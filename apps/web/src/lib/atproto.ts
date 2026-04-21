@@ -3,32 +3,74 @@ import type { Agent } from '@atproto/api';
 /** クライアント識別子。TOKIMEKI 方式で post record 最上位に書き込む。 */
 export const VIA = 'AozoraQuest';
 
+/** 診断パイプラインで使う「本文 + 時刻」。 */
+export interface DiagnosisPost {
+  text: string;
+  /** 投稿の createdAt (record) または indexedAt (feed) の ISO 文字列 */
+  at: string;
+}
+
 /**
  * 自分の直近投稿を N 件取得 (リポスト・引用を除外)。
+ * タイムスタンプ付きで返す (診断の時間軸考慮用)。
  */
-export async function fetchMyPosts(agent: Agent, limit: number = 150): Promise<string[]> {
+export async function fetchMyPosts(agent: Agent, limit: number = 150): Promise<DiagnosisPost[]> {
   const did = agent.assertDid;
-  const texts: string[] = [];
+  const posts: DiagnosisPost[] = [];
   let cursor: string | undefined;
 
-  while (texts.length < limit) {
+  while (posts.length < limit) {
     const res = await agent.getAuthorFeed({
       actor: did,
-      limit: Math.min(100, limit - texts.length),
+      limit: Math.min(100, limit - posts.length),
       ...(cursor !== undefined ? { cursor } : {}),
       filter: 'posts_no_replies',
     });
     for (const item of res.data.feed) {
       const post = item.post;
-      const record = post.record as { text?: string; reply?: unknown };
+      const record = post.record as { text?: string; createdAt?: string; reply?: unknown };
       if (typeof record.text === 'string' && record.text.length >= 10) {
-        texts.push(record.text);
+        const at = record.createdAt ?? post.indexedAt ?? new Date().toISOString();
+        posts.push({ text: record.text, at });
       }
     }
     cursor = res.data.cursor;
     if (!cursor) break;
   }
-  return texts.slice(0, limit);
+  return posts.slice(0, limit);
+}
+
+/**
+ * 他ユーザーの直近投稿を診断用に N 件取得 (タイムスタンプ付き)。
+ * 認証済みセッションで getAuthorFeed を呼ぶ (ブラウザ内で完結)。
+ */
+export async function fetchUserPostsForDiagnosis(
+  agent: Agent,
+  actor: string,
+  limit: number = 150,
+): Promise<DiagnosisPost[]> {
+  const posts: DiagnosisPost[] = [];
+  let cursor: string | undefined;
+
+  while (posts.length < limit) {
+    const res = await agent.getAuthorFeed({
+      actor,
+      limit: Math.min(100, limit - posts.length),
+      ...(cursor !== undefined ? { cursor } : {}),
+      filter: 'posts_no_replies',
+    });
+    for (const item of res.data.feed) {
+      const post = item.post;
+      const record = post.record as { text?: string; createdAt?: string };
+      if (typeof record.text === 'string' && record.text.length >= 10) {
+        const at = record.createdAt ?? post.indexedAt ?? new Date().toISOString();
+        posts.push({ text: record.text, at });
+      }
+    }
+    cursor = res.data.cursor;
+    if (!cursor) break;
+  }
+  return posts.slice(0, limit);
 }
 
 /**

@@ -106,33 +106,96 @@ export function computeConfidence(postCount: number, scores: CognitiveScores): C
 }
 
 /**
+ * 各投稿の重みを決める (時間軸考慮)。
+ *   - 新しい投稿ほど重い (30 日で線形に半減する、180 日で 1/4)。
+ *   - 5 分以内の連投 (burst) はひとまとまりの気分で「重複」しやすいので、
+ *     グループ内で重みを割って加算の寄与を平準化する。
+ * 時刻が与えられない場合は全て 1.0 (従来挙動)。
+ */
+export function computePostWeights(timestamps?: readonly string[], now: Date = new Date()): number[] {
+  if (!timestamps || timestamps.length === 0) return [];
+  const n = timestamps.length;
+  const weights = new Array<number>(n).fill(1);
+  const BURST_MS = 5 * 60 * 1000;
+  const HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000; // 30 日
+
+  const times = timestamps.map((t) => {
+    const ms = Date.parse(t);
+    return Number.isFinite(ms) ? ms : NaN;
+  });
+  const nowMs = now.getTime();
+
+  // 1) 時間減衰 (recency): 古いほど軽い (下限 0.25)。
+  for (let i = 0; i < n; i++) {
+    const t = times[i]!;
+    if (!Number.isFinite(t)) continue;
+    const ageMs = Math.max(0, nowMs - t);
+    // linear half-life: 30 日で 0.5、180 日で 0.25 下限
+    const w = Math.max(0.25, 1 - 0.5 * (ageMs / HALF_LIFE_MS));
+    weights[i] = w;
+  }
+
+  // 2) バースト平準化: 5 分以内で隣接するグループを束ねて、
+  //    各メンバーの重みを 1/sqrt(groupSize) に割る (連投の連呼を抑制)。
+  const order = times
+    .map((t, i) => ({ t, i }))
+    .filter((x) => Number.isFinite(x.t))
+    .sort((a, b) => a.t - b.t);
+  let g: number[] = [];
+  const flush = () => {
+    if (g.length <= 1) return;
+    const factor = 1 / Math.sqrt(g.length);
+    for (const i of g) weights[i] = (weights[i] ?? 1) * factor;
+  };
+  for (let k = 0; k < order.length; k++) {
+    const cur = order[k]!;
+    if (g.length === 0) { g = [cur.i]; continue; }
+    const prevT = order[k - 1]!.t;
+    if (cur.t - prevT <= BURST_MS) g.push(cur.i);
+    else { flush(); g = [cur.i]; }
+  }
+  flush();
+  return weights;
+}
+
+/**
  * 全体の診断ロジックを純粋関数で (埋め込みは呼び出し側で行う)。
  *
  * @param postEmbeddings 投稿 N 件の埋め込みベクトル
  * @param cognitivePrototypes 各認知機能のプロトタイプ埋め込み (8 機能)
  * @param postCount 入力投稿数 (信頼度計算に使う)
+ * @param options.timestamps 各投稿の createdAt (ISO)。与えると時間軸重み付けを適用
  */
 export function diagnose(
   postEmbeddings: readonly Float32Array[],
   cognitivePrototypes: Record<CogFunction, readonly Float32Array[]>,
   postCount: number,
   now: Date = new Date(),
+  options: { timestamps?: readonly string[] } = {},
 ): DiagnosisResult | { insufficient: true; postCount: number } {
   if (postCount < 50) {
     return { insufficient: true, postCount };
   }
 
-  // 各投稿 × 各機能のスコア (Top-N 平均)
+  const weights = options.timestamps
+    ? computePostWeights(options.timestamps, now)
+    : new Array<number>(postEmbeddings.length).fill(1);
+
+  // 各投稿 × 各機能のスコア (Top-N 平均) を重み付け加算
   const scoreAcc: CognitiveScores = { Ni: 0, Ne: 0, Si: 0, Se: 0, Ti: 0, Te: 0, Fi: 0, Fe: 0 };
   const fnKeys = Object.keys(cognitivePrototypes) as CogFunction[];
-  for (const vec of postEmbeddings) {
+  let totalWeight = 0;
+  for (let i = 0; i < postEmbeddings.length; i++) {
+    const vec = postEmbeddings[i]!;
+    const w = weights[i] ?? 1;
+    totalWeight += w;
     for (const fn of fnKeys) {
-      scoreAcc[fn] += topNAverage(vec, cognitivePrototypes[fn]);
+      scoreAcc[fn] += topNAverage(vec, cognitivePrototypes[fn]) * w;
     }
   }
-  // 投稿数で平均化
   const avg = {} as CognitiveScores;
-  for (const fn of fnKeys) avg[fn] = scoreAcc[fn] / postEmbeddings.length;
+  const denom = totalWeight > 0 ? totalWeight : postEmbeddings.length;
+  for (const fn of fnKeys) avg[fn] = scoreAcc[fn] / denom;
 
   const normalized = normalizeCognitive(avg);
   const rpgStats = cognitiveToRpg(normalized);
