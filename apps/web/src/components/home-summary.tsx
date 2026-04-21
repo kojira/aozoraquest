@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
-import { generateDailyQuests, jobDisplayName, jobTagline } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobTagline } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
-import { ensureTodayQuestLog, loadTodayQuestLog, type QuestLogRecord } from '@/lib/post-processor';
+import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
 
 interface HomeSummaryProps {
   agent: Agent | null;
@@ -179,6 +179,11 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
             </div>
           );
         })() : null}
+
+      {/* 透明性: 今日カウントされた行動の監査ログ */}
+      {questLog?.activity && questLog.activity.length > 0 && (
+        <ActivityAudit activity={questLog.activity} />
+      )}
     </section>
   );
 }
@@ -242,5 +247,101 @@ function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
         </div>
       )}
     </SpiritBubble>
+  );
+}
+
+/**
+ * 今日の投稿が何と分類され、どのクエストを +1 したかの監査ログ。
+ * 「なぜ感謝の返信 3 件が進まないのか」「この投稿はどの行動扱いなのか」を
+ * 自分で確認できる透明性 UI。折り畳み式で最新 3 件をデフォルト表示。
+ */
+function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
+  const [open, setOpen] = useState(false);
+  // 新しい順に並べ替え (activity は古い順に追記されている)
+  const sorted = [...activity].reverse();
+  const visible = open ? sorted : sorted.slice(0, 3);
+  const hidden = sorted.length - visible.length;
+
+  return (
+    <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.5em' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          padding: '0.2em 0',
+          color: 'var(--color-fg)',
+          font: 'inherit',
+          textAlign: 'left',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5em',
+          cursor: 'pointer',
+          boxShadow: 'none',
+        }}
+      >
+        <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
+          今日カウントされた行動 ({sorted.length})
+        </span>
+        <span style={{ marginLeft: 'auto', color: 'var(--color-muted)' }}>{open ? '▾' : '▸'}</span>
+      </button>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '0.3em 0 0', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+        {visible.map((e, i) => (
+          <li key={i}>
+            <ActivityRow entry={e} />
+          </li>
+        ))}
+      </ul>
+      {!open && hidden > 0 && (
+        <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
+          他 {hidden} 件
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityRow({ entry }: { entry: ActivityEntry }) {
+  const templateToDesc = (id: string): string => {
+    const t = DEFAULT_QUEST_TEMPLATES.find((t) => t.id === id);
+    return t ? t.descriptionTemplate.replace('{N}', '—') : id;
+  };
+  const time = (() => {
+    try { return new Date(entry.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+  })();
+  const actionText = actionLabel(entry.action);
+  return (
+    <div
+      style={{
+        background: 'rgba(0,0,0,0.35)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 4,
+        padding: '0.4em 0.5em',
+        fontSize: '0.8em',
+        lineHeight: 1.4,
+      }}
+    >
+      <div style={{ display: 'flex', gap: '0.5em', color: 'var(--color-muted)', fontSize: '0.9em' }}>
+        <span>{time}</span>
+        <span>→</span>
+        <span style={{ color: entry.action ? 'var(--color-accent)' : 'var(--color-muted)' }}>
+          {actionText}
+        </span>
+      </div>
+      <div style={{ marginTop: '0.2em', color: 'var(--color-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        「{entry.preview}」
+      </div>
+      {entry.incremented.length > 0 ? (
+        <div style={{ marginTop: '0.3em', color: 'var(--color-muted)', fontSize: '0.85em' }}>
+          +1: {entry.incremented.map((id) => templateToDesc(id)).join(' / ')}
+        </div>
+      ) : (
+        <div style={{ marginTop: '0.3em', color: 'var(--color-muted)', fontSize: '0.85em' }}>
+          {entry.action ? '該当クエスト無し (カウント対象外)' : '分類できず'}
+        </div>
+      )}
+    </div>
   );
 }

@@ -54,6 +54,29 @@ export function buildAction(type: ActionType, timestamp: number = Date.now()): A
   return { type, timestamp, weights: { ...ACTION_WEIGHTS[type] } };
 }
 
+/** 行動タイプの日本語ラベル (UI の透明性表示用)。 */
+export const ACTION_LABELS: Record<ActionType, string> = {
+  opinion_post:        '意見の投稿',
+  analysis_post:       '分析・長文',
+  short_burst:         '短文',
+  quick_reply:         '即レス',
+  empathy_reply:       '共感の返信',
+  humor_post:          'ユーモア',
+  quote_with_opinion:  '引用 + 意見',
+  quote_with_analysis: '引用 + 考察',
+  thread_continue:     'スレッド継続',
+  calm_debate_reply:   '落ち着いた議論返信',
+  streak_maintain:     '連続投稿の維持',
+  like_underseen:      '埋もれいいね',
+  like_regular:        'いいね',
+  repost_only:         'リポストのみ',
+};
+
+export function actionLabel(type: ActionType | string | null | undefined): string {
+  if (!type) return '—';
+  return (ACTION_LABELS as Record<string, string | undefined>)[type] ?? type;
+}
+
 export const ANTI_CHEAT = {
   sameUserLikeCooldownHours: 4,
   dailyLukCapFromLikes: 15,

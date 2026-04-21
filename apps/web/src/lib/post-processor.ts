@@ -32,9 +32,23 @@ export interface QuestLogEntry {
   xpAwarded?: number;
 }
 
+/** 投稿 1 件の分類履歴 (透明性表示用: なぜクエストが進んだかを後から見るため) */
+export interface ActivityEntry {
+  /** 発生時刻 (ISO) */
+  at: string;
+  /** 投稿本文の先頭 (最大 60 字)。プライバシー配慮で全文は記録しない。 */
+  preview: string;
+  /** 分類された行動タイプ。分類不能なら null。 */
+  action: string | null;
+  /** この投稿で +1 された quest の templateId 一覧。 */
+  incremented: string[];
+}
+
 export interface QuestLogRecord {
   date: string;
   quests: QuestLogEntry[];
+  /** 今日分類された投稿の履歴 (古い順)。最新 50 件までを保持。 */
+  activity?: ActivityEntry[];
   totalXpGained?: number;
   updatedAt: string;
 }
@@ -85,42 +99,54 @@ export async function processSelfPost(
   const action = actResult.action;
   const actionType = action ? (action as ActionType) : null;
 
-  // 3) questLog の更新 (action があるときのみ)
+  // 3) questLog の更新 (常に記録: 分類されなかった投稿も activity に残すことで「なぜ進まないか」が分かる)
   const incremented: string[] = [];
   const completed: string[] = [];
   let xpGained = 0;
-  if (actionType) {
+  {
     const date = todayDateString();
     const existing = await getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', date);
     const log: QuestLogRecord = existing ?? {
       date,
       quests: [],
+      activity: [],
       totalXpGained: 0,
       updatedAt: new Date().toISOString(),
     };
-    for (const q of log.quests) {
-      if (q.completed) continue;
-      const tmpl = templateById(q.templateId);
-      if (!tmpl) continue;
-      if (tmpl.type === 'restraint') {
-        if (tmpl.forbiddenActionTypes?.includes(actionType)) {
-          q.completed = false;
-          q.xpAwarded = 0;
+    if (actionType) {
+      for (const q of log.quests) {
+        if (q.completed) continue;
+        const tmpl = templateById(q.templateId);
+        if (!tmpl) continue;
+        if (tmpl.type === 'restraint') {
+          if (tmpl.forbiddenActionTypes?.includes(actionType)) {
+            q.completed = false;
+            q.xpAwarded = 0;
+          }
+          continue;
         }
-        continue;
-      }
-      if (tmpl.expectedActionTypes?.includes(actionType)) {
-        q.currentCount = q.currentCount + 1;
-        incremented.push(q.templateId);
-        if (q.currentCount >= q.requiredCount && q.requiredCount > 0) {
-          q.completed = true;
-          const xp = tmpl.xpRewardFn(q.currentCount);
-          q.xpAwarded = xp;
-          completed.push(q.templateId);
-          xpGained += xp;
+        if (tmpl.expectedActionTypes?.includes(actionType)) {
+          q.currentCount = q.currentCount + 1;
+          incremented.push(q.templateId);
+          if (q.currentCount >= q.requiredCount && q.requiredCount > 0) {
+            q.completed = true;
+            const xp = tmpl.xpRewardFn(q.currentCount);
+            q.xpAwarded = xp;
+            completed.push(q.templateId);
+            xpGained += xp;
+          }
         }
       }
     }
+    const preview = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
+    const entry: ActivityEntry = {
+      at: new Date().toISOString(),
+      preview,
+      action: actionType,
+      incremented,
+    };
+    const prev = log.activity ?? [];
+    log.activity = [...prev, entry].slice(-50);
     log.totalXpGained = (log.totalXpGained ?? 0) + xpGained;
     log.updatedAt = new Date().toISOString();
     await putRecord(agent, 'app.aozoraquest.questLog', date, log);
