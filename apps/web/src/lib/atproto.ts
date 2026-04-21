@@ -1,5 +1,5 @@
 import type { Agent } from '@atproto/api';
-import { DIAGNOSIS_POST_LIMIT } from '@aozoraquest/core';
+import { BLUESKY_API_PAGE_LIMIT, DIAGNOSIS_MIN_POST_TEXT_LENGTH, DIAGNOSIS_POST_LIMIT, TIMELINE_PAGE_LIMIT } from '@aozoraquest/core';
 
 /** クライアント識別子。TOKIMEKI 方式で post record 最上位に書き込む。 */
 export const VIA = 'AozoraQuest';
@@ -23,14 +23,14 @@ export async function fetchMyPosts(agent: Agent, limit: number = DIAGNOSIS_POST_
   while (posts.length < limit) {
     const res = await agent.getAuthorFeed({
       actor: did,
-      limit: Math.min(100, limit - posts.length),
+      limit: Math.min(BLUESKY_API_PAGE_LIMIT, limit - posts.length),
       ...(cursor !== undefined ? { cursor } : {}),
       filter: 'posts_no_replies',
     });
     for (const item of res.data.feed) {
       const post = item.post;
       const record = post.record as { text?: string; createdAt?: string; reply?: unknown };
-      if (typeof record.text === 'string' && record.text.length >= 10) {
+      if (typeof record.text === 'string' && record.text.length >= DIAGNOSIS_MIN_POST_TEXT_LENGTH) {
         const at = record.createdAt ?? post.indexedAt ?? new Date().toISOString();
         posts.push({ text: record.text, at });
       }
@@ -56,14 +56,14 @@ export async function fetchUserPostsForDiagnosis(
   while (posts.length < limit) {
     const res = await agent.getAuthorFeed({
       actor,
-      limit: Math.min(100, limit - posts.length),
+      limit: Math.min(BLUESKY_API_PAGE_LIMIT, limit - posts.length),
       ...(cursor !== undefined ? { cursor } : {}),
       filter: 'posts_no_replies',
     });
     for (const item of res.data.feed) {
       const post = item.post;
       const record = post.record as { text?: string; createdAt?: string };
-      if (typeof record.text === 'string' && record.text.length >= 10) {
+      if (typeof record.text === 'string' && record.text.length >= DIAGNOSIS_MIN_POST_TEXT_LENGTH) {
         const at = record.createdAt ?? post.indexedAt ?? new Date().toISOString();
         posts.push({ text: record.text, at });
       }
@@ -78,7 +78,7 @@ export async function fetchUserPostsForDiagnosis(
  * タイムライン (フォロー中) を 1 ページ取得。
  */
 export async function fetchTimeline(agent: Agent, cursor?: string) {
-  return agent.getTimeline({ limit: 30, ...(cursor !== undefined ? { cursor } : {}) });
+  return agent.getTimeline({ limit: TIMELINE_PAGE_LIMIT, ...(cursor !== undefined ? { cursor } : {}) });
 }
 
 /**
@@ -89,7 +89,7 @@ export async function fetchAuthorPosts(agent: Agent, did: string, limit: number 
   const out: string[] = [];
   for (const item of res.data.feed) {
     const record = item.post.record as { text?: string };
-    if (typeof record.text === 'string' && record.text.length >= 10) {
+    if (typeof record.text === 'string' && record.text.length >= DIAGNOSIS_MIN_POST_TEXT_LENGTH) {
       out.push(record.text);
     }
   }

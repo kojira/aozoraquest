@@ -16,7 +16,10 @@
 import type { Agent } from '@atproto/api';
 import type { ActionType, Archetype, CogFunction, CognitiveScores, DiagnosisResult, JobLevelState, PlayerLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
 import {
+  ACTIVITY_HISTORY_LIMIT,
+  ACTIVITY_PREVIEW_LENGTH,
   COGNITIVE_BLEND_ALPHA,
+  DAILY_BONUS_DAY_MARGIN_FACTOR,
   DEFAULT_QUEST_TEMPLATES,
   JOB_CHANGE_STREAK_THRESHOLD as CORE_JOB_CHANGE_STREAK_THRESHOLD,
   XP_REWARDS,
@@ -157,7 +160,7 @@ export async function processSelfPost(
         }
       }
     }
-    const preview = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
+    const preview = trimmed.length > ACTIVITY_PREVIEW_LENGTH ? trimmed.slice(0, ACTIVITY_PREVIEW_LENGTH) + '…' : trimmed;
     const entry: ActivityEntry = {
       at: new Date().toISOString(),
       preview,
@@ -165,7 +168,7 @@ export async function processSelfPost(
       incremented,
     };
     const prev = log.activity ?? [];
-    log.activity = [...prev, entry].slice(-50);
+    log.activity = [...prev, entry].slice(-ACTIVITY_HISTORY_LIMIT);
     log.totalXpGained = (log.totalXpGained ?? 0) + xpGained;
     log.updatedAt = new Date().toISOString();
     await putRecord(agent, 'app.aozoraquest.questLog', date, log);
@@ -331,7 +334,7 @@ function isYesterday(dateA: string, dateB: string): boolean {
   const a = new Date(dateA + 'T00:00:00');
   const b = new Date(dateB + 'T00:00:00');
   const diff = b.getTime() - a.getTime();
-  return diff > 0 && diff <= 1000 * 60 * 60 * 24 * 1.5;
+  return diff > 0 && diff <= 1000 * 60 * 60 * 24 * DAILY_BONUS_DAY_MARGIN_FACTOR;
 }
 
 function blendCognitive(

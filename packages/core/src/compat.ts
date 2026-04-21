@@ -90,9 +90,11 @@ export function resonanceLabel(score: number): string {
 /**
  * 共鳴タイムラインのランク付けスコア。
  * resonance × exp(-age_hours / HALF_LIFE_HOURS) でフレッシュネス考慮。
- * 仮置き 48h (11-validation.md §実験 7)。
+ * 半減期は tuning.RESONANCE_FRESHNESS_HALF_LIFE_HOURS。
  */
-export const FRESHNESS_HALF_LIFE_HOURS = 48;
+import { RESONANCE_FRESHNESS_HALF_LIFE_HOURS } from './tuning.js';
+
+export const FRESHNESS_HALF_LIFE_HOURS = RESONANCE_FRESHNESS_HALF_LIFE_HOURS;
 
 export function resonanceTimelineScore(resonanceScore: number, postAgeMs: number): number {
   const ageHours = postAgeMs / 3600000;

@@ -4,7 +4,7 @@ import { createPost, type ReplyRef } from '@/lib/atproto';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
-import { jobDisplayName } from '@aozoraquest/core';
+import { POST_MAX_LENGTH, jobDisplayName } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -96,7 +96,7 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
 
   async function submit() {
     const body = text.trim();
-    if (!body || body.length > 300 || loading || !agent) return;
+    if (!body || body.length > POST_MAX_LENGTH || loading || !agent) return;
     setLoading(true);
     setErr(null);
     try {
@@ -211,18 +211,18 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
           onSubmit={submit}
           style={{ width: '100%', minHeight: '7em', padding: '0.5em', fontSize: '1em' }}
           placeholder={replyTo ? '返信を書く' : 'いまどうしてる?'}
-          maxLength={300}
+          maxLength={POST_MAX_LENGTH}
           disabled={loading}
           autoFocus
         />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5em' }}>
-          <span style={{ fontSize: '0.85em', color: text.length > 300 ? 'var(--color-danger)' : 'var(--color-muted)' }}>
-            {text.length} / 300
+          <span style={{ fontSize: '0.85em', color: text.length > POST_MAX_LENGTH ? 'var(--color-danger)' : 'var(--color-muted)' }}>
+            {text.length} / {POST_MAX_LENGTH}
           </span>
           <div style={{ display: 'flex', gap: '0.4em' }}>
             <button className="secondary" onClick={onClose} disabled={loading}>キャンセル</button>
-            <button onClick={submit} disabled={!text.trim() || text.length > 300 || loading}>
+            <button onClick={submit} disabled={!text.trim() || text.length > POST_MAX_LENGTH || loading}>
               {loading ? '送信中...' : replyTo ? '返信する' : 'ポスト'}
             </button>
           </div>
