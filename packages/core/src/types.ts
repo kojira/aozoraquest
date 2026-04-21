@@ -90,4 +90,8 @@ export interface DiagnosisResult {
   analyzedAt: string; // ISO datetime
   jobLevel?: JobLevelState;
   playerLevel?: PlayerLevelState;
+  /** 投稿ごとの cognitive 再判定で、現 archetype と異なる候補が出ているときに埋まる。 */
+  pendingArchetype?: Archetype;
+  /** 同じ候補が何回連続で出たか。閾値以上で UI が転職バナーを出す。 */
+  pendingArchetypeStreak?: number;
 }

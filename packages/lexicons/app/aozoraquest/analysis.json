@@ -29,7 +29,17 @@
           "analyzedAt": { "type": "string", "format": "datetime" },
           "public": { "type": "boolean", "default": false },
           "jobLevel": { "type": "ref", "ref": "#jobLevel" },
-          "playerLevel": { "type": "ref", "ref": "#playerLevel" }
+          "playerLevel": { "type": "ref", "ref": "#playerLevel" },
+          "pendingArchetype": {
+            "type": "string",
+            "knownValues": [
+              "sage", "mage", "shogun", "bard",
+              "seer", "poet", "paladin", "explorer",
+              "warrior", "guardian", "fighter", "dancer",
+              "captain", "miko", "gladiator", "performer"
+            ]
+          },
+          "pendingArchetypeStreak": { "type": "integer", "minimum": 0 }
         }
       }
     },

@@ -6,6 +6,7 @@ import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLeve
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
+import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { Avatar } from '@/components/avatar';
@@ -148,6 +149,32 @@ export function MyProfile() {
           </p>
         </div>
       </div>
+
+      {state.status === 'done' && state.result.pendingArchetype && (state.result.pendingArchetypeStreak ?? 0) >= JOB_CHANGE_STREAK_THRESHOLD && (
+        <JobChangeBanner
+          current={state.result.archetype}
+          pending={state.result.pendingArchetype}
+          streak={state.result.pendingArchetypeStreak ?? 0}
+          onConfirm={async () => {
+            if (session.status !== 'signed-in' || !session.agent || !session.did) return;
+            const next = await confirmJobChange(session.agent, session.did, state.result.pendingArchetype!);
+            if (next) setState({ status: 'done', result: next });
+          }}
+          onDismiss={async () => {
+            if (session.status !== 'signed-in' || !session.agent || !session.did) return;
+            await dismissPendingArchetype(session.agent, session.did);
+            setState({
+              status: 'done',
+              result: (() => {
+                const r = { ...state.result };
+                delete r.pendingArchetype;
+                delete r.pendingArchetypeStreak;
+                return r;
+              })(),
+            });
+          }}
+        />
+      )}
 
       {state.status === 'idle' && (
         <div style={{ marginTop: '1em' }}>
@@ -312,6 +339,54 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
       </p>
 
       <button onClick={onRerun} style={{ marginTop: '1em' }}>もう一度調べる</button>
+    </section>
+  );
+}
+
+function JobChangeBanner({
+  current,
+  pending,
+  streak,
+  onConfirm,
+  onDismiss,
+}: {
+  current: Archetype;
+  pending: Archetype;
+  streak: number;
+  onConfirm: () => void | Promise<void>;
+  onDismiss: () => void | Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const handle = async (fn: () => void | Promise<void>) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+  return (
+    <section
+      style={{
+        marginTop: '1em',
+        padding: '0.8em',
+        border: '2px solid var(--color-accent)',
+        borderRadius: 4,
+        background: 'rgba(159, 215, 255, 0.08)',
+      }}
+    >
+      <p style={{ margin: 0, fontWeight: 700 }}>
+        最近の投稿は <strong>{jobDisplayName(pending, 'default')}</strong> に近づいています
+      </p>
+      <p style={{ margin: '0.3em 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
+        今は「{jobDisplayName(current, 'default')}」のまま。{streak} 投稿連続で {jobDisplayName(pending, 'default')} 寄りに判定されました。
+        転職すると現ジョブの LV・XP はリセットされ、新しいジョブで 0 から育て直しになります
+        (全体 LV は維持されます)。
+      </p>
+      <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
+        <button disabled={busy} onClick={() => void handle(onConfirm)}>
+          {jobDisplayName(pending, 'default')} に転職する
+        </button>
+        <button className="secondary" disabled={busy} onClick={() => void handle(onDismiss)}>
+          このまま続ける
+        </button>
+      </div>
     </section>
   );
 }
