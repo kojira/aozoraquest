@@ -111,13 +111,32 @@ const compass = (color: string) =>
     </g>,
   );
 
-const fist = (color: string) =>
+/** カイザーナックル (メリケンサック): 指穴 4 つ + 上部の打撃突起 */
+const knuckle = (color: string) =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      <rect x="18" y="28" width="64" height="56" rx="14" fill={color} />
-      <line x1="26" y1="46" x2="74" y2="46" strokeWidth="3" />
-      <line x1="26" y1="62" x2="74" y2="62" strokeWidth="3" />
-      <rect x="18" y="18" width="64" height="14" rx="4" fill="#a05515" />
+      {/* 打撃用の 4 つの突起 (上側の山) */}
+      <path
+        d="M 10 44
+           Q 10 34 18 28 L 26 18 L 34 28
+           L 42 28 L 50 18 L 58 28
+           L 66 28 L 74 18 L 82 28
+           Q 90 34 90 44
+           L 90 62 Q 90 78 78 78 L 22 78 Q 10 78 10 62 Z"
+        fill={color}
+      />
+      {/* ハイライト (メタル感) */}
+      <path
+        d="M 20 36 L 80 36 L 80 42 L 20 42 Z"
+        fill={HIGHLIGHT}
+        stroke="none"
+        opacity="0.35"
+      />
+      {/* 指穴 4 つ (黒抜き) */}
+      <circle cx="25" cy="58" r="8" fill={OUTLINE} />
+      <circle cx="42" cy="58" r="8" fill={OUTLINE} />
+      <circle cx="58" cy="58" r="8" fill={OUTLINE} />
+      <circle cx="75" cy="58" r="8" fill={OUTLINE} />
     </g>,
   );
 
@@ -242,7 +261,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     explorer:  { primary: compass(c),     accentColor: accent },
     warrior:   { primary: sword(c),       accentColor: accent },
     guardian:  { primary: shield(c),      accentColor: accent },
-    fighter:   { primary: fist(c),        accentColor: accent },
+    fighter:   { primary: knuckle(c),     accentColor: accent },
     dancer:    { primary: fan(c),         accentColor: accent },
     captain:   { primary: starEpaulet(c), accentColor: accent },
     miko:      { primary: bell(c),        accentColor: accent },
