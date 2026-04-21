@@ -14,8 +14,8 @@
  */
 
 import type { Agent } from '@atproto/api';
-import type { ActionType, Archetype, CogFunction, CognitiveScores, DiagnosisResult, JobHistoryEntry, JobLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
-import { DEFAULT_QUEST_TEMPLATES, JOB_XP_REWARDS, cognitiveToRpg, determineArchetype, jobLevelFromXp } from '@aozoraquest/core';
+import type { ActionType, CogFunction, CognitiveScores, DiagnosisResult, JobLevelState, PlayerLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, JOB_XP_REWARDS, cognitiveToRpg, jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { getEmbedder } from './embedder';
@@ -61,8 +61,9 @@ export interface ProcessResult {
   updatedRpgStats?: StatVector | undefined;
   updatedCognitive?: CognitiveScores | undefined;
   jobLevel?: JobLevelState | undefined;
+  playerLevel?: PlayerLevelState | undefined;
   jobLeveledUp?: { from: number; to: number } | undefined;
-  jobChanged?: { from: Archetype; to: Archetype } | undefined;
+  playerLeveledUp?: { from: number; to: number } | undefined;
 }
 
 /** 認知機能スコアのブレンド比率。α * 既存 + (1-α) * 新規。 */
@@ -157,16 +158,17 @@ export async function processSelfPost(
 
   // 4) analysis を更新
   //   - cognitiveScores を α でブレンド (新しい投稿が少しずつ寄せる)
-  //   - rpgStats は常に cognitiveScores から合成 (両者が乖離しないように)
-  //   - archetype を新 cognitiveScores から再判定
-  //   - jobLevel の XP を 3 系統 (投稿マッチ / クエスト完了 / 日次ボーナス + streak) で積み増し。
-  //     archetype が変わった場合は jobHistory に旧職を push、新職で xp=0 からリスタート。
-  //   ※ ACTION_WEIGHTS はクエスト進捗と XP 判定のみに使い、ステータスには直接影響させない。
+  //   - rpgStats は常に cognitiveScores から合成
+  //   - ※ archetype は post ごとに自動更新しない (勝手な転職を防ぐ)。
+  //     re-diagnosis (明示的な「もう一度調べる」) でのみ更新される。
+  //   - playerLevel.xp は常に積む。jobLevel.xp は現 archetype のみ積む。
+  //   - 日次ボーナス / streak は playerLevel で判定 (1 日 1 回の本体)。
   let updatedRpgStats: StatVector | undefined;
   let updatedCognitive: CognitiveScores | undefined;
   let finalJobLevel: JobLevelState | undefined;
+  let finalPlayerLevel: PlayerLevelState | undefined;
   let jobLeveledUp: { from: number; to: number } | undefined;
-  let jobChanged: { from: Archetype; to: Archetype } | undefined;
+  let playerLeveledUp: { from: number; to: number } | undefined;
   try {
     const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
     if (analysis?.cognitiveScores) {
@@ -176,84 +178,66 @@ export async function processSelfPost(
       const nextStats = cognitiveToRpg(blended);
       updatedRpgStats = nextStats;
 
-      const { archetype: newArchetype } = determineArchetype(blended);
-      const archetype = newArchetype ?? analysis.archetype;
-
-      // ── job XP の計算 ─────────────────────────────
+      // ── XP 計算 ─────────────────────────────
       const now = new Date();
       const nowIso = now.toISOString();
       const today = todayDateString();
-      const oldJobLevel: JobLevelState = analysis.jobLevel ?? {
+      const oldPlayer: PlayerLevelState = analysis.playerLevel ?? { xp: 0, streakDays: 0 };
+      const oldJob: JobLevelState = analysis.jobLevel ?? {
         archetype: analysis.archetype,
         xp: 0,
         joinedAt: analysis.analyzedAt,
-        streakDays: 0,
       };
-      const jobHistory: JobHistoryEntry[] = analysis.jobHistory ? [...analysis.jobHistory] : [];
 
-      // XP 加算量を計算
       let gainedXp = 0;
       if (actionType) gainedXp += JOB_XP_REWARDS.postMatch;
       gainedXp += xpGained; // クエスト完了分
 
-      // 日次ボーナス (その日初めての加算のみ)
-      const prevBonusDate = oldJobLevel.lastDailyBonusDate;
-      let newStreak = oldJobLevel.streakDays;
+      // 日次ボーナス (playerLevel で判定、1 日 1 回)
+      const prevBonusDate = oldPlayer.lastDailyBonusDate;
+      let newStreak = oldPlayer.streakDays;
       let newBonusDate = prevBonusDate;
       if (prevBonusDate !== today) {
-        // streak 判定: 昨日の日付なら +1、そうでなければ 1 にリセット
-        if (prevBonusDate && isYesterday(prevBonusDate, today)) {
-          newStreak = newStreak + 1;
-        } else {
-          newStreak = 1;
-        }
+        newStreak = prevBonusDate && isYesterday(prevBonusDate, today) ? newStreak + 1 : 1;
         const streakBonus = Math.min(JOB_XP_REWARDS.streakBonusCap, newStreak * JOB_XP_REWARDS.streakBonusPerDay);
         gainedXp += JOB_XP_REWARDS.dailyBonus + streakBonus;
         newBonusDate = today;
       }
 
-      // archetype 変化検出 → 履歴 push + リセット
-      let nextJobLevel: JobLevelState;
-      if (archetype !== oldJobLevel.archetype) {
-        jobHistory.push({
-          archetype: oldJobLevel.archetype,
-          peakLevel: jobLevelFromXp(oldJobLevel.xp),
-          totalXp: oldJobLevel.xp,
-          from: oldJobLevel.joinedAt,
-          until: nowIso,
-        });
-        nextJobLevel = {
-          archetype,
-          xp: gainedXp,
-          joinedAt: nowIso,
-          ...(newBonusDate ? { lastDailyBonusDate: newBonusDate } : {}),
-          streakDays: gainedXp > 0 ? 1 : 0,
-        };
-        jobChanged = { from: oldJobLevel.archetype, to: archetype };
-      } else {
-        const prevLevel = jobLevelFromXp(oldJobLevel.xp);
-        const nextXp = oldJobLevel.xp + gainedXp;
-        const nextLevel = jobLevelFromXp(nextXp);
-        if (nextLevel > prevLevel) jobLeveledUp = { from: prevLevel, to: nextLevel };
-        nextJobLevel = {
-          archetype,
-          xp: nextXp,
-          joinedAt: oldJobLevel.joinedAt,
-          ...(newBonusDate ? { lastDailyBonusDate: newBonusDate } : {}),
-          streakDays: newStreak,
-        };
-      }
+      // playerLevel 更新 (常に積む)
+      const prevPlayerLv = playerLevelFromXp(oldPlayer.xp);
+      const nextPlayerXp = oldPlayer.xp + gainedXp;
+      const nextPlayerLv = playerLevelFromXp(nextPlayerXp);
+      if (nextPlayerLv > prevPlayerLv) playerLeveledUp = { from: prevPlayerLv, to: nextPlayerLv };
+      const nextPlayerLevel: PlayerLevelState = {
+        xp: nextPlayerXp,
+        ...(newBonusDate ? { lastDailyBonusDate: newBonusDate } : {}),
+        streakDays: newStreak,
+      };
+      finalPlayerLevel = nextPlayerLevel;
+
+      // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)
+      const prevJobLv = jobLevelFromXp(oldJob.xp);
+      const nextJobXp = oldJob.xp + gainedXp;
+      const nextJobLv = jobLevelFromXp(nextJobXp);
+      if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
+      const nextJobLevel: JobLevelState = {
+        archetype: oldJob.archetype,
+        xp: nextJobXp,
+        joinedAt: oldJob.joinedAt,
+      };
       finalJobLevel = nextJobLevel;
 
       await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
         ...analysis,
         cognitiveScores: blended,
         rpgStats: nextStats,
-        archetype,
+        // archetype は固定 (post ごとには変えない)
         analyzedAt: analysis.analyzedAt,
         jobLevel: nextJobLevel,
-        jobHistory,
+        playerLevel: nextPlayerLevel,
       });
+      void nowIso; // 将来 jobLevel.joinedAt 更新などに使う用
     }
   } catch (e) {
     console.warn('analysis update failed', e);
@@ -267,8 +251,9 @@ export async function processSelfPost(
     updatedRpgStats,
     updatedCognitive,
     jobLevel: finalJobLevel,
+    playerLevel: finalPlayerLevel,
     jobLeveledUp,
-    jobChanged,
+    playerLeveledUp,
   };
 }
 

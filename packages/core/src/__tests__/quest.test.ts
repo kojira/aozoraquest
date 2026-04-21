@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_QUEST_TEMPLATES, JOB_XP_CURVE, generateDailyQuests, jobLevelFromXp, jobXpToNextLevel, levelFromXp } from '../quest.js';
+import { DEFAULT_QUEST_TEMPLATES, JOB_XP_CURVE, PLAYER_XP_CURVE, generateDailyQuests, jobLevelFromXp, jobXpToNextLevel, levelFromXp, playerLevelFromXp, playerXpToNextLevel } from '../quest.js';
 import type { StatVector } from '../types.js';
 
 describe('DEFAULT_QUEST_TEMPLATES', () => {
@@ -160,6 +160,45 @@ describe('jobLevelFromXp', () => {
       const cur = JOB_XP_CURVE[i]![1];
       expect(cur).toBeGreaterThan(prev);
     }
+  });
+});
+
+describe('playerLevelFromXp', () => {
+  test('0 XP は LV1', () => {
+    expect(playerLevelFromXp(0)).toBe(1);
+  });
+
+  test('LV2 閾値 (60 XP) ぴったりで LV2', () => {
+    expect(playerLevelFromXp(60)).toBe(2);
+  });
+
+  test('上限は LV99', () => {
+    expect(playerLevelFromXp(10_000_000)).toBe(99);
+  });
+
+  test('曲線は LV1-99 を含み単調増加', () => {
+    expect(PLAYER_XP_CURVE.length).toBe(99);
+    expect(PLAYER_XP_CURVE[0]).toEqual([1, 0]);
+    for (let i = 1; i < PLAYER_XP_CURVE.length; i++) {
+      expect(PLAYER_XP_CURVE[i]![1]).toBeGreaterThan(PLAYER_XP_CURVE[i - 1]![1]);
+    }
+  });
+
+  test('同じ XP なら Player LV は Job LV 以下 (Player の方が緩やか)', () => {
+    for (const xp of [0, 100, 1000, 5000, 20000, 44000]) {
+      expect(playerLevelFromXp(xp)).toBeLessThanOrEqual(jobLevelFromXp(xp));
+    }
+  });
+});
+
+describe('playerXpToNextLevel', () => {
+  test('0 XP は LV1、next=60', () => {
+    expect(playerXpToNextLevel(0)).toEqual({ level: 1, current: 0, next: 60 });
+  });
+
+  test('LV99 到達後は next=0', () => {
+    const lv99 = PLAYER_XP_CURVE[98]![1];
+    expect(playerXpToNextLevel(lv99)).toMatchObject({ level: 99, next: 0 });
   });
 });
 
