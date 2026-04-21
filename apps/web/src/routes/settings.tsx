@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AtpAgent } from '@atproto/api';
 import type { Archetype, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -7,6 +8,7 @@ import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
+import { Avatar } from '@/components/avatar';
 
 const OPTIN_TAG = 'aozoraquest';
 
@@ -35,21 +37,35 @@ export function Settings() {
   const [optInErr, setOptInErr] = useState<string | null>(null);
   const [optInDialog, setOptInDialog] = useState(false);
   const [postText, setPostText] = useState(DEFAULT_OPTIN_POST);
+  /** 自分のアバター URL (目指す姿の各ボタンで自分のアイコン + 装備プレビューに使う) */
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
     const agent = session.agent;
     const did = session.did;
+    let cancelled = false;
     (async () => {
       try {
         const p = await getRecord<Profile>(agent, did, 'app.aozoraquest.profile', 'self');
-        setProfile(p);
+        if (!cancelled) setProfile(p);
       } catch (e) {
         console.warn('profile load failed', e);
       } finally {
-        setProfileLoaded(true);
+        if (!cancelled) setProfileLoaded(true);
       }
     })();
+    // アバター URL を公開 AppView から取得 (目指す姿の各ボタンで使う)
+    (async () => {
+      try {
+        const publicAgent = new AtpAgent({ service: 'https://api.bsky.app' });
+        const res = await publicAgent.getProfile({ actor: did });
+        if (!cancelled && res.data.avatar) setAvatarUrl(res.data.avatar);
+      } catch (e) {
+        console.warn('self avatar fetch failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [session.status, session.agent, session.did]);
 
   async function onSignOut() {
@@ -156,8 +172,8 @@ export function Settings() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '0.4em',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '0.5em',
                 marginTop: '0.6em',
               }}
             >
@@ -169,16 +185,22 @@ export function Settings() {
                     onClick={() => void setTargetJob(id)}
                     disabled={targetBusy}
                     style={{
-                      padding: '0.4em 0.3em',
-                      fontSize: '0.8em',
+                      padding: '0.5em 0.5em 0.5em 0.8em',
+                      fontSize: '0.85em',
                       background: isCurrent ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.4)',
                       border: `2px solid ${isCurrent ? '#ffffff' : 'rgba(255,255,255,0.5)'}`,
                       borderRadius: 2,
                       color: '#ffffff',
                       cursor: targetBusy ? 'wait' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.8em',
+                      textAlign: 'left',
+                      minHeight: '3.2em',
                     }}
                   >
-                    {jobDisplayName(id, 'default')}
+                    <Avatar src={avatarUrl ?? undefined} size={36} archetype={id} />
+                    <span>{jobDisplayName(id, 'default')}</span>
                   </button>
                 );
               })}
