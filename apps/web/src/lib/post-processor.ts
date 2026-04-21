@@ -15,7 +15,7 @@
 
 import type { Agent } from '@atproto/api';
 import type { ActionType, CogFunction, CognitiveScores, DiagnosisResult, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
-import { ACTION_WEIGHTS, DEFAULT_QUEST_TEMPLATES, determineArchetype } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, cognitiveToRpg, determineArchetype } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { getEmbedder } from './embedder';
@@ -152,32 +152,22 @@ export async function processSelfPost(
     await putRecord(agent, 'app.aozoraquest.questLog', date, log);
   }
 
-  // 4) analysis を更新 (cognitive blend + rpgStats + archetype)
+  // 4) analysis を更新
+  //   - cognitiveScores を α でブレンド (新しい投稿が少しずつ寄せる)
+  //   - rpgStats は常に cognitiveScores から合成 (両者が乖離しないように)
+  //   - archetype を新 cognitiveScores から再判定
+  //   ※ ACTION_WEIGHTS はクエスト進捗と XP 判定のみに使い、ステータスには直接影響させない。
   let updatedRpgStats: StatVector | undefined;
   let updatedCognitive: CognitiveScores | undefined;
   try {
     const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
     if (analysis?.cognitiveScores) {
-      // 認知ブレンド
       const blended = blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA);
       updatedCognitive = blended;
 
-      // rpgStats: 既存 rpgStats に ACTION_WEIGHTS 加算 → 正規化
-      let nextStats = analysis.rpgStats;
-      if (actionType) {
-        const w = ACTION_WEIGHTS[actionType];
-        const raw: StatVector = {
-          atk: Math.max(0, (analysis.rpgStats?.atk ?? 0) + w.atk),
-          def: Math.max(0, (analysis.rpgStats?.def ?? 0) + w.def),
-          agi: Math.max(0, (analysis.rpgStats?.agi ?? 0) + w.agi),
-          int: Math.max(0, (analysis.rpgStats?.int ?? 0) + w.int),
-          luk: Math.max(0, (analysis.rpgStats?.luk ?? 0) + w.luk),
-        };
-        nextStats = normalizeTo100(raw);
-        updatedRpgStats = nextStats;
-      }
+      const nextStats = cognitiveToRpg(blended);
+      updatedRpgStats = nextStats;
 
-      // archetype 再判定
       const { archetype: newArchetype } = determineArchetype(blended);
       const archetype = newArchetype ?? analysis.archetype;
 
@@ -215,31 +205,6 @@ function blendCognitive(
     out[fn] = Math.round(alpha * e + (1 - alpha) * p);
   }
   return out;
-}
-
-function normalizeTo100(s: StatVector): StatVector {
-  const sum = s.atk + s.def + s.agi + s.int + s.luk;
-  if (sum === 0) return { atk: 20, def: 20, agi: 20, int: 20, luk: 20 };
-  const k = 100 / sum;
-  const raw = {
-    atk: s.atk * k, def: s.def * k, agi: s.agi * k, int: s.int * k, luk: s.luk * k,
-  };
-  const rounded = {
-    atk: Math.round(raw.atk),
-    def: Math.round(raw.def),
-    agi: Math.round(raw.agi),
-    int: Math.round(raw.int),
-    luk: Math.round(raw.luk),
-  };
-  const rSum = rounded.atk + rounded.def + rounded.agi + rounded.int + rounded.luk;
-  const diff = 100 - rSum;
-  if (diff !== 0) {
-    const order: Array<keyof StatVector> = ['atk', 'def', 'agi', 'int', 'luk'];
-    order.sort((a, b) => rounded[b] - rounded[a]);
-    const target = order[0]!;
-    rounded[target] = rounded[target] + diff;
-  }
-  return rounded;
 }
 
 /** HomeSummary が生成したクエストを questLog レコードに初期化する。 */
