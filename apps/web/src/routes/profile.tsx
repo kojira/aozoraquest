@@ -5,6 +5,7 @@ import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/c
 import { jobDisplayName, jobTagline, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
 import { PostText } from '@/components/post-text';
@@ -108,9 +109,14 @@ export function Profile() {
         <section className="dq-window" style={{ marginTop: '0.8em' }}>
           <h3 style={{ fontSize: '0.95em', margin: '0 0 0.5em' }}>この人との相性</h3>
           {!theirDiag ? (
-            <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
-              相手がまだ気質を公開していません。
-            </p>
+            <EstimateOtherPanel
+              agent={session.agent}
+              actor={profile.did}
+              displayName={profile.displayName || profile.handle}
+              onEstimated={(r) =>
+                setState((prev) => (prev.kind === 'ok' ? { ...prev, theirDiag: r } : prev))
+              }
+            />
           ) : !myDiag ? (
             <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
               あなた自身の気質がまだ調べられていません。<Link to="/me">自分のページ</Link> で調べてみてください。
@@ -251,5 +257,81 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
         </article>
       ))}
     </>
+  );
+}
+
+/**
+ * 相手が AozoraQuest を使っていなくても、閲覧側のブラウザで気質を推定して
+ * その場で表示する。PDS には一切書き込まず、推定結果は local state 止まり。
+ */
+function EstimateOtherPanel({
+  agent,
+  actor,
+  displayName,
+  onEstimated,
+}: {
+  agent: Agent;
+  actor: string;
+  displayName: string;
+  onEstimated: (r: DiagnosisResult) => void;
+}) {
+  const [phase, setPhase] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [insufficient, setInsufficient] = useState<number | null>(null);
+
+  const run = async () => {
+    setErr(null);
+    setInsufficient(null);
+    setPhase('starting');
+    try {
+      const r = await runDiagnosisForOther(agent, actor, (p, done, total) => {
+        setPhase(p);
+        if (done !== undefined && total !== undefined) setProgress({ done, total });
+      });
+      if ('insufficient' in r) {
+        setInsufficient(r.postCount);
+      } else {
+        onEstimated(r);
+      }
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setPhase(null);
+      setProgress(null);
+    }
+  };
+
+  if (phase) {
+    return (
+      <div>
+        <p style={{ fontSize: '0.85em', margin: 0 }}>{displayName} の気質を推し量っています ({phase})</p>
+        {progress && (
+          <div style={{ height: 5, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden', marginTop: '0.3em' }}>
+            <div style={{ width: `${(progress.done / progress.total) * 100}%`, height: '100%', background: 'var(--color-accent)' }} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (insufficient !== null) {
+    return (
+      <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
+        投稿が少なくて推定できませんでした ({insufficient} 件、50 件以上必要)。
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
+        相手はまだ気質を公開していません。公開投稿から推し量ってみますか？ (結果はこの画面だけに表示され、保存されません)
+      </p>
+      <button onClick={() => void run()} style={{ marginTop: '0.5em' }}>
+        {displayName} の気質を推し量る
+      </button>
+      {err && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em', marginTop: '0.4em' }}>{err}</p>}
+    </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   COGNITIVE_TO_RPG,
   cognitiveToRpg,
   computeConfidence,
+  computePostWeights,
   cosineSimilarity,
   determineArchetype,
   normalizeCognitive,
@@ -96,5 +97,41 @@ describe('computeConfidence', () => {
 
   test('small gap → ambiguous', () => {
     expect(computeConfidence(150, { Ni: 100, Te: 97, Ti: 95, Ne: 90, Si: 80, Se: 70, Fi: 60, Fe: 50 })).toBe('ambiguous');
+  });
+});
+
+describe('computePostWeights', () => {
+  test('timestamps 無しは全て 1', () => {
+    expect(computePostWeights(undefined)).toEqual([]);
+  });
+
+  test('今から新しい投稿ほど重い', () => {
+    const now = new Date('2026-04-21T12:00:00Z');
+    const ts = [
+      '2026-04-21T11:55:00Z', // 直前 → 1.0
+      '2025-10-21T12:00:00Z', // 半年前 → 下限 0.25
+    ];
+    const w = computePostWeights(ts, now);
+    expect(w[0]).toBeCloseTo(1.0, 2);
+    expect(w[1]).toBeCloseTo(0.25, 2);
+  });
+
+  test('5 分以内のバーストは重みを 1/sqrt(group) に割る', () => {
+    const now = new Date('2026-04-21T12:00:00Z');
+    // 4 件が連投 (5 分以内)、1 件は離れている
+    const ts = [
+      '2026-04-21T11:58:00Z',
+      '2026-04-21T11:58:30Z',
+      '2026-04-21T11:59:00Z',
+      '2026-04-21T11:59:30Z',
+      '2026-04-21T10:00:00Z', // 2 時間前、単独
+    ];
+    const w = computePostWeights(ts, now);
+    // 4 連投はそれぞれ 1/sqrt(4) = 0.5 倍されている (recency は直近なのでほぼ 1)
+    const avgBurst = (w[0]! + w[1]! + w[2]! + w[3]!) / 4;
+    expect(avgBurst).toBeLessThan(0.6);
+    expect(avgBurst).toBeGreaterThan(0.45);
+    // 単独投稿はバースト補正なし
+    expect(w[4]).toBeGreaterThan(0.9);
   });
 });

@@ -1,6 +1,6 @@
 import type { Agent } from '@atproto/api';
 import { diagnose, type DiagnosisResult } from '@aozoraquest/core';
-import { fetchMyPosts, getRecord, putRecord } from './atproto';
+import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
 
@@ -30,12 +30,14 @@ export async function runDiagnosis(
   const protos = await loadPrototypeEmbeddings(embedder);
 
   onProgress('embedding-posts', 0, posts.length);
-  const postVecs = await embedder.embedBatch(posts, (done, total) =>
+  const texts = posts.map((p) => p.text);
+  const timestamps = posts.map((p) => p.at);
+  const postVecs = await embedder.embedBatch(texts, (done, total) =>
     onProgress('embedding-posts', done, total),
   );
 
   onProgress('analyzing');
-  const result = diagnose(postVecs, protos, posts.length);
+  const result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
 
   if ('insufficient' in result) return result;
 
@@ -66,4 +68,38 @@ export async function runDiagnosis(
 
   onProgress('done');
   return { ...result, jobLevel, playerLevel };
+}
+
+/**
+ * 他ユーザーの気質を推し量る。PDS には一切書き込まず、戻り値のみ。
+ * 相手の公開投稿から 150 件取得し、ブラウザ内で diagnose() を走らせる。
+ */
+export async function runDiagnosisForOther(
+  agent: Agent,
+  actor: string,
+  onProgress: ProgressCallback = () => {},
+): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
+  onProgress('fetching-posts');
+  const posts = await fetchUserPostsForDiagnosis(agent, actor, 150);
+  if (posts.length < 50) {
+    return { insufficient: true, postCount: posts.length };
+  }
+
+  onProgress('loading-prototypes');
+  const embedder = getEmbedder();
+  const protos = await loadPrototypeEmbeddings(embedder);
+
+  onProgress('embedding-posts', 0, posts.length);
+  const texts = posts.map((p) => p.text);
+  const timestamps = posts.map((p) => p.at);
+  const postVecs = await embedder.embedBatch(texts, (done, total) =>
+    onProgress('embedding-posts', done, total),
+  );
+
+  onProgress('analyzing');
+  const result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
+  if ('insufficient' in result) return result;
+
+  onProgress('done');
+  return result; // PDS には書かない (閲覧側のローカル表示専用)
 }
