@@ -1,5 +1,6 @@
+import { archetypePairRelation, type ArchetypePairRelation } from './archetype-pair.js';
 import { COMPATIBILITY_WEIGHTS, COMPLEMENT_GAP_RANGE } from './tuning.js';
-import type { StatArray } from './types.js';
+import type { Archetype, StatArray } from './types.js';
 
 // 後方互換の別名 (以前の API で参照されていた名称)
 export const SIMILARITY_WEIGHT = COMPATIBILITY_WEIGHTS.similarity;
@@ -43,16 +44,36 @@ export interface ResonanceDetail {
   score: number;
   similarity: number;
   complementarity: number;
+  /** archetype ペアの関係カテゴリ (archetype 引数が渡されたときのみ入る)。 */
+  pairRelation?: ArchetypePairRelation;
 }
 
 /**
- * 共鳴度 (相性) を「類似性 + 相補性」の 2 軸で評価する。
- * 重み (tuning.COMPATIBILITY_WEIGHTS) と併せて根拠は tuning.ts 冒頭を参照。
+ * 共鳴度 (相性) を計算する。
+ * archetype を渡した場合: ペア関係カテゴリ (双対/鏡像/衝突 等) を主に、
+ *   連続 stat 類似度 + 相補性で微調整する合成式。
+ * archetype を渡さない場合: 2 軸 (類似 / 相補) のみでフォールバック。
  */
-export function resonance(a: StatArray, b: StatArray): ResonanceDetail {
+export function resonance(
+  a: StatArray,
+  b: StatArray,
+  archetypeA?: Archetype,
+  archetypeB?: Archetype,
+): ResonanceDetail {
   const sim = similarity(a, b);
   const comp = complementarity(a, b);
   const w = COMPATIBILITY_WEIGHTS;
+
+  if (archetypeA && archetypeB) {
+    const pair = archetypePairRelation(archetypeA, archetypeB);
+    const score =
+      pair.baseScore * w.pairBase +
+      sim * w.statSimilarity +
+      comp * w.statComplement;
+    return { score, similarity: sim, complementarity: comp, pairRelation: pair };
+  }
+
+  // archetype 無しフォールバック (2 軸)
   const score = sim * w.similarity + comp * w.complementarity;
   return { score, similarity: sim, complementarity: comp };
 }

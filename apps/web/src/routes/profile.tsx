@@ -84,7 +84,12 @@ export function Profile() {
   const isSelf = profile.did === session.did;
   const both = theirDiag && myDiag;
   const detail: ResonanceDetail | null = both
-    ? resonance(statVectorToArray(myDiag.rpgStats), statVectorToArray(theirDiag.rpgStats))
+    ? resonance(
+        statVectorToArray(myDiag.rpgStats),
+        statVectorToArray(theirDiag.rpgStats),
+        myDiag.archetype,
+        theirDiag.archetype,
+      )
     : null;
 
   return (
@@ -173,6 +178,16 @@ function CompatView({
           <div style={{ fontSize: '0.9em', color: 'var(--color-accent)' }}>{resonanceLabel(detail.score)}</div>
         </div>
         <div style={{ flex: 1, minWidth: '10em', fontSize: '0.85em' }}>
+          {detail.pairRelation && (
+            <div style={{ marginBottom: '0.4em' }}>
+              <span style={{ fontWeight: 700, color: 'var(--color-fg)' }}>
+                気質の関係: {detail.pairRelation.label}
+              </span>
+              <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.15em' }}>
+                {detail.pairRelation.description}
+              </div>
+            </div>
+          )}
           <MiniBar label="近さ (似ているほど高い)" value={detail.similarity} />
           <MiniBar label="補い (違いが活きる距離)" value={detail.complementarity} />
         </div>

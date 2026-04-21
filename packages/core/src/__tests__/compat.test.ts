@@ -44,7 +44,7 @@ describe('complementarity', () => {
   });
 });
 
-describe('resonance', () => {
+describe('resonance (archetype なしフォールバック)', () => {
   test('score = w.sim * similarity + w.comp * complementarity', () => {
     const a: StatArray = [20, 20, 20, 20, 20];
     const b: StatArray = [35, 20, 20, 15, 10];
@@ -52,14 +52,32 @@ describe('resonance', () => {
     expect(r.score).toBeCloseTo(
       r.similarity * SIMILARITY_WEIGHT + r.complementarity * COMPLEMENTARITY_WEIGHT,
     );
+    expect(r.pairRelation).toBeUndefined();
   });
 
-  test('identical → similarity=1, complementarity=0, score = similarity 重み', () => {
+  test('identical (archetype 無し) → similarity=1, complementarity=0', () => {
     const v: StatArray = [20, 25, 15, 30, 10];
     const r = resonance(v, v);
     expect(r.similarity).toBeCloseTo(1);
     expect(r.complementarity).toBe(0);
-    expect(r.score).toBeCloseTo(SIMILARITY_WEIGHT);
+  });
+});
+
+describe('resonance (archetype 付き)', () => {
+  test('archetype を渡すと pairRelation が入る', () => {
+    const v: StatArray = [25, 14, 10, 37, 14];
+    const r = resonance(v, v, 'sage', 'sage');
+    expect(r.pairRelation?.category).toBe('identity');
+  });
+
+  test('双対ペア (sage Ni/Te と performer Se/Fi) は pairRelation.category = duality', () => {
+    const a: StatArray = [25, 14, 10, 37, 14];
+    const b: StatArray = [20, 12, 30, 10, 28];
+    const r = resonance(a, b, 'sage', 'performer');
+    expect(r.pairRelation?.category).toBe('duality');
+    // 双対は最高スコア帯 (恒等より高いはず)
+    const identity = resonance(a, a, 'sage', 'sage');
+    expect(r.score).toBeGreaterThan(identity.score);
   });
 });
 

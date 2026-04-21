@@ -4,6 +4,7 @@ export * from './generation-config.js';
 export * from './jobs.js';
 export * from './tuning.js';
 export * from './stats.js';
+export * from './archetype-pair.js';
 export * from './compat.js';
 export * from './diagnosis.js';
 export * from './weights.js';
