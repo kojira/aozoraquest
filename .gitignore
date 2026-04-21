@@ -24,6 +24,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Claude Code local settings
+.claude/
+
 # Test outputs
 coverage/
 validation-results/
