@@ -12,7 +12,8 @@ import { VirtualFeed } from '@/components/virtual-feed';
 import { Avatar } from '@/components/avatar';
 import { HomeSummary } from '@/components/home-summary';
 import { PostMetrics } from '@/components/post-metrics';
-import { useCompose } from '@/components/compose-modal';
+import { useCompose, useOnPosted } from '@/components/compose-modal';
+import { PostText } from '@/components/post-text';
 
 type Tab = 'following' | 'resonance';
 
@@ -43,6 +44,12 @@ export function Home() {
     () => (targetJob ? statArrayToVector(JOBS_BY_ID[targetJob].stats) : null),
     [targetJob],
   );
+
+  // 自分が投稿した直後にフォロー TL をリフレッシュする (自分の投稿が即表示される)
+  // Bluesky の timeline は書き込みから反映まで数秒ラグがあるので少し待ってから。
+  useOnPosted(() => {
+    setTimeout(() => followingFeed.refresh(), 500);
+  });
 
   // フォロー TL: カーソル無限スクロール
   const followingFeed = useInfiniteFeed<AppBskyFeedDefs.FeedViewPost>({
@@ -166,10 +173,16 @@ export function Home() {
   );
 }
 
+interface PostRecord {
+  text?: string;
+  createdAt?: string;
+  facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
+}
+
 function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
   const post = item.post;
   const author = post.author;
-  const record = post.record as { text?: string; createdAt?: string };
+  const record = post.record as PostRecord;
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -179,7 +192,7 @@ function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
         </Link>
         <span>@{author.handle}</span>
       </div>
-      <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
+      <PostText text={record.text ?? ''} facets={record.facets} style={{ marginTop: '0.45em' }} />
       <PostMetrics post={post} />
     </article>
   );
@@ -188,7 +201,7 @@ function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
 function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
   const post = entry.item.post;
   const author = post.author;
-  const record = post.record as { text?: string; createdAt?: string };
+  const record = post.record as PostRecord;
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -206,7 +219,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
           </span>
         )}
       </div>
-      <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
+      <PostText text={record.text ?? ''} facets={record.facets} style={{ marginTop: '0.45em' }} />
       <PostMetrics post={post} />
     </article>
   );

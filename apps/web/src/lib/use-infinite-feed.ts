@@ -29,6 +29,8 @@ export interface InfiniteFeedState<T> {
   err: string | null;
   done: boolean;
   loadMore: () => void;
+  /** 先頭から再読み込み (投稿直後のリフレッシュ用など) */
+  refresh: () => void;
 }
 
 export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFeedState<T> {
@@ -98,5 +100,14 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
     if (!inflight.current && !doneRef.current) void load(false);
   }, [load]);
 
-  return { items, loading, err, done, loadMore };
+  const refresh = useCallback(() => {
+    setItems([]);
+    cursorRef.current = undefined;
+    doneRef.current = false;
+    setDone(false);
+    setErr(null);
+    void load(true);
+  }, [load]);
+
+  return { items, loading, err, done, loadMore, refresh };
 }
