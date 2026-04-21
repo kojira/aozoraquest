@@ -15,7 +15,16 @@
 
 import type { Agent } from '@atproto/api';
 import type { ActionType, Archetype, CogFunction, CognitiveScores, DiagnosisResult, JobLevelState, PlayerLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
-import { DEFAULT_QUEST_TEMPLATES, JOB_XP_REWARDS, cognitiveToRpg, determineArchetype, jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
+import {
+  COGNITIVE_BLEND_ALPHA,
+  DEFAULT_QUEST_TEMPLATES,
+  JOB_CHANGE_STREAK_THRESHOLD as CORE_JOB_CHANGE_STREAK_THRESHOLD,
+  XP_REWARDS,
+  cognitiveToRpg,
+  determineArchetype,
+  jobLevelFromXp,
+  playerLevelFromXp,
+} from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { getEmbedder } from './embedder';
@@ -69,11 +78,11 @@ export interface ProcessResult {
   pendingArchetypeStreak?: number | undefined;
 }
 
-/** UI のバナー表示閾値: 連続何回同じ候補が出たら「転職可能」扱いにするか。 */
-export const JOB_CHANGE_STREAK_THRESHOLD = 3;
-
-/** 認知機能スコアのブレンド比率。α * 既存 + (1-α) * 新規。 */
-const COGNITIVE_BLEND_ALPHA = 0.97;
+/**
+ * UI のバナー表示閾値。tuning.JOB_CHANGE_STREAK_THRESHOLD の別名を再 export
+ * (UI が本ファイルからまとめて import できるように)。
+ */
+export const JOB_CHANGE_STREAK_THRESHOLD = CORE_JOB_CHANGE_STREAK_THRESHOLD;
 
 const COGNITIVE_FUNCTIONS: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
 
@@ -198,7 +207,7 @@ export async function processSelfPost(
       };
 
       let gainedXp = 0;
-      if (actionType) gainedXp += JOB_XP_REWARDS.postMatch;
+      if (actionType) gainedXp += XP_REWARDS.postMatch;
       gainedXp += xpGained; // クエスト完了分
 
       // 日次ボーナス (playerLevel で判定、1 日 1 回)
@@ -207,8 +216,8 @@ export async function processSelfPost(
       let newBonusDate = prevBonusDate;
       if (prevBonusDate !== today) {
         newStreak = prevBonusDate && isYesterday(prevBonusDate, today) ? newStreak + 1 : 1;
-        const streakBonus = Math.min(JOB_XP_REWARDS.streakBonusCap, newStreak * JOB_XP_REWARDS.streakBonusPerDay);
-        gainedXp += JOB_XP_REWARDS.dailyBonus + streakBonus;
+        const streakBonus = Math.min(XP_REWARDS.streakBonusCap, newStreak * XP_REWARDS.streakBonusPerDay);
+        gainedXp += XP_REWARDS.dailyBonus + streakBonus;
         newBonusDate = today;
       }
 

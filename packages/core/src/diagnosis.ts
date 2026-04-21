@@ -1,5 +1,6 @@
 import { DIAGNOSIS_TOP_N } from './embedding-config.js';
 import { archetypeFromFunctionPair } from './jobs.js';
+import { DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
 import { STATS, type Archetype, type CogFunction, type CognitiveScores, type Confidence, type DiagnosisResult, type Stat, type StatVector } from './types.js';
 
 /**
@@ -124,10 +125,9 @@ export function computeConfidence(postCount: number, scores: CognitiveScores): C
  */
 export function computePostWeights(timestamps?: readonly string[], now: Date = new Date()): number[] {
   if (!timestamps || timestamps.length === 0) return [];
+  const { burstWindowMs, halfLifeMs, decayAmplitude, minRecencyWeight } = DIAGNOSIS_TIME_WEIGHTING;
   const n = timestamps.length;
   const weights = new Array<number>(n).fill(1);
-  const BURST_MS = 5 * 60 * 1000;
-  const HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000; // 30 日
 
   const times = timestamps.map((t) => {
     const ms = Date.parse(t);
@@ -135,17 +135,16 @@ export function computePostWeights(timestamps?: readonly string[], now: Date = n
   });
   const nowMs = now.getTime();
 
-  // 1) 時間減衰 (recency): 古いほど軽い (下限 0.25)。
+  // 1) recency 減衰: 古いほど軽い (halfLifeMs 経過で 1-decayAmplitude、下限 minRecencyWeight)
   for (let i = 0; i < n; i++) {
     const t = times[i]!;
     if (!Number.isFinite(t)) continue;
     const ageMs = Math.max(0, nowMs - t);
-    // linear half-life: 30 日で 0.5、180 日で 0.25 下限
-    const w = Math.max(0.25, 1 - 0.5 * (ageMs / HALF_LIFE_MS));
+    const w = Math.max(minRecencyWeight, 1 - decayAmplitude * (ageMs / halfLifeMs));
     weights[i] = w;
   }
 
-  // 2) バースト平準化: 5 分以内で隣接するグループを束ねて、
+  // 2) バースト平準化: burstWindowMs 以内で連続する投稿群は
   //    各メンバーの重みを 1/sqrt(groupSize) に割る (連投の連呼を抑制)。
   const order = times
     .map((t, i) => ({ t, i }))
@@ -161,7 +160,7 @@ export function computePostWeights(timestamps?: readonly string[], now: Date = n
     const cur = order[k]!;
     if (g.length === 0) { g = [cur.i]; continue; }
     const prevT = order[k - 1]!.t;
-    if (cur.t - prevT <= BURST_MS) g.push(cur.i);
+    if (cur.t - prevT <= burstWindowMs) g.push(cur.i);
     else { flush(); g = [cur.i]; }
   }
   flush();
