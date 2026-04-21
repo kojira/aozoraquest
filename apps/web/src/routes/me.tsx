@@ -17,11 +17,17 @@ type DiagnosisState =
   | { status: 'done'; result: DiagnosisResult }
   | { status: 'error'; error: string };
 
+interface Profile {
+  targetJob?: string;
+  updatedAt?: string;
+}
+
 export function MyProfile() {
   const session = useSession();
   const navigate = useNavigate();
   const [state, setState] = useState<DiagnosisState>({ status: 'idle' });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [targetArchetype, setTargetArchetype] = useState<Archetype | null>(null);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -50,6 +56,17 @@ export function MyProfile() {
         if (!cancelled && res.data.avatar) setAvatarUrl(res.data.avatar);
       } catch (e) {
         console.warn('self avatar fetch failed', e);
+      }
+    })();
+    // 目指すジョブ (app.aozoraquest.profile/self の targetJob)
+    (async () => {
+      try {
+        const p = await getRecord<Profile>(agent, did, 'app.aozoraquest.profile', 'self');
+        if (!cancelled && p?.targetJob && p.targetJob in JOBS_BY_ID) {
+          setTargetArchetype(p.targetJob as Archetype);
+        }
+      } catch (e) {
+        console.warn('target job load failed', e);
       }
     })();
     return () => { cancelled = true; };
@@ -98,10 +115,22 @@ export function MyProfile() {
           <h2 style={{ margin: 0 }}>{session.handle ?? '自分'}</h2>
           {myArchetype && (
             <p style={{ margin: 0, fontSize: '0.85em', color: 'var(--color-muted)' }}>
-              {jobDisplayName(myArchetype, 'default')}
+              <span style={{ color: 'var(--color-muted)' }}>今:</span> {jobDisplayName(myArchetype, 'default')}
               <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(myArchetype)}</span>
             </p>
           )}
+          <p style={{ margin: '0.15em 0 0', fontSize: '0.85em', color: 'var(--color-muted)' }}>
+            <span style={{ color: 'var(--color-muted)' }}>目指す:</span>{' '}
+            {targetArchetype ? (
+              <>
+                <span style={{ color: 'var(--color-fg)' }}>{jobDisplayName(targetArchetype, 'default')}</span>
+                <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(targetArchetype)}</span>
+                <Link to="/settings" style={{ marginLeft: '0.6em', fontSize: '0.85em' }}>変更</Link>
+              </>
+            ) : (
+              <Link to="/settings">目指す姿を選ぶ</Link>
+            )}
+          </p>
         </div>
       </div>
 
