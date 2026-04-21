@@ -66,9 +66,6 @@ export function AdminShell() {
           </button>
         </div>
         {err && <p style={{ color: '#b00', marginTop: '0.5em' }}>{err}</p>}
-        <p style={{ marginTop: '1em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-          登録管理者数: {adminDids.length}
-        </p>
       </div>
     );
   }
@@ -97,8 +94,7 @@ export function AdminShell() {
           ))}
         </ul>
         <div style={{ marginTop: '2em', fontSize: '0.75em', color: 'var(--color-muted)' }}>
-          <p>登録管理者 DID: {adminDids.length}</p>
-          <p>ログイン中: {session.handle ?? session.did?.slice(0, 24) + '...'}</p>
+          <p>ログイン中: {session.handle ?? '…'}</p>
           <button
             onClick={() => session.did && void signOut(session.did)}
             style={{ marginTop: '0.4em', fontSize: '0.9em' }}
