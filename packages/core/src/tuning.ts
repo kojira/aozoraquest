@@ -101,9 +101,26 @@ export const ARCHETYPE_FIT_WEIGHTS = {
  * 既存研究と整合する。重みは 0.6 / 0.4 のまま (11-validation.md §実験 3 で
  * 再校正予定)。
  */
+/**
+ * resonance の合成式:
+ *   score = pairBase * pairCategory
+ *         + statSimilarity * 類似度
+ *         + statComplement * 相補性
+ *
+ * pairCategory を主、stat 類似/相補は微調整として扱う。理由:
+ *  - 16 型診断の UX 期待 (型同士の関係カテゴリを見せる) と一致させる。
+ *  - Big Five の類似性効果量 (r ≈ 0.22) は小-中なので、連続指標のみでは
+ *    discrimination が弱く、カテゴリ色の方が実用的。
+ *
+ * 重みの合計は 1.0。pairBase を 0.6 で主にし、残り 0.4 を stat 2 軸で分ける。
+ */
 export const COMPATIBILITY_WEIGHTS = {
-  similarity: 0.6,
-  complementarity: 0.4,
+  pairBase: 0.6,
+  statSimilarity: 0.25,
+  statComplement: 0.15,
+  /** 後方互換: 旧 API (resonance 2 軸版) の同名 key を参照するコード用 */
+  similarity: 0.25,
+  complementarity: 0.15,
 } as const;
 
 /** 相補性のスイートスポット: 軸ごとの差がこの区間に入っていれば +0.2 (5 軸合計で最大 1.0)。 */
