@@ -4,6 +4,8 @@ import type { DiagnosisResult } from '@aozoraquest/core';
 import { jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { SpiritIcon } from '@/components/spirit-icon';
+import { SpiritBubble } from '@/components/spirit-bubble';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
 
@@ -43,7 +45,6 @@ export function Spirit() {
     const userName = session.handle?.split('.')[0] ?? 'あなた';
     const ctx = { userName, userDid: session.did };
     const situations: SpiritSituation[] = [currentGreeting()];
-    // 診断済みなら job 到達の労いを一行足す
     if (diag) situations.push('quest.complete');
     const collected: string[] = [];
     for (const s of situations) {
@@ -53,14 +54,21 @@ export function Spirit() {
     return collected;
   }, [session.status, session.did, session.handle, diag]);
 
-  if (session.status === 'loading' || !loaded) return <p>読み込み中...</p>;
+  if (session.status === 'loading' || !loaded) {
+    return (
+      <div>
+        <h2>精霊ブルスコン</h2>
+        <SpiritBubble sleeping>…</SpiritBubble>
+      </div>
+    );
+  }
 
   if (session.status === 'signed-out') {
     return (
       <div>
-        <h2>精霊</h2>
-        <p>ログインが必要です。</p>
-        <Link to="/onboarding"><button>ログイン</button></Link>
+        <h2>精霊ブルスコン</h2>
+        <SpiritBubble>ログインすると、わたしの声が届きます。</SpiritBubble>
+        <Link to="/onboarding"><button style={{ marginTop: '1em' }}>ログイン</button></Link>
       </div>
     );
   }
@@ -69,23 +77,23 @@ export function Spirit() {
 
   return (
     <div>
-      <h2>精霊</h2>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        {jobLabel ? `今の姿: ${jobLabel}` : '気質を調べるともう少し深く話せるようになる。'}
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6em', marginBottom: '0.2em' }}>
+        <SpiritIcon size={56} />
+        <div>
+          <h2 style={{ margin: 0 }}>精霊ブルスコン</h2>
+          <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
+            {jobLabel ? `あなたは今「${jobLabel}」の姿` : '気質を調べるともう少し深く話せる'}
+          </p>
+        </div>
+      </div>
 
-      <section style={{ marginTop: '1em', border: '1px solid var(--color-border)', borderRadius: 4, padding: '1em', display: 'flex', flexDirection: 'column', gap: '0.8em' }}>
+      <section style={{ marginTop: '1em', display: 'flex', flexDirection: 'column', gap: '0.8em' }}>
         {lines.length === 0 ? (
-          <p style={{ color: 'var(--color-muted)' }}>(精霊は静かにそこにいる)</p>
+          <SpiritBubble sleeping>…今はそっとしておくね。</SpiritBubble>
         ) : (
-          lines.map((line, i) => (
-            <div key={i} style={{ background: 'var(--color-bg-alt, rgba(0,0,0,0.04))', padding: '0.7em 0.9em', borderRadius: 8, whiteSpace: 'pre-wrap' }}>
-              {line}
-            </div>
-          ))
+          lines.map((line, i) => <SpiritBubble key={i}>{line}</SpiritBubble>)
         )}
       </section>
-
     </div>
   );
 }
