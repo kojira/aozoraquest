@@ -214,15 +214,6 @@ const starEpaulet = (color: string) =>
     </g>,
   );
 
-const bell = (color: string) =>
-  svg(
-    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      <path d="M 26 30 Q 26 14 50 14 Q 74 14 74 30 L 80 72 L 20 72 Z" fill={color} />
-      <rect x="16" y="72" width="68" height="10" rx="3" fill="#3a2a15" />
-      <circle cx="50" cy="84" r="7" fill={OUTLINE} stroke="none" />
-    </g>,
-  );
-
 /** 巫女装束 (白衣 + 緋袴): 顔の下に重ねる衣装レイヤー (横長 viewBox) */
 const mikoOutfit = () =>
   svgWide(
@@ -416,7 +407,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     captain:   { primary: starEpaulet(c),          accentColor: accent },
     miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
     gladiator: { primary: twinSwords(c),           accentColor: accent },
-    performer: { primary: dice(c),                 secondary: bell('#e8c34b'),   accentColor: accent },
+    performer: { primary: dice(c),                 accentColor: accent },
   };
   return map[archetype];
 }
