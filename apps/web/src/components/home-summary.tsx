@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
 import { generateDailyQuests, jobDisplayName } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
 import { SpiritBubble } from './spirit-bubble';
+import { useOnPosted } from './compose-modal';
+import { ensureTodayQuestLog, loadTodayQuestLog, type QuestLogRecord } from '@/lib/post-processor';
 
 interface HomeSummaryProps {
+  agent: Agent | null;
   diag: DiagnosisResult | null;
   userDid: string;
   /** 目指すジョブのステータス配分。未設定ならクエストは生成しない。 */
@@ -23,10 +27,11 @@ interface HomeSummaryProps {
  * - 静的: 折り畳み。閉じたら 1 行のジョブ名のみ。開くと小さなレーダー + ステータス要約。
  * - 動的 (今日のクエスト): 常時表示。
  */
-export function HomeSummary({ diag, userDid, targetStats }: HomeSummaryProps) {
+export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryProps) {
   const [open, setOpen] = useState(false);
+  const [questLog, setQuestLog] = useState<QuestLogRecord | null>(null);
 
-  const quests: Quest[] = useMemo(() => {
+  const generatedQuests: Quest[] = useMemo(() => {
     if (!diag || !targetStats) return [];
     const today = new Date();
     const dateStr =
@@ -34,12 +39,55 @@ export function HomeSummary({ diag, userDid, targetStats }: HomeSummaryProps) {
     return generateDailyQuests({
       userDid,
       dateStr,
-      level: 1, // TODO: xp log から算出
+      level: 1,
       currentStats: diag.rpgStats,
       targetStats,
       recentTemplateIds: [],
     });
   }, [diag, userDid, targetStats]);
+
+  // PDS の questLog から進捗を反映する。無ければ generatedQuests で初期化。
+  useEffect(() => {
+    if (!agent || !userDid || generatedQuests.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const rec = await ensureTodayQuestLog(agent, userDid, generatedQuests);
+      if (!cancelled) setQuestLog(rec);
+    })().catch((e) => console.warn('ensure questLog failed', e));
+    return () => { cancelled = true; };
+  }, [agent, userDid, generatedQuests]);
+
+  // 投稿直後に questLog を再フェッチして進捗反映
+  useOnPosted(() => {
+    if (!agent || !userDid) return;
+    setTimeout(() => {
+      loadTodayQuestLog(agent, userDid).then((rec) => {
+        if (rec) setQuestLog(rec);
+      }).catch((e) => console.warn('reload questLog failed', e));
+    }, 300);
+  });
+
+  // 表示用クエスト: questLog があればそちらを優先、無ければ generatedQuests
+  const quests: Quest[] = useMemo(() => {
+    if (questLog) {
+      return questLog.quests.map<Quest>((q) => {
+        const gq = generatedQuests.find((g) => g.id === q.id);
+        return {
+          id: q.id,
+          templateId: q.templateId,
+          type: q.type,
+          targetStat: q.targetStat,
+          description: gq?.description ?? '',
+          requiredCount: q.requiredCount,
+          currentCount: q.currentCount,
+          xpReward: gq?.xpReward ?? 0,
+          issuedDate: gq?.issuedDate ?? (questLog.date ?? ''),
+          ...(gq?.forbiddenActionTypes ? { forbiddenActionTypes: gq.forbiddenActionTypes } : {}),
+        };
+      });
+    }
+    return generatedQuests;
+  }, [questLog, generatedQuests]);
 
   if (!diag) {
     return (

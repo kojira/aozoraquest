@@ -49,6 +49,16 @@ export function Home() {
   // Bluesky の timeline は書き込みから反映まで数秒ラグがあるので少し待ってから。
   useOnPosted(() => {
     setTimeout(() => followingFeed.refresh(), 500);
+    // 投稿解析で rpgStats が変わるのでレーダーも更新
+    if (agent && session.did) {
+      const a = agent;
+      const d = session.did;
+      setTimeout(() => {
+        getRecord<DiagnosisResult>(a, d, 'app.aozoraquest.analysis', 'self')
+          .then((r) => { if (r) setSelfDiag(r); })
+          .catch(() => {});
+      }, 400);
+    }
   });
 
   // フォロー TL: カーソル無限スクロール
@@ -98,7 +108,7 @@ export function Home() {
 
   return (
     <div>
-      {session.did && <HomeSummary diag={selfDiag} userDid={session.did} targetStats={targetStats} />}
+      {session.did && <HomeSummary agent={agent ?? null} diag={selfDiag} userDid={session.did} targetStats={targetStats} />}
 
       <div className="dq-tabs">
         {(['following', 'resonance'] as Tab[]).map((t) => (
