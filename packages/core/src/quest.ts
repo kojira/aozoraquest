@@ -1,9 +1,8 @@
 import { statGap, sortStatsByAbsGap } from './stats.js';
-import type { Quest, Stat, StatVector } from './types.js';
+import type { ActionType, Quest, Stat, StatVector } from './types.js';
 
 /**
  * クエストテンプレート (03-game-design.md §クエストテンプレートプール)。
- * Phase 0 で 35 + 10 件の本文を用意する予定。ここは構造定義のみ。
  */
 export interface QuestTemplate {
   id: string;
@@ -12,7 +11,10 @@ export interface QuestTemplate {
   descriptionTemplate: string; // {N} を required count で置換
   requiredCountFn: (level: number) => number;
   xpRewardFn: (count: number) => number;
-  forbiddenActionTypes?: string[];
+  /** restraint で禁止される行動タイプ。この行動をすると失敗扱い。 */
+  forbiddenActionTypes?: ActionType[];
+  /** growth / maintenance がカウントの対象とする行動タイプ。これらの行動で currentCount が +1。 */
+  expectedActionTypes?: ActionType[];
 }
 
 /**
@@ -25,51 +27,51 @@ const scaleLv = (base: number) => (lv: number) => Math.max(base, Math.floor(base
 
 export const DEFAULT_QUEST_TEMPLATES: QuestTemplate[] = [
   // ─── ATK 成長 (6) ───
-  { id: 'atk_opinion_post',  type: 'growth', targetStat: 'atk', descriptionTemplate: '自分の意見を {N} 個発信せよ',         requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10 },
-  { id: 'atk_debate_reply',  type: 'growth', targetStat: 'atk', descriptionTemplate: '議論に {N} 回参戦せよ',                requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12 },
-  { id: 'atk_quote_opinion', type: 'growth', targetStat: 'atk', descriptionTemplate: '誰かの投稿を引用し自分の立場を {N} 回示せ', requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12 },
-  { id: 'atk_hot_take',      type: 'growth', targetStat: 'atk', descriptionTemplate: '躊躇せず思ったことを {N} 回ポストせよ', requiredCountFn: scaleLv(3), xpRewardFn: n => 55 + n * 10 },
-  { id: 'atk_stance_reply',  type: 'growth', targetStat: 'atk', descriptionTemplate: '異論に {N} 回、丁寧に返答せよ',         requiredCountFn: scaleLv(2), xpRewardFn: n => 65 + n * 12 },
-  { id: 'atk_solo_thread',   type: 'growth', targetStat: 'atk', descriptionTemplate: '一つのテーマで連続投稿を {N} 本書け',   requiredCountFn: scaleLv(2), xpRewardFn: n => 70 + n * 15 },
+  { id: 'atk_opinion_post',  type: 'growth', targetStat: 'atk', descriptionTemplate: '自分の意見を {N} 個発信せよ',         requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['opinion_post'] },
+  { id: 'atk_debate_reply',  type: 'growth', targetStat: 'atk', descriptionTemplate: '議論に {N} 回参戦せよ',                requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['opinion_post'] },
+  { id: 'atk_quote_opinion', type: 'growth', targetStat: 'atk', descriptionTemplate: '誰かの投稿を引用し自分の立場を {N} 回示せ', requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['opinion_post', 'quote_with_opinion'] },
+  { id: 'atk_hot_take',      type: 'growth', targetStat: 'atk', descriptionTemplate: '躊躇せず思ったことを {N} 回ポストせよ', requiredCountFn: scaleLv(3), xpRewardFn: n => 55 + n * 10, expectedActionTypes: ['opinion_post', 'short_burst'] },
+  { id: 'atk_stance_reply',  type: 'growth', targetStat: 'atk', descriptionTemplate: '異論に {N} 回、丁寧に返答せよ',         requiredCountFn: scaleLv(2), xpRewardFn: n => 65 + n * 12, expectedActionTypes: ['opinion_post'] },
+  { id: 'atk_solo_thread',   type: 'growth', targetStat: 'atk', descriptionTemplate: '一つのテーマで連続投稿を {N} 本書け',   requiredCountFn: scaleLv(2), xpRewardFn: n => 70 + n * 15, expectedActionTypes: ['opinion_post', 'analysis_post'] },
 
   // ─── DEF 成長 (6) ───
-  { id: 'def_thread',         type: 'growth', targetStat: 'def', descriptionTemplate: 'スレッドを {N} 段続けよ',              requiredCountFn: () => 3,     xpRewardFn: n => 50 + n * 10 },
-  { id: 'def_streak',         type: 'growth', targetStat: 'def', descriptionTemplate: '{N} 日連続で投稿せよ',                  requiredCountFn: () => 3,     xpRewardFn: n => 50 + n * 10 },
-  { id: 'def_calm_debate',    type: 'growth', targetStat: 'def', descriptionTemplate: '荒れた会話に落ち着いて返答を {N} 回', requiredCountFn: scaleLv(2), xpRewardFn: n => 65 + n * 13 },
-  { id: 'def_deep_reply',     type: 'growth', targetStat: 'def', descriptionTemplate: '同じ相手に {N} 往復、会話を深めよ',   requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12 },
-  { id: 'def_anchored_series',type: 'growth', targetStat: 'def', descriptionTemplate: 'テーマを固定して {N} 日投稿せよ',     requiredCountFn: () => 3,     xpRewardFn: n => 70 + n * 15 },
-  { id: 'def_supporter_reply',type: 'growth', targetStat: 'def', descriptionTemplate: '困っている投稿に {N} 件、静かに寄り添え', requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12 },
+  { id: 'def_thread',         type: 'growth', targetStat: 'def', descriptionTemplate: 'スレッドを {N} 段続けよ',              requiredCountFn: () => 3,     xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['analysis_post', 'thread_continue'] },
+  { id: 'def_streak',         type: 'growth', targetStat: 'def', descriptionTemplate: '{N} 日連続で投稿せよ',                  requiredCountFn: () => 3,     xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['streak_maintain', 'short_burst', 'analysis_post'] },
+  { id: 'def_calm_debate',    type: 'growth', targetStat: 'def', descriptionTemplate: '荒れた会話に落ち着いて返答を {N} 回', requiredCountFn: scaleLv(2), xpRewardFn: n => 65 + n * 13, expectedActionTypes: ['calm_debate_reply', 'analysis_post'] },
+  { id: 'def_deep_reply',     type: 'growth', targetStat: 'def', descriptionTemplate: '同じ相手に {N} 往復、会話を深めよ',   requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['analysis_post', 'calm_debate_reply'] },
+  { id: 'def_anchored_series',type: 'growth', targetStat: 'def', descriptionTemplate: 'テーマを固定して {N} 日投稿せよ',     requiredCountFn: () => 3,     xpRewardFn: n => 70 + n * 15, expectedActionTypes: ['analysis_post'] },
+  { id: 'def_supporter_reply',type: 'growth', targetStat: 'def', descriptionTemplate: '困っている投稿に {N} 件、静かに寄り添え', requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['empathy_reply'] },
 
   // ─── AGI 成長 (6) ───
-  { id: 'agi_short_post',    type: 'growth', targetStat: 'agi', descriptionTemplate: '軽やかに短文を {N} 個連投せよ',        requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10 },
-  { id: 'agi_quick_reply',   type: 'growth', targetStat: 'agi', descriptionTemplate: '{N} 件のポストに 5 分以内に反応せよ',  requiredCountFn: () => 3,     xpRewardFn: n => 50 + n * 10 },
-  { id: 'agi_rhythm_chain',  type: 'growth', targetStat: 'agi', descriptionTemplate: '30 分以内に {N} 投稿、リズムを保て',   requiredCountFn: scaleLv(3), xpRewardFn: n => 55 + n * 10 },
-  { id: 'agi_pulse_burst',   type: 'growth', targetStat: 'agi', descriptionTemplate: '今日の瞬間を {N} 回切り取って投稿',   requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10 },
-  { id: 'agi_skim_reply',    type: 'growth', targetStat: 'agi', descriptionTemplate: 'TL を流し読み、気になった {N} 件に即反応', requiredCountFn: scaleLv(4), xpRewardFn: n => 50 + n * 10 },
-  { id: 'agi_fast_repost',   type: 'growth', targetStat: 'agi', descriptionTemplate: '{N} 回、1 分以内にリポスト判断せよ',   requiredCountFn: scaleLv(3), xpRewardFn: n => 45 + n * 10 },
+  { id: 'agi_short_post',    type: 'growth', targetStat: 'agi', descriptionTemplate: '軽やかに短文を {N} 個連投せよ',        requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['short_burst'] },
+  { id: 'agi_quick_reply',   type: 'growth', targetStat: 'agi', descriptionTemplate: '{N} 件のポストに 5 分以内に反応せよ',  requiredCountFn: () => 3,     xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['quick_reply', 'short_burst'] },
+  { id: 'agi_rhythm_chain',  type: 'growth', targetStat: 'agi', descriptionTemplate: '30 分以内に {N} 投稿、リズムを保て',   requiredCountFn: scaleLv(3), xpRewardFn: n => 55 + n * 10, expectedActionTypes: ['short_burst'] },
+  { id: 'agi_pulse_burst',   type: 'growth', targetStat: 'agi', descriptionTemplate: '今日の瞬間を {N} 回切り取って投稿',   requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['short_burst'] },
+  { id: 'agi_skim_reply',    type: 'growth', targetStat: 'agi', descriptionTemplate: 'TL を流し読み、気になった {N} 件に即反応', requiredCountFn: scaleLv(4), xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['short_burst', 'quick_reply'] },
+  { id: 'agi_fast_repost',   type: 'growth', targetStat: 'agi', descriptionTemplate: '{N} 回、1 分以内にリポスト判断せよ',   requiredCountFn: scaleLv(3), xpRewardFn: n => 45 + n * 10, expectedActionTypes: ['repost_only'] },
 
   // ─── INT 成長 (6) ───
-  { id: 'int_long_post',      type: 'growth', targetStat: 'int', descriptionTemplate: '200 字以上の分析を {N} 件書け',        requiredCountFn: () => 2,     xpRewardFn: n => 70 + n * 15 },
-  { id: 'int_quote_analysis', type: 'growth', targetStat: 'int', descriptionTemplate: '引用して考察を添えよ、{N} 回',         requiredCountFn: () => 2,     xpRewardFn: n => 60 + n * 12 },
-  { id: 'int_long_thread',    type: 'growth', targetStat: 'int', descriptionTemplate: '複数段の分析スレッドを {N} 本書け',    requiredCountFn: () => 1,     xpRewardFn: n => 90 + n * 20 },
-  { id: 'int_citation_post',  type: 'growth', targetStat: 'int', descriptionTemplate: '出典付きの投稿を {N} 件書け',           requiredCountFn: () => 2,     xpRewardFn: n => 75 + n * 15 },
-  { id: 'int_critical_read',  type: 'growth', targetStat: 'int', descriptionTemplate: '読んだ記事に批判的コメントを {N} 回付けよ', requiredCountFn: scaleLv(2), xpRewardFn: n => 70 + n * 14 },
-  { id: 'int_research_reply', type: 'growth', targetStat: 'int', descriptionTemplate: '質問に調べた情報を添えて {N} 回返せ',   requiredCountFn: scaleLv(2), xpRewardFn: n => 65 + n * 13 },
+  { id: 'int_long_post',      type: 'growth', targetStat: 'int', descriptionTemplate: '200 字以上の分析を {N} 件書け',        requiredCountFn: () => 2,     xpRewardFn: n => 70 + n * 15, expectedActionTypes: ['analysis_post'] },
+  { id: 'int_quote_analysis', type: 'growth', targetStat: 'int', descriptionTemplate: '引用して考察を添えよ、{N} 回',         requiredCountFn: () => 2,     xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['analysis_post', 'quote_with_analysis'] },
+  { id: 'int_long_thread',    type: 'growth', targetStat: 'int', descriptionTemplate: '複数段の分析スレッドを {N} 本書け',    requiredCountFn: () => 1,     xpRewardFn: n => 90 + n * 20, expectedActionTypes: ['analysis_post'] },
+  { id: 'int_citation_post',  type: 'growth', targetStat: 'int', descriptionTemplate: '出典付きの投稿を {N} 件書け',           requiredCountFn: () => 2,     xpRewardFn: n => 75 + n * 15, expectedActionTypes: ['analysis_post'] },
+  { id: 'int_critical_read',  type: 'growth', targetStat: 'int', descriptionTemplate: '読んだ記事に批判的コメントを {N} 回付けよ', requiredCountFn: scaleLv(2), xpRewardFn: n => 70 + n * 14, expectedActionTypes: ['analysis_post', 'opinion_post'] },
+  { id: 'int_research_reply', type: 'growth', targetStat: 'int', descriptionTemplate: '質問に調べた情報を添えて {N} 回返せ',   requiredCountFn: scaleLv(2), xpRewardFn: n => 65 + n * 13, expectedActionTypes: ['analysis_post'] },
 
   // ─── LUK 成長 (6) ───
-  { id: 'luk_empathy',       type: 'growth', targetStat: 'luk', descriptionTemplate: '{N} 人に共感を贈れ',                   requiredCountFn: scaleLv(5), xpRewardFn: n => 50 + n * 10 },
-  { id: 'luk_underseen',     type: 'growth', targetStat: 'luk', descriptionTemplate: '埋もれた投稿に {N} いいね',            requiredCountFn: () => 5,     xpRewardFn: n => 60 + n * 10 },
-  { id: 'luk_boost_fresh',   type: 'growth', targetStat: 'luk', descriptionTemplate: '投稿数の少ない人を {N} 回リポストせよ', requiredCountFn: scaleLv(3), xpRewardFn: n => 60 + n * 12 },
-  { id: 'luk_warm_welcome',  type: 'growth', targetStat: 'luk', descriptionTemplate: '新しく出会った人に {N} 回声をかけよ',  requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12 },
-  { id: 'luk_thank_reply',   type: 'growth', targetStat: 'luk', descriptionTemplate: '感謝の返信を {N} 件送れ',               requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10 },
-  { id: 'luk_humor_post',    type: 'growth', targetStat: 'luk', descriptionTemplate: '空気を和ませる投稿を {N} 件書け',       requiredCountFn: scaleLv(2), xpRewardFn: n => 55 + n * 12 },
+  { id: 'luk_empathy',       type: 'growth', targetStat: 'luk', descriptionTemplate: '{N} 人に共感を贈れ',                   requiredCountFn: scaleLv(5), xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['empathy_reply'] },
+  { id: 'luk_underseen',     type: 'growth', targetStat: 'luk', descriptionTemplate: '埋もれた投稿に {N} いいね',            requiredCountFn: () => 5,     xpRewardFn: n => 60 + n * 10, expectedActionTypes: ['like_underseen'] },
+  { id: 'luk_boost_fresh',   type: 'growth', targetStat: 'luk', descriptionTemplate: '投稿数の少ない人を {N} 回リポストせよ', requiredCountFn: scaleLv(3), xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['repost_only'] },
+  { id: 'luk_warm_welcome',  type: 'growth', targetStat: 'luk', descriptionTemplate: '新しく出会った人に {N} 回声をかけよ',  requiredCountFn: scaleLv(2), xpRewardFn: n => 60 + n * 12, expectedActionTypes: ['empathy_reply'] },
+  { id: 'luk_thank_reply',   type: 'growth', targetStat: 'luk', descriptionTemplate: '感謝の返信を {N} 件送れ',               requiredCountFn: scaleLv(3), xpRewardFn: n => 50 + n * 10, expectedActionTypes: ['empathy_reply'] },
+  { id: 'luk_humor_post',    type: 'growth', targetStat: 'luk', descriptionTemplate: '空気を和ませる投稿を {N} 件書け',       requiredCountFn: scaleLv(2), xpRewardFn: n => 55 + n * 12, expectedActionTypes: ['humor_post'] },
 
   // ─── 維持 (5) ───
-  { id: 'maintenance_daily_word',   type: 'maintenance', targetStat: 'def', descriptionTemplate: '今日も一言を記せ',                     requiredCountFn: () => 1, xpRewardFn: () => 20 },
-  { id: 'maintenance_one_thought',  type: 'maintenance', targetStat: 'atk', descriptionTemplate: '今日、思ったことを一度だけ書け',       requiredCountFn: () => 1, xpRewardFn: () => 20 },
-  { id: 'maintenance_gentle_scroll',type: 'maintenance', targetStat: 'agi', descriptionTemplate: 'TL を軽く流し、心に触れた投稿に反応せよ', requiredCountFn: () => 1, xpRewardFn: () => 20 },
+  { id: 'maintenance_daily_word',   type: 'maintenance', targetStat: 'def', descriptionTemplate: '今日も一言を記せ',                     requiredCountFn: () => 1, xpRewardFn: () => 20, expectedActionTypes: ['short_burst', 'opinion_post', 'analysis_post', 'humor_post', 'empathy_reply'] },
+  { id: 'maintenance_one_thought',  type: 'maintenance', targetStat: 'atk', descriptionTemplate: '今日、思ったことを一度だけ書け',       requiredCountFn: () => 1, xpRewardFn: () => 20, expectedActionTypes: ['opinion_post', 'short_burst'] },
+  { id: 'maintenance_gentle_scroll',type: 'maintenance', targetStat: 'agi', descriptionTemplate: 'TL を軽く流し、心に触れた投稿に反応せよ', requiredCountFn: () => 1, xpRewardFn: () => 20, expectedActionTypes: ['short_burst', 'empathy_reply'] },
   { id: 'maintenance_read_silent',  type: 'maintenance', targetStat: 'int', descriptionTemplate: '読むだけの時間を作り、考えを言葉にしない日', requiredCountFn: () => 0, xpRewardFn: () => 20 },
-  { id: 'maintenance_thanks_round', type: 'maintenance', targetStat: 'luk', descriptionTemplate: '誰か一人に静かに「ありがとう」を送れ',   requiredCountFn: () => 1, xpRewardFn: () => 20 },
+  { id: 'maintenance_thanks_round', type: 'maintenance', targetStat: 'luk', descriptionTemplate: '誰か一人に静かに「ありがとう」を送れ',   requiredCountFn: () => 1, xpRewardFn: () => 20, expectedActionTypes: ['empathy_reply'] },
 
   // ─── 節制 (10) ───
   { id: 'restraint_opinion',        type: 'restraint', targetStat: 'atk', descriptionTemplate: '今日は意見投稿を控えよ',       requiredCountFn: () => 0, xpRewardFn: () => 80, forbiddenActionTypes: ['opinion_post', 'quote_with_opinion'] },

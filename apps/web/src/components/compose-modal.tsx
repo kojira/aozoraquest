@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { useSession } from '@/lib/session';
 import { createPost, type ReplyRef } from '@/lib/atproto';
 import { TextField } from './text-field';
+import { processSelfPost } from '@/lib/post-processor';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -101,6 +102,16 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
         : undefined;
       await createPost(agent, body, reply);
       setText('');
+      // 投稿直後に解析 (行動分類 → questLog 更新 → rpgStats 更新) を走らせる。
+      // 結果は UI 側 (ホーム / /spirit) が useOnPosted で再フェッチするので、ここで
+      // 保存までやり切ってから notifyPosted する。失敗してもクローズは続行。
+      if (session.did) {
+        try {
+          await processSelfPost(agent, session.did, body);
+        } catch (e) {
+          console.warn('post-processor failed', e);
+        }
+      }
       notifyPosted();
       onClose();
     } catch (e) {

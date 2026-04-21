@@ -1,12 +1,8 @@
 /**
- * 認知機能プロトタイプの埋め込みを事前計算。
+ * 認知機能 + 行動タイプ プロトタイプの埋め込みを事前計算。
  *
- * packages/prompts/cognitive/*.json を読み、
- * Ruri-v3-30m-ONNX で各プロトタイプ文を埋め込み、
- * apps/web/public/prototypes/cognitive/*.bin に保存する。
- *
- * ランタイムで 150 投稿 × 1 回 + プロトタイプ 160 文の計 310 回/初回 から、
- * 150 回に削減 (プロトタイプは事前埋め込み済みを bin 読込)。
+ * - packages/prompts/cognitive/*.json → apps/web/public/prototypes/cognitive/*.bin (診断用)
+ * - packages/prompts/actions/*.json   → apps/web/public/prototypes/actions/*.bin   (投稿直後の行動分類用)
  *
  * 使い方: pnpm build:prototypes
  *
@@ -27,11 +23,10 @@ env.useBrowserCache = false;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
-const INPUT_DIR = path.join(repoRoot, 'packages/prompts/cognitive');
-const OUTPUT_DIR = path.join(repoRoot, 'apps/web/public/prototypes/cognitive');
 
 interface PrototypeJson {
-  function: string;
+  function?: string;
+  action?: string;
   description?: string;
   prototypes: Array<{ text: string }>;
 }
@@ -57,33 +52,67 @@ function packBin(vectors: Float32Array[], dims: number): Buffer {
   return buf;
 }
 
-async function main() {
-  console.log(`loading ${EMBEDDING_MODEL_ID} (${EMBEDDING_DTYPE})...`);
-  const extractor: any = await pipeline('feature-extraction', EMBEDDING_MODEL_ID, { dtype: EMBEDDING_DTYPE });
-  console.log('model ready');
-
-  await fs.mkdir(OUTPUT_DIR, { recursive: true });
-  const inputs = (await fs.readdir(INPUT_DIR)).filter((f) => f.endsWith('.json'));
-  if (inputs.length === 0) throw new Error(`no JSON in ${INPUT_DIR}`);
-
+async function processDir(
+  extractor: any,
+  inputDir: string,
+  outputDir: string,
+  keyField: 'function' | 'action',
+): Promise<{ files: number; vectors: number }> {
+  await fs.mkdir(outputDir, { recursive: true });
+  let entries: string[] = [];
+  try {
+    entries = (await fs.readdir(inputDir)).filter((f) => f.endsWith('.json'));
+  } catch {
+    console.log(`  (${inputDir} なし — スキップ)`);
+    return { files: 0, vectors: 0 };
+  }
+  if (entries.length === 0) {
+    console.log(`  (${inputDir} 空 — スキップ)`);
+    return { files: 0, vectors: 0 };
+  }
   let totalVectors = 0;
-  for (const file of inputs) {
-    const srcPath = path.join(INPUT_DIR, file);
+  for (const file of entries) {
+    const srcPath = path.join(inputDir, file);
     const json = JSON.parse(await fs.readFile(srcPath, 'utf8')) as PrototypeJson;
     const texts = json.prototypes.map((p) => p.text);
-    const fnName = json.function || path.basename(file, '.json');
-    process.stdout.write(`  ${fnName}: embedding ${texts.length} prototypes...`);
+    const name = (json[keyField] as string | undefined) || path.basename(file, '.json');
+    process.stdout.write(`  ${name}: embedding ${texts.length} prototypes...`);
     const t0 = Date.now();
     const vecs: Float32Array[] = [];
     for (const t of texts) vecs.push(await embedText(extractor, t));
     const bin = packBin(vecs, EMBEDDING_DIMENSIONS);
-    const outPath = path.join(OUTPUT_DIR, `${fnName}.bin`);
+    const outPath = path.join(outputDir, `${name}.bin`);
     await fs.writeFile(outPath, bin);
     totalVectors += vecs.length;
     console.log(` ok (${((Date.now() - t0) / 1000).toFixed(1)}s → ${bin.length} bytes)`);
   }
+  return { files: entries.length, vectors: totalVectors };
+}
 
-  console.log(`\ndone. ${inputs.length} files, ${totalVectors} vectors, ${EMBEDDING_DIMENSIONS} dims, ${EMBEDDING_DTYPE}`);
+async function main() {
+  console.log(`loading ${EMBEDDING_MODEL_ID} (${EMBEDDING_DTYPE})...`);
+  const extractor: any = await pipeline('feature-extraction', EMBEDDING_MODEL_ID, { dtype: EMBEDDING_DTYPE });
+  console.log('model ready\n');
+
+  console.log('[cognitive]');
+  const cog = await processDir(
+    extractor,
+    path.join(repoRoot, 'packages/prompts/cognitive'),
+    path.join(repoRoot, 'apps/web/public/prototypes/cognitive'),
+    'function',
+  );
+
+  console.log('\n[actions]');
+  const act = await processDir(
+    extractor,
+    path.join(repoRoot, 'packages/prompts/actions'),
+    path.join(repoRoot, 'apps/web/public/prototypes/actions'),
+    'action',
+  );
+
+  console.log(
+    `\ndone. cognitive: ${cog.files} files / ${cog.vectors} vectors. actions: ${act.files} files / ${act.vectors} vectors. ${EMBEDDING_DIMENSIONS} dims, ${EMBEDDING_DTYPE}.`,
+  );
 }
 
 main().catch((e) => {
