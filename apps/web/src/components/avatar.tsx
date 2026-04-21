@@ -24,6 +24,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
     minWidth: size,
     flexShrink: 0,
     display: 'inline-block',
+    isolation: 'isolate',
     ...style,
   };
 
@@ -65,6 +66,27 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
       <span style={inner}>{imgEl}</span>
       {equipment && (
         <>
+          {/* body: 顔の下に重ねる衣装 (巫女装束など)。face より後ろ */}
+          {equipment.body && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: `${Math.round(size * 0.45)}px`,
+                transform: 'translateX(-50%)',
+                width: Math.round(size * 1.55),
+                height: Math.round(size * 0.95),
+                pointerEvents: 'none',
+                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
+                display: 'block',
+                lineHeight: 0,
+                zIndex: -1,
+              }}
+            >
+              {equipment.body}
+            </span>
+          )}
           {/* primary: 右下コーナー */}
           {equipment.primary && (
             <span
