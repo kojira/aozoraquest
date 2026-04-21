@@ -30,8 +30,10 @@ export async function getConfigRecord<T = unknown>(
     const res = await agent.com.atproto.repo.getRecord({ repo: did, collection, rkey });
     return res.data.value as T;
   } catch (e) {
-    const msg = (e as { message?: string })?.message ?? '';
-    if (/RecordNotFound|not found|InvalidRequest/i.test(msg)) return null;
+    const err = e as { name?: string; message?: string };
+    if (err?.name === 'RecordNotFoundError') return null;
+    const msg = err?.message ?? '';
+    if (/RecordNotFound|not found|could not locate|InvalidRequest/i.test(msg)) return null;
     throw e;
   }
 }
