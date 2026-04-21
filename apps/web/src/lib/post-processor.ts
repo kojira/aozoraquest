@@ -1,18 +1,23 @@
 /**
  * 投稿直後の解析パイプライン。
  *
- * 1. 本文を Ruri-v3 で埋め込み、行動プロトタイプと比較して行動タイプを分類
- * 2. 今日の questLog を読み込み (無ければ新規)、該当する growth/maintenance クエストの currentCount を +1、
- *    restraint クエストの forbiddenActionTypes に該当する場合は completed=false をキープ (失敗)
- * 3. クエスト達成したら completed=true + xpAwarded を設定、totalXpGained に加算
- * 4. analysis.rpgStats を ACTION_WEIGHTS で増減、合計 100 に正規化して保存
- * 5. 更新結果を呼び出し元に返す
+ * 1. 本文を Ruri-v3 で 1 回だけ埋め込む
+ * 2. 行動プロトタイプと比較 → 行動タイプ
+ * 3. 認知プロトタイプと比較 → 8 認知機能の per-post 正規化スコア
+ * 4. 今日の questLog を読み込み / 新規、該当 growth / maintenance の currentCount を +1、
+ *    restraint の forbiddenActionTypes 該当なら failed マーク
+ * 5. analysis を更新:
+ *    - cognitiveScores を α=0.97 でブレンド (新しい投稿が少しずつ寄せる)
+ *    - rpgStats に ACTION_WEIGHTS を加算して合計 100 に正規化
+ *    - archetype を新 cognitiveScores から再判定
+ * 6. 更新結果を呼び出し元に返す
  */
 
 import type { Agent } from '@atproto/api';
-import type { ActionType, DiagnosisResult, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
-import { ACTION_WEIGHTS, DEFAULT_QUEST_TEMPLATES } from '@aozoraquest/core';
-import { classifyPost, type ActionCategory } from './action-classifier';
+import type { ActionType, CogFunction, CognitiveScores, DiagnosisResult, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
+import { ACTION_WEIGHTS, DEFAULT_QUEST_TEMPLATES, determineArchetype } from '@aozoraquest/core';
+import { classifyFromVec, type ActionCategory } from './action-classifier';
+import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { getEmbedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
 
@@ -28,7 +33,7 @@ export interface QuestLogEntry {
 }
 
 export interface QuestLogRecord {
-  date: string; // ISO datetime (date 部分のみ使用)
+  date: string;
   quests: QuestLogEntry[];
   totalXpGained?: number;
   updatedAt: string;
@@ -36,11 +41,17 @@ export interface QuestLogRecord {
 
 export interface ProcessResult {
   action: ActionCategory | null;
-  incremented: string[];     // 進んだクエストの templateId
-  completed: string[];       // 今回達成したクエストの templateId
+  incremented: string[];
+  completed: string[];
   xpGained: number;
   updatedRpgStats?: StatVector | undefined;
+  updatedCognitive?: CognitiveScores | undefined;
 }
+
+/** 認知機能スコアのブレンド比率。α * 既存 + (1-α) * 新規。 */
+const COGNITIVE_BLEND_ALPHA = 0.97;
+
+const COGNITIVE_FUNCTIONS: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
 
 function todayDateString(): string {
   const d = new Date();
@@ -51,14 +62,6 @@ function templateById(id: string): QuestTemplate | undefined {
   return DEFAULT_QUEST_TEMPLATES.find((t) => t.id === id);
 }
 
-/**
- * 自分の投稿 1 件が発生した直後に呼ぶ。
- *
- * @param agent ログイン済み agent
- * @param did   自分の DID
- * @param text  投稿本文
- * @returns     分類結果と更新内容。UI に反映する用。
- */
 export async function processSelfPost(
   agent: Agent,
   did: string,
@@ -68,99 +71,124 @@ export async function processSelfPost(
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
   if (trimmed.length === 0) return empty;
 
-  // 1) 分類
+  // 1) 埋め込みは 1 回
   const embedder = getEmbedder();
   await embedder.init().catch(() => { /* 既に init 済みなら no-op */ });
-  const { action } = await classifyPost(embedder, trimmed);
-  if (!action) return empty;
+  const vec = await embedder.embed(trimmed);
 
-  // ActionCategory は ActionType の subset なので as 変換可
-  const actionType = action as ActionType;
+  // 2) 行動 & 認知を並列 (どちらもベクトルから同期的に計算)
+  const [actResult, postCognitive] = await Promise.all([
+    classifyFromVec(vec),
+    classifyCognitiveFromVec(vec, embedder),
+  ]);
 
-  // 2) 今日の questLog を取得
-  const date = todayDateString();
-  const rkey = date; // YYYY-MM-DD
-  const existing = await getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', rkey);
+  const action = actResult.action;
+  const actionType = action ? (action as ActionType) : null;
 
-  // 無ければ今日のクエストを生成して questLog を新規作成
-  let log: QuestLogRecord;
-  if (existing) {
-    log = existing;
-  } else {
-    // 空の quests: HomeSummary が generateDailyQuests で作る 3 件と揃えたいが、
-    // このサーバーサイド側でも generate して入れておく。initial は全部 currentCount=0。
-    // ここでは簡易に「まだ questLog 無し」の場合は空で始める。HomeSummary の方が正とする。
-    log = {
+  // 3) questLog の更新 (action があるときのみ)
+  const incremented: string[] = [];
+  const completed: string[] = [];
+  let xpGained = 0;
+  if (actionType) {
+    const date = todayDateString();
+    const existing = await getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', date);
+    const log: QuestLogRecord = existing ?? {
       date,
       quests: [],
       totalXpGained: 0,
       updatedAt: new Date().toISOString(),
     };
-  }
-
-  // 3) quest を更新
-  const incremented: string[] = [];
-  const completed: string[] = [];
-  let xpGained = 0;
-  for (const q of log.quests) {
-    if (q.completed) continue;
-    const tmpl = templateById(q.templateId);
-    if (!tmpl) continue;
-
-    if (tmpl.type === 'restraint') {
-      if (tmpl.forbiddenActionTypes?.includes(actionType)) {
-        // 失敗: completed は変えない (0 XP のまま), ただマークだけ
-        q.completed = false;
-        q.xpAwarded = 0;
+    for (const q of log.quests) {
+      if (q.completed) continue;
+      const tmpl = templateById(q.templateId);
+      if (!tmpl) continue;
+      if (tmpl.type === 'restraint') {
+        if (tmpl.forbiddenActionTypes?.includes(actionType)) {
+          q.completed = false;
+          q.xpAwarded = 0;
+        }
+        continue;
       }
-      continue;
-    }
-    // growth / maintenance
-    if (tmpl.expectedActionTypes?.includes(actionType)) {
-      q.currentCount = q.currentCount + 1;
-      incremented.push(q.templateId);
-      if (q.currentCount >= q.requiredCount && q.requiredCount > 0) {
-        q.completed = true;
-        const xp = tmpl.xpRewardFn(q.currentCount);
-        q.xpAwarded = xp;
-        completed.push(q.templateId);
-        xpGained += xp;
-      } else if (q.requiredCount === 0) {
-        // maintenance_read_silent のような requiredCount=0 のクエストは達成判定しない
+      if (tmpl.expectedActionTypes?.includes(actionType)) {
+        q.currentCount = q.currentCount + 1;
+        incremented.push(q.templateId);
+        if (q.currentCount >= q.requiredCount && q.requiredCount > 0) {
+          q.completed = true;
+          const xp = tmpl.xpRewardFn(q.currentCount);
+          q.xpAwarded = xp;
+          completed.push(q.templateId);
+          xpGained += xp;
+        }
       }
     }
+    log.totalXpGained = (log.totalXpGained ?? 0) + xpGained;
+    log.updatedAt = new Date().toISOString();
+    await putRecord(agent, 'app.aozoraquest.questLog', date, log);
   }
-  log.totalXpGained = (log.totalXpGained ?? 0) + xpGained;
-  log.updatedAt = new Date().toISOString();
 
-  await putRecord(agent, 'app.aozoraquest.questLog', rkey, log);
-
-  // 4) rpgStats を更新 (analysis にすでに値がある場合のみ)
+  // 4) analysis を更新 (cognitive blend + rpgStats + archetype)
   let updatedRpgStats: StatVector | undefined;
+  let updatedCognitive: CognitiveScores | undefined;
   try {
     const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
-    if (analysis?.rpgStats) {
-      const w = ACTION_WEIGHTS[actionType];
-      const next: StatVector = {
-        atk: Math.max(0, (analysis.rpgStats.atk ?? 0) + w.atk),
-        def: Math.max(0, (analysis.rpgStats.def ?? 0) + w.def),
-        agi: Math.max(0, (analysis.rpgStats.agi ?? 0) + w.agi),
-        int: Math.max(0, (analysis.rpgStats.int ?? 0) + w.int),
-        luk: Math.max(0, (analysis.rpgStats.luk ?? 0) + w.luk),
-      };
-      const normalized = normalizeTo100(next);
-      updatedRpgStats = normalized;
+    if (analysis?.cognitiveScores) {
+      // 認知ブレンド
+      const blended = blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA);
+      updatedCognitive = blended;
+
+      // rpgStats: 既存 rpgStats に ACTION_WEIGHTS 加算 → 正規化
+      let nextStats = analysis.rpgStats;
+      if (actionType) {
+        const w = ACTION_WEIGHTS[actionType];
+        const raw: StatVector = {
+          atk: Math.max(0, (analysis.rpgStats?.atk ?? 0) + w.atk),
+          def: Math.max(0, (analysis.rpgStats?.def ?? 0) + w.def),
+          agi: Math.max(0, (analysis.rpgStats?.agi ?? 0) + w.agi),
+          int: Math.max(0, (analysis.rpgStats?.int ?? 0) + w.int),
+          luk: Math.max(0, (analysis.rpgStats?.luk ?? 0) + w.luk),
+        };
+        nextStats = normalizeTo100(raw);
+        updatedRpgStats = nextStats;
+      }
+
+      // archetype 再判定
+      const { archetype: newArchetype } = determineArchetype(blended);
+      const archetype = newArchetype ?? analysis.archetype;
+
       await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
         ...analysis,
-        rpgStats: normalized,
+        cognitiveScores: blended,
+        rpgStats: nextStats,
+        archetype,
         analyzedAt: analysis.analyzedAt,
       });
     }
   } catch (e) {
-    console.warn('rpgStats update failed', e);
+    console.warn('analysis update failed', e);
   }
 
-  return { action, incremented, completed, xpGained, updatedRpgStats };
+  return {
+    action,
+    incremented,
+    completed,
+    xpGained,
+    updatedRpgStats,
+    updatedCognitive,
+  };
+}
+
+function blendCognitive(
+  existing: CognitiveScores,
+  post: CognitiveScores,
+  alpha: number,
+): CognitiveScores {
+  const out = {} as CognitiveScores;
+  for (const fn of COGNITIVE_FUNCTIONS) {
+    const e = existing[fn] ?? 0;
+    const p = post[fn] ?? 0;
+    out[fn] = Math.round(alpha * e + (1 - alpha) * p);
+  }
+  return out;
 }
 
 function normalizeTo100(s: StatVector): StatVector {
@@ -168,13 +196,8 @@ function normalizeTo100(s: StatVector): StatVector {
   if (sum === 0) return { atk: 20, def: 20, agi: 20, int: 20, luk: 20 };
   const k = 100 / sum;
   const raw = {
-    atk: s.atk * k,
-    def: s.def * k,
-    agi: s.agi * k,
-    int: s.int * k,
-    luk: s.luk * k,
+    atk: s.atk * k, def: s.def * k, agi: s.agi * k, int: s.int * k, luk: s.luk * k,
   };
-  // 四捨五入して合計 100 になるよう誤差を調整
   const rounded = {
     atk: Math.round(raw.atk),
     def: Math.round(raw.def),
@@ -185,7 +208,6 @@ function normalizeTo100(s: StatVector): StatVector {
   const rSum = rounded.atk + rounded.def + rounded.agi + rounded.int + rounded.luk;
   const diff = 100 - rSum;
   if (diff !== 0) {
-    // 絶対値の大きい軸に吸収させる
     const order: Array<keyof StatVector> = ['atk', 'def', 'agi', 'int', 'luk'];
     order.sort((a, b) => rounded[b] - rounded[a]);
     const target = order[0]!;
@@ -194,10 +216,7 @@ function normalizeTo100(s: StatVector): StatVector {
   return rounded;
 }
 
-/**
- * HomeSummary が生成したクエストを questLog レコードに初期化する。
- * 1 日の初回アクセスで呼ぶと、サーバー側で進捗を累積できる。
- */
+/** HomeSummary が生成したクエストを questLog レコードに初期化する。 */
 export async function ensureTodayQuestLog(
   agent: Agent,
   did: string,
@@ -206,7 +225,6 @@ export async function ensureTodayQuestLog(
   const date = todayDateString();
   const existing = await getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', date);
   if (existing) return existing;
-
   const record: QuestLogRecord = {
     date,
     quests: quests.map<QuestLogEntry>((q) => ({
