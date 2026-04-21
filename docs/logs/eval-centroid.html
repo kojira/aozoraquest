@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>Ruri vs Gemini cognitive classification</title>
+<style>
+  body { font-family: "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif; margin: 2em; background: #f6f9fc; color: #1c2b44; }
+  h1, h2 { margin: 0 0 0.4em; }
+  .meta { color: #546580; font-size: 0.9em; margin-bottom: 1.5em; }
+  .summary { background: white; border: 2px solid #9fd7ff; border-radius: 6px; padding: 1em 1.2em; margin-bottom: 1em; display: flex; gap: 2em; flex-wrap: wrap; }
+  .metric { }
+  .metric .value { font-size: 2.2em; font-weight: 700; font-family: ui-monospace, monospace; color: #1c5299; }
+  .metric .label { color: #546580; font-size: 0.85em; }
+  table { border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1em; }
+  .confusion th, .confusion td { padding: 0.5em 0.75em; text-align: center; border: 1px solid #e0eaf5; font-family: ui-monospace, monospace; min-width: 3em; }
+  .confusion th { background: #eef4fb; font-weight: 700; }
+  .confusion .sup { background: #f8fafd; color: #546580; }
+  .perclass th, .perclass td { padding: 0.5em 0.75em; border-bottom: 1px solid #e0eaf5; text-align: left; font-family: ui-monospace, monospace; }
+  .perclass th { background: #eef4fb; font-weight: 700; }
+  .bar { position: relative; background: #e0eaf5; border-radius: 3px; overflow: hidden; height: 1.4em; width: 8em; }
+  .bar::before { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--v); background: linear-gradient(90deg, #60a5fa, #3b82f6); }
+  .bar.f1::before { background: linear-gradient(90deg, #34d399, #10b981); }
+  .bar span { position: relative; z-index: 1; padding: 0 0.6em; font-size: 0.85em; color: #1c2b44; line-height: 1.4em; }
+  details { background: white; border: 1px solid #e0eaf5; border-radius: 4px; padding: 0.5em 0.8em; margin-bottom: 0.4em; }
+  details summary { cursor: pointer; font-family: ui-monospace, monospace; }
+  details ol { padding-left: 1.2em; }
+  details .post { background: #f8fafd; padding: 0.5em; border-radius: 3px; margin: 0.4em 0; white-space: pre-wrap; font-size: 0.9em; }
+  details .meta { font-size: 0.75em; color: #546580; }
+</style>
+</head><body>
+<h1>Ruri vs Gemini cognitive classification</h1>
+<div class="meta">
+  test set: /Users/kojira/develop/aozoraquest/docs/data/cognitive-split/test.jsonl<br>
+  prototypes: /Users/kojira/develop/aozoraquest/apps/web/public/prototypes/cognitive-centroid<br>
+  生成: 2026/4/21 20:09:20
+</div>
+
+<div class="summary">
+  <div class="metric"><div class="value">30.1%</div><div class="label">top-1 accuracy (75/249)</div></div>
+  <div class="metric"><div class="value">61.0%</div><div class="label">Ruri top-1 ∈ Gemini top-3</div></div>
+  <div class="metric"><div class="value">249</div><div class="label">test 件数</div></div>
+</div>
+
+<h2>混同行列 (行=Gemini top-1, 列=Ruri top-1)</h2>
+
+    <table class="confusion">
+      <thead>
+        <tr><th></th><th>Ni</th><th>Ne</th><th>Si</th><th>Se</th><th>Ti</th><th>Te</th><th>Fi</th><th>Fe</th><th>支持</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+            <th>Ni</th>
+            <td style="background: rgba(60, 180, 100, 0.5472222222222223);">11</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0);">0</td>
+            <td class="sup">27</td>
+          </tr><tr>
+            <th>Ne</th>
+            <td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(60, 180, 100, 0.4027777777777778);">7</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0);">0</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td>
+            <td class="sup">24</td>
+          </tr><tr>
+            <th>Si</th>
+            <td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td><td style="background: rgba(60, 180, 100, 0.6194444444444445);">13</td><td style="background: rgba(220, 100, 100, 0.16666666666666666);">5</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td>
+            <td class="sup">40</td>
+          </tr><tr>
+            <th>Se</th>
+            <td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.3666666666666667);">11</td><td style="background: rgba(60, 180, 100, 0.2583333333333333);">3</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.3);">9</td><td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td><td style="background: rgba(220, 100, 100, 0.23333333333333334);">7</td>
+            <td class="sup">40</td>
+          </tr><tr>
+            <th>Ti</th>
+            <td style="background: rgba(220, 100, 100, 0);">0</td><td style="background: rgba(220, 100, 100, 0);">0</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0);">0</td><td style="background: rgba(60, 180, 100, 0.3305555555555556);">5</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.26666666666666666);">8</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td>
+            <td class="sup">20</td>
+          </tr><tr>
+            <th>Te</th>
+            <td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td><td style="background: rgba(60, 180, 100, 0.8);">18</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td>
+            <td class="sup">40</td>
+          </tr><tr>
+            <th>Fi</th>
+            <td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(60, 180, 100, 0.5472222222222223);">11</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td>
+            <td class="sup">35</td>
+          </tr><tr>
+            <th>Fe</th>
+            <td style="background: rgba(220, 100, 100, 0);">0</td><td style="background: rgba(220, 100, 100, 0);">0</td><td style="background: rgba(220, 100, 100, 0.13333333333333333);">4</td><td style="background: rgba(220, 100, 100, 0.09999999999999999);">3</td><td style="background: rgba(220, 100, 100, 0.03333333333333333);">1</td><td style="background: rgba(220, 100, 100, 0.06666666666666667);">2</td><td style="background: rgba(220, 100, 100, 0.19999999999999998);">6</td><td style="background: rgba(60, 180, 100, 0.4027777777777778);">7</td>
+            <td class="sup">23</td>
+          </tr>
+      </tbody>
+    </table>
+
+<h2>per-class precision / recall / F1</h2>
+
+    <table class="perclass">
+      <thead><tr><th>機能</th><th>Precision</th><th>Recall</th><th>F1</th><th>支持</th></tr></thead>
+      <tbody>
+        <tr>
+          <th>Ni</th>
+          <td><div class="bar" style="--v:36.666666666666664%"><span>36.7%</span></div></td>
+          <td><div class="bar" style="--v:40.74074074074074%"><span>40.7%</span></div></td>
+          <td><div class="bar f1" style="--v:38.59649122807017%"><span>38.6</span></div></td>
+          <td>27</td>
+        </tr><tr>
+          <th>Ne</th>
+          <td><div class="bar" style="--v:35%"><span>35.0%</span></div></td>
+          <td><div class="bar" style="--v:29.166666666666668%"><span>29.2%</span></div></td>
+          <td><div class="bar f1" style="--v:31.818181818181824%"><span>31.8</span></div></td>
+          <td>24</td>
+        </tr><tr>
+          <th>Si</th>
+          <td><div class="bar" style="--v:30.952380952380953%"><span>31.0%</span></div></td>
+          <td><div class="bar" style="--v:32.5%"><span>32.5%</span></div></td>
+          <td><div class="bar f1" style="--v:31.70731707317073%"><span>31.7</span></div></td>
+          <td>40</td>
+        </tr><tr>
+          <th>Se</th>
+          <td><div class="bar" style="--v:15.789473684210526%"><span>15.8%</span></div></td>
+          <td><div class="bar" style="--v:7.5%"><span>7.5%</span></div></td>
+          <td><div class="bar f1" style="--v:10.169491525423728%"><span>10.2</span></div></td>
+          <td>40</td>
+        </tr><tr>
+          <th>Ti</th>
+          <td><div class="bar" style="--v:27.77777777777778%"><span>27.8%</span></div></td>
+          <td><div class="bar" style="--v:25%"><span>25.0%</span></div></td>
+          <td><div class="bar f1" style="--v:26.31578947368421%"><span>26.3</span></div></td>
+          <td>20</td>
+        </tr><tr>
+          <th>Te</th>
+          <td><div class="bar" style="--v:42.857142857142854%"><span>42.9%</span></div></td>
+          <td><div class="bar" style="--v:45%"><span>45.0%</span></div></td>
+          <td><div class="bar f1" style="--v:43.90243902439024%"><span>43.9</span></div></td>
+          <td>40</td>
+        </tr><tr>
+          <th>Fi</th>
+          <td><div class="bar" style="--v:23.91304347826087%"><span>23.9%</span></div></td>
+          <td><div class="bar" style="--v:31.428571428571427%"><span>31.4%</span></div></td>
+          <td><div class="bar f1" style="--v:27.160493827160497%"><span>27.2</span></div></td>
+          <td>35</td>
+        </tr><tr>
+          <th>Fe</th>
+          <td><div class="bar" style="--v:21.875%"><span>21.9%</span></div></td>
+          <td><div class="bar" style="--v:30.434782608695656%"><span>30.4%</span></div></td>
+          <td><div class="bar f1" style="--v:25.454545454545457%"><span>25.5</span></div></td>
+          <td>23</td>
+        </tr>
+      </tbody>
+    </table>
+
+<h2>誤分類サンプル (gold → ruri ペア上位 15)</h2>
+
+        <details>
+          <summary>Gemini <b>Se</b> → Ruri <b>Si</b>  (11 件)</summary>
+          <ol>
+        <li>
+          <div class="post">どうやら四十肩ってやつらしいんだが、どうやって緩和すんのこれ</div>
+          <div class="meta">@kobashing.bsky.social  Gemini=[Se,Te,Si]</div>
+        </li>
+        <li>
+          <div class="post">Good morning and pura vida, Nostr! The craziness of Vegas is less than a week away. That means that the craziness of preparing for Vegas is happening this week. Hold my npub, I&#39;m going in. 💜🤙🏻🫂</div>
+          <div class="meta">@derekross.bsky.social  Gemini=[Se,Te,Fe]</div>
+        </li>
+        <li>
+          <div class="post">カイロ久々にうけたら疲れがどっと出て3時間くらい寝たけどまだ疲れ取れない</div>
+          <div class="meta">@uekuraeku.bsky.social  Gemini=[Se,Si,Fi]</div>
+        </li>
+        <li>
+          <div class="post">おはようございます🌤
+
+冷房つけて寝たけどちょっと寒かったかも…
+:( ;´꒳`;):
+
+📷2025/07/12</div>
+          <div class="meta">@aozora-antenna.bsky.social  Gemini=[Se,Si,Fe]</div>
+        </li>
+        <li>
+          <div class="post">昨日お刺身食べた時に余った大葉どしよかな〜。そや、納豆に入れて食べよう</div>
+          <div class="meta">@uekuraeku.bsky.social  Gemini=[Se,Si,Ne]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Se</b> → Ruri <b>Te</b>  (9 件)</summary>
+          <ol>
+        <li>
+          <div class="post">話題のやつ😹 #Pattaya #Thailand</div>
+          <div class="meta">@yutaro.bsky.social  Gemini=[Se,none,none]</div>
+        </li>
+        <li>
+          <div class="post">配信１時間前なのじゃ👹✨
+今日でクリアまで行けるかなぁ
+
+#昼鬼 #ゲーム配信 
+#こだわりラーメン館
+www.youtube.com/live/IrAJquC...</div>
+          <div class="meta">@sikuisumire.bsky.social  Gemini=[Se,Fe,Te]</div>
+        </li>
+        <li>
+          <div class="post">大会参加ァ！
+www.youtube.com/watch?v=-Xek...</div>
+          <div class="meta">@progre.me  Gemini=[Se,Fe,none]</div>
+        </li>
+        <li>
+          <div class="post">Tie game at the half.</div>
+          <div class="meta">@otsumamiboy.bsky.social  Gemini=[Se,none,none]</div>
+        </li>
+        <li>
+          <div class="post">配信１時間前なのじゃ👹✨
+キューブ……キューブ……
+
+#昼鬼 #ゲーム配信 #リムワールド
+www.youtube.com/live/Pkbzh1Y...</div>
+          <div class="meta">@sikuisumire.bsky.social  Gemini=[Se,Fe,Ne]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Ti</b> → Ruri <b>Fi</b>  (8 件)</summary>
+          <ol>
+        <li>
+          <div class="post">音源そのまま採点なしガイドメロディなしだったら別に自分で金払ってカラオケに入れることができるんですが、カラオケって誰かが耳コピしてあのカラオケの音にしてくれるというのが一つでかい嬉しさとしてあって、せっかく入るならそれでありたいという思想もあるから、自分で金払ってまで嘘のカラオケ入れたくないという気持ちもあり、でもこれを断る理由もないというか話題と経験として一つやっておいても良いかなくらいの気持ち…</div>
+          <div class="meta">@myriico.com  Gemini=[Ti,Fi,Fe]</div>
+        </li>
+        <li>
+          <div class="post">指を太くしないために指を細くするマッサージなるものを調べたけど、これ効果あるんか？？</div>
+          <div class="meta">@suguruwn.bsky.social  Gemini=[Ti,Se,Te]</div>
+        </li>
+        <li>
+          <div class="post">bluesky-selfhost-envはshowcaseにも載ってるのだし、これだけ分散だなんだで色々言われているなら何人か試す人が観測できてもよさそうなものだが、今のところ見たことない。 docs.bsky.app/showcase?tag...</div>
+          <div class="meta">@y-s.bsky.social  Gemini=[Ti,Ne,Te]</div>
+        </li>
+        <li>
+          <div class="post">g.ai でgoogleのai modeが開くのか……</div>
+          <div class="meta">@nobsato.com  Gemini=[Ti,Ne,Te]</div>
+        </li>
+        <li>
+          <div class="post">解像度ビミョーに変なのなんやろね
+サブモニターでやってるのがよくないんかな</div>
+          <div class="meta">@ebi.bsky.social  Gemini=[Ti,Se,Te]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Se</b> → Ruri <b>Fe</b>  (7 件)</summary>
+          <ol>
+        <li>
+          <div class="post">東北きりたんのイラスト描きました
+
+#東北きりたん</div>
+          <div class="meta">@ubanis.com  Gemini=[Se,Si,none]</div>
+        </li>
+        <li>
+          <div class="post">Eita porra what a day</div>
+          <div class="meta">@pfrazee.com  Gemini=[Se,Fi,Fe]</div>
+        </li>
+        <li>
+          <div class="post">Santa’s Gift Delivery Race 🎁❄️🎄
+#racha #sucknis #christmas2025</div>
+          <div class="meta">@rybiok.bsky.social  Gemini=[Se,Ne,Te]</div>
+        </li>
+        <li>
+          <div class="post">大トロ、中トロ炙り、つぶ貝、赤身、とびっこ軍艦
+
+いただきます😋🍶✨🍣</div>
+          <div class="meta">@howevergames.bsky.social  Gemini=[Se,Si,Fe]</div>
+        </li>
+        <li>
+          <div class="post">बहुत स्वादिष्ट♥️</div>
+          <div class="meta">@yuki-0fut0n.bsky.social  Gemini=[Se,Fe,Fi]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Fe</b> → Ruri <b>Fi</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">遅くなりましたが、以前コミティア参加したときに飛び出す堀井のファンレターをいただきました。ありがとうございます‼️</div>
+          <div class="meta">@kuwahali.bsky.social  Gemini=[Fe,Si,Fi]</div>
+        </li>
+        <li>
+          <div class="post">アマチュアブラスバンドやってた友達が一番苦痛だったって話してくれたのが「音楽に詳しいと思い込んでるおじさん客に毎回呼ばれて、見当違いな上から目線アドバイスを延々と聞かされる事」で、「終わったらすぐ俺のところに来い」まで言われてて、違う地域でも別の人から似たようなことあって、割とあるある事案らしい…
+これ、ブラスバンドじゃない方のバンドでも似たようなことあるあるまくりだったんだけど、「相手はアマチュ…</div>
+          <div class="meta">@aozora-antenna.bsky.social  Gemini=[Fe,Ti,Ne]</div>
+        </li>
+        <li>
+          <div class="post">I hope you enjoy the handled line as well!</div>
+          <div class="meta">@kazkodaka.bsky.social  Gemini=[Fe,Ne,Fi]</div>
+        </li>
+        <li>
+          <div class="post">イヤイヤ期育児に疲れた時、子どもの可愛いエピソードを話してかわいい〜って言ってもらうことで、そうそう子どもは可愛いものだったって、メンタル保ってるんだけど、特殊すぎるって言われて草生えた</div>
+          <div class="meta">@okohs.bsky.social  Gemini=[Fe,Fi,Si]</div>
+        </li>
+        <li>
+          <div class="post">後輩と久しぶりに会って何気ないおしゃべりしてたら、悩みが解決したらしくて、奢ってもらっちゃった
+やったー</div>
+          <div class="meta">@keng000.bsky.social  Gemini=[Fe,Se,Si]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Ne</b> → Ruri <b>Fi</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">このアカウントは謎の少女ラベルが貼られていますが自分で貼ったので気にしないでくださいね　でどこで貼ったんだっけ…</div>
+          <div class="meta">@stok33.bsky.social  Gemini=[Ne,Fi,Si]</div>
+        </li>
+        <li>
+          <div class="post">ほんとにわからなくて聞いたんだけど、考えてみれば大喜利に最適なネタだったなーと</div>
+          <div class="meta">@layla21.bsky.social  Gemini=[Ne,Ti,Fe]</div>
+        </li>
+        <li>
+          <div class="post">やりたいこといっぱい出てくんなぁ
+手数がたりん</div>
+          <div class="meta">@kobashing.bsky.social  Gemini=[Ne,Te,Se]</div>
+        </li>
+        <li>
+          <div class="post">thoughts on ai &amp; how it relates to the atmosphere</div>
+          <div class="meta">@dholms.at  Gemini=[Ne,Ni,Ti]</div>
+        </li>
+        <li>
+          <div class="post">主人公視点で序盤敵役だったのに現時点で一番大局的視点で動けてる妃だしシンママなのもあってソルコクタニ様応援せざるをえないんだよな
+
+モンケ、クビライ、フレグは全員高校世界史で覚えた名前だけどキャラデザ見てたらなんとなくクビライが主人公顔な気がする
+アリクブケ除く兄弟の中では一番出番少ないのに</div>
+          <div class="meta">@kawaiirailroads.millie-may.net  Gemini=[Ne,Ni,Ti]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Te</b> → Ruri <b>Ti</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">If this isn’t contested by Congress and isn’t called out as the insane executive overreach that it is, then this is one of the last remain nails in the coffin for the US democratic system.
+
+It’s blata…</div>
+          <div class="meta">@frost42.bsky.social  Gemini=[Te,Fi,Ni]</div>
+        </li>
+        <li>
+          <div class="post">ツール2つくらい作らなきゃ…………</div>
+          <div class="meta">@yuki-0fut0n.bsky.social  Gemini=[Te,Ti,Ni]</div>
+        </li>
+        <li>
+          <div class="post">パスワード管理は「覚えない」から「保存しない」に　注目の新技術「HIPPO」とは？
+https://atmarkit.itmedia.co.jp/ait/articles/2604/20/news017.html</div>
+          <div class="meta">@rhosoi.bsky.social  Gemini=[Te,Ni,Ti]</div>
+        </li>
+        <li>
+          <div class="post">オランダのFairphoneは自分で修理できるスマホを作っています。バッテリー、カメラユニット、ディスプレイまでスペアパーツを販売していて、ドライバー1つで分解できる構造。
+
+スマホとしては側面の物理スイッチで通常のホーム画面からミニマリストホームに切り替えできる機能が特徴です。</div>
+          <div class="meta">@ti.aroka.net  Gemini=[Te,Si,Ti]</div>
+        </li>
+        <li>
+          <div class="post">good call on adding &quot;Denial-of-service: no&quot; to robots.txt</div>
+          <div class="meta">@pfrazee.com  Gemini=[Te,Ti,Si]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Te</b> → Ruri <b>Fe</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">&quot;Bluesky meetupを関西でも開催することになったら参加したいですか？(一定数以上集まったら開催したいです。できそうなら会場提供者も募集！)&quot; asked by @kojira.io. Vote below!
+
+🅰 絶対参加したい
+🅱 都合が付けば参加したい
+🅲 参加したいけど無理
+🅳 参加したくない
+
+📊 Show results</div>
+          <div class="meta">@jinsugimoto.bsky.social  Gemini=[Te,Fe,Ne]</div>
+        </li>
+        <li>
+          <div class="post">【雑談】9月配信なし回避、おひさしぶりです【泡雪ふわり/Vtuber】
+#Vtuber #雑談
+
+www.youtube.com/watch?v=9jOR...</div>
+          <div class="meta">@angelfuwari.bsky.social  Gemini=[Te,Si,Fe]</div>
+        </li>
+        <li>
+          <div class="post">👾ファンサイト開設のおしらせ👾
+
+本日10月3日、ななみ雪オフィシャルファンサイトをオープンしました‼︎
+限定の動画コンテンツや壁紙、イベント情報などをどんどんアップしていきます！
+質問相談コーナーや会員イベントの開催も考えてますのでぜひぜひご入会ください🫶
+
+nanamiyuki.bitfan.id</div>
+          <div class="meta">@yuki77mi.bsky.social  Gemini=[Te,Fe,Se]</div>
+        </li>
+        <li>
+          <div class="post">連合が開始したということで、Blueskyクライアント一覧に、bsky.social以外のサーバーを指定できるものに絞ったビューを追加しました（プラットフォームごとに分けているので複数使えるものは重複して表示されます）
+dolciss.notion.site/c03ea7599515...</div>
+          <div class="meta">@kappa.seijin.jp  Gemini=[Te,Ti,Si]</div>
+        </li>
+        <li>
+          <div class="post">拡散希望 #Quest水着集会
+2月10日22時より開催！
+#VRChatイベント #VRChat
+wondernote.net/event/868ca3...</div>
+          <div class="meta">@nyano.bsky.social  Gemini=[Te,Fe,Se]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Si</b> → Ruri <b>Ni</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">happened to me for the first time in years.</div>
+          <div class="meta">@11oct.net  Gemini=[Si,Fi,none]</div>
+        </li>
+        <li>
+          <div class="post">#ワンドロ
+#OneHourDrawing 
+原神　キィニチ、ファルカ
+モノクロ</div>
+          <div class="meta">@sksksketch.net  Gemini=[Si,Te,none]</div>
+        </li>
+        <li>
+          <div class="post">#ワンドロ
+#OneHourDrawing 
+らき☆すた　こなた
+モノクロ
+線による影を整理しました（昨日比）</div>
+          <div class="meta">@sksksketch.net  Gemini=[Si,Te,Ti]</div>
+        </li>
+        <li>
+          <div class="post">VF-31の腕って主翼の中に入ってたのね。</div>
+          <div class="meta">@ioriayane.relog.tech  Gemini=[Si,Ti,Se]</div>
+        </li>
+        <li>
+          <div class="post">最近 青空を見ない（見てなかった）ですなあ。</div>
+          <div class="meta">@pporoch.bsky.social  Gemini=[Si,Fi,Ni]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Fi</b> → Ruri <b>Ni</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">好きあう人を諦めて好き合う犬と暮らしてる</div>
+          <div class="meta">@mihochannel.bsky.social  Gemini=[Fi,Si,Ni]</div>
+        </li>
+        <li>
+          <div class="post">No. How do you feel autonomically when you perform intentional kindness?
+
+How do you feel autonomically when you perform intentional cruelty?
+
+That is the truth. You don’t need to teach it. Your body …</div>
+          <div class="meta">@otsumamiboy.bsky.social  Gemini=[Fi,Ni,Se]</div>
+        </li>
+        <li>
+          <div class="post">そもそもブリッジの意義を欠片も理解してないのでmostrのことを完全なる害悪だと認識している</div>
+          <div class="meta">@kuuote.bsky.social  Gemini=[Fi,Ti,Te]</div>
+        </li>
+        <li>
+          <div class="post">俺が何したって言うんだろう。いったい、なぜ他の人と同じことをやってもこんなにも結果が違うんだろう</div>
+          <div class="meta">@jinsugimoto.bsky.social  Gemini=[Fi,Ni,Te]</div>
+        </li>
+        <li>
+          <div class="post">いいえ。人間をまともに見て美しいと思ったのです。</div>
+          <div class="meta">@kazkodaka.bsky.social  Gemini=[Fi,Ni,Se]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Se</b> → Ruri <b>Fi</b>  (6 件)</summary>
+          <ol>
+        <li>
+          <div class="post">バナンザ面白すぎて仕事のこと考えられない</div>
+          <div class="meta">@myayoi62.bsky.social  Gemini=[Se,Fi,Ne]</div>
+        </li>
+        <li>
+          <div class="post">画像CDNまで重くなってないか？！</div>
+          <div class="meta">@baisony.zazen.social  Gemini=[Se,Te,Ti]</div>
+        </li>
+        <li>
+          <div class="post">(_・ω・)_ﾊﾞｧﾝ… (ええな....)
+
+(ﾉｼ &#39;ω&#39;)ﾉｼ ﾊﾞﾝﾊﾞﾝ
+(ﾉｼ &#39;ω&#39;)ﾉｼ ﾊﾞﾝﾊﾞﾝ
+(ﾉｼ &#39;ω&#39;)ﾉｼ ﾊﾞﾝﾊﾞﾝ
+(我慢できなくなった)</div>
+          <div class="meta">@chi-bird.com  Gemini=[Se,Fi,Fe]</div>
+        </li>
+        <li>
+          <div class="post">コナン映画見た、劇伴音楽が良くて満足</div>
+          <div class="meta">@silmin.net  Gemini=[Se,Fi,Si]</div>
+        </li>
+        <li>
+          <div class="post">最後の方ちょっと接客とかしてたんですが、ころねすきーパーカーの集団が「僕ら怪しいものではないです」ってやって来たり、被疑者の方が現地でグッズのビジュ見てお礼言いに来てくれたりとかで楽しかったですね…</div>
+          <div class="meta">@fukahireruinon.bsky.social  Gemini=[Se,Fe,Si]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Si</b> → Ruri <b>Se</b>  (5 件)</summary>
+          <ol>
+        <li>
+          <div class="post">メンタルリープという発達のいち指標に曰く、息子は「分類」ができるようになったそう
+確かに、おもちゃによって口に含むだけでなく振ったり(音が鳴る)落としたり(哺乳瓶やコップの傾け方も理解=重力に気づきつつある？)何度も裏返したり(絵本類)と、遊び方を分けだした。
+私はひたすら息子の探究に付き合う。
+
+ズリバイで押して持ってきた絵本は読まないと不機嫌になるので読み聞かせの回数稼ぎが息子主導になった。
+…</div>
+          <div class="meta">@kawaiirailroads.millie-may.net  Gemini=[Si,Se,Ti]</div>
+        </li>
+        <li>
+          <div class="post">豊川市名電赤坂駅近くにあるうなぎやさんのうな重
+
+愛知のうなぎは焼きが強くてパリッとしていて味が濃い印象が強いけど、こちらのうなぎはやわらかいけど味付けが濃いというあまり食べたことのないタイプ
+
+湧水で何日も過ごしたうなぎは臭みもなく脂もほどよくのって美味しい
+
+おばあちゃんが1人で切り盛りしているお店、なくなってしまう前に再訪したい</div>
+          <div class="meta">@sigekun.bsky.social  Gemini=[Si,Se,Fi]</div>
+        </li>
+        <li>
+          <div class="post">本日の一枚。
+37年前の1989年2月、AC『マッド・ギア』稼働開始！
+開発中だった『ファイナルファイト』敵組織名はこのタイトルから流用。（イラスト・あきまん）
+#カプコンアートワーク #CAPCOM #ARTWORK #MADGEAR</div>
+          <div class="meta">@capcomart.bsky.social  Gemini=[Si,Te,Ne]</div>
+        </li>
+        <li>
+          <div class="post">チーズカツカレーはうまいに決まってる</div>
+          <div class="meta">@machopudding.bsky.social  Gemini=[Si,Se,Fi]</div>
+        </li>
+        <li>
+          <div class="post">こっちと対になってる絵あげわすれとった</div>
+          <div class="meta">@mignon.bsky.social  Gemini=[Si,Se,none]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Si</b> → Ruri <b>Ne</b>  (4 件)</summary>
+          <ol>
+        <li>
+          <div class="post">サッポロ行きでおいてかれたことある。
+それ以来ANA容赦ないって思ってる。</div>
+          <div class="meta">@mihochannel.bsky.social  Gemini=[Si,Fi,Se]</div>
+        </li>
+        <li>
+          <div class="post">デジタルイラストを印刷したものを作るなら、やっぱり実物ならではの魅力があるように作りたいなあと思ったり…</div>
+          <div class="meta">@fukahireruinon.bsky.social  Gemini=[Si,Se,Fi]</div>
+        </li>
+        <li>
+          <div class="post">oudo.-オウド-さん
+陶器専門店
+
+手仕事の器、そして陶で焼く珈琲。スコーン。
+静かな店内に響く時計の音。
+風にうたう窓ガラスの聲。</div>
+          <div class="meta">@yoshika.bsky.social  Gemini=[Si,Se,Ni]</div>
+        </li>
+        <li>
+          <div class="post">I like to reuse packaging, so if you see some wrapping or backing in your order that seems out of place, please pay no mind. 🌱</div>
+          <div class="meta">@koyamori.bsky.social  Gemini=[Si,Te,Fi]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Si</b> → Ruri <b>Fe</b>  (4 件)</summary>
+          <ol>
+        <li>
+          <div class="post">ラムはいつ食っても美味いので尊いもの</div>
+          <div class="meta">@ato-sky.bsky.social  Gemini=[Si,Fi,Se]</div>
+        </li>
+        <li>
+          <div class="post">NY 2023, Patti Smith, son sapin ! ❤️‍🩹</div>
+          <div class="meta">@isabelleplume.bsky.social  Gemini=[Si,Se,Fi]</div>
+        </li>
+        <li>
+          <div class="post">こめっこさんも生誕100日なんだとなった
+はやい</div>
+          <div class="meta">@oppapili.bsky.social  Gemini=[Si,Ni,none]</div>
+        </li>
+        <li>
+          <div class="post">本日の一枚。
+#カプコンアートワーク #CAPCOM #ARTWORK #ストリートファイター #たみお #メナト生誕祭</div>
+          <div class="meta">@capcomart.bsky.social  Gemini=[Si,Se,none]</div>
+        </li></ol>
+        </details>
+        <details>
+          <summary>Gemini <b>Fe</b> → Ruri <b>Si</b>  (4 件)</summary>
+          <ol>
+        <li>
+          <div class="post">最近ついったーの治安が良くなくて悲しい、皆けんかしているから仲良くして欲しい</div>
+          <div class="meta">@shiromanta.bsky.social  Gemini=[Fe,Fi,Si]</div>
+        </li>
+        <li>
+          <div class="post">友人が折り悪く家を建てようとしてて部材がなくて上棟でけへんと泣いとりますわ</div>
+          <div class="meta">@yodogawa.bsky.social  Gemini=[Fe,Se,Si]</div>
+        </li>
+        <li>
+          <div class="post">今日のFF16プレイ時間10分やった（泣かれた</div>
+          <div class="meta">@nisshiee.bsky.social  Gemini=[Fe,Se,Fi]</div>
+        </li>
+        <li>
+          <div class="post">おはようございます！
+今週ずっとインフルで完全にダウンしてましたꀬ⏖ꀬ 
+今日ようやく平熱まで下がりました…皆さんもお気をつけてお過ごしくださいね！</div>
+          <div class="meta">@sakulayuki.bsky.social  Gemini=[Fe,Si,Se]</div>
+        </li></ol>
+        </details>
+
+</body></html>
