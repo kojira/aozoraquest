@@ -35,3 +35,8 @@ validation-results/
 diagnose-follows-*.html
 diagnose-ranking-*.html
 /docs/logs/*.log
+
+# fine-tune artifacts (巨大なので git に入れない、必要なら再生成)
+/docs/data/ruri-finetuned/
+/docs/data/ruri-finetuned-encoder/
+/docs/data/ruri-finetuned-onnx/
