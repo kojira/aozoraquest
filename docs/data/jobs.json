@@ -69,7 +69,7 @@
       "auxiliaryFunction": "Se"
     },
     "dancer": {
-      "names": { "default": "舞踏家", "maker": "工芸家", "alt": "庭師" },
+      "names": { "default": "芸術家", "maker": "工芸家", "alt": "庭師" },
       "stats": [15, 20, 23, 15, 27],
       "dominantFunction": "Fi",
       "auxiliaryFunction": "Se"
@@ -93,7 +93,7 @@
       "auxiliaryFunction": "Ti"
     },
     "performer": {
-      "names": { "default": "踊り子", "maker": "芸人", "alt": "祭司" },
+      "names": { "default": "遊び人", "maker": "芸人", "alt": "祭司" },
       "stats": [20, 12, 30, 10, 28],
       "dominantFunction": "Se",
       "auxiliaryFunction": "Fi"

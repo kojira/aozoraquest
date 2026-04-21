@@ -149,24 +149,60 @@ const fist = () =>
     </g>,
   );
 
-/** 舞扇: 柄 + 半円扇面 + 骨 + 要 でハッキリ扇とわかる意匠 */
-const fan = (color: string) =>
+/** 絵筆: 柄 + 金輪 + 穂先 (斜めに構えて動きを出す) */
+const brush = (color: string) =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round" transform="rotate(25 50 50)">
+      {/* 柄 */}
+      <rect x="44" y="40" width="12" height="54" rx="3" fill="#8a5a20" />
+      {/* 金輪 */}
+      <rect x="40" y="26" width="20" height="14" rx="2" fill="#c0a060" />
+      {/* 穂先 */}
+      <path d="M 42 26 Q 50 -2 58 26 Z" fill={color} />
+      {/* 墨の滴 */}
+      <circle cx="56" cy="4" r="5" fill={color} />
+    </g>,
+  );
+
+/** パレット: 穴あきの楕円に絵の具のだま */
+const palette = () =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      {/* 柄 (handle, 要の下) */}
-      <rect x="44" y="82" width="12" height="16" rx="3" fill="#6a3a10" />
-      {/* 扇面 (花弁型) */}
-      <path d="M 50 82 Q 4 60 10 22 Q 50 2 90 22 Q 96 60 50 82 Z" fill={color} />
-      {/* 骨 (要から放射) */}
-      <line x1="50" y1="82" x2="10" y2="22" strokeWidth="3" />
-      <line x1="50" y1="82" x2="24" y2="10" strokeWidth="3" />
-      <line x1="50" y1="82" x2="50" y2="2" strokeWidth="3" />
-      <line x1="50" y1="82" x2="76" y2="10" strokeWidth="3" />
-      <line x1="50" y1="82" x2="90" y2="22" strokeWidth="3" />
-      {/* 上縁の金の弧 (装飾) */}
-      <path d="M 18 32 Q 50 16 82 32" stroke="#d0a040" strokeWidth="3" fill="none" />
-      {/* 要 (金のリベット) */}
-      <circle cx="50" cy="82" r="5" fill="#d0a040" />
+      {/* 本体 */}
+      <path d="M 14 46 Q 14 16 48 14 Q 82 16 86 40 Q 88 60 68 62 Q 76 72 70 82 Q 62 90 50 86 Q 34 82 22 72 Q 8 56 14 46 Z" fill="#f0ddb4" />
+      {/* 親指穴 */}
+      <ellipse cx="36" cy="52" rx="8" ry="6" fill="#3a2a15" stroke="none" />
+      {/* 絵の具のだま */}
+      <circle cx="58" cy="28" r="7" fill="#e04030" />
+      <circle cx="76" cy="44" r="7" fill="#3070d0" />
+      <circle cx="66" cy="64" r="7" fill="#60c040" />
+      <circle cx="46" cy="76" r="7" fill="#ffd84a" />
+    </g>,
+  );
+
+/** サイコロ (遊び人の象徴): 3 面見える等角投影 + ピップ */
+const dice = (color: string) =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+      {/* 天面 */}
+      <path d="M 22 32 L 50 16 L 78 32 L 50 48 Z" fill="#ffffff" />
+      {/* 右面 */}
+      <path d="M 78 32 L 78 66 L 50 82 L 50 48 Z" fill={color} />
+      {/* 左面 */}
+      <path d="M 22 32 L 22 66 L 50 82 L 50 48 Z" fill="#d8d4c8" />
+      {/* 天面ピップ (5) */}
+      <circle cx="32" cy="30" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="50" cy="20" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="68" cy="30" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="40" cy="38" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="60" cy="38" r="2.8" fill={OUTLINE} stroke="none" />
+      {/* 右面ピップ (3) */}
+      <circle cx="62" cy="46" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="64" cy="60" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="66" cy="74" r="2.8" fill={OUTLINE} stroke="none" />
+      {/* 左面ピップ (2) */}
+      <circle cx="30" cy="48" r="2.8" fill={OUTLINE} stroke="none" />
+      <circle cx="38" cy="70" r="2.8" fill={OUTLINE} stroke="none" />
     </g>,
   );
 
@@ -243,14 +279,6 @@ const twinSwords = (color: string) =>
         <rect x="30" y="68" width="40" height="10" fill="#b87a1e" />
         <polygon points="42,68 58,68 55,10 50,2 45,10" fill={color} />
       </g>
-    </g>,
-  );
-
-const windFeather = (color: string) =>
-  svg(
-    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      <path d="M 50 94 Q 26 72 22 38 Q 20 14 38 6 Q 52 24 60 52 Q 66 80 50 94 Z" fill={color} />
-      <line x1="50" y1="94" x2="42" y2="28" strokeWidth="2.5" />
     </g>,
   );
 
@@ -384,11 +412,11 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     warrior:   { leftSide: sword(c),               accentColor: accent },
     guardian:  { rightSide: shield(c),             accentColor: accent },
     fighter:   { primary: fist(),                  accentColor: accent },
-    dancer:    { leftSide: fan(c), rightSide: fan(c),                      accentColor: accent },
+    dancer:    { primary: brush(c),                secondary: palette(),        accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
     miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
     gladiator: { primary: twinSwords(c),           accentColor: accent },
-    performer: { primary: windFeather(c),          secondary: bell('#e8c34b'),   accentColor: accent },
+    performer: { primary: dice(c),                 secondary: bell('#e8c34b'),   accentColor: accent },
   };
   return map[archetype];
 }
