@@ -75,6 +75,33 @@ describe('generateDailyQuests', () => {
     expect(a.map((q) => q.templateId)).toEqual(b.map((q) => q.templateId));
   });
 
+  test('目標ジョブを切り替えると育成軸が変わる', () => {
+    // 同じ現在ステータスに対して、目標を「攻極振り」と「知極振り」で生成。
+    // 攻を目標にしたら atk 系クエストが出て、知を目標にしたら int 系クエストが出るはず。
+    const common = {
+      userDid: 'did:plc:target-switch',
+      dateStr: '2026-04-21',
+      level: 1,
+      currentStats: stats(30, 30, 30, 30, 30), // 平坦
+      recentTemplateIds: [] as string[],
+    };
+    const atkFocused = generateDailyQuests({
+      ...common,
+      targetStats: stats(80, 10, 5, 5, 0),
+    });
+    const intFocused = generateDailyQuests({
+      ...common,
+      targetStats: stats(5, 10, 5, 80, 0),
+    });
+    // それぞれ成長クエストの targetStat を見れば、最大ギャップ軸に沿っていることが分かる
+    const atkGrowthStats = atkFocused.filter((q) => q.type === 'growth').map((q) => q.targetStat);
+    const intGrowthStats = intFocused.filter((q) => q.type === 'growth').map((q) => q.targetStat);
+    expect(atkGrowthStats).toContain('atk');
+    expect(intGrowthStats).toContain('int');
+    // 2 つのクエスト集合が完全一致しないこと (= 目標が効いている)
+    expect(atkFocused.map((q) => q.templateId)).not.toEqual(intFocused.map((q) => q.templateId));
+  });
+
   test('recentTemplateIds に入っているテンプレは避けられる', () => {
     const input = {
       userDid: 'did:plc:a',
