@@ -12,7 +12,7 @@ export function AppShell() {
       <nav className="footer-nav">
         <NavLink to="/" end>ホーム</NavLink>
         <NavLink to="/me">自分</NavLink>
-        <NavLink to="/spirit">精霊</NavLink>
+        <NavLink to="/spirit">ブルスコン</NavLink>
         <NavLink to="/search">検索</NavLink>
         <NavLink to="/settings">設定</NavLink>
       </nav>

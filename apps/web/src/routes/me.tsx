@@ -6,6 +6,7 @@ import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
 import { RadarChart } from '@/components/radar-chart';
+import { SpiritBubble } from '@/components/spirit-bubble';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -110,8 +111,8 @@ export function MyProfile() {
 
       {state.status === 'insufficient' && (
         <div style={{ marginTop: '1em' }}>
-          <p>まだ歩みが浅い。もう少し投稿してから改めて来てくれ。</p>
-          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+          <SpiritBubble>まだ歩みが浅い。もう少し投稿してから、改めて来てくれ。</SpiritBubble>
+          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
             見つかった投稿 {state.postCount} 件 (判定には 50 件以上必要です)。
           </p>
         </div>
