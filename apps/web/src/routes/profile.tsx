@@ -112,7 +112,7 @@ export function Profile() {
 
       {!isSelf && (
         <section className="dq-window" style={{ marginTop: '0.8em' }}>
-          <h3 style={{ fontSize: '0.95em', margin: '0 0 0.5em' }}>この人との相性</h3>
+          <h3 style={{ fontSize: '0.95em', margin: '0 0 0.5em' }}>このユーザーとの相性</h3>
           {!theirDiag ? (
             <EstimateOtherPanel
               agent={session.agent}
