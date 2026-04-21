@@ -150,7 +150,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               style={{
                 position: 'absolute',
                 left: '50%',
-                top: `-${Math.round(size * 0.55)}px`,
+                top: `-${Math.round(size * 0.68)}px`,
                 transform: 'translateX(-50%)',
                 width: Math.round(size * 1.05),
                 height: Math.round(size * 0.8),
