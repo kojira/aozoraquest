@@ -1,12 +1,22 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '@/lib/session';
-import { createPost } from '@/lib/atproto';
+import { createPost, type ReplyRef } from '@/lib/atproto';
 import { TextField } from '@/components/text-field';
+
+interface ReplyToState {
+  parent: { uri: string; cid: string };
+  root: { uri: string; cid: string };
+  author: string;
+  text: string;
+}
 
 export function Compose() {
   const session = useSession();
   const navigate = useNavigate();
+  const location = useLocation();
+  const replyTo = (location.state as { replyTo?: ReplyToState } | null)?.replyTo;
+
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -27,7 +37,10 @@ export function Compose() {
     setLoading(true);
     setErr(null);
     try {
-      await createPost(agent, text);
+      const reply: ReplyRef | undefined = replyTo
+        ? { root: replyTo.root, parent: replyTo.parent }
+        : undefined;
+      await createPost(agent, text, reply);
       navigate('/', { replace: true });
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -37,7 +50,24 @@ export function Compose() {
 
   return (
     <div>
-      <h2>投稿作成</h2>
+      <h2>{replyTo ? '返信' : '投稿作成'}</h2>
+
+      {replyTo && (
+        <div
+          style={{
+            padding: '0.6em 0.8em',
+            borderLeft: '3px solid var(--color-accent)',
+            background: 'rgba(255,255,255,0.06)',
+            borderRadius: 2,
+            marginBottom: '0.6em',
+            fontSize: '0.85em',
+          }}
+        >
+          <div style={{ color: 'var(--color-muted)', fontSize: '0.8em' }}>@{replyTo.author} への返信</div>
+          <div style={{ marginTop: '0.3em', whiteSpace: 'pre-wrap' }}>{replyTo.text}</div>
+        </div>
+      )}
+
       <TextField
         multiline
         submitWithModifier
@@ -45,7 +75,7 @@ export function Compose() {
         onChange={setText}
         onSubmit={submit}
         style={{ width: '100%', minHeight: '8em', padding: '0.5em', fontSize: '1em' }}
-        placeholder="いまどうしてる?"
+        placeholder={replyTo ? '返信を書く' : 'いまどうしてる?'}
         maxLength={300}
         disabled={loading}
       />
@@ -54,7 +84,7 @@ export function Compose() {
           {text.length} / 300
         </span>
         <button onClick={submit} disabled={!text.trim() || text.length > 300 || loading}>
-          {loading ? '送信中...' : 'ポスト'}
+          {loading ? '送信中...' : replyTo ? '返信する' : 'ポスト'}
         </button>
       </div>
       {err && <p style={{ color: '#b00', marginTop: '0.5em' }}>{err}</p>}
