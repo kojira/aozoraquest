@@ -16,8 +16,8 @@
             "knownValues": [
               "sage", "mage", "shogun", "bard",
               "seer", "poet", "paladin", "explorer",
-              "warrior", "guardian", "fighter", "dancer",
-              "captain", "miko", "gladiator", "performer"
+              "warrior", "guardian", "fighter", "artist",
+              "captain", "miko", "ninja", "performer"
             ]
           },
           "nameVariant": {

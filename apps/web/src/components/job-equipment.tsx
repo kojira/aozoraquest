@@ -382,10 +382,10 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     warrior: '#d48a55',
     guardian: '#6aa8ff',
     fighter: '#ff6a45',
-    dancer: '#ff7aa8',
+    artist: '#ff7aa8',
     captain: '#ffc830',
     miko: '#ff5a92',
-    gladiator: '#ff4a28',
+    ninja: '#ff4a28',
     performer: '#ffb85a',
   };
   const c = jobColor[archetype];
@@ -402,10 +402,10 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     warrior:   { leftSide: sword(c),               accentColor: accent },
     guardian:  { rightSide: shield(c),             accentColor: accent },
     fighter:   { primary: fist(),                  accentColor: accent },
-    dancer:    { primary: palette(),               primaryLeft: brush(c),       accentColor: accent },
+    artist:    { primary: palette(),               primaryLeft: brush(c),       accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
     miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
-    gladiator: { primary: shuriken(c),             accentColor: accent },
+    ninja:     { primary: shuriken(c),             accentColor: accent },
     performer: { primary: dice(c),                 accentColor: accent },
   };
   return map[archetype];

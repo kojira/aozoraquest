@@ -68,7 +68,7 @@
       "dominantFunction": "Ti",
       "auxiliaryFunction": "Se"
     },
-    "dancer": {
+    "artist": {
       "names": { "default": "芸術家", "maker": "工芸家", "alt": "庭師" },
       "stats": [15, 20, 23, 15, 27],
       "dominantFunction": "Fi",
@@ -86,7 +86,7 @@
       "dominantFunction": "Fe",
       "auxiliaryFunction": "Si"
     },
-    "gladiator": {
+    "ninja": {
       "names": { "default": "忍者", "maker": "職方", "alt": "現場監督" },
       "stats": [15, 10, 33, 27, 15],
       "dominantFunction": "Se",

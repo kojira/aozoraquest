@@ -11,8 +11,8 @@ export type CogFunction = (typeof COGNITIVE_FUNCTIONS)[number];
 export const ARCHETYPES = [
   'sage', 'mage', 'shogun', 'bard',
   'seer', 'poet', 'paladin', 'explorer',
-  'warrior', 'guardian', 'fighter', 'dancer',
-  'captain', 'miko', 'gladiator', 'performer',
+  'warrior', 'guardian', 'fighter', 'artist',
+  'captain', 'miko', 'ninja', 'performer',
 ] as const;
 export type Archetype = (typeof ARCHETYPES)[number];
 

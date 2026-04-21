@@ -16,10 +16,10 @@ export const JOBS: readonly JobDefinition[] = [
   { id: 'warrior',   names: { default: '戦士',     maker: '書記',     alt: '鍛冶師' },   stats: [24, 42,  8,  9, 17], dominantFunction: 'Si', auxiliaryFunction: 'Te' },
   { id: 'guardian',  names: { default: '守護者',   maker: '司書',     alt: '家守' },     stats: [ 7, 39, 10, 20, 24], dominantFunction: 'Si', auxiliaryFunction: 'Fe' },
   { id: 'fighter',   names: { default: '武闘家',   maker: '技師',     alt: '匠' },       stats: [10, 13, 22, 42, 13], dominantFunction: 'Ti', auxiliaryFunction: 'Se' },
-  { id: 'dancer',    names: { default: '芸術家',   maker: '工芸家',   alt: '庭師' },     stats: [15, 20, 23, 15, 27], dominantFunction: 'Fi', auxiliaryFunction: 'Se' },
+  { id: 'artist',    names: { default: '芸術家',   maker: '工芸家',   alt: '庭師' },     stats: [15, 20, 23, 15, 27], dominantFunction: 'Fi', auxiliaryFunction: 'Se' },
   { id: 'captain',   names: { default: '隊長',     maker: '指揮者',   alt: '管理官' },   stats: [34, 28, 10, 10, 18], dominantFunction: 'Te', auxiliaryFunction: 'Si' },
   { id: 'miko',      names: { default: '巫女',     maker: '世話役',   alt: '看護師' },   stats: [ 7, 32, 10, 15, 36], dominantFunction: 'Fe', auxiliaryFunction: 'Si' },
-  { id: 'gladiator', names: { default: '忍者',     maker: '職方',     alt: '現場監督' }, stats: [15, 10, 33, 27, 15], dominantFunction: 'Se', auxiliaryFunction: 'Ti' },
+  { id: 'ninja',     names: { default: '忍者',     maker: '職方',     alt: '現場監督' }, stats: [15, 10, 33, 27, 15], dominantFunction: 'Se', auxiliaryFunction: 'Ti' },
   { id: 'performer', names: { default: '遊び人',   maker: '芸人',     alt: '祭司' },     stats: [20, 12, 30, 10, 28], dominantFunction: 'Se', auxiliaryFunction: 'Fi' },
 ];
 
@@ -55,10 +55,10 @@ export const JOB_TAGLINES: Record<Archetype, string> = {
   warrior:   '反復で鍛える堅実型',
   guardian:  '身近な人を守り続ける',
   fighter:   '体で覚え理で磨く',
-  dancer:    '感性を形に残す',
+  artist:    '感性を形に残す',
   captain:   '組織を回す実務家',
   miko:      '場を整え寄り添う',
-  gladiator: '一瞬の見切りで決める',
+  ninja:     '一瞬の見切りで決める',
   performer: '運と勘で生きる',
 };
 
