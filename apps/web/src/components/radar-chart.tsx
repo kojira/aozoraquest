@@ -6,6 +6,14 @@ interface RadarChartProps {
   size?: number;
   /** 最大値 (0..max の範囲で描画)。ステータスは 0-100 想定。 */
   max?: number;
+  /**
+   * true にすると、stats の中の最大値を外周 (1.0) に合わせて相対化して描画する。
+   * 値が全体的に小さいときに中心に固まるのを避けたいとき使う。
+   * 絶対値は出さず、形だけ見せたい場合向け。
+   */
+  normalize?: boolean;
+  /** 各軸に数値ラベルを出すか (true なら「攻 25」、false なら「攻」) */
+  showValues?: boolean;
 }
 
 const AXES: Array<{ key: keyof StatVector; label: string; color: string }> = [
@@ -20,10 +28,16 @@ const AXES: Array<{ key: keyof StatVector; label: string; color: string }> = [
  * 5 軸レーダーチャート。純粋 SVG、依存なし。
  * 軸は 12 時位置を起点に時計回りに 72°ずつ (攻・守・速・知・運)。
  */
-export function RadarChart({ stats, size = 220, max = 100 }: RadarChartProps) {
+export function RadarChart({ stats, size = 220, max = 100, normalize = false, showValues = true }: RadarChartProps) {
   const cx = size / 2;
   const cy = size / 2;
   const radius = size * 0.36;
+
+  // normalize=true の場合、外周を「各軸の値の最大」にスケールする。
+  // max=0 ケース保険で 1 にフォールバック。
+  const scaleMax = normalize
+    ? Math.max(stats.atk, stats.def, stats.agi, stats.int, stats.luk, 1)
+    : max;
 
   // 軸方向の単位ベクトル (12 時を 0°、時計回り)
   const axisVecs = AXES.map((_, i) => {
@@ -32,7 +46,7 @@ export function RadarChart({ stats, size = 220, max = 100 }: RadarChartProps) {
   });
 
   const pointFor = (value: number, scale: number) => {
-    const r = (Math.max(0, Math.min(max, value)) / max) * radius * scale;
+    const r = (Math.max(0, Math.min(scaleMax, value)) / scaleMax) * radius * scale;
     return axisVecs.map((v) => ({ x: cx + v.x * r, y: cy + v.y * r }));
   };
 
@@ -41,7 +55,7 @@ export function RadarChart({ stats, size = 220, max = 100 }: RadarChartProps) {
 
   // 実データの多角形
   const valuePoints = AXES.map((a, i) => {
-    const v = (Math.max(0, Math.min(max, stats[a.key])) / max) * radius;
+    const v = (Math.max(0, Math.min(scaleMax, stats[a.key])) / scaleMax) * radius;
     return { x: cx + axisVecs[i]!.x * v, y: cy + axisVecs[i]!.y * v };
   });
   const valuePath = valuePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ') + ' Z';
@@ -60,7 +74,7 @@ export function RadarChart({ stats, size = 220, max = 100 }: RadarChartProps) {
     >
       {/* グリッド (5 段階の五角形) */}
       {gridLevels.map((level, idx) => {
-        const pts = pointFor(level * max, 1);
+        const pts = pointFor(level * scaleMax, 1);
         const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ') + ' Z';
         return (
           <path
@@ -109,7 +123,7 @@ export function RadarChart({ stats, size = 220, max = 100 }: RadarChartProps) {
             dominantBaseline="central"
             style={{ userSelect: 'none' }}
           >
-            {a.label} {stats[a.key]}
+            {showValues ? `${a.label} ${stats[a.key]}` : a.label}
           </text>
         );
       })}
