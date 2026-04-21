@@ -7,6 +7,7 @@ import { JOBS_BY_ID } from '@aozoraquest/core';
  * - crown: 頭上 (正面中央・上) に被せる兜 / 帽子の類
  * - body: 顔の下に重ねる衣装 (巫女装束など)。Avatar の face より後ろに描画
  * - primary: 右下コーナーの装備
+ * - primaryLeft: 左下コーナー (primary のミラー)
  * - secondary: 左上コーナーの副装備
  * - leftSide: アイコン左 (キャラの右手) — 剣など攻撃側
  * - rightSide: アイコン右 (キャラの左手) — 盾など防御側
@@ -16,6 +17,7 @@ export interface JobEquipment {
   crown?: ReactNode;
   body?: ReactNode;
   primary?: ReactNode;
+  primaryLeft?: ReactNode;
   secondary?: ReactNode;
   leftSide?: ReactNode;
   rightSide?: ReactNode;
@@ -403,7 +405,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     warrior:   { leftSide: sword(c),               accentColor: accent },
     guardian:  { rightSide: shield(c),             accentColor: accent },
     fighter:   { primary: fist(),                  accentColor: accent },
-    dancer:    { primary: brush(c),                secondary: palette(),        accentColor: accent },
+    dancer:    { primary: palette(),               primaryLeft: brush(c),       accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
     miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
     gladiator: { primary: twinSwords(c),           accentColor: accent },
