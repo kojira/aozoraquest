@@ -1,6 +1,6 @@
 import { DIAGNOSIS_TOP_N } from './embedding-config.js';
-import { archetypeFromFunctionPair } from './jobs.js';
-import { DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
+import { JOBS } from './jobs.js';
+import { ARCHETYPE_FIT_WEIGHTS, DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
 import { STATS, type Archetype, type CogFunction, type CognitiveScores, type Confidence, type DiagnosisResult, type Stat, type StatVector } from './types.js';
 
 /**
@@ -88,20 +88,48 @@ export function cognitiveToRpg(scores: CognitiveScores): StatVector {
   return out;
 }
 
-/** アーキタイプ判定 (トップ 2 ペアから) */
-export function determineArchetype(scores: CognitiveScores): { archetype: Archetype | null; top2: [CogFunction, CogFunction]; top3: [CogFunction, CogFunction, CogFunction] } {
+// 文字反転テーブル: T↔F、N↔S、i↔e
+const OPPOSITE_LETTER: Record<string, string> = { N: 'S', S: 'N', T: 'F', F: 'T' };
+const OPPOSITE_ATTITUDE: Record<string, string> = { i: 'e', e: 'i' };
+
+/**
+ * 気質スタックの 4 層を (dom, aux) から展開する。
+ * 例: dom=Ni, aux=Te のとき
+ *   tertiary = Fi  (aux の letter を反転、attitude は dom と同じ)
+ *   inferior = Se  (dom の letter と attitude を両方反転)
+ */
+function temperamentStack(dom: CogFunction, aux: CogFunction): { tertiary: CogFunction; inferior: CogFunction } {
+  const domLetter = dom[0]!;
+  const domAtt = dom[1]!;
+  const auxLetter = aux[0]!;
+  const tertiary = (OPPOSITE_LETTER[auxLetter]! + domAtt) as CogFunction;
+  const inferior = (OPPOSITE_LETTER[domLetter]! + OPPOSITE_ATTITUDE[domAtt]!) as CogFunction;
+  return { tertiary, inferior };
+}
+
+/**
+ * 全 16 archetype に対して気質スタック適合度を計算し argmax。
+ * フォールバック不要 — 必ず測定された scores に最も合う archetype を返す。
+ */
+export function determineArchetype(scores: CognitiveScores): { archetype: Archetype; top2: [CogFunction, CogFunction]; top3: [CogFunction, CogFunction, CogFunction]; fitScore: number } {
   const sorted = (Object.entries(scores) as [CogFunction, number][])
     .sort((a, b) => b[1] - a[1])
-    .map(e => e[0]);
+    .map((e) => e[0]);
   const top2 = [sorted[0]!, sorted[1]!] as [CogFunction, CogFunction];
   const top3 = [sorted[0]!, sorted[1]!, sorted[2]!] as [CogFunction, CogFunction, CogFunction];
-  let archetype = archetypeFromFunctionPair(top2[0], top2[1]);
-  if (!archetype) {
-    // 無効ペア (Ni×Se など) → 3 位まで試す
-    archetype = archetypeFromFunctionPair(top2[0], top3[2]);
-    if (!archetype) archetype = archetypeFromFunctionPair(top2[1], top3[2]);
+
+  const w = ARCHETYPE_FIT_WEIGHTS;
+  let best: { archetype: Archetype; fit: number } | null = null;
+  for (const j of JOBS) {
+    const { tertiary, inferior } = temperamentStack(j.dominantFunction, j.auxiliaryFunction);
+    const fit =
+      w.dom * scores[j.dominantFunction] +
+      w.aux * scores[j.auxiliaryFunction] +
+      w.tertiary * scores[tertiary] +
+      w.inferior * scores[inferior];
+    if (!best || fit > best.fit) best = { archetype: j.id, fit };
   }
-  return { archetype, top2, top3 };
+  return { archetype: best!.archetype, top2, top3, fitScore: best!.fit };
 }
 
 /** 信頼度判定 (04-diagnosis.md §信頼度) */
@@ -226,7 +254,7 @@ export function diagnose(
   const confidence = computeConfidence(postCount, normalized);
 
   return {
-    archetype: archetype ?? 'sage', // フォールバック (ambiguous 時に補助的に使う)
+    archetype,
     rpgStats,
     cognitiveScores: normalized,
     confidence,
