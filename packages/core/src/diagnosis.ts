@@ -43,16 +43,26 @@ export function topNAverage(
 }
 
 /**
- * 認知機能スコア正規化: 最大値を 100 にスケール。
+ * 認知機能スコア正規化: min-max で 0-100 にリスケール。
+ *
+ * Ruri-v3 の類似度は全体的に高めに分布する (0.75-0.9 帯に固まる) ため、
+ * 最大値のみで割るとトップ以外が 80-90 に並び差が見えない。8 軸中の
+ * 最小を 0、最大を 100 にシフトするとシルエットが明確になる。
+ *
+ * 入力値が全て同じ場合は全て 0 を返す (分類不能)。
+ * 全て 0 (または負) の場合も 0 埋めフォールバック。
  */
 export function normalizeCognitive(scores: CognitiveScores): CognitiveScores {
-  const max = Math.max(...Object.values(scores));
-  if (max === 0) {
+  const vals = Object.values(scores);
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const range = maxV - minV;
+  if (range === 0) {
     return { Ni: 0, Ne: 0, Si: 0, Se: 0, Ti: 0, Te: 0, Fi: 0, Fe: 0 };
   }
   const out = {} as CognitiveScores;
   for (const k of Object.keys(scores) as CogFunction[]) {
-    out[k] = Math.round((scores[k] / max) * 100);
+    out[k] = Math.round(((scores[k] - minV) / range) * 100);
   }
   return out;
 }
@@ -181,16 +191,30 @@ export function diagnose(
     ? computePostWeights(options.timestamps, now)
     : new Array<number>(postEmbeddings.length).fill(1);
 
-  // 各投稿 × 各機能のスコア (Top-N 平均) を重み付け加算
+  // 各投稿について 8 機能スコアを取り、per-post で平均を引いて中心化してから加算。
+  // Ruri の類似度分布が全体的に高いため、生スコアをそのまま足すと「最も一般的な
+  // 機能プロトタイプ」が常に勝ってしまう (実際 Ni が全ユーザーで 1 位になる
+  // 現象が出ていた)。中心化すれば「この投稿は 8 機能のうちどれに特に傾いて
+  // いるか」だけが寄与する。
   const scoreAcc: CognitiveScores = { Ni: 0, Ne: 0, Si: 0, Se: 0, Ti: 0, Te: 0, Fi: 0, Fe: 0 };
   const fnKeys = Object.keys(cognitivePrototypes) as CogFunction[];
   let totalWeight = 0;
+  const F = fnKeys.length;
   for (let i = 0; i < postEmbeddings.length; i++) {
     const vec = postEmbeddings[i]!;
     const w = weights[i] ?? 1;
     totalWeight += w;
-    for (const fn of fnKeys) {
-      scoreAcc[fn] += topNAverage(vec, cognitivePrototypes[fn]) * w;
+
+    const perFn = new Array<number>(F);
+    let postMean = 0;
+    for (let f = 0; f < F; f++) {
+      const s = topNAverage(vec, cognitivePrototypes[fnKeys[f]!]);
+      perFn[f] = s;
+      postMean += s;
+    }
+    postMean /= F;
+    for (let f = 0; f < F; f++) {
+      scoreAcc[fnKeys[f]!] += (perFn[f]! - postMean) * w;
     }
   }
   const avg = {} as CognitiveScores;
