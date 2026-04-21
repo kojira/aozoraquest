@@ -1,7 +1,14 @@
-import { Agent } from '@atproto/api';
+import { Agent, AtpAgent } from '@atproto/api';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { restoreSession } from './oauth';
+
+/**
+ * 公開 AppView エンドポイント。OAuth セッションの PDS は app.bsky.* を
+ * プロキシするはずだが、一部のケース (session 復元直後など) で 401 を返す。
+ * 名前解決のような公開読み取りはこちらから引く。
+ */
+const PUBLIC_APPVIEW = 'https://api.bsky.app';
 
 export interface SessionState {
   status: 'loading' | 'signed-in' | 'signed-out';
@@ -48,8 +55,10 @@ async function setStateFromSession(
   const agent = new Agent(session);
   const did = session.did;
   const next: SessionState = { status: 'signed-in', did, agent };
+  // 公開 AppView から引く: PDS 経由の getProfile は初期化直後に 401 が出ることがある
   try {
-    const profile = await agent.getProfile({ actor: did });
+    const publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW });
+    const profile = await publicAgent.getProfile({ actor: did });
     if (profile.data.handle) next.handle = profile.data.handle;
   } catch (e) {
     console.warn('getProfile failed', e);
