@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>LLM 分類ハーネス (認知機能 / タグ)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 1em auto; padding: 0 1em; color: #222; line-height: 1.45; }
+    h1 { font-size: 1.1em; margin: 0 0 0.5em; }
+    h2 { font-size: 1em; margin: 1em 0 0.3em; color: #555; border-bottom: 1px solid #eee; }
+    .meta { font-size: 0.85em; color: #666; }
+    .phase { display: inline-block; padding: 0.2em 0.6em; border-radius: 4px; background: #fff8d6; color: #7b6300; font-size: 0.9em; }
+    .phase.done { background: #d4edda; color: #1a6230; }
+    .phase.error { background: #f8d7da; color: #842029; }
+    pre.log { font-family: ui-monospace, monospace; font-size: 0.8em; background: #0a0a0d; color: #ddd; padding: 0.6em; border-radius: 4px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; }
+    table { border-collapse: collapse; font-size: 0.85em; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 0.35em 0.5em; text-align: left; vertical-align: top; }
+    th { background: #f0f0f4; }
+    td.ok { background: #d4edda; }
+    td.ng { background: #f8d7da; }
+    .summary { padding: 0.8em 1em; border-radius: 4px; margin: 0.5em 0; }
+    .summary.ok { background: #d4edda; color: #1a6230; }
+    .summary.ng { background: #fff2cc; color: #7b6300; }
+  </style>
+</head>
+<body>
+  <h1 id="title">分類ハーネス</h1>
+  <div class="meta" id="env"></div>
+  <div style="margin: 0.5em 0"><span id="phase" class="phase">initializing</span> <span id="load-info" class="meta"></span></div>
+
+  <h2>結果サマリー</h2>
+  <div id="summary"></div>
+
+  <h2>サンプル別</h2>
+  <div id="sample-table"></div>
+
+  <h2>ログ</h2>
+  <pre id="log" class="log"></pre>
+
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.1.0/+esm';
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    // 評価データ (docs/data/validation/cognitive_labeled.jsonl から 40 件)
+    // playwright がフェッチで取ってくるので、埋め込んでしまう
+    const COG_DATA = [
+      { "text": "今この動きの向こう側に何があるか、もう見えてる気がする", "label": "Ni" },
+      { "text": "事象が全部、別の大きなテーマの縮図に見える", "label": "Ni" },
+      { "text": "説明できない確信が、たまに当たる", "label": "Ni" },
+      { "text": "物事の底流が変わる前兆だと思う", "label": "Ni" },
+      { "text": "言葉にしたら消えそうな予感を、そっと書き留めた", "label": "Ni" },
+      { "text": "映画見ながら、次に作りたいアプリが 3 個浮かんだ", "label": "Ne" },
+      { "text": "料理のレシピから組織論の話まで、脳が勝手に繋ぐ", "label": "Ne" },
+      { "text": "やりたいこと書き出したら 30 個超えた、絞れない", "label": "Ne" },
+      { "text": "「で、これ他に応用できない？」がデフォルト", "label": "Ne" },
+      { "text": "違う業界の人と話すと、自分の業界の謎が解けたりする", "label": "Ne" },
+      { "text": "去年の今頃のメモ見返してたら、同じ悩み抱えてて笑った", "label": "Si" },
+      { "text": "この店の定番、20 年前から変わらない味", "label": "Si" },
+      { "text": "過去ログ全部 Notion に移したら、過去の自分がコーチになる", "label": "Si" },
+      { "text": "身体が覚えてる手順は、頭で考えるより速い", "label": "Si" },
+      { "text": "いつもの道、いつもの時間、いつもの服", "label": "Si" },
+      { "text": "いま目の前のこの景色、写真じゃ伝わらない", "label": "Se" },
+      { "text": "考える前に、もう手が動いてた", "label": "Se" },
+      { "text": "このコーヒーの湯気の動きが好き", "label": "Se" },
+      { "text": "予定変更、今日は川沿いを走りに行く", "label": "Se" },
+      { "text": "体感が答えるから、頭を後からついてこさせる", "label": "Se" },
+      { "text": "「自由」を定義しない議論、根本的に無理ゲー", "label": "Ti" },
+      { "text": "統計の話で分母と分子を混ぜて議論が走ってる", "label": "Ti" },
+      { "text": "この仕様、エッジで確実に壊れる", "label": "Ti" },
+      { "text": "前提を 1 つだけ変えて再検証してみる", "label": "Ti" },
+      { "text": "「それは因果じゃなくて相関ですよね」って言いたい場面が多い", "label": "Ti" },
+      { "text": "ゴール設定して、逆算して、今日のタスクを 3 つに絞った", "label": "Te" },
+      { "text": "決裁フローが長すぎる、1 段階減らせば 3 日短縮できる", "label": "Te" },
+      { "text": "完璧な企画書より、動く試作を金曜までに", "label": "Te" },
+      { "text": "「とりあえず会議で」じゃなくて、こっちで決めて持っていこう", "label": "Te" },
+      { "text": "30 分で決まらない議題は、情報が足りないか切り方が悪い", "label": "Te" },
+      { "text": "条件良くても価値観合わないオファーは断った", "label": "Fi" },
+      { "text": "自分の本音に逆らって笑うの、しんどすぎ", "label": "Fi" },
+      { "text": "これだけは譲れないっていう軸が、だんだん輪郭出てきた", "label": "Fi" },
+      { "text": "誰かの正義のために、自分の感覚を曲げない", "label": "Fi" },
+      { "text": "心の声が NO って言ってる時は、たいてい正しい", "label": "Fi" },
+      { "text": "みんなの温度差に気づいて、ちょっと話題変えた", "label": "Fe" },
+      { "text": "後輩が暗い顔してたから、コーヒー誘った", "label": "Fe" },
+      { "text": "場の空気、正直しんどいけど、読むのは止められない", "label": "Fe" },
+      { "text": "誰も拾わなかった発言を、拾っておいた", "label": "Fe" },
+      { "text": "誕生日忘れてた友達に、遅くてもちゃんと伝える", "label": "Fe" },
+    ];
+
+    const FUNCTIONS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
+
+    // Harness state
+    const out = {
+      status: 'running',
+      phase: 'init',
+      modelId: null,
+      dtype: null,
+      device: null,
+      loadMs: null,
+      results: [],
+      logs: [],
+      error: null,
+      summary: {},
+    };
+    window.__RESULT__ = out;
+
+    const logEl = document.getElementById('log');
+    const phaseEl = document.getElementById('phase');
+    const loadInfoEl = document.getElementById('load-info');
+    const summaryEl = document.getElementById('summary');
+    const tableEl = document.getElementById('sample-table');
+    const titleEl = document.getElementById('title');
+    const envEl = document.getElementById('env');
+
+    const log = (msg) => {
+      out.logs.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+      logEl.textContent = out.logs.join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    const setPhase = (p, cls = '') => {
+      out.phase = p;
+      phaseEl.textContent = p;
+      phaseEl.className = 'phase ' + cls;
+    };
+
+    const params = new URLSearchParams(location.search);
+    const modelId = params.get('model') || 'onnx-community/TinySwallow-1.5B-Instruct-ONNX';
+    const dtype = params.get('dtype') || 'q4';
+    const device = params.get('device') || 'webgpu';
+    out.modelId = modelId; out.dtype = dtype; out.device = device;
+
+    titleEl.textContent = `分類 ${modelId} (${dtype}, ${device})`;
+    envEl.textContent = `UA: ${navigator.userAgent.slice(0, 120)}...`;
+
+    // init table
+    const thead = '<tr><th>#</th><th>正解</th><th>予測</th><th>投稿</th><th>速度</th><th>生出力</th></tr>';
+    tableEl.innerHTML = `<table><thead>${thead}</thead><tbody id="tbody"></tbody></table>`;
+    const tbodyEl = document.getElementById('tbody');
+
+    // Few-shot 例 (packages/prompts/cognitive/*.json から各 2 件抜粋、テストセットと重複しない)
+    const FEWSHOT = [
+      { label: 'Ni', text: '今起きてることの 10 年後の姿が、なぜか見えてしまう' },
+      { label: 'Ni', text: '個別の出来事じゃなく、流れそのものが見える瞬間がある' },
+      { label: 'Ne', text: 'この話、別の業界に持っていったら全然違う使い方できそう' },
+      { label: 'Ne', text: '一個アイデア出るたびに、枝が 3 本分岐するから手が追いつかない' },
+      { label: 'Si', text: '以前同じような状況でこう対処したのを覚えてる' },
+      { label: 'Si', text: '手順通りにやる方が結局速い' },
+      { label: 'Se', text: '今この瞬間の体感が全て' },
+      { label: 'Se', text: '頭で考えるより先に体が動いてた' },
+      { label: 'Ti', text: 'その定義だと、こことここで矛盾しない？' },
+      { label: 'Ti', text: '概念の線引きをしないと議論が滑る' },
+      { label: 'Te', text: 'で、次のアクションは？' },
+      { label: 'Te', text: '目標から逆算して今週のタスクを決めた' },
+      { label: 'Fi', text: '自分にとって譲れないラインがある' },
+      { label: 'Fi', text: '合わない人に合わせるエネルギーを、合う人に使う' },
+      { label: 'Fe', text: 'みんなが楽しそうだと、自分も嬉しい' },
+      { label: 'Fe', text: '場の空気を読むのは、たぶん呼吸みたいなもの' },
+    ];
+
+    function buildPrompt(text) {
+      const examples = FEWSHOT.map(e => `投稿: "${e.text}"\n答え: ${e.label}`).join('\n\n');
+      return `次の投稿を、ユング派の 8 認知機能 (Ni / Ne / Si / Se / Ti / Te / Fi / Fe) のうち最も該当するもの 1 つに分類してください。
+
+機能の定義:
+- Ni: 表面の奥にある本質・パターン・未来のビジョンの直感
+- Ne: 連想・可能性の列挙、異分野の接続、アイデアの発散
+- Si: 記憶・既知の詳細・伝統・積み上げた経験への信頼
+- Se: 今この瞬間の感覚、身体性、即時反応、現場対応
+- Ti: 内的論理体系、定義の精密化、整合性の追求
+- Te: 効率・結果・外的秩序化・意思決定・実行
+- Fi: 個人的な価値観、真正性、内なる倫理
+- Fe: 場の調和、他者の感情への配慮、社会的連結
+
+例:
+
+${examples}
+
+投稿: "${text}"
+答え:`;
+    }
+
+    function parseLabel(text) {
+      // 先頭付近 (最初の 30 字以内) の最初の機能ラベルを採用。
+      // 「答え:」の直後から開始することが多いので、先頭付近を優先する。
+      const head = text.slice(0, 30);
+      const m = head.match(/\b(Ni|Ne|Si|Se|Ti|Te|Fi|Fe)\b/);
+      if (m) return m[1];
+      // fallback: 全体から最初のマッチ
+      const m2 = text.match(/\b(Ni|Ne|Si|Se|Ti|Te|Fi|Fe)\b/);
+      return m2 ? m2[1] : null;
+    }
+
+    (async () => {
+      setPhase('loading');
+      loadInfoEl.textContent = 'モデル読込中...';
+      const loadStart = performance.now();
+      let generator;
+      try {
+        generator = await pipeline('text-generation', modelId, {
+          device,
+          dtype,
+          progress_callback: (p) => {
+            if (p.status === 'progress' && p.file && p.total) {
+              const pct = ((p.progress || 0)).toFixed(0);
+              loadInfoEl.textContent = `DL ${p.file}: ${pct}%`;
+            }
+          },
+        });
+        out.loadMs = performance.now() - loadStart;
+        log(`load OK (${(out.loadMs / 1000).toFixed(1)}s)`);
+        loadInfoEl.textContent = `ロード完了: ${(out.loadMs / 1000).toFixed(1)}s`;
+      } catch (e) {
+        out.status = 'error';
+        out.error = String(e.message || e);
+        setPhase('load-failed', 'error');
+        log(`LOAD FAILED: ${out.error}`);
+        window.__DONE__ = true;
+        return;
+      }
+
+      setPhase('classifying');
+      const tokenizer = generator.tokenizer;
+      const hasChat = tokenizer?.chat_template || tokenizer?.default_chat_template;
+
+      // 混同行列初期化
+      const confusion = {};
+      for (const a of FUNCTIONS) { confusion[a] = {}; for (const b of FUNCTIONS) confusion[a][b] = 0; }
+      let correct = 0;
+      const latencies = [];
+
+      for (let i = 0; i < COG_DATA.length; i++) {
+        const ex = COG_DATA[i];
+        const t0 = performance.now();
+        let rawText = '';
+        let predicted = null;
+        try {
+          const prompt = buildPrompt(ex.text);
+          const input = hasChat ? [{ role: 'user', content: prompt }] : prompt;
+          const gen = await generator(input, {
+            max_new_tokens: 40,
+            do_sample: false,
+            temperature: 0,
+            return_full_text: false,
+          });
+          const first = Array.isArray(gen) ? gen[0] : gen;
+          if (Array.isArray(first.generated_text)) {
+            const last = first.generated_text[first.generated_text.length - 1];
+            rawText = typeof last === 'object' ? last.content : String(last);
+          } else {
+            rawText = String(first.generated_text || '');
+          }
+          rawText = rawText.trim();
+          predicted = parseLabel(rawText);
+        } catch (e) {
+          rawText = `ERR: ${String(e.message || e)}`;
+        }
+        const latencyMs = performance.now() - t0;
+        latencies.push(latencyMs);
+
+        const ok = predicted === ex.label;
+        if (ok) correct++;
+        if (predicted && confusion[ex.label] && confusion[ex.label][predicted] !== undefined) {
+          confusion[ex.label][predicted]++;
+        }
+
+        out.results.push({
+          idx: i,
+          text: ex.text,
+          actual: ex.label,
+          predicted,
+          rawText,
+          latencyMs,
+          ok,
+        });
+
+        // Update table row
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td><strong>${ex.label}</strong></td>
+          <td class="${ok ? 'ok' : 'ng'}">${predicted ?? '-'}</td>
+          <td>${ex.text.replace(/</g, '&lt;')}</td>
+          <td>${(latencyMs / 1000).toFixed(1)}s</td>
+          <td style="font-family:ui-monospace,monospace;font-size:0.8em;">${rawText.slice(0, 120).replace(/</g, '&lt;')}</td>
+        `;
+        tbodyEl.appendChild(tr);
+
+        // Update summary incrementally
+        const acc = correct / (i + 1);
+        summaryEl.innerHTML = `<div class="summary ${acc >= 0.5 ? 'ok' : 'ng'}">Top-1 精度: <strong>${(acc * 100).toFixed(1)}%</strong> (${correct}/${i + 1})</div>`;
+      }
+
+      latencies.sort((a, b) => a - b);
+      const p50 = latencies[Math.floor(latencies.length * 0.5)];
+      const p95 = latencies[Math.floor(latencies.length * 0.95)];
+      const mean = latencies.reduce((s, v) => s + v, 0) / latencies.length;
+
+      const top1 = correct / COG_DATA.length;
+      out.summary = {
+        total: COG_DATA.length,
+        correct,
+        top1Accuracy: top1,
+        latency: { mean, p50, p95 },
+        confusion,
+      };
+
+      // Final summary
+      summaryEl.innerHTML = `
+        <div class="summary ${top1 >= 0.5 ? 'ok' : 'ng'}">
+          <strong>Top-1 精度: ${(top1 * 100).toFixed(1)}% (${correct} / ${COG_DATA.length})</strong><br>
+          レイテンシ: p50 ${(p50 / 1000).toFixed(2)}s / p95 ${(p95 / 1000).toFixed(2)}s / 平均 ${(mean / 1000).toFixed(2)}s<br>
+          <span class="meta">MiniLM 参考: 70.0% / Gemini v1 参考: 95.0%</span>
+        </div>
+      `;
+      log(`DONE. Top-1 = ${(top1 * 100).toFixed(1)}%`);
+
+      setPhase('done', 'done');
+      out.status = 'ok';
+      window.__DONE__ = true;
+    })().catch(e => {
+      out.status = 'error';
+      out.error = String(e.message || e);
+      setPhase('fatal-error', 'error');
+      log(`FATAL: ${out.error}`);
+      window.__DONE__ = true;
+    });
+  </script>
+</body>
+</html>

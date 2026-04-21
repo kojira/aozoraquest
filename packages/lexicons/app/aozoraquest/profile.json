@@ -1,0 +1,47 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.profile",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "User profile settings and target job for Aozora Quest",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["targetJob", "nameVariant", "updatedAt"],
+        "properties": {
+          "targetJob": {
+            "type": "string",
+            "description": "Target job id (e.g., 'sage', 'explorer')",
+            "knownValues": [
+              "sage", "mage", "shogun", "bard",
+              "seer", "poet", "paladin", "explorer",
+              "warrior", "guardian", "fighter", "dancer",
+              "captain", "miko", "gladiator", "performer"
+            ]
+          },
+          "nameVariant": {
+            "type": "string",
+            "knownValues": ["default", "maker", "alt"],
+            "default": "default"
+          },
+          "publicAnalysis": {
+            "type": "boolean",
+            "default": false
+          },
+          "discoverable": {
+            "type": "boolean",
+            "description": "Opt-in: can be added to the admin directory for the 共鳴 timeline",
+            "default": false
+          },
+          "spiritStyle": {
+            "type": "string",
+            "knownValues": ["sky"],
+            "default": "sky"
+          },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

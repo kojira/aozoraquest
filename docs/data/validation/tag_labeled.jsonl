@@ -1,0 +1,90 @@
+{"text": "ねえ、スマホの機種変更っていつがベストタイミング？", "label": "question"}
+{"text": "この本、読んだ人いる？感想聞きたい", "label": "question"}
+{"text": "3 年前の動画で見たあの技の名前、誰か覚えてる？", "label": "question"}
+{"text": "育休取った人、復帰後ってすんなり戻れた？", "label": "question"}
+{"text": "なんで会議室って必ず寒すぎるか暑すぎるかのどっちかなの", "label": "question"}
+{"text": "初めての海外旅行、どこがおすすめ？", "label": "question"}
+{"text": "このエラーメッセージ、心当たりある人いますか", "label": "question"}
+{"text": "なぜ人は金曜の夜に自炊する気力を失うのか", "label": "question"}
+{"text": "英語学習、結局何が一番効いた？", "label": "question"}
+{"text": "梅雨の湿気対策、みんなどうしてる", "label": "question"}
+{"text": "もう限界かも、何も手につかない", "label": "distress"}
+{"text": "期待に応えられない自分が嫌になる", "label": "distress"}
+{"text": "一人でいるのに寂しいって、変だよね", "label": "distress"}
+{"text": "泣きそうだけど、泣ける場所がない", "label": "distress"}
+{"text": "頑張ってるのに評価されないとき、心が折れる", "label": "distress"}
+{"text": "家に帰りたいのに、家にいても落ち着かない", "label": "distress"}
+{"text": "眠れない夜が続いてる", "label": "distress"}
+{"text": "失敗を思い出して夜中に起きる", "label": "distress"}
+{"text": "誰かに全部話したいけど、誰にも話せない", "label": "distress"}
+{"text": "こんなに疲れてるの、自分だけじゃないはず、って言い聞かせてる", "label": "distress"}
+{"text": "転職先、正式に決まりました", "label": "goodnews"}
+{"text": "10 年ぶりの友達と再会できた", "label": "goodnews"}
+{"text": "娘が初めて「ありがとう」って言った", "label": "goodnews"}
+{"text": "苦手な上司が異動になった、心から祝う", "label": "goodnews"}
+{"text": "健康診断 A 判定だった、続ける", "label": "goodnews"}
+{"text": "書いた小説、出版が決まった", "label": "goodnews"}
+{"text": "新居の鍵を受け取った", "label": "goodnews"}
+{"text": "長年欲しかった時計、ついに買った", "label": "goodnews"}
+{"text": "夫が記念日を覚えててくれた", "label": "goodnews"}
+{"text": "試験に受かった、信じられない", "label": "goodnews"}
+{"text": "今日もやる気スイッチ、工場出荷時設定", "label": "humor"}
+{"text": "冷蔵庫に理由なく入れられたリモコン、探し続けて 20 分", "label": "humor"}
+{"text": "「明日やる」が口癖の人類代表です", "label": "humor"}
+{"text": "ダイエット宣言した翌日、ケーキを 2 つ食べた理由を説明します", "label": "humor"}
+{"text": "寝ようとした瞬間に名案が浮かぶ謎現象の解明求む", "label": "humor"}
+{"text": "月曜の朝、自分の存在意義を疑う会議の議長を務めます", "label": "humor"}
+{"text": "家を出た直後にトイレ行きたくなる呪い、誰が解けるの", "label": "humor"}
+{"text": "洗った靴下、片方だけ次元の狭間に消える件", "label": "humor"}
+{"text": "やる気ゲージは満タンにすると溢れてゼロになる", "label": "humor"}
+{"text": "休みの日に限って早起きする才能、使い道がない", "label": "humor"}
+{"text": "日本の少子化議論、原因分析と政策の解像度がかみ合ってない", "label": "analysis"}
+{"text": "リモートワークが定着するかは、職種よりマネジメント能力に依存する", "label": "analysis"}
+{"text": "AI 時代の教育、暗記より問いの質で差がつく", "label": "analysis"}
+{"text": "サブスク疲れの本質は、金額より「解約するか判断する認知負荷」", "label": "analysis"}
+{"text": "地方再生の成功例、共通点は外部人材と地元の熱量の掛け算", "label": "analysis"}
+{"text": "日本企業の DX が進まない構造は、IT 予算の位置づけに表れてる", "label": "analysis"}
+{"text": "若者の消費傾向、可処分所得より可処分時間の方が効く説", "label": "analysis"}
+{"text": "UX 改善で一番効くのは新機能より摩擦の除去", "label": "analysis"}
+{"text": "気候変動対策のトレードオフは、経済成長と倫理の単純対立じゃない", "label": "analysis"}
+{"text": "チーム生産性の低下は、会議数じゃなくてコンテキストスイッチ数で測るべき", "label": "analysis"}
+{"text": "ワクチン義務化は社会コスト面で合理的だと思う", "label": "opinion"}
+{"text": "英語を公用語化する会社、だいたい失敗するよね", "label": "opinion"}
+{"text": "チップ文化を日本に持ち込むのは反対", "label": "opinion"}
+{"text": "人事評価で数値化できる指標だけ見る会社は滅ぶ", "label": "opinion"}
+{"text": "大学は研究機関であって就職予備校じゃない", "label": "opinion"}
+{"text": "SNS の匿名性は表現の自由の基本要素", "label": "opinion"}
+{"text": "子供の写真を親が勝手に投稿するのは、もっと議論されていい", "label": "opinion"}
+{"text": "オフィス回帰を強制する会社は、優秀層から離職される", "label": "opinion"}
+{"text": "「根性論」は教育の放棄だと思う", "label": "opinion"}
+{"text": "公共交通機関で飲食禁止は徹底すべき", "label": "opinion"}
+{"text": "古い団地のベランダに並ぶ植木鉢、どれも名前のない花", "label": "underseen"}
+{"text": "雨に濡れた朱印帳の、ちょっと滲んだ字が好き", "label": "underseen"}
+{"text": "朝 5 時のコンビニ、店員さんと客の静かな挨拶", "label": "underseen"}
+{"text": "祖母が毎年漬けてる梅干しの容器、同じのを 30 年使ってる", "label": "underseen"}
+{"text": "駅前の本屋が、平日昼に読み聞かせやってた", "label": "underseen"}
+{"text": "路地裏の煉瓦塀、地衣類が年輪みたいに広がってる", "label": "underseen"}
+{"text": "和菓子屋の季節の上生菓子、名前の付け方がいつも美しい", "label": "underseen"}
+{"text": "公民館の掲示板、昔の手書きポスターがまだ貼ってある", "label": "underseen"}
+{"text": "古い銭湯の番台の灰皿、昭和の貝殻のまま", "label": "underseen"}
+{"text": "夜の街灯の下で本を読むおじいさん、毎週同じ場所", "label": "underseen"}
+{"text": "今ちょうどニュース速報出た", "label": "fresh"}
+{"text": "地震、大きくない？震度どれくらいだった", "label": "fresh"}
+{"text": "ライブ会場なう、サウンドチェック終わった", "label": "fresh"}
+{"text": "さっき見かけた虹、二重だった", "label": "fresh"}
+{"text": "雹降ってきた、5 月なのに", "label": "fresh"}
+{"text": "新宿駅で構内放送、遅延情報", "label": "fresh"}
+{"text": "カフェの席取れた、新作フラペ飲める", "label": "fresh"}
+{"text": "今日オープンのパン屋、行列できてる", "label": "fresh"}
+{"text": "飛行機 5 分早く着いた、珍しい", "label": "fresh"}
+{"text": "会議キャンセル、急に午後が空いた", "label": "fresh"}
+{"text": "選択的夫婦別姓、反対論の論理的根拠が弱い", "label": "debated"}
+{"text": "週休 3 日制、ホワイトカラーには段階導入すべき", "label": "debated"}
+{"text": "消費税減税の是非、景気と財政のバランスをどう取るか", "label": "debated"}
+{"text": "AI 生成物の著作権、現行法で対応しきれていない", "label": "debated"}
+{"text": "電車での女性専用車両、制度の合理性は議論の余地あり", "label": "debated"}
+{"text": "死刑制度、存置か廃止か、国民的合意形成はまだ", "label": "debated"}
+{"text": "学校での個人面談、保護者同席か生徒単独か", "label": "debated"}
+{"text": "マイナンバー制度、利便性とプライバシーの比較", "label": "debated"}
+{"text": "遺伝子編集食品、表示義務の範囲", "label": "debated"}
+{"text": "交通違反のキャッシュレス罰金、徴収効率と公平性", "label": "debated"}

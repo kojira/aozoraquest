@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.config.prompts",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "System prompt for a specific Claude/OpenRouter-backed feature (admin-owned)",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["id", "body", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "knownValues": ["spiritChat", "draftPost", "advancedDiagnosis"] },
+          "body": { "type": "string", "maxLength": 8000 },
+          "notes": { "type": "string", "maxLength": 500 },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

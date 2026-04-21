@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Browser LLM レイテンシ計測 (WebGPU)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2em auto; padding: 0 1em; color: #222; }
+    h1 { font-size: 1.4em; }
+    .row { display: flex; gap: 0.5em; align-items: center; margin: 0.5em 0; }
+    select, input, button { padding: 0.4em 0.6em; font-size: 0.95em; }
+    button { background: #378ADD; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    pre { background: #f4f4f6; padding: 1em; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
+    table { border-collapse: collapse; margin: 1em 0; }
+    th, td { border: 1px solid #ccc; padding: 0.3em 0.6em; text-align: right; }
+    th { background: #f0f0f4; }
+    td:first-child { text-align: left; }
+    .log { font-family: ui-monospace, monospace; font-size: 0.85em; background: #0a0a0d; color: #eee; padding: 1em; border-radius: 4px; max-height: 300px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>Browser LLM レイテンシ計測</h1>
+  <p>
+    11-validation.md §実験 1 の一部。<code>scripts/validate-llm.ts</code> (Node / WASM) の結果に加え、
+    実ブラウザでの WebGPU レイテンシを取得する。
+  </p>
+  <p>
+    <strong>使い方</strong>:
+    このファイルを <code>aozoraquest.app</code> などの HTTPS オリジン配下に置くか、
+    <code>python3 -m http.server</code> でローカル配信してアクセス。
+    モデルと試行回数を選んで「計測開始」。
+  </p>
+
+  <div class="row">
+    <label>モデル:</label>
+    <select id="model">
+      <option value="Xenova/multilingual-e5-small">multilingual-e5-small (~130MB)</option>
+      <option value="Xenova/multilingual-e5-base">multilingual-e5-base (~280MB)</option>
+      <option value="Xenova/paraphrase-multilingual-MiniLM-L12-v2">paraphrase-multilingual-MiniLM-L12-v2 (~120MB)</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>バックエンド:</label>
+    <select id="device">
+      <option value="webgpu">WebGPU (推奨)</option>
+      <option value="wasm">WASM (フォールバック)</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>dtype:</label>
+    <select id="dtype">
+      <option value="q8">q8 (量子化、速い)</option>
+      <option value="fp16">fp16</option>
+      <option value="fp32">fp32</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>試行数:</label>
+    <input id="trials" type="number" value="100" min="10" max="1000">
+    <span>(ウォームアップ 5 回を除く)</span>
+  </div>
+
+  <div class="row">
+    <button id="start">計測開始</button>
+  </div>
+
+  <h2>結果</h2>
+  <div id="summary"></div>
+
+  <h2>ログ</h2>
+  <pre id="log" class="log"></pre>
+
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm';
+
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    const SAMPLES = [
+      "なんかもう何もかも嫌になってきた。眠れない",
+      "朝から冷蔵庫開けて、何を取りに来たか忘れた。脳みそどこ行った",
+      "最近の AI 動向を整理すると、基盤モデルの寡占化とエッジ推論の民主化が同時並行で進んでいる",
+      "リモートワークは全業種で選択肢として残すべきだと思う",
+      "雨上がりの夕方、通学路のアスファルトがピンク色に光る一瞬が好き",
+      "やった！プロジェクトが無事リリースできた。みんなお疲れさま",
+      "みんな朝ごはん何食べてる？シリアル飽きた",
+      "いま電車止まってる。人身事故らしい",
+      "満員電車でリュックを前に抱えない人は配慮不足だと思う",
+      "会議は 30 分が上限。1 時間取る時点で設計ミス",
+    ];
+
+    const logEl = document.getElementById('log');
+    const summaryEl = document.getElementById('summary');
+    const btn = document.getElementById('start');
+
+    function log(msg) {
+      logEl.textContent += msg + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function percentile(arr, p) {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const idx = Math.min(Math.floor(sorted.length * p), sorted.length - 1);
+      return sorted[idx];
+    }
+
+    function needsE5Prefix(modelId) {
+      return /e5/i.test(modelId);
+    }
+
+    async function run() {
+      btn.disabled = true;
+      summaryEl.innerHTML = '';
+
+      const modelId = document.getElementById('model').value;
+      const device = document.getElementById('device').value;
+      const dtype = document.getElementById('dtype').value;
+      const trials = parseInt(document.getElementById('trials').value, 10);
+      const prefix = needsE5Prefix(modelId) ? 'passage: ' : '';
+
+      log(`モデル: ${modelId}`);
+      log(`バックエンド: ${device}, dtype: ${dtype}`);
+      log(`試行数: ${trials} (+ ウォームアップ 5)`);
+      log('ロード開始...');
+
+      const loadStart = performance.now();
+      let extractor;
+      try {
+        extractor = await pipeline('feature-extraction', modelId, {
+          device,
+          dtype,
+          progress_callback: (p) => {
+            if (p.status === 'progress' && p.file) {
+              log(`  ${p.file}: ${(p.progress || 0).toFixed(1)}%`);
+            }
+          },
+        });
+      } catch (e) {
+        log(`ロード失敗: ${e.message}`);
+        btn.disabled = false;
+        return;
+      }
+      const loadTime = performance.now() - loadStart;
+      log(`ロード完了 (${(loadTime / 1000).toFixed(1)}s)`);
+
+      // ウォームアップ
+      log('ウォームアップ 5 回...');
+      for (let i = 0; i < 5; i++) {
+        await extractor(prefix + SAMPLES[i % SAMPLES.length], {
+          pooling: 'mean',
+          normalize: true,
+        });
+      }
+
+      // 計測
+      log(`計測中 (${trials} 回)...`);
+      const latencies = [];
+      for (let i = 0; i < trials; i++) {
+        const text = prefix + SAMPLES[i % SAMPLES.length];
+        const t = performance.now();
+        await extractor(text, { pooling: 'mean', normalize: true });
+        latencies.push(performance.now() - t);
+        if ((i + 1) % 25 === 0) log(`  ${i + 1} / ${trials}`);
+      }
+
+      const mean = latencies.reduce((s, v) => s + v, 0) / latencies.length;
+      const p50 = percentile(latencies, 0.5);
+      const p95 = percentile(latencies, 0.95);
+      const p99 = percentile(latencies, 0.99);
+
+      log('\n=== 結果 ===');
+      log(`平均:   ${mean.toFixed(1)}ms`);
+      log(`p50:    ${p50.toFixed(1)}ms`);
+      log(`p95:    ${p95.toFixed(1)}ms`);
+      log(`p99:    ${p99.toFixed(1)}ms`);
+
+      const ok = (v, max) => v <= max ? '✓' : '✗';
+      const threshold = device === 'webgpu' ? 100 : 500;
+      summaryEl.innerHTML = `
+        <table>
+          <tr><th>指標</th><th>値</th><th>基準</th><th>判定</th></tr>
+          <tr><td>ロード時間</td><td>${(loadTime / 1000).toFixed(1)}s</td><td>-</td><td>-</td></tr>
+          <tr><td>平均</td><td>${mean.toFixed(1)}ms</td><td>-</td><td>-</td></tr>
+          <tr><td>p50</td><td>${p50.toFixed(1)}ms</td><td>-</td><td>-</td></tr>
+          <tr><td>p95</td><td>${p95.toFixed(1)}ms</td><td>${threshold}ms</td><td>${ok(p95, threshold)}</td></tr>
+          <tr><td>p99</td><td>${p99.toFixed(1)}ms</td><td>-</td><td>-</td></tr>
+        </table>
+        <p>この結果を docs/data/llm-benchmark.md に手動で転記してください。</p>
+      `;
+
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', run);
+  </script>
+</body>
+</html>

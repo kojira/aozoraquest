@@ -1,0 +1,26 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.config.bans",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "DIDs to hide from timelines (admin-owned)",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["dids", "updatedAt"],
+        "properties": {
+          "dids": {
+            "type": "array",
+            "items": { "type": "string", "format": "did" }
+          },
+          "notes": {
+            "type": "unknown",
+            "description": "Optional map of did to note string"
+          },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

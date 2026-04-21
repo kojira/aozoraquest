@@ -1,0 +1,32 @@
+{
+  "name": "aozoraquest",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "build:prototypes": "tsx scripts/build-prototypes.ts",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "validate:llm": "tsx scripts/validate-llm.ts",
+    "validate:llm:gemini": "tsx scripts/validate-llm-gemini.ts",
+    "validate:llm:gen": "tsx scripts/validate-llm-gen-playwright.ts",
+    "validate:llm:cls": "tsx scripts/validate-llm-cls-playwright.ts",
+    "validate:data": "tsx scripts/validate-data.ts",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@google/genai": "^1.50.1",
+    "@huggingface/transformers": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.4",
+    "dotenv": "^17.4.2",
+    "onnxruntime-node": "^1",
+    "playwright": "^1.59.1",
+    "tsx": "^4",
+    "turbo": "^2",
+    "typescript": "^5",
+    "vitest": "^2",
+    "zod": "^3"
+  }
+}

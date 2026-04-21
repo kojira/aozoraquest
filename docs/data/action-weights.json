@@ -1,0 +1,173 @@
+{
+  "$schema": "./schemas/action-weights.schema.json",
+  "description": "Action × Stat weight table. Each action adds to main stats and subtracts from opposing stats. Daily cap per action type is 5. Decay half-life is 60 days. Floor value is 5.",
+  "parameters": {
+    "dailyCapPerActionType": 5,
+    "decayHalfLifeDays": 60,
+    "minStatValue": 5,
+    "opposingPairs": [
+      ["atk", "def"],
+      ["agi", "int"]
+    ]
+  },
+  "actions": {
+    "opinion_post": {
+      "label": "意見ポスト",
+      "description": "断定・主張を含む投稿",
+      "weights": { "atk": 3, "def": -1, "agi": 0, "int": 1, "luk": 0 },
+      "detection": {
+        "requires": ["post"],
+        "tagsAny": ["opinion"]
+      }
+    },
+    "analysis_post": {
+      "label": "長文分析ポスト",
+      "description": "200 字以上の分析的な投稿",
+      "weights": { "atk": 1, "def": 0, "agi": -1, "int": 3, "luk": 0 },
+      "detection": {
+        "requires": ["post"],
+        "minTextLength": 200,
+        "tagsAny": ["analysis"]
+      }
+    },
+    "short_burst": {
+      "label": "短文連投",
+      "description": "60 字未満の投稿 (時間的連続性はクエスト側で判定)",
+      "weights": { "atk": 0, "def": 0, "agi": 3, "int": -1, "luk": 1 },
+      "detection": {
+        "requires": ["post"],
+        "maxTextLength": 60
+      }
+    },
+    "quick_reply": {
+      "label": "5 分以内の即レス",
+      "description": "親投稿から 5 分以内に返信",
+      "weights": { "atk": 0, "def": -1, "agi": 2, "int": 0, "luk": 1 },
+      "detection": {
+        "requires": ["reply"],
+        "maxReplyDelaySeconds": 300
+      }
+    },
+    "empathy_reply": {
+      "label": "共感リプ",
+      "description": "感情的な内容への共感を示すリプ",
+      "weights": { "atk": -1, "def": 1, "agi": 0, "int": 0, "luk": 3 },
+      "detection": {
+        "requires": ["reply"],
+        "parentTagsAny": ["distress", "goodnews"]
+      }
+    },
+    "humor_post": {
+      "label": "ユーモア投稿",
+      "description": "笑いや遊び心を含む投稿",
+      "weights": { "atk": 0, "def": 0, "agi": 0, "int": 0, "luk": 3 },
+      "detection": {
+        "requires": ["post"],
+        "tagsAny": ["humor"]
+      }
+    },
+    "quote_with_opinion": {
+      "label": "引用リポスト + 意見",
+      "description": "引用に自分の意見を添える",
+      "weights": { "atk": 2, "def": -1, "agi": 0, "int": 1, "luk": 0 },
+      "detection": {
+        "requires": ["quote"],
+        "tagsAny": ["opinion"]
+      }
+    },
+    "quote_with_analysis": {
+      "label": "引用リポスト + 考察",
+      "description": "引用に分析や考察を添える",
+      "weights": { "atk": 0, "def": 0, "agi": -1, "int": 2, "luk": 1 },
+      "detection": {
+        "requires": ["quote"],
+        "tagsAny": ["analysis"]
+      }
+    },
+    "thread_continue": {
+      "label": "スレッド継続",
+      "description": "自己連投 3 件以上の継続",
+      "weights": { "atk": 0, "def": 2, "agi": 0, "int": 1, "luk": 0 },
+      "detection": {
+        "requires": ["post"],
+        "selfReplyChainMin": 3
+      }
+    },
+    "calm_debate_reply": {
+      "label": "冷静な議論応答",
+      "description": "論争的な親投稿に冷静に応答",
+      "weights": { "atk": -1, "def": 2, "agi": 0, "int": 1, "luk": 0 },
+      "detection": {
+        "requires": ["reply"],
+        "parentTagsAny": ["debated"]
+      }
+    },
+    "streak_maintain": {
+      "label": "連続投稿日数維持",
+      "description": "日次、少なくとも 1 投稿がその日に発生",
+      "weights": { "atk": 0, "def": 2, "agi": 0, "int": 0, "luk": 0 },
+      "detection": {
+        "requires": ["dailyStreak"]
+      }
+    },
+    "like_underseen": {
+      "label": "埋もれた投稿へいいね",
+      "description": "60 分以上経過かつ いいね 5 件未満のポストへのいいね",
+      "weights": { "atk": 0, "def": 0, "agi": 0, "int": 0, "luk": 2 },
+      "detection": {
+        "requires": ["like"],
+        "parentMinAgeSeconds": 3600,
+        "parentMaxLikes": 5
+      }
+    },
+    "like_regular": {
+      "label": "普通のいいね",
+      "description": "デフォルトのいいね行動",
+      "weights": { "atk": 0, "def": 0, "agi": 0, "int": 0, "luk": 1 },
+      "detection": {
+        "requires": ["like"]
+      }
+    },
+    "repost_only": {
+      "label": "リポストのみ",
+      "description": "コメントなしのリポスト",
+      "weights": { "atk": 0, "def": 0, "agi": 1, "int": 0, "luk": 0 },
+      "detection": {
+        "requires": ["repost"]
+      }
+    }
+  },
+  "antiCheat": {
+    "sameUserLikeCooldownHours": 4,
+    "dailyLukCapFromLikes": 15,
+    "minReplyTextLength": 10,
+    "rapidReplyDecayAfterSeconds": 300,
+    "rapidReplyDecayFactor": 0.5,
+    "botProfileBadgeSuppress": true,
+    "qualityMultiplier": {
+      "description": "If user's recent posts are spammy, reduce LUK gain from giving likes",
+      "factor": 0.5,
+      "criteria": {
+        "last24hAllShort": true,
+        "duplicateContent": true
+      }
+    }
+  },
+  "resolutionOrder": [
+    "quote_with_analysis",
+    "quote_with_opinion",
+    "calm_debate_reply",
+    "empathy_reply",
+    "quick_reply",
+    "analysis_post",
+    "humor_post",
+    "opinion_post",
+    "short_burst",
+    "thread_continue",
+    "like_underseen",
+    "like_regular",
+    "repost_only",
+    "streak_maintain"
+  ],
+  "resolutionNote": "When multiple actions match a single event, use the one listed earlier in resolutionOrder. Do not double-count."
+}

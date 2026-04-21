@@ -1,0 +1,29 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.companionLog",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Spirit dialogue log (BYOK chat only)",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["messages", "startedAt"],
+        "properties": {
+          "messages": { "type": "array", "items": { "type": "ref", "ref": "#message" } },
+          "startedAt": { "type": "string", "format": "datetime" },
+          "endedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "required": ["role", "text", "at"],
+      "properties": {
+        "role": { "type": "string", "knownValues": ["user", "spirit"] },
+        "text": { "type": "string", "maxLength": 2000 },
+        "at": { "type": "string", "format": "datetime" }
+      }
+    }
+  }
+}

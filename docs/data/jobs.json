@@ -1,0 +1,130 @@
+{
+  "$schema": "./schemas/jobs.schema.json",
+  "description": "16 archetypes with stat distributions and display name variants. Stats array is [ATK, DEF, AGI, INT, LUK] and sums to 100.",
+  "jobs": {
+    "sage": {
+      "names": { "default": "賢者", "maker": "建築家", "alt": "戦略家" },
+      "stats": [25, 14, 10, 37, 14],
+      "dominantFunction": "Ni",
+      "auxiliaryFunction": "Te"
+    },
+    "mage": {
+      "names": { "default": "魔法使い", "maker": "錬金術師", "alt": "研究者" },
+      "stats": [7, 23, 16, 31, 23],
+      "dominantFunction": "Ti",
+      "auxiliaryFunction": "Ne"
+    },
+    "shogun": {
+      "names": { "default": "将軍", "maker": "棟梁", "alt": "起業家" },
+      "stats": [38, 10, 14, 28, 10],
+      "dominantFunction": "Te",
+      "auxiliaryFunction": "Ni"
+    },
+    "bard": {
+      "names": { "default": "吟遊詩人", "maker": "発明家", "alt": "即興師" },
+      "stats": [7, 20, 23, 20, 30],
+      "dominantFunction": "Ne",
+      "auxiliaryFunction": "Ti"
+    },
+    "seer": {
+      "names": { "default": "予言者", "maker": "導師", "alt": "語り部" },
+      "stats": [7, 14, 13, 44, 22],
+      "dominantFunction": "Ni",
+      "auxiliaryFunction": "Fe"
+    },
+    "poet": {
+      "names": { "default": "詩人", "maker": "職人", "alt": "彫刻家" },
+      "stats": [14, 34, 12, 7, 33],
+      "dominantFunction": "Fi",
+      "auxiliaryFunction": "Ne"
+    },
+    "paladin": {
+      "names": { "default": "聖騎士", "maker": "教育者", "alt": "案内人" },
+      "stats": [7, 16, 16, 32, 29],
+      "dominantFunction": "Fe",
+      "auxiliaryFunction": "Ni"
+    },
+    "explorer": {
+      "names": { "default": "冒険者", "maker": "触媒", "alt": "旅芸人" },
+      "stats": [18, 24, 20, 8, 30],
+      "dominantFunction": "Ne",
+      "auxiliaryFunction": "Fi"
+    },
+    "warrior": {
+      "names": { "default": "戦士", "maker": "書記", "alt": "鍛冶師" },
+      "stats": [24, 42, 8, 9, 17],
+      "dominantFunction": "Si",
+      "auxiliaryFunction": "Te"
+    },
+    "guardian": {
+      "names": { "default": "守護者", "maker": "司書", "alt": "家守" },
+      "stats": [7, 39, 10, 20, 24],
+      "dominantFunction": "Si",
+      "auxiliaryFunction": "Fe"
+    },
+    "fighter": {
+      "names": { "default": "武闘家", "maker": "技師", "alt": "匠" },
+      "stats": [10, 13, 22, 42, 13],
+      "dominantFunction": "Ti",
+      "auxiliaryFunction": "Se"
+    },
+    "dancer": {
+      "names": { "default": "舞踏家", "maker": "工芸家", "alt": "庭師" },
+      "stats": [15, 20, 23, 15, 27],
+      "dominantFunction": "Fi",
+      "auxiliaryFunction": "Se"
+    },
+    "captain": {
+      "names": { "default": "隊長", "maker": "指揮者", "alt": "管理官" },
+      "stats": [34, 28, 10, 10, 18],
+      "dominantFunction": "Te",
+      "auxiliaryFunction": "Si"
+    },
+    "miko": {
+      "names": { "default": "巫女", "maker": "世話役", "alt": "看護師" },
+      "stats": [7, 32, 10, 15, 36],
+      "dominantFunction": "Fe",
+      "auxiliaryFunction": "Si"
+    },
+    "gladiator": {
+      "names": { "default": "剣闘士", "maker": "職方", "alt": "現場監督" },
+      "stats": [15, 10, 33, 27, 15],
+      "dominantFunction": "Se",
+      "auxiliaryFunction": "Ti"
+    },
+    "performer": {
+      "names": { "default": "踊り子", "maker": "芸人", "alt": "祭司" },
+      "stats": [20, 12, 30, 10, 28],
+      "dominantFunction": "Se",
+      "auxiliaryFunction": "Fi"
+    }
+  },
+  "statOrder": ["atk", "def", "agi", "int", "luk"],
+  "statLabels": {
+    "atk": { "short": "ATK", "long": "こうげきりょく" },
+    "def": { "short": "DEF", "long": "ぼうぎょりょく" },
+    "agi": { "short": "AGI", "long": "すばやさ" },
+    "int": { "short": "INT", "long": "かしこさ" },
+    "luk": { "short": "LUK", "long": "うんのよさ" }
+  },
+  "cognitiveFunctions": {
+    "Ni": "内向的直観",
+    "Ne": "外向的直観",
+    "Si": "内向的感覚",
+    "Se": "外向的感覚",
+    "Ti": "内向的思考",
+    "Te": "外向的思考",
+    "Fi": "内向的感情",
+    "Fe": "外向的感情"
+  },
+  "cognitiveToRpgCoefficients": {
+    "Ni": { "atk": 0, "def": 0.1, "agi": 0, "int": 0.8, "luk": 0.1 },
+    "Ne": { "atk": 0, "def": 0, "agi": 0.5, "int": 0, "luk": 0.5 },
+    "Si": { "atk": 0.1, "def": 0.8, "agi": 0, "int": 0.1, "luk": 0 },
+    "Se": { "atk": 0.3, "def": 0, "agi": 0.7, "int": 0, "luk": 0 },
+    "Ti": { "atk": 0, "def": 0.1, "agi": 0.1, "int": 0.8, "luk": 0 },
+    "Te": { "atk": 0.8, "def": 0, "agi": 0, "int": 0.2, "luk": 0 },
+    "Fi": { "atk": 0, "def": 0.5, "agi": 0, "int": 0, "luk": 0.5 },
+    "Fe": { "atk": 0, "def": 0.3, "agi": 0, "int": 0, "luk": 0.7 }
+  }
+}

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ブラウザ内 LLM 日本語生成実測 (WebGPU)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.6; }
+    h1 { font-size: 1.4em; }
+    h2 { font-size: 1.1em; margin-top: 1.5em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em; }
+    .row { display: flex; gap: 0.5em; align-items: center; margin: 0.6em 0; flex-wrap: wrap; }
+    select, input, button { padding: 0.4em 0.7em; font-size: 0.95em; }
+    button { background: #378ADD; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    button.secondary { background: #666; }
+    pre { background: #f4f4f6; padding: 1em; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+    table { border-collapse: collapse; margin: 1em 0; width: 100%; font-size: 0.9em; }
+    th, td { border: 1px solid #ccc; padding: 0.4em 0.6em; text-align: left; vertical-align: top; }
+    th { background: #f0f0f4; }
+    .log { font-family: ui-monospace, monospace; font-size: 0.85em; background: #0a0a0d; color: #eee; padding: 1em; border-radius: 4px; max-height: 300px; overflow-y: auto; }
+    .result { background: #f9f9fb; border-left: 4px solid #378ADD; padding: 0.8em 1em; margin: 0.6em 0; }
+    .meta { color: #666; font-size: 0.85em; }
+    .fail { color: #c4342b; }
+    .ok { color: #2a8754; }
+    .warn { color: #b8831b; }
+    textarea { width: 100%; min-height: 4em; padding: 0.5em; font-family: ui-monospace, monospace; font-size: 0.9em; box-sizing: border-box; }
+    #download-status { background: #fff8d6; padding: 0.6em; border-radius: 4px; margin: 0.5em 0; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>ブラウザ内 LLM 日本語生成実測 (WebGPU)</h1>
+
+  <p>
+    11-validation.md §実験 9 (post-MVP ウォッチ) の生成モデル比較用。
+    候補モデルを WebGPU で走らせて、Aozora Quest の精霊発言を想定した
+    プロンプトで速度と品質を評価する。
+  </p>
+
+  <h2>候補モデル (参考情報)</h2>
+  <table>
+    <tr>
+      <th>モデル</th>
+      <th>params</th>
+      <th>最小サイズ</th>
+      <th>Instruct</th>
+      <th>日本語</th>
+      <th>特徴</th>
+    </tr>
+    <tr style="background:#fff4e6">
+      <td>onnx-community/Bonsai-8B-ONNX</td>
+      <td>8B</td>
+      <td>1.33GB (q1)</td>
+      <td class="ok">✓</td>
+      <td class="ok">○○</td>
+      <td><strong>★ 品質最有力</strong>: Qwen3-8B ベース、1-bit で fp16 の 1/14、benchmark 70.5 (Qwen3-8B 79.3 に近い)</td>
+    </tr>
+    <tr style="background:#fff4e6">
+      <td>onnx-community/Bonsai-4B-ONNX</td>
+      <td>4B</td>
+      <td>585MB (q1f16)</td>
+      <td class="ok">✓</td>
+      <td class="ok">○</td>
+      <td><strong>★ モバイルバランス</strong>: Qwen3-4B ベース、~600MB で品質と軽量の折衷</td>
+    </tr>
+    <tr>
+      <td>onnx-community/Ternary-Bonsai-8B-ONNX</td>
+      <td>8B</td>
+      <td>2.21GB (q2f16)</td>
+      <td class="ok">✓</td>
+      <td class="ok">○○</td>
+      <td>1.58-bit (ternary)、Bonsai-8B q1 より若干大きいが精度期待</td>
+    </tr>
+    <tr>
+      <td>onnx-community/Ternary-Bonsai-4B-ONNX</td>
+      <td>4B</td>
+      <td>1.09GB (q2f16)</td>
+      <td class="ok">✓</td>
+      <td class="ok">○</td>
+      <td>1.58-bit 4B、Bonsai-4B と比較</td>
+    </tr>
+    <tr>
+      <td>onnx-community/Bonsai-1.7B-ONNX</td>
+      <td>1.7B</td>
+      <td>291MB (q1)</td>
+      <td class="ok">✓</td>
+      <td class="warn">中</td>
+      <td>Qwen3-1.7B ベース、最軽量。品質は 4B/8B 劣勢</td>
+    </tr>
+    <tr>
+      <td>onnx-community/Qwen2.5-1.5B-Instruct</td>
+      <td>1.5B</td>
+      <td>~1.0GB (q4)</td>
+      <td class="ok">✓</td>
+      <td class="ok">○</td>
+      <td>非 1-bit のベースライン、Qwen2.5 系</td>
+    </tr>
+    <tr>
+      <td>onnx-community/Qwen2.5-3B-Instruct</td>
+      <td>3B</td>
+      <td>~2.0GB (q4)</td>
+      <td class="ok">✓</td>
+      <td class="ok">○○</td>
+      <td>非 1-bit の比較、品質◎、サイズ大</td>
+    </tr>
+    <tr>
+      <td>onnx-community/gemma-2-2b-it</td>
+      <td>2B</td>
+      <td>~1.4GB (q4)</td>
+      <td class="ok">✓</td>
+      <td class="warn">中</td>
+      <td>Google、ライセンス注意</td>
+    </tr>
+    <tr>
+      <td>onnx-community/Llama-3.2-1B-Instruct</td>
+      <td>1B</td>
+      <td>~700MB (q4)</td>
+      <td class="ok">✓</td>
+      <td class="fail">弱</td>
+      <td>英語中心、日本語非推奨</td>
+    </tr>
+  </table>
+
+  <p><strong>推奨テスト順</strong>: <strong>Bonsai-8B (q1)</strong> → <strong>Bonsai-4B (q1f16)</strong> → Bonsai-1.7B (q1) で 1-bit シリーズの品質とレイテンシを確認。比較対象として Qwen2.5-1.5B (非 1-bit) を入れると「1-bit 量子化の劣化度」が測れる。</p>
+
+  <h2>実行環境</h2>
+  <div class="row">
+    <button id="check-webgpu">WebGPU サポート確認</button>
+    <span id="webgpu-info" class="meta"></span>
+  </div>
+
+  <h2>モデル選択</h2>
+  <div class="row">
+    <label>モデル:</label>
+    <select id="model">
+      <option value="onnx-community/Bonsai-8B-ONNX" selected>Bonsai-8B (★ 品質最有力、1.33GB)</option>
+      <option value="onnx-community/Bonsai-4B-ONNX">Bonsai-4B (★ モバイルバランス、585MB)</option>
+      <option value="onnx-community/Ternary-Bonsai-8B-ONNX">Ternary-Bonsai-8B (2.21GB)</option>
+      <option value="onnx-community/Ternary-Bonsai-4B-ONNX">Ternary-Bonsai-4B (1.09GB)</option>
+      <option value="onnx-community/Bonsai-1.7B-ONNX">Bonsai-1.7B (291MB)</option>
+      <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5-1.5B-Instruct (非 1-bit 比較)</option>
+      <option value="onnx-community/Qwen2.5-3B-Instruct">Qwen2.5-3B-Instruct</option>
+      <option value="onnx-community/Qwen2.5-0.5B-Instruct">Qwen2.5-0.5B-Instruct</option>
+      <option value="onnx-community/gemma-2-2b-it">gemma-2-2b-it</option>
+      <option value="onnx-community/Llama-3.2-1B-Instruct">Llama-3.2-1B-Instruct</option>
+    </select>
+    <label>dtype:</label>
+    <select id="dtype">
+      <option value="q1" selected>q1 (Bonsai の推奨)</option>
+      <option value="q1f16">q1f16 (Bonsai-4B 最小)</option>
+      <option value="q2f16">q2f16 (Ternary-Bonsai)</option>
+      <option value="q4" >q4 (Qwen2.5 等標準)</option>
+      <option value="q4f16">q4f16</option>
+      <option value="q2">q2</option>
+      <option value="q8">q8</option>
+      <option value="fp16">fp16</option>
+    </select>
+    <label>デバイス:</label>
+    <select id="device">
+      <option value="webgpu" selected>WebGPU</option>
+      <option value="wasm">WASM</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>max_new_tokens:</label>
+    <input id="maxtokens" type="number" value="100" min="20" max="300" style="width:6em">
+    <label>temperature:</label>
+    <input id="temp" type="number" value="0.8" min="0" max="2" step="0.1" style="width:5em">
+  </div>
+
+  <div class="row">
+    <button id="load">モデルをロード</button>
+    <button id="run-preset" disabled>プリセット 7 件を実行</button>
+    <button id="run-custom" disabled class="secondary">カスタム入力を試す</button>
+  </div>
+
+  <div id="download-status" style="display:none"></div>
+
+  <h2>カスタム入力</h2>
+  <div class="row">
+    <label style="width:100%">システムプロンプト (オプション):</label>
+    <textarea id="custom-system" placeholder="あなたは青空の精霊です。穏やかで詩的な日本語で話します。100 字以内で答えてください。"></textarea>
+  </div>
+  <div class="row">
+    <label style="width:100%">ユーザープロンプト:</label>
+    <textarea id="custom-user" placeholder="今日は雨だ。一言、詩的に。"></textarea>
+  </div>
+
+  <h2>結果</h2>
+  <div id="results"></div>
+
+  <h2>ログ</h2>
+  <pre id="log" class="log"></pre>
+
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.1.0/+esm';
+
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    const PRESETS = [
+      { label: '簡単な日本語生成', system: '', user: '春の空を一言で表してください。' },
+      { label: '挨拶 (朝)', system: 'あなたは青空の精霊です。穏やかで詩的な日本語で話します。100 字以内で。', user: 'ユーザー名 "ことりら" に朝の挨拶を一言。' },
+      { label: 'クエスト達成の祝福', system: 'あなたは青空の精霊です。穏やかで詩的な日本語で話します。100 字以内で。', user: 'ユーザーが「軽やかに短文を 3 つ放つ」クエストを達成しました。穏やかな祝福を一言。' },
+      { label: 'LV アップ', system: 'あなたは青空の精霊です。穏やかで詩的な日本語で話します。100 字以内で。', user: 'ユーザーがレベル 5 に上がりました。祝福を一言。' },
+      { label: '節制クエスト提示', system: 'あなたは青空の精霊です。穏やかで詩的な日本語で話します。100 字以内で。', user: '今日は長文分析を控えるクエストが出ました。ユーザーへの案内を一言。' },
+      { label: '基本文法', system: '', user: '次の文を完成させてください: 朝の光が' },
+      { label: '指示理解', system: '', user: 'リンゴ、バナナ、カエル、ブドウ。この中で果物でないものはどれですか？一語で答えてください。' },
+    ];
+
+    const logEl = document.getElementById('log');
+    const resultsEl = document.getElementById('results');
+    const btnLoad = document.getElementById('load');
+    const btnRunPreset = document.getElementById('run-preset');
+    const btnRunCustom = document.getElementById('run-custom');
+    const btnCheckWebGpu = document.getElementById('check-webgpu');
+    const webgpuInfoEl = document.getElementById('webgpu-info');
+    const downloadStatusEl = document.getElementById('download-status');
+
+    let generator = null;
+    let currentModelId = null;
+    let tokenizer = null;
+
+    function log(msg) {
+      const ts = new Date().toISOString().slice(11, 19);
+      logEl.textContent += `[${ts}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    btnCheckWebGpu.addEventListener('click', async () => {
+      if (!('gpu' in navigator)) {
+        webgpuInfoEl.innerHTML = '<span class="fail">❌ WebGPU 非対応</span>';
+        return;
+      }
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          webgpuInfoEl.innerHTML = '<span class="fail">❌ アダプタ取得失敗</span>';
+          return;
+        }
+        const info = adapter.info ?? {};
+        webgpuInfoEl.innerHTML = `<span class="ok">✓ WebGPU 利用可</span> (vendor: ${info.vendor || '不明'}, arch: ${info.architecture || '不明'}, device: ${info.device || '不明'})`;
+      } catch (e) {
+        webgpuInfoEl.innerHTML = `<span class="fail">❌ エラー: ${e.message}</span>`;
+      }
+    });
+
+    btnLoad.addEventListener('click', async () => {
+      btnLoad.disabled = true;
+      const modelId = document.getElementById('model').value;
+      const dtype = document.getElementById('dtype').value;
+      const device = document.getElementById('device').value;
+
+      log(`モデル: ${modelId}`);
+      log(`dtype: ${dtype}, device: ${device}`);
+      log('ロード開始 (初回はモデルダウンロード発生)...');
+      downloadStatusEl.style.display = 'block';
+      downloadStatusEl.textContent = 'ダウンロード中...';
+
+      const loadStart = performance.now();
+      try {
+        generator = await pipeline('text-generation', modelId, {
+          device,
+          dtype,
+          progress_callback: (p) => {
+            if (p.status === 'progress' && p.file) {
+              const pct = (p.progress || 0).toFixed(1);
+              downloadStatusEl.textContent = `${p.file}: ${pct}% (${((p.loaded || 0) / 1e6).toFixed(1)}MB / ${((p.total || 0) / 1e6).toFixed(1)}MB)`;
+            }
+          },
+        });
+        tokenizer = generator.tokenizer;
+        currentModelId = modelId;
+        const loadMs = performance.now() - loadStart;
+        log(`ロード完了: ${(loadMs / 1000).toFixed(1)}s`);
+        downloadStatusEl.style.display = 'none';
+        btnRunPreset.disabled = false;
+        btnRunCustom.disabled = false;
+        btnLoad.disabled = false;
+
+        // ヘッダー追加
+        const div = document.createElement('div');
+        div.className = 'result';
+        div.style.background = '#e6f4ea';
+        div.innerHTML = `<strong>ロード完了</strong><div class="meta">model=${modelId}<br>dtype=${dtype}, device=${device}<br>load: ${(loadMs / 1000).toFixed(1)}s<br>UA: ${navigator.userAgent}</div>`;
+        resultsEl.prepend(div);
+      } catch (e) {
+        log(`ロード失敗: ${e.message}`);
+        downloadStatusEl.textContent = `失敗: ${e.message}`;
+        btnLoad.disabled = false;
+      }
+    });
+
+    function buildMessages(system, user) {
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: user });
+      return messages;
+    }
+
+    async function generate(label, system, user) {
+      const maxTokens = parseInt(document.getElementById('maxtokens').value, 10);
+      const temp = parseFloat(document.getElementById('temp').value);
+
+      log(`[${label}] 生成開始...`);
+      const t0 = performance.now();
+
+      // chat template があるモデルは messages、なければ生 prompt
+      let input;
+      const hasChatTemplate = tokenizer?.chat_template || tokenizer?.default_chat_template;
+      if (hasChatTemplate) {
+        input = buildMessages(system, user);
+      } else {
+        // base モデル: system + user を素の prompt に
+        input = system ? `${system}\n\n${user}\n` : user;
+      }
+
+      const out = await generator(input, {
+        max_new_tokens: maxTokens,
+        do_sample: temp > 0,
+        temperature: temp,
+        top_p: 0.9,
+        return_full_text: false,
+      });
+      const latencyMs = performance.now() - t0;
+
+      const first = Array.isArray(out) ? out[0] : out;
+      // chat template の場合、generated_text は message 配列
+      let text;
+      if (Array.isArray(first.generated_text)) {
+        const last = first.generated_text[first.generated_text.length - 1];
+        text = typeof last === 'object' ? last.content : String(last);
+      } else {
+        text = String(first.generated_text || '');
+      }
+      text = text.trim();
+
+      const chars = text.length;
+      // 粗いトークン推定
+      const estTokens = Math.max(1, Math.round(chars * 1.5));
+      const tokPerSec = estTokens / (latencyMs / 1000);
+
+      log(`[${label}] 完了 ${(latencyMs / 1000).toFixed(1)}s (${tokPerSec.toFixed(1)} tok/s 推定, ${chars} 字)`);
+
+      const div = document.createElement('div');
+      div.className = 'result';
+      div.innerHTML = `
+        <strong>${label}</strong>
+        <div class="meta">
+          プロンプト: "${user.replace(/</g, '&lt;')}"
+          ${system ? `<br>システム: "${system.replace(/</g, '&lt;')}"` : ''}
+          <br>レイテンシ: <strong>${(latencyMs / 1000).toFixed(2)}s</strong>
+          / 文字数: ${chars}
+          / 推定速度: <strong>${tokPerSec.toFixed(1)} tok/s</strong>
+        </div>
+        <pre>${text.replace(/</g, '&lt;') || '(空)'}</pre>
+      `;
+      resultsEl.prepend(div);
+    }
+
+    btnRunPreset.addEventListener('click', async () => {
+      btnRunPreset.disabled = true;
+      log(`プリセット 7 件を実行 (model=${currentModelId})`);
+
+      const times = [];
+      for (const p of PRESETS) {
+        const t0 = performance.now();
+        try {
+          await generate(p.label, p.system, p.user);
+          times.push(performance.now() - t0);
+        } catch (e) {
+          log(`[${p.label}] エラー: ${e.message}`);
+        }
+      }
+
+      const totalS = times.reduce((s, v) => s + v, 0) / 1000;
+      const avgS = totalS / times.length;
+      log(`プリセット完了: 合計 ${totalS.toFixed(1)}s, 平均 ${avgS.toFixed(1)}s/件`);
+
+      const div = document.createElement('div');
+      div.className = 'result';
+      div.style.background = '#e6f4ea';
+      div.innerHTML = `<strong>プリセット ${PRESETS.length} 件 完了</strong><div class="meta">合計 ${totalS.toFixed(1)}s / 平均 ${avgS.toFixed(1)}s/件<br>model=${currentModelId}</div>`;
+      resultsEl.prepend(div);
+      btnRunPreset.disabled = false;
+    });
+
+    btnRunCustom.addEventListener('click', async () => {
+      btnRunCustom.disabled = true;
+      const sys = document.getElementById('custom-system').value.trim();
+      const usr = document.getElementById('custom-user').value.trim();
+      if (!usr) {
+        alert('ユーザープロンプトを入力してください');
+        btnRunCustom.disabled = false;
+        return;
+      }
+      try {
+        await generate('カスタム', sys, usr);
+      } catch (e) {
+        log(`エラー: ${e.message}`);
+      }
+      btnRunCustom.disabled = false;
+    });
+  </script>
+
+  <h2>記録</h2>
+  <p>
+    各モデルの結果を <code>docs/data/llm-benchmark-browser-gen.md</code> に手動で転記してください。
+    最低限記録すべき情報:
+  </p>
+  <ul>
+    <li>UA (OS / ブラウザ / 端末)</li>
+    <li>WebGPU adapter info</li>
+    <li>モデル ID + dtype + device</li>
+    <li>ロード時間 (初回 / キャッシュ後)</li>
+    <li>プリセット 7 件の tok/s + 出力の日本語品質 (1〜5 の主観評価)</li>
+  </ul>
+
+  <h2>期待する結論</h2>
+  <ul>
+    <li>Qwen2.5-1.5B-Instruct (q4, 1GB) で <strong>8-15 tok/s / 日本語品質 3-4/5</strong> が出れば採用候補</li>
+    <li>精霊らしい穏やかな口調が出るかは <strong>system prompt + few-shot</strong> でさらに調整可能</li>
+    <li>ミドルレンジスマホ (iPhone SE / Pixel 6a) で <strong>5 tok/s</strong> を切るなら採用不可</li>
+  </ul>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "client_id": "https://admin.aozoraquest.app/client-metadata.json",
+  "client_name": "Aozora Quest Admin",
+  "client_uri": "https://admin.aozoraquest.app",
+  "redirect_uris": ["https://admin.aozoraquest.app/oauth/callback"],
+  "scope": "atproto transition:generic",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "application_type": "web",
+  "dpop_bound_access_tokens": true,
+  "token_endpoint_auth_method": "none"
+}

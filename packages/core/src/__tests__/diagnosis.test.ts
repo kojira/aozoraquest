@@ -1,0 +1,100 @@
+import { describe, expect, test } from 'vitest';
+import {
+  COGNITIVE_TO_RPG,
+  cognitiveToRpg,
+  computeConfidence,
+  cosineSimilarity,
+  determineArchetype,
+  normalizeCognitive,
+  topNAverage,
+} from '../diagnosis.js';
+import { COGNITIVE_FUNCTIONS, STATS, type CognitiveScores } from '../types.js';
+
+describe('COGNITIVE_TO_RPG', () => {
+  test('each row sums to ~1.0', () => {
+    for (const fn of COGNITIVE_FUNCTIONS) {
+      const sum = STATS.reduce((s, stat) => s + COGNITIVE_TO_RPG[fn][stat], 0);
+      expect(sum).toBeCloseTo(1.0, 2);
+    }
+  });
+});
+
+describe('cosineSimilarity', () => {
+  test('identical normalized → 1', () => {
+    const v = new Float32Array([0.6, 0.8]);
+    expect(cosineSimilarity(v, v)).toBeCloseTo(1);
+  });
+
+  test('orthogonal → 0', () => {
+    const a = new Float32Array([1, 0]);
+    const b = new Float32Array([0, 1]);
+    expect(cosineSimilarity(a, b)).toBe(0);
+  });
+});
+
+describe('topNAverage', () => {
+  test('takes top 3 of similarities', () => {
+    const v = new Float32Array([1, 0]);
+    const prototypes = [
+      new Float32Array([1, 0]),       // 1.0
+      new Float32Array([0.9, 0.1]),   // ~0.9
+      new Float32Array([0.1, 0.9]),   // ~0.1
+      new Float32Array([0, 1]),       // 0
+    ];
+    const avg = topNAverage(v, prototypes, 3);
+    // (1.0 + 0.9 + 0.1) / 3 = 0.666...
+    expect(avg).toBeCloseTo((1.0 + prototypes[1]![0]! + prototypes[2]![0]!) / 3);
+  });
+});
+
+describe('normalizeCognitive', () => {
+  test('max scaled to 100', () => {
+    const scores: CognitiveScores = { Ni: 0.5, Ne: 0.25, Si: 0.125, Se: 0.0625, Ti: 0, Te: 0, Fi: 0, Fe: 0 };
+    const n = normalizeCognitive(scores);
+    expect(n.Ni).toBe(100);
+    expect(n.Ne).toBe(50);
+  });
+});
+
+describe('cognitiveToRpg', () => {
+  test('pure Te → dominated by atk', () => {
+    const scores: CognitiveScores = { Ni: 0, Ne: 0, Si: 0, Se: 0, Ti: 0, Te: 100, Fi: 0, Fe: 0 };
+    const rpg = cognitiveToRpg(scores);
+    expect(rpg.atk).toBe(80);
+    expect(rpg.int).toBe(20);
+    expect(rpg.def + rpg.agi + rpg.luk).toBe(0);
+  });
+
+  test('even distribution → balanced rpg', () => {
+    const scores: CognitiveScores = { Ni: 50, Ne: 50, Si: 50, Se: 50, Ti: 50, Te: 50, Fi: 50, Fe: 50 };
+    const rpg = cognitiveToRpg(scores);
+    const sum = STATS.reduce((s, k) => s + rpg[k], 0);
+    expect(Math.abs(sum - 100)).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('determineArchetype', () => {
+  test('Ni > Te → sage', () => {
+    const scores: CognitiveScores = { Ni: 100, Te: 80, Ti: 20, Ne: 10, Si: 5, Se: 5, Fi: 5, Fe: 5 };
+    expect(determineArchetype(scores).archetype).toBe('sage');
+  });
+
+  test('Fi > Ne → poet', () => {
+    const scores: CognitiveScores = { Fi: 100, Ne: 80, Ni: 30, Si: 10, Ti: 10, Te: 10, Se: 10, Fe: 10 };
+    expect(determineArchetype(scores).archetype).toBe('poet');
+  });
+});
+
+describe('computeConfidence', () => {
+  test('postCount < 50 → insufficient', () => {
+    expect(computeConfidence(30, { Ni: 50, Ne: 40, Si: 30, Se: 20, Ti: 10, Te: 5, Fi: 3, Fe: 1 })).toBe('insufficient');
+  });
+
+  test('large gap, many posts → high', () => {
+    expect(computeConfidence(150, { Ni: 100, Te: 50, Ti: 30, Ne: 10, Si: 5, Se: 5, Fi: 5, Fe: 5 })).toBe('high');
+  });
+
+  test('small gap → ambiguous', () => {
+    expect(computeConfidence(150, { Ni: 100, Te: 97, Ti: 95, Ne: 90, Si: 80, Se: 70, Fi: 60, Fe: 50 })).toBe('ambiguous');
+  });
+});
