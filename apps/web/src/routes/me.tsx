@@ -258,6 +258,7 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
           .sort((a, b) => b[1] - a[1])
           .map(([fn, score]) => (
             <li key={fn}>
+              <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>({fn})</span>{' '}
               {COGNITIVE_LABEL[fn] ?? fn}: {score}
             </li>
           ))}
