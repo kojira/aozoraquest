@@ -191,20 +191,20 @@ const bell = (color: string) =>
 const mikoOutfit = () =>
   svgWide(
     <g stroke={OUTLINE} strokeWidth="3" strokeLinejoin="round">
-      {/* 白衣 (肩〜胴) */}
-      <path d="M 2 18 Q 2 6 20 3 L 80 3 Q 98 6 98 18 L 98 22 L 2 22 Z" fill="#f8f4ec" />
+      {/* 白衣 (肩〜胴) — 顔の下に白が見えるよう広めに取る */}
+      <path d="M 2 28 Q 2 6 24 2 L 76 2 Q 98 6 98 28 L 98 32 L 2 32 Z" fill="#f8f4ec" />
       {/* 襟 V */}
-      <path d="M 42 3 L 50 18 L 58 3 Z" fill="#f8f4ec" />
-      <line x1="42" y1="3" x2="50" y2="16" strokeWidth="2" />
-      <line x1="58" y1="3" x2="50" y2="16" strokeWidth="2" />
+      <path d="M 40 2 L 50 24 L 60 2 Z" fill="#f8f4ec" />
+      <line x1="40" y1="2" x2="50" y2="22" strokeWidth="2" />
+      <line x1="60" y1="2" x2="50" y2="22" strokeWidth="2" />
       {/* 帯 (white sash) */}
-      <rect x="0" y="21" width="100" height="4" fill="#ffffff" />
+      <rect x="0" y="30" width="100" height="4" fill="#ffffff" />
       {/* 緋袴 (red hakama) */}
-      <path d="M 0 25 L 100 25 L 100 50 L 0 50 Z" fill="#c8162b" />
+      <path d="M 0 34 L 100 34 L 100 50 L 0 50 Z" fill="#c8162b" />
       {/* 袴の襞 */}
-      <line x1="25" y1="25" x2="22" y2="50" strokeWidth="1.8" />
-      <line x1="50" y1="25" x2="50" y2="50" strokeWidth="1.8" />
-      <line x1="75" y1="25" x2="78" y2="50" strokeWidth="1.8" />
+      <line x1="25" y1="34" x2="22" y2="50" strokeWidth="1.8" />
+      <line x1="50" y1="34" x2="50" y2="50" strokeWidth="1.8" />
+      <line x1="75" y1="34" x2="78" y2="50" strokeWidth="1.8" />
     </g>,
   );
 
@@ -384,7 +384,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     warrior:   { leftSide: sword(c),               accentColor: accent },
     guardian:  { rightSide: shield(c),             accentColor: accent },
     fighter:   { primary: fist(),                  accentColor: accent },
-    dancer:    { primary: fan(c),                  accentColor: accent },
+    dancer:    { leftSide: fan(c), rightSide: fan(c),                      accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
     miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
     gladiator: { primary: twinSwords(c),           accentColor: accent },
