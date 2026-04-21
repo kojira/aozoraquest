@@ -1,6 +1,6 @@
 import type { Agent } from '@atproto/api';
 import { diagnose, type DiagnosisResult } from '@aozoraquest/core';
-import { fetchMyPosts, putRecord } from './atproto';
+import { fetchMyPosts, getRecord, putRecord } from './atproto';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
 
@@ -40,6 +40,18 @@ export async function runDiagnosis(
   if ('insufficient' in result) return result;
 
   onProgress('saving');
+
+  // 既存レコード (あれば) を読み込んで playerLevel / jobLevel を引き継ぐ。
+  // - playerLevel: 常に保持。archetype が変わっても個人の累積は途切れない。
+  // - jobLevel: 同じ archetype なら XP 継続、違えば新 archetype で xp=0 再スタート。
+  const existing = await getRecord<DiagnosisResult>(agent, agent.assertDid ?? '', 'app.aozoraquest.analysis', 'self')
+    .catch(() => null);
+  const playerLevel = existing?.playerLevel ?? { xp: 0, streakDays: 0 };
+  const jobLevel =
+    existing?.jobLevel && existing.jobLevel.archetype === result.archetype
+      ? existing.jobLevel
+      : { archetype: result.archetype, xp: 0, joinedAt: result.analyzedAt };
+
   await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
     archetype: result.archetype,
     rpgStats: result.rpgStats,
@@ -48,8 +60,10 @@ export async function runDiagnosis(
     analyzedPostCount: result.analyzedPostCount,
     analyzedAt: result.analyzedAt,
     public: false,
+    jobLevel,
+    playerLevel,
   });
 
   onProgress('done');
-  return result;
+  return { ...result, jobLevel, playerLevel };
 }

@@ -62,24 +62,23 @@ export interface Quest {
 export type Confidence = 'high' | 'medium' | 'low' | 'ambiguous' | 'insufficient';
 
 /**
- * 現職 (archetype) の熟練度ステート。archetype が変わると 0 からやり直す。
- * 前職は `DiagnosisResult.jobHistory` に履歴として積まれる。
+ * 現職 (archetype) の熟練度ステート。archetype は post ごとには変わらず、
+ * 明示的な再診断で archetype が切り替わったときに xp=0 リセット。
  */
 export interface JobLevelState {
   archetype: Archetype;
   xp: number;
-  joinedAt: string;              // この archetype に切り替わった ISO 日時
-  lastDailyBonusDate?: string;   // 日次ボーナスを最後に付与した YYYY-MM-DD
-  streakDays: number;            // 連続活動日数 (日次ボーナスの計算に使う)
+  joinedAt: string;              // この archetype になった ISO 日時
 }
 
-/** 過去に就いたジョブの履歴エントリ。 */
-export interface JobHistoryEntry {
-  archetype: Archetype;
-  peakLevel: number;
-  totalXp: number;
-  from: string;                  // ISO
-  until: string;                 // ISO
+/**
+ * 個人 (プレイヤー) の累積ステート。archetype が変わっても継続する。
+ * 日次ボーナス / streak はプレイヤー単位で判定 (1 日 1 回の本体)。
+ */
+export interface PlayerLevelState {
+  xp: number;
+  lastDailyBonusDate?: string;   // 最後に日次ボーナスを付けた YYYY-MM-DD
+  streakDays: number;
 }
 
 export interface DiagnosisResult {
@@ -90,5 +89,5 @@ export interface DiagnosisResult {
   analyzedPostCount: number;
   analyzedAt: string; // ISO datetime
   jobLevel?: JobLevelState;
-  jobHistory?: JobHistoryEntry[];
+  playerLevel?: PlayerLevelState;
 }

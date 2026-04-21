@@ -251,3 +251,38 @@ export const JOB_XP_REWARDS = {
   /** streak 追加の上限 */
   streakBonusCap: 50,
 } as const;
+
+/**
+ * 個人 (プレイヤー) LV 用の XP 曲線 (LV1-99)。
+ * 公式: threshold(n) = round(60 * (n-1)^1.95)
+ * - JobLV より緩やか (2 倍程度遅い)。archetype が変わっても継続して伸びる設計。
+ * - LV50 = 約 123,000 XP。標準ユーザー (100 XP/日) で 3-4 年。
+ * - 上限を LV99 にして長期プレイに耐える。
+ */
+export const PLAYER_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = (() => {
+  const out: Array<[number, number]> = [];
+  for (let lv = 1; lv <= 99; lv++) {
+    out.push([lv, Math.round(60 * Math.pow(lv - 1, 1.95))]);
+  }
+  return out;
+})();
+
+/** 累計 XP から個人 LV を計算。 */
+export function playerLevelFromXp(xp: number): number {
+  let lv = 1;
+  for (const [l, threshold] of PLAYER_XP_CURVE) {
+    if (xp >= threshold) lv = l;
+    else break;
+  }
+  return lv;
+}
+
+/** 個人 LV の UI 進捗バー用。 */
+export function playerXpToNextLevel(xp: number): { level: number; current: number; next: number } {
+  const level = playerLevelFromXp(xp);
+  const idx = PLAYER_XP_CURVE.findIndex((e) => e[0] === level);
+  const curThreshold = idx >= 0 ? PLAYER_XP_CURVE[idx]![1] : 0;
+  const nextEntry = idx >= 0 && idx + 1 < PLAYER_XP_CURVE.length ? PLAYER_XP_CURVE[idx + 1] : undefined;
+  if (!nextEntry) return { level, current: xp - curThreshold, next: 0 };
+  return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
+}

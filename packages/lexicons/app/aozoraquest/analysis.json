@@ -29,14 +29,14 @@
           "analyzedAt": { "type": "string", "format": "datetime" },
           "public": { "type": "boolean", "default": false },
           "jobLevel": { "type": "ref", "ref": "#jobLevel" },
-          "jobHistory": { "type": "array", "items": { "type": "ref", "ref": "#jobHistoryEntry" } }
+          "playerLevel": { "type": "ref", "ref": "#playerLevel" }
         }
       }
     },
     "jobLevel": {
       "type": "object",
-      "description": "Current-job stay level; resets when archetype changes",
-      "required": ["archetype", "xp", "joinedAt", "streakDays"],
+      "description": "Current-job stay level; resets only on explicit re-diagnosis with a different archetype",
+      "required": ["archetype", "xp", "joinedAt"],
       "properties": {
         "archetype": {
           "type": "string",
@@ -48,20 +48,17 @@
           ]
         },
         "xp": { "type": "integer", "minimum": 0 },
-        "joinedAt": { "type": "string", "format": "datetime" },
-        "lastDailyBonusDate": { "type": "string" },
-        "streakDays": { "type": "integer", "minimum": 0 }
+        "joinedAt": { "type": "string", "format": "datetime" }
       }
     },
-    "jobHistoryEntry": {
+    "playerLevel": {
       "type": "object",
-      "required": ["archetype", "peakLevel", "totalXp", "from", "until"],
+      "description": "Player-wide cumulative level; persists across archetype changes",
+      "required": ["xp", "streakDays"],
       "properties": {
-        "archetype": { "type": "string" },
-        "peakLevel": { "type": "integer", "minimum": 1 },
-        "totalXp": { "type": "integer", "minimum": 0 },
-        "from": { "type": "string", "format": "datetime" },
-        "until": { "type": "string", "format": "datetime" }
+        "xp": { "type": "integer", "minimum": 0 },
+        "lastDailyBonusDate": { "type": "string" },
+        "streakDays": { "type": "integer", "minimum": 0 }
       }
     },
     "statVector": {
