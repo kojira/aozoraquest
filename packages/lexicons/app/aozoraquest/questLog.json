@@ -12,6 +12,7 @@
         "properties": {
           "date": { "type": "string", "format": "datetime" },
           "quests": { "type": "array", "items": { "type": "ref", "ref": "#questEntry" } },
+          "activity": { "type": "array", "items": { "type": "ref", "ref": "#activityEntry" }, "maxLength": 50 },
           "totalXpGained": { "type": "integer", "minimum": 0 },
           "updatedAt": { "type": "string", "format": "datetime" }
         }
@@ -29,6 +30,17 @@
         "currentCount": { "type": "integer", "minimum": 0 },
         "completed": { "type": "boolean" },
         "xpAwarded": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "activityEntry": {
+      "type": "object",
+      "description": "One classified post, shown in the transparency audit UI",
+      "required": ["at", "preview", "incremented"],
+      "properties": {
+        "at": { "type": "string", "format": "datetime" },
+        "preview": { "type": "string", "maxLength": 80 },
+        "action": { "type": "string" },
+        "incremented": { "type": "array", "items": { "type": "string" } }
       }
     }
   }
