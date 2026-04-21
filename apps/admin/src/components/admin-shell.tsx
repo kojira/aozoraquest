@@ -7,7 +7,7 @@ import { signIn, signOut } from '@/lib/oauth';
 const nav = [
   { to: '/', label: '概要', end: true },
   { to: '/flags', label: 'フラグ' },
-  { to: '/prompts', label: 'プロンプト' },
+  { to: '/prompts', label: '精霊プロンプト' },
   { to: '/maintenance', label: 'メンテナンス' },
   { to: '/bans', label: 'BAN' },
   { to: '/directory', label: '発見ディレクトリ' },

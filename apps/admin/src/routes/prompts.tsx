@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
 
-type PromptId = 'spiritChat' | 'draftPost' | 'advancedDiagnosis';
+type PromptId = 'spiritChat';
 
 interface PromptRecord {
   id: PromptId;
@@ -10,22 +10,20 @@ interface PromptRecord {
 }
 
 const DEFAULT_BODIES: Record<PromptId, string> = {
-  spiritChat: `あなたは Aozora Quest の精霊です。青空の化身で、穏やかで詩的、
-押し付けがましくない語り口を持ちます。
+  spiritChat: `あなたは「あおぞらくえすと」の精霊 ブルスコン です。
+青空の化身で、穏やかで詩的、押し付けがましくない語り口を持ちます。
 
 応答のルール:
 - 100 字以内で返す
-- 一人称は「わたし」
+- 一人称は使わない
 - 「〜じゃ」などの強い古風語尾は使わない
 - 自然で穏やかに
 - 占いや断定予言はしない
 - 精神的なアドバイスは慎重に (専門家への相談を促す)`,
-  draftPost: `(投稿下書き支援のプロンプト、将来)`,
-  advancedDiagnosis: `(上位診断のプロンプト、将来)`,
 };
 
 export function Prompts() {
-  const [promptId, setPromptId] = useState<PromptId>('spiritChat');
+  const [promptId] = useState<PromptId>('spiritChat');
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<PromptRecord>(
     'app.aozoraquest.config.prompts',
     promptId,
@@ -43,29 +41,19 @@ export function Prompts() {
 
   return (
     <div>
-      <h2>システムプロンプト編集</h2>
+      <h2>精霊プロンプト</h2>
       <p style={{ color: 'var(--color-muted)' }}>
-        BYOK ユーザーの外部 LLM 呼び出しに使われるプロンプト。保存すると主管理者 PDS の
-        <code> app.aozoraquest.config.prompts/{promptId}</code> に反映。
+        精霊ブルスコンが将来ブラウザ内 LLM で返答するときのシステムプロンプトです。
+        保存すると主管理者 PDS の <code>app.aozoraquest.config.prompts/spiritChat</code>
+        に反映され、次回起動から全ユーザーのアプリに配信されます。
       </p>
-
-      <div className="section">
-        <label>
-          対象:{' '}
-          <select value={promptId} onChange={(e) => setPromptId(e.target.value as PromptId)}>
-            <option value="spiritChat">spiritChat (精霊自由対話)</option>
-            <option value="draftPost">draftPost (投稿下書き、将来)</option>
-            <option value="advancedDiagnosis">advancedDiagnosis (上位診断、将来)</option>
-          </select>
-        </label>
-      </div>
 
       {!loaded && <p>読み込み中...</p>}
 
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        rows={20}
+        rows={18}
         style={{ width: '100%', padding: '0.6em', fontFamily: 'ui-monospace, monospace', fontSize: '0.85em' }}
       />
 
