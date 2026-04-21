@@ -69,36 +69,35 @@ function topNAverage(postVec: Float32Array, protos: Float32Array[], n = 3): numb
 }
 
 /**
- * 投稿 1 件を分類する。
- * @param embedder 既にロード済みの Embedder
- * @param text 投稿本文
+ * 投稿 1 件を分類する。内部で embed を走らせる。
+ * 複数用途 (行動 + 認知) に使いたいときは先に embed してから classifyFromVec を呼ぶ。
  */
 export async function classifyPost(embedder: Embedder, text: string): Promise<ActionClassifierResult> {
   const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    const zeros = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<ActionCategory, number>;
-    return { action: null, scores: zeros, margin: 0 };
-  }
-  const protos = await loadPrototypes();
+  if (trimmed.length === 0) return emptyResult();
   const vec = await embedder.embed(trimmed);
+  return classifyFromVec(vec);
+}
+
+/** 埋め込み済みベクトルから直接分類 (単一 embed を複数分類で使い回す用) */
+export async function classifyFromVec(vec: Float32Array): Promise<ActionClassifierResult> {
+  const protos = await loadPrototypes();
   const scores = {} as Record<ActionCategory, number>;
   for (const c of CATEGORIES) {
     scores[c] = topNAverage(vec, protos[c], 3);
   }
-  // Top-1 を決定
   const sorted = CATEGORIES.slice().sort((a, b) => scores[b] - scores[a]);
   const top = sorted[0]!;
   const second = sorted[1]!;
   const margin = scores[top] - scores[second];
 
-  // 曖昧なら判定しない (margin が小さすぎる場合)
   const MIN_MARGIN = 0.02;
-  if (margin < MIN_MARGIN) {
-    return { action: null, scores, margin };
-  }
-  // neutral が最大なら行動なし
-  if (top === 'neutral') {
-    return { action: null, scores, margin };
-  }
+  if (margin < MIN_MARGIN) return { action: null, scores, margin };
+  if (top === 'neutral') return { action: null, scores, margin };
   return { action: top, scores, margin };
+}
+
+function emptyResult(): ActionClassifierResult {
+  const zeros = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<ActionCategory, number>;
+  return { action: null, scores: zeros, margin: 0 };
 }
