@@ -10,6 +10,7 @@ import { useRuntimeConfig } from '@/components/config-provider';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { Avatar } from '@/components/avatar';
+import { HomeSummary } from '@/components/home-summary';
 
 type Tab = 'following' | 'resonance';
 
@@ -76,6 +77,8 @@ export function Home() {
 
   return (
     <div>
+      {session.did && <HomeSummary diag={selfDiag} userDid={session.did} />}
+
       <div className="dq-tabs">
         {(['following', 'resonance'] as Tab[]).map((t) => (
           <button
