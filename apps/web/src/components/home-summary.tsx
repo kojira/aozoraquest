@@ -154,28 +154,45 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
             <Link to="/settings">目指す姿</Link> を選ぶと、そこへ近づくための今日のクエストが出ます。
           </p>
         </div>
-      ) : quests.length > 0 ? (
-        <div>
-          <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
-            今日のクエスト{!open && quests.length > 1 ? ` (他 ${quests.length - 1} 件)` : ''}
-          </div>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
-            {(open ? quests : quests.slice(0, 1)).map((q, i) => (
-              <li key={q.id}>
-                <QuestRow quest={q} showIcon={i === 0} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      ) : quests.length > 0 ? (() => {
+          // 達成済は後ろへ。維持/節制の requiredCount=0 は「今日を過ごしきれば達成」扱いで常に完了表示にはしない。
+          const incomplete = quests.filter((q) => !isQuestDone(q));
+          const done = quests.filter((q) => isQuestDone(q));
+          const sorted = [...incomplete, ...done];
+          const visible = open ? sorted : sorted.slice(0, 1);
+          const hiddenCount = sorted.length - visible.length;
+          return (
+            <div>
+              <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em', display: 'flex', gap: '0.6em' }}>
+                <span>今日のクエスト{!open && hiddenCount > 0 ? ` (他 ${hiddenCount} 件)` : ''}</span>
+                {done.length > 0 && (
+                  <span style={{ color: 'var(--color-accent)' }}>達成 {done.length}/{quests.length}</span>
+                )}
+              </div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
+                {visible.map((q, i) => (
+                  <li key={q.id}>
+                    <QuestRow quest={q} showIcon={i === 0} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })() : null}
     </section>
   );
+}
+
+/** requiredCount に達していれば達成 (requiredCount=0 の維持/節制は達成扱いにしない — 日を跨いだときに評価) */
+function isQuestDone(q: Quest): boolean {
+  return q.requiredCount > 0 && q.currentCount >= q.requiredCount;
 }
 
 function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
   const progress = quest.requiredCount > 0
     ? Math.min(1, quest.currentCount / quest.requiredCount)
     : 0;
+  const done = isQuestDone(quest);
   const typeBadge = { growth: '成長', maintenance: '維持', restraint: '節制' }[quest.type];
   const typeColor = {
     growth: 'var(--color-accent)',
@@ -184,7 +201,7 @@ function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
   }[quest.type];
 
   return (
-    <SpiritBubble showIcon={showIcon} iconSize={36} fontSize="0.9em">
+    <SpiritBubble showIcon={showIcon} iconSize={36} fontSize="0.9em" {...(done ? { style: { opacity: 0.55 } } : {})}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em', flexWrap: 'wrap' }}>
         <span
           style={{
@@ -198,7 +215,21 @@ function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
         >
           {typeBadge}
         </span>
-        <span>{quest.description}</span>
+        {done && (
+          <span
+            style={{
+              fontSize: '0.7em',
+              padding: '0.1em 0.4em',
+              background: 'var(--color-accent)',
+              color: '#0a1528',
+              borderRadius: 2,
+              fontWeight: 700,
+            }}
+          >
+            達成!
+          </span>
+        )}
+        <span style={done ? { textDecoration: 'line-through' } : undefined}>{quest.description}</span>
       </div>
       {quest.requiredCount > 0 && (
         <div style={{ marginTop: '0.4em', display: 'flex', alignItems: 'center', gap: '0.5em' }}>
