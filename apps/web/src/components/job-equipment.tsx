@@ -4,17 +4,22 @@ import { JOBS_BY_ID } from '@aozoraquest/core';
 
 /**
  * ジョブごとに合う装備アイコンを返す。
- * - primary: 右下に重ねるメインの装備
- * - secondary: 左上に重ねる副装備 (任意)
- * - accentColor: Avatar のリング色。各ジョブの最大ステ軸の色に寄せる。
+ * - crown: 頭上 (正面中央・上) に被せる兜 / 帽子の類
+ * - primary: 右下コーナーの装備
+ * - secondary: 左上コーナーの副装備
+ * - leftSide: アイコン左 (キャラの右手) — 剣など攻撃側
+ * - rightSide: アイコン右 (キャラの左手) — 盾など防御側
+ * - accentColor: Avatar のリング色
  */
 export interface JobEquipment {
-  primary: ReactNode;
+  crown?: ReactNode;
+  primary?: ReactNode;
   secondary?: ReactNode;
+  leftSide?: ReactNode;
+  rightSide?: ReactNode;
   accentColor: string;
 }
 
-// 便利関数: 単一 svg を size=100 の正方 viewBox で返す
 function svg(children: ReactNode): ReactNode {
   return (
     <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -23,24 +28,24 @@ function svg(children: ReactNode): ReactNode {
   );
 }
 
-// よく使うパス (色は CSS currentColor を推奨、ここはフィルム的に指定)
-
-// 黒の縁取り (どんな背景でも輪郭が切れない)
 const OUTLINE = '#0a1528';
 const OUTLINE_W = 4.5;
 const HIGHLIGHT = '#ffffff';
 
+/** 長剣: -25 度に傾けて viewBox を目一杯使う */
 const sword = (color: string) =>
   svg(
-    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round" transform="rotate(-25 50 50)">
       {/* 柄 */}
-      <rect x="40" y="68" width="20" height="14" rx="2" fill="#6a3a10" />
-      <rect x="32" y="64" width="36" height="8" fill="#b87a1e" />
-      <rect x="42" y="82" width="16" height="8" fill="#a06b32" />
-      {/* 刃 */}
-      <polygon points="43,62 57,62 55,14 50,6 45,14" fill={color} />
+      <rect x="38" y="70" width="24" height="20" rx="3" fill="#6a3a10" />
+      {/* 鍔 */}
+      <rect x="26" y="62" width="48" height="10" fill="#b87a1e" />
+      {/* 柄頭 */}
+      <rect x="40" y="88" width="20" height="8" rx="2" fill="#a06b32" />
+      {/* 刃 (幅広めに) */}
+      <polygon points="40,62 60,62 57,8 50,0 43,8" fill={color} />
       {/* 刃のハイライト */}
-      <polygon points="48,60 50,16 52,60" fill={HIGHLIGHT} stroke="none" opacity="0.75" />
+      <polygon points="47,60 50,10 53,60" fill={HIGHLIGHT} stroke="none" opacity="0.75" />
     </g>,
   );
 
@@ -111,32 +116,25 @@ const compass = (color: string) =>
     </g>,
   );
 
-/** カイザーナックル (メリケンサック): 指穴 4 つ + 上部の打撃突起 */
-const knuckle = (color: string) =>
+/** 拳: 画面手前に突き出した肌色のグー (knuckles toward viewer) */
+const fist = () =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      {/* 打撃用の 4 つの突起 (上側の山) */}
-      <path
-        d="M 10 44
-           Q 10 34 18 28 L 26 18 L 34 28
-           L 42 28 L 50 18 L 58 28
-           L 66 28 L 74 18 L 82 28
-           Q 90 34 90 44
-           L 90 62 Q 90 78 78 78 L 22 78 Q 10 78 10 62 Z"
-        fill={color}
-      />
-      {/* ハイライト (メタル感) */}
-      <path
-        d="M 20 36 L 80 36 L 80 42 L 20 42 Z"
-        fill={HIGHLIGHT}
-        stroke="none"
-        opacity="0.35"
-      />
-      {/* 指穴 4 つ (黒抜き) */}
-      <circle cx="25" cy="58" r="8" fill={OUTLINE} />
-      <circle cx="42" cy="58" r="8" fill={OUTLINE} />
-      <circle cx="58" cy="58" r="8" fill={OUTLINE} />
-      <circle cx="75" cy="58" r="8" fill={OUTLINE} />
+      {/* 手首の袖 */}
+      <rect x="22" y="80" width="56" height="16" rx="3" fill="#6a3a10" />
+      {/* 手のひら (メインの握り) */}
+      <path d="M 18 40 Q 18 26 30 22 L 72 22 Q 84 26 84 40 L 84 72 Q 84 84 72 86 L 30 86 Q 18 84 18 72 Z" fill="#f4caa3" />
+      {/* 親指 (左側から巻き込む) */}
+      <path d="M 18 50 Q 2 48 6 66 Q 12 78 24 74 Z" fill="#f4caa3" />
+      {/* 4 本の指の溝 */}
+      <line x1="34" y1="28" x2="34" y2="72" strokeWidth="3" />
+      <line x1="50" y1="28" x2="50" y2="72" strokeWidth="3" />
+      <line x1="66" y1="28" x2="66" y2="72" strokeWidth="3" />
+      {/* ナックル (4 つのふくらみ) */}
+      <circle cx="26" cy="30" r="5" fill="#f8d6b0" stroke="none" />
+      <circle cx="42" cy="30" r="5" fill="#f8d6b0" stroke="none" />
+      <circle cx="58" cy="30" r="5" fill="#f8d6b0" stroke="none" />
+      <circle cx="74" cy="30" r="5" fill="#f8d6b0" stroke="none" />
     </g>,
   );
 
@@ -168,18 +166,40 @@ const bell = (color: string) =>
     </g>,
   );
 
+/** 神楽鈴: 巫女の祭具 (3 つ鈴 + 紅白紐) */
+const kaguraSuzu = (color: string) =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+      {/* 柄 */}
+      <rect x="47" y="62" width="6" height="34" fill="#7a3a10" />
+      {/* 柄頭の装飾 */}
+      <rect x="40" y="54" width="20" height="10" rx="2" fill="#b87a1e" />
+      {/* 鈴 3 つ (三角配置) */}
+      <circle cx="50" cy="22" r="14" fill={color} />
+      <circle cx="24" cy="44" r="12" fill={color} />
+      <circle cx="76" cy="44" r="12" fill={color} />
+      {/* 鈴のスロット */}
+      <line x1="42" y1="24" x2="58" y2="24" strokeWidth="3" />
+      <line x1="16" y1="46" x2="32" y2="46" strokeWidth="3" />
+      <line x1="68" y1="46" x2="84" y2="46" strokeWidth="3" />
+      {/* 紐 (紅白) */}
+      <path d="M 44 66 Q 38 80 32 96" stroke="#e02030" strokeWidth="3.5" fill="none" />
+      <path d="M 56 66 Q 62 80 68 96" stroke="#ffffff" strokeWidth="3.5" fill="none" />
+    </g>,
+  );
+
 const twinSwords = (color: string) =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
       <g transform="rotate(-22 50 50)">
-        <rect x="40" y="72" width="20" height="14" rx="2" fill="#6a3a10" />
-        <rect x="34" y="70" width="32" height="6" fill="#b87a1e" />
-        <polygon points="43,66 57,66 55,14 50,6 45,14" fill={color} />
+        <rect x="40" y="76" width="20" height="16" rx="2" fill="#6a3a10" />
+        <rect x="30" y="68" width="40" height="10" fill="#b87a1e" />
+        <polygon points="42,68 58,68 55,10 50,2 45,10" fill={color} />
       </g>
       <g transform="rotate(22 50 50)">
-        <rect x="40" y="72" width="20" height="14" rx="2" fill="#6a3a10" />
-        <rect x="34" y="70" width="32" height="6" fill="#b87a1e" />
-        <polygon points="43,66 57,66 55,14 50,6 45,14" fill={color} />
+        <rect x="40" y="76" width="20" height="16" rx="2" fill="#6a3a10" />
+        <rect x="30" y="68" width="40" height="10" fill="#b87a1e" />
+        <polygon points="42,68 58,68 55,10 50,2 45,10" fill={color} />
       </g>
     </g>,
   );
@@ -192,17 +212,62 @@ const windFeather = (color: string) =>
     </g>,
   );
 
-// 軍配
-const uchiwa = (color: string) =>
+// ─── crown 用 (頭上に被せる) ───
+
+/** 兜 (samurai helmet): 鍬形 + 前立て + 錏 */
+const kabuto = (color: string) =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      <rect x="44" y="50" width="12" height="42" fill="#3a2a15" />
-      <ellipse cx="50" cy="34" rx="34" ry="30" fill={color} />
-      <circle cx="50" cy="34" r="12" fill="#fff8e0" />
+      {/* 錏 (neck guard) */}
+      <path d="M 20 62 L 22 88 L 78 88 L 80 62 Z" fill={color} />
+      <line x1="24" y1="72" x2="76" y2="72" strokeWidth="2" />
+      <line x1="24" y1="80" x2="76" y2="80" strokeWidth="2" />
+      {/* 鉢 (dome) */}
+      <path d="M 16 66 Q 16 22 50 16 Q 84 22 84 66 Z" fill={color} />
+      <line x1="50" y1="18" x2="50" y2="66" strokeWidth="2" />
+      <path d="M 32 22 Q 32 46 30 66" strokeWidth="2" fill="none" />
+      <path d="M 68 22 Q 68 46 70 66" strokeWidth="2" fill="none" />
+      {/* 吹返し (side flares) */}
+      <path d="M 6 58 Q 0 80 16 82 L 20 64 Z" fill={color} />
+      <path d="M 94 58 Q 100 80 84 82 L 80 64 Z" fill={color} />
+      {/* 鍬形 (金の角・左右) */}
+      <path d="M 28 28 Q 14 8 2 0 Q 12 18 26 40 Z" fill="#e8c34b" />
+      <path d="M 72 28 Q 86 8 98 0 Q 88 18 74 40 Z" fill="#e8c34b" />
+      {/* 前立て (forehead crescent) */}
+      <path d="M 36 48 Q 50 32 64 48 Q 56 42 50 42 Q 44 42 36 48 Z" fill="#ffd84a" />
     </g>,
   );
 
-// ─── ステ軸 → 色 ──────────────────────
+/** 賢者の三角帽子 (wizard hat with star) */
+const wizardHat = (color: string) =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+      {/* つば */}
+      <ellipse cx="50" cy="76" rx="44" ry="10" fill={color} />
+      {/* 円錐 (先端を少し傾ける) */}
+      <path d="M 20 74 Q 40 44 56 6 Q 66 44 80 74 Z" fill={color} />
+      {/* 帯 */}
+      <path d="M 26 68 Q 50 80 76 68 L 78 62 Q 50 74 24 62 Z" fill="#3a2a15" />
+      {/* 星 */}
+      <path d="M 56 36 l 3 8 l 9 1 l -7 6 l 2 8 l -7 -5 l -7 5 l 2 -8 l -7 -6 l 9 -1 z" fill="#ffd84a" stroke="none" />
+    </g>,
+  );
+
+/** 吟遊詩人の羽根付き帽子 (feathered cap) */
+const featheredCap = (color: string) =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+      {/* 本体 (ベレー風) */}
+      <path d="M 12 70 Q 10 38 50 28 Q 90 38 88 70 L 82 78 L 18 78 Z" fill={color} />
+      <ellipse cx="50" cy="78" rx="38" ry="8" fill={color} />
+      {/* 帯 */}
+      <rect x="14" y="66" width="72" height="8" fill="#3a2a15" />
+      {/* 羽根 (斜め上に伸ばす) */}
+      <path d="M 66 32 Q 88 8 98 0 Q 88 20 82 44 Z" fill="#ffd84a" />
+      <line x1="68" y1="30" x2="92" y2="4" strokeWidth="2" />
+    </g>,
+  );
+
 const STAT_COLORS = {
   atk: 'var(--color-atk)',
   def: 'var(--color-def)',
@@ -229,7 +294,6 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
   const ds = dominantStat(archetype);
   const accent = STAT_COLORS[ds];
 
-  // 装備のメインカラー。彩度高め + 白っぽいハイライトが乗るように明るめを採用。
   const jobColor: Record<Archetype, string> = {
     sage: '#9d8aff',
     mage: '#d0b0ff',
@@ -251,22 +315,22 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
   const c = jobColor[archetype];
 
   const map: Record<Archetype, JobEquipment> = {
-    sage:      { primary: book(c),        secondary: feather('#d0d8e0'), accentColor: accent },
-    mage:      { primary: staff(c),       accentColor: accent },
-    shogun:    { primary: uchiwa(c),      accentColor: accent },
-    bard:      { primary: musicNote(c),   secondary: feather('#e0b0ff'), accentColor: accent },
-    seer:      { primary: crystalBall(c), accentColor: accent },
-    poet:      { primary: feather(c),     accentColor: accent },
-    paladin:   { primary: sword(c),       secondary: shield('#e8c34b'),  accentColor: accent },
-    explorer:  { primary: compass(c),     accentColor: accent },
-    warrior:   { primary: sword(c),       accentColor: accent },
-    guardian:  { primary: shield(c),      accentColor: accent },
-    fighter:   { primary: knuckle(c),     accentColor: accent },
-    dancer:    { primary: fan(c),         accentColor: accent },
-    captain:   { primary: starEpaulet(c), accentColor: accent },
-    miko:      { primary: bell(c),        accentColor: accent },
-    gladiator: { primary: twinSwords(c),  accentColor: accent },
-    performer: { primary: windFeather(c), secondary: bell('#e8c34b'),    accentColor: accent },
+    sage:      { crown: wizardHat('#3a2a5a'),      primary: book(c),           accentColor: accent },
+    mage:      { primary: staff(c),                accentColor: accent },
+    shogun:    { crown: kabuto('#2a2f3a'),         accentColor: accent },
+    bard:      { crown: featheredCap('#3a2a5a'),   primary: musicNote(c),      accentColor: accent },
+    seer:      { primary: crystalBall(c),          accentColor: accent },
+    poet:      { primary: feather(c),              accentColor: accent },
+    paladin:   { leftSide: sword(c),               rightSide: shield('#e8c34b'), accentColor: accent },
+    explorer:  { primary: compass(c),              accentColor: accent },
+    warrior:   { leftSide: sword(c),               accentColor: accent },
+    guardian:  { rightSide: shield(c),             accentColor: accent },
+    fighter:   { primary: fist(),                  accentColor: accent },
+    dancer:    { primary: fan(c),                  accentColor: accent },
+    captain:   { primary: starEpaulet(c),          accentColor: accent },
+    miko:      { primary: kaguraSuzu(c),           accentColor: accent },
+    gladiator: { primary: twinSwords(c),           accentColor: accent },
+    performer: { primary: windFeather(c),          secondary: bell('#e8c34b'),   accentColor: accent },
   };
   return map[archetype];
 }

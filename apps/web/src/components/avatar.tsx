@@ -65,23 +65,26 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
       <span style={inner}>{imgEl}</span>
       {equipment && (
         <>
-          {/* primary: 右下、アクセント色のハロー + 黒シャドウでどんな背景でも浮かせる */}
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute',
-              right: `-${Math.round(size * 0.2)}px`,
-              bottom: `-${Math.round(size * 0.2)}px`,
-              width: Math.round(size * 0.62),
-              height: Math.round(size * 0.62),
-              pointerEvents: 'none',
-              filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
-              display: 'block',
-              lineHeight: 0,
-            }}
-          >
-            {equipment.primary}
-          </span>
+          {/* primary: 右下コーナー */}
+          {equipment.primary && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                right: `-${Math.round(size * 0.2)}px`,
+                bottom: `-${Math.round(size * 0.2)}px`,
+                width: Math.round(size * 0.62),
+                height: Math.round(size * 0.62),
+                pointerEvents: 'none',
+                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                display: 'block',
+                lineHeight: 0,
+              }}
+            >
+              {equipment.primary}
+            </span>
+          )}
+          {/* secondary: 左上コーナー */}
           {equipment.secondary && (
             <span
               aria-hidden
@@ -98,6 +101,67 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               }}
             >
               {equipment.secondary}
+            </span>
+          )}
+          {/* leftSide: キャラの右手 (viewer の左) — 剣などの攻撃装備 */}
+          {equipment.leftSide && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `-${Math.round(size * 0.35)}px`,
+                top: `${Math.round(size * 0.1)}px`,
+                width: Math.round(size * 0.85),
+                height: Math.round(size * 0.85),
+                pointerEvents: 'none',
+                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                display: 'block',
+                lineHeight: 0,
+                zIndex: 1,
+              }}
+            >
+              {equipment.leftSide}
+            </span>
+          )}
+          {/* rightSide: キャラの左手 (viewer の右) — 盾などの防御装備 */}
+          {equipment.rightSide && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                right: `-${Math.round(size * 0.35)}px`,
+                top: `${Math.round(size * 0.1)}px`,
+                width: Math.round(size * 0.85),
+                height: Math.round(size * 0.85),
+                pointerEvents: 'none',
+                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                display: 'block',
+                lineHeight: 0,
+                zIndex: 1,
+              }}
+            >
+              {equipment.rightSide}
+            </span>
+          )}
+          {/* crown: 頭上中央 */}
+          {equipment.crown && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: `-${Math.round(size * 0.55)}px`,
+                transform: 'translateX(-50%)',
+                width: Math.round(size * 1.05),
+                height: Math.round(size * 0.8),
+                pointerEvents: 'none',
+                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                display: 'block',
+                lineHeight: 0,
+                zIndex: 2,
+              }}
+            >
+              {equipment.crown}
             </span>
           )}
         </>
