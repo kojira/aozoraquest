@@ -184,7 +184,7 @@ export function generateDailyQuests(input: QuestGenInput): Quest[] {
   return quests;
 }
 
-/** 累計 XP から LV を計算 (03-game-design.md §XP とレベル) */
+/** 累計 XP から LV を計算 (03-game-design.md §XP とレベル)。グローバル用 (現状未使用)。 */
 const XP_CURVE: Array<[number, number]> = [
   [1, 0], [2, 100], [5, 800], [10, 3500], [20, 15000], [30, 40000], [50, 150000],
 ];
@@ -196,3 +196,58 @@ export function levelFromXp(xp: number): number {
   }
   return lv;
 }
+
+/**
+ * 現職 (archetype) の滞在 LV 用 XP 曲線 (LV1-50 全て)。
+ * 公式: threshold(n) = round(30 * (n-1)^1.85)
+ * - 初期は速い (LV2 = 30 XP、LV5 = 394 XP)。
+ * - 後期にかけて鈍化。LV50 = 約 44,000 XP。
+ * - 標準ユーザー (約 100 XP/日) で 1 年強で LV50 近傍に到達する目安。
+ */
+export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = (() => {
+  const out: Array<[number, number]> = [];
+  for (let lv = 1; lv <= 50; lv++) {
+    out.push([lv, Math.round(30 * Math.pow(lv - 1, 1.85))]);
+  }
+  return out;
+})();
+
+/** 累計 XP から現職 LV を計算。 */
+export function jobLevelFromXp(xp: number): number {
+  let lv = 1;
+  for (const [l, threshold] of JOB_XP_CURVE) {
+    if (xp >= threshold) lv = l;
+    else break;
+  }
+  return lv;
+}
+
+/**
+ * 現職 LV の UI 進捗バー用。
+ * - level: 現在 LV
+ * - current: 現在 LV に入ってから積んだ XP
+ * - next: 次 LV までに必要な XP (現 LV 内の分母)
+ * LV 50 に到達後は next = 0 (打ち止め)
+ */
+export function jobXpToNextLevel(xp: number): { level: number; current: number; next: number } {
+  const level = jobLevelFromXp(xp);
+  const curEntry = JOB_XP_CURVE.find((e) => e[0] === level);
+  const nextEntry = JOB_XP_CURVE.find((e) => e[0] === level + 1);
+  const curThreshold = curEntry ? curEntry[1] : 0;
+  if (!nextEntry) {
+    return { level, current: xp - curThreshold, next: 0 };
+  }
+  return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
+}
+
+/** 現職 LV 用の XP 加算定数。 */
+export const JOB_XP_REWARDS = {
+  /** 投稿が action 分類に成功するたびの XP */
+  postMatch: 5,
+  /** 日次ボーナス (その日 1 回だけ) */
+  dailyBonus: 30,
+  /** streak 1 日あたりの追加 XP */
+  streakBonusPerDay: 3,
+  /** streak 追加の上限 */
+  streakBonusCap: 50,
+} as const;

@@ -27,8 +27,41 @@
           },
           "analyzedPostCount": { "type": "integer", "minimum": 0 },
           "analyzedAt": { "type": "string", "format": "datetime" },
-          "public": { "type": "boolean", "default": false }
+          "public": { "type": "boolean", "default": false },
+          "jobLevel": { "type": "ref", "ref": "#jobLevel" },
+          "jobHistory": { "type": "array", "items": { "type": "ref", "ref": "#jobHistoryEntry" } }
         }
+      }
+    },
+    "jobLevel": {
+      "type": "object",
+      "description": "Current-job stay level; resets when archetype changes",
+      "required": ["archetype", "xp", "joinedAt", "streakDays"],
+      "properties": {
+        "archetype": {
+          "type": "string",
+          "knownValues": [
+            "sage", "mage", "shogun", "bard",
+            "seer", "poet", "paladin", "explorer",
+            "warrior", "guardian", "fighter", "dancer",
+            "captain", "miko", "gladiator", "performer"
+          ]
+        },
+        "xp": { "type": "integer", "minimum": 0 },
+        "joinedAt": { "type": "string", "format": "datetime" },
+        "lastDailyBonusDate": { "type": "string" },
+        "streakDays": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "jobHistoryEntry": {
+      "type": "object",
+      "required": ["archetype", "peakLevel", "totalXp", "from", "until"],
+      "properties": {
+        "archetype": { "type": "string" },
+        "peakLevel": { "type": "integer", "minimum": 1 },
+        "totalXp": { "type": "integer", "minimum": 0 },
+        "from": { "type": "string", "format": "datetime" },
+        "until": { "type": "string", "format": "datetime" }
       }
     },
     "statVector": {

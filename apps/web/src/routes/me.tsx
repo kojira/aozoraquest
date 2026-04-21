@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID, jobDisplayName, jobTagline } from '@aozoraquest/core';
+import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
@@ -106,6 +106,8 @@ export function MyProfile() {
     state.status === 'done' && state.result.archetype && state.result.archetype in JOBS_BY_ID
       ? (state.result.archetype as Archetype)
       : null;
+  const myJobXp = state.status === 'done' ? (state.result.jobLevel?.xp ?? 0) : 0;
+  const myLevel = jobLevelFromXp(myJobXp);
 
   return (
     <div>
@@ -115,7 +117,11 @@ export function MyProfile() {
           <h2 style={{ margin: 0 }}>{session.handle ?? '自分'}</h2>
           {myArchetype && (
             <p style={{ margin: 0, fontSize: '0.85em', color: 'var(--color-muted)' }}>
-              <span style={{ color: 'var(--color-muted)' }}>今:</span> {jobDisplayName(myArchetype, 'default')}
+              <span style={{ color: 'var(--color-muted)' }}>今:</span>{' '}
+              {jobDisplayName(myArchetype, 'default')}
+              <span style={{ marginLeft: '0.4em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
+                LV{myLevel}
+              </span>
               <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(myArchetype)}</span>
             </p>
           )}
@@ -228,10 +234,14 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
   const jobName = jobDisplayName(result.archetype, 'default');
   const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
+  const xp = result.jobLevel?.xp ?? 0;
+  const lv = jobXpToNextLevel(xp);
+  const progressPct = lv.next > 0 ? Math.min(1, lv.current / lv.next) * 100 : 100;
   return (
     <section style={{ marginTop: '1em' }}>
       <h3 style={{ fontSize: '1em' }}>
         今の姿: {jobName}
+        <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', marginLeft: '0.4em' }}>LV{lv.level}</span>
         {tagline && <span style={{ fontSize: '0.8em', fontWeight: 400, color: 'var(--color-muted)', marginLeft: '0.5em' }}>{tagline}</span>}
       </h3>
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -247,6 +257,16 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
           <StatRow label="知 INT" value={result.rpgStats.int} color="var(--color-int)" />
           <StatRow label="運 LUK" value={result.rpgStats.luk} color="var(--color-luk)" />
         </ul>
+      </div>
+
+      <div style={{ marginTop: '0.8em', maxWidth: '28em' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
+          <span>LV{lv.level} → LV{lv.level + 1}</span>
+          <span>{lv.next > 0 ? `${lv.current} / ${lv.next} XP` : `MAX (累計 ${xp} XP)`}</span>
+        </div>
+        <div style={{ height: 5, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden', marginTop: '0.2em' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', background: 'var(--color-accent)' }} />
+        </div>
       </div>
 
       <h4 style={{ fontSize: '0.95em', marginTop: '1em' }}>考え方のクセ</h4>
