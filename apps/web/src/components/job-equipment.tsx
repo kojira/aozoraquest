@@ -5,6 +5,7 @@ import { JOBS_BY_ID } from '@aozoraquest/core';
 /**
  * ジョブごとに合う装備アイコンを返す。
  * - crown: 頭上 (正面中央・上) に被せる兜 / 帽子の類
+ * - body: 顔の下に重ねる衣装 (巫女装束など)。Avatar の face より後ろに描画
  * - primary: 右下コーナーの装備
  * - secondary: 左上コーナーの副装備
  * - leftSide: アイコン左 (キャラの右手) — 剣など攻撃側
@@ -13,6 +14,7 @@ import { JOBS_BY_ID } from '@aozoraquest/core';
  */
 export interface JobEquipment {
   crown?: ReactNode;
+  body?: ReactNode;
   primary?: ReactNode;
   secondary?: ReactNode;
   leftSide?: ReactNode;
@@ -163,6 +165,27 @@ const bell = (color: string) =>
       <path d="M 26 30 Q 26 14 50 14 Q 74 14 74 30 L 80 72 L 20 72 Z" fill={color} />
       <rect x="16" y="72" width="68" height="10" rx="3" fill="#3a2a15" />
       <circle cx="50" cy="84" r="7" fill={OUTLINE} stroke="none" />
+    </g>,
+  );
+
+/** 巫女装束 (白衣 + 緋袴): 顔の下に重ねる衣装レイヤー */
+const mikoOutfit = () =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+      {/* 白衣 (肩〜胴) */}
+      <path d="M 2 60 Q 2 40 18 34 L 82 34 Q 98 40 98 60 L 98 70 L 2 70 Z" fill="#f8f4ec" />
+      {/* 襟 (V collar) */}
+      <path d="M 42 34 L 50 54 L 58 34 Z" fill="#f8f4ec" />
+      <line x1="42" y1="34" x2="50" y2="50" strokeWidth="3" />
+      <line x1="58" y1="34" x2="50" y2="50" strokeWidth="3" />
+      {/* 帯 (white sash) */}
+      <rect x="0" y="68" width="100" height="9" fill="#ffffff" />
+      {/* 緋袴 (red hakama) */}
+      <path d="M 0 77 L 100 77 L 100 100 L 0 100 Z" fill="#c8162b" />
+      {/* 袴の襞 (pleats) */}
+      <line x1="25" y1="77" x2="22" y2="100" strokeWidth="2.5" />
+      <line x1="50" y1="77" x2="50" y2="100" strokeWidth="2.5" />
+      <line x1="75" y1="77" x2="78" y2="100" strokeWidth="2.5" />
     </g>,
   );
 
@@ -344,7 +367,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     fighter:   { primary: fist(),                  accentColor: accent },
     dancer:    { primary: fan(c),                  accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
-    miko:      { primary: kaguraSuzu(c),           accentColor: accent },
+    miko:      { body: mikoOutfit(), primary: kaguraSuzu(c),            accentColor: accent },
     gladiator: { primary: twinSwords(c),           accentColor: accent },
     performer: { primary: windFeather(c),          secondary: bell('#e8c34b'),   accentColor: accent },
   };
