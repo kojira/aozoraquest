@@ -6,9 +6,11 @@ import {
   computePostWeights,
   cosineSimilarity,
   determineArchetype,
+  diagnose,
   normalizeCognitive,
   topNAverage,
 } from '../diagnosis.js';
+import type { CogFunction } from '../types.js';
 import { COGNITIVE_FUNCTIONS, STATS, type CognitiveScores } from '../types.js';
 
 describe('COGNITIVE_TO_RPG', () => {
@@ -97,6 +99,42 @@ describe('computeConfidence', () => {
 
   test('small gap → ambiguous', () => {
     expect(computeConfidence(150, { Ni: 100, Te: 97, Ti: 95, Ne: 90, Si: 80, Se: 70, Fi: 60, Fe: 50 })).toBe('ambiguous');
+  });
+});
+
+describe('diagnose (centering の効果)', () => {
+  // 各機能ごとに「その機能の軸に 1.0、他は 0」の単位ベクトルを 1 本ずつ
+  // プロトタイプにする。ポストも同じ形式 (one-hot on 1 軸)。
+  // これで「post 軸 = proto 軸」なら cos = 1、違えば cos = 0 になる。
+  const fns: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
+  function oneHot(idx: number): Float32Array {
+    const v = new Float32Array(8);
+    v[idx] = 1;
+    return v;
+  }
+  const protos = {} as Record<CogFunction, Float32Array[]>;
+  fns.forEach((fn, i) => { protos[fn] = [oneHot(i)]; });
+
+  test('全投稿が Fi 寄りなら Fi が top-1 になる', () => {
+    const fiIdx = fns.indexOf('Fi');
+    const posts: Float32Array[] = [];
+    for (let i = 0; i < 60; i++) posts.push(oneHot(fiIdx));
+    const r = diagnose(posts, protos, 60);
+    expect('insufficient' in r).toBe(false);
+    if ('archetype' in r) {
+      expect(r.cognitiveScores.Fi).toBeGreaterThan(r.cognitiveScores.Ni);
+      expect(r.cognitiveScores.Fi).toBeGreaterThan(r.cognitiveScores.Te);
+    }
+  });
+
+  test('全投稿が Te 寄りなら Te が top-1 になる (Ni 偏りに引きずられない)', () => {
+    const teIdx = fns.indexOf('Te');
+    const posts: Float32Array[] = [];
+    for (let i = 0; i < 60; i++) posts.push(oneHot(teIdx));
+    const r = diagnose(posts, protos, 60);
+    if ('archetype' in r) {
+      expect(r.cognitiveScores.Te).toBeGreaterThan(r.cognitiveScores.Ni);
+    }
   });
 });
 
