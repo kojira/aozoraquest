@@ -24,6 +24,12 @@ function currentGreeting(): GreetingSituation {
   return 'greeting.night';
 }
 
+/** ユーザー 1 発言の最大文字数 */
+const INPUT_MAX = 100;
+
+/** LLM に渡す直近の会話ターン数 (1 ターン = user + spirit = 2 件)。これより古い発言は忘れる。 */
+const HISTORY_TURNS = 10;
+
 const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
 青空の化身で、穏やかで詩的、押し付けがましくない。
 応答ルール:
@@ -128,7 +134,7 @@ export function Spirit() {
 
   const sendMessage = useCallback(async () => {
     if (!agent || !did || !points || sending) return;
-    const text = input.trim();
+    const text = input.trim().slice(0, INPUT_MAX);
     if (!text) return;
     if (points.balance < 1) return;
 
@@ -168,7 +174,9 @@ export function Spirit() {
     const placeholder: HistoryItem = { uri: streamKey, role: 'spirit', text: '', createdAt: new Date().toISOString() };
     setHistory((h) => [...h, placeholder]);
 
-    const recentHistory = [...history.slice(-10), tempUser];
+    // 直近 HISTORY_TURNS ターン (1 ターン = user + spirit の 2 件) を LLM コンテキストに渡す。
+    // 要約はせず、それ以前は忘れる。
+    const recentHistory = [...history.slice(-HISTORY_TURNS * 2), tempUser];
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...recentHistory.map((m) => ({
@@ -358,22 +366,28 @@ export function Spirit() {
             {sendErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{sendErr}</p>}
           </section>
 
-          <section style={{ marginTop: '0.8em', display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
-            <TextField
-              ref={inputRef}
-              value={input}
-              onChange={setInput}
-              onSubmit={() => void sendMessage()}
-              placeholder={points.balance > 0 ? 'ブルスコンに話しかける' : 'あなたの投稿を重ねると、話せるようになる'}
-              disabled={sending || points.balance < 1}
-              style={{ flex: 1 }}
-            />
-            <button
-              onClick={() => void sendMessage()}
-              disabled={sending || points.balance < 1 || !input.trim()}
-            >
-              {sending ? '…' : '送る'}
-            </button>
+          <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+            <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
+              <TextField
+                ref={inputRef}
+                value={input}
+                onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
+                onSubmit={() => void sendMessage()}
+                placeholder={points.balance > 0 ? 'ブルスコンに話しかける' : 'あなたの投稿を重ねると、話せるようになる'}
+                disabled={sending || points.balance < 1}
+                maxLength={INPUT_MAX}
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={() => void sendMessage()}
+                disabled={sending || points.balance < 1 || !input.trim()}
+              >
+                {sending ? '…' : '送る'}
+              </button>
+            </div>
+            <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
+              {input.length} / {INPUT_MAX}
+            </div>
           </section>
         </>
       )}
