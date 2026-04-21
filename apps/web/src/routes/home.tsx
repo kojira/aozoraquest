@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
-import type { DiagnosisResult } from '@aozoraquest/core';
-import { resonanceLabel } from '@aozoraquest/core';
+import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
+import { JOBS_BY_ID, resonanceLabel, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { fetchTimeline, getRecord } from '@/lib/atproto';
 import { buildResonanceTimeline, type ResonanceEntry } from '@/lib/resonance-flow';
@@ -19,6 +19,7 @@ export function Home() {
   const config = useRuntimeConfig();
   const [tab, setTab] = useState<Tab>('following');
   const [selfDiag, setSelfDiag] = useState<DiagnosisResult | null>(null);
+  const [targetJob, setTargetJob] = useState<Archetype | null>(null);
 
   const agent = session.agent;
 
@@ -28,7 +29,17 @@ export function Home() {
     getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self')
       .then((r) => setSelfDiag(r))
       .catch((e) => console.warn('self analysis load failed', e));
+    getRecord<{ targetJob?: string }>(agent, did, 'app.aozoraquest.profile', 'self')
+      .then((p) => {
+        if (p?.targetJob && p.targetJob in JOBS_BY_ID) setTargetJob(p.targetJob as Archetype);
+      })
+      .catch((e) => console.warn('profile load failed', e));
   }, [session.status, agent, session.did]);
+
+  const targetStats: StatVector | null = useMemo(
+    () => (targetJob ? statArrayToVector(JOBS_BY_ID[targetJob].stats) : null),
+    [targetJob],
+  );
 
   // フォロー TL: カーソル無限スクロール
   const followingFeed = useInfiniteFeed<AppBskyFeedDefs.FeedViewPost>({
@@ -77,7 +88,7 @@ export function Home() {
 
   return (
     <div>
-      {session.did && <HomeSummary diag={selfDiag} userDid={session.did} />}
+      {session.did && <HomeSummary diag={selfDiag} userDid={session.did} targetStats={targetStats} />}
 
       <div className="dq-tabs">
         {(['following', 'resonance'] as Tab[]).map((t) => (

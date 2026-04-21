@@ -7,10 +7,9 @@ import { RadarChart } from './radar-chart';
 interface HomeSummaryProps {
   diag: DiagnosisResult | null;
   userDid: string;
+  /** 目指すジョブのステータス配分。未設定ならクエストは生成しない。 */
+  targetStats?: StatVector | null;
 }
-
-/** 仮の目標値: 全軸バランス (20/20/20/20/20)。将来は user.profile.targetJob から引く。 */
-const BALANCED_TARGET: StatVector = { atk: 20, def: 20, agi: 20, int: 20, luk: 20 };
 
 /**
  * ホーム上部のサマリー。
@@ -23,11 +22,11 @@ const BALANCED_TARGET: StatVector = { atk: 20, def: 20, agi: 20, int: 20, luk: 2
  * - 静的: 折り畳み。閉じたら 1 行のジョブ名のみ。開くと小さなレーダー + ステータス要約。
  * - 動的 (今日のクエスト): 常時表示。
  */
-export function HomeSummary({ diag, userDid }: HomeSummaryProps) {
+export function HomeSummary({ diag, userDid, targetStats }: HomeSummaryProps) {
   const [open, setOpen] = useState(false);
 
   const quests: Quest[] = useMemo(() => {
-    if (!diag) return [];
+    if (!diag || !targetStats) return [];
     const today = new Date();
     const dateStr =
       `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -36,10 +35,10 @@ export function HomeSummary({ diag, userDid }: HomeSummaryProps) {
       dateStr,
       level: 1, // TODO: xp log から算出
       currentStats: diag.rpgStats,
-      targetStats: BALANCED_TARGET,
+      targetStats,
       recentTemplateIds: [],
     });
-  }, [diag, userDid]);
+  }, [diag, userDid, targetStats]);
 
   if (!diag) {
     return (
@@ -96,7 +95,13 @@ export function HomeSummary({ diag, userDid }: HomeSummaryProps) {
       </div>
 
       {/* 動的: 今日のクエスト。折り畳み時は 1 件、展開時は全件。 */}
-      {quests.length > 0 && (
+      {!targetStats ? (
+        <div style={{ fontSize: '0.85em' }}>
+          <p style={{ margin: '0 0 0.3em' }}>
+            <Link to="/settings">目指す姿</Link> を選ぶと、そこへ近づくための今日のクエストが出ます。
+          </p>
+        </div>
+      ) : quests.length > 0 ? (
         <div>
           <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
             今日のクエスト{!open && quests.length > 1 ? ` (他 ${quests.length - 1} 件)` : ''}
@@ -107,7 +112,7 @@ export function HomeSummary({ diag, userDid }: HomeSummaryProps) {
             ))}
           </ul>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

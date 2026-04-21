@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { Archetype, StatVector } from '@aozoraquest/core';
+import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { TextField } from '@/components/text-field';
+import { RadarChart } from '@/components/radar-chart';
 
 const OPTIN_TAG = 'aozoraquest';
+
+function statsOf(id: Archetype): StatVector {
+  return statArrayToVector(JOBS_BY_ID[id].stats);
+}
 const DEFAULT_OPTIN_POST = `#${OPTIN_TAG} の気質診断に参加しました。共鳴 TL に自分の投稿が表示されても構いません。`;
 
 interface Profile {
@@ -97,11 +104,91 @@ export function Settings() {
     }
   }
 
+  const [targetBusy, setTargetBusy] = useState(false);
+  const [targetErr, setTargetErr] = useState<string | null>(null);
+  async function setTargetJob(id: Archetype) {
+    if (session.status !== 'signed-in' || !session.agent) return;
+    const agent = session.agent;
+    setTargetBusy(true);
+    setTargetErr(null);
+    try {
+      const next: Profile = {
+        ...(profile ?? {}),
+        targetJob: id,
+        updatedAt: new Date().toISOString(),
+      };
+      await putRecord(agent, 'app.aozoraquest.profile', 'self', next);
+      setProfile(next);
+    } catch (e) {
+      setTargetErr(String((e as Error)?.message ?? e));
+    } finally {
+      setTargetBusy(false);
+    }
+  }
+
+  const currentTarget = profile?.targetJob && profile.targetJob in JOBS_BY_ID
+    ? (profile.targetJob as Archetype)
+    : null;
+
   return (
     <div>
       <h2>設定</h2>
 
       <section style={{ marginTop: '1em' }}>
+        <h3 style={{ fontSize: '0.95em' }}>目指す姿</h3>
+        <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
+          近づきたい「ジョブ」を 1 つ選ぶと、毎日のクエストがそこへ向かう内容になります。
+          いつでも変更できます。
+        </p>
+        {!profileLoaded ? (
+          <p>読み込み中...</p>
+        ) : (
+          <>
+            {currentTarget && (
+              <div style={{ marginTop: '0.5em', display: 'flex', alignItems: 'center', gap: '0.8em' }}>
+                <RadarChart stats={statsOf(currentTarget)} size={110} showValues={false} />
+                <div>
+                  <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>現在の目標</div>
+                  <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{jobDisplayName(currentTarget, 'default')}</div>
+                </div>
+              </div>
+            )}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '0.4em',
+                marginTop: '0.6em',
+              }}
+            >
+              {ARCHETYPES.map((id) => {
+                const isCurrent = currentTarget === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => void setTargetJob(id)}
+                    disabled={targetBusy}
+                    style={{
+                      padding: '0.4em 0.3em',
+                      fontSize: '0.8em',
+                      background: isCurrent ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.4)',
+                      border: `2px solid ${isCurrent ? '#ffffff' : 'rgba(255,255,255,0.5)'}`,
+                      borderRadius: 2,
+                      color: '#ffffff',
+                      cursor: targetBusy ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {jobDisplayName(id, 'default')}
+                  </button>
+                );
+              })}
+            </div>
+            {targetErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em', marginTop: '0.5em' }}>{targetErr}</p>}
+          </>
+        )}
+      </section>
+
+      <section style={{ marginTop: '2em' }}>
         <h3 style={{ fontSize: '0.95em' }}>共鳴タイムラインへの参加 (オプトイン)</h3>
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
           参加すると、他のユーザーの共鳴 TL にあなたの投稿が表示される可能性があります。

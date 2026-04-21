@@ -31,7 +31,11 @@ const AXES: Array<{ key: keyof StatVector; label: string; color: string }> = [
 export function RadarChart({ stats, size = 220, max = 100, normalize = false, showValues = true }: RadarChartProps) {
   const cx = size / 2;
   const cy = size / 2;
-  const radius = size * 0.36;
+  // ラベルが上下端ではみ出ないように radius は控えめに。
+  // SVG viewBox は size × size なので、radius + labelOffset + fontSize/2 が size/2 を超えてはいけない。
+  const fontSize = Math.max(10, size * 0.07);
+  const labelOffset = fontSize * 1.5;
+  const radius = (size / 2 - labelOffset - fontSize / 2) * 0.95;
 
   // normalize=true の場合、外周を「各軸の値の最大」にスケールする。
   // max=0 ケース保険で 1 にフォールバック。
@@ -61,7 +65,10 @@ export function RadarChart({ stats, size = 220, max = 100, normalize = false, sh
   const valuePath = valuePoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ') + ' Z';
 
   // ラベル位置 (外周の少し外)
-  const labelPoints = axisVecs.map((v) => ({ x: cx + v.x * (radius + 16), y: cy + v.y * (radius + 16) }));
+  const labelPoints = axisVecs.map((v) => ({
+    x: cx + v.x * (radius + labelOffset),
+    y: cy + v.y * (radius + labelOffset),
+  }));
 
   return (
     <svg
@@ -117,7 +124,7 @@ export function RadarChart({ stats, size = 220, max = 100, normalize = false, sh
             key={a.key}
             x={p.x}
             y={p.y}
-            fontSize={size * 0.07}
+            fontSize={fontSize}
             fill="#ffffff"
             textAnchor="middle"
             dominantBaseline="central"
