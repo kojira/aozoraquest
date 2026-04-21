@@ -1,33 +1,40 @@
 import type { CSSProperties } from 'react';
+import type { Archetype } from '@aozoraquest/core';
+import { getJobEquipment } from './job-equipment';
 
 interface AvatarProps {
   src?: string | undefined;
   alt?: string;
   size?: number;
   style?: CSSProperties;
+  /** 表示したい本人のジョブ。指定すると装備と accent リングが重なる。 */
+  archetype?: Archetype | null | undefined;
 }
 
 /**
- * 円形アバター。
- *
- * ジャギーを避けるための工夫:
- * 1. **ラッパー div で overflow:hidden + border-radius:50%** を受け持つ。
- *    img 自体に border-radius を掛けない → 円形クリップがコンポジットレイヤで綺麗に効く。
- * 2. **img の intrinsic を 2× 表示サイズで要求**する。retina (2 DPR) の実ピクセル数と一致するので、
- *    縮小補間によるモアレ/エッジのギザつきが出ない。
- * 3. **リングは別 div の box-shadow**。img に border を付けると円形との合成で縁がカクつく。
+ * 円形アバター。archetype を渡すとジョブに応じた装備アイコンを周囲に配置する。
  */
-export function Avatar({ src, alt = '', size = 32, style }: AvatarProps) {
-  const wrapper: CSSProperties = {
+export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarProps) {
+  const equipment = archetype ? getJobEquipment(archetype) : null;
+
+  const outer: CSSProperties = {
+    position: 'relative',
     width: size,
     height: size,
     minWidth: size,
+    flexShrink: 0,
+    display: 'inline-block',
+    ...style,
+  };
+
+  const inner: CSSProperties = {
+    width: size,
+    height: size,
     borderRadius: '50%',
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    flexShrink: 0,
+    boxShadow: equipment ? `0 0 0 2px ${equipment.accentColor}` : 'none',
     display: 'block',
-    ...style,
   };
 
   const img: CSSProperties = {
@@ -37,26 +44,62 @@ export function Avatar({ src, alt = '', size = 32, style }: AvatarProps) {
     objectFit: 'cover',
   };
 
-  if (!src) {
-    return <div aria-hidden style={wrapper} />;
-  }
-
-  // retina 用に実ピクセルの 2 倍サイズで要求 (intrinsic サイズの指定)。
-  // Bluesky CDN の avatar_thumbnail は元々十分大きい (256px 程度) ので、
-  // width/height 属性を 2× にしておけばブラウザに「2x で描画する」ことを伝えられる。
-  const intrinsic = size * 2;
+  const imgEl = src ? (
+    <img
+      src={src}
+      alt={alt}
+      width={size * 2}
+      height={size * 2}
+      loading="lazy"
+      decoding="async"
+      style={img}
+    />
+  ) : (
+    <div aria-hidden style={{ width: '100%', height: '100%' }} />
+  );
 
   return (
-    <div style={wrapper}>
-      <img
-        src={src}
-        alt={alt}
-        width={intrinsic}
-        height={intrinsic}
-        loading="lazy"
-        decoding="async"
-        style={img}
-      />
-    </div>
+    <span style={outer}>
+      <span style={inner}>{imgEl}</span>
+      {equipment && (
+        <>
+          {/* primary: 右下 */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              right: `-${Math.round(size * 0.12)}px`,
+              bottom: `-${Math.round(size * 0.12)}px`,
+              width: Math.round(size * 0.48),
+              height: Math.round(size * 0.48),
+              pointerEvents: 'none',
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+              display: 'block',
+              lineHeight: 0,
+            }}
+          >
+            {equipment.primary}
+          </span>
+          {equipment.secondary && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `-${Math.round(size * 0.08)}px`,
+                top: `-${Math.round(size * 0.08)}px`,
+                width: Math.round(size * 0.36),
+                height: Math.round(size * 0.36),
+                pointerEvents: 'none',
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+                display: 'block',
+                lineHeight: 0,
+              }}
+            >
+              {equipment.secondary}
+            </span>
+          )}
+        </>
+      )}
+    </span>
   );
 }
