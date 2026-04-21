@@ -1,0 +1,246 @@
+@import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
+
+:root {
+  --color-primary: #ffdd55;       /* 強調黄色 (DQ 的) */
+  --color-primary-deep: #d4a017;
+  --color-atk: #ff6b3d;
+  --color-def: #3fa0ff;
+  --color-agi: #ffb83c;
+  --color-int: #b08cff;
+  --color-luk: #ff78aa;
+  --color-fg: #ffffff;
+  --color-muted: #c9d4e0;
+  --color-border: #ffffff;
+  --color-window-bg: #0b1b5c;        /* DQ 紺 */
+  --color-window-bg-alt: #08103b;
+  --color-window-inner-border: #1f3fa0;
+  --color-danger: #ff7272;
+
+  --font-pixel: 'DotGothic16', ui-monospace, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: var(--font-pixel);
+  color: var(--color-fg);
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  -webkit-font-smoothing: antialiased;
+  /* 青空 (上) + 水平線 + 草地 (下) の 3 層グラデーション。スクロールしても動かない。 */
+  background:
+    linear-gradient(
+      to bottom,
+      #4aa6e2 0%,
+      #7cc7ea 35%,
+      #bee3f1 62%,
+      #9dd07f 63%,
+      #6fb052 80%,
+      #3f7a32 100%
+    ) fixed;
+  background-size: 100% 100vh;
+}
+
+/* 遠くに雲を薄く散らす */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(180px 40px at 15% 12%, rgba(255,255,255,0.55), rgba(255,255,255,0) 70%),
+    radial-gradient(260px 60px at 75% 22%, rgba(255,255,255,0.5), rgba(255,255,255,0) 70%),
+    radial-gradient(160px 36px at 45% 34%, rgba(255,255,255,0.4), rgba(255,255,255,0) 70%);
+  z-index: 0;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-primary);
+}
+a:hover { color: #fff8c5; }
+
+button {
+  font-family: inherit;
+  font-size: 1em;
+  cursor: pointer;
+  color: var(--color-fg);
+  background: var(--color-window-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 2px;
+  padding: 0.35em 0.9em;
+  box-shadow: inset 0 0 0 1px var(--color-window-inner-border);
+}
+button:hover:not(:disabled) {
+  background: var(--color-window-bg-alt);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.secondary {
+  background: transparent;
+  color: var(--color-fg);
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: 0.95em;
+  color: var(--color-fg);
+  background: var(--color-window-bg-alt);
+  border: 2px solid var(--color-border);
+  border-radius: 2px;
+  padding: 0.35em 0.6em;
+  outline: none;
+}
+input::placeholder, textarea::placeholder { color: rgba(201,212,224,0.55); }
+input:focus, textarea:focus, select:focus {
+  border-color: var(--color-primary);
+}
+
+code {
+  font-family: ui-monospace, 'Courier New', monospace;
+  background: rgba(0,0,0,0.35);
+  padding: 0 0.25em;
+  border-radius: 2px;
+  font-size: 0.9em;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-pixel);
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  margin: 0.6em 0 0.4em;
+}
+
+p { margin: 0.4em 0; }
+
+/* ─── レイアウト ───────────────────────────────── */
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 420px;
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .app-shell { max-width: 680px; }
+}
+
+.header {
+  padding: 0.6em 1em;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(to bottom, rgba(10,20,60,0.85), rgba(10,20,60,0.45));
+  backdrop-filter: blur(2px);
+  border-bottom: 2px solid rgba(255,255,255,0.5);
+}
+
+.content {
+  flex: 1;
+  padding: 1em;
+}
+
+.footer-nav {
+  display: flex;
+  justify-content: space-around;
+  padding: 0.4em;
+  background: var(--color-window-bg);
+  border-top: 3px solid var(--color-border);
+  box-shadow: inset 0 1px 0 var(--color-window-inner-border);
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+.footer-nav a {
+  color: var(--color-muted);
+  padding: 0.35em 0.6em;
+  font-size: 0.9em;
+  border: none;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+.footer-nav a.active {
+  color: var(--color-primary);
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.6);
+}
+
+/* ─── DQ 風ウィンドウ ──────────────────────────── */
+
+.dq-window {
+  position: relative;
+  background: var(--color-window-bg);
+  color: var(--color-fg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0.8em 1em;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0,0,0,0.35);
+  margin-bottom: 0.9em;
+}
+
+/* 角の内側の小さな装飾 (ドラクエ風ウィンドウの四隅). 省略可。 */
+.dq-window::before,
+.dq-window::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--color-border);
+}
+.dq-window::before { top: 3px; left: 3px; }
+.dq-window::after  { bottom: 3px; right: 3px; }
+
+.dq-window.compact {
+  padding: 0.6em 0.8em;
+  margin-bottom: 0.6em;
+}
+
+.dq-window a { color: var(--color-primary); }
+
+/* タブ見出し */
+.dq-tabs {
+  display: flex;
+  gap: 0.5em;
+  margin-top: 0.5em;
+}
+.dq-tab {
+  flex: 1;
+  padding: 0.5em;
+  background: rgba(11,27,92,0.6);
+  color: var(--color-fg);
+  border: 2px solid var(--color-border);
+  border-radius: 2px;
+  text-align: center;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+.dq-tab.active {
+  background: var(--color-window-bg);
+  color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary-deep);
+}
+
+/* 旧 .section クラスを残すアプリ用 */
+.section {
+  margin: 0.8em 0;
+}

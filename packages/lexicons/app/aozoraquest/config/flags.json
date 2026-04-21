@@ -1,0 +1,22 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.config.flags",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Feature flags (admin-owned)",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["flags", "updatedAt"],
+        "properties": {
+          "flags": {
+            "type": "unknown",
+            "description": "Map of flag id to { enabled, rollout, description }"
+          },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

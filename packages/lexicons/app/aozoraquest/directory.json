@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.directory",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Directory of opted-in users for the 共鳴 timeline (admin-maintained)",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["users", "updatedAt"],
+        "properties": {
+          "users": { "type": "array", "items": { "type": "ref", "ref": "#entry" } },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["did", "addedAt"],
+      "properties": {
+        "did": { "type": "string", "format": "did" },
+        "addedAt": { "type": "string", "format": "datetime" },
+        "note": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

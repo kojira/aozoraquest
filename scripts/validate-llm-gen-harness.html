@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>LLM gen harness</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 1em auto; padding: 0 1em; color: #222; line-height: 1.5; }
+    h1 { font-size: 1.2em; margin: 0 0 0.5em; }
+    h2 { font-size: 1em; margin: 1em 0 0.3em; color: #555; }
+    .meta { font-size: 0.85em; color: #666; }
+    .phase { display: inline-block; padding: 0.2em 0.6em; border-radius: 4px; background: #fff8d6; color: #7b6300; font-size: 0.9em; margin-right: 0.5em; }
+    .phase.done { background: #d4edda; color: #1a6230; }
+    .phase.error { background: #f8d7da; color: #842029; }
+    pre.log { font-family: ui-monospace, monospace; font-size: 0.8em; background: #0a0a0d; color: #ddd; padding: 0.8em; border-radius: 4px; max-height: 240px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+    .result-card { border: 1px solid #ddd; border-left: 4px solid #378ADD; border-radius: 4px; padding: 0.8em 1em; margin: 0.5em 0; background: #fafbfc; }
+    .result-card .title { font-weight: 600; margin-bottom: 0.3em; }
+    .result-card .stats { font-size: 0.85em; color: #666; margin-bottom: 0.4em; }
+    .result-card .prompt { font-size: 0.85em; color: #888; padding: 0.4em 0.6em; background: #f0f0f4; border-radius: 3px; margin-bottom: 0.4em; }
+    .result-card .output { font-size: 1em; padding: 0.5em 0.7em; background: white; border: 1px solid #e0e0e0; border-radius: 3px; white-space: pre-wrap; word-break: break-word; }
+    .result-card.error .output { color: #842029; background: #fff2f3; border-color: #f5c2c7; }
+    progress { width: 100%; height: 1em; }
+  </style>
+</head>
+<body>
+  <h1 id="title">LLM generation harness</h1>
+  <div class="meta" id="env-info"></div>
+
+  <h2>
+    <span id="phase" class="phase">initializing</span>
+    <span id="load-info" class="meta"></span>
+  </h2>
+
+  <h2>生成結果</h2>
+  <div id="results"></div>
+
+  <h2>ログ</h2>
+  <pre id="log" class="log"></pre>
+
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.1.0/+esm';
+
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    const PROMPTS = [
+      { label: '春の空',     system: '',                                                                                     user: '春の空を一言で表してください。' },
+      { label: '朝の挨拶',   system: 'あなたは青空の精霊です。穏やかで詩的な日本語で、100 字以内で話します。',              user: 'ユーザー名 "ことりら" に朝の挨拶を一言。' },
+      { label: 'クエスト達成', system: 'あなたは青空の精霊です。穏やかで詩的な日本語で、100 字以内で話します。',           user: 'ユーザーが軽やかに短文を 3 つ放つクエストを達成しました。祝福を一言。' },
+      { label: 'LV アップ',  system: 'あなたは青空の精霊です。穏やかで詩的な日本語で、100 字以内で話します。',              user: 'ユーザーがレベル 5 に上がりました。祝福を一言。' },
+      { label: '節制クエスト案内', system: 'あなたは青空の精霊です。穏やかで詩的な日本語で、100 字以内で話します。',       user: '今日は長文分析を控えるクエストが出ました。ユーザーへの案内を一言。' },
+    ];
+
+    const out = {
+      status: 'running',
+      phase: 'init',
+      logs: [],
+      webgpu: null,
+      modelId: null,
+      dtype: null,
+      device: null,
+      loadMs: null,
+      results: [],
+      error: null,
+    };
+    window.__RESULT__ = out;
+
+    const logEl = document.getElementById('log');
+    const phaseEl = document.getElementById('phase');
+    const loadInfoEl = document.getElementById('load-info');
+    const resultsEl = document.getElementById('results');
+    const titleEl = document.getElementById('title');
+    const envEl = document.getElementById('env-info');
+
+    const log = (msg) => {
+      const ts = new Date().toISOString().slice(11, 23);
+      out.logs.push(`${ts} ${msg}`);
+      logEl.textContent = out.logs.join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    const setPhase = (p, className = '') => {
+      out.phase = p;
+      phaseEl.textContent = p;
+      phaseEl.className = 'phase ' + className;
+    };
+    const setLoadInfo = (s) => { loadInfoEl.textContent = s; };
+
+    // URL params
+    const params = new URLSearchParams(location.search);
+    const modelId = params.get('model') || 'onnx-community/Bonsai-1.7B-ONNX';
+    const dtype = params.get('dtype') || 'q4';
+    const device = params.get('device') || 'webgpu';
+    const maxTokens = parseInt(params.get('maxtokens') || '100', 10);
+    out.modelId = modelId;
+    out.dtype = dtype;
+    out.device = device;
+
+    titleEl.textContent = `${modelId} (${dtype}, ${device})`;
+    envEl.textContent = `UA: ${navigator.userAgent.slice(0, 120)}...`;
+    log(`harness start. model=${modelId} dtype=${dtype} device=${device}`);
+
+    async function checkWebGPU() {
+      if (!('gpu' in navigator)) return { supported: false, reason: 'no navigator.gpu' };
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) return { supported: false, reason: 'no adapter' };
+        return { supported: true, info: adapter.info ?? {} };
+      } catch (e) {
+        return { supported: false, reason: e.message };
+      }
+    }
+
+    (async () => {
+      setPhase('webgpu-check');
+      out.webgpu = await checkWebGPU();
+      log(`webgpu: ${JSON.stringify(out.webgpu)}`);
+
+      setPhase('loading');
+      setLoadInfo('モデルロード中...');
+      const loadStart = performance.now();
+      let generator;
+      const fileStart = new Map();
+      const fileDone = new Set();
+      let biggestFileDoneAt = 0;
+      try {
+        generator = await pipeline('text-generation', modelId, {
+          device,
+          dtype,
+          progress_callback: (p) => {
+            if (p.status === 'initiate' && p.file) {
+              if (!fileStart.has(p.file)) {
+                fileStart.set(p.file, performance.now());
+                log(`  DL start: ${p.file}`);
+                setLoadInfo(`DL: ${p.file}`);
+              }
+            }
+            if (p.status === 'progress' && p.file && p.total) {
+              const pct = ((p.progress || 0)).toFixed(0);
+              const mb = ((p.loaded || 0) / 1e6).toFixed(0);
+              const tot = ((p.total || 0) / 1e6).toFixed(0);
+              setLoadInfo(`DL ${p.file}: ${pct}% (${mb}MB / ${tot}MB)`);
+            }
+            if (p.status === 'done' && p.file && !fileDone.has(p.file)) {
+              fileDone.add(p.file);
+              const start = fileStart.get(p.file) ?? loadStart;
+              const elapsed = (performance.now() - start) / 1000;
+              const mb = ((p.total || 0) / 1e6).toFixed(0);
+              log(`  DL done:  ${p.file} ${mb}MB in ${elapsed.toFixed(1)}s`);
+              biggestFileDoneAt = performance.now();
+              setLoadInfo(`ONNX セッション初期化中...`);
+            }
+          },
+        });
+        out.loadMs = performance.now() - loadStart;
+        if (biggestFileDoneAt > 0) {
+          const sessionMs = performance.now() - biggestFileDoneAt;
+          log(`load OK (total ${(out.loadMs / 1000).toFixed(1)}s: DL + ONNX session ${(sessionMs / 1000).toFixed(1)}s)`);
+        } else {
+          log(`load OK (${(out.loadMs / 1000).toFixed(1)}s, possibly cached)`);
+        }
+        setLoadInfo(`ロード完了: ${(out.loadMs / 1000).toFixed(1)}s`);
+      } catch (e) {
+        out.status = 'error';
+        setPhase('load-failed', 'error');
+        out.error = String(e.message || e);
+        out.loadMs = performance.now() - loadStart;
+        log(`LOAD FAILED: ${out.error}`);
+        setLoadInfo(`失敗: ${out.error}`);
+        window.__DONE__ = true;
+        return;
+      }
+
+      // 結果カードを先に全件表示 (running 状態)
+      setPhase('generating');
+      for (const p of PROMPTS) {
+        const card = document.createElement('div');
+        card.className = 'result-card';
+        card.innerHTML = `
+          <div class="title">${p.label}</div>
+          <div class="stats">生成中...</div>
+          <div class="prompt">${p.user.replace(/</g, '&lt;')}${p.system ? `<br><em style="opacity:0.7">system: ${p.system.replace(/</g, '&lt;')}</em>` : ''}</div>
+          <div class="output">⏳</div>
+        `;
+        resultsEl.appendChild(card);
+        p._card = card;
+      }
+
+      const tokenizer = generator.tokenizer;
+      const hasChat = tokenizer?.chat_template || tokenizer?.default_chat_template;
+
+      for (const p of PROMPTS) {
+        const card = p._card;
+        const t0 = performance.now();
+        let input;
+        if (hasChat) {
+          const msgs = [];
+          if (p.system) msgs.push({ role: 'system', content: p.system });
+          msgs.push({ role: 'user', content: p.user });
+          input = msgs;
+        } else {
+          input = p.system ? `${p.system}\n\n${p.user}\n` : p.user;
+        }
+
+        try {
+          const gen = await generator(input, {
+            max_new_tokens: maxTokens,
+            do_sample: true,
+            temperature: 0.8,
+            top_p: 0.9,
+            return_full_text: false,
+          });
+          const latencyMs = performance.now() - t0;
+          const first = Array.isArray(gen) ? gen[0] : gen;
+          let text;
+          if (Array.isArray(first.generated_text)) {
+            const last = first.generated_text[first.generated_text.length - 1];
+            text = typeof last === 'object' ? last.content : String(last);
+          } else {
+            text = String(first.generated_text || '');
+          }
+          text = text.trim();
+
+          const chars = text.length;
+          const estTokens = Math.max(1, Math.round(chars * 1.5));
+          const tokPerSec = estTokens / (latencyMs / 1000);
+
+          out.results.push({ label: p.label, latencyMs, chars, tokPerSec, text });
+          log(`[${p.label}] ${(latencyMs / 1000).toFixed(1)}s (${tokPerSec.toFixed(1)} tok/s, ${chars} chars)`);
+
+          card.querySelector('.stats').textContent = `レイテンシ ${(latencyMs / 1000).toFixed(2)}s / ${chars} 字 / 推定 ${tokPerSec.toFixed(1)} tok/s`;
+          card.querySelector('.output').textContent = text || '(空)';
+        } catch (e) {
+          const msg = String(e.message || e);
+          out.results.push({ label: p.label, error: msg });
+          log(`[${p.label}] ERR: ${msg}`);
+          card.classList.add('error');
+          card.querySelector('.stats').textContent = 'エラー';
+          card.querySelector('.output').textContent = msg;
+        }
+      }
+
+      out.status = 'ok';
+      setPhase('done', 'done');
+      log('done');
+      window.__DONE__ = true;
+    })().catch(e => {
+      out.status = 'error';
+      out.error = String(e.message || e);
+      setPhase('fatal-error', 'error');
+      log(`FATAL: ${out.error}`);
+      window.__DONE__ = true;
+    });
+  </script>
+</body>
+</html>

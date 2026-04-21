@@ -1,0 +1,29 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.companion",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Companions (旅の仲間) list",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["companions", "updatedAt"],
+        "properties": {
+          "companions": { "type": "array", "items": { "type": "ref", "ref": "#companion" } },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    },
+    "companion": {
+      "type": "object",
+      "required": ["did", "addedAt"],
+      "properties": {
+        "did": { "type": "string", "format": "did" },
+        "addedAt": { "type": "string", "format": "datetime" },
+        "resonanceSnapshot": { "type": "number", "minimum": 0, "maximum": 1 },
+        "note": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.analysis",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Temperament analysis result",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["archetype", "rpgStats", "cognitiveScores", "confidence", "analyzedPostCount", "analyzedAt"],
+        "properties": {
+          "archetype": {
+            "type": "string",
+            "knownValues": [
+              "sage", "mage", "shogun", "bard",
+              "seer", "poet", "paladin", "explorer",
+              "warrior", "guardian", "fighter", "dancer",
+              "captain", "miko", "gladiator", "performer"
+            ]
+          },
+          "rpgStats": { "type": "ref", "ref": "#statVector" },
+          "cognitiveScores": { "type": "ref", "ref": "#cognitiveScores" },
+          "confidence": {
+            "type": "string",
+            "knownValues": ["high", "medium", "low", "ambiguous", "insufficient"]
+          },
+          "analyzedPostCount": { "type": "integer", "minimum": 0 },
+          "analyzedAt": { "type": "string", "format": "datetime" },
+          "public": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "statVector": {
+      "type": "object",
+      "required": ["atk", "def", "agi", "int", "luk"],
+      "properties": {
+        "atk": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "def": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "agi": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "int": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "luk": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "cognitiveScores": {
+      "type": "object",
+      "required": ["Ni", "Ne", "Si", "Se", "Ti", "Te", "Fi", "Fe"],
+      "properties": {
+        "Ni": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Ne": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Si": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Se": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Ti": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Te": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Fi": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "Fe": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    }
+  }
+}

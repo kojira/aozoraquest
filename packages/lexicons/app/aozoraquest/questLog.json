@@ -1,0 +1,35 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.questLog",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Quest progress and completion log",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["date", "quests", "updatedAt"],
+        "properties": {
+          "date": { "type": "string", "format": "datetime" },
+          "quests": { "type": "array", "items": { "type": "ref", "ref": "#questEntry" } },
+          "totalXpGained": { "type": "integer", "minimum": 0 },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    },
+    "questEntry": {
+      "type": "object",
+      "required": ["id", "templateId", "type", "targetStat", "requiredCount", "currentCount", "completed"],
+      "properties": {
+        "id": { "type": "string" },
+        "templateId": { "type": "string" },
+        "type": { "type": "string", "knownValues": ["growth", "maintenance", "restraint"] },
+        "targetStat": { "type": "string", "knownValues": ["atk", "def", "agi", "int", "luk"] },
+        "requiredCount": { "type": "integer", "minimum": 0 },
+        "currentCount": { "type": "integer", "minimum": 0 },
+        "completed": { "type": "boolean" },
+        "xpAwarded": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

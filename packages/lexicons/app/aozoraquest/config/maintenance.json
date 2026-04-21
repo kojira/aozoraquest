@@ -1,0 +1,25 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.config.maintenance",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Maintenance mode state (admin-owned)",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["enabled", "updatedAt"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "message": { "type": "string", "maxLength": 500 },
+          "until": { "type": "string", "format": "datetime" },
+          "allowedDids": {
+            "type": "array",
+            "items": { "type": "string", "format": "did" }
+          },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

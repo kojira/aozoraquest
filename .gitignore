@@ -1,0 +1,29 @@
+node_modules/
+.pnpm-store/
+.turbo/
+.cache/
+dist/
+build/
+out/
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# HF cache (Transformers.js Node)
+.hf-cache/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Test outputs
+coverage/
+validation-results/

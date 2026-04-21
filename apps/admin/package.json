@@ -1,0 +1,32 @@
+{
+  "name": "@aozoraquest/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --port 5174",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo lint (tbd)",
+    "test": "echo no tests yet"
+  },
+  "dependencies": {
+    "@aozoraquest/core": "workspace:*",
+    "@aozoraquest/lexicons": "workspace:*",
+    "@aozoraquest/types": "workspace:*",
+    "@atproto/api": "^0.17",
+    "@atproto/oauth-client-browser": "^0.3.41",
+    "idb": "^8",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-router-dom": "^7"
+  },
+  "devDependencies": {
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@vitejs/plugin-react": "^4",
+    "vite": "^5",
+    "typescript": "^5"
+  }
+}
