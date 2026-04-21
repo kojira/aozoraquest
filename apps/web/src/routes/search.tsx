@@ -6,6 +6,7 @@ import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
+import { PostMetrics } from '@/components/post-metrics';
 
 type Mode = 'users' | 'posts';
 
@@ -171,9 +172,7 @@ function PostHit({ post }: { post: AppBskyFeedDefs.PostView }) {
         <span>@{post.author.handle}</span>
       </div>
       <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{rec.text ?? ''}</div>
-      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-        ♡ {post.likeCount ?? 0} · 🔁 {post.repostCount ?? 0} · 💬 {post.replyCount ?? 0}
-      </div>
+      <PostMetrics likeCount={post.likeCount} repostCount={post.repostCount} replyCount={post.replyCount} />
     </article>
   );
 }
