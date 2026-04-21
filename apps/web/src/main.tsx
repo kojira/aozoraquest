@@ -4,7 +4,6 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { Home } from '@/routes/home';
 import { Profile } from '@/routes/profile';
 import { MyProfile } from '@/routes/me';
-import { Compose } from '@/routes/compose';
 import { PostDetail } from '@/routes/post-detail';
 import { Notifications } from '@/routes/notifications';
 import { Search } from '@/routes/search';
@@ -17,6 +16,7 @@ import { Privacy } from '@/routes/privacy';
 import { AppShell } from '@/components/app-shell';
 import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
+import { ComposeProvider } from '@/components/compose-modal';
 import '@/styles.css';
 
 const router = createBrowserRouter([
@@ -27,7 +27,6 @@ const router = createBrowserRouter([
       { index: true, element: <Home /> },
       { path: 'profile/:handle', element: <Profile /> },
       { path: 'me', element: <MyProfile /> },
-      { path: 'compose', element: <Compose /> },
       { path: 'post/:uri', element: <PostDetail /> },
       { path: 'notifications', element: <Notifications /> },
       { path: 'search', element: <Search /> },
@@ -45,8 +44,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ConfigProvider>
       <SessionProvider>
-      <RouterProvider router={router} />
-    </SessionProvider>
+        <ComposeProvider>
+          <RouterProvider router={router} />
+        </ComposeProvider>
+      </SessionProvider>
     </ConfigProvider>
   </StrictMode>,
 );

@@ -12,6 +12,7 @@ import { VirtualFeed } from '@/components/virtual-feed';
 import { Avatar } from '@/components/avatar';
 import { HomeSummary } from '@/components/home-summary';
 import { PostMetrics } from '@/components/post-metrics';
+import { useCompose } from '@/components/compose-modal';
 
 type Tab = 'following' | 'resonance';
 
@@ -21,6 +22,7 @@ export function Home() {
   const [tab, setTab] = useState<Tab>('following');
   const [selfDiag, setSelfDiag] = useState<DiagnosisResult | null>(null);
   const [targetJob, setTargetJob] = useState<Archetype | null>(null);
+  const { openCompose } = useCompose();
 
   const agent = session.agent;
 
@@ -104,9 +106,7 @@ export function Home() {
       </div>
 
       <div style={{ marginTop: '0.5em', textAlign: 'right' }}>
-        <Link to="/compose">
-          <button>投稿する</button>
-        </Link>
+        <button onClick={() => openCompose()}>投稿する</button>
       </div>
 
       {tab === 'following' && (

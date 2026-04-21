@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
 import { HeartIcon, RepeatIcon, ReplyIcon } from './icons';
+import { useCompose } from './compose-modal';
 
 interface PostMetricsProps {
   post: AppBskyFeedDefs.PostView;
@@ -16,7 +16,7 @@ interface PostMetricsProps {
  */
 export function PostMetrics({ post }: PostMetricsProps) {
   const session = useSession();
-  const navigate = useNavigate();
+  const { openCompose } = useCompose();
   const agent = session.agent;
 
   const [likeUri, setLikeUri] = useState<string | undefined>(post.viewer?.like);
@@ -92,15 +92,11 @@ export function PostMetrics({ post }: PostMetricsProps) {
     e.stopPropagation();
     const rec = post.record as { reply?: { root: { uri: string; cid: string } }; text?: string };
     const root = rec.reply?.root ?? { uri: post.uri, cid: post.cid };
-    navigate('/compose', {
-      state: {
-        replyTo: {
-          parent: { uri: post.uri, cid: post.cid },
-          root,
-          author: post.author.handle,
-          text: rec.text ?? '',
-        },
-      },
+    openCompose({
+      parent: { uri: post.uri, cid: post.cid },
+      root,
+      author: post.author.handle,
+      text: rec.text ?? '',
     });
   }
 
