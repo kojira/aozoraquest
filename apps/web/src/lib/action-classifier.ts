@@ -7,6 +7,7 @@
  * - 最大スコアのアクションを返す。"neutral" が最大ならアクション無し扱い。
  */
 
+import { ACTION_CLASSIFICATION_MIN_MARGIN } from '@aozoraquest/core';
 import { unpackBin } from './prototype-loader';
 import { Embedder } from './embedder';
 
@@ -91,8 +92,7 @@ export async function classifyFromVec(vec: Float32Array): Promise<ActionClassifi
   const second = sorted[1]!;
   const margin = scores[top] - scores[second];
 
-  const MIN_MARGIN = 0.02;
-  if (margin < MIN_MARGIN) return { action: null, scores, margin };
+  if (margin < ACTION_CLASSIFICATION_MIN_MARGIN) return { action: null, scores, margin };
   if (top === 'neutral') return { action: null, scores, margin };
   return { action: top, scores, margin };
 }

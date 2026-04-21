@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
-import { jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
+import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { SpiritIcon } from '@/components/spirit-icon';
@@ -19,16 +19,16 @@ type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.nig
 
 function currentGreeting(): GreetingSituation {
   const h = new Date().getHours();
-  if (h < 11) return 'greeting.morning';
-  if (h < 18) return 'greeting.daytime';
+  if (h < GREETING_HOUR_BOUNDARIES.morningEnd) return 'greeting.morning';
+  if (h < GREETING_HOUR_BOUNDARIES.dayEnd) return 'greeting.daytime';
   return 'greeting.night';
 }
 
-/** ユーザー 1 発言の最大文字数 */
-const INPUT_MAX = 100;
+/** ユーザー 1 発言の最大文字数 (tuning.SPIRIT_INPUT_MAX_LENGTH の別名) */
+const INPUT_MAX = SPIRIT_INPUT_MAX_LENGTH;
 
-/** LLM に渡す直近の会話ターン数 (1 ターン = user + spirit = 2 件)。これより古い発言は忘れる。 */
-const HISTORY_TURNS = 10;
+/** LLM に渡す直近の会話ターン数 (tuning.SPIRIT_CHAT_HISTORY_TURNS の別名) */
+const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 
 const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
 青空の化身で、穏やかで詩的、押し付けがましくない。

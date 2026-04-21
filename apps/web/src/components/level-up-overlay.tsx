@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LEVEL_UP_OVERLAY_DURATION_MS, LEVEL_UP_POP_DURATION_MS } from '@aozoraquest/core';
 
 export interface LevelUpEvent {
   kind: 'job' | 'player';
@@ -37,7 +38,7 @@ export function LevelUpOverlay() {
       }
       playingRef.current = true;
       setCurrent(next);
-      window.setTimeout(playNext, 2200);
+      window.setTimeout(playNext, LEVEL_UP_OVERLAY_DURATION_MS);
     };
     const listener: Listener = (ev) => {
       queueRef.current.push(ev);
@@ -73,7 +74,7 @@ export function LevelUpOverlay() {
           border: '3px solid var(--color-accent)',
           borderRadius: 6,
           textAlign: 'center',
-          animation: 'lvup-pop 0.6s cubic-bezier(0.2, 0.9, 0.4, 1.4) both, lvup-hold 2.2s linear both',
+          animation: `lvup-pop ${LEVEL_UP_POP_DURATION_MS}ms cubic-bezier(0.2, 0.9, 0.4, 1.4) both, lvup-hold ${LEVEL_UP_OVERLAY_DURATION_MS}ms linear both`,
           boxShadow: '0 0 24px rgba(159, 215, 255, 0.5)',
         }}
       >

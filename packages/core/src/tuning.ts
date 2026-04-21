@@ -157,3 +157,116 @@ export const DIAGNOSIS_TIME_WEIGHTING = {
   /** recency 重みの下限。これ以上は古くても軽くしない。 */
   minRecencyWeight: 0.25,
 } as const;
+
+/** 診断対象にする 1 投稿あたりの最小文字数。短文ノイズを除外する。 */
+export const DIAGNOSIS_MIN_POST_TEXT_LENGTH = 10;
+
+/**
+ * 認知スコアのギャップによる confidence 判定閾値 (04-diagnosis.md §信頼度)。
+ *  gap1to2 or gap2to3 < minGap    → ambiguous
+ *  gap1to2 < mediumGap             → medium
+ *  それ以外 (high post count)      → high
+ *  postCount < lowPostCount        → low
+ */
+export const DIAGNOSIS_CONFIDENCE_THRESHOLDS = {
+  minGap: 5,
+  mediumGap: 10,
+  lowPostCount: 100,
+} as const;
+
+// ────────────────────────────────
+// アクション / 認知分類 (per-post)
+// ────────────────────────────────
+
+/**
+ * 行動分類の Top-1 と Top-2 の差分がこの値未満なら「分類不能」として扱う。
+ * 低すぎると間違った分類を強行、高すぎると何も分類できない。
+ */
+export const ACTION_CLASSIFICATION_MIN_MARGIN = 0.02;
+
+// ────────────────────────────────
+// キャッシュ / API ページング
+// ────────────────────────────────
+
+/** 他ユーザーの archetype をメモリキャッシュに保持する時間 (ms)。 */
+export const ARCHETYPE_CACHE_TTL_MS = 30 * 60 * 1000;
+
+/** Bluesky API の 1 ページ最大件数 (com.atproto.repo.listRecords / app.bsky.feed.*)。 */
+export const BLUESKY_API_PAGE_LIMIT = 100;
+
+/** ホームのタイムライン 1 ページ取得件数。 */
+export const TIMELINE_PAGE_LIMIT = 30;
+
+// ────────────────────────────────
+// ステータス減衰 (weights.ts 系の anti-cheat パラメータ)
+// ────────────────────────────────
+
+export const STATS_TUNING = {
+  /** アクション重みの半減期 (日)。古いアクションほど軽くなる。 */
+  decayHalfLifeDays: 60,
+  /** ステータスの下限値 (正規化後に 0 にしないための床)。 */
+  minStatValue: 5,
+  /** 1 日・1 アクション種別あたりの上限回数 (6 回目以降は weights=0)。 */
+  dailyCapPerActionType: 5,
+} as const;
+
+/** 共鳴タイムラインのフレッシュネス: 投稿の古さで resonance をこの半減期で減衰。 */
+export const RESONANCE_FRESHNESS_HALF_LIFE_HOURS = 48;
+
+// ────────────────────────────────
+// UI テキスト制限
+// ────────────────────────────────
+
+/** 投稿本文の最大文字数 (Bluesky API 上限に準拠)。 */
+export const POST_MAX_LENGTH = 300;
+
+/** 精霊チャットのユーザー入力最大文字数。短め推奨でコンテキスト節約。 */
+export const SPIRIT_INPUT_MAX_LENGTH = 100;
+
+/** 精霊チャットで LLM に渡す過去会話ターン数 (1 ターン = user + spirit)。 */
+export const SPIRIT_CHAT_HISTORY_TURNS = 10;
+
+/** 精霊の時間帯別挨拶の境界 (時)。morning < morningEnd <= day < dayEnd <= night。 */
+export const GREETING_HOUR_BOUNDARIES = {
+  morningEnd: 11,
+  dayEnd: 18,
+} as const;
+
+// ────────────────────────────────
+// アクティビティログ (透明性 UI)
+// ────────────────────────────────
+
+/** questLog に保持する投稿分類履歴の最大件数 (古いものから切り詰め)。 */
+export const ACTIVITY_HISTORY_LIMIT = 50;
+
+/** アクティビティ 1 件あたりの本文プレビュー文字数 (プライバシー考慮で短め)。 */
+export const ACTIVITY_PREVIEW_LENGTH = 60;
+
+// ────────────────────────────────
+// 日次ボーナス / streak
+// ────────────────────────────────
+
+/**
+ * 「昨日」と判定する時間差のマージン。
+ * 24h * この値 を超えなければ streak を継続。UTC / localtime のずれ吸収。
+ */
+export const DAILY_BONUS_DAY_MARGIN_FACTOR = 1.5;
+
+// ────────────────────────────────
+// LV アップ演出
+// ────────────────────────────────
+
+/** LV アップオーバーレイの表示時間 (ms)。CSS keyframe と必ず同期させる。 */
+export const LEVEL_UP_OVERLAY_DURATION_MS = 2200;
+/** LV アップポップインの時間 (ms)。 */
+export const LEVEL_UP_POP_DURATION_MS = 600;
+
+// ────────────────────────────────
+// 精霊召喚 / ポイント算出
+// ────────────────────────────────
+
+/** 精霊召喚に必要な via:AozoraQuest 投稿数。 */
+export const SUMMON_THRESHOLD = 3;
+
+/** ポイント集計時にスキャンする listRecords のページ数上限。 */
+export const POINTS_SCAN_PAGES = 5;

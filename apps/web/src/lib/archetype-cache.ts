@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID } from '@aozoraquest/core';
+import { ARCHETYPE_CACHE_TTL_MS, JOBS_BY_ID } from '@aozoraquest/core';
 import { getRecord } from './atproto';
 
 interface CacheEntry {
@@ -17,7 +17,7 @@ interface CacheEntry {
   fetchedAt: number;
 }
 
-const TTL_MS = 30 * 60 * 1000;
+const TTL_MS = ARCHETYPE_CACHE_TTL_MS;
 const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<Archetype | null>>();
 

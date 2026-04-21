@@ -6,12 +6,17 @@
  */
 
 import type { Agent } from '@atproto/api';
+import {
+  BLUESKY_API_PAGE_LIMIT,
+  POINTS_SCAN_PAGES,
+  SUMMON_THRESHOLD as CORE_SUMMON_THRESHOLD,
+} from '@aozoraquest/core';
 import { VIA } from './atproto';
 
-export const SUMMON_THRESHOLD = 3;
-const POST_SCAN_PAGES = 5;
-const POST_SCAN_LIMIT = 100;
-const SPIRIT_CHAT_SCAN_LIMIT = 100;
+export const SUMMON_THRESHOLD = CORE_SUMMON_THRESHOLD;
+const POST_SCAN_PAGES = POINTS_SCAN_PAGES;
+const POST_SCAN_LIMIT = BLUESKY_API_PAGE_LIMIT;
+const SPIRIT_CHAT_SCAN_LIMIT = BLUESKY_API_PAGE_LIMIT;
 
 export interface PointsState {
   /** 自分の via 付き投稿数 (上限 500) */

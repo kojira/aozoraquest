@@ -1,8 +1,10 @@
+import { STATS_TUNING } from './tuning.js';
 import { STATS, type Action, type Stat, type StatArray, type StatVector } from './types.js';
 
-export const DECAY_HALF_LIFE_DAYS = 60;
-export const MIN_STAT_VALUE = 5;
-export const DAILY_CAP_PER_ACTION_TYPE = 5;
+// tuning.STATS_TUNING の別名 re-export (後方互換)
+export const DECAY_HALF_LIFE_DAYS = STATS_TUNING.decayHalfLifeDays;
+export const MIN_STAT_VALUE = STATS_TUNING.minStatValue;
+export const DAILY_CAP_PER_ACTION_TYPE = STATS_TUNING.dailyCapPerActionType;
 
 /** 空のステータスベクトル */
 export function zeroStats(): StatVector {

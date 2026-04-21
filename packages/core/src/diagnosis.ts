@@ -1,6 +1,6 @@
 import { DIAGNOSIS_TOP_N } from './embedding-config.js';
 import { JOBS } from './jobs.js';
-import { ARCHETYPE_FIT_WEIGHTS, DIAGNOSIS_MIN_POST_COUNT, DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
+import { ARCHETYPE_FIT_WEIGHTS, DIAGNOSIS_CONFIDENCE_THRESHOLDS, DIAGNOSIS_MIN_POST_COUNT, DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
 import { STATS, type Archetype, type CogFunction, type CognitiveScores, type Confidence, type DiagnosisResult, type Stat, type StatVector } from './types.js';
 
 /**
@@ -138,9 +138,10 @@ export function computeConfidence(postCount: number, scores: CognitiveScores): C
   const sorted = Object.values(scores).sort((a, b) => b - a);
   const gap1to2 = (sorted[0] ?? 0) - (sorted[1] ?? 0);
   const gap2to3 = (sorted[1] ?? 0) - (sorted[2] ?? 0);
-  if (gap1to2 < 5 || gap2to3 < 5) return 'ambiguous';
-  if (postCount < 100) return 'low';
-  if (gap1to2 < 10) return 'medium';
+  const th = DIAGNOSIS_CONFIDENCE_THRESHOLDS;
+  if (gap1to2 < th.minGap || gap2to3 < th.minGap) return 'ambiguous';
+  if (postCount < th.lowPostCount) return 'low';
+  if (gap1to2 < th.mediumGap) return 'medium';
   return 'high';
 }
 
