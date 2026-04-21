@@ -33,7 +33,9 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
     borderRadius: '50%',
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    boxShadow: equipment ? `0 0 0 2px ${equipment.accentColor}` : 'none',
+    boxShadow: equipment
+      ? `0 0 0 2px rgba(0,0,0,0.9), 0 0 0 4px ${equipment.accentColor}, 0 0 10px ${equipment.accentColor}`
+      : 'none',
     display: 'block',
   };
 
@@ -63,17 +65,17 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
       <span style={inner}>{imgEl}</span>
       {equipment && (
         <>
-          {/* primary: 右下 */}
+          {/* primary: 右下、アクセント色のハロー + 黒シャドウでどんな背景でも浮かせる */}
           <span
             aria-hidden
             style={{
               position: 'absolute',
-              right: `-${Math.round(size * 0.12)}px`,
-              bottom: `-${Math.round(size * 0.12)}px`,
-              width: Math.round(size * 0.48),
-              height: Math.round(size * 0.48),
+              right: `-${Math.round(size * 0.2)}px`,
+              bottom: `-${Math.round(size * 0.2)}px`,
+              width: Math.round(size * 0.62),
+              height: Math.round(size * 0.62),
               pointerEvents: 'none',
-              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+              filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
               display: 'block',
               lineHeight: 0,
             }}
@@ -85,12 +87,12 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               aria-hidden
               style={{
                 position: 'absolute',
-                left: `-${Math.round(size * 0.08)}px`,
-                top: `-${Math.round(size * 0.08)}px`,
-                width: Math.round(size * 0.36),
-                height: Math.round(size * 0.36),
+                left: `-${Math.round(size * 0.12)}px`,
+                top: `-${Math.round(size * 0.12)}px`,
+                width: Math.round(size * 0.44),
+                height: Math.round(size * 0.44),
                 pointerEvents: 'none',
-                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+                filter: `drop-shadow(0 0 5px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
                 display: 'block',
                 lineHeight: 0,
               }}
