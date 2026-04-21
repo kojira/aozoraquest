@@ -14,8 +14,8 @@
  */
 
 import type { Agent } from '@atproto/api';
-import type { ActionType, CogFunction, CognitiveScores, DiagnosisResult, JobLevelState, PlayerLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
-import { DEFAULT_QUEST_TEMPLATES, JOB_XP_REWARDS, cognitiveToRpg, jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
+import type { ActionType, Archetype, CogFunction, CognitiveScores, DiagnosisResult, JobLevelState, PlayerLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, JOB_XP_REWARDS, cognitiveToRpg, determineArchetype, jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { getEmbedder } from './embedder';
@@ -64,7 +64,13 @@ export interface ProcessResult {
   playerLevel?: PlayerLevelState | undefined;
   jobLeveledUp?: { from: number; to: number } | undefined;
   playerLeveledUp?: { from: number; to: number } | undefined;
+  /** 現 archetype と異なる判定が出ている場合の候補と連続回数。 */
+  pendingArchetype?: Archetype | undefined;
+  pendingArchetypeStreak?: number | undefined;
 }
+
+/** UI のバナー表示閾値: 連続何回同じ候補が出たら「転職可能」扱いにするか。 */
+export const JOB_CHANGE_STREAK_THRESHOLD = 3;
 
 /** 認知機能スコアのブレンド比率。α * 既存 + (1-α) * 新規。 */
 const COGNITIVE_BLEND_ALPHA = 0.97;
@@ -169,6 +175,8 @@ export async function processSelfPost(
   let finalPlayerLevel: PlayerLevelState | undefined;
   let jobLeveledUp: { from: number; to: number } | undefined;
   let playerLeveledUp: { from: number; to: number } | undefined;
+  let finalPendingArchetype: Archetype | undefined;
+  let finalPendingStreak: number | undefined;
   try {
     const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
     if (analysis?.cognitiveScores) {
@@ -228,6 +236,22 @@ export async function processSelfPost(
       };
       finalJobLevel = nextJobLevel;
 
+      // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
+      // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。
+      const { archetype: candidate } = determineArchetype(blended);
+      let nextPendingArchetype: Archetype | undefined;
+      let nextPendingStreak: number | undefined;
+      if (candidate && candidate !== analysis.archetype) {
+        if (analysis.pendingArchetype === candidate) {
+          nextPendingStreak = (analysis.pendingArchetypeStreak ?? 0) + 1;
+        } else {
+          nextPendingStreak = 1;
+        }
+        nextPendingArchetype = candidate;
+      }
+      finalPendingArchetype = nextPendingArchetype;
+      finalPendingStreak = nextPendingStreak;
+
       await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
         ...analysis,
         cognitiveScores: blended,
@@ -236,8 +260,11 @@ export async function processSelfPost(
         analyzedAt: analysis.analyzedAt,
         jobLevel: nextJobLevel,
         playerLevel: nextPlayerLevel,
+        ...(nextPendingArchetype
+          ? { pendingArchetype: nextPendingArchetype, pendingArchetypeStreak: nextPendingStreak }
+          : { pendingArchetype: undefined, pendingArchetypeStreak: undefined }),
       });
-      void nowIso; // 将来 jobLevel.joinedAt 更新などに使う用
+      void nowIso;
     }
   } catch (e) {
     console.warn('analysis update failed', e);
@@ -254,7 +281,40 @@ export async function processSelfPost(
     playerLevel: finalPlayerLevel,
     jobLeveledUp,
     playerLeveledUp,
+    pendingArchetype: finalPendingArchetype,
+    pendingArchetypeStreak: finalPendingStreak,
   };
+}
+
+/**
+ * ユーザーが転職バナーの「転職する」ボタンを押したとき呼ぶ。
+ * - analysis.archetype を pendingArchetype に切り替え
+ * - jobLevel を新 archetype で xp=0 から再スタート (playerLevel は維持)
+ * - pendingArchetype / Streak をクリア
+ */
+export async function confirmJobChange(agent: Agent, did: string, newArchetype: Archetype): Promise<DiagnosisResult | null> {
+  const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+  if (!analysis) return null;
+  const now = new Date().toISOString();
+  const next: DiagnosisResult = {
+    ...analysis,
+    archetype: newArchetype,
+    jobLevel: { archetype: newArchetype, xp: 0, joinedAt: now },
+  };
+  delete (next as Partial<DiagnosisResult>).pendingArchetype;
+  delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
+  await putRecord(agent, 'app.aozoraquest.analysis', 'self', next);
+  return next;
+}
+
+/** ユーザーが「このまま」を押したとき呼ぶ。pending をクリアするが、次の投稿で再度出る可能性あり。 */
+export async function dismissPendingArchetype(agent: Agent, did: string): Promise<void> {
+  const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+  if (!analysis) return;
+  const next: Partial<DiagnosisResult> = { ...analysis };
+  delete next.pendingArchetype;
+  delete next.pendingArchetypeStreak;
+  await putRecord(agent, 'app.aozoraquest.analysis', 'self', next);
 }
 
 /** dateA (YYYY-MM-DD) が dateB の前日かどうか。 */
