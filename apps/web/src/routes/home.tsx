@@ -9,6 +9,7 @@ import { buildResonanceTimeline, type ResonanceEntry } from '@/lib/resonance-flo
 import { useRuntimeConfig } from '@/components/config-provider';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
+import { Avatar } from '@/components/avatar';
 
 type Tab = 'following' | 'resonance';
 
@@ -64,7 +65,7 @@ export function Home() {
   if (session.status === 'signed-out') {
     return (
       <div>
-        <h2>Aozora Quest</h2>
+        <h2>あおぞらくえすと</h2>
         <p style={{ color: 'var(--color-muted)' }}>
           Bluesky で読み書きしながら、あなたの気質をゆっくり見つけていくアプリ。
         </p>
@@ -157,7 +158,7 @@ function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        {author.avatar && <img src={author.avatar} alt="" width={32} height={32} style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
+        <Avatar src={author.avatar} size={32} />
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>
@@ -178,7 +179,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        {author.avatar && <img src={author.avatar} alt="" width={32} height={32} style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
+        <Avatar src={author.avatar} size={32} />
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>

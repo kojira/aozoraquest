@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
+import { TextField } from '@/components/text-field';
 
 const OPTIN_TAG = 'aozoraquest';
 const DEFAULT_OPTIN_POST = `#${OPTIN_TAG} の気質診断に参加しました。共鳴 TL に自分の投稿が表示されても構いません。`;
@@ -124,10 +125,11 @@ export function Settings() {
             ) : (
               <div style={{ border: '1px solid var(--color-border)', padding: '0.8em', borderRadius: 4 }}>
                 <p style={{ fontSize: '0.85em' }}>以下の投稿をあなたのアカウントから作成します。本文は自由に編集できます:</p>
-                <textarea
-                  value={postText}
-                  onChange={(e) => setPostText(e.target.value)}
+                <TextField
+                  multiline
                   rows={4}
+                  value={postText}
+                  onChange={setPostText}
                   style={{ width: '100%', padding: '0.5em', fontSize: '0.9em' }}
                   disabled={optInBusy}
                 />

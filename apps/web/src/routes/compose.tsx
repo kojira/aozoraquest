@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { createPost } from '@/lib/atproto';
+import { TextField } from '@/components/text-field';
 
 export function Compose() {
   const session = useSession();
@@ -37,9 +38,12 @@ export function Compose() {
   return (
     <div>
       <h2>投稿作成</h2>
-      <textarea
+      <TextField
+        multiline
+        submitWithModifier
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        onSubmit={submit}
         style={{ width: '100%', minHeight: '8em', padding: '0.5em', fontSize: '1em' }}
         placeholder="いまどうしてる?"
         maxLength={300}

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
 :root {
   /* 強調は白。黄色は RPG で状態異常の色になるので使わない。 */
@@ -19,7 +19,7 @@
   --color-window-inner-border: rgba(255, 255, 255, 0.35);
   --color-danger: #ff7272;
 
-  --font-pixel: 'DotGothic16', ui-monospace, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
 }
 
 * {
@@ -32,7 +32,7 @@ html, body {
 }
 
 body {
-  font-family: var(--font-pixel);
+  font-family: var(--font-main);
   color: var(--color-fg);
   line-height: 1.6;
   letter-spacing: 0.02em;
@@ -121,8 +121,7 @@ code {
 }
 
 h1, h2, h3, h4 {
-  font-family: var(--font-pixel);
-  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  font-family: var(--font-main);
   margin: 0.6em 0 0.4em;
 }
 

@@ -4,7 +4,7 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <header className="header">
-        <strong>Aozora Quest</strong> <span style={{ color: 'var(--color-muted)' }}>(WIP)</span>
+        <strong>あおぞらくえすと</strong>
       </header>
       <main className="content">
         <Outlet />
