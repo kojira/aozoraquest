@@ -253,6 +253,22 @@ const wizardHat = (color: string) =>
     </g>,
   );
 
+/** 魔法使いの三角帽子 (witch hat with crescent moon) */
+const sorcererHat = (color: string) =>
+  svg(
+    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+      {/* つば */}
+      <ellipse cx="50" cy="76" rx="44" ry="10" fill={color} />
+      {/* 円錐 (sage とは逆方向に傾ける) */}
+      <path d="M 20 74 Q 32 42 44 6 Q 58 44 80 74 Z" fill={color} />
+      {/* 帯 */}
+      <path d="M 26 68 Q 50 80 76 68 L 78 62 Q 50 74 24 62 Z" fill="#3a2a15" />
+      {/* 三日月 (yellow disk + same-color overlay で crescent) */}
+      <circle cx="42" cy="40" r="10" fill="#ffd84a" />
+      <circle cx="48" cy="37" r="8.5" fill={color} stroke="none" />
+    </g>,
+  );
+
 /** 吟遊詩人の羽根付き帽子 (feathered cap) */
 const featheredCap = (color: string) =>
   svg(
@@ -316,7 +332,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
 
   const map: Record<Archetype, JobEquipment> = {
     sage:      { crown: wizardHat('#3a2a5a'),      primary: book(c),           accentColor: accent },
-    mage:      { primary: staff(c),                accentColor: accent },
+    mage:      { crown: sorcererHat('#1a2f5a'),    primary: staff(c),          accentColor: accent },
     shogun:    { crown: kabuto('#2a2f3a'),         accentColor: accent },
     bard:      { crown: featheredCap('#3a2a5a'),   primary: musicNote(c),      accentColor: accent },
     seer:      { primary: crystalBall(c),          accentColor: accent },
