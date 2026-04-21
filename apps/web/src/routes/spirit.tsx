@@ -13,7 +13,7 @@ import { TextField } from '@/components/text-field';
 import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
-import { getGenerator, type ChatMessage } from '@/lib/generator';
+import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
 
@@ -54,6 +54,10 @@ export function Spirit() {
   const [loaded, setLoaded] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [ritualOpen, setRitualOpen] = useState(false);
+  /** モデルファイルがブラウザの Cache Storage にあるかどうか。false ならキャッシュ切れ。 */
+  const [cacheReady, setCacheReady] = useState(false);
+  /** モデルが現在のセッションで生成器として使える状態か。cacheReady=true のときは裏で自動ロードする。 */
+  const [generatorReady, setGeneratorReady] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
@@ -68,7 +72,7 @@ export function Spirit() {
   const userName = session.handle?.split('.')[0] ?? 'あなた';
   const systemPrompt = (config.prompts?.spiritChat?.body ?? DEFAULT_SYSTEM_PROMPT).trim();
 
-  // 初期ロード: diagnosis, points, chat history
+  // 初期ロード: diagnosis, points, chat history, モデルキャッシュ確認
   useEffect(() => {
     if (session.status !== 'signed-in' || !agent || !did) {
       setLoaded(true);
@@ -77,15 +81,25 @@ export function Spirit() {
     let cancelled = false;
     (async () => {
       try {
-        const [r, p, hist] = await Promise.all([
+        const [r, p, hist, cached] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
+          isModelCached(),
         ]);
         if (cancelled) return;
         setDiag(r);
         setPoints(p);
         setHistory(hist);
+        setCacheReady(cached);
+        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)
+        if (p.summoned && cached) {
+          getGenerator().load().then(() => {
+            if (!cancelled) setGeneratorReady(true);
+          }).catch((e) => {
+            console.warn('silent generator load failed', e);
+          });
+        }
       } catch (e) {
         console.warn('spirit init failed', e);
       } finally {
@@ -250,6 +264,9 @@ export function Spirit() {
         });
         setHistory((h) => [...h, { uri: res.data.uri, role: 'spirit', text: welcome, createdAt }]);
         setPoints((p) => (p ? { ...p, summoned: true } : p));
+        // 儀式中にモデルはロード済み、キャッシュにも入った
+        setCacheReady(true);
+        setGeneratorReady(true);
       } catch (e) {
         console.warn('welcome message save failed', e);
         throw e;
@@ -281,6 +298,8 @@ export function Spirit() {
   if (!points) return null;
 
   const jobLabel = diag ? jobDisplayName(diag.archetype, 'default') : null;
+  /** 召喚済みだがキャッシュが消えているため、再召喚の儀式を要求する状態。 */
+  const needsResummon = points.summoned && !cacheReady;
 
   return (
     <div>
@@ -296,7 +315,30 @@ export function Spirit() {
         </div>
       </div>
 
-      {/* ─── E1: pre-ritual ─── */}
+      {/* ─── 再召喚 (キャッシュ切れ) ─── */}
+      {needsResummon && (
+        <section style={{ marginTop: '1em', textAlign: 'center' }}>
+          <SpiritBubble sleeping>
+            ブルスコンのかたちが、消えてしまったようだ。もう一度、呼び戻そう。
+          </SpiritBubble>
+          <button
+            onClick={() => setRitualOpen(true)}
+            style={{
+              marginTop: '1em',
+              padding: '0.7em 1.6em',
+              fontSize: '1em',
+              background: 'rgba(0, 0, 0, 0.6)',
+              color: '#ffffff',
+              border: '3px solid #ffffff',
+              boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
+            }}
+          >
+            もう一度 召喚の儀式
+          </button>
+        </section>
+      )}
+
+      {/* ─── E1: pre-ritual (初回) ─── */}
       {!points.summoned && points.viaPosts < SUMMON_THRESHOLD && (
         <section style={{ marginTop: '1em' }}>
           <SpiritBubble sleeping>
@@ -341,8 +383,8 @@ export function Spirit() {
         </section>
       )}
 
-      {/* ─── E3: summoned ─── */}
-      {points.summoned && (
+      {/* ─── E3: summoned (かつキャッシュあり) ─── */}
+      {points.summoned && !needsResummon && (
         <>
           <section style={{ marginTop: '1em', display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
             {greetingLines.map((line, i) => (
@@ -373,14 +415,20 @@ export function Spirit() {
                 value={input}
                 onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
                 onSubmit={() => void sendMessage()}
-                placeholder={points.balance > 0 ? 'ブルスコンに話しかける' : 'あなたの投稿を重ねると、話せるようになる'}
-                disabled={sending || points.balance < 1}
+                placeholder={
+                  !generatorReady
+                    ? 'ブルスコンを呼び戻している…'
+                    : points.balance > 0
+                      ? 'ブルスコンに話しかける'
+                      : 'あなたの投稿を重ねると、話せるようになる'
+                }
+                disabled={sending || points.balance < 1 || !generatorReady}
                 maxLength={INPUT_MAX}
                 style={{ flex: 1 }}
               />
               <button
                 onClick={() => void sendMessage()}
-                disabled={sending || points.balance < 1 || !input.trim()}
+                disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
               >
                 {sending ? '…' : '送る'}
               </button>

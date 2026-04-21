@@ -8,7 +8,7 @@
 import type { Agent } from '@atproto/api';
 import { VIA } from './atproto';
 
-export const SUMMON_THRESHOLD = 10;
+export const SUMMON_THRESHOLD = 3;
 const POST_SCAN_PAGES = 5;
 const POST_SCAN_LIMIT = 100;
 const SPIRIT_CHAT_SCAN_LIMIT = 100;

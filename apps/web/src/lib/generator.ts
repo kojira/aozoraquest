@@ -3,6 +3,29 @@
  * Web Worker (generator.worker.ts) に対する Promise ベースのラッパー。
  */
 
+import { GENERATION_MODEL_ID } from '@aozoraquest/core';
+
+/**
+ * ブラウザの Cache Storage に TinySwallow のモデルファイルが残っているか確認する。
+ * Transformers.js は env.useBrowserCache=true のとき Cache API ("transformers-cache") を使う。
+ * ONNX / tokenizer.json などが入っているかで cache の有無を判定する。
+ * 権限 (HTTPS 必須など) 問題や Cache API 非対応の場合は false。
+ */
+export async function isModelCached(modelId: string = GENERATION_MODEL_ID): Promise<boolean> {
+  if (typeof caches === 'undefined') return false;
+  try {
+    const names = await caches.keys();
+    for (const name of names) {
+      const cache = await caches.open(name);
+      const keys = await cache.keys();
+      if (keys.some((req) => req.url.includes(modelId))) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export interface GeneratorProgress {
   file?: string;
   loaded?: number;
