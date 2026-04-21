@@ -104,6 +104,24 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               {equipment.primary}
             </span>
           )}
+          {/* primaryLeft: 左下コーナー (primary のミラー) */}
+          {equipment.primaryLeft && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `-${Math.round(size * 0.2)}px`,
+                bottom: `-${Math.round(size * 0.2)}px`,
+                width: Math.round(size * 0.62),
+                height: Math.round(size * 0.62),
+                pointerEvents: 'none',
+                display: 'block',
+                lineHeight: 0,
+              }}
+            >
+              {equipment.primaryLeft}
+            </span>
+          )}
           {/* secondary: 左上コーナー */}
           {equipment.secondary && (
             <span
