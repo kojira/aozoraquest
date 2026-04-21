@@ -1,6 +1,6 @@
 import { DIAGNOSIS_TOP_N } from './embedding-config.js';
 import { JOBS } from './jobs.js';
-import { ARCHETYPE_FIT_WEIGHTS, DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
+import { ARCHETYPE_FIT_WEIGHTS, DIAGNOSIS_MIN_POST_COUNT, DIAGNOSIS_TIME_WEIGHTING } from './tuning.js';
 import { STATS, type Archetype, type CogFunction, type CognitiveScores, type Confidence, type DiagnosisResult, type Stat, type StatVector } from './types.js';
 
 /**
@@ -134,7 +134,7 @@ export function determineArchetype(scores: CognitiveScores): { archetype: Archet
 
 /** 信頼度判定 (04-diagnosis.md §信頼度) */
 export function computeConfidence(postCount: number, scores: CognitiveScores): Confidence {
-  if (postCount < 50) return 'insufficient';
+  if (postCount < DIAGNOSIS_MIN_POST_COUNT) return 'insufficient';
   const sorted = Object.values(scores).sort((a, b) => b - a);
   const gap1to2 = (sorted[0] ?? 0) - (sorted[1] ?? 0);
   const gap2to3 = (sorted[1] ?? 0) - (sorted[2] ?? 0);
@@ -210,7 +210,7 @@ export function diagnose(
   now: Date = new Date(),
   options: { timestamps?: readonly string[] } = {},
 ): DiagnosisResult | { insufficient: true; postCount: number } {
-  if (postCount < 50) {
+  if (postCount < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount };
   }
 

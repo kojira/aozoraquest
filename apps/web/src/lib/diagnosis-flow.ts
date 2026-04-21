@@ -1,5 +1,5 @@
 import type { Agent } from '@atproto/api';
-import { diagnose, type DiagnosisResult } from '@aozoraquest/core';
+import { DIAGNOSIS_MIN_POST_COUNT, DIAGNOSIS_POST_LIMIT, diagnose, type DiagnosisResult } from '@aozoraquest/core';
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
@@ -8,7 +8,7 @@ type ProgressCallback = (phase: string, done?: number, total?: number) => void;
 
 /**
  * 全体の診断パイプライン:
- *   1. 投稿 150 件取得
+ *   1. 投稿 DIAGNOSIS_POST_LIMIT 件取得 (tuning.ts)
  *   2. プロトタイプ埋め込みをロード (初回はランタイム計算、キャッシュしたい)
  *   3. 各投稿を埋め込み
  *   4. core.diagnose() で RPG 合成
@@ -19,9 +19,9 @@ export async function runDiagnosis(
   onProgress: ProgressCallback = () => {},
 ): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
   onProgress('fetching-posts');
-  const posts = await fetchMyPosts(agent, 150);
+  const posts = await fetchMyPosts(agent, DIAGNOSIS_POST_LIMIT);
 
-  if (posts.length < 50) {
+  if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount: posts.length };
   }
 
@@ -72,7 +72,7 @@ export async function runDiagnosis(
 
 /**
  * 他ユーザーの気質を推し量る。PDS には一切書き込まず、戻り値のみ。
- * 相手の公開投稿から 150 件取得し、ブラウザ内で diagnose() を走らせる。
+ * 相手の公開投稿から DIAGNOSIS_POST_LIMIT 件取得し、ブラウザ内で diagnose() を走らせる。
  */
 export async function runDiagnosisForOther(
   agent: Agent,
@@ -80,8 +80,8 @@ export async function runDiagnosisForOther(
   onProgress: ProgressCallback = () => {},
 ): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
   onProgress('fetching-posts');
-  const posts = await fetchUserPostsForDiagnosis(agent, actor, 150);
-  if (posts.length < 50) {
+  const posts = await fetchUserPostsForDiagnosis(agent, actor, DIAGNOSIS_POST_LIMIT);
+  if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount: posts.length };
   }
 

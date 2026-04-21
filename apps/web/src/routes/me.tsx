@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerLevelFromXp, playerXpToNextLevel } from '@aozoraquest/core';
+import { DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerLevelFromXp, playerXpToNextLevel } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
@@ -213,7 +213,7 @@ export function MyProfile() {
         <div style={{ marginTop: '1em' }}>
           <SpiritBubble>まだ歩みが浅い。もう少し投稿してから、改めて来てくれ。</SpiritBubble>
           <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-            見つかった投稿 {state.postCount} 件 (判定には 50 件以上必要です)。
+            見つかった投稿 {state.postCount} 件 (判定には {DIAGNOSIS_MIN_POST_COUNT} 件以上必要です)。
           </p>
         </div>
       )}

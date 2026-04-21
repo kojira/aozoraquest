@@ -131,6 +131,17 @@ export const COMPLEMENT_GAP_RANGE = {
 } as const;
 
 /**
+ * 診断に取得する投稿件数。多いほど精度・安定性が上がるが、埋め込み計算の
+ * レイテンシと Bluesky API の負荷が増える。
+ */
+export const DIAGNOSIS_POST_LIMIT = 300;
+
+/**
+ * 診断が成立する最小投稿数。これ未満は insufficient として返す。
+ */
+export const DIAGNOSIS_MIN_POST_COUNT = 50;
+
+/**
  * 診断時に投稿の時間情報を使った重み付けで使う定数群。
  */
 export const DIAGNOSIS_TIME_WEIGHTING = {

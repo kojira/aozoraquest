@@ -1,4 +1,5 @@
 import type { Agent } from '@atproto/api';
+import { DIAGNOSIS_POST_LIMIT } from '@aozoraquest/core';
 
 /** クライアント識別子。TOKIMEKI 方式で post record 最上位に書き込む。 */
 export const VIA = 'AozoraQuest';
@@ -14,7 +15,7 @@ export interface DiagnosisPost {
  * 自分の直近投稿を N 件取得 (リポスト・引用を除外)。
  * タイムスタンプ付きで返す (診断の時間軸考慮用)。
  */
-export async function fetchMyPosts(agent: Agent, limit: number = 150): Promise<DiagnosisPost[]> {
+export async function fetchMyPosts(agent: Agent, limit: number = DIAGNOSIS_POST_LIMIT): Promise<DiagnosisPost[]> {
   const did = agent.assertDid;
   const posts: DiagnosisPost[] = [];
   let cursor: string | undefined;
@@ -47,7 +48,7 @@ export async function fetchMyPosts(agent: Agent, limit: number = 150): Promise<D
 export async function fetchUserPostsForDiagnosis(
   agent: Agent,
   actor: string,
-  limit: number = 150,
+  limit: number = DIAGNOSIS_POST_LIMIT,
 ): Promise<DiagnosisPost[]> {
   const posts: DiagnosisPost[] = [];
   let cursor: string | undefined;
