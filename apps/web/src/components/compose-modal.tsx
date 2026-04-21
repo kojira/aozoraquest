@@ -3,6 +3,8 @@ import { useSession } from '@/lib/session';
 import { createPost, type ReplyRef } from '@/lib/atproto';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
+import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
+import { jobDisplayName } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -61,6 +63,7 @@ export function ComposeProvider({ children }: { children: ReactNode }) {
     <ComposeContext.Provider value={{ openCompose, closeCompose }}>
       {children}
       {state.open && <ComposeDialog replyTo={state.replyTo} onClose={closeCompose} />}
+      <LevelUpOverlay />
     </ComposeContext.Provider>
   );
 }
@@ -107,7 +110,23 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
       // 保存までやり切ってから notifyPosted する。失敗してもクローズは続行。
       if (session.did) {
         try {
-          await processSelfPost(agent, session.did, body);
+          const result = await processSelfPost(agent, session.did, body);
+          // LV アップがあれば即オーバーレイで祝う。ジョブ → プレイヤーの順で並べる。
+          if (result.jobLeveledUp && result.jobLevel) {
+            notifyLevelUp({
+              kind: 'job',
+              from: result.jobLeveledUp.from,
+              to: result.jobLeveledUp.to,
+              jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
+            });
+          }
+          if (result.playerLeveledUp) {
+            notifyLevelUp({
+              kind: 'player',
+              from: result.playerLeveledUp.from,
+              to: result.playerLeveledUp.to,
+            });
+          }
         } catch (e) {
           console.warn('post-processor failed', e);
         }
