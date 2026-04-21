@@ -112,10 +112,20 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
     setErr(null);
     fetchPageRef.current(undefined)
       .then((page) => {
+        // page.items 自体に重複キーが含まれる可能性がある (Bluesky の edge case) ので
+        // まず new 内で dedupe、その後 prev から new に含まれる key を除外。
         setItems((prev) => {
-          const seen = new Set(page.items.map((x) => keyOfRef.current(x)));
+          const seen = new Set<string>();
+          const uniqueNew: T[] = [];
+          for (const it of page.items) {
+            const k = keyOfRef.current(it);
+            if (!seen.has(k)) {
+              seen.add(k);
+              uniqueNew.push(it);
+            }
+          }
           const kept = prev.filter((x) => !seen.has(keyOfRef.current(x)));
-          return [...page.items, ...kept];
+          return [...uniqueNew, ...kept];
         });
       })
       .catch((e) => setErr(String((e as Error)?.message ?? e)))
