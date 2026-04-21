@@ -173,9 +173,8 @@ function CompatView({
           <div style={{ fontSize: '0.9em', color: 'var(--color-accent)' }}>{resonanceLabel(detail.score)}</div>
         </div>
         <div style={{ flex: 1, minWidth: '10em', fontSize: '0.85em' }}>
+          <MiniBar label="近さ (似ているほど高い)" value={detail.similarity} />
           <MiniBar label="補い (違いが活きる距離)" value={detail.complementarity} />
-          <MiniBar label="カバレッジ (合わせて強みを補う)" value={detail.jointCoverage} />
-          <MiniBar label="近さ (形の似かた、参考値)" value={detail.similarity} />
         </div>
       </div>
 

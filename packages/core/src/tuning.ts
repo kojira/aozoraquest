@@ -83,18 +83,27 @@ export const ARCHETYPE_FIT_WEIGHTS = {
 } as const;
 
 /**
- * 共鳴 (相性) スコアの重み。
- * resonance = w.similarity * 形の類似
- *           + w.complementarity * 軸ごとの適度なギャップ (相補性)
- *           + w.jointCoverage * 2 人で合わせたときのカバレッジ
+ * 共鳴 (相性) スコアの重み。暫定値で、β データで再校正する前提 (docs/11-validation.md §実験 3)。
  *
- * 「似ている = 相性が良い」ではないので、similarity は低めに抑え、
- * 相補性 + 合わせ技のカバレッジを重視する。
+ * 研究根拠:
+ *  - Robins, Caspi, & Moffitt (2000): 性格特性の類似性と関係満足度の相関 r ≈ 0.22
+ *    (中程度の効果量)。この知見がメタ分析系でも再現されており、similarity は
+ *    小-中の正の予測子として扱われている。
+ *  - Montoya & Horton 系のメタ分析: similarity の効果は小-中、complementarity は
+ *    全体としては弱く、特定次元 (支配-服従、開放性) でのみ意味を持つ。
+ *  - Dyrenforth et al. (2010): ペア間類似性は actor/partner 効果を除くと
+ *    negligible という知見もあり、類似性の寄与も過度に強調しない方が良い。
+ *  - MBTI / Socionics の intertype 理論 (duality など) は peer review で
+ *    ほぼ検証されていない。本アプリは 16 archetype を扱うが、相性算出には
+ *    その理論を直接使わず、RPG stat の連続ベクトルで行う。
+ *
+ * 結論: similarity を主、complementarity を補助、という従来設計は
+ * 既存研究と整合する。重みは 0.6 / 0.4 のまま (11-validation.md §実験 3 で
+ * 再校正予定)。
  */
 export const COMPATIBILITY_WEIGHTS = {
-  similarity: 0.2,
+  similarity: 0.6,
   complementarity: 0.4,
-  jointCoverage: 0.4,
 } as const;
 
 /** 相補性のスイートスポット: 軸ごとの差がこの区間に入っていれば +0.2 (5 軸合計で最大 1.0)。 */
