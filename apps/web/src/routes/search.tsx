@@ -7,6 +7,7 @@ import { VirtualFeed } from '@/components/virtual-feed';
 import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
 import { PostMetrics } from '@/components/post-metrics';
+import { PostText } from '@/components/post-text';
 
 type Mode = 'users' | 'posts';
 
@@ -161,7 +162,7 @@ function UserCard({ user }: { user: AppBskyActorDefs.ProfileView }) {
 }
 
 function PostHit({ post }: { post: AppBskyFeedDefs.PostView }) {
-  const rec = post.record as { text?: string; createdAt?: string };
+  const rec = post.record as { text?: string; facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }> };
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -171,7 +172,7 @@ function PostHit({ post }: { post: AppBskyFeedDefs.PostView }) {
         </Link>
         <span>@{post.author.handle}</span>
       </div>
-      <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{rec.text ?? ''}</div>
+      <PostText text={rec.text ?? ''} facets={rec.facets} style={{ marginTop: '0.45em' }} />
       <PostMetrics post={post} />
     </article>
   );

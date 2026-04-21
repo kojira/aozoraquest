@@ -10,6 +10,25 @@ export interface ComposeReplyTo {
   text: string;
 }
 
+// 投稿成功イベント (タイムライン側が購読して自分の投稿をすぐ反映する)
+type PostedListener = () => void;
+const postedListeners = new Set<PostedListener>();
+function notifyPosted() {
+  for (const cb of postedListeners) {
+    try { cb(); } catch (e) { console.warn('posted listener failed', e); }
+  }
+}
+
+/** 自分が投稿を作成した直後に呼ばれるコールバックを登録する。return で解除。 */
+export function useOnPosted(cb: PostedListener) {
+  useEffect(() => {
+    postedListeners.add(cb);
+    return () => {
+      postedListeners.delete(cb);
+    };
+  }, [cb]);
+}
+
 interface ComposeCtx {
   openCompose: (replyTo?: ComposeReplyTo) => void;
   closeCompose: () => void;
@@ -82,6 +101,7 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
         : undefined;
       await createPost(agent, body, reply);
       setText('');
+      notifyPosted();
       onClose();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));

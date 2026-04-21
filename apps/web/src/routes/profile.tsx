@@ -7,6 +7,7 @@ import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
+import { PostText } from '@/components/post-text';
 
 interface LoadState {
   kind: 'loading' | 'not-found' | 'ok' | 'error';
@@ -201,8 +202,18 @@ function toVec(s: StatArray) {
   return { atk: s[0], def: s[1], agi: s[2], int: s[3], luk: s[4] };
 }
 
+interface RecentPostItem {
+  text: string;
+  facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
+}
+
+interface RawPostRecord {
+  text?: string;
+  facets?: RecentPostItem['facets'];
+}
+
 function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
-  const [items, setItems] = useState<string[]>([]);
+  const [items, setItems] = useState<RecentPostItem[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
@@ -210,12 +221,12 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
       try {
         const res = await agent.getAuthorFeed({ actor: did, limit: 10, filter: 'posts_no_replies' });
         if (cancelled) return;
-        const texts: string[] = [];
+        const out: RecentPostItem[] = [];
         for (const item of res.data.feed) {
-          const rec = item.post.record as { text?: string };
-          if (typeof rec.text === 'string') texts.push(rec.text);
+          const rec = item.post.record as RawPostRecord;
+          if (typeof rec.text === 'string') out.push({ text: rec.text, ...(rec.facets ? { facets: rec.facets } : {}) });
         }
-        setItems(texts);
+        setItems(out);
       } catch (e) {
         console.warn('recent posts failed', e);
       } finally {
@@ -231,9 +242,9 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
   return (
     <>
       <h3 style={{ fontSize: '0.95em' }}>最近の投稿</h3>
-      {items.map((t, i) => (
+      {items.map((it, i) => (
         <article key={i} className="dq-window">
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{t}</div>
+          <PostText text={it.text} facets={it.facets} />
         </article>
       ))}
     </>
