@@ -84,39 +84,31 @@ export function HomeSummary({ diag, userDid }: HomeSummaryProps) {
 
         {open && (
           <div style={{ marginTop: '0.5em', display: 'flex', alignItems: 'center', gap: '0.8em' }}>
-            <RadarChart stats={diag.rpgStats} size={100} />
-            <div style={{ fontSize: '0.8em', display: 'flex', flexWrap: 'wrap', gap: '0.3em 0.8em', flex: 1 }}>
-              <StatInline label="攻" v={diag.rpgStats.atk} />
-              <StatInline label="守" v={diag.rpgStats.def} />
-              <StatInline label="速" v={diag.rpgStats.agi} />
-              <StatInline label="知" v={diag.rpgStats.int} />
-              <StatInline label="運" v={diag.rpgStats.luk} />
-              <Link to="/me" style={{ marginLeft: 'auto', fontSize: '0.9em' }}>詳しく</Link>
+            <RadarChart stats={diag.rpgStats} size={120} normalize showValues={false} />
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: '0.75em', color: 'var(--color-muted)' }}>
+                いま目立っている軸がどこか、形で見る図。絶対値は自分のページで確認できます。
+              </p>
+              <Link to="/me" style={{ marginTop: '0.4em', display: 'inline-block', fontSize: '0.9em' }}>詳しく見る</Link>
             </div>
           </div>
         )}
       </div>
 
-      {/* 動的: 今日のクエスト (常時表示) */}
+      {/* 動的: 今日のクエスト。折り畳み時は 1 件、展開時は全件。 */}
       {quests.length > 0 && (
         <div>
-          <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>今日のクエスト</div>
+          <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
+            今日のクエスト{!open && quests.length > 1 ? ` (他 ${quests.length - 1} 件)` : ''}
+          </div>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
-            {quests.map((q) => (
+            {(open ? quests : quests.slice(0, 1)).map((q) => (
               <QuestRow key={q.id} quest={q} />
             ))}
           </ul>
         </div>
       )}
     </section>
-  );
-}
-
-function StatInline({ label, v }: { label: string; v: number }) {
-  return (
-    <span style={{ fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap' }}>
-      {label} {v}
-    </span>
   );
 }
 
