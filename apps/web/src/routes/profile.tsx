@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/core';
-import { jobDisplayName, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
+import { jobDisplayName, jobTagline, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { Avatar } from '@/components/avatar';
@@ -131,6 +131,9 @@ export function Profile() {
         <section className="dq-window" style={{ marginTop: '0.8em' }}>
           <p style={{ margin: 0, fontSize: '0.9em' }}>
             今の姿: <strong>{jobDisplayName(theirDiag.archetype, 'default')}</strong>
+            <span style={{ marginLeft: '0.5em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
+              {jobTagline(theirDiag.archetype)}
+            </span>
           </p>
         </section>
       )}

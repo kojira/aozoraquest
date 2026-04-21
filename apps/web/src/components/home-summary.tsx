@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
-import { generateDailyQuests, jobDisplayName } from '@aozoraquest/core';
+import { generateDailyQuests, jobDisplayName, jobTagline } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
@@ -102,6 +102,7 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   }
 
   const jobName = jobDisplayName(diag.archetype, 'default');
+  const tagline = jobTagline(diag.archetype);
 
   return (
     <section className="dq-window" style={{ display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
@@ -127,6 +128,9 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
         >
           <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>今の姿</span>
           <span style={{ fontSize: '1em', fontWeight: 700 }}>{jobName}</span>
+          {tagline && (
+            <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{tagline}</span>
+          )}
           <span style={{ marginLeft: 'auto', color: 'var(--color-muted)' }}>{open ? '▾' : '▸'}</span>
         </button>
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID, jobDisplayName } from '@aozoraquest/core';
+import { JOBS_BY_ID, jobDisplayName, jobTagline } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
@@ -99,6 +99,7 @@ export function MyProfile() {
           {myArchetype && (
             <p style={{ margin: 0, fontSize: '0.85em', color: 'var(--color-muted)' }}>
               {jobDisplayName(myArchetype, 'default')}
+              <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(myArchetype)}</span>
             </p>
           )}
         </div>
@@ -196,10 +197,14 @@ const COGNITIVE_LABEL: Record<string, string> = {
 
 function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () => void }) {
   const jobName = jobDisplayName(result.archetype, 'default');
+  const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
   return (
     <section style={{ marginTop: '1em' }}>
-      <h3 style={{ fontSize: '1em' }}>今の姿: {jobName}</h3>
+      <h3 style={{ fontSize: '1em' }}>
+        今の姿: {jobName}
+        {tagline && <span style={{ fontSize: '0.8em', fontWeight: 400, color: 'var(--color-muted)', marginLeft: '0.5em' }}>{tagline}</span>}
+      </h3>
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
         {result.analyzedPostCount} 件の投稿から読み取りました · {conf}
       </p>

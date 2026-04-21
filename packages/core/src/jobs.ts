@@ -19,7 +19,7 @@ export const JOBS: readonly JobDefinition[] = [
   { id: 'dancer',    names: { default: '芸術家',   maker: '工芸家',   alt: '庭師' },     stats: [15, 20, 23, 15, 27], dominantFunction: 'Fi', auxiliaryFunction: 'Se' },
   { id: 'captain',   names: { default: '隊長',     maker: '指揮者',   alt: '管理官' },   stats: [34, 28, 10, 10, 18], dominantFunction: 'Te', auxiliaryFunction: 'Si' },
   { id: 'miko',      names: { default: '巫女',     maker: '世話役',   alt: '看護師' },   stats: [ 7, 32, 10, 15, 36], dominantFunction: 'Fe', auxiliaryFunction: 'Si' },
-  { id: 'gladiator', names: { default: '剣闘士',   maker: '職方',     alt: '現場監督' }, stats: [15, 10, 33, 27, 15], dominantFunction: 'Se', auxiliaryFunction: 'Ti' },
+  { id: 'gladiator', names: { default: '忍者',     maker: '職方',     alt: '現場監督' }, stats: [15, 10, 33, 27, 15], dominantFunction: 'Se', auxiliaryFunction: 'Ti' },
   { id: 'performer', names: { default: '遊び人',   maker: '芸人',     alt: '祭司' },     stats: [20, 12, 30, 10, 28], dominantFunction: 'Se', auxiliaryFunction: 'Fi' },
 ];
 
@@ -40,6 +40,30 @@ export function archetypeFromFunctionPair(dom: CogFunction, aux: CogFunction): A
 export function jobDisplayName(id: string, variant: 'default' | 'maker' | 'alt' = 'default'): string {
   if (id in JOBS_BY_ID) return JOBS_BY_ID[id as Archetype].names[variant];
   return '旅人';
+}
+
+/** ジョブの一言説明 (名前の右に添える)。短めに保つ。 */
+export const JOB_TAGLINES: Record<Archetype, string> = {
+  sage:      '遠くを見通す戦略家',
+  mage:      '仕組みを解く研究者',
+  shogun:    '結果で示す指揮官',
+  bard:      '言葉で場を動かす即興家',
+  seer:      '静かに先を読む語り部',
+  poet:      '自分の美で形を彫る',
+  paladin:   '義を貫く守護者',
+  explorer:  '未踏を楽しむ旅人',
+  warrior:   '反復で鍛える堅実型',
+  guardian:  '身近な人を守り続ける',
+  fighter:   '体で覚え理で磨く',
+  dancer:    '感性を形に残す',
+  captain:   '組織を回す実務家',
+  miko:      '場を整え寄り添う',
+  gladiator: '一瞬の見切りで決める',
+  performer: '運と勘で生きる',
+};
+
+export function jobTagline(id: string): string | null {
+  return id in JOB_TAGLINES ? JOB_TAGLINES[id as Archetype] : null;
 }
 
 /** ベクトル (配列) を StatVector (オブジェクト) に変換 */
