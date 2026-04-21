@@ -53,6 +53,8 @@ export function Spirit() {
   const [sendErr, setSendErr] = useState<string | null>(null);
   const streamingRef = useRef<string | null>(null); // uri of current streaming message
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const prevSendingRef = useRef(false);
 
   const agent = session.agent ?? null;
   const did = session.did ?? null;
@@ -99,6 +101,17 @@ export function Spirit() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history.length, sending]);
+
+  // 送信が終わった瞬間に入力欄へフォーカスを戻す (disabled 解除のタイミング)
+  useEffect(() => {
+    if (prevSendingRef.current && !sending) {
+      // disabled 属性の更新後に focus したいので次の tick に回す
+      const t = setTimeout(() => inputRef.current?.focus(), 0);
+      return () => clearTimeout(t);
+    }
+    prevSendingRef.current = sending;
+    return;
+  }, [sending]);
 
   const greetingLines = useMemo(() => {
     if (session.status !== 'signed-in' || !did) return [];
@@ -347,6 +360,7 @@ export function Spirit() {
 
           <section style={{ marginTop: '0.8em', display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
             <TextField
+              ref={inputRef}
               value={input}
               onChange={setInput}
               onSubmit={() => void sendMessage()}
