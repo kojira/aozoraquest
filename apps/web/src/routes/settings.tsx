@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, StatVector } from '@aozoraquest/core';
-import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, statArrayToVector } from '@aozoraquest/core';
+import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
@@ -165,7 +165,12 @@ export function Settings() {
                 <RadarChart stats={statsOf(currentTarget)} size={110} showValues={false} />
                 <div>
                   <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>現在の目標</div>
-                  <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{jobDisplayName(currentTarget, 'default')}</div>
+                  <div style={{ fontSize: '1.1em', fontWeight: 700 }}>
+                    {jobDisplayName(currentTarget, 'default')}
+                    <span style={{ fontSize: '0.7em', fontWeight: 400, color: 'var(--color-muted)', marginLeft: '0.5em' }}>
+                      {jobTagline(currentTarget)}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -200,7 +205,10 @@ export function Settings() {
                     }}
                   >
                     <Avatar src={avatarUrl ?? undefined} size={36} archetype={id} />
-                    <span>{jobDisplayName(id, 'default')}</span>
+                    <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+                      <span>{jobDisplayName(id, 'default')}</span>
+                      <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{jobTagline(id)}</span>
+                    </span>
                   </button>
                 );
               })}

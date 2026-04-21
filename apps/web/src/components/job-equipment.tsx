@@ -259,19 +259,16 @@ const kaguraSuzu = (color: string) =>
     </g>,
   );
 
-const twinSwords = (color: string) =>
+/** 手裏剣: 4 枚刃 + 中央の穴 (忍者の象徴) */
+const shuriken = (color: string) =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      <g transform="rotate(-22 50 50)">
-        <rect x="40" y="76" width="20" height="16" rx="2" fill="#6a3a10" />
-        <rect x="30" y="68" width="40" height="10" fill="#b87a1e" />
-        <polygon points="42,68 58,68 55,10 50,2 45,10" fill={color} />
-      </g>
-      <g transform="rotate(22 50 50)">
-        <rect x="40" y="76" width="20" height="16" rx="2" fill="#6a3a10" />
-        <rect x="30" y="68" width="40" height="10" fill="#b87a1e" />
-        <polygon points="42,68 58,68 55,10 50,2 45,10" fill={color} />
-      </g>
+      {/* 4 点星 */}
+      <path d="M 50 4 L 60 42 L 96 50 L 60 58 L 50 96 L 40 58 L 4 50 L 40 42 Z" fill={color} />
+      {/* 中央穴 */}
+      <circle cx="50" cy="50" r="8" fill="#ffffff" />
+      {/* 刃のハイライト */}
+      <path d="M 50 8 L 54 42 L 50 44 L 46 42 Z" fill={HIGHLIGHT} stroke="none" opacity="0.5" />
     </g>,
   );
 
@@ -408,7 +405,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     dancer:    { primary: palette(),               primaryLeft: brush(c),       accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
     miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
-    gladiator: { primary: twinSwords(c),           accentColor: accent },
+    gladiator: { primary: shuriken(c),             accentColor: accent },
     performer: { primary: dice(c),                 accentColor: accent },
   };
   return map[archetype];

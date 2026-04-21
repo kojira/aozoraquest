@@ -87,7 +87,7 @@
       "auxiliaryFunction": "Si"
     },
     "gladiator": {
-      "names": { "default": "剣闘士", "maker": "職方", "alt": "現場監督" },
+      "names": { "default": "忍者", "maker": "職方", "alt": "現場監督" },
       "stats": [15, 10, 33, 27, 15],
       "dominantFunction": "Se",
       "auxiliaryFunction": "Ti"
