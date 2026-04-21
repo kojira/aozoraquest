@@ -83,6 +83,28 @@ export const ARCHETYPE_FIT_WEIGHTS = {
 } as const;
 
 /**
+ * 共鳴 (相性) スコアの重み。
+ * resonance = w.similarity * 形の類似
+ *           + w.complementarity * 軸ごとの適度なギャップ (相補性)
+ *           + w.jointCoverage * 2 人で合わせたときのカバレッジ
+ *
+ * 「似ている = 相性が良い」ではないので、similarity は低めに抑え、
+ * 相補性 + 合わせ技のカバレッジを重視する。
+ */
+export const COMPATIBILITY_WEIGHTS = {
+  similarity: 0.2,
+  complementarity: 0.4,
+  jointCoverage: 0.4,
+} as const;
+
+/** 相補性のスイートスポット: 軸ごとの差がこの区間に入っていれば +0.2 (5 軸合計で最大 1.0)。 */
+export const COMPLEMENT_GAP_RANGE = {
+  min: 10,
+  max: 25,
+  perAxisScore: 0.2,
+} as const;
+
+/**
  * 診断時に投稿の時間情報を使った重み付けで使う定数群。
  */
 export const DIAGNOSIS_TIME_WEIGHTING = {
