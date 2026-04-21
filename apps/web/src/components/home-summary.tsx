@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
 import { generateDailyQuests, jobDisplayName } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
+import { SpiritBubble } from './spirit-bubble';
 
 interface HomeSummaryProps {
   diag: DiagnosisResult | null;
@@ -107,8 +108,10 @@ export function HomeSummary({ diag, userDid, targetStats }: HomeSummaryProps) {
             今日のクエスト{!open && quests.length > 1 ? ` (他 ${quests.length - 1} 件)` : ''}
           </div>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
-            {(open ? quests : quests.slice(0, 1)).map((q) => (
-              <QuestRow key={q.id} quest={q} />
+            {(open ? quests : quests.slice(0, 1)).map((q, i) => (
+              <li key={q.id}>
+                <QuestRow quest={q} showIcon={i === 0} />
+              </li>
             ))}
           </ul>
         </div>
@@ -117,7 +120,7 @@ export function HomeSummary({ diag, userDid, targetStats }: HomeSummaryProps) {
   );
 }
 
-function QuestRow({ quest }: { quest: Quest }) {
+function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
   const progress = quest.requiredCount > 0
     ? Math.min(1, quest.currentCount / quest.requiredCount)
     : 0;
@@ -129,15 +132,8 @@ function QuestRow({ quest }: { quest: Quest }) {
   }[quest.type];
 
   return (
-    <li
-      style={{
-        padding: '0.4em 0.6em',
-        background: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 3,
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
+    <SpiritBubble showIcon={showIcon} iconSize={36} fontSize="0.9em">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em', flexWrap: 'wrap' }}>
         <span
           style={{
             fontSize: '0.7em',
@@ -145,22 +141,23 @@ function QuestRow({ quest }: { quest: Quest }) {
             border: `1px solid ${typeColor}`,
             color: typeColor,
             borderRadius: 2,
+            background: 'rgba(255,255,255,0.1)',
           }}
         >
           {typeBadge}
         </span>
-        <span style={{ fontSize: '0.85em' }}>{quest.description}</span>
+        <span>{quest.description}</span>
       </div>
       {quest.requiredCount > 0 && (
-        <div style={{ marginTop: '0.3em', display: 'flex', alignItems: 'center', gap: '0.5em' }}>
-          <div style={{ flex: 1, height: 3, background: 'rgba(255, 255, 255, 0.15)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ marginTop: '0.4em', display: 'flex', alignItems: 'center', gap: '0.5em' }}>
+          <div style={{ flex: 1, height: 4, background: 'rgba(28,43,68,0.2)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{ width: `${progress * 100}%`, height: '100%', background: typeColor }} />
           </div>
-          <span style={{ fontSize: '0.7em', color: 'var(--color-muted)', minWidth: '2.5em', textAlign: 'right' }}>
+          <span style={{ fontSize: '0.75em', color: '#546580', minWidth: '2.5em', textAlign: 'right' }}>
             {quest.currentCount}/{quest.requiredCount}
           </span>
         </div>
       )}
-    </li>
+    </SpiritBubble>
   );
 }

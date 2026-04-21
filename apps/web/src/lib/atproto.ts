@@ -1,5 +1,8 @@
 import type { Agent } from '@atproto/api';
 
+/** クライアント識別子。TOKIMEKI 方式で post record 最上位に書き込む。 */
+export const VIA = 'AozoraQuest';
+
 /**
  * 自分の直近投稿を N 件取得 (リポスト・引用を除外)。
  */
@@ -63,14 +66,16 @@ export interface ReplyRef { root: StrongRef; parent: StrongRef }
 
 /**
  * 投稿を作成。reply を渡すとスレッド返信になる。
+ * クライアント識別のため `via: VIA` を record top-level に付加 (TOKIMEKI 互換)。
  */
 export async function createPost(agent: Agent, text: string, reply?: ReplyRef) {
-  const base: { text: string; createdAt: string; reply?: ReplyRef } = {
+  const base: { text: string; createdAt: string; via: string; reply?: ReplyRef } = {
     text,
     createdAt: new Date().toISOString(),
+    via: VIA,
   };
   if (reply) base.reply = reply;
-  return agent.post(base);
+  return agent.post(base as unknown as Parameters<Agent['post']>[0]);
 }
 
 /**
@@ -111,9 +116,11 @@ export async function createTaggedPost(agent: Agent, text: string, tag: string):
     },
     features: [{ $type: 'app.bsky.richtext.facet#tag', tag }],
   }] : [];
-  await agent.post({
+  const record = {
     text,
     createdAt: new Date().toISOString(),
+    via: VIA,
     ...(facets.length > 0 ? { facets } : {}),
-  });
+  };
+  await agent.post(record as unknown as Parameters<Agent['post']>[0]);
 }

@@ -99,6 +99,13 @@ export const CompanionLogSchema = z.object({
 });
 export type CompanionLog = z.infer<typeof CompanionLogSchema>;
 
+export const SpiritChatMessageSchema = z.object({
+  role: z.enum(['user', 'spirit']),
+  text: z.string().max(2000),
+  createdAt: Datetime,
+});
+export type SpiritChatMessage = z.infer<typeof SpiritChatMessageSchema>;
+
 // ─────────────────────────────────────────────────
 // Admin-owned config lexicons
 // ─────────────────────────────────────────────────
