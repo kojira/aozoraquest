@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(rm /Users/kojira/.claude/plans/greedy-riding-stallman.md)",
-      "Read(//Users/kojira/.claude/plans/**)"
-    ]
-  }
-}
