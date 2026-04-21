@@ -36,16 +36,18 @@ const COGNITIVE_FUNCTIONS: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 
 
 interface LabeledPost { handle: string; did: string; at: string; text: string; geminiRanked: string[] }
 
-function parseArgs(): { testPath: string; protoDir: string; htmlOut: string | null } {
+function parseArgs(): { testPath: string; protoDir: string; classifierPath: string | null; htmlOut: string | null } {
   const args = process.argv.slice(2);
   const get = (name: string): string | undefined =>
     args.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
   const proto = get('prototypes');
+  const cls = get('classifier');
   return {
     testPath: get('test') ?? path.join(repoRoot, 'docs/data/cognitive-split/test.jsonl'),
     protoDir: !proto || proto === 'original'
       ? path.join(repoRoot, 'apps/web/public/prototypes/cognitive')
       : path.resolve(proto),
+    classifierPath: cls ? path.resolve(cls) : null,
     htmlOut: get('html') ?? path.join(repoRoot, 'eval-ruri-vs-gemini.html'),
   };
 }
@@ -91,10 +93,36 @@ function classifyPost(
   return { top1, scores: centered };
 }
 
+interface ClassifierJSON { W: number[][]; b: number[]; classes: string[] }
+
+function softmaxArgmax(logits: number[]): { top1: number } {
+  let idx = 0, best = -Infinity;
+  for (let i = 0; i < logits.length; i++) if (logits[i]! > best) { best = logits[i]!; idx = i; }
+  return { top1: idx };
+}
+
+function classifyWithHead(vec: Float32Array, cls: ClassifierJSON): { top1: CogFunction } {
+  const { W, b, classes } = cls;
+  const nClasses = b.length;
+  const D = vec.length;
+  const logits: number[] = new Array(nClasses).fill(0);
+  for (let j = 0; j < nClasses; j++) {
+    let s = b[j]!;
+    for (let d = 0; d < D; d++) s += vec[d]! * W[d]![j]!;
+    logits[j] = s;
+  }
+  const { top1 } = softmaxArgmax(logits);
+  return { top1: classes[top1] as CogFunction };
+}
+
 async function main() {
-  const { testPath, protoDir, htmlOut } = parseArgs();
+  const { testPath, protoDir, classifierPath, htmlOut } = parseArgs();
   console.log(`test set: ${testPath}`);
-  console.log(`prototypes: ${protoDir}`);
+  if (classifierPath) {
+    console.log(`classifier: ${classifierPath}  (prototype mode は無効)`);
+  } else {
+    console.log(`prototypes: ${protoDir}`);
+  }
   console.log(`html out: ${htmlOut}\n`);
 
   const raw = (await fs.readFile(testPath, 'utf-8')).split('\n').filter((l) => l.trim());
@@ -102,9 +130,16 @@ async function main() {
   console.log(`test 件数: ${entries.length}\n`);
 
   const extractor = await pipeline('feature-extraction', EMBEDDING_MODEL_ID, { dtype: EMBEDDING_DTYPE });
-  const protos = await loadPrototypes(protoDir);
-  console.log(`prototypes 件数/機能:`);
-  for (const fn of COGNITIVE_FUNCTIONS) console.log(`  ${fn}: ${protos[fn].length}`);
+  let protos: Record<CogFunction, Float32Array[]> | null = null;
+  let classifier: ClassifierJSON | null = null;
+  if (classifierPath) {
+    classifier = JSON.parse(await fs.readFile(classifierPath, 'utf-8')) as ClassifierJSON;
+    console.log(`classifier classes: ${classifier.classes.join(', ')}\n`);
+  } else {
+    protos = await loadPrototypes(protoDir);
+    console.log(`prototypes 件数/機能:`);
+    for (const fn of COGNITIVE_FUNCTIONS) console.log(`  ${fn}: ${protos[fn].length}`);
+  }
 
   // 評価
   let correct = 0;
@@ -122,7 +157,12 @@ async function main() {
     const e = entries[i]!;
     const emb = await extractor(e.text, { pooling: 'mean', normalize: true });
     const vec = emb.data as Float32Array;
-    const { top1 } = classifyPost(vec, protos);
+    let top1: CogFunction;
+    if (classifier) {
+      top1 = classifyWithHead(vec, classifier).top1;
+    } else {
+      top1 = classifyPost(vec, protos!).top1;
+    }
     const gold = e.geminiRanked[0]!;
     const isCorrect = top1 === gold;
     if (isCorrect) correct++;
@@ -166,7 +206,9 @@ async function main() {
   // HTML レポート出力
   if (htmlOut) {
     await writeHtmlReport(htmlOut, {
-      testPath, protoDir, total: entries.length, correct, correctTop3,
+      testPath,
+      protoDir: classifierPath ?? protoDir,
+      total: entries.length, correct, correctTop3,
       confusion, perClass, evalEntries,
     });
     console.log(`\nHTML: ${htmlOut}`);
