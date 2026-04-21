@@ -30,3 +30,7 @@ Thumbs.db
 # Test outputs
 coverage/
 validation-results/
+
+# 診断スクリプトの HTML 出力 (ローカル検証用、一時的アーティファクト)
+diagnose-follows-*.html
+diagnose-ranking-*.html
