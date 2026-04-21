@@ -4,6 +4,8 @@ import type { AppBskyActorDefs, AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
+import { TextField } from '@/components/text-field';
+import { Avatar } from '@/components/avatar';
 
 type Mode = 'users' | 'posts';
 
@@ -79,10 +81,10 @@ export function Search() {
       </div>
 
       <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.7em' }}>
-        <input
+        <TextField
           value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          onChange={setQ}
+          onSubmit={submit}
           placeholder={mode === 'users' ? 'ハンドル・表示名など' : 'キーワード'}
           style={{ flex: 1 }}
         />
@@ -142,7 +144,7 @@ function UserCard({ user }: { user: AppBskyActorDefs.ProfileView }) {
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center' }}>
-        {user.avatar && <img src={user.avatar} alt="" width={36} height={36} style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
+        <Avatar src={user.avatar} size={36} />
         <div style={{ flex: 1 }}>
           <div>
             <Link to={`/profile/${user.handle}`}><strong>{user.displayName || user.handle}</strong></Link>
@@ -162,7 +164,7 @@ function PostHit({ post }: { post: AppBskyFeedDefs.PostView }) {
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        {post.author.avatar && <img src={post.author.avatar} alt="" width={28} height={28} style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
+        <Avatar src={post.author.avatar} size={28} />
         <Link to={`/profile/${post.author.handle}`}>
           <strong>{post.author.displayName || post.author.handle}</strong>
         </Link>

@@ -14,11 +14,6 @@ function currentGreeting(): GreetingSituation {
   return 'greeting.night';
 }
 
-/**
- * 精霊は「そこにいる」存在。
- * 時刻に応じた挨拶と、利用者の診断結果の要約を静かに提示する。
- * 自由対話はブラウザ側 LLM が整うまで実装しない (BYOK は仕様から外した)。
- */
 export function Spirit() {
   const session = useSession();
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
@@ -91,10 +86,6 @@ export function Spirit() {
         )}
       </section>
 
-      <p style={{ marginTop: '1em', fontSize: '0.75em', color: 'var(--color-muted)' }}>
-        精霊のセリフは日ごとに選ばれ、同じ日なら同じ文が戻る (決定的)。
-        自由対話の機能はブラウザ内 LLM の検証を経てから追加予定。
-      </p>
     </div>
   );
 }

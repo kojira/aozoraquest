@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signIn } from '@/lib/oauth';
 import { useSession } from '@/lib/session';
+import { TextField } from '@/components/text-field';
 
 export function Onboarding() {
   const session = useSession();
@@ -35,18 +36,19 @@ export function Onboarding() {
 
   return (
     <div>
-      <h2>Aozora Quest へようこそ</h2>
+      <h2>あおぞらくえすと へようこそ</h2>
       <p style={{ color: 'var(--color-muted)' }}>
         Bluesky のハンドル (例: yourname.bsky.social) を入力してログインしてください。
       </p>
       <div style={{ marginTop: '1em' }}>
-        <input
-          type="text"
+        <TextField
           value={handle}
-          onChange={(e) => setHandle(e.target.value)}
+          onChange={setHandle}
+          onSubmit={onSignIn}
           placeholder="yourname.bsky.social"
           style={{ width: '100%', padding: '0.6em', fontSize: '1em' }}
           disabled={loading}
+          autoFocus
         />
       </div>
       <button
