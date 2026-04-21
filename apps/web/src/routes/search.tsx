@@ -172,7 +172,7 @@ function PostHit({ post }: { post: AppBskyFeedDefs.PostView }) {
         <span>@{post.author.handle}</span>
       </div>
       <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{rec.text ?? ''}</div>
-      <PostMetrics likeCount={post.likeCount} repostCount={post.repostCount} replyCount={post.replyCount} />
+      <PostMetrics post={post} />
     </article>
   );
 }

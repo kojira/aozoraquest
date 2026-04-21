@@ -180,7 +180,7 @@ function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
         <span>@{author.handle}</span>
       </div>
       <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
-      <PostMetrics likeCount={post.likeCount} repostCount={post.repostCount} replyCount={post.replyCount} />
+      <PostMetrics post={post} />
     </article>
   );
 }
@@ -207,7 +207,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
         )}
       </div>
       <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
-      <PostMetrics likeCount={post.likeCount} repostCount={post.repostCount} replyCount={post.replyCount} />
+      <PostMetrics post={post} />
     </article>
   );
 }

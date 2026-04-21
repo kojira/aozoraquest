@@ -58,11 +58,19 @@ export async function fetchAuthorFeed(agent: Agent, did: string, limit: number =
   return res.data.feed;
 }
 
+export interface StrongRef { uri: string; cid: string }
+export interface ReplyRef { root: StrongRef; parent: StrongRef }
+
 /**
- * 投稿を作成。
+ * 投稿を作成。reply を渡すとスレッド返信になる。
  */
-export async function createPost(agent: Agent, text: string) {
-  return agent.post({ text, createdAt: new Date().toISOString() });
+export async function createPost(agent: Agent, text: string, reply?: ReplyRef) {
+  const base: { text: string; createdAt: string; reply?: ReplyRef } = {
+    text,
+    createdAt: new Date().toISOString(),
+  };
+  if (reply) base.reply = reply;
+  return agent.post(base);
 }
 
 /**
