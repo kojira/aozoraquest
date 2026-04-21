@@ -34,7 +34,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     boxShadow: equipment
-      ? `0 0 0 2px rgba(0,0,0,0.9), 0 0 0 4px ${equipment.accentColor}, 0 0 10px ${equipment.accentColor}`
+      ? `0 0 0 2px rgba(0,0,0,0.9), 0 0 0 4px ${equipment.accentColor}`
       : 'none',
     display: 'block',
   };
@@ -76,7 +76,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
                 width: Math.round(size * 0.62),
                 height: Math.round(size * 0.62),
                 pointerEvents: 'none',
-                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
                 display: 'block',
                 lineHeight: 0,
               }}
@@ -95,7 +95,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
                 width: Math.round(size * 0.44),
                 height: Math.round(size * 0.44),
                 pointerEvents: 'none',
-                filter: `drop-shadow(0 0 5px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
                 display: 'block',
                 lineHeight: 0,
               }}
@@ -109,12 +109,12 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               aria-hidden
               style={{
                 position: 'absolute',
-                left: `-${Math.round(size * 0.35)}px`,
-                top: `${Math.round(size * 0.1)}px`,
-                width: Math.round(size * 0.85),
-                height: Math.round(size * 0.85),
+                left: `-${Math.round(size * 0.42)}px`,
+                top: `${Math.round(size * 0.2)}px`,
+                width: Math.round(size * 0.6),
+                height: Math.round(size * 0.6),
                 pointerEvents: 'none',
-                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
                 display: 'block',
                 lineHeight: 0,
                 zIndex: 1,
@@ -129,12 +129,12 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               aria-hidden
               style={{
                 position: 'absolute',
-                right: `-${Math.round(size * 0.35)}px`,
-                top: `${Math.round(size * 0.1)}px`,
-                width: Math.round(size * 0.85),
-                height: Math.round(size * 0.85),
+                right: `-${Math.round(size * 0.42)}px`,
+                top: `${Math.round(size * 0.2)}px`,
+                width: Math.round(size * 0.6),
+                height: Math.round(size * 0.6),
                 pointerEvents: 'none',
-                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
                 display: 'block',
                 lineHeight: 0,
                 zIndex: 1,
@@ -155,7 +155,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
                 width: Math.round(size * 1.05),
                 height: Math.round(size * 0.8),
                 pointerEvents: 'none',
-                filter: `drop-shadow(0 0 6px ${equipment.accentColor}) drop-shadow(0 2px 3px rgba(0,0,0,0.95))`,
+                filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
                 display: 'block',
                 lineHeight: 0,
                 zIndex: 2,
