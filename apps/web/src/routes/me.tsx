@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { DiagnosisResult } from '@aozoraquest/core';
-import { jobDisplayName } from '@aozoraquest/core';
+import { AtpAgent } from '@atproto/api';
+import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
+import { JOBS_BY_ID, jobDisplayName } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
+import { Avatar } from '@/components/avatar';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -19,6 +21,7 @@ export function MyProfile() {
   const session = useSession();
   const navigate = useNavigate();
   const [state, setState] = useState<DiagnosisState>({ status: 'idle' });
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -37,6 +40,16 @@ export function MyProfile() {
         });
       } catch (e) {
         console.warn('existing analysis load failed', e);
+      }
+    })();
+    // 自分の Bluesky プロフィールのアバター画像を取る (公開 AppView 経由)
+    (async () => {
+      try {
+        const publicAgent = new AtpAgent({ service: 'https://api.bsky.app' });
+        const res = await publicAgent.getProfile({ actor: did });
+        if (!cancelled && res.data.avatar) setAvatarUrl(res.data.avatar);
+      } catch (e) {
+        console.warn('self avatar fetch failed', e);
       }
     })();
     return () => { cancelled = true; };
@@ -72,9 +85,24 @@ export function MyProfile() {
     }
   }
 
+  const myArchetype: Archetype | null =
+    state.status === 'done' && state.result.archetype && state.result.archetype in JOBS_BY_ID
+      ? (state.result.archetype as Archetype)
+      : null;
+
   return (
     <div>
-      <h2>{session.handle ?? '自分'}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8em' }}>
+        <Avatar src={avatarUrl ?? undefined} size={72} archetype={myArchetype} />
+        <div>
+          <h2 style={{ margin: 0 }}>{session.handle ?? '自分'}</h2>
+          {myArchetype && (
+            <p style={{ margin: 0, fontSize: '0.85em', color: 'var(--color-muted)' }}>
+              {jobDisplayName(myArchetype, 'default')}
+            </p>
+          )}
+        </div>
+      </div>
 
       {state.status === 'idle' && (
         <div style={{ marginTop: '1em' }}>
