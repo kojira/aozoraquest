@@ -11,6 +11,7 @@ import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { Avatar } from '@/components/avatar';
 import { HomeSummary } from '@/components/home-summary';
+import { PostMetrics } from '@/components/post-metrics';
 
 type Tab = 'following' | 'resonance';
 
@@ -179,9 +180,7 @@ function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
         <span>@{author.handle}</span>
       </div>
       <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
-      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-        ♡ {post.likeCount ?? 0} · 🔁 {post.repostCount ?? 0} · 💬 {post.replyCount ?? 0}
-      </div>
+      <PostMetrics likeCount={post.likeCount} repostCount={post.repostCount} replyCount={post.replyCount} />
     </article>
   );
 }
@@ -208,9 +207,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
         )}
       </div>
       <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
-      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-        ♡ {post.likeCount ?? 0} · 🔁 {post.repostCount ?? 0} · 💬 {post.replyCount ?? 0}
-      </div>
+      <PostMetrics likeCount={post.likeCount} repostCount={post.repostCount} replyCount={post.replyCount} />
     </article>
   );
 }
