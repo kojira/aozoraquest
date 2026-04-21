@@ -14,6 +14,7 @@ import { HomeSummary } from '@/components/home-summary';
 import { PostMetrics } from '@/components/post-metrics';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
 import { PostText } from '@/components/post-text';
+import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
 
 type Tab = 'following' | 'resonance';
 
@@ -31,7 +32,12 @@ export function Home() {
     if (session.status !== 'signed-in' || !agent || !session.did) return;
     const did = session.did;
     getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self')
-      .then((r) => setSelfDiag(r))
+      .then((r) => {
+        setSelfDiag(r);
+        // 自分の archetype をキャッシュに入れておく
+        const a = r?.archetype && r.archetype in JOBS_BY_ID ? (r.archetype as Archetype) : null;
+        seedArchetype(did, a);
+      })
       .catch((e) => console.warn('self analysis load failed', e));
     getRecord<{ targetJob?: string }>(agent, did, 'app.aozoraquest.profile', 'self')
       .then((p) => {
@@ -75,6 +81,13 @@ export function Home() {
       };
     },
   });
+
+  // フォロー TL の著者 archetype 解決
+  const followingAuthorDids = useMemo(
+    () => followingFeed.items.map((it) => it.post.author.did),
+    [followingFeed.items],
+  );
+  const followingArchetypes = useArchetypes(agent ?? null, followingAuthorDids);
 
   // 共鳴 TL: ディレクトリベース一括取得 (件数は directory ≤ 30 に自然制約)
   const [resonanceFeed, setResonanceFeed] = useState<ResonanceEntry[]>([]);
@@ -135,7 +148,9 @@ export function Home() {
           <VirtualFeed
             items={followingFeed.items}
             keyOf={(x) => x.post.uri}
-            renderItem={(item) => <PostCard item={item} />}
+            renderItem={(item) => (
+              <PostCard item={item} archetype={followingArchetypes.get(item.post.author.did) ?? null} />
+            )}
             onEndReached={followingFeed.done ? undefined : followingFeed.loadMore}
             footer={
               <>
@@ -189,14 +204,14 @@ interface PostRecord {
   facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
 }
 
-function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
+function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; archetype?: Archetype | null }) {
   const post = item.post;
   const author = post.author;
   const record = post.record as PostRecord;
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        <Avatar src={author.avatar} size={32} />
+        <Avatar src={author.avatar} size={32} archetype={archetype ?? null} />
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>
@@ -215,7 +230,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        <Avatar src={author.avatar} size={32} />
+        <Avatar src={author.avatar} size={32} archetype={entry.theirArchetype} />
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>

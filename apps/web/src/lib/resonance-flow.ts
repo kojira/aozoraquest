@@ -7,9 +7,10 @@
  */
 
 import type { Agent, AppBskyFeedDefs } from '@atproto/api';
-import type { DiagnosisResult, StatArray, StatVector } from '@aozoraquest/core';
-import { resonance, resonanceTimelineScore } from '@aozoraquest/core';
+import type { Archetype, DiagnosisResult, StatArray, StatVector } from '@aozoraquest/core';
+import { JOBS_BY_ID, resonance, resonanceTimelineScore } from '@aozoraquest/core';
 import { fetchAuthorFeed, getRecord } from './atproto';
+import { seedArchetype } from './archetype-cache';
 
 export interface ResonanceEntry {
   item: AppBskyFeedDefs.FeedViewPost;
@@ -17,6 +18,7 @@ export interface ResonanceEntry {
   score: number | null; // null = 相手が未診断 or 自分が未診断
   similarity: number | null;
   complementarity: number | null;
+  theirArchetype: Archetype | null;
 }
 
 export interface BuildResonanceOptions {
@@ -54,12 +56,19 @@ export async function buildResonanceTimeline(
           sim = d.similarity;
           comp = d.complementarity;
         }
+        const theirArchetype: Archetype | null =
+          otherDiag?.archetype && otherDiag.archetype in JOBS_BY_ID
+            ? (otherDiag.archetype as Archetype)
+            : null;
+        // ついでに archetype キャッシュにも投入
+        seedArchetype(did, theirArchetype);
         return feed.map<ResonanceEntry>((item) => ({
           item,
           did,
           score,
           similarity: sim,
           complementarity: comp,
+          theirArchetype,
         }));
       } catch (e) {
         console.warn('resonance author fetch failed', did, e);

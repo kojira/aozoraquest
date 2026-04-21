@@ -90,7 +90,7 @@ export function Profile() {
     <div>
       <section className="dq-window">
         <div style={{ display: 'flex', gap: '0.8em', alignItems: 'center' }}>
-          <Avatar src={profile.avatar} size={56} />
+          <Avatar src={profile.avatar} size={56} archetype={theirDiag?.archetype ?? null} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{profile.displayName || profile.handle}</div>
             <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>@{profile.handle}</div>

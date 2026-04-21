@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AppBskyActorDefs, AppBskyFeedDefs } from '@atproto/api';
+import type { Archetype } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
@@ -8,6 +9,7 @@ import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
 import { PostMetrics } from '@/components/post-metrics';
 import { PostText } from '@/components/post-text';
+import { useArchetypes } from '@/lib/archetype-cache';
 
 type Mode = 'users' | 'posts';
 
@@ -73,6 +75,11 @@ export function Search() {
 
   const active = mode === 'users' ? users : posts;
 
+  const userDids = useMemo(() => users.items.map((u) => u.did), [users.items]);
+  const postAuthorDids = useMemo(() => posts.items.map((p) => p.author.did), [posts.items]);
+  const usersArchetypes = useArchetypes(agent ?? null, userDids);
+  const postsArchetypes = useArchetypes(agent ?? null, postAuthorDids);
+
   return (
     <div>
       <h2>検索</h2>
@@ -104,7 +111,7 @@ export function Search() {
             items={users.items}
             keyOf={(u) => u.did}
             estimateSize={120}
-            renderItem={(u) => <UserCard user={u} />}
+            renderItem={(u) => <UserCard user={u} archetype={usersArchetypes.get(u.did) ?? null} />}
             onEndReached={users.done ? undefined : users.loadMore}
             footer={
               <>
@@ -123,7 +130,7 @@ export function Search() {
           <VirtualFeed
             items={posts.items}
             keyOf={(p) => p.uri}
-            renderItem={(p) => <PostHit post={p} />}
+            renderItem={(p) => <PostHit post={p} archetype={postsArchetypes.get(p.author.did) ?? null} />}
             onEndReached={posts.done ? undefined : posts.loadMore}
             footer={
               <>
@@ -142,11 +149,11 @@ export function Search() {
   );
 }
 
-function UserCard({ user }: { user: AppBskyActorDefs.ProfileView }) {
+function UserCard({ user, archetype }: { user: AppBskyActorDefs.ProfileView; archetype?: Archetype | null }) {
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center' }}>
-        <Avatar src={user.avatar} size={36} />
+        <Avatar src={user.avatar} size={36} archetype={archetype ?? null} />
         <div style={{ flex: 1 }}>
           <div>
             <Link to={`/profile/${user.handle}`}><strong>{user.displayName || user.handle}</strong></Link>
@@ -161,12 +168,12 @@ function UserCard({ user }: { user: AppBskyActorDefs.ProfileView }) {
   );
 }
 
-function PostHit({ post }: { post: AppBskyFeedDefs.PostView }) {
+function PostHit({ post, archetype }: { post: AppBskyFeedDefs.PostView; archetype?: Archetype | null }) {
   const rec = post.record as { text?: string; facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }> };
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        <Avatar src={post.author.avatar} size={28} />
+        <Avatar src={post.author.avatar} size={28} archetype={archetype ?? null} />
         <Link to={`/profile/${post.author.handle}`}>
           <strong>{post.author.displayName || post.author.handle}</strong>
         </Link>
