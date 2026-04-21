@@ -409,3 +409,60 @@ p { margin: 0.4em 0; }
 .breathe {
   animation: ritual-breathe 3.2s ease-in-out infinite;
 }
+
+/* ─── 儀式フィナーレ (emerging 位相) ─── */
+
+@keyframes ritual-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes ritual-zoom-in {
+  0%   { transform: scale(0.8); filter: brightness(1) drop-shadow(0 0 0 rgba(159,215,255,0)); }
+  40%  { transform: scale(1.25); filter: brightness(1.6) drop-shadow(0 0 24px rgba(159,215,255,1)); }
+  100% { transform: scale(1.08); filter: brightness(1.2) drop-shadow(0 0 18px rgba(159,215,255,0.9)); }
+}
+
+@keyframes ritual-burst-fly {
+  0%   { transform: rotate(var(--angle, 0deg)) translateX(0) scale(0.5); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: rotate(var(--angle, 0deg)) translateX(180px) scale(1.6); opacity: 0; }
+}
+
+@keyframes ritual-announce {
+  0%   { opacity: 0; transform: translateY(16px) scale(0.9); filter: blur(4px); }
+  30%  { opacity: 1; transform: translateY(0) scale(1.05); filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+.summon-flash {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(200, 230, 255, 0.7) 30%,
+    rgba(120, 180, 255, 0.2) 60%,
+    transparent 80%);
+  pointer-events: none;
+  z-index: 201;
+  animation: ritual-flash 900ms ease-out forwards;
+}
+
+.summon-silhouette.emerging {
+  animation: ritual-zoom-in 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.summon-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: radial-gradient(circle, #ffffff 0%, #9fd7ff 40%, transparent 70%);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.9);
+  animation: ritual-burst-fly 1800ms ease-out forwards;
+  pointer-events: none;
+}
