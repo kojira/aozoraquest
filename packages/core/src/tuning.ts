@@ -69,6 +69,20 @@ export const JOB_CHANGE_STREAK_THRESHOLD = 3;
 // ────────────────────────────────
 
 /**
+ * Archetype 適合度 (気質スタック 4 層) の重み。
+ * fit(j) = dom*scores[dom] + aux*scores[aux] + tertiary*scores[tertiary] + inferior*scores[inferior]
+ *
+ * - 各気質は dom > aux > tertiary > inferior の順で強く出るのが理想形。
+ * - フォールバックではなく全 16 archetype に対して fit を計算し、argmax で決定する。
+ */
+export const ARCHETYPE_FIT_WEIGHTS = {
+  dom: 1.0,
+  aux: 0.7,
+  tertiary: 0.3,
+  inferior: 0.1,
+} as const;
+
+/**
  * 診断時に投稿の時間情報を使った重み付けで使う定数群。
  */
 export const DIAGNOSIS_TIME_WEIGHTING = {

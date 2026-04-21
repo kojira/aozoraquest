@@ -102,6 +102,27 @@ describe('computeConfidence', () => {
   });
 });
 
+describe('determineArchetype (無効ペアのフォールバック)', () => {
+  test('Se top-1, Ne top-2 は無効ペアだが賢者にはならない (Se dominant の職に落ちる)', () => {
+    const scores = { Ni: 10, Ne: 70, Si: 20, Se: 100, Ti: 30, Te: 20, Fi: 50, Fe: 40 } as const;
+    const { archetype } = determineArchetype(scores);
+    // Se を dominant に持つのは gladiator (Se/Ti) と performer (Se/Fi) の 2 つ
+    expect(['gladiator', 'performer']).toContain(archetype);
+  });
+
+  test('Se top-1 かつ Ti より Fi が高い → performer (遊び人)', () => {
+    const scores = { Ni: 10, Ne: 20, Si: 30, Se: 100, Ti: 25, Te: 20, Fi: 60, Fe: 40 } as const;
+    const { archetype } = determineArchetype(scores);
+    expect(archetype).toBe('performer');
+  });
+
+  test('Se top-1 かつ Fi より Ti が高い → gladiator (忍者)', () => {
+    const scores = { Ni: 10, Ne: 20, Si: 30, Se: 100, Ti: 60, Te: 20, Fi: 25, Fe: 40 } as const;
+    const { archetype } = determineArchetype(scores);
+    expect(archetype).toBe('gladiator');
+  });
+});
+
 describe('diagnose (centering の効果)', () => {
   // 各機能ごとに「その機能の軸に 1.0、他は 0」の単位ベクトルを 1 本ずつ
   // プロトタイプにする。ポストも同じ形式 (one-hot on 1 軸)。
