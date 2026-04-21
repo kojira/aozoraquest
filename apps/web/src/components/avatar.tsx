@@ -73,10 +73,10 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
               style={{
                 position: 'absolute',
                 left: '50%',
-                top: `${Math.round(size * 0.45)}px`,
+                top: `${Math.round(size * 0.6)}px`,
                 transform: 'translateX(-50%)',
-                width: Math.round(size * 1.55),
-                height: Math.round(size * 0.95),
+                width: Math.round(size * 1.05),
+                height: Math.round(size * 0.5),
                 pointerEvents: 'none',
                 filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.95))',
                 display: 'block',

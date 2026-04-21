@@ -30,6 +30,15 @@ function svg(children: ReactNode): ReactNode {
   );
 }
 
+/** 横長 viewBox (body レイヤー向け) */
+function svgWide(children: ReactNode): ReactNode {
+  return (
+    <svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg">
+      {children}
+    </svg>
+  );
+}
+
 const OUTLINE = '#0a1528';
 const OUTLINE_W = 4.5;
 const HIGHLIGHT = '#ffffff';
@@ -140,14 +149,24 @@ const fist = () =>
     </g>,
   );
 
+/** 舞扇: 柄 + 半円扇面 + 骨 + 要 でハッキリ扇とわかる意匠 */
 const fan = (color: string) =>
   svg(
     <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
-      <path d="M 50 92 L 8 26 Q 50 8 92 26 Z" fill={color} />
-      <line x1="50" y1="92" x2="24" y2="34" strokeWidth="2" />
-      <line x1="50" y1="92" x2="36" y2="22" strokeWidth="2" />
-      <line x1="50" y1="92" x2="64" y2="22" strokeWidth="2" />
-      <line x1="50" y1="92" x2="76" y2="34" strokeWidth="2" />
+      {/* 柄 (handle, 要の下) */}
+      <rect x="44" y="82" width="12" height="16" rx="3" fill="#6a3a10" />
+      {/* 扇面 (花弁型) */}
+      <path d="M 50 82 Q 4 60 10 22 Q 50 2 90 22 Q 96 60 50 82 Z" fill={color} />
+      {/* 骨 (要から放射) */}
+      <line x1="50" y1="82" x2="10" y2="22" strokeWidth="3" />
+      <line x1="50" y1="82" x2="24" y2="10" strokeWidth="3" />
+      <line x1="50" y1="82" x2="50" y2="2" strokeWidth="3" />
+      <line x1="50" y1="82" x2="76" y2="10" strokeWidth="3" />
+      <line x1="50" y1="82" x2="90" y2="22" strokeWidth="3" />
+      {/* 上縁の金の弧 (装飾) */}
+      <path d="M 18 32 Q 50 16 82 32" stroke="#d0a040" strokeWidth="3" fill="none" />
+      {/* 要 (金のリベット) */}
+      <circle cx="50" cy="82" r="5" fill="#d0a040" />
     </g>,
   );
 
@@ -168,24 +187,24 @@ const bell = (color: string) =>
     </g>,
   );
 
-/** 巫女装束 (白衣 + 緋袴): 顔の下に重ねる衣装レイヤー */
+/** 巫女装束 (白衣 + 緋袴): 顔の下に重ねる衣装レイヤー (横長 viewBox) */
 const mikoOutfit = () =>
-  svg(
-    <g stroke={OUTLINE} strokeWidth={OUTLINE_W} strokeLinejoin="round">
+  svgWide(
+    <g stroke={OUTLINE} strokeWidth="3" strokeLinejoin="round">
       {/* 白衣 (肩〜胴) */}
-      <path d="M 2 60 Q 2 40 18 34 L 82 34 Q 98 40 98 60 L 98 70 L 2 70 Z" fill="#f8f4ec" />
-      {/* 襟 (V collar) */}
-      <path d="M 42 34 L 50 54 L 58 34 Z" fill="#f8f4ec" />
-      <line x1="42" y1="34" x2="50" y2="50" strokeWidth="3" />
-      <line x1="58" y1="34" x2="50" y2="50" strokeWidth="3" />
+      <path d="M 2 18 Q 2 6 20 3 L 80 3 Q 98 6 98 18 L 98 22 L 2 22 Z" fill="#f8f4ec" />
+      {/* 襟 V */}
+      <path d="M 42 3 L 50 18 L 58 3 Z" fill="#f8f4ec" />
+      <line x1="42" y1="3" x2="50" y2="16" strokeWidth="2" />
+      <line x1="58" y1="3" x2="50" y2="16" strokeWidth="2" />
       {/* 帯 (white sash) */}
-      <rect x="0" y="68" width="100" height="9" fill="#ffffff" />
+      <rect x="0" y="21" width="100" height="4" fill="#ffffff" />
       {/* 緋袴 (red hakama) */}
-      <path d="M 0 77 L 100 77 L 100 100 L 0 100 Z" fill="#c8162b" />
-      {/* 袴の襞 (pleats) */}
-      <line x1="25" y1="77" x2="22" y2="100" strokeWidth="2.5" />
-      <line x1="50" y1="77" x2="50" y2="100" strokeWidth="2.5" />
-      <line x1="75" y1="77" x2="78" y2="100" strokeWidth="2.5" />
+      <path d="M 0 25 L 100 25 L 100 50 L 0 50 Z" fill="#c8162b" />
+      {/* 袴の襞 */}
+      <line x1="25" y1="25" x2="22" y2="50" strokeWidth="1.8" />
+      <line x1="50" y1="25" x2="50" y2="50" strokeWidth="1.8" />
+      <line x1="75" y1="25" x2="78" y2="50" strokeWidth="1.8" />
     </g>,
   );
 
@@ -367,7 +386,7 @@ export function getJobEquipment(archetype: Archetype): JobEquipment {
     fighter:   { primary: fist(),                  accentColor: accent },
     dancer:    { primary: fan(c),                  accentColor: accent },
     captain:   { primary: starEpaulet(c),          accentColor: accent },
-    miko:      { body: mikoOutfit(), primary: kaguraSuzu(c),            accentColor: accent },
+    miko:      { body: mikoOutfit(), primary: kaguraSuzu('#ffd84a'),    accentColor: accent },
     gladiator: { primary: twinSwords(c),           accentColor: accent },
     performer: { primary: windFeather(c),          secondary: bell('#e8c34b'),   accentColor: accent },
   };
