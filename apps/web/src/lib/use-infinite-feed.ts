@@ -1,0 +1,102 @@
+/**
+ * カーソル型ページングの汎用フック。
+ *
+ * - items は append-only で伸びる (データ配列は成長する)
+ * - DOM 側の制約は VirtualFeed が担当する
+ * - deps が変わると state をリセットして再フェッチ
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+export interface InfiniteFeedPage<T> {
+  items: T[];
+  cursor?: string;
+}
+
+export interface UseInfiniteFeedOptions<T> {
+  fetchPage: (cursor?: string) => Promise<InfiniteFeedPage<T>>;
+  /** dedupe に使うキー抽出関数 */
+  keyOf: (item: T) => string;
+  /** 依存値が変わるとリセット */
+  deps: ReadonlyArray<unknown>;
+  /** 有効化フラグ (false の間は何もしない) */
+  enabled?: boolean;
+}
+
+export interface InfiniteFeedState<T> {
+  items: T[];
+  loading: boolean;
+  err: string | null;
+  done: boolean;
+  loadMore: () => void;
+}
+
+export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFeedState<T> {
+  const { fetchPage, keyOf, deps, enabled = true } = opts;
+
+  const [items, setItems] = useState<T[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const cursorRef = useRef<string | undefined>(undefined);
+  const inflight = useRef(false);
+  const doneRef = useRef(false);
+  const fetchPageRef = useRef(fetchPage);
+  fetchPageRef.current = fetchPage;
+  const keyOfRef = useRef(keyOf);
+  keyOfRef.current = keyOf;
+
+  const load = useCallback(async (resetting: boolean) => {
+    if (inflight.current) return;
+    if (!enabled) return;
+    if (!resetting && doneRef.current) return;
+    inflight.current = true;
+    setLoading(true);
+    setErr(null);
+    try {
+      const nextCursor = resetting ? undefined : cursorRef.current;
+      const page = await fetchPageRef.current(nextCursor);
+      setItems((prev) => {
+        const base = resetting ? [] : prev;
+        const seen = new Set(base.map((x) => keyOfRef.current(x)));
+        const merged = [...base];
+        for (const it of page.items) {
+          const k = keyOfRef.current(it);
+          if (!seen.has(k)) {
+            merged.push(it);
+            seen.add(k);
+          }
+        }
+        return merged;
+      });
+      cursorRef.current = page.cursor;
+      if (!page.cursor || page.items.length === 0) {
+        doneRef.current = true;
+        setDone(true);
+      }
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      inflight.current = false;
+      setLoading(false);
+    }
+  }, [enabled]);
+
+  // deps 変化でリセット
+  useEffect(() => {
+    setItems([]);
+    cursorRef.current = undefined;
+    doneRef.current = false;
+    setDone(false);
+    setErr(null);
+    if (enabled) void load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, enabled]);
+
+  const loadMore = useCallback(() => {
+    if (!inflight.current && !doneRef.current) void load(false);
+  }, [load]);
+
+  return { items, loading, err, done, loadMore };
+}

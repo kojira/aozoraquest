@@ -7,6 +7,8 @@ import { useSession } from '@/lib/session';
 import { fetchTimeline, getRecord } from '@/lib/atproto';
 import { buildResonanceTimeline, type ResonanceEntry } from '@/lib/resonance-flow';
 import { useRuntimeConfig } from '@/components/config-provider';
+import { useInfiniteFeed } from '@/lib/use-infinite-feed';
+import { VirtualFeed } from '@/components/virtual-feed';
 
 type Tab = 'following' | 'resonance';
 
@@ -14,40 +16,48 @@ export function Home() {
   const session = useSession();
   const config = useRuntimeConfig();
   const [tab, setTab] = useState<Tab>('following');
-  const [feed, setFeed] = useState<AppBskyFeedDefs.FeedViewPost[]>([]);
-  const [resonanceFeed, setResonanceFeed] = useState<ResonanceEntry[]>([]);
   const [selfDiag, setSelfDiag] = useState<DiagnosisResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+
+  const agent = session.agent;
 
   useEffect(() => {
-    if (session.status !== 'signed-in' || !session.agent || !session.did) return;
-    const agent = session.agent;
+    if (session.status !== 'signed-in' || !agent || !session.did) return;
     const did = session.did;
     getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self')
       .then((r) => setSelfDiag(r))
       .catch((e) => console.warn('self analysis load failed', e));
-  }, [session.status, session.agent, session.did]);
+  }, [session.status, agent, session.did]);
+
+  // フォロー TL: カーソル無限スクロール
+  const followingFeed = useInfiniteFeed<AppBskyFeedDefs.FeedViewPost>({
+    enabled: session.status === 'signed-in' && tab === 'following' && !!agent,
+    keyOf: (x) => x.post.uri,
+    deps: [session.status, agent, tab],
+    fetchPage: async (cursor) => {
+      if (!agent) return { items: [] };
+      const res = await fetchTimeline(agent, cursor);
+      return {
+        items: res.data.feed,
+        ...(res.data.cursor !== undefined ? { cursor: res.data.cursor } : {}),
+      };
+    },
+  });
+
+  // 共鳴 TL: ディレクトリベース一括取得 (件数は directory ≤ 30 に自然制約)
+  const [resonanceFeed, setResonanceFeed] = useState<ResonanceEntry[]>([]);
+  const [resonanceLoading, setResonanceLoading] = useState(false);
+  const [resonanceErr, setResonanceErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session.status !== 'signed-in' || !session.agent) return;
-    if (tab === 'following') {
-      setLoading(true);
-      setErr(null);
-      fetchTimeline(session.agent)
-        .then((res) => setFeed(res.data.feed))
-        .catch((e) => setErr(String((e as Error)?.message ?? e)))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(true);
-      setErr(null);
-      const dids = config.directory.map((u) => u.did).filter((d) => d !== session.did);
-      buildResonanceTimeline(session.agent, { selfDiagnosis: selfDiag, directoryDids: dids })
-        .then((list) => setResonanceFeed(list))
-        .catch((e) => setErr(String((e as Error)?.message ?? e)))
-        .finally(() => setLoading(false));
-    }
-  }, [session.status, session.agent, session.did, tab, selfDiag, config.directory]);
+    if (session.status !== 'signed-in' || !agent || tab !== 'resonance') return;
+    setResonanceLoading(true);
+    setResonanceErr(null);
+    const dids = config.directory.map((u) => u.did).filter((d) => d !== session.did);
+    buildResonanceTimeline(agent, { selfDiagnosis: selfDiag, directoryDids: dids })
+      .then((list) => setResonanceFeed(list))
+      .catch((e) => setResonanceErr(String((e as Error)?.message ?? e)))
+      .finally(() => setResonanceLoading(false));
+  }, [session.status, agent, session.did, tab, selfDiag, config.directory]);
 
   if (session.status === 'loading') return <p>準備しています...</p>;
 
@@ -65,19 +75,12 @@ export function Home() {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.5em' }}>
+      <div className="dq-tabs">
         {(['following', 'resonance'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            style={{
-              flex: 1,
-              padding: '0.5em',
-              background: tab === t ? 'var(--color-primary)' : 'transparent',
-              color: tab === t ? 'white' : 'var(--color-fg)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '4px',
-            }}
+            className={`dq-tab${tab === t ? ' active' : ''}`}
           >
             {t === 'following' ? 'フォロー' : '共鳴'}
           </button>
@@ -92,14 +95,26 @@ export function Home() {
 
       {tab === 'following' && (
         <section style={{ marginTop: '1em' }}>
-          {loading && <p>読み込み中...</p>}
-          {err && <p style={{ color: '#b00' }}>エラー: {err}</p>}
-          {!loading && feed.length === 0 && !err && (
+          {followingFeed.err && <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {followingFeed.err}</p>}
+          {!followingFeed.loading && followingFeed.items.length === 0 && !followingFeed.err && (
             <p style={{ color: 'var(--color-muted)' }}>タイムラインが空です。</p>
           )}
-          {feed.map((item) => (
-            <PostCard key={item.post.uri} item={item} />
-          ))}
+          <VirtualFeed
+            items={followingFeed.items}
+            keyOf={(x) => x.post.uri}
+            renderItem={(item) => <PostCard item={item} />}
+            onEndReached={followingFeed.done ? undefined : followingFeed.loadMore}
+            footer={
+              <>
+                {followingFeed.loading && <p style={{ textAlign: 'center' }}>読み込み中...</p>}
+                {followingFeed.done && followingFeed.items.length > 0 && (
+                  <p style={{ textAlign: 'center', fontSize: '0.8em', color: 'var(--color-muted)' }}>
+                    これ以上はありません。
+                  </p>
+                )}
+              </>
+            }
+          />
         </section>
       )}
 
@@ -117,16 +132,18 @@ export function Home() {
               <Link to="/settings">設定</Link> から参加すると、似た気質の人たちの投稿が少しずつ集まってきます。
             </p>
           )}
-          {loading && <p>読み込み中...</p>}
-          {err && <p style={{ color: '#b00' }}>うまく読み込めませんでした: {err}</p>}
-          {!loading && resonanceFeed.length === 0 && !err && config.directory.length > 0 && (
+          {resonanceLoading && <p>読み込み中...</p>}
+          {resonanceErr && <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {resonanceErr}</p>}
+          {!resonanceLoading && resonanceFeed.length === 0 && !resonanceErr && config.directory.length > 0 && (
             <p style={{ color: 'var(--color-muted)' }}>
               まだあなたと響きあう投稿が見つかりません。参加者が増えると少しずつ流れてきます。
             </p>
           )}
-          {resonanceFeed.map((entry) => (
-            <ResonancePostCard key={entry.item.post.uri} entry={entry} />
-          ))}
+          <VirtualFeed
+            items={resonanceFeed}
+            keyOf={(x) => x.item.post.uri}
+            renderItem={(entry) => <ResonancePostCard entry={entry} />}
+          />
         </section>
       )}
     </div>
@@ -138,16 +155,16 @@ function PostCard({ item }: { item: AppBskyFeedDefs.FeedViewPost }) {
   const author = post.author;
   const record = post.record as { text?: string; createdAt?: string };
   return (
-    <article style={{ padding: '0.8em 0', borderBottom: '1px solid var(--color-border)' }}>
+    <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        {author.avatar && <img src={author.avatar} alt="" width={32} height={32} style={{ borderRadius: '50%' }} />}
+        {author.avatar && <img src={author.avatar} alt="" width={32} height={32} style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>
         <span>@{author.handle}</span>
       </div>
-      <div style={{ marginTop: '0.3em', whiteSpace: 'pre-wrap' }}>{record.text ?? ''}</div>
-      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
+      <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
+      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
         ♡ {post.likeCount ?? 0} · 🔁 {post.repostCount ?? 0} · 💬 {post.replyCount ?? 0}
       </div>
     </article>
@@ -159,9 +176,9 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
   const author = post.author;
   const record = post.record as { text?: string; createdAt?: string };
   return (
-    <article style={{ padding: '0.8em 0', borderBottom: '1px solid var(--color-border)' }}>
+    <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        {author.avatar && <img src={author.avatar} alt="" width={32} height={32} style={{ borderRadius: '50%' }} />}
+        {author.avatar && <img src={author.avatar} alt="" width={32} height={32} style={{ borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>
@@ -169,14 +186,14 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
         {entry.score != null && (
           <span
             title={`近さ ${((entry.similarity ?? 0) * 100).toFixed(0)} / 補い ${((entry.complementarity ?? 0) * 100).toFixed(0)}`}
-            style={{ marginLeft: 'auto', fontSize: '0.75em', color: 'var(--color-primary)' }}
+            style={{ marginLeft: 'auto', fontSize: '0.75em', color: 'var(--color-accent)' }}
           >
             {resonanceLabel(entry.score)}
           </span>
         )}
       </div>
-      <div style={{ marginTop: '0.3em', whiteSpace: 'pre-wrap' }}>{record.text ?? ''}</div>
-      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
+      <div style={{ marginTop: '0.45em', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{record.text ?? ''}</div>
+      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
         ♡ {post.likeCount ?? 0} · 🔁 {post.repostCount ?? 0} · 💬 {post.replyCount ?? 0}
       </div>
     </article>
