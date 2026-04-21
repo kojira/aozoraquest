@@ -238,18 +238,16 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
         {result.analyzedPostCount} 件の投稿から読み取りました · {conf}
       </p>
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1em' }}>
-        <RadarChart stats={result.rpgStats} size={260} normalize />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1em', marginTop: '0.8em', flexWrap: 'wrap' }}>
+        <RadarChart stats={result.rpgStats} size={180} normalize showValues={false} />
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontFamily: 'ui-monospace, monospace', fontSize: '0.95em' }}>
+          <StatRow label="攻 ATK" value={result.rpgStats.atk} color="var(--color-atk)" />
+          <StatRow label="守 DEF" value={result.rpgStats.def} color="var(--color-def)" />
+          <StatRow label="速 AGI" value={result.rpgStats.agi} color="var(--color-agi)" />
+          <StatRow label="知 INT" value={result.rpgStats.int} color="var(--color-int)" />
+          <StatRow label="運 LUK" value={result.rpgStats.luk} color="var(--color-luk)" />
+        </ul>
       </div>
-
-      <h4 style={{ fontSize: '0.95em', marginTop: '1em' }}>ステータス</h4>
-      <ul style={{ listStyle: 'none', padding: 0, fontFamily: 'ui-monospace, monospace' }}>
-        <StatBar label="攻 ATK" value={result.rpgStats.atk} color="var(--color-atk)" />
-        <StatBar label="守 DEF" value={result.rpgStats.def} color="var(--color-def)" />
-        <StatBar label="速 AGI" value={result.rpgStats.agi} color="var(--color-agi)" />
-        <StatBar label="知 INT" value={result.rpgStats.int} color="var(--color-int)" />
-        <StatBar label="運 LUK" value={result.rpgStats.luk} color="var(--color-luk)" />
-      </ul>
 
       <h4 style={{ fontSize: '0.95em', marginTop: '1em' }}>考え方のクセ</h4>
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
@@ -274,16 +272,12 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
   );
 }
 
-function StatBar({ label, value, color }: { label: string; value: number; color: string }) {
+function StatRow({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <li style={{ margin: '0.4em 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em' }}>
-        <span>{label}</span>
-        <span>{value}%</span>
-      </div>
-      <div style={{ height: '6px', background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ width: `${value}%`, height: '100%', background: color }} />
-      </div>
+    <li style={{ display: 'flex', alignItems: 'center', gap: '0.6em', padding: '0.15em 0' }}>
+      <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />
+      <span style={{ minWidth: '4.5em', color: 'var(--color-muted)' }}>{label}</span>
+      <span style={{ fontWeight: 700, fontSize: '1.05em', minWidth: '2em', textAlign: 'right' }}>{value}</span>
     </li>
   );
 }
