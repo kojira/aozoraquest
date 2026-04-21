@@ -48,33 +48,60 @@ async function resolveDidToPds(did: string): Promise<string> {
   throw new Error(`unsupported DID method: ${did}`);
 }
 
-function isNotFoundError(e: unknown): boolean {
-  const err = e as { name?: string; message?: string };
-  if (err?.name === 'RecordNotFoundError') return true;
-  const msg = err?.message ?? '';
-  return /RecordNotFound|not found|could not locate|InvalidRequest/i.test(msg);
-}
-
-async function tryGetRecord<T>(
+/**
+ * 指定コレクションの全レコードを listRecords で取得し、rkey → value の Map にして返す。
+ * レコードが無い場合は空 Map を返すだけで HTTP 4xx を発生させない
+ * (getRecord は存在しない rkey に対し 400 を返すためブラウザコンソールが汚れる)。
+ */
+async function listAsMap<T>(
   agent: AtpAgent,
   repo: string,
   collection: string,
-  rkey: string,
-): Promise<T | null> {
+): Promise<Map<string, T>> {
+  const out = new Map<string, T>();
   try {
-    const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });
-    return res.data.value as T;
+    const res = await agent.com.atproto.repo.listRecords({ repo, collection, limit: 100 });
+    for (const r of res.data.records) {
+      const rkey = r.uri.split('/').pop();
+      if (rkey) out.set(rkey, r.value as T);
+    }
   } catch (e) {
-    if (isNotFoundError(e)) return null;
-    console.warn(`getRecord ${collection}/${rkey} failed`, e);
-    return null;
+    console.warn(`listRecords ${collection} failed`, e);
   }
+  return out;
 }
+
+/** 起動中に同じ admin DID を 2 度呼ばれても同じ Promise を返す (StrictMode の 2 重発火対策)。 */
+let inflight: Promise<RuntimeConfig> | null = null;
 
 /**
  * 全コンフィグを並列取得。どれか失敗してもデフォルトでフォールバック。
  */
-export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
+export function loadRuntimeConfig(): Promise<RuntimeConfig> {
+  if (inflight) return inflight;
+  inflight = loadRuntimeConfigInner().finally(() => {
+    // 結果は ConfigProvider 側で保持するのでここは開放
+    inflight = null;
+  });
+  return inflight;
+}
+
+interface FlagsRecord {
+  flags: Record<string, { enabled: boolean; rollout: number; description: string }>;
+  updatedAt: string;
+}
+interface MaintenanceRecord {
+  enabled: boolean;
+  message?: string;
+  until?: string;
+  allowedDids?: string[];
+  updatedAt: string;
+}
+interface BansRecord { dids: string[]; updatedAt: string }
+interface PromptRecord { id: string; body: string; updatedAt: string }
+interface DirectoryRecord { users: Array<{ did: string; addedAt: string; note?: string }>; updatedAt: string }
+
+async function loadRuntimeConfigInner(): Promise<RuntimeConfig> {
   const adminDid = getPrimaryAdminDid();
   if (!adminDid) {
     console.info('VITE_ADMIN_DIDS 未設定。デフォルトコンフィグで起動');
@@ -90,29 +117,25 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   }
   const agent = new AtpAgent({ service: pdsUrl });
 
-  const [flags, maintenance, bans, spiritChat, directory] = await Promise.all([
-    tryGetRecord<{ flags: Record<string, { enabled: boolean; rollout: number; description: string }>; updatedAt: string }>(
-      agent, adminDid, 'app.aozoraquest.config.flags', 'self',
-    ),
-    tryGetRecord<{ enabled: boolean; message?: string; until?: string; allowedDids?: string[]; updatedAt: string }>(
-      agent, adminDid, 'app.aozoraquest.config.maintenance', 'self',
-    ),
-    tryGetRecord<{ dids: string[]; updatedAt: string }>(
-      agent, adminDid, 'app.aozoraquest.config.bans', 'self',
-    ),
-    tryGetRecord<{ id: 'spiritChat'; body: string; updatedAt: string }>(
-      agent, adminDid, 'app.aozoraquest.config.prompts', 'spiritChat',
-    ),
-    tryGetRecord<{ users: Array<{ did: string; addedAt: string; note?: string }>; updatedAt: string }>(
-      agent, adminDid, 'app.aozoraquest.directory', 'self',
-    ),
+  const [flagsMap, maintMap, bansMap, promptsMap, dirMap] = await Promise.all([
+    listAsMap<FlagsRecord>(agent, adminDid, 'app.aozoraquest.config.flags'),
+    listAsMap<MaintenanceRecord>(agent, adminDid, 'app.aozoraquest.config.maintenance'),
+    listAsMap<BansRecord>(agent, adminDid, 'app.aozoraquest.config.bans'),
+    listAsMap<PromptRecord>(agent, adminDid, 'app.aozoraquest.config.prompts'),
+    listAsMap<DirectoryRecord>(agent, adminDid, 'app.aozoraquest.directory'),
   ]);
+
+  const flags = flagsMap.get('self');
+  const maintenance = maintMap.get('self');
+  const bans = bansMap.get('self');
+  const spiritChat = promptsMap.get('spiritChat');
+  const directory = dirMap.get('self');
 
   return {
     flags: flags?.flags ?? {},
     maintenance: maintenance ?? DEFAULT_RUNTIME_CONFIG.maintenance,
     bans: bans?.dids ?? [],
-    prompts: spiritChat ? { spiritChat } : {},
+    prompts: spiritChat ? { spiritChat: { id: 'spiritChat' as const, body: spiritChat.body, updatedAt: spiritChat.updatedAt } } : {},
     directory: directory?.users ?? [],
   };
 }
