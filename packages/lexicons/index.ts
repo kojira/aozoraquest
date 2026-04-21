@@ -8,6 +8,7 @@ import analysisJson from './app/aozoraquest/analysis.json' with { type: 'json' }
 import questLogJson from './app/aozoraquest/questLog.json' with { type: 'json' };
 import companionJson from './app/aozoraquest/companion.json' with { type: 'json' };
 import companionLogJson from './app/aozoraquest/companionLog.json' with { type: 'json' };
+import spiritChatJson from './app/aozoraquest/spiritChat.json' with { type: 'json' };
 import directoryJson from './app/aozoraquest/directory.json' with { type: 'json' };
 import flagsJson from './app/aozoraquest/config/flags.json' with { type: 'json' };
 import promptsJson from './app/aozoraquest/config/prompts.json' with { type: 'json' };
@@ -20,6 +21,7 @@ export const LEXICON_DOCS = {
   'app.aozoraquest.questLog': questLogJson,
   'app.aozoraquest.companion': companionJson,
   'app.aozoraquest.companionLog': companionLogJson,
+  'app.aozoraquest.spiritChat': spiritChatJson,
   'app.aozoraquest.directory': directoryJson,
   'app.aozoraquest.config.flags': flagsJson,
   'app.aozoraquest.config.prompts': promptsJson,
@@ -35,6 +37,7 @@ export const USER_LEXICONS = [
   'app.aozoraquest.questLog',
   'app.aozoraquest.companion',
   'app.aozoraquest.companionLog',
+  'app.aozoraquest.spiritChat',
 ] as const satisfies readonly LexiconNsid[];
 
 export const ADMIN_LEXICONS = [

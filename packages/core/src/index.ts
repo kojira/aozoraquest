@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './embedding-config.js';
+export * from './generation-config.js';
 export * from './jobs.js';
 export * from './stats.js';
 export * from './compat.js';

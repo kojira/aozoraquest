@@ -1,0 +1,31 @@
+{
+  "lexicon": 1,
+  "id": "app.aozoraquest.spiritChat",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "User-owned chat log with the spirit (Brusukon). One record per message.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["role", "text", "createdAt"],
+        "properties": {
+          "role": {
+            "type": "string",
+            "knownValues": ["user", "spirit"],
+            "description": "Who spoke this message"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Message content"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

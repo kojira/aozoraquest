@@ -296,3 +296,116 @@ p { margin: 0.4em 0; }
 .section {
   margin: 0.8em 0;
 }
+
+/* ─── 召喚の儀式 アニメーション ─────────────────── */
+
+@keyframes ritual-particle-fall {
+  0% {
+    transform: translate(var(--x-start, 0), -60vh);
+    opacity: 0;
+  }
+  20% { opacity: 1; }
+  100% {
+    transform: translate(var(--x-end, 0), 0);
+    opacity: 0;
+  }
+}
+
+@keyframes ritual-pulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.95);
+    filter: blur(2px);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.05);
+    filter: blur(0);
+  }
+}
+
+@keyframes ritual-sparkle {
+  0% { transform: scale(0); opacity: 0; }
+  30% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.6); opacity: 0; }
+}
+
+@keyframes ritual-breathe {
+  0%, 100% { transform: scale(1); }
+  50%     { transform: scale(1.04); }
+}
+
+@keyframes ritual-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes ritual-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes ritual-text-swap {
+  0%   { opacity: 0; transform: translateY(4px); }
+  20%  { opacity: 1; transform: translateY(0); }
+  80%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+
+.summon-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center,
+    rgba(20, 50, 110, 0.7) 0%,
+    rgba(5, 15, 35, 0.95) 70%,
+    rgba(0, 0, 0, 0.98) 100%);
+  animation: ritual-fade-in 600ms ease;
+  overflow: hidden;
+}
+
+.summon-stage {
+  position: relative;
+  width: min(320px, 80vw);
+  height: min(320px, 80vw);
+}
+
+.summon-particle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.8);
+  animation: ritual-particle-fall 2.4s ease-in infinite;
+  pointer-events: none;
+}
+
+.summon-silhouette {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: ritual-pulse 2s ease-in-out infinite;
+}
+
+.summon-sparkle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle, #fff8 0%, transparent 70%);
+  border-radius: 50%;
+  animation: ritual-sparkle 1.4s ease-out infinite;
+  pointer-events: none;
+}
+
+.breathe {
+  animation: ritual-breathe 3.2s ease-in-out infinite;
+}

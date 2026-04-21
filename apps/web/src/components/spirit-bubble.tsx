@@ -9,16 +9,28 @@ interface SpiritBubbleProps {
   /** テキスト部分の font-size (例: '0.9em') */
   fontSize?: string;
   sleeping?: boolean;
+  /** アイコンを表示するか。連続した吹き出しの 2 つ目以降で false にするとすっきりする。 */
+  showIcon?: boolean;
 }
 
 /**
  * 精霊の発言は必ずこの吹き出しで。アイコン (精霊キャラ) を左、右に本文。
  * アイコンからの吹き出し矢尻は小さな三角で表現。
  */
-export function SpiritBubble({ children, iconSize = 44, fontSize = '0.95em', sleeping = false }: SpiritBubbleProps) {
+export function SpiritBubble({
+  children,
+  iconSize = 44,
+  fontSize = '0.95em',
+  sleeping = false,
+  showIcon = true,
+}: SpiritBubbleProps) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.55em' }}>
-      <SpiritIcon size={iconSize} sleeping={sleeping} />
+      {showIcon ? (
+        <SpiritIcon size={iconSize} sleeping={sleeping} />
+      ) : (
+        <div style={{ width: iconSize, flexShrink: 0 }} aria-hidden />
+      )}
       <div
         style={{
           position: 'relative',
@@ -33,20 +45,21 @@ export function SpiritBubble({ children, iconSize = 44, fontSize = '0.95em', sle
           boxShadow: '0 1px 0 rgba(0, 0, 0, 0.25)',
         }}
       >
-        {/* アイコン側の三角 (吹き出しの矢) */}
-        <span
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: -8,
-            top: 12,
-            width: 0,
-            height: 0,
-            borderTop: '6px solid transparent',
-            borderBottom: '6px solid transparent',
-            borderRight: '10px solid rgba(255, 255, 255, 0.95)',
-          }}
-        />
+        {showIcon && (
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: -8,
+              top: 12,
+              width: 0,
+              height: 0,
+              borderTop: '6px solid transparent',
+              borderBottom: '6px solid transparent',
+              borderRight: '10px solid rgba(255, 255, 255, 0.95)',
+            }}
+          />
+        )}
         {children}
       </div>
     </div>
