@@ -5,6 +5,7 @@ import { jobDisplayName } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
+import { RadarChart } from '@/components/radar-chart';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -173,6 +174,10 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
         {result.analyzedPostCount} 件の投稿から読み取りました · {conf}
       </p>
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1em' }}>
+        <RadarChart stats={result.rpgStats} size={260} />
+      </div>
 
       <h4 style={{ fontSize: '0.95em', marginTop: '1em' }}>ステータス</h4>
       <ul style={{ listStyle: 'none', padding: 0, fontFamily: 'ui-monospace, monospace' }}>
