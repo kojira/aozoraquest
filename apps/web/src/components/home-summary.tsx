@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
-import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobTagline } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobLevelFromXp, jobTagline } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
@@ -103,6 +103,7 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
 
   const jobName = jobDisplayName(diag.archetype, 'default');
   const tagline = jobTagline(diag.archetype);
+  const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0);
 
   return (
     <section className="dq-window" style={{ display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
@@ -128,6 +129,7 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
         >
           <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>今の姿</span>
           <span style={{ fontSize: '1em', fontWeight: 700 }}>{jobName}</span>
+          <span style={{ fontSize: '0.8em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>LV{jobLv}</span>
           {tagline && (
             <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{tagline}</span>
           )}

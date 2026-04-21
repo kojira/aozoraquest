@@ -61,6 +61,27 @@ export interface Quest {
 
 export type Confidence = 'high' | 'medium' | 'low' | 'ambiguous' | 'insufficient';
 
+/**
+ * 現職 (archetype) の熟練度ステート。archetype が変わると 0 からやり直す。
+ * 前職は `DiagnosisResult.jobHistory` に履歴として積まれる。
+ */
+export interface JobLevelState {
+  archetype: Archetype;
+  xp: number;
+  joinedAt: string;              // この archetype に切り替わった ISO 日時
+  lastDailyBonusDate?: string;   // 日次ボーナスを最後に付与した YYYY-MM-DD
+  streakDays: number;            // 連続活動日数 (日次ボーナスの計算に使う)
+}
+
+/** 過去に就いたジョブの履歴エントリ。 */
+export interface JobHistoryEntry {
+  archetype: Archetype;
+  peakLevel: number;
+  totalXp: number;
+  from: string;                  // ISO
+  until: string;                 // ISO
+}
+
 export interface DiagnosisResult {
   archetype: Archetype;
   rpgStats: StatVector;
@@ -68,4 +89,6 @@ export interface DiagnosisResult {
   confidence: Confidence;
   analyzedPostCount: number;
   analyzedAt: string; // ISO datetime
+  jobLevel?: JobLevelState;
+  jobHistory?: JobHistoryEntry[];
 }
