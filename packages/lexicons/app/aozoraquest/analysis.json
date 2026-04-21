@@ -15,8 +15,8 @@
             "knownValues": [
               "sage", "mage", "shogun", "bard",
               "seer", "poet", "paladin", "explorer",
-              "warrior", "guardian", "fighter", "dancer",
-              "captain", "miko", "gladiator", "performer"
+              "warrior", "guardian", "fighter", "artist",
+              "captain", "miko", "ninja", "performer"
             ]
           },
           "rpgStats": { "type": "ref", "ref": "#statVector" },
@@ -35,8 +35,8 @@
             "knownValues": [
               "sage", "mage", "shogun", "bard",
               "seer", "poet", "paladin", "explorer",
-              "warrior", "guardian", "fighter", "dancer",
-              "captain", "miko", "gladiator", "performer"
+              "warrior", "guardian", "fighter", "artist",
+              "captain", "miko", "ninja", "performer"
             ]
           },
           "pendingArchetypeStreak": { "type": "integer", "minimum": 0 }
@@ -53,8 +53,8 @@
           "knownValues": [
             "sage", "mage", "shogun", "bard",
             "seer", "poet", "paladin", "explorer",
-            "warrior", "guardian", "fighter", "dancer",
-            "captain", "miko", "gladiator", "performer"
+            "warrior", "guardian", "fighter", "artist",
+            "captain", "miko", "ninja", "performer"
           ]
         },
         "xp": { "type": "integer", "minimum": 0 },

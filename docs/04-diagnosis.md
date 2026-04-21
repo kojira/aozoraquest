@@ -102,14 +102,14 @@ async function diagnose(posts: Post[]): Promise<DiagnosisResult> {
 | Ne | Fi | `explorer` |
 | Si | Te | `warrior` |
 | Si | Fe | `guardian` |
-| Se | Ti | `gladiator` |
+| Se | Ti | `ninja` |
 | Se | Fi | `performer` |
 | Ti | Ne | `mage` |
 | Ti | Se | `fighter` |
 | Te | Ni | `shogun` |
 | Te | Si | `captain` |
 | Fi | Ne | `poet` |
-| Fi | Se | `dancer` |
+| Fi | Se | `artist` |
 | Fe | Ni | `paladin` |
 | Fe | Si | `miko` |
 

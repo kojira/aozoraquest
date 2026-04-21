@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ARCHETYPES } from '@aozoraquest/core';
 
 // ─────────────────────────────────────────────────
 // Common primitives
@@ -6,12 +7,11 @@ import { z } from 'zod';
 
 const Datetime = z.string().datetime();
 const Did = z.string().regex(/^did:/, 'invalid DID');
-const ArchetypeEnum = z.enum([
-  'sage', 'mage', 'shogun', 'bard',
-  'seer', 'poet', 'paladin', 'explorer',
-  'warrior', 'guardian', 'fighter', 'dancer',
-  'captain', 'miko', 'gladiator', 'performer',
-]);
+/**
+ * Archetype の単一ソース (packages/core/src/types.ts の ARCHETYPES)。
+ * Zod enum は readonly tuple を要求するので [string, ...string[]] に coerce。
+ */
+const ArchetypeEnum = z.enum(ARCHETYPES as unknown as [string, ...string[]]);
 
 const StatScore = z.number().int().min(0).max(100);
 const StatVectorSchema = z.object({

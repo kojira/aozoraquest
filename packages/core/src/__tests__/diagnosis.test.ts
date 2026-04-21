@@ -106,8 +106,8 @@ describe('determineArchetype (無効ペアのフォールバック)', () => {
   test('Se top-1, Ne top-2 は無効ペアだが賢者にはならない (Se dominant の職に落ちる)', () => {
     const scores = { Ni: 10, Ne: 70, Si: 20, Se: 100, Ti: 30, Te: 20, Fi: 50, Fe: 40 } as const;
     const { archetype } = determineArchetype(scores);
-    // Se を dominant に持つのは gladiator (Se/Ti) と performer (Se/Fi) の 2 つ
-    expect(['gladiator', 'performer']).toContain(archetype);
+    // Se を dominant に持つのは ninja (Se/Ti) と performer (Se/Fi) の 2 つ
+    expect(['ninja', 'performer']).toContain(archetype);
   });
 
   test('Se top-1 かつ Ti より Fi が高い → performer (遊び人)', () => {
@@ -116,10 +116,10 @@ describe('determineArchetype (無効ペアのフォールバック)', () => {
     expect(archetype).toBe('performer');
   });
 
-  test('Se top-1 かつ Fi より Ti が高い → gladiator (忍者)', () => {
+  test('Se top-1 かつ Fi より Ti が高い → ninja (忍者)', () => {
     const scores = { Ni: 10, Ne: 20, Si: 30, Se: 100, Ti: 60, Te: 20, Fi: 25, Fe: 40 } as const;
     const { archetype } = determineArchetype(scores);
-    expect(archetype).toBe('gladiator');
+    expect(archetype).toBe('ninja');
   });
 });
 

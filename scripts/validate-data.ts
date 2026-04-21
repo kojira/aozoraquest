@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ARCHETYPES } from '../packages/core/src/types.js';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const errors: string[] = [];
@@ -41,12 +42,8 @@ function validateJobs() {
   console.log('## jobs.json\n');
   const data = loadJson<JobsData>('docs/data/jobs.json');
 
-  const expectedJobs = [
-    'sage', 'mage', 'shogun', 'bard',
-    'seer', 'poet', 'paladin', 'explorer',
-    'warrior', 'guardian', 'fighter', 'dancer',
-    'captain', 'miko', 'gladiator', 'performer',
-  ];
+  // Archetype の単一ソースは packages/core/src/types.ts の ARCHETYPES
+  const expectedJobs = [...ARCHETYPES];
   const foundJobs = Object.keys(data.jobs);
 
   // 16 ジョブ揃っているか
@@ -268,6 +265,40 @@ function validateCognitivePrototypes() {
 }
 
 // ─────────────────────────────────────────────────
+// lexicon JSON の knownValues が core/types.ts の ARCHETYPES と一致するか
+// (archetype のリネーム時にここが漏れないようチェック)
+// ─────────────────────────────────────────────────
+
+function validateLexiconArchetypes() {
+  console.log('## lexicon knownValues vs ARCHETYPES\n');
+  const expected = [...ARCHETYPES].sort().join(',');
+  const targets = [
+    { path: 'packages/lexicons/app/aozoraquest/analysis.json', paths: ['defs.main.record.properties.archetype.knownValues', 'defs.jobLevel.properties.archetype.knownValues', 'defs.main.record.properties.pendingArchetype.knownValues'] },
+    { path: 'packages/lexicons/app/aozoraquest/profile.json', paths: ['defs.main.record.properties.targetJob.knownValues'] },
+  ];
+  for (const t of targets) {
+    const doc = loadJson<unknown>(t.path);
+    for (const pth of t.paths) {
+      const arr = getPath(doc, pth) as string[] | undefined;
+      if (!arr) { errors.push(`${t.path}: ${pth} が見つからない`); continue; }
+      const got = [...arr].sort().join(',');
+      if (got !== expected) {
+        errors.push(`${t.path}: ${pth} が ARCHETYPES と不一致`);
+        console.log(`  expected: ${expected}`);
+        console.log(`  got     : ${got}`);
+      } else {
+        console.log(`- ${t.path}:${pth} ✓`);
+      }
+    }
+  }
+  console.log();
+}
+
+function getPath(obj: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), obj);
+}
+
+// ─────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────
 
@@ -278,6 +309,7 @@ validateJobs();
 validateActionWeights();
 validateTags();
 validateCognitivePrototypes();
+validateLexiconArchetypes();
 
 console.log('## サマリー\n');
 console.log(`- エラー: ${errors.length}`);
