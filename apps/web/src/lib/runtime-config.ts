@@ -48,6 +48,13 @@ async function resolveDidToPds(did: string): Promise<string> {
   throw new Error(`unsupported DID method: ${did}`);
 }
 
+function isNotFoundError(e: unknown): boolean {
+  const err = e as { name?: string; message?: string };
+  if (err?.name === 'RecordNotFoundError') return true;
+  const msg = err?.message ?? '';
+  return /RecordNotFound|not found|could not locate|InvalidRequest/i.test(msg);
+}
+
 async function tryGetRecord<T>(
   agent: AtpAgent,
   repo: string,
@@ -58,7 +65,7 @@ async function tryGetRecord<T>(
     const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });
     return res.data.value as T;
   } catch (e) {
-    if (/RecordNotFound|not found|InvalidRequest/i.test(String((e as Error)?.message ?? ''))) return null;
+    if (isNotFoundError(e)) return null;
     console.warn(`getRecord ${collection}/${rkey} failed`, e);
     return null;
   }

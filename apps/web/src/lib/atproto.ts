@@ -91,8 +91,10 @@ export async function getRecord<T = unknown>(agent: Agent, repo: string, collect
     const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });
     return res.data.value as T;
   } catch (e) {
-    const msg = (e as { message?: string })?.message ?? '';
-    if (/RecordNotFound|not found/i.test(msg)) return null;
+    const err = e as { name?: string; message?: string };
+    if (err?.name === 'RecordNotFoundError') return null;
+    const msg = err?.message ?? '';
+    if (/RecordNotFound|not found|could not locate/i.test(msg)) return null;
     throw e;
   }
 }

@@ -100,14 +100,30 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
     if (!inflight.current && !doneRef.current) void load(false);
   }, [load]);
 
+  /**
+   * 先頭ページを取得して既存と「マージ」する。
+   * 画面から投稿が一瞬消えるのを避けるため、items は clear せず、
+   * 新しい投稿だけを先頭に挿入する。既存のカーソル (末尾) はそのまま維持。
+   */
   const refresh = useCallback(() => {
-    setItems([]);
-    cursorRef.current = undefined;
-    doneRef.current = false;
-    setDone(false);
+    if (inflight.current || !enabled) return;
+    inflight.current = true;
+    setLoading(true);
     setErr(null);
-    void load(true);
-  }, [load]);
+    fetchPageRef.current(undefined)
+      .then((page) => {
+        setItems((prev) => {
+          const seen = new Set(page.items.map((x) => keyOfRef.current(x)));
+          const kept = prev.filter((x) => !seen.has(keyOfRef.current(x)));
+          return [...page.items, ...kept];
+        });
+      })
+      .catch((e) => setErr(String((e as Error)?.message ?? e)))
+      .finally(() => {
+        inflight.current = false;
+        setLoading(false);
+      });
+  }, [enabled]);
 
   return { items, loading, err, done, loadMore, refresh };
 }
