@@ -85,9 +85,9 @@ async function main() {
       await webPage.waitForSelector('text=ログインして始める', { timeout: 15_000 });
       console.log('[web] unauthenticated home rendered');
 
-      // footer nav には「精霊」リンクがあるはず
-      const spiritLink = await webPage.getByRole('link', { name: '精霊' }).count();
-      if (spiritLink < 1) failures.push('[web] footer nav に「精霊」リンクが無い');
+      // footer nav にはブルスコン (精霊) リンクがあるはず (aria-label で探す)
+      const spiritLink = await webPage.getByRole('link', { name: 'ブルスコン' }).count();
+      if (spiritLink < 1) failures.push('[web] footer nav にブルスコンリンクが無い');
 
       const webRealErrors = webErrors.filter((e) => !isIgnorable(e));
       if (webRealErrors.length > 0) {
