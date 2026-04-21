@@ -11,27 +11,45 @@ interface SummoningRitualProps {
   onCancel: () => void;
 }
 
-type Phase = 'gathering' | 'forming' | 'awakening' | 'greeting' | 'done' | 'error';
+type Phase = 'gathering' | 'forming' | 'awakening' | 'greeting' | 'emerging' | 'done' | 'error';
 
-const NARRATIONS: Record<Phase, string> = {
+// phase ごとの基本ナレーション。greeting 中は変化させたいので追加プールも用意する
+const STATIC_NARRATIONS: Partial<Record<Phase, string>> = {
   gathering: '青空の気配が集まる…',
   forming: '光の中に、形が見えてきた…',
   awakening: 'まぶたがゆっくりと開いていく…',
-  greeting: '名乗りの言葉を、ブルスコンが紡いでいる…',
-  done: '',
-  error: '',
+  emerging: '',
 };
 
+/** greeting 中は長引くので、数秒ごとにこのプールから言葉を差し替える。 */
+const GREETING_POOL: readonly string[] = [
+  '名乗りの言葉を、ブルスコンが紡いでいる…',
+  '空の奥で、声の形を整えている…',
+  '吹く風が、言葉を運んでこようとしている…',
+  'あなたの呼びかけが、深いところまで届いている…',
+  '光の粒が、一つひとつ意味を帯びていく…',
+  '遠くの雲が、耳を澄ませているようだ…',
+  'ふるえる気配が、かたちを探している…',
+  'もうすぐ、最初のひと息が聞こえる…',
+  '言葉になる前の、静けさが満ちる…',
+  '空色の糸が、ゆっくりと編まれていく…',
+  '名前の輪郭が、淡く立ち上がる…',
+  '一つひとつの音が、選ばれていく…',
+];
+
 const MIN_PHASE_MS = 2200;
+const GREETING_NARRATION_INTERVAL = 3200;
 
 /**
  * ブルスコン召喚の儀式。
  *
- * TinySwallow のロードと演出を並列進行。演出は最低 ~7 秒、LLM ロードが長引く場合はその分伸びる。
- * 完了時に LLM で歓迎メッセージを生成し、onComplete で親に渡す。
+ * TinySwallow のロードと演出を並列進行。演出は最低 ~7 秒、LLM ロードが長引く場合は
+ * greeting フェーズでナレーションを巡回させて間を持たせる。ロード完了 → 歓迎メッセージ
+ * 生成完了の瞬間に 'emerging' フェーズに入り、フラッシュ + 星弾けの演出をしてから閉じる。
  */
 export function SummoningRitual({ agent: _agent, userName, systemPrompt, onComplete, onCancel }: SummoningRitualProps) {
   const [phase, setPhase] = useState<Phase>('gathering');
+  const [greetingIdx, setGreetingIdx] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const startedAt = useRef(Date.now());
   const loadedRef = useRef(false);
@@ -40,7 +58,6 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
     let cancelled = false;
     const g = getGenerator();
 
-    // 1) LLM ロード開始
     const loadPromise = g.load().then(() => {
       loadedRef.current = true;
     }).catch((e) => {
@@ -49,9 +66,7 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
       setPhase('error');
     });
 
-    // 2) 最低演出時間を確保しつつ phase を進める
     async function run() {
-      // gathering 〜 awakening は時間で進める
       await sleep(MIN_PHASE_MS);
       if (cancelled) return;
       setPhase('forming');
@@ -61,13 +76,11 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
       await sleep(MIN_PHASE_MS);
       if (cancelled) return;
 
-      // LLM ロード完了を待つ。ここで長く待つ可能性がある
       setPhase('greeting');
       await loadPromise;
       if (cancelled || err) return;
-      if (!loadedRef.current) return; // エラーで中断
+      if (!loadedRef.current) return;
 
-      // 歓迎メッセージを LLM に生成させる
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
         {
@@ -90,6 +103,13 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
       }
 
+      // 生成が終わったところで 'emerging' に遷移してスペクタクル演出
+      if (cancelled) return;
+      setPhase('emerging');
+      // 演出が見えるように少し待つ
+      await sleep(2200);
+      if (cancelled) return;
+
       try {
         await onComplete(welcome);
       } catch (e) {
@@ -106,7 +126,15 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // done になったら親の onComplete で閉じられる想定 (SummoningRitual 自体は消える)
+  // greeting 中はナレーションを巡回
+  useEffect(() => {
+    if (phase !== 'greeting') return;
+    const id = setInterval(() => {
+      setGreetingIdx((i) => (i + 1) % GREETING_POOL.length);
+    }, GREETING_NARRATION_INTERVAL);
+    return () => clearInterval(id);
+  }, [phase]);
+
   if (phase === 'done') return null;
 
   if (phase === 'error') {
@@ -127,24 +155,32 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
     );
   }
 
-  // 進行中
   const elapsed = Date.now() - startedAt.current;
+  const narrationText =
+    phase === 'greeting' ? GREETING_POOL[greetingIdx]! : (STATIC_NARRATIONS[phase] ?? '');
+  const narrationKey = phase === 'greeting' ? `greet-${greetingIdx}` : `phase-${phase}`;
+
+  const emerging = phase === 'emerging';
+
   return (
     <div className="summon-overlay" role="dialog" aria-modal="true" aria-label="精霊召喚の儀式">
+      {/* emergence 用フラッシュ (一瞬、画面全体を白光で覆う) */}
+      {emerging && <div className="summon-flash" aria-hidden />}
+
       <div className="summon-stage">
         {/* 粒子 */}
-        {buildParticles(24)}
+        {!emerging && buildParticles(24)}
 
-        {/* シルエット (phase によって徐々にはっきり) */}
+        {/* シルエット */}
         <div
-          className="summon-silhouette"
+          className={`summon-silhouette${emerging ? ' emerging' : ''}`}
           style={{
             opacity: phase === 'gathering' ? 0.2 : phase === 'forming' ? 0.55 : 1,
             transition: 'opacity 800ms ease',
           }}
         >
           <SpiritIcon
-            size={180}
+            size={emerging ? 220 : 180}
             sleeping={phase === 'gathering' || phase === 'forming'}
           />
         </div>
@@ -158,28 +194,69 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
             <span className="summon-sparkle" style={{ bottom: '15%', right: '22%', animationDelay: '0.9s' }} />
           </>
         )}
+
+        {/* emerging: 放射状に弾ける大きな星たち */}
+        {emerging && (
+          <>
+            {Array.from({ length: 14 }).map((_, i) => {
+              const angle = (360 / 14) * i;
+              return (
+                <span
+                  key={i}
+                  className="summon-burst"
+                  style={{
+                    ['--angle' as string]: `${angle}deg`,
+                    animationDelay: `${Math.random() * 0.15}s`,
+                  } as React.CSSProperties}
+                />
+              );
+            })}
+          </>
+        )}
       </div>
 
-      {/* ナレーション */}
-      <div
-        key={phase}
-        style={{
-          position: 'absolute',
-          bottom: '14%',
-          left: 0,
-          right: 0,
-          textAlign: 'center',
-          color: '#ffffff',
-          fontSize: '1.05em',
-          letterSpacing: '0.04em',
-          animation: 'ritual-fade-in 700ms ease',
-        }}
-      >
-        {NARRATIONS[phase]}
-      </div>
+      {/* ナレーション (greeting 中は key 切り替えでフェード) */}
+      {!emerging && narrationText && (
+        <div
+          key={narrationKey}
+          style={{
+            position: 'absolute',
+            bottom: '14%',
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            color: '#ffffff',
+            fontSize: '1.05em',
+            letterSpacing: '0.04em',
+            animation: 'ritual-text-swap 3200ms ease',
+          }}
+        >
+          {narrationText}
+        </div>
+      )}
 
-      {/* 経過を隠す代わりに「歩みを重ねる」遠い数値は出さない。長引いたときだけヒント。 */}
-      {phase === 'greeting' && elapsed > 15000 && (
+      {/* 出現宣言 */}
+      {emerging && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '18%',
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            color: '#ffffff',
+            fontSize: '1.6em',
+            letterSpacing: '0.08em',
+            fontWeight: 700,
+            textShadow: '0 0 16px rgba(159, 215, 255, 0.85), 0 0 40px rgba(255, 255, 255, 0.6)',
+            animation: 'ritual-announce 1800ms ease',
+          }}
+        >
+          ブルスコン、あらわれた!
+        </div>
+      )}
+
+      {phase === 'greeting' && elapsed > 20000 && (
         <div style={{ position: 'absolute', bottom: '8%', left: 0, right: 0, textAlign: 'center', fontSize: '0.8em', color: '#9fb3c8' }}>
           もう少しで姿が現れる
         </div>
@@ -215,7 +292,6 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-/** LLM が余計なマークを出したときの整形 */
 function cleanGenerated(s: string): string {
   return s
     .replace(/^<\|.*?\|>/g, '')
