@@ -1,4 +1,5 @@
 import { statGap, sortStatsByAbsGap } from './stats.js';
+import { JOB_LEVEL_TUNING, PLAYER_LEVEL_TUNING, XP_REWARDS } from './tuning.js';
 import type { ActionType, Quest, Stat, StatVector } from './types.js';
 
 /**
@@ -198,19 +199,14 @@ export function levelFromXp(xp: number): number {
 }
 
 /**
- * 現職 (archetype) の滞在 LV 用 XP 曲線 (LV1-50 全て)。
- * 公式: threshold(n) = round(30 * (n-1)^1.85)
- * - 初期は速い (LV2 = 30 XP、LV5 = 394 XP)。
- * - 後期にかけて鈍化。LV50 = 約 44,000 XP。
- * - 標準ユーザー (約 100 XP/日) で 1 年強で LV50 近傍に到達する目安。
+ * 現職 (archetype) の滞在 LV 用 XP 曲線。パラメータは tuning.JOB_LEVEL_TUNING。
+ * threshold(n) = round(coef * (n - 1)^exp)、LV1 = 0。
  */
-export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = (() => {
-  const out: Array<[number, number]> = [];
-  for (let lv = 1; lv <= 50; lv++) {
-    out.push([lv, Math.round(30 * Math.pow(lv - 1, 1.85))]);
-  }
-  return out;
-})();
+export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = buildXpCurve(
+  JOB_LEVEL_TUNING.maxLevel,
+  JOB_LEVEL_TUNING.coefficient,
+  JOB_LEVEL_TUNING.exponent,
+);
 
 /** 累計 XP から現職 LV を計算。 */
 export function jobLevelFromXp(xp: number): number {
@@ -240,32 +236,26 @@ export function jobXpToNextLevel(xp: number): { level: number; current: number; 
   return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
 }
 
-/** 現職 LV 用の XP 加算定数。 */
-export const JOB_XP_REWARDS = {
-  /** 投稿が action 分類に成功するたびの XP */
-  postMatch: 5,
-  /** 日次ボーナス (その日 1 回だけ) */
-  dailyBonus: 30,
-  /** streak 1 日あたりの追加 XP */
-  streakBonusPerDay: 3,
-  /** streak 追加の上限 */
-  streakBonusCap: 50,
-} as const;
+/** 現職 LV 用の XP 加算定数 (後方互換の別名。実体は tuning.XP_REWARDS)。 */
+export const JOB_XP_REWARDS = XP_REWARDS;
 
 /**
- * 個人 (プレイヤー) LV 用の XP 曲線 (LV1-99)。
- * 公式: threshold(n) = round(60 * (n-1)^1.95)
- * - JobLV より緩やか (2 倍程度遅い)。archetype が変わっても継続して伸びる設計。
- * - LV50 = 約 123,000 XP。標準ユーザー (100 XP/日) で 3-4 年。
- * - 上限を LV99 にして長期プレイに耐える。
+ * 個人 (プレイヤー) LV 用 XP 曲線。パラメータは tuning.PLAYER_LEVEL_TUNING。
  */
-export const PLAYER_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = (() => {
+export const PLAYER_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = buildXpCurve(
+  PLAYER_LEVEL_TUNING.maxLevel,
+  PLAYER_LEVEL_TUNING.coefficient,
+  PLAYER_LEVEL_TUNING.exponent,
+);
+
+/** 共通: threshold(n) = round(coef * (n - 1)^exp)、LV1..maxLv。 */
+function buildXpCurve(maxLv: number, coefficient: number, exponent: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
-  for (let lv = 1; lv <= 99; lv++) {
-    out.push([lv, Math.round(60 * Math.pow(lv - 1, 1.95))]);
+  for (let lv = 1; lv <= maxLv; lv++) {
+    out.push([lv, Math.round(coefficient * Math.pow(lv - 1, exponent))]);
   }
   return out;
-})();
+}
 
 /** 累計 XP から個人 LV を計算。 */
 export function playerLevelFromXp(xp: number): number {
