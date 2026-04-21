@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
-import type { Archetype, StatVector } from '@aozoraquest/core';
+import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
@@ -39,6 +39,8 @@ export function Settings() {
   const [postText, setPostText] = useState(DEFAULT_OPTIN_POST);
   /** 自分のアバター URL (目指す姿の各ボタンで自分のアイコン + 装備プレビューに使う) */
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  /** 自分の現在のステータス (目標ジョブとの比較に使う) */
+  const [myStats, setMyStats] = useState<StatVector | null>(null);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -63,6 +65,15 @@ export function Settings() {
         if (!cancelled && res.data.avatar) setAvatarUrl(res.data.avatar);
       } catch (e) {
         console.warn('self avatar fetch failed', e);
+      }
+    })();
+    // 現在の診断結果 (自分の rpgStats) をロード。目標ジョブとの比較に使う。
+    (async () => {
+      try {
+        const diag = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+        if (!cancelled && diag) setMyStats(diag.rpgStats);
+      } catch (e) {
+        console.warn('self analysis load failed', e);
       }
     })();
     return () => { cancelled = true; };
@@ -162,7 +173,13 @@ export function Settings() {
           <>
             {currentTarget && (
               <div style={{ marginTop: '0.5em', display: 'flex', alignItems: 'center', gap: '0.8em' }}>
-                <RadarChart stats={statsOf(currentTarget)} size={110} showValues={false} />
+                <RadarChart
+                  stats={myStats ?? statsOf(currentTarget)}
+                  {...(myStats ? { compare: statsOf(currentTarget) } : {})}
+                  size={130}
+                  normalize
+                  showValues={false}
+                />
                 <div>
                   <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>現在の目標</div>
                   <div style={{ fontSize: '1.1em', fontWeight: 700 }}>
@@ -171,6 +188,22 @@ export function Settings() {
                       {jobTagline(currentTarget)}
                     </span>
                   </div>
+                  {myStats ? (
+                    <div style={{ marginTop: '0.4em', fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.5 }}>
+                      <div>
+                        <span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(159,215,255,0.6)', border: '1.5px solid var(--color-accent)', marginRight: '0.4em', verticalAlign: 'middle' }} />
+                        いまのあなた
+                      </div>
+                      <div>
+                        <span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(255,170,110,0.35)', border: '1.5px dashed #ffaa6e', marginRight: '0.4em', verticalAlign: 'middle' }} />
+                        目標「{jobDisplayName(currentTarget, 'default')}」
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '0.4em', fontSize: '0.75em', color: 'var(--color-muted)' }}>
+                      自分の気質を調べると、目標との形の違いを比べられます。
+                    </div>
+                  )}
                 </div>
               </div>
             )}

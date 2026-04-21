@@ -174,11 +174,11 @@ function CompatView({
 
       <div style={{ marginTop: '0.8em', display: 'flex', gap: '0.6em', flexWrap: 'wrap', fontSize: '0.85em' }}>
         <div style={{ flex: 1, minWidth: '7em', textAlign: 'center' }}>
-          <RadarChart stats={toVec(myStats)} size={110} showValues={false} />
+          <RadarChart stats={toVec(myStats)} size={110} normalize showValues={false} />
           <div style={{ color: 'var(--color-muted)', marginTop: '0.2em' }}>あなた ({myJob})</div>
         </div>
         <div style={{ flex: 1, minWidth: '7em', textAlign: 'center' }}>
-          <RadarChart stats={toVec(theirStats)} size={110} showValues={false} />
+          <RadarChart stats={toVec(theirStats)} size={110} normalize showValues={false} />
           <div style={{ color: 'var(--color-muted)', marginTop: '0.2em' }}>相手 ({theirJob})</div>
         </div>
       </div>
