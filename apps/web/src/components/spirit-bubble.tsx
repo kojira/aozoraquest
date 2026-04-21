@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { SpiritIcon } from './spirit-icon';
 
 interface SpiritBubbleProps {
@@ -11,6 +11,8 @@ interface SpiritBubbleProps {
   sleeping?: boolean;
   /** アイコンを表示するか。連続した吹き出しの 2 つ目以降で false にするとすっきりする。 */
   showIcon?: boolean;
+  /** 外側コンテナに追加する style (達成済みのクエストを薄く見せる等)。 */
+  style?: CSSProperties;
 }
 
 /**
@@ -23,9 +25,10 @@ export function SpiritBubble({
   fontSize = '0.95em',
   sleeping = false,
   showIcon = true,
+  style,
 }: SpiritBubbleProps) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.55em' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.55em', ...style }}>
       {showIcon ? (
         <SpiritIcon size={iconSize} sleeping={sleeping} />
       ) : (
