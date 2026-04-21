@@ -9,7 +9,8 @@ export const COMPLEMENT_GAP_MAX = COMPLEMENT_GAP_RANGE.max;
 
 /**
  * 形の類似度 (ピアソン相関)。0 未満は 0 にクリップ。
- * 「似ている」だけで相性が高くはならないので、resonance の寄与は小さい重みに抑える。
+ * Robins et al. (2000) 等では性格類似性と関係満足度に r ≈ 0.22 の
+ * 中程度の相関が報告されており、主要な相性予測子として扱う。
  */
 export function similarity(a: StatArray, b: StatArray): number {
   const aMean = mean(a);
@@ -37,42 +38,23 @@ export function complementarity(a: StatArray, b: StatArray): number {
   return Math.min(score, 1);
 }
 
-/**
- * 2 人で合わせたときのカバレッジ: 軸ごとの max(a[i], b[i]) の合計を正規化。
- * 2 人が全く同じ形 → 0 (合わせても自分ひとり分しかカバーできない)。
- * 2 人が完全に相補的 (軸ごとにどちらかに全振り) → 1 (全軸で強みを持ち寄れる)。
- *
- * 理論上界は 2 人の合計 = 200、identical の場合は 100 に一致するので、
- * coverage = (jointSum - 100) / 100 で 0-1 にマップする。
- */
-export function jointCoverage(a: StatArray, b: StatArray): number {
-  let jointSum = 0;
-  for (let i = 0; i < 5; i++) jointSum += Math.max(a[i]!, b[i]!);
-  return Math.max(0, Math.min(1, (jointSum - 100) / 100));
-}
-
 export interface ResonanceDetail {
   /** 総合スコア (0-1)。大きいほど「相性が良い」。 */
   score: number;
   similarity: number;
   complementarity: number;
-  /** 2 人合わせたときの役割カバレッジ。 */
-  jointCoverage: number;
 }
 
 /**
- * 共鳴度 (相性) を 3 軸で評価する。
- * - similarity  : 形が似ているか (低めの重み。似てるだけでは相性ではない)
- * - complementarity : 軸ごとの差が適度か (大きすぎず小さすぎず)
- * - jointCoverage   : 2 人で合わせたときに強みを補い合えるか
+ * 共鳴度 (相性) を「類似性 + 相補性」の 2 軸で評価する。
+ * 重み (tuning.COMPATIBILITY_WEIGHTS) と併せて根拠は tuning.ts 冒頭を参照。
  */
 export function resonance(a: StatArray, b: StatArray): ResonanceDetail {
   const sim = similarity(a, b);
   const comp = complementarity(a, b);
-  const cov = jointCoverage(a, b);
   const w = COMPATIBILITY_WEIGHTS;
-  const score = sim * w.similarity + comp * w.complementarity + cov * w.jointCoverage;
-  return { score, similarity: sim, complementarity: comp, jointCoverage: cov };
+  const score = sim * w.similarity + comp * w.complementarity;
+  return { score, similarity: sim, complementarity: comp };
 }
 
 /** 共鳴度の言語ラベル (05-compatibility.md §共鳴度の意味付け) */
