@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/core';
-import { jobDisplayName, jobTagline, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
+import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
@@ -333,7 +333,7 @@ function EstimateOtherPanel({
   if (insufficient !== null) {
     return (
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
-        投稿が少なくて推定できませんでした ({insufficient} 件、50 件以上必要)。
+        投稿が少なくて推定できませんでした ({insufficient} 件、{DIAGNOSIS_MIN_POST_COUNT} 件以上必要)。
       </p>
     );
   }

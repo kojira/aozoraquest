@@ -15,6 +15,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AtpAgent } from '@atproto/api';
 import {
+  DIAGNOSIS_MIN_POST_COUNT,
+  DIAGNOSIS_POST_LIMIT,
   DIAGNOSIS_TOP_N,
   EMBEDDING_DIMENSIONS,
   EMBEDDING_DTYPE,
@@ -76,7 +78,7 @@ async function scrapeRanking(limit: number): Promise<Array<{ displayName: string
   return out;
 }
 
-async function fetchUserPosts(actor: string, limit: number = 150): Promise<{ text: string; at: string }[]> {
+async function fetchUserPosts(actor: string, limit: number = DIAGNOSIS_POST_LIMIT): Promise<{ text: string; at: string }[]> {
   const agent = new AtpAgent({ service: 'https://public.api.bsky.app' });
   const out: { text: string; at: string }[] = [];
   let cursor: string | undefined;
@@ -115,8 +117,8 @@ async function main() {
     const u = users[i]!;
     process.stdout.write(`[${i + 1}/${users.length}] ${u.displayName} (@${u.handle}) ... `);
     try {
-      const posts = await fetchUserPosts(u.handle, 150);
-      if (posts.length < 50) {
+      const posts = await fetchUserPosts(u.handle, DIAGNOSIS_POST_LIMIT);
+      if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
         console.log(`skip (only ${posts.length} posts)`);
         continue;
       }
