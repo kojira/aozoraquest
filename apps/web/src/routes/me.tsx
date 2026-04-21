@@ -210,7 +210,7 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
       </p>
 
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1em' }}>
-        <RadarChart stats={result.rpgStats} size={260} />
+        <RadarChart stats={result.rpgStats} size={260} normalize />
       </div>
 
       <h4 style={{ fontSize: '0.95em', marginTop: '1em' }}>ステータス</h4>
