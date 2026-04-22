@@ -243,6 +243,14 @@ export function MyProfile() {
 
       {state.status === 'done' && <ResultView result={state.result} onRerun={runAgain} />}
 
+      {state.status === 'done' && (
+        <div style={{ marginTop: '1.5em' }}>
+          <Link to="/friends">
+            <button>フォロー中の相性ランキングを見る</button>
+          </Link>
+        </div>
+      )}
+
       <div style={{ marginTop: '2em' }}>
         <Link to="/settings">設定</Link>
       </div>
