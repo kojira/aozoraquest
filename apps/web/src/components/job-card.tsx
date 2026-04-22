@@ -135,23 +135,18 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
         </mask>
       </defs>
 
-      {/* === 羊皮紙ベース === */}
+      {/* === カード背景 ===
+          Gemini 生成のレアリティ別枠 (羊皮紙 + 装飾枠が 1 枚絵で入っている) を
+          全面に敷く。枠画像が未配置の rarity は parchment.jpg で fallback し、
+          SVG の細線枠で 2 重線を足す。 */}
       <rect x="0" y="0" width={W} height={H} fill="url(#paper)" />
       <image
-        href="/card-art/parchment.jpg"
-        xlinkHref="/card-art/parchment.jpg"
+        href={`/card-art/frame-${rarity}.jpg`}
+        xlinkHref={`/card-art/frame-${rarity}.jpg`}
         x="0" y="0" width={W} height={H}
         preserveAspectRatio="xMidYMid slice"
       />
       <rect x="0" y="0" width={W} height={H} fill="url(#vignette)" />
-
-      {/* === 外枠 (インク 2 重線 + rarity 色の細線) === */}
-      <rect x={PADX - 14} y={PADY - 14}
-            width={W - 2 * (PADX - 14)} height={H - 2 * (PADY - 14)}
-            fill="none" stroke={INK} strokeWidth="2.5" />
-      <rect x={PADX - 8} y={PADY - 8}
-            width={W - 2 * (PADX - 8)} height={H - 2 * (PADY - 8)}
-            fill="none" stroke={rarityColor} strokeWidth="2" />
 
       {/* === 1. Title bar === */}
       <g>
