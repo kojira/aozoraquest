@@ -48,15 +48,22 @@ interface Pending {
   acc: string;
 }
 
+export type GeneratorBackend = 'webgpu' | 'wasm';
+
 export class Generator {
   private worker: Worker | null = null;
   private ready: Promise<void> | null = null;
   private pending = new Map<string, Pending>();
   private nextId = 0;
   private listeners = new Set<GeneratorProgressListener>();
+  private backend: GeneratorBackend | null = null;
 
   isReady(): boolean {
     return this.worker !== null && this.ready !== null;
+  }
+
+  getBackend(): GeneratorBackend | null {
+    return this.backend;
   }
 
   addProgressListener(l: GeneratorProgressListener): () => void {
@@ -73,6 +80,7 @@ export class Generator {
         const m = ev.data;
         if (m.type === 'ready') {
           this.worker!.removeEventListener('message', onMsg);
+          if (m.backend === 'webgpu' || m.backend === 'wasm') this.backend = m.backend;
           resolve();
         } else if (m.type === 'error' && !m.id) {
           this.worker!.removeEventListener('message', onMsg);

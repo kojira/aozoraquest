@@ -5,6 +5,7 @@ import { Home } from '@/routes/home';
 import { Profile } from '@/routes/profile';
 import { MyProfile } from '@/routes/me';
 import { Friends } from '@/routes/friends';
+import { Card } from '@/routes/card';
 import { PostDetail } from '@/routes/post-detail';
 import { Notifications } from '@/routes/notifications';
 import { Search } from '@/routes/search';
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
       { path: 'profile/:handle', element: <Profile /> },
       { path: 'me', element: <MyProfile /> },
       { path: 'friends', element: <Friends /> },
+      { path: 'me/card', element: <Card /> },
       { path: 'post/:uri', element: <PostDetail /> },
       { path: 'notifications', element: <Notifications /> },
       { path: 'search', element: <Search /> },

@@ -2,16 +2,17 @@
  * 生成 LLM (TinySwallow-1.5B-Instruct) 専用 Web Worker。
  *
  * メッセージ:
- *   { type: 'load' }                         → ロード完了で { type: 'ready' }
+ *   { type: 'load' }                         → ロード完了で { type: 'ready', backend }
  *   { type: 'generate', id, messages }       → chunk を { type: 'token', id, text } で逐次、完了で { type: 'done', id, full }
  *
  * 進捗: { type: 'progress', file, loaded, total, progress, status }
  * エラー: { type: 'error', id?, error }
+ *
+ * backend: 'webgpu' (高速) → 失敗したら 'wasm' (遅いが動く) に fallback。
  */
 
 import { pipeline, env, TextStreamer } from '@huggingface/transformers';
 import {
-  GENERATION_DEVICE,
   GENERATION_DTYPE,
   GENERATION_MAX_NEW_TOKENS,
   GENERATION_MODEL_ID,
@@ -31,13 +32,17 @@ type IncomingMessage =
   | { type: 'load' }
   | { type: 'generate'; id: string; messages: ChatMessage[] };
 
-let generator: any = null;
+type Backend = 'webgpu' | 'wasm';
 
-async function ensureGenerator(): Promise<void> {
-  if (generator) return;
-  generator = await pipeline('text-generation', GENERATION_MODEL_ID, {
-    device: GENERATION_DEVICE,
-    dtype: GENERATION_DTYPE,
+let generator: any = null;
+let activeBackend: Backend = 'webgpu';
+
+async function tryCreate(device: Backend) {
+  // WASM fallback では dtype が q4f16 のままだと動かないので q4 に下げる。
+  const dtype = device === 'webgpu' ? GENERATION_DTYPE : 'q4';
+  return await pipeline('text-generation', GENERATION_MODEL_ID, {
+    device,
+    dtype,
     progress_callback: (p: any) => {
       (self as unknown as Worker).postMessage({
         type: 'progress',
@@ -51,12 +56,26 @@ async function ensureGenerator(): Promise<void> {
   });
 }
 
+async function ensureGenerator(): Promise<void> {
+  if (generator) return;
+  try {
+    generator = await tryCreate('webgpu');
+    activeBackend = 'webgpu';
+    console.info('[generator] ready: WebGPU');
+  } catch (e) {
+    console.warn('[generator] WebGPU failed, falling back to WASM', e);
+    generator = await tryCreate('wasm');
+    activeBackend = 'wasm';
+    console.info('[generator] ready: WASM (slower)');
+  }
+}
+
 self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) => {
   const msg = event.data;
   try {
     if (msg.type === 'load') {
       await ensureGenerator();
-      (self as unknown as Worker).postMessage({ type: 'ready' });
+      (self as unknown as Worker).postMessage({ type: 'ready', backend: activeBackend });
       return;
     }
     if (msg.type === 'generate') {
@@ -82,8 +101,6 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
         streamer,
       });
 
-      // output は配列: [{ generated_text: [...messages, { role: 'assistant', content: ... }] }]
-      // or string depending on pipeline version. 抽出を試みる。
       let full = '';
       try {
         const first = Array.isArray(output) ? output[0] : output;

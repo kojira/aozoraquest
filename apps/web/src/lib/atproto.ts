@@ -198,6 +198,46 @@ export async function getRecord<T = unknown>(agent: Agent, repo: string, collect
   }
 }
 
+/**
+ * 画像付き投稿を作成する。画像を uploadBlob → `app.bsky.embed.images` embed
+ * として post に紐付ける。
+ * @param alt 画像の代替テキスト (アクセシビリティ)
+ * @param tag  付与したいハッシュタグ (指定した場合 text 内から facet を抽出)
+ */
+export async function createPostWithImage(
+  agent: Agent,
+  text: string,
+  blob: Blob,
+  alt: string,
+  tag?: string,
+): Promise<void> {
+  const res = await agent.uploadBlob(blob, { encoding: blob.type || 'image/png' });
+  const record: Record<string, unknown> = {
+    text,
+    createdAt: new Date().toISOString(),
+    via: VIA,
+    embed: {
+      $type: 'app.bsky.embed.images',
+      images: [{ alt, image: res.data.blob }],
+    },
+  };
+  if (tag) {
+    const marker = `#${tag}`;
+    const idx = text.indexOf(marker);
+    if (idx >= 0) {
+      const encoder = new TextEncoder();
+      record['facets'] = [{
+        index: {
+          byteStart: encoder.encode(text.slice(0, idx)).length,
+          byteEnd: encoder.encode(text.slice(0, idx + marker.length)).length,
+        },
+        features: [{ $type: 'app.bsky.richtext.facet#tag', tag }],
+      }];
+    }
+  }
+  await agent.post(record as unknown as Parameters<Agent['post']>[0]);
+}
+
 /** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする) */
 export async function createTaggedPost(agent: Agent, text: string, tag: string): Promise<void> {
   const marker = `#${tag}`;
