@@ -188,8 +188,16 @@ function CompatView({
               </div>
             </div>
           )}
-          <MiniBar label="近さ (似ているほど高い)" value={detail.similarity} />
-          <MiniBar label="補い (違いが活きる距離)" value={detail.complementarity} />
+          <MiniBar
+            label="似ている度"
+            hint="同じ感覚で盛り上がれる"
+            value={detail.similarity}
+          />
+          <MiniBar
+            label="支え合い度"
+            hint="苦手なところを埋め合える"
+            value={detail.complementarity}
+          />
         </div>
       </div>
 
@@ -207,15 +215,20 @@ function CompatView({
   );
 }
 
-function MiniBar({ label, value }: { label: string; value: number }) {
+function MiniBar({ label, value, hint }: { label: string; value: number; hint?: string }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
     <div style={{ margin: '0.3em 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-muted)' }}>
-        <span>{label}</span>
-        <span>{Math.round(pct)}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: 'var(--color-muted)' }}>
+        <span>
+          <span style={{ fontWeight: 700, color: 'var(--color-fg)' }}>{label}</span>
+          {hint && (
+            <span style={{ marginLeft: '0.5em', fontSize: '0.85em' }}>— {hint}</span>
+          )}
+        </span>
+        <span style={{ fontFamily: 'ui-monospace, monospace' }}>{Math.round(pct)}</span>
       </div>
-      <div style={{ height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, overflow: 'hidden', marginTop: '0.15em' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-accent)' }} />
       </div>
     </div>
