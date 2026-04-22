@@ -330,25 +330,47 @@ function FlavorBlock(props: { x: number; y: number; width: number; maxHeight: nu
   );
 }
 
+// 行頭禁則 (この文字で行が始まってはいけない)
+const KINSOKU_HEAD_NG = '、。，．・）」』】〕｝〉》！？!?,.:;：；)]｝〉》';
+// 行末禁則 (この文字で行が終わってはいけない)
+const KINSOKU_TAIL_NG = '（「『【〔｛〈《([{';
+// 自然な改行候補 (行末に来ると気持ちいい記号)
+const WRAP_DELIMS = '、。 ・!?!?';
+
 function wrapJa(text: string, perLine: number, maxLines: number): string[] {
   const out: string[] = [];
   let buf = '';
+  const chars = Array.from(text);
+  let i = 0;
   let consumed = 0;
-  for (const ch of text) {
+
+  while (i < chars.length && out.length < maxLines) {
+    const ch = chars[i]!;
     buf += ch;
+    i++;
     consumed++;
-    const atDelim = buf.length >= perLine && /[、。 ・!?!?]/.test(ch);
+
+    const atDelim = buf.length >= perLine && WRAP_DELIMS.includes(ch);
     const overLong = buf.length >= perLine + 3;
-    if (atDelim || overLong) {
-      out.push(buf);
-      buf = '';
-      if (out.length >= maxLines) break;
+    if (!(atDelim || overLong)) continue;
+
+    // 行末禁則: 行末が開き括弧なら切らずに続行
+    if (KINSOKU_TAIL_NG.includes(ch)) continue;
+
+    // 行頭禁則: 次の文字が禁則なら吸収してから切る (追い出し)
+    while (i < chars.length && KINSOKU_HEAD_NG.includes(chars[i]!)) {
+      buf += chars[i]!;
+      i++;
+      consumed++;
     }
+
+    out.push(buf);
+    buf = '';
   }
   if (buf.length > 0 && out.length < maxLines) {
     out.push(buf);
   }
-  if (out.length >= maxLines && consumed < text.length) {
+  if (out.length >= maxLines && consumed < chars.length) {
     const last = out[maxLines - 1]!.replace(/[、。 ]*$/, '');
     out[maxLines - 1] = last + '…';
   }
