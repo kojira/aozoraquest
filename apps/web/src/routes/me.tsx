@@ -261,11 +261,11 @@ export function MyProfile() {
           </Link>
           {summoned ? (
             <Link to="/me/card">
-              <button>カードにして共有</button>
+              <button>カードを見る</button>
             </Link>
           ) : (
             <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
-              ブルスコンを召喚すると、カードにして共有できるようになる。
+              ブルスコンを召喚すると、カードを見られるようになる。
               {' '}
               <Link to="/spirit">精霊の社へ</Link>
             </p>

@@ -14,8 +14,14 @@
  *   5. 右下 P/T 相当 (dom-aux) + footer (handle, date)
  */
 
-import type { DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID, jobDisplayName, playerLevelFromXp } from '@aozoraquest/core';
+import type { DiagnosisResult, Rarity } from '@aozoraquest/core';
+import {
+  JOBS_BY_ID,
+  jobDisplayName,
+  playerLevelFromXp,
+  RARITY_COLOR,
+  RARITY_LABEL,
+} from '@aozoraquest/core';
 import { forwardRef } from 'react';
 
 const W = 768;
@@ -52,6 +58,8 @@ export interface JobCardProps {
   effectText: string;
   /** italic の詩文 */
   flavorText: string;
+  /** カードレアリティ (6 段階)。badge 色と表示に使う。 */
+  rarity: Rarity;
   displayName: string;
   handle: string;
   /** ジョブ固有の背景イラスト (例: '/card-art/sage.jpg') */
@@ -63,7 +71,9 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectText, flavorText, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectText, flavorText, rarity, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const rarityColor = RARITY_COLOR[rarity];
+  const rarityLabel = RARITY_LABEL[rarity];
   const job = JOBS_BY_ID[result.archetype];
   const jobName = jobDisplayName(result.archetype, 'default');
   const lv = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
@@ -135,13 +145,13 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       />
       <rect x="0" y="0" width={W} height={H} fill="url(#vignette)" />
 
-      {/* === 外枠 (インク 2 重線) === */}
+      {/* === 外枠 (インク 2 重線 + rarity 色の細線) === */}
       <rect x={PADX - 14} y={PADY - 14}
             width={W - 2 * (PADX - 14)} height={H - 2 * (PADY - 14)}
             fill="none" stroke={INK} strokeWidth="2.5" />
       <rect x={PADX - 8} y={PADY - 8}
             width={W - 2 * (PADX - 8)} height={H - 2 * (PADY - 8)}
-            fill="none" stroke={INK_SOFT} strokeWidth="1" />
+            fill="none" stroke={rarityColor} strokeWidth="2" />
 
       {/* === 1. Title bar === */}
       <g>
@@ -208,6 +218,16 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
               fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
           旅人 — {jobName}
         </text>
+        {/* rarity pill (右端) */}
+        <g transform={`translate(${W - PADX - 12}, ${TYPE_Y + TYPE_H / 2})`}>
+          <rect x={-74} y={-18} width="68" height="36" rx="18"
+                fill={rarityColor} stroke={INK} strokeWidth="1.4" />
+          <text x={-40} y="6" fontSize="16" fontWeight="800"
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif"
+                textAnchor="middle" fill="#fff8e2">
+            {rarityLabel}
+          </text>
+        </g>
       </g>
 
       {/* === 4. Rules / Body box === */}

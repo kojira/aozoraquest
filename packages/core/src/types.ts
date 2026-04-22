@@ -94,8 +94,14 @@ export interface DiagnosisResult {
   pendingArchetype?: Archetype;
   /** 同じ候補が何回連続で出たか。閾値以上で UI が転職バナーを出す。 */
   pendingArchetypeStreak?: number;
-  /** カード用のフレーバーテキスト (TinySwallow 生成、再生成で上書き)。 */
+  /** カード用のフレーバーテキスト (TinySwallow 生成、引き直しで上書き)。 */
   flavorText?: string;
-  /** flavorText 生成時刻 (ISO)。 */
+  /** カード能力テキスト (MTG ルール文相当。TinySwallow 生成)。 */
+  cardEffect?: string;
+  /** カードレアリティ (引き直し毎に抽選)。 */
+  cardRarity?: string;
+  /** カードを引いた時刻 (ISO)。flavorText / cardEffect / cardRarity はこの時刻で同期。 */
+  cardDrawnAt?: string;
+  /** 後方互換 */
   flavorGeneratedAt?: string;
 }

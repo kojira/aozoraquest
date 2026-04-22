@@ -9,8 +9,14 @@
  * 失敗時は archetype ごとのハンドクラフト pool から抽選。
  */
 
-import type { Archetype, CogFunction, DiagnosisResult } from '@aozoraquest/core';
-import { COGNITIVE_FUNCTIONS, JOBS_BY_ID, jobDisplayName } from '@aozoraquest/core';
+import type { Archetype, CogFunction, DiagnosisResult, Rarity } from '@aozoraquest/core';
+import {
+  COGNITIVE_FUNCTIONS,
+  JOBS_BY_ID,
+  jobDisplayName,
+  RARITY_GUIDANCE,
+  RARITY_LABEL,
+} from '@aozoraquest/core';
 import { getGenerator } from './generator';
 import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
 
@@ -38,7 +44,7 @@ export interface CardText {
   source: CardTextSource;
 }
 
-function buildPrompt(result: DiagnosisResult): { system: string; user: string } {
+function buildPrompt(result: DiagnosisResult, rarity: Rarity): { system: string; user: string } {
   const job = JOBS_BY_ID[result.archetype];
   const name = jobDisplayName(result.archetype);
   // 上位 4 認知機能
@@ -46,10 +52,16 @@ function buildPrompt(result: DiagnosisResult): { system: string; user: string } 
     .sort((a, b) => (result.cognitiveScores[b] ?? 0) - (result.cognitiveScores[a] ?? 0))
     .slice(0, 4);
   const topDesc = top.map((fn) => `${fn} ${COG_LABEL[fn]} (${result.cognitiveScores[fn] ?? 0})`).join('、');
+  const rarityLabel = RARITY_LABEL[rarity];
+  const rarityGuidance = RARITY_GUIDANCE[rarity];
 
   const system = [
     'あなたはトレーディングカードゲームのカード文を書くデザイナーです。',
-    '指定された気質から、MTG のルール文とフレーバーテキストを日本語で作ります。',
+    '指定された気質と希少度から、MTG のルール文とフレーバーテキストを日本語で作ります。',
+    '',
+    `このカードの希少度は ${rarityLabel} です。`,
+    `${rarityLabel} にふさわしい性格: ${rarityGuidance}`,
+    '希少度が高いほど珍しく印象的な能力を書いてください。',
     '',
     '出力はちょうど 2 ブロック。必ず以下の形式を守ってください:',
     '能力: <キーワード> ― <20-40 字の説明>',
@@ -113,6 +125,7 @@ function parseLLMOutput(raw: string): { effect: string; flavor: string } | null 
 
 async function generateWithLLM(
   result: DiagnosisResult,
+  rarity: Rarity,
   timeoutMs: number,
 ): Promise<CardText | null> {
   const gen = getGenerator();
@@ -122,7 +135,7 @@ async function generateWithLLM(
     console.warn('[card-text] generator load failed', e);
     return null;
   }
-  const { system, user } = buildPrompt(result);
+  const { system, user } = buildPrompt(result, rarity);
   const messages = [
     { role: 'system' as const, content: system },
     { role: 'user' as const, content: user },
@@ -145,14 +158,15 @@ async function generateWithLLM(
   }
 }
 
-/** effect + flavor を生成 (メイン API)。失敗時は fallback。 */
+/** effect + flavor を生成 (メイン API)。失敗時は fallback。rarity を必ず渡す。 */
 export async function generateCardText(
   result: DiagnosisResult,
+  rarity: Rarity,
   opts: { seed?: number; timeoutMs?: number } = {},
 ): Promise<CardText> {
   const seed = opts.seed ?? Date.now();
   const timeoutMs = opts.timeoutMs ?? 60000;
-  const llm = await generateWithLLM(result, timeoutMs);
+  const llm = await generateWithLLM(result, rarity, timeoutMs);
   if (llm) return llm;
   return {
     effect: pickFallbackEffect(result.archetype, seed),
@@ -170,7 +184,3 @@ export function getFallbackCardText(archetype: Archetype, seed: number): CardTex
   };
 }
 
-// 旧 API (互換のため残す; card.tsx 側で swap するまで動くように)
-export type FlavorTextResult = CardText;
-export const generateFlavor = generateCardText;
-export const getFallbackFlavor = getFallbackCardText;
