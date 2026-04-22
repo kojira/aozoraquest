@@ -32,8 +32,7 @@ function getPublicAgent(): AtpAgent {
   return _publicAgent;
 }
 
-/** 直近 N 日に投稿している人を「活発」と定義する。
- * 短くするほど裏診断対象人数が減って API 呼び出しも減る。 */
+/** 「いま発信している人」と会いたい、という意図に合わせた直近投稿のしきい値。 */
 export const RECENCY_DAYS = 3;
 const RECENCY_MS = RECENCY_DAYS * 24 * 60 * 60 * 1000;
 
