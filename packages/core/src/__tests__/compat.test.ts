@@ -45,14 +45,16 @@ describe('complementarity', () => {
 });
 
 describe('resonance (archetype なしフォールバック)', () => {
-  test('score = w.sim * similarity + w.comp * complementarity', () => {
+  test('archetype 無しでも pairRelation は undefined、score は 0-1 に calibrate', () => {
     const a: StatArray = [20, 20, 20, 20, 20];
     const b: StatArray = [35, 20, 20, 15, 10];
     const r = resonance(a, b);
-    expect(r.score).toBeCloseTo(
-      r.similarity * SIMILARITY_WEIGHT + r.complementarity * COMPLEMENTARITY_WEIGHT,
-    );
     expect(r.pairRelation).toBeUndefined();
+    expect(r.score).toBeGreaterThanOrEqual(0);
+    expect(r.score).toBeLessThanOrEqual(1);
+    // 生成式そのものではなく calibrate 後の値なので raw 直値とは一致しない
+    const raw = r.similarity * SIMILARITY_WEIGHT + r.complementarity * COMPLEMENTARITY_WEIGHT;
+    expect(r.score).toBeGreaterThanOrEqual(raw); // 低域は持ち上がる想定
   });
 
   test('identical (archetype 無し) → similarity=1, complementarity=0', () => {
