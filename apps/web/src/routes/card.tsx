@@ -36,6 +36,7 @@ export function Card() {
   const [frameVariant, setFrameVariant] = useState<1 | 2>(1);
   const [flavorBusy, setFlavorBusy] = useState(false);
   const [power, setPower] = useState<PointsState | null>(null);
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -111,6 +112,27 @@ export function Card() {
   const result = load.status === 'ready' ? load.result : null;
   const profile = load.status === 'ready' ? load.profile : null;
   const artSrc = useMemo(() => (result ? `/card-art/${result.archetype}.jpg` : undefined), [result]);
+
+  // アバターをロード時に dataURL 化しておく (rasterize 時の CORS 問題回避)。
+  // fetch → blob → FileReader のパスが失敗したら XRPC sync.getBlob で自分の PDS
+  // 経由で取得するフォールバックを用意。
+  useEffect(() => {
+    if (!profile?.avatar) return;
+    if (avatarDataUrl) return;
+    const url = profile.avatar;
+    let cancelled = false;
+    (async () => {
+      const viaFetch = await fetchAsDataUrl(url);
+      if (cancelled) return;
+      if (viaFetch) { setAvatarDataUrl(viaFetch); return; }
+      // XRPC 経由 fallback
+      if (session.status !== 'signed-in' || !session.agent || !profile.did) return;
+      const viaXrpc = await fetchBlobViaXrpc(session.agent, profile.did, url);
+      if (cancelled) return;
+      if (viaXrpc) setAvatarDataUrl(viaXrpc);
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.avatar, profile?.did, session.status, session.agent, avatarDataUrl]);
 
   // 診断読み込みが終わったら、PDS にカードが無いときだけ初回生成 (コスト 0)
   useEffect(() => {
@@ -269,7 +291,7 @@ export function Card() {
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}
-          avatarSrc={profile!.avatar}
+          avatarSrc={avatarDataUrl ?? profile!.avatar}
           style={{ width: '100%', height: 'auto', display: 'block' }}
         />
       </div>
@@ -329,6 +351,47 @@ async function fetchProfile(agent: Agent, did: string): Promise<AppBskyActorDefs
     const res = await agent.getProfile({ actor: did });
     return res.data;
   } catch {
+    return null;
+  }
+}
+
+/** fetch → blob → dataURL。CORS 通れば成功、駄目なら null。 */
+async function fetchAsDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise<string | null>((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('[card] avatar fetch failed, will try XRPC fallback', e);
+    return null;
+  }
+}
+
+/** Bluesky 形式 URL から cid を取って XRPC sync.getBlob 経由で取得。
+ *  URL 例: https://cdn.bsky.app/img/avatar/plain/{did}/{cid}@jpeg */
+async function fetchBlobViaXrpc(agent: Agent, did: string, url: string): Promise<string | null> {
+  const m = url.match(/\/([a-z0-9]{20,})(?:@[\w.]+)?(?:\?.*)?$/);
+  if (!m) return null;
+  const cid = m[1]!;
+  try {
+    const res = await agent.com.atproto.sync.getBlob({ did, cid });
+    const bytes = res.data as unknown as Uint8Array;
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const blob = new Blob([ab], { type: 'image/jpeg' });
+    return await new Promise<string | null>((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('[card] avatar XRPC fetch failed', e);
     return null;
   }
 }
