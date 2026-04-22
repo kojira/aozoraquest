@@ -265,7 +265,7 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
         {/* Effect (3 要素): 名前 (bold) + コスト (: 区切で続けて) + 説明 (下段) */}
         <EffectBlock
           x={PADX + 20}
-          y={BODY_Y + 40}
+          y={BODY_Y + 44}
           width={W - 2 * (PADX + 20)}
           name={effectName}
           cost={effectCost}
