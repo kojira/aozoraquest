@@ -85,11 +85,13 @@ describe('resonance (archetype 付き)', () => {
 
 describe('resonanceLabel', () => {
   test.each([
-    [0.9, '最高の相棒'],
-    [0.7, 'よき仲間'],
-    [0.5, '共に歩める'],
-    [0.3, '違いが面白い'],
-    [0.1, '異なる道を歩む者'],
+    [0.98, '魂の片割れ'],
+    [0.90, '宿命の盟友'],
+    [0.85, '最高の相棒'],
+    [0.70, 'よき仲間'],
+    [0.50, '共に歩める'],
+    [0.30, '違いが面白い'],
+    [0.10, '異なる道を歩む者'],
   ])('score %f → label %s', (score, label) => {
     expect(resonanceLabel(score)).toBe(label);
   });

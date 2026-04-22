@@ -104,6 +104,8 @@ function calibrateScore(raw: number, peak: number): number {
 
 /** 共鳴度の言語ラベル (05-compatibility.md §共鳴度の意味付け) */
 export function resonanceLabel(score: number): string {
+  if (score >= 0.95) return '魂の片割れ';
+  if (score >= 0.88) return '宿命の盟友';
   if (score >= 0.8) return '最高の相棒';
   if (score >= 0.6) return 'よき仲間';
   if (score >= 0.4) return '共に歩める';
