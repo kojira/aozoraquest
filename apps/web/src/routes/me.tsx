@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerLevelFromXp, playerXpToNextLevel } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerLevelFromXp, playerXpToNextLevel } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
@@ -398,12 +398,67 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
           ))}
       </ul>
 
+      <CompatibleJobs myArchetype={result.archetype} />
+
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '1em' }}>
         最後に調べた日時: {new Date(result.analyzedAt).toLocaleString()}
       </p>
 
       <button onClick={onRerun} style={{ marginTop: '1em' }}>もう一度調べる</button>
     </section>
+  );
+}
+
+/** 自分の archetype と他 15 ジョブの関係性を表示する。 */
+function CompatibleJobs({ myArchetype }: { myArchetype: Archetype }) {
+  if (!(myArchetype in JOBS_BY_ID)) return null;
+  const pairs = ARCHETYPES
+    .filter((a) => a !== myArchetype)
+    .map((a) => ({
+      archetype: a,
+      rel: archetypePairRelation(myArchetype, a),
+    }))
+    .sort((a, b) => b.rel.baseScore - a.rel.baseScore);
+  const top = pairs.slice(0, 3);
+  const bottom = [...pairs].slice(-2).reverse();
+  return (
+    <>
+      <h4 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>相性の良いジョブ</h4>
+      <ul style={{
+        fontSize: '0.85em', color: 'var(--color-muted)', listStyle: 'none',
+        padding: 0, margin: '0 auto', maxWidth: '22em', textAlign: 'left',
+      }}>
+        {top.map(({ archetype, rel }) => (
+          <li key={archetype} style={{ display: 'flex', alignItems: 'baseline', gap: '0.6em', margin: '0.2em 0' }}>
+            <span style={{ minWidth: '5em', fontWeight: 700, color: 'var(--color-fg)' }}>
+              {jobDisplayName(archetype, 'default')}
+            </span>
+            <span style={{ flex: 1, color: 'var(--color-accent)' }}>{rel.label}</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums', minWidth: '2.5em', textAlign: 'right' }}>
+              {Math.round(rel.baseScore * 100)}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <h4 style={{ fontSize: '0.95em', marginTop: '0.8em' }}>相性が試されるジョブ</h4>
+      <ul style={{
+        fontSize: '0.85em', color: 'var(--color-muted)', listStyle: 'none',
+        padding: 0, margin: '0 auto', maxWidth: '22em', textAlign: 'left',
+      }}>
+        {bottom.map(({ archetype, rel }) => (
+          <li key={archetype} style={{ display: 'flex', alignItems: 'baseline', gap: '0.6em', margin: '0.2em 0' }}>
+            <span style={{ minWidth: '5em', fontWeight: 700, color: 'var(--color-fg)' }}>
+              {jobDisplayName(archetype, 'default')}
+            </span>
+            <span style={{ flex: 1, color: 'var(--color-muted)' }}>{rel.label}</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums', minWidth: '2.5em', textAlign: 'right' }}>
+              {Math.round(rel.baseScore * 100)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
