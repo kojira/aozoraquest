@@ -53,6 +53,9 @@ export interface ResonanceDetail {
  * archetype を渡した場合: ペア関係カテゴリ (双対/鏡像/衝突 等) を主に、
  *   連続 stat 類似度 + 相補性で微調整する合成式。
  * archetype を渡さない場合: 2 軸 (類似 / 相補) のみでフォールバック。
+ *
+ * 最終的に calibrateScore で正規分布寄りに整形し、
+ * 「双対 + 強い stat 一致」の完璧ペアで 1.0 (=100%) に届くようにする。
  */
 export function resonance(
   a: StatArray,
@@ -66,16 +69,37 @@ export function resonance(
 
   if (archetypeA && archetypeB) {
     const pair = archetypePairRelation(archetypeA, archetypeB);
-    const score =
+    const raw =
       pair.baseScore * w.pairBase +
       sim * w.statSimilarity +
       comp * w.statComplement;
-    return { score, similarity: sim, complementarity: comp, pairRelation: pair };
+    return {
+      score: calibrateScore(raw, 0.85),
+      similarity: sim,
+      complementarity: comp,
+      pairRelation: pair,
+    };
   }
 
   // archetype 無しフォールバック (2 軸)
-  const score = sim * w.similarity + comp * w.complementarity;
-  return { score, similarity: sim, complementarity: comp };
+  const raw = sim * w.similarity + comp * w.complementarity;
+  return {
+    score: calibrateScore(raw, 0.4),
+    similarity: sim,
+    complementarity: comp,
+  };
+}
+
+/**
+ * 生スコアを正規分布寄りにキャリブレートする。
+ * - 現実的な最高値 (peak) を 1.0 に写像 → 理論上 100% が届く
+ * - 低域を pow(0.65) で持ち上げ、典型値が 0.6-0.8 帯に入るよう分布を整形
+ *
+ * peak は合成式の現実的上限 (archetype + stat 版は 0.85、stat のみ版は 0.4)。
+ */
+function calibrateScore(raw: number, peak: number): number {
+  const scaled = Math.min(1, Math.max(0, raw) / peak);
+  return Math.pow(scaled, 0.65);
 }
 
 /** 共鳴度の言語ラベル (05-compatibility.md §共鳴度の意味付け) */
