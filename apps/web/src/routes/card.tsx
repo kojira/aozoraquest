@@ -126,12 +126,13 @@ export function Card() {
 
     setFlavorBusy(true);
     try {
-      // レアリティと枠 variant を抽選 (初回も引き直しも毎回)
+      // レアリティと枠 variant を抽選
       const nextRarity = rollRarity();
       const nextVariant: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
+      // LLM 先に走らせてから state を一括更新 (背景だけ先に変わる現象を防ぐ)
+      const r = await generateCardText(load.result, nextRarity, { seed: Date.now() });
       setRarity(nextRarity);
       setFrameVariant(nextVariant);
-      const r = await generateCardText(load.result, nextRarity, { seed: Date.now() });
       setCard(r);
       // PDS に一式保存 (effect + flavor + rarity + frameVariant)
       try {
@@ -143,7 +144,6 @@ export function Card() {
           cardRarity: nextRarity,
           cardFrameVariant: nextVariant,
           cardDrawnAt: now,
-          // 後方互換
           flavorGeneratedAt: now,
         });
       } catch (e) {
