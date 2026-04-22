@@ -203,7 +203,8 @@ export function MyProfile() {
               position: 'relative',
               width: '100%',
               height: '10px',
-              background: 'var(--color-border)',
+              background: 'rgba(255,255,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.6)',
               borderRadius: 5,
               overflow: 'hidden',
             }}
@@ -212,7 +213,8 @@ export function MyProfile() {
               style={{
                 width: `${pct ?? 20}%`,
                 height: '100%',
-                background: 'var(--color-primary)',
+                background: 'var(--color-accent)',
+                transition: 'width 0.1s linear',
               }}
             />
           </div>
