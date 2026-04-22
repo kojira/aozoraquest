@@ -22,7 +22,7 @@ const ART_Y = 120;         // art 枠の開始 y
 const ART_H = 500;         // art 枠の高さ
 const TYPE_Y = ART_Y + ART_H + 24;     // type line 開始 y
 const STATS_Y = TYPE_Y + 50;           // stats 開始 y
-const FLAVOR_Y = STATS_Y + 240;        // flavor 開始 y
+const FLAVOR_Y = STATS_Y + 260;        // flavor 開始 y
 
 const SEPIA = '#3b2a16';
 const SEPIA_SOFT = '#5c4628';
@@ -118,16 +118,15 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
 
       {/* === タイトル行 === */}
       <g>
-        <text x={PADX + 8} y={PADY + 36} fontSize="30" fontWeight="700"
+        <text x={PADX + 8} y={PADY + 44} fontSize="42" fontWeight="700"
               fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA}>
           ✦ {displayName}
         </text>
-        <text x={W - PADX - 8} y={PADY + 36} fontSize="22" fontWeight="700"
+        <text x={W - PADX - 8} y={PADY + 44} fontSize="32" fontWeight="700"
               fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="end" fill={SEPIA}>
           LV {lv}
         </text>
-        {/* handle を小さく下段 */}
-        <text x={PADX + 8} y={PADY + 62} fontSize="14"
+        <text x={PADX + 8} y={PADY + 76} fontSize="20"
               fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA_SOFT}>
           @{handle}
         </text>
@@ -158,13 +157,13 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
 
       {/* === type 行 === */}
       <g>
-        <text x={PADX + 8} y={TYPE_Y + 26} fontSize="22" fontWeight="700"
+        <text x={PADX + 8} y={TYPE_Y + 32} fontSize="30" fontWeight="700"
               fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA}>
           《 旅人 — {jobName} 》
         </text>
         {tagline && (
-          <text x={W - PADX - 8} y={TYPE_Y + 26} fontSize="14"
-                fontFamily="'Hiragino Mincho ProN', serif" textAnchor="end" fill={SEPIA_SOFT}>
+          <text x={PADX + 8} y={TYPE_Y + 62} fontSize="20"
+                fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA_SOFT}>
             {tagline}
           </text>
         )}
@@ -181,15 +180,15 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
           const x = PADX + 8 + i * ((W - 2 * (PADX + 8)) / 4);
           return (
             <g key={fn}>
-              <text x={x} y={STATS_Y + 24} fontSize="18" fontWeight="700"
+              <text x={x} y={STATS_Y + 30} fontSize="26" fontWeight="700"
                     fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA}>
                 {COG_SHORT[fn]}
               </text>
-              <text x={x} y={STATS_Y + 44} fontSize="12"
+              <text x={x} y={STATS_Y + 54} fontSize="16"
                     fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA_SOFT}>
                 {COG_JP[fn]}
               </text>
-              <text x={x} y={STATS_Y + 74} fontSize="22"
+              <text x={x} y={STATS_Y + 92} fontSize="30"
                     fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA}>
                 {score}
               </text>
@@ -197,7 +196,7 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
           );
         })}
         {/* RPG stats 行 */}
-        <g transform={`translate(${PADX + 8}, ${STATS_Y + 120})`}>
+        <g transform={`translate(${PADX + 8}, ${STATS_Y + 140})`}>
           {([
             ['攻', result.rpgStats.atk],
             ['守', result.rpgStats.def],
@@ -209,11 +208,11 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
             const cx = i * segW + segW / 2;
             return (
               <g key={label}>
-                <text x={cx} y={0} fontSize="14"
+                <text x={cx} y={0} fontSize="20"
                       fontFamily="'Hiragino Mincho ProN', serif" textAnchor="middle" fill={SEPIA_SOFT}>
                   {label}
                 </text>
-                <text x={cx} y={28} fontSize="22" fontWeight="700"
+                <text x={cx} y={36} fontSize="30" fontWeight="700"
                       fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="middle" fill={SEPIA}>
                   {value}
                 </text>
@@ -231,13 +230,13 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       </g>
 
       {/* === foot === */}
-      <line x1={PADX + 8} y1={H - PADY - 30} x2={W - PADX - 8} y2={H - PADY - 30}
+      <line x1={PADX + 8} y1={H - PADY - 36} x2={W - PADX - 8} y2={H - PADY - 36}
             stroke={SEPIA_SOFT} strokeWidth="0.6" />
-      <text x={PADX + 8} y={H - PADY - 8} fontSize="12"
+      <text x={PADX + 8} y={H - PADY - 10} fontSize="18"
             fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA_SOFT}>
         AozoraQuest · {analyzedDate}
       </text>
-      <text x={W - PADX - 8} y={H - PADY - 8} fontSize="12"
+      <text x={W - PADX - 8} y={H - PADY - 10} fontSize="18"
             fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="end" fill={SEPIA_SOFT}>
         {job.dominantFunction}-{job.auxiliaryFunction}
       </text>
@@ -250,18 +249,16 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
  * 24-26 全角文字ごとに改行する。
  */
 function FlavorBlock({ x, y, width, text }: { x: number; y: number; width: number; text: string }) {
-  const lines = wrapJa(text, 24);
+  const lines = wrapJa(text, 20);
   return (
     <g>
       {lines.map((line, i) => (
-        <text key={i} x={x} y={y + i * 28} fontSize="18" fontStyle="italic"
+        <text key={i} x={x} y={y + i * 36} fontSize="26" fontStyle="italic"
               fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA}>
           {line}
         </text>
       ))}
-      {/* wrap を超える行数になったら width に収まるスケールを適用する手もあるが、
-          sanitize 側で 80 字上限のため通常 3 行で収まる。 */}
-      <rect x={x - 8} y={y - 22} width={width} height={(lines.length * 28) + 8}
+      <rect x={x - 8} y={y - 28} width={width} height={(lines.length * 36) + 8}
             fill="none" stroke="none" />
     </g>
   );
@@ -281,7 +278,7 @@ function wrapJa(text: string, perLine: number): string[] {
     }
   }
   if (buf.length > 0) out.push(buf);
-  return out.slice(0, 4); // 保険: 最大 4 行
+  return out.slice(0, 4);
 }
 
 function formatDate(iso: string): string {
