@@ -29,6 +29,7 @@ export function MyProfile() {
   const [state, setState] = useState<DiagnosisState>({ status: 'idle' });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [targetArchetype, setTargetArchetype] = useState<Archetype | null>(null);
+  const [summoned, setSummoned] = useState<boolean>(false);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -68,6 +69,16 @@ export function MyProfile() {
         }
       } catch (e) {
         console.warn('target job load failed', e);
+      }
+    })();
+    // ブルスコン召喚済みか (カード機能のゲート)
+    (async () => {
+      try {
+        const { loadPointsState } = await import('@/lib/points');
+        const pts = await loadPointsState(agent, did);
+        if (!cancelled) setSummoned(pts.summoned);
+      } catch (e) {
+        console.warn('summon state load failed', e);
       }
     })();
     return () => { cancelled = true; };
@@ -244,10 +255,21 @@ export function MyProfile() {
       {state.status === 'done' && <ResultView result={state.result} onRerun={runAgain} />}
 
       {state.status === 'done' && (
-        <div style={{ marginTop: '1.5em' }}>
+        <div style={{ marginTop: '1.5em', display: 'flex', flexDirection: 'column', gap: '0.6em', alignItems: 'center' }}>
           <Link to="/friends">
             <button>フォロー中の相性ランキングを見る</button>
           </Link>
+          {summoned ? (
+            <Link to="/me/card">
+              <button>カードにして共有</button>
+            </Link>
+          ) : (
+            <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', margin: 0 }}>
+              ブルスコンを召喚すると、カードにして共有できるようになる。
+              {' '}
+              <Link to="/spirit">精霊の社へ</Link>
+            </p>
+          )}
         </div>
       )}
 

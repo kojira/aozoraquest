@@ -94,4 +94,8 @@ export interface DiagnosisResult {
   pendingArchetype?: Archetype;
   /** 同じ候補が何回連続で出たか。閾値以上で UI が転職バナーを出す。 */
   pendingArchetypeStreak?: number;
+  /** カード用のフレーバーテキスト (TinySwallow 生成、再生成で上書き)。 */
+  flavorText?: string;
+  /** flavorText 生成時刻 (ISO)。 */
+  flavorGeneratedAt?: string;
 }
