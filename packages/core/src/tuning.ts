@@ -131,10 +131,10 @@ export const COMPLEMENT_GAP_RANGE = {
 } as const;
 
 /**
- * 診断に取得する投稿件数。多いほど精度・安定性が上がるが、埋め込み計算の
- * レイテンシと Bluesky API の負荷が増える。
+ * 診断に取得する投稿件数。多いほど精度・安定性が上がる。
+ * WebGPU int4 ONNX 分類器で 1 post あたり ~30ms なので 500 でも数秒で終わる。
  */
-export const DIAGNOSIS_POST_LIMIT = 300;
+export const DIAGNOSIS_POST_LIMIT = 500;
 
 /**
  * 診断が成立する最小投稿数。これ未満は insufficient として返す。
