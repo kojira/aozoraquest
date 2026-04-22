@@ -4,6 +4,8 @@ import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord, putRecord } from '@/lib/atproto';
+import type { Rarity } from '@aozoraquest/core';
+import { isRarity, rollRarity } from '@aozoraquest/core';
 import { loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, type CardText } from '@/lib/flavor-text';
@@ -30,6 +32,7 @@ export function Card() {
   const navigate = useNavigate();
   const [load, setLoad] = useState<LoadState>({ status: 'checking' });
   const [card, setCard] = useState<CardText | null>(null);
+  const [rarity, setRarity] = useState<Rarity>('common');
   const [flavorBusy, setFlavorBusy] = useState(false);
   const [power, setPower] = useState<PointsState | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
@@ -60,12 +63,18 @@ export function Card() {
           ...(profile?.avatar ? { avatar: profile.avatar } : {}),
         };
         setLoad({ status: 'ready', result: analysis, profile: pb });
-        // 既存 flavor text があれば暫定で表示 (effect は新規扱いで再生成)
-        // 過去データには markdown が混ざっている可能性があるので sanitize してから表示
-        if (analysis.flavorText) {
+        // PDS に既存のカード情報があればそのまま表示 (引き直しまで同じ)
+        const hasSaved = analysis.flavorText || analysis.cardEffect || analysis.cardRarity;
+        if (hasSaved) {
+          const savedRarity: Rarity = isRarity(analysis.cardRarity) ? analysis.cardRarity : 'common';
+          setRarity(savedRarity);
           setCard({
-            effect: getFallbackCardText(analysis.archetype, Date.now()).effect,
-            flavor: stripMarkdown(analysis.flavorText),
+            effect: analysis.cardEffect
+              ? stripMarkdown(analysis.cardEffect)
+              : getFallbackCardText(analysis.archetype, Date.now()).effect,
+            flavor: analysis.flavorText
+              ? stripMarkdown(analysis.flavorText)
+              : getFallbackCardText(analysis.archetype, Date.now()).flavor,
             source: { kind: 'fallback' },
           });
         }
@@ -81,9 +90,13 @@ export function Card() {
   const profile = load.status === 'ready' ? load.profile : null;
   const artSrc = useMemo(() => (result ? `/card-art/${result.archetype}.jpg` : undefined), [result]);
 
-  // 診断読み込みが終わったら、既存 card が無ければ初回生成 (コスト 0)
+  // 診断読み込みが終わったら、PDS にカードが無いときだけ初回生成 (コスト 0)
   useEffect(() => {
-    if (load.status !== 'ready' || card) return;
+    if (load.status !== 'ready') return;
+    // 既に PDS にカード情報があればそれを見せる (引き直すまで変わらない)
+    const hasSaved = load.result.flavorText || load.result.cardEffect || load.result.cardRarity;
+    if (hasSaved) return;
+    // 初回生成: rarity を抽選して生成 + 保存
     void regenerateCard({ initial: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load.status]);
@@ -92,7 +105,6 @@ export function Card() {
     if (load.status !== 'ready') return;
     if (session.status !== 'signed-in' || !session.agent) return;
     const agent = session.agent;
-    const did = session.did;
 
     // 明示的な引き直し (initial でない) は 1 あおぞらパワーを消費する
     if (!opts.initial) {
@@ -106,23 +118,30 @@ export function Card() {
         console.warn('[card] recordCardDraw failed', e);
         return;
       }
-      // ローカル state を楽観的に 1 減らす
       setPower((p) => p ? { ...p, cardDraws: p.cardDraws + 1, balance: Math.max(0, p.balance - 1) } : p);
     }
 
     setFlavorBusy(true);
     try {
-      const r = await generateCardText(load.result, { seed: Date.now() });
+      // レアリティ抽選 (初回も引き直しも毎回)
+      const nextRarity = rollRarity();
+      setRarity(nextRarity);
+      const r = await generateCardText(load.result, nextRarity, { seed: Date.now() });
       setCard(r);
-      // PDS に flavor 保存 (初回 or 引き直し両方)
+      // PDS に一式保存 (effect + flavor + rarity)
       try {
+        const now = new Date().toISOString();
         await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
           ...load.result,
+          cardEffect: r.effect,
           flavorText: r.flavor,
-          flavorGeneratedAt: new Date().toISOString(),
+          cardRarity: nextRarity,
+          cardDrawnAt: now,
+          // 後方互換
+          flavorGeneratedAt: now,
         });
       } catch (e) {
-        console.warn('[card] save flavor failed', e);
+        console.warn('[card] save card to PDS failed', e);
       }
     } catch (e) {
       console.warn('[card] regenerate card failed', e);
@@ -130,9 +149,8 @@ export function Card() {
     } finally {
       setFlavorBusy(false);
     }
-    void did;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load.status, session.status, session.agent, session.did, power]);
+  }, [load.status, session.status, session.agent, power]);
 
   const onDownload = useCallback(async () => {
     if (!svgRef.current || !result) return;
@@ -215,6 +233,7 @@ export function Card() {
           result={result!}
           effectText={card?.effect ?? '…'}
           flavorText={card?.flavor ?? '…'}
+          rarity={rarity}
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}
