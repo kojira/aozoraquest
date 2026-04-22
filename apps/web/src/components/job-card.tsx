@@ -326,40 +326,39 @@ function EffectBlock(props: {
   name: string; cost: string; description: string;
 }) {
   const { x, y, width, name, cost, description } = props;
-  const NAME_FONT = 26;
-  const BODY_FONT = 20;
-  const LINE_H = 28;
+  const NAME_FONT = 32;
+  const BODY_FONT = 24;
+  const LINE_H = 34;
+  const TEXT_COLOR = '#000';        // 視認性のため純黒
+  const LABEL_COLOR = '#2a1a08';    // 「効果:」などのラベルは濃セピア
 
   const isPassive = !cost || cost === 'なし' || /^\s*なし\s*$/.test(cost);
-  // 名前
   const nameLine = (
     <text x={x} y={y} fontSize={NAME_FONT} fontWeight="800"
-          fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
       {name}
     </text>
   );
 
   if (isPassive) {
-    // 名前 — 説明 の 2 行レイアウト (コストなし)
-    const descLines = wrapJa(description, 24, 3);
+    const descLines = wrapJa(description, 20, 3);
     return (
       <g>
         {nameLine}
         {descLines.map((line, i) => (
-          <text key={i} x={x} y={y + (i + 1) * LINE_H + 4} fontSize={BODY_FONT}
-                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          <text key={i} x={x} y={y + (i + 1) * LINE_H + 6} fontSize={BODY_FONT}
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
             {line}
           </text>
         ))}
-        <rect x={x} y={y - 24} width={width} height={LINE_H * (descLines.length + 1) + 12}
+        <rect x={x} y={y - 28} width={width} height={LINE_H * (descLines.length + 1) + 14}
               fill="none" stroke="none" />
       </g>
     );
   }
 
-  // コストあり: 名前 / コスト: 説明 の 3 行レイアウト
-  const costLines = wrapJa(cost, 22, 2);
-  const descLines = wrapJa(description, 24, 2);
+  const costLines = wrapJa(cost, 18, 2);
+  const descLines = wrapJa(description, 20, 2);
   let yOff = 0;
   return (
     <g>
@@ -367,25 +366,24 @@ function EffectBlock(props: {
       {costLines.map((line, i) => {
         yOff = (i + 1) * LINE_H;
         return (
-          <text key={`c${i}`} x={x} y={y + yOff + 4} fontSize={BODY_FONT} fontWeight="700"
-                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          <text key={`c${i}`} x={x} y={y + yOff + 6} fontSize={BODY_FONT} fontWeight="700"
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
             {line}
           </text>
         );
       })}
-      {/* " :" の separator — 最後の cost line の行末に付ける表現にせず、次行を「説明: ...」で始める */}
       {descLines.map((line, i) => {
-        const yy = y + yOff + (i + 1) * LINE_H + 10;
+        const yy = y + yOff + (i + 1) * LINE_H + 12;
         return (
           <text key={`d${i}`} x={x} y={yy} fontSize={BODY_FONT}
-                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
-            {i === 0 ? <tspan fontWeight="700" fill={INK_SOFT}>効果: </tspan> : null}
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
+            {i === 0 ? <tspan fontWeight="700" fill={LABEL_COLOR}>効果: </tspan> : null}
             {line}
           </text>
         );
       })}
-      <rect x={x} y={y - 24} width={width}
-            height={yOff + LINE_H * descLines.length + 20}
+      <rect x={x} y={y - 28} width={width}
+            height={yOff + LINE_H * descLines.length + 24}
             fill="none" stroke="none" />
     </g>
   );
