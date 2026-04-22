@@ -36,12 +36,15 @@ function getPublicAgent(): AtpAgent {
 export const RECENCY_DAYS = 7;
 const RECENCY_MS = RECENCY_DAYS * 24 * 60 * 60 * 1000;
 
-/** 同時並列で走らせる API 呼び出し数 (follow / recency / analysis で使う)。 */
-const CONCURRENCY = 10;
+/** 同時並列で走らせる API 呼び出し数 (recency / analysis で使う)。
+ * Bluesky AppView のレート制限を避けるため控えめに。 */
+const CONCURRENCY = 2;
 
-/** 裏診断時の post 取得並列度。ONNX は singleton で直列だが、次の N 人分の
- * 投稿を先取りしておいて推論待ち時間に被せる (pipeline)。 */
-const PREFETCH_CONCURRENCY = 5;
+/** 裏診断時の post 取得並列度。ONNX 側は singleton で直列なので 1-2 で十分。 */
+const PREFETCH_CONCURRENCY = 1;
+
+/** 各 API コール前に最低限挟む間隔 (ms)。burst を緩和する。 */
+const MIN_INTERVAL_MS = 80;
 
 /** 裏診断の軽量モード: fetch する投稿数。相性ランキングでは archetype/stats の
  * 大まかな傾向が分かれば十分なので 100 posts で打ち切る。これで API 取得も推論も
@@ -103,6 +106,8 @@ async function parallelMap<T, R>(
     while (true) {
       const i = next++;
       if (i >= total) return;
+      // burst 緩和のため各 call 前に軽い間隔を入れる
+      if (MIN_INTERVAL_MS > 0) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS));
       results[i] = await fn(items[i]!, i);
       done++;
       onEach?.(done, total);
@@ -111,6 +116,41 @@ async function parallelMap<T, R>(
   const workers = Array.from({ length: Math.min(concurrency, total) }, () => worker());
   await Promise.all(workers);
   return results;
+}
+
+/** 429 / rate limit error かを判定 (ATProto error の形に緩く対応)。 */
+function isRateLimitError(e: unknown): boolean {
+  const err = e as { status?: number; headers?: Record<string, string>; message?: string };
+  if (err?.status === 429) return true;
+  const msg = String(err?.message ?? e);
+  return /rate ?limit|429|too many requests/i.test(msg);
+}
+
+/** Retry-After ヘッダがあればその秒数、無ければ指数バックオフで待機秒を返す。 */
+function retryAfterMs(e: unknown, attempt: number): number {
+  const err = e as { headers?: Record<string, string> };
+  const h = err?.headers?.['retry-after'] ?? err?.headers?.['Retry-After'];
+  if (h) {
+    const secs = parseInt(h, 10);
+    if (Number.isFinite(secs) && secs > 0) return Math.min(secs, 60) * 1000;
+  }
+  return Math.min(30_000, 2000 * Math.pow(2, attempt)); // 2s, 4s, 8s, ... max 30s
+}
+
+/** rate limit を食らったらバックオフリトライ。最大 3 回まで。 */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRateLimitError(e) || attempt >= maxAttempts - 1) throw e;
+      const wait = retryAfterMs(e, attempt);
+      console.warn(`[friends] rate limited, retrying after ${wait}ms (attempt ${attempt + 1})`);
+      await new Promise((r) => setTimeout(r, wait));
+      attempt++;
+    }
+  }
 }
 
 interface Candidate {
@@ -177,7 +217,7 @@ export async function computeFollowResonanceRanking(
   const latestAts = await parallelMap(
     follows,
     CONCURRENCY,
-    (f) => fetchLatestPostAt(pub, f.did),
+    (f) => withRateLimitRetry(() => fetchLatestPostAt(pub, f.did)),
     (d, t) => onProgress?.({ phase: 'recency', done: d, total: t }),
   );
   const candidates: Candidate[] = [];
@@ -194,7 +234,7 @@ export async function computeFollowResonanceRanking(
   const pdsAnalyses = await parallelMap(
     candidates,
     CONCURRENCY,
-    ({ profile }) => getAnalysis(agent, profile.did),
+    ({ profile }) => withRateLimitRetry(() => getAnalysis(agent, profile.did)),
     (d, t) => onProgress?.({ phase: 'analysis', done: d, total: t }),
   );
 
@@ -289,13 +329,15 @@ export async function computeFollowResonanceRanking(
     job.postsPromise = (async () => {
       await acquireFetch();
       try {
-        // 公開 AppView を使う (認証済 PDS だと並列 DPoP で CORS preflight が落ちる)
-        return await fetchUserPostsForDiagnosis(pub, job.cand.profile.did, LIGHT_POST_LIMIT);
+        // burst 緩和 + 公開 AppView 経由 + 429 リトライ
+        if (MIN_INTERVAL_MS > 0) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS));
+        return await withRateLimitRetry(
+          () => fetchUserPostsForDiagnosis(pub, job.cand.profile.did, LIGHT_POST_LIMIT),
+        );
       } finally {
         releaseFetch();
       }
     })();
-    // unhandled rejection を抑えるための no-op handler (実際の処理は await 側で)
     job.postsPromise.catch(() => {});
   };
 
