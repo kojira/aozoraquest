@@ -43,6 +43,7 @@ describe('loadPointsState', () => {
     expect(p).toEqual({
       viaPosts: 0,
       userMessages: 0,
+      cardDraws: 0,
       summoned: false,
       balance: 0,
       toSummon: SUMMON_THRESHOLD,
