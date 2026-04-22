@@ -263,3 +263,55 @@ export function diagnose(
     analyzedAt: now.toISOString(),
   };
 }
+
+/**
+ * ONNX 分類器の per-post 8-function スコアから診断を合成する。
+ *
+ * embedding + prototype 版 (diagnose) と違い、入力は既に各 post で 8 機能
+ * スコアに落ちているので、時間軸重み付きで加重平均するだけ。正規化と
+ * archetype 判定は同じ後段に通して結果互換を保つ。
+ *
+ * @param perPostScores 各投稿の 8 認知機能スコア (ONNX softmax から none を
+ *   落として作ったもの、min-max 前の生値で OK)
+ * @param postCount 有効分類に使えた件数 (信頼度計算に使う)
+ * @param options.timestamps 各投稿の createdAt (ISO)
+ */
+export function diagnoseFromPerPostScores(
+  perPostScores: readonly CognitiveScores[],
+  postCount: number,
+  now: Date = new Date(),
+  options: { timestamps?: readonly string[] } = {},
+): DiagnosisResult | { insufficient: true; postCount: number } {
+  if (postCount < DIAGNOSIS_MIN_POST_COUNT) {
+    return { insufficient: true, postCount };
+  }
+  const weights = options.timestamps
+    ? computePostWeights(options.timestamps, now)
+    : new Array<number>(perPostScores.length).fill(1);
+
+  const acc: CognitiveScores = { Ni: 0, Ne: 0, Si: 0, Se: 0, Ti: 0, Te: 0, Fi: 0, Fe: 0 };
+  const fnKeys = Object.keys(acc) as CogFunction[];
+  let totalWeight = 0;
+  for (let i = 0; i < perPostScores.length; i++) {
+    const s = perPostScores[i]!;
+    const w = weights[i] ?? 1;
+    totalWeight += w;
+    for (const fn of fnKeys) acc[fn] += (s[fn] ?? 0) * w;
+  }
+  const denom = totalWeight > 0 ? totalWeight : perPostScores.length;
+  const avg = {} as CognitiveScores;
+  for (const fn of fnKeys) avg[fn] = acc[fn] / denom;
+
+  const normalized = normalizeCognitive(avg);
+  const rpgStats = cognitiveToRpg(normalized);
+  const { archetype } = determineArchetype(normalized);
+  const confidence = computeConfidence(postCount, normalized);
+  return {
+    archetype,
+    rpgStats,
+    cognitiveScores: normalized,
+    confidence,
+    analyzedPostCount: postCount,
+    analyzedAt: now.toISOString(),
+  };
+}

@@ -1,18 +1,77 @@
 import type { Agent } from '@atproto/api';
-import { DIAGNOSIS_MIN_POST_COUNT, DIAGNOSIS_POST_LIMIT, diagnose, type DiagnosisResult } from '@aozoraquest/core';
+import type { CognitiveScores } from '@aozoraquest/core';
+import {
+  DIAGNOSIS_MIN_POST_COUNT,
+  DIAGNOSIS_POST_LIMIT,
+  diagnose,
+  diagnoseFromPerPostScores,
+  type DiagnosisResult,
+} from '@aozoraquest/core';
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
+import { getCognitiveOnnxClassifier } from './cognitive-onnx';
 
 type ProgressCallback = (phase: string, done?: number, total?: number) => void;
 
 /**
+ * 診断の本命パス: fine-tune 済 ONNX 分類器で各投稿を 8 認知機能に直接分類し、
+ * 時間軸重み付きで合成する。非日本語 / 短すぎ投稿は null 返しで skip される。
+ *
+ * ONNX 分類器が利用不能 (webgpu/wasm 両方失敗、モデル配信失敗など) の場合は
+ * 旧 prototype embedding 方式に自動フォールバックする。
+ */
+async function classifyWithOnnx(
+  posts: { text: string; at: string }[],
+  onProgress: ProgressCallback,
+): Promise<{ perPost: CognitiveScores[]; timestamps: string[] } | null> {
+  const cog = getCognitiveOnnxClassifier();
+  try {
+    await cog.init();
+  } catch (e) {
+    console.warn('[diagnosis] ONNX classifier init failed, falling back to prototype', e);
+    return null;
+  }
+  onProgress('embedding-posts', 0, posts.length);
+  const perPost: CognitiveScores[] = [];
+  const timestamps: string[] = [];
+  for (let i = 0; i < posts.length; i++) {
+    try {
+      const s = await cog.classifyPost(posts[i]!.text);
+      if (s) {
+        perPost.push(s);
+        timestamps.push(posts[i]!.at);
+      }
+    } catch (e) {
+      console.warn('[diagnosis] classify failed for post, skip', e);
+    }
+    onProgress('embedding-posts', i + 1, posts.length);
+  }
+  return { perPost, timestamps };
+}
+
+/** prototype embedding 方式 (旧): fallback 時のみ使う。 */
+async function classifyWithPrototype(
+  posts: { text: string; at: string }[],
+  onProgress: ProgressCallback,
+): Promise<{ postVecs: Float32Array[]; timestamps: string[]; protos: Awaited<ReturnType<typeof loadPrototypeEmbeddings>> }> {
+  onProgress('loading-prototypes');
+  const embedder = getEmbedder();
+  const protos = await loadPrototypeEmbeddings(embedder);
+  onProgress('embedding-posts', 0, posts.length);
+  const postVecs = await embedder.embedBatch(
+    posts.map((p) => p.text),
+    (done, total) => onProgress('embedding-posts', done, total),
+  );
+  return { postVecs, timestamps: posts.map((p) => p.at), protos };
+}
+
+/**
  * 全体の診断パイプライン:
  *   1. 投稿 DIAGNOSIS_POST_LIMIT 件取得 (tuning.ts)
- *   2. プロトタイプ埋め込みをロード (初回はランタイム計算、キャッシュしたい)
- *   3. 各投稿を埋め込み
- *   4. core.diagnose() で RPG 合成
- *   5. PDS の app.aozoraquest.analysis/self に保存
+ *   2. ONNX 分類器で各投稿 → 8 機能スコア (失敗時は prototype fallback)
+ *   3. 時間軸重み付きで合成 → archetype 判定
+ *   4. PDS の app.aozoraquest.analysis/self に保存
  */
 export async function runDiagnosis(
   agent: Agent,
@@ -26,26 +85,28 @@ export async function runDiagnosis(
   }
 
   onProgress('loading-prototypes');
-  const embedder = getEmbedder();
-  const protos = await loadPrototypeEmbeddings(embedder);
-
-  onProgress('embedding-posts', 0, posts.length);
-  const texts = posts.map((p) => p.text);
-  const timestamps = posts.map((p) => p.at);
-  const postVecs = await embedder.embedBatch(texts, (done, total) =>
-    onProgress('embedding-posts', done, total),
-  );
+  const onnx = await classifyWithOnnx(posts, onProgress);
 
   onProgress('analyzing');
-  const result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
+  let result: DiagnosisResult | { insufficient: true; postCount: number };
+  if (onnx && onnx.perPost.length >= DIAGNOSIS_MIN_POST_COUNT) {
+    result = diagnoseFromPerPostScores(
+      onnx.perPost,
+      onnx.perPost.length,
+      new Date(),
+      { timestamps: onnx.timestamps },
+    );
+  } else {
+    // ONNX が使えなかった / 日本語 post が足りなかった → prototype fallback
+    const { postVecs, timestamps, protos } = await classifyWithPrototype(posts, onProgress);
+    result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
+  }
 
   if ('insufficient' in result) return result;
 
   onProgress('saving');
 
   // 既存レコード (あれば) を読み込んで playerLevel / jobLevel を引き継ぐ。
-  // - playerLevel: 常に保持。archetype が変わっても個人の累積は途切れない。
-  // - jobLevel: 同じ archetype なら XP 継続、違えば新 archetype で xp=0 再スタート。
   const existing = await getRecord<DiagnosisResult>(agent, agent.assertDid ?? '', 'app.aozoraquest.analysis', 'self')
     .catch(() => null);
   const playerLevel = existing?.playerLevel ?? { xp: 0, streakDays: 0 };
@@ -72,7 +133,7 @@ export async function runDiagnosis(
 
 /**
  * 他ユーザーの気質を推し量る。PDS には一切書き込まず、戻り値のみ。
- * 相手の公開投稿から DIAGNOSIS_POST_LIMIT 件取得し、ブラウザ内で diagnose() を走らせる。
+ * runDiagnosis と同じ ONNX → prototype fallback の順で判定する。
  */
 export async function runDiagnosisForOther(
   agent: Agent,
@@ -86,20 +147,23 @@ export async function runDiagnosisForOther(
   }
 
   onProgress('loading-prototypes');
-  const embedder = getEmbedder();
-  const protos = await loadPrototypeEmbeddings(embedder);
-
-  onProgress('embedding-posts', 0, posts.length);
-  const texts = posts.map((p) => p.text);
-  const timestamps = posts.map((p) => p.at);
-  const postVecs = await embedder.embedBatch(texts, (done, total) =>
-    onProgress('embedding-posts', done, total),
-  );
+  const onnx = await classifyWithOnnx(posts, onProgress);
 
   onProgress('analyzing');
-  const result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
+  let result: DiagnosisResult | { insufficient: true; postCount: number };
+  if (onnx && onnx.perPost.length >= DIAGNOSIS_MIN_POST_COUNT) {
+    result = diagnoseFromPerPostScores(
+      onnx.perPost,
+      onnx.perPost.length,
+      new Date(),
+      { timestamps: onnx.timestamps },
+    );
+  } else {
+    const { postVecs, timestamps, protos } = await classifyWithPrototype(posts, onProgress);
+    result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
+  }
   if ('insufficient' in result) return result;
 
   onProgress('done');
-  return result; // PDS には書かない (閲覧側のローカル表示専用)
+  return result;
 }
