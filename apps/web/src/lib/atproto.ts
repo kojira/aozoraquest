@@ -81,6 +81,57 @@ export async function fetchTimeline(agent: Agent, cursor?: string) {
   return agent.getTimeline({ limit: TIMELINE_PAGE_LIMIT, ...(cursor !== undefined ? { cursor } : {}) });
 }
 
+/** フォロー一覧取得時の最小型 (相性ランキング用)。 */
+export interface FollowProfile {
+  did: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+}
+
+/**
+ * 指定アクターの follow 一覧を全件取得 (cursor pagination)。
+ * Bluesky API は 1 ページ最大 100 件。
+ */
+export async function fetchFollows(agent: Agent, actor: string): Promise<FollowProfile[]> {
+  const out: FollowProfile[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 50; page++) {   // 5000 件で打ち切り (安全装置)
+    const res = await agent.getFollows({
+      actor,
+      limit: 100,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
+    for (const f of res.data.follows) {
+      out.push({
+        did: f.did,
+        handle: f.handle,
+        ...(f.displayName ? { displayName: f.displayName } : {}),
+        ...(f.avatar ? { avatar: f.avatar } : {}),
+      });
+    }
+    cursor = res.data.cursor;
+    if (!cursor) break;
+  }
+  return out;
+}
+
+/**
+ * アクターの最新投稿 1 件の createdAt を返す。post なし or 取得失敗は null。
+ * 相性ランキングの「直近 N 日以内に投稿したか」判定用の軽量 API。
+ */
+export async function fetchLatestPostAt(agent: Agent, actor: string): Promise<string | null> {
+  try {
+    const res = await agent.getAuthorFeed({ actor, limit: 1, filter: 'posts_no_replies' });
+    const item = res.data.feed[0];
+    if (!item) return null;
+    const record = item.post.record as { createdAt?: string };
+    return record.createdAt ?? item.post.indexedAt ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 指定 DID の直近投稿 (診断・共鳴 TL 用)。
  */
