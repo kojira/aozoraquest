@@ -345,15 +345,25 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
         listStyle: 'none',
         padding: 0,
         margin: '0 auto',
-        maxWidth: '18em',
+        maxWidth: '20em',
         textAlign: 'left',
       }}>
         {Object.entries(result.cognitiveScores)
           .sort((a, b) => b[1] - a[1])
           .map(([fn, score]) => (
-            <li key={fn}>
-              <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>({fn})</span>{' '}
-              {COGNITIVE_LABEL[fn] ?? fn}: {score}
+            <li key={fn} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6em' }}>
+              <span>
+                <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>({fn})</span>{' '}
+                {COGNITIVE_LABEL[fn] ?? fn}
+              </span>
+              <span style={{
+                fontFamily: 'ui-monospace, monospace',
+                fontVariantNumeric: 'tabular-nums',
+                minWidth: '2.5em',
+                textAlign: 'right',
+              }}>
+                {score}
+              </span>
             </li>
           ))}
       </ul>
