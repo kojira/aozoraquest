@@ -76,7 +76,7 @@ function buildPrompt(result: DiagnosisResult): { system: string; user: string } 
   return { system, user };
 }
 
-function stripMarkdown(s: string): string {
+export function stripMarkdown(s: string): string {
   let t = s;
   t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
   t = t.replace(/(?<![\*])\*([^\*\n]+)\*(?![\*])/g, '$1');
