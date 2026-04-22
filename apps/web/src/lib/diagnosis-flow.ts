@@ -134,14 +134,19 @@ export async function runDiagnosis(
 /**
  * 他ユーザーの気質を推し量る。PDS には一切書き込まず、戻り値のみ。
  * runDiagnosis と同じ ONNX → prototype fallback の順で判定する。
+ *
+ * options.postLimit: 取得する投稿の最大件数 (デフォルト DIAGNOSIS_POST_LIMIT)。
+ * 相性ランキング用の軽量診断では 150 程度に抑え per-user レイテンシを短縮する。
  */
 export async function runDiagnosisForOther(
   agent: Agent,
   actor: string,
   onProgress: ProgressCallback = () => {},
+  options: { postLimit?: number } = {},
 ): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
+  const postLimit = options.postLimit ?? DIAGNOSIS_POST_LIMIT;
   onProgress('fetching-posts');
-  const posts = await fetchUserPostsForDiagnosis(agent, actor, DIAGNOSIS_POST_LIMIT);
+  const posts = await fetchUserPostsForDiagnosis(agent, actor, postLimit);
   if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount: posts.length };
   }
