@@ -32,7 +32,6 @@ function getPublicAgent(): AtpAgent {
   return _publicAgent;
 }
 
-/** 「いま発信している人」と会いたい、という意図に合わせた直近投稿のしきい値。 */
 export const RECENCY_DAYS = 3;
 const RECENCY_MS = RECENCY_DAYS * 24 * 60 * 60 * 1000;
 
