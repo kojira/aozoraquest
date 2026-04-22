@@ -24,8 +24,10 @@ const RECENCY_MS = RECENCY_DAYS * 24 * 60 * 60 * 1000;
 /** 同時並列で走らせる API 呼び出し数 (follow / recency / analysis で使う)。 */
 const CONCURRENCY = 10;
 
-/** 裏診断の軽量モード: fetch する投稿数。500 より少ないと per-user レイテンシが劇的に縮む。 */
-const LIGHT_POST_LIMIT = 150;
+/** 裏診断の軽量モード: fetch する投稿数。相性ランキングでは archetype/stats の
+ * 大まかな傾向が分かれば十分なので 100 posts で打ち切る。これで API 取得も推論も
+ * 最短 (/me の 500 より 5x 速い)。 */
+const LIGHT_POST_LIMIT = 100;
 
 export type ResonanceRankPhase = 'follows' | 'recency' | 'analysis' | 'scoring' | 'diagnosing';
 export type ResonanceSource = 'pds' | 'idb' | 'onnx';
