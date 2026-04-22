@@ -12,6 +12,7 @@ import {
   SUMMON_THRESHOLD as CORE_SUMMON_THRESHOLD,
 } from '@aozoraquest/core';
 import { VIA } from './atproto';
+import { countCardDraws } from './card-power';
 
 export const SUMMON_THRESHOLD = CORE_SUMMON_THRESHOLD;
 const POST_SCAN_PAGES = POINTS_SCAN_PAGES;
@@ -23,24 +24,28 @@ export interface PointsState {
   viaPosts: number;
   /** 自分 (role=user) が発した精霊チャットのメッセージ数 */
   userMessages: number;
+  /** カード引き直しで消費したパワー数 */
+  cardDraws: number;
   /** 召喚済みか (spiritChat レコードが 1 件でもあるか) */
   summoned: boolean;
-  /** 話せる残り回数 = max(0, viaPosts - userMessages) */
+  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws) */
   balance: number;
   /** 召喚に必要な残り投稿数 = max(0, SUMMON_THRESHOLD - viaPosts) */
   toSummon: number;
 }
 
 export async function loadPointsState(agent: Agent, did: string): Promise<PointsState> {
-  const [viaPosts, { userMessages, hasAnySpiritChat }] = await Promise.all([
+  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws] = await Promise.all([
     countViaPosts(agent, did),
     countSpiritChat(agent, did),
+    countCardDraws(agent, did),
   ]);
-  const balance = Math.max(0, viaPosts - userMessages);
+  const balance = Math.max(0, viaPosts - userMessages - cardDraws);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - viaPosts);
   return {
     viaPosts,
     userMessages,
+    cardDraws,
     summoned: hasAnySpiritChat,
     balance,
     toSummon,

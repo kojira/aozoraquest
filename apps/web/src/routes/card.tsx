@@ -4,8 +4,9 @@ import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord, putRecord } from '@/lib/atproto';
-import { loadPointsState } from '@/lib/points';
-import { generateCardText, getFallbackCardText, type CardText } from '@/lib/flavor-text';
+import { loadPointsState, type PointsState } from '@/lib/points';
+import { recordCardDraw } from '@/lib/card-power';
+import { generateCardText, getFallbackCardText, stripMarkdown, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
@@ -30,6 +31,7 @@ export function Card() {
   const [load, setLoad] = useState<LoadState>({ status: 'checking' });
   const [card, setCard] = useState<CardText | null>(null);
   const [flavorBusy, setFlavorBusy] = useState(false);
+  const [power, setPower] = useState<PointsState | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -50,6 +52,7 @@ export function Card() {
         if (cancelled) return;
         if (!analysis) { setLoad({ status: 'no-diagnosis' }); return; }
         if (!points.summoned) { setLoad({ status: 'not-summoned' }); return; }
+        setPower(points as PointsState);
         const pb: ProfileBrief = {
           did,
           handle: profile?.handle ?? session.handle ?? 'you',
@@ -58,10 +61,11 @@ export function Card() {
         };
         setLoad({ status: 'ready', result: analysis, profile: pb });
         // 既存 flavor text があれば暫定で表示 (effect は新規扱いで再生成)
+        // 過去データには markdown が混ざっている可能性があるので sanitize してから表示
         if (analysis.flavorText) {
           setCard({
             effect: getFallbackCardText(analysis.archetype, Date.now()).effect,
-            flavor: analysis.flavorText,
+            flavor: stripMarkdown(analysis.flavorText),
             source: { kind: 'fallback' },
           });
         }
@@ -77,31 +81,48 @@ export function Card() {
   const profile = load.status === 'ready' ? load.profile : null;
   const artSrc = useMemo(() => (result ? `/card-art/${result.archetype}.jpg` : undefined), [result]);
 
-  // 診断読み込みが終わったら、既存 card が無ければ自動生成
+  // 診断読み込みが終わったら、既存 card が無ければ初回生成 (コスト 0)
   useEffect(() => {
     if (load.status !== 'ready' || card) return;
-    void regenerateCard(false);
+    void regenerateCard({ initial: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load.status]);
 
-  const regenerateCard = useCallback(async (persist: boolean) => {
+  const regenerateCard = useCallback(async (opts: { initial?: boolean }) => {
     if (load.status !== 'ready') return;
+    if (session.status !== 'signed-in' || !session.agent) return;
+    const agent = session.agent;
+    const did = session.did;
+
+    // 明示的な引き直し (initial でない) は 1 あおぞらパワーを消費する
+    if (!opts.initial) {
+      if (!power || power.balance < 1) {
+        console.warn('[card] power insufficient');
+        return;
+      }
+      try {
+        await recordCardDraw(agent, 'flavor-reroll');
+      } catch (e) {
+        console.warn('[card] recordCardDraw failed', e);
+        return;
+      }
+      // ローカル state を楽観的に 1 減らす
+      setPower((p) => p ? { ...p, cardDraws: p.cardDraws + 1, balance: Math.max(0, p.balance - 1) } : p);
+    }
+
     setFlavorBusy(true);
     try {
       const r = await generateCardText(load.result, { seed: Date.now() });
       setCard(r);
-      if (persist || !load.result.flavorText) {
-        if (session.status === 'signed-in' && session.agent) {
-          try {
-            await putRecord(session.agent, 'app.aozoraquest.analysis', 'self', {
-              ...load.result,
-              flavorText: r.flavor,
-              flavorGeneratedAt: new Date().toISOString(),
-            });
-          } catch (e) {
-            console.warn('[card] save flavor failed', e);
-          }
-        }
+      // PDS に flavor 保存 (初回 or 引き直し両方)
+      try {
+        await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
+          ...load.result,
+          flavorText: r.flavor,
+          flavorGeneratedAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('[card] save flavor failed', e);
       }
     } catch (e) {
       console.warn('[card] regenerate card failed', e);
@@ -109,8 +130,9 @@ export function Card() {
     } finally {
       setFlavorBusy(false);
     }
+    void did;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load.status, session.status, session.agent]);
+  }, [load.status, session.status, session.agent, session.did, power]);
 
   const onDownload = useCallback(async () => {
     if (!svgRef.current || !result) return;
@@ -201,11 +223,21 @@ export function Card() {
         />
       </div>
 
+      {power && (
+        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+          あおぞらパワー: <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{power.balance}</span>
+          <span style={{ opacity: 0.6, marginLeft: '0.5em' }}>(引き直しで 1 消費)</span>
+        </p>
+      )}
+
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
-        <button disabled={flavorBusy} onClick={() => void regenerateCard(true)}>
+        <button
+          disabled={flavorBusy || !power || power.balance < 1}
+          onClick={() => void regenerateCard({ initial: false })}
+        >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {flavorBusy ? '詩を探している…' : '引き直す'}
+            {flavorBusy ? '詩を探している…' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>
