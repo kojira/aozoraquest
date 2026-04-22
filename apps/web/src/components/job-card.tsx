@@ -60,6 +60,8 @@ export interface JobCardProps {
   flavorText: string;
   /** カードレアリティ (6 段階)。badge 色と表示に使う。 */
   rarity: Rarity;
+  /** 枠画像の variant (1 or 2)。同じ rarity でも見た目が変わる。 */
+  frameVariant: 1 | 2;
   displayName: string;
   handle: string;
   /** ジョブ固有の背景イラスト (例: '/card-art/sage.jpg') */
@@ -71,7 +73,7 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectText, flavorText, rarity, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectText, flavorText, rarity, frameVariant, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
   const job = JOBS_BY_ID[result.archetype];
@@ -141,8 +143,8 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
           SVG の細線枠で 2 重線を足す。 */}
       <rect x="0" y="0" width={W} height={H} fill="url(#paper)" />
       <image
-        href={`/card-art/frame-${rarity}.jpg`}
-        xlinkHref={`/card-art/frame-${rarity}.jpg`}
+        href={`/card-art/frame-${rarity}-${frameVariant}.jpg`}
+        xlinkHref={`/card-art/frame-${rarity}-${frameVariant}.jpg`}
         x="0" y="0" width={W} height={H}
         preserveAspectRatio="xMidYMid slice"
       />
