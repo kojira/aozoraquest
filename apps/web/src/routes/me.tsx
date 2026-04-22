@@ -113,7 +113,7 @@ export function MyProfile() {
   const myPlayerLv = playerLevelFromXp(myPlayerXp);
 
   return (
-    <div>
+    <div style={{ textAlign: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.8em' }}>
         <Avatar src={avatarUrl ?? undefined} size={72} archetype={myArchetype} />
         <div>
