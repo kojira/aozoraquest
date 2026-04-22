@@ -30,6 +30,7 @@ import {
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
+import { getCognitiveOnnxClassifier } from './cognitive-onnx';
 import { getEmbedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
 
@@ -107,16 +108,23 @@ export async function processSelfPost(
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
   if (trimmed.length === 0) return empty;
 
-  // 1) 埋め込みは 1 回
+  // 1) 埋め込みは action 用に 1 回 (cognitive は fine-tune 済 ONNX 直接推論)
   const embedder = getEmbedder();
   await embedder.init().catch(() => { /* 既に init 済みなら no-op */ });
+  const cog = getCognitiveOnnxClassifier();
+  await cog.init().catch(() => { /* 既に init 済みなら no-op */ });
   const vec = await embedder.embed(trimmed);
 
-  // 2) 行動 & 認知を並列 (どちらもベクトルから同期的に計算)
-  const [actResult, postCognitive] = await Promise.all([
+  // 2) 行動 (vec) & 認知 (text) を並列
+  const [actResult, onnxCognitive] = await Promise.all([
     classifyFromVec(vec),
-    classifyCognitiveFromVec(vec, embedder),
+    cog.classifyPost(trimmed).catch((e) => {
+      console.warn('[cognitive] ONNX classify failed, falling back to prototype', e);
+      return null;
+    }),
   ]);
+  // ONNX が使えなかった場合は従来の prototype embedding にフォールバック
+  const postCognitive = onnxCognitive ?? await classifyCognitiveFromVec(vec, embedder);
 
   const action = actResult.action;
   const actionType = action ? (action as ActionType) : null;
