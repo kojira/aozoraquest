@@ -159,7 +159,7 @@ export function resonanceLabel(score: number): string {
   if (score >= 0.70) return '最高の相棒';
   if (score >= 0.55) return 'よき仲間';
   if (score >= 0.40) return '道連れの縁';
-  if (score >= 0.25) return '違いが面白い';
+  if (score >= 0.25) return '異色の縁';
   return '異なる道を歩む者';
 }
 

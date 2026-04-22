@@ -90,7 +90,7 @@ describe('resonanceLabel', () => {
     [0.75, '最高の相棒'],
     [0.60, 'よき仲間'],
     [0.45, '道連れの縁'],
-    [0.30, '違いが面白い'],
+    [0.30, '異色の縁'],
     [0.10, '異なる道を歩む者'],
   ])('score %f → label %s', (score, label) => {
     expect(resonanceLabel(score)).toBe(label);
