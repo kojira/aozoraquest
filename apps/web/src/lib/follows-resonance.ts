@@ -165,7 +165,9 @@ export async function computeFollowResonanceRanking(
 ): Promise<ResonanceRankResult> {
   // ── Phase 1: follow 一覧 ───────────────────────────────
   onProgress?.({ phase: 'follows', done: 0, total: 1 });
-  const follows = await fetchFollows(agent, myDid);
+  const allFollows = await fetchFollows(agent, myDid);
+  // 稀に getFollows が自分自身を含むケースがあるので防御的に除外
+  const follows = allFollows.filter((f) => f.did !== myDid);
   onProgress?.({ phase: 'follows', done: 1, total: 1 });
   if (cancelled()) return { ranking: [], stats: emptyStats(follows.length) };
 
@@ -239,7 +241,8 @@ export async function computeFollowResonanceRanking(
 
   interface DiagnoseJob {
     cand: Candidate;
-    postsPromise: Promise<DiagnosisPost[] | null>;
+    /** 成功: DiagnosisPost[] / 失敗: throw (= 次回再挑戦、IDB に null は書かない)。 */
+    postsPromise: Promise<DiagnosisPost[]>;
   }
   const onnxJobs: DiagnoseJob[] = [];
 
@@ -256,7 +259,7 @@ export async function computeFollowResonanceRanking(
       }
       continue;
     }
-    onnxJobs.push({ cand, postsPromise: Promise.resolve(null) as Promise<DiagnosisPost[] | null> });
+    onnxJobs.push({ cand, postsPromise: Promise.resolve([] as DiagnosisPost[]) });
   }
   ranking.sort((a, b) => b.score - a.score);
   onProgress?.({ phase: 'partial', ranking: [...ranking], stats: buildStats() });
@@ -288,13 +291,12 @@ export async function computeFollowResonanceRanking(
       try {
         // 公開 AppView を使う (認証済 PDS だと並列 DPoP で CORS preflight が落ちる)
         return await fetchUserPostsForDiagnosis(pub, job.cand.profile.did, LIGHT_POST_LIMIT);
-      } catch (e) {
-        console.warn('[friends] fetch posts failed for', job.cand.profile.handle, e);
-        return null;
       } finally {
         releaseFetch();
       }
     })();
+    // unhandled rejection を抑えるための no-op handler (実際の処理は await 側で)
+    job.postsPromise.catch(() => {});
   };
 
   // 先頭 PREFETCH_CONCURRENCY 件の fetch を即発火
@@ -317,8 +319,19 @@ export async function computeFollowResonanceRanking(
       fetchCursor++;
     }
 
-    const posts = await job.postsPromise;
-    if (!posts || posts.length === 0) {
+    let posts: DiagnosisPost[];
+    try {
+      posts = await job.postsPromise;
+    } catch (e) {
+      // fetch 失敗 (ネットワーク、CORS、一時的 429 など) → IDB には書かず次回リトライさせる
+      console.warn('[friends] fetch posts failed (will retry next visit)', cand.profile.handle, e);
+      ranking.sort((a, b) => b.score - a.score);
+      onProgress?.({ phase: 'partial', ranking: [...ranking], stats: buildStats() });
+      continue;
+    }
+
+    if (posts.length === 0) {
+      // 投稿 0 件は本当に活動がないケース → null キャッシュして OK
       await saveCachedAnalysis(cand.profile.did, null);
       skippedInsufficient++;
       ranking.sort((a, b) => b.score - a.score);
@@ -329,6 +342,7 @@ export async function computeFollowResonanceRanking(
     try {
       const result = await diagnoseGivenPosts(posts);
       if ('insufficient' in result) {
+        // posts はあるが文字数足りない等で DIAGNOSIS_MIN_POST_COUNT 未満 → null キャッシュ
         await saveCachedAnalysis(cand.profile.did, null);
         skippedInsufficient++;
       } else {
@@ -337,8 +351,8 @@ export async function computeFollowResonanceRanking(
         if (entry) { ranking.push(entry); freshlyDiagnosed++; } else { skippedInsufficient++; }
       }
     } catch (e) {
-      console.warn('[friends] diagnose failed for', cand.profile.handle, e);
-      skippedInsufficient++;
+      console.warn('[friends] diagnose failed (will retry next visit)', cand.profile.handle, e);
+      // 推論失敗は IDB に書かない (次回リトライ)
     }
     ranking.sort((a, b) => b.score - a.score);
     onProgress?.({ phase: 'partial', ranking: [...ranking], stats: buildStats() });
