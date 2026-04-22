@@ -187,37 +187,32 @@ export function MyProfile() {
         </div>
       )}
 
-      {state.status === 'running' && (
+      {state.status === 'running' && (() => {
+        const pct =
+          typeof state.done === 'number' && typeof state.total === 'number' && state.total > 0
+            ? Math.min(100, Math.max(0, (state.done / state.total) * 100))
+            : null;
+        return (
         <div style={{ marginTop: '1em' }}>
           <p>
             <strong>{phaseLabel(state.phase)}</strong>
-            {state.done !== undefined && state.total !== undefined && ` (${state.done}/${state.total})`}
+            {state.done !== undefined && state.total !== undefined && ` (${state.done}/${state.total}${pct != null ? ` = ${pct.toFixed(1)}%` : ''})`}
           </p>
           <div
             style={{
               position: 'relative',
               width: '100%',
-              height: '8px',
+              height: '10px',
               background: 'var(--color-border)',
-              borderRadius: 4,
+              borderRadius: 5,
               overflow: 'hidden',
             }}
           >
             <div
               style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: (() => {
-                  if (typeof state.done === 'number' && typeof state.total === 'number' && state.total > 0) {
-                    const pct = Math.min(100, Math.max(0, (state.done / state.total) * 100));
-                    return `${pct}%`;
-                  }
-                  return '20%';
-                })(),
+                width: `${pct ?? 20}%`,
                 height: '100%',
                 background: 'var(--color-primary)',
-                transition: 'width 0.08s linear',
               }}
             />
           </div>
@@ -225,7 +220,8 @@ export function MyProfile() {
             初回はアプリが使うファイルを読み込みます。回線状況により数分かかることがあります。
           </p>
         </div>
-      )}
+        );
+      })()}
 
       {state.status === 'insufficient' && (
         <div style={{ marginTop: '1em' }}>
