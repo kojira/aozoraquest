@@ -13,10 +13,7 @@
 import type { DiagnosisResult } from '@aozoraquest/core';
 
 const DB_NAME = 'aozoraquest';
-// v2: v1 はネットワーク失敗時にも null キャッシュしてしまうバグがあったので、
-// 既存エントリを一掃してやり直させる。以降 null を保存するのは「取得は成功
-// したが投稿数が足りない」ケースのみ。
-const DB_VERSION = 2;
+const DB_VERSION = 1;
 const STORE = 'follow-analysis';
 export const IDB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -32,15 +29,10 @@ function openDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (event) => {
+    req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'did' });
-      }
-      // v1 → v2: バグで汚染された可能性があるので全エントリを破棄
-      if (event.oldVersion >= 1 && event.oldVersion < 2 && db.objectStoreNames.contains(STORE)) {
-        const tx = req.transaction!;
-        tx.objectStore(STORE).clear();
       }
     };
     req.onsuccess = () => resolve(req.result);
