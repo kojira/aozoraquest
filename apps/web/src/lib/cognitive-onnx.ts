@@ -67,13 +67,23 @@ export class CognitiveOnnxClassifier {
     }
   }
 
-  /** 単一 text の 9-class softmax 確率 (LABELS_9 順) を返す。 */
-  async classifyRaw(text: string): Promise<number[]> {
+  /**
+   * 単一 text の 9-class softmax 確率 (LABELS_9 順) を返す。
+   * timeoutMs を過ぎたら reject して pending を削除 (ハング対策)。
+   */
+  async classifyRaw(text: string, timeoutMs = 15000): Promise<number[]> {
     if (!this.worker) await this.init();
     await this.ready;
     const id = String(this.nextId++);
     return new Promise<number[]>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const to = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`cognitive-onnx timeout ${timeoutMs}ms "${text.slice(0, 30)}"`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (v) => { clearTimeout(to); resolve(v); },
+        reject: (e) => { clearTimeout(to); reject(e); },
+      });
       this.worker!.postMessage({ type: 'classify', id, text });
     });
   }
@@ -92,7 +102,17 @@ export class CognitiveOnnxClassifier {
     if (!hasJapanese(pre)) return null;
 
     const pieces = splitLongPost(pre, splitThreshold);
-    const perPiece = await Promise.all(pieces.map((p) => this.classifyRaw(p)));
+    // piece は直列で処理。並列にするとメモリ圧が上がり、特定 piece が
+    // ハングしたとき他の piece も道連れになって進捗が止まるため。
+    const perPiece: number[][] = [];
+    for (const p of pieces) {
+      try {
+        perPiece.push(await this.classifyRaw(p));
+      } catch (e) {
+        console.warn('[cognitive] piece classify failed, skipping piece', e);
+      }
+    }
+    if (perPiece.length === 0) return null;
 
     // 各次元を piece 数で平均 (WHOLE 含む全 piece を等重み)
     const nDim = LABELS_9.length;
