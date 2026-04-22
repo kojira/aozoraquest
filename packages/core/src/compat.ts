@@ -113,18 +113,43 @@ export interface ResonanceBreakdown {
 export function resonanceBreakdown(detail: ResonanceDetail): ResonanceBreakdown {
   const w = COMPATIBILITY_WEIGHTS;
   const baseNorm = detail.pairRelation ? detail.pairRelation.baseScore / PAIR_BASE_MAX : 0;
-  const pairPts = detail.pairRelation ? Math.round(baseNorm * w.pairBase * 100) : 0;
+  // 生の contribution (float) と max
+  const rawPair = detail.pairRelation ? baseNorm * w.pairBase * 100 : 0;
+  const rawSim = detail.similarity * w.statSimilarity * 100;
+  const rawComp = detail.complementarity * w.statComplement * 100;
+  // 各 max
   const pairMax = detail.pairRelation ? Math.round(w.pairBase * 100) : 0;
-  const simPts = Math.round(detail.similarity * w.statSimilarity * 100);
   const simMax = Math.round(w.statSimilarity * 100);
-  const compPts = Math.round(detail.complementarity * w.statComplement * 100);
   const compMax = Math.round(w.statComplement * 100);
+  // 合計は detail.score (= 0-1 float) * 100 を丸めた値と一致させたい。
+  // これを target として、大きい余り法 (Largest Remainder) で pts を割り振る。
+  const targetTotal = Math.round(Math.min(1, Math.max(0, detail.score)) * 100);
+  const pts = distributeWithTarget([rawPair, rawSim, rawComp], targetTotal);
   return {
-    pair: { pts: pairPts, max: pairMax },
-    similarity: { pts: simPts, max: simMax },
-    complementarity: { pts: compPts, max: compMax },
-    totalPts: pairPts + simPts + compPts,
+    pair: { pts: pts[0]!, max: pairMax },
+    similarity: { pts: pts[1]!, max: simMax },
+    complementarity: { pts: pts[2]!, max: compMax },
+    totalPts: targetTotal,
   };
+}
+
+/**
+ * 各 raw 値に対して Math.floor を取り、不足分を小数部が大きい順に +1 する
+ * (Largest Remainder / Hamilton method)。合計が target に一致する整数列を返す。
+ */
+function distributeWithTarget(raws: readonly number[], target: number): number[] {
+  const floors = raws.map((r) => Math.max(0, Math.floor(r)));
+  const sumFloor = floors.reduce((s, f) => s + f, 0);
+  const deficit = Math.max(0, target - sumFloor);
+  const remainders = raws
+    .map((r, i) => ({ i, frac: Math.max(0, r) - Math.max(0, Math.floor(r)) }))
+    .sort((a, b) => b.frac - a.frac);
+  const out = [...floors];
+  for (let k = 0; k < deficit; k++) {
+    const j = remainders[k % remainders.length]!.i;
+    out[j]!++;
+  }
+  return out;
 }
 
 /** 共鳴度の言語ラベル (05-compatibility.md §共鳴度の意味付け) */
