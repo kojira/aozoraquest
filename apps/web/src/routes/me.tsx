@@ -204,7 +204,7 @@ export function MyProfile() {
             />
           </div>
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-            初回はアプリが使うファイル (約 37MB) を読み込みます。1 分ほどかかります。
+            初回はアプリが使うファイルを読み込みます。回線状況により数分かかることがあります。
           </p>
         </div>
       )}
