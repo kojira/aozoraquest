@@ -32,20 +32,34 @@ async function classifyWithOnnx(
     console.warn('[diagnosis] ONNX classifier init failed, falling back to prototype', e);
     return null;
   }
+  // 全 post の piece を flatten してバッチ推論する (classifier.classifyPosts の中で
+  // chunked sess.run を回す)。単純ループより per-call オーバヘッドが削れて数倍速い。
   onProgress('embedding-posts', 0, posts.length);
+  let scoresPerPost: Array<CognitiveScores | null>;
+  try {
+    scoresPerPost = await cog.classifyPosts(
+      posts.map((p) => p.text),
+      120,
+      (done, total) => {
+        // piece 単位の進捗を post 単位に粗く変換して UI へ通知する
+        const frac = total > 0 ? done / total : 1;
+        onProgress('embedding-posts', Math.min(posts.length, Math.round(frac * posts.length)), posts.length);
+      },
+    );
+  } catch (e) {
+    console.warn('[diagnosis] batch classify failed, aborting ONNX path', e);
+    return null;
+  }
+  onProgress('embedding-posts', posts.length, posts.length);
+
   const perPost: CognitiveScores[] = [];
   const timestamps: string[] = [];
   for (let i = 0; i < posts.length; i++) {
-    try {
-      const s = await cog.classifyPost(posts[i]!.text);
-      if (s) {
-        perPost.push(s);
-        timestamps.push(posts[i]!.at);
-      }
-    } catch (e) {
-      console.warn('[diagnosis] classify failed for post, skip', e);
+    const s = scoresPerPost[i];
+    if (s) {
+      perPost.push(s);
+      timestamps.push(posts[i]!.at);
     }
-    onProgress('embedding-posts', i + 1, posts.length);
   }
   return { perPost, timestamps };
 }

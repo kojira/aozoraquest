@@ -8,8 +8,9 @@
  * WebGPU int8 (q8) は ORT-web 1.24.3 でも計算破綻するので使わない。
  *
  * メッセージ:
- *   { type: 'init' }                  → 準備完了で { type: 'ready', backend, dtype }
- *   { type: 'classify', id, text }    → 結果 { type: 'result', id, scores: number[9] }
+ *   { type: 'init' }                          → { type: 'ready', backend, dtype }
+ *   { type: 'classify', id, text }            → { type: 'result', id, scores: number[9] }
+ *   { type: 'classify-batch', id, texts[] }   → { type: 'result-batch', id, scoresList: number[][] }
  */
 import { pipeline, env } from '@huggingface/transformers';
 
@@ -33,7 +34,8 @@ type Dtype = 'q4' | 'q8';
 
 interface InitMessage { type: 'init' }
 interface ClassifyMessage { type: 'classify'; id: string; text: string }
-type IncomingMessage = InitMessage | ClassifyMessage;
+interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
+type IncomingMessage = InitMessage | ClassifyMessage | ClassifyBatchMessage;
 
 const MODEL_NAME = 'cognitive-onnx';
 const LABELS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
@@ -145,6 +147,27 @@ function pipelineToScores(out: Array<{ label: string; score: number }>): number[
   return scores;
 }
 
+/**
+ * pipeline にテキスト配列を渡したときの戻り値を正規化する。
+ * transformers.js のバージョンによって:
+ *  - Array<Array<{label,score}>> (期待どおり、text ごとに label リスト)
+ *  - Array<{label,score}> (flat: top_k=1 + 単一入力の慣習が混じった出力)
+ * のどちらもあり得るので両対応。
+ */
+function normalizeBatchOutput(raw: unknown, batchSize: number): number[][] {
+  if (!Array.isArray(raw)) return Array.from({ length: batchSize }, () => new Array(LABELS.length).fill(0));
+  // nested: 最初の要素が配列
+  if (Array.isArray(raw[0])) {
+    return (raw as Array<Array<{ label: string; score: number }>>).map(pipelineToScores);
+  }
+  // flat: 単一 input の結果を 1 要素 list として扱うケース
+  if (batchSize === 1) {
+    return [pipelineToScores(raw as Array<{ label: string; score: number }>)];
+  }
+  // 想定外: 空で埋める
+  return Array.from({ length: batchSize }, () => new Array(LABELS.length).fill(0));
+}
+
 self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) => {
   const msg = event.data;
   try {
@@ -160,6 +183,18 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
       const out = await classifier(msg.text, { top_k: LABELS.length });
       const scores = pipelineToScores(out as any);
       (self as unknown as Worker).postMessage({ type: 'result', id: msg.id, scores });
+    }
+    if (msg.type === 'classify-batch') {
+      if (!classifier) await ensureClassifier();
+      if (msg.texts.length === 0) {
+        (self as unknown as Worker).postMessage({ type: 'result-batch', id: msg.id, scoresList: [] });
+        return;
+      }
+      // transformers.js は配列入力を受けて 1 回の sess.run でバッチ推論する。
+      // padding は text-classification pipeline 内部で longest に揃えられる。
+      const out = await classifier(msg.texts, { top_k: LABELS.length });
+      const scoresList = normalizeBatchOutput(out, msg.texts.length);
+      (self as unknown as Worker).postMessage({ type: 'result-batch', id: msg.id, scoresList });
     }
   } catch (e) {
     (self as unknown as Worker).postMessage({
