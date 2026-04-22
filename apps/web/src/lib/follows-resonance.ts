@@ -12,10 +12,10 @@
 import type { Agent } from '@atproto/api';
 import type { ArchetypePairRelation, Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { DIAGNOSIS_MIN_POST_COUNT, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
-import { fetchFollows, fetchLatestPostAt, type FollowProfile } from './atproto';
+import { fetchFollows, fetchLatestPostAt, fetchUserPostsForDiagnosis, type FollowProfile, type DiagnosisPost } from './atproto';
 import { getAnalysis } from './analysis-cache';
 import { loadCachedAnalysis, saveCachedAnalysis } from './analysis-idb';
-import { runDiagnosisForOther } from './diagnosis-flow';
+import { diagnoseGivenPosts } from './diagnosis-flow';
 
 /** 直近 7 日 (相性ランキングの「活発」定義)。 */
 export const RECENCY_DAYS = 7;
@@ -23,6 +23,10 @@ const RECENCY_MS = RECENCY_DAYS * 24 * 60 * 60 * 1000;
 
 /** 同時並列で走らせる API 呼び出し数 (follow / recency / analysis で使う)。 */
 const CONCURRENCY = 10;
+
+/** 裏診断時の post 取得並列度。ONNX は singleton で直列だが、次の N 人分の
+ * 投稿を先取りしておいて推論待ち時間に被せる (pipeline)。 */
+const PREFETCH_CONCURRENCY = 5;
 
 /** 裏診断の軽量モード: fetch する投稿数。相性ランキングでは archetype/stats の
  * 大まかな傾向が分かれば十分なので 100 posts で打ち切る。これで API 取得も推論も
@@ -212,13 +216,20 @@ export async function computeFollowResonanceRanking(
   if (cancelled()) return { ranking, stats: buildStats() };
 
   // ── Phase 4: 裏診断 (IDB → 無ければ ONNX 軽量診断) ────
-  // ONNX worker は singleton なので直列実行。IDB hit は並列で先に処理できる。
+  // まず IDB hit を一斉に処理 (並列 OK、ONNX は使わない)。
+  // 残りは fetch pipeline: PREFETCH_CONCURRENCY 並列で posts を先取り、
+  // 完了したものから ONNX 推論 (singleton なので直列消費)。
+  // これで fetch 待ち時間を ONNX 実行に被せられる。
+
+  interface DiagnoseJob {
+    cand: Candidate;
+    postsPromise: Promise<DiagnosisPost[] | null>;
+  }
+  const onnxJobs: DiagnoseJob[] = [];
+
   for (let i = 0; i < unanalyzed.length; i++) {
     if (cancelled()) break;
     const cand = unanalyzed[i]!;
-    onProgress?.({ phase: 'diagnosing', done: i, total: unanalyzed.length, currentHandle: cand.profile.handle });
-
-    // 1) IDB キャッシュ確認
     const cached = await loadCachedAnalysis(cand.profile.did);
     if (cached !== undefined) {
       if (cached === null) {
@@ -227,14 +238,79 @@ export async function computeFollowResonanceRanking(
         const entry = entryFromAnalysis(myAnalysis, cand, cached, 'idb');
         if (entry) { ranking.push(entry); idbCached++; } else { skippedInsufficient++; }
       }
+      continue;
+    }
+    onnxJobs.push({ cand, postsPromise: Promise.resolve(null) as Promise<DiagnosisPost[] | null> });
+  }
+  ranking.sort((a, b) => b.score - a.score);
+  onProgress?.({ phase: 'partial', ranking: [...ranking], stats: buildStats() });
+
+  if (cancelled() || onnxJobs.length === 0) {
+    onProgress?.({ phase: 'diagnosing', done: 0, total: 0 });
+    return { ranking, stats: buildStats() };
+  }
+
+  // fetch pipeline: 並列 prefetch + 直列 ONNX 消費
+  // postsPromise を semaphore 付きで発火させる (開始時点で最大 PREFETCH_CONCURRENCY 本)
+  let fetchActive = 0;
+  let fetchCursor = 0;
+  const fetchPool: Array<() => void> = [];
+
+  const acquireFetch = (): Promise<void> => {
+    if (fetchActive < PREFETCH_CONCURRENCY) { fetchActive++; return Promise.resolve(); }
+    return new Promise((resolve) => { fetchPool.push(() => { fetchActive++; resolve(); }); });
+  };
+  const releaseFetch = () => {
+    fetchActive--;
+    const next = fetchPool.shift();
+    if (next) next();
+  };
+
+  const startFetch = (job: DiagnoseJob) => {
+    job.postsPromise = (async () => {
+      await acquireFetch();
+      try {
+        return await fetchUserPostsForDiagnosis(agent, job.cand.profile.did, LIGHT_POST_LIMIT);
+      } catch (e) {
+        console.warn('[friends] fetch posts failed for', job.cand.profile.handle, e);
+        return null;
+      } finally {
+        releaseFetch();
+      }
+    })();
+  };
+
+  // 先頭 PREFETCH_CONCURRENCY 件の fetch を即発火
+  const primeCount = Math.min(PREFETCH_CONCURRENCY, onnxJobs.length);
+  for (let k = 0; k < primeCount; k++) { startFetch(onnxJobs[k]!); fetchCursor++; }
+
+  // ONNX は順番に消費。1 件終わるたびに次の fetch を発火
+  for (let i = 0; i < onnxJobs.length; i++) {
+    if (cancelled()) break;
+    const job = onnxJobs[i]!;
+    const { cand } = job;
+
+    // fetch が未発火なら発火 (起きにくいが安全弁)
+    if (!job.postsPromise) startFetch(job);
+    onProgress?.({ phase: 'diagnosing', done: i, total: onnxJobs.length, currentHandle: cand.profile.handle });
+
+    // 次々の fetch を先取りしておく
+    while (fetchCursor < onnxJobs.length && fetchActive < PREFETCH_CONCURRENCY) {
+      startFetch(onnxJobs[fetchCursor]!);
+      fetchCursor++;
+    }
+
+    const posts = await job.postsPromise;
+    if (!posts || posts.length === 0) {
+      await saveCachedAnalysis(cand.profile.did, null);
+      skippedInsufficient++;
       ranking.sort((a, b) => b.score - a.score);
       onProgress?.({ phase: 'partial', ranking: [...ranking], stats: buildStats() });
       continue;
     }
 
-    // 2) ONNX で軽量診断
     try {
-      const result = await runDiagnosisForOther(agent, cand.profile.did, () => {}, { postLimit: LIGHT_POST_LIMIT });
+      const result = await diagnoseGivenPosts(posts);
       if ('insufficient' in result) {
         await saveCachedAnalysis(cand.profile.did, null);
         skippedInsufficient++;
@@ -245,14 +321,13 @@ export async function computeFollowResonanceRanking(
       }
     } catch (e) {
       console.warn('[friends] diagnose failed for', cand.profile.handle, e);
-      // 失敗は IDB に書かない (次回リトライ可)
       skippedInsufficient++;
     }
     ranking.sort((a, b) => b.score - a.score);
     onProgress?.({ phase: 'partial', ranking: [...ranking], stats: buildStats() });
   }
 
-  onProgress?.({ phase: 'diagnosing', done: unanalyzed.length, total: unanalyzed.length });
+  onProgress?.({ phase: 'diagnosing', done: onnxJobs.length, total: onnxJobs.length });
   return { ranking, stats: buildStats() };
 }
 

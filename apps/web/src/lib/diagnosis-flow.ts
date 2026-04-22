@@ -161,10 +161,21 @@ export async function runDiagnosisForOther(
   const postLimit = options.postLimit ?? DIAGNOSIS_POST_LIMIT;
   onProgress('fetching-posts');
   const posts = await fetchUserPostsForDiagnosis(agent, actor, postLimit);
+  return await diagnoseGivenPosts(posts, onProgress);
+}
+
+/**
+ * 既に取得済の投稿配列を受けて診断する (ネットワーク I/O と推論の分離版)。
+ * 相性ランキングの裏診断で、次ユーザー分の posts を並列 prefetch しつつ
+ * ONNX は 1 人ずつ直列消費する pipeline を作るために公開している。
+ */
+export async function diagnoseGivenPosts(
+  posts: { text: string; at: string }[],
+  onProgress: ProgressCallback = () => {},
+): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
   if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount: posts.length };
   }
-
   onProgress('loading-prototypes');
   const onnx = await classifyWithOnnx(posts, onProgress);
 
