@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>Ruri ONNX ブラウザ推論 bench</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+         margin: 20px; max-width: 1000px; color: #222; }
+  h1 { font-size: 20px; }
+  button { padding: 8px 14px; margin-right: 8px; font-size: 14px; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: 13px; min-width: 700px; }
+  th, td { border: 1px solid #bbb; padding: 5px 10px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  td.ok { background: #e0ffe4; }
+  td.warn { background: #fff5cc; }
+  td.fail { background: #ffd7d7; }
+  pre { background: #f4f4f4; padding: 10px; overflow: auto; font-size: 12px; max-height: 280px; }
+  .opt { margin: 6px 0; }
+  label { margin-right: 10px; }
+  #status { color: #555; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; }
+  #diag { background: #f0f7ff; padding: 8px 12px; border: 1px solid #cde; margin: 8px 0; font-size: 12px; font-family: ui-monospace, monospace; }
+  #diag .ok { color: #0a6; }
+  #diag .bad { color: #c33; }
+  #progress { display: inline-block; margin-left: 10px; color: #555; font-family: ui-monospace, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Ruri ONNX ブラウザ推論 bench</h1>
+<p>
+  ModernBERT-ja 130m / 9-class cognitive classifier を ONNX Runtime Web で計測します。
+  事前 tokenize 済 input_ids を使うので、pure inference latency を測ります。
+</p>
+
+<div id="diag">診断情報を取得中...</div>
+
+<div class="opt">
+  <strong>ORT version:</strong>
+  <select id="ortver">
+    <option value="1.24.3" selected>1.24.3 (stable, 推奨)</option>
+    <option value="1.25.0-dev.20260327-722743c0e2">1.25.0-dev.20260327 (nightly)</option>
+    <option value="1.22.0">1.22.0</option>
+    <option value="1.21.0">1.21.0 (旧、WebGPU 不具合あり)</option>
+  </select>
+</div>
+<div class="opt">
+  <strong>Backend:</strong>
+  <label><input type="radio" name="ep" value="wasm" checked /> WASM (CPU)</label>
+  <label><input type="radio" name="ep" value="webgpu" /> WebGPU</label>
+</div>
+<div class="opt">
+  <strong>Threads:</strong>
+  <input type="number" id="threads" min="1" max="16" value="4" style="width:60px" />
+  (WASM のみ)
+</div>
+<div class="opt">
+  <strong>Models:</strong>
+  <label><input type="checkbox" class="mc" value="int8" checked /> int8 (127 MB)</label>
+  <label><input type="checkbox" class="mc" value="int4" checked /> int4 (248 MB)</label>
+  <label><input type="checkbox" class="mc" value="fp32" /> fp32 (506 MB ※重い)</label>
+</div>
+<div class="opt">
+  <strong>Warmup runs:</strong> <input type="number" id="warmup" value="3" style="width:50px" />
+  <strong>Measure runs:</strong> <input type="number" id="measure" value="30" style="width:50px" />
+</div>
+
+<p>
+  <button id="run">Benchmark 実行</button>
+  <button id="clear">クリア</button>
+  <span id="progress"></span>
+</p>
+
+<div id="status"></div>
+
+<table id="result" hidden>
+  <thead>
+    <tr>
+      <th>model</th><th>size</th><th>load ms</th>
+      <th>warmup ms/s</th><th>median ms/s</th><th>mean ms/s</th>
+      <th>p95 ms/s</th><th>top-1 acc</th><th>agree fp32</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h3>ログ</h3>
+<pre id="log"></pre>
+
+<script type="module">
+// ort は動的 import で版切替可能にする
+let ort = null;
+let ortVersion = null;
+
+async function loadOrt(ver) {
+  if (ortVersion === ver && ort) return ort;
+  const base = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ver}/dist/`;
+  ort = await import(base + "ort.min.mjs");
+  ort.env.wasm.wasmPaths = base; // .wasm/.jsep.wasm を同版から取得
+  ortVersion = ver;
+  return ort;
+}
+
+const $ = (s) => document.querySelector(s);
+const logEl = $("#log"), statusEl = $("#status"), resEl = $("#result"), diagEl = $("#diag"), progEl = $("#progress");
+const log = (m) => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
+const setStatus = (m) => { statusEl.textContent = m; };
+const setProgress = (m) => { progEl.textContent = m; };
+const fmt = (x, d=1) => x == null ? "-" : x.toFixed(d);
+const yieldToUI = () => new Promise((r) => setTimeout(r, 0));
+
+// 診断情報: cross-origin isolation / threads / WebGPU 有無
+async function diagnose() {
+  const iso = self.crossOriginIsolated === true;
+  const sab = typeof SharedArrayBuffer !== "undefined";
+  const cores = navigator.hardwareConcurrency ?? "?";
+  let webgpu = false;
+  try {
+    if (navigator.gpu) {
+      const adapter = await navigator.gpu.requestAdapter();
+      webgpu = !!adapter;
+    }
+  } catch { /* ignore */ }
+  const tag = (b) => b ? `<span class=ok>OK</span>` : `<span class=bad>NO</span>`;
+  diagEl.innerHTML =
+    `crossOriginIsolated: ${tag(iso)}  |  ` +
+    `SharedArrayBuffer: ${tag(sab)}  |  ` +
+    `hardwareConcurrency: ${cores}  |  ` +
+    `WebGPU: ${tag(webgpu)}<br>` +
+    (!iso ? `<span class=bad>※ COOP/COEP が有効でないため WASM マルチスレッドは使えず、単一スレッドで動きます。scripts/serve-bench.py で起動し直してください。</span>` : `<span class=ok>WASM マルチスレッド利用可</span>`);
+  return { iso, sab, cores, webgpu };
+}
+
+function percentile(arr, p) {
+  const sorted = [...arr].sort((a,b) => a-b);
+  const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * p));
+  return sorted[idx];
+}
+function median(arr) { return percentile(arr, 0.5); }
+function mean(arr) { return arr.reduce((a,b)=>a+b, 0) / arr.length; }
+
+async function loadSamples() {
+  const r = await fetch("samples.json");
+  if (!r.ok) throw new Error("samples.json not found. run prepare-browser-bench.py first");
+  return await r.json();
+}
+
+function argmax(arr) {
+  let best = 0, v = arr[0];
+  for (let i = 1; i < arr.length; i++) if (arr[i] > v) { v = arr[i]; best = i; }
+  return best;
+}
+
+async function runVariant(tag, path, samples, ep, threads, warmupN, measureN) {
+  log(`[${tag}] loading from ${path} ...`);
+  const opts = {
+    executionProviders: [ep],
+    graphOptimizationLevel: "all",
+    logSeverityLevel: 3,
+  };
+  if (ep === "wasm") ort.env.wasm.numThreads = Number(threads) || 1;
+  const t0 = performance.now();
+  const sess = await ort.InferenceSession.create(path, opts);
+  const loadMs = performance.now() - t0;
+  log(`[${tag}] loaded in ${fmt(loadMs)} ms`);
+
+  const [inputIdsName, attnName] = sess.inputNames.slice(0, 2).sort().reverse();
+  // ModernBERT: "input_ids", "attention_mask"
+  const idsKey = sess.inputNames.includes("input_ids") ? "input_ids" : sess.inputNames[0];
+  const attnKey = sess.inputNames.includes("attention_mask") ? "attention_mask" : sess.inputNames[1];
+  const logitsName = sess.outputNames[0];
+  const seqLen = samples.samples[0].input_ids.length;
+
+  // BigInt64Array で int64 tensor を作る
+  const idsArr = new BigInt64Array(seqLen);
+  const attnArr = new BigInt64Array(seqLen);
+  const shape = [1, seqLen];
+
+  const fillFrom = (s) => {
+    for (let i = 0; i < seqLen; i++) idsArr[i] = BigInt(s.input_ids[i]);
+    for (let i = 0; i < seqLen; i++) attnArr[i] = BigInt(s.attention_mask[i]);
+  };
+
+  // warmup (ANR 回避のため毎回 yield)
+  const warmupTimes = [];
+  for (let w = 0; w < warmupN; w++) {
+    setProgress(`[${tag}] warmup ${w + 1}/${warmupN}`);
+    await yieldToUI();
+    fillFrom(samples.samples[w % samples.samples.length]);
+    const feeds = {
+      [idsKey]: new ort.Tensor("int64", idsArr, shape),
+      [attnKey]: new ort.Tensor("int64", attnArr, shape),
+    };
+    const wt0 = performance.now();
+    await sess.run(feeds);
+    warmupTimes.push(performance.now() - wt0);
+  }
+
+  // measure (毎 iteration yield で ANR 回避)
+  const times = [];
+  const preds = [];
+  const golds = [];
+  const N = Math.min(measureN, samples.samples.length);
+  for (let i = 0; i < N; i++) {
+    if (i % 3 === 0) { setProgress(`[${tag}] measure ${i + 1}/${N}`); await yieldToUI(); }
+    const s = samples.samples[i];
+    fillFrom(s);
+    const feeds = {
+      [idsKey]: new ort.Tensor("int64", idsArr, shape),
+      [attnKey]: new ort.Tensor("int64", attnArr, shape),
+    };
+    const t0 = performance.now();
+    const out = await sess.run(feeds);
+    times.push(performance.now() - t0);
+    const logits = out[logitsName].data;
+    preds.push(argmax(Array.from(logits)));
+    golds.push(s.label);
+  }
+  setProgress("");
+
+  await sess.release();
+  return {
+    tag, loadMs,
+    warmupMedian: median(warmupTimes),
+    median: median(times),
+    mean: mean(times),
+    p95: percentile(times, 0.95),
+    preds, golds, times,
+  };
+}
+
+$("#run").addEventListener("click", async () => {
+  $("#run").disabled = true;
+  resEl.hidden = true;
+  logEl.textContent = "";
+  setStatus("loading samples ...");
+  let data;
+  try { data = await loadSamples(); }
+  catch (e) { setStatus("ERROR: " + e.message); $("#run").disabled = false; return; }
+  const meta = data.meta;
+  log(`samples: ${meta.n_samples}  seq_len: ${meta.max_len}  labels: ${meta.labels.join(",")}`);
+
+  const ep = document.querySelector("input[name=ep]:checked").value;
+  const threads = $("#threads").value;
+  const warmupN = Number($("#warmup").value) || 1;
+  const measureN = Number($("#measure").value) || 10;
+  const tags = Array.from(document.querySelectorAll(".mc:checked")).map((c) => c.value);
+  const ver = $("#ortver").value;
+
+  setStatus(`loading onnxruntime-web ${ver} ...`);
+  try { await loadOrt(ver); } catch (e) {
+    setStatus(`ORT load failed: ${e.message}`); $("#run").disabled = false; return;
+  }
+  log(`onnxruntime-web version: ${ortVersion}`);
+  log(`backend=${ep} threads=${threads} warmup=${warmupN} measure=${measureN}`);
+  log(`ua=${navigator.userAgent}`);
+
+  const results = [];
+  for (const tag of tags) {
+    const path = meta.model_paths[tag];
+    setStatus(`running ${tag} ...`);
+    try {
+      const r = await runVariant(tag, path, data, ep, threads, warmupN, measureN);
+      let correct = 0;
+      for (let i = 0; i < r.preds.length; i++) if (r.preds[i] === r.golds[i]) correct++;
+      r.acc = correct / r.preds.length;
+      results.push(r);
+      log(`[${tag}] median=${fmt(r.median)}ms mean=${fmt(r.mean)}ms p95=${fmt(r.p95)}ms acc=${fmt(r.acc*100,2)}%`);
+    } catch (e) {
+      log(`[${tag}] FAILED: ${e.message}`);
+      results.push({ tag, failed: e.message });
+    }
+  }
+
+  // agreement vs fp32 (if fp32 ran)
+  const fp32r = results.find((r) => r.tag === "fp32" && !r.failed);
+  for (const r of results) {
+    if (r.failed || !fp32r) { r.agree = null; continue; }
+    if (r.tag === "fp32") { r.agree = 1.0; continue; }
+    let same = 0;
+    for (let i = 0; i < r.preds.length; i++) if (r.preds[i] === fp32r.preds[i]) same++;
+    r.agree = same / r.preds.length;
+  }
+
+  // render table
+  const tbody = resEl.querySelector("tbody");
+  tbody.innerHTML = "";
+  const sizes = { fp32: 506, int8: 127, int4: 248 };
+  for (const r of results) {
+    const tr = document.createElement("tr");
+    if (r.failed) {
+      tr.innerHTML = `<td>${r.tag}</td><td colspan=8 class="fail">FAILED: ${r.failed}</td>`;
+    } else {
+      tr.innerHTML = `
+        <td>${r.tag}</td>
+        <td>${sizes[r.tag] ?? "-"} MB</td>
+        <td>${fmt(r.loadMs)}</td>
+        <td>${fmt(r.warmupMedian)}</td>
+        <td>${fmt(r.median)}</td>
+        <td>${fmt(r.mean)}</td>
+        <td>${fmt(r.p95)}</td>
+        <td>${fmt(r.acc*100, 2)}%</td>
+        <td>${r.agree != null ? fmt(r.agree*100, 1) + "%" : "-"}</td>`;
+    }
+    tbody.appendChild(tr);
+  }
+  resEl.hidden = false;
+  setStatus("done");
+  $("#run").disabled = false;
+});
+
+$("#clear").addEventListener("click", () => {
+  logEl.textContent = "";
+  resEl.hidden = true;
+  setStatus("");
+});
+
+await diagnose();
+setStatus("ready. click 'Benchmark 実行'.");
+</script>
+</body>
+</html>
