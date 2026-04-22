@@ -17,18 +17,16 @@ import { pipeline, env } from '@huggingface/transformers';
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.localModelPath = '/';
-// transformers.js 独自の Cache API 層 (transformers-cache) は使わない。
-// 理由: Cache API は HTTP cache とは別の永続 Storage で Cache-Control ヘッダを
-// 無視する。dev 中に Vite が一瞬 SPA fallback (297 byte HTML) を返した瞬間の
-// 応答を永続保存されると、以降 "protobuf parsing failed" が永久に出続ける
-// (ブラウザ再起動でも消えない)。
-//
-// ブラウザの HTTP cache はサーバの Cache-Control に素直に従うので、
-// - dev: Vite が Cache-Control: no-cache を返す → 毎回 Vite に revalidate (健全)
-// - prod: CDN で max-age=31536000, immutable を付ければ永続キャッシュ
-// という普通の振る舞いになる。モデル差し替え時は URL に ?v=xxx を付けるか
-// ディレクトリ名に version を入れれば cache buster になる。
-env.useBrowserCache = false;
+// transformers.js の Cache API (transformers-cache) を使う: 248MB DL を永続化
+// し、2 回目以降の起動を瞬時にする。
+// 注意点: Cache API は HTTP cache と別で Cache-Control に従わないため、一度
+// 汚染された応答 (SPA fallback の 297 byte HTML、DL 途中中断など) が保存されると
+// 永遠に壊れたまま読み続ける。対策として、
+//   1. 起動時に transformers-cache を走査し、小さすぎる (< 1MB) エントリは
+//      事前に削除する (汚染応答をキャッシュから排除)
+//   2. pipeline 作成時に protobuf error を検知したらキャッシュを消して retry
+// の 2 段構えで自動回復できるようにしている (下の ensureClassifier 参照)。
+env.useBrowserCache = true;
 
 type Device = 'webgpu' | 'wasm';
 type Dtype = 'q4' | 'q8';
@@ -81,6 +79,35 @@ async function clearPoisonedCache(): Promise<void> {
   }
 }
 
+/**
+ * 起動時に transformers-cache を走査し、明らかに壊れている (model を名乗るが
+ * 数 KB しかない) エントリを事前に削除する。protobuf parse 失敗を事前予防。
+ */
+async function pruneTinyModelEntries(): Promise<void> {
+  try {
+    const names = await caches.keys();
+    for (const n of names) {
+      if (!n.includes('transformers')) continue;
+      const cache = await caches.open(n);
+      const reqs = await cache.keys();
+      for (const req of reqs) {
+        if (!req.url.endsWith('.onnx')) continue;
+        const res = await cache.match(req);
+        if (!res) continue;
+        const sizeHeader = res.headers.get('content-length');
+        const size = sizeHeader ? parseInt(sizeHeader, 10) : NaN;
+        // 1MB 未満の .onnx は汚染確定 (最小モデルでも数十MB)
+        if (!Number.isFinite(size) || size < 1_000_000) {
+          console.warn(`[cognitive] pruning tiny cached entry: ${req.url} (${size} bytes)`);
+          await cache.delete(req);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[cognitive] cache prune failed', e);
+  }
+}
+
 async function createWithRecovery(device: Device, dtype: Dtype) {
   try {
     return await tryCreate(device, dtype);
@@ -94,13 +121,17 @@ async function createWithRecovery(device: Device, dtype: Dtype) {
 
 async function ensureClassifier(): Promise<void> {
   if (classifier) return;
+  // 初回起動前に tiny 汚染エントリを掃除 (protobuf error を事前予防)
+  await pruneTinyModelEntries();
   try {
     classifier = await createWithRecovery('webgpu', 'q4');
     activeBackend = 'webgpu'; activeDtype = 'q4';
+    console.info('[cognitive] ready: WebGPU + int4');
   } catch (e) {
     console.warn('[cognitive] WebGPU q4 failed, falling back to WASM q8', e);
     classifier = await createWithRecovery('wasm', 'q8');
     activeBackend = 'wasm'; activeDtype = 'q8';
+    console.info('[cognitive] ready: WASM + int8');
   }
 }
 
