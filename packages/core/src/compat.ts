@@ -54,8 +54,12 @@ export interface ResonanceDetail {
  *   連続 stat 類似度 + 相補性で微調整する合成式。
  * archetype を渡さない場合: 2 軸 (類似 / 相補) のみでフォールバック。
  *
- * 最終的に calibrateScore で正規分布寄りに整形し、
- * 「双対 + 強い stat 一致」の完璧ペアで 1.0 (=100%) に届くようにする。
+ * 各成分の「貢献点」が加算で 100 になるよう設計:
+ *   気質ペア (baseScore normalised) * 0.60  → 最大 60 点
+ *   共鳴 (similarity)               * 0.25  → 最大 25 点
+ *   連携 (complementarity)          * 0.15  → 最大 15 点
+ * 合計 100 点。双対 (baseScore 0.9) + sim 1.0 + comp 1.0 で理論 100%。
+ * baseScore はカテゴリ最高値 0.9 を 1.0 にスケールしてから使う。
  */
 export function resonance(
   a: StatArray,
@@ -69,47 +73,68 @@ export function resonance(
 
   if (archetypeA && archetypeB) {
     const pair = archetypePairRelation(archetypeA, archetypeB);
-    const raw =
-      pair.baseScore * w.pairBase +
-      sim * w.statSimilarity +
-      comp * w.statComplement;
+    const basePart = (pair.baseScore / PAIR_BASE_MAX) * w.pairBase;
+    const simPart = sim * w.statSimilarity;
+    const compPart = comp * w.statComplement;
+    const score = Math.min(1, Math.max(0, basePart + simPart + compPart));
     return {
-      score: calibrateScore(raw, 0.85),
+      score,
       similarity: sim,
       complementarity: comp,
       pairRelation: pair,
     };
   }
 
-  // archetype 無しフォールバック (2 軸)
-  const raw = sim * w.similarity + comp * w.complementarity;
+  // archetype 無しフォールバック (2 軸)。この 2 つも合計 100 点スケールに揃える
+  // (similarity 重み + complementarity 重み = 0.4 を 1.0 へリスケール)。
+  const fallbackTotal = w.similarity + w.complementarity;
+  const raw = (sim * w.similarity + comp * w.complementarity) / (fallbackTotal || 1);
   return {
-    score: calibrateScore(raw, 0.4),
+    score: Math.min(1, Math.max(0, raw)),
     similarity: sim,
     complementarity: comp,
   };
 }
 
+/** archetype-pair.ts の baseScore 最大値 (duality)。バージョン互換のためここで定数化。 */
+const PAIR_BASE_MAX = 0.9;
+
 /**
- * 生スコアを正規分布寄りにキャリブレートする。
- * - 現実的な最高値 (peak) を 1.0 に写像 → 理論上 100% が届く
- * - 低域を pow(0.65) で持ち上げ、典型値が 0.6-0.8 帯に入るよう分布を整形
- *
- * peak は合成式の現実的上限 (archetype + stat 版は 0.85、stat のみ版は 0.4)。
+ * UI 表示用: 生コンポーネントを「貢献点 (pts)」と「最大点」のペアで返す。
+ * 合計は必ず 100 点満点に等しい。
  */
-function calibrateScore(raw: number, peak: number): number {
-  const scaled = Math.min(1, Math.max(0, raw) / peak);
-  return Math.pow(scaled, 0.65);
+export interface ResonanceBreakdown {
+  pair: { pts: number; max: number };
+  similarity: { pts: number; max: number };
+  complementarity: { pts: number; max: number };
+  totalPts: number;
+}
+
+export function resonanceBreakdown(detail: ResonanceDetail): ResonanceBreakdown {
+  const w = COMPATIBILITY_WEIGHTS;
+  const baseNorm = detail.pairRelation ? detail.pairRelation.baseScore / PAIR_BASE_MAX : 0;
+  const pairPts = detail.pairRelation ? Math.round(baseNorm * w.pairBase * 100) : 0;
+  const pairMax = detail.pairRelation ? Math.round(w.pairBase * 100) : 0;
+  const simPts = Math.round(detail.similarity * w.statSimilarity * 100);
+  const simMax = Math.round(w.statSimilarity * 100);
+  const compPts = Math.round(detail.complementarity * w.statComplement * 100);
+  const compMax = Math.round(w.statComplement * 100);
+  return {
+    pair: { pts: pairPts, max: pairMax },
+    similarity: { pts: simPts, max: simMax },
+    complementarity: { pts: compPts, max: compMax },
+    totalPts: pairPts + simPts + compPts,
+  };
 }
 
 /** 共鳴度の言語ラベル (05-compatibility.md §共鳴度の意味付け) */
 export function resonanceLabel(score: number): string {
-  if (score >= 0.95) return '魂の片割れ';
-  if (score >= 0.88) return '宿命の盟友';
-  if (score >= 0.8) return '最高の相棒';
-  if (score >= 0.6) return 'よき仲間';
-  if (score >= 0.4) return '共に歩める';
-  if (score >= 0.2) return '違いが面白い';
+  if (score >= 0.90) return '魂の片割れ';
+  if (score >= 0.80) return '宿命の盟友';
+  if (score >= 0.70) return '最高の相棒';
+  if (score >= 0.55) return 'よき仲間';
+  if (score >= 0.40) return '共に歩める';
+  if (score >= 0.25) return '違いが面白い';
   return '異なる道を歩む者';
 }
 

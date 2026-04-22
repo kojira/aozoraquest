@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/core';
-import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
+import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resonanceBreakdown, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
@@ -178,23 +178,48 @@ function CompatView({
           <div style={{ fontSize: '0.9em', color: 'var(--color-accent)' }}>{resonanceLabel(detail.score)}</div>
         </div>
         <div style={{ flex: 1, minWidth: '10em', fontSize: '0.85em' }}>
-          {detail.pairRelation && (
-            <MiniBar
-              label={`気質: ${detail.pairRelation.label}`}
-              hint={detail.pairRelation.description}
-              value={detail.pairRelation.baseScore}
-            />
-          )}
-          <MiniBar
-            label="共鳴"
-            hint="同じ波長で盛り上がれる度合い"
-            value={detail.similarity}
-          />
-          <MiniBar
-            label="連携"
-            hint="互いの欠けを補って戦える度合い"
-            value={detail.complementarity}
-          />
+          {(() => {
+            const bd = resonanceBreakdown(detail);
+            return (
+              <>
+                {detail.pairRelation && (
+                  <MiniBar
+                    label={`気質: ${detail.pairRelation.label}`}
+                    hint={detail.pairRelation.description}
+                    points={bd.pair.pts}
+                    max={bd.pair.max}
+                  />
+                )}
+                <MiniBar
+                  label="共鳴"
+                  hint="同じ波長で盛り上がれる度合い"
+                  points={bd.similarity.pts}
+                  max={bd.similarity.max}
+                />
+                <MiniBar
+                  label="連携"
+                  hint="互いの欠けを補って戦える度合い"
+                  points={bd.complementarity.pts}
+                  max={bd.complementarity.max}
+                />
+                <div style={{
+                  marginTop: '0.4em',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '0.9em',
+                  fontWeight: 700,
+                  color: 'var(--color-fg)',
+                  borderTop: '1px dashed rgba(255,255,255,0.25)',
+                  paddingTop: '0.3em',
+                }}>
+                  <span>合計</span>
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    {bd.totalPts} / 100
+                  </span>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -212,8 +237,8 @@ function CompatView({
   );
 }
 
-function MiniBar({ label, value, hint }: { label: string; value: number; hint?: string }) {
-  const pct = Math.max(0, Math.min(1, value)) * 100;
+function MiniBar({ label, hint, points, max }: { label: string; hint?: string; points: number; max: number }) {
+  const pct = max > 0 ? Math.max(0, Math.min(1, points / max)) * 100 : 0;
   return (
     <div style={{ margin: '0.3em 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: 'var(--color-muted)' }}>
@@ -223,7 +248,9 @@ function MiniBar({ label, value, hint }: { label: string; value: number; hint?: 
             <span style={{ marginLeft: '0.5em', fontSize: '0.85em' }}>— {hint}</span>
           )}
         </span>
-        <span style={{ fontFamily: 'ui-monospace, monospace' }}>{Math.round(pct)}</span>
+        <span style={{ fontFamily: 'ui-monospace, monospace' }}>
+          {points} / {max}
+        </span>
       </div>
       <div style={{ height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, overflow: 'hidden', marginTop: '0.15em' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-accent)' }} />
