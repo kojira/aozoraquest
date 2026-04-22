@@ -5,9 +5,10 @@ import type { DiagnosisResult } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord, putRecord } from '@/lib/atproto';
 import { loadPointsState } from '@/lib/points';
-import { generateFlavor, getFallbackFlavor, type FlavorTextResult } from '@/lib/flavor-text';
+import { generateCardText, getFallbackCardText, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
+import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
 
 type LoadState =
   | { status: 'checking' }
@@ -27,7 +28,7 @@ export function Card() {
   const session = useSession();
   const navigate = useNavigate();
   const [load, setLoad] = useState<LoadState>({ status: 'checking' });
-  const [flavor, setFlavor] = useState<FlavorTextResult | null>(null);
+  const [card, setCard] = useState<CardText | null>(null);
   const [flavorBusy, setFlavorBusy] = useState(false);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
@@ -56,9 +57,13 @@ export function Card() {
           ...(profile?.avatar ? { avatar: profile.avatar } : {}),
         };
         setLoad({ status: 'ready', result: analysis, profile: pb });
-        // 既に flavor が保存されていれば初期値に
+        // 既存 flavor text があれば暫定で表示 (effect は新規扱いで再生成)
         if (analysis.flavorText) {
-          setFlavor({ text: analysis.flavorText, source: { kind: 'fallback' } });
+          setCard({
+            effect: getFallbackCardText(analysis.archetype, Date.now()).effect,
+            flavor: analysis.flavorText,
+            source: { kind: 'fallback' },
+          });
         }
       } catch (e) {
         if (cancelled) return;
@@ -72,26 +77,25 @@ export function Card() {
   const profile = load.status === 'ready' ? load.profile : null;
   const artSrc = useMemo(() => (result ? `/card-art/${result.archetype}.jpg` : undefined), [result]);
 
-  // 診断読み込みが終わったら、既存 flavor が無ければ自動生成
+  // 診断読み込みが終わったら、既存 card が無ければ自動生成
   useEffect(() => {
-    if (load.status !== 'ready' || flavor) return;
-    void regenerateFlavor(false);
+    if (load.status !== 'ready' || card) return;
+    void regenerateCard(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load.status]);
 
-  const regenerateFlavor = useCallback(async (persist: boolean) => {
+  const regenerateCard = useCallback(async (persist: boolean) => {
     if (load.status !== 'ready') return;
     setFlavorBusy(true);
     try {
-      const r = await generateFlavor(load.result, { seed: Date.now() });
-      setFlavor(r);
-      // PDS に保存 (初回 or 引き直し)
+      const r = await generateCardText(load.result, { seed: Date.now() });
+      setCard(r);
       if (persist || !load.result.flavorText) {
         if (session.status === 'signed-in' && session.agent) {
           try {
             await putRecord(session.agent, 'app.aozoraquest.analysis', 'self', {
               ...load.result,
-              flavorText: r.text,
+              flavorText: r.flavor,
               flavorGeneratedAt: new Date().toISOString(),
             });
           } catch (e) {
@@ -100,8 +104,8 @@ export function Card() {
         }
       }
     } catch (e) {
-      console.warn('[card] regenerate flavor failed', e);
-      setFlavor(getFallbackFlavor(load.result.archetype, Date.now()));
+      console.warn('[card] regenerate card failed', e);
+      setCard(getFallbackCardText(load.result.archetype, Date.now()));
     } finally {
       setFlavorBusy(false);
     }
@@ -187,28 +191,34 @@ export function Card() {
         <JobCard
           ref={svgRef}
           result={result!}
-          flavorText={flavor?.text ?? '…'}
+          effectText={card?.effect ?? '…'}
+          flavorText={card?.flavor ?? '…'}
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}
+          avatarSrc={profile!.avatar}
           style={{ width: '100%', height: 'auto', display: 'block' }}
         />
-        {flavor?.source.kind === 'fallback' && (
-          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-            精霊の声がまだ届かないので、伝承集から引いてきました。
-          </p>
-        )}
       </div>
 
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
-        <button disabled={flavorBusy} onClick={() => void regenerateFlavor(true)}>
-          {flavorBusy ? '詩を探している…' : '🎲 引き直す'}
+        <button disabled={flavorBusy} onClick={() => void regenerateCard(true)}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
+            <CasinoIcon size={16} />
+            {flavorBusy ? '詩を探している…' : '引き直す'}
+          </span>
         </button>
-        <button disabled={shareBusy !== 'idle' || !flavor} onClick={() => void onDownload()}>
-          {shareBusy === 'downloading' ? '書き出し中…' : '📥 画像として保存'}
+        <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
+            <DownloadIcon size={16} />
+            {shareBusy === 'downloading' ? '書き出し中…' : '画像として保存'}
+          </span>
         </button>
-        <button disabled={shareBusy !== 'idle' || !flavor} onClick={() => void onPost()}>
-          {shareBusy === 'posting' ? '投稿中…' : shareBusy === 'posted' ? '投稿しました' : '🔗 Bluesky に投稿'}
+        <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onPost()}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
+            <ShareIcon size={16} />
+            {shareBusy === 'posting' ? '投稿中…' : shareBusy === 'posted' ? '投稿しました' : 'Bluesky に投稿'}
+          </span>
         </button>
       </div>
 

@@ -1,69 +1,78 @@
 /**
  * 診断結果を 1 枚の SVG カード (MTG 風、羊皮紙質感) として描く。
- * 出力は 768×1072 (約 63:88 比、rasterize 時に 2x で 1536×2144 まで引けるよう
- * stroke を太めに設計)。
+ * 出力は 768×1100 (約 63:88 比)。rasterize 時に 2x = 1536×2200 まで引ける。
  *
  * カードは self-contained SVG: 外部 CSS や font に依存せず、そのまま PNG に
  * rasterize できる。背景 art は public/card-art/{archetype}.(png|jpg) から
- * <image> で読む。
+ * <image> で読む。parchment も public/card-art/parchment.jpg。
+ *
+ * レイアウトは MTG の典型に倣った 5 段構成:
+ *   1. Title bar  (name + LV)
+ *   2. Art frame
+ *   3. Type line  ("旅人 — {job}")
+ *   4. Rules box  (cog keywords + stats + flavor italic)
+ *   5. 右下 P/T 相当 (dom-aux) + footer (handle, date)
  */
 
-import type { CogFunction, DiagnosisResult } from '@aozoraquest/core';
-import { COGNITIVE_FUNCTIONS, JOBS_BY_ID, jobDisplayName, jobTagline, playerLevelFromXp } from '@aozoraquest/core';
+import type { DiagnosisResult } from '@aozoraquest/core';
+import { JOBS_BY_ID, jobDisplayName, playerLevelFromXp } from '@aozoraquest/core';
 import { forwardRef } from 'react';
 
 const W = 768;
-const H = 1072;
+const H = 1100;
 
-// 余白・区画
-const PADX = 40;           // カード外枠の内側余白 (x)
-const PADY = 40;           // 同 (y)
-const ART_Y = 120;         // art 枠の開始 y
-const ART_H = 500;         // art 枠の高さ
-const TYPE_Y = ART_Y + ART_H + 24;     // type line 開始 y
-const STATS_Y = TYPE_Y + 50;           // stats 開始 y
-const FLAVOR_Y = STATS_Y + 260;        // flavor 開始 y
+const PADX = 36;
+const PADY = 36;
 
-const SEPIA = '#3b2a16';
-const SEPIA_SOFT = '#5c4628';
-const PAPER_1 = '#efdfb5';
-const PAPER_2 = '#d9bf85';
-const PAPER_BURN = '#9b7a3d';
+// 各セクションの height / y 座標
+const TITLE_Y = PADY;                  // 36
+const TITLE_H = 72;
+const ART_Y = TITLE_Y + TITLE_H + 8;   // 116
+const ART_H = 456;
+const TYPE_Y = ART_Y + ART_H + 10;     // 582
+const TYPE_H = 56;
+const BODY_Y = TYPE_Y + TYPE_H + 10;   // 648
+const BODY_H = H - BODY_Y - PADY - 20; // 20 は footer 分
+const FOOTER_Y = H - PADY - 4;
+const PT_W = 100;
+const PT_H = 60;
 
-const COG_SHORT: Record<CogFunction, string> = {
-  Ni: 'Ni', Ne: 'Ne', Si: 'Si', Se: 'Se', Ti: 'Ti', Te: 'Te', Fi: 'Fi', Fe: 'Fe',
-};
-const COG_JP: Record<CogFunction, string> = {
-  Ni: '内向直観', Ne: '外向直観',
-  Si: '内向感覚', Se: '外向感覚',
-  Ti: '内向思考', Te: '外向思考',
-  Fi: '内向感情', Fe: '外向感情',
-};
+// 配色
+const INK = '#2a1a08';            // 主要なインク色 (強め)
+const INK_SOFT = '#5a3f1d';
+const PANEL_FILL = 'rgba(246, 236, 208, 0.92)';  // クリーム
+const PANEL_STROKE = '#4a3416';
+const PAPER_FALLBACK_1 = '#efdfb5';
+const ACCENT = '#7a5220';         // 金寄り
+
 
 export interface JobCardProps {
   result: DiagnosisResult;
+  /** MTG のルール文相当 (能力キーワード + 短い説明) */
+  effectText: string;
+  /** italic の詩文 */
   flavorText: string;
   displayName: string;
   handle: string;
-  /** 背景アートのパス (無ければ空の枠のみ)。例: '/card-art/sage.jpg' */
+  /** ジョブ固有の背景イラスト (例: '/card-art/sage.jpg') */
   artSrc?: string | undefined;
-  /** ブラウザ表示用に width/height を外から上書きしたい場合 (デフォルトは viewBox 固定) */
+  /** 本人の Bluesky アバター画像 (円形クロップで中央に配置) */
+  avatarSrc?: string | undefined;
   className?: string;
   style?: React.CSSProperties;
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, flavorText, displayName, handle, artSrc, className, style } = props;
+  const { result, effectText, flavorText, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const job = JOBS_BY_ID[result.archetype];
   const jobName = jobDisplayName(result.archetype, 'default');
-  const tagline = jobTagline(result.archetype) ?? '';
   const lv = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
   const analyzedDate = formatDate(result.analyzedAt);
 
-  // 上位 4 認知機能
-  const topCog = [...COGNITIVE_FUNCTIONS]
-    .sort((a, b) => (result.cognitiveScores[b] ?? 0) - (result.cognitiveScores[a] ?? 0))
-    .slice(0, 4);
+  // 円形アバターの配置 (art frame 中央)
+  const AVATAR_CX = W / 2;
+  const AVATAR_CY = ART_Y + ART_H / 2;
+  const AVATAR_R = Math.min(ART_H, W - 2 * (PADX + 14)) * 0.32;
 
   return (
     <svg
@@ -75,210 +84,275 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       style={style}
     >
       <defs>
-        {/* 羊皮紙 filter: turbulence で繊維、color matrix でセピアトーン */}
-        <filter id="parchment" x="-5%" y="-5%" width="110%" height="110%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="5" result="noise" />
-          <feColorMatrix
-            in="noise"
-            values="0 0 0 0 0.35  0 0 0 0 0.25  0 0 0 0 0.10  0 0 0 0.14 0"
-            result="fibers"
-          />
-          <feComposite in="fibers" in2="SourceGraphic" operator="in" result="tinted" />
-          <feBlend in="SourceGraphic" in2="tinted" mode="multiply" />
-        </filter>
-        {/* art を羊皮紙と馴染ませる filter: セピア寄せ + やや multiply */}
-        <filter id="artTint">
+        {/* 羊皮紙縁の焼け (vignette) */}
+        <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+          <stop offset="0%" stopColor="rgba(0,0,0,0)" />
+          <stop offset="70%" stopColor="rgba(60,35,10,0)" />
+          <stop offset="92%" stopColor="rgba(60,35,10,0.25)" />
+          <stop offset="100%" stopColor="rgba(40,22,6,0.55)" />
+        </radialGradient>
+        <radialGradient id="paper" cx="42%" cy="38%" r="85%">
+          <stop offset="0%" stopColor="#f3e4be" />
+          <stop offset="45%" stopColor="#e6d2a0" />
+          <stop offset="78%" stopColor="#cfb27a" />
+          <stop offset="100%" stopColor="#a07c47" />
+        </radialGradient>
+        <clipPath id="artClip">
+          <rect x={PADX + 14} y={ART_Y} width={W - 2 * (PADX + 14)} height={ART_H} rx="4" />
+        </clipPath>
+        {/* ジョブ背景を薄くする filter (彩度↓ + 明度↑、Gaussian blur) */}
+        <filter id="jobFade" x="-5%" y="-5%" width="110%" height="110%">
+          <feGaussianBlur stdDeviation="3" edgeMode="duplicate" />
           <feColorMatrix values="
-            0.50 0.42 0.20 0 0
-            0.38 0.38 0.18 0 0
-            0.20 0.22 0.12 0 0
+            0.60 0.25 0.05 0 0.18
+            0.25 0.55 0.10 0 0.16
+            0.15 0.20 0.35 0 0.12
             0    0    0    1 0" />
         </filter>
-        {/* 四隅の焼けグラデ */}
-        <radialGradient id="paper" cx="50%" cy="50%" r="75%">
-          <stop offset="0%" stopColor={PAPER_1} />
-          <stop offset="75%" stopColor={PAPER_2} />
-          <stop offset="100%" stopColor={PAPER_BURN} />
+        {/* アバターの周囲をフェザリング (縁取りなし、中央濃く → 外側 0 へ) */}
+        <radialGradient id="avatarFeather" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="white" stopOpacity="1" />
+          <stop offset="65%" stopColor="white" stopOpacity="1" />
+          <stop offset="85%" stopColor="white" stopOpacity="0.7" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
         </radialGradient>
-        {/* clip for art (rounded corners) */}
-        <clipPath id="artClip">
-          <rect x={PADX + 12} y={ART_Y} width={W - 2 * (PADX + 12)} height={ART_H} rx="6" />
-        </clipPath>
+        <mask id="avatarMask">
+          <rect x={AVATAR_CX - AVATAR_R}
+                y={AVATAR_CY - AVATAR_R}
+                width={AVATAR_R * 2}
+                height={AVATAR_R * 2}
+                fill="url(#avatarFeather)" />
+        </mask>
       </defs>
 
       {/* === 羊皮紙ベース === */}
       <rect x="0" y="0" width={W} height={H} fill="url(#paper)" />
-      <rect x="0" y="0" width={W} height={H} fill={PAPER_1} filter="url(#parchment)" opacity="0.9" />
+      <image
+        href="/card-art/parchment.jpg"
+        xlinkHref="/card-art/parchment.jpg"
+        x="0" y="0" width={W} height={H}
+        preserveAspectRatio="xMidYMid slice"
+      />
+      <rect x="0" y="0" width={W} height={H} fill="url(#vignette)" />
 
-      {/* 外枠 (インクで引いた 2 重線) */}
-      <rect x={PADX - 12} y={PADY - 12} width={W - 2 * (PADX - 12)} height={H - 2 * (PADY - 12)}
-            fill="none" stroke={SEPIA} strokeWidth="2.5" />
-      <rect x={PADX - 6} y={PADY - 6} width={W - 2 * (PADX - 6)} height={H - 2 * (PADY - 6)}
-            fill="none" stroke={SEPIA_SOFT} strokeWidth="1" />
+      {/* === 外枠 (インク 2 重線) === */}
+      <rect x={PADX - 14} y={PADY - 14}
+            width={W - 2 * (PADX - 14)} height={H - 2 * (PADY - 14)}
+            fill="none" stroke={INK} strokeWidth="2.5" />
+      <rect x={PADX - 8} y={PADY - 8}
+            width={W - 2 * (PADX - 8)} height={H - 2 * (PADY - 8)}
+            fill="none" stroke={INK_SOFT} strokeWidth="1" />
 
-      {/* === タイトル行 === */}
+      {/* === 1. Title bar === */}
       <g>
-        <text x={PADX + 8} y={PADY + 44} fontSize="42" fontWeight="700"
-              fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA}>
-          ✦ {displayName}
+        <rect x={PADX} y={TITLE_Y} width={W - 2 * PADX} height={TITLE_H}
+              fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
+        <text x={PADX + 18} y={TITLE_Y + TITLE_H * 0.62} fontSize="38" fontWeight="800"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          {displayName}
         </text>
-        <text x={W - PADX - 8} y={PADY + 44} fontSize="32" fontWeight="700"
-              fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="end" fill={SEPIA}>
-          LV {lv}
-        </text>
-        <text x={PADX + 8} y={PADY + 76} fontSize="20"
-              fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA_SOFT}>
-          @{handle}
-        </text>
+        {/* LV を MTG のマナコスト相当として右に */}
+        <g transform={`translate(${W - PADX - 16}, ${TITLE_Y + TITLE_H / 2})`}>
+          <circle cx="0" cy="0" r="22" fill={ACCENT} stroke={INK} strokeWidth="1.5" />
+          <text x="0" y="2" fontSize="20" fontWeight="800"
+                fontFamily="ui-monospace, 'Courier New', monospace"
+                textAnchor="middle" dominantBaseline="middle" fill="#fff8e2">
+            {lv}
+          </text>
+        </g>
       </g>
 
-      {/* セパレータ */}
-      <line x1={PADX} y1={ART_Y - 12} x2={W - PADX} y2={ART_Y - 12}
-            stroke={SEPIA} strokeWidth="1.5" />
-
-      {/* === art 枠 === */}
-      <g>
-        <rect x={PADX + 12} y={ART_Y} width={W - 2 * (PADX + 12)} height={ART_H}
-              fill="#d6bb85" />
+      {/* === 2. Art frame ===
+          層構成:
+          1. 羊皮紙に馴染む淡いクリーム枠
+          2. ジョブ背景画像 (blur + 彩度↓で「薄い背景」化)
+          3. 中央に円形クロップしたユーザーアバター (フェザーで縁取りなし + 透過)
+      */}
+      <g clipPath="url(#artClip)">
+        <rect x={PADX + 14} y={ART_Y} width={W - 2 * (PADX + 14)} height={ART_H}
+              fill="#efdfb5" />
         {artSrc && (
           <image
             href={artSrc}
             xlinkHref={artSrc}
-            x={PADX + 12} y={ART_Y}
-            width={W - 2 * (PADX + 12)} height={ART_H}
+            x={PADX + 14} y={ART_Y}
+            width={W - 2 * (PADX + 14)} height={ART_H}
             preserveAspectRatio="xMidYMid slice"
-            clipPath="url(#artClip)"
+            filter="url(#jobFade)"
+            opacity="0.55"
           />
         )}
-        {/* art 枠のインク縁 */}
-        <rect x={PADX + 12} y={ART_Y} width={W - 2 * (PADX + 12)} height={ART_H}
-              fill="none" stroke={SEPIA} strokeWidth="2" rx="4" />
-      </g>
-
-      {/* === type 行 === */}
-      <g>
-        <text x={PADX + 8} y={TYPE_Y + 32} fontSize="30" fontWeight="700"
-              fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA}>
-          《 旅人 — {jobName} 》
-        </text>
-        {tagline && (
-          <text x={PADX + 8} y={TYPE_Y + 62} fontSize="20"
-                fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA_SOFT}>
-            {tagline}
-          </text>
+        {avatarSrc && (
+          <image
+            href={avatarSrc}
+            xlinkHref={avatarSrc}
+            x={AVATAR_CX - AVATAR_R}
+            y={AVATAR_CY - AVATAR_R}
+            width={AVATAR_R * 2}
+            height={AVATAR_R * 2}
+            preserveAspectRatio="xMidYMid slice"
+            mask="url(#avatarMask)"
+            opacity="0.92"
+          />
         )}
       </g>
+      {/* art 枠外縁 (clip の外に描いてシャープな線を保つ) */}
+      <rect x={PADX + 14} y={ART_Y} width={W - 2 * (PADX + 14)} height={ART_H}
+            fill="none" stroke={INK} strokeWidth="1.4" rx="4" />
 
-      <line x1={PADX + 8} y1={STATS_Y - 10} x2={W - PADX - 8} y2={STATS_Y - 10}
-            stroke={SEPIA_SOFT} strokeWidth="0.8" strokeDasharray="2 3" />
-
-      {/* === stats 行 === */}
+      {/* === 3. Type line === */}
       <g>
-        {/* 認知機能 TOP4 */}
-        {topCog.map((fn, i) => {
-          const score = result.cognitiveScores[fn] ?? 0;
-          const x = PADX + 8 + i * ((W - 2 * (PADX + 8)) / 4);
-          return (
-            <g key={fn}>
-              <text x={x} y={STATS_Y + 30} fontSize="26" fontWeight="700"
-                    fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA}>
-                {COG_SHORT[fn]}
-              </text>
-              <text x={x} y={STATS_Y + 54} fontSize="16"
-                    fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA_SOFT}>
-                {COG_JP[fn]}
-              </text>
-              <text x={x} y={STATS_Y + 92} fontSize="30"
-                    fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA}>
-                {score}
-              </text>
-            </g>
-          );
-        })}
-        {/* RPG stats 行 */}
-        <g transform={`translate(${PADX + 8}, ${STATS_Y + 140})`}>
-          {([
-            ['攻', result.rpgStats.atk],
-            ['守', result.rpgStats.def],
-            ['速', result.rpgStats.agi],
-            ['知', result.rpgStats.int],
-            ['運', result.rpgStats.luk],
-          ] as const).map(([label, value], i) => {
-            const segW = (W - 2 * (PADX + 8)) / 5;
-            const cx = i * segW + segW / 2;
-            return (
-              <g key={label}>
-                <text x={cx} y={0} fontSize="20"
-                      fontFamily="'Hiragino Mincho ProN', serif" textAnchor="middle" fill={SEPIA_SOFT}>
-                  {label}
-                </text>
-                <text x={cx} y={36} fontSize="30" fontWeight="700"
-                      fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="middle" fill={SEPIA}>
-                  {value}
-                </text>
-              </g>
-            );
-          })}
-        </g>
+        <rect x={PADX} y={TYPE_Y} width={W - 2 * PADX} height={TYPE_H}
+              fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
+        <text x={PADX + 18} y={TYPE_Y + TYPE_H * 0.66} fontSize="28" fontWeight="800"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          旅人 — {jobName}
+        </text>
       </g>
 
-      {/* === flavor === */}
+      {/* === 4. Rules / Body box === */}
       <g>
-        <line x1={PADX + 8} y1={FLAVOR_Y - 6} x2={W - PADX - 8} y2={FLAVOR_Y - 6}
-              stroke={SEPIA} strokeWidth="1" />
-        <FlavorBlock x={PADX + 12} y={FLAVOR_Y + 22} width={W - 2 * (PADX + 12)} text={flavorText} />
+        <rect x={PADX} y={BODY_Y} width={W - 2 * PADX} height={BODY_H}
+              fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
+
+        {/* Effect (MTG のルール文相当): "キーワード ― 説明文" */}
+        <EffectBlock
+          x={PADX + 20}
+          y={BODY_Y + 36}
+          width={W - 2 * (PADX + 20)}
+          text={effectText}
+        />
+
+        {/* 区切り (ルール / フレーバーの間) */}
+        <line x1={PADX + 40} y1={BODY_Y + BODY_H * 0.42}
+              x2={W - PADX - 40} y2={BODY_Y + BODY_H * 0.42}
+              stroke={INK_SOFT} strokeWidth="0.6" strokeDasharray="3 3" />
+
+        {/* Flavor italic */}
+        <FlavorBlock
+          x={PADX + 20}
+          y={BODY_Y + BODY_H * 0.42 + 38}
+          width={W - 2 * (PADX + 20)}
+          maxHeight={BODY_H * 0.58 - 60}
+          text={flavorText}
+        />
       </g>
 
-      {/* === foot === */}
-      <line x1={PADX + 8} y1={H - PADY - 36} x2={W - PADX - 8} y2={H - PADY - 36}
-            stroke={SEPIA_SOFT} strokeWidth="0.6" />
-      <text x={PADX + 8} y={H - PADY - 10} fontSize="18"
-            fontFamily="ui-monospace, 'Courier New', monospace" fill={SEPIA_SOFT}>
-        AozoraQuest · {analyzedDate}
+      {/* === 5. P/T 相当 (dom-aux 表示、右下に重ねる) === */}
+      <g>
+        <rect x={W - PADX - PT_W - 4} y={BODY_Y + BODY_H - PT_H / 2}
+              width={PT_W} height={PT_H}
+              fill="#fff8e2" stroke={INK} strokeWidth="2" rx="4" />
+        <text x={W - PADX - PT_W / 2 - 4} y={BODY_Y + BODY_H - PT_H / 2 + PT_H * 0.66}
+              fontSize="30" fontWeight="800"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif"
+              textAnchor="middle" fill={INK}>
+          {job.dominantFunction}/{job.auxiliaryFunction}
+        </text>
+      </g>
+
+      {/* === Footer (tiny) === */}
+      <text x={PADX} y={FOOTER_Y} fontSize="13"
+            fontFamily="ui-monospace, 'Courier New', monospace" fill={INK_SOFT}>
+        AozoraQuest · @{handle}
       </text>
-      <text x={W - PADX - 8} y={H - PADY - 10} fontSize="18"
-            fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="end" fill={SEPIA_SOFT}>
-        {job.dominantFunction}-{job.auxiliaryFunction}
+      <text x={W - PADX} y={FOOTER_Y} fontSize="13"
+            fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="end" fill={INK_SOFT}>
+        {analyzedDate}
       </text>
     </svg>
   );
 });
 
 /**
- * 折り返し対応のフレーバー描画。SVG の text は wrap しないので、おおよそ
- * 24-26 全角文字ごとに改行する。
+ * 能力テキスト (MTG ルール文相当)。先頭の "キーワード ― " を bold、残りを normal で描く。
  */
-function FlavorBlock({ x, y, width, text }: { x: number; y: number; width: number; text: string }) {
-  const lines = wrapJa(text, 20);
+function EffectBlock(props: { x: number; y: number; width: number; text: string }) {
+  const { x, y, width, text } = props;
+  const FONT = 22;
+  const LINE_H = 30;
+  // "キーワード ― 説明文" の dash を探す (全角ダッシュ、半角ダッシュ、ハイフンのいずれでも)
+  const dashMatch = text.match(/^([^\s―—–\-]{1,8})\s*([―—–\-])\s*(.+)$/);
+  const keyword = dashMatch?.[1] ?? null;
+  const dash = dashMatch?.[2] ?? '―';
+  const rest = dashMatch?.[3] ?? text;
+  const lines = wrapJa(rest, 24, 3);
   return (
     <g>
-      {lines.map((line, i) => (
-        <text key={i} x={x} y={y + i * 36} fontSize="26" fontStyle="italic"
-              fontFamily="'Hiragino Mincho ProN', serif" fill={SEPIA}>
+      {keyword && (
+        <text x={x} y={y} fontSize={FONT + 2} fontWeight="800"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          {keyword}
+          <tspan fontWeight="500" fill={INK_SOFT}>{' '}{dash}{' '}</tspan>
+          <tspan fontWeight="500" fill={INK}>{lines[0] ?? ''}</tspan>
+        </text>
+      )}
+      {!keyword && (
+        <text x={x} y={y} fontSize={FONT} fontWeight="500"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          {lines[0] ?? text}
+        </text>
+      )}
+      {lines.slice(1).map((line, i) => (
+        <text key={i} x={x} y={y + (i + 1) * LINE_H} fontSize={FONT} fontWeight="500"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
           {line}
         </text>
       ))}
-      <rect x={x - 8} y={y - 28} width={width} height={(lines.length * 36) + 8}
+      <rect x={x} y={y - 4} width={width} height={lines.length * LINE_H + 8}
             fill="none" stroke="none" />
     </g>
   );
 }
 
-function wrapJa(text: string, perLine: number): string[] {
+/**
+ * flavor text を折り返して italic で描画。maxHeight を超える行はカットし、
+ * 末尾を 「…」 に丸める。
+ */
+function FlavorBlock(props: { x: number; y: number; width: number; maxHeight: number; text: string }) {
+  const { x, y, width, maxHeight, text } = props;
+  const FONT_SIZE = 22;
+  const LINE_H = 30;
+  const maxLines = Math.max(1, Math.floor(maxHeight / LINE_H));
+  const lines = wrapJa(text, 22, maxLines);
+  return (
+    <g>
+      {lines.map((line, i) => (
+        <text key={i} x={x} y={y + i * LINE_H}
+              fontSize={FONT_SIZE} fontStyle="italic" fontWeight="500"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+          {line}
+        </text>
+      ))}
+      <rect x={x - 4} y={y - (LINE_H - 8)} width={width} height={lines.length * LINE_H + 8}
+            fill="none" stroke="none" />
+    </g>
+  );
+}
+
+function wrapJa(text: string, perLine: number, maxLines: number): string[] {
   const out: string[] = [];
   let buf = '';
+  let consumed = 0;
   for (const ch of text) {
     buf += ch;
-    if (buf.length >= perLine && /[、。 ・!?!?]/.test(ch)) {
+    consumed++;
+    const atDelim = buf.length >= perLine && /[、。 ・!?!?]/.test(ch);
+    const overLong = buf.length >= perLine + 3;
+    if (atDelim || overLong) {
       out.push(buf);
       buf = '';
-    } else if (buf.length >= perLine + 4) {
-      out.push(buf);
-      buf = '';
+      if (out.length >= maxLines) break;
     }
   }
-  if (buf.length > 0) out.push(buf);
-  return out.slice(0, 4);
+  if (buf.length > 0 && out.length < maxLines) {
+    out.push(buf);
+  }
+  if (out.length >= maxLines && consumed < text.length) {
+    const last = out[maxLines - 1]!.replace(/[、。 ]*$/, '');
+    out[maxLines - 1] = last + '…';
+  }
+  return out.slice(0, maxLines);
 }
 
 function formatDate(iso: string): string {
@@ -286,4 +360,5 @@ function formatDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
+// 未使用の警告回避
+void PAPER_FALLBACK_1;

@@ -76,6 +76,33 @@ export function ReplyIcon(props: IconProps) {
   );
 }
 
+export function CasinoIcon(props: IconProps) {
+  // Material Icons "casino" (サイコロ)
+  return (
+    <svg viewBox="0 0 24 24" style={base(props)} aria-hidden>
+      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM7.5 18c-.83 0-1.5-.67-1.5-1.5S6.67 15 7.5 15s1.5.67 1.5 1.5S8.33 18 7.5 18zm0-9C6.67 9 6 8.33 6 7.5S6.67 6 7.5 6 9 6.67 9 7.5 8.33 9 7.5 9zm4.5 4.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5 4.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm0-9c-.83 0-1.5-.67-1.5-1.5S15.67 6 16.5 6s1.5.67 1.5 1.5S17.33 9 16.5 9z" />
+    </svg>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  // Material Icons "file_download"
+  return (
+    <svg viewBox="0 0 24 24" style={base(props)} aria-hidden>
+      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+    </svg>
+  );
+}
+
+export function ShareIcon(props: IconProps) {
+  // Material Icons "share"
+  return (
+    <svg viewBox="0 0 24 24" style={base(props)} aria-hidden>
+      <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z" />
+    </svg>
+  );
+}
+
 /**
  * ブルスコンのナビ用アイコン。中央のマスコットだけをコンパクトに描く。
  * (マスコット本体の SpiritIcon は詳細すぎるので小サイズ用に別実装)
