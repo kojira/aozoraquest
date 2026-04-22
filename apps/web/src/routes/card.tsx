@@ -65,19 +65,38 @@ export function Card() {
         };
         setLoad({ status: 'ready', result: analysis, profile: pb });
         // PDS に既存のカード情報があればそのまま表示 (引き直しまで同じ)
-        const hasSaved = analysis.flavorText || analysis.cardEffect || analysis.cardRarity;
+        const hasSaved = analysis.flavorText || analysis.cardEffect || analysis.cardEffectName || analysis.cardRarity;
         if (hasSaved) {
           const savedRarity: Rarity = isRarity(analysis.cardRarity) ? analysis.cardRarity : 'common';
           setRarity(savedRarity);
           const savedVariant = analysis.cardFrameVariant === 2 ? 2 : 1;
           setFrameVariant(savedVariant);
+          // 新フォーマット (name/cost/description) が入っていれば優先、無ければ旧 cardEffect を分割、
+          // さらに無ければ fallback
+          const fallback = getFallbackCardText(analysis.archetype, Date.now(), savedRarity);
+          const name = analysis.cardEffectName
+            ? stripMarkdown(analysis.cardEffectName)
+            : analysis.cardEffect
+              ? fallback.effect.name
+              : fallback.effect.name;
+          const cost = typeof analysis.cardEffectCost === 'string'
+            ? stripMarkdown(analysis.cardEffectCost)
+            : analysis.cardEffectCost !== undefined
+              ? String(analysis.cardEffectCost)
+              : fallback.effect.cost;
+          const description = analysis.cardEffectDescription
+            ? stripMarkdown(analysis.cardEffectDescription)
+            : analysis.cardEffect
+              ? (() => {
+                  const m = analysis.cardEffect.match(/^[^\s―—–\-]+\s*[―—–\-]\s*(.+)$/);
+                  return m ? stripMarkdown(m[1]!) : stripMarkdown(analysis.cardEffect);
+                })()
+              : fallback.effect.description;
           setCard({
-            effect: analysis.cardEffect
-              ? stripMarkdown(analysis.cardEffect)
-              : getFallbackCardText(analysis.archetype, Date.now()).effect,
+            effect: { name, cost, description },
             flavor: analysis.flavorText
               ? stripMarkdown(analysis.flavorText)
-              : getFallbackCardText(analysis.archetype, Date.now()).flavor,
+              : fallback.flavor,
             source: { kind: 'fallback' },
           });
         }
@@ -134,12 +153,16 @@ export function Card() {
       setRarity(nextRarity);
       setFrameVariant(nextVariant);
       setCard(r);
-      // PDS に一式保存 (effect + flavor + rarity + frameVariant)
+      // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant)
       try {
         const now = new Date().toISOString();
         await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
           ...load.result,
-          cardEffect: r.effect,
+          cardEffectName: r.effect.name,
+          cardEffectCost: r.effect.cost,
+          cardEffectDescription: r.effect.description,
+          // 後方互換: 旧 cardEffect フィールドには "名前 ― 説明" を入れる
+          cardEffect: `${r.effect.name} ― ${r.effect.description}`,
           flavorText: r.flavor,
           cardRarity: nextRarity,
           cardFrameVariant: nextVariant,
@@ -151,7 +174,7 @@ export function Card() {
       }
     } catch (e) {
       console.warn('[card] regenerate card failed', e);
-      setCard(getFallbackCardText(load.result.archetype, Date.now()));
+      setCard(getFallbackCardText(load.result.archetype, Date.now(), rarity));
     } finally {
       setFlavorBusy(false);
     }
@@ -237,7 +260,9 @@ export function Card() {
         <JobCard
           ref={svgRef}
           result={result!}
-          effectText={card?.effect ?? '…'}
+          effectName={card?.effect.name ?? ''}
+          effectCost={card?.effect.cost ?? ''}
+          effectDescription={card?.effect.description ?? '…'}
           flavorText={card?.flavor ?? '…'}
           rarity={rarity}
           frameVariant={frameVariant}

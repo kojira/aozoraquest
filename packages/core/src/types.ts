@@ -96,8 +96,14 @@ export interface DiagnosisResult {
   pendingArchetypeStreak?: number;
   /** カード用のフレーバーテキスト (TinySwallow 生成、引き直しで上書き)。 */
   flavorText?: string;
-  /** カード能力テキスト (MTG ルール文相当。TinySwallow 生成)。 */
+  /** カード能力テキスト (旧フィールド、連結文字列)。新データは cardEffectName/Cost/Description を優先。 */
   cardEffect?: string;
+  /** 能力キーワード名 (2-5 字、例: 潜影 / 星読み)。 */
+  cardEffectName?: string;
+  /** 能力の発動コスト (0-5 の整数)。MTG のマナコスト相当。 */
+  cardEffectCost?: number;
+  /** 能力の説明文 (20-40 字)。 */
+  cardEffectDescription?: string;
   /** カードレアリティ (引き直し毎に抽選)。 */
   cardRarity?: string;
   /** 同じレアリティでも 2 種類ある枠画像のどちらを採用したか (1 or 2)。 */

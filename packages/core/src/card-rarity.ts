@@ -69,3 +69,20 @@ export function rollRarity(seed?: number): Rarity {
 export function isRarity(s: unknown): s is Rarity {
   return typeof s === 'string' && (RARITIES as readonly string[]).includes(s);
 }
+
+/** 希少度に応じた能力コストのデフォルトレンジ。ランダムに 1 個選ぶ。 */
+const RARITY_COST_RANGE: Record<Rarity, readonly number[]> = {
+  common: [0, 1],
+  uncommon: [1, 2],
+  rare: [2, 2, 3],
+  srare: [2, 3, 3],
+  ssr: [3, 4],
+  ur: [4, 5],
+};
+
+/** 希少度から妥当なコスト (0-5) を 1 つ決める。LLM 未指定 / fallback 時に使う。 */
+export function defaultCostFor(rarity: Rarity, seed?: number): number {
+  const pool = RARITY_COST_RANGE[rarity];
+  const r = seed === undefined ? Math.random() : Math.abs(seed) % 1;
+  return pool[Math.floor(r * pool.length) % pool.length] ?? 1;
+}
