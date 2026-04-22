@@ -32,8 +32,9 @@ function getPublicAgent(): AtpAgent {
   return _publicAgent;
 }
 
-/** 直近 7 日 (相性ランキングの「活発」定義)。 */
-export const RECENCY_DAYS = 7;
+/** 直近 N 日に投稿している人を「活発」と定義する。
+ * 短くするほど裏診断対象人数が減って API 呼び出しも減る。 */
+export const RECENCY_DAYS = 3;
 const RECENCY_MS = RECENCY_DAYS * 24 * 60 * 60 * 1000;
 
 /** 同時並列で走らせる API 呼び出し数 (recency / analysis で使う)。
