@@ -56,26 +56,27 @@ function buildPrompt(result: DiagnosisResult, rarity: Rarity): { system: string;
   const rarityGuidance = RARITY_GUIDANCE[rarity];
 
   const system = [
-    'あなたはトレーディングカードゲームのカード文を書くデザイナーです。',
-    '指定された気質と希少度から、MTG のルール文とフレーバーテキストを日本語で作ります。',
+    'あなたはトレーディングカードゲームのカード文を書く詩人兼デザイナーです。',
+    '気質情報と希少度を受け取り、MTG 調のルール文 (能力) と古文書風フレーバーを',
+    '日本語で 1 セット書きます。',
     '',
-    `このカードの希少度は ${rarityLabel} です。`,
-    `${rarityLabel} にふさわしい性格: ${rarityGuidance}`,
-    '希少度が高いほど珍しく印象的な能力を書いてください。',
+    `希少度は ${rarityLabel}。${rarityGuidance}`,
+    '希少度が高いほど、響きも挙動も稀有で印象的な能力にすること。',
     '',
-    '出力はちょうど 2 ブロック。必ず以下の形式を守ってください:',
-    '能力: <キーワード> ― <20-40 字の説明>',
-    'フレーバー: <40-60 字の 1 文>',
+    '出力形式は以下の 2 行のみ。他に何も書かない。',
+    '能力: <2〜5字キーワード> ― <20〜40字説明>',
+    'フレーバー: <40〜60字の詩的な 1 文>',
     '',
-    '規則:',
-    '- 能力行は MTG の "Ward 2" "Flash" のような短いキーワード名 + ダッシュ ― + 説明文。',
-    '- キーワードは 2-5 文字の日本語造語 (例: 先読、共鳴、俊敏、遠望、執心、潜影)。',
-    '- 説明文は常体、20-40 字。具体的な数値は書かず、気質の性質を動的に描写する。',
-    '- フレーバーは地の文の 1 文、40-60 字、詩的に。常体。',
-    '- Markdown (**、*、_ など) を一切使わない。見出し記号も使わない。',
-    '- 括弧 (「」『』《》) を使わない。',
-    '- 「能力:」「フレーバー:」以外の見出しや前置きを付けない。',
-    '- 合計 2 行だけ出力する。',
+    '禁止: Markdown、*強調*、「」『』《》の括弧、見出し記号 (# や ** など)、',
+    '     前置き ("はい、" "わかりました" 等)、数値指定、3 行以上の出力。',
+    '',
+    '例 1 (希少度コモン):',
+    '能力: 俊敏 ― 相手が気付く前に一歩動く。見た者はもう手遅れである。',
+    'フレーバー: 影が動いたのではない。影になる前に、彼が動いただけだ。',
+    '',
+    '例 2 (希少度UR):',
+    '能力: 星読み ― 敵味方の運命を重ねた光で束ね、盤面そのものを書き換える。',
+    'フレーバー: 星の一つを彼の指が撫でた。銀河が、行儀よくページを捲った。',
   ].join('\n');
 
   const user = [
@@ -83,6 +84,9 @@ function buildPrompt(result: DiagnosisResult, rarity: Rarity): { system: string;
     `主機能: ${job.dominantFunction} (${COG_LABEL[job.dominantFunction]})`,
     `副機能: ${job.auxiliaryFunction} (${COG_LABEL[job.auxiliaryFunction]})`,
     `上位傾向: ${topDesc}`,
+    `希少度: ${rarityLabel}`,
+    '',
+    '上の気質と希少度に合う「能力」と「フレーバー」を 1 組だけ書いてください。',
   ].join('\n');
 
   return { system, user };
@@ -103,23 +107,59 @@ function stripWrappers(s: string): string {
     .trim();
 }
 
-/** LLM の出力から "能力:" と "フレーバー:" ブロックを抽出する。 */
+/** LLM の出力から "能力:" と "フレーバー:" ブロックを抽出する。
+ *  TinySwallow は小さいモデルで様式が崩れがちなので、いくつかの表記ゆれに対応する。 */
 function parseLLMOutput(raw: string): { effect: string; flavor: string } | null {
   const text = stripMarkdown(raw.replace(/\r\n/g, '\n'));
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
 
+  const HEADER_EFFECT = /^(?:能力|効果|アビリティ|スキル)[:\s::・　]*(.*)$/;
+  const HEADER_FLAVOR = /^(?:フレーバー|flavor|情景|詩|口上)[:\s::・　]*(.*)$/i;
+
   let effect = '';
   let flavor = '';
+  let pendingHeader: 'effect' | 'flavor' | null = null;
+
   for (const line of lines) {
-    const effM = line.match(/^(?:能力|効果)\s*[::]\s*(.+)$/);
-    const flaM = line.match(/^(?:フレーバー|flavor)\s*[::]\s*(.+)$/i);
-    if (effM && !effect) effect = stripWrappers(effM[1]!);
-    else if (flaM && !flavor) flavor = stripWrappers(flaM[1]!);
+    const lineClean = line.replace(/^[-・*#>\s]+/, '').trim();
+    const effM = lineClean.match(HEADER_EFFECT);
+    const flaM = lineClean.match(HEADER_FLAVOR);
+    if (effM) {
+      if (effM[1]!.trim()) {
+        if (!effect) effect = stripWrappers(effM[1]!);
+        pendingHeader = null;
+      } else {
+        pendingHeader = 'effect';
+      }
+      continue;
+    }
+    if (flaM) {
+      if (flaM[1]!.trim()) {
+        if (!flavor) flavor = stripWrappers(flaM[1]!);
+        pendingHeader = null;
+      } else {
+        pendingHeader = 'flavor';
+      }
+      continue;
+    }
+    // ヘッダーの次行に本文が来るパターン
+    if (pendingHeader === 'effect' && !effect) { effect = stripWrappers(lineClean); pendingHeader = null; continue; }
+    if (pendingHeader === 'flavor' && !flavor) { flavor = stripWrappers(lineClean); pendingHeader = null; continue; }
   }
+
+  // フォールバック: 明示的な header が見つからなかったら最初の 2 本文行を effect/flavor に割り振る
+  if ((!effect || !flavor) && lines.length >= 2) {
+    const plain = lines.filter((l) => !HEADER_EFFECT.test(l) && !HEADER_FLAVOR.test(l));
+    if (plain.length >= 2) {
+      if (!effect) effect = stripWrappers(plain[0]!);
+      if (!flavor) flavor = stripWrappers(plain[1]!);
+    }
+  }
+
   if (!effect || !flavor) return null;
-  // 長さサニティ
-  if (effect.length < 8 || effect.length > 120) return null;
-  if (flavor.length < 15 || flavor.length > 140) return null;
+  // 長さサニティ (緩め)
+  if (effect.length < 6 || effect.length > 160) return null;
+  if (flavor.length < 10 || flavor.length > 180) return null;
   return { effect, flavor };
 }
 
@@ -146,8 +186,13 @@ async function generateWithLLM(
       fullPromise,
       new Promise<string>((_, rej) => setTimeout(() => rej(new Error('card-text LLM timeout')), timeoutMs)),
     ]);
+    console.info('[card-text] raw LLM output:\n' + raced);
     const parsed = parseLLMOutput(raced);
-    if (!parsed) return null;
+    if (!parsed) {
+      console.warn('[card-text] parse failed, falling back. raw length=', raced.length);
+      return null;
+    }
+    console.info('[card-text] parsed → effect:', parsed.effect, '| flavor:', parsed.flavor);
     const source: CardTextSource = { kind: 'llm' };
     const backend = gen.getBackend();
     if (backend) source.backend = backend;
