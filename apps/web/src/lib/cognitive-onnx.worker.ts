@@ -17,6 +17,18 @@ import { pipeline, env } from '@huggingface/transformers';
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.localModelPath = '/';
+// transformers.js 独自の Cache API 層 (transformers-cache) は使わない。
+// 理由: Cache API は HTTP cache とは別の永続 Storage で Cache-Control ヘッダを
+// 無視する。dev 中に Vite が一瞬 SPA fallback (297 byte HTML) を返した瞬間の
+// 応答を永続保存されると、以降 "protobuf parsing failed" が永久に出続ける
+// (ブラウザ再起動でも消えない)。
+//
+// ブラウザの HTTP cache はサーバの Cache-Control に素直に従うので、
+// - dev: Vite が Cache-Control: no-cache を返す → 毎回 Vite に revalidate (健全)
+// - prod: CDN で max-age=31536000, immutable を付ければ永続キャッシュ
+// という普通の振る舞いになる。モデル差し替え時は URL に ?v=xxx を付けるか
+// ディレクトリ名に version を入れれば cache buster になる。
+env.useBrowserCache = false;
 
 type Device = 'webgpu' | 'wasm';
 type Dtype = 'q4' | 'q8';
