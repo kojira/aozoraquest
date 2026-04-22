@@ -114,7 +114,7 @@ export function MyProfile() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8em' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.8em' }}>
         <Avatar src={avatarUrl ?? undefined} size={72} archetype={myArchetype} />
         <div>
           <h2 style={{ margin: 0 }}>{session.handle ?? '自分'}</h2>
@@ -303,7 +303,7 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
         {result.analyzedPostCount} 件の投稿から読み取りました · {conf}
       </p>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1em', marginTop: '0.8em', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1em', marginTop: '0.8em', flexWrap: 'wrap' }}>
         <RadarChart stats={result.rpgStats} size={180} normalize showValues={false} />
         <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontFamily: 'ui-monospace, monospace', fontSize: '0.95em' }}>
           <StatRow label="攻 ATK" value={result.rpgStats.atk} color="var(--color-atk)" />
@@ -314,7 +314,7 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
         </ul>
       </div>
 
-      <div style={{ marginTop: '0.8em', maxWidth: '28em', display: 'flex', flexDirection: 'column', gap: '0.5em' }}>
+      <div style={{ margin: '0.8em auto 0', maxWidth: '28em', display: 'flex', flexDirection: 'column', gap: '0.5em' }}>
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
             <span>{jobName} LV{jobLv.level} → LV{jobLv.level + 1}</span>
