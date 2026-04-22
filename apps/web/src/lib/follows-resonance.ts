@@ -9,13 +9,28 @@
  *     にランキングへ差し込む。
  */
 
-import type { Agent } from '@atproto/api';
+import { AtpAgent, type Agent } from '@atproto/api';
 import type { ArchetypePairRelation, Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { DIAGNOSIS_MIN_POST_COUNT, resonance, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { fetchFollows, fetchLatestPostAt, fetchUserPostsForDiagnosis, type FollowProfile, type DiagnosisPost } from './atproto';
 import { getAnalysis } from './analysis-cache';
 import { loadCachedAnalysis, saveCachedAnalysis } from './analysis-idb';
 import { diagnoseGivenPosts } from './diagnosis-flow';
+
+/**
+ * 他人の公開投稿を読むときは認証済 agent を使わず、公開 AppView に直接叩く。
+ * 理由:
+ *  1. 認証済 agent は user の PDS (例: puffball.us-east.host.bsky.network) 経由で
+ *     DPoP 認証する必要があり、並列発火で nonce が競合する & PDS 側の CORS
+ *     preflight が不安定になる (実測で ~1 時間で Failed to fetch 連発)
+ *  2. api.bsky.app (公式 AppView) は匿名アクセス可、CORS 正常、DPoP なしで高速
+ *  3. getAuthorFeed / getProfile で読む情報は公開データなので認証不要
+ */
+let _publicAgent: AtpAgent | null = null;
+function getPublicAgent(): AtpAgent {
+  if (!_publicAgent) _publicAgent = new AtpAgent({ service: 'https://api.bsky.app' });
+  return _publicAgent;
+}
 
 /** 直近 7 日 (相性ランキングの「活発」定義)。 */
 export const RECENCY_DAYS = 7;
@@ -154,12 +169,13 @@ export async function computeFollowResonanceRanking(
   onProgress?.({ phase: 'follows', done: 1, total: 1 });
   if (cancelled()) return { ranking: [], stats: emptyStats(follows.length) };
 
-  // ── Phase 2: recency filter (並列 10) ─────────────────
+  // ── Phase 2: recency filter (並列 10、公開 AppView 経由) ─────
+  const pub = getPublicAgent() as unknown as Agent; // AtpAgent は Agent 互換
   const cutoff = Date.now() - RECENCY_MS;
   const latestAts = await parallelMap(
     follows,
     CONCURRENCY,
-    (f) => fetchLatestPostAt(agent, f.did),
+    (f) => fetchLatestPostAt(pub, f.did),
     (d, t) => onProgress?.({ phase: 'recency', done: d, total: t }),
   );
   const candidates: Candidate[] = [];
@@ -270,7 +286,8 @@ export async function computeFollowResonanceRanking(
     job.postsPromise = (async () => {
       await acquireFetch();
       try {
-        return await fetchUserPostsForDiagnosis(agent, job.cand.profile.did, LIGHT_POST_LIMIT);
+        // 公開 AppView を使う (認証済 PDS だと並列 DPoP で CORS preflight が落ちる)
+        return await fetchUserPostsForDiagnosis(pub, job.cand.profile.did, LIGHT_POST_LIMIT);
       } catch (e) {
         console.warn('[friends] fetch posts failed for', job.cand.profile.handle, e);
         return null;
