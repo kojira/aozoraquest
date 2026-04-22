@@ -50,16 +50,22 @@ export async function buildResonanceTimeline(
         let score: number | null = null;
         let sim: number | null = null;
         let comp: number | null = null;
-        if (selfArr && otherDiag?.rpgStats) {
-          const d = resonance(selfArr, toStatArray(otherDiag.rpgStats));
-          score = d.score;
-          sim = d.similarity;
-          comp = d.complementarity;
-        }
         const theirArchetype: Archetype | null =
           otherDiag?.archetype && otherDiag.archetype in JOBS_BY_ID
             ? (otherDiag.archetype as Archetype)
             : null;
+        const myArchetype: Archetype | null =
+          selfDiagnosis?.archetype && selfDiagnosis.archetype in JOBS_BY_ID
+            ? (selfDiagnosis.archetype as Archetype)
+            : null;
+        if (selfArr && otherDiag?.rpgStats) {
+          const d = (myArchetype && theirArchetype)
+            ? resonance(selfArr, toStatArray(otherDiag.rpgStats), myArchetype, theirArchetype)
+            : resonance(selfArr, toStatArray(otherDiag.rpgStats));
+          score = d.score;
+          sim = d.similarity;
+          comp = d.complementarity;
+        }
         // ついでに archetype キャッシュにも投入
         seedArchetype(did, theirArchetype);
         return feed.map<ResonanceEntry>((item) => ({
