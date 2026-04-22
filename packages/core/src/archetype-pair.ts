@@ -43,14 +43,14 @@ export interface ArchetypePairRelation {
 }
 
 export const ARCHETYPE_PAIR_CATEGORIES: Record<ArchetypePairCategory, { label: string; description: string; baseScore: number }> = {
-  identity: { label: '同じタイプ',       description: '似た者同士で息が合う。刺激や驚きは生まれにくい。',             baseScore: 0.55 },
-  duality:  { label: '補い合う二人',     description: 'お互いの弱点を完璧に埋め合う理想の組み合わせ。',             baseScore: 0.90 },
-  mirror:   { label: '鏡写しの関係',     description: '同じテーマを別の角度から見ている。話せば話すほど深まる。', baseScore: 0.75 },
-  activity: { label: '刺激し合う',       description: '波長が近くて、互いを押し上げるエネルギーになる。',           baseScore: 0.70 },
-  kindred:  { label: '重なる価値観',     description: '大事にするものは近い。やり方で時々ぶつかることも。',         baseScore: 0.55 },
-  contrary: { label: '逆向きの視点',     description: '見方がかみ合わない瞬間に、思いがけない気付きが生まれる。',   baseScore: 0.40 },
-  conflict: { label: '噛み合わない',     description: '根本の見方が違う。分かり合うまでに時間と対話が要る。',       baseScore: 0.20 },
-  other:    { label: '独特な組み合わせ', description: '典型パターンには当てはまらない、この二人だけの関係。',       baseScore: 0.50 },
+  identity: { label: '同じ星のもと',     description: '同じ気質を持つ二人。語らずとも通じるが、新しい発見は少ない。',   baseScore: 0.55 },
+  duality:  { label: '運命の対',         description: '剣と盾のように欠けを埋め合う、理想の組み合わせ。',                 baseScore: 0.90 },
+  mirror:   { label: '鏡映しの相棒',     description: '同じ頂を反対側から見上げる関係。掘るほどに共鳴が深まる。',         baseScore: 0.75 },
+  activity: { label: '併走の仲',         description: '同じ風を受けて走る二人。並んで加速する仲間。',                     baseScore: 0.70 },
+  kindred:  { label: '同志の旅路',       description: '同じ旗を掲げる仲間。歩み方の違いで時に火花が散る。',               baseScore: 0.55 },
+  contrary: { label: '背中合わせの道',   description: '逆の道をゆく二人。すれ違う一瞬に、思わぬ真実が見える。',           baseScore: 0.40 },
+  conflict: { label: '異流の者',         description: '異なる神々に仕える者たち。分かり合うには長い旅路が要る。',         baseScore: 0.20 },
+  other:    { label: '星読みの外',       description: '星の巡りにも語られぬ、前例のない縁。二人だけの物語。',             baseScore: 0.50 },
 };
 
 // ── 補助: 文字 / attitude の対比判定 ──────────────────

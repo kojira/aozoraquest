@@ -189,13 +189,13 @@ function CompatView({
             </div>
           )}
           <MiniBar
-            label="似ている度"
-            hint="同じ感覚で盛り上がれる"
+            label="共鳴"
+            hint="同じ波長で盛り上がれる度合い"
             value={detail.similarity}
           />
           <MiniBar
-            label="支え合い度"
-            hint="苦手なところを埋め合える"
+            label="連携"
+            hint="互いの欠けを補って戦える度合い"
             value={detail.complementarity}
           />
         </div>
