@@ -339,7 +339,15 @@ function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () 
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
         8 つの傾向を 100 点満点で表示しています。
       </p>
-      <ul style={{ fontSize: '0.85em', color: 'var(--color-muted)', listStyle: 'none', padding: 0 }}>
+      <ul style={{
+        fontSize: '0.85em',
+        color: 'var(--color-muted)',
+        listStyle: 'none',
+        padding: 0,
+        margin: '0 auto',
+        maxWidth: '18em',
+        textAlign: 'left',
+      }}>
         {Object.entries(result.cognitiveScores)
           .sort((a, b) => b[1] - a[1])
           .map(([fn, score]) => (
