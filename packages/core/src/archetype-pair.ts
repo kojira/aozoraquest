@@ -43,14 +43,14 @@ export interface ArchetypePairRelation {
 }
 
 export const ARCHETYPE_PAIR_CATEGORIES: Record<ArchetypePairCategory, { label: string; description: string; baseScore: number }> = {
-  identity: { label: '恒等', description: '同じ気質。互いをよく理解するが、発展や気付きは少なめ。', baseScore: 0.55 },
-  duality: { label: '双対', description: 'お互いの弱点を補い合う理想的な組み合わせ。', baseScore: 0.90 },
-  mirror:  { label: '鏡像', description: '同じ機能を別の角度から見ている。共通テーマを深掘りできる。', baseScore: 0.75 },
-  activity:{ label: '活動', description: '動きの向きが近く、刺激し合える関係。', baseScore: 0.70 },
-  kindred: { label: '類似', description: '主機能が同じで価値観は重なるが、役割分担で衝突することも。', baseScore: 0.55 },
-  contrary:{ label: '対比', description: '見方が逆でじれったいが、違いから気付きが生まれる。', baseScore: 0.40 },
-  conflict:{ label: '衝突', description: '根本的に見方が違い、分かり合うのに時間がかかる。', baseScore: 0.20 },
-  other:   { label: '独自', description: '典型パターンから外れた、名前の付けにくい組み合わせ。', baseScore: 0.50 },
+  identity: { label: '同じタイプ',       description: '似た者同士で息が合う。刺激や驚きは生まれにくい。',             baseScore: 0.55 },
+  duality:  { label: '補い合う二人',     description: 'お互いの弱点を完璧に埋め合う理想の組み合わせ。',             baseScore: 0.90 },
+  mirror:   { label: '鏡写しの関係',     description: '同じテーマを別の角度から見ている。話せば話すほど深まる。', baseScore: 0.75 },
+  activity: { label: '刺激し合う',       description: '波長が近くて、互いを押し上げるエネルギーになる。',           baseScore: 0.70 },
+  kindred:  { label: '重なる価値観',     description: '大事にするものは近い。やり方で時々ぶつかることも。',         baseScore: 0.55 },
+  contrary: { label: '逆向きの視点',     description: '見方がかみ合わない瞬間に、思いがけない気付きが生まれる。',   baseScore: 0.40 },
+  conflict: { label: '噛み合わない',     description: '根本の見方が違う。分かり合うまでに時間と対話が要る。',       baseScore: 0.20 },
+  other:    { label: '独特な組み合わせ', description: '典型パターンには当てはまらない、この二人だけの関係。',       baseScore: 0.50 },
 };
 
 // ── 補助: 文字 / attitude の対比判定 ──────────────────
