@@ -54,8 +54,12 @@ const ACCENT = '#7a5220';         // 金寄り
 
 export interface JobCardProps {
   result: DiagnosisResult;
-  /** MTG のルール文相当 (能力キーワード + 短い説明) */
-  effectText: string;
+  /** 能力キーワード名 (例: 潜影) */
+  effectName: string;
+  /** 能力の発動コスト (例: このカードをタップする。) 空文字または "なし" でパッシブ扱い */
+  effectCost: string;
+  /** 能力の説明文 */
+  effectDescription: string;
   /** italic の詩文 */
   flavorText: string;
   /** カードレアリティ (6 段階)。badge 色と表示に使う。 */
@@ -73,7 +77,7 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectText, flavorText, rarity, frameVariant, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectName, effectCost, effectDescription, flavorText, rarity, frameVariant, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
   const job = JOBS_BY_ID[result.archetype];
@@ -258,25 +262,27 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
         <rect x={PADX} y={BODY_Y} width={W - 2 * PADX} height={BODY_H}
               fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
 
-        {/* Effect (MTG のルール文相当): "キーワード ― 説明文" */}
+        {/* Effect (3 要素): 名前 (bold) + コスト (: 区切で続けて) + 説明 (下段) */}
         <EffectBlock
           x={PADX + 20}
           y={BODY_Y + 36}
           width={W - 2 * (PADX + 20)}
-          text={effectText}
+          name={effectName}
+          cost={effectCost}
+          description={effectDescription}
         />
 
         {/* 区切り (ルール / フレーバーの間) */}
-        <line x1={PADX + 40} y1={BODY_Y + BODY_H * 0.42}
-              x2={W - PADX - 40} y2={BODY_Y + BODY_H * 0.42}
+        <line x1={PADX + 40} y1={BODY_Y + BODY_H * 0.58}
+              x2={W - PADX - 40} y2={BODY_Y + BODY_H * 0.58}
               stroke={INK_SOFT} strokeWidth="0.6" strokeDasharray="3 3" />
 
         {/* Flavor italic */}
         <FlavorBlock
           x={PADX + 20}
-          y={BODY_Y + BODY_H * 0.42 + 38}
+          y={BODY_Y + BODY_H * 0.58 + 36}
           width={W - 2 * (PADX + 20)}
-          maxHeight={BODY_H * 0.58 - 60}
+          maxHeight={BODY_H * 0.42 - 50}
           text={flavorText}
         />
       </g>
@@ -308,41 +314,78 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
 });
 
 /**
- * 能力テキスト (MTG ルール文相当)。先頭の "キーワード ― " を bold、残りを normal で描く。
+ * 能力テキスト: 名前 (bold) + コスト行 (MTG の ":" 前に太字で来る発動コスト) + 説明文。
+ *
+ * 表示フォーマット (MTG 能力の典型):
+ *   <名前>
+ *   <コスト>: <説明>
+ * ただしコストが「なし」「空」ならパッシブ扱いで "<名前> — <説明>" の 1 行短縮版。
  */
-function EffectBlock(props: { x: number; y: number; width: number; text: string }) {
-  const { x, y, width, text } = props;
-  const FONT = 22;
-  const LINE_H = 30;
-  // "キーワード ― 説明文" の dash を探す (全角ダッシュ、半角ダッシュ、ハイフンのいずれでも)
-  const dashMatch = text.match(/^([^\s―—–\-]{1,8})\s*([―—–\-])\s*(.+)$/);
-  const keyword = dashMatch?.[1] ?? null;
-  const dash = dashMatch?.[2] ?? '―';
-  const rest = dashMatch?.[3] ?? text;
-  const lines = wrapJa(rest, 24, 3);
+function EffectBlock(props: {
+  x: number; y: number; width: number;
+  name: string; cost: string; description: string;
+}) {
+  const { x, y, width, name, cost, description } = props;
+  const NAME_FONT = 26;
+  const BODY_FONT = 20;
+  const LINE_H = 28;
+
+  const isPassive = !cost || cost === 'なし' || /^\s*なし\s*$/.test(cost);
+  // 名前
+  const nameLine = (
+    <text x={x} y={y} fontSize={NAME_FONT} fontWeight="800"
+          fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+      {name}
+    </text>
+  );
+
+  if (isPassive) {
+    // 名前 — 説明 の 2 行レイアウト (コストなし)
+    const descLines = wrapJa(description, 24, 3);
+    return (
+      <g>
+        {nameLine}
+        {descLines.map((line, i) => (
+          <text key={i} x={x} y={y + (i + 1) * LINE_H + 4} fontSize={BODY_FONT}
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+            {line}
+          </text>
+        ))}
+        <rect x={x} y={y - 24} width={width} height={LINE_H * (descLines.length + 1) + 12}
+              fill="none" stroke="none" />
+      </g>
+    );
+  }
+
+  // コストあり: 名前 / コスト: 説明 の 3 行レイアウト
+  const costLines = wrapJa(cost, 22, 2);
+  const descLines = wrapJa(description, 24, 2);
+  let yOff = 0;
   return (
     <g>
-      {keyword && (
-        <text x={x} y={y} fontSize={FONT + 2} fontWeight="800"
-              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
-          {keyword}
-          <tspan fontWeight="500" fill={INK_SOFT}>{' '}{dash}{' '}</tspan>
-          <tspan fontWeight="500" fill={INK}>{lines[0] ?? ''}</tspan>
-        </text>
-      )}
-      {!keyword && (
-        <text x={x} y={y} fontSize={FONT} fontWeight="500"
-              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
-          {lines[0] ?? text}
-        </text>
-      )}
-      {lines.slice(1).map((line, i) => (
-        <text key={i} x={x} y={y + (i + 1) * LINE_H} fontSize={FONT} fontWeight="500"
-              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
-          {line}
-        </text>
-      ))}
-      <rect x={x} y={y - 4} width={width} height={lines.length * LINE_H + 8}
+      {nameLine}
+      {costLines.map((line, i) => {
+        yOff = (i + 1) * LINE_H;
+        return (
+          <text key={`c${i}`} x={x} y={y + yOff + 4} fontSize={BODY_FONT} fontWeight="700"
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+            {line}
+          </text>
+        );
+      })}
+      {/* " :" の separator — 最後の cost line の行末に付ける表現にせず、次行を「説明: ...」で始める */}
+      {descLines.map((line, i) => {
+        const yy = y + yOff + (i + 1) * LINE_H + 10;
+        return (
+          <text key={`d${i}`} x={x} y={yy} fontSize={BODY_FONT}
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
+            {i === 0 ? <tspan fontWeight="700" fill={INK_SOFT}>効果: </tspan> : null}
+            {line}
+          </text>
+        );
+      })}
+      <rect x={x} y={y - 24} width={width}
+            height={yOff + LINE_H * descLines.length + 20}
             fill="none" stroke="none" />
     </g>
   );

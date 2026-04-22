@@ -16,6 +16,7 @@ import {
   jobDisplayName,
   RARITY_GUIDANCE,
   RARITY_LABEL,
+  defaultCostFor,
 } from '@aozoraquest/core';
 import { getGenerator } from './generator';
 import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
@@ -36,47 +37,104 @@ export interface CardTextSource {
   backend?: 'webgpu' | 'wasm';
 }
 
+export interface CardEffect {
+  /** キーワード名 (2-5 字)。例: 潜影 / 星読み */
+  name: string;
+  /** 発動コスト (テキスト表現)。MTG 風の「タップ」「生贄」「パワーN支払う」等。
+   *  パッシブ能力の場合は「なし」もしくは空文字。 */
+  cost: string;
+  /** 効果説明 (20-40 字)。 */
+  description: string;
+}
+
 export interface CardText {
-  /** 1 行の能力テキスト (キーワード ― 説明)。MTG のルール文相当。 */
-  effect: string;
+  /** 能力 (名前 + コスト + 説明) */
+  effect: CardEffect;
   /** 40-60 字の flavor text、italic 描画前提。 */
   flavor: string;
   source: CardTextSource;
 }
 
+/** 希少度ごとの「コスト目安」— プロンプトに当該 rarity だけを埋めて短く保つ。 */
+const COST_GUIDANCE: Record<Rarity, string> = {
+  common: 'コストは「なし」 または 「このカードをタップする。」 の軽いもの。',
+  uncommon: 'コストは「このカードをタップする。」 または 「あおぞらパワー 1 を支払う。」 程度。',
+  rare: 'コストは「このカードをタップし、あおぞらパワー 2 を支払う。」 のような 2 要素。',
+  srare: 'コストは「このカードをタップし、仲間 1 体を生贄に捧げる。」 のような軽い 2 要素。',
+  ssr: 'コストは「このカードをタップし、仲間 1 体を生贄に捧げ、あおぞらパワー 2 を支払う。」 のような重い 3 要素。',
+  ur: 'コストは「このカードをタップし、仲間 2 体を生贄に捧げ、あおぞらパワー 4 を支払う。」 のように非常に重い複数要素。',
+};
+
+/** 希少度ごとの 1-shot example。当該 rarity の例だけを system に含める。 */
+const EXAMPLE: Record<Rarity, string> = {
+  common: [
+    '能力名: 俊敏',
+    'コスト: このカードをタップする。',
+    '説明: 相手が気付く前に一歩動く。見た者はもう手遅れである。',
+    'フレーバー: 影が動いたのではない。影になる前に、彼が動いただけだ。',
+  ].join('\n'),
+  uncommon: [
+    '能力名: 見切り',
+    'コスト: あおぞらパワー 1 を支払う。',
+    '説明: 敵の一撃を一度だけ完全に回避する。',
+    'フレーバー: 瞳は刃を追わない。追うのは、振るう者の迷いの線である。',
+  ].join('\n'),
+  rare: [
+    '能力名: 鏡映',
+    'コスト: このカードをタップし、あおぞらパワー 2 を支払う。',
+    '説明: 直近に受けた効果を、術者へそのまま返す。',
+    'フレーバー: 鏡は映すのではない。映されていたのが、自分であったと気付かせる。',
+  ].join('\n'),
+  srare: [
+    '能力名: 結界',
+    'コスト: このカードをタップし、仲間 1 体を生贄に捧げる。',
+    '説明: ターン終了時まで、仲間全員が致死の一撃を無効にする。',
+    'フレーバー: 盾は鉄でできているのではない。彼の覚悟が、そう見えているだけだ。',
+  ].join('\n'),
+  ssr: [
+    '能力名: 天啓',
+    'コスト: このカードをタップし、仲間 1 体を生贄に捧げ、あおぞらパワー 2 を支払う。',
+    '説明: 次のターン、全てのプレイヤーのカードを 1 枚めくり直す。',
+    'フレーバー: 星々の並びが、ほんのわずか組み直される。それを見た者は、もう元の道に戻れない。',
+  ].join('\n'),
+  ur: [
+    '能力名: 星読み',
+    'コスト: このカードをタップし、仲間 2 体を生贄に捧げ、あおぞらパワー 4 を支払う。',
+    '説明: 敵味方の運命を重ねた光で束ね、盤面そのものを書き換える。',
+    'フレーバー: 星の一つを彼の指が撫でた。銀河が、行儀よくページを捲った。',
+  ].join('\n'),
+};
+
 function buildPrompt(result: DiagnosisResult, rarity: Rarity): { system: string; user: string } {
   const job = JOBS_BY_ID[result.archetype];
   const name = jobDisplayName(result.archetype);
-  // 上位 4 認知機能
   const top = [...COGNITIVE_FUNCTIONS]
     .sort((a, b) => (result.cognitiveScores[b] ?? 0) - (result.cognitiveScores[a] ?? 0))
     .slice(0, 4);
-  const topDesc = top.map((fn) => `${fn} ${COG_LABEL[fn]} (${result.cognitiveScores[fn] ?? 0})`).join('、');
+  const topDesc = top.map((fn) => `${fn} ${COG_LABEL[fn]}`).join('、');
   const rarityLabel = RARITY_LABEL[rarity];
   const rarityGuidance = RARITY_GUIDANCE[rarity];
+  const costGuidance = COST_GUIDANCE[rarity];
+  const example = EXAMPLE[rarity];
 
   const system = [
     'あなたはトレーディングカードゲームのカード文を書く詩人兼デザイナーです。',
-    '気質情報と希少度を受け取り、MTG 調のルール文 (能力) と古文書風フレーバーを',
-    '日本語で 1 セット書きます。',
+    '能力 (名前・コスト・説明) と古文書風フレーバーを日本語で 1 セット書きます。',
     '',
-    `希少度は ${rarityLabel}。${rarityGuidance}`,
-    '希少度が高いほど、響きも挙動も稀有で印象的な能力にすること。',
+    `希少度: ${rarityLabel}`,
+    `${rarityGuidance}`,
+    `${costGuidance}`,
     '',
-    '出力形式は以下の 2 行のみ。他に何も書かない。',
-    '能力: <2〜5字キーワード> ― <20〜40字説明>',
-    'フレーバー: <40〜60字の詩的な 1 文>',
+    '出力形式は以下の 4 行のみ。他には何も書かない。',
+    '能力名: <2〜5字>',
+    'コスト: <日本語。なし でも可>',
+    '説明: <20〜40字>',
+    'フレーバー: <40〜60字>',
     '',
-    '禁止: Markdown、*強調*、「」『』《》の括弧、見出し記号 (# や ** など)、',
-    '     前置き ("はい、" "わかりました" 等)、数値指定、3 行以上の出力。',
+    '禁止: Markdown (**、*、_)、括弧 (「」『』《》)、見出し記号 (#)、前置き、5行以上の出力。',
     '',
-    '例 1 (希少度コモン):',
-    '能力: 俊敏 ― 相手が気付く前に一歩動く。見た者はもう手遅れである。',
-    'フレーバー: 影が動いたのではない。影になる前に、彼が動いただけだ。',
-    '',
-    '例 2 (希少度UR):',
-    '能力: 星読み ― 敵味方の運命を重ねた光で束ね、盤面そのものを書き換える。',
-    'フレーバー: 星の一つを彼の指が撫でた。銀河が、行儀よくページを捲った。',
+    '例:',
+    example,
   ].join('\n');
 
   const user = [
@@ -86,7 +144,7 @@ function buildPrompt(result: DiagnosisResult, rarity: Rarity): { system: string;
     `上位傾向: ${topDesc}`,
     `希少度: ${rarityLabel}`,
     '',
-    '上の気質と希少度に合う「能力」と「フレーバー」を 1 組だけ書いてください。',
+    '上に合う能力とフレーバーを 1 組だけ書いてください。',
   ].join('\n');
 
   return { system, user };
@@ -107,60 +165,66 @@ function stripWrappers(s: string): string {
     .trim();
 }
 
-/** LLM の出力から "能力:" と "フレーバー:" ブロックを抽出する。
- *  TinySwallow は小さいモデルで様式が崩れがちなので、いくつかの表記ゆれに対応する。 */
-function parseLLMOutput(raw: string): { effect: string; flavor: string } | null {
+/** LLM 出力から 4 項目 (能力名 / コスト / 説明 / フレーバー) を抽出する。 */
+function parseLLMOutput(raw: string): { name: string; cost: string; description: string; flavor: string } | null {
   const text = stripMarkdown(raw.replace(/\r\n/g, '\n'));
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
 
-  const HEADER_EFFECT = /^(?:能力|効果|アビリティ|スキル)[:\s::・　]*(.*)$/;
-  const HEADER_FLAVOR = /^(?:フレーバー|flavor|情景|詩|口上)[:\s::・　]*(.*)$/i;
+  const HEADERS: Record<'name' | 'cost' | 'description' | 'flavor', RegExp> = {
+    name: /^(?:能力名|キーワード|スキル名|アビリティ名|名前)[:\s::・　]*(.*)$/,
+    cost: /^(?:コスト|起動コスト|代償|消費)[:\s::・　]*(.*)$/,
+    description: /^(?:説明|効果|能力|動作|挙動)[:\s::・　]*(.*)$/,
+    flavor: /^(?:フレーバー|flavor|情景|詩|口上)[:\s::・　]*(.*)$/i,
+  };
 
-  let effect = '';
-  let flavor = '';
-  let pendingHeader: 'effect' | 'flavor' | null = null;
+  const out: Record<'name' | 'cost' | 'description' | 'flavor', string> = {
+    name: '', cost: '', description: '', flavor: '',
+  };
+  let pending: keyof typeof out | null = null;
 
   for (const line of lines) {
     const lineClean = line.replace(/^[-・*#>\s]+/, '').trim();
-    const effM = lineClean.match(HEADER_EFFECT);
-    const flaM = lineClean.match(HEADER_FLAVOR);
-    if (effM) {
-      if (effM[1]!.trim()) {
-        if (!effect) effect = stripWrappers(effM[1]!);
-        pendingHeader = null;
+    let matched = false;
+    for (const key of Object.keys(HEADERS) as (keyof typeof HEADERS)[]) {
+      const m = lineClean.match(HEADERS[key]);
+      if (!m) continue;
+      matched = true;
+      if (m[1]!.trim()) {
+        if (!out[key]) out[key] = stripWrappers(m[1]!);
+        pending = null;
       } else {
-        pendingHeader = 'effect';
+        pending = key;
       }
-      continue;
+      break;
     }
-    if (flaM) {
-      if (flaM[1]!.trim()) {
-        if (!flavor) flavor = stripWrappers(flaM[1]!);
-        pendingHeader = null;
-      } else {
-        pendingHeader = 'flavor';
-      }
-      continue;
-    }
-    // ヘッダーの次行に本文が来るパターン
-    if (pendingHeader === 'effect' && !effect) { effect = stripWrappers(lineClean); pendingHeader = null; continue; }
-    if (pendingHeader === 'flavor' && !flavor) { flavor = stripWrappers(lineClean); pendingHeader = null; continue; }
-  }
-
-  // フォールバック: 明示的な header が見つからなかったら最初の 2 本文行を effect/flavor に割り振る
-  if ((!effect || !flavor) && lines.length >= 2) {
-    const plain = lines.filter((l) => !HEADER_EFFECT.test(l) && !HEADER_FLAVOR.test(l));
-    if (plain.length >= 2) {
-      if (!effect) effect = stripWrappers(plain[0]!);
-      if (!flavor) flavor = stripWrappers(plain[1]!);
+    if (matched) continue;
+    if (pending && !out[pending]) {
+      out[pending] = stripWrappers(lineClean);
+      pending = null;
     }
   }
 
-  if (!effect || !flavor) return null;
-  // 長さサニティ (緩め)
-  if (effect.length < 6 || effect.length > 160) return null;
-  if (flavor.length < 10 || flavor.length > 180) return null;
-  return { effect, flavor };
+  // fallback: header が全く無い場合は 1-4 行目を順に充当
+  if ((!out.name || !out.description || !out.flavor) && lines.length >= 3) {
+    const plain = lines.filter((l) =>
+      !Object.values(HEADERS).some((rx) => rx.test(l)),
+    );
+    if (plain.length >= 3) {
+      if (!out.name) out.name = stripWrappers(plain[0]!);
+      if (!out.cost) out.cost = plain[1] ? stripWrappers(plain[1]!) : 'なし';
+      if (!out.description) out.description = stripWrappers(plain[2]!);
+      if (!out.flavor && plain[3]) out.flavor = stripWrappers(plain[3]!);
+    }
+  }
+
+  if (!out.name || !out.description || !out.flavor) return null;
+  if (!out.cost) out.cost = 'なし';
+  // 長さサニティ
+  if (out.name.length < 1 || out.name.length > 16) return null;
+  if (out.cost.length > 120) return null;
+  if (out.description.length < 6 || out.description.length > 160) return null;
+  if (out.flavor.length < 10 || out.flavor.length > 180) return null;
+  return out;
 }
 
 async function generateWithLLM(
@@ -192,11 +256,15 @@ async function generateWithLLM(
       console.warn('[card-text] parse failed, falling back. raw length=', raced.length);
       return null;
     }
-    console.info('[card-text] parsed → effect:', parsed.effect, '| flavor:', parsed.flavor);
+    console.info('[card-text] parsed →', parsed);
     const source: CardTextSource = { kind: 'llm' };
     const backend = gen.getBackend();
     if (backend) source.backend = backend;
-    return { ...parsed, source };
+    return {
+      effect: { name: parsed.name, cost: parsed.cost, description: parsed.description },
+      flavor: parsed.flavor,
+      source,
+    };
   } catch (e) {
     console.warn('[card-text] generation failed', e);
     return null;
@@ -213,19 +281,45 @@ export async function generateCardText(
   const timeoutMs = opts.timeoutMs ?? 60000;
   const llm = await generateWithLLM(result, rarity, timeoutMs);
   if (llm) return llm;
+  return buildFallbackCardText(result.archetype, rarity, seed);
+}
+
+function buildFallbackCardText(archetype: Archetype, rarity: Rarity, seed: number): CardText {
+  const raw = pickFallbackEffect(archetype, seed);
+  const { name, description } = splitFallbackEffect(raw);
+  const cost = fallbackCostFor(rarity, seed);
   return {
-    effect: pickFallbackEffect(result.archetype, seed),
-    flavor: pickFallbackFlavor(result.archetype, seed),
+    effect: { name, cost, description },
+    flavor: pickFallbackFlavor(archetype, seed),
     source: { kind: 'fallback' },
   };
 }
 
+/** 旧ハンドクラフト effect 文字列 "名前 ― 説明" を分割する。 */
+function splitFallbackEffect(raw: string): { name: string; description: string } {
+  const m = raw.match(/^([^\s―—–\-]{1,8})\s*[―—–\-]\s*(.+)$/);
+  if (m) return { name: m[1]!, description: m[2]! };
+  return { name: raw.slice(0, 4), description: raw };
+}
+
+/** 希少度と seed から fallback 用のコスト文言を合成。 */
+function fallbackCostFor(rarity: Rarity, seed: number): string {
+  const n = defaultCostFor(rarity, (seed / 1000) % 1);
+  if (rarity === 'common') {
+    return n === 0 ? 'なし' : 'このカードをタップする。';
+  }
+  if (rarity === 'uncommon') {
+    return n <= 1 ? 'このカードをタップする。' : 'あおぞらパワー 1 を支払う。';
+  }
+  if (rarity === 'rare' || rarity === 'srare') {
+    return `このカードをタップし、あおぞらパワー ${Math.max(1, n - 1)} を支払う。`;
+  }
+  // ssr / ur
+  return `このカードをタップし、仲間 1 体を生贄に捧げ、あおぞらパワー ${n} を支払う。`;
+}
+
 /** fallback だけ (テスト用) */
-export function getFallbackCardText(archetype: Archetype, seed: number): CardText {
-  return {
-    effect: pickFallbackEffect(archetype, seed),
-    flavor: pickFallbackFlavor(archetype, seed),
-    source: { kind: 'fallback' },
-  };
+export function getFallbackCardText(archetype: Archetype, seed: number, rarity: Rarity = 'common'): CardText {
+  return buildFallbackCardText(archetype, rarity, seed);
 }
 
