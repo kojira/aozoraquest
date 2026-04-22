@@ -100,6 +100,8 @@ export interface DiagnosisResult {
   cardEffect?: string;
   /** カードレアリティ (引き直し毎に抽選)。 */
   cardRarity?: string;
+  /** 同じレアリティでも 2 種類ある枠画像のどちらを採用したか (1 or 2)。 */
+  cardFrameVariant?: number;
   /** カードを引いた時刻 (ISO)。flavorText / cardEffect / cardRarity はこの時刻で同期。 */
   cardDrawnAt?: string;
   /** 後方互換 */

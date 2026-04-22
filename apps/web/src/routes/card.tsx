@@ -33,6 +33,7 @@ export function Card() {
   const [load, setLoad] = useState<LoadState>({ status: 'checking' });
   const [card, setCard] = useState<CardText | null>(null);
   const [rarity, setRarity] = useState<Rarity>('common');
+  const [frameVariant, setFrameVariant] = useState<1 | 2>(1);
   const [flavorBusy, setFlavorBusy] = useState(false);
   const [power, setPower] = useState<PointsState | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
@@ -68,6 +69,8 @@ export function Card() {
         if (hasSaved) {
           const savedRarity: Rarity = isRarity(analysis.cardRarity) ? analysis.cardRarity : 'common';
           setRarity(savedRarity);
+          const savedVariant = analysis.cardFrameVariant === 2 ? 2 : 1;
+          setFrameVariant(savedVariant);
           setCard({
             effect: analysis.cardEffect
               ? stripMarkdown(analysis.cardEffect)
@@ -123,12 +126,14 @@ export function Card() {
 
     setFlavorBusy(true);
     try {
-      // レアリティ抽選 (初回も引き直しも毎回)
+      // レアリティと枠 variant を抽選 (初回も引き直しも毎回)
       const nextRarity = rollRarity();
+      const nextVariant: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
       setRarity(nextRarity);
+      setFrameVariant(nextVariant);
       const r = await generateCardText(load.result, nextRarity, { seed: Date.now() });
       setCard(r);
-      // PDS に一式保存 (effect + flavor + rarity)
+      // PDS に一式保存 (effect + flavor + rarity + frameVariant)
       try {
         const now = new Date().toISOString();
         await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
@@ -136,6 +141,7 @@ export function Card() {
           cardEffect: r.effect,
           flavorText: r.flavor,
           cardRarity: nextRarity,
+          cardFrameVariant: nextVariant,
           cardDrawnAt: now,
           // 後方互換
           flavorGeneratedAt: now,
@@ -234,6 +240,7 @@ export function Card() {
           effectText={card?.effect ?? '…'}
           flavorText={card?.flavor ?? '…'}
           rarity={rarity}
+          frameVariant={frameVariant}
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}
