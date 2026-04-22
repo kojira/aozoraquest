@@ -11,48 +11,59 @@ const OUTPUT_H = 2144;
 const EMBEDDED_MIME_FOR_ART = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' } as const;
 
 /**
- * SVG 内の `<image href="/card-art/...">` 参照は、CanvasContext.drawImage で
- * rasterize するときに CORS / same-origin の制約が出る。Vite 同一 origin から
- * fetch → blob → dataURL 化して埋め込み、単一 SVG にしてから rasterize する。
+ * SVG 内の外部 <image href="..."> を全て data URL に inline し、rasterize 時に
+ * CORS で失敗しないようにする。
+ *
+ * 従来は fetch → blob → FileReader.readAsDataURL を使っていたが、Bluesky CDN
+ * (cdn.bsky.app 等) のアバター URL に対して CORS が効かず結果が壊れるケース
+ * があった。ブラウザ標準の <img crossOrigin="anonymous"> + canvas.toDataURL
+ * のパターンの方が一般的なので、こちらに統一する。
  */
+async function imageToDataUrl(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.decoding = 'async';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 512;
+        canvas.height = img.naturalHeight || 512;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('no 2d context')); return; }
+        ctx.drawImage(img, 0, 0);
+        // toDataURL は CORS tainted canvas で SecurityError を投げる。その場合は reject。
+        resolve(canvas.toDataURL('image/png'));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error(`image load failed: ${url}`));
+    img.src = url;
+  });
+}
+
 async function inlineImages(svgEl: SVGSVGElement): Promise<string> {
   const clone = svgEl.cloneNode(true) as SVGSVGElement;
   const images = Array.from(clone.querySelectorAll('image'));
-  await Promise.all(images.map(async (img) => {
-    const href = img.getAttribute('href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+  await Promise.all(images.map(async (imgEl) => {
+    const href = imgEl.getAttribute('href')
+      || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
     if (!href || href.startsWith('data:')) return;
     try {
-      const res = await fetch(href);
-      if (!res.ok) throw new Error(`fetch ${href} ${res.status}`);
-      const blob = await res.blob();
-      const mime = blob.type || inferMimeFromExt(href);
-      const dataUrl = await blobToDataUrl(blob, mime);
-      img.removeAttribute('href');
-      img.removeAttribute('xlink:href');
-      img.setAttribute('href', dataUrl);
-      img.setAttribute('xlink:href', dataUrl);
+      const dataUrl = await imageToDataUrl(href);
+      imgEl.removeAttribute('href');
+      imgEl.removeAttribute('xlink:href');
+      imgEl.setAttribute('href', dataUrl);
+      imgEl.setAttribute('xlink:href', dataUrl);
     } catch (e) {
       console.warn('[card-export] image inline failed', href, e);
+      // 失敗した <image> は削除: 壊れた外部画像のまま rasterize すると
+      // canvas が tainted になって blob 書き出しが死ぬ。
+      imgEl.remove();
     }
   }));
   return new XMLSerializer().serializeToString(clone);
-}
-
-function inferMimeFromExt(url: string): string {
-  const lower = url.toLowerCase();
-  for (const [ext, mime] of Object.entries(EMBEDDED_MIME_FOR_ART)) {
-    if (lower.endsWith('.' + ext)) return mime;
-  }
-  return 'image/png';
-}
-
-function blobToDataUrl(blob: Blob, mime: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result).replace(/^data:[^;]+/, `data:${mime}`));
-    fr.onerror = () => reject(fr.error);
-    fr.readAsDataURL(blob);
-  });
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

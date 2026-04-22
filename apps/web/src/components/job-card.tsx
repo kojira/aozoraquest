@@ -135,6 +135,21 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
                 height={AVATAR_R * 2}
                 fill="url(#avatarFeather)" />
         </mask>
+        {/* LV バッジ用の立体感グラデ */}
+        <radialGradient id="badgeGrad" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#d9a94e" />
+          <stop offset="55%" stopColor={ACCENT} />
+          <stop offset="100%" stopColor="#4a2f12" />
+        </radialGradient>
+        {/* rarity pill 用のメタル風グラデ (rarity 色から派生) */}
+        <linearGradient id="rarityGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={rarityColor} stopOpacity="1" />
+          <stop offset="100%" stopColor={rarityColor} stopOpacity="0.75" />
+        </linearGradient>
+        {/* バッジの影 */}
+        <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" floodOpacity="0.45" />
+        </filter>
       </defs>
 
       {/* === カード背景 ===
@@ -158,12 +173,19 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
               fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
           {displayName}
         </text>
-        {/* LV を MTG のマナコスト相当として右に */}
-        <g transform={`translate(${W - PADX - 16}, ${TITLE_Y + TITLE_H / 2})`}>
-          <circle cx="0" cy="0" r="22" fill={ACCENT} stroke={INK} strokeWidth="1.5" />
-          <text x="0" y="2" fontSize="20" fontWeight="800"
-                fontFamily="ui-monospace, 'Courier New', monospace"
-                textAnchor="middle" dominantBaseline="middle" fill="#fff8e2">
+        {/* LV バッジ (MTG のマナコスト相当)。パネル内に収まるよう中心を調整。 */}
+        <g transform={`translate(${W - PADX - 32}, ${TITLE_Y + TITLE_H / 2})`} filter="url(#badgeShadow)">
+          {/* 外輪 (暗色リング) */}
+          <circle cx="0" cy="0" r="24" fill="#2a1a08" />
+          {/* 本体 (グラデでメタリック) */}
+          <circle cx="0" cy="0" r="22" fill="url(#badgeGrad)" />
+          {/* ハイライト (左上のキラ) */}
+          <ellipse cx="-7" cy="-8" rx="7" ry="4" fill="rgba(255,240,200,0.55)" />
+          {/* 数値 */}
+          <text x="0" y="1" fontSize="22" fontWeight="800"
+                fontFamily="'Hiragino Mincho ProN', serif"
+                textAnchor="middle" dominantBaseline="middle" fill="#fff8e2"
+                style={{ letterSpacing: '-0.02em' }}>
             {lv}
           </text>
         </g>
@@ -215,13 +237,17 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
               fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
           旅人 — {jobName}
         </text>
-        {/* rarity pill (右端) */}
-        <g transform={`translate(${W - PADX - 12}, ${TYPE_Y + TYPE_H / 2})`}>
-          <rect x={-74} y={-18} width="68" height="36" rx="18"
-                fill={rarityColor} stroke={INK} strokeWidth="1.4" />
-          <text x={-40} y="6" fontSize="16" fontWeight="800"
+        {/* rarity pill (右端、パネル内に収める) */}
+        <g transform={`translate(${W - PADX - 12}, ${TYPE_Y + TYPE_H / 2})`} filter="url(#badgeShadow)">
+          <rect x={-92} y={-16} width="86" height="32" rx="16"
+                fill="url(#rarityGrad)" stroke={INK} strokeWidth="1.4" />
+          {/* 内側の細い白縁 */}
+          <rect x={-89} y={-13} width="80" height="26" rx="13"
+                fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.8" />
+          <text x={-49} y="5" fontSize="15" fontWeight="800"
                 fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif"
-                textAnchor="middle" fill="#fff8e2">
+                textAnchor="middle" fill="#fff8e2"
+                style={{ letterSpacing: '0.03em' }}>
             {rarityLabel}
           </text>
         </g>
