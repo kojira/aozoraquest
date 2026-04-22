@@ -1,69 +1,125 @@
 /**
- * カード用フレーバーテキスト生成。
- * TinySwallow (browser LLM) が使えればそちら、駄目ならハンドクラフト pool
- * から seed に基づいて抽選する。
+ * カードの「能力テキスト」+「フレーバーテキスト」を生成する。
+ * MTG に倣い:
+ *   - 能力行 (ability): 認知機能の特徴を擬似能力として日本語で表現
+ *     (例: 「俊敏 ― 他者の気配を先読みし、いち早く動き出す。」)
+ *   - フレーバー (flavor): カード下部の italic、詩的な 1 文
+ *
+ * 実行: TinySwallow で 1 回の生成で両方を構造化出力 → 解析。
+ * 失敗時は archetype ごとのハンドクラフト pool から抽選。
  */
 
 import type { Archetype, CogFunction, DiagnosisResult } from '@aozoraquest/core';
-import { JOB_TAGLINES, JOBS_BY_ID, jobDisplayName } from '@aozoraquest/core';
+import { COGNITIVE_FUNCTIONS, JOBS_BY_ID, jobDisplayName } from '@aozoraquest/core';
 import { getGenerator } from './generator';
-import { pickFallbackFlavor } from './job-flavor-fallback';
+import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
 
 const COG_LABEL: Record<CogFunction, string> = {
-  Ni: '内向直観', Ne: '外向直観',
-  Si: '内向感覚', Se: '外向感覚',
-  Ti: '内向思考', Te: '外向思考',
-  Fi: '内向感情', Fe: '外向感情',
+  Ni: '内向直観 (本質を見抜く)',
+  Ne: '外向直観 (可能性を広げる)',
+  Si: '内向感覚 (積み重ねを信じる)',
+  Se: '外向感覚 (今この瞬間に動く)',
+  Ti: '内向思考 (論理の整合を組む)',
+  Te: '外向思考 (結果で示す)',
+  Fi: '内向感情 (自分の価値観に忠実)',
+  Fe: '外向感情 (場の調和を整える)',
 };
 
-export interface FlavorTextSource {
+export interface CardTextSource {
   kind: 'llm' | 'fallback';
-  /** LLM 採用時の backend (webgpu/wasm) */
   backend?: 'webgpu' | 'wasm';
 }
 
-export interface FlavorTextResult {
-  text: string;
-  source: FlavorTextSource;
+export interface CardText {
+  /** 1 行の能力テキスト (キーワード ― 説明)。MTG のルール文相当。 */
+  effect: string;
+  /** 40-60 字の flavor text、italic 描画前提。 */
+  flavor: string;
+  source: CardTextSource;
 }
 
 function buildPrompt(result: DiagnosisResult): { system: string; user: string } {
   const job = JOBS_BY_ID[result.archetype];
   const name = jobDisplayName(result.archetype);
-  const tagline = JOB_TAGLINES[result.archetype];
-  const dom = COG_LABEL[job.dominantFunction];
-  const aux = COG_LABEL[job.auxiliaryFunction];
-  const { atk, def, agi, int: i, luk } = result.rpgStats;
+  // 上位 4 認知機能
+  const top = [...COGNITIVE_FUNCTIONS]
+    .sort((a, b) => (result.cognitiveScores[b] ?? 0) - (result.cognitiveScores[a] ?? 0))
+    .slice(0, 4);
+  const topDesc = top.map((fn) => `${fn} ${COG_LABEL[fn]} (${result.cognitiveScores[fn] ?? 0})`).join('、');
+
   const system = [
-    'あなたは古い冒険者ギルドの登録証に添えるフレーバーテキストを書く詩人です。',
-    '指定された気質を持つ人物を、40〜80 文字の日本語 1 文で詩的に描写してください。',
-    '括弧 (「」『』《》) や説明文は使わず、地の文のみ。語尾は常体で。',
-    '具体的なステータス数値や職業名はそのまま使わず、質感として織り込むこと。',
+    'あなたはトレーディングカードゲームのカード文を書くデザイナーです。',
+    '指定された気質から、MTG のルール文とフレーバーテキストを日本語で作ります。',
+    '',
+    '出力はちょうど 2 ブロック。必ず以下の形式を守ってください:',
+    '能力: <キーワード> ― <20-40 字の説明>',
+    'フレーバー: <40-60 字の 1 文>',
+    '',
+    '規則:',
+    '- 能力行は MTG の "Ward 2" "Flash" のような短いキーワード名 + ダッシュ ― + 説明文。',
+    '- キーワードは 2-5 文字の日本語造語 (例: 先読、共鳴、俊敏、遠望、執心、潜影)。',
+    '- 説明文は常体、20-40 字。具体的な数値は書かず、気質の性質を動的に描写する。',
+    '- フレーバーは地の文の 1 文、40-60 字、詩的に。常体。',
+    '- Markdown (**、*、_ など) を一切使わない。見出し記号も使わない。',
+    '- 括弧 (「」『』《》) を使わない。',
+    '- 「能力:」「フレーバー:」以外の見出しや前置きを付けない。',
+    '- 合計 2 行だけ出力する。',
   ].join('\n');
-  const user = `職業: ${name}
-タグライン: ${tagline}
-主要機能: ${dom} / ${aux}
-ステータス: 攻 ${atk} / 守 ${def} / 速 ${agi} / 知 ${i} / 運 ${luk}`;
+
+  const user = [
+    `職業: ${name}`,
+    `主機能: ${job.dominantFunction} (${COG_LABEL[job.dominantFunction]})`,
+    `副機能: ${job.auxiliaryFunction} (${COG_LABEL[job.auxiliaryFunction]})`,
+    `上位傾向: ${topDesc}`,
+  ].join('\n');
+
   return { system, user };
 }
 
-/** LLM 出力から括弧・引用符・余計な改行を削る。 */
-function sanitize(raw: string): string {
-  let t = raw.trim();
-  // 先頭/末尾の「」『』「」"' を剥がす
-  t = t.replace(/^[「『《"'“”]+/, '').replace(/[」』》"'“”]+$/, '');
-  // 改行を 1 スペースに
-  t = t.replace(/\s*\n\s*/g, ' ').trim();
+function stripMarkdown(s: string): string {
+  let t = s;
+  t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
+  t = t.replace(/(?<![\*])\*([^\*\n]+)\*(?![\*])/g, '$1');
+  t = t.replace(/(?<![_])_([^_\n]+)_(?![_])/g, '$1');
   return t;
 }
 
-/** LLM 生成を試みる。失敗なら null。 */
-async function generateWithLLM(result: DiagnosisResult, timeoutMs: number): Promise<FlavorTextResult | null> {
+function stripWrappers(s: string): string {
+  return s
+    .replace(/^[「『《【〈"'“”]+/, '')
+    .replace(/[」』》】〉"'“”]+$/, '')
+    .trim();
+}
+
+/** LLM の出力から "能力:" と "フレーバー:" ブロックを抽出する。 */
+function parseLLMOutput(raw: string): { effect: string; flavor: string } | null {
+  const text = stripMarkdown(raw.replace(/\r\n/g, '\n'));
+  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
+
+  let effect = '';
+  let flavor = '';
+  for (const line of lines) {
+    const effM = line.match(/^(?:能力|効果)\s*[::]\s*(.+)$/);
+    const flaM = line.match(/^(?:フレーバー|flavor)\s*[::]\s*(.+)$/i);
+    if (effM && !effect) effect = stripWrappers(effM[1]!);
+    else if (flaM && !flavor) flavor = stripWrappers(flaM[1]!);
+  }
+  if (!effect || !flavor) return null;
+  // 長さサニティ
+  if (effect.length < 8 || effect.length > 120) return null;
+  if (flavor.length < 15 || flavor.length > 140) return null;
+  return { effect, flavor };
+}
+
+async function generateWithLLM(
+  result: DiagnosisResult,
+  timeoutMs: number,
+): Promise<CardText | null> {
   const gen = getGenerator();
   try {
     await gen.load();
   } catch (e) {
-    console.warn('[flavor] generator load failed', e);
+    console.warn('[card-text] generator load failed', e);
     return null;
   }
   const { system, user } = buildPrompt(result);
@@ -75,44 +131,46 @@ async function generateWithLLM(result: DiagnosisResult, timeoutMs: number): Prom
     const fullPromise = gen.generate(messages);
     const raced = await Promise.race([
       fullPromise,
-      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('flavor LLM timeout')), timeoutMs)),
+      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('card-text LLM timeout')), timeoutMs)),
     ]);
-    const text = sanitize(raced);
-    if (!text || text.length < 15 || text.length > 200) return null;
-    const source: FlavorTextSource = { kind: 'llm' };
+    const parsed = parseLLMOutput(raced);
+    if (!parsed) return null;
+    const source: CardTextSource = { kind: 'llm' };
     const backend = gen.getBackend();
     if (backend) source.backend = backend;
-    return { text, source };
+    return { ...parsed, source };
   } catch (e) {
-    console.warn('[flavor] generation failed', e);
+    console.warn('[card-text] generation failed', e);
     return null;
   }
 }
 
-/**
- * フレーバーテキスト生成 (メイン API)。
- * LLM → fallback の順で試し、必ず 1 文返す。
- * seed は fallback のとき pool からの選択に使う (再生成で別の文を返したいとき
- * bump する)。
- */
-export async function generateFlavor(
+/** effect + flavor を生成 (メイン API)。失敗時は fallback。 */
+export async function generateCardText(
   result: DiagnosisResult,
   opts: { seed?: number; timeoutMs?: number } = {},
-): Promise<FlavorTextResult> {
+): Promise<CardText> {
   const seed = opts.seed ?? Date.now();
-  const timeoutMs = opts.timeoutMs ?? 45000;
+  const timeoutMs = opts.timeoutMs ?? 60000;
   const llm = await generateWithLLM(result, timeoutMs);
   if (llm) return llm;
   return {
-    text: pickFallbackFlavor(result.archetype, seed),
+    effect: pickFallbackEffect(result.archetype, seed),
+    flavor: pickFallbackFlavor(result.archetype, seed),
     source: { kind: 'fallback' },
   };
 }
 
-/** fallback だけを使いたい場合 (テスト / 強制保守モード)。 */
-export function getFallbackFlavor(archetype: Archetype, seed: number): FlavorTextResult {
+/** fallback だけ (テスト用) */
+export function getFallbackCardText(archetype: Archetype, seed: number): CardText {
   return {
-    text: pickFallbackFlavor(archetype, seed),
+    effect: pickFallbackEffect(archetype, seed),
+    flavor: pickFallbackFlavor(archetype, seed),
     source: { kind: 'fallback' },
   };
 }
+
+// 旧 API (互換のため残す; card.tsx 側で swap するまで動くように)
+export type FlavorTextResult = CardText;
+export const generateFlavor = generateCardText;
+export const getFallbackFlavor = getFallbackCardText;
