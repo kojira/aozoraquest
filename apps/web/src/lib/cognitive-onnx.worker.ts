@@ -45,14 +45,49 @@ async function tryCreate(device: Device, dtype: Dtype) {
   });
 }
 
+/**
+ * transformers.js は Cache API (transformers-cache) に model を保存するが、
+ * 初回取得時に dev server の SPA fallback (index.html) が返っていた場合、
+ * 汚染された 297 byte HTML が永続キャッシュされて以降 "protobuf parsing
+ * failed" で永遠に起動しない。そのエラー時はキャッシュを一掃してリトライ。
+ */
+function isProtobufError(e: unknown): boolean {
+  const msg = String((e as Error)?.message ?? e);
+  return msg.includes('protobuf') || msg.includes('ERROR_CODE: 7');
+}
+
+async function clearPoisonedCache(): Promise<void> {
+  try {
+    const names = await caches.keys();
+    for (const n of names) {
+      if (n.includes('transformers') || n.includes('cognitive-onnx')) {
+        await caches.delete(n);
+      }
+    }
+  } catch (e) {
+    console.warn('[cognitive] cache clear failed', e);
+  }
+}
+
+async function createWithRecovery(device: Device, dtype: Dtype) {
+  try {
+    return await tryCreate(device, dtype);
+  } catch (e) {
+    if (!isProtobufError(e)) throw e;
+    console.warn(`[cognitive] ${device}/${dtype} protobuf error, clearing cache and retrying`, e);
+    await clearPoisonedCache();
+    return await tryCreate(device, dtype);
+  }
+}
+
 async function ensureClassifier(): Promise<void> {
   if (classifier) return;
   try {
-    classifier = await tryCreate('webgpu', 'q4');
+    classifier = await createWithRecovery('webgpu', 'q4');
     activeBackend = 'webgpu'; activeDtype = 'q4';
   } catch (e) {
     console.warn('[cognitive] WebGPU q4 failed, falling back to WASM q8', e);
-    classifier = await tryCreate('wasm', 'q8');
+    classifier = await createWithRecovery('wasm', 'q8');
     activeBackend = 'wasm'; activeDtype = 'q8';
   }
 }
