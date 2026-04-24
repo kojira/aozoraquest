@@ -6,6 +6,7 @@ import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector }
 import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
+import { getAutoTranslate, setAutoTranslate } from '@/lib/prefs';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
@@ -302,6 +303,11 @@ export function Settings() {
       </section>
 
       <section style={{ marginTop: '2em' }}>
+        <h3 style={{ fontSize: '0.95em' }}>表示設定</h3>
+        <AutoTranslateToggle />
+      </section>
+
+      <section style={{ marginTop: '2em' }}>
         <h3 style={{ fontSize: '0.95em' }}>アカウント</h3>
         {session.status === 'signed-in' && (
           <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -310,6 +316,29 @@ export function Settings() {
         )}
         <button onClick={onSignOut}>ログアウト</button>
       </section>
+    </div>
+  );
+}
+
+function AutoTranslateToggle() {
+  const [enabled, setEnabled] = useState<boolean>(() => getAutoTranslate());
+  function handleChange(v: boolean) {
+    setAutoTranslate(v);
+    setEnabled(v);
+  }
+  return (
+    <div style={{ marginTop: '0.5em' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em', fontSize: '0.9em', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => handleChange(e.target.checked)}
+        />
+        <span>日本語以外の投稿を自動で翻訳する</span>
+      </label>
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
+        ブラウザ内で TinySwallow が動くので外部に送信されません。OFF にした場合も各投稿下の「🌐 翻訳する」ボタンから個別に翻訳できます。
+      </p>
     </div>
   );
 }

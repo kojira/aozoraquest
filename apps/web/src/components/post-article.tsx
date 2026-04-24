@@ -14,6 +14,7 @@ import { postDetailPath } from '@/lib/uri';
 interface PostRecordShape {
   text?: string;
   createdAt?: string;
+  langs?: string[];
   reply?: { root?: { uri?: string }; parent?: { uri?: string } };
   facets?: Parameters<typeof PostBody>[0]['facets'];
 }
@@ -139,6 +140,8 @@ export function PostArticle({
         facets={record.facets}
         images={extractPostImages(post)}
         external={extractPostExternal(post)}
+        postUri={post.uri}
+        {...(record.langs ? { langs: record.langs } : {})}
       />
       <PostMetrics
         post={post}

@@ -170,7 +170,7 @@ export function stripMarkdown(s: string): string {
   return t;
 }
 
-function stripWrappers(s: string): string {
+export function stripWrappers(s: string): string {
   return s
     .replace(/^[「『《【〈"'“”]+/, '')
     .replace(/[」』》】〉"'“”]+$/, '')
