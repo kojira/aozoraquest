@@ -11,6 +11,7 @@ import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from '
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
 import { getCognitiveOnnxClassifier } from './cognitive-onnx';
+import { isLowEndDevice } from './device';
 
 type ProgressCallback = (phase: string, done?: number, total?: number) => void;
 
@@ -92,7 +93,10 @@ export async function runDiagnosis(
   onProgress: ProgressCallback = () => {},
 ): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
   onProgress('fetching-posts');
-  const posts = await fetchMyPosts(agent, DIAGNOSIS_POST_LIMIT);
+  // モバイルは 500 件フルだと Safari のメモリ制限を超えてクラッシュするので
+  // 半分に抑える (精度は DIAGNOSIS_MIN_POST_COUNT 以上確保できれば大きく落ちない)。
+  const limit = isLowEndDevice() ? 200 : DIAGNOSIS_POST_LIMIT;
+  const posts = await fetchMyPosts(agent, limit);
 
   if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount: posts.length };
