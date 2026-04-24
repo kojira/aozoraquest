@@ -11,7 +11,7 @@ import { PostMetrics } from '@/components/post-metrics';
 import { PostBody } from '@/components/post-body';
 import { useArchetypes } from '@/lib/archetype-cache';
 import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostImages } from '@/lib/post-embed';
+import { extractPostImages, extractPostExternal } from '@/lib/post-embed';
 
 type Mode = 'users' | 'posts';
 
@@ -185,7 +185,7 @@ function PostHit({ post, archetype }: { post: AppBskyFeedDefs.PostView; archetyp
           {formatDateTime(ts)}
         </time>
       </div>
-      <PostBody text={rec.text ?? ''} facets={rec.facets} images={extractPostImages(post)} />
+      <PostBody text={rec.text ?? ''} facets={rec.facets} images={extractPostImages(post)} external={extractPostExternal(post)} />
       <PostMetrics post={post} />
     </article>
   );

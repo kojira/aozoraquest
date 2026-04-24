@@ -10,7 +10,7 @@ import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
 import { PostBody } from '@/components/post-body';
 import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostImages, type PostImage } from '@/lib/post-embed';
+import { extractPostImages, extractPostExternal, type PostExternal, type PostImage } from '@/lib/post-embed';
 
 interface LoadState {
   kind: 'loading' | 'not-found' | 'ok' | 'error';
@@ -269,6 +269,7 @@ interface RecentPostItem {
   text: string;
   createdAt?: string;
   images?: PostImage[];
+  external?: PostExternal;
   facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
 }
 
@@ -293,10 +294,12 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
           if (typeof rec.text === 'string') {
             const ts = rec.createdAt ?? item.post.indexedAt;
             const images = extractPostImages(item.post);
+            const external = extractPostExternal(item.post);
             out.push({
               text: rec.text,
               ...(ts ? { createdAt: ts } : {}),
               ...(images.length > 0 ? { images } : {}),
+              ...(external ? { external } : {}),
               ...(rec.facets ? { facets: rec.facets } : {}),
             });
           }
@@ -331,6 +334,7 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
             text={it.text}
             facets={it.facets}
             images={it.images}
+            external={it.external}
             topMargin={it.createdAt ? '0.35em' : 0}
           />
         </article>

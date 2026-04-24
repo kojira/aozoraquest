@@ -8,6 +8,14 @@ export interface PostImage {
   aspectRatio?: { width: number; height: number };
 }
 
+/** 外部リンクカード (app.bsky.embed.external#view)。 */
+export interface PostExternal {
+  uri: string;
+  title: string;
+  description: string;
+  thumb?: string;
+}
+
 interface ViewImageShape {
   thumb?: unknown;
   fullsize?: unknown;
@@ -29,6 +37,23 @@ function toPostImage(v: ViewImageShape): PostImage | null {
   return out;
 }
 
+interface ExternalViewShape {
+  $type?: string;
+  external?: {
+    uri?: unknown;
+    title?: unknown;
+    description?: unknown;
+    thumb?: unknown;
+  };
+}
+
+interface EmbedShape {
+  $type?: string;
+  images?: ViewImageShape[];
+  external?: ExternalViewShape['external'];
+  media?: { $type?: string; images?: ViewImageShape[]; external?: ExternalViewShape['external'] };
+}
+
 /**
  * post.embed から画像配列を安全に抽出する。
  * - app.bsky.embed.images#view: 単純な画像添付
@@ -36,9 +61,7 @@ function toPostImage(v: ViewImageShape): PostImage | null {
  * どちらも拾う。どれにも該当しないときは空配列を返す。
  */
 export function extractPostImages(post: AppBskyFeedDefs.PostView): PostImage[] {
-  const embed = post.embed as
-    | { $type?: string; images?: ViewImageShape[]; media?: { $type?: string; images?: ViewImageShape[] } }
-    | undefined;
+  const embed = post.embed as EmbedShape | undefined;
   if (!embed) return [];
 
   const fromList = (list: ViewImageShape[] | undefined): PostImage[] => {
@@ -58,4 +81,33 @@ export function extractPostImages(post: AppBskyFeedDefs.PostView): PostImage[] {
     return fromList(embed.media.images);
   }
   return [];
+}
+
+/**
+ * post.embed から外部リンクカードを抽出する。
+ * - app.bsky.embed.external#view
+ * - app.bsky.embed.recordWithMedia#view の media 側
+ */
+export function extractPostExternal(post: AppBskyFeedDefs.PostView): PostExternal | null {
+  const embed = post.embed as EmbedShape | undefined;
+  if (!embed) return null;
+
+  const pick = (e: ExternalViewShape['external'] | undefined): PostExternal | null => {
+    if (!e) return null;
+    if (typeof e.uri !== 'string') return null;
+    return {
+      uri: e.uri,
+      title: typeof e.title === 'string' ? e.title : '',
+      description: typeof e.description === 'string' ? e.description : '',
+      ...(typeof e.thumb === 'string' ? { thumb: e.thumb } : {}),
+    };
+  };
+
+  if (embed.$type === 'app.bsky.embed.external#view') {
+    return pick(embed.external);
+  }
+  if (embed.media && embed.media.$type === 'app.bsky.embed.external#view') {
+    return pick(embed.media.external);
+  }
+  return null;
 }
