@@ -10,8 +10,7 @@ import {
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
-import { disposeCognitiveOnnxClassifier, getCognitiveOnnxClassifier } from './cognitive-onnx';
-import { isLowEndDevice } from './device';
+import { getCognitiveOnnxClassifier } from './cognitive-onnx';
 
 type ProgressCallback = (phase: string, done?: number, total?: number) => void;
 
@@ -93,10 +92,7 @@ export async function runDiagnosis(
   onProgress: ProgressCallback = () => {},
 ): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
   onProgress('fetching-posts');
-  // モバイル Safari はメモリ上限が低く、200 件でも 2 回目でクラッシュするので
-  // 100 まで絞る (DIAGNOSIS_MIN_POST_COUNT を超えていれば精度は実用域)。
-  const limit = isLowEndDevice() ? 100 : DIAGNOSIS_POST_LIMIT;
-  const posts = await fetchMyPosts(agent, limit);
+  const posts = await fetchMyPosts(agent, DIAGNOSIS_POST_LIMIT);
 
   if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
     return { insufficient: true, postCount: posts.length };
@@ -167,12 +163,6 @@ export async function runDiagnosis(
     ...record,
     public: false,
   });
-
-  // モバイル Safari で繰り返し診断すると worker 内の tensor / KV cache が蓄積して
-  // クラッシュするので、診断完了ごとに worker を terminate して全解放する。
-  // 次回診断は再 init が走るが、Cache API でモデル DL はスキップされるので
-  // コストは ~3 秒程度 (クラッシュよりは遥かにマシ)。
-  if (isLowEndDevice()) disposeCognitiveOnnxClassifier();
 
   onProgress('done');
   return record;
