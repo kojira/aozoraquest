@@ -274,3 +274,16 @@ export function getCognitiveOnnxClassifier(): CognitiveOnnxClassifier {
   if (!singleton) singleton = new CognitiveOnnxClassifier();
   return singleton;
 }
+
+/** 診断完了時などに呼ぶ: Worker を terminate して tensor / KV cache を解放。
+ *  次回 getCognitiveOnnxClassifier() で新 Worker が立つ。モバイル Safari で
+ *  繰り返し診断すると tensor が貯まってクラッシュするので必須。 */
+export function disposeCognitiveOnnxClassifier(): void {
+  if (!singleton) return;
+  try {
+    singleton.dispose();
+  } catch {
+    /* no-op */
+  }
+  singleton = null;
+}
