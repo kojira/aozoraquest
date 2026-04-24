@@ -9,6 +9,9 @@ import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
 import { PostText } from '@/components/post-text';
+import { PostImages } from '@/components/post-images';
+import { formatDateTime } from '@/lib/format-datetime';
+import { extractPostImages, type PostImage } from '@/lib/post-embed';
 
 interface LoadState {
   kind: 'loading' | 'not-found' | 'ok' | 'error';
@@ -265,11 +268,14 @@ function toVec(s: StatArray) {
 
 interface RecentPostItem {
   text: string;
+  createdAt?: string;
+  images?: PostImage[];
   facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
 }
 
 interface RawPostRecord {
   text?: string;
+  createdAt?: string;
   facets?: RecentPostItem['facets'];
 }
 
@@ -285,7 +291,16 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
         const out: RecentPostItem[] = [];
         for (const item of res.data.feed) {
           const rec = item.post.record as RawPostRecord;
-          if (typeof rec.text === 'string') out.push({ text: rec.text, ...(rec.facets ? { facets: rec.facets } : {}) });
+          if (typeof rec.text === 'string') {
+            const ts = rec.createdAt ?? item.post.indexedAt;
+            const images = extractPostImages(item.post);
+            out.push({
+              text: rec.text,
+              ...(ts ? { createdAt: ts } : {}),
+              ...(images.length > 0 ? { images } : {}),
+              ...(rec.facets ? { facets: rec.facets } : {}),
+            });
+          }
         }
         setItems(out);
       } catch (e) {
@@ -305,7 +320,16 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
       <h3 style={{ fontSize: '0.95em' }}>最近の投稿</h3>
       {items.map((it, i) => (
         <article key={i} className="dq-window">
-          <PostText text={it.text} facets={it.facets} />
+          {it.createdAt && (
+            <time
+              dateTime={it.createdAt}
+              style={{ fontSize: '0.85em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}
+            >
+              {formatDateTime(it.createdAt)}
+            </time>
+          )}
+          <PostText text={it.text} facets={it.facets} style={{ marginTop: it.createdAt ? '0.35em' : 0 }} />
+          {it.images && it.images.length > 0 && <PostImages images={it.images} />}
         </article>
       ))}
     </>

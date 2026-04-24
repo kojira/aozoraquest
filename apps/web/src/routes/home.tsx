@@ -14,7 +14,10 @@ import { HomeSummary } from '@/components/home-summary';
 import { PostMetrics } from '@/components/post-metrics';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
 import { PostText } from '@/components/post-text';
+import { PostImages } from '@/components/post-images';
 import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
+import { formatDateTime } from '@/lib/format-datetime';
+import { extractPostImages } from '@/lib/post-embed';
 
 type Tab = 'following' | 'resonance';
 
@@ -216,8 +219,15 @@ function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; arc
           <strong>{author.displayName || author.handle}</strong>
         </Link>
         <span>@{author.handle}</span>
+        <time
+          dateTime={record.createdAt ?? post.indexedAt}
+          style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}
+        >
+          {formatDateTime(record.createdAt ?? post.indexedAt)}
+        </time>
       </div>
       <PostText text={record.text ?? ''} facets={record.facets} style={{ marginTop: '0.45em' }} />
+      <PostImages images={extractPostImages(post)} />
       <PostMetrics post={post} />
     </article>
   );
@@ -229,7 +239,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
   const record = post.record as PostRecord;
   return (
     <article className="dq-window">
-      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
+      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)', flexWrap: 'wrap' }}>
         <Avatar src={author.avatar} size={32} archetype={entry.theirArchetype} />
         <Link to={`/profile/${author.handle}`}>
           <strong>{author.displayName || author.handle}</strong>
@@ -243,8 +253,15 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
             {resonanceLabel(entry.score)}
           </span>
         )}
+        <time
+          dateTime={record.createdAt ?? post.indexedAt}
+          style={{ fontFamily: 'ui-monospace, monospace', ...(entry.score != null ? {} : { marginLeft: 'auto' }) }}
+        >
+          {formatDateTime(record.createdAt ?? post.indexedAt)}
+        </time>
       </div>
       <PostText text={record.text ?? ''} facets={record.facets} style={{ marginTop: '0.45em' }} />
+      <PostImages images={extractPostImages(post)} />
       <PostMetrics post={post} />
     </article>
   );

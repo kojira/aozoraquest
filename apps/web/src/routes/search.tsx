@@ -9,7 +9,10 @@ import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
 import { PostMetrics } from '@/components/post-metrics';
 import { PostText } from '@/components/post-text';
+import { PostImages } from '@/components/post-images';
 import { useArchetypes } from '@/lib/archetype-cache';
+import { formatDateTime } from '@/lib/format-datetime';
+import { extractPostImages } from '@/lib/post-embed';
 
 type Mode = 'users' | 'posts';
 
@@ -169,7 +172,8 @@ function UserCard({ user, archetype }: { user: AppBskyActorDefs.ProfileView; arc
 }
 
 function PostHit({ post, archetype }: { post: AppBskyFeedDefs.PostView; archetype?: Archetype | null }) {
-  const rec = post.record as { text?: string; facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }> };
+  const rec = post.record as { text?: string; createdAt?: string; facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }> };
+  const ts = rec.createdAt ?? post.indexedAt;
   return (
     <article className="dq-window">
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -178,8 +182,12 @@ function PostHit({ post, archetype }: { post: AppBskyFeedDefs.PostView; archetyp
           <strong>{post.author.displayName || post.author.handle}</strong>
         </Link>
         <span>@{post.author.handle}</span>
+        <time dateTime={ts} style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}>
+          {formatDateTime(ts)}
+        </time>
       </div>
       <PostText text={rec.text ?? ''} facets={rec.facets} style={{ marginTop: '0.45em' }} />
+      <PostImages images={extractPostImages(post)} />
       <PostMetrics post={post} />
     </article>
   );
