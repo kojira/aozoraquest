@@ -14,11 +14,14 @@
  */
 import { pipeline, env } from '@huggingface/transformers';
 
-// Vite dev server は public/ を / に配信するので、local model を有効化する。
-env.allowLocalModels = true;
-env.allowRemoteModels = false;
-env.localModelPath = '/';
-// transformers.js の Cache API (transformers-cache) を使う: 248MB DL を永続化
+// cognitive-onnx は HuggingFace Hub (kojira/aozoraquest-cognitive) から取得する。
+// 2025-04 以前は Vite dev server の public/ から local で配信していたが、
+// Cloudflare Pages の 25MB/file 制限に引っかかるのと、dev/prod で経路を揃えた
+// いため HF CDN 経由で統一した。初回 DL 後は Cache API に永続化されるので、
+// 以降の起動は local と同じく瞬時。
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+// transformers.js の Cache API (transformers-cache) を使う: ~248MB DL を永続化
 // し、2 回目以降の起動を瞬時にする。
 // 注意点: Cache API は HTTP cache と別で Cache-Control に従わないため、一度
 // 汚染された応答 (SPA fallback の 297 byte HTML、DL 途中中断など) が保存されると
@@ -37,7 +40,7 @@ interface ClassifyMessage { type: 'classify'; id: string; text: string }
 interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
 type IncomingMessage = InitMessage | ClassifyMessage | ClassifyBatchMessage;
 
-const MODEL_NAME = 'cognitive-onnx';
+const MODEL_NAME = 'kojira/aozoraquest-cognitive';
 const LABELS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 
 let classifier: any = null;
