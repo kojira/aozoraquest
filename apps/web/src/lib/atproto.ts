@@ -178,6 +178,24 @@ export interface StrongRef { uri: string; cid: string }
 export interface ReplyRef { root: StrongRef; parent: StrongRef }
 
 /**
+ * 指定 AT URI のスレッドを取得。
+ * depth: 返信の深さ (各投稿の replies を何段潜るか)
+ * parentHeight: 親方向にたどる最大段数
+ */
+export async function fetchPostThread(
+  agent: Agent,
+  uri: string,
+  opts: { depth?: number; parentHeight?: number } = {},
+) {
+  const res = await agent.getPostThread({
+    uri,
+    depth: opts.depth ?? 6,
+    parentHeight: opts.parentHeight ?? 10,
+  });
+  return res.data.thread;
+}
+
+/**
  * 投稿を作成。reply を渡すとスレッド返信になる。
  * クライアント識別のため `via: VIA` を record top-level に付加 (TOKIMEKI 互換)。
  */
