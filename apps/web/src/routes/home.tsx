@@ -96,7 +96,7 @@ export function Home() {
     if (session.status !== 'signed-in' || !agent || tab !== 'resonance') return;
     setResonanceLoading(true);
     setResonanceErr(null);
-    const dids = config.directory.map((u) => u.did).filter((d) => d !== session.did);
+    const dids = config.directory.map((u) => u.did);
     buildResonanceTimeline(agent, { selfDiagnosis: selfDiag, directoryDids: dids })
       .then((list) => setResonanceFeed(list))
       .catch((e) => setResonanceErr(String((e as Error)?.message ?? e)))
