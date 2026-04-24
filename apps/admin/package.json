@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5174",
+    "dev": "vite --port 9998",
     "build": "vite build",
-    "preview": "vite preview --port 5174",
+    "preview": "vite preview --port 9998",
     "typecheck": "tsc --noEmit",
     "lint": "echo lint (tbd)",
     "test": "echo no tests yet"

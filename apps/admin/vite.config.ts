@@ -7,8 +7,8 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
-  server: { port: 5174, strictPort: true },
-  preview: { port: 5174 },
+  server: { port: 9998, strictPort: true },
+  preview: { port: 9998 },
   build: {
     outDir: 'dist',
     target: 'es2022',
