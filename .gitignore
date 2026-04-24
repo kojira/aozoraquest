@@ -40,3 +40,7 @@ diagnose-ranking-*.html
 /docs/data/ruri-finetuned/
 /docs/data/ruri-finetuned-encoder/
 /docs/data/ruri-finetuned-onnx/
+
+# cognitive-onnx は HuggingFace Hub (kojira/aozoraquest-cognitive) から取得する。
+# ローカルには置かない (Cloudflare Pages の 25MB/file 制限対策 + dev/prod 統一)。
+apps/web/public/cognitive-onnx/
