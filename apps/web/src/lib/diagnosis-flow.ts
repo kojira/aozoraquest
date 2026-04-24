@@ -10,7 +10,7 @@ import {
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
-import { getCognitiveOnnxClassifier } from './cognitive-onnx';
+import { disposeCognitiveOnnxClassifier, getCognitiveOnnxClassifier } from './cognitive-onnx';
 import { isLowEndDevice } from './device';
 
 type ProgressCallback = (phase: string, done?: number, total?: number) => void;
@@ -167,6 +167,12 @@ export async function runDiagnosis(
     ...record,
     public: false,
   });
+
+  // モバイル Safari で繰り返し診断すると worker 内の tensor / KV cache が蓄積して
+  // クラッシュするので、診断完了ごとに worker を terminate して全解放する。
+  // 次回診断は再 init が走るが、Cache API でモデル DL はスキップされるので
+  // コストは ~3 秒程度 (クラッシュよりは遥かにマシ)。
+  if (isLowEndDevice()) disposeCognitiveOnnxClassifier();
 
   onProgress('done');
   return record;
