@@ -9,14 +9,10 @@ import { buildResonanceTimeline, type ResonanceEntry } from '@/lib/resonance-flo
 import { useRuntimeConfig } from '@/components/config-provider';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
-import { Avatar } from '@/components/avatar';
 import { HomeSummary } from '@/components/home-summary';
-import { PostMetrics } from '@/components/post-metrics';
+import { PostArticle } from '@/components/post-article';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
-import { PostBody } from '@/components/post-body';
 import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
-import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostImages, extractPostExternal } from '@/lib/post-embed';
 
 type Tab = 'following' | 'resonance';
 
@@ -200,66 +196,27 @@ export function Home() {
   );
 }
 
-interface PostRecord {
-  text?: string;
-  createdAt?: string;
-  facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
-}
-
 function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; archetype?: Archetype | null }) {
-  const post = item.post;
-  const author = post.author;
-  const record = post.record as PostRecord;
-  return (
-    <article className="dq-window">
-      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        <Avatar src={author.avatar} size={32} archetype={archetype ?? null} />
-        <Link to={`/profile/${author.handle}`}>
-          <strong>{author.displayName || author.handle}</strong>
-        </Link>
-        <span>@{author.handle}</span>
-        <time
-          dateTime={record.createdAt ?? post.indexedAt}
-          style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}
-        >
-          {formatDateTime(record.createdAt ?? post.indexedAt)}
-        </time>
-      </div>
-      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} external={extractPostExternal(post)} />
-      <PostMetrics post={post} />
-    </article>
-  );
+  return <PostArticle post={item.post} archetype={archetype ?? null} expandable />;
 }
 
 function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
-  const post = entry.item.post;
-  const author = post.author;
-  const record = post.record as PostRecord;
+  const score = entry.score;
+  const resonanceBadge =
+    score != null ? (
+      <span
+        title={`近さ ${((entry.similarity ?? 0) * 100).toFixed(0)} / 補い ${((entry.complementarity ?? 0) * 100).toFixed(0)}`}
+        style={{ marginLeft: 'auto', fontSize: '0.75em', color: 'var(--color-accent)' }}
+      >
+        {resonanceLabel(score)}
+      </span>
+    ) : null;
   return (
-    <article className="dq-window">
-      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)', flexWrap: 'wrap' }}>
-        <Avatar src={author.avatar} size={32} archetype={entry.theirArchetype} />
-        <Link to={`/profile/${author.handle}`}>
-          <strong>{author.displayName || author.handle}</strong>
-        </Link>
-        <span>@{author.handle}</span>
-        {entry.score != null && (
-          <span
-            title={`近さ ${((entry.similarity ?? 0) * 100).toFixed(0)} / 補い ${((entry.complementarity ?? 0) * 100).toFixed(0)}`}
-            style={{ marginLeft: 'auto', fontSize: '0.75em', color: 'var(--color-accent)' }}
-          >
-            {resonanceLabel(entry.score)}
-          </span>
-        )}
-        <time
-          dateTime={record.createdAt ?? post.indexedAt}
-          style={{ fontFamily: 'ui-monospace, monospace', ...(entry.score != null ? {} : { marginLeft: 'auto' }) }}
-        >
-          {formatDateTime(record.createdAt ?? post.indexedAt)}
-        </time>
-      </div>
-      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} external={extractPostExternal(post)} />
-      <PostMetrics post={post} />
-    </article>
+    <PostArticle
+      post={entry.item.post}
+      archetype={entry.theirArchetype}
+      expandable
+      {...(resonanceBadge ? { headerExtra: resonanceBadge } : {})}
+    />
   );
 }

@@ -31,7 +31,7 @@ const router = createBrowserRouter([
       { path: 'me', element: <MyProfile /> },
       { path: 'friends', element: <Friends /> },
       { path: 'me/card', element: <Card /> },
-      { path: 'post/:uri', element: <PostDetail /> },
+      { path: 'profile/:handle/post/:rkey', element: <PostDetail /> },
       { path: 'notifications', element: <Notifications /> },
       { path: 'search', element: <Search /> },
       { path: 'settings', element: <Settings /> },

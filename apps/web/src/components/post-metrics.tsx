@@ -6,6 +6,9 @@ import { useCompose } from './compose-modal';
 
 interface PostMetricsProps {
   post: AppBskyFeedDefs.PostView;
+  /** スレッド展開トグルを表示する場合。ハンドラを渡すと ▼/▲ ボタンが現れる。 */
+  onToggleThread?: () => void;
+  threadExpanded?: boolean;
 }
 
 /**
@@ -14,7 +17,7 @@ interface PostMetricsProps {
  * - リポスト: agent.repost / agent.deleteRepost をトグル
  * - リプライ: /compose にリプライ先を持たせて遷移
  */
-export function PostMetrics({ post }: PostMetricsProps) {
+export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetricsProps) {
   const session = useSession();
   const { openCompose } = useCompose();
   const agent = session.agent;
@@ -114,6 +117,33 @@ export function PostMetrics({ post }: PostMetricsProps) {
       <MetricButton onClick={toggleLike} ariaLabel={liked ? 'いいね解除' : 'いいね'} count={likeCount} active={liked} activeColor="#ff6b9a">
         <HeartIcon size={15} />
       </MetricButton>
+      {onToggleThread && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleThread();
+          }}
+          aria-label={threadExpanded ? 'スレッドを閉じる' : 'スレッドを展開'}
+          title={threadExpanded ? 'スレッドを閉じる' : 'スレッドを展開'}
+          style={{
+            marginLeft: 'auto',
+            background: 'transparent',
+            border: 'none',
+            padding: '0.15em 0.4em',
+            color: threadExpanded ? 'var(--color-accent)' : 'var(--color-muted)',
+            fontSize: '0.78em',
+            cursor: 'pointer',
+            borderRadius: 4,
+            fontFamily: 'ui-monospace, monospace',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+        >
+          {threadExpanded ? '▲ 閉じる' : '▼ スレッド'}
+        </button>
+      )}
     </div>
   );
 }

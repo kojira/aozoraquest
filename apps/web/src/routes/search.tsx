@@ -7,11 +7,8 @@ import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
-import { PostMetrics } from '@/components/post-metrics';
-import { PostBody } from '@/components/post-body';
+import { PostArticle } from '@/components/post-article';
 import { useArchetypes } from '@/lib/archetype-cache';
-import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostImages, extractPostExternal } from '@/lib/post-embed';
 
 type Mode = 'users' | 'posts';
 
@@ -171,22 +168,5 @@ function UserCard({ user, archetype }: { user: AppBskyActorDefs.ProfileView; arc
 }
 
 function PostHit({ post, archetype }: { post: AppBskyFeedDefs.PostView; archetype?: Archetype | null }) {
-  const rec = post.record as { text?: string; createdAt?: string; facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }> };
-  const ts = rec.createdAt ?? post.indexedAt;
-  return (
-    <article className="dq-window">
-      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        <Avatar src={post.author.avatar} size={28} archetype={archetype ?? null} />
-        <Link to={`/profile/${post.author.handle}`}>
-          <strong>{post.author.displayName || post.author.handle}</strong>
-        </Link>
-        <span>@{post.author.handle}</span>
-        <time dateTime={ts} style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}>
-          {formatDateTime(ts)}
-        </time>
-      </div>
-      <PostBody text={rec.text ?? ''} facets={rec.facets} images={extractPostImages(post)} external={extractPostExternal(post)} />
-      <PostMetrics post={post} />
-    </article>
-  );
+  return <PostArticle post={post} archetype={archetype ?? null} avatarSize={28} expandable />;
 }
