@@ -29,10 +29,19 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
   return clientPromise;
 }
 
+/** StrictMode の 2 重発火や複数 SessionProvider 下でも init() を 1 回にするため、
+ *  Promise をモジュールスコープでキャッシュする (2 回 init すると DPoP 鍵ペアが
+ *  別々に生成され、サーバー側とバインドしたキーと実際のリクエストが食い違って
+ *  "Invalid DPoP key binding" で API 呼び出しが全部落ちる)。 */
+let initPromise: Promise<OAuthSession | null> | null = null;
 export async function restoreSession(): Promise<OAuthSession | null> {
-  const client = await getOAuthClient();
-  const result = await client.init();
-  return result?.session ?? null;
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    const client = await getOAuthClient();
+    const result = await client.init();
+    return result?.session ?? null;
+  })();
+  return initPromise;
 }
 
 export async function signIn(handle: string): Promise<never> {
