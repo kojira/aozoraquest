@@ -174,6 +174,48 @@ export async function fetchAuthorFeed(agent: Agent, did: string, limit: number =
   return res.data.feed;
 }
 
+/** 通知一覧の 1 ページ取得 (cursor 式)。 */
+export async function listNotifications(agent: Agent, cursor?: string) {
+  const res = await agent.app.bsky.notification.listNotifications({
+    limit: 30,
+    ...(cursor !== undefined ? { cursor } : {}),
+  });
+  return res.data;
+}
+
+export async function getUnreadNotificationCount(agent: Agent): Promise<number> {
+  try {
+    const res = await agent.app.bsky.notification.getUnreadCount({});
+    return res.data.count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 通知を見たことをサーバーに通知 (これで getUnreadCount が 0 に戻る)。 */
+export async function updateNotificationsSeen(
+  agent: Agent,
+  seenAt: string = new Date().toISOString(),
+): Promise<void> {
+  try {
+    await agent.app.bsky.notification.updateSeen({ seenAt });
+  } catch (e) {
+    console.warn('[notifications] updateSeen failed', e);
+  }
+}
+
+/** 複数の投稿 URI をまとめて取得 (getPosts は 1 リクエスト 25 件まで)。 */
+export async function fetchPosts(agent: Agent, uris: string[]) {
+  if (uris.length === 0) return [];
+  const unique = Array.from(new Set(uris));
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 25) chunks.push(unique.slice(i, i + 25));
+  const results = await Promise.all(
+    chunks.map((batch) => agent.app.bsky.feed.getPosts({ uris: batch })),
+  );
+  return results.flatMap((r) => r.data.posts);
+}
+
 export interface StrongRef { uri: string; cid: string }
 export interface ReplyRef { root: StrongRef; parent: StrongRef }
 
