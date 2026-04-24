@@ -105,31 +105,34 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
         : undefined;
       await createPost(agent, body, reply);
       setText('');
-      // 投稿直後に解析 (行動分類 → questLog 更新 → rpgStats 更新) を走らせる。
-      // 結果は UI 側 (ホーム / /spirit) が useOnPosted で再フェッチするので、ここで
-      // 保存までやり切ってから notifyPosted する。失敗してもクローズは続行。
-      if (session.did) {
-        try {
-          const result = await processSelfPost(agent, session.did, body);
-          // LV アップがあれば即オーバーレイで祝う。ジョブ → プレイヤーの順で並べる。
-          if (result.jobLeveledUp && result.jobLevel) {
-            notifyLevelUp({
-              kind: 'job',
-              from: result.jobLeveledUp.from,
-              to: result.jobLeveledUp.to,
-              jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
-            });
+      // 投稿直後に解析 (行動分類 → questLog 更新 → rpgStats 更新) を走らせるが、
+      // 推論は数秒〜十数秒かかる (モバイル特に遅い) ので await せずに
+      // バックグラウンドで進める。結果は UI 側 (ホーム / /spirit) が
+      // useOnPosted で再フェッチするし、LV アップ通知も届いたら表示される。
+      const did = session.did;
+      if (did) {
+        void (async () => {
+          try {
+            const result = await processSelfPost(agent, did, body);
+            if (result.jobLeveledUp && result.jobLevel) {
+              notifyLevelUp({
+                kind: 'job',
+                from: result.jobLeveledUp.from,
+                to: result.jobLeveledUp.to,
+                jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
+              });
+            }
+            if (result.playerLeveledUp) {
+              notifyLevelUp({
+                kind: 'player',
+                from: result.playerLeveledUp.from,
+                to: result.playerLeveledUp.to,
+              });
+            }
+          } catch (e) {
+            console.warn('post-processor failed', e);
           }
-          if (result.playerLeveledUp) {
-            notifyLevelUp({
-              kind: 'player',
-              from: result.playerLeveledUp.from,
-              to: result.playerLeveledUp.to,
-            });
-          }
-        } catch (e) {
-          console.warn('post-processor failed', e);
-        }
+        })();
       }
       notifyPosted();
       onClose();
