@@ -8,8 +8,7 @@ import { getRecord } from '@/lib/atproto';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
-import { PostText } from '@/components/post-text';
-import { PostImages } from '@/components/post-images';
+import { PostBody } from '@/components/post-body';
 import { formatDateTime } from '@/lib/format-datetime';
 import { extractPostImages, type PostImage } from '@/lib/post-embed';
 
@@ -328,8 +327,12 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
               {formatDateTime(it.createdAt)}
             </time>
           )}
-          <PostText text={it.text} facets={it.facets} style={{ marginTop: it.createdAt ? '0.35em' : 0 }} />
-          {it.images && it.images.length > 0 && <PostImages images={it.images} />}
+          <PostBody
+            text={it.text}
+            facets={it.facets}
+            images={it.images}
+            topMargin={it.createdAt ? '0.35em' : 0}
+          />
         </article>
       ))}
     </>
