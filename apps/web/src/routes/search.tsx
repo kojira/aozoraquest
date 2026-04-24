@@ -8,8 +8,7 @@ import { VirtualFeed } from '@/components/virtual-feed';
 import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
 import { PostMetrics } from '@/components/post-metrics';
-import { PostText } from '@/components/post-text';
-import { PostImages } from '@/components/post-images';
+import { PostBody } from '@/components/post-body';
 import { useArchetypes } from '@/lib/archetype-cache';
 import { formatDateTime } from '@/lib/format-datetime';
 import { extractPostImages } from '@/lib/post-embed';
@@ -186,8 +185,7 @@ function PostHit({ post, archetype }: { post: AppBskyFeedDefs.PostView; archetyp
           {formatDateTime(ts)}
         </time>
       </div>
-      <PostText text={rec.text ?? ''} facets={rec.facets} style={{ marginTop: '0.45em' }} />
-      <PostImages images={extractPostImages(post)} />
+      <PostBody text={rec.text ?? ''} facets={rec.facets} images={extractPostImages(post)} />
       <PostMetrics post={post} />
     </article>
   );

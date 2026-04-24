@@ -1,14 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-interface FacetFeature {
+export interface FacetFeature {
   $type?: string;
   uri?: string;
   did?: string;
   tag?: string;
 }
 
-interface Facet {
+export interface Facet {
   index: { byteStart: number; byteEnd: number };
   features?: FacetFeature[];
 }

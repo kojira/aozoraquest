@@ -3,51 +3,30 @@ import type { PostImage } from '@/lib/post-embed';
 import { ImageLightbox } from './image-lightbox';
 
 /**
- * 投稿に添付された 1〜4 枚の画像を固定高 (180px) のグリッドで表示。
- * 添付が 0 枚 or 5 枚以上なら 4 枚まで描画 (Bluesky の最大が 4 だが念のため)。
+ * 投稿に添付された 1〜4 枚の画像を **正方形タイル** で表示する
+ * 固定幅の小さなグリッド。投稿テキストの左横に置く想定。
  *
- * 「画像ロードでレイアウトがジャンプしない」を最優先にするため、高さは
- * 画像 aspectRatio に依らず常に 180px。画像自体は object-fit: cover。
- * フル解像度はクリックで開くライトボックス側に任せる。
+ * レイアウト (総幅 COL_W = 140px):
+ *   1 枚: 140×140 (単独)
+ *   2 枚: 140×68 (2 列 × 1 行、各タイル 68×68)
+ *   3 枚: 140×140 (2×2 で 1 枚分空き、各タイル 68×68)
+ *   4 枚: 140×140 (2×2、各タイル 68×68)
+ *
+ * 画像ロードで高さがジャンプしないよう `aspect-ratio: 1 / 1` で
+ * タイル形状を CSS 側で確定させる。画像本体は `object-fit: cover`。
  */
-const GRID_HEIGHT = 180;
+const COL_W = 140;
 const GAP = 2;
 
-function layoutStyle(n: 1 | 2 | 3 | 4): CSSProperties {
-  switch (n) {
-    case 1:
-      return {
-        display: 'grid',
-        gridTemplateColumns: '1fr',
-        gridTemplateRows: `${GRID_HEIGHT}px`,
-      };
-    case 2:
-      return {
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: `${GRID_HEIGHT}px`,
-      };
-    case 3:
-      return {
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: `1fr 1fr`,
-        gridTemplateAreas: `'a b' 'a c'`,
-        height: GRID_HEIGHT,
-      };
-    case 4:
-      return {
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: `1fr 1fr`,
-        height: GRID_HEIGHT,
-      };
-  }
-}
-
-function tileArea(n: 1 | 2 | 3 | 4, i: number): string | undefined {
-  if (n === 3) return ['a', 'b', 'c'][i];
-  return undefined;
+function gridStyle(n: 1 | 2 | 3 | 4): CSSProperties {
+  const cols = n === 1 ? 1 : 2;
+  return {
+    display: 'grid',
+    gridTemplateColumns: `repeat(${cols}, 1fr)`,
+    gap: GAP,
+    width: COL_W,
+    flexShrink: 0,
+  };
 }
 
 export function PostImages({ images }: { images: PostImage[] }) {
@@ -58,48 +37,37 @@ export function PostImages({ images }: { images: PostImage[] }) {
 
   return (
     <>
-      <div
-        style={{
-          marginTop: '0.5em',
-          borderRadius: 6,
-          overflow: 'hidden',
-          gap: GAP,
-          ...layoutStyle(n),
-        }}
-      >
-        {slice.map((img, i) => {
-          const area = tileArea(n, i);
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setOpenIdx(i)}
+      <div style={gridStyle(n)}>
+        {slice.map((img, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setOpenIdx(i)}
+            style={{
+              all: 'unset',
+              cursor: 'zoom-in',
+              display: 'block',
+              width: '100%',
+              aspectRatio: '1 / 1',
+              overflow: 'hidden',
+              borderRadius: 4,
+              background: '#000',
+            }}
+          >
+            <img
+              src={img.thumb}
+              alt={img.alt}
+              loading="lazy"
+              decoding="async"
               style={{
-                all: 'unset',
-                cursor: 'zoom-in',
-                display: 'block',
                 width: '100%',
                 height: '100%',
-                overflow: 'hidden',
-                background: '#000',
-                ...(area ? { gridArea: area } : {}),
+                objectFit: 'cover',
+                display: 'block',
               }}
-            >
-              <img
-                src={img.thumb}
-                alt={img.alt}
-                loading="lazy"
-                decoding="async"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  display: 'block',
-                }}
-              />
-            </button>
-          );
-        })}
+            />
+          </button>
+        ))}
       </div>
       {openIdx !== null && (
         <ImageLightbox images={slice} initialIndex={openIdx} onClose={() => setOpenIdx(null)} />

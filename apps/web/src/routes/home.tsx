@@ -13,8 +13,7 @@ import { Avatar } from '@/components/avatar';
 import { HomeSummary } from '@/components/home-summary';
 import { PostMetrics } from '@/components/post-metrics';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
-import { PostText } from '@/components/post-text';
-import { PostImages } from '@/components/post-images';
+import { PostBody } from '@/components/post-body';
 import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
 import { formatDateTime } from '@/lib/format-datetime';
 import { extractPostImages } from '@/lib/post-embed';
@@ -226,8 +225,7 @@ function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; arc
           {formatDateTime(record.createdAt ?? post.indexedAt)}
         </time>
       </div>
-      <PostText text={record.text ?? ''} facets={record.facets} style={{ marginTop: '0.45em' }} />
-      <PostImages images={extractPostImages(post)} />
+      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} />
       <PostMetrics post={post} />
     </article>
   );
@@ -260,8 +258,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
           {formatDateTime(record.createdAt ?? post.indexedAt)}
         </time>
       </div>
-      <PostText text={record.text ?? ''} facets={record.facets} style={{ marginTop: '0.45em' }} />
-      <PostImages images={extractPostImages(post)} />
+      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} />
       <PostMetrics post={post} />
     </article>
   );
