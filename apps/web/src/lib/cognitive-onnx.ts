@@ -27,9 +27,18 @@ const COGNITIVE_8: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'F
 /** batch 推論の 1 call あたり最大件数。GPU メモリと padding 損失のバランス。 */
 const DEFAULT_BATCH_SIZE = 16;
 
+import { isLowEndDevice } from './device';
+
 type Pending =
   | { kind: 'single'; resolve: (v: number[]) => void; reject: (e: Error) => void }
   | { kind: 'batch'; resolve: (v: number[][]) => void; reject: (e: Error) => void };
+
+const MODEL_LARGE = 'kojira/aozoraquest-cognitive';
+const MODEL_SMALL = 'kojira/aozoraquest-cognitive-small';
+
+function pickModelName(): string {
+  return isLowEndDevice() ? MODEL_SMALL : MODEL_LARGE;
+}
 
 export class CognitiveOnnxClassifier {
   private worker: Worker | null = null;
@@ -55,7 +64,7 @@ export class CognitiveOnnxClassifier {
         }
       };
       this.worker!.addEventListener('message', onMsg);
-      this.worker!.postMessage({ type: 'init' });
+      this.worker!.postMessage({ type: 'init', modelName: pickModelName() });
     });
     return this.ready;
   }

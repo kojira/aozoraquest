@@ -1,0 +1,20 @@
+# A100 ホスト (kojira@100.89.44.63) で動作確認済みの組み合わせ。2026-04-24。
+# 30m fine-tune → ONNX 出力 → int8/int4 量子化 までこれで通る。
+#
+# ベースイメージ: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime (torch 2.5.1+cu124 同梱)
+# なので torch は書かない。
+
+transformers==4.53.3
+tokenizers==0.21.4
+datasets==4.8.4
+accelerate==1.13.0
+sentencepiece==0.2.1
+protobuf==7.34.1
+peft==0.19.1
+scikit-learn==1.8.0
+scipy==1.17.1
+optimum[exporters]==1.27.0
+onnxruntime==1.25.0
+onnx==1.21.0
+onnx-ir==0.2.1
+onnxscript==0.7.0
