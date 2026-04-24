@@ -35,13 +35,16 @@ env.useBrowserCache = true;
 type Device = 'webgpu' | 'wasm';
 type Dtype = 'q4' | 'q8';
 
-interface InitMessage { type: 'init'; modelName?: string }
+interface InitMessage { type: 'init'; modelName?: string; forceWasm?: boolean }
 interface ClassifyMessage { type: 'classify'; id: string; text: string }
 interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
 type IncomingMessage = InitMessage | ClassifyMessage | ClassifyBatchMessage;
 
 // 既定は大きい方 (130m ベース)。init メッセージで上書き可能。
 let modelName = 'kojira/aozoraquest-cognitive';
+/** iOS Safari は WebGPU に既知の WebKit JIT バグ (microsoft/onnxruntime#26827)
+ *  があり、繰り返し inference するとプロセスが kill されるので WASM 強制。 */
+let forceWasm = false;
 const LABELS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 
 let classifier: any = null;
@@ -129,6 +132,12 @@ async function ensureClassifier(): Promise<void> {
   if (classifier) return;
   // 初回起動前に tiny 汚染エントリを掃除 (protobuf error を事前予防)
   await pruneTinyModelEntries();
+  if (forceWasm) {
+    classifier = await createWithRecovery('wasm', 'q8');
+    activeBackend = 'wasm'; activeDtype = 'q8';
+    console.info('[cognitive] ready: WASM + int8 (forced: iOS Safari)');
+    return;
+  }
   try {
     classifier = await createWithRecovery('webgpu', 'q4');
     activeBackend = 'webgpu'; activeDtype = 'q4';
@@ -177,6 +186,7 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
   try {
     if (msg.type === 'init') {
       if (msg.modelName) modelName = msg.modelName;
+      if (msg.forceWasm) forceWasm = true;
       await ensureClassifier();
       (self as unknown as Worker).postMessage({
         type: 'ready', backend: activeBackend, dtype: activeDtype, labels: LABELS, modelName,

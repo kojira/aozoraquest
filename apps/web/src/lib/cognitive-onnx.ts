@@ -24,7 +24,7 @@ export type CognitiveDtype = 'q4' | 'q8';
 const LABELS_9 = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 const COGNITIVE_8: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
 
-import { isLowEndDevice } from './device';
+import { isIosSafari, isLowEndDevice } from './device';
 
 /** batch 推論の 1 call あたり最大件数。GPU メモリと padding 損失のバランス。 */
 const DEFAULT_BATCH_SIZE = 16;
@@ -64,7 +64,11 @@ export class CognitiveOnnxClassifier {
         }
       };
       this.worker!.addEventListener('message', onMsg);
-      this.worker!.postMessage({ type: 'init', modelName: pickModelName() });
+      this.worker!.postMessage({
+        type: 'init',
+        modelName: pickModelName(),
+        forceWasm: isIosSafari(),
+      });
     });
     return this.ready;
   }
