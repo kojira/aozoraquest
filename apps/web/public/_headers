@@ -1,0 +1,15 @@
+# Cloudflare Pages/Workers 静的アセット向けキャッシュ設定。
+# Vite の chunk hash が毎デプロイで変わる前提で、index.html は毎回 revalidate、
+# assets/ (hash 付き) は 1 年 immutable。
+# これがないと、古い index.html がキャッシュされたまま新 deploy の chunk に
+# アクセスしてしまい、SPA fallback で HTML が返って MIME エラー → クラッシュ
+# ループ (iOS Safari でよく起きる) を引き起こす。
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

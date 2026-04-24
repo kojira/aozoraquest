@@ -12,6 +12,7 @@ import { getGenerator } from './generator';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
+import { isLowEndDevice } from './device';
 import { stripMarkdown, stripWrappers } from './flavor-text';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
