@@ -16,7 +16,7 @@ import { useCompose, useOnPosted } from '@/components/compose-modal';
 import { PostBody } from '@/components/post-body';
 import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
 import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostImages } from '@/lib/post-embed';
+import { extractPostImages, extractPostExternal } from '@/lib/post-embed';
 
 type Tab = 'following' | 'resonance';
 
@@ -225,7 +225,7 @@ function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; arc
           {formatDateTime(record.createdAt ?? post.indexedAt)}
         </time>
       </div>
-      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} />
+      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} external={extractPostExternal(post)} />
       <PostMetrics post={post} />
     </article>
   );
@@ -258,7 +258,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
           {formatDateTime(record.createdAt ?? post.indexedAt)}
         </time>
       </div>
-      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} />
+      <PostBody text={record.text ?? ''} facets={record.facets} images={extractPostImages(post)} external={extractPostExternal(post)} />
       <PostMetrics post={post} />
     </article>
   );
