@@ -104,6 +104,13 @@ export function Profile() {
             <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{profile.displayName || profile.handle}</div>
             <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>@{profile.handle}</div>
           </div>
+          {!isSelf && session.agent && (
+            <FollowButton
+              agent={session.agent}
+              did={profile.did}
+              initialFollowingUri={profile.viewer?.following}
+            />
+          )}
         </div>
         {profile.description && (
           <PostText text={profile.description} style={{ marginTop: '0.6em', fontSize: '0.9em' }} />
@@ -387,5 +394,62 @@ function EstimateOtherPanel({
       </button>
       {err && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em', marginTop: '0.4em' }}>{err}</p>}
     </div>
+  );
+}
+
+/** Bluesky のフォロー状態トグル。viewer.following が URI なら解除、なければ作成。 */
+function FollowButton({
+  agent,
+  did,
+  initialFollowingUri,
+}: {
+  agent: Agent;
+  did: string;
+  initialFollowingUri: string | undefined;
+}) {
+  const [followUri, setFollowUri] = useState<string | undefined>(initialFollowingUri);
+  const [busy, setBusy] = useState(false);
+  const following = !!followUri;
+
+  async function toggle() {
+    if (busy) return;
+    setBusy(true);
+    const prev = followUri;
+    // 楽観的更新
+    setFollowUri(prev ? undefined : 'pending');
+    try {
+      if (prev && prev !== 'pending') {
+        await agent.deleteFollow(prev);
+      } else {
+        const res = await agent.follow(did);
+        setFollowUri(res.uri);
+      }
+    } catch (e) {
+      console.warn('[follow] toggle failed', e);
+      setFollowUri(prev);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={busy}
+      style={{
+        padding: '0.4em 0.9em',
+        fontSize: '0.85em',
+        fontWeight: 700,
+        background: following ? 'transparent' : 'var(--color-accent)',
+        color: following ? 'var(--color-fg)' : '#000',
+        border: `2px solid ${following ? 'var(--color-border)' : 'var(--color-accent)'}`,
+        borderRadius: 4,
+        cursor: busy ? 'wait' : 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {busy ? '…' : following ? 'フォロー中' : 'フォロー'}
+    </button>
   );
 }
