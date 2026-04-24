@@ -197,7 +197,17 @@ export function Home() {
 }
 
 function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; archetype?: Archetype | null }) {
-  return <PostArticle post={item.post} archetype={archetype ?? null} expandable />;
+  const reason = item.reason as { $type?: string; by?: AppBskyFeedDefs.FeedViewPost['post']['author'] } | undefined;
+  const repostedBy =
+    reason?.$type === 'app.bsky.feed.defs#reasonRepost' && reason.by ? reason.by : undefined;
+  return (
+    <PostArticle
+      post={item.post}
+      archetype={archetype ?? null}
+      expandable
+      {...(repostedBy ? { repostedBy } : {})}
+    />
+  );
 }
 
 function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {

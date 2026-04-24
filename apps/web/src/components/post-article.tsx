@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { AppBskyFeedDefs } from '@atproto/api';
+import type { AppBskyActorDefs, AppBskyFeedDefs } from '@atproto/api';
 import type { Archetype } from '@aozoraquest/core';
 import { Avatar } from './avatar';
 import { PostBody } from './post-body';
 import { PostMetrics } from './post-metrics';
 import { InlineThread } from './inline-thread';
+import { RepeatIcon } from './icons';
 import { formatDateTime } from '@/lib/format-datetime';
 import { extractPostExternal, extractPostImages } from '@/lib/post-embed';
 import { postDetailPath } from '@/lib/uri';
@@ -28,6 +29,8 @@ export interface PostArticleProps {
   highlight?: boolean;
   /** true なら PostMetrics に ▼ スレッド展開トグルが出る。展開中は下部に InlineThread */
   expandable?: boolean;
+  /** リポスト由来で流れてきた場合、リポストした人を表示 (🔁 <name> がリポスト) */
+  repostedBy?: AppBskyActorDefs.ProfileViewBasic | undefined;
 }
 
 /**
@@ -43,6 +46,7 @@ export function PostArticle({
   headerExtra,
   highlight = false,
   expandable = false,
+  repostedBy,
 }: PostArticleProps) {
   const [expanded, setExpanded] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
@@ -77,6 +81,29 @@ export function PostArticle({
       className="dq-window"
       style={highlight ? { outline: '2px solid var(--color-accent)', outlineOffset: -2 } : undefined}
     >
+      {repostedBy && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4em',
+            fontSize: '0.78em',
+            color: 'var(--color-muted)',
+            marginBottom: '0.4em',
+          }}
+        >
+          <RepeatIcon size={13} />
+          <Link
+            to={`/profile/${repostedBy.handle}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em', color: 'inherit' }}
+          >
+            <Avatar src={repostedBy.avatar} size={18} archetype={null} />
+            <span>{repostedBy.displayName || repostedBy.handle}</span>
+          </Link>
+          <span>がリポスト</span>
+        </div>
+      )}
       <div
         style={{
           display: 'flex',
