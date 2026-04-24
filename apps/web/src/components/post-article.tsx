@@ -22,7 +22,7 @@ interface PostRecordShape {
 export interface PostArticleProps {
   post: AppBskyFeedDefs.PostView;
   archetype?: Archetype | null;
-  /** Avatar のサイズ (px)。既定 32 */
+  /** Avatar のサイズ (px)。既定 40 */
   avatarSize?: number;
   /** ヘッダの右端に差し込むスロット (相性ラベルなど) */
   headerExtra?: ReactNode;
@@ -43,7 +43,7 @@ export interface PostArticleProps {
 export function PostArticle({
   post,
   archetype,
-  avatarSize = 32,
+  avatarSize = 40,
   headerExtra,
   highlight = false,
   expandable = false,
