@@ -1,0 +1,11 @@
+# Cloudflare Workers (静的アセット) 用の設定。
+# Vite でビルドした apps/web/dist を そのまま CDN に配信する。
+# SPA ルーティング (/profile/:handle/post/:rkey 等) は
+# not_found_handling = "single-page-application" で index.html にフォールバック。
+
+name = "aozoraquest"
+compatibility_date = "2026-04-24"
+
+[assets]
+directory = "./apps/web/dist"
+not_found_handling = "single-page-application"
