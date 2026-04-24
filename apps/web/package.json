@@ -19,6 +19,7 @@
     "@atproto/oauth-client-browser": "^0.3.41",
     "@huggingface/transformers": "^4.1.0",
     "@tanstack/react-virtual": "^3.13.0",
+    "hls.js": "^1.6.16",
     "react": "^18",
     "react-dom": "^18",
     "react-router-dom": "^7"

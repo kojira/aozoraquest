@@ -16,6 +16,14 @@ export interface PostExternal {
   thumb?: string;
 }
 
+/** Bluesky ネイティブ動画 (app.bsky.embed.video#view)。HLS (.m3u8) 再生。 */
+export interface PostVideo {
+  playlist: string;
+  thumbnail?: string;
+  alt?: string;
+  aspectRatio?: { width: number; height: number };
+}
+
 interface ViewImageShape {
   thumb?: unknown;
   fullsize?: unknown;
@@ -47,11 +55,31 @@ interface ExternalViewShape {
   };
 }
 
+interface VideoViewShape {
+  $type?: string;
+  playlist?: unknown;
+  thumbnail?: unknown;
+  alt?: unknown;
+  aspectRatio?: { width?: unknown; height?: unknown };
+}
+
 interface EmbedShape {
   $type?: string;
+  playlist?: unknown;
+  thumbnail?: unknown;
+  alt?: unknown;
+  aspectRatio?: { width?: unknown; height?: unknown };
   images?: ViewImageShape[];
   external?: ExternalViewShape['external'];
-  media?: { $type?: string; images?: ViewImageShape[]; external?: ExternalViewShape['external'] };
+  media?: {
+    $type?: string;
+    images?: ViewImageShape[];
+    external?: ExternalViewShape['external'];
+    playlist?: VideoViewShape['playlist'];
+    thumbnail?: VideoViewShape['thumbnail'];
+    alt?: VideoViewShape['alt'];
+    aspectRatio?: VideoViewShape['aspectRatio'];
+  };
 }
 
 /**
@@ -108,6 +136,38 @@ export function extractPostExternal(post: AppBskyFeedDefs.PostView): PostExterna
   }
   if (embed.media && embed.media.$type === 'app.bsky.embed.external#view') {
     return pick(embed.media.external);
+  }
+  return null;
+}
+
+/** post.embed から動画情報を抽出。 */
+export function extractPostVideo(post: AppBskyFeedDefs.PostView): PostVideo | null {
+  const embed = post.embed as EmbedShape | undefined;
+  if (!embed) return null;
+
+  const pick = (v: {
+    playlist?: unknown;
+    thumbnail?: unknown;
+    alt?: unknown;
+    aspectRatio?: { width?: unknown; height?: unknown } | undefined;
+  } | undefined): PostVideo | null => {
+    if (!v) return null;
+    if (typeof v.playlist !== 'string') return null;
+    const out: PostVideo = { playlist: v.playlist };
+    if (typeof v.thumbnail === 'string') out.thumbnail = v.thumbnail;
+    if (typeof v.alt === 'string') out.alt = v.alt;
+    const ar = v.aspectRatio;
+    if (ar && typeof ar.width === 'number' && typeof ar.height === 'number') {
+      out.aspectRatio = { width: ar.width, height: ar.height };
+    }
+    return out;
+  };
+
+  if (embed.$type === 'app.bsky.embed.video#view') {
+    return pick(embed);
+  }
+  if (embed.media && embed.media.$type === 'app.bsky.embed.video#view') {
+    return pick(embed.media);
   }
   return null;
 }

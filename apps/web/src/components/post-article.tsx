@@ -8,7 +8,7 @@ import { PostMetrics } from './post-metrics';
 import { InlineThread } from './inline-thread';
 import { RepeatIcon } from './icons';
 import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostExternal, extractPostImages } from '@/lib/post-embed';
+import { extractPostExternal, extractPostImages, extractPostVideo } from '@/lib/post-embed';
 import { postDetailPath } from '@/lib/uri';
 
 interface PostRecordShape {
@@ -140,6 +140,7 @@ export function PostArticle({
         facets={record.facets}
         images={extractPostImages(post)}
         external={extractPostExternal(post)}
+        video={extractPostVideo(post)}
         postUri={post.uri}
         {...(record.langs ? { langs: record.langs } : {})}
       />

@@ -1,8 +1,11 @@
 import { useState, type CSSProperties } from 'react';
-import type { PostExternal, PostImage } from '@/lib/post-embed';
+import type { PostExternal, PostImage, PostVideo } from '@/lib/post-embed';
 import { PostText, type Facet } from './post-text';
 import { PostImages } from './post-images';
 import { PostExternalCard } from './post-external';
+import { PostVideoCard } from './post-video';
+import { YoutubeEmbed } from './youtube-embed';
+import { youtubeId } from '@/lib/youtube';
 import { useTranslation } from '@/lib/translate';
 
 /**
@@ -20,6 +23,7 @@ export interface PostBodyProps {
   facets?: Facet[] | undefined;
   images?: PostImage[] | undefined;
   external?: PostExternal | null | undefined;
+  video?: PostVideo | null | undefined;
   /** 翻訳キャッシュのキー兼有無判定に使う。profile の RecentPosts など
    *  URI が無い場面では翻訳機能を無効化する。 */
   postUri?: string | undefined;
@@ -29,7 +33,7 @@ export interface PostBodyProps {
   topMargin?: CSSProperties['marginTop'];
 }
 
-export function PostBody({ text, facets, images, external, postUri, langs, topMargin = '0.45em' }: PostBodyProps) {
+export function PostBody({ text, facets, images, external, video, postUri, langs, topMargin = '0.45em' }: PostBodyProps) {
   const hasImages = images && images.length > 0;
   const { state, translated, error, triggerTranslate, retranslate, isNonJapanese } = useTranslation(postUri, text, langs);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -65,10 +69,17 @@ export function PostBody({ text, facets, images, external, postUri, langs, topMa
     <div style={{ marginTop: topMargin }}>{textNode}</div>
   );
 
+  // 外部リンクが YouTube なら iframe 埋め込み、それ以外なら OG カード
+  const ytId = external ? youtubeId(external.uri) : null;
+
   return (
     <>
       {textBlock}
-      {external && <PostExternalCard external={external} />}
+      {video && <PostVideoCard video={video} />}
+      {external && ytId && (
+        <YoutubeEmbed id={ytId} {...(external.title ? { title: external.title } : {})} {...(external.thumb ? { thumb: external.thumb } : {})} />
+      )}
+      {external && !ytId && <PostExternalCard external={external} />}
     </>
   );
 }
