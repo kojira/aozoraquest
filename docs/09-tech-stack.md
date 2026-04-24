@@ -129,8 +129,8 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
-  server: { port: 5173, strictPort: true },
-  preview: { port: 5173 },
+  server: { port: 9999, strictPort: true },
+  preview: { port: 9999 },
   build: {
     outDir: 'dist',
     target: 'es2022',
@@ -139,7 +139,7 @@ export default defineConfig({
 });
 ```
 
-管理画面 (`apps/admin/vite.config.ts`) はポート `5174` を使う以外は同じ。Service Worker は導入しない (モデルキャッシュは Transformers.js が IndexedDB に自動保存する)。
+管理画面 (`apps/admin/vite.config.ts`) はポート `9998` を使う以外は同じ。Service Worker は導入しない (モデルキャッシュは Transformers.js が IndexedDB に自動保存する)。
 
 ### ルーティング (React Router v7 data mode)
 
@@ -516,7 +516,7 @@ packages:
 ```bash
 pnpm install
 pnpm build:prototypes  # 初回のみ: 埋め込みバイナリ生成
-pnpm dev               # 本体 SPA (5173) + 管理画面 (5174) を並列起動
+pnpm dev               # 本体 SPA (9999) + 管理画面 (9998) を並列起動
 ```
 
 `pnpm dev` は `turbo run dev --parallel` を叩き、`apps/web` と `apps/admin` の両方の Vite dev server を同時に立ち上げる。Ctrl-C で両方停止。

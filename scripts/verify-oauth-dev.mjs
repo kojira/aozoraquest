@@ -7,7 +7,7 @@
 
 import { chromium } from 'playwright';
 
-const url = process.argv[2] ?? 'http://127.0.0.1:5173/onboarding';
+const url = process.argv[2] ?? 'http://127.0.0.1:9999/onboarding';
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
