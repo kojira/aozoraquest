@@ -124,25 +124,48 @@ export async function runDiagnosis(
   const existing = await getRecord<DiagnosisResult>(agent, agent.assertDid ?? '', 'app.aozoraquest.analysis', 'self')
     .catch(() => null);
   const playerLevel = existing?.playerLevel ?? { xp: 0, streakDays: 0 };
-  const jobLevel =
-    existing?.jobLevel && existing.jobLevel.archetype === result.archetype
-      ? existing.jobLevel
-      : { archetype: result.archetype, xp: 0, joinedAt: result.analyzedAt };
 
-  await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
-    archetype: result.archetype,
+  // ユーザーが過去に「転職」で選んだ archetype (jobLevel.archetype) があり、
+  // 新しい診断結果がそれと異なる場合は、ユーザーの選択を優先し、新候補は
+  // pendingArchetype として提示する。これがないと診断を走らせる度に「転職前
+  // の職業に戻ってしまう」ことになる。
+  const userChosenArchetype = existing?.jobLevel?.archetype;
+  const suggestedArchetype = result.archetype;
+  const divergent = userChosenArchetype && userChosenArchetype !== suggestedArchetype;
+
+  const finalArchetype = divergent ? userChosenArchetype : suggestedArchetype;
+  const jobLevel =
+    existing?.jobLevel && existing.jobLevel.archetype === finalArchetype
+      ? existing.jobLevel
+      : { archetype: finalArchetype, xp: 0, joinedAt: result.analyzedAt };
+
+  // divergent 時の pending 扱い: 既存の streak が同じ候補を指していれば +1、
+  // 別候補なら 1 にリセット。一致時 (divergent でない) は pending をクリア。
+  const record: DiagnosisResult = {
+    archetype: finalArchetype,
     rpgStats: result.rpgStats,
     cognitiveScores: result.cognitiveScores,
     confidence: result.confidence,
     analyzedPostCount: result.analyzedPostCount,
     analyzedAt: result.analyzedAt,
-    public: false,
     jobLevel,
     playerLevel,
+  };
+  if (divergent) {
+    record.pendingArchetype = suggestedArchetype;
+    const prev = existing?.pendingArchetype === suggestedArchetype
+      ? existing.pendingArchetypeStreak ?? 0
+      : 0;
+    record.pendingArchetypeStreak = prev + 1;
+  }
+
+  await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
+    ...record,
+    public: false,
   });
 
   onProgress('done');
-  return { ...result, jobLevel, playerLevel };
+  return record;
 }
 
 /**
