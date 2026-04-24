@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { Agent, AppBskyActorDefs } from '@atproto/api';
+import type { Agent, AppBskyActorDefs, AppBskyFeedDefs } from '@atproto/api';
 import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/core';
 import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resonanceBreakdown, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -8,9 +8,9 @@ import { getRecord } from '@/lib/atproto';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
-import { PostBody } from '@/components/post-body';
-import { formatDateTime } from '@/lib/format-datetime';
-import { extractPostImages, extractPostExternal, type PostExternal, type PostImage } from '@/lib/post-embed';
+import { PostArticle } from '@/components/post-article';
+import { VirtualFeed } from '@/components/virtual-feed';
+import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 
 interface LoadState {
   kind: 'loading' | 'not-found' | 'ok' | 'error';
@@ -265,80 +265,50 @@ function toVec(s: StatArray) {
   return { atk: s[0], def: s[1], agi: s[2], int: s[3], luk: s[4] };
 }
 
-interface RecentPostItem {
-  text: string;
-  createdAt?: string;
-  images?: PostImage[];
-  external?: PostExternal;
-  facets?: Array<{ index: { byteStart: number; byteEnd: number }; features?: Array<{ $type?: string; uri?: string; did?: string; tag?: string }> }>;
-}
-
-interface RawPostRecord {
-  text?: string;
-  createdAt?: string;
-  facets?: RecentPostItem['facets'];
-}
-
 function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
-  const [items, setItems] = useState<RecentPostItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await agent.getAuthorFeed({ actor: did, limit: 10, filter: 'posts_no_replies' });
-        if (cancelled) return;
-        const out: RecentPostItem[] = [];
-        for (const item of res.data.feed) {
-          const rec = item.post.record as RawPostRecord;
-          if (typeof rec.text === 'string') {
-            const ts = rec.createdAt ?? item.post.indexedAt;
-            const images = extractPostImages(item.post);
-            const external = extractPostExternal(item.post);
-            out.push({
-              text: rec.text,
-              ...(ts ? { createdAt: ts } : {}),
-              ...(images.length > 0 ? { images } : {}),
-              ...(external ? { external } : {}),
-              ...(rec.facets ? { facets: rec.facets } : {}),
-            });
-          }
-        }
-        setItems(out);
-      } catch (e) {
-        console.warn('recent posts failed', e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [agent, did]);
-
-  if (loading) return <p>投稿を読み込み中...</p>;
-  if (items.length === 0) return <p style={{ color: 'var(--color-muted)' }}>投稿がありません。</p>;
+  const feed = useInfiniteFeed<AppBskyFeedDefs.FeedViewPost>({
+    enabled: !!agent && !!did,
+    keyOf: (x) => x.post.uri,
+    deps: [agent, did],
+    fetchPage: async (cursor) => {
+      const res = await agent.getAuthorFeed({
+        actor: did,
+        limit: 20,
+        filter: 'posts_no_replies',
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      return {
+        items: res.data.feed,
+        ...(res.data.cursor !== undefined ? { cursor: res.data.cursor } : {}),
+      };
+    },
+  });
 
   return (
     <>
-      <h3 style={{ fontSize: '0.95em' }}>最近の投稿</h3>
-      {items.map((it, i) => (
-        <article key={i} className="dq-window">
-          {it.createdAt && (
-            <time
-              dateTime={it.createdAt}
-              style={{ fontSize: '0.85em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}
-            >
-              {formatDateTime(it.createdAt)}
-            </time>
-          )}
-          <PostBody
-            text={it.text}
-            facets={it.facets}
-            images={it.images}
-            external={it.external}
-            topMargin={it.createdAt ? '0.35em' : 0}
-          />
-        </article>
-      ))}
+      <h3 style={{ fontSize: '0.95em' }}>投稿</h3>
+      {feed.err && (
+        <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {feed.err}</p>
+      )}
+      {!feed.loading && feed.items.length === 0 && !feed.err && (
+        <p style={{ color: 'var(--color-muted)' }}>投稿がありません。</p>
+      )}
+      <VirtualFeed
+        items={feed.items}
+        keyOf={(x) => x.post.uri}
+        renderItem={(item) => <PostArticle post={item.post} expandable />}
+        onEndReached={feed.done ? undefined : feed.loadMore}
+        footer={
+          <>
+            {feed.loading && <p style={{ textAlign: 'center' }}>読み込み中…</p>}
+            {feed.done && feed.items.length > 0 && (
+              <p style={{ textAlign: 'center', fontSize: '0.8em', color: 'var(--color-muted)' }}>
+                これ以上はありません。
+              </p>
+            )}
+          </>
+        }
+      />
     </>
   );
 }
