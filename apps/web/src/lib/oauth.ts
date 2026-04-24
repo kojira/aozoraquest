@@ -33,11 +33,19 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
   return clientPromise;
 }
 
-/** 起動時にセッションを復元する。前回ログインしていれば session を返す。 */
+/** 起動時にセッションを復元する。前回ログインしていれば session を返す。
+ *  StrictMode の 2 重発火や複数 SessionProvider 下でも init() を 1 回にするため、
+ *  Promise をモジュールスコープでキャッシュする (callback URL 上で init() が 2 回走ると
+ *  1 回目が code を消費し 2 回目が state 未発見で失敗する)。 */
+let initPromise: Promise<OAuthSession | null> | null = null;
 export async function restoreSession(): Promise<OAuthSession | null> {
-  const client = await getOAuthClient();
-  const result = await client.init();
-  return result?.session ?? null;
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    const client = await getOAuthClient();
+    const result = await client.init();
+    return result?.session ?? null;
+  })();
+  return initPromise;
 }
 
 /** ログインフローを開始 (authorize 画面にリダイレクト) */
