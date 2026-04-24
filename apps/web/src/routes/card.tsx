@@ -3,12 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { getRecord, putRecord } from '@/lib/atproto';
+import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import type { Rarity } from '@aozoraquest/core';
 import { isRarity, rollRarity } from '@aozoraquest/core';
 import { loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
-import { generateCardText, getFallbackCardText, stripMarkdown, type CardText } from '@/lib/flavor-text';
+import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
@@ -39,6 +39,8 @@ export function Card() {
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
+  const [genError, setGenError] = useState<{ stage: string; message: string; raw?: string } | null>(null);
+  const [flavorAttribution, setFlavorAttribution] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // 初回: session 確認 → 診断 + points ロード
@@ -100,6 +102,7 @@ export function Card() {
               : fallback.flavor,
             source: { kind: 'fallback' },
           });
+          if (analysis.flavorAttribution) setFlavorAttribution(analysis.flavorAttribution);
         }
       } catch (e) {
         if (cancelled) return;
@@ -166,16 +169,31 @@ export function Card() {
     }
 
     setFlavorBusy(true);
+    setGenError(null);
     try {
       // レアリティと枠 variant を抽選
       const nextRarity = rollRarity();
       const nextVariant: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
+      // フォロイーからフレーバー発言者をランダムに選ぶ (失敗しても致命ではない)。
+      let attribution: string | null = null;
+      if (session.did) {
+        try {
+          const follows = await fetchFirstPageFollows(agent, session.did);
+          if (follows.length > 0) {
+            const pick = follows[Math.floor(Math.random() * follows.length)]!;
+            attribution = pick.displayName?.trim() || pick.handle;
+          }
+        } catch (e) {
+          console.warn('[card] fetch follows for attribution failed', e);
+        }
+      }
       // LLM 先に走らせてから state を一括更新 (背景だけ先に変わる現象を防ぐ)
       const r = await generateCardText(load.result, nextRarity, { seed: Date.now() });
       setRarity(nextRarity);
       setFrameVariant(nextVariant);
       setCard(r);
-      // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant)
+      setFlavorAttribution(attribution);
+      // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant + attribution)
       try {
         const now = new Date().toISOString();
         await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
@@ -186,6 +204,7 @@ export function Card() {
           // 後方互換: 旧 cardEffect フィールドには "名前 ― 説明" を入れる
           cardEffect: `${r.effect.name} ― ${r.effect.description}`,
           flavorText: r.flavor,
+          ...(attribution ? { flavorAttribution: attribution } : {}),
           cardRarity: nextRarity,
           cardFrameVariant: nextVariant,
           cardDrawnAt: now,
@@ -195,8 +214,16 @@ export function Card() {
         console.warn('[card] save card to PDS failed', e);
       }
     } catch (e) {
-      console.warn('[card] regenerate card failed', e);
-      setCard(getFallbackCardText(load.result.archetype, Date.now(), rarity));
+      console.error('[card] regenerate card failed', e);
+      if (e instanceof CardTextError) {
+        setGenError({
+          stage: e.stage,
+          message: e.message,
+          ...(e.raw !== undefined ? { raw: e.raw } : {}),
+        });
+      } else {
+        setGenError({ stage: 'unknown', message: String((e as Error)?.message ?? e) });
+      }
     } finally {
       setFlavorBusy(false);
     }
@@ -286,6 +313,7 @@ export function Card() {
           effectCost={card?.effect.cost ?? ''}
           effectDescription={card?.effect.description ?? '…'}
           flavorText={card?.flavor ?? '…'}
+          flavorAttribution={flavorAttribution ?? undefined}
           rarity={rarity}
           frameVariant={frameVariant}
           displayName={profile!.displayName}
@@ -331,6 +359,35 @@ export function Card() {
         <p style={{ color: 'var(--color-danger)', fontSize: '0.85em', marginTop: '0.6em' }}>
           うまくいきませんでした: {shareErr}
         </p>
+      )}
+
+      {genError && (
+        <div
+          style={{
+            color: 'var(--color-danger)',
+            fontSize: '0.85em',
+            marginTop: '0.6em',
+            padding: '0.6em 0.8em',
+            border: '1px solid var(--color-danger)',
+            borderRadius: 6,
+            textAlign: 'left',
+            maxWidth: 420,
+            margin: '0.6em auto 0',
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>
+            カード生成に失敗しました (stage: {genError.stage})
+          </div>
+          <div style={{ fontFamily: 'ui-monospace, monospace', marginTop: '0.3em', whiteSpace: 'pre-wrap' }}>
+            {genError.message}
+          </div>
+          {genError.raw && (
+            <details style={{ marginTop: '0.4em' }}>
+              <summary style={{ cursor: 'pointer' }}>LLM 生の出力</summary>
+              <pre style={{ fontSize: '0.8em', whiteSpace: 'pre-wrap', marginTop: '0.3em' }}>{genError.raw}</pre>
+            </details>
+          )}
+        </div>
       )}
 
       {shareBusy === 'posted' && (

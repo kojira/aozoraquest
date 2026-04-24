@@ -9,10 +9,8 @@
  * 失敗時は archetype ごとのハンドクラフト pool から抽選。
  */
 
-import type { Archetype, CogFunction, DiagnosisResult, Rarity } from '@aozoraquest/core';
+import type { Archetype, DiagnosisResult, Rarity } from '@aozoraquest/core';
 import {
-  COGNITIVE_FUNCTIONS,
-  JOBS_BY_ID,
   jobDisplayName,
   RARITY_GUIDANCE,
   RARITY_LABEL,
@@ -20,17 +18,6 @@ import {
 } from '@aozoraquest/core';
 import { getGenerator } from './generator';
 import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
-
-const COG_LABEL: Record<CogFunction, string> = {
-  Ni: '内向直観 (本質を見抜く)',
-  Ne: '外向直観 (可能性を広げる)',
-  Si: '内向感覚 (積み重ねを信じる)',
-  Se: '外向感覚 (今この瞬間に動く)',
-  Ti: '内向思考 (論理の整合を組む)',
-  Te: '外向思考 (結果で示す)',
-  Fi: '内向感情 (自分の価値観に忠実)',
-  Fe: '外向感情 (場の調和を整える)',
-};
 
 export interface CardTextSource {
   kind: 'llm' | 'fallback';
@@ -55,137 +42,121 @@ export interface CardText {
   source: CardTextSource;
 }
 
-/** 希少度ごとの「コスト目安」— プロンプトに当該 rarity だけを埋めて短く保つ。
- *  SNS 世界観のコスト表現 (投稿削除・フォロワ喪失・いいね消費 等) を混ぜる。 */
+/** 希少度ごとのコスト例 (当該レアリティのみプロンプトに埋める)。 */
 const COST_GUIDANCE: Record<Rarity, string> = {
-  common: 'コスト例: 「なし」/ 「このカードをタップする。」/ 「いいねを 1 個消費する。」 の軽いもの。',
-  uncommon: 'コスト例: 「このカードをタップする。」/ 「いいねを 3 個消費する。」/ 「投稿の下書きを 1 本捨てる。」',
-  rare: 'コスト例: 「リポストを 1 回する。」/ 「タップし、いいねを 5 個消費する。」/ 「引用返信を 1 つ捨てる。」',
-  srare: 'コスト例: 「タップし、仲間 1 体を生贄に捧げる。」/ 「あなたの投稿を 1 つ削除する。」',
-  ssr: 'コスト例: 「タップし、あなたの投稿を 1 つ削除し、いいねを 10 個消費する。」/ 「フォロワを 5 人失う。」 など重め。',
-  ur: 'コスト例: 「タップし、仲間 2 体を生贄に捧げ、フォロワを 10 人失う。」/ 「あなたのタイムラインを 1 日封じる。」 など非常に重い複数要素。',
+  common: 'なし / このカードをタップする / いいね 1 消費',
+  uncommon: 'タップ / いいね 3 消費 / 下書き 1 捨てる',
+  rare: 'リポスト 1 回 / タップ + いいね 5 消費',
+  srare: 'タップ + 仲間 1 生贄 / 投稿 1 削除',
+  ssr: 'タップ + 投稿 1 削除 + いいね 10 消費',
+  ur: 'タップ + 仲間 2 生贄 + フォロワ 10 喪失',
 };
 
-/** LLM に与える SNS 世界観リファレンス。全 rarity 共通でプロンプトに入れる。
- *  TinySwallow は Bluesky のような固有名を知らない可能性が高いので、
- *  一般名の「SNS」で統一する。
- *
- *  トーンはあえて「笑える・あるある・軽い自嘲」寄り。真面目詩的は避ける。 */
-const SNS_REFERENCE = [
-  '世界観: 旅人たちは SNS (投稿と繋がりの広場) で戦う。深刻ぶらず、どこか笑える。',
-  '',
-  'コストで使える要素:',
-  '  - このカードをタップする',
-  '  - あおぞらパワー N を支払う',
-  '  - あなたの投稿を 1 つ削除する',
-  '  - フォロワを N 人失う',
-  '  - いいねを N 個消費する',
-  '  - リポスト (再投稿) を 1 回する',
-  '  - 引用返信を 1 つ捨てる',
-  '  - 下書きを 1 本捨てる',
-  '  - 仲間 1 体を生贄に捧げる',
-  '',
-  '説明で使える "あるある" ネタ:',
-  '  - 深夜 2 時に送信ボタンを押す / 翌朝消したくなる',
-  '  - 推敲せず投稿 / 直後に誤字に気付く',
-  '  - フォロワが静かに増減する',
-  '  - 返信を打ちかけて消す (何度も)',
-  '  - 自分の古い投稿がリプ沼から掘り起こされる',
-  '  - 通知が一斉に鳴る / 一斉に止まる',
-  '  - ハッシュタグが意図せず広がる',
-  '  - 誰かの下書きが勝手に完成する',
-  '  - 既読スルー / ミュート解除',
-  '',
-  '能力名の参考 (RPG 調 × SNS あるある、迷った時用):',
-  '  驚天動地 / 世界征服 / 先制攻撃 / 沼わたり / 深夜の暴走 / 推敲漏れ /',
-  '  指滑り / 通知ノック / 既読スルー / 炎上鎮火 / 引用封じ / リプ沼突入 /',
-  '  後悔の朝 / 言霊暴発 / ミュート返し / 空リプ連打。',
+/** SNS 世界観の短いヒント (能力用)。 */
+const SNS_HINT_ABILITY = [
+  'SNS (投稿と繋がりの広場) が舞台。コスト要素: タップ / あおぞらパワー / 投稿削除 / フォロワ喪失 / いいね消費 / リポスト / 下書き / 仲間生贄。',
 ].join('\n');
 
-/** 希少度ごとの 1-shot example (ユーモア寄り・あるあるネタ)。 */
-const EXAMPLE: Record<Rarity, string> = {
+/** SNS 世界観の短いヒント (flavor 用)。 */
+const SNS_HINT_FLAVOR = [
+  'SNS あるあるネタ例: 深夜投稿→翌朝消したい / 推敲漏れ / 既読スルー / 通知一斉 / リプ沼 / ミュート返し。',
+].join('\n');
+
+/** 能力 (ルール文) 用の 1-shot example。TCG のルールテキスト調で機械的。 */
+const ABILITY_EXAMPLE: Record<Rarity, string> = {
   common: [
     '能力名: 指滑り',
     'コスト: このカードをタップする。',
-    '説明: 送信直前で気が変わり、全く違う絵文字 1 つだけを投稿する。',
-    'フレーバー: 意味があるのではない。指に先を越されただけだ。それでもいいねは 3 つ付く。',
+    '説明: カードを 1 枚山札から引く。',
   ].join('\n'),
   uncommon: [
     '能力名: 推敲漏れ',
     'コスト: いいねを 3 個消費する。',
-    '説明: 最も届けたかった相手にだけ、誤字入りの返信が飛ぶ。届く速度は普段の 3 倍。',
-    'フレーバー: 送信ボタンは昔から彼より素早い。反省会だけが毎晩、生真面目に開かれる。',
+    '説明: 対象プレイヤーの手札を 1 枚ランダムに公開する。',
   ].join('\n'),
   rare: [
     '能力名: 既読スルー',
     'コスト: このカードをタップし、いいねを 5 個消費する。',
-    '説明: 対象の返信を読んだが返さない。相手のタイムラインに微妙な沈黙が広がる。',
-    'フレーバー: 沈黙は金だというが、相手にとっては無言の拷問だったりする。',
+    '説明: 対象プレイヤーはターン中に 1 枚しかカードをプレイできない。',
   ].join('\n'),
   srare: [
     '能力名: 深夜の暴走',
     'コスト: このカードをタップし、あなたの投稿を 1 つ削除する。',
-    '説明: 午前 2 時に本音を連投。朝になると自分で全部消したくなる。',
-    'フレーバー: 眠気に負けた者は、翌朝自分の言葉と再会する。たいてい、泣く。',
+    '説明: あなたの墓地のカードを 2 枚、手札に戻す。',
   ].join('\n'),
   ssr: [
     '能力名: 通知一斉ノック',
     'コスト: このカードをタップし、仲間 1 体を生贄に捧げ、フォロワを 5 人失う。',
-    '説明: 場の全プレイヤーの通知が同時に鳴る。内容は全部、あなたの 3 年前の投稿。',
-    'フレーバー: 過去は消えない。ただ、掘り起こされるタイミングを常に待っている。',
+    '説明: 全プレイヤーのカードを墓地から 3 枚まで、手札に戻す。',
   ].join('\n'),
   ur: [
-    '能力名: 世界征服 (あしたからほんき)',
+    '能力名: 世界征服',
     'コスト: このカードをタップし、仲間 2 体を生贄に捧げ、フォロワを 10 人失う。',
-    '説明: 次のターン、全タイムラインの流れを自分好みに並び替える。ただし明日までに忘れる。',
-    'フレーバー: 青空を一度、自分の名で畳んだ。畳み方が雑すぎて、誰も真似しようと思わなかった。',
+    '説明: あなたの次のターン終了まで、全プレイヤーのカードの操作権を得る。',
   ].join('\n'),
 };
 
-function buildPrompt(result: DiagnosisResult, rarity: Rarity): { system: string; user: string } {
-  const job = JOBS_BY_ID[result.archetype];
-  const name = jobDisplayName(result.archetype);
-  const top = [...COGNITIVE_FUNCTIONS]
-    .sort((a, b) => (result.cognitiveScores[b] ?? 0) - (result.cognitiveScores[a] ?? 0))
-    .slice(0, 4);
-  const topDesc = top.map((fn) => `${fn} ${COG_LABEL[fn]}`).join('、');
+/** フレーバー用の 1-shot example (希少度別)。詩的・あるある・オチ締め。 */
+const FLAVOR_EXAMPLE: Record<Rarity, string> = {
+  common: '意味があるのではない。指に先を越されただけだ。それでもいいねは 3 つ付く。',
+  uncommon: '送信ボタンは昔から彼より素早い。反省会だけが毎晩、生真面目に開かれる。',
+  rare: '沈黙は金だというが、相手にとっては無言の拷問だったりする。',
+  srare: '眠気に負けた者は、翌朝自分の言葉と再会する。たいてい、泣く。',
+  ssr: '過去は消えない。ただ、掘り起こされるタイミングを常に待っている。',
+  ur: '青空を一度、自分の名で畳んだ。畳み方が雑すぎて、誰も真似しようと思わなかった。',
+};
+
+/** 能力 (ルールテキスト) 生成用プロンプト。機械的・ゲーム効果寄り。 */
+function buildAbilityPrompt(result: DiagnosisResult, rarity: Rarity): { system: string; user: string } {
   const rarityLabel = RARITY_LABEL[rarity];
-  const rarityGuidance = RARITY_GUIDANCE[rarity];
-  const costGuidance = COST_GUIDANCE[rarity];
-  const example = EXAMPLE[rarity];
 
   const system = [
-    'あなたはユーモアの効いた SNS トレカのデザイナーです。',
-    '能力 (名前・コスト・説明) + フレーバーを日本語 1 セットで書きます。',
-    'トーン: 深刻すぎず、あるある寄り、軽い自嘲や皮肉を含めるとよい。詩的一辺倒は避ける。',
-    'フレーバーはできれば最後に小さなオチ (軽いツッコミ or 哲学) で締める。',
+    'あなたはトレカのルールテキストを書くゲームデザイナーです。日本語で能力 1 組だけ書きます。',
+    SNS_HINT_ABILITY,
     '',
-    SNS_REFERENCE,
+    '出力は次の 3 行のみ。前置き・Markdown・括弧類・箇条書き禁止。',
+    '能力名: <2〜8字>',
+    'コスト: <なし でも可>',
+    '説明: <20〜50字。具体的なゲーム効果のみ。詩的描写禁止>',
     '',
-    `希少度: ${rarityLabel}`,
-    `${rarityGuidance}`,
-    `${costGuidance}`,
-    '',
-    '出力形式は以下の 4 行のみ。他には何も書かない。',
-    '能力名: <2〜8字、RPG 調 or SNS あるある>',
-    'コスト: <日本語、SNS 要素を混ぜてよい。なし でも可>',
-    '説明: <20〜50字、具体的なあるあるネタを 1 つ入れる>',
-    'フレーバー: <40〜70字、オチを含む 1 文>',
-    '',
-    '禁止: Markdown (**、*、_)、括弧 (「」『』《》)、見出し記号 (#)、前置き、5行以上の出力。',
-    '',
-    '例:',
-    example,
+    `例 (${rarityLabel}):`,
+    ABILITY_EXAMPLE[rarity],
   ].join('\n');
 
   const user = [
-    `職業: ${name}`,
-    `主機能: ${job.dominantFunction} (${COG_LABEL[job.dominantFunction]})`,
-    `副機能: ${job.auxiliaryFunction} (${COG_LABEL[job.auxiliaryFunction]})`,
-    `上位傾向: ${topDesc}`,
+    `職業: ${jobDisplayName(result.archetype)}`,
+    `希少度: ${rarityLabel}`,
+    `コスト例: ${COST_GUIDANCE[rarity]}`,
+    `雰囲気: ${RARITY_GUIDANCE[rarity]}`,
+    '',
+    '上記に合う能力を 1 組だけ。',
+  ].join('\n');
+
+  return { system, user };
+}
+
+/** フレーバーテキスト生成用プロンプト。詩的・ユーモア・オチ締め。 */
+function buildFlavorPrompt(result: DiagnosisResult, rarity: Rarity, abilityName: string): { system: string; user: string } {
+  const rarityLabel = RARITY_LABEL[rarity];
+
+  const system = [
+    'あなたはトレカのフレーバー作家です。能力の直下に添える 1 文を日本語で書きます。',
+    '詩的でありながらユーモアや皮肉を含み、最後は小さなオチで締める。ゲーム効果は書かない。',
+    SNS_HINT_FLAVOR,
+    '',
+    '出力は次の 1 行のみ。前置き・Markdown・括弧類禁止。',
+    'フレーバー: <40〜70字>',
+    '',
+    `例 (${rarityLabel}):`,
+    `フレーバー: ${FLAVOR_EXAMPLE[rarity]}`,
+  ].join('\n');
+
+  const user = [
+    `職業: ${jobDisplayName(result.archetype)}`,
+    `能力名: ${abilityName}`,
     `希少度: ${rarityLabel}`,
     '',
-    '上に合う能力とフレーバーを 1 組だけ書いてください。',
+    `能力「${abilityName}」に添える 1 文のフレーバーを書いて。`,
   ].join('\n');
 
   return { system, user };
@@ -206,27 +177,25 @@ function stripWrappers(s: string): string {
     .trim();
 }
 
-/** LLM 出力から 4 項目 (能力名 / コスト / 説明 / フレーバー) を抽出する。 */
-function parseLLMOutput(raw: string): { name: string; cost: string; description: string; flavor: string } | null {
+type HeaderKey = 'name' | 'cost' | 'description' | 'flavor';
+const HEADERS: Record<HeaderKey, RegExp> = {
+  // 「能力」「アビリティ」単体も name のラベルとして受け付ける (LLM が短縮しがち)。
+  name: /^(?:能力名|能力|キーワード|スキル名|アビリティ名|アビリティ|名前)[:\s\uFF1A\u30FB\u3000]*(.*)$/,
+  cost: /^(?:コスト|起動コスト|代償|消費)[:\s\uFF1A\u30FB\u3000]*(.*)$/,
+  description: /^(?:説明|効果|能力説明|動作|挙動)[:\s\uFF1A\u30FB\u3000]*(.*)$/,
+  flavor: /^(?:フレーバー|flavor|情景|詩|口上)[:\s\uFF1A\u30FB\u3000]*(.*)$/i,
+};
+
+/** 能力用: name + cost + description の 3 項目を抽出。 */
+function parseAbilityOutput(raw: string): { name: string; cost: string; description: string } | null {
   const text = stripMarkdown(raw.replace(/\r\n/g, '\n'));
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
-
-  const HEADERS: Record<'name' | 'cost' | 'description' | 'flavor', RegExp> = {
-    name: /^(?:能力名|キーワード|スキル名|アビリティ名|名前)[:\s::・　]*(.*)$/,
-    cost: /^(?:コスト|起動コスト|代償|消費)[:\s::・　]*(.*)$/,
-    description: /^(?:説明|効果|能力|動作|挙動)[:\s::・　]*(.*)$/,
-    flavor: /^(?:フレーバー|flavor|情景|詩|口上)[:\s::・　]*(.*)$/i,
-  };
-
-  const out: Record<'name' | 'cost' | 'description' | 'flavor', string> = {
-    name: '', cost: '', description: '', flavor: '',
-  };
-  let pending: keyof typeof out | null = null;
-
+  const out = { name: '', cost: '', description: '' };
+  let pending: 'name' | 'cost' | 'description' | null = null;
   for (const line of lines) {
     const lineClean = line.replace(/^[-・*#>\s]+/, '').trim();
     let matched = false;
-    for (const key of Object.keys(HEADERS) as (keyof typeof HEADERS)[]) {
+    for (const key of ['name', 'cost', 'description'] as const) {
       const m = lineClean.match(HEADERS[key]);
       if (!m) continue;
       matched = true;
@@ -239,90 +208,163 @@ function parseLLMOutput(raw: string): { name: string; cost: string; description:
       break;
     }
     if (matched) continue;
-    if (pending && !out[pending]) {
-      out[pending] = stripWrappers(lineClean);
-      pending = null;
-    }
+    if (pending && !out[pending]) { out[pending] = stripWrappers(lineClean); pending = null; }
   }
-
-  // fallback: header が全く無い場合は 1-4 行目を順に充当
-  if ((!out.name || !out.description || !out.flavor) && lines.length >= 3) {
+  // fallback: header 無しなら 3 行並び
+  if ((!out.name || !out.description) && lines.length >= 2) {
     const plain = lines.filter((l) =>
       !Object.values(HEADERS).some((rx) => rx.test(l)),
     );
-    if (plain.length >= 3) {
+    if (plain.length >= 2) {
       if (!out.name) out.name = stripWrappers(plain[0]!);
-      if (!out.cost) out.cost = plain[1] ? stripWrappers(plain[1]!) : 'なし';
-      if (!out.description) out.description = stripWrappers(plain[2]!);
-      if (!out.flavor && plain[3]) out.flavor = stripWrappers(plain[3]!);
+      if (plain.length >= 3) {
+        if (!out.cost) out.cost = stripWrappers(plain[1]!);
+        if (!out.description) out.description = stripWrappers(plain[2]!);
+      } else {
+        if (!out.description) out.description = stripWrappers(plain[1]!);
+      }
     }
   }
-
-  if (!out.name || !out.description || !out.flavor) return null;
+  if (!out.name || !out.description) return null;
   if (!out.cost) out.cost = 'なし';
-  // 長さサニティ
-  if (out.name.length < 1 || out.name.length > 16) return null;
-  if (out.cost.length > 120) return null;
-  if (out.description.length < 6 || out.description.length > 160) return null;
-  if (out.flavor.length < 10 || out.flavor.length > 180) return null;
+  if (out.name.length < 1 || out.name.length > 20) return null;
+  if (out.cost.length > 140) return null;
+  if (out.description.length < 6 || out.description.length > 180) return null;
   return out;
+}
+
+/** フレーバー用: 1 行だけ抽出。 */
+function parseFlavorOutput(raw: string): string | null {
+  const text = stripMarkdown(raw.replace(/\r\n/g, '\n'));
+  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
+  for (const line of lines) {
+    const lineClean = line.replace(/^[-・*#>\s]+/, '').trim();
+    const m = lineClean.match(HEADERS.flavor);
+    if (m && m[1]!.trim()) {
+      const t = stripWrappers(m[1]!);
+      if (t.length >= 10 && t.length <= 200) return t;
+    }
+  }
+  // フォールバック: 最初の header 無し行を採用
+  const plain = lines.filter((l) => !Object.values(HEADERS).some((rx) => rx.test(l)));
+  if (plain.length > 0) {
+    const t = stripWrappers(plain[0]!);
+    if (t.length >= 10 && t.length <= 200) return t;
+  }
+  return null;
+}
+
+export class CardTextError extends Error {
+  stage: 'load' | 'ability-generate' | 'ability-parse' | 'flavor-generate' | 'flavor-parse';
+  raw?: string;
+  cause?: unknown;
+  constructor(stage: CardTextError['stage'], message: string, opts: { raw?: string; cause?: unknown } = {}) {
+    super(message);
+    this.name = 'CardTextError';
+    this.stage = stage;
+    if (opts.raw !== undefined) this.raw = opts.raw;
+    if (opts.cause !== undefined) this.cause = opts.cause;
+  }
+}
+
+async function callLLM(
+  gen: ReturnType<typeof getGenerator>,
+  system: string,
+  user: string,
+  timeoutMs: number,
+  tag: 'ability' | 'flavor',
+): Promise<string> {
+  const messages = [
+    { role: 'system' as const, content: system },
+    { role: 'user' as const, content: user },
+  ];
+  const fullPromise = gen.generate(messages);
+  const raced = await Promise.race([
+    fullPromise,
+    new Promise<string>((_, rej) => setTimeout(() => rej(new Error(`${tag} LLM timeout (${timeoutMs}ms)`)), timeoutMs)),
+  ]);
+  console.info(`[card-text/${tag}] raw LLM output:\n` + raced);
+  return raced;
+}
+
+/** 1 段階 (ability または flavor) を生成 + パース。失敗時は最大 attempts 回リトライ。 */
+async function runStageWithRetry<T>(
+  tag: 'ability' | 'flavor',
+  stageGenerate: CardTextError['stage'],
+  stageParse: CardTextError['stage'],
+  gen: ReturnType<typeof getGenerator>,
+  prompt: { system: string; user: string },
+  parse: (raw: string) => T | null,
+  timeoutMs: number,
+  attempts: number,
+): Promise<T> {
+  let lastErr: CardTextError | null = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let raw: string;
+    try {
+      raw = await callLLM(gen, prompt.system, prompt.user, timeoutMs, tag);
+    } catch (e) {
+      lastErr = new CardTextError(stageGenerate, `${tag} generation failed (attempt ${attempt}/${attempts}): ${(e as Error)?.message ?? e}`, { cause: e });
+      console.warn(`[card-text/${tag}] attempt ${attempt}/${attempts} generation failed, retrying`, e);
+      continue;
+    }
+    const parsed = parse(raw);
+    if (parsed !== null) return parsed;
+    lastErr = new CardTextError(stageParse, `${tag} parse failed (attempt ${attempt}/${attempts}, length=${raw.length})`, { raw });
+    console.warn(`[card-text/${tag}] attempt ${attempt}/${attempts} parse failed, raw:\n${raw}`);
+  }
+  throw lastErr ?? new CardTextError(stageGenerate, `${tag} failed after ${attempts} attempts`);
 }
 
 async function generateWithLLM(
   result: DiagnosisResult,
   rarity: Rarity,
   timeoutMs: number,
-): Promise<CardText | null> {
+): Promise<CardText> {
   const gen = getGenerator();
   try {
     await gen.load();
   } catch (e) {
-    console.warn('[card-text] generator load failed', e);
-    return null;
+    throw new CardTextError('load', `generator load failed: ${(e as Error)?.message ?? e}`, { cause: e });
   }
-  const { system, user } = buildPrompt(result, rarity);
-  const messages = [
-    { role: 'system' as const, content: system },
-    { role: 'user' as const, content: user },
-  ];
-  try {
-    const fullPromise = gen.generate(messages);
-    const raced = await Promise.race([
-      fullPromise,
-      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('card-text LLM timeout')), timeoutMs)),
-    ]);
-    console.info('[card-text] raw LLM output:\n' + raced);
-    const parsed = parseLLMOutput(raced);
-    if (!parsed) {
-      console.warn('[card-text] parse failed, falling back. raw length=', raced.length);
-      return null;
-    }
-    console.info('[card-text] parsed →', parsed);
-    const source: CardTextSource = { kind: 'llm' };
-    const backend = gen.getBackend();
-    if (backend) source.backend = backend;
-    return {
-      effect: { name: parsed.name, cost: parsed.cost, description: parsed.description },
-      flavor: parsed.flavor,
-      source,
-    };
-  } catch (e) {
-    console.warn('[card-text] generation failed', e);
-    return null;
-  }
+  const half = Math.max(15000, Math.floor(timeoutMs / 2));
+  const MAX_ATTEMPTS = 3;
+
+  // 1) 能力 (ルールテキスト)
+  const ability = await runStageWithRetry(
+    'ability', 'ability-generate', 'ability-parse',
+    gen, buildAbilityPrompt(result, rarity), parseAbilityOutput, half, MAX_ATTEMPTS,
+  );
+  console.info('[card-text/ability] parsed →', ability);
+
+  // 2) フレーバー (詩的 1 行)
+  const flavor = await runStageWithRetry(
+    'flavor', 'flavor-generate', 'flavor-parse',
+    gen, buildFlavorPrompt(result, rarity, ability.name), parseFlavorOutput, half, MAX_ATTEMPTS,
+  );
+  console.info('[card-text/flavor] parsed →', flavor);
+
+  const source: CardTextSource = { kind: 'llm' };
+  const backend = gen.getBackend();
+  if (backend) source.backend = backend;
+  return {
+    effect: { name: ability.name, cost: ability.cost, description: ability.description },
+    flavor,
+    source,
+  };
 }
 
-/** effect + flavor を生成 (メイン API)。失敗時は fallback。rarity を必ず渡す。 */
+/** effect + flavor を生成 (メイン API)。rarity を必ず渡す。
+ *  開発中はエラーを隠さない: LLM 失敗時は CardTextError を投げる (UI 側で表示)。
+ *  本番で自動フォールバックが必要になったら呼び出し側で catch → getFallbackCardText。 */
 export async function generateCardText(
   result: DiagnosisResult,
   rarity: Rarity,
   opts: { seed?: number; timeoutMs?: number } = {},
 ): Promise<CardText> {
-  const seed = opts.seed ?? Date.now();
+  void opts.seed;
   const timeoutMs = opts.timeoutMs ?? 60000;
-  const llm = await generateWithLLM(result, rarity, timeoutMs);
-  if (llm) return llm;
-  return buildFallbackCardText(result.archetype, rarity, seed);
+  return await generateWithLLM(result, rarity, timeoutMs);
 }
 
 function buildFallbackCardText(archetype: Archetype, rarity: Rarity, seed: number): CardText {

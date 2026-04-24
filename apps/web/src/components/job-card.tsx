@@ -62,6 +62,8 @@ export interface JobCardProps {
   effectDescription: string;
   /** italic の詩文 */
   flavorText: string;
+  /** フレーバーの発言者 (フォロイーの表示名など、"— {名前}" で右下寄せ)。 */
+  flavorAttribution?: string | undefined;
   /** カードレアリティ (6 段階)。badge 色と表示に使う。 */
   rarity: Rarity;
   /** 枠画像の variant (1 or 2)。同じ rarity でも見た目が変わる。 */
@@ -77,7 +79,7 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectName, effectCost, effectDescription, flavorText, rarity, frameVariant, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, frameVariant, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
   const job = JOBS_BY_ID[result.archetype];
@@ -284,6 +286,7 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
           width={W - 2 * (PADX + 20)}
           maxHeight={BODY_H * 0.42 - 50}
           text={flavorText}
+          attribution={flavorAttribution}
         />
       </g>
 
@@ -341,7 +344,7 @@ function EffectBlock(props: {
   );
 
   if (isPassive) {
-    const descLines = wrapJa(description, 20, 3);
+    const descLines = wrapJa(description, 21, 5);
     return (
       <g>
         {nameLine}
@@ -357,8 +360,12 @@ function EffectBlock(props: {
     );
   }
 
-  const costLines = wrapJa(cost, 18, 2);
-  const descLines = wrapJa(description, 20, 2);
+  // 効果欄は「名前 + コスト + 説明」で合計最大 6 行 (仕切り線の上ぎりぎりまで)。
+  // コストが短ければその分を説明に回す。
+  const MAX_TOTAL = 6;
+  const costLines = wrapJa(cost, 21, 2);
+  const descBudget = Math.max(1, MAX_TOTAL - 1 - costLines.length);
+  const descLines = wrapJa(description, 21, descBudget);
   let yOff = 0;
   return (
     <g>
@@ -392,13 +399,18 @@ function EffectBlock(props: {
 /**
  * flavor text を折り返して italic で描画。maxHeight を超える行はカットし、
  * 末尾を 「…」 に丸める。
+ * attribution があれば最終行の下に MTG 風の "— {名前}" を右寄せ小字で添える。
  */
-function FlavorBlock(props: { x: number; y: number; width: number; maxHeight: number; text: string }) {
-  const { x, y, width, maxHeight, text } = props;
+function FlavorBlock(props: { x: number; y: number; width: number; maxHeight: number; text: string; attribution?: string | undefined }) {
+  const { x, y, width, maxHeight, text, attribution } = props;
   const FONT_SIZE = 22;
   const LINE_H = 30;
-  const maxLines = Math.max(1, Math.floor(maxHeight / LINE_H));
-  const lines = wrapJa(text, 22, maxLines);
+  const ATTR_FONT = 16;
+  const ATTR_GAP = 6;
+  const reserveForAttr = attribution ? ATTR_FONT + ATTR_GAP : 0;
+  const maxLines = Math.max(1, Math.floor((maxHeight - reserveForAttr) / LINE_H));
+  const lines = wrapJa(text, 21, maxLines);
+  const lastY = y + (lines.length - 1) * LINE_H;
   return (
     <g>
       {lines.map((line, i) => (
@@ -408,7 +420,15 @@ function FlavorBlock(props: { x: number; y: number; width: number; maxHeight: nu
           {line}
         </text>
       ))}
-      <rect x={x - 4} y={y - (LINE_H - 8)} width={width} height={lines.length * LINE_H + 8}
+      {attribution && (
+        <text x={x + width - 6} y={lastY + ATTR_FONT + ATTR_GAP}
+              fontSize={ATTR_FONT} fontStyle="italic" fontWeight="500"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif"
+              textAnchor="end" fill={INK_SOFT}>
+          — {attribution}
+        </text>
+      )}
+      <rect x={x - 4} y={y - (LINE_H - 8)} width={width} height={lines.length * LINE_H + 8 + reserveForAttr}
             fill="none" stroke="none" />
     </g>
   );

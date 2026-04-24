@@ -96,6 +96,8 @@ export interface DiagnosisResult {
   pendingArchetypeStreak?: number;
   /** カード用のフレーバーテキスト (TinySwallow 生成、引き直しで上書き)。 */
   flavorText?: string;
+  /** フレーバーの発言者 (MTG 風の "— 表示名" 帰属)。フォロイーからランダムに選定。 */
+  flavorAttribution?: string;
   /** カード能力テキスト (旧フィールド、連結文字列)。新データは cardEffectName/Cost/Description を優先。 */
   cardEffect?: string;
   /** 能力キーワード名 (2-5 字、例: 潜影 / 星読み)。 */
