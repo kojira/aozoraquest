@@ -12,7 +12,6 @@ import { getGenerator } from './generator';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
-import { isLowEndDevice } from './device';
 import { stripMarkdown, stripWrappers } from './flavor-text';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
@@ -205,13 +204,9 @@ export function useTranslation(
   const start = useCallback(() => run(false), [run]);
   const retranslate = useCallback(() => run(true), [run]);
 
-  // 自動翻訳が有効なら即時開始。
-  // モバイル / 低メモリ端末では TinySwallow (1.5B) をロードすると
-  // メモリ上限を超えて他機能 (診断など) まで巻き込みクラッシュするので、
-  // 強制 OFF にする (手動ボタンで個別翻訳は可能)。
+  // 自動翻訳が有効なら即時開始
   useEffect(() => {
     if (!canTranslate) return;
-    if (isLowEndDevice()) return;
     if (!getAutoTranslate()) return;
     start();
   }, [canTranslate, start]);
