@@ -205,9 +205,13 @@ export function useTranslation(
   const start = useCallback(() => run(false), [run]);
   const retranslate = useCallback(() => run(true), [run]);
 
-  // 自動翻訳が有効なら即時開始
+  // 自動翻訳が有効なら即時開始。
+  // モバイル / 低メモリ端末では TinySwallow (1.5B) をロードすると
+  // メモリ上限を超えて他機能 (診断など) まで巻き込みクラッシュするので、
+  // 強制 OFF にする (手動ボタンで個別翻訳は可能)。
   useEffect(() => {
     if (!canTranslate) return;
+    if (isLowEndDevice()) return;
     if (!getAutoTranslate()) return;
     start();
   }, [canTranslate, start]);

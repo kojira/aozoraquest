@@ -93,9 +93,9 @@ export async function runDiagnosis(
   onProgress: ProgressCallback = () => {},
 ): Promise<DiagnosisResult | { insufficient: true; postCount: number }> {
   onProgress('fetching-posts');
-  // モバイルは 500 件フルだと Safari のメモリ制限を超えてクラッシュするので
-  // 半分に抑える (精度は DIAGNOSIS_MIN_POST_COUNT 以上確保できれば大きく落ちない)。
-  const limit = isLowEndDevice() ? 200 : DIAGNOSIS_POST_LIMIT;
+  // モバイル Safari はメモリ上限が低く、200 件でも 2 回目でクラッシュするので
+  // 100 まで絞る (DIAGNOSIS_MIN_POST_COUNT を超えていれば精度は実用域)。
+  const limit = isLowEndDevice() ? 100 : DIAGNOSIS_POST_LIMIT;
   const posts = await fetchMyPosts(agent, limit);
 
   if (posts.length < DIAGNOSIS_MIN_POST_COUNT) {
