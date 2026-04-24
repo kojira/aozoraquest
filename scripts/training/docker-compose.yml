@@ -1,0 +1,140 @@
+# AozoraQuest cognitive classifier: 学習 / ONNX 出力 / 量子化のパイプライン。
+# 前提: A100 ホスト (kojira@100.89.44.63) で以下の構成が整っていること
+#   /mnt/ssd8000/kojira/bluesky/finetune-user/         <- このレポの scripts 群 + データ
+#     finetune-soft-label.py
+#     train_clean_aug_jp.jsonl / val_clean_jp.jsonl / test_clean_jp.jsonl
+#     output/                       <- ログ吐き先
+#     runs/                         <- 各 run の成果物 (epoch 毎 model, ONNX, 量子化済)
+#     hf_cache/                     <- HuggingFace download キャッシュ
+#
+# 使い方:
+#   cd /mnt/ssd8000/kojira/bluesky/finetune-user
+#   docker compose -f <このリポ>/scripts/training/docker-compose.yml --env-file .env build
+#   docker compose -f <このリポ>/scripts/training/docker-compose.yml run --rm train
+#   docker compose -f <このリポ>/scripts/training/docker-compose.yml run --rm export
+#   docker compose -f <このリポ>/scripts/training/docker-compose.yml run --rm quantize
+#
+# .env 例:
+#   TAG=v4-30m
+#   BASE_MODEL=cl-nagoya/ruri-v3-30m
+#   TRAIN_TAG=clean_aug_jp
+#   VAL_TAG=clean_jp
+#   TEST_TAG=clean_jp
+#   RUN_DIR=runs/20260424-134019-v4-30m   # export/quantize は学習結果のパスを指定
+#   EPOCH=18                              # 量子化対象の best epoch
+
+services:
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aozoraquest-ml:latest
+    container_name: fine-tune-${TAG:-default}
+    working_dir: /work
+    shm_size: 8gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${WORK_DIR:-/mnt/ssd8000/kojira/bluesky/finetune-user}:/work
+      - ${WORK_DIR:-/mnt/ssd8000/kojira/bluesky/finetune-user}/hf_cache:/root/.cache/huggingface
+    environment:
+      - BASE_MODEL=${BASE_MODEL:-cl-nagoya/ruri-v3-30m}
+      - TRAIN_TAG=${TRAIN_TAG:-clean_aug_jp}
+      - VAL_TAG=${VAL_TAG:-clean_jp}
+      - TEST_TAG=${TEST_TAG:-clean_jp}
+    command: >
+      bash -c "python -u finetune-soft-label.py
+        --epochs ${EPOCHS:-40}
+        --patience ${PATIENCE:-5}
+        --per-class ${PER_CLASS:-500}
+        --batch ${BATCH:-32}
+        --max-len ${MAX_LEN:-128}
+        --loss soft_kl
+        --label-smoothing 0.05
+        --tag ${TAG:-default}
+        2>&1 | tee output/train-${TAG:-default}.log"
+
+  export:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aozoraquest-ml:latest
+    container_name: onnx-export-${TAG:-default}
+    working_dir: /work
+    shm_size: 8gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${WORK_DIR:-/mnt/ssd8000/kojira/bluesky/finetune-user}:/work
+    environment:
+      - RUN_DIR=${RUN_DIR}
+      - EPOCH=${EPOCH}
+    command: >
+      bash -c "set -e &&
+        MODEL=/work/${RUN_DIR}/epochs/${EPOCH}/model &&
+        OUT=/work/${RUN_DIR}/epochs/${EPOCH}/onnx-fp32 &&
+        mkdir -p $$OUT &&
+        optimum-cli export onnx --model $$MODEL --task text-classification $$OUT
+        2>&1 | tee output/export-${TAG:-default}.log"
+
+  quantize:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aozoraquest-ml:latest
+    container_name: quantize-${TAG:-default}
+    working_dir: /work
+    shm_size: 8gb
+    volumes:
+      - ${WORK_DIR:-/mnt/ssd8000/kojira/bluesky/finetune-user}:/work
+    environment:
+      - RUN_DIR=${RUN_DIR}
+      - EPOCH=${EPOCH}
+    command: >
+      bash -c "python -u -c '
+import shutil
+from pathlib import Path
+from onnxruntime.quantization import QuantType, quantize_dynamic
+from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+import onnx
+
+BASE = Path(\"/work/${RUN_DIR}/epochs/${EPOCH}\")
+FP32 = BASE/\"onnx-fp32\"
+INT8 = BASE/\"onnx-int8\"
+INT4 = BASE/\"onnx-int4\"
+TOK  = [\"config.json\",\"tokenizer.json\",\"tokenizer.model\",\"tokenizer_config.json\",\"special_tokens_map.json\"]
+
+def copy_tok(src, dst):
+    dst.mkdir(parents=True, exist_ok=True)
+    for n in TOK:
+        p = src/n
+        if p.exists(): shutil.copy2(p, dst/n)
+
+print(\"[int8] quantize_dynamic\")
+INT8.mkdir(parents=True, exist_ok=True)
+quantize_dynamic(str(FP32/\"model.onnx\"), str(INT8/\"model.onnx\"), weight_type=QuantType.QInt8)
+copy_tok(FP32, INT8)
+
+print(\"[int4] MatMulNBitsQuantizer\")
+INT4.mkdir(parents=True, exist_ok=True)
+m = onnx.load(str(FP32/\"model.onnx\"))
+q = MatMulNBitsQuantizer(m, block_size=32, bits=4)
+q.process()
+onnx.save(q.model.model, str(INT4/\"model.onnx\"))
+copy_tok(FP32, INT4)
+
+for p in [FP32, INT8, INT4]:
+    mb = (p/\"model.onnx\").stat().st_size/1024/1024
+    print(f\"  {p.name}: {mb:.1f}MB\")
+print(\"[done]\")
+' 2>&1 | tee output/quantize-${TAG:-default}.log"

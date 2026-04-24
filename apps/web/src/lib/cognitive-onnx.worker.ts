@@ -35,12 +35,13 @@ env.useBrowserCache = true;
 type Device = 'webgpu' | 'wasm';
 type Dtype = 'q4' | 'q8';
 
-interface InitMessage { type: 'init' }
+interface InitMessage { type: 'init'; modelName?: string }
 interface ClassifyMessage { type: 'classify'; id: string; text: string }
 interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
 type IncomingMessage = InitMessage | ClassifyMessage | ClassifyBatchMessage;
 
-const MODEL_NAME = 'kojira/aozoraquest-cognitive';
+// 既定は大きい方 (130m ベース)。init メッセージで上書き可能。
+let modelName = 'kojira/aozoraquest-cognitive';
 const LABELS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 
 let classifier: any = null;
@@ -48,7 +49,7 @@ let activeBackend: Device = 'webgpu';
 let activeDtype: Dtype = 'q4';
 
 async function tryCreate(device: Device, dtype: Dtype) {
-  return await pipeline('text-classification', MODEL_NAME, {
+  return await pipeline('text-classification', modelName, {
     device,
     dtype,
     progress_callback: (p: any) => {
@@ -175,9 +176,10 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
   const msg = event.data;
   try {
     if (msg.type === 'init') {
+      if (msg.modelName) modelName = msg.modelName;
       await ensureClassifier();
       (self as unknown as Worker).postMessage({
-        type: 'ready', backend: activeBackend, dtype: activeDtype, labels: LABELS,
+        type: 'ready', backend: activeBackend, dtype: activeDtype, labels: LABELS, modelName,
       });
       return;
     }
