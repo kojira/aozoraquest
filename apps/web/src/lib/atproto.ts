@@ -90,6 +90,25 @@ export interface FollowProfile {
 }
 
 /**
+ * フォロー一覧の先頭 1 ページ (最大 100 件) だけを取得。
+ * カードのフレーバー発言者や軽量 UI 用。セッション中はメモリキャッシュ。
+ */
+const firstPageFollowsCache = new Map<string, FollowProfile[]>();
+export async function fetchFirstPageFollows(agent: Agent, actor: string): Promise<FollowProfile[]> {
+  const cached = firstPageFollowsCache.get(actor);
+  if (cached) return cached;
+  const res = await agent.getFollows({ actor, limit: 100 });
+  const out: FollowProfile[] = res.data.follows.map((f) => ({
+    did: f.did,
+    handle: f.handle,
+    ...(f.displayName ? { displayName: f.displayName } : {}),
+    ...(f.avatar ? { avatar: f.avatar } : {}),
+  }));
+  firstPageFollowsCache.set(actor, out);
+  return out;
+}
+
+/**
  * 指定アクターの follow 一覧を全件取得 (cursor pagination)。
  * Bluesky API は 1 ページ最大 100 件。
  */
