@@ -8,6 +8,7 @@ import { VirtualFeed } from '@/components/virtual-feed';
 import { TextField } from '@/components/text-field';
 import { Avatar } from '@/components/avatar';
 import { PostArticle } from '@/components/post-article';
+import { PostText } from '@/components/post-text';
 import { useArchetypes } from '@/lib/archetype-cache';
 
 type Mode = 'users' | 'posts';
@@ -161,7 +162,7 @@ function UserCard({ user, archetype }: { user: AppBskyActorDefs.ProfileView; arc
         </div>
       </div>
       {user.description && (
-        <div style={{ marginTop: '0.4em', fontSize: '0.85em', whiteSpace: 'pre-wrap' }}>{user.description}</div>
+        <PostText text={user.description} style={{ marginTop: '0.4em', fontSize: '0.85em' }} />
       )}
     </article>
   );

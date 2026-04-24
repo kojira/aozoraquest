@@ -9,6 +9,7 @@ import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
 import { PostArticle } from '@/components/post-article';
+import { PostText } from '@/components/post-text';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 
@@ -105,7 +106,7 @@ export function Profile() {
           </div>
         </div>
         {profile.description && (
-          <p style={{ marginTop: '0.6em', whiteSpace: 'pre-wrap', fontSize: '0.9em' }}>{profile.description}</p>
+          <PostText text={profile.description} style={{ marginTop: '0.6em', fontSize: '0.9em' }} />
         )}
         <div style={{ marginTop: '0.6em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
           フォロー {profile.followsCount ?? 0} · フォロワー {profile.followersCount ?? 0} · 投稿 {profile.postsCount ?? 0}
