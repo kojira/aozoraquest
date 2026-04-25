@@ -12,7 +12,6 @@ import { getGenerator } from './generator';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
-import { isLowEndDevice } from './device';
 import { stripMarkdown, stripWrappers } from './flavor-text';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
@@ -121,7 +120,8 @@ async function runLLM(text: string, langs?: string[] | undefined): Promise<strin
     { role: 'user' as const, content: userPrompt },
   ];
   const raw = await Promise.race([
-    gen.generate(messages),
+    // 翻訳は創造性不要なので temperature=0 (greedy) で安定化
+    gen.generate(messages, { temperature: 0 }),
     new Promise<string>((_, rej) =>
       setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
     ),
@@ -180,10 +180,9 @@ export function useTranslation(
   const [error, setError] = useState<string | undefined>(undefined);
   const startedRef = useRef(false);
 
-  // モバイルは TinySwallow をロードした時点でクラッシュするので、翻訳機能
-  // (自動・手動問わず) を完全に無効化する。isNonJapanese=false にして UI も
-  // 一切出さない。
-  const isNonJapanese = !isLowEndDevice() && shouldAutoTranslate(text, langs);
+  // モバイルでも Bonsai 1.7B (q1) なら動くようになったので isLowEndDevice
+  // ガードは外す。auto-translate を OFF にしたいユーザーは設定で切る。
+  const isNonJapanese = shouldAutoTranslate(text, langs);
   const canTranslate = Boolean(uri) && isNonJapanese;
 
   const run = useCallback((force: boolean) => {
@@ -208,13 +207,9 @@ export function useTranslation(
   const start = useCallback(() => run(false), [run]);
   const retranslate = useCallback(() => run(true), [run]);
 
-  // 自動翻訳が有効なら即時開始。
-  // モバイル (iOS / Android) では TinySwallow (1.5B) をロードすると
-  // メモリ上限を超えて他機能まで巻き込みクラッシュするので、設定値に
-  // 関わらず強制 OFF。手動ボタンも押せないようにする。
+  // 自動翻訳が有効なら即時開始
   useEffect(() => {
     if (!canTranslate) return;
-    if (isLowEndDevice()) return;
     if (!getAutoTranslate()) return;
     start();
   }, [canTranslate, start]);

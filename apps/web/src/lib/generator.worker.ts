@@ -13,11 +13,11 @@
 
 import { pipeline, env, TextStreamer } from '@huggingface/transformers';
 import {
-  GENERATION_DTYPE,
+  DESKTOP_GENERATION_SPEC,
   GENERATION_MAX_NEW_TOKENS,
-  GENERATION_MODEL_ID,
   GENERATION_REPETITION_PENALTY,
   GENERATION_TEMPERATURE,
+  type GenerationModelSpec,
 } from '@aozoraquest/core';
 
 env.allowLocalModels = false;
@@ -29,18 +29,19 @@ interface ChatMessage {
 }
 
 type IncomingMessage =
-  | { type: 'load' }
-  | { type: 'generate'; id: string; messages: ChatMessage[] };
+  | { type: 'load'; spec?: GenerationModelSpec }
+  | { type: 'generate'; id: string; messages: ChatMessage[]; temperature?: number };
 
 type Backend = 'webgpu' | 'wasm';
 
 let generator: any = null;
 let activeBackend: Backend = 'webgpu';
+// load 時に上書きされるが、未指定で来た場合は Desktop 設定にフォールバック
+let activeSpec: GenerationModelSpec = DESKTOP_GENERATION_SPEC;
 
 async function tryCreate(device: Backend) {
-  // WASM fallback では dtype が q4f16 のままだと動かないので q4 に下げる。
-  const dtype = device === 'webgpu' ? GENERATION_DTYPE : 'q4';
-  return await pipeline('text-generation', GENERATION_MODEL_ID, {
+  const dtype = device === 'webgpu' ? activeSpec.webgpuDtype : activeSpec.wasmDtype;
+  return await pipeline('text-generation', activeSpec.modelId, {
     device,
     dtype,
     progress_callback: (p: any) => {
@@ -61,12 +62,16 @@ async function ensureGenerator(): Promise<void> {
   try {
     generator = await tryCreate('webgpu');
     activeBackend = 'webgpu';
-    console.info('[generator] ready: WebGPU');
+    console.info(`[generator] ready: WebGPU (${activeSpec.modelId})`);
   } catch (e) {
+    if (!activeSpec.allowWasm) {
+      console.error('[generator] WebGPU failed and WASM fallback disabled for this model', e);
+      throw e;
+    }
     console.warn('[generator] WebGPU failed, falling back to WASM', e);
     generator = await tryCreate('wasm');
     activeBackend = 'wasm';
-    console.info('[generator] ready: WASM (slower)');
+    console.info(`[generator] ready: WASM (${activeSpec.modelId}, slower)`);
   }
 }
 
@@ -74,8 +79,11 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
   const msg = event.data;
   try {
     if (msg.type === 'load') {
+      if (msg.spec) activeSpec = msg.spec;
       await ensureGenerator();
-      (self as unknown as Worker).postMessage({ type: 'ready', backend: activeBackend });
+      (self as unknown as Worker).postMessage({
+        type: 'ready', backend: activeBackend, modelId: activeSpec.modelId,
+      });
       return;
     }
     if (msg.type === 'generate') {
@@ -93,11 +101,13 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
         },
       });
 
+      const temp = msg.temperature ?? GENERATION_TEMPERATURE;
       const output = await generator(msg.messages, {
         max_new_tokens: GENERATION_MAX_NEW_TOKENS,
-        temperature: GENERATION_TEMPERATURE,
+        temperature: temp,
         repetition_penalty: GENERATION_REPETITION_PENALTY,
-        do_sample: true,
+        // temperature=0 はサンプリング不要 (greedy) なので do_sample を切る
+        do_sample: temp > 0,
         streamer,
       });
 

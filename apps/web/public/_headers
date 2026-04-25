@@ -13,3 +13,10 @@
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# OAuth client metadata は dev.aozoraquest.app からも cross-origin で
+# 取得するので CORS 解放。redirect_uris にもう片方の domain も入っているので
+# 両 origin から同一 metadata を共有して使う。
+/client-metadata.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=300
