@@ -17,12 +17,17 @@ export const GENERATION_DEVICE = 'webgpu' as const;
 /**
  * 端末別 LLM スペック。
  * - Desktop: TinySwallow 1.5B q4f16 (日本語強い、~600MB)
- * - Mobile: SmolLM2-360M-Instruct q4f16 (英語中心、~273MB)
+ * - Mobile: SmolLM2-135M-Instruct q4f16 (英語中心、~118MB on disk)
  *
- * Bonsai 1.7B q1 (~290MB on disk) も検討したが、メモリ展開時に
- * iPhone Air / Pixel 7a/9 で OOM クラッシュした (1-bit 重みを
- * 推論時に dequant するためメモリ使用量が膨らむのが原因と推定)。
- * SmolLM2-360M は素直に小さいので両 backend で安全に乗る想定。
+ * 経緯:
+ *   - Bonsai 1.7B q1 (~290MB) → iPhone Air / Pixel 7a/9 で OOM
+ *   - SmolLM2-360M q4f16 (~273MB) → 同じく iPhone Air で OOM
+ *     trace で「DL 完了後の ONNX セッション初期化 / WebGPU バッファ割当て」
+ *     で死亡することを確認。dequant 後のメモリが iOS Safari のタブ枠超え。
+ *   - SmolLM2-135M q4f16 (~118MB) → ここまで小さければ展開後も収まる想定
+ *
+ * トレードオフ: 135M は英語中心で文生成品質はおまけ程度。
+ * モバイルで「LLM が動く」ベースラインを優先。
  */
 /** Transformers.js が受け付ける dtype のリテラル和。 */
 export type GenerationDtype =
@@ -45,9 +50,9 @@ export const DESKTOP_GENERATION_SPEC: GenerationModelSpec = {
 };
 
 export const MOBILE_GENERATION_SPEC: GenerationModelSpec = {
-  modelId: 'HuggingFaceTB/SmolLM2-360M-Instruct',
-  webgpuDtype: 'q4f16', // 273 MB
-  wasmDtype: 'q4',      // 388 MB
+  modelId: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+  webgpuDtype: 'q4f16', // 118 MB
+  wasmDtype: 'q4',      // 182 MB
   allowWasm: true,
 };
 
