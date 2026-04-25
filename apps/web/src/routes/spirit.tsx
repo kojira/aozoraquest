@@ -201,9 +201,11 @@ export function Spirit() {
 
     let full = '';
     try {
-      full = await g.generate(messages, (chunk) => {
-        if (streamingRef.current !== streamKey) return;
-        setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+      full = await g.generate(messages, {
+        onToken: (chunk: string) => {
+          if (streamingRef.current !== streamKey) return;
+          setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+        },
       });
     } catch (e) {
       streamingRef.current = null;

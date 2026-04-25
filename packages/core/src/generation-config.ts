@@ -14,6 +14,37 @@ export const GENERATION_DTYPE = 'q4f16' as const;
 /** 実行デバイス。WebGPU 必須。 */
 export const GENERATION_DEVICE = 'webgpu' as const;
 
+/**
+ * 端末別 LLM スペック。Desktop は TinySwallow を維持、Mobile は 1-bit
+ * 量子化された Bonsai 1.7B (~290MB、4GB RAM 級スマホで動作する設計) に切替。
+ */
+/** Transformers.js が受け付ける dtype のリテラル和。 */
+export type GenerationDtype =
+  | 'auto' | 'fp32' | 'fp16' | 'q4f16' | 'q4' | 'q8' | 'int8' | 'uint8'
+  | 'bnb4' | 'q2' | 'q2f16' | 'q1' | 'q1f16';
+
+export interface GenerationModelSpec {
+  modelId: string;
+  webgpuDtype: GenerationDtype;
+  wasmDtype: GenerationDtype;
+  /** WASM fallback を許可するか (Bonsai 1-bit は WebGPU カーネル前提のため false) */
+  allowWasm: boolean;
+}
+
+export const DESKTOP_GENERATION_SPEC: GenerationModelSpec = {
+  modelId: GENERATION_MODEL_ID,
+  webgpuDtype: 'q4f16',
+  wasmDtype: 'q4',
+  allowWasm: true,
+};
+
+export const MOBILE_GENERATION_SPEC: GenerationModelSpec = {
+  modelId: 'onnx-community/Bonsai-1.7B-ONNX',
+  webgpuDtype: 'q1',
+  wasmDtype: 'q1',
+  allowWasm: false,
+};
+
 /** 1 回の生成で出す最大トークン数。精霊は短く返すので抑えめ。 */
 export const GENERATION_MAX_NEW_TOKENS = 200;
 

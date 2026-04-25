@@ -25,8 +25,12 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
       handleResolver: 'https://bsky.social',
     });
   } else {
+    // 本番 (aozoraquest.app) と開発 (dev.aozoraquest.app) で同じ
+    // client-metadata.json (両方の redirect_uri を含む) を共有するために、
+    // origin に関わらず本番ホストの URL を使う。これがズレると Bluesky の
+    // 認可サーバーが client_id mismatch で拒否する。
     clientPromise = BrowserOAuthClient.load({
-      clientId: `${appUrl}/client-metadata.json`,
+      clientId: 'https://aozoraquest.app/client-metadata.json',
       handleResolver: 'https://bsky.social',
     });
   }
