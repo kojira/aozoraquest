@@ -40,6 +40,10 @@ export interface GenerationModelSpec {
   wasmDtype: GenerationDtype;
   /** WASM fallback を許可するか。極小モデルは true、特殊量子化前提モデルは false */
   allowWasm: boolean;
+  /** WebGPU を試さず最初から WASM で動かす。
+   *  iOS Safari は WebGPU pipeline は構築できても inference 時に GPU メモリ
+   *  確保で OOM クラッシュするケースがあるため、安定性優先のモバイルは WASM 直行。 */
+  preferWasm?: boolean;
 }
 
 export const DESKTOP_GENERATION_SPEC: GenerationModelSpec = {
@@ -51,9 +55,10 @@ export const DESKTOP_GENERATION_SPEC: GenerationModelSpec = {
 
 export const MOBILE_GENERATION_SPEC: GenerationModelSpec = {
   modelId: 'HuggingFaceTB/SmolLM2-135M-Instruct',
-  webgpuDtype: 'q4f16', // 118 MB
+  webgpuDtype: 'q4f16', // 118 MB (preferWasm=true なので未使用)
   wasmDtype: 'q4',      // 182 MB
   allowWasm: true,
+  preferWasm: true,
 };
 
 /** 1 回の生成で出す最大トークン数。精霊は短く返すので抑えめ。 */
