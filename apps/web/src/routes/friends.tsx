@@ -4,6 +4,7 @@ import type { DiagnosisResult } from '@aozoraquest/core';
 import { jobDisplayName } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import { seedAnalysis } from '@/lib/analysis-cache';
 import {
   computeFollowResonanceRanking,
@@ -51,7 +52,7 @@ export function Friends() {
     const did = session.did;
     cancelledRef.current = false;
     (async () => {
-      const mine = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self').catch(() => null);
+      const mine = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null);
       if (cancelledRef.current) return;
       if (!mine) {
         setState({ status: 'no-self-analysis' });

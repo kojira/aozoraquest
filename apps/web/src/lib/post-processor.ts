@@ -14,6 +14,7 @@
  */
 
 import type { Agent } from '@atproto/api';
+import { COL } from './collections';
 import type { ActionType, Archetype, CogFunction, CognitiveScores, DiagnosisResult, JobLevelState, PlayerLevelState, Quest, QuestTemplate, StatVector } from '@aozoraquest/core';
 import {
   ACTIVITY_HISTORY_LIMIT,
@@ -135,7 +136,7 @@ export async function processSelfPost(
   let xpGained = 0;
   {
     const date = todayDateString();
-    const existing = await getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', date);
+    const existing = await getRecord<QuestLogRecord>(agent, did, COL.questLog, date);
     const log: QuestLogRecord = existing ?? {
       date,
       quests: [],
@@ -179,7 +180,7 @@ export async function processSelfPost(
     log.activity = [...prev, entry].slice(-ACTIVITY_HISTORY_LIMIT);
     log.totalXpGained = (log.totalXpGained ?? 0) + xpGained;
     log.updatedAt = new Date().toISOString();
-    await putRecord(agent, 'app.aozoraquest.questLog', date, log);
+    await putRecord(agent, COL.questLog, date, log);
   }
 
   // 4) analysis を更新
@@ -198,7 +199,7 @@ export async function processSelfPost(
   let finalPendingArchetype: Archetype | undefined;
   let finalPendingStreak: number | undefined;
   try {
-    const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+    const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
     if (analysis?.cognitiveScores) {
       const blended = blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA);
       updatedCognitive = blended;
@@ -272,7 +273,7 @@ export async function processSelfPost(
       finalPendingArchetype = nextPendingArchetype;
       finalPendingStreak = nextPendingStreak;
 
-      await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
+      await putRecord(agent, COL.analysis, 'self', {
         ...analysis,
         cognitiveScores: blended,
         rpgStats: nextStats,
@@ -313,7 +314,7 @@ export async function processSelfPost(
  * - pendingArchetype / Streak をクリア
  */
 export async function confirmJobChange(agent: Agent, did: string, newArchetype: Archetype): Promise<DiagnosisResult | null> {
-  const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+  const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
   if (!analysis) return null;
   const now = new Date().toISOString();
   const next: DiagnosisResult = {
@@ -323,18 +324,18 @@ export async function confirmJobChange(agent: Agent, did: string, newArchetype: 
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
-  await putRecord(agent, 'app.aozoraquest.analysis', 'self', next);
+  await putRecord(agent, COL.analysis, 'self', next);
   return next;
 }
 
 /** ユーザーが「このまま」を押したとき呼ぶ。pending をクリアするが、次の投稿で再度出る可能性あり。 */
 export async function dismissPendingArchetype(agent: Agent, did: string): Promise<void> {
-  const analysis = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+  const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
   if (!analysis) return;
   const next: Partial<DiagnosisResult> = { ...analysis };
   delete next.pendingArchetype;
   delete next.pendingArchetypeStreak;
-  await putRecord(agent, 'app.aozoraquest.analysis', 'self', next);
+  await putRecord(agent, COL.analysis, 'self', next);
 }
 
 /** dateA (YYYY-MM-DD) が dateB の前日かどうか。 */
@@ -366,7 +367,7 @@ export async function ensureTodayQuestLog(
   quests: Quest[],
 ): Promise<QuestLogRecord> {
   const date = todayDateString();
-  const existing = await getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', date);
+  const existing = await getRecord<QuestLogRecord>(agent, did, COL.questLog, date);
   if (existing) return existing;
   const record: QuestLogRecord = {
     date,
@@ -382,7 +383,7 @@ export async function ensureTodayQuestLog(
     totalXpGained: 0,
     updatedAt: new Date().toISOString(),
   };
-  await putRecord(agent, 'app.aozoraquest.questLog', date, record);
+  await putRecord(agent, COL.questLog, date, record);
   return record;
 }
 
@@ -391,5 +392,5 @@ export async function loadTodayQuestLog(
   did: string,
 ): Promise<QuestLogRecord | null> {
   const date = todayDateString();
-  return getRecord<QuestLogRecord>(agent, did, 'app.aozoraquest.questLog', date);
+  return getRecord<QuestLogRecord>(agent, did, COL.questLog, date);
 }

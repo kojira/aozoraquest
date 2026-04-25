@@ -10,8 +10,9 @@
 
 import type { Agent } from '@atproto/api';
 import { VIA } from './atproto';
+import { COL } from './collections';
 
-const COLLECTION = 'app.aozoraquest.cardDraw';
+const COLLECTION = COL.cardDraw;
 
 /** 過去に書かれた cardDraw レコード数を数える (最大 500 件まで)。 */
 export async function countCardDraws(agent: Agent, did: string): Promise<number> {

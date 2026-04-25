@@ -11,6 +11,7 @@ import type { Agent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { ARCHETYPE_CACHE_TTL_MS, JOBS_BY_ID } from '@aozoraquest/core';
 import { getRecord } from './atproto';
+import { COL } from './collections';
 
 interface CacheEntry {
   archetype: Archetype | null;
@@ -30,7 +31,7 @@ async function fetchOne(agent: Agent, did: string): Promise<Archetype | null> {
   if (existing) return existing;
   const p = (async () => {
     try {
-      const r = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+      const r = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
       const a = r?.archetype;
       const valid = a && a in JOBS_BY_ID ? (a as Archetype) : null;
       cache.set(did, { archetype: valid, fetchedAt: Date.now() });

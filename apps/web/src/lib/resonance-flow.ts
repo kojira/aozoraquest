@@ -11,6 +11,7 @@ import type { Archetype, DiagnosisResult, StatArray, StatVector } from '@aozoraq
 import { JOBS_BY_ID, resonance, resonanceTimelineScore } from '@aozoraquest/core';
 import { fetchAuthorFeed, getRecord } from './atproto';
 import { seedArchetype } from './archetype-cache';
+import { COL } from './collections';
 
 export interface ResonanceEntry {
   item: AppBskyFeedDefs.FeedViewPost;
@@ -45,7 +46,7 @@ export async function buildResonanceTimeline(
       try {
         const [feed, otherDiag] = await Promise.all([
           fetchAuthorFeed(agent, did, perAuthor),
-          getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self'),
+          getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self'),
         ]);
         let score: number | null = null;
         let sim: number | null = null;

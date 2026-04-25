@@ -4,6 +4,7 @@ import type { Agent, AppBskyActorDefs } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
 import { isRarity, rollRarity } from '@aozoraquest/core';
 import { loadPointsState, type PointsState } from '@/lib/points';
@@ -52,7 +53,7 @@ export function Card() {
     (async () => {
       try {
         const [analysis, points, profile] = await Promise.all([
-          getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self').catch(() => null),
+          getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did).catch(() => ({ summoned: false } as { summoned: boolean })),
           fetchProfile(agent, did).catch(() => null),
         ]);
@@ -196,7 +197,7 @@ export function Card() {
       // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant + attribution)
       try {
         const now = new Date().toISOString();
-        await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
+        await putRecord(agent, COL.analysis, 'self', {
           ...load.result,
           cardEffectName: r.effect.name,
           cardEffectCost: r.effect.cost,
