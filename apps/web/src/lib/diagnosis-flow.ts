@@ -8,6 +8,7 @@ import {
   type DiagnosisResult,
 } from '@aozoraquest/core';
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
+import { COL } from './collections';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
 import { getCognitiveOnnxClassifier } from './cognitive-onnx';
@@ -121,7 +122,7 @@ export async function runDiagnosis(
   onProgress('saving');
 
   // 既存レコード (あれば) を読み込んで playerLevel / jobLevel を引き継ぐ。
-  const existing = await getRecord<DiagnosisResult>(agent, agent.assertDid ?? '', 'app.aozoraquest.analysis', 'self')
+  const existing = await getRecord<DiagnosisResult>(agent, agent.assertDid ?? '', COL.analysis, 'self')
     .catch(() => null);
   const playerLevel = existing?.playerLevel ?? { xp: 0, streakDays: 0 };
 
@@ -159,7 +160,7 @@ export async function runDiagnosis(
     record.pendingArchetypeStreak = prev + 1;
   }
 
-  await putRecord(agent, 'app.aozoraquest.analysis', 'self', {
+  await putRecord(agent, COL.analysis, 'self', {
     ...record,
     public: false,
   });

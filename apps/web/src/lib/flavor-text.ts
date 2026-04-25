@@ -18,6 +18,7 @@ import {
 } from '@aozoraquest/core';
 import { getGenerator } from './generator';
 import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
+import { isLowEndDevice } from './device';
 
 export interface CardTextSource {
   kind: 'llm' | 'fallback';
@@ -356,12 +357,17 @@ async function generateWithLLM(
 
 /** effect + flavor を生成 (メイン API)。rarity を必ず渡す。
  *  開発中はエラーを隠さない: LLM 失敗時は CardTextError を投げる (UI 側で表示)。
- *  本番で自動フォールバックが必要になったら呼び出し側で catch → getFallbackCardText。 */
+ *  本番で自動フォールバックが必要になったら呼び出し側で catch → getFallbackCardText。
+ *
+ *  モバイルは LLM 自体が乗らない (OOM) ので即 hand-crafted fallback。 */
 export async function generateCardText(
   result: DiagnosisResult,
   rarity: Rarity,
   opts: { seed?: number; timeoutMs?: number } = {},
 ): Promise<CardText> {
+  if (isLowEndDevice()) {
+    return getFallbackCardText(result.archetype, opts.seed ?? Date.now(), rarity);
+  }
   void opts.seed;
   const timeoutMs = opts.timeoutMs ?? 60000;
   return await generateWithLLM(result, rarity, timeoutMs);

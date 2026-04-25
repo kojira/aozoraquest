@@ -5,6 +5,7 @@ import type { DiagnosisResult } from '@aozoraquest/core';
 import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { UserBubble } from '@/components/user-bubble';
@@ -14,6 +15,7 @@ import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
+import { isLowEndDevice } from '@/lib/device';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
 
@@ -82,7 +84,7 @@ export function Spirit() {
     (async () => {
       try {
         const [r, p, hist, cached] = await Promise.all([
-          getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self').catch(() => null),
+          getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
           isModelCached(),
@@ -92,8 +94,9 @@ export function Spirit() {
         setPoints(p);
         setHistory(hist);
         setCacheReady(cached);
-        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)
-        if (p.summoned && cached) {
+        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)。
+        // モバイルは LLM 自体が乗らないので skip (会話 UI も別経路で隠す)。
+        if (p.summoned && cached && !isLowEndDevice()) {
           getGenerator().load().then(() => {
             if (!cancelled) setGeneratorReady(true);
           }).catch((e) => {
@@ -166,8 +169,8 @@ export function Spirit() {
     try {
       const res = await agent.com.atproto.repo.createRecord({
         repo: did,
-        collection: 'app.aozoraquest.spiritChat',
-        record: { $type: 'app.aozoraquest.spiritChat', role: 'user', text, createdAt },
+        collection: COL.spiritChat,
+        record: { $type: COL.spiritChat, role: 'user', text, createdAt },
       });
       userUri = res.data.uri;
     } catch (e) {
@@ -201,9 +204,11 @@ export function Spirit() {
 
     let full = '';
     try {
-      full = await g.generate(messages, (chunk) => {
-        if (streamingRef.current !== streamKey) return;
-        setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+      full = await g.generate(messages, {
+        onToken: (chunk: string) => {
+          if (streamingRef.current !== streamKey) return;
+          setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+        },
       });
     } catch (e) {
       streamingRef.current = null;
@@ -228,8 +233,8 @@ export function Spirit() {
     try {
       const res = await agent.com.atproto.repo.createRecord({
         repo: did,
-        collection: 'app.aozoraquest.spiritChat',
-        record: { $type: 'app.aozoraquest.spiritChat', role: 'spirit', text: cleanFull, createdAt: spiritCreatedAt },
+        collection: COL.spiritChat,
+        record: { $type: COL.spiritChat, role: 'spirit', text: cleanFull, createdAt: spiritCreatedAt },
       });
       streamingRef.current = null;
       setHistory((h) =>
@@ -259,8 +264,8 @@ export function Spirit() {
       try {
         const res = await agent.com.atproto.repo.createRecord({
           repo: did,
-          collection: 'app.aozoraquest.spiritChat',
-          record: { $type: 'app.aozoraquest.spiritChat', role: 'spirit', text: welcome, createdAt },
+          collection: COL.spiritChat,
+          record: { $type: COL.spiritChat, role: 'spirit', text: welcome, createdAt },
         });
         setHistory((h) => [...h, { uri: res.data.uri, role: 'spirit', text: welcome, createdAt }]);
         setPoints((p) => (p ? { ...p, summoned: true } : p));
@@ -408,35 +413,44 @@ export function Spirit() {
             {sendErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{sendErr}</p>}
           </section>
 
-          <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-            <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
-              <TextField
-                ref={inputRef}
-                value={input}
-                onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
-                onSubmit={() => void sendMessage()}
-                placeholder={
-                  !generatorReady
-                    ? 'ブルスコンを呼び戻している…'
-                    : points.balance > 0
-                      ? 'ブルスコンに話しかける'
-                      : 'あなたの投稿を重ねると、話せるようになる'
-                }
-                disabled={sending || points.balance < 1 || !generatorReady}
-                maxLength={INPUT_MAX}
-                style={{ flex: 1 }}
-              />
-              <button
-                onClick={() => void sendMessage()}
-                disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
-              >
-                {sending ? '…' : '送る'}
-              </button>
-            </div>
-            <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
-              {input.length} / {INPUT_MAX}
-            </div>
-          </section>
+          {isLowEndDevice() ? (
+            <section style={{ marginTop: '0.8em' }}>
+              <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+                ブルスコンとの会話は PC のブラウザでのみ使えます。
+                モバイルではブルスコンの存在を眺めるだけになります。
+              </p>
+            </section>
+          ) : (
+            <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+              <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
+                <TextField
+                  ref={inputRef}
+                  value={input}
+                  onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
+                  onSubmit={() => void sendMessage()}
+                  placeholder={
+                    !generatorReady
+                      ? 'ブルスコンを呼び戻している…'
+                      : points.balance > 0
+                        ? 'ブルスコンに話しかける'
+                        : 'あなたの投稿を重ねると、話せるようになる'
+                  }
+                  disabled={sending || points.balance < 1 || !generatorReady}
+                  maxLength={INPUT_MAX}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  onClick={() => void sendMessage()}
+                  disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
+                >
+                  {sending ? '…' : '送る'}
+                </button>
+              </div>
+              <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
+                {input.length} / {INPUT_MAX}
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -457,7 +471,7 @@ async function loadChatHistory(agent: Agent, did: string): Promise<HistoryItem[]
   try {
     const res = await agent.com.atproto.repo.listRecords({
       repo: did,
-      collection: 'app.aozoraquest.spiritChat',
+      collection: COL.spiritChat,
       limit: 50,
     });
     const items: HistoryItem[] = [];

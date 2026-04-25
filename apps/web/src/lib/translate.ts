@@ -12,8 +12,8 @@ import { getGenerator } from './generator';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
-import { isLowEndDevice } from './device';
 import { stripMarkdown, stripWrappers } from './flavor-text';
+import { isLowEndDevice } from './device';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
 const TIMEOUT_MS = 60_000;
@@ -121,7 +121,8 @@ async function runLLM(text: string, langs?: string[] | undefined): Promise<strin
     { role: 'user' as const, content: userPrompt },
   ];
   const raw = await Promise.race([
-    gen.generate(messages),
+    // 翻訳は創造性不要なので temperature=0 (greedy) で安定化
+    gen.generate(messages, { temperature: 0 }),
     new Promise<string>((_, rej) =>
       setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
     ),
@@ -180,11 +181,13 @@ export function useTranslation(
   const [error, setError] = useState<string | undefined>(undefined);
   const startedRef = useRef(false);
 
-  // モバイルは TinySwallow をロードした時点でクラッシュするので、翻訳機能
-  // (自動・手動問わず) を完全に無効化する。isNonJapanese=false にして UI も
-  // 一切出さない。
-  const isNonJapanese = !isLowEndDevice() && shouldAutoTranslate(text, langs);
-  const canTranslate = Boolean(uri) && isNonJapanese;
+  // モバイルは LLM ロード自体で OOM クラッシュするので翻訳機能を完全 OFF。
+  // Bonsai 1.7B / SmolLM2-360M でも iPhone Air・Pixel 7a/9 でクラッシュする
+  // ことが判明したため、軽量端末は手動翻訳ボタンも含めて非表示にする。
+  // PC では従来通り auto-translate 設定に従う。
+  const lowEnd = isLowEndDevice();
+  const isNonJapanese = !lowEnd && shouldAutoTranslate(text, langs);
+  const canTranslate = !lowEnd && Boolean(uri) && isNonJapanese;
 
   const run = useCallback((force: boolean) => {
     if (!uri || !isNonJapanese) return;
@@ -208,13 +211,9 @@ export function useTranslation(
   const start = useCallback(() => run(false), [run]);
   const retranslate = useCallback(() => run(true), [run]);
 
-  // 自動翻訳が有効なら即時開始。
-  // モバイル (iOS / Android) では TinySwallow (1.5B) をロードすると
-  // メモリ上限を超えて他機能まで巻き込みクラッシュするので、設定値に
-  // 関わらず強制 OFF。手動ボタンも押せないようにする。
+  // 自動翻訳が有効なら即時開始
   useEffect(() => {
     if (!canTranslate) return;
-    if (isLowEndDevice()) return;
     if (!getAutoTranslate()) return;
     start();
   }, [canTranslate, start]);

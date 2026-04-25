@@ -17,6 +17,10 @@ for (const route of ROUTES) {
       // 実ネットワーク先の外部 (bsky.social) をブロックしてるケースもあり得るので
       // 同じく無視
       if (/bsky\.social|bsky\.app/.test(text)) return;
+      // ローカル preview では aozoraquest.app の client-metadata.json を
+      // cross-origin fetch して CORS エラーになる (本番では同一 origin)。
+      // 環境差なので無視
+      if (/aozoraquest\.app\/client-metadata\.json|CORS policy|ERR_FAILED/i.test(text)) return;
       errors.push(text);
     });
     page.on('pageerror', (err) => {
