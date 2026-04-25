@@ -40,6 +40,20 @@ export const COL = {
   cardDraw: `${USER_PREFIX}.cardDraw`,
 } as const;
 
+/**
+ * 他ユーザーのレコードを読みに行くときの NSID (ROOT 直下 = production view)。
+ *
+ * 自分の WRITE は env-isolated な COL.* に行くが、他ユーザーは production
+ * NSID にしか書いていない。dev 環境の resonance タイムラインや friends 画面で
+ * 他者の archetype を表示するためには ROOT_COL から読む必要がある。
+ *
+ * production 環境 (VITE_NSID_ENV 未指定) では COL と ROOT_COL は同値になる。
+ */
+export const ROOT_COL = {
+  analysis: `${ROOT}.analysis`,
+  profile: `${ROOT}.profile`,
+} as const;
+
 export const ADMIN_COL = {
   configFlags: `${ROOT}.config.flags`,
   configMaintenance: `${ROOT}.config.maintenance`,
