@@ -23,6 +23,19 @@ import {
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// 進捗を main thread と console の両方に出す。クラッシュ前にどこまで進んだかを
+// Inspector の console と (生きていれば) main 側からも見えるように。
+function trace(...args: unknown[]) {
+  console.info('[gen-worker]', ...args);
+  try {
+    (self as unknown as Worker).postMessage({ type: 'trace', text: args.map(String).join(' ') });
+  } catch {
+    // ignore
+  }
+}
+
+trace('worker module loaded');
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -41,7 +54,9 @@ let activeSpec: GenerationModelSpec = DESKTOP_GENERATION_SPEC;
 
 async function tryCreate(device: Backend) {
   const dtype = device === 'webgpu' ? activeSpec.webgpuDtype : activeSpec.wasmDtype;
-  return await pipeline('text-generation', activeSpec.modelId, {
+  trace(`tryCreate: device=${device} dtype=${dtype} modelId=${activeSpec.modelId}`);
+  const t0 = performance.now();
+  const pipe = await pipeline('text-generation', activeSpec.modelId, {
     device,
     dtype,
     progress_callback: (p: any) => {
@@ -55,23 +70,27 @@ async function tryCreate(device: Backend) {
       });
     },
   });
+  trace(`tryCreate: ${device} pipeline ready in ${Math.round(performance.now() - t0)}ms`);
+  return pipe;
 }
 
 async function ensureGenerator(): Promise<void> {
   if (generator) return;
+  trace(`ensureGenerator: WebGPU available? ${typeof (self as any).navigator?.gpu !== 'undefined'}`);
   try {
     generator = await tryCreate('webgpu');
     activeBackend = 'webgpu';
-    console.info(`[generator] ready: WebGPU (${activeSpec.modelId})`);
+    trace(`ready: WebGPU (${activeSpec.modelId})`);
   } catch (e) {
+    trace(`WebGPU failed: ${(e as Error)?.message ?? e}`);
     if (!activeSpec.allowWasm) {
-      console.error('[generator] WebGPU failed and WASM fallback disabled for this model', e);
+      trace('WASM fallback disabled, giving up');
       throw e;
     }
-    console.warn('[generator] WebGPU failed, falling back to WASM', e);
+    trace('falling back to WASM');
     generator = await tryCreate('wasm');
     activeBackend = 'wasm';
-    console.info(`[generator] ready: WASM (${activeSpec.modelId}, slower)`);
+    trace(`ready: WASM (${activeSpec.modelId})`);
   }
 }
 
@@ -80,7 +99,9 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
   try {
     if (msg.type === 'load') {
       if (msg.spec) activeSpec = msg.spec;
+      trace(`load: spec=${activeSpec.modelId} webgpu=${activeSpec.webgpuDtype} wasm=${activeSpec.wasmDtype} allowWasm=${activeSpec.allowWasm}`);
       await ensureGenerator();
+      trace('load: posting ready');
       (self as unknown as Worker).postMessage({
         type: 'ready', backend: activeBackend, modelId: activeSpec.modelId,
       });
