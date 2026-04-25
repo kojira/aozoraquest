@@ -15,8 +15,14 @@ export const GENERATION_DTYPE = 'q4f16' as const;
 export const GENERATION_DEVICE = 'webgpu' as const;
 
 /**
- * 端末別 LLM スペック。Desktop は TinySwallow を維持、Mobile は 1-bit
- * 量子化された Bonsai 1.7B (~290MB、4GB RAM 級スマホで動作する設計) に切替。
+ * 端末別 LLM スペック。
+ * - Desktop: TinySwallow 1.5B q4f16 (日本語強い、~600MB)
+ * - Mobile: SmolLM2-360M-Instruct q4f16 (英語中心、~273MB)
+ *
+ * Bonsai 1.7B q1 (~290MB on disk) も検討したが、メモリ展開時に
+ * iPhone Air / Pixel 7a/9 で OOM クラッシュした (1-bit 重みを
+ * 推論時に dequant するためメモリ使用量が膨らむのが原因と推定)。
+ * SmolLM2-360M は素直に小さいので両 backend で安全に乗る想定。
  */
 /** Transformers.js が受け付ける dtype のリテラル和。 */
 export type GenerationDtype =
@@ -27,7 +33,7 @@ export interface GenerationModelSpec {
   modelId: string;
   webgpuDtype: GenerationDtype;
   wasmDtype: GenerationDtype;
-  /** WASM fallback を許可するか (Bonsai 1-bit は WebGPU カーネル前提のため false) */
+  /** WASM fallback を許可するか。極小モデルは true、特殊量子化前提モデルは false */
   allowWasm: boolean;
 }
 
@@ -39,10 +45,10 @@ export const DESKTOP_GENERATION_SPEC: GenerationModelSpec = {
 };
 
 export const MOBILE_GENERATION_SPEC: GenerationModelSpec = {
-  modelId: 'onnx-community/Bonsai-1.7B-ONNX',
-  webgpuDtype: 'q1',
-  wasmDtype: 'q1',
-  allowWasm: false,
+  modelId: 'HuggingFaceTB/SmolLM2-360M-Instruct',
+  webgpuDtype: 'q4f16', // 273 MB
+  wasmDtype: 'q4',      // 388 MB
+  allowWasm: true,
 };
 
 /** 1 回の生成で出す最大トークン数。精霊は短く返すので抑えめ。 */
