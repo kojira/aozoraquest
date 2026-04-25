@@ -98,7 +98,11 @@ export function Home() {
     setResonanceLoading(true);
     setResonanceErr(null);
     const dids = config.directory.map((u) => u.did);
-    buildResonanceTimeline(agent, { selfDiagnosis: selfDiag, directoryDids: dids })
+    buildResonanceTimeline(agent, {
+      selfDiagnosis: selfDiag,
+      selfDid: session.did,
+      directoryDids: dids,
+    })
       .then((list) => setResonanceFeed(list))
       .catch((e) => setResonanceErr(String((e as Error)?.message ?? e)))
       .finally(() => setResonanceLoading(false));

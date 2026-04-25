@@ -1,17 +1,17 @@
 /**
  * 共鳴タイムライン: 管理者 PDS のディレクトリに登録された DID から
- * 直近投稿を取り、自分との共鳴度 (もしくは単純に時系列) で並べる。
+ * 直近投稿を取り、createdAt の新しい順に並べる。共鳴スコアは表示の
+ * バッジに使うが並び順には影響しない (純粋な時系列タイムライン)。
  *
- * - 自分の診断と相手の診断が揃えば resonance (0.6*sim + 0.4*compl) で並べる
- * - 揃わなければ createdAt の新しい順で並べる (diagnosis gating のため)
+ * 自分の DID は除外する (resonance=1.0 で常に top に張り付く問題を回避)。
  */
 
 import type { Agent, AppBskyFeedDefs } from '@atproto/api';
 import type { Archetype, DiagnosisResult, StatArray, StatVector } from '@aozoraquest/core';
-import { JOBS_BY_ID, resonance, resonanceTimelineScore } from '@aozoraquest/core';
+import { JOBS_BY_ID, resonance } from '@aozoraquest/core';
 import { fetchAuthorFeed, getRecord } from './atproto';
 import { seedArchetype } from './archetype-cache';
-import { COL } from './collections';
+import { ROOT_COL } from './collections';
 
 export interface ResonanceEntry {
   item: AppBskyFeedDefs.FeedViewPost;
@@ -24,6 +24,8 @@ export interface ResonanceEntry {
 
 export interface BuildResonanceOptions {
   selfDiagnosis: DiagnosisResult | null;
+  /** 自分の DID。指定されれば directoryDids から除外する。 */
+  selfDid?: string | undefined;
   directoryDids: string[];
   perAuthorLimit?: number;
   maxAuthors?: number;
@@ -33,10 +35,12 @@ export async function buildResonanceTimeline(
   agent: Agent,
   opts: BuildResonanceOptions,
 ): Promise<ResonanceEntry[]> {
-  const { selfDiagnosis, directoryDids } = opts;
+  const { selfDiagnosis, directoryDids, selfDid } = opts;
   const perAuthor = opts.perAuthorLimit ?? 5;
   const maxAuthors = opts.maxAuthors ?? 30;
-  const dids = directoryDids.slice(0, maxAuthors);
+  const dids = directoryDids
+    .filter((d) => d !== selfDid)
+    .slice(0, maxAuthors);
   if (dids.length === 0) return [];
 
   const selfArr = selfDiagnosis ? toStatArray(selfDiagnosis.rpgStats) : null;
@@ -46,7 +50,8 @@ export async function buildResonanceTimeline(
       try {
         const [feed, otherDiag] = await Promise.all([
           fetchAuthorFeed(agent, did, perAuthor),
-          getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self'),
+          // 他人の analysis は production NSID から読む (env 隔離は self 用)
+          getRecord<DiagnosisResult>(agent, did, ROOT_COL.analysis, 'self'),
         ]);
         let score: number | null = null;
         let sim: number | null = null;
@@ -84,23 +89,10 @@ export async function buildResonanceTimeline(
     }),
   );
 
-  const now = Date.now();
+  // createdAt 降順 (新しい順)
   const all = results.flat();
-  all.sort((a, b) => {
-    const sa = rankScore(a, now);
-    const sb = rankScore(b, now);
-    return sb - sa;
-  });
+  all.sort((a, b) => postTime(b.item) - postTime(a.item));
   return all;
-}
-
-function rankScore(e: ResonanceEntry, now: number): number {
-  const age = Math.max(0, now - postTime(e.item));
-  if (e.score == null) {
-    // 未診断なら純粋に新しさだけで並べる (古いほど小さい)
-    return -age;
-  }
-  return resonanceTimelineScore(e.score, age);
 }
 
 function postTime(item: AppBskyFeedDefs.FeedViewPost): number {
