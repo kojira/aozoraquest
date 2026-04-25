@@ -3,7 +3,7 @@ import { BrowserOAuthClient, type OAuthSession } from '@atproto/oauth-client-bro
 /**
  * OAuth クライアントをシングルトンで初期化する。
  *
- * 本番: client_id は https://aozoraquest.app/client-metadata.json
+ * 本番: client_id は ${VITE_APP_URL}/client-metadata.json (build 時生成)
  * 開発: loopback client_id パターン (http://localhost で使える仮想 client_id)
  */
 let clientPromise: Promise<BrowserOAuthClient> | null = null;

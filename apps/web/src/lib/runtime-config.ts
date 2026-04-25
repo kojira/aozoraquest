@@ -1,18 +1,19 @@
 /**
  * 主管理者 DID の PDS から公開コンフィグを boot 時に取得する。
  *
- * 14-admin.md の設計通り:
- *   - app.aozoraquest.config.flags (rkey=self)
- *   - app.aozoraquest.config.maintenance (rkey=self)
- *   - app.aozoraquest.config.bans (rkey=self)
- *   - app.aozoraquest.config.prompts (rkey=spiritChat | draftPost | advancedDiagnosis)
- *   - app.aozoraquest.directory (rkey=self)
+ * NSID は VITE_NSID_ROOT 由来 (collections.ts ADMIN_COL):
+ *   - {ROOT}.config.flags (rkey=self)
+ *   - {ROOT}.config.maintenance (rkey=self)
+ *   - {ROOT}.config.bans (rkey=self)
+ *   - {ROOT}.config.prompts (rkey=spiritChat | draftPost | advancedDiagnosis)
+ *   - {ROOT}.directory (rkey=self)
  *
  * 失敗時は DEFAULT_RUNTIME_CONFIG でフォールバック起動。
  */
 
 import { AtpAgent } from '@atproto/api';
 import { DEFAULT_RUNTIME_CONFIG, type RuntimeConfig } from '@aozoraquest/types';
+import { ADMIN_COL } from './collections';
 
 const PLC_DIRECTORY = 'https://plc.directory';
 
@@ -118,11 +119,11 @@ async function loadRuntimeConfigInner(): Promise<RuntimeConfig> {
   const agent = new AtpAgent({ service: pdsUrl });
 
   const [flagsMap, maintMap, bansMap, promptsMap, dirMap] = await Promise.all([
-    listAsMap<FlagsRecord>(agent, adminDid, 'app.aozoraquest.config.flags'),
-    listAsMap<MaintenanceRecord>(agent, adminDid, 'app.aozoraquest.config.maintenance'),
-    listAsMap<BansRecord>(agent, adminDid, 'app.aozoraquest.config.bans'),
-    listAsMap<PromptRecord>(agent, adminDid, 'app.aozoraquest.config.prompts'),
-    listAsMap<DirectoryRecord>(agent, adminDid, 'app.aozoraquest.directory'),
+    listAsMap<FlagsRecord>(agent, adminDid, ADMIN_COL.configFlags),
+    listAsMap<MaintenanceRecord>(agent, adminDid, ADMIN_COL.configMaintenance),
+    listAsMap<BansRecord>(agent, adminDid, ADMIN_COL.configBans),
+    listAsMap<PromptRecord>(agent, adminDid, ADMIN_COL.configPrompts),
+    listAsMap<DirectoryRecord>(agent, adminDid, ADMIN_COL.directory),
   ]);
 
   const flags = flagsMap.get('self');

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
+import { ADMIN_COL } from '@/lib/collections';
 
 type PromptId = 'spiritChat';
 
@@ -25,7 +26,7 @@ const DEFAULT_BODIES: Record<PromptId, string> = {
 export function Prompts() {
   const [promptId] = useState<PromptId>('spiritChat');
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<PromptRecord>(
-    'app.aozoraquest.config.prompts',
+    ADMIN_COL.configPrompts,
     promptId,
   );
   const [body, setBody] = useState(DEFAULT_BODIES[promptId]);
@@ -44,7 +45,7 @@ export function Prompts() {
       <h2>精霊プロンプト</h2>
       <p style={{ color: 'var(--color-muted)' }}>
         精霊ブルスコンが将来ブラウザ内 LLM で返答するときのシステムプロンプトです。
-        保存すると主管理者 PDS の <code>app.aozoraquest.config.prompts/spiritChat</code>
+        保存すると主管理者 PDS の <code>{ADMIN_COL.configPrompts}/{promptId}</code>
         に反映され、次回起動から全ユーザーのアプリに配信されます。
       </p>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
+import { ADMIN_COL } from '@/lib/collections';
 
 interface FlagDraft {
   id: string;
@@ -20,7 +21,7 @@ const INITIAL_FLAGS: FlagDraft[] = [
 
 export function Flags() {
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<FlagsRecord>(
-    'app.aozoraquest.config.flags',
+    ADMIN_COL.configFlags,
     'self',
   );
   const [flags, setFlags] = useState<FlagDraft[]>(INITIAL_FLAGS);
@@ -52,7 +53,7 @@ export function Flags() {
     <div>
       <h2>フィーチャーフラグ</h2>
       <p style={{ color: 'var(--color-muted)' }}>
-        保存すると主管理者 PDS の <code>app.aozoraquest.config.flags/self</code> に書き込まれ、次回起動から全ユーザーに反映されます。
+        保存すると主管理者 PDS の <code>{ADMIN_COL.configFlags}/self</code> に書き込まれ、次回起動から全ユーザーに反映されます。
       </p>
       {!loaded && <p>読み込み中...</p>}
 
