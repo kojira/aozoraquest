@@ -25,12 +25,12 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
       handleResolver: 'https://bsky.social',
     });
   } else {
-    // 本番 (aozoraquest.app) と開発 (dev.aozoraquest.app) で同じ
-    // client-metadata.json (両方の redirect_uri を含む) を共有するために、
-    // origin に関わらず本番ホストの URL を使う。これがズレると Bluesky の
-    // 認可サーバーが client_id mismatch で拒否する。
+    // 各 origin が自分の client-metadata.json を提供する (vite.config.ts の
+    // clientMetadataPlugin が VITE_APP_URL から build 時に生成)。
+    // client_id は metadata の URL と一致している必要があるので、ここでも
+    // 同じ origin を使う。
     clientPromise = BrowserOAuthClient.load({
-      clientId: 'https://aozoraquest.app/client-metadata.json',
+      clientId: `${appUrl}/client-metadata.json`,
       handleResolver: 'https://bsky.social',
     });
   }
