@@ -23,19 +23,6 @@ import {
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
-// 進捗を main thread と console の両方に出す。クラッシュ前にどこまで進んだかを
-// Inspector の console と (生きていれば) main 側からも見えるように。
-function trace(...args: unknown[]) {
-  console.info('[gen-worker]', ...args);
-  try {
-    (self as unknown as Worker).postMessage({ type: 'trace', text: args.map(String).join(' ') });
-  } catch {
-    // ignore
-  }
-}
-
-trace('worker module loaded');
-
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -54,9 +41,7 @@ let activeSpec: GenerationModelSpec = DESKTOP_GENERATION_SPEC;
 
 async function tryCreate(device: Backend) {
   const dtype = device === 'webgpu' ? activeSpec.webgpuDtype : activeSpec.wasmDtype;
-  trace(`tryCreate: device=${device} dtype=${dtype} modelId=${activeSpec.modelId}`);
-  const t0 = performance.now();
-  const pipe = await pipeline('text-generation', activeSpec.modelId, {
+  return await pipeline('text-generation', activeSpec.modelId, {
     device,
     dtype,
     progress_callback: (p: any) => {
@@ -70,34 +55,23 @@ async function tryCreate(device: Backend) {
       });
     },
   });
-  trace(`tryCreate: ${device} pipeline ready in ${Math.round(performance.now() - t0)}ms`);
-  return pipe;
 }
 
 async function ensureGenerator(): Promise<void> {
   if (generator) return;
-  trace(`ensureGenerator: WebGPU available? ${typeof (self as any).navigator?.gpu !== 'undefined'}`);
   if (activeSpec.preferWasm) {
-    trace('ensureGenerator: preferWasm=true, skipping WebGPU');
     generator = await tryCreate('wasm');
     activeBackend = 'wasm';
-    trace(`ready: WASM (${activeSpec.modelId})`);
     return;
   }
   try {
     generator = await tryCreate('webgpu');
     activeBackend = 'webgpu';
-    trace(`ready: WebGPU (${activeSpec.modelId})`);
   } catch (e) {
-    trace(`WebGPU failed: ${(e as Error)?.message ?? e}`);
-    if (!activeSpec.allowWasm) {
-      trace('WASM fallback disabled, giving up');
-      throw e;
-    }
-    trace('falling back to WASM');
+    if (!activeSpec.allowWasm) throw e;
+    console.warn('[generator] WebGPU failed, falling back to WASM', e);
     generator = await tryCreate('wasm');
     activeBackend = 'wasm';
-    trace(`ready: WASM (${activeSpec.modelId})`);
   }
 }
 
@@ -106,9 +80,7 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
   try {
     if (msg.type === 'load') {
       if (msg.spec) activeSpec = msg.spec;
-      trace(`load: spec=${activeSpec.modelId} webgpu=${activeSpec.webgpuDtype} wasm=${activeSpec.wasmDtype} allowWasm=${activeSpec.allowWasm}`);
       await ensureGenerator();
-      trace('load: posting ready');
       (self as unknown as Worker).postMessage({
         type: 'ready', backend: activeBackend, modelId: activeSpec.modelId,
       });
@@ -117,7 +89,6 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
     if (msg.type === 'generate') {
       if (!generator) await ensureGenerator();
       const id = msg.id;
-      trace(`generate start id=${id} backend=${activeBackend} messages=${msg.messages.length}`);
       const tokenizer = generator.tokenizer;
 
       const streamer = new TextStreamer(tokenizer, {
@@ -131,19 +102,14 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
       });
 
       const temp = msg.temperature ?? GENERATION_TEMPERATURE;
-      // モバイルは生成 token 数を抑えてメモリ圧縮 (KV cache 縮める)
-      const maxNewTokens = activeBackend === 'wasm' ? Math.min(80, GENERATION_MAX_NEW_TOKENS) : GENERATION_MAX_NEW_TOKENS;
-      trace(`generate: max_new_tokens=${maxNewTokens} temp=${temp}`);
-      const t0 = performance.now();
       const output = await generator(msg.messages, {
-        max_new_tokens: maxNewTokens,
+        max_new_tokens: GENERATION_MAX_NEW_TOKENS,
         temperature: temp,
         repetition_penalty: GENERATION_REPETITION_PENALTY,
         // temperature=0 はサンプリング不要 (greedy) なので do_sample を切る
         do_sample: temp > 0,
         streamer,
       });
-      trace(`generate: completed in ${Math.round(performance.now() - t0)}ms`);
 
       let full = '';
       try {
