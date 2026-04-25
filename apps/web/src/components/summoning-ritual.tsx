@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
 import { getGenerator, type ChatMessage } from '@/lib/generator';
+import { isLowEndDevice } from '@/lib/device';
 
 interface SummoningRitualProps {
   agent: Agent;
@@ -56,15 +57,20 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
 
   useEffect(() => {
     let cancelled = false;
-    const g = getGenerator();
+    // モバイルは LLM が乗らないので儀式自体を hand-crafted 完走させる。
+    // モデル DL すらしない (Cache Storage 圧迫もしない)。
+    const skipLlm = isLowEndDevice();
+    const g = skipLlm ? null : getGenerator();
 
-    const loadPromise = g.load().then(() => {
-      loadedRef.current = true;
-    }).catch((e) => {
-      if (cancelled) return;
-      setErr(String((e as Error)?.message ?? e));
-      setPhase('error');
-    });
+    const loadPromise = skipLlm
+      ? Promise.resolve()
+      : g!.load().then(() => {
+          loadedRef.current = true;
+        }).catch((e) => {
+          if (cancelled) return;
+          setErr(String((e as Error)?.message ?? e));
+          setPhase('error');
+        });
 
     async function run() {
       await sleep(MIN_PHASE_MS);
@@ -79,28 +85,32 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
       setPhase('greeting');
       await loadPromise;
       if (cancelled || err) return;
-      if (!loadedRef.current) return;
-
-      const messages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`,
-        },
-      ];
 
       let welcome = '';
-      try {
-        welcome = await g.generate(messages);
-        welcome = cleanGenerated(welcome);
-      } catch (e) {
-        if (cancelled) return;
-        setErr(String((e as Error)?.message ?? e));
-        setPhase('error');
-        return;
-      }
-      if (!welcome || welcome.length < 4) {
+      if (skipLlm) {
+        // モバイル: ハンドクラフト固定文 (一人称無し)
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
+      } else {
+        if (!loadedRef.current) return;
+        const messages: ChatMessage[] = [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`,
+          },
+        ];
+        try {
+          welcome = await g!.generate(messages);
+          welcome = cleanGenerated(welcome);
+        } catch (e) {
+          if (cancelled) return;
+          setErr(String((e as Error)?.message ?? e));
+          setPhase('error');
+          return;
+        }
+        if (!welcome || welcome.length < 4) {
+          welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
+        }
       }
 
       // 生成が終わったところで 'emerging' に遷移してスペクタクル演出

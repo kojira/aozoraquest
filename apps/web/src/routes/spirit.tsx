@@ -17,6 +17,7 @@ import { loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/point
 import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
 import { finalizeLlmTrace } from '@/lib/llm-trace';
 import { LlmTracePanel } from '@/components/llm-trace-panel';
+import { isLowEndDevice } from '@/lib/device';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
 
@@ -95,8 +96,9 @@ export function Spirit() {
         setPoints(p);
         setHistory(hist);
         setCacheReady(cached);
-        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)
-        if (p.summoned && cached) {
+        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)。
+        // モバイルは LLM 自体が乗らないので skip (会話 UI も別経路で隠す)。
+        if (p.summoned && cached && !isLowEndDevice()) {
           getGenerator().load().then(() => {
             if (!cancelled) setGeneratorReady(true);
           }).catch((e) => {
@@ -424,35 +426,44 @@ export function Spirit() {
             {sendErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{sendErr}</p>}
           </section>
 
-          <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-            <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
-              <TextField
-                ref={inputRef}
-                value={input}
-                onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
-                onSubmit={() => void sendMessage()}
-                placeholder={
-                  !generatorReady
-                    ? 'ブルスコンを呼び戻している…'
-                    : points.balance > 0
-                      ? 'ブルスコンに話しかける'
-                      : 'あなたの投稿を重ねると、話せるようになる'
-                }
-                disabled={sending || points.balance < 1 || !generatorReady}
-                maxLength={INPUT_MAX}
-                style={{ flex: 1 }}
-              />
-              <button
-                onClick={() => void sendMessage()}
-                disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
-              >
-                {sending ? '…' : '送る'}
-              </button>
-            </div>
-            <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
-              {input.length} / {INPUT_MAX}
-            </div>
-          </section>
+          {isLowEndDevice() ? (
+            <section style={{ marginTop: '0.8em' }}>
+              <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+                ブルスコンとの会話は PC のブラウザでのみ使えます。
+                モバイルではブルスコンの存在を眺めるだけになります。
+              </p>
+            </section>
+          ) : (
+            <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+              <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
+                <TextField
+                  ref={inputRef}
+                  value={input}
+                  onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
+                  onSubmit={() => void sendMessage()}
+                  placeholder={
+                    !generatorReady
+                      ? 'ブルスコンを呼び戻している…'
+                      : points.balance > 0
+                        ? 'ブルスコンに話しかける'
+                        : 'あなたの投稿を重ねると、話せるようになる'
+                  }
+                  disabled={sending || points.balance < 1 || !generatorReady}
+                  maxLength={INPUT_MAX}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  onClick={() => void sendMessage()}
+                  disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
+                >
+                  {sending ? '…' : '送る'}
+                </button>
+              </div>
+              <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
+                {input.length} / {INPUT_MAX}
+              </div>
+            </section>
+          )}
         </>
       )}
 
