@@ -15,8 +15,6 @@ import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
-import { finalizeLlmTrace } from '@/lib/llm-trace';
-import { LlmTracePanel } from '@/components/llm-trace-panel';
 import { isLowEndDevice } from '@/lib/device';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
@@ -274,8 +272,6 @@ export function Spirit() {
         // 儀式中にモデルはロード済み、キャッシュにも入った
         setCacheReady(true);
         setGeneratorReady(true);
-        // ここまで来たら LLM trace は無事完走、last 側に格上げして次セッションは綺麗に始まる
-        finalizeLlmTrace();
       } catch (e) {
         console.warn('welcome message save failed', e);
         throw e;
@@ -288,7 +284,6 @@ export function Spirit() {
   if (session.status === 'loading' || !loaded) {
     return (
       <div>
-        <LlmTracePanel />
         <h2>精霊ブルスコン</h2>
         <SpiritBubble sleeping>…</SpiritBubble>
       </div>
@@ -298,7 +293,6 @@ export function Spirit() {
   if (session.status === 'signed-out') {
     return (
       <div>
-        <LlmTracePanel />
         <h2>精霊ブルスコン</h2>
         <SpiritBubble>ログインすると、わたしの声が届きます。</SpiritBubble>
         <Link to="/onboarding"><button style={{ marginTop: '1em' }}>ログイン</button></Link>
@@ -306,13 +300,7 @@ export function Spirit() {
     );
   }
 
-  if (!points) {
-    return (
-      <div>
-        <LlmTracePanel />
-      </div>
-    );
-  }
+  if (!points) return null;
 
   const jobLabel = diag ? jobDisplayName(diag.archetype, 'default') : null;
   /** 召喚済みだがキャッシュが消えているため、再召喚の儀式を要求する状態。 */
@@ -320,7 +308,6 @@ export function Spirit() {
 
   return (
     <div>
-      <LlmTracePanel />
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6em', marginBottom: '0.2em' }}>
         <div className={points.summoned ? '' : 'breathe'}>
           <SpiritIcon size={56} sleeping={!points.summoned} />
