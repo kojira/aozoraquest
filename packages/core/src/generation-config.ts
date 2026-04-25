@@ -16,18 +16,20 @@ export const GENERATION_DEVICE = 'webgpu' as const;
 
 /**
  * 端末別 LLM スペック。
- * - Desktop: TinySwallow 1.5B q4f16 (日本語強い、~600MB)
- * - Mobile: SmolLM2-135M-Instruct q4f16 (英語中心、~118MB on disk)
+ * - Desktop: TinySwallow 1.5B q4f16 (WebGPU、日本語強い)
+ * - Mobile: TinySwallow 1.5B q4 (WASM 強制、JS heap で動かす)
  *
  * 経緯:
- *   - Bonsai 1.7B q1 (~290MB) → iPhone Air / Pixel 7a/9 で OOM
- *   - SmolLM2-360M q4f16 (~273MB) → 同じく iPhone Air で OOM
- *     trace で「DL 完了後の ONNX セッション初期化 / WebGPU バッファ割当て」
- *     で死亡することを確認。dequant 後のメモリが iOS Safari のタブ枠超え。
- *   - SmolLM2-135M q4f16 (~118MB) → ここまで小さければ展開後も収まる想定
+ *   - Bonsai 1.7B q1 (~290MB on disk) → iPhone Air で OOM (WebGPU init)
+ *   - SmolLM2-360M q4f16 (~273MB) → iPhone Air で OOM (WebGPU init)
+ *   - SmolLM2-135M q4f16 (~118MB) → WebGPU init は通るが推論で落ちる
+ *   - SmolLM2-135M q4 / WASM 直行 → 動くが英語中心で出力崩壊
+ *   - TinySwallow 1.5B q4 / WASM 直行 → JS heap (~1.5GB枠) なら乗る想定
  *
- * トレードオフ: 135M は英語中心で文生成品質はおまけ程度。
- * モバイルで「LLM が動く」ベースラインを優先。
+ * iOS Safari は WebGPU の GPU メモリ枠が極端に小さい (~数百MB) が、
+ * WASM 用の JS heap は 1.5GB 程度まで使える。後者は遅いが日本語モデルが
+ * 動くなら出力品質を優先したほうが UX 上得。max_new_tokens を抑えれば
+ * 体感も許容範囲に収まる想定。
  */
 /** Transformers.js が受け付ける dtype のリテラル和。 */
 export type GenerationDtype =
@@ -54,9 +56,9 @@ export const DESKTOP_GENERATION_SPEC: GenerationModelSpec = {
 };
 
 export const MOBILE_GENERATION_SPEC: GenerationModelSpec = {
-  modelId: 'HuggingFaceTB/SmolLM2-135M-Instruct',
-  webgpuDtype: 'q4f16', // 118 MB (preferWasm=true なので未使用)
-  wasmDtype: 'q4',      // 182 MB
+  modelId: GENERATION_MODEL_ID, // TinySwallow 1.5B (Desktop と同じ)
+  webgpuDtype: 'q4f16',         // (preferWasm=true なので未使用)
+  wasmDtype: 'q4',              // ~600MB on disk
   allowWasm: true,
   preferWasm: true,
 };
