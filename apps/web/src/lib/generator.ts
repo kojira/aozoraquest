@@ -3,15 +3,28 @@
  * Web Worker (generator.worker.ts) に対する Promise ベースのラッパー。
  */
 
-import { GENERATION_MODEL_ID } from '@aozoraquest/core';
+import {
+  DESKTOP_GENERATION_SPEC,
+  MOBILE_GENERATION_SPEC,
+  type GenerationModelSpec,
+} from '@aozoraquest/core';
+import { isLowEndDevice } from './device';
+
+/** 端末種別ごとの LLM スペックを選ぶ。低スペック (mobile / RAM≤4GB) は
+ *  Bonsai 1.7B q1 (~290MB)、それ以外は TinySwallow 1.5B q4f16。 */
+function pickGenerationSpec(): GenerationModelSpec {
+  return isLowEndDevice() ? MOBILE_GENERATION_SPEC : DESKTOP_GENERATION_SPEC;
+}
 
 /**
- * ブラウザの Cache Storage に TinySwallow のモデルファイルが残っているか確認する。
+ * ブラウザの Cache Storage に LLM モデルファイルが残っているか確認する。
  * Transformers.js は env.useBrowserCache=true のとき Cache API ("transformers-cache") を使う。
  * ONNX / tokenizer.json などが入っているかで cache の有無を判定する。
- * 権限 (HTTPS 必須など) 問題や Cache API 非対応の場合は false。
+ * 引数を省略した場合は端末別のデフォルト spec の modelId を見る。
  */
-export async function isModelCached(modelId: string = GENERATION_MODEL_ID): Promise<boolean> {
+export async function isModelCached(
+  modelId: string = pickGenerationSpec().modelId,
+): Promise<boolean> {
   if (typeof caches === 'undefined') return false;
   try {
     const names = await caches.keys();
@@ -88,7 +101,7 @@ export class Generator {
         }
       };
       this.worker!.addEventListener('message', onMsg);
-      this.worker!.postMessage({ type: 'load' });
+      this.worker!.postMessage({ type: 'load', spec: pickGenerationSpec() });
     });
     return this.ready;
   }
@@ -125,15 +138,22 @@ export class Generator {
     }
   }
 
-  async generate(messages: ChatMessage[], onToken?: (t: string) => void): Promise<string> {
+  async generate(
+    messages: ChatMessage[],
+    opts: { onToken?: (t: string) => void; temperature?: number } = {},
+  ): Promise<string> {
     if (!this.worker) await this.load();
     await this.ready;
     const id = String(this.nextId++);
     return new Promise<string>((resolve, reject) => {
       const pending: Pending = { resolve, reject, acc: '' };
-      if (onToken) pending.onToken = onToken;
+      if (opts.onToken) pending.onToken = opts.onToken;
       this.pending.set(id, pending);
-      this.worker!.postMessage({ type: 'generate', id, messages });
+      const msg: { type: 'generate'; id: string; messages: ChatMessage[]; temperature?: number } = {
+        type: 'generate', id, messages,
+      };
+      if (opts.temperature !== undefined) msg.temperature = opts.temperature;
+      this.worker!.postMessage(msg);
     });
   }
 

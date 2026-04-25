@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
 import { useAdminSession } from '@/lib/session';
+import { ADMIN_COL } from '@/lib/collections';
 
 interface Entry {
   did: string;
@@ -18,7 +19,7 @@ const OPTIN_TAG = 'aozoraquest';
 export function DirectoryRoute() {
   const session = useAdminSession();
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<DirectoryRecord>(
-    'app.aozoraquest.directory',
+    ADMIN_COL.directory,
     'self',
   );
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -61,7 +62,8 @@ export function DirectoryRoute() {
       const seenDids = new Set(entries.map((e) => e.did));
       const newEntries: Entry[] = [...entries];
       let cursor: string | undefined;
-      let totalHits = 0;
+      let totalPosts = 0;
+      const uniqueAuthors = new Set<string>();
       let added = 0;
       // 最大 5 ページ、500 件まで走査する (オプトイン規模の上限目安)
       for (let page = 0; page < 5; page++) {
@@ -70,10 +72,12 @@ export function DirectoryRoute() {
           limit: 100,
           ...(cursor !== undefined ? { cursor } : {}),
         });
-        totalHits += res.data.posts.length;
+        totalPosts += res.data.posts.length;
         for (const post of res.data.posts) {
           const did = post.author?.did;
-          if (!did || seenDids.has(did)) continue;
+          if (!did) continue;
+          uniqueAuthors.add(did);
+          if (seenDids.has(did)) continue;
           seenDids.add(did);
           newEntries.push({ did, addedAt: new Date().toISOString(), note: 'auto' });
           added++;
@@ -83,7 +87,9 @@ export function DirectoryRoute() {
         cursor = next;
       }
       setEntries(newEntries);
-      setRefreshSummary(`検索 ${totalHits} 件ヒット、新規 ${added} 人を追加。保存ボタンで PDS に反映。`);
+      setRefreshSummary(
+        `投稿 ${totalPosts} 件ヒット (ユニーク投稿者 ${uniqueAuthors.size} 人)、新規 ${added} 人を追加。保存ボタンで PDS に反映。`,
+      );
     } catch (e) {
       setRefreshErr(String((e as Error)?.message ?? e));
     } finally {

@@ -6,6 +6,7 @@ import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector }
 import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import { getAutoTranslate, setAutoTranslate } from '@/lib/prefs';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
@@ -50,7 +51,7 @@ export function Settings() {
     let cancelled = false;
     (async () => {
       try {
-        const p = await getRecord<Profile>(agent, did, 'app.aozoraquest.profile', 'self');
+        const p = await getRecord<Profile>(agent, did, COL.profile, 'self');
         if (!cancelled) setProfile(p);
       } catch (e) {
         console.warn('profile load failed', e);
@@ -71,7 +72,7 @@ export function Settings() {
     // 現在の診断結果 (自分の rpgStats) をロード。目標ジョブとの比較に使う。
     (async () => {
       try {
-        const diag = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+        const diag = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
         if (!cancelled && diag) setMyStats(diag.rpgStats);
       } catch (e) {
         console.warn('self analysis load failed', e);
@@ -102,7 +103,7 @@ export function Settings() {
         discoverable: true,
         updatedAt: new Date().toISOString(),
       };
-      await putRecord(agent, 'app.aozoraquest.profile', 'self', next);
+      await putRecord(agent, COL.profile, 'self', next);
       setProfile(next);
       setOptInDialog(false);
     } catch (e) {
@@ -123,7 +124,7 @@ export function Settings() {
         discoverable: false,
         updatedAt: new Date().toISOString(),
       };
-      await putRecord(agent, 'app.aozoraquest.profile', 'self', next);
+      await putRecord(agent, COL.profile, 'self', next);
       setProfile(next);
     } catch (e) {
       setOptInErr(String((e as Error)?.message ?? e));
@@ -145,7 +146,7 @@ export function Settings() {
         targetJob: id,
         updatedAt: new Date().toISOString(),
       };
-      await putRecord(agent, 'app.aozoraquest.profile', 'self', next);
+      await putRecord(agent, COL.profile, 'self', next);
       setProfile(next);
     } catch (e) {
       setTargetErr(String((e as Error)?.message ?? e));

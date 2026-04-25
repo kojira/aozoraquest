@@ -3,7 +3,7 @@ import { BrowserOAuthClient, type OAuthSession } from '@atproto/oauth-client-bro
 /**
  * OAuth クライアントをシングルトンで初期化する。
  *
- * 本番: client_id は https://aozoraquest.app/client-metadata.json
+ * 本番: client_id は ${VITE_APP_URL}/client-metadata.json (build 時生成)
  * 開発: loopback client_id パターン (http://localhost で使える仮想 client_id)
  */
 let clientPromise: Promise<BrowserOAuthClient> | null = null;
@@ -25,6 +25,10 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
       handleResolver: 'https://bsky.social',
     });
   } else {
+    // 各 origin が自分の client-metadata.json を提供する (vite.config.ts の
+    // clientMetadataPlugin が VITE_APP_URL から build 時に生成)。
+    // client_id は metadata の URL と一致している必要があるので、ここでも
+    // 同じ origin を使う。
     clientPromise = BrowserOAuthClient.load({
       clientId: `${appUrl}/client-metadata.json`,
       handleResolver: 'https://bsky.social',

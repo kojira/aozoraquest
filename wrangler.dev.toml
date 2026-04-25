@@ -1,0 +1,12 @@
+# 開発用デプロイ (dev.aozoraquest.app) 専用設定。
+# wrangler.toml (本番) と Worker name を分けて干渉を避ける。
+# Cloudflare 側に別プロジェクトを作って、deploy command を
+#   npx wrangler deploy -c wrangler.dev.toml
+# にしておく。git repo は同じ、ブランチは dev。
+
+name = "aozoraquest-dev"
+compatibility_date = "2026-04-24"
+
+[assets]
+directory = "./apps/web/dist"
+not_found_handling = "single-page-application"

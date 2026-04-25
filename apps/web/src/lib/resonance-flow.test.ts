@@ -2,16 +2,28 @@ import { describe, expect, test } from 'vitest';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { buildResonanceTimeline } from './resonance-flow';
 
-type FeedItem = { post: { uri: string; record: { createdAt: string } } };
+type FeedItem = { post: { uri: string; record: { createdAt: string }; author: { did: string } } };
 
 /** fetchAuthorFeed / getRecord はエージェント経由なので、
  * 擬似 Agent を渡して差し込み (動的 import は不要、com.atproto.repo.getRecord をモック)。
+ *
+ * mkPost が actor の did で post.author.did を埋めるので、resonance-flow の
+ * リポスト除外フィルタ (post.author.did === directory did) を通過する。
  */
 function makeAgent(scenarios: Record<string, { posts: FeedItem[]; diag?: DiagnosisResult }>): any {
   return {
-    getAuthorFeed: async ({ actor, limit }: { actor: string; limit: number }) => ({
-      data: { feed: (scenarios[actor]?.posts ?? []).slice(0, limit) },
-    }),
+    getAuthorFeed: async ({ actor, limit }: { actor: string; limit: number }) => {
+      const posts = scenarios[actor]?.posts ?? [];
+      // テスト側で author.did 未指定 (空文字) のものは actor で埋める
+      const decorated = posts.map((p) => ({
+        ...p,
+        post: {
+          ...p.post,
+          author: { ...(p.post.author ?? {}), did: p.post.author?.did || actor },
+        },
+      }));
+      return { data: { feed: decorated.slice(0, limit) } };
+    },
     com: {
       atproto: {
         repo: {
@@ -28,7 +40,7 @@ function makeAgent(scenarios: Record<string, { posts: FeedItem[]; diag?: Diagnos
 }
 
 function mkPost(uri: string, createdAt: string): FeedItem {
-  return { post: { uri, record: { createdAt } } };
+  return { post: { uri, record: { createdAt }, author: { did: '' } } };
 }
 
 function mkDiag(atk: number, def: number, agi: number, int: number, luk: number): DiagnosisResult {
@@ -63,23 +75,41 @@ describe('buildResonanceTimeline', () => {
     expect(out.every((e) => e.score == null)).toBe(true);
   });
 
-  test('両者診断あり → 共鳴度で並ぶ (類似度高い方が前)', async () => {
+  test('両者診断あり → スコアは計算されるが並びは時系列', async () => {
     const now = Date.now();
     // 分散のあるベクトルを使わないと Pearson が 0 に潰れる
     const me = mkDiag(70, 60, 50, 40, 30);
     const close = mkDiag(72, 62, 48, 38, 30); // パターンほぼ同じ → sim 高
     const far = mkDiag(30, 40, 50, 60, 70);   // パターン反転 → sim 低
+    // close の投稿の方が古い (sim が高くても順序は時系列)
     const agent = makeAgent({
-      'did:plc:close': { posts: [mkPost('at://close/1', new Date(now - 1000).toISOString())], diag: close },
-      'did:plc:far': { posts: [mkPost('at://far/1', new Date(now - 1000).toISOString())], diag: far },
+      'did:plc:close': { posts: [mkPost('at://close/1', new Date(now - 60_000).toISOString())], diag: close },
+      'did:plc:far': { posts: [mkPost('at://far/1', new Date(now - 1_000).toISOString())], diag: far },
     });
     const out = await buildResonanceTimeline(agent, {
       selfDiagnosis: me,
       directoryDids: ['did:plc:far', 'did:plc:close'],
     });
-    expect(out[0]!.did).toBe('did:plc:close');
-    expect(out[1]!.did).toBe('did:plc:far');
+    // 新しい順 = far が先、close が後
+    expect(out[0]!.did).toBe('did:plc:far');
+    expect(out[1]!.did).toBe('did:plc:close');
+    // スコアはバッジ表示用に計算は走る
     expect(out.every((e) => typeof e.score === 'number')).toBe(true);
+  });
+
+  test('selfDid を指定すると自分の DID は除外される', async () => {
+    const now = Date.now();
+    const me = mkDiag(50, 50, 50, 50, 50);
+    const agent = makeAgent({
+      'did:plc:self': { posts: [mkPost('at://self/1', new Date(now - 1000).toISOString())], diag: me },
+      'did:plc:other': { posts: [mkPost('at://other/1', new Date(now - 60_000).toISOString())], diag: me },
+    });
+    const out = await buildResonanceTimeline(agent, {
+      selfDiagnosis: me,
+      selfDid: 'did:plc:self',
+      directoryDids: ['did:plc:self', 'did:plc:other'],
+    });
+    expect(out.map((e) => e.did)).toEqual(['did:plc:other']);
   });
 
   test('相手未診断の DID は score=null だが含まれる', async () => {
@@ -100,7 +130,10 @@ describe('buildResonanceTimeline', () => {
     const agent: any = {
       getAuthorFeed: async ({ actor }: { actor: string }) => {
         if (actor === 'did:plc:bad') throw new Error('upstream');
-        return { data: { feed: [mkPost('at://good/1', new Date().toISOString())] } };
+        const p = mkPost('at://good/1', new Date().toISOString());
+        // post.author.did をその actor で埋める (リポスト除外フィルタを通すため)
+        p.post.author.did = actor;
+        return { data: { feed: [p] } };
       },
       com: { atproto: { repo: { getRecord: async () => { throw new Error('RecordNotFound'); } } } },
     };

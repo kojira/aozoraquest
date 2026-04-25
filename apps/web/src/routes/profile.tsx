@@ -5,6 +5,7 @@ import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/c
 import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resonanceBreakdown, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { COL, ROOT_COL } from '@/lib/collections';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
@@ -40,8 +41,9 @@ export function Profile() {
         const theirDid = profile.did;
 
         const [theirDiag, myDiag] = await Promise.all([
-          getRecord<DiagnosisResult>(agent, theirDid, 'app.aozoraquest.analysis', 'self').catch(() => null),
-          myDid ? getRecord<DiagnosisResult>(agent, myDid, 'app.aozoraquest.analysis', 'self').catch(() => null) : Promise.resolve(null),
+          // 他人 (theirDid) は production NSID、自分 (myDid) は env-isolated COL
+          getRecord<DiagnosisResult>(agent, theirDid, ROOT_COL.analysis, 'self').catch(() => null),
+          myDid ? getRecord<DiagnosisResult>(agent, myDid, COL.analysis, 'self').catch(() => null) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setState({ kind: 'ok', profile, did: theirDid, theirDiag, myDiag });
