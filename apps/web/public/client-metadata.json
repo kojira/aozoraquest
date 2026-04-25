@@ -2,7 +2,10 @@
   "client_id": "https://aozoraquest.app/client-metadata.json",
   "client_name": "Aozora Quest",
   "client_uri": "https://aozoraquest.app",
-  "redirect_uris": ["https://aozoraquest.app/oauth/callback"],
+  "redirect_uris": [
+    "https://aozoraquest.app/oauth/callback",
+    "https://dev.aozoraquest.app/oauth/callback"
+  ],
   "scope": "atproto transition:generic",
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
