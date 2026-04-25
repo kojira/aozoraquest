@@ -108,6 +108,12 @@ export class Generator {
 
   private onMessage(ev: MessageEvent) {
     const m = ev.data;
+    if (m.type === 'trace') {
+      // Worker 側の進捗を main の console に渡す。Web Inspector が worker を
+      // ちゃんと拾えない環境でもこちらでは見える。
+      console.info('[gen-worker]', m.text);
+      return;
+    }
     if (m.type === 'progress') {
       for (const l of this.listeners) l(m);
       return;
