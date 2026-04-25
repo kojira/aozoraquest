@@ -9,6 +9,7 @@ import {
   type GenerationModelSpec,
 } from '@aozoraquest/core';
 import { isLowEndDevice } from './device';
+import { appendLlmTrace } from './llm-trace';
 
 /** 端末種別ごとの LLM スペックを選ぶ。低スペック (mobile / RAM≤4GB) は
  *  Bonsai 1.7B q1 (~290MB)、それ以外は TinySwallow 1.5B q4f16。 */
@@ -109,13 +110,22 @@ export class Generator {
   private onMessage(ev: MessageEvent) {
     const m = ev.data;
     if (m.type === 'trace') {
-      // Worker 側の進捗を main の console に渡す。Web Inspector が worker を
-      // ちゃんと拾えない環境でもこちらでは見える。
+      // Worker 側の進捗を main の console に渡す + localStorage にも追記。
+      // iOS Safari の OOM クラッシュ後に Web Inspector で console を再取得は
+      // 不可能なので、reload 後にページから読めるよう永続化する。
       console.info('[gen-worker]', m.text);
+      appendLlmTrace(m.text);
       return;
     }
     if (m.type === 'progress') {
       for (const l of this.listeners) l(m);
+      // 進捗もダウンロード状況の判別に役立つので記録
+      const file = (m as { file?: string }).file;
+      const status = (m as { status?: string }).status;
+      const progress = (m as { progress?: number }).progress;
+      if (file && status) {
+        appendLlmTrace(`progress: ${status} ${file}${progress != null ? ` ${Math.round(progress)}%` : ''}`);
+      }
       return;
     }
     if (m.type === 'token' && m.id) {
