@@ -13,6 +13,7 @@ import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
 import { stripMarkdown, stripWrappers } from './flavor-text';
+import { isLowEndDevice } from './device';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
 const TIMEOUT_MS = 60_000;
@@ -180,10 +181,13 @@ export function useTranslation(
   const [error, setError] = useState<string | undefined>(undefined);
   const startedRef = useRef(false);
 
-  // モバイルでも Bonsai 1.7B (q1) なら動くようになったので isLowEndDevice
-  // ガードは外す。auto-translate を OFF にしたいユーザーは設定で切る。
-  const isNonJapanese = shouldAutoTranslate(text, langs);
-  const canTranslate = Boolean(uri) && isNonJapanese;
+  // モバイルは LLM ロード自体で OOM クラッシュするので翻訳機能を完全 OFF。
+  // Bonsai 1.7B / SmolLM2-360M でも iPhone Air・Pixel 7a/9 でクラッシュする
+  // ことが判明したため、軽量端末は手動翻訳ボタンも含めて非表示にする。
+  // PC では従来通り auto-translate 設定に従う。
+  const lowEnd = isLowEndDevice();
+  const isNonJapanese = !lowEnd && shouldAutoTranslate(text, langs);
+  const canTranslate = !lowEnd && Boolean(uri) && isNonJapanese;
 
   const run = useCallback((force: boolean) => {
     if (!uri || !isNonJapanese) return;
