@@ -2,16 +2,28 @@ import { describe, expect, test } from 'vitest';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { buildResonanceTimeline } from './resonance-flow';
 
-type FeedItem = { post: { uri: string; record: { createdAt: string } } };
+type FeedItem = { post: { uri: string; record: { createdAt: string }; author: { did: string } } };
 
 /** fetchAuthorFeed / getRecord はエージェント経由なので、
  * 擬似 Agent を渡して差し込み (動的 import は不要、com.atproto.repo.getRecord をモック)。
+ *
+ * mkPost が actor の did で post.author.did を埋めるので、resonance-flow の
+ * リポスト除外フィルタ (post.author.did === directory did) を通過する。
  */
 function makeAgent(scenarios: Record<string, { posts: FeedItem[]; diag?: DiagnosisResult }>): any {
   return {
-    getAuthorFeed: async ({ actor, limit }: { actor: string; limit: number }) => ({
-      data: { feed: (scenarios[actor]?.posts ?? []).slice(0, limit) },
-    }),
+    getAuthorFeed: async ({ actor, limit }: { actor: string; limit: number }) => {
+      const posts = scenarios[actor]?.posts ?? [];
+      // テスト側で author.did 未指定 (空文字) のものは actor で埋める
+      const decorated = posts.map((p) => ({
+        ...p,
+        post: {
+          ...p.post,
+          author: { ...(p.post.author ?? {}), did: p.post.author?.did || actor },
+        },
+      }));
+      return { data: { feed: decorated.slice(0, limit) } };
+    },
     com: {
       atproto: {
         repo: {
@@ -28,7 +40,7 @@ function makeAgent(scenarios: Record<string, { posts: FeedItem[]; diag?: Diagnos
 }
 
 function mkPost(uri: string, createdAt: string): FeedItem {
-  return { post: { uri, record: { createdAt } } };
+  return { post: { uri, record: { createdAt }, author: { did: '' } } };
 }
 
 function mkDiag(atk: number, def: number, agi: number, int: number, luk: number): DiagnosisResult {
@@ -118,7 +130,10 @@ describe('buildResonanceTimeline', () => {
     const agent: any = {
       getAuthorFeed: async ({ actor }: { actor: string }) => {
         if (actor === 'did:plc:bad') throw new Error('upstream');
-        return { data: { feed: [mkPost('at://good/1', new Date().toISOString())] } };
+        const p = mkPost('at://good/1', new Date().toISOString());
+        // post.author.did をその actor で埋める (リポスト除外フィルタを通すため)
+        p.post.author.did = actor;
+        return { data: { feed: [p] } };
       },
       com: { atproto: { repo: { getRecord: async () => { throw new Error('RecordNotFound'); } } } },
     };
