@@ -77,6 +77,13 @@ async function tryCreate(device: Backend) {
 async function ensureGenerator(): Promise<void> {
   if (generator) return;
   trace(`ensureGenerator: WebGPU available? ${typeof (self as any).navigator?.gpu !== 'undefined'}`);
+  if (activeSpec.preferWasm) {
+    trace('ensureGenerator: preferWasm=true, skipping WebGPU');
+    generator = await tryCreate('wasm');
+    activeBackend = 'wasm';
+    trace(`ready: WASM (${activeSpec.modelId})`);
+    return;
+  }
   try {
     generator = await tryCreate('webgpu');
     activeBackend = 'webgpu';
@@ -110,6 +117,7 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
     if (msg.type === 'generate') {
       if (!generator) await ensureGenerator();
       const id = msg.id;
+      trace(`generate start id=${id} backend=${activeBackend} messages=${msg.messages.length}`);
       const tokenizer = generator.tokenizer;
 
       const streamer = new TextStreamer(tokenizer, {
@@ -123,14 +131,19 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
       });
 
       const temp = msg.temperature ?? GENERATION_TEMPERATURE;
+      // モバイルは生成 token 数を抑えてメモリ圧縮 (KV cache 縮める)
+      const maxNewTokens = activeBackend === 'wasm' ? Math.min(80, GENERATION_MAX_NEW_TOKENS) : GENERATION_MAX_NEW_TOKENS;
+      trace(`generate: max_new_tokens=${maxNewTokens} temp=${temp}`);
+      const t0 = performance.now();
       const output = await generator(msg.messages, {
-        max_new_tokens: GENERATION_MAX_NEW_TOKENS,
+        max_new_tokens: maxNewTokens,
         temperature: temp,
         repetition_penalty: GENERATION_REPETITION_PENALTY,
         // temperature=0 はサンプリング不要 (greedy) なので do_sample を切る
         do_sample: temp > 0,
         streamer,
       });
+      trace(`generate: completed in ${Math.round(performance.now() - t0)}ms`);
 
       let full = '';
       try {
