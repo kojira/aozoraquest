@@ -5,6 +5,7 @@ import type { DiagnosisResult } from '@aozoraquest/core';
 import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { UserBubble } from '@/components/user-bubble';
@@ -82,7 +83,7 @@ export function Spirit() {
     (async () => {
       try {
         const [r, p, hist, cached] = await Promise.all([
-          getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self').catch(() => null),
+          getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
           isModelCached(),
@@ -166,8 +167,8 @@ export function Spirit() {
     try {
       const res = await agent.com.atproto.repo.createRecord({
         repo: did,
-        collection: 'app.aozoraquest.spiritChat',
-        record: { $type: 'app.aozoraquest.spiritChat', role: 'user', text, createdAt },
+        collection: COL.spiritChat,
+        record: { $type: COL.spiritChat, role: 'user', text, createdAt },
       });
       userUri = res.data.uri;
     } catch (e) {
@@ -230,8 +231,8 @@ export function Spirit() {
     try {
       const res = await agent.com.atproto.repo.createRecord({
         repo: did,
-        collection: 'app.aozoraquest.spiritChat',
-        record: { $type: 'app.aozoraquest.spiritChat', role: 'spirit', text: cleanFull, createdAt: spiritCreatedAt },
+        collection: COL.spiritChat,
+        record: { $type: COL.spiritChat, role: 'spirit', text: cleanFull, createdAt: spiritCreatedAt },
       });
       streamingRef.current = null;
       setHistory((h) =>
@@ -261,8 +262,8 @@ export function Spirit() {
       try {
         const res = await agent.com.atproto.repo.createRecord({
           repo: did,
-          collection: 'app.aozoraquest.spiritChat',
-          record: { $type: 'app.aozoraquest.spiritChat', role: 'spirit', text: welcome, createdAt },
+          collection: COL.spiritChat,
+          record: { $type: COL.spiritChat, role: 'spirit', text: welcome, createdAt },
         });
         setHistory((h) => [...h, { uri: res.data.uri, role: 'spirit', text: welcome, createdAt }]);
         setPoints((p) => (p ? { ...p, summoned: true } : p));
@@ -459,7 +460,7 @@ async function loadChatHistory(agent: Agent, did: string): Promise<HistoryItem[]
   try {
     const res = await agent.com.atproto.repo.listRecords({
       repo: did,
-      collection: 'app.aozoraquest.spiritChat',
+      collection: COL.spiritChat,
       limit: 50,
     });
     const items: HistoryItem[] = [];

@@ -5,6 +5,7 @@ import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { JOBS_BY_ID, resonanceLabel, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { fetchTimeline, getRecord } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import { buildResonanceTimeline, type ResonanceEntry } from '@/lib/resonance-flow';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
@@ -29,7 +30,7 @@ export function Home() {
   useEffect(() => {
     if (session.status !== 'signed-in' || !agent || !session.did) return;
     const did = session.did;
-    getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self')
+    getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
       .then((r) => {
         setSelfDiag(r);
         // 自分の archetype をキャッシュに入れておく
@@ -37,7 +38,7 @@ export function Home() {
         seedArchetype(did, a);
       })
       .catch((e) => console.warn('self analysis load failed', e));
-    getRecord<{ targetJob?: string }>(agent, did, 'app.aozoraquest.profile', 'self')
+    getRecord<{ targetJob?: string }>(agent, did, COL.profile, 'self')
       .then((p) => {
         if (p?.targetJob && p.targetJob in JOBS_BY_ID) setTargetJob(p.targetJob as Archetype);
       })
@@ -58,7 +59,7 @@ export function Home() {
       const a = agent;
       const d = session.did;
       setTimeout(() => {
-        getRecord<DiagnosisResult>(a, d, 'app.aozoraquest.analysis', 'self')
+        getRecord<DiagnosisResult>(a, d, COL.analysis, 'self')
           .then((r) => { if (r) setSelfDiag(r); })
           .catch(() => {});
       }, 400);

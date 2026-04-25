@@ -12,6 +12,7 @@ import {
   SUMMON_THRESHOLD as CORE_SUMMON_THRESHOLD,
 } from '@aozoraquest/core';
 import { VIA } from './atproto';
+import { COL } from './collections';
 import { countCardDraws } from './card-power';
 
 export const SUMMON_THRESHOLD = CORE_SUMMON_THRESHOLD;
@@ -92,7 +93,7 @@ export async function countSpiritChat(
     try {
       res = await agent.com.atproto.repo.listRecords({
         repo: did,
-        collection: 'app.aozoraquest.spiritChat',
+        collection: COL.spiritChat,
         limit: SPIRIT_CHAT_SCAN_LIMIT,
         ...(cursor !== undefined ? { cursor } : {}),
       });

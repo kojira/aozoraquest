@@ -6,6 +6,7 @@ import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { getRecord } from '@/lib/atproto';
+import { COL } from '@/lib/collections';
 import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
@@ -38,7 +39,7 @@ export function MyProfile() {
     let cancelled = false;
     (async () => {
       try {
-        const existing = await getRecord<DiagnosisResult>(agent, did, 'app.aozoraquest.analysis', 'self');
+        const existing = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
         if (cancelled) return;
         // 診断実行中 (running) や結果表示中 (done/error/insufficient) を勝手に上書きしない。
         // idle の時だけ既存レコードを反映する。
@@ -60,10 +61,10 @@ export function MyProfile() {
         console.warn('self avatar fetch failed', e);
       }
     })();
-    // 目指すジョブ (app.aozoraquest.profile/self の targetJob)
+    // 目指すジョブ (COL.profile/self の targetJob)
     (async () => {
       try {
-        const p = await getRecord<Profile>(agent, did, 'app.aozoraquest.profile', 'self');
+        const p = await getRecord<Profile>(agent, did, COL.profile, 'self');
         if (!cancelled && p?.targetJob && p.targetJob in JOBS_BY_ID) {
           setTargetArchetype(p.targetJob as Archetype);
         }
