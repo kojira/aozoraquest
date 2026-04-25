@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
+import { ADMIN_COL } from '@/lib/collections';
 
 interface MaintRecord {
   enabled: boolean;
@@ -11,7 +12,7 @@ interface MaintRecord {
 
 export function Maintenance() {
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<MaintRecord>(
-    'app.aozoraquest.config.maintenance',
+    ADMIN_COL.configMaintenance,
     'self',
   );
   const [enabled, setEnabled] = useState(false);

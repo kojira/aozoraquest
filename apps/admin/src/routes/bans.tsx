@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
+import { ADMIN_COL } from '@/lib/collections';
 
 interface BansRecord {
   dids: string[];
@@ -8,7 +9,7 @@ interface BansRecord {
 
 export function Bans() {
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<BansRecord>(
-    'app.aozoraquest.config.bans',
+    ADMIN_COL.configBans,
     'self',
   );
   const [dids, setDids] = useState<string[]>([]);

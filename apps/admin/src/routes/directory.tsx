@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAdminConfig } from '@/lib/use-config';
 import { useAdminSession } from '@/lib/session';
+import { ADMIN_COL } from '@/lib/collections';
 
 interface Entry {
   did: string;
@@ -18,7 +19,7 @@ const OPTIN_TAG = 'aozoraquest';
 export function DirectoryRoute() {
   const session = useAdminSession();
   const { loaded, value, save, saving, err, savedMark } = useAdminConfig<DirectoryRecord>(
-    'app.aozoraquest.directory',
+    ADMIN_COL.directory,
     'self',
   );
   const [entries, setEntries] = useState<Entry[]>([]);
