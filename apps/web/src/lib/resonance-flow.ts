@@ -48,11 +48,14 @@ export async function buildResonanceTimeline(
   const results = await Promise.all(
     dids.map(async (did) => {
       try {
-        const [feed, otherDiag] = await Promise.all([
+        const [feedRaw, otherDiag] = await Promise.all([
           fetchAuthorFeed(agent, did, perAuthor),
           // 他人の analysis は production NSID から読む (env 隔離は self 用)
           getRecord<DiagnosisResult>(agent, did, ROOT_COL.analysis, 'self'),
         ]);
+        // リポストを除外。getAuthorFeed は post 本人 + リポストを返すので、
+        // 本人投稿だけに絞らないと directory に居ない他人の post が混入する。
+        const feed = feedRaw.filter((item) => item.post.author.did === did);
         let score: number | null = null;
         let sim: number | null = null;
         let comp: number | null = null;
