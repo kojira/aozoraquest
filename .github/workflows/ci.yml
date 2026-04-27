@@ -30,14 +30,17 @@ jobs:
         run: pnpm --filter @aozoraquest/web typecheck
 
       - name: Build
-        # build 時必須の env vars。GitHub の Repository Variables
+        # build 時に参照される env vars。GitHub の Repository Variables
         # (Settings → Secrets and variables → Actions → Variables) で設定する。
-        # 値は CF ダッシュボードと同じ (本番 prod の値で OK):
+        # 必須:
         #   VITE_APP_URL=https://aozoraquest.app
         #   VITE_NSID_ROOT=app.aozoraquest
+        # 任意 (deploy 環境を再現したい場合に設定。空でもよい):
+        #   VITE_NSID_ENV=dev
         env:
           VITE_APP_URL: ${{ vars.VITE_APP_URL }}
           VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+          VITE_NSID_ENV: ${{ vars.VITE_NSID_ENV }}
         run: pnpm --filter @aozoraquest/web build
 
       - name: Install Playwright browsers
@@ -47,6 +50,7 @@ jobs:
         env:
           VITE_APP_URL: ${{ vars.VITE_APP_URL }}
           VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+          VITE_NSID_ENV: ${{ vars.VITE_NSID_ENV }}
         run: pnpm --filter @aozoraquest/web test:e2e
 
       - name: Upload Playwright report on failure
