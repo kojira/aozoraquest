@@ -15,6 +15,7 @@ import { Onboarding } from '@/routes/onboarding';
 import { OAuthCallback } from '@/routes/oauth-callback';
 import { Tos } from '@/routes/tos';
 import { Privacy } from '@/routes/privacy';
+import { DebugCard } from '@/routes/debug-card';
 import { AppShell } from '@/components/app-shell';
 import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
       { path: 'oauth/callback', element: <OAuthCallback /> },
       { path: 'tos', element: <Tos /> },
       { path: 'privacy', element: <Privacy /> },
+      { path: 'debug/card', element: <DebugCard /> },
     ],
   },
 ]);
