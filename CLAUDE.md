@@ -167,7 +167,7 @@ iPhone Air で TinySwallow / Bonsai / SmolLM2 を試して全部 OOM。
 
 merge 後に main に居続けて 5 commits 直接編集 → push。
 ユーザーは dev で確認しようとしたが反映されておらず混乱。
-**学び**: merge したら即 dev に戻る。本セクションのルールはこの事故に対する反省で書かれた。
+**学び**: merge したら即 dev に戻る。
 
 ### 2026-04-28: CI 失敗を放置して次作業
 
