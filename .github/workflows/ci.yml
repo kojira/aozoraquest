@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     # GitHub Environments に置いた variables / secrets を使うために environment を指定する。
     # main 向けと dev 向けで env vars が違う場合は branch ごとに分ける。
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+    environment: ${{ github.ref == 'refs/heads/main' && 'main' || 'dev' }}
     steps:
       - uses: actions/checkout@v4
 
