@@ -30,12 +30,23 @@ jobs:
         run: pnpm --filter @aozoraquest/web typecheck
 
       - name: Build
+        # build 時必須の env vars。GitHub の Repository Variables
+        # (Settings → Secrets and variables → Actions → Variables) で設定する。
+        # 値は CF ダッシュボードと同じ (本番 prod の値で OK):
+        #   VITE_APP_URL=https://aozoraquest.app
+        #   VITE_NSID_ROOT=app.aozoraquest
+        env:
+          VITE_APP_URL: ${{ vars.VITE_APP_URL }}
+          VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
         run: pnpm --filter @aozoraquest/web build
 
       - name: Install Playwright browsers
         run: pnpm --filter @aozoraquest/web exec playwright install chromium --with-deps
 
       - name: E2E (smoke + model URL sanity)
+        env:
+          VITE_APP_URL: ${{ vars.VITE_APP_URL }}
+          VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
         run: pnpm --filter @aozoraquest/web test:e2e
 
       - name: Upload Playwright report on failure
