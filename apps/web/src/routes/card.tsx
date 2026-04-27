@@ -10,7 +10,7 @@ import { isRarity, rollRarity } from '@aozoraquest/core';
 import { loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
-import { cardToPngBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
+import { cardToPngBlob, cardToShareBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
 
@@ -251,7 +251,8 @@ export function Card() {
     setShareBusy('posting');
     setShareErr(null);
     try {
-      const blob = await cardToPngBlob(svgRef.current);
+      // 投稿用は WebP で 100KB 以下に圧縮 (Bluesky の表示でも十分な解像度)
+      const blob = await cardToShareBlob(svgRef.current);
       const text = `${displayArchetype(result.archetype)} の気質が出ました。 #AozoraQuest`;
       const alt = `${profile.displayName} の診断カード。職業は${displayArchetype(result.archetype)}。`;
       await postCardToBluesky(session.agent, blob, text, alt);

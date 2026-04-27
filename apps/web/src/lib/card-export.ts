@@ -6,8 +6,12 @@
 import type { Agent } from '@atproto/api';
 import { createPostWithImage } from './atproto';
 
-const OUTPUT_W = 1536;
-const OUTPUT_H = 2144;
+/** ダウンロード用 PNG の出力サイズ。印刷でも耐える解像度。 */
+const DOWNLOAD_W = 1536;
+const DOWNLOAD_H = 2144;
+/** Bluesky 投稿用の出力サイズ。100KB 以下に収めやすく、表示でも十分な解像度。 */
+const SHARE_W = 1024;
+const SHARE_H = 1430;
 const EMBEDDED_MIME_FOR_ART = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' } as const;
 
 /**
@@ -76,29 +80,78 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** SVG 要素を PNG Blob に変換する。 */
-export async function cardToPngBlob(svgEl: SVGSVGElement): Promise<Blob> {
+/** SVG を指定サイズの canvas に描画して返す。圧縮処理の共通前処理。 */
+async function rasterizeSvg(svgEl: SVGSVGElement, w: number, h: number): Promise<HTMLCanvasElement> {
   const xml = await inlineImages(svgEl);
   const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(svgBlob);
   try {
     const img = await loadImage(url);
     const canvas = document.createElement('canvas');
-    canvas.width = OUTPUT_W;
-    canvas.height = OUTPUT_H;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d')!;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, OUTPUT_W, OUTPUT_H);
-    return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('toBlob returned null'));
-      }, 'image/png');
-    });
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** SVG 要素を PNG Blob に変換する (ダウンロード用、フル解像度)。 */
+export async function cardToPngBlob(svgEl: SVGSVGElement): Promise<Blob> {
+  const canvas = await rasterizeSvg(svgEl, DOWNLOAD_W, DOWNLOAD_H);
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('toBlob returned null'));
+    }, 'image/png');
+  });
+}
+
+/** ブラウザが image/webp の canvas エンコードに対応しているか。
+ *  Safari は古いバージョンで未対応だったため、フォールバック判定が要る。 */
+function canvasEncodesWebp(): boolean {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 1; c.height = 1;
+    return c.toDataURL('image/webp').startsWith('data:image/webp');
+  } catch {
+    return false;
+  }
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error(`toBlob(${mime}) returned null`));
+    }, mime, quality);
+  });
+}
+
+/** SVG 要素を Bluesky 投稿用に圧縮した Blob にする。
+ *  既定で 100KB 以下を狙う。WebP が使えれば WebP、ダメなら JPEG にフォールバック。
+ *  目標サイズに収まるまで quality を下げる (0.85 → 0.5)。 */
+export async function cardToShareBlob(
+  svgEl: SVGSVGElement,
+  opts: { maxBytes?: number } = {},
+): Promise<Blob> {
+  const maxBytes = opts.maxBytes ?? 100 * 1024;
+  const canvas = await rasterizeSvg(svgEl, SHARE_W, SHARE_H);
+  const mime = canvasEncodesWebp() ? 'image/webp' : 'image/jpeg';
+  const qualities = [0.85, 0.78, 0.7, 0.62, 0.55, 0.5];
+  let last: Blob | null = null;
+  for (const q of qualities) {
+    const blob = await canvasToBlob(canvas, mime, q);
+    last = blob;
+    if (blob.size <= maxBytes) return blob;
+  }
+  // それでも超えるなら quality 0.5 の最終結果を返す (この後も大きいなら諦め)
+  if (last) return last;
+  throw new Error('cardToShareBlob: unable to encode');
 }
 
 /** PNG Blob をブラウザで DL させる。 */
