@@ -3,6 +3,23 @@ import { useSearchParams } from 'react-router-dom';
 import { JobCard } from '@/components/job-card';
 import type { DiagnosisResult } from '@aozoraquest/core';
 
+/** 同 origin の fetch → blob → dataURL で inline。CORS が通れば成功。 */
+async function fetchAsDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise<string | null>((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 実カードのサイズ計測用 debug ルート (本番では辿る導線なし、Playwright から /debug/card で開く)。
  *
@@ -17,6 +34,7 @@ export function DebugCard() {
   const [params] = useSearchParams();
   const handle = params.get('handle');
   const [profile, setProfile] = useState<{ displayName: string; handle: string; avatar: string | null } | null>(null);
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
   const [profileErr, setProfileErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,6 +51,15 @@ export function DebugCard() {
           handle: data.handle,
           avatar: data.avatar ?? null,
         });
+        // 1) Playwright runner が事前注入した dataURL を優先 (CORS 越え)。
+        const forced = (window as unknown as { __forcedAvatar?: string }).__forcedAvatar;
+        if (forced) {
+          if (!cancelled) setAvatarDataUrl(forced);
+        } else if (data.avatar) {
+          // 2) フォールバック: fetch 経由 (CORS 通る環境のみ)
+          const inlined = await fetchAsDataUrl(data.avatar);
+          if (!cancelled && inlined) setAvatarDataUrl(inlined);
+        }
       } catch (e) {
         if (cancelled) return;
         setProfileErr(String((e as Error)?.message ?? e));
@@ -95,7 +122,7 @@ export function DebugCard() {
           displayName={profile.displayName}
           handle={profile.handle}
           artSrc="/card-art/sage.jpg"
-          {...(profile.avatar ? { avatarSrc: profile.avatar } : {})}
+          {...((avatarDataUrl ?? profile.avatar) ? { avatarSrc: avatarDataUrl ?? profile.avatar! } : {})}
         />
       </div>
     </div>
