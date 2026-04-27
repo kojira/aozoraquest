@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
-import { createPost, type ReplyRef } from '@/lib/atproto';
+import { createPost, createPostWithImage, type ReplyRef } from '@/lib/atproto';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
@@ -11,6 +11,24 @@ export interface ComposeReplyTo {
   root: { uri: string; cid: string };
   author: string;
   text: string;
+}
+
+/**
+ * compose-modal で添付できる画像。card 共有経由でも user 添付経由でも同じ形。
+ * - blob: そのまま uploadBlob にかける本体
+ * - alt: a11y 用代替テキスト。空でも投稿可
+ * - source: 'card' なら #AozoraQuest facet を自動付与する
+ */
+export interface ComposeAttachedImage {
+  blob: Blob;
+  alt: string;
+  source: 'card' | 'user';
+}
+
+export interface ComposeOpenOptions {
+  replyTo?: ComposeReplyTo;
+  initialText?: string;
+  image?: ComposeAttachedImage;
 }
 
 // 投稿成功イベント (タイムライン側が購読して自分の投稿をすぐ反映する)
@@ -33,7 +51,8 @@ export function useOnPosted(cb: PostedListener) {
 }
 
 interface ComposeCtx {
-  openCompose: (replyTo?: ComposeReplyTo) => void;
+  /** replyTo のみの旧シグネチャ + opts オブジェクトの新シグネチャ両対応。 */
+  openCompose: (optsOrReplyTo?: ComposeOpenOptions | ComposeReplyTo) => void;
   closeCompose: () => void;
 }
 
@@ -46,35 +65,98 @@ export function useCompose(): ComposeCtx {
 interface ProviderState {
   open: boolean;
   replyTo: ComposeReplyTo | null;
+  initialText: string;
+  initialImage: ComposeAttachedImage | null;
+}
+
+/** 引数が ReplyRef 形式 (parent + root を持つ) か新オプション形式かを判別。 */
+function isReplyTo(v: unknown): v is ComposeReplyTo {
+  return !!v && typeof v === 'object' && 'parent' in v && 'root' in v;
 }
 
 export function ComposeProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProviderState>({ open: false, replyTo: null });
+  const [state, setState] = useState<ProviderState>({
+    open: false, replyTo: null, initialText: '', initialImage: null,
+  });
 
-  const openCompose = useCallback((replyTo?: ComposeReplyTo) => {
-    setState({ open: true, replyTo: replyTo ?? null });
+  const openCompose = useCallback((arg?: ComposeOpenOptions | ComposeReplyTo) => {
+    if (!arg) {
+      setState({ open: true, replyTo: null, initialText: '', initialImage: null });
+      return;
+    }
+    if (isReplyTo(arg)) {
+      setState({ open: true, replyTo: arg, initialText: '', initialImage: null });
+      return;
+    }
+    setState({
+      open: true,
+      replyTo: arg.replyTo ?? null,
+      initialText: arg.initialText ?? '',
+      initialImage: arg.image ?? null,
+    });
   }, []);
 
   const closeCompose = useCallback(() => {
-    setState({ open: false, replyTo: null });
+    setState({ open: false, replyTo: null, initialText: '', initialImage: null });
   }, []);
 
   return (
     <ComposeContext.Provider value={{ openCompose, closeCompose }}>
       {children}
-      {state.open && <ComposeDialog replyTo={state.replyTo} onClose={closeCompose} />}
+      {state.open && (
+        <ComposeDialog
+          replyTo={state.replyTo}
+          initialText={state.initialText}
+          initialImage={state.initialImage}
+          onClose={closeCompose}
+        />
+      )}
       <LevelUpOverlay />
     </ComposeContext.Provider>
   );
 }
 
-function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; onClose: () => void }) {
+interface DialogState {
+  blob: Blob;
+  alt: string;
+  source: 'card' | 'user';
+  /** プレビュー用の objectURL。dialog unmount 時に revoke する */
+  previewUrl: string;
+}
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+/** Bluesky uploadBlob の上限は約 1MB。少しマージン取って 950KB を上限警告ラインに。 */
+const MAX_IMAGE_BYTES = 950_000;
+
+function ComposeDialog({
+  replyTo,
+  initialText,
+  initialImage,
+  onClose,
+}: {
+  replyTo: ComposeReplyTo | null;
+  initialText: string;
+  initialImage: ComposeAttachedImage | null;
+  onClose: () => void;
+}) {
   const session = useSession();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText);
+  const [image, setImage] = useState<DialogState | null>(() => {
+    if (!initialImage) return null;
+    return {
+      blob: initialImage.blob,
+      alt: initialImage.alt,
+      source: initialImage.source,
+      previewUrl: URL.createObjectURL(initialImage.blob),
+    };
+  });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageRef = useRef<DialogState | null>(image);
+  imageRef.current = image;
 
-  // ESC で閉じる、背面スクロールをロック
+  // ESC で閉じる、背面スクロールをロック、画像 objectURL を unmount で revoke
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -85,6 +167,9 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
     return () => {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
+      // 最後にセットされてた image の url を revoke
+      const last = imageRef.current;
+      if (last) URL.revokeObjectURL(last.previewUrl);
     };
   }, [loading, onClose]);
 
@@ -94,23 +179,64 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
     return null;
   }
 
+  function pickImage() {
+    fileInputRef.current?.click();
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 同じファイルを再選択しても change が起きるように
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setErr(`対応していない画像形式です (${file.type || '不明'})。jpg/png/webp/gif のみ。`);
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setErr(`画像サイズが大きすぎます (${(file.size / 1024).toFixed(0)} KB)。950KB 以下にしてください。`);
+      return;
+    }
+    setErr(null);
+    // 既存があれば revoke
+    if (image) URL.revokeObjectURL(image.previewUrl);
+    setImage({
+      blob: file,
+      alt: '',
+      source: 'user',
+      previewUrl: URL.createObjectURL(file),
+    });
+  }
+
+  function removeImage() {
+    if (image) URL.revokeObjectURL(image.previewUrl);
+    setImage(null);
+  }
+
   async function submit() {
     const body = text.trim();
-    if (!body || body.length > POST_MAX_LENGTH || loading || !agent) return;
+    if (loading || !agent) return;
+    // 画像なしの場合は空文字 NG。画像付きの場合は本文空でも投稿可。
+    if (!image && !body) return;
+    if (body.length > POST_MAX_LENGTH) return;
+
     setLoading(true);
     setErr(null);
     try {
-      const reply: ReplyRef | undefined = replyTo
-        ? { root: replyTo.root, parent: replyTo.parent }
-        : undefined;
-      await createPost(agent, body, reply);
+      if (image) {
+        const tag = image.source === 'card' ? 'AozoraQuest' : undefined;
+        await createPostWithImage(agent, body, image.blob, image.alt, tag);
+      } else {
+        const reply: ReplyRef | undefined = replyTo
+          ? { root: replyTo.root, parent: replyTo.parent }
+          : undefined;
+        await createPost(agent, body, reply);
+      }
       setText('');
       // 投稿直後に解析 (行動分類 → questLog 更新 → rpgStats 更新) を走らせるが、
       // 推論は数秒〜十数秒かかる (モバイル特に遅い) ので await せずに
       // バックグラウンドで進める。結果は UI 側 (ホーム / /spirit) が
       // useOnPosted で再フェッチするし、LV アップ通知も届いたら表示される。
       const did = session.did;
-      if (did) {
+      if (did && body) {
         void (async () => {
           try {
             const result = await processSelfPost(agent, did, body);
@@ -141,6 +267,13 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
       setLoading(false);
     }
   }
+
+  // 画像添付時のみ「reply 」UI と排他: 既存 reply フローへの画像添付は今回非対応。
+  const showImageUi = !replyTo;
+  const submitDisabled =
+    loading
+    || (!text.trim() && !image)
+    || text.length > POST_MAX_LENGTH;
 
   return (
     <div
@@ -219,13 +352,86 @@ function ComposeDialog({ replyTo, onClose }: { replyTo: ComposeReplyTo | null; o
           autoFocus
         />
 
+        {showImageUi && (
+          <div style={{ marginTop: '0.5em' }}>
+            {image ? (
+              <div
+                style={{
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  borderRadius: 6,
+                  padding: '0.5em',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4em',
+                  background: 'rgba(0,0,0,0.25)',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '0.6em', alignItems: 'flex-start' }}>
+                  <img
+                    src={image.previewUrl}
+                    alt=""
+                    style={{
+                      maxWidth: 120,
+                      maxHeight: 160,
+                      objectFit: 'contain',
+                      borderRadius: 4,
+                      background: '#000',
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
+                      alt (代替テキスト)
+                    </label>
+                    <TextField
+                      multiline
+                      value={image.alt}
+                      onChange={(v) => setImage((prev) => prev ? { ...prev, alt: v } : prev)}
+                      style={{ width: '100%', minHeight: '3em', padding: '0.3em', fontSize: '0.85em' }}
+                      placeholder="画像の説明 (a11y 用、空でも投稿可)"
+                      maxLength={1000}
+                      disabled={loading}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
+                      <span>{(image.blob.size / 1024).toFixed(0)} KB · {image.blob.type || '?'}</span>
+                      <button
+                        className="secondary"
+                        onClick={removeImage}
+                        disabled={loading}
+                        style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
+                      >
+                        画像を削除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="secondary"
+                onClick={pickImage}
+                disabled={loading}
+                style={{ fontSize: '0.85em' }}
+              >
+                📷 画像を添付
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ALLOWED_IMAGE_TYPES.join(',')}
+              onChange={onFileChange}
+              style={{ display: 'none' }}
+            />
+          </div>
+        )}
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5em' }}>
           <span style={{ fontSize: '0.85em', color: text.length > POST_MAX_LENGTH ? 'var(--color-danger)' : 'var(--color-muted)' }}>
             {text.length} / {POST_MAX_LENGTH}
           </span>
           <div style={{ display: 'flex', gap: '0.4em' }}>
             <button className="secondary" onClick={onClose} disabled={loading}>キャンセル</button>
-            <button onClick={submit} disabled={!text.trim() || text.length > POST_MAX_LENGTH || loading}>
+            <button onClick={submit} disabled={submitDisabled}>
               {loading ? '送信中...' : replyTo ? '返信する' : 'ポスト'}
             </button>
           </div>
