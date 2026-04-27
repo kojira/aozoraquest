@@ -70,6 +70,13 @@ a {
   border-bottom: 1px dotted var(--color-accent);
 }
 a:hover { color: #ffffff; border-bottom-color: #ffffff; }
+a {
+  -webkit-tap-highlight-color: transparent;
+  transition: color 80ms ease, opacity 80ms ease, border-bottom-color 80ms ease;
+}
+a:active {
+  opacity: 0.7;
+}
 
 button {
   font-family: inherit;
@@ -81,12 +88,27 @@ button {
   border-radius: 2px;
   padding: 0.35em 0.9em;
   box-shadow: inset 0 0 0 1px var(--color-window-inner-border);
+  /* タップ・クリック直後に色が変わるように 80ms で transition。
+     long 過ぎると逆に「効いてない」と感じるので短め。 */
+  transition: background-color 80ms ease, transform 60ms ease, box-shadow 80ms ease;
+  /* mobile の灰色 tap highlight は自前 active で出すので殺す */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 button:hover:not(:disabled) {
   background: var(--color-window-bg-alt);
 }
 button:active:not(:disabled) {
-  transform: translateY(1px);
+  /* 押した瞬間に色が変わる + 沈む + 影が縮む。視覚と触覚的に「押した」感 */
+  background: var(--color-window-bg-alt);
+  transform: translateY(1px) scale(0.985);
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 button:disabled {
   opacity: 0.45;
@@ -216,11 +238,18 @@ p { margin: 0.4em 0; }
   opacity: 0.55;
   border: none;
   border-radius: 8px;
-  transition: background-color 120ms ease, opacity 120ms ease;
+  transition: background-color 80ms ease, opacity 80ms ease, transform 60ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 .footer-nav-item:hover {
   opacity: 0.85;
   background: rgba(255, 255, 255, 0.06);
+}
+.footer-nav-item:active {
+  /* タップ瞬間の即時フィードバック */
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(0.94);
 }
 .footer-nav-item.active {
   opacity: 1;
@@ -278,10 +307,17 @@ p { margin: 0.4em 0; }
   cursor: pointer;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
   font-weight: 700;
+  transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease, transform 60ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 .dq-tab:hover {
   color: #ffffff;
   border-color: #ffffff;
+}
+.dq-tab:active:not(.active) {
+  /* タップ瞬間に背景を濃くして「押した」を即座に見せる */
+  background: rgba(0, 0, 0, 0.7);
+  transform: scale(0.985);
 }
 .dq-tab.active {
   background: rgba(0, 0, 0, 0.85);   /* アクティブ: 濃い黒 */
