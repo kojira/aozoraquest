@@ -9,9 +9,12 @@ import { createPostWithImage } from './atproto';
 /** ダウンロード用 PNG の出力サイズ。印刷でも耐える解像度。 */
 const DOWNLOAD_W = 1536;
 const DOWNLOAD_H = 2144;
-/** Bluesky 投稿用の出力サイズ。100KB 以下に収めやすく、表示でも十分な解像度。 */
-const SHARE_W = 1024;
-const SHARE_H = 1430;
+/** Bluesky 投稿用の解像度候補 (5:7)。100KB 制約で大きい順に試行する。 */
+const SHARE_SIZES: ReadonlyArray<readonly [number, number]> = [
+  [800, 1117],
+  [640, 894],
+  [512, 715],
+];
 const EMBEDDED_MIME_FOR_ART = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' } as const;
 
 /**
@@ -134,22 +137,26 @@ async function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality: nu
 
 /** SVG 要素を Bluesky 投稿用に圧縮した Blob にする。
  *  既定で 100KB 以下を狙う。WebP が使えれば WebP、ダメなら JPEG にフォールバック。
- *  目標サイズに収まるまで quality を下げる (0.85 → 0.5)。 */
+ *  目標サイズに収まるまで:
+ *    1. 解像度を SHARE_SIZES の上から (800x1117 → 640x894 → 512x715) 段階的に縮小
+ *    2. 各解像度で quality を 0.85 → 0.7 → 0.55 → 0.4 の順に試行
+ *  どれも超えたら最後に得た Blob を返す (それでも超えるならカード側の問題)。 */
 export async function cardToShareBlob(
   svgEl: SVGSVGElement,
   opts: { maxBytes?: number } = {},
 ): Promise<Blob> {
   const maxBytes = opts.maxBytes ?? 100 * 1024;
-  const canvas = await rasterizeSvg(svgEl, SHARE_W, SHARE_H);
   const mime = canvasEncodesWebp() ? 'image/webp' : 'image/jpeg';
-  const qualities = [0.85, 0.78, 0.7, 0.62, 0.55, 0.5];
+  const qualities = [0.85, 0.7, 0.55, 0.4];
   let last: Blob | null = null;
-  for (const q of qualities) {
-    const blob = await canvasToBlob(canvas, mime, q);
-    last = blob;
-    if (blob.size <= maxBytes) return blob;
+  for (const [w, h] of SHARE_SIZES) {
+    const canvas = await rasterizeSvg(svgEl, w, h);
+    for (const q of qualities) {
+      const blob = await canvasToBlob(canvas, mime, q);
+      last = blob;
+      if (blob.size <= maxBytes) return blob;
+    }
   }
-  // それでも超えるなら quality 0.5 の最終結果を返す (この後も大きいなら諦め)
   if (last) return last;
   throw new Error('cardToShareBlob: unable to encode');
 }
