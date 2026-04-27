@@ -85,7 +85,6 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
   const job = JOBS_BY_ID[result.archetype];
   const jobName = jobDisplayName(result.archetype, 'default');
   const lv = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
-  const analyzedDate = formatDate(result.analyzedAt);
 
   // 円形アバターの配置 (art frame 中央)
   const AVATAR_CX = W / 2;
@@ -304,13 +303,11 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       </g>
 
       {/* === Footer (tiny) === */}
+      {/* 右下の日付は dominantFunction バッジと重なって見苦しいので非表示。
+       *  必要なら別位置に出す。左下の handle はそのまま。 */}
       <text x={PADX} y={FOOTER_Y} fontSize="13"
             fontFamily="ui-monospace, 'Courier New', monospace" fill={INK_SOFT}>
         AozoraQuest · @{handle}
-      </text>
-      <text x={W - PADX} y={FOOTER_Y} fontSize="13"
-            fontFamily="ui-monospace, 'Courier New', monospace" textAnchor="end" fill={INK_SOFT}>
-        {analyzedDate}
       </text>
     </svg>
   );
@@ -481,10 +478,5 @@ function wrapJa(text: string, perLine: number, maxLines: number): string[] {
   return out.slice(0, maxLines);
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 // 未使用の警告回避
 void PAPER_FALLBACK_1;
