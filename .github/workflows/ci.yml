@@ -9,6 +9,9 @@ on:
 jobs:
   web-ci:
     runs-on: ubuntu-latest
+    # GitHub Environments に置いた variables / secrets を使うために environment を指定する。
+    # main 向けと dev 向けで env vars が違う場合は branch ごとに分ける。
+    environment: ${{ github.ref == 'refs/heads/main' && 'main' || 'dev' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,12 +33,28 @@ jobs:
         run: pnpm --filter @aozoraquest/web typecheck
 
       - name: Build
+        # build 時に参照される env vars。GitHub の Environment Variables
+        # (Settings → Environments → dev / production → Environment variables) で
+        # branch ごとに設定する。job 冒頭の environment: で参照先を切替。
+        # 必須:
+        #   VITE_APP_URL  (dev: https://dev.aozoraquest.app, prod: https://aozoraquest.app)
+        #   VITE_NSID_ROOT (= app.aozoraquest 等のプロジェクト固有 prefix)
+        # 任意:
+        #   VITE_NSID_ENV (dev では "dev"、prod では未設定 / 空)
+        env:
+          VITE_APP_URL: ${{ vars.VITE_APP_URL }}
+          VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+          VITE_NSID_ENV: ${{ vars.VITE_NSID_ENV }}
         run: pnpm --filter @aozoraquest/web build
 
       - name: Install Playwright browsers
         run: pnpm --filter @aozoraquest/web exec playwright install chromium --with-deps
 
       - name: E2E (smoke + model URL sanity)
+        env:
+          VITE_APP_URL: ${{ vars.VITE_APP_URL }}
+          VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+          VITE_NSID_ENV: ${{ vars.VITE_NSID_ENV }}
         run: pnpm --filter @aozoraquest/web test:e2e
 
       - name: Upload Playwright report on failure
