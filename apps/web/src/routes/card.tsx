@@ -10,9 +10,10 @@ import { isRarity, rollRarity } from '@aozoraquest/core';
 import { loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
-import { cardToPngBlob, cardToShareBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
+import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
+import { useCompose, useOnPosted } from '@/components/compose-modal';
 
 type LoadState =
   | { status: 'checking' }
@@ -38,7 +39,7 @@ export function Card() {
   const [flavorBusy, setFlavorBusy] = useState(false);
   const [power, setPower] = useState<PointsState | null>(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
-  const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
+  const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'preparing' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
   const [genError, setGenError] = useState<{ stage: string; message: string; raw?: string } | null>(null);
   const [flavorAttribution, setFlavorAttribution] = useState<string | null>(null);
@@ -245,23 +246,44 @@ export function Card() {
     }
   }, [result]);
 
+  const { openCompose } = useCompose();
+
+  // compose-modal が投稿成功を通知してきたら、card 側の状態も "posted" に倒す。
+  // image 経由の投稿でも notifyPosted は走るので useOnPosted で受ける。
+  useOnPosted(() => {
+    if (shareBusy === 'preparing') {
+      // モーダルを開いただけで送信前にイベントが来ることはないが念のため
+      return;
+    }
+    setShareBusy('posted');
+  });
+
   const onPost = useCallback(async () => {
     if (!svgRef.current || !result || !profile) return;
     if (session.status !== 'signed-in' || !session.agent) return;
-    setShareBusy('posting');
+    setShareBusy('preparing');
     setShareErr(null);
     try {
       // 投稿用は WebP で 100KB 以下に圧縮 (Bluesky の表示でも十分な解像度)
       const blob = await cardToShareBlob(svgRef.current);
-      const text = `${displayArchetype(result.archetype)} の気質が出ました。 #AozoraQuest`;
+      const initialText = `${displayArchetype(result.archetype)} の気質が出ました。 #AozoraQuest`;
       const alt = `${profile.displayName} の診断カード。職業は${displayArchetype(result.archetype)}。`;
-      await postCardToBluesky(session.agent, blob, text, alt);
-      setShareBusy('posted');
+      // 既存の投稿モーダルに blob + 既定テキストを渡して、ユーザー編集 → 送信。
+      // モーダル送信時は createPostWithImage 経路を通るので tag (#AozoraQuest)
+      // も automatic に facet 化される (compose-modal 側で source='card' を判定)。
+      openCompose({
+        initialText,
+        image: { blob, alt, source: 'card' },
+      });
+      // モーダルを開いた後はそちらに主導権を渡す。busy 状態は idle に戻して
+      // ボタン disable を解除 (ユーザーがモーダルでキャンセルしてもボタンが
+      // 押せるように)。posted への遷移は useOnPosted で受ける。
+      setShareBusy('idle');
     } catch (e) {
       setShareErr(String((e as Error)?.message ?? e));
       setShareBusy('idle');
     }
-  }, [result, profile, session.status, session.agent]);
+  }, [result, profile, session.status, session.agent, openCompose]);
 
   if (session.status !== 'signed-in') {
     return (
@@ -352,7 +374,7 @@ export function Card() {
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onPost()}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <ShareIcon size={16} />
-            {shareBusy === 'posting' ? '投稿中…' : shareBusy === 'posted' ? '投稿しました' : 'Bluesky に投稿'}
+            {shareBusy === 'preparing' ? '画像準備中…' : shareBusy === 'posting' ? '投稿中…' : shareBusy === 'posted' ? '投稿しました' : 'Bluesky に投稿'}
           </span>
         </button>
       </div>

@@ -3,8 +3,6 @@
  * Bluesky 投稿用・ダウンロード用の両方で使う。
  */
 
-import type { Agent } from '@atproto/api';
-import { createPostWithImage } from './atproto';
 
 /** ダウンロード用 PNG の出力サイズ。印刷でも耐える解像度。 */
 const DOWNLOAD_W = 1536;
@@ -173,12 +171,3 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/** Bluesky に画像付きで投稿する。 */
-export async function postCardToBluesky(
-  agent: Agent,
-  blob: Blob,
-  text: string,
-  alt: string,
-): Promise<void> {
-  await createPostWithImage(agent, text, blob, alt, 'AozoraQuest');
-}
