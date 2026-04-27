@@ -1,19 +1,51 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { JobCard } from '@/components/job-card';
 import type { DiagnosisResult } from '@aozoraquest/core';
 
 /**
  * 実カードのサイズ計測用 debug ルート (本番では辿る導線なし、Playwright から /debug/card で開く)。
- * 実 JobCard を mock データでマウントして window.__cardSvg に SVG ref を露出する。
- * これによりテストから本物の出力を rasterize → 圧縮できる。
+ *
+ * `?handle=xxx.bsky.social` で表示するアバター/displayName を Bluesky 公開 API から取得する。
+ * 未指定なら kojira.io をデフォルトに使う。
+ *
+ * window.__cardSvg に SVG ref を露出するので、テスト側で本物の cardToShareBlob で
+ * 圧縮 + サイズ計測ができる。
  */
 export function DebugCard() {
   const svgRef = useRef<SVGSVGElement>(null);
+  const [params] = useSearchParams();
+  const handle = params.get('handle');
+  const [profile, setProfile] = useState<{ displayName: string; handle: string; avatar: string | null } | null>(null);
+  const [profileErr, setProfileErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!handle) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`https://api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
+        if (!res.ok) throw new Error(`profile fetch ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setProfile({
+          displayName: data.displayName || data.handle,
+          handle: data.handle,
+          avatar: data.avatar ?? null,
+        });
+      } catch (e) {
+        if (cancelled) return;
+        setProfileErr(String((e as Error)?.message ?? e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [handle]);
+
   useEffect(() => {
     if (svgRef.current) {
       (window as unknown as { __cardSvg?: SVGSVGElement }).__cardSvg = svgRef.current;
     }
-  }, []);
+  }, [profile]);
 
   const result: DiagnosisResult = {
     archetype: 'sage',
@@ -26,10 +58,28 @@ export function DebugCard() {
     jobLevel: { archetype: 'sage', xp: 800, joinedAt: '2026-04-01T00:00:00Z' },
   };
 
+  if (!handle) {
+    return (
+      <div style={{ padding: '1em' }}>
+        <p>?handle=&lt;bluesky-handle&gt; が必要です。</p>
+      </div>
+    );
+  }
+  if (profileErr) {
+    return (
+      <div style={{ padding: '1em' }}>
+        <p style={{ color: 'var(--color-danger)' }}>profile fetch failed: {profileErr}</p>
+      </div>
+    );
+  }
+  if (!profile) {
+    return <div style={{ padding: '1em' }}>loading {handle}...</div>;
+  }
+
   return (
     <div style={{ padding: '1em' }}>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        debug: 実 JobCard のサイズ計測専用ページ。
+        debug: 実 JobCard のサイズ計測専用 (handle={profile.handle})
       </p>
       <div style={{ width: '320px' }}>
         <JobCard
@@ -42,10 +92,10 @@ export function DebugCard() {
           flavorAttribution="アゾラ"
           rarity="rare"
           frameVariant={1}
-          displayName="テスト太郎"
-          handle="test.bsky.social"
+          displayName={profile.displayName}
+          handle={profile.handle}
           artSrc="/card-art/sage.jpg"
-          avatarSrc="https://avatar.cdn.bsky.app/img/avatar/plain/did%3Aplc%3Atest/test%40jpeg"
+          {...(profile.avatar ? { avatarSrc: profile.avatar } : {})}
         />
       </div>
     </div>
