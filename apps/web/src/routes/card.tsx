@@ -7,13 +7,14 @@ import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
 import { isRarity, rollRarity } from '@aozoraquest/core';
-import { loadPointsState, type PointsState } from '@/lib/points';
+import { hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
+import { Spinner } from '@/components/spinner';
 
 type LoadState =
   | { status: 'checking' }
@@ -53,15 +54,21 @@ export function Card() {
     let cancelled = false;
     (async () => {
       try {
-        const [analysis, points, profile] = await Promise.all([
+        // カード表示に必要な「軽量」3 件を並列で取る (analysis / 召喚済 / profile)。
+        // フル points (~500 posts scan) は送信時の引き直しコストにのみ必要なので
+        // 後段でバックグラウンドロードする。これでカード表示が ~1-2 秒早くなる。
+        const [analysis, summoned, profile] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
-          loadPointsState(agent, did).catch(() => ({ summoned: false } as { summoned: boolean })),
+          hasSummoned(agent, did).catch(() => false),
           fetchProfile(agent, did).catch(() => null),
         ]);
         if (cancelled) return;
         if (!analysis) { setLoad({ status: 'no-diagnosis' }); return; }
-        if (!points.summoned) { setLoad({ status: 'not-summoned' }); return; }
-        setPower(points as PointsState);
+        if (!summoned) { setLoad({ status: 'not-summoned' }); return; }
+        // フル points を裏で取る (引き直しボタンの balance 表示に使う)。
+        void loadPointsState(agent, did)
+          .then((p) => { if (!cancelled) setPower(p); })
+          .catch((e) => console.warn('points load failed', e));
         const pb: ProfileBrief = {
           did,
           handle: profile?.handle ?? session.handle ?? 'you',
@@ -294,7 +301,13 @@ export function Card() {
     );
   }
 
-  if (load.status === 'checking') return <p>読み込み中…</p>;
+  if (load.status === 'checking') {
+    return (
+      <div style={{ padding: '2em 0', textAlign: 'center' }}>
+        <Spinner size={28} label="カード情報を読み込み中…" />
+      </div>
+    );
+  }
 
   if (load.status === 'no-diagnosis') {
     return (
