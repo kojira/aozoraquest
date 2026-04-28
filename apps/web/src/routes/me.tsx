@@ -11,6 +11,7 @@ import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype 
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { Avatar } from '@/components/avatar';
+import { Spinner } from '@/components/spinner';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -31,6 +32,7 @@ export function MyProfile() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [targetArchetype, setTargetArchetype] = useState<Archetype | null>(null);
   const [summoned, setSummoned] = useState<boolean>(false);
+  const [summonedLoaded, setSummonedLoaded] = useState<boolean>(false);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -72,14 +74,17 @@ export function MyProfile() {
         console.warn('target job load failed', e);
       }
     })();
-    // ブルスコン召喚済みか (カード機能のゲート)
+    // ブルスコン召喚済みか (カード機能のゲート)。
+    // フル points 計算 (post 500 件 scan) は不要、spiritChat 存在判定だけで済む。
     (async () => {
       try {
-        const { loadPointsState } = await import('@/lib/points');
-        const pts = await loadPointsState(agent, did);
-        if (!cancelled) setSummoned(pts.summoned);
+        const { hasSummoned } = await import('@/lib/points');
+        const ok = await hasSummoned(agent, did);
+        if (!cancelled) setSummoned(ok);
       } catch (e) {
         console.warn('summon state load failed', e);
+      } finally {
+        if (!cancelled) setSummonedLoaded(true);
       }
     })();
     return () => { cancelled = true; };
@@ -260,7 +265,9 @@ export function MyProfile() {
           <Link to="/friends">
             <button>フォロー中の相性ランキングを見る</button>
           </Link>
-          {summoned ? (
+          {!summonedLoaded ? (
+            <Spinner label="カード情報を確認中…" />
+          ) : summoned ? (
             <Link to="/me/card">
               <button>カードを見る</button>
             </Link>

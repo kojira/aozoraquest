@@ -333,6 +333,12 @@ p { margin: 0.4em 0; }
   margin: 0.8em 0;
 }
 
+/* 共通スピナー (components/spinner.tsx で参照) */
+@keyframes aq-spinner-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ─── 召喚の儀式 アニメーション ─────────────────── */
 
 @keyframes ritual-particle-fall {

@@ -80,6 +80,22 @@ export async function countViaPosts(agent: Agent, did: string): Promise<number> 
   return count;
 }
 
+/** 召喚済みか (spiritChat レコードが 1 件でもあるか) を最小コストで確認する。
+ *  /me 等で「カードを見る」ボタンの表示判定だけが必要な場面で使う。
+ *  loadPointsState のフル走査 (~500 posts) を避けて listRecords limit=1 で済む。 */
+export async function hasSummoned(agent: Agent, did: string): Promise<boolean> {
+  try {
+    const res = await agent.com.atproto.repo.listRecords({
+      repo: did,
+      collection: COL.spiritChat,
+      limit: 1,
+    });
+    return res.data.records.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function countSpiritChat(
   agent: Agent,
   did: string,
