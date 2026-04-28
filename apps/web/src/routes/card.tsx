@@ -7,7 +7,7 @@ import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
 import { isRarity, rollRarity } from '@aozoraquest/core';
-import { hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
+import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
@@ -174,6 +174,8 @@ export function Card() {
         console.warn('[card] recordCardDraw failed', e);
         return;
       }
+      // 累積カウンタも +cardDraws (record 自体は recordCardDraw が書いた)
+      if (session.did) void bumpPower(agent, session.did, { cardDraws: 1 });
       setPower((p) => p ? { ...p, cardDraws: p.cardDraws + 1, balance: Math.max(0, p.balance - 1) } : p);
     }
 

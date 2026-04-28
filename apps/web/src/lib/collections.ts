@@ -38,6 +38,9 @@ export const COL = {
   spiritChat: `${USER_PREFIX}.spiritChat`,
   questLog: `${USER_PREFIX}.questLog`,
   cardDraw: `${USER_PREFIX}.cardDraw`,
+  /** あおぞらパワーの累積カウンタ (rkey='self')。アクションごとに増分する。
+   *  初回読み取り時に旧データから一度だけスキャン → 書き込みでマイグレーション。 */
+  power: `${USER_PREFIX}.power`,
 } as const;
 
 /**
