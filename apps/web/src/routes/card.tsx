@@ -361,12 +361,19 @@ export function Card() {
         />
       </div>
 
-      {power && (
-        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-          あおぞらパワー: <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{power.balance}</span>
-          <span style={{ opacity: 0.6, marginLeft: '0.5em' }}>(引き直しで 1 消費)</span>
-        </p>
-      )}
+      {/* power 表示行は常に同じ高さを確保。読込中は Spinner、完了後に balance 表示。
+       *  null → 値 で行が突然出現してレイアウトがズレる体感を防ぐ。 */}
+      <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em', minHeight: '1.6em', display: 'flex', alignItems: 'center', gap: '0.4em' }}>
+        あおぞらパワー:
+        {power ? (
+          <>
+            <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{power.balance}</span>
+            <span style={{ opacity: 0.6 }}>(引き直しで 1 消費)</span>
+          </>
+        ) : (
+          <Spinner size={14} label="計測中…" />
+        )}
+      </p>
 
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
         <button
