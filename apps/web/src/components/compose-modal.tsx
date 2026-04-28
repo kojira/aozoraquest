@@ -3,6 +3,7 @@ import { useSession } from '@/lib/session';
 import { createPost, createPostWithImage, type ReplyRef } from '@/lib/atproto';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
+import { bumpPower } from '@/lib/points';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
 import { POST_MAX_LENGTH, jobDisplayName } from '@aozoraquest/core';
 
@@ -230,12 +231,15 @@ function ComposeDialog({
           : undefined;
         await createPost(agent, body, reply);
       }
+      // via=AozoraQuest で投稿が作成されたので power 累積カウンタを +1。
+      // 失敗しても投稿自体は成功してるので UI は閉じる方向で進む。
+      const did = session.did;
+      if (did) void bumpPower(agent, did, { viaPosts: 1 });
       setText('');
       // 投稿直後に解析 (行動分類 → questLog 更新 → rpgStats 更新) を走らせるが、
       // 推論は数秒〜十数秒かかる (モバイル特に遅い) ので await せずに
       // バックグラウンドで進める。結果は UI 側 (ホーム / /spirit) が
       // useOnPosted で再フェッチするし、LV アップ通知も届いたら表示される。
-      const did = session.did;
       if (did && body) {
         void (async () => {
           try {
