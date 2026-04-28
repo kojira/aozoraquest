@@ -363,7 +363,7 @@ export function Card() {
 
       {/* power 表示行は常に同じ高さを確保。読込中は Spinner、完了後に balance 表示。
        *  null → 値 で行が突然出現してレイアウトがズレる体感を防ぐ。 */}
-      <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em', minHeight: '1.6em', display: 'flex', alignItems: 'center', gap: '0.4em' }}>
+      <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em', minHeight: '1.6em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4em' }}>
         あおぞらパワー:
         {power ? (
           <>
