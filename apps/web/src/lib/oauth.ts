@@ -6,17 +6,32 @@ import { BrowserOAuthClient, type OAuthSession } from '@atproto/oauth-client-bro
  * 本番: client_id は ${VITE_APP_URL}/client-metadata.json (build 時生成)
  * 開発: loopback client_id パターン (http://localhost で使える仮想 client_id)
  *
- * 計測: onDelete/onUpdate/fetch hook で session 寿命を可視化する
- * (「session deleted」エラーの根本原因特定用、対症ではない)
+ * session 削除イベントは `onSessionDeleted(listener)` で subscribe できる。
+ * session.ts がこれを使って削除瞬間に signed-out に flip する
+ * (「session was deleted by another process」cascade を window-1 で打ち切る)。
  */
 let clientPromise: Promise<BrowserOAuthClient> | null = null;
 
-/** /oauth/token endpoint へのリクエストを fetch wrap で識別する。 */
-function isTokenEndpoint(url: string): boolean {
-  return /\/oauth\/(?:token|revoke|par|introspect)\b/.test(url);
+type SessionDeletedListener = (sub: string, cause: unknown) => void;
+const sessionDeletedListeners = new Set<SessionDeletedListener>();
+
+/**
+ * SessionStore (IDB) から session が消された瞬間を subscribe する。
+ *
+ * `cached-getter.ts:142` の `deleteOnError` 経由で oauth-client が IDB
+ * から session を消したとき、ここに登録された listener が同期的に呼ばれる。
+ * session.ts が signed-out に倒すために使う。
+ *
+ * @returns unsubscribe 関数
+ */
+export function onSessionDeleted(listener: SessionDeletedListener): () => void {
+  sessionDeletedListeners.add(listener);
+  return () => {
+    sessionDeletedListeners.delete(listener);
+  };
 }
 
-/** OAuth client に渡す共通の hook 群。session 寿命を全部 console に残す。 */
+/** OAuth client に渡す共通の hook 群。session 寿命を console に残し、削除は listener にも通知する。 */
 function buildHooks() {
   return {
     onDelete: async (sub: string, cause: unknown) => {
@@ -35,6 +50,13 @@ function buildHooks() {
         causes,
         timestamp: new Date().toISOString(),
       });
+      for (const l of sessionDeletedListeners) {
+        try {
+          l(sub, cause);
+        } catch (e) {
+          console.warn('[oauth/onDelete] listener threw', e);
+        }
+      }
     },
     onUpdate: async (sub: string, session: unknown) => {
       const tokenSet = (session as { tokenSet?: { expires_at?: string; sub?: string; scope?: string } } | undefined)
@@ -46,39 +68,6 @@ function buildHooks() {
         scope: tokenSet?.scope,
         timestamp: new Date().toISOString(),
       });
-    },
-    fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const isOAuth = isTokenEndpoint(url);
-      const t0 = performance.now();
-      try {
-        const res = await fetch(input, init);
-        if (isOAuth || !res.ok) {
-          // token endpoint と非 2xx だけ詳細ログ。それ以外はノイズ抑制。
-          let bodyPreview: string | undefined;
-          if (isOAuth || res.status >= 400) {
-            try {
-              const clone = res.clone();
-              const text = await clone.text();
-              bodyPreview = text.slice(0, 500);
-            } catch {
-              /* ignore */
-            }
-          }
-          (res.ok ? console.info : console.warn)('[oauth/fetch]', {
-            method: init?.method ?? 'GET',
-            url,
-            status: res.status,
-            ok: res.ok,
-            durationMs: Math.round(performance.now() - t0),
-            bodyPreview,
-          });
-        }
-        return res;
-      } catch (e) {
-        console.error('[oauth/fetch] threw', { url, error: e, durationMs: Math.round(performance.now() - t0) });
-        throw e;
-      }
     },
   };
 }
