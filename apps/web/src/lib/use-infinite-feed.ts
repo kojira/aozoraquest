@@ -8,6 +8,32 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/**
+ * Error と (再帰的に) cause を console に吐き出す。
+ * `setErr(String(e.message))` だけでは TokenRefreshError などラッパー型の
+ * 中身 (status / response / 内部の Error.stack) が消えるので、この hook 由来の
+ * 失敗は `console.error('[infinite-feed] ...', e, { causeChain })` で残す。
+ *
+ * オーバーヘッドは catch 時のみ。本番ノイズにならない範囲。
+ */
+function logFeedError(label: string, e: unknown): void {
+  const causes: unknown[] = [];
+  let cur: unknown = (e as { cause?: unknown })?.cause;
+  // 循環参照しない範囲で 5 段まで
+  for (let i = 0; i < 5 && cur; i++) {
+    causes.push(cur);
+    cur = (cur as { cause?: unknown })?.cause;
+  }
+  console.error(`[infinite-feed] ${label}`, {
+    error: e,
+    name: (e as Error)?.name,
+    message: (e as Error)?.message,
+    stack: (e as Error)?.stack,
+    causes,
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export interface InfiniteFeedPage<T> {
   items: T[];
   cursor?: string;
@@ -78,6 +104,7 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
         setDone(true);
       }
     } catch (e) {
+      logFeedError(resetting ? 'load(reset) failed' : 'load(append) failed', e);
       setErr(String((e as Error)?.message ?? e));
     } finally {
       inflight.current = false;
@@ -128,7 +155,10 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
           return [...uniqueNew, ...kept];
         });
       })
-      .catch((e) => setErr(String((e as Error)?.message ?? e)))
+      .catch((e) => {
+        logFeedError('refresh failed', e);
+        setErr(String((e as Error)?.message ?? e));
+      })
       .finally(() => {
         inflight.current = false;
         setLoading(false);
