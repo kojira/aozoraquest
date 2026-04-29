@@ -52,6 +52,14 @@ async function setStateFromSession(
   session: OAuthSession,
   setState: (s: SessionState) => void,
 ): Promise<void> {
+  // 計測: 復元したセッションの shape (寿命含む) を出して、後続の onDelete と
+  // 突き合わせやすくする。token 本体は出さない。
+  // OAuthSession は内部 tokenSet を直接公開しないので tokenSet は省略。
+  console.info('[session] restored', {
+    did: session.did,
+    timestamp: new Date().toISOString(),
+  });
+
   const agent = new Agent(session);
   const did = session.did;
   const next: SessionState = { status: 'signed-in', did, agent };
