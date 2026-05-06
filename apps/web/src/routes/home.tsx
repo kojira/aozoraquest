@@ -9,6 +9,7 @@ import { COL } from '@/lib/collections';
 import { buildResonanceTimeline, type ResonanceEntry } from '@/lib/resonance-flow';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
+import { loadCachedTLPage, saveCachedTLPage } from '@/lib/tl-cache-idb';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { HomeSummary } from '@/components/home-summary';
 import { PostArticle } from '@/components/post-article';
@@ -66,7 +67,9 @@ export function Home() {
     }
   });
 
-  // フォロー TL: カーソル無限スクロール
+  // フォロー TL: カーソル無限スクロール + IDB SWR キャッシュ
+  // (DID 単位で key を分けて別ユーザの cache が混入しないようにする)
+  const followingCacheKey = session.did ? `tl:following:${session.did}` : null;
   const followingFeed = useInfiniteFeed<AppBskyFeedDefs.FeedViewPost>({
     enabled: session.status === 'signed-in' && tab === 'following' && !!agent,
     keyOf: (x) => x.post.uri,
@@ -79,6 +82,14 @@ export function Home() {
         ...(res.data.cursor !== undefined ? { cursor: res.data.cursor } : {}),
       };
     },
+    ...(followingCacheKey
+      ? {
+          cache: {
+            load: () => loadCachedTLPage<AppBskyFeedDefs.FeedViewPost>(followingCacheKey),
+            save: (items) => saveCachedTLPage(followingCacheKey, items),
+          },
+        }
+      : {}),
   });
 
   // フォロー TL の著者 archetype 解決
