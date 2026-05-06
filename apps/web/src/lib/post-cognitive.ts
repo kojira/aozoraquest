@@ -5,8 +5,10 @@
  * 推論は ONNX classifier 経由 (URL/hashtag/mention 除去 → 文分割 → 平均) で、
  * `cognitive-onnx.ts:classifyPost` を呼ぶだけ (前処理は向こうで完結)。
  *
- * 結果はメモリキャッシュ (Map<uri, scores>) のみ。同じ post を別の場所で
- * 再描画しても 1 度しか推論しない。タブ閉じたら破棄でよい (PDS に書かない)。
+ * 2 段キャッシュ:
+ * - メモリ Map<uri, scores>: 同タブ内の再描画 dedup
+ * - IDB (`cognitive-idb.ts`): リロード後も再推論しない (post 本文は immutable
+ *   なので URI = 一意で OK)。TTL 30 日
  *
  * モバイル (low-end) はモデルロードで OOM するので強制 OFF。
  */
@@ -17,6 +19,7 @@ import { getCognitiveOnnxClassifier } from './cognitive-onnx';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { getAnalyzePosts } from './prefs';
 import { isLowEndDevice } from './device';
+import { loadCachedCognitive, saveCachedCognitive } from './cognitive-idb';
 
 const MIN_TEXT_LEN = 10;
 
@@ -60,9 +63,23 @@ export function useCognitiveAnalysis(
     setState('loading');
     setError(undefined);
     (async () => {
+      // 1) IDB 確認: リロード後も同じ post なら ONNX 再推論しない
+      try {
+        const cached = await loadCachedCognitive(uri);
+        if (cached) {
+          cache.set(uri, cached);
+          setScores(cached);
+          setState('done');
+          return;
+        }
+      } catch {
+        /* IDB 失敗は無視して推論に進む */
+      }
+      // 2) IDB miss: ONNX 推論
       try {
         const s = await getCognitiveOnnxClassifier().classifyPost(text);
         cache.set(uri, s);
+        if (s) void saveCachedCognitive(uri, s);
         setScores(s);
         setState(s ? 'done' : 'skipped');
       } catch (e) {
