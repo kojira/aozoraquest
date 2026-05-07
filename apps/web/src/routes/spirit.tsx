@@ -13,7 +13,7 @@ import { SummoningRitual } from '@/components/summoning-ritual';
 import { TextField } from '@/components/text-field';
 import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
-import { loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
+import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
 import { isLowEndDevice } from '@/lib/device';
 
@@ -182,6 +182,8 @@ export function Spirit() {
 
     // 楽観的残高 -1
     setPoints({ ...points, userMessages: points.userMessages + 1, balance: points.balance - 1 });
+    // PDS の累積カウンタも +userMessages (失敗しても UI は止めない)
+    void bumpPower(agent, did, { userMessages: 1 });
 
     // spirit の返答を生成 (streaming)
     const g = getGenerator();
@@ -269,6 +271,8 @@ export function Spirit() {
         });
         setHistory((h) => [...h, { uri: res.data.uri, role: 'spirit', text: welcome, createdAt }]);
         setPoints((p) => (p ? { ...p, summoned: true } : p));
+        // PDS の累積カウンタの summoned フラグも立てる
+        void bumpPower(agent, did, { summoned: true });
         // 儀式中にモデルはロード済み、キャッシュにも入った
         setCacheReady(true);
         setGeneratorReady(true);

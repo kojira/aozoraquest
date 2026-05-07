@@ -7,12 +7,14 @@ import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
 import { isRarity, rollRarity } from '@aozoraquest/core';
-import { loadPointsState, type PointsState } from '@/lib/points';
+import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
-import { cardToPngBlob, cardToShareBlob, downloadBlob, postCardToBluesky } from '@/lib/card-export';
+import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
+import { useCompose, useOnPosted } from '@/components/compose-modal';
+import { Spinner } from '@/components/spinner';
 
 type LoadState =
   | { status: 'checking' }
@@ -38,7 +40,7 @@ export function Card() {
   const [flavorBusy, setFlavorBusy] = useState(false);
   const [power, setPower] = useState<PointsState | null>(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
-  const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'posting' | 'posted'>('idle');
+  const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'preparing' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
   const [genError, setGenError] = useState<{ stage: string; message: string; raw?: string } | null>(null);
   const [flavorAttribution, setFlavorAttribution] = useState<string | null>(null);
@@ -52,15 +54,21 @@ export function Card() {
     let cancelled = false;
     (async () => {
       try {
-        const [analysis, points, profile] = await Promise.all([
+        // カード表示に必要な「軽量」3 件を並列で取る (analysis / 召喚済 / profile)。
+        // フル points (~500 posts scan) は送信時の引き直しコストにのみ必要なので
+        // 後段でバックグラウンドロードする。これでカード表示が ~1-2 秒早くなる。
+        const [analysis, summoned, profile] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
-          loadPointsState(agent, did).catch(() => ({ summoned: false } as { summoned: boolean })),
+          hasSummoned(agent, did).catch(() => false),
           fetchProfile(agent, did).catch(() => null),
         ]);
         if (cancelled) return;
         if (!analysis) { setLoad({ status: 'no-diagnosis' }); return; }
-        if (!points.summoned) { setLoad({ status: 'not-summoned' }); return; }
-        setPower(points as PointsState);
+        if (!summoned) { setLoad({ status: 'not-summoned' }); return; }
+        // フル points を裏で取る (引き直しボタンの balance 表示に使う)。
+        void loadPointsState(agent, did)
+          .then((p) => { if (!cancelled) setPower(p); })
+          .catch((e) => console.warn('points load failed', e));
         const pb: ProfileBrief = {
           did,
           handle: profile?.handle ?? session.handle ?? 'you',
@@ -166,6 +174,8 @@ export function Card() {
         console.warn('[card] recordCardDraw failed', e);
         return;
       }
+      // 累積カウンタも +cardDraws (record 自体は recordCardDraw が書いた)
+      if (session.did) void bumpPower(agent, session.did, { cardDraws: 1 });
       setPower((p) => p ? { ...p, cardDraws: p.cardDraws + 1, balance: Math.max(0, p.balance - 1) } : p);
     }
 
@@ -245,23 +255,44 @@ export function Card() {
     }
   }, [result]);
 
+  const { openCompose } = useCompose();
+
+  // compose-modal が投稿成功を通知してきたら、card 側の状態も "posted" に倒す。
+  // image 経由の投稿でも notifyPosted は走るので useOnPosted で受ける。
+  useOnPosted(() => {
+    if (shareBusy === 'preparing') {
+      // モーダルを開いただけで送信前にイベントが来ることはないが念のため
+      return;
+    }
+    setShareBusy('posted');
+  });
+
   const onPost = useCallback(async () => {
     if (!svgRef.current || !result || !profile) return;
     if (session.status !== 'signed-in' || !session.agent) return;
-    setShareBusy('posting');
+    setShareBusy('preparing');
     setShareErr(null);
     try {
       // 投稿用は WebP で 100KB 以下に圧縮 (Bluesky の表示でも十分な解像度)
       const blob = await cardToShareBlob(svgRef.current);
-      const text = `${displayArchetype(result.archetype)} の気質が出ました。 #AozoraQuest`;
+      const initialText = `${displayArchetype(result.archetype)} の気質が出ました。 #AozoraQuest`;
       const alt = `${profile.displayName} の診断カード。職業は${displayArchetype(result.archetype)}。`;
-      await postCardToBluesky(session.agent, blob, text, alt);
-      setShareBusy('posted');
+      // 既存の投稿モーダルに blob + 既定テキストを渡して、ユーザー編集 → 送信。
+      // モーダル送信時は createPostWithImage 経路を通るので tag (#AozoraQuest)
+      // も automatic に facet 化される (compose-modal 側で source='card' を判定)。
+      openCompose({
+        initialText,
+        image: { blob, alt, source: 'card' },
+      });
+      // モーダルを開いた後はそちらに主導権を渡す。busy 状態は idle に戻して
+      // ボタン disable を解除 (ユーザーがモーダルでキャンセルしてもボタンが
+      // 押せるように)。posted への遷移は useOnPosted で受ける。
+      setShareBusy('idle');
     } catch (e) {
       setShareErr(String((e as Error)?.message ?? e));
       setShareBusy('idle');
     }
-  }, [result, profile, session.status, session.agent]);
+  }, [result, profile, session.status, session.agent, openCompose]);
 
   if (session.status !== 'signed-in') {
     return (
@@ -272,7 +303,13 @@ export function Card() {
     );
   }
 
-  if (load.status === 'checking') return <p>読み込み中…</p>;
+  if (load.status === 'checking') {
+    return (
+      <div style={{ padding: '2em 0', textAlign: 'center' }}>
+        <Spinner size={28} label="カード情報を読み込み中…" />
+      </div>
+    );
+  }
 
   if (load.status === 'no-diagnosis') {
     return (
@@ -326,12 +363,19 @@ export function Card() {
         />
       </div>
 
-      {power && (
-        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-          あおぞらパワー: <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{power.balance}</span>
-          <span style={{ opacity: 0.6, marginLeft: '0.5em' }}>(引き直しで 1 消費)</span>
-        </p>
-      )}
+      {/* power 表示行は常に同じ高さを確保。読込中は Spinner、完了後に balance 表示。
+       *  null → 値 で行が突然出現してレイアウトがズレる体感を防ぐ。 */}
+      <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em', minHeight: '1.6em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4em' }}>
+        あおぞらパワー:
+        {power ? (
+          <>
+            <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{power.balance}</span>
+            <span style={{ opacity: 0.6 }}>(引き直しで 1 消費)</span>
+          </>
+        ) : (
+          <Spinner size={14} label="計測中…" />
+        )}
+      </p>
 
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
         <button
@@ -352,7 +396,7 @@ export function Card() {
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onPost()}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <ShareIcon size={16} />
-            {shareBusy === 'posting' ? '投稿中…' : shareBusy === 'posted' ? '投稿しました' : 'Bluesky に投稿'}
+            {shareBusy === 'preparing' ? '画像準備中…' : shareBusy === 'posting' ? '投稿中…' : shareBusy === 'posted' ? '投稿しました' : 'Bluesky に投稿'}
           </span>
         </button>
       </div>

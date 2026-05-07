@@ -8,6 +8,32 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/**
+ * Error と (再帰的に) cause を console に吐き出す。
+ * `setErr(String(e.message))` だけでは TokenRefreshError などラッパー型の
+ * 中身 (status / response / 内部の Error.stack) が消えるので、この hook 由来の
+ * 失敗は `console.error('[infinite-feed] ...', e, { causeChain })` で残す。
+ *
+ * オーバーヘッドは catch 時のみ。本番ノイズにならない範囲。
+ */
+function logFeedError(label: string, e: unknown): void {
+  const causes: unknown[] = [];
+  let cur: unknown = (e as { cause?: unknown })?.cause;
+  // 循環参照しない範囲で 5 段まで
+  for (let i = 0; i < 5 && cur; i++) {
+    causes.push(cur);
+    cur = (cur as { cause?: unknown })?.cause;
+  }
+  console.error(`[infinite-feed] ${label}`, {
+    error: e,
+    name: (e as Error)?.name,
+    message: (e as Error)?.message,
+    stack: (e as Error)?.stack,
+    causes,
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export interface InfiniteFeedPage<T> {
   items: T[];
   cursor?: string;
@@ -21,6 +47,12 @@ export interface UseInfiniteFeedOptions<T> {
   deps: ReadonlyArray<unknown>;
   /** 有効化フラグ (false の間は何もしない) */
   enabled?: boolean;
+  /** SWR キャッシュ。指定すると hydrate (load) と保存 (save) を mount 時 / load(reset) 成功時に行う。
+   *  未指定なら現状動作 (毎回 network から fresh) のまま。 */
+  cache?: {
+    load: () => Promise<T[] | undefined>;
+    save: (items: T[]) => Promise<void>;
+  };
 }
 
 export interface InfiniteFeedState<T> {
@@ -34,7 +66,7 @@ export interface InfiniteFeedState<T> {
 }
 
 export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFeedState<T> {
-  const { fetchPage, keyOf, deps, enabled = true } = opts;
+  const { fetchPage, keyOf, deps, enabled = true, cache } = opts;
 
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +80,11 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
   fetchPageRef.current = fetchPage;
   const keyOfRef = useRef(keyOf);
   keyOfRef.current = keyOf;
+  const cacheRef = useRef(cache);
+  cacheRef.current = cache;
+  // hydrate epoch: deps 変化ごとに増やすことで、古い cache.load() の解決が
+  // 新しい hydrate を上書きしないようにする (race ガード)
+  const hydrateEpoch = useRef(0);
 
   const load = useCallback(async (resetting: boolean) => {
     if (inflight.current) return;
@@ -77,7 +114,13 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
         doneRef.current = true;
         setDone(true);
       }
+      // SWR: load(reset) 成功時に直近 1 ページを cache に保存。
+      // append load 時は保存しない (1 ページ目のみキャッシュする方針)。
+      if (resetting && cacheRef.current && page.items.length > 0) {
+        void cacheRef.current.save(page.items);
+      }
     } catch (e) {
+      logFeedError(resetting ? 'load(reset) failed' : 'load(append) failed', e);
       setErr(String((e as Error)?.message ?? e));
     } finally {
       inflight.current = false;
@@ -85,14 +128,27 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
     }
   }, [enabled]);
 
-  // deps 変化でリセット
+  // deps 変化でリセット + (cache あれば) hydrate
   useEffect(() => {
     setItems([]);
     cursorRef.current = undefined;
     doneRef.current = false;
     setDone(false);
     setErr(null);
-    if (enabled) void load(true);
+    if (!enabled) return;
+    const epoch = ++hydrateEpoch.current;
+    // SWR: cache から hydrate を非同期で発射 (network fetch を待たせない)
+    if (cacheRef.current) {
+      void cacheRef.current.load().then((cached) => {
+        if (!cached || cached.length === 0) return;
+        // 自分が最新の hydrate でなくなっていたら無視 (deps 変化で次の epoch に進んだ場合)
+        if (epoch !== hydrateEpoch.current) return;
+        // fresh が先に到達して items が埋まっていたら上書きしない
+        setItems((curr) => (curr.length === 0 ? cached : curr));
+      });
+    }
+    // 並行で fresh fetch を開始。cached より遅れて到達して items を置換する。
+    void load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, enabled]);
 
@@ -128,7 +184,10 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
           return [...uniqueNew, ...kept];
         });
       })
-      .catch((e) => setErr(String((e as Error)?.message ?? e)))
+      .catch((e) => {
+        logFeedError('refresh failed', e);
+        setErr(String((e as Error)?.message ?? e));
+      })
       .finally(() => {
         inflight.current = false;
         setLoading(false);
