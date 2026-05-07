@@ -28,12 +28,41 @@ export function useSessionLoader(): SessionState {
 
   useEffect(() => {
     let cancelled = false;
-    // 何らかの理由 (concurrent refresh の race / 手動 IDB 削除 等) で
-    // SessionStore から session が消えた瞬間に signed-out へ flip する。
-    // boot 時の warmup 経路でも runtime の cascade 経路でもここを通る。
-    const unsubscribe = onSessionDeleted(() => {
+    // 何らかの理由 (concurrent refresh の race / 手動 IDB 削除 / 別タブからの
+    // cross-tab broadcast 等) で SessionStore から session が消えた瞬間に
+    // signed-out へ flip する。
+    //
+    // ただし以下の場合は flip しない:
+    // 1. 既に signed-out (= 別タブの broadcast を受けただけで自分は無関係) →
+    //    無駄な re-render を避ける
+    // 2. 削除された sub が自分の did と一致しない (= 別タブ・別アカウントの
+    //    削除 broadcast) → 自分のセッションは生きているので維持
+    const unsubscribe = onSessionDeleted((deletedSub, cause) => {
       if (cancelled) return;
-      setState({ status: 'signed-out' });
+      setState((curr) => {
+        if (curr.status !== 'signed-in') return curr; // 1.
+        if (curr.did && deletedSub && curr.did !== deletedSub) return curr; // 2.
+        // 自分の現セッションが消されたケース。ここで初めて log を出す
+        // (oauth.ts は cross-tab broadcast も含めて全 onDelete を捉えるが、
+        // signed-out に倒す決定はこの listener 内で sub マッチを見て出すため、
+        // 観測すべきイベントもこのタイミングで出す)。
+        const causes: unknown[] = [];
+        let cur: unknown = (cause as { cause?: unknown })?.cause;
+        for (let i = 0; i < 5 && cur; i++) {
+          causes.push(cur);
+          cur = (cur as { cause?: unknown })?.cause;
+        }
+        console.error('[session] my session was deleted; signing out', {
+          sub: deletedSub,
+          cause,
+          name: (cause as Error)?.name,
+          message: (cause as Error)?.message,
+          stack: (cause as Error)?.stack,
+          causes,
+          timestamp: new Date().toISOString(),
+        });
+        return { status: 'signed-out' };
+      });
     });
     (async () => {
       try {

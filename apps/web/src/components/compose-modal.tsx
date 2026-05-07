@@ -241,9 +241,21 @@ function ComposeDialog({
       // バックグラウンドで進める。結果は UI 側 (ホーム / /spirit) が
       // useOnPosted で再フェッチするし、LV アップ通知も届いたら表示される。
       if (did && body) {
+        // 投稿の構造的特徴 (返信か / 引用か / 自分のスレッドか / 文字数) を post-processor に
+        // 渡して、テキスト分類だけでは取れない quote_with_*, thread_continue,
+        // calm_debate_reply 等を確定的にカウントできるようにする。
+        const isReply = !!replyTo;
+        const isReplyToSelf = !!replyTo && replyTo.author === did;
+        // 画像添付の card 共有や引用ポストはここでは true 化しない (引用リッチ化は将来対応)。
+        const structure = {
+          isReply,
+          isReplyToSelf,
+          isQuote: false,
+          textLength: body.length,
+        };
         void (async () => {
           try {
-            const result = await processSelfPost(agent, did, body);
+            const result = await processSelfPost(agent, did, body, structure);
             if (result.jobLeveledUp && result.jobLevel) {
               notifyLevelUp({
                 kind: 'job',
