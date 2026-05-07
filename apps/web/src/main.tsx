@@ -8,6 +8,7 @@ import { Friends } from '@/routes/friends';
 import { Card } from '@/routes/card';
 import { PostDetail } from '@/routes/post-detail';
 import { Notifications } from '@/routes/notifications';
+import { Quests } from '@/routes/quests';
 import { Search } from '@/routes/search';
 import { Settings } from '@/routes/settings';
 import { Spirit } from '@/routes/spirit';
@@ -34,6 +35,7 @@ const router = createBrowserRouter([
       { path: 'me/card', element: <Card /> },
       { path: 'profile/:handle/post/:rkey', element: <PostDetail /> },
       { path: 'notifications', element: <Notifications /> },
+      { path: 'quests', element: <Quests /> },
       { path: 'search', element: <Search /> },
       { path: 'settings', element: <Settings /> },
       { path: 'spirit', element: <Spirit /> },
