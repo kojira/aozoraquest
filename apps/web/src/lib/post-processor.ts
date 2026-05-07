@@ -34,6 +34,7 @@ import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { getCognitiveOnnxClassifier } from './cognitive-onnx';
 import { getEmbedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
+import { deriveActionTypes, type PostStructure } from './structural-action';
 
 export interface QuestLogEntry {
   id: string;
@@ -52,8 +53,11 @@ export interface ActivityEntry {
   at: string;
   /** 投稿本文の先頭 (最大 60 字)。プライバシー配慮で全文は記録しない。 */
   preview: string;
-  /** 分類された行動タイプ。分類不能なら null。 */
+  /** 分類された主行動タイプ (text classifier 由来)。分類不能なら null。 */
   action: string | null;
+  /** この投稿に該当した全 ActionType (テキスト分類 + 構造判定の合成)。
+   *  例: ['opinion_post', 'quote_with_opinion'] のように複数つく場合がある。 */
+  actionTypes?: string[];
   /** この投稿で +1 された quest の templateId 一覧。 */
   incremented: string[];
 }
@@ -104,6 +108,7 @@ export async function processSelfPost(
   agent: Agent,
   did: string,
   text: string,
+  structure?: PostStructure,
 ): Promise<ProcessResult> {
   const trimmed = text.trim();
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
@@ -129,6 +134,15 @@ export async function processSelfPost(
 
   const action = actResult.action;
   const actionType = action ? (action as ActionType) : null;
+  // テキスト分類 + 構造から該当 ActionType 集合を合成。
+  // structure が無いケース (旧 API) でも textLength は trimmed から導出する。
+  const fallbackStructure: PostStructure = structure ?? {
+    isReply: false,
+    isReplyToSelf: false,
+    isQuote: false,
+    textLength: trimmed.length,
+  };
+  const actionTypes = deriveActionTypes(action, fallbackStructure);
 
   // 3) questLog の更新 (常に記録: 分類されなかった投稿も activity に残すことで「なぜ進まないか」が分かる)
   const incremented: string[] = [];
@@ -144,19 +158,23 @@ export async function processSelfPost(
       totalXpGained: 0,
       updatedAt: new Date().toISOString(),
     };
-    if (actionType) {
+    // actionTypes 集合のいずれかが quest の expectedActionTypes / forbiddenActionTypes に
+    // 含まれれば match。complex 行動 (引用 + 意見表明など) は両方カウント可。
+    if (actionTypes.size > 0) {
       for (const q of log.quests) {
         if (q.completed) continue;
         const tmpl = templateById(q.templateId);
         if (!tmpl) continue;
         if (tmpl.type === 'restraint') {
-          if (tmpl.forbiddenActionTypes?.includes(actionType)) {
+          const violated = tmpl.forbiddenActionTypes?.some((t) => actionTypes.has(t)) ?? false;
+          if (violated) {
             q.completed = false;
             q.xpAwarded = 0;
           }
           continue;
         }
-        if (tmpl.expectedActionTypes?.includes(actionType)) {
+        const matched = tmpl.expectedActionTypes?.some((t) => actionTypes.has(t)) ?? false;
+        if (matched) {
           q.currentCount = q.currentCount + 1;
           incremented.push(q.templateId);
           if (q.currentCount >= q.requiredCount && q.requiredCount > 0) {
@@ -174,6 +192,7 @@ export async function processSelfPost(
       at: new Date().toISOString(),
       preview,
       action: actionType,
+      actionTypes: [...actionTypes],
       incremented,
     };
     const prev = log.activity ?? [];
