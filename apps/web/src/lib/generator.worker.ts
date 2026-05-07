@@ -30,7 +30,7 @@ interface ChatMessage {
 
 type IncomingMessage =
   | { type: 'load'; spec?: GenerationModelSpec }
-  | { type: 'generate'; id: string; messages: ChatMessage[]; temperature?: number };
+  | { type: 'generate'; id: string; messages: ChatMessage[]; temperature?: number; maxNewTokens?: number };
 
 type Backend = 'webgpu' | 'wasm';
 
@@ -102,8 +102,9 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
       });
 
       const temp = msg.temperature ?? GENERATION_TEMPERATURE;
+      const maxTok = msg.maxNewTokens ?? GENERATION_MAX_NEW_TOKENS;
       const output = await generator(msg.messages, {
-        max_new_tokens: GENERATION_MAX_NEW_TOKENS,
+        max_new_tokens: maxTok,
         temperature: temp,
         repetition_penalty: GENERATION_REPETITION_PENALTY,
         // temperature=0 はサンプリング不要 (greedy) なので do_sample を切る

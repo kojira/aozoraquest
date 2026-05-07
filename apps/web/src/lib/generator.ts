@@ -140,7 +140,7 @@ export class Generator {
 
   async generate(
     messages: ChatMessage[],
-    opts: { onToken?: (t: string) => void; temperature?: number } = {},
+    opts: { onToken?: (t: string) => void; temperature?: number; maxNewTokens?: number } = {},
   ): Promise<string> {
     if (!this.worker) await this.load();
     await this.ready;
@@ -149,10 +149,11 @@ export class Generator {
       const pending: Pending = { resolve, reject, acc: '' };
       if (opts.onToken) pending.onToken = opts.onToken;
       this.pending.set(id, pending);
-      const msg: { type: 'generate'; id: string; messages: ChatMessage[]; temperature?: number } = {
+      const msg: { type: 'generate'; id: string; messages: ChatMessage[]; temperature?: number; maxNewTokens?: number } = {
         type: 'generate', id, messages,
       };
       if (opts.temperature !== undefined) msg.temperature = opts.temperature;
+      if (opts.maxNewTokens !== undefined) msg.maxNewTokens = opts.maxNewTokens;
       this.worker!.postMessage(msg);
     });
   }
