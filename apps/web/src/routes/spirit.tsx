@@ -35,11 +35,14 @@ const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
 青空の化身で、穏やかで詩的、押し付けがましくない。
 応答ルール:
-- 2 文以内で返す
+- **必ず 1〜2 文、合計 60 字以内で**簡潔に返す。長文・列挙・前置きは禁止
 - 一人称は使わない
 - 古風な語尾 (じゃ、ぞ、など) は使わない
 - 断定予言や強い助言はしない
 - 相手の名前が分かれば自然に添える`;
+
+/** 精霊応答の最大トークン数。日本語 1 token ≒ 0.5-1 字なので 60 字 ≒ 100 token 強で打ち切り。 */
+const SPIRIT_MAX_NEW_TOKENS = 100;
 
 interface HistoryItem {
   uri?: string;
@@ -207,6 +210,7 @@ export function Spirit() {
     let full = '';
     try {
       full = await g.generate(messages, {
+        maxNewTokens: SPIRIT_MAX_NEW_TOKENS,
         onToken: (chunk: string) => {
           if (streamingRef.current !== streamKey) return;
           setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
@@ -493,11 +497,25 @@ async function loadChatHistory(agent: Agent, did: string): Promise<HistoryItem[]
   }
 }
 
+/** 精霊の応答を整える。
+ *  1) 特殊トークン / role prefix を除去
+ *  2) **2 文 (「。！？!?」) で打ち切る** — system prompt で指示しても LLM が
+ *     伸びる場合があるので、出力側でも強制
+ *  3) ハードキャップ 120 字 (極端に長い 1 文への保険)
+ */
 function cleanGenerated(s: string): string {
-  return s
+  const stripped = s
     .replace(/^<\|.*?\|>/g, '')
     .replace(/<\|.*?\|>$/g, '')
     .replace(/^(assistant|system):\s*/i, '')
-    .trim()
-    .slice(0, 400);
+    .trim();
+  // 文末記号で 2 文目までを採用。デリミタは前文末に残す。
+  const SENTENCE_END = /[。！？!?]/g;
+  const ends: number[] = [];
+  for (const m of stripped.matchAll(SENTENCE_END)) {
+    if (m.index !== undefined) ends.push(m.index + m[0].length);
+    if (ends.length >= 2) break;
+  }
+  const cut = ends.length >= 2 ? stripped.slice(0, ends[1]!) : stripped;
+  return cut.slice(0, 120);
 }
