@@ -31,25 +31,16 @@ export function onSessionDeleted(listener: SessionDeletedListener): () => void {
   };
 }
 
-/** OAuth client に渡す共通の hook 群。session 寿命を console に残し、削除は listener にも通知する。 */
+/** OAuth client に渡す共通の hook 群。
+ *  onDelete は **同タブのローカル削除** と **別タブからの cross-tab broadcast** の
+ *  両方で呼ばれる。ここでは listener に流すだけで、log は session.ts 側
+ *  (実際に自分の sub に該当するもののみ) で出すようにしてノイズを抑える。 */
 function buildHooks() {
   return {
     onDelete: async (sub: string, cause: unknown) => {
-      const causes: unknown[] = [];
-      let cur: unknown = (cause as { cause?: unknown })?.cause;
-      for (let i = 0; i < 5 && cur; i++) {
-        causes.push(cur);
-        cur = (cur as { cause?: unknown })?.cause;
-      }
-      console.error('[oauth/onDelete] session removed from store', {
-        sub,
-        cause,
-        name: (cause as Error)?.name,
-        message: (cause as Error)?.message,
-        stack: (cause as Error)?.stack,
-        causes,
-        timestamp: new Date().toISOString(),
-      });
+      // 詳細 log は session.ts の listener が「自分の sub に該当する」ときだけ出す。
+      // ここでは listener へ素通しするだけ (cross-tab broadcast でも全 listener が
+      // 確実に呼ばれる必要があるため早期 return しない)。
       for (const l of sessionDeletedListeners) {
         try {
           l(sub, cause);

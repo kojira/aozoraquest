@@ -37,11 +37,30 @@ export function useSessionLoader(): SessionState {
     //    無駄な re-render を避ける
     // 2. 削除された sub が自分の did と一致しない (= 別タブ・別アカウントの
     //    削除 broadcast) → 自分のセッションは生きているので維持
-    const unsubscribe = onSessionDeleted((deletedSub) => {
+    const unsubscribe = onSessionDeleted((deletedSub, cause) => {
       if (cancelled) return;
       setState((curr) => {
         if (curr.status !== 'signed-in') return curr; // 1.
         if (curr.did && deletedSub && curr.did !== deletedSub) return curr; // 2.
+        // 自分の現セッションが消されたケース。ここで初めて log を出す
+        // (oauth.ts は cross-tab broadcast も含めて全 onDelete を捉えるが、
+        // signed-out に倒す決定はこの listener 内で sub マッチを見て出すため、
+        // 観測すべきイベントもこのタイミングで出す)。
+        const causes: unknown[] = [];
+        let cur: unknown = (cause as { cause?: unknown })?.cause;
+        for (let i = 0; i < 5 && cur; i++) {
+          causes.push(cur);
+          cur = (cur as { cause?: unknown })?.cause;
+        }
+        console.error('[session] my session was deleted; signing out', {
+          sub: deletedSub,
+          cause,
+          name: (cause as Error)?.name,
+          message: (cause as Error)?.message,
+          stack: (cause as Error)?.stack,
+          causes,
+          timestamp: new Date().toISOString(),
+        });
         return { status: 'signed-out' };
       });
     });
