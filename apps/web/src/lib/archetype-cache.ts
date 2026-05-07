@@ -12,6 +12,7 @@ import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { ARCHETYPE_CACHE_TTL_MS, JOBS_BY_ID } from '@aozoraquest/core';
 import { getRecord } from './atproto';
 import { ROOT_COL } from './collections';
+import { loadCachedArchetype, saveCachedArchetype } from './archetype-idb';
 
 interface CacheEntry {
   archetype: Archetype | null;
@@ -31,14 +32,24 @@ async function fetchOne(agent: Agent, did: string): Promise<Archetype | null> {
   if (existing) return existing;
   const p = (async () => {
     try {
-      // 他人の analysis は production NSID から (env 隔離は self 用)
+      // 1) IDB 確認 (24h 以内ならネット叩かず即返す)。これで TL 表示時の
+      //    archetype バッジが PDS 待ちなしで即時出る。
+      const cached = await loadCachedArchetype(did);
+      if (cached !== undefined) {
+        cache.set(did, { archetype: cached, fetchedAt: Date.now() });
+        return cached;
+      }
+      // 2) IDB miss: PDS から取得 (他人の analysis は production NSID)
       const r = await getRecord<DiagnosisResult>(agent, did, ROOT_COL.analysis, 'self');
       const a = r?.archetype;
       const valid = a && a in JOBS_BY_ID ? (a as Archetype) : null;
       cache.set(did, { archetype: valid, fetchedAt: Date.now() });
+      void saveCachedArchetype(did, valid);
       return valid;
     } catch {
+      // PDS エラー: null を memory + IDB に保存して以降の問い合わせを抑制
       cache.set(did, { archetype: null, fetchedAt: Date.now() });
+      void saveCachedArchetype(did, null);
       return null;
     } finally {
       inflight.delete(did);
