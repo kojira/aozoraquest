@@ -94,7 +94,25 @@ function splitTranslatableText(text: string): { body: string; trailing: string }
   return { body, trailing };
 }
 
-async function runLLM(text: string, langs?: string[] | undefined): Promise<string> {
+/** 訳文の本文部分が日本語比率を満たすか (URL/ハッシュタグ等の trailing は除外で判定済)。
+ *  小モデルが時々原文をそのまま吐く / 英語ままを出すのを検知して retry に回すために使う。 */
+function looksLikeJapaneseTranslation(cleanedBody: string): boolean {
+  return hasJapanese(cleanedBody, 0.3);
+}
+
+/** runLLM が「日本語にならなかった」場合の専用エラー。retry で識別するため。
+ *  attempted には英語のまま返ってきた翻訳結果を保持し、全 attempt が失敗した時に
+ *  最後の出力として UI に渡せるようにする (空表示よりはマシ)。 */
+class NonJapaneseTranslationError extends Error {
+  attempted: string;
+  constructor(attempted: string) {
+    super('translation output is not Japanese enough');
+    this.name = 'NonJapaneseTranslationError';
+    this.attempted = attempted;
+  }
+}
+
+async function runLLM(text: string, langs: string[] | undefined, temperature: number): Promise<string> {
   const { body, trailing } = splitTranslatableText(text);
   if (!body) return trailing; // 本文なし → リンク等だけ返す
   const gen = getGenerator();
@@ -121,15 +139,50 @@ async function runLLM(text: string, langs?: string[] | undefined): Promise<strin
     { role: 'user' as const, content: userPrompt },
   ];
   const raw = await Promise.race([
-    // 翻訳は創造性不要なので temperature=0 (greedy) で安定化
-    gen.generate(messages, { temperature: 0 }),
+    gen.generate(messages, { temperature }),
     new Promise<string>((_, rej) =>
       setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
     ),
   ]);
   const cleaned = cleanTranslation(raw);
-  return trailing ? `${cleaned}\n${trailing}` : cleaned;
+  const composed = trailing ? `${cleaned}\n${trailing}` : cleaned;
+  if (!looksLikeJapaneseTranslation(cleaned)) {
+    throw new NonJapaneseTranslationError(composed);
+  }
+  return composed;
 }
+
+/** 温度を段階的に上げて translate を再試行する。
+ *  - auto (初回): [0, 0.7, 1.0] — 0 で安定、駄目なら確率的に揺らして突破
+ *  - retry (ユーザ手動): [0.7, 1.0] — temp=0 cache と必ず違う出力にする
+ *  全 attempt 失敗時は最後の英語出力を返す (空 throw より UX マシ)。 */
+async function runLLMWithRetry(
+  text: string,
+  langs: string[] | undefined,
+  temperatures: readonly number[],
+): Promise<string> {
+  let lastFail: NonJapaneseTranslationError | null = null;
+  let lastError: unknown = null;
+  for (let i = 0; i < temperatures.length; i++) {
+    const temp = temperatures[i]!;
+    try {
+      return await runLLM(text, langs, temp);
+    } catch (e) {
+      if (e instanceof NonJapaneseTranslationError) {
+        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (temp=${temp})`);
+        lastFail = e;
+      } else {
+        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} threw`, e);
+        lastError = e;
+      }
+    }
+  }
+  if (lastFail) return lastFail.attempted; // 英語ままでも最後の出力を返す
+  throw lastError ?? new Error('translation failed (all attempts errored)');
+}
+
+const TRANSLATION_TEMPS_AUTO = [0, 0.7, 1.0] as const;
+const TRANSLATION_TEMPS_RETRY = [0.7, 1.0] as const;
 
 function cleanTranslation(raw: string): string {
   let t = stripMarkdown(raw).replace(/\r\n/g, '\n').trim();
@@ -149,10 +202,20 @@ export async function translateToJapanese(
 ): Promise<string> {
   if (!opts.force) {
     const cached = await loadCachedTranslation(uri);
-    if (cached) return cached;
+    // 旧バージョン (=temperature=0 単発で英語ままだった訳) のキャッシュが残ってる
+    // ことがあるので、日本語比率で validate してから採用する。失敗ケースは miss
+    // 扱いで再翻訳に進む。
+    if (cached && hasJapanese(cached, 0.3)) return cached;
   }
-  const result = await enqueue(() => runLLM(text, langs));
-  await saveCachedTranslation(uri, result);
+  // force=true (ユーザが「再翻訳」ボタンを押した) は temp 0.7 から始めて、必ず
+  // キャッシュと違う出力になるようにする。auto 経路は 0 → 0.7 → 1.0 の retry chain。
+  const temps = opts.force ? TRANSLATION_TEMPS_RETRY : TRANSLATION_TEMPS_AUTO;
+  const result = await enqueue(() => runLLMWithRetry(text, langs, temps));
+  // 日本語として成立した翻訳のみキャッシュに保存。全 attempt 失敗で英語のまま
+  // 帰ってきた場合はキャッシュしない (次回また試せる)。
+  if (hasJapanese(result, 0.3)) {
+    await saveCachedTranslation(uri, result);
+  }
   return result;
 }
 
