@@ -28,12 +28,22 @@ export function useSessionLoader(): SessionState {
 
   useEffect(() => {
     let cancelled = false;
-    // 何らかの理由 (concurrent refresh の race / 手動 IDB 削除 等) で
-    // SessionStore から session が消えた瞬間に signed-out へ flip する。
-    // boot 時の warmup 経路でも runtime の cascade 経路でもここを通る。
-    const unsubscribe = onSessionDeleted(() => {
+    // 何らかの理由 (concurrent refresh の race / 手動 IDB 削除 / 別タブからの
+    // cross-tab broadcast 等) で SessionStore から session が消えた瞬間に
+    // signed-out へ flip する。
+    //
+    // ただし以下の場合は flip しない:
+    // 1. 既に signed-out (= 別タブの broadcast を受けただけで自分は無関係) →
+    //    無駄な re-render を避ける
+    // 2. 削除された sub が自分の did と一致しない (= 別タブ・別アカウントの
+    //    削除 broadcast) → 自分のセッションは生きているので維持
+    const unsubscribe = onSessionDeleted((deletedSub) => {
       if (cancelled) return;
-      setState({ status: 'signed-out' });
+      setState((curr) => {
+        if (curr.status !== 'signed-in') return curr; // 1.
+        if (curr.did && deletedSub && curr.did !== deletedSub) return curr; // 2.
+        return { status: 'signed-out' };
+      });
     });
     (async () => {
       try {
