@@ -3,8 +3,11 @@ import { DEFAULT_QUEST_TEMPLATES, JOB_XP_CURVE, PLAYER_XP_CURVE, generateDailyQu
 import type { StatVector } from '../types.js';
 
 describe('DEFAULT_QUEST_TEMPLATES', () => {
-  test('45 件ある', () => {
-    expect(DEFAULT_QUEST_TEMPLATES.length).toBe(45);
+  test('39 件ある', () => {
+    // pipeline で確定的にトラッキングできる action のみに絞った結果。
+    // 旧 45 件から repost_only / like_underseen / streak_maintain / quick_reply
+    // 系の untrackable 6 件を削除した。
+    expect(DEFAULT_QUEST_TEMPLATES.length).toBe(39);
   });
 
   test('全 ID がユニーク', () => {
@@ -12,10 +15,10 @@ describe('DEFAULT_QUEST_TEMPLATES', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  test('growth が 30, maintenance 5, restraint 10', () => {
+  test('growth が 27, maintenance 5, restraint 7', () => {
     const counts = { growth: 0, maintenance: 0, restraint: 0 };
     for (const t of DEFAULT_QUEST_TEMPLATES) counts[t.type]++;
-    expect(counts).toEqual({ growth: 30, maintenance: 5, restraint: 10 });
+    expect(counts).toEqual({ growth: 27, maintenance: 5, restraint: 7 });
   });
 
   test('restraint は必ず forbiddenActionTypes を持つ', () => {
@@ -26,10 +29,10 @@ describe('DEFAULT_QUEST_TEMPLATES', () => {
     }
   });
 
-  test('5 軸それぞれに growth テンプレがある', () => {
+  test('5 軸それぞれに growth テンプレが 3 件以上', () => {
     for (const s of ['atk', 'def', 'agi', 'int', 'luk'] as const) {
       const count = DEFAULT_QUEST_TEMPLATES.filter((t) => t.type === 'growth' && t.targetStat === s).length;
-      expect(count).toBeGreaterThanOrEqual(5);
+      expect(count).toBeGreaterThanOrEqual(3);
     }
   });
 
@@ -39,6 +42,22 @@ describe('DEFAULT_QUEST_TEMPLATES', () => {
       const at50 = t.requiredCountFn(50);
       expect(at1).toBeGreaterThanOrEqual(0);
       expect(at50).toBeGreaterThanOrEqual(at1);
+    }
+  });
+
+  test('全テンプレが pipeline でトラッキング可能な ActionType しか参照しない', () => {
+    // post-processor + structural-action が出せる ActionType の集合。
+    // これ以外 (streak_maintain / repost_only / like_underseen / quick_reply /
+    // like_regular) を要求するテンプレは pipeline で永遠に進まないので除外する。
+    const trackable = new Set<string>([
+      'opinion_post', 'analysis_post', 'short_burst', 'humor_post', 'empathy_reply',
+      'quote_with_opinion', 'quote_with_analysis', 'thread_continue', 'calm_debate_reply',
+    ]);
+    for (const t of DEFAULT_QUEST_TEMPLATES) {
+      const types = [...(t.expectedActionTypes ?? []), ...(t.forbiddenActionTypes ?? [])];
+      for (const at of types) {
+        expect(trackable.has(at)).toBe(true);
+      }
     }
   });
 });
