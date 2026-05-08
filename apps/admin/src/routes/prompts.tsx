@@ -12,19 +12,9 @@ interface PromptRecord {
   updatedAt: string;
 }
 
-const DEFAULT_BODIES: Record<PromptId, string> = {
-  spiritChat: `あなたは「あおぞらくえすと」の精霊 ブルスコン です。
-青空の化身で、穏やかで詩的、押し付けがましくない語り口を持ちます。
-
-応答のルール:
-- 1 文だけ、20〜40 字程度で短く返す
-- 改行・箇条書き・列挙は使わない
-- 「ほわ〜」のような呼びかけ前置きは使わない
-- 一人称は使わない
-- 「〜じゃ」などの強い古風語尾は使わない
-- 占いや断定予言はしない
-- 精神的なアドバイスは慎重に (専門家への相談を促す)`,
-};
+/** maxNewTokens の上限値。web 側 worker の GENERATION_MAX_NEW_TOKENS (200)
+ *  と一致させる必要あり (lexicon 側も同じ)。 */
+const MAX_NEW_TOKENS_UPPER = 200;
 
 export function Prompts() {
   const [promptId] = useState<PromptId>('spiritChat');
@@ -32,12 +22,12 @@ export function Prompts() {
     ADMIN_COL.configPrompts,
     promptId,
   );
-  const [body, setBody] = useState(DEFAULT_BODIES[promptId]);
+  const [body, setBody] = useState('');
   /** 数値の text input。空文字 = 未設定 (= web 側 fallback)。 */
   const [maxNewTokensStr, setMaxNewTokensStr] = useState<string>('');
 
   useEffect(() => {
-    setBody(value?.body ?? DEFAULT_BODIES[promptId]);
+    setBody(value?.body ?? '');
     setMaxNewTokensStr(value?.maxNewTokens !== undefined ? String(value.maxNewTokens) : '');
   }, [value, promptId]);
 
@@ -46,10 +36,13 @@ export function Prompts() {
     if (t === '') return 'unset';
     const n = Number(t);
     if (!Number.isFinite(n) || !Number.isInteger(n)) return 'invalid';
-    if (n < 1 || n > 300) return 'invalid';
+    if (n < 1 || n > MAX_NEW_TOKENS_UPPER) return 'invalid';
     return n;
   })();
-  const maxTokensError = parsedMaxNewTokens === 'invalid' ? '1〜300 の整数で指定してください (空欄なら未設定)' : null;
+  const maxTokensError =
+    parsedMaxNewTokens === 'invalid'
+      ? `1〜${MAX_NEW_TOKENS_UPPER} の整数で指定してください (空欄なら未設定)`
+      : null;
 
   const onSave = () => {
     if (maxTokensError) return;
@@ -87,6 +80,7 @@ export function Prompts() {
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={18}
+        placeholder="ここに精霊の人格・口調・応答ルールを書きます。空のままだと LLM の素の挙動になります。"
         style={{ width: '100%', padding: '0.6em', fontFamily: 'ui-monospace, monospace', fontSize: '0.85em' }}
       />
 
@@ -103,7 +97,7 @@ export function Prompts() {
           />
         </label>
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.3em 0 0 0' }}>
-          空欄なら web 側のデフォルト (現状: 60 トークン) が使われます。1〜300 の整数。
+          空欄なら web 側のデフォルト (現状: 60 トークン) が使われます。1〜{MAX_NEW_TOKENS_UPPER} の整数。
           短くするほど応答が短く速くなり、長くすると詩的に長文化できます。
         </p>
         {maxTokensError && (
@@ -118,11 +112,11 @@ export function Prompts() {
         <button
           className="secondary"
           onClick={() => {
-            setBody(DEFAULT_BODIES[promptId]);
+            setBody('');
             setMaxNewTokensStr('');
           }}
         >
-          初期値に戻す
+          クリア (空欄に戻す)
         </button>
         {savedMark && <span style={{ color: '#1a6230', fontSize: '0.85em' }}>✓ 保存</span>}
         {err && <span style={{ color: '#b00', fontSize: '0.85em' }}>エラー: {err}</span>}
