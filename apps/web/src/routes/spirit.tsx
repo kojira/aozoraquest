@@ -32,17 +32,16 @@ const INPUT_MAX = SPIRIT_INPUT_MAX_LENGTH;
 /** LLM に渡す直近の会話ターン数 (tuning.SPIRIT_CHAT_HISTORY_TURNS の別名) */
 const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 
-/** ブルスコンのデフォルト性格。admin が `app.aozoraquest.config.prompts/spiritChat`
- *  で上書きできる。性格に関わる癖 (口調・呼びかけ・絵文字使用等) はここでは
- *  指定せず、character override がない時のみのフォールバック。 */
-const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
-青空の化身で、穏やかで詩的、押し付けがましくない。
-一人称は使わない。古風な語尾 (じゃ、ぞ、など) は使わない。
-断定予言や強い助言はしない。`;
+/** ブルスコンの最小 identity。admin が
+ *  `app.aozoraquest.config.prompts/spiritChat` で完全に上書きできる。
+ *  性格に関わる要素 (口調・語尾・呼びかけ・価値観・絵文字使用 等) は
+ *  ここでは一切指定しない — それは admin の領分。 */
+const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。`;
 
 /** どの prompt (DEFAULT / admin override) を使うときも必ず append される
- *  「応答形式」の制約。性格には触れず、長さと構造だけを縛る。
- *  これにより admin は性格を自由に変えつつ、UI 都合の長さ制約は維持できる。 */
+ *  応答形式 (UI 都合) の制約。長さと構造だけを縛り、性格には触れない。
+ *  ここを admin に開放するかどうかは別議論 (max_new_tokens 等の code 側
+ *  制約と整合させる必要があるため、現状はコードで固定)。 */
 const RESPONSE_FORMAT_GUARD = `
 
 # 応答形式 (必ず守ること)
