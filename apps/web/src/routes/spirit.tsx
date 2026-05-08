@@ -32,24 +32,15 @@ const INPUT_MAX = SPIRIT_INPUT_MAX_LENGTH;
 /** LLM に渡す直近の会話ターン数 (tuning.SPIRIT_CHAT_HISTORY_TURNS の別名) */
 const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 
-/** ブルスコンの最小 identity。admin が
- *  `app.aozoraquest.config.prompts/spiritChat` で完全に上書きできる。
- *  性格に関わる要素 (口調・語尾・呼びかけ・価値観・絵文字使用 等) は
- *  ここでは一切指定しない — それは admin の領分。 */
-const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。`;
-
-/** どの prompt (DEFAULT / admin override) を使うときも必ず append される
- *  応答形式 (UI 都合) の制約。長さと構造だけを縛り、性格には触れない。
- *  ここを admin に開放するかどうかは別議論 (max_new_tokens 等の code 側
- *  制約と整合させる必要があるため、現状はコードで固定)。 */
-const RESPONSE_FORMAT_GUARD = `
-
-# 応答形式 (必ず守ること)
-- 1 文のみで返す。改行・箇条書き・列挙は禁止
-- 20〜40 字程度を目安に、簡潔に`;
-
-/** 精霊応答の最大トークン数。1 文 20〜40 字想定でマージンを取って 60 token。 */
-const SPIRIT_MAX_NEW_TOKENS = 60;
+/** 精霊応答の最大トークン数のデフォルト値 (= UI 側の fallback)。
+ *  これ以上短くしたい / 長くしたいときは admin が
+ *  `app.aozoraquest.config.prompts/spiritChat` の `maxNewTokens` で
+ *  上書きできる (lexicon 拡張は別タスクで対応予定)。
+ *
+ *  この数値定数だけが code 側に残るが、character には関与しない (生成上限の
+ *  安全値 = エンジニアリング都合)。性格・口調・形式・例文は **すべて admin** が
+ *  PDS の prompt body に書く。 */
+const SPIRIT_MAX_NEW_TOKENS_DEFAULT = 60;
 
 interface HistoryItem {
   uri?: string;
@@ -82,9 +73,11 @@ export function Spirit() {
   const did = session.did ?? null;
 
   const userName = session.handle?.split('.')[0] ?? 'あなた';
-  // 性格 prompt (admin 上書き可) + 応答形式の制約 (常に append)
-  const characterPrompt = (config.prompts?.spiritChat?.body ?? DEFAULT_SYSTEM_PROMPT).trim();
-  const systemPrompt = characterPrompt + RESPONSE_FORMAT_GUARD;
+  // 性格・口調・応答形式・例文 — 全部 admin の領分 (PDS の prompts/spiritChat に書く)。
+  // 長さも admin の `maxNewTokens` で上書き可。code 側には fallback 数値だけ残す
+  // (UI 安全のため、未設定時の暴走を抑える程度の小さな default)。
+  const systemPrompt = (config.prompts?.spiritChat?.body ?? '').trim();
+  const spiritMaxNewTokens = config.prompts?.spiritChat?.maxNewTokens ?? SPIRIT_MAX_NEW_TOKENS_DEFAULT;
 
   // 初期ロード: diagnosis, points, chat history, モデルキャッシュ確認
   useEffect(() => {
@@ -219,7 +212,7 @@ export function Spirit() {
     let full = '';
     try {
       full = await g.generate(messages, {
-        maxNewTokens: SPIRIT_MAX_NEW_TOKENS,
+        maxNewTokens: spiritMaxNewTokens,
         onToken: (chunk: string) => {
           if (streamingRef.current !== streamKey) return;
           setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
@@ -266,7 +259,7 @@ export function Spirit() {
 
     void userUri;
     setSending(false);
-  }, [agent, did, points, input, sending, history, systemPrompt]);
+  }, [agent, did, points, input, sending, history, systemPrompt, spiritMaxNewTokens]);
 
   const onCancelRitual = useCallback(() => {
     setRitualOpen(false);

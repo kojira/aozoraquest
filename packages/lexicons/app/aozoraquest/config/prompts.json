@@ -13,6 +13,7 @@
           "id": { "type": "string", "knownValues": ["spiritChat", "draftPost", "advancedDiagnosis"] },
           "body": { "type": "string", "maxLength": 8000 },
           "notes": { "type": "string", "maxLength": 500 },
+          "maxNewTokens": { "type": "integer", "minimum": 1, "maximum": 300, "description": "Generation token budget. UI uses this as max_new_tokens. If unset, UI falls back to a sane default per feature." },
           "updatedAt": { "type": "string", "format": "datetime" }
         }
       }
