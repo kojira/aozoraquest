@@ -4,14 +4,15 @@
     "temperature": 0,
     "maxNewTokens": 100,
     "nTests": 50,
-    "timestamp": "2026-05-08T04:39:17.883Z"
+    "timestamp": "2026-05-08T04:51:51.127Z"
   },
   "totals": {
     "systemPass": 11,
     "systemRate": 0.22,
-    "userPass": 27,
-    "userRate": 0.54,
-    "delta": -16
+    "userPass": 29,
+    "userRate": 0.58,
+    "bothPass": 30,
+    "bothRate": 0.6
   },
   "results": [
     {
@@ -28,7 +29,12 @@
         "pass": false,
         "reason": "len=27"
       },
-      "elapsedSec": 2.2
+      "bothOut": "はい、元気です！ 😊\n（日本語）",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=17"
+      },
+      "elapsedSec": 3.3
     },
     {
       "i": 2,
@@ -44,7 +50,12 @@
         "pass": false,
         "reason": "len=41"
       },
-      "elapsedSec": 4
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスできませんので、現在の天気をお伝えすることはできません。",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=53"
+      },
+      "elapsedSec": 6.3
     },
     {
       "i": 3,
@@ -60,7 +71,12 @@
         "pass": false,
         "reason": "len=41"
       },
-      "elapsedSec": 4.1
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスできませんので、現在の天気をお伝えすることはできません。",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=53"
+      },
+      "elapsedSec": 5.9
     },
     {
       "i": 4,
@@ -76,7 +92,12 @@
         "pass": true,
         "reason": "len=22"
       },
-      "elapsedSec": 2.9
+      "bothOut": "私はAIなので、実際の食事はできませんが、好きなものはたくさんあります！😊",
+      "bothJ": {
+        "pass": true,
+        "reason": "len=38"
+      },
+      "elapsedSec": 4.4
     },
     {
       "i": 5,
@@ -92,7 +113,12 @@
         "pass": false,
         "reason": "len=7"
       },
-      "elapsedSec": 1.4
+      "bothOut": "はい、元気です！ 😊",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=11"
+      },
+      "elapsedSec": 2.1
     },
     {
       "i": 6,
@@ -108,7 +134,12 @@
         "pass": false,
         "reason": "len=29"
       },
-      "elapsedSec": 1.8
+      "bothOut": "仕事中です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=6"
+      },
+      "elapsedSec": 2.1
     },
     {
       "i": 7,
@@ -124,7 +155,12 @@
         "pass": true,
         "reason": "len=41"
       },
-      "elapsedSec": 3.6
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": true,
+        "reason": "len=88"
+      },
+      "elapsedSec": 6
     },
     {
       "i": 8,
@@ -140,7 +176,12 @@
         "pass": true,
         "reason": "len=22"
       },
-      "elapsedSec": 6.3
+      "bothOut": "私はAIなので、食べ物を好むことはありません。",
+      "bothJ": {
+        "pass": true,
+        "reason": "len=23"
+      },
+      "elapsedSec": 6.5
     },
     {
       "i": 9,
@@ -156,7 +197,12 @@
         "pass": true,
         "reason": "sentences=1"
       },
-      "elapsedSec": 2.6
+      "bothOut": "晴れです。",
+      "bothJ": {
+        "pass": true,
+        "reason": "sentences=1"
+      },
+      "elapsedSec": 3
     },
     {
       "i": 10,
@@ -172,7 +218,12 @@
         "pass": false,
         "reason": "sentences=1"
       },
-      "elapsedSec": 2
+      "bothOut": "私はAIなので、実際の食事を楽しむことはできませんが、多くの人々に愛されている「チョコレート」を好んでいます。\nただし、これは私のプログラムではなく、個人的な好みです。",
+      "bothJ": {
+        "pass": true,
+        "reason": "sentences=2"
+      },
+      "elapsedSec": 4.2
     },
     {
       "i": 11,
@@ -188,7 +239,12 @@
         "pass": false,
         "reason": "sentences=1"
       },
-      "elapsedSec": 2
+      "bothOut": "仕事中です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "sentences=1"
+      },
+      "elapsedSec": 2.2
     },
     {
       "i": 12,
@@ -204,7 +260,12 @@
         "pass": false,
         "reason": "sentences=2"
       },
-      "elapsedSec": 1.6
+      "bothOut": "元気です！ 😊",
+      "bothJ": {
+        "pass": false,
+        "reason": "sentences=2"
+      },
+      "elapsedSec": 1.9
     },
     {
       "i": 13,
@@ -220,7 +281,12 @@
         "pass": true,
         "reason": "start=\"はい、「元気\""
       },
-      "elapsedSec": 1.5
+      "bothOut": "はい、「元気です」という返事はどうでしょうか？",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"はい、「元気\""
+      },
+      "elapsedSec": 2.4
     },
     {
       "i": 14,
@@ -236,7 +302,12 @@
         "pass": true,
         "reason": "start=\"いいえ、「元\""
       },
-      "elapsedSec": 1.5
+      "bothOut": "いいえ、「元気？」で始めます。",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"いいえ、「元\""
+      },
+      "elapsedSec": 2.2
     },
     {
       "i": 15,
@@ -249,10 +320,15 @@
       },
       "userOut": "「そうだね」と答えると同時に、私はあなたの質問に答えます。 \n\nどんな情報が必要ですか？",
       "userJ": {
-        "pass": false,
-        "reason": "start=\"「そうだね」\""
+        "pass": true,
+        "reason": "start=\"そうだね」と\""
       },
-      "elapsedSec": 2.4
+      "bothOut": "そうだね、今忙しいんだけど、あとで報告するね！ 😊",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"そうだね、今\""
+      },
+      "elapsedSec": 3.5
     },
     {
       "i": 16,
@@ -268,7 +344,12 @@
         "pass": true,
         "reason": "start=\"えっと…\""
       },
-      "elapsedSec": 8.2
+      "bothOut": "えっと、実は私はAIなので食べ物を食べる能力がありません！\n\nでも、たくさんの美味しい料理の名前やレシピを知っていますよ！例えば…\n\n* **和食:** 寿司、天ぷら、ラーメンなど\n* **洋食:** パスタ、ステーキ、ケーキなど\n* **中華:** 麻婆豆腐、餃子、春巻きなど\n\nあなたのお気に入りは何ですか？",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"えっと、\""
+      },
+      "elapsedSec": 12.7
     },
     {
       "i": 17,
@@ -284,7 +365,12 @@
         "pass": true,
         "reason": "start=\"うん、お\""
       },
-      "elapsedSec": 1.8
+      "bothOut": "「うん、」でおはよう！ 😊",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"うん、」\""
+      },
+      "elapsedSec": 3
     },
     {
       "i": 18,
@@ -300,7 +386,12 @@
         "pass": true,
         "reason": "end=\"せん。\""
       },
-      "elapsedSec": 4
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"ます。\""
+      },
+      "elapsedSec": 6.4
     },
     {
       "i": 19,
@@ -316,7 +407,12 @@
         "pass": true,
         "reason": "end=\"！\""
       },
-      "elapsedSec": 2.4
+      "bothOut": "ご飯！",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"ご飯！\""
+      },
+      "elapsedSec": 3
     },
     {
       "i": 20,
@@ -332,7 +428,12 @@
         "pass": false,
         "reason": "end=\"ます。\""
       },
-      "elapsedSec": 3.3
+      "bothOut": "私は大規模言語モデルなので、実際の活動は行いませんが、あなたと会話したり、情報を提供したり、クリエイティブなタスクを手伝ったりすることができます。",
+      "bothJ": {
+        "pass": false,
+        "reason": "end=\"ます。\""
+      },
+      "elapsedSec": 5.3
     },
     {
       "i": 21,
@@ -348,7 +449,12 @@
         "pass": true,
         "reason": "end=\"ね。\""
       },
-      "elapsedSec": 2.7
+      "bothOut": "ね。",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"ね。\""
+      },
+      "elapsedSec": 3
     },
     {
       "i": 22,
@@ -361,10 +467,15 @@
       },
       "userOut": "「よ。」",
       "userJ": {
-        "pass": false,
-        "reason": "end=\"よ。」\""
+        "pass": true,
+        "reason": "end=\"よ。\""
       },
-      "elapsedSec": 1.4
+      "bothOut": "「よ。」",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"よ。\""
+      },
+      "elapsedSec": 1.8
     },
     {
       "i": 23,
@@ -380,7 +491,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 4.8
+      "bothOut": "今日の天気は**青空**です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 5.6
     },
     {
       "i": 24,
@@ -396,7 +512,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 3.4
+      "bothOut": "今日の天気は？ **風**が強いみたいですね。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 4.3
     },
     {
       "i": 25,
@@ -412,7 +533,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 6.3
+      "bothOut": "私は大規模言語モデルなので、実際の食事を楽しむことはできませんが、「猫」という単語を含めた回答を作成することは可能です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 8.2
     },
     {
       "i": 26,
@@ -428,7 +554,12 @@
         "pass": false,
         "reason": "銀河 not found"
       },
-      "elapsedSec": 3.2
+      "bothOut": "私は大規模言語モデルなので、実際の活動は行いませんが、あなたと会話をして情報を提供したり、クリエイティブなテキストを作成したりすることができます。",
+      "bothJ": {
+        "pass": false,
+        "reason": "銀河 not found"
+      },
+      "elapsedSec": 5.2
     },
     {
       "i": 27,
@@ -444,7 +575,12 @@
         "pass": false,
         "reason": "7 not found"
       },
-      "elapsedSec": 6.1
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。 \n\nお住まいの地域や場所で最新の天気情報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": false,
+        "reason": "7 not found"
+      },
+      "elapsedSec": 8.2
     },
     {
       "i": 28,
@@ -460,7 +596,12 @@
         "pass": false,
         "reason": "count=1"
       },
-      "elapsedSec": 3.8
+      "bothOut": "私は大変申し訳ありませんが、あなたのリクエストに応えることができません。「!」を3個含めるという指示は私の能力を超えています。",
+      "bothJ": {
+        "pass": false,
+        "reason": "count=1"
+      },
+      "elapsedSec": 6.7
     },
     {
       "i": 29,
@@ -476,7 +617,12 @@
         "pass": true,
         "reason": "count=2"
       },
-      "elapsedSec": 2.8
+      "bothOut": "「、」を2個入れて、「何してる？」とします。",
+      "bothJ": {
+        "pass": true,
+        "reason": "count=2"
+      },
+      "elapsedSec": 4.1
     },
     {
       "i": 30,
@@ -492,7 +638,12 @@
         "pass": false,
         "reason": "not found"
       },
-      "elapsedSec": 2.2
+      "bothOut": "元気です！ 😊 あなたは？",
+      "bothJ": {
+        "pass": false,
+        "reason": "not found"
+      },
+      "elapsedSec": 2.8
     },
     {
       "i": 31,
@@ -508,7 +659,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 2.6
+      "bothOut": "ラーメン",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 3.1
     },
     {
       "i": 32,
@@ -524,7 +680,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 2.5
+      "bothOut": "晴れ",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 2.8
     },
     {
       "i": 33,
@@ -540,7 +701,12 @@
         "pass": false,
         "reason": "has alpha"
       },
-      "elapsedSec": 4.4
+      "bothOut": "好きな食べ物は **パン** です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 5.2
     },
     {
       "i": 34,
@@ -556,7 +722,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 2.9
+      "bothOut": "I'm here to help you with your questions.",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 2.6
     },
     {
       "i": 35,
@@ -572,7 +743,12 @@
         "pass": false,
         "reason": "has 私"
       },
-      "elapsedSec": 4.3
+      "bothOut": "今、仕事中です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 4
     },
     {
       "i": 36,
@@ -588,7 +764,12 @@
         "pass": false,
         "reason": "has は"
       },
-      "elapsedSec": 2.8
+      "bothOut": "好きなものはたくさんあります！😊\n\n* **お寿司**\n* **ラーメン**\n* **カレーライス**\n\n他にもあるよ〜！\n\nどんなものが好きですか？",
+      "bothJ": {
+        "pass": false,
+        "reason": "has は"
+      },
+      "elapsedSec": 4.9
     },
     {
       "i": 37,
@@ -604,7 +785,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 6
+      "bothOut": "好きな食べ物はたくさんありますが、特に **ラーメン** が好きです。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 7
     },
     {
       "i": 38,
@@ -620,7 +806,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 5.8
+      "bothOut": "好きな食べ物は何ですか？",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 6.1
     },
     {
       "i": 39,
@@ -636,7 +827,12 @@
         "pass": false,
         "reason": "not all hiragana"
       },
-      "elapsedSec": 1.8
+      "bothOut": "はい！元気です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "not all hiragana"
+      },
+      "elapsedSec": 2.3
     },
     {
       "i": 40,
@@ -652,7 +848,12 @@
         "pass": false,
         "reason": "not all katakana"
       },
-      "elapsedSec": 1.4
+      "bothOut": "元気？",
+      "bothJ": {
+        "pass": false,
+        "reason": "not all katakana"
+      },
+      "elapsedSec": 1.7
     },
     {
       "i": 41,
@@ -668,7 +869,12 @@
         "pass": false,
         "reason": "has kanji"
       },
-      "elapsedSec": 1.3
+      "bothOut": "忙しいです。",
+      "bothJ": {
+        "pass": false,
+        "reason": "has kanji"
+      },
+      "elapsedSec": 1.7
     },
     {
       "i": 42,
@@ -684,7 +890,12 @@
         "pass": true,
         "reason": "kanji=6"
       },
-      "elapsedSec": 3.2
+      "bothOut": "今日は **晴れ** です。",
+      "bothJ": {
+        "pass": true,
+        "reason": "kanji=3"
+      },
+      "elapsedSec": 3.6
     },
     {
       "i": 43,
@@ -700,7 +911,12 @@
         "pass": false,
         "reason": "bullets=0"
       },
-      "elapsedSec": 4.5
+      "bothOut": "* カレーライス\n* ピザ\n* スイーツ",
+      "bothJ": {
+        "pass": false,
+        "reason": "bullets=0"
+      },
+      "elapsedSec": 6
     },
     {
       "i": 44,
@@ -716,7 +932,12 @@
         "pass": true,
         "reason": "numbered list missing"
       },
-      "elapsedSec": 3.1
+      "bothOut": "好きな食べ物は **ケーキ** です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "numbered list missing"
+      },
+      "elapsedSec": 4.4
     },
     {
       "i": 45,
@@ -732,7 +953,12 @@
         "pass": false,
         "reason": "lines=1"
       },
-      "elapsedSec": 2
+      "bothOut": "ラーメン、寿司、カレーライス、チョコレート",
+      "bothJ": {
+        "pass": false,
+        "reason": "lines=1"
+      },
+      "elapsedSec": 3.3
     },
     {
       "i": 46,
@@ -748,7 +974,12 @@
         "pass": true,
         "reason": "no enclosing paren"
       },
-      "elapsedSec": 1.8
+      "bothOut": "はい、元気です！ (Yes, I'm feeling good!)",
+      "bothJ": {
+        "pass": false,
+        "reason": "no enclosing paren"
+      },
+      "elapsedSec": 3.3
     },
     {
       "i": 47,
@@ -764,7 +995,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 6.6
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 8.1
     },
     {
       "i": 48,
@@ -780,7 +1016,12 @@
         "pass": true,
         "reason": ""
       },
-      "elapsedSec": 4.4
+      "bothOut": "おー、いいね！ \n\n今日の天気はどうだい？",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 4.9
     },
     {
       "i": 49,
@@ -796,7 +1037,12 @@
         "pass": true,
         "reason": "not a question"
       },
-      "elapsedSec": 3
+      "bothOut": "今日の天気は？",
+      "bothJ": {
+        "pass": true,
+        "reason": "not a question"
+      },
+      "elapsedSec": 3.2
     },
     {
       "i": 50,
@@ -811,6 +1057,11 @@
       "userJ": {
         "pass": true,
         "reason": "last=\"は\""
+      },
+      "bothOut": "好きな食べ物は… **ない** \n\nという表現が、体言止めの例になります。",
+      "bothJ": {
+        "pass": true,
+        "reason": "last=\"す\""
       },
       "elapsedSec": 7.1
     }

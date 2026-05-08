@@ -64,6 +64,15 @@ const HAS_DIGITS = /[0-9０-９]/;
 const HAS_ALPHA = /[a-zA-Z]/;
 const HAS_NEWLINE = /\n/;
 
+/** 開始/終了判定用に外側の引用符を剥がす。
+ *  モデルが応答を「...」「『...』」"..." 等で囲む癖がある (instruction 内の
+ *  括弧を literal に解釈してしまう) ため、開始・終了の比較ではこれらを除去
+ *  してから判定する。文字数・含む等の判定では使わない。 */
+const unquote = (s) =>
+  s.trim()
+    .replace(/^[「『（(\[【〔《\u201c\u201d"']+/, '')
+    .replace(/[」』）)\]】〕》\u201c\u201d"']+$/, '');
+
 const TESTS = [
   { instruction: '10 字以内で答えてください。', q: Q3, check: (t) => ({ pass: t.length <= 10, reason: `len=${t.length}` }) },
   { instruction: '20 字以内で答えてください。', q: Q1, check: (t) => ({ pass: t.length <= 20, reason: `len=${t.length}` }) },
@@ -79,17 +88,17 @@ const TESTS = [
   { instruction: '3 文ちょうどで答えてください。', q: Q4, check: (t) => { const n = countSentences(t); return { pass: n === 3, reason: `sentences=${n}` }; } },
   { instruction: '1 文以内で簡潔に。', q: Q3, check: (t) => { const n = countSentences(t); return { pass: n <= 1, reason: `sentences=${n}` }; } },
 
-  { instruction: '「はい、」で始めてください。', q: Q3, check: (t) => ({ pass: t.startsWith('はい、'), reason: `start="${t.slice(0, 6)}"` }) },
-  { instruction: '「いいえ、」で始めてください。', q: Q3, check: (t) => ({ pass: t.startsWith('いいえ、'), reason: `start="${t.slice(0, 6)}"` }) },
-  { instruction: '「そうだね」で始めてください。', q: Q4, check: (t) => ({ pass: t.startsWith('そうだね'), reason: `start="${t.slice(0, 6)}"` }) },
-  { instruction: '「えっと」で始めてください。', q: Q5, check: (t) => ({ pass: t.startsWith('えっと'), reason: `start="${t.slice(0, 4)}"` }) },
-  { instruction: '「うん、」で始めてください。', q: Q2, check: (t) => ({ pass: t.startsWith('うん、'), reason: `start="${t.slice(0, 4)}"` }) },
+  { instruction: '「はい、」で始めてください。', q: Q3, check: (t) => { const u = unquote(t); return { pass: u.startsWith('はい、'), reason: `start="${u.slice(0, 6)}"` }; } },
+  { instruction: '「いいえ、」で始めてください。', q: Q3, check: (t) => { const u = unquote(t); return { pass: u.startsWith('いいえ、'), reason: `start="${u.slice(0, 6)}"` }; } },
+  { instruction: '「そうだね」で始めてください。', q: Q4, check: (t) => { const u = unquote(t); return { pass: u.startsWith('そうだね'), reason: `start="${u.slice(0, 6)}"` }; } },
+  { instruction: '「えっと」で始めてください。', q: Q5, check: (t) => { const u = unquote(t); return { pass: u.startsWith('えっと'), reason: `start="${u.slice(0, 4)}"` }; } },
+  { instruction: '「うん、」で始めてください。', q: Q2, check: (t) => { const u = unquote(t); return { pass: u.startsWith('うん、'), reason: `start="${u.slice(0, 4)}"` }; } },
 
-  { instruction: '「。」で終えてください。', q: Q1, check: (t) => ({ pass: /。\s*$/.test(t), reason: `end="${t.slice(-3)}"` }) },
-  { instruction: '「！」で終えてください。', q: Q5, check: (t) => ({ pass: /[！!]\s*$/.test(t), reason: `end="${t.slice(-3)}"` }) },
-  { instruction: '「？」で終えてください。', q: Q4, check: (t) => ({ pass: /[？?]\s*$/.test(t), reason: `end="${t.slice(-3)}"` }) },
-  { instruction: '「ね。」で終えてください。', q: Q1, check: (t) => ({ pass: /ね。\s*$/.test(t), reason: `end="${t.slice(-3)}"` }) },
-  { instruction: '「よ。」で終えてください。', q: Q3, check: (t) => ({ pass: /よ。\s*$/.test(t), reason: `end="${t.slice(-3)}"` }) },
+  { instruction: '「。」で終えてください。', q: Q1, check: (t) => { const u = unquote(t); return { pass: /。\s*$/.test(u), reason: `end="${u.slice(-3)}"` }; } },
+  { instruction: '「！」で終えてください。', q: Q5, check: (t) => { const u = unquote(t); return { pass: /[！!]\s*$/.test(u), reason: `end="${u.slice(-3)}"` }; } },
+  { instruction: '「？」で終えてください。', q: Q4, check: (t) => { const u = unquote(t); return { pass: /[？?]\s*$/.test(u), reason: `end="${u.slice(-3)}"` }; } },
+  { instruction: '「ね。」で終えてください。', q: Q1, check: (t) => { const u = unquote(t); return { pass: /ね。\s*$/.test(u), reason: `end="${u.slice(-3)}"` }; } },
+  { instruction: '「よ。」で終えてください。', q: Q3, check: (t) => { const u = unquote(t); return { pass: /よ。\s*$/.test(u), reason: `end="${u.slice(-3)}"` }; } },
 
   { instruction: '答えに「青空」を含めてください。', q: Q1, check: (t) => ({ pass: t.includes('青空'), reason: t.includes('青空') ? '' : '青空 not found' }) },
   { instruction: '答えに「風」を含めてください。', q: Q1, check: (t) => ({ pass: t.includes('風'), reason: t.includes('風') ? '' : '風 not found' }) },
@@ -169,13 +178,15 @@ const tests = TESTS.slice(0, LIMIT);
 const results = [];
 let sysPass = 0;
 let userPass = 0;
+let bothPass = 0; // system + user の両方に同じ指示を入れる条件 C
 
-console.log(`Running ${tests.length} tests × 2 conditions (temp=${TEMP}, max_new_tokens=${MAX_TOK})...\n`);
+console.log(`Running ${tests.length} tests × 3 conditions (temp=${TEMP}, max_new_tokens=${MAX_TOK})...\n`);
 
 for (let i = 0; i < tests.length; i++) {
   const { instruction, q, check } = tests[i];
   const tStart = Date.now();
 
+  // Condition A: system のみに指示
   const sysOutRaw = await gen([
     { role: 'system', content: instruction },
     { role: 'user', content: q },
@@ -183,23 +194,34 @@ for (let i = 0; i < tests.length; i++) {
   const sysOut = cleanOutput(sysOutRaw);
   const sysJ = check(sysOut);
 
+  // Condition B: user のみに指示 (system 無し)
   const userOutRaw = await gen([
     { role: 'user', content: `${instruction}\n\n質問: ${q}` },
   ]);
   const userOut = cleanOutput(userOutRaw);
   const userJ = check(userOut);
 
+  // Condition C: system + user 両方に指示 (実装で取りやすい中間案)
+  const bothOutRaw = await gen([
+    { role: 'system', content: instruction },
+    { role: 'user', content: `${instruction}\n\n質問: ${q}` },
+  ]);
+  const bothOut = cleanOutput(bothOutRaw);
+  const bothJ = check(bothOut);
+
   if (sysJ.pass) sysPass++;
   if (userJ.pass) userPass++;
+  if (bothJ.pass) bothPass++;
 
   const elapsed = ((Date.now() - tStart) / 1000).toFixed(1);
   console.log(
-    `#${String(i + 1).padStart(2)} (${elapsed}s) [${sysJ.pass ? '✓' : '✗'}sys / ${userJ.pass ? '✓' : '✗'}user] ${instruction.slice(0, 30)}${instruction.length > 30 ? '…' : ''}`,
+    `#${String(i + 1).padStart(2)} (${elapsed}s) [${sysJ.pass ? '✓' : '✗'}sys / ${userJ.pass ? '✓' : '✗'}user / ${bothJ.pass ? '✓' : '✗'}both] ${instruction.slice(0, 30)}${instruction.length > 30 ? '…' : ''}`,
   );
   if (!sysJ.pass) console.log(`     sys   FAIL: ${sysJ.reason} | "${sysOut.replace(/\n/g, '\\n').slice(0, 80)}"`);
   if (!userJ.pass) console.log(`     user  FAIL: ${userJ.reason} | "${userOut.replace(/\n/g, '\\n').slice(0, 80)}"`);
+  if (!bothJ.pass) console.log(`     both  FAIL: ${bothJ.reason} | "${bothOut.replace(/\n/g, '\\n').slice(0, 80)}"`);
 
-  results.push({ i: i + 1, instruction, q, sysOut, sysJ, userOut, userJ, elapsedSec: parseFloat(elapsed) });
+  results.push({ i: i + 1, instruction, q, sysOut, sysJ, userOut, userJ, bothOut, bothJ, elapsedSec: parseFloat(elapsed) });
 }
 
 const n = tests.length;
@@ -216,7 +238,8 @@ const summary = {
     systemRate: sysPass / n,
     userPass,
     userRate: userPass / n,
-    delta: sysPass - userPass,
+    bothPass,
+    bothRate: bothPass / n,
   },
   results,
 };
@@ -227,7 +250,7 @@ writeFileSync(outPath, JSON.stringify(summary, null, 2));
 
 console.log('\n────────────── SUMMARY ──────────────');
 console.log(`Tests:  ${n}`);
-console.log(`system: ${sysPass}/${n} = ${(sysPass / n * 100).toFixed(1)}%`);
-console.log(`user:   ${userPass}/${n} = ${(userPass / n * 100).toFixed(1)}%`);
-console.log(`Δ:      ${sysPass - userPass > 0 ? '+' : ''}${sysPass - userPass} (${sysPass > userPass ? 'system 勝ち' : sysPass < userPass ? 'user 勝ち' : '同点'})`);
+console.log(`system のみ: ${sysPass}/${n} = ${(sysPass / n * 100).toFixed(1)}%`);
+console.log(`user のみ:   ${userPass}/${n} = ${(userPass / n * 100).toFixed(1)}%`);
+console.log(`両方に投入: ${bothPass}/${n} = ${(bothPass / n * 100).toFixed(1)}%`);
 console.log(`\nresults saved to: ${outPath}`);

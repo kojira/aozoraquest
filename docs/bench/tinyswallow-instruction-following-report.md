@@ -7,16 +7,29 @@
 ランナ: `scripts/bench-tinyswallow-instruction-following.mjs`
 詳細データ: `tinyswallow-instruction-following-result.json`
 
-## 定量結果
+## 定量結果 (3 条件、unquote 対応 evaluator)
 
 | 条件 | PASS | 率 |
 |-|-|-|
-| **system role に指示** | 11/50 | **22.0%** |
-| **user role に指示** | 27/50 | **54.0%** |
-| 差 | -16 | **user が +32 ppt 勝ち** |
+| **system のみに指示** | 11/50 | **22.0%** |
+| **user のみに指示** | 29/50 | **58.0%** |
+| **両方 (system + user) に指示** | 30/50 | **60.0%** |
 
 「TinySwallow は system role の指示をあまり守らない」というユーザの観察が
-定量的に裏付けられた。
+定量的に裏付けられた (system 22% vs user 58%、**+36 ppt** 差)。
+
+両方に重複投入する条件 C は user-only より +1 件 (誤差レベル) で、有意な
+改善は得られなかった。さらに条件 C 特有の失敗 (#44 番号付きリストや
+#46 括弧囲みで英訳を出すなど) もあり、複雑にする見返りは小さい。
+
+### Evaluator 修正履歴
+
+初回評価では「開始/終了」系のテストで応答が `「そうだね」と...` のように
+引用符で囲まれていた場合に false negative が出ていた。これは「instruction
+内の括弧を literal に解釈してしまう」というモデルの癖で、外側 1 段の
+引用符 (`「」『』""''()` 等) を strip してから start/end 判定するよう修正
+した結果、user / both で 2 件ずつ PASS が増えた。system 側は元々引用符
+ラップ応答を出していなかったので変化なし。
 
 ## カテゴリ別の傾向
 
