@@ -92,15 +92,14 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
       } else {
         if (!loadedRef.current) return;
-        // admin prompt は user 側に prepend (TinySwallow が system role を
-        // 守らない傾向の実測対応、spirit.tsx と同じ方針)。
-        const ritualUserText = `${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
-        const messages: ChatMessage[] = [
-          {
-            role: 'user',
-            content: systemPrompt ? `${systemPrompt}\n\n${ritualUserText}` : ritualUserText,
-          },
-        ];
+        // admin prompt (役割定義) と ritual のタスク指示が混ざらないよう、
+        // ヘッダ行で明示的に区切る。LLM が「役割」と「今やる依頼」を分けて
+        // 解釈できる構造にする。systemPrompt が空ならヘッダごと省く。
+        const taskBlock = `# あなたへの依頼\n${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
+        const fullUser = systemPrompt
+          ? `# あなたの役割\n${systemPrompt}\n\n${taskBlock}`
+          : taskBlock;
+        const messages: ChatMessage[] = [{ role: 'user', content: fullUser }];
         try {
           welcome = await g!.generate(messages);
           welcome = cleanGenerated(welcome);
