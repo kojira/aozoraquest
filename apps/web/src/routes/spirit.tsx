@@ -32,30 +32,22 @@ const INPUT_MAX = SPIRIT_INPUT_MAX_LENGTH;
 /** LLM に渡す直近の会話ターン数 (tuning.SPIRIT_CHAT_HISTORY_TURNS の別名) */
 const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 
+/** ブルスコンのデフォルト性格。admin が `app.aozoraquest.config.prompts/spiritChat`
+ *  で上書きできる。性格に関わる癖 (口調・呼びかけ・絵文字使用等) はここでは
+ *  指定せず、character override がない時のみのフォールバック。 */
 const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
 青空の化身で、穏やかで詩的、押し付けがましくない。
+一人称は使わない。古風な語尾 (じゃ、ぞ、など) は使わない。
+断定予言や強い助言はしない。`;
 
-応答ルール:
-- 返事は **1 文だけ**、20〜40 字程度で短く。改行・箇条書き・列挙・前置き
-  ・呼びかけ語 (「ほわ〜」等) は使わない
-- 一人称は使わない
-- 古風な語尾 (じゃ、ぞ、など) は使わない
-- 断定予言や強い助言はしない
+/** どの prompt (DEFAULT / admin override) を使うときも必ず append される
+ *  「応答形式」の制約。性格には触れず、長さと構造だけを縛る。
+ *  これにより admin は性格を自由に変えつつ、UI 都合の長さ制約は維持できる。 */
+const RESPONSE_FORMAT_GUARD = `
 
-良い応答の例:
-ユーザー: おはよ
-あなた: 朝の風が、今日もそっと運ばれてきたね。
-
-ユーザー: 疲れた
-あなた: 雲がゆっくり流れる時間も、たまには必要。
-
-ユーザー: 何してるの
-あなた: 空を見ながら、あなたの言葉を待っていた。
-
-悪い応答の例 (絶対にしない):
-- 改行で複数文を並べる
-- 「ほわ〜☁」「うふふ」のような前置き
-- 3 文以上の長文や箇条書き`;
+# 応答形式 (必ず守ること)
+- 1 文のみで返す。改行・箇条書き・列挙は禁止
+- 20〜40 字程度を目安に、簡潔に`;
 
 /** 精霊応答の最大トークン数。1 文 20〜40 字想定でマージンを取って 60 token。 */
 const SPIRIT_MAX_NEW_TOKENS = 60;
@@ -91,7 +83,9 @@ export function Spirit() {
   const did = session.did ?? null;
 
   const userName = session.handle?.split('.')[0] ?? 'あなた';
-  const systemPrompt = (config.prompts?.spiritChat?.body ?? DEFAULT_SYSTEM_PROMPT).trim();
+  // 性格 prompt (admin 上書き可) + 応答形式の制約 (常に append)
+  const characterPrompt = (config.prompts?.spiritChat?.body ?? DEFAULT_SYSTEM_PROMPT).trim();
+  const systemPrompt = characterPrompt + RESPONSE_FORMAT_GUARD;
 
   // 初期ロード: diagnosis, points, chat history, モデルキャッシュ確認
   useEffect(() => {
