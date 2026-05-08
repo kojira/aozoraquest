@@ -92,11 +92,13 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
       } else {
         if (!loadedRef.current) return;
+        // admin prompt は user 側に prepend (TinySwallow が system role を
+        // 守らない傾向の実測対応、spirit.tsx と同じ方針)。
+        const ritualUserText = `${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
         const messages: ChatMessage[] = [
-          { role: 'system', content: systemPrompt },
           {
             role: 'user',
-            content: `${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`,
+            content: systemPrompt ? `${systemPrompt}\n\n${ritualUserText}` : ritualUserText,
           },
         ];
         try {

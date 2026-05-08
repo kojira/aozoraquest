@@ -211,14 +211,19 @@ export function Spirit() {
 
     // 直近 HISTORY_TURNS ターン (1 ターン = user + spirit の 2 件) を LLM コンテキストに渡す。
     // 要約はせず、それ以前は忘れる。
+    //
+    // ※ admin prompt (systemPrompt) は **system role に置かず、最後のユーザー
+    //    メッセージに prepend する**。理由: TinySwallow は system role の
+    //    指示追従率が 22%、user role に置くと 58% という実測 (50 件 ×
+    //    temp=0)。詳細は docs/bench/tinyswallow-instruction-following-report.md
+    //    各ターン毎に prompt を再注入する形になり、長い会話でも遵守が保てる。
     const recentHistory = [...history.slice(-HISTORY_TURNS * 2), tempUser];
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...recentHistory.map((m) => ({
-        role: (m.role === 'spirit' ? 'assistant' : 'user') as 'assistant' | 'user',
-        content: m.text,
-      })),
-    ];
+    const messages: ChatMessage[] = recentHistory.map((m, i) => {
+      const role = m.role === 'spirit' ? ('assistant' as const) : ('user' as const);
+      const isLastUser = role === 'user' && i === recentHistory.length - 1;
+      const content = isLastUser && systemPrompt ? `${systemPrompt}\n\n${m.text}` : m.text;
+      return { role, content };
+    });
 
     let full = '';
     try {
