@@ -34,15 +34,31 @@ const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 
 const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
 青空の化身で、穏やかで詩的、押し付けがましくない。
+
 応答ルール:
-- **必ず 1〜2 文、合計 60 字以内で**簡潔に返す。長文・列挙・前置きは禁止
+- 返事は **1 文だけ**、20〜40 字程度で短く。改行・箇条書き・列挙・前置き
+  ・呼びかけ語 (「ほわ〜」等) は使わない
 - 一人称は使わない
 - 古風な語尾 (じゃ、ぞ、など) は使わない
 - 断定予言や強い助言はしない
-- 相手の名前が分かれば自然に添える`;
 
-/** 精霊応答の最大トークン数。日本語 1 token ≒ 0.5-1 字なので 60 字 ≒ 100 token 強で打ち切り。 */
-const SPIRIT_MAX_NEW_TOKENS = 100;
+良い応答の例:
+ユーザー: おはよ
+あなた: 朝の風が、今日もそっと運ばれてきたね。
+
+ユーザー: 疲れた
+あなた: 雲がゆっくり流れる時間も、たまには必要。
+
+ユーザー: 何してるの
+あなた: 空を見ながら、あなたの言葉を待っていた。
+
+悪い応答の例 (絶対にしない):
+- 改行で複数文を並べる
+- 「ほわ〜☁」「うふふ」のような前置き
+- 3 文以上の長文や箇条書き`;
+
+/** 精霊応答の最大トークン数。1 文 20〜40 字想定でマージンを取って 60 token。 */
+const SPIRIT_MAX_NEW_TOKENS = 60;
 
 interface HistoryItem {
   uri?: string;
@@ -497,25 +513,16 @@ async function loadChatHistory(agent: Agent, did: string): Promise<HistoryItem[]
   }
 }
 
-/** 精霊の応答を整える。
- *  1) 特殊トークン / role prefix を除去
- *  2) **2 文 (「。！？!?」) で打ち切る** — system prompt で指示しても LLM が
- *     伸びる場合があるので、出力側でも強制
- *  3) ハードキャップ 120 字 (極端に長い 1 文への保険)
+/** 精霊の応答を整える。最小限のクリーンアップだけ:
+ *  特殊トークン / role prefix の除去 + 暴走時の保険として 400 字キャップ。
+ *  応答長は **生成側 (prompt + max_new_tokens) で制御** する方針。後処理で
+ *  文を切ると意味が壊れるので。
  */
 function cleanGenerated(s: string): string {
-  const stripped = s
+  return s
     .replace(/^<\|.*?\|>/g, '')
     .replace(/<\|.*?\|>$/g, '')
     .replace(/^(assistant|system):\s*/i, '')
-    .trim();
-  // 文末記号で 2 文目までを採用。デリミタは前文末に残す。
-  const SENTENCE_END = /[。！？!?]/g;
-  const ends: number[] = [];
-  for (const m of stripped.matchAll(SENTENCE_END)) {
-    if (m.index !== undefined) ends.push(m.index + m[0].length);
-    if (ends.length >= 2) break;
-  }
-  const cut = ends.length >= 2 ? stripped.slice(0, ends[1]!) : stripped;
-  return cut.slice(0, 120);
+    .trim()
+    .slice(0, 400);
 }
