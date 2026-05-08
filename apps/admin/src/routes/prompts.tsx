@@ -73,6 +73,16 @@ export function Prompts() {
 
       {!loaded && <p>読み込み中...</p>}
 
+      <details style={{ marginBottom: '0.5em', fontSize: '0.85em' }}>
+        <summary style={{ cursor: 'pointer', color: 'var(--color-muted)' }}>使える変数 (本文に埋め込めます)</summary>
+        <ul style={{ margin: '0.4em 0 0 1em', padding: 0, lineHeight: 1.6 }}>
+          <li><code>{'{user}'}</code> — ユーザのハンドル先頭部分 (例: <code>kojira.io</code> → <code>kojira</code>)。未ログイン時は <code>あなた</code></li>
+          <li><code>{'{archetype}'}</code> — そのユーザの現在の職業名 (例: <code>賢者</code>)。診断未実施なら空文字</li>
+          <li><code>{'{level}'}</code> — そのユーザの現職 LV (例: <code>5</code>)。診断未実施なら空文字</li>
+          <li>未定義の <code>{'{xxx}'}</code> はそのまま残ります (typo に気付くため)</li>
+        </ul>
+      </details>
+
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}

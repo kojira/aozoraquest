@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
-import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
+import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, jobLevelFromXp, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
@@ -13,6 +13,7 @@ import { SummoningRitual } from '@/components/summoning-ritual';
 import { TextField } from '@/components/text-field';
 import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
+import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
 import { isLowEndDevice } from '@/lib/device';
@@ -76,7 +77,17 @@ export function Spirit() {
   // 性格・口調・応答形式・例文 — 全部 admin の領分 (PDS の prompts/spiritChat に書く)。
   // 長さも admin の `maxNewTokens` で上書き可。code 側には fallback 数値だけ残す
   // (UI 安全のため、未設定時の暴走を抑える程度の小さな default)。
-  const systemPrompt = (config.prompts?.spiritChat?.body ?? '').trim();
+  // admin の prompt body 内の `{user}` `{archetype}` `{level}` を実行時に展開する。
+  const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
+  const systemPrompt = useMemo(
+    () =>
+      applyPromptTemplate(systemPromptRaw, {
+        user: userName,
+        archetype: diag ? jobDisplayName(diag.archetype, 'default') : '',
+        level: diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp)) : '',
+      }),
+    [systemPromptRaw, userName, diag],
+  );
   const spiritMaxNewTokens = config.prompts?.spiritChat?.maxNewTokens ?? SPIRIT_MAX_NEW_TOKENS_DEFAULT;
 
   // 初期ロード: diagnosis, points, chat history, モデルキャッシュ確認
