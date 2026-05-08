@@ -78,15 +78,19 @@ export function Spirit() {
   // 長さも admin の `maxNewTokens` で上書き可。code 側には fallback 数値だけ残す
   // (UI 安全のため、未設定時の暴走を抑える程度の小さな default)。
   // admin の prompt body 内の `{user}` `{archetype}` `{level}` を実行時に展開する。
+  // 値が無い変数 (例: 診断未実施の {archetype}) は placeholder のまま残る
+  // (admin が typo / 未定義に気付ける、UI で誤展開せず可視化される)。
   const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
+  const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
+  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp)) : undefined;
   const systemPrompt = useMemo(
     () =>
       applyPromptTemplate(systemPromptRaw, {
         user: userName,
-        archetype: diag ? jobDisplayName(diag.archetype, 'default') : '',
-        level: diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp)) : '',
+        archetype: archetypeName,
+        level: levelStr,
       }),
-    [systemPromptRaw, userName, diag],
+    [systemPromptRaw, userName, archetypeName, levelStr],
   );
   const spiritMaxNewTokens = config.prompts?.spiritChat?.maxNewTokens ?? SPIRIT_MAX_NEW_TOKENS_DEFAULT;
 

@@ -70,9 +70,9 @@ export function Prompts() {
         <summary style={{ cursor: 'pointer', color: 'var(--color-muted)' }}>使える変数 (本文に埋め込めます)</summary>
         <ul style={{ margin: '0.4em 0 0 1em', padding: 0, lineHeight: 1.6 }}>
           <li><code>{'{user}'}</code> — ユーザのハンドル先頭部分 (例: <code>kojira.io</code> → <code>kojira</code>)。未ログイン時は <code>あなた</code></li>
-          <li><code>{'{archetype}'}</code> — そのユーザの現在の職業名 (例: <code>賢者</code>)。診断未実施なら空文字</li>
-          <li><code>{'{level}'}</code> — そのユーザの現職 LV (例: <code>5</code>)。診断未実施なら空文字</li>
-          <li>未定義の <code>{'{xxx}'}</code> はそのまま残ります (typo に気付くため)</li>
+          <li><code>{'{archetype}'}</code> — そのユーザの現在の職業名 (例: <code>賢者</code>)</li>
+          <li><code>{'{level}'}</code> — そのユーザの現職 LV (例: <code>5</code>)</li>
+          <li>値が取れない変数 (診断未実施 / 未定義キー) は <code>{'{xxx}'}</code> のままユーザに見える形で残ります (admin が設定ミスに気付けるため)</li>
         </ul>
       </details>
 
