@@ -23,9 +23,15 @@ export interface SpiritGenOptions {
 }
 
 /**
- * 日本語混じりテキストの token 数を雑に推定する。
- * GPT/Gemini 系の経験則で「日本語 1 文字 ≒ 1.0-1.5 token、英数字 1 文字 ≒ 0.3 token」。
- * 安全側 (短めで打ち切る) に倒して 1 文字 ≒ 0.7 token 換算。
+ * 出力を打ち切る soft cap の長さ推定。厳密な token count ではなく
+ * 「TinySwallow に同じ maxNewTokens を渡したときと概ね同じ文字数で止める」
+ * ための換算係数。日本語 1 文字 ≒ 1.0-1.5 token、英数字 1 文字 ≒ 0.3 token
+ * が経験則だが、Bluskon は admin の maxNewTokens (default 60) で
+ * 「TinySwallow が出していたのと同じくらいの長さ」を期待する運用なので、
+ * 0.7 換算で文字数を伸ばす方向に倒している (= ハード上限ではない)。
+ *
+ * 厳密に token quota を守りたければ session.measureInputUsage() を使うべき
+ * だが、出力 token は事前計測できない (Nano API 制約) ため近似で十分。
  */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length * 0.7);
@@ -51,10 +57,14 @@ export async function generateWithGeminiNano(
     initialPrompts.push({ role: m.role, content: m.content });
   }
 
+  // topK: 確率上位 K 個から sampling。低いほど決定的 (毎回同じ言い回し)、
+  // 高いほど多様。admin が「詩的に」「優しい言葉で」のように曖昧な指示を
+  // 出している場合は多様性側に倒した方が応答が硬くならない。5 は Chrome の
+  // デフォルト近辺で、温度 0.8 と組み合わせて自然な揺らぎが出る値。
   const createOpts: LanguageModelCreateOptions = {
     initialPrompts,
     temperature: opts.temperature ?? 0.8,
-    topK: 3,
+    topK: 5,
     expectedInputs: [{ type: 'text', languages: ['ja', 'en'] }],
     expectedOutputs: [{ type: 'text', languages: ['ja'] }],
   };

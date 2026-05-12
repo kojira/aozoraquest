@@ -71,6 +71,9 @@ export function Spirit() {
   const [useNano, setUseNano] = useGeminiNanoPref();
   const [nanoStatus, setNanoStatus] = useState<NanoStatus | null>(null);
   const [lastBackend, setLastBackend] = useState<SpiritBackend | null>(null);
+  /** 直近の発話で Nano を試して失敗し TinySwallow に fallback した時のエラー。
+   *  チップ横に小さく表示してユーザーが「Nano にならない原因」を確認できるように。 */
+  const [lastFallback, setLastFallback] = useState<string | null>(null);
   const streamingRef = useRef<string | null>(null); // uri of current streaming message
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -252,6 +255,7 @@ export function Spirit() {
       );
       full = result.text;
       setLastBackend(result.backend);
+      setLastFallback(result.fallbackReason ?? null);
     } catch (e) {
       streamingRef.current = null;
       setHistory((h) => h.filter((x) => x.uri !== streamKey));
@@ -476,6 +480,14 @@ export function Spirit() {
                   {lastBackend && (
                     <span style={{ marginLeft: '0.5em', padding: '0.05em 0.5em', borderRadius: 10, background: 'rgba(255,255,255,0.1)' }}>
                       前回: {lastBackend === 'gemini-nano' ? 'Gemini Nano' : 'TinySwallow'}
+                      {lastFallback && (
+                        <span
+                          title={lastFallback}
+                          style={{ marginLeft: '0.3em', color: 'var(--color-danger, #b00)', fontSize: '0.85em' }}
+                        >
+                          (Nano エラーで切替)
+                        </span>
+                      )}
                     </span>
                   )}
                 </summary>
