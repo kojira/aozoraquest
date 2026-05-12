@@ -1,20 +1,21 @@
 /**
- * 投稿の日本語翻訳 (TinySwallow 使用)。
+ * 投稿の日本語翻訳 (ブラウザ内 LLM 使用)。
  *
  * - `shouldAutoTranslate(text)`: 自動翻訳の対象か (日本語比率が低く、かつ空でない)
  * - `translateToJapanese(uri, text)`: キャッシュ → 直列キュー → LLM → キャッシュ保存
  * - `useTranslation(uri, text)`: React フック。設定が ON なら自動で翻訳開始、
  *   OFF なら `triggerTranslate()` 手動呼び出しで開始。
+ *
+ * Backend は local-llm.ts の抽象に委譲 (現状は Gemini Nano、将来増えても
+ * このファイルは触らない)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getGenerator } from './generator';
+import { generateWithLocalLLM, pickLocalLLM } from './local-llm';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
 import { stripMarkdown, stripWrappers } from './flavor-text';
-import { isLowEndDevice } from './device';
-import { isNanoAvailableForTranslate, translateWithNano } from './translate-nano';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
 const TIMEOUT_MS = 60_000;
@@ -113,33 +114,12 @@ class NonJapaneseTranslationError extends Error {
   }
 }
 
-type TranslateBackend = 'gemini-nano' | 'tinyswallow';
-
 const TRANSLATE_SYSTEM_PROMPT = 'あなたは SNS 投稿を日本語に翻訳する翻訳者です。';
-
-async function callBackend(
-  backend: TranslateBackend,
-  systemPrompt: string,
-  userPrompt: string,
-  temperature: number,
-): Promise<string> {
-  if (backend === 'gemini-nano') {
-    return translateWithNano(systemPrompt, userPrompt, temperature);
-  }
-  const gen = getGenerator();
-  await gen.load();
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
-    { role: 'user' as const, content: userPrompt },
-  ];
-  return gen.generate(messages, { temperature });
-}
 
 async function runLLM(
   text: string,
   langs: string[] | undefined,
   temperature: number,
-  backend: TranslateBackend,
 ): Promise<string> {
   const { body, trailing } = splitTranslatableText(text);
   if (!body) return trailing; // 本文なし → リンク等だけ返す
@@ -160,13 +140,20 @@ async function runLLM(
     body,
     '---',
   ].filter((l) => l !== '').join('\n');
-  const raw = await Promise.race([
-    callBackend(backend, TRANSLATE_SYSTEM_PROMPT, userPrompt, temperature),
-    new Promise<string>((_, rej) =>
+  const result = await Promise.race([
+    generateWithLocalLLM(
+      { systemPrompt: TRANSLATE_SYSTEM_PROMPT, history: [{ role: 'user', content: userPrompt }] },
+      { temperature, maxNewTokens: 300 },
+    ),
+    new Promise<null>((_, rej) =>
       setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
     ),
   ]);
-  const cleaned = cleanTranslation(raw);
+  if (!result) {
+    // 利用可能な LLM が無い (Firefox/Safari/mobile 等)
+    throw new Error('no local LLM available for translation');
+  }
+  const cleaned = cleanTranslation(result.text);
   const composed = trailing ? `${cleaned}\n${trailing}` : cleaned;
   if (!looksLikeJapaneseTranslation(cleaned)) {
     throw new NonJapaneseTranslationError(composed);
@@ -179,30 +166,27 @@ async function runLLM(
  *  - retry (ユーザ手動): [0.7, 1.0] — temp=0 cache と必ず違う出力にする
  *  全 attempt 失敗時は最後の英語出力を返す (空 throw より UX マシ)。
  *
- *  Backend: Nano available なら **最初の attempt のみ Nano**、それ以外と
- *  Nano 失敗時の残り attempt は TinySwallow。理由は Google 公式が「Nano は
- *  英語以外の翻訳に弱い」と明記しているため、まず試して駄目なら fine-tune 済
- *  TinySwallow に任せる。retry 段は temperature を上げて確率的に揺らすので、
- *  同じ Nano で再試行しても改善は見込み薄。 */
+ *  LLM 利用不可な環境では最初の attempt で即 throw (リトライ意味なし)。 */
 async function runLLMWithRetry(
   text: string,
   langs: string[] | undefined,
   temperatures: readonly number[],
 ): Promise<string> {
-  const nanoAvailable = await isNanoAvailableForTranslate();
+  // LLM 利用不可なら即時 throw (retry chain 全部 fail 待ちは無駄)
+  const llm = await pickLocalLLM();
+  if (!llm) throw new Error('no local LLM available for translation');
   let lastFail: NonJapaneseTranslationError | null = null;
   let lastError: unknown = null;
   for (let i = 0; i < temperatures.length; i++) {
     const temp = temperatures[i]!;
-    const backend: TranslateBackend = i === 0 && nanoAvailable ? 'gemini-nano' : 'tinyswallow';
     try {
-      return await runLLM(text, langs, temp, backend);
+      return await runLLM(text, langs, temp);
     } catch (e) {
       if (e instanceof NonJapaneseTranslationError) {
-        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (backend=${backend}, temp=${temp})`);
+        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (temp=${temp})`);
         lastFail = e;
       } else {
-        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} threw (backend=${backend})`, e);
+        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} threw`, e);
         lastError = e;
       }
     }
@@ -274,13 +258,18 @@ export function useTranslation(
   const [error, setError] = useState<string | undefined>(undefined);
   const startedRef = useRef(false);
 
-  // モバイルは LLM ロード自体で OOM クラッシュするので翻訳機能を完全 OFF。
-  // Bonsai 1.7B / SmolLM2-360M でも iPhone Air・Pixel 7a/9 でクラッシュする
-  // ことが判明したため、軽量端末は手動翻訳ボタンも含めて非表示にする。
-  // PC では従来通り auto-translate 設定に従う。
-  const lowEnd = isLowEndDevice();
-  const isNonJapanese = !lowEnd && shouldAutoTranslate(text, langs);
-  const canTranslate = !lowEnd && Boolean(uri) && isNonJapanese;
+  // LLM 利用可否は async なので mount 後に確定する。null = 確認中、
+  // false = 利用不可 (Firefox/Safari/モバイル等)、true = 使える。
+  const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    pickLocalLLM().then((llm) => {
+      if (!cancelled) setLlmAvailable(!!llm);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const isNonJapanese = llmAvailable === true && shouldAutoTranslate(text, langs);
+  const canTranslate = llmAvailable === true && Boolean(uri) && isNonJapanese;
 
   const run = useCallback((force: boolean) => {
     if (!uri || !isNonJapanese) return;
