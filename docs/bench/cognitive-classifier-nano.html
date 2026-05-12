@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>認知機能分類 bench (Gemini Nano / Ruri ONNX)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+         margin: 16px; max-width: 1400px; color: #222; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 16px; margin-top: 1.5em; }
+  button { padding: 8px 14px; margin-right: 8px; font-size: 14px; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  input[type=number] { width: 6em; padding: 0.3em; }
+  table { border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  th, td { border: 1px solid #bbb; padding: 4px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  td.num { text-align: right; font-family: ui-monospace, monospace; }
+  td.text { max-width: 480px; word-break: break-word; }
+  td.ok { background: #e0ffe4; }
+  td.partial { background: #fff5cc; }
+  td.fail { background: #ffd7d7; }
+  #status { color: #555; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+  #summary { background: #f0f7ff; padding: 12px; border: 1px solid #cde; margin: 12px 0; font-size: 14px; }
+  #confusion { margin-top: 12px; }
+  #confusion th, #confusion td { padding: 3px 8px; text-align: center; }
+  #confusion td.diag { background: #e0ffe4; font-weight: bold; }
+  pre { background: #f4f4f4; padding: 10px; font-size: 12px; max-height: 200px; overflow: auto; }
+  .opt { margin: 6px 0; }
+  .ref { color: #557; font-size: 12px; margin-top: 4px; }
+  .opt-hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>認知機能分類 bench (Gemini Nano / Ruri ONNX)</h1>
+<p>
+  SNS 投稿を 9 クラス (Fe/Fi/Te/Ti/Ne/Ni/Se/Si/none) に分類する精度を、
+  Gemini Nano (ゼロショット) と Ruri ONNX fine-tune (130m / 30m) で比較する。
+  <code>docs/bench/cognitive-samples.jsonl</code> (252 件、test split clean_jp) を ground truth に使用。
+</p>
+<p class="ref">
+  training 時の Ruri 130m best test top-1: 57.9% (docs/runs/20260421-213249-130m-clean-aug-jp-16ep)。
+  ベンチ値はこれと多少ズレる (推論パイプライン: 単発 raw text 入力、splitLongPost 無し)。
+</p>
+
+<div class="opt">
+  <strong>Backend:</strong>
+  <label><input type="radio" name="backend" value="nano" checked /> Gemini Nano (Chrome 148+)</label>
+  <label><input type="radio" name="backend" value="ruri-large" /> Ruri 130m (kojira/aozoraquest-cognitive)</label>
+  <label><input type="radio" name="backend" value="ruri-small" /> Ruri 30m (kojira/aozoraquest-cognitive-small)</label>
+</div>
+<div class="opt">
+  <strong>サンプル数:</strong>
+  <input type="number" id="limit" min="1" max="252" value="252" />
+  <span style="color:#888; font-size: 12px">(全 252 件、Nano: ~0.15s/件 / Ruri: ~0.05s/件)</span>
+</div>
+<div class="opt">
+  <strong>シャッフル:</strong>
+  <label><input type="checkbox" id="shuffle" /> ランダム順 (= クラス分布のバランス)</label>
+</div>
+<div class="opt" id="prompt-opt">
+  <strong>プロンプト (Nano のみ):</strong>
+  <label><input type="radio" name="prompt" value="defs" checked /> 9 機能定義入り</label>
+  <label><input type="radio" name="prompt" value="bare" /> 定義なし</label>
+</div>
+<div class="opt" id="ruri-opt" style="display:none">
+  <strong>Ruri device:</strong>
+  <label><input type="radio" name="device" value="webgpu" checked /> WebGPU (q4)</label>
+  <label><input type="radio" name="device" value="wasm" /> WASM (q8)</label>
+</div>
+
+<p>
+  <button id="run">実行</button>
+  <button id="abort" disabled>停止</button>
+  <button id="clear">クリア</button>
+</p>
+
+<div id="status">準備中…</div>
+<div id="summary" hidden></div>
+<div id="confusion"></div>
+
+<h2>サンプル結果</h2>
+<table id="result" hidden>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>text</th>
+      <th>truth (top-1)</th>
+      <th>geminiRanked</th>
+      <th>pred</th>
+      <th>raw</th>
+      <th>top-1</th>
+      <th>top-3</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h2>ログ</h2>
+<pre id="log"></pre>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.4/dist/transformers.min.js';
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+env.useBrowserCache = true;
+
+const FUNCS = ['Fe', 'Fi', 'Te', 'Ti', 'Ne', 'Ni', 'Se', 'Si', 'none'];
+// "none" は先に match させる (Ne の \b にぶつかるので順序に注意)
+const FUNC_RE = /\b(none|Fe|Fi|Te|Ti|Ne|Ni|Se|Si)\b/i;
+
+const PROMPT_DEFS = (text) => `次の SNS 投稿が最も強く表現している認知機能を 1 つだけ選んで、コード (Fe/Fi/Te/Ti/Ne/Ni/Se/Si/none) だけで答えてください。説明や前置きは不要です。
+
+定義:
+- Fe (外向感情): 他者の感情、場の調和、共感、配慮
+- Fi (内向感情): 自分の内なる価値観、感情の真実性、好き嫌い
+- Te (外向思考): 効率、客観的事実、実用的解決、データ
+- Ti (内向思考): 論理の一貫性、原理、体系の正確さ
+- Ne (外向直観): 可能性、連想、新しいアイデア、拡散
+- Ni (内向直観): パターン、本質、将来の見通し、収斂
+- Se (外向感覚): 今この瞬間の体験、身体感覚、行動
+- Si (内向感覚): 過去の経験、既知の情報、慣れ親しんだもの
+- none: 認知機能の表現が薄い (単なる挨拶、事実のみの URL シェア、文脈不足など)
+
+投稿:
+${text}
+
+答え:`;
+
+const PROMPT_BARE = (text) => `次の SNS 投稿を以下のいずれかに分類してコードだけで答えて (none は「判別できない」): Fe / Fi / Te / Ti / Ne / Ni / Se / Si / none
+
+投稿: ${text}
+
+答え:`;
+
+const SYSTEM_PROMPT =
+  'あなたは MBTI / Jung 心理学の認知機能 (Fe/Fi/Te/Ti/Ne/Ni/Se/Si の 8 種 + none) で SNS 投稿を分類する分類器です。投稿の表面的なトピックではなく、書き手の認知の **動き方** に注目して 1 つだけ選んでください。';
+
+const elStatus = document.getElementById('status');
+const elLog = document.getElementById('log');
+const elTable = document.getElementById('result');
+const elTbody = elTable.querySelector('tbody');
+const elSummary = document.getElementById('summary');
+const elConfusion = document.getElementById('confusion');
+const elRun = document.getElementById('run');
+const elAbort = document.getElementById('abort');
+const elPromptOpt = document.getElementById('prompt-opt');
+const elRuriOpt = document.getElementById('ruri-opt');
+
+function log(s) {
+  elLog.textContent += s + '\n';
+  elLog.scrollTop = elLog.scrollHeight;
+}
+function setStatus(s) { elStatus.textContent = s; }
+function escapeHtml(s) {
+  return String(s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function currentBackend() { return document.querySelector('input[name=backend]:checked').value; }
+
+function syncOptVisibility() {
+  const b = currentBackend();
+  elPromptOpt.style.display = b === 'nano' ? '' : 'none';
+  elRuriOpt.style.display = b.startsWith('ruri') ? '' : 'none';
+}
+for (const r of document.querySelectorAll('input[name=backend]')) {
+  r.addEventListener('change', syncOptVisibility);
+}
+syncOptVisibility();
+
+async function loadSamples() {
+  const r = await fetch('./cognitive-samples.jsonl');
+  if (!r.ok) throw new Error(`failed to fetch cognitive-samples.jsonl: ${r.status}`);
+  const t = await r.text();
+  return t.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+
+function parseNanoAnswer(raw) {
+  const m = String(raw).match(FUNC_RE);
+  if (!m) return null;
+  const lower = m[1].toLowerCase();
+  if (lower === 'none') return 'none';
+  const code = lower.charAt(0).toUpperCase() + lower.charAt(1);
+  return FUNCS.includes(code) ? code : null;
+}
+
+// ─── Backend abstractions ──────────────────────────────────────────────
+// 共通 interface: { classify(text) → {raw, pred}, cleanup() }
+
+async function makeNanoBackend(promptKind) {
+  if (typeof LanguageModel === 'undefined') {
+    throw new Error('LanguageModel API が見つかりません (Chrome 148+ デスクトップ必須)');
+  }
+  setStatus('Nano availability 確認中…');
+  const a = await LanguageModel.availability({
+    expectedInputs: [{ type: 'text', languages: ['ja'] }],
+    expectedOutputs: [{ type: 'text', languages: ['en'] }],
+  });
+  log(`Nano availability: ${a}`);
+  if (a === 'unavailable') throw new Error('Gemini Nano が利用不可');
+
+  const getPrompt = promptKind === 'defs' ? PROMPT_DEFS : PROMPT_BARE;
+  setStatus('Nano session template 作成中…');
+  const template = await LanguageModel.create({
+    initialPrompts: [{ role: 'system', content: SYSTEM_PROMPT }],
+    temperature: 0,
+    topK: 1,
+    expectedInputs: [{ type: 'text', languages: ['ja'] }],
+    expectedOutputs: [{ type: 'text', languages: ['en'] }],
+  });
+  return {
+    label: `Nano (${promptKind})`,
+    classify: async (text, signal) => {
+      const session = await template.clone({ signal });
+      try {
+        const raw = await session.prompt(getPrompt(text), { signal });
+        return { raw: String(raw).slice(0, 120), pred: parseNanoAnswer(raw) };
+      } finally {
+        session.destroy();
+      }
+    },
+    cleanup: () => template.destroy(),
+  };
+}
+
+async function makeRuriBackend(modelName, device) {
+  const dtype = device === 'webgpu' ? 'q4' : 'q8';
+  setStatus(`Ruri model ロード中… (${modelName}, ${device}+${dtype})`);
+  const classifier = await pipeline('text-classification', modelName, {
+    device,
+    dtype,
+    progress_callback: (p) => {
+      if (p.status === 'progress' && p.file) {
+        const pct = Math.round((p.progress ?? 0));
+        setStatus(`Loading ${p.file}: ${pct}%`);
+      }
+    },
+  });
+  log(`Ruri loaded: ${modelName} (${device}+${dtype})`);
+  return {
+    label: `Ruri ${modelName.split('/').pop()} (${device}+${dtype})`,
+    classify: async (text) => {
+      const result = await classifier(text, { top_k: 1 });
+      const r0 = Array.isArray(result) ? result[0] : result;
+      const label = r0?.label ?? '';
+      const score = r0?.score ?? 0;
+      return {
+        raw: `${label} (${score.toFixed(3)})`,
+        pred: FUNCS.includes(label) ? label : null,
+      };
+    },
+    cleanup: () => { /* transformers.js pipeline は明示 dispose API 無し */ },
+  };
+}
+
+async function makeBackend() {
+  const b = currentBackend();
+  if (b === 'nano') {
+    const promptKind = document.querySelector('input[name=prompt]:checked').value;
+    return makeNanoBackend(promptKind);
+  }
+  const device = document.querySelector('input[name=device]:checked').value;
+  const modelName = b === 'ruri-large'
+    ? 'kojira/aozoraquest-cognitive'
+    : 'kojira/aozoraquest-cognitive-small';
+  return makeRuriBackend(modelName, device);
+}
+
+// ─── Run loop ──────────────────────────────────────────────
+let abortController = null;
+
+async function run() {
+  elTable.hidden = false;
+  elTbody.innerHTML = '';
+  elSummary.hidden = true;
+  elConfusion.innerHTML = '';
+  elLog.textContent = '';
+
+  const limit = Math.max(1, Math.min(252, parseInt(document.getElementById('limit').value, 10) || 100));
+  const shuffle = document.getElementById('shuffle').checked;
+
+  let backend;
+  try {
+    backend = await makeBackend();
+  } catch (e) {
+    setStatus(`Backend ロード失敗: ${e.message}`);
+    return;
+  }
+
+  setStatus('Samples 読込中…');
+  let samples = await loadSamples();
+  if (shuffle) samples = [...samples].sort(() => Math.random() - 0.5);
+  samples = samples.slice(0, limit);
+  log(`samples: ${samples.length}, backend: ${backend.label}`);
+
+  abortController = new AbortController();
+  elRun.disabled = true;
+  elAbort.disabled = false;
+
+  let top1 = 0, top3 = 0, unparseable = 0;
+  let noneCount = 0, top1ExclNone = 0, top3ExclNone = 0, denomExclNone = 0;
+  const confusion = {};
+
+  const t0 = performance.now();
+  try {
+    for (let i = 0; i < samples.length; i++) {
+      if (abortController.signal.aborted) break;
+      const s = samples[i];
+      const truth = s.geminiRanked?.[0];
+      if (!truth) continue;
+
+      setStatus(`(${i + 1}/${samples.length}) classifying…`);
+      let raw = '', pred = null;
+      try {
+        const r = await backend.classify(s.text, abortController.signal);
+        raw = r.raw;
+        pred = r.pred;
+      } catch (e) {
+        if (abortController.signal.aborted) break;
+        log(`#${i + 1} error: ${e.message}`);
+      }
+
+      const isTop1 = pred && pred === truth;
+      const isTop3 = pred && Array.isArray(s.geminiRanked) && s.geminiRanked.includes(pred);
+      const isNone = truth === 'none';
+      if (isTop1) top1++;
+      if (isTop3) top3++;
+      if (!pred) unparseable++;
+      if (isNone) {
+        noneCount++;
+      } else {
+        denomExclNone++;
+        if (isTop1) top1ExclNone++;
+        if (isTop3) top3ExclNone++;
+      }
+
+      const predKey = pred ?? '?';
+      if (!confusion[truth]) confusion[truth] = {};
+      confusion[truth][predKey] = (confusion[truth][predKey] || 0) + 1;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i + 1}</td>
+        <td class="text">${escapeHtml(s.text)}</td>
+        <td>${truth}</td>
+        <td>${(s.geminiRanked || []).join(' / ')}</td>
+        <td>${pred ?? '<i>不明</i>'}</td>
+        <td class="text">${escapeHtml(String(raw).slice(0, 80))}</td>
+        <td class="${isTop1 ? 'ok' : 'fail'}">${isTop1 ? '✓' : '✗'}</td>
+        <td class="${isTop3 ? 'ok' : 'fail'}">${isTop3 ? '✓' : '✗'}</td>
+      `;
+      elTbody.appendChild(tr);
+      log(`#${i + 1}: pred=${pred ?? '?'} truth=${truth} top1=${isTop1 ? 'Y' : 'N'} top3=${isTop3 ? 'Y' : 'N'}`);
+    }
+  } finally {
+    try { backend.cleanup(); } catch {}
+    elRun.disabled = false;
+    elAbort.disabled = true;
+  }
+
+  const dt = ((performance.now() - t0) / 1000).toFixed(1);
+  const n = samples.length;
+  const denomA = n;
+  const denomB = denomExclNone;
+  elSummary.hidden = false;
+  elSummary.innerHTML = `
+    <strong>${backend.label} (n=${n}, ${dt}s, ${(dt / n).toFixed(2)}s/sample, shuffle=${shuffle})</strong><br>
+    Top-1 全体 (9-class、apples-to-apples): <strong>${top1}/${denomA} = ${(top1 / denomA * 100).toFixed(1)}%</strong><br>
+    Top-1 (excl. none): <strong>${top1ExclNone}/${denomB} = ${denomB ? (top1ExclNone / denomB * 100).toFixed(1) : 'n/a'}%</strong><br>
+    Top-3 全体: <strong>${top3}/${denomA} = ${(top3 / denomA * 100).toFixed(1)}%</strong><br>
+    Top-3 (excl. none): <strong>${top3ExclNone}/${denomB} = ${denomB ? (top3ExclNone / denomB * 100).toFixed(1) : 'n/a'}%</strong><br>
+    none サンプル: ${noneCount}/${denomA}、分類不能 (9 ラベル外応答): ${unparseable}/${n}<br>
+    <em>training 時の Ruri 130m baseline (test, 9-class): 57.9%</em>
+  `;
+  setStatus(`完了 (${dt}s)`);
+
+  // confusion matrix
+  const observedTruths = Object.keys(confusion);
+  const orderedTruths = [
+    ...FUNCS.filter((f) => observedTruths.includes(f)),
+    ...observedTruths.filter((t) => !FUNCS.includes(t)),
+  ];
+  let html = '<h2>混同行列 (行: truth, 列: pred、対角=正解)</h2><table id="conf"><thead><tr><th></th>';
+  for (const p of FUNCS) html += `<th>${p}</th>`;
+  html += '<th>?</th><th>合計</th></tr></thead><tbody>';
+  for (const t of orderedTruths) {
+    html += `<tr><th>${t}</th>`;
+    let total = 0;
+    for (const p of FUNCS) {
+      const c = confusion[t][p] || 0;
+      total += c;
+      html += `<td class="num ${p === t && c > 0 ? 'diag' : ''}">${c || ''}</td>`;
+    }
+    const q = confusion[t]['?'] || 0;
+    total += q;
+    html += `<td class="num">${q || ''}</td><td class="num">${total}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  elConfusion.innerHTML = html;
+}
+
+elRun.addEventListener('click', () => run().catch((e) => { log('ERR ' + e.message); console.error(e); }));
+elAbort.addEventListener('click', () => abortController?.abort());
+document.getElementById('clear').addEventListener('click', () => {
+  elTbody.innerHTML = '';
+  elSummary.hidden = true;
+  elConfusion.innerHTML = '';
+  elLog.textContent = '';
+  setStatus('準備中…');
+});
+
+setStatus('「実行」を押すと選んだ backend で N サンプルを分類します。');
+</script>
+</body>
+</html>

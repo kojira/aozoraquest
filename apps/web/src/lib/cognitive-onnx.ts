@@ -10,8 +10,16 @@
  *   5. 全 piece の確率を mean aggregate
  *   6. none を除いた 8 class を normalizeCognitive で 0-100 にリスケール
  *
- * Worker は singleton で保持。初回 init で WebGPU + int4 を試し、失敗したら
- * WASM + int8 にフォールバック。
+ * Worker は singleton で保持。Backend は WASM + int8 固定。
+ *
+ * モデル選択: 130m と 30m (small) を 252 件 test set でベンチした結果、
+ * 30m + WASM q8 が 130m を ~11 ppt 上回り (top-1 69.0% vs 57.9%) かつ
+ * 推論も速いため、PC/mobile 問わず 30m に統一。
+ * bench: docs/bench/cognitive-classifier-nano.html (backend selector 付き)。
+ *
+ * Backend 選択: WebGPU q4 は 30m モデルだと WASM q8 より精度が ~2 ppt 低く、
+ * かつ iOS Safari WebGPU JIT バグ (microsoft/onnxruntime#26827) もあるため
+ * WASM 単一経路に。30m モデルは小さく WASM でも十分速い (~12ms/sample)。
  */
 
 import type { CogFunction, CognitiveScores } from '@aozoraquest/core';
@@ -24,21 +32,12 @@ export type CognitiveDtype = 'q4' | 'q8';
 const LABELS_9 = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 const COGNITIVE_8: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
 
-import { isIosSafari, isLowEndDevice } from './device';
-
 /** batch 推論の 1 call あたり最大件数。GPU メモリと padding 損失のバランス。 */
 const DEFAULT_BATCH_SIZE = 16;
 
 type Pending =
   | { kind: 'single'; resolve: (v: number[]) => void; reject: (e: Error) => void }
   | { kind: 'batch'; resolve: (v: number[][]) => void; reject: (e: Error) => void };
-
-const MODEL_LARGE = 'kojira/aozoraquest-cognitive';
-const MODEL_SMALL = 'kojira/aozoraquest-cognitive-small';
-
-function pickModelName(): string {
-  return isLowEndDevice() ? MODEL_SMALL : MODEL_LARGE;
-}
 
 export class CognitiveOnnxClassifier {
   private worker: Worker | null = null;
@@ -64,11 +63,7 @@ export class CognitiveOnnxClassifier {
         }
       };
       this.worker!.addEventListener('message', onMsg);
-      this.worker!.postMessage({
-        type: 'init',
-        modelName: pickModelName(),
-        forceWasm: isIosSafari(),
-      });
+      this.worker!.postMessage({ type: 'init' });
     });
     return this.ready;
   }
