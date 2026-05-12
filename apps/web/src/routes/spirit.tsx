@@ -15,7 +15,10 @@ import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
-import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
+import { getGenerator, isModelCached } from '@/lib/generator';
+import { generateSpirit, type SpiritBackend } from '@/lib/spirit-generator';
+import { useGeminiNanoPref } from '@/lib/spirit-prefs';
+import { detectGeminiNano, type NanoStatus } from '@/lib/gemini-nano-availability';
 import { isLowEndDevice } from '@/lib/device';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
@@ -65,6 +68,9 @@ export function Spirit() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
+  const [useNano, setUseNano] = useGeminiNanoPref();
+  const [nanoStatus, setNanoStatus] = useState<NanoStatus | null>(null);
+  const [lastBackend, setLastBackend] = useState<SpiritBackend | null>(null);
   const streamingRef = useRef<string | null>(null); // uri of current streaming message
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -131,6 +137,15 @@ export function Spirit() {
     })();
     return () => { cancelled = true; };
   }, [session.status, agent, did]);
+
+  // Gemini Nano (Chrome 内蔵 AI) の利用可能性を 1 回だけ問い合わせる。
+  useEffect(() => {
+    let cancelled = false;
+    detectGeminiNano().then((s) => {
+      if (!cancelled) setNanoStatus(s);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // 投稿直後にポイント再計算
   useOnPosted(() => {
@@ -206,7 +221,6 @@ export function Spirit() {
     void bumpPower(agent, did, { userMessages: 1 });
 
     // spirit の返答を生成 (streaming)
-    const g = getGenerator();
     // 保留用 uri (本物が入るまで streamingRef で識別)
     const streamKey = `__streaming_${Date.now()}`;
     streamingRef.current = streamKey;
@@ -216,28 +230,28 @@ export function Spirit() {
     // 直近 HISTORY_TURNS ターン (1 ターン = user + spirit の 2 件) を LLM コンテキストに渡す。
     // 要約はせず、それ以前は忘れる。
     //
-    // ※ admin prompt (systemPrompt) は **system role に置かず、最後のユーザー
-    //    メッセージに prepend する**。理由: TinySwallow は system role の
-    //    指示追従率が 22%、user role に置くと 58% という実測 (50 件 ×
-    //    temp=0)。詳細は docs/bench/tinyswallow-instruction-following-report.md
-    //    各ターン毎に prompt を再注入する形になり、長い会話でも遵守が保てる。
+    // backend 切替 (Gemini Nano か TinySwallow か) と、TinySwallow 用の
+    // system prompt prepend は spirit-generator.ts の router が引き受ける。
     const recentHistory = [...history.slice(-HISTORY_TURNS * 2), tempUser];
-    const messages: ChatMessage[] = recentHistory.map((m, i) => {
-      const role = m.role === 'spirit' ? ('assistant' as const) : ('user' as const);
-      const isLastUser = role === 'user' && i === recentHistory.length - 1;
-      const content = isLastUser && systemPrompt ? `${systemPrompt}\n\n${m.text}` : m.text;
-      return { role, content };
-    });
+    const historyForGen = recentHistory.map((m) => ({
+      role: m.role === 'spirit' ? ('assistant' as const) : ('user' as const),
+      content: m.text,
+    }));
 
     let full = '';
     try {
-      full = await g.generate(messages, {
-        maxNewTokens: spiritMaxNewTokens,
-        onToken: (chunk: string) => {
-          if (streamingRef.current !== streamKey) return;
-          setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+      const result = await generateSpirit(
+        { systemPrompt, history: historyForGen },
+        {
+          maxNewTokens: spiritMaxNewTokens,
+          onToken: (chunk: string) => {
+            if (streamingRef.current !== streamKey) return;
+            setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+          },
         },
-      });
+      );
+      full = result.text;
+      setLastBackend(result.backend);
     } catch (e) {
       streamingRef.current = null;
       setHistory((h) => h.filter((x) => x.uri !== streamKey));
@@ -335,6 +349,10 @@ export function Spirit() {
   const jobLabel = diag ? jobDisplayName(diag.archetype, 'default') : null;
   /** 召喚済みだがキャッシュが消えているため、再召喚の儀式を要求する状態。 */
   const needsResummon = points.summoned && !cacheReady;
+  /** Nano を使う条件: ユーザー設定 ON + Nano available。Nano なら TinySwallow
+   *  キャッシュロード完了を待たずに即チャット可能。 */
+  const willUseNano = useNano && nanoStatus === 'available';
+  const effectiveReady = willUseNano || generatorReady;
 
   return (
     <div>
@@ -452,6 +470,34 @@ export function Spirit() {
             </section>
           ) : (
             <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+              <details style={{ fontSize: '0.8em' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--color-muted)' }}>
+                  ⚙ AI 設定
+                  {lastBackend && (
+                    <span style={{ marginLeft: '0.5em', padding: '0.05em 0.5em', borderRadius: 10, background: 'rgba(255,255,255,0.1)' }}>
+                      前回: {lastBackend === 'gemini-nano' ? 'Gemini Nano' : 'TinySwallow'}
+                    </span>
+                  )}
+                </summary>
+                <div style={{ marginTop: '0.5em', paddingLeft: '0.5em', lineHeight: 1.6 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
+                    <input
+                      type="checkbox"
+                      checked={useNano}
+                      disabled={nanoStatus !== 'available'}
+                      onChange={(e) => setUseNano(e.target.checked)}
+                    />
+                    <span>ブラウザ内蔵 AI を使う (Gemini Nano、速い)</span>
+                  </label>
+                  <p style={{ margin: '0.3em 0 0 1.8em', color: 'var(--color-muted)', fontSize: '0.9em' }}>
+                    {nanoStatus === 'available' && 'お使いの環境では Gemini Nano が利用可能です。OFF にすると常に TinySwallow を使います。'}
+                    {nanoStatus === 'downloadable' && 'Chrome がモデルを未取得のため使えません。他サイトで一度有効化されると自動的に使えるようになります。今は TinySwallow を使います。'}
+                    {nanoStatus === 'downloading' && 'Chrome がモデルをダウンロード中。完了するまでは TinySwallow を使います。'}
+                    {nanoStatus === 'unavailable' && 'お使いの環境では利用できません (Chrome 148+ デスクトップ専用)。TinySwallow を使います。'}
+                    {nanoStatus === null && '利用可否を確認中…'}
+                  </p>
+                </div>
+              </details>
               <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
                 <TextField
                   ref={inputRef}
@@ -459,19 +505,19 @@ export function Spirit() {
                   onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
                   onSubmit={() => void sendMessage()}
                   placeholder={
-                    !generatorReady
+                    !effectiveReady
                       ? 'ブルスコンを呼び戻している…'
                       : points.balance > 0
                         ? 'ブルスコンに話しかける'
                         : 'あなたの投稿を重ねると、話せるようになる'
                   }
-                  disabled={sending || points.balance < 1 || !generatorReady}
+                  disabled={sending || points.balance < 1 || !effectiveReady}
                   maxLength={INPUT_MAX}
                   style={{ flex: 1 }}
                 />
                 <button
                   onClick={() => void sendMessage()}
-                  disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
+                  disabled={sending || points.balance < 1 || !input.trim() || !effectiveReady}
                 >
                   {sending ? '…' : '送る'}
                 </button>
