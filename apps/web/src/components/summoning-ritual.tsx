@@ -136,7 +136,7 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
           <h2 style={{ marginTop: '0.8em' }}>今日は儀式を続けられないようだ</h2>
           <p style={{ marginTop: '0.5em', color: '#c9d4e0' }}>{err ?? '原因不明'}</p>
           <p style={{ marginTop: '0.5em', fontSize: '0.85em', color: '#9fb3c8' }}>
-            (WebGPU が使えるブラウザで再試行すると進みます)
+            (PDS への書き込みが失敗したようです。少し待ってから再試行してください)
           </p>
           <div style={{ display: 'flex', gap: '0.5em', justifyContent: 'center', marginTop: '1.2em' }}>
             <button onClick={onCancel}>やめる</button>

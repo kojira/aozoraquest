@@ -16,7 +16,7 @@ import {
   RARITY_LABEL,
   defaultCostFor,
 } from '@aozoraquest/core';
-import { generateWithLocalLLM, pickLocalLLM } from './local-llm';
+import { generateWithLocalLLM, pickLocalLLM, type LLMGenResult } from './local-llm';
 import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
 
 export interface CardTextSource {
@@ -407,7 +407,7 @@ async function callLLM(
   user: string,
   timeoutMs: number,
   tag: 'ability' | 'flavor',
-): Promise<{ text: string; backend: string }> {
+): Promise<LLMGenResult> {
   const fullPromise = generateWithLocalLLM(
     { systemPrompt: system, history: [{ role: 'user', content: user }] },
     { temperature: 0.8, maxNewTokens: 400 },
@@ -435,7 +435,7 @@ async function runStageWithRetry<T>(
 ): Promise<{ parsed: T; backend: string }> {
   let lastErr: CardTextError | null = null;
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    let result: { text: string; backend: string };
+    let result: LLMGenResult;
     try {
       result = await callLLM(prompt.system, prompt.user, timeoutMs, tag);
     } catch (e) {
