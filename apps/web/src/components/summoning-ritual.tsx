@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
-import { getGenerator } from '@/lib/generator';
-import { generateSpirit, pickSpiritBackend } from '@/lib/spirit-generator';
-import { isLowEndDevice } from '@/lib/device';
+import { generateWithLocalLLM, pickLocalLLM } from '@/lib/local-llm';
 
 interface SummoningRitualProps {
   agent: Agent;
@@ -45,43 +43,21 @@ const GREETING_NARRATION_INTERVAL = 3200;
 /**
  * ブルスコン召喚の儀式。
  *
- * TinySwallow のロードと演出を並列進行。演出は最低 ~7 秒、LLM ロードが長引く場合は
- * greeting フェーズでナレーションを巡回させて間を持たせる。ロード完了 → 歓迎メッセージ
- * 生成完了の瞬間に 'emerging' フェーズに入り、フラッシュ + 星弾けの演出をしてから閉じる。
+ * LLM 利用可能性 (Nano など) のチェックと演出を並列で進める。演出は最低 ~7 秒、
+ * LLM 応答が長引いた場合は greeting フェーズでナレーションを巡回させて間を持たせる。
+ * LLM 応答完了 (or LLM 利用不可で hand-crafted 採用) の瞬間に 'emerging' フェーズへ
+ * 遷移し、フラッシュ + 星弾けの演出をしてから閉じる。
  */
 export function SummoningRitual({ agent: _agent, userName, systemPrompt, onComplete, onCancel }: SummoningRitualProps) {
   const [phase, setPhase] = useState<Phase>('gathering');
   const [greetingIdx, setGreetingIdx] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const startedAt = useRef(Date.now());
-  const loadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    // モバイルは LLM が乗らないので儀式自体を hand-crafted 完走させる。
-    // モデル DL すらしない (Cache Storage 圧迫もしない)。
-    const skipLlm = isLowEndDevice();
-
-    // backend を先に決める。TinySwallow が選ばれた場合だけ、儀式の演出と
-    // 並行してモデルロードを走らせる (~600MB DL を「気配が集まる」フェーズで
-    // 隠す)。Gemini Nano なら DL 不要なので即時待機なし。
-    const backendPromise = skipLlm
-      ? Promise.resolve('tinyswallow' as const)
-      : pickSpiritBackend();
-
-    const loadPromise = backendPromise
-      .then(async (b) => {
-        if (skipLlm) return;
-        if (b === 'tinyswallow') {
-          await getGenerator().load();
-        }
-        loadedRef.current = true;
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setErr(String((e as Error)?.message ?? e));
-        setPhase('error');
-      });
+    // LLM 利用可能性は儀式の早い段階で並行 probe しておく (greeting 到達時に確定済)。
+    const llmProbe = pickLocalLLM().catch(() => null);
 
     async function run() {
       await sleep(MIN_PHASE_MS);
@@ -94,31 +70,24 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
       if (cancelled) return;
 
       setPhase('greeting');
-      await loadPromise;
-      if (cancelled || err) return;
+      const llm = await llmProbe;
+      if (cancelled) return;
 
       let welcome = '';
-      if (skipLlm) {
-        // モバイル: ハンドクラフト固定文 (一人称無し)
+      if (!llm) {
+        // LLM 利用不可 (Firefox/Safari/モバイル等): ハンドクラフト固定文
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
       } else {
-        if (!loadedRef.current) return;
-        // 儀式特有のタスク指示。`# あなたへの依頼` ヘッダで「今やること」を
-        // 明示する。Nano は systemPrompt を system role に、TinySwallow は
-        // 最後の user に prepend するが、いずれの経路でも task ヘッダは
-        // user message 内に保持される。
+        // 儀式特有のタスク指示。`# あなたへの依頼` ヘッダで「今やること」を明示する。
         const taskBlock = `# あなたへの依頼\n${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
         try {
-          const result = await generateSpirit(
+          const result = await generateWithLocalLLM(
             { systemPrompt, history: [{ role: 'user', content: taskBlock }] },
-            {},
           );
-          welcome = cleanGenerated(result.text);
+          welcome = cleanGenerated(result?.text ?? '');
         } catch (e) {
-          if (cancelled) return;
-          setErr(String((e as Error)?.message ?? e));
-          setPhase('error');
-          return;
+          console.warn('[ritual] LLM failed, falling back to hand-crafted welcome', e);
+          welcome = '';
         }
         if (!welcome || welcome.length < 4) {
           welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
