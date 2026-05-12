@@ -39,3 +39,22 @@ export function setAnalyzePosts(v: boolean): void {
     /* no-op */
   }
 }
+
+const KEY_HIDE_REPOSTS = 'aozoraquest:hideReposts';
+
+/** タイムラインからリポストを除外するか。デフォルト OFF (= リポストも表示)。 */
+export function getHideReposts(): boolean {
+  try {
+    return localStorage.getItem(KEY_HIDE_REPOSTS) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setHideReposts(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_HIDE_REPOSTS, String(v));
+  } catch {
+    /* no-op */
+  }
+}

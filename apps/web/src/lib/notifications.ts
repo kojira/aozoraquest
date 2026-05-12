@@ -28,6 +28,9 @@ const GROUPABLE = new Set<string>([
   'follow',
   'like-via-repost',
   'repost-via-repost',
+  // 購読中ユーザーの新着投稿。各 notification は別 post を指すが、グループ化
+  // しないと連投で通知欄が埋まる。subjectKey 無し (= 全部マージ) で扱う。
+  'subscribed-post',
 ]);
 
 function subjectKey(n: Notification): string | undefined {
@@ -90,8 +93,11 @@ export function previewUriForGroup(g: NotifGroup): string | undefined {
       g.reason === 'like-via-repost' || g.reason === 'repost-via-repost')) {
     return g.subjectUri;
   }
-  // reply / mention / quote: 相手の投稿 (notification.uri が record URI)
-  if (g.reason === 'reply' || g.reason === 'mention' || g.reason === 'quote') {
+  // reply / mention / quote / subscribed-post: 相手の投稿
+  // (notification.uri が新規 record の URI)。グループ内 notifications は
+  // DESC 順なので [0] が最新 = preview として最も妥当。
+  if (g.reason === 'reply' || g.reason === 'mention' || g.reason === 'quote'
+      || g.reason === 'subscribed-post') {
     return g.notifications[0]?.uri;
   }
   return undefined;
@@ -115,6 +121,8 @@ export function labelForReason(reason: string): string {
       return '引用';
     case 'starterpack-joined':
       return 'スターターパック参加';
+    case 'subscribed-post':
+      return '新しい投稿';
     default:
       return reason;
   }
