@@ -19,15 +19,17 @@
  *
  * Backend 選択: WebGPU q4 は 30m モデルだと WASM q8 より精度が ~2 ppt 低く、
  * かつ iOS Safari WebGPU JIT バグ (microsoft/onnxruntime#26827) もあるため
- * WASM 単一経路に。30m モデルは小さく WASM でも十分速い (~12ms/sample)。
+ * WASM 単一経路に。30m モデルは十分小さく、WASM でも実用速度が出る。
  */
 
 import type { CogFunction, CognitiveScores } from '@aozoraquest/core';
 import { normalizeCognitive } from '@aozoraquest/core';
 import { preprocessText, hasJapanese, splitLongPost } from './japanese-text';
 
-export type CognitiveBackend = 'webgpu' | 'wasm';
-export type CognitiveDtype = 'q4' | 'q8';
+/** 現状は wasm/q8 のみ。将来別 backend を再導入する時は worker 側も含めて
+ *  union を広げる (今は literal narrow で誤参照を compile-time に検出可能)。 */
+export type CognitiveBackend = 'wasm';
+export type CognitiveDtype = 'q8';
 
 const LABELS_9 = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 const COGNITIVE_8: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
