@@ -61,10 +61,14 @@ export function NotificationItem({
   const label = labelForReason(group.reason);
   const previewUri = previewUriForGroup(group);
   const post = previewUri ? postCache.get(previewUri) : undefined;
-  const primary = group.authors[0];
+  // 同一 author が連投したケース (subscribed-post で 1 人が 20 件連投など) は
+  // 1 人 1 行に集約。group.authors は notification 1 件ごとに重複し得るので
+  // did で dedupe してから UI に渡す。出現順は最古発見順 = notification DESC。
+  const uniqueAuthors = dedupeAuthorsByDid(group.authors);
+  const primary = uniqueAuthors[0];
   if (!primary) return null;
   // 2 人以上集約されている時だけ accordion を出す (1 人なら展開しても情報増えない)。
-  const expandable = group.authors.length > 1;
+  const expandable = uniqueAuthors.length > 1;
 
   const onCardClick = (e: React.MouseEvent) => {
     // 子の Link / button が onClick stopPropagation しているのでここに来たら navigate
@@ -78,7 +82,7 @@ export function NotificationItem({
     }
   };
 
-  const headerText = buildHeaderText(group);
+  const headerText = buildHeaderText(uniqueAuthors);
 
   return (
     <article
@@ -100,7 +104,7 @@ export function NotificationItem({
         }}
       >
         <Icon size={18} style={{ color: 'var(--color-accent)' }} />
-        <AuthorStack authors={group.authors} />
+        <AuthorStack authors={uniqueAuthors} />
         <span>
           が<strong style={{ color: 'var(--color-fg)' }}>{label}</strong>しました
         </span>
@@ -116,7 +120,7 @@ export function NotificationItem({
             }}
             aria-expanded={expanded}
             aria-label={expanded ? '反応した人の一覧を閉じる' : '反応した人の一覧を開く'}
-            title={expanded ? '閉じる' : `反応した ${group.authors.length} 人を表示`}
+            title={expanded ? '閉じる' : `反応した ${uniqueAuthors.length} 人を表示`}
             style={{
               background: 'transparent',
               border: 'none',
@@ -137,7 +141,7 @@ export function NotificationItem({
         </p>
       )}
       {expanded && (
-        <ExpandedAuthorList authors={group.authors} />
+        <ExpandedAuthorList authors={uniqueAuthors} />
       )}
       {group.reason === 'follow' ? (
         <FollowPreview author={primary} />
@@ -211,16 +215,27 @@ function ExpandedAuthorList({ authors }: { authors: NotifGroup['authors'] }) {
   );
 }
 
-function buildHeaderText(g: NotifGroup): string | null {
-  const first = g.authors[0];
+function dedupeAuthorsByDid(authors: NotifGroup['authors']): NotifGroup['authors'] {
+  const seen = new Set<string>();
+  const out: NotifGroup['authors'] = [];
+  for (const a of authors) {
+    if (seen.has(a.did)) continue;
+    seen.add(a.did);
+    out.push(a);
+  }
+  return out;
+}
+
+function buildHeaderText(authors: NotifGroup['authors']): string | null {
+  const first = authors[0];
   if (!first) return null;
   const firstName = first.displayName || first.handle;
-  if (g.authors.length === 1) return firstName;
-  const second = g.authors[1];
+  if (authors.length === 1) return firstName;
+  const second = authors[1];
   if (!second) return firstName;
   const secondName = second.displayName || second.handle;
-  if (g.authors.length === 2) return `${firstName}、${secondName}`;
-  return `${firstName}、${secondName} 他 ${g.authors.length - 2} 人`;
+  if (authors.length === 2) return `${firstName}、${secondName}`;
+  return `${firstName}、${secondName} 他 ${authors.length - 2} 人`;
 }
 
 function FollowPreview({ author }: { author: NotifGroup['authors'][number] }) {
