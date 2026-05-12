@@ -11,8 +11,10 @@ import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
 import { PostArticle } from '@/components/post-article';
 import { PostText } from '@/components/post-text';
+import { TranslationControls } from '@/components/post-body';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
+import { useTranslation } from '@/lib/translate';
 
 interface LoadState {
   kind: 'loading' | 'not-found' | 'ok' | 'error';
@@ -115,7 +117,7 @@ export function Profile() {
           )}
         </div>
         {profile.description && (
-          <PostText text={profile.description} style={{ marginTop: '0.6em', fontSize: '0.9em' }} />
+          <ProfileBio did={profile.did} description={profile.description} />
         )}
         <div style={{ marginTop: '0.6em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
           フォロー {profile.followsCount ?? 0} · フォロワー {profile.followersCount ?? 0} · 投稿 {profile.postsCount ?? 0}
@@ -164,6 +166,35 @@ export function Profile() {
       <div style={{ marginTop: '1em' }}>
         <RecentPosts agent={session.agent} did={profile.did} />
       </div>
+    </div>
+  );
+}
+
+/** プロフィール bio の翻訳対応ラッパー。本文と同じ TinySwallow/Nano 経路を
+ *  使うが、URI が無いので合成キー `profile-bio:<did>` を翻訳キャッシュ key に。 */
+function ProfileBio({ did, description }: { did: string; description: string }) {
+  const cacheKey = `profile-bio:${did}`;
+  const { state, translated, error, triggerTranslate, retranslate, isNonJapanese } =
+    useTranslation(cacheKey, description);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const displayText = !showOriginal && translated ? translated : undefined;
+  return (
+    <div style={{ marginTop: '0.6em', fontSize: '0.9em' }}>
+      <PostText text={description} override={displayText} />
+      {isNonJapanese && (
+        <TranslationControls
+          state={state}
+          hasTranslation={!!translated}
+          showOriginal={showOriginal}
+          error={error}
+          onToggleOriginal={() => setShowOriginal((v) => !v)}
+          onTranslate={triggerTranslate}
+          onRetranslate={() => {
+            setShowOriginal(false);
+            retranslate();
+          }}
+        />
+      )}
     </div>
   );
 }
