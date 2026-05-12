@@ -7,7 +7,7 @@ import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts } from '@/lib/prefs';
+import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts } from '@/lib/prefs';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
@@ -307,6 +307,7 @@ export function Settings() {
         <h3 style={{ fontSize: '0.95em' }}>表示設定</h3>
         <AutoTranslateToggle />
         <AnalyzePostsToggle />
+        <HideRepostsToggle />
       </section>
 
       <section style={{ marginTop: '2em' }}>
@@ -340,6 +341,29 @@ function AutoTranslateToggle() {
       </label>
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
         ブラウザ内で TinySwallow が動くので外部に送信されません。OFF にした場合も各投稿下の「🌐 翻訳する」ボタンから個別に翻訳できます。
+      </p>
+    </div>
+  );
+}
+
+function HideRepostsToggle() {
+  const [enabled, setEnabled] = useState<boolean>(() => getHideReposts());
+  function handleChange(v: boolean) {
+    setHideReposts(v);
+    setEnabled(v);
+  }
+  return (
+    <div style={{ marginTop: '1em' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em', fontSize: '0.9em', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => handleChange(e.target.checked)}
+        />
+        <span>タイムラインのリポストを非表示にする</span>
+      </label>
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
+        フォロー中のタイムラインで、他人がリポストした投稿を流さないようにします。フォローしている本人の投稿はそのまま表示されます。
       </p>
     </div>
   );
