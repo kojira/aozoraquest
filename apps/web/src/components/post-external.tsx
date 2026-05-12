@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { PostExternal } from '@/lib/post-embed';
 import { useTranslation } from '@/lib/translate';
+import { TranslationControls } from './post-body';
 
 /**
  * 外部リンクカード (app.bsky.embed.external#view)。
@@ -24,96 +26,123 @@ export function PostExternalCard({ external }: { external: PostExternal }) {
     descHasText ? `og-desc:${external.uri}` : undefined,
     external.description ?? '',
   );
-  const titleDisplay = titleTr.translated ?? external.title;
-  const descDisplay = descTr.translated ?? external.description;
-  const anyTranslated = !!titleTr.translated || !!descTr.translated;
+  const [showOriginal, setShowOriginal] = useState(false);
+  const titleDisplay = !showOriginal && titleTr.translated ? titleTr.translated : external.title;
+  const descDisplay = !showOriginal && descTr.translated ? descTr.translated : external.description;
+  const hasTranslation = !!titleTr.translated || !!descTr.translated;
+  // 2 つの翻訳 state を 1 つに統合 (UI 表示の優先順位)
+  const combinedState: ReturnType<typeof useTranslation>['state'] =
+    titleTr.state === 'loading' || descTr.state === 'loading' ? 'loading'
+    : hasTranslation ? 'done'
+    : titleTr.state === 'error' || descTr.state === 'error' ? 'error'
+    : 'idle';
+  const combinedError = titleTr.error ?? descTr.error;
+  // どちらかでも翻訳対象なら controls を出す
+  const showControls = titleTr.isNonJapanese || descTr.isNonJapanese;
+  const onTriggerTranslate = () => {
+    titleTr.triggerTranslate();
+    descTr.triggerTranslate();
+  };
+  const onRetranslate = () => {
+    setShowOriginal(false);
+    titleTr.retranslate();
+    descTr.retranslate();
+  };
   return (
-    <a
-      href={external.uri}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
+    <div
       style={{
-        display: 'flex',
-        gap: 8,
-        alignItems: 'center',
         marginTop: '0.5em',
         padding: 8,
         border: '1px solid var(--color-border)',
         borderRadius: 6,
-        textDecoration: 'none',
-        color: 'inherit',
         background: 'rgba(255, 255, 255, 0.03)',
       }}
+      onClick={(e) => e.stopPropagation()}
     >
-      {external.thumb && (
-        <img
-          src={external.thumb}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          style={{
-            width: 72,
-            height: 72,
-            borderRadius: 4,
-            objectFit: 'cover',
-            flexShrink: 0,
-            background: '#000',
-          }}
-        />
-      )}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {host && (
-          <div
+      <a
+        href={external.uri}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          textDecoration: 'none',
+          color: 'inherit',
+        }}
+      >
+        {external.thumb && (
+          <img
+            src={external.thumb}
+            alt=""
+            loading="lazy"
+            decoding="async"
             style={{
-              fontSize: '0.75em',
-              color: 'var(--color-muted)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
+              width: 72,
+              height: 72,
+              borderRadius: 4,
+              objectFit: 'cover',
+              flexShrink: 0,
+              background: '#000',
             }}
-          >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{host}</span>
-            {anyTranslated && (
-              <span title="日本語に翻訳済み" aria-label="日本語に翻訳済み" style={{ flexShrink: 0 }}>
-                🌐
-              </span>
-            )}
-          </div>
+          />
         )}
-        <div
-          style={{
-            fontWeight: 700,
-            fontSize: '0.95em',
-            lineHeight: 1.3,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {titleDisplay || external.uri}
-        </div>
-        {descDisplay && (
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {host && (
+            <div
+              style={{
+                fontSize: '0.75em',
+                color: 'var(--color-muted)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {host}
+            </div>
+          )}
           <div
             style={{
-              fontSize: '0.85em',
-              color: 'var(--color-muted)',
-              lineHeight: 1.4,
+              fontWeight: 700,
+              fontSize: '0.95em',
+              lineHeight: 1.3,
               display: '-webkit-box',
               WebkitLineClamp: 2,
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
             }}
           >
-            {descDisplay}
+            {titleDisplay || external.uri}
           </div>
-        )}
-      </div>
-    </a>
+          {descDisplay && (
+            <div
+              style={{
+                fontSize: '0.85em',
+                color: 'var(--color-muted)',
+                lineHeight: 1.4,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {descDisplay}
+            </div>
+          )}
+        </div>
+      </a>
+      {showControls && (
+        <TranslationControls
+          state={combinedState}
+          hasTranslation={hasTranslation}
+          showOriginal={showOriginal}
+          error={combinedError}
+          onToggleOriginal={() => setShowOriginal((v) => !v)}
+          onTranslate={onTriggerTranslate}
+          onRetranslate={onRetranslate}
+        />
+      )}
+    </div>
   );
 }
 
