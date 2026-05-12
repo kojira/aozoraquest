@@ -16,13 +16,13 @@ import {
   RARITY_LABEL,
   defaultCostFor,
 } from '@aozoraquest/core';
-import { getGenerator } from './generator';
+import { generateWithLocalLLM, pickLocalLLM, type LLMGenResult } from './local-llm';
 import { pickFallbackFlavor, pickFallbackEffect } from './job-flavor-fallback';
-import { isLowEndDevice } from './device';
 
 export interface CardTextSource {
   kind: 'llm' | 'fallback';
-  backend?: 'webgpu' | 'wasm';
+  /** llm が使った backend id (例: 'gemini-nano')。fallback の場合 undefined。 */
+  backend?: string;
 }
 
 export interface CardEffect {
@@ -403,22 +403,23 @@ export class CardTextError extends Error {
 }
 
 async function callLLM(
-  gen: ReturnType<typeof getGenerator>,
   system: string,
   user: string,
   timeoutMs: number,
   tag: 'ability' | 'flavor',
-): Promise<string> {
-  const messages = [
-    { role: 'system' as const, content: system },
-    { role: 'user' as const, content: user },
-  ];
-  const fullPromise = gen.generate(messages);
+): Promise<LLMGenResult> {
+  const fullPromise = generateWithLocalLLM(
+    { systemPrompt: system, history: [{ role: 'user', content: user }] },
+    { temperature: 0.8, maxNewTokens: 400 },
+  );
   const raced = await Promise.race([
     fullPromise,
-    new Promise<string>((_, rej) => setTimeout(() => rej(new Error(`${tag} LLM timeout (${timeoutMs}ms)`)), timeoutMs)),
+    new Promise<null>((_, rej) => setTimeout(() => rej(new Error(`${tag} LLM timeout (${timeoutMs}ms)`)), timeoutMs)),
   ]);
-  console.info(`[card-text/${tag}] raw LLM output:\n` + raced);
+  if (!raced) {
+    throw new CardTextError('load', `${tag}: no local LLM available`);
+  }
+  console.info(`[card-text/${tag}] raw LLM output (${raced.backend}):\n` + raced.text);
   return raced;
 }
 
@@ -427,26 +428,25 @@ async function runStageWithRetry<T>(
   tag: 'ability' | 'flavor',
   stageGenerate: CardTextError['stage'],
   stageParse: CardTextError['stage'],
-  gen: ReturnType<typeof getGenerator>,
   prompt: { system: string; user: string },
   parse: (raw: string) => T | null,
   timeoutMs: number,
   attempts: number,
-): Promise<T> {
+): Promise<{ parsed: T; backend: string }> {
   let lastErr: CardTextError | null = null;
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    let raw: string;
+    let result: LLMGenResult;
     try {
-      raw = await callLLM(gen, prompt.system, prompt.user, timeoutMs, tag);
+      result = await callLLM(prompt.system, prompt.user, timeoutMs, tag);
     } catch (e) {
       lastErr = new CardTextError(stageGenerate, `${tag} generation failed (attempt ${attempt}/${attempts}): ${(e as Error)?.message ?? e}`, { cause: e });
       console.warn(`[card-text/${tag}] attempt ${attempt}/${attempts} generation failed, retrying`, e);
       continue;
     }
-    const parsed = parse(raw);
-    if (parsed !== null) return parsed;
-    lastErr = new CardTextError(stageParse, `${tag} parse failed (attempt ${attempt}/${attempts}, length=${raw.length})`, { raw });
-    console.warn(`[card-text/${tag}] attempt ${attempt}/${attempts} parse failed, raw:\n${raw}`);
+    const parsed = parse(result.text);
+    if (parsed !== null) return { parsed, backend: result.backend };
+    lastErr = new CardTextError(stageParse, `${tag} parse failed (attempt ${attempt}/${attempts}, length=${result.text.length})`, { raw: result.text });
+    console.warn(`[card-text/${tag}] attempt ${attempt}/${attempts} parse failed, raw:\n${result.text}`);
   }
   throw lastErr ?? new CardTextError(stageGenerate, `${tag} failed after ${attempts} attempts`);
 }
@@ -457,12 +457,6 @@ async function generateWithLLM(
   timeoutMs: number,
   tone: Tone,
 ): Promise<CardText> {
-  const gen = getGenerator();
-  try {
-    await gen.load();
-  } catch (e) {
-    throw new CardTextError('load', `generator load failed: ${(e as Error)?.message ?? e}`, { cause: e });
-  }
   const half = Math.max(15000, Math.floor(timeoutMs / 2));
   const MAX_ATTEMPTS = 3;
 
@@ -471,24 +465,21 @@ async function generateWithLLM(
   // 1) 能力 (ルールテキスト)
   const ability = await runStageWithRetry(
     'ability', 'ability-generate', 'ability-parse',
-    gen, buildAbilityPrompt(result, rarity, tone), parseAbilityOutput, half, MAX_ATTEMPTS,
+    buildAbilityPrompt(result, rarity, tone), parseAbilityOutput, half, MAX_ATTEMPTS,
   );
-  console.info('[card-text/ability] parsed →', ability);
+  console.info('[card-text/ability] parsed →', ability.parsed);
 
   // 2) フレーバー (詩的 1 行)
   const flavor = await runStageWithRetry(
     'flavor', 'flavor-generate', 'flavor-parse',
-    gen, buildFlavorPrompt(result, rarity, ability.name, tone), parseFlavorOutput, half, MAX_ATTEMPTS,
+    buildFlavorPrompt(result, rarity, ability.parsed.name, tone), parseFlavorOutput, half, MAX_ATTEMPTS,
   );
-  console.info('[card-text/flavor] parsed →', flavor);
+  console.info('[card-text/flavor] parsed →', flavor.parsed);
 
-  const source: CardTextSource = { kind: 'llm' };
-  const backend = gen.getBackend();
-  if (backend) source.backend = backend;
   return {
-    effect: { name: ability.name, cost: ability.cost, description: ability.description },
-    flavor,
-    source,
+    effect: { name: ability.parsed.name, cost: ability.parsed.cost, description: ability.parsed.description },
+    flavor: flavor.parsed,
+    source: { kind: 'llm', backend: flavor.backend },
   };
 }
 
@@ -496,13 +487,14 @@ async function generateWithLLM(
  *  開発中はエラーを隠さない: LLM 失敗時は CardTextError を投げる (UI 側で表示)。
  *  本番で自動フォールバックが必要になったら呼び出し側で catch → getFallbackCardText。
  *
- *  モバイルは LLM 自体が乗らない (OOM) ので即 hand-crafted fallback。 */
+ *  LLM が利用不可な環境 (Firefox/Safari/モバイル等) は即 hand-crafted fallback。 */
 export async function generateCardText(
   result: DiagnosisResult,
   rarity: Rarity,
   opts: { seed?: number; timeoutMs?: number } = {},
 ): Promise<CardText> {
-  if (isLowEndDevice()) {
+  const llm = await pickLocalLLM();
+  if (!llm) {
     return getFallbackCardText(result.archetype, opts.seed ?? Date.now(), rarity);
   }
   const timeoutMs = opts.timeoutMs ?? 60000;

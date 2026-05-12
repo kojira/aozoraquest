@@ -99,7 +99,7 @@ interface MaintenanceRecord {
   updatedAt: string;
 }
 interface BansRecord { dids: string[]; updatedAt: string }
-interface PromptRecord { id: string; body: string; updatedAt: string }
+interface PromptRecord { id: string; body: string; updatedAt: string; maxNewTokens?: number }
 interface DirectoryRecord { users: Array<{ did: string; addedAt: string; note?: string }>; updatedAt: string }
 
 async function loadRuntimeConfigInner(): Promise<RuntimeConfig> {
@@ -136,7 +136,16 @@ async function loadRuntimeConfigInner(): Promise<RuntimeConfig> {
     flags: flags?.flags ?? {},
     maintenance: maintenance ?? DEFAULT_RUNTIME_CONFIG.maintenance,
     bans: bans?.dids ?? [],
-    prompts: spiritChat ? { spiritChat: { id: 'spiritChat' as const, body: spiritChat.body, updatedAt: spiritChat.updatedAt } } : {},
+    prompts: spiritChat
+      ? {
+          spiritChat: {
+            id: 'spiritChat' as const,
+            body: spiritChat.body,
+            ...(spiritChat.maxNewTokens !== undefined ? { maxNewTokens: spiritChat.maxNewTokens } : {}),
+            updatedAt: spiritChat.updatedAt,
+          },
+        }
+      : {},
     directory: directory?.users ?? [],
   };
 }

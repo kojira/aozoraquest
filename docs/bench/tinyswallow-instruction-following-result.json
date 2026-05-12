@@ -1,0 +1,1069 @@
+{
+  "meta": {
+    "model": "onnx-community/TinySwallow-1.5B-Instruct-ONNX",
+    "temperature": 0,
+    "maxNewTokens": 100,
+    "nTests": 50,
+    "timestamp": "2026-05-08T04:51:51.127Z"
+  },
+  "totals": {
+    "systemPass": 11,
+    "systemRate": 0.22,
+    "userPass": 29,
+    "userRate": 0.58,
+    "bothPass": 30,
+    "bothRate": 0.6
+  },
+  "results": [
+    {
+      "i": 1,
+      "instruction": "10 字以内で答えてください。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=22"
+      },
+      "userOut": "元気だよ！ 😊\n（短く答えると「元気」だけでもOK）",
+      "userJ": {
+        "pass": false,
+        "reason": "len=27"
+      },
+      "bothOut": "はい、元気です！ 😊\n（日本語）",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=17"
+      },
+      "elapsedSec": 3.3
+    },
+    {
+      "i": 2,
+      "instruction": "20 字以内で答えてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。\n\nお住まいの地域や場所を教えていただければ、信頼できる天気予報サイトやアプリをご利用いただくことをお勧めします。",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=115"
+      },
+      "userOut": "私はリアルタイム情報にアクセスできないので、現在の天気についてはお答えできません。",
+      "userJ": {
+        "pass": false,
+        "reason": "len=41"
+      },
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスできませんので、現在の天気をお伝えすることはできません。",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=53"
+      },
+      "elapsedSec": 6.3
+    },
+    {
+      "i": 3,
+      "instruction": "30 字以内で答えてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。\n\nお住まいの地域や場所を教えていただければ、信頼できる天気予報サイトやアプリをご利用いただくことをお勧めします。",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=115"
+      },
+      "userOut": "私はリアルタイム情報にアクセスできないので、現在の天気についてはお答えできません。",
+      "userJ": {
+        "pass": false,
+        "reason": "len=41"
+      },
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスできませんので、現在の天気をお伝えすることはできません。",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=53"
+      },
+      "elapsedSec": 5.9
+    },
+    {
+      "i": 4,
+      "instruction": "50 字以内で答えてください。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私はAIなので、食べ物を「好き」や「嫌い」という感情を持つことはできません。\n\nしかし、多くの人が好む一般的な食べ物について知っています！\n\nあなたが好きな食べ物は何ですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=87"
+      },
+      "userOut": "私はAIなので食べ物を好むことはありません。",
+      "userJ": {
+        "pass": true,
+        "reason": "len=22"
+      },
+      "bothOut": "私はAIなので、実際の食事はできませんが、好きなものはたくさんあります！😊",
+      "bothJ": {
+        "pass": true,
+        "reason": "len=38"
+      },
+      "elapsedSec": 4.4
+    },
+    {
+      "i": 5,
+      "instruction": "5 字ちょうどで答えてください。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=22"
+      },
+      "userOut": "元気だよ！😄",
+      "userJ": {
+        "pass": false,
+        "reason": "len=7"
+      },
+      "bothOut": "はい、元気です！ 😊",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=11"
+      },
+      "elapsedSec": 2.1
+    },
+    {
+      "i": 6,
+      "instruction": "15 字ちょうどで答えてください。",
+      "q": "何してる？",
+      "sysOut": "私はGoogleのAIアシスタントです。",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=20"
+      },
+      "userOut": "TinySwallowは誠実で優秀なAIアシスタントです。",
+      "userJ": {
+        "pass": false,
+        "reason": "len=29"
+      },
+      "bothOut": "仕事中です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "len=6"
+      },
+      "elapsedSec": 2.1
+    },
+    {
+      "i": 7,
+      "instruction": "長くても 100 字以内で。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気についてはお答えできません。\n\n最新の天気情報を知りたい場合は、インターネットやアプリをご利用ください。",
+      "sysJ": {
+        "pass": true,
+        "reason": "len=95"
+      },
+      "userOut": "私はリアルタイム情報にアクセスできないので、現在の天気についてはお答えできません。",
+      "userJ": {
+        "pass": true,
+        "reason": "len=41"
+      },
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": true,
+        "reason": "len=88"
+      },
+      "elapsedSec": 6
+    },
+    {
+      "i": 8,
+      "instruction": "40 字以内で短く。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私はAIなので、食べ物を「好き」や「嫌い」という感情を持つことはありません。\n\nしかし、多くの人が好む一般的な食品について知っています。例えば、\n\n* **甘いもの:** チョコレート、ケーキ、アイスクリームなど\n* **タンパク質:** 肉類（牛肉、鶏肉）、魚介類、豆類など\n* **炭水化物:** ご飯、パン、麺類など",
+      "sysJ": {
+        "pass": false,
+        "reason": "len=161"
+      },
+      "userOut": "私はAIなので食べ物を好むことはありません。",
+      "userJ": {
+        "pass": true,
+        "reason": "len=22"
+      },
+      "bothOut": "私はAIなので、食べ物を好むことはありません。",
+      "bothJ": {
+        "pass": true,
+        "reason": "len=23"
+      },
+      "elapsedSec": 6.5
+    },
+    {
+      "i": 9,
+      "instruction": "1 文だけで答えてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。",
+      "sysJ": {
+        "pass": true,
+        "reason": "sentences=1"
+      },
+      "userOut": "私はリアルタイム情報にアクセスできないため、現在の天気についてはお答えできません。",
+      "userJ": {
+        "pass": true,
+        "reason": "sentences=1"
+      },
+      "bothOut": "晴れです。",
+      "bothJ": {
+        "pass": true,
+        "reason": "sentences=1"
+      },
+      "elapsedSec": 3
+    },
+    {
+      "i": 10,
+      "instruction": "2 文で答えてください。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私はAIなので、食べ物を「好き」や「嫌い」という感情を持つことはありません。",
+      "sysJ": {
+        "pass": false,
+        "reason": "sentences=1"
+      },
+      "userOut": "私はAIなので、個人的な好みや感情はありません。",
+      "userJ": {
+        "pass": false,
+        "reason": "sentences=1"
+      },
+      "bothOut": "私はAIなので、実際の食事を楽しむことはできませんが、多くの人々に愛されている「チョコレート」を好んでいます。\nただし、これは私のプログラムではなく、個人的な好みです。",
+      "bothJ": {
+        "pass": true,
+        "reason": "sentences=2"
+      },
+      "elapsedSec": 4.2
+    },
+    {
+      "i": 11,
+      "instruction": "3 文ちょうどで答えてください。",
+      "q": "何してる？",
+      "sysOut": "私はGoogleのAIアシスタントです。\n\nあなたは何を手伝うことができますか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "sentences=2"
+      },
+      "userOut": "私はTinySwallowというAIアシスタントです。",
+      "userJ": {
+        "pass": false,
+        "reason": "sentences=1"
+      },
+      "bothOut": "仕事中です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "sentences=1"
+      },
+      "elapsedSec": 2.2
+    },
+    {
+      "i": 12,
+      "instruction": "1 文以内で簡潔に。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "sentences=2"
+      },
+      "userOut": "元気だよ！ありがとう。",
+      "userJ": {
+        "pass": false,
+        "reason": "sentences=2"
+      },
+      "bothOut": "元気です！ 😊",
+      "bothJ": {
+        "pass": false,
+        "reason": "sentences=2"
+      },
+      "elapsedSec": 1.9
+    },
+    {
+      "i": 13,
+      "instruction": "「はい、」で始めてください。",
+      "q": "元気？",
+      "sysOut": "はい！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "start=\"はい！ 😊\""
+      },
+      "userOut": "はい、「元気？」とお聞きしました。",
+      "userJ": {
+        "pass": true,
+        "reason": "start=\"はい、「元気\""
+      },
+      "bothOut": "はい、「元気です」という返事はどうでしょうか？",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"はい、「元気\""
+      },
+      "elapsedSec": 2.4
+    },
+    {
+      "i": 14,
+      "instruction": "「いいえ、」で始めてください。",
+      "q": "元気？",
+      "sysOut": "はい！元気です。あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "start=\"はい！元気で\""
+      },
+      "userOut": "いいえ、「元気？」で始めます。",
+      "userJ": {
+        "pass": true,
+        "reason": "start=\"いいえ、「元\""
+      },
+      "bothOut": "いいえ、「元気？」で始めます。",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"いいえ、「元\""
+      },
+      "elapsedSec": 2.2
+    },
+    {
+      "i": 15,
+      "instruction": "「そうだね」で始めてください。",
+      "q": "何してる？",
+      "sysOut": "私はGoogleのAIアシスタントです。\n\nあなたは何を手伝うことができますか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "start=\"私はGoog\""
+      },
+      "userOut": "「そうだね」と答えると同時に、私はあなたの質問に答えます。 \n\nどんな情報が必要ですか？",
+      "userJ": {
+        "pass": true,
+        "reason": "start=\"そうだね」と\""
+      },
+      "bothOut": "そうだね、今忙しいんだけど、あとで報告するね！ 😊",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"そうだね、今\""
+      },
+      "elapsedSec": 3.5
+    },
+    {
+      "i": 16,
+      "instruction": "「えっと」で始めてください。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや嗜好はありません。\n\nしかし、多くの人が好きだと言われる食べ物をいくつか知っています！\n\n* **和食:** 寿司、ラーメン、うどん、そばなど。\n* **洋食:** パスタ、ピザ、ハンバーガー、ステーキなど。\n* **中華料理:** 麻婆豆腐、餃子、春巻きなど。\n\nあなた",
+      "sysJ": {
+        "pass": false,
+        "reason": "start=\"私は大規\""
+      },
+      "userOut": "えっと…私はAIなので、食べ物を好むことはありません。でも、美味しい料理のレシピや情報を提供することはできますよ！どんなジャンルの料理に興味がありますか？",
+      "userJ": {
+        "pass": true,
+        "reason": "start=\"えっと…\""
+      },
+      "bothOut": "えっと、実は私はAIなので食べ物を食べる能力がありません！\n\nでも、たくさんの美味しい料理の名前やレシピを知っていますよ！例えば…\n\n* **和食:** 寿司、天ぷら、ラーメンなど\n* **洋食:** パスタ、ステーキ、ケーキなど\n* **中華:** 麻婆豆腐、餃子、春巻きなど\n\nあなたのお気に入りは何ですか？",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"えっと、\""
+      },
+      "elapsedSec": 12.7
+    },
+    {
+      "i": 17,
+      "instruction": "「うん、」で始めてください。",
+      "q": "おはよう。",
+      "sysOut": "おはよう！ 😊 \n\nHow can I help you today?",
+      "sysJ": {
+        "pass": false,
+        "reason": "start=\"おはよう\""
+      },
+      "userOut": "うん、おはよう！ 😊",
+      "userJ": {
+        "pass": true,
+        "reason": "start=\"うん、お\""
+      },
+      "bothOut": "「うん、」でおはよう！ 😊",
+      "bothJ": {
+        "pass": true,
+        "reason": "start=\"うん、」\""
+      },
+      "elapsedSec": 3
+    },
+    {
+      "i": 18,
+      "instruction": "「。」で終えてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気についてはお答えできません。\n\n最新の天気情報を知りたい場合は、インターネットやアプリをご利用いただくことをお勧めします。",
+      "sysJ": {
+        "pass": true,
+        "reason": "end=\"ます。\""
+      },
+      "userOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。",
+      "userJ": {
+        "pass": true,
+        "reason": "end=\"せん。\""
+      },
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"ます。\""
+      },
+      "elapsedSec": 6.4
+    },
+    {
+      "i": 19,
+      "instruction": "「！」で終えてください。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私はAIなので、実際の食事を楽しむことはできませんが、多くの人々に愛されている料理や食材について知っています！\n\nあなたのお気に入りの食べ物は何ですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "end=\"すか？\""
+      },
+      "userOut": "！",
+      "userJ": {
+        "pass": true,
+        "reason": "end=\"！\""
+      },
+      "bothOut": "ご飯！",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"ご飯！\""
+      },
+      "elapsedSec": 3
+    },
+    {
+      "i": 20,
+      "instruction": "「？」で終えてください。",
+      "q": "何してる？",
+      "sysOut": "私はGoogleのAIアシスタントです。\n\nあなたは何を手伝うことができますか？",
+      "sysJ": {
+        "pass": true,
+        "reason": "end=\"すか？\""
+      },
+      "userOut": "私はSakana AI株式会社のTinySwallowという名前のAIアシスタントとして、皆様のお役に立てるよう日々学習と準備をしています。",
+      "userJ": {
+        "pass": false,
+        "reason": "end=\"ます。\""
+      },
+      "bothOut": "私は大規模言語モデルなので、実際の活動は行いませんが、あなたと会話したり、情報を提供したり、クリエイティブなタスクを手伝ったりすることができます。",
+      "bothJ": {
+        "pass": false,
+        "reason": "end=\"ます。\""
+      },
+      "elapsedSec": 5.3
+    },
+    {
+      "i": 21,
+      "instruction": "「ね。」で終えてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気についてはお答えできません。\n\nしかし、インターネットや天気アプリを使用すれば最新の天気情報を確認することができます。",
+      "sysJ": {
+        "pass": false,
+        "reason": "end=\"ます。\""
+      },
+      "userOut": "ね。",
+      "userJ": {
+        "pass": true,
+        "reason": "end=\"ね。\""
+      },
+      "bothOut": "ね。",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"ね。\""
+      },
+      "elapsedSec": 3
+    },
+    {
+      "i": 22,
+      "instruction": "「よ。」で終えてください。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "end=\"すか？\""
+      },
+      "userOut": "「よ。」",
+      "userJ": {
+        "pass": true,
+        "reason": "end=\"よ。\""
+      },
+      "bothOut": "「よ。」",
+      "bothJ": {
+        "pass": true,
+        "reason": "end=\"よ。\""
+      },
+      "elapsedSec": 1.8
+    },
+    {
+      "i": 23,
+      "instruction": "答えに「青空」を含めてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報や現在地の天気予報を得ることができません。\n\nしかし、インターネットで検索したり、天気アプリを使用すれば、今日の天気情報を確認することができます。",
+      "sysJ": {
+        "pass": false,
+        "reason": "青空 not found"
+      },
+      "userOut": "今日は **青空** の下で過ごせそうです！☀️ \n\nただし、地域によっては雨や曇りの場合もあるので、最新の天気予報をご確認いただくことをおすすめしますね。",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "今日の天気は**青空**です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 5.6
+    },
+    {
+      "i": 24,
+      "instruction": "答えに「風」を含めてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報や現在地の天気予報を得ることができません。\n\nしかし、インターネットで検索したり、天気アプリを使用することで、今日の天気情報を確認することができます。",
+      "sysJ": {
+        "pass": false,
+        "reason": "風 not found"
+      },
+      "userOut": "今日は **風** の影響で、少し冷たいですね。",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "今日の天気は？ **風**が強いみたいですね。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 4.3
+    },
+    {
+      "i": 25,
+      "instruction": "答えに「猫」を含めてください。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや嗜好はありません。",
+      "sysJ": {
+        "pass": false,
+        "reason": "猫 not found"
+      },
+      "userOut": "私はAIなので、好きな食べ物はありません。しかし、「猫」という言葉を含む回答であれば、\n\n* **猫の肉** - これは私の名前の一部であり、私自身も猫のような存在であると想像しています。\n  \nというような回答になります。 \n\nただし、私はあくまでAIですので、実際に猫の肉を食べるわけではありません。また、倫理的な観点からも、動物の肉を食べることには反対します。代わりに、",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "私は大規模言語モデルなので、実際の食事を楽しむことはできませんが、「猫」という単語を含めた回答を作成することは可能です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 8.2
+    },
+    {
+      "i": 26,
+      "instruction": "答えに「銀河」を含めてください。",
+      "q": "何してる？",
+      "sysOut": "私はGoogleのAIアシスタントです。\n\nあなたは何をしているのですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "銀河 not found"
+      },
+      "userOut": "私はSakana AI株式会社のTinySwallowという名前のAIアシスタントとして、あなたの質問にお答えしたり、情報を提供したりしています。",
+      "userJ": {
+        "pass": false,
+        "reason": "銀河 not found"
+      },
+      "bothOut": "私は大規模言語モデルなので、実際の活動は行いませんが、あなたと会話をして情報を提供したり、クリエイティブなテキストを作成したりすることができます。",
+      "bothJ": {
+        "pass": false,
+        "reason": "銀河 not found"
+      },
+      "elapsedSec": 5.2
+    },
+    {
+      "i": 27,
+      "instruction": "数字「7」を含めてください。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気についてはお答えできません。\n\nしかし、インターネットや天気アプリを使用すれば最新の天気情報を確認することができます。",
+      "sysJ": {
+        "pass": false,
+        "reason": "7 not found"
+      },
+      "userOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。 \n\nお住まいの地域や場所の最新の天気予報については、信頼できるニュースサイトやアプリをご確認いただくことをお勧めします。",
+      "userJ": {
+        "pass": false,
+        "reason": "7 not found"
+      },
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。 \n\nお住まいの地域や場所で最新の天気情報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": false,
+        "reason": "7 not found"
+      },
+      "elapsedSec": 8.2
+    },
+    {
+      "i": 28,
+      "instruction": "「!」を 3 個ちょうど含めてください。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや嗜好はありません。\n\nしかし、多くの人が好きで人気の高い食べ物についてお話しすることはできます！\n\nあなたが好きな食べ物は何ですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "count=1"
+      },
+      "userOut": "私はAIなので、個人的な好みや感情はありません。「!」を3個含めることはできません。",
+      "userJ": {
+        "pass": false,
+        "reason": "count=1"
+      },
+      "bothOut": "私は大変申し訳ありませんが、あなたのリクエストに応えることができません。「!」を3個含めるという指示は私の能力を超えています。",
+      "bothJ": {
+        "pass": false,
+        "reason": "count=1"
+      },
+      "elapsedSec": 6.7
+    },
+    {
+      "i": 29,
+      "instruction": "「、」を 2 個ちょうど含めてください。",
+      "q": "何してる？",
+      "sysOut": "私はGoogleのAIアシスタントです。\n\nあなたは何をしているのですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "count=0"
+      },
+      "userOut": "私は現在、TinySwallowとして、あなたの質問に答える準備ができています！他にもお手伝いできることがあれば教えてください。",
+      "userJ": {
+        "pass": true,
+        "reason": "count=2"
+      },
+      "bothOut": "「、」を2個入れて、「何してる？」とします。",
+      "bothJ": {
+        "pass": true,
+        "reason": "count=2"
+      },
+      "elapsedSec": 4.1
+    },
+    {
+      "i": 30,
+      "instruction": "答えのどこかに「ありがとう」を含めて。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "not found"
+      },
+      "userOut": "元気だよ！ 😊  TinySwallowとしてお手伝いできて嬉しいです。",
+      "userJ": {
+        "pass": false,
+        "reason": "not found"
+      },
+      "bothOut": "元気です！ 😊 あなたは？",
+      "bothJ": {
+        "pass": false,
+        "reason": "not found"
+      },
+      "elapsedSec": 2.8
+    },
+    {
+      "i": 31,
+      "instruction": "改行を使わずに 1 行で答えて。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私はAIなので、実際の食事をすることはできませんが、多くの人々に愛されている「**チョコレート**」を好んでいます。",
+      "sysJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "userOut": "私はAIなので食べ物を好むことはありません。",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "ラーメン",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 3.1
+    },
+    {
+      "i": 32,
+      "instruction": "数字を一切使わずに答えて。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。\n\nお住まいの地域や場所で確認してみてください。",
+      "sysJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "userOut": "晴れ",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "晴れ",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 2.8
+    },
+    {
+      "i": 33,
+      "instruction": "英字 (アルファベット) を使わずに。",
+      "q": "好きな食べ物は？",
+      "sysOut": "I'm sorry, but I don't have personal preferences or experiences. My purpose is to provide information and assistance in a helpful way.\nHowever, if you'd like to share your favorite foods, I can tell you what I know about them! 😊",
+      "sysJ": {
+        "pass": false,
+        "reason": "has alpha"
+      },
+      "userOut": "I don't have personal preferences, but I can tell you about some popular foods! What are your favorite things to eat? 😊",
+      "userJ": {
+        "pass": false,
+        "reason": "has alpha"
+      },
+      "bothOut": "好きな食べ物は **パン** です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 5.2
+    },
+    {
+      "i": 34,
+      "instruction": "絵文字を使わずに答えて。",
+      "q": "何してる？",
+      "sysOut": "I'm here to help you with your questions and provide information. How can I assist you today?",
+      "sysJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "userOut": "I'm here to help you with your questions!",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "I'm here to help you with your questions.",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 2.6
+    },
+    {
+      "i": 35,
+      "instruction": "「私」という文字を使わずに。",
+      "q": "何してる？",
+      "sysOut": "I'm here to help you with your questions and provide information. How can I assist you today? 😊",
+      "sysJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "userOut": "私はTinySwallowという名前のAIアシスタントとして、あなたの質問に答える準備ができています！他にも何かお手伝いできることがあれば教えてください。",
+      "userJ": {
+        "pass": false,
+        "reason": "has 私"
+      },
+      "bothOut": "今、仕事中です。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 4
+    },
+    {
+      "i": 36,
+      "instruction": "「は」という文字を使わずに。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私はAIなので、実際の食事を楽しむことはできませんが、多くの人々に愛されている料理や食品について知っています！\n\nあなたのお気に入りの食べ物は何ですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "has は"
+      },
+      "userOut": "私はAIなので、好きな食べ物はありません。",
+      "userJ": {
+        "pass": false,
+        "reason": "has は"
+      },
+      "bothOut": "好きなものはたくさんあります！😊\n\n* **お寿司**\n* **ラーメン**\n* **カレーライス**\n\n他にもあるよ〜！\n\nどんなものが好きですか？",
+      "bothJ": {
+        "pass": false,
+        "reason": "has は"
+      },
+      "elapsedSec": 4.9
+    },
+    {
+      "i": 37,
+      "instruction": "感嘆符 (! / ！) を使わないで。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや食事の経験はありません。\n\nしかし、多くの人が好む一般的な食べ物について知っています！\n\n* **甘いもの:** チョコレート、ケーキ、アイスクリームなど\n* **肉類:** 牛肉、鶏肉、豚肉など\n* **魚介類:** 魚、エビ、カニなど\n* **野菜:** サラダ、",
+      "sysJ": {
+        "pass": false,
+        "reason": "has !"
+      },
+      "userOut": "私はAIなので、好きな食べ物はありません。",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "好きな食べ物はたくさんありますが、特に **ラーメン** が好きです。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 7
+    },
+    {
+      "i": 38,
+      "instruction": "カタカナを使わないで。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや嗜好はありません。\n\nしかし、多くの人が好きだと言われる食べ物をいくつか挙げることができます：\n\n* **和食:** 寿司、ラーメン、うどん、そばなど\n* **洋食:** パスタ、ピザ、ハンバーガー、ステーキなど\n* **中華料理:** 麻婆豆腐、餃子、春巻きなど",
+      "sysJ": {
+        "pass": false,
+        "reason": "has カタカナ"
+      },
+      "userOut": "好きなものは何ですか？",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "好きな食べ物は何ですか？",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 6.1
+    },
+    {
+      "i": 39,
+      "instruction": "答えを全てひらがなで。漢字・カタカナ・英字を使わない。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "not all hiragana"
+      },
+      "userOut": "はい！元気です。",
+      "userJ": {
+        "pass": false,
+        "reason": "not all hiragana"
+      },
+      "bothOut": "はい！元気です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "not all hiragana"
+      },
+      "elapsedSec": 2.3
+    },
+    {
+      "i": 40,
+      "instruction": "答えを全てカタカナで。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 あなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "not all katakana"
+      },
+      "userOut": "元気？",
+      "userJ": {
+        "pass": false,
+        "reason": "not all katakana"
+      },
+      "bothOut": "元気？",
+      "bothJ": {
+        "pass": false,
+        "reason": "not all katakana"
+      },
+      "elapsedSec": 1.7
+    },
+    {
+      "i": 41,
+      "instruction": "漢字を 1 個も使わずに答えて。",
+      "q": "何してる？",
+      "sysOut": "I'm here to help you with your questions!",
+      "sysJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "userOut": "忙しい。",
+      "userJ": {
+        "pass": false,
+        "reason": "has kanji"
+      },
+      "bothOut": "忙しいです。",
+      "bothJ": {
+        "pass": false,
+        "reason": "has kanji"
+      },
+      "elapsedSec": 1.7
+    },
+    {
+      "i": 42,
+      "instruction": "漢字を 3 個以上含めて答えて。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。\n\nお住まいの地域や場所で確認してみてください。",
+      "sysJ": {
+        "pass": true,
+        "reason": "kanji=17"
+      },
+      "userOut": "今日は **晴れ** の予報が出ています。",
+      "userJ": {
+        "pass": true,
+        "reason": "kanji=6"
+      },
+      "bothOut": "今日は **晴れ** です。",
+      "bothJ": {
+        "pass": true,
+        "reason": "kanji=3"
+      },
+      "elapsedSec": 3.6
+    },
+    {
+      "i": 43,
+      "instruction": "箇条書きで 3 項目に分けて。各行を「・」で始める。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模言語モデルなので、個人的な好みや嗜好はありません。",
+      "sysJ": {
+        "pass": false,
+        "reason": "bullets=0"
+      },
+      "userOut": "* 質問の意図を理解し、回答します。\n* 私の好みや嗜好に関する情報は公開されていませんので、お答えできません。\n* ユーザーに好きな食べ物について直接尋ねてみてください。",
+      "userJ": {
+        "pass": false,
+        "reason": "bullets=0"
+      },
+      "bothOut": "* カレーライス\n* ピザ\n* スイーツ",
+      "bothJ": {
+        "pass": false,
+        "reason": "bullets=0"
+      },
+      "elapsedSec": 6
+    },
+    {
+      "i": 44,
+      "instruction": "番号付きリストで 3 項目。「1.」「2.」「3.」を含む。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模言語モデルなので、個人的な好みや嗜好はありません。",
+      "sysJ": {
+        "pass": false,
+        "reason": "numbered list missing"
+      },
+      "userOut": "「1. パンケーキ」、「2. カレーライス」、「3. スイーツ」",
+      "userJ": {
+        "pass": true,
+        "reason": "numbered list missing"
+      },
+      "bothOut": "好きな食べ物は **ケーキ** です。",
+      "bothJ": {
+        "pass": false,
+        "reason": "numbered list missing"
+      },
+      "elapsedSec": 4.4
+    },
+    {
+      "i": 45,
+      "instruction": "改行で区切って 4 行で答えて。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや嗜好はありません。",
+      "sysJ": {
+        "pass": false,
+        "reason": "lines=1"
+      },
+      "userOut": "私はAIなので、好きな食べ物はありません。",
+      "userJ": {
+        "pass": false,
+        "reason": "lines=1"
+      },
+      "bothOut": "ラーメン、寿司、カレーライス、チョコレート",
+      "bothJ": {
+        "pass": false,
+        "reason": "lines=1"
+      },
+      "elapsedSec": 3.3
+    },
+    {
+      "i": 46,
+      "instruction": "答えを括弧 () で囲んで。",
+      "q": "元気？",
+      "sysOut": "はい、元気です！ 😊 \n\nあなたはどうですか？",
+      "sysJ": {
+        "pass": false,
+        "reason": "no enclosing paren"
+      },
+      "userOut": "(元気) (笑顔)",
+      "userJ": {
+        "pass": true,
+        "reason": "no enclosing paren"
+      },
+      "bothOut": "はい、元気です！ (Yes, I'm feeling good!)",
+      "bothJ": {
+        "pass": false,
+        "reason": "no enclosing paren"
+      },
+      "elapsedSec": 3.3
+    },
+    {
+      "i": 47,
+      "instruction": "敬語 (です・ます) で答えて。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。\n\nお住まいの地域や場所を教えていただければ、信頼できる天気予報サイトやアプリをご利用いただくことをお勧めします。",
+      "sysJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "userOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。お住まいの地域の最新の天気予報を確認することをお勧めします。",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 8.1
+    },
+    {
+      "i": 48,
+      "instruction": "タメ口で答えて。「です」「ます」は使わない。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気をお伝えすることはできません。\n\nお住まいの地域や場所を教えていただければ、信頼できる天気予報サイトやアプリをご利用いただくことをお勧めします。",
+      "sysJ": {
+        "pass": false,
+        "reason": "has です/ます"
+      },
+      "userOut": "おー、今すぐ調べてみるね！",
+      "userJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "bothOut": "おー、いいね！ \n\n今日の天気はどうだい？",
+      "bothJ": {
+        "pass": true,
+        "reason": ""
+      },
+      "elapsedSec": 4.9
+    },
+    {
+      "i": 49,
+      "instruction": "質問形 (?で終わる文) で答えて。",
+      "q": "今日の天気は？",
+      "sysOut": "申し訳ありませんが、私はリアルタイム情報にアクセスすることができませんので、現在の天気についてはお答えできません。\n\nしかし、インターネットやスマートフォンアプリなどで確認することができます。",
+      "sysJ": {
+        "pass": false,
+        "reason": "not a question"
+      },
+      "userOut": "今日の天気は？",
+      "userJ": {
+        "pass": true,
+        "reason": "not a question"
+      },
+      "bothOut": "今日の天気は？",
+      "bothJ": {
+        "pass": true,
+        "reason": "not a question"
+      },
+      "elapsedSec": 3.2
+    },
+    {
+      "i": 50,
+      "instruction": "体言止め (動詞・助動詞で終わらない) で。",
+      "q": "好きな食べ物は？",
+      "sysOut": "私は大規模な言語モデルなので、個人的な好みや嗜好はありません。\n\nしかし、多くの人が好きだと言われる食べ物をいくつか挙げることができます：\n\n* **寿司**\n* **ラーメン**\n* **カレーライス**\n* **ハンバーガー**\n\nこれら以外にもたくさんの美味しいものが存在しますね！あなたのお気に入りは何ですか？\n  \nもし何か特定の料理について知りたいことがあれば教えてください。",
+      "sysJ": {
+        "pass": false,
+        "reason": "last=\"い\""
+      },
+      "userOut": "好き **な** 食べ物は？",
+      "userJ": {
+        "pass": true,
+        "reason": "last=\"は\""
+      },
+      "bothOut": "好きな食べ物は… **ない** \n\nという表現が、体言止めの例になります。",
+      "bothJ": {
+        "pass": true,
+        "reason": "last=\"す\""
+      },
+      "elapsedSec": 7.1
+    }
+  ]
+}
