@@ -12,8 +12,8 @@ interface PromptRecord {
   updatedAt: string;
 }
 
-/** maxNewTokens の上限値。web 側 worker の GENERATION_MAX_NEW_TOKENS (200)
- *  と一致させる必要あり (lexicon 側も同じ)。 */
+/** maxNewTokens の上限値。lexicon の制約 (200) と一致させる必要あり。
+ *  web 側 LocalLLM 抽象が soft cap として解釈する。 */
 const MAX_NEW_TOKENS_UPPER = 200;
 
 export function Prompts() {
