@@ -28,6 +28,9 @@ export type SpiritBackend = 'gemini-nano' | 'tinyswallow';
 export interface SpiritGenResult {
   text: string;
   backend: SpiritBackend;
+  /** Nano を試して失敗し TinySwallow に fallback したとき、その理由を残す。
+   *  caller は UI で「Nano エラーで TinySwallow に切替」と見せられる。 */
+  fallbackReason?: string;
 }
 
 export async function pickSpiritBackend(): Promise<SpiritBackend> {
@@ -41,12 +44,14 @@ export async function generateSpirit(
   opts: SpiritGenOptions = {},
 ): Promise<SpiritGenResult> {
   const backend = await pickSpiritBackend();
+  let fallbackReason: string | undefined;
 
   if (backend === 'gemini-nano') {
     try {
       const text = await generateWithGeminiNano(input, opts);
       return { text, backend: 'gemini-nano' };
     } catch (e) {
+      fallbackReason = (e as Error)?.message ?? String(e);
       console.warn('[spirit] Gemini Nano failed, falling back to TinySwallow:', e);
     }
   }
@@ -58,7 +63,9 @@ export async function generateSpirit(
   if (opts.temperature !== undefined) tsOpts.temperature = opts.temperature;
   if (opts.maxNewTokens !== undefined) tsOpts.maxNewTokens = opts.maxNewTokens;
   const text = await g.generate(messages, tsOpts);
-  return { text, backend: 'tinyswallow' };
+  return fallbackReason
+    ? { text, backend: 'tinyswallow', fallbackReason }
+    : { text, backend: 'tinyswallow' };
 }
 
 /**
