@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { Avatar } from './avatar';
@@ -55,12 +56,15 @@ export function NotificationItem({
   postCache: Map<string, AppBskyFeedDefs.PostView>;
 }) {
   const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
   const Icon = iconFor(group.reason);
   const label = labelForReason(group.reason);
   const previewUri = previewUriForGroup(group);
   const post = previewUri ? postCache.get(previewUri) : undefined;
   const primary = group.authors[0];
   if (!primary) return null;
+  // 2 人以上集約されている時だけ accordion を出す (1 人なら展開しても情報増えない)。
+  const expandable = group.authors.length > 1;
 
   const onCardClick = (e: React.MouseEvent) => {
     // 子の Link / button が onClick stopPropagation しているのでここに来たら navigate
@@ -103,11 +107,37 @@ export function NotificationItem({
         <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}>
           {formatDateTime(group.latestAt)}
         </span>
+        {expandable && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }}
+            aria-expanded={expanded}
+            aria-label={expanded ? '反応した人の一覧を閉じる' : '反応した人の一覧を開く'}
+            title={expanded ? '閉じる' : `反応した ${group.authors.length} 人を表示`}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '0 0.3em',
+              cursor: 'pointer',
+              color: 'var(--color-muted)',
+              fontSize: '0.85em',
+              lineHeight: 1,
+            }}
+          >
+            {expanded ? '▲' : '▼'}
+          </button>
+        )}
       </div>
-      {headerText && (
+      {headerText && !expanded && (
         <p style={{ marginTop: '0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
           {headerText}
         </p>
+      )}
+      {expanded && (
+        <ExpandedAuthorList authors={group.authors} />
       )}
       {group.reason === 'follow' ? (
         <FollowPreview author={primary} />
@@ -150,6 +180,34 @@ function AuthorStack({ authors }: { authors: NotifGroup['authors'] }) {
         <span style={{ marginLeft: 6, fontSize: '0.85em' }}>他 {extra} 人</span>
       )}
     </span>
+  );
+}
+
+/** accordion 展開時の全 author 縦リスト。 */
+function ExpandedAuthorList({ authors }: { authors: NotifGroup['authors'] }) {
+  return (
+    <ul style={{ listStyle: 'none', padding: 0, margin: '0.5em 0 0 0', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
+      {authors.map((a) => (
+        <li key={a.did}>
+          <Link
+            to={`/profile/${a.handle}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5em',
+              fontSize: '0.85em',
+              color: 'inherit',
+              textDecoration: 'none',
+            }}
+          >
+            <Avatar src={a.avatar} size={24} archetype={null} />
+            <span style={{ fontWeight: 600 }}>{a.displayName || a.handle}</span>
+            <span style={{ color: 'var(--color-muted)' }}>@{a.handle}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
