@@ -14,6 +14,7 @@ import { loadCachedTranslation, saveCachedTranslation } from './translation-idb'
 import { getAutoTranslate } from './prefs';
 import { stripMarkdown, stripWrappers } from './flavor-text';
 import { isLowEndDevice } from './device';
+import { isNanoAvailableForTranslate, translateWithNano } from './translate-nano';
 
 const MIN_TEXT_LEN = 10; // これ未満は翻訳しない (挨拶・絵文字のみなど)
 const TIMEOUT_MS = 60_000;
@@ -112,11 +113,36 @@ class NonJapaneseTranslationError extends Error {
   }
 }
 
-async function runLLM(text: string, langs: string[] | undefined, temperature: number): Promise<string> {
-  const { body, trailing } = splitTranslatableText(text);
-  if (!body) return trailing; // 本文なし → リンク等だけ返す
+type TranslateBackend = 'gemini-nano' | 'tinyswallow';
+
+const TRANSLATE_SYSTEM_PROMPT = 'あなたは SNS 投稿を日本語に翻訳する翻訳者です。';
+
+async function callBackend(
+  backend: TranslateBackend,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number,
+): Promise<string> {
+  if (backend === 'gemini-nano') {
+    return translateWithNano(systemPrompt, userPrompt, temperature);
+  }
   const gen = getGenerator();
   await gen.load();
+  const messages = [
+    { role: 'system' as const, content: systemPrompt },
+    { role: 'user' as const, content: userPrompt },
+  ];
+  return gen.generate(messages, { temperature });
+}
+
+async function runLLM(
+  text: string,
+  langs: string[] | undefined,
+  temperature: number,
+  backend: TranslateBackend,
+): Promise<string> {
+  const { body, trailing } = splitTranslatableText(text);
+  if (!body) return trailing; // 本文なし → リンク等だけ返す
   const sourceHint = langs && langs.length > 0 ? `原文の言語: ${langs.join(', ')}。\n` : '';
   // LLM は入力末尾に最も注目するため、「指示を前に、原文を末尾に」の順で
   // 1 つの user メッセージに詰める。短文でも原文が埋もれにくい。
@@ -134,12 +160,8 @@ async function runLLM(text: string, langs: string[] | undefined, temperature: nu
     body,
     '---',
   ].filter((l) => l !== '').join('\n');
-  const messages = [
-    { role: 'system' as const, content: 'あなたは SNS 投稿を日本語に翻訳する翻訳者です。' },
-    { role: 'user' as const, content: userPrompt },
-  ];
   const raw = await Promise.race([
-    gen.generate(messages, { temperature }),
+    callBackend(backend, TRANSLATE_SYSTEM_PROMPT, userPrompt, temperature),
     new Promise<string>((_, rej) =>
       setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
     ),
@@ -155,24 +177,32 @@ async function runLLM(text: string, langs: string[] | undefined, temperature: nu
 /** 温度を段階的に上げて translate を再試行する。
  *  - auto (初回): [0, 0.7, 1.0] — 0 で安定、駄目なら確率的に揺らして突破
  *  - retry (ユーザ手動): [0.7, 1.0] — temp=0 cache と必ず違う出力にする
- *  全 attempt 失敗時は最後の英語出力を返す (空 throw より UX マシ)。 */
+ *  全 attempt 失敗時は最後の英語出力を返す (空 throw より UX マシ)。
+ *
+ *  Backend: Nano available なら **最初の attempt のみ Nano**、それ以外と
+ *  Nano 失敗時の残り attempt は TinySwallow。理由は Google 公式が「Nano は
+ *  英語以外の翻訳に弱い」と明記しているため、まず試して駄目なら fine-tune 済
+ *  TinySwallow に任せる。retry 段は temperature を上げて確率的に揺らすので、
+ *  同じ Nano で再試行しても改善は見込み薄。 */
 async function runLLMWithRetry(
   text: string,
   langs: string[] | undefined,
   temperatures: readonly number[],
 ): Promise<string> {
+  const nanoAvailable = await isNanoAvailableForTranslate();
   let lastFail: NonJapaneseTranslationError | null = null;
   let lastError: unknown = null;
   for (let i = 0; i < temperatures.length; i++) {
     const temp = temperatures[i]!;
+    const backend: TranslateBackend = i === 0 && nanoAvailable ? 'gemini-nano' : 'tinyswallow';
     try {
-      return await runLLM(text, langs, temp);
+      return await runLLM(text, langs, temp, backend);
     } catch (e) {
       if (e instanceof NonJapaneseTranslationError) {
-        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (temp=${temp})`);
+        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (backend=${backend}, temp=${temp})`);
         lastFail = e;
       } else {
-        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} threw`, e);
+        console.warn(`[translate] attempt ${i + 1}/${temperatures.length} threw (backend=${backend})`, e);
         lastError = e;
       }
     }
