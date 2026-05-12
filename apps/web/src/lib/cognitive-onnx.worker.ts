@@ -32,17 +32,18 @@ env.allowRemoteModels = true;
 // の 2 段構えで自動回復できるようにしている (下の ensureClassifier 参照)。
 env.useBrowserCache = true;
 
-type Device = 'webgpu' | 'wasm';
-type Dtype = 'q4' | 'q8';
-
 interface InitMessage { type: 'init' }
 interface ClassifyMessage { type: 'classify'; id: string; text: string }
 interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
 type IncomingMessage = InitMessage | ClassifyMessage | ClassifyBatchMessage;
 
 const MODEL_NAME = 'kojira/aozoraquest-cognitive-small';
-const ACTIVE_BACKEND: Device = 'wasm';
-const ACTIVE_DTYPE: Dtype = 'q8';
+const ACTIVE_BACKEND = 'wasm' as const;
+const ACTIVE_DTYPE = 'q8' as const;
+/** 旧 130m モデル (kojira/aozoraquest-cognitive) を使っていた頃の Cache Storage
+ *  entry を識別する prefix。30m (small) は "...cognitive-small/..." なので
+ *  "cognitive/" (末尾スラッシュ込み) で区別できる。 */
+const OUTDATED_MODEL_URL_NEEDLE = 'kojira/aozoraquest-cognitive/';
 const LABELS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 
 let classifier: any = null;
@@ -85,10 +86,14 @@ async function clearPoisonedCache(): Promise<void> {
 }
 
 /**
- * 起動時に transformers-cache を走査し、明らかに壊れている (model を名乗るが
- * 数 KB しかない) エントリを事前に削除する。protobuf parse 失敗を事前予防。
+ * 起動時に transformers-cache を走査して、以下を削除する:
+ *  1. **旧 130m モデル (kojira/aozoraquest-cognitive)** のキャッシュ entry。
+ *     以前は PC で 130m を使っていたが、30m に統一したので Cache Storage を
+ *     無駄に占有しているだけ (数百MB)。一度限り掃除する。
+ *  2. 明らかに壊れている (~数 KB の .onnx) エントリ。protobuf parse 失敗の
+ *     事前予防 (dev server の SPA fallback で 297 byte HTML が混入する事故)。
  */
-async function pruneTinyModelEntries(): Promise<void> {
+async function pruneOutdatedModels(): Promise<void> {
   try {
     const names = await caches.keys();
     for (const n of names) {
@@ -96,12 +101,18 @@ async function pruneTinyModelEntries(): Promise<void> {
       const cache = await caches.open(n);
       const reqs = await cache.keys();
       for (const req of reqs) {
+        // 1) 旧 130m モデル: 30m (small) に統一されたので無用
+        if (req.url.includes(OUTDATED_MODEL_URL_NEEDLE)) {
+          console.info(`[cognitive] pruning outdated 130m cache: ${req.url}`);
+          await cache.delete(req);
+          continue;
+        }
+        // 2) tiny 汚染 entry
         if (!req.url.endsWith('.onnx')) continue;
         const res = await cache.match(req);
         if (!res) continue;
         const sizeHeader = res.headers.get('content-length');
         const size = sizeHeader ? parseInt(sizeHeader, 10) : NaN;
-        // 1MB 未満の .onnx は汚染確定 (最小モデルでも数十MB)
         if (!Number.isFinite(size) || size < 1_000_000) {
           console.warn(`[cognitive] pruning tiny cached entry: ${req.url} (${size} bytes)`);
           await cache.delete(req);
@@ -126,8 +137,8 @@ async function createWithRecovery() {
 
 async function ensureClassifier(): Promise<void> {
   if (classifier) return;
-  // 初回起動前に tiny 汚染エントリを掃除 (protobuf error を事前予防)
-  await pruneTinyModelEntries();
+  // 旧モデルキャッシュ + tiny 汚染エントリの掃除
+  await pruneOutdatedModels();
   classifier = await createWithRecovery();
   console.info(`[cognitive] ready: ${ACTIVE_BACKEND} + ${ACTIVE_DTYPE} (${MODEL_NAME})`);
 }
