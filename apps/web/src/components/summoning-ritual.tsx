@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
-import { getGenerator, type ChatMessage } from '@/lib/generator';
-import { isLowEndDevice } from '@/lib/device';
+import { generateWithLocalLLM, pickLocalLLM } from '@/lib/local-llm';
 
 interface SummoningRitualProps {
   agent: Agent;
@@ -44,33 +43,21 @@ const GREETING_NARRATION_INTERVAL = 3200;
 /**
  * ブルスコン召喚の儀式。
  *
- * TinySwallow のロードと演出を並列進行。演出は最低 ~7 秒、LLM ロードが長引く場合は
- * greeting フェーズでナレーションを巡回させて間を持たせる。ロード完了 → 歓迎メッセージ
- * 生成完了の瞬間に 'emerging' フェーズに入り、フラッシュ + 星弾けの演出をしてから閉じる。
+ * LLM 利用可能性 (Nano など) のチェックと演出を並列で進める。演出は最低 ~7 秒、
+ * LLM 応答が長引いた場合は greeting フェーズでナレーションを巡回させて間を持たせる。
+ * LLM 応答完了 (or LLM 利用不可で hand-crafted 採用) の瞬間に 'emerging' フェーズへ
+ * 遷移し、フラッシュ + 星弾けの演出をしてから閉じる。
  */
 export function SummoningRitual({ agent: _agent, userName, systemPrompt, onComplete, onCancel }: SummoningRitualProps) {
   const [phase, setPhase] = useState<Phase>('gathering');
   const [greetingIdx, setGreetingIdx] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const startedAt = useRef(Date.now());
-  const loadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    // モバイルは LLM が乗らないので儀式自体を hand-crafted 完走させる。
-    // モデル DL すらしない (Cache Storage 圧迫もしない)。
-    const skipLlm = isLowEndDevice();
-    const g = skipLlm ? null : getGenerator();
-
-    const loadPromise = skipLlm
-      ? Promise.resolve()
-      : g!.load().then(() => {
-          loadedRef.current = true;
-        }).catch((e) => {
-          if (cancelled) return;
-          setErr(String((e as Error)?.message ?? e));
-          setPhase('error');
-        });
+    // LLM 利用可能性は儀式の早い段階で並行 probe しておく (greeting 到達時に確定済)。
+    const llmProbe = pickLocalLLM().catch(() => null);
 
     async function run() {
       await sleep(MIN_PHASE_MS);
@@ -83,30 +70,24 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
       if (cancelled) return;
 
       setPhase('greeting');
-      await loadPromise;
-      if (cancelled || err) return;
+      const llm = await llmProbe;
+      if (cancelled) return;
 
       let welcome = '';
-      if (skipLlm) {
-        // モバイル: ハンドクラフト固定文 (一人称無し)
+      if (!llm) {
+        // LLM 利用不可 (Firefox/Safari/モバイル等): ハンドクラフト固定文
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
       } else {
-        if (!loadedRef.current) return;
-        const messages: ChatMessage[] = [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: `${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`,
-          },
-        ];
+        // 儀式特有のタスク指示。`# あなたへの依頼` ヘッダで「今やること」を明示する。
+        const taskBlock = `# あなたへの依頼\n${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
         try {
-          welcome = await g!.generate(messages);
-          welcome = cleanGenerated(welcome);
+          const result = await generateWithLocalLLM(
+            { systemPrompt, history: [{ role: 'user', content: taskBlock }] },
+          );
+          welcome = cleanGenerated(result?.text ?? '');
         } catch (e) {
-          if (cancelled) return;
-          setErr(String((e as Error)?.message ?? e));
-          setPhase('error');
-          return;
+          console.warn('[ritual] LLM failed, falling back to hand-crafted welcome', e);
+          welcome = '';
         }
         if (!welcome || welcome.length < 4) {
           welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
@@ -155,7 +136,7 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
           <h2 style={{ marginTop: '0.8em' }}>今日は儀式を続けられないようだ</h2>
           <p style={{ marginTop: '0.5em', color: '#c9d4e0' }}>{err ?? '原因不明'}</p>
           <p style={{ marginTop: '0.5em', fontSize: '0.85em', color: '#9fb3c8' }}>
-            (WebGPU が使えるブラウザで再試行すると進みます)
+            (PDS への書き込みが失敗したようです。少し待ってから再試行してください)
           </p>
           <div style={{ display: 'flex', gap: '0.5em', justifyContent: 'center', marginTop: '1.2em' }}>
             <button onClick={onCancel}>やめる</button>

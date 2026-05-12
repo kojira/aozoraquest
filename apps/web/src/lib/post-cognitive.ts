@@ -10,7 +10,9 @@
  * - IDB (`cognitive-idb.ts`): リロード後も再推論しない (post 本文は immutable
  *   なので URI = 一意で OK)。TTL 30 日
  *
- * モバイル (low-end) はモデルロードで OOM するので強制 OFF。
+ * PC/モバイル共通で `getAnalyzePosts()` (デフォルト OFF) の設定で制御。
+ * モバイルは LLM (TinySwallow) と違って Ruri 30m は ~30MB で OOM しないため
+ * ハードゲートしない (旧 commit 2e50d3f で誤って LLM の OOM 経験を流用していた)。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,7 +20,6 @@ import type { CognitiveScores } from '@aozoraquest/core';
 import { getCognitiveOnnxClassifier } from './cognitive-onnx';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { getAnalyzePosts } from './prefs';
-import { isLowEndDevice } from './device';
 import { loadCachedCognitive, saveCachedCognitive } from './cognitive-idb';
 
 const MIN_TEXT_LEN = 10;
@@ -33,7 +34,8 @@ export interface UseCognitiveAnalysisResult {
   error: string | undefined;
   /** 自動分析 OFF の時に手動で分析を開始するためのトリガ */
   triggerAnalyze: () => void;
-  /** 分析対象 (PC + 日本語比率十分 + 短すぎない) かどうか。UI 表示判定に使う。 */
+  /** 分析対象 (日本語比率十分 + 短すぎない) かどうか。UI 表示判定に使う。
+   *  実行可否 (設定 ON/OFF) はこれとは別、auto trigger 側で見る。 */
   canAnalyze: boolean;
 }
 
@@ -46,9 +48,8 @@ export function useCognitiveAnalysis(
   const [error, setError] = useState<string | undefined>(undefined);
   const startedRef = useRef(false);
 
-  const lowEnd = isLowEndDevice();
   const pre = preprocessText(text);
-  const canAnalyze = !lowEnd && Boolean(uri) && pre.length >= MIN_TEXT_LEN && hasJapanese(pre);
+  const canAnalyze = Boolean(uri) && pre.length >= MIN_TEXT_LEN && hasJapanese(pre);
 
   const run = useCallback(() => {
     if (!uri || !canAnalyze) return;

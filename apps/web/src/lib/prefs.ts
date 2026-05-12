@@ -23,7 +23,7 @@ export function setAutoTranslate(v: boolean): void {
 }
 
 /** TL の各投稿に cognitive function (Fe/Ni 等) の判定バッジを表示するか。
- *  ONNX classifier (~500MB) を起動するため負荷が大きい。デフォルト OFF。 */
+ *  ONNX classifier (Ruri 30m、初回 DL ~30MB) を起動する。デフォルト OFF。 */
 export function getAnalyzePosts(): boolean {
   try {
     return localStorage.getItem(KEY_ANALYZE_POSTS) === 'true';

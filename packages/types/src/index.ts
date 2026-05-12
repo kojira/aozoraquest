@@ -126,6 +126,10 @@ export const ConfigPromptSchema = z.object({
   id: z.enum(['spiritChat', 'draftPost', 'advancedDiagnosis']),
   body: z.string().max(8000),
   notes: z.string().max(500).optional(),
+  /** 生成トークン上限。admin が UI から長さを制御するための窓口。
+   *  上限 200 は web 側 LocalLLM 抽象の soft cap (estimateTokens 換算で
+   *  ~285 文字相当)。UI 側は未設定時に機能毎の sane default にフォールバック。 */
+  maxNewTokens: z.number().int().min(1).max(200).optional(),
   updatedAt: Datetime,
 });
 export type ConfigPrompt = z.infer<typeof ConfigPromptSchema>;

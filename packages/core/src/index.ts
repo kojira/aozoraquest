@@ -1,6 +1,5 @@
 export * from './types.js';
 export * from './embedding-config.js';
-export * from './generation-config.js';
 export * from './jobs.js';
 export * from './tuning.js';
 export * from './stats.js';

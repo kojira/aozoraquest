@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
-import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
+import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, jobLevelFromXp, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
@@ -13,9 +13,9 @@ import { SummoningRitual } from '@/components/summoning-ritual';
 import { TextField } from '@/components/text-field';
 import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
+import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
-import { getGenerator, isModelCached, type ChatMessage } from '@/lib/generator';
-import { isLowEndDevice } from '@/lib/device';
+import { generateWithLocalLLM, pickLocalLLM } from '@/lib/local-llm';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
 
@@ -32,17 +32,15 @@ const INPUT_MAX = SPIRIT_INPUT_MAX_LENGTH;
 /** LLM に渡す直近の会話ターン数 (tuning.SPIRIT_CHAT_HISTORY_TURNS の別名) */
 const HISTORY_TURNS = SPIRIT_CHAT_HISTORY_TURNS;
 
-const DEFAULT_SYSTEM_PROMPT = `あなたは「あおぞらくえすと」の精霊、ブルスコン。
-青空の化身で、穏やかで詩的、押し付けがましくない。
-応答ルール:
-- **必ず 1〜2 文、合計 60 字以内で**簡潔に返す。長文・列挙・前置きは禁止
-- 一人称は使わない
-- 古風な語尾 (じゃ、ぞ、など) は使わない
-- 断定予言や強い助言はしない
-- 相手の名前が分かれば自然に添える`;
-
-/** 精霊応答の最大トークン数。日本語 1 token ≒ 0.5-1 字なので 60 字 ≒ 100 token 強で打ち切り。 */
-const SPIRIT_MAX_NEW_TOKENS = 100;
+/** 精霊応答の最大トークン数のデフォルト値 (= UI 側の fallback)。
+ *  これ以上短くしたい / 長くしたいときは admin が
+ *  `app.aozoraquest.config.prompts/spiritChat` の `maxNewTokens` で
+ *  上書きできる (lexicon 拡張は別タスクで対応予定)。
+ *
+ *  この数値定数だけが code 側に残るが、character には関与しない (生成上限の
+ *  安全値 = エンジニアリング都合)。性格・口調・形式・例文は **すべて admin** が
+ *  PDS の prompt body に書く。 */
+const SPIRIT_MAX_NEW_TOKENS_DEFAULT = 60;
 
 interface HistoryItem {
   uri?: string;
@@ -59,10 +57,11 @@ export function Spirit() {
   const [loaded, setLoaded] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [ritualOpen, setRitualOpen] = useState(false);
-  /** モデルファイルがブラウザの Cache Storage にあるかどうか。false ならキャッシュ切れ。 */
-  const [cacheReady, setCacheReady] = useState(false);
-  /** モデルが現在のセッションで生成器として使える状態か。cacheReady=true のときは裏で自動ロードする。 */
-  const [generatorReady, setGeneratorReady] = useState(false);
+  /** ブラウザ内 LLM (Gemini Nano など) が現在使えるか。null = 未確定、
+   *  false = 利用不可 (Firefox/Safari/古い Chrome/モバイル等)。 */
+  const [llmReady, setLlmReady] = useState<boolean | null>(null);
+  /** 使用中の LLM 表示名 (例: "Gemini Nano (Chrome 内蔵 AI)")。 */
+  const [llmLabel, setLlmLabel] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
@@ -75,9 +74,27 @@ export function Spirit() {
   const did = session.did ?? null;
 
   const userName = session.handle?.split('.')[0] ?? 'あなた';
-  const systemPrompt = (config.prompts?.spiritChat?.body ?? DEFAULT_SYSTEM_PROMPT).trim();
+  // 性格・口調・応答形式・例文 — 全部 admin の領分 (PDS の prompts/spiritChat に書く)。
+  // 長さも admin の `maxNewTokens` で上書き可。code 側には fallback 数値だけ残す
+  // (UI 安全のため、未設定時の暴走を抑える程度の小さな default)。
+  // admin の prompt body 内の `{user}` `{archetype}` `{level}` を実行時に展開する。
+  // 値が無い変数 (例: 診断未実施の {archetype}) は placeholder のまま残る
+  // (admin が typo / 未定義に気付ける、UI で誤展開せず可視化される)。
+  const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
+  const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
+  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp)) : undefined;
+  const systemPrompt = useMemo(
+    () =>
+      applyPromptTemplate(systemPromptRaw, {
+        user: userName,
+        archetype: archetypeName,
+        level: levelStr,
+      }),
+    [systemPromptRaw, userName, archetypeName, levelStr],
+  );
+  const spiritMaxNewTokens = config.prompts?.spiritChat?.maxNewTokens ?? SPIRIT_MAX_NEW_TOKENS_DEFAULT;
 
-  // 初期ロード: diagnosis, points, chat history, モデルキャッシュ確認
+  // 初期ロード: diagnosis, points, chat history
   useEffect(() => {
     if (session.status !== 'signed-in' || !agent || !did) {
       setLoaded(true);
@@ -86,26 +103,15 @@ export function Spirit() {
     let cancelled = false;
     (async () => {
       try {
-        const [r, p, hist, cached] = await Promise.all([
+        const [r, p, hist] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
-          isModelCached(),
         ]);
         if (cancelled) return;
         setDiag(r);
         setPoints(p);
         setHistory(hist);
-        setCacheReady(cached);
-        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)。
-        // モバイルは LLM 自体が乗らないので skip (会話 UI も別経路で隠す)。
-        if (p.summoned && cached && !isLowEndDevice()) {
-          getGenerator().load().then(() => {
-            if (!cancelled) setGeneratorReady(true);
-          }).catch((e) => {
-            console.warn('silent generator load failed', e);
-          });
-        }
       } catch (e) {
         console.warn('spirit init failed', e);
       } finally {
@@ -114,6 +120,18 @@ export function Spirit() {
     })();
     return () => { cancelled = true; };
   }, [session.status, agent, did]);
+
+  // ブラウザ内 LLM (Gemini Nano など) の利用可能性を 1 回だけ問い合わせる。
+  // 利用不可なら会話 UI は disabled、ヒントを表示する。
+  useEffect(() => {
+    let cancelled = false;
+    pickLocalLLM().then((llm) => {
+      if (cancelled) return;
+      setLlmReady(!!llm);
+      setLlmLabel(llm?.label ?? null);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // 投稿直後にポイント再計算
   useOnPosted(() => {
@@ -189,7 +207,6 @@ export function Spirit() {
     void bumpPower(agent, did, { userMessages: 1 });
 
     // spirit の返答を生成 (streaming)
-    const g = getGenerator();
     // 保留用 uri (本物が入るまで streamingRef で識別)
     const streamKey = `__streaming_${Date.now()}`;
     streamingRef.current = streamKey;
@@ -197,25 +214,33 @@ export function Spirit() {
     setHistory((h) => [...h, placeholder]);
 
     // 直近 HISTORY_TURNS ターン (1 ターン = user + spirit の 2 件) を LLM コンテキストに渡す。
-    // 要約はせず、それ以前は忘れる。
+    // 要約はせず、それ以前は忘れる。LLM backend の選択は local-llm.ts に委譲。
     const recentHistory = [...history.slice(-HISTORY_TURNS * 2), tempUser];
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...recentHistory.map((m) => ({
-        role: (m.role === 'spirit' ? 'assistant' : 'user') as 'assistant' | 'user',
-        content: m.text,
-      })),
-    ];
+    const historyForGen = recentHistory.map((m) => ({
+      role: m.role === 'spirit' ? ('assistant' as const) : ('user' as const),
+      content: m.text,
+    }));
 
     let full = '';
     try {
-      full = await g.generate(messages, {
-        maxNewTokens: SPIRIT_MAX_NEW_TOKENS,
-        onToken: (chunk: string) => {
-          if (streamingRef.current !== streamKey) return;
-          setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+      const result = await generateWithLocalLLM(
+        { systemPrompt, history: historyForGen },
+        {
+          maxNewTokens: spiritMaxNewTokens,
+          onToken: (chunk: string) => {
+            if (streamingRef.current !== streamKey) return;
+            setHistory((h) => h.map((x) => (x.uri === streamKey ? { ...x, text: x.text + chunk } : x)));
+          },
         },
-      });
+      );
+      if (!result) {
+        streamingRef.current = null;
+        setHistory((h) => h.filter((x) => x.uri !== streamKey));
+        setSendErr('お使いの環境ではブルスコンと話せないようだ (ブラウザ内 AI が利用不可)。');
+        setSending(false);
+        return;
+      }
+      full = result.text;
     } catch (e) {
       streamingRef.current = null;
       setHistory((h) => h.filter((x) => x.uri !== streamKey));
@@ -257,7 +282,7 @@ export function Spirit() {
 
     void userUri;
     setSending(false);
-  }, [agent, did, points, input, sending, history, systemPrompt]);
+  }, [agent, did, points, input, sending, history, systemPrompt, spiritMaxNewTokens]);
 
   const onCancelRitual = useCallback(() => {
     setRitualOpen(false);
@@ -277,9 +302,6 @@ export function Spirit() {
         setPoints((p) => (p ? { ...p, summoned: true } : p));
         // PDS の累積カウンタの summoned フラグも立てる
         void bumpPower(agent, did, { summoned: true });
-        // 儀式中にモデルはロード済み、キャッシュにも入った
-        setCacheReady(true);
-        setGeneratorReady(true);
       } catch (e) {
         console.warn('welcome message save failed', e);
         throw e;
@@ -311,8 +333,6 @@ export function Spirit() {
   if (!points) return null;
 
   const jobLabel = diag ? jobDisplayName(diag.archetype, 'default') : null;
-  /** 召喚済みだがキャッシュが消えているため、再召喚の儀式を要求する状態。 */
-  const needsResummon = points.summoned && !cacheReady;
 
   return (
     <div>
@@ -327,29 +347,6 @@ export function Spirit() {
           </p>
         </div>
       </div>
-
-      {/* ─── 再召喚 (キャッシュ切れ) ─── */}
-      {needsResummon && (
-        <section style={{ marginTop: '1em', textAlign: 'center' }}>
-          <SpiritBubble sleeping>
-            ブルスコンのかたちが、消えてしまったようだ。もう一度、呼び戻そう。
-          </SpiritBubble>
-          <button
-            onClick={() => setRitualOpen(true)}
-            style={{
-              marginTop: '1em',
-              padding: '0.7em 1.6em',
-              fontSize: '1em',
-              background: 'rgba(0, 0, 0, 0.6)',
-              color: '#ffffff',
-              border: '3px solid #ffffff',
-              boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
-            }}
-          >
-            もう一度 召喚の儀式
-          </button>
-        </section>
-      )}
 
       {/* ─── E1: pre-ritual (初回) ─── */}
       {!points.summoned && points.viaPosts < SUMMON_THRESHOLD && (
@@ -396,8 +393,8 @@ export function Spirit() {
         </section>
       )}
 
-      {/* ─── E3: summoned (かつキャッシュあり) ─── */}
-      {points.summoned && !needsResummon && (
+      {/* ─── E3: summoned ─── */}
+      {points.summoned && (
         <>
           <section style={{ marginTop: '1em', display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
             {greetingLines.map((line, i) => (
@@ -421,11 +418,12 @@ export function Spirit() {
             {sendErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{sendErr}</p>}
           </section>
 
-          {isLowEndDevice() ? (
+          {llmReady === false ? (
             <section style={{ marginTop: '0.8em' }}>
               <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-                ブルスコンとの会話は PC のブラウザでのみ使えます。
-                モバイルではブルスコンの存在を眺めるだけになります。
+                ブルスコンと話すにはブラウザ内蔵 AI (Chrome 148+ デスクトップの
+                Gemini Nano など) が必要です。お使いの環境では今は話せませんが、
+                これまでの会話はそのまま読めます。
               </p>
             </section>
           ) : (
@@ -437,25 +435,26 @@ export function Spirit() {
                   onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
                   onSubmit={() => void sendMessage()}
                   placeholder={
-                    !generatorReady
-                      ? 'ブルスコンを呼び戻している…'
+                    llmReady === null
+                      ? 'AI を確認中…'
                       : points.balance > 0
                         ? 'ブルスコンに話しかける'
                         : 'あなたの投稿を重ねると、話せるようになる'
                   }
-                  disabled={sending || points.balance < 1 || !generatorReady}
+                  disabled={sending || points.balance < 1 || llmReady !== true}
                   maxLength={INPUT_MAX}
                   style={{ flex: 1 }}
                 />
                 <button
                   onClick={() => void sendMessage()}
-                  disabled={sending || points.balance < 1 || !input.trim() || !generatorReady}
+                  disabled={sending || points.balance < 1 || !input.trim() || llmReady !== true}
                 >
                   {sending ? '…' : '送る'}
                 </button>
               </div>
-              <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
-                {input.length} / {INPUT_MAX}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)' }}>
+                <span>{llmLabel ? `AI: ${llmLabel}` : ''}</span>
+                <span>{input.length} / {INPUT_MAX}</span>
               </div>
             </section>
           )}
@@ -497,25 +496,16 @@ async function loadChatHistory(agent: Agent, did: string): Promise<HistoryItem[]
   }
 }
 
-/** 精霊の応答を整える。
- *  1) 特殊トークン / role prefix を除去
- *  2) **2 文 (「。！？!?」) で打ち切る** — system prompt で指示しても LLM が
- *     伸びる場合があるので、出力側でも強制
- *  3) ハードキャップ 120 字 (極端に長い 1 文への保険)
+/** 精霊の応答を整える。最小限のクリーンアップだけ:
+ *  特殊トークン / role prefix の除去 + 暴走時の保険として 400 字キャップ。
+ *  応答長は **生成側 (prompt + max_new_tokens) で制御** する方針。後処理で
+ *  文を切ると意味が壊れるので。
  */
 function cleanGenerated(s: string): string {
-  const stripped = s
+  return s
     .replace(/^<\|.*?\|>/g, '')
     .replace(/<\|.*?\|>$/g, '')
     .replace(/^(assistant|system):\s*/i, '')
-    .trim();
-  // 文末記号で 2 文目までを採用。デリミタは前文末に残す。
-  const SENTENCE_END = /[。！？!?]/g;
-  const ends: number[] = [];
-  for (const m of stripped.matchAll(SENTENCE_END)) {
-    if (m.index !== undefined) ends.push(m.index + m[0].length);
-    if (ends.length >= 2) break;
-  }
-  const cut = ends.length >= 2 ? stripped.slice(0, ends[1]!) : stripped;
-  return cut.slice(0, 120);
+    .trim()
+    .slice(0, 400);
 }
