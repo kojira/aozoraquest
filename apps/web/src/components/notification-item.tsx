@@ -4,6 +4,7 @@ import { Avatar } from './avatar';
 import { PostArticle } from './post-article';
 import {
   AtIcon,
+  BellIcon,
   HeartIcon,
   PersonAddIcon,
   QuoteIcon,
@@ -39,6 +40,8 @@ function iconFor(reason: string) {
       return AtIcon;
     case 'quote':
       return QuoteIcon;
+    case 'subscribed-post':
+      return BellIcon;
     default:
       return HeartIcon;
   }
