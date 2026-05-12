@@ -1,11 +1,11 @@
 /**
- * 9-class cognitive classifier 専用 Worker (fine-tune 済 ModernBERT-ja 130m)。
+ * 9-class cognitive classifier 専用 Worker (fine-tune 済 ModernBERT-ja 30m)。
  *
- * transformers.js pipeline('text-classification', ...) で local ONNX をロードし、
+ * transformers.js pipeline('text-classification', ...) で HF Hub ONNX をロードし、
  * 投稿 text → 9 class softmax 確率を返す。
  *
- * 優先度: WebGPU + int4 (q4) → WASM + int8 (q8)。
- * WebGPU int8 (q8) は ORT-web 1.24.3 でも計算破綻するので使わない。
+ * Backend: **WASM + int8 (q8) 固定**。理由は cognitive-onnx.ts のヘッダ参照
+ * (30m モデルでは WebGPU q4 より精度高く速い、iOS Safari WebGPU バグも回避)。
  *
  * メッセージ:
  *   { type: 'init' }                          → { type: 'ready', backend, dtype }
@@ -35,26 +35,22 @@ env.useBrowserCache = true;
 type Device = 'webgpu' | 'wasm';
 type Dtype = 'q4' | 'q8';
 
-interface InitMessage { type: 'init'; modelName?: string; forceWasm?: boolean }
+interface InitMessage { type: 'init' }
 interface ClassifyMessage { type: 'classify'; id: string; text: string }
 interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
 type IncomingMessage = InitMessage | ClassifyMessage | ClassifyBatchMessage;
 
-// 既定は大きい方 (130m ベース)。init メッセージで上書き可能。
-let modelName = 'kojira/aozoraquest-cognitive';
-/** iOS Safari は WebGPU に既知の WebKit JIT バグ (microsoft/onnxruntime#26827)
- *  があり、繰り返し inference するとプロセスが kill されるので WASM 強制。 */
-let forceWasm = false;
+const MODEL_NAME = 'kojira/aozoraquest-cognitive-small';
+const ACTIVE_BACKEND: Device = 'wasm';
+const ACTIVE_DTYPE: Dtype = 'q8';
 const LABELS = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 
 let classifier: any = null;
-let activeBackend: Device = 'webgpu';
-let activeDtype: Dtype = 'q4';
 
-async function tryCreate(device: Device, dtype: Dtype) {
-  return await pipeline('text-classification', modelName, {
-    device,
-    dtype,
+async function tryCreate() {
+  return await pipeline('text-classification', MODEL_NAME, {
+    device: ACTIVE_BACKEND,
+    dtype: ACTIVE_DTYPE,
     progress_callback: (p: any) => {
       (self as unknown as Worker).postMessage({
         type: 'progress', file: p.file, loaded: p.loaded, total: p.total,
@@ -117,14 +113,14 @@ async function pruneTinyModelEntries(): Promise<void> {
   }
 }
 
-async function createWithRecovery(device: Device, dtype: Dtype) {
+async function createWithRecovery() {
   try {
-    return await tryCreate(device, dtype);
+    return await tryCreate();
   } catch (e) {
     if (!isProtobufError(e)) throw e;
-    console.warn(`[cognitive] ${device}/${dtype} protobuf error, clearing cache and retrying`, e);
+    console.warn(`[cognitive] ${ACTIVE_BACKEND}/${ACTIVE_DTYPE} protobuf error, clearing cache and retrying`, e);
     await clearPoisonedCache();
-    return await tryCreate(device, dtype);
+    return await tryCreate();
   }
 }
 
@@ -132,22 +128,8 @@ async function ensureClassifier(): Promise<void> {
   if (classifier) return;
   // 初回起動前に tiny 汚染エントリを掃除 (protobuf error を事前予防)
   await pruneTinyModelEntries();
-  if (forceWasm) {
-    classifier = await createWithRecovery('wasm', 'q8');
-    activeBackend = 'wasm'; activeDtype = 'q8';
-    console.info('[cognitive] ready: WASM + int8 (forced: iOS Safari)');
-    return;
-  }
-  try {
-    classifier = await createWithRecovery('webgpu', 'q4');
-    activeBackend = 'webgpu'; activeDtype = 'q4';
-    console.info('[cognitive] ready: WebGPU + int4');
-  } catch (e) {
-    console.warn('[cognitive] WebGPU q4 failed, falling back to WASM q8', e);
-    classifier = await createWithRecovery('wasm', 'q8');
-    activeBackend = 'wasm'; activeDtype = 'q8';
-    console.info('[cognitive] ready: WASM + int8');
-  }
+  classifier = await createWithRecovery();
+  console.info(`[cognitive] ready: ${ACTIVE_BACKEND} + ${ACTIVE_DTYPE} (${MODEL_NAME})`);
 }
 
 /** text-classification pipeline は top_k 指定で全 label 確率を返すので、label 順序を揃える。 */
@@ -185,11 +167,9 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
   const msg = event.data;
   try {
     if (msg.type === 'init') {
-      if (msg.modelName) modelName = msg.modelName;
-      if (msg.forceWasm) forceWasm = true;
       await ensureClassifier();
       (self as unknown as Worker).postMessage({
-        type: 'ready', backend: activeBackend, dtype: activeDtype, labels: LABELS, modelName,
+        type: 'ready', backend: ACTIVE_BACKEND, dtype: ACTIVE_DTYPE, labels: LABELS, modelName: MODEL_NAME,
       });
       return;
     }
