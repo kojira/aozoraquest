@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
-import { getGenerator, type ChatMessage } from '@/lib/generator';
+import { getGenerator } from '@/lib/generator';
+import { generateSpirit, pickSpiritBackend } from '@/lib/spirit-generator';
 import { isLowEndDevice } from '@/lib/device';
 
 interface SummoningRitualProps {
@@ -60,17 +61,27 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
     // モバイルは LLM が乗らないので儀式自体を hand-crafted 完走させる。
     // モデル DL すらしない (Cache Storage 圧迫もしない)。
     const skipLlm = isLowEndDevice();
-    const g = skipLlm ? null : getGenerator();
 
-    const loadPromise = skipLlm
-      ? Promise.resolve()
-      : g!.load().then(() => {
-          loadedRef.current = true;
-        }).catch((e) => {
-          if (cancelled) return;
-          setErr(String((e as Error)?.message ?? e));
-          setPhase('error');
-        });
+    // backend を先に決める。TinySwallow が選ばれた場合だけ、儀式の演出と
+    // 並行してモデルロードを走らせる (~600MB DL を「気配が集まる」フェーズで
+    // 隠す)。Gemini Nano なら DL 不要なので即時待機なし。
+    const backendPromise = skipLlm
+      ? Promise.resolve('tinyswallow' as const)
+      : pickSpiritBackend();
+
+    const loadPromise = backendPromise
+      .then(async (b) => {
+        if (skipLlm) return;
+        if (b === 'tinyswallow') {
+          await getGenerator().load();
+        }
+        loadedRef.current = true;
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setErr(String((e as Error)?.message ?? e));
+        setPhase('error');
+      });
 
     async function run() {
       await sleep(MIN_PHASE_MS);
@@ -92,17 +103,17 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
         welcome = `呼んでくれて、ありがとう、${userName}。ここにいる。`;
       } else {
         if (!loadedRef.current) return;
-        // admin prompt (役割定義) と ritual のタスク指示が混ざらないよう、
-        // ヘッダ行で明示的に区切る。LLM が「役割」と「今やる依頼」を分けて
-        // 解釈できる構造にする。systemPrompt が空ならヘッダごと省く。
+        // 儀式特有のタスク指示。`# あなたへの依頼` ヘッダで「今やること」を
+        // 明示する。Nano は systemPrompt を system role に、TinySwallow は
+        // 最後の user に prepend するが、いずれの経路でも task ヘッダは
+        // user message 内に保持される。
         const taskBlock = `# あなたへの依頼\n${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
-        const fullUser = systemPrompt
-          ? `# あなたの役割\n${systemPrompt}\n\n${taskBlock}`
-          : taskBlock;
-        const messages: ChatMessage[] = [{ role: 'user', content: fullUser }];
         try {
-          welcome = await g!.generate(messages);
-          welcome = cleanGenerated(welcome);
+          const result = await generateSpirit(
+            { systemPrompt, history: [{ role: 'user', content: taskBlock }] },
+            {},
+          );
+          welcome = cleanGenerated(result.text);
         } catch (e) {
           if (cancelled) return;
           setErr(String((e as Error)?.message ?? e));
