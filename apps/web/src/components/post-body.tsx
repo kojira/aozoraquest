@@ -86,7 +86,7 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
   );
 }
 
-function TranslationControls({
+export function TranslationControls({
   state,
   hasTranslation,
   showOriginal,
