@@ -15,6 +15,7 @@ import { HomeSummary } from '@/components/home-summary';
 import { PostArticle } from '@/components/post-article';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
 import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
+import { getHideReposts } from '@/lib/prefs';
 
 type Tab = 'following' | 'resonance';
 
@@ -92,10 +93,25 @@ export function Home() {
       : {}),
   });
 
+  // 設定でリポスト非表示 ON の場合、reasonRepost 付きの item を除外する。
+  // 元の本人の投稿 (reason 無し) はそのまま流れる。設定は localStorage 直読みなので
+  // mount 時に決まる (頻繁に切り替えない想定)。切り替え後はリロードで反映。
+  const hideReposts = getHideReposts();
+  const followingItems = useMemo(
+    () =>
+      hideReposts
+        ? followingFeed.items.filter(
+            (it) =>
+              (it.reason as { $type?: string } | undefined)?.$type !== 'app.bsky.feed.defs#reasonRepost',
+          )
+        : followingFeed.items,
+    [followingFeed.items, hideReposts],
+  );
+
   // フォロー TL の著者 archetype 解決
   const followingAuthorDids = useMemo(
-    () => followingFeed.items.map((it) => it.post.author.did),
-    [followingFeed.items],
+    () => followingItems.map((it) => it.post.author.did),
+    [followingItems],
   );
   const followingArchetypes = useArchetypes(agent ?? null, followingAuthorDids);
 
@@ -156,11 +172,11 @@ export function Home() {
       {tab === 'following' && (
         <section style={{ marginTop: '1em' }}>
           {followingFeed.err && <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {followingFeed.err}</p>}
-          {!followingFeed.loading && followingFeed.items.length === 0 && !followingFeed.err && (
+          {!followingFeed.loading && followingItems.length === 0 && !followingFeed.err && (
             <p style={{ color: 'var(--color-muted)' }}>タイムラインが空です。</p>
           )}
           <VirtualFeed
-            items={followingFeed.items}
+            items={followingItems}
             keyOf={(x) => x.post.uri}
             renderItem={(item) => (
               <PostCard item={item} archetype={followingArchetypes.get(item.post.author.did) ?? null} />
@@ -169,7 +185,7 @@ export function Home() {
             footer={
               <>
                 {followingFeed.loading && <p style={{ textAlign: 'center' }}>読み込み中...</p>}
-                {followingFeed.done && followingFeed.items.length > 0 && (
+                {followingFeed.done && followingItems.length > 0 && (
                   <p style={{ textAlign: 'center', fontSize: '0.8em', color: 'var(--color-muted)' }}>
                     これ以上はありません。
                   </p>
