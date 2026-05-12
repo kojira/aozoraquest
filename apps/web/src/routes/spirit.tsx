@@ -15,11 +15,7 @@ import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
-import { getGenerator, isModelCached } from '@/lib/generator';
-import { generateSpirit, type SpiritBackend } from '@/lib/spirit-generator';
-import { useGeminiNanoPref } from '@/lib/spirit-prefs';
-import { detectGeminiNano, type NanoStatus } from '@/lib/gemini-nano-availability';
-import { isLowEndDevice } from '@/lib/device';
+import { generateWithLocalLLM, pickLocalLLM } from '@/lib/local-llm';
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
 
@@ -61,19 +57,14 @@ export function Spirit() {
   const [loaded, setLoaded] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [ritualOpen, setRitualOpen] = useState(false);
-  /** モデルファイルがブラウザの Cache Storage にあるかどうか。false ならキャッシュ切れ。 */
-  const [cacheReady, setCacheReady] = useState(false);
-  /** モデルが現在のセッションで生成器として使える状態か。cacheReady=true のときは裏で自動ロードする。 */
-  const [generatorReady, setGeneratorReady] = useState(false);
+  /** ブラウザ内 LLM (Gemini Nano など) が現在使えるか。null = 未確定、
+   *  false = 利用不可 (Firefox/Safari/古い Chrome/モバイル等)。 */
+  const [llmReady, setLlmReady] = useState<boolean | null>(null);
+  /** 使用中の LLM 表示名 (例: "Gemini Nano (Chrome 内蔵 AI)")。 */
+  const [llmLabel, setLlmLabel] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
-  const [useNano, setUseNano] = useGeminiNanoPref();
-  const [nanoStatus, setNanoStatus] = useState<NanoStatus | null>(null);
-  const [lastBackend, setLastBackend] = useState<SpiritBackend | null>(null);
-  /** 直近の発話で Nano を試して失敗し TinySwallow に fallback した時のエラー。
-   *  チップ横に小さく表示してユーザーが「Nano にならない原因」を確認できるように。 */
-  const [lastFallback, setLastFallback] = useState<string | null>(null);
   const streamingRef = useRef<string | null>(null); // uri of current streaming message
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -103,7 +94,7 @@ export function Spirit() {
   );
   const spiritMaxNewTokens = config.prompts?.spiritChat?.maxNewTokens ?? SPIRIT_MAX_NEW_TOKENS_DEFAULT;
 
-  // 初期ロード: diagnosis, points, chat history, モデルキャッシュ確認
+  // 初期ロード: diagnosis, points, chat history
   useEffect(() => {
     if (session.status !== 'signed-in' || !agent || !did) {
       setLoaded(true);
@@ -112,26 +103,15 @@ export function Spirit() {
     let cancelled = false;
     (async () => {
       try {
-        const [r, p, hist, cached] = await Promise.all([
+        const [r, p, hist] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
-          isModelCached(),
         ]);
         if (cancelled) return;
         setDiag(r);
         setPoints(p);
         setHistory(hist);
-        setCacheReady(cached);
-        // 召喚済み + キャッシュあり → 裏で静かにロード (儀式なし)。
-        // モバイルは LLM 自体が乗らないので skip (会話 UI も別経路で隠す)。
-        if (p.summoned && cached && !isLowEndDevice()) {
-          getGenerator().load().then(() => {
-            if (!cancelled) setGeneratorReady(true);
-          }).catch((e) => {
-            console.warn('silent generator load failed', e);
-          });
-        }
       } catch (e) {
         console.warn('spirit init failed', e);
       } finally {
@@ -141,11 +121,14 @@ export function Spirit() {
     return () => { cancelled = true; };
   }, [session.status, agent, did]);
 
-  // Gemini Nano (Chrome 内蔵 AI) の利用可能性を 1 回だけ問い合わせる。
+  // ブラウザ内 LLM (Gemini Nano など) の利用可能性を 1 回だけ問い合わせる。
+  // 利用不可なら会話 UI は disabled、ヒントを表示する。
   useEffect(() => {
     let cancelled = false;
-    detectGeminiNano().then((s) => {
-      if (!cancelled) setNanoStatus(s);
+    pickLocalLLM().then((llm) => {
+      if (cancelled) return;
+      setLlmReady(!!llm);
+      setLlmLabel(llm?.label ?? null);
     });
     return () => { cancelled = true; };
   }, []);
@@ -231,10 +214,7 @@ export function Spirit() {
     setHistory((h) => [...h, placeholder]);
 
     // 直近 HISTORY_TURNS ターン (1 ターン = user + spirit の 2 件) を LLM コンテキストに渡す。
-    // 要約はせず、それ以前は忘れる。
-    //
-    // backend 切替 (Gemini Nano か TinySwallow か) と、TinySwallow 用の
-    // system prompt prepend は spirit-generator.ts の router が引き受ける。
+    // 要約はせず、それ以前は忘れる。LLM backend の選択は local-llm.ts に委譲。
     const recentHistory = [...history.slice(-HISTORY_TURNS * 2), tempUser];
     const historyForGen = recentHistory.map((m) => ({
       role: m.role === 'spirit' ? ('assistant' as const) : ('user' as const),
@@ -243,7 +223,7 @@ export function Spirit() {
 
     let full = '';
     try {
-      const result = await generateSpirit(
+      const result = await generateWithLocalLLM(
         { systemPrompt, history: historyForGen },
         {
           maxNewTokens: spiritMaxNewTokens,
@@ -253,9 +233,14 @@ export function Spirit() {
           },
         },
       );
+      if (!result) {
+        streamingRef.current = null;
+        setHistory((h) => h.filter((x) => x.uri !== streamKey));
+        setSendErr('お使いの環境ではブルスコンと話せないようだ (ブラウザ内 AI が利用不可)。');
+        setSending(false);
+        return;
+      }
       full = result.text;
-      setLastBackend(result.backend);
-      setLastFallback(result.fallbackReason ?? null);
     } catch (e) {
       streamingRef.current = null;
       setHistory((h) => h.filter((x) => x.uri !== streamKey));
@@ -317,9 +302,6 @@ export function Spirit() {
         setPoints((p) => (p ? { ...p, summoned: true } : p));
         // PDS の累積カウンタの summoned フラグも立てる
         void bumpPower(agent, did, { summoned: true });
-        // 儀式中にモデルはロード済み、キャッシュにも入った
-        setCacheReady(true);
-        setGeneratorReady(true);
       } catch (e) {
         console.warn('welcome message save failed', e);
         throw e;
@@ -351,12 +333,6 @@ export function Spirit() {
   if (!points) return null;
 
   const jobLabel = diag ? jobDisplayName(diag.archetype, 'default') : null;
-  /** 召喚済みだがキャッシュが消えているため、再召喚の儀式を要求する状態。 */
-  const needsResummon = points.summoned && !cacheReady;
-  /** Nano を使う条件: ユーザー設定 ON + Nano available。Nano なら TinySwallow
-   *  キャッシュロード完了を待たずに即チャット可能。 */
-  const willUseNano = useNano && nanoStatus === 'available';
-  const effectiveReady = willUseNano || generatorReady;
 
   return (
     <div>
@@ -371,29 +347,6 @@ export function Spirit() {
           </p>
         </div>
       </div>
-
-      {/* ─── 再召喚 (キャッシュ切れ) ─── */}
-      {needsResummon && (
-        <section style={{ marginTop: '1em', textAlign: 'center' }}>
-          <SpiritBubble sleeping>
-            ブルスコンのかたちが、消えてしまったようだ。もう一度、呼び戻そう。
-          </SpiritBubble>
-          <button
-            onClick={() => setRitualOpen(true)}
-            style={{
-              marginTop: '1em',
-              padding: '0.7em 1.6em',
-              fontSize: '1em',
-              background: 'rgba(0, 0, 0, 0.6)',
-              color: '#ffffff',
-              border: '3px solid #ffffff',
-              boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
-            }}
-          >
-            もう一度 召喚の儀式
-          </button>
-        </section>
-      )}
 
       {/* ─── E1: pre-ritual (初回) ─── */}
       {!points.summoned && points.viaPosts < SUMMON_THRESHOLD && (
@@ -440,8 +393,8 @@ export function Spirit() {
         </section>
       )}
 
-      {/* ─── E3: summoned (かつキャッシュあり) ─── */}
-      {points.summoned && !needsResummon && (
+      {/* ─── E3: summoned ─── */}
+      {points.summoned && (
         <>
           <section style={{ marginTop: '1em', display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
             {greetingLines.map((line, i) => (
@@ -465,51 +418,16 @@ export function Spirit() {
             {sendErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{sendErr}</p>}
           </section>
 
-          {isLowEndDevice() ? (
+          {llmReady === false ? (
             <section style={{ marginTop: '0.8em' }}>
               <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-                ブルスコンとの会話は PC のブラウザでのみ使えます。
-                モバイルではブルスコンの存在を眺めるだけになります。
+                ブルスコンと話すにはブラウザ内蔵 AI (Chrome 148+ デスクトップの
+                Gemini Nano など) が必要です。お使いの環境では今は話せませんが、
+                これまでの会話はそのまま読めます。
               </p>
             </section>
           ) : (
             <section style={{ marginTop: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-              <details style={{ fontSize: '0.8em' }}>
-                <summary style={{ cursor: 'pointer', color: 'var(--color-muted)' }}>
-                  ⚙ AI 設定
-                  {lastBackend && (
-                    <span style={{ marginLeft: '0.5em', padding: '0.05em 0.5em', borderRadius: 10, background: 'rgba(255,255,255,0.1)' }}>
-                      前回: {lastBackend === 'gemini-nano' ? 'Gemini Nano' : 'TinySwallow'}
-                      {lastFallback && (
-                        <span
-                          title={lastFallback}
-                          style={{ marginLeft: '0.3em', color: 'var(--color-danger, #b00)', fontSize: '0.85em' }}
-                        >
-                          (Nano エラーで切替)
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </summary>
-                <div style={{ marginTop: '0.5em', paddingLeft: '0.5em', lineHeight: 1.6 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
-                    <input
-                      type="checkbox"
-                      checked={useNano}
-                      disabled={nanoStatus !== 'available'}
-                      onChange={(e) => setUseNano(e.target.checked)}
-                    />
-                    <span>ブラウザ内蔵 AI を使う (Gemini Nano、速い)</span>
-                  </label>
-                  <p style={{ margin: '0.3em 0 0 1.8em', color: 'var(--color-muted)', fontSize: '0.9em' }}>
-                    {nanoStatus === 'available' && 'お使いの環境では Gemini Nano が利用可能です。OFF にすると常に TinySwallow を使います。'}
-                    {nanoStatus === 'downloadable' && 'Chrome がモデルを未取得のため使えません。他サイトで一度有効化されると自動的に使えるようになります。今は TinySwallow を使います。'}
-                    {nanoStatus === 'downloading' && 'Chrome がモデルをダウンロード中。完了するまでは TinySwallow を使います。'}
-                    {nanoStatus === 'unavailable' && 'お使いの環境では利用できません (Chrome 148+ デスクトップ専用)。TinySwallow を使います。'}
-                    {nanoStatus === null && '利用可否を確認中…'}
-                  </p>
-                </div>
-              </details>
               <div style={{ display: 'flex', gap: '0.4em', alignItems: 'flex-end' }}>
                 <TextField
                   ref={inputRef}
@@ -517,25 +435,26 @@ export function Spirit() {
                   onChange={(v) => setInput(v.slice(0, INPUT_MAX))}
                   onSubmit={() => void sendMessage()}
                   placeholder={
-                    !effectiveReady
-                      ? 'ブルスコンを呼び戻している…'
+                    llmReady === null
+                      ? 'AI を確認中…'
                       : points.balance > 0
                         ? 'ブルスコンに話しかける'
                         : 'あなたの投稿を重ねると、話せるようになる'
                   }
-                  disabled={sending || points.balance < 1 || !effectiveReady}
+                  disabled={sending || points.balance < 1 || llmReady !== true}
                   maxLength={INPUT_MAX}
                   style={{ flex: 1 }}
                 />
                 <button
                   onClick={() => void sendMessage()}
-                  disabled={sending || points.balance < 1 || !input.trim() || !effectiveReady}
+                  disabled={sending || points.balance < 1 || !input.trim() || llmReady !== true}
                 >
                   {sending ? '…' : '送る'}
                 </button>
               </div>
-              <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', textAlign: 'right' }}>
-                {input.length} / {INPUT_MAX}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)' }}>
+                <span>{llmLabel ? `AI: ${llmLabel}` : ''}</span>
+                <span>{input.length} / {INPUT_MAX}</span>
               </div>
             </section>
           )}
