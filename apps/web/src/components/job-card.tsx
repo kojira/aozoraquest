@@ -1,10 +1,10 @@
 /**
- * 診断結果を 1 枚の SVG カード (MTG 風、羊皮紙質感) として描く。
+ * 診断結果を 1 枚の SVG カード (MTG 風) として描く。
  * 出力は 768×1100 (約 63:88 比)。rasterize 時に 2x = 1536×2200 まで引ける。
  *
  * カードは self-contained SVG: 外部 CSS や font に依存せず、そのまま PNG に
- * rasterize できる。背景 art は public/card-art/{archetype}.(png|jpg) から
- * <image> で読む。parchment も public/card-art/parchment.jpg。
+ * rasterize できる。ジョブ別の art だけ public/card-art/{archetype}.(png|jpg)
+ * から <image> で読む (任意)。枠装飾は全て SVG で描画。
  *
  * レイアウトは MTG の典型に倣った 5 段構成:
  *   1. Title bar  (name + LV)
@@ -12,6 +12,9 @@
  *   3. Type line  ("旅人 — {job}")
  *   4. Rules box  (cog keywords + stats + flavor italic)
  *   5. 右下 P/T 相当 (dom-aux) + footer (handle, date)
+ *
+ * カード枠は rarity 色 + 金縁 + 4 隅装飾でプログラマティックに生成。
+ * 旧 AI 生成枠画像 (/card-art/frame-{rarity}-*.jpg) は使わない。
  */
 
 import type { DiagnosisResult, Rarity } from '@aozoraquest/core';
@@ -46,9 +49,9 @@ const PT_H = 60;
 // 配色
 const INK = '#2a1a08';            // 主要なインク色 (強め)
 const INK_SOFT = '#5a3f1d';
-const PANEL_FILL = 'rgba(246, 236, 208, 0.92)';  // クリーム
+const PANEL_FILL = 'rgba(246, 236, 208, 0.94)';  // クリーム (rarity 色がうっすら透けるバランス)
 const PANEL_STROKE = '#4a3416';
-const PAPER_FALLBACK_1 = '#efdfb5';
+const FRAME_OUTER = '#0e0600';    // カード最外周の縁 (純黒に近い深い焦げ茶)
 const ACCENT = '#7a5220';         // 金寄り
 
 
@@ -64,10 +67,11 @@ export interface JobCardProps {
   flavorText: string;
   /** フレーバーの発言者 (フォロイーの表示名など、"— {名前}" で右下寄せ)。 */
   flavorAttribution?: string | undefined;
-  /** カードレアリティ (6 段階)。badge 色と表示に使う。 */
+  /** カードレアリティ (6 段階)。badge 色 + 枠の rarity 色に使う。 */
   rarity: Rarity;
-  /** 枠画像の variant (1 or 2)。同じ rarity でも見た目が変わる。 */
-  frameVariant: 1 | 2;
+  /** @deprecated プログラマティック枠に置き換えたので未使用。PDS 互換のため
+   *  caller がまだ渡してくるが、ここでは無視する。次の lexicon 改定で削除。 */
+  frameVariant?: 1 | 2;
   displayName: string;
   handle: string;
   /** ジョブ固有の背景イラスト (例: '/card-art/sage.jpg') */
@@ -79,7 +83,7 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, frameVariant, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
   const job = JOBS_BY_ID[result.archetype];
@@ -101,19 +105,35 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       style={style}
     >
       <defs>
-        {/* 羊皮紙縁の焼け (vignette) */}
-        <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
-          <stop offset="0%" stopColor="rgba(0,0,0,0)" />
-          <stop offset="70%" stopColor="rgba(60,35,10,0)" />
-          <stop offset="92%" stopColor="rgba(60,35,10,0.25)" />
-          <stop offset="100%" stopColor="rgba(40,22,6,0.55)" />
-        </radialGradient>
-        <radialGradient id="paper" cx="42%" cy="38%" r="85%">
-          <stop offset="0%" stopColor="#f3e4be" />
-          <stop offset="45%" stopColor="#e6d2a0" />
-          <stop offset="78%" stopColor="#cfb27a" />
-          <stop offset="100%" stopColor="#a07c47" />
-        </radialGradient>
+        {/* === Card frame (新規 / 旧 AI 枠画像の置き換え) ===
+            rarity 色を frame の主役にして、上に金縁 + 角飾りを乗せる。
+            - frameLight: 上から光が当たって下が落ちる擬似 3D
+            - goldTrim: メタリック金 (上ハイライト→下シャドウのリニア)
+            - urShimmer: UR/SSR 用、虹色っぽいシマー
+        */}
+        <linearGradient id="frameLight" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+          <stop offset="35%" stopColor="rgba(255,255,255,0)" />
+          <stop offset="100%" stopColor="rgba(0,0,0,0.4)" />
+        </linearGradient>
+        <linearGradient id="goldTrim" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f8e493" />
+          <stop offset="40%" stopColor="#e1b04a" />
+          <stop offset="70%" stopColor="#a87420" />
+          <stop offset="100%" stopColor="#6a4310" />
+        </linearGradient>
+        <linearGradient id="goldTrimHoriz" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#a87420" />
+          <stop offset="50%" stopColor="#f8e493" />
+          <stop offset="100%" stopColor="#a87420" />
+        </linearGradient>
+        <linearGradient id="urShimmer" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#f9e0a0" />
+          <stop offset="25%" stopColor="#ffb6e0" />
+          <stop offset="50%" stopColor="#b4d8ff" />
+          <stop offset="75%" stopColor="#cfffe0" />
+          <stop offset="100%" stopColor="#f9e0a0" />
+        </linearGradient>
         <clipPath id="artClip">
           <rect x={PADX + 14} y={ART_Y} width={W - 2 * (PADX + 14)} height={ART_H} rx="4" />
         </clipPath>
@@ -157,18 +177,35 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
         </filter>
       </defs>
 
-      {/* === カード背景 ===
-          Gemini 生成のレアリティ別枠 (羊皮紙 + 装飾枠が 1 枚絵で入っている) を
-          全面に敷く。枠画像が未配置の rarity は parchment.jpg で fallback し、
-          SVG の細線枠で 2 重線を足す。 */}
-      <rect x="0" y="0" width={W} height={H} fill="url(#paper)" />
-      <image
-        href={`/card-art/frame-${rarity}-${frameVariant}.jpg`}
-        xlinkHref={`/card-art/frame-${rarity}-${frameVariant}.jpg`}
-        x="0" y="0" width={W} height={H}
-        preserveAspectRatio="xMidYMid slice"
-      />
-      <rect x="0" y="0" width={W} height={H} fill="url(#vignette)" />
+      {/* === カード背景 (プログラマティック frame) ===
+          層構成 (下→上):
+          1. 最外周の濃焦げ茶リム (silhouette を決める)
+          2. rarity 色 (このカードの「色」=希少度を一目で識別)
+          3. UR/SSR は光らせる虹シマー帯を重ねる
+          4. frameLight (上ハイライト→下シャドウで 3D 感)
+          5. 金縁ダブルライン (内側に細線、外側に太線)
+          6. 4 隅の装飾オーナメント
+      */}
+      <rect x="0" y="0" width={W} height={H} fill={FRAME_OUTER} rx="18" />
+      <rect x="6" y="6" width={W - 12} height={H - 12} fill={rarityColor} rx="14" />
+      {(rarity === 'ssr' || rarity === 'ur') && (
+        <rect x="6" y="6" width={W - 12} height={H - 12}
+              fill="url(#urShimmer)" opacity={rarity === 'ur' ? 0.45 : 0.22} rx="14" />
+      )}
+      <rect x="6" y="6" width={W - 12} height={H - 12} fill="url(#frameLight)" rx="14" />
+      {/* 金縁ダブルライン */}
+      <rect x="13" y="13" width={W - 26} height={H - 26} fill="none"
+            stroke="url(#goldTrim)" strokeWidth="2.2" rx="11" />
+      <rect x="18" y="18" width={W - 36} height={H - 36} fill="none"
+            stroke="rgba(0,0,0,0.55)" strokeWidth="0.7" rx="9" />
+      {/* 4 隅のオーナメント */}
+      <CornerOrnament cx={18} cy={18} rotation={0} />
+      <CornerOrnament cx={W - 18} cy={18} rotation={90} />
+      <CornerOrnament cx={W - 18} cy={H - 18} rotation={180} />
+      <CornerOrnament cx={18} cy={H - 18} rotation={270} />
+      {/* 上下中央の装飾 (沈黙の baroque な仕切り) */}
+      <CenterFlourish cx={W / 2} cy={14} />
+      <CenterFlourish cx={W / 2} cy={H - 14} rotation={180} />
 
       {/* === 1. Title bar === */}
       <g>
@@ -478,5 +515,47 @@ function wrapJa(text: string, perLine: number, maxLines: number): string[] {
   return out.slice(0, maxLines);
 }
 
-// 未使用の警告回避
-void PAPER_FALLBACK_1;
+/**
+ * 4 隅の金細工オーナメント。L 字の二重線 + コーナーの宝石風ダイヤ + 沿線のドット。
+ * cx,cy は L の内角 (= 内側ゴールド trim の角)。rotation で 4 隅に向きを合わせる。
+ */
+function CornerOrnament({ cx, cy, rotation }: { cx: number; cy: number; rotation: number }) {
+  return (
+    <g transform={`translate(${cx},${cy}) rotate(${rotation})`}>
+      {/* 内側細線 L (黒で陰影) */}
+      <path d="M 4 38 L 4 4 L 38 4" fill="none"
+            stroke="rgba(0,0,0,0.55)" strokeWidth="0.6" />
+      {/* 主役: 金 L */}
+      <path d="M 0 40 L 0 0 L 40 0" fill="none"
+            stroke="url(#goldTrim)" strokeWidth="1.8" strokeLinecap="round" />
+      {/* コーナーの菱形宝石 */}
+      <path d="M 0 0 L 9 -9 L 18 0 L 9 9 Z"
+            fill="url(#goldTrim)" stroke="#3a2408" strokeWidth="0.7" />
+      <path d="M 9 -5.5 L 14 0 L 9 5.5 L 4 0 Z"
+            fill="rgba(255,240,180,0.7)" />
+      {/* 沿線のドット (2 つずつ) */}
+      <circle cx="24" cy="0" r="1.8" fill="url(#goldTrim)" />
+      <circle cx="32" cy="0" r="1.2" fill="url(#goldTrim)" opacity="0.7" />
+      <circle cx="0" cy="24" r="1.8" fill="url(#goldTrim)" />
+      <circle cx="0" cy="32" r="1.2" fill="url(#goldTrim)" opacity="0.7" />
+    </g>
+  );
+}
+
+/**
+ * 上下中央の小さな baroque 装飾。シンメトリな菱形 + 横線。
+ * cx,cy は装飾の中心点。
+ */
+function CenterFlourish({ cx, cy, rotation = 0 }: { cx: number; cy: number; rotation?: number }) {
+  return (
+    <g transform={`translate(${cx},${cy}) rotate(${rotation})`}>
+      <path d="M -28 0 L -8 0" stroke="url(#goldTrimHoriz)" strokeWidth="1.4" />
+      <path d="M 28 0 L 8 0" stroke="url(#goldTrimHoriz)" strokeWidth="1.4" />
+      <path d="M -8 0 L 0 -5 L 8 0 L 0 5 Z"
+            fill="url(#goldTrim)" stroke="#3a2408" strokeWidth="0.5" />
+      <circle cx="-32" cy="0" r="1.4" fill="url(#goldTrim)" />
+      <circle cx="32" cy="0" r="1.4" fill="url(#goldTrim)" />
+    </g>
+  );
+}
+
