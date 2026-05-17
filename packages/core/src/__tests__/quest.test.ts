@@ -3,11 +3,8 @@ import { DEFAULT_QUEST_TEMPLATES, JOB_XP_CURVE, PLAYER_XP_CURVE, generateDailyQu
 import type { StatVector } from '../types.js';
 
 describe('DEFAULT_QUEST_TEMPLATES', () => {
-  test('39 件ある', () => {
-    // pipeline で確定的にトラッキングできる action のみに絞った結果。
-    // 旧 45 件から repost_only / like_underseen / streak_maintain / quick_reply
-    // 系の untrackable 6 件を削除した。
-    expect(DEFAULT_QUEST_TEMPLATES.length).toBe(39);
+  test('34 件ある', () => {
+    expect(DEFAULT_QUEST_TEMPLATES.length).toBe(34);
   });
 
   test('全 ID がユニーク', () => {
@@ -15,10 +12,10 @@ describe('DEFAULT_QUEST_TEMPLATES', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  test('growth が 27, maintenance 5, restraint 7', () => {
+  test('growth が 22, maintenance 5, restraint 7', () => {
     const counts = { growth: 0, maintenance: 0, restraint: 0 };
     for (const t of DEFAULT_QUEST_TEMPLATES) counts[t.type]++;
-    expect(counts).toEqual({ growth: 27, maintenance: 5, restraint: 7 });
+    expect(counts).toEqual({ growth: 22, maintenance: 5, restraint: 7 });
   });
 
   test('restraint は必ず forbiddenActionTypes を持つ', () => {
@@ -46,9 +43,6 @@ describe('DEFAULT_QUEST_TEMPLATES', () => {
   });
 
   test('全テンプレが pipeline でトラッキング可能な ActionType しか参照しない', () => {
-    // post-processor + structural-action が出せる ActionType の集合。
-    // これ以外 (streak_maintain / repost_only / like_underseen / quick_reply /
-    // like_regular) を要求するテンプレは pipeline で永遠に進まないので除外する。
     const trackable = new Set<string>([
       'opinion_post', 'analysis_post', 'short_burst', 'humor_post', 'empathy_reply',
       'quote_with_opinion', 'quote_with_analysis', 'thread_continue', 'calm_debate_reply',
@@ -58,6 +52,33 @@ describe('DEFAULT_QUEST_TEMPLATES', () => {
       for (const at of types) {
         expect(trackable.has(at)).toBe(true);
       }
+    }
+  });
+
+  test('description が pipeline で判定不能な語を含まない', () => {
+    // 過去に description と実装の乖離を起こしていた語のリスト。
+    // 出典 URL / 異論判定 / スレッド深さ / 困窮判定 / テーマ統一 / 連投構造 は
+    // いずれも現状の pipeline では判定できないので、これらが文言に含まれていると
+    // ユーザーの努力方向と達成判定が乖離する。
+    const banned = ['出典', '異論', '複数段', '困っている', 'テーマで連続', '連投'];
+    for (const t of DEFAULT_QUEST_TEMPLATES) {
+      for (const word of banned) {
+        expect(t.descriptionTemplate, `${t.id}: "${t.descriptionTemplate}" は禁止語 "${word}" を含む`).not.toContain(word);
+      }
+    }
+  });
+
+  test('返信構造を示唆する文言を含む場合は thread_continue or calm_debate_reply を expect する', () => {
+    // 「返信」「返せ」「返答」を description に含むなら、実装側も返信構造を判定
+    // できる ActionType (thread_continue / calm_debate_reply) を expect していないと
+    // 受動的なクエスト (相手の投稿待ち) になってしまう。
+    const replyIndicators = /(返信|返せ|返答)/;
+    const replyAware = new Set(['thread_continue', 'calm_debate_reply']);
+    for (const t of DEFAULT_QUEST_TEMPLATES) {
+      if (!replyIndicators.test(t.descriptionTemplate)) continue;
+      const types = t.expectedActionTypes ?? [];
+      const hasReplyAware = types.some((at) => replyAware.has(at));
+      expect(hasReplyAware, `${t.id}: "${t.descriptionTemplate}" は返信語を含むが返信判定 ActionType を expect していない`).toBe(true);
     }
   });
 });
@@ -92,6 +113,31 @@ describe('generateDailyQuests', () => {
     const a = generateDailyQuests(input);
     const b = generateDailyQuests(input);
     expect(a.map((q) => q.templateId)).toEqual(b.map((q) => q.templateId));
+  });
+
+  test('遊び人志望で int 過剰 → restraint は int 系 (regression: 相対ギャップ)', () => {
+    // バグ再現シナリオ: 遊び人 target (atk=20, def=12, agi=30, int=10, luk=28) に
+    // 対して current (atk=23, def=14, agi=33, int=13, luk=18) のとき、
+    // 絶対 |gap| は atk/agi/int=3 で同点、絶対値ソートのタイブレークで atk が
+    // 拾われて「衝動的な発信を一日休め」が出ていた。
+    // 相対ギャップ (|gap|/target) では int=30% が最大の負ギャップなので、
+    // restraint は int 系 (restraint_long_analysis or restraint_quote_analysis) が
+    // 選ばれるはず。
+    const quests = generateDailyQuests({
+      userDid: 'did:plc:performer-seeker',
+      dateStr: '2026-05-17',
+      level: 3,
+      currentStats: stats(23, 14, 33, 13, 18),
+      targetStats: stats(20, 12, 30, 10, 28), // 遊び人
+      recentTemplateIds: [],
+    });
+    const restraint = quests.find((q) => q.type === 'restraint');
+    expect(restraint).toBeDefined();
+    expect(restraint!.targetStat).toBe('int');
+    expect(['restraint_long_analysis', 'restraint_quote_analysis']).toContain(restraint!.templateId);
+    // growth は luk (共感) で変わらず
+    const growthLuk = quests.find((q) => q.type === 'growth' && q.targetStat === 'luk');
+    expect(growthLuk).toBeDefined();
   });
 
   test('目標ジョブを切り替えると育成軸が変わる', () => {

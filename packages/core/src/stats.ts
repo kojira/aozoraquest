@@ -114,7 +114,18 @@ export function statGap(current: StatVector, target: StatVector): StatVector {
   };
 }
 
-/** 絶対ギャップが大きい順に Stat キーを返す */
-export function sortStatsByAbsGap(gap: StatVector): readonly Stat[] {
-  return [...STATS].sort((a, b) => Math.abs(gap[b]) - Math.abs(gap[a]));
+/**
+ * 「target に対する相対ギャップ」が大きい順に Stat キーを返す。
+ *
+ * 各 stat の target 値域は職業ごとに 7〜44 と 6 倍の幅があるため、絶対点数で
+ * 比較するとレンジが小さい stat (例: 遊び人 int=10) のオーバー/アンダーが
+ * 過小評価される。`|gap| / target` で正規化して相対的な歪みの大きさで並べる。
+ *
+ * target は常に正 (最小 7) なので 0 除算は発生しないが、防御として
+ * `Math.max(target[s], 1)` を入れている。
+ */
+export function sortStatsByRelativeGap(gap: StatVector, target: StatVector): readonly Stat[] {
+  return [...STATS].sort((a, b) =>
+    Math.abs(gap[b]) / Math.max(target[b], 1) - Math.abs(gap[a]) / Math.max(target[a], 1),
+  );
 }
