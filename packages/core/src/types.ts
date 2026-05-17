@@ -102,6 +102,8 @@ export interface DiagnosisResult {
   flavorAttribution?: string;
   /** カード能力テキスト (旧フィールド、連結文字列)。新データは cardEffectName/Cost/Description を優先。 */
   cardEffect?: string;
+  /** カード名 (4-12 字、能力テーマと整合する詩的命名、例: 「忍び寄る混沌」)。MTG のカード名相当、タイトル位置に大きく描画。 */
+  cardName?: string;
   /** 能力キーワード名 (2-5 字、例: 潜影 / 星読み)。 */
   cardEffectName?: string;
   /** @deprecated 旧: 能力の発動コスト (free-form text)。新 schema では `cardAbilityCost` に構造化マナで保存。 */

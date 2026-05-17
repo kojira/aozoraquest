@@ -32,6 +32,9 @@ export interface CardEffect {
 }
 
 export interface CardText {
+  /** カード名 (4-12 字、能力テーマに沿った詩的な命名、例: 「忍び寄る混沌」)。
+   *  カード上部の大きなタイトルに表示。MTG のカード名相当。 */
+  cardName: string;
   /** カードタイプ (creature / artifact / instant / sorcery)。 */
   type: CardType;
   /** 召喚コスト (右上に表示するマナコスト)。 */
@@ -217,16 +220,18 @@ function buildAbilityPrompt(result: DiagnosisResult, rarity: Rarity, tone: Tone)
     '- 1 色マナが N 個欲しい時は「赤N」と数字で書く。',
     '- generic マナは「generic N」と書く。',
     '',
-    '出力は次の 5 行のみ。前置き・Markdown・括弧類・箇条書き禁止。',
+    '出力は次の 6 行のみ。前置き・Markdown・括弧類・箇条書き禁止。',
     'タイプ: <クリーチャー|アーティファクト|インスタント|ソーサリー>',
     `マナコスト: <合計 ${minMana}-${maxMana} マナ。色マナ + generic で組み立てる>`,
-    '能力名: <2〜8字>',
+    'カード名: <4〜12字。能力テーマと整合する詩的な命名。例「忍び寄る混沌」「朝霧の歩哨」>',
+    '能力名: <2〜8字。短いキーワード。例「潜影」「星読み」>',
     '起動コスト: <マナ表記、または「なし」(クリーチャー常時能力等)>',
     '説明: <20〜50字。具体的なゲーム効果のみ。詩的描写禁止>',
     '',
     `例 (${rarityLabel} / ${TONE_LABEL[tone]}):`,
     `タイプ: ${exampleTypeFor(rarity)}`,
     `マナコスト: ${exampleManaCostFor(rarity, job.primaryColor)}`,
+    `カード名: ${exampleCardNameFor(result.archetype)}`,
     ABILITY_EXAMPLE[rarity][tone],
     `起動コスト: ${exampleAbilityCostFor(rarity, job.primaryColor)}`,
   ].join('\n');
@@ -267,14 +272,40 @@ function exampleAbilityCostFor(rarity: Rarity, primary: Color): string {
   return `${COLOR_NAME_JA[primary]}1 generic1`;
 }
 
-/** フレーバーテキスト生成用プロンプト。トーンに沿った 1 文。 */
-function buildFlavorPrompt(result: DiagnosisResult, rarity: Rarity, abilityName: string, tone: Tone): { system: string; user: string } {
+/** archetype 別のカード名例。LLM の few-shot として 1 つだけ提示。 */
+const CARD_NAME_EXAMPLES: Record<string, string> = {
+  sage: '黄昏の編纂者',
+  mage: '理屈の織り手',
+  shogun: '号令の旗手',
+  bard: '気まぐれな旋律',
+  seer: '星詠みの預言',
+  poet: '余白の住人',
+  paladin: '夜明けの守護',
+  explorer: '風読みの旅人',
+  warrior: '一閃の戦士',
+  guardian: '静かな砦',
+  fighter: '研ぎ澄まされた拳',
+  artist: '色を編む者',
+  captain: '指揮の灯火',
+  miko: '清めの巫女',
+  ninja: '忍び寄る混沌',
+  performer: '即興の遊び手',
+};
+
+function exampleCardNameFor(archetype: string): string {
+  return CARD_NAME_EXAMPLES[archetype] ?? '名もなき旅人';
+}
+
+/** フレーバーテキスト生成用プロンプト。トーンに沿った 1 文。displayName を自然に織り込ませる。 */
+function buildFlavorPrompt(result: DiagnosisResult, rarity: Rarity, cardName: string, abilityName: string, tone: Tone, displayName?: string): { system: string; user: string } {
   const rarityLabel = RARITY_LABEL[rarity];
 
   const system = [
     'あなたはトレカのフレーバー作家です。能力の直下に添える 1 文を日本語で書きます。',
     `今回のトーン (${TONE_LABEL[tone]}): ${TONE_DIRECTIVE[tone]}`,
     'ゲーム効果は書かない。詩的でありながら、上のトーン指示を守る。',
+    'ユーザー名が与えられた場合、可能なら自然な形で 1 度だけ織り込む (「〜は…した」のような主語化)。',
+    '不自然になるなら無理に入れず、第三者視点で書いてよい。',
     SNS_HINT_FLAVOR,
     '',
     '出力は次の 1 行のみ。前置き・Markdown・括弧類禁止。',
@@ -286,11 +317,13 @@ function buildFlavorPrompt(result: DiagnosisResult, rarity: Rarity, abilityName:
 
   const user = [
     `職業: ${jobDisplayName(result.archetype)}`,
+    `カード名: ${cardName}`,
     `能力名: ${abilityName}`,
     `希少度: ${rarityLabel}`,
     `トーン: ${TONE_LABEL[tone]}`,
+    ...(displayName ? [`ユーザー名: ${displayName}`] : []),
     '',
-    `能力「${abilityName}」に添える 1 文のフレーバーを書いて。`,
+    `「${cardName}」のフレーバーを 1 文で書いて。`,
   ].join('\n');
 
   return { system, user };
@@ -311,10 +344,11 @@ export function stripWrappers(s: string): string {
     .trim();
 }
 
-type HeaderKey = 'type' | 'manaCost' | 'name' | 'abilityCost' | 'description' | 'flavor';
+type HeaderKey = 'type' | 'manaCost' | 'cardName' | 'name' | 'abilityCost' | 'description' | 'flavor';
 const HEADERS: Record<HeaderKey, RegExp> = {
   type: /^(?:タイプ|種別|カードタイプ|type)[:\s：・　]*(.*)$/i,
   manaCost: /^(?:マナコスト|召喚コスト|cost|mana[\s-]?cost)[:\s：・　]*(.*)$/i,
+  cardName: /^(?:カード名|タイトル|card[\s-]?name|title)[:\s：・　]*(.*)$/i,
   name: /^(?:能力名|能力|キーワード|スキル名|アビリティ名|アビリティ|名前)[:\s：・　]*(.*)$/,
   abilityCost: /^(?:起動コスト|アビリティコスト|発動コスト|代償|消費)[:\s：・　]*(.*)$/,
   description: /^(?:説明|効果|能力説明|動作|挙動)[:\s：・　]*(.*)$/,
@@ -378,22 +412,23 @@ function parseCardTypeString(raw: string): CardType | null {
 interface ParsedAbility {
   type: CardType;
   manaCost: ManaCost;
+  cardName: string;
   name: string;
   abilityCost: ManaCost | null;
   description: string;
 }
 
-/** 能力用: type + manaCost + name + abilityCost + description の 5 項目を抽出。 */
+/** 能力用: type + manaCost + cardName + name + abilityCost + description の 6 項目を抽出。 */
 function parseAbilityOutput(raw: string): ParsedAbility | null {
   const text = stripMarkdown(raw.replace(/\r\n/g, '\n'));
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
-  const out = { type: '', manaCost: '', name: '', abilityCost: '', description: '' };
+  const out = { type: '', manaCost: '', cardName: '', name: '', abilityCost: '', description: '' };
   type FieldKey = keyof typeof out;
   let pending: FieldKey | null = null;
   for (const line of lines) {
     const lineClean = line.replace(/^[-・*#>\s]+/, '').trim();
     let matched = false;
-    for (const key of ['type', 'manaCost', 'name', 'abilityCost', 'description'] as const) {
+    for (const key of ['type', 'manaCost', 'cardName', 'name', 'abilityCost', 'description'] as const) {
       const m = lineClean.match(HEADERS[key]);
       if (!m) continue;
       matched = true;
@@ -422,9 +457,14 @@ function parseAbilityOutput(raw: string): ParsedAbility | null {
         })();
   if (out.name.length < 1 || out.name.length > 20) return null;
   if (out.description.length < 6 || out.description.length > 180) return null;
+  // cardName が抜けたら能力名で代替 (LLM が出してくれなかった時の安全弁)
+  const cardName = (out.cardName && out.cardName.length >= 2 && out.cardName.length <= 24)
+    ? out.cardName
+    : out.name;
   return {
     type: cardType,
     manaCost,
+    cardName,
     name: out.name,
     abilityCost,
     description: out.description,
@@ -518,27 +558,30 @@ async function generateWithLLM(
   rarity: Rarity,
   timeoutMs: number,
   tone: Tone,
+  displayName?: string,
 ): Promise<CardText> {
   const half = Math.max(15000, Math.floor(timeoutMs / 2));
   const MAX_ATTEMPTS = 3;
 
   console.info(`[card-text] tone=${tone} (${TONE_LABEL[tone]}), rarity=${rarity}`);
 
-  // 1) 能力 (タイプ + マナコスト + 名前 + 起動コスト + 説明)
+  // 1) 能力 (タイプ + マナコスト + カード名 + 能力名 + 起動コスト + 説明)
   const ability = await runStageWithRetry(
     'ability', 'ability-generate', 'ability-parse',
     buildAbilityPrompt(result, rarity, tone), parseAbilityOutput, half, MAX_ATTEMPTS,
   );
   console.info('[card-text/ability] parsed →', ability.parsed);
 
-  // 2) フレーバー (詩的 1 行)
+  // 2) フレーバー (詩的 1 行、displayName を自然に織り込む)
   const flavor = await runStageWithRetry(
     'flavor', 'flavor-generate', 'flavor-parse',
-    buildFlavorPrompt(result, rarity, ability.parsed.name, tone), parseFlavorOutput, half, MAX_ATTEMPTS,
+    buildFlavorPrompt(result, rarity, ability.parsed.cardName, ability.parsed.name, tone, displayName),
+    parseFlavorOutput, half, MAX_ATTEMPTS,
   );
   console.info('[card-text/flavor] parsed →', flavor.parsed);
 
   return {
+    cardName: ability.parsed.cardName,
     type: ability.parsed.type,
     manaCost: ability.parsed.manaCost,
     abilityCost: ability.parsed.abilityCost,
@@ -549,14 +592,11 @@ async function generateWithLLM(
 }
 
 /** effect + flavor を生成 (メイン API)。rarity を必ず渡す。
- *  開発中はエラーを隠さない: LLM 失敗時は CardTextError を投げる (UI 側で表示)。
- *  本番で自動フォールバックが必要になったら呼び出し側で catch → getFallbackCardText。
- *
- *  LLM が利用不可な環境 (Firefox/Safari/モバイル等) は即 hand-crafted fallback。 */
+ *  displayName を渡すと、flavor 生成時に LLM へ「自然なら織り込んで」と指示する。 */
 export async function generateCardText(
   result: DiagnosisResult,
   rarity: Rarity,
-  opts: { seed?: number; timeoutMs?: number } = {},
+  opts: { seed?: number; timeoutMs?: number; displayName?: string } = {},
 ): Promise<CardText> {
   const llm = await pickLocalLLM();
   if (!llm) {
@@ -564,7 +604,7 @@ export async function generateCardText(
   }
   const timeoutMs = opts.timeoutMs ?? 60000;
   const tone = pickTone(opts.seed);
-  return await generateWithLLM(result, rarity, timeoutMs, tone);
+  return await generateWithLLM(result, rarity, timeoutMs, tone, opts.displayName);
 }
 
 function buildFallbackCardText(archetype: Archetype, rarity: Rarity, seed: number): CardText {
@@ -572,6 +612,7 @@ function buildFallbackCardText(archetype: Archetype, rarity: Rarity, seed: numbe
   const { name, description } = splitFallbackEffect(raw);
   const job = JOBS_BY_ID[archetype];
   return {
+    cardName: exampleCardNameFor(archetype),
     type: 'creature',
     manaCost: fallbackManaCost(rarity, job.primaryColor),
     abilityCost: fallbackAbilityCost(rarity, job.primaryColor),
