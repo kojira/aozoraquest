@@ -54,6 +54,33 @@ const PANEL_STROKE = '#4a3416';
 const FRAME_OUTER = '#0e0600';    // カード最外周の縁 (純黒に近い深い焦げ茶)
 const ACCENT = '#7a5220';         // 金寄り
 
+/**
+ * rarity 別の枠スタイル。
+ * - bodyGradId: 枠の主色 (multi-stop メタリック)
+ * - shimmer: 上に重ねるシマー層 (複数可、UR/SSR は 2 重で深みを出す)
+ * - trimId: 外側ダブルラインの色 (silver / gold / rainbow)
+ * - sparkleCount: 枠帯にちりばめる星の数 (上位レアほど多い)
+ * - bigSparkles: 大粒の + 字型スパークルを混ぜるか (SSR/UR のみ)
+ */
+type RarityFrameStyle = {
+  bodyGradId: string;
+  shimmer: Array<{ id: string; opacity: number }>;
+  trimId: 'silverTrim' | 'goldTrim' | 'rainbowTrim';
+  sparkleCount: number;
+  bigSparkles: boolean;
+};
+
+const FRAME_STYLES: Record<Rarity, RarityFrameStyle> = {
+  common:   { bodyGradId: 'commonGrad',   shimmer: [],                                              trimId: 'silverTrim', sparkleCount: 0,  bigSparkles: false },
+  uncommon: { bodyGradId: 'uncommonGrad', shimmer: [],                                              trimId: 'silverTrim', sparkleCount: 0,  bigSparkles: false },
+  rare:     { bodyGradId: 'rareGrad',     shimmer: [{ id: 'rareShimmer',  opacity: 0.22 }],         trimId: 'goldTrim',   sparkleCount: 0,  bigSparkles: false },
+  srare:    { bodyGradId: 'srareGrad',    shimmer: [{ id: 'srareShimmer', opacity: 0.32 }],         trimId: 'goldTrim',   sparkleCount: 8,  bigSparkles: false },
+  ssr:      { bodyGradId: 'ssrGrad',      shimmer: [{ id: 'ssrShimmer',   opacity: 0.45 },
+                                                    { id: 'ssrShimmer2',  opacity: 0.30 }],         trimId: 'goldTrim',   sparkleCount: 20, bigSparkles: true  },
+  ur:       { bodyGradId: 'urGrad',       shimmer: [{ id: 'urShimmer',    opacity: 0.55 },
+                                                    { id: 'urShimmer2',   opacity: 0.40 }],         trimId: 'rainbowTrim', sparkleCount: 36, bigSparkles: true  },
+};
+
 
 export interface JobCardProps {
   result: DiagnosisResult;
@@ -86,6 +113,7 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
   const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
+  const frameStyle = FRAME_STYLES[rarity];
   const job = JOBS_BY_ID[result.archetype];
   const jobName = jobDisplayName(result.archetype, 'default');
   const lv = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
@@ -105,34 +133,117 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       style={style}
     >
       <defs>
-        {/* === Card frame (新規 / 旧 AI 枠画像の置き換え) ===
-            rarity 色を frame の主役にして、上に金縁 + 角飾りを乗せる。
+        {/* === Card frame の defs ===
+            - bodyGrad-*: rarity 別の枠主色 (multi-stop メタリック)
+            - shimmer-*: rarity 別のシマー層 (光沢の色味と方向を変える)
+            - silverTrim/goldTrim/rainbowTrim: 外側ダブルラインの色
             - frameLight: 上から光が当たって下が落ちる擬似 3D
-            - goldTrim: メタリック金 (上ハイライト→下シャドウのリニア)
-            - urShimmer: UR/SSR 用、虹色っぽいシマー
         */}
         <linearGradient id="frameLight" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
           <stop offset="35%" stopColor="rgba(255,255,255,0)" />
           <stop offset="100%" stopColor="rgba(0,0,0,0.4)" />
         </linearGradient>
+
+        {/* ─── 枠主色 (rarity 別 multi-stop) ─── */}
+        <linearGradient id="commonGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#9a8e80" />
+          <stop offset="50%" stopColor="#7a7066" />
+          <stop offset="100%" stopColor="#3a3028" />
+        </linearGradient>
+        <linearGradient id="uncommonGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#7aaa88" />
+          <stop offset="50%" stopColor="#4c7a5a" />
+          <stop offset="100%" stopColor="#1c3024" />
+        </linearGradient>
+        <linearGradient id="rareGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#7ea2d4" />
+          <stop offset="50%" stopColor="#5c7aa8" />
+          <stop offset="100%" stopColor="#1e3a64" />
+        </linearGradient>
+        <linearGradient id="srareGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#c388e4" />
+          <stop offset="50%" stopColor="#9e60c0" />
+          <stop offset="100%" stopColor="#4a1a70" />
+        </linearGradient>
+        <linearGradient id="ssrGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f9d670" />
+          <stop offset="40%" stopColor="#c49833" />
+          <stop offset="100%" stopColor="#5a3a08" />
+        </linearGradient>
+        <linearGradient id="urGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ff96b6" />
+          <stop offset="40%" stopColor="#c93c6a" />
+          <stop offset="100%" stopColor="#4a0818" />
+        </linearGradient>
+
+        {/* ─── シマー層 (上に重ねる光沢) ─── */}
+        <linearGradient id="rareShimmer" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#a8d4ff" />
+          <stop offset="50%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#7eb5e8" />
+        </linearGradient>
+        <linearGradient id="srareShimmer" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#ffa8e8" />
+          <stop offset="50%" stopColor="#ffe0ff" />
+          <stop offset="100%" stopColor="#a880ff" />
+        </linearGradient>
+        {/* SSR: 金スイープ (水平、中央に強い白ハイライト) */}
+        <linearGradient id="ssrShimmer" x1="0" y1="0" x2="1" y2="0.3">
+          <stop offset="0%" stopColor="#fff8d0" stopOpacity="0" />
+          <stop offset="35%" stopColor="#fff8d0" stopOpacity="0.55" />
+          <stop offset="50%" stopColor="#ffffff" stopOpacity="0.95" />
+          <stop offset="65%" stopColor="#fff8d0" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#fff8d0" stopOpacity="0" />
+        </linearGradient>
+        {/* SSR 第 2 層: 縦方向の暖色グロー */}
+        <linearGradient id="ssrShimmer2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ffd87a" stopOpacity="0.5" />
+          <stop offset="50%" stopColor="#ffa854" stopOpacity="0.1" />
+          <stop offset="100%" stopColor="#a86510" stopOpacity="0.4" />
+        </linearGradient>
+        {/* UR: 完全プリズム虹 (対角) */}
+        <linearGradient id="urShimmer" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stopColor="#ff80c0" />
+          <stop offset="20%"  stopColor="#ffd57a" />
+          <stop offset="40%"  stopColor="#a5ff8a" />
+          <stop offset="60%"  stopColor="#80e8ff" />
+          <stop offset="80%"  stopColor="#c080ff" />
+          <stop offset="100%" stopColor="#ff80c0" />
+        </linearGradient>
+        {/* UR 第 2 層: 反対方向の白ハイライト (ホログラフィック干渉) */}
+        <linearGradient id="urShimmer2" x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#ffffff" stopOpacity="0.7" />
+          <stop offset="35%"  stopColor="#ffffff" stopOpacity="0.05" />
+          <stop offset="65%"  stopColor="#ffffff" stopOpacity="0.05" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0.7" />
+        </linearGradient>
+
+        {/* ─── トリム (外側ダブルライン用) ─── */}
+        <linearGradient id="silverTrim" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#f4f6fa" />
+          <stop offset="40%"  stopColor="#c0c4ca" />
+          <stop offset="70%"  stopColor="#7a7e84" />
+          <stop offset="100%" stopColor="#3a3e44" />
+        </linearGradient>
         <linearGradient id="goldTrim" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f8e493" />
-          <stop offset="40%" stopColor="#e1b04a" />
-          <stop offset="70%" stopColor="#a87420" />
+          <stop offset="0%"   stopColor="#f8e493" />
+          <stop offset="40%"  stopColor="#e1b04a" />
+          <stop offset="70%"  stopColor="#a87420" />
           <stop offset="100%" stopColor="#6a4310" />
         </linearGradient>
         <linearGradient id="goldTrimHoriz" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#a87420" />
-          <stop offset="50%" stopColor="#f8e493" />
+          <stop offset="0%"   stopColor="#a87420" />
+          <stop offset="50%"  stopColor="#f8e493" />
           <stop offset="100%" stopColor="#a87420" />
         </linearGradient>
-        <linearGradient id="urShimmer" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#f9e0a0" />
-          <stop offset="25%" stopColor="#ffb6e0" />
-          <stop offset="50%" stopColor="#b4d8ff" />
-          <stop offset="75%" stopColor="#cfffe0" />
-          <stop offset="100%" stopColor="#f9e0a0" />
+        <linearGradient id="rainbowTrim" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stopColor="#ff6aa8" />
+          <stop offset="20%"  stopColor="#ffd54f" />
+          <stop offset="40%"  stopColor="#85ff7e" />
+          <stop offset="60%"  stopColor="#7eebff" />
+          <stop offset="80%"  stopColor="#c47eff" />
+          <stop offset="100%" stopColor="#ff6aa8" />
         </linearGradient>
         <clipPath id="artClip">
           <rect x={PADX + 14} y={ART_Y} width={W - 2 * (PADX + 14)} height={ART_H} rx="4" />
@@ -180,32 +291,37 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       {/* === カード背景 (プログラマティック frame) ===
           層構成 (下→上):
           1. 最外周の濃焦げ茶リム (silhouette を決める)
-          2. rarity 色 (このカードの「色」=希少度を一目で識別)
-          3. UR/SSR は光らせる虹シマー帯を重ねる
+          2. rarity 別の枠主色 multi-stop メタリック
+          3. シマー層 (rarity 別、UR/SSR は 2 重で深みを出す)
           4. frameLight (上ハイライト→下シャドウで 3D 感)
-          5. 金縁ダブルライン (内側に細線、外側に太線)
-          6. 4 隅の装飾オーナメント
+          5. スパークル (srare 以上で枠帯に星をちりばめる、UR は最多)
+          6. トリム ダブルライン (silver / gold / rainbow を rarity で切替)
+          7. 4 隅オーナメント + 上下中央装飾
       */}
       <rect x="0" y="0" width={W} height={H} fill={FRAME_OUTER} rx="18" />
-      <rect x="6" y="6" width={W - 12} height={H - 12} fill={rarityColor} rx="14" />
-      {(rarity === 'ssr' || rarity === 'ur') && (
-        <rect x="6" y="6" width={W - 12} height={H - 12}
-              fill="url(#urShimmer)" opacity={rarity === 'ur' ? 0.45 : 0.22} rx="14" />
-      )}
+      <rect x="6" y="6" width={W - 12} height={H - 12} fill={`url(#${frameStyle.bodyGradId})`} rx="14" />
+      {frameStyle.shimmer.map((sh) => (
+        <rect key={sh.id} x="6" y="6" width={W - 12} height={H - 12}
+              fill={`url(#${sh.id})`} opacity={sh.opacity} rx="14" />
+      ))}
       <rect x="6" y="6" width={W - 12} height={H - 12} fill="url(#frameLight)" rx="14" />
-      {/* 金縁ダブルライン */}
+      {/* トリム ダブルライン (silver/gold/rainbow) */}
       <rect x="13" y="13" width={W - 26} height={H - 26} fill="none"
-            stroke="url(#goldTrim)" strokeWidth="2.2" rx="11" />
+            stroke={`url(#${frameStyle.trimId})`} strokeWidth="2.2" rx="11" />
       <rect x="18" y="18" width={W - 36} height={H - 36} fill="none"
             stroke="rgba(0,0,0,0.55)" strokeWidth="0.7" rx="9" />
       {/* 4 隅のオーナメント */}
-      <CornerOrnament cx={18} cy={18} rotation={0} />
-      <CornerOrnament cx={W - 18} cy={18} rotation={90} />
-      <CornerOrnament cx={W - 18} cy={H - 18} rotation={180} />
-      <CornerOrnament cx={18} cy={H - 18} rotation={270} />
+      <CornerOrnament cx={18} cy={18} rotation={0} trimId={frameStyle.trimId} />
+      <CornerOrnament cx={W - 18} cy={18} rotation={90} trimId={frameStyle.trimId} />
+      <CornerOrnament cx={W - 18} cy={H - 18} rotation={180} trimId={frameStyle.trimId} />
+      <CornerOrnament cx={18} cy={H - 18} rotation={270} trimId={frameStyle.trimId} />
       {/* 上下中央の装飾 (沈黙の baroque な仕切り) */}
-      <CenterFlourish cx={W / 2} cy={14} />
-      <CenterFlourish cx={W / 2} cy={H - 14} rotation={180} />
+      <CenterFlourish cx={W / 2} cy={14} trimId={frameStyle.trimId} />
+      <CenterFlourish cx={W / 2} cy={H - 14} rotation={180} trimId={frameStyle.trimId} />
+      {/* スパークル (枠帯のみ、パネル上には載せない / トリムと装飾の上に光らせる) */}
+      {frameStyle.sparkleCount > 0 && (
+        <SparkleField count={frameStyle.sparkleCount} seed={hashRarity(rarity)} bigSparkles={frameStyle.bigSparkles} />
+      )}
 
       {/* === 1. Title bar === */}
       <g>
@@ -516,46 +632,143 @@ function wrapJa(text: string, perLine: number, maxLines: number): string[] {
 }
 
 /**
- * 4 隅の金細工オーナメント。L 字の二重線 + コーナーの宝石風ダイヤ + 沿線のドット。
- * cx,cy は L の内角 (= 内側ゴールド trim の角)。rotation で 4 隅に向きを合わせる。
+ * 4 隅のオーナメント。L 字の二重線 + コーナーの宝石風ダイヤ + 沿線のドット。
+ * cx,cy は L の内角 (= 内側トリムの角)。rotation で 4 隅に向きを合わせる。
+ * trimId は silver/gold/rainbow から選び、宝石とダイヤの色味が rarity と合う。
  */
-function CornerOrnament({ cx, cy, rotation }: { cx: number; cy: number; rotation: number }) {
+function CornerOrnament({ cx, cy, rotation, trimId }: { cx: number; cy: number; rotation: number; trimId: string }) {
+  const stroke = `url(#${trimId})`;
   return (
     <g transform={`translate(${cx},${cy}) rotate(${rotation})`}>
-      {/* 内側細線 L (黒で陰影) */}
       <path d="M 4 38 L 4 4 L 38 4" fill="none"
             stroke="rgba(0,0,0,0.55)" strokeWidth="0.6" />
-      {/* 主役: 金 L */}
       <path d="M 0 40 L 0 0 L 40 0" fill="none"
-            stroke="url(#goldTrim)" strokeWidth="1.8" strokeLinecap="round" />
-      {/* コーナーの菱形宝石 */}
+            stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
       <path d="M 0 0 L 9 -9 L 18 0 L 9 9 Z"
-            fill="url(#goldTrim)" stroke="#3a2408" strokeWidth="0.7" />
+            fill={stroke} stroke="#1a0e02" strokeWidth="0.7" />
       <path d="M 9 -5.5 L 14 0 L 9 5.5 L 4 0 Z"
-            fill="rgba(255,240,180,0.7)" />
-      {/* 沿線のドット (2 つずつ) */}
-      <circle cx="24" cy="0" r="1.8" fill="url(#goldTrim)" />
-      <circle cx="32" cy="0" r="1.2" fill="url(#goldTrim)" opacity="0.7" />
-      <circle cx="0" cy="24" r="1.8" fill="url(#goldTrim)" />
-      <circle cx="0" cy="32" r="1.2" fill="url(#goldTrim)" opacity="0.7" />
+            fill="rgba(255,255,255,0.7)" />
+      <circle cx="24" cy="0" r="1.8" fill={stroke} />
+      <circle cx="32" cy="0" r="1.2" fill={stroke} opacity="0.7" />
+      <circle cx="0" cy="24" r="1.8" fill={stroke} />
+      <circle cx="0" cy="32" r="1.2" fill={stroke} opacity="0.7" />
     </g>
   );
 }
 
 /**
  * 上下中央の小さな baroque 装飾。シンメトリな菱形 + 横線。
- * cx,cy は装飾の中心点。
+ * trimId は CornerOrnament と同じ色味系を共有させる。
  */
-function CenterFlourish({ cx, cy, rotation = 0 }: { cx: number; cy: number; rotation?: number }) {
+function CenterFlourish({ cx, cy, rotation = 0, trimId }: { cx: number; cy: number; rotation?: number; trimId: string }) {
+  const stroke = `url(#${trimId})`;
   return (
     <g transform={`translate(${cx},${cy}) rotate(${rotation})`}>
-      <path d="M -28 0 L -8 0" stroke="url(#goldTrimHoriz)" strokeWidth="1.4" />
-      <path d="M 28 0 L 8 0" stroke="url(#goldTrimHoriz)" strokeWidth="1.4" />
+      <path d="M -28 0 L -8 0" stroke={stroke} strokeWidth="1.4" />
+      <path d="M 28 0 L 8 0" stroke={stroke} strokeWidth="1.4" />
       <path d="M -8 0 L 0 -5 L 8 0 L 0 5 Z"
-            fill="url(#goldTrim)" stroke="#3a2408" strokeWidth="0.5" />
-      <circle cx="-32" cy="0" r="1.4" fill="url(#goldTrim)" />
-      <circle cx="32" cy="0" r="1.4" fill="url(#goldTrim)" />
+            fill={stroke} stroke="#1a0e02" strokeWidth="0.5" />
+      <circle cx="-32" cy="0" r="1.4" fill={stroke} />
+      <circle cx="32" cy="0" r="1.4" fill={stroke} />
     </g>
   );
+}
+
+/**
+ * 枠帯にちりばめるスパークル星。
+ *
+ * 配置はパネル外 (x < PADX, x > W - PADX, y < PADY, y > H - PADY) の枠帯のみ。
+ * 角オーナメント / 中央装飾 と被らないようにバッファを取って rejection sampling。
+ * seed (rarity から導出) で決定的に位置決め → 同じ rarity は毎回同じ模様。
+ *
+ * bigSparkles=true なら 1/4 を + 字型の大粒に置き換える (SSR/UR で輝きを強める)。
+ */
+function SparkleField({ count, seed, bigSparkles }: { count: number; seed: number; bigSparkles: boolean }) {
+  const stars = generateSparkles(seed, count);
+  return (
+    <g>
+      {stars.map((s, i) => {
+        if (bigSparkles && i % 4 === 0) {
+          // + 字型の大粒 (4-point star)
+          const r = s.r * 1.4;
+          const inner = r * 0.28;
+          return (
+            <path
+              key={i}
+              transform={`translate(${s.x},${s.y})`}
+              d={`M 0 ${-r} L ${inner} ${-inner} L ${r} 0 L ${inner} ${inner} L 0 ${r} L ${-inner} ${inner} L ${-r} 0 L ${-inner} ${-inner} Z`}
+              fill="#fffce8"
+              opacity={s.op}
+            />
+          );
+        }
+        return (
+          <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#fffce8" opacity={s.op} />
+        );
+      })}
+    </g>
+  );
+}
+
+/** rarity 文字列を deterministic な seed に潰す (FNV-1a 簡易版)。 */
+function hashRarity(r: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < r.length; i++) {
+    h ^= r.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+/**
+ * 枠帯 (パネルの外側) にスパークル星の座標を count 個生成。
+ * - 上下のストリップ: y < 32 / y > H - 32
+ * - 左右のストリップ: x < 32 / x > W - 32
+ * - 角オーナメント (±50px) と中央装飾 (±36px) を避ける rejection sampling
+ */
+function generateSparkles(seed: number, count: number): Array<{ x: number; y: number; r: number; op: number }> {
+  const stars: Array<{ x: number; y: number; r: number; op: number }> = [];
+  let h = seed >>> 0;
+  const rand = () => {
+    h = (h * 1664525 + 1013904223) >>> 0;
+    return h / 0x100000000;
+  };
+  const corners: Array<[number, number]> = [[18, 18], [W - 18, 18], [W - 18, H - 18], [18, H - 18]];
+  const flourishes: Array<[number, number]> = [[W / 2, 14], [W / 2, H - 14]];
+  let attempts = 0;
+  while (stars.length < count && attempts < count * 12) {
+    attempts++;
+    const side = Math.floor(rand() * 4);
+    let x: number;
+    let y: number;
+    if (side === 0) {        // top strip
+      x = 30 + rand() * (W - 60);
+      y = 3 + rand() * 28;
+    } else if (side === 1) { // bottom strip
+      x = 30 + rand() * (W - 60);
+      y = H - 31 + rand() * 28;
+    } else if (side === 2) { // left strip
+      x = 3 + rand() * 28;
+      y = 50 + rand() * (H - 100);
+    } else {                 // right strip
+      x = W - 31 + rand() * 28;
+      y = 50 + rand() * (H - 100);
+    }
+    // reject if too close to corner ornaments or center flourishes
+    let bad = false;
+    for (const [cx, cy] of corners) {
+      if (Math.hypot(x - cx, y - cy) < 50) { bad = true; break; }
+    }
+    if (!bad) {
+      for (const [cx, cy] of flourishes) {
+        if (Math.hypot(x - cx, y - cy) < 36) { bad = true; break; }
+      }
+    }
+    if (bad) continue;
+    const r = 1.5 + rand() * 2.2;
+    const op = 0.55 + rand() * 0.4;
+    stars.push({ x, y, r, op });
+  }
+  return stars;
 }
 
