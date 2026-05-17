@@ -24,6 +24,7 @@ import {
   frameColorOf,
   JOBS_BY_ID,
   jobDisplayName,
+  manaCostTotal,
   RARITY_COLOR,
   RARITY_LABEL,
 } from '@aozoraquest/core';
@@ -70,6 +71,18 @@ type RarityFrameStyle = {
   trimId: 'silverTrim' | 'goldTrim' | 'rainbowTrim';
   sparkleCount: number;
   bigSparkles: boolean;
+};
+
+/** frameColor (manaCost から派生) ごとの body gradient id。
+ *  単色 → その色の枠、複数色 → gold、無色 → silver (colorless)。 */
+const COLOR_FRAME_STYLES: Record<'colorless' | Color | 'gold', { bodyGradId: string }> = {
+  colorless: { bodyGradId: 'frameColorless' },
+  W: { bodyGradId: 'frameW' },
+  U: { bodyGradId: 'frameU' },
+  B: { bodyGradId: 'frameB' },
+  R: { bodyGradId: 'frameR' },
+  G: { bodyGradId: 'frameG' },
+  gold: { bodyGradId: 'frameGold' },
 };
 
 const FRAME_STYLES: Record<Rarity, RarityFrameStyle> = {
@@ -129,9 +142,10 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
   const jobName = jobDisplayName(result.archetype, 'default');
   // Type line 表示用ラベル (creature/instant/sorcery/artifact の和訳)。指定無しは「クリーチャー」。
   const cardTypeLabel = cardType ? CARD_TYPE_LABEL[cardType] : CARD_TYPE_LABEL.creature;
-  // 色アイデンティティ。manaCost から派生して frame アクセントに使う (次の PR で本格活用)。
+  // 色アイデンティティ。manaCost から派生して枠主色に反映する。
+  // 単色 → その色の枠 / 複数色 → gold / 無色 → silver。
   const frameColor = manaCost ? frameColorOf(manaCost) : 'colorless';
-  void frameColor; // commit 4 では未使用、commit 5 で frame 色に反映予定
+  const colorStyle = COLOR_FRAME_STYLES[frameColor];
 
   // 円形アバターの配置 (art frame 中央)
   const AVATAR_CX = W / 2;
@@ -190,6 +204,44 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
           <stop offset="0%" stopColor="#ff96b6" />
           <stop offset="40%" stopColor="#c93c6a" />
           <stop offset="100%" stopColor="#4a0818" />
+        </linearGradient>
+
+        {/* ─── color identity 別の枠主色 (manaCost から派生)。
+              rarity 別の grad と並列で、frameColor 駆動で使い分け。 ─── */}
+        <linearGradient id="frameColorless" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#d8d4cc" />
+          <stop offset="50%" stopColor="#807a72" />
+          <stop offset="100%" stopColor="#2a2520" />
+        </linearGradient>
+        <linearGradient id="frameW" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f8efce" />
+          <stop offset="50%" stopColor="#bca870" />
+          <stop offset="100%" stopColor="#5a4810" />
+        </linearGradient>
+        <linearGradient id="frameU" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#86b8e4" />
+          <stop offset="50%" stopColor="#3a5e98" />
+          <stop offset="100%" stopColor="#0c1c40" />
+        </linearGradient>
+        <linearGradient id="frameB" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6e5078" />
+          <stop offset="50%" stopColor="#2c1838" />
+          <stop offset="100%" stopColor="#080208" />
+        </linearGradient>
+        <linearGradient id="frameR" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#e88060" />
+          <stop offset="50%" stopColor="#a02818" />
+          <stop offset="100%" stopColor="#280408" />
+        </linearGradient>
+        <linearGradient id="frameG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#7eb88a" />
+          <stop offset="50%" stopColor="#2e6a3e" />
+          <stop offset="100%" stopColor="#0a2412" />
+        </linearGradient>
+        <linearGradient id="frameGold" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#fbe488" />
+          <stop offset="50%" stopColor="#c89940" />
+          <stop offset="100%" stopColor="#603810" />
         </linearGradient>
 
         {/* ─── シマー層 (上に重ねる光沢) ─── */}
@@ -314,7 +366,9 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
           7. 4 隅オーナメント + 上下中央装飾
       */}
       <rect x="0" y="0" width={W} height={H} fill={FRAME_OUTER} rx="18" />
-      <rect x="6" y="6" width={W - 12} height={H - 12} fill={`url(#${frameStyle.bodyGradId})`} rx="14" />
+      {/* 枠主色は color identity 駆動 (frameColor)。rarity-別の bodyGrad は使わず、
+       *  rarity は上に乗るシマー/スパークル/トリムの強度差で表現する。 */}
+      <rect x="6" y="6" width={W - 12} height={H - 12} fill={`url(#${colorStyle.bodyGradId})`} rx="14" />
       {frameStyle.shimmer.map((sh) => (
         <rect key={sh.id} x="6" y="6" width={W - 12} height={H - 12}
               fill={`url(#${sh.id})`} opacity={sh.opacity} rx="14" />
@@ -425,12 +479,15 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
         <rect x={PADX} y={BODY_Y} width={W - 2 * PADX} height={BODY_H}
               fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
 
-        {/* Effect (3 要素): 名前 (bold) + コスト (: 区切で続けて) + 説明 (下段) */}
+        {/* Effect (3 要素): 名前 (bold) + 起動コスト (マナアイコン + : 区切) + 説明
+         *  abilityCost (structured ManaCost) があればそちらをアイコンで表示、
+         *  なければ effectCost (string、interim) を後方互換で使う。 */}
         <EffectBlock
           x={PADX + 20}
           y={BODY_Y + 44}
           width={W - 2 * (PADX + 20)}
           name={effectName}
+          {...(props.abilityCost !== undefined ? { abilityManaCost: props.abilityCost } : {})}
           cost={effectCost}
           description={effectDescription}
         />
@@ -485,16 +542,26 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
  */
 function EffectBlock(props: {
   x: number; y: number; width: number;
-  name: string; cost: string; description: string;
+  name: string;
+  /** 構造化マナコスト。abilityManaCost === undefined なら旧 cost: string で fallback。
+   *  null または total=0 は passive 扱い。 */
+  abilityManaCost?: ManaCost | null;
+  /** 後方互換: interim 文字列コスト。abilityManaCost が無いときに使う。 */
+  cost: string;
+  description: string;
 }) {
-  const { x, y, width, name, cost, description } = props;
+  const { x, y, width, name, abilityManaCost, cost, description } = props;
   const NAME_FONT = 32;
   const BODY_FONT = 24;
   const LINE_H = 34;
-  const TEXT_COLOR = '#000';        // 視認性のため純黒
-  const LABEL_COLOR = '#2a1a08';    // 「効果:」などのラベルは濃セピア
+  const TEXT_COLOR = '#000';
+  const LABEL_COLOR = '#2a1a08';
 
-  const isPassive = !cost || cost === 'なし' || /^\s*なし\s*$/.test(cost);
+  // passive 判定: 構造化マナがあれば total で判断、無ければ文字列の「なし」を見る
+  const isPassive = abilityManaCost !== undefined
+    ? (abilityManaCost === null || manaCostTotal(abilityManaCost) === 0)
+    : (!cost || cost === 'なし' || /^\s*なし\s*$/.test(cost));
+
   const nameLine = (
     <text x={x} y={y} fontSize={NAME_FONT} fontWeight="800"
           fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
@@ -519,25 +586,39 @@ function EffectBlock(props: {
     );
   }
 
-  // 効果欄は「名前 + コスト + 説明」で合計最大 6 行 (仕切り線の上ぎりぎりまで)。
-  // コストが短ければその分を説明に回す。
   const MAX_TOTAL = 6;
-  const costLines = wrapJa(cost, 21, 2);
-  const descBudget = Math.max(1, MAX_TOTAL - 1 - costLines.length);
+  // 構造化マナがあるならコスト行はマナアイコン 1 行で済む (折り返し不要)
+  const useManaIcons = abilityManaCost !== undefined && abilityManaCost !== null;
+  const costLineCount = useManaIcons ? 1 : Math.min(2, Math.max(1, Math.ceil(cost.length / 21)));
+  const descBudget = Math.max(1, MAX_TOTAL - 1 - costLineCount);
   const descLines = wrapJa(description, 21, descBudget);
-  let yOff = 0;
+  const costLines = useManaIcons ? [] : wrapJa(cost, 21, 2);
+  const COST_ICON_SIZE = 26;
+  const yOff = LINE_H; // コスト行は常に 1 段下に配置
+
   return (
     <g>
       {nameLine}
-      {costLines.map((line, i) => {
-        yOff = (i + 1) * LINE_H;
-        return (
-          <text key={`c${i}`} x={x} y={y + yOff + 6} fontSize={BODY_FONT} fontWeight="700"
+      {/* コスト行: マナアイコン (構造化) or 文字列 (interim) */}
+      {useManaIcons ? (
+        <>
+          <ManaCostSvgRow cost={abilityManaCost!} leftX={x} cy={y + yOff - 4} symbolSize={COST_ICON_SIZE} />
+          {/* マナ列の後ろに「:」を置いて、効果説明への橋渡し (MTG の活性化コスト表記) */}
+          <text x={x + (manaCostTotal(abilityManaCost!) * (COST_ICON_SIZE + 4)) + 2}
+                y={y + yOff + 6} fontSize={BODY_FONT} fontWeight="700"
+                fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
+            :
+          </text>
+        </>
+      ) : (
+        costLines.map((line, i) => (
+          <text key={`c${i}`} x={x} y={y + (i + 1) * LINE_H + 6} fontSize={BODY_FONT} fontWeight="700"
                 fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={TEXT_COLOR}>
             {line}
           </text>
-        );
-      })}
+        ))
+      )}
+      {/* 説明行 (コスト下) */}
       {descLines.map((line, i) => {
         const yy = y + yOff + (i + 1) * LINE_H + 12;
         return (
@@ -653,13 +734,13 @@ function titleFontSizeOf(text: string): number {
 }
 
 /**
- * カード右上に表示するマナコスト列。SVG ネイティブ (rasterize 対応)。
+ * カードに表示するマナコスト列。SVG ネイティブ (rasterize 対応)。
  * cost に含まれる generic を先頭、色マナを WUBRG 順で並べる。
- * rightX に右端を合わせて右寄せ表示 (LV バッジが居た位置にハマる)。
- */
-function ManaCostSvgRow({ cost, rightX, cy, symbolSize }: {
+ * rightX (右端) または leftX (左端) のどちらかを指定して整列。 */
+function ManaCostSvgRow({ cost, rightX, leftX, cy, symbolSize }: {
   cost: ManaCost;
-  rightX: number;
+  rightX?: number;
+  leftX?: number;
   cy: number;
   symbolSize: number;
 }) {
@@ -674,7 +755,7 @@ function ManaCostSvgRow({ cost, rightX, cy, symbolSize }: {
   if (items.length === 0) return null;
   const gap = 4;
   const totalWidth = items.length * symbolSize + (items.length - 1) * gap;
-  const startX = rightX - totalWidth;
+  const startX = leftX !== undefined ? leftX : (rightX !== undefined ? rightX - totalWidth : 0);
   return (
     <g>
       {items.map((item, idx) => (
