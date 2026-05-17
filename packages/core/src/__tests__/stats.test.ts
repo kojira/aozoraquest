@@ -8,7 +8,7 @@ import {
   currentStatsRaw,
   normalizeStats,
   scaleStats,
-  sortStatsByAbsGap,
+  sortStatsByRelativeGap,
   statGap,
   zeroStats,
 } from '../stats.js';
@@ -110,10 +110,31 @@ describe('computeStats end-to-end', () => {
 });
 
 describe('statGap and sort', () => {
-  test('sortStatsByAbsGap orders by |gap|', () => {
+  test('sortStatsByRelativeGap orders by |gap| / target', () => {
+    // target ベースの正規化が効くケース: 絶対値が同じでも target が小さい方が上に来る。
     const gap = { atk: 5, def: -20, agi: 0, int: 10, luk: -3 };
-    const sorted = sortStatsByAbsGap(gap);
+    const target = { atk: 25, def: 25, agi: 25, int: 25, luk: 25 };
+    const sorted = sortStatsByRelativeGap(gap, target);
+    // 同じ target なら abs ベースと同じ順序になる
     expect(sorted[0]).toBe('def');
     expect(sorted[1]).toBe('int');
+  });
+
+  test('sortStatsByRelativeGap は target レンジ差を吸収する (遊び人シナリオ)', () => {
+    // 遊び人 target: atk=20, def=12, agi=30, int=10, luk=28
+    // current:      atk=23, def=14, agi=33, int=13, luk=18
+    // 絶対 |gap|:    3,      2,      3,      3,     10
+    // 相対 |gap|/tgt 0.150,  0.167,  0.100,  0.300, 0.357
+    // 絶対値ソートでは atk/agi/int が同点 3 でタイブレーク不定だが、
+    // 相対ソートでは int (0.300) が atk/agi より明確に上位に来る。
+    const target = { atk: 20, def: 12, agi: 30, int: 10, luk: 28 };
+    const current = { atk: 23, def: 14, agi: 33, int: 13, luk: 18 };
+    const gap = statGap(current, target);
+    const sorted = sortStatsByRelativeGap(gap, target);
+    expect(sorted[0]).toBe('luk'); // 最大の正ギャップ
+    expect(sorted[1]).toBe('int'); // 最大の負ギャップ (絶対 |gap|=3 だが相対 30%)
+    // atk, agi (相対 15% / 10%) は int より後
+    expect(sorted.indexOf('int')).toBeLessThan(sorted.indexOf('atk'));
+    expect(sorted.indexOf('int')).toBeLessThan(sorted.indexOf('agi'));
   });
 });
