@@ -96,6 +96,9 @@ export function Card() {
           // 新フォーマット (name/description + manaCost/type/abilityCost) が入っていれば優先、
           // 無ければ fallback で穴埋め
           const fallback = getFallbackCardText(analysis.archetype, Date.now(), savedRarity);
+          const cardName = analysis.cardName
+            ? stripMarkdown(analysis.cardName)
+            : fallback.cardName;
           const name = analysis.cardEffectName
             ? stripMarkdown(analysis.cardEffectName)
             : fallback.effect.name;
@@ -117,6 +120,7 @@ export function Card() {
               ? analysis.cardAbilityCost
               : fallback.abilityCost;
           setCard({
+            cardName,
             type: cardType,
             manaCost,
             abilityCost,
@@ -224,7 +228,10 @@ export function Card() {
     // LLM 生成 (失敗時は fallback テキストにフォールバック、演出は最後まで流す)
     let generated: CardText;
     try {
-      generated = await generateCardText(load.result, nextRarity, { seed: Date.now() });
+      generated = await generateCardText(load.result, nextRarity, {
+        seed: Date.now(),
+        displayName: load.profile.displayName,
+      });
     } catch (e) {
       console.error('[card] regenerate card failed', e);
       if (e instanceof CardTextError) {
@@ -244,6 +251,7 @@ export function Card() {
       const now = new Date().toISOString();
       await putRecord(agent, COL.analysis, 'self', {
         ...load.result,
+        cardName: generated.cardName,
         cardEffectName: generated.effect.name,
         cardEffectDescription: generated.effect.description,
         cardEffect: `${generated.effect.name} ― ${generated.effect.description}`,
@@ -408,6 +416,7 @@ export function Card() {
           {...(card?.type ? { cardType: card.type } : {})}
           {...(card?.manaCost ? { manaCost: card.manaCost } : {})}
           {...(card?.abilityCost !== undefined ? { abilityCost: card.abilityCost } : {})}
+          {...(card?.cardName ? { cardName: card.cardName } : {})}
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}

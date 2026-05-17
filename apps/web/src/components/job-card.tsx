@@ -106,6 +106,9 @@ export interface JobCardProps {
   manaCost?: ManaCost;
   /** アビリティ起動コスト (description の前にマナアイコンで表示)。null = passive。 */
   abilityCost?: ManaCost | null;
+  /** カード名 (LLM 生成、例: 「忍び寄る混沌」)。タイトル位置に表示。未指定なら displayName へ fallback。 */
+  cardName?: string;
+  /** ユーザー表示名。cardName が無いときの fallback と、a11y/footer 用に保持。 */
   displayName: string;
   handle: string;
   /** ジョブ固有の背景イラスト (例: '/card-art/sage.jpg') */
@@ -117,7 +120,8 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, cardType, manaCost, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, cardType, manaCost, cardName, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const titleText = cardName ?? displayName;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
   const frameStyle = FRAME_STYLES[rarity];
@@ -338,9 +342,9 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
       <g>
         <rect x={PADX} y={TITLE_Y} width={W - 2 * PADX} height={TITLE_H}
               fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
-        <text x={PADX + 18} y={TITLE_Y + TITLE_H * 0.62} fontSize="38" fontWeight="800"
+        <text x={PADX + 18} y={TITLE_Y + TITLE_H * 0.62} fontSize={titleFontSizeOf(titleText)} fontWeight="800"
               fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
-          {displayName}
+          {titleText}
         </text>
         {/* マナコスト (MTG 右上)。色マナ + generic を WUBRG + 数字で並べる。
          *  manaCost 未指定なら何も表示しない (旧データ互換)。 */}
@@ -634,6 +638,18 @@ function wrapJa(text: string, perLine: number, maxLines: number): string[] {
     out[maxLines - 1] = last + '…';
   }
   return out.slice(0, maxLines);
+}
+
+/** タイトル (cardName または displayName) の長さに応じてフォントサイズを縮める。
+ *  Title bar 内の幅は W - 2*PADX - マナコスト幅 ≈ 540px。
+ *  日本語フォントの幅は font-size の ~0.95 倍なので、概ね N 字 × size = 540 を解く。 */
+function titleFontSizeOf(text: string): number {
+  const len = Array.from(text).length;
+  if (len <= 8) return 38;
+  if (len <= 10) return 34;
+  if (len <= 12) return 30;
+  if (len <= 14) return 26;
+  return 22;
 }
 
 /**
