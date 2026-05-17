@@ -783,35 +783,6 @@ p { margin: 0.4em 0; }
   100% { transform: scale(0.7) rotate(90deg);  opacity: 0; }
 }
 
-/* レアリティ判明テキスト (sensing で fade-in) */
-.cd-rarity-label {
-  position: absolute;
-  top: 14%;
-  left: 0; right: 0;
-  text-align: center;
-  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
-  font-size: clamp(20px, 5vw, 32px);
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  color: color-mix(in srgb, var(--rar) 80%, white);
-  text-shadow:
-    0 0 calc(20px * var(--intensity)) var(--rar),
-    0 0 4px rgba(0, 0, 0, 0.6);
-  opacity: 0;
-  transform: translateY(8px) scale(0.95);
-  transition: opacity 400ms ease, transform 400ms ease;
-}
-.cd-overlay[data-stage="sensing"] .cd-rarity-label,
-.cd-overlay[data-stage="reveal"] .cd-rarity-label {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  animation: cd-rarity-pulse 1.4s ease-in-out infinite;
-}
-@keyframes cd-rarity-pulse {
-  0%, 100% { letter-spacing: 0.15em; }
-  50%      { letter-spacing: 0.22em; }
-}
-
 /* シェイク (ssr/ur で sensing 中に画面が震える) */
 .cd-overlay[data-stage="sensing"][data-rarity="ssr"] .cd-stage,
 .cd-overlay[data-stage="sensing"][data-rarity="ur"] .cd-stage,
@@ -849,7 +820,7 @@ p { margin: 0.4em 0; }
 @media (prefers-reduced-motion: reduce) {
   /* モーション削減: 演出のループだけ止めて、フェード in/out は最小限残す */
   .cd-card, .cd-rays span, .cd-rings span, .cd-particles span,
-  .cd-big-sparkles span, .cd-aura, .cd-rarity-label, .cd-stage {
+  .cd-big-sparkles span, .cd-aura, .cd-stage {
     animation: none !important;
   }
   .cd-overlay { background: rgba(0, 0, 0, 0.92); }

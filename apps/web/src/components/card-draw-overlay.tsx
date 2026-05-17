@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { RARITY_LABEL, type Rarity } from '@aozoraquest/core';
+import type { Rarity } from '@aozoraquest/core';
 
 /**
  * カード抽選演出のフルスクリーンオーバーレイ。
@@ -101,7 +101,8 @@ export function CardDrawOverlay({ rarity, llmDone, onComplete }: CardDrawOverlay
             />
           ))}
         </div>
-        <div className="cd-rarity-label">{RARITY_LABEL[rarity]}</div>
+        {/* レアリティはテキストで明示しない。色 / 粒子 / 光線 / シェイク の強度差で
+         *  ユーザーが視覚的に察するのが TCG 抽選演出の作法。 */}
       </div>
       <div className="cd-flash" />
     </div>
