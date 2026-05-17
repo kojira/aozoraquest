@@ -12,6 +12,7 @@ import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
+import { CardDrawOverlay } from '@/components/card-draw-overlay';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
 import { Spinner } from '@/components/spinner';
@@ -44,6 +45,15 @@ export function Card() {
   const [shareErr, setShareErr] = useState<string | null>(null);
   const [genError, setGenError] = useState<{ stage: string; message: string; raw?: string } | null>(null);
   const [flavorAttribution, setFlavorAttribution] = useState<string | null>(null);
+  // 引き直し演出: 抽選結果のレアリティをオーバーレイ表示中に保持。
+  // llmDone が true になったらオーバーレイは reveal フェーズへ進む。
+  // pending は LLM 完了後の結果バッファ。オーバーレイの onComplete で実 state に commit。
+  const [drawing, setDrawing] = useState<{ rarity: Rarity; llmDone: boolean } | null>(null);
+  const [pending, setPending] = useState<{
+    card: CardText;
+    attribution: string | null;
+    variant: 1 | 2;
+  } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // 初回: session 確認 → 診断 + points ロード
@@ -181,49 +191,35 @@ export function Card() {
 
     setFlavorBusy(true);
     setGenError(null);
-    try {
-      // レアリティと枠 variant を抽選
-      const nextRarity = rollRarity();
-      const nextVariant: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
-      // フォロイーからフレーバー発言者をランダムに選ぶ (失敗しても致命ではない)。
-      let attribution: string | null = null;
-      if (session.did) {
-        try {
-          const follows = await fetchFirstPageFollows(agent, session.did);
-          if (follows.length > 0) {
-            const pick = follows[Math.floor(Math.random() * follows.length)]!;
-            attribution = pick.displayName?.trim() || pick.handle;
-          }
-        } catch (e) {
-          console.warn('[card] fetch follows for attribution failed', e);
-        }
-      }
-      // LLM 先に走らせてから state を一括更新 (背景だけ先に変わる現象を防ぐ)
-      const r = await generateCardText(load.result, nextRarity, { seed: Date.now() });
-      setRarity(nextRarity);
-      setFrameVariant(nextVariant);
-      setCard(r);
-      setFlavorAttribution(attribution);
-      // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant + attribution)
+
+    // レアリティと枠 variant を抽選 (同期、即決定するので演出開始前に決められる)
+    const nextRarity = rollRarity();
+    const nextVariant: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
+    // 明示的な引き直しのみ演出を出す。初回 (PDS にカードが無い時の自動生成) は無音で。
+    const showOverlay = !opts.initial;
+    if (showOverlay) {
+      setDrawing({ rarity: nextRarity, llmDone: false });
+    }
+
+    // 相互フォローの中からフレーバー発言者を選ぶ (失敗しても致命ではない)
+    let attribution: string | null = null;
+    if (session.did) {
       try {
-        const now = new Date().toISOString();
-        await putRecord(agent, COL.analysis, 'self', {
-          ...load.result,
-          cardEffectName: r.effect.name,
-          cardEffectCost: r.effect.cost,
-          cardEffectDescription: r.effect.description,
-          // 後方互換: 旧 cardEffect フィールドには "名前 ― 説明" を入れる
-          cardEffect: `${r.effect.name} ― ${r.effect.description}`,
-          flavorText: r.flavor,
-          ...(attribution ? { flavorAttribution: attribution } : {}),
-          cardRarity: nextRarity,
-          cardFrameVariant: nextVariant,
-          cardDrawnAt: now,
-          flavorGeneratedAt: now,
-        });
+        const follows = await fetchFirstPageFollows(agent, session.did);
+        const mutuals = follows.filter((f) => f.isMutual);
+        if (mutuals.length > 0) {
+          const pick = mutuals[Math.floor(Math.random() * mutuals.length)]!;
+          attribution = pick.displayName?.trim() || pick.handle;
+        }
       } catch (e) {
-        console.warn('[card] save card to PDS failed', e);
+        console.warn('[card] fetch follows for attribution failed', e);
       }
+    }
+
+    // LLM 生成 (失敗時は fallback テキストにフォールバック、演出は最後まで流す)
+    let generated: CardText;
+    try {
+      generated = await generateCardText(load.result, nextRarity, { seed: Date.now() });
     } catch (e) {
       console.error('[card] regenerate card failed', e);
       if (e instanceof CardTextError) {
@@ -235,11 +231,57 @@ export function Card() {
       } else {
         setGenError({ stage: 'unknown', message: String((e as Error)?.message ?? e) });
       }
-    } finally {
-      setFlavorBusy(false);
+      generated = getFallbackCardText(load.result.archetype, Date.now(), nextRarity);
+    }
+
+    // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant + attribution)
+    try {
+      const now = new Date().toISOString();
+      await putRecord(agent, COL.analysis, 'self', {
+        ...load.result,
+        cardEffectName: generated.effect.name,
+        cardEffectCost: generated.effect.cost,
+        cardEffectDescription: generated.effect.description,
+        cardEffect: `${generated.effect.name} ― ${generated.effect.description}`,
+        flavorText: generated.flavor,
+        ...(attribution ? { flavorAttribution: attribution } : {}),
+        cardRarity: nextRarity,
+        cardFrameVariant: nextVariant,
+        cardDrawnAt: now,
+        flavorGeneratedAt: now,
+      });
+    } catch (e) {
+      console.warn('[card] save card to PDS failed', e);
+    }
+
+    setFlavorBusy(false);
+
+    if (showOverlay) {
+      // 演出を出してる間は state を温存して、onDrawComplete で一括コミット。
+      // これでオーバーレイ下の旧カードが先に変わって "ネタバレ" するのを防ぐ。
+      setPending({ card: generated, attribution, variant: nextVariant });
+      setDrawing((d) => (d ? { ...d, llmDone: true } : null));
+    } else {
+      // initial 経路 (PDS から復元できなかった初回生成): 即時コミット
+      setRarity(nextRarity);
+      setFrameVariant(nextVariant);
+      setCard(generated);
+      setFlavorAttribution(attribution);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load.status, session.status, session.agent, power]);
+
+  /** カード抽選演出が reveal を終えた瞬間に pending を実 state にコミット。 */
+  const onDrawComplete = useCallback(() => {
+    if (drawing && pending) {
+      setRarity(drawing.rarity);
+      setFrameVariant(pending.variant);
+      setCard(pending.card);
+      setFlavorAttribution(pending.attribution);
+    }
+    setDrawing(null);
+    setPending(null);
+  }, [drawing, pending]);
 
   const onDownload = useCallback(async () => {
     if (!svgRef.current || !result) return;
@@ -379,12 +421,12 @@ export function Card() {
 
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
         <button
-          disabled={flavorBusy || !power || power.balance < 1}
+          disabled={flavorBusy || !!drawing || !power || power.balance < 1}
           onClick={() => void regenerateCard({ initial: false })}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {flavorBusy ? '詩を探している…' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
+            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>
@@ -445,6 +487,14 @@ export function Card() {
       <div style={{ marginTop: '2em' }}>
         <Link to="/me">← 自分の気質に戻る</Link>
       </div>
+
+      {drawing && (
+        <CardDrawOverlay
+          rarity={drawing.rarity}
+          llmDone={drawing.llmDone}
+          onComplete={onDrawComplete}
+        />
+      )}
     </div>
   );
 }
