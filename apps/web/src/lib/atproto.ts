@@ -87,6 +87,9 @@ export interface FollowProfile {
   handle: string;
   displayName?: string;
   avatar?: string;
+  /** 相互フォロー (相手も viewer をフォロー返ししているか)。
+   *  ※ actor が viewer 自身の場合のみ意味を持つ (viewer.followedBy 由来)。 */
+  isMutual?: boolean;
 }
 
 /**
@@ -103,6 +106,7 @@ export async function fetchFirstPageFollows(agent: Agent, actor: string): Promis
     handle: f.handle,
     ...(f.displayName ? { displayName: f.displayName } : {}),
     ...(f.avatar ? { avatar: f.avatar } : {}),
+    ...(f.viewer?.followedBy ? { isMutual: true } : {}),
   }));
   firstPageFollowsCache.set(actor, out);
   return out;
@@ -127,6 +131,7 @@ export async function fetchFollows(agent: Agent, actor: string): Promise<FollowP
         handle: f.handle,
         ...(f.displayName ? { displayName: f.displayName } : {}),
         ...(f.avatar ? { avatar: f.avatar } : {}),
+        ...(f.viewer?.followedBy ? { isMutual: true } : {}),
       });
     }
     cursor = res.data.cursor;
