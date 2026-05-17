@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Agent, AppBskyActorDefs } from '@atproto/api';
-import type { DiagnosisResult } from '@aozoraquest/core';
+import type { CardType, DiagnosisResult, ManaCost } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
-import { isRarity, rollRarity } from '@aozoraquest/core';
+import { CARD_TYPES, COLORS, isRarity, manaCostColors, rollRarity } from '@aozoraquest/core';
 import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
@@ -93,19 +93,12 @@ export function Card() {
           setRarity(savedRarity);
           const savedVariant = analysis.cardFrameVariant === 2 ? 2 : 1;
           setFrameVariant(savedVariant);
-          // 新フォーマット (name/cost/description) が入っていれば優先、無ければ旧 cardEffect を分割、
-          // さらに無ければ fallback
+          // 新フォーマット (name/description + manaCost/type/abilityCost) が入っていれば優先、
+          // 無ければ fallback で穴埋め
           const fallback = getFallbackCardText(analysis.archetype, Date.now(), savedRarity);
           const name = analysis.cardEffectName
             ? stripMarkdown(analysis.cardEffectName)
-            : analysis.cardEffect
-              ? fallback.effect.name
-              : fallback.effect.name;
-          const cost = typeof analysis.cardEffectCost === 'string'
-            ? stripMarkdown(analysis.cardEffectCost)
-            : analysis.cardEffectCost !== undefined
-              ? String(analysis.cardEffectCost)
-              : fallback.effect.cost;
+            : fallback.effect.name;
           const description = analysis.cardEffectDescription
             ? stripMarkdown(analysis.cardEffectDescription)
             : analysis.cardEffect
@@ -114,8 +107,20 @@ export function Card() {
                   return m ? stripMarkdown(m[1]!) : stripMarkdown(analysis.cardEffect);
                 })()
               : fallback.effect.description;
+          const cardType = isCardType(analysis.cardType) ? analysis.cardType : fallback.type;
+          const manaCost: ManaCost = (analysis.cardManaCost && typeof analysis.cardManaCost === 'object')
+            ? analysis.cardManaCost
+            : fallback.manaCost;
+          const abilityCost: ManaCost | null = (analysis.cardAbilityCost === null)
+            ? null
+            : (analysis.cardAbilityCost && typeof analysis.cardAbilityCost === 'object')
+              ? analysis.cardAbilityCost
+              : fallback.abilityCost;
           setCard({
-            effect: { name, cost, description },
+            type: cardType,
+            manaCost,
+            abilityCost,
+            effect: { name, description },
             flavor: analysis.flavorText
               ? stripMarkdown(analysis.flavorText)
               : fallback.flavor,
@@ -234,15 +239,18 @@ export function Card() {
       generated = getFallbackCardText(load.result.archetype, Date.now(), nextRarity);
     }
 
-    // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant + attribution)
+    // PDS に一式保存 (新スキーマ: type + manaCost + abilityCost + effect 2 要素 + flavor)
     try {
       const now = new Date().toISOString();
       await putRecord(agent, COL.analysis, 'self', {
         ...load.result,
         cardEffectName: generated.effect.name,
-        cardEffectCost: generated.effect.cost,
         cardEffectDescription: generated.effect.description,
         cardEffect: `${generated.effect.name} ― ${generated.effect.description}`,
+        cardType: generated.type,
+        cardManaCost: generated.manaCost,
+        cardColors: manaCostColors(generated.manaCost) as Array<typeof COLORS[number]>,
+        cardAbilityCost: generated.abilityCost,
         flavorText: generated.flavor,
         ...(attribution ? { flavorAttribution: attribution } : {}),
         cardRarity: nextRarity,
@@ -391,7 +399,7 @@ export function Card() {
           ref={svgRef}
           result={result!}
           effectName={card?.effect.name ?? ''}
-          effectCost={card?.effect.cost ?? ''}
+          effectCost={formatAbilityCostForDisplay(card?.abilityCost ?? null)}
           effectDescription={card?.effect.description ?? '…'}
           flavorText={card?.flavor ?? '…'}
           flavorAttribution={flavorAttribution ?? undefined}
@@ -497,6 +505,23 @@ export function Card() {
       )}
     </div>
   );
+}
+
+function isCardType(s: unknown): s is CardType {
+  return typeof s === 'string' && (CARD_TYPES as readonly string[]).includes(s);
+}
+
+/** JobCard の旧 `effectCost: string` プロパティ用に、ManaCost を簡易表記する。
+ *  commit 4 でマナアイコン描画に置き換わるまでの一時的な表示。 */
+function formatAbilityCostForDisplay(cost: ManaCost | null): string {
+  if (!cost) return 'なし';
+  const parts: string[] = [];
+  if (cost.generic && cost.generic > 0) parts.push(String(cost.generic));
+  for (const c of ['W', 'U', 'B', 'R', 'G'] as const) {
+    const n = cost[c] ?? 0;
+    for (let i = 0; i < n; i++) parts.push(c);
+  }
+  return parts.length === 0 ? 'なし' : parts.join('');
 }
 
 async function fetchProfile(agent: Agent, did: string): Promise<AppBskyActorDefs.ProfileViewDetailed | null> {
