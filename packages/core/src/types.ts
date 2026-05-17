@@ -28,6 +28,8 @@ export interface JobDefinition {
   stats: StatArray;
   dominantFunction: CogFunction;
   auxiliaryFunction: CogFunction;
+  /** MTG カラーパイの primary color (WUBRG 1 文字)。LLM が能力生成時に最低 1 色含める制約として使う。 */
+  primaryColor: 'W' | 'U' | 'B' | 'R' | 'G';
 }
 
 export interface Action {
@@ -102,8 +104,8 @@ export interface DiagnosisResult {
   cardEffect?: string;
   /** 能力キーワード名 (2-5 字、例: 潜影 / 星読み)。 */
   cardEffectName?: string;
-  /** 能力の発動コスト (0-5 の整数)。MTG のマナコスト相当。 */
-  cardEffectCost?: number;
+  /** @deprecated 旧: 能力の発動コスト (free-form text)。新 schema では `cardAbilityCost` に構造化マナで保存。 */
+  cardEffectCost?: number | string;
   /** 能力の説明文 (20-40 字)。 */
   cardEffectDescription?: string;
   /** カードレアリティ (引き直し毎に抽選)。 */
@@ -112,6 +114,18 @@ export interface DiagnosisResult {
   cardFrameVariant?: number;
   /** カードを引いた時刻 (ISO)。flavorText / cardEffect / cardRarity はこの時刻で同期。 */
   cardDrawnAt?: string;
+  /** カード召喚コスト (右上に表示するマナコスト、JSON で {W: 0, U: 1, ...} 形式)。 */
+  cardManaCost?: {
+    W?: number; U?: number; B?: number; R?: number; G?: number; generic?: number;
+  };
+  /** カードタイプ (creature / artifact / instant / sorcery)。 */
+  cardType?: 'creature' | 'artifact' | 'instant' | 'sorcery';
+  /** カラーアイデンティティ (cardManaCost から派生だが query 用に保存)。 */
+  cardColors?: ReadonlyArray<'W' | 'U' | 'B' | 'R' | 'G'>;
+  /** アビリティ起動コスト (creature の passive 能力は null、起動型は構造化マナ)。 */
+  cardAbilityCost?: {
+    W?: number; U?: number; B?: number; R?: number; G?: number; generic?: number;
+  } | null;
   /** 後方互換 */
   flavorGeneratedAt?: string;
 }
