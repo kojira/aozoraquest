@@ -405,6 +405,9 @@ export function Card() {
           flavorAttribution={flavorAttribution ?? undefined}
           rarity={rarity}
           frameVariant={frameVariant}
+          {...(card?.type ? { cardType: card.type } : {})}
+          {...(card?.manaCost ? { manaCost: card.manaCost } : {})}
+          {...(card?.abilityCost !== undefined ? { abilityCost: card.abilityCost } : {})}
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}
