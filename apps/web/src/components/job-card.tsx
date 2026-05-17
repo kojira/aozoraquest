@@ -17,11 +17,13 @@
  * 旧 AI 生成枠画像 (/card-art/frame-{rarity}-*.jpg) は使わない。
  */
 
-import type { DiagnosisResult, Rarity } from '@aozoraquest/core';
+import type { CardType, Color, DiagnosisResult, ManaCost, Rarity } from '@aozoraquest/core';
 import {
+  CARD_TYPE_LABEL,
+  COLORS,
+  frameColorOf,
   JOBS_BY_ID,
   jobDisplayName,
-  playerLevelFromXp,
   RARITY_COLOR,
   RARITY_LABEL,
 } from '@aozoraquest/core';
@@ -94,11 +96,16 @@ export interface JobCardProps {
   flavorText: string;
   /** フレーバーの発言者 (フォロイーの表示名など、"— {名前}" で右下寄せ)。 */
   flavorAttribution?: string | undefined;
-  /** カードレアリティ (6 段階)。badge 色 + 枠の rarity 色に使う。 */
+  /** カードレアリティ (6 段階)。シマー強度・スパークル個数に使う。 */
   rarity: Rarity;
-  /** @deprecated プログラマティック枠に置き換えたので未使用。PDS 互換のため
-   *  caller がまだ渡してくるが、ここでは無視する。次の lexicon 改定で削除。 */
+  /** @deprecated プログラマティック枠に置き換えたので未使用。PDS 互換のため残置。 */
   frameVariant?: 1 | 2;
+  /** カードタイプ (creature/artifact/instant/sorcery)。type line に和訳ラベルを表示。 */
+  cardType?: CardType;
+  /** 召喚マナコスト (右上に表示)。 */
+  manaCost?: ManaCost;
+  /** アビリティ起動コスト (description の前にマナアイコンで表示)。null = passive。 */
+  abilityCost?: ManaCost | null;
   displayName: string;
   handle: string;
   /** ジョブ固有の背景イラスト (例: '/card-art/sage.jpg') */
@@ -110,13 +117,17 @@ export interface JobCardProps {
 }
 
 export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(props, ref) {
-  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, displayName, handle, artSrc, avatarSrc, className, style } = props;
+  const { result, effectName, effectCost, effectDescription, flavorText, flavorAttribution, rarity, cardType, manaCost, displayName, handle, artSrc, avatarSrc, className, style } = props;
   const rarityColor = RARITY_COLOR[rarity];
   const rarityLabel = RARITY_LABEL[rarity];
   const frameStyle = FRAME_STYLES[rarity];
   const job = JOBS_BY_ID[result.archetype];
   const jobName = jobDisplayName(result.archetype, 'default');
-  const lv = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
+  // Type line 表示用ラベル (creature/instant/sorcery/artifact の和訳)。指定無しは「クリーチャー」。
+  const cardTypeLabel = cardType ? CARD_TYPE_LABEL[cardType] : CARD_TYPE_LABEL.creature;
+  // 色アイデンティティ。manaCost から派生して frame アクセントに使う (次の PR で本格活用)。
+  const frameColor = manaCost ? frameColorOf(manaCost) : 'colorless';
+  void frameColor; // commit 4 では未使用、commit 5 で frame 色に反映予定
 
   // 円形アバターの配置 (art frame 中央)
   const AVATAR_CX = W / 2;
@@ -331,22 +342,16 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
               fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
           {displayName}
         </text>
-        {/* LV バッジ (MTG のマナコスト相当)。パネル内に収まるよう中心を調整。 */}
-        <g transform={`translate(${W - PADX - 32}, ${TITLE_Y + TITLE_H / 2})`} filter="url(#badgeShadow)">
-          {/* 外輪 (暗色リング) */}
-          <circle cx="0" cy="0" r="24" fill="#2a1a08" />
-          {/* 本体 (グラデでメタリック) */}
-          <circle cx="0" cy="0" r="22" fill="url(#badgeGrad)" />
-          {/* ハイライト (左上のキラ) */}
-          <ellipse cx="-7" cy="-8" rx="7" ry="4" fill="rgba(255,240,200,0.55)" />
-          {/* 数値 */}
-          <text x="0" y="1" fontSize="22" fontWeight="800"
-                fontFamily="'Hiragino Mincho ProN', serif"
-                textAnchor="middle" dominantBaseline="middle" fill="#fff8e2"
-                style={{ letterSpacing: '-0.02em' }}>
-            {lv}
-          </text>
-        </g>
+        {/* マナコスト (MTG 右上)。色マナ + generic を WUBRG + 数字で並べる。
+         *  manaCost 未指定なら何も表示しない (旧データ互換)。 */}
+        {manaCost && (
+          <ManaCostSvgRow
+            cost={manaCost}
+            rightX={W - PADX - 10}
+            cy={TITLE_Y + TITLE_H / 2}
+            symbolSize={32}
+          />
+        )}
       </g>
 
       {/* === 2. Art frame ===
@@ -393,7 +398,7 @@ export const JobCard = forwardRef<SVGSVGElement, JobCardProps>(function JobCard(
               fill={PANEL_FILL} stroke={PANEL_STROKE} strokeWidth="1.4" rx="6" />
         <text x={PADX + 18} y={TYPE_Y + TYPE_H * 0.66} fontSize="28" fontWeight="800"
               fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif" fill={INK}>
-          旅人 — {jobName}
+          {cardType === 'artifact' ? cardTypeLabel : `${cardTypeLabel} — ${jobName}`}
         </text>
         {/* rarity pill (右端、パネル内に収める) */}
         <g transform={`translate(${W - PADX - 12}, ${TYPE_Y + TYPE_H / 2})`} filter="url(#badgeShadow)">
@@ -629,6 +634,138 @@ function wrapJa(text: string, perLine: number, maxLines: number): string[] {
     out[maxLines - 1] = last + '…';
   }
   return out.slice(0, maxLines);
+}
+
+/**
+ * カード右上に表示するマナコスト列。SVG ネイティブ (rasterize 対応)。
+ * cost に含まれる generic を先頭、色マナを WUBRG 順で並べる。
+ * rightX に右端を合わせて右寄せ表示 (LV バッジが居た位置にハマる)。
+ */
+function ManaCostSvgRow({ cost, rightX, cy, symbolSize }: {
+  cost: ManaCost;
+  rightX: number;
+  cy: number;
+  symbolSize: number;
+}) {
+  const items: Array<{ key: string; color: Color | 'generic'; value?: number }> = [];
+  if (cost.generic && cost.generic > 0) {
+    items.push({ key: 'g', color: 'generic', value: cost.generic });
+  }
+  for (const c of COLORS) {
+    const n = cost[c] ?? 0;
+    for (let i = 0; i < n; i++) items.push({ key: `${c}${i}`, color: c });
+  }
+  if (items.length === 0) return null;
+  const gap = 4;
+  const totalWidth = items.length * symbolSize + (items.length - 1) * gap;
+  const startX = rightX - totalWidth;
+  return (
+    <g>
+      {items.map((item, idx) => (
+        <ManaSymbolSvg
+          key={item.key}
+          color={item.color}
+          {...(item.value !== undefined ? { value: item.value } : {})}
+          x={startX + idx * (symbolSize + gap)}
+          y={cy - symbolSize / 2}
+          size={symbolSize}
+        />
+      ))}
+    </g>
+  );
+}
+
+/** マナシンボル 1 個を SVG <g> として描く。color 別の背景色 + シンボル glyph。 */
+function ManaSymbolSvg({ color, value, x, y, size }: {
+  color: Color | 'generic';
+  value?: number;
+  x: number;
+  y: number;
+  size: number;
+}) {
+  const bg: Record<Color | 'generic', string> = {
+    W: '#f4ead0', U: '#7fb6e0', B: '#2a1f2a', R: '#c84a36', G: '#3f7a4a', generic: '#a8a298',
+  };
+  const ring: Record<Color | 'generic', string> = {
+    W: '#8c7a40', U: '#234a70', B: '#0a0a0a', R: '#5a1a10', G: '#1c3a22', generic: '#3a3530',
+  };
+  const ic: Record<Color | 'generic', string> = {
+    W: '#5a4810', U: '#0e2a4a', B: '#e0c8c8', R: '#fff0c0', G: '#e8f0d0', generic: '#1a1a1a',
+  };
+  const r = size / 2;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <circle cx={r} cy={r} r={r * 0.97} fill={ring[color]} />
+      <circle cx={r} cy={r} r={r * 0.84} fill={bg[color]} />
+      <ellipse cx={r * 0.78} cy={r * 0.68} rx={r * 0.32} ry={r * 0.18} fill="rgba(255,255,255,0.35)" />
+      <ManaGlyph color={color} value={value} fg={ic[color]} bg={bg[color]} cx={r} cy={r} r={r} />
+    </g>
+  );
+}
+
+function ManaGlyph({ color, value, fg, bg, cx, cy, r }: {
+  color: Color | 'generic';
+  value: number | undefined;
+  fg: string;
+  bg: string;
+  cx: number;
+  cy: number;
+  r: number;
+}) {
+  const s = r / 12; // scale (viewBox 24×24 → 実 size)
+  const tx = (n: number) => cx + (n - 12) * s;
+  const ty = (n: number) => cy + (n - 12) * s;
+  switch (color) {
+    case 'W':
+      return (
+        <g fill={fg}>
+          <circle cx={tx(12)} cy={ty(12)} r={2.8 * s} />
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+            <rect key={deg}
+              x={tx(11.2)} y={ty(3.6)} width={1.6 * s} height={3.6 * s}
+              transform={`rotate(${deg} ${cx} ${cy})`} rx={0.6 * s} />
+          ))}
+        </g>
+      );
+    case 'U':
+      return (
+        <path
+          d={`M ${tx(12)} ${ty(4.5)} C ${tx(12)} ${ty(4.5)}, ${tx(6)} ${ty(11)}, ${tx(6)} ${ty(14.8)} C ${tx(6)} ${ty(17.8)}, ${tx(8.7)} ${ty(19.8)}, ${tx(12)} ${ty(19.8)} C ${tx(15.3)} ${ty(19.8)}, ${tx(18)} ${ty(17.8)}, ${tx(18)} ${ty(14.8)} C ${tx(18)} ${ty(11)}, ${tx(12)} ${ty(4.5)}, ${tx(12)} ${ty(4.5)} Z`}
+          fill={fg}
+        />
+      );
+    case 'B':
+      return (
+        <g fill={fg}>
+          <path d={`M ${tx(12)} ${ty(5)} C ${tx(8)} ${ty(5)}, ${tx(5.5)} ${ty(8)}, ${tx(5.5)} ${ty(11.5)} C ${tx(5.5)} ${ty(13.6)}, ${tx(6.6)} ${ty(15.4)}, ${tx(8.3)} ${ty(16.4)} L ${tx(8.3)} ${ty(18.5)} L ${tx(10)} ${ty(18.5)} L ${tx(10)} ${ty(17.2)} L ${tx(11.2)} ${ty(17.2)} L ${tx(11.2)} ${ty(18.5)} L ${tx(12.8)} ${ty(18.5)} L ${tx(12.8)} ${ty(17.2)} L ${tx(14)} ${ty(17.2)} L ${tx(14)} ${ty(18.5)} L ${tx(15.7)} ${ty(18.5)} L ${tx(15.7)} ${ty(16.4)} C ${tx(17.4)} ${ty(15.4)}, ${tx(18.5)} ${ty(13.6)}, ${tx(18.5)} ${ty(11.5)} C ${tx(18.5)} ${ty(8)}, ${tx(16)} ${ty(5)}, ${tx(12)} ${ty(5)} Z`} />
+          <circle cx={tx(9.3)} cy={ty(11.5)} r={1.6 * s} fill={bg} />
+          <circle cx={tx(14.7)} cy={ty(11.5)} r={1.6 * s} fill={bg} />
+        </g>
+      );
+    case 'R':
+      return (
+        <path
+          d={`M ${tx(12)} ${ty(4)} C ${tx(13)} ${ty(7)}, ${tx(15)} ${ty(9)}, ${tx(15)} ${ty(11.5)} C ${tx(15)} ${ty(13)}, ${tx(14)} ${ty(13.6)}, ${tx(13.6)} ${ty(13.4)} C ${tx(13.8)} ${ty(12)}, ${tx(13.2)} ${ty(10.5)}, ${tx(11.8)} ${ty(10)} C ${tx(12)} ${ty(12)}, ${tx(10.5)} ${ty(13)}, ${tx(9)} ${ty(14.5)} C ${tx(7.8)} ${ty(15.8)}, ${tx(7.5)} ${ty(17.4)}, ${tx(8.4)} ${ty(18.6)} C ${tx(9.3)} ${ty(19.6)}, ${tx(11)} ${ty(20)}, ${tx(12.5)} ${ty(20)} C ${tx(16)} ${ty(20)}, ${tx(17.6)} ${ty(16.8)}, ${tx(17)} ${ty(14)} C ${tx(16.3)} ${ty(10.7)}, ${tx(13.8)} ${ty(7.5)}, ${tx(12)} ${ty(4)} Z`}
+          fill={fg}
+        />
+      );
+    case 'G':
+      return (
+        <path
+          d={`M ${tx(12)} ${ty(4.5)} C ${tx(17)} ${ty(6)}, ${tx(19)} ${ty(10)}, ${tx(18)} ${ty(15)} C ${tx(17.2)} ${ty(18.5)}, ${tx(14)} ${ty(19.8)}, ${tx(11)} ${ty(19.5)} C ${tx(7.5)} ${ty(19)}, ${tx(5.4)} ${ty(16)}, ${tx(5.8)} ${ty(12.5)} C ${tx(6.2)} ${ty(9)}, ${tx(8)} ${ty(6)}, ${tx(12)} ${ty(4.5)} Z`}
+          fill={fg}
+        />
+      );
+    case 'generic':
+      return (
+        <text x={cx} y={cy + r * 0.05}
+              fontSize={r * 1.1} fontWeight="800"
+              fontFamily="'Hiragino Mincho ProN', 'Yu Mincho', serif"
+              textAnchor="middle" dominantBaseline="central" fill={fg}>
+          {value ?? '?'}
+        </text>
+      );
+  }
 }
 
 /**
