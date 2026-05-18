@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Agent, AppBskyActorDefs } from '@atproto/api';
-import type { DiagnosisResult } from '@aozoraquest/core';
+import type { CardType, DiagnosisResult, ManaCost } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
-import { isRarity, rollRarity } from '@aozoraquest/core';
+import { CARD_TYPES, COLORS, isRarity, manaCostColors, rollRarity } from '@aozoraquest/core';
 import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
-import { CardDrawOverlay } from '@/components/card-draw-overlay';
+import { CardPackOverlay } from '@/components/card-pack-overlay';
 import { CasinoIcon, DownloadIcon, ShareIcon } from '@/components/icons';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
 import { Spinner } from '@/components/spinner';
@@ -30,6 +30,10 @@ interface ProfileBrief {
   displayName: string;
   avatar?: string;
 }
+
+/** ローカル開発時 (vite dev) のみ true。あおぞらパワーの消費・残量チェックを丸ごとバイパスする。
+ *  本番ビルド (vite build) では false 固定なので、prod に影響しない。 */
+const IS_DEV = import.meta.env.DEV;
 
 export function Card() {
   const session = useSession();
@@ -54,6 +58,9 @@ export function Card() {
     attribution: string | null;
     variant: 1 | 2;
   } | null>(null);
+  // 演出 → 新カード登場アニメーション用のキー。引き直しが reveal を終えるたびに +1。
+  // <div key={...}> に渡して remount させ、CSS アニメを毎回再生する。
+  const [revealAnimKey, setRevealAnimKey] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // 初回: session 確認 → 診断 + points ロード
@@ -93,19 +100,15 @@ export function Card() {
           setRarity(savedRarity);
           const savedVariant = analysis.cardFrameVariant === 2 ? 2 : 1;
           setFrameVariant(savedVariant);
-          // 新フォーマット (name/cost/description) が入っていれば優先、無ければ旧 cardEffect を分割、
-          // さらに無ければ fallback
+          // 新フォーマット (name/description + manaCost/type/abilityCost) が入っていれば優先、
+          // 無ければ fallback で穴埋め
           const fallback = getFallbackCardText(analysis.archetype, Date.now(), savedRarity);
+          const cardName = analysis.cardName
+            ? stripMarkdown(analysis.cardName)
+            : fallback.cardName;
           const name = analysis.cardEffectName
             ? stripMarkdown(analysis.cardEffectName)
-            : analysis.cardEffect
-              ? fallback.effect.name
-              : fallback.effect.name;
-          const cost = typeof analysis.cardEffectCost === 'string'
-            ? stripMarkdown(analysis.cardEffectCost)
-            : analysis.cardEffectCost !== undefined
-              ? String(analysis.cardEffectCost)
-              : fallback.effect.cost;
+            : fallback.effect.name;
           const description = analysis.cardEffectDescription
             ? stripMarkdown(analysis.cardEffectDescription)
             : analysis.cardEffect
@@ -114,11 +117,34 @@ export function Card() {
                   return m ? stripMarkdown(m[1]!) : stripMarkdown(analysis.cardEffect);
                 })()
               : fallback.effect.description;
+          const cardType = isCardType(analysis.cardType) ? analysis.cardType : fallback.type;
+          const manaCost: ManaCost = (analysis.cardManaCost && typeof analysis.cardManaCost === 'object')
+            ? analysis.cardManaCost
+            : fallback.manaCost;
+          const abilityCost: ManaCost | null = (analysis.cardAbilityCost === null)
+            ? null
+            : (analysis.cardAbilityCost && typeof analysis.cardAbilityCost === 'object')
+              ? analysis.cardAbilityCost
+              : fallback.abilityCost;
+          const abilityTap = typeof analysis.cardAbilityTap === 'boolean' ? analysis.cardAbilityTap : fallback.abilityTap;
+          const keywords: string[] = Array.isArray(analysis.cardKeywords)
+            ? analysis.cardKeywords.filter((s): s is string => typeof s === 'string')
+            : fallback.keywords;
+          const power = typeof analysis.cardPower === 'number' ? analysis.cardPower : fallback.power;
+          const toughness = typeof analysis.cardToughness === 'number' ? analysis.cardToughness : fallback.toughness;
           setCard({
-            effect: { name, cost, description },
+            cardName,
+            type: cardType,
+            manaCost,
+            abilityCost,
+            abilityTap,
+            effect: { name, description },
             flavor: analysis.flavorText
               ? stripMarkdown(analysis.flavorText)
               : fallback.flavor,
+            keywords,
+            ...(power !== undefined ? { power } : {}),
+            ...(toughness !== undefined ? { toughness } : {}),
             source: { kind: 'fallback' },
           });
           if (analysis.flavorAttribution) setFlavorAttribution(analysis.flavorAttribution);
@@ -172,8 +198,9 @@ export function Card() {
     if (session.status !== 'signed-in' || !session.agent) return;
     const agent = session.agent;
 
-    // 明示的な引き直し (initial でない) は 1 あおぞらパワーを消費する
-    if (!opts.initial) {
+    // 明示的な引き直し (initial でない) は 1 あおぞらパワーを消費する。
+    // ローカル開発時 (IS_DEV) は残量チェックも記録も丸ごとスキップして何枚でも引ける。
+    if (!opts.initial && !IS_DEV) {
       if (!power || power.balance < 1) {
         console.warn('[card] power insufficient');
         return;
@@ -219,7 +246,10 @@ export function Card() {
     // LLM 生成 (失敗時は fallback テキストにフォールバック、演出は最後まで流す)
     let generated: CardText;
     try {
-      generated = await generateCardText(load.result, nextRarity, { seed: Date.now() });
+      generated = await generateCardText(load.result, nextRarity, {
+        seed: Date.now(),
+        displayName: load.profile.displayName,
+      });
     } catch (e) {
       console.error('[card] regenerate card failed', e);
       if (e instanceof CardTextError) {
@@ -234,15 +264,23 @@ export function Card() {
       generated = getFallbackCardText(load.result.archetype, Date.now(), nextRarity);
     }
 
-    // PDS に一式保存 (effect 3 要素 + flavor + rarity + frameVariant + attribution)
+    // PDS に一式保存 (新スキーマ: type + manaCost + abilityCost + effect 2 要素 + flavor)
     try {
       const now = new Date().toISOString();
       await putRecord(agent, COL.analysis, 'self', {
         ...load.result,
+        cardName: generated.cardName,
         cardEffectName: generated.effect.name,
-        cardEffectCost: generated.effect.cost,
         cardEffectDescription: generated.effect.description,
         cardEffect: `${generated.effect.name} ― ${generated.effect.description}`,
+        cardType: generated.type,
+        cardManaCost: generated.manaCost,
+        cardColors: manaCostColors(generated.manaCost) as Array<typeof COLORS[number]>,
+        cardAbilityCost: generated.abilityCost,
+        cardAbilityTap: generated.abilityTap,
+        cardKeywords: generated.keywords,
+        ...(generated.power !== undefined ? { cardPower: generated.power } : {}),
+        ...(generated.toughness !== undefined ? { cardToughness: generated.toughness } : {}),
         flavorText: generated.flavor,
         ...(attribution ? { flavorAttribution: attribution } : {}),
         cardRarity: nextRarity,
@@ -274,6 +312,7 @@ export function Card() {
   /** カード抽選演出が reveal を終えた瞬間に pending を実 state にコミット。 */
   const onDrawComplete = useCallback(() => {
     if (drawing && pending) {
+      setRevealAnimKey((k) => k + 1);
       setRarity(drawing.rarity);
       setFrameVariant(pending.variant);
       setCard(pending.card);
@@ -386,17 +425,29 @@ export function Card() {
         ブルスコンが羊皮紙にしたためた、今のあなたの姿。
       </p>
 
-      <div style={{ margin: '1em auto', maxWidth: 420, width: '100%' }}>
+      <div
+        className={`card-stage${drawing ? ' card-stage--hidden' : ''}`}
+        style={{ margin: '1em auto', maxWidth: 420, width: '100%' }}
+        key={revealAnimKey}
+      >
         <JobCard
           ref={svgRef}
           result={result!}
           effectName={card?.effect.name ?? ''}
-          effectCost={card?.effect.cost ?? ''}
+          effectCost={formatAbilityCostForDisplay(card?.abilityCost ?? null)}
           effectDescription={card?.effect.description ?? '…'}
           flavorText={card?.flavor ?? '…'}
           flavorAttribution={flavorAttribution ?? undefined}
           rarity={rarity}
           frameVariant={frameVariant}
+          {...(card?.type ? { cardType: card.type } : {})}
+          {...(card?.manaCost ? { manaCost: card.manaCost } : {})}
+          {...(card?.abilityCost !== undefined ? { abilityCost: card.abilityCost } : {})}
+          {...(card?.abilityTap ? { abilityTap: true } : {})}
+          {...(card?.cardName ? { cardName: card.cardName } : {})}
+          {...(card?.keywords ? { keywords: card.keywords } : {})}
+          {...(card?.power !== undefined ? { power: card.power } : {})}
+          {...(card?.toughness !== undefined ? { toughness: card.toughness } : {})}
           displayName={profile!.displayName}
           handle={profile!.handle}
           artSrc={artSrc}
@@ -421,12 +472,12 @@ export function Card() {
 
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
         <button
-          disabled={flavorBusy || !!drawing || !power || power.balance < 1}
+          disabled={flavorBusy || !!drawing || (!IS_DEV && (!power || power.balance < 1))}
           onClick={() => void regenerateCard({ initial: false })}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
+            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : IS_DEV ? '引き直す (dev: 無制限)' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>
@@ -489,7 +540,7 @@ export function Card() {
       </div>
 
       {drawing && (
-        <CardDrawOverlay
+        <CardPackOverlay
           rarity={drawing.rarity}
           llmDone={drawing.llmDone}
           onComplete={onDrawComplete}
@@ -497,6 +548,23 @@ export function Card() {
       )}
     </div>
   );
+}
+
+function isCardType(s: unknown): s is CardType {
+  return typeof s === 'string' && (CARD_TYPES as readonly string[]).includes(s);
+}
+
+/** JobCard の旧 `effectCost: string` プロパティ用に、ManaCost を簡易表記する。
+ *  commit 4 でマナアイコン描画に置き換わるまでの一時的な表示。 */
+function formatAbilityCostForDisplay(cost: ManaCost | null): string {
+  if (!cost) return 'なし';
+  const parts: string[] = [];
+  if (cost.generic && cost.generic > 0) parts.push(String(cost.generic));
+  for (const c of ['W', 'U', 'B', 'R', 'G'] as const) {
+    const n = cost[c] ?? 0;
+    for (let i = 0; i < n; i++) parts.push(c);
+  }
+  return parts.length === 0 ? 'なし' : parts.join('');
 }
 
 async function fetchProfile(agent: Agent, did: string): Promise<AppBskyActorDefs.ProfileViewDetailed | null> {

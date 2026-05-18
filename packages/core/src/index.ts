@@ -10,3 +10,4 @@ export * from './weights.js';
 export * from './quest.js';
 export * from './spirit.js';
 export * from './card-rarity.js';
+export * from './card.js';
