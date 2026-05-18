@@ -509,10 +509,10 @@ p { margin: 0.4em 0; }
   pointer-events: none;
 }
 
-/* ─── カード抽選演出 ─────────────────── */
-/* 3 段階: drawing (汎用) → sensing (rarity 判明) → reveal (フィナーレ) */
+/* ─── カードパック開封演出 (4 段階) ─────────────────── */
+/* package (登場) → tearing (破れ) → emerge (loop, LLM 待ち) → reveal (フィナーレ) */
 
-.cd-overlay {
+.cp-overlay {
   position: fixed;
   inset: 0;
   z-index: 250;
@@ -521,139 +521,347 @@ p { margin: 0.4em 0; }
   justify-content: center;
   pointer-events: auto;
   overflow: hidden;
-  /* rarity 色は data-rarity でセット (下で個別定義) */
   --rar: #cccccc;
   --intensity: 1;
   background: radial-gradient(ellipse at center,
-    rgba(20, 10, 30, 0.65) 0%,
+    rgba(20, 10, 30, 0.7) 0%,
     rgba(5, 5, 15, 0.96) 60%,
     rgba(0, 0, 0, 1) 100%);
-  animation: cd-fade-in 350ms ease forwards;
+  animation: cp-fade-in 350ms ease forwards;
 }
-.cd-overlay[data-stage="reveal"] {
-  animation: cd-fade-out 600ms ease 700ms forwards;
+.cp-overlay[data-stage="reveal"] {
+  animation: cp-fade-out 600ms ease 500ms forwards;
 }
+@keyframes cp-fade-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cp-fade-out { from { opacity: 1 } to { opacity: 0 } }
 
-@keyframes cd-fade-in  { from { opacity: 0 } to { opacity: 1 } }
-@keyframes cd-fade-out { from { opacity: 1 } to { opacity: 0 } }
+/* package / tearing 段階、および低レア (common/uncommon) の emerge は
+ *  ニュートラル銀色のまま — レアリティを早期に "光" で漏らさない。
+ *  emerge で rare 以上、reveal で全レアリティを本来の rarity 色に切替。 */
 
-/* rarity 色変数 */
-.cd-overlay[data-rarity="common"]   { --rar: #b0a89c; --intensity: 0.6; }
-.cd-overlay[data-rarity="uncommon"] { --rar: #6acc8a; --intensity: 0.8; }
-.cd-overlay[data-rarity="rare"]     { --rar: #5c9fff; --intensity: 1.1; }
-.cd-overlay[data-rarity="srare"]    { --rar: #c47eff; --intensity: 1.4; }
-.cd-overlay[data-rarity="ssr"]      { --rar: #ffce5e; --intensity: 1.8; }
-.cd-overlay[data-rarity="ur"]       { --rar: #ff7eb0; --intensity: 2.4; }
+/* デフォルト (任意 stage / 任意 rarity) はニュートラル銀。 */
+.cp-overlay { --rar: #b0a89c; --intensity: 0.6; }
 
-.cd-stage {
+/* emerge: rare 以上だけ rarity 色を出す (= "これは普通じゃない" の合図)。 */
+.cp-overlay[data-stage="emerge"][data-rarity="rare"]   { --rar: #5c9fff; --intensity: 1.1; }
+.cp-overlay[data-stage="emerge"][data-rarity="srare"]  { --rar: #c47eff; --intensity: 1.4; }
+.cp-overlay[data-stage="emerge"][data-rarity="ssr"]    { --rar: #ffce5e; --intensity: 1.8; }
+.cp-overlay[data-stage="emerge"][data-rarity="ur"]     { --rar: #ff7eb0; --intensity: 2.4; }
+
+/* reveal: 最終的にすべての rarity 色を出す。 */
+.cp-overlay[data-stage="reveal"][data-rarity="common"]   { --rar: #b0a89c; --intensity: 0.6; }
+.cp-overlay[data-stage="reveal"][data-rarity="uncommon"] { --rar: #6acc8a; --intensity: 0.8; }
+.cp-overlay[data-stage="reveal"][data-rarity="rare"]     { --rar: #5c9fff; --intensity: 1.1; }
+.cp-overlay[data-stage="reveal"][data-rarity="srare"]    { --rar: #c47eff; --intensity: 1.4; }
+.cp-overlay[data-stage="reveal"][data-rarity="ssr"]      { --rar: #ffce5e; --intensity: 1.8; }
+.cp-overlay[data-stage="reveal"][data-rarity="ur"]       { --rar: #ff7eb0; --intensity: 2.4; }
+
+.cp-stage {
   position: relative;
   width: min(360px, 80vw);
-  height: min(520px, 80vh);
-  perspective: 900px;
+  height: min(560px, 85vh);
 }
 
-/* オーラ (rarity 色の柔らかい発光) */
-.cd-aura {
+/* 背景オーラ */
+.cp-aura {
   position: absolute;
   inset: -40%;
   background: radial-gradient(circle at center,
-    color-mix(in srgb, var(--rar) 80%, transparent) 0%,
-    color-mix(in srgb, var(--rar) 30%, transparent) 35%,
+    color-mix(in srgb, var(--rar) 70%, transparent) 0%,
+    color-mix(in srgb, var(--rar) 25%, transparent) 35%,
     transparent 70%);
   filter: blur(28px);
   opacity: 0;
-  animation: cd-aura-breathe 1.6s ease-in-out infinite;
+  animation: cp-aura-breathe 1.8s ease-in-out infinite;
   transition: opacity 600ms ease;
   pointer-events: none;
 }
-.cd-overlay[data-stage="sensing"] .cd-aura,
-.cd-overlay[data-stage="reveal"] .cd-aura {
-  opacity: calc(0.45 * var(--intensity));
+.cp-overlay[data-stage="emerge"] .cp-aura,
+.cp-overlay[data-stage="reveal"] .cp-aura {
+  opacity: calc(0.5 * var(--intensity));
 }
-
-@keyframes cd-aura-breathe {
-  0%, 100% { transform: scale(1);    filter: blur(28px); }
-  50%      { transform: scale(1.08); filter: blur(22px); }
+@keyframes cp-aura-breathe {
+  0%, 100% { transform: scale(1);   filter: blur(28px); }
+  50%      { transform: scale(1.1); filter: blur(22px); }
 }
-
-/* UR 用: 虹色 conic を重ねる */
-.cd-overlay[data-rarity="ur"] .cd-aura {
-  background:
-    conic-gradient(from 0deg,
-      #ff80c0, #ffd57a, #a5ff8a, #80e8ff, #c080ff, #ff80c0);
+/* UR 虹色 conic aura は emerge/reveal でのみ展開 (= 「UR の合図」) */
+.cp-overlay[data-stage="emerge"][data-rarity="ur"] .cp-aura,
+.cp-overlay[data-stage="reveal"][data-rarity="ur"] .cp-aura {
+  background: conic-gradient(from 0deg,
+    #ff80c0, #ffd57a, #a5ff8a, #80e8ff, #c080ff, #ff80c0);
   filter: blur(36px);
-  animation: cd-aura-breathe 1.6s ease-in-out infinite,
-             cd-conic-rotate 5s linear infinite;
+  animation: cp-aura-breathe 1.8s ease-in-out infinite,
+             cp-conic-rotate 6s linear infinite;
 }
-@keyframes cd-conic-rotate {
-  to { transform: rotate(360deg); }
+@keyframes cp-conic-rotate { to { transform: rotate(360deg); } }
+
+/* パック本体 wrapper (center anchor) */
+.cp-pack {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 60%;
+  aspect-ratio: 5 / 7;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.7));
 }
 
-/* 中央のカード裏面 (Y 軸回転で「めくる」感を出す) */
-.cd-card-wrap {
+/* entry + shake をかける child */
+.cp-pack-shake {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  animation: cp-pack-enter 700ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes cp-pack-enter {
+  0%   { opacity: 0; transform: translateY(-40%) scale(0.55) rotate(-10deg); }
+  60%  { opacity: 1; transform: translateY(6%)   scale(1.08) rotate(4deg); }
+  100% { opacity: 1; transform: translateY(0)    scale(1)    rotate(0); }
+}
+.cp-overlay[data-stage="tearing"] .cp-pack-shake,
+.cp-overlay[data-stage="emerge"] .cp-pack-shake {
+  animation: cp-pack-enter 700ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards,
+             cp-pack-shake 0.34s ease-in-out 700ms infinite;
+}
+@keyframes cp-pack-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  25%      { transform: translate(-3px, 1px) rotate(-0.8deg); }
+  50%      { transform: translate(2px, -2px) rotate(0.6deg); }
+  75%      { transform: translate(-1px, -1px) rotate(-0.3deg); }
+}
+
+/* パック本体 */
+.cp-pack-body {
   position: absolute;
   inset: 0;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--rar) 35%, #2a1f32) 0%,
+      color-mix(in srgb, var(--rar) 15%, #0a0418) 100%);
+  border: 2px solid color-mix(in srgb, var(--rar) 60%, #2a1a08);
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 calc(30px * var(--intensity)) color-mix(in srgb, var(--rar) 60%, transparent);
+  z-index: 2;
+}
+
+/* 銀紙質感 */
+.cp-pack-foil {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255, 255, 255, 0.06) 0px,
+      rgba(255, 255, 255, 0.06) 2px,
+      transparent 2px,
+      transparent 7px),
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      transparent 14%,
+      transparent 86%,
+      rgba(0, 0, 0, 0.25) 100%);
+  pointer-events: none;
+}
+
+/* 動く反射光 */
+.cp-pack-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.25) 45%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0.25) 55%,
+    transparent 70%);
+  background-size: 250% 100%;
+  animation: cp-pack-shine 2.4s linear infinite;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+@keyframes cp-pack-shine {
+  0%   { background-position: 100% 0%; }
+  100% { background-position: -100% 0%; }
+}
+
+/* 中央シール */
+.cp-pack-seal {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 46%;
+  height: 46%;
+  margin: -23% 0 0 -23%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.5) 0%, transparent 50%),
+    radial-gradient(circle, color-mix(in srgb, var(--rar) 80%, white) 0%, color-mix(in srgb, var(--rar) 60%, black) 100%);
+  border: 3px solid color-mix(in srgb, var(--rar) 50%, #1a1015);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--rar) 60%, transparent);
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  transform-style: preserve-3d;
+  font-size: 32px;
+  color: #fff;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--rar) 80%, white);
 }
-.cd-card {
-  width: 56%;
-  aspect-ratio: 768 / 1100;
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.18), transparent 55%),
-    linear-gradient(160deg, #1a1028 0%, #0a0418 100%);
-  border: 2px solid color-mix(in srgb, var(--rar) 60%, #2a1a08);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 0 calc(36px * var(--intensity)) color-mix(in srgb, var(--rar) 80%, transparent),
-    0 12px 28px rgba(0, 0, 0, 0.7);
-  transform-style: preserve-3d;
-  animation: cd-card-spin 2.2s cubic-bezier(0.4, 0.0, 0.6, 1) infinite;
+.cp-pack-seal::before {
+  content: '★';
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
 }
-.cd-overlay[data-stage="reveal"] .cd-card {
-  animation: cd-card-final-flip 900ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+.cp-overlay[data-stage="tearing"] .cp-pack-seal,
+.cp-overlay[data-stage="emerge"] .cp-pack-seal,
+.cp-overlay[data-stage="reveal"] .cp-pack-seal {
+  animation: cp-seal-rip 500ms ease-out forwards;
+}
+@keyframes cp-seal-rip {
+  0%   { opacity: 1; transform: scale(1)   rotate(0deg)  translateY(0); }
+  60%  { opacity: 1; transform: scale(1.2) rotate(20deg) translateY(-8%); }
+  100% { opacity: 0; transform: scale(0.4) rotate(60deg) translateY(-80%); }
 }
 
-/* 中央に小さな菱形 (カード裏紋章) */
-.cd-card::before {
-  content: '';
+/* 破れ線 (tear) */
+.cp-pack-tear {
+  position: absolute;
+  top: 14%;
+  left: 0; right: 0;
+  height: 5%;
+  background:
+    linear-gradient(180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--rar) 80%, white) 30%,
+      white 50%,
+      color-mix(in srgb, var(--rar) 80%, white) 70%,
+      transparent 100%);
+  filter: blur(2px);
+  opacity: 0;
+  z-index: 4;
+}
+.cp-overlay[data-stage="tearing"] .cp-pack-tear {
+  animation: cp-tear-line 900ms ease-out forwards;
+}
+@keyframes cp-tear-line {
+  0%   { opacity: 0; clip-path: inset(0 100% 0 0); transform: scaleY(0.4); }
+  20%  { opacity: 1; transform: scaleY(1); }
+  100% { opacity: 1; clip-path: inset(0 0 0 0); transform: scaleY(1); }
+}
+.cp-overlay[data-stage="emerge"] .cp-pack-tear,
+.cp-overlay[data-stage="reveal"] .cp-pack-tear {
+  background:
+    radial-gradient(ellipse at center,
+      white 0%,
+      color-mix(in srgb, var(--rar) 90%, white) 30%,
+      color-mix(in srgb, var(--rar) 60%, transparent) 70%,
+      transparent 100%);
+  filter: blur(3px);
+  opacity: calc(0.8 * var(--intensity));
+  height: 9%;
+  animation: cp-tear-pulse 1.8s ease-in-out infinite;
+}
+@keyframes cp-tear-pulse {
+  0%, 100% { opacity: calc(0.4 * var(--intensity));  transform: scaleY(0.85); }
+  50%      { opacity: calc(0.95 * var(--intensity)); transform: scaleY(1.2); }
+}
+
+/* 中のカードが覗く */
+.cp-card-peek {
+  position: absolute;
+  top: 0; left: 50%;
+  width: 78%;
+  aspect-ratio: 5 / 7;
+  margin-left: -39%;
+  border-radius: 10px;
+  z-index: 1;
+  opacity: 0;
+  transform: translateY(20%);
+}
+.cp-overlay[data-stage="emerge"] .cp-card-peek {
+  opacity: 1;
+  animation: cp-card-peek-loop 1.8s ease-in-out infinite;
+}
+@keyframes cp-card-peek-loop {
+  0%, 100% { transform: translateY(2%); }
+  50%      { transform: translateY(-12%); }
+}
+.cp-overlay[data-stage="reveal"] .cp-card-peek {
+  opacity: 1;
+  z-index: 5;
+  animation: cp-card-peek-final 1.0s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes cp-card-peek-final {
+  0%   { transform: translateY(0)    scale(1); }
+  40%  { transform: translateY(-45%) scale(1.2); }
+  100% { transform: translateY(-65%) scale(1.55); opacity: 0; }
+}
+.cp-card-edge {
   position: absolute;
   inset: 0;
-  border-radius: 12px;
-  background:
-    linear-gradient(45deg, transparent 47%, color-mix(in srgb, var(--rar) 50%, transparent) 50%, transparent 53%),
-    linear-gradient(-45deg, transparent 47%, color-mix(in srgb, var(--rar) 50%, transparent) 50%, transparent 53%);
-  background-size: 28px 28px;
-  opacity: 0.35;
+  border-radius: 10px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--rar) 70%, white) 0%,
+    color-mix(in srgb, var(--rar) 50%, #1a0e1c) 50%,
+    color-mix(in srgb, var(--rar) 30%, #050208) 100%);
+  border: 2px solid color-mix(in srgb, var(--rar) 70%, #2a1a08);
+  box-shadow:
+    0 0 calc(28px * var(--intensity)) color-mix(in srgb, var(--rar) 80%, transparent),
+    inset 0 0 8px rgba(255, 255, 255, 0.2);
 }
-.cd-card::after {
-  content: '';
+.cp-card-glow {
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(circle at center,
+    color-mix(in srgb, var(--rar) 60%, transparent) 0%,
+    transparent 60%);
+  filter: blur(20px);
+  opacity: 0;
+  pointer-events: none;
+}
+.cp-overlay[data-stage="emerge"] .cp-card-glow {
+  animation: cp-glow-pulse 1.8s ease-in-out infinite;
+}
+@keyframes cp-glow-pulse {
+  0%, 100% { opacity: calc(0.3 * var(--intensity)); }
+  50%      { opacity: calc(0.95 * var(--intensity)); }
+}
+
+/* 紙片 (shreds) */
+.cp-shreds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cp-shreds span {
   position: absolute;
   top: 50%; left: 50%;
-  width: 32%; aspect-ratio: 1;
-  margin: -16% 0 0 -16%;
-  background: radial-gradient(circle, var(--rar) 0%, transparent 70%);
-  border-radius: 50%;
-  filter: blur(8px);
-  opacity: calc(0.6 * var(--intensity));
+  width: 14px;
+  height: 4px;
+  background: color-mix(in srgb, var(--rar) 35%, #d4cab8);
+  border-radius: 1px;
+  opacity: 0;
+  transform-origin: center center;
+}
+.cp-overlay[data-stage="tearing"] .cp-shreds span {
+  animation: cp-shred-fly 900ms ease-out forwards;
+  animation-delay: var(--d, 0s);
+}
+@keyframes cp-shred-fly {
+  0%   { opacity: 0; transform: translate(0, 0) rotate(0); }
+  15%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(var(--rot, 360deg)); }
+}
+.cp-overlay[data-stage="emerge"] .cp-shreds span {
+  animation: cp-shred-loop 2.4s ease-in-out infinite;
+  animation-delay: calc(var(--d, 0s) + var(--i, 0) * 0.06s);
+}
+@keyframes cp-shred-loop {
+  0%   { opacity: 0; transform: translate(0, 0) rotate(0); }
+  10%  { opacity: 0.55; }
+  100% { opacity: 0; transform: translate(calc(var(--tx) * 0.5), calc(var(--ty) * 0.5)) rotate(calc(var(--rot, 360deg) * 0.5)); }
 }
 
-@keyframes cd-card-spin {
-  0%   { transform: rotateY(0deg)   rotateZ(-2deg); }
-  50%  { transform: rotateY(180deg) rotateZ(2deg);  }
-  100% { transform: rotateY(360deg) rotateZ(-2deg); }
-}
-@keyframes cd-card-final-flip {
-  0%   { transform: rotateY(0deg)    scale(1); }
-  60%  { transform: rotateY(720deg)  scale(1.25); }
-  100% { transform: rotateY(720deg)  scale(0); opacity: 0; }
-}
-
-/* 光線 (srare 以上で出る、中央から放射) */
-.cd-rays {
+/* 光線 (rare 以上) */
+.cp-rays {
   position: absolute;
   inset: 0;
   display: flex;
@@ -663,13 +871,14 @@ p { margin: 0.4em 0; }
   opacity: 0;
   transition: opacity 500ms ease;
 }
-.cd-overlay[data-stage="sensing"][data-rarity="srare"] .cd-rays,
-.cd-overlay[data-stage="sensing"][data-rarity="ssr"] .cd-rays,
-.cd-overlay[data-stage="sensing"][data-rarity="ur"] .cd-rays,
-.cd-overlay[data-stage="reveal"] .cd-rays {
-  opacity: calc(0.5 * var(--intensity));
+.cp-overlay[data-stage="emerge"][data-rarity="rare"] .cp-rays,
+.cp-overlay[data-stage="emerge"][data-rarity="srare"] .cp-rays,
+.cp-overlay[data-stage="emerge"][data-rarity="ssr"] .cp-rays,
+.cp-overlay[data-stage="emerge"][data-rarity="ur"] .cp-rays,
+.cp-overlay[data-stage="reveal"] .cp-rays {
+  opacity: calc(0.4 * var(--intensity));
 }
-.cd-rays span {
+.cp-rays span {
   position: absolute;
   width: 4px;
   height: 200%;
@@ -680,16 +889,16 @@ p { margin: 0.4em 0; }
     transparent 100%);
   transform-origin: center center;
   transform: rotate(calc(var(--a, 0) * 1deg));
-  animation: cd-ray-rotate 6s linear infinite;
+  animation: cp-ray-rotate 8s linear infinite;
   filter: blur(1px);
 }
-@keyframes cd-ray-rotate {
+@keyframes cp-ray-rotate {
   from { transform: rotate(calc(var(--a, 0) * 1deg)); }
   to   { transform: rotate(calc((var(--a, 0) + 360) * 1deg)); }
 }
 
-/* 衝撃波リング (ssr 以上) */
-.cd-rings {
+/* 衝撃波 (ssr 以上) */
+.cp-rings {
   position: absolute;
   inset: 0;
   display: flex;
@@ -697,7 +906,7 @@ p { margin: 0.4em 0; }
   justify-content: center;
   pointer-events: none;
 }
-.cd-rings span {
+.cp-rings span {
   position: absolute;
   width: 40px;
   height: 40px;
@@ -705,100 +914,70 @@ p { margin: 0.4em 0; }
   border: 2px solid color-mix(in srgb, var(--rar) 90%, white);
   opacity: 0;
 }
-.cd-overlay[data-stage="sensing"][data-rarity="ssr"] .cd-rings span,
-.cd-overlay[data-stage="sensing"][data-rarity="ur"] .cd-rings span,
-.cd-overlay[data-stage="reveal"] .cd-rings span {
-  animation: cd-ring-pulse 1.6s ease-out infinite;
+.cp-overlay[data-stage="emerge"][data-rarity="ssr"] .cp-rings span,
+.cp-overlay[data-stage="emerge"][data-rarity="ur"] .cp-rings span,
+.cp-overlay[data-stage="reveal"] .cp-rings span {
+  animation: cp-ring-pulse 1.8s ease-out infinite;
 }
-.cd-rings span:nth-child(2) { animation-delay: 0.5s; }
-.cd-rings span:nth-child(3) { animation-delay: 1s; }
-
-@keyframes cd-ring-pulse {
+.cp-rings span:nth-child(2) { animation-delay: 0.6s; }
+.cp-rings span:nth-child(3) { animation-delay: 1.2s; }
+@keyframes cp-ring-pulse {
   0%   { transform: scale(0.4); opacity: 0;    border-width: 4px; }
   20%  {                         opacity: 0.7; }
   100% { transform: scale(8);   opacity: 0;    border-width: 1px; }
 }
 
-/* 粒子 (rarity 色の小さな星が落ちる) */
-.cd-particles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.cd-particles span {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  top: -10%;
-  left: calc(var(--i, 0) * 7.6%);
-  background: color-mix(in srgb, var(--rar) 85%, white);
-  border-radius: 50%;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--rar) 80%, transparent);
-  opacity: 0;
-  animation: cd-particle-fall 3s ease-in infinite;
-  animation-delay: calc(var(--i, 0) * 0.13s);
-}
-.cd-overlay[data-stage="drawing"] .cd-particles span {
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
-}
-@keyframes cd-particle-fall {
-  0%   { transform: translateY(0)     scale(0.4); opacity: 0; }
-  15%  {                                          opacity: 1; }
-  100% { transform: translateY(120vh) scale(1.2); opacity: 0; }
-}
-
-/* 大粒スパークル (ur のみ、ランダム位置でキラっと光る + 字星) */
-.cd-big-sparkles {
+/* 大粒スパークル (ssr/ur) */
+.cp-big-sparkles {
   position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 0;
 }
-.cd-overlay[data-rarity="ur"][data-stage="sensing"] .cd-big-sparkles,
-.cd-overlay[data-rarity="ur"][data-stage="reveal"] .cd-big-sparkles,
-.cd-overlay[data-rarity="ssr"][data-stage="sensing"] .cd-big-sparkles,
-.cd-overlay[data-rarity="ssr"][data-stage="reveal"] .cd-big-sparkles {
+.cp-overlay[data-rarity="ur"][data-stage="emerge"] .cp-big-sparkles,
+.cp-overlay[data-rarity="ur"][data-stage="reveal"] .cp-big-sparkles,
+.cp-overlay[data-rarity="ssr"][data-stage="emerge"] .cp-big-sparkles,
+.cp-overlay[data-rarity="ssr"][data-stage="reveal"] .cp-big-sparkles {
   opacity: 1;
 }
-.cd-big-sparkles span {
+.cp-big-sparkles span {
   position: absolute;
   width: 22px;
   height: 22px;
   top: var(--y);
   left: var(--x);
   background:
-    linear-gradient(0deg,    transparent 45%, white 50%, transparent 55%),
-    linear-gradient(90deg,   transparent 45%, white 50%, transparent 55%),
-    linear-gradient(45deg,   transparent 47%, white 50%, transparent 53%),
-    linear-gradient(135deg,  transparent 47%, white 50%, transparent 53%);
+    linear-gradient(0deg,   transparent 45%, white 50%, transparent 55%),
+    linear-gradient(90deg,  transparent 45%, white 50%, transparent 55%),
+    linear-gradient(45deg,  transparent 47%, white 50%, transparent 53%),
+    linear-gradient(135deg, transparent 47%, white 50%, transparent 53%);
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--rar) 80%, white));
-  animation: cd-big-sparkle 1.4s ease-out infinite;
+  animation: cp-big-sparkle 1.4s ease-out infinite;
   animation-delay: var(--d, 0s);
   opacity: 0;
 }
-@keyframes cd-big-sparkle {
+@keyframes cp-big-sparkle {
   0%   { transform: scale(0)   rotate(0deg);   opacity: 0; }
   30%  { transform: scale(1.4) rotate(45deg);  opacity: 1; }
   100% { transform: scale(0.7) rotate(90deg);  opacity: 0; }
 }
 
-/* シェイク (ssr/ur で sensing 中に画面が震える) */
-.cd-overlay[data-stage="sensing"][data-rarity="ssr"] .cd-stage,
-.cd-overlay[data-stage="sensing"][data-rarity="ur"] .cd-stage,
-.cd-overlay[data-stage="reveal"][data-rarity="ssr"] .cd-stage,
-.cd-overlay[data-stage="reveal"][data-rarity="ur"] .cd-stage {
-  animation: cd-shake 0.18s ease-in-out infinite;
+/* シェイク (ssr/ur で emerge 中ずっと震える) */
+.cp-overlay[data-stage="emerge"][data-rarity="ssr"] .cp-stage,
+.cp-overlay[data-stage="emerge"][data-rarity="ur"] .cp-stage,
+.cp-overlay[data-stage="reveal"][data-rarity="ssr"] .cp-stage,
+.cp-overlay[data-stage="reveal"][data-rarity="ur"] .cp-stage {
+  animation: cp-shake 0.18s ease-in-out infinite;
 }
-@keyframes cd-shake {
+@keyframes cp-shake {
   0%, 100% { transform: translate(0, 0); }
   25%      { transform: translate(-2px, 1px); }
   50%      { transform: translate(1px, -2px); }
   75%      { transform: translate(-1px, -1px); }
 }
 
-/* reveal 時のフラッシュ */
-.cd-flash {
+/* reveal フラッシュ */
+.cp-flash {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at center,
@@ -808,20 +987,51 @@ p { margin: 0.4em 0; }
   pointer-events: none;
   opacity: 0;
 }
-.cd-overlay[data-stage="reveal"] .cd-flash {
-  animation: cd-flash 750ms ease-out forwards;
+.cp-overlay[data-stage="reveal"] .cp-flash {
+  animation: cp-flash 700ms ease-out forwards;
 }
-@keyframes cd-flash {
+@keyframes cp-flash {
   0%   { opacity: 0; transform: scale(0.6); }
   30%  { opacity: 1; transform: scale(1.1); }
   100% { opacity: 0; transform: scale(2); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* モーション削減: 演出のループだけ止めて、フェード in/out は最小限残す */
-  .cd-card, .cd-rays span, .cd-rings span, .cd-particles span,
-  .cd-big-sparkles span, .cd-aura, .cd-stage {
+  .cp-pack-shake, .cp-card-peek, .cp-rays span, .cp-rings span, .cp-shreds span,
+  .cp-big-sparkles span, .cp-aura, .cp-stage, .cp-card-glow, .cp-pack-seal,
+  .cp-pack-tear, .cp-pack-shine {
     animation: none !important;
   }
-  .cd-overlay { background: rgba(0, 0, 0, 0.92); }
+  .cp-pack-shake { opacity: 1; }
+  .cp-overlay { background: rgba(0, 0, 0, 0.92); }
+}
+
+
+/* ─── カード登場アニメ ─────────────────── */
+/* CardPackOverlay の reveal が完了 → drawing が null になる瞬間にラッパーが remount され
+ *  (key={revealAnimKey})、card-spin-in が 1 度再生される。
+ *  サイズを小さく → 高速回転 → 着地まで 950ms。 */
+
+.card-stage {
+  transform-origin: center center;
+  perspective: 1200px;
+  animation: card-spin-in 950ms cubic-bezier(0.18, 0.7, 0.25, 1) both;
+}
+
+/* drawing 中はカード本体を隠す。overlay の z-index は上にあるが、念のため透過させて
+ *  reveal フェーズ終了直後の "新カードが既にそこに居る" 不自然さを回避。 */
+.card-stage--hidden {
+  visibility: hidden;
+  animation: none;
+}
+
+@keyframes card-spin-in {
+  0%   { opacity: 0; transform: rotateY(540deg) scale(0.15) translateY(-20%); filter: brightness(2.2); }
+  35%  { opacity: 1; transform: rotateY(180deg) scale(0.9) translateY(0);     filter: brightness(1.6); }
+  70%  { opacity: 1; transform: rotateY(20deg)  scale(1.08);                  filter: brightness(1.1); }
+  100% { opacity: 1; transform: rotateY(0deg)   scale(1);                     filter: brightness(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-stage { animation: none; }
 }
