@@ -128,6 +128,14 @@ export interface DiagnosisResult {
   cardAbilityCost?: {
     W?: number; U?: number; B?: number; R?: number; G?: number; generic?: number;
   } | null;
+  /** タップして起動する能力かどうか (creature / artifact の起動型に多い)。cardAbilityCost と独立、両方併用可。 */
+  cardAbilityTap?: boolean;
+  /** クリーチャーのキーワード能力 (先制攻撃 / トランプル / 飛行 等)。最大 3 個。 */
+  cardKeywords?: ReadonlyArray<string>;
+  /** クリーチャーのパワー (攻撃力)。1-7 程度の整数。 */
+  cardPower?: number;
+  /** クリーチャーのタフネス (防御力)。1-7 程度の整数。 */
+  cardToughness?: number;
   /** 後方互換 */
   flavorGeneratedAt?: string;
 }
