@@ -10,6 +10,7 @@ import { CARD_TYPES, COLORS, isRarity, manaCostColors, rollRarity } from '@aozor
 import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
+import { pickLocalLLM } from '@/lib/local-llm';
 import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CardPackOverlay } from '@/components/card-pack-overlay';
@@ -43,6 +44,11 @@ export function Card() {
   const [rarity, setRarity] = useState<Rarity>('common');
   const [frameVariant, setFrameVariant] = useState<1 | 2>(1);
   const [flavorBusy, setFlavorBusy] = useState(false);
+  // LLM (Gemini Nano 等) が今のブラウザで使えるか。null = まだ確認中。
+  // false なら引き直しボタンを無効化して、その理由をユーザーに見せる。
+  // (LLM 不可だと fallback 文言になり、ユーザーが「ハズレを引いた」感を持つので
+  //  そもそも引けないようにする。)
+  const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
   const [power, setPower] = useState<PointsState | null>(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'preparing' | 'posting' | 'posted'>('idle');
@@ -182,16 +188,29 @@ export function Card() {
     return () => { cancelled = true; };
   }, [profile?.avatar, profile?.did, session.status, session.agent, avatarDataUrl]);
 
+  // LLM 可用性を mount 時に 1 度だけ判定 (Gemini Nano が使えるかは Chrome のみ true)。
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const llm = await pickLocalLLM();
+      if (!cancelled) setLlmAvailable(llm !== null);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // 診断読み込みが終わったら、PDS にカードが無いときだけ初回生成 (コスト 0)
+  // LLM が使えない環境では fallback の生成も走らせない (味気ない既定カードを
+  // 見せるくらいなら何も出さず、Chrome で開き直してくれと案内する)。
   useEffect(() => {
     if (load.status !== 'ready') return;
+    if (llmAvailable !== true) return;
     // 既に PDS にカード情報があればそれを見せる (引き直すまで変わらない)
     const hasSaved = load.result.flavorText || load.result.cardEffect || load.result.cardRarity;
     if (hasSaved) return;
     // 初回生成: rarity を抽選して生成 + 保存
     void regenerateCard({ initial: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load.status]);
+  }, [load.status, llmAvailable]);
 
   const regenerateCard = useCallback(async (opts: { initial?: boolean }) => {
     if (load.status !== 'ready') return;
@@ -470,14 +489,20 @@ export function Card() {
         )}
       </p>
 
+      {llmAvailable === false && (
+        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+          このブラウザでは AI モデルが使えないため引き直しできません。Chrome (デスクトップ版、Gemini Nano 対応) でお試しください。
+        </p>
+      )}
+
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
         <button
-          disabled={flavorBusy || !!drawing || (!IS_DEV && (!power || power.balance < 1))}
+          disabled={flavorBusy || !!drawing || llmAvailable !== true || (!IS_DEV && (!power || power.balance < 1))}
           onClick={() => void regenerateCard({ initial: false })}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : IS_DEV ? '引き直す (dev: 無制限)' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
+            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'AI 確認中…' : llmAvailable === false ? 'AI 不可で引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>
