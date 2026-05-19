@@ -1015,6 +1015,11 @@ p { margin: 0.4em 0; }
 .card-stage {
   transform-origin: center center;
   perspective: 1200px;
+  /* will-change で GPU レイヤを事前確保し、フレームドロップを減らす。
+   *  filter (brightness) はモバイル GPU で激重なので使わない方針。
+   *  rotateY + scale + translateY だけならコンポジタで処理されてカクつかない。 */
+  will-change: transform, opacity;
+  backface-visibility: hidden;
   animation: card-spin-in 950ms cubic-bezier(0.18, 0.7, 0.25, 1) both;
 }
 
@@ -1026,10 +1031,21 @@ p { margin: 0.4em 0; }
 }
 
 @keyframes card-spin-in {
-  0%   { opacity: 0; transform: rotateY(540deg) scale(0.15) translateY(-20%); filter: brightness(2.2); }
-  35%  { opacity: 1; transform: rotateY(180deg) scale(0.9) translateY(0);     filter: brightness(1.6); }
-  70%  { opacity: 1; transform: rotateY(20deg)  scale(1.08);                  filter: brightness(1.1); }
-  100% { opacity: 1; transform: rotateY(0deg)   scale(1);                     filter: brightness(1); }
+  0%   { opacity: 0; transform: rotateY(540deg) scale(0.15) translateY(-20%); }
+  35%  { opacity: 1; transform: rotateY(180deg) scale(0.9) translateY(0); }
+  70%  { opacity: 1; transform: rotateY(20deg)  scale(1.08); }
+  100% { opacity: 1; transform: rotateY(0deg)   scale(1); }
+}
+
+/* モバイル想定のコンパクト幅では回転を抑えめにし、scale だけのフェードに。
+ *  rotateY の DOM/SVG リフレクトはモバイル GPU で重く、カクツキの主因になる。 */
+@media (max-width: 720px) {
+  .card-stage { animation: card-pop-in 650ms cubic-bezier(0.18, 0.7, 0.25, 1) both; }
+}
+@keyframes card-pop-in {
+  0%   { opacity: 0; transform: scale(0.5) translateY(-8%); }
+  60%  { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
