@@ -1024,8 +1024,9 @@ p { margin: 0.4em 0; }
 }
 
 /* drawing 中はカード本体を隠す。overlay の z-index は上にあるが、念のため透過させて
- *  reveal フェーズ終了直後の "新カードが既にそこに居る" 不自然さを回避。 */
-.card-stage--hidden {
+ *  reveal フェーズ終了直後の "新カードが既にそこに居る" 不自然さを回避。
+ *  compound selector で specificity を 0,2,0 に上げる (モバイル @media に勝つため)。 */
+.card-stage.card-stage--hidden {
   visibility: hidden;
   animation: none;
 }
