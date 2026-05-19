@@ -73,6 +73,15 @@ export function Search() {
     setSearchParams(next, { replace: true });
   }
 
+  /** タブ切替時に mode を変えつつ、すでに検索済みなら URL の mode= も書き戻す。 */
+  function switchMode(next: Mode) {
+    setMode(next);
+    if (!submittedQ) return; // 未検索ならまだ URL には書かない
+    const params = new URLSearchParams(searchParams);
+    if (next === 'posts') params.set('mode', 'posts'); else params.delete('mode');
+    setSearchParams(params, { replace: true });
+  }
+
   // URL の q が外部 (戻る/進む、別ページからのリンク) で変わったら state に追従
   useEffect(() => {
     const qFromUrl = searchParams.get('q') ?? '';
@@ -109,8 +118,8 @@ export function Search() {
       <h2>検索</h2>
 
       <div className="dq-tabs">
-        <button className={`dq-tab${mode === 'users' ? ' active' : ''}`} onClick={() => setMode('users')}>ユーザー</button>
-        <button className={`dq-tab${mode === 'posts' ? ' active' : ''}`} onClick={() => setMode('posts')}>投稿</button>
+        <button className={`dq-tab${mode === 'users' ? ' active' : ''}`} onClick={() => switchMode('users')}>ユーザー</button>
+        <button className={`dq-tab${mode === 'posts' ? ' active' : ''}`} onClick={() => switchMode('posts')}>投稿</button>
       </div>
 
       <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.7em' }}>
