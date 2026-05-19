@@ -420,9 +420,9 @@ export function Card() {
   // ready
   return (
     <div style={{ textAlign: 'center' }}>
-      <h2 style={{ marginTop: 0 }}>登録証</h2>
+      <h2 style={{ marginTop: 0 }}>ブルスコンカード</h2>
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        ブルスコンが羊皮紙にしたためた、今のあなたの姿。
+        ブルスコンがピックアップしたあなたのカード
       </p>
 
       <div
