@@ -112,17 +112,23 @@ export function Card() {
           const cardName = analysis.cardName
             ? stripMarkdown(analysis.cardName)
             : fallback.cardName;
+          // 旧フォーマットは「名前 ― 説明」を 1 つの cardEffect 文字列に詰めていた。
+          // 新フィールドが無ければ同じ regex で name / description を両方拾う。
+          const legacySplit = !analysis.cardEffectName && analysis.cardEffect
+            ? analysis.cardEffect.match(/^([^\s―—–\-]{1,12})\s*[―—–\-]\s*(.+)$/)
+            : null;
           const name = analysis.cardEffectName
             ? stripMarkdown(analysis.cardEffectName)
-            : fallback.effect.name;
+            : legacySplit
+              ? stripMarkdown(legacySplit[1]!)
+              : fallback.effect.name;
           const description = analysis.cardEffectDescription
             ? stripMarkdown(analysis.cardEffectDescription)
-            : analysis.cardEffect
-              ? (() => {
-                  const m = analysis.cardEffect.match(/^[^\s―—–\-]+\s*[―—–\-]\s*(.+)$/);
-                  return m ? stripMarkdown(m[1]!) : stripMarkdown(analysis.cardEffect);
-                })()
-              : fallback.effect.description;
+            : legacySplit
+              ? stripMarkdown(legacySplit[2]!)
+              : analysis.cardEffect
+                ? stripMarkdown(analysis.cardEffect)
+                : fallback.effect.description;
           const cardType = isCardType(analysis.cardType) ? analysis.cardType : fallback.type;
           const manaCost: ManaCost = (analysis.cardManaCost && typeof analysis.cardManaCost === 'object')
             ? analysis.cardManaCost
