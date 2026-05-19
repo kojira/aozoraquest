@@ -102,4 +102,4 @@ AI は全部ブラウザ内で動く (Chrome の Gemini Nano)。データはあ�
 
 - AT Protocol: https://atproto.com
 - Transformers.js: https://huggingface.co/docs/transformers.js
-- Cloudflare Pages / Workers: https://developers.cloudflare.com
+- Cloudflare Workers: https://developers.cloudflare.com
