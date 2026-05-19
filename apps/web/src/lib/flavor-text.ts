@@ -194,13 +194,15 @@ const STRUCTURE_BY_TYPE: Record<'creature' | 'instant' | 'sorcery' | 'artifact',
   // 「対象呪い」「全体作用」は creature 能力でも有り得るが、典型ではないので除外。
   creature: ['etb', 'triggered', 'static-buff', 'activated-tap', 'activated-mana', 'conditional', 'choice', 'drawback'],
   // instant/sorcery は 1 度きりの能動効果。
-  instant: ['conditional', 'choice', 'drawback', 'replacement', 'sacrifice', 'all-affect', 'target-curse'],
-  sorcery: ['conditional', 'choice', 'drawback', 'replacement', 'sacrifice', 'all-affect', 'target-curse'],
+  // 'replacement' は「~を受けるたび、代わりに~として扱う」型で永続作用前提のため除外
+  // (instant/sorcery は場に留まらず 1 度だけ解決するので「~するたび」と相性が悪い)。
+  instant: ['conditional', 'choice', 'drawback', 'sacrifice', 'all-affect', 'target-curse'],
+  sorcery: ['conditional', 'choice', 'drawback', 'sacrifice', 'all-affect', 'target-curse'],
   // artifact は道具。タップ起動 / マナ起動 / 静的が中心。
   artifact: ['activated-tap', 'activated-mana', 'static-buff', 'conditional', 'all-affect', 'target-curse'],
 };
 
-function pickStructure(_seed?: number, type?: 'creature' | 'instant' | 'sorcery' | 'artifact'): typeof STRUCTURE_PATTERNS[number] {
+function pickStructure(type?: 'creature' | 'instant' | 'sorcery' | 'artifact'): typeof STRUCTURE_PATTERNS[number] {
   // type 指定があればそれ用の構造リストでフィルタ、なければ全 12 構造から抽選。
   const allowedIds = type ? STRUCTURE_BY_TYPE[type] : null;
   const pool = allowedIds
@@ -902,7 +904,7 @@ export function parseCardTypeString_TEST(raw: string): CardType | null {
 }
 /** @internal test 用に export。 */
 export function pickStructure_TEST(type?: 'creature' | 'instant' | 'sorcery' | 'artifact') {
-  return pickStructure(undefined, type);
+  return pickStructure(type);
 }
 /** @internal test 用に export。 */
 export function pickEffectInspirations_TEST(structureId: string, n: number): string[] {
@@ -1177,7 +1179,7 @@ async function generateWithLLM(
 
   // テーマと効果構造もランダム化 (毎回違う切り口・型を強制して類似化を防ぐ)。
   const theme = pickAbilityTheme();
-  const structure = pickStructure(undefined, fixedType);
+  const structure = pickStructure(fixedType);
 
   console.info(`[card-text] tone=${tone} (${TONE_LABEL[tone]}), rarity=${rarity}, fixedType=${fixedType}, theme="${theme}", structure="${structure.label}"`);
 
