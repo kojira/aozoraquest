@@ -113,9 +113,10 @@ export function Card() {
             ? stripMarkdown(analysis.cardName)
             : fallback.cardName;
           // 旧フォーマットは「名前 ― 説明」を 1 つの cardEffect 文字列に詰めていた。
-          // 新フィールドが無ければ同じ regex で name / description を両方拾う。
+          // 区切り文字は em/en/zenkaku の長 dash のみ (ASCII hyphen は本文に混入し
+          // やすく、「あ-い-う」のような行を name=「あ」desc=「い-う」と誤分割する)。
           const legacySplit = !analysis.cardEffectName && analysis.cardEffect
-            ? analysis.cardEffect.match(/^([^\s―—–\-]{1,12})\s*[―—–\-]\s*(.+)$/)
+            ? analysis.cardEffect.match(/^([^\s―—–]{1,12})\s*[―—–]\s*(.+)$/)
             : null;
           const name = analysis.cardEffectName
             ? stripMarkdown(analysis.cardEffectName)
