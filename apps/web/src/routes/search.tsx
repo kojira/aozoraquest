@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { AppBskyActorDefs, AppBskyFeedDefs } from '@atproto/api';
 import type { Archetype } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -15,9 +15,14 @@ type Mode = 'users' | 'posts';
 
 export function Search() {
   const session = useSession();
-  const [mode, setMode] = useState<Mode>('users');
-  const [q, setQ] = useState('');
-  const [submittedQ, setSubmittedQ] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // URL の ?q= を初期値にセット。ハッシュタグ (#...) や引用記法から飛んできた時に
+  // そのまま投稿モードで検索が走るよう、# 始まりは mode=posts に振る。
+  const initialQ = searchParams.get('q') ?? '';
+  const initialMode: Mode = searchParams.get('mode') === 'posts' || initialQ.startsWith('#') ? 'posts' : 'users';
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [q, setQ] = useState(initialQ);
+  const [submittedQ, setSubmittedQ] = useState(initialQ);
 
   const agent = session.agent;
 
@@ -61,7 +66,31 @@ export function Search() {
     const t = q.trim();
     if (!t) return;
     setSubmittedQ(t);
+    // ブックマーク・共有ができるよう URL に反映 (#始まりは posts モードも一緒に書く)
+    const next = new URLSearchParams(searchParams);
+    next.set('q', t);
+    if (mode === 'posts' || t.startsWith('#')) next.set('mode', 'posts'); else next.delete('mode');
+    setSearchParams(next, { replace: true });
   }
+
+  // URL の q が外部 (戻る/進む、別ページからのリンク) で変わったら state に追従
+  useEffect(() => {
+    const qFromUrl = searchParams.get('q') ?? '';
+    if (qFromUrl !== submittedQ) {
+      setQ(qFromUrl);
+      setSubmittedQ(qFromUrl);
+      const modeFromUrl = searchParams.get('mode') === 'posts' || qFromUrl.startsWith('#') ? 'posts' : 'users';
+      setMode(modeFromUrl);
+    }
+    // submittedQ を deps に入れると loop するので意図的に除外
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // 以下は早期 return より前に置く (Hooks ルール: 順序を維持)
+  const userDids = useMemo(() => users.items.map((u) => u.did), [users.items]);
+  const postAuthorDids = useMemo(() => posts.items.map((p) => p.author.did), [posts.items]);
+  const usersArchetypes = useArchetypes(agent ?? null, userDids);
+  const postsArchetypes = useArchetypes(agent ?? null, postAuthorDids);
 
   if (session.status !== 'signed-in') {
     return (
@@ -74,11 +103,6 @@ export function Search() {
   }
 
   const active = mode === 'users' ? users : posts;
-
-  const userDids = useMemo(() => users.items.map((u) => u.did), [users.items]);
-  const postAuthorDids = useMemo(() => posts.items.map((p) => p.author.did), [posts.items]);
-  const usersArchetypes = useArchetypes(agent ?? null, userDids);
-  const postsArchetypes = useArchetypes(agent ?? null, postAuthorDids);
 
   return (
     <div>

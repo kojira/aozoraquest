@@ -188,15 +188,24 @@ const STRUCTURE_PATTERNS: readonly { id: string; label: string; description: str
   { id: 'target-curse', label: '対象呪い', description: '「対象アカウントは〜できなくなる/〜が起こり続ける」型のデバフ' },
 ];
 
+/** カードタイプ毎に許容される構造 ID リスト。pickStructure と prompt の説明文の整合を取る要。 */
+const STRUCTURE_BY_TYPE: Record<'creature' | 'instant' | 'sorcery' | 'artifact', readonly StructureId[]> = {
+  // creature は場に居続けるカード。登場時 / 常在トリガー / 静的 / タップ起動 / マナ起動 / 選択 / 代償 が自然。
+  // 「対象呪い」「全体作用」は creature 能力でも有り得るが、典型ではないので除外。
+  creature: ['etb', 'triggered', 'static-buff', 'activated-tap', 'activated-mana', 'conditional', 'choice', 'drawback'],
+  // instant/sorcery は 1 度きりの能動効果。
+  instant: ['conditional', 'choice', 'drawback', 'replacement', 'sacrifice', 'all-affect', 'target-curse'],
+  sorcery: ['conditional', 'choice', 'drawback', 'replacement', 'sacrifice', 'all-affect', 'target-curse'],
+  // artifact は道具。タップ起動 / マナ起動 / 静的が中心。
+  artifact: ['activated-tap', 'activated-mana', 'static-buff', 'conditional', 'all-affect', 'target-curse'],
+};
+
 function pickStructure(_seed?: number, type?: 'creature' | 'instant' | 'sorcery' | 'artifact'): typeof STRUCTURE_PATTERNS[number] {
-  // creature 向きの構造を優先で選ぶ場合のフィルタ
-  let pool = STRUCTURE_PATTERNS;
-  if (type === 'instant' || type === 'sorcery') {
-    // instant/sorcery は登場時・常在トリガー・静的・タップ起動が使えない (1 度きり)
-    pool = STRUCTURE_PATTERNS.filter((p) => ['conditional', 'choice', 'drawback', 'replacement', 'sacrifice', 'all-affect', 'target-curse'].includes(p.id));
-  } else if (type === 'artifact') {
-    pool = STRUCTURE_PATTERNS.filter((p) => ['activated-tap', 'activated-mana', 'static-buff', 'conditional', 'all-affect', 'target-curse'].includes(p.id));
-  }
+  // type 指定があればそれ用の構造リストでフィルタ、なければ全 12 構造から抽選。
+  const allowedIds = type ? STRUCTURE_BY_TYPE[type] : null;
+  const pool = allowedIds
+    ? STRUCTURE_PATTERNS.filter((p) => (allowedIds as readonly string[]).includes(p.id))
+    : STRUCTURE_PATTERNS;
   return pool[Math.floor(Math.random() * pool.length)] ?? STRUCTURE_PATTERNS[0]!;
 }
 
@@ -875,6 +884,35 @@ const ALLOWED_KEYWORDS = [
   '二段攻撃', '威迫', '到達', '呪禁', '護法', '防衛',
 ];
 
+/** @internal test 用に export。本番コードからは直接呼ばない。 */
+export function parseKeywordsString_TEST(raw: string): string[] {
+  return parseKeywordsString(raw);
+}
+/** @internal test 用に export。 */
+export function parseStatNumber_TEST(raw: string): number | undefined {
+  return parseStatNumber(raw);
+}
+/** @internal test 用に export。 */
+export function parseManaCostString_TEST(raw: string): ManaCost {
+  return parseManaCostString(raw);
+}
+/** @internal test 用に export。 */
+export function parseCardTypeString_TEST(raw: string): CardType | null {
+  return parseCardTypeString(raw);
+}
+/** @internal test 用に export。 */
+export function pickStructure_TEST(type?: 'creature' | 'instant' | 'sorcery' | 'artifact') {
+  return pickStructure(undefined, type);
+}
+/** @internal test 用に export。 */
+export function pickEffectInspirations_TEST(structureId: string, n: number): string[] {
+  return pickEffectInspirations(structureId as StructureId, n);
+}
+/** @internal test 用に export。重み付き抽選を多数回実行した時の分布チェック用。 */
+export function pickCardType_TEST(): string {
+  return pickCardType();
+}
+
 function parseKeywordsString(raw: string): string[] {
   const trimmed = raw.trim();
   if (!trimmed || /^(なし|無し|none|0|-|—|―)$/i.test(trimmed)) return [];
@@ -893,7 +931,9 @@ function parseStatNumber(raw: string): number | undefined {
   const m = trimmed.match(/(\d+)/);
   if (!m) return undefined;
   const n = Number(m[1]);
-  if (!Number.isFinite(n) || n < 0 || n > 20) return undefined;
+  // プロンプトは P/T を 1-7 で指示しているので、それ以外は parse 失敗扱いにして
+  // 上位で fallback (rarity 連動の default) に落とす。0 や 8+ を弾く。
+  if (!Number.isFinite(n) || n < 1 || n > 7) return undefined;
   return n;
 }
 
