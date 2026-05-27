@@ -1,9 +1,25 @@
-# Cloudflare Pages/Workers 静的アセット向けキャッシュ設定。
+# Cloudflare Workers Builds 静的アセット向けキャッシュ + セキュリティヘッダ。
 # Vite の chunk hash が毎デプロイで変わる前提で、index.html は毎回 revalidate、
 # assets/ (hash 付き) は 1 年 immutable。
 # これがないと、古い index.html がキャッシュされたまま新 deploy の chunk に
 # アクセスしてしまい、SPA fallback で HTML が返って MIME エラー → クラッシュ
 # ループ (iOS Safari でよく起きる) を引き起こす。
+
+# 全リクエストに共通のセキュリティヘッダ。
+# - X-Frame-Options / frame-ancestors: クリックジャッキング防止
+# - X-Content-Type-Options: MIME sniffing 抑止 (SPA fallback の MIME 事故対策にも効く)
+# - Referrer-Policy: 遷移先に full URL を漏らさない (Bluesky 投稿等にプライベート情報を入れない方針と整合)
+# - Permissions-Policy: 第三者広告系 API を全 disable (FLoC, topics 等)
+# - CSP (enforce): frame-ancestors / base-uri / object-src だけ強制。本番動作を壊さない最小セット
+# - CSP-Report-Only: より厳しい完全版を観察モードで配信。違反は DevTools で確認できる
+#   (送信先サーバは持っていないので report-uri は付けない)。enforce へ昇格させる時の参考にする
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: interest-cohort=(), browsing-topics=()
+  Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.bsky.app https://*.bsky.app https://*.bsky.social https://*.bsky.network https://i.ytimg.com; media-src 'self' blob: https://*.bsky.app https://*.bsky.network; connect-src 'self' https://api.bsky.app https://*.bsky.app https://*.bsky.network https://bsky.social https://plc.directory https://huggingface.co https://*.huggingface.co https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://bsky.social
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
