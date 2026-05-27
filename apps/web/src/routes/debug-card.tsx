@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { JobCard } from '@/components/job-card';
 import type { Archetype, CardType, DiagnosisResult, ManaCost, Rarity } from '@aozoraquest/core';
-import { isRarity } from '@aozoraquest/core';
+import { isArchetype, isCardType, isRarity, sanitizeManaCost } from '@aozoraquest/core';
 
 /** 同 origin の fetch → blob → dataURL で inline。CORS が通れば成功。 */
 async function fetchAsDataUrl(url: string): Promise<string | null> {
@@ -76,8 +76,10 @@ export function DebugCard() {
   }, [profile]);
 
   // URL パラメータで JobCard の全フィールドを上書きできるようにする (README ヒーロー
-  // 画像など、特定の見え方を再現したい時用)。
-  const archetype = (params.get('archetype') ?? 'sage') as Archetype;
+  // 画像など、特定の見え方を再現したい時用)。任意 URL 文字列はすべてホワイトリスト
+  // ガード or sanitizer を通してから JobCard に渡す。
+  const archetypeParam = params.get('archetype') ?? 'sage';
+  const archetype: Archetype = isArchetype(archetypeParam) ? archetypeParam : 'sage';
   const rarityParam = params.get('rarity') ?? 'rare';
   const rarity: Rarity = isRarity(rarityParam) ? rarityParam : 'rare';
   const cardName = params.get('cardName') ?? undefined;
@@ -85,18 +87,19 @@ export function DebugCard() {
   const effectDescription = params.get('effectDescription') ?? '対象プレイヤーの手札を 1 枚ランダムに公開する。';
   const flavorText = params.get('flavor') ?? '夜の街並みは、星よりも遠くに灯りを散らす。それでも見上げる者には、必ず一つは見つかる。';
   const flavorAttribution = params.get('flavorAttr') ?? 'アゾラ';
-  const cardTypeParam = (params.get('cardType') ?? 'creature') as CardType;
+  const cardTypeRaw = params.get('cardType') ?? 'creature';
+  const cardTypeParam: CardType = isCardType(cardTypeRaw) ? cardTypeRaw : 'creature';
   const manaCost: ManaCost = (() => {
     const raw = params.get('manaCost');
-    if (!raw) return { U: 1, generic: 2 };
-    try { return JSON.parse(raw) as ManaCost; } catch { return { U: 1, generic: 2 }; }
+    if (!raw) return sanitizeManaCost({ U: 1, generic: 2 });
+    try { return sanitizeManaCost(JSON.parse(raw)); } catch { return sanitizeManaCost({ U: 1, generic: 2 }); }
   })();
   const abilityCostRaw = params.get('abilityCost');
   const abilityCost: ManaCost | null = abilityCostRaw === null
     ? null
     : abilityCostRaw === 'null' || abilityCostRaw === ''
       ? null
-      : (() => { try { return JSON.parse(abilityCostRaw) as ManaCost; } catch { return null; } })();
+      : (() => { try { return sanitizeManaCost(JSON.parse(abilityCostRaw)); } catch { return null; } })();
   const abilityTap = params.get('tap') === '1';
   const keywords = (params.get('keywords') ?? '').split(/[,、]/).map((s) => s.trim()).filter(Boolean);
   const powerParam = params.get('power');
