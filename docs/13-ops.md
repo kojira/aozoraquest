@@ -4,8 +4,8 @@
 
 Aozora Quest は**バックエンドレス**のため、運用は以下だけに絞られる:
 
-1. **CI/CD**: GitHub → Cloudflare Pages の自動デプロイ (本体 PWA + 管理画面、2 プロジェクト)
-2. **モニタリング**: Cloudflare Web Analytics (匿名集計のみ、PII なし)
+1. **CI/CD**: GitHub → Cloudflare Workers Builds の自動デプロイ (本体 PWA + 管理画面、2 プロジェクト)
+2. **モニタリング**: 解析サービス無し (Cloudflare ダッシュボードの基本ログのみ)
 3. **シークレット管理**: BYOK 関連の秘匿 (ユーザー各自)、管理者の OAuth クレデンシャル
 4. **法務**: 商標性のある性格類型論表記を使わない、AT Protocol ToS、Cloudflare ToS
 
@@ -13,22 +13,22 @@ Aozora Quest は**バックエンドレス**のため、運用は以下だけに
 
 ---
 
-## CI/CD (GitHub Actions → Cloudflare Pages)
+## CI/CD (GitHub Actions → Cloudflare Workers Builds)
 
 ### リポジトリ構造とブランチ戦略
 
-- `main` ブランチ = 本番相当 (Cloudflare Pages の production)
+- `main` ブランチ = 本番相当 (Cloudflare Workers Builds の production)
 - PR は `feature/*` → `main` への merge で運用
 - タグ `v*.*.*` でリリース扱い
 
-### Cloudflare Pages プロジェクト (2 つ)
+### Cloudflare Workers Builds プロジェクト (2 つ)
 
 | プロジェクト | ドメイン | Build 対象 |
 |---|---|---|
 | `aozoraquest-web` | `aozoraquest.app` | `apps/web` |
 | `aozoraquest-admin` | `admin.aozoraquest.app` | `apps/admin` |
 
-Cloudflare Pages の GitHub 連携で、push / PR preview が自動発動。
+Cloudflare Workers Builds の GitHub 連携で、push / PR preview が自動発動。
 
 ### ワークフロー (`.github/workflows/ci.yml`)
 
@@ -68,7 +68,7 @@ jobs:
       - run: pnpm test:e2e
 ```
 
-Cloudflare Pages の build 設定は UI で登録 (09-tech-stack.md §本番ビルド参照)。CI は test/lint の gating、deploy は Pages 側が担当。
+Cloudflare Workers Builds の build 設定は UI で登録 (09-tech-stack.md §本番ビルド参照)。CI は test/lint の gating、deploy は Pages 側が担当。
 
 ### 手動デプロイ (管理ダッシュボードから)
 
@@ -90,19 +90,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: ${{ inputs.ref }} }
-      # ... build + push to Cloudflare Pages via wrangler or Pages API
+      # ... build + push to Cloudflare Workers Builds via wrangler or Pages API
 ```
 
 ## モニタリング
 
-### Cloudflare Web Analytics (唯一の監視)
-
-- Cloudflare Pages の設定で Web Analytics を有効化
-- クライアントサイドスクリプト不要 (サーバーサイド計測)
-- 取得項目: PV、ユニーク訪問 (匿名)、国別、デバイス、Core Web Vitals
-- PII なし、Cookie なし
-
-管理ダッシュボード (14-admin.md §(i)) からダッシュボード URL に遷移して閲覧。
+**採用しない**。プライバシー第一の方針として、解析サービス・トラッキング・Cookie は導入しない (README の差別化主張と整合)。Cloudflare ダッシュボードに残るデプロイログとリクエスト統計の範囲で運用する。
 
 ### エラートラッキング
 
@@ -193,7 +186,7 @@ fi
 - ユーザーの個人情報はすべて AT Protocol PDS に保存 (= Bluesky または自己ホストの PDS)
 - **Aozora Quest 運営者は PII を一切保持しない**
 - 法務上の「データ保持者」は Bluesky または当該 PDS 運営者
-- Cloudflare Web Analytics は Cookie / PII なしなので GDPR 問題なし
+- 解析サービス・Cookie を導入していないため GDPR 上の追加対応不要
 
 ### プライバシーポリシー / 利用規約
 
@@ -206,13 +199,13 @@ fi
 
 - ユーザーデータ: PDS 側のバックアップに依存 (Bluesky 運営または self-hosted PDS 管理者の責任)
 - 運用コンフィグ: 主管理者 PDS のコミット履歴に自動保存 (AT Protocol の仕組み)
-- 静的アセット: GitHub にソースがある、ビルド成果物は Cloudflare Pages が履歴保持
+- 静的アセット: GitHub にソースがある、ビルド成果物は Cloudflare Workers Builds が履歴保持
 
 ### 障害復旧プロセス
 
 | 障害 | 対応 |
 |---|---|
-| aozoraquest.app が落ちた | Cloudflare Pages の deployments からロールバック (14-admin.md §(h) 参照) |
+| aozoraquest.app が落ちた | Cloudflare Workers Builds の deployments からロールバック (14-admin.md §(h) 参照) |
 | 主管理者 PDS が落ちた | アプリはデフォルト値でフォールバック起動、PDS 復旧を待つ (Bluesky 公式 PDS なら通常数時間) |
 | Cloudflare が大規模障害 | 静的配信不能 → ユーザーは既存ブラウザキャッシュで動く。新規アクセスは待機 |
 | 主管理者アカウント乗っ取り | 被害範囲調査 → ADMIN_DIDS から除外して再デプロイ → コンフィグレコードを前バージョンに revert |
@@ -221,7 +214,7 @@ fi
 
 | 項目 | 月額見積 |
 |---|---|
-| Cloudflare Pages (本体 + 管理画面、2 プロジェクト) | **$0** (Free プラン: 500 ビルド/月、100GB 転送/月) |
+| Cloudflare Workers Builds (本体 + 管理画面、2 プロジェクト) | **$0** (Free プラン: 500 ビルド/月、100GB 転送/月) |
 | ドメイン (aozoraquest.app) | $10/年 ÷ 12 ≈ **$0.83** |
 | モニタリング (Cloudflare Analytics) | **$0** |
 | 合計 | **< $1/月** |

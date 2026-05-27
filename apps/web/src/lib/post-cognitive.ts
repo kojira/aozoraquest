@@ -11,7 +11,7 @@
  *   なので URI = 一意で OK)。TTL 30 日
  *
  * PC/モバイル共通で `getAnalyzePosts()` (デフォルト OFF) の設定で制御。
- * モバイルは LLM (TinySwallow) と違って Ruri 30m は ~30MB で OOM しないため
+ * モバイルは大型 LLM (~1GB) と違って Ruri 30m は ~30MB で OOM しないため
  * ハードゲートしない (旧 commit 2e50d3f で誤って LLM の OOM 経験を流用していた)。
  */
 

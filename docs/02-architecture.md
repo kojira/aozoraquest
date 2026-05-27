@@ -27,7 +27,7 @@
 └─────────────┘ └─────────────┘ └──────────┘ └─────────────┘
 ```
 
-サーバー層は存在しない。Aozora Quest の開発者が運用するホストは **Cloudflare Pages (静的配信) のみ**。Worker や独自 API は用意しない。
+サーバー層は存在しない。Aozora Quest の開発者が運用するホストは **Cloudflare Workers Builds (静的配信) のみ**。Worker や独自 API は用意しない。
 
 - ユーザーデータはユーザーの PDS に保存
 - 運用コンフィグ (フラグ、プロンプト、メンテ、BAN) は主管理者 DID の PDS に保存し、全クライアント が boot 時に読み取る (14-admin.md)
@@ -37,7 +37,7 @@
 
 ### Client (SPA)
 
-Vite + React で静的ビルドされる SPA。Cloudflare Pages でホスティングし、`aozoraquest.app` 配下に配置する。Service Worker は導入せず、キャッシュは CDN (Cloudflare Pages) と IndexedDB (Transformers.js の標準キャッシュ) に委ねる。オンライン前提で動作し、ネットワーク障害時はエラー表示とする。
+Vite + React で静的ビルドされる SPA。Cloudflare Workers Builds でホスティングし、`aozoraquest.app` 配下に配置する。Service Worker は導入せず、キャッシュは CDN (Cloudflare Workers Builds) と IndexedDB (Transformers.js の標準キャッシュ) に委ねる。オンライン前提で動作し、ネットワーク障害時はエラー表示とする。
 
 **責務**:
 - UI 描画とユーザー操作のハンドリング

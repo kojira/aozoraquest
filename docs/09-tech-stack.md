@@ -4,7 +4,7 @@
 
 | レイヤー | 技術 | 備考 |
 |---|---|---|
-| ホスティング (Web + 管理画面) | Cloudflare Pages | 静的配信、SSL、CDN。Worker / Functions は使わない |
+| ホスティング (Web + 管理画面) | Cloudflare Workers Builds | 静的配信、SSL、CDN。Worker / Functions は使わない |
 | フロントエンドフレームワーク | Vite + React 18+ | SPA + 静的ビルド。`vite build` で配信用 `dist/` を出力 |
 | ルーティング | React Router v7 (data mode) | 明示ルート定義。ファイルベースは採用しない |
 | UI ライブラリ | React 18+ | |
@@ -183,7 +183,7 @@ createRoot(document.getElementById('root')!).render(<RouterProvider router={rout
 
 ### SPA フォールバック
 
-React Router は History API ベース (`createBrowserRouter`)。Cloudflare Pages の SPA モードを有効化するか、`public/_redirects` に以下を置いて全ルートを `index.html` に戻す:
+React Router は History API ベース (`createBrowserRouter`)。Cloudflare Workers Builds の SPA モードを有効化するか、`public/_redirects` に以下を置いて全ルートを `index.html` に戻す:
 
 ```
 /*    /index.html   200
@@ -552,7 +552,7 @@ pnpm --filter @aozoraquest/web build
 pnpm --filter @aozoraquest/admin build
 ```
 
-### Cloudflare Pages デプロイ
+### Cloudflare Workers Builds デプロイ
 
 GitHub 連携で自動デプロイ。本体 SPA と管理画面は**別プロジェクト**として登録する (サブドメインと XSS 分離のため、14-admin.md §サブドメインとホスティング)。
 

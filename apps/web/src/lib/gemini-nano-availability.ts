@@ -3,7 +3,7 @@
  *
  * 戻り値:
  *  - 'available'    : すぐ使える
- *  - 'downloadable' : 端末は対応するが、モデル未 DL (今回は使わず TinySwallow に fallback)
+ *  - 'downloadable' : 端末は対応するが、モデル未 DL (今回は使わず fallback 経路に倒す)
  *  - 'downloading'  : ユーザーが他サイトで DL を開始済みの途中
  *  - 'unavailable'  : 環境非対応 (Firefox/Safari/Android/古い Chrome 等)
  */
