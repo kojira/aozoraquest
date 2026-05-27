@@ -16,7 +16,7 @@ import { useTranslation } from '@/lib/translate';
  * (縦方向は画像が中央、テキストは alignSelf: flex-start で上部配置)。
  * 外部リンクカードがある場合はテキスト / 画像行の下にフル幅で追加。
  *
- * `postUri` が渡されると、非日本語投稿に対して TinySwallow による翻訳を
+ * `postUri` が渡されると、非日本語投稿に対してローカル LLM による翻訳を
  * オンデマンドで表示 (自動翻訳設定 ON ならロード時に自動開始)。
  */
 export interface PostBodyProps {

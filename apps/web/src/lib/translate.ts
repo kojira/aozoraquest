@@ -38,7 +38,7 @@ export function shouldAutoTranslate(text: string, langs?: string[] | undefined):
 }
 
 // ── 直列キュー ──
-// TinySwallow worker は 1 本しか捌けないので、複数の翻訳要求は並列に投げず
+// ローカル LLM は 1 本しか捌けないので、複数の翻訳要求は並列に投げず
 // 順番に処理する。Promise チェーンで素朴に直列化。
 let chain: Promise<unknown> = Promise.resolve();
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {

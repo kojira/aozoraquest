@@ -170,8 +170,8 @@ export function Profile() {
   );
 }
 
-/** プロフィール bio の翻訳対応ラッパー。本文と同じ TinySwallow/Nano 経路を
- *  使うが、URI が無いので合成キー `profile-bio:<did>` を翻訳キャッシュ key に。 */
+/** プロフィール bio の翻訳対応ラッパー。本文と同じ翻訳経路 (Gemini Nano + fallback)
+ *  を使うが、URI が無いので合成キー `profile-bio:<did>` を翻訳キャッシュ key に。 */
 function ProfileBio({ did, description }: { did: string; description: string }) {
   const cacheKey = `profile-bio:${did}`;
   const { state, translated, error, triggerTranslate, retranslate, isNonJapanese } =
