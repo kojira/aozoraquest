@@ -581,9 +581,14 @@ frame-ancestors 'none'; base-uri 'self'; object-src 'none'
 
 #### Report-Only 部分 (完全版、観察モード)
 
-`default-src 'self'` を起点に、外部接続先 (Bluesky AppView / PDS / PLC ディレクトリ / Hugging Face モデル CDN / YouTube 埋め込み 等) を明示列挙する。違反は DevTools で確認できるが配信は止まらない。実運用で違反ゼロを確認できたら enforce 側に昇格させる。
+`default-src 'self'` を起点に、必要なディレクティブだけ広げる:
 
-`wasm-unsafe-eval` は Transformers.js (Ruri-v3 30m ONNX) の WASM 実行に必要。`plc.directory` は主管理者 DID → PDS エンドポイントの解決に使う。クラウド LLM API への接続元は CSP からも除外している (10-roadmap.md §決定ログ 2026-05-27)。
+- `script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net` — Transformers.js が動的 import する ONNX Runtime の `.mjs` を許可
+- `worker-src 'self' blob: https://cdn.jsdelivr.net` — 同上 (Worker からも fetch)
+- `connect-src 'self' https:` — AT Protocol は任意 PDS (self-hosted 含む) と OAuth 先に届くため、scheme 制限 (HTTPS のみ) で実用十分。Mixed content だけ防げればよい
+- `img-src` / `font-src` / `style-src` / `frame-src` — 実コードで使う特定ドメインのみ列挙
+
+違反は DevTools で確認できるが配信は止まらない。実運用で違反ゼロを確認できたら enforce 側に昇格させる。クラウド LLM API への接続元は意図的に列挙していない (10-roadmap.md §決定ログ 2026-05-27)。
 
 ### 認証情報の扱い
 
