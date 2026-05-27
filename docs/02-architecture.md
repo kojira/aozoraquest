@@ -124,7 +124,7 @@ AT Protocol のデフォルト PDS (Bluesky 社が運営) または self-hosted 
 
 ### 外部 LLM API
 
-**採用しない**。プライバシー第一・商用化しない方針のため、クラウド LLM API への送信機能 (BYOK / 中継 Worker を含む) は採用しない (2026-04-20 決定、10-roadmap.md §決定ログ参照)。LLM 推論はすべて端末内で完結する:
+**採用しない**。プライバシー第一・商用化しない方針のため、クラウド LLM API への送信機能 (BYOK / 中継 Worker を含む) は採用しない (10-roadmap.md §決定ログ 2026-05-27)。LLM 推論はすべて端末内で完結する:
 
 - 認知機能分類: ONNX/WASM の Ruri-v3 ベース 30m モデル
 - 生成系 (カードフレーバー、精霊会話、翻訳): Chrome の Gemini Nano

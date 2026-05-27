@@ -1,5 +1,7 @@
 # Gemini 3.1 Flash Lite Preview ベンチマーク
 
+> **注 (2026-05-27)**: 本ドキュメントは検証当時の判断記録。**クラウド LLM API (BYOK 含む) は採用しない**方針が後に確定したため (10-roadmap.md §決定ログ)、本文中の「Gemini をクラウド経由で BYOK 呼び出しする」前提の結論は現行採用していない。歴史的経緯としてのみ参照すること。
+
 11-validation.md §実験 1 の比較。`scripts/validate-llm-gemini.ts` で生成。
 
 - モデル: `gemini-3.1-flash-lite-preview`
