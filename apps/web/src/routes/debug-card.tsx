@@ -36,6 +36,10 @@ export function DebugCard() {
   const handle = params.get('handle');
   const [profile, setProfile] = useState<{ displayName: string; handle: string; avatar: string | null } | null>(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
+  /** avatar inline 試行が完了した (成功・失敗・未試行 = false / settled = true)。
+   *  Playwright が __cardReady を待つために必要 (CORS で fetch が失敗しても
+   *  「試した」事実を React state に残して描画完了を判定可能にする)。 */
+  const [avatarSettled, setAvatarSettled] = useState(false);
   const [profileErr, setProfileErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,6 +65,7 @@ export function DebugCard() {
           const inlined = await fetchAsDataUrl(data.avatar);
           if (!cancelled && inlined) setAvatarDataUrl(inlined);
         }
+        if (!cancelled) setAvatarSettled(true);
       } catch (e) {
         if (cancelled) return;
         setProfileErr(String((e as Error)?.message ?? e));
@@ -74,6 +79,17 @@ export function DebugCard() {
       (window as unknown as { __cardSvg?: SVGSVGElement }).__cardSvg = svgRef.current;
     }
   }, [profile]);
+
+  // capture-hero-card.ts 等の外部ツールから、SVG + avatar 解決が両方完了した
+  // タイミングを確実に拾えるよう、window に Ready フラグを公開する。
+  // waitForTimeout(1500) のような flaky な sleep に依存せず waitForFunction で待てる。
+  // avatar inline は CORS で失敗する環境もあるので「試行が完了したか」(avatarSettled)
+  // で判定し、成功/失敗に関わらず描画後に立てる。
+  useEffect(() => {
+    const w = window as unknown as { __cardReady?: boolean };
+    w.__cardReady = !!(svgRef.current && profile && avatarSettled);
+    return () => { w.__cardReady = false; };
+  }, [profile, avatarSettled]);
 
   // URL パラメータで JobCard の全フィールドを上書きできるようにする (README ヒーロー
   // 画像など、特定の見え方を再現したい時用)。任意 URL 文字列はすべてホワイトリスト
