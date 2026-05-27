@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { JobCard } from '@/components/job-card';
-import type { DiagnosisResult } from '@aozoraquest/core';
+import type { Archetype, CardType, DiagnosisResult, ManaCost, Rarity } from '@aozoraquest/core';
+import { isArchetype, isCardType, isRarity, sanitizeManaCost } from '@aozoraquest/core';
 
 /** 同 origin の fetch → blob → dataURL で inline。CORS が通れば成功。 */
 async function fetchAsDataUrl(url: string): Promise<string | null> {
@@ -74,15 +75,47 @@ export function DebugCard() {
     }
   }, [profile]);
 
+  // URL パラメータで JobCard の全フィールドを上書きできるようにする (README ヒーロー
+  // 画像など、特定の見え方を再現したい時用)。任意 URL 文字列はすべてホワイトリスト
+  // ガード or sanitizer を通してから JobCard に渡す。
+  const archetypeParam = params.get('archetype') ?? 'sage';
+  const archetype: Archetype = isArchetype(archetypeParam) ? archetypeParam : 'sage';
+  const rarityParam = params.get('rarity') ?? 'rare';
+  const rarity: Rarity = isRarity(rarityParam) ? rarityParam : 'rare';
+  const cardName = params.get('cardName') ?? undefined;
+  const effectName = params.get('effectName') ?? '星読み';
+  const effectDescription = params.get('effectDescription') ?? '対象プレイヤーの手札を 1 枚ランダムに公開する。';
+  const flavorText = params.get('flavor') ?? '夜の街並みは、星よりも遠くに灯りを散らす。それでも見上げる者には、必ず一つは見つかる。';
+  const flavorAttribution = params.get('flavorAttr') ?? 'アゾラ';
+  const cardTypeRaw = params.get('cardType') ?? 'creature';
+  const cardTypeParam: CardType = isCardType(cardTypeRaw) ? cardTypeRaw : 'creature';
+  const manaCost: ManaCost = (() => {
+    const raw = params.get('manaCost');
+    if (!raw) return sanitizeManaCost({ U: 1, generic: 2 });
+    try { return sanitizeManaCost(JSON.parse(raw)); } catch { return sanitizeManaCost({ U: 1, generic: 2 }); }
+  })();
+  const abilityCostRaw = params.get('abilityCost');
+  const abilityCost: ManaCost | null = abilityCostRaw === null
+    ? null
+    : abilityCostRaw === 'null' || abilityCostRaw === ''
+      ? null
+      : (() => { try { return sanitizeManaCost(JSON.parse(abilityCostRaw)); } catch { return null; } })();
+  const abilityTap = params.get('tap') === '1';
+  const keywords = (params.get('keywords') ?? '').split(/[,、]/).map((s) => s.trim()).filter(Boolean);
+  const powerParam = params.get('power');
+  const toughnessParam = params.get('toughness');
+  const power = powerParam ? Number(powerParam) : undefined;
+  const toughness = toughnessParam ? Number(toughnessParam) : undefined;
+
   const result: DiagnosisResult = {
-    archetype: 'sage',
+    archetype,
     rpgStats: { atk: 30, def: 50, agi: 40, int: 95, luk: 60 },
     cognitiveScores: { Ni: 90, Ne: 60, Si: 50, Se: 30, Ti: 80, Te: 50, Fi: 40, Fe: 55 },
     confidence: 'high',
     analyzedPostCount: 250,
     analyzedAt: '2026-04-15T00:00:00Z',
     playerLevel: { xp: 1200, streakDays: 5 },
-    jobLevel: { archetype: 'sage', xp: 800, joinedAt: '2026-04-01T00:00:00Z' },
+    jobLevel: { archetype, xp: 800, joinedAt: '2026-04-01T00:00:00Z' },
   };
 
   if (!handle) {
@@ -112,16 +145,24 @@ export function DebugCard() {
         <JobCard
           ref={svgRef}
           result={result}
-          effectName="星読み"
+          effectName={effectName}
           effectCost="このカードをタップする。"
-          effectDescription="対象プレイヤーの手札を 1 枚ランダムに公開する。"
-          flavorText="夜の街並みは、星よりも遠くに灯りを散らす。それでも見上げる者には、必ず一つは見つかる。"
-          flavorAttribution="アゾラ"
-          rarity="rare"
+          effectDescription={effectDescription}
+          flavorText={flavorText}
+          flavorAttribution={flavorAttribution}
+          rarity={rarity}
           frameVariant={1}
+          cardType={cardTypeParam}
+          manaCost={manaCost}
+          abilityCost={abilityCost}
+          abilityTap={abilityTap}
+          {...(cardName ? { cardName } : {})}
+          {...(keywords.length > 0 ? { keywords } : {})}
+          {...(power !== undefined && Number.isFinite(power) ? { power } : {})}
+          {...(toughness !== undefined && Number.isFinite(toughness) ? { toughness } : {})}
           displayName={profile.displayName}
           handle={profile.handle}
-          artSrc="/card-art/sage.jpg"
+          artSrc={`/card-art/${archetype}.jpg`}
           {...((avatarDataUrl ?? profile.avatar) ? { avatarSrc: avatarDataUrl ?? profile.avatar! } : {})}
         />
       </div>
