@@ -1,5 +1,5 @@
 /**
- * TinySwallow が使えないときの archetype ごとのハンドクラフト card テキスト集。
+ * LLM が使えないときの archetype ごとのハンドクラフト card テキスト集。
  * effect (MTG ルール文相当) + flavor (italic の詩文) の 2 セット。
  */
 

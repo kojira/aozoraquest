@@ -10,6 +10,7 @@
  */
 import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -48,14 +49,11 @@ async function main() {
   const page = await ctx.newPage();
   await page.goto(url.toString(), { waitUntil: 'networkidle' });
 
-  // SVG が render されて window.__cardSvg がセットされるまで待つ。
+  // debug-card 側で SVG + avatar inline 完了で立てる __cardReady フラグを待つ。
+  // waitForTimeout で待っていた以前の実装は flaky だった。
   await page.waitForFunction(() => {
-    const svg = (window as unknown as { __cardSvg?: SVGSVGElement }).__cardSvg;
-    return !!svg;
-  }, undefined, { timeout: 10000 });
-
-  // 少し待ってアバター画像が data URL に inline されるのを待つ。
-  await page.waitForTimeout(1500);
+    return (window as unknown as { __cardReady?: boolean }).__cardReady === true;
+  }, undefined, { timeout: 15000 });
 
   // SVG bounding box 周辺をキャプチャ。
   const svgElement = page.locator('svg').first();
@@ -66,6 +64,17 @@ async function main() {
   console.log(`[capture] saved → ${OUT}  (${buf.byteLength} bytes)`);
 
   await browser.close();
+
+  // pngquant があれば自動圧縮 (8bit パレット PNG)。GitHub README は毎 view で
+  // PNG を配るので帯域削減になる。pngquant 未インストールなら警告のみで継続。
+  const quant = spawnSync('pngquant', ['--force', '--quality', '70-90', '--strip', '--skip-if-larger', '--output', OUT, OUT], { stdio: 'inherit' });
+  if (quant.status === 0) {
+    const fs = await import('node:fs/promises');
+    const stat = await fs.stat(OUT);
+    console.log(`[capture] pngquant → ${stat.size} bytes`);
+  } else {
+    console.log('[capture] pngquant not available or no gain (skipped)');
+  }
 }
 
 main().catch((e) => {
