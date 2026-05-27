@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "System prompt for a specific Claude/OpenRouter-backed feature (admin-owned)",
+      "description": "System prompt for a local-LLM-backed feature (admin-owned, applied to Gemini Nano etc.)",
       "key": "any",
       "record": {
         "type": "object",
