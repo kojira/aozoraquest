@@ -340,7 +340,7 @@ function AutoTranslateToggle() {
         <span>日本語以外の投稿を自動で翻訳する</span>
       </label>
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
-        ブラウザ内で TinySwallow が動くので外部に送信されません。OFF にした場合も各投稿下の「🌐 翻訳する」ボタンから個別に翻訳できます。
+        翻訳はブラウザ内 LLM で動くので外部に送信されません。OFF にした場合も各投稿下の「🌐 翻訳する」ボタンから個別に翻訳できます。
       </p>
     </div>
   );
