@@ -9,6 +9,7 @@ export function Tos() {
         <li>共鳴タイムラインのために主管理者 DID の PDS から公開コンフィグを読み取ります。</li>
         <li>気質診断は Bluesky 公開投稿のみを対象とし、ブラウザ内で完結します。</li>
       </ul>
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>最終更新: 2026-05-27</p>
     </div>
   );
 }
