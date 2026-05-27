@@ -16,6 +16,10 @@ export const ARCHETYPES = [
 ] as const;
 export type Archetype = (typeof ARCHETYPES)[number];
 
+export function isArchetype(s: unknown): s is Archetype {
+  return typeof s === 'string' && (ARCHETYPES as readonly string[]).includes(s);
+}
+
 export type StatVector = Record<Stat, number>;
 export type CognitiveScores = Record<CogFunction, number>;
 

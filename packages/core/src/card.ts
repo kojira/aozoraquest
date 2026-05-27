@@ -29,6 +29,10 @@ export interface ManaCost {
 export const CARD_TYPES = ['creature', 'artifact', 'instant', 'sorcery'] as const;
 export type CardType = (typeof CARD_TYPES)[number];
 
+export function isCardType(s: unknown): s is CardType {
+  return typeof s === 'string' && (CARD_TYPES as readonly string[]).includes(s);
+}
+
 /** 枠色の分類 (UI 表示用)。 */
 export type FrameColor = 'colorless' | Color | 'gold';
 

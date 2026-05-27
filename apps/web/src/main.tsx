@@ -43,7 +43,11 @@ const router = createBrowserRouter([
       { path: 'oauth/callback', element: <OAuthCallback /> },
       { path: 'tos', element: <Tos /> },
       { path: 'privacy', element: <Privacy /> },
-      { path: 'debug/card', element: <DebugCard /> },
+      // 任意 URL でカード偽装 → スクショされる悪用を避けるため、本番ビルドでは
+      // /debug/card route 自体を登録しない (vite が条件式を静的解釈して
+      // dead-code elimination)。ヒーロー画像生成 (scripts/capture-hero-card.ts)
+      // は dev サーバー前提なので影響なし。
+      ...(import.meta.env.DEV ? [{ path: 'debug/card', element: <DebugCard /> }] : []),
     ],
   },
 ]);
