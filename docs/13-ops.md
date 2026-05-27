@@ -68,7 +68,7 @@ jobs:
       - run: pnpm test:e2e
 ```
 
-Cloudflare Workers Builds の build 設定は UI で登録 (09-tech-stack.md §本番ビルド参照)。CI は test/lint の gating、deploy は Pages 側が担当。
+Cloudflare Workers Builds の build 設定は UI で登録 (09-tech-stack.md §本番ビルド参照)。CI は test/lint の gating、deploy は Workers Builds 側が担当。
 
 ### 手動デプロイ (管理ダッシュボードから)
 
@@ -90,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: ${{ inputs.ref }} }
-      # ... build + push to Cloudflare Workers Builds via wrangler or Pages API
+      # ... build + push to Cloudflare Workers Builds via wrangler
 ```
 
 ## モニタリング
@@ -113,7 +113,7 @@ GitHub Actions repository secrets に登録:
 
 | 名前 | 用途 |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Pages デプロイ (Pages Edit スコープのみ) |
+| `CLOUDFLARE_API_TOKEN` | Workers Builds デプロイ (Edit スコープのみ) |
 | `CLOUDFLARE_ACCOUNT_ID` | 同上 |
 
 **ローテーション**: 年 1 回程度の見直しで十分 (ボトルネックではない)。漏洩が判明したら即座に revoke、新規発行。
@@ -138,7 +138,7 @@ GitHub Actions repository secrets に登録:
 
 - 新しい CDN を追加するとき
 - 新しい LLM プロバイダーを追加するとき (OpenRouter 以外)
-- Cloudflare Analytics 以外の計測を入れないこと
+- 解析サービス・トラッキング Cookie を一切入れないこと (README の差別化主張と整合)
 
 ### 依存性監査
 
@@ -216,7 +216,7 @@ fi
 |---|---|
 | Cloudflare Workers Builds (本体 + 管理画面、2 プロジェクト) | **$0** (Free プラン: 500 ビルド/月、100GB 転送/月) |
 | ドメイン (aozoraquest.app) | $10/年 ÷ 12 ≈ **$0.83** |
-| モニタリング (Cloudflare Analytics) | **$0** |
+| モニタリング | **$0** (解析サービス無し、Cloudflare 標準ログのみ) |
 | 合計 | **< $1/月** |
 
 スケールしても Cloudflare の有料プランで月 $20 程度が上限目安。商用化しない前提 (01-overview.md §収益モデル) のためコストは最小化。

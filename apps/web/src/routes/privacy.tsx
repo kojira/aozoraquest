@@ -9,6 +9,7 @@ export function Privacy() {
         <li>解析サービス・トラッキング・Cookie の利用はありません。</li>
         <li>発見 ON にしたユーザーの DID は、主管理者 DID の PDS に公開レコードとして掲載されます。</li>
       </ul>
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>最終更新: 2026-05-27</p>
     </div>
   );
 }
