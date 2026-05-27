@@ -288,12 +288,11 @@ SVG で実装。`react-native-svg` とも互換性があるようにする。
    - ジョブ表示名のバリアント (既定 / 生産系 / 別系統)
    - 診断結果の公開設定 (publicAnalysis)
    - 発見 ON/OFF (discoverable、共鳴 TL への掲載オプトイン。ON にすると publicAnalysis も自動的に ON)
-2. **AI 接続 (BYOK)**
-   - プロバイダー選択: Anthropic / OpenRouter
-   - API キーの入力 (暗号化して IndexedDB 保存)
-   - モデル選択 (プロバイダーごとに選択肢が変わる。Anthropic: Haiku / Sonnet / Opus、OpenRouter: 一覧から検索)
-   - 接続確認ボタン (小さな test プロンプトで疎通確認)
-   - キー未設定の場合、LLM 依存機能 (自由対話、上位診断、投稿ドラフト) はグレーアウト
+2. **AI 機能の状態**
+   - 端末の Gemini Nano 可用性表示 (available / downloading / unavailable)
+   - 未対応時の案内文 (Chrome デスクトップへ誘導)
+   - 自動翻訳 ON/OFF
+   - リポスト非表示など各種フィード設定
 3. **通知**
    - クエスト到着通知
    - 仲間追加通知
@@ -413,7 +412,7 @@ ATK 25% DEF 14% AGI 10% INT 37% LUK 14%
 └────────────────────────────────────────┘
 ```
 
-「精霊に案」ボタン押下 (BYOK) で、ユーザーが選択したモデル (Claude Haiku 相当) が現在のクエストに合った下書きを 3 案生成して挿入。
+「精霊に案」ボタン押下で、Chrome の Gemini Nano が現在のクエストに合った下書きを生成して挿入する。Gemini Nano 未対応のブラウザではボタンを表示しない。
 
 ## ダークモード
 

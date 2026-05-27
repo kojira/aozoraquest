@@ -14,7 +14,7 @@
 | AT Protocol | `@atproto/api`, `@atproto/oauth-client-browser` | 公式 |
 | LLM (ローカル) | `@huggingface/transformers` v4 | WebGPU、ブラウザ内埋め込み |
 | 埋め込みモデル | `sirasagi62/ruri-v3-30m-ONNX` (int8, ~37MB, 256次元、日本語ネイティブ) | 11-validation.md §実験 1 で確定 (docs/data/llm-benchmark.md)。Ruri v3 = ModernBERT-ja 基盤、JMTEB STS 82.48。差し替え時は `packages/core/src/embedding-config.ts` と プロトタイプ事前埋め込みを同時に更新 |
-| LLM (BYOK) | Anthropic / OpenRouter | ユーザーが選択した API キーでブラウザから直接呼び出す。Anthropic は `@anthropic-ai/sdk`、OpenRouter は OpenAI 互換なので `openai` SDK |
+| LLM (生成) | Chrome 標準の Gemini Nano (Prompt API) | カードフレーバー / 翻訳 / 精霊会話の生成に使用。未対応ブラウザでは生成系を OFF。クラウド LLM API は採用しない (10-roadmap.md §決定ログ 2026-05-27) |
 | クライアントストレージ | IndexedDB (via `idb` または `dexie`) | |
 | 型検証 | Zod | |
 | ビルドシステム | pnpm + Turbo | モノレポ |
@@ -326,85 +326,14 @@ async function createExtractor() {
 
 WASM 版は 5-10 倍遅い。その場合は UI で「処理に時間がかかります」を表示。
 
-## 外部 LLM 呼び出し (BYOK、プロバイダー抽象化)
+## 生成 LLM の呼び出し (Chrome の Gemini Nano)
 
-外部 LLM を使う機能 (精霊自由対話、上位診断、投稿下書き生成) はすべて**ユーザー自身の API キーでブラウザから直接呼ぶ**。開発者は API キーを保持せず、中継 Worker も用意しない。ユーザーは Anthropic / OpenRouter のいずれかを選択できる。
+カードフレーバー / 翻訳 / 精霊会話の生成は、Chrome の Prompt API (Gemini Nano) を呼ぶ。クラウド LLM API (BYOK 含む) は採用しない方針 (10-roadmap.md §決定ログ 2026-05-27)。
 
-### 対応プロバイダー
-
-| プロバイダー | エンドポイント | 依存 | 特徴 |
-|---|---|---|---|
-| Anthropic | `https://api.anthropic.com/v1/messages` | `@anthropic-ai/sdk` | Claude ネイティブ |
-| OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `openai` (OpenAI SDK) | OpenAI 互換、多数のモデル |
-
-### プロバイダー抽象
-
-```typescript
-// packages/core/src/llm.ts (簡略)
-import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
-
-export type Provider = 'anthropic' | 'openrouter';
-export interface ChatMessage { role: 'user' | 'assistant'; content: string }
-export interface BYOKConfig {
-  provider: Provider;
-  apiKey: string;
-  model: string;
-}
-
-export async function* streamChat(
-  cfg: BYOKConfig,
-  system: string,
-  messages: ChatMessage[]
-): AsyncGenerator<string> {
-  if (cfg.provider === 'anthropic') {
-    const client = new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true });
-    const stream = client.messages.stream({
-      model: cfg.model,
-      max_tokens: 512,
-      system,
-      messages,
-    });
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        yield event.delta.text;
-      }
-    }
-  } else {
-    // OpenRouter は OpenAI 互換
-    const client = new OpenAI({
-      apiKey: cfg.apiKey,
-      baseURL: 'https://openrouter.ai/api/v1',
-      dangerouslyAllowBrowser: true,
-      defaultHeaders: {
-        'HTTP-Referer': 'https://aozoraquest.app',
-        'X-Title': 'Aozora Quest',
-      },
-    });
-    const stream = await client.chat.completions.create({
-      model: cfg.model,
-      max_tokens: 512,
-      stream: true,
-      messages: [{ role: 'system', content: system }, ...messages],
-    });
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (delta) yield delta;
-    }
-  }
-}
-```
-
-`system` プロンプトはどちらのプロバイダーでも同じ文面を渡せるようにする (プロンプトエンジニアリング側でプロバイダー依存の書き分けを避ける)。プロンプトは管理者 PDS の `app.aozoraquest.config.prompts` (rkey=`spiritChat`) から boot 時に取得する (14-admin.md §(c))。
-
-### モデル識別子の例
-
-| プロバイダー | 識別子の形 | 例 |
-|---|---|---|
-| Anthropic | Anthropic 公式のモデル ID | `claude-haiku-4-5-20251001` |
-| OpenRouter | `<provider>/<model>` | `anthropic/claude-haiku-4.5`、`openai/gpt-5`、`google/gemini-2.5-flash` |
-
-UI 上ではプロバイダー選択 → モデル選択の 2 段構成にする (07-ui-design.md §AI 接続)。
+- 可用性検出: `apps/web/src/lib/gemini-nano-availability.ts`
+- バックエンド統合: `apps/web/src/lib/local-llm.ts` の `pickLocalLLM()` が利用可能な実装を返す
+- 未対応ブラウザでは生成系機能を UI 側で OFF にして案内する (例: `apps/web/src/routes/card.tsx` の引き直しボタン)
+- system prompt は管理者 PDS の `app.aozoraquest.config.prompts` (rkey=`spiritChat`) から boot 時に取得する (14-admin.md §(c))
 
 ## 公開コンフィグの取得
 
@@ -645,20 +574,17 @@ default-src 'self';
 script-src 'self' 'wasm-unsafe-eval';
 connect-src 'self' https://*.bsky.app https://*.bsky.network
             https://bsky.social https://plc.directory
-            https://api.anthropic.com https://openrouter.ai
             https://huggingface.co https://cdn.jsdelivr.net;
 img-src 'self' https://cdn.bsky.app https://*.bsky.social data: blob:;
 worker-src 'self' blob:;
 ```
 
-`wasm-unsafe-eval` は Transformers.js の WASM 実行に必要。`plc.directory` は主管理者 DID → PDS エンドポイントの解決に使う。`openrouter.ai` は BYOK 経由の LLM 呼び出し先。
+`wasm-unsafe-eval` は Transformers.js の WASM 実行に必要。`plc.directory` は主管理者 DID → PDS エンドポイントの解決に使う。クラウド LLM API への接続元は CSP からも除外している (10-roadmap.md §決定ログ 2026-05-27)。
 
-### API キーの扱い (BYOK)
+### 認証情報の扱い
 
-- IndexedDB に保存
-- Web Crypto API で AES-GCM 暗号化 (Origin-bound key)
-- メモリ内では使用時だけ展開
-- UI にはマスク表示のみ
+- AT Protocol OAuth の access token は DPoP バインドされ、ブラウザ内でセッション管理
+- クラウド LLM API への送信機能 (BYOK 含む) を採用していないため、追加で保管する API キーは無い
 
 ## 多言語対応
 
