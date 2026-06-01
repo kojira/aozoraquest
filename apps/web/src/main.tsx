@@ -46,10 +46,14 @@ const router = createBrowserRouter([
       { path: 'tos', element: <Tos /> },
       { path: 'privacy', element: <Privacy /> },
       // 任意 URL でカード偽装 → スクショされる悪用を避けるため、本番ビルドでは
-      // /debug/card route 自体を登録しない (vite が条件式を静的解釈して
-      // dead-code elimination)。ヒーロー画像生成 (scripts/capture-hero-card.ts)
-      // は dev サーバー前提なので影響なし。
-      ...(import.meta.env.DEV ? [
+      // /debug/* route 自体を登録しない (vite が条件式を静的解釈して
+      // dead-code elimination)。
+      //   - ローカル dev (pnpm dev): import.meta.env.DEV = true で含まれる
+      //   - CI の e2e (card-share-size.spec.ts): VITE_INCLUDE_DEBUG=1 を build 時に
+      //     渡すことで preview ビルドにも含める
+      //   - 本番 Cloudflare Workers Builds: 両方 false で除外される
+      // ヒーロー画像生成 (scripts/capture-hero-card.ts) は dev サーバー前提。
+      ...((import.meta.env.DEV || import.meta.env.VITE_INCLUDE_DEBUG === '1') ? [
         { path: 'debug/card', element: <DebugCard /> },
         { path: 'debug/radar', element: <DebugRadar /> },
         { path: 'debug/me', element: <DebugMe /> },
