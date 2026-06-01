@@ -105,6 +105,8 @@ export function DebugMe() {
   return (
     // README 用のヒーロー画像なので、本物の AppShell + 背景なしで content だけ
     // 撮りやすいよう独立した dq-window 風コンテナで包む。
+    // background は半透明にすると body の青空グラデが透けて PNG にゴミ
+    // (草地ライン等) が混ざるため、不透明な濃紺を使う。
     <div
       ref={wrapRef}
       data-hero-me="1"
@@ -112,8 +114,7 @@ export function DebugMe() {
         display: 'inline-block',
         width: '480px',
         padding: '20px 24px',
-        background: 'rgba(0, 0, 0, 0.78)',
-        border: '3px solid #ffffff',
+        background: '#0a0420',
         borderRadius: '4px',
         color: '#ffffff',
         fontFamily: "'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif",
