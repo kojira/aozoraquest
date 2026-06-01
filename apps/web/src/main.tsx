@@ -17,6 +17,7 @@ import { OAuthCallback } from '@/routes/oauth-callback';
 import { Tos } from '@/routes/tos';
 import { Privacy } from '@/routes/privacy';
 import { DebugCard } from '@/routes/debug-card';
+import { DebugRadar } from '@/routes/debug-radar';
 import { AppShell } from '@/components/app-shell';
 import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
@@ -47,7 +48,10 @@ const router = createBrowserRouter([
       // /debug/card route 自体を登録しない (vite が条件式を静的解釈して
       // dead-code elimination)。ヒーロー画像生成 (scripts/capture-hero-card.ts)
       // は dev サーバー前提なので影響なし。
-      ...(import.meta.env.DEV ? [{ path: 'debug/card', element: <DebugCard /> }] : []),
+      ...(import.meta.env.DEV ? [
+        { path: 'debug/card', element: <DebugCard /> },
+        { path: 'debug/radar', element: <DebugRadar /> },
+      ] : []),
     ],
   },
 ]);
