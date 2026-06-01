@@ -40,7 +40,9 @@ async function main() {
 
   const wrap = page.locator('[data-hero-me="1"]').first();
   await wrap.waitFor({ state: 'visible' });
-  const buf = await wrap.screenshot({ type: 'png', omitBackground: true });
+  // wrap div の不透明 background (#0a0420) があるので omitBackground は不要。
+  // むしろ true にすると body の青空グラデが透けて PNG にゴミが混ざる。
+  const buf = await wrap.screenshot({ type: 'png' });
 
   await writeFile(OUT, buf);
   console.log(`[capture] saved → ${OUT}  (${buf.byteLength} bytes)`);
