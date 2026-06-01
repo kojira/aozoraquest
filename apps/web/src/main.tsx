@@ -18,6 +18,7 @@ import { Tos } from '@/routes/tos';
 import { Privacy } from '@/routes/privacy';
 import { DebugCard } from '@/routes/debug-card';
 import { DebugRadar } from '@/routes/debug-radar';
+import { DebugMe } from '@/routes/debug-me';
 import { AppShell } from '@/components/app-shell';
 import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
@@ -51,6 +52,7 @@ const router = createBrowserRouter([
       ...(import.meta.env.DEV ? [
         { path: 'debug/card', element: <DebugCard /> },
         { path: 'debug/radar', element: <DebugRadar /> },
+        { path: 'debug/me', element: <DebugMe /> },
       ] : []),
     ],
   },
