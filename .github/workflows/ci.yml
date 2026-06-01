@@ -41,10 +41,16 @@ jobs:
         #   VITE_NSID_ROOT (= app.aozoraquest 等のプロジェクト固有 prefix)
         # 任意:
         #   VITE_NSID_ENV (dev では "dev"、prod では未設定 / 空)
+        # CI 限定:
+        #   VITE_INCLUDE_DEBUG=1 — /debug/* route (debug-card / debug-radar /
+        #     debug-me) を preview ビルドに含める。card-share-size.spec.ts が
+        #     /debug/card に依存しているため。Cloudflare Workers Builds 側では
+        #     未設定なので本番に debug ルートは含まれない。
         env:
           VITE_APP_URL: ${{ vars.VITE_APP_URL }}
           VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
           VITE_NSID_ENV: ${{ vars.VITE_NSID_ENV }}
+          VITE_INCLUDE_DEBUG: '1'
         run: pnpm --filter @aozoraquest/web build
 
       - name: Install Playwright browsers
