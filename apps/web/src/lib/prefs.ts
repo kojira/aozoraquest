@@ -58,3 +58,36 @@ export function setHideReposts(v: boolean): void {
     /* no-op */
   }
 }
+
+const KEY_FONT_SCALE = 'aozoraquest:fontScale';
+export const FONT_SCALE_MIN = 50;
+export const FONT_SCALE_MAX = 150;
+export const FONT_SCALE_DEFAULT = 100;
+
+/** html の font-size に乗せる % 倍率。50-150 の整数。デフォルト 100。
+ *  ブラウザのデフォルト 16px に対する倍率なので、100 = 16px、80 = 12.8px。 */
+export function getFontScale(): number {
+  try {
+    const raw = localStorage.getItem(KEY_FONT_SCALE);
+    if (raw === null) return FONT_SCALE_DEFAULT;
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) return FONT_SCALE_DEFAULT;
+    return clampFontScale(n);
+  } catch {
+    return FONT_SCALE_DEFAULT;
+  }
+}
+
+export function setFontScale(v: number): void {
+  try {
+    localStorage.setItem(KEY_FONT_SCALE, String(clampFontScale(v)));
+  } catch {
+    /* no-op */
+  }
+}
+
+export function clampFontScale(v: number): number {
+  if (v < FONT_SCALE_MIN) return FONT_SCALE_MIN;
+  if (v > FONT_SCALE_MAX) return FONT_SCALE_MAX;
+  return Math.round(v);
+}
