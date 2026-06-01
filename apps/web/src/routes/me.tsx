@@ -320,7 +320,7 @@ const COGNITIVE_LABEL: Record<string, string> = {
   Fe: '場の調和',
 };
 
-function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () => void }) {
+export function ResultView({ result, onRerun }: { result: DiagnosisResult; onRerun: () => void }) {
   const jobName = jobDisplayName(result.archetype, 'default');
   const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
