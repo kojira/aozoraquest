@@ -94,7 +94,12 @@ export function RadarChart({ stats, compare, size = 220, max = 100, normalize = 
       height={size}
       role="img"
       aria-label="ステータスのレーダーチャート"
-      style={{ display: 'block' }}
+      // 軸ラベル (「攻 23」等) は radius + labelOffset の位置に置くため、viewBox の
+      // 端ぎりぎりに描かれる。SVG のデフォルト overflow は環境依存なので、明示的に
+      // visible にして親要素側に描画させる。debug-radar の screenshot で右ラベルが
+      // 切れる事故 (PNG 撮影時のクリップ) を防ぐ。
+      overflow="visible"
+      style={{ display: 'block', overflow: 'visible' }}
     >
       {/* グリッド (5 段階の五角形) */}
       {gridLevels.map((level, idx) => {
