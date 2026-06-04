@@ -23,7 +23,10 @@ import { AppShell } from '@/components/app-shell';
 import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
 import { ComposeProvider } from '@/components/compose-modal';
+import { initFontScale } from '@/lib/font-scale';
 import '@/styles.css';
+
+initFontScale();
 
 const router = createBrowserRouter([
   {

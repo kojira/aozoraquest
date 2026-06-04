@@ -7,7 +7,8 @@ import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts } from '@/lib/prefs';
+import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale } from '@/lib/prefs';
+import { applyFontScale } from '@/lib/font-scale';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
@@ -305,6 +306,7 @@ export function Settings() {
 
       <section style={{ marginTop: '2em' }}>
         <h3 style={{ fontSize: '0.95em' }}>表示設定</h3>
+        <FontScaleSlider />
         <AutoTranslateToggle />
         <AnalyzePostsToggle />
         <HideRepostsToggle />
@@ -319,6 +321,62 @@ export function Settings() {
         )}
         <button onClick={onSignOut}>ログアウト</button>
       </section>
+    </div>
+  );
+}
+
+function FontScaleSlider() {
+  const [scale, setScale] = useState<number>(() => getFontScale());
+
+  // ドラッグ中は 1% 単位で即時プレビュー (DOM の font-size だけ書き換える)。
+  // 操作完了時に 5 の倍数へスナップし、localStorage に確定保存する。
+  function handleDrag(v: number) {
+    const next = clampFontScale(v);
+    setScale(next);
+    applyFontScale(next);
+  }
+
+  function commit() {
+    const snapped = clampFontScale(Math.round(scale / 5) * 5);
+    setScale(snapped);
+    applyFontScale(snapped);
+    setFontScale(snapped);
+  }
+
+  function reset() {
+    setScale(FONT_SCALE_DEFAULT);
+    applyFontScale(FONT_SCALE_DEFAULT);
+    setFontScale(FONT_SCALE_DEFAULT);
+  }
+
+  return (
+    <div style={{ marginTop: '0.5em', marginBottom: '0.8em' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6em', fontSize: '0.9em' }}>
+        <span>文字サイズ</span>
+        <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', minWidth: '3em', textAlign: 'right' }}>{scale}%</span>
+        <button
+          type="button"
+          onClick={reset}
+          style={{ padding: '0.15em 0.6em', fontSize: '0.75em' }}
+        >標準</button>
+      </div>
+      <input
+        type="range"
+        min={FONT_SCALE_MIN}
+        max={FONT_SCALE_MAX}
+        step={1}
+        value={scale}
+        onChange={(e) => handleDrag(parseInt(e.target.value, 10))}
+        onMouseUp={commit}
+        onTouchEnd={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+        style={{ width: '100%', marginTop: '0.4em' }}
+        aria-label="文字サイズ"
+      />
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
+        アプリ全体の文字サイズを {FONT_SCALE_MIN}% 〜 {FONT_SCALE_MAX}% で調整します。離した時に 5% 単位に揃います。「標準」で 100% に戻ります。
+      </p>
     </div>
   );
 }
