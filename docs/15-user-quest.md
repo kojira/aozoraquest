@@ -371,7 +371,17 @@ AT Proto には逆引き API がないため、「公開クエスト一覧」「
 
 既存 `apps/admin` の OAuth client_id とは別 client_id にする (admin SPA は public client、quest Worker は confidential client、混在不可)。
 
-**Cloudflare Workers 動作確認**: `@atproto/oauth-client-node` は Node.js 想定だが、Workers の `nodejs_compat` flag + `wrangler.toml` で動く想定。**Phase 1 着手時の最初の PoC でこの組み合わせを実機検証する**。動かなければ Web Crypto Subtle で JWT 署名 + DPoP を手書きする代替ルートに切り替える (実装量増えるが仕様準拠で動かせる)。Workers がどうしても無理なら Cloudflare Pages Functions または別ホスト (Fly.io 等) で Node ランタイムに逃げる選択肢もある。
+**Cloudflare Workers 動作確認 (PoC 2026-06-05 実施)**: `@atproto/oauth-client-node` を `nodejs_compat` 付き Workers にロードすると **import 評価で失敗** することが確定。原因は内部依存 `undici` が `process.env.NODE_DEBUG.split(',')` を初期化時に評価するため、Workers の polyfill では `undefined.split` で死ぬ。`@atproto-labs/fetch-node` 自体も `https.Agent` 依存で Workers 互換ではない。
+
+そのため、**Workers では `@atproto/oauth-client` (core) を直接使い、Node 依存部分を Web Crypto Subtle + Web 標準 `fetch` で自前 adapter として書く** ルートを採る:
+
+- 鍵管理: Web Crypto SubtleCrypto (`importKey('jwk', ...)`, `sign('ECDSA', ...)`) で ES256
+- JWT 署名: `private_key_jwt` 用 `client_assertion` を自前で組み立て
+- DPoP: Web Crypto で都度署名
+- セッション永続化: Cloudflare KV (or Durable Objects)
+- HTTP: Workers ネイティブの `fetch` を使う Runtime adapter
+
+実装量は増えるが、仕様 (`atproto.com/specs/oauth`) は明確で、参照実装 (`@atproto/oauth-client-node` のソース) を読みながら Workers ネイティブ化していく。`apps/edge/src/oauth-probe.ts` で PoC の足跡を残してある。
 
 **クライアント → Worker** の認証は **クライアント自身の Bluesky access token を Bearer で送り**、Worker が AppView 経由で `getSession` を呼び本人検証する。これで「他人のクエストを勝手に index に乗せる」を防ぐ。
 
