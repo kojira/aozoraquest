@@ -59,6 +59,9 @@ export function Board() {
           </span>
         )}
       </header>
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em' }}>
+        <Link to="/quests">📓 日次クエスト (個人用)</Link>
+      </p>
 
       <div className="dq-tabs" role="tablist">
         <div className={`dq-tab ${tab === 'open' ? 'active' : ''}`} role="tab" onClick={() => setTab('open')}>
