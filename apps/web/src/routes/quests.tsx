@@ -236,6 +236,9 @@ export function Quests() {
           : '—'}{' '}
         / 累計 {history.length} 日分の記録
       </p>
+      <p style={{ fontSize: '0.85em', marginTop: '0.2em' }}>
+        <Link to="/board">📜 依頼クエスト掲示板を見る →</Link>
+      </p>
 
       {err && <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {err}</p>}
       {loading && history.length === 0 && <p style={{ color: 'var(--color-muted)' }}>読み込み中...</p>}
