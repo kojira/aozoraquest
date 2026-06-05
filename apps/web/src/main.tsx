@@ -16,6 +16,9 @@ import { Onboarding } from '@/routes/onboarding';
 import { OAuthCallback } from '@/routes/oauth-callback';
 import { Tos } from '@/routes/tos';
 import { Privacy } from '@/routes/privacy';
+import { Board } from '@/routes/board';
+import { BoardNew } from '@/routes/board-new';
+import { BoardDetail } from '@/routes/board-detail';
 import { DebugCard } from '@/routes/debug-card';
 import { DebugRadar } from '@/routes/debug-radar';
 import { DebugMe } from '@/routes/debug-me';
@@ -41,6 +44,9 @@ const router = createBrowserRouter([
       { path: 'profile/:handle/post/:rkey', element: <PostDetail /> },
       { path: 'notifications', element: <Notifications /> },
       { path: 'quests', element: <Quests /> },
+      { path: 'board', element: <Board /> },
+      { path: 'board/new', element: <BoardNew /> },
+      { path: 'board/:uri', element: <BoardDetail /> },
       { path: 'search', element: <Search /> },
       { path: 'settings', element: <Settings /> },
       { path: 'spirit', element: <Spirit /> },
