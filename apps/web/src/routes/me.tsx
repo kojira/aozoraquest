@@ -12,6 +12,7 @@ import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { Avatar } from '@/components/avatar';
 import { Spinner } from '@/components/spinner';
+import { BookIcon, BoardIcon } from '@/components/icons';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -165,8 +166,12 @@ export function MyProfile() {
             )}
           </p>
           <p style={{ margin: '0.4em 0 0', fontSize: '0.85em', display: 'flex', gap: '0.8em' }}>
-            <Link to="/me/portfolio">📚 ポートフォリオ</Link>
-            <Link to="/board">📜 クエスト掲示板</Link>
+            <Link to="/me/portfolio" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em' }}>
+              <BookIcon size={16} /> ポートフォリオ
+            </Link>
+            <Link to="/board" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em' }}>
+              <BoardIcon size={16} /> クエスト掲示板
+            </Link>
           </p>
         </div>
       </div>

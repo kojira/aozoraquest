@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { BoardIcon } from '@/components/icons';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
 import {
@@ -237,7 +238,9 @@ export function Quests() {
         / 累計 {history.length} 日分の記録
       </p>
       <p style={{ fontSize: '0.85em', marginTop: '0.2em' }}>
-        <Link to="/board">📜 依頼クエスト掲示板を見る →</Link>
+        <Link to="/board" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em' }}>
+          <BoardIcon size={16} /> 依頼クエスト掲示板を見る
+        </Link>
       </p>
 
       {err && <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {err}</p>}
