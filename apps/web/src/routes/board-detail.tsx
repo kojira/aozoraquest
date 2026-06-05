@@ -1,35 +1,68 @@
 /**
  * 依頼クエスト詳細画面 (docs/15-user-quest.md §UI 設計 C)。
  *
- * Phase 1 MVP: ヘッダー + 本文 + tags + 募集期限 + status + 発注者向け
- * 「キャンセル」「期限延長」のみ。応募・受託・完了は Phase 2 で追加する。
+ * Phase 2 (応募・完了):
+ *  - 応募 (自分以外の人が募集中クエストに応募メッセージ送信)
+ *  - 応募者一覧 (発注者にのみ展開、「受託者に指定」ボタン付き)
+ *  - 完了報告 (受託者) → 発注者承認 / やり直し依頼
+ *  - completion チェーン表示
+ *  - 発注者: 募集期限の延長 / キャンセル
  */
-import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
-import { getQuest, parseAtUri } from '@/lib/quest-api';
+import {
+  getQuest,
+  parseAtUri,
+  applyToQuest,
+  withdrawApplication,
+  listApplicationsFor,
+  setAssignee,
+  reportCompletion,
+  approveCompletion,
+  requestRevision,
+  listCompletionsFor,
+} from '@/lib/quest-api';
 import { mockIndex } from '@/lib/quest-mock';
 import { putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { isExpired, type UserQuest } from '@aozoraquest/core';
+import {
+  isExpired,
+  isCompleted as isCompletedFn,
+  type UserQuest,
+  type QuestApplication,
+  type QuestCompletion,
+} from '@aozoraquest/core';
 
 export function BoardDetail() {
   const { uri: encoded } = useParams<{ uri: string }>();
   const session = useSession();
-  const navigate = useNavigate();
   const uri = encoded ? decodeURIComponent(encoded) : null;
   const [quest, setQuest] = useState<UserQuest | null>(null);
+  const [applications, setApplications] = useState<QuestApplication[] | null>(null);
+  const [completions, setCompletions] = useState<QuestCompletion[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     if (!uri || !session.agent) return;
-    let cancelled = false;
-    getQuest(session.agent, uri)
-      .then((q) => { if (!cancelled) setQuest(q); })
-      .catch((e) => { if (!cancelled) setErr(String((e as Error)?.message ?? e)); });
-    return () => { cancelled = true; };
+    try {
+      const q = await getQuest(session.agent, uri);
+      setQuest(q);
+      if (q) {
+        const [apps, comps] = await Promise.all([
+          listApplicationsFor(session.agent, uri),
+          listCompletionsFor(session.agent, q),
+        ]);
+        setApplications(apps);
+        setCompletions(comps);
+      }
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    }
   }, [uri, session.agent]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
 
   if (!uri) return <p>URL が壊れています。</p>;
   if (err) return <p style={{ color: 'var(--color-danger)' }}>取得に失敗: {err}</p>;
@@ -37,6 +70,9 @@ export function BoardDetail() {
 
   const expired = isExpired(quest);
   const isOwner = session.did === quest.did;
+  const isAssignee = session.did === quest.assignee;
+  const myApp = applications?.find(a => a.did === session.did) ?? null;
+  const completedByApproval = isCompletedFn(quest, completions ?? []);
 
   async function cancelQuest() {
     if (!session.agent || !quest || !isOwner) return;
@@ -45,12 +81,12 @@ export function BoardDetail() {
     try {
       const { rkey } = parseAtUri(quest.uri);
       const next = { ...quest, status: 'cancelled' as const, updatedAt: new Date().toISOString() };
-      const recordWithoutUri: Record<string, unknown> = { ...next, $type: COL.userQuest };
-      delete recordWithoutUri.uri;
-      delete recordWithoutUri.did;
-      await putRecord(session.agent, COL.userQuest, rkey, recordWithoutUri);
+      const record: Record<string, unknown> = { ...next, $type: COL.userQuest };
+      delete record.uri;
+      delete record.did;
+      await putRecord(session.agent, COL.userQuest, rkey, record);
       mockIndex.updateQuestStatus(quest.uri, 'cancelled');
-      setQuest(next);
+      await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
     } finally {
@@ -61,7 +97,7 @@ export function BoardDetail() {
   async function extendDeadline() {
     if (!session.agent || !quest || !isOwner) return;
     const cur = quest.deadline ? toLocalInput(quest.deadline) : '';
-    const next = prompt('新しい募集期限 (YYYY-MM-DDTHH:MM 形式)\n空欄で削除', cur);
+    const next = prompt('新しい募集期限 (YYYY-MM-DDTHH:MM、空欄で削除)', cur);
     if (next === null) return;
     setBusy(true);
     try {
@@ -74,7 +110,95 @@ export function BoardDetail() {
       delete record.uri;
       delete record.did;
       await putRecord(session.agent, COL.userQuest, rkey, record);
-      setQuest(updated);
+      await refresh();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onApply() {
+    if (!session.agent || !session.did || !quest) return;
+    const message = prompt('応募メッセージ (やる気・経験・質問など):');
+    if (!message?.trim()) return;
+    setBusy(true);
+    try {
+      await applyToQuest(session.agent, session.did, quest.uri, message.trim());
+      await refresh();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onWithdraw() {
+    if (!session.agent || !myApp) return;
+    if (!confirm('応募を取り下げますか?')) return;
+    setBusy(true);
+    try {
+      await withdrawApplication(session.agent, myApp);
+      await refresh();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onAssign(applicantDid: string) {
+    if (!session.agent || !quest || !isOwner) return;
+    if (!confirm('この応募者を受託者に指定しますか? 他の応募は受け付けられなくなります。')) return;
+    setBusy(true);
+    try {
+      await setAssignee(session.agent, quest, applicantDid);
+      await refresh();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onReport() {
+    if (!session.agent || !session.did || !quest || !isAssignee) return;
+    const comment = prompt('完了報告 (成果物の URL や一言コメント):');
+    if (comment === null) return;
+    setBusy(true);
+    try {
+      await reportCompletion(session.agent, session.did, quest, comment.trim() || undefined);
+      await refresh();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onApprove() {
+    if (!session.agent || !session.did || !quest || !isOwner) return;
+    const comment = prompt('承認コメント (任意):');
+    if (comment === null) return;
+    setBusy(true);
+    try {
+      await approveCompletion(session.agent, session.did, quest, comment.trim() || undefined);
+      await refresh();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRevision() {
+    if (!session.agent || !session.did || !quest || !isOwner) return;
+    const comment = prompt('やり直し依頼コメント (必須):');
+    if (!comment?.trim()) return;
+    setBusy(true);
+    try {
+      await requestRevision(session.agent, session.did, quest, comment.trim());
+      await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
     } finally {
@@ -95,13 +219,13 @@ export function BoardDetail() {
         <span style={{ color: 'var(--color-accent)' }}>
           {handleStub(quest.did)}P {quest.rewardPoints.toLocaleString()}
         </span>
-        <span style={{ marginLeft: 'auto' }}>{statusLabel(quest.status, expired)}</span>
+        <span style={{ marginLeft: 'auto' }}>{statusLabel(quest.status, expired, completedByApproval)}</span>
       </div>
 
       <div style={{ marginTop: '0.6em', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{quest.body}</div>
 
       <div style={{ display: 'flex', gap: '0.4em', flexWrap: 'wrap', marginTop: '0.8em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        {quest.tags.map((t) => <span key={t}>#{t}</span>)}
+        {quest.tags.map(t => <span key={t}>#{t}</span>)}
       </div>
 
       {quest.deadline && (
@@ -110,6 +234,7 @@ export function BoardDetail() {
         </p>
       )}
 
+      {/* 発注者向け: 期限変更 / キャンセル (open 中のみ) */}
       {isOwner && quest.status === 'open' && (
         <div style={{ display: 'flex', gap: '0.6em', marginTop: '1em' }}>
           <button onClick={extendDeadline} disabled={busy}>募集期限を変更</button>
@@ -117,23 +242,109 @@ export function BoardDetail() {
         </div>
       )}
 
-      {!isOwner && (
-        <p style={{ marginTop: '1em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-          応募機能は Phase 2 で実装予定です。今は Bluesky DM で発注者に直接連絡してください。
-        </p>
+      {/* 応募者向け: 応募ボタン / 自分の応募表示 */}
+      {!isOwner && session.status === 'signed-in' && quest.status === 'open' && !expired && (
+        <div style={{ marginTop: '1em' }}>
+          {!myApp ? (
+            <button onClick={onApply} disabled={busy}>このクエストに応募する</button>
+          ) : (
+            <div className="dq-window compact">
+              <p style={{ margin: 0, fontSize: '0.85em' }}>あなたの応募:</p>
+              <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{myApp.message}</p>
+              <button onClick={onWithdraw} disabled={busy} className="secondary">取り下げる</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 発注者向け応募者一覧 (open のとき) */}
+      {isOwner && quest.status === 'open' && (
+        <section style={{ marginTop: '1.4em' }}>
+          <h3 style={{ fontSize: '0.95em' }}>応募者 ({applications?.length ?? 0})</h3>
+          {!applications && <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中...</p>}
+          {applications && applications.length === 0 && (
+            <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ応募がありません。</p>
+          )}
+          {applications && applications.map(a => (
+            <div key={a.uri} className="dq-window compact">
+              <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
+                {handleStub(a.did)} - {new Date(a.createdAt).toLocaleString()}
+              </p>
+              <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{a.message}</p>
+              <button onClick={() => onAssign(a.did)} disabled={busy}>受託者に指定</button>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* assigned 中: 受託者の表示 + 受託者の完了報告ボタン */}
+      {(quest.status === 'assigned' || quest.status === 'reported') && quest.assignee && (
+        <section style={{ marginTop: '1.4em' }}>
+          <p style={{ fontSize: '0.85em' }}>
+            受託者: <strong>{handleStub(quest.assignee)}</strong>
+            {quest.status === 'reported' && ' (完了報告済み、承認待ち)'}
+          </p>
+          {isAssignee && quest.status === 'assigned' && (
+            <button onClick={onReport} disabled={busy}>完了を報告する</button>
+          )}
+          {isOwner && quest.status === 'reported' && (
+            <div style={{ display: 'flex', gap: '0.6em', marginTop: '0.4em' }}>
+              <button onClick={onApprove} disabled={busy}>承認する (報酬を発行)</button>
+              <button onClick={onRevision} disabled={busy} className="secondary">やり直しを依頼</button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 完了済み: 報酬表示 */}
+      {(quest.status === 'completed' || completedByApproval) && (
+        <section style={{ marginTop: '1.4em' }} className="dq-window">
+          <p style={{ margin: 0, fontSize: '0.9em' }}>
+            完了! 受託者 <strong>{handleStub(quest.assignee ?? '')}</strong> に{' '}
+            <span style={{ color: 'var(--color-accent)' }}>
+              {handleStub(quest.did)}P {quest.rewardPoints.toLocaleString()}
+            </span>{' '}
+            が発行されました。
+          </p>
+        </section>
+      )}
+
+      {/* completion チェーン */}
+      {completions && completions.length > 0 && (
+        <section style={{ marginTop: '1.4em' }}>
+          <h3 style={{ fontSize: '0.95em' }}>進行記録</h3>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {completions.map(c => (
+              <li key={c.uri} className="dq-window compact">
+                <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
+                  {roleLabel(c.role)} - {handleStub(c.did)} - {new Date(c.createdAt).toLocaleString()}
+                </p>
+                {c.comment && <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{c.comment}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );
 }
 
-function statusLabel(status: string, expired: boolean): string {
+function statusLabel(status: string, expired: boolean, completedByApproval: boolean): string {
+  if (completedByApproval && status !== 'completed') return '完了 (承認済み)';
+  if (status === 'completed') return '完了';
   if (expired) return '期限切れ';
   if (status === 'open') return '募集中';
   if (status === 'assigned') return '受託中';
-  if (status === 'reported') return '完了報告中';
-  if (status === 'completed') return '完了';
+  if (status === 'reported') return '完了報告中 (承認待ち)';
   if (status === 'cancelled') return 'キャンセル';
   return status;
+}
+
+function roleLabel(role: string): string {
+  if (role === 'assigneeReport') return '完了報告';
+  if (role === 'requesterApproval') return '承認';
+  if (role === 'requesterRevision') return 'やり直し依頼';
+  return role;
 }
 
 function handleStub(did: string): string {
@@ -141,7 +352,6 @@ function handleStub(did: string): string {
 }
 
 function toLocalInput(iso: string): string {
-  // datetime-local input は YYYY-MM-DDTHH:MM (no timezone)
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
