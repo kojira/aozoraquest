@@ -24,11 +24,13 @@ import {
   listCompletionsFor,
 } from '@/lib/quest-api';
 import { mockIndex } from '@/lib/quest-mock';
-import { putRecord } from '@/lib/atproto';
+import { putRecord, createPost } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import {
   isExpired,
   isCompleted as isCompletedFn,
+  formatNotificationPost,
+  type NotificationAction,
   type UserQuest,
   type QuestApplication,
   type QuestCompletion,
@@ -118,6 +120,22 @@ export function BoardDetail() {
     }
   }
 
+  async function notifyBluesky(action: NotificationAction, recipientHandle: string | null) {
+    if (!session.agent || !quest) return;
+    if (!recipientHandle) return;
+    const text = formatNotificationPost({
+      action,
+      recipientHandle,
+      questTitle: quest.title,
+      questUrl: `${location.origin}/board/${encodeURIComponent(quest.uri)}`,
+    });
+    try {
+      await createPost(session.agent, text);
+    } catch (e) {
+      console.warn('[board-detail] notify post failed', e);
+    }
+  }
+
   async function onApply() {
     if (!session.agent || !session.did || !quest) return;
     const message = prompt('応募メッセージ (やる気・経験・質問など):');
@@ -125,6 +143,9 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await applyToQuest(session.agent, session.did, quest.uri, message.trim());
+      // 発注者宛の通知 (handle は今は did stub にフォールバック。Phase 3 後半で
+      // AppView から正規 handle 解決するキャッシュ層を入れる)
+      await notifyBluesky('applied', handleStub(quest.did));
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -153,6 +174,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await setAssignee(session.agent, quest, applicantDid);
+      await notifyBluesky('assigned', handleStub(applicantDid));
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -168,6 +190,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await reportCompletion(session.agent, session.did, quest, comment.trim() || undefined);
+      await notifyBluesky('reported', handleStub(quest.did));
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -183,6 +206,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await approveCompletion(session.agent, session.did, quest, comment.trim() || undefined);
+      if (quest.assignee) await notifyBluesky('approved', handleStub(quest.assignee));
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -198,6 +222,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await requestRevision(session.agent, session.did, quest, comment.trim());
+      if (quest.assignee) await notifyBluesky('revisionRequested', handleStub(quest.assignee));
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
