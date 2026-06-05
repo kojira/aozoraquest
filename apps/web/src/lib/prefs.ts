@@ -91,3 +91,34 @@ export function clampFontScale(v: number): number {
   if (v > FONT_SCALE_MAX) return FONT_SCALE_MAX;
   return Math.round(v);
 }
+
+const KEY_POST_QUEST_NOTIFICATIONS = 'aozoraquest:postQuestNotifications';
+
+/** 依頼クエスト (docs/15-user-quest.md) の Bluesky 告知 / mention 通知 post を
+ *  実際に Bluesky に投稿するか。
+ *
+ *  - VITE_NSID_ENV='dev' のとき: default false (dev でテストしても本番に流さない)
+ *  - production: default true (告知・通知を Bluesky 通知に乗せる方針)
+ *  - localStorage で明示設定があれば優先 (= dev でも本番に流したいとき ON できる) */
+export function getPostQuestNotifications(): boolean {
+  try {
+    const raw = localStorage.getItem(KEY_POST_QUEST_NOTIFICATIONS);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+  } catch {/* no-op */}
+  const env = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
+  return env !== 'dev';
+}
+
+export function setPostQuestNotifications(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_POST_QUEST_NOTIFICATIONS, String(v));
+  } catch {/* no-op */}
+}
+
+/** デフォルト動作 (= localStorage の override を考慮しない、純粋な env 判定) を返す。
+ *  「設定で個別に変更してください」の文言出すときに使う。 */
+export function getPostQuestNotificationsDefault(): boolean {
+  const env = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
+  return env !== 'dev';
+}

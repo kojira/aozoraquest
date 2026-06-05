@@ -26,6 +26,7 @@ import {
 import { mockIndex } from '@/lib/quest-mock';
 import { putRecord, createPost } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
+import { getPostQuestNotifications } from '@/lib/prefs';
 import {
   isExpired,
   isCompleted as isCompletedFn,
@@ -123,6 +124,11 @@ export function BoardDetail() {
   async function notifyBluesky(action: NotificationAction, recipientHandle: string | null) {
     if (!session.agent || !quest) return;
     if (!recipientHandle) return;
+    // dev 環境では default OFF。設定で明示的に ON にしている場合のみ送る。
+    if (!getPostQuestNotifications()) {
+      console.info('[board-detail] skip notify (postQuestNotifications=false):', action, recipientHandle);
+      return;
+    }
     const text = formatNotificationPost({
       action,
       recipientHandle,
