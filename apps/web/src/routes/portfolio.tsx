@@ -1,0 +1,213 @@
+/**
+ * ポートフォリオ画面 (docs/15-user-quest.md §UI 設計 D)。
+ *
+ * Phase 2 MVP:
+ *  - 受託履歴 (完了済み) + 受託サマリ (受託総数 / 成功 / 失敗 / キャンセル / 関わった発注者数)
+ *  - 発注履歴 + サマリ (発注総数 / success / failure / cancelled / 何人に発行 / 累計発行 pt)
+ *  - 自分が完了済みで受け取ったポイントの種類別表示 (= 発注者別)
+ *
+ * Phase 3 で拡張: シェア% 表示 (他人 PDS から発行者総量取得が必要)、
+ *               公開ポートフォリオ (他人視点) 表示の opt-out
+ */
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  summarize,
+  distinctRecipients,
+  distinctRequesters,
+  type UserQuest,
+  type OutcomeSummary,
+} from '@aozoraquest/core';
+import { useSession } from '@/lib/session';
+import {
+  listIssuedQuests,
+  listMyApplications,
+  parseAtUri,
+  getQuest,
+} from '@/lib/quest-api';
+
+export function Portfolio() {
+  const session = useSession();
+  const [issued, setIssued] = useState<UserQuest[] | null>(null);
+  const [received, setReceived] = useState<UserQuest[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (session.status !== 'signed-in' || !session.agent || !session.did) return;
+    const agent = session.agent;
+    const did = session.did;
+    let cancelled = false;
+    (async () => {
+      try {
+        const myIssued = await listIssuedQuests(agent, did);
+        if (!cancelled) setIssued(myIssued);
+
+        // 受託: 自分の applications から quest URI を集めて、それぞれ resolve
+        const apps = await listMyApplications(agent, did);
+        const questUris = Array.from(new Set(apps.map(a => a.questUri)));
+        const fetched: UserQuest[] = [];
+        for (const u of questUris) {
+          try {
+            const q = await getQuest(agent, u);
+            if (q && q.assignee === did) fetched.push(q);
+          } catch (e) {
+            console.warn('[portfolio] resolve received quest failed', u, e);
+          }
+        }
+        if (!cancelled) setReceived(fetched);
+      } catch (e) {
+        if (!cancelled) setErr(String((e as Error)?.message ?? e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session.status, session.agent, session.did]);
+
+  const issuedSummary: OutcomeSummary | null = issued ? summarize(issued) : null;
+  const receivedSummary: OutcomeSummary | null = received ? summarize(received) : null;
+
+  const completedIssued = useMemo(() => (issued ?? []).filter(q => q.status === 'completed'), [issued]);
+  const completedReceived = useMemo(() => (received ?? []).filter(q => q.status === 'completed'), [received]);
+
+  /** 受託者視点: 発注者 DID → 獲得 pt の合計 */
+  const receivedByIssuer = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const q of completedReceived) {
+      map.set(q.did, (map.get(q.did) ?? 0) + q.rewardPoints);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [completedReceived]);
+
+  const totalIssuedPower = useMemo(
+    () => completedIssued.reduce((s, q) => s + q.rewardPoints, 0),
+    [completedIssued],
+  );
+
+  if (session.status !== 'signed-in') {
+    return <p style={{ fontSize: '0.9em' }}>サインインしてください。</p>;
+  }
+
+  return (
+    <div>
+      <h2 style={{ marginTop: 0, fontSize: '1.15em' }}>ポートフォリオ</h2>
+      <p style={{ fontSize: '0.85em' }}>
+        <Link to="/board">← 掲示板へ戻る</Link>
+      </p>
+
+      {err && <p style={{ color: 'var(--color-danger)' }}>取得に失敗: {err}</p>}
+
+      <section style={{ marginTop: '1em' }} className="dq-window">
+        <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>発注サマリ (出したクエスト)</h3>
+        {!issuedSummary ? (
+          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中...</p>
+        ) : (
+          <SummaryGrid s={issuedSummary} />
+        )}
+        {issued && (
+          <p style={{ fontSize: '0.85em', marginTop: '0.6em' }}>
+            完了したクエストで <strong>{distinctRecipients(issued)} 人</strong> に
+            自分発行ポイントを渡しました (累計{' '}
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
+              {totalIssuedPower.toLocaleString()} pt
+            </span>
+            )。
+          </p>
+        )}
+      </section>
+
+      <section style={{ marginTop: '1em' }} className="dq-window">
+        <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>受託サマリ (うけたクエスト)</h3>
+        {!receivedSummary ? (
+          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中...</p>
+        ) : (
+          <SummaryGrid s={receivedSummary} />
+        )}
+        {received && (
+          <p style={{ fontSize: '0.85em', marginTop: '0.6em' }}>
+            <strong>{distinctRequesters(received)} 人</strong> の発注者から受託しました。
+          </p>
+        )}
+      </section>
+
+      {receivedByIssuer.length > 0 && (
+        <section style={{ marginTop: '1em' }} className="dq-window">
+          <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>保有ポイント (発行者別)</h3>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {receivedByIssuer.map(([did, pt]) => (
+              <li key={did} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3em 0', borderBottom: '1px dotted rgba(255,255,255,0.1)' }}>
+                <span>{handleStub(did)}ポイント</span>
+                <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
+                  {pt.toLocaleString()} pt
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
+            シェア% (= 発行者の総発行量に対する保有割合) は Phase 3 で表示予定。
+          </p>
+        </section>
+      )}
+
+      {completedIssued.length > 0 && (
+        <section style={{ marginTop: '1em' }}>
+          <h3 style={{ fontSize: '0.95em' }}>完了した発注 ({completedIssued.length})</h3>
+          <QuestHistoryList quests={completedIssued} />
+        </section>
+      )}
+
+      {completedReceived.length > 0 && (
+        <section style={{ marginTop: '1em' }}>
+          <h3 style={{ fontSize: '0.95em' }}>完了した受託 ({completedReceived.length})</h3>
+          <QuestHistoryList quests={completedReceived} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SummaryGrid({ s }: { s: OutcomeSummary }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5em', fontSize: '0.85em' }}>
+      <Stat label="総数" v={s.total} />
+      <Stat label="成功" v={s.success} accent />
+      <Stat label="失敗" v={s.failure} danger={s.failure > 0} />
+      <Stat label="ｷｬﾝｾﾙ" v={s.cancelled} />
+      <Stat label="進行中" v={s.inProgress} />
+    </div>
+  );
+}
+
+function Stat({ label, v, accent, danger }: { label: string; v: number; accent?: boolean; danger?: boolean }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: '0.7em', color: 'var(--color-muted)' }}>{label}</div>
+      <div style={{
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '1.2em',
+        color: danger ? 'var(--color-danger)' : accent ? 'var(--color-accent)' : 'var(--color-fg)',
+      }}>{v}</div>
+    </div>
+  );
+}
+
+function QuestHistoryList({ quests }: { quests: UserQuest[] }) {
+  return (
+    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+      {quests.map(q => (
+        <li key={q.uri}>
+          <Link to={`/board/${encodeURIComponent(q.uri)}`} style={{ textDecoration: 'none' }}>
+            <div className="dq-window compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ color: 'var(--color-fg)', fontSize: '0.9em' }}>{q.title}</span>
+              <span style={{ fontSize: '0.75em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
+                {handleStub(q.did)}P {q.rewardPoints.toLocaleString()}
+              </span>
+            </div>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function handleStub(did: string): string {
+  return did.slice(0, 14).replace(/^did:plc:/, '');
+}

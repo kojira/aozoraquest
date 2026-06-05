@@ -53,9 +53,10 @@ export function Board() {
       <header style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.6em' }}>
         <h2 style={{ margin: 0, fontSize: '1.05em' }}>クエスト掲示板</h2>
         {session.status === 'signed-in' && (
-          <Link to="/board/new" style={{ fontSize: '0.85em' }}>
-            ＋ クエストを出す
-          </Link>
+          <span style={{ display: 'inline-flex', gap: '0.8em', fontSize: '0.85em' }}>
+            <Link to="/me/portfolio">📚 履歴</Link>
+            <Link to="/board/new">＋ クエストを出す</Link>
+          </span>
         )}
       </header>
 

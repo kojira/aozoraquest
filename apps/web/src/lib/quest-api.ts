@@ -205,5 +205,244 @@ export function questUrlOf(uri: AtUri, origin: string): string {
   return `${origin}/quests/${encodeURIComponent(uri)}`;
 }
 
-// 応募 / 完了は Phase 2 で実装。型のみ公開。
+// ─── Phase 2: 応募 ────────────────────────────────────
+
+export async function applyToQuest(
+  agent: Agent,
+  applicantDid: Did,
+  questUri: AtUri,
+  message: string,
+): Promise<QuestApplication> {
+  const rkey = makeRkey();
+  const now = new Date().toISOString();
+  const record = {
+    $type: COL.questApplication,
+    questUri,
+    message,
+    withdrawn: false,
+    createdAt: now,
+  };
+  await putRecord(agent, COL.questApplication, rkey, record);
+  const uri: AtUri = `at://${applicantDid}/${COL.questApplication}/${rkey}`;
+  const app: QuestApplication = {
+    uri,
+    did: applicantDid,
+    questUri,
+    message,
+    withdrawn: false,
+    createdAt: now,
+  };
+  await notifyEdgeApplication(agent, app);
+  return app;
+}
+
+export async function withdrawApplication(
+  agent: Agent,
+  app: QuestApplication,
+): Promise<void> {
+  const { rkey } = parseAtUri(app.uri);
+  const next = { ...app, withdrawn: true, $type: COL.questApplication };
+  const record: Record<string, unknown> = { ...next };
+  delete record.uri;
+  delete record.did;
+  await putRecord(agent, COL.questApplication, rkey, record);
+}
+
+/** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する */
+export async function listApplicationsFor(
+  agent: Agent,
+  questUri: AtUri,
+): Promise<QuestApplication[]> {
+  const idx = await fetchQuestIndex();
+  const entries = idx.applications.filter(a => a.questUri === questUri);
+  const out: QuestApplication[] = [];
+  for (const e of entries) {
+    try {
+      const { rkey } = parseAtUri(e.uri);
+      const v = await getRecord<Omit<QuestApplication, 'uri' | 'did'>>(
+        agent, e.did, COL.questApplication, rkey,
+      );
+      if (v && !v.withdrawn) {
+        out.push({ ...v, uri: e.uri, did: e.did });
+      }
+    } catch (err) {
+      console.warn('[quest-api] fetch application failed', e.uri, err);
+    }
+  }
+  // 古い順 (応募順)
+  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** 自分が出した応募一覧 */
+export async function listMyApplications(agent: Agent, myDid: Did, limit = 100): Promise<QuestApplication[]> {
+  const res = await agent.com.atproto.repo.listRecords({
+    repo: myDid,
+    collection: COL.questApplication,
+    limit,
+  });
+  return res.data.records
+    .map(r => {
+      const v = r.value as Omit<QuestApplication, 'uri' | 'did'>;
+      return { ...v, uri: r.uri, did: myDid };
+    })
+    .filter(a => !a.withdrawn);
+}
+
+// ─── Phase 2: 受託者指定 (発注者が quest record を更新) ───
+
+export async function setAssignee(
+  agent: Agent,
+  quest: UserQuest,
+  assignee: Did,
+): Promise<UserQuest> {
+  const { rkey } = parseAtUri(quest.uri);
+  const updated: UserQuest = {
+    ...quest,
+    assignee,
+    status: 'assigned',
+    updatedAt: new Date().toISOString(),
+  };
+  const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
+  delete record.uri;
+  delete record.did;
+  await putRecord(agent, COL.userQuest, rkey, record);
+  await notifyEdgeQuest(agent, updated);
+  return updated;
+}
+
+// ─── Phase 2: 完了報告 / 承認 / やり直し ─────────────
+
+async function writeCompletion(
+  agent: Agent,
+  writerDid: Did,
+  questUri: AtUri,
+  role: QuestCompletion['role'],
+  comment?: string,
+): Promise<QuestCompletion> {
+  const rkey = makeRkey();
+  const now = new Date().toISOString();
+  const record: Record<string, unknown> = {
+    $type: COL.questCompletion,
+    questUri,
+    role,
+    createdAt: now,
+  };
+  if (comment !== undefined) record.comment = comment;
+  await putRecord(agent, COL.questCompletion, rkey, record);
+  const c: QuestCompletion = {
+    uri: `at://${writerDid}/${COL.questCompletion}/${rkey}`,
+    did: writerDid,
+    questUri,
+    role,
+    createdAt: now,
+  };
+  if (comment !== undefined) c.comment = comment;
+  return c;
+}
+
+export async function reportCompletion(
+  agent: Agent,
+  assigneeDid: Did,
+  quest: UserQuest,
+  comment?: string,
+): Promise<QuestCompletion> {
+  const completion = await writeCompletion(agent, assigneeDid, quest.uri, 'assigneeReport', comment);
+  // 元 quest の status を `reported` に進める (受託者は自分の record しか書けないので
+  // ここでは発注者の quest を更新できない。発注者側が次回読み込み時に進める運用)。
+  // ただ UI 上の即時反映のため mock index は更新する。
+  mockIndex.updateQuestStatus(quest.uri, 'reported');
+  return completion;
+}
+
+/**
+ * 発注者が完了報告を承認 (= ポイント発行 + XP 付与 が確定するトリガ)。
+ * 元 quest record の status を completed に更新 (= reconciliation の真実 B)。
+ */
+export async function approveCompletion(
+  agent: Agent,
+  requesterDid: Did,
+  quest: UserQuest,
+  comment?: string,
+): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
+  const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterApproval', comment);
+  const { rkey } = parseAtUri(quest.uri);
+  const updated: UserQuest = { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
+  const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
+  delete record.uri;
+  delete record.did;
+  await putRecord(agent, COL.userQuest, rkey, record);
+  mockIndex.updateQuestStatus(quest.uri, 'completed');
+  await notifyEdgeQuest(agent, updated);
+  return { completion, updatedQuest: updated };
+}
+
+/** 発注者が「やり直し」を依頼。元 quest の status を assigned に戻す。 */
+export async function requestRevision(
+  agent: Agent,
+  requesterDid: Did,
+  quest: UserQuest,
+  comment: string,
+): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
+  const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterRevision', comment);
+  const { rkey } = parseAtUri(quest.uri);
+  const updated: UserQuest = { ...quest, status: 'assigned', updatedAt: new Date().toISOString() };
+  const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
+  delete record.uri;
+  delete record.did;
+  await putRecord(agent, COL.userQuest, rkey, record);
+  mockIndex.updateQuestStatus(quest.uri, 'assigned');
+  return { completion, updatedQuest: updated };
+}
+
+/** quest に紐付く completion レコードを発注者・受託者の PDS から fetch して時系列で返す */
+export async function listCompletionsFor(
+  agent: Agent,
+  quest: UserQuest,
+): Promise<QuestCompletion[]> {
+  const dids = new Set<Did>();
+  dids.add(quest.did);
+  if (quest.assignee) dids.add(quest.assignee);
+
+  const out: QuestCompletion[] = [];
+  for (const did of dids) {
+    try {
+      const res = await agent.com.atproto.repo.listRecords({
+        repo: did,
+        collection: COL.questCompletion,
+        limit: 100,
+      });
+      for (const r of res.data.records) {
+        const v = r.value as Omit<QuestCompletion, 'uri' | 'did'>;
+        if (v.questUri !== quest.uri) continue;
+        out.push({ ...v, uri: r.uri, did });
+      }
+    } catch (err) {
+      console.warn('[quest-api] listCompletions fetch failed', did, err);
+    }
+  }
+  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+async function notifyEdgeApplication(_agent: Agent, app: QuestApplication): Promise<void> {
+  if (!EDGE_URL) {
+    mockIndex.addApplication({
+      uri: app.uri,
+      did: app.did,
+      questUri: app.questUri,
+      createdAt: app.createdAt,
+    });
+    return;
+  }
+  try {
+    await fetch(`${EDGE_URL}/index/application`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ uri: app.uri }),
+    });
+  } catch (e) {
+    console.warn('[quest-api] notifyEdgeApplication failed', e);
+  }
+}
+
+// Phase 2 で追加した write/read。型の re-export は不要 (`@aozoraquest/core` から直接 import 可能)
 export type { UserQuest, QuestApplication, QuestCompletion };
