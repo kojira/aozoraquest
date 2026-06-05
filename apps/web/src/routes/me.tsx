@@ -13,6 +13,7 @@ import { SpiritBubble } from '@/components/spirit-bubble';
 import { Avatar } from '@/components/avatar';
 import { Spinner } from '@/components/spinner';
 import { BookIcon, BoardIcon } from '@/components/icons';
+import { ActionLink } from '@/components/action-link';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -165,13 +166,9 @@ export function MyProfile() {
               <Link to="/settings">目指す姿を選ぶ</Link>
             )}
           </p>
-          <p style={{ margin: '0.4em 0 0', fontSize: '0.85em', display: 'flex', gap: '0.8em' }}>
-            <Link to="/me/portfolio" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em' }}>
-              <BookIcon size={16} /> ポートフォリオ
-            </Link>
-            <Link to="/board" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em' }}>
-              <BoardIcon size={16} /> クエスト掲示板
-            </Link>
+          <p style={{ margin: '0.5em 0 0', display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
+            <ActionLink to="/me/portfolio" icon={<BookIcon size={20} />}>ポートフォリオ</ActionLink>
+            <ActionLink to="/board" icon={<BoardIcon size={20} />}>クエスト掲示板</ActionLink>
           </p>
         </div>
       </div>

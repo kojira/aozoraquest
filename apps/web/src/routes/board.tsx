@@ -15,6 +15,7 @@ import {
 } from '@/lib/quest-api';
 import { isExpired, type UserQuest } from '@aozoraquest/core';
 import { BookIcon, PlusIcon, CalendarIcon } from '@/components/icons';
+import { ActionLink } from '@/components/action-link';
 
 type Tab = 'open' | 'mine';
 
@@ -51,23 +52,19 @@ export function Board() {
 
   return (
     <div>
-      <header style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.6em' }}>
-        <h2 style={{ margin: 0, fontSize: '1.05em' }}>クエスト掲示板</h2>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.8em', flexWrap: 'wrap', gap: '0.5em' }}>
+        <h2 style={{ margin: 0, fontSize: '1.1em' }}>クエスト掲示板</h2>
         {session.status === 'signed-in' && (
-          <span style={{ display: 'inline-flex', gap: '0.8em', fontSize: '0.85em' }}>
-            <Link to="/me/portfolio" style={iconLink}>
-              <BookIcon size={16} /> 履歴
-            </Link>
-            <Link to="/board/new" style={iconLink}>
-              <PlusIcon size={16} /> クエストを出す
-            </Link>
+          <span style={{ display: 'inline-flex', gap: '0.5em', flexWrap: 'wrap' }}>
+            <ActionLink to="/me/portfolio" icon={<BookIcon size={20} />}>履歴</ActionLink>
+            <ActionLink to="/board/new" icon={<PlusIcon size={20} />}>クエストを出す</ActionLink>
           </span>
         )}
       </header>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em' }}>
-        <Link to="/quests" style={iconLink}>
-          <CalendarIcon size={14} /> 日次クエスト (個人用)
-        </Link>
+      <p style={{ margin: '0 0 0.8em' }}>
+        <ActionLink to="/quests" icon={<CalendarIcon size={18} />} variant="inline">
+          日次クエスト (個人用)
+        </ActionLink>
       </p>
 
       <div className="dq-tabs" role="tablist">
@@ -178,9 +175,3 @@ function formatDate(iso: string): string {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
-
-const iconLink: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.3em',
-};
