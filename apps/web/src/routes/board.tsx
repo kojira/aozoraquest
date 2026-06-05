@@ -14,6 +14,7 @@ import {
   type QuestIndexSummary,
 } from '@/lib/quest-api';
 import { isExpired, type UserQuest } from '@aozoraquest/core';
+import { BookIcon, PlusIcon, CalendarIcon } from '@/components/icons';
 
 type Tab = 'open' | 'mine';
 
@@ -54,13 +55,19 @@ export function Board() {
         <h2 style={{ margin: 0, fontSize: '1.05em' }}>クエスト掲示板</h2>
         {session.status === 'signed-in' && (
           <span style={{ display: 'inline-flex', gap: '0.8em', fontSize: '0.85em' }}>
-            <Link to="/me/portfolio">📚 履歴</Link>
-            <Link to="/board/new">＋ クエストを出す</Link>
+            <Link to="/me/portfolio" style={iconLink}>
+              <BookIcon size={16} /> 履歴
+            </Link>
+            <Link to="/board/new" style={iconLink}>
+              <PlusIcon size={16} /> クエストを出す
+            </Link>
           </span>
         )}
       </header>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em' }}>
-        <Link to="/quests">📓 日次クエスト (個人用)</Link>
+        <Link to="/quests" style={iconLink}>
+          <CalendarIcon size={14} /> 日次クエスト (個人用)
+        </Link>
       </p>
 
       <div className="dq-tabs" role="tablist">
@@ -171,3 +178,9 @@ function formatDate(iso: string): string {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
+
+const iconLink: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.3em',
+};
