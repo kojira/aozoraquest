@@ -11,6 +11,7 @@ import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement } from 
 import { useSession } from '@/lib/session';
 import { createQuest } from '@/lib/quest-api';
 import { createTaggedPost } from '@/lib/atproto';
+import { getPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
 
 const MAX_TITLE = 80;
 const MAX_BODY = 1500;
@@ -26,7 +27,7 @@ export function BoardNew() {
   const [targetJob, setTargetJob] = useState<string>('');
   const [deadline, setDeadline] = useState('');
   const [rewardPoints, setRewardPoints] = useState(100);
-  const [announce, setAnnounce] = useState(true);
+  const [announce, setAnnounce] = useState(() => getPostQuestNotifications());
   const [announceText, setAnnounceText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -188,6 +189,12 @@ export function BoardNew() {
           <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
           告知する
         </label>
+        {!getPostQuestNotificationsDefault() && (
+          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
+            dev 環境では default OFF (本番 Bluesky に流さないため)。
+            設定ページの「クエスト告知を Bluesky に投稿する」で常時 ON にできます。
+          </p>
+        )}
         {announce && (
           <textarea
             value={announceText}

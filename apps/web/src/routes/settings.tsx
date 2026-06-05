@@ -7,7 +7,7 @@ import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale } from '@/lib/prefs';
+import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
 import { applyFontScale } from '@/lib/font-scale';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
@@ -310,6 +310,7 @@ export function Settings() {
         <AutoTranslateToggle />
         <AnalyzePostsToggle />
         <HideRepostsToggle />
+        <PostQuestNotificationsToggle />
       </section>
 
       <section style={{ marginTop: '2em' }}>
@@ -422,6 +423,33 @@ function HideRepostsToggle() {
       </label>
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
         フォロー中のタイムラインで、他人がリポストした投稿を流さないようにします。フォローしている本人の投稿はそのまま表示されます。
+      </p>
+    </div>
+  );
+}
+
+function PostQuestNotificationsToggle() {
+  const [enabled, setEnabled] = useState<boolean>(() => getPostQuestNotifications());
+  const def = getPostQuestNotificationsDefault();
+  function handleChange(v: boolean) {
+    setPostQuestNotifications(v);
+    setEnabled(v);
+  }
+  return (
+    <div style={{ marginTop: '1em' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em', fontSize: '0.9em', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => handleChange(e.target.checked)}
+        />
+        <span>クエスト告知 / 通知を Bluesky に投稿する</span>
+      </label>
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
+        依頼クエスト機能で、発行時の告知 post や応募・承認等の mention 通知を Bluesky に流すかどうか。
+        {def
+          ? ' 本番では default ON。OFF にすると Bluesky には流れず aozoraquest 内のみで完結します。'
+          : ' dev 環境では default OFF (本番 Bluesky にテスト投稿が流れないように)。ON にすると dev でも投稿されます。'}
       </p>
     </div>
   );
