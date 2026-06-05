@@ -164,6 +164,10 @@ export function MyProfile() {
               <Link to="/settings">目指す姿を選ぶ</Link>
             )}
           </p>
+          <p style={{ margin: '0.4em 0 0', fontSize: '0.85em', display: 'flex', gap: '0.8em' }}>
+            <Link to="/me/portfolio">📚 ポートフォリオ</Link>
+            <Link to="/board">📜 クエスト掲示板</Link>
+          </p>
         </div>
       </div>
 
