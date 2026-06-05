@@ -1,0 +1,10 @@
+# aozoraquest 依頼クエスト集約 Worker (docs/15-user-quest.md §集約インフラ)
+#
+# 主管理者 PDS の app.aozoraquest.questIndex に書き込むサーバ側 client。
+# AT Proto OAuth confidential client (private_key_jwt, dpop_bound_access_tokens)
+# として動作するため、@atproto/oauth-client-node を nodejs_compat で読む。
+
+name = "aozoraquest-edge"
+main = "src/index.ts"
+compatibility_date = "2026-04-24"
+compatibility_flags = ["nodejs_compat"]
