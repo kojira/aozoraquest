@@ -27,6 +27,8 @@ import { mockIndex } from '@/lib/quest-mock';
 import { putRecord, createPost } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { getPostQuestNotifications } from '@/lib/prefs';
+import { Handle } from '@/components/handle';
+import { resolveHandle } from '@/lib/handle-cache';
 import {
   isExpired,
   isCompleted as isCompletedFn,
@@ -121,14 +123,16 @@ export function BoardDetail() {
     }
   }
 
-  async function notifyBluesky(action: NotificationAction, recipientHandle: string | null) {
+  async function notifyBluesky(action: NotificationAction, recipientDid: string | null) {
     if (!session.agent || !quest) return;
-    if (!recipientHandle) return;
+    if (!recipientDid) return;
     // dev 環境では default OFF。設定で明示的に ON にしている場合のみ送る。
     if (!getPostQuestNotifications()) {
-      console.info('[board-detail] skip notify (postQuestNotifications=false):', action, recipientHandle);
+      console.info('[board-detail] skip notify (postQuestNotifications=false):', action, recipientDid);
       return;
     }
+    const recipientHandle = await resolveHandle(recipientDid);
+    if (!recipientHandle) return;
     const text = formatNotificationPost({
       action,
       recipientHandle,
@@ -151,7 +155,7 @@ export function BoardDetail() {
       await applyToQuest(session.agent, session.did, quest.uri, message.trim());
       // 発注者宛の通知 (handle は今は did stub にフォールバック。Phase 3 後半で
       // AppView から正規 handle 解決するキャッシュ層を入れる)
-      await notifyBluesky('applied', handleStub(quest.did));
+      await notifyBluesky('applied', quest.did);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -180,7 +184,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await setAssignee(session.agent, quest, applicantDid);
-      await notifyBluesky('assigned', handleStub(applicantDid));
+      await notifyBluesky('assigned', applicantDid);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -196,7 +200,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await reportCompletion(session.agent, session.did, quest, comment.trim() || undefined);
-      await notifyBluesky('reported', handleStub(quest.did));
+      await notifyBluesky('reported', quest.did);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -212,7 +216,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await approveCompletion(session.agent, session.did, quest, comment.trim() || undefined);
-      if (quest.assignee) await notifyBluesky('approved', handleStub(quest.assignee));
+      if (quest.assignee) await notifyBluesky('approved', quest.assignee);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -228,7 +232,7 @@ export function BoardDetail() {
     setBusy(true);
     try {
       await requestRevision(session.agent, session.did, quest, comment.trim());
-      if (quest.assignee) await notifyBluesky('revisionRequested', handleStub(quest.assignee));
+      if (quest.assignee) await notifyBluesky('revisionRequested', quest.assignee);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -246,9 +250,9 @@ export function BoardDetail() {
       <h2 style={{ marginTop: 0, fontSize: '1.15em' }}>{quest.title}</h2>
 
       <div style={{ display: 'flex', gap: '0.6em', flexWrap: 'wrap', fontSize: '0.85em', color: 'var(--color-muted)' }}>
-        <span>発注者: {handleStub(quest.did)}</span>
+        <span>発注者: <Handle did={quest.did} /></span>
         <span style={{ color: 'var(--color-accent)' }}>
-          {handleStub(quest.did)}P {quest.rewardPoints.toLocaleString()}
+          <Handle did={quest.did} suffix="P" /> {quest.rewardPoints.toLocaleString()}
         </span>
         <span style={{ marginLeft: 'auto' }}>{statusLabel(quest.status, expired, completedByApproval)}</span>
       </div>
@@ -299,7 +303,7 @@ export function BoardDetail() {
           {applications && applications.map(a => (
             <div key={a.uri} className="dq-window compact">
               <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                {handleStub(a.did)} - {new Date(a.createdAt).toLocaleString()}
+                <Handle did={a.did} /> - {new Date(a.createdAt).toLocaleString()}
               </p>
               <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{a.message}</p>
               <button onClick={() => onAssign(a.did)} disabled={busy}>受託者に指定</button>
@@ -312,7 +316,7 @@ export function BoardDetail() {
       {(quest.status === 'assigned' || quest.status === 'reported') && quest.assignee && (
         <section style={{ marginTop: '1.4em' }}>
           <p style={{ fontSize: '0.85em' }}>
-            受託者: <strong>{handleStub(quest.assignee)}</strong>
+            受託者: <strong><Handle did={quest.assignee} /></strong>
             {quest.status === 'reported' && ' (完了報告済み、承認待ち)'}
           </p>
           {isAssignee && quest.status === 'assigned' && (
@@ -331,9 +335,9 @@ export function BoardDetail() {
       {(quest.status === 'completed' || completedByApproval) && (
         <section style={{ marginTop: '1.4em' }} className="dq-window">
           <p style={{ margin: 0, fontSize: '0.9em' }}>
-            完了! 受託者 <strong>{handleStub(quest.assignee ?? '')}</strong> に{' '}
+            完了! 受託者 <strong>{quest.assignee ? <Handle did={quest.assignee} /> : '—'}</strong> に{' '}
             <span style={{ color: 'var(--color-accent)' }}>
-              {handleStub(quest.did)}P {quest.rewardPoints.toLocaleString()}
+              <Handle did={quest.did} suffix="P" /> {quest.rewardPoints.toLocaleString()}
             </span>{' '}
             が発行されました。
           </p>
@@ -348,7 +352,7 @@ export function BoardDetail() {
             {completions.map(c => (
               <li key={c.uri} className="dq-window compact">
                 <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                  {roleLabel(c.role)} - {handleStub(c.did)} - {new Date(c.createdAt).toLocaleString()}
+                  {roleLabel(c.role)} - <Handle did={c.did} /> - {new Date(c.createdAt).toLocaleString()}
                 </p>
                 {c.comment && <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{c.comment}</p>}
               </li>
@@ -376,10 +380,6 @@ function roleLabel(role: string): string {
   if (role === 'requesterApproval') return '承認';
   if (role === 'requesterRevision') return 'やり直し依頼';
   return role;
-}
-
-function handleStub(did: string): string {
-  return did.slice(0, 14).replace(/^did:plc:/, '');
 }
 
 function toLocalInput(iso: string): string {

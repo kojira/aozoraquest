@@ -22,9 +22,9 @@ import { useSession } from '@/lib/session';
 import {
   listIssuedQuests,
   listMyApplications,
-  parseAtUri,
   getQuest,
 } from '@/lib/quest-api';
+import { Handle } from '@/components/handle';
 
 export function Portfolio() {
   const session = useSession();
@@ -134,7 +134,7 @@ export function Portfolio() {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {receivedByIssuer.map(([did, pt]) => (
               <li key={did} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3em 0', borderBottom: '1px dotted rgba(255,255,255,0.1)' }}>
-                <span>{handleStub(did)}ポイント</span>
+                <span><Handle did={did} suffix="ポイント" /></span>
                 <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
                   {pt.toLocaleString()} pt
                 </span>
@@ -198,7 +198,7 @@ function QuestHistoryList({ quests }: { quests: UserQuest[] }) {
             <div className="dq-window compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <span style={{ color: 'var(--color-fg)', fontSize: '0.9em' }}>{q.title}</span>
               <span style={{ fontSize: '0.75em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
-                {handleStub(q.did)}P {q.rewardPoints.toLocaleString()}
+                <Handle did={q.did} suffix="P" /> {q.rewardPoints.toLocaleString()}
               </span>
             </div>
           </Link>
@@ -208,6 +208,3 @@ function QuestHistoryList({ quests }: { quests: UserQuest[] }) {
   );
 }
 
-function handleStub(did: string): string {
-  return did.slice(0, 14).replace(/^did:plc:/, '');
-}
