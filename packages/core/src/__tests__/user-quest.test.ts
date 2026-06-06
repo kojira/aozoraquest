@@ -12,6 +12,9 @@ import {
   statXpDistribution,
   formatQuestAnnouncement,
   formatNotificationPost,
+  checkIssuanceLimits,
+  MAX_OPEN_QUESTS_PER_USER,
+  MAX_QUESTS_PER_DAY,
   type UserQuest,
   type QuestCompletion,
 } from '../user-quest.js';
@@ -245,6 +248,63 @@ describe('formatQuestAnnouncement', () => {
       questUrl: 'https://x',
     });
     expect(out).not.toContain('〆切');
+  });
+});
+
+describe('checkIssuanceLimits', () => {
+  it('0 件なら ok', () => {
+    const r = checkIssuanceLimits([], NOW);
+    expect(r.ok).toBe(true);
+    expect(r.openCount).toBe(0);
+    expect(r.todayCount).toBe(0);
+  });
+
+  it('open が上限未満なら ok', () => {
+    const qs: UserQuest[] = Array.from({ length: MAX_OPEN_QUESTS_PER_USER - 1 }, (_, i) =>
+      mk({ uri: `u${i}`, status: 'open', createdAt: '2026-05-01T00:00:00Z' })
+    );
+    const r = checkIssuanceLimits(qs, NOW);
+    expect(r.ok).toBe(true);
+  });
+
+  it('open が上限以上なら NG', () => {
+    const qs: UserQuest[] = Array.from({ length: MAX_OPEN_QUESTS_PER_USER }, (_, i) =>
+      mk({ uri: `u${i}`, status: 'open', createdAt: '2026-05-01T00:00:00Z' })
+    );
+    const r = checkIssuanceLimits(qs, NOW);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/同時に/);
+  });
+
+  it('完了済みやキャンセルは open カウントに入らない', () => {
+    const qs: UserQuest[] = [
+      ...Array.from({ length: MAX_OPEN_QUESTS_PER_USER + 5 }, (_, i) =>
+        mk({ uri: `done${i}`, status: 'completed', createdAt: '2026-05-01T00:00:00Z' })
+      ),
+    ];
+    const r = checkIssuanceLimits(qs, NOW);
+    expect(r.ok).toBe(true);
+    expect(r.openCount).toBe(0);
+  });
+
+  it('24h 以内の発行数が上限以上なら NG', () => {
+    const recentIso = new Date(NOW.getTime() - 60 * 60 * 1000).toISOString(); // 1h 前
+    const qs: UserQuest[] = Array.from({ length: MAX_QUESTS_PER_DAY }, (_, i) =>
+      mk({ uri: `r${i}`, status: 'cancelled', createdAt: recentIso })
+    );
+    const r = checkIssuanceLimits(qs, NOW);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/24 時間/);
+  });
+
+  it('24h 超過の発行はカウントされない', () => {
+    const oldIso = new Date(NOW.getTime() - 48 * 60 * 60 * 1000).toISOString();
+    const qs: UserQuest[] = Array.from({ length: MAX_QUESTS_PER_DAY * 3 }, (_, i) =>
+      mk({ uri: `old${i}`, status: 'cancelled', createdAt: oldIso })
+    );
+    const r = checkIssuanceLimits(qs, NOW);
+    expect(r.ok).toBe(true);
+    expect(r.todayCount).toBe(0);
   });
 });
 

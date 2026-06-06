@@ -85,31 +85,36 @@ export async function resolveHandle(did: string): Promise<string | null> {
   return p;
 }
 
-/** UI 用フック: handle を取得しつつ、未解決中は fallback を返す。 */
-export function useHandle(did: string | null | undefined, fallback?: string): string {
-  const [handle, setHandle] = useState<string | null>(() => {
-    if (!did) return null;
+export type HandleState = 'loading' | 'resolved' | 'deleted';
+
+export interface HandleResult {
+  handle: string | null;
+  state: HandleState;
+}
+
+/** UI 用フック: handle を取得しつつ、未解決中は loading を返す。
+ *  解決失敗 (= getProfile が 4xx 等で返した) は deleted (= アカウント削除) と扱う。 */
+export function useHandle(did: string | null | undefined): HandleResult {
+  const [result, setResult] = useState<HandleResult>(() => {
+    if (!did) return { handle: null, state: 'loading' };
     ensureLoaded();
     const hit = memCache.get(did);
-    return hit && Date.now() - hit.ts < TTL_MS ? hit.handle : null;
+    if (hit && Date.now() - hit.ts < TTL_MS) {
+      return { handle: hit.handle, state: 'resolved' };
+    }
+    return { handle: null, state: 'loading' };
   });
 
   useEffect(() => {
     if (!did) return;
     let cancelled = false;
     void resolveHandle(did).then((h) => {
-      if (!cancelled && h) setHandle(h);
+      if (cancelled) return;
+      if (h) setResult({ handle: h, state: 'resolved' });
+      else setResult({ handle: null, state: 'deleted' });
     });
     return () => { cancelled = true; };
   }, [did]);
 
-  if (handle) return handle;
-  return fallback ?? defaultStub(did ?? '');
-}
-
-/** handle 解決中・失敗時の表示。最低限「@unknown」よりはマシな見た目を出す。 */
-function defaultStub(did: string): string {
-  if (!did) return '...';
-  // 旧 stub と違って DID と気付かれにくいよう短く。
-  return '...';
+  return result;
 }
