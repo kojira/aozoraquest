@@ -7,9 +7,9 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement } from '@aozoraquest/core';
+import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement, checkIssuanceLimits } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { createQuest } from '@/lib/quest-api';
+import { createQuest, listIssuedQuests } from '@/lib/quest-api';
 import { createTaggedPost } from '@/lib/atproto';
 import { getPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
 
@@ -67,6 +67,14 @@ export function BoardNew() {
     setBusy(true);
     setErr(null);
     try {
+      // スパム上限チェック (docs/15-user-quest.md §モデレーション)
+      const myQuests = await listIssuedQuests(session.agent, session.did, 100);
+      const limit = checkIssuanceLimits(myQuests);
+      if (!limit.ok) {
+        setErr(limit.reason ?? '発行制限に達しました。');
+        setBusy(false);
+        return;
+      }
       const quest = await createQuest(session.agent, session.did, {
         title: title.trim(),
         body: body.trim(),

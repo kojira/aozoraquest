@@ -228,6 +228,46 @@ export function statXpDistribution(tags: string[]): StatVector {
   return result;
 }
 
+// ─── 発行スパム上限 (docs/15-user-quest.md §モデレーション) ─
+
+export const MAX_OPEN_QUESTS_PER_USER = 3;
+export const MAX_QUESTS_PER_DAY = 5;
+
+export interface SpamLimitCheck {
+  ok: boolean;
+  reason?: string;
+  openCount: number;
+  todayCount: number;
+}
+
+/** 発注者の発行制限をチェック。自分の既存 userQuest 一覧を渡す。 */
+export function checkIssuanceLimits(
+  myQuests: UserQuest[],
+  now: Date = new Date(),
+): SpamLimitCheck {
+  const openCount = myQuests.filter(q => q.status === 'open').length;
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const todayCount = myQuests.filter(q => new Date(q.createdAt) > dayAgo).length;
+
+  if (openCount >= MAX_OPEN_QUESTS_PER_USER) {
+    return {
+      ok: false,
+      reason: `同時に公開できるクエストは ${MAX_OPEN_QUESTS_PER_USER} 件までです。古いものをキャンセルしてから発行してください。`,
+      openCount,
+      todayCount,
+    };
+  }
+  if (todayCount >= MAX_QUESTS_PER_DAY) {
+    return {
+      ok: false,
+      reason: `24 時間以内に発行できるクエストは ${MAX_QUESTS_PER_DAY} 件までです。少し時間を置いてください。`,
+      openCount,
+      todayCount,
+    };
+  }
+  return { ok: true, openCount, todayCount };
+}
+
 // ─── Bluesky 告知 / 通知 post 文面テンプレ (付録 B) ──────
 
 export function formatQuestAnnouncement(args: {

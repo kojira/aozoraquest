@@ -10,7 +10,8 @@
  *               公開ポートフォリオ (他人視点) 表示の opt-out
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { AtpAgent, Agent } from '@atproto/api';
 import {
   summarize,
   distinctRecipients,
@@ -26,16 +27,59 @@ import {
 } from '@/lib/quest-api';
 import { Handle } from '@/components/handle';
 
+const PUBLIC_APPVIEW = 'https://api.bsky.app';
+
 export function Portfolio() {
   const session = useSession();
+  return <PortfolioView did={session.did ?? null} agent={session.agent ?? null} isSelf={true} signedIn={session.status === 'signed-in'} />;
+}
+
+/**
+ * 他人の公開ポートフォリオ画面 (`/profile/:handle/portfolio`)。
+ * handle → did 解決して PortfolioView に渡す。サインインなしでも閲覧可能。
+ */
+export function PublicPortfolio() {
+  const { handle } = useParams<{ handle: string }>();
+  const session = useSession();
+  const [did, setDid] = useState<string | null>(null);
+  const [resolveErr, setResolveErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!handle) return;
+    let cancelled = false;
+    const agent = new AtpAgent({ service: PUBLIC_APPVIEW });
+    agent.getProfile({ actor: handle })
+      .then((res) => { if (!cancelled) setDid(res.data.did); })
+      .catch((e) => { if (!cancelled) setResolveErr(String((e as Error)?.message ?? e)); });
+    return () => { cancelled = true; };
+  }, [handle]);
+
+  if (!handle) return <p>URL が壊れています。</p>;
+  if (resolveErr) return <p style={{ color: 'var(--color-danger)' }}>解決に失敗: {resolveErr}</p>;
+  if (!did) return <p style={{ fontSize: '0.9em', color: 'var(--color-muted)' }}>読み込み中...</p>;
+
+  // 他人視点では session.agent (= 認証済み) があれば listRecords は通る。
+  // 公開 read だけなら publicAgent でも十分だが、認証済みエージェントを優先する。
+  // AtpAgent と Agent は内部実装が同等なので、PortfolioView 側では unknown 経由で受ける。
+  const agent: Agent = session.agent ?? (new AtpAgent({ service: PUBLIC_APPVIEW }) as unknown as Agent);
+  const isSelf = session.did === did;
+  return <PortfolioView did={did} agent={agent} isSelf={isSelf} signedIn={session.status === 'signed-in'} />;
+}
+
+interface PortfolioViewProps {
+  did: string | null;
+  agent: Agent | null;
+  isSelf: boolean;
+  signedIn: boolean;
+}
+
+function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
   const [issued, setIssued] = useState<UserQuest[] | null>(null);
   const [received, setReceived] = useState<UserQuest[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session.status !== 'signed-in' || !session.agent || !session.did) return;
-    const agent = session.agent;
-    const did = session.did;
+    if (!agent || !did) return;
     let cancelled = false;
     (async () => {
       try {
@@ -60,7 +104,7 @@ export function Portfolio() {
       }
     })();
     return () => { cancelled = true; };
-  }, [session.status, session.agent, session.did]);
+  }, [did, agent]);
 
   const issuedSummary: OutcomeSummary | null = issued ? summarize(issued) : null;
   const receivedSummary: OutcomeSummary | null = received ? summarize(received) : null;
@@ -82,13 +126,15 @@ export function Portfolio() {
     [completedIssued],
   );
 
-  if (session.status !== 'signed-in') {
+  if (isSelf && !signedIn) {
     return <p style={{ fontSize: '0.9em' }}>サインインしてください。</p>;
   }
 
   return (
     <div>
-      <h2 style={{ marginTop: 0, fontSize: '1.15em' }}>ポートフォリオ</h2>
+      <h2 style={{ marginTop: 0, fontSize: '1.15em' }}>
+        {isSelf ? 'ポートフォリオ' : <><Handle did={did ?? ''} suffix=" のポートフォリオ" /></>}
+      </h2>
       <p style={{ fontSize: '0.85em' }}>
         <Link to="/board">← 掲示板へ戻る</Link>
       </p>

@@ -6,6 +6,8 @@ import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resona
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL, ROOT_COL } from '@/lib/collections';
+import { ActionLink } from '@/components/action-link';
+import { BookIcon } from '@/components/icons';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
 import { Avatar } from '@/components/avatar';
 import { RadarChart } from '@/components/radar-chart';
@@ -121,6 +123,11 @@ export function Profile() {
         )}
         <div style={{ marginTop: '0.6em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
           フォロー {profile.followsCount ?? 0} · フォロワー {profile.followersCount ?? 0} · 投稿 {profile.postsCount ?? 0}
+        </div>
+        <div style={{ marginTop: '0.6em' }}>
+          <ActionLink to={`/profile/${profile.handle}/portfolio`} icon={<BookIcon size={18} />} variant="inline">
+            クエストポートフォリオ
+          </ActionLink>
         </div>
       </section>
 
