@@ -16,6 +16,7 @@ import {
 import { isExpired, type UserQuest } from '@aozoraquest/core';
 import { BookIcon, PlusIcon, CalendarIcon } from '@/components/icons';
 import { ActionLink } from '@/components/action-link';
+import { Handle } from '@/components/handle';
 
 type Tab = 'open' | 'mine';
 
@@ -135,14 +136,13 @@ function summaryOf(q: UserQuest): QuestIndexSummary {
 }
 
 function QuestCard({ summary, expired }: { summary: QuestIndexSummary; expired?: boolean }) {
-  const handle = handleFromDid(summary.did);
   return (
     <Link to={`/board/${encodeURIComponent(summary.uri)}`} style={{ textDecoration: 'none' }}>
       <div className="dq-window compact" style={{ borderColor: expired ? 'var(--color-muted)' : undefined }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5em' }}>
           <div style={{ fontWeight: 700, fontSize: '0.95em', color: 'var(--color-fg)' }}>{summary.title}</div>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.8em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-            {handle}P {summary.rewardPoints.toLocaleString()}
+            <Handle did={summary.did} suffix="P" /> {summary.rewardPoints.toLocaleString()}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
@@ -155,12 +155,6 @@ function QuestCard({ summary, expired }: { summary: QuestIndexSummary; expired?:
       </div>
     </Link>
   );
-}
-
-function handleFromDid(did: string): string {
-  // 簡易: handle 解決は別途キャッシュ層が要るが、Phase 1 では did の末尾だけ。
-  // 実体としては「kojiraP」のように発行者を識別できれば十分。Phase 2 で AppView 経由解決を実装。
-  return did.slice(0, 10).replace(/^did:plc:/, '');
 }
 
 function labelOf(status: string): string {
