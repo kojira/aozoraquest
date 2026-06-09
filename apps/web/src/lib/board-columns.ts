@@ -1,0 +1,94 @@
+/**
+ * 依頼クエスト掲示板のマルチカラム設定 (docs/15-user-quest.md §UI 設計 E)。
+ *
+ * カラム種類:
+ *  - open     : 全体の募集中
+ *  - mine     : 自分が出した
+ *  - applied  : 自分が応募した
+ *  - tag      : 特定タグ (param = タグ名)
+ *  - job      : 特定 targetJob (param = archetype id)
+ *  - issuer   : 特定発行者 DID (param = did)
+ *
+ * 設定は localStorage に保存。デスクトップ (>= 768px) で並列、
+ * モバイルでは縦並びでスクロール (Phase 3 MVP)。
+ */
+
+import type { Archetype } from '@aozoraquest/core';
+
+export type ColumnKind = 'open' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
+
+export interface Column {
+  id: string;
+  kind: ColumnKind;
+  /** tag=タグ名、job=archetype id、issuer=did。kind により意味が変わる。 */
+  param?: string;
+  /** ヘッダー表示。未設定なら kind+param から推定。 */
+  title?: string;
+}
+
+const KEY = 'aozoraquest:boardColumns:v1';
+
+const DEFAULT_COLUMNS: Column[] = [
+  { id: 'col-open', kind: 'open', title: '募集中' },
+  { id: 'col-mine', kind: 'mine', title: '自分が出した' },
+];
+
+export function loadColumns(): Column[] {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return [...DEFAULT_COLUMNS];
+    const parsed = JSON.parse(raw) as Column[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [...DEFAULT_COLUMNS];
+    return parsed.filter(isValidColumn);
+  } catch {
+    return [...DEFAULT_COLUMNS];
+  }
+}
+
+export function saveColumns(columns: Column[]): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(columns));
+  } catch {/* no-op */}
+}
+
+export function resetColumns(): Column[] {
+  saveColumns([...DEFAULT_COLUMNS]);
+  return [...DEFAULT_COLUMNS];
+}
+
+export function makeColumn(kind: ColumnKind, param?: string, title?: string): Column {
+  const id = `col-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+  const col: Column = { id, kind };
+  if (param !== undefined) col.param = param;
+  if (title !== undefined) col.title = title;
+  return col;
+}
+
+export function defaultTitleFor(c: Column): string {
+  if (c.title) return c.title;
+  switch (c.kind) {
+    case 'open':    return '募集中';
+    case 'mine':    return '自分が出した';
+    case 'applied': return '自分が応募した';
+    case 'tag':     return `#${c.param ?? ''}`;
+    case 'job':     return `求めるジョブ: ${c.param ?? ''}`;
+    case 'issuer':  return `発行者別`;
+  }
+}
+
+function isValidColumn(c: unknown): c is Column {
+  if (!c || typeof c !== 'object') return false;
+  const obj = c as Record<string, unknown>;
+  if (typeof obj.id !== 'string') return false;
+  const kinds: ColumnKind[] = ['open', 'mine', 'applied', 'tag', 'job', 'issuer'];
+  if (!kinds.includes(obj.kind as ColumnKind)) return false;
+  return true;
+}
+
+/** archetype の knownValues は core から。チップ選択肢に使う。 */
+export const JOB_OPTIONS: Archetype[] = [
+  'sage', 'mage', 'shogun', 'bard',
+  'seer', 'poet', 'paladin', 'explorer',
+  'warrior', 'guardian', 'fighter', 'artist',
+  'captain', 'miko', 'ninja', 'performer',
+];
