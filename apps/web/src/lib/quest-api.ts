@@ -213,15 +213,16 @@ export function questOwnerDidOf(uri: AtUri): Did | null {
   }
 }
 
-/** PDS write 用に「undefined フィールドを落とす + $type 付与」を行う。
+/** PDS write 用に「undefined / null フィールドを落とす + $type 付与」を行う。
  *  exactOptionalPropertyTypes 下で `{ ...x }` を put すると undefined が
  *  そのまま PDS に書き込まれる可能性があるため、send 直前に必ず通す。
+ *  null も Lexicon 違反になりうるので同じく落とす。
  *  uri / did は record 自体には含めない (rkey や URI は別途扱う)。 */
 export function toRecord<T extends object>(value: T, $type: string, exclude: string[] = ['uri', 'did']): Record<string, unknown> {
   const out: Record<string, unknown> = { $type };
   for (const [k, v] of Object.entries(value)) {
     if (exclude.includes(k)) continue;
-    if (v === undefined) continue;
+    if (v === undefined || v === null) continue;
     out[k] = v;
   }
   return out;

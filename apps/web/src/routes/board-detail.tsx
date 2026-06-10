@@ -53,6 +53,22 @@ export function BoardDetail() {
   const [reportForm, setReportForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
   const [approveForm, setApproveForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
   const [revisionForm, setRevisionForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
+  /** 受託者指定の確認: applicant did を保持 (= 確認 UI を開いている対象) */
+  const [pendingAssign, setPendingAssign] = useState<string | null>(null);
+
+  // URI 変更 (= 別 quest へ遷移) 時に inline form の state を初期化する。
+  // 第三者レビューの指摘 (UI: form 持ち越し)。
+  useEffect(() => {
+    setEditingDeadline(false);
+    setDeadlineInput('');
+    setApplyForm({ open: false, message: '' });
+    setReportForm({ open: false, message: '' });
+    setApproveForm({ open: false, message: '' });
+    setRevisionForm({ open: false, message: '' });
+    setPendingAssign(null);
+    setErr(null);
+    setBusy(false);
+  }, [uri]);
 
   const refresh = useCallback(async () => {
     if (!uri || !session.agent) return;
@@ -175,13 +191,13 @@ export function BoardDetail() {
     }
   }
 
-  async function onAssign(applicantDid: string) {
+  async function confirmAssign(applicantDid: string) {
     if (!session.agent || !quest || !isOwner) return;
-    if (!confirm('この応募者を受託者に指定しますか? 他の応募は受け付けられなくなります。')) return;
     setBusy(true);
     try {
       await setAssignee(session.agent, quest, applicantDid);
       await notifyBluesky('assigned', applicantDid);
+      setPendingAssign(null);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -279,13 +295,16 @@ export function BoardDetail() {
           </div>
           {editingDeadline && (
             <div className="dq-window compact" style={{ marginTop: '0.5em' }}>
-              <label style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
+              <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>募集期限を変更</h4>
+              <label htmlFor="deadline-input" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
                 新しい期限 (空欄で削除)
               </label>
               <input
+                id="deadline-input"
                 type="datetime-local"
                 value={deadlineInput}
                 onChange={(e) => setDeadlineInput(e.target.value)}
+                autoFocus
                 style={{ width: '100%' }}
               />
               <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
@@ -305,11 +324,14 @@ export function BoardDetail() {
               <button onClick={() => setApplyForm({ open: true, message: '' })} disabled={busy}>このクエストに応募する</button>
             ) : (
               <div className="dq-window compact">
-                <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>応募メッセージ (やる気・経験・質問など)</label>
+                <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>クエストに応募する</h4>
+                <label htmlFor="apply-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>応募メッセージ (やる気・経験・質問など)</label>
                 <textarea
+                  id="apply-msg"
                   value={applyForm.message}
                   onChange={(e) => setApplyForm({ ...applyForm, message: e.target.value })}
                   rows={4}
+                  autoFocus
                   style={{ width: '100%' }}
                 />
                 <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
@@ -328,25 +350,43 @@ export function BoardDetail() {
         </div>
       )}
 
-      {/* 発注者向け応募者一覧 (open のとき) */}
-      {isOwner && quest.status === 'open' && (
-        <section style={{ marginTop: '1.4em' }}>
-          <h3 style={{ fontSize: '0.95em' }}>応募者 ({applications?.length ?? 0})</h3>
-          {!applications && <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中...</p>}
-          {applications && applications.length === 0 && (
-            <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ応募がありません。</p>
-          )}
-          {applications && applications.map(a => (
-            <div key={a.uri} className="dq-window compact">
-              <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                <Handle did={a.did} /> - {new Date(a.createdAt).toLocaleString()}
-              </p>
-              <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{a.message}</p>
-              <button onClick={() => onAssign(a.did)} disabled={busy}>受託者に指定</button>
-            </div>
-          ))}
-        </section>
-      )}
+      {/* 発注者向け応募者一覧 (open のとき): withdrawn は除外 */}
+      {isOwner && quest.status === 'open' && (() => {
+        const activeApps = applications?.filter(a => !a.withdrawn) ?? null;
+        return (
+          <section style={{ marginTop: '1.4em' }}>
+            <h3 style={{ fontSize: '0.95em' }}>応募者 ({activeApps?.length ?? 0})</h3>
+            {!activeApps && <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中...</p>}
+            {activeApps && activeApps.length === 0 && (
+              <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ応募がありません。</p>
+            )}
+            {activeApps && activeApps.map(a => (
+              <div key={a.uri} className="dq-window compact">
+                <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
+                  <Handle did={a.did} /> - {new Date(a.createdAt).toLocaleString()}
+                </p>
+                <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{a.message}</p>
+                {pendingAssign === a.did ? (
+                  <div style={{ marginTop: '0.4em', padding: '0.4em', background: 'rgba(255,255,255,0.06)', borderRadius: '2px' }}>
+                    <p style={{ margin: '0 0 0.4em', fontSize: '0.85em' }}>
+                      <strong><Handle did={a.did} /></strong> を受託者に指定しますか?<br />
+                      <span style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
+                        他の応募者には自動通知は送られませんが、ステータスが「受託中」に変わり追加応募は受け付けられなくなります。
+                      </span>
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.5em' }}>
+                      <button onClick={() => confirmAssign(a.did)} disabled={busy}>確定する</button>
+                      <button className="secondary" onClick={() => setPendingAssign(null)} disabled={busy}>戻る</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setPendingAssign(a.did)} disabled={busy || pendingAssign !== null}>受託者に指定</button>
+                )}
+              </div>
+            ))}
+          </section>
+        );
+      })()}
 
       {/* assigned 中: 受託者の表示 + 受託者の完了報告フォーム */}
       {(quest.status === 'assigned' || quest.status === 'reported') && quest.assignee && (
@@ -360,11 +400,14 @@ export function BoardDetail() {
               <button onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
             ) : (
               <div className="dq-window compact">
-                <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>成果物の URL・一言コメント (任意)</label>
+                <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>完了を報告する</h4>
+                <label htmlFor="report-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>成果物の URL・一言コメント (任意)</label>
                 <textarea
+                  id="report-msg"
                   value={reportForm.message}
                   onChange={(e) => setReportForm({ ...reportForm, message: e.target.value })}
                   rows={4}
+                  autoFocus
                   placeholder="例: https://example.com/illust.png&#10;こんな感じになりました!"
                   style={{ width: '100%' }}
                 />
@@ -385,11 +428,14 @@ export function BoardDetail() {
               )}
               {approveForm.open && (
                 <div className="dq-window compact">
-                  <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>承認コメント (任意)</label>
+                  <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>完了を承認する (報酬を発行)</h4>
+                  <label htmlFor="approve-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>承認コメント (任意)</label>
                   <textarea
+                    id="approve-msg"
                     value={approveForm.message}
                     onChange={(e) => setApproveForm({ ...approveForm, message: e.target.value })}
                     rows={3}
+                    autoFocus
                     style={{ width: '100%' }}
                   />
                   <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
@@ -400,11 +446,14 @@ export function BoardDetail() {
               )}
               {revisionForm.open && (
                 <div className="dq-window compact">
-                  <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>やり直しを依頼する理由 (必須)</label>
+                  <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>やり直しを依頼する</h4>
+                  <label htmlFor="revision-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>依頼する理由 (必須)</label>
                   <textarea
+                    id="revision-msg"
                     value={revisionForm.message}
                     onChange={(e) => setRevisionForm({ ...revisionForm, message: e.target.value })}
                     rows={4}
+                    autoFocus
                     style={{ width: '100%' }}
                   />
                   <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>

@@ -40,7 +40,7 @@ export function BoardNew() {
       handle,
       ...(deadline ? { deadline } : {}),
       tags,
-      questUrl: '<クエスト URL は発行後に置き換わります>',
+      questUrl: '[QUEST_URL]',
     });
   }, [title, rewardPoints, handle, deadline, tags]);
 
@@ -85,7 +85,10 @@ export function BoardNew() {
       });
       // Bluesky 告知 (default ON、ユーザー編集テキストを使う)
       if (announce) {
-        const finalText = announceText.replace('<クエスト URL は発行後に置き換わります>', `${location.origin}/board/${encodeURIComponent(quest.uri)}`);
+        const questUrl = `${location.origin}/board/${encodeURIComponent(quest.uri)}`;
+        // [QUEST_URL] マーカーが残っていれば置換。ユーザーが消してしまっていれば末尾に追加。
+        let finalText = announceText.replace('[QUEST_URL]', questUrl);
+        if (!finalText.includes(questUrl)) finalText = `${finalText.trim()}\n${questUrl}`;
         try {
           await createTaggedPost(session.agent, finalText, 'aozoraquest');
         } catch (e) {
@@ -204,12 +207,18 @@ export function BoardNew() {
           </p>
         )}
         {announce && (
-          <textarea
-            value={announceText}
-            onChange={(e) => setAnnounceText(e.target.value)}
-            rows={5}
-            style={{ width: '100%', marginTop: '0.4em' }}
-          />
+          <>
+            <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.4em 0 0.2em' }}>
+              <code>[QUEST_URL]</code> が発行後の URL に置き換わります。消した場合は末尾に自動追加されます。
+            </p>
+            <textarea
+              aria-label="Bluesky 告知本文"
+              value={announceText}
+              onChange={(e) => setAnnounceText(e.target.value)}
+              rows={5}
+              style={{ width: '100%', marginTop: '0.2em' }}
+            />
+          </>
         )}
       </Field>
 
@@ -227,7 +236,7 @@ export function BoardNew() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: '1em' }}>
+    <div role="group" aria-label={label} style={{ marginBottom: '1em' }}>
       <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>{label}</label>
       {children}
     </div>
