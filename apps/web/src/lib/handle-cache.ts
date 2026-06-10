@@ -146,9 +146,9 @@ export interface HandleResult {
 export function useHandle(did: string | null | undefined): HandleResult {
   const [result, setResult] = useState<HandleResult>(() => {
     if (!did) return { handle: null, state: 'loading' };
-    if (typeof globalThis.localStorage === 'undefined') {
-      return { handle: null, state: 'loading' };
-    }
+    // SSR や localStorage access が throw する環境 (= 一部のブラウザ拡張)
+    // でも初期 render を落とさないよう、guard を hasLocalStorage() に揃える。
+    if (!hasLocalStorage()) return { handle: null, state: 'loading' };
     ensureLoaded();
     const hit = memCache.get(did);
     if (hit && Date.now() - hit.ts < TTL_MS) {
