@@ -25,9 +25,18 @@ interface CacheEntry {
 const memCache = new Map<string, CacheEntry>();
 let loaded = false;
 
-function loadDisk(): Record<string, CacheEntry> {
+function hasLocalStorage(): boolean {
   try {
-    const raw = localStorage.getItem(KEY);
+    return typeof globalThis !== 'undefined' && typeof globalThis.localStorage !== 'undefined';
+  } catch {
+    return false;
+  }
+}
+
+function loadDisk(): Record<string, CacheEntry> {
+  if (!hasLocalStorage()) return {};
+  try {
+    const raw = globalThis.localStorage.getItem(KEY);
     if (!raw) return {};
     return JSON.parse(raw) as Record<string, CacheEntry>;
   } catch {
@@ -36,10 +45,11 @@ function loadDisk(): Record<string, CacheEntry> {
 }
 
 function saveDisk(): void {
+  if (!hasLocalStorage()) return;
   try {
     const obj: Record<string, CacheEntry> = {};
     for (const [k, v] of memCache) obj[k] = v;
-    localStorage.setItem(KEY, JSON.stringify(obj));
+    globalThis.localStorage.setItem(KEY, JSON.stringify(obj));
   } catch {/* no-op */}
 }
 
@@ -52,31 +62,62 @@ function ensureLoaded(): void {
   loaded = true;
 }
 
-const publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW });
+// AtpAgent インスタンスは初回利用時に生成 (= モジュール top-level での副作用を避ける、SSR-safe)
+let _publicAgent: AtpAgent | null = null;
+function publicAgent(): AtpAgent {
+  if (!_publicAgent) _publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW });
+  return _publicAgent;
+}
 
-const inflight = new Map<string, Promise<string | null>>();
+/** resolve の結果区分。
+ *  - { kind: 'ok', handle } : 解決成功
+ *  - { kind: 'deleted' } : AppView が 4xx で「存在しない」と返した
+ *  - { kind: 'transient' } : ネットワーク/レート制限/5xx (一時的)
+ */
+export type ResolveResult =
+  | { kind: 'ok'; handle: string }
+  | { kind: 'deleted' }
+  | { kind: 'transient' };
 
-/** 単発の handle 解決。キャッシュにあれば即返す。 */
-export async function resolveHandle(did: string): Promise<string | null> {
+const inflight = new Map<string, Promise<ResolveResult>>();
+
+function classifyError(e: unknown): 'deleted' | 'transient' {
+  // @atproto/api は失敗時に { status } を持つ。4xx = NotFound 系、5xx と TypeError = transient
+  const status = (e as { status?: number })?.status;
+  if (typeof status === 'number') {
+    if (status === 400 || status === 404) return 'deleted';
+    return 'transient';
+  }
+  return 'transient';
+}
+
+/** 単発の handle 解決。キャッシュにあれば即返す。失敗時は kind で transient/deleted を区別 */
+export async function resolveHandleDetailed(did: string): Promise<ResolveResult> {
   ensureLoaded();
   const hit = memCache.get(did);
-  if (hit && Date.now() - hit.ts < TTL_MS) return hit.handle;
+  if (hit && Date.now() - hit.ts < TTL_MS) return { kind: 'ok', handle: hit.handle };
 
   const existing = inflight.get(did);
   if (existing) return existing;
 
-  const p = (async () => {
+  const p = (async (): Promise<ResolveResult> => {
     try {
-      const res = await publicAgent.getProfile({ actor: did });
+      const res = await publicAgent().getProfile({ actor: did });
       const handle = res.data.handle;
       if (handle) {
         memCache.set(did, { handle, ts: Date.now() });
         saveDisk();
+        return { kind: 'ok', handle };
       }
-      return handle ?? null;
+      return { kind: 'deleted' };
     } catch (e) {
-      console.warn('[handle-cache] resolve failed', did, e);
-      return null;
+      const cls = classifyError(e);
+      if (cls === 'transient') {
+        console.warn('[handle-cache] transient resolve failure', did, e);
+      } else {
+        console.info('[handle-cache] account looks deleted', did);
+      }
+      return { kind: cls };
     } finally {
       inflight.delete(did);
     }
@@ -85,7 +126,13 @@ export async function resolveHandle(did: string): Promise<string | null> {
   return p;
 }
 
-export type HandleState = 'loading' | 'resolved' | 'deleted';
+/** 互換 API: 解決できなかった場合は (deleted も transient も) null。 */
+export async function resolveHandle(did: string): Promise<string | null> {
+  const r = await resolveHandleDetailed(did);
+  return r.kind === 'ok' ? r.handle : null;
+}
+
+export type HandleState = 'loading' | 'resolved' | 'deleted' | 'transient';
 
 export interface HandleResult {
   handle: string | null;
@@ -93,10 +140,15 @@ export interface HandleResult {
 }
 
 /** UI 用フック: handle を取得しつつ、未解決中は loading を返す。
- *  解決失敗 (= getProfile が 4xx 等で返した) は deleted (= アカウント削除) と扱う。 */
+ *  - kind='ok'        → resolved
+ *  - kind='deleted'   → deleted (削除済み = グレー表示)
+ *  - kind='transient' → transient (短時間 retry してから deleted に倒す) */
 export function useHandle(did: string | null | undefined): HandleResult {
   const [result, setResult] = useState<HandleResult>(() => {
     if (!did) return { handle: null, state: 'loading' };
+    if (typeof globalThis.localStorage === 'undefined') {
+      return { handle: null, state: 'loading' };
+    }
     ensureLoaded();
     const hit = memCache.get(did);
     if (hit && Date.now() - hit.ts < TTL_MS) {
@@ -108,11 +160,22 @@ export function useHandle(did: string | null | undefined): HandleResult {
   useEffect(() => {
     if (!did) return;
     let cancelled = false;
-    void resolveHandle(did).then((h) => {
+    const attempt = async (retry: number) => {
+      const r = await resolveHandleDetailed(did);
       if (cancelled) return;
-      if (h) setResult({ handle: h, state: 'resolved' });
-      else setResult({ handle: null, state: 'deleted' });
-    });
+      if (r.kind === 'ok') {
+        setResult({ handle: r.handle, state: 'resolved' });
+        return;
+      }
+      if (r.kind === 'transient' && retry > 0) {
+        // 1.2s 待って 1 回だけ retry。それでも transient なら UI 上は loading→transient へ
+        await new Promise((res) => setTimeout(res, 1200));
+        if (cancelled) return;
+        return attempt(retry - 1);
+      }
+      setResult({ handle: null, state: r.kind });
+    };
+    void attempt(1);
     return () => { cancelled = true; };
   }, [did]);
 

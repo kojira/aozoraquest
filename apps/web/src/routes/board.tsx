@@ -88,7 +88,7 @@ export function Board() {
 
   return (
     <div data-board-wide="1" className="board-wide-wrap">
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.8em', flexWrap: 'wrap', gap: '0.5em' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5em', flexWrap: 'wrap', gap: '0.5em' }}>
         <h2 style={{ margin: 0, fontSize: '1.1em' }}>クエスト掲示板</h2>
         {session.status === 'signed-in' && (
           <span style={{ display: 'inline-flex', gap: '0.5em', flexWrap: 'wrap' }}>
@@ -98,9 +98,14 @@ export function Board() {
         )}
       </header>
 
+      <p style={{ margin: '0 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)', lineHeight: 1.5 }}>
+        お互いの「<strong>名前のポイント</strong>」(例: kojira.io ポイント) を発行しあって、やってほしいことを頼み合う掲示板です。
+        応募は誰でも、完了の判定は発注者が行います。報酬は自分が発行するので元手は要りません。
+      </p>
+
       <p style={{ margin: '0 0 0.8em' }}>
         <ActionLink to="/quests" icon={<CalendarIcon size={18} />} variant="inline">
-          日次クエスト (個人用)
+          日次クエスト (個人用) はこちら
         </ActionLink>
       </p>
 
@@ -207,7 +212,7 @@ function ColumnView({ column, index, myQuests, myApplicationQuestUris, sessionDi
       {items == null ? (
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>読み込み中...</p>
       ) : items.length === 0 ? (
-        <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>なし</p>
+        <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>{emptyMessageFor(column)}</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {items.map((q) => (
@@ -305,6 +310,17 @@ function QuestCard({ summary, expired }: { summary: QuestIndexSummary; expired?:
       </div>
     </Link>
   );
+}
+
+function emptyMessageFor(col: Column): string {
+  switch (col.kind) {
+    case 'open':    return 'まだ誰も募集していません。「クエストを出す」から始めてみましょう。';
+    case 'mine':    return 'あなたが発行したクエストはまだありません。';
+    case 'applied': return '応募中のクエストはありません。';
+    case 'tag':     return `#${col.param ?? ''} のクエストは見つかりませんでした。`;
+    case 'job':     return `「${col.param ?? ''}」を求めるクエストはまだありません。`;
+    case 'issuer':  return 'この発行者の募集中クエストはありません。';
+  }
 }
 
 function labelOf(status: string): string {

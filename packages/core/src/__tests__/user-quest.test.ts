@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isExpired,
   isCompleted,
+  isValidCompletion,
   outcomeOf,
   holdings,
   totalIssued,
@@ -92,6 +93,47 @@ describe('isCompleted (耐故障性)', () => {
       { uri: 'r2', did: 'did:plc:owner', questUri: q.uri, role: 'requesterRevision', createdAt: 'x' },
     ];
     expect(isCompleted(q, cs)).toBe(false);
+  });
+
+  it('★ approval owner DID が quest.did と一致しないと完了と見なさない (偽造防止)', () => {
+    const q = mk({ status: 'reported', did: 'did:plc:owner', uri: 'at://owner/q/1' });
+    const fakeApproval: QuestCompletion = {
+      uri: 'at://attacker/c/x',
+      did: 'did:plc:attacker',  // ← quest.did と違う
+      questUri: q.uri,
+      role: 'requesterApproval',
+      createdAt: 'x',
+    };
+    expect(isCompleted(q, [fakeApproval])).toBe(false);
+  });
+});
+
+describe('isValidCompletion (owner DID 検証)', () => {
+  function quest(): UserQuest {
+    return mk({ uri: 'at://owner/q/1', did: 'did:plc:owner', assignee: 'did:plc:assignee' });
+  }
+
+  it('assigneeReport は assignee 本人のみ正当', () => {
+    const q = quest();
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:assignee', questUri: q.uri, role: 'assigneeReport', createdAt: 'x' }, q)).toBe(true);
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:attacker', questUri: q.uri, role: 'assigneeReport', createdAt: 'x' }, q)).toBe(false);
+  });
+
+  it('requesterApproval / requesterRevision は発注者本人のみ正当', () => {
+    const q = quest();
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:owner', questUri: q.uri, role: 'requesterApproval', createdAt: 'x' }, q)).toBe(true);
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:owner', questUri: q.uri, role: 'requesterRevision', createdAt: 'x' }, q)).toBe(true);
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:attacker', questUri: q.uri, role: 'requesterApproval', createdAt: 'x' }, q)).toBe(false);
+  });
+
+  it('questUri が違う completion は無効', () => {
+    const q = quest();
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:owner', questUri: 'at://owner/q/2', role: 'requesterApproval', createdAt: 'x' }, q)).toBe(false);
+  });
+
+  it('assignee 未指定の quest に対する assigneeReport は無効', () => {
+    const q = mk({ uri: 'at://owner/q/2', did: 'did:plc:owner' });
+    expect(isValidCompletion({ uri: 'r', did: 'did:plc:assignee', questUri: q.uri, role: 'assigneeReport', createdAt: 'x' }, q)).toBe(false);
   });
 });
 

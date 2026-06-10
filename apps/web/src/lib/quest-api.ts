@@ -16,6 +16,7 @@ import type {
   AtUri,
   Did,
 } from '@aozoraquest/core';
+import { isValidCompletion } from '@aozoraquest/core';
 import { putRecord, getRecord } from './atproto';
 import { COL } from './collections';
 import { mockIndex } from './quest-mock';
@@ -50,22 +51,6 @@ export async function createQuest(
 ): Promise<UserQuest> {
   const rkey = makeRkey();
   const now = new Date().toISOString();
-  const record = {
-    $type: COL.userQuest,
-    title: input.title,
-    body: input.body,
-    tags: input.tags,
-    targetJob: input.targetJob,
-    deadline: input.deadline,
-    rewardPoints: input.rewardPoints,
-    blueskyPostUri: input.blueskyPostUri,
-    visibility: 'public',
-    status: 'open',
-    createdAt: now,
-    updatedAt: now,
-  };
-  await putRecord(agent, COL.userQuest, rkey, record);
-
   const uri: AtUri = `at://${did}/${COL.userQuest}/${rkey}`;
   const quest: UserQuest = {
     uri,
@@ -83,8 +68,21 @@ export async function createQuest(
   if (input.deadline !== undefined) quest.deadline = input.deadline;
   if (input.blueskyPostUri !== undefined) quest.blueskyPostUri = input.blueskyPostUri;
 
+  await putRecord(agent, COL.userQuest, rkey, toRecord(quest, COL.userQuest));
   await notifyEdgeQuest(agent, quest);
   return quest;
+}
+
+/** quest record を update (発注者がキャンセル / 期限変更 / status 更新するときに使う共通関数) */
+export async function updateQuest(
+  agent: Agent,
+  quest: UserQuest,
+): Promise<UserQuest> {
+  const { rkey } = parseAtUri(quest.uri);
+  const next: UserQuest = { ...quest, updatedAt: new Date().toISOString() };
+  await putRecord(agent, COL.userQuest, rkey, toRecord(next, COL.userQuest));
+  await notifyEdgeQuest(agent, next);
+  return next;
 }
 
 /** クエストを取得する (URI 指定、公開 read で OK) */
@@ -193,11 +191,40 @@ async function getBearerToken(_agent: Agent): Promise<string | null> {
 
 // ─── ヘルパ ───────────────────────────────────────────
 
+/** at-uri を厳格にパース。
+ *  - rkey に `/` を含む uri (= AT Proto 仕様外) は invalid 扱いで throw
+ *  - 不正 uri は呼び出し側で必ず catch すること */
 export function parseAtUri(uri: AtUri): { repo: Did; collection: string; rkey: string } {
   // at://did:plc:xxxx/app.aozoraquest.userQuest/3lp...
-  const m = uri.match(/^at:\/\/([^/]+)\/([^/]+)\/(.+)$/);
+  // rkey は AT Proto 仕様では `[A-Za-z0-9._:~-]` のみで `/` を含まない。
+  // collection と rkey の境界が曖昧にならないよう、rkey 側を厳格化。
+  const m = uri.match(/^at:\/\/([^/]+)\/([^/]+)\/([A-Za-z0-9._:~-]+)$/);
   if (!m || !m[1] || !m[2] || !m[3]) throw new Error(`invalid at-uri: ${uri}`);
   return { repo: m[1], collection: m[2], rkey: m[3] };
+}
+
+/** at-uri から発注者 (owner) DID だけを取り出す。集計時の owner check 用。
+ *  不正 uri なら null を返す (集計は無視するのが安全)。 */
+export function questOwnerDidOf(uri: AtUri): Did | null {
+  try {
+    return parseAtUri(uri).repo;
+  } catch {
+    return null;
+  }
+}
+
+/** PDS write 用に「undefined フィールドを落とす + $type 付与」を行う。
+ *  exactOptionalPropertyTypes 下で `{ ...x }` を put すると undefined が
+ *  そのまま PDS に書き込まれる可能性があるため、send 直前に必ず通す。
+ *  uri / did は record 自体には含めない (rkey や URI は別途扱う)。 */
+export function toRecord<T extends object>(value: T, $type: string, exclude: string[] = ['uri', 'did']): Record<string, unknown> {
+  const out: Record<string, unknown> = { $type };
+  for (const [k, v] of Object.entries(value)) {
+    if (exclude.includes(k)) continue;
+    if (v === undefined) continue;
+    out[k] = v;
+  }
+  return out;
 }
 
 export function questUrlOf(uri: AtUri, origin: string): string {
@@ -215,14 +242,6 @@ export async function applyToQuest(
 ): Promise<QuestApplication> {
   const rkey = makeRkey();
   const now = new Date().toISOString();
-  const record = {
-    $type: COL.questApplication,
-    questUri,
-    message,
-    withdrawn: false,
-    createdAt: now,
-  };
-  await putRecord(agent, COL.questApplication, rkey, record);
   const uri: AtUri = `at://${applicantDid}/${COL.questApplication}/${rkey}`;
   const app: QuestApplication = {
     uri,
@@ -232,6 +251,7 @@ export async function applyToQuest(
     withdrawn: false,
     createdAt: now,
   };
+  await putRecord(agent, COL.questApplication, rkey, toRecord(app, COL.questApplication));
   await notifyEdgeApplication(agent, app);
   return app;
 }
@@ -241,11 +261,8 @@ export async function withdrawApplication(
   app: QuestApplication,
 ): Promise<void> {
   const { rkey } = parseAtUri(app.uri);
-  const next = { ...app, withdrawn: true, $type: COL.questApplication };
-  const record: Record<string, unknown> = { ...next };
-  delete record.uri;
-  delete record.did;
-  await putRecord(agent, COL.questApplication, rkey, record);
+  const next: QuestApplication = { ...app, withdrawn: true };
+  await putRecord(agent, COL.questApplication, rkey, toRecord(next, COL.questApplication));
 }
 
 /** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する */
@@ -262,7 +279,8 @@ export async function listApplicationsFor(
       const v = await getRecord<Omit<QuestApplication, 'uri' | 'did'>>(
         agent, e.did, COL.questApplication, rkey,
       );
-      if (v && !v.withdrawn) {
+      if (v) {
+        // withdrawn も含めて返す (= UI 側で「取り下げ済み」表示するため)
         out.push({ ...v, uri: e.uri, did: e.did });
       }
     } catch (err) {
@@ -273,7 +291,7 @@ export async function listApplicationsFor(
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/** 自分が出した応募一覧 */
+/** 自分が出した応募一覧 (withdrawn も含めて返す。フィルタは UI 側で) */
 export async function listMyApplications(agent: Agent, myDid: Did, limit = 100): Promise<QuestApplication[]> {
   const res = await agent.com.atproto.repo.listRecords({
     repo: myDid,
@@ -284,8 +302,7 @@ export async function listMyApplications(agent: Agent, myDid: Did, limit = 100):
     .map(r => {
       const v = r.value as Omit<QuestApplication, 'uri' | 'did'>;
       return { ...v, uri: r.uri, did: myDid };
-    })
-    .filter(a => !a.withdrawn);
+    });
 }
 
 // ─── Phase 2: 受託者指定 (発注者が quest record を更新) ───
@@ -302,10 +319,7 @@ export async function setAssignee(
     status: 'assigned',
     updatedAt: new Date().toISOString(),
   };
-  const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
-  delete record.uri;
-  delete record.did;
-  await putRecord(agent, COL.userQuest, rkey, record);
+  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
   await notifyEdgeQuest(agent, updated);
   return updated;
 }
@@ -321,14 +335,6 @@ async function writeCompletion(
 ): Promise<QuestCompletion> {
   const rkey = makeRkey();
   const now = new Date().toISOString();
-  const record: Record<string, unknown> = {
-    $type: COL.questCompletion,
-    questUri,
-    role,
-    createdAt: now,
-  };
-  if (comment !== undefined) record.comment = comment;
-  await putRecord(agent, COL.questCompletion, rkey, record);
   const c: QuestCompletion = {
     uri: `at://${writerDid}/${COL.questCompletion}/${rkey}`,
     did: writerDid,
@@ -337,6 +343,7 @@ async function writeCompletion(
     createdAt: now,
   };
   if (comment !== undefined) c.comment = comment;
+  await putRecord(agent, COL.questCompletion, rkey, toRecord(c, COL.questCompletion));
   return c;
 }
 
@@ -364,13 +371,14 @@ export async function approveCompletion(
   quest: UserQuest,
   comment?: string,
 ): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
+  // 順序: (A) approval record → (B) quest status → (C) index 同期。
+  // (A) が真実、B-C は派生 (docs/15-user-quest.md §耐故障性)。
   const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterApproval', comment);
   const { rkey } = parseAtUri(quest.uri);
   const updated: UserQuest = { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
-  const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
-  delete record.uri;
-  delete record.did;
-  await putRecord(agent, COL.userQuest, rkey, record);
+  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
+  // (B) 成功後にのみ index と mock を更新する。B 失敗時は次回 reconciliation で
+  // 自分の approval record から完了済みと判定される (= eventual consistency)。
   mockIndex.updateQuestStatus(quest.uri, 'completed');
   await notifyEdgeQuest(agent, updated);
   return { completion, updatedQuest: updated };
@@ -386,10 +394,7 @@ export async function requestRevision(
   const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterRevision', comment);
   const { rkey } = parseAtUri(quest.uri);
   const updated: UserQuest = { ...quest, status: 'assigned', updatedAt: new Date().toISOString() };
-  const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
-  delete record.uri;
-  delete record.did;
-  await putRecord(agent, COL.userQuest, rkey, record);
+  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
   mockIndex.updateQuestStatus(quest.uri, 'assigned');
   return { completion, updatedQuest: updated };
 }
@@ -414,7 +419,14 @@ export async function listCompletionsFor(
       for (const r of res.data.records) {
         const v = r.value as Omit<QuestCompletion, 'uri' | 'did'>;
         if (v.questUri !== quest.uri) continue;
-        out.push({ ...v, uri: r.uri, did });
+        const c: QuestCompletion = { ...v, uri: r.uri, did };
+        // owner DID 検証: assigneeReport は assignee 本人、approval/revision は
+        // 発注者本人が書いた record だけを正当と扱う (= 偽造防止)。
+        if (!isValidCompletion(c, quest)) {
+          console.warn('[quest-api] dropping invalid completion (owner mismatch)', r.uri, c.role);
+          continue;
+        }
+        out.push(c);
       }
     } catch (err) {
       console.warn('[quest-api] listCompletions fetch failed', did, err);
