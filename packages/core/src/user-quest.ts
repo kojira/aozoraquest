@@ -81,10 +81,29 @@ export function isExpired(q: UserQuest, now: Date = new Date()): boolean {
 
 // ─── 完了判定 (耐故障性: 元 record の status と approval record の両方を見る) ─
 
-/** `requesterApproval` が書かれていれば、元 record の status が未更新 (= B 遅延) でも完了扱い */
+/** `requesterApproval` が書かれていれば、元 record の status が未更新 (= B 遅延) でも完了扱い。
+ *
+ *  **セキュリティ: approval の owner DID が発注者 (= quest.did) であることを必須にする**。
+ *  AT Proto では誰でも自分の PDS に同名 record を書けるため、owner check なしだと
+ *  第三者が「対象 quest URI + role=requesterApproval」の record を自 PDS に PUT するだけで
+ *  完了偽造が成立してしまう (docs/15-user-quest.md §耐故障性 で指摘されたリスク)。 */
 export function isCompleted(q: UserQuest, completions: QuestCompletion[]): boolean {
   if (q.status === 'completed') return true;
-  return completions.some(c => c.questUri === q.uri && c.role === 'requesterApproval');
+  return completions.some(c =>
+    c.questUri === q.uri &&
+    c.role === 'requesterApproval' &&
+    c.did === q.did,
+  );
+}
+
+/** completion record の owner DID が role に対応する正当な書き手かを検証する。
+ *  集計・表示の前に flooring すると、不正な record を排除できる。 */
+export function isValidCompletion(c: QuestCompletion, q: UserQuest): boolean {
+  if (c.questUri !== q.uri) return false;
+  if (c.role === 'assigneeReport')      return q.assignee ? c.did === q.assignee : false;
+  if (c.role === 'requesterApproval')   return c.did === q.did;
+  if (c.role === 'requesterRevision')   return c.did === q.did;
+  return false;
 }
 
 // ─── 発注者視点: 成功 / 失敗 / キャンセル / 進行中 ─────────

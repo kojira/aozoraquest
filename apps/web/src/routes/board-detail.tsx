@@ -13,7 +13,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
   getQuest,
-  parseAtUri,
+  updateQuest,
   applyToQuest,
   withdrawApplication,
   listApplicationsFor,
@@ -23,9 +23,7 @@ import {
   requestRevision,
   listCompletionsFor,
 } from '@/lib/quest-api';
-import { mockIndex } from '@/lib/quest-mock';
-import { putRecord, createPost } from '@/lib/atproto';
-import { COL } from '@/lib/collections';
+import { createPost } from '@/lib/atproto';
 import { getPostQuestNotifications } from '@/lib/prefs';
 import { Handle } from '@/components/handle';
 import { resolveHandle } from '@/lib/handle-cache';
@@ -48,6 +46,13 @@ export function BoardDetail() {
   const [completions, setCompletions] = useState<QuestCompletion[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // inline form state
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineInput, setDeadlineInput] = useState('');
+  const [applyForm, setApplyForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
+  const [reportForm, setReportForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
+  const [approveForm, setApproveForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
+  const [revisionForm, setRevisionForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
 
   const refresh = useCallback(async () => {
     if (!uri || !session.agent) return;
@@ -76,7 +81,11 @@ export function BoardDetail() {
   const expired = isExpired(quest);
   const isOwner = session.did === quest.did;
   const isAssignee = session.did === quest.assignee;
-  const myApp = applications?.find(a => a.did === session.did) ?? null;
+  // 自分の応募の中で、取り下げてないものを最新順で先頭から (= 複数応募していても
+  // 最新のアクティブ応募を「自分の応募」として扱う)。
+  const myApp = applications
+    ?.filter(a => a.did === session.did && !a.withdrawn)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
   const completedByApproval = isCompletedFn(quest, completions ?? []);
 
   async function cancelQuest() {
@@ -84,13 +93,7 @@ export function BoardDetail() {
     if (!confirm('このクエストをキャンセルしますか?')) return;
     setBusy(true);
     try {
-      const { rkey } = parseAtUri(quest.uri);
-      const next = { ...quest, status: 'cancelled' as const, updatedAt: new Date().toISOString() };
-      const record: Record<string, unknown> = { ...next, $type: COL.userQuest };
-      delete record.uri;
-      delete record.did;
-      await putRecord(session.agent, COL.userQuest, rkey, record);
-      mockIndex.updateQuestStatus(quest.uri, 'cancelled');
+      await updateQuest(session.agent, { ...quest, status: 'cancelled' });
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -99,22 +102,17 @@ export function BoardDetail() {
     }
   }
 
-  async function extendDeadline() {
+  async function extendDeadline(newDeadlineLocal: string | null) {
     if (!session.agent || !quest || !isOwner) return;
-    const cur = quest.deadline ? toLocalInput(quest.deadline) : '';
-    const next = prompt('新しい募集期限 (YYYY-MM-DDTHH:MM、空欄で削除)', cur);
-    if (next === null) return;
     setBusy(true);
     try {
-      const { rkey } = parseAtUri(quest.uri);
-      const deadlineIso = next.trim() ? new Date(next).toISOString() : undefined;
-      const updated: UserQuest = { ...quest, updatedAt: new Date().toISOString() };
-      if (deadlineIso) updated.deadline = deadlineIso;
-      else delete updated.deadline;
-      const record: Record<string, unknown> = { ...updated, $type: COL.userQuest };
-      delete record.uri;
-      delete record.did;
-      await putRecord(session.agent, COL.userQuest, rkey, record);
+      const next: UserQuest = { ...quest };
+      if (newDeadlineLocal && newDeadlineLocal.trim()) {
+        next.deadline = new Date(newDeadlineLocal).toISOString();
+      } else {
+        delete next.deadline;
+      }
+      await updateQuest(session.agent, next);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -146,16 +144,15 @@ export function BoardDetail() {
     }
   }
 
-  async function onApply() {
+  async function submitApply() {
     if (!session.agent || !session.did || !quest) return;
-    const message = prompt('応募メッセージ (やる気・経験・質問など):');
-    if (!message?.trim()) return;
+    const message = applyForm.message.trim();
+    if (!message) return;
     setBusy(true);
     try {
-      await applyToQuest(session.agent, session.did, quest.uri, message.trim());
-      // 発注者宛の通知 (handle は今は did stub にフォールバック。Phase 3 後半で
-      // AppView から正規 handle 解決するキャッシュ層を入れる)
+      await applyToQuest(session.agent, session.did, quest.uri, message);
       await notifyBluesky('applied', quest.did);
+      setApplyForm({ open: false, message: '' });
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -193,14 +190,14 @@ export function BoardDetail() {
     }
   }
 
-  async function onReport() {
+  async function submitReport() {
     if (!session.agent || !session.did || !quest || !isAssignee) return;
-    const comment = prompt('完了報告 (成果物の URL や一言コメント):');
-    if (comment === null) return;
     setBusy(true);
     try {
-      await reportCompletion(session.agent, session.did, quest, comment.trim() || undefined);
+      const comment = reportForm.message.trim();
+      await reportCompletion(session.agent, session.did, quest, comment || undefined);
       await notifyBluesky('reported', quest.did);
+      setReportForm({ open: false, message: '' });
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -209,14 +206,14 @@ export function BoardDetail() {
     }
   }
 
-  async function onApprove() {
+  async function submitApprove() {
     if (!session.agent || !session.did || !quest || !isOwner) return;
-    const comment = prompt('承認コメント (任意):');
-    if (comment === null) return;
     setBusy(true);
     try {
-      await approveCompletion(session.agent, session.did, quest, comment.trim() || undefined);
+      const comment = approveForm.message.trim();
+      await approveCompletion(session.agent, session.did, quest, comment || undefined);
       if (quest.assignee) await notifyBluesky('approved', quest.assignee);
+      setApproveForm({ open: false, message: '' });
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -225,14 +222,15 @@ export function BoardDetail() {
     }
   }
 
-  async function onRevision() {
+  async function submitRevision() {
     if (!session.agent || !session.did || !quest || !isOwner) return;
-    const comment = prompt('やり直し依頼コメント (必須):');
-    if (!comment?.trim()) return;
+    const comment = revisionForm.message.trim();
+    if (!comment) return;
     setBusy(true);
     try {
-      await requestRevision(session.agent, session.did, quest, comment.trim());
+      await requestRevision(session.agent, session.did, quest, comment);
       if (quest.assignee) await notifyBluesky('revisionRequested', quest.assignee);
+      setRevisionForm({ open: false, message: '' });
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -271,17 +269,55 @@ export function BoardDetail() {
 
       {/* 発注者向け: 期限変更 / キャンセル (open 中のみ) */}
       {isOwner && quest.status === 'open' && (
-        <div style={{ display: 'flex', gap: '0.6em', marginTop: '1em' }}>
-          <button onClick={extendDeadline} disabled={busy}>募集期限を変更</button>
-          <button onClick={cancelQuest} disabled={busy}>キャンセル</button>
+        <div style={{ marginTop: '1em' }}>
+          <div style={{ display: 'flex', gap: '0.6em' }}>
+            <button onClick={() => {
+              setDeadlineInput(quest.deadline ? toLocalInput(quest.deadline) : '');
+              setEditingDeadline(true);
+            }} disabled={busy}>募集期限を変更</button>
+            <button onClick={cancelQuest} disabled={busy}>キャンセル</button>
+          </div>
+          {editingDeadline && (
+            <div className="dq-window compact" style={{ marginTop: '0.5em' }}>
+              <label style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
+                新しい期限 (空欄で削除)
+              </label>
+              <input
+                type="datetime-local"
+                value={deadlineInput}
+                onChange={(e) => setDeadlineInput(e.target.value)}
+                style={{ width: '100%' }}
+              />
+              <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                <button onClick={async () => { await extendDeadline(deadlineInput); setEditingDeadline(false); }} disabled={busy}>適用</button>
+                <button className="secondary" onClick={() => setEditingDeadline(false)} disabled={busy}>キャンセル</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* 応募者向け: 応募ボタン / 自分の応募表示 */}
+      {/* 応募者向け: 応募フォーム / 自分の応募表示 */}
       {!isOwner && session.status === 'signed-in' && quest.status === 'open' && !expired && (
         <div style={{ marginTop: '1em' }}>
           {!myApp ? (
-            <button onClick={onApply} disabled={busy}>このクエストに応募する</button>
+            !applyForm.open ? (
+              <button onClick={() => setApplyForm({ open: true, message: '' })} disabled={busy}>このクエストに応募する</button>
+            ) : (
+              <div className="dq-window compact">
+                <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>応募メッセージ (やる気・経験・質問など)</label>
+                <textarea
+                  value={applyForm.message}
+                  onChange={(e) => setApplyForm({ ...applyForm, message: e.target.value })}
+                  rows={4}
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                  <button onClick={submitApply} disabled={busy || !applyForm.message.trim()}>応募する</button>
+                  <button className="secondary" onClick={() => setApplyForm({ open: false, message: '' })} disabled={busy}>キャンセル</button>
+                </div>
+              </div>
+            )
           ) : (
             <div className="dq-window compact">
               <p style={{ margin: 0, fontSize: '0.85em' }}>あなたの応募:</p>
@@ -312,7 +348,7 @@ export function BoardDetail() {
         </section>
       )}
 
-      {/* assigned 中: 受託者の表示 + 受託者の完了報告ボタン */}
+      {/* assigned 中: 受託者の表示 + 受託者の完了報告フォーム */}
       {(quest.status === 'assigned' || quest.status === 'reported') && quest.assignee && (
         <section style={{ marginTop: '1.4em' }}>
           <p style={{ fontSize: '0.85em' }}>
@@ -320,12 +356,63 @@ export function BoardDetail() {
             {quest.status === 'reported' && ' (完了報告済み、承認待ち)'}
           </p>
           {isAssignee && quest.status === 'assigned' && (
-            <button onClick={onReport} disabled={busy}>完了を報告する</button>
+            !reportForm.open ? (
+              <button onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
+            ) : (
+              <div className="dq-window compact">
+                <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>成果物の URL・一言コメント (任意)</label>
+                <textarea
+                  value={reportForm.message}
+                  onChange={(e) => setReportForm({ ...reportForm, message: e.target.value })}
+                  rows={4}
+                  placeholder="例: https://example.com/illust.png&#10;こんな感じになりました!"
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                  <button onClick={submitReport} disabled={busy}>完了を報告する</button>
+                  <button className="secondary" onClick={() => setReportForm({ open: false, message: '' })} disabled={busy}>キャンセル</button>
+                </div>
+              </div>
+            )
           )}
           {isOwner && quest.status === 'reported' && (
-            <div style={{ display: 'flex', gap: '0.6em', marginTop: '0.4em' }}>
-              <button onClick={onApprove} disabled={busy}>承認する (報酬を発行)</button>
-              <button onClick={onRevision} disabled={busy} className="secondary">やり直しを依頼</button>
+            <div style={{ marginTop: '0.4em' }}>
+              {!approveForm.open && !revisionForm.open && (
+                <div style={{ display: 'flex', gap: '0.6em' }}>
+                  <button onClick={() => setApproveForm({ open: true, message: '' })} disabled={busy}>承認する (報酬を発行)</button>
+                  <button onClick={() => setRevisionForm({ open: true, message: '' })} disabled={busy} className="secondary">やり直しを依頼</button>
+                </div>
+              )}
+              {approveForm.open && (
+                <div className="dq-window compact">
+                  <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>承認コメント (任意)</label>
+                  <textarea
+                    value={approveForm.message}
+                    onChange={(e) => setApproveForm({ ...approveForm, message: e.target.value })}
+                    rows={3}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                    <button onClick={submitApprove} disabled={busy}>承認する</button>
+                    <button className="secondary" onClick={() => setApproveForm({ open: false, message: '' })} disabled={busy}>戻る</button>
+                  </div>
+                </div>
+              )}
+              {revisionForm.open && (
+                <div className="dq-window compact">
+                  <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '0.3em' }}>やり直しを依頼する理由 (必須)</label>
+                  <textarea
+                    value={revisionForm.message}
+                    onChange={(e) => setRevisionForm({ ...revisionForm, message: e.target.value })}
+                    rows={4}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                    <button onClick={submitRevision} disabled={busy || !revisionForm.message.trim()}>送信する</button>
+                    <button className="secondary" onClick={() => setRevisionForm({ open: false, message: '' })} disabled={busy}>戻る</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>

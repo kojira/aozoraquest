@@ -21,13 +21,21 @@ export function Handle({ did, prefix, suffix }: Props) {
 
   if (state === 'deleted') {
     return (
-      <span style={{ color: 'var(--color-muted)', opacity: 0.7 }} title="アカウントが削除されています">
+      <span style={{ color: 'var(--color-muted)', opacity: 0.7 }} title="このアカウントは削除されています">
         {prefix}(削除済み){suffix}
       </span>
     );
   }
+  if (state === 'transient') {
+    return (
+      <span style={{ color: 'var(--color-muted)' }} title="アカウント情報の取得に失敗しました (一時的な可能性)">
+        {prefix}???{suffix}
+      </span>
+    );
+  }
   if (state === 'loading' || !handle) {
-    return <span style={{ opacity: 0.6 }}>{prefix}...{suffix}</span>;
+    // min-width で CLS を抑える (= ... → handle 切替時にレイアウトがガタつくのを避ける)
+    return <span style={{ opacity: 0.6, display: 'inline-block', minWidth: '4em' }}>{prefix}…{suffix}</span>;
   }
   return <>{prefix}{handle}{suffix}</>;
 }
