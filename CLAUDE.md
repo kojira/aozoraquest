@@ -13,32 +13,52 @@
 
 - **`main` ブランチは本番デプロイ専用** (Cloudflare Workers Builds が main push で `aozoraquest.app` に自動 deploy)。
   直接 commit / push / 編集してはいけない。
-- すべての修正は **`dev` ブランチで行う**。`dev` push で `dev.aozoraquest.app` に自動 deploy されるので、
-  そこで動作確認してから main にマージする。
-- `git checkout main` の後にファイル編集してはいけない。merge の操作だけが許される。
-- merge 完了直後に **必ず `git checkout dev` で戻る**。main に居続けない。
+- **`dev` ブランチは統合 / dev 環境デプロイ専用** (Cloudflare Workers Builds が dev push で `dev.aozoraquest.app` に自動 deploy)。
+  **直接 commit / push してはいけない**。すべての修正は feature ブランチで行い、PR 経由で dev にマージする。
+- 機能開発・修正は **トピックブランチ** を切ってそこで作業する。命名規則:
+  - `feature/<topic>`: 新機能 (例 `feature/quest-board-columns`)
+  - `fix/<topic>`: バグ修正 (例 `fix/handle-cache-ssr`)
+  - `docs/<topic>`: ドキュメントのみ
+  - `chore/<topic>`: 設定 / 依存関係
+  - `refactor/<topic>` / `perf/<topic>` / `test/<topic>` も Conventional Commits の prefix に合わせて使う
+- 1 トピックブランチ = 1 PR = 1 つの目的 を原則とし、PR を肥大化させない (= 横道にそれた修正は別ブランチを切る)
+- `git checkout main` / `git checkout dev` の後にファイル編集してはいけない。merge の操作だけが許される。
+- PR マージ完了直後に **元のトピックブランチか、新規トピックブランチを切って** main / dev から離れる。
 
 ### 作業開始時のルーティン
 
 ```bash
-git branch --show-current   # main だったら止める
-git status                   # uncommitted を確認
-git pull --rebase origin dev # 最新を取り込んでから着手
+git branch --show-current        # main / dev に居たら止める
+git checkout dev
+git pull --rebase origin dev     # 最新の dev を取り込む
+git checkout -b feature/<topic>  # 新規トピックブランチを切る
+# 編集 → commit → push -u origin feature/<topic>
+gh pr create --base dev --head feature/<topic>
 ```
 
-### main へのマージは PR 経由が基本
+### feature → dev のマージは PR 経由が基本
 
-`git checkout main && git merge dev && git push origin main` の直接マージは緊急時のみ。
+`git checkout dev && git merge feature/xxx` の直接マージは緊急時のみ。
 通常は GitHub の Pull Request で:
-1. dev → main の PR を作成 (`gh pr create --base main --head dev`)
+1. `gh pr create --base dev --head feature/<topic>`
 2. CI 緑を確認
-3. ユーザー (オーナー) のレビューと承認
-4. squash or merge ボタン
+3. オーナー (kojira) のレビューと承認
+4. **squash merge** ボタン (= feature の commit が dev に 1 コミットで圧縮される)
+5. feature ブランチは **削除 OK** (`gh pr merge --squash --delete-branch`)
 
-`main` ブランチは GitHub の branch protection rule で守る:
+### dev → main の本番リリース
+
+dev に複数の feature PR が積まれた後、リリース単位で `dev → main` の PR を作成:
+1. `gh pr create --base main --head dev`
+2. CI 緑 + オーナー承認
+3. squash merge (= 複数 feature が main に 1 コミットで反映、リリースノート的)
+4. dev ブランチは残す (= 次の機能開発用)
+
+`main` / `dev` は GitHub の branch protection rule で守る:
 - Require pull request before merging
 - Require status checks to pass (CI)
 - Restrict who can push (admin のみ + force-push 禁止)
+- `main` のみ「Required approvals」を 1 に設定するのも可
 
 ---
 
@@ -107,13 +127,14 @@ VITE_APP_URL や VITE_NSID_ROOT は variables。
 
 ## 6. force-push 禁止
 
-`git push --force` または `--force-with-lease` は dev/main では原則禁止。
+`git push --force` または `--force-with-lease` は **dev / main では絶対禁止**。
 
-- 自分の作業ブランチ (feature branch) では amend → force-push は OK
-- dev はチームで共有しているとみなす (将来複数人になる時のため)
+- 自分のトピックブランチ (`feature/xxx` 等) では amend → force-push は OK
+  (PR レビュー中に rebase + force-push で commit を整理する運用は許容)
+- dev / main は共有ブランチなので force-push は履歴が壊れて他人を巻き込む
 - 直近のコミットを書き直したい時は新しい commit で「revert」or「fixup」する
 
-例外: ユーザーが明示的に「amend して force-push して」と言った場合のみ。
+例外: ユーザーが明示的に「dev に force-push して」と言った場合のみ。
 
 ---
 
@@ -146,13 +167,15 @@ Conventional Commits に従う:
 
 実行前に毎回:
 
-- [ ] `git branch --show-current` で `dev` か確認
-- [ ] `git pull --rebase origin dev` で最新を取り込んだ
+- [ ] `git branch --show-current` で **トピックブランチ** に居ることを確認 (dev / main 直接編集禁止)
+- [ ] トピックブランチに居なければ `git checkout dev && git pull --rebase origin dev && git checkout -b feature/<topic>` で切る
 - [ ] 修正の意図をユーザーと共有・合意済み
 - [ ] ローカルで typecheck / build / test 緑
 - [ ] 重要変更ならブラウザで動作確認 (PC + 必要ならモバイル実機)
 - [ ] commit message に Why を書いた
 - [ ] push 前にユーザーの明示許可を取った (本番に影響する変更は特に)
+- [ ] PR 作成は `gh pr create --base dev --head feature/<topic>` で
+- [ ] dev → main の本番リリース PR を作るのはオーナーがリリース判断したときだけ
 
 ---
 
@@ -183,3 +206,10 @@ build 時必須にした env vars を CI workflow に追加し忘れ、CI 落ち
 
 debug-card のデフォルトに `kojira.io` を直書き → 個人情報がリポジトリに残る。
 **学び**: handle / DID / email 等の固有情報は環境変数か query 経由で。
+
+### 2026-06-10: ブランチ運用を feature ブランチ方式へ移行
+
+PR #25 までは dev に直 push して dev → main の PR でリリースしていたが、
+複数人開発に備えて feature/<topic> → dev → main の 3 段運用に変更した。
+それ以前の memory や doc に「dev で開発」と書かれている箇所は新ルール
+(= トピックブランチで開発) に読み替えること。
