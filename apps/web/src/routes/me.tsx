@@ -12,6 +12,8 @@ import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { Avatar } from '@/components/avatar';
 import { Spinner } from '@/components/spinner';
+import { BookIcon, BoardIcon } from '@/components/icons';
+import { ActionLink } from '@/components/action-link';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -163,6 +165,10 @@ export function MyProfile() {
             ) : (
               <Link to="/settings">目指す姿を選ぶ</Link>
             )}
+          </p>
+          <p style={{ margin: '0.5em 0 0', display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
+            <ActionLink to="/me/portfolio" icon={<BookIcon size={20} />}>ポートフォリオ</ActionLink>
+            <ActionLink to="/board" icon={<BoardIcon size={20} />}>クエスト掲示板</ActionLink>
           </p>
         </div>
       </div>

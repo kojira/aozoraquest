@@ -7,7 +7,7 @@ import { getUnreadNotificationCount } from '@/lib/atproto';
 const nav = [
   { to: '/', label: 'ホーム', icon: HomeIcon, end: true, key: 'home' as const },
   { to: '/me', label: '自分', icon: PersonIcon, key: 'me' as const },
-  { to: '/quests', label: 'クエスト', icon: ScrollIcon, key: 'quests' as const },
+  { to: '/board', label: 'クエスト', icon: ScrollIcon, key: 'quests' as const },
   { to: '/notifications', label: '通知', icon: BellIcon, key: 'notifications' as const },
   { to: '/spirit', label: 'ブルスコン', icon: BrusukonIcon, key: 'spirit' as const },
   { to: '/search', label: '検索', icon: SearchIcon, key: 'search' as const },

@@ -41,6 +41,12 @@ export const COL = {
   /** あおぞらパワーの累積カウンタ (rkey='self')。アクションごとに増分する。
    *  初回読み取り時に旧データから一度だけスキャン → 書き込みでマイグレーション。 */
   power: `${USER_PREFIX}.power`,
+  /** 依頼クエスト (docs/15-user-quest.md)。tid key。発注者の PDS に書く。 */
+  userQuest: `${USER_PREFIX}.userQuest`,
+  /** 応募 (docs/15-user-quest.md)。tid key。応募者の PDS に書く。 */
+  questApplication: `${USER_PREFIX}.questApplication`,
+  /** 完了報告 / 承認 / やり直し依頼 (docs/15-user-quest.md)。tid key。 */
+  questCompletion: `${USER_PREFIX}.questCompletion`,
 } as const;
 
 /**
@@ -63,4 +69,10 @@ export const ADMIN_COL = {
   configBans: `${ROOT}.config.bans`,
   configPrompts: `${ROOT}.config.prompts`,
   directory: `${ROOT}.directory`,
+  /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
+   *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
+  questIndex: `${ROOT}.questIndex`,
 } as const;
+
+/** ADMIN_COL.questIndex の rkey: env 別に分離する */
+export const QUEST_INDEX_RKEY = ENV ? ENV : 'self';
