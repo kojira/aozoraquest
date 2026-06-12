@@ -13,32 +13,107 @@
 
 - **`main` ブランチは本番デプロイ専用** (Cloudflare Workers Builds が main push で `aozoraquest.app` に自動 deploy)。
   直接 commit / push / 編集してはいけない。
-- すべての修正は **`dev` ブランチで行う**。`dev` push で `dev.aozoraquest.app` に自動 deploy されるので、
-  そこで動作確認してから main にマージする。
-- `git checkout main` の後にファイル編集してはいけない。merge の操作だけが許される。
-- merge 完了直後に **必ず `git checkout dev` で戻る**。main に居続けない。
+- **`dev` ブランチは統合 / dev 環境デプロイ専用** (Cloudflare Workers Builds が dev push で `dev.aozoraquest.app` に自動 deploy)。
+  **直接 commit / push してはいけない**。すべての修正は feature ブランチで行い、PR 経由で dev にマージする。
+- 機能開発・修正は **トピックブランチ** を切ってそこで作業する。命名規則:
+  - `feature/<topic>`: 新機能 (例 `feature/quest-board-columns`)
+  - `fix/<topic>`: バグ修正 (例 `fix/handle-cache-ssr`)
+  - `docs/<topic>`: ドキュメントのみ
+  - `chore/<topic>`: 設定 / 依存関係
+  - `refactor/<topic>` / `perf/<topic>` / `test/<topic>` も Conventional Commits の prefix に合わせて使う
+- 1 トピックブランチ = 1 PR = 1 つの目的 を原則とし、PR を肥大化させない (= 横道にそれた修正は別ブランチを切る)
+- `git checkout main` / `git checkout dev` の後にファイル編集してはいけない。merge の操作だけが許される。
+- PR マージ完了直後に **元のトピックブランチか、新規トピックブランチを切って** main / dev から離れる。
 
 ### 作業開始時のルーティン
 
 ```bash
-git branch --show-current   # main だったら止める
-git status                   # uncommitted を確認
-git pull --rebase origin dev # 最新を取り込んでから着手
+git branch --show-current        # main / dev に居たら止める
+git checkout dev
+git pull --rebase origin dev     # 最新の dev を取り込む
+git checkout -b feature/<topic>  # 新規トピックブランチを切る
+# 編集 → commit → push -u origin feature/<topic>
+gh pr create --base dev --head feature/<topic>
 ```
 
-### main へのマージは PR 経由が基本
+### feature → dev のマージは PR 経由が基本
 
-`git checkout main && git merge dev && git push origin main` の直接マージは緊急時のみ。
+`git checkout dev && git merge feature/xxx` の直接マージは緊急時のみ。
 通常は GitHub の Pull Request で:
-1. dev → main の PR を作成 (`gh pr create --base main --head dev`)
+1. `gh pr create --base dev --head feature/<topic>`
 2. CI 緑を確認
-3. ユーザー (オーナー) のレビューと承認
-4. squash or merge ボタン
+3. **第三者レビュー (§1.5 必須レビュー) を実施し、指摘事項に対応してから承認**
+4. **squash merge** ボタン (= feature の commit が dev に 1 コミットで圧縮される)
+5. feature ブランチは **削除 OK** (`gh pr merge --squash --delete-branch`)
 
-`main` ブランチは GitHub の branch protection rule で守る:
+### dev → main の本番リリース
+
+dev に複数の feature PR が積まれた後、リリース単位で `dev → main` の PR を作成:
+1. `gh pr create --base main --head dev`
+2. CI 緑 + **第三者レビュー (§1.5) で指摘ゼロ or 全対応済み**
+3. オーナー承認
+4. squash merge (= 複数 feature が main に 1 コミットで反映、リリースノート的)
+5. dev ブランチは残す (= 次の機能開発用)
+
+`main` / `dev` は GitHub の branch protection rule で守る:
 - Require pull request before merging
 - Require status checks to pass (CI)
 - Restrict who can push (admin のみ + force-push 禁止)
+- `main` のみ「Required approvals」を 1 に設定するのも可
+
+---
+
+## 1.5 マージ前の必須レビュー
+
+**全ての PR (feature → dev、dev → main の両方) は、マージ前に第三者視点レビューを実施し、指摘事項にすべて対応する** ことを必須とする。
+
+### 必須レビューの実施
+
+PR 作成後、CI 緑になった時点で:
+1. **3 つの subagent を並列** で立て、独立に第三者視点レビューを実施
+   - **設計レビュー**: 設計判断の妥当性、未解決事項、設計書との整合
+   - **実装レビュー**: バグ可能性、型安全、エッジケース、テスト網羅性
+   - **UX レビュー**: ユーザー体験、視認性、認知負荷、DESIGN.md 準拠
+2. 各 subagent は `claude.ai/code` の管理外で動く独立観点。**ultrareview のような有料ツールは使わない**
+3. レビュー結果は ★★★ (致命的) / ★★ (中規模) / ★ (改善余地) の 3 段階で出力させる
+
+### 対応ルール
+
+| 重要度 | マージ前対応 | 対応しない場合 |
+|---|---|---|
+| **★★★** | **必須対応** | マージ不可 |
+| **★★** | **必須対応 or issue 化して別 PR で対応** | issue 番号を PR description にリンク |
+| ★ | **対応 or issue 化、どちらでも可** | issue リンクのみで OK |
+
+要するに **「★★★ は PR 内で必ず修正、★★ は対応 or issue 化、★ は柔軟」** が原則。
+
+### 「対応 or issue 化」の判断基準
+
+- PR の本来スコープに含まれる修正 → **PR 内で対応**
+- PR の本来スコープを超える別 topic → **issue を切って別 PR**
+- 仕様ではなく好みの問題 (= 設計判断の代替案) → **設計者がコメントで判断記録**
+
+### PR description への記録
+
+PR description に **「## Review」セクション** を追加し、以下を記載:
+- ★★★ 対応内容 (どの commit で何を直したか)
+- ★★ 対応内容 or 別 issue 番号 (例: `#42`)
+- ★ 別 issue 番号 (PR 内で対応した場合は対応内容)
+
+これで後から PR 履歴を見ても「どのレビュー指摘がどう処理されたか」が追える。
+
+### 例: PR #25 (依頼クエスト機能) の運用実例
+
+- 3 並列レビューで ★★★ 13 件 + ★★ 多数を検出
+- ★★★ をすべて PR 内で修正、★★ も主要分は PR 内で対応、残りを issue #26-#30 に切り出し
+- PR description に各 issue 番号を追記してマージ
+- これと同じ流儀を以降の全 PR で踏襲する
+
+### 自動レビューを忘れない仕組み
+
+- PR を作ったら、ローカル CLI (claude code) で `「PR #N を第三者視点でレビューして」` と依頼するのが運用ルーチン
+- ユーザーは PR レビューを取らずにマージしない (= マージボタンを押すのはレビュー対応完了後)
+- レビュー subagent は dev / main の merge 操作を一切しない (= レビュー専用)
 
 ---
 
@@ -107,13 +182,14 @@ VITE_APP_URL や VITE_NSID_ROOT は variables。
 
 ## 6. force-push 禁止
 
-`git push --force` または `--force-with-lease` は dev/main では原則禁止。
+`git push --force` または `--force-with-lease` は **dev / main では絶対禁止**。
 
-- 自分の作業ブランチ (feature branch) では amend → force-push は OK
-- dev はチームで共有しているとみなす (将来複数人になる時のため)
+- 自分のトピックブランチ (`feature/xxx` 等) では amend → force-push は OK
+  (PR レビュー中に rebase + force-push で commit を整理する運用は許容)
+- dev / main は共有ブランチなので force-push は履歴が壊れて他人を巻き込む
 - 直近のコミットを書き直したい時は新しい commit で「revert」or「fixup」する
 
-例外: ユーザーが明示的に「amend して force-push して」と言った場合のみ。
+例外: ユーザーが明示的に「dev に force-push して」と言った場合のみ。
 
 ---
 
@@ -146,13 +222,18 @@ Conventional Commits に従う:
 
 実行前に毎回:
 
-- [ ] `git branch --show-current` で `dev` か確認
-- [ ] `git pull --rebase origin dev` で最新を取り込んだ
+- [ ] `git branch --show-current` で **トピックブランチ** に居ることを確認 (dev / main 直接編集禁止)
+- [ ] トピックブランチに居なければ `git checkout dev && git pull --rebase origin dev && git checkout -b feature/<topic>` で切る
 - [ ] 修正の意図をユーザーと共有・合意済み
 - [ ] ローカルで typecheck / build / test 緑
 - [ ] 重要変更ならブラウザで動作確認 (PC + 必要ならモバイル実機)
 - [ ] commit message に Why を書いた
 - [ ] push 前にユーザーの明示許可を取った (本番に影響する変更は特に)
+- [ ] PR 作成は `gh pr create --base dev --head feature/<topic>` で
+- [ ] PR 作成後、**§1.5 の必須レビュー (3 並列 subagent) を回す**
+- [ ] レビュー指摘の ★★★ をすべて PR 内で修正、★★ は対応 or issue 化、PR description の Review セクションに記録
+- [ ] 全対応完了後にマージ承認 (= ここまで来てから merge ボタン)
+- [ ] dev → main の本番リリース PR を作るのはオーナーがリリース判断したときだけ
 
 ---
 
@@ -183,3 +264,18 @@ build 時必須にした env vars を CI workflow に追加し忘れ、CI 落ち
 
 debug-card のデフォルトに `kojira.io` を直書き → 個人情報がリポジトリに残る。
 **学び**: handle / DID / email 等の固有情報は環境変数か query 経由で。
+
+### 2026-06-10: ブランチ運用を feature ブランチ方式へ移行
+
+PR #25 までは dev に直 push して dev → main の PR でリリースしていたが、
+複数人開発に備えて feature/<topic> → dev → main の 3 段運用に変更した。
+それ以前の memory や doc に「dev で開発」と書かれている箇所は新ルール
+(= トピックブランチで開発) に読み替えること。
+
+### 2026-06-13: マージ前の必須レビューを運用化 (§1.5)
+
+PR #25 で 3 並列レビューが実際に効いた (★★★ 13 件を未然に潰した) ので、
+これを全 PR の運用ルールに昇格させた。マージ前に必ず 3 並列 subagent
+レビューを回し、★★★ は PR 内で必ず修正、★★ は対応 or issue 化、★ は柔軟
+の原則で対応する。PR description の Review セクションにどう処理したかを
+記録する。
