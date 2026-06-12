@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 /**
@@ -7,8 +7,12 @@ import { useVirtualizer } from '@tanstack/react-virtual';
  *
  * スクロール元は 2 モード:
  *  - 既定: ウィンドウ (ビューポート) スクロール
- *  - `scrollParentRef` 指定時: その要素内のスクロール
+ *  - `scrollParent` 指定時: その要素内のスクロール
  *    (マルチカラム workspace の column-body 等、docs/16-multicolumn.md)
+ *
+ * scrollParent は RefObject ではなく要素そのものを受け取る。利用側は
+ * `useState<HTMLElement | null>` + callback ref で要素を管理して渡すこと
+ * (要素の出現・差し替えが props 変化として自然に再 render を起こすため)。
  *
  * data 配列自体は成長するため真に無限な memory bound ではないが、
  * DOM 側は件数によらず一定、これが体感メモリの主因なのでこれでほぼ解決する。
@@ -25,8 +29,8 @@ export interface VirtualFeedProps<T> {
   renderItem: (item: T, index: number) => ReactNode;
   /** 末尾に置くフッター (読み込み中表示など) */
   footer?: ReactNode;
-  /** 未指定なら window スクロール (後方互換)。指定するとその要素内スクロール。 */
-  scrollParentRef?: RefObject<HTMLElement | null> | undefined;
+  /** 未指定 / null なら window スクロール (後方互換)。指定するとその要素内スクロール。 */
+  scrollParent?: HTMLElement | null | undefined;
 }
 
 export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
@@ -39,18 +43,18 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     endReachedThreshold = 800,
     renderItem,
     footer,
-    scrollParentRef,
+    scrollParent,
   } = props;
 
   // window モードでは parentRef は offsetTop 計算用。container モードでは不要 (margin 0)。
   const parentRef = useRef<HTMLDivElement>(null);
+  const containerEl = scrollParent ?? null;
 
-  // ref.current は commit 後に入るので、render 中に直接読むと初回 null のまま固定される。
-  // effect で state に同期して、container が入った時点で再 render させる。
-  const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setContainerEl(scrollParentRef?.current ?? null);
-  });
+  // 既知の制約 (旧実装から同じ): window モードの scrollMargin は render 中に
+  // parentRef.current を読むため、初回 render では 0 のまま確定する。
+  // リストがページ先頭近くに置かれる現状のレイアウトでは実害がないので
+  // 据え置き (直すなら offsetTop を state 化して mount 後に再 render する)。
+  const scrollMargin = containerEl ? 0 : (parentRef.current?.offsetTop ?? 0);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -60,8 +64,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     overscan,
     getItemKey: (i) => keyOf(items[i]!),
     // window スクロールで parentRef が描画ツリー内のどこにあるかをオフセットとして渡す。
-    // container モードでは container 先頭 = リスト先頭なので 0。
-    scrollMargin: containerEl ? 0 : (parentRef.current?.offsetTop ?? 0),
+    // container モードでは container 先頭 = リスト先頭なので 0
+    // (column 内にヘッダー等を挟む場合は利用側で要再考)。
+    scrollMargin,
     measureElement: (el) => el.getBoundingClientRect().height,
   });
 
@@ -88,7 +93,6 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
 
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
-  const scrollMargin = containerEl ? 0 : (parentRef.current?.offsetTop ?? 0);
 
   return (
     <div ref={parentRef} style={{ position: 'relative' }}>
