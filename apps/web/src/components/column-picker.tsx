@@ -2,8 +2,8 @@
  * workspace のカラム追加 UI (docs/16-multicolumn.md)。
  *
  * kind を選び、必要な kind (search / profile) は param を入力して追加する。
- * board の inner 構成は従来ページ (/board) で編集したものが read-time で
- * 反映されるため、ここでは board は無パラメータで追加する。
+ * board の inner 構成は /board ページで編集したものが read-time で反映される
+ * ため、ここでは board は無パラメータで追加する。
  */
 import { useState } from 'react';
 import { makeAppColumn, type AppColumn, type AppColumnKind } from '@/lib/app-columns';
@@ -35,13 +35,17 @@ export function ColumnPicker({
 }) {
   const [paramFor, setParamFor] = useState<'search' | 'profile' | null>(null);
   const [val, setVal] = useState('');
+  const [paramErr, setParamErr] = useState<string | null>(null);
 
-  function add(def: PickerDef) {
+  function pick(def: PickerDef) {
+    setParamErr(null);
     if (def.needsParam) {
+      // param 入力中に別の param kind を押したら入力対象を切り替える
       setParamFor(def.needsParam);
       setVal('');
       return;
     }
+    setParamFor(null);
     onAdd(makeAppColumn(def.kind));
   }
 
@@ -52,12 +56,21 @@ export function ColumnPicker({
       // 空でも追加可 (カラム内で検索すればよい)
       onAdd(v ? makeAppColumn('search', { param: v }) : makeAppColumn('search'));
     } else {
-      // profile はハンドル必須
-      if (!v) return;
-      onAdd(makeAppColumn('profile', { param: v.replace(/^@/, '') }));
+      // profile はハンドル必須。軽い形式チェック (ドット入り handle or DID)
+      const handle = v.replace(/^@/, '');
+      if (!handle) {
+        setParamErr('ハンドルを入力してください。');
+        return;
+      }
+      if (!handle.includes('.') && !handle.startsWith('did:')) {
+        setParamErr('ハンドルは kojira.example のようなドット入りの形式です。');
+        return;
+      }
+      onAdd(makeAppColumn('profile', { param: handle }));
     }
     setParamFor(null);
     setVal('');
+    setParamErr(null);
   }
 
   return (
@@ -70,8 +83,8 @@ export function ColumnPicker({
             <button
               key={def.kind}
               type="button"
-              onClick={() => add(def)}
-              disabled={locked || (paramFor !== null && def.needsParam !== paramFor)}
+              onClick={() => pick(def)}
+              disabled={locked}
               title={locked ? 'サインインすると追加できます' : undefined}
               style={{ textAlign: 'left', fontSize: '0.85em', opacity: locked ? 0.5 : 1 }}
             >
@@ -89,13 +102,15 @@ export function ColumnPicker({
             <input
               id="column-picker-param"
               value={val}
-              onChange={(e) => setVal(e.target.value)}
+              onChange={(e) => { setVal(e.target.value); setParamErr(null); }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitParam(); } }}
               autoFocus
               style={{ flex: 1, fontSize: '0.85em' }}
             />
             <button type="button" onClick={commitParam} style={{ fontSize: '0.8em' }}>追加</button>
+            <button type="button" className="secondary" onClick={() => { setParamFor(null); setVal(''); setParamErr(null); }} style={{ fontSize: '0.8em' }}>戻る</button>
           </div>
+          {paramErr && <p style={{ color: 'var(--color-danger)', fontSize: '0.75em', margin: '0.3em 0 0' }}>{paramErr}</p>}
         </div>
       )}
       <div style={{ marginTop: '0.7em' }}>

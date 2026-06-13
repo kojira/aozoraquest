@@ -21,10 +21,23 @@ import {
 
 const DEFAULT_INNER: BoardInner[] = [{ kind: 'open' }, { kind: 'mine' }];
 
+/** タブ表示用ラベル。issuer は DID 全表示だと長く区別もできないため
+ *  末尾を省略して識別子の頭を見せる。 */
+function boardTabLabel(t: BoardFilter): string {
+  if (t.kind === 'issuer' && t.param) {
+    const short = t.param.replace(/^did:plc:/, '').slice(0, 6);
+    return `発行者: ${short}…`;
+  }
+  return boardFilterTitle(t);
+}
+
 export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
   const tabs: BoardFilter[] = (inner && inner.length > 0) ? inner : DEFAULT_INNER;
   const [tabIndex, setTabIndex] = useState(0);
-  const active = tabs[Math.min(tabIndex, tabs.length - 1)]!;
+  // tabs が縮んだとき (inner 編集の反映等) に範囲外参照と highlight ズレを
+  // 両方防ぐため、clamp した index を表示にも使う
+  const activeIndex = Math.min(tabIndex, tabs.length - 1);
+  const active = tabs[activeIndex]!;
 
   const { index, myQuests, myApplicationQuestUris, err } = useBoardData();
   const items = useMemo(
@@ -40,15 +53,16 @@ export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
       </div>
 
       {tabs.length > 1 && (
-        <div className="dq-tabs" style={{ margin: '0 0 0.5em' }}>
+        // dq-tabs (flex:1 等分) だと 5-6 タブで日本語が縦折返しして潰れる
+        // ため、横スクロールする chip 行にする (レビュー指摘 ★★★)
+        <div className="board-column-tabs">
           {tabs.map((t, i) => (
             <button
-              key={`${t.kind}:${t.param ?? ''}`}
+              key={`${t.kind}:${t.param ?? ''}:${i}`}
               onClick={() => setTabIndex(i)}
-              className={`dq-tab${i === tabIndex ? ' active' : ''}`}
-              style={{ fontSize: '0.8em', padding: '0.35em 0.3em' }}
+              className={`dq-tab${i === activeIndex ? ' active' : ''}`}
             >
-              {boardFilterTitle(t)}
+              {boardTabLabel(t)}
             </button>
           ))}
         </div>

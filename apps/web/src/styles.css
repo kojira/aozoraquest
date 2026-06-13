@@ -318,6 +318,23 @@ p { margin: 0.4em 0; }
   display: none;
 }
 
+/* board カラム内の inner タブ: 等分 (dq-tabs) だと多タブで潰れるため、
+   折り返さない chip の横スクロール行にする */
+.board-column-tabs {
+  display: flex;
+  gap: 0.3em;
+  overflow-x: auto;
+  margin: 0 0 0.5em;
+  padding-bottom: 0.2em;
+  -webkit-overflow-scrolling: touch;
+}
+.board-column-tabs .dq-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.8em;
+  padding: 0.35em 0.6em;
+}
+
 .workspace-column-body {
   flex: 1 1 auto;
   overflow-y: auto;
