@@ -143,6 +143,133 @@ export interface QuestIndex {
   updatedAt: string;
 }
 
+/** クエストを questIndex の summary 形に落とす */
+function questToSummary(q: UserQuest): QuestIndexSummary {
+  return {
+    uri: q.uri,
+    did: q.did,
+    title: q.title,
+    tags: q.tags ?? [],
+    rewardPoints: q.rewardPoints,
+    ...(q.deadline ? { deadline: q.deadline } : {}),
+    status: q.status,
+    createdAt: q.createdAt,
+  };
+}
+
+/**
+ * 集約 Worker が未デプロイのとき、**発見ディレクトリの DID 群から直接**
+ * questIndex を組み立てる (共鳴 TL と同じく各 PDS を読むクライアント集約)。
+ *
+ * これがないと fetchQuestIndex は localStorage モックに落ち、quest が
+ * 「発行者本人の端末でしか見えない」状態になる (= 他人に見えないバグ)。
+ * 各 DID の userQuest / questApplication を listRecords で読み、
+ * 公開 quest 一覧と応募 index を作る。一部 DID の失敗は無視して続行する。
+ */
+export async function buildQuestIndexFromDirectory(
+  agent: Agent,
+  dids: Did[],
+  limitPerRepo = 100,
+): Promise<QuestIndex> {
+  // 重複 DID を除去 (自分 + directory の和集合などで重なりうる)
+  const unique = Array.from(new Set(dids));
+  const results = await Promise.allSettled(
+    unique.map(async (did) => {
+      const [questsRes, appsRes] = await Promise.allSettled([
+        agent.com.atproto.repo.listRecords({ repo: did, collection: COL.userQuest, limit: limitPerRepo }),
+        agent.com.atproto.repo.listRecords({ repo: did, collection: COL.questApplication, limit: limitPerRepo }),
+      ]);
+      const quests: QuestIndexSummary[] = [];
+      const applications: ApplicationIndexEntry[] = [];
+      if (questsRes.status === 'fulfilled') {
+        for (const r of questsRes.value.data.records) {
+          const v = r.value as Omit<UserQuest, 'uri' | 'did'>;
+          quests.push(questToSummary({ ...v, uri: r.uri, did, updatedAt: v.updatedAt ?? v.createdAt }));
+        }
+      }
+      if (appsRes.status === 'fulfilled') {
+        for (const r of appsRes.value.data.records) {
+          const v = r.value as { questUri?: AtUri; createdAt?: string };
+          if (typeof v.questUri === 'string') {
+            applications.push({
+              uri: r.uri,
+              did,
+              questUri: v.questUri,
+              createdAt: v.createdAt ?? '',
+            });
+          }
+        }
+      }
+      return { quests, applications };
+    }),
+  );
+
+  const quests: QuestIndexSummary[] = [];
+  const applications: ApplicationIndexEntry[] = [];
+  const seenQ = new Set<string>();
+  const seenA = new Set<string>();
+  for (const res of results) {
+    if (res.status !== 'fulfilled') continue;
+    for (const q of res.value.quests) {
+      if (seenQ.has(q.uri)) continue;
+      seenQ.add(q.uri);
+      quests.push(q);
+    }
+    for (const a of res.value.applications) {
+      if (seenA.has(a.uri)) continue;
+      seenA.add(a.uri);
+      applications.push(a);
+    }
+  }
+  // 新しい順 (createdAt 降順) に並べる
+  quests.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return { quests, applications, updatedAt: new Date().toISOString() };
+}
+
+const DISCOVERY_TAG = 'aozoraquest';
+/** 集約対象 DID 数の上限 (1 DID = 2 listRecords なので過大にしない) */
+const MAX_DISCOVERY_DIDS = 60;
+
+/**
+ * questIndex を「発見ディレクトリ + #aozoraquest 投稿者 + 自分」の和集合から
+ * 集約する。集約 Worker 未デプロイ時の board の正規ルート。
+ *
+ * directory は admin キュレーションなので、**まだ directory 未登録でも告知
+ * (#aozoraquest 投稿) した発行者をその場の検索で拾う** ことで、登録待ち
+ * (毎時 cron) を待たずに quest が他人へ見えるようにする。過去の quest も
+ * その発行者の userQuest を listRecords で全件読むので一緒に出る。
+ */
+export async function buildQuestIndexViaDiscovery(
+  agent: Agent,
+  directoryDids: Did[],
+  selfDid?: Did | null,
+): Promise<QuestIndex> {
+  const dids = new Set<string>(directoryDids);
+  if (selfDid) dids.add(selfDid);
+  // #aozoraquest 投稿者を拾う (告知した発行者を即 discovery)。検索失敗は無視。
+  try {
+    let cursor: string | undefined;
+    for (let page = 0; page < 2 && dids.size < MAX_DISCOVERY_DIDS; page++) {
+      const res = await agent.app.bsky.feed.searchPosts({
+        q: `#${DISCOVERY_TAG}`,
+        limit: 100,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      for (const post of res.data.posts) {
+        const d = post.author?.did;
+        if (d) dids.add(d);
+        if (dids.size >= MAX_DISCOVERY_DIDS) break;
+      }
+      const next = res.data.cursor;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+  } catch (e) {
+    console.warn('[quest-api] discovery search failed, directory のみで集約', e);
+  }
+  return buildQuestIndexFromDirectory(agent, Array.from(dids).slice(0, MAX_DISCOVERY_DIDS));
+}
+
 /** 公開クエスト一覧を取得 (Worker → admin PDS の questIndex)。
  *  Worker 未デプロイなら mock-index に fallback。 */
 export async function fetchQuestIndex(): Promise<QuestIndex> {
