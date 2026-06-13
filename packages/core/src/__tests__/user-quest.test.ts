@@ -279,6 +279,19 @@ describe('formatQuestAnnouncement', () => {
     expect(out).toContain('〆切: 6/15');
     expect(out).toContain('#illust');
     expect(out).toContain('https://aozoraquest.app/');
+    // 発見タグ #aozoraquest が必ず含まれる (これが無いと掲示板に載らない)
+    expect(out).toContain('#aozoraquest');
+  });
+
+  it('タグ無しでも #aozoraquest は付く', () => {
+    const out = formatQuestAnnouncement({
+      title: 't',
+      rewardPoints: 100,
+      handle: 'k',
+      tags: [],
+      questUrl: 'https://x',
+    });
+    expect(out).toContain('#aozoraquest');
   });
 
   it('〆切なしのときは行ごと省略', () => {

@@ -92,6 +92,9 @@ export function BoardNew() {
         // [QUEST_URL] マーカーが残っていれば置換。ユーザーが消してしまっていれば末尾に追加。
         let finalText = announceText.replace('[QUEST_URL]', questUrl);
         if (!finalText.includes(questUrl)) finalText = `${finalText.trim()}\n${questUrl}`;
+        // 発見タグ #aozoraquest は掲示板掲載の必須条件。ユーザーが本文から
+        // 消していても必ず付ける (= これが無いと searchPosts で拾えない)。
+        if (!finalText.includes('#aozoraquest')) finalText = `#aozoraquest\n${finalText.trim()}`;
         try {
           await createTaggedPost(session.agent, finalText, 'aozoraquest');
         } catch (e) {

@@ -301,8 +301,10 @@ export function formatQuestAnnouncement(args: {
   lines.push(`【クエスト】${args.title}`);
   lines.push(`報酬: ${args.handle}ポイント ${args.rewardPoints} pt`);
   if (args.deadline) lines.push(`〆切: ${formatDateShort(args.deadline)}`);
-  const tagLine = args.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ');
-  if (tagLine) lines.push(tagLine);
+  // #aozoraquest は掲示板の発見タグ (= これが本文に無いと searchPosts で
+  // 拾えず他人の掲示板に載らない)。必ず先頭に入れ、ユーザータグを後続する。
+  const userTags = args.tags.map(t => t.startsWith('#') ? t : `#${t}`);
+  lines.push(['#aozoraquest', ...userTags].join(' '));
   lines.push(args.questUrl);
   return lines.join('\n');
 }
