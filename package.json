@@ -14,9 +14,11 @@
     "validate:llm:gen": "tsx scripts/validate-llm-gen-playwright.ts",
     "validate:llm:cls": "tsx scripts/validate-llm-cls-playwright.ts",
     "validate:data": "tsx scripts/validate-data.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "refresh:directory": "tsx scripts/refresh-directory.ts"
   },
   "devDependencies": {
+    "@atproto/api": "^0.17",
     "@google/genai": "^1.50.1",
     "@huggingface/transformers": "^4.1.0",
     "@vitest/coverage-v8": "^4.1.4",

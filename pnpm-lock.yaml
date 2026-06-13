@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@atproto/api':
+        specifier: ^0.17
+        version: 0.17.7
       '@google/genai':
         specifier: ^1.50.1
         version: 1.50.1
