@@ -1,4 +1,11 @@
 /**
+ * @deprecated アプリ全体マルチカラム化 (docs/16-multicolumn.md) に伴い、
+ * この board 限定カラム設定は app-columns.ts の `board` カラム内
+ * `BoardInner` に統合される。旧保存キー `boardColumns:v1` は
+ * app-columns.ts 側で片方向マイグレーションされる。
+ * board.tsx が workspace の ColumnContent に包含されるまで (PR 4) は
+ * 本ファイルが現役。新規コードからは参照しないこと。
+ *
  * 依頼クエスト掲示板のマルチカラム設定 (docs/15-user-quest.md §UI 設計 E)。
  *
  * カラム種類:
