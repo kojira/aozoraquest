@@ -3,14 +3,17 @@
  *
  * 段階導入の途中 (flag なし方針) なので、未実装の kind は従来ページへの
  * リンク付きプレースホルダを出す:
- *  - PR 2 (本 PR): home / bar
- *  - PR 3: notifications / search / profile
+ *  - PR 2: home / bar
+ *  - PR 3: notifications / search / profile (本 PR)
  *  - PR 4: board
  */
 import { Link } from 'react-router-dom';
 import type { AppColumn } from '@/lib/app-columns';
 import { HomeColumn } from './home-column';
 import { BarColumn } from './bar-column';
+import { NotificationsFeed } from '@/routes/notifications';
+import { SearchPanel } from '@/routes/search';
+import { ProfileView } from '@/routes/profile';
 
 export function ColumnContent({ column }: { column: AppColumn }) {
   switch (column.kind) {
@@ -19,13 +22,22 @@ export function ColumnContent({ column }: { column: AppColumn }) {
     case 'bar':
       return <BarColumn />;
     case 'notifications':
-      return <PendingColumn label="通知" to="/notifications" />;
+      return <NotificationsFeed />;
     case 'search':
-      return <PendingColumn label="検索" to={column.param ? `/search?q=${encodeURIComponent(column.param)}` : '/search'} />;
+      return (
+        <SearchPanel
+          {...(column.param !== undefined ? { initialQuery: column.param } : {})}
+          {...(column.mode !== undefined ? { initialMode: column.mode } : {})}
+        />
+      );
+    case 'profile':
+      return column.param ? (
+        <ProfileView actor={column.param} />
+      ) : (
+        <MissingParam label="プロフィール" hint="表示するユーザーの指定がありません。カラム追加 UI (PR 4) からハンドルを指定できるようになります。" />
+      );
     case 'board':
       return <PendingColumn label="クエスト掲示板" to="/board" />;
-    case 'profile':
-      return <PendingColumn label="プロフィール" to={column.param ? `/profile/${column.param}` : '/me'} />;
   }
 }
 
@@ -38,5 +50,13 @@ function PendingColumn({ label, to }: { label: string; to: string }) {
       </p>
       <Link to={to}><button style={{ marginTop: '0.4em' }}>{label}を開く</button></Link>
     </div>
+  );
+}
+
+function MissingParam({ label, hint }: { label: string; hint: string }) {
+  return (
+    <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', lineHeight: 1.6 }}>
+      {label}: {hint}
+    </p>
   );
 }

@@ -5,6 +5,7 @@ import { fetchPosts, listNotifications, updateNotificationsSeen } from '@/lib/at
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { NotificationItem } from '@/components/notification-item';
+import { useColumnScrollEl } from '@/components/column-scroll-context';
 import {
   groupNotifications,
   postUrisForGroups,
@@ -12,15 +13,28 @@ import {
   type Notification,
 } from '@/lib/notifications';
 
+/** 通知ページ (route)。中身は NotificationsFeed (workspace カラムと共用)。 */
+export function Notifications() {
+  return (
+    <div>
+      <h2>通知</h2>
+      <NotificationsFeed />
+    </div>
+  );
+}
+
 /**
- * 通知タブ: listNotifications でページングしつつ、グループ単位で表示。
- * - 初回ロード後に updateNotificationsSeen を発火 (未読バッジをクリア)
+ * 通知フィード本体: listNotifications でページングしつつ、グループ単位で表示。
+ * - 初回ロード後に updateNotificationsSeen を発火 (未読バッジをクリア)。
+ *   workspace カラムとして常時 mount される場合も「カラムが表示された =
+ *   見た」として扱う (可視判定ベースへの改善は PR 5 の検討事項)
  * - 各ページ分の関連投稿 URI をまとめて getPosts で取得し、Map にキャッシュ
  * - グルーピングはページ単位ではなく **全 items の連結** に対して再計算
  *   (ページ境界で連続マージが成り立つように)
  */
-export function Notifications() {
+export function NotificationsFeed() {
   const session = useSession();
+  const scrollEl = useColumnScrollEl();
   const agent = session.agent;
   const seenSent = useRef(false);
   const [postCache, setPostCache] = useState<Map<string, AppBskyFeedDefs.PostView>>(
@@ -77,7 +91,6 @@ export function Notifications() {
 
   return (
     <div>
-      <h2>通知</h2>
       {feed.err && (
         <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {feed.err}</p>
       )}
@@ -88,6 +101,7 @@ export function Notifications() {
         items={groups}
         keyOf={(g) => g.id}
         estimateSize={220}
+        scrollParent={scrollEl}
         renderItem={(g) => <NotificationItem group={g} postCache={postCache} />}
         onEndReached={feed.done ? undefined : feed.loadMore}
         footer={

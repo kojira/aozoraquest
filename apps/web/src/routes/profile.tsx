@@ -17,6 +17,8 @@ import { TranslationControls } from '@/components/post-body';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { useTranslation } from '@/lib/translate';
+import { getProfileCached } from '@/lib/profile-cache';
+import { useColumnScrollEl } from '@/components/column-scroll-context';
 
 interface LoadState {
   kind: 'loading' | 'not-found' | 'ok' | 'error';
@@ -29,19 +31,27 @@ interface LoadState {
 
 export function Profile() {
   const { handle } = useParams<{ handle: string }>();
+  if (!handle) return <p>URL が壊れています。</p>;
+  return <ProfileView actor={handle} />;
+}
+
+/** プロフィール表示本体。route (useParams) と workspace の profile カラム
+ *  (column.param) の両方から actor を受けて使う。 */
+export function ProfileView({ actor }: { actor: string }) {
   const session = useSession();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
 
   useEffect(() => {
-    if (session.status !== 'signed-in' || !session.agent || !handle) return;
+    if (session.status !== 'signed-in' || !session.agent) return;
     const agent = session.agent;
     const myDid = session.did;
     let cancelled = false;
+    setState({ kind: 'loading' });
     (async () => {
       try {
-        const pRes = await agent.getProfile({ actor: handle });
+        // 共有キャッシュ経由 (同じ profile を複数カラムで開いても fetch は 1 回)
+        const profile = await getProfileCached(agent, actor);
         if (cancelled) return;
-        const profile = pRes.data;
         const theirDid = profile.did;
 
         const [theirDiag, myDiag] = await Promise.all([
@@ -62,12 +72,12 @@ export function Profile() {
       }
     })();
     return () => { cancelled = true; };
-  }, [session.status, session.agent, session.did, handle]);
+  }, [session.status, session.agent, session.did, actor]);
 
   if (session.status !== 'signed-in' || !session.agent) {
     return (
       <div>
-        <h2>@{handle}</h2>
+        <h2>@{actor}</h2>
         <p>まずはログインしてください。</p>
       </div>
     );
@@ -76,13 +86,13 @@ export function Profile() {
   if (state.kind === 'loading') return <p>読み込み中...</p>;
   if (state.kind === 'not-found') return (
     <div>
-      <h2>@{handle}</h2>
+      <h2>@{actor}</h2>
       <p style={{ color: 'var(--color-muted)' }}>このユーザーは見つかりませんでした。</p>
     </div>
   );
   if (state.kind === 'error') return (
     <div>
-      <h2>@{handle}</h2>
+      <h2>@{actor}</h2>
       <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {state.error}</p>
     </div>
   );
@@ -314,6 +324,8 @@ function toVec(s: StatArray) {
 }
 
 function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
+  // workspace のカラム内ではカラム内スクロール、単独ページでは window スクロール
+  const scrollEl = useColumnScrollEl();
   const feed = useInfiniteFeed<AppBskyFeedDefs.FeedViewPost>({
     enabled: !!agent && !!did,
     keyOf: (x) => x.post.uri,
@@ -344,6 +356,7 @@ function RecentPosts({ agent, did }: { agent: Agent; did: string }) {
       <VirtualFeed
         items={feed.items}
         keyOf={(x) => x.post.uri}
+        scrollParent={scrollEl}
         renderItem={(item) => <PostArticle post={item.post} expandable />}
         onEndReached={feed.done ? undefined : feed.loadMore}
         footer={
