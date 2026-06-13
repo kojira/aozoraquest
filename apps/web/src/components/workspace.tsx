@@ -30,6 +30,8 @@ import { publishVisibleColumn } from '@/lib/visible-column';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
 import { ColumnContent } from '@/components/column-content';
 import { ColumnPicker } from '@/components/column-picker';
+import { refreshQuestIndex } from '@/lib/quest-index-cache';
+import { invalidateProfile } from '@/lib/profile-cache';
 
 /** picker の表示位置: 'end' = 末尾タイル、数値 = そのカラムの直右 */
 type PickerAnchor = number | 'end' | null;
@@ -49,6 +51,34 @@ export function Workspace() {
 
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+
+  // 各カラムの「更新世代」。bump すると ColumnContent の key が変わり remount
+  // → mount 時に各カラムがネットワークから取り直す (= リフレッシュ)。
+  // 明示更新なので先頭に戻る挙動は自然 (pull-to-refresh / ↻ ボタンとして妥当)。
+  const [refreshNonce, setRefreshNonce] = useState<Record<string, number>>({});
+
+  /** kind ごとのモジュールキャッシュを無効化する (remount だけでは
+   *  取り直さない quest index / profile を真に fresh にするため)。 */
+  function bustColumnCache(col: AppColumn) {
+    if (col.kind === 'board') void refreshQuestIndex();
+    if (col.kind === 'profile' && col.param) invalidateProfile(col.param);
+  }
+
+  /** 1 カラムをリフレッシュする */
+  function refreshColumn(col: AppColumn) {
+    bustColumnCache(col);
+    setRefreshNonce((m) => ({ ...m, [col.id]: (m[col.id] ?? 0) + 1 }));
+  }
+
+  /** 全カラムをまとめてリフレッシュする */
+  function refreshAll(cols: AppColumn[]) {
+    for (const c of cols) bustColumnCache(c);
+    setRefreshNonce((m) => {
+      const next = { ...m };
+      for (const c of cols) next[c.id] = (next[c.id] ?? 0) + 1;
+      return next;
+    });
+  }
 
   // いま主に見えているカラムの kind を footer-nav に伝える
   // (モバイル横スワイプで現在位置が分かるように)。
@@ -162,6 +192,17 @@ export function Workspace() {
 
   return (
     <div data-workspace="1">
+      {(columns?.length ?? 0) > 0 && (
+        <button
+          type="button"
+          className="workspace-refresh-all"
+          aria-label="すべてのカラムを更新"
+          title="すべてのカラムを更新"
+          onClick={() => refreshAll(columns ?? [])}
+        >
+          <RefreshIcon /> すべて更新
+        </button>
+      )}
       <div className="workspace-columns" ref={scrollerRef}>
         {(columns ?? []).map((col, i) => (
           <Fragment key={col.id}>
@@ -173,8 +214,10 @@ export function Workspace() {
               onMoveRight={() => edit((cols) => moveColumnRight(cols, col.id))}
               onRemove={() => edit((cols) => removeColumn(cols, col.id))}
               onAddRight={() => setPickerAnchor(i)}
+              onRefresh={() => refreshColumn(col)}
             >
               <ColumnContent
+                key={refreshNonce[col.id] ?? 0}
                 column={col}
                 onPatch={(patch) => patchColumn(col.id, patch)}
               />
@@ -221,15 +264,25 @@ interface ColumnViewProps {
   onMoveRight: () => void;
   onRemove: () => void;
   onAddRight: () => void;
+  onRefresh: () => void;
   children: ReactNode;
 }
 
-function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, children }: ColumnViewProps) {
+function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, children }: ColumnViewProps) {
   // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
   // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // 押下フィードバック (↻ を一瞬回す) 用
+  const [spinning, setSpinning] = useState(false);
+  function triggerRefresh() {
+    onRefresh();
+    setSpinning(true);
+    setTimeout(() => setSpinning(false), 600);
+  }
+  // モバイル pull-to-refresh (カラム body を最上部から下に引くと更新)
+  const pull = usePullToRefresh(bodyEl, triggerRefresh);
 
   // home / bar は専用 URL を持たない (urlForColumn が '/' を返す) ので
   // 直リンク項目を出さない
@@ -261,6 +314,15 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
         <span className="workspace-column-title">{appColumnTitle(column)}</span>
         <button
           type="button"
+          className={`workspace-column-refresh-btn${spinning ? ' is-spinning' : ''}`}
+          aria-label={`${appColumnTitle(column)}を更新`}
+          title="このカラムを更新"
+          onClick={triggerRefresh}
+        >
+          <RefreshIcon />
+        </button>
+        <button
+          type="button"
           className="workspace-column-menu-btn"
           aria-label="カラム操作メニュー"
           aria-expanded={menuOpen}
@@ -284,10 +346,107 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
         </div>
       )}
       <div className="workspace-column-body" ref={setBodyEl}>
+        {pull.offset > 0 && (
+          <div className="workspace-pull-indicator" style={{ height: pull.offset }}>
+            <span className={pull.armed ? 'armed' : ''}>
+              {pull.armed ? '離して更新' : '引いて更新'}
+            </span>
+          </div>
+        )}
         <ColumnScrollContext.Provider value={bodyEl}>
           {children}
         </ColumnScrollContext.Provider>
       </div>
     </section>
   );
+}
+
+/** カレンダーの ↻ / すべて更新ボタンで使う回転矢印アイコン (絵文字不使用)。 */
+function RefreshIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden focusable="false">
+      <path
+        d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path d="M13.7 1.8V5h-3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
+
+interface PullState {
+  offset: number;
+  armed: boolean;
+}
+
+/**
+ * モバイル pull-to-refresh。スクロール最上部 (scrollTop===0) から下に引いた
+ * ときだけ反応し、閾値を超えて指を離したら onRefresh を呼ぶ。
+ * 通常の縦スクロールを邪魔しないよう、最上部かつ下方向のときだけ engage する。
+ */
+function usePullToRefresh(el: HTMLElement | null, onRefresh: () => void): PullState {
+  const [state, setState] = useState<PullState>({ offset: 0, armed: false });
+  const startY = useRef<number | null>(null);
+  const pulling = useRef(false);
+  const armedRef = useRef(false);
+  // onRefresh は毎 render で identity が変わるので ref 越しに最新を読む
+  // (effect を毎回貼り直さないため)。
+  const onRefreshRef = useRef(onRefresh);
+  onRefreshRef.current = onRefresh;
+  const THRESHOLD = 64;
+  const MAX = 96;
+
+  useEffect(() => {
+    if (!el) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (el.scrollTop <= 0 && e.touches.length === 1) {
+        startY.current = e.touches[0]!.clientY;
+        pulling.current = false;
+      } else {
+        startY.current = null;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (startY.current === null) return;
+      const dy = e.touches[0]!.clientY - startY.current;
+      if (dy <= 0) {
+        if (pulling.current) {
+          pulling.current = false;
+          armedRef.current = false;
+          setState({ offset: 0, armed: false });
+        }
+        return;
+      }
+      pulling.current = true;
+      const offset = Math.min(MAX, dy * 0.5); // ゴム的に減衰
+      const armed = offset >= THRESHOLD;
+      armedRef.current = armed;
+      setState({ offset, armed });
+      if (e.cancelable) e.preventDefault(); // pull 中はネイティブスクロール抑止
+    };
+    const end = () => {
+      if (pulling.current && armedRef.current) onRefreshRef.current();
+      pulling.current = false;
+      armedRef.current = false;
+      startY.current = null;
+      setState({ offset: 0, armed: false });
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
+  }, [el]);
+
+  return state;
 }
