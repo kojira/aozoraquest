@@ -27,6 +27,8 @@ import { createPost } from '@/lib/atproto';
 import { getPostQuestNotifications } from '@/lib/prefs';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { Handle } from '@/components/handle';
+import { DateTimePicker } from '@/components/date-time-picker';
+import { isoToLocalInput } from '@/lib/datetime';
 import { resolveHandle } from '@/lib/handle-cache';
 import {
   isExpired,
@@ -292,7 +294,7 @@ export function BoardDetail() {
         <div style={{ marginTop: '1em' }}>
           <div style={{ display: 'flex', gap: '0.6em' }}>
             <button onClick={() => {
-              setDeadlineInput(quest.deadline ? toLocalInput(quest.deadline) : '');
+              setDeadlineInput(quest.deadline ? isoToLocalInput(quest.deadline) : '');
               setEditingDeadline(true);
             }} disabled={busy}>募集期限を変更</button>
             <button onClick={cancelQuest} disabled={busy}>キャンセル</button>
@@ -303,13 +305,11 @@ export function BoardDetail() {
               <label htmlFor="deadline-input" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
                 新しい期限 (空欄で削除)
               </label>
-              <input
+              <DateTimePicker
                 id="deadline-input"
-                type="datetime-local"
                 value={deadlineInput}
-                onChange={(e) => setDeadlineInput(e.target.value)}
-                autoFocus
-                style={{ width: '100%' }}
+                onChange={setDeadlineInput}
+                ariaLabel="新しい募集期限を選択"
               />
               <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
                 <button onClick={async () => { await extendDeadline(deadlineInput); setEditingDeadline(false); }} disabled={busy}>適用</button>
@@ -520,10 +520,4 @@ function roleLabel(role: string): string {
   if (role === 'requesterApproval') return '承認';
   if (role === 'requesterRevision') return 'やり直し依頼';
   return role;
-}
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
