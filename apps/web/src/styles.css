@@ -251,6 +251,10 @@ p { margin: 0.4em 0; }
 .workspace-column {
   display: flex;
   flex-direction: column;
+  /* flex item の min-width は既定 auto = 中身の min-content。長い URL や
+     CJK 連続文字があると min-content がカラムを flex-basis より広げてしまう
+     (= 長文投稿でホームカラムが膨らむバグ)。min-width:0 で basis を守る。 */
+  min-width: 0;
   /* モバイル: ほぼ画面幅。次のカラムの端を少し見せて「右にまだある」を示す */
   flex: 0 0 calc(100% - 1.6em);
   scroll-snap-align: start;
@@ -416,6 +420,9 @@ p { margin: 0.4em 0; }
 
 .workspace-column-body {
   flex: 1 1 auto;
+  min-width: 0;                   /* 親同様、中身でカラムが膨らまないように */
+  /* 長い URL 等の切れない token を折り返す (横にはみ出してカラムを広げない) */
+  overflow-wrap: anywhere;
   overflow-y: auto;
   overflow-x: hidden;             /* 本体は横スクロールしない (横は親が担う) */
   /* 縦だけ contain (縦終端でページ全体が動くのを防ぐ)。
