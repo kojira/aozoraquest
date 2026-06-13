@@ -261,6 +261,11 @@ export function Settings() {
           参加の合図として <code>#{OPTIN_TAG}</code> 付きの投稿をあなたのアカウントから 1 本作成します
           (これで検索 API で発見可能になる)。
         </p>
+        <p style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
+          この <code>#{OPTIN_TAG}</code> 投稿で <strong>クエスト掲示板の発見元 (ディレクトリ)</strong> にも載るため、
+          あなたが出したクエストが他の人の「募集中」に表示されやすくなります
+          (クエスト発行時の告知でも同じタグが付きます)。
+        </p>
         {!profileLoaded ? (
           <p>読み込み中...</p>
         ) : profile?.discoverable ? (
