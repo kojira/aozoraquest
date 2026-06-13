@@ -390,6 +390,8 @@ interface PullState {
 function usePullToRefresh(el: HTMLElement | null, onRefresh: () => void): PullState {
   const [state, setState] = useState<PullState>({ offset: 0, armed: false });
   const startY = useRef<number | null>(null);
+  const startX = useRef<number>(0);
+  const lockedAxis = useRef<'none' | 'vertical' | 'horizontal'>('none');
   const pulling = useRef(false);
   const armedRef = useRef(false);
   // onRefresh は毎 render で identity が変わるので ref 越しに最新を読む
@@ -405,6 +407,8 @@ function usePullToRefresh(el: HTMLElement | null, onRefresh: () => void): PullSt
     const onTouchStart = (e: TouchEvent) => {
       if (el.scrollTop <= 0 && e.touches.length === 1) {
         startY.current = e.touches[0]!.clientY;
+        startX.current = e.touches[0]!.clientX;
+        lockedAxis.current = 'none';
         pulling.current = false;
       } else {
         startY.current = null;
@@ -413,6 +417,13 @@ function usePullToRefresh(el: HTMLElement | null, onRefresh: () => void): PullSt
     const onTouchMove = (e: TouchEvent) => {
       if (startY.current === null) return;
       const dy = e.touches[0]!.clientY - startY.current;
+      const dx = e.touches[0]!.clientX - startX.current;
+      // 軸ロック: 最初に優勢な方向を決め、横優勢ならカラム間スワイプとして
+      // pull を一切発火させない (scroll-snap の横送りを妨げない)。
+      if (lockedAxis.current === 'none' && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+        lockedAxis.current = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+      }
+      if (lockedAxis.current === 'horizontal') return;
       if (dy <= 0) {
         if (pulling.current) {
           pulling.current = false;

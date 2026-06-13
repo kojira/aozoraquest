@@ -284,7 +284,9 @@ p { margin: 0.4em 0; }
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* タイトル左、ボタン群 (↻ / ⋯) は refresh-btn の margin-left:auto で右へ。
+     space-between だと 3 子が等間隔に散るので flex-start にする。 */
+  justify-content: flex-start;
   gap: 0.5em;
   padding: 0.45em 0.5em 0.45em 0.8em;
   font-size: 0.92em;
@@ -330,20 +332,24 @@ p { margin: 0.4em 0; }
 }
 
 /* 全カラム一括更新ボタン (右下のフローティング FAB)。
-   viewport 固定にしてカラムヘッダー (右上の ⋯ / ↻) と重ならないようにする。
-   footer-nav の上に浮かせる。 */
-.workspace-refresh-all {
-  position: fixed;
-  right: 0.8em;
-  bottom: calc(var(--shell-chrome-height, 9.5em) * 0.5 + 0.8em);
-  z-index: 20;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  font-size: 0.82em;
-  padding: 0.45em 0.85em;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--color-window-inner-border), 0 3px 8px rgba(0, 0, 0, 0.4);
+   PC は各カラムヘッダーの ↻ で足りる + カラムが右端まで埋まって被るため、
+   モバイル (単一カラム表示) 限定で出す。pull-to-refresh と機能は冗長なので
+   PC で消しても損失は小さい。 */
+.workspace-refresh-all { display: none; }
+@media (max-width: 767px) {
+  .workspace-refresh-all {
+    display: inline-flex;
+    position: fixed;
+    right: 0.8em;
+    bottom: calc(var(--shell-chrome-height, 9.5em) * 0.5 + 0.8em);
+    z-index: 20;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.82em;
+    padding: 0.45em 0.85em;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--color-window-inner-border), 0 3px 8px rgba(0, 0, 0, 0.4);
+  }
 }
 
 /* pull-to-refresh のインジケータ (カラム body 先頭に出る) */
