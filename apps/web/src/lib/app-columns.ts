@@ -62,14 +62,7 @@ export function defaultColumns(signedIn: boolean): AppColumn[] {
         { id: makeColumnId(), kind: 'board' },
       ]
     : [{ id: makeColumnId(), kind: 'board' }];
-  // 旧 board 設定があれば board カラムの inner として read-time で取り込む。
-  // ここでは保存しない (= サインイン状態確定前の永続化事故を防ぐ)。
-  const inner = readLegacyBoardInner();
-  if (inner.length > 0) {
-    const board = cols.find(c => c.kind === 'board');
-    if (board && board.kind === 'board') board.inner = inner;
-  }
-  return cols;
+  return injectBoardInner(cols);
 }
 
 export function loadAppColumns(signedIn: boolean): AppColumn[] {
@@ -80,18 +73,41 @@ export function loadAppColumns(signedIn: boolean): AppColumn[] {
     if (!Array.isArray(parsed) || parsed.length === 0) return defaultColumns(signedIn);
     const valid = parsed.filter(isValidAppColumn);
     if (valid.length === 0) return defaultColumns(signedIn);
-    return valid;
+    // 保存済み構成にも board の inner を read-time で注入する
+    // (inner の正は常に旧 boardColumns:v1 = /board ページでの編集)
+    return injectBoardInner(valid);
   } catch {
     return defaultColumns(signedIn);
   }
 }
 
-/** 保存はユーザーの明示操作 (カラム追加・削除・並べ替え) 時のみ呼ぶこと。
- *  default 構成や read-time 変換結果を機械的に保存してはいけない
- *  (サインイン前に board だけの構成が固定される事故のもと)。 */
+/** board カラムの inner は保存しない。inner の唯一の正は
+ *  旧 boardColumns:v1 (= /board ページでの編集) で、load 時に毎回
+ *  read-time で注入する。これにより検索カラムの param 保存などで
+ *  appColumns:v1 が確定した後も /board での inner 編集が workspace に
+ *  反映され続ける。 */
+function injectBoardInner(cols: AppColumn[]): AppColumn[] {
+  const inner = readLegacyBoardInner();
+  return cols.map((c) => {
+    if (c.kind !== 'board') return c;
+    if (inner.length > 0) return { ...c, inner };
+    const { inner: _drop, ...rest } = c;
+    return rest as AppColumn;
+  });
+}
+
+/** 保存はユーザーの明示操作 (カラム追加・削除・並べ替え・検索 param 更新)
+ *  時のみ呼ぶこと。default 構成や read-time 変換結果を機械的に保存しては
+ *  いけない (サインイン前に board だけの構成が固定される事故のもと)。
+ *  board カラムの inner は strip して保存する (正は boardColumns:v1)。 */
 export function saveAppColumns(columns: AppColumn[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(columns));
+    const stripped = columns.map((c) => {
+      if (c.kind !== 'board') return c;
+      const { inner: _drop, ...rest } = c;
+      return rest as AppColumn;
+    });
+    localStorage.setItem(KEY, JSON.stringify(stripped));
   } catch {/* no-op */}
 }
 
@@ -201,8 +217,9 @@ function readLegacyBoardInner(): BoardInner[] {
 }
 
 /** 16 ジョブの選択肢 (board inner の job filter で使う)。
- *  board-columns.ts にも同名 export があるが、あちらは PR 4 で削除予定の
- *  deprecated ファイルなので import せずここに正本を置く。 */
+ *  board-columns.ts にも同名 export があるが、あちらは /board フル表示
+ *  ページ専用 (inner 編集の正)。workspace 側はここを正本として参照する。
+ *  将来 inner 編集を workspace に統合したら board-columns.ts ごと削除する。 */
 export const JOB_OPTIONS: Archetype[] = [
   'sage', 'mage', 'shogun', 'bard',
   'seer', 'poet', 'paladin', 'explorer',

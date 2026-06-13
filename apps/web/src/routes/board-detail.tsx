@@ -25,6 +25,7 @@ import {
 } from '@/lib/quest-api';
 import { createPost } from '@/lib/atproto';
 import { getPostQuestNotifications } from '@/lib/prefs';
+import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { Handle } from '@/components/handle';
 import { resolveHandle } from '@/lib/handle-cache';
 import {
@@ -72,6 +73,9 @@ export function BoardDetail() {
 
   const refresh = useCallback(async () => {
     if (!uri || !session.agent) return;
+    // 状態を変える操作の後に呼ばれるので、共有 index キャッシュも破棄して
+    // board 一覧 (募集中カラム等) に反映されるようにする
+    void refreshQuestIndex();
     try {
       const q = await getQuest(session.agent, uri);
       setQuest(q);
