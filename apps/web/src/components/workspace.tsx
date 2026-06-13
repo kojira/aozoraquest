@@ -1,0 +1,293 @@
+/**
+ * アプリ全体マルチカラムの workspace shell (docs/16-multicolumn.md)。
+ *
+ * `/` の index route として表示され、カラム構成をレンダリングする。
+ * カラムの追加 (ColumnPicker) / 並べ替え (← →) / 削除 / 直リンクコピーが
+ * でき、変更は saveAppColumns で localStorage に永続化される
+ * (= ユーザーが編集して初めて保存される。未編集なら read-time 計算のまま。
+ *  board カラムの inner は保存対象外で、常に /board での編集が正)。
+ *
+ * 各カラムは ColumnView (ヘッダー + 縦スクロールする body) で包み、
+ * body 要素を ColumnScrollContext で配って内部の VirtualFeed が
+ * 「カラム内スクロール」モードで動けるようにする。
+ */
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { useSession } from '@/lib/session';
+import {
+  loadAppColumns,
+  saveAppColumns,
+  resetAppColumns,
+  moveColumnLeft,
+  moveColumnRight,
+  removeColumn,
+  appColumnTitle,
+  type AppColumn,
+  type AppColumnKind,
+} from '@/lib/app-columns';
+import { urlForColumn } from '@/lib/column-router';
+import { publishVisibleColumn } from '@/lib/visible-column';
+import { ColumnScrollContext } from '@/components/column-scroll-context';
+import { ColumnContent } from '@/components/column-content';
+import { ColumnPicker } from '@/components/column-picker';
+
+/** picker の表示位置: 'end' = 末尾タイル、数値 = そのカラムの直右 */
+type PickerAnchor = number | 'end' | null;
+
+export function Workspace() {
+  const session = useSession();
+  const signedIn = session.status === 'signed-in';
+
+  // columns は編集可能な state。session 確定時に load する
+  // (loading 中に読むと board 構成が 1 render チラつくため)。
+  // load 結果は id を毎回生成するので、effect で 1 回だけ state に入れる。
+  const [columns, setColumns] = useState<AppColumn[] | null>(null);
+  useEffect(() => {
+    if (session.status === 'loading') return;
+    setColumns(loadAppColumns(signedIn));
+  }, [session.status, signedIn]);
+
+  const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  // いま主に見えているカラムの kind を footer-nav に伝える
+  // (モバイル横スワイプで現在位置が分かるように)。
+  // deps はカラム数のみ (= observe 対象の増減時だけ再構築。param 変更等の
+  // 頻繁な columns 参照変化で IO を作り直して active がチラつくのを防ぐ)。
+  const columnCount = columns?.length ?? 0;
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        // 最も大きく見えているカラムを採用
+        let best: { kind: AppColumnKind; ratio: number } | null = null;
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const kind = (e.target as HTMLElement).dataset.columnKind as AppColumnKind | undefined;
+          if (!kind) continue;
+          if (!best || e.intersectionRatio > best.ratio) best = { kind, ratio: e.intersectionRatio };
+        }
+        if (best) publishVisibleColumn(best.kind);
+      },
+      { root: scroller, threshold: [0.5] },
+    );
+    for (const el of scroller.querySelectorAll('[data-column-kind]')) io.observe(el);
+    return () => io.disconnect();
+    // workspace 自体が unmount される (= `/` 離脱) ときだけ null に戻す。
+    // 再構築のたびに null を publish するとタブが一瞬チラつくため分離。
+  }, [columnCount]);
+
+  // PC で横スワイプ (トラックパッド) したとき、カーソルがカラム本体
+  // (縦スクロールコンテナ) の上にあると横方向が本体に吸われて「引っかかる」。
+  // 横優勢のホイールジェスチャを明示的に workspace スクローラへ流す。
+  // 縦優勢 (deltaY) はそのまま = カラム内縦スクロールを妨げない。
+  // 縦ホイールしかないマウスの横移動は別途スクロールバーで。
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // 縦優勢は無視
+      // 横優勢: 親を横スクロールして本体への吸われを防ぐ
+      scroller.scrollLeft += e.deltaX;
+      e.preventDefault();
+    };
+    scroller.addEventListener('wheel', onWheel, { passive: false });
+    return () => scroller.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // `/` 離脱時に可視 kind をクリアする (active 残留防止)
+  useEffect(() => () => publishVisibleColumn(null), []);
+
+  if (session.status === 'loading') {
+    return <p>準備しています...</p>;
+  }
+
+  if (session.status === 'signed-out') {
+    // 未サインインの landing。board カラム等は ColumnPicker で追加可能だが、
+    // 初見の体験としては従来の導入文を出す。
+    return (
+      <div>
+        <h2>あおぞらくえすと</h2>
+        <p style={{ color: 'var(--color-muted)' }}>
+          Bluesky で読み書きしながら、あなたの気質をゆっくり見つけていくアプリ。
+        </p>
+        <Link to="/onboarding"><button style={{ marginTop: '1em' }}>ログインして始める</button></Link>
+        <p style={{ marginTop: '1.5em', fontSize: '0.85em' }}>
+          <Link to="/board">ログインせずにクエスト掲示板をのぞく →</Link>
+        </p>
+      </div>
+    );
+  }
+
+  /** 編集操作: state 更新と同時に localStorage へ保存する */
+  function edit(updater: (cols: AppColumn[]) => AppColumn[]) {
+    setColumns((prev) => {
+      if (!prev) return prev;
+      const next = updater(prev);
+      if (next !== prev) saveAppColumns(next);
+      return next;
+    });
+  }
+
+  /** カラムの部分更新 (検索カラムの param 追従などに使う)。
+   *  onPatch は対象カラムの id に束縛されるため、kind を跨ぐ patch は
+   *  構造上発生しない (dispatcher 参照)。 */
+  function patchColumn(id: string, patch: Partial<AppColumn>) {
+    edit((cols) => cols.map((c) => (c.id === id ? ({ ...c, ...patch } as AppColumn) : c)));
+  }
+
+  /** anchor 位置にカラムを挿入する */
+  function insertColumn(col: AppColumn, anchor: PickerAnchor) {
+    edit((cols) => {
+      if (anchor === 'end' || anchor === null) return [...cols, col];
+      const next = [...cols];
+      next.splice(anchor + 1, 0, col);
+      return next;
+    });
+    setPickerAnchor(null);
+  }
+
+  const picker = (
+    <section className="workspace-column workspace-column-add">
+      <div className="workspace-column-body">
+        <ColumnPicker
+          signedIn={signedIn}
+          onAdd={(col) => insertColumn(col, pickerAnchor)}
+          onClose={() => setPickerAnchor(null)}
+        />
+      </div>
+    </section>
+  );
+
+  return (
+    <div data-workspace="1">
+      <div className="workspace-columns" ref={scrollerRef}>
+        {(columns ?? []).map((col, i) => (
+          <Fragment key={col.id}>
+            <ColumnView
+              column={col}
+              canMoveLeft={i > 0}
+              canMoveRight={i < (columns?.length ?? 0) - 1}
+              onMoveLeft={() => edit((cols) => moveColumnLeft(cols, col.id))}
+              onMoveRight={() => edit((cols) => moveColumnRight(cols, col.id))}
+              onRemove={() => edit((cols) => removeColumn(cols, col.id))}
+              onAddRight={() => setPickerAnchor(i)}
+            >
+              <ColumnContent
+                column={col}
+                onPatch={(patch) => patchColumn(col.id, patch)}
+              />
+            </ColumnView>
+            {/* 「右にカラムを追加」: そのカラムの直右に picker を出す
+                (モバイルで末尾までスワイプしなくても追加できる副導線) */}
+            {pickerAnchor === i && picker}
+          </Fragment>
+        ))}
+
+        {pickerAnchor === 'end' ? (
+          picker
+        ) : (
+          <section className="workspace-column workspace-column-add">
+            <div className="workspace-column-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
+                <button type="button" onClick={() => setPickerAnchor('end')}>＋ カラムを追加</button>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ fontSize: '0.8em' }}
+                  onClick={() => {
+                    if (confirm('カラム構成を初期状態に戻しますか?\n(追加したカラムや並び順の変更は消えます)')) {
+                      setColumns(resetAppColumns(signedIn));
+                    }
+                  }}
+                >
+                  初期構成に戻す
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ColumnViewProps {
+  column: AppColumn;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  onRemove: () => void;
+  onAddRight: () => void;
+  children: ReactNode;
+}
+
+function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, children }: ColumnViewProps) {
+  // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
+  // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
+  const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // home / bar は専用 URL を持たない (urlForColumn が '/' を返す) ので
+  // 直リンク項目を出さない
+  const linkUrl = urlForColumn(column);
+  const hasDirectLink = linkUrl !== '/';
+
+  async function copyLink() {
+    const url = `${location.origin}${linkUrl}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => { setCopied(false); setMenuOpen(false); }, 1200);
+    } catch {
+      prompt('このカラムの URL:', url);
+      setMenuOpen(false);
+    }
+  }
+
+  function confirmRemove() {
+    if (confirm(`「${appColumnTitle(column)}」カラムを削除しますか?`)) {
+      onRemove();
+    }
+    setMenuOpen(false);
+  }
+
+  return (
+    <section className="workspace-column" data-column-kind={column.kind}>
+      <header className="workspace-column-header">
+        <span className="workspace-column-title">{appColumnTitle(column)}</span>
+        <button
+          type="button"
+          className="workspace-column-menu-btn"
+          aria-label="カラム操作メニュー"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          ⋯
+        </button>
+      </header>
+      {menuOpen && (
+        <div className="workspace-column-menu">
+          <button type="button" disabled={!canMoveLeft} onClick={() => { onMoveLeft(); setMenuOpen(false); }}>← 左へ移動</button>
+          <button type="button" disabled={!canMoveRight} onClick={() => { onMoveRight(); setMenuOpen(false); }}>→ 右へ移動</button>
+          <button type="button" onClick={() => { onAddRight(); setMenuOpen(false); }}>＋ 右にカラムを追加</button>
+          {hasDirectLink && (
+            <button type="button" onClick={copyLink}>
+              {copied ? 'コピーしました ✓' : 'このカラムの直リンクをコピー'}
+            </button>
+          )}
+          <button type="button" onClick={confirmRemove}>✕ カラムを削除</button>
+          <button type="button" className="secondary" onClick={() => setMenuOpen(false)}>閉じる</button>
+        </div>
+      )}
+      <div className="workspace-column-body" ref={setBodyEl}>
+        <ColumnScrollContext.Provider value={bodyEl}>
+          {children}
+        </ColumnScrollContext.Provider>
+      </div>
+    </section>
+  );
+}
