@@ -29,10 +29,21 @@ interface DirectoryRecord {
   updatedAt: string;
 }
 
+// admin PDS の service URL。bsky.social ホストのアカウントは entryway が
+// login 後に実 PDS へルーティングするので既定で動くが、**セルフホスト /
+// サードパーティ PDS の管理者アカウントの場合は当該ホストを必ず指定する**
+// (さもないと login 失敗 or 誤った repo を参照する)。
 const SERVICE = process.env.BLUESKY_SERVICE ?? 'https://bsky.social';
 const IDENTIFIER = process.env.BLUESKY_ADMIN_IDENTIFIER;
 const APP_PASSWORD = process.env.BLUESKY_ADMIN_APP_PASSWORD;
 const NSID_ROOT = process.env.NSID_ROOT ?? 'app.aozoraquest';
+// web 側 (runtime-config.ts) が読む primary admin DID。書き込み先 (この
+// スクリプトが login する DID) と一致しないと、毎時「成功」でも web に一切
+// 反映されない silent failure になる。設定されていれば突合して守る。
+const EXPECTED_ADMIN_DIDS = (process.env.ADMIN_DIDS ?? process.env.VITE_ADMIN_DIDS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 const OPTIN_TAG = process.env.OPTIN_TAG ?? 'aozoraquest';
 const MAX_PAGES = Math.max(1, Number(process.env.MAX_PAGES ?? '5') || 5);
 const COLLECTION = `${NSID_ROOT}.directory`;
@@ -60,6 +71,17 @@ async function main(): Promise<void> {
   await agent.login({ identifier: IDENTIFIER, password: APP_PASSWORD });
   const did = agent.assertDid;
   console.log(`[refresh-directory] logged in as ${did} (${SERVICE}), collection=${COLLECTION}`);
+
+  // 書き込み先 (login した DID) が web の読み取り先 (VITE_ADMIN_DIDS primary)
+  // と一致するか検証する。取り違えると毎時「成功」でも web に反映されない
+  // ので、設定されていてズレていたら fail させて可視化する。
+  if (EXPECTED_ADMIN_DIDS.length > 0 && !EXPECTED_ADMIN_DIDS.includes(did)) {
+    console.error(
+      `[refresh-directory] ログイン DID (${did}) が ADMIN_DIDS (${EXPECTED_ADMIN_DIDS.join(', ')}) に含まれません。` +
+        ' BLUESKY_ADMIN_IDENTIFIER と VITE_ADMIN_DIDS が同一アカウントを指しているか確認してください。',
+    );
+    process.exit(1);
+  }
 
   // 既存ディレクトリレコード (なければ空) を取得
   let existingUsers: Entry[] = [];

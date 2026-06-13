@@ -49,4 +49,7 @@ jobs:
           BLUESKY_ADMIN_IDENTIFIER: ${{ secrets.BLUESKY_ADMIN_IDENTIFIER }}
           BLUESKY_ADMIN_APP_PASSWORD: ${{ secrets.BLUESKY_ADMIN_APP_PASSWORD }}
           NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+          # web 読み取り先と書き込み先の取り違えを検知する (任意)。
+          # 設定しておくと login DID と不一致のとき fail する。
+          ADMIN_DIDS: ${{ vars.VITE_ADMIN_DIDS }}
         run: pnpm refresh:directory
