@@ -29,7 +29,6 @@ export function BoardNew() {
   const [targetJob, setTargetJob] = useState<string>('');
   const [deadline, setDeadline] = useState('');
   const [rewardPoints, setRewardPoints] = useState(100);
-  const [announce, setAnnounce] = useState(() => getPostQuestNotifications());
   const [announceText, setAnnounceText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -85,8 +84,10 @@ export function BoardNew() {
         ...(deadline ? { deadline: new Date(deadline).toISOString() } : {}),
         rewardPoints,
       });
-      // Bluesky 告知 (default ON、ユーザー編集テキストを使う)
-      if (announce) {
+      // Bluesky 告知は常時 ON (= 掲示板で他人に見えるために必須。発行者が
+      // off にできる導線は廃止)。ただし dev 環境だけは本番 Bluesky への誤投稿
+      // 防止ゲート (getPostQuestNotifications) を残す。
+      if (getPostQuestNotifications()) {
         const questUrl = `${location.origin}/board/${encodeURIComponent(quest.uri)}`;
         // [QUEST_URL] マーカーが残っていれば置換。ユーザーが消してしまっていれば末尾に追加。
         let finalText = announceText.replace('[QUEST_URL]', questUrl);
@@ -199,30 +200,24 @@ export function BoardNew() {
         </p>
       </Field>
 
-      <Field label="Bluesky に告知する">
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4em', fontSize: '0.9em' }}>
-          <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
-          告知する
-        </label>
+      <Field label="Bluesky 告知文 (発行時に自動投稿)">
+        <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0 0 0.3em' }}>
+          クエストは発行と同時に <code>#aozoraquest</code> 付きで Bluesky に告知されます
+          (= 他の人の掲示板に載るために必須)。本文は編集できます。
+          <code>[QUEST_URL]</code> が発行後の URL に置き換わります (消した場合は末尾に自動追加)。
+        </p>
+        <textarea
+          aria-label="Bluesky 告知本文"
+          value={announceText}
+          onChange={(e) => setAnnounceText(e.target.value)}
+          rows={5}
+          style={{ width: '100%' }}
+        />
         {!getPostQuestNotificationsDefault() && (
-          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
-            dev 環境では default OFF (本番 Bluesky に流さないため)。
-            設定ページの「クエスト告知を Bluesky に投稿する」で常時 ON にできます。
+          <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
+            ※ この環境 (dev) では本番 Bluesky への誤投稿を防ぐため告知を保留します。
+            設定ページの「クエスト告知を Bluesky に投稿する」を ON にすると告知されます。
           </p>
-        )}
-        {announce && (
-          <>
-            <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.4em 0 0.2em' }}>
-              <code>[QUEST_URL]</code> が発行後の URL に置き換わります。消した場合は末尾に自動追加されます。
-            </p>
-            <textarea
-              aria-label="Bluesky 告知本文"
-              value={announceText}
-              onChange={(e) => setAnnounceText(e.target.value)}
-              rows={5}
-              style={{ width: '100%', marginTop: '0.2em' }}
-            />
-          </>
         )}
       </Field>
 
