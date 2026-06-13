@@ -226,7 +226,7 @@ export async function buildQuestIndexFromDirectory(
   return { quests, applications, updatedAt: new Date().toISOString() };
 }
 
-const DISCOVERY_TAG = 'aozoraquest';
+export const DISCOVERY_TAG = 'aozoraquest';
 /** 集約対象 DID 数の上限 (1 DID = 2 listRecords なので過大にしない) */
 const MAX_DISCOVERY_DIDS = 60;
 
