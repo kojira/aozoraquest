@@ -14,7 +14,8 @@
     "validate:llm:gen": "tsx scripts/validate-llm-gen-playwright.ts",
     "validate:llm:cls": "tsx scripts/validate-llm-cls-playwright.ts",
     "validate:data": "tsx scripts/validate-data.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "refresh:directory": "tsx scripts/refresh-directory.ts"
   },
   "devDependencies": {
     "@google/genai": "^1.50.1",

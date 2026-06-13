@@ -1,0 +1,52 @@
+name: directory-refresh
+
+# 発見ディレクトリ (app.aozoraquest.directory) を #aozoraquest 投稿から自動更新する。
+# admin UI の「検索から更新 → 保存」を毎時 headless で実行する (scripts/refresh-directory.ts)。
+#
+# 必要な設定 (GitHub → Settings → Environments → main):
+#   secrets:
+#     BLUESKY_ADMIN_IDENTIFIER   管理者アカウントの handle か DID
+#     BLUESKY_ADMIN_APP_PASSWORD 管理者アカウントの app password (Bluesky 設定で発行・失効可)
+#   variables (任意):
+#     BLUESKY_SERVICE   管理者 PDS の service URL (未指定なら https://bsky.social)
+#     VITE_NSID_ROOT    NSID prefix (未指定なら app.aozoraquest)
+
+on:
+  schedule:
+    - cron: '0 * * * *' # 毎時 0 分 (UTC)。GitHub の cron は数分遅延しうる
+  workflow_dispatch: {} # 手動実行も可 (Actions タブから)
+
+# 毎時実行が重なって putRecord が二重に走らないよう直列化する
+concurrency:
+  group: directory-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # 本番の Environment に置いた secrets / variables を使う
+    environment: main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Refresh directory
+        env:
+          BLUESKY_SERVICE: ${{ vars.BLUESKY_SERVICE }}
+          BLUESKY_ADMIN_IDENTIFIER: ${{ secrets.BLUESKY_ADMIN_IDENTIFIER }}
+          BLUESKY_ADMIN_APP_PASSWORD: ${{ secrets.BLUESKY_ADMIN_APP_PASSWORD }}
+          NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+        run: pnpm refresh:directory
