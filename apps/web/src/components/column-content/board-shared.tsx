@@ -7,10 +7,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
-import { listIssuedQuests, listMyApplications } from '@/lib/quest-api';
+import { listIssuedQuests, listMyApplications, buildQuestIndexFromDirectory } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
 import type { UserQuest } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
+import { useRuntimeConfig } from '@/components/config-provider';
 import { Handle } from '@/components/handle';
 
 export interface BoardFilter {
@@ -22,18 +23,35 @@ export interface BoardFilter {
  *  (index は quest-index-cache で重複防止)。 */
 export function useBoardData() {
   const session = useSession();
+  const config = useRuntimeConfig();
   const [index, setIndex] = useState<QuestIndex | null>(null);
   const [myQuests, setMyQuests] = useState<UserQuest[] | null>(null);
   const [myApplicationQuestUris, setMyApplicationQuestUris] = useState<Set<string> | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // 集約 Worker が未デプロイの間は、発見ディレクトリの DID 群 (+ 自分) から
+  // クライアント集約して quest を全員に見えるようにする。サインインしている
+  // ときだけ実 agent で各 PDS を読める (未サインインは従来 fallback)。
+  const directoryDids = config.directory.map((u) => u.did);
+  const agent = session.agent;
+  const selfDid = session.did;
+  // 依存値を文字列化して effect の不要再実行を防ぐ
+  const aggregationKey = `${selfDid ?? ''}|${directoryDids.join(',')}`;
+
   useEffect(() => {
     let cancelled = false;
-    getQuestIndexCached()
+    const builder = agent
+      ? () => {
+          const dids = selfDid ? [selfDid, ...directoryDids] : directoryDids;
+          return buildQuestIndexFromDirectory(agent, dids);
+        }
+      : undefined;
+    getQuestIndexCached(builder)
       .then((idx) => { if (!cancelled) setIndex(idx); })
       .catch((e) => { if (!cancelled) setErr(String((e as Error)?.message ?? e)); });
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent, aggregationKey]);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
