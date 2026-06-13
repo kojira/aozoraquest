@@ -13,26 +13,29 @@ import {
   type Notification,
 } from '@/lib/notifications';
 
-/** 通知ページ (route)。中身は NotificationsFeed (workspace カラムと共用)。 */
+/** 通知ページ (route)。中身は NotificationsFeed (workspace カラムと共用)。
+ *  既読化 (markSeen) はこのページを開いたときだけ発火する。 */
 export function Notifications() {
   return (
     <div>
       <h2>通知</h2>
-      <NotificationsFeed />
+      <NotificationsFeed markSeen />
     </div>
   );
 }
 
 /**
  * 通知フィード本体: listNotifications でページングしつつ、グループ単位で表示。
- * - 初回ロード後に updateNotificationsSeen を発火 (未読バッジをクリア)。
- *   workspace カラムとして常時 mount される場合も「カラムが表示された =
- *   見た」として扱う (可視判定ベースへの改善は PR 5 の検討事項)
+ * - markSeen=true のとき初回ロード後に updateNotificationsSeen を発火
+ *   (未読バッジをクリア)。**workspace カラムでは発火しない** —
+ *   default 構成に通知カラムが入るため、`/` を開いただけで未読バッジが
+ *   死ぬのを防ぐ (レビュー指摘 ★★★)。カラムでの既読化は可視判定
+ *   (IntersectionObserver) と合わせて PR 5 で導入する
  * - 各ページ分の関連投稿 URI をまとめて getPosts で取得し、Map にキャッシュ
  * - グルーピングはページ単位ではなく **全 items の連結** に対して再計算
  *   (ページ境界で連続マージが成り立つように)
  */
-export function NotificationsFeed() {
+export function NotificationsFeed({ markSeen = false }: { markSeen?: boolean }) {
   const session = useSession();
   const scrollEl = useColumnScrollEl();
   const agent = session.agent;
@@ -55,14 +58,14 @@ export function NotificationsFeed() {
     },
   });
 
-  // 初回 items 取得後に updateSeen を fire-and-forget
+  // 初回 items 取得後に updateSeen を fire-and-forget (markSeen のときのみ)
   useEffect(() => {
-    if (!agent) return;
+    if (!markSeen || !agent) return;
     if (seenSent.current) return;
     if (feed.items.length === 0 && !feed.done) return;
     seenSent.current = true;
     void updateNotificationsSeen(agent);
-  }, [agent, feed.items.length, feed.done]);
+  }, [markSeen, agent, feed.items.length, feed.done]);
 
   const groups = useMemo(() => groupNotifications(feed.items), [feed.items]);
 

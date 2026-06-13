@@ -17,7 +17,7 @@ import { TranslationControls } from '@/components/post-body';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { useTranslation } from '@/lib/translate';
-import { getProfileCached } from '@/lib/profile-cache';
+import { getProfileCached, invalidateProfile } from '@/lib/profile-cache';
 import { useColumnScrollEl } from '@/components/column-scroll-context';
 
 interface LoadState {
@@ -477,6 +477,9 @@ function FollowButton({
         const res = await agent.follow(did);
         setFollowUri(res.uri);
       }
+      // viewer.following が変わったので profile キャッシュを無効化
+      // (30s TTL 内の stale 初期値で二重フォロー等にならないように)
+      invalidateProfile(did);
     } catch (e) {
       console.warn('[follow] toggle failed', e);
       setFollowUri(prev);

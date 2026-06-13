@@ -36,10 +36,15 @@ export async function getProfileCached(
       const res = await agent.getProfile({ actor });
       const profile = res.data;
       // handle と did の両方の key で引けるようにしておく
-      // (カラムは handle、通知由来は did で来ることがある)
-      cache.set(actor, { profile, ts: Date.now() });
-      cache.set(profile.did, { profile, ts: Date.now() });
-      if (profile.handle) cache.set(profile.handle, { profile, ts: Date.now() });
+      // (カラムは handle、通知由来は did で来ることがある)。
+      // handle.invalid (凍結等で handle 解決不能) は固有名でないため
+      // key にしない (別人の profile が 30s 間混ざるのを防ぐ)。
+      const entry: Entry = { profile, ts: Date.now() };
+      cache.set(actor, entry);
+      cache.set(profile.did, entry);
+      if (profile.handle && profile.handle !== 'handle.invalid') {
+        cache.set(profile.handle, entry);
+      }
       return profile;
     } finally {
       inflight.delete(actor);
@@ -47,6 +52,19 @@ export async function getProfileCached(
   })();
   inflight.set(actor, p);
   return p;
+}
+
+/** 指定 actor (handle or DID) のキャッシュを無効化する。
+ *  フォロー / フォロー解除のように viewer 状態 (viewer.following 等) を
+ *  変えた直後に呼ぶこと (= 30s TTL 内の stale 表示で二重フォロー等の
+ *  事故になるのを防ぐ)。 */
+export function invalidateProfile(actor: string): void {
+  const hit = cache.get(actor);
+  cache.delete(actor);
+  if (hit) {
+    cache.delete(hit.profile.did);
+    if (hit.profile.handle) cache.delete(hit.profile.handle);
+  }
 }
 
 /** テスト用 */

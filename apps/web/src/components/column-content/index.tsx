@@ -22,19 +22,24 @@ export function ColumnContent({ column }: { column: AppColumn }) {
     case 'bar':
       return <BarColumn />;
     case 'notifications':
+      // markSeen は渡さない (= カラム表示では既読化しない。通知ページを
+      // 開いたときだけ既読化する。可視判定ベースは PR 5)
       return <NotificationsFeed />;
     case 'search':
       return (
+        // key に param/mode を含め、カラム編集 (PR 4) で param が変わったら
+        // remount して initial 値を反映する (useState 初期値のみのため)
         <SearchPanel
+          key={`${column.id}:${column.param ?? ''}:${column.mode ?? ''}`}
           {...(column.param !== undefined ? { initialQuery: column.param } : {})}
           {...(column.mode !== undefined ? { initialMode: column.mode } : {})}
         />
       );
     case 'profile':
       return column.param ? (
-        <ProfileView actor={column.param} />
+        <ProfileView key={`${column.id}:${column.param}`} actor={column.param} />
       ) : (
-        <MissingParam label="プロフィール" hint="表示するユーザーの指定がありません。カラム追加 UI (PR 4) からハンドルを指定できるようになります。" />
+        <MissingParam label="プロフィール" hint="表示するユーザーの指定がありません。今後のアップデートでカラム追加時にハンドルを指定できるようになります。" />
       );
     case 'board':
       return <PendingColumn label="クエスト掲示板" to="/board" />;
