@@ -191,7 +191,7 @@ export function BoardNew() {
           value={rewardPoints}
           onChange={(e) => setRewardPoints(Math.max(0, parseInt(e.target.value, 10) || 0))}
           min={0}
-          step={100}
+          step={1}
           style={{ width: '12em' }}
         />
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
