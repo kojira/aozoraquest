@@ -158,6 +158,8 @@ function ComposeDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<DialogState | null>(image);
   imageRef.current = image;
+  // 圧縮中に dialog が閉じたら、完了後の setState / objectURL 生成を抑止する
+  const mountedRef = useRef(true);
 
   // ESC で閉じる、背面スクロールをロック、画像 objectURL を unmount で revoke
   useEffect(() => {
@@ -168,6 +170,7 @@ function ComposeDialog({
     };
     window.addEventListener('keydown', onKey);
     return () => {
+      mountedRef.current = false;
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
       // 最後にセットされてた image の url を revoke
@@ -205,8 +208,10 @@ function ComposeDialog({
     } catch (e) {
       console.warn('[compose] image compress failed, use original', e);
     } finally {
-      setCompressing(false);
+      if (mountedRef.current) setCompressing(false);
     }
+    // 圧縮中に dialog を閉じていたら何もしない (objectURL を作らない = リーク防止)
+    if (!mountedRef.current) return;
     if (blob.size > MAX_IMAGE_BYTES) {
       setErr(
         `圧縮しても上限を超えました (${(blob.size / 1024).toFixed(0)} KB)。` +

@@ -89,7 +89,7 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
     let h = Math.max(1, Math.round(bitmap.height * scale));
     let last: Blob | null = null;
 
-    // 寸法を 2 段階まで落としつつ、各段で画質を上から試す
+    // 初期寸法 + 最大 2 回の縮小 (計 3 サイズ) を試し、各サイズで画質を上から試す
     for (let shrink = 0; shrink < 3; shrink++) {
       const canvas = drawTo(bitmap, w, h);
       if (!canvas) break;
@@ -114,9 +114,4 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
   } finally {
     bitmap.close();
   }
-}
-
-/** webp blob 用のファイル名を作る (元名の拡張子を .webp に) */
-export function webpFileName(original: string): string {
-  return original.replace(/\.[^.]+$/, '') + '.webp';
 }
