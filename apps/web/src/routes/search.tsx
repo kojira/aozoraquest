@@ -10,17 +10,38 @@ import { Avatar } from '@/components/avatar';
 import { PostArticle } from '@/components/post-article';
 import { PostText } from '@/components/post-text';
 import { useArchetypes } from '@/lib/archetype-cache';
+import { useColumnScrollEl } from '@/components/column-scroll-context';
 
 type Mode = 'users' | 'posts';
 
+/** 検索ページ (route)。URL の ?q= / ?mode= と同期する。 */
 export function Search() {
+  return <SearchPanel syncUrl />;
+}
+
+/**
+ * 検索 UI 本体。route (syncUrl=true) と workspace の search カラム
+ * (syncUrl=false、initialQuery/initialMode を column から注入) の両用。
+ * カラムでは複数の検索カラムが並ぶため URL とは同期しない。
+ */
+export function SearchPanel({
+  syncUrl = false,
+  initialQuery,
+  initialMode,
+}: {
+  syncUrl?: boolean;
+  initialQuery?: string;
+  initialMode?: Mode;
+}) {
   const session = useSession();
   const [searchParams, setSearchParams] = useSearchParams();
   // URL の ?q= を初期値にセット。ハッシュタグ (#...) や引用記法から飛んできた時に
   // そのまま投稿モードで検索が走るよう、# 始まりは mode=posts に振る。
-  const initialQ = searchParams.get('q') ?? '';
-  const initialMode: Mode = searchParams.get('mode') === 'posts' || initialQ.startsWith('#') ? 'posts' : 'users';
-  const [mode, setMode] = useState<Mode>(initialMode);
+  const initialQ = syncUrl ? (searchParams.get('q') ?? '') : (initialQuery ?? '');
+  const urlMode = syncUrl ? searchParams.get('mode') : null;
+  const computedInitialMode: Mode =
+    initialMode ?? (urlMode === 'posts' || initialQ.startsWith('#') ? 'posts' : 'users');
+  const [mode, setMode] = useState<Mode>(computedInitialMode);
   const [q, setQ] = useState(initialQ);
   const [submittedQ, setSubmittedQ] = useState(initialQ);
 
@@ -66,6 +87,7 @@ export function Search() {
     const t = q.trim();
     if (!t) return;
     setSubmittedQ(t);
+    if (!syncUrl) return;
     // ブックマーク・共有ができるよう URL に反映 (#始まりは posts モードも一緒に書く)
     const next = new URLSearchParams(searchParams);
     next.set('q', t);
@@ -76,7 +98,7 @@ export function Search() {
   /** タブ切替時に mode を変えつつ、すでに検索済みなら URL の mode= も書き戻す。 */
   function switchMode(next: Mode) {
     setMode(next);
-    if (!submittedQ) return; // 未検索ならまだ URL には書かない
+    if (!syncUrl || !submittedQ) return; // カラム or 未検索ならまだ URL には書かない
     const params = new URLSearchParams(searchParams);
     if (next === 'posts') params.set('mode', 'posts'); else params.delete('mode');
     setSearchParams(params, { replace: true });
@@ -84,6 +106,7 @@ export function Search() {
 
   // URL の q が外部 (戻る/進む、別ページからのリンク) で変わったら state に追従
   useEffect(() => {
+    if (!syncUrl) return;
     const qFromUrl = searchParams.get('q') ?? '';
     if (qFromUrl !== submittedQ) {
       setQ(qFromUrl);
@@ -93,9 +116,10 @@ export function Search() {
     }
     // submittedQ を deps に入れると loop するので意図的に除外
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, syncUrl]);
 
   // 以下は早期 return より前に置く (Hooks ルール: 順序を維持)
+  const scrollEl = useColumnScrollEl();
   const userDids = useMemo(() => users.items.map((u) => u.did), [users.items]);
   const postAuthorDids = useMemo(() => posts.items.map((p) => p.author.did), [posts.items]);
   const usersArchetypes = useArchetypes(agent ?? null, userDids);
@@ -104,7 +128,7 @@ export function Search() {
   if (session.status !== 'signed-in') {
     return (
       <div>
-        <h2>検索</h2>
+        {syncUrl && <h2>検索</h2>}
         <p>まずはログインしてください。</p>
         <Link to="/onboarding"><button>ログイン</button></Link>
       </div>
@@ -115,7 +139,7 @@ export function Search() {
 
   return (
     <div>
-      <h2>検索</h2>
+      {syncUrl && <h2>検索</h2>}
 
       <div className="dq-tabs">
         <button className={`dq-tab${mode === 'users' ? ' active' : ''}`} onClick={() => switchMode('users')}>ユーザー</button>
@@ -144,6 +168,7 @@ export function Search() {
             items={users.items}
             keyOf={(u) => u.did}
             estimateSize={120}
+            scrollParent={scrollEl}
             renderItem={(u) => <UserCard user={u} archetype={usersArchetypes.get(u.did) ?? null} />}
             onEndReached={users.done ? undefined : users.loadMore}
             footer={
@@ -163,6 +188,7 @@ export function Search() {
           <VirtualFeed
             items={posts.items}
             keyOf={(p) => p.uri}
+            scrollParent={scrollEl}
             renderItem={(p) => <PostHit post={p} archetype={postsArchetypes.get(p.author.did) ?? null} />}
             onEndReached={posts.done ? undefined : posts.loadMore}
             footer={
