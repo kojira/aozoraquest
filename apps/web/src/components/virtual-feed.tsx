@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 /**
@@ -46,15 +46,39 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     scrollParent,
   } = props;
 
-  // window モードでは parentRef は offsetTop 計算用。container モードでは不要 (margin 0)。
+  // window モードでは parentRef は offsetTop 計算用。
   const parentRef = useRef<HTMLDivElement>(null);
   const containerEl = scrollParent ?? null;
 
+  // container モードの scrollMargin: リスト先頭の container 内オフセットを実測する。
+  // カラム内ではリストの上に HomeSummary 等のコンテンツが挟まることがあり、
+  // 0 固定だと visible range がずれて上端に空白行が出る (レビュー指摘)。
+  // 上部コンテンツの高さ変化 (レーダーの遅延描画等) に ResizeObserver で追従。
+  const [containerMargin, setContainerMargin] = useState(0);
+  useEffect(() => {
+    if (!containerEl) return;
+    const measure = () => {
+      const listEl = parentRef.current;
+      if (!listEl) return;
+      const m =
+        listEl.getBoundingClientRect().top -
+        containerEl.getBoundingClientRect().top +
+        containerEl.scrollTop;
+      setContainerMargin(Math.max(0, Math.round(m)));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(containerEl);
+    const above = parentRef.current?.parentElement;
+    if (above) ro.observe(above);
+    return () => ro.disconnect();
+  }, [containerEl]);
+
   // 既知の制約 (旧実装から同じ): window モードの scrollMargin は render 中に
   // parentRef.current を読むため、初回 render では 0 のまま確定する。
-  // リストがページ先頭近くに置かれる現状のレイアウトでは実害がないので
-  // 据え置き (直すなら offsetTop を state 化して mount 後に再 render する)。
-  const scrollMargin = containerEl ? 0 : (parentRef.current?.offsetTop ?? 0);
+  // リストがページ先頭近くに置かれる現状のレイアウトでは実害がないので据え置き。
+  const scrollMargin = containerEl ? containerMargin : (parentRef.current?.offsetTop ?? 0);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,

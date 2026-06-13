@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import { Home } from '@/routes/home';
+import { Workspace } from '@/components/workspace';
 import { Profile } from '@/routes/profile';
 import { MyProfile } from '@/routes/me';
 import { Friends } from '@/routes/friends';
@@ -37,7 +37,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <AppShell />,
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <Workspace /> },
       { path: 'profile/:handle', element: <Profile /> },
       { path: 'me', element: <MyProfile /> },
       { path: 'friends', element: <Friends /> },
