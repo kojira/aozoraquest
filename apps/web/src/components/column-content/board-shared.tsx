@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
-import { listIssuedQuests, listMyApplications, buildQuestIndexFromDirectory } from '@/lib/quest-api';
+import { listIssuedQuests, listMyApplications, buildQuestIndexViaDiscovery } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
 import type { UserQuest } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -41,10 +41,7 @@ export function useBoardData() {
   useEffect(() => {
     let cancelled = false;
     const builder = agent
-      ? () => {
-          const dids = selfDid ? [selfDid, ...directoryDids] : directoryDids;
-          return buildQuestIndexFromDirectory(agent, dids);
-        }
+      ? () => buildQuestIndexViaDiscovery(agent, directoryDids, selfDid)
       : undefined;
     getQuestIndexCached(builder)
       .then((idx) => { if (!cancelled) setIndex(idx); })

@@ -226,6 +226,50 @@ export async function buildQuestIndexFromDirectory(
   return { quests, applications, updatedAt: new Date().toISOString() };
 }
 
+const DISCOVERY_TAG = 'aozoraquest';
+/** 集約対象 DID 数の上限 (1 DID = 2 listRecords なので過大にしない) */
+const MAX_DISCOVERY_DIDS = 60;
+
+/**
+ * questIndex を「発見ディレクトリ + #aozoraquest 投稿者 + 自分」の和集合から
+ * 集約する。集約 Worker 未デプロイ時の board の正規ルート。
+ *
+ * directory は admin キュレーションなので、**まだ directory 未登録でも告知
+ * (#aozoraquest 投稿) した発行者をその場の検索で拾う** ことで、登録待ち
+ * (毎時 cron) を待たずに quest が他人へ見えるようにする。過去の quest も
+ * その発行者の userQuest を listRecords で全件読むので一緒に出る。
+ */
+export async function buildQuestIndexViaDiscovery(
+  agent: Agent,
+  directoryDids: Did[],
+  selfDid?: Did | null,
+): Promise<QuestIndex> {
+  const dids = new Set<string>(directoryDids);
+  if (selfDid) dids.add(selfDid);
+  // #aozoraquest 投稿者を拾う (告知した発行者を即 discovery)。検索失敗は無視。
+  try {
+    let cursor: string | undefined;
+    for (let page = 0; page < 2 && dids.size < MAX_DISCOVERY_DIDS; page++) {
+      const res = await agent.app.bsky.feed.searchPosts({
+        q: `#${DISCOVERY_TAG}`,
+        limit: 100,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      for (const post of res.data.posts) {
+        const d = post.author?.did;
+        if (d) dids.add(d);
+        if (dids.size >= MAX_DISCOVERY_DIDS) break;
+      }
+      const next = res.data.cursor;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+  } catch (e) {
+    console.warn('[quest-api] discovery search failed, directory のみで集約', e);
+  }
+  return buildQuestIndexFromDirectory(agent, Array.from(dids).slice(0, MAX_DISCOVERY_DIDS));
+}
+
 /** 公開クエスト一覧を取得 (Worker → admin PDS の questIndex)。
  *  Worker 未デプロイなら mock-index に fallback。 */
 export async function fetchQuestIndex(): Promise<QuestIndex> {
