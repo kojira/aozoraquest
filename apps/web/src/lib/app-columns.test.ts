@@ -32,9 +32,9 @@ beforeEach(() => {
 });
 
 describe('defaultColumns', () => {
-  it('サインイン済み: home / bar / notifications / board の 4 カラム', () => {
+  it('サインイン済み: home / notifications / bar / board の 4 カラム', () => {
     const cols = defaultColumns(true);
-    expect(cols.map(c => c.kind)).toEqual(['home', 'bar', 'notifications', 'board']);
+    expect(cols.map(c => c.kind)).toEqual(['home', 'notifications', 'bar', 'board']);
   });
 
   it('未サインイン: board 1 カラムのみ', () => {
@@ -53,7 +53,7 @@ describe('defaultColumns', () => {
 
 describe('loadAppColumns / saveAppColumns', () => {
   it('保存なし → default 構成 (localStorage への書き込みは発生しない)', () => {
-    expect(loadAppColumns(true).map(c => c.kind)).toEqual(['home', 'bar', 'notifications', 'board']);
+    expect(loadAppColumns(true).map(c => c.kind)).toEqual(['home', 'notifications', 'bar', 'board']);
     expect(localStorage.getItem('aozoraquest:appColumns:v1')).toBeNull();
   });
 
@@ -119,7 +119,7 @@ describe('旧 boardColumns:v1 の read-time 変換', () => {
     // セッション解決前 (signedIn=false) に先に読まれるケース
     expect(loadAppColumns(false).map(c => c.kind)).toEqual(['board']);
     // サインイン後はフル構成に戻る (read-time なので固定化しない)
-    expect(loadAppColumns(true).map(c => c.kind)).toEqual(['home', 'bar', 'notifications', 'board']);
+    expect(loadAppColumns(true).map(c => c.kind)).toEqual(['home', 'notifications', 'bar', 'board']);
   });
 
   it('★ 旧キーが後から更新されても次回 load に反映される (鮮度維持)', () => {

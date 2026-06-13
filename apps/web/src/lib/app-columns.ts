@@ -57,8 +57,8 @@ export function defaultColumns(signedIn: boolean): AppColumn[] {
   const cols: AppColumn[] = signedIn
     ? [
         { id: makeColumnId(), kind: 'home' },
-        { id: makeColumnId(), kind: 'bar' },
         { id: makeColumnId(), kind: 'notifications' },
+        { id: makeColumnId(), kind: 'bar' },
         { id: makeColumnId(), kind: 'board' },
       ]
     : [{ id: makeColumnId(), kind: 'board' }];
