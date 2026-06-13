@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
 import { createPost, createPostWithImage, type ReplyRef } from '@/lib/atproto';
+import { compressImage } from '@/lib/image-compress';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
@@ -152,10 +153,13 @@ function ComposeDialog({
     };
   });
   const [loading, setLoading] = useState(false);
+  const [compressing, setCompressing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<DialogState | null>(image);
   imageRef.current = image;
+  // 圧縮中に dialog が閉じたら、完了後の setState / objectURL 生成を抑止する
+  const mountedRef = useRef(true);
 
   // ESC で閉じる、背面スクロールをロック、画像 objectURL を unmount で revoke
   useEffect(() => {
@@ -166,6 +170,7 @@ function ComposeDialog({
     };
     window.addEventListener('keydown', onKey);
     return () => {
+      mountedRef.current = false;
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
       // 最後にセットされてた image の url を revoke
@@ -184,7 +189,7 @@ function ComposeDialog({
     fileInputRef.current?.click();
   }
 
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ''; // 同じファイルを再選択しても change が起きるように
     if (!file) return;
@@ -192,18 +197,34 @@ function ComposeDialog({
       setErr(`対応していない画像形式です (${file.type || '不明'})。jpg/png/webp/gif のみ。`);
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setErr(`画像サイズが大きすぎます (${(file.size / 1024).toFixed(0)} KB)。950KB 以下にしてください。`);
+    setErr(null);
+    // 大きい画像は弾かず、lossy WebP に圧縮して上限内に収める
+    // (GIF はアニメ保持のため変換しない)。
+    setCompressing(true);
+    let blob: Blob = file;
+    try {
+      const result = await compressImage(file, { maxBytes: MAX_IMAGE_BYTES });
+      blob = result.blob;
+    } catch (e) {
+      console.warn('[compose] image compress failed, use original', e);
+    } finally {
+      if (mountedRef.current) setCompressing(false);
+    }
+    // 圧縮中に dialog を閉じていたら何もしない (objectURL を作らない = リーク防止)
+    if (!mountedRef.current) return;
+    if (blob.size > MAX_IMAGE_BYTES) {
+      setErr(
+        `圧縮しても上限を超えました (${(blob.size / 1024).toFixed(0)} KB)。` +
+          'より小さい画像、または GIF 以外の形式でお試しください。',
+      );
       return;
     }
-    setErr(null);
-    // 既存があれば revoke
     if (image) URL.revokeObjectURL(image.previewUrl);
     setImage({
-      blob: file,
+      blob,
       alt: '',
       source: 'user',
-      previewUrl: URL.createObjectURL(file),
+      previewUrl: URL.createObjectURL(blob),
     });
   }
 
@@ -288,6 +309,7 @@ function ComposeDialog({
   const showImageUi = !replyTo;
   const submitDisabled =
     loading
+    || compressing
     || (!text.trim() && !image)
     || text.length > POST_MAX_LENGTH;
 
@@ -425,11 +447,16 @@ function ComposeDialog({
               <button
                 className="secondary"
                 onClick={pickImage}
-                disabled={loading}
+                disabled={loading || compressing}
                 style={{ fontSize: '0.85em' }}
               >
-                📷 画像を添付
+                {compressing ? '画像を圧縮中...' : '📷 画像を添付'}
               </button>
+            )}
+            {compressing && (
+              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
+                WebP に圧縮しています…
+              </span>
             )}
             <input
               ref={fileInputRef}
