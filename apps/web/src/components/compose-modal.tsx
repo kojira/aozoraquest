@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
 import { createPost, createPostWithImage, type ReplyRef } from '@/lib/atproto';
-import { compressImage, isBlueskySupportedImageType } from '@/lib/image-compress';
+import { compressImage } from '@/lib/image-compress';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
@@ -213,11 +213,9 @@ function ComposeDialog({
     // (GIF はアニメ保持のため変換しない)。
     setCompressing(true);
     let blob: Blob = file;
-    let compressed = false;
     try {
       const result = await compressImage(file, { maxBytes: MAX_IMAGE_BYTES });
       blob = result.blob;
-      compressed = result.compressed;
     } catch (e) {
       console.warn('[compose] image compress failed, use original', e);
     } finally {
@@ -225,20 +223,13 @@ function ComposeDialog({
     }
     // 圧縮中に dialog を閉じていたら何もしない (objectURL を作らない = リーク防止)
     if (!mountedRef.current) return;
-    // 変換できず Bluesky 非対応形式 (HEIC など) のままなら投稿させない。
-    // (そのまま uploadBlob すると投稿は通っても画像が表示されない。
-    //  例: デスクトップ Chrome は HEIC を decode できず元 File が返る)
-    if (!compressed && !isBlueskySupportedImageType(blob.type)) {
-      setErr(
-        `この形式の画像 (${blob.type || '不明'}) はこの環境で変換できませんでした。` +
-          'JPEG / PNG で保存し直すか、別の画像でお試しください。',
-      );
-      return;
-    }
+    // 圧縮しても上限を超える場合のみエラー (= 物理的に投稿できないサイズ)。
+    // 形式での門前払いはしない。iOS は写真を JPEG で渡すか Safari が HEIC を
+    // decode できるので、compressImage が JPEG/WebP に変換して投稿できる。
     if (blob.size > MAX_IMAGE_BYTES) {
       setErr(
         `圧縮しても上限を超えました (${(blob.size / 1024).toFixed(0)} KB)。` +
-          'より小さい画像、または GIF 以外の形式でお試しください。',
+          'より小さい画像でお試しください。',
       );
       return;
     }
