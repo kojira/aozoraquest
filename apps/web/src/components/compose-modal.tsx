@@ -127,6 +127,15 @@ interface DialogState {
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+/** ファイル選択ダイアログに渡す accept。iPhone の HEIC や撮影写真も選べるよう
+ *  image/* を基本に、明示形式も併記する (一部 OS で image/* だけだと挙動が鈍い)。 */
+const FILE_ACCEPT = 'image/*,image/heic,image/heif';
+/** 添付を許可する type 判定。HEIC など ALLOWED 以外でも image/* なら受けて
+ *  compressImage 側で canvas 再エンコードを試す (Safari は HEIC を decode 可能)。
+ *  iOS は type が空文字で来ることがあるのでそれも許す。 */
+function isAttachableImage(file: File): boolean {
+  return file.type === '' || file.type.startsWith('image/') || ALLOWED_IMAGE_TYPES.includes(file.type);
+}
 /** Bluesky uploadBlob の上限は約 1MB。少しマージン取って 950KB を上限警告ラインに。 */
 const MAX_IMAGE_BYTES = 950_000;
 
@@ -193,8 +202,8 @@ function ComposeDialog({
     const file = e.target.files?.[0];
     e.target.value = ''; // 同じファイルを再選択しても change が起きるように
     if (!file) return;
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setErr(`対応していない画像形式です (${file.type || '不明'})。jpg/png/webp/gif のみ。`);
+    if (!isAttachableImage(file)) {
+      setErr(`画像ファイルを選んでください (${file.type || '不明な形式'})。`);
       return;
     }
     setErr(null);
@@ -461,7 +470,7 @@ function ComposeDialog({
             <input
               ref={fileInputRef}
               type="file"
-              accept={ALLOWED_IMAGE_TYPES.join(',')}
+              accept={FILE_ACCEPT}
               onChange={onFileChange}
               style={{ display: 'none' }}
             />
