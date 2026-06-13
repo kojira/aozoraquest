@@ -18,7 +18,7 @@ const OPTIN_TAG = 'aozoraquest';
 function statsOf(id: Archetype): StatVector {
   return statArrayToVector(JOBS_BY_ID[id].stats);
 }
-const DEFAULT_OPTIN_POST = `#${OPTIN_TAG} の気質診断に参加しました。共鳴 TL に自分の投稿が表示されても構いません。`;
+const DEFAULT_OPTIN_POST = `#${OPTIN_TAG} の気質診断に参加しました。BAR ブルスコ (aozoraquest 利用者が集う TL) に自分の投稿が表示されても構いません。`;
 
 interface Profile {
   targetJob?: string;
@@ -255,9 +255,9 @@ export function Settings() {
       </section>
 
       <section style={{ marginTop: '2em' }}>
-        <h3 style={{ fontSize: '0.95em' }}>共鳴タイムラインへの参加 (オプトイン)</h3>
+        <h3 style={{ fontSize: '0.95em' }}>BAR ブルスコへの参加 (オプトイン)</h3>
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-          参加すると、他のユーザーの共鳴 TL にあなたの投稿が表示される可能性があります。
+          参加すると、ほかの利用者の BAR ブルスコにあなたの投稿が表示される可能性があります。
           参加の合図として <code>#{OPTIN_TAG}</code> 付きの投稿をあなたのアカウントから 1 本作成します
           (これで検索 API で発見可能になる)。
         </p>
@@ -265,16 +265,16 @@ export function Settings() {
           <p>読み込み中...</p>
         ) : profile?.discoverable ? (
           <div style={{ marginTop: '0.5em' }}>
-            <p style={{ fontSize: '0.85em', color: '#1a6230' }}>✓ 共鳴 TL に参加しています。</p>
+            <p style={{ fontSize: '0.85em', color: '#1a6230' }}>✓ BAR ブルスコに参加しています。</p>
             <p style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>
               完全に離脱するには、このボタンで discoverable を false に戻し、かつ先ほどの <code>#{OPTIN_TAG}</code> 投稿を Bluesky から削除してください。
             </p>
-            <button onClick={optOut} disabled={optInBusy}>共鳴 TL から外す</button>
+            <button onClick={optOut} disabled={optInBusy}>BAR ブルスコから外す</button>
           </div>
         ) : (
           <div style={{ marginTop: '0.5em' }}>
             {!optInDialog ? (
-              <button onClick={() => setOptInDialog(true)}>共鳴 TL に参加する</button>
+              <button onClick={() => setOptInDialog(true)}>BAR ブルスコに参加する</button>
             ) : (
               <div style={{ border: '1px solid var(--color-border)', padding: '0.8em', borderRadius: 4 }}>
                 <p style={{ fontSize: '0.85em' }}>以下の投稿をあなたのアカウントから作成します。本文は自由に編集できます:</p>
