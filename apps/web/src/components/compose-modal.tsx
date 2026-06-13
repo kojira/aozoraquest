@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
 import { createPost, createPostWithImage, type ReplyRef } from '@/lib/atproto';
-import { compressImage } from '@/lib/image-compress';
+import { compressImage, isBlueskySupportedImageType } from '@/lib/image-compress';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
@@ -126,15 +126,17 @@ interface DialogState {
   previewUrl: string;
 }
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 /** ファイル選択ダイアログに渡す accept。iPhone の HEIC や撮影写真も選べるよう
  *  image/* を基本に、明示形式も併記する (一部 OS で image/* だけだと挙動が鈍い)。 */
 const FILE_ACCEPT = 'image/*,image/heic,image/heif';
-/** 添付を許可する type 判定。HEIC など ALLOWED 以外でも image/* なら受けて
- *  compressImage 側で canvas 再エンコードを試す (Safari は HEIC を decode 可能)。
- *  iOS は type が空文字で来ることがあるのでそれも許す。 */
+/** 添付を受け付ける type (HEIC/HEIF を含む。SVG や非画像は除外)。
+ *  iOS は type が空文字で来ることがあるのでそれも許し、最終的な可否は
+ *  「圧縮できて Bluesky 対応形式になったか」で判定する (onFileChange 参照)。 */
+const ATTACHABLE_TYPES = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+];
 function isAttachableImage(file: File): boolean {
-  return file.type === '' || file.type.startsWith('image/') || ALLOWED_IMAGE_TYPES.includes(file.type);
+  return file.type === '' || ATTACHABLE_TYPES.includes(file.type);
 }
 /** Bluesky uploadBlob の上限は約 1MB。少しマージン取って 950KB を上限警告ラインに。 */
 const MAX_IMAGE_BYTES = 950_000;
@@ -211,9 +213,11 @@ function ComposeDialog({
     // (GIF はアニメ保持のため変換しない)。
     setCompressing(true);
     let blob: Blob = file;
+    let compressed = false;
     try {
       const result = await compressImage(file, { maxBytes: MAX_IMAGE_BYTES });
       blob = result.blob;
+      compressed = result.compressed;
     } catch (e) {
       console.warn('[compose] image compress failed, use original', e);
     } finally {
@@ -221,6 +225,16 @@ function ComposeDialog({
     }
     // 圧縮中に dialog を閉じていたら何もしない (objectURL を作らない = リーク防止)
     if (!mountedRef.current) return;
+    // 変換できず Bluesky 非対応形式 (HEIC など) のままなら投稿させない。
+    // (そのまま uploadBlob すると投稿は通っても画像が表示されない。
+    //  例: デスクトップ Chrome は HEIC を decode できず元 File が返る)
+    if (!compressed && !isBlueskySupportedImageType(blob.type)) {
+      setErr(
+        `この形式の画像 (${blob.type || '不明'}) はこの環境で変換できませんでした。` +
+          'JPEG / PNG で保存し直すか、別の画像でお試しください。',
+      );
+      return;
+    }
     if (blob.size > MAX_IMAGE_BYTES) {
       setErr(
         `圧縮しても上限を超えました (${(blob.size / 1024).toFixed(0)} KB)。` +

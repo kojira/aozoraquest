@@ -46,6 +46,20 @@ const DEFAULTS = {
   mimeType: 'image/webp',
 };
 
+/** Bluesky の app.bsky.embed.images が受け付ける画像形式。
+ *  HEIC はここに無いので、HEIC のまま uploadBlob すると表示不能になる。 */
+export const BLUESKY_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+/** その MIME が Bluesky にそのまま投稿できる形式か。 */
+export function isBlueskySupportedImageType(type: string): boolean {
+  return BLUESKY_IMAGE_TYPES.includes(type);
+}
+
+/** 希望 webp + 対応状況から実際の出力 MIME を決める (DOM 非依存・テスト用)。 */
+export function pickOutputType(wantWebp: boolean, webpSupported: boolean): string {
+  return wantWebp && webpSupported ? 'image/webp' : 'image/jpeg';
+}
+
 /** canvas が WebP エンコードに対応しているか (Safari は長らく非対応 → JPEG に倒す) */
 function supportsWebpEncode(): boolean {
   if (typeof document === 'undefined') return false;
@@ -93,7 +107,7 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
 
   // 希望 webp でも未対応ブラウザ (Safari) では jpeg に倒す
   const wantWebp = (opts.mimeType ?? DEFAULTS.mimeType) === 'image/webp';
-  const outType = wantWebp && supportsWebpEncode() ? 'image/webp' : 'image/jpeg';
+  const outType = pickOutputType(wantWebp, supportsWebpEncode());
 
   let bitmap: ImageBitmap;
   try {
