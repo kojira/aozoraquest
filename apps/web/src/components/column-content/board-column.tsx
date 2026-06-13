@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BoardInner } from '@/lib/app-columns';
+import { DISCOVERY_TAG } from '@/lib/quest-api';
 import {
   useBoardData,
   filterForBoard,
@@ -88,21 +89,19 @@ export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
 }
 
 /** 空表示。クエストの発見はオプトイン (BAR ブルスコ参加) で広がるので、
- *  open / mine が空のときは「出す」「参加して見つけてもらう」導線を出す。 */
+ *  open / mine が空のときはオプトイン誘導を出す。
+ *  (「クエストを出す」リンクはカラムヘッダに常設なので空表示では重複させない) */
 function BoardEmpty({ filter }: { filter: BoardFilter }) {
   const showGuide = filter.kind === 'open' || filter.kind === 'mine';
   return (
     <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', lineHeight: 1.6 }}>
       <p style={{ margin: 0 }}>{emptyMessageForBoard(filter)}</p>
       {showGuide && (
-        <div style={{ marginTop: '0.6em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-          <Link to="/board/new">＋ クエストを出す</Link>
-          <span>
-            自分のクエストや投稿を見つけてもらうには{' '}
-            <Link to="/settings">BAR ブルスコに参加 (オプトイン)</Link>
-            。<code>#aozoraquest</code> を 1 件投稿して掲示板の発見元に載ります。
-          </span>
-        </div>
+        <p style={{ marginTop: '0.6em' }}>
+          自分のクエストや投稿を見つけてもらうには{' '}
+          <Link to="/settings">BAR ブルスコに参加 (オプトイン)</Link>
+          。<code>#{DISCOVERY_TAG}</code> を 1 件投稿して掲示板の発見元に載ります。
+        </p>
       )}
     </div>
   );
