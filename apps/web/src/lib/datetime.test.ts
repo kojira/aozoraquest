@@ -5,6 +5,7 @@ import {
   formatDisplay,
   daysInMonth,
   minuteOptions,
+  isoToLocalInput,
 } from './datetime';
 
 describe('parseLocal', () => {
@@ -12,7 +13,7 @@ describe('parseLocal', () => {
     expect(parseLocal('2026-06-20T23:59')).toEqual({ y: 2026, m: 6, d: 20, hh: 23, mm: 59 });
   });
 
-  it('ignores trailing seconds / timezone', () => {
+  it('ignores trailing seconds', () => {
     expect(parseLocal('2026-06-20T08:05:30')).toEqual({ y: 2026, m: 6, d: 20, hh: 8, mm: 5 });
   });
 
@@ -20,6 +21,13 @@ describe('parseLocal', () => {
     expect(parseLocal('')).toBeNull();
     expect(parseLocal('2026-06-20')).toBeNull();
     expect(parseLocal('not-a-date')).toBeNull();
+  });
+
+  it('rejects trailing garbage and TZ-suffixed ISO (anchored)', () => {
+    expect(parseLocal('2026-06-20T23:59GARBAGE')).toBeNull();
+    // TZ 付きはローカル誤解釈を避けるため null
+    expect(parseLocal('2026-06-20T23:59:00Z')).toBeNull();
+    expect(parseLocal('2026-06-20T23:59+09:00')).toBeNull();
   });
 
   it('rejects out-of-range month / hour / minute', () => {
@@ -54,6 +62,19 @@ describe('formatDisplay', () => {
   it('renders the Japanese weekday and zero-padded time', () => {
     // 2026-06-20 は土曜日
     expect(formatDisplay({ y: 2026, m: 6, d: 20, hh: 23, mm: 59 })).toBe('2026年6月20日 (土) 23:59');
+  });
+});
+
+describe('isoToLocalInput', () => {
+  it('round-trips a picker value through ISO and back', () => {
+    // ローカル文字列 → ISO (board が保存する形) → ローカル文字列 が一致する
+    const local = '2026-06-20T23:59';
+    const iso = new Date(local).toISOString();
+    expect(isoToLocalInput(iso)).toBe(local);
+  });
+
+  it('returns empty string for an invalid ISO', () => {
+    expect(isoToLocalInput('garbage')).toBe('');
   });
 });
 

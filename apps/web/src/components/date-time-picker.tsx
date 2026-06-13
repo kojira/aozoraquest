@@ -35,6 +35,8 @@ export interface DateTimePickerProps {
   ariaLabel?: string;
   /** 初回に日付を選んだときのデフォルト時刻 (省略時 23:59 = 締切らしい終端) */
   defaultTime?: { hh: number; mm: number };
+  /** 過去日を選べなくする (省略時 true)。締切用途では過去日を弾く。 */
+  disablePast?: boolean;
   className?: string;
 }
 
@@ -44,6 +46,7 @@ export function DateTimePicker({
   id,
   ariaLabel = '日時を選択',
   defaultTime = { hh: 23, mm: 59 },
+  disablePast = true,
   className,
 }: DateTimePickerProps) {
   const reactId = useId();
@@ -61,18 +64,31 @@ export function DateTimePicker({
       : { year: today.getFullYear(), month1: today.getMonth() + 1 },
   );
 
-  // value が外部 / クリアで変わったら表示月も追従 (選択日の月へ)
+  // value の「月」が変わったときだけ表示月を追従する。
+  // 時刻だけ変更 (= 月は同じ) では view を動かさない
+  // (ユーザーが別の月を眺めている最中に巻き戻さないため)。
+  const lastSyncedMonth = useRef<string | null>(parsed ? `${parsed.y}-${parsed.m}` : null);
   useEffect(() => {
-    if (parsed) setView({ year: parsed.y, month1: parsed.m });
-    // parsed は value 由来。value の変化のみ監視。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const p = parseLocal(value);
+    const key = p ? `${p.y}-${p.m}` : null;
+    if (key && key !== lastSyncedMonth.current) {
+      setView({ year: p!.y, month1: p!.m });
+    }
+    lastSyncedMonth.current = key;
   }, [value]);
 
-  // パネル外クリック / Esc で閉じる
+  // パネル外クリック / Esc で閉じる。
+  // ネイティブ <select> の操作中 (focus がパネル内) は閉じない
+  // (モバイルでネイティブピッカーのオーバーレイを触ると mousedown が
+  //  ルート外と判定され、時刻選択中にパネルが消える事故を防ぐ)。
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const root = rootRef.current;
+      if (!root) return;
+      if (root.contains(e.target as Node)) return;
+      if (document.activeElement && root.contains(document.activeElement)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', onDocClick);
@@ -89,17 +105,11 @@ export function DateTimePicker({
     onChange(formatLocal(view.year, view.month1, day, hh, mm));
   }
 
+  // 時刻 select は「日付を選んでから」のみ有効 (parsed があるとき)。
+  // 日付未選択で時刻だけ触っても勝手に日付が確定しないようにする。
   function setTime(hh: number, mm: number) {
-    // 日付未選択なら表示中の月の「今日 or 1日」に時刻を乗せる
-    const base = parsed ?? {
-      y: view.year,
-      m: view.month1,
-      d:
-        view.year === today.getFullYear() && view.month1 === today.getMonth() + 1
-          ? today.getDate()
-          : 1,
-    };
-    onChange(formatLocal(base.y, base.m, base.d, hh, mm));
+    if (!parsed) return;
+    onChange(formatLocal(parsed.y, parsed.m, parsed.d, hh, mm));
   }
 
   function shiftMonth(delta: number) {
@@ -123,6 +133,18 @@ export function DateTimePicker({
 
   const isSelectedMonth = !!parsed && parsed.y === view.year && parsed.m === view.month1;
   const isThisMonth = today.getFullYear() === view.year && today.getMonth() + 1 === view.month1;
+  // 表示月が今日より前か (= 月まるごと過去か) の判定に使う
+  const todayDay = today.getDate();
+  const viewBeforeToday =
+    view.year < today.getFullYear() ||
+    (view.year === today.getFullYear() && view.month1 < today.getMonth() + 1);
+
+  function isPast(day: number): boolean {
+    if (!disablePast) return false;
+    if (viewBeforeToday) return true;
+    if (isThisMonth) return day < todayDay;
+    return false;
+  }
 
   return (
     <div className={`dtp${className ? ` ${className}` : ''}`} ref={rootRef}>
@@ -156,11 +178,12 @@ export function DateTimePicker({
             ))}
           </div>
 
-          <div className="dtp-grid" role="grid">
+          <div className="dtp-grid">
             {cells.map((day, i) => {
               if (day === null) return <span key={`e${i}`} className="dtp-day empty" aria-hidden />;
               const selected = isSelectedMonth && parsed!.d === day;
-              const isToday = isThisMonth && today.getDate() === day;
+              const isToday = isThisMonth && todayDay === day;
+              const past = isPast(day);
               const dow = (firstWeekday + day - 1) % 7;
               return (
                 <button
@@ -169,6 +192,7 @@ export function DateTimePicker({
                   className={`dtp-day${selected ? ' selected' : ''}${isToday ? ' today' : ''}${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}`}
                   aria-pressed={selected}
                   aria-label={`${view.year}年${view.month1}月${day}日`}
+                  disabled={past}
                   onClick={() => selectDay(day)}
                 >
                   {day}
@@ -181,6 +205,7 @@ export function DateTimePicker({
             <label className="dtp-time-label">時刻</label>
             <select
               aria-label="時"
+              disabled={!parsed}
               value={parsed ? parsed.hh : defaultTime.hh}
               onChange={(e) => setTime(Number(e.target.value), parsed ? parsed.mm : defaultTime.mm)}
             >
@@ -191,6 +216,7 @@ export function DateTimePicker({
             <span className="dtp-colon">:</span>
             <select
               aria-label="分"
+              disabled={!parsed}
               value={parsed ? parsed.mm : defaultTime.mm}
               onChange={(e) => setTime(parsed ? parsed.hh : defaultTime.hh, Number(e.target.value))}
             >
@@ -199,10 +225,13 @@ export function DateTimePicker({
                 <option key={mm} value={mm}>{pad(mm)}</option>
               ))}
             </select>
+            {!parsed && <span className="dtp-time-hint">日付を選ぶと指定できます</span>}
           </div>
 
           <div className="dtp-actions">
-            <button type="button" className="secondary dtp-clear" onClick={clear}>クリア</button>
+            <button type="button" className="secondary dtp-clear" onClick={clear} disabled={!parsed}>
+              未設定に戻す
+            </button>
             <button type="button" onClick={() => setOpen(false)}>決定</button>
           </div>
         </div>

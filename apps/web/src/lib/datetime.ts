@@ -21,7 +21,9 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /** `YYYY-MM-DDTHH:mm` をパース。空文字 / 不正 / 実在しない日付なら null。 */
 export function parseLocal(v: string): LocalDateTime | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v);
+  // 秒は許容して切り捨てるが、末尾の無関係な文字列や TZ 指定は弾く
+  // (TZ 付き ISO はローカルとして誤解釈しないよう null にする。value は常にローカル形式)
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/.exec(v);
   if (!match) return null;
   const parsed: LocalDateTime = {
     y: Number(match[1]),
@@ -52,6 +54,23 @@ export function formatDisplay(p: LocalDateTime): string {
 /** その月の日数 (month1 は 1-12)。 */
 export function daysInMonth(year: number, month1: number): number {
   return new Date(year, month1, 0).getDate();
+}
+
+/**
+ * ISO 文字列 (PDS 保存値) を datetime-local 形式のローカル文字列
+ * `YYYY-MM-DDTHH:mm` に変換する。DateTimePicker / datetime-local の
+ * value としてそのまま使える (ローカルタイムで表示・編集)。
+ */
+export function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return formatLocal(
+    d.getFullYear(),
+    d.getMonth() + 1,
+    d.getDate(),
+    d.getHours(),
+    d.getMinutes(),
+  );
 }
 
 /** 5 分刻みの分の選択肢。current が刻み外 (例 59) なら昇順で混ぜる。 */
