@@ -165,15 +165,30 @@ function questToSummary(q: UserQuest): QuestIndexSummary {
  * 各 DID の userQuest / questApplication を listRecords で読み、
  * 公開 quest 一覧と応募 index を作る。一部 DID の失敗は無視して続行する。
  */
+/** items を最大 limit 並列で fn にかけ、Promise.allSettled 相当の結果を返す。 */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const settled = await Promise.allSettled(items.slice(i, i + limit).map(fn));
+    results.push(...settled);
+  }
+  return results;
+}
+
 export async function buildQuestIndexFromDirectory(
-  agent: Agent,
+  _agent: Agent,
   dids: Did[],
   limitPerRepo = 100,
 ): Promise<QuestIndex> {
   // 重複 DID を除去 (自分 + directory の和集合などで重なりうる)
   const unique = Array.from(new Set(dids));
-  const results = await Promise.allSettled(
-    unique.map(async (did) => {
+  // plc.directory / 各 PDS への過大な同時リクエストを避けるため並列数を絞る
+  // (最大 60 DID を一気に叩くと plc.directory に 429 を食らい欠落しうる)
+  const results = await mapWithConcurrency(unique, 8, async (did) => {
       // 各 DID の PDS から公開 read する (自分の PDS 経由だと別ホストの repo を読めない)
       const [questsRes, appsRes] = await Promise.allSettled([
         listRecordsForDid(did, COL.userQuest, limitPerRepo),
@@ -201,8 +216,7 @@ export async function buildQuestIndexFromDirectory(
         }
       }
       return { quests, applications };
-    }),
-  );
+    });
 
   const quests: QuestIndexSummary[] = [];
   const applications: ApplicationIndexEntry[] = [];

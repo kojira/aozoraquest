@@ -14,39 +14,17 @@
  * .well-known/did.json) から解決し、DID 単位・PDS 単位でキャッシュする。
  */
 import { AtpAgent } from '@atproto/api';
-
-interface DidService {
-  id?: string;
-  type?: string;
-  serviceEndpoint?: string;
-}
+import { resolveDidToPds } from './runtime-config';
 
 const pdsByDid = new Map<string, Promise<string>>();
 const agentByPds = new Map<string, AtpAgent>();
 
-const PLC_DIRECTORY = 'https://plc.directory';
-
+/** DID → PDS を DID/PDS 単位でキャッシュしつつ解決する
+ *  (解決ロジックは runtime-config の resolveDidToPds に一本化)。 */
 async function resolvePds(did: string): Promise<string> {
   let p = pdsByDid.get(did);
   if (!p) {
-    p = (async (): Promise<string> => {
-      let doc: { service?: DidService[] };
-      if (did.startsWith('did:web:')) {
-        const host = decodeURIComponent(did.slice('did:web:'.length));
-        const res = await fetch(`https://${host}/.well-known/did.json`);
-        if (!res.ok) throw new Error(`did:web 解決失敗 (${res.status}) ${did}`);
-        doc = (await res.json()) as { service?: DidService[] };
-      } else {
-        const res = await fetch(`${PLC_DIRECTORY}/${encodeURIComponent(did)}`);
-        if (!res.ok) throw new Error(`PLC 解決失敗 (${res.status}) ${did}`);
-        doc = (await res.json()) as { service?: DidService[] };
-      }
-      const svc = (doc.service ?? []).find(
-        (s) => s.id === '#atproto_pds' || s.type === 'AtprotoPersonalDataServer',
-      );
-      if (!svc?.serviceEndpoint) throw new Error(`PDS エンドポイント無し ${did}`);
-      return svc.serviceEndpoint;
-    })();
+    p = resolveDidToPds(did);
     // 失敗した promise はキャッシュに残さない (一過性失敗で永久に詰まらないよう)
     p.catch(() => pdsByDid.delete(did));
     pdsByDid.set(did, p);
