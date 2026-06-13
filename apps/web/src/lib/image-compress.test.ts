@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compressImage, isBlueskySupportedImageType, pickOutputType } from './image-compress';
+import { compressImage, isBlueskySupportedImageType } from './image-compress';
 
 // jsdom には createImageBitmap / canvas.toBlob('image/webp') が無いため、
 // canvas 経路は通らず early-return (元 File を返す) になる。ここではその
@@ -40,14 +40,3 @@ describe('isBlueskySupportedImageType', () => {
   });
 });
 
-describe('pickOutputType', () => {
-  it('webp 希望 + 対応 → webp', () => {
-    expect(pickOutputType(true, true)).toBe('image/webp');
-  });
-  it('webp 希望 + 非対応 (Safari) → jpeg にフォールバック', () => {
-    expect(pickOutputType(true, false)).toBe('image/jpeg');
-  });
-  it('webp 非希望 → jpeg', () => {
-    expect(pickOutputType(false, true)).toBe('image/jpeg');
-  });
-});
