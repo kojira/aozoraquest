@@ -107,19 +107,24 @@ function loadWasmWebpEncode() {
   return wasmWebpPromise;
 }
 
-/** 出力形式とエンコーダを決める。
+/** WASM encode はメインスレッドで重い。試行回数を抑えるため画質ステップを
+ *  短くする (ネイティブ/JPEG の 5 段に対し 3 段)。 */
+const WASM_QUALITY_STEPS = [0.82, 0.6, 0.42];
+
+/** 出力形式とエンコーダを決める。heavy=true は WASM 経路 (encode が重い)。
  *  - WebP 希望 + canvas ネイティブ対応 (Chrome) → ネイティブ WebP (高速)
  *  - WebP 希望 + 非対応 (Safari) → WASM WebP。ロード失敗時のみ JPEG
  *  - それ以外 → JPEG */
-async function chooseEncoder(wantWebp: boolean): Promise<{ outType: string; encode: Encoder }> {
+async function chooseEncoder(wantWebp: boolean): Promise<{ outType: string; encode: Encoder; heavy: boolean }> {
   if (wantWebp && supportsWebpEncode()) {
-    return { outType: 'image/webp', encode: (c, q) => canvasToBlob(c, 'image/webp', q) };
+    return { outType: 'image/webp', encode: (c, q) => canvasToBlob(c, 'image/webp', q), heavy: false };
   }
   if (wantWebp) {
     const wasm = await loadWasmWebpEncode();
     if (wasm) {
       return {
         outType: 'image/webp',
+        heavy: true,
         encode: async (c, q) => {
           const ctx = c.getContext('2d');
           if (!ctx) return null;
@@ -130,7 +135,7 @@ async function chooseEncoder(wantWebp: boolean): Promise<{ outType: string; enco
       };
     }
   }
-  return { outType: 'image/jpeg', encode: (c, q) => canvasToBlob(c, 'image/jpeg', q) };
+  return { outType: 'image/jpeg', encode: (c, q) => canvasToBlob(c, 'image/jpeg', q), heavy: false };
 }
 
 /** 指定エンコーダで「寸法 × 画質」を試し、maxBytes 以下になる最良 (fit) を返す。
@@ -160,7 +165,8 @@ async function encodeBestFit(
       } catch (e) {
         console.warn('[image-compress] encode に失敗', e);
       }
-      if (!blob) continue;
+      // size 0 (壊れた encode 結果) は採用しない
+      if (!blob || blob.size === 0) continue;
       if (blob.size <= maxBytes) return { blob, w, h, fit: true };
       if (!best || blob.size < best.blob.size) best = { blob, w, h, fit: false };
     }
@@ -186,7 +192,9 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
 
   // WebP 希望: ネイティブ(Chrome)→ WASM(Safari)→ JPEG の順でエンコーダを選ぶ
   const wantWebp = (opts.mimeType ?? DEFAULTS.mimeType) === 'image/webp';
-  const { outType, encode } = await chooseEncoder(wantWebp);
+  const { outType, encode, heavy } = await chooseEncoder(wantWebp);
+  // WASM 経路 (heavy) はメインスレッド負荷が高いので試行回数を減らす
+  const primarySteps = heavy && !opts.qualitySteps ? WASM_QUALITY_STEPS : qualitySteps;
 
   let bitmap: ImageBitmap;
   try {
@@ -198,7 +206,7 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
 
   try {
     let usedType = outType;
-    let result = await encodeBestFit(bitmap, outType, encode, maxBytes, maxDimension, qualitySteps);
+    let result = await encodeBestFit(bitmap, outType, encode, maxBytes, maxDimension, primarySteps);
 
     // WebP エンコーダが 1 枚も作れなかった (WASM ロード/実行失敗等) 場合は
     // JPEG に退避する。これで「これまで動いていた JPEG 圧縮」を絶対に壊さない。
