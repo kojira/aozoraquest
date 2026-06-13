@@ -208,9 +208,11 @@ p { margin: 0.4em 0; }
 /* ─── アプリ全体マルチカラム workspace (docs/16-multicolumn.md) ── */
 /* `/` の index route が [data-workspace] を含むとき、app-shell の幅制限を
    緩める。各カラムが DQ ウィンドウになるので、.content の大枠 (二重枠) は
-   workspace モードでは透明化する (= 「手帳の見開き」メタファー)。 */
-@media (min-width: 1100px) {
-  .app-shell:has([data-workspace="1"]) { max-width: min(100vw - 2em, 1480px); }
+   workspace モードでは透明化する (= 「手帳の見開き」メタファー)。
+   幅緩和は 768px から (1100px 始まりだとタブレット縦持ちで 680px 枠内に
+   340px カラムが 2 列弱しか見えず破綻するため)。 */
+@media (min-width: 768px) {
+  .app-shell:has([data-workspace="1"]) { max-width: min(100vw - 1.5em, 1480px); }
 }
 
 .app-shell:has([data-workspace="1"]) .content {
@@ -224,25 +226,29 @@ p { margin: 0.4em 0; }
   display: none;
 }
 
+/* モバイルも横並び + scroll-snap で 1 スワイプ = 1 カラム送り。
+   (縦積みだと先頭カラムの無限フィードがページスクロールを塞いで
+   2 枚目以降に到達できない、というレビュー指摘への対応。
+   snap の磨き込み・footer-nav 連動は PR 5 で行う) */
 .workspace-columns {
   display: flex;
-  flex-direction: column;     /* モバイル: 縦積み (横スワイプ snap は PR 5) */
+  flex-direction: row;
   gap: 0.7em;
-}
-
-@media (min-width: 768px) {
-  .workspace-columns {
-    flex-direction: row;
-    gap: 0.8em;
-    overflow-x: auto;
-    align-items: flex-start;
-    padding-bottom: 0.5em;
-  }
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;     /* ブラウザの戻る gesture との衝突回避 */
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.4em;
 }
 
 .workspace-column {
   display: flex;
   flex-direction: column;
+  /* モバイル: ほぼ画面幅。次のカラムの端を少し見せて「右にまだある」を示す */
+  flex: 0 0 calc(100% - 1.6em);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;            /* 1 スワイプ = 1 カラム送り */
+  height: calc(100dvh - 10.5em);       /* header + footer-nav 分。実測 CSS 変数化は PR 5 */
   background: var(--color-window-bg);
   border: 3px solid var(--color-border);
   border-radius: 3px;
@@ -277,20 +283,18 @@ p { margin: 0.4em 0; }
   overflow-y: auto;
   overscroll-behavior: contain;   /* 縦終端が外側に漏れない */
   padding: 0.6em 0.7em;
+  /* 縦は body 内、横はカラム送り、の両ジェスチャを許可 */
+  touch-action: pan-y pan-x;
 }
 
 @media (min-width: 768px) {
   .workspace-column {
     flex: 0 0 340px;
-    /* header + footer-nav 分を引いた高さ。実測 CSS 変数化は PR 5 で。 */
     height: calc(100dvh - 9.5em);
   }
-}
-
-@media (max-width: 767.98px) {
-  .workspace-column {
-    /* モバイル縦積み: 1 カラムが画面を占有しすぎない高さに */
-    max-height: calc(100dvh - 12em);
+  .workspace-columns {
+    scroll-snap-type: none;   /* PC は自由スクロール */
+    gap: 0.8em;
   }
 }
 

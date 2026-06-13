@@ -9,19 +9,12 @@
  * レイアウトはモバイル = 縦積み、768px 以上 = 横並び (styles.css の
  * .workspace-columns)。横スワイプ (scroll-snap) は PR 5 で追加する。
  */
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { loadAppColumns, appColumnTitle, type AppColumn } from '@/lib/app-columns';
+import { ColumnScrollContext } from '@/components/column-scroll-context';
 import { ColumnContent } from '@/components/column-content';
-
-/** カラムの縦スクロール要素。VirtualFeed の scrollParent に渡す。
- *  workspace 外 (= 従来の単一ページ) では null = window スクロール。 */
-const ColumnScrollContext = createContext<HTMLElement | null>(null);
-
-export function useColumnScrollEl(): HTMLElement | null {
-  return useContext(ColumnScrollContext);
-}
 
 export function Workspace() {
   const session = useSession();

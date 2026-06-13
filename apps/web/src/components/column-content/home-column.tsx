@@ -3,44 +3,39 @@
  *
  * HomeSummary (自分のレーダー + 日次サマリ) + 投稿ボタン + フォロー TL。
  * VirtualFeed は ColumnScrollContext 経由でカラム内スクロールに切り替わる。
+ * 自分の診断は use-self-diagnosis の共有キャッシュから取る (bar と重複
+ * fetch しない / 投稿後の refresh が bar にも伝播する)。
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { AppBskyFeedDefs } from '@atproto/api';
-import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
+import type { Archetype, StatVector } from '@aozoraquest/core';
 import { JOBS_BY_ID, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { fetchTimeline, getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { loadCachedTLPage, saveCachedTLPage } from '@/lib/tl-cache-idb';
+import { useSelfDiagnosis, refreshSelfDiagnosis } from '@/lib/use-self-diagnosis';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { HomeSummary } from '@/components/home-summary';
 import { PostArticle } from '@/components/post-article';
 import { useCompose, useOnPosted } from '@/components/compose-modal';
-import { seedArchetype, useArchetypes } from '@/lib/archetype-cache';
+import { useArchetypes } from '@/lib/archetype-cache';
 import { getHideReposts } from '@/lib/prefs';
-import { useColumnScrollEl } from '@/components/workspace';
+import { useColumnScrollEl } from '@/components/column-scroll-context';
 
 export function HomeColumn() {
   const session = useSession();
   const { openCompose } = useCompose();
   const scrollEl = useColumnScrollEl();
-  const [selfDiag, setSelfDiag] = useState<DiagnosisResult | null>(null);
+  const { diag: selfDiag } = useSelfDiagnosis();
   const [targetJob, setTargetJob] = useState<Archetype | null>(null);
 
   const agent = session.agent;
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !agent || !session.did) return;
-    const did = session.did;
-    getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
-      .then((r) => {
-        setSelfDiag(r);
-        const a = r?.archetype && r.archetype in JOBS_BY_ID ? (r.archetype as Archetype) : null;
-        seedArchetype(did, a);
-      })
-      .catch((e) => console.warn('self analysis load failed', e));
-    getRecord<{ targetJob?: string }>(agent, did, COL.profile, 'self')
+    getRecord<{ targetJob?: string }>(agent, session.did, COL.profile, 'self')
       .then((p) => {
         if (p?.targetJob && p.targetJob in JOBS_BY_ID) setTargetJob(p.targetJob as Archetype);
       })
@@ -76,17 +71,14 @@ export function HomeColumn() {
       : {}),
   });
 
-  // 自分が投稿した直後に TL をリフレッシュ (反映ラグがあるので少し待つ)
+  // 自分が投稿した直後に TL をリフレッシュ (反映ラグがあるので少し待つ)。
+  // 診断の更新は共有キャッシュ経由なので bar カラムにも伝播する。
   useOnPosted(() => {
     setTimeout(() => followingFeed.refresh(), 500);
     if (agent && session.did) {
       const a = agent;
       const d = session.did;
-      setTimeout(() => {
-        getRecord<DiagnosisResult>(a, d, COL.analysis, 'self')
-          .then((r) => { if (r) setSelfDiag(r); })
-          .catch(() => {});
-      }, 400);
+      setTimeout(() => { void refreshSelfDiagnosis(a, d); }, 400);
     }
   });
 
