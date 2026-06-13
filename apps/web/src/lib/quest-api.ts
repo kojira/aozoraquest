@@ -18,6 +18,7 @@ import type {
 } from '@aozoraquest/core';
 import { isValidCompletion } from '@aozoraquest/core';
 import { putRecord, getRecord } from './atproto';
+import { listRecordsForDid, getRecordForDid } from './repo-read';
 import { COL } from './collections';
 import { mockIndex } from './quest-mock';
 
@@ -85,10 +86,11 @@ export async function updateQuest(
   return next;
 }
 
-/** クエストを取得する (URI 指定、公開 read で OK) */
-export async function getQuest(agent: Agent, uri: AtUri): Promise<UserQuest | null> {
+/** クエストを取得する (URI 指定)。発行者の PDS から公開 read する
+ *  (自分の agent で他人 repo を読むと別ホスト時に「Could not find repo」になる)。 */
+export async function getQuest(_agent: Agent, uri: AtUri): Promise<UserQuest | null> {
   const { repo, rkey } = parseAtUri(uri);
-  const value = await getRecord<Omit<UserQuest, 'uri' | 'did'>>(agent, repo, COL.userQuest, rkey);
+  const value = await getRecordForDid<Omit<UserQuest, 'uri' | 'did'>>(repo, COL.userQuest, rkey);
   if (!value) return null;
   return {
     ...value,
@@ -99,14 +101,11 @@ export async function getQuest(agent: Agent, uri: AtUri): Promise<UserQuest | nu
   };
 }
 
-/** 発行者 (= 任意の did) の userQuest を時系列で list */
-export async function listIssuedQuests(agent: Agent, issuerDid: Did, limit = 100): Promise<UserQuest[]> {
-  const res = await agent.com.atproto.repo.listRecords({
-    repo: issuerDid,
-    collection: COL.userQuest,
-    limit,
-  });
-  return res.data.records.map(r => {
+/** 発行者 (= 任意の did) の userQuest を時系列で list。
+ *  対象 DID の PDS から公開 read する (他人 repo を自分の PDS 経由で読まない)。 */
+export async function listIssuedQuests(_agent: Agent, issuerDid: Did, limit = 100): Promise<UserQuest[]> {
+  const res = await listRecordsForDid(issuerDid, COL.userQuest, limit);
+  return res.records.map(r => {
     const v = r.value as Omit<UserQuest, 'uri' | 'did'>;
     return {
       ...v,
@@ -175,20 +174,21 @@ export async function buildQuestIndexFromDirectory(
   const unique = Array.from(new Set(dids));
   const results = await Promise.allSettled(
     unique.map(async (did) => {
+      // 各 DID の PDS から公開 read する (自分の PDS 経由だと別ホストの repo を読めない)
       const [questsRes, appsRes] = await Promise.allSettled([
-        agent.com.atproto.repo.listRecords({ repo: did, collection: COL.userQuest, limit: limitPerRepo }),
-        agent.com.atproto.repo.listRecords({ repo: did, collection: COL.questApplication, limit: limitPerRepo }),
+        listRecordsForDid(did, COL.userQuest, limitPerRepo),
+        listRecordsForDid(did, COL.questApplication, limitPerRepo),
       ]);
       const quests: QuestIndexSummary[] = [];
       const applications: ApplicationIndexEntry[] = [];
       if (questsRes.status === 'fulfilled') {
-        for (const r of questsRes.value.data.records) {
+        for (const r of questsRes.value.records) {
           const v = r.value as Omit<UserQuest, 'uri' | 'did'>;
           quests.push(questToSummary({ ...v, uri: r.uri, did, updatedAt: v.updatedAt ?? v.createdAt }));
         }
       }
       if (appsRes.status === 'fulfilled') {
-        for (const r of appsRes.value.data.records) {
+        for (const r of appsRes.value.records) {
           const v = r.value as { questUri?: AtUri; createdAt?: string };
           if (typeof v.questUri === 'string') {
             applications.push({
@@ -404,8 +404,8 @@ export async function listApplicationsFor(
   for (const e of entries) {
     try {
       const { rkey } = parseAtUri(e.uri);
-      const v = await getRecord<Omit<QuestApplication, 'uri' | 'did'>>(
-        agent, e.did, COL.questApplication, rkey,
+      const v = await getRecordForDid<Omit<QuestApplication, 'uri' | 'did'>>(
+        e.did, COL.questApplication, rkey,
       );
       if (v) {
         // withdrawn も含めて返す (= UI 側で「取り下げ済み」表示するため)
@@ -419,18 +419,14 @@ export async function listApplicationsFor(
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/** 自分が出した応募一覧 (withdrawn も含めて返す。フィルタは UI 側で) */
-export async function listMyApplications(agent: Agent, myDid: Did, limit = 100): Promise<QuestApplication[]> {
-  const res = await agent.com.atproto.repo.listRecords({
-    repo: myDid,
-    collection: COL.questApplication,
-    limit,
+/** ある DID が出した応募一覧 (withdrawn 含む。フィルタは UI 側で)。
+ *  対象 DID の PDS から公開 read する (ポートフォリオで他人の did も渡るため)。 */
+export async function listMyApplications(_agent: Agent, did: Did, limit = 100): Promise<QuestApplication[]> {
+  const res = await listRecordsForDid(did, COL.questApplication, limit);
+  return res.records.map(r => {
+    const v = r.value as Omit<QuestApplication, 'uri' | 'did'>;
+    return { ...v, uri: r.uri, did };
   });
-  return res.data.records
-    .map(r => {
-      const v = r.value as Omit<QuestApplication, 'uri' | 'did'>;
-      return { ...v, uri: r.uri, did: myDid };
-    });
 }
 
 // ─── Phase 2: 受託者指定 (発注者が quest record を更新) ───
@@ -539,12 +535,9 @@ export async function listCompletionsFor(
   const out: QuestCompletion[] = [];
   for (const did of dids) {
     try {
-      const res = await agent.com.atproto.repo.listRecords({
-        repo: did,
-        collection: COL.questCompletion,
-        limit: 100,
-      });
-      for (const r of res.data.records) {
+      // 各 DID の PDS から公開 read (自分の PDS 経由だと別ホストの repo を読めない)
+      const res = await listRecordsForDid(did, COL.questCompletion, 100);
+      for (const r of res.records) {
         const v = r.value as Omit<QuestCompletion, 'uri' | 'did'>;
         if (v.questUri !== quest.uri) continue;
         const c: QuestCompletion = { ...v, uri: r.uri, did };
