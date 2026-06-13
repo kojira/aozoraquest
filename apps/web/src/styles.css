@@ -272,10 +272,50 @@ p { margin: 0.4em 0; }
 
 .workspace-column-header {
   flex: 0 0 auto;
-  padding: 0.45em 0.8em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.45em 0.5em 0.45em 0.8em;
   font-size: 0.92em;
   font-weight: 700;
   border-bottom: 2px solid var(--color-window-inner-border);
+}
+
+.workspace-column-menu-btn {
+  padding: 0 0.5em;
+  font-size: 1em;
+  line-height: 1.4;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.workspace-column-menu-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.workspace-column-menu {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 0.5em 0.7em;
+  border-bottom: 2px solid var(--color-window-inner-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+.workspace-column-menu button {
+  font-size: 0.8em;
+  text-align: left;
+}
+
+.workspace-column-add {
+  /* 追加タイルはカラムより控えめな見た目 (破線枠) */
+  border-style: dashed;
+  background: rgba(0, 0, 0, 0.35);
+}
+.workspace-column-add::before,
+.workspace-column-add::after {
+  display: none;
 }
 
 .workspace-column-body {

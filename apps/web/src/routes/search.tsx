@@ -22,16 +22,20 @@ export function Search() {
 /**
  * 検索 UI 本体。route (syncUrl=true) と workspace の search カラム
  * (syncUrl=false、initialQuery/initialMode を column から注入) の両用。
- * カラムでは複数の検索カラムが並ぶため URL とは同期しない。
+ * カラムでは複数の検索カラムが並ぶため URL とは同期せず、代わりに
+ * onSearch で検索内容を親 (= カラム設定) に通知する。
  */
 export function SearchPanel({
   syncUrl = false,
   initialQuery,
   initialMode,
+  onSearch,
 }: {
   syncUrl?: boolean;
   initialQuery?: string;
   initialMode?: Mode;
+  /** 検索実行時に呼ばれる (カラムの param/title 追従用) */
+  onSearch?: ((q: string, mode: Mode) => void) | undefined;
 }) {
   const session = useSession();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,6 +91,8 @@ export function SearchPanel({
     const t = q.trim();
     if (!t) return;
     setSubmittedQ(t);
+    const effectiveMode: Mode = mode === 'posts' || t.startsWith('#') ? 'posts' : mode;
+    onSearch?.(t, effectiveMode);
     if (!syncUrl) return;
     // ブックマーク・共有ができるよう URL に反映 (#始まりは posts モードも一緒に書く)
     const next = new URLSearchParams(searchParams);
