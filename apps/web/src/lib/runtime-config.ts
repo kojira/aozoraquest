@@ -23,28 +23,27 @@ function getPrimaryAdminDid(): string | null {
   return first ?? null;
 }
 
-async function resolveDidToPds(did: string): Promise<string> {
-  // did:plc:* は plc.directory を経由、did:web:* はドメイン直 .well-known/did.json
-  if (did.startsWith('did:plc:')) {
-    const res = await fetch(`${PLC_DIRECTORY}/${did}`);
-    if (!res.ok) throw new Error(`plc.directory ${res.status}`);
-    const doc = await res.json();
-    const service = (doc.service ?? []).find(
-      (s: { type: string }) => s.type === 'AtprotoPersonalDataServer',
+/** DID を PDS エンドポイントに解決する (公開 read の宛先決定に使う唯一の実装)。
+ *  did:plc:* は plc.directory、did:web:* はドメイン直 .well-known/did.json。 */
+export async function resolveDidToPds(did: string): Promise<string> {
+  const pickPds = (doc: { service?: { id?: string; type?: string; serviceEndpoint?: string }[] }) => {
+    const svc = (doc.service ?? []).find(
+      (s) => s.id === '#atproto_pds' || s.type === 'AtprotoPersonalDataServer',
     );
-    if (!service) throw new Error(`no PDS in DID doc for ${did}`);
-    return service.serviceEndpoint as string;
+    if (!svc?.serviceEndpoint) throw new Error(`no PDS in DID doc for ${did}`);
+    return svc.serviceEndpoint;
+  };
+  if (did.startsWith('did:plc:')) {
+    const res = await fetch(`${PLC_DIRECTORY}/${encodeURIComponent(did)}`);
+    if (!res.ok) throw new Error(`plc.directory ${res.status}`);
+    return pickPds(await res.json());
   }
   if (did.startsWith('did:web:')) {
+    // host-only did:web のみ対応 (path 付きは未対応 = Bluesky では稀)
     const host = did.slice('did:web:'.length);
     const res = await fetch(`https://${host}/.well-known/did.json`);
     if (!res.ok) throw new Error(`did:web ${res.status}`);
-    const doc = await res.json();
-    const service = (doc.service ?? []).find(
-      (s: { type: string }) => s.type === 'AtprotoPersonalDataServer',
-    );
-    if (!service) throw new Error(`no PDS in did:web doc for ${did}`);
-    return service.serviceEndpoint as string;
+    return pickPds(await res.json());
   }
   throw new Error(`unsupported DID method: ${did}`);
 }
