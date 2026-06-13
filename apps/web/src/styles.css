@@ -19,6 +19,13 @@
   --color-window-inner-border: rgba(255, 255, 255, 0.35);
   --color-danger: #ff7272;
 
+  /* カレンダーの週末色。ステータス色 (atk/def/agi/int/luk) や accent の
+     意味と干渉しないよう専用に持つ (DESIGN.md: ステータス色は流用しない)。 */
+  --color-cal-sun: #ff9a9a;
+  --color-cal-sat: #8fc2ef;
+  /* accent 背景の上に乗せる文字色 (選択日セルなど)。濃紺で十分なコントラスト。 */
+  --color-on-accent: #06223a;
+
   --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
 }
 
@@ -1255,3 +1262,131 @@ p { margin: 0.4em 0; }
 @media (prefers-reduced-motion: reduce) {
   .card-stage { animation: none; }
 }
+
+/* ─── DateTimePicker (カレンダー日時ピッカー) ─────────────
+   DQ ウィンドウ様式の月グリッド + 時刻選択。
+   `<input type="datetime-local">` を世界観に揃えた置き換え。 */
+.dtp { position: relative; }
+
+/* trigger は input 様式に寄せた押せるフィールド */
+.dtp-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: 100%;
+  text-align: left;
+  background: var(--color-window-bg-alt);
+  border: 2px solid var(--color-border);
+  border-radius: 2px;
+  padding: 0.35em 0.6em;
+  box-shadow: none;
+  font-size: 0.95em;
+}
+.dtp-trigger:hover:not(:disabled) { background: var(--color-window-bg-alt); }
+.dtp-icon { flex: 0 0 auto; opacity: 0.85; }
+.dtp-trigger-text { flex: 1; }
+.dtp-trigger-text.is-empty { color: var(--color-muted); }
+.dtp-caret { flex: 0 0 auto; opacity: 0.7; font-size: 0.8em; }
+
+/* パネルはインライン展開 (スクロールコンテナでクリップされない) */
+.dtp-panel {
+  margin-top: 0.4em;
+  margin-bottom: 0;
+  max-width: min(19em, 100%);
+}
+/* board-detail の dq-window の中に入れ子になると四隅装飾が
+   三重に出てうるさい。ネスト時は装飾を消して枠だけにする。 */
+.dtp-panel.dq-window::before,
+.dtp-panel.dq-window::after { display: none; }
+
+.dtp-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4em;
+}
+.dtp-cal-title { font-size: 0.92em; font-weight: bold; }
+.dtp-nav {
+  padding: 0.1em 0.55em;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.dtp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.dtp-weekrow { margin-bottom: 2px; }
+.dtp-weekday {
+  text-align: center;
+  font-size: 0.7em;
+  color: var(--color-muted);
+  padding: 0.2em 0;
+}
+.dtp-weekday.sun { color: var(--color-cal-sun); }
+.dtp-weekday.sat { color: var(--color-cal-sat); }
+
+.dtp-day {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82em;
+  padding: 0;
+  border: 2px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 2px;
+}
+.dtp-day:hover:not(:disabled):not(.empty) {
+  background: var(--color-window-bg-alt);
+  border-color: var(--color-window-inner-border);
+}
+.dtp-day.sun { color: var(--color-cal-sun); }
+.dtp-day.sat { color: var(--color-cal-sat); }
+.dtp-day.today {
+  border-color: var(--color-window-inner-border);
+}
+.dtp-day.selected {
+  background: var(--color-accent);
+  border-color: var(--color-primary);
+  color: var(--color-on-accent);
+  font-weight: bold;
+}
+.dtp-day.selected.sun, .dtp-day.selected.sat { color: var(--color-on-accent); }
+.dtp-day:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.dtp-day.empty {
+  cursor: default;
+  pointer-events: none;
+}
+
+.dtp-time {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-top: 0.6em;
+}
+.dtp-time-label {
+  font-size: 0.78em;
+  color: var(--color-muted);
+  margin-right: 0.2em;
+}
+.dtp-time select { padding: 0.2em 0.4em; }
+.dtp-colon { opacity: 0.8; }
+.dtp-time-hint {
+  font-size: 0.72em;
+  color: var(--color-muted);
+  margin-left: 0.2em;
+}
+
+.dtp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+.dtp-actions button { font-size: 0.85em; padding: 0.25em 0.8em; }
