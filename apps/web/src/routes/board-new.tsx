@@ -10,8 +10,10 @@ import { useNavigate } from 'react-router-dom';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement, checkIssuanceLimits } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { createQuest, listIssuedQuests } from '@/lib/quest-api';
+import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { createTaggedPost } from '@/lib/atproto';
 import { getPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
+import { DateTimePicker } from '@/components/date-time-picker';
 
 const MAX_TITLE = 80;
 const MAX_BODY = 1500;
@@ -95,6 +97,8 @@ export function BoardNew() {
           console.warn('[board-new] bluesky announce failed', e);
         }
       }
+      // index キャッシュを破棄 (発行直後に「募集中」一覧へ反映されるように)
+      void refreshQuestIndex();
       navigate(`/board/${encodeURIComponent(quest.uri)}`);
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -171,10 +175,10 @@ export function BoardNew() {
       </Field>
 
       <Field label="募集期限 (任意)">
-        <input
-          type="datetime-local"
+        <DateTimePicker
           value={deadline}
-          onChange={(e) => setDeadline(e.target.value)}
+          onChange={setDeadline}
+          ariaLabel="募集期限を選択"
         />
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
           期限内のみ応募可。後から延長 / 短縮できます。期限切れでも自動キャンセルされません。

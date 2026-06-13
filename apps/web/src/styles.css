@@ -19,6 +19,13 @@
   --color-window-inner-border: rgba(255, 255, 255, 0.35);
   --color-danger: #ff7272;
 
+  /* カレンダーの週末色。ステータス色 (atk/def/agi/int/luk) や accent の
+     意味と干渉しないよう専用に持つ (DESIGN.md: ステータス色は流用しない)。 */
+  --color-cal-sun: #ff9a9a;
+  --color-cal-sat: #8fc2ef;
+  /* accent 背景の上に乗せる文字色 (選択日セルなど)。濃紺で十分なコントラスト。 */
+  --color-on-accent: #06223a;
+
   --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
 }
 
@@ -202,6 +209,169 @@ p { margin: 0.4em 0; }
     flex: 0 0 320px;
     max-height: calc(100vh - 12em);
     overflow-y: auto;
+  }
+}
+
+/* ─── アプリ全体マルチカラム workspace (docs/16-multicolumn.md) ── */
+/* `/` の index route が [data-workspace] を含むとき、app-shell の幅制限を
+   緩める。各カラムが DQ ウィンドウになるので、.content の大枠 (二重枠) は
+   workspace モードでは透明化する (= 「手帳の見開き」メタファー)。
+   幅緩和は 768px から (1100px 始まりだとタブレット縦持ちで 680px 枠内に
+   340px カラムが 2 列弱しか見えず破綻するため)。 */
+@media (min-width: 768px) {
+  .app-shell:has([data-workspace="1"]) { max-width: min(100vw - 1.5em, 1480px); }
+}
+
+.app-shell:has([data-workspace="1"]) .content {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  padding: 0.4em 0.2em;
+}
+.app-shell:has([data-workspace="1"]) .content::before,
+.app-shell:has([data-workspace="1"]) .content::after {
+  display: none;
+}
+
+/* モバイルも横並び + scroll-snap で 1 スワイプ = 1 カラム送り。
+   (縦積みだと先頭カラムの無限フィードがページスクロールを塞いで
+   2 枚目以降に到達できない、というレビュー指摘への対応。
+   snap の磨き込み・footer-nav 連動は PR 5 で行う) */
+.workspace-columns {
+  display: flex;
+  flex-direction: row;
+  gap: 0.7em;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;     /* ブラウザの戻る gesture との衝突回避 */
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.4em;
+}
+
+.workspace-column {
+  display: flex;
+  flex-direction: column;
+  /* モバイル: ほぼ画面幅。次のカラムの端を少し見せて「右にまだある」を示す */
+  flex: 0 0 calc(100% - 1.6em);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;            /* 1 スワイプ = 1 カラム送り */
+  /* header + footer-nav の実高は AppShell が ResizeObserver で
+     --shell-chrome-height に書き出す (文字サイズ設定にも追従)。
+     変数が無い初回 paint 用に fallback を持つ。 */
+  height: calc(100dvh - var(--shell-chrome-height, 9.5em));
+  background: var(--color-window-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0, 0, 0, 0.35);
+  position: relative;
+}
+/* DQ ウィンドウの四隅装飾 (dq-window と同じ) */
+.workspace-column::before,
+.workspace-column::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--color-border);
+  pointer-events: none;
+}
+.workspace-column::before { top: 3px; left: 3px; }
+.workspace-column::after  { bottom: 3px; right: 3px; }
+
+.workspace-column-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.45em 0.5em 0.45em 0.8em;
+  font-size: 0.92em;
+  font-weight: 700;
+  border-bottom: 2px solid var(--color-window-inner-border);
+}
+
+.workspace-column-menu-btn {
+  padding: 0 0.5em;
+  font-size: 1em;
+  line-height: 1.4;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.workspace-column-menu-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.workspace-column-menu {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 0.5em 0.7em;
+  border-bottom: 2px solid var(--color-window-inner-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+.workspace-column-menu button {
+  font-size: 0.8em;
+  text-align: left;
+}
+
+.workspace-column-add {
+  /* 追加タイルはカラムより控えめな見た目 (破線枠) */
+  border-style: dashed;
+  background: rgba(0, 0, 0, 0.35);
+}
+.workspace-column-add::before,
+.workspace-column-add::after {
+  display: none;
+}
+
+/* board カラム内の inner タブ: 等分 (dq-tabs) だと多タブで潰れるため、
+   折り返さない chip の横スクロール行にする */
+.board-column-tabs {
+  display: flex;
+  gap: 0.3em;
+  overflow-x: auto;
+  margin: 0 0 0.5em;
+  padding-bottom: 0.2em;
+  -webkit-overflow-scrolling: touch;
+}
+.board-column-tabs .dq-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.8em;
+  padding: 0.35em 0.6em;
+}
+
+/* モーション抑制設定では scroll-snap の慣性 + smooth scroll を切る
+   (iOS Safari の snap カクつき対策も兼ねる) */
+@media (prefers-reduced-motion: reduce) {
+  .workspace-columns { scroll-snap-type: none; scroll-behavior: auto; }
+}
+
+.workspace-column-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;             /* 本体は横スクロールしない (横は親が担う) */
+  /* 縦だけ contain (縦終端でページ全体が動くのを防ぐ)。
+     PC の横スワイプ引っかかりは workspace.tsx の wheel ハンドラで親へ流す。 */
+  overscroll-behavior-y: contain;
+  padding: 0.6em 0.7em;
+  /* 縦は body 内、横はカラム送り、の両ジェスチャを許可 */
+  touch-action: pan-y pan-x;
+}
+
+@media (min-width: 768px) {
+  .workspace-column {
+    flex: 0 0 340px;
+    /* モバイルと同じく chrome 実測に追従 (--shell-chrome-height) */
+    height: calc(100dvh - var(--shell-chrome-height, 9.5em));
+  }
+  .workspace-columns {
+    scroll-snap-type: none;   /* PC は自由スクロール */
+    gap: 0.8em;
   }
 }
 
@@ -1092,3 +1262,131 @@ p { margin: 0.4em 0; }
 @media (prefers-reduced-motion: reduce) {
   .card-stage { animation: none; }
 }
+
+/* ─── DateTimePicker (カレンダー日時ピッカー) ─────────────
+   DQ ウィンドウ様式の月グリッド + 時刻選択。
+   `<input type="datetime-local">` を世界観に揃えた置き換え。 */
+.dtp { position: relative; }
+
+/* trigger は input 様式に寄せた押せるフィールド */
+.dtp-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: 100%;
+  text-align: left;
+  background: var(--color-window-bg-alt);
+  border: 2px solid var(--color-border);
+  border-radius: 2px;
+  padding: 0.35em 0.6em;
+  box-shadow: none;
+  font-size: 0.95em;
+}
+.dtp-trigger:hover:not(:disabled) { background: var(--color-window-bg-alt); }
+.dtp-icon { flex: 0 0 auto; opacity: 0.85; }
+.dtp-trigger-text { flex: 1; }
+.dtp-trigger-text.is-empty { color: var(--color-muted); }
+.dtp-caret { flex: 0 0 auto; opacity: 0.7; font-size: 0.8em; }
+
+/* パネルはインライン展開 (スクロールコンテナでクリップされない) */
+.dtp-panel {
+  margin-top: 0.4em;
+  margin-bottom: 0;
+  max-width: min(19em, 100%);
+}
+/* board-detail の dq-window の中に入れ子になると四隅装飾が
+   三重に出てうるさい。ネスト時は装飾を消して枠だけにする。 */
+.dtp-panel.dq-window::before,
+.dtp-panel.dq-window::after { display: none; }
+
+.dtp-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4em;
+}
+.dtp-cal-title { font-size: 0.92em; font-weight: bold; }
+.dtp-nav {
+  padding: 0.1em 0.55em;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.dtp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.dtp-weekrow { margin-bottom: 2px; }
+.dtp-weekday {
+  text-align: center;
+  font-size: 0.7em;
+  color: var(--color-muted);
+  padding: 0.2em 0;
+}
+.dtp-weekday.sun { color: var(--color-cal-sun); }
+.dtp-weekday.sat { color: var(--color-cal-sat); }
+
+.dtp-day {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82em;
+  padding: 0;
+  border: 2px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 2px;
+}
+.dtp-day:hover:not(:disabled):not(.empty) {
+  background: var(--color-window-bg-alt);
+  border-color: var(--color-window-inner-border);
+}
+.dtp-day.sun { color: var(--color-cal-sun); }
+.dtp-day.sat { color: var(--color-cal-sat); }
+.dtp-day.today {
+  border-color: var(--color-window-inner-border);
+}
+.dtp-day.selected {
+  background: var(--color-accent);
+  border-color: var(--color-primary);
+  color: var(--color-on-accent);
+  font-weight: bold;
+}
+.dtp-day.selected.sun, .dtp-day.selected.sat { color: var(--color-on-accent); }
+.dtp-day:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.dtp-day.empty {
+  cursor: default;
+  pointer-events: none;
+}
+
+.dtp-time {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-top: 0.6em;
+}
+.dtp-time-label {
+  font-size: 0.78em;
+  color: var(--color-muted);
+  margin-right: 0.2em;
+}
+.dtp-time select { padding: 0.2em 0.4em; }
+.dtp-colon { opacity: 0.8; }
+.dtp-time-hint {
+  font-size: 0.72em;
+  color: var(--color-muted);
+  margin-left: 0.2em;
+}
+
+.dtp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+.dtp-actions button { font-size: 0.85em; padding: 0.25em 0.8em; }
