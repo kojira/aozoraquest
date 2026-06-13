@@ -26,11 +26,11 @@ export function Notifications() {
 
 /**
  * 通知フィード本体: listNotifications でページングしつつ、グループ単位で表示。
- * - markSeen=true のとき初回ロード後に updateNotificationsSeen を発火
- *   (未読バッジをクリア)。**workspace カラムでは発火しない** —
- *   default 構成に通知カラムが入るため、`/` を開いただけで未読バッジが
- *   死ぬのを防ぐ (レビュー指摘 ★★★)。カラムでの既読化は可視判定
- *   (IntersectionObserver) と合わせて PR 5 で導入する
+ * - markSeen=true (通知ページ) は初回ロード後に updateNotificationsSeen を
+ *   発火 (未読バッジをクリア)
+ * - markSeen=false (workspace カラム) は **このフィードが画面に 50% 以上
+ *   見えたとき** に既読化する。`/` を開いただけ (= カラムが画面外) では
+ *   未読バッジが死なない
  * - 各ページ分の関連投稿 URI をまとめて getPosts で取得し、Map にキャッシュ
  * - グルーピングはページ単位ではなく **全 items の連結** に対して再計算
  *   (ページ境界で連続マージが成り立つように)
@@ -38,6 +38,23 @@ export function Notifications() {
 export function NotificationsFeed({ markSeen = false }: { markSeen?: boolean }) {
   const session = useSession();
   const scrollEl = useColumnScrollEl();
+  const rootRef = useRef<HTMLDivElement>(null);
+  // カラムモードの可視判定: 50% 以上見えたら markSeen 相当に切り替える
+  const [visibleSeen, setVisibleSeen] = useState(false);
+  useEffect(() => {
+    if (markSeen || visibleSeen) return;
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setVisibleSeen(true);
+      },
+      { threshold: [0.5] },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [markSeen, visibleSeen]);
+  const shouldMarkSeen = markSeen || visibleSeen;
   const agent = session.agent;
   const seenSent = useRef(false);
   const [postCache, setPostCache] = useState<Map<string, AppBskyFeedDefs.PostView>>(
@@ -58,14 +75,15 @@ export function NotificationsFeed({ markSeen = false }: { markSeen?: boolean }) 
     },
   });
 
-  // 初回 items 取得後に updateSeen を fire-and-forget (markSeen のときのみ)
+  // 初回 items 取得後に updateSeen を fire-and-forget
+  // (通知ページ、またはカラムが可視になったとき)
   useEffect(() => {
-    if (!markSeen || !agent) return;
+    if (!shouldMarkSeen || !agent) return;
     if (seenSent.current) return;
     if (feed.items.length === 0 && !feed.done) return;
     seenSent.current = true;
     void updateNotificationsSeen(agent);
-  }, [markSeen, agent, feed.items.length, feed.done]);
+  }, [shouldMarkSeen, agent, feed.items.length, feed.done]);
 
   const groups = useMemo(() => groupNotifications(feed.items), [feed.items]);
 
@@ -93,7 +111,7 @@ export function NotificationsFeed({ markSeen = false }: { markSeen?: boolean }) 
   }, [agent, groups]);
 
   return (
-    <div>
+    <div ref={rootRef}>
       {feed.err && (
         <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {feed.err}</p>
       )}

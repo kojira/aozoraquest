@@ -248,7 +248,10 @@ p { margin: 0.4em 0; }
   flex: 0 0 calc(100% - 1.6em);
   scroll-snap-align: start;
   scroll-snap-stop: always;            /* 1 スワイプ = 1 カラム送り */
-  height: calc(100dvh - 10.5em);       /* header + footer-nav 分。実測 CSS 変数化は PR 5 */
+  /* header + footer-nav の実高は AppShell が ResizeObserver で
+     --shell-chrome-height に書き出す (文字サイズ設定にも追従)。
+     変数が無い初回 paint 用に fallback を持つ。 */
+  height: calc(100dvh - var(--shell-chrome-height, 10.5em));
   background: var(--color-window-bg);
   border: 3px solid var(--color-border);
   border-radius: 3px;
@@ -333,6 +336,12 @@ p { margin: 0.4em 0; }
   white-space: nowrap;
   font-size: 0.8em;
   padding: 0.35em 0.6em;
+}
+
+/* モーション抑制設定では scroll-snap の慣性 + smooth scroll を切る
+   (iOS Safari の snap カクつき対策も兼ねる) */
+@media (prefers-reduced-motion: reduce) {
+  .workspace-columns { scroll-snap-type: none; scroll-behavior: auto; }
 }
 
 .workspace-column-body {

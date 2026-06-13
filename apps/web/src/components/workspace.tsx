@@ -11,7 +11,7 @@
  * body 要素を ColumnScrollContext で配って内部の VirtualFeed が
  * 「カラム内スクロール」モードで動けるようにする。
  */
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
@@ -23,8 +23,10 @@ import {
   removeColumn,
   appColumnTitle,
   type AppColumn,
+  type AppColumnKind,
 } from '@/lib/app-columns';
 import { urlForColumn } from '@/lib/column-router';
+import { publishVisibleColumn } from '@/lib/visible-column';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
 import { ColumnContent } from '@/components/column-content';
 import { ColumnPicker } from '@/components/column-picker';
@@ -46,6 +48,33 @@ export function Workspace() {
   }, [session.status, signedIn]);
 
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  // いま主に見えているカラムの kind を footer-nav に伝える
+  // (モバイル横スワイプで現在位置が分かるように)。
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        // 最も大きく見えているカラムを採用
+        let best: { kind: AppColumnKind; ratio: number } | null = null;
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const kind = (e.target as HTMLElement).dataset.columnKind as AppColumnKind | undefined;
+          if (!kind) continue;
+          if (!best || e.intersectionRatio > best.ratio) best = { kind, ratio: e.intersectionRatio };
+        }
+        if (best) publishVisibleColumn(best.kind);
+      },
+      { root: scroller, threshold: [0.5] },
+    );
+    for (const el of scroller.querySelectorAll('[data-column-kind]')) io.observe(el);
+    return () => {
+      io.disconnect();
+      publishVisibleColumn(null);
+    };
+  }, [columns]);
 
   if (session.status === 'loading') {
     return <p>準備しています...</p>;
@@ -110,7 +139,7 @@ export function Workspace() {
 
   return (
     <div data-workspace="1">
-      <div className="workspace-columns">
+      <div className="workspace-columns" ref={scrollerRef}>
         {(columns ?? []).map((col, i) => (
           <Fragment key={col.id}>
             <ColumnView
