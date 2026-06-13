@@ -78,6 +78,24 @@ export function Workspace() {
     // 再構築のたびに null を publish するとタブが一瞬チラつくため分離。
   }, [columnCount]);
 
+  // PC で横スワイプ (トラックパッド) したとき、カーソルがカラム本体
+  // (縦スクロールコンテナ) の上にあると横方向が本体に吸われて「引っかかる」。
+  // 横優勢のホイールジェスチャを明示的に workspace スクローラへ流す。
+  // 縦優勢 (deltaY) はそのまま = カラム内縦スクロールを妨げない。
+  // 縦ホイールしかないマウスの横移動は別途スクロールバーで。
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // 縦優勢は無視
+      // 横優勢: 親を横スクロールして本体への吸われを防ぐ
+      scroller.scrollLeft += e.deltaX;
+      e.preventDefault();
+    };
+    scroller.addEventListener('wheel', onWheel, { passive: false });
+    return () => scroller.removeEventListener('wheel', onWheel);
+  }, []);
+
   // `/` 離脱時に可視 kind をクリアする (active 残留防止)
   useEffect(() => () => publishVisibleColumn(null), []);
 
