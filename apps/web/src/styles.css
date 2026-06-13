@@ -251,7 +251,7 @@ p { margin: 0.4em 0; }
   /* header + footer-nav の実高は AppShell が ResizeObserver で
      --shell-chrome-height に書き出す (文字サイズ設定にも追従)。
      変数が無い初回 paint 用に fallback を持つ。 */
-  height: calc(100dvh - var(--shell-chrome-height, 10.5em));
+  height: calc(100dvh - var(--shell-chrome-height, 9.5em));
   background: var(--color-window-bg);
   border: 3px solid var(--color-border);
   border-radius: 3px;
@@ -356,7 +356,8 @@ p { margin: 0.4em 0; }
 @media (min-width: 768px) {
   .workspace-column {
     flex: 0 0 340px;
-    height: calc(100dvh - 9.5em);
+    /* モバイルと同じく chrome 実測に追従 (--shell-chrome-height) */
+    height: calc(100dvh - var(--shell-chrome-height, 9.5em));
   }
   .workspace-columns {
     scroll-snap-type: none;   /* PC は自由スクロール */

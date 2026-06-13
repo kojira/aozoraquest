@@ -120,7 +120,7 @@ MVP 完了。以降は下記「既知の制約 / 検討事項」と issue #36 (p
 
 ## 既知の制約 / 検討事項
 
-- **通知の既読化**: NotificationsFeed は markSeen=true (通知ページ) で即既読化、markSeen=false (workspace カラム) では **IntersectionObserver で 50% 以上見えたとき** に既読化する。`/` を開いただけ (カラムが画面外) では未読バッジが死なない (PR 5 で対応済み)
+- **通知の既読化**: NotificationsFeed は markSeen=true (通知ページ) で即既読化、markSeen=false (workspace カラム) では **フィード先頭の sentinel 要素が 600ms 以上見えたとき** に既読化する (root はカラムスクローラ)。`/` を開いただけ (カラムが画面外) や横スワイプで一瞬かすめただけでは未読バッジが死なない (PR 5)
 - **board カラムの inner 編集**: workspace の board カラムは inner を **タブ切替** で表示するのみ。inner の追加・削除は /board フル表示ページで行い、その結果が read-time で workspace に反映される (appColumns:v1 には inner を保存しない規約)
 - **profile カラムの情報量**: フルプロフィール (相性 + 推し量り + 投稿) をそのまま表示している。コンパクト版は issue #36
 - **DM カラム / List カラム**: Bluesky の DM・List API 調査が別途必要 (将来)

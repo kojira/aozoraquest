@@ -33,24 +33,10 @@ test('未サインインの `/` は landing を表示し console エラーが出
   expect(errors, 'unexpected errors').toEqual([]);
 });
 
-test('モバイル幅で workspace カラムが横スクロール (scroll-snap) になる', async ({ page }) => {
+test('モバイル幅の `/board` がマルチカラム表示される', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  // 未サインインだと landing なので、検索ページ単体で snap CSS の適用を確認する
-  // 代わりに、サインイン不要で複数カラムを並べられる状態を localStorage で仕込む。
-  await page.addInitScript(() => {
-    localStorage.setItem('aozoraquest:appColumns:v1', JSON.stringify([
-      { id: 'c1', kind: 'board' },
-      { id: 'c2', kind: 'search', param: 'art' },
-    ]));
-  });
-  // landing をすり抜けるため、まず board ページ (サインイン不要) で
-  // workspace CSS が読まれることを確認する。
   await page.goto('/board');
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
-
-  // board ページ自体のマルチカラム CSS (.board-columns) が横並びでなく
-  // モバイルでは縦並びであることだけ軽く確認 (workspace の snap は
-  // サインイン必須のため実機確認に委ねる)。
   await expect(page.locator('.board-columns')).toBeVisible();
 });
 

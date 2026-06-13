@@ -34,17 +34,23 @@ export function AppShell() {
   const headerRef = useRef<HTMLElement>(null);
   const footerRef = useRef<HTMLElement>(null);
 
-  // header + footer-nav の実高を CSS 変数 --shell-chrome-height に書き出す。
-  // workspace のカラム高 calc(100dvh - var(--shell-chrome-height)) が
-  // マジックナンバーではなく実測に追従する (文字サイズ設定で chrome の
-  // 高さが変わっても崩れない)。
+  // header + footer-nav の実高 (margin 込み) を CSS 変数
+  // --shell-chrome-height に書き出す。workspace のカラム高
+  // calc(100dvh - var(--shell-chrome-height)) がマジックナンバーでなく
+  // 実測に追従する (文字サイズ設定で chrome の高さが変わっても崩れない)。
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
+    const outerHeight = (el: HTMLElement | null): number => {
+      if (!el) return 0;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      // footer-nav は margin-bottom + sticky bottom offset を持つので
+      // margin も含めて占有高を測る
+      return r.height + parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0');
+    };
     const update = () => {
-      const h = headerRef.current?.offsetHeight ?? 0;
-      const f = footerRef.current?.offsetHeight ?? 0;
-      // 0.6em ×2 相当の余白ぶんを足す (footer-nav の sticky bottom offset 等)
-      document.documentElement.style.setProperty('--shell-chrome-height', `${h + f + 32}px`);
+      const total = outerHeight(headerRef.current) + outerHeight(footerRef.current);
+      document.documentElement.style.setProperty('--shell-chrome-height', `${Math.ceil(total)}px`);
     };
     update();
     const ro = new ResizeObserver(update);
@@ -83,16 +89,22 @@ export function AppShell() {
   }, [location.pathname, unread]);
 
   const onWorkspace = location.pathname === '/';
+  // workspace 中の active 表示用 kind。IntersectionObserver 発火前
+  // (visibleKind=null) は先頭 = home を仮の active にしてチラつきを防ぐ。
+  const activeWorkspaceKind: AppColumnKind | null = onWorkspace ? (visibleKind ?? 'home') : null;
 
   /** workspace 表示中: 該当 kind のカラムが存在すればページ遷移せず
-   *  そこへ横スクロールする */
+   *  そこへ横スクロールする。カラムが無ければ先頭カラムへ。 */
   function navClick(e: MouseEvent, columnKind?: AppColumnKind) {
     if (!onWorkspace || !columnKind) return;
-    const el = document.querySelector(`[data-column-kind="${columnKind}"]`);
-    if (el) {
-      e.preventDefault();
-      el.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
-    }
+    e.preventDefault();
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const behavior: ScrollBehavior = reduce ? 'auto' : 'smooth';
+    const el =
+      document.querySelector(`[data-column-kind="${columnKind}"]`) ??
+      // 該当カラムを削除済みでも「ホーム」等で迷子にならないよう先頭カラムへ
+      document.querySelector('.workspace-column');
+    el?.scrollIntoView({ behavior, inline: 'start', block: 'nearest' });
   }
 
   return (
@@ -114,9 +126,11 @@ export function AppShell() {
             onClick={(e) => navClick(e, columnKind)}
             className={({ isActive }) => {
               // workspace 表示中は「いま見えているカラムの kind」を active に
-              // 反映する (モバイル横スワイプで位置が分かる)
-              const active = onWorkspace && visibleKind
-                ? columnKind === visibleKind
+              // 反映する (モバイル横スワイプで位置が分かる)。
+              // columnKind を持たないタブ (自分/ブルスコン/設定) は従来通り
+              // isActive で判定する。
+              const active = activeWorkspaceKind !== null && columnKind !== undefined
+                ? columnKind === activeWorkspaceKind
                 : isActive;
               return `footer-nav-item${active ? ' active' : ''}`;
             }}

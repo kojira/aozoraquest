@@ -52,6 +52,9 @@ export function Workspace() {
 
   // いま主に見えているカラムの kind を footer-nav に伝える
   // (モバイル横スワイプで現在位置が分かるように)。
+  // deps はカラム数のみ (= observe 対象の増減時だけ再構築。param 変更等の
+  // 頻繁な columns 参照変化で IO を作り直して active がチラつくのを防ぐ)。
+  const columnCount = columns?.length ?? 0;
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || typeof IntersectionObserver === 'undefined') return;
@@ -70,11 +73,13 @@ export function Workspace() {
       { root: scroller, threshold: [0.5] },
     );
     for (const el of scroller.querySelectorAll('[data-column-kind]')) io.observe(el);
-    return () => {
-      io.disconnect();
-      publishVisibleColumn(null);
-    };
-  }, [columns]);
+    return () => io.disconnect();
+    // workspace 自体が unmount される (= `/` 離脱) ときだけ null に戻す。
+    // 再構築のたびに null を publish するとタブが一瞬チラつくため分離。
+  }, [columnCount]);
+
+  // `/` 離脱時に可視 kind をクリアする (active 残留防止)
+  useEffect(() => () => publishVisibleColumn(null), []);
 
   if (session.status === 'loading') {
     return <p>準備しています...</p>;
