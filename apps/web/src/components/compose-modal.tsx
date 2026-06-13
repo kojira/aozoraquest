@@ -126,7 +126,18 @@ interface DialogState {
   previewUrl: string;
 }
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+/** ファイル選択ダイアログに渡す accept。iPhone の HEIC や撮影写真も選べるよう
+ *  image/* を基本に、明示形式も併記する (一部 OS で image/* だけだと挙動が鈍い)。 */
+const FILE_ACCEPT = 'image/*,image/heic,image/heif';
+/** 添付を受け付ける type (HEIC/HEIF を含む。SVG や非画像は除外)。
+ *  iOS は type が空文字で来ることがあるのでそれも許し、最終的な可否は
+ *  「圧縮できて Bluesky 対応形式になったか」で判定する (onFileChange 参照)。 */
+const ATTACHABLE_TYPES = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+];
+function isAttachableImage(file: File): boolean {
+  return file.type === '' || ATTACHABLE_TYPES.includes(file.type);
+}
 /** Bluesky uploadBlob の上限は約 1MB。少しマージン取って 950KB を上限警告ラインに。 */
 const MAX_IMAGE_BYTES = 950_000;
 
@@ -193,8 +204,8 @@ function ComposeDialog({
     const file = e.target.files?.[0];
     e.target.value = ''; // 同じファイルを再選択しても change が起きるように
     if (!file) return;
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setErr(`対応していない画像形式です (${file.type || '不明'})。jpg/png/webp/gif のみ。`);
+    if (!isAttachableImage(file)) {
+      setErr(`画像ファイルを選んでください (${file.type || '不明な形式'})。`);
       return;
     }
     setErr(null);
@@ -212,10 +223,13 @@ function ComposeDialog({
     }
     // 圧縮中に dialog を閉じていたら何もしない (objectURL を作らない = リーク防止)
     if (!mountedRef.current) return;
+    // 圧縮しても上限を超える場合のみエラー (= 物理的に投稿できないサイズ)。
+    // 形式での門前払いはしない。iOS は写真を JPEG で渡すか Safari が HEIC を
+    // decode できるので、compressImage が JPEG/WebP に変換して投稿できる。
     if (blob.size > MAX_IMAGE_BYTES) {
       setErr(
         `圧縮しても上限を超えました (${(blob.size / 1024).toFixed(0)} KB)。` +
-          'より小さい画像、または GIF 以外の形式でお試しください。',
+          'より小さい画像でお試しください。',
       );
       return;
     }
@@ -461,7 +475,7 @@ function ComposeDialog({
             <input
               ref={fileInputRef}
               type="file"
-              accept={ALLOWED_IMAGE_TYPES.join(',')}
+              accept={FILE_ACCEPT}
               onChange={onFileChange}
               style={{ display: 'none' }}
             />
