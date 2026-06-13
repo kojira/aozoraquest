@@ -168,6 +168,24 @@ describe('旧 boardColumns:v1 の read-time 変換', () => {
     localStorage.setItem('aozoraquest:boardColumns:v1', JSON.stringify([{ id: 'x', kind: 'open' }]));
     expect(loadAppColumns(true).map(c => c.kind)).toEqual(['search']);
   });
+
+  it('★ saveAppColumns は board の inner を保存しない (正は boardColumns:v1)', () => {
+    saveAppColumns([makeAppColumn('board', { inner: [{ kind: 'open' }] })]);
+    const raw = JSON.parse(localStorage.getItem('aozoraquest:appColumns:v1')!) as Array<Record<string, unknown>>;
+    expect(raw[0]!.kind).toBe('board');
+    expect(raw[0]!.inner).toBeUndefined();
+  });
+
+  it('★ 保存済み構成の load でも board の inner は read-time 注入される', () => {
+    // ユーザーがカラム編集して保存済み (board は inner なしで保存される)
+    saveAppColumns([makeAppColumn('board'), makeAppColumn('home')]);
+    // その後 /board ページで inner を編集
+    localStorage.setItem('aozoraquest:boardColumns:v1', JSON.stringify([
+      { id: 'x', kind: 'tag', param: 'art' },
+    ]));
+    const board = loadAppColumns(true).find(c => c.kind === 'board')!;
+    expect(board.kind === 'board' && board.inner).toEqual([{ kind: 'tag', param: 'art' }]);
+  });
 });
 
 describe('moveColumnLeft / moveColumnRight / removeColumn', () => {

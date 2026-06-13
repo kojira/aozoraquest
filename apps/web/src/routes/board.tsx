@@ -1,28 +1,13 @@
 /**
  * 依頼クエスト掲示板 (docs/15-user-quest.md §UI 設計 B + E)。
  *
- * Phase 3 マルチカラム:
- *  - デスクトップ (>= 768px): 横並び複数カラム
- *  - モバイル (< 768px): 縦並び 1 カラムずつ
- *
- * 各カラム種類: open / mine / applied / tag / job / issuer
- * (board-columns.ts 参照)
+ * フル表示ページ: inner カラム (open / mine / applied / tag / job / issuer)
+ * を追加・削除しながら横並びで見る。表示部品とデータ取得は
+ * components/column-content/board-shared.tsx に共用化されており、
+ * workspace の board カラム (タブ切替式) と同じものを使う。
  */
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useSession } from '@/lib/session';
-import {
-  fetchQuestIndex,
-  listIssuedQuests,
-  listMyApplications,
-  type QuestIndex,
-  type QuestIndexSummary,
-} from '@/lib/quest-api';
-import {
-  isExpired,
-  jobDisplayName,
-  type UserQuest,
-} from '@aozoraquest/core';
+import { useMemo, useState } from 'react';
+import { jobDisplayName } from '@aozoraquest/core';
 import {
   loadColumns,
   saveColumns,
@@ -33,43 +18,21 @@ import {
   type Column,
   type ColumnKind,
 } from '@/lib/board-columns';
+import {
+  useBoardData,
+  filterForBoard,
+  isExpiredSummary,
+  emptyMessageForBoard,
+  QuestCard,
+} from '@/components/column-content/board-shared';
 import { BookIcon, PlusIcon, CalendarIcon } from '@/components/icons';
 import { ActionLink } from '@/components/action-link';
-import { Handle } from '@/components/handle';
+import { useSession } from '@/lib/session';
 
 export function Board() {
   const session = useSession();
-  const [index, setIndex] = useState<QuestIndex | null>(null);
-  const [myQuests, setMyQuests] = useState<UserQuest[] | null>(null);
-  const [myApplicationQuestUris, setMyApplicationQuestUris] = useState<Set<string> | null>(null);
   const [columns, setColumns] = useState<Column[]>(() => loadColumns());
-  const [err, setErr] = useState<string | null>(null);
-
-  // 公開 index
-  useEffect(() => {
-    let cancelled = false;
-    fetchQuestIndex()
-      .then((idx) => { if (!cancelled) setIndex(idx); })
-      .catch((e) => { if (!cancelled) setErr(String((e as Error)?.message ?? e)); });
-    return () => { cancelled = true; };
-  }, []);
-
-  // 自分の発注 + 応募
-  useEffect(() => {
-    if (session.status !== 'signed-in' || !session.agent || !session.did) return;
-    const agent = session.agent;
-    const did = session.did;
-    let cancelled = false;
-    listIssuedQuests(agent, did)
-      .then((qs) => { if (!cancelled) setMyQuests(qs); })
-      .catch((e) => { if (!cancelled) console.warn('[board] listIssuedQuests', e); });
-    listMyApplications(agent, did)
-      .then((apps) => {
-        if (!cancelled) setMyApplicationQuestUris(new Set(apps.map(a => a.questUri)));
-      })
-      .catch((e) => { if (!cancelled) console.warn('[board] listMyApplications', e); });
-    return () => { cancelled = true; };
-  }, [session.status, session.agent, session.did]);
+  const { index, myQuests, myApplicationQuestUris, err } = useBoardData();
 
   function persistColumns(next: Column[]) {
     setColumns(next);
@@ -115,13 +78,10 @@ export function Board() {
 
       <div className="board-columns">
         {columns.map((col) => (
-          <ColumnView
+          <BoardInnerColumnView
             key={col.id}
             column={col}
-            index={index}
-            myQuests={myQuests}
-            myApplicationQuestUris={myApplicationQuestUris}
-            sessionDid={session.did ?? null}
+            indexData={{ index, myQuests, myApplicationQuestUris }}
             onRemove={() => removeColumn(col.id)}
           />
         ))}
@@ -189,17 +149,22 @@ function SmallBtn(props: { onClick: () => void; children: React.ReactNode }) {
   );
 }
 
-interface ColumnViewProps {
+interface BoardInnerColumnViewProps {
   column: Column;
-  index: QuestIndex | null;
-  myQuests: UserQuest[] | null;
-  myApplicationQuestUris: Set<string> | null;
-  sessionDid: string | null;
+  indexData: {
+    index: ReturnType<typeof useBoardData>['index'];
+    myQuests: ReturnType<typeof useBoardData>['myQuests'];
+    myApplicationQuestUris: ReturnType<typeof useBoardData>['myApplicationQuestUris'];
+  };
   onRemove: () => void;
 }
 
-function ColumnView({ column, index, myQuests, myApplicationQuestUris, sessionDid, onRemove }: ColumnViewProps) {
-  const items = useMemo(() => filterForColumn(column, index, myQuests, myApplicationQuestUris, sessionDid), [column, index, myQuests, myApplicationQuestUris, sessionDid]);
+function BoardInnerColumnView({ column, indexData, onRemove }: BoardInnerColumnViewProps) {
+  const { index, myQuests, myApplicationQuestUris } = indexData;
+  const items = useMemo(
+    () => filterForBoard(column, index, myQuests, myApplicationQuestUris),
+    [column, index, myQuests, myApplicationQuestUris],
+  );
   return (
     <section className="board-column">
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4em' }}>
@@ -212,7 +177,7 @@ function ColumnView({ column, index, myQuests, myApplicationQuestUris, sessionDi
       {items == null ? (
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>読み込み中...</p>
       ) : items.length === 0 ? (
-        <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>{emptyMessageFor(column)}</p>
+        <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>{emptyMessageForBoard(column)}</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {items.map((q) => (
@@ -224,114 +189,4 @@ function ColumnView({ column, index, myQuests, myApplicationQuestUris, sessionDi
       )}
     </section>
   );
-}
-
-function filterForColumn(
-  c: Column,
-  index: QuestIndex | null,
-  myQuests: UserQuest[] | null,
-  myApplicationQuestUris: Set<string> | null,
-  sessionDid: string | null,
-): QuestIndexSummary[] | null {
-  if (c.kind === 'open') {
-    if (!index) return null;
-    return index.quests.filter(q => q.status === 'open');
-  }
-  if (c.kind === 'mine') {
-    if (!myQuests) return null;
-    return myQuests.map(toSummary);
-  }
-  if (c.kind === 'applied') {
-    if (!index || !myApplicationQuestUris) return null;
-    return index.quests.filter(q => myApplicationQuestUris.has(q.uri));
-  }
-  if (c.kind === 'tag') {
-    if (!index || !c.param) return null;
-    const target = c.param.replace(/^#/, '').toLowerCase();
-    return index.quests.filter(q =>
-      q.status === 'open' &&
-      q.tags.some(t => t.replace(/^#/, '').toLowerCase() === target),
-    );
-  }
-  if (c.kind === 'job') {
-    // questIndex には targetJob を載せていないため、発注者 PDS の値が必要。
-    // MVP では index にない情報なので、自分が出したクエストからのみ filter する。
-    // (Phase 3 後半で questIndex に targetJob を追加する想定。設計書参照)
-    void sessionDid; // 将来 issuer/me filter で使う
-    if (!myQuests) return null;
-    return myQuests
-      .filter(q => q.status === 'open' && q.targetJob === c.param)
-      .map(toSummary);
-  }
-  if (c.kind === 'issuer') {
-    if (!index || !c.param) return null;
-    return index.quests.filter(q => q.status === 'open' && q.did === c.param);
-  }
-  return [];
-}
-
-function toSummary(q: UserQuest): QuestIndexSummary {
-  const s: QuestIndexSummary = {
-    uri: q.uri,
-    did: q.did,
-    title: q.title,
-    tags: q.tags,
-    rewardPoints: q.rewardPoints,
-    status: q.status,
-    createdAt: q.createdAt,
-  };
-  if (q.deadline !== undefined) s.deadline = q.deadline;
-  return s;
-}
-
-function isExpiredSummary(s: QuestIndexSummary): boolean {
-  if (s.status !== 'open') return false;
-  if (!s.deadline) return false;
-  return new Date(s.deadline) < new Date();
-}
-
-function QuestCard({ summary, expired }: { summary: QuestIndexSummary; expired?: boolean }) {
-  return (
-    <Link to={`/board/${encodeURIComponent(summary.uri)}`} style={{ textDecoration: 'none' }}>
-      <div className="dq-window compact" style={{ borderColor: expired ? 'var(--color-muted)' : undefined }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5em' }}>
-          <div style={{ fontWeight: 700, fontSize: '0.92em', color: 'var(--color-fg)' }}>{summary.title}</div>
-          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.78em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-            <Handle did={summary.did} suffix="P" /> {summary.rewardPoints.toLocaleString()}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
-          {summary.tags.slice(0, 3).map(t => <span key={t}>#{t.replace(/^#/, '')}</span>)}
-          <span style={{ marginLeft: 'auto' }}>
-            {expired ? '期限切れ' : summary.deadline ? `〆 ${formatDate(summary.deadline)}` : ''}
-            {summary.status !== 'open' && <span style={{ marginLeft: '0.6em' }}>{labelOf(summary.status)}</span>}
-          </span>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function emptyMessageFor(col: Column): string {
-  switch (col.kind) {
-    case 'open':    return 'まだ誰も募集していません。「クエストを出す」から始めてみましょう。';
-    case 'mine':    return 'あなたが発行したクエストはまだありません。';
-    case 'applied': return '応募中のクエストはありません。';
-    case 'tag':     return `#${col.param ?? ''} のクエストは見つかりませんでした。`;
-    case 'job':     return `「${col.param ?? ''}」を求めるクエストはまだありません。`;
-    case 'issuer':  return 'この発行者の募集中クエストはありません。';
-  }
-}
-
-function labelOf(status: string): string {
-  if (status === 'assigned') return '受託中';
-  if (status === 'reported') return '完了報告中';
-  if (status === 'completed') return '完了';
-  if (status === 'cancelled') return 'キャンセル';
-  return status;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
 }

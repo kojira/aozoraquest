@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement, checkIssuanceLimits } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { createQuest, listIssuedQuests } from '@/lib/quest-api';
+import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { createTaggedPost } from '@/lib/atproto';
 import { getPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
 
@@ -95,6 +96,8 @@ export function BoardNew() {
           console.warn('[board-new] bluesky announce failed', e);
         }
       }
+      // index キャッシュを破棄 (発行直後に「募集中」一覧へ反映されるように)
+      void refreshQuestIndex();
       navigate(`/board/${encodeURIComponent(quest.uri)}`);
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
