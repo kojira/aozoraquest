@@ -62,7 +62,7 @@ export type AppColumn =
 - 保存キー: `aozoraquest:appColumns:v1`
 - **保存はユーザーの明示操作 (saveAppColumns) のみ**。default 構成や変換結果を機械的に保存しない
 - 保存がない限り `loadAppColumns(signedIn)` は毎回「default 構成 + 旧 `boardColumns:v1` の read-time 変換」を計算するため、サインイン状態の変化や旧キーの更新に常に追従する (= セッション解決前に board だけの構成が固定化される事故を構造的に防ぐ)
-- デフォルト構成: サインイン済み `[home, bar, notifications, board]`、未サインイン `[board]`
+- デフォルト構成: サインイン済み `[home, notifications, bar, board]` (通知は 2 番目)、未サインイン `[board]`
 - PDS 同期 (`app.aozoraquest.layout`) は将来の opt-in 機能 (Phase 4+)
 
 ## レイアウト CSS

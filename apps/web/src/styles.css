@@ -347,7 +347,12 @@ p { margin: 0.4em 0; }
 .workspace-column-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  overscroll-behavior: contain;   /* 縦終端が外側に漏れない */
+  overflow-x: hidden;             /* 本体は横スクロールしない (横は親が担う) */
+  /* 縦だけ contain (縦終端が外側に漏れない)。横は auto にして、本体の上を
+     横スクロールしたとき .workspace-columns へ連鎖させる
+     (contain だと横スクロールが本体に吸われて「引っかかる」)。 */
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: auto;
   padding: 0.6em 0.7em;
   /* 縦は body 内、横はカラム送り、の両ジェスチャを許可 */
   touch-action: pan-y pan-x;
