@@ -171,8 +171,11 @@ export function BoardDetail() {
   async function notifyBluesky(action: NotificationAction, recipientDid: string | null) {
     if (!session.agent || !quest) return;
     if (!recipientDid) return;
-    // dev 環境では default OFF。設定で明示的に ON にしている場合のみ送る。
-    if (!getPostQuestNotifications()) {
+    // 'applied' は集約 Worker 無しで発注者が応募者を発見する唯一の手段 (#aozoraquest 投稿で
+    // discovery 網に乗せる) なので、通知設定に関わらず必ず送る。これが出ないと応募しても
+    // 発注者に見えず進行が詰む。他の通知 (assigned/reported/approved/revision) は従来どおり
+    // 設定に従う (dev 環境では default OFF)。
+    if (action !== 'applied' && !getPostQuestNotifications()) {
       console.info('[board-detail] skip notify (postQuestNotifications=false):', action, recipientDid);
       return;
     }
