@@ -6,7 +6,7 @@ import { useSession } from '@/lib/session';
 import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
-import { CARD_TYPES, COLORS, isRarity, manaCostColors, rollRarity } from '@aozoraquest/core';
+import { CARD_TYPES, COLORS, isArchetype, isRarity, jobDisplayName, manaCostColors, rollRarity } from '@aozoraquest/core';
 import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
@@ -650,12 +650,6 @@ async function fetchBlobViaXrpc(agent: Agent, did: string, url: string): Promise
 }
 
 function displayArchetype(id: string): string {
-  // jobDisplayName を使わずここで軽く寄せる (import を増やしたくない程度の都合)
-  const map: Record<string, string> = {
-    sage: '賢者', mage: '魔法使い', shogun: '将軍', bard: '吟遊詩人',
-    seer: '予言者', poet: '詩人', paladin: '聖騎士', explorer: '冒険者',
-    warrior: '戦士', guardian: '守護者', fighter: '武闘家', artist: '芸術家',
-    captain: '隊長', miko: '巫女', ninja: '忍者', performer: '遊び人',
-  };
-  return map[id] ?? '旅人';
+  // 表示名は core の jobDisplayName を単一ソースに (ジョブ名変更が二重管理にならないよう)。
+  return isArchetype(id) ? jobDisplayName(id, 'default') : '旅人';
 }
