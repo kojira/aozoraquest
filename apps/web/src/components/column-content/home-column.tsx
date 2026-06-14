@@ -151,6 +151,7 @@ function PostCard({ item, archetype }: { item: AppBskyFeedDefs.FeedViewPost; arc
       post={item.post}
       archetype={archetype ?? null}
       expandable
+      hideHandle
       {...(repostedBy ? { repostedBy } : {})}
     />
   );

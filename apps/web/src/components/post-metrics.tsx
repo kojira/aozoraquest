@@ -116,8 +116,9 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
 
   return (
     <div style={{ marginTop: '0.5em' }}>
-      {/* アクション行: リプ/リポスト/いいね + 右端に日時 (小さく右揃え) */}
-      <div style={{ display: 'flex', gap: '1em', alignItems: 'center' }}>
+      {/* アクション行: リプ/リポスト/いいね + 右端に日時 (小さく右揃え)。
+          行・各要素とも nowrap で、狭いカラムでも絶対に折り返さない。 */}
+      <div style={{ display: 'flex', gap: '0.7em', alignItems: 'center', flexWrap: 'nowrap' }}>
         <MetricButton onClick={onReply} ariaLabel="返信" count={post.replyCount ?? 0}>
           <ReplyIcon size={15} />
         </MetricButton>
@@ -133,11 +134,13 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
           style={{
             marginLeft: 'auto',
             padding: '0.2em 0.1em',
-            fontSize: '0.75em',
+            fontSize: '0.68em',
             fontFamily: 'ui-monospace, monospace',
             color: 'var(--color-muted)',
             textDecoration: 'none',
             borderBottom: 'none',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
           }}
           title="投稿詳細を開く"
         >
@@ -202,6 +205,7 @@ function MetricButton({
         display: 'inline-flex',
         alignItems: 'center',
         gap: '0.3em',
+        flexShrink: 0,
         background: 'transparent',
         border: 'none',
         padding: '0.15em 0.3em',
@@ -210,6 +214,7 @@ function MetricButton({
         cursor: 'pointer',
         boxShadow: 'none',
         borderRadius: 4,
+        whiteSpace: 'nowrap',
         transition: 'color 120ms ease, background-color 120ms ease',
       }}
       onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}

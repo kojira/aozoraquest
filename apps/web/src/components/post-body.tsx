@@ -5,7 +5,6 @@ import { PostImages } from './post-images';
 import { PostExternalCard } from './post-external';
 import { PostVideoCard } from './post-video';
 import { YoutubeEmbed } from './youtube-embed';
-import { PostCognitiveBadge } from './post-cognitive-badge';
 import { youtubeId } from '@/lib/youtube';
 import { useTranslation } from '@/lib/translate';
 
@@ -58,7 +57,6 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
           }}
         />
       )}
-      <PostCognitiveBadge postUri={postUri} text={text} />
     </div>
   );
 

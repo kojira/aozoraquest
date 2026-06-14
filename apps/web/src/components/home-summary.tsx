@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
-import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobLevelFromXp, jobTagline, playerLevelFromXp } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
-import { ScrollIcon } from './icons';
+import { PersonIcon, ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
@@ -103,7 +103,6 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   }
 
   const jobName = jobDisplayName(diag.archetype, 'default');
-  const tagline = jobTagline(diag.archetype);
   const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0);
   const playerLv = playerLevelFromXp(diag.playerLevel?.xp ?? 0);
 
@@ -124,19 +123,20 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
             textAlign: 'left',
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5em',
+            gap: '0.4em',
+            flexWrap: 'nowrap',
+            overflow: 'hidden',
             cursor: 'pointer',
             boxShadow: 'none',
           }}
         >
-          <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>今の姿</span>
-          <span style={{ fontSize: '1em', fontWeight: 700 }}>{jobName}</span>
-          <span style={{ fontSize: '0.8em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>LV{jobLv}</span>
-          <span style={{ fontSize: '0.75em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-muted)' }}>全体LV{playerLv}</span>
-          {tagline && (
-            <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{tagline}</span>
-          )}
-          <span style={{ marginLeft: 'auto', color: 'var(--color-muted)' }}>{open ? '▾' : '▸'}</span>
+          {/* 「今の姿」ラベル + ジョブ説明は排除し、アイコン + ジョブ名 + LV を
+              1 行 (nowrap) に収める。長いジョブ名はジョブ名側だけ省略する。 */}
+          <PersonIcon size={14} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.95em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{jobName}</span>
+          <span style={{ fontSize: '0.78em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', whiteSpace: 'nowrap', flexShrink: 0 }}>LV{jobLv}</span>
+          <span style={{ fontSize: '0.72em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>全体{playerLv}</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--color-muted)', flexShrink: 0 }}>{open ? '▾' : '▸'}</span>
         </button>
 
         {open && (
@@ -152,7 +152,8 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
         )}
       </div>
 
-      {/* 動的: 今日のクエスト。折り畳み時は 1 件、展開時は全件。 */}
+      {/* 動的: 今日のクエスト。常に全件表示する (折り畳み時はコンパクト 1 行、
+          展開時はカード表示)。クエスト内容を隠さないのがオーナー方針。 */}
       {!targetStats ? (
         <div style={{ fontSize: '0.85em' }}>
           <p style={{ margin: '0 0 0.3em' }}>
@@ -163,13 +164,11 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
           // 達成済は後ろへ。維持/節制の requiredCount=0 は「今日を過ごしきれば達成」扱いで常に完了表示にはしない。
           const incomplete = quests.filter((q) => !isQuestDone(q));
           const done = quests.filter((q) => isQuestDone(q));
-          const sorted = [...incomplete, ...done];
-          const visible = open ? sorted : sorted.slice(0, 1);
-          const hiddenCount = sorted.length - visible.length;
+          const visible = [...incomplete, ...done];
           return (
             <div>
               <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em', display: 'flex', gap: '0.6em' }}>
-                <span>今日のクエスト{!open && hiddenCount > 0 ? ` (他 ${hiddenCount} 件)` : ''}</span>
+                <span>今日のクエスト</span>
                 {done.length > 0 && (
                   <span style={{ color: 'var(--color-accent)' }}>達成 {done.length}/{quests.length}</span>
                 )}
