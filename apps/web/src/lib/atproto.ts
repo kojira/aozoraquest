@@ -283,11 +283,62 @@ export async function getRecord<T = unknown>(agent: Agent, repo: string, collect
 }
 
 /**
- * 画像付き投稿を作成する。画像を uploadBlob → `app.bsky.embed.images` embed
- * として post に紐付ける。
- * @param alt 画像の代替テキスト (アクセシビリティ)
- * @param tag  付与したいハッシュタグ (指定した場合 text 内から facet を抽出)
+ * text 内のハッシュタグ `#tag` を richtext facet (tag) に変換する。
+ * 見つからなければ undefined。
  */
+function buildTagFacets(text: string, tag?: string): unknown[] | undefined {
+  if (!tag) return undefined;
+  const marker = `#${tag}`;
+  const idx = text.indexOf(marker);
+  if (idx < 0) return undefined;
+  const encoder = new TextEncoder();
+  return [{
+    index: {
+      byteStart: encoder.encode(text.slice(0, idx)).length,
+      byteEnd: encoder.encode(text.slice(0, idx + marker.length)).length,
+    },
+    features: [{ $type: 'app.bsky.richtext.facet#tag', tag }],
+  }];
+}
+
+/** Bluesky の 1 投稿あたり画像添付上限。 */
+export const MAX_POST_IMAGES = 4;
+
+/**
+ * 画像付き投稿を作成する。最大 {@link MAX_POST_IMAGES} 枚を uploadBlob して
+ * `app.bsky.embed.images` embed として post に紐付ける (画像は配列順で表示)。
+ * @param images 各 {blob, alt}。alt は a11y 用 (空でも可)
+ * @param tag    付与したいハッシュタグ (指定時 text 内から facet を抽出)
+ */
+export async function createPostWithImages(
+  agent: Agent,
+  text: string,
+  images: Array<{ blob: Blob; alt: string }>,
+  tag?: string,
+): Promise<void> {
+  const picked = images.slice(0, MAX_POST_IMAGES);
+  // 並列アップロード (map は順序を保持するので表示順は維持される)
+  const uploaded = await Promise.all(
+    picked.map(async ({ blob, alt }) => {
+      const res = await agent.uploadBlob(blob, { encoding: blob.type || 'image/png' });
+      return { alt, image: res.data.blob };
+    }),
+  );
+  const record: Record<string, unknown> = {
+    text,
+    createdAt: new Date().toISOString(),
+    via: VIA,
+    embed: {
+      $type: 'app.bsky.embed.images',
+      images: uploaded,
+    },
+  };
+  const facets = buildTagFacets(text, tag);
+  if (facets) record['facets'] = facets;
+  await agent.post(record as unknown as Parameters<Agent['post']>[0]);
+}
+
+/** 単一画像版 (createPostWithImages の薄いラッパ。既存呼び出し互換)。 */
 export async function createPostWithImage(
   agent: Agent,
   text: string,
@@ -295,31 +346,7 @@ export async function createPostWithImage(
   alt: string,
   tag?: string,
 ): Promise<void> {
-  const res = await agent.uploadBlob(blob, { encoding: blob.type || 'image/png' });
-  const record: Record<string, unknown> = {
-    text,
-    createdAt: new Date().toISOString(),
-    via: VIA,
-    embed: {
-      $type: 'app.bsky.embed.images',
-      images: [{ alt, image: res.data.blob }],
-    },
-  };
-  if (tag) {
-    const marker = `#${tag}`;
-    const idx = text.indexOf(marker);
-    if (idx >= 0) {
-      const encoder = new TextEncoder();
-      record['facets'] = [{
-        index: {
-          byteStart: encoder.encode(text.slice(0, idx)).length,
-          byteEnd: encoder.encode(text.slice(0, idx + marker.length)).length,
-        },
-        features: [{ $type: 'app.bsky.richtext.facet#tag', tag }],
-      }];
-    }
-  }
-  await agent.post(record as unknown as Parameters<Agent['post']>[0]);
+  return createPostWithImages(agent, text, [{ blob, alt }], tag);
 }
 
 /** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする) */

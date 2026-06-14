@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
-import { createPost, createPostWithImage, type ReplyRef } from '@/lib/atproto';
+import { createPost, createPostWithImages, MAX_POST_IMAGES, type ReplyRef } from '@/lib/atproto';
 import { compressImage } from '@/lib/image-compress';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
@@ -154,21 +154,21 @@ function ComposeDialog({
 }) {
   const session = useSession();
   const [text, setText] = useState(initialText);
-  const [image, setImage] = useState<DialogState | null>(() => {
-    if (!initialImage) return null;
-    return {
+  const [images, setImages] = useState<DialogState[]>(() => {
+    if (!initialImage) return [];
+    return [{
       blob: initialImage.blob,
       alt: initialImage.alt,
       source: initialImage.source,
       previewUrl: URL.createObjectURL(initialImage.blob),
-    };
+    }];
   });
   const [loading, setLoading] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imageRef = useRef<DialogState | null>(image);
-  imageRef.current = image;
+  const imagesRef = useRef<DialogState[]>(images);
+  imagesRef.current = images;
   // 圧縮中に dialog が閉じたら、完了後の setState / objectURL 生成を抑止する
   const mountedRef = useRef(true);
 
@@ -184,9 +184,8 @@ function ComposeDialog({
       mountedRef.current = false;
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
-      // 最後にセットされてた image の url を revoke
-      const last = imageRef.current;
-      if (last) URL.revokeObjectURL(last.previewUrl);
+      // 最後にセットされてた image 群の url をすべて revoke
+      for (const im of imagesRef.current) URL.revokeObjectURL(im.previewUrl);
     };
   }, [loading, onClose]);
 
@@ -201,65 +200,75 @@ function ComposeDialog({
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const selected = Array.from(e.target.files ?? []);
     e.target.value = ''; // 同じファイルを再選択しても change が起きるように
-    if (!file) return;
-    if (!isAttachableImage(file)) {
-      setErr(`画像ファイルを選んでください (${file.type || '不明な形式'})。`);
+    if (selected.length === 0) return;
+
+    // 既存枚数 + 今回分が上限を超えるぶんは切り捨てて警告
+    const remaining = MAX_POST_IMAGES - imagesRef.current.length;
+    if (remaining <= 0) {
+      setErr(`画像は最大 ${MAX_POST_IMAGES} 枚までです。`);
       return;
     }
-    setErr(null);
-    // 大きい画像は弾かず、lossy WebP に圧縮して上限内に収める
-    // (GIF はアニメ保持のため変換しない)。
+    const files = selected.filter(isAttachableImage).slice(0, remaining);
+    const rejected = selected.length - files.length;
+    if (files.length === 0) {
+      setErr('画像ファイルを選んでください。');
+      return;
+    }
+    setErr(rejected > 0 ? `一部の画像は追加できませんでした (上限 ${MAX_POST_IMAGES} 枚 / 非対応形式)。` : null);
+
     setCompressing(true);
-    let blob: Blob = file;
+    const added: DialogState[] = [];
     try {
-      const result = await compressImage(file, { maxBytes: MAX_IMAGE_BYTES });
-      blob = result.blob;
-    } catch (e) {
-      console.warn('[compose] image compress failed, use original', e);
+      for (const file of files) {
+        // 大きい画像は弾かず、lossy WebP に圧縮して上限内に収める (GIF は変換しない)。
+        let blob: Blob = file;
+        try {
+          const result = await compressImage(file, { maxBytes: MAX_IMAGE_BYTES });
+          blob = result.blob;
+        } catch (err) {
+          console.warn('[compose] image compress failed, use original', err);
+        }
+        if (blob.size > MAX_IMAGE_BYTES) {
+          setErr(`圧縮しても上限を超える画像をスキップしました (${(blob.size / 1024).toFixed(0)} KB)。`);
+          continue;
+        }
+        added.push({ blob, alt: '', source: 'user', previewUrl: URL.createObjectURL(blob) });
+      }
     } finally {
       if (mountedRef.current) setCompressing(false);
     }
-    // 圧縮中に dialog を閉じていたら何もしない (objectURL を作らない = リーク防止)
-    if (!mountedRef.current) return;
-    // 圧縮しても上限を超える場合のみエラー (= 物理的に投稿できないサイズ)。
-    // 形式での門前払いはしない。iOS は写真を JPEG で渡すか Safari が HEIC を
-    // decode できるので、compressImage が JPEG/WebP に変換して投稿できる。
-    if (blob.size > MAX_IMAGE_BYTES) {
-      setErr(
-        `圧縮しても上限を超えました (${(blob.size / 1024).toFixed(0)} KB)。` +
-          'より小さい画像でお試しください。',
-      );
+    // 圧縮中に dialog を閉じていたら何もしない (objectURL を破棄してリーク防止)
+    if (!mountedRef.current) {
+      for (const im of added) URL.revokeObjectURL(im.previewUrl);
       return;
     }
-    if (image) URL.revokeObjectURL(image.previewUrl);
-    setImage({
-      blob,
-      alt: '',
-      source: 'user',
-      previewUrl: URL.createObjectURL(blob),
-    });
+    if (added.length > 0) setImages((prev) => [...prev, ...added].slice(0, MAX_POST_IMAGES));
   }
 
-  function removeImage() {
-    if (image) URL.revokeObjectURL(image.previewUrl);
-    setImage(null);
+  function removeImage(index: number) {
+    setImages((prev) => {
+      const target = prev[index];
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
   }
 
   async function submit() {
     const body = text.trim();
     if (loading || !agent) return;
     // 画像なしの場合は空文字 NG。画像付きの場合は本文空でも投稿可。
-    if (!image && !body) return;
+    if (images.length === 0 && !body) return;
     if (body.length > POST_MAX_LENGTH) return;
 
     setLoading(true);
     setErr(null);
     try {
-      if (image) {
-        const tag = image.source === 'card' ? 'AozoraQuest' : undefined;
-        await createPostWithImage(agent, body, image.blob, image.alt, tag);
+      if (images.length > 0) {
+        // カード共有画像が含まれていれば #AozoraQuest facet を付ける。
+        const tag = images.some((im) => im.source === 'card') ? 'AozoraQuest' : undefined;
+        await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag);
       } else {
         const reply: ReplyRef | undefined = replyTo
           ? { root: replyTo.root, parent: replyTo.parent }
@@ -324,7 +333,7 @@ function ComposeDialog({
   const submitDisabled =
     loading
     || compressing
-    || (!text.trim() && !image)
+    || (!text.trim() && images.length === 0)
     || text.length > POST_MAX_LENGTH;
 
   return (
@@ -405,77 +414,74 @@ function ComposeDialog({
         />
 
         {showImageUi && (
-          <div style={{ marginTop: '0.5em' }}>
-            {image ? (
+          <div style={{ marginTop: '0.5em', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
+            {images.map((im, i) => (
               <div
+                key={im.previewUrl}
                 style={{
                   border: '1px solid rgba(255,255,255,0.18)',
                   borderRadius: 6,
                   padding: '0.5em',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.4em',
+                  gap: '0.6em',
+                  alignItems: 'flex-start',
                   background: 'rgba(0,0,0,0.25)',
                 }}
               >
-                <div style={{ display: 'flex', gap: '0.6em', alignItems: 'flex-start' }}>
-                  <img
-                    src={image.previewUrl}
-                    alt=""
-                    style={{
-                      maxWidth: 120,
-                      maxHeight: 160,
-                      objectFit: 'contain',
-                      borderRadius: 4,
-                      background: '#000',
-                    }}
+                <img
+                  src={im.previewUrl}
+                  alt=""
+                  style={{ maxWidth: 120, maxHeight: 160, objectFit: 'contain', borderRadius: 4, background: '#000' }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <label style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
+                    alt (代替テキスト) — {i + 1}/{images.length}
+                  </label>
+                  <TextField
+                    multiline
+                    value={im.alt}
+                    onChange={(v) => setImages((prev) => prev.map((p, j) => (j === i ? { ...p, alt: v } : p)))}
+                    style={{ width: '100%', minHeight: '3em', padding: '0.3em', fontSize: '0.85em' }}
+                    placeholder="画像の説明 (a11y 用、空でも投稿可)"
+                    maxLength={1000}
+                    disabled={loading}
                   />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <label style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
-                      alt (代替テキスト)
-                    </label>
-                    <TextField
-                      multiline
-                      value={image.alt}
-                      onChange={(v) => setImage((prev) => prev ? { ...prev, alt: v } : prev)}
-                      style={{ width: '100%', minHeight: '3em', padding: '0.3em', fontSize: '0.85em' }}
-                      placeholder="画像の説明 (a11y 用、空でも投稿可)"
-                      maxLength={1000}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
+                    <span>{(im.blob.size / 1024).toFixed(0)} KB · {im.blob.type || '?'}</span>
+                    <button
+                      className="secondary"
+                      onClick={() => removeImage(i)}
                       disabled={loading}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
-                      <span>{(image.blob.size / 1024).toFixed(0)} KB · {image.blob.type || '?'}</span>
-                      <button
-                        className="secondary"
-                        onClick={removeImage}
-                        disabled={loading}
-                        style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
-                      >
-                        画像を削除
-                      </button>
-                    </div>
+                      style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
+                    >
+                      削除
+                    </button>
                   </div>
                 </div>
               </div>
-            ) : (
-              <button
-                className="secondary"
-                onClick={pickImage}
-                disabled={loading || compressing}
-                style={{ fontSize: '0.85em' }}
-              >
-                {compressing ? '画像を圧縮中...' : '📷 画像を添付'}
-              </button>
-            )}
-            {compressing && (
-              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
-                WebP に圧縮しています…
-              </span>
+            ))}
+            {images.length < MAX_POST_IMAGES && (
+              <div>
+                <button
+                  className="secondary"
+                  onClick={pickImage}
+                  disabled={loading || compressing}
+                  style={{ fontSize: '0.85em' }}
+                >
+                  {compressing ? '画像を圧縮中...' : images.length === 0 ? '画像を添付' : `画像を追加 (${images.length}/${MAX_POST_IMAGES})`}
+                </button>
+                {compressing && (
+                  <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
+                    WebP に圧縮しています…
+                  </span>
+                )}
+              </div>
             )}
             <input
               ref={fileInputRef}
               type="file"
               accept={FILE_ACCEPT}
+              multiple
               onChange={onFileChange}
               style={{ display: 'none' }}
             />
