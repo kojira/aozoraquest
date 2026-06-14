@@ -472,7 +472,7 @@ function ComposeDialog({
           <div style={{ marginTop: '0.5em', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
             {images.length > 1 && (
               <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: 0 }}>
-                上から順に表示されます (1 枚目が代表)。← → で並べ替え。
+                上から順に表示されます (1 枚目が代表)。↑ ↓ で並べ替え。
               </p>
             )}
             {/* key は previewUrl (blob ごとに一意・生存中不変)。並べ替えでも安定なので
@@ -517,21 +517,21 @@ function ComposeDialog({
                             className="secondary"
                             onClick={() => moveImage(i, -1)}
                             disabled={loading || i === 0}
-                            aria-label={`画像 ${i + 1} を前へ`}
-                            title="前へ"
+                            aria-label={`画像 ${i + 1} を上へ`}
+                            title="上へ"
                             style={IMG_CTRL_BTN}
                           >
-                            ←
+                            ↑
                           </button>
                           <button
                             className="secondary"
                             onClick={() => moveImage(i, 1)}
                             disabled={loading || i === images.length - 1}
-                            aria-label={`画像 ${i + 1} を後ろへ`}
-                            title="後ろへ"
+                            aria-label={`画像 ${i + 1} を下へ`}
+                            title="下へ"
                             style={IMG_CTRL_BTN}
                           >
-                            →
+                            ↓
                           </button>
                         </>
                       )}
