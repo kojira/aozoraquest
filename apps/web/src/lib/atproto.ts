@@ -301,7 +301,18 @@ async function detectPostFacets(agent: Agent, text: string): Promise<unknown[] |
     console.warn('[atproto] facet 検出に失敗 (facet 無しで投稿)', e);
     return undefined;
   }
-  return rt.facets && rt.facets.length > 0 ? rt.facets : undefined;
+  if (!rt.facets || rt.facets.length === 0) return undefined;
+  // detectFacets は handle を解決できなかった mention に did:'' を残す。
+  // 空 did の mention facet をそのまま post すると壊れた facet が PDS に書かれる
+  // (通知投稿は必ず @handle を含むので、相手が離脱/改名/解決失敗だと発生する) ため除外する。
+  const MENTION = 'app.bsky.richtext.facet#mention';
+  const clean = rt.facets.filter((f) =>
+    f.features.every((ft) => {
+      const feat = ft as { $type?: string; did?: string };
+      return feat.$type !== MENTION || (typeof feat.did === 'string' && feat.did.length > 0);
+    }),
+  );
+  return clean.length > 0 ? clean : undefined;
 }
 
 /** Bluesky の 1 投稿あたり画像添付上限。 */
