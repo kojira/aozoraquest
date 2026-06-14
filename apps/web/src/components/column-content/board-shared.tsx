@@ -130,10 +130,16 @@ export function isExpiredSummary(s: QuestIndexSummary): boolean {
   return new Date(s.deadline) < new Date();
 }
 
-export function QuestCard({ summary, expired }: { summary: QuestIndexSummary; expired?: boolean }) {
+export function QuestCard({ summary, expired, needsApproval }: { summary: QuestIndexSummary; expired?: boolean; needsApproval?: boolean }) {
   return (
     <Link to={`/board/${encodeURIComponent(summary.uri)}`} style={{ textDecoration: 'none' }}>
-      <div className="dq-window compact" style={{ borderColor: expired ? 'var(--color-muted)' : undefined }}>
+      <div className="dq-window compact" style={{ borderColor: needsApproval ? 'var(--color-accent)' : expired ? 'var(--color-muted)' : undefined }}>
+        {needsApproval && (
+          // 発注者の「完了報告が来た = 承認すれば達成」を見逃さないための強調バッジ
+          <div style={{ fontSize: '0.72em', fontWeight: 700, color: 'var(--color-accent)', marginBottom: '0.2em' }}>
+            ● 承認待ち（完了報告が届いています）
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5em' }}>
           <div style={{ fontWeight: 700, fontSize: '0.92em', color: 'var(--color-fg)' }}>{summary.title}</div>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.78em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
@@ -149,6 +155,38 @@ export function QuestCard({ summary, expired }: { summary: QuestIndexSummary; ex
         </div>
       </div>
     </Link>
+  );
+}
+
+/** 自分が発注したクエストのうち「完了報告が届き承認待ち (status=reported)」のもの。
+ *  発注者がこれを見逃すと永久に達成されないため、掲示板上部のバナーで promote する。 */
+export function pendingApprovalQuests(myQuests: UserQuest[] | null): UserQuest[] {
+  return (myQuests ?? []).filter((q) => q.status === 'reported');
+}
+
+/** 承認待ちが 1 件以上あるとき、掲示板上部に出す気づき導線。
+ *  各クエストへ直リンクし、1 タップで承認画面 (board-detail) に到達させる。 */
+export function ApprovalPendingBanner({ myQuests }: { myQuests: UserQuest[] | null }) {
+  const pending = pendingApprovalQuests(myQuests);
+  if (pending.length === 0) return null;
+  return (
+    <div className="dq-window compact" style={{ borderColor: 'var(--color-accent)', marginBottom: '0.5em' }}>
+      <div style={{ fontSize: '0.85em', fontWeight: 700, color: 'var(--color-accent)' }}>
+        ● 承認待ちが {pending.length} 件
+      </div>
+      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
+        完了報告が届いています。承認するとクエストが達成になります。
+      </div>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '0.4em 0 0' }}>
+        {pending.map((q) => (
+          <li key={q.uri} style={{ marginTop: '0.25em' }}>
+            <Link to={`/board/${encodeURIComponent(q.uri)}`} style={{ fontSize: '0.82em' }}>
+              「{q.title}」を承認する →
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -17,6 +17,7 @@ import {
   emptyMessageForBoard,
   boardFilterTitle,
   QuestCard,
+  ApprovalPendingBanner,
   type BoardFilter,
 } from './board-shared';
 
@@ -40,7 +41,7 @@ export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
   const activeIndex = Math.min(tabIndex, tabs.length - 1);
   const active = tabs[activeIndex]!;
 
-  const { index, myQuests, myApplicationQuestUris, err } = useBoardData();
+  const { index, myQuests, myApplicationQuestUris, err, sessionDid } = useBoardData();
   const items = useMemo(
     () => filterForBoard(active, index, myQuests, myApplicationQuestUris),
     [active, index, myQuests, myApplicationQuestUris],
@@ -71,6 +72,9 @@ export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
 
       {err && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>取得に失敗: {err}</p>}
 
+      {/* どのタブを見ていても承認待ちに気づけるよう、リスト上部に常設 */}
+      <ApprovalPendingBanner myQuests={myQuests} />
+
       {items == null ? (
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>読み込み中...</p>
       ) : items.length === 0 ? (
@@ -79,7 +83,7 @@ export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {items.map((q) => (
             <li key={q.uri}>
-              <QuestCard summary={q} expired={isExpiredSummary(q)} />
+              <QuestCard summary={q} expired={isExpiredSummary(q)} needsApproval={q.status === 'reported' && q.did === sessionDid} />
             </li>
           ))}
         </ul>
