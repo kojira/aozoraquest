@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { BellIcon, BrusukonIcon, ComposeIcon, HomeIcon, PersonIcon, ScrollIcon, SearchIcon, SettingsIcon } from './icons';
 import { useCompose } from './compose-modal';
+import { composeFabAllowedOnPath } from '@/lib/compose-fab';
 import { useSession } from '@/lib/session';
 import { getUnreadNotificationCount } from '@/lib/atproto';
 import { useVisibleColumn } from '@/lib/visible-column';
@@ -58,8 +59,12 @@ export function AppShell() {
       return r.height + parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0');
     };
     const update = () => {
-      const total = outerHeight(headerRef.current) + outerHeight(footerRef.current);
+      const footer = outerHeight(footerRef.current);
+      const total = outerHeight(headerRef.current) + footer;
       document.documentElement.style.setProperty('--shell-chrome-height', `${Math.ceil(total)}px`);
+      // footer 単独の占有高も書き出す (compose FAB の bottom 位置を header≒footer
+      // 仮定に頼らず footer 実測に追従させる)。
+      document.documentElement.style.setProperty('--footer-height', `${Math.ceil(footer)}px`);
     };
     update();
     const ro = new ResizeObserver(update);
@@ -98,6 +103,10 @@ export function AppShell() {
   }, [location.pathname, unread]);
 
   const onWorkspace = location.pathname === '/';
+  // 投稿 FAB は、入力フォーム/認証系などタイムラインでない画面では出さない
+  // (送信ボタン等と被って文脈ノイズになるため)。
+  const showComposeFab =
+    session.status === 'signed-in' && composeFabAllowedOnPath(location.pathname);
   // workspace 中の active 表示用 kind。IntersectionObserver 発火前
   // (visibleKind=null) は先頭 = home を仮の active にしてチラつきを防ぐ。
   const activeWorkspaceKind: AppColumnKind | null = onWorkspace ? (visibleKind ?? 'home') : null;
@@ -124,12 +133,11 @@ export function AppShell() {
       <main className="content">
         <Outlet />
       </main>
-      {session.status === 'signed-in' && (
+      {showComposeFab && (
         <button
           type="button"
           className="compose-fab"
           aria-label="投稿する"
-          title="投稿する"
           onClick={() => openCompose()}
         >
           <ComposeIcon size={24} />

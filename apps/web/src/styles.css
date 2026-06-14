@@ -474,12 +474,12 @@ p { margin: 0.4em 0; }
    「仕切り」スタイルに切り替える。ただし .dq-window クラスを使っている要素は
    あえて二重枠 (DQ で名前付きウィンドウが中に入っているイメージ) にする。 */
 
-/* 投稿作成のフローティングボタン (右下、アイコンのみ)。footer-nav の上に浮かべる。
-   高さは --shell-chrome-height (header+footer 実測) の約半分 = footer 上端に追従。 */
+/* 投稿作成のフローティングボタン (右下、アイコンのみ)。footer-nav の上端に浮かべる。
+   位置は footer 実測 (--footer-height, app-shell が ResizeObserver で書き出す) に追従。 */
 .compose-fab {
   position: fixed;
   right: 1em;
-  bottom: calc(var(--shell-chrome-height, 9.5em) * 0.5 + 1em);
+  bottom: calc(var(--footer-height, 4.5em) + 1em);
   z-index: 20;
   width: 3.2em;
   height: 3.2em;

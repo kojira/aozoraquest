@@ -1,7 +1,8 @@
 /**
  * home カラム: 自分のフォロー TL (旧 routes/home.tsx の「フォロー」タブを移設)。
  *
- * HomeSummary (自分のレーダー + 日次サマリ) + 投稿ボタン + フォロー TL。
+ * HomeSummary (自分のレーダー + 日次サマリ) + フォロー TL。
+ * (投稿ボタンは AppShell のフローティング FAB に移設済み)
  * VirtualFeed は ColumnScrollContext 経由でカラム内スクロールに切り替わる。
  * 自分の診断は use-self-diagnosis の共有キャッシュから取る (bar と重複
  * fetch しない / 投稿後の refresh が bar にも伝播する)。
