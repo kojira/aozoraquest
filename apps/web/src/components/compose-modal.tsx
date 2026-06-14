@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
 import { createPost, createPostWithImages, MAX_POST_IMAGES, type ReplyRef } from '@/lib/atproto';
 import { compressImage } from '@/lib/image-compress';
@@ -141,6 +141,16 @@ function isAttachableImage(file: File): boolean {
 /** Bluesky uploadBlob の上限は約 1MB。少しマージン取って 950KB を上限警告ラインに。 */
 const MAX_IMAGE_BYTES = 950_000;
 
+/** 画像プレビュー行の操作ボタン (← → 削除)。親が 0.75em と小さいので rem 基準で
+ *  独立に大きさを決め、モバイルのタップ領域 (≈40px) を確保する。 */
+const IMG_CTRL_BTN: CSSProperties = {
+  fontSize: '0.95rem',
+  minHeight: '2.6em',
+  minWidth: '2.6em',
+  padding: '0.2em 0.6em',
+  lineHeight: 1,
+};
+
 function ComposeDialog({
   replyTo,
   initialText,
@@ -268,6 +278,22 @@ function ComposeDialog({
       const target = prev[index];
       if (target) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  // 隣の画像と入れ替え (Bluesky は embed.images の配列順で表示するので順序に意味がある)。
+  // objectURL は不変なので revoke しない。
+  function moveImage(index: number, dir: -1 | 1) {
+    setImages((prev) => {
+      const to = index + dir;
+      if (to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const a = next[index];
+      const b = next[to];
+      if (!a || !b) return prev;
+      next[index] = b;
+      next[to] = a;
+      return next;
     });
   }
 
@@ -431,6 +457,13 @@ function ComposeDialog({
 
         {showImageUi && (
           <div style={{ marginTop: '0.5em', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
+            {images.length > 1 && (
+              <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: 0 }}>
+                上から順に表示されます (1 枚目が代表)。← → で並べ替え。
+              </p>
+            )}
+            {/* key は previewUrl (blob ごとに一意・生存中不変)。並べ替えでも安定なので
+                index ベース操作でも img/alt の状態が混ざらない reorder-safe key になる。 */}
             {images.map((im, i) => (
               <div
                 key={im.previewUrl}
@@ -462,17 +495,44 @@ function ComposeDialog({
                     maxLength={1000}
                     disabled={loading}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
-                    <span>{(im.blob.size / 1024).toFixed(0)} KB · {im.blob.type || '?'}</span>
-                    <button
-                      className="secondary"
-                      onClick={() => removeImage(i)}
-                      disabled={loading}
-                      aria-label={`画像 ${i + 1} を削除`}
-                      style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
-                    >
-                      削除
-                    </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', gap: '0.5em', flexWrap: 'wrap' }}>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(im.blob.size / 1024).toFixed(0)} KB · {im.blob.type || '?'}</span>
+                    <span style={{ display: 'inline-flex', gap: '0.4em', flexShrink: 0, alignItems: 'center' }}>
+                      {images.length > 1 && (
+                        <>
+                          <button
+                            className="secondary"
+                            onClick={() => moveImage(i, -1)}
+                            disabled={loading || i === 0}
+                            aria-label={`画像 ${i + 1} を前へ`}
+                            title="前へ"
+                            style={IMG_CTRL_BTN}
+                          >
+                            ←
+                          </button>
+                          <button
+                            className="secondary"
+                            onClick={() => moveImage(i, 1)}
+                            disabled={loading || i === images.length - 1}
+                            aria-label={`画像 ${i + 1} を後ろへ`}
+                            title="後ろへ"
+                            style={IMG_CTRL_BTN}
+                          >
+                            →
+                          </button>
+                        </>
+                      )}
+                      {/* 破壊的アクションなので移動ボタンと間隔を空けて誤タップを防ぐ */}
+                      <button
+                        className="secondary"
+                        onClick={() => removeImage(i)}
+                        disabled={loading}
+                        aria-label={`画像 ${i + 1} を削除`}
+                        style={{ ...IMG_CTRL_BTN, marginLeft: images.length > 1 ? '0.7em' : 0 }}
+                      >
+                        削除
+                      </button>
+                    </span>
                   </div>
                 </div>
               </div>

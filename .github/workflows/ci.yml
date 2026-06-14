@@ -32,6 +32,14 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @aozoraquest/web typecheck
 
+      - name: Unit tests (core + web)
+        run: |
+          pnpm --filter @aozoraquest/core test
+          pnpm --filter @aozoraquest/web test
+
+      - name: Validate data (jobs.ts ↔ jobs.json 等の整合)
+        run: pnpm validate:data
+
       - name: Build
         # build 時に参照される env vars。GitHub の Environment Variables
         # (Settings → Environments → dev / production → Environment variables) で

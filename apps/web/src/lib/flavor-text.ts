@@ -806,7 +806,7 @@ const CARD_NAME_EXAMPLES: Record<string, string> = {
   explorer: '風読みの旅人',
   warrior: '一閃の戦士',
   guardian: '静かな砦',
-  fighter: '研ぎ澄まされた拳',
+  fighter: '研ぎ澄まされた技巧',
   artist: '色を編む者',
   captain: '指揮の灯火',
   miko: '清めの巫女',
