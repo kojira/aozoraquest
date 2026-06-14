@@ -24,6 +24,7 @@ import {
   isExpiredSummary,
   emptyMessageForBoard,
   QuestCard,
+  ApprovalPendingBanner,
 } from '@/components/column-content/board-shared';
 import { BookIcon, PlusIcon, CalendarIcon } from '@/components/icons';
 import { ActionLink } from '@/components/action-link';
@@ -33,7 +34,8 @@ export function Board() {
   const session = useSession();
   const signedIn = session.status === 'signed-in';
   const [columns, setColumns] = useState<Column[]>(() => loadColumns());
-  const { index, myQuests, myApplicationQuestUris, err } = useBoardData();
+  const { index, myQuests, myApplicationQuestUris, pendingApproval, err } = useBoardData();
+  const pendingUris = useMemo(() => new Set(pendingApproval.map((q) => q.uri)), [pendingApproval]);
 
   // 未ログイン時は「自分が出した / 応募」など自分前提のカラムを描画しない
   // (保存設定は壊さず描画だけ除外。ログインで復活する)。
@@ -84,12 +86,16 @@ export function Board() {
 
       {err && <p style={{ color: 'var(--color-danger)' }}>取得に失敗: {err}</p>}
 
+      {/* 承認待ち (完了報告が届いた自分の依頼) を最上部で promote。各クエストへ直リンク。 */}
+      <ApprovalPendingBanner pending={pendingApproval} />
+
       <div className="board-columns">
         {visibleColumns.map((col) => (
           <BoardInnerColumnView
             key={col.id}
             column={col}
             indexData={{ index, myQuests, myApplicationQuestUris }}
+            pendingUris={pendingUris}
             onRemove={() => removeColumn(col.id)}
           />
         ))}
@@ -164,10 +170,11 @@ interface BoardInnerColumnViewProps {
     myQuests: ReturnType<typeof useBoardData>['myQuests'];
     myApplicationQuestUris: ReturnType<typeof useBoardData>['myApplicationQuestUris'];
   };
+  pendingUris: Set<string>;
   onRemove: () => void;
 }
 
-function BoardInnerColumnView({ column, indexData, onRemove }: BoardInnerColumnViewProps) {
+function BoardInnerColumnView({ column, indexData, pendingUris, onRemove }: BoardInnerColumnViewProps) {
   const { index, myQuests, myApplicationQuestUris } = indexData;
   const items = useMemo(
     () => filterForBoard(column, index, myQuests, myApplicationQuestUris),
@@ -190,7 +197,7 @@ function BoardInnerColumnView({ column, indexData, onRemove }: BoardInnerColumnV
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {items.map((q) => (
             <li key={q.uri}>
-              <QuestCard summary={q} expired={isExpiredSummary(q)} />
+              <QuestCard summary={q} expired={isExpiredSummary(q)} needsApproval={pendingUris.has(q.uri)} />
             </li>
           ))}
         </ul>

@@ -106,6 +106,33 @@ export function isValidCompletion(c: QuestCompletion, q: UserQuest): boolean {
   return false;
 }
 
+function latestCreatedAt(items: QuestCompletion[]): string | null {
+  let max: string | null = null;
+  for (const c of items) {
+    if (max === null || c.createdAt > max) max = c.createdAt;
+  }
+  return max;
+}
+
+/** **発注者が承認すべき状態か** (= 受託者の完了報告が届いていて、まだ承認も差し戻しもしていない)。
+ *
+ *  発注者の `userQuest.status` は **受託者が書き込めない** ため、受託者が完了報告しても
+ *  発注者 record の status は `assigned` のまま (= `reported` は当てにできない)。よって
+ *  完了判定 (`isCompleted`) と同様に **completion record から導出** する:
+ *  - `requesterApproval` があれば承認済み → false
+ *  - 有効な `assigneeReport` が無ければ報告未着 → false
+ *  - 最後の報告 (assigneeReport) が最後の差し戻し (requesterRevision) より新しければ「承認待ち」。
+ *    差し戻しの方が新しければ受託者の再報告待ちなので false。 */
+export function needsRequesterApproval(q: UserQuest, completions: QuestCompletion[]): boolean {
+  if (q.status === 'completed' || q.status === 'cancelled') return false;
+  const valid = completions.filter(c => isValidCompletion(c, q));
+  if (valid.some(c => c.role === 'requesterApproval')) return false;
+  const lastReport = latestCreatedAt(valid.filter(c => c.role === 'assigneeReport'));
+  if (lastReport === null) return false;
+  const lastRevision = latestCreatedAt(valid.filter(c => c.role === 'requesterRevision'));
+  return lastRevision === null || lastReport > lastRevision;
+}
+
 // ─── 発注者視点: 成功 / 失敗 / キャンセル / 進行中 ─────────
 
 export type Outcome = 'success' | 'failure' | 'cancelled' | 'inProgress';
