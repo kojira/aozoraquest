@@ -1,7 +1,8 @@
 import { type Archetype, type CogFunction, type JobDefinition, type StatArray, type StatVector } from './types.js';
 
 /**
- * 16 ジョブ定義 (docs/data/jobs.json と同期)。
+ * 16 ジョブ定義。これが**単一ソース**。docs/data/jobs.json は本定義のドキュメント用
+ * ミラーで、runtime からは参照されない (整合は scripts/validate-data.ts が突合検証)。
  * stats は [atk, def, agi, int, luk] 順、合計 100。
  */
 export const JOBS: readonly JobDefinition[] = [

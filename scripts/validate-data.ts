@@ -116,9 +116,13 @@ function validateJobs() {
   for (const job of JOBS) {
     const j = data.jobs[job.id];
     if (!j) { driftErrors.push(`  ${job.id}: jobs.json に存在しない`); continue; }
-    for (const variant of ['default', 'maker', 'alt'] as const) {
-      if (j.names[variant] !== job.names[variant]) {
-        driftErrors.push(`  ${job.id}.names.${variant}: ts="${job.names[variant]}" ≠ json="${j.names[variant]}"`);
+    // names は variant を直書きせず両者のキー集合を突合 (将来 variant 追加もドリフト検出)
+    const nameKeys = new Set([...Object.keys(job.names), ...Object.keys(j.names)]);
+    for (const variant of nameKeys) {
+      const tsv = (job.names as Record<string, string>)[variant];
+      const jsv = j.names[variant];
+      if (tsv !== jsv) {
+        driftErrors.push(`  ${job.id}.names.${variant}: ts="${tsv}" ≠ json="${jsv}"`);
       }
     }
     if (JSON.stringify(j.stats) !== JSON.stringify([...job.stats])) {
@@ -140,7 +144,7 @@ function validateJobs() {
     }
   }
   if (driftErrors.length === 0) {
-    console.log(`- jobs.ts ↔ jobs.json 一致 (names/stats/dom/aux/係数): **全 16 ジョブ OK** ✓`);
+    console.log(`- jobs.ts ↔ jobs.json 一致 (names/stats/dom/aux/係数): **全 ${JOBS.length} ジョブ OK** ✓`);
   } else {
     errors.push(`jobs.json: jobs.ts と不一致 (手編集ドリフト)`);
     for (const d of driftErrors) console.log(d);
