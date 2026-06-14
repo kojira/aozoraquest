@@ -44,7 +44,7 @@ describe('shapeSimilarity', () => {
 
 describe('currentJob', () => {
   test('exact sage stats → sage match', () => {
-    const sageStats: StatArray = [25, 14, 10, 37, 14];
+    const sageStats: StatArray = [23, 12, 5, 48, 12];
     const result = currentJob(sageStats);
     expect(result).not.toBeNull();
     expect(result!.jobId).toBe('sage');
