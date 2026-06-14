@@ -1,12 +1,31 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createPostWithImages, MAX_POST_IMAGES } from './atproto';
+import { createPost, createPostWithImages, MAX_POST_IMAGES } from './atproto';
 import type { Agent } from '@atproto/api';
 
 interface PostRecord {
   text: string;
   embed?: { $type: string; images: { alt: string }[] };
-  facets?: { features: { tag?: string }[] }[];
+  facets?: { features?: { $type?: string; tag?: string; uri?: string; did?: string }[] }[];
 }
+
+/** mention 解決 (resolveHandle) も持つ mock agent。resolve が null を返すと解決失敗。 */
+function mockAgentWithResolve(resolve: (handle: string) => string | null) {
+  let posted: PostRecord | undefined;
+  const post = vi.fn(async (record: unknown) => {
+    posted = record as PostRecord;
+    return { uri: 'at://x/app.bsky.feed.post/1', cid: 'cid' };
+  });
+  const resolveHandle = vi.fn(async ({ handle }: { handle: string }) => {
+    const did = resolve(handle);
+    if (!did) throw new Error('unresolved');
+    return { data: { did } };
+  });
+  const agent = { post, com: { atproto: { identity: { resolveHandle } } } } as unknown as Agent;
+  return { agent, post, posted: () => posted };
+}
+
+const hasFeature = (rec: PostRecord | undefined, type: string) =>
+  rec?.facets?.some((f) => f.features?.some((ft) => ft.$type === type)) ?? false;
 
 function mockAgent() {
   let posted: PostRecord | undefined;
@@ -52,6 +71,16 @@ describe('createPostWithImages', () => {
     expect(m.posted()?.facets).toBeUndefined();
   });
 
+  it('detects a URL in text as a link facet (他クライアントでもクリック可能に)', async () => {
+    const m = mockAgent();
+    await createPostWithImages(m.agent, 'みて https://aozoraquest.app/board/x', [img('image/webp', '')]);
+    const facets = m.posted()?.facets;
+    expect(facets).toBeDefined();
+    expect(
+      facets?.some((f) => f.features?.some((ft) => ft.$type === 'app.bsky.richtext.facet#link' && ft.uri === 'https://aozoraquest.app/board/x')),
+    ).toBe(true);
+  });
+
   it('posts a single image correctly', async () => {
     const m = mockAgent();
     await createPostWithImages(m.agent, 'hi', [img('image/png', 'alt')]);
@@ -65,5 +94,25 @@ describe('createPostWithImages', () => {
     expect(m.uploadBlob).not.toHaveBeenCalled();
     expect(m.posted()?.embed).toBeUndefined();
     expect(m.posted()?.text).toBe('text only');
+  });
+});
+
+describe('createPost facets (mention 解決)', () => {
+  it('mention を DID に解決して mention + link facet を付ける', async () => {
+    const m = mockAgentWithResolve(() => 'did:plc:abc');
+    await createPost(m.agent, '@alice.test みて https://x.io/y');
+    expect(
+      m.posted()?.facets?.some((f) => f.features?.some((ft) => ft.$type === 'app.bsky.richtext.facet#mention' && ft.did === 'did:plc:abc')),
+    ).toBe(true);
+    expect(hasFeature(m.posted(), 'app.bsky.richtext.facet#link')).toBe(true);
+  });
+
+  it('解決できない handle の mention facet は捨てる (空 did facet を漏らさない)', async () => {
+    const m = mockAgentWithResolve(() => null); // 解決失敗 → did:''
+    await createPost(m.agent, '@ghost.test みて https://x.io/y');
+    // 空 did の壊れた mention facet は record に載らない
+    expect(hasFeature(m.posted(), 'app.bsky.richtext.facet#mention')).toBe(false);
+    // URL の link facet は残る
+    expect(hasFeature(m.posted(), 'app.bsky.richtext.facet#link')).toBe(true);
   });
 });
