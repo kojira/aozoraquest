@@ -9,6 +9,7 @@ import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
 import { applyFontScale } from '@/lib/font-scale';
+import { APP_VERSION } from '@/lib/app-version';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
@@ -340,6 +341,18 @@ export function Settings() {
         )}
         <button onClick={onSignOut}>ログアウト</button>
       </section>
+
+      <p
+        style={{
+          marginTop: '2.5em',
+          textAlign: 'right',
+          fontSize: '0.7em',
+          color: 'var(--color-muted)',
+          fontFamily: 'ui-monospace, monospace',
+        }}
+      >
+        aozoraquest v{APP_VERSION}
+      </p>
     </div>
   );
 }
