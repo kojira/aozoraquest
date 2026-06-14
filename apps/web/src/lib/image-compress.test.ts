@@ -98,6 +98,32 @@ describe('compressImage decode fallback', () => {
     expect(imgInstances.length).toBeGreaterThan(0); // <img> 経路を実際に通った
   });
 
+  it('createImageBitmap が存在しない環境でも <img> 経路で圧縮する (早期 return しない)', async () => {
+    installCanvasStub();
+    stubUrl();
+    // createImageBitmap 自体が未定義 (古い WebView 等)。早期 return せず <img> に退避する想定。
+    vi.stubGlobal('createImageBitmap', undefined);
+    let used = false;
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 4080;
+      naturalHeight = 3072;
+      decode = () => Promise.resolve();
+      set src(_v: string) {
+        used = true;
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('Image', FakeImage as unknown as typeof Image);
+
+    const r = await compressImage(fakeFile('image/jpeg', 4_000_000), { maxBytes: 950_000 });
+
+    expect(r.compressed).toBe(true);
+    expect(r.blob.size).toBeLessThanOrEqual(950_000);
+    expect(used).toBe(true);
+  });
+
   it('createImageBitmap 成功時は <img> を使わず bitmap を後始末する', async () => {
     installCanvasStub();
     stubUrl();

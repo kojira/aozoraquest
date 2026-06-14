@@ -99,29 +99,52 @@ interface DecodedImage {
   cleanup: () => void;
 }
 
-/** <img> + decode() でデコードする (createImageBitmap が使えない/失敗した時の退避)。
+/** decode に時間がかかっても固まらないよう上限を設ける (壊れた環境で onload/onerror が
+ *  どちらも来ないと添付処理ごと hang するのを防ぐ)。実機の大画像 decode を吸収できる長さ。 */
+const IMG_DECODE_TIMEOUT_MS = 15_000;
+
+/** <img> で file をデコードする (createImageBitmap が使えない/失敗した時の退避)。
  *  Android Chrome で高解像度 JPEG の createImageBitmap が reject するケースを救う。
- *  EXIF 回転はブラウザ既定の image-orientation:from-image が効く。 */
+ *  - onload だけだと稀に内部デコード未完で drawImage が失敗するため、可能なら
+ *    img.decode() の解決も待つ (未対応/失敗時は onload にフォールバック)。
+ *  - EXIF 回転はブラウザ既定の image-orientation:from-image が効く (明示制御は不可)。 */
 function decodeViaImgElement(file: File): Promise<DecodedImage | null> {
   if (typeof Image === 'undefined' || typeof URL === 'undefined') return Promise.resolve(null);
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    const cleanup = () => URL.revokeObjectURL(url);
-    img.onload = () => {
+    let settled = false; // onload/onerror/timeout の二重解決を防ぐ
+    const cleanupUrl = () => URL.revokeObjectURL(url);
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanupUrl();
+      resolve(null);
+    };
+    const succeed = () => {
+      if (settled) return;
       const width = img.naturalWidth;
       const height = img.naturalHeight;
       if (!width || !height) {
-        cleanup();
-        resolve(null);
+        fail();
         return;
       }
-      resolve({ source: img, width, height, cleanup });
+      settled = true;
+      clearTimeout(timer);
+      // cleanup: objectURL 解放 + デコード済みバッファ解放のヒント (close() 相当の後始末)
+      resolve({ source: img, width, height, cleanup: () => { cleanupUrl(); img.src = ''; } });
     };
-    img.onerror = () => {
-      cleanup();
-      resolve(null);
+    const timer = setTimeout(fail, IMG_DECODE_TIMEOUT_MS);
+    img.onload = () => {
+      // decode() があれば内部デコード完了まで待ってから採用 (drawImage 失敗を防ぐ)
+      if (typeof img.decode === 'function') {
+        img.decode().then(succeed, succeed);
+      } else {
+        succeed();
+      }
     };
+    img.onerror = fail;
     img.src = url;
   });
 }
@@ -242,7 +265,9 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
   if (file.type === 'image/gif') {
     return { blob: file, compressed: false, originalBytes };
   }
-  if (typeof document === 'undefined' || typeof createImageBitmap === 'undefined') {
+  // canvas が無ければ再エンコードできないので元 File を返す。createImageBitmap の
+  // 有無はここで判定しない (無ければ decodeImage が <img> 経路に退避する)。
+  if (typeof document === 'undefined') {
     return { blob: file, compressed: false, originalBytes };
   }
 
