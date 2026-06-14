@@ -4,6 +4,7 @@ import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
 import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobLevelFromXp, jobTagline, playerLevelFromXp } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
+import { ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
@@ -259,49 +260,98 @@ function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
  * 「なぜ感謝の返信 3 件が進まないのか」「この投稿はどの行動扱いなのか」を
  * 自分で確認できる透明性 UI。折り畳み式で最新 3 件をデフォルト表示。
  */
+/** 分類不能 (?) アイコン */
+function UnclassifiedIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden focusable="false">
+      <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6.3 6.2c0-1 .8-1.7 1.8-1.7s1.7.7 1.7 1.6c0 .8-.5 1.2-1.1 1.6-.5.3-.7.6-.7 1.1v.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
+      <circle cx="8" cy="11.6" r="0.85" fill="currentColor" />
+    </svg>
+  );
+}
+/** カウント対象外 (横線) アイコン */
+function NoMatchIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden focusable="false">
+      <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M4.8 8H11.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
-  const [open, setOpen] = useState(false);
-  // 新しい順に並べ替え (activity は古い順に追記されている)
-  const sorted = [...activity].reverse();
-  const visible = open ? sorted : sorted.slice(0, 3);
-  const hidden = sorted.length - visible.length;
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  // 新しい順 (activity は古い順に追記)
+  const sorted = useMemo(() => [...activity].reverse(), [activity]);
+  if (sorted.length === 0) return null;
+
+  // 結果カテゴリに振り分け (本文は出さず、アイコン+件数だけ畳む)
+  const cats = [
+    {
+      key: 'quest', label: 'クエスト達成', accent: true,
+      icon: <ScrollIcon size={15} />,
+      entries: sorted.filter((e) => e.incremented.length > 0),
+    },
+    {
+      key: 'other', label: 'カウント対象外', accent: false,
+      icon: <NoMatchIcon />,
+      entries: sorted.filter((e) => e.incremented.length === 0 && !!e.action),
+    },
+    {
+      key: 'none', label: '分類不能', accent: false,
+      icon: <UnclassifiedIcon />,
+      entries: sorted.filter((e) => e.incremented.length === 0 && !e.action),
+    },
+  ].filter((c) => c.entries.length > 0);
+
+  const openCat = cats.find((c) => c.key === openKey) ?? null;
 
   return (
     <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.5em' }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        style={{
-          width: '100%',
-          background: 'transparent',
-          border: 'none',
-          padding: '0.2em 0',
-          color: 'var(--color-fg)',
-          font: 'inherit',
-          textAlign: 'left',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5em',
-          cursor: 'pointer',
-          boxShadow: 'none',
-        }}
-      >
-        <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-          今日カウントされた行動 ({sorted.length})
-        </span>
-        <span style={{ marginLeft: 'auto', color: 'var(--color-muted)' }}>{open ? '▾' : '▸'}</span>
-      </button>
-      <ul style={{ listStyle: 'none', padding: 0, margin: '0.3em 0 0', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-        {visible.map((e, i) => (
-          <li key={i}>
-            <ActivityRow entry={e} />
-          </li>
-        ))}
-      </ul>
-      {!open && hidden > 0 && (
-        <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
-          他 {hidden} 件
-        </div>
+      <div style={{ fontSize: '0.78em', color: 'var(--color-muted)', marginBottom: '0.35em' }}>
+        今日カウントされた行動 ({sorted.length})
+      </div>
+      {/* 分類ごとにアイコン + 件数。押すまで本文は 1 行も出さない */}
+      <div style={{ display: 'flex', gap: '0.45em', flexWrap: 'wrap' }}>
+        {cats.map((c) => {
+          const active = openKey === c.key;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => setOpenKey(active ? null : c.key)}
+              aria-expanded={active}
+              aria-label={`${c.label} ${c.entries.length}件`}
+              title={`${c.label} ${c.entries.length}件`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3em',
+                padding: '0.2em 0.6em',
+                fontSize: '0.82em',
+                borderRadius: 999,
+                background: active ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.35)',
+                border: '1px solid',
+                borderColor: active ? 'var(--color-primary)' : 'rgba(255,255,255,0.15)',
+                color: c.accent ? 'var(--color-accent)' : 'var(--color-muted)',
+                boxShadow: 'none',
+              }}
+            >
+              {c.icon}
+              <span style={{ fontWeight: 700 }}>{c.entries.length}</span>
+            </button>
+          );
+        })}
+      </div>
+      {openCat && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '0.45em 0 0', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+          {openCat.entries.map((e, i) => (
+            <li key={i}>
+              <ActivityRow entry={e} />
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
