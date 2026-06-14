@@ -13,6 +13,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ARCHETYPES } from '../packages/core/src/types.js';
+import { JOBS } from '../packages/core/src/jobs.js';
+import { COGNITIVE_TO_RPG } from '../packages/core/src/diagnosis.js';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const errors: string[] = [];
@@ -107,6 +109,41 @@ function validateJobs() {
   for (const f of functions) {
     if ((domCount[f] ?? 0) !== 2) warnings.push(`jobs.json: dominant=${f} が 2 ジョブじゃない (${domCount[f] ?? 0})`);
     if ((auxCount[f] ?? 0) !== 2) warnings.push(`jobs.json: auxiliary=${f} が 2 ジョブじゃない (${auxCount[f] ?? 0})`);
+  }
+
+  // ── jobs.ts (単一ソース) ↔ jobs.json の突合 (手で並行編集してドリフトするのを検出) ──
+  const driftErrors: string[] = [];
+  for (const job of JOBS) {
+    const j = data.jobs[job.id];
+    if (!j) { driftErrors.push(`  ${job.id}: jobs.json に存在しない`); continue; }
+    for (const variant of ['default', 'maker', 'alt'] as const) {
+      if (j.names[variant] !== job.names[variant]) {
+        driftErrors.push(`  ${job.id}.names.${variant}: ts="${job.names[variant]}" ≠ json="${j.names[variant]}"`);
+      }
+    }
+    if (JSON.stringify(j.stats) !== JSON.stringify([...job.stats])) {
+      driftErrors.push(`  ${job.id}.stats: ts=[${job.stats.join(',')}] ≠ json=[${j.stats.join(',')}]`);
+    }
+    if (j.dominantFunction !== job.dominantFunction) {
+      driftErrors.push(`  ${job.id}.dominantFunction: ts=${job.dominantFunction} ≠ json=${j.dominantFunction}`);
+    }
+    if (j.auxiliaryFunction !== job.auxiliaryFunction) {
+      driftErrors.push(`  ${job.id}.auxiliaryFunction: ts=${job.auxiliaryFunction} ≠ json=${j.auxiliaryFunction}`);
+    }
+  }
+  // cognitiveToRpgCoefficients も TS (COGNITIVE_TO_RPG) と突合
+  for (const f of functions) {
+    const tsRow = COGNITIVE_TO_RPG[f as keyof typeof COGNITIVE_TO_RPG];
+    const jsonRow = data.cognitiveToRpgCoefficients[f];
+    if (tsRow && jsonRow && JSON.stringify(tsRow) !== JSON.stringify(jsonRow)) {
+      driftErrors.push(`  cognitiveToRpgCoefficients.${f}: ts ≠ json`);
+    }
+  }
+  if (driftErrors.length === 0) {
+    console.log(`- jobs.ts ↔ jobs.json 一致 (names/stats/dom/aux/係数): **全 16 ジョブ OK** ✓`);
+  } else {
+    errors.push(`jobs.json: jobs.ts と不一致 (手編集ドリフト)`);
+    for (const d of driftErrors) console.log(d);
   }
 
   console.log();
