@@ -111,6 +111,7 @@ function ResonancePostCard({ entry }: { entry: ResonanceEntry }) {
       post={entry.item.post}
       archetype={entry.theirArchetype}
       expandable
+      hideHandle
       {...(resonanceBadge ? { headerExtra: resonanceBadge } : {})}
     />
   );
