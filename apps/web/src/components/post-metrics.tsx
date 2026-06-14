@@ -6,6 +6,7 @@ import { HeartIcon, RepeatIcon, ReplyIcon } from './icons';
 import { useCompose } from './compose-modal';
 import { formatDateTime } from '@/lib/format-datetime';
 import { postDetailPath } from '@/lib/uri';
+import type { PostRecordShape } from './post-article';
 
 interface PostMetricsProps {
   post: AppBskyFeedDefs.PostView;
@@ -15,10 +16,12 @@ interface PostMetricsProps {
 }
 
 /**
- * 投稿カード下部。いいね/リポスト/リプライ。クリックで実際に AT Protocol 操作を行う。
+ * 投稿カード下部のアクション行。いいね/リポスト/リプライ + 右端に投稿日時。
  * - いいね: agent.like / agent.deleteLike をトグル
  * - リポスト: agent.repost / agent.deleteRepost をトグル
  * - リプライ: /compose にリプライ先を持たせて遷移
+ * - 日時: アクション行の右端に小さく右揃え。タップで投稿詳細へ遷移
+ * - スレッドトグル (任意): スレッドを持つ投稿のみ一段下の右端に表示
  */
 export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetricsProps) {
   const session = useSession();
@@ -108,7 +111,7 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
 
   const liked = !!likeUri;
   const reposted = !!repostUri;
-  const ts = (post.record as { createdAt?: string }).createdAt ?? post.indexedAt;
+  const ts = (post.record as PostRecordShape).createdAt ?? post.indexedAt;
   const detailPath = postDetailPath(post.author.handle, post.uri);
 
   return (
@@ -129,10 +132,12 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
           onClick={(e) => e.stopPropagation()}
           style={{
             marginLeft: 'auto',
-            fontSize: '0.72em',
+            padding: '0.2em 0.1em',
+            fontSize: '0.75em',
             fontFamily: 'ui-monospace, monospace',
             color: 'var(--color-muted)',
             textDecoration: 'none',
+            borderBottom: 'none',
           }}
           title="投稿詳細を開く"
         >
