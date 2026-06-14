@@ -192,17 +192,6 @@ export function Workspace() {
 
   return (
     <div data-workspace="1">
-      {(columns?.length ?? 0) > 0 && (
-        <button
-          type="button"
-          className="workspace-refresh-all"
-          aria-label="すべてのカラムを更新"
-          title="すべてのカラムを更新"
-          onClick={() => refreshAll(columns ?? [])}
-        >
-          <RefreshIcon /> すべて更新
-        </button>
-      )}
       <div className="workspace-columns" ref={scrollerRef}>
         {(columns ?? []).map((col, i) => (
           <Fragment key={col.id}>
@@ -215,6 +204,7 @@ export function Workspace() {
               onRemove={() => edit((cols) => removeColumn(cols, col.id))}
               onAddRight={() => setPickerAnchor(i)}
               onRefresh={() => refreshColumn(col)}
+              onRefreshAll={() => refreshAll(columns ?? [])}
             >
               <ColumnContent
                 key={refreshNonce[col.id] ?? 0}
@@ -265,10 +255,11 @@ interface ColumnViewProps {
   onRemove: () => void;
   onAddRight: () => void;
   onRefresh: () => void;
+  onRefreshAll: () => void;
   children: ReactNode;
 }
 
-function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, children }: ColumnViewProps) {
+function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, onRefreshAll, children }: ColumnViewProps) {
   // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
   // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
@@ -336,6 +327,12 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           <button type="button" disabled={!canMoveLeft} onClick={() => { onMoveLeft(); setMenuOpen(false); }}>← 左へ移動</button>
           <button type="button" disabled={!canMoveRight} onClick={() => { onMoveRight(); setMenuOpen(false); }}>→ 右へ移動</button>
           <button type="button" onClick={() => { onAddRight(); setMenuOpen(false); }}>＋ 右にカラムを追加</button>
+          {/* 単一カラム時は「すべて」= 自カラムでラベルと実体が一致しないので隠す */}
+          {(canMoveLeft || canMoveRight) && (
+            <button type="button" onClick={() => { onRefreshAll(); setMenuOpen(false); }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}><RefreshIcon /> すべてのカラムを更新</span>
+            </button>
+          )}
           {hasDirectLink && (
             <button type="button" onClick={copyLink}>
               {copied ? 'コピーしました ✓' : 'このカラムの直リンクをコピー'}

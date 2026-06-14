@@ -44,7 +44,7 @@ typography:
     lineHeight: 1.4
   header:
     fontFamily: "{typography.font-main.fontFamily}"
-    fontSize: 1.05em
+    fontSize: 0.92em
     fontWeight: 700
     lineHeight: 1.2
   code:
@@ -142,7 +142,7 @@ components:
 - **本文**: 1em (= ブラウザデフォルト 16px)、line-height 1.6、letter-spacing 0.02em
 - **メタデータ・キャプション**: 0.85em (`body-sm`)
 - **タグ・メトリクス**: 0.75em (`body-xs`)
-- **見出し (ヘッダー)**: 1.05em、font-weight 700、影付き
+- **見出し (ヘッダー)**: 0.92em、font-weight 700、影付き (上部 sticky バーは薄め)
 
 font-size は **em ベース** で書く。html/body には絶対サイズを指定せず、ブラウザのユーザー設定とアクセシビリティを尊重する。「文字サイズ設定」(設定ページ → 表示設定) で `html { font-size: <50-150>% }` を動的に書き換えることで、すべての em が比例して伸縮する。スライダーは 1% で動かせて離した時に 5% 単位にスナップ、デフォルトは 100%。
 
