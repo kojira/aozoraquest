@@ -385,7 +385,7 @@ export function Card() {
       const initialText = `${displayArchetype(result.archetype)} の気質が出ました。 #AozoraQuest`;
       const alt = `${profile.displayName} の診断カード。職業は${displayArchetype(result.archetype)}。`;
       // 既存の投稿モーダルに blob + 既定テキストを渡して、ユーザー編集 → 送信。
-      // モーダル送信時は createPostWithImage 経路を通るので tag (#AozoraQuest)
+      // モーダル送信時は createPostWithImages 経路を通るので tag (#AozoraQuest)
       // も automatic に facet 化される (compose-modal 側で source='card' を判定)。
       openCompose({
         initialText,
