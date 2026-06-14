@@ -12,9 +12,14 @@
  *   createImageBitmap で HEIC をデコードできるので、canvas 経由で jpeg/webp に
  *   再エンコードして投稿可能にする。
  * - GIF はアニメーションを壊さないため変換しない (そのまま返す)
- * - EXIF 回転は createImageBitmap の imageOrientation:'from-image' で吸収
- * - createImageBitmap や canvas が使えない/失敗時は元 File を返す
- *   (呼び出し側で最終 size 検査)
+ * - EXIF 回転は createImageBitmap の imageOrientation:'from-image' で吸収。
+ *   img フォールバック時はブラウザ既定の image-orientation:from-image で吸収。
+ * - **デコードは createImageBitmap → 失敗時 <img> の 2 段**。Android Chrome は
+ *   端末メモリ次第で高解像度カメラ JPEG (12〜64MP) の createImageBitmap が
+ *   reject することがある (= 4 枚連続添付すると後半が落ちる)。その時に元 File を
+ *   返すと「圧縮されず素のサイズで上限超過 → 投稿弾かれ」になるため、<img> +
+ *   decode() の別経路でデコードし、必ず再エンコードまで到達させる。
+ * - 両経路とも失敗 / canvas 非対応時のみ元 File を返す (呼び出し側で最終 size 検査)
  */
 
 export interface CompressOptions {
@@ -72,7 +77,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number):
 }
 
 /** outType が jpeg のときは透過部分が黒くならないよう白背景を敷く */
-function drawTo(bitmap: ImageBitmap, w: number, h: number, outType: string): HTMLCanvasElement | null {
+function drawTo(source: CanvasImageSource, w: number, h: number, outType: string): HTMLCanvasElement | null {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -82,8 +87,80 @@ function drawTo(bitmap: ImageBitmap, w: number, h: number, outType: string): HTM
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
   }
-  ctx.drawImage(bitmap, 0, 0, w, h);
+  ctx.drawImage(source, 0, 0, w, h);
   return canvas;
+}
+
+/** デコード結果 (createImageBitmap か <img>)。再エンコードの draw に使う共通形。 */
+interface DecodedImage {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  cleanup: () => void;
+}
+
+/** decode に時間がかかっても固まらないよう上限を設ける (壊れた環境で onload/onerror が
+ *  どちらも来ないと添付処理ごと hang するのを防ぐ)。実機の大画像 decode を吸収できる長さ。 */
+const IMG_DECODE_TIMEOUT_MS = 15_000;
+
+/** <img> で file をデコードする (createImageBitmap が使えない/失敗した時の退避)。
+ *  Android Chrome で高解像度 JPEG の createImageBitmap が reject するケースを救う。
+ *  - onload だけだと稀に内部デコード未完で drawImage が失敗するため、可能なら
+ *    img.decode() の解決も待つ (未対応/失敗時は onload にフォールバック)。
+ *  - EXIF 回転はブラウザ既定の image-orientation:from-image が効く (明示制御は不可)。 */
+function decodeViaImgElement(file: File): Promise<DecodedImage | null> {
+  if (typeof Image === 'undefined' || typeof URL === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    let settled = false; // onload/onerror/timeout の二重解決を防ぐ
+    const cleanupUrl = () => URL.revokeObjectURL(url);
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanupUrl();
+      resolve(null);
+    };
+    const succeed = () => {
+      if (settled) return;
+      const width = img.naturalWidth;
+      const height = img.naturalHeight;
+      if (!width || !height) {
+        fail();
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      // cleanup: objectURL 解放 + デコード済みバッファ解放のヒント (close() 相当の後始末)
+      resolve({ source: img, width, height, cleanup: () => { cleanupUrl(); img.src = ''; } });
+    };
+    const timer = setTimeout(fail, IMG_DECODE_TIMEOUT_MS);
+    img.onload = () => {
+      // decode() があれば内部デコード完了まで待ってから採用 (drawImage 失敗を防ぐ)
+      if (typeof img.decode === 'function') {
+        img.decode().then(succeed, succeed);
+      } else {
+        succeed();
+      }
+    };
+    img.onerror = fail;
+    img.src = url;
+  });
+}
+
+/** createImageBitmap (EXIF 吸収・HEIC 対応) を優先し、失敗したら <img> に退避する。 */
+async function decodeImage(file: File): Promise<DecodedImage | null> {
+  if (typeof createImageBitmap !== 'undefined') {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, cleanup: () => bitmap.close() };
+    } catch (e) {
+      // Android Chrome のメモリ起因 reject 等。<img> 経路に退避する。
+      console.warn('[image-compress] createImageBitmap 失敗、<img> 経路に退避', e);
+    }
+  }
+  return decodeViaImgElement(file);
 }
 
 /** canvas を quality (0-1) で Blob にエンコードする関数。 */
@@ -142,21 +219,23 @@ async function chooseEncoder(wantWebp: boolean): Promise<{ outType: string; enco
  *  encode が throw しても握りつぶして null 扱いにする (堅牢性)。
  *  fit する blob が無ければ「最小だが超過」の best を返し、1 枚も作れなければ null。 */
 async function encodeBestFit(
-  bitmap: ImageBitmap,
+  source: CanvasImageSource,
+  srcWidth: number,
+  srcHeight: number,
   outType: string,
   encode: Encoder,
   maxBytes: number,
   maxDimension: number,
   qualitySteps: number[],
 ): Promise<{ blob: Blob; w: number; h: number; fit: boolean } | null> {
-  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-  let w = Math.max(1, Math.round(bitmap.width * scale));
-  let h = Math.max(1, Math.round(bitmap.height * scale));
+  const scale = Math.min(1, maxDimension / Math.max(srcWidth, srcHeight));
+  let w = Math.max(1, Math.round(srcWidth * scale));
+  let h = Math.max(1, Math.round(srcHeight * scale));
   let best: { blob: Blob; w: number; h: number; fit: boolean } | null = null;
 
   // 初期寸法 + 最大 2 回の縮小 (計 3 サイズ) を試し、各サイズで画質を上から試す
   for (let shrink = 0; shrink < 3; shrink++) {
-    const canvas = drawTo(bitmap, w, h, outType);
+    const canvas = drawTo(source, w, h, outType);
     if (!canvas) break;
     for (const q of qualitySteps) {
       let blob: Blob | null = null;
@@ -186,7 +265,9 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
   if (file.type === 'image/gif') {
     return { blob: file, compressed: false, originalBytes };
   }
-  if (typeof document === 'undefined' || typeof createImageBitmap === 'undefined') {
+  // canvas が無ければ再エンコードできないので元 File を返す。createImageBitmap の
+  // 有無はここで判定しない (無ければ decodeImage が <img> 経路に退避する)。
+  if (typeof document === 'undefined') {
     return { blob: file, compressed: false, originalBytes };
   }
 
@@ -196,24 +277,25 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
   // WASM 経路 (heavy) はメインスレッド負荷が高いので試行回数を減らす
   const primarySteps = heavy && !opts.qualitySteps ? WASM_QUALITY_STEPS : qualitySteps;
 
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    // HEIC を decode できない環境 (例: デスクトップ Chrome) 等
+  // createImageBitmap (EXIF/HEIC) 優先、ダメなら <img> に退避してでもデコードする。
+  // ここで null = どの経路でもデコードできなかった (= 元 File を返すしかない)。
+  const decoded = await decodeImage(file);
+  if (!decoded) {
+    // HEIC を <img> でも decode できない環境 (例: デスクトップ Chrome) 等
     return { blob: file, compressed: false, originalBytes };
   }
+  const { source, width: srcW, height: srcH } = decoded;
 
   try {
     let usedType = outType;
-    let result = await encodeBestFit(bitmap, outType, encode, maxBytes, maxDimension, primarySteps);
+    let result = await encodeBestFit(source, srcW, srcH, outType, encode, maxBytes, maxDimension, primarySteps);
 
     // WebP エンコーダが 1 枚も作れなかった (WASM ロード/実行失敗等) 場合は
     // JPEG に退避する。これで「これまで動いていた JPEG 圧縮」を絶対に壊さない。
     if (!result && outType !== 'image/jpeg') {
       usedType = 'image/jpeg';
       result = await encodeBestFit(
-        bitmap, 'image/jpeg', (c, q) => canvasToBlob(c, 'image/jpeg', q), maxBytes, maxDimension, qualitySteps,
+        source, srcW, srcH, 'image/jpeg', (c, q) => canvasToBlob(c, 'image/jpeg', q), maxBytes, maxDimension, qualitySteps,
       );
     }
 
@@ -222,10 +304,10 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
     }
     // 収まらなくても、元より小さければ返す (呼び出し側が最終 size 検査)
     if (result && result.blob.size < originalBytes) {
-      return { blob: result.blob, compressed: true, originalBytes, outputType: usedType };
+      return { blob: result.blob, compressed: true, originalBytes, outputType: usedType, width: result.w, height: result.h };
     }
     return { blob: file, compressed: false, originalBytes };
   } finally {
-    bitmap.close();
+    decoded.cleanup();
   }
 }

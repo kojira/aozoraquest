@@ -175,6 +175,8 @@ function ComposeDialog({
   });
   const [loading, setLoading] = useState(false);
   const [compressing, setCompressing] = useState(false);
+  // 複数枚を逐次処理する間「進んでいる」ことを見せる (高解像度 4 枚は数秒かかり、固まったと誤解されるため)
+  const [compressProgress, setCompressProgress] = useState<{ done: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<DialogState[]>(images);
@@ -231,9 +233,11 @@ function ComposeDialog({
     }
 
     setCompressing(true);
+    setCompressProgress({ done: 0, total: files.length });
     const added: DialogState[] = [];
     let sizeSkipped = 0;
     try {
+      let done = 0;
       for (const file of files) {
         // 大きい画像は弾かず、lossy WebP に圧縮して上限内に収める (GIF は変換しない)。
         let blob: Blob = file;
@@ -243,14 +247,20 @@ function ComposeDialog({
         } catch (err) {
           console.warn('[compose] image compress failed, use original', err);
         }
+        if (mountedRef.current) setCompressProgress({ done: ++done, total: files.length });
         if (blob.size > MAX_IMAGE_BYTES) {
           sizeSkipped += 1;
+          // 原因切り分け (圧縮が効いていない / 効いても収まらない) は開発者向け。文言には出さない。
+          console.warn(`[compose] 添付不可: 圧縮後も ${(blob.size / 1000).toFixed(0)}KB で上限 ${(MAX_IMAGE_BYTES / 1000).toFixed(0)}KB 超過`);
           continue;
         }
         added.push({ blob, alt: '', source: 'user', previewUrl: URL.createObjectURL(blob) });
       }
     } finally {
-      if (mountedRef.current) setCompressing(false);
+      if (mountedRef.current) {
+        setCompressing(false);
+        setCompressProgress(null);
+      }
     }
     // 圧縮中に dialog を閉じていたら何もしない (objectURL を破棄してリーク防止)
     if (!mountedRef.current) {
@@ -267,10 +277,13 @@ function ComposeDialog({
     }
     // スキップ内訳をまとめて 1 つの文言に
     const notes: string[] = [];
-    if (overLimit > 0) notes.push(`${overLimit} 枚は上限 (${MAX_POST_IMAGES} 枚) 超過`);
-    if (unsupported > 0) notes.push(`${unsupported} 枚は非対応形式`);
-    if (sizeSkipped > 0) notes.push(`${sizeSkipped} 枚はサイズ超過`);
-    setErr(notes.length > 0 ? `一部スキップ: ${notes.join(' / ')}` : null);
+    if (overLimit > 0) notes.push(`${overLimit} 枚は上限 (${MAX_POST_IMAGES} 枚) を超えました`);
+    if (unsupported > 0) notes.push(`${unsupported} 枚は対応していない形式でした`);
+    if (sizeSkipped > 0) {
+      // ユーザーには行動 (撮り直し/縮小) を促す。サイズ等の技術詳細は console 側に出す。
+      notes.push(`${sizeSkipped} 枚は容量が大きく添付できませんでした。小さくして添付し直してください`);
+    }
+    setErr(notes.length > 0 ? `一部添付できませんでした: ${notes.join(' / ')}` : null);
   }
 
   function removeImage(index: number) {
@@ -546,14 +559,16 @@ function ComposeDialog({
                 style={{ fontSize: '0.85em' }}
               >
                 {compressing
-                  ? '画像を圧縮中...'
+                  ? compressProgress && compressProgress.total > 1
+                    ? `画像を準備中... (${compressProgress.done}/${compressProgress.total})`
+                    : '画像を準備中...'
                   : images.length === 0
                     ? '画像を添付'
                     : `画像を追加 (${images.length}/${MAX_POST_IMAGES})`}
               </button>
               {compressing && (
                 <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
-                  WebP に圧縮しています…
+                  投稿用に画像を準備しています…
                 </span>
               )}
             </div>
