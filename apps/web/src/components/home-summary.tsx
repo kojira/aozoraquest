@@ -258,8 +258,19 @@ function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
 /**
  * 今日の投稿が何と分類され、どのクエストを +1 したかの監査ログ。
  * 「なぜ感謝の返信 3 件が進まないのか」「この投稿はどの行動扱いなのか」を
- * 自分で確認できる透明性 UI。折り畳み式で最新 3 件をデフォルト表示。
+ * 自分で確認できる透明性 UI。
+ *
+ * 結果カテゴリ (クエスト達成 / カウント対象外 / 分類不能) ごとに
+ * アイコン + 件数のチップへ畳み、チップをタップしたときだけ本文を出す。
  */
+type AuditCatKey = 'quest' | 'other' | 'none';
+
+/** entry を結果カテゴリへ振り分ける単一の分類基準 (チップと展開本文でズレないよう一元化)。 */
+function auditCategory(e: ActivityEntry): AuditCatKey {
+  if (e.incremented.length > 0) return 'quest';
+  return e.action ? 'other' : 'none';
+}
+
 /** 分類不能 (?) アイコン */
 function UnclassifiedIcon({ size = 15 }: { size?: number }) {
   return (
@@ -281,31 +292,31 @@ function NoMatchIcon({ size = 15 }: { size?: number }) {
 }
 
 function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<AuditCatKey | null>(null);
   // 新しい順 (activity は古い順に追記)
   const sorted = useMemo(() => [...activity].reverse(), [activity]);
-  if (sorted.length === 0) return null;
 
   // 結果カテゴリに振り分け (本文は出さず、アイコン+件数だけ畳む)
-  const cats = [
-    {
-      key: 'quest', label: 'クエスト達成', accent: true,
-      icon: <ScrollIcon size={15} />,
-      entries: sorted.filter((e) => e.incremented.length > 0),
-    },
-    {
-      key: 'other', label: 'カウント対象外', accent: false,
-      icon: <NoMatchIcon />,
-      entries: sorted.filter((e) => e.incremented.length === 0 && !!e.action),
-    },
-    {
-      key: 'none', label: '分類不能', accent: false,
-      icon: <UnclassifiedIcon />,
-      entries: sorted.filter((e) => e.incremented.length === 0 && !e.action),
-    },
-  ].filter((c) => c.entries.length > 0);
+  const cats = useMemo(() => {
+    const defs: { key: AuditCatKey; label: string; accent: boolean; icon: React.ReactNode }[] = [
+      { key: 'quest', label: 'クエスト達成', accent: true, icon: <ScrollIcon size={15} /> },
+      { key: 'other', label: 'カウント対象外', accent: false, icon: <NoMatchIcon size={15} /> },
+      { key: 'none', label: '分類不能', accent: false, icon: <UnclassifiedIcon size={15} /> },
+    ];
+    return defs
+      .map((d) => ({ ...d, entries: sorted.filter((e) => auditCategory(e) === d.key) }))
+      .filter((c) => c.entries.length > 0);
+  }, [sorted]);
+
+  // 開いていたカテゴリが再集計 (投稿後の再 fetch 等) で 0 件化したら閉じる (ゴースト state 防止)
+  useEffect(() => {
+    if (openKey && !cats.some((c) => c.key === openKey)) setOpenKey(null);
+  }, [cats, openKey]);
+
+  if (sorted.length === 0) return null;
 
   const openCat = cats.find((c) => c.key === openKey) ?? null;
+  const panelId = 'activity-audit-panel';
 
   return (
     <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.5em' }}>
@@ -322,13 +333,15 @@ function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
               type="button"
               onClick={() => setOpenKey(active ? null : c.key)}
               aria-expanded={active}
+              aria-controls={active ? panelId : undefined}
               aria-label={`${c.label} ${c.entries.length}件`}
               title={`${c.label} ${c.entries.length}件`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.3em',
-                padding: '0.2em 0.6em',
+                minHeight: '1.9em',
+                padding: '0.3em 0.7em',
                 fontSize: '0.82em',
                 borderRadius: 999,
                 background: active ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.35)',
@@ -345,13 +358,19 @@ function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
         })}
       </div>
       {openCat && (
-        <ul style={{ listStyle: 'none', padding: 0, margin: '0.45em 0 0', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-          {openCat.entries.map((e, i) => (
-            <li key={i}>
-              <ActivityRow entry={e} />
-            </li>
-          ))}
-        </ul>
+        <div id={panelId} style={{ marginTop: '0.45em' }}>
+          {/* タップ時のみ、どの分類を開いているかをラベルで明示 (普段はアイコンのみ) */}
+          <div style={{ fontSize: '0.78em', fontWeight: 700, marginBottom: '0.3em', color: openCat.accent ? 'var(--color-accent)' : 'var(--color-muted)' }}>
+            {openCat.label} ({openCat.entries.length})
+          </div>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+            {openCat.entries.map((e) => (
+              <li key={e.at}>
+                <ActivityRow entry={e} />
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
