@@ -210,16 +210,19 @@ function ComposeDialog({
       setErr(`画像は最大 ${MAX_POST_IMAGES} 枚までです。`);
       return;
     }
-    const files = selected.filter(isAttachableImage).slice(0, remaining);
-    const rejected = selected.length - files.length;
+    const attachable = selected.filter(isAttachableImage);
+    const files = attachable.slice(0, remaining);
+    // スキップ理由を内訳で集計 (1 つの文言に上書きしない)
+    const unsupported = selected.length - attachable.length; // 非対応形式
+    const overLimit = attachable.length - files.length;       // 上限超過で入りきらない
     if (files.length === 0) {
       setErr('画像ファイルを選んでください。');
       return;
     }
-    setErr(rejected > 0 ? `一部の画像は追加できませんでした (上限 ${MAX_POST_IMAGES} 枚 / 非対応形式)。` : null);
 
     setCompressing(true);
     const added: DialogState[] = [];
+    let sizeSkipped = 0;
     try {
       for (const file of files) {
         // 大きい画像は弾かず、lossy WebP に圧縮して上限内に収める (GIF は変換しない)。
@@ -231,7 +234,7 @@ function ComposeDialog({
           console.warn('[compose] image compress failed, use original', err);
         }
         if (blob.size > MAX_IMAGE_BYTES) {
-          setErr(`圧縮しても上限を超える画像をスキップしました (${(blob.size / 1024).toFixed(0)} KB)。`);
+          sizeSkipped += 1;
           continue;
         }
         added.push({ blob, alt: '', source: 'user', previewUrl: URL.createObjectURL(blob) });
@@ -244,7 +247,20 @@ function ComposeDialog({
       for (const im of added) URL.revokeObjectURL(im.previewUrl);
       return;
     }
-    if (added.length > 0) setImages((prev) => [...prev, ...added].slice(0, MAX_POST_IMAGES));
+    if (added.length > 0) {
+      setImages((prev) => {
+        const merged = [...prev, ...added];
+        // 上限超過で落ちた分の objectURL を revoke (await を挟む間に prev が増えても漏らさない)
+        for (const dropped of merged.slice(MAX_POST_IMAGES)) URL.revokeObjectURL(dropped.previewUrl);
+        return merged.slice(0, MAX_POST_IMAGES);
+      });
+    }
+    // スキップ内訳をまとめて 1 つの文言に
+    const notes: string[] = [];
+    if (overLimit > 0) notes.push(`${overLimit} 枚は上限 (${MAX_POST_IMAGES} 枚) 超過`);
+    if (unsupported > 0) notes.push(`${unsupported} 枚は非対応形式`);
+    if (sizeSkipped > 0) notes.push(`${sizeSkipped} 枚はサイズ超過`);
+    setErr(notes.length > 0 ? `一部スキップ: ${notes.join(' / ')}` : null);
   }
 
   function removeImage(index: number) {
@@ -435,7 +451,7 @@ function ComposeDialog({
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <label style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
-                    alt (代替テキスト) — {i + 1}/{images.length}
+                    画像 {i + 1}/{images.length} の代替テキスト (alt)
                   </label>
                   <TextField
                     multiline
@@ -452,6 +468,7 @@ function ComposeDialog({
                       className="secondary"
                       onClick={() => removeImage(i)}
                       disabled={loading}
+                      aria-label={`画像 ${i + 1} を削除`}
                       style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
                     >
                       削除
@@ -460,23 +477,26 @@ function ComposeDialog({
                 </div>
               </div>
             ))}
-            {images.length < MAX_POST_IMAGES && (
-              <div>
-                <button
-                  className="secondary"
-                  onClick={pickImage}
-                  disabled={loading || compressing}
-                  style={{ fontSize: '0.85em' }}
-                >
-                  {compressing ? '画像を圧縮中...' : images.length === 0 ? '画像を添付' : `画像を追加 (${images.length}/${MAX_POST_IMAGES})`}
-                </button>
-                {compressing && (
-                  <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
-                    WebP に圧縮しています…
-                  </span>
-                )}
-              </div>
-            )}
+            {/* 上限到達時もボタンは残し disabled + (N/4) で「これ以上添付できない」を明示 */}
+            <div>
+              <button
+                className="secondary"
+                onClick={pickImage}
+                disabled={loading || compressing || images.length >= MAX_POST_IMAGES}
+                style={{ fontSize: '0.85em' }}
+              >
+                {compressing
+                  ? '画像を圧縮中...'
+                  : images.length === 0
+                    ? '画像を添付'
+                    : `画像を追加 (${images.length}/${MAX_POST_IMAGES})`}
+              </button>
+              {compressing && (
+                <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
+                  WebP に圧縮しています…
+                </span>
+              )}
+            </div>
             <input
               ref={fileInputRef}
               type="file"

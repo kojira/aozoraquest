@@ -316,37 +316,27 @@ export async function createPostWithImages(
   images: Array<{ blob: Blob; alt: string }>,
   tag?: string,
 ): Promise<void> {
+  // 呼び出し側 (UI) を信頼せず lib 側でも 4 枚に切り詰める最終ガード。
   const picked = images.slice(0, MAX_POST_IMAGES);
-  // 並列アップロード (map は順序を保持するので表示順は維持される)
-  const uploaded = await Promise.all(
-    picked.map(async ({ blob, alt }) => {
-      const res = await agent.uploadBlob(blob, { encoding: blob.type || 'image/png' });
-      return { alt, image: res.data.blob };
-    }),
-  );
   const record: Record<string, unknown> = {
     text,
     createdAt: new Date().toISOString(),
     via: VIA,
-    embed: {
-      $type: 'app.bsky.embed.images',
-      images: uploaded,
-    },
   };
+  if (picked.length > 0) {
+    // 並列アップロード (map は順序を保持するので表示順は維持される)
+    const uploaded = await Promise.all(
+      picked.map(async ({ blob, alt }) => {
+        const res = await agent.uploadBlob(blob, { encoding: blob.type || 'image/png' });
+        return { alt, image: res.data.blob };
+      }),
+    );
+    record['embed'] = { $type: 'app.bsky.embed.images', images: uploaded };
+  }
+  // picked が空なら embed を付けない (空 images embed は不正なので作らない)。
   const facets = buildTagFacets(text, tag);
   if (facets) record['facets'] = facets;
   await agent.post(record as unknown as Parameters<Agent['post']>[0]);
-}
-
-/** 単一画像版 (createPostWithImages の薄いラッパ。既存呼び出し互換)。 */
-export async function createPostWithImage(
-  agent: Agent,
-  text: string,
-  blob: Blob,
-  alt: string,
-  tag?: string,
-): Promise<void> {
-  return createPostWithImages(agent, text, [{ blob, alt }], tag);
 }
 
 /** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする) */
