@@ -141,7 +141,7 @@ function isAttachableImage(file: File): boolean {
 /** Bluesky uploadBlob の上限は約 1MB。少しマージン取って 950KB を上限警告ラインに。 */
 const MAX_IMAGE_BYTES = 950_000;
 
-/** 画像プレビュー行の操作ボタン (← → 削除)。親が 0.75em と小さいので rem 基準で
+/** 画像プレビュー行の操作ボタン (↑ ↓ 削除)。親が 0.75em と小さいので rem 基準で
  *  独立に大きさを決め、モバイルのタップ領域 (≈40px) を確保する。 */
 const IMG_CTRL_BTN: CSSProperties = {
   fontSize: '0.95rem',
