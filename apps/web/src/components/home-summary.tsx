@@ -174,10 +174,10 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
                   <span style={{ color: 'var(--color-accent)' }}>達成 {done.length}/{quests.length}</span>
                 )}
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: open ? '0.35em' : '0.2em' }}>
                 {visible.map((q, i) => (
                   <li key={q.id}>
-                    <QuestRow quest={q} showIcon={i === 0} />
+                    <QuestRow quest={q} showIcon={i === 0} compact={!open} />
                   </li>
                 ))}
               </ul>
@@ -198,7 +198,7 @@ function isQuestDone(q: Quest): boolean {
   return q.requiredCount > 0 && q.currentCount >= q.requiredCount;
 }
 
-function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
+function QuestRow({ quest, showIcon, compact = false }: { quest: Quest; showIcon: boolean; compact?: boolean }) {
   const progress = quest.requiredCount > 0
     ? Math.min(1, quest.currentCount / quest.requiredCount)
     : 0;
@@ -209,6 +209,32 @@ function QuestRow({ quest, showIcon }: { quest: Quest; showIcon: boolean }) {
     maintenance: 'var(--color-muted)',
     restraint: 'var(--color-agi)',
   }[quest.type];
+
+  // 折り畳み (ファーストビュー) 時はスピリット吹き出し + プログレスバーを出さず、
+  // 1 行のコンパクト表示にしてホーム上部がクエストに専有されないようにする。
+  // 達成済は行全体を薄くせず「達成!」チップを残す (= RPG の達成感をファースト
+  // ビューでも消さない)。
+  if (compact) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45em', fontSize: '0.85em' }}>
+        <span style={{ fontSize: '0.68em', padding: '0.05em 0.35em', border: `1px solid ${typeColor}`, color: typeColor, borderRadius: 2, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }}>
+          {typeBadge}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(done ? { color: 'var(--color-muted)', textDecoration: 'line-through' } : {}) }}>
+          {quest.description}
+        </span>
+        {done ? (
+          <span style={{ fontSize: '0.68em', padding: '0.05em 0.4em', background: 'var(--color-accent)', color: '#0a1528', borderRadius: 2, fontWeight: 700, flexShrink: 0 }}>
+            達成!
+          </span>
+        ) : quest.requiredCount > 0 ? (
+          <span style={{ fontSize: '0.78em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace', flexShrink: 0 }}>
+            {quest.currentCount}/{quest.requiredCount}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <SpiritBubble showIcon={showIcon} iconSize={36} fontSize="0.9em" {...(done ? { style: { opacity: 0.55 } } : {})}>
