@@ -9,11 +9,11 @@
         "alt": "戦略家"
       },
       "stats": [
-        23,
-        12,
-        5,
-        48,
-        12
+        22,
+        15,
+        9,
+        40,
+        14
       ],
       "dominantFunction": "Ni",
       "auxiliaryFunction": "Te"
@@ -25,10 +25,10 @@
         "alt": "研究者"
       },
       "stats": [
-        1,
-        18,
+        7,
         19,
-        44,
+        19,
+        37,
         18
       ],
       "dominantFunction": "Ti",
@@ -41,11 +41,11 @@
         "alt": "起業家"
       },
       "stats": [
-        47,
-        6,
-        9,
-        32,
-        6
+        39,
+        10,
+        13,
+        28,
+        10
       ],
       "dominantFunction": "Te",
       "auxiliaryFunction": "Ni"
@@ -57,11 +57,11 @@
         "alt": "即興師"
       },
       "stats": [
-        1,
-        12,
-        29,
-        22,
-        36
+        7,
+        14,
+        27,
+        21,
+        31
       ],
       "dominantFunction": "Ne",
       "auxiliaryFunction": "Ti"
@@ -73,11 +73,11 @@
         "alt": "語り部"
       },
       "stats": [
-        2,
-        15,
-        6,
-        53,
-        24
+        8,
+        16,
+        10,
+        43,
+        23
       ],
       "dominantFunction": "Ni",
       "auxiliaryFunction": "Fe"
@@ -89,11 +89,11 @@
         "alt": "彫刻家"
       },
       "stats": [
-        7,
-        37,
-        13,
-        3,
-        40
+        11,
+        32,
+        15,
+        8,
+        34
       ],
       "dominantFunction": "Fi",
       "auxiliaryFunction": "Ne"
@@ -105,11 +105,11 @@
         "alt": "案内人"
       },
       "stats": [
-        4,
+        9,
         19,
-        10,
-        27,
-        40
+        13,
+        25,
+        34
       ],
       "dominantFunction": "Fe",
       "auxiliaryFunction": "Ni"
@@ -121,11 +121,11 @@
         "alt": "旅芸人"
       },
       "stats": [
-        11,
+        14,
         19,
-        27,
-        3,
-        40
+        25,
+        8,
+        34
       ],
       "dominantFunction": "Ne",
       "auxiliaryFunction": "Fi"
@@ -137,11 +137,11 @@
         "alt": "鍛冶師"
       },
       "stats": [
-        27,
-        49,
-        3,
-        11,
-        10
+        25,
+        41,
+        8,
+        13,
+        13
       ],
       "dominantFunction": "Si",
       "auxiliaryFunction": "Te"
@@ -153,11 +153,11 @@
         "alt": "家守"
       },
       "stats": [
-        5,
-        52,
-        5,
-        16,
-        22
+        10,
+        43,
+        9,
+        17,
+        21
       ],
       "dominantFunction": "Si",
       "auxiliaryFunction": "Fe"
@@ -169,11 +169,11 @@
         "alt": "達人"
       },
       "stats": [
-        8,
-        9,
-        24,
-        53,
-        6
+        12,
+        12,
+        23,
+        43,
+        10
       ],
       "dominantFunction": "Ti",
       "auxiliaryFunction": "Se"
@@ -185,11 +185,11 @@
         "alt": "庭師"
       },
       "stats": [
-        13,
-        28,
+        15,
+        26,
         19,
-        12,
-        28
+        14,
+        26
       ],
       "dominantFunction": "Fi",
       "auxiliaryFunction": "Se"
@@ -201,11 +201,11 @@
         "alt": "管理官"
       },
       "stats": [
-        45,
-        25,
-        7,
-        13,
-        10
+        38,
+        23,
+        11,
+        15,
+        13
       ],
       "dominantFunction": "Te",
       "auxiliaryFunction": "Si"
@@ -217,11 +217,11 @@
         "alt": "看護師"
       },
       "stats": [
-        3,
-        38,
-        7,
         8,
-        44
+        32,
+        11,
+        12,
+        37
       ],
       "dominantFunction": "Fe",
       "auxiliaryFunction": "Si"
@@ -233,11 +233,11 @@
         "alt": "現場監督"
       },
       "stats": [
-        16,
-        7,
-        40,
-        27,
-        10
+        17,
+        11,
+        34,
+        25,
+        13
       ],
       "dominantFunction": "Se",
       "auxiliaryFunction": "Ti"
@@ -249,11 +249,11 @@
         "alt": "祭司"
       },
       "stats": [
-        27,
-        14,
-        37,
-        8,
-        14
+        25,
+        16,
+        32,
+        11,
+        16
       ],
       "dominantFunction": "Se",
       "auxiliaryFunction": "Fi"

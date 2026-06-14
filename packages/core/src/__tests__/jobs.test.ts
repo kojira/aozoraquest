@@ -1,6 +1,24 @@
 import { describe, expect, test } from 'vitest';
 import { JOBS, archetypeFromFunctionPair, currentJob, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
-import type { StatArray } from '../types.js';
+import { COGNITIVE_TO_RPG } from '../diagnosis.js';
+import { STATS, type CogFunction, type StatArray } from '../types.js';
+
+/** scripts/gen-job-stats.ts と同じ式で dom/aux からジョブ stats を再導出する。 */
+function expectedStats(dom: CogFunction, aux: CogFunction): number[] {
+  const FLIP_L: Record<string, string> = { N: 'S', S: 'N', T: 'F', F: 'T' };
+  const FLIP_A: Record<string, string> = { i: 'e', e: 'i' };
+  const flip = (f: CogFunction) => (FLIP_L[f[0]!]! + FLIP_A[f[1]!]!) as CogFunction;
+  const stack: Partial<Record<CogFunction, number>> = { [dom]: 1.0, [aux]: 0.5, [flip(aux)]: 0.25, [flip(dom)]: 0.125 };
+  const raw: Record<string, number> = Object.fromEntries(STATS.map((s) => [s, 0]));
+  for (const [fn, w] of Object.entries(stack)) for (const s of STATS) raw[s]! += (w as number) * COGNITIVE_TO_RPG[fn as CogFunction][s];
+  const tot = STATS.reduce((a, s) => a + raw[s]!, 0);
+  const floored = STATS.map((s) => 6 + 0.7 * ((raw[s]! / tot) * 100)); // floor + affine
+  const base = floored.map(Math.floor);
+  const rem = 100 - base.reduce((a, b) => a + b, 0);
+  const order = floored.map((v, i) => ({ frac: v - Math.floor(v), i })).sort((a, b) => b.frac - a.frac).map((x) => x.i);
+  for (let k = 0; k < rem; k++) base[order[k]!] = base[order[k]!]! + 1;
+  return base;
+}
 
 describe('JOBS', () => {
   test('has 16 entries', () => {
@@ -11,6 +29,12 @@ describe('JOBS', () => {
     for (const j of JOBS) {
       const sum = j.stats.reduce((a, b) => a + b, 0);
       expect(sum, `${j.id} stats sum`).toBe(100);
+    }
+  });
+
+  test('stats は認知機能スタックの floor 付き理論値と一致 (gen-job-stats.ts と同式・ドリフト検出)', () => {
+    for (const j of JOBS) {
+      expect([...j.stats], `${j.id} stats`).toEqual(expectedStats(j.dominantFunction, j.auxiliaryFunction));
     }
   });
 
@@ -44,7 +68,7 @@ describe('shapeSimilarity', () => {
 
 describe('currentJob', () => {
   test('exact sage stats → sage match', () => {
-    const sageStats: StatArray = [23, 12, 5, 48, 12];
+    const sageStats: StatArray = [22, 15, 9, 40, 14];
     const result = currentJob(sageStats);
     expect(result).not.toBeNull();
     expect(result!.jobId).toBe('sage');
