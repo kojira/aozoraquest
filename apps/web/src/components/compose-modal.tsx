@@ -271,6 +271,22 @@ function ComposeDialog({
     });
   }
 
+  // 隣の画像と入れ替え (Bluesky は embed.images の配列順で表示するので順序に意味がある)。
+  // objectURL は不変なので revoke しない。
+  function moveImage(index: number, dir: -1 | 1) {
+    setImages((prev) => {
+      const to = index + dir;
+      if (to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const a = next[index];
+      const b = next[to];
+      if (!a || !b) return prev;
+      next[index] = b;
+      next[to] = a;
+      return next;
+    });
+  }
+
   async function submit() {
     const body = text.trim();
     if (loading || !agent) return;
@@ -462,17 +478,43 @@ function ComposeDialog({
                     maxLength={1000}
                     disabled={loading}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
-                    <span>{(im.blob.size / 1024).toFixed(0)} KB · {im.blob.type || '?'}</span>
-                    <button
-                      className="secondary"
-                      onClick={() => removeImage(i)}
-                      disabled={loading}
-                      aria-label={`画像 ${i + 1} を削除`}
-                      style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
-                    >
-                      削除
-                    </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em', gap: '0.4em' }}>
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(im.blob.size / 1024).toFixed(0)} KB · {im.blob.type || '?'}</span>
+                    <span style={{ display: 'inline-flex', gap: '0.3em', flexShrink: 0 }}>
+                      {images.length > 1 && (
+                        <>
+                          <button
+                            className="secondary"
+                            onClick={() => moveImage(i, -1)}
+                            disabled={loading || i === 0}
+                            aria-label={`画像 ${i + 1} を前へ`}
+                            title="前へ"
+                            style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
+                          >
+                            ←
+                          </button>
+                          <button
+                            className="secondary"
+                            onClick={() => moveImage(i, 1)}
+                            disabled={loading || i === images.length - 1}
+                            aria-label={`画像 ${i + 1} を後ろへ`}
+                            title="後ろへ"
+                            style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
+                          >
+                            →
+                          </button>
+                        </>
+                      )}
+                      <button
+                        className="secondary"
+                        onClick={() => removeImage(i)}
+                        disabled={loading}
+                        aria-label={`画像 ${i + 1} を削除`}
+                        style={{ fontSize: '0.8em', padding: '0.1em 0.5em' }}
+                      >
+                        削除
+                      </button>
+                    </span>
                   </div>
                 </div>
               </div>
