@@ -212,20 +212,26 @@ function QuestRow({ quest, showIcon, compact = false }: { quest: Quest; showIcon
 
   // 折り畳み (ファーストビュー) 時はスピリット吹き出し + プログレスバーを出さず、
   // 1 行のコンパクト表示にしてホーム上部がクエストに専有されないようにする。
+  // 達成済は行全体を薄くせず「達成!」チップを残す (= RPG の達成感をファースト
+  // ビューでも消さない)。
   if (compact) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45em', fontSize: '0.85em', opacity: done ? 0.55 : 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45em', fontSize: '0.85em' }}>
         <span style={{ fontSize: '0.68em', padding: '0.05em 0.35em', border: `1px solid ${typeColor}`, color: typeColor, borderRadius: 2, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }}>
           {typeBadge}
         </span>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(done ? { textDecoration: 'line-through' } : {}) }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(done ? { color: 'var(--color-muted)', textDecoration: 'line-through' } : {}) }}>
           {quest.description}
         </span>
-        {quest.requiredCount > 0 && (
+        {done ? (
+          <span style={{ fontSize: '0.68em', padding: '0.05em 0.4em', background: 'var(--color-accent)', color: '#0a1528', borderRadius: 2, fontWeight: 700, flexShrink: 0 }}>
+            達成!
+          </span>
+        ) : quest.requiredCount > 0 ? (
           <span style={{ fontSize: '0.78em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace', flexShrink: 0 }}>
             {quest.currentCount}/{quest.requiredCount}
           </span>
-        )}
+        ) : null}
       </div>
     );
   }

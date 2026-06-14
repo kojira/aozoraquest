@@ -327,9 +327,12 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           <button type="button" disabled={!canMoveLeft} onClick={() => { onMoveLeft(); setMenuOpen(false); }}>← 左へ移動</button>
           <button type="button" disabled={!canMoveRight} onClick={() => { onMoveRight(); setMenuOpen(false); }}>→ 右へ移動</button>
           <button type="button" onClick={() => { onAddRight(); setMenuOpen(false); }}>＋ 右にカラムを追加</button>
-          <button type="button" onClick={() => { onRefreshAll(); setMenuOpen(false); }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}><RefreshIcon /> すべてのカラムを更新</span>
-          </button>
+          {/* 単一カラム時は「すべて」= 自カラムでラベルと実体が一致しないので隠す */}
+          {(canMoveLeft || canMoveRight) && (
+            <button type="button" onClick={() => { onRefreshAll(); setMenuOpen(false); }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}><RefreshIcon /> すべてのカラムを更新</span>
+            </button>
+          )}
           {hasDirectLink && (
             <button type="button" onClick={copyLink}>
               {copied ? 'コピーしました ✓' : 'このカラムの直リンクをコピー'}
