@@ -1,7 +1,8 @@
 /**
  * home カラム: 自分のフォロー TL (旧 routes/home.tsx の「フォロー」タブを移設)。
  *
- * HomeSummary (自分のレーダー + 日次サマリ) + 投稿ボタン + フォロー TL。
+ * HomeSummary (自分のレーダー + 日次サマリ) + フォロー TL。
+ * (投稿ボタンは AppShell のフローティング FAB に移設済み)
  * VirtualFeed は ColumnScrollContext 経由でカラム内スクロールに切り替わる。
  * 自分の診断は use-self-diagnosis の共有キャッシュから取る (bar と重複
  * fetch しない / 投稿後の refresh が bar にも伝播する)。
@@ -19,14 +20,13 @@ import { useSelfDiagnosis, refreshSelfDiagnosis } from '@/lib/use-self-diagnosis
 import { VirtualFeed } from '@/components/virtual-feed';
 import { HomeSummary } from '@/components/home-summary';
 import { PostArticle } from '@/components/post-article';
-import { useCompose, useOnPosted } from '@/components/compose-modal';
+import { useOnPosted } from '@/components/compose-modal';
 import { useArchetypes } from '@/lib/archetype-cache';
 import { getHideReposts } from '@/lib/prefs';
 import { useColumnScrollEl } from '@/components/column-scroll-context';
 
 export function HomeColumn() {
   const session = useSession();
-  const { openCompose } = useCompose();
   const scrollEl = useColumnScrollEl();
   const { diag: selfDiag } = useSelfDiagnosis();
   const [targetJob, setTargetJob] = useState<Archetype | null>(null);
@@ -108,10 +108,6 @@ export function HomeColumn() {
   return (
     <div>
       {session.did && <HomeSummary agent={agent ?? null} diag={selfDiag} userDid={session.did} targetStats={targetStats} />}
-
-      <div style={{ marginTop: '0.5em', textAlign: 'right' }}>
-        <button onClick={() => openCompose()}>投稿する</button>
-      </div>
 
       <section style={{ marginTop: '0.8em' }}>
         {followingFeed.err && <p style={{ color: 'var(--color-danger)' }}>うまく読み込めませんでした: {followingFeed.err}</p>}
