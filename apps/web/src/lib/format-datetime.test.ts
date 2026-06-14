@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDateTime } from './format-datetime';
+import { formatDateTime, formatTime } from './format-datetime';
 
 describe('formatDateTime', () => {
   it('formats an ISO string to YYYY/MM/DD HH:MM:SS in local time', () => {
@@ -23,5 +23,23 @@ describe('formatDateTime', () => {
     expect(formatDateTime(undefined)).toBe('');
     expect(formatDateTime('')).toBe('');
     expect(formatDateTime('not-a-date')).toBe('');
+  });
+});
+
+describe('formatTime', () => {
+  it('formats HH:MM in local time, zero-padded', () => {
+    const d = new Date(2026, 5, 14, 9, 5, 30);
+    expect(formatTime(d.toISOString())).toBe('09:05');
+  });
+
+  it('drops seconds and date', () => {
+    const d = new Date(2026, 11, 31, 23, 59, 59);
+    expect(formatTime(d.toISOString())).toBe('23:59');
+  });
+
+  it('returns empty string for null / undefined / invalid', () => {
+    expect(formatTime(null)).toBe('');
+    expect(formatTime(undefined)).toBe('');
+    expect(formatTime('nope')).toBe('');
   });
 });

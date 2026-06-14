@@ -8,7 +8,7 @@
  *   tertiary = flip(aux)、inferior = flip(dom) (flip = 機能文字と態度を反転)。
  * さらにレーダー表示が軸潰れしないよう floor を噛ませる:
  *   v = FLOOR + (1 - 5*FLOOR/100) * 理論値
- *   これは affine 変換なので Pearson 相関は理論値と 1.0 (= currentJob 判定は不変)、
+ *   これは理論値に対する affine 変換なので純理論値と形 (Pearson 相関) は 1.0、
  *   かつ最小値 FLOOR を保証する。
  *
  * 実行: pnpm tsx scripts/gen-job-stats.ts
