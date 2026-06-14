@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BoardIcon } from '@/components/icons';
 import { ActionLink } from '@/components/action-link';
+import { formatTime } from '@/lib/format-datetime';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
 import {
@@ -425,13 +426,7 @@ function QuestRow({ quest }: { quest: Quest }) {
 }
 
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
-  const time = (() => {
-    try {
-      return new Date(entry.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return '';
-    }
-  })();
+  const time = formatTime(entry.at);
   const actionText = actionLabel(entry.action);
   const types = entry.actionTypes ?? (entry.action ? [entry.action] : []);
   return (

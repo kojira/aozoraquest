@@ -8,6 +8,7 @@ import { PersonIcon, ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
+import { formatTime } from '@/lib/format-datetime';
 
 interface HomeSummaryProps {
   agent: Agent | null;
@@ -406,9 +407,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
     const t = DEFAULT_QUEST_TEMPLATES.find((t) => t.id === id);
     return t ? t.descriptionTemplate.replace('{N}', '—') : id;
   };
-  const time = (() => {
-    try { return new Date(entry.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
-  })();
+  const time = formatTime(entry.at);
   const actionText = actionLabel(entry.action);
   return (
     <div
