@@ -141,6 +141,17 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--color-primary);
 }
 
+/* iOS Safari は input/textarea/select の実効 font-size が 16px 未満だと、
+   フォーカス時に画面を自動ズームする (その後 position:fixed / 100dvh の
+   レイアウトが崩れる)。モバイルでは下限 16px を強制してズームを止める。
+   各所のインライン em 指定 (例 compose textarea 0.85em) を上書きするため
+   !important を付ける。font-scale で拡大している場合はそれ以上を尊重。 */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: max(16px, 1rem) !important;
+  }
+}
+
 code {
   font-family: ui-monospace, 'Courier New', monospace;
   background: rgba(0,0,0,0.35);
