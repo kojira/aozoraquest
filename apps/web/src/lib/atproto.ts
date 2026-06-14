@@ -1,4 +1,4 @@
-import type { Agent } from '@atproto/api';
+import { RichText, type Agent } from '@atproto/api';
 import { BLUESKY_API_PAGE_LIMIT, DIAGNOSIS_MIN_POST_TEXT_LENGTH, DIAGNOSIS_POST_LIMIT, TIMELINE_PAGE_LIMIT } from '@aozoraquest/core';
 
 /** クライアント識別子。TOKIMEKI 方式で post record 最上位に書き込む。 */
@@ -247,12 +247,14 @@ export async function fetchPostThread(
  * クライアント識別のため `via: VIA` を record top-level に付加 (TOKIMEKI 互換)。
  */
 export async function createPost(agent: Agent, text: string, reply?: ReplyRef) {
-  const base: { text: string; createdAt: string; via: string; reply?: ReplyRef } = {
+  const base: { text: string; createdAt: string; via: string; reply?: ReplyRef; facets?: unknown[] } = {
     text,
     createdAt: new Date().toISOString(),
     via: VIA,
   };
   if (reply) base.reply = reply;
+  const facets = await detectPostFacets(agent, text);
+  if (facets) base.facets = facets;
   return agent.post(base as unknown as Parameters<Agent['post']>[0]);
 }
 
@@ -283,22 +285,23 @@ export async function getRecord<T = unknown>(agent: Agent, repo: string, collect
 }
 
 /**
- * text 内のハッシュタグ `#tag` を richtext facet (tag) に変換する。
- * 見つからなければ undefined。
+ * 投稿本文から richtext facet (URL リンク / @メンション / #ハッシュタグ) を自動検出する。
+ * - URL → `facet#link` (他クライアントでもクリック可能になる)
+ * - @handle → `facet#mention` (handle を DID に解決。要ネットワーク)
+ * - #tag → `facet#tag` (検索 API で拾える)
+ * detectFacets は内部で正しい byte index を計算するので、手組みより堅牢。
+ * 失敗しても投稿自体は止めない (facet 無しで投稿)。
  */
-function buildTagFacets(text: string, tag?: string): unknown[] | undefined {
-  if (!tag) return undefined;
-  const marker = `#${tag}`;
-  const idx = text.indexOf(marker);
-  if (idx < 0) return undefined;
-  const encoder = new TextEncoder();
-  return [{
-    index: {
-      byteStart: encoder.encode(text.slice(0, idx)).length,
-      byteEnd: encoder.encode(text.slice(0, idx + marker.length)).length,
-    },
-    features: [{ $type: 'app.bsky.richtext.facet#tag', tag }],
-  }];
+async function detectPostFacets(agent: Agent, text: string): Promise<unknown[] | undefined> {
+  if (!text) return undefined;
+  const rt = new RichText({ text });
+  try {
+    await rt.detectFacets(agent);
+  } catch (e) {
+    console.warn('[atproto] facet 検出に失敗 (facet 無しで投稿)', e);
+    return undefined;
+  }
+  return rt.facets && rt.facets.length > 0 ? rt.facets : undefined;
 }
 
 /** Bluesky の 1 投稿あたり画像添付上限。 */
@@ -308,7 +311,8 @@ export const MAX_POST_IMAGES = 4;
  * 画像付き投稿を作成する。最大 {@link MAX_POST_IMAGES} 枚を uploadBlob して
  * `app.bsky.embed.images` embed として post に紐付ける (画像は配列順で表示)。
  * @param images 各 {blob, alt}。alt は a11y 用 (空でも可)
- * @param tag    付与したいハッシュタグ (指定時 text 内から facet を抽出)
+ * @param tag    互換のため残置。facet (リンク/メンション/#tag) は detectPostFacets が
+ *               text から自動検出するので、ハッシュタグもこの引数なしで facet 化される。
  */
 export async function createPostWithImages(
   agent: Agent,
@@ -316,6 +320,7 @@ export async function createPostWithImages(
   images: Array<{ blob: Blob; alt: string }>,
   tag?: string,
 ): Promise<void> {
+  void tag; // facet 検出は自動化済み。引数は呼び出し側互換のため受けるだけ。
   // 呼び出し側 (UI) を信頼せず lib 側でも 4 枚に切り詰める最終ガード。
   const picked = images.slice(0, MAX_POST_IMAGES);
   const record: Record<string, unknown> = {
@@ -334,28 +339,21 @@ export async function createPostWithImages(
     record['embed'] = { $type: 'app.bsky.embed.images', images: uploaded };
   }
   // picked が空なら embed を付けない (空 images embed は不正なので作らない)。
-  const facets = buildTagFacets(text, tag);
+  const facets = await detectPostFacets(agent, text);
   if (facets) record['facets'] = facets;
   await agent.post(record as unknown as Parameters<Agent['post']>[0]);
 }
 
-/** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする) */
+/** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする)。
+ *  text に含まれる #tag / URL / @mention をまとめて facet 化する。 */
 export async function createTaggedPost(agent: Agent, text: string, tag: string): Promise<void> {
-  const marker = `#${tag}`;
-  const idx = text.indexOf(marker);
-  const encoder = new TextEncoder();
-  const facets = idx >= 0 ? [{
-    index: {
-      byteStart: encoder.encode(text.slice(0, idx)).length,
-      byteEnd: encoder.encode(text.slice(0, idx + marker.length)).length,
-    },
-    features: [{ $type: 'app.bsky.richtext.facet#tag', tag }],
-  }] : [];
+  void tag; // #tag は text に含まれている前提。facet 化は detectPostFacets が自動で行う。
+  const facets = await detectPostFacets(agent, text);
   const record = {
     text,
     createdAt: new Date().toISOString(),
     via: VIA,
-    ...(facets.length > 0 ? { facets } : {}),
+    ...(facets ? { facets } : {}),
   };
   await agent.post(record as unknown as Parameters<Agent['post']>[0]);
 }

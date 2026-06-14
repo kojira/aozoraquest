@@ -5,7 +5,7 @@ import type { Agent } from '@atproto/api';
 interface PostRecord {
   text: string;
   embed?: { $type: string; images: { alt: string }[] };
-  facets?: { features: { tag?: string }[] }[];
+  facets?: { features?: { $type?: string; tag?: string; uri?: string }[] }[];
 }
 
 function mockAgent() {
@@ -50,6 +50,16 @@ describe('createPostWithImages', () => {
     const m = mockAgent();
     await createPostWithImages(m.agent, 'タグなし本文', [img('image/webp', '')], 'AozoraQuest');
     expect(m.posted()?.facets).toBeUndefined();
+  });
+
+  it('detects a URL in text as a link facet (他クライアントでもクリック可能に)', async () => {
+    const m = mockAgent();
+    await createPostWithImages(m.agent, 'みて https://aozoraquest.app/board/x', [img('image/webp', '')]);
+    const facets = m.posted()?.facets;
+    expect(facets).toBeDefined();
+    expect(
+      facets?.some((f) => f.features?.some((ft) => ft.$type === 'app.bsky.richtext.facet#link' && ft.uri === 'https://aozoraquest.app/board/x')),
+    ).toBe(true);
   });
 
   it('posts a single image correctly', async () => {
