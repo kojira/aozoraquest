@@ -371,6 +371,37 @@ describe('formatNotificationPost', () => {
       questTitle: '精霊のイラスト',
       questUrl: 'https://aozoraquest.app/quests/x',
     });
+    // applied 以外 (assigned 等) には #aozoraquest を付けない (TL 汚染回避)
     expect(out).toBe('@sato.bsky.social 受託者に指定されました: 精霊のイラスト → https://aozoraquest.app/quests/x');
+  });
+
+  it('applied のときだけ発見用 #aozoraquest を付ける', () => {
+    const applied = formatNotificationPost({
+      action: 'applied',
+      recipientHandle: 'owner.bsky.social',
+      questTitle: 'テスト',
+      questUrl: 'https://aozoraquest.app/quests/y',
+    });
+    expect(applied).toContain('#aozoraquest');
+    expect(applied.startsWith('@owner.bsky.social')).toBe(true);
+
+    // ネガティブ寄りの通知はタグ無し (公開タグ TL に流さない)
+    for (const action of ['reported', 'approved', 'revisionRequested'] as const) {
+      const out = formatNotificationPost({ action, recipientHandle: 'h', questTitle: 't', questUrl: 'u' });
+      expect(out).not.toContain('#aozoraquest');
+    }
+  });
+
+  it('長いタイトルを丸めて post が長くなりすぎないようにする', () => {
+    const longTitle = 'あ'.repeat(200);
+    const out = formatNotificationPost({
+      action: 'applied',
+      recipientHandle: 'owner.bsky.social',
+      questTitle: longTitle,
+      questUrl: 'https://aozoraquest.app/quests/at%3A%2F%2Fdid%3Aplc%3Axxxxxxxxxxxxxxxxxxxx%2Fapp.aozoraquest.userQuest%2F3lpzzzzzz',
+    });
+    expect(out).toContain('…');
+    // Bluesky 上限 300 grapheme に対し安全側 (タイトル丸め後)
+    expect([...out].length).toBeLessThanOrEqual(300);
   });
 });
