@@ -3,6 +3,7 @@ import {
   isExpired,
   isCompleted,
   isValidCompletion,
+  needsRequesterApproval,
   outcomeOf,
   holdings,
   totalIssued,
@@ -105,6 +106,40 @@ describe('isCompleted (耐故障性)', () => {
       createdAt: 'x',
     };
     expect(isCompleted(q, [fakeApproval])).toBe(false);
+  });
+});
+
+describe('needsRequesterApproval (status ではなく completion record から導出)', () => {
+  const q = mk({ status: 'assigned', assignee: 'did:plc:assignee', did: 'did:plc:owner' });
+  const report = (at: string): QuestCompletion =>
+    ({ uri: `r-${at}`, did: 'did:plc:assignee', questUri: q.uri, role: 'assigneeReport', createdAt: at });
+  const approval = (at: string): QuestCompletion =>
+    ({ uri: `a-${at}`, did: 'did:plc:owner', questUri: q.uri, role: 'requesterApproval', createdAt: at });
+  const revision = (at: string): QuestCompletion =>
+    ({ uri: `v-${at}`, did: 'did:plc:owner', questUri: q.uri, role: 'requesterRevision', createdAt: at });
+
+  it('受託者の完了報告が来ていて未承認なら true (status は assigned のまま)', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z')])).toBe(true);
+  });
+  it('まだ報告が来ていなければ false', () => {
+    expect(needsRequesterApproval(q, [])).toBe(false);
+  });
+  it('既に承認済みなら false', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z'), approval('2026-06-15T02:00:00Z')])).toBe(false);
+  });
+  it('差し戻し後・再報告前 (差し戻しが最新) は false (受託者待ち)', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z')])).toBe(false);
+  });
+  it('差し戻し後に再報告が来たら true (承認待ちに戻る)', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z'), report('2026-06-15T03:00:00Z')])).toBe(true);
+  });
+  it('completed / cancelled は常に false', () => {
+    expect(needsRequesterApproval(mk({ ...q, status: 'completed' }), [report('2026-06-15T01:00:00Z')])).toBe(false);
+    expect(needsRequesterApproval(mk({ ...q, status: 'cancelled' }), [report('2026-06-15T01:00:00Z')])).toBe(false);
+  });
+  it('assignee 以外が書いた偽の報告は無視する', () => {
+    const fake: QuestCompletion = { uri: 'r', did: 'did:plc:attacker', questUri: q.uri, role: 'assigneeReport', createdAt: '2026-06-15T01:00:00Z' };
+    expect(needsRequesterApproval(q, [fake])).toBe(false);
   });
 });
 

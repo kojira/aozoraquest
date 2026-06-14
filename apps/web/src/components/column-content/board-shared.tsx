@@ -7,9 +7,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
-import { listIssuedQuests, listMyApplications, buildQuestIndexViaDiscovery } from '@/lib/quest-api';
+import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
-import type { UserQuest } from '@aozoraquest/core';
+import { needsRequesterApproval, type UserQuest } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { RewardPoints } from '@/components/handle';
@@ -27,6 +27,9 @@ export function useBoardData() {
   const [index, setIndex] = useState<QuestIndex | null>(null);
   const [myQuests, setMyQuests] = useState<UserQuest[] | null>(null);
   const [myApplicationQuestUris, setMyApplicationQuestUris] = useState<Set<string> | null>(null);
+  // 自分が発注したクエストのうち「受託者の完了報告が届き承認待ち」のもの。
+  // status は受託者が書けず assigned のままなので、completion record から判定する。
+  const [pendingApproval, setPendingApproval] = useState<UserQuest[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   // 集約 Worker が未デプロイの間は、発見ディレクトリの DID 群 (+ 自分) から
@@ -56,7 +59,25 @@ export function useBoardData() {
     const did = session.did;
     let cancelled = false;
     listIssuedQuests(agent, did)
-      .then((qs) => { if (!cancelled) setMyQuests(qs); })
+      .then(async (qs) => {
+        if (cancelled) return;
+        setMyQuests(qs);
+        // 承認待ち判定: assigned のクエストだけ completion を読み、受託者の報告が
+        // 来ていて未承認のものを集める (status='reported' は PDS に書かれないため)。
+        const candidates = qs.filter((q) => q.status === 'assigned');
+        const checked = await Promise.all(
+          candidates.map(async (q) => {
+            try {
+              const comps = await listCompletionsFor(undefined, q);
+              return needsRequesterApproval(q, comps) ? q : null;
+            } catch (e) {
+              console.warn('[board] listCompletionsFor (pending approval)', e);
+              return null;
+            }
+          }),
+        );
+        if (!cancelled) setPendingApproval(checked.filter((q): q is UserQuest => q !== null));
+      })
       .catch((e) => { if (!cancelled) console.warn('[board] listIssuedQuests', e); });
     listMyApplications(agent, did)
       .then((apps) => {
@@ -66,7 +87,7 @@ export function useBoardData() {
     return () => { cancelled = true; };
   }, [session.status, session.agent, session.did]);
 
-  return { index, myQuests, myApplicationQuestUris, err, sessionDid: session.did ?? null };
+  return { index, myQuests, myApplicationQuestUris, pendingApproval, err, sessionDid: session.did ?? null };
 }
 
 export function filterForBoard(
@@ -150,7 +171,8 @@ export function QuestCard({ summary, expired, needsApproval }: { summary: QuestI
           {summary.tags.slice(0, 3).map(t => <span key={t}>#{t.replace(/^#/, '')}</span>)}
           <span style={{ marginLeft: 'auto' }}>
             {expired ? '期限切れ' : summary.deadline ? `〆 ${formatDate(summary.deadline)}` : ''}
-            {summary.status !== 'open' && <span style={{ marginLeft: '0.6em' }}>{labelOf(summary.status)}</span>}
+            {/* needsApproval のときは上の accent バッジが状態を示すので muted ラベルは重複させない */}
+            {!needsApproval && summary.status !== 'open' && <span style={{ marginLeft: '0.6em' }}>{labelOf(summary.status)}</span>}
           </span>
         </div>
       </div>
@@ -158,29 +180,23 @@ export function QuestCard({ summary, expired, needsApproval }: { summary: QuestI
   );
 }
 
-/** 自分が発注したクエストのうち「完了報告が届き承認待ち (status=reported)」のもの。
- *  発注者がこれを見逃すと永久に達成されないため、掲示板上部のバナーで promote する。 */
-export function pendingApprovalQuests(myQuests: UserQuest[] | null): UserQuest[] {
-  return (myQuests ?? []).filter((q) => q.status === 'reported');
-}
-
 /** 承認待ちが 1 件以上あるとき、掲示板上部に出す気づき導線。
- *  各クエストへ直リンクし、1 タップで承認画面 (board-detail) に到達させる。 */
-export function ApprovalPendingBanner({ myQuests }: { myQuests: UserQuest[] | null }) {
-  const pending = pendingApprovalQuests(myQuests);
+ *  `pending` は useBoardData が completion record から算出済み (status には依存しない)。
+ *  各クエストへ直リンクし、詳細画面 (board-detail) で承認できる。 */
+export function ApprovalPendingBanner({ pending }: { pending: UserQuest[] }) {
   if (pending.length === 0) return null;
   return (
-    <div className="dq-window compact" style={{ borderColor: 'var(--color-accent)', marginBottom: '0.5em' }}>
+    <div className="dq-window compact" style={{ borderColor: 'var(--color-accent)', background: 'rgba(159,215,255,0.08)', marginBottom: '0.5em' }}>
       <div style={{ fontSize: '0.85em', fontWeight: 700, color: 'var(--color-accent)' }}>
         ● 承認待ちが {pending.length} 件
       </div>
       <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
-        完了報告が届いています。承認するとクエストが達成になります。
+        完了報告が届いています。各クエストを開いて承認すると達成になります。
       </div>
       <ul style={{ listStyle: 'none', padding: 0, margin: '0.4em 0 0' }}>
         {pending.map((q) => (
           <li key={q.uri} style={{ marginTop: '0.25em' }}>
-            <Link to={`/board/${encodeURIComponent(q.uri)}`} style={{ fontSize: '0.82em' }}>
+            <Link to={`/board/${encodeURIComponent(q.uri)}`} style={{ fontSize: '0.82em', wordBreak: 'break-word' }}>
               「{q.title}」を承認する →
             </Link>
           </li>
