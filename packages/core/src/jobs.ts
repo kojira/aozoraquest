@@ -5,22 +5,28 @@ import { type Archetype, type CogFunction, type JobDefinition, type StatArray, t
  * stats は [atk, def, agi, int, luk] 順、合計 100。
  */
 export const JOBS: readonly JobDefinition[] = [
-  { id: 'sage',      names: { default: '賢者',     maker: '建築家',   alt: '戦略家' },   stats: [25, 14, 10, 37, 14], dominantFunction: 'Ni', auxiliaryFunction: 'Te', primaryColor: 'U' },
-  { id: 'mage',      names: { default: '魔法使い', maker: '錬金術師', alt: '研究者' },   stats: [ 7, 23, 16, 31, 23], dominantFunction: 'Ti', auxiliaryFunction: 'Ne', primaryColor: 'U' },
-  { id: 'shogun',    names: { default: '将軍',     maker: '棟梁',     alt: '起業家' },   stats: [38, 10, 14, 28, 10], dominantFunction: 'Te', auxiliaryFunction: 'Ni', primaryColor: 'W' },
-  { id: 'bard',      names: { default: '吟遊詩人', maker: '発明家',   alt: '即興師' },   stats: [ 7, 20, 23, 20, 30], dominantFunction: 'Ne', auxiliaryFunction: 'Ti', primaryColor: 'R' },
-  { id: 'seer',      names: { default: '予言者',   maker: '導師',     alt: '語り部' },   stats: [ 7, 14, 13, 44, 22], dominantFunction: 'Ni', auxiliaryFunction: 'Fe', primaryColor: 'U' },
-  { id: 'poet',      names: { default: '詩人',     maker: '職人',     alt: '彫刻家' },   stats: [14, 34, 12,  7, 33], dominantFunction: 'Fi', auxiliaryFunction: 'Ne', primaryColor: 'G' },
-  { id: 'paladin',   names: { default: '聖騎士',   maker: '教育者',   alt: '案内人' },   stats: [ 7, 16, 16, 32, 29], dominantFunction: 'Fe', auxiliaryFunction: 'Ni', primaryColor: 'W' },
-  { id: 'explorer',  names: { default: '冒険者',   maker: '触媒',     alt: '旅芸人' },   stats: [18, 24, 20,  8, 30], dominantFunction: 'Ne', auxiliaryFunction: 'Fi', primaryColor: 'G' },
-  { id: 'warrior',   names: { default: '戦士',     maker: '書記',     alt: '鍛冶師' },   stats: [24, 42,  8,  9, 17], dominantFunction: 'Si', auxiliaryFunction: 'Te', primaryColor: 'R' },
-  { id: 'guardian',  names: { default: '守護者',   maker: '司書',     alt: '家守' },     stats: [ 7, 39, 10, 20, 24], dominantFunction: 'Si', auxiliaryFunction: 'Fe', primaryColor: 'W' },
-  { id: 'fighter',   names: { default: '武闘家',   maker: '技師',     alt: '匠' },       stats: [10, 13, 22, 42, 13], dominantFunction: 'Ti', auxiliaryFunction: 'Se', primaryColor: 'R' },
-  { id: 'artist',    names: { default: '芸術家',   maker: '工芸家',   alt: '庭師' },     stats: [15, 20, 23, 15, 27], dominantFunction: 'Fi', auxiliaryFunction: 'Se', primaryColor: 'G' },
-  { id: 'captain',   names: { default: '隊長',     maker: '指揮者',   alt: '管理官' },   stats: [34, 28, 10, 10, 18], dominantFunction: 'Te', auxiliaryFunction: 'Si', primaryColor: 'W' },
-  { id: 'miko',      names: { default: '巫女',     maker: '世話役',   alt: '看護師' },   stats: [ 7, 32, 10, 15, 36], dominantFunction: 'Fe', auxiliaryFunction: 'Si', primaryColor: 'W' },
-  { id: 'ninja',     names: { default: '忍者',     maker: '職方',     alt: '現場監督' }, stats: [15, 10, 33, 27, 15], dominantFunction: 'Se', auxiliaryFunction: 'Ti', primaryColor: 'B' },
-  { id: 'performer', names: { default: '遊び人',   maker: '芸人',     alt: '祭司' },     stats: [20, 12, 30, 10, 28], dominantFunction: 'Se', auxiliaryFunction: 'Fi', primaryColor: 'R' },
+  // stats は認知機能スタック (dom 1.0 / aux 0.5 / tertiary 0.25 / inferior 0.125) を
+  // COGNITIVE_TO_RPG で合成・正規化した理論値に、レーダー軸潰れ防止の floor を噛ませた値
+  // (v = 6 + 0.7×理論値、affine なので Pearson 相関は理論値と 1.0 = currentJob 判定は不変)。
+  // 再生成・検証は scripts/gen-job-stats.ts。16 型 MBTI と整合。
+  { id: 'sage',      names: { default: '賢者',     maker: '建築家',   alt: '戦略家' },   stats: [22, 15,  9, 40, 14], dominantFunction: 'Ni', auxiliaryFunction: 'Te', primaryColor: 'U' },
+  { id: 'mage',      names: { default: '魔法使い', maker: '錬金術師', alt: '研究者' },   stats: [ 7, 19, 19, 37, 18], dominantFunction: 'Ti', auxiliaryFunction: 'Ne', primaryColor: 'U' },
+  { id: 'shogun',    names: { default: '将軍',     maker: '棟梁',     alt: '起業家' },   stats: [39, 10, 13, 28, 10], dominantFunction: 'Te', auxiliaryFunction: 'Ni', primaryColor: 'W' },
+  { id: 'bard',      names: { default: '吟遊詩人', maker: '発明家',   alt: '即興師' },   stats: [ 7, 14, 27, 21, 31], dominantFunction: 'Ne', auxiliaryFunction: 'Ti', primaryColor: 'R' },
+  { id: 'seer',      names: { default: '予言者',   maker: '導師',     alt: '語り部' },   stats: [ 8, 16, 10, 43, 23], dominantFunction: 'Ni', auxiliaryFunction: 'Fe', primaryColor: 'U' },
+  { id: 'poet',      names: { default: '詩人',     maker: '職人',     alt: '彫刻家' },   stats: [11, 32, 15,  8, 34], dominantFunction: 'Fi', auxiliaryFunction: 'Ne', primaryColor: 'G' },
+  { id: 'paladin',   names: { default: '聖騎士',   maker: '教育者',   alt: '案内人' },   stats: [ 9, 19, 13, 25, 34], dominantFunction: 'Fe', auxiliaryFunction: 'Ni', primaryColor: 'W' },
+  { id: 'explorer',  names: { default: '冒険者',   maker: '触媒',     alt: '旅芸人' },   stats: [14, 19, 25,  8, 34], dominantFunction: 'Ne', auxiliaryFunction: 'Fi', primaryColor: 'G' },
+  { id: 'warrior',   names: { default: '戦士',     maker: '書記',     alt: '鍛冶師' },   stats: [25, 41,  8, 13, 13], dominantFunction: 'Si', auxiliaryFunction: 'Te', primaryColor: 'R' },
+  { id: 'guardian',  names: { default: '守護者',   maker: '司書',     alt: '家守' },     stats: [10, 43,  9, 17, 21], dominantFunction: 'Si', auxiliaryFunction: 'Fe', primaryColor: 'W' },
+  // ISTP は 16personalities でも「巨匠 (Virtuoso)」。Ti 支配で知力が高いのは設計通りなので、
+  // 物理を想起させる旧称「武闘家」をやめ、知力型の職人名「匠」に改名 (MBTI 分類は不変)。
+  { id: 'fighter',   names: { default: '匠',       maker: '技師',     alt: '達人' },     stats: [12, 12, 23, 43, 10], dominantFunction: 'Ti', auxiliaryFunction: 'Se', primaryColor: 'R' },
+  { id: 'artist',    names: { default: '芸術家',   maker: '工芸家',   alt: '庭師' },     stats: [15, 26, 19, 14, 26], dominantFunction: 'Fi', auxiliaryFunction: 'Se', primaryColor: 'G' },
+  { id: 'captain',   names: { default: '隊長',     maker: '指揮者',   alt: '管理官' },   stats: [38, 23, 11, 15, 13], dominantFunction: 'Te', auxiliaryFunction: 'Si', primaryColor: 'W' },
+  { id: 'miko',      names: { default: '巫女',     maker: '世話役',   alt: '看護師' },   stats: [ 8, 32, 11, 12, 37], dominantFunction: 'Fe', auxiliaryFunction: 'Si', primaryColor: 'W' },
+  { id: 'ninja',     names: { default: '忍者',     maker: '職方',     alt: '現場監督' }, stats: [17, 11, 34, 25, 13], dominantFunction: 'Se', auxiliaryFunction: 'Ti', primaryColor: 'B' },
+  { id: 'performer', names: { default: '遊び人',   maker: '芸人',     alt: '祭司' },     stats: [25, 16, 32, 11, 16], dominantFunction: 'Se', auxiliaryFunction: 'Fi', primaryColor: 'R' },
 ];
 
 export const JOBS_BY_ID: Record<Archetype, JobDefinition> = Object.fromEntries(

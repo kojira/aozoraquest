@@ -67,14 +67,14 @@ describe('resonance (archetype なしフォールバック)', () => {
 
 describe('resonance (archetype 付き)', () => {
   test('archetype を渡すと pairRelation が入る', () => {
-    const v: StatArray = [25, 14, 10, 37, 14];
+    const v: StatArray = [22, 15, 9, 40, 14];
     const r = resonance(v, v, 'sage', 'sage');
     expect(r.pairRelation?.category).toBe('identity');
   });
 
   test('双対ペア (sage Ni/Te と performer Se/Fi) は pairRelation.category = duality', () => {
-    const a: StatArray = [25, 14, 10, 37, 14];
-    const b: StatArray = [20, 12, 30, 10, 28];
+    const a: StatArray = [22, 15, 9, 40, 14];
+    const b: StatArray = [25, 16, 32, 11, 16];
     const r = resonance(a, b, 'sage', 'performer');
     expect(r.pairRelation?.category).toBe('duality');
     // 双対は最高スコア帯 (恒等より高いはず)
