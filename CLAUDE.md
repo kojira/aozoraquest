@@ -49,11 +49,17 @@ gh pr create --base dev --head feature/<topic>
 ### dev → main の本番リリース
 
 dev に複数の feature PR が積まれた後、リリース単位で `dev → main` の PR を作成:
-1. `gh pr create --base main --head dev`
-2. CI 緑 + **第三者レビュー (§1.5) で指摘ゼロ or 全対応済み**
-3. オーナー承認
-4. squash merge (= 複数 feature が main に 1 コミットで反映、リリースノート的)
-5. dev ブランチは残す (= 次の機能開発用)
+1. **`apps/web/src/lib/app-version.ts` の `APP_VERSION` をリリース日 + 枝番に更新** (形式 `YYYY.MM.DD-N`、その日最初は `-1`、同日追加リリースは `-2`, `-3` …)。feature ブランチでコミットして dev に入れておく
+2. `gh pr create --base main --head dev`
+3. CI 緑 + **第三者レビュー (§1.5) で指摘ゼロ or 全対応済み**
+4. オーナー承認
+5. squash merge (= 複数 feature が main に 1 コミットで反映、リリースノート的)
+6. **`APP_VERSION` と同じ値で git tag を打つ** (リリースされた main のコミットに付くよう、先に main を最新化してから打つ):
+   `git checkout main && git pull origin main && git tag v2026.06.14-1 && git push origin v2026.06.14-1`
+   (タグを打ったら忘れず `git checkout dev` で dev に戻る)
+7. dev ブランチは残す (= 次の機能開発用)
+
+`APP_VERSION` は設定画面の隅に表示され、ユーザー/サポートが「どのリリースを見ているか」を特定するのに使う。package.json の version は semver 制約でこの日付表記を表せないため、表示用バージョンは app-version.ts を単一の出所とする。
 
 `main` / `dev` は GitHub の branch protection rule で守る:
 - Require pull request before merging

@@ -9,6 +9,7 @@ import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
 import { applyFontScale } from '@/lib/font-scale';
+import { APP_VERSION } from '@/lib/app-version';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
@@ -340,6 +341,43 @@ export function Settings() {
         )}
         <button onClick={onSignOut}>ログアウト</button>
       </section>
+
+      <AppVersionFooter />
+    </div>
+  );
+}
+
+/** 設定画面の隅にバージョンを表示。タップでクリップボードにコピー (サポート連絡時に伝えやすく)。 */
+function AppVersionFooter() {
+  const label = `aozoraquest v${APP_VERSION}`;
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard?.writeText(label);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      console.warn('version copy failed', e);
+    }
+  }
+  return (
+    <div style={{ marginTop: '2.5em', textAlign: 'right' }}>
+      <button
+        type="button"
+        onClick={copy}
+        title="タップでバージョンをコピー"
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: '0.3em 0',
+          fontSize: '0.75em',
+          color: 'var(--color-muted)',
+          fontFamily: 'ui-monospace, monospace',
+          cursor: 'pointer',
+        }}
+      >
+        {copied ? 'コピーしました' : label}
+      </button>
     </div>
   );
 }
