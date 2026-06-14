@@ -62,7 +62,7 @@ export const JOB_TAGLINES: Record<Archetype, string> = {
   explorer:  '未踏を楽しむ旅人',
   warrior:   '反復で鍛える堅実型',
   guardian:  '身近な人を守り続ける',
-  fighter:   '体で覚え理で磨く',
+  fighter:   '手の業を理で磨く',
   artist:    '感性を形に残す',
   captain:   '組織を回す実務家',
   miko:      '場を整え寄り添う',
