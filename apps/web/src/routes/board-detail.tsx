@@ -22,10 +22,13 @@ import {
   approveCompletion,
   requestRevision,
   listCompletionsFor,
+  buildQuestIndexViaDiscovery,
+  type QuestIndex,
 } from '@/lib/quest-api';
 import { createPost } from '@/lib/atproto';
 import { getPostQuestNotifications } from '@/lib/prefs';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
+import { useRuntimeConfig } from '@/components/config-provider';
 import { Handle, RewardPoints } from '@/components/handle';
 import { DateTimePicker } from '@/components/date-time-picker';
 import { isoToLocalInput } from '@/lib/datetime';
@@ -73,6 +76,14 @@ export function BoardDetail() {
     setBusy(false);
   }, [uri]);
 
+  const config = useRuntimeConfig();
+  const agent = session.agent;
+  const selfDid = session.did;
+  // directory の DID 群 (+ 自分) から掲示板と同じ PDS 直読み index を組む材料。
+  // 配列は毎 render 新規なので、effect の不要再実行を防ぐため文字列キー化する。
+  const directoryDids = config.directory.map((u) => u.did);
+  const aggregationKey = `${selfDid ?? ''}|${directoryDids.join(',')}`;
+
   const refresh = useCallback(async () => {
     // クエスト読み取りは公開 read (PDS 経由) で agent 不要。未ログインでも
     // 詳細を表示できるよう session.agent はガードしない (操作系は個別に
@@ -86,8 +97,15 @@ export function BoardDetail() {
       const q = await getQuest(undefined, uri);
       setQuest(q);
       if (q) {
+        // 集約 Worker が未デプロイでも他ユーザーの応募が発注者に見えるよう、
+        // 掲示板と同じ「discovery index (各 PDS 直読み)」を **この詳細表示用に直接** 組む。
+        // (共有キャッシュ経由だと refreshQuestIndex の inflight と競合して mock を
+        //  掴みうるため、詳細では毎回 fresh に組む。サインイン時のみ他 repo を読める)
+        const index: QuestIndex | undefined = agent
+          ? await buildQuestIndexViaDiscovery(agent, directoryDids, selfDid).catch(() => undefined)
+          : undefined;
         const [apps, comps] = await Promise.all([
-          listApplicationsFor(undefined, uri),
+          listApplicationsFor(undefined, uri, index),
           listCompletionsFor(undefined, q),
         ]);
         setApplications(apps);
@@ -96,8 +114,10 @@ export function BoardDetail() {
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
     }
-    // agent を使わないので deps は uri のみ (session 解決での二重 fetch を回避)
-  }, [uri]);
+    // directoryDids / selfDid は aggregationKey に内包される (配列を直接 deps に
+    // 入れると毎 render 別参照で refetch ループになるため文字列キーで安定化)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uri, agent, aggregationKey]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -151,8 +171,11 @@ export function BoardDetail() {
   async function notifyBluesky(action: NotificationAction, recipientDid: string | null) {
     if (!session.agent || !quest) return;
     if (!recipientDid) return;
-    // dev 環境では default OFF。設定で明示的に ON にしている場合のみ送る。
-    if (!getPostQuestNotifications()) {
+    // 'applied' は集約 Worker 無しで発注者が応募者を発見する唯一の手段 (#aozoraquest 投稿で
+    // discovery 網に乗せる) なので、通知設定に関わらず必ず送る。これが出ないと応募しても
+    // 発注者に見えず進行が詰む。他の通知 (assigned/reported/approved/revision) は従来どおり
+    // 設定に従う (dev 環境では default OFF)。
+    if (action !== 'applied' && !getPostQuestNotifications()) {
       console.info('[board-detail] skip notify (postQuestNotifications=false):', action, recipientDid);
       return;
     }

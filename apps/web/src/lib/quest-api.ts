@@ -407,12 +407,18 @@ export async function withdrawApplication(
   await putRecord(agent, COL.questApplication, rkey, toRecord(next, COL.questApplication));
 }
 
-/** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する */
+/** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する。
+ *
+ *  `index` を渡すと、それ (= 掲示板と同じ PDS 直読みの discovery index) の
+ *  applications を使う。これにより集約 Worker が未デプロイでも **他ユーザーの
+ *  応募が発注者に見える** (応募者が #aozoraquest 投稿で発見可能な前提)。
+ *  未指定なら従来どおり fetchQuestIndex (Worker or localStorage モック) に落ちる。 */
 export async function listApplicationsFor(
   _agent: Agent | undefined,
   questUri: AtUri,
+  index?: QuestIndex,
 ): Promise<QuestApplication[]> {
-  const idx = await fetchQuestIndex();
+  const idx = index ?? await fetchQuestIndex();
   const entries = idx.applications.filter(a => a.questUri === questUri);
   const out: QuestApplication[] = [];
   for (const e of entries) {

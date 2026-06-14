@@ -324,13 +324,28 @@ const ACTION_MESSAGES: Record<NotificationAction, string> = {
   revisionRequested: 'やり直しを依頼されました',
 };
 
+/** 通知 post 本文がこの grapheme 数を超えないようタイトルを丸める (Bluesky 上限 300 の安全側)。 */
+const NOTIFICATION_TITLE_MAX = 80;
+
 export function formatNotificationPost(args: {
   action: NotificationAction;
   recipientHandle: string;
   questTitle: string;
   questUrl: string;
 }): string {
-  return `@${args.recipientHandle} ${ACTION_MESSAGES[args.action]}: ${args.questTitle} → ${args.questUrl}`;
+  // #aozoraquest は **応募 (applied) のときだけ** 付ける。集約 Worker が無い間、
+  // 発注者が応募者を発見する経路は「#aozoraquest 投稿者の PDS を走査する」のみで、
+  // 応募者をこの検索網に乗せるのが目的。承認/やり直し等は当事者間の mention で
+  // 足り、全部にタグを付けると (a) 発見用 TL を希釈し (b) ネガティブなやりとりまで
+  // 公開タグに流す副作用があるため付けない。
+  const tag = args.action === 'applied' ? ' #aozoraquest' : '';
+  // タイトル + 長い at:// URL で 300 grapheme を超えると post が落ち、応募者が
+  // 発見されなくなる。タイトルを安全側に丸める。
+  const title =
+    args.questTitle.length > NOTIFICATION_TITLE_MAX
+      ? `${args.questTitle.slice(0, NOTIFICATION_TITLE_MAX - 1)}…`
+      : args.questTitle;
+  return `@${args.recipientHandle} ${ACTION_MESSAGES[args.action]}: ${title} → ${args.questUrl}${tag}`;
 }
 
 function formatDateShort(iso: string): string {

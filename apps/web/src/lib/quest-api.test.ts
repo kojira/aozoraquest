@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
-import { parseAtUri, questUrlOf } from './quest-api';
+import { parseAtUri, questUrlOf, listApplicationsFor, type QuestIndex } from './quest-api';
 import { mockIndex } from './quest-mock';
 import type { UserQuest } from '@aozoraquest/core';
 
@@ -9,7 +9,7 @@ vi.mock('./repo-read', () => ({
   listRecordsForDid: vi.fn(),
   getRecordForDid: vi.fn(),
 }));
-import { listRecordsForDid } from './repo-read';
+import { listRecordsForDid, getRecordForDid } from './repo-read';
 
 // in-memory localStorage polyfill (node 環境では存在しないので)
 beforeAll(() => {
@@ -51,6 +51,34 @@ describe('questUrlOf', () => {
   it('encodes at-uri into /quests/<encoded>', () => {
     const url = questUrlOf('at://did:plc:abc/app.aozoraquest.userQuest/r1', 'https://aozoraquest.app');
     expect(url).toBe('https://aozoraquest.app/quests/at%3A%2F%2Fdid%3Aplc%3Aabc%2Fapp.aozoraquest.userQuest%2Fr1');
+  });
+});
+
+describe('listApplicationsFor', () => {
+  beforeEach(() => { vi.mocked(getRecordForDid).mockReset(); });
+
+  it('渡された discovery index の applications を使い、対象 quest の応募だけを PDS から取る', async () => {
+    const questUri = 'at://did:plc:owner/app.aozoraquest.userQuest/q1';
+    const index: QuestIndex = {
+      quests: [],
+      applications: [
+        { uri: 'at://did:plc:alice/app.aozoraquest.questApplication/a1', did: 'did:plc:alice', questUri, createdAt: '2026-06-14T00:00:00Z' },
+        // 別 quest への応募 → 除外されるべき
+        { uri: 'at://did:plc:bob/app.aozoraquest.questApplication/b1', did: 'did:plc:bob', questUri: 'at://did:plc:owner/app.aozoraquest.userQuest/OTHER', createdAt: '2026-06-14T00:00:00Z' },
+      ],
+      updatedAt: '2026-06-14T00:00:00Z',
+    };
+    vi.mocked(getRecordForDid).mockResolvedValue({
+      questUri, message: 'やります', withdrawn: false, createdAt: '2026-06-14T00:00:00Z',
+    } as unknown as Awaited<ReturnType<typeof getRecordForDid>>);
+
+    const apps = await listApplicationsFor(undefined, questUri, index);
+
+    expect(apps).toHaveLength(1);
+    expect(apps[0]?.did).toBe('did:plc:alice');
+    // alice の 1 件だけ PDS read (bob の別 quest 応募は対象外)
+    expect(vi.mocked(getRecordForDid)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getRecordForDid)).toHaveBeenCalledWith('did:plc:alice', expect.any(String), 'a1');
   });
 });
 
