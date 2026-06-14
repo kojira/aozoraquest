@@ -7,7 +7,9 @@ import { type Archetype, type CogFunction, type JobDefinition, type StatArray, t
 export const JOBS: readonly JobDefinition[] = [
   // stats は認知機能スタック (dom 1.0 / aux 0.5 / tertiary 0.25 / inferior 0.125) を
   // COGNITIVE_TO_RPG で合成・正規化した理論値に、レーダー軸潰れ防止の floor を噛ませた値
-  // (v = 6 + 0.7×理論値、affine なので Pearson 相関は理論値と 1.0 = currentJob 判定は不変)。
+  // (v = 6 + 0.7×理論値)。floor は理論値に対する affine 変換なので、純理論値と形
+  // (Pearson 相関) は 1.0 = floor を入れても理論値ベースの形は崩れない (旧手書き表とは
+  // 別モデルなので一致しない。なお shapeSimilarity/currentJob はランタイム未使用)。
   // 再生成・検証は scripts/gen-job-stats.ts。16 型 MBTI と整合。
   { id: 'sage',      names: { default: '賢者',     maker: '建築家',   alt: '戦略家' },   stats: [22, 15,  9, 40, 14], dominantFunction: 'Ni', auxiliaryFunction: 'Te', primaryColor: 'U' },
   { id: 'mage',      names: { default: '魔法使い', maker: '錬金術師', alt: '研究者' },   stats: [ 7, 19, 19, 37, 18], dominantFunction: 'Ti', auxiliaryFunction: 'Ne', primaryColor: 'U' },
