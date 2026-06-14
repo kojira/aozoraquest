@@ -14,5 +14,6 @@
  */
 export const APP_VERSION = '2026.06.14-1';
 
-/** APP_VERSION が `YYYY.MM.DD-N` 形式かを検証する (テスト/CI で形式崩れを検出)。 */
-export const APP_VERSION_PATTERN = /^\d{4}\.\d{2}\.\d{2}-\d+$/;
+/** APP_VERSION が `YYYY.MM.DD-N` 形式かを検証する (テスト/CI で形式崩れを検出)。
+ *  月 01-12 / 日 01-31 のゼロ詰め 2 桁、枝番は先頭ゼロ不可の 1 以上まで一本でガードする。 */
+export const APP_VERSION_PATTERN = /^\d{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12]\d|3[01])-[1-9]\d*$/;
