@@ -93,6 +93,8 @@ export function NotificationItem({
         ...(group.allRead ? {} : { borderLeft: '3px solid var(--color-accent)' }),
       }}
     >
+      {/* ヘッダ行は折り返さない (nowrap)。日時は小さく右端固定、本文 (がいいね
+          しました) は幅が足りなければ ellipsize して日時を 1 行目に収める。 */}
       <div
         style={{
           display: 'flex',
@@ -100,15 +102,17 @@ export function NotificationItem({
           gap: '0.5em',
           fontSize: '0.85em',
           color: 'var(--color-muted)',
-          flexWrap: 'wrap',
+          flexWrap: 'nowrap',
         }}
       >
-        <Icon size={18} style={{ color: 'var(--color-accent)' }} />
-        <AuthorStack authors={uniqueAuthors} />
-        <span>
+        <Icon size={18} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+        <span style={{ flexShrink: 0, display: 'inline-flex' }}>
+          <AuthorStack authors={uniqueAuthors} />
+        </span>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           が<strong style={{ color: 'var(--color-fg)' }}>{label}</strong>しました
         </span>
-        <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}>
+        <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {formatDateTime(group.latestAt)}
         </span>
         {expandable && (
@@ -129,6 +133,7 @@ export function NotificationItem({
               color: 'var(--color-muted)',
               fontSize: '0.85em',
               lineHeight: 1,
+              flexShrink: 0,
             }}
           >
             {expanded ? '▲' : '▼'}

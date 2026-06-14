@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
-import type { CogFunction, CognitiveScores } from '@aozoraquest/core';
-import { useCognitiveAnalysis } from '@/lib/post-cognitive';
+import type { CogFunction, CognitiveScores as Scores } from '@aozoraquest/core';
+import type { useCognitiveAnalysis } from '@/lib/post-cognitive';
+import { BrainIcon } from './icons';
 
 const FN_LABEL: Record<CogFunction, string> = {
   Ni: '内向直観',
@@ -24,97 +25,83 @@ const FN_COLOR: Record<CogFunction, string> = {
   Fe: '#c0d89a',
 };
 
-function topN(scores: CognitiveScores, n: number): Array<{ fn: CogFunction; v: number }> {
+function topN(scores: Scores, n: number): Array<{ fn: CogFunction; v: number }> {
   return (Object.entries(scores) as [CogFunction, number][])
     .map(([fn, v]) => ({ fn, v }))
     .sort((a, b) => b.v - a.v)
     .slice(0, n);
 }
 
-const baseStyle: CSSProperties = {
-  fontSize: '0.75em',
-  color: 'var(--color-muted)',
-  marginTop: '0.3em',
-  display: 'flex',
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  gap: '0.4em',
-};
+type AnalysisState = ReturnType<typeof useCognitiveAnalysis>['state'];
 
-const linkButtonStyle: CSSProperties = {
+const iconBtnStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   background: 'transparent',
   border: 'none',
-  padding: 0,
-  color: 'var(--color-accent)',
+  padding: '0.1em',
   cursor: 'pointer',
-  fontSize: 'inherit',
-  textDecoration: 'underline',
+  boxShadow: 'none',
+  lineHeight: 0,
+  flexShrink: 0,
 };
 
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…' : s;
-}
-
-export interface PostCognitiveBadgeProps {
-  postUri: string | undefined;
-  text: string;
-}
-
 /**
- * 投稿テキストの cognitive function 判定バッジ。
- * 設定 ON で auto 起動 / OFF でも「🧠 気質を分析」ボタンから個別起動可。
+ * 気質分析のトリガー脳アイコン (文字無し)。ヘッダ右端にインライン配置する想定。
+ * idle: タップで分析 / loading: 淡色 / error: 赤・タップで再試行。
+ * done・skipped・分析不可では何も描かない (結果は CognitiveScores 側)。
  */
-export function PostCognitiveBadge({ postUri, text }: PostCognitiveBadgeProps) {
-  const { state, scores, error, triggerAnalyze, canAnalyze } = useCognitiveAnalysis(postUri, text);
-  if (!canAnalyze) return null;
-
+export function CognitiveTriggerIcon({ state, error, onAnalyze }: {
+  state: AnalysisState;
+  error: string | undefined;
+  onAnalyze: () => void;
+}) {
   if (state === 'idle') {
     return (
-      <div style={baseStyle}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            triggerAnalyze();
-          }}
-          style={linkButtonStyle}
-        >
-          🧠 気質を分析
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onAnalyze(); }}
+        style={{ ...iconBtnStyle, color: 'var(--color-muted)' }}
+        aria-label="この投稿の気質を分析"
+        title="この投稿の気質を分析"
+      >
+        <BrainIcon size={17} />
+      </button>
     );
   }
   if (state === 'loading') {
     return (
-      <div style={baseStyle}>
-        <span>🧠 分析中…</span>
-      </div>
+      <span style={{ ...iconBtnStyle, color: 'var(--color-accent)', opacity: 0.7, cursor: 'default' }} aria-label="気質を分析中" title="気質を分析中…">
+        <BrainIcon size={17} />
+      </span>
     );
   }
   if (state === 'error') {
     return (
-      <div style={{ ...baseStyle, color: 'var(--color-danger)' }}>
-        <span>🧠 分析失敗</span>
-        {error && <span style={{ opacity: 0.7 }}>({truncate(error, 40)})</span>}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            triggerAnalyze();
-          }}
-          style={linkButtonStyle}
-        >
-          再試行
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onAnalyze(); }}
+        style={{ ...iconBtnStyle, color: 'var(--color-danger)' }}
+        aria-label={`気質の分析に失敗${error ? ` (${error})` : ''} — 再試行`}
+        title={`分析失敗${error ? ` (${error})` : ''} — タップで再試行`}
+      >
+        <BrainIcon size={17} />
+      </button>
     );
   }
-  if (state === 'skipped' || !scores) return null;
+  return null;
+}
 
+/** 分析結果 (上位 3 心理機能) のチップ。本文下にインライン表示。 */
+export function CognitiveScores({ scores }: { scores: Scores }) {
   const top = topN(scores, 3);
   return (
-    <div style={baseStyle} title="この投稿テキストから推定した心理機能スコア (上位 3, 0–100 正規化)">
-      <span>🧠</span>
+    <div
+      style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.4em' }}
+      title="この投稿テキストから推定した心理機能スコア (上位 3, 0–100 正規化)"
+    >
+      <BrainIcon size={14} style={{ opacity: 0.7 }} />
       {top.map(({ fn, v }) => (
         <span
           key={fn}
