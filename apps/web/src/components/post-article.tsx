@@ -7,11 +7,15 @@ import { PostBody } from './post-body';
 import { PostMetrics } from './post-metrics';
 import { InlineThread } from './inline-thread';
 import { RepeatIcon } from './icons';
-import { formatDateTime } from '@/lib/format-datetime';
+import { CognitiveTriggerIcon, CognitiveScores } from './post-cognitive-badge';
+import { useCognitiveAnalysis } from '@/lib/post-cognitive';
+import { displayWidth } from '@/lib/text-width';
 import { extractPostExternal, extractPostImages, extractPostVideo } from '@/lib/post-embed';
-import { postDetailPath } from '@/lib/uri';
 
-interface PostRecordShape {
+/** 名前がこの表示幅を超えたら、タイムラインでは @handle を畳む (折り返し防止)。 */
+const HANDLE_HIDE_WIDTH = 18;
+
+export interface PostRecordShape {
   text?: string;
   createdAt?: string;
   langs?: string[];
@@ -32,6 +36,8 @@ export interface PostArticleProps {
   expandable?: boolean;
   /** リポスト由来で流れてきた場合、リポストした人を表示 (🔁 <name> がリポスト) */
   repostedBy?: AppBskyActorDefs.ProfileViewBasic | undefined;
+  /** タイムライン表示では @handle を一切出さない (表示名で識別、handle は profile で確認)。 */
+  hideHandle?: boolean;
 }
 
 /**
@@ -48,6 +54,7 @@ export function PostArticle({
   highlight = false,
   expandable = false,
   repostedBy,
+  hideHandle = false,
 }: PostArticleProps) {
   const [expanded, setExpanded] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
@@ -68,13 +75,17 @@ export function PostArticle({
 
   const author = post.author;
   const record = post.record as PostRecordShape;
-  const ts = record.createdAt ?? post.indexedAt;
-  const detailPath = postDetailPath(author.handle, post.uri);
+  // タイムラインでは @handle を出さない (hideHandle)。それ以外でも、名前が長い
+  // (= 折り返す) ときは畳む。名前が無いときは strong が handle を出すので不要。
+  const showHandle = !hideHandle && !!author.displayName && displayWidth(author.displayName) <= HANDLE_HIDE_WIDTH;
   // 返信が 1 件以上、または自身がリプライ (親がある) 投稿はスレッドを持つ。
   const hasReplies = (post.replyCount ?? 0) > 0;
   const isReply = !!record.reply;
   const hasThread = hasReplies || isReply;
   const showToggle = expandable && hasThread;
+  // 気質分析: トリガー脳アイコンはヘッダ右端、結果チップは本文下に出す。
+  // hook はここで 1 回だけ呼ぶ (二重分析を避ける)。
+  const cog = useCognitiveAnalysis(post.uri, record.text ?? '');
 
   return (
     <article
@@ -119,21 +130,13 @@ export function PostArticle({
         <Link to={`/profile/${author.handle}`} onClick={(e) => e.stopPropagation()}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>
-        <span>@{author.handle}</span>
+        {showHandle && <span>@{author.handle}</span>}
         {headerExtra}
-        <Link
-          to={detailPath}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            marginLeft: headerExtra ? 0 : 'auto',
-            fontFamily: 'ui-monospace, monospace',
-            color: 'inherit',
-            textDecoration: 'none',
-          }}
-          title="投稿詳細を開く"
-        >
-          <time dateTime={ts}>{formatDateTime(ts)}</time>
-        </Link>
+        {cog.canAnalyze && (
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', flexShrink: 0 }}>
+            <CognitiveTriggerIcon state={cog.state} error={cog.error} onAnalyze={cog.triggerAnalyze} />
+          </span>
+        )}
       </div>
       <PostBody
         text={record.text ?? ''}
@@ -144,6 +147,7 @@ export function PostArticle({
         postUri={post.uri}
         {...(record.langs ? { langs: record.langs } : {})}
       />
+      {cog.canAnalyze && cog.state === 'done' && cog.scores && <CognitiveScores scores={cog.scores} />}
       <PostMetrics
         post={post}
         {...(showToggle ? { onToggleThread: onToggle, threadExpanded: expanded } : {})}
