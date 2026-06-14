@@ -82,12 +82,13 @@ export function BoardDetail() {
     // board 一覧 (募集中カラム等) に反映されるようにする
     void refreshQuestIndex();
     try {
-      const q = await getQuest(session.agent, uri);
+      // 読み取りは PDS 経由の公開 read なので agent 不要 (undefined を渡す)
+      const q = await getQuest(undefined, uri);
       setQuest(q);
       if (q) {
         const [apps, comps] = await Promise.all([
-          listApplicationsFor(session.agent, uri),
-          listCompletionsFor(session.agent, q),
+          listApplicationsFor(undefined, uri),
+          listCompletionsFor(undefined, q),
         ]);
         setApplications(apps);
         setCompletions(comps);
@@ -95,7 +96,8 @@ export function BoardDetail() {
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
     }
-  }, [uri, session.agent]);
+    // agent を使わないので deps は uri のみ (session 解決での二重 fetch を回避)
+  }, [uri]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 

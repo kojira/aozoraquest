@@ -160,6 +160,19 @@ export function Settings() {
     ? (profile.targetJob as Archetype)
     : null;
 
+  // 設定はログイン必須 (未ログインで設定項目・ログアウトボタンを出さない)
+  if (session.status !== 'signed-in') {
+    return (
+      <div>
+        <h2>設定</h2>
+        <p style={{ color: 'var(--color-muted)' }}>設定を使うにはログインしてください。</p>
+        <button style={{ marginTop: '0.5em' }} onClick={() => navigate('/onboarding')}>
+          ログインして始める
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2>設定</h2>
