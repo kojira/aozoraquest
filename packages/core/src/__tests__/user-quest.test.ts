@@ -371,6 +371,17 @@ describe('formatNotificationPost', () => {
       questTitle: '精霊のイラスト',
       questUrl: 'https://aozoraquest.app/quests/x',
     });
-    expect(out).toBe('@sato.bsky.social 受託者に指定されました: 精霊のイラスト → https://aozoraquest.app/quests/x');
+    expect(out).toBe('@sato.bsky.social 受託者に指定されました: 精霊のイラスト → https://aozoraquest.app/quests/x #aozoraquest');
+  });
+
+  it('発見性のため #aozoraquest を必ず含む', () => {
+    const out = formatNotificationPost({
+      action: 'applied',
+      recipientHandle: 'owner.bsky.social',
+      questTitle: 'テスト',
+      questUrl: 'https://aozoraquest.app/quests/y',
+    });
+    expect(out).toContain('#aozoraquest');
+    expect(out.startsWith('@owner.bsky.social')).toBe(true);
   });
 });

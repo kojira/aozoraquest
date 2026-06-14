@@ -330,7 +330,10 @@ export function formatNotificationPost(args: {
   questTitle: string;
   questUrl: string;
 }): string {
-  return `@${args.recipientHandle} ${ACTION_MESSAGES[args.action]}: ${args.questTitle} → ${args.questUrl}`;
+  // #aozoraquest を必ず付ける。集約 Worker が無い間、応募者/関係者の発見は
+  // 「#aozoraquest 投稿者の PDS を走査する」経路に依存するため、通知 post に
+  // タグが無いと応募しても発注者の掲示板に応募者として現れない (= 進行が詰む)。
+  return `@${args.recipientHandle} ${ACTION_MESSAGES[args.action]}: ${args.questTitle} → ${args.questUrl} #aozoraquest`;
 }
 
 function formatDateShort(iso: string): string {
