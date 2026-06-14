@@ -31,8 +31,15 @@ import { useSession } from '@/lib/session';
 
 export function Board() {
   const session = useSession();
+  const signedIn = session.status === 'signed-in';
   const [columns, setColumns] = useState<Column[]>(() => loadColumns());
   const { index, myQuests, myApplicationQuestUris, err } = useBoardData();
+
+  // 未ログイン時は「自分が出した / 応募」など自分前提のカラムを描画しない
+  // (保存設定は壊さず描画だけ除外。ログインで復活する)。
+  const visibleColumns = signedIn
+    ? columns
+    : columns.filter((c) => c.kind !== 'mine' && c.kind !== 'applied');
 
   function persistColumns(next: Column[]) {
     setColumns(next);
@@ -72,12 +79,13 @@ export function Board() {
         </ActionLink>
       </p>
 
-      <ColumnControls onAdd={addColumn} onReset={reset} />
+      {/* カラム管理はログイン時のみ (未ログインは閲覧専用) */}
+      {signedIn && <ColumnControls onAdd={addColumn} onReset={reset} />}
 
       {err && <p style={{ color: 'var(--color-danger)' }}>取得に失敗: {err}</p>}
 
       <div className="board-columns">
-        {columns.map((col) => (
+        {visibleColumns.map((col) => (
           <BoardInnerColumnView
             key={col.id}
             column={col}

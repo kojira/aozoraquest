@@ -25,7 +25,7 @@ import {
   listMyApplications,
   getQuest,
 } from '@/lib/quest-api';
-import { Handle } from '@/components/handle';
+import { Handle, RewardPoints } from '@/components/handle';
 
 const PUBLIC_APPVIEW = 'https://api.bsky.app';
 
@@ -244,7 +244,7 @@ function QuestHistoryList({ quests }: { quests: UserQuest[] }) {
             <div className="dq-window compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <span style={{ color: 'var(--color-fg)', fontSize: '0.9em' }}>{q.title}</span>
               <span style={{ fontSize: '0.75em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
-                <Handle did={q.did} suffix="P" /> {q.rewardPoints.toLocaleString()}
+                <RewardPoints did={q.did} points={q.rewardPoints} />
               </span>
             </div>
           </Link>

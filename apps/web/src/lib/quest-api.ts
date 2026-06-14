@@ -88,7 +88,7 @@ export async function updateQuest(
 
 /** クエストを取得する (URI 指定)。発行者の PDS から公開 read する
  *  (自分の agent で他人 repo を読むと別ホスト時に「Could not find repo」になる)。 */
-export async function getQuest(_agent: Agent, uri: AtUri): Promise<UserQuest | null> {
+export async function getQuest(_agent: Agent | undefined, uri: AtUri): Promise<UserQuest | null> {
   const { repo, rkey } = parseAtUri(uri);
   const value = await getRecordForDid<Omit<UserQuest, 'uri' | 'did'>>(repo, COL.userQuest, rkey);
   if (!value) return null;
@@ -409,7 +409,7 @@ export async function withdrawApplication(
 
 /** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する */
 export async function listApplicationsFor(
-  agent: Agent,
+  _agent: Agent | undefined,
   questUri: AtUri,
 ): Promise<QuestApplication[]> {
   const idx = await fetchQuestIndex();
@@ -539,7 +539,7 @@ export async function requestRevision(
 
 /** quest に紐付く completion レコードを発注者・受託者の PDS から fetch して時系列で返す */
 export async function listCompletionsFor(
-  agent: Agent,
+  _agent: Agent | undefined,
   quest: UserQuest,
 ): Promise<QuestCompletion[]> {
   const dids = new Set<Did>();

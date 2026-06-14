@@ -26,7 +26,7 @@ import {
 import { createPost } from '@/lib/atproto';
 import { getPostQuestNotifications } from '@/lib/prefs';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
-import { Handle } from '@/components/handle';
+import { Handle, RewardPoints } from '@/components/handle';
 import { DateTimePicker } from '@/components/date-time-picker';
 import { isoToLocalInput } from '@/lib/datetime';
 import { resolveHandle } from '@/lib/handle-cache';
@@ -74,7 +74,10 @@ export function BoardDetail() {
   }, [uri]);
 
   const refresh = useCallback(async () => {
-    if (!uri || !session.agent) return;
+    // クエスト読み取りは公開 read (PDS 経由) で agent 不要。未ログインでも
+    // 詳細を表示できるよう session.agent はガードしない (操作系は個別に
+    // session.agent をチェック済み)。
+    if (!uri) return;
     // 状態を変える操作の後に呼ばれるので、共有 index キャッシュも破棄して
     // board 一覧 (募集中カラム等) に反映されるようにする
     void refreshQuestIndex();
@@ -272,7 +275,7 @@ export function BoardDetail() {
       <div style={{ display: 'flex', gap: '0.6em', flexWrap: 'wrap', fontSize: '0.85em', color: 'var(--color-muted)' }}>
         <span>発注者: <Handle did={quest.did} /></span>
         <span style={{ color: 'var(--color-accent)' }}>
-          <Handle did={quest.did} suffix="P" /> {quest.rewardPoints.toLocaleString()}
+          <RewardPoints did={quest.did} points={quest.rewardPoints} />
         </span>
         <span style={{ marginLeft: 'auto' }}>{statusLabel(quest.status, expired, completedByApproval)}</span>
       </div>
@@ -477,7 +480,7 @@ export function BoardDetail() {
           <p style={{ margin: 0, fontSize: '0.9em' }}>
             完了! 受託者 <strong>{quest.assignee ? <Handle did={quest.assignee} /> : '—'}</strong> に{' '}
             <span style={{ color: 'var(--color-accent)' }}>
-              <Handle did={quest.did} suffix="P" /> {quest.rewardPoints.toLocaleString()}
+              <RewardPoints did={quest.did} points={quest.rewardPoints} />
             </span>{' '}
             が発行されました。
           </p>
