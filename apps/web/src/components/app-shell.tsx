@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BellIcon, BrusukonIcon, HomeIcon, PersonIcon, ScrollIcon, SearchIcon, SettingsIcon } from './icons';
+import { BellIcon, BrusukonIcon, ComposeIcon, HomeIcon, PersonIcon, ScrollIcon, SearchIcon, SettingsIcon } from './icons';
+import { useCompose } from './compose-modal';
 import { useSession } from '@/lib/session';
 import { getUnreadNotificationCount } from '@/lib/atproto';
 import { useVisibleColumn } from '@/lib/visible-column';
@@ -35,6 +36,7 @@ const navLoggedOut: typeof nav = [
 
 export function AppShell() {
   const session = useSession();
+  const { openCompose } = useCompose();
   const location = useLocation();
   const [unread, setUnread] = useState(0);
   const visibleKind = useVisibleColumn();
@@ -122,6 +124,17 @@ export function AppShell() {
       <main className="content">
         <Outlet />
       </main>
+      {session.status === 'signed-in' && (
+        <button
+          type="button"
+          className="compose-fab"
+          aria-label="投稿する"
+          title="投稿する"
+          onClick={() => openCompose()}
+        >
+          <ComposeIcon size={24} />
+        </button>
+      )}
       <nav className="footer-nav" ref={footerRef}>
         {(session.status === 'signed-in' ? nav : navLoggedOut).map(({ to, label, icon: Icon, end, key, columnKind }) => (
           <NavLink
