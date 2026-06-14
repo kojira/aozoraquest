@@ -26,6 +26,13 @@ const nav: Array<{
   { to: '/settings', label: '設定', icon: SettingsIcon, key: 'settings' },
 ];
 
+/** 未ログイン時の footer-nav。ホーム/通知/検索などログイン必須の項目は出さず、
+ *  閲覧できるクエスト掲示板とログイン導線だけにする。 */
+const navLoggedOut: typeof nav = [
+  { to: '/board', label: 'クエスト掲示板', icon: ScrollIcon, key: 'quests' },
+  { to: '/onboarding', label: 'ログイン', icon: PersonIcon, key: 'login' },
+];
+
 export function AppShell() {
   const session = useSession();
   const location = useLocation();
@@ -116,7 +123,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <nav className="footer-nav" ref={footerRef}>
-        {nav.map(({ to, label, icon: Icon, end, key, columnKind }) => (
+        {(session.status === 'signed-in' ? nav : navLoggedOut).map(({ to, label, icon: Icon, end, key, columnKind }) => (
           <NavLink
             key={to}
             to={to}

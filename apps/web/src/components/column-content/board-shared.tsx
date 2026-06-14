@@ -12,7 +12,7 @@ import { getQuestIndexCached } from '@/lib/quest-index-cache';
 import type { UserQuest } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { useRuntimeConfig } from '@/components/config-provider';
-import { Handle } from '@/components/handle';
+import { RewardPoints } from '@/components/handle';
 
 export interface BoardFilter {
   kind: 'open' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
@@ -137,7 +137,7 @@ export function QuestCard({ summary, expired }: { summary: QuestIndexSummary; ex
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5em' }}>
           <div style={{ fontWeight: 700, fontSize: '0.92em', color: 'var(--color-fg)' }}>{summary.title}</div>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.78em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-            <Handle did={summary.did} suffix="P" /> {summary.rewardPoints.toLocaleString()}
+            <RewardPoints did={summary.did} points={summary.rewardPoints} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.3em' }}>

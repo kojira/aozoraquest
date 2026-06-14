@@ -39,3 +39,18 @@ export function Handle({ did, prefix, suffix }: Props) {
   }
   return <>{prefix}{handle}{suffix}</>;
 }
+
+/**
+ * 報酬ポイント表記。「kojira.ioP777」だと読みづらいので
+ * 「kojira.io P 777」と区切り、「P」を太字の白で浮かせる
+ * (DESIGN.md: 強調は白)。handle 部分は親の色を踏襲する。
+ */
+export function RewardPoints({ did, points }: { did: string; points: number }) {
+  return (
+    <>
+      <Handle did={did} />{' '}
+      <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>P</span>{' '}
+      {points.toLocaleString()}
+    </>
+  );
+}
