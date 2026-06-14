@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
 import { HeartIcon, RepeatIcon, ReplyIcon } from './icons';
 import { useCompose } from './compose-modal';
+import { formatDateTime } from '@/lib/format-datetime';
+import { postDetailPath } from '@/lib/uri';
 
 interface PostMetricsProps {
   post: AppBskyFeedDefs.PostView;
@@ -105,44 +108,65 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
 
   const liked = !!likeUri;
   const reposted = !!repostUri;
+  const ts = (post.record as { createdAt?: string }).createdAt ?? post.indexedAt;
+  const detailPath = postDetailPath(post.author.handle, post.uri);
 
   return (
-    <div style={{ display: 'flex', gap: '1em', alignItems: 'center', marginTop: '0.5em' }}>
-      <MetricButton onClick={onReply} ariaLabel="返信" count={post.replyCount ?? 0}>
-        <ReplyIcon size={15} />
-      </MetricButton>
-      <MetricButton onClick={toggleRepost} ariaLabel={reposted ? 'リポスト解除' : 'リポスト'} count={repostCount} active={reposted} activeColor="#4caf7d">
-        <RepeatIcon size={15} />
-      </MetricButton>
-      <MetricButton onClick={toggleLike} ariaLabel={liked ? 'いいね解除' : 'いいね'} count={likeCount} active={liked} activeColor="#ff6b9a">
-        <HeartIcon size={15} />
-      </MetricButton>
-      {onToggleThread && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleThread();
-          }}
-          aria-label={threadExpanded ? 'スレッドを閉じる' : 'スレッドを展開'}
-          title={threadExpanded ? 'スレッドを閉じる' : 'スレッドを展開'}
+    <div style={{ marginTop: '0.5em' }}>
+      {/* アクション行: リプ/リポスト/いいね + 右端に日時 (小さく右揃え) */}
+      <div style={{ display: 'flex', gap: '1em', alignItems: 'center' }}>
+        <MetricButton onClick={onReply} ariaLabel="返信" count={post.replyCount ?? 0}>
+          <ReplyIcon size={15} />
+        </MetricButton>
+        <MetricButton onClick={toggleRepost} ariaLabel={reposted ? 'リポスト解除' : 'リポスト'} count={repostCount} active={reposted} activeColor="#4caf7d">
+          <RepeatIcon size={15} />
+        </MetricButton>
+        <MetricButton onClick={toggleLike} ariaLabel={liked ? 'いいね解除' : 'いいね'} count={likeCount} active={liked} activeColor="#ff6b9a">
+          <HeartIcon size={15} />
+        </MetricButton>
+        <Link
+          to={detailPath}
+          onClick={(e) => e.stopPropagation()}
           style={{
             marginLeft: 'auto',
-            background: 'transparent',
-            border: 'none',
-            padding: '0.15em 0.4em',
-            color: threadExpanded ? 'var(--color-accent)' : 'var(--color-muted)',
-            fontSize: '0.78em',
-            cursor: 'pointer',
-            borderRadius: 4,
+            fontSize: '0.72em',
             fontFamily: 'ui-monospace, monospace',
+            color: 'var(--color-muted)',
+            textDecoration: 'none',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          title="投稿詳細を開く"
         >
-          {threadExpanded ? '▲ 閉じる' : '▼ スレッド'}
-        </button>
+          <time dateTime={ts}>{formatDateTime(ts)}</time>
+        </Link>
+      </div>
+      {/* スレッドがあるときはトグルを一段下の右端へ */}
+      {onToggleThread && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.2em' }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleThread();
+            }}
+            aria-label={threadExpanded ? 'スレッドを閉じる' : 'スレッドを展開'}
+            title={threadExpanded ? 'スレッドを閉じる' : 'スレッドを展開'}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '0.15em 0.4em',
+              color: threadExpanded ? 'var(--color-accent)' : 'var(--color-muted)',
+              fontSize: '0.78em',
+              cursor: 'pointer',
+              borderRadius: 4,
+              fontFamily: 'ui-monospace, monospace',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            {threadExpanded ? '▲ 閉じる' : '▼ スレッド'}
+          </button>
+        </div>
       )}
     </div>
   );
