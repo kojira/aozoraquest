@@ -233,6 +233,7 @@ function ComposeDialog({
     setCompressing(true);
     const added: DialogState[] = [];
     let sizeSkipped = 0;
+    let worstSkippedBytes = 0; // 超過した中で最大の「圧縮後」サイズ (文言で原因を可視化)
     try {
       for (const file of files) {
         // 大きい画像は弾かず、lossy WebP に圧縮して上限内に収める (GIF は変換しない)。
@@ -245,6 +246,7 @@ function ComposeDialog({
         }
         if (blob.size > MAX_IMAGE_BYTES) {
           sizeSkipped += 1;
+          worstSkippedBytes = Math.max(worstSkippedBytes, blob.size);
           continue;
         }
         added.push({ blob, alt: '', source: 'user', previewUrl: URL.createObjectURL(blob) });
@@ -269,7 +271,11 @@ function ComposeDialog({
     const notes: string[] = [];
     if (overLimit > 0) notes.push(`${overLimit} 枚は上限 (${MAX_POST_IMAGES} 枚) 超過`);
     if (unsupported > 0) notes.push(`${unsupported} 枚は非対応形式`);
-    if (sizeSkipped > 0) notes.push(`${sizeSkipped} 枚はサイズ超過`);
+    if (sizeSkipped > 0) {
+      // 圧縮後サイズを併記。これが原寸近いなら「圧縮が効いていない」と切り分けできる。
+      const mb = (worstSkippedBytes / 1_000_000).toFixed(1);
+      notes.push(`${sizeSkipped} 枚はサイズ超過 (圧縮後 約${mb}MB)`);
+    }
     setErr(notes.length > 0 ? `一部スキップ: ${notes.join(' / ')}` : null);
   }
 
