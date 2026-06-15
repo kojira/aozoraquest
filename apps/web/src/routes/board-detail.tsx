@@ -9,7 +9,7 @@
  *  - 発注者: 募集期限の延長 / キャンセル
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Navigate, Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
   getQuest,
@@ -23,6 +23,9 @@ import {
   requestRevision,
   listCompletionsFor,
   buildQuestIndexViaDiscovery,
+  questUriFromParams,
+  questUrlOf,
+  questPath,
   type QuestIndex,
 } from '@/lib/quest-api';
 import { createPost } from '@/lib/atproto';
@@ -44,9 +47,10 @@ import {
 } from '@aozoraquest/core';
 
 export function BoardDetail() {
-  const { uri: encoded } = useParams<{ uri: string }>();
+  // clean segment route `/board/:repo/:rkey`。collection は常に userQuest。
+  const { repo, rkey } = useParams<{ repo: string; rkey: string }>();
   const session = useSession();
-  const uri = encoded ? decodeURIComponent(encoded) : null;
+  const uri = repo && rkey ? questUriFromParams(repo, rkey) : null;
   const [quest, setQuest] = useState<UserQuest | null>(null);
   const [applications, setApplications] = useState<QuestApplication[] | null>(null);
   const [completions, setCompletions] = useState<QuestCompletion[] | null>(null);
@@ -185,7 +189,7 @@ export function BoardDetail() {
       action,
       recipientHandle,
       questTitle: quest.title,
-      questUrl: `${location.origin}/board/${encodeURIComponent(quest.uri)}`,
+      questUrl: questUrlOf(quest.uri, location.origin),
     });
     try {
       await createPost(session.agent, text);
@@ -548,4 +552,22 @@ function roleLabel(role: string): string {
   if (role === 'requesterApproval') return '承認';
   if (role === 'requesterRevision') return 'やり直し依頼';
   return role;
+}
+
+/**
+ * 旧 `/board/<encodeURIComponent(at-uri)>` リンク (Bluesky に投稿済み) の救済。
+ * 新規ロードで `%2F` が `/` に正規化され、splat route の pathname に at-uri が
+ * そのまま入るので、それを clean form (`/board/:repo/:rkey`) へ redirect する。
+ * at-uri として解釈できなければ掲示板トップへ。
+ */
+export function BoardDetailLegacyRedirect() {
+  const location = useLocation();
+  let target = '/board';
+  try {
+    const rest = decodeURIComponent(location.pathname.replace(/^\/board\//, ''));
+    target = questPath(rest); // parseAtUri が throw すれば catch
+  } catch {
+    target = '/board';
+  }
+  return <Navigate to={target} replace />;
 }

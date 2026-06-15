@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
-import { parseAtUri, questUrlOf, listApplicationsFor, type QuestIndex } from './quest-api';
+import { parseAtUri, questUrlOf, questPath, questUriFromParams, listApplicationsFor, type QuestIndex } from './quest-api';
 import { mockIndex } from './quest-mock';
 import type { UserQuest } from '@aozoraquest/core';
 
@@ -47,10 +47,21 @@ describe('parseAtUri', () => {
   });
 });
 
-describe('questUrlOf', () => {
-  it('encodes at-uri into /quests/<encoded>', () => {
-    const url = questUrlOf('at://did:plc:abc/app.aozoraquest.userQuest/r1', 'https://aozoraquest.app');
-    expect(url).toBe('https://aozoraquest.app/quests/at%3A%2F%2Fdid%3Aplc%3Aabc%2Fapp.aozoraquest.userQuest%2Fr1');
+describe('questPath / questUrlOf / questUriFromParams (clean segment URL)', () => {
+  const uri = 'at://did:plc:abc/app.aozoraquest.userQuest/r1';
+
+  it('questPath は /board/<repo>/<rkey> (スラッシュを含む param を作らない)', () => {
+    expect(questPath(uri)).toBe('/board/did:plc:abc/r1');
+  });
+
+  it('questUrlOf は origin + questPath', () => {
+    expect(questUrlOf(uri, 'https://aozoraquest.app')).toBe('https://aozoraquest.app/board/did:plc:abc/r1');
+  });
+
+  it('questUriFromParams は repo+rkey から at-uri を復元 (questPath と往復)', () => {
+    const round = questUriFromParams('did:plc:abc', 'r1');
+    expect(round).toBe(uri);
+    expect(questPath(round)).toBe('/board/did:plc:abc/r1');
   });
 });
 
