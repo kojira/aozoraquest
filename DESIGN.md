@@ -155,6 +155,7 @@ font-size は **em ベース** で書く。html/body には絶対サイズを指
 - **app-shell**: 中央寄せ。`max-width: 420px` を基本、`@media (min-width: 768px)` で `680px` に拡張。それ以上には広げない (1 列の冒険ログという読み心地を保つため)。
 - **header**: 上部 sticky。半透明グラデ + backdrop-blur。
 - **content**: app-shell の中身を 1 枚の大きな DQ ウィンドウで包む。内側に置く個別ウィンドウは `.dq-window` でさらに二重枠にする (DQ で「持ち物」の中に「やくそう ×3」が表示される入れ子構造)。
+  - *例外*: workspace のカラムはモバイル (<=767px) では本文幅を優先し、太枠・四隅装飾・peek を省いて全幅化する (横幅が枠に食われる問題への対処)。カラム送りは ▶/◀ のスワイプヒントで示す。PC では従来どおり太枠カラム。詳細は `docs/16-multicolumn.md`。
 - **footer-nav**: 下部 sticky。`min(340px, 80%)` で中央寄せ。タブで「ホーム/通知/検索/自分」など主要 route を切替。
 
 spacing は em ベースの 0.3 / 0.5 / 0.8 / 1.0 / 1.6em を主軸に。px 直書きは枠線・装飾 (3px border, 6px 四隅装飾) のみ。
