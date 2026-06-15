@@ -24,6 +24,7 @@ import {
   listIssuedQuests,
   listMyApplications,
   getQuest,
+  questPath,
 } from '@/lib/quest-api';
 import { Handle, RewardPoints } from '@/components/handle';
 
@@ -240,7 +241,7 @@ function QuestHistoryList({ quests }: { quests: UserQuest[] }) {
     <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
       {quests.map(q => (
         <li key={q.uri}>
-          <Link to={`/board/${encodeURIComponent(q.uri)}`} style={{ textDecoration: 'none' }}>
+          <Link to={questPath(q.uri)} style={{ textDecoration: 'none' }}>
             <div className="dq-window compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <span style={{ color: 'var(--color-fg)', fontSize: '0.9em' }}>{q.title}</span>
               <span style={{ fontSize: '0.75em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>

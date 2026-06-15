@@ -18,7 +18,7 @@ import { Tos } from '@/routes/tos';
 import { Privacy } from '@/routes/privacy';
 import { Board } from '@/routes/board';
 import { BoardNew } from '@/routes/board-new';
-import { BoardDetail } from '@/routes/board-detail';
+import { BoardDetail, BoardDetailLegacyRedirect } from '@/routes/board-detail';
 import { Portfolio, PublicPortfolio } from '@/routes/portfolio';
 import { DebugCard } from '@/routes/debug-card';
 import { DebugRadar } from '@/routes/debug-radar';
@@ -47,7 +47,11 @@ const router = createBrowserRouter([
       { path: 'quests', element: <Quests /> },
       { path: 'board', element: <Board /> },
       { path: 'board/new', element: <BoardNew /> },
-      { path: 'board/:uri', element: <BoardDetail /> },
+      { path: 'board/:repo/:rkey', element: <BoardDetail /> },
+      // 旧 `/board/<encodeURIComponent(at-uri)>` リンク (Bluesky に投稿済み) の救済。
+      // 新規ロードで %2F が / に正規化され splat に at-uri がそのまま入るので、
+      // clean form (/board/:repo/:rkey) へ redirect する。
+      { path: 'board/*', element: <BoardDetailLegacyRedirect /> },
       { path: 'me/portfolio', element: <Portfolio /> },
       { path: 'profile/:handle/portfolio', element: <PublicPortfolio /> },
       { path: 'search', element: <Search /> },

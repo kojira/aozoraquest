@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
-import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery } from '@/lib/quest-api';
+import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery, questPath } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
 import { needsRequesterApproval, type UserQuest } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -153,7 +153,7 @@ export function isExpiredSummary(s: QuestIndexSummary): boolean {
 
 export function QuestCard({ summary, expired, needsApproval }: { summary: QuestIndexSummary; expired?: boolean; needsApproval?: boolean }) {
   return (
-    <Link to={`/board/${encodeURIComponent(summary.uri)}`} style={{ textDecoration: 'none' }}>
+    <Link to={questPath(summary.uri)} style={{ textDecoration: 'none' }}>
       <div className="dq-window compact" style={{ borderColor: needsApproval ? 'var(--color-accent)' : expired ? 'var(--color-muted)' : undefined }}>
         {needsApproval && (
           // 発注者の「完了報告が来た = 承認すれば達成」を見逃さないための強調バッジ
@@ -196,7 +196,7 @@ export function ApprovalPendingBanner({ pending }: { pending: UserQuest[] }) {
       <ul style={{ listStyle: 'none', padding: 0, margin: '0.4em 0 0' }}>
         {pending.map((q) => (
           <li key={q.uri} style={{ marginTop: '0.25em' }}>
-            <Link to={`/board/${encodeURIComponent(q.uri)}`} style={{ fontSize: '0.82em', wordBreak: 'break-word' }}>
+            <Link to={questPath(q.uri)} style={{ fontSize: '0.82em', wordBreak: 'break-word' }}>
               「{q.title}」を承認する →
             </Link>
           </li>
