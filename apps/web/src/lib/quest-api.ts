@@ -388,7 +388,11 @@ export function questUrlOf(uri: AtUri, origin: string): string {
   return `${origin}${questPath(uri)}`;
 }
 
-/** `/board/:repo/:rkey` の 2 param から userQuest の at-uri を復元する。 */
+/** `/board/:repo/:rkey` の 2 param から userQuest の at-uri を復元する。
+ *  collection は URL に含めず常に `COL.userQuest` で組む。これは `getQuest` が元々 uri の
+ *  collection を無視して `COL.userQuest` で読む挙動と一致し、production リンクを dev で開いた
+ *  ときの cross-env collection mismatch も解消する。board で別 collection を開く要件が出たら
+ *  ここと getQuest の両方を直す。 */
 export function questUriFromParams(repo: string, rkey: string): AtUri {
   return `at://${repo}/${COL.userQuest}/${rkey}`;
 }

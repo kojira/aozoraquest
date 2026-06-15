@@ -51,6 +51,9 @@ const router = createBrowserRouter([
       // 旧 `/board/<encodeURIComponent(at-uri)>` リンク (Bluesky に投稿済み) の救済。
       // 新規ロードで %2F が / に正規化され splat に at-uri がそのまま入るので、
       // clean form (/board/:repo/:rkey) へ redirect する。
+      // 注意: 新しい board サブルートを足すときは必ずこの `board/*` より **上** に置くこと
+      // (splat が全部飲み込むため。React Router は静的/名前付きルートを splat より上位に
+      //  ランクするので順序自体は問題ないが、可読性のため上に書く)。
       { path: 'board/*', element: <BoardDetailLegacyRedirect /> },
       { path: 'me/portfolio', element: <Portfolio /> },
       { path: 'profile/:handle/portfolio', element: <PublicPortfolio /> },

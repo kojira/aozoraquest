@@ -366,8 +366,8 @@ export function formatNotificationPost(args: {
   // 足り、全部にタグを付けると (a) 発見用 TL を希釈し (b) ネガティブなやりとりまで
   // 公開タグに流す副作用があるため付けない。
   const tag = args.action === 'applied' ? ' #aozoraquest' : '';
-  // タイトル + 長い at:// URL で 300 grapheme を超えると post が落ち、応募者が
-  // 発見されなくなる。タイトルを安全側に丸める。
+  // タイトル + クエスト URL (https://…/board/<did>/<rkey>) で 300 grapheme を超えると
+  // post が落ち、応募者が発見されなくなる。タイトルを安全側に丸める。
   const title =
     args.questTitle.length > NOTIFICATION_TITLE_MAX
       ? `${args.questTitle.slice(0, NOTIFICATION_TITLE_MAX - 1)}…`
