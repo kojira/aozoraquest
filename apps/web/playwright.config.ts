@@ -2,6 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  // Playwright は *.spec.ts のみ。e2e/ には vitest の API 結合テスト (*.test.ts) も
+  // 同居しており、それを Playwright が拾うと vitest import と衝突するため除外する。
+  testMatch: '**/*.spec.ts',
   timeout: 10 * 60 * 1000, // モデル初回 DL が重いので長め
   expect: { timeout: 30_000 },
   fullyParallel: false,
