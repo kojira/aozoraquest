@@ -34,7 +34,9 @@ import { filterForBoard } from '@/components/column-content/board-shared';
  *  - 書き込み先 NSID は vitest.integration.config.ts で **隔離 env (e2etest)** に固定。
  *    本番 (env 無し = app.aozoraquest.userQuest) を絶対に触らない (下の SAFETY assert で二重防御)。
  *  - 専用テストアカウントの app-password を gitignore 済 .env.e2e.local から読む。無ければ skip。
- *  - afterAll で作成レコードを全削除。
+ *  - afterAll で作成レコードを全削除。**注意**: beforeAll/afterAll は対象アカウントの
+ *    e2etest NSID の userQuest/questApplication/questCompletion を**問答無用で全削除**する。
+ *    必ず捨てて良いテスト専用アカウントを使うこと (実ユーザーのアカウントを入れない)。
  *
  *  実行: `pnpm --filter @aozoraquest/web test:quest-integration`
  */
@@ -90,9 +92,12 @@ describe.skipIf(!HAS_CREDS)('依頼クエスト 2 アカウント フル E2E (AP
   let didB = '';
 
   beforeAll(async () => {
-    // **SAFETY**: 隔離 env に固定されていなければ即停止 (本番 PDS 保護)
-    if (!COL.userQuest.includes('.e2etest.')) {
-      throw new Error(`SAFETY ABORT: COL.userQuest=${COL.userQuest} は隔離 env ではない。本番を触る恐れ`);
+    // **SAFETY**: 3 collection すべてが隔離 env に固定されていなければ即停止 (本番 PDS 保護)。
+    // これ (= 全書き込み・全削除より前) で throw すれば beforeAll/afterAll の write/delete は走らない。
+    for (const col of [COL.userQuest, COL.questApplication, COL.questCompletion]) {
+      if (!col.includes('.e2etest.')) {
+        throw new Error(`SAFETY ABORT: ${col} は隔離 env (e2etest) ではない。本番 PDS を触る恐れ`);
+      }
     }
     agentA = new AtpAgent({ service: SERVICE });
     agentB = new AtpAgent({ service: SERVICE });
