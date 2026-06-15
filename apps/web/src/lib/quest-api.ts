@@ -16,7 +16,7 @@ import type {
   AtUri,
   Did,
 } from '@aozoraquest/core';
-import { isValidCompletion } from '@aozoraquest/core';
+import { isValidCompletion, isCompleted } from '@aozoraquest/core';
 import { putRecord, getRecord } from './atproto';
 import { listRecordsForDid, getRecordForDid } from './repo-read';
 import { COL } from './collections';
@@ -538,6 +538,18 @@ export async function approveCompletion(
   quest: UserQuest,
   comment?: string,
 ): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
+  // 冪等性: 既に承認済みなら二重 approval record を書かない (= 二重発行防止)。
+  // 報酬 (ポイント/XP) は完了集合からの派生なので record が 1 つでも複数でも結果は同じだが、
+  // 余計な record を増やさないため既存 approval を返して no-op にする。
+  const existing = await listCompletionsFor(undefined, quest);
+  if (isCompleted(quest, existing)) {
+    const approval = existing.find(c => c.role === 'requesterApproval' && c.did === quest.did);
+    const updated: UserQuest = quest.status === 'completed'
+      ? quest
+      : { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
+    if (approval) return { completion: approval, updatedQuest: updated };
+    // status は completed だが approval record が見当たらない稀ケースは通常経路で書く
+  }
   // 順序: (A) approval record → (B) quest status → (C) index 同期。
   // (A) が真実、B-C は派生 (docs/15-user-quest.md §耐故障性)。
   const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterApproval', comment);
