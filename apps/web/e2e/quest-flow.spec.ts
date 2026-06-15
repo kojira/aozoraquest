@@ -10,6 +10,7 @@ import { AtpAgent } from '@atproto/api';
  * 前提:
  *  - `apps/web/.env.e2e.local` に 2 つの **捨てて良いテスト専用アカウント** の handle +
  *    app-password を入れる (テンプレ .env.e2e.example)。無ければ test.skip。
+ *  - 実行: `pnpm --filter @aozoraquest/web test:quest-e2e`
  *  - 実 PDS (bsky.social) にレコードを作るので、afterAll で両アカウントの quest 関連
  *    レコードを全削除してクリーンアップする。
  *  - 127.0.0.1 preview + loopback OAuth client で実 bsky.social に対し OAuth する。
@@ -19,6 +20,15 @@ const SERVICE = process.env.QUEST_E2E_SERVICE || 'https://bsky.social';
 const A = { handle: process.env.QUEST_E2E_A_HANDLE || '', password: process.env.QUEST_E2E_A_PASSWORD || '' };
 const B = { handle: process.env.QUEST_E2E_B_HANDLE || '', password: process.env.QUEST_E2E_B_PASSWORD || '' };
 const HAS_CREDS = !!(A.handle && A.password && B.handle && B.password);
+
+// アプリの書き込み先 collection は env で分離される (collections.ts: USER_PREFIX = ROOT[.ENV])。
+// preview は .env.development の VITE_NSID_ROOT=app.aozoraquest / VITE_NSID_ENV=local を使うので
+// 既定をそれに合わせる。**安全装置**: ENV が空 (= production NSID) のとき cleanup は実行しない
+// (万一 prod を触った creds を入れても本番クエストを消さない)。
+const NSID_ROOT = process.env.QUEST_E2E_NSID_ROOT || 'app.aozoraquest';
+const NSID_ENV = (process.env.QUEST_E2E_NSID_ENV ?? 'local').trim();
+const PREFIX = NSID_ENV ? `${NSID_ROOT}.${NSID_ENV}` : NSID_ROOT;
+const QUEST_COLLECTIONS = ['userQuest', 'questApplication', 'questCompletion'].map(c => `${PREFIX}.${c}`);
 
 // 一意なクエストタイトル (並行/再実行で衝突しないよう実行時刻を入れる)。
 const STAMP = `${Date.now()}`;
@@ -50,17 +60,30 @@ async function login(page: Page, handle: string, password: string): Promise<void
 }
 
 async function cleanupAccount(handle: string, password: string): Promise<void> {
+  // 安全装置: env 無し (= production NSID) では絶対に削除しない。
+  if (!NSID_ENV) {
+    console.warn('[quest-e2e] NSID_ENV が空 (production) のため cleanup を中止 (本番クエスト保護)');
+    return;
+  }
   try {
     const agent = new AtpAgent({ service: SERVICE });
     await agent.login({ identifier: handle, password });
     const did = agent.assertDid;
-    for (const col of ['app.aozoraquest.userQuest', 'app.aozoraquest.questApplication', 'app.aozoraquest.questCompletion']) {
-      const res = await agent.com.atproto.repo.listRecords({ repo: did, collection: col, limit: 100 });
-      for (const r of res.data.records) {
-        const rkey = r.uri.split('/').pop()!;
-        await agent.com.atproto.repo.deleteRecord({ repo: did, collection: col, rkey }).catch(() => {});
-      }
+    let count = 0;
+    for (const col of QUEST_COLLECTIONS) {
+      // ページングして全件消す (再実行でゴミが 100 件を超えても確実に掃除)
+      let cursor: string | undefined;
+      do {
+        const res = await agent.com.atproto.repo.listRecords({ repo: did, collection: col, limit: 100, cursor });
+        for (const r of res.data.records) {
+          const rkey = r.uri.split('/').pop()!;
+          await agent.com.atproto.repo.deleteRecord({ repo: did, collection: col, rkey }).catch(() => {});
+          count += 1;
+        }
+        cursor = res.data.cursor;
+      } while (cursor);
     }
+    console.info(`[quest-e2e] cleanup ${handle}: deleted ${count} records under ${PREFIX}.*`);
   } catch (e) {
     console.warn('[quest-e2e] cleanup failed', handle, e);
   }
