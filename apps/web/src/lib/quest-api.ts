@@ -126,6 +126,8 @@ export interface QuestIndexSummary {
   rewardPoints: number;
   deadline?: string;
   status: string;
+  /** 受託者 DID (status>=assigned)。受託者が「自分が受けたクエスト」を一覧で判定するのに使う。 */
+  assignee?: Did;
   createdAt: string;
 }
 
@@ -152,6 +154,7 @@ function questToSummary(q: UserQuest): QuestIndexSummary {
     rewardPoints: q.rewardPoints,
     ...(q.deadline ? { deadline: q.deadline } : {}),
     status: q.status,
+    ...(q.assignee ? { assignee: q.assignee } : {}),
     createdAt: q.createdAt,
   };
 }

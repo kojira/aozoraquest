@@ -26,10 +26,10 @@ beforeEach(() => {
 });
 
 describe('loadColumns / saveColumns', () => {
-  it('初期状態で default 2 カラム (募集中 + 自分が出した)', () => {
+  it('初期状態で default 4 カラム (募集中 + 受託中 + 自分が出した + 自分が応募)', () => {
     const cols = loadColumns();
-    expect(cols).toHaveLength(2);
-    expect(cols.map(c => c.kind)).toEqual(['open', 'mine']);
+    expect(cols).toHaveLength(4);
+    expect(cols.map(c => c.kind)).toEqual(['open', 'assigned', 'mine', 'applied']);
   });
 
   it('save → load で同じ内容が戻る', () => {
@@ -50,13 +50,13 @@ describe('loadColumns / saveColumns', () => {
   it('壊れた JSON は default に fallback', () => {
     localStorage.setItem('aozoraquest:boardColumns:v1', 'not json {');
     const cols = loadColumns();
-    expect(cols).toHaveLength(2);
+    expect(cols).toHaveLength(4);
   });
 
   it('空配列は default に fallback (= UI 上「全消し」を許さない)', () => {
     localStorage.setItem('aozoraquest:boardColumns:v1', '[]');
     const cols = loadColumns();
-    expect(cols).toHaveLength(2);
+    expect(cols).toHaveLength(4);
   });
 
   it('未知の kind は filter で除外する', () => {
@@ -75,9 +75,9 @@ describe('resetColumns', () => {
   it('default に戻して localStorage にも書き込む', () => {
     saveColumns([makeColumn('tag', 'foo')]);
     const cols = resetColumns();
-    expect(cols).toHaveLength(2);
+    expect(cols).toHaveLength(4);
     const loaded = loadColumns();
-    expect(loaded).toHaveLength(2);
+    expect(loaded).toHaveLength(4);
   });
 });
 

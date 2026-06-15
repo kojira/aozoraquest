@@ -96,6 +96,7 @@ export function Board() {
             column={col}
             indexData={{ index, myQuests, myApplicationQuestUris }}
             pendingUris={pendingUris}
+            selfDid={session.did ?? null}
             onRemove={() => removeColumn(col.id)}
           />
         ))}
@@ -121,6 +122,7 @@ function ColumnControls({ onAdd, onReset }: { onAdd: (kind: ColumnKind, param?: 
       <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>カラムを追加</div>
       <div style={{ display: 'flex', gap: '0.4em', flexWrap: 'wrap' }}>
         <SmallBtn onClick={() => onAdd('open')}>＋ 募集中</SmallBtn>
+        <SmallBtn onClick={() => onAdd('assigned')}>＋ 受託中</SmallBtn>
         <SmallBtn onClick={() => onAdd('mine')}>＋ 自分が出した</SmallBtn>
         <SmallBtn onClick={() => onAdd('applied')}>＋ 自分が応募</SmallBtn>
         <SmallBtn onClick={() => setPicker('tag')}>＋ タグ別</SmallBtn>
@@ -171,14 +173,15 @@ interface BoardInnerColumnViewProps {
     myApplicationQuestUris: ReturnType<typeof useBoardData>['myApplicationQuestUris'];
   };
   pendingUris: Set<string>;
+  selfDid: string | null;
   onRemove: () => void;
 }
 
-function BoardInnerColumnView({ column, indexData, pendingUris, onRemove }: BoardInnerColumnViewProps) {
+function BoardInnerColumnView({ column, indexData, pendingUris, selfDid, onRemove }: BoardInnerColumnViewProps) {
   const { index, myQuests, myApplicationQuestUris } = indexData;
   const items = useMemo(
-    () => filterForBoard(column, index, myQuests, myApplicationQuestUris),
-    [column, index, myQuests, myApplicationQuestUris],
+    () => filterForBoard(column, index, myQuests, myApplicationQuestUris, selfDid),
+    [column, index, myQuests, myApplicationQuestUris, selfDid],
   );
   return (
     <section className="board-column">

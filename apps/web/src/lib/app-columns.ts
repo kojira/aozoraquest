@@ -29,7 +29,7 @@ export type AppColumnKind = 'home' | 'bar' | 'notifications' | 'search' | 'board
  *  board ColumnContent が React key 用の id を mount 時に付与して
  *  橋渡しする (削除・並べ替えは index ベースで書き戻す)。 */
 export interface BoardInner {
-  kind: 'open' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
+  kind: 'open' | 'assigned' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
   param?: string;
 }
 
@@ -171,7 +171,7 @@ export function appColumnTitle(c: AppColumn): string {
 // ─── validation ───────────────────────────────────────
 
 const APP_KINDS: AppColumnKind[] = ['home', 'bar', 'notifications', 'search', 'board', 'profile'];
-const BOARD_INNER_KINDS: BoardInner['kind'][] = ['open', 'mine', 'applied', 'tag', 'job', 'issuer'];
+const BOARD_INNER_KINDS: BoardInner['kind'][] = ['open', 'assigned', 'mine', 'applied', 'tag', 'job', 'issuer'];
 
 export function isValidAppColumn(c: unknown): c is AppColumn {
   if (!c || typeof c !== 'object') return false;

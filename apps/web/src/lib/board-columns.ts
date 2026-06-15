@@ -22,7 +22,7 @@
 
 import type { Archetype } from '@aozoraquest/core';
 
-export type ColumnKind = 'open' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
+export type ColumnKind = 'open' | 'assigned' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
 
 export interface Column {
   id: string;
@@ -37,7 +37,10 @@ const KEY = 'aozoraquest:boardColumns:v1';
 
 const DEFAULT_COLUMNS: Column[] = [
   { id: 'col-open', kind: 'open', title: '募集中' },
+  // 受託したクエストを見失わないよう既定に追加 (受託者の完了報告導線)
+  { id: 'col-assigned', kind: 'assigned', title: '受託中' },
   { id: 'col-mine', kind: 'mine', title: '自分が出した' },
+  { id: 'col-applied', kind: 'applied', title: '自分が応募した' },
 ];
 
 export function loadColumns(): Column[] {
@@ -75,6 +78,7 @@ export function defaultTitleFor(c: Column): string {
   if (c.title) return c.title;
   switch (c.kind) {
     case 'open':    return '募集中';
+    case 'assigned': return '受託中';
     case 'mine':    return '自分が出した';
     case 'applied': return '自分が応募した';
     case 'tag':     return `#${c.param ?? ''}`;
@@ -87,7 +91,7 @@ function isValidColumn(c: unknown): c is Column {
   if (!c || typeof c !== 'object') return false;
   const obj = c as Record<string, unknown>;
   if (typeof obj.id !== 'string') return false;
-  const kinds: ColumnKind[] = ['open', 'mine', 'applied', 'tag', 'job', 'issuer'];
+  const kinds: ColumnKind[] = ['open', 'assigned', 'mine', 'applied', 'tag', 'job', 'issuer'];
   if (!kinds.includes(obj.kind as ColumnKind)) return false;
   return true;
 }

@@ -38,7 +38,8 @@ import { isoToLocalInput } from '@/lib/datetime';
 import { resolveHandle } from '@/lib/handle-cache';
 import {
   isExpired,
-  isCompleted as isCompletedFn,
+  effectiveState,
+  type EffectiveState,
   formatNotificationPost,
   type NotificationAction,
   type UserQuest,
@@ -137,7 +138,8 @@ export function BoardDetail() {
   const myApp = applications
     ?.filter(a => a.did === session.did && !a.withdrawn)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
-  const completedByApproval = isCompletedFn(quest, completions ?? []);
+  // 全状態・操作の gate は effectiveState を唯一の真実に (status は受託者の報告を反映しない)。
+  const state = effectiveState(quest, completions ?? []);
 
   async function cancelQuest() {
     if (!session.agent || !quest || !isOwner) return;
@@ -306,7 +308,7 @@ export function BoardDetail() {
         <span style={{ color: 'var(--color-accent)' }}>
           <RewardPoints did={quest.did} points={quest.rewardPoints} />
         </span>
-        <span style={{ marginLeft: 'auto' }}>{statusLabel(quest.status, expired, completedByApproval)}</span>
+        <span style={{ marginLeft: 'auto' }}>{statusLabel(state)}</span>
       </div>
 
       <div style={{ marginTop: '0.6em', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{quest.body}</div>
@@ -424,14 +426,16 @@ export function BoardDetail() {
         );
       })()}
 
-      {/* assigned 中: 受託者の表示 + 受託者の完了報告フォーム */}
-      {(quest.status === 'assigned' || quest.status === 'reported') && quest.assignee && (
+      {/* 受託確定〜完了前: 受託者の表示 + 受託者の完了報告フォーム (state は completion 由来) */}
+      {(state === 'IN_PROGRESS' || state === 'AWAITING_APPROVAL' || state === 'REVISION_REQUESTED') && quest.assignee && (
         <section style={{ marginTop: '1.4em' }}>
           <p style={{ fontSize: '0.85em' }}>
             受託者: <strong><Handle did={quest.assignee} /></strong>
-            {quest.status === 'reported' && ' (完了報告済み、承認待ち)'}
+            {state === 'AWAITING_APPROVAL' && ' (完了報告済み、承認待ち)'}
+            {state === 'REVISION_REQUESTED' && ' (やり直し依頼中)'}
           </p>
-          {isAssignee && quest.status === 'assigned' && (
+          {/* 受託者は作業中(未報告) と 差し戻し中 のとき報告できる。報告後(承認待ち)は隠す。 */}
+          {isAssignee && (state === 'IN_PROGRESS' || state === 'REVISION_REQUESTED') && (
             !reportForm.open ? (
               <button onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
             ) : (
@@ -454,7 +458,7 @@ export function BoardDetail() {
               </div>
             )
           )}
-          {isOwner && quest.status === 'reported' && (
+          {isOwner && state === 'AWAITING_APPROVAL' && (
             <div style={{ marginTop: '0.4em' }}>
               {!approveForm.open && !revisionForm.open && (
                 <div style={{ display: 'flex', gap: '0.6em' }}>
@@ -504,7 +508,7 @@ export function BoardDetail() {
       )}
 
       {/* 完了済み: 報酬表示 */}
-      {(quest.status === 'completed' || completedByApproval) && (
+      {state === 'COMPLETED' && (
         <section style={{ marginTop: '1.4em' }} className="dq-window">
           <p style={{ margin: 0, fontSize: '0.9em' }}>
             完了! 受託者 <strong>{quest.assignee ? <Handle did={quest.assignee} /> : '—'}</strong> に{' '}
@@ -536,15 +540,16 @@ export function BoardDetail() {
   );
 }
 
-function statusLabel(status: string, expired: boolean, completedByApproval: boolean): string {
-  if (completedByApproval && status !== 'completed') return '完了 (承認済み)';
-  if (status === 'completed') return '完了';
-  if (expired) return '期限切れ';
-  if (status === 'open') return '募集中';
-  if (status === 'assigned') return '受託中';
-  if (status === 'reported') return '完了報告中 (承認待ち)';
-  if (status === 'cancelled') return 'キャンセル';
-  return status;
+function statusLabel(state: EffectiveState): string {
+  switch (state) {
+    case 'COMPLETED':          return '完了';
+    case 'EXPIRED':            return '期限切れ';
+    case 'OPEN':               return '募集中';
+    case 'IN_PROGRESS':        return '受託中';
+    case 'AWAITING_APPROVAL':  return '完了報告中 (承認待ち)';
+    case 'REVISION_REQUESTED': return 'やり直し対応中';
+    case 'CANCELLED':          return 'キャンセル';
+  }
 }
 
 function roleLabel(role: string): string {
