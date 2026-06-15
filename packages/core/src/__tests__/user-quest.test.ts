@@ -172,6 +172,12 @@ describe('effectiveState (唯一の真実)', () => {
     expect(effectiveState(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z')])).toBe('REVISION_REQUESTED');
     expect(effectiveState(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z'), report('2026-06-15T03:00:00Z')])).toBe('AWAITING_APPROVAL');
   });
+  it('報告と差し戻しが同時刻のタイブレークは AWAITING (docs §2.3: v>r のみ REVISION)', () => {
+    // 別 PDS への別 record なので現実の衝突確率はほぼ無いが、挙動を固定して回帰を防ぐ。
+    const q = mk({ status: 'assigned', assignee, did: owner });
+    const t = '2026-06-15T01:00:00Z';
+    expect(effectiveState(q, [report(t), revision(t)])).toBe('AWAITING_APPROVAL');
+  });
   it('needsRequesterApproval は effectiveState===AWAITING_APPROVAL のラッパ', () => {
     const q = mk({ status: 'assigned', assignee, did: owner });
     expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z')])).toBe(true);
