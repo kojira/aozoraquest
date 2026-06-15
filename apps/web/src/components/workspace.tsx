@@ -57,6 +57,12 @@ export function Workspace() {
   // 明示更新なので先頭に戻る挙動は自然 (pull-to-refresh / ↻ ボタンとして妥当)。
   const [refreshNonce, setRefreshNonce] = useState<Record<string, number>>({});
 
+  // モバイル全幅カラムでは「次カラムの peek」を出さない代わりに、横スクロールの
+  // 端 (左右にまだカラムがあるか) を検知して ▶ / ◀ のスワイプヒントを出す。
+  // swiped = 一度でも横スワイプしたら ▶ の点滅を止める (知らせ終わったので静める)。
+  const [edges, setEdges] = useState({ atStart: true, atEnd: true });
+  const [swiped, setSwiped] = useState(false);
+
   /** kind ごとのモジュールキャッシュを無効化する (remount だけでは
    *  取り直さない quest index / profile を真に fresh にするため)。 */
   function bustColumnCache(col: AppColumn) {
@@ -126,6 +132,29 @@ export function Workspace() {
     return () => scroller.removeEventListener('wheel', onWheel);
   }, []);
 
+  // 横スクロールの端を追跡し、左右にまだカラムがあるかでスワイプヒントを出し分ける。
+  // 初回の横スワイプで swiped を立て、▶ の点滅を静める。
+  // deps はカラム数 (= 端の判定が変わる構成変化) のみ。リサイズは ResizeObserver で拾う。
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const update = () => {
+      const { scrollLeft, scrollWidth, clientWidth } = scroller;
+      const atStart = scrollLeft <= 1;
+      const atEnd = scrollLeft + clientWidth >= scrollWidth - 1;
+      setEdges((prev) => (prev.atStart === atStart && prev.atEnd === atEnd ? prev : { atStart, atEnd }));
+    };
+    const onScroll = () => { setSwiped(true); update(); };
+    update();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(scroller);
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+      ro?.disconnect();
+    };
+  }, [columnCount]);
+
   // `/` 離脱時に可視 kind をクリアする (active 残留防止)
   useEffect(() => () => publishVisibleColumn(null), []);
 
@@ -176,6 +205,13 @@ export function Workspace() {
       return next;
     });
     setPickerAnchor(null);
+  }
+
+  /** スワイプヒントのタップでカラム 1 枚ぶん送る (scroll-snap が次カラムに吸着)。 */
+  function scrollByColumn(dir: 1 | -1) {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollBy({ left: dir * scroller.clientWidth * 0.92, behavior: 'smooth' });
   }
 
   const picker = (
@@ -242,6 +278,30 @@ export function Workspace() {
           </section>
         )}
       </div>
+
+      {/* スワイプヒント (モバイル全幅カラム用)。左右にまだカラムがあるときだけ出す。
+          ▶ は初回スワイプまで点滅して「横に送れる」を知らせ、以後は静かな常駐に。
+          PC では枠と自由スクロールで自明なので CSS で非表示。タップで 1 枚送り。 */}
+      {!edges.atStart && (
+        <button
+          type="button"
+          className="workspace-swipe-hint left is-idle"
+          aria-label="前のカラムへ"
+          onClick={() => scrollByColumn(-1)}
+        >
+          ◀
+        </button>
+      )}
+      {!edges.atEnd && (
+        <button
+          type="button"
+          className={`workspace-swipe-hint right${swiped ? ' is-idle' : ''}`}
+          aria-label="次のカラムへ"
+          onClick={() => scrollByColumn(1)}
+        >
+          ▶
+        </button>
+      )}
     </div>
   );
 }
