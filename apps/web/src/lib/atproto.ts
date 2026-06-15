@@ -271,12 +271,6 @@ export async function putRecord(agent: Agent, collection: string, rkey: string, 
   });
 }
 
-/** AT Protocol レコードを削除する (自分の repo のみ)。E2E のクリーンアップ等に使う。 */
-export async function deleteRecord(agent: Agent, collection: string, rkey: string) {
-  const did = agent.assertDid;
-  return agent.com.atproto.repo.deleteRecord({ repo: did, collection, rkey });
-}
-
 export async function getRecord<T = unknown>(agent: Agent, repo: string, collection: string, rkey: string): Promise<T | null> {
   try {
     const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });

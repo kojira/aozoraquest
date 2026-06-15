@@ -17,7 +17,7 @@ import type {
   Did,
 } from '@aozoraquest/core';
 import { isValidCompletion, isCompleted } from '@aozoraquest/core';
-import { putRecord, getRecord, deleteRecord } from './atproto';
+import { putRecord, getRecord } from './atproto';
 import { listRecordsForDid, getRecordForDid } from './repo-read';
 import { COL } from './collections';
 import { mockIndex } from './quest-mock';
@@ -389,29 +389,6 @@ export function questPath(uri: AtUri): string {
 /** {@link questPath} の絶対 URL 版 (Bluesky 投稿に埋め込む共有リンク用)。 */
 export function questUrlOf(uri: AtUri, origin: string): string {
   return `${origin}${questPath(uri)}`;
-}
-
-/**
- * ログイン中アカウントの **クエスト関連レコードを全削除** する (userQuest / questApplication /
- * questCompletion)。E2E のクリーンアップ専用。**専用テストアカウントでのみ使うこと**
- * (実ユーザーのクエストを消すため)。削除した件数を返す。
- */
-export async function deleteAllQuestRecords(agent: Agent): Promise<number> {
-  const did = agent.assertDid;
-  let count = 0;
-  for (const col of [COL.userQuest, COL.questApplication, COL.questCompletion]) {
-    try {
-      const res = await listRecordsForDid(did, col, 100);
-      for (const r of res.records) {
-        const { rkey } = parseAtUri(r.uri);
-        await deleteRecord(agent, col, rkey);
-        count += 1;
-      }
-    } catch (e) {
-      console.warn('[quest-api] deleteAllQuestRecords failed for', col, e);
-    }
-  }
-  return count;
 }
 
 /** `/board/:repo/:rkey` の 2 param から userQuest の at-uri を復元する。
