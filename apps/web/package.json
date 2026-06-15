@@ -11,7 +11,7 @@
     "lint": "echo lint (tbd)",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:quest-e2e": "playwright test quest-flow"
+    "test:quest-integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@aozoraquest/core": "workspace:*",
