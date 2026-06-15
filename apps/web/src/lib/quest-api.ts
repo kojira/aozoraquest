@@ -16,7 +16,7 @@ import type {
   AtUri,
   Did,
 } from '@aozoraquest/core';
-import { isValidCompletion } from '@aozoraquest/core';
+import { isValidCompletion, isCompleted } from '@aozoraquest/core';
 import { putRecord, getRecord } from './atproto';
 import { listRecordsForDid, getRecordForDid } from './repo-read';
 import { COL } from './collections';
@@ -126,6 +126,8 @@ export interface QuestIndexSummary {
   rewardPoints: number;
   deadline?: string;
   status: string;
+  /** 受託者 DID (status>=assigned)。受託者が「自分が受けたクエスト」を一覧で判定するのに使う。 */
+  assignee?: Did;
   createdAt: string;
 }
 
@@ -152,6 +154,7 @@ function questToSummary(q: UserQuest): QuestIndexSummary {
     rewardPoints: q.rewardPoints,
     ...(q.deadline ? { deadline: q.deadline } : {}),
     status: q.status,
+    ...(q.assignee ? { assignee: q.assignee } : {}),
     createdAt: q.createdAt,
   };
 }
@@ -369,9 +372,32 @@ export function toRecord<T extends object>(value: T, $type: string, exclude: str
   return out;
 }
 
+/**
+ * クエスト詳細への **アプリ内パス**。`/board/<repo did>/<rkey>` の clean segment 形式。
+ *
+ * 旧実装は at-uri 全体を 1 つの param に `encodeURIComponent` で押し込んでいたが、
+ * at-uri はスラッシュを含むため新規ロード時に `%2F` が `/` に正規化され、React Router の
+ * 単一セグメント param にマッチせず 404 になっていた (アプリ内 <Link> だけ動く非対称)。
+ * 既存の `profile/:handle/post/:rkey` と同じく、スラッシュを含まない 2 つの clean segment
+ * (repo DID + rkey) に分解する。collection は常に userQuest なので URL に含めない。
+ */
+export function questPath(uri: AtUri): string {
+  const { repo, rkey } = parseAtUri(uri);
+  return `/board/${repo}/${rkey}`;
+}
+
+/** {@link questPath} の絶対 URL 版 (Bluesky 投稿に埋め込む共有リンク用)。 */
 export function questUrlOf(uri: AtUri, origin: string): string {
-  // ブラウザ表示用 URL。/quests/<encodeURIComponent(at-uri)> 形式。
-  return `${origin}/quests/${encodeURIComponent(uri)}`;
+  return `${origin}${questPath(uri)}`;
+}
+
+/** `/board/:repo/:rkey` の 2 param から userQuest の at-uri を復元する。
+ *  collection は URL に含めず常に `COL.userQuest` で組む。これは `getQuest` が元々 uri の
+ *  collection を無視して `COL.userQuest` で読む挙動と一致し、production リンクを dev で開いた
+ *  ときの cross-env collection mismatch も解消する。board で別 collection を開く要件が出たら
+ *  ここと getQuest の両方を直す。 */
+export function questUriFromParams(repo: string, rkey: string): AtUri {
+  return `at://${repo}/${COL.userQuest}/${rkey}`;
 }
 
 // ─── Phase 2: 応募 ────────────────────────────────────
@@ -407,12 +433,18 @@ export async function withdrawApplication(
   await putRecord(agent, COL.questApplication, rkey, toRecord(next, COL.questApplication));
 }
 
-/** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する */
+/** 特定 quest への応募一覧を、index で発見した応募者 PDS から fetch する。
+ *
+ *  `index` を渡すと、それ (= 掲示板と同じ PDS 直読みの discovery index) の
+ *  applications を使う。これにより集約 Worker が未デプロイでも **他ユーザーの
+ *  応募が発注者に見える** (応募者が #aozoraquest 投稿で発見可能な前提)。
+ *  未指定なら従来どおり fetchQuestIndex (Worker or localStorage モック) に落ちる。 */
 export async function listApplicationsFor(
   _agent: Agent | undefined,
   questUri: AtUri,
+  index?: QuestIndex,
 ): Promise<QuestApplication[]> {
-  const idx = await fetchQuestIndex();
+  const idx = index ?? await fetchQuestIndex();
   const entries = idx.applications.filter(a => a.questUri === questUri);
   const out: QuestApplication[] = [];
   for (const e of entries) {
@@ -509,6 +541,18 @@ export async function approveCompletion(
   quest: UserQuest,
   comment?: string,
 ): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
+  // 冪等性: 既に承認済みなら二重 approval record を書かない (= 二重発行防止)。
+  // 報酬 (ポイント/XP) は完了集合からの派生なので record が 1 つでも複数でも結果は同じだが、
+  // 余計な record を増やさないため既存 approval を返して no-op にする。
+  const existing = await listCompletionsFor(undefined, quest);
+  if (isCompleted(quest, existing)) {
+    const approval = existing.find(c => c.role === 'requesterApproval' && c.did === quest.did);
+    const updated: UserQuest = quest.status === 'completed'
+      ? quest
+      : { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
+    if (approval) return { completion: approval, updatedQuest: updated };
+    // status は completed だが approval record が見当たらない稀ケースは通常経路で書く
+  }
   // 順序: (A) approval record → (B) quest status → (C) index 同期。
   // (A) が真実、B-C は派生 (docs/15-user-quest.md §耐故障性)。
   const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterApproval', comment);

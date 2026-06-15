@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement, checkIssuanceLimits } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { createQuest, listIssuedQuests } from '@/lib/quest-api';
+import { createQuest, listIssuedQuests, questUrlOf, questPath } from '@/lib/quest-api';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { createTaggedPost } from '@/lib/atproto';
 import { getPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
@@ -88,7 +88,7 @@ export function BoardNew() {
       // off にできる導線は廃止)。ただし dev 環境だけは本番 Bluesky への誤投稿
       // 防止ゲート (getPostQuestNotifications) を残す。
       if (getPostQuestNotifications()) {
-        const questUrl = `${location.origin}/board/${encodeURIComponent(quest.uri)}`;
+        const questUrl = questUrlOf(quest.uri, location.origin);
         // [QUEST_URL] マーカーが残っていれば置換。ユーザーが消してしまっていれば末尾に追加。
         let finalText = announceText.replace('[QUEST_URL]', questUrl);
         if (!finalText.includes(questUrl)) finalText = `${finalText.trim()}\n${questUrl}`;
@@ -103,7 +103,7 @@ export function BoardNew() {
       }
       // index キャッシュを破棄 (発行直後に「募集中」一覧へ反映されるように)
       void refreshQuestIndex();
-      navigate(`/board/${encodeURIComponent(quest.uri)}`);
+      navigate(questPath(quest.uri));
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
       setBusy(false);

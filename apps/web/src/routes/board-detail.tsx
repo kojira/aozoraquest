@@ -9,7 +9,7 @@
  *  - 発注者: 募集期限の延長 / キャンセル
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Navigate, Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
   getQuest,
@@ -22,17 +22,24 @@ import {
   approveCompletion,
   requestRevision,
   listCompletionsFor,
+  buildQuestIndexViaDiscovery,
+  questUriFromParams,
+  questUrlOf,
+  questPath,
+  type QuestIndex,
 } from '@/lib/quest-api';
 import { createPost } from '@/lib/atproto';
 import { getPostQuestNotifications } from '@/lib/prefs';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
+import { useRuntimeConfig } from '@/components/config-provider';
 import { Handle, RewardPoints } from '@/components/handle';
 import { DateTimePicker } from '@/components/date-time-picker';
 import { isoToLocalInput } from '@/lib/datetime';
 import { resolveHandle } from '@/lib/handle-cache';
 import {
   isExpired,
-  isCompleted as isCompletedFn,
+  effectiveState,
+  type EffectiveState,
   formatNotificationPost,
   type NotificationAction,
   type UserQuest,
@@ -41,9 +48,10 @@ import {
 } from '@aozoraquest/core';
 
 export function BoardDetail() {
-  const { uri: encoded } = useParams<{ uri: string }>();
+  // clean segment route `/board/:repo/:rkey`。collection は常に userQuest。
+  const { repo, rkey } = useParams<{ repo: string; rkey: string }>();
   const session = useSession();
-  const uri = encoded ? decodeURIComponent(encoded) : null;
+  const uri = repo && rkey ? questUriFromParams(repo, rkey) : null;
   const [quest, setQuest] = useState<UserQuest | null>(null);
   const [applications, setApplications] = useState<QuestApplication[] | null>(null);
   const [completions, setCompletions] = useState<QuestCompletion[] | null>(null);
@@ -73,6 +81,14 @@ export function BoardDetail() {
     setBusy(false);
   }, [uri]);
 
+  const config = useRuntimeConfig();
+  const agent = session.agent;
+  const selfDid = session.did;
+  // directory の DID 群 (+ 自分) から掲示板と同じ PDS 直読み index を組む材料。
+  // 配列は毎 render 新規なので、effect の不要再実行を防ぐため文字列キー化する。
+  const directoryDids = config.directory.map((u) => u.did);
+  const aggregationKey = `${selfDid ?? ''}|${directoryDids.join(',')}`;
+
   const refresh = useCallback(async () => {
     // クエスト読み取りは公開 read (PDS 経由) で agent 不要。未ログインでも
     // 詳細を表示できるよう session.agent はガードしない (操作系は個別に
@@ -86,8 +102,15 @@ export function BoardDetail() {
       const q = await getQuest(undefined, uri);
       setQuest(q);
       if (q) {
+        // 集約 Worker が未デプロイでも他ユーザーの応募が発注者に見えるよう、
+        // 掲示板と同じ「discovery index (各 PDS 直読み)」を **この詳細表示用に直接** 組む。
+        // (共有キャッシュ経由だと refreshQuestIndex の inflight と競合して mock を
+        //  掴みうるため、詳細では毎回 fresh に組む。サインイン時のみ他 repo を読める)
+        const index: QuestIndex | undefined = agent
+          ? await buildQuestIndexViaDiscovery(agent, directoryDids, selfDid).catch(() => undefined)
+          : undefined;
         const [apps, comps] = await Promise.all([
-          listApplicationsFor(undefined, uri),
+          listApplicationsFor(undefined, uri, index),
           listCompletionsFor(undefined, q),
         ]);
         setApplications(apps);
@@ -96,8 +119,10 @@ export function BoardDetail() {
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
     }
-    // agent を使わないので deps は uri のみ (session 解決での二重 fetch を回避)
-  }, [uri]);
+    // directoryDids / selfDid は aggregationKey に内包される (配列を直接 deps に
+    // 入れると毎 render 別参照で refetch ループになるため文字列キーで安定化)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uri, agent, aggregationKey]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -113,7 +138,8 @@ export function BoardDetail() {
   const myApp = applications
     ?.filter(a => a.did === session.did && !a.withdrawn)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
-  const completedByApproval = isCompletedFn(quest, completions ?? []);
+  // 全状態・操作の gate は effectiveState を唯一の真実に (status は受託者の報告を反映しない)。
+  const state = effectiveState(quest, completions ?? []);
 
   async function cancelQuest() {
     if (!session.agent || !quest || !isOwner) return;
@@ -151,8 +177,11 @@ export function BoardDetail() {
   async function notifyBluesky(action: NotificationAction, recipientDid: string | null) {
     if (!session.agent || !quest) return;
     if (!recipientDid) return;
-    // dev 環境では default OFF。設定で明示的に ON にしている場合のみ送る。
-    if (!getPostQuestNotifications()) {
+    // 'applied' は集約 Worker 無しで発注者が応募者を発見する唯一の手段 (#aozoraquest 投稿で
+    // discovery 網に乗せる) なので、通知設定に関わらず必ず送る。これが出ないと応募しても
+    // 発注者に見えず進行が詰む。他の通知 (assigned/reported/approved/revision) は従来どおり
+    // 設定に従う (dev 環境では default OFF)。
+    if (action !== 'applied' && !getPostQuestNotifications()) {
       console.info('[board-detail] skip notify (postQuestNotifications=false):', action, recipientDid);
       return;
     }
@@ -162,7 +191,7 @@ export function BoardDetail() {
       action,
       recipientHandle,
       questTitle: quest.title,
-      questUrl: `${location.origin}/board/${encodeURIComponent(quest.uri)}`,
+      questUrl: questUrlOf(quest.uri, location.origin),
     });
     try {
       await createPost(session.agent, text);
@@ -279,7 +308,7 @@ export function BoardDetail() {
         <span style={{ color: 'var(--color-accent)' }}>
           <RewardPoints did={quest.did} points={quest.rewardPoints} />
         </span>
-        <span style={{ marginLeft: 'auto' }}>{statusLabel(quest.status, expired, completedByApproval)}</span>
+        <span style={{ marginLeft: 'auto' }}>{statusLabel(state)}</span>
       </div>
 
       <div style={{ marginTop: '0.6em', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{quest.body}</div>
@@ -397,14 +426,18 @@ export function BoardDetail() {
         );
       })()}
 
-      {/* assigned 中: 受託者の表示 + 受託者の完了報告フォーム */}
-      {(quest.status === 'assigned' || quest.status === 'reported') && quest.assignee && (
+      {/* 受託確定〜完了前: 受託者の表示 + 受託者の完了報告フォーム (state は completion 由来) */}
+      {(state === 'IN_PROGRESS' || state === 'AWAITING_APPROVAL' || state === 'REVISION_REQUESTED') && quest.assignee && (
         <section style={{ marginTop: '1.4em' }}>
           <p style={{ fontSize: '0.85em' }}>
             受託者: <strong><Handle did={quest.assignee} /></strong>
-            {quest.status === 'reported' && ' (完了報告済み、承認待ち)'}
+            {state === 'AWAITING_APPROVAL' && ' (完了報告済み、承認待ち)'}
+            {state === 'REVISION_REQUESTED' && ' (やり直し依頼中)'}
           </p>
-          {isAssignee && quest.status === 'assigned' && (
+          {/* 受託者は作業中(未報告) と 差し戻し中 のとき報告できる。報告後(承認待ち)は隠す。
+              completions ロード中 (null) は state が IN_PROGRESS に見えるため、確定するまで
+              報告ボタンを出さない (ちらつき + 報告済みなのに再報告で二重 report を防ぐ)。 */}
+          {isAssignee && completions !== null && (state === 'IN_PROGRESS' || state === 'REVISION_REQUESTED') && (
             !reportForm.open ? (
               <button onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
             ) : (
@@ -427,7 +460,7 @@ export function BoardDetail() {
               </div>
             )
           )}
-          {isOwner && quest.status === 'reported' && (
+          {isOwner && state === 'AWAITING_APPROVAL' && (
             <div style={{ marginTop: '0.4em' }}>
               {!approveForm.open && !revisionForm.open && (
                 <div style={{ display: 'flex', gap: '0.6em' }}>
@@ -477,7 +510,7 @@ export function BoardDetail() {
       )}
 
       {/* 完了済み: 報酬表示 */}
-      {(quest.status === 'completed' || completedByApproval) && (
+      {state === 'COMPLETED' && (
         <section style={{ marginTop: '1.4em' }} className="dq-window">
           <p style={{ margin: 0, fontSize: '0.9em' }}>
             完了! 受託者 <strong>{quest.assignee ? <Handle did={quest.assignee} /> : '—'}</strong> に{' '}
@@ -509,15 +542,16 @@ export function BoardDetail() {
   );
 }
 
-function statusLabel(status: string, expired: boolean, completedByApproval: boolean): string {
-  if (completedByApproval && status !== 'completed') return '完了 (承認済み)';
-  if (status === 'completed') return '完了';
-  if (expired) return '期限切れ';
-  if (status === 'open') return '募集中';
-  if (status === 'assigned') return '受託中';
-  if (status === 'reported') return '完了報告中 (承認待ち)';
-  if (status === 'cancelled') return 'キャンセル';
-  return status;
+function statusLabel(state: EffectiveState): string {
+  switch (state) {
+    case 'COMPLETED':          return '完了';
+    case 'EXPIRED':            return '期限切れ';
+    case 'OPEN':               return '募集中';
+    case 'IN_PROGRESS':        return '受託中';
+    case 'AWAITING_APPROVAL':  return '完了報告中 (承認待ち)';
+    case 'REVISION_REQUESTED': return 'やり直し対応中';
+    case 'CANCELLED':          return 'キャンセル';
+  }
 }
 
 function roleLabel(role: string): string {
@@ -525,4 +559,22 @@ function roleLabel(role: string): string {
   if (role === 'requesterApproval') return '承認';
   if (role === 'requesterRevision') return 'やり直し依頼';
   return role;
+}
+
+/**
+ * 旧 `/board/<encodeURIComponent(at-uri)>` リンク (Bluesky に投稿済み) の救済。
+ * 新規ロードで `%2F` が `/` に正規化され、splat route の pathname に at-uri が
+ * そのまま入るので、それを clean form (`/board/:repo/:rkey`) へ redirect する。
+ * at-uri として解釈できなければ掲示板トップへ。
+ */
+export function BoardDetailLegacyRedirect() {
+  const location = useLocation();
+  let target = '/board';
+  try {
+    const rest = decodeURIComponent(location.pathname.replace(/^\/board\//, ''));
+    target = questPath(rest); // parseAtUri が throw すれば catch
+  } catch {
+    target = '/board';
+  }
+  return <Navigate to={target} replace />;
 }
