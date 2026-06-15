@@ -369,9 +369,32 @@ export function toRecord<T extends object>(value: T, $type: string, exclude: str
   return out;
 }
 
+/**
+ * クエスト詳細への **アプリ内パス**。`/board/<repo did>/<rkey>` の clean segment 形式。
+ *
+ * 旧実装は at-uri 全体を 1 つの param に `encodeURIComponent` で押し込んでいたが、
+ * at-uri はスラッシュを含むため新規ロード時に `%2F` が `/` に正規化され、React Router の
+ * 単一セグメント param にマッチせず 404 になっていた (アプリ内 <Link> だけ動く非対称)。
+ * 既存の `profile/:handle/post/:rkey` と同じく、スラッシュを含まない 2 つの clean segment
+ * (repo DID + rkey) に分解する。collection は常に userQuest なので URL に含めない。
+ */
+export function questPath(uri: AtUri): string {
+  const { repo, rkey } = parseAtUri(uri);
+  return `/board/${repo}/${rkey}`;
+}
+
+/** {@link questPath} の絶対 URL 版 (Bluesky 投稿に埋め込む共有リンク用)。 */
 export function questUrlOf(uri: AtUri, origin: string): string {
-  // ブラウザ表示用 URL。/quests/<encodeURIComponent(at-uri)> 形式。
-  return `${origin}/quests/${encodeURIComponent(uri)}`;
+  return `${origin}${questPath(uri)}`;
+}
+
+/** `/board/:repo/:rkey` の 2 param から userQuest の at-uri を復元する。
+ *  collection は URL に含めず常に `COL.userQuest` で組む。これは `getQuest` が元々 uri の
+ *  collection を無視して `COL.userQuest` で読む挙動と一致し、production リンクを dev で開いた
+ *  ときの cross-env collection mismatch も解消する。board で別 collection を開く要件が出たら
+ *  ここと getQuest の両方を直す。 */
+export function questUriFromParams(repo: string, rkey: string): AtUri {
+  return `at://${repo}/${COL.userQuest}/${rkey}`;
 }
 
 // ─── Phase 2: 応募 ────────────────────────────────────
