@@ -233,6 +233,9 @@ p { margin: 0.4em 0; }
   .app-shell:has([data-workspace="1"]) { max-width: min(100vw - 1.5em, 1480px); }
 }
 
+/* スワイプヒント (▶ / ◀) を絶対配置する基準 */
+[data-workspace="1"] { position: relative; }
+
 .app-shell:has([data-workspace="1"]) .content {
   background: transparent;
   border-color: transparent;
@@ -266,7 +269,9 @@ p { margin: 0.4em 0; }
      CJK 連続文字があると min-content がカラムを flex-basis より広げてしまう
      (= 長文投稿でホームカラムが膨らむバグ)。min-width:0 で basis を守る。 */
   min-width: 0;
-  /* モバイル: ほぼ画面幅。次のカラムの端を少し見せて「右にまだある」を示す */
+  /* flex-basis はメディアクエリで上書きされる (モバイル <=767px = 全幅 100%、
+     PC >=768px = 340px)。下の calc は両クエリ外の保険値。モバイルで「右にまだ
+     カラムがある」ことは peek ではなく .workspace-swipe-hint (▶) で知らせる。 */
   flex: 0 0 calc(100% - 1.6em);
   scroll-snap-align: start;
   scroll-snap-stop: always;            /* 1 スワイプ = 1 カラム送り */
@@ -437,6 +442,73 @@ p { margin: 0.4em 0; }
     scroll-snap-type: none;   /* PC は自由スクロール */
     gap: 0.8em;
   }
+}
+
+/* ─── モバイル: カラムを全幅で使う (横幅を枠に食わせない) ───────────
+   1 スワイプ = 1 カラムなので、左右の太枠・四隅装飾・次カラム peek を省いて
+   本文に幅を回す。横幅ロス ~66px → ~12px。代わりに「右にまだカラムがある」は
+   .workspace-swipe-hint (▶ 点滅) で知らせる。PC (>=768px) は従来の太枠カラム維持。 */
+@media (max-width: 767px) {
+  .app-shell:has([data-workspace="1"]) .content { padding: 0; }
+  .workspace-columns { gap: 0; padding-bottom: 0; }
+  .workspace-column {
+    flex: 0 0 100%;            /* peek を出さず全幅 */
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* 四隅のコーナー装飾は全幅では出さない */
+  .workspace-column::before,
+  .workspace-column::after { display: none; }
+  /* 隣接カラムの境目だけ薄い縦線で示す (スワイプ後の「別カラム」感) */
+  .workspace-column + .workspace-column {
+    box-shadow: inset 1px 0 0 var(--color-window-inner-border);
+  }
+  .workspace-column-body { padding: 0.55em 0.35em; }   /* 22.4px → 11.2px L/R */
+}
+
+/* ─── カラム送りのスワイプヒント (▶ / ◀) ───────────────────────
+   モバイル全幅で peek を消した代償に「横に送れる」を明示する。左右の端に
+   まだカラムがあるときだけ表示 (端に着いたら消える)。▶ は初回スワイプまで
+   点滅して気づかせ、以後は is-idle で静かな常駐に。タップで 1 枚送り。 */
+.workspace-swipe-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 2.6em;
+  padding: 0;
+  font-size: 1em;
+  line-height: 1;
+  color: var(--color-on-accent);
+  background: rgba(159, 215, 255, 0.92);   /* accent */
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* 純粋な視覚マーカー。タップ送りはしない (スワイプで送れるため冗長 +
+     本文右端のリンク/アクションのタップ誤爆を防ぐ)。 */
+  pointer-events: none;
+}
+.workspace-swipe-hint.right { right: 0; border-radius: 8px 0 0 8px; }
+.workspace-swipe-hint.left  { left: 0;  border-radius: 0 8px 8px 0; }
+/* 初期 (未スワイプ) の ▶ は点滅 + わずかに右へ動いて送りを誘導 */
+.workspace-swipe-hint.right:not(.is-idle) {
+  animation: swipe-hint-blink 1.15s ease-in-out infinite;
+}
+.workspace-swipe-hint.is-idle { opacity: 0.5; }
+@keyframes swipe-hint-blink {
+  0%, 100% { opacity: 1;    transform: translateY(-50%) translateX(0); }
+  50%      { opacity: 0.3;  transform: translateY(-50%) translateX(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-swipe-hint.right:not(.is-idle) { animation: none; opacity: 0.85; }
+}
+/* PC は枠 + 自由スクロールで送りが自明なのでヒント不要 */
+@media (min-width: 768px) {
+  .workspace-swipe-hint { display: none; }
 }
 
 .header {
