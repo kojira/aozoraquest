@@ -124,13 +124,47 @@ function latestCreatedAt(items: QuestCompletion[]): string | null {
  *  - 最後の報告 (assigneeReport) が最後の差し戻し (requesterRevision) より新しければ「承認待ち」。
  *    差し戻しの方が新しければ受託者の再報告待ちなので false。 */
 export function needsRequesterApproval(q: UserQuest, completions: QuestCompletion[]): boolean {
-  if (q.status === 'completed' || q.status === 'cancelled') return false;
+  return effectiveState(q, completions) === 'AWAITING_APPROVAL';
+}
+
+/**
+ * クエストの **実効状態 (effective state)** — 全ての表示・操作可否の唯一の真実。
+ *
+ * record 上の `status` は発注者しか書けないので素朴に信じてはいけない (受託者の完了報告は
+ * 発注者 record に乗らず status は `assigned` のまま)。`isCompleted` / `needsRequesterApproval`
+ * と同じく **completion record から導出** する (docs/17 §2.3)。
+ *
+ * | state | 意味 |
+ * |---|---|
+ * | OPEN | 募集中 (応募受付) |
+ * | IN_PROGRESS | 受託確定、受託者が作業中 (未報告) |
+ * | AWAITING_APPROVAL | 受託者が完了報告済み、発注者の承認待ち |
+ * | REVISION_REQUESTED | 発注者がやり直し依頼、受託者の再報告待ち |
+ * | COMPLETED | 承認済み = 達成 (報酬確定) |
+ * | CANCELLED | 発注者が中止 |
+ * | EXPIRED | 募集期限切れ (open のまま期限超過) |
+ */
+export type EffectiveState =
+  | 'OPEN' | 'IN_PROGRESS' | 'AWAITING_APPROVAL' | 'REVISION_REQUESTED'
+  | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
+
+export function effectiveState(
+  q: UserQuest,
+  completions: QuestCompletion[],
+  now: Date = new Date(),
+): EffectiveState {
+  if (q.status === 'cancelled') return 'CANCELLED';
+  if (isCompleted(q, completions)) return 'COMPLETED';
+  if (!q.assignee) {
+    return isExpired(q, now) ? 'EXPIRED' : 'OPEN';
+  }
+  // 受託確定済み (assignee あり)。completion record から進行を判定する。
   const valid = completions.filter(c => isValidCompletion(c, q));
-  if (valid.some(c => c.role === 'requesterApproval')) return false;
   const lastReport = latestCreatedAt(valid.filter(c => c.role === 'assigneeReport'));
-  if (lastReport === null) return false;
+  if (lastReport === null) return 'IN_PROGRESS';
   const lastRevision = latestCreatedAt(valid.filter(c => c.role === 'requesterRevision'));
-  return lastRevision === null || lastReport > lastRevision;
+  if (lastRevision !== null && lastRevision > lastReport) return 'REVISION_REQUESTED';
+  return 'AWAITING_APPROVAL';
 }
 
 // ─── 発注者視点: 成功 / 失敗 / キャンセル / 進行中 ─────────
@@ -272,6 +306,24 @@ export function statXpDistribution(tags: string[]): StatVector {
     result[maxStat] += 100 - final;
   }
   return result;
+}
+
+/**
+ * 受託者が **完了したクエストから得た累計ステータス XP** (`holdings` と同じく完了集合からの
+ * 派生 = 二重加算が原理的に起きない)。
+ *
+ * 完了 1 件あたり `statXpDistribution(tags)` (合計 100) を配分加算する。`me` が受託者で、かつ
+ * 承認済み (`status==='completed'`) のクエストのみ対象。承認の真実は発注者 record の
+ * `status='completed'` (= 承認時に発注者が書く) で、受託者はそれを公開 read できる。
+ */
+export function questXpEarned(receivedQuests: UserQuest[], me: Did): StatVector {
+  const acc: StatVector = v(0, 0, 0, 0, 0);
+  for (const q of receivedQuests) {
+    if (q.status !== 'completed' || q.assignee !== me) continue;
+    const dist = statXpDistribution(q.tags);
+    for (const stat of STATS) acc[stat] += dist[stat];
+  }
+  return acc;
 }
 
 // ─── 発行スパム上限 (docs/15-user-quest.md §モデレーション) ─
