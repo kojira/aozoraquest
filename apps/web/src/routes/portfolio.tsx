@@ -115,7 +115,7 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
   const completedIssued = useMemo(() => (issued ?? []).filter(q => q.status === 'completed'), [issued]);
   const completedReceived = useMemo(() => (received ?? []).filter(q => q.status === 'completed'), [received]);
   // 受託して完了したクエストから得た累計ステータス XP (完了集合からの派生)。
-  const questXp = useMemo(() => questXpEarned(received ?? [], did ?? ''), [received, did]);
+  const questXp = useMemo(() => questXpEarned(completedReceived, did ?? ''), [completedReceived, did]);
   const questXpTotal = questXp.atk + questXp.def + questXp.agi + questXp.int + questXp.luk;
 
   /** 受託者視点: 発注者 DID → 獲得 pt の合計 */
@@ -188,6 +188,10 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
             <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
               受託して完了したクエストの内容 (タグ) に応じて、各ステータスに合計
               <strong style={{ color: 'var(--color-accent)' }}> {questXpTotal.toLocaleString()} XP</strong> を獲得。
+              <span style={{ display: 'block', marginTop: '0.3em', fontSize: '0.92em' }}>
+                ※ 投稿から診断した「気質ステータス」とは別の、冒険 (受託) で稼いだ経験値です。
+                図は配分のバランス、量は合計 XP を参照してください。
+              </span>
             </div>
           </div>
         </section>
