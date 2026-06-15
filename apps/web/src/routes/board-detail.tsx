@@ -434,8 +434,10 @@ export function BoardDetail() {
             {state === 'AWAITING_APPROVAL' && ' (完了報告済み、承認待ち)'}
             {state === 'REVISION_REQUESTED' && ' (やり直し依頼中)'}
           </p>
-          {/* 受託者は作業中(未報告) と 差し戻し中 のとき報告できる。報告後(承認待ち)は隠す。 */}
-          {isAssignee && (state === 'IN_PROGRESS' || state === 'REVISION_REQUESTED') && (
+          {/* 受託者は作業中(未報告) と 差し戻し中 のとき報告できる。報告後(承認待ち)は隠す。
+              completions ロード中 (null) は state が IN_PROGRESS に見えるため、確定するまで
+              報告ボタンを出さない (ちらつき + 報告済みなのに再報告で二重 report を防ぐ)。 */}
+          {isAssignee && completions !== null && (state === 'IN_PROGRESS' || state === 'REVISION_REQUESTED') && (
             !reportForm.open ? (
               <button onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
             ) : (

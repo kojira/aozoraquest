@@ -21,8 +21,13 @@ beforeAll(() => {
   }
 });
 
+const ASSIGNED_MIGRATED_KEY = 'aozoraquest:boardColumns:assignedMigrated';
+
 beforeEach(() => {
   localStorage.clear();
+  // 既存テストは「受託中」移行と無関係なので、既定で移行済みにして干渉を避ける。
+  // 移行ロジック自体は専用 describe でフラグを外して検証する。
+  localStorage.setItem(ASSIGNED_MIGRATED_KEY, '1');
 });
 
 describe('loadColumns / saveColumns', () => {
@@ -78,6 +83,31 @@ describe('resetColumns', () => {
     expect(cols).toHaveLength(4);
     const loaded = loadColumns();
     expect(loaded).toHaveLength(4);
+  });
+});
+
+describe('既存ユーザーへの「受託中」マイグレーション', () => {
+  it('旧 [open, mine] に open 直後で assigned を、末尾に applied を 1 回だけ注入し保存する', () => {
+    localStorage.removeItem(ASSIGNED_MIGRATED_KEY); // 未移行の既存ユーザーを再現
+    localStorage.setItem('aozoraquest:boardColumns:v1', JSON.stringify([
+      { id: 'a', kind: 'open' }, { id: 'b', kind: 'mine' },
+    ]));
+    const cols = loadColumns();
+    expect(cols.map(c => c.kind)).toEqual(['open', 'assigned', 'mine', 'applied']);
+    // 保存もされる (= workspace の board inner にも効く)
+    expect((JSON.parse(localStorage.getItem('aozoraquest:boardColumns:v1')!) as { kind: string }[]).map(c => c.kind))
+      .toEqual(['open', 'assigned', 'mine', 'applied']);
+    // 2 回目はフラグ済みなので再注入しない (ユーザーが消しても戻らない)
+    saveColumns([{ id: 'a', kind: 'open' }]);
+    expect(loadColumns().map(c => c.kind)).toEqual(['open']);
+  });
+
+  it('既に assigned を持つ構成は変更しない', () => {
+    localStorage.removeItem(ASSIGNED_MIGRATED_KEY);
+    localStorage.setItem('aozoraquest:boardColumns:v1', JSON.stringify([
+      { id: 'a', kind: 'open' }, { id: 'x', kind: 'assigned' },
+    ]));
+    expect(loadColumns().map(c => c.kind)).toEqual(['open', 'assigned']);
   });
 });
 
