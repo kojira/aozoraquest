@@ -15,7 +15,7 @@ import { useRuntimeConfig } from '@/components/config-provider';
 import { RewardPoints } from '@/components/handle';
 
 export interface BoardFilter {
-  kind: 'open' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
+  kind: 'open' | 'assigned' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
   param?: string;
 }
 
@@ -95,10 +95,19 @@ export function filterForBoard(
   index: QuestIndex | null,
   myQuests: UserQuest[] | null,
   myApplicationQuestUris: Set<string> | null,
+  selfDid: string | null,
 ): QuestIndexSummary[] | null {
   if (c.kind === 'open') {
     if (!index) return null;
     return index.quests.filter(q => q.status === 'open');
+  }
+  if (c.kind === 'assigned') {
+    // 自分が受託したクエスト (受託確定〜完了前)。status==='assigned' は受託者の
+    // IN_PROGRESS / 承認待ち / 差し戻し をすべて含む (発注者が承認すると completed に
+    // 抜ける)。これが無いと受託者は受託後にクエストを見失い完了報告に到達できない。
+    if (!index) return null;
+    if (!selfDid) return [];
+    return index.quests.filter(q => q.assignee === selfDid && q.status === 'assigned');
   }
   if (c.kind === 'mine') {
     if (!myQuests) return null;
@@ -209,6 +218,7 @@ export function ApprovalPendingBanner({ pending }: { pending: UserQuest[] }) {
 export function emptyMessageForBoard(c: BoardFilter): string {
   switch (c.kind) {
     case 'open':    return 'まだ誰も募集していません。「クエストを出す」から始めてみましょう。';
+    case 'assigned': return '受託中のクエストはありません。募集中から応募してみましょう。';
     case 'mine':    return 'あなたが発行したクエストはまだありません。';
     case 'applied': return '応募中のクエストはありません。';
     case 'tag':     return `#${c.param ?? ''} のクエストは見つかりませんでした。`;
@@ -220,6 +230,7 @@ export function emptyMessageForBoard(c: BoardFilter): string {
 export function boardFilterTitle(c: BoardFilter): string {
   switch (c.kind) {
     case 'open':    return '募集中';
+    case 'assigned': return '受託中';
     case 'mine':    return '自分が出した';
     case 'applied': return '自分が応募した';
     case 'tag':     return `#${c.param ?? ''}`;

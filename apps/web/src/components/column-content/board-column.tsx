@@ -21,7 +21,7 @@ import {
   type BoardFilter,
 } from './board-shared';
 
-const DEFAULT_INNER: BoardInner[] = [{ kind: 'open' }, { kind: 'mine' }];
+const DEFAULT_INNER: BoardInner[] = [{ kind: 'open' }, { kind: 'assigned' }, { kind: 'mine' }, { kind: 'applied' }];
 
 /** タブ表示用ラベル。issuer は DID 全表示だと長く区別もできないため
  *  末尾を省略して識別子の頭を見せる。 */
@@ -41,10 +41,10 @@ export function BoardColumn({ inner }: { inner?: BoardInner[] | undefined }) {
   const activeIndex = Math.min(tabIndex, tabs.length - 1);
   const active = tabs[activeIndex]!;
 
-  const { index, myQuests, myApplicationQuestUris, pendingApproval, err } = useBoardData();
+  const { index, myQuests, myApplicationQuestUris, pendingApproval, err, sessionDid } = useBoardData();
   const items = useMemo(
-    () => filterForBoard(active, index, myQuests, myApplicationQuestUris),
-    [active, index, myQuests, myApplicationQuestUris],
+    () => filterForBoard(active, index, myQuests, myApplicationQuestUris, sessionDid),
+    [active, index, myQuests, myApplicationQuestUris, sessionDid],
   );
   const pendingUris = useMemo(() => new Set(pendingApproval.map((q) => q.uri)), [pendingApproval]);
 
