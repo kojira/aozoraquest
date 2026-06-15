@@ -22,7 +22,7 @@
 
 import type { Archetype } from '@aozoraquest/core';
 
-export type ColumnKind = 'open' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
+export type ColumnKind = 'open' | 'assigned' | 'mine' | 'applied' | 'tag' | 'job' | 'issuer';
 
 export interface Column {
   id: string;
@@ -34,10 +34,15 @@ export interface Column {
 }
 
 const KEY = 'aozoraquest:boardColumns:v1';
+/** 「受託中」カラム導入の 1 回限りマイグレーション済みフラグ。 */
+const ASSIGNED_MIGRATED_KEY = 'aozoraquest:boardColumns:assignedMigrated';
 
 const DEFAULT_COLUMNS: Column[] = [
   { id: 'col-open', kind: 'open', title: '募集中' },
+  // 受託したクエストを見失わないよう既定に追加 (受託者の完了報告導線)
+  { id: 'col-assigned', kind: 'assigned', title: '受託中' },
   { id: 'col-mine', kind: 'mine', title: '自分が出した' },
+  { id: 'col-applied', kind: 'applied', title: '自分が応募した' },
 ];
 
 export function loadColumns(): Column[] {
@@ -46,10 +51,35 @@ export function loadColumns(): Column[] {
     if (!raw) return [...DEFAULT_COLUMNS];
     const parsed = JSON.parse(raw) as Column[];
     if (!Array.isArray(parsed) || parsed.length === 0) return [...DEFAULT_COLUMNS];
-    return parsed.filter(isValidColumn);
+    return migrateAssigned(parsed.filter(isValidColumn));
   } catch {
     return [...DEFAULT_COLUMNS];
   }
+}
+
+/**
+ * 既存ユーザー (localStorage に旧 [open, mine] 等を保存済み) に「受託中」カラムを 1 回だけ
+ * 注入する。これが無いと DEFAULT_COLUMNS 拡張が新規ユーザーにしか届かず、受託者導線の修正が
+ * 本番の既存ユーザーに反映されない。保存もするので workspace の board inner (同じ key を
+ * read-time 参照) にも効く。ユーザーが後で意図的に削除したら、フラグ済みなので再注入しない。
+ */
+function migrateAssigned(cols: Column[]): Column[] {
+  try {
+    if (localStorage.getItem(ASSIGNED_MIGRATED_KEY)) return cols;
+    localStorage.setItem(ASSIGNED_MIGRATED_KEY, '1');
+  } catch {
+    return cols;
+  }
+  if (cols.some(c => c.kind === 'assigned')) return cols;
+  const next: Column[] = [];
+  for (const c of cols) {
+    next.push(c);
+    if (c.kind === 'open') next.push({ id: 'col-assigned', kind: 'assigned', title: '受託中' });
+  }
+  if (!next.some(c => c.kind === 'assigned')) next.unshift({ id: 'col-assigned', kind: 'assigned', title: '受託中' });
+  if (!next.some(c => c.kind === 'applied')) next.push({ id: 'col-applied', kind: 'applied', title: '自分が応募した' });
+  saveColumns(next);
+  return next;
 }
 
 export function saveColumns(columns: Column[]): void {
@@ -75,6 +105,7 @@ export function defaultTitleFor(c: Column): string {
   if (c.title) return c.title;
   switch (c.kind) {
     case 'open':    return '募集中';
+    case 'assigned': return '受託中';
     case 'mine':    return '自分が出した';
     case 'applied': return '自分が応募した';
     case 'tag':     return `#${c.param ?? ''}`;
@@ -87,7 +118,7 @@ function isValidColumn(c: unknown): c is Column {
   if (!c || typeof c !== 'object') return false;
   const obj = c as Record<string, unknown>;
   if (typeof obj.id !== 'string') return false;
-  const kinds: ColumnKind[] = ['open', 'mine', 'applied', 'tag', 'job', 'issuer'];
+  const kinds: ColumnKind[] = ['open', 'assigned', 'mine', 'applied', 'tag', 'job', 'issuer'];
   if (!kinds.includes(obj.kind as ColumnKind)) return false;
   return true;
 }

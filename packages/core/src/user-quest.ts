@@ -106,6 +106,67 @@ export function isValidCompletion(c: QuestCompletion, q: UserQuest): boolean {
   return false;
 }
 
+function latestCreatedAt(items: QuestCompletion[]): string | null {
+  let max: string | null = null;
+  for (const c of items) {
+    if (max === null || c.createdAt > max) max = c.createdAt;
+  }
+  return max;
+}
+
+/** **発注者が承認すべき状態か** (= 受託者の完了報告が届いていて、まだ承認も差し戻しもしていない)。
+ *
+ *  発注者の `userQuest.status` は **受託者が書き込めない** ため、受託者が完了報告しても
+ *  発注者 record の status は `assigned` のまま (= `reported` は当てにできない)。よって
+ *  完了判定 (`isCompleted`) と同様に **completion record から導出** する:
+ *  - `requesterApproval` があれば承認済み → false
+ *  - 有効な `assigneeReport` が無ければ報告未着 → false
+ *  - 最後の報告 (assigneeReport) が最後の差し戻し (requesterRevision) より新しければ「承認待ち」。
+ *    差し戻しの方が新しければ受託者の再報告待ちなので false。 */
+export function needsRequesterApproval(q: UserQuest, completions: QuestCompletion[]): boolean {
+  return effectiveState(q, completions) === 'AWAITING_APPROVAL';
+}
+
+/**
+ * クエストの **実効状態 (effective state)** — 全ての表示・操作可否の唯一の真実。
+ *
+ * record 上の `status` は発注者しか書けないので素朴に信じてはいけない (受託者の完了報告は
+ * 発注者 record に乗らず status は `assigned` のまま)。`isCompleted` / `needsRequesterApproval`
+ * と同じく **completion record から導出** する (docs/17 §2.3)。
+ *
+ * | state | 意味 |
+ * |---|---|
+ * | OPEN | 募集中 (応募受付) |
+ * | IN_PROGRESS | 受託確定、受託者が作業中 (未報告) |
+ * | AWAITING_APPROVAL | 受託者が完了報告済み、発注者の承認待ち |
+ * | REVISION_REQUESTED | 発注者がやり直し依頼、受託者の再報告待ち |
+ * | COMPLETED | 承認済み = 達成 (報酬確定) |
+ * | CANCELLED | 発注者が中止 |
+ * | EXPIRED | 募集期限切れ (open のまま期限超過) |
+ */
+export type EffectiveState =
+  | 'OPEN' | 'IN_PROGRESS' | 'AWAITING_APPROVAL' | 'REVISION_REQUESTED'
+  | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
+
+export function effectiveState(
+  q: UserQuest,
+  completions: QuestCompletion[],
+  now: Date = new Date(),
+): EffectiveState {
+  if (q.status === 'cancelled') return 'CANCELLED';
+  if (isCompleted(q, completions)) return 'COMPLETED';
+  if (!q.assignee) {
+    return isExpired(q, now) ? 'EXPIRED' : 'OPEN';
+  }
+  // 受託確定済み (assignee あり)。completion record から進行を判定する。
+  const valid = completions.filter(c => isValidCompletion(c, q));
+  const lastReport = latestCreatedAt(valid.filter(c => c.role === 'assigneeReport'));
+  if (lastReport === null) return 'IN_PROGRESS';
+  const lastRevision = latestCreatedAt(valid.filter(c => c.role === 'requesterRevision'));
+  if (lastRevision !== null && lastRevision > lastReport) return 'REVISION_REQUESTED';
+  return 'AWAITING_APPROVAL';
+}
+
 // ─── 発注者視点: 成功 / 失敗 / キャンセル / 進行中 ─────────
 
 export type Outcome = 'success' | 'failure' | 'cancelled' | 'inProgress';
@@ -247,6 +308,24 @@ export function statXpDistribution(tags: string[]): StatVector {
   return result;
 }
 
+/**
+ * 受託者が **完了したクエストから得た累計ステータス XP** (`holdings` と同じく完了集合からの
+ * 派生 = 二重加算が原理的に起きない)。
+ *
+ * 完了 1 件あたり `statXpDistribution(tags)` (合計 100) を配分加算する。`me` が受託者で、かつ
+ * 承認済み (`status==='completed'`) のクエストのみ対象。承認の真実は発注者 record の
+ * `status='completed'` (= 承認時に発注者が書く) で、受託者はそれを公開 read できる。
+ */
+export function questXpEarned(receivedQuests: UserQuest[], me: Did): StatVector {
+  const acc: StatVector = v(0, 0, 0, 0, 0);
+  for (const q of receivedQuests) {
+    if (q.status !== 'completed' || q.assignee !== me) continue;
+    const dist = statXpDistribution(q.tags);
+    for (const stat of STATS) acc[stat] += dist[stat];
+  }
+  return acc;
+}
+
 // ─── 発行スパム上限 (docs/15-user-quest.md §モデレーション) ─
 
 export const MAX_OPEN_QUESTS_PER_USER = 3;
@@ -324,13 +403,28 @@ const ACTION_MESSAGES: Record<NotificationAction, string> = {
   revisionRequested: 'やり直しを依頼されました',
 };
 
+/** 通知 post 本文がこの grapheme 数を超えないようタイトルを丸める (Bluesky 上限 300 の安全側)。 */
+const NOTIFICATION_TITLE_MAX = 80;
+
 export function formatNotificationPost(args: {
   action: NotificationAction;
   recipientHandle: string;
   questTitle: string;
   questUrl: string;
 }): string {
-  return `@${args.recipientHandle} ${ACTION_MESSAGES[args.action]}: ${args.questTitle} → ${args.questUrl}`;
+  // #aozoraquest は **応募 (applied) のときだけ** 付ける。集約 Worker が無い間、
+  // 発注者が応募者を発見する経路は「#aozoraquest 投稿者の PDS を走査する」のみで、
+  // 応募者をこの検索網に乗せるのが目的。承認/やり直し等は当事者間の mention で
+  // 足り、全部にタグを付けると (a) 発見用 TL を希釈し (b) ネガティブなやりとりまで
+  // 公開タグに流す副作用があるため付けない。
+  const tag = args.action === 'applied' ? ' #aozoraquest' : '';
+  // タイトル + クエスト URL (https://…/board/<did>/<rkey>) で 300 grapheme を超えると
+  // post が落ち、応募者が発見されなくなる。タイトルを安全側に丸める。
+  const title =
+    args.questTitle.length > NOTIFICATION_TITLE_MAX
+      ? `${args.questTitle.slice(0, NOTIFICATION_TITLE_MAX - 1)}…`
+      : args.questTitle;
+  return `@${args.recipientHandle} ${ACTION_MESSAGES[args.action]}: ${title} → ${args.questUrl}${tag}`;
 }
 
 function formatDateShort(iso: string): string {

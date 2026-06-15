@@ -3,6 +3,9 @@ import {
   isExpired,
   isCompleted,
   isValidCompletion,
+  needsRequesterApproval,
+  effectiveState,
+  questXpEarned,
   outcomeOf,
   holdings,
   totalIssued,
@@ -105,6 +108,100 @@ describe('isCompleted (耐故障性)', () => {
       createdAt: 'x',
     };
     expect(isCompleted(q, [fakeApproval])).toBe(false);
+  });
+});
+
+describe('needsRequesterApproval (status ではなく completion record から導出)', () => {
+  const q = mk({ status: 'assigned', assignee: 'did:plc:assignee', did: 'did:plc:owner' });
+  const report = (at: string): QuestCompletion =>
+    ({ uri: `r-${at}`, did: 'did:plc:assignee', questUri: q.uri, role: 'assigneeReport', createdAt: at });
+  const approval = (at: string): QuestCompletion =>
+    ({ uri: `a-${at}`, did: 'did:plc:owner', questUri: q.uri, role: 'requesterApproval', createdAt: at });
+  const revision = (at: string): QuestCompletion =>
+    ({ uri: `v-${at}`, did: 'did:plc:owner', questUri: q.uri, role: 'requesterRevision', createdAt: at });
+
+  it('受託者の完了報告が来ていて未承認なら true (status は assigned のまま)', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z')])).toBe(true);
+  });
+  it('まだ報告が来ていなければ false', () => {
+    expect(needsRequesterApproval(q, [])).toBe(false);
+  });
+  it('既に承認済みなら false', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z'), approval('2026-06-15T02:00:00Z')])).toBe(false);
+  });
+  it('差し戻し後・再報告前 (差し戻しが最新) は false (受託者待ち)', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z')])).toBe(false);
+  });
+  it('差し戻し後に再報告が来たら true (承認待ちに戻る)', () => {
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z'), report('2026-06-15T03:00:00Z')])).toBe(true);
+  });
+  it('completed / cancelled は常に false', () => {
+    expect(needsRequesterApproval(mk({ ...q, status: 'completed' }), [report('2026-06-15T01:00:00Z')])).toBe(false);
+    expect(needsRequesterApproval(mk({ ...q, status: 'cancelled' }), [report('2026-06-15T01:00:00Z')])).toBe(false);
+  });
+  it('assignee 以外が書いた偽の報告は無視する', () => {
+    const fake: QuestCompletion = { uri: 'r', did: 'did:plc:attacker', questUri: q.uri, role: 'assigneeReport', createdAt: '2026-06-15T01:00:00Z' };
+    expect(needsRequesterApproval(q, [fake])).toBe(false);
+  });
+});
+
+describe('effectiveState (唯一の真実)', () => {
+  const owner = 'did:plc:owner';
+  const assignee = 'did:plc:assignee';
+  const report = (at: string): QuestCompletion => ({ uri: `r-${at}`, did: assignee, questUri: 'at://did:plc:owner/app.aozoraquest.userQuest/abc', role: 'assigneeReport', createdAt: at });
+  const approval = (at: string): QuestCompletion => ({ uri: `a-${at}`, did: owner, questUri: 'at://did:plc:owner/app.aozoraquest.userQuest/abc', role: 'requesterApproval', createdAt: at });
+  const revision = (at: string): QuestCompletion => ({ uri: `v-${at}`, did: owner, questUri: 'at://did:plc:owner/app.aozoraquest.userQuest/abc', role: 'requesterRevision', createdAt: at });
+
+  it('cancelled / completed を最優先', () => {
+    expect(effectiveState(mk({ status: 'cancelled' }), [])).toBe('CANCELLED');
+    expect(effectiveState(mk({ status: 'completed' }), [])).toBe('COMPLETED');
+    expect(effectiveState(mk({ status: 'assigned', assignee, did: owner }), [approval('2026-06-15T02:00:00Z')])).toBe('COMPLETED');
+  });
+  it('assignee 無し: open=OPEN / 期限切れ=EXPIRED', () => {
+    expect(effectiveState(mk({ status: 'open' }), [], NOW)).toBe('OPEN');
+    const expired = mk({ status: 'open', deadline: '2026-06-01T00:00:00Z' });
+    expect(effectiveState(expired, [], NOW)).toBe('EXPIRED');
+  });
+  it('assignee あり: 報告前=IN_PROGRESS / 報告後=AWAITING_APPROVAL', () => {
+    const q = mk({ status: 'assigned', assignee, did: owner });
+    expect(effectiveState(q, [])).toBe('IN_PROGRESS');
+    expect(effectiveState(q, [report('2026-06-15T01:00:00Z')])).toBe('AWAITING_APPROVAL');
+  });
+  it('差し戻しが最新=REVISION_REQUESTED / 再報告で AWAITING に戻る', () => {
+    const q = mk({ status: 'assigned', assignee, did: owner });
+    expect(effectiveState(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z')])).toBe('REVISION_REQUESTED');
+    expect(effectiveState(q, [report('2026-06-15T01:00:00Z'), revision('2026-06-15T02:00:00Z'), report('2026-06-15T03:00:00Z')])).toBe('AWAITING_APPROVAL');
+  });
+  it('報告と差し戻しが同時刻のタイブレークは AWAITING (docs §2.3: v>r のみ REVISION)', () => {
+    // 別 PDS への別 record なので現実の衝突確率はほぼ無いが、挙動を固定して回帰を防ぐ。
+    const q = mk({ status: 'assigned', assignee, did: owner });
+    const t = '2026-06-15T01:00:00Z';
+    expect(effectiveState(q, [report(t), revision(t)])).toBe('AWAITING_APPROVAL');
+  });
+  it('needsRequesterApproval は effectiveState===AWAITING_APPROVAL のラッパ', () => {
+    const q = mk({ status: 'assigned', assignee, did: owner });
+    expect(needsRequesterApproval(q, [report('2026-06-15T01:00:00Z')])).toBe(true);
+    expect(needsRequesterApproval(q, [])).toBe(false);
+  });
+});
+
+describe('questXpEarned (完了集合からの派生 XP)', () => {
+  const me = 'did:plc:me';
+  it('自分が受託して完了したクエストの statXpDistribution を合算', () => {
+    const quests = [
+      mk({ uri: 'at://x/1', status: 'completed', assignee: me, tags: ['code'] }),    // 100 を code 配分
+      mk({ uri: 'at://x/2', status: 'completed', assignee: me, tags: ['illust'] }),  // 100 を illust 配分
+      mk({ uri: 'at://x/3', status: 'assigned', assignee: me, tags: ['code'] }),     // 未完了 → 除外
+      mk({ uri: 'at://x/4', status: 'completed', assignee: 'did:plc:other', tags: ['code'] }), // 他人 → 除外
+    ];
+    const xp = questXpEarned(quests, me);
+    const total = xp.atk + xp.def + xp.agi + xp.int + xp.luk;
+    expect(total).toBe(200); // 完了 2 件 × 100
+    expect(xp.int).toBeGreaterThan(0); // code は int 寄り
+  });
+  it('完了が無ければ全 0', () => {
+    const xp = questXpEarned([mk({ status: 'open', assignee: me, tags: ['code'] })], me);
+    expect(xp).toEqual({ atk: 0, def: 0, agi: 0, int: 0, luk: 0 });
   });
 });
 
@@ -371,6 +468,37 @@ describe('formatNotificationPost', () => {
       questTitle: '精霊のイラスト',
       questUrl: 'https://aozoraquest.app/quests/x',
     });
+    // applied 以外 (assigned 等) には #aozoraquest を付けない (TL 汚染回避)
     expect(out).toBe('@sato.bsky.social 受託者に指定されました: 精霊のイラスト → https://aozoraquest.app/quests/x');
+  });
+
+  it('applied のときだけ発見用 #aozoraquest を付ける', () => {
+    const applied = formatNotificationPost({
+      action: 'applied',
+      recipientHandle: 'owner.bsky.social',
+      questTitle: 'テスト',
+      questUrl: 'https://aozoraquest.app/quests/y',
+    });
+    expect(applied).toContain('#aozoraquest');
+    expect(applied.startsWith('@owner.bsky.social')).toBe(true);
+
+    // ネガティブ寄りの通知はタグ無し (公開タグ TL に流さない)
+    for (const action of ['reported', 'approved', 'revisionRequested'] as const) {
+      const out = formatNotificationPost({ action, recipientHandle: 'h', questTitle: 't', questUrl: 'u' });
+      expect(out).not.toContain('#aozoraquest');
+    }
+  });
+
+  it('長いタイトルを丸めて post が長くなりすぎないようにする', () => {
+    const longTitle = 'あ'.repeat(200);
+    const out = formatNotificationPost({
+      action: 'applied',
+      recipientHandle: 'owner.bsky.social',
+      questTitle: longTitle,
+      questUrl: 'https://aozoraquest.app/quests/at%3A%2F%2Fdid%3Aplc%3Axxxxxxxxxxxxxxxxxxxx%2Fapp.aozoraquest.userQuest%2F3lpzzzzzz',
+    });
+    expect(out).toContain('…');
+    // Bluesky 上限 300 grapheme に対し安全側 (タイトル丸め後)
+    expect([...out].length).toBeLessThanOrEqual(300);
   });
 });
