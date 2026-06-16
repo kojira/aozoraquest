@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- viewport-fit=cover: モバイルで全幅 footer を最下部に密着させる際、env(safe-area-inset-*)
+       を有効化して iOS ホームインジケータと被らないようにするため (footer の padding-bottom 参照)。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#378ADD">
   <title>あおぞらくえすと</title>
 </head>

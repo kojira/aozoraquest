@@ -127,6 +127,8 @@ MVP 完了。以降は下記「既知の制約 / 検討事項」と issue #36 (p
 - **drag & drop 並べ替え**: MVP は矢印ボタン (⋯メニュー) のみ。要望次第で dnd-kit
 - **PDS 同期 (`app.aozoraquest.layout`)**: カラム構成は localStorage 止まり。端末横断同期は将来の opt-in
 - **iOS Safari の scroll-snap 慣性**: `scroll-snap-stop: always` で軽減。深い tuning は実機検証後
+- **モバイル (<=767px) はカラムを全幅化**: 横幅が枠に食われて本文が窮屈という指摘を受け、スマホでは DQ ウィンドウの太枠・四隅装飾・次カラム peek を省いて本文幅を優先 (~83% → ~97%)。カラム境界は隣接間の `inset 1px` 縦線で示す。「右/左にまだカラムがある」ことは peek の代わりに `.workspace-swipe-hint` (▶ / ◀) で知らせる (▶ は初回スワイプまで点滅、末尾のコンテンツカラムで消える、`pointer-events:none` の純粋な視覚マーカー)。**PC (>=768px) は従来どおり太枠 340px カラム + 自由スクロール**。DESIGN.md の DQ ウィンドウ様式はモバイルでのみ緩める例外。
+  - **カラム内のフィード投稿 (`.feed-post`) も全幅化**: 投稿カード (`.dq-window`) の左右枠・四隅・角丸も撤去し、左右余白 0.5em の「タイムライン行」に。区切りは枠ではなく下辺ヘアライン (背景同色で埋もれるため)。カラム本体の左右パディングも 0、大画面スマホ (420px 超) でも workspace は 420px キャップを外す。**board のクエストカード等 (インライン borderColor で承認待ち=accent / 期限切れ=muted の状態色を示す `.dq-window.compact`) は対象外** — 枠ごと消すと状態が読めなくなるため、全幅化は `.feed-post` (PostArticle) に限定する。
 
 ## 関連ドキュメント
 

@@ -233,6 +233,9 @@ p { margin: 0.4em 0; }
   .app-shell:has([data-workspace="1"]) { max-width: min(100vw - 1.5em, 1480px); }
 }
 
+/* スワイプヒント (▶ / ◀) を絶対配置する基準 */
+[data-workspace="1"] { position: relative; }
+
 .app-shell:has([data-workspace="1"]) .content {
   background: transparent;
   border-color: transparent;
@@ -266,7 +269,9 @@ p { margin: 0.4em 0; }
      CJK 連続文字があると min-content がカラムを flex-basis より広げてしまう
      (= 長文投稿でホームカラムが膨らむバグ)。min-width:0 で basis を守る。 */
   min-width: 0;
-  /* モバイル: ほぼ画面幅。次のカラムの端を少し見せて「右にまだある」を示す */
+  /* flex-basis はメディアクエリで上書きされる (モバイル <=767px = 全幅 100%、
+     PC >=768px = 340px)。下の calc は両クエリ外の保険値。モバイルで「右にまだ
+     カラムがある」ことは peek ではなく .workspace-swipe-hint (▶) で知らせる。 */
   flex: 0 0 calc(100% - 1.6em);
   scroll-snap-align: start;
   scroll-snap-stop: always;            /* 1 スワイプ = 1 カラム送り */
@@ -299,7 +304,7 @@ p { margin: 0.4em 0; }
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  /* タイトル左、ボタン群 (↻ / ⋯) は refresh-btn の margin-left:auto で右へ。
+  /* タイトル左、ボタン群 (↑ / ↻ / ⋯) は refresh-btn の margin-left:auto で右へ。
      space-between だと 3 子が等間隔に散るので flex-start にする。 */
   justify-content: flex-start;
   gap: 0.5em;
@@ -333,6 +338,20 @@ p { margin: 0.4em 0; }
   color: var(--color-fg);
 }
 .workspace-column-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* カラムを最上部へスクロールするボタン (↻ の隣)。refresh と同じ控えめな見た目。 */
+.workspace-column-totop-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.4em;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-fg);
+}
+.workspace-column-totop-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
 }
 .workspace-column-refresh-btn.is-spinning svg {
@@ -437,6 +456,150 @@ p { margin: 0.4em 0; }
     scroll-snap-type: none;   /* PC は自由スクロール */
     gap: 0.8em;
   }
+}
+
+/* ─── モバイルは全画面ダーク・全幅に統一 (workspace / 通知 / 検索 / 掲示板 共通) ──
+   方針: スマホでは「青空+草原に手帳が浮かぶ」世界観 (PC 専用) は出さず、
+   header + 本文 + footer をダークで画面いっぱいに敷き詰める。workspace のカラムも、
+   footer から開く通知/検索などの単独ルートも、同じ全幅・枠なし・全幅 footer に揃える。
+   投稿の境目は下辺ヘアライン、カラム送りは .workspace-swipe-hint (▶)。
+   PC (>=768px) は従来の太枠カラム + 中央寄せピル footer + 世界観背景を維持。 */
+@media (max-width: 767px) {
+  /* 青空/草原を出さない。body を不透明ダークにして、どの隙間 (外枠・footer 下・
+     カラム下端) からも地面/空が透けない (= 緑のにじみ・外枠透け・隙間を一掃)。 */
+  body { background: #0e1318; }
+  /* base body::before の白い雲もモバイルでは消す (ダーク統一の徹底) */
+  body::before { display: none; }
+
+  /* app-shell は全ルートで全幅 (通常の 420px 中央寄せキャップを外す) */
+  .app-shell { max-width: 100%; }
+
+  /* .content: 外枠・四隅装飾・余白を撤去して全幅。通知/検索/設定など非 workspace
+     ルートも自前のダーク背景 (base) で表示領域を最大化。横は 0.5em だけ余白。
+     セレクタは `.app-shell .content` (0,2,0) にして base `.content` (0,1,0) に詳細度で
+     勝つ (= モバイルブロックが base より前にあるためソース順だけでは負ける)。 */
+  .app-shell .content {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0.6em 0.5em;
+  }
+  .app-shell .content::before,
+  .app-shell .content::after { display: none; }
+
+  /* workspace の content は透明 + padding 0 (各カラムが背景・余白を持つ) */
+  .app-shell:has([data-workspace="1"]) .content { padding: 0; background: transparent; }
+
+  /* footer-nav を全ルートで全幅フラッシュに統一。base は width:min(340px,80%) の
+     中央寄せピルで、ワークスペースと単独ルートで footer の見た目が不揃いだった。
+     モバイルでは全ルート画面幅いっぱい + 最下部密着 + 上辺の区切り線 + 浮き影。
+     セレクタ `.app-shell .footer-nav` (0,2,0) で base `.footer-nav` (0,1,0) に詳細度で
+     勝つ。footer は sticky で flex フロー内にボックスを予約するため、通常スクロール
+     ルートでも最下部コンテンツに被らない (= 余白を別途確保する必要はない)。 */
+  .app-shell .footer-nav {
+    width: 100%;
+    margin: 0;
+    border: none;
+    border-top: 2px solid var(--color-window-inner-border);
+    border-radius: 0;
+    /* タイムラインと地続きにしつつ「ナビバー」だと分かる程度の浮き影 (blur は
+       DESIGN 方針で控えめに、上方向の影だけ) */
+    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.45);
+    bottom: 0;
+    /* iOS ホームインジケータと被らないよう safe-area 下余白を足す
+       (index.html の viewport-fit=cover が前提。--footer-height は padding 込み
+       実測なのでカラム高・FAB 位置も自動追従する)。 */
+    padding-bottom: calc(0.35em + env(safe-area-inset-bottom, 0px));
+  }
+  .workspace-columns { gap: 0; padding-bottom: 0; }
+  .workspace-column {
+    flex: 0 0 100%;            /* peek を出さず全幅 */
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* 四隅のコーナー装飾は全幅では出さない */
+  .workspace-column::before,
+  .workspace-column::after { display: none; }
+  /* 隣接カラムの境目だけ薄い縦線で示す (スワイプ後の「別カラム」感) */
+  .workspace-column + .workspace-column {
+    box-shadow: inset 1px 0 0 var(--color-window-inner-border);
+  }
+  /* カラム本体に左右 0.5em の余白 (掲示板等、フィード以外の文字が画面端に密着して
+     素人臭く見えるのを防ぐ)。フィード投稿は下で横 padding 0 にしてこの余白に揃える。 */
+  .workspace-column-body { padding: 0.5em; }
+
+  /* ワークスペースのタイムライン投稿 (.feed-post = PostArticle) を全幅タイムライン行に。
+     枠・四隅・角丸・横 inset を消し、区切りは下辺ヘアライン (横 padding はカラム body が
+     0.5em 持つので 0)。
+     セレクタは `.workspace-column-body .feed-post` (0,2,0) に**限定**する。これは
+     (1) base `.dq-window` (0,1,0) に詳細度で勝って確実に効き、かつ
+     (2) 通知カード内ネスト投稿 / スレッド枝内の PostArticle (= .feed-post を裸で広げると
+         巻き込んで「カード in カード」やインデント階層が壊れる) を**対象外**にするため。
+     board のクエストカード (.dq-window.compact, 状態色枠) は .feed-post を持たず対象外。 */
+  .workspace-column-body .feed-post {
+    border: none;
+    /* 区切りは **border-top** に置く。VirtualFeed は各投稿を position:absolute +
+       translateY で隙間なく重ねるため、border-bottom だと次の投稿 (後に描画) の
+       背景が前の投稿の下端 1px を覆って線が消える (= 濃さを上げても見えなかった真因)。
+       border-top は「線を持つ投稿自身」が後に描画されるので覆われず確実に見える。 */
+    border-top: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 0;
+    box-shadow: none;
+    padding-left: 0;
+    padding-right: 0;
+    margin-bottom: 0;
+  }
+  /* カラム最上部の投稿 (index 0) には上線を出さない (列ヘッダ/上部コンテンツ
+     (HomeSummary 等) との二重線を避ける) */
+  .workspace-column-body [data-index="0"] .feed-post { border-top: none; }
+  .workspace-column-body .feed-post::before,
+  .workspace-column-body .feed-post::after { display: none; }
+}
+
+/* ─── カラム送りのスワイプヒント (▶ / ◀) ───────────────────────
+   モバイル全幅で peek を消した代償に「横に送れる」を明示する。左右の端に
+   まだカラムがあるときだけ表示 (端に着いたら消える)。▶ は初回スワイプまで
+   点滅して気づかせ、以後は is-idle で静かな常駐に。タップで 1 枚送り。 */
+.workspace-swipe-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 2.6em;
+  padding: 0;
+  font-size: 1em;
+  line-height: 1;
+  color: var(--color-on-accent);
+  background: rgba(159, 215, 255, 0.92);   /* accent */
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* 純粋な視覚マーカー。タップ送りはしない (スワイプで送れるため冗長 +
+     本文右端のリンク/アクションのタップ誤爆を防ぐ)。 */
+  pointer-events: none;
+}
+.workspace-swipe-hint.right { right: 0; border-radius: 8px 0 0 8px; }
+.workspace-swipe-hint.left  { left: 0;  border-radius: 0 8px 8px 0; }
+/* 初期 (未スワイプ) の ▶ は点滅 + わずかに右へ動いて送りを誘導 */
+.workspace-swipe-hint.right:not(.is-idle) {
+  animation: swipe-hint-blink 1.15s ease-in-out infinite;
+}
+.workspace-swipe-hint.is-idle { opacity: 0.5; }
+@keyframes swipe-hint-blink {
+  0%, 100% { opacity: 1;    transform: translateY(-50%) translateX(0); }
+  50%      { opacity: 0.3;  transform: translateY(-50%) translateX(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-swipe-hint.right:not(.is-idle) { animation: none; opacity: 0.85; }
+}
+/* PC は枠 + 自由スクロールで送りが自明なのでヒント不要 */
+@media (min-width: 768px) {
+  .workspace-swipe-hint { display: none; }
 }
 
 .header {
