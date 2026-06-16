@@ -540,14 +540,20 @@ p { margin: 0.4em 0; }
      board のクエストカード (.dq-window.compact, 状態色枠) は .feed-post を持たず対象外。 */
   .workspace-column-body .feed-post {
     border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+    /* 区切りは **border-top** に置く。VirtualFeed は各投稿を position:absolute +
+       translateY で隙間なく重ねるため、border-bottom だと次の投稿 (後に描画) の
+       背景が前の投稿の下端 1px を覆って線が消える (= 濃さを上げても見えなかった真因)。
+       border-top は「線を持つ投稿自身」が後に描画されるので覆われず確実に見える。 */
+    border-top: 1px solid rgba(255, 255, 255, 0.5);
     border-radius: 0;
     box-shadow: none;
     padding-left: 0;
     padding-right: 0;
     margin-bottom: 0;
   }
-  .workspace-column-body .feed-post:last-child { border-bottom: none; }
+  /* カラム最上部の投稿 (index 0) には上線を出さない (列ヘッダ/上部コンテンツ
+     (HomeSummary 等) との二重線を避ける) */
+  .workspace-column-body [data-index="0"] .feed-post { border-top: none; }
   .workspace-column-body .feed-post::before,
   .workspace-column-body .feed-post::after { display: none; }
 }
