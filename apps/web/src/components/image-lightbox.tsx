@@ -166,19 +166,7 @@ export function ImageLightbox({
           type="button"
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           aria-label="閉じる"
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            border: 'none',
-            background: 'rgba(255,255,255,0.15)',
-            color: '#fff',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0,
-          }}
+          style={navBtnStyle(true)}
         >
           <CloseIcon />
         </button>
