@@ -31,6 +31,8 @@ import { publishVisibleColumn } from '@/lib/visible-column';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
 import { ColumnContent } from '@/components/column-content';
 import { ColumnPicker } from '@/components/column-picker';
+import { ComposeColumn } from '@/components/compose-modal';
+import { useComposePaneOpen, closeComposePane } from '@/lib/compose-pane';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { invalidateProfile } from '@/lib/profile-cache';
 
@@ -52,6 +54,8 @@ export function Workspace() {
 
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  // PC 左レールの投稿ボタンで開く投稿カラムの開閉 (compose-pane store)
+  const composeOpen = useComposePaneOpen();
 
   // 各カラムの「更新世代」。bump すると ColumnContent の key が変わり remount
   // → mount 時に各カラムがネットワークから取り直す (= リフレッシュ)。
@@ -167,6 +171,16 @@ export function Workspace() {
   // `/` 離脱時に可視 kind をクリアする (active 残留防止)
   useEffect(() => () => publishVisibleColumn(null), []);
 
+  // 投稿カラムを開いたら左端 (レール直右) へスクロールして必ず見えるようにする
+  // (横スクロールで右を見ている最中に開いても画面外に隠れないように)。
+  useEffect(() => {
+    if (!composeOpen) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    scrollerRef.current?.scrollTo({ left: 0, behavior: reduce ? 'auto' : 'smooth' });
+  }, [composeOpen]);
+  // `/` 離脱時は投稿カラムを閉じる (ルート跨ぎ・モバイル幅で開きっぱなしを防ぐ)
+  useEffect(() => () => closeComposePane(), []);
+
   if (session.status === 'loading') {
     return <p>準備しています...</p>;
   }
@@ -244,6 +258,8 @@ export function Workspace() {
   return (
     <div data-workspace="1">
       <div className="workspace-columns" ref={scrollerRef}>
+        {/* PC 左レールの投稿ボタンで開く投稿カラム (先頭・レール直右)。✕ で閉じる。 */}
+        {composeOpen && <ComposeColumn onClose={closeComposePane} />}
         {(columns ?? []).map((col, i) => (
           <Fragment key={col.id}>
             <ColumnView
