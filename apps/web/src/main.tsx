@@ -28,9 +28,11 @@ import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
 import { ComposeProvider } from '@/components/compose-modal';
 import { initFontScale } from '@/lib/font-scale';
+import { initTheme } from '@/lib/theme';
 import '@/styles.css';
 
 initFontScale();
+initTheme();
 
 const router = createBrowserRouter([
   {

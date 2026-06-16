@@ -7,8 +7,9 @@ import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault } from '@/lib/prefs';
+import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault, getTheme, type ThemeChoice } from '@/lib/prefs';
 import { applyFontScale } from '@/lib/font-scale';
+import { applyTheme } from '@/lib/theme';
 import { APP_VERSION } from '@/lib/app-version';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
@@ -242,10 +243,10 @@ export function Settings() {
                     style={{
                       padding: '0.5em 0.5em 0.5em 0.8em',
                       fontSize: '0.85em',
-                      background: isCurrent ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.4)',
-                      border: `2px solid ${isCurrent ? '#ffffff' : 'rgba(255,255,255,0.5)'}`,
+                      background: isCurrent ? 'var(--color-item-selected-bg)' : 'var(--color-item-bg)',
+                      border: `2px solid ${isCurrent ? 'var(--color-item-selected-border)' : 'var(--color-item-border)'}`,
                       borderRadius: 2,
-                      color: '#ffffff',
+                      color: 'var(--color-fg)',
                       cursor: targetBusy ? 'wait' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -325,6 +326,7 @@ export function Settings() {
 
       <section style={{ marginTop: '2em' }}>
         <h3 style={{ fontSize: '0.95em' }}>表示設定</h3>
+        <ThemeSelector />
         <FontScaleSlider />
         <AutoTranslateToggle />
         <AnalyzePostsToggle />
@@ -378,6 +380,53 @@ function AppVersionFooter() {
       >
         {copied ? 'コピーしました' : label}
       </button>
+    </div>
+  );
+}
+
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
+  { value: 'system', label: 'システム' },
+  { value: 'light', label: 'ライト' },
+  { value: 'dark', label: 'ダーク' },
+];
+
+function ThemeSelector() {
+  const [choice, setChoice] = useState<ThemeChoice>(() => getTheme());
+
+  function pick(v: ThemeChoice) {
+    setChoice(v);
+    applyTheme(v);    // 保存 + 即時 <html data-theme> 反映 + system 監視の張り直し
+  }
+
+  return (
+    <div style={{ marginTop: '0.5em', marginBottom: '0.8em' }}>
+      <div style={{ fontSize: '0.9em', marginBottom: '0.4em' }}>テーマ</div>
+      <div role="radiogroup" aria-label="テーマ" style={{ display: 'flex', gap: '0.4em' }}>
+        {THEME_OPTIONS.map((opt) => {
+          const active = choice === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => pick(opt.value)}
+              style={{
+                flex: 1,
+                padding: '0.4em 0.5em',
+                fontSize: '0.85em',
+                fontWeight: active ? 700 : 400,
+                background: active ? 'var(--color-accent)' : 'var(--color-window-bg)',
+                color: active ? 'var(--color-on-accent)' : 'var(--color-fg)',
+                borderColor: active ? 'var(--color-accent-deep)' : 'var(--color-border)',
+              }}
+            >{opt.label}</button>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
+        画面全体の配色を切り替えます。「システム」は端末の設定 (ダーク/ライト) に追従します。
+      </p>
     </div>
   );
 }
