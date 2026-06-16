@@ -56,6 +56,8 @@
   --color-track-border: rgba(255, 255, 255, 0.6);
   /* 控えめなオーバーレイ/区切り (バッジ地・hover 地・点線境界) */
   --color-overlay-soft: rgba(255, 255, 255, 0.1);
+  /* レーダーチャートのグリッド/軸線 (SVG stroke)。ライトで白だと消えるため */
+  --color-chart-grid: rgba(255, 255, 255, 0.25);
 
   --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
 }
@@ -93,6 +95,7 @@
   --color-pill-bg: rgba(255, 255, 255, 0.85);
   --color-pill-border: var(--color-border);
   --color-pill-inner: rgba(0, 0, 0, 0.12);
+  --color-chart-grid: rgba(0, 0, 0, 0.18);
 }
 
 * {

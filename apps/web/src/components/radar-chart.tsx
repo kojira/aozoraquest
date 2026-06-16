@@ -110,7 +110,7 @@ export function RadarChart({ stats, compare, size = 220, max = 100, normalize = 
             key={idx}
             d={d}
             fill="none"
-            stroke="rgba(255,255,255,0.25)"
+            stroke="var(--color-chart-grid)"
             strokeWidth={1}
           />
         );
@@ -124,7 +124,7 @@ export function RadarChart({ stats, compare, size = 220, max = 100, normalize = 
           y1={cy}
           x2={cx + v.x * radius}
           y2={cy + v.y * radius}
-          stroke="rgba(255,255,255,0.25)"
+          stroke="var(--color-chart-grid)"
           strokeWidth={1}
         />
       ))}
@@ -159,7 +159,7 @@ export function RadarChart({ stats, compare, size = 220, max = 100, normalize = 
             x={p.x}
             y={p.y}
             fontSize={fontSize}
-            fill="#ffffff"
+            fill="var(--color-fg)"
             textAnchor="middle"
             dominantBaseline="central"
             style={{ userSelect: 'none' }}
