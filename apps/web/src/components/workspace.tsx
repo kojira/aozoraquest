@@ -11,7 +11,7 @@
  * body 要素を ColumnScrollContext で配って内部の VirtualFeed が
  * 「カラム内スクロール」モードで動けるようにする。
  */
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
@@ -22,6 +22,7 @@ import {
   moveColumnRight,
   removeColumn,
   appColumnTitle,
+  clampColumnWidth,
   type AppColumn,
   type AppColumnKind,
 } from '@/lib/app-columns';
@@ -30,6 +31,8 @@ import { publishVisibleColumn } from '@/lib/visible-column';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
 import { ColumnContent } from '@/components/column-content';
 import { ColumnPicker } from '@/components/column-picker';
+import { ComposeColumn } from '@/components/compose-modal';
+import { useComposePaneOpen, closeComposePane } from '@/lib/compose-pane';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { invalidateProfile } from '@/lib/profile-cache';
 
@@ -51,6 +54,8 @@ export function Workspace() {
 
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  // PC 左レールの投稿ボタンで開く投稿カラムの開閉 (compose-pane store)
+  const composeOpen = useComposePaneOpen();
 
   // 各カラムの「更新世代」。bump すると ColumnContent の key が変わり remount
   // → mount 時に各カラムがネットワークから取り直す (= リフレッシュ)。
@@ -166,6 +171,16 @@ export function Workspace() {
   // `/` 離脱時に可視 kind をクリアする (active 残留防止)
   useEffect(() => () => publishVisibleColumn(null), []);
 
+  // 投稿カラムを開いたら左端 (レール直右) へスクロールして必ず見えるようにする
+  // (横スクロールで右を見ている最中に開いても画面外に隠れないように)。
+  useEffect(() => {
+    if (!composeOpen) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    scrollerRef.current?.scrollTo({ left: 0, behavior: reduce ? 'auto' : 'smooth' });
+  }, [composeOpen]);
+  // `/` 離脱時は投稿カラムを閉じる (ルート跨ぎ・モバイル幅で開きっぱなしを防ぐ)
+  useEffect(() => () => closeComposePane(), []);
+
   if (session.status === 'loading') {
     return <p>準備しています...</p>;
   }
@@ -204,6 +219,19 @@ export function Workspace() {
     edit((cols) => cols.map((c) => (c.id === id ? ({ ...c, ...patch } as AppColumn) : c)));
   }
 
+  /** カラム幅を変更/リセットする。width=undefined は width キーを削除して既定幅に戻す
+   *  (exactOptionalPropertyTypes 下では undefined を代入できないのでキーごと外す)。 */
+  function resizeColumn(id: string, width: number | undefined) {
+    edit((cols) => cols.map((c) => {
+      if (c.id !== id) return c;
+      if (width === undefined) {
+        const { width: _drop, ...rest } = c;
+        return rest as AppColumn;
+      }
+      return { ...c, width } as AppColumn;
+    }));
+  }
+
   /** anchor 位置にカラムを挿入する */
   function insertColumn(col: AppColumn, anchor: PickerAnchor) {
     edit((cols) => {
@@ -230,6 +258,8 @@ export function Workspace() {
   return (
     <div data-workspace="1">
       <div className="workspace-columns" ref={scrollerRef}>
+        {/* PC 左レールの投稿ボタンで開く投稿カラム (先頭・レール直右)。✕ で閉じる。 */}
+        {composeOpen && <ComposeColumn onClose={closeComposePane} />}
         {(columns ?? []).map((col, i) => (
           <Fragment key={col.id}>
             <ColumnView
@@ -242,6 +272,7 @@ export function Workspace() {
               onAddRight={() => setPickerAnchor(i)}
               onRefresh={() => refreshColumn(col)}
               onRefreshAll={() => refreshAll(columns ?? [])}
+              onResize={(width) => resizeColumn(col.id, width)}
             >
               <ColumnContent
                 key={refreshNonce[col.id] ?? 0}
@@ -305,10 +336,15 @@ interface ColumnViewProps {
   onAddRight: () => void;
   onRefresh: () => void;
   onRefreshAll: () => void;
+  /** 右端ドラッグでカラム幅 (px) を変更し確定したとき。undefined で既定幅に戻す。 */
+  onResize: (width: number | undefined) => void;
   children: ReactNode;
 }
 
-function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, onRefreshAll, children }: ColumnViewProps) {
+function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, onRefreshAll, onResize, children }: ColumnViewProps) {
+  // カラム要素 (リサイズ時に幅を直接いじって再描画を避ける)
+  const sectionRef = useRef<HTMLElement>(null);
+  const resizeStart = useRef<{ x: number; w: number } | null>(null);
   // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
   // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
@@ -348,8 +384,41 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
     setMenuOpen(false);
   }
 
+  // ── 右端ドラッグでのカラム幅リサイズ (PC) ──
+  // ドラッグ中は section の --col-width を直接書き換えて再描画を避け、
+  // pointerup で onResize に確定値を渡して state + localStorage に保存する。
+  function onResizePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    const el = sectionRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.currentTarget.classList.add('is-dragging');
+    resizeStart.current = { x: e.clientX, w: el.getBoundingClientRect().width };
+  }
+  function onResizePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const st = resizeStart.current;
+    const el = sectionRef.current;
+    if (!st || !el) return;
+    el.style.setProperty('--col-width', `${clampColumnWidth(st.w + (e.clientX - st.x))}px`);
+  }
+  function onResizePointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const st = resizeStart.current;
+    resizeStart.current = null;
+    e.currentTarget.classList.remove('is-dragging');
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* no-op */ }
+    if (!st) return;
+    onResize(clampColumnWidth(st.w + (e.clientX - st.x)));
+  }
+
+  // 保存値も念のため clamp して描画 (壊れた範囲外値が flex-basis に流れないよう
+  // 二重防御。検証は isValidAppColumn で型を、ここで範囲を担保)。
+  const sectionStyle = column.width != null
+    ? ({ ['--col-width']: `${clampColumnWidth(column.width)}px` } as CSSProperties)
+    : undefined;
+
   return (
-    <section className="workspace-column" data-column-kind={column.kind}>
+    <section className="workspace-column" data-column-kind={column.kind} ref={sectionRef} style={sectionStyle}>
       <header className="workspace-column-header">
         <span className="workspace-column-title">{appColumnTitle(column)}</span>
         <button
@@ -391,6 +460,10 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           <button type="button" disabled={!canMoveLeft} onClick={() => { onMoveLeft(); setMenuOpen(false); }}>← 左へ移動</button>
           <button type="button" disabled={!canMoveRight} onClick={() => { onMoveRight(); setMenuOpen(false); }}>→ 右へ移動</button>
           <button type="button" onClick={() => { onAddRight(); setMenuOpen(false); }}>＋ 右にカラムを追加</button>
+          {/* 幅を変更済みのときだけ「既定幅に戻す」を出す (ポインタ以外の幅リセット経路) */}
+          {column.width != null && (
+            <button type="button" onClick={() => { onResize(undefined); setMenuOpen(false); }}>↔ カラム幅を既定に戻す</button>
+          )}
           {/* 単一カラム時は「すべて」= 自カラムでラベルと実体が一致しないので隠す */}
           {(canMoveLeft || canMoveRight) && (
             <button type="button" onClick={() => { onRefreshAll(); setMenuOpen(false); }}>
@@ -418,6 +491,15 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           {children}
         </ColumnScrollContext.Provider>
       </div>
+      {/* 右端のリサイズハンドル (PC のみ表示)。掴んで左右で幅を変える。 */}
+      <div
+        className="workspace-column-resizer"
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerUp}
+        aria-hidden="true"
+      />
     </section>
   );
 }

@@ -10,6 +10,9 @@ import {
   removeColumn,
   appColumnTitle,
   isValidAppColumn,
+  clampColumnWidth,
+  COLUMN_MIN_WIDTH,
+  COLUMN_MAX_WIDTH,
   type AppColumn,
 } from './app-columns';
 
@@ -284,5 +287,49 @@ describe('makeAppColumn (discriminated union)', () => {
     const h = makeAppColumn('home');
     expect(h.kind).toBe('home');
     expect(h.id).toMatch(/^col-/);
+  });
+});
+
+describe('clampColumnWidth', () => {
+  it('範囲内はそのまま (四捨五入)', () => {
+    expect(clampColumnWidth(340)).toBe(340);
+    expect(clampColumnWidth(500.4)).toBe(500);
+    expect(clampColumnWidth(500.6)).toBe(501);
+  });
+  it('下限・上限でクランプ', () => {
+    expect(clampColumnWidth(COLUMN_MIN_WIDTH - 1)).toBe(COLUMN_MIN_WIDTH);
+    expect(clampColumnWidth(0)).toBe(COLUMN_MIN_WIDTH);
+    expect(clampColumnWidth(-9999)).toBe(COLUMN_MIN_WIDTH);
+    expect(clampColumnWidth(COLUMN_MAX_WIDTH + 1)).toBe(COLUMN_MAX_WIDTH);
+    expect(clampColumnWidth(99999)).toBe(COLUMN_MAX_WIDTH);
+  });
+});
+
+describe('カラム幅 (width) の永続化と検証', () => {
+  it('width 付きカラムが save→load で round-trip する', () => {
+    const cols: AppColumn[] = [{ id: 'a', kind: 'home', width: 500 }];
+    saveAppColumns(cols);
+    const loaded = loadAppColumns(true);
+    expect(loaded[0]).toMatchObject({ kind: 'home', width: 500 });
+  });
+
+  it('isValidAppColumn は有限数の width のみ許容、壊れた width は弾く', () => {
+    expect(isValidAppColumn({ id: 'a', kind: 'home', width: 400 })).toBe(true);
+    expect(isValidAppColumn({ id: 'a', kind: 'home' })).toBe(true); // width 無しも可
+    expect(isValidAppColumn({ id: 'a', kind: 'home', width: 'abc' })).toBe(false);
+    expect(isValidAppColumn({ id: 'a', kind: 'home', width: NaN })).toBe(false);
+    expect(isValidAppColumn({ id: 'a', kind: 'home', width: Infinity })).toBe(false);
+    expect(isValidAppColumn({ id: 'a', kind: 'home', width: null })).toBe(false);
+  });
+
+  it('壊れた width のカラムは load 時に除外される', () => {
+    localStorage.setItem(
+      'aozoraquest:appColumns:v1',
+      JSON.stringify([{ id: 'a', kind: 'home', width: 'oops' }, { id: 'b', kind: 'bar', width: 400 }]),
+    );
+    const loaded = loadAppColumns(true);
+    // 壊れた home は除外、正常な bar は残る
+    expect(loaded.map(c => c.kind)).toEqual(['bar']);
+    expect(loaded[0]).toMatchObject({ width: 400 });
   });
 });
