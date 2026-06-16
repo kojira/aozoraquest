@@ -304,7 +304,7 @@ p { margin: 0.4em 0; }
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  /* タイトル左、ボタン群 (↻ / ⋯) は refresh-btn の margin-left:auto で右へ。
+  /* タイトル左、ボタン群 (↑ / ↻ / ⋯) は refresh-btn の margin-left:auto で右へ。
      space-between だと 3 子が等間隔に散るので flex-start にする。 */
   justify-content: flex-start;
   gap: 0.5em;
@@ -468,32 +468,35 @@ p { margin: 0.4em 0; }
   /* 青空/草原を出さない。body を不透明ダークにして、どの隙間 (外枠・footer 下・
      カラム下端) からも地面/空が透けない (= 緑のにじみ・外枠透け・隙間を一掃)。 */
   body { background: #0e1318; }
+  /* base body::before の白い雲もモバイルでは消す (ダーク統一の徹底) */
+  body::before { display: none; }
 
   /* app-shell は全ルートで全幅 (通常の 420px 中央寄せキャップを外す) */
   .app-shell { max-width: 100%; }
 
   /* .content: 外枠・四隅装飾・余白を撤去して全幅。通知/検索/設定など非 workspace
-     ルートも自前のダーク背景 (base) で表示領域を最大化。横は 0.5em だけ余白。 */
-  .content {
+     ルートも自前のダーク背景 (base) で表示領域を最大化。横は 0.5em だけ余白。
+     セレクタは `.app-shell .content` (0,2,0) にして base `.content` (0,1,0) に詳細度で
+     勝つ (= モバイルブロックが base より前にあるためソース順だけでは負ける)。 */
+  .app-shell .content {
     margin: 0;
     border: none;
     border-radius: 0;
     box-shadow: none;
     padding: 0.6em 0.5em;
   }
-  .content::before,
-  .content::after { display: none; }
+  .app-shell .content::before,
+  .app-shell .content::after { display: none; }
 
   /* workspace の content は透明 + padding 0 (各カラムが背景・余白を持つ) */
   .app-shell:has([data-workspace="1"]) .content { padding: 0; background: transparent; }
 
-  /* footer-nav を全幅フラッシュに。base は width:min(340px,80%) の中央寄せピルで
-     周囲と下に地面が見え、タイムラインとの間に空白ができていた。モバイルでは
-     画面幅いっぱい + 最下部に密着させ、上辺の区切り線 + 浮き影でタイムラインと繋ぐ。
-     セレクタは workspace ルート限定 (= `:has([data-workspace])`)。これで
-     (1) 詳細度が base `.footer-nav` (0,1,0) を上回り確実に上書きされ、
-     (2) 設定/通知など通常スクロールルートでは従来のピル footer を維持して
-         sticky footer がコンテンツに被るのを避ける。 */
+  /* footer-nav を全ルートで全幅フラッシュに統一。base は width:min(340px,80%) の
+     中央寄せピルで、ワークスペースと単独ルートで footer の見た目が不揃いだった。
+     モバイルでは全ルート画面幅いっぱい + 最下部密着 + 上辺の区切り線 + 浮き影。
+     セレクタ `.app-shell .footer-nav` (0,2,0) で base `.footer-nav` (0,1,0) に詳細度で
+     勝つ。footer は sticky で flex フロー内にボックスを予約するため、通常スクロール
+     ルートでも最下部コンテンツに被らない (= 余白を別途確保する必要はない)。 */
   .app-shell .footer-nav {
     width: 100%;
     margin: 0;
@@ -527,19 +530,16 @@ p { margin: 0.4em 0; }
      素人臭く見えるのを防ぐ)。フィード投稿は下で横 padding 0 にしてこの余白に揃える。 */
   .workspace-column-body { padding: 0.5em; }
 
-  /* フィード投稿 (.feed-post) を全幅のタイムライン行に。左右の枠・四隅・角丸・
-     横方向の inset を全部消し、左右余白は 0.5em のみ。区切りは下辺のヘアライン
-     (背景がカラムと同色のため枠なしだと埋もれる → 区切り線で分離)。
-     ※ board のクエストカード等 (.dq-window.compact, インライン borderColor で
-     承認待ち=accent / 期限切れ=muted の状態を示す) は **対象外**。枠ごと消すと
-     状態色が読めなくなるため、フィード投稿だけに限定する。 */
-  .feed-post {
+  /* ワークスペースのタイムライン投稿 (.feed-post = PostArticle) を全幅タイムライン行に。
+     枠・四隅・角丸・横 inset を消し、区切りは下辺ヘアライン (横 padding はカラム body が
+     0.5em 持つので 0)。
+     セレクタは `.workspace-column-body .feed-post` (0,2,0) に**限定**する。これは
+     (1) base `.dq-window` (0,1,0) に詳細度で勝って確実に効き、かつ
+     (2) 通知カード内ネスト投稿 / スレッド枝内の PostArticle (= .feed-post を裸で広げると
+         巻き込んで「カード in カード」やインデント階層が壊れる) を**対象外**にするため。
+     board のクエストカード (.dq-window.compact, 状態色枠) は .feed-post を持たず対象外。 */
+  .workspace-column-body .feed-post {
     border: none;
-    /* 投稿間の区切り。**確実に見える** 濃さの 1px ヘアライン (実機で 0.2 / 0.35 では
-       埋もれたため 0.55 まで上げる)。横 padding はコンテナ (column-body / content) が
-       0.5em 持つので 0。workspace でも通知/検索ルートでも同じ全幅タイムライン行に統一。
-       board のクエストカード (.dq-window.compact, 状態色枠) は .feed-post を持たない
-       ので対象外 = 枠と状態色を維持。 */
     border-bottom: 1px solid rgba(255, 255, 255, 0.55);
     border-radius: 0;
     box-shadow: none;
@@ -547,9 +547,9 @@ p { margin: 0.4em 0; }
     padding-right: 0;
     margin-bottom: 0;
   }
-  .feed-post:last-child { border-bottom: none; }
-  .feed-post::before,
-  .feed-post::after { display: none; }
+  .workspace-column-body .feed-post:last-child { border-bottom: none; }
+  .workspace-column-body .feed-post::before,
+  .workspace-column-body .feed-post::after { display: none; }
 }
 
 /* ─── カラム送りのスワイプヒント (▶ / ◀) ───────────────────────
