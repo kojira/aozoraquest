@@ -8,6 +8,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#378ADD">
   <title>あおぞらくえすと</title>
+  <!-- テーマの初回ペイント前適用 (FOUC 防止)。CSS の :root 既定はダークなので、
+       ライト/システム(=OS ライト) のユーザーは JS バンドル評価まで一瞬ダークが
+       ちらつく。ここで lib/theme.ts と同じ解決を first paint 前に走らせて
+       <html data-theme> を確定させる。main.tsx の initTheme() が後で再適用
+       (冪等) + system 監視を張る。キーは prefs.ts の KEY_THEME と一致させること。 -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('aozoraquest:theme');
+        if (t !== 'light' && t !== 'dark' && t !== 'system') t = 'system';
+        var resolved = t;
+        if (t === 'system') {
+          resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+            ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+      } catch (e) { /* localStorage 不可時は CSS の :root 既定 (ダーク) のまま */ }
+    })();
+  </script>
 </head>
 <body>
   <div id="root"></div>
