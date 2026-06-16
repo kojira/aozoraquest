@@ -101,7 +101,13 @@
 
 html, body {
   margin: 0;
+  /* dvh (動的ビューポート) に合わせる。ワークスペースのカラム高は 100dvh 基準
+     なのに、こことシェルが 100vh (= モバイル Safari ではアドレスバー表示時の
+     大きい方) だと、URL バーが出ている間だけシェルが可視領域より高くなり、
+     ページ自体がスクロール → sticky ヘッダーの下にカラム見出しがめり込み、
+     最下部に隙間ができる。vh は古いブラウザ向けの fallback。 */
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 body {
@@ -239,7 +245,11 @@ p { margin: 0.4em 0; }
   position: relative;
   z-index: 1;
   max-width: 420px;
+  /* カラム高 (100dvh - chrome) と単位を揃える。100vh のままだとモバイルで
+     アドレスバー表示時にシェルが可視領域を超え、ページがスクロールして
+     カラム見出しがヘッダー下にめり込む (vh は fallback)。 */
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
