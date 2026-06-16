@@ -363,6 +363,21 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
         </button>
         <button
           type="button"
+          className="workspace-column-totop-btn"
+          aria-label={`${appColumnTitle(column)}を最上部へスクロール`}
+          title="最上部へ"
+          onClick={() => {
+            // reduced-motion 設定では smooth を切る (CSS の scroll-behavior は
+            // JS の behavior 指定に勝てないため JS 側で分岐)
+            const reduce = typeof window !== 'undefined'
+              && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+            bodyEl?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+          }}
+        >
+          <UpIcon />
+        </button>
+        <button
+          type="button"
           className="workspace-column-menu-btn"
           aria-label="カラム操作メニュー"
           aria-expanded={menuOpen}
@@ -419,6 +434,15 @@ function RefreshIcon() {
         fill="none"
       />
       <path d="M13.7 1.8V5h-3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
+
+/** カラムを最上部へスクロールするボタンの上向き矢印アイコン (絵文字不使用)。 */
+function UpIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden focusable="false">
+      <path d="M8 13V3.5M3.5 8 8 3.3 12.5 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   );
 }
