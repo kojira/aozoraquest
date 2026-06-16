@@ -26,7 +26,33 @@
   /* accent 背景の上に乗せる文字色 (選択日セルなど)。濃紺で十分なコントラスト。 */
   --color-on-accent: #06223a;
 
+  /* モバイルで青空/草地を隠す全画面背景 (PR #144 の全幅ダーク)。
+     ライトでは明色に切り替える。 */
+  --color-mobile-bg: #0e1318;
+  /* 投稿と投稿の間の区切り線 (VirtualFeed の border-top)。 */
+  --color-feed-divider: rgba(255, 255, 255, 0.5);
+
   --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
+}
+
+/*
+ * ライトテーマ。「世界観を残して明るく」方針: 青空グラデーションとヘッダー紺は
+ * 両モード共通で残し、ウィンドウ地・文字色・境界・accent だけを明色へ反転する。
+ * data-theme は theme.ts が常に解決後の 'light'|'dark' を入れる。ダークは :root 既定。
+ */
+:root[data-theme='light'] {
+  --color-primary: #15212c;
+  --color-accent: #2b7cc0;
+  --color-accent-deep: #1f5e96;
+  --color-fg: #15212c;
+  --color-muted: #51616f;
+  --color-border: #38506a;
+  --color-window-bg: rgba(255, 255, 255, 0.9);
+  --color-window-bg-alt: rgba(255, 255, 255, 0.97);
+  --color-window-inner-border: rgba(0, 0, 0, 0.16);
+  --color-on-accent: #ffffff;
+  --color-mobile-bg: #cfe6f3;
+  --color-feed-divider: rgba(0, 0, 0, 0.16);
 }
 
 * {
@@ -500,7 +526,7 @@ p { margin: 0.4em 0; }
 @media (max-width: 767px) {
   /* 青空/草原を出さない。body を不透明ダークにして、どの隙間 (外枠・footer 下・
      カラム下端) からも地面/空が透けない (= 緑のにじみ・外枠透け・隙間を一掃)。 */
-  body { background: #0e1318; }
+  body { background: var(--color-mobile-bg); }
   /* base body::before の白い雲もモバイルでは消す (ダーク統一の徹底) */
   body::before { display: none; }
 
@@ -577,7 +603,7 @@ p { margin: 0.4em 0; }
        translateY で隙間なく重ねるため、border-bottom だと次の投稿 (後に描画) の
        背景が前の投稿の下端 1px を覆って線が消える (= 濃さを上げても見えなかった真因)。
        border-top は「線を持つ投稿自身」が後に描画されるので覆われず確実に見える。 */
-    border-top: 1px solid rgba(255, 255, 255, 0.5);
+    border-top: 1px solid var(--color-feed-divider);
     border-radius: 0;
     box-shadow: none;
     padding-left: 0;
@@ -655,7 +681,7 @@ p { margin: 0.4em 0; }
   flex: 1;
   padding: 1em;
   margin: 0.6em 0.5em;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--color-window-bg);
   color: var(--color-fg);
   border: 3px solid var(--color-border);
   border-radius: 3px;
@@ -694,7 +720,7 @@ p { margin: 0.4em 0; }
   align-items: center;
   justify-content: center;
   padding: 0;
-  color: #ffffff;
+  color: var(--color-fg);
   background: var(--color-window-bg);
   border: 3px solid var(--color-border);
   border-radius: 3px;
@@ -734,7 +760,7 @@ p { margin: 0.4em 0; }
   align-items: center;
   justify-content: center;
   padding: 0.45em 0.2em;
-  color: #ffffff;
+  color: var(--color-fg);
   opacity: 0.55;
   border: none;
   border-radius: 8px;
@@ -1739,3 +1765,71 @@ p { margin: 0.4em 0; }
   margin-top: 0.6em;
 }
 .dtp-actions button { font-size: 0.85em; padding: 0.25em 0.8em; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ライトテーマの個別補正
+   ───────────────────────────────────────────────────────────────────
+   大半のサーフェス (ウィンドウ地・文字・境界・accent) は :root の
+   トークンを :root[data-theme='light'] で差し替えるだけで反転する。
+   ここに置くのは「ダーク前提で焼き込まれた」リテラル色 —
+   半透明黒パネル・白文字・白ホバー — だけ。ライトでそのまま使うと
+   白地に白で消える/コントラスト不足になるものをライト専用で上書きする。
+
+   全ルールを :root[data-theme='light'] 配下に閉じてあるので、ダーク
+   (:root 既定) の既存ルールには一切触れない (= ダークは byte 不変)。
+   セレクタに [data-theme='light'] が付くぶん特異度が base より高いので、
+   ソース順に依らず確実に勝つ。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* リンク hover の白は明地で消えるので accent-deep に */
+:root[data-theme='light'] a:hover {
+  color: var(--color-accent-deep);
+  border-bottom-color: var(--color-accent-deep);
+}
+
+/* 焼き込み黒パネル → ウィンドウ地に合わせて明色に */
+:root[data-theme='light'] .board-column {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* タブ見出し: 焼き込み黒 + 白文字 → 明色ピル。アクティブは accent で塗る。 */
+:root[data-theme='light'] .dq-tab {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-muted);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+:root[data-theme='light'] .dq-tab:hover {
+  color: var(--color-fg);
+  border-color: var(--color-accent-deep);
+}
+:root[data-theme='light'] .dq-tab:active:not(.active) {
+  background: rgba(0, 0, 0, 0.08);
+}
+:root[data-theme='light'] .dq-tab.active {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent-deep);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+/* 白ホバー/アクティブのオーバーレイ → 明地では暗く反転 */
+:root[data-theme='light'] .workspace-column-menu-btn:hover:not(:disabled),
+:root[data-theme='light'] .workspace-column-refresh-btn:hover:not(:disabled),
+:root[data-theme='light'] .workspace-column-totop-btn:hover:not(:disabled),
+:root[data-theme='light'] .footer-nav-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+:root[data-theme='light'] .footer-nav-item:active {
+  background: rgba(0, 0, 0, 0.12);
+}
+/* 選択中タブ: 白ハイライトは明地で消えて現在地が分からないので暗く */
+:root[data-theme='light'] .footer-nav-item.active {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* カラム間リサイザーの縦線 (白) → 明地では暗い線で発見性を確保 */
+:root[data-theme='light'] .workspace-column-resizer::after {
+  background: rgba(0, 0, 0, 0.18);
+}

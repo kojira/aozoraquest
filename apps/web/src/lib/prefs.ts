@@ -122,3 +122,24 @@ export function getPostQuestNotificationsDefault(): boolean {
   const env = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
   return env !== 'dev';
 }
+
+// ─── テーマ (ライト/ダーク) ────────────────────────────────
+const KEY_THEME = 'aozoraquest:theme';
+
+/** ユーザーが選んだテーマ。'system' は OS の prefers-color-scheme に追従。
+ *  既定は 'system' (= 新規/未設定ユーザーは OS 設定に従う)。 */
+export type ThemeChoice = 'system' | 'light' | 'dark';
+
+export function getTheme(): ThemeChoice {
+  try {
+    const v = localStorage.getItem(KEY_THEME);
+    if (v === 'light' || v === 'dark' || v === 'system') return v;
+  } catch {/* no-op */}
+  return 'system';
+}
+
+export function setTheme(v: ThemeChoice): void {
+  try {
+    localStorage.setItem(KEY_THEME, v);
+  } catch {/* no-op */}
+}
