@@ -202,7 +202,7 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
           <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>保有ポイント (発行者別)</h3>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {receivedByIssuer.map(([did, pt]) => (
-              <li key={did} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3em 0', borderBottom: '1px dotted rgba(255,255,255,0.1)' }}>
+              <li key={did} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3em 0', borderBottom: '1px dotted var(--color-subpanel-border)' }}>
                 <span><Handle did={did} suffix="ポイント" /></span>
                 <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
                   {pt.toLocaleString()} pt

@@ -405,7 +405,7 @@ export function BoardDetail() {
                 </p>
                 <p style={{ margin: '0.3em 0', fontSize: '0.9em', whiteSpace: 'pre-wrap' }}>{a.message}</p>
                 {pendingAssign === a.did ? (
-                  <div style={{ marginTop: '0.4em', padding: '0.4em', background: 'rgba(255,255,255,0.06)', borderRadius: '2px' }}>
+                  <div style={{ marginTop: '0.4em', padding: '0.4em', background: 'var(--color-overlay-soft)', borderRadius: '2px' }}>
                     <p style={{ margin: '0 0 0.4em', fontSize: '0.85em' }}>
                       <strong><Handle did={a.did} /></strong> を受託者に指定しますか?<br />
                       <span style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
