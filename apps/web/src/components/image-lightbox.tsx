@@ -117,12 +117,14 @@ export function ImageLightbox({
           border: 'none',
           background: 'rgba(255,255,255,0.15)',
           color: '#fff',
-          fontSize: 22,
           cursor: 'pointer',
-          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0,
         }}
       >
-        ×
+        <CloseIcon />
       </button>
 
       {/* 左 */}
@@ -146,11 +148,14 @@ export function ImageLightbox({
             border: 'none',
             background: hasPrev ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
             color: hasPrev ? '#fff' : 'rgba(255,255,255,0.35)',
-            fontSize: 24,
             cursor: hasPrev ? 'pointer' : 'default',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
           }}
         >
-          ‹
+          <ChevronIcon dir="left" />
         </button>
       )}
 
@@ -188,11 +193,14 @@ export function ImageLightbox({
             border: 'none',
             background: hasNext ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
             color: hasNext ? '#fff' : 'rgba(255,255,255,0.35)',
-            fontSize: 24,
             cursor: hasNext ? 'pointer' : 'default',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
           }}
         >
-          ›
+          <ChevronIcon dir="right" />
         </button>
       )}
 
@@ -225,5 +233,24 @@ export function ImageLightbox({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** 閉じる × アイコン (グリフだと字形で中央がずれるので SVG で正確に中央化)。 */
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden focusable="false">
+      <path d="M6 6 18 18M18 6 6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 前/次の山形アイコン (グリフ ‹ › は字形が左右非対称で中央がずれるため SVG)。 */
+function ChevronIcon({ dir }: { dir: 'left' | 'right' }) {
+  const d = dir === 'left' ? 'M15 5 8 12 15 19' : 'M9 5 16 12 9 19';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden focusable="false">
+      <path d={d} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
