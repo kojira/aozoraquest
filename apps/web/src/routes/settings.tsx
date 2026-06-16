@@ -243,10 +243,10 @@ export function Settings() {
                     style={{
                       padding: '0.5em 0.5em 0.5em 0.8em',
                       fontSize: '0.85em',
-                      background: isCurrent ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.4)',
-                      border: `2px solid ${isCurrent ? '#ffffff' : 'rgba(255,255,255,0.5)'}`,
+                      background: isCurrent ? 'var(--color-item-selected-bg)' : 'var(--color-item-bg)',
+                      border: `2px solid ${isCurrent ? 'var(--color-item-selected-border)' : 'var(--color-item-border)'}`,
                       borderRadius: 2,
-                      color: '#ffffff',
+                      color: 'var(--color-fg)',
                       cursor: targetBusy ? 'wait' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',

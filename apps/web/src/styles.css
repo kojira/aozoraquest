@@ -32,6 +32,24 @@
   /* 投稿と投稿の間の区切り線 (VirtualFeed の border-top)。 */
   --color-feed-divider: rgba(255, 255, 255, 0.5);
 
+  /* ── インラインスタイルがダーク前提で焼き込んでいた半透明色のトークン化 ──
+     tsx の style={{}} は CSS セレクタで上書きできないため、ライト追従には
+     値そのものをトークン経由にするしかない。ダーク既定値は元のリテラルに
+     合わせてある (= ダーク非干渉)。ライトは :root[data-theme='light'] で反転。 */
+  /* 選択可能なアイテム/タイル (ジョブ選択ボタン等) */
+  --color-item-bg: rgba(0, 0, 0, 0.4);
+  --color-item-border: rgba(255, 255, 255, 0.5);
+  --color-item-selected-bg: rgba(255, 255, 255, 0.18);
+  --color-item-selected-border: #ffffff;
+  /* 窓内のインセット小パネル (アクティビティ行等) */
+  --color-subpanel-bg: rgba(0, 0, 0, 0.35);
+  --color-subpanel-border: rgba(255, 255, 255, 0.1);
+  /* 進捗バーのトラック (空き部分) */
+  --color-track-bg: rgba(255, 255, 255, 0.2);
+  --color-track-border: rgba(255, 255, 255, 0.6);
+  /* 控えめなオーバーレイ/区切り (バッジ地・hover 地・点線境界) */
+  --color-overlay-soft: rgba(255, 255, 255, 0.1);
+
   --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
 }
 
@@ -42,7 +60,8 @@
  */
 :root[data-theme='light'] {
   --color-primary: #15212c;
-  --color-accent: #2b7cc0;
+  /* #2b7cc0 だと白地で 4.42:1 と AA (4.5) をわずかに下回るので一段濃く */
+  --color-accent: #2773b5;
   --color-accent-deep: #1f5e96;
   --color-fg: #15212c;
   --color-muted: #51616f;
@@ -53,6 +72,16 @@
   --color-on-accent: #ffffff;
   --color-mobile-bg: #cfe6f3;
   --color-feed-divider: rgba(0, 0, 0, 0.16);
+  /* インラインスタイル由来トークンのライト反転 */
+  --color-item-bg: rgba(0, 0, 0, 0.05);
+  --color-item-border: rgba(0, 0, 0, 0.2);
+  --color-item-selected-bg: rgba(39, 115, 181, 0.16);
+  --color-item-selected-border: var(--color-accent-deep);
+  --color-subpanel-bg: rgba(0, 0, 0, 0.05);
+  --color-subpanel-border: rgba(0, 0, 0, 0.1);
+  --color-track-bg: rgba(0, 0, 0, 0.1);
+  --color-track-border: rgba(0, 0, 0, 0.2);
+  --color-overlay-soft: rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -1788,7 +1817,9 @@ p { margin: 0.4em 0; }
 }
 
 /* 焼き込み黒パネル → ウィンドウ地に合わせて明色に */
-:root[data-theme='light'] .board-column {
+:root[data-theme='light'] .board-column,
+:root[data-theme='light'] .workspace-column-menu,
+:root[data-theme='light'] .workspace-column-add {
   background: rgba(255, 255, 255, 0.82);
 }
 
@@ -1797,6 +1828,8 @@ p { margin: 0.4em 0; }
   background: rgba(0, 0, 0, 0.05);
   color: var(--color-muted);
   border-color: rgba(0, 0, 0, 0.2);
+  /* ダークの黒影 (白文字を浮かせる用) は明地で濃文字が滲むので消す */
+  text-shadow: none;
 }
 :root[data-theme='light'] .dq-tab:hover {
   color: var(--color-fg);
