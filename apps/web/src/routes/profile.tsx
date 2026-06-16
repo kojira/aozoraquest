@@ -269,7 +269,7 @@ function CompatView({
                   fontSize: '0.9em',
                   fontWeight: 700,
                   color: 'var(--color-fg)',
-                  borderTop: '1px dashed rgba(255,255,255,0.25)',
+                  borderTop: '1px dashed var(--color-subpanel-border)',
                   paddingTop: '0.3em',
                 }}>
                   <span>合計</span>
@@ -312,7 +312,7 @@ function MiniBar({ label, hint, points, max }: { label: string; hint?: string; p
           {points} / {max}
         </span>
       </div>
-      <div style={{ height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, overflow: 'hidden', marginTop: '0.15em' }}>
+      <div style={{ height: 4, background: 'var(--color-track-bg)', borderRadius: 2, overflow: 'hidden', marginTop: '0.15em' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-accent)' }} />
       </div>
     </div>
@@ -498,7 +498,7 @@ function FollowButton({
         fontSize: '0.85em',
         fontWeight: 700,
         background: following ? 'transparent' : 'var(--color-accent)',
-        color: following ? 'var(--color-fg)' : '#000',
+        color: following ? 'var(--color-fg)' : 'var(--color-on-accent)',
         border: `2px solid ${following ? 'var(--color-border)' : 'var(--color-accent)'}`,
         borderRadius: 4,
         cursor: busy ? 'wait' : 'pointer',
