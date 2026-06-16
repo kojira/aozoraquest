@@ -264,6 +264,9 @@ p { margin: 0.4em 0; }
   padding-bottom: 0.4em;
 }
 
+/* リサイズハンドルは PC のみ表示 (モバイルは全幅でリサイズ不要) */
+.workspace-column-resizer { display: none; }
+
 .workspace-column {
   display: flex;
   flex-direction: column;
@@ -450,13 +453,40 @@ p { margin: 0.4em 0; }
 
 @media (min-width: 768px) {
   .workspace-column {
-    flex: 0 0 340px;
+    /* 幅は --col-width (ユーザーがドラッグで保存した値) があればそれ、無ければ 340px。
+       モバイルは別ルール (flex:0 0 100%) が勝つので --col-width は無視される。 */
+    flex: 0 0 var(--col-width, 340px);
     /* モバイルと同じく chrome 実測に追従 (--shell-chrome-height) */
     height: calc(100dvh - var(--shell-chrome-height, 9.5em));
   }
   .workspace-columns {
     scroll-snap-type: none;   /* PC は自由スクロール */
     gap: 0.8em;
+  }
+  /* カラム右端のリサイズハンドル (PC のみ)。掴んで左右にドラッグで幅を変える。 */
+  .workspace-column-resizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -8px;            /* カラム間 gap (0.8em) の中央に重ねる */
+    width: 16px;            /* 掴みやすい当たり判定 (見た目の線は細い) */
+    cursor: col-resize;
+    z-index: 15;
+    touch-action: none;    /* pointer ドラッグを横取りされない */
+  }
+  /* 中央に縦線。**常時うっすら見せて発見性を確保**し、ホバー/ドラッグで accent に強調。 */
+  .workspace-column-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 7px;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    transition: background-color 0.1s;
+  }
+  .workspace-column-resizer:hover::after,
+  .workspace-column-resizer.is-dragging::after {
+    background: var(--color-accent);
   }
 }
 
