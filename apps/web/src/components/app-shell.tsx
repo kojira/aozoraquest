@@ -148,8 +148,9 @@ export function AppShell() {
       )}
       <nav className="footer-nav" ref={footerRef}>
         {/* 投稿ボタン: PC では左ナビレールの先頭に置いて押しやすく (CSS で PC のみ表示)。
-            モバイルは従来どおり右下の compose-fab を使う。 */}
-        {session.status === 'signed-in' && (
+            モバイルは従来どおり右下の compose-fab を使う。表示可否は FAB と同じ
+            (composeFabAllowedOnPath = フォーム/認証画面では出さない) に揃える。 */}
+        {showComposeFab && (
           <button
             type="button"
             className="footer-nav-item footer-nav-compose"

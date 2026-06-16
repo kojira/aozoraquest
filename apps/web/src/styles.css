@@ -765,9 +765,11 @@ p { margin: 0.4em 0; }
    レールぶんの幅は .app-shell の padding-left で確保 (固定レールと本文が被らない)。
    モバイルは従来の下部バー (full-width flush) を維持。 */
 @media (min-width: 768px) {
-  /* 固定レールぶんを全ルートで左に空ける (768px でも margin+padding でレールと
-     本文が重ならない)。 */
-  .app-shell { padding-left: 56px; }
+  /* 固定レールぶんを全ルートで左に空ける + app-shell を左寄せ (margin-left:0)。
+     base の margin:0 auto のままだと中央寄せ本文と left:0 固定レールが分離して
+     レールが画面左隅に孤立するため、左寄せにしてレールが本文に寄り添うようにする
+     (= 左ナビ + 本文、という標準レイアウト)。max-width (非 workspace=680) は維持。 */
+  .app-shell { padding-left: 56px; margin-left: 0; }
 
   /* footer-nav を左端の縦レールに (詳細度 .app-shell .footer-nav で base に勝つ)。 */
   .app-shell .footer-nav {
@@ -805,6 +807,11 @@ p { margin: 0.4em 0; }
     margin-bottom: 0.4em;
   }
   .footer-nav-compose:hover { background: var(--color-accent); opacity: 0.88; }
+
+  /* レールの現在地は左端 accent バーで明示 (横バーの薄い背景だけだと縦レールで埋もれる) */
+  .footer-nav-item.active {
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
 
   /* PC は投稿をレールから行うので右下 FAB は出さない */
   .compose-fab { display: none; }
