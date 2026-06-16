@@ -454,10 +454,12 @@ p { margin: 0.4em 0; }
 @media (max-width: 767px) {
   /* 大きいスマホ (420px 超) でも workspace は全幅に (通常の 420px キャップを外す) */
   .app-shell:has([data-workspace="1"]) { max-width: 100%; }
-  /* .content の余白を撤去。base の margin:0.6em 0.5em が残っていると workspace の
-     上下左右に 8px ずつ背景 (青空/地面) が覗くため、モバイルでは 0 にして
-     ダークを画面いっぱいに敷き詰める。 */
-  .app-shell:has([data-workspace="1"]) .content { margin: 0; padding: 0; }
+  /* .content の余白・枠を撤去。
+     - base の margin:0.6em 0.5em が残ると workspace の上下左右に 8px ずつ背景が覗く。
+     - さらに base の border:3px は workspace 既定で border-color:transparent にされて
+       いるだけで **幅 3px は残っており**、.content 背景も透明なので透明枠から body の
+       青空/地面が左右に透ける (= 「外枠の左右に背景」)。border ごと 0 にして塞ぐ。 */
+  .app-shell:has([data-workspace="1"]) .content { margin: 0; padding: 0; border: none; }
 
   /* footer-nav を全幅フラッシュに。base は width:min(340px,80%) の中央寄せピルで
      周囲と下に地面が見え、タイムラインとの間に空白ができていた。モバイルでは
@@ -506,7 +508,11 @@ p { margin: 0.4em 0; }
      状態色が読めなくなるため、フィード投稿だけに限定する。 */
   .workspace-column-body .feed-post {
     border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    /* 投稿間の区切り。控えめだが視認できる 1px ヘアライン。footer 上辺・カラム境界
+       など窓内の区切りで使う標準トークン (--color-window-inner-border = 白 0.35) に
+       揃える (旧 0.2 のリテラルは埋もれて見えず、0.5 は逆に投稿間だけ最も明るくなり
+       階層が逆転していた)。 */
+    border-bottom: 1px solid var(--color-window-inner-border);
     border-radius: 0;
     box-shadow: none;
     padding-left: 0.5em;
