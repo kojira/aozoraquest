@@ -32,16 +32,16 @@ const pillStyle: CSSProperties = {
   alignItems: 'center',
   gap: '0.4em',
   padding: '0.35em 0.8em',
-  // ウィンドウトークンに乗せてテーマ追従させる (ダーク: 黒地+白文字 /
-  // ライト: 白地+濃紺文字)。リテラル色で焼き込むとライトで浮くため。
-  background: 'var(--color-window-bg)',
-  border: '2px solid var(--color-border)',
+  // ピル専用トークンでテーマ追従させる (ダーク: 薄黒地+白枠+白文字 /
+  // ライト: 白地+濃紺枠+濃紺文字)。ダーク値は元リテラルに一致 = ダーク不変。
+  background: 'var(--color-pill-bg)',
+  border: '2px solid var(--color-pill-border)',
   borderRadius: '2px',
   color: 'var(--color-fg)',
   textDecoration: 'none',
   fontSize: '0.95em',
   fontWeight: 500,
-  boxShadow: 'inset 0 0 0 1px var(--color-window-inner-border)',
+  boxShadow: 'inset 0 0 0 1px var(--color-pill-inner)',
   WebkitTapHighlightColor: 'transparent',
   transition: 'background-color 80ms ease, transform 60ms ease',
 };
