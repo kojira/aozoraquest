@@ -33,7 +33,7 @@ export function Avatar({ src, alt = '', size = 32, style, archetype }: AvatarPro
     height: size,
     borderRadius: '50%',
     overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'var(--color-overlay-soft)',
     boxShadow: equipment
       ? `0 0 0 2px rgba(0,0,0,0.9), 0 0 0 4px ${equipment.accentColor}`
       : 'none',

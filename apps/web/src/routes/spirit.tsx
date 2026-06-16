@@ -358,7 +358,7 @@ export function Spirit() {
             <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>
               あおぞらパワー {points.viaPosts} / {SUMMON_THRESHOLD}
             </div>
-            <div style={{ height: 8, background: 'rgba(255,255,255,0.15)', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ height: 8, background: 'var(--color-track-bg)', borderRadius: 4, overflow: 'hidden' }}>
               <div
                 style={{
                   width: `${(points.viaPosts / SUMMON_THRESHOLD) * 100}%`,
@@ -382,9 +382,9 @@ export function Spirit() {
               marginTop: '1em',
               padding: '0.7em 1.6em',
               fontSize: '1em',
-              background: 'rgba(0, 0, 0, 0.6)',
-              color: '#ffffff',
-              border: '3px solid #ffffff',
+              background: 'var(--color-pill-bg)',
+              color: 'var(--color-fg)',
+              border: '3px solid var(--color-pill-border)',
               boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
             }}
           >

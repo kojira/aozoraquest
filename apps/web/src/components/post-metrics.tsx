@@ -169,7 +169,7 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
               borderRadius: 4,
               fontFamily: 'ui-monospace, monospace',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-overlay-soft)')}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             {threadExpanded ? '▲ 閉じる' : '▼ スレッド'}
@@ -217,7 +217,7 @@ function MetricButton({
         whiteSpace: 'nowrap',
         transition: 'color 120ms ease, background-color 120ms ease',
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-overlay-soft)')}
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
     >
       {children}
