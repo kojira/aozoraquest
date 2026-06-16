@@ -37,6 +37,16 @@ interface ColumnBase {
   id: string;
   /** ヘッダー表示の上書き。未設定なら kind+param から推定。 */
   title?: string;
+  /** PC でのカラム幅 (px)。ユーザーが右端をドラッグして変更し保存する。
+   *  未設定なら CSS 既定 (340px)。モバイルは全幅なので無視される。 */
+  width?: number;
+}
+
+/** カラム幅 (px) の下限・上限。リサイズ時にこの範囲へクランプする。 */
+export const COLUMN_MIN_WIDTH = 240;
+export const COLUMN_MAX_WIDTH = 760;
+export function clampColumnWidth(px: number): number {
+  return Math.max(COLUMN_MIN_WIDTH, Math.min(COLUMN_MAX_WIDTH, Math.round(px)));
 }
 
 export type AppColumn =
@@ -178,6 +188,9 @@ export function isValidAppColumn(c: unknown): c is AppColumn {
   const obj = c as Record<string, unknown>;
   if (typeof obj.id !== 'string') return false;
   if (!APP_KINDS.includes(obj.kind as AppColumnKind)) return false;
+  // width は数値かつ有限のときのみ許容 (壊れた localStorage の "abc"/NaN/null 等で
+  // --col-width に不正値が流れるのを防ぐ。範囲外の数値は描画時に clamp する)。
+  if (obj.width !== undefined && (typeof obj.width !== 'number' || !Number.isFinite(obj.width))) return false;
   // kind 別フィールドの軽い検証 (壊れた値は load 時に丸ごと除外する)
   if (obj.kind === 'board' && obj.inner !== undefined) {
     if (!Array.isArray(obj.inner) || !obj.inner.every(isValidBoardInner)) return false;
