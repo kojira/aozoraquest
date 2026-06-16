@@ -15,6 +15,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 変更が CSS / docs / md だけかを判定し、そうなら重い e2e (Playwright) を
+      # スキップして CI を高速化する。コード (ts/tsx/json/html/config/packages 等)
+      # が 1 つでも変われば e2e を回す = 安全側のデフォルト。main への push/PR は
+      # 本番経路なので常に e2e を回す。
+      - name: Detect change scope
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            code:
+              - 'apps/web/**/*.ts'
+              - 'apps/web/**/*.tsx'
+              - 'apps/web/**/*.js'
+              - 'apps/web/**/*.jsx'
+              - 'apps/web/**/*.html'
+              - 'apps/web/**/*.json'
+              - 'apps/web/*.{ts,js,mjs,cjs,json}'
+              - 'packages/**'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/**'
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -61,10 +82,22 @@ jobs:
           VITE_INCLUDE_DEBUG: '1'
         run: pnpm --filter @aozoraquest/web build
 
+      # Playwright のブラウザバイナリをキャッシュして install を高速化
+      # (e2e を回すときだけ。キーは lockfile に紐付け)。
+      - name: Cache Playwright browsers
+        if: steps.changes.outputs.code == 'true' || github.ref == 'refs/heads/main'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright browsers
+        if: steps.changes.outputs.code == 'true' || github.ref == 'refs/heads/main'
         run: pnpm --filter @aozoraquest/web exec playwright install chromium --with-deps
 
       - name: E2E (smoke + model URL sanity)
+        # CSS / docs だけの変更ではスキップ (typecheck / unit / build は常に回る)。
+        if: steps.changes.outputs.code == 'true' || github.ref == 'refs/heads/main'
         env:
           VITE_APP_URL: ${{ vars.VITE_APP_URL }}
           VITE_NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
