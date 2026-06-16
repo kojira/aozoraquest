@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { PostImage } from '@/lib/post-embed';
 
@@ -99,141 +99,98 @@ export function ImageLightbox({
         else go(-1);
       }}
     >
-      {/* 閉じる */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-        aria-label="閉じる"
-        style={{
-          position: 'absolute',
-          top: 12,
-          right: 12,
-          width: 40,
-          height: 40,
-          borderRadius: 20,
-          border: 'none',
-          background: 'rgba(255,255,255,0.15)',
-          color: '#fff',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 0,
-        }}
-      >
-        <CloseIcon />
-      </button>
-
-      {/* 左 */}
-      {multi && (
-        <button
-          type="button"
-          disabled={!hasPrev}
-          onClick={(e) => {
-            e.stopPropagation();
-            go(-1);
-          }}
-          aria-label="前の画像"
+      {/* 画像エリア (残りの高さいっぱい。ボタンは画像に重ねない) */}
+      <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img
+          src={current.fullsize}
+          alt={current.alt}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'absolute',
-            left: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            border: 'none',
-            background: hasPrev ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
-            color: hasPrev ? '#fff' : 'rgba(255,255,255,0.35)',
-            cursor: hasPrev ? 'pointer' : 'default',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0,
+            maxWidth: '100%',
+            maxHeight: '100%',
+            objectFit: 'contain',
+            userSelect: 'none',
           }}
-        >
-          <ChevronIcon dir="left" />
-        </button>
-      )}
+        />
+      </div>
 
-      {/* 画像 */}
-      <img
-        src={current.fullsize}
-        alt={current.alt}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: '92vw',
-          maxHeight: '84vh',
-          objectFit: 'contain',
-          userSelect: 'none',
-        }}
-      />
-
-      {/* 右 */}
-      {multi && (
-        <button
-          type="button"
-          disabled={!hasNext}
-          onClick={(e) => {
-            e.stopPropagation();
-            go(1);
-          }}
-          aria-label="次の画像"
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            border: 'none',
-            background: hasNext ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
-            color: hasNext ? '#fff' : 'rgba(255,255,255,0.35)',
-            cursor: hasNext ? 'pointer' : 'default',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0,
-          }}
-        >
-          <ChevronIcon dir="right" />
-        </button>
-      )}
-
-      {/* カウンタ + alt */}
+      {/* 下部コントロール: 親指で届く位置に。前後 ‹›・カウンタは画像の下、
+          閉じる × は最下部 (画面上部まで指を伸ばさなくて済むように)。 */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          position: 'absolute',
-          bottom: 16,
-          left: 0,
-          right: 0,
+          flex: '0 0 auto',
+          width: '100%',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 6,
-          padding: '0 16px',
+          gap: 10,
+          paddingTop: 10,
+          paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
           color: 'rgba(255,255,255,0.9)',
           fontSize: 13,
-          pointerEvents: 'none',
         }}
       >
-        {multi && (
-          <span style={{ fontFamily: 'ui-monospace, monospace' }}>
-            {idx + 1} / {images.length}
-          </span>
-        )}
         {current.alt && (
-          <span style={{ maxWidth: 720, textAlign: 'center', lineHeight: 1.5 }}>{current.alt}</span>
+          <span style={{ maxWidth: 720, textAlign: 'center', lineHeight: 1.5, padding: '0 16px' }}>{current.alt}</span>
         )}
+
+        {multi && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <button
+              type="button"
+              disabled={!hasPrev}
+              onClick={(e) => { e.stopPropagation(); go(-1); }}
+              aria-label="前の画像"
+              style={navBtnStyle(hasPrev)}
+            >
+              <ChevronIcon dir="left" />
+            </button>
+            <span style={{ fontFamily: 'ui-monospace, monospace', minWidth: '3.5em', textAlign: 'center' }}>
+              {idx + 1} / {images.length}
+            </span>
+            <button
+              type="button"
+              disabled={!hasNext}
+              onClick={(e) => { e.stopPropagation(); go(1); }}
+              aria-label="次の画像"
+              style={navBtnStyle(hasNext)}
+            >
+              <ChevronIcon dir="right" />
+            </button>
+          </div>
+        )}
+
+        {/* 閉じる (最下部・中央) */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          aria-label="閉じる"
+          style={navBtnStyle(true)}
+        >
+          <CloseIcon />
+        </button>
       </div>
     </div>,
     document.body,
   );
+}
+
+/** 前/次の丸ボタンのスタイル (有効/無効で色を出し分け)。 */
+function navBtnStyle(enabled: boolean): CSSProperties {
+  return {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    border: 'none',
+    background: enabled ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+    color: enabled ? '#fff' : 'rgba(255,255,255,0.35)',
+    cursor: enabled ? 'pointer' : 'default',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+  };
 }
 
 /** 閉じる × アイコン (グリフだと字形で中央がずれるので SVG で正確に中央化)。 */
