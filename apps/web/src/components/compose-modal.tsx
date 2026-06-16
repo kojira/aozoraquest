@@ -151,16 +151,21 @@ const IMG_CTRL_BTN: CSSProperties = {
   lineHeight: 1,
 };
 
+/** 投稿フォーム。`variant='modal'` は中央モーダル、`variant='column'` は
+ *  ワークスペースの 1 カラムとして描画する (PC 左レールの投稿ボタンから開く)。
+ *  state / 画像処理 / 送信ロジックは共通で、外枠 (overlay or column) だけ分岐。 */
 function ComposeDialog({
   replyTo,
   initialText,
   initialImage,
   onClose,
+  variant = 'modal',
 }: {
   replyTo: ComposeReplyTo | null;
   initialText: string;
   initialImage: ComposeAttachedImage | null;
   onClose: () => void;
+  variant?: 'modal' | 'column';
 }) {
   const session = useSession();
   const [text, setText] = useState(initialText);
@@ -184,8 +189,15 @@ function ComposeDialog({
   // 圧縮中に dialog が閉じたら、完了後の setState / objectURL 生成を抑止する
   const mountedRef = useRef(true);
 
-  // ESC で閉じる、背面スクロールをロック、画像 objectURL を unmount で revoke
+  // 画像 objectURL を unmount で revoke (両 variant 共通)。
+  // モーダルのみ ESC で閉じる + 背面スクロールをロックする (カラムは常設なので不要)。
   useEffect(() => {
+    if (variant !== 'modal') {
+      return () => {
+        mountedRef.current = false;
+        for (const im of imagesRef.current) URL.revokeObjectURL(im.previewUrl);
+      };
+    }
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
@@ -199,7 +211,7 @@ function ComposeDialog({
       // 最後にセットされてた image 群の url をすべて revoke
       for (const im of imagesRef.current) URL.revokeObjectURL(im.previewUrl);
     };
-  }, [loading, onClose]);
+  }, [loading, onClose, variant]);
 
   const agent = session.agent;
   if (!agent) {
@@ -391,33 +403,18 @@ function ComposeDialog({
     || (!text.trim() && images.length === 0)
     || text.length > POST_MAX_LENGTH;
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => {
-        if (e.currentTarget === e.target && !loading) onClose();
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0, 0, 0, 0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1em',
-        zIndex: 100,
-      }}
-    >
+  const isColumn = variant === 'column';
+  // 投稿カード本体 (タイトル + フォーム)。モーダルでもカラムでもこれを再利用する。
+  const card = (
       <div
         className="dq-window"
         style={{
-          width: 'min(440px, 100%)',
+          width: isColumn ? '100%' : 'min(440px, 100%)',
           margin: 0,
-          maxHeight: '90vh',
-          overflow: 'auto',
+          maxHeight: isColumn ? 'none' : '90vh',
+          overflow: isColumn ? 'visible' : 'auto',
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={isColumn ? undefined : (e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4em' }}>
           <h3 style={{ margin: 0, fontSize: '1em' }}>{replyTo ? '返信' : '投稿する'}</h3>
@@ -596,6 +593,49 @@ function ComposeDialog({
         </div>
         {err && <p style={{ color: 'var(--color-danger)', marginTop: '0.5em', fontSize: '0.85em' }}>{err}</p>}
       </div>
+  );
+
+  // カラム: ワークスペースの 1 カラムとして常設表示 (overlay なし)
+  if (isColumn) {
+    return (
+      <section className="workspace-column" data-column-kind="compose">
+        <div className="workspace-column-body" style={{ padding: '0.6em' }}>{card}</div>
+      </section>
+    );
+  }
+  // モーダル: 中央オーバーレイ。背景クリック / ✕ / ESC で閉じる
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.currentTarget === e.target && !loading) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1em',
+        zIndex: 100,
+      }}
+    >
+      {card}
     </div>
+  );
+}
+
+/** PC 左レールの投稿ボタンから開く「投稿カラム」。ワークスペースが描画する。 */
+export function ComposeColumn({ onClose }: { onClose: () => void }) {
+  return (
+    <ComposeDialog
+      replyTo={null}
+      initialText=""
+      initialImage={null}
+      onClose={onClose}
+      variant="column"
+    />
   );
 }

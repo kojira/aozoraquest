@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { openComposePane, toggleComposePane } from '@/lib/compose-pane';
 import { BellIcon, BrusukonIcon, ComposeIcon, HomeIcon, PersonIcon, ScrollIcon, SearchIcon, SettingsIcon } from './icons';
 import { useCompose } from './compose-modal';
 import { composeFabAllowedOnPath } from '@/lib/compose-fab';
@@ -39,6 +40,7 @@ export function AppShell() {
   const session = useSession();
   const { openCompose } = useCompose();
   const location = useLocation();
+  const navigate = useNavigate();
   const [unread, setUnread] = useState(0);
   const visibleKind = useVisibleColumn();
   const headerRef = useRef<HTMLElement>(null);
@@ -156,7 +158,16 @@ export function AppShell() {
             className="footer-nav-item footer-nav-compose"
             aria-label="投稿する"
             title="投稿する"
-            onClick={() => openCompose()}
+            onClick={() => {
+              // 投稿カラムは workspace ('/') が描画する。別ルートに居たら '/' へ移って開く。
+              // workspace に居れば開閉トグル。
+              if (location.pathname !== '/') {
+                navigate('/');
+                openComposePane();
+              } else {
+                toggleComposePane();
+              }
+            }}
           >
             <ComposeIcon size={26} />
           </button>
