@@ -456,8 +456,9 @@ p { margin: 0.4em 0; }
     /* 幅は --col-width (ユーザーがドラッグで保存した値) があればそれ、無ければ 340px。
        モバイルは別ルール (flex:0 0 100%) が勝つので --col-width は無視される。 */
     flex: 0 0 var(--col-width, 340px);
-    /* モバイルと同じく chrome 実測に追従 (--shell-chrome-height) */
-    height: calc(100dvh - var(--shell-chrome-height, 9.5em));
+    /* PC は footer が左の縦レールになり縦方向の chrome に含まれないので、
+       カラム高は header 分だけ引く (--header-height)。 */
+    height: calc(100dvh - var(--header-height, 3em));
   }
   .workspace-columns {
     scroll-snap-type: none;   /* PC は自由スクロール */
@@ -755,7 +756,66 @@ p { margin: 0.4em 0; }
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* ─── DQ 風ウィンドウ ──────────────────────────── */
+/* 投稿ボタンはモバイルでは非表示 (右下 compose-fab を使う)。PC でレールに出す。 */
+.footer-nav-compose { display: none; }
+
+/* ─── PC: 下部ナビを「左の縦レール」に ──────────────────────
+   下部横並びだと投稿ボタン (右下 FAB) が押しづらいというオーナー指摘を受け、
+   PC (>=768px) ではナビを画面左端の固定縦レールにし、先頭に投稿ボタンを置く。
+   レールぶんの幅は .app-shell の padding-left で確保 (固定レールと本文が被らない)。
+   モバイルは従来の下部バー (full-width flush) を維持。 */
+@media (min-width: 768px) {
+  /* 固定レールぶんを全ルートで左に空ける + app-shell を左寄せ (margin-left:0)。
+     base の margin:0 auto のままだと中央寄せ本文と left:0 固定レールが分離して
+     レールが画面左隅に孤立するため、左寄せにしてレールが本文に寄り添うようにする
+     (= 左ナビ + 本文、という標準レイアウト)。max-width (非 workspace=680) は維持。 */
+  .app-shell { padding-left: 56px; margin-left: 0; }
+
+  /* footer-nav を左端の縦レールに (詳細度 .app-shell .footer-nav で base に勝つ)。 */
+  .app-shell .footer-nav {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 56px;
+    margin: 0;
+    padding: 0.5em 0;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0.15em;
+    border: none;
+    border-right: 2px solid var(--color-window-inner-border);
+    border-radius: 0;
+    background: var(--color-window-bg);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);
+    overflow-y: auto;
+    z-index: 30;
+  }
+  .footer-nav-item {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  /* 投稿ボタン: レール先頭で目立たせる (accent 背景) */
+  .footer-nav-compose {
+    display: flex;
+    opacity: 1;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    margin-bottom: 0.4em;
+  }
+  .footer-nav-compose:hover { background: var(--color-accent); opacity: 0.88; }
+
+  /* レールの現在地は左端 accent バーで明示 (横バーの薄い背景だけだと縦レールで埋もれる) */
+  .footer-nav-item.active {
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+
+  /* PC は投稿をレールから行うので右下 FAB は出さない */
+  .compose-fab { display: none; }
+}
 
 .dq-window {
   position: relative;

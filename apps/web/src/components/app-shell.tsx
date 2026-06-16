@@ -59,12 +59,15 @@ export function AppShell() {
       return r.height + parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0');
     };
     const update = () => {
+      const header = outerHeight(headerRef.current);
       const footer = outerHeight(footerRef.current);
-      const total = outerHeight(headerRef.current) + footer;
-      document.documentElement.style.setProperty('--shell-chrome-height', `${Math.ceil(total)}px`);
+      document.documentElement.style.setProperty('--shell-chrome-height', `${Math.ceil(header + footer)}px`);
       // footer 単独の占有高も書き出す (compose FAB の bottom 位置を header≒footer
       // 仮定に頼らず footer 実測に追従させる)。
       document.documentElement.style.setProperty('--footer-height', `${Math.ceil(footer)}px`);
+      // header 単独の高さ。PC では footer が「左の縦レール」になり縦方向の chrome に
+      // 含めないため、カラム高は 100dvh - header だけで計算する (--header-height を使う)。
+      document.documentElement.style.setProperty('--header-height', `${Math.ceil(header)}px`);
     };
     update();
     const ro = new ResizeObserver(update);
@@ -144,6 +147,20 @@ export function AppShell() {
         </button>
       )}
       <nav className="footer-nav" ref={footerRef}>
+        {/* 投稿ボタン: PC では左ナビレールの先頭に置いて押しやすく (CSS で PC のみ表示)。
+            モバイルは従来どおり右下の compose-fab を使う。表示可否は FAB と同じ
+            (composeFabAllowedOnPath = フォーム/認証画面では出さない) に揃える。 */}
+        {showComposeFab && (
+          <button
+            type="button"
+            className="footer-nav-item footer-nav-compose"
+            aria-label="投稿する"
+            title="投稿する"
+            onClick={() => openCompose()}
+          >
+            <ComposeIcon size={26} />
+          </button>
+        )}
         {(session.status === 'signed-in' ? nav : navLoggedOut).map(({ to, label, icon: Icon, end, key, columnKind }) => (
           <NavLink
             key={to}
