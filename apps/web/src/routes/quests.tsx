@@ -374,8 +374,8 @@ function QuestRow({ quest }: { quest: Quest }) {
   return (
     <div
       style={{
-        background: 'rgba(0,0,0,0.25)',
-        border: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--color-subpanel-bg)',
+        border: '1px solid var(--color-subpanel-border)',
         borderRadius: 4,
         padding: '0.4em 0.5em',
         ...(done ? { opacity: 0.55 } : {}),
@@ -432,8 +432,8 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   return (
     <div
       style={{
-        background: 'rgba(0,0,0,0.4)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: 'var(--color-subpanel-bg)',
+        border: '1px solid var(--color-subpanel-border)',
         borderRadius: 4,
         padding: '0.35em 0.5em',
         fontSize: '0.78em',

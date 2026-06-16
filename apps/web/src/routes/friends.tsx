@@ -246,7 +246,7 @@ function RankRow({ entry, rank }: { entry: ResonanceRankEntry; rank: number }) {
         alignItems: 'center',
         gap: '0.8em',
         padding: '0.6em 0.4em',
-        borderBottom: '1px solid rgba(255,255,255,0.15)',
+        borderBottom: '1px solid var(--color-subpanel-border)',
         textAlign: 'left',
         color: 'inherit',
         textDecoration: 'none',

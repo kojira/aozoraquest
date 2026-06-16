@@ -451,7 +451,7 @@ function ComposeDialog({
             style={{
               padding: '0.5em 0.7em',
               borderLeft: '3px solid var(--color-accent)',
-              background: 'rgba(255, 255, 255, 0.06)',
+              background: 'var(--color-overlay-soft)',
               borderRadius: 2,
               marginBottom: '0.5em',
               fontSize: '0.85em',
@@ -488,13 +488,13 @@ function ComposeDialog({
               <div
                 key={im.previewUrl}
                 style={{
-                  border: '1px solid rgba(255,255,255,0.18)',
+                  border: '1px solid var(--color-subpanel-border)',
                   borderRadius: 6,
                   padding: '0.5em',
                   display: 'flex',
                   gap: '0.6em',
                   alignItems: 'flex-start',
-                  background: 'rgba(0,0,0,0.25)',
+                  background: 'var(--color-subpanel-bg)',
                 }}
               >
                 <img

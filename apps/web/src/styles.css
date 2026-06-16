@@ -56,6 +56,10 @@
   --color-track-border: rgba(255, 255, 255, 0.6);
   /* 控えめなオーバーレイ/区切り (バッジ地・hover 地・点線境界) */
   --color-overlay-soft: rgba(255, 255, 255, 0.1);
+  /* レーダーチャートのグリッド/軸線 (SVG stroke)。ライトで白だと消えるため */
+  --color-chart-grid: rgba(255, 255, 255, 0.25);
+  /* レーダーの比較多角形 (目標ジョブ)。ダークは橙、ライトは白地で沈むので濃い橙 */
+  --color-radar-compare: #ffaa6e;
 
   --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
 }
@@ -85,7 +89,8 @@
   --color-item-selected-bg: rgba(39, 115, 181, 0.16);
   --color-item-selected-border: var(--color-accent-deep);
   --color-subpanel-bg: rgba(0, 0, 0, 0.05);
-  --color-subpanel-border: rgba(0, 0, 0, 0.1);
+  /* feed-divider (0.16) に揃える。0.1 だと白地でパネル境界が溶けて見えない */
+  --color-subpanel-border: rgba(0, 0, 0, 0.16);
   --color-track-bg: rgba(0, 0, 0, 0.1);
   --color-track-border: rgba(0, 0, 0, 0.2);
   --color-overlay-soft: rgba(0, 0, 0, 0.08);
@@ -93,6 +98,8 @@
   --color-pill-bg: rgba(255, 255, 255, 0.85);
   --color-pill-border: var(--color-border);
   --color-pill-inner: rgba(0, 0, 0, 0.12);
+  --color-chart-grid: rgba(0, 0, 0, 0.18);
+  --color-radar-compare: #c2571a;
 }
 
 * {

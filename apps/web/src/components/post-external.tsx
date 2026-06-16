@@ -55,7 +55,7 @@ export function PostExternalCard({ external }: { external: PostExternal }) {
         padding: 8,
         border: '1px solid var(--color-border)',
         borderRadius: 6,
-        background: 'rgba(255, 255, 255, 0.03)',
+        background: 'var(--color-overlay-soft)',
       }}
       onClick={(e) => e.stopPropagation()}
     >
