@@ -133,16 +133,18 @@ export function RadarChart({ stats, compare, size = 220, max = 100, normalize = 
       {comparePath && (
         <path
           d={comparePath}
-          fill="rgba(255, 170, 110, 0.22)"
-          stroke="#ffaa6e"
+          fill="var(--color-radar-compare)"
+          fillOpacity={0.22}
+          stroke="var(--color-radar-compare)"
           strokeWidth={2}
           strokeDasharray="4 3"
           strokeLinejoin="round"
         />
       )}
 
-      {/* データ多角形 (= 自分) */}
-      <path d={valuePath} fill="rgba(159, 215, 255, 0.35)" stroke="var(--color-accent)" strokeWidth={2} strokeLinejoin="round" />
+      {/* データ多角形 (= 自分)。fill は accent + fillOpacity でテーマ追従
+         (ダーク accent=#9fd7ff なので従来の rgba(159,215,255,0.35) と一致)。 */}
+      <path d={valuePath} fill="var(--color-accent)" fillOpacity={0.35} stroke="var(--color-accent)" strokeWidth={2} strokeLinejoin="round" />
 
       {/* 各頂点の点 */}
       {AXES.map((a, i) => {
