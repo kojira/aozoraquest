@@ -205,6 +205,19 @@ export function Workspace() {
     edit((cols) => cols.map((c) => (c.id === id ? ({ ...c, ...patch } as AppColumn) : c)));
   }
 
+  /** カラム幅を変更/リセットする。width=undefined は width キーを削除して既定幅に戻す
+   *  (exactOptionalPropertyTypes 下では undefined を代入できないのでキーごと外す)。 */
+  function resizeColumn(id: string, width: number | undefined) {
+    edit((cols) => cols.map((c) => {
+      if (c.id !== id) return c;
+      if (width === undefined) {
+        const { width: _drop, ...rest } = c;
+        return rest as AppColumn;
+      }
+      return { ...c, width } as AppColumn;
+    }));
+  }
+
   /** anchor 位置にカラムを挿入する */
   function insertColumn(col: AppColumn, anchor: PickerAnchor) {
     edit((cols) => {
@@ -243,7 +256,7 @@ export function Workspace() {
               onAddRight={() => setPickerAnchor(i)}
               onRefresh={() => refreshColumn(col)}
               onRefreshAll={() => refreshAll(columns ?? [])}
-              onResize={(width) => patchColumn(col.id, { width })}
+              onResize={(width) => resizeColumn(col.id, width)}
             >
               <ColumnContent
                 key={refreshNonce[col.id] ?? 0}
@@ -307,8 +320,8 @@ interface ColumnViewProps {
   onAddRight: () => void;
   onRefresh: () => void;
   onRefreshAll: () => void;
-  /** 右端ドラッグでカラム幅 (px) を変更し確定したとき。 */
-  onResize: (width: number) => void;
+  /** 右端ドラッグでカラム幅 (px) を変更し確定したとき。undefined で既定幅に戻す。 */
+  onResize: (width: number | undefined) => void;
   children: ReactNode;
 }
 
@@ -382,8 +395,10 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
     onResize(clampColumnWidth(st.w + (e.clientX - st.x)));
   }
 
-  const sectionStyle = column.width
-    ? ({ ['--col-width']: `${column.width}px` } as CSSProperties)
+  // 保存値も念のため clamp して描画 (壊れた範囲外値が flex-basis に流れないよう
+  // 二重防御。検証は isValidAppColumn で型を、ここで範囲を担保)。
+  const sectionStyle = column.width != null
+    ? ({ ['--col-width']: `${clampColumnWidth(column.width)}px` } as CSSProperties)
     : undefined;
 
   return (
@@ -429,6 +444,10 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           <button type="button" disabled={!canMoveLeft} onClick={() => { onMoveLeft(); setMenuOpen(false); }}>← 左へ移動</button>
           <button type="button" disabled={!canMoveRight} onClick={() => { onMoveRight(); setMenuOpen(false); }}>→ 右へ移動</button>
           <button type="button" onClick={() => { onAddRight(); setMenuOpen(false); }}>＋ 右にカラムを追加</button>
+          {/* 幅を変更済みのときだけ「既定幅に戻す」を出す (ポインタ以外の幅リセット経路) */}
+          {column.width != null && (
+            <button type="button" onClick={() => { onResize(undefined); setMenuOpen(false); }}>↔ カラム幅を既定に戻す</button>
+          )}
           {/* 単一カラム時は「すべて」= 自カラムでラベルと実体が一致しないので隠す */}
           {(canMoveLeft || canMoveRight) && (
             <button type="button" onClick={() => { onRefreshAll(); setMenuOpen(false); }}>
