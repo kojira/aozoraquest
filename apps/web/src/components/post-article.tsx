@@ -90,7 +90,10 @@ export function PostArticle({
   return (
     <article
       ref={articleRef}
-      className="dq-window"
+      // feed-post: モバイル workspace カラムで「全幅タイムライン行」化する対象を
+      // 投稿カードに限定するためのマーカー (board のクエストカード等は状態色の枠を
+      // 残したいので対象外にする。styles.css のモバイルブロック参照)。
+      className="dq-window feed-post"
       style={highlight ? { outline: '2px solid var(--color-accent)', outlineOffset: -2 } : undefined}
     >
       {repostedBy && (

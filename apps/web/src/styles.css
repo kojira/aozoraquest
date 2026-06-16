@@ -446,9 +446,14 @@ p { margin: 0.4em 0; }
 
 /* ─── モバイル: カラムを全幅で使う (横幅を枠に食わせない) ───────────
    1 スワイプ = 1 カラムなので、左右の太枠・四隅装飾・次カラム peek を省いて
-   本文に幅を回す。横幅ロス ~66px → ~12px。代わりに「右にまだカラムがある」は
+   本文に幅を回す。さらにカラム内の投稿カード (.dq-window) も全幅化し、左右の
+   枠・余白をほぼ撤去 (本文の左右余白は ~0.5em のみ)。投稿の境目は枠ではなく
+   下辺のヘアラインで示す (Twitter 風のタイムライン行)。背景色がカラムと同じため
+   枠を消すと埋もれるので区切り線で代替。「右にまだカラムがある」は
    .workspace-swipe-hint (▶ 点滅) で知らせる。PC (>=768px) は従来の太枠カラム維持。 */
 @media (max-width: 767px) {
+  /* 大きいスマホ (420px 超) でも workspace は全幅に (通常の 420px キャップを外す) */
+  .app-shell:has([data-workspace="1"]) { max-width: 100%; }
   .app-shell:has([data-workspace="1"]) .content { padding: 0; }
   .workspace-columns { gap: 0; padding-bottom: 0; }
   .workspace-column {
@@ -464,7 +469,28 @@ p { margin: 0.4em 0; }
   .workspace-column + .workspace-column {
     box-shadow: inset 1px 0 0 var(--color-window-inner-border);
   }
-  .workspace-column-body { padding: 0.55em 0.35em; }   /* 22.4px → 11.2px L/R */
+  /* カラム本体は左右パディングを撤去。投稿カード側に最小限の余白を持たせる */
+  .workspace-column-body { padding: 0; }
+
+  /* フィード投稿 (.feed-post) を全幅のタイムライン行に。左右の枠・四隅・角丸・
+     横方向の inset を全部消し、左右余白は 0.5em のみ。区切りは下辺のヘアライン
+     (背景がカラムと同色のため枠なしだと埋もれる → 区切り線で分離)。
+     ※ board のクエストカード等 (.dq-window.compact, インライン borderColor で
+     承認待ち=accent / 期限切れ=muted の状態を示す) は **対象外**。枠ごと消すと
+     状態色が読めなくなるため、フィード投稿だけに限定する。 */
+  .workspace-column-body .feed-post {
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 0;
+    box-shadow: none;
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+    margin-bottom: 0;
+  }
+  /* リスト末尾の宙ぶらりんの区切り線は消す */
+  .workspace-column-body .feed-post:last-child { border-bottom: none; }
+  .workspace-column-body .feed-post::before,
+  .workspace-column-body .feed-post::after { display: none; }
 }
 
 /* ─── カラム送りのスワイプヒント (▶ / ◀) ───────────────────────
