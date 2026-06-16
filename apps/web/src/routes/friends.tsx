@@ -171,8 +171,8 @@ function RunningView({ state }: { state: Extract<RunState, { status: 'running' }
           position: 'relative',
           width: '100%',
           height: '10px',
-          background: 'rgba(255,255,255,0.2)',
-          border: '1px solid rgba(255,255,255,0.6)',
+          background: 'var(--color-track-bg)',
+          border: '1px solid var(--color-track-border)',
           borderRadius: 5,
           overflow: 'hidden',
         }}
