@@ -461,15 +461,25 @@ p { margin: 0.4em 0; }
 
   /* footer-nav を全幅フラッシュに。base は width:min(340px,80%) の中央寄せピルで
      周囲と下に地面が見え、タイムラインとの間に空白ができていた。モバイルでは
-     画面幅いっぱい + 最下部に密着させ、上辺の区切り線でタイムラインと繋ぐ。 */
-  .footer-nav {
+     画面幅いっぱい + 最下部に密着させ、上辺の区切り線 + 浮き影でタイムラインと繋ぐ。
+     セレクタは workspace ルート限定 (= `:has([data-workspace])`)。これで
+     (1) 詳細度が base `.footer-nav` (0,1,0) を上回り確実に上書きされ、
+     (2) 設定/通知など通常スクロールルートでは従来のピル footer を維持して
+         sticky footer がコンテンツに被るのを避ける。 */
+  .app-shell:has([data-workspace="1"]) .footer-nav {
     width: 100%;
     margin: 0;
     border: none;
     border-top: 2px solid var(--color-window-inner-border);
     border-radius: 0;
-    box-shadow: none;
+    /* タイムラインと地続きにしつつ「ナビバー」だと分かる程度の浮き影 (blur は
+       DESIGN 方針で控えめに、上方向の影だけ) */
+    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.45);
     bottom: 0;
+    /* iOS ホームインジケータと被らないよう safe-area 下余白を足す
+       (index.html の viewport-fit=cover が前提。--footer-height は padding 込み
+       実測なのでカラム高・FAB 位置も自動追従する)。 */
+    padding-bottom: calc(0.35em + env(safe-area-inset-bottom, 0px));
   }
   .workspace-columns { gap: 0; padding-bottom: 0; }
   .workspace-column {
