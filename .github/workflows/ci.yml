@@ -32,6 +32,9 @@ jobs:
               - 'apps/web/**/*.html'
               - 'apps/web/**/*.json'
               - 'apps/web/*.{ts,js,mjs,cjs,json}'
+              # public 配下のアセット (card-art SVG 等) は e2e (card-share-size.spec)
+              # が参照するので、変更時は e2e を回す (CSS 微修正の高速パスには含めない)。
+              - 'apps/web/public/**'
               - 'packages/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/**'
