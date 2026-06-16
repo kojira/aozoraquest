@@ -508,9 +508,11 @@ p { margin: 0.4em 0; }
      状態色が読めなくなるため、フィード投稿だけに限定する。 */
   .workspace-column-body .feed-post {
     border: none;
-    /* 投稿間の区切り。控えめだが視認できる 1px ヘアライン (0.2 では埋もれて
-       見えなかったため 0.5 に。場所は取らず線だけで分離)。 */
-    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+    /* 投稿間の区切り。控えめだが視認できる 1px ヘアライン。footer 上辺・カラム境界
+       など窓内の区切りで使う標準トークン (--color-window-inner-border = 白 0.35) に
+       揃える (旧 0.2 のリテラルは埋もれて見えず、0.5 は逆に投稿間だけ最も明るくなり
+       階層が逆転していた)。 */
+    border-bottom: 1px solid var(--color-window-inner-border);
     border-radius: 0;
     box-shadow: none;
     padding-left: 0.5em;
