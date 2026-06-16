@@ -340,6 +340,20 @@ p { margin: 0.4em 0; }
 .workspace-column-refresh-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* カラムを最上部へスクロールするボタン (↻ の隣)。refresh と同じ控えめな見た目。 */
+.workspace-column-totop-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.4em;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-fg);
+}
+.workspace-column-totop-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
 .workspace-column-refresh-btn.is-spinning svg {
   animation: dtp-spin 0.6s linear;
 }
@@ -444,22 +458,34 @@ p { margin: 0.4em 0; }
   }
 }
 
-/* ─── モバイル: カラムを全幅で使う (横幅を枠に食わせない) ───────────
-   1 スワイプ = 1 カラムなので、左右の太枠・四隅装飾・次カラム peek を省いて
-   本文に幅を回す。さらにカラム内の投稿カード (.dq-window) も全幅化し、左右の
-   枠・余白をほぼ撤去 (本文の左右余白は ~0.5em のみ)。投稿の境目は枠ではなく
-   下辺のヘアラインで示す (Twitter 風のタイムライン行)。背景色がカラムと同じため
-   枠を消すと埋もれるので区切り線で代替。「右にまだカラムがある」は
-   .workspace-swipe-hint (▶ 点滅) で知らせる。PC (>=768px) は従来の太枠カラム維持。 */
+/* ─── モバイルは全画面ダーク・全幅に統一 (workspace / 通知 / 検索 / 掲示板 共通) ──
+   方針: スマホでは「青空+草原に手帳が浮かぶ」世界観 (PC 専用) は出さず、
+   header + 本文 + footer をダークで画面いっぱいに敷き詰める。workspace のカラムも、
+   footer から開く通知/検索などの単独ルートも、同じ全幅・枠なし・全幅 footer に揃える。
+   投稿の境目は下辺ヘアライン、カラム送りは .workspace-swipe-hint (▶)。
+   PC (>=768px) は従来の太枠カラム + 中央寄せピル footer + 世界観背景を維持。 */
 @media (max-width: 767px) {
-  /* 大きいスマホ (420px 超) でも workspace は全幅に (通常の 420px キャップを外す) */
-  .app-shell:has([data-workspace="1"]) { max-width: 100%; }
-  /* .content の余白・枠を撤去。
-     - base の margin:0.6em 0.5em が残ると workspace の上下左右に 8px ずつ背景が覗く。
-     - さらに base の border:3px は workspace 既定で border-color:transparent にされて
-       いるだけで **幅 3px は残っており**、.content 背景も透明なので透明枠から body の
-       青空/地面が左右に透ける (= 「外枠の左右に背景」)。border ごと 0 にして塞ぐ。 */
-  .app-shell:has([data-workspace="1"]) .content { margin: 0; padding: 0; border: none; }
+  /* 青空/草原を出さない。body を不透明ダークにして、どの隙間 (外枠・footer 下・
+     カラム下端) からも地面/空が透けない (= 緑のにじみ・外枠透け・隙間を一掃)。 */
+  body { background: #0e1318; }
+
+  /* app-shell は全ルートで全幅 (通常の 420px 中央寄せキャップを外す) */
+  .app-shell { max-width: 100%; }
+
+  /* .content: 外枠・四隅装飾・余白を撤去して全幅。通知/検索/設定など非 workspace
+     ルートも自前のダーク背景 (base) で表示領域を最大化。横は 0.5em だけ余白。 */
+  .content {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0.6em 0.5em;
+  }
+  .content::before,
+  .content::after { display: none; }
+
+  /* workspace の content は透明 + padding 0 (各カラムが背景・余白を持つ) */
+  .app-shell:has([data-workspace="1"]) .content { padding: 0; background: transparent; }
 
   /* footer-nav を全幅フラッシュに。base は width:min(340px,80%) の中央寄せピルで
      周囲と下に地面が見え、タイムラインとの間に空白ができていた。モバイルでは
@@ -468,7 +494,7 @@ p { margin: 0.4em 0; }
      (1) 詳細度が base `.footer-nav` (0,1,0) を上回り確実に上書きされ、
      (2) 設定/通知など通常スクロールルートでは従来のピル footer を維持して
          sticky footer がコンテンツに被るのを避ける。 */
-  .app-shell:has([data-workspace="1"]) .footer-nav {
+  .app-shell .footer-nav {
     width: 100%;
     margin: 0;
     border: none;
@@ -497,8 +523,9 @@ p { margin: 0.4em 0; }
   .workspace-column + .workspace-column {
     box-shadow: inset 1px 0 0 var(--color-window-inner-border);
   }
-  /* カラム本体は左右パディングを撤去。投稿カード側に最小限の余白を持たせる */
-  .workspace-column-body { padding: 0; }
+  /* カラム本体に左右 0.5em の余白 (掲示板等、フィード以外の文字が画面端に密着して
+     素人臭く見えるのを防ぐ)。フィード投稿は下で横 padding 0 にしてこの余白に揃える。 */
+  .workspace-column-body { padding: 0.5em; }
 
   /* フィード投稿 (.feed-post) を全幅のタイムライン行に。左右の枠・四隅・角丸・
      横方向の inset を全部消し、左右余白は 0.5em のみ。区切りは下辺のヘアライン
@@ -506,23 +533,23 @@ p { margin: 0.4em 0; }
      ※ board のクエストカード等 (.dq-window.compact, インライン borderColor で
      承認待ち=accent / 期限切れ=muted の状態を示す) は **対象外**。枠ごと消すと
      状態色が読めなくなるため、フィード投稿だけに限定する。 */
-  .workspace-column-body .feed-post {
+  .feed-post {
     border: none;
-    /* 投稿間の区切り。控えめだが視認できる 1px ヘアライン。footer 上辺・カラム境界
-       など窓内の区切りで使う標準トークン (--color-window-inner-border = 白 0.35) に
-       揃える (旧 0.2 のリテラルは埋もれて見えず、0.5 は逆に投稿間だけ最も明るくなり
-       階層が逆転していた)。 */
-    border-bottom: 1px solid var(--color-window-inner-border);
+    /* 投稿間の区切り。**確実に見える** 濃さの 1px ヘアライン (実機で 0.2 / 0.35 では
+       埋もれたため 0.55 まで上げる)。横 padding はコンテナ (column-body / content) が
+       0.5em 持つので 0。workspace でも通知/検索ルートでも同じ全幅タイムライン行に統一。
+       board のクエストカード (.dq-window.compact, 状態色枠) は .feed-post を持たない
+       ので対象外 = 枠と状態色を維持。 */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.55);
     border-radius: 0;
     box-shadow: none;
-    padding-left: 0.5em;
-    padding-right: 0.5em;
+    padding-left: 0;
+    padding-right: 0;
     margin-bottom: 0;
   }
-  /* リスト末尾の宙ぶらりんの区切り線は消す */
-  .workspace-column-body .feed-post:last-child { border-bottom: none; }
-  .workspace-column-body .feed-post::before,
-  .workspace-column-body .feed-post::after { display: none; }
+  .feed-post:last-child { border-bottom: none; }
+  .feed-post::before,
+  .feed-post::after { display: none; }
 }
 
 /* ─── カラム送りのスワイプヒント (▶ / ◀) ───────────────────────
