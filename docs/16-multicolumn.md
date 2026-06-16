@@ -125,6 +125,7 @@ MVP 完了。以降は下記「既知の制約 / 検討事項」と issue #36 (p
 - **profile カラムの情報量**: フルプロフィール (相性 + 推し量り + 投稿) をそのまま表示している。コンパクト版は issue #36
 - **DM カラム / List カラム**: Bluesky の DM・List API 調査が別途必要 (将来)
 - **drag & drop 並べ替え**: MVP は矢印ボタン (⋯メニュー) のみ。要望次第で dnd-kit
+- **カラム幅のリサイズ (PC)**: 各カラム右端のハンドルをドラッグして幅を変更し、`AppColumn.width` (px) として localStorage 保存。CSS は PC で `flex: 0 0 var(--col-width, 340px)`、ドラッグ中は section の `--col-width` を直接書き換えて再描画を避け、pointerup で state + 保存。幅は `clampColumnWidth` で 240〜760px にクランプ。モバイルは全幅なのでハンドル非表示・`--col-width` 無視。PC は workspace 全幅 (1480px キャップ撤去済) で、カラムが入りきらなければ横スクロール。
 - **PDS 同期 (`app.aozoraquest.layout`)**: カラム構成は localStorage 止まり。端末横断同期は将来の opt-in
 - **iOS Safari の scroll-snap 慣性**: `scroll-snap-stop: always` で軽減。深い tuning は実機検証後
 - **モバイル (<=767px) はカラムを全幅化**: 横幅が枠に食われて本文が窮屈という指摘を受け、スマホでは DQ ウィンドウの太枠・四隅装飾・次カラム peek を省いて本文幅を優先 (~83% → ~97%)。カラム境界は隣接間の `inset 1px` 縦線で示す。「右/左にまだカラムがある」ことは peek の代わりに `.workspace-swipe-hint` (▶ / ◀) で知らせる (▶ は初回スワイプまで点滅、末尾のコンテンツカラムで消える、`pointer-events:none` の純粋な視覚マーカー)。**PC (>=768px) は従来どおり太枠 340px カラム + 自由スクロール**。DESIGN.md の DQ ウィンドウ様式はモバイルでのみ緩める例外。

@@ -37,6 +37,16 @@ interface ColumnBase {
   id: string;
   /** ヘッダー表示の上書き。未設定なら kind+param から推定。 */
   title?: string;
+  /** PC でのカラム幅 (px)。ユーザーが右端をドラッグして変更し保存する。
+   *  未設定なら CSS 既定 (340px)。モバイルは全幅なので無視される。 */
+  width?: number;
+}
+
+/** カラム幅 (px) の下限・上限。リサイズ時にこの範囲へクランプする。 */
+export const COLUMN_MIN_WIDTH = 240;
+export const COLUMN_MAX_WIDTH = 760;
+export function clampColumnWidth(px: number): number {
+  return Math.max(COLUMN_MIN_WIDTH, Math.min(COLUMN_MAX_WIDTH, Math.round(px)));
 }
 
 export type AppColumn =

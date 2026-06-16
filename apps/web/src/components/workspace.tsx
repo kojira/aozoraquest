@@ -11,7 +11,7 @@
  * body 要素を ColumnScrollContext で配って内部の VirtualFeed が
  * 「カラム内スクロール」モードで動けるようにする。
  */
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
@@ -22,6 +22,7 @@ import {
   moveColumnRight,
   removeColumn,
   appColumnTitle,
+  clampColumnWidth,
   type AppColumn,
   type AppColumnKind,
 } from '@/lib/app-columns';
@@ -242,6 +243,7 @@ export function Workspace() {
               onAddRight={() => setPickerAnchor(i)}
               onRefresh={() => refreshColumn(col)}
               onRefreshAll={() => refreshAll(columns ?? [])}
+              onResize={(width) => patchColumn(col.id, { width })}
             >
               <ColumnContent
                 key={refreshNonce[col.id] ?? 0}
@@ -305,10 +307,15 @@ interface ColumnViewProps {
   onAddRight: () => void;
   onRefresh: () => void;
   onRefreshAll: () => void;
+  /** 右端ドラッグでカラム幅 (px) を変更し確定したとき。 */
+  onResize: (width: number) => void;
   children: ReactNode;
 }
 
-function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, onRefreshAll, children }: ColumnViewProps) {
+function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, onRemove, onAddRight, onRefresh, onRefreshAll, onResize, children }: ColumnViewProps) {
+  // カラム要素 (リサイズ時に幅を直接いじって再描画を避ける)
+  const sectionRef = useRef<HTMLElement>(null);
+  const resizeStart = useRef<{ x: number; w: number } | null>(null);
   // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
   // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
@@ -348,8 +355,39 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
     setMenuOpen(false);
   }
 
+  // ── 右端ドラッグでのカラム幅リサイズ (PC) ──
+  // ドラッグ中は section の --col-width を直接書き換えて再描画を避け、
+  // pointerup で onResize に確定値を渡して state + localStorage に保存する。
+  function onResizePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    const el = sectionRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.currentTarget.classList.add('is-dragging');
+    resizeStart.current = { x: e.clientX, w: el.getBoundingClientRect().width };
+  }
+  function onResizePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const st = resizeStart.current;
+    const el = sectionRef.current;
+    if (!st || !el) return;
+    el.style.setProperty('--col-width', `${clampColumnWidth(st.w + (e.clientX - st.x))}px`);
+  }
+  function onResizePointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const st = resizeStart.current;
+    resizeStart.current = null;
+    e.currentTarget.classList.remove('is-dragging');
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* no-op */ }
+    if (!st) return;
+    onResize(clampColumnWidth(st.w + (e.clientX - st.x)));
+  }
+
+  const sectionStyle = column.width
+    ? ({ ['--col-width']: `${column.width}px` } as CSSProperties)
+    : undefined;
+
   return (
-    <section className="workspace-column" data-column-kind={column.kind}>
+    <section className="workspace-column" data-column-kind={column.kind} ref={sectionRef} style={sectionStyle}>
       <header className="workspace-column-header">
         <span className="workspace-column-title">{appColumnTitle(column)}</span>
         <button
@@ -418,6 +456,15 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           {children}
         </ColumnScrollContext.Provider>
       </div>
+      {/* 右端のリサイズハンドル (PC のみ表示)。掴んで左右で幅を変える。 */}
+      <div
+        className="workspace-column-resizer"
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerUp}
+        aria-hidden="true"
+      />
     </section>
   );
 }
