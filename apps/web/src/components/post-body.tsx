@@ -11,9 +11,9 @@ import { useTranslation } from '@/lib/translate';
 /**
  * 投稿本文 (テキスト + 画像 + 外部リンクカード) の共通レイアウト。
  *
- * 画像が 0 枚: テキストのみ。1 枚以上: 左に正方形グリッド、右にテキスト
- * (縦方向は画像が中央、テキストは alignSelf: flex-start で上部配置)。
- * 外部リンクカードがある場合はテキスト / 画像行の下にフル幅で追加。
+ * 画像が 0 枚: テキストのみ。1 枚以上: 画像を float:left して**テキストを回り込ませる**
+ * (画像の横に最初の数行、画像の下からは全幅)。末尾 clear:both で float を閉じる。
+ * 外部リンクカード / 動画は回り込みを clear した後にフル幅で追加。
  *
  * `postUri` が渡されると、非日本語投稿に対してローカル LLM による翻訳を
  * オンデマンドで表示 (自動翻訳設定 ON ならロード時に自動開始)。
@@ -60,10 +60,18 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
     </div>
   );
 
+  // 画像ありのときは画像を float: left してテキストを回り込ませる
+  // (画像の横に最初の数行、画像の下からは全幅)。旧 flex 横並びだとテキストが
+  // 画像の高さ全体にわたって狭い列に押し込まれ縦長になっていた。
+  // 末尾の clear:both で、テキストが短くても親が画像高さまで伸び、後続
+  // (翻訳コントロール・metrics) が float に巻き込まれないようにする。
   const textBlock = hasImages ? (
-    <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginTop: topMargin }}>
-      <PostImages images={images} />
-      <div style={{ flex: 1, minWidth: 0, alignSelf: 'flex-start' }}>{textNode}</div>
+    <div style={{ marginTop: topMargin }}>
+      <div style={{ float: 'left', marginRight: '0.6em', marginBottom: '0.3em' }}>
+        <PostImages images={images} />
+      </div>
+      {textNode}
+      <div style={{ clear: 'both' }} />
     </div>
   ) : (
     <div style={{ marginTop: topMargin }}>{textNode}</div>
