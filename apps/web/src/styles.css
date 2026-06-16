@@ -551,7 +551,8 @@ p { margin: 0.4em 0; }
     padding-right: 0;
     margin-bottom: 0;
   }
-  /* 先頭投稿 (index 0) は header 直下なので上線を出さない */
+  /* カラム最上部の投稿 (index 0) には上線を出さない (列ヘッダ/上部コンテンツ
+     (HomeSummary 等) との二重線を避ける) */
   .workspace-column-body [data-index="0"] .feed-post { border-top: none; }
   .workspace-column-body .feed-post::before,
   .workspace-column-body .feed-post::after { display: none; }
