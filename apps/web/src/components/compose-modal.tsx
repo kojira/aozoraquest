@@ -388,7 +388,17 @@ function ComposeDialog({
         })();
       }
       notifyPosted();
-      onClose();
+      if (variant === 'column') {
+        // カラムは常設なので閉じず、本文と画像をクリアして連投できるようにする
+        // (閉じると既存カラムが詰め直されてレイアウトが揺れるため)。
+        setImages((prev) => {
+          for (const im of prev) URL.revokeObjectURL(im.previewUrl);
+          return [];
+        });
+        setLoading(false);
+      } else {
+        onClose();
+      }
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
       setLoading(false);
@@ -597,8 +607,10 @@ function ComposeDialog({
 
   // カラム: ワークスペースの 1 カラムとして常設表示 (overlay なし)
   if (isColumn) {
+    // data-column-kind は付けない: 'compose' は AppColumnKind 外で、workspace の
+    // 可視カラム検知 (IntersectionObserver) / 端検知が型外値を拾うのを避ける。
     return (
-      <section className="workspace-column" data-column-kind="compose">
+      <section className="workspace-column workspace-column-compose">
         <div className="workspace-column-body" style={{ padding: '0.6em' }}>{card}</div>
       </section>
     );

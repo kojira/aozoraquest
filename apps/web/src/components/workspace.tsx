@@ -171,6 +171,16 @@ export function Workspace() {
   // `/` 離脱時に可視 kind をクリアする (active 残留防止)
   useEffect(() => () => publishVisibleColumn(null), []);
 
+  // 投稿カラムを開いたら左端 (レール直右) へスクロールして必ず見えるようにする
+  // (横スクロールで右を見ている最中に開いても画面外に隠れないように)。
+  useEffect(() => {
+    if (!composeOpen) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    scrollerRef.current?.scrollTo({ left: 0, behavior: reduce ? 'auto' : 'smooth' });
+  }, [composeOpen]);
+  // `/` 離脱時は投稿カラムを閉じる (ルート跨ぎ・モバイル幅で開きっぱなしを防ぐ)
+  useEffect(() => () => closeComposePane(), []);
+
   if (session.status === 'loading') {
     return <p>準備しています...</p>;
   }
