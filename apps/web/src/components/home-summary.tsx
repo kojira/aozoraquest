@@ -217,7 +217,7 @@ function QuestRow({ quest, showIcon, compact = false }: { quest: Quest; showIcon
   if (compact) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45em', fontSize: '0.85em' }}>
-        <span style={{ fontSize: '0.68em', padding: '0.05em 0.35em', border: `1px solid ${typeColor}`, color: typeColor, borderRadius: 2, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }}>
+        <span style={{ fontSize: '0.68em', padding: '0.05em 0.35em', border: `1px solid ${typeColor}`, color: typeColor, borderRadius: 2, background: 'var(--color-overlay-soft)', flexShrink: 0 }}>
           {typeBadge}
         </span>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(done ? { color: 'var(--color-muted)', textDecoration: 'line-through' } : {}) }}>
@@ -246,7 +246,7 @@ function QuestRow({ quest, showIcon, compact = false }: { quest: Quest; showIcon
             border: `1px solid ${typeColor}`,
             color: typeColor,
             borderRadius: 2,
-            background: 'rgba(255,255,255,0.1)',
+            background: 'var(--color-overlay-soft)',
           }}
         >
           {typeBadge}
@@ -345,7 +345,7 @@ function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
   const panelId = 'activity-audit-panel';
 
   return (
-    <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.5em' }}>
+    <div style={{ borderTop: '1px solid var(--color-subpanel-border)', paddingTop: '0.5em' }}>
       <div style={{ fontSize: '0.78em', color: 'var(--color-muted)', marginBottom: '0.35em' }}>
         今日カウントされた行動 ({sorted.length})
       </div>
@@ -370,9 +370,9 @@ function ActivityAudit({ activity }: { activity: ActivityEntry[] }) {
                 padding: '0.3em 0.7em',
                 fontSize: '0.82em',
                 borderRadius: 999,
-                background: active ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.35)',
+                background: active ? 'var(--color-item-selected-bg)' : 'var(--color-subpanel-bg)',
                 border: '1px solid',
-                borderColor: active ? 'var(--color-primary)' : 'rgba(255,255,255,0.15)',
+                borderColor: active ? 'var(--color-primary)' : 'var(--color-subpanel-border)',
                 color: c.accent ? 'var(--color-accent)' : 'var(--color-muted)',
                 boxShadow: 'none',
               }}
@@ -412,8 +412,8 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   return (
     <div
       style={{
-        background: 'rgba(0,0,0,0.35)',
-        border: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--color-subpanel-bg)',
+        border: '1px solid var(--color-subpanel-border)',
         borderRadius: 4,
         padding: '0.4em 0.5em',
         fontSize: '0.8em',
