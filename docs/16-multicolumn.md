@@ -125,6 +125,7 @@ MVP 完了。以降は下記「既知の制約 / 検討事項」と issue #36 (p
 - **profile カラムの情報量**: フルプロフィール (相性 + 推し量り + 投稿) をそのまま表示している。コンパクト版は issue #36
 - **DM カラム / List カラム**: Bluesky の DM・List API 調査が別途必要 (将来)
 - **drag & drop 並べ替え**: MVP は矢印ボタン (⋯メニュー) のみ。要望次第で dnd-kit
+- **PC の左ナビレール**: 下部横並びナビだと投稿ボタン (右下 FAB) が押しづらいため、PC (>=768px) では footer-nav を画面左端の固定縦レール (`position:fixed; width:56px`) にし、先頭に投稿ボタンを置く。レールぶんは `.app-shell { padding-left: 56px }` で確保 (768px でも margin+padding でレールと本文が被らない)。PC は右下 FAB を非表示、投稿はレールから。モバイルは従来の下部バー (full-width flush) 維持。レールは縦方向の chrome に含まれないので、PC のカラム高は `100dvh - var(--header-height)` (footer 込みの `--shell-chrome-height` ではなく header だけ引く)。`--header-height` は AppShell が ResizeObserver で実測。投稿はいまモーダルで開く (将来「投稿カラム」化予定)。
 - **カラム幅のリサイズ (PC)**: 各カラム右端のハンドルをドラッグして幅を変更し、`AppColumn.width` (px) として localStorage 保存。CSS は PC で `flex: 0 0 var(--col-width, 340px)`、ドラッグ中は section の `--col-width` を直接書き換えて再描画を避け、pointerup で state + 保存。幅は `clampColumnWidth` で 240〜760px にクランプ。モバイルは全幅なのでハンドル非表示・`--col-width` 無視。PC は workspace 全幅 (1480px キャップ撤去済) で、カラムが入りきらなければ横スクロール。
 - **PDS 同期 (`app.aozoraquest.layout`)**: カラム構成は localStorage 止まり。端末横断同期は将来の opt-in
 - **iOS Safari の scroll-snap 慣性**: `scroll-snap-stop: always` で軽減。深い tuning は実機検証後
