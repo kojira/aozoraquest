@@ -230,7 +230,9 @@ p { margin: 0.4em 0; }
    幅緩和は 768px から (1100px 始まりだとタブレット縦持ちで 680px 枠内に
    340px カラムが 2 列弱しか見えず破綻するため)。 */
 @media (min-width: 768px) {
-  .app-shell:has([data-workspace="1"]) { max-width: min(100vw - 1.5em, 1480px); }
+  /* workspace はブラウザ横幅をフルに使う (旧 1480px キャップを撤去)。
+     カラムは固定幅で並び、入りきらなければ横スクロール。 */
+  .app-shell:has([data-workspace="1"]) { max-width: 100%; }
 }
 
 /* スワイプヒント (▶ / ◀) を絶対配置する基準 */
