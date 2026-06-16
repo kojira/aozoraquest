@@ -57,6 +57,14 @@ export function Workspace() {
   // 明示更新なので先頭に戻る挙動は自然 (pull-to-refresh / ↻ ボタンとして妥当)。
   const [refreshNonce, setRefreshNonce] = useState<Record<string, number>>({});
 
+  // モバイル全幅カラムでは「次カラムの peek」を出さない代わりに、横スクロールの
+  // 端 (左右にまだカラムがあるか) を検知して ▶ / ◀ のスワイプヒントを出す。
+  // swiped = 一度でも横スワイプしたら ▶ の点滅を止める。粒度は workspace 全体で
+  // セッション中 1 回きり (= 「このアプリは横送りできる」を学べば十分なので、
+  // カラムごとには点滅し直さない)。静かな常駐 (is-idle) には切り替わる。
+  const [edges, setEdges] = useState({ atStart: true, atEnd: true });
+  const [swiped, setSwiped] = useState(false);
+
   /** kind ごとのモジュールキャッシュを無効化する (remount だけでは
    *  取り直さない quest index / profile を真に fresh にするため)。 */
   function bustColumnCache(col: AppColumn) {
@@ -125,6 +133,35 @@ export function Workspace() {
     scroller.addEventListener('wheel', onWheel, { passive: false });
     return () => scroller.removeEventListener('wheel', onWheel);
   }, []);
+
+  // 横スクロールの端を追跡し、左右にまだカラムがあるかでスワイプヒントを出し分ける。
+  // 初回の横スワイプで swiped を立て、▶ の点滅を静める。
+  // deps はカラム数 (= 端の判定が変わる構成変化) のみ。リサイズは ResizeObserver で拾う。
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const update = () => {
+      const { scrollLeft, clientWidth } = scroller;
+      const atStart = scrollLeft <= 1;
+      // 「右にまだ "カラム" がある」= 末尾の追加タイル (data-column-kind を持たない)
+      // を除いた、最後のコンテンツカラムの右端を越えていないか。追加タイルを対象に
+      // 入れると最終コンテンツ列でも ▶ が消えず誤誘導するため除外する。
+      const contentCols = scroller.querySelectorAll<HTMLElement>('[data-column-kind]');
+      const last = contentCols[contentCols.length - 1];
+      const lastRight = last ? last.offsetLeft + last.offsetWidth : scroller.scrollWidth;
+      const atEnd = scrollLeft + clientWidth >= lastRight - 1;
+      setEdges((prev) => (prev.atStart === atStart && prev.atEnd === atEnd ? prev : { atStart, atEnd }));
+    };
+    const onScroll = () => { setSwiped(true); update(); };
+    update();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(scroller);
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+      ro?.disconnect();
+    };
+  }, [columnCount]);
 
   // `/` 離脱時に可視 kind をクリアする (active 残留防止)
   useEffect(() => () => publishVisibleColumn(null), []);
@@ -242,6 +279,18 @@ export function Workspace() {
           </section>
         )}
       </div>
+
+      {/* スワイプヒント (モバイル全幅カラム用)。左右にまだコンテンツカラムがあるときだけ
+          出す純粋な視覚マーカー (pointer-events:none。タップ送りはしない = スワイプで
+          送れるため冗長 + 本文右端のタップ誤爆を防ぐ)。▶ は初回スワイプまで点滅して
+          「横に送れる」を知らせ、以後は静かな常駐に。PC では枠と自由スクロールで自明
+          なので CSS で非表示。 */}
+      {!edges.atStart && (
+        <span className="workspace-swipe-hint left is-idle" aria-hidden="true">◀</span>
+      )}
+      {!edges.atEnd && (
+        <span className={`workspace-swipe-hint right${swiped ? ' is-idle' : ''}`} aria-hidden="true">▶</span>
+      )}
     </div>
   );
 }
@@ -314,6 +363,21 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
         </button>
         <button
           type="button"
+          className="workspace-column-totop-btn"
+          aria-label={`${appColumnTitle(column)}を最上部へスクロール`}
+          title="最上部へ"
+          onClick={() => {
+            // reduced-motion 設定では smooth を切る (CSS の scroll-behavior は
+            // JS の behavior 指定に勝てないため JS 側で分岐)
+            const reduce = typeof window !== 'undefined'
+              && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+            bodyEl?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+          }}
+        >
+          <UpIcon />
+        </button>
+        <button
+          type="button"
           className="workspace-column-menu-btn"
           aria-label="カラム操作メニュー"
           aria-expanded={menuOpen}
@@ -370,6 +434,15 @@ function RefreshIcon() {
         fill="none"
       />
       <path d="M13.7 1.8V5h-3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
+
+/** カラムを最上部へスクロールするボタンの上向き矢印アイコン (絵文字不使用)。 */
+function UpIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden focusable="false">
+      <path d="M8 13V3.5M3.5 8 8 3.3 12.5 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   );
 }
