@@ -32,14 +32,16 @@ const pillStyle: CSSProperties = {
   alignItems: 'center',
   gap: '0.4em',
   padding: '0.35em 0.8em',
-  background: 'rgba(0, 0, 0, 0.45)',
-  border: '2px solid rgba(255, 255, 255, 0.85)',
+  // ウィンドウトークンに乗せてテーマ追従させる (ダーク: 黒地+白文字 /
+  // ライト: 白地+濃紺文字)。リテラル色で焼き込むとライトで浮くため。
+  background: 'var(--color-window-bg)',
+  border: '2px solid var(--color-border)',
   borderRadius: '2px',
-  color: '#ffffff',
+  color: 'var(--color-fg)',
   textDecoration: 'none',
   fontSize: '0.95em',
   fontWeight: 500,
-  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.2)',
+  boxShadow: 'inset 0 0 0 1px var(--color-window-inner-border)',
   WebkitTapHighlightColor: 'transparent',
   transition: 'background-color 80ms ease, transform 60ms ease',
 };
