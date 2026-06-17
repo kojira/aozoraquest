@@ -11,18 +11,23 @@
 # - X-Content-Type-Options: MIME sniffing 抑止 (SPA fallback の MIME 事故対策にも効く)
 # - Referrer-Policy: 遷移先に full URL を漏らさない (プライバシー第一の方針と整合)
 # - Permissions-Policy: トラッキング系ブラウザ API (Topics 等) を全 disable
-# - CSP (enforce): frame-ancestors / base-uri / object-src だけ強制。本番動作を壊さない最小セット
-# - CSP-Report-Only: より厳しい完全版を観察モードで配信。違反は DevTools で確認できる
-#   (送信先サーバは持っていないので report-uri は付けない)。enforce へ昇格させる時の参考にする。
-#   connect-src は AT Protocol の任意 PDS (self-hosted も含む) と OAuth 経由のサードパーティ
-#   ホストに届くため `https:` で全許可。scheme 制限による mixed content だけ防げれば実用十分
+# - CSP (enforce): XSS の多層防御。**script の実行元を限定**するのが要 —
+#   self + wasm-unsafe-eval (WASM 推論) + jsdelivr (ONNX/transformers) + 初回テーマ
+#   インライン script の sha256 だけ許可。これで将来 XSS で文字列が注入されても、
+#   許可外の inline/外部 script は実行されない。
+#   ・img/media は AT Protocol の任意 PDS (self-host 含む) から来るので `https:` で広く
+#     許可 (画像/動画は非実行 sink なので scheme 制限で十分、ホスト固定すると壊れる)。
+#   ・connect も任意 PDS / OAuth 先に届くため `https:`。
+#   ・style は React のインラインスタイル (style={{}}) のため unsafe-inline 必須
+#     (スタイル注入は script 実行に比べ低リスク)。
+#   ※ index.html のインライン script を変更したら下の 'sha256-...' を更新すること。
+#     src/csp-inline-hash.test.ts が drift を検知して CI を落とす。
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: browsing-topics=(), join-ad-interest-group=(), run-ad-auction=()
-  Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.bsky.app https://*.bsky.app https://*.bsky.network https://i.ytimg.com; media-src 'self' blob: https://*.bsky.app https://*.bsky.network; connect-src 'self' https:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-YKin9zMHg8npsYTSijeNtStnfpbl4y3ojuowebzvlEM=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
