@@ -184,6 +184,9 @@ function ComposeDialog({
   // 複数枚を逐次処理する間「進んでいる」ことを見せる (高解像度 4 枚は数秒かかり、固まったと誤解されるため)
   const [compressProgress, setCompressProgress] = useState<{ done: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 添付完了の読み上げ用 (aria-live)。貼り付けは間接操作で「受け取った」合図が薄いので、
+  // ファイル選択・貼り付け共通でスクリーンリーダーに枚数を知らせる。
+  const [addNotice, setAddNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<DialogState[]>(images);
   imagesRef.current = images;
@@ -232,6 +235,9 @@ function ComposeDialog({
 
   // クリップボードから画像を貼り付けて添付する (スクショ等)。テキストだけの貼り付けは
   // 邪魔しない (画像が無ければ preventDefault せず通常の貼り付けに任せる)。
+  // 仕様: ハンドラはカード全体に付くので、alt (画像説明) 欄にフォーカス中に画像を貼っても
+  // その欄に紐づくのではなく**常に末尾へ新規画像として追加**する (差し替えは概念的に
+  // 複雑で混乱を招くため、「貼り付け=新規添付」に一貫させる)。
   function onPaste(e: React.ClipboardEvent) {
     if (replyTo) return; // 返信は画像添付不可 (showImageUi=false と揃える)
     if (loading || compressing) return; // 投稿中/圧縮中は受け付けない (ボタンの disabled と揃える)
@@ -297,12 +303,17 @@ function ComposeDialog({
       return;
     }
     if (added.length > 0) {
+      let total = 0;
       setImages((prev) => {
         const merged = [...prev, ...added];
         // 上限超過で落ちた分の objectURL を revoke (await を挟む間に prev が増えても漏らさない)
         for (const dropped of merged.slice(MAX_POST_IMAGES)) URL.revokeObjectURL(dropped.previewUrl);
-        return merged.slice(0, MAX_POST_IMAGES);
+        const next = merged.slice(0, MAX_POST_IMAGES);
+        total = next.length;
+        return next;
       });
+      // 貼り付け/選択どちらでも「添付された」ことを読み上げる (毎回更新で再アナウンス)。
+      setAddNotice(`画像を添付しました (${total}/${MAX_POST_IMAGES} 枚)`);
     }
     // スキップ内訳をまとめて 1 つの文言に
     const notes: string[] = [];
@@ -492,6 +503,15 @@ function ComposeDialog({
           disabled={loading}
           autoFocus
         />
+
+        {/* 添付完了の読み上げ (視覚的には非表示)。プレビューが画面外/圧縮が一瞬でも、
+           貼り付け/選択で「添付された」ことをスクリーンリーダーに伝える。 */}
+        <span
+          aria-live="polite"
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
+        >
+          {addNotice}
+        </span>
 
         {showImageUi && (
           <div style={{ marginTop: '0.5em', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
