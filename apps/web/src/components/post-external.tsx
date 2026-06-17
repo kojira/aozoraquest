@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { PostExternal } from '@/lib/post-embed';
 import { useTranslation } from '@/lib/translate';
 import { TranslationControls } from './post-body';
+import { safeLinkUri } from './post-text';
 
 /**
  * 外部リンクカード (app.bsky.embed.external#view)。
@@ -14,6 +15,10 @@ import { TranslationControls } from './post-body';
  */
 export function PostExternalCard({ external }: { external: PostExternal }) {
   const host = safeHost(external.uri);
+  // OG カードの uri は投稿者が自由に付けられる (embed)。post-text の facet link と
+  // 同じく javascript:/data: 等の保存型 XSS が成立するため http/https のみ許可。
+  // 許可外は href を付けず (= クリックしても遷移しない非リンクカード) にする。
+  const safeUri = safeLinkUri(external.uri);
   // useTranslation は uri=undefined or text=空 / 短い時は no-op (= isNonJapanese=false)
   // なので、title/desc が無い OG カードでも安全に呼べる。
   const titleHasText = !!external.title && external.title.length > 0;
@@ -60,7 +65,7 @@ export function PostExternalCard({ external }: { external: PostExternal }) {
       onClick={(e) => e.stopPropagation()}
     >
       <a
-        href={external.uri}
+        {...(safeUri ? { href: safeUri } : {})}
         target="_blank"
         rel="noopener noreferrer"
         style={{
