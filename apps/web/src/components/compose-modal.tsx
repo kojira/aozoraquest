@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useSession } from '@/lib/session';
 import { createPost, createPostWithImages, MAX_POST_IMAGES, type ReplyRef } from '@/lib/atproto';
 import { compressImage } from '@/lib/image-compress';
+import { imageFilesFromClipboard } from '@/lib/clipboard-images';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
@@ -226,6 +227,22 @@ function ComposeDialog({
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? []);
     e.target.value = ''; // 同じファイルを再選択しても change が起きるように
+    await addFiles(selected);
+  }
+
+  // クリップボードから画像を貼り付けて添付する (スクショ等)。テキストだけの貼り付けは
+  // 邪魔しない (画像が無ければ preventDefault せず通常の貼り付けに任せる)。
+  function onPaste(e: React.ClipboardEvent) {
+    if (replyTo) return; // 返信は画像添付不可 (showImageUi=false と揃える)
+    if (loading || compressing) return; // 投稿中/圧縮中は受け付けない (ボタンの disabled と揃える)
+    const files = imageFilesFromClipboard(e.clipboardData?.items);
+    if (files.length === 0) return; // 画像が無ければ通常のテキスト貼り付けに委ねる
+    e.preventDefault();
+    void addFiles(files);
+  }
+
+  // ファイル選択・クリップボード貼り付け共通の取り込み処理 (圧縮 → 上限内に収めて添付)。
+  async function addFiles(selected: File[]) {
     if (selected.length === 0) return;
 
     // 既存枚数 + 今回分が上限を超えるぶんは切り捨てて警告
@@ -425,6 +442,7 @@ function ComposeDialog({
           overflow: isColumn ? 'visible' : 'auto',
         }}
         onClick={isColumn ? undefined : (e) => e.stopPropagation()}
+        onPaste={onPaste}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4em' }}>
           <h3 style={{ margin: 0, fontSize: '1em' }}>{replyTo ? '返信' : '投稿する'}</h3>
@@ -576,6 +594,11 @@ function ComposeDialog({
               {compressing && (
                 <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
                   投稿用に画像を準備しています…
+                </span>
+              )}
+              {!compressing && images.length < MAX_POST_IMAGES && (
+                <span style={{ fontSize: '0.72em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
+                  貼り付け (クリップボード) でも添付できます
                 </span>
               )}
             </div>
