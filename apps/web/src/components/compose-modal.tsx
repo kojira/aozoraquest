@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useSession } from '@/lib/session';
 import { createPost, createPostWithImages, MAX_POST_IMAGES, type ReplyRef } from '@/lib/atproto';
 import { compressImage } from '@/lib/image-compress';
+import { imageFilesFromClipboard } from '@/lib/clipboard-images';
 import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
@@ -183,6 +184,9 @@ function ComposeDialog({
   // 複数枚を逐次処理する間「進んでいる」ことを見せる (高解像度 4 枚は数秒かかり、固まったと誤解されるため)
   const [compressProgress, setCompressProgress] = useState<{ done: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 添付完了の読み上げ用 (aria-live)。貼り付けは間接操作で「受け取った」合図が薄いので、
+  // ファイル選択・貼り付け共通でスクリーンリーダーに枚数を知らせる。
+  const [addNotice, setAddNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<DialogState[]>(images);
   imagesRef.current = images;
@@ -226,6 +230,25 @@ function ComposeDialog({
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? []);
     e.target.value = ''; // 同じファイルを再選択しても change が起きるように
+    await addFiles(selected);
+  }
+
+  // クリップボードから画像を貼り付けて添付する (スクショ等)。テキストだけの貼り付けは
+  // 邪魔しない (画像が無ければ preventDefault せず通常の貼り付けに任せる)。
+  // 仕様: ハンドラはカード全体に付くので、alt (画像説明) 欄にフォーカス中に画像を貼っても
+  // その欄に紐づくのではなく**常に末尾へ新規画像として追加**する (差し替えは概念的に
+  // 複雑で混乱を招くため、「貼り付け=新規添付」に一貫させる)。
+  function onPaste(e: React.ClipboardEvent) {
+    if (replyTo) return; // 返信は画像添付不可 (showImageUi=false と揃える)
+    if (loading || compressing) return; // 投稿中/圧縮中は受け付けない (ボタンの disabled と揃える)
+    const files = imageFilesFromClipboard(e.clipboardData?.items);
+    if (files.length === 0) return; // 画像が無ければ通常のテキスト貼り付けに委ねる
+    e.preventDefault();
+    void addFiles(files);
+  }
+
+  // ファイル選択・クリップボード貼り付け共通の取り込み処理 (圧縮 → 上限内に収めて添付)。
+  async function addFiles(selected: File[]) {
     if (selected.length === 0) return;
 
     // 既存枚数 + 今回分が上限を超えるぶんは切り捨てて警告
@@ -280,12 +303,17 @@ function ComposeDialog({
       return;
     }
     if (added.length > 0) {
+      let total = 0;
       setImages((prev) => {
         const merged = [...prev, ...added];
         // 上限超過で落ちた分の objectURL を revoke (await を挟む間に prev が増えても漏らさない)
         for (const dropped of merged.slice(MAX_POST_IMAGES)) URL.revokeObjectURL(dropped.previewUrl);
-        return merged.slice(0, MAX_POST_IMAGES);
+        const next = merged.slice(0, MAX_POST_IMAGES);
+        total = next.length;
+        return next;
       });
+      // 貼り付け/選択どちらでも「添付された」ことを読み上げる (毎回更新で再アナウンス)。
+      setAddNotice(`画像を添付しました (${total}/${MAX_POST_IMAGES} 枚)`);
     }
     // スキップ内訳をまとめて 1 つの文言に
     const notes: string[] = [];
@@ -425,6 +453,7 @@ function ComposeDialog({
           overflow: isColumn ? 'visible' : 'auto',
         }}
         onClick={isColumn ? undefined : (e) => e.stopPropagation()}
+        onPaste={onPaste}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4em' }}>
           <h3 style={{ margin: 0, fontSize: '1em' }}>{replyTo ? '返信' : '投稿する'}</h3>
@@ -474,6 +503,15 @@ function ComposeDialog({
           disabled={loading}
           autoFocus
         />
+
+        {/* 添付完了の読み上げ (視覚的には非表示)。プレビューが画面外/圧縮が一瞬でも、
+           貼り付け/選択で「添付された」ことをスクリーンリーダーに伝える。 */}
+        <span
+          aria-live="polite"
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
+        >
+          {addNotice}
+        </span>
 
         {showImageUi && (
           <div style={{ marginTop: '0.5em', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
@@ -576,6 +614,11 @@ function ComposeDialog({
               {compressing && (
                 <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
                   投稿用に画像を準備しています…
+                </span>
+              )}
+              {!compressing && images.length < MAX_POST_IMAGES && (
+                <span style={{ fontSize: '0.72em', color: 'var(--color-muted)', marginLeft: '0.5em' }}>
+                  貼り付け (クリップボード) でも添付できます
                 </span>
               )}
             </div>
