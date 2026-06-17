@@ -18,6 +18,9 @@
 #   壊れる) + 初回テーマインライン script の sha256 だけ許可。これで将来 XSS で文字列が
 #   注入されても、許可外の inline/外部 script は実行されない (blob script の生成自体に
 #   JS 実行が要るので、注入経路を塞いだ状態では blob: は実害にならない)。
+#   ・static.cloudflareinsights.com: Cloudflare Web Analytics のビーコンを CF がエッジで
+#     自動注入する (ソースには無い)。許可しないと毎ロード CSP 違反 + 解析が動かない。
+#     送信先 cloudflareinsights.com は connect-src https: でカバー済。
 #   ・img/media は AT Protocol の任意 PDS (self-host 含む) から来るので `https:` で広く
 #     許可 (画像/動画は非実行 sink なので scheme 制限で十分、ホスト固定すると壊れる)。
 #   ・connect も任意 PDS / OAuth 先に届くため `https:`。
@@ -30,7 +33,7 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: browsing-topics=(), join-ad-interest-group=(), run-ad-auction=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-YKin9zMHg8npsYTSijeNtStnfpbl4y3ojuowebzvlEM=' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-YKin9zMHg8npsYTSijeNtStnfpbl4y3ojuowebzvlEM=' blob: https://cdn.jsdelivr.net https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
