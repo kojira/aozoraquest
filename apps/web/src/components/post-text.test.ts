@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { segmentPost, type Facet, type FacetFeature } from './post-text';
+import { segmentPost, safeLinkUri, type Facet, type FacetFeature } from './post-text';
 
 // byte index は UTF-8。テスト用に文字列の byte offset を測るヘルパ。
 const enc = new TextEncoder();
@@ -74,5 +74,57 @@ describe('segmentPost', () => {
     const segs = segmentPost('@bob.test と #ねこ');
     expect(segs).toContainEqual({ kind: 'mention', text: '@bob.test', handle: 'bob.test' });
     expect(segs).toContainEqual({ kind: 'tag', text: '#ねこ', tag: 'ねこ' });
+  });
+
+  // ─── XSS: facet の uri は投稿者が自由に付けられるので scheme を検証する ───
+  it('link facet の uri が javascript: のときはリンク化せず素のテキストにする', () => {
+    const text = 'click here';
+    const facets = [facetAt(text, 'here', { $type: 'app.bsky.richtext.facet#link', uri: 'javascript:alert(document.cookie)' })];
+    const segs = segmentPost(text, facets);
+    // link セグメントを作らない (= <a href="javascript:..."> が描画されない)
+    expect(segs.some((s) => s.kind === 'link')).toBe(false);
+    // 原文は欠落しない
+    expect(segs.map((s) => s.text).join('')).toBe(text);
+  });
+
+  it('link facet の uri が data: のときもリンク化しない', () => {
+    const text = 'x data y';
+    const facets = [facetAt(text, 'data', { $type: 'app.bsky.richtext.facet#link', uri: 'data:text/html,<script>alert(1)</script>' })];
+    const segs = segmentPost(text, facets);
+    expect(segs.some((s) => s.kind === 'link')).toBe(false);
+  });
+
+  it('link facet の http/https はこれまで通りリンク化する', () => {
+    const text = 'a link b';
+    for (const uri of ['https://example.com/x', 'http://example.com']) {
+      const facets = [facetAt(text, 'link', { $type: 'app.bsky.richtext.facet#link', uri })];
+      expect(segmentPost(text, facets)).toContainEqual({ kind: 'link', text: 'link', uri });
+    }
+  });
+});
+
+describe('safeLinkUri', () => {
+  it('http/https はそのまま返す', () => {
+    expect(safeLinkUri('https://example.com/x')).toBe('https://example.com/x');
+    expect(safeLinkUri('http://example.com')).toBe('http://example.com');
+  });
+
+  it('javascript: / data: / vbscript: / mailto: は null', () => {
+    expect(safeLinkUri('javascript:alert(1)')).toBeNull();
+    expect(safeLinkUri('data:text/html,x')).toBeNull();
+    expect(safeLinkUri('vbscript:msgbox(1)')).toBeNull();
+    expect(safeLinkUri('mailto:a@b.com')).toBeNull();
+  });
+
+  it('空白/制御文字による scheme 回避 (java\\tscript:) も null', () => {
+    expect(safeLinkUri(' javascript:alert(1)')).toBeNull();
+    expect(safeLinkUri('java\tscript:alert(1)')).toBeNull();
+    expect(safeLinkUri('JavaScript:alert(1)')).toBeNull();
+  });
+
+  it('相対 URL や不正な文字列は null', () => {
+    expect(safeLinkUri('/foo/bar')).toBeNull();
+    expect(safeLinkUri('not a url')).toBeNull();
+    expect(safeLinkUri('')).toBeNull();
   });
 });

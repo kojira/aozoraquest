@@ -60,11 +60,30 @@ function autoLinkSegments(text: string): PostSegment[] {
   return out;
 }
 
+/**
+ * リンク先 URI を http/https のみ許可する。facet の uri は投稿者が自由に付けられる
+ * ため、`javascript:` / `data:` / `vbscript:` 等を `<a href>` に通すと、クリックで
+ * 閲覧者のオリジン上でコードが走る (保存型 XSS)。`new URL` で正規化して scheme を
+ * 判定するので、`java\tscript:` のような空白/制御文字による回避もパーサ側で潰れる。
+ * 許可外は null を返し、呼び出し側は素のテキストにフォールバックする。
+ */
+export function safeLinkUri(uri: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return null; // 相対 URL や不正な文字列は弾く (facet の uri は絶対 URL 前提)
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? uri : null;
+}
+
 /** facet 1 つ分のセグメント化。未知 feature は素のテキストとして返す。 */
 function featureSegment(segment: string, feature: FacetFeature | undefined): PostSegment {
   const t = feature?.$type;
   if (t === 'app.bsky.richtext.facet#link' && feature?.uri) {
-    return { kind: 'link', text: segment, uri: feature.uri };
+    // http/https 以外 (javascript: 等) はリンク化せず素のテキストに (XSS 回避)
+    const safe = safeLinkUri(feature.uri);
+    return safe ? { kind: 'link', text: segment, uri: safe } : { kind: 'text', text: segment };
   }
   if (t === 'app.bsky.richtext.facet#mention' && feature?.did) {
     return { kind: 'mention', text: segment, handle: segment.replace(/^@/, '') };
@@ -160,9 +179,13 @@ function renderSegment(seg: PostSegment, key: number): ReactNode {
 }
 
 function ExternalLink({ href, label }: { href: string; label: string }) {
+  // 多層防御: セグメント化側でも弾いているが、ここでも http/https 以外は
+  // リンクにせず素のテキストにして、危険な scheme が <a href> に届かないようにする。
+  const safe = safeLinkUri(href);
+  if (!safe) return <span style={{ wordBreak: 'break-all' }}>{label}</span>;
   return (
     <a
-      href={href}
+      href={safe}
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
