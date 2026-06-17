@@ -12,9 +12,12 @@
 # - Referrer-Policy: 遷移先に full URL を漏らさない (プライバシー第一の方針と整合)
 # - Permissions-Policy: トラッキング系ブラウザ API (Topics 等) を全 disable
 # - CSP (enforce): XSS の多層防御。**script の実行元を限定**するのが要 —
-#   self + wasm-unsafe-eval (WASM 推論) + jsdelivr (ONNX/transformers) + 初回テーマ
-#   インライン script の sha256 だけ許可。これで将来 XSS で文字列が注入されても、
-#   許可外の inline/外部 script は実行されない。
+#   self + wasm-unsafe-eval (WASM 推論) + jsdelivr (ONNX/transformers) + blob:
+#   (transformers.js は通常ブラウザで ONNX の wasm glue .mjs を fetch→Blob 化して
+#   worker 内で import() するため。これが無いと認知機能分析/精霊生成が enforce 下で
+#   壊れる) + 初回テーマインライン script の sha256 だけ許可。これで将来 XSS で文字列が
+#   注入されても、許可外の inline/外部 script は実行されない (blob script の生成自体に
+#   JS 実行が要るので、注入経路を塞いだ状態では blob: は実害にならない)。
 #   ・img/media は AT Protocol の任意 PDS (self-host 含む) から来るので `https:` で広く
 #     許可 (画像/動画は非実行 sink なので scheme 制限で十分、ホスト固定すると壊れる)。
 #   ・connect も任意 PDS / OAuth 先に届くため `https:`。
@@ -27,7 +30,7 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: browsing-topics=(), join-ad-interest-group=(), run-ad-auction=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-YKin9zMHg8npsYTSijeNtStnfpbl4y3ojuowebzvlEM=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-YKin9zMHg8npsYTSijeNtStnfpbl4y3ojuowebzvlEM=' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
