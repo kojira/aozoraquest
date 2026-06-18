@@ -6,6 +6,10 @@
  * 世界観に合わせ、本体 (styles.css) と同じ青空→草地グラデーション + 精霊の雲マスコット
  * (spirit-icon.tsx の SVG を流用) + タイトルで構成する。フォントはアプリと同じ
  * Hiragino Maru Gothic / Noto Sans JP 系。playwright で 1200×630 を screenshot する。
+ *
+ * 注意: Hiragino Maru Gothic は macOS 専用フォントなので、再生成は macOS で行うこと。
+ * Linux/CI で走らせると Noto Sans JP 以降の fallback に落ち、字形が変わる。成果物
+ * (apps/web/public/og.png) はコミット済みなので通常は再生成不要。
  */
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
@@ -88,8 +92,14 @@ const html = `<!doctype html><html><head><meta charset="utf-8">
 </body></html>`;
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
-await page.setContent(html, { waitUntil: 'networkidle' });
-await page.locator('.og').screenshot({ path: out });
-await browser.close();
-console.log('wrote', out);
+try {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
+  await page.setContent(html, { waitUntil: 'networkidle' });
+  await page.locator('.og').screenshot({ path: out });
+  console.log('wrote', out);
+} catch (e) {
+  console.error(e);
+  process.exitCode = 1;
+} finally {
+  await browser.close();
+}
