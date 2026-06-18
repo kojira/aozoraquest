@@ -68,11 +68,26 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
+    // ResizeObserver のコールバックを rAF でデバウンスする。同一フレーム内の
+    // 複数発火を 1 回に畳み込み、measure → setState → reflow → 再発火 の
+    // タイトループ ("ResizeObserver loop" / スクロール震え) を断つ。値が変わら
+    // なければ setContainerMargin は React がバイパスするので再 render も起きない。
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        measure();
+      });
+    };
+    const ro = new ResizeObserver(schedule);
     ro.observe(containerEl);
     const above = parentRef.current?.parentElement;
     if (above) ro.observe(above);
-    return () => ro.disconnect();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, [containerEl]);
 
   // 既知の制約 (旧実装から同じ): window モードの scrollMargin は render 中に
@@ -91,7 +106,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     // container モードでは container 先頭 = リスト先頭なので 0
     // (column 内にヘッダー等を挟む場合は利用側で要再考)。
     scrollMargin,
-    measureElement: (el) => el.getBoundingClientRect().height,
+    // 実測高さを整数に丸める。getBoundingClientRect().height は小数を返し、
+    // 行の高さが 0.x px 単位で揺れると translateY 補正 → 再測定 → … と
+    // サブピクセルのフィードバックループ (スクロール震え/shimmer) を起こしうる。
+    // 丸めることでこの振動源を断つ (体感の高さ精度には影響しない)。
+    measureElement: (el) => Math.round(el.getBoundingClientRect().height),
   });
 
   // onEndReached: 末尾からの距離で発火
