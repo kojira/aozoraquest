@@ -63,7 +63,7 @@ self.addEventListener('message', async (event: MessageEvent<IncomingMessage>) =>
       return;
     }
     if (msg.type === 'embed') {
-      if (!extractor) await ensureExtractor('webgpu');
+      if (!extractor) await ensureExtractor('wasm');
       const output = await extractor(msg.text, { pooling: 'mean', normalize: true });
       const vec = output.data as Float32Array;
       // 所有権を移してコピーを避ける
