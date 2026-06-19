@@ -76,12 +76,19 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
   const cursorRef = useRef<string | undefined>(undefined);
   const inflight = useRef(false);
   const doneRef = useRef(false);
+  // 連続で「ほぼ重複ページ」(新規が少ない) を踏んだ回数。Bluesky が cursor 付きで
+  // 重複だらけのページを返し続けるケースで loadMore 暴走 (→ モバイル OOM) を止める。
+  const lowProgressRef = useRef(0);
   const fetchPageRef = useRef(fetchPage);
   fetchPageRef.current = fetchPage;
   const keyOfRef = useRef(keyOf);
   keyOfRef.current = keyOf;
   const cacheRef = useRef(cache);
   cacheRef.current = cache;
+  // done 判定 (新規ゼロ検出) 用に、コミット済みの items を ref で参照する。
+  // 件数カウントにのみ使う (state 更新は functional updater のまま = refresh と競合しない)。
+  const itemsRef = useRef<T[]>([]);
+  itemsRef.current = items;
   // hydrate epoch: deps 変化ごとに増やすことで、古い cache.load() の解決が
   // 新しい hydrate を上書きしないようにする (race ガード)
   const hydrateEpoch = useRef(0);
@@ -96,6 +103,17 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
     try {
       const nextCursor = resetting ? undefined : cursorRef.current;
       const page = await fetchPageRef.current(nextCursor);
+      // 新規追加件数を、コミット済み items に対してカウントする (done 判定用)。
+      const baseForCount = resetting ? [] : itemsRef.current;
+      const seenForCount = new Set(baseForCount.map((x) => keyOfRef.current(x)));
+      let added = 0;
+      for (const it of page.items) {
+        const k = keyOfRef.current(it);
+        if (!seenForCount.has(k)) {
+          seenForCount.add(k);
+          added += 1;
+        }
+      }
       setItems((prev) => {
         const base = resetting ? [] : prev;
         const seen = new Set(base.map((x) => keyOfRef.current(x)));
@@ -110,7 +128,19 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
         return merged;
       });
       cursorRef.current = page.cursor;
-      if (!page.cursor || page.items.length === 0) {
+      // 低進捗バックオフ: append fetch で「ページの大半が重複」(新規が少ない) のが
+      // 連続したら done にする。Bluesky が cursor 付きで重複だらけのページを返し
+      // 続けるケースで、onEndReached → loadMore が空振りフェッチ (30 件取得 + パース)
+      // を連打し、ネットワーク/メモリのチャーンでモバイルが OOM するのを防ぐ。
+      // 健全な TL は毎ページ大量の新規が来るので発火しない。
+      if (!resetting && page.items.length > 0) {
+        const lowThreshold = Math.max(3, Math.floor(page.items.length * 0.3));
+        if (added < lowThreshold) lowProgressRef.current += 1;
+        else lowProgressRef.current = 0;
+      }
+      // done にする条件: 正規の終端 (cursor 無し / 空ページ) か、
+      // 低進捗が 2 連続 (= これ以上 loadMore しても新規はほぼ無い)。
+      if (!page.cursor || page.items.length === 0 || lowProgressRef.current >= 2) {
         doneRef.current = true;
         setDone(true);
       }
@@ -133,6 +163,7 @@ export function useInfiniteFeed<T>(opts: UseInfiniteFeedOptions<T>): InfiniteFee
     setItems([]);
     cursorRef.current = undefined;
     doneRef.current = false;
+    lowProgressRef.current = 0;
     setDone(false);
     setErr(null);
     if (!enabled) return;
