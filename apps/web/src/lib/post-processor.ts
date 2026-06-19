@@ -31,8 +31,8 @@ import {
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
-import { getCognitiveOnnxClassifier } from './cognitive-onnx';
-import { getEmbedder } from './embedder';
+import { CognitiveOnnxClassifier } from './cognitive-onnx';
+import { Embedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
 import { deriveActionTypes, type PostStructure } from './structural-action';
 
@@ -115,22 +115,40 @@ export async function processSelfPost(
   if (trimmed.length === 0) return empty;
 
   // 1) 埋め込みは action 用に 1 回 (cognitive は fine-tune 済 ONNX 直接推論)
-  const embedder = getEmbedder();
-  await embedder.init().catch(() => { /* 既に init 済みなら no-op */ });
-  const cog = getCognitiveOnnxClassifier();
-  await cog.init().catch(() => { /* 既に init 済みなら no-op */ });
-  const vec = await embedder.embed(trimmed);
+  //
+  // この解析は投稿のたびに走る。Worker (WASM + ONNX tensor) を開きっぱなしにすると
+  // モバイル Safari では tensor がプロセスメモリに蓄積し、メモリ監視 (jetsam) が
+  // タブを破棄 → 投稿直後に画面全体がリロードされる。よって推論後に必ず解放する。
+  //
+  // ただし共有 singleton (getEmbedder / getCognitiveOnnxClassifier) を解放すると、
+  // 同じ Worker を使う他フロー (診断・相性ランキングの裏診断・TL 認知分析) を巻き
+  // 込んで terminate し、永久 hang やスコア欠落を起こす。そこで投稿解析専用の
+  // ローカルインスタンスを立て、これだけを finally で dispose する。共有 singleton
+  // には一切触れない。モデル本体は Cache/IDB 済なので再 DL は無い (WASM 構築のみ)。
+  const embedder = new Embedder();
+  const cog = new CognitiveOnnxClassifier();
+  let actResult: Awaited<ReturnType<typeof classifyFromVec>>;
+  let postCognitive: CognitiveScores;
+  try {
+    await embedder.init().catch(() => { /* init 失敗時は embed 側が reject → 下で throw */ });
+    await cog.init().catch(() => { /* ONNX 不可なら classifyPost が null → prototype fallback */ });
+    const vec = await embedder.embed(trimmed);
 
-  // 2) 行動 (vec) & 認知 (text) を並列
-  const [actResult, onnxCognitive] = await Promise.all([
-    classifyFromVec(vec),
-    cog.classifyPost(trimmed).catch((e) => {
-      console.warn('[cognitive] ONNX classify failed, falling back to prototype', e);
-      return null;
-    }),
-  ]);
-  // ONNX が使えなかった場合は従来の prototype embedding にフォールバック
-  const postCognitive = onnxCognitive ?? await classifyCognitiveFromVec(vec, embedder);
+    // 2) 行動 (vec) & 認知 (text) を並列
+    const [act, onnxCognitive] = await Promise.all([
+      classifyFromVec(vec),
+      cog.classifyPost(trimmed).catch((e) => {
+        console.warn('[cognitive] ONNX classify failed, falling back to prototype', e);
+        return null;
+      }),
+    ]);
+    actResult = act;
+    // ONNX が使えなかった場合は従来の prototype embedding にフォールバック
+    postCognitive = onnxCognitive ?? await classifyCognitiveFromVec(vec, embedder);
+  } finally {
+    cog.dispose();
+    embedder.dispose();
+  }
 
   const action = actResult.action;
   const actionType = action ? (action as ActionType) : null;

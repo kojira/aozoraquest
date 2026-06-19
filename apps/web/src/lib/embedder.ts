@@ -25,7 +25,7 @@ export class Embedder {
     return () => this.listeners.delete(l);
   }
 
-  async init(device: 'webgpu' | 'wasm' = 'webgpu'): Promise<void> {
+  async init(device: 'webgpu' | 'wasm' = 'wasm'): Promise<void> {
     if (this.ready) return this.ready;
     this.worker = new Worker(new URL('./embedder.worker.ts', import.meta.url), { type: 'module' });
     this.worker.addEventListener('message', (ev) => this.onMessage(ev));
