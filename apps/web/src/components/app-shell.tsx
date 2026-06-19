@@ -129,6 +129,10 @@ export function AppShell() {
       // 該当カラムを削除済みでも「ホーム」等で迷子にならないよう先頭カラムへ
       document.querySelector('.workspace-column');
     el?.scrollIntoView({ behavior, inline: 'start', block: 'nearest' });
+    // 既にそのカラムを見ている時の再タップ等で、カラム内の縦スクロールも最上部へ戻す
+    // (ホーム再タップで TL の先頭に戻る一般的な挙動)。縦スクロール要素は
+    // .workspace-column-body (VirtualFeed の scrollParent)。
+    el?.querySelector('.workspace-column-body')?.scrollTo({ top: 0, behavior });
   }
 
   return (
