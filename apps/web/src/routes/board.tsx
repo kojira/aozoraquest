@@ -25,7 +25,9 @@ import {
   emptyMessageForBoard,
   QuestCard,
   ApprovalPendingBanner,
+  ReportPendingBanner,
 } from '@/components/column-content/board-shared';
+import type { EffectiveState } from '@aozoraquest/core';
 import { BookIcon, PlusIcon, CalendarIcon } from '@/components/icons';
 import { ActionLink } from '@/components/action-link';
 import { useSession } from '@/lib/session';
@@ -34,7 +36,7 @@ export function Board() {
   const session = useSession();
   const signedIn = session.status === 'signed-in';
   const [columns, setColumns] = useState<Column[]>(() => loadColumns());
-  const { index, myQuests, myApplicationQuestUris, pendingApproval, err } = useBoardData();
+  const { index, myQuests, myApplicationQuestUris, pendingApproval, assigneeStates, reportPending, err } = useBoardData();
   const pendingUris = useMemo(() => new Set(pendingApproval.map((q) => q.uri)), [pendingApproval]);
 
   // 未ログイン時は「自分が出した / 応募」など自分前提のカラムを描画しない
@@ -86,8 +88,9 @@ export function Board() {
 
       {err && <p style={{ color: 'var(--color-danger)' }}>取得に失敗: {err}</p>}
 
-      {/* 承認待ち (完了報告が届いた自分の依頼) を最上部で promote。各クエストへ直リンク。 */}
+      {/* 「自分の番」を最上部で promote。発注者=承認待ち / 受託者=報告する番。各クエストへ直リンク。 */}
       <ApprovalPendingBanner pending={pendingApproval} />
+      <ReportPendingBanner pending={reportPending} />
 
       <div className="board-columns">
         {visibleColumns.map((col) => (
@@ -96,6 +99,7 @@ export function Board() {
             column={col}
             indexData={{ index, myQuests, myApplicationQuestUris }}
             pendingUris={pendingUris}
+            assigneeStates={assigneeStates}
             selfDid={session.did ?? null}
             onRemove={() => removeColumn(col.id)}
           />
@@ -173,11 +177,12 @@ interface BoardInnerColumnViewProps {
     myApplicationQuestUris: ReturnType<typeof useBoardData>['myApplicationQuestUris'];
   };
   pendingUris: Set<string>;
+  assigneeStates: Map<string, EffectiveState>;
   selfDid: string | null;
   onRemove: () => void;
 }
 
-function BoardInnerColumnView({ column, indexData, pendingUris, selfDid, onRemove }: BoardInnerColumnViewProps) {
+function BoardInnerColumnView({ column, indexData, pendingUris, assigneeStates, selfDid, onRemove }: BoardInnerColumnViewProps) {
   const { index, myQuests, myApplicationQuestUris } = indexData;
   const items = useMemo(
     () => filterForBoard(column, index, myQuests, myApplicationQuestUris, selfDid),
@@ -198,11 +203,19 @@ function BoardInnerColumnView({ column, indexData, pendingUris, selfDid, onRemov
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>{emptyMessageForBoard(column)}</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {items.map((q) => (
-            <li key={q.uri}>
-              <QuestCard summary={q} expired={isExpiredSummary(q)} needsApproval={pendingUris.has(q.uri)} />
-            </li>
-          ))}
+          {items.map((q) => {
+            const aState = column.kind === 'assigned' ? assigneeStates.get(q.uri) : undefined;
+            return (
+              <li key={q.uri}>
+                <QuestCard
+                  summary={q}
+                  expired={isExpiredSummary(q)}
+                  needsApproval={pendingUris.has(q.uri)}
+                  {...(aState ? { assigneeState: aState } : {})}
+                />
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
