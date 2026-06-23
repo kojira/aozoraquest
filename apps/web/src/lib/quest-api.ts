@@ -465,6 +465,25 @@ export async function listApplicationsFor(
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+/** ある DID が「受託したクエスト」(= assignee==did) の一覧。
+ *  自分の応募 (questApplication) から quest URI を集め、各 quest を発注者 PDS から
+ *  resolve して assignee==did のものだけ返す。discovery 不要で軽量 (応募数ぶんの read)。
+ *  経験値 (questXpScalar) 算出や受託履歴で使う。 */
+export async function listReceivedQuests(agent: Agent, did: Did): Promise<UserQuest[]> {
+  const apps = await listMyApplications(agent, did);
+  const questUris = Array.from(new Set(apps.map(a => a.questUri)));
+  const out: UserQuest[] = [];
+  for (const u of questUris) {
+    try {
+      const q = await getQuest(agent, u);
+      if (q && q.assignee === did) out.push(q);
+    } catch (e) {
+      console.warn('[quest-api] resolve received quest failed', u, e);
+    }
+  }
+  return out;
+}
+
 /** ある DID が出した応募一覧 (withdrawn 含む。フィルタは UI 側で)。
  *  対象 DID の PDS から公開 read する (ポートフォリオで他人の did も渡るため)。 */
 export async function listMyApplications(_agent: Agent, did: Did, limit = 100): Promise<QuestApplication[]> {

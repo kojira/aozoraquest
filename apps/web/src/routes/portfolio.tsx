@@ -16,11 +16,10 @@ import {
   summarize,
   distinctRecipients,
   distinctRequesters,
-  questXpEarned,
+  questXpScalar,
   type UserQuest,
   type OutcomeSummary,
 } from '@aozoraquest/core';
-import { RadarChart } from '@/components/radar-chart';
 import { useSession } from '@/lib/session';
 import {
   listIssuedQuests,
@@ -114,9 +113,9 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
 
   const completedIssued = useMemo(() => (issued ?? []).filter(q => q.status === 'completed'), [issued]);
   const completedReceived = useMemo(() => (received ?? []).filter(q => q.status === 'completed'), [received]);
-  // 受託して完了したクエストから得た累計ステータス XP (完了集合からの派生)。
-  const questXp = useMemo(() => questXpEarned(completedReceived, did ?? ''), [completedReceived, did]);
-  const questXpTotal = questXp.atk + questXp.def + questXp.agi + questXp.int + questXp.luk;
+  // 受託して完了したクエストから得た累計経験値 (完了集合からの派生 = 二重加算なし)。
+  // 全体 LV と現職 LV の両方に加算される (固定 100 XP/件)。
+  const questXpTotal = useMemo(() => questXpScalar(completedReceived, did ?? ''), [completedReceived, did]);
 
   /** 受託者視点: 発注者 DID → 獲得 pt の合計 */
   const receivedByIssuer = useMemo(() => {
@@ -182,17 +181,14 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
 
       {questXpTotal > 0 && (
         <section style={{ marginTop: '1em' }} className="dq-window">
-          <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>クエストで得たステータス XP</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1em', flexWrap: 'wrap' }}>
-            <RadarChart stats={questXp} size={140} normalize showValues />
-            <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-              受託して完了したクエストの内容 (タグ) に応じて、各ステータスに合計
-              <strong style={{ color: 'var(--color-accent)' }}> {questXpTotal.toLocaleString()} XP</strong> を獲得。
-              <span style={{ display: 'block', marginTop: '0.3em', fontSize: '0.92em' }}>
-                ※ 投稿から診断した「気質ステータス」とは別の、冒険 (受託) で稼いだ経験値です。
-                図は配分のバランス、量は合計 XP を参照してください。
-              </span>
-            </div>
+          <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>クエストで得た経験値</h3>
+          <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+            受託して完了したクエストで、累計
+            <strong style={{ color: 'var(--color-accent)' }}> {questXpTotal.toLocaleString()} XP</strong>{' '}
+            を獲得しました (1 件あたり 100 XP)。
+            <span style={{ display: 'block', marginTop: '0.3em', fontSize: '0.92em' }}>
+              ※ この経験値は<strong>全体 LV</strong> と<strong>現職 LV</strong> の両方に加算されます。
+            </span>
           </div>
         </section>
       )}
