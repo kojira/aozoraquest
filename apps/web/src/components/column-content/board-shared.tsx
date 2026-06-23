@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
 import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery, questPath } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
-import { needsRequesterApproval, type UserQuest } from '@aozoraquest/core';
+import { needsRequesterApproval, effectiveState, type EffectiveState, type UserQuest } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { RewardPoints } from '@/components/handle';
@@ -30,6 +30,12 @@ export function useBoardData() {
   // 自分が発注したクエストのうち「受託者の完了報告が届き承認待ち」のもの。
   // status は受託者が書けず assigned のままなので、completion record から判定する。
   const [pendingApproval, setPendingApproval] = useState<UserQuest[]>([]);
+  // 自分が受託したクエストの effective state (uri → state)。受託中カラムのカードで
+  // 「あなたが報告する番 / 承認待ち / やり直し」を出し分けるのに使う。
+  const [assigneeStates, setAssigneeStates] = useState<Map<string, EffectiveState>>(new Map());
+  // 上記のうち「あなたが (再)完了報告する番」(IN_PROGRESS / REVISION_REQUESTED) のクエスト。
+  // 発注者の pendingApproval と対称な、受託者向けの気づき導線 (ReportPendingBanner)。
+  const [reportPending, setReportPending] = useState<UserQuest[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   // 集約 Worker が未デプロイの間は、発見ディレクトリの DID 群 (+ 自分) から
@@ -52,6 +58,47 @@ export function useBoardData() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent, aggregationKey]);
+
+  // 受託者視点: index から「自分が受託 (assignee==自分 かつ status==assigned)」の
+  // クエストを拾い、completion を読んで effective state を出す。発注者の承認待ち判定
+  // (下の effect) と対称。index ロード後に走る。
+  useEffect(() => {
+    if (!index || !selfDid) {
+      setAssigneeStates(new Map());
+      setReportPending([]);
+      return;
+    }
+    const mine = index.quests.filter((q) => q.assignee === selfDid && q.status === 'assigned');
+    if (mine.length === 0) {
+      setAssigneeStates(new Map());
+      setReportPending([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const states = new Map<string, EffectiveState>();
+      const pend: UserQuest[] = [];
+      await Promise.all(mine.map(async (s) => {
+        const q = summaryToQuest(s);
+        try {
+          const comps = await listCompletionsFor(undefined, q);
+          const st = effectiveState(q, comps);
+          states.set(q.uri, st);
+          if (st === 'IN_PROGRESS' || st === 'REVISION_REQUESTED') pend.push(q);
+        } catch (e) {
+          console.warn('[board] assignee effectiveState', e);
+          // 失敗時は「報告する番」に倒す (= 受託者が見落とすより、出して気づかせる)
+          states.set(q.uri, 'IN_PROGRESS');
+          pend.push(q);
+        }
+      }));
+      if (!cancelled) {
+        setAssigneeStates(states);
+        setReportPending(pend);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [index, selfDid]);
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -87,7 +134,27 @@ export function useBoardData() {
     return () => { cancelled = true; };
   }, [session.status, session.agent, session.did]);
 
-  return { index, myQuests, myApplicationQuestUris, pendingApproval, err, sessionDid: session.did ?? null };
+  return { index, myQuests, myApplicationQuestUris, pendingApproval, assigneeStates, reportPending, err, sessionDid: session.did ?? null };
+}
+
+/** QuestIndexSummary を effectiveState / listCompletionsFor が必要とする最小 UserQuest に。
+ *  これらは uri/did/status/assignee/deadline しか見ないので body 等はダミーで十分。 */
+function summaryToQuest(s: QuestIndexSummary): UserQuest {
+  const q: UserQuest = {
+    uri: s.uri,
+    did: s.did,
+    title: s.title,
+    body: '',
+    tags: s.tags,
+    visibility: 'public',
+    status: s.status as UserQuest['status'],
+    rewardPoints: s.rewardPoints,
+    createdAt: s.createdAt,
+    updatedAt: s.createdAt,
+  };
+  if (s.assignee !== undefined) q.assignee = s.assignee;
+  if (s.deadline !== undefined) q.deadline = s.deadline;
+  return q;
 }
 
 export function filterForBoard(
@@ -160,14 +227,31 @@ export function isExpiredSummary(s: QuestIndexSummary): boolean {
   return new Date(s.deadline) < new Date();
 }
 
-export function QuestCard({ summary, expired, needsApproval }: { summary: QuestIndexSummary; expired?: boolean; needsApproval?: boolean }) {
+/** 受託者カードの状態バッジ文言 (あなたの番かどうか)。null なら出さない。 */
+function assigneeBadge(state: EffectiveState): { text: string; accent: boolean } | null {
+  if (state === 'IN_PROGRESS')        return { text: '● あなたが完了報告する番', accent: true };
+  if (state === 'REVISION_REQUESTED') return { text: '● やり直し依頼 — 再報告する番', accent: true };
+  if (state === 'AWAITING_APPROVAL')  return { text: '承認待ち（相手の番）', accent: false };
+  return null;
+}
+
+export function QuestCard({ summary, expired, needsApproval, assigneeState }: { summary: QuestIndexSummary; expired?: boolean; needsApproval?: boolean; assigneeState?: EffectiveState }) {
+  const badge = assigneeState ? assigneeBadge(assigneeState) : null;
+  // あなたの番 (発注者=承認 / 受託者=報告) のときカードを accent 強調する。
+  const myTurn = needsApproval || (badge?.accent ?? false);
   return (
     <Link to={questPath(summary.uri)} style={{ textDecoration: 'none' }}>
-      <div className="dq-window compact" style={{ borderColor: needsApproval ? 'var(--color-accent)' : expired ? 'var(--color-muted)' : undefined }}>
+      <div className="dq-window compact" style={{ borderColor: myTurn ? 'var(--color-accent)' : expired ? 'var(--color-muted)' : undefined }}>
         {needsApproval && (
           // 発注者の「完了報告が来た = 承認すれば達成」を見逃さないための強調バッジ
           <div style={{ fontSize: '0.72em', fontWeight: 700, color: 'var(--color-accent)', marginBottom: '0.2em' }}>
             ● 承認待ち（完了報告が届いています）
+          </div>
+        )}
+        {!needsApproval && badge && (
+          // 受託者の「自分の番か / 相手待ちか」を一覧で示す (発注者バッジと対称)
+          <div style={{ fontSize: '0.72em', fontWeight: badge.accent ? 700 : 400, color: badge.accent ? 'var(--color-accent)' : 'var(--color-muted)', marginBottom: '0.2em' }}>
+            {badge.text}
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5em' }}>
@@ -180,8 +264,8 @@ export function QuestCard({ summary, expired, needsApproval }: { summary: QuestI
           {summary.tags.slice(0, 3).map(t => <span key={t}>#{t.replace(/^#/, '')}</span>)}
           <span style={{ marginLeft: 'auto' }}>
             {expired ? '期限切れ' : summary.deadline ? `〆 ${formatDate(summary.deadline)}` : ''}
-            {/* needsApproval のときは上の accent バッジが状態を示すので muted ラベルは重複させない */}
-            {!needsApproval && summary.status !== 'open' && <span style={{ marginLeft: '0.6em' }}>{labelOf(summary.status)}</span>}
+            {/* needsApproval / assignee バッジが状態を示すときは muted ラベルを重複させない */}
+            {!needsApproval && !badge && summary.status !== 'open' && <span style={{ marginLeft: '0.6em' }}>{labelOf(summary.status)}</span>}
           </span>
         </div>
       </div>
@@ -207,6 +291,32 @@ export function ApprovalPendingBanner({ pending }: { pending: UserQuest[] }) {
           <li key={q.uri} style={{ marginTop: '0.25em' }}>
             <Link to={questPath(q.uri)} style={{ fontSize: '0.82em', wordBreak: 'break-word' }}>
               「{q.title}」を承認する →
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 受託者の「(再)完了報告する番」が 1 件以上あるとき、掲示板上部に出す気づき導線。
+ *  発注者の ApprovalPendingBanner と対称。`pending` は useBoardData が completion record
+ *  から effectiveState で算出済み (IN_PROGRESS / REVISION_REQUESTED)。 */
+export function ReportPendingBanner({ pending }: { pending: UserQuest[] }) {
+  if (pending.length === 0) return null;
+  return (
+    <div className="dq-window compact" style={{ borderColor: 'var(--color-accent)', background: 'rgba(159,215,255,0.08)', marginBottom: '0.5em' }}>
+      <div style={{ fontSize: '0.85em', fontWeight: 700, color: 'var(--color-accent)' }}>
+        ● あなたが完了報告する番が {pending.length} 件
+      </div>
+      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.2em' }}>
+        受託したクエストです。作業が終わったら各クエストを開いて「完了を報告」しましょう。
+      </div>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '0.4em 0 0' }}>
+        {pending.map((q) => (
+          <li key={q.uri} style={{ marginTop: '0.25em' }}>
+            <Link to={questPath(q.uri)} style={{ fontSize: '0.82em', wordBreak: 'break-word' }}>
+              「{q.title}」を報告する →
             </Link>
           </li>
         ))}
