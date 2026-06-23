@@ -5,7 +5,7 @@ import {
   isValidCompletion,
   needsRequesterApproval,
   effectiveState,
-  questXpEarned,
+  questXpScalar,
   outcomeOf,
   holdings,
   totalIssued,
@@ -13,7 +13,6 @@ import {
   distinctRecipients,
   distinctRequesters,
   summarize,
-  statXpDistribution,
   formatQuestAnnouncement,
   formatNotificationPost,
   checkIssuanceLimits,
@@ -185,23 +184,25 @@ describe('effectiveState (唯一の真実)', () => {
   });
 });
 
-describe('questXpEarned (完了集合からの派生 XP)', () => {
+describe('questXpScalar (完了集合からの派生経験値)', () => {
   const me = 'did:plc:me';
-  it('自分が受託して完了したクエストの statXpDistribution を合算', () => {
+  it('自分が受託して完了したクエスト 1 件あたり固定 100 XP を合算', () => {
     const quests = [
-      mk({ uri: 'at://x/1', status: 'completed', assignee: me, tags: ['code'] }),    // 100 を code 配分
-      mk({ uri: 'at://x/2', status: 'completed', assignee: me, tags: ['illust'] }),  // 100 を illust 配分
-      mk({ uri: 'at://x/3', status: 'assigned', assignee: me, tags: ['code'] }),     // 未完了 → 除外
-      mk({ uri: 'at://x/4', status: 'completed', assignee: 'did:plc:other', tags: ['code'] }), // 他人 → 除外
+      mk({ uri: 'at://x/1', status: 'completed', assignee: me }),                       // 採用
+      mk({ uri: 'at://x/2', status: 'completed', assignee: me }),                       // 採用
+      mk({ uri: 'at://x/3', status: 'assigned', assignee: me }),                        // 未完了 → 除外
+      mk({ uri: 'at://x/4', status: 'completed', assignee: 'did:plc:other' }),          // 他人 → 除外
     ];
-    const xp = questXpEarned(quests, me);
-    const total = xp.atk + xp.def + xp.agi + xp.int + xp.luk;
-    expect(total).toBe(200); // 完了 2 件 × 100
-    expect(xp.int).toBeGreaterThan(0); // code は int 寄り
+    expect(questXpScalar(quests, me)).toBe(200); // 完了 2 件 × 100
   });
-  it('完了が無ければ全 0', () => {
-    const xp = questXpEarned([mk({ status: 'open', assignee: me, tags: ['code'] })], me);
-    expect(xp).toEqual({ atk: 0, def: 0, agi: 0, int: 0, luk: 0 });
+  it('完了が無ければ 0', () => {
+    expect(questXpScalar([mk({ status: 'open', assignee: me })], me)).toBe(0);
+  });
+  it('タグに依存せず一律 (内容で配分しない)', () => {
+    const a = questXpScalar([mk({ status: 'completed', assignee: me, tags: ['code'] })], me);
+    const b = questXpScalar([mk({ status: 'completed', assignee: me, tags: ['illust'] })], me);
+    expect(a).toBe(b);
+    expect(a).toBe(100);
   });
 });
 
@@ -320,44 +321,6 @@ describe('summarize', () => {
       cancelled: 1,
       inProgress: 2,
     });
-  });
-});
-
-describe('statXpDistribution', () => {
-  it('タグなしはデフォルト均等', () => {
-    const d = statXpDistribution([]);
-    expect(d).toEqual({ atk: 20, def: 20, agi: 20, int: 20, luk: 20 });
-  });
-
-  it('illust は LUK と INT に偏る', () => {
-    const d = statXpDistribution(['illust']);
-    expect(d.luk).toBeGreaterThan(d.atk);
-    expect(d.int).toBeGreaterThan(d.def);
-    expect(Object.values(d).reduce((a, b) => a + b)).toBe(100);
-  });
-
-  it('code は INT 偏重', () => {
-    const d = statXpDistribution(['#code']);
-    expect(d.int).toBeGreaterThan(d.atk + d.def + d.agi + d.luk);
-    expect(Object.values(d).reduce((a, b) => a + b)).toBe(100);
-  });
-
-  it('複数タグはマージされる', () => {
-    const d = statXpDistribution(['illust', 'code']);
-    expect(d.int).toBeGreaterThan(0);
-    expect(d.luk).toBeGreaterThan(0);
-    expect(Object.values(d).reduce((a, b) => a + b)).toBe(100);
-  });
-
-  it('未知タグは無視されデフォルトに落ちる', () => {
-    const d = statXpDistribution(['nonexistent-tag-xyz']);
-    expect(d).toEqual({ atk: 20, def: 20, agi: 20, int: 20, luk: 20 });
-  });
-
-  it('# 付き / 大文字 / 小文字を正規化する', () => {
-    const a = statXpDistribution(['#Illust']);
-    const b = statXpDistribution(['illust']);
-    expect(a).toEqual(b);
   });
 });
 

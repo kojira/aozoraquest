@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
-import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, jobLevelFromXp, pickSpiritLine, type SpiritSituation } from '@aozoraquest/core';
+import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, jobLevelFromXp, pickSpiritLine, questXpScalar, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
+import { listReceivedQuests } from '@/lib/quest-api';
 import { COL } from '@/lib/collections';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { SpiritBubble } from '@/components/spirit-bubble';
@@ -54,6 +55,8 @@ export function Spirit() {
   const config = useRuntimeConfig();
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
   const [points, setPoints] = useState<PointsState | null>(null);
+  // 受託完了クエストの経験値 (現職 LV に加算)。
+  const [questXp, setQuestXp] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [ritualOpen, setRitualOpen] = useState(false);
@@ -82,7 +85,7 @@ export function Spirit() {
   // (admin が typo / 未定義に気付ける、UI で誤展開せず可視化される)。
   const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
   const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
-  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp)) : undefined;
+  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp + questXp)) : undefined;
   const systemPrompt = useMemo(
     () =>
       applyPromptTemplate(systemPromptRaw, {
@@ -103,15 +106,17 @@ export function Spirit() {
     let cancelled = false;
     (async () => {
       try {
-        const [r, p, hist] = await Promise.all([
+        const [r, p, hist, rxp] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
+          listReceivedQuests(agent, did).then((qs) => questXpScalar(qs, did)).catch(() => 0),
         ]);
         if (cancelled) return;
         setDiag(r);
         setPoints(p);
         setHistory(hist);
+        setQuestXp(rxp);
       } catch (e) {
         console.warn('spirit init failed', e);
       } finally {

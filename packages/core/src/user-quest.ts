@@ -5,7 +5,7 @@
  * 詳細は docs/15-user-quest.md を参照。
  */
 
-import type { Stat, StatVector } from './types.js';
+import { XP_REWARDS } from './tuning.js';
 
 // ─── NSID ──────────────────────────────────────────────────
 
@@ -238,92 +238,26 @@ export function summarize(quests: UserQuest[]): OutcomeSummary {
   return acc;
 }
 
-// ─── タグ → ステータス XP マッピング (docs/15-user-quest.md 付録 A) ─
-
-type TagStatMap = Record<string, StatVector>;
-
-const v = (atk: number, def: number, agi: number, int: number, luk: number): StatVector =>
-  ({ atk, def, agi, int, luk });
-
-/** 既定マップ。LLM 動的判定はしない。更新は kojira のみが PR で行う。 */
-export const TAG_STAT_MAP: TagStatMap = {
-  illust:     v(10,  0, 20, 30, 40),
-  art:        v(10,  0, 20, 30, 40),
-  design:     v(10,  0, 20, 30, 40),
-  code:       v( 5, 15, 10, 60, 10),
-  review:     v( 5, 15, 10, 60, 10),
-  debug:      v( 5, 15, 10, 60, 10),
-  write:      v(15, 10, 15, 50, 10),
-  blog:       v(15, 10, 15, 50, 10),
-  text:       v(15, 10, 15, 50, 10),
-  translate:  v( 5, 25,  5, 60,  5),
-  proofread:  v( 5, 25,  5, 60,  5),
-  feedback:   v(20, 30, 10, 30, 10),
-  advice:     v(20, 30, 10, 30, 10),
-  listen:     v( 5, 30,  5, 10, 50),
-  chat:       v( 5, 30,  5, 10, 50),
-  counsel:    v( 5, 30,  5, 10, 50),
-  research:   v(10, 20,  5, 60,  5),
-  investigate:v(10, 20,  5, 60,  5),
-  walk:       v(15, 20, 30,  5, 30),
-  meetup:     v(15, 20, 30,  5, 30),
-  offline:    v(15, 20, 30,  5, 30),
-  music:      v(25,  5, 25,  5, 40),
-  perform:    v(25,  5, 25,  5, 40),
-  cook:       v(10, 20, 20, 20, 30),
-  craft:      v(10, 20, 20, 20, 30),
-  make:       v(10, 20, 20, 20, 30),
-};
-
-const DEFAULT_FLAT: StatVector = v(20, 20, 20, 20, 20);
-const STATS: Stat[] = ['atk', 'def', 'agi', 'int', 'luk'];
-
-/** タグ配列をマージしてステータス配分 (合計 100) を返す */
-export function statXpDistribution(tags: string[]): StatVector {
-  const normalized = tags.map(t => t.replace(/^#/, '').toLowerCase());
-  const known: StatVector[] = [];
-  for (const t of normalized) {
-    const entry = TAG_STAT_MAP[t];
-    if (entry) known.push(entry);
-  }
-  if (known.length === 0) return DEFAULT_FLAT;
-
-  const summed: StatVector = v(0, 0, 0, 0, 0);
-  for (const stat of STATS) {
-    for (const k of known) summed[stat] += k[stat];
-  }
-
-  const total = STATS.reduce((s, k) => s + summed[k], 0);
-  if (total === 0) return DEFAULT_FLAT;
-  const result: StatVector = v(0, 0, 0, 0, 0);
-  for (const stat of STATS) {
-    result[stat] = Math.round((summed[stat] / total) * 100);
-  }
-  // 端数で 99 / 101 になりうるので、最大軸で吸収
-  const final = STATS.reduce((s, k) => s + result[k], 0);
-  if (final !== 100) {
-    const maxStat = STATS.reduce((a, b) => result[a] >= result[b] ? a : b);
-    result[maxStat] += 100 - final;
-  }
-  return result;
-}
+// ─── 受託完了で得る経験値 (レベルアップ用) ──────────────
 
 /**
- * 受託者が **完了したクエストから得た累計ステータス XP** (`holdings` と同じく完了集合からの
+ * 受託者が **完了したクエストから得た累計経験値 (XP)** (`holdings` と同じく完了集合からの
  * 派生 = 二重加算が原理的に起きない)。
  *
- * 完了 1 件あたり `statXpDistribution(tags)` (合計 100) を配分加算する。`me` が受託者で、かつ
- * 承認済み (`status==='completed'`) のクエストのみ対象。承認の真実は発注者 record の
- * `status='completed'` (= 承認時に発注者が書く) で、受託者はそれを公開 read できる。
+ * 完了 1 件あたり固定 `XP_REWARDS.questComplete` を加算する。`me` が受託者で、かつ
+ * 承認済み (`status==='completed'`) のクエストのみ対象。この XP は全体 LV (playerLevel) と
+ * 現職 LV (jobLevel) の両方に乗せて表示する (= 冒険で確かにレベルが上がる)。
+ *
+ * 引数は `status` / `assignee` だけ見るので、完全な UserQuest でも questIndex の
+ * summary でも渡せる。承認の真実は発注者 record の `status='completed'` (承認時に発注者が
+ * 書く) で、受託者はそれを公開 read できる。
  */
-export function questXpEarned(receivedQuests: UserQuest[], me: Did): StatVector {
-  const acc: StatVector = v(0, 0, 0, 0, 0);
-  for (const q of receivedQuests) {
-    if (q.status !== 'completed' || q.assignee !== me) continue;
-    const dist = statXpDistribution(q.tags);
-    for (const stat of STATS) acc[stat] += dist[stat];
-  }
-  return acc;
+export function questXpScalar(
+  receivedQuests: { status: string; assignee?: Did }[],
+  me: Did,
+): number {
+  const n = receivedQuests.filter(q => q.status === 'completed' && q.assignee === me).length;
+  return n * XP_REWARDS.questComplete;
 }
 
 // ─── 発行スパム上限 (docs/15-user-quest.md §モデレーション) ─

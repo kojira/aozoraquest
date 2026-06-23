@@ -46,6 +46,10 @@ export const XP_REWARDS = {
   streakBonusPerDay: 3,
   /** streak 追加の上限 (streakBonusPerDay * n でこの値にキャップ) */
   streakBonusCap: 50,
+  /** 依頼クエストを受託して完了 (発注者が承認) するたびの固定 XP。
+   *  全体 LV (playerLevel) と現職 LV (jobLevel) の両方に加算される。
+   *  約 1 日分の活動量 (投稿 ~100 XP/日) 相当で、冒険 (受託) が確かな前進になるよう設定。 */
+  questComplete: 100,
 } as const;
 
 // ────────────────────────────────
