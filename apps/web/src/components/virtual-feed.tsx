@@ -50,6 +50,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
   const containerEl = scrollParent ?? null;
 
+  // 一度実測した行の高さを keyOf(uri) で記憶する。再マウント時 (= 下に古い投稿まで
+  // スクロール → 最新へ戻る) に 180px 推定からやり直すと、実測との差ぶん totalSize と
+  // 各行 translateY が補正され、スクロール位置が数十 px ズレて「引っかかる」。
+  // estimateSize がこのキャッシュを引くことで、再マウント行は最初から実高さで配置され、
+  // 帳尻ズレが起きない (標準的なスクロールアンカー対策)。
+  const measuredRef = useRef<Map<string, number>>(new Map());
+
   // container モードの scrollMargin: リスト先頭の container 内オフセットを実測する。
   // カラム内ではリストの上に HomeSummary 等のコンテンツが挟まることがあり、
   // 0 固定だと visible range がずれて上端に空白行が出る (レビュー指摘)。
@@ -99,7 +106,12 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     count: items.length,
     getScrollElement: () =>
       containerEl ?? (typeof window === 'undefined' ? null : (document.scrollingElement as HTMLElement)),
-    estimateSize: () => estimateSize,
+    // 未測定行は既定推定。一度測った行は記憶した実高さを初期値に使う (再マウントの帳尻ズレ防止)。
+    estimateSize: (i) => {
+      const it = items[i];
+      const cached = it ? measuredRef.current.get(keyOf(it)) : undefined;
+      return cached ?? estimateSize;
+    },
     overscan,
     getItemKey: (i) => keyOf(items[i]!),
     // window スクロールで parentRef が描画ツリー内のどこにあるかをオフセットとして渡す。
@@ -110,7 +122,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     // 行の高さが 0.x px 単位で揺れると translateY 補正 → 再測定 → … と
     // サブピクセルのフィードバックループ (スクロール震え/shimmer) を起こしうる。
     // 丸めることでこの振動源を断つ (体感の高さ精度には影響しない)。
-    measureElement: (el) => Math.round(el.getBoundingClientRect().height),
+    // 同時に keyOf(uri) → 実高さを記憶し、再マウント時の estimateSize に使う。
+    measureElement: (el) => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      const idx = Number((el as HTMLElement).getAttribute('data-index'));
+      if (!Number.isNaN(idx) && items[idx]) measuredRef.current.set(keyOf(items[idx]!), h);
+      return h;
+    },
   });
 
   // onEndReached: 末尾からの距離で発火
