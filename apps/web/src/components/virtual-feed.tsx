@@ -2,20 +2,17 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 /**
- * 仮想スクローラ。DOM 上に存在するのは可視範囲 ± overscan のアイテムだけ。
- * 可変高に対応 (measureElement で各要素の高さを実測)。
+ * フィードのリスト描画。**デバイスで描画方式を出し分ける**:
  *
- * スクロール元は 2 モード:
- *  - 既定: ウィンドウ (ビューポート) スクロール
- *  - `scrollParent` 指定時: その要素内のスクロール
- *    (マルチカラム workspace の column-body 等、docs/16-multicolumn.md)
+ *  - スマホ/タブレット (タッチ主体): `VirtualizedFeed` = tanstack の transform 仮想化。
+ *    画面外行をアンマウントして DOM/デコード画像を可視範囲に限定する **省メモリ**方式。
+ *    モバイルは iOS Safari のメモリ上限が厳しく、上スクロールの微小なズレも気になりにくい。
+ *  - PC (マウス主体): `FlowFeed` = 全行を通常フローで DOM 保持 + CSS `content-visibility:auto`。
+ *    Bluesky 公式 web (社内 List.web.tsx) と同じ「行を捨てない」方式で、上スクロールの
+ *    位置ズレも最新へ戻る際の画像再リクエストも起きない。PC はメモリに余裕がある一方
+ *    ズレが目立つため、こちらを使う。
  *
- * scrollParent は RefObject ではなく要素そのものを受け取る。利用側は
- * `useState<HTMLElement | null>` + callback ref で要素を管理して渡すこと
- * (要素の出現・差し替えが props 変化として自然に再 render を起こすため)。
- *
- * data 配列自体は成長するため真に無限な memory bound ではないが、
- * DOM 側は件数によらず一定、これが体感メモリの主因なのでこれでほぼ解決する。
+ * scrollParent は RefObject ではなく要素そのものを受け取る (column-body 等)。
  */
 export interface VirtualFeedProps<T> {
   items: T[];
@@ -33,27 +30,102 @@ export interface VirtualFeedProps<T> {
   scrollParent?: HTMLElement | null | undefined;
 }
 
-export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
-  const {
-    items,
-    keyOf,
-    estimateSize = 180,
-    overscan = 6,
-    onEndReached,
-    endReachedThreshold = 800,
-    renderItem,
-    footer,
-    scrollParent,
-  } = props;
+/** タッチ主体 (スマホ/タブレット) か。primary pointer が coarse なら true。 */
+function useIsTouchPrimary(): boolean {
+  const [touch, setTouch] = useState(() =>
+    typeof window !== 'undefined' && !!window.matchMedia
+      ? window.matchMedia('(pointer: coarse)').matches
+      : false,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(pointer: coarse)');
+    const onChange = () => setTouch(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return touch;
+}
 
-  // window モードでは parentRef は offsetTop 計算用。
+export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
+  const touch = useIsTouchPrimary();
+  // 子コンポーネントを切り替える (各自のフックは無条件呼び出し = Rules of Hooks 準拠)。
+  return touch ? <VirtualizedFeed {...props} /> : <FlowFeed {...props} />;
+}
+
+// ─── PC: 通常フロー + content-visibility (Bluesky 流。ズレ/再リクエストなし) ───
+
+function FlowFeed<T>({
+  items,
+  keyOf,
+  estimateSize = 400,
+  onEndReached,
+  endReachedThreshold = 800,
+  renderItem,
+  footer,
+  scrollParent,
+}: VirtualFeedProps<T>) {
+  const containerEl = scrollParent ?? null;
+
+  useEffect(() => {
+    if (!onEndReached) return;
+    const check = () => {
+      const scrollEl: Element | null = containerEl ?? document.scrollingElement;
+      if (!scrollEl) return;
+      const remaining = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+      if (remaining < endReachedThreshold) onEndReached();
+    };
+    const target: EventTarget = containerEl ?? window;
+    target.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    check();
+    return () => {
+      target.removeEventListener('scroll', check);
+      window.removeEventListener('resize', check);
+    };
+  }, [onEndReached, endReachedThreshold, items.length, containerEl]);
+
+  return (
+    <div>
+      {items.map((item, i) => (
+        <div
+          key={keyOf(item)}
+          // 先頭投稿の border-top を消す CSS (.workspace-column-body [data-index="0"]) が
+          // FlowFeed でも効くよう index を付与 (VirtualizedFeed と対称)。
+          data-index={i}
+          style={{
+            // 画面外行は描画/レイアウト/画像デコードをスキップ。<img> は DOM に残るので
+            // 上スクロールで再取得しない。auto = 一度描画した実寸を記憶しスペースを確保。
+            contentVisibility: 'auto',
+            containIntrinsicSize: `auto ${estimateSize}px`,
+          } as React.CSSProperties}
+        >
+          {renderItem(item, i)}
+        </div>
+      ))}
+      {footer}
+    </div>
+  );
+}
+
+// ─── スマホ: tanstack transform 仮想化 (省メモリ。画面外行はアンマウント) ───
+
+function VirtualizedFeed<T>({
+  items,
+  keyOf,
+  estimateSize = 180,
+  overscan = 6,
+  onEndReached,
+  endReachedThreshold = 800,
+  renderItem,
+  footer,
+  scrollParent,
+}: VirtualFeedProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
   const containerEl = scrollParent ?? null;
 
   // container モードの scrollMargin: リスト先頭の container 内オフセットを実測する。
-  // カラム内ではリストの上に HomeSummary 等のコンテンツが挟まることがあり、
-  // 0 固定だと visible range がずれて上端に空白行が出る (レビュー指摘)。
-  // 上部コンテンツの高さ変化 (レーダーの遅延描画等) に ResizeObserver で追従。
+  // 上部コンテンツ (HomeSummary 等) の高さ変化に ResizeObserver で追従。
   const [containerMargin, setContainerMargin] = useState(0);
   useEffect(() => {
     if (!containerEl) return;
@@ -68,10 +140,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
-    // ResizeObserver のコールバックを rAF でデバウンスする。同一フレーム内の
-    // 複数発火を 1 回に畳み込み、measure → setState → reflow → 再発火 の
-    // タイトループ ("ResizeObserver loop" / スクロール震え) を断つ。値が変わら
-    // なければ setContainerMargin は React がバイパスするので再 render も起きない。
+    // ResizeObserver のコールバックを rAF でデバウンス (ResizeObserver loop / 震え対策)。
     let raf = 0;
     const schedule = () => {
       if (raf) return;
@@ -90,9 +159,6 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     };
   }, [containerEl]);
 
-  // 既知の制約 (旧実装から同じ): window モードの scrollMargin は render 中に
-  // parentRef.current を読むため、初回 render では 0 のまま確定する。
-  // リストがページ先頭近くに置かれる現状のレイアウトでは実害がないので据え置き。
   const scrollMargin = containerEl ? containerMargin : (parentRef.current?.offsetTop ?? 0);
 
   const rowVirtualizer = useVirtualizer({
@@ -102,18 +168,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     estimateSize: () => estimateSize,
     overscan,
     getItemKey: (i) => keyOf(items[i]!),
-    // window スクロールで parentRef が描画ツリー内のどこにあるかをオフセットとして渡す。
-    // container モードでは container 先頭 = リスト先頭なので 0
-    // (column 内にヘッダー等を挟む場合は利用側で要再考)。
     scrollMargin,
-    // 実測高さを整数に丸める。getBoundingClientRect().height は小数を返し、
-    // 行の高さが 0.x px 単位で揺れると translateY 補正 → 再測定 → … と
-    // サブピクセルのフィードバックループ (スクロール震え/shimmer) を起こしうる。
-    // 丸めることでこの振動源を断つ (体感の高さ精度には影響しない)。
+    // 実測高さを整数に丸める (サブピクセルのフィードバックループ = スクロール震え対策)。
     measureElement: (el) => Math.round(el.getBoundingClientRect().height),
   });
 
-  // onEndReached: 末尾からの距離で発火
   useEffect(() => {
     if (!onEndReached) return;
     const check = () => {
@@ -122,11 +181,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
       const remaining = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
       if (remaining < endReachedThreshold) onEndReached();
     };
-    // scroll イベントは bubbling しないので、container モードでは container 自身に貼る
     const target: EventTarget = containerEl ?? window;
     target.addEventListener('scroll', check, { passive: true });
     window.addEventListener('resize', check);
-    // 初回の描画直後にも 1 度呼ぶ (items が少ないときに即時 loadMore)
     check();
     return () => {
       target.removeEventListener('scroll', check);
