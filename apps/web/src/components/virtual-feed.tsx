@@ -90,6 +90,9 @@ function FlowFeed<T>({
       {items.map((item, i) => (
         <div
           key={keyOf(item)}
+          // 先頭投稿の border-top を消す CSS (.workspace-column-body [data-index="0"]) が
+          // FlowFeed でも効くよう index を付与 (VirtualizedFeed と対称)。
+          data-index={i}
           style={{
             // 画面外行は描画/レイアウト/画像デコードをスキップ。<img> は DOM に残るので
             // 上スクロールで再取得しない。auto = 一度描画した実寸を記憶しスペースを確保。
