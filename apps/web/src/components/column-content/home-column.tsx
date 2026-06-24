@@ -118,7 +118,6 @@ export function HomeColumn() {
           items={followingItems}
           keyOf={(x) => x.post.uri}
           scrollParent={scrollEl}
-          {...(followingCacheKey ? { heightCacheKey: followingCacheKey } : {})}
           renderItem={(item) => (
             <PostCard item={item} archetype={followingArchetypes.get(item.post.author.did) ?? null} />
           )}

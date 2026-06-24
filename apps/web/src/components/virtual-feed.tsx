@@ -1,27 +1,33 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { loadHeights, saveHeights, MAX_HEIGHT_ENTRIES, type HeightEntry } from '@/lib/post-height-idb';
+import { type ReactNode, useEffect } from 'react';
 
 /**
- * 仮想スクローラ。DOM 上に存在するのは可視範囲 ± overscan のアイテムだけ。
- * 可変高に対応 (measureElement で各要素の高さを実測)。
+ * フィードのリスト描画。**仮想化 (transform で画面外行をアンマウント) はしない**。
+ *
+ * 全行を通常フローで DOM に保持し、画面外行は CSS `content-visibility: auto` で
+ * ブラウザに描画/レイアウト/デコードをスキップさせる。これは Bluesky 公式 web
+ * クライアント (社内 List.web.tsx = 全行を normal flow で保持) と同じ方針で、さらに
+ * content-visibility でレンダリングコストを抑えたもの。
+ *
+ * これにより過去の transform 仮想化 (tanstack) で起きていた問題が原理的に消える:
+ *  - 上スクロールで位置がズレる … 通常フロー + ブラウザの overflow-anchor が効く
+ *  - 画面外行の再マウントで画像を再リクエスト … <img> が DOM に残るので再取得しない
+ *  - 推定 vs 実測の高さ帳尻ズレ / スクロール震え … 再計測自体が無い
+ * `contain-intrinsic-size: auto <推定>` で、ブラウザが一度描画した実寸を記憶し、
+ * スキップ中もその高さでスクロールバー/位置を安定させる (= height キャッシュ不要)。
+ *
+ * メモリ: 行 DOM は残るが (1 投稿 ~30-45 ノードと軽量)、画面外は content-visibility が
+ * 描画・画像デコードをスキップするのでデコード画像メモリは可視付近に有界。
  *
  * スクロール元は 2 モード:
  *  - 既定: ウィンドウ (ビューポート) スクロール
- *  - `scrollParent` 指定時: その要素内のスクロール
- *    (マルチカラム workspace の column-body 等、docs/16-multicolumn.md)
- *
- * scrollParent は RefObject ではなく要素そのものを受け取る。利用側は
- * `useState<HTMLElement | null>` + callback ref で要素を管理して渡すこと
- * (要素の出現・差し替えが props 変化として自然に再 render を起こすため)。
- *
- * data 配列自体は成長するため真に無限な memory bound ではないが、
- * DOM 側は件数によらず一定、これが体感メモリの主因なのでこれでほぼ解決する。
+ *  - `scrollParent` 指定時: その要素内のスクロール (マルチカラム column-body 等)
  */
 export interface VirtualFeedProps<T> {
   items: T[];
   keyOf: (item: T) => string;
+  /** content-visibility スキップ中の行のプレースホルダ高さ (実寸は描画後ブラウザが記憶)。 */
   estimateSize?: number;
+  /** @deprecated 仮想化していないので未使用 (後方互換のため受けるだけ)。 */
   overscan?: number;
   /** リストの末尾近くに来たら呼ばれる (次ページ読み込みトリガー) */
   onEndReached?: (() => void) | undefined;
@@ -30,10 +36,9 @@ export interface VirtualFeedProps<T> {
   renderItem: (item: T, index: number) => ReactNode;
   /** 末尾に置くフッター (読み込み中表示など) */
   footer?: ReactNode;
-  /** 未指定 / null なら window スクロール (後方互換)。指定するとその要素内スクロール。 */
+  /** 未指定 / null なら window スクロール。指定するとその要素内スクロール (onEndReached 用)。 */
   scrollParent?: HTMLElement | null | undefined;
-  /** 指定すると、行の実測高さをこの namespace で IndexedDB に永続化し、再マウント/リロード後の
-   *  estimateSize に使う (スクロール位置ズレ防止)。通常は feed の cache key を渡す。 */
+  /** @deprecated content-visibility が native に高さを記憶するので不要 (後方互換)。 */
   heightCacheKey?: string | undefined;
 }
 
@@ -41,148 +46,17 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
   const {
     items,
     keyOf,
-    estimateSize = 180,
-    overscan = 6,
+    estimateSize = 400,
     onEndReached,
     endReachedThreshold = 800,
     renderItem,
     footer,
     scrollParent,
-    heightCacheKey,
   } = props;
 
-  // window モードでは parentRef は offsetTop 計算用。
-  const parentRef = useRef<HTMLDivElement>(null);
   const containerEl = scrollParent ?? null;
 
-  // 一度実測した行の高さを keyOf(uri) → { w(描画幅), h } で記憶する。再マウント時
-  // (= 下に古い投稿までスクロール → 最新へ戻る) に 180px 推定からやり直すと、実測との差ぶん
-  // totalSize と各行 translateY が補正され、スクロール位置が数十 px ズレて「引っかかる」。
-  // estimateSize がこのキャッシュ (幅一致時のみ) を引くことで再マウント行は最初から実高さで
-  // 配置され帳尻ズレが起きない。heightCacheKey 指定時は IndexedDB にも保存し、リロード/カラム
-  // 更新後の初回スクロールから安定させる (post-height-idb.ts)。
-  const measuredRef = useRef<Map<string, HeightEntry>>(new Map());
-  // 現在の描画幅 (高さは幅依存なので、別幅のキャッシュは使わない)。
-  const widthRef = useRef(0);
-  // hydrate 完了などで estimateSize の結果を再評価させるための強制再描画。
-  const [, forceTick] = useState(0);
-
-  // 起動時に永続化済み高さを hydrate (heightCacheKey 指定時のみ)。async だが estimateSize は
-  // Map を sync 参照するので、hydrate 完了後の再描画で反映される。
-  useEffect(() => {
-    if (!heightCacheKey) return;
-    let cancelled = false;
-    void loadHeights(heightCacheKey).then((map) => {
-      if (cancelled) return;
-      for (const [k, v] of Object.entries(map)) measuredRef.current.set(k, v);
-      forceTick((t) => t + 1); // hydrate を見た目に反映
-    });
-    return () => { cancelled = true; };
-  }, [heightCacheKey]);
-
-  // 測定結果の IndexedDB 書き込みをデバウンス + 上限プルーン。
-  const saveTimerRef = useRef<number | null>(null);
-  function scheduleHeightSave() {
-    if (!heightCacheKey) return;
-    if (saveTimerRef.current) return;
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      const entries = Array.from(measuredRef.current.entries());
-      // 上限超過分は古い側 (Map の挿入順で前方) から捨てる
-      const trimmed = entries.length > MAX_HEIGHT_ENTRIES
-        ? entries.slice(entries.length - MAX_HEIGHT_ENTRIES)
-        : entries;
-      void saveHeights(heightCacheKey, Object.fromEntries(trimmed));
-    }, 1500);
-  }
-  // unmount 時に保留中の保存タイマを破棄 (リーク防止)。
-  useEffect(() => () => { if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current); }, []);
-
-  // container モードの scrollMargin: リスト先頭の container 内オフセットを実測する。
-  // カラム内ではリストの上に HomeSummary 等のコンテンツが挟まることがあり、
-  // 0 固定だと visible range がずれて上端に空白行が出る (レビュー指摘)。
-  // 上部コンテンツの高さ変化 (レーダーの遅延描画等) に ResizeObserver で追従。
-  const [containerMargin, setContainerMargin] = useState(0);
-  useEffect(() => {
-    if (!containerEl) return;
-    const measure = () => {
-      const listEl = parentRef.current;
-      if (!listEl) return;
-      const m =
-        listEl.getBoundingClientRect().top -
-        containerEl.getBoundingClientRect().top +
-        containerEl.scrollTop;
-      setContainerMargin(Math.max(0, Math.round(m)));
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    // ResizeObserver のコールバックを rAF でデバウンスする。同一フレーム内の
-    // 複数発火を 1 回に畳み込み、measure → setState → reflow → 再発火 の
-    // タイトループ ("ResizeObserver loop" / スクロール震え) を断つ。値が変わら
-    // なければ setContainerMargin は React がバイパスするので再 render も起きない。
-    let raf = 0;
-    const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        measure();
-      });
-    };
-    const ro = new ResizeObserver(schedule);
-    ro.observe(containerEl);
-    const above = parentRef.current?.parentElement;
-    if (above) ro.observe(above);
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, [containerEl]);
-
-  // 既知の制約 (旧実装から同じ): window モードの scrollMargin は render 中に
-  // parentRef.current を読むため、初回 render では 0 のまま確定する。
-  // リストがページ先頭近くに置かれる現状のレイアウトでは実害がないので据え置き。
-  const scrollMargin = containerEl ? containerMargin : (parentRef.current?.offsetTop ?? 0);
-
-  const rowVirtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () =>
-      containerEl ?? (typeof window === 'undefined' ? null : (document.scrollingElement as HTMLElement)),
-    // 未測定行は既定推定。一度測った行は記憶した実高さを初期値に使う (再マウントの帳尻ズレ防止)。
-    // ただし高さは描画幅で変わるので、保存時と同じ幅のときだけキャッシュを使う。
-    estimateSize: (i) => {
-      const it = items[i];
-      const c = it ? measuredRef.current.get(keyOf(it)) : undefined;
-      const w = Math.round(parentRef.current?.clientWidth ?? 0);
-      return (c && c.w === w) ? c.h : estimateSize;
-    },
-    overscan,
-    getItemKey: (i) => keyOf(items[i]!),
-    // window スクロールで parentRef が描画ツリー内のどこにあるかをオフセットとして渡す。
-    // container モードでは container 先頭 = リスト先頭なので 0
-    // (column 内にヘッダー等を挟む場合は利用側で要再考)。
-    scrollMargin,
-    // 実測高さを整数に丸める。getBoundingClientRect().height は小数を返し、
-    // 行の高さが 0.x px 単位で揺れると translateY 補正 → 再測定 → … と
-    // サブピクセルのフィードバックループ (スクロール震え/shimmer) を起こしうる。
-    // 丸めることでこの振動源を断つ (体感の高さ精度には影響しない)。
-    // 同時に keyOf(uri) → { 幅, 高さ } を記憶し (再挿入で recency 順を保つ)、
-    // 再マウント時の estimateSize と IndexedDB 永続化に使う。
-    measureElement: (el) => {
-      const h = Math.round(el.getBoundingClientRect().height);
-      const w = Math.round((el as HTMLElement).offsetWidth) || widthRef.current;
-      if (w > 0) widthRef.current = w;
-      const idx = Number((el as HTMLElement).getAttribute('data-index'));
-      if (!Number.isNaN(idx) && items[idx]) {
-        const key = keyOf(items[idx]!);
-        measuredRef.current.delete(key);
-        measuredRef.current.set(key, { w, h });
-        scheduleHeightSave();
-      }
-      return h;
-    },
-  });
-
-  // onEndReached: 末尾からの距離で発火
+  // onEndReached: 末尾からの距離で発火 (スクロール / リサイズ / 件数変化時)。
   useEffect(() => {
     if (!onEndReached) return;
     const check = () => {
@@ -203,32 +77,22 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>) {
     };
   }, [onEndReached, endReachedThreshold, items.length, containerEl]);
 
-  const virtualItems = rowVirtualizer.getVirtualItems();
-  const totalSize = rowVirtualizer.getTotalSize();
-
   return (
-    <div ref={parentRef} style={{ position: 'relative' }}>
-      <div style={{ height: totalSize, position: 'relative', width: '100%' }}>
-        {virtualItems.map((vItem) => {
-          const item = items[vItem.index]!;
-          return (
-            <div
-              key={vItem.key}
-              data-index={vItem.index}
-              ref={rowVirtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                transform: `translateY(${vItem.start - scrollMargin}px)`,
-              }}
-            >
-              {renderItem(item, vItem.index)}
-            </div>
-          );
-        })}
-      </div>
+    <div>
+      {items.map((item, i) => (
+        <div
+          key={keyOf(item)}
+          style={{
+            // 画面外行は描画/レイアウト/画像デコードをスキップ。実寸は描画後にブラウザが記憶。
+            contentVisibility: 'auto',
+            // auto = 一度描画した実寸を記憶し、スキップ中もそれでスペースを確保 (位置安定)。
+            // 幅は通常フローで決まるので block (高さ) 側だけ推定を与える。
+            containIntrinsicSize: `auto ${estimateSize}px`,
+          } as React.CSSProperties}
+        >
+          {renderItem(item, i)}
+        </div>
+      ))}
       {footer}
     </div>
   );
