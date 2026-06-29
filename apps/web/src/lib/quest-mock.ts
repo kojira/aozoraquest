@@ -46,6 +46,11 @@ function toSummary(q: UserQuest): QuestIndexSummary {
     createdAt: q.createdAt,
   };
   if (q.deadline !== undefined) base.deadline = q.deadline;
+  // 受託者情報を summary に載せる (これが無いと mock fallback 時に「受託中」判定や
+  // 複数受託の表示が消える)。legacy 単数 assignee と新形式 assignees の両方を運ぶ。
+  if (q.assignee !== undefined) base.assignee = q.assignee;
+  if (q.assignees !== undefined) base.assignees = q.assignees;
+  if (q.maxAssignees !== undefined) base.maxAssignees = q.maxAssignees;
   return base;
 }
 
