@@ -734,16 +734,15 @@ export async function listCompletionsFor(
 /**
  * 報酬/XP 集計を per-assignee 承認ベースで正しく出すための completion マップを作る。
  *
- * **multi かつ未完了 (status が completed/cancelled でない) のクエストだけ** completion を読む。
- * 単数クエストや全員承認済み (status='completed') のクエストは status fallback が実値と一致する
- * ため取得しない (= 無駄な PDS read を避ける)。複数受託で「一部だけ承認・quest 未完了」のときに
- * 承認済み受託者の報酬を計上するのが目的。
+ * **複数受託 (maxAssignees > 1) のクエストだけ** completion を読む。複数受託では報酬の真実は
+ * 受託者ごとの承認 record (sticky) であって quest.status ではないため、status に関わらず取得して
+ * per-assignee で集計する (例: 全員未承認なのに発注者が completed にした / 一部承認済みで
+ * cancelled になった、でも正しく承認済みの人だけ計上)。単数クエストは status fallback が実値と
+ * 一致するので取得しない (= 無駄な PDS read を避ける。本番の既存データは全件これ)。
  */
 export async function loadCompletionsByUri(quests: UserQuest[]): Promise<Map<AtUri, QuestCompletion[]>> {
   const map = new Map<AtUri, QuestCompletion[]>();
-  const targets = quests.filter(
-    q => questMaxAssignees(q) > 1 && q.status !== 'completed' && q.status !== 'cancelled',
-  );
+  const targets = quests.filter(q => questMaxAssignees(q) > 1);
   await Promise.all(targets.map(async (q) => {
     try { map.set(q.uri, await listCompletionsFor(undefined, q)); }
     catch (e) { console.warn('[quest-api] loadCompletionsByUri', q.uri, e); }
