@@ -12,7 +12,7 @@
  *   3. 同じ値で git tag を打つ:
  *        git tag v2026.06.14-1 && git push origin v2026.06.14-1
  */
-export const APP_VERSION = '2026.06.24-3';
+export const APP_VERSION = '2026.06.29-1';
 
 /** APP_VERSION が `YYYY.MM.DD-N` 形式かを検証する (テスト/CI で形式崩れを検出)。
  *  月 01-12 / 日 01-31 のゼロ詰め 2 桁、枝番は先頭ゼロ不可の 1 以上まで一本でガードする。 */
