@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { AtpAgent } from '@atproto/api';
 import {
   effectiveState,
+  effectiveStateForAssignee,
+  questLevelState,
+  questAssignees,
+  rewardForMe,
   isCompleted,
   questXpScalar,
   type UserQuest,
@@ -15,6 +19,7 @@ import {
   applyToQuest,
   listApplicationsFor,
   setAssignee,
+  addAssignee,
   reportCompletion,
   approveCompletion,
   listCompletionsFor,
@@ -136,9 +141,9 @@ describe.skipIf(!HAS_CREDS)('依頼クエスト 2 アカウント フル E2E (AP
     const apps = await listApplicationsFor(undefined, quest.uri, idxA1);
     expect(apps.some(a => a.did === didB && !a.withdrawn)).toBe(true);
 
-    // 5) A が B を受託者に指定
+    // 5) A が B を受託者に指定 (setAssignee は addAssignee の alias。新形式 assignees に入る)
     const assigned = await setAssignee(agentA, quest, didB);
-    expect(assigned.assignee).toBe(didB);
+    expect(questAssignees(assigned)).toContain(didB);
 
     // 6) B の「受託中」フィルタにクエストが出る (#126: 消えるバグの回帰)
     const idxB2 = await buildQuestIndexFromDirectory(agentB, dids);
@@ -165,5 +170,39 @@ describe.skipIf(!HAS_CREDS)('依頼クエスト 2 アカウント フル E2E (AP
     // 11) 報酬: B が受託完了した分の経験値 (固定 100 XP/件)。全体/現職 LV に加算される。
     const xp = questXpScalar([finalQuest], didB);
     expect(xp).toBe(100); // 完了 1 件 × XP_REWARDS.questComplete
+  });
+
+  it('複数受託 (maxAssignees=2): 1人承認しても空き枠があれば quest は assigned のまま・報酬は per-assignee で確定', async () => {
+    const dids = [didA, didB];
+
+    // A が「最大2人」のクエストを発行
+    const quest = await createQuest(agentA, didA, {
+      title: `E2E複数受託 ${Date.now()}`, body: 'multi', tags: ['code'], rewardPoints: 200, maxAssignees: 2,
+    });
+    expect(quest.maxAssignees).toBe(2);
+
+    // B が応募 → A が B を受託者に追加 (1/2、空き枠が残る)
+    await applyToQuest(agentB, didB, quest.uri, 'やります (multi)');
+    const idxA = await buildQuestIndexFromDirectory(agentA, dids);
+    const apps = await listApplicationsFor(undefined, quest.uri, idxA);
+    expect(apps.some(a => a.did === didB)).toBe(true);
+    const assigned = await addAssignee(agentA, quest, didB);
+    expect(questAssignees(assigned)).toEqual([didB]);
+    expect(assigned.status).toBe('assigned');
+
+    // B が報告 → A が B を承認 (targetAssignee=didB)
+    await reportCompletion(agentB, didB, assigned, '成果物 (multi)');
+    const { updatedQuest } = await approveCompletion(agentA, didA, assigned, 'OK (multi)', didB);
+
+    // 空き枠が残る (1/2) ので quest 全体 status は completed にならない (assigned 据え置き)
+    expect(updatedQuest.status).toBe('assigned');
+
+    // PDS から読み直し: B は per-assignee で COMPLETED・報酬確定、quest 全体は ASSIGNED
+    const finalQuest = await getQuest(undefined, quest.uri) as UserQuest;
+    const comps = await listCompletionsFor(undefined, finalQuest);
+    expect(effectiveStateForAssignee(finalQuest, comps, didB)).toBe('COMPLETED');
+    expect(questLevelState(finalQuest, comps)).toBe('ASSIGNED'); // 空き枠 1 残り
+    expect(rewardForMe(finalQuest, didB, comps)).toBe(200); // B に満額
+    expect(questXpScalar([finalQuest], didB, new Map([[finalQuest.uri, comps]]))).toBe(100);
   });
 });

@@ -16,7 +16,15 @@ import type {
   AtUri,
   Did,
 } from '@aozoraquest/core';
-import { isValidCompletion, isCompleted } from '@aozoraquest/core';
+import {
+  isValidCompletion,
+  isCompletedForAssignee,
+  questAssignees,
+  questMaxAssignees,
+  hasOpenSlot,
+  completionTarget,
+  MAX_ASSIGNEES_PER_QUEST,
+} from '@aozoraquest/core';
 import { putRecord, getRecord } from './atproto';
 import { listRecordsForDid, getRecordForDid } from './repo-read';
 import { COL } from './collections';
@@ -42,6 +50,8 @@ export interface NewQuestInput {
   deadline?: string;
   rewardPoints: number;
   blueskyPostUri?: AtUri;
+  /** 受託上限人数 (1〜MAX_ASSIGNEES_PER_QUEST)。未指定は 1 (単数受託)。 */
+  maxAssignees?: number;
 }
 
 /** クエストを発行する: tid 生成 → putRecord → index 同期 */
@@ -68,6 +78,11 @@ export async function createQuest(
   if (input.targetJob !== undefined) quest.targetJob = input.targetJob;
   if (input.deadline !== undefined) quest.deadline = input.deadline;
   if (input.blueskyPostUri !== undefined) quest.blueskyPostUri = input.blueskyPostUri;
+  // 2 人以上募集のときだけ maxAssignees を書く (1 は legacy と同義なので省略)。
+  // 整数化 + [2, MAX] に clamp (UI 配線時の不正値で巨大ループ等が起きないよう API でも防御)。
+  if (input.maxAssignees !== undefined && input.maxAssignees > 1) {
+    quest.maxAssignees = Math.min(Math.floor(input.maxAssignees), MAX_ASSIGNEES_PER_QUEST);
+  }
 
   await putRecord(agent, COL.userQuest, rkey, toRecord(quest, COL.userQuest));
   await notifyEdgeQuest(agent, quest);
@@ -126,8 +141,12 @@ export interface QuestIndexSummary {
   rewardPoints: number;
   deadline?: string;
   status: string;
-  /** 受託者 DID (status>=assigned)。受託者が「自分が受けたクエスト」を一覧で判定するのに使う。 */
+  /** @deprecated 旧・単数受託者 DID。読み取りは questAssignees(summary) を通すこと。 */
   assignee?: Did;
+  /** 受託者 DID 群 (新形式)。受託者が「自分が受けたクエスト」を一覧で判定するのに使う。 */
+  assignees?: Did[];
+  /** 受託上限人数 (未指定は 1)。「空き枠あり」判定 (募集中表示) に使う。 */
+  maxAssignees?: number;
   createdAt: string;
 }
 
@@ -154,7 +173,10 @@ function questToSummary(q: UserQuest): QuestIndexSummary {
     rewardPoints: q.rewardPoints,
     ...(q.deadline ? { deadline: q.deadline } : {}),
     status: q.status,
+    // legacy 単数 assignee も併載 (旧クライアント互換)。新形式は assignees。
     ...(q.assignee ? { assignee: q.assignee } : {}),
+    ...(q.assignees && q.assignees.length > 0 ? { assignees: q.assignees } : {}),
+    ...(q.maxAssignees !== undefined ? { maxAssignees: q.maxAssignees } : {}),
     createdAt: q.createdAt,
   };
 }
@@ -476,7 +498,7 @@ export async function listReceivedQuests(agent: Agent, did: Did): Promise<UserQu
   for (const u of questUris) {
     try {
       const q = await getQuest(agent, u);
-      if (q && q.assignee === did) out.push(q);
+      if (q && questAssignees(q).includes(did)) out.push(q);
     } catch (e) {
       console.warn('[quest-api] resolve received quest failed', u, e);
     }
@@ -496,21 +518,71 @@ export async function listMyApplications(_agent: Agent, did: Did, limit = 100): 
 
 // ─── Phase 2: 受託者指定 (発注者が quest record を更新) ───
 
+/**
+ * 書き込み record の legacy `assignee` を新形式 `assignees` に同期する (in-place)。
+ * **単数 (assignees が 1 名) のうちは legacy `assignee` も併記** する。これは段階3 未改修の
+ * UI (board-detail / board-shared / quest-actionable / portfolio が `quest.assignee` を直読み)
+ * が単数受託で壊れないための後方互換措置。複数 (2 名以上) は単数フィールドで表せないので外す
+ * (複数受託は段階3 の UI 配線が揃ってから作成可能になる)。
+ */
+function syncLegacyAssignee(q: UserQuest): void {
+  const list = q.assignees ?? [];
+  if (list.length === 1) q.assignee = list[0]!;
+  else delete q.assignee;
+}
+
+/** 受託者を 1 名追加する (発注者操作)。上限超過は拒否、重複は no-op。
+ *  書き込みは新形式 `assignees` に寄せる (単数のうちは legacy assignee も併記 = 後方互換)。 */
+export async function addAssignee(
+  agent: Agent,
+  quest: UserQuest,
+  assignee: Did,
+): Promise<UserQuest> {
+  const list = questAssignees(quest);
+  if (list.includes(assignee)) return quest; // 冪等 (重複追加は何もしない)
+  if (list.length >= questMaxAssignees(quest)) {
+    throw new Error('受託上限に達しています');
+  }
+  const { rkey } = parseAtUri(quest.uri);
+  const updated: UserQuest = {
+    ...quest,
+    assignees: [...list, assignee],
+    status: 'assigned',
+    updatedAt: new Date().toISOString(),
+  };
+  syncLegacyAssignee(updated);
+  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
+  await notifyEdgeQuest(agent, updated);
+  return updated;
+}
+
+/** 受託者を 1 名外す (発注者操作)。全員外れたら status を open に戻す。 */
+export async function removeAssignee(
+  agent: Agent,
+  quest: UserQuest,
+  assignee: Did,
+): Promise<UserQuest> {
+  const assignees = questAssignees(quest).filter(d => d !== assignee);
+  const { rkey } = parseAtUri(quest.uri);
+  const updated: UserQuest = {
+    ...quest,
+    assignees,
+    status: assignees.length === 0 ? 'open' : 'assigned',
+    updatedAt: new Date().toISOString(),
+  };
+  syncLegacyAssignee(updated);
+  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
+  await notifyEdgeQuest(agent, updated);
+  return updated;
+}
+
+/** @deprecated `addAssignee` を使う。単数指定の後方互換 alias。 */
 export async function setAssignee(
   agent: Agent,
   quest: UserQuest,
   assignee: Did,
 ): Promise<UserQuest> {
-  const { rkey } = parseAtUri(quest.uri);
-  const updated: UserQuest = {
-    ...quest,
-    assignee,
-    status: 'assigned',
-    updatedAt: new Date().toISOString(),
-  };
-  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
-  await notifyEdgeQuest(agent, updated);
-  return updated;
+  return addAssignee(agent, quest, assignee);
 }
 
 // ─── Phase 2: 完了報告 / 承認 / やり直し ─────────────
@@ -521,6 +593,7 @@ async function writeCompletion(
   questUri: AtUri,
   role: QuestCompletion['role'],
   comment?: string,
+  targetAssignee?: Did,
 ): Promise<QuestCompletion> {
   const rkey = makeRkey();
   const now = new Date().toISOString();
@@ -532,6 +605,8 @@ async function writeCompletion(
     createdAt: now,
   };
   if (comment !== undefined) c.comment = comment;
+  // approval / revision は「どの受託者向けか」を必ず記録する (複数受託の per-assignee 判定用)。
+  if (targetAssignee !== undefined) c.targetAssignee = targetAssignee;
   await putRecord(agent, COL.questCompletion, rkey, toRecord(c, COL.questCompletion));
   return c;
 }
@@ -559,44 +634,66 @@ export async function approveCompletion(
   requesterDid: Did,
   quest: UserQuest,
   comment?: string,
+  targetAssignee?: Did,
 ): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
-  // 冪等性: 既に承認済みなら二重 approval record を書かない (= 二重発行防止)。
-  // 報酬 (ポイント/XP) は完了集合からの派生なので record が 1 つでも複数でも結果は同じだが、
-  // 余計な record を増やさないため既存 approval を返して no-op にする。
+  // targetAssignee 省略時は唯一の受託者に解決 (単数 quest の後方互換)。
+  const target = targetAssignee ?? questAssignees(quest)[0];
+  if (!target) throw new Error('受託者がいません');
+  // 書き込み前ガード: target が受託者集合内であること (読み取り時 isValidCompletion でも弾くが、
+  // ゴミ approval record を書かないよう書き込み側でも防御)。
+  if (!questAssignees(quest).includes(target)) throw new Error('指定した受託者はこのクエストの受託者ではありません');
+
   const existing = await listCompletionsFor(undefined, quest);
-  if (isCompleted(quest, existing)) {
-    const approval = existing.find(c => c.role === 'requesterApproval' && c.did === quest.did);
-    const updated: UserQuest = quest.status === 'completed'
-      ? quest
-      : { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
-    if (approval) return { completion: approval, updatedQuest: updated };
-    // status は completed だが approval record が見当たらない稀ケースは通常経路で書く
+  // 冪等性: **この受託者向け**の承認が既にあれば二重 approval を書かない (= 二重発行防止)。
+  // 複数受託では「他の受託者が承認済み」でもこの受託者は未承認なので、per-assignee で判定する。
+  if (isCompletedForAssignee(quest, existing, target)) {
+    const approval = existing.find(
+      c => c.role === 'requesterApproval' && completionTarget(c, quest) === target,
+    );
+    if (approval) return { completion: approval, updatedQuest: quest };
   }
-  // 順序: (A) approval record → (B) quest status → (C) index 同期。
-  // (A) が真実、B-C は派生 (docs/15-user-quest.md §耐故障性)。
-  const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterApproval', comment);
-  const { rkey } = parseAtUri(quest.uri);
-  const updated: UserQuest = { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
-  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
-  // (B) 成功後にのみ index と mock を更新する。B 失敗時は次回 reconciliation で
-  // 自分の approval record から完了済みと判定される (= eventual consistency)。
-  mockIndex.updateQuestStatus(quest.uri, 'completed');
+  // 順序: (A) approval record → (B) quest status → (C) index 同期。(A) が真実 (docs/15 §耐故障性)。
+  const completion = await writeCompletion(
+    agent, requesterDid, quest.uri, 'requesterApproval', comment, target,
+  );
+  // quest 全体 status を completed にするのは「全受託者が承認済み かつ 空き枠なし」のときだけ。
+  // 途中 (一部だけ承認 / まだ募集枠が残る) は assigned のまま据え置き、報酬は per-assignee で確定。
+  const after = [...existing, completion];
+  const allApproved = questAssignees(quest).every(d => isCompletedForAssignee(quest, after, d));
+  let updated = quest;
+  if (allApproved && !hasOpenSlot(quest)) {
+    const { rkey } = parseAtUri(quest.uri);
+    updated = { ...quest, status: 'completed', updatedAt: new Date().toISOString() };
+    await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
+    mockIndex.updateQuestStatus(quest.uri, 'completed');
+  }
   await notifyEdgeQuest(agent, updated);
   return { completion, updatedQuest: updated };
 }
 
-/** 発注者が「やり直し」を依頼。元 quest の status を assigned に戻す。 */
+/** 発注者が特定の受託者に「やり直し」を依頼。quest 全体 status は assigned のまま
+ *  (他の受託者が進行中の可能性があるため、status は据え置き = per-assignee で管理)。 */
 export async function requestRevision(
   agent: Agent,
   requesterDid: Did,
   quest: UserQuest,
   comment: string,
+  targetAssignee?: Did,
 ): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
-  const completion = await writeCompletion(agent, requesterDid, quest.uri, 'requesterRevision', comment);
-  const { rkey } = parseAtUri(quest.uri);
-  const updated: UserQuest = { ...quest, status: 'assigned', updatedAt: new Date().toISOString() };
-  await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
-  mockIndex.updateQuestStatus(quest.uri, 'assigned');
+  const target = targetAssignee ?? questAssignees(quest)[0];
+  if (!target) throw new Error('受託者がいません');
+  if (!questAssignees(quest).includes(target)) throw new Error('指定した受託者はこのクエストの受託者ではありません');
+  const completion = await writeCompletion(
+    agent, requesterDid, quest.uri, 'requesterRevision', comment, target,
+  );
+  // status は assigned に揃える (completed/reported から戻す)。複数受託では元々 assigned。
+  let updated = quest;
+  if (quest.status !== 'assigned') {
+    const { rkey } = parseAtUri(quest.uri);
+    updated = { ...quest, status: 'assigned', updatedAt: new Date().toISOString() };
+    await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
+    mockIndex.updateQuestStatus(quest.uri, 'assigned');
+  }
   return { completion, updatedQuest: updated };
 }
 
@@ -607,7 +704,8 @@ export async function listCompletionsFor(
 ): Promise<QuestCompletion[]> {
   const dids = new Set<Did>();
   dids.add(quest.did);
-  if (quest.assignee) dids.add(quest.assignee);
+  // 全受託者の PDS から completion を読む (複数受託では各自が自分の PDS に報告を書く)。
+  for (const a of questAssignees(quest)) dids.add(a);
 
   const out: QuestCompletion[] = [];
   for (const did of dids) {
