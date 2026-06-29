@@ -324,9 +324,13 @@ export function BoardDetail() {
         <span style={{ color: 'var(--color-accent)' }}>
           <RewardPoints did={quest.did} points={quest.rewardPoints} />
         </span>
-        <span style={{ marginLeft: 'auto' }}>{questLevelLabel(qState)}</span>
+        {/* 空き枠が残る間は「受託中」でなく「募集中」と出す (複数受託で 1 人確定済みでも
+            まだ応募を受け付けているため。👥 N/M で確定済み人数も併記)。 */}
+        <span style={{ marginLeft: 'auto' }}>
+          {qState === 'ASSIGNED' && openSlot ? '募集中' : questLevelLabel(qState)}
+        </span>
         {questMaxAssignees(quest) > 1 && (
-          <span title="受託者数 / 上限">👥 {assignees.length}/{questMaxAssignees(quest)}</span>
+          <span title="受託者数 / 上限">受託 {assignees.length}/{questMaxAssignees(quest)}</span>
         )}
       </div>
 
@@ -342,8 +346,10 @@ export function BoardDetail() {
         </p>
       )}
 
-      {/* 発注者向け: 期限変更 / キャンセル (open 中のみ) */}
-      {isOwner && quest.status === 'open' && (
+      {/* 発注者向け: 期限変更 / キャンセル (募集枠が残る間 = まだ受付中のクエストのみ)。
+          複数受託では 1 人確定後 (status=assigned) でも空き枠がある間は募集継続なので操作可。
+          単数 (満枠 1/1) や完了/キャンセル後は従来どおり非表示。 */}
+      {isOwner && openSlot && qState !== 'CANCELLED' && qState !== 'COMPLETED' && (
         <div style={{ marginTop: '1em' }}>
           <div style={{ display: 'flex', gap: '0.6em' }}>
             <button onClick={() => {
@@ -408,6 +414,14 @@ export function BoardDetail() {
         </div>
       )}
 
+      {/* 満枠 (空き枠なし・未完了) のとき、非受託の訪問者に「もう応募できない理由」を明示する
+          (無言で応募導線が消えると認知ギャップになる、UX レビュー指摘)。 */}
+      {!isOwner && !isAssignee && !openSlot && qState === 'ASSIGNED' && questMaxAssignees(quest) > 1 && (
+        <p style={{ marginTop: '1em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
+          受託枠が埋まりました ({assignees.length}/{questMaxAssignees(quest)} 人)。
+        </p>
+      )}
+
       {/* 発注者向け応募者一覧: 空き枠がある間表示。withdrawn と確定済み受託者は除外 */}
       {isOwner && openSlot && qState !== 'CANCELLED' && qState !== 'COMPLETED' && (() => {
         const activeApps = applications?.filter(a => !a.withdrawn && !assignees.includes(a.did)) ?? null;
@@ -462,7 +476,7 @@ export function BoardDetail() {
             const st = stateOf(aDid);
             const meRow = session.did === aDid;
             return (
-              <div key={aDid} className="dq-window compact" style={{ marginTop: '0.4em' }}>
+              <div key={aDid} className="dq-window compact" style={{ marginTop: '0.4em', borderColor: actionTarget === aDid ? 'var(--color-accent)' : undefined }}>
                 <p style={{ margin: 0, fontSize: '0.85em' }}>
                   <strong><Handle did={aDid} /></strong>
                   <span style={{ marginLeft: '0.5em', fontSize: '0.85em', color: st === 'COMPLETED' ? 'var(--color-accent)' : 'var(--color-muted)' }}>
@@ -520,8 +534,8 @@ export function BoardDetail() {
 
                 {/* この受託者が承認済み: 報酬発行を表示 */}
                 {st === 'COMPLETED' && (
-                  <p style={{ margin: '0.3em 0 0', fontSize: '0.82em' }}>
-                    ✅ <RewardPoints did={quest.did} points={quest.rewardPoints} /> を発行しました。
+                  <p style={{ margin: '0.3em 0 0', fontSize: '0.82em', color: 'var(--color-accent)' }}>
+                    ✓ <RewardPoints did={quest.did} points={quest.rewardPoints} /> を発行しました。
                   </p>
                 )}
               </div>
@@ -565,7 +579,7 @@ function assigneeStateLabel(state: AssigneeState): string {
     case 'IN_PROGRESS':        return '作業中';
     case 'AWAITING_APPROVAL':  return '完了報告済み (承認待ち)';
     case 'REVISION_REQUESTED': return 'やり直し対応中';
-    case 'COMPLETED':          return '✅ 完了 (承認済み)';
+    case 'COMPLETED':          return '✓ 完了 (承認済み)';
   }
 }
 

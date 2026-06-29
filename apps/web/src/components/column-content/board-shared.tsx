@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
 import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery, questPath } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
-import { needsRequesterApproval, effectiveState, effectiveStateForAssignee, questAssignees, questMaxAssignees, type EffectiveState, type UserQuest } from '@aozoraquest/core';
+import { needsRequesterApproval, effectiveStateForAssignee, questAssignees, questMaxAssignees, type EffectiveState, type UserQuest } from '@aozoraquest/core';
 import { setQuestActionableCount } from '@/lib/quest-actionable';
 import { useSession } from '@/lib/session';
 import { useRuntimeConfig } from '@/components/config-provider';
@@ -274,7 +274,7 @@ export function QuestCard({ summary, expired, needsApproval, assigneeState }: { 
           {summary.tags.slice(0, 3).map(t => <span key={t}>#{t.replace(/^#/, '')}</span>)}
           {questMaxAssignees(summary) > 1 && (
             // 複数受託クエスト: 確定済み人数 / 上限を示す (募集枠の埋まり具合)
-            <span title="受託者数 / 上限">👥 {questAssignees(summary).length}/{questMaxAssignees(summary)}</span>
+            <span title="受託者数 / 上限">受託 {questAssignees(summary).length}/{questMaxAssignees(summary)}</span>
           )}
           <span style={{ marginLeft: 'auto' }}>
             {expired ? '期限切れ' : summary.deadline ? `〆 ${formatDate(summary.deadline)}` : ''}
