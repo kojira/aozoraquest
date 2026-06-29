@@ -10,6 +10,7 @@ import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
 import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery, questPath } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
 import { needsRequesterApproval, effectiveState, type EffectiveState, type UserQuest } from '@aozoraquest/core';
+import { setQuestActionableCount } from '@/lib/quest-actionable';
 import { useSession } from '@/lib/session';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { RewardPoints } from '@/components/handle';
@@ -133,6 +134,12 @@ export function useBoardData() {
       .catch((e) => { if (!cancelled) console.warn('[board] listMyApplications', e); });
     return () => { cancelled = true; };
   }, [session.status, session.agent, session.did]);
+
+  // 「自分のアクション待ち件数」(承認待ち + 完了報告待ち) を共有ストアへ publish。
+  // footer-nav の「クエスト」タブが赤カウントバッジで表示し、@mention を見逃しても気付ける。
+  useEffect(() => {
+    setQuestActionableCount(pendingApproval.length + reportPending.length);
+  }, [pendingApproval, reportPending]);
 
   return { index, myQuests, myApplicationQuestUris, pendingApproval, assigneeStates, reportPending, err, sessionDid: session.did ?? null };
 }
