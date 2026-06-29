@@ -731,6 +731,26 @@ export async function listCompletionsFor(
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+/**
+ * 報酬/XP 集計を per-assignee 承認ベースで正しく出すための completion マップを作る。
+ *
+ * **multi かつ未完了 (status が completed/cancelled でない) のクエストだけ** completion を読む。
+ * 単数クエストや全員承認済み (status='completed') のクエストは status fallback が実値と一致する
+ * ため取得しない (= 無駄な PDS read を避ける)。複数受託で「一部だけ承認・quest 未完了」のときに
+ * 承認済み受託者の報酬を計上するのが目的。
+ */
+export async function loadCompletionsByUri(quests: UserQuest[]): Promise<Map<AtUri, QuestCompletion[]>> {
+  const map = new Map<AtUri, QuestCompletion[]>();
+  const targets = quests.filter(
+    q => questMaxAssignees(q) > 1 && q.status !== 'completed' && q.status !== 'cancelled',
+  );
+  await Promise.all(targets.map(async (q) => {
+    try { map.set(q.uri, await listCompletionsFor(undefined, q)); }
+    catch (e) { console.warn('[quest-api] loadCompletionsByUri', q.uri, e); }
+  }));
+  return map;
+}
+
 async function notifyEdgeApplication(_agent: Agent, app: QuestApplication): Promise<void> {
   if (!EDGE_URL) {
     mockIndex.addApplication({
