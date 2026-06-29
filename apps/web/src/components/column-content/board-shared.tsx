@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import type { QuestIndex, QuestIndexSummary } from '@/lib/quest-api';
 import { listIssuedQuests, listMyApplications, listCompletionsFor, buildQuestIndexViaDiscovery, questPath } from '@/lib/quest-api';
 import { getQuestIndexCached } from '@/lib/quest-index-cache';
-import { needsRequesterApproval, effectiveState, type EffectiveState, type UserQuest } from '@aozoraquest/core';
+import { needsRequesterApproval, effectiveState, effectiveStateForAssignee, questAssignees, questMaxAssignees, type EffectiveState, type UserQuest } from '@aozoraquest/core';
 import { setQuestActionableCount } from '@/lib/quest-actionable';
 import { useSession } from '@/lib/session';
 import { useRuntimeConfig } from '@/components/config-provider';
@@ -69,7 +69,7 @@ export function useBoardData() {
       setReportPending([]);
       return;
     }
-    const mine = index.quests.filter((q) => q.assignee === selfDid && q.status === 'assigned');
+    const mine = index.quests.filter((q) => questAssignees(q).includes(selfDid) && q.status === 'assigned');
     if (mine.length === 0) {
       setAssigneeStates(new Map());
       setReportPending([]);
@@ -83,7 +83,8 @@ export function useBoardData() {
         const q = summaryToQuest(s);
         try {
           const comps = await listCompletionsFor(undefined, q);
-          const st = effectiveState(q, comps);
+          // 複数受託: 自分ぶんの状態だけを見る (他の受託者の進行は無関係)。
+          const st = effectiveStateForAssignee(q, comps, selfDid);
           states.set(q.uri, st);
           if (st === 'IN_PROGRESS' || st === 'REVISION_REQUESTED') pend.push(q);
         } catch (e) {
@@ -160,6 +161,8 @@ function summaryToQuest(s: QuestIndexSummary): UserQuest {
     updatedAt: s.createdAt,
   };
   if (s.assignee !== undefined) q.assignee = s.assignee;
+  if (s.assignees !== undefined) q.assignees = s.assignees;
+  if (s.maxAssignees !== undefined) q.maxAssignees = s.maxAssignees;
   if (s.deadline !== undefined) q.deadline = s.deadline;
   return q;
 }
@@ -181,7 +184,7 @@ export function filterForBoard(
     // 抜ける)。これが無いと受託者は受託後にクエストを見失い完了報告に到達できない。
     if (!index) return null;
     if (!selfDid) return [];
-    return index.quests.filter(q => q.assignee === selfDid && q.status === 'assigned');
+    return index.quests.filter(q => questAssignees(q).includes(selfDid) && q.status === 'assigned');
   }
   if (c.kind === 'mine') {
     if (!myQuests) return null;
@@ -269,6 +272,10 @@ export function QuestCard({ summary, expired, needsApproval, assigneeState }: { 
         </div>
         <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.3em' }}>
           {summary.tags.slice(0, 3).map(t => <span key={t}>#{t.replace(/^#/, '')}</span>)}
+          {questMaxAssignees(summary) > 1 && (
+            // 複数受託クエスト: 確定済み人数 / 上限を示す (募集枠の埋まり具合)
+            <span title="受託者数 / 上限">👥 {questAssignees(summary).length}/{questMaxAssignees(summary)}</span>
+          )}
           <span style={{ marginLeft: 'auto' }}>
             {expired ? '期限切れ' : summary.deadline ? `〆 ${formatDate(summary.deadline)}` : ''}
             {/* needsApproval / assignee バッジが状態を示すときは muted ラベルを重複させない */}
