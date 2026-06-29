@@ -5,7 +5,7 @@ import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerLevelFromXp, playerXpToNextLevel, questXpScalar } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
-import { listReceivedQuests } from '@/lib/quest-api';
+import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
@@ -96,7 +96,9 @@ export function MyProfile() {
     (async () => {
       try {
         const received = await listReceivedQuests(agent, did);
-        if (!cancelled) setQuestXp(questXpScalar(received, did));
+        // 複数受託で一部だけ承認 (quest 未完了) のときも、自分が承認済みなら XP に計上する。
+        const compMap = await loadCompletionsByUri(received);
+        if (!cancelled) setQuestXp(questXpScalar(received, did, compMap));
       } catch (e) {
         console.warn('quest xp load failed', e);
       }

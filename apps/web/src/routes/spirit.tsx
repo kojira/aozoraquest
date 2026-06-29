@@ -5,7 +5,7 @@ import type { DiagnosisResult } from '@aozoraquest/core';
 import { GREETING_HOUR_BOUNDARIES, SPIRIT_CHAT_HISTORY_TURNS, SPIRIT_INPUT_MAX_LENGTH, jobDisplayName, jobLevelFromXp, pickSpiritLine, questXpScalar, type SpiritSituation } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
-import { listReceivedQuests } from '@/lib/quest-api';
+import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
 import { COL } from '@/lib/collections';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { SpiritBubble } from '@/components/spirit-bubble';
@@ -110,7 +110,7 @@ export function Spirit() {
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           loadChatHistory(agent, did),
-          listReceivedQuests(agent, did).then((qs) => questXpScalar(qs, did)).catch(() => 0),
+          listReceivedQuests(agent, did).then(async (qs) => questXpScalar(qs, did, await loadCompletionsByUri(qs))).catch(() => 0),
         ]);
         if (cancelled) return;
         setDiag(r);
