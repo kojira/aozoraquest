@@ -7,6 +7,7 @@ import { composeFabAllowedOnPath } from '@/lib/compose-fab';
 import { useSession } from '@/lib/session';
 import { getUnreadNotificationCount } from '@/lib/atproto';
 import { useVisibleColumn } from '@/lib/visible-column';
+import { useQuestActionableCount } from '@/lib/quest-actionable';
 import type { AppColumnKind } from '@/lib/app-columns';
 
 /** footer-nav の各タブと workspace カラム kind の対応。
@@ -43,6 +44,8 @@ export function AppShell() {
   const navigate = useNavigate();
   const composeOpen = useComposePaneOpen();
   const [unread, setUnread] = useState(0);
+  // 自分のアクション待ちクエスト件数 (承認待ち + 完了報告待ち)。クエストタブに赤カウント表示。
+  const questActionable = useQuestActionableCount();
   const visibleKind = useVisibleColumn();
   const headerRef = useRef<HTMLElement>(null);
   const footerRef = useRef<HTMLElement>(null);
@@ -216,6 +219,32 @@ export function AppShell() {
                   boxShadow: '0 0 0 2px var(--color-bg, #000)',
                 }}
               />
+            )}
+            {key === 'quests' && session.status === 'signed-in' && questActionable > 0 && (
+              // 自分のアクション待ち (承認 / 完了報告) 件数の赤カウントバッジ。
+              // @mention を見逃しても未対応が残っていれば常に見える。
+              <span
+                aria-label={`対応待ちクエスト ${questActionable} 件`}
+                style={{
+                  position: 'absolute',
+                  top: 1,
+                  right: 'calc(50% - 22px)',
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 4px',
+                  boxSizing: 'border-box',
+                  borderRadius: 8,
+                  background: '#e53935',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  lineHeight: '16px',
+                  textAlign: 'center',
+                  boxShadow: '0 0 0 2px var(--color-bg, #000)',
+                }}
+              >
+                {questActionable > 9 ? '9+' : questActionable}
+              </span>
             )}
           </NavLink>
         ))}
