@@ -707,8 +707,10 @@ export async function listCompletionsFor(
   // 全受託者の PDS から completion を読む (複数受託では各自が自分の PDS に報告を書く)。
   for (const a of questAssignees(quest)) dids.add(a);
 
-  const out: QuestCompletion[] = [];
-  for (const did of dids) {
+  // 各 DID の PDS read を並列化する (複数受託で受託者が増えても read 時間が伸びにくい。
+  // 1 DID の失敗は他に波及させず空配列に倒す)。
+  const perDid = await Promise.all([...dids].map(async (did) => {
+    const acc: QuestCompletion[] = [];
     try {
       // 各 DID の PDS から公開 read (自分の PDS 経由だと別ホストの repo を読めない)
       const res = await listRecordsForDid(did, COL.questCompletion, 100);
@@ -722,13 +724,15 @@ export async function listCompletionsFor(
           console.warn('[quest-api] dropping invalid completion (owner mismatch)', r.uri, c.role);
           continue;
         }
-        out.push(c);
+        acc.push(c);
       }
     } catch (err) {
       console.warn('[quest-api] listCompletions fetch failed', did, err);
     }
-  }
-  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return acc;
+  }));
+  // createdAt 昇順で安定ソート (並列なので順序を明示的に確定させる)。
+  return perDid.flat().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 /**

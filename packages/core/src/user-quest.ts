@@ -88,7 +88,7 @@ export interface QuestCompletion {
 // ─── 受託者集合の正規化 (新旧形式を吸収する読み取りの単一窓口) ─────
 
 /** 受託上限。未指定 legacy は 1 (旧 = 単数受託)。 */
-export const MAX_ASSIGNEES_PER_QUEST = 20;
+export const MAX_ASSIGNEES_PER_QUEST = 50;
 export const MIN_ASSIGNEES_PER_QUEST = 1;
 
 /** quest の受託者 DID を新旧両形式から正規化する。書き込み済み record を壊さない読み取りの窓口。 */

@@ -559,8 +559,8 @@ describe('複数受託 (multi-assignee)', () => {
     expect(questAssignees({ assignees: [], assignee: A })).toEqual([A]);
   });
 
-  it('MAX_ASSIGNEES_PER_QUEST = 20 (確定値)', () => {
-    expect(MAX_ASSIGNEES_PER_QUEST).toBe(20);
+  it('MAX_ASSIGNEES_PER_QUEST = 50 (確定値)', () => {
+    expect(MAX_ASSIGNEES_PER_QUEST).toBe(50);
   });
 });
 
