@@ -18,7 +18,7 @@
 import { useSyncExternalStore } from 'react';
 import { listIssuedQuests, listCompletionsFor, buildQuestIndexViaDiscovery, type QuestIndexSummary } from './quest-api';
 import { getQuestIndexCached } from './quest-index-cache';
-import { effectiveState, needsRequesterApproval, type UserQuest } from '@aozoraquest/core';
+import { effectiveStateForAssignee, needsRequesterApproval, questAssignees, type UserQuest } from '@aozoraquest/core';
 
 type Agent = Parameters<typeof buildQuestIndexViaDiscovery>[0];
 type Did = Parameters<typeof buildQuestIndexViaDiscovery>[1][number];
@@ -65,6 +65,8 @@ function summaryToQuest(s: QuestIndexSummary): UserQuest {
     updatedAt: s.createdAt,
   };
   if (s.assignee !== undefined) q.assignee = s.assignee;
+  if (s.assignees !== undefined) q.assignees = s.assignees;
+  if (s.maxAssignees !== undefined) q.maxAssignees = s.maxAssignees;
   if (s.deadline !== undefined) q.deadline = s.deadline;
   return q;
 }
@@ -84,12 +86,13 @@ export async function computeQuestActionableCount(
   let reportPending = 0;
   try {
     const idx = await getQuestIndexCached(() => buildQuestIndexViaDiscovery(agent, directoryDids, did));
-    const mine = idx.quests.filter((q) => q.assignee === did && q.status === 'assigned');
+    const mine = idx.quests.filter((q) => questAssignees(q).includes(did) && q.status === 'assigned');
     await Promise.all(mine.map(async (s) => {
       const q = summaryToQuest(s);
       try {
         const comps = await listCompletionsFor(undefined, q);
-        const st = effectiveState(q, comps);
+        // 複数受託: 自分ぶんの状態だけ見る (他受託者の進行は無関係)。
+        const st = effectiveStateForAssignee(q, comps, did);
         if (st === 'IN_PROGRESS' || st === 'REVISION_REQUESTED') reportPending += 1;
       } catch {
         // 失敗時は「報告する番」に倒す (見落とすより出して気づかせる。useBoardData と対称)
