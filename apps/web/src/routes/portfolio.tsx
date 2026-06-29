@@ -17,6 +17,7 @@ import {
   distinctRecipients,
   distinctRequesters,
   questXpScalar,
+  questAssignees,
   type UserQuest,
   type OutcomeSummary,
 } from '@aozoraquest/core';
@@ -95,7 +96,7 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
         for (const u of questUris) {
           try {
             const q = await getQuest(agent, u);
-            if (q && q.assignee === did) fetched.push(q);
+            if (q && questAssignees(q).includes(did)) fetched.push(q);
           } catch (e) {
             console.warn('[portfolio] resolve received quest failed', u, e);
           }
