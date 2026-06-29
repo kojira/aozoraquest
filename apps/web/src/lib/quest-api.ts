@@ -23,6 +23,7 @@ import {
   questMaxAssignees,
   hasOpenSlot,
   completionTarget,
+  MAX_ASSIGNEES_PER_QUEST,
 } from '@aozoraquest/core';
 import { putRecord, getRecord } from './atproto';
 import { listRecordsForDid, getRecordForDid } from './repo-read';
@@ -78,7 +79,10 @@ export async function createQuest(
   if (input.deadline !== undefined) quest.deadline = input.deadline;
   if (input.blueskyPostUri !== undefined) quest.blueskyPostUri = input.blueskyPostUri;
   // 2 人以上募集のときだけ maxAssignees を書く (1 は legacy と同義なので省略)。
-  if (input.maxAssignees !== undefined && input.maxAssignees > 1) quest.maxAssignees = input.maxAssignees;
+  // 整数化 + [2, MAX] に clamp (UI 配線時の不正値で巨大ループ等が起きないよう API でも防御)。
+  if (input.maxAssignees !== undefined && input.maxAssignees > 1) {
+    quest.maxAssignees = Math.min(Math.floor(input.maxAssignees), MAX_ASSIGNEES_PER_QUEST);
+  }
 
   await putRecord(agent, COL.userQuest, rkey, toRecord(quest, COL.userQuest));
   await notifyEdgeQuest(agent, quest);
@@ -514,8 +518,21 @@ export async function listMyApplications(_agent: Agent, did: Did, limit = 100): 
 
 // ─── Phase 2: 受託者指定 (発注者が quest record を更新) ───
 
+/**
+ * 書き込み record の legacy `assignee` を新形式 `assignees` に同期する (in-place)。
+ * **単数 (assignees が 1 名) のうちは legacy `assignee` も併記** する。これは段階3 未改修の
+ * UI (board-detail / board-shared / quest-actionable / portfolio が `quest.assignee` を直読み)
+ * が単数受託で壊れないための後方互換措置。複数 (2 名以上) は単数フィールドで表せないので外す
+ * (複数受託は段階3 の UI 配線が揃ってから作成可能になる)。
+ */
+function syncLegacyAssignee(q: UserQuest): void {
+  const list = q.assignees ?? [];
+  if (list.length === 1) q.assignee = list[0]!;
+  else delete q.assignee;
+}
+
 /** 受託者を 1 名追加する (発注者操作)。上限超過は拒否、重複は no-op。
- *  書き込みは新形式 `assignees` に一本化し、legacy `assignee` フィールドは除去する。 */
+ *  書き込みは新形式 `assignees` に寄せる (単数のうちは legacy assignee も併記 = 後方互換)。 */
 export async function addAssignee(
   agent: Agent,
   quest: UserQuest,
@@ -533,7 +550,7 @@ export async function addAssignee(
     status: 'assigned',
     updatedAt: new Date().toISOString(),
   };
-  delete updated.assignee; // 新形式に一本化 (legacy 単数フィールドを残さない)
+  syncLegacyAssignee(updated);
   await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
   await notifyEdgeQuest(agent, updated);
   return updated;
@@ -553,7 +570,7 @@ export async function removeAssignee(
     status: assignees.length === 0 ? 'open' : 'assigned',
     updatedAt: new Date().toISOString(),
   };
-  delete updated.assignee;
+  syncLegacyAssignee(updated);
   await putRecord(agent, COL.userQuest, rkey, toRecord(updated, COL.userQuest));
   await notifyEdgeQuest(agent, updated);
   return updated;
@@ -622,6 +639,9 @@ export async function approveCompletion(
   // targetAssignee 省略時は唯一の受託者に解決 (単数 quest の後方互換)。
   const target = targetAssignee ?? questAssignees(quest)[0];
   if (!target) throw new Error('受託者がいません');
+  // 書き込み前ガード: target が受託者集合内であること (読み取り時 isValidCompletion でも弾くが、
+  // ゴミ approval record を書かないよう書き込み側でも防御)。
+  if (!questAssignees(quest).includes(target)) throw new Error('指定した受託者はこのクエストの受託者ではありません');
 
   const existing = await listCompletionsFor(undefined, quest);
   // 冪等性: **この受託者向け**の承認が既にあれば二重 approval を書かない (= 二重発行防止)。
@@ -662,6 +682,7 @@ export async function requestRevision(
 ): Promise<{ completion: QuestCompletion; updatedQuest: UserQuest }> {
   const target = targetAssignee ?? questAssignees(quest)[0];
   if (!target) throw new Error('受託者がいません');
+  if (!questAssignees(quest).includes(target)) throw new Error('指定した受託者はこのクエストの受託者ではありません');
   const completion = await writeCompletion(
     agent, requesterDid, quest.uri, 'requesterRevision', comment, target,
   );
