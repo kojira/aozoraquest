@@ -18,6 +18,10 @@
   --color-window-bg-alt: rgba(0, 0, 0, 0.88);
   --color-window-inner-border: rgba(255, 255, 255, 0.35);
   --color-danger: #ff7272;
+  /* footer-nav の通知ドット / クエスト対応待ちカウントの赤バッジ色。
+     --color-danger (#ff7272) は淡く、10px の白文字カウントを乗せるとコントラスト不足に
+     なるため、視認性優先で濃い赤を専用トークンとして持つ (DESIGN.md の danger とは別用途)。 */
+  --color-notify-badge: #e53935;
 
   /* カレンダーの週末色。ステータス色 (atk/def/agi/int/luk) や accent の
      意味と干渉しないよう専用に持つ (DESIGN.md: ステータス色は流用しない)。 */

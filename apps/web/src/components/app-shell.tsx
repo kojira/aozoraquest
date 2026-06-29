@@ -7,6 +7,8 @@ import { composeFabAllowedOnPath } from '@/lib/compose-fab';
 import { useSession } from '@/lib/session';
 import { getUnreadNotificationCount } from '@/lib/atproto';
 import { useVisibleColumn } from '@/lib/visible-column';
+import { useQuestActionableCount, computeQuestActionableCount, setQuestActionableCount } from '@/lib/quest-actionable';
+import { useRuntimeConfig } from '@/components/config-provider';
 import type { AppColumnKind } from '@/lib/app-columns';
 
 /** footer-nav の各タブと workspace カラム kind の対応。
@@ -43,6 +45,9 @@ export function AppShell() {
   const navigate = useNavigate();
   const composeOpen = useComposePaneOpen();
   const [unread, setUnread] = useState(0);
+  // 自分のアクション待ちクエスト件数 (承認待ち + 完了報告待ち)。クエストタブに赤カウント表示。
+  const questActionable = useQuestActionableCount();
+  const runtimeConfig = useRuntimeConfig();
   const visibleKind = useVisibleColumn();
   const headerRef = useRef<HTMLElement>(null);
   const footerRef = useRef<HTMLElement>(null);
@@ -100,6 +105,40 @@ export function AppShell() {
       clearInterval(id);
     };
   }, [session.status, session.agent]);
+
+  // クエストのアクション待ち件数をルート非依存で集計 (board カラムが mount されない
+  // /me 等に直接着地してもバッジが出るように)。サインイン時 + 復帰(focus)時に再計算し、
+  // サインアウトで 0 リセット。focus は throttle し、index は getQuestIndexCached で
+  // board カラムと共有するので、連続発火しても重い discovery を繰り返さない。
+  const directoryKey = runtimeConfig.directory.map((u) => u.did).join(',');
+  useEffect(() => {
+    if (session.status !== 'signed-in' || !session.agent || !session.did) {
+      setQuestActionableCount(0);
+      return;
+    }
+    const agent = session.agent;
+    const did = session.did;
+    const dids = directoryKey ? (directoryKey.split(',') as Parameters<typeof computeQuestActionableCount>[2]) : [];
+    let cancelled = false;
+    let lastRun = 0;
+    const run = () => {
+      const now = Date.now();
+      if (now - lastRun < 60_000) return; // 復帰連打を間引く
+      lastRun = now;
+      void computeQuestActionableCount(agent, did, dids)
+        .then((n) => { if (!cancelled) setQuestActionableCount(n); })
+        .catch(() => {});
+    };
+    run();
+    const onVisible = () => { if (document.visibilityState === 'visible') run(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [session.status, session.agent, session.did, directoryKey]);
 
   // 通知タブを開いた瞬間にバッジを消す
   useEffect(() => {
@@ -199,24 +238,54 @@ export function AppShell() {
                 : isActive;
               return `footer-nav-item${active ? ' active' : ''}`;
             }}
-            style={{ position: 'relative' }}
           >
-            <Icon size={26} />
-            {key === 'notifications' && unread > 0 && (
-              <span
-                aria-label={`未読 ${unread} 件`}
-                style={{
-                  position: 'absolute',
-                  top: 4,
-                  right: 'calc(50% - 16px)',
-                  width: 10,
-                  height: 10,
-                  borderRadius: 5,
-                  background: '#e53935',
-                  boxShadow: '0 0 0 2px var(--color-bg, #000)',
-                }}
-              />
-            )}
+            {/* バッジはアイコン基準で配置する。footer-nav はモバイルでは横長タブ、PC では
+                幅 56px の縦レール (44x44 の正方形タブ) になるため、タブ基準 (calc(50%-..))
+                だとレールで位置が破綻する。アイコン右上に固定すれば両レイアウトで成立する。 */}
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <Icon size={26} />
+              {key === 'notifications' && unread > 0 && (
+                <span
+                  aria-label={`未読 ${unread} 件`}
+                  style={{
+                    position: 'absolute',
+                    top: -3,
+                    right: -4,
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    background: 'var(--color-notify-badge)',
+                    boxShadow: '0 0 0 2px var(--color-bg, #000)',
+                  }}
+                />
+              )}
+              {key === 'quests' && session.status === 'signed-in' && questActionable > 0 && (
+                // 自分のアクション待ち (承認 / 完了報告) 件数の赤カウントバッジ。
+                // @mention を見逃しても未対応が残っていれば常に見える。
+                <span
+                  aria-label={`対応待ちクエスト ${questActionable} 件`}
+                  style={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -9,
+                    minWidth: 16,
+                    height: 16,
+                    padding: '0 4px',
+                    boxSizing: 'border-box',
+                    borderRadius: 8,
+                    background: 'var(--color-notify-badge)',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    lineHeight: '16px',
+                    textAlign: 'center',
+                    boxShadow: '0 0 0 2px var(--color-bg, #000)',
+                  }}
+                >
+                  {questActionable > 9 ? '9+' : questActionable}
+                </span>
+              )}
+            </span>
           </NavLink>
         ))}
       </nav>
