@@ -93,7 +93,9 @@ export const MIN_ASSIGNEES_PER_QUEST = 1;
 
 /** quest の受託者 DID を新旧両形式から正規化する。書き込み済み record を壊さない読み取りの窓口。 */
 export function questAssignees(q: Pick<UserQuest, 'assignees' | 'assignee'>): Did[] {
-  if (q.assignees && q.assignees.length > 0) return q.assignees;
+  // 重複 DID は除去する (集計の水増し防止 = 防御。書き込み側 addAssignee も重複拒否するが、
+  // 不正/壊れた record でも totalIssued 等が水増しされないよう読み取り窓口でも担保)。
+  if (q.assignees && q.assignees.length > 0) return [...new Set(q.assignees)];
   return q.assignee ? [q.assignee] : [];
 }
 
@@ -143,6 +145,20 @@ export function isCompleted(q: UserQuest, completions: QuestCompletion[]): boole
     c.role === 'requesterApproval' &&
     c.did === q.did,
   );
+}
+
+/**
+ * **複数受託では `isCompleted` を完了判定に使わないこと** (= owner の approval が 1 件でも
+ * あれば true を返すため、複数受託で「1 人承認 = quest 全体完了」に化ける)。
+ * 報酬・冪等性・per-assignee の完了は **この関数** (= その受託者向けの承認があるか) を使う。
+ * `isCompleted` は legacy 単数 / quest 全体の概況用に限定する。
+ */
+export function isCompletedForAssignee(
+  q: UserQuest,
+  completions: QuestCompletion[],
+  assigneeDid: Did,
+): boolean {
+  return effectiveStateForAssignee(q, completions, assigneeDid) === 'COMPLETED';
 }
 
 /** completion record の owner DID が role に対応する正当な書き手かを検証する。

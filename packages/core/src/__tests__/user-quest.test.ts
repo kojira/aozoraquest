@@ -11,6 +11,7 @@ import {
   questMaxAssignees,
   hasOpenSlot,
   completionTarget,
+  isCompletedForAssignee,
   rewardForMe,
   MAX_ASSIGNEES_PER_QUEST,
   questXpScalar,
@@ -530,8 +531,36 @@ describe('複数受託 (multi-assignee)', () => {
     expect(questAssignees(legacy)).toEqual([A]);
   });
 
-  it('MAX_ASSIGNEES_PER_QUEST が定義されている', () => {
-    expect(MAX_ASSIGNEES_PER_QUEST).toBeGreaterThanOrEqual(10);
+  it('ある受託者への承認は別の受託者の状態に漏れない (target フィルタの効き)', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02')]; // A のみ報告+承認、B は何もしていない
+    expect(effectiveStateForAssignee(q, comps, A)).toBe('COMPLETED');
+    expect(effectiveStateForAssignee(q, comps, B)).toBe('IN_PROGRESS'); // B には漏れない
+    expect(isCompletedForAssignee(q, comps, A)).toBe(true);
+    expect(isCompletedForAssignee(q, comps, B)).toBe(false);
+  });
+
+  it('isCompletedForAssignee は受託者ごとに判定 (isCompleted の複数受託版)', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02'), report(B, '03')];
+    expect(isCompletedForAssignee(q, comps, A)).toBe(true);
+    expect(isCompletedForAssignee(q, comps, B)).toBe(false); // B は報告のみ未承認
+  });
+
+  it('questAssignees: assignees の重複 DID は除去する (水増し防止)', () => {
+    expect(questAssignees(multi({ assignees: [A, A, B] }))).toEqual([A, B]);
+    // 重複 assignee でも totalIssued は承認された実人数ぶんに留まる
+    const q = multi({ assignees: [A, A], maxAssignees: 2, rewardPoints: 500 });
+    const byUri = new Map([[URI, [report(A, '01'), approve(A, '02')]]]);
+    expect(totalIssued([q], byUri)).toBe(500); // A 1 人ぶん (重複で 1000 にならない)
+  });
+
+  it('questAssignees: assignees:[] (明示空) は legacy assignee に fallback する', () => {
+    expect(questAssignees({ assignees: [], assignee: A })).toEqual([A]);
+  });
+
+  it('MAX_ASSIGNEES_PER_QUEST = 20 (確定値)', () => {
+    expect(MAX_ASSIGNEES_PER_QUEST).toBe(20);
   });
 });
 
