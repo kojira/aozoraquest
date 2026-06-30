@@ -15,9 +15,13 @@ import { ImageLightbox } from './image-lightbox';
  * 外周だけ角丸 (overflow:hidden)、セル間は 2px gap。
  */
 const GAP = 2;
-const RADIUS = 12;
+// DESIGN.md (Shapes): 角丸は 8px 上限。X 風でも世界観に合わせ 8px に収める。
+const RADIUS = 8;
 /** 1 枚表示の最大高さ (縦長画像が極端に縦に伸びないようキャップ)。 */
 const SINGLE_MAX_H = 510;
+// PC のカラム幅は最大 760px までドラッグ可能 (COLUMN_MAX_WIDTH)。画像がそのまま追従して
+// 巨大化しないよう、グリッド全体の最大幅もキャップする (X の本文カラム幅相当)。
+const MAX_W = 510;
 
 /** 1 枚画像の表示アスペクト比 (= width/height)。自然比を縦長 0.75〜横長 1.78 にクランプ。 */
 function singleAspect(img: PostImage): number {
@@ -41,7 +45,12 @@ export function PostImages({ images }: { images: PostImage[] }) {
         type="button"
         onClick={() => setOpenIdx(i)}
         style={{
-          all: 'unset',
+          // all:unset は使わない (global の button:focus-visible アウトラインを潰すため)。
+          // 必要なリセットだけ明示し、フォーカスリング (a11y) は global ルールに任せる。
+          border: 'none',
+          padding: 0,
+          margin: 0,
+          font: 'inherit',
           cursor: 'zoom-in',
           display: 'block',
           width: '100%',
@@ -94,7 +103,7 @@ export function PostImages({ images }: { images: PostImage[] }) {
 
   return (
     <>
-      <div style={{ width: '100%', borderRadius: RADIUS, overflow: 'hidden', ...containerStyle }}>
+      <div style={{ width: '100%', maxWidth: MAX_W, borderRadius: RADIUS, overflow: 'hidden', ...containerStyle }}>
         {inner}
       </div>
       {openIdx !== null && (
