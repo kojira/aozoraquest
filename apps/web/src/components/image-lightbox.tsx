@@ -76,7 +76,16 @@ export function ImageLightbox({
   const hasPrev = idx > 0;
   const hasNext = idx < images.length - 1;
 
+  // 指が外れた / ジェスチャ中断時に drag が途中値で固定されないよう確実にリセットする。
+  function resetDrag() {
+    setDragging(false);
+    setDrag(0);
+    axis.current = null;
+  }
+
   function onTouchStart(e: React.TouchEvent) {
+    // 2 本目以降 (ピンチ等) は基準点がぶれるのでカルーセルを開始しない。
+    if (e.touches.length > 1) { resetDrag(); return; }
     const t = e.touches[0];
     if (!t) return;
     startX.current = t.clientX;
@@ -87,6 +96,7 @@ export function ImageLightbox({
   }
 
   function onTouchMove(e: React.TouchEvent) {
+    if (e.touches.length > 1) return; // マルチタッチ中は drag を更新しない
     const t = e.touches[0];
     if (!t) return;
     const dx = t.clientX - startX.current;
@@ -138,6 +148,10 @@ export function ImageLightbox({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onTouchCancel={resetDrag}
+        // 画像エリア (レターボックス余白含む) のタップで誤って閉じない。閉じるのは
+        // 背景余白 / ✕ ボタン / ESC のみ (スワイプ後のタップ誤爆も防ぐ)。
+        onClick={(e) => e.stopPropagation()}
         style={{
           flex: 1,
           minHeight: 0,
