@@ -5,6 +5,15 @@ import {
   isValidCompletion,
   needsRequesterApproval,
   effectiveState,
+  effectiveStateForAssignee,
+  questLevelState,
+  questAssignees,
+  questMaxAssignees,
+  hasOpenSlot,
+  completionTarget,
+  isCompletedForAssignee,
+  rewardForMe,
+  MAX_ASSIGNEES_PER_QUEST,
   questXpScalar,
   outcomeOf,
   holdings,
@@ -420,6 +429,138 @@ describe('checkIssuanceLimits', () => {
     const r = checkIssuanceLimits(qs, NOW);
     expect(r.ok).toBe(true);
     expect(r.todayCount).toBe(0);
+  });
+});
+
+describe('複数受託 (multi-assignee)', () => {
+  const owner = 'did:plc:owner';
+  const A = 'did:plc:alice';
+  const B = 'did:plc:bob';
+  const URI = 'at://did:plc:owner/app.aozoraquest.userQuest/multi';
+  const multi = (over: Partial<UserQuest> = {}): UserQuest =>
+    mk({ uri: URI, did: owner, status: 'assigned', assignees: [A, B], maxAssignees: 2, rewardPoints: 500, ...over });
+  const report = (who: string, at: string): QuestCompletion =>
+    ({ uri: `rep-${who}-${at}`, did: who, questUri: URI, role: 'assigneeReport', createdAt: at });
+  const approve = (target: string, at: string): QuestCompletion =>
+    ({ uri: `app-${target}-${at}`, did: owner, questUri: URI, role: 'requesterApproval', targetAssignee: target, createdAt: at });
+  const revise = (target: string, at: string): QuestCompletion =>
+    ({ uri: `rev-${target}-${at}`, did: owner, questUri: URI, role: 'requesterRevision', targetAssignee: target, createdAt: at });
+
+  describe('正規化ヘルパー', () => {
+    it('questAssignees: assignees 優先・無ければ legacy assignee・両方無しは空', () => {
+      expect(questAssignees(multi())).toEqual([A, B]);
+      expect(questAssignees(mk({ assignee: A }))).toEqual([A]);
+      expect(questAssignees(mk({}))).toEqual([]);
+    });
+    it('questMaxAssignees: 未指定 legacy は 1', () => {
+      expect(questMaxAssignees(multi())).toBe(2);
+      expect(questMaxAssignees(mk({}))).toBe(1);
+    });
+    it('hasOpenSlot: 空き枠の有無', () => {
+      expect(hasOpenSlot(multi({ assignees: [A], maxAssignees: 2 }))).toBe(true);
+      expect(hasOpenSlot(multi({ assignees: [A, B], maxAssignees: 2 }))).toBe(false);
+    });
+    it('completionTarget: targetAssignee → 唯一assignee → 複数で不明は null', () => {
+      expect(completionTarget(approve(A, 't'), multi())).toBe(A);
+      // legacy 単数: target 無し approval は唯一の assignee に解決
+      const legacy = mk({ assignee: A });
+      expect(completionTarget({ uri: 'x', did: owner, questUri: legacy.uri, role: 'requesterApproval', createdAt: 't' }, legacy)).toBe(A);
+      // 複数受託で target 無しは曖昧 → null
+      expect(completionTarget({ uri: 'x', did: owner, questUri: URI, role: 'requesterApproval', createdAt: 't' }, multi())).toBeNull();
+    });
+  });
+
+  it('受託者ごとに独立して進行する (A承認済み・B報告済み未承認)', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02'), report(B, '03')];
+    expect(effectiveStateForAssignee(q, comps, A)).toBe('COMPLETED');
+    expect(effectiveStateForAssignee(q, comps, B)).toBe('AWAITING_APPROVAL');
+    expect(questLevelState(q, comps)).toBe('ASSIGNED'); // 全員 COMPLETED ではない
+    expect(needsRequesterApproval(q, comps)).toBe(true); // B が承認待ち
+  });
+
+  it('全員承認で questLevelState=COMPLETED', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02'), report(B, '03'), approve(B, '04')];
+    expect(questLevelState(q, comps)).toBe('COMPLETED');
+    expect(needsRequesterApproval(q, comps)).toBe(false);
+  });
+
+  it('1人やり直し中・1人完了の混在', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02'), report(B, '03'), revise(B, '04')];
+    expect(effectiveStateForAssignee(q, comps, A)).toBe('COMPLETED');
+    expect(effectiveStateForAssignee(q, comps, B)).toBe('REVISION_REQUESTED');
+    expect(questLevelState(q, comps)).toBe('ASSIGNED');
+  });
+
+  it('isValidCompletion: 各受託者の報告は本人なら正当 / target が集合外の承認は無効', () => {
+    const q = multi();
+    expect(isValidCompletion(report(A, 't'), q)).toBe(true);
+    expect(isValidCompletion(report(B, 't'), q)).toBe(true);
+    expect(isValidCompletion(report('did:plc:stranger', 't'), q)).toBe(false);
+    expect(isValidCompletion(approve(A, 't'), q)).toBe(true);
+    expect(isValidCompletion(approve('did:plc:stranger', 't'), q)).toBe(false); // target が assignees 外
+    // 複数受託で target 無し approval は曖昧 → 無効 (偽の一括完了防止)
+    expect(isValidCompletion({ uri: 'x', did: owner, questUri: URI, role: 'requesterApproval', createdAt: 't' }, q)).toBe(false);
+  });
+
+  it('報酬は承認された受託者それぞれに満額 (per-assignee 承認ベース)', () => {
+    const q = multi(); // rewardPoints: 500
+    const comps = [report(A, '01'), approve(A, '02'), report(B, '03')]; // A 承認, B 未承認
+    const byUri = new Map([[URI, comps]]);
+    expect(rewardForMe(q, A, comps)).toBe(500);
+    expect(rewardForMe(q, B, comps)).toBe(0);
+    expect(holdings([q], A, byUri)).toBe(500);
+    expect(holdings([q], B, byUri)).toBe(0);
+    expect(totalIssued([q], byUri)).toBe(500); // 承認済み 1 人ぶん
+    expect(distinctRecipients([q], byUri)).toBe(1);
+    // 全員承認後は 2 人ぶん発行
+    const comps2 = [...comps, approve(B, '04')];
+    const byUri2 = new Map([[URI, comps2]]);
+    expect(totalIssued([q], byUri2)).toBe(1000);
+    expect(distinctRecipients([q], byUri2)).toBe(2);
+    expect(questXpScalar([q], A, byUri2)).toBe(questXpScalar([q], B, byUri2)); // 各自 1 件ぶん
+  });
+
+  it('後方互換: legacy 単数 assignee + status=completed は従来どおり (completions 無し fallback)', () => {
+    const legacy = mk({ status: 'completed', assignee: A, rewardPoints: 300 });
+    expect(rewardForMe(legacy, A)).toBe(300);
+    expect(holdings([legacy], A)).toBe(300);
+    expect(effectiveState(legacy, [])).toBe('COMPLETED');
+    expect(questAssignees(legacy)).toEqual([A]);
+  });
+
+  it('ある受託者への承認は別の受託者の状態に漏れない (target フィルタの効き)', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02')]; // A のみ報告+承認、B は何もしていない
+    expect(effectiveStateForAssignee(q, comps, A)).toBe('COMPLETED');
+    expect(effectiveStateForAssignee(q, comps, B)).toBe('IN_PROGRESS'); // B には漏れない
+    expect(isCompletedForAssignee(q, comps, A)).toBe(true);
+    expect(isCompletedForAssignee(q, comps, B)).toBe(false);
+  });
+
+  it('isCompletedForAssignee は受託者ごとに判定 (isCompleted の複数受託版)', () => {
+    const q = multi();
+    const comps = [report(A, '01'), approve(A, '02'), report(B, '03')];
+    expect(isCompletedForAssignee(q, comps, A)).toBe(true);
+    expect(isCompletedForAssignee(q, comps, B)).toBe(false); // B は報告のみ未承認
+  });
+
+  it('questAssignees: assignees の重複 DID は除去する (水増し防止)', () => {
+    expect(questAssignees(multi({ assignees: [A, A, B] }))).toEqual([A, B]);
+    // 重複 assignee でも totalIssued は承認された実人数ぶんに留まる
+    const q = multi({ assignees: [A, A], maxAssignees: 2, rewardPoints: 500 });
+    const byUri = new Map([[URI, [report(A, '01'), approve(A, '02')]]]);
+    expect(totalIssued([q], byUri)).toBe(500); // A 1 人ぶん (重複で 1000 にならない)
+  });
+
+  it('questAssignees: assignees:[] (明示空) は legacy assignee に fallback する', () => {
+    expect(questAssignees({ assignees: [], assignee: A })).toEqual([A]);
+  });
+
+  it('MAX_ASSIGNEES_PER_QUEST = 50 (確定値)', () => {
+    expect(MAX_ASSIGNEES_PER_QUEST).toBe(50);
   });
 });
 

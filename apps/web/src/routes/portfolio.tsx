@@ -17,7 +17,12 @@ import {
   distinctRecipients,
   distinctRequesters,
   questXpScalar,
+  questAssignees,
+  rewardForMe,
+  totalIssued,
   type UserQuest,
+  type QuestCompletion,
+  type AtUri,
   type OutcomeSummary,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -25,6 +30,7 @@ import {
   listIssuedQuests,
   listMyApplications,
   getQuest,
+  loadCompletionsByUri,
   questPath,
 } from '@/lib/quest-api';
 import { Handle, RewardPoints } from '@/components/handle';
@@ -78,6 +84,8 @@ interface PortfolioViewProps {
 function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
   const [issued, setIssued] = useState<UserQuest[] | null>(null);
   const [received, setReceived] = useState<UserQuest[] | null>(null);
+  // 複数受託で一部だけ承認 (quest 未完了) のクエストの completion (per-assignee 報酬集計用)。
+  const [compMap, setCompMap] = useState<Map<AtUri, QuestCompletion[]>>(new Map());
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,12 +103,15 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
         for (const u of questUris) {
           try {
             const q = await getQuest(agent, u);
-            if (q && q.assignee === did) fetched.push(q);
+            if (q && questAssignees(q).includes(did)) fetched.push(q);
           } catch (e) {
             console.warn('[portfolio] resolve received quest failed', u, e);
           }
         }
         if (!cancelled) setReceived(fetched);
+        // multi かつ未完了のクエストだけ completion を読み、per-assignee 承認の報酬を計上する。
+        const m = await loadCompletionsByUri([...myIssued, ...fetched]);
+        if (!cancelled) setCompMap(m);
       } catch (e) {
         if (!cancelled) setErr(String((e as Error)?.message ?? e));
       }
@@ -111,24 +122,32 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
   const issuedSummary: OutcomeSummary | null = issued ? summarize(issued) : null;
   const receivedSummary: OutcomeSummary | null = received ? summarize(received) : null;
 
-  const completedIssued = useMemo(() => (issued ?? []).filter(q => q.status === 'completed'), [issued]);
-  const completedReceived = useMemo(() => (received ?? []).filter(q => q.status === 'completed'), [received]);
-  // 受託して完了したクエストから得た累計経験値 (完了集合からの派生 = 二重加算なし)。
-  // 全体 LV と現職 LV の両方に加算される (固定 100 XP/件)。
-  const questXpTotal = useMemo(() => questXpScalar(completedReceived, did ?? ''), [completedReceived, did]);
+  // 「完了」= per-assignee 承認ベース。複数受託で quest 全体が未完了でも、自分が承認された
+  // 受託 / 誰かを承認した発注は「完了」履歴に含める (compMap が無い単数/完了は status fallback)。
+  const completedIssued = useMemo(
+    () => (issued ?? []).filter(q => totalIssued([q], compMap) > 0),
+    [issued, compMap],
+  );
+  const completedReceived = useMemo(
+    () => (received ?? []).filter(q => rewardForMe(q, did ?? '', compMap.get(q.uri)) > 0),
+    [received, compMap, did],
+  );
+  // 受託して承認された分の累計経験値 (固定 100 XP/件)。全体 LV と現職 LV の両方に加算。
+  const questXpTotal = useMemo(() => questXpScalar(received ?? [], did ?? '', compMap), [received, compMap, did]);
 
-  /** 受託者視点: 発注者 DID → 獲得 pt の合計 */
+  /** 受託者視点: 発注者 DID → 獲得 pt の合計 (per-assignee 承認ベース) */
   const receivedByIssuer = useMemo(() => {
     const map = new Map<string, number>();
-    for (const q of completedReceived) {
-      map.set(q.did, (map.get(q.did) ?? 0) + q.rewardPoints);
+    for (const q of received ?? []) {
+      const r = rewardForMe(q, did ?? '', compMap.get(q.uri));
+      if (r > 0) map.set(q.did, (map.get(q.did) ?? 0) + r);
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [completedReceived]);
+  }, [received, compMap, did]);
 
   const totalIssuedPower = useMemo(
-    () => completedIssued.reduce((s, q) => s + q.rewardPoints, 0),
-    [completedIssued],
+    () => totalIssued(issued ?? [], compMap),
+    [issued, compMap],
   );
 
   if (isSelf && !signedIn) {
@@ -155,7 +174,7 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
         )}
         {issued && (
           <p style={{ fontSize: '0.85em', marginTop: '0.6em' }}>
-            完了したクエストで <strong>{distinctRecipients(issued)} 人</strong> に
+            完了したクエストで <strong>{distinctRecipients(issued, compMap)} 人</strong> に
             自分発行ポイントを渡しました (累計{' '}
             <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
               {totalIssuedPower.toLocaleString()} pt
