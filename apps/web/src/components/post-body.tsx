@@ -60,21 +60,17 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
     </div>
   );
 
-  // 画像ありのときは画像を float: left してテキストを回り込ませる
-  // (画像の横に最初の数行、画像の下からは全幅)。旧 flex 横並びだとテキストが
-  // 画像の高さ全体にわたって狭い列に押し込まれ縦長になっていた。
-  // 末尾の clear:both で、テキストが短くても親が画像高さまで伸び、後続
-  // (翻訳コントロール・metrics) が float に巻き込まれないようにする。
-  const textBlock = hasImages ? (
+  // X 風: テキストを上に、画像をその下にフル幅で並べる (枚数でレイアウトが変わる
+  // グリッドは PostImages 側)。aspect-ratio で形が確定するのでロード時の高さジャンプは無い。
+  const textBlock = (
     <div style={{ marginTop: topMargin }}>
-      <div style={{ float: 'left', marginRight: '0.6em', marginBottom: '0.3em' }}>
-        <PostImages images={images} />
-      </div>
       {textNode}
-      <div style={{ clear: 'both' }} />
+      {hasImages && (
+        <div style={{ marginTop: '0.5em' }}>
+          <PostImages images={images} />
+        </div>
+      )}
     </div>
-  ) : (
-    <div style={{ marginTop: topMargin }}>{textNode}</div>
   );
 
   // 外部リンクが YouTube なら iframe 埋め込み、それ以外なら OG カード
