@@ -17,7 +17,7 @@ import {
   applyToQuest,
   withdrawApplication,
   listApplicationsFor,
-  setAssignee,
+  addAssignee,
   reportCompletion,
   approveCompletion,
   requestRevision,
@@ -38,8 +38,13 @@ import { isoToLocalInput } from '@/lib/datetime';
 import { resolveHandle } from '@/lib/handle-cache';
 import {
   isExpired,
-  effectiveState,
-  type EffectiveState,
+  effectiveStateForAssignee,
+  questLevelState,
+  questAssignees,
+  questMaxAssignees,
+  hasOpenSlot,
+  type AssigneeState,
+  type QuestLevelState,
   formatNotificationPost,
   type NotificationAction,
   type UserQuest,
@@ -66,6 +71,8 @@ export function BoardDetail() {
   const [revisionForm, setRevisionForm] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
   /** 受託者指定の確認: applicant did を保持 (= 確認 UI を開いている対象) */
   const [pendingAssign, setPendingAssign] = useState<string | null>(null);
+  /** 承認/やり直しフォームの対象受託者 did (複数受託で「誰を」承認/差し戻すか)。 */
+  const [actionTarget, setActionTarget] = useState<string | null>(null);
 
   // URI 変更 (= 別 quest へ遷移) 時に inline form の state を初期化する。
   // 第三者レビューの指摘 (UI: form 持ち越し)。
@@ -77,6 +84,7 @@ export function BoardDetail() {
     setApproveForm({ open: false, message: '' });
     setRevisionForm({ open: false, message: '' });
     setPendingAssign(null);
+    setActionTarget(null);
     setErr(null);
     setBusy(false);
   }, [uri]);
@@ -132,14 +140,20 @@ export function BoardDetail() {
 
   const expired = isExpired(quest);
   const isOwner = session.did === quest.did;
-  const isAssignee = session.did === quest.assignee;
+  const assignees = questAssignees(quest);
+  const isAssignee = !!session.did && assignees.includes(session.did);
+  const openSlot = hasOpenSlot(quest);
   // 自分の応募の中で、取り下げてないものを最新順で先頭から (= 複数応募していても
   // 最新のアクティブ応募を「自分の応募」として扱う)。
   const myApp = applications
     ?.filter(a => a.did === session.did && !a.withdrawn)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
-  // 全状態・操作の gate は effectiveState を唯一の真実に (status は受託者の報告を反映しない)。
-  const state = effectiveState(quest, completions ?? []);
+  // quest 全体状態と、受託者ごとの状態 (複数受託では受託者ごとに独立進行)。status は信じず
+  // completion record から導出する (status は受託者の報告を反映しないため)。
+  const qState: QuestLevelState = questLevelState(quest, completions ?? []);
+  const comps = completions ?? [];
+  const stateOf = (did: string): AssigneeState => effectiveStateForAssignee(quest, comps, did);
+  const myState: AssigneeState | null = isAssignee && session.did ? stateOf(session.did) : null;
 
   async function cancelQuest() {
     if (!session.agent || !quest || !isOwner) return;
@@ -235,7 +249,7 @@ export function BoardDetail() {
     if (!session.agent || !quest || !isOwner) return;
     setBusy(true);
     try {
-      await setAssignee(session.agent, quest, applicantDid);
+      await addAssignee(session.agent, quest, applicantDid);
       await notifyBluesky('assigned', applicantDid);
       setPendingAssign(null);
       await refresh();
@@ -263,13 +277,14 @@ export function BoardDetail() {
   }
 
   async function submitApprove() {
-    if (!session.agent || !session.did || !quest || !isOwner) return;
+    if (!session.agent || !session.did || !quest || !isOwner || !actionTarget) return;
     setBusy(true);
     try {
       const comment = approveForm.message.trim();
-      await approveCompletion(session.agent, session.did, quest, comment || undefined);
-      if (quest.assignee) await notifyBluesky('approved', quest.assignee);
+      await approveCompletion(session.agent, session.did, quest, comment || undefined, actionTarget);
+      await notifyBluesky('approved', actionTarget);
       setApproveForm({ open: false, message: '' });
+      setActionTarget(null);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -279,14 +294,15 @@ export function BoardDetail() {
   }
 
   async function submitRevision() {
-    if (!session.agent || !session.did || !quest || !isOwner) return;
+    if (!session.agent || !session.did || !quest || !isOwner || !actionTarget) return;
     const comment = revisionForm.message.trim();
     if (!comment) return;
     setBusy(true);
     try {
-      await requestRevision(session.agent, session.did, quest, comment);
-      if (quest.assignee) await notifyBluesky('revisionRequested', quest.assignee);
+      await requestRevision(session.agent, session.did, quest, comment, actionTarget);
+      await notifyBluesky('revisionRequested', actionTarget);
       setRevisionForm({ open: false, message: '' });
+      setActionTarget(null);
       await refresh();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -308,7 +324,14 @@ export function BoardDetail() {
         <span style={{ color: 'var(--color-accent)' }}>
           <RewardPoints did={quest.did} points={quest.rewardPoints} />
         </span>
-        <span style={{ marginLeft: 'auto' }}>{statusLabel(state)}</span>
+        {/* 空き枠が残る間は「受託中」でなく「募集中」と出す (複数受託で 1 人確定済みでも
+            まだ応募を受け付けているため。👥 N/M で確定済み人数も併記)。 */}
+        <span style={{ marginLeft: 'auto' }}>
+          {qState === 'ASSIGNED' && openSlot ? '募集中' : questLevelLabel(qState)}
+        </span>
+        {questMaxAssignees(quest) > 1 && (
+          <span title="受託者数 / 上限">受託 {assignees.length}/{questMaxAssignees(quest)}</span>
+        )}
       </div>
 
       <div style={{ marginTop: '0.6em', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{quest.body}</div>
@@ -323,8 +346,10 @@ export function BoardDetail() {
         </p>
       )}
 
-      {/* 発注者向け: 期限変更 / キャンセル (open 中のみ) */}
-      {isOwner && quest.status === 'open' && (
+      {/* 発注者向け: 期限変更 / キャンセル (募集枠が残る間 = まだ受付中のクエストのみ)。
+          複数受託では 1 人確定後 (status=assigned) でも空き枠がある間は募集継続なので操作可。
+          単数 (満枠 1/1) や完了/キャンセル後は従来どおり非表示。 */}
+      {isOwner && openSlot && qState !== 'CANCELLED' && qState !== 'COMPLETED' && (
         <div style={{ marginTop: '1em' }}>
           <div style={{ display: 'flex', gap: '0.6em' }}>
             <button onClick={() => {
@@ -354,8 +379,9 @@ export function BoardDetail() {
         </div>
       )}
 
-      {/* 応募者向け: 応募フォーム / 自分の応募表示 */}
-      {!isOwner && session.status === 'signed-in' && quest.status === 'open' && !expired && (
+      {/* 応募者向け: 応募フォーム / 自分の応募表示。複数受託では空き枠がある間 (assigned でも) 応募可。 */}
+      {!isOwner && session.status === 'signed-in' && !isAssignee && openSlot
+        && qState !== 'CANCELLED' && qState !== 'COMPLETED' && !expired && (
         <div style={{ marginTop: '1em' }}>
           {!myApp ? (
             !applyForm.open ? (
@@ -388,12 +414,23 @@ export function BoardDetail() {
         </div>
       )}
 
-      {/* 発注者向け応募者一覧 (open のとき): withdrawn は除外 */}
-      {isOwner && quest.status === 'open' && (() => {
-        const activeApps = applications?.filter(a => !a.withdrawn) ?? null;
+      {/* 満枠 (空き枠なし・未完了) のとき、非受託の訪問者に「もう応募できない理由」を明示する
+          (無言で応募導線が消えると認知ギャップになる、UX レビュー指摘)。 */}
+      {!isOwner && !isAssignee && !openSlot && qState === 'ASSIGNED' && questMaxAssignees(quest) > 1 && (
+        <p style={{ marginTop: '1em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
+          受託枠が埋まりました ({assignees.length}/{questMaxAssignees(quest)} 人)。
+        </p>
+      )}
+
+      {/* 発注者向け応募者一覧: 空き枠がある間表示。withdrawn と確定済み受託者は除外 */}
+      {isOwner && openSlot && qState !== 'CANCELLED' && qState !== 'COMPLETED' && (() => {
+        const activeApps = applications?.filter(a => !a.withdrawn && !assignees.includes(a.did)) ?? null;
         return (
           <section style={{ marginTop: '1.4em' }}>
-            <h3 style={{ fontSize: '0.95em' }}>応募者 ({activeApps?.length ?? 0})</h3>
+            <h3 style={{ fontSize: '0.95em' }}>
+              応募者 ({activeApps?.length ?? 0})
+              {questMaxAssignees(quest) > 1 && <span style={{ fontSize: '0.8em', color: 'var(--color-muted)', fontWeight: 400 }}> ・受託 {assignees.length}/{questMaxAssignees(quest)} 人</span>}
+            </h3>
             {!activeApps && <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中...</p>}
             {activeApps && activeApps.length === 0 && (
               <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ応募がありません。</p>
@@ -409,7 +446,9 @@ export function BoardDetail() {
                     <p style={{ margin: '0 0 0.4em', fontSize: '0.85em' }}>
                       <strong><Handle did={a.did} /></strong> を受託者に指定しますか?<br />
                       <span style={{ fontSize: '0.78em', color: 'var(--color-muted)' }}>
-                        他の応募者には自動通知は送られませんが、ステータスが「受託中」に変わり追加応募は受け付けられなくなります。
+                        {questMaxAssignees(quest) > 1
+                          ? `この人が受託者に加わります (受託 ${assignees.length + 1}/${questMaxAssignees(quest)} 人)。空き枠がある間は他の人も追加できます。`
+                          : '他の応募者には自動通知は送られませんが、ステータスが「受託中」に変わり追加応募は受け付けられなくなります。'}
                       </span>
                     </p>
                     <div style={{ display: 'flex', gap: '0.5em' }}>
@@ -426,99 +465,82 @@ export function BoardDetail() {
         );
       })()}
 
-      {/* 受託確定〜完了前: 受託者の表示 + 受託者の完了報告フォーム (state は completion 由来) */}
-      {(state === 'IN_PROGRESS' || state === 'AWAITING_APPROVAL' || state === 'REVISION_REQUESTED') && quest.assignee && (
+      {/* 受託者一覧: 受託者ごとに状態を表示。受託者は自分ぶんを報告でき、発注者は受託者ごとに
+          個別に承認/やり直しできる (複数受託対応)。状態は completion record から導出 (status 非依存)。 */}
+      {assignees.length > 0 && (
         <section style={{ marginTop: '1.4em' }}>
-          <p style={{ fontSize: '0.85em' }}>
-            受託者: <strong><Handle did={quest.assignee} /></strong>
-            {state === 'AWAITING_APPROVAL' && ' (完了報告済み、承認待ち)'}
-            {state === 'REVISION_REQUESTED' && ' (やり直し依頼中)'}
-          </p>
-          {/* 受託者は作業中(未報告) と 差し戻し中 のとき報告できる。報告後(承認待ち)は隠す。
-              completions ロード中 (null) は state が IN_PROGRESS に見えるため、確定するまで
-              報告ボタンを出さない (ちらつき + 報告済みなのに再報告で二重 report を防ぐ)。 */}
-          {isAssignee && completions !== null && (state === 'IN_PROGRESS' || state === 'REVISION_REQUESTED') && (
-            !reportForm.open ? (
-              <button onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
-            ) : (
-              <div className="dq-window compact">
-                <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>完了を報告する</h4>
-                <label htmlFor="report-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>成果物の URL・一言コメント (任意)</label>
-                <textarea
-                  id="report-msg"
-                  value={reportForm.message}
-                  onChange={(e) => setReportForm({ ...reportForm, message: e.target.value })}
-                  rows={4}
-                  autoFocus
-                  placeholder="例: https://example.com/illust.png&#10;こんな感じになりました!"
-                  style={{ width: '100%' }}
-                />
-                <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
-                  <button onClick={submitReport} disabled={busy}>完了を報告する</button>
-                  <button className="secondary" onClick={() => setReportForm({ open: false, message: '' })} disabled={busy}>キャンセル</button>
-                </div>
-              </div>
-            )
-          )}
-          {isOwner && state === 'AWAITING_APPROVAL' && (
-            <div style={{ marginTop: '0.4em' }}>
-              {!approveForm.open && !revisionForm.open && (
-                <div style={{ display: 'flex', gap: '0.6em' }}>
-                  <button onClick={() => setApproveForm({ open: true, message: '' })} disabled={busy}>承認する (報酬を発行)</button>
-                  <button onClick={() => setRevisionForm({ open: true, message: '' })} disabled={busy} className="secondary">やり直しを依頼</button>
-                </div>
-              )}
-              {approveForm.open && (
-                <div className="dq-window compact">
-                  <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>完了を承認する (報酬を発行)</h4>
-                  <label htmlFor="approve-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>承認コメント (任意)</label>
-                  <textarea
-                    id="approve-msg"
-                    value={approveForm.message}
-                    onChange={(e) => setApproveForm({ ...approveForm, message: e.target.value })}
-                    rows={3}
-                    autoFocus
-                    style={{ width: '100%' }}
-                  />
-                  <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
-                    <button onClick={submitApprove} disabled={busy}>承認する</button>
-                    <button className="secondary" onClick={() => setApproveForm({ open: false, message: '' })} disabled={busy}>戻る</button>
-                  </div>
-                </div>
-              )}
-              {revisionForm.open && (
-                <div className="dq-window compact">
-                  <h4 style={{ margin: '0 0 0.4em', fontSize: '0.9em' }}>やり直しを依頼する</h4>
-                  <label htmlFor="revision-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>依頼する理由 (必須)</label>
-                  <textarea
-                    id="revision-msg"
-                    value={revisionForm.message}
-                    onChange={(e) => setRevisionForm({ ...revisionForm, message: e.target.value })}
-                    rows={4}
-                    autoFocus
-                    style={{ width: '100%' }}
-                  />
-                  <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
-                    <button onClick={submitRevision} disabled={busy || !revisionForm.message.trim()}>送信する</button>
-                    <button className="secondary" onClick={() => setRevisionForm({ open: false, message: '' })} disabled={busy}>戻る</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+          <h3 style={{ fontSize: '0.95em' }}>
+            受託者{questMaxAssignees(quest) > 1 ? ` (${assignees.length}/${questMaxAssignees(quest)})` : ''}
+          </h3>
+          {assignees.map((aDid) => {
+            const st = stateOf(aDid);
+            const meRow = session.did === aDid;
+            return (
+              <div key={aDid} className="dq-window compact" style={{ marginTop: '0.4em', borderColor: actionTarget === aDid ? 'var(--color-accent)' : undefined }}>
+                <p style={{ margin: 0, fontSize: '0.85em' }}>
+                  <strong><Handle did={aDid} /></strong>
+                  <span style={{ marginLeft: '0.5em', fontSize: '0.85em', color: st === 'COMPLETED' ? 'var(--color-accent)' : 'var(--color-muted)' }}>
+                    {assigneeStateLabel(st)}
+                  </span>
+                </p>
 
-      {/* 完了済み: 報酬表示 */}
-      {state === 'COMPLETED' && (
-        <section style={{ marginTop: '1.4em' }} className="dq-window">
-          <p style={{ margin: 0, fontSize: '0.9em' }}>
-            完了! 受託者 <strong>{quest.assignee ? <Handle did={quest.assignee} /> : '—'}</strong> に{' '}
-            <span style={{ color: 'var(--color-accent)' }}>
-              <RewardPoints did={quest.did} points={quest.rewardPoints} />
-            </span>{' '}
-            が発行されました。
-          </p>
+                {/* この受託者本人: 報告 (作業中 / やり直し中、completions ロード後のみ) */}
+                {meRow && completions !== null && (st === 'IN_PROGRESS' || st === 'REVISION_REQUESTED') && (
+                  !reportForm.open ? (
+                    <button style={{ marginTop: '0.4em' }} onClick={() => setReportForm({ open: true, message: '' })} disabled={busy}>完了を報告する</button>
+                  ) : (
+                    <div style={{ marginTop: '0.4em' }}>
+                      <label htmlFor="report-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>成果物の URL・一言コメント (任意)</label>
+                      <textarea id="report-msg" value={reportForm.message} onChange={(e) => setReportForm({ ...reportForm, message: e.target.value })} rows={4} autoFocus placeholder="例: https://example.com/illust.png&#10;こんな感じになりました!" style={{ width: '100%' }} />
+                      <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                        <button onClick={submitReport} disabled={busy}>完了を報告する</button>
+                        <button className="secondary" onClick={() => setReportForm({ open: false, message: '' })} disabled={busy}>キャンセル</button>
+                      </div>
+                    </div>
+                  )
+                )}
+
+                {/* 発注者: この受託者が承認待ちなら、この受託者を対象に承認/やり直し */}
+                {isOwner && st === 'AWAITING_APPROVAL' && (
+                  <div style={{ marginTop: '0.4em' }}>
+                    {actionTarget !== aDid && (
+                      <div style={{ display: 'flex', gap: '0.6em' }}>
+                        <button onClick={() => { setActionTarget(aDid); setApproveForm({ open: true, message: '' }); setRevisionForm({ open: false, message: '' }); }} disabled={busy}>承認する (報酬を発行)</button>
+                        <button className="secondary" onClick={() => { setActionTarget(aDid); setRevisionForm({ open: true, message: '' }); setApproveForm({ open: false, message: '' }); }} disabled={busy}>やり直しを依頼</button>
+                      </div>
+                    )}
+                    {actionTarget === aDid && approveForm.open && (
+                      <div style={{ marginTop: '0.4em' }}>
+                        <label htmlFor="approve-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>承認コメント (任意)</label>
+                        <textarea id="approve-msg" value={approveForm.message} onChange={(e) => setApproveForm({ ...approveForm, message: e.target.value })} rows={3} autoFocus style={{ width: '100%' }} />
+                        <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                          <button onClick={submitApprove} disabled={busy}>承認する</button>
+                          <button className="secondary" onClick={() => { setApproveForm({ open: false, message: '' }); setActionTarget(null); }} disabled={busy}>戻る</button>
+                        </div>
+                      </div>
+                    )}
+                    {actionTarget === aDid && revisionForm.open && (
+                      <div style={{ marginTop: '0.4em' }}>
+                        <label htmlFor="revision-msg" style={{ display: 'block', fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em' }}>依頼する理由 (必須)</label>
+                        <textarea id="revision-msg" value={revisionForm.message} onChange={(e) => setRevisionForm({ ...revisionForm, message: e.target.value })} rows={4} autoFocus style={{ width: '100%' }} />
+                        <div style={{ display: 'flex', gap: '0.5em', marginTop: '0.5em' }}>
+                          <button onClick={submitRevision} disabled={busy || !revisionForm.message.trim()}>送信する</button>
+                          <button className="secondary" onClick={() => { setRevisionForm({ open: false, message: '' }); setActionTarget(null); }} disabled={busy}>戻る</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* この受託者が承認済み: 報酬発行を表示 */}
+                {st === 'COMPLETED' && (
+                  <p style={{ margin: '0.3em 0 0', fontSize: '0.82em', color: 'var(--color-accent)' }}>
+                    ✓ <RewardPoints did={quest.did} points={quest.rewardPoints} /> を発行しました。
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </section>
       )}
 
@@ -542,15 +564,22 @@ export function BoardDetail() {
   );
 }
 
-function statusLabel(state: EffectiveState): string {
+function questLevelLabel(state: QuestLevelState): string {
   switch (state) {
-    case 'COMPLETED':          return '完了';
-    case 'EXPIRED':            return '期限切れ';
-    case 'OPEN':               return '募集中';
-    case 'IN_PROGRESS':        return '受託中';
-    case 'AWAITING_APPROVAL':  return '完了報告中 (承認待ち)';
+    case 'COMPLETED': return '完了';
+    case 'EXPIRED':   return '期限切れ';
+    case 'OPEN':      return '募集中';
+    case 'ASSIGNED':  return '受託中';
+    case 'CANCELLED': return 'キャンセル';
+  }
+}
+
+function assigneeStateLabel(state: AssigneeState): string {
+  switch (state) {
+    case 'IN_PROGRESS':        return '作業中';
+    case 'AWAITING_APPROVAL':  return '完了報告済み (承認待ち)';
     case 'REVISION_REQUESTED': return 'やり直し対応中';
-    case 'CANCELLED':          return 'キャンセル';
+    case 'COMPLETED':          return '✓ 完了 (承認済み)';
   }
 }
 

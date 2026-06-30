@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement, checkIssuanceLimits } from '@aozoraquest/core';
+import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, formatQuestAnnouncement, checkIssuanceLimits, MAX_ASSIGNEES_PER_QUEST } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { createQuest, listIssuedQuests, questUrlOf, questPath } from '@/lib/quest-api';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
@@ -29,6 +29,7 @@ export function BoardNew() {
   const [targetJob, setTargetJob] = useState<string>('');
   const [deadline, setDeadline] = useState('');
   const [rewardPoints, setRewardPoints] = useState(100);
+  const [maxAssignees, setMaxAssignees] = useState(1);
   const [announceText, setAnnounceText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export function BoardNew() {
         ...(targetJob ? { targetJob } : {}),
         ...(deadline ? { deadline: new Date(deadline).toISOString() } : {}),
         rewardPoints,
+        maxAssignees,
       });
       // Bluesky 告知は常時 ON (= 掲示板で他人に見えるために必須。発行者が
       // off にできる導線は廃止)。ただし dev 環境だけは本番 Bluesky への誤投稿
@@ -117,7 +119,8 @@ export function BoardNew() {
   const validTitle = title.trim().length > 0 && title.length <= MAX_TITLE;
   const validBody = body.trim().length > 0 && body.length <= MAX_BODY;
   const validReward = Number.isInteger(rewardPoints) && rewardPoints >= 0;
-  const canSubmit = !busy && validTitle && validBody && validReward;
+  const validMax = Number.isInteger(maxAssignees) && maxAssignees >= 1 && maxAssignees <= MAX_ASSIGNEES_PER_QUEST;
+  const canSubmit = !busy && validTitle && validBody && validReward && validMax;
 
   return (
     <form onSubmit={onSubmit}>
@@ -200,6 +203,23 @@ export function BoardNew() {
         />
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
           あなたの名前のポイントを {rewardPoints} pt 発行します (合算されない、発行上限なし)。
+        </p>
+      </Field>
+
+      <Field label={`受託できる人数 (1〜${MAX_ASSIGNEES_PER_QUEST} 人)`}>
+        <input
+          type="number"
+          value={maxAssignees}
+          onChange={(e) => setMaxAssignees(Math.max(1, Math.min(MAX_ASSIGNEES_PER_QUEST, parseInt(e.target.value, 10) || 1)))}
+          min={1}
+          max={MAX_ASSIGNEES_PER_QUEST}
+          step={1}
+          style={{ width: '12em' }}
+        />
+        <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
+          {maxAssignees > 1
+            ? `最大 ${maxAssignees} 人まで受託者に指定できます。報酬は承認した受託者それぞれに ${rewardPoints} pt ずつ発行します。`
+            : '1 人だけが受託します。2 人以上にすると複数人で取り組めます。'}
         </p>
       </Field>
 
