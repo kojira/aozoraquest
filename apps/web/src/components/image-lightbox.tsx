@@ -6,11 +6,18 @@ import type { PostImage } from '@/lib/post-embed';
  * 投稿画像のフルスクリーンビューア。
  *
  * - ESC / 背景クリック / 閉じるボタンで閉じる
- * - 複数枚: ← → キー、左右ボタン、スワイプで前後移動
- * - 端まで来たら止まる (ループしない)
- * - 次の画像を new Image().src でプリロード
+ * - 複数枚: ← → キー、左右ボタン、**横スワイプ (指追従カルーセル)** で前後移動
+ * - 端まで来たら止まる (ループしない。端ではドラッグに抵抗をかける)
+ * - 次/前の画像を new Image().src でプリロード
  * - body のスクロールを掴んだままにしない
+ *
+ * スワイプは横カルーセル方式: 全スライドを横一列に並べ translateX で動かす。
+ * `touch-action: none` でブラウザの縦スクロール/パンに**ジェスチャを奪われない**ようにし、
+ * touchmove で指に追従、touchend で閾値を超えたら次/前へスナップ (transition でスライドイン)。
  */
+const SWIPE_THRESHOLD_RATIO = 0.18; // ビューポート幅のこの割合を超えたらページ送り
+const SWIPE_THRESHOLD_MAX = 60;     // ただし最低でもこの px を超えれば送る
+
 export function ImageLightbox({
   images,
   initialIndex,
@@ -21,7 +28,14 @@ export function ImageLightbox({
   onClose: () => void;
 }) {
   const [idx, setIdx] = useState(initialIndex);
-  const touchStartX = useRef<number | null>(null);
+  const [drag, setDrag] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const axis = useRef<'h' | 'v' | null>(null);
+  const vpRef = useRef<HTMLDivElement>(null);
+  const vpW = useRef(0);
 
   const go = useCallback(
     (delta: number) => {
@@ -50,26 +64,57 @@ export function ImageLightbox({
     };
   }, [onClose, go]);
 
-  // 次の画像をプリロード
+  // 前後の画像をプリロード
   useEffect(() => {
-    const next = images[idx + 1];
-    if (next) {
-      const img = new Image();
-      img.src = next.fullsize;
-    }
-    const prev = images[idx - 1];
-    if (prev) {
-      const img = new Image();
-      img.src = prev.fullsize;
+    for (const j of [idx + 1, idx - 1]) {
+      const im = images[j];
+      if (im) { const pre = new Image(); pre.src = im.fullsize; }
     }
   }, [idx, images]);
 
-  const current = images[idx];
-  if (!current) return null;
-
+  const multi = images.length > 1;
   const hasPrev = idx > 0;
   const hasNext = idx < images.length - 1;
-  const multi = images.length > 1;
+
+  function onTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    startX.current = t.clientX;
+    startY.current = t.clientY;
+    axis.current = null;
+    vpW.current = vpRef.current?.clientWidth ?? window.innerWidth;
+    setDragging(true);
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    const dx = t.clientX - startX.current;
+    const dy = t.clientY - startY.current;
+    // 最初の十分な移動で軸を確定 (横なら以後カルーセル、縦なら無視)。
+    if (axis.current === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      axis.current = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+    }
+    if (axis.current === 'h') {
+      // 端ではドラッグに抵抗 (1/3) をかけ、これ以上めくれない感を出す。
+      const atEdge = (idx === 0 && dx > 0) || (idx === images.length - 1 && dx < 0);
+      setDrag(atEdge ? dx / 3 : dx);
+    }
+  }
+
+  function onTouchEnd(e: React.TouchEvent) {
+    setDragging(false);
+    const a = axis.current;
+    axis.current = null;
+    if (a !== 'h') { setDrag(0); return; }
+    const endX = e.changedTouches[0]?.clientX ?? startX.current;
+    const dx = endX - startX.current;
+    const threshold = Math.min(SWIPE_THRESHOLD_MAX, vpW.current * SWIPE_THRESHOLD_RATIO);
+    if (Math.abs(dx) > threshold) go(dx < 0 ? 1 : -1);
+    setDrag(0); // idx 変化 + drag 0 + transition で新しい位置へスライドイン
+  }
+
+  if (!images[idx]) return null;
 
   return createPortal(
     <div
@@ -85,33 +130,51 @@ export function ImageLightbox({
         justifyContent: 'center',
         padding: '2vh 2vw',
       }}
-      onTouchStart={(e) => {
-        touchStartX.current = e.touches[0]?.clientX ?? null;
-      }}
-      onTouchEnd={(e) => {
-        const startX = touchStartX.current;
-        touchStartX.current = null;
-        if (startX === null) return;
-        const endX = e.changedTouches[0]?.clientX ?? startX;
-        const dx = endX - startX;
-        if (Math.abs(dx) < 50) return;
-        if (dx < 0) go(1);
-        else go(-1);
-      }}
     >
-      {/* 画像エリア (残りの高さいっぱい。ボタンは画像に重ねない) */}
-      <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <img
-          src={current.fullsize}
-          alt={current.alt}
-          onClick={(e) => e.stopPropagation()}
+      {/* 画像エリア = 横カルーセル。touch-action:none でブラウザの縦スクロール/パンに
+          スワイプを奪われないようにする (= 指追従が安定)。 */}
+      <div
+        ref={vpRef}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          width: '100%',
+          overflow: 'hidden',
+          touchAction: 'none',
+        }}
+      >
+        <div
           style={{
-            maxWidth: '100%',
-            maxHeight: '100%',
-            objectFit: 'contain',
-            userSelect: 'none',
+            display: 'flex',
+            height: '100%',
+            transform: `translateX(calc(${-idx * 100}% + ${drag}px))`,
+            transition: dragging ? 'none' : 'transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1)',
+            willChange: 'transform',
           }}
-        />
+        >
+          {images.map((im, i) => (
+            <div
+              key={i}
+              style={{ flex: '0 0 100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <img
+                src={im.fullsize}
+                alt={im.alt}
+                onClick={(e) => e.stopPropagation()}
+                draggable={false}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  userSelect: 'none',
+                }}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 下部コントロール: 親指で届く位置に。前後 ‹›・カウンタは画像の下、
@@ -131,8 +194,8 @@ export function ImageLightbox({
           fontSize: 13,
         }}
       >
-        {current.alt && (
-          <span style={{ maxWidth: 720, textAlign: 'center', lineHeight: 1.5, padding: '0 16px' }}>{current.alt}</span>
+        {images[idx]!.alt && (
+          <span style={{ maxWidth: 720, textAlign: 'center', lineHeight: 1.5, padding: '0 16px' }}>{images[idx]!.alt}</span>
         )}
 
         {multi && (
