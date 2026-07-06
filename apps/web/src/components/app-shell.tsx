@@ -8,6 +8,7 @@ import { useSession } from '@/lib/session';
 import { getUnreadNotificationCount } from '@/lib/atproto';
 import { useVisibleColumn } from '@/lib/visible-column';
 import { useQuestActionableCount, computeQuestActionableCount, setQuestActionableCount } from '@/lib/quest-actionable';
+import { subscribeNotificationsSeen } from '@/lib/notification-seen';
 import { useRuntimeConfig } from '@/components/config-provider';
 import type { AppColumnKind } from '@/lib/app-columns';
 
@@ -140,12 +141,17 @@ export function AppShell() {
     };
   }, [session.status, session.agent, session.did, directoryKey]);
 
-  // 通知タブを開いた瞬間にバッジを消す
+  // 通知タブ (ルート) を開いた瞬間にバッジを消す
   useEffect(() => {
     if (location.pathname === '/notifications' && unread > 0) {
       setUnread(0);
     }
   }, [location.pathname, unread]);
+
+  // 通知を既読化した瞬間 (NotificationsFeed が updateSeen を撃ったとき) にバッジを消す。
+  // モバイルはカラム (swipe, pathname='/') で通知を見るのでルート判定だけでは消えず、
+  // 60 秒 poll まで赤ポッチが残っていた。既読化イベントに直結させて即消す。
+  useEffect(() => subscribeNotificationsSeen(() => setUnread(0)), []);
 
   const onWorkspace = location.pathname === '/';
   // 投稿 FAB は、入力フォーム/認証系などタイムラインでない画面では出さない
