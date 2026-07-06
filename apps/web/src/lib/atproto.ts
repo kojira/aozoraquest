@@ -197,15 +197,19 @@ export async function getUnreadNotificationCount(agent: Agent): Promise<number> 
   }
 }
 
-/** 通知を見たことをサーバーに通知 (これで getUnreadCount が 0 に戻る)。 */
+/** 通知を見たことをサーバーに通知 (これで getUnreadCount が 0 に戻る)。
+ *  成功したら true。呼び出し側はこれを見て未読バッジの楽観クリアを成功時に限定できる
+ *  (失敗時にクリアすると次の poll でサーバの未読を拾い直しバッジが復活してしまうため)。 */
 export async function updateNotificationsSeen(
   agent: Agent,
   seenAt: string = new Date().toISOString(),
-): Promise<void> {
+): Promise<boolean> {
   try {
     await agent.app.bsky.notification.updateSeen({ seenAt });
+    return true;
   } catch (e) {
     console.warn('[notifications] updateSeen failed', e);
+    return false;
   }
 }
 

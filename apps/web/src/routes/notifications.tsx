@@ -103,7 +103,8 @@ export function NotificationsFeed({ markSeen = false }: { markSeen?: boolean }) 
     // 無ければ updateNotificationsSeen 既定の now に落ちる。既読化できたら app 全体へ通知して
     // 未読バッジを即クリアする (モバイルのカラム閲覧でも消えるように)。
     const latest = feed.items[0]?.indexedAt;
-    void updateNotificationsSeen(agent, latest).then(() => publishNotificationsSeen());
+    // 成功時のみ publish (= サーバ反映後だけ楽観クリア。失敗時にクリアすると poll で復活する)。
+    void updateNotificationsSeen(agent, latest).then((ok) => { if (ok) publishNotificationsSeen(); });
   }, [shouldMarkSeen, agent, feed.items.length, feed.done]);
 
   const groups = useMemo(() => groupNotifications(feed.items), [feed.items]);
