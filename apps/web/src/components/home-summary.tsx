@@ -8,6 +8,7 @@ import { PersonIcon, ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
+import { getDailyQuestsOpen, setDailyQuestsOpen } from '@/lib/prefs';
 import { formatTime } from '@/lib/format-datetime';
 
 interface HomeSummaryProps {
@@ -31,6 +32,10 @@ interface HomeSummaryProps {
  */
 export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryProps) {
   const [open, setOpen] = useState(false);
+  // 「今日のクエスト」アコーディオンの開閉。localStorage に永続化し次回もその状態で開く。
+  const [questsOpen, setQuestsOpen] = useState(getDailyQuestsOpen);
+  // setState の updater 内で副作用を呼ばない (StrictMode 二重実行対策)。現在値から反転する。
+  const toggleQuests = () => { const nv = !questsOpen; setQuestsOpen(nv); setDailyQuestsOpen(nv); };
   const [questLog, setQuestLog] = useState<QuestLogRecord | null>(null);
 
   const generatedQuests: Quest[] = useMemo(() => {
@@ -153,8 +158,9 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
         )}
       </div>
 
-      {/* 動的: 今日のクエスト。常に全件表示する (折り畳み時はコンパクト 1 行、
-          展開時はカード表示)。クエスト内容を隠さないのがオーナー方針。 */}
+      {/* 動的: 今日のクエスト。見出しのアコーディオンで完全に畳める (開閉は永続化)。
+          展開時は静的サマリの開閉 (open) に応じてコンパクト 1 行 / カード表示。
+          畳むのはユーザーの明示操作のみで、既定は展開 (= 内容を勝手に隠さない)。 */}
       {!targetStats ? (
         <div style={{ fontSize: '0.85em' }}>
           <p style={{ margin: '0 0 0.3em' }}>
@@ -168,19 +174,46 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
           const visible = [...incomplete, ...done];
           return (
             <div>
-              <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em', display: 'flex', gap: '0.6em' }}>
+              {/* 今日のクエストのアコーディオン見出し (タップで完全に畳む / 開く、状態は永続化)。 */}
+              <button
+                type="button"
+                onClick={toggleQuests}
+                aria-expanded={questsOpen}
+                aria-controls="daily-quests-panel"
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0.1em 0',
+                  font: 'inherit',
+                  color: 'var(--color-muted)',
+                  cursor: 'pointer',
+                  boxShadow: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6em',
+                  fontSize: '0.8em',
+                }}
+              >
                 <span>今日のクエスト</span>
-                {done.length > 0 && (
-                  <span style={{ color: 'var(--color-accent)' }}>達成 {done.length}/{quests.length}</span>
+                {/* 進捗サマリ: 展開時は達成があるときだけ、畳み時は常に「達成 X/Y」を出して
+                    開かなくても状況が分かるようにする (達成0でも 0/Y を表示 = 左右対称)。 */}
+                {(done.length > 0 || !questsOpen) && (
+                  <span style={{ color: done.length > 0 ? 'var(--color-accent)' : 'var(--color-muted)' }}>
+                    達成 {done.length}/{quests.length}
+                  </span>
                 )}
-              </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: open ? '0.35em' : '0.2em' }}>
-                {visible.map((q, i) => (
-                  <li key={q.id}>
-                    <QuestRow quest={q} showIcon={i === 0} compact={!open} />
-                  </li>
-                ))}
-              </ul>
+                <span style={{ marginLeft: 'auto' }}>{questsOpen ? '▾' : '▸'}</span>
+              </button>
+              {questsOpen && (
+                <ul id="daily-quests-panel" style={{ listStyle: 'none', padding: 0, margin: '0.3em 0 0', display: 'flex', flexDirection: 'column', gap: open ? '0.35em' : '0.2em' }}>
+                  {visible.map((q, i) => (
+                    <li key={q.id}>
+                      <QuestRow quest={q} showIcon={i === 0} compact={!open} />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           );
         })() : null}
