@@ -59,6 +59,27 @@ export function setHideReposts(v: boolean): void {
   }
 }
 
+const KEY_DAILY_QUESTS_OPEN = 'aozoraquest:dailyQuestsOpen';
+
+/** ホームの「今日のクエスト」を展開表示するか。デフォルト ON (= 従来どおり表示)。
+ *  ユーザーがアコーディオンで畳んだら false を覚え、次回もその状態で開く。 */
+export function getDailyQuestsOpen(): boolean {
+  try {
+    // 未設定 (null) は既定の true。明示的に 'false' のときだけ畳む。
+    return localStorage.getItem(KEY_DAILY_QUESTS_OPEN) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setDailyQuestsOpen(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_DAILY_QUESTS_OPEN, String(v));
+  } catch {
+    /* no-op */
+  }
+}
+
 const KEY_FONT_SCALE = 'aozoraquest:fontScale';
 export const FONT_SCALE_MIN = 50;
 export const FONT_SCALE_MAX = 150;
