@@ -80,6 +80,26 @@ export function setDailyQuestsOpen(v: boolean): void {
   }
 }
 
+const KEY_HOME_SUMMARY_OPEN = 'aozoraquest:homeSummaryOpen';
+
+/** ホーム上部サマリ (ジョブ + 今日のクエスト + 行動ログ) 全体を展開するか。既定 ON。
+ *  畳むと細い 1 行のバーだけになり TL がすぐ上に来る。状態は永続化。 */
+export function getHomeSummaryOpen(): boolean {
+  try {
+    return localStorage.getItem(KEY_HOME_SUMMARY_OPEN) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setHomeSummaryOpen(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_HOME_SUMMARY_OPEN, String(v));
+  } catch {
+    /* no-op */
+  }
+}
+
 const KEY_FONT_SCALE = 'aozoraquest:fontScale';
 export const FONT_SCALE_MIN = 50;
 export const FONT_SCALE_MAX = 150;
