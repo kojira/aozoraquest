@@ -8,7 +8,7 @@ import { PersonIcon, ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
-import { getDailyQuestsOpen, setDailyQuestsOpen } from '@/lib/prefs';
+import { getDailyQuestsOpen, setDailyQuestsOpen, getHomeSummaryOpen, setHomeSummaryOpen } from '@/lib/prefs';
 import { formatTime } from '@/lib/format-datetime';
 
 interface HomeSummaryProps {
@@ -36,6 +36,9 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   const [questsOpen, setQuestsOpen] = useState(getDailyQuestsOpen);
   // setState の updater 内で副作用を呼ばない (StrictMode 二重実行対策)。現在値から反転する。
   const toggleQuests = () => { const nv = !questsOpen; setQuestsOpen(nv); setDailyQuestsOpen(nv); };
+  // ホーム上部サマリ全体の開閉 (master)。畳むと細い 1 行のバーだけになる。永続化。
+  const [summaryOpen, setSummaryOpen] = useState(getHomeSummaryOpen);
+  const toggleSummary = () => { const nv = !summaryOpen; setSummaryOpen(nv); setHomeSummaryOpen(nv); };
   const [questLog, setQuestLog] = useState<QuestLogRecord | null>(null);
 
   const generatedQuests: Quest[] = useMemo(() => {
@@ -111,6 +114,35 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   const jobName = jobDisplayName(diag.archetype, 'default');
   const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0);
   const playerLv = playerLevelFromXp(diag.playerLevel?.xp ?? 0);
+
+  // master 畳み: サマリ全体を隠し、細い 1 行のバーだけにする (TL がすぐ上に来る)。
+  // dq-window の箱ごと消すので「遊び人 LV… / 今日のクエスト…」の 2 行も見えなくなる。
+  if (!summaryOpen) {
+    return (
+      <button
+        onClick={toggleSummary}
+        aria-expanded={false}
+        aria-label="今日のあなた・クエストを開く"
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          padding: '0.15em 0.3em',
+          font: 'inherit',
+          fontSize: '0.8em',
+          color: 'var(--color-muted)',
+          cursor: 'pointer',
+          boxShadow: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5em',
+        }}
+      >
+        <span style={{ flexShrink: 0 }}>▸</span>
+        <span>今日のあなた・クエスト</span>
+      </button>
+    );
+  }
 
   return (
     <section className="dq-window" style={{ display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
@@ -222,6 +254,26 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
       {questLog?.activity && questLog.activity.length > 0 && (
         <ActivityAudit activity={questLog.activity} />
       )}
+
+      {/* このサマリ全体を畳む (控えめ・下部中央)。畳むと細い 1 行になり TL がすぐ上に来る。 */}
+      <button
+        type="button"
+        onClick={toggleSummary}
+        aria-label="今日のあなた・クエストを畳む"
+        style={{
+          alignSelf: 'center',
+          background: 'transparent',
+          border: 'none',
+          padding: '0.1em 0.6em',
+          font: 'inherit',
+          fontSize: '0.72em',
+          color: 'var(--color-muted)',
+          cursor: 'pointer',
+          boxShadow: 'none',
+        }}
+      >
+        ▴ 畳む
+      </button>
     </section>
   );
 }
