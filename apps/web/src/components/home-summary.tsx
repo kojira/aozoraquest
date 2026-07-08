@@ -8,6 +8,7 @@ import { PersonIcon, ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
 import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
+import { getDailyQuestsOpen, setDailyQuestsOpen } from '@/lib/prefs';
 import { formatTime } from '@/lib/format-datetime';
 
 interface HomeSummaryProps {
@@ -31,6 +32,9 @@ interface HomeSummaryProps {
  */
 export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryProps) {
   const [open, setOpen] = useState(false);
+  // 「今日のクエスト」アコーディオンの開閉。localStorage に永続化し次回もその状態で開く。
+  const [questsOpen, setQuestsOpen] = useState(getDailyQuestsOpen);
+  const toggleQuests = () => setQuestsOpen((v) => { const nv = !v; setDailyQuestsOpen(nv); return nv; });
   const [questLog, setQuestLog] = useState<QuestLogRecord | null>(null);
 
   const generatedQuests: Quest[] = useMemo(() => {
@@ -168,19 +172,45 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
           const visible = [...incomplete, ...done];
           return (
             <div>
-              <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.3em', display: 'flex', gap: '0.6em' }}>
+              {/* 今日のクエストのアコーディオン見出し (タップで完全に畳む / 開く、状態は永続化)。 */}
+              <button
+                type="button"
+                onClick={toggleQuests}
+                aria-expanded={questsOpen}
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0.1em 0',
+                  font: 'inherit',
+                  color: 'var(--color-muted)',
+                  cursor: 'pointer',
+                  boxShadow: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6em',
+                  fontSize: '0.8em',
+                }}
+              >
                 <span>今日のクエスト</span>
                 {done.length > 0 && (
                   <span style={{ color: 'var(--color-accent)' }}>達成 {done.length}/{quests.length}</span>
                 )}
-              </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: open ? '0.35em' : '0.2em' }}>
-                {visible.map((q, i) => (
-                  <li key={q.id}>
-                    <QuestRow quest={q} showIcon={i === 0} compact={!open} />
-                  </li>
-                ))}
-              </ul>
+                {/* 畳んでいるときは残件も添えて、開かなくても状況が分かるようにする。 */}
+                {!questsOpen && incomplete.length > 0 && (
+                  <span>未達 {incomplete.length}</span>
+                )}
+                <span style={{ marginLeft: 'auto' }}>{questsOpen ? '▾' : '▸'}</span>
+              </button>
+              {questsOpen && (
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0.3em 0 0', display: 'flex', flexDirection: 'column', gap: open ? '0.35em' : '0.2em' }}>
+                  {visible.map((q, i) => (
+                    <li key={q.id}>
+                      <QuestRow quest={q} showIcon={i === 0} compact={!open} />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           );
         })() : null}
