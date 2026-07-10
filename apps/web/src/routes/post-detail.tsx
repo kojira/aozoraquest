@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { AppBskyFeedDefs, Agent } from '@atproto/api';
 import { AppBskyFeedDefs as FeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
@@ -21,7 +21,19 @@ type LoadState =
 export function PostDetail() {
   const { handle, rkey } = useParams<{ handle: string; rkey: string }>();
   const session = useSession();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  // 投稿詳細は Workspace とは別ルートなので、戻り先は「直前に居た場所」(TL の途中・
+  // プロフィール・通知など) であるべきで、常にホーム先頭ではない。
+  // location.key は、この document 読み込み後に 1 回でも app 内 navigation が
+  // push されていれば非 'default' になる (RR 7 は index 0 のエントリだけ 'default')。
+  // その場合は history を pop する (navigate(-1))。pop で戻ると home カラムは IDB
+  // キャッシュから即描画されるため以前の位置付近が保たれやすい (仮想リストなので
+  // 厳密なピクセル単位の復元までは保証しない。少なくとも毎回先頭リセットは避けられる)。
+  // 履歴が無い場合 (共有 URL の直開き等) はホームへのリンクにフォールバックする。
+  const canGoBack = location.key !== 'default';
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent) return;
@@ -62,7 +74,25 @@ export function PostDetail() {
   return (
     <div>
       <div style={{ marginBottom: '0.6em' }}>
-        <Link to="/">← ホームに戻る</Link>
+        {canGoBack ? (
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              color: 'var(--color-accent)',
+              cursor: 'pointer',
+              font: 'inherit',
+              textDecoration: 'underline',
+            }}
+          >
+            ← 戻る
+          </button>
+        ) : (
+          <Link to="/">← ホームへ</Link>
+        )}
       </div>
       {state.status === 'loading' && <p>読み込み中…</p>}
       {state.status === 'not-found' && (
