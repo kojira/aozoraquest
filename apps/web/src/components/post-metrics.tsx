@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
 import { HeartIcon, RepeatIcon, ReplyIcon, ShareIcon } from './icons';
 import { useCompose } from './compose-modal';
 import { formatDateTime } from '@/lib/format-datetime';
-import { postDetailPath, rkeyFromUri } from '@/lib/uri';
+import { didFromUri, postDetailPath, rkeyFromUri } from '@/lib/uri';
 import { useColumnNav } from './column-detail';
 import type { PostRecordShape } from './post-article';
 
@@ -117,11 +117,19 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
   const detailPath = postDetailPath(post.author.handle, post.uri);
 
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 行が仮想フィードでアンマウントされても、遅延した setCopied(false) が走らないよう掃除。
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+
   // 投稿を共有する。公開リンク (bsky.app) を使い、誰でも開ける URL にする。
   // モバイルは OS の共有シート (navigator.share)、無ければクリップボードにコピー。
   async function onShare(e: React.MouseEvent) {
     e.stopPropagation();
-    const url = `https://bsky.app/profile/${post.author.handle}/post/${rkeyFromUri(post.uri)}`;
+    // handle.invalid (未解決アカウント) は bsky.app で開けないので DID を使う。
+    // bsky.app は /profile/<did>/post/<rkey> も解決する。
+    const handle = post.author.handle;
+    const actor = handle && handle !== 'handle.invalid' ? handle : didFromUri(post.uri);
+    const url = `https://bsky.app/profile/${actor}/post/${rkeyFromUri(post.uri)}`;
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({ url });
@@ -133,7 +141,8 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
     try {
       await navigator.clipboard?.writeText(url);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       /* no-op */
     }
