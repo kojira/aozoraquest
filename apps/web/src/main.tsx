@@ -98,3 +98,13 @@ createRoot(document.getElementById('root')!).render(
     </ConfigProvider>
   </StrictMode>,
 );
+
+// 即時スプラッシュ (index.html) を React マウント後に除去。次フレームで消して
+// 初回描画のちらつきを防ぐ + フェードアウト。
+requestAnimationFrame(() => {
+  const splash = document.getElementById('app-splash');
+  if (!splash) return;
+  splash.style.transition = 'opacity 0.2s ease';
+  splash.style.opacity = '0';
+  setTimeout(() => splash.remove(), 220);
+});
