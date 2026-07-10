@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { AppBskyFeedDefs, Agent } from '@atproto/api';
 import { AppBskyFeedDefs as FeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
@@ -21,7 +21,16 @@ type LoadState =
 export function PostDetail() {
   const { handle, rkey } = useParams<{ handle: string; rkey: string }>();
   const session = useSession();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  // 投稿詳細は Workspace とは別ルートなので、戻り先は「直前に居た場所」(TL の途中・
+  // プロフィール・通知など) であるべきで、常にホーム先頭ではない。アプリ内履歴が
+  // あれば history を pop する (navigate(-1))。pop 遷移はブラウザ標準のスクロール復元が
+  // 効くうえ、home カラムは IDB キャッシュから即描画されるので TL の位置が保たれる。
+  // 履歴が無い場合 (共有 URL の直開き等) のみホームへのリンクにフォールバックする。
+  const canGoBack = location.key !== 'default';
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent) return;
@@ -62,7 +71,25 @@ export function PostDetail() {
   return (
     <div>
       <div style={{ marginBottom: '0.6em' }}>
-        <Link to="/">← ホームに戻る</Link>
+        {canGoBack ? (
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              color: 'var(--color-accent)',
+              cursor: 'pointer',
+              font: 'inherit',
+              textDecoration: 'underline',
+            }}
+          >
+            ← 戻る
+          </button>
+        ) : (
+          <Link to="/">← ホームへ</Link>
+        )}
       </div>
       {state.status === 'loading' && <p>読み込み中…</p>}
       {state.status === 'not-found' && (
