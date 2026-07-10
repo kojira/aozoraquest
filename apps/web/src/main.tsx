@@ -33,6 +33,7 @@ import { ConfigProvider } from '@/components/config-provider';
 import { ComposeProvider } from '@/components/compose-modal';
 import { initFontScale } from '@/lib/font-scale';
 import { initTheme } from '@/lib/theme';
+import { removeSplash } from '@/lib/splash';
 import '@/styles.css';
 
 initFontScale();
@@ -99,12 +100,7 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// 即時スプラッシュ (index.html) を React マウント後に除去。次フレームで消して
-// 初回描画のちらつきを防ぐ + フェードアウト。
-requestAnimationFrame(() => {
-  const splash = document.getElementById('app-splash');
-  if (!splash) return;
-  splash.style.transition = 'opacity 0.2s ease';
-  splash.style.opacity = '0';
-  setTimeout(() => splash.remove(), 220);
-});
+// スプラッシュ (index.html) は通常 AppShell が session 復元完了時に除去する
+// (JS パース + 復元の間ずっと 1 枚出続け、「準備しています…」のちらつきを避ける)。
+// ここはハング保険: 復元が異常に長い/失敗しても最大 12s でスプラッシュを剥がす。
+setTimeout(removeSplash, 12000);
