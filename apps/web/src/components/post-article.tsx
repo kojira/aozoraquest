@@ -11,6 +11,7 @@ import { CognitiveTriggerIcon, CognitiveScores } from './post-cognitive-badge';
 import { useCognitiveAnalysis } from '@/lib/post-cognitive';
 import { displayWidth } from '@/lib/text-width';
 import { extractPostExternal, extractPostImages, extractPostQuote, extractPostVideo } from '@/lib/post-embed';
+import { useColumnNav } from './column-detail';
 
 /** 名前がこの表示幅を超えたら、タイムラインでは @handle を畳む (折り返し防止)。 */
 const HANDLE_HIDE_WIDTH = 18;
@@ -58,6 +59,15 @@ export function PostArticle({
 }: PostArticleProps) {
   const [expanded, setExpanded] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
+  const columnNav = useColumnNav();
+  // カラム内ならプロフィールリンクは route 遷移せずカラムに積む (TL 保持)。
+  const onProfileClick = (handle: string) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (columnNav && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      columnNav.openProfile(handle);
+    }
+  };
 
   const onToggle = useCallback(() => {
     setExpanded((v) => {
@@ -110,7 +120,7 @@ export function PostArticle({
           <RepeatIcon size={13} />
           <Link
             to={`/profile/${repostedBy.handle}`}
-            onClick={(e) => e.stopPropagation()}
+            onClick={onProfileClick(repostedBy.handle)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3em', color: 'inherit' }}
           >
             <Avatar src={repostedBy.avatar} size={18} archetype={null} />
@@ -130,7 +140,7 @@ export function PostArticle({
         }}
       >
         <Avatar src={author.avatar} size={avatarSize} archetype={archetype ?? null} />
-        <Link to={`/profile/${author.handle}`} onClick={(e) => e.stopPropagation()}>
+        <Link to={`/profile/${author.handle}`} onClick={onProfileClick(author.handle)}>
           <strong>{author.displayName || author.handle}</strong>
         </Link>
         {showHandle && <span>@{author.handle}</span>}

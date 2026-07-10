@@ -12,7 +12,7 @@
  * 「カラム内スクロール」モードで動けるようにする。
  */
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
   loadAppColumns,
@@ -29,6 +29,7 @@ import {
 import { urlForColumn } from '@/lib/column-router';
 import { publishVisibleColumn } from '@/lib/visible-column';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
+import { ColumnNavProvider, ColumnDetailView, useColumnDetailTop, useColumnNavValue } from '@/components/column-detail';
 import { ColumnContent } from '@/components/column-content';
 import { ColumnPicker } from '@/components/column-picker';
 import { ComposeColumn } from '@/components/compose-modal';
@@ -348,6 +349,10 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
   // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
   // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
+  const navigate = useNavigate();
+  // カラム内ドリルダウン: このカラムに開かれている詳細 (投稿/プロフィール) の最上位エントリ。
+  const columnNav = useColumnNavValue(column.id);
+  const detailTop = useColumnDetailTop(column.id);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   // 押下フィードバック (↻ を一瞬回す) 用
@@ -488,9 +493,17 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           </div>
         )}
         <ColumnScrollContext.Provider value={bodyEl}>
-          {children}
+          <ColumnNavProvider value={columnNav}>{children}</ColumnNavProvider>
         </ColumnScrollContext.Provider>
       </div>
+      {/* カラム内ドリルダウンの詳細オーバーレイ。フィードは下でマウントされたままなので
+          戻ると (history pop) スクロール位置ごと元に戻る。オーバーレイ内のタップも同じ
+          カラムに積めるよう nav を配る。 */}
+      {detailTop && (
+        <ColumnNavProvider value={columnNav}>
+          <ColumnDetailView entry={detailTop} onBack={() => navigate(-1)} />
+        </ColumnNavProvider>
+      )}
       {/* 右端のリサイズハンドル (PC のみ表示)。掴んで左右で幅を変える。 */}
       <div
         className="workspace-column-resizer"
