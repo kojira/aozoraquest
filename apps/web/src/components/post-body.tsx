@@ -1,8 +1,9 @@
 import { useState, type CSSProperties } from 'react';
-import type { PostExternal, PostImage, PostVideo } from '@/lib/post-embed';
+import type { PostExternal, PostImage, PostQuote, PostVideo } from '@/lib/post-embed';
 import { PostText, type Facet } from './post-text';
 import { PostImages } from './post-images';
 import { PostExternalCard } from './post-external';
+import { PostQuoteCard } from './post-quote';
 import { PostVideoCard } from './post-video';
 import { YoutubeEmbed } from './youtube-embed';
 import { youtubeId } from '@/lib/youtube';
@@ -24,6 +25,8 @@ export interface PostBodyProps {
   images?: PostImage[] | undefined;
   external?: PostExternal | null | undefined;
   video?: PostVideo | null | undefined;
+  /** 引用投稿 (app.bsky.embed.record#view 相当)。あれば本文下にカード表示。 */
+  quote?: PostQuote | null | undefined;
   /** 翻訳キャッシュのキー兼有無判定に使う。profile の RecentPosts など
    *  URI が無い場面では翻訳機能を無効化する。 */
   postUri?: string | undefined;
@@ -33,7 +36,7 @@ export interface PostBodyProps {
   topMargin?: CSSProperties['marginTop'];
 }
 
-export function PostBody({ text, facets, images, external, video, postUri, langs, topMargin = '0.45em' }: PostBodyProps) {
+export function PostBody({ text, facets, images, external, video, quote, postUri, langs, topMargin = '0.45em' }: PostBodyProps) {
   const hasImages = images && images.length > 0;
   const { state, translated, error, triggerTranslate, retranslate, isNonJapanese } = useTranslation(postUri, text, langs);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -84,6 +87,7 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
         <YoutubeEmbed id={ytId} {...(external.title ? { title: external.title } : {})} {...(external.thumb ? { thumb: external.thumb } : {})} />
       )}
       {external && !ytId && <PostExternalCard external={external} />}
+      {quote && <PostQuoteCard quote={quote} />}
     </>
   );
 }

@@ -10,7 +10,7 @@ import { RepeatIcon } from './icons';
 import { CognitiveTriggerIcon, CognitiveScores } from './post-cognitive-badge';
 import { useCognitiveAnalysis } from '@/lib/post-cognitive';
 import { displayWidth } from '@/lib/text-width';
-import { extractPostExternal, extractPostImages, extractPostVideo } from '@/lib/post-embed';
+import { extractPostExternal, extractPostImages, extractPostQuote, extractPostVideo } from '@/lib/post-embed';
 
 /** 名前がこの表示幅を超えたら、タイムラインでは @handle を畳む (折り返し防止)。 */
 const HANDLE_HIDE_WIDTH = 18;
@@ -147,6 +147,7 @@ export function PostArticle({
         images={extractPostImages(post)}
         external={extractPostExternal(post)}
         video={extractPostVideo(post)}
+        quote={extractPostQuote(post)}
         postUri={post.uri}
         {...(record.langs ? { langs: record.langs } : {})}
       />
