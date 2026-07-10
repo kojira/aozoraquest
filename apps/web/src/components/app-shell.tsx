@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { openComposePane, toggleComposePane, useComposePaneOpen } from '@/lib/compose-pane';
 import { BellIcon, BrusukonIcon, ComposeIcon, HomeIcon, PersonIcon, ScrollIcon, SearchIcon, SettingsIcon } from './icons';
@@ -189,7 +189,10 @@ export function AppShell() {
         <strong>あおぞらくえすと</strong>
       </header>
       <main className="content">
-        <Outlet />
+        {/* ルートは lazy 分割 (main.tsx)。チャンク取得中の簡素なフォールバック。 */}
+        <Suspense fallback={<div style={{ padding: '1em', fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
       {showComposeFab && (
         <button
