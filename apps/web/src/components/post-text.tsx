@@ -1,8 +1,9 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Facet, FacetFeature } from '@/lib/facet';
 import { bskyAppLinkToInternalPath } from '@/lib/bsky-url';
 import { getOpenBskyLinksExternally } from '@/lib/prefs';
+import { useColumnNav, pushInternalPath, type ColumnNav } from './column-detail';
 
 // 従来 post-text から Facet 型を import していた箇所 (post-body 等) の後方互換のため再エクスポート。
 export type { Facet, FacetFeature } from '@/lib/facet';
@@ -138,6 +139,8 @@ export function PostText({ text, facets, style, override }: PostTextProps) {
   // bsky.app の投稿/プロフィールリンクをあおぞら内で開くか、外部にするかは端末設定次第。
   // 設定変更は次のレンダーから反映される (localStorage 読み取り)。
   const openBskyExternally = getOpenBskyLinksExternally();
+  // カラム内なら mention / 内部リンクは route 遷移せずカラムに詳細を積む (TL 保持)。
+  const columnNav = useColumnNav();
 
   return (
     <div
@@ -149,12 +152,22 @@ export function PostText({ text, facets, style, override }: PostTextProps) {
         ...style,
       }}
     >
-      {segments.map((seg, i) => renderSegment(seg, i, openBskyExternally))}
+      {segments.map((seg, i) => renderSegment(seg, i, openBskyExternally, columnNav))}
     </div>
   );
 }
 
-function renderSegment(seg: PostSegment, key: number, openBskyExternally: boolean): ReactNode {
+/** カラム内リンククリックの共通ハンドラ。修飾キー/中クリックは既定挙動 (新規タブ) に任せる。 */
+function shouldInterceptClick(e: ReactMouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
+function renderSegment(
+  seg: PostSegment,
+  key: number,
+  openBskyExternally: boolean,
+  columnNav: ColumnNav | null,
+): ReactNode {
   switch (seg.kind) {
     case 'link': {
       // bsky.app の投稿/プロフィールリンクは、設定が OFF (既定) ならあおぞら内で開く。
@@ -162,7 +175,17 @@ function renderSegment(seg: PostSegment, key: number, openBskyExternally: boolea
       const internal = openBskyExternally ? null : bskyAppLinkToInternalPath(seg.uri);
       if (internal) {
         return (
-          <Link key={key} to={internal} onClick={(e) => e.stopPropagation()} style={{ wordBreak: 'break-all' }}>
+          <Link
+            key={key}
+            to={internal}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (columnNav && shouldInterceptClick(e) && pushInternalPath(columnNav, internal)) {
+                e.preventDefault();
+              }
+            }}
+            style={{ wordBreak: 'break-all' }}
+          >
             {seg.text}
           </Link>
         );
@@ -171,7 +194,17 @@ function renderSegment(seg: PostSegment, key: number, openBskyExternally: boolea
     }
     case 'mention':
       return (
-        <Link key={key} to={`/profile/${seg.handle}`} onClick={(e) => e.stopPropagation()}>
+        <Link
+          key={key}
+          to={`/profile/${seg.handle}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (columnNav && shouldInterceptClick(e)) {
+              e.preventDefault();
+              columnNav.openProfile(seg.handle);
+            }
+          }}
+        >
           {seg.text}
         </Link>
       );

@@ -6,6 +6,7 @@ import { HeartIcon, RepeatIcon, ReplyIcon } from './icons';
 import { useCompose } from './compose-modal';
 import { formatDateTime } from '@/lib/format-datetime';
 import { postDetailPath } from '@/lib/uri';
+import { useColumnNav } from './column-detail';
 import type { PostRecordShape } from './post-article';
 
 interface PostMetricsProps {
@@ -25,6 +26,7 @@ interface PostMetricsProps {
  */
 export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetricsProps) {
   const session = useSession();
+  const columnNav = useColumnNav();
   const { openCompose } = useCompose();
   const agent = session.agent;
 
@@ -130,7 +132,15 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
         </MetricButton>
         <Link
           to={detailPath}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            // カラム内なら route 遷移せず、そのカラムに詳細を積む (TL は下でマウントの
+            // まま = スクロール保持)。修飾キー/中クリックは新規タブ等の既定挙動に任せる。
+            if (columnNav && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+              e.preventDefault();
+              columnNav.openPost(post.uri, post.author.handle);
+            }
+          }}
           style={{
             marginLeft: 'auto',
             padding: '0.2em 0.1em',
