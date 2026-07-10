@@ -100,6 +100,27 @@ export function setHomeSummaryOpen(v: boolean): void {
   }
 }
 
+const KEY_OPEN_BSKY_EXTERNAL = 'aozoraquest:openBskyLinksExternally';
+
+/** 本文中の Bluesky 公式 (bsky.app) 投稿/プロフィールリンクを、あおぞら内で開かず
+ *  外部 (別タブ/公式アプリ) で開くか。デフォルト false (= あおぞら内で表示)。
+ *  公式が新しいリンク形式を追加してあおぞらが追従できない時の逃げ道として ON にする。 */
+export function getOpenBskyLinksExternally(): boolean {
+  try {
+    return localStorage.getItem(KEY_OPEN_BSKY_EXTERNAL) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setOpenBskyLinksExternally(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_OPEN_BSKY_EXTERNAL, String(v));
+  } catch {
+    /* no-op */
+  }
+}
+
 const KEY_FONT_SCALE = 'aozoraquest:fontScale';
 export const FONT_SCALE_MIN = 50;
 export const FONT_SCALE_MAX = 150;
