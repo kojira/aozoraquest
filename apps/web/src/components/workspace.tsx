@@ -27,6 +27,7 @@ import {
   type AppColumnKind,
 } from '@/lib/app-columns';
 import { urlForColumn } from '@/lib/column-router';
+import { columnScrollKey, readColumnScroll, writeColumnScroll } from '@/lib/column-scroll';
 import { publishVisibleColumn } from '@/lib/visible-column';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
 import { ColumnContent } from '@/components/column-content';
@@ -348,6 +349,53 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
   // body 要素を state で持つ (callback ref)。要素の出現が props 変化として
   // 子に伝わり、VirtualFeed がカラム内スクロールへ自然に切り替わる。
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
+
+  // スクロール位置の保存/復元。投稿詳細等の別ルートから戻ると ColumnView が再マウント
+  // され先頭に戻ってしまうため、body の scrollTop を kind+param 単位で sessionStorage に
+  // 控えて復元する。復元はコンテンツ高さ (IDB キャッシュ描画) が保存位置に届くまで rAF で
+  // 待つ。届く前の scroll=0 で保存を上書きしないよう restored フラグでゲートする。
+  const scrollKey = columnScrollKey(column);
+  useEffect(() => {
+    const el = bodyEl;
+    if (!el) return;
+    const saved = readColumnScroll(scrollKey);
+    let restored = saved <= 0;
+    let restoreRaf = 0;
+    let frames = 0;
+    const tryRestore = () => {
+      if (el.scrollHeight - el.clientHeight >= saved - 4) {
+        el.scrollTop = saved;
+        restored = true;
+        return;
+      }
+      if (++frames < 60) {
+        restoreRaf = requestAnimationFrame(tryRestore);
+      } else {
+        // 高さが届かなくても (キャッシュ未満のページ数など) 近い位置へ寄せて打ち切る
+        el.scrollTop = Math.min(saved, Math.max(0, el.scrollHeight - el.clientHeight));
+        restored = true;
+      }
+    };
+    if (!restored) restoreRaf = requestAnimationFrame(tryRestore);
+
+    let saveRaf = 0;
+    const onScroll = () => {
+      if (!restored) return; // 復元完了前は保存しない (0 上書き防止)
+      if (saveRaf) return;
+      saveRaf = requestAnimationFrame(() => {
+        saveRaf = 0;
+        writeColumnScroll(scrollKey, el.scrollTop);
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      if (restoreRaf) cancelAnimationFrame(restoreRaf);
+      if (saveRaf) cancelAnimationFrame(saveRaf);
+      el.removeEventListener('scroll', onScroll);
+      if (restored) writeColumnScroll(scrollKey, el.scrollTop); // route away 時の最終保存
+    };
+  }, [bodyEl, scrollKey]);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   // 押下フィードバック (↻ を一瞬回す) 用
