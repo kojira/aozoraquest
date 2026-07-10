@@ -26,10 +26,13 @@ export function PostDetail() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   // 投稿詳細は Workspace とは別ルートなので、戻り先は「直前に居た場所」(TL の途中・
-  // プロフィール・通知など) であるべきで、常にホーム先頭ではない。アプリ内履歴が
-  // あれば history を pop する (navigate(-1))。pop 遷移はブラウザ標準のスクロール復元が
-  // 効くうえ、home カラムは IDB キャッシュから即描画されるので TL の位置が保たれる。
-  // 履歴が無い場合 (共有 URL の直開き等) のみホームへのリンクにフォールバックする。
+  // プロフィール・通知など) であるべきで、常にホーム先頭ではない。
+  // location.key は、この document 読み込み後に 1 回でも app 内 navigation が
+  // push されていれば非 'default' になる (RR 7 は index 0 のエントリだけ 'default')。
+  // その場合は history を pop する (navigate(-1))。pop で戻ると home カラムは IDB
+  // キャッシュから即描画されるため以前の位置付近が保たれやすい (仮想リストなので
+  // 厳密なピクセル単位の復元までは保証しない。少なくとも毎回先頭リセットは避けられる)。
+  // 履歴が無い場合 (共有 URL の直開き等) はホームへのリンクにフォールバックする。
   const canGoBack = location.key !== 'default';
 
   useEffect(() => {
