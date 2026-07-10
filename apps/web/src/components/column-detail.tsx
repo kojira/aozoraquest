@@ -138,7 +138,7 @@ export function ColumnDetailView({
         <ColumnScrollContext.Provider value={bodyEl}>
           <Suspense fallback={DETAIL_FALLBACK}>
             {entry.kind === 'post' ? (
-              <PostThread handle={entry.handle} rkey={entry.rkey} />
+              <PostThread handle={entry.handle} rkey={entry.rkey} uri={entry.uri} />
             ) : (
               <ProfileView actor={entry.actor} />
             )}

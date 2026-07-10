@@ -17,8 +17,12 @@ type LoadState =
  * handle + rkey から投稿スレッドをロードして表示する。
  * ルート (routes/post-detail.tsx の全画面表示) とカラム内ドリルダウン
  * (column-detail.tsx のオーバーレイ) の両方から使い回す。
+ *
+ * uri (at://did:.../) が渡され DID 形式なら、handle→DID 解決 (getProfile 1 往復) を
+ * 省いて即スレッド取得する (タイムラインからのタップは post.uri を持っているので速い)。
+ * uri が無い/handle 形式のとき (共有 URL 直開き・bsky.app リンク等) だけ解決する。
  */
-export function PostThread({ handle, rkey }: { handle: string; rkey: string }) {
+export function PostThread({ handle, rkey, uri: uriProp }: { handle: string; rkey: string; uri?: string }) {
   const session = useSession();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
@@ -32,13 +36,16 @@ export function PostThread({ handle, rkey }: { handle: string; rkey: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const did = await resolveHandleToDid(agent, handle);
-        if (cancelled) return;
-        if (!did) {
-          setState({ status: 'error', message: `ユーザー "@${handle}" が見つかりません。` });
-          return;
+        let uri = uriProp && uriProp.startsWith('at://did:') ? uriProp : null;
+        if (!uri) {
+          const did = await resolveHandleToDid(agent, handle);
+          if (cancelled) return;
+          if (!did) {
+            setState({ status: 'error', message: `ユーザー "@${handle}" が見つかりません。` });
+            return;
+          }
+          uri = postUri(did, rkey);
         }
-        const uri = postUri(did, rkey);
         const thread = await fetchPostThread(agent, uri, { depth: 6, parentHeight: 10 });
         if (cancelled) return;
         if (FeedDefs.isThreadViewPost(thread)) {
@@ -56,7 +63,7 @@ export function PostThread({ handle, rkey }: { handle: string; rkey: string }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [handle, rkey, session.status, session.agent]);
+  }, [handle, rkey, uriProp, session.status, session.agent]);
 
   return (
     <>
