@@ -16,7 +16,8 @@
 
   <!-- 即時スプラッシュ: JS バンドル (~2MB) のパース完了まで #root は空でブランクになる。
        ここに軽量 splash を置くと「開いた瞬間に何か出る」体感になる。
-       createRoot().render() が #root の中身を置き換えるので React マウント時に自動で消える。 -->
+       splash は #root の兄弟 (下記) なので createRoot では消えない。lib/splash.ts の
+       removeSplash() が session 復元完了時 (AppShell) にフェード除去する。 -->
   <style>
     #app-splash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 1.1em;

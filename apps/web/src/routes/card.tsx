@@ -168,7 +168,12 @@ export function Card() {
       }
     })();
     return () => { cancelled = true; };
-  }, [session.status, session.agent, session.did, session.handle]);
+    // session.handle は effect 内で profile?.handle のフォールバック表示にしか使わない。
+    // dep に入れると、handle が signed-in の後に背景取得で届いたとき (session.ts の
+    // getProfile 非ブロッキング化) にカードの全ロード (~500 posts scan 含む) が再発火して
+    // しまうため、意図的に dep から外す。表示 handle は effect 自身が引く profile が主。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.status, session.agent, session.did]);
 
   const result = load.status === 'ready' ? load.result : null;
   const profile = load.status === 'ready' ? load.profile : null;
