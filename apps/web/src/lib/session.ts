@@ -118,14 +118,23 @@ async function setStateFromSession(
   }
   if (isCancelled()) return;
 
+  // ハンドル取得 (getProfile) は**表示に必須でない**ので待たない。先に signed-in にして
+  // workspace を描画させ (= 「準備しています」を早く抜けフィード/キャッシュを出す)、handle は
+  // バックグラウンドで取得して来たら足す。これで初回表示のブロッキングから 1 往復ぶん外れる。
   const next: SessionState = { status: 'signed-in', did, agent };
-  // 公開 AppView から引く: PDS 経由の getProfile は初期化直後に 401 が出ることがある
-  try {
-    const publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW });
-    const profile = await publicAgent.getProfile({ actor: did });
-    if (profile.data.handle) next.handle = profile.data.handle;
-  } catch (e) {
-    console.warn('getProfile failed', e);
-  }
   if (!isCancelled()) setState(next);
+
+  void (async () => {
+    try {
+      // 公開 AppView から引く: PDS 経由の getProfile は初期化直後に 401 が出ることがある
+      const publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW });
+      const profile = await publicAgent.getProfile({ actor: did });
+      if (!isCancelled() && profile.data.handle) {
+        // agent は同一 instance のまま handle だけ足して更新 (下流の再 fetch は起きない)。
+        setState({ ...next, handle: profile.data.handle });
+      }
+    } catch (e) {
+      console.warn('getProfile failed', e);
+    }
+  })();
 }

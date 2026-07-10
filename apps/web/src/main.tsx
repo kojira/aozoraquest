@@ -1,34 +1,39 @@
-import { StrictMode } from 'react';
+import { StrictMode, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { Workspace } from '@/components/workspace';
-import { Profile } from '@/routes/profile';
-import { MyProfile } from '@/routes/me';
-import { Friends } from '@/routes/friends';
-import { Card } from '@/routes/card';
-import { PostDetail } from '@/routes/post-detail';
-import { Notifications } from '@/routes/notifications';
-import { Quests } from '@/routes/quests';
-import { Search } from '@/routes/search';
-import { Settings } from '@/routes/settings';
-import { Spirit } from '@/routes/spirit';
-import { Onboarding } from '@/routes/onboarding';
-import { OAuthCallback } from '@/routes/oauth-callback';
-import { Tos } from '@/routes/tos';
-import { Privacy } from '@/routes/privacy';
-import { Board } from '@/routes/board';
-import { BoardNew } from '@/routes/board-new';
-import { BoardDetail, BoardDetailLegacyRedirect } from '@/routes/board-detail';
-import { Portfolio, PublicPortfolio } from '@/routes/portfolio';
-import { DebugCard } from '@/routes/debug-card';
-import { DebugRadar } from '@/routes/debug-radar';
-import { DebugMe } from '@/routes/debug-me';
+// 初回に必要な shell + workspace(ホーム) だけ eager。それ以外のルートは lazy 分割して
+// 初期バンドルから外す (初回表示の JS を軽くする)。named export を default に写す。
+const Profile = lazy(() => import('@/routes/profile').then(m => ({ default: m.Profile })));
+const MyProfile = lazy(() => import('@/routes/me').then(m => ({ default: m.MyProfile })));
+const Friends = lazy(() => import('@/routes/friends').then(m => ({ default: m.Friends })));
+const Card = lazy(() => import('@/routes/card').then(m => ({ default: m.Card })));
+const PostDetail = lazy(() => import('@/routes/post-detail').then(m => ({ default: m.PostDetail })));
+const Notifications = lazy(() => import('@/routes/notifications').then(m => ({ default: m.Notifications })));
+const Quests = lazy(() => import('@/routes/quests').then(m => ({ default: m.Quests })));
+const Search = lazy(() => import('@/routes/search').then(m => ({ default: m.Search })));
+const Settings = lazy(() => import('@/routes/settings').then(m => ({ default: m.Settings })));
+const Spirit = lazy(() => import('@/routes/spirit').then(m => ({ default: m.Spirit })));
+const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
+const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
+const Tos = lazy(() => import('@/routes/tos').then(m => ({ default: m.Tos })));
+const Privacy = lazy(() => import('@/routes/privacy').then(m => ({ default: m.Privacy })));
+const Board = lazy(() => import('@/routes/board').then(m => ({ default: m.Board })));
+const BoardNew = lazy(() => import('@/routes/board-new').then(m => ({ default: m.BoardNew })));
+const BoardDetail = lazy(() => import('@/routes/board-detail').then(m => ({ default: m.BoardDetail })));
+const BoardDetailLegacyRedirect = lazy(() => import('@/routes/board-detail').then(m => ({ default: m.BoardDetailLegacyRedirect })));
+const Portfolio = lazy(() => import('@/routes/portfolio').then(m => ({ default: m.Portfolio })));
+const PublicPortfolio = lazy(() => import('@/routes/portfolio').then(m => ({ default: m.PublicPortfolio })));
+const DebugCard = lazy(() => import('@/routes/debug-card').then(m => ({ default: m.DebugCard })));
+const DebugRadar = lazy(() => import('@/routes/debug-radar').then(m => ({ default: m.DebugRadar })));
+const DebugMe = lazy(() => import('@/routes/debug-me').then(m => ({ default: m.DebugMe })));
 import { AppShell } from '@/components/app-shell';
 import { SessionProvider } from '@/components/session-provider';
 import { ConfigProvider } from '@/components/config-provider';
 import { ComposeProvider } from '@/components/compose-modal';
 import { initFontScale } from '@/lib/font-scale';
 import { initTheme } from '@/lib/theme';
+import { removeSplash } from '@/lib/splash';
 import '@/styles.css';
 
 initFontScale();
@@ -94,3 +99,8 @@ createRoot(document.getElementById('root')!).render(
     </ConfigProvider>
   </StrictMode>,
 );
+
+// スプラッシュ (index.html) は通常 AppShell が session 復元完了時に除去する
+// (JS パース + 復元の間ずっと 1 枚出続け、「準備しています…」のちらつきを避ける)。
+// ここはハング保険: 復元が異常に長い/失敗しても最大 12s でスプラッシュを剥がす。
+setTimeout(removeSplash, 12000);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { openComposePane, toggleComposePane, useComposePaneOpen } from '@/lib/compose-pane';
 import { BellIcon, BrusukonIcon, ComposeIcon, HomeIcon, PersonIcon, ScrollIcon, SearchIcon, SettingsIcon } from './icons';
@@ -7,6 +7,7 @@ import { composeFabAllowedOnPath } from '@/lib/compose-fab';
 import { useSession } from '@/lib/session';
 import { getUnreadNotificationCount } from '@/lib/atproto';
 import { useVisibleColumn } from '@/lib/visible-column';
+import { removeSplash } from '@/lib/splash';
 import { useQuestActionableCount, computeQuestActionableCount, setQuestActionableCount } from '@/lib/quest-actionable';
 import { subscribeNotificationsSeen } from '@/lib/notification-seen';
 import { useRuntimeConfig } from '@/components/config-provider';
@@ -49,6 +50,12 @@ export function AppShell() {
   // 自分のアクション待ちクエスト件数 (承認待ち + 完了報告待ち)。クエストタブに赤カウント表示。
   const questActionable = useQuestActionableCount();
   const runtimeConfig = useRuntimeConfig();
+
+  // セッション復元が終わって実コンテンツを描画できる状態になったら、即時スプラッシュを
+  // 滑らかに除去する (JS パース + 復元の間は 1 枚のまま維持し「準備しています…」を挟まない)。
+  useEffect(() => {
+    if (session.status !== 'loading') removeSplash();
+  }, [session.status]);
   const visibleKind = useVisibleColumn();
   const headerRef = useRef<HTMLElement>(null);
   const footerRef = useRef<HTMLElement>(null);
@@ -189,7 +196,10 @@ export function AppShell() {
         <strong>あおぞらくえすと</strong>
       </header>
       <main className="content">
-        <Outlet />
+        {/* ルートは lazy 分割 (main.tsx)。チャンク取得中の簡素なフォールバック。 */}
+        <Suspense fallback={<div style={{ padding: '1em', fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
       {showComposeFab && (
         <button
