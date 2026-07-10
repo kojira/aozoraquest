@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Facet, FacetFeature } from '@/lib/facet';
+import { bskyAppLinkToInternalPath } from '@/lib/bsky-url';
+import { getOpenBskyLinksExternally } from '@/lib/prefs';
 
 // 従来 post-text から Facet 型を import していた箇所 (post-body 等) の後方互換のため再エクスポート。
 export type { Facet, FacetFeature } from '@/lib/facet';
@@ -133,6 +135,9 @@ export function segmentPost(text: string, facets?: Facet[]): PostSegment[] {
 export function PostText({ text, facets, style, override }: PostTextProps) {
   const segments =
     override === undefined ? segmentPost(text, facets) : autoLinkSegments(override);
+  // bsky.app の投稿/プロフィールリンクをあおぞら内で開くか、外部にするかは端末設定次第。
+  // 設定変更は次のレンダーから反映される (localStorage 読み取り)。
+  const openBskyExternally = getOpenBskyLinksExternally();
 
   return (
     <div
@@ -144,15 +149,26 @@ export function PostText({ text, facets, style, override }: PostTextProps) {
         ...style,
       }}
     >
-      {segments.map((seg, i) => renderSegment(seg, i))}
+      {segments.map((seg, i) => renderSegment(seg, i, openBskyExternally))}
     </div>
   );
 }
 
-function renderSegment(seg: PostSegment, key: number): ReactNode {
+function renderSegment(seg: PostSegment, key: number, openBskyExternally: boolean): ReactNode {
   switch (seg.kind) {
-    case 'link':
+    case 'link': {
+      // bsky.app の投稿/プロフィールリンクは、設定が OFF (既定) ならあおぞら内で開く。
+      // 対応外 (feed/lists 等) や設定 ON のときは従来どおり外部リンク。
+      const internal = openBskyExternally ? null : bskyAppLinkToInternalPath(seg.uri);
+      if (internal) {
+        return (
+          <Link key={key} to={internal} onClick={(e) => e.stopPropagation()} style={{ wordBreak: 'break-all' }}>
+            {seg.text}
+          </Link>
+        );
+      }
       return <ExternalLink key={key} href={seg.uri} label={seg.text} />;
+    }
     case 'mention':
       return (
         <Link key={key} to={`/profile/${seg.handle}`} onClick={(e) => e.stopPropagation()}>

@@ -7,7 +7,7 @@ import { useSession } from '@/lib/session';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault, getTheme, type ThemeChoice } from '@/lib/prefs';
+import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getOpenBskyLinksExternally, setOpenBskyLinksExternally, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault, getTheme, type ThemeChoice } from '@/lib/prefs';
 import { applyFontScale } from '@/lib/font-scale';
 import { applyTheme } from '@/lib/theme';
 import { APP_VERSION } from '@/lib/app-version';
@@ -331,6 +331,7 @@ export function Settings() {
         <AutoTranslateToggle />
         <AnalyzePostsToggle />
         <HideRepostsToggle />
+        <OpenBskyLinksToggle />
         <PostQuestNotificationsToggle />
       </section>
 
@@ -528,6 +529,29 @@ function HideRepostsToggle() {
       </label>
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
         フォロー中のタイムラインで、他人がリポストした投稿を流さないようにします。フォローしている本人の投稿はそのまま表示されます。
+      </p>
+    </div>
+  );
+}
+
+function OpenBskyLinksToggle() {
+  const [enabled, setEnabled] = useState<boolean>(() => getOpenBskyLinksExternally());
+  function handleChange(v: boolean) {
+    setOpenBskyLinksExternally(v);
+    setEnabled(v);
+  }
+  return (
+    <div style={{ marginTop: '1em' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em', fontSize: '0.9em', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => handleChange(e.target.checked)}
+        />
+        <span>Bluesky 公式リンクを外部で開く</span>
+      </label>
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
+        本文中の bsky.app の投稿 / プロフィールリンクを、既定ではあおぞらくえすと内で開きます。ON にすると常に外部 (別タブ / 公式アプリ) で開きます。あおぞら内の表示で不都合があるときや、公式が未対応の新リンク形式を追加したときの逃げ道です。
       </p>
     </div>
   );
