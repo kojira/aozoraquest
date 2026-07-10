@@ -11,7 +11,7 @@
  * body 要素を ColumnScrollContext で配って内部の VirtualFeed が
  * 「カラム内スクロール」モードで動けるようにする。
  */
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import {
@@ -354,18 +354,26 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
   // され先頭に戻ってしまうため、body の scrollTop を kind+param 単位で sessionStorage に
   // 控えて復元する。復元はコンテンツ高さ (IDB キャッシュ描画) が保存位置に届くまで rAF で
   // 待つ。届く前の scroll=0 で保存を上書きしないよう restored フラグでゲートする。
+  // 復元完了まで body を隠して「一瞬先頭に見えてからジャンプ」を避ける (useLayoutEffect で
+  // 初回ペイント前に opacity=0 を当てる)。仮想リストは estimate 高さベースなので mobile では
+  // 位置は近似 (desktop の FlowFeed は実寸で正確)。
   const scrollKey = columnScrollKey(column);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = bodyEl;
     if (!el) return;
     const saved = readColumnScroll(scrollKey);
     let restored = saved <= 0;
+    if (!restored) el.style.opacity = '0'; // 復元まで隠す
+    const finishRestore = () => {
+      restored = true;
+      el.style.opacity = '';
+    };
     let restoreRaf = 0;
     let frames = 0;
     const tryRestore = () => {
       if (el.scrollHeight - el.clientHeight >= saved - 4) {
         el.scrollTop = saved;
-        restored = true;
+        finishRestore();
         return;
       }
       if (++frames < 60) {
@@ -373,25 +381,28 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
       } else {
         // 高さが届かなくても (キャッシュ未満のページ数など) 近い位置へ寄せて打ち切る
         el.scrollTop = Math.min(saved, Math.max(0, el.scrollHeight - el.clientHeight));
-        restored = true;
+        finishRestore();
       }
     };
     if (!restored) restoreRaf = requestAnimationFrame(tryRestore);
 
-    let saveRaf = 0;
+    // 保存は 200ms トレイルデバウンス。モバイルの momentum scroll で毎フレーム
+    // sessionStorage に書くのを避ける (最終位置は cleanup でも保存)。
+    let saveTimer = 0;
     const onScroll = () => {
       if (!restored) return; // 復元完了前は保存しない (0 上書き防止)
-      if (saveRaf) return;
-      saveRaf = requestAnimationFrame(() => {
-        saveRaf = 0;
+      if (saveTimer) return;
+      saveTimer = window.setTimeout(() => {
+        saveTimer = 0;
         writeColumnScroll(scrollKey, el.scrollTop);
-      });
+      }, 200);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       if (restoreRaf) cancelAnimationFrame(restoreRaf);
-      if (saveRaf) cancelAnimationFrame(saveRaf);
+      if (saveTimer) clearTimeout(saveTimer);
       el.removeEventListener('scroll', onScroll);
+      el.style.opacity = ''; // 隠したまま剥がれないよう必ず戻す
       if (restored) writeColumnScroll(scrollKey, el.scrollTop); // route away 時の最終保存
     };
   }, [bodyEl, scrollKey]);
@@ -402,6 +413,10 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
   const [spinning, setSpinning] = useState(false);
   function triggerRefresh() {
     onRefresh();
+    // 明示更新は先頭から見せる。保存位置も破棄して「高さ collapse 依存で先頭に戻る」
+    // レースをやめ、意図を明示する。
+    writeColumnScroll(scrollKey, 0);
+    bodyEl?.scrollTo({ top: 0 });
     setSpinning(true);
     setTimeout(() => setSpinning(false), 600);
   }
@@ -488,6 +503,8 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
             // JS の behavior 指定に勝てないため JS 側で分岐)
             const reduce = typeof window !== 'undefined'
               && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+            // 保存位置を即座に破棄 (smooth 中に別ルートへ抜けても先頭起点を保つ)
+            writeColumnScroll(scrollKey, 0);
             bodyEl?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
           }}
         >
