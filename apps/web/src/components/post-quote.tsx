@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PostQuote } from '@/lib/post-embed';
 import { didFromUri, postDetailPath } from '@/lib/uri';
+import { useColumnNav } from './column-detail';
 import { Avatar } from './avatar';
 import { PostText } from './post-text';
 
@@ -15,6 +16,7 @@ import { PostText } from './post-text';
  */
 export function PostQuoteCard({ quote }: { quote: PostQuote }) {
   const navigate = useNavigate();
+  const columnNav = useColumnNav();
 
   const box: CSSProperties = {
     marginTop: '0.5em',
@@ -49,7 +51,11 @@ export function PostQuoteCard({ quote }: { quote: PostQuote }) {
   // handle があれば /profile/<handle>/post/<rkey>、無ければ at-uri の DID で代替
   // (profile ルートは DID をそのまま解決できる)。/post/<uri> 素通しは未登録ルートなので避ける。
   const to = postDetailPath(quote.author.handle || didFromUri(quote.uri), quote.uri);
-  const go = () => navigate(to);
+  // カラム内なら詳細を積む (TL 保持)。カラム外 (全画面ルート等) は route 遷移。
+  const go = () => {
+    if (columnNav) columnNav.openPost(quote.uri, quote.author.handle);
+    else navigate(to);
+  };
   const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // 親投稿カードのクリックには伝播させない (引用先へ飛ぶのが意図)。
     e.stopPropagation();
