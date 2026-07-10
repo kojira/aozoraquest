@@ -1,17 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import type { Facet, FacetFeature } from '@/lib/facet';
 
-export interface FacetFeature {
-  $type?: string;
-  uri?: string;
-  did?: string;
-  tag?: string;
-}
-
-export interface Facet {
-  index: { byteStart: number; byteEnd: number };
-  features?: FacetFeature[];
-}
+// 従来 post-text から Facet 型を import していた箇所 (post-body 等) の後方互換のため再エクスポート。
+export type { Facet, FacetFeature } from '@/lib/facet';
 
 interface PostTextProps {
   text: string;

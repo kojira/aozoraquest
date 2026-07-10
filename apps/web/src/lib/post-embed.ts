@@ -1,5 +1,5 @@
 import type { AppBskyFeedDefs } from '@atproto/api';
-import type { Facet } from '@/components/post-text';
+import type { Facet } from '@/lib/facet';
 
 /** 投稿カード / ライトボックスで使う 1 枚分の画像。 */
 export interface PostImage {
