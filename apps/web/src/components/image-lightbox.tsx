@@ -20,8 +20,9 @@ import type { PostImage } from '@/lib/post-embed';
 const SWIPE_THRESHOLD_RATIO = 0.18; // ビューポート幅のこの割合を超えたらページ送り
 const SWIPE_THRESHOLD_MAX = 60;     // ただし最低でもこの px を超えれば送る
 const MAX_SCALE = 5;                // ピンチ/ダブルタップの最大倍率
-const DOUBLE_TAP_SCALE = 2.5;       // ダブルタップ時に飛ぶ倍率
+const DOUBLE_TAP_SCALE = 3;         // ダブルタップ時に飛ぶ倍率 (スクショの小文字も読める程度)
 const DOUBLE_TAP_MS = 300;          // ダブルタップ判定の間隔
+const TAP_MOVE_TOL = 10;            // これ未満の移動はタップ扱い (ダブルタップ検出)
 
 interface Zoom {
   scale: number;
@@ -59,6 +60,8 @@ export function ImageLightbox({
   // ピンチ (2 本指) / パン (ズーム中 1 本指) のジェスチャ追跡。
   const pinch = useRef<{ dist: number; midX: number; midY: number } | null>(null);
   const pan = useRef<{ x: number; y: number } | null>(null);
+  // 単指タッチの開始点 (タップ判定用)。ピンチからの引き継ぎパンでは付けない (= タップ扱いしない)。
+  const panStart = useRef<{ x: number; y: number } | null>(null);
   const lastTap = useRef(0);
 
   const go = useCallback(
@@ -135,6 +138,7 @@ export function ImageLightbox({
     axis.current = null;
     pinch.current = null;
     pan.current = null;
+    panStart.current = null;
     setGesturing(false);
   }
 
@@ -158,6 +162,17 @@ export function ImageLightbox({
     return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
   }
 
+  // タップ (= ダブルタップ) 判定。ズーム中/等倍どちらの経路からも呼べる。
+  function handleTapAt(x: number, y: number) {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      lastTap.current = 0;
+      zoomTo(zoomRef.current.scale > 1 ? 1 : DOUBLE_TAP_SCALE, x, y);
+    } else {
+      lastTap.current = now;
+    }
+  }
+
   function onTouchStart(e: React.TouchEvent) {
     if (e.touches.length >= 2) {
       // ピンチ開始。カルーセルドラッグはキャンセル。
@@ -174,8 +189,9 @@ export function ImageLightbox({
     const t = e.touches[0];
     if (!t) return;
     if (zoomRef.current.scale > 1) {
-      // ズーム中の 1 本指 = パン。
+      // ズーム中の 1 本指 = パン。開始点を控えて (ほぼ動かなければ) ダブルタップも拾えるように。
       pan.current = { x: t.clientX, y: t.clientY };
+      panStart.current = { x: t.clientX, y: t.clientY };
       setGesturing(true);
       return;
     }
@@ -244,8 +260,19 @@ export function ImageLightbox({
     if (pinch.current || pan.current) {
       if (e.touches.length === 0) {
         setGesturing(false);
+        const wasTapCandidate = panStart.current;
         pinch.current = null;
         pan.current = null;
+        panStart.current = null;
+        // ズーム中に (ほぼ動かさず) タップした = ダブルタップでズームアウトできるように拾う。
+        if (wasTapCandidate) {
+          const ex = e.changedTouches[0]?.clientX ?? wasTapCandidate.x;
+          const ey = e.changedTouches[0]?.clientY ?? wasTapCandidate.y;
+          if (Math.abs(ex - wasTapCandidate.x) < TAP_MOVE_TOL && Math.abs(ey - wasTapCandidate.y) < TAP_MOVE_TOL) {
+            handleTapAt(ex, ey);
+            return;
+          }
+        }
         const z = zoomRef.current;
         if (z.scale <= 1.02) applyZoom(IDENTITY);
         else {
@@ -254,9 +281,10 @@ export function ImageLightbox({
         }
       } else if (e.touches.length === 1) {
         // 2 本指の片方が離れた → 残り 1 本指でパンに引き継ぐ (急に飛ばないよう基準点を取り直す)。
+        // 引き継ぎパンはタップ候補にしない (panStart は付けない)。
         pinch.current = null;
         const t = e.touches[0];
-        if (t && zoomRef.current.scale > 1) {
+        if (t && zoomRef.current.scale > 1.02) {
           pan.current = { x: t.clientX, y: t.clientY };
         } else {
           pan.current = null;
@@ -272,25 +300,40 @@ export function ImageLightbox({
     const endX = e.changedTouches[0]?.clientX ?? startX.current;
     const endY = e.changedTouches[0]?.clientY ?? startY.current;
     const dx = endX - startX.current;
-    if (a === null && Math.abs(dx) < 10) {
-      // 軸が立たない微小移動 = タップ。ダブルタップならズームトグル。
-      const now = Date.now();
-      if (now - lastTap.current < DOUBLE_TAP_MS) {
-        lastTap.current = 0;
-        zoomTo(zoomRef.current.scale > 1 ? 1 : DOUBLE_TAP_SCALE, endX, endY);
-      } else {
-        lastTap.current = now;
-      }
+    const dy = endY - startY.current;
+    // 軸が立たない微小移動 = タップ (ダブルタップならズームトグル)。
+    if (a === null && Math.abs(dx) < TAP_MOVE_TOL && Math.abs(dy) < TAP_MOVE_TOL) {
+      handleTapAt(endX, endY);
       setDrag(0);
       return;
     }
-    if (a !== 'h') {
+    // 横スワイプ判定: axis が 'h' で確定、または高速フリックで axis 未確定でも終端デルタが
+    // 横優勢なら横送り扱いにする (サンプルが少ない速い指で送りが死ぬのを防ぐ)。
+    const horizontal = a === 'h' || (a === null && Math.abs(dx) > Math.abs(dy));
+    if (!horizontal) {
       setDrag(0);
       return;
     }
     const threshold = Math.min(SWIPE_THRESHOLD_MAX, vpW.current * SWIPE_THRESHOLD_RATIO);
     if (Math.abs(dx) > threshold) go(dx < 0 ? 1 : -1);
     setDrag(0);
+  }
+
+  // デスクトップ: ホイールでカーソル位置を固定してズーム。
+  function onWheel(e: React.WheelEvent) {
+    e.stopPropagation();
+    const { cx, cy, w, h } = viewport();
+    const prev = zoomRef.current;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const scale = Math.max(1, Math.min(MAX_SCALE, prev.scale * factor));
+    if (scale <= 1.001) {
+      applyZoom(IDENTITY);
+      return;
+    }
+    const ratio = scale / prev.scale;
+    const mrx = e.clientX - cx;
+    const mry = e.clientY - cy;
+    applyZoom(clampZoom({ scale, tx: mrx - ratio * (mrx - prev.tx), ty: mry - ratio * (mry - prev.ty) }, w, h));
   }
 
   // デスクトップ: ダブルクリックでズームトグル。
@@ -324,6 +367,7 @@ export function ImageLightbox({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onTouchCancel={resetDrag}
+        onWheel={onWheel}
         // 画像エリア (レターボックス余白含む) のタップで誤って閉じない。閉じるのは
         // 背景余白 / ✕ ボタン / ESC のみ (スワイプ後のタップ誤爆も防ぐ)。
         onClick={(e) => e.stopPropagation()}
@@ -366,7 +410,7 @@ export function ImageLightbox({
                     transform: isCurrent ? `translate(${zoom.tx}px, ${zoom.ty}px) scale(${zoom.scale})` : undefined,
                     transformOrigin: 'center center',
                     transition: isCurrent && !gesturing ? 'transform 0.2s ease' : 'none',
-                    cursor: isCurrent && zoom.scale > 1 ? 'grab' : 'zoom-in',
+                    cursor: isCurrent && zoom.scale > 1 ? (gesturing ? 'grabbing' : 'grab') : 'zoom-in',
                     touchAction: 'none',
                   }}
                 />
