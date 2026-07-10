@@ -959,6 +959,24 @@ p { margin: 0.4em 0; }
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease, transform 60ms ease;
   -webkit-tap-highlight-color: transparent;
 }
+/* 引用投稿カード (post-quote.tsx)。カード全体がタップ可能なので、初動の視覚
+   フィードバック (ホバー着色 + 押下の沈み) とキーボードフォーカスリングを付ける。 */
+.dq-quote-card {
+  transition:
+    background-color 0.12s ease,
+    transform 0.08s ease;
+}
+.dq-quote-card:hover {
+  background: var(--color-window-bg-alt);
+}
+.dq-quote-card:active {
+  transform: translateY(1px) scale(0.99);
+}
+.dq-quote-card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .dq-tab:hover {
   color: #ffffff;
   border-color: #ffffff;
