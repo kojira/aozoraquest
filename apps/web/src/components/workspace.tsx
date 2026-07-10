@@ -501,7 +501,7 @@ function ColumnView({ column, canMoveLeft, canMoveRight, onMoveLeft, onMoveRight
           カラムに積めるよう nav を配る。 */}
       {detailTop && (
         <ColumnNavProvider value={columnNav}>
-          <ColumnDetailView entry={detailTop} onBack={() => navigate(-1)} />
+          <ColumnDetailView entry={detailTop} onBack={() => navigate(-1)} parentTitle={appColumnTitle(column)} />
         </ColumnNavProvider>
       )}
       {/* 右端のリサイズハンドル (PC のみ表示)。掴んで左右で幅を変える。 */}

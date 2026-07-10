@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, lazy, Suspense, useContext, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, type Location } from 'react-router-dom';
 import { didFromUri, postUri, rkeyFromUri } from '@/lib/uri';
 import { ColumnScrollContext } from '@/components/column-scroll-context';
@@ -74,32 +74,33 @@ export function useColumnDetailTop(columnId: string): ColumnDetailEntry | null {
   return null;
 }
 
-/** columnId 用の ColumnNav を作る (ColumnView が Provider に渡す)。 */
+/** columnId 用の ColumnNav を作る (ColumnView が Provider に渡す)。
+ *  location は毎 navigation で identity が変わるので ref 経由で最新を読む。これで nav の
+ *  identity を (navigate/columnId が安定な限り) 固定でき、どこかの drill 毎に全カラムの
+ *  投稿行が無駄に再レンダーするのを防ぐ。push は click 時に最新 stack を読む。 */
 export function useColumnNavValue(columnId: string): ColumnNav {
   const navigate = useNavigate();
   const location = useLocation();
+  const locRef = useRef(location);
+  locRef.current = location;
 
-  const push = useCallback(
-    (entry: ColumnDetailEntry) => {
-      const prev = getStack(location);
+  return useMemo<ColumnNav>(() => {
+    const push = (entry: ColumnDetailEntry) => {
+      const loc = locRef.current;
+      const prev = getStack(loc);
       // URL は現在のまま (workspace の '/') で history に 1 つ積む。state に stack を載せる。
-      navigate(location.pathname + location.search, {
-        state: { ...(location.state as object | null), colStack: [...prev, { columnId, entry }] },
+      navigate(loc.pathname + loc.search, {
+        state: { ...(loc.state as object | null), colStack: [...prev, { columnId, entry }] },
       });
-    },
-    [navigate, location, columnId],
-  );
-
-  return useMemo<ColumnNav>(
-    () => ({
+    };
+    return {
       openPost: (uri, handle) =>
         push({ kind: 'post', uri, rkey: rkeyFromUri(uri), handle: handle || didFromUri(uri) }),
       openPostByParts: (actor, rkey) =>
         push({ kind: 'post', uri: postUri(actor, rkey), rkey, handle: actor }),
       openProfile: (actor) => push({ kind: 'profile', actor }),
-    }),
-    [push],
-  );
+    };
+  }, [navigate, columnId]);
 }
 
 export const ColumnNavProvider = ColumnNavContext.Provider;
@@ -115,7 +116,15 @@ const DETAIL_FALLBACK = (
 /** カラムを覆う詳細オーバーレイ (戻るヘッダ + 本体)。onBack は history を 1 つ pop する。
  *  本体は独自スクロールなので、内側の VirtualFeed (ProfileView 等) 用に ColumnScrollContext を
  *  自前の body 要素で上書きする。 */
-export function ColumnDetailView({ entry, onBack }: { entry: ColumnDetailEntry; onBack: () => void }) {
+export function ColumnDetailView({
+  entry,
+  onBack,
+  parentTitle,
+}: {
+  entry: ColumnDetailEntry;
+  onBack: () => void;
+  parentTitle?: string;
+}) {
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
   return (
     <div className="workspace-column-detail">
@@ -123,6 +132,7 @@ export function ColumnDetailView({ entry, onBack }: { entry: ColumnDetailEntry; 
         <button type="button" className="workspace-column-detail-back" onClick={onBack} aria-label="戻る">
           ← 戻る
         </button>
+        {parentTitle && <span className="workspace-column-detail-parent">{parentTitle}</span>}
       </div>
       <div className="workspace-column-detail-body" ref={setBodyEl}>
         <ColumnScrollContext.Provider value={bodyEl}>

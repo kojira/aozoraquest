@@ -175,11 +175,12 @@ export function AppShell() {
     if (!onWorkspace || !columnKind) return;
     e.preventDefault();
     // カラム内ドリルダウンの詳細が開いている状態で、見ているカラムのタブを再タップ
-    // したらフィードへ戻す (state をクリア = オーバーレイを閉じる)。開いていなければ
-    // 従来どおりカラムへ横スクロール + 先頭へ。
+    // したら 1 つ戻す (= 詳細を閉じる)。navigate('/') で state を全消しすると他カラムの
+    // ドリルまで閉じ (M1)、かつ push なので Back で開き直ってしまう (M2)。history を
+    // pop する navigate(-1) なら「← 戻る」/端末バックと一貫する。
     const stack = (location.state as { colStack?: unknown[] } | null)?.colStack;
     if (Array.isArray(stack) && stack.length > 0 && columnKind === activeWorkspaceKind) {
-      navigate('/');
+      navigate(-1);
       return;
     }
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;

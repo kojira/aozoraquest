@@ -16,6 +16,9 @@
   --color-border: #ffffff;
   --color-window-bg: rgba(0, 0, 0, 0.78);
   --color-window-bg-alt: rgba(0, 0, 0, 0.88);
+  /* カラム内ドリルダウンのオーバーレイ用の**不透明**背景 (半透明 window-bg だと
+     下のフィードが透ける)。背景グラデ上でも列と近い見えになる濃色。 */
+  --color-window-solid: #0f1519;
   --color-window-inner-border: rgba(255, 255, 255, 0.35);
   --color-danger: #ff7272;
   /* footer-nav の通知ドット / クエスト対応待ちカウントの赤バッジ色。
@@ -83,6 +86,7 @@
   --color-border: #38506a;
   --color-window-bg: rgba(255, 255, 255, 0.9);
   --color-window-bg-alt: rgba(255, 255, 255, 0.97);
+  --color-window-solid: #eef4f7;
   --color-window-inner-border: rgba(0, 0, 0, 0.16);
   --color-on-accent: #ffffff;
   --color-mobile-bg: #cfe6f3;
@@ -403,24 +407,37 @@ p { margin: 0.4em 0; }
   z-index: 6;
   display: flex;
   flex-direction: column;
-  background: var(--color-window-bg);
-  border-radius: 3px;
+  /* 不透明にして下のフィードを完全に隠す (半透明 window-bg だと透ける)。 */
+  background: var(--color-window-solid);
   overflow: hidden;
 }
 .workspace-column-detail-header {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
   padding: 0.4em 0.6em;
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-window-bg);
+  background: var(--color-window-solid);
+}
+/* どのカラムに潜っているかを示す親ラベル (デスクトップ多カラムで迷子にならないよう)。 */
+.workspace-column-detail-parent {
+  font-size: 0.8em;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .workspace-column-detail-back {
+  flex: 0 0 auto;
   background: transparent;
   border: none;
   padding: 0.2em 0.1em;
   font: inherit;
   color: var(--color-accent);
   cursor: pointer;
-  text-decoration: underline;
+  border-bottom: 1px dotted currentColor;
+  line-height: 1.2;
 }
 .workspace-column-detail-back:active { transform: translateY(1px); }
 .workspace-column-detail-body {
