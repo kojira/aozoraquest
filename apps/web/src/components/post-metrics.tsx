@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
-import { HeartIcon, RepeatIcon, ReplyIcon } from './icons';
+import { HeartIcon, RepeatIcon, ReplyIcon, ShareIcon } from './icons';
 import { useCompose } from './compose-modal';
 import { formatDateTime } from '@/lib/format-datetime';
-import { postDetailPath } from '@/lib/uri';
+import { postDetailPath, rkeyFromUri } from '@/lib/uri';
 import { useColumnNav } from './column-detail';
 import type { PostRecordShape } from './post-article';
 
@@ -116,6 +116,29 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
   const ts = (post.record as PostRecordShape).createdAt ?? post.indexedAt;
   const detailPath = postDetailPath(post.author.handle, post.uri);
 
+  const [copied, setCopied] = useState(false);
+  // 投稿を共有する。公開リンク (bsky.app) を使い、誰でも開ける URL にする。
+  // モバイルは OS の共有シート (navigator.share)、無ければクリップボードにコピー。
+  async function onShare(e: React.MouseEvent) {
+    e.stopPropagation();
+    const url = `https://bsky.app/profile/${post.author.handle}/post/${rkeyFromUri(post.uri)}`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ url });
+      } catch {
+        /* キャンセル/失敗時は何もしない (誤コピーを避ける) */
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* no-op */
+    }
+  }
+
   return (
     <div style={{ marginTop: '0.5em' }}>
       {/* アクション行: リプ/リポスト/いいね + 右端に日時 (小さく右揃え)。
@@ -129,6 +152,9 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
         </MetricButton>
         <MetricButton onClick={toggleLike} ariaLabel={liked ? 'いいね解除' : 'いいね'} count={likeCount} active={liked} activeColor="#ff6b9a">
           <HeartIcon size={15} />
+        </MetricButton>
+        <MetricButton onClick={onShare} ariaLabel="共有" {...(copied ? { count: '✓' } : {})} active={copied} activeColor="#4caf7d">
+          <ShareIcon size={15} />
         </MetricButton>
         <Link
           to={detailPath}
@@ -200,7 +226,8 @@ function MetricButton({
 }: {
   onClick: (e: React.MouseEvent) => void;
   ariaLabel: string;
-  count: number;
+  /** 数値カウント / 短い文字 (共有ボタンのコピー完了 ✓ 等)。未指定なら数字を出さない。 */
+  count?: number | string;
   children: React.ReactNode;
   active?: boolean;
   activeColor?: string;
@@ -231,7 +258,7 @@ function MetricButton({
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
     >
       {children}
-      <span>{count}</span>
+      {count !== undefined && count !== '' && <span>{count}</span>}
     </button>
   );
 }
