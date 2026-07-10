@@ -55,4 +55,36 @@ describe('bskyAppLinkToInternalPath', () => {
     expect(bskyAppLinkToInternalPath('https://bsky.app/settings')).toBeNull();
     expect(bskyAppLinkToInternalPath('https://bsky.app/profile')).toBeNull();
   });
+
+  it('userinfo によるホストなりすまし (bsky.app@evil.com) は null', () => {
+    expect(bskyAppLinkToInternalPath('https://bsky.app@evil.com/profile/a')).toBeNull();
+  });
+
+  it('大文字ホスト / ポート付きは許可 (正規化される)', () => {
+    expect(bskyAppLinkToInternalPath('https://BSKY.APP/profile/a.example')).toBe('/profile/a.example');
+    expect(bskyAppLinkToInternalPath('https://bsky.app:443/profile/a.example')).toBe('/profile/a.example');
+  });
+
+  it('末尾ドット FQDN (bsky.app.) は null (内部化せず外部のまま = 安全側)', () => {
+    expect(bskyAppLinkToInternalPath('https://bsky.app./profile/a.example')).toBeNull();
+  });
+
+  it('エンコード済みデリミタ (%2F/%3F/%23) は decode されずセグメント境界を壊さない', () => {
+    // 生のまま透過 → 常に 2/4 セグメントに収まり、パスインジェクションにならない
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/a%2Fb')).toBe('/profile/a%2Fb');
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/..%2F..%2Fsettings')).toBe(
+      '/profile/..%2F..%2Fsettings',
+    );
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/x/post/r%2F..%2Fy')).toBe(
+      '/profile/x/post/r%2F..%2Fy',
+    );
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/a%3Fq%3D1')).toBe('/profile/a%3Fq%3D1');
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/a%23x')).toBe('/profile/a%23x');
+  });
+
+  it('rkey 欠落 / 余分なセグメントは null', () => {
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/a/post/')).toBeNull();
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/a/post')).toBeNull();
+    expect(bskyAppLinkToInternalPath('https://bsky.app/profile/a/post/x/y')).toBeNull();
+  });
 });
