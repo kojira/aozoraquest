@@ -89,6 +89,9 @@ export function World() {
    *  フィールドでの使用はセッション内のみ (TODO(W3): 在庫の正を Worker/DO に移す)。 */
   const [herbStock, setHerbStock] = useState(0);
   const [tonicStock, setTonicStock] = useState(0);
+  const [featherStock, setFeatherStock] = useState(0);
+  /** そらのはね帰還のワイプ待ち (cover 完了時に onCoverDone がテレポートを実行する) */
+  const featherDestRef = useRef<{ x: number; y: number } | null>(null);
   const [points, setPoints] = useState<PointsState | null>(null);
   const [battle, setBattle] = useState<{ state: BattleState; busy: boolean; rkey: string; tier: 1 | 2 | 3 } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
@@ -158,6 +161,7 @@ export function World() {
       setDiag(d);
       setHerbStock(stats?.materials['herb'] ?? 0);
       setTonicStock(stats?.materials['sky-dew'] ?? 0);
+      setFeatherStock(stats?.materials['sky-feather'] ?? 0);
       setPoints(pts);
     })();
     return () => { cancelled = true; };
@@ -387,6 +391,7 @@ export function World() {
       // プレビュー限定の割り切り)。
       setHerbStock((n) => Math.max(0, n - next.herbsUsed) + drops.filter((x) => x === 'herb').length);
       setTonicStock((n) => Math.max(0, n - next.tonicsUsed) + drops.filter((x) => x === 'sky-dew').length);
+      setFeatherStock((n) => n + drops.filter((x) => x === 'sky-feather').length);
       let movedToTown: string | null = null;
       if (next.outcome === 'lose') {
         // 敗北: 最後に立ち寄った街 (無ければはじまりの街) へ。宿で介抱 = 全快。
@@ -416,9 +421,21 @@ export function World() {
   // ワイプ演出の進行。覆い切った時点で支払いがまだ終わっていなければ hold でつなぐ
   // (通信の遅さが「固まった」に見えず、演出の一部になる)。
   const onCoverDone = useCallback(() => {
+    // そらのはね帰還: 覆い切ったところでテレポートして開く (旅の演出をワイプで共用)
+    const dest = featherDestRef.current;
+    if (dest) {
+      featherDestRef.current = null;
+      const name = townAt(dest.x, dest.y)?.name ?? worldOverlay().spawn.name;
+      wsRef.current = { x: dest.x, y: dest.y, hp: null, mp: null, lastTown: { x: dest.x, y: dest.y } };
+      setWs(wsRef.current);
+      scheduleSave();
+      setNotice(`そらのはねで「${name}」へ舞いもどった!`);
+      setWipe('reveal');
+      return;
+    }
     const b = battleRef.current;
     setWipe(b && b.rkey === '' && b.busy ? 'hold' : 'reveal');
-  }, []);
+  }, [scheduleSave]);
   const onRevealDone = useCallback(() => setWipe(null), []);
   // hold の上限 (10s) 到達 = 支払い通信ハング。遭遇をキャンセルしてマップに開き直す
   // (全面黒でリロード以外の脱出手段がなくなるのを防ぐ。レコードが後から成立していた
@@ -464,6 +481,24 @@ export function World() {
     setNotice(`そらのしずくを使った! MP が ${restored - mpNow} 回復。`);
     scheduleSave();
   }, [combat, tonicStock, scheduleSave]);
+
+  // そらのはねを使う: 最後に立ち寄った街 (無ければはじまりの街) へ帰還。
+  // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
+  const useFeatherOnField = useCallback(() => {
+    if (featherStock <= 0) return;
+    const s = wsRef.current;
+    if (!s || battleRef.current || battleResultRef.current || wipeRef.current) return;
+    const lt = s.lastTown && townAt(s.lastTown.x, s.lastTown.y) ? s.lastTown : null;
+    const spawn = worldOverlay().spawn;
+    const dest = lt ?? { x: spawn.x, y: spawn.y };
+    if (s.x === dest.x && s.y === dest.y) {
+      setNotice('もうその街にいる。');
+      return;
+    }
+    setFeatherStock((n) => n - 1);
+    featherDestRef.current = dest;
+    setWipe('cover'); // 覆い切ったら onCoverDone がテレポートする
+  }, [featherStock]);
 
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
   useEffect(() => {
@@ -719,6 +754,14 @@ export function World() {
           style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
         >
           そらのしずく ×{tonicStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>MP回復</span>
+        </button>
+        <button
+          type="button"
+          onClick={useFeatherOnField}
+          disabled={featherStock <= 0}
+          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
+        >
+          そらのはね ×{featherStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>街へ帰る</span>
         </button>
         <button
           type="button"
