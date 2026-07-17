@@ -504,9 +504,9 @@ export const WORLD_DATA: WorldOverlayData = {
   ],
   "bridgeSpans": 20,
   "spawn": {
-    "x": 64,
-    "y": 64,
-    "region": 0,
-    "name": "そらみの街"
+    "x": 211,
+    "y": 340,
+    "region": 17,
+    "name": "ふたばの村"
   }
 };
