@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import type { MonsterSpecies } from '@aozoraquest/core';
 
 /**
@@ -21,7 +22,7 @@ export function MonsterSvg({ species, size = 160 }: { species: MonsterSpecies; s
 
 const OUT = '#1b2530'; // 輪郭色
 
-const BODIES: Record<MonsterSpecies, JSX.Element> = {
+const BODIES: Record<MonsterSpecies, ReactElement> = {
   slime: (
     <g>
       <path d="M50 18 C74 18 84 42 84 58 C84 76 68 84 50 84 C32 84 16 76 16 58 C16 42 26 18 50 18Z" fill="#57b7ee" stroke={OUT} strokeWidth="4" />
@@ -68,18 +69,20 @@ const BODIES: Record<MonsterSpecies, JSX.Element> = {
     </g>
   ),
   wisp: (
+    // slime (青) と紛れないよう紫寄りの炎色にする
     <g>
-      <path d="M50 10 C68 26 80 40 80 58 C80 76 66 88 50 88 C34 88 20 76 20 58 C20 40 32 26 50 10Z" fill="#63d8f0" opacity="0.9" stroke={OUT} strokeWidth="4" />
-      <path d="M50 24 C60 34 68 44 68 58 C68 70 60 78 50 78 C40 78 32 70 32 58 C32 44 40 34 50 24Z" fill="#c8f4ff" opacity="0.85" />
+      <path d="M50 10 C68 26 80 40 80 58 C80 76 66 88 50 88 C34 88 20 76 20 58 C20 40 32 26 50 10Z" fill="#a06ee8" opacity="0.9" stroke={OUT} strokeWidth="4" />
+      <path d="M50 24 C60 34 68 44 68 58 C68 70 60 78 50 78 C40 78 32 70 32 58 C32 44 40 34 50 24Z" fill="#e6d4ff" opacity="0.85" />
       <circle cx="42" cy="56" r="4.5" fill={OUT} />
       <circle cx="58" cy="56" r="4.5" fill={OUT} />
       <path d="M44 68 Q50 64 56 68" fill="none" stroke={OUT} strokeWidth="3" strokeLinecap="round" />
     </g>
   ),
   serpent: (
+    // 輪郭 (太い暗ストローク) を先に描き、胴体を上に重ねる (逆だと暗色が体に被って濁る)
     <g>
+      <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke={OUT} strokeWidth="18" strokeLinecap="round" />
       <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke="#4fae6d" strokeWidth="14" strokeLinecap="round" />
-      <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke={OUT} strokeWidth="18" strokeLinecap="round" opacity="0.25" />
       <ellipse cx="42" cy="26" rx="15" ry="12" fill="#5fc37e" stroke={OUT} strokeWidth="4" />
       <circle cx="36" cy="24" r="4" fill={OUT} />
       <path d="M27 30 L18 32 L26 35" fill="none" stroke="#e8566a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import {
   BATTLE_TUNING,
@@ -31,19 +31,22 @@ import {
  *
  * スマホ縦画面前提: モンスターを大きく上に、コマンド 3 つを親指の届く下に。
  * 挑戦開始で 1 パワー消費 + 仮レコード (敗北扱い) を書き、決着時に確定へ更新する
- * (途中離脱 = 棄権 = 敗北。負けそうで閉じる、を無料にしない)。
+ * (途中離脱 = 棄権 = 敗北。負けそうで閉じる、を無料にしない。select 画面で開示)。
  */
 
 type Phase =
   | { kind: 'select' }
-  | { kind: 'starting' }
-  | { kind: 'battle'; state: BattleState; rkey: string; busy: boolean }
+  | { kind: 'starting'; tier: 1 | 2 | 3 }
+  | { kind: 'battle'; state: BattleState; tier: 1 | 2 | 3; rkey: string; busy: boolean }
   | {
       kind: 'result';
       state: BattleState;
+      tier: 1 | 2 | 3;
       drops: string[];
       xp: number;
       newTitles: string[];
+      finalEvents: TurnEvent[];
+      saveFailed: boolean;
     };
 
 const TIER_LABELS: Record<1 | 2 | 3, { name: string; hint: string }> = {
@@ -74,23 +77,17 @@ export function TrialArena({
   const [phase, setPhase] = useState<Phase>({ kind: 'select' });
   const [stats, setStats] = useState<BattleStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const logRef = useRef<HTMLDivElement>(null);
 
   const refreshStats = useCallback(() => {
     loadBattleStats(agent, did).then(setStats).catch(() => {});
   }, [agent, did]);
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
-  // ログ末尾へオートスクロール
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  });
-
   const begin = useCallback(
     async (tier: 1 | 2 | 3) => {
       if (points.balance < BATTLE_TUNING.powerCost) return;
       setErr(null);
-      setPhase({ kind: 'starting' });
+      setPhase({ kind: 'starting', tier });
       // 32bit seed (Math.random で十分。決定性はエンジン側の性質)
       const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
       const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed);
@@ -99,7 +96,7 @@ export function TrialArena({
         const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
         void bumpPower(agent, did, { battles: 1 });
         onPointsChanged({ ...points, battles: points.battles + 1, balance: points.balance - BATTLE_TUNING.powerCost });
-        setPhase({ kind: 'battle', state, rkey, busy: false });
+        setPhase({ kind: 'battle', state, tier, rkey, busy: false });
       } catch (e) {
         console.warn('battle start failed', e);
         setErr('試練を始められなかった。通信を確認してもう一度どうぞ。');
@@ -123,31 +120,50 @@ export function TrialArena({
       // 決着: レコード確定 + XP + ドロップ
       const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
       const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : BATTLE_TUNING.xpLose;
+      const record = {
+        seed: next.seed,
+        tier: phase.tier,
+        monsterId: next.monsterId,
+        outcome: next.outcome,
+        turns: next.turn,
+        drops,
+      };
+      // 保存は 1 回リトライ。最終的に失敗したらリザルトで明示する
+      // (仮レコードが敗北のままだと、勝ちと素材が記録に残らないため)。
+      let saveFailed = false;
       try {
-        await finishBattleRecord(agent, phase.rkey, {
-          seed: next.seed,
-          tier: MONSTERS_BY_ID[next.monsterId]?.tier ?? 1,
-          monsterId: next.monsterId,
-          outcome: next.outcome,
-          turns: next.turn,
-          drops,
-        });
-      } catch (e) {
-        console.warn('battle finish record failed', e);
+        await finishBattleRecord(agent, phase.rkey, record);
+      } catch {
+        try {
+          await finishBattleRecord(agent, phase.rkey, record);
+        } catch (e) {
+          console.warn('battle finish record failed (after retry)', e);
+          saveFailed = true;
+        }
       }
       void awardBattleXp(agent, did, xp);
-      // 称号の新規獲得判定 (確定前の stats と比較)
+      // 称号の新規獲得判定 (確定前の stats と比較)。stats 未取得 (取得失敗) 時は
+      // 称号トーストを出さないだけで戦績自体はレコードに残る。
       const before = stats ? earnedTitles(stats).map((t) => t.id) : [];
       const after = stats
         ? earnedTitles({
             wins: stats.wins + (next.outcome === 'win' ? 1 : 0),
             losses: stats.losses + (next.outcome === 'lose' ? 1 : 0),
             bestStreak: Math.max(stats.bestStreak, next.outcome === 'win' ? stats.currentStreak + 1 : 0),
-            tier3Wins: stats.tier3Wins + (next.outcome === 'win' && MONSTERS_BY_ID[next.monsterId]?.tier === 3 ? 1 : 0),
+            tier3Wins: stats.tier3Wins + (next.outcome === 'win' && phase.tier === 3 ? 1 : 0),
           })
         : [];
       const newTitles = after.filter((t) => !before.includes(t.id)).map((t) => t.name);
-      setPhase({ kind: 'result', state: next, drops, xp, newTitles });
+      setPhase({
+        kind: 'result',
+        state: next,
+        tier: phase.tier,
+        drops,
+        xp,
+        newTitles,
+        finalEvents: next.lastEvents,
+        saveFailed,
+      });
       refreshStats();
     },
     [phase, agent, did, stats, refreshStats],
@@ -160,7 +176,7 @@ export function TrialArena({
     return (
       <div>
         <SpiritBubble>
-          試練を受けるかい? わたしが呼んだ相手と、きみのジョブの力で戦うんだ。1 回につきあおぞらパワーを {BATTLE_TUNING.powerCost} つかうよ。
+          これからは会話のかわりに、試練できみの力を見せてもらうよ。わたしが呼んだ相手と、きみのジョブの力で戦うんだ。1 回につきあおぞらパワーを {BATTLE_TUNING.powerCost} つかう。
         </SpiritBubble>
         <div style={{ margin: '0.8em 0 0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
           あおぞらパワー: <strong style={{ color: 'var(--color-fg)' }}>{points.balance}</strong>
@@ -180,14 +196,19 @@ export function TrialArena({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                opacity: canPlay ? 1 : 0.55,
+                opacity: canPlay && !starting ? 1 : 0.55,
               }}
             >
-              <span>{'★'.repeat(tier)} {TIER_LABELS[tier].name}</span>
+              <span>
+                {starting && phase.tier === tier ? '呼び出している…' : `${'★'.repeat(tier)} ${TIER_LABELS[tier].name}`}
+              </span>
               <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{TIER_LABELS[tier].hint}</span>
             </button>
           ))}
         </div>
+        <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
+          ※ 試練の途中でやめる (画面を閉じる) と敗北あつかいになるよ。
+        </p>
         {!canPlay && (
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
             パワーが足りない。あおぞらくえすとから投稿すると 1 つ増えるよ。
@@ -205,25 +226,29 @@ export function TrialArena({
     const monsterDef = MONSTERS_BY_ID[state.monsterId];
     return (
       <div>
-        {/* 敵エリア */}
+        {/* 敵エリア。key=turn で再マウントして被弾シェイクを毎ターン再生する
+            (class 文字列が同じままだと CSS アニメは再始動しない)。 */}
         <div style={{ textAlign: 'center', paddingTop: '0.4em' }}>
-          <div style={{ display: 'inline-block' }} className={state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}>
+          <div
+            key={state.turn}
+            style={{ display: 'inline-block' }}
+            className={state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
+          >
             <MonsterSvg species={monsterDef?.species ?? 'slime'} size={150} />
           </div>
           <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} />
         </div>
 
-        {/* ログ */}
+        {/* ログ。1 ターン分だけ表示するので高さは内容に応じて伸ばす
+            (固定高 + 末尾スクロールだと冒頭行が隠れて経緯が読めない)。 */}
         <div
-          ref={logRef}
           style={{
             margin: '0.7em 0',
             padding: '0.5em 0.7em',
             border: '2px solid var(--color-border)',
             borderRadius: 4,
             background: 'var(--color-window-bg)',
-            height: '7.5em',
-            overflowY: 'auto',
+            minHeight: '4.5em',
             fontSize: '0.85em',
             lineHeight: 1.6,
           }}
@@ -256,16 +281,37 @@ export function TrialArena({
   }
 
   // ─── result ───
-  const { state, drops, xp, newTitles } = phase;
+  const { state, tier, drops, xp, newTitles, finalEvents, saveFailed } = phase;
   const won = state.outcome === 'win';
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{ opacity: won ? 1 : 0.45, display: 'inline-block', transform: won ? 'none' : 'rotate(180deg)' }}>
+      {/* 倒されたモンスター (= 勝利時) を逆さ + 薄表示にする。敗北時は健在のまま。 */}
+      <div style={{ opacity: won ? 0.45 : 1, display: 'inline-block', transform: won ? 'rotate(180deg)' : 'none' }}>
         <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={120} />
       </div>
       <h3 style={{ margin: '0.4em 0' }}>
         {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : 'ひきわけ'}
       </h3>
+      {/* 決着ターンのログ (「たおした!」や 30 ターン判定の口上) はここで読めるようにする */}
+      {finalEvents.length > 0 && (
+        <div
+          style={{
+            margin: '0.5em auto',
+            maxWidth: 420,
+            padding: '0.4em 0.7em',
+            border: '2px solid var(--color-border)',
+            borderRadius: 4,
+            background: 'var(--color-window-bg)',
+            fontSize: '0.8em',
+            lineHeight: 1.6,
+            textAlign: 'left',
+          }}
+        >
+          {finalEvents.map((e, i) => (
+            <div key={i}>{e.text}</div>
+          ))}
+        </div>
+      )}
       <SpiritBubble>
         {won
           ? 'みごとだ! きみのジョブの力、しかと見せてもらったよ。'
@@ -283,10 +329,25 @@ export function TrialArena({
         {newTitles.map((t) => (
           <div key={t} style={{ color: 'var(--color-accent)', fontWeight: 700 }}>称号「{t}」を獲得!</div>
         ))}
+        {saveFailed && (
+          <div style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>
+            ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残ることがある。
+          </div>
+        )}
       </div>
-      <button type="button" onClick={() => setPhase({ kind: 'select' })} style={{ padding: '0.7em 1.6em' }}>
-        試練の間に戻る
-      </button>
+      <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          disabled={points.balance < BATTLE_TUNING.powerCost}
+          onClick={() => void begin(tier)}
+          style={{ padding: '0.7em 1.4em' }}
+        >
+          もういちど挑む (パワー {points.balance})
+        </button>
+        <button type="button" onClick={() => setPhase({ kind: 'select' })} style={{ padding: '0.7em 1.4em' }}>
+          試練の間に戻る
+        </button>
+      </div>
     </div>
   );
 }
