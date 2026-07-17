@@ -50,6 +50,7 @@ import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
+import { SpiritIcon } from '@/components/spirit-icon';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -97,7 +98,7 @@ const ONBOARDING_LINES: readonly DialogueLine[] = [
   { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ! わたしは せいれいブルスコン。すこしだけ あんないするね。' },
   { speaker: 'ブルスコン', text: 'マップを おしたまま ゆびを うごかすと あるけるよ。' },
   { speaker: 'ブルスコン', text: 'そとには モンスターが いる。たたかいに まけると さいごに たちよった 街まで もどされちゃう。あぶなくなったら 街で やすもう。' },
-  { speaker: 'ブルスコン', text: '街に つくと「ちずのかけら」が 手に はいる。ちずは かけらを あつめた ちほうだけ ひろがっていくんだ。' },
+  { speaker: 'ブルスコン', text: '街に つくと「ちずのかけら」が 手に はいって、その街の まわりの ちずが ひろがっていくんだ。' },
   { speaker: 'ブルスコン', text: '🗺 ちずボタンで いつでも たしかめられる。それじゃ、よい たびを!' },
 ];
 
@@ -641,6 +642,7 @@ export function World() {
   // そらのはねを使う: 最後に立ち寄った街 (無ければはじまりの街) へ帰還。
   // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
   const useFeatherOnField = useCallback(() => {
+    if (onboardingRef.current) return;
     if (featherStock <= 0) return;
     const s = wsRef.current;
     // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
@@ -1110,6 +1112,7 @@ export function World() {
       {onboarding && (
         <DialogueWindow
           lines={ONBOARDING_LINES}
+          plateIcon={<SpiritIcon size={20} />}
           onDone={() => {
             setOnboarding(false);
             onboardingRef.current = false;

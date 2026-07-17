@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { advanceDialogue, currentLine, lineComplete, startDialogue, tickDialogue, type DialogueLine } from './dialogue';
+import { advanceDialogue, charCount, currentLine, lineComplete, startDialogue, tickDialogue, visibleText, type DialogueLine } from './dialogue';
 
 const LINES: DialogueLine[] = [
   { speaker: 'ブルスコン', text: 'やあ!' },
@@ -42,5 +42,17 @@ describe('dialogue 進行 (DQ 風セリフ送り)', () => {
   test('空配列でも落ちない (advance で即 done)', () => {
     const st = advanceDialogue([], startDialogue());
     expect(st.done).toBe(true);
+  });
+});
+
+describe('サロゲートペア (絵文字) の扱い', () => {
+  test('絵文字を 1 文字と数え、タイプ途中でも半欠けにならない', () => {
+    const text = '🗺 ちず';
+    expect(charCount(text)).toBe(4); // 🗺, 空白, ち, ず
+    expect(visibleText(text, 1)).toBe('🗺'); // lone surrogate にならない
+    const lines: DialogueLine[] = [{ text }];
+    let st = startDialogue();
+    for (let i = 0; i < 4; i++) st = tickDialogue(lines, st);
+    expect(lineComplete(lines, st)).toBe(true); // code unit (5) でなく code point (4) で完了
   });
 });

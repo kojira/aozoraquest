@@ -30,6 +30,18 @@ export function startDialogue(): DialogueState {
   return { index: 0, chars: 0, done: false };
 }
 
+/** code point 単位の文字数 (サロゲートペア = 絵文字を 1 文字と数える)。
+ *  code unit (String.length) 基準だと 🗺 等が半欠けの壊れグリフで 1 tick
+ *  表示される (レビュー指摘)。chars はすべてこの単位。 */
+export function charCount(text: string): number {
+  return Array.from(text).length;
+}
+
+/** タイプ途中の表示文字列 (code point 単位で先頭 chars 文字) */
+export function visibleText(text: string, chars: number): string {
+  return Array.from(text).slice(0, chars).join('');
+}
+
 export function currentLine(lines: readonly DialogueLine[], st: DialogueState): DialogueLine | null {
   return lines[st.index] ?? null;
 }
@@ -37,7 +49,7 @@ export function currentLine(lines: readonly DialogueLine[], st: DialogueState): 
 /** 表示中の行が全文表示済みか */
 export function lineComplete(lines: readonly DialogueLine[], st: DialogueState): boolean {
   const line = lines[st.index];
-  return !!line && st.chars >= line.text.length;
+  return !!line && st.chars >= charCount(line.text);
 }
 
 /** 1 文字進める (interval から呼ぶ)。全文表示済み・done なら何もしない */
@@ -51,7 +63,7 @@ export function advanceDialogue(lines: readonly DialogueLine[], st: DialogueStat
   if (st.done) return st;
   const line = lines[st.index];
   if (!line) return { ...st, done: true };
-  if (st.chars < line.text.length) return { ...st, chars: line.text.length };
+  if (st.chars < charCount(line.text)) return { ...st, chars: charCount(line.text) };
   if (st.index + 1 >= lines.length) return { ...st, done: true };
   return { index: st.index + 1, chars: 0, done: false };
 }

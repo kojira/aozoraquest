@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   advanceDialogue,
+  charCount,
   currentLine,
   lineComplete,
   startDialogue,
   tickDialogue,
+  visibleText,
   type DialogueLine,
 } from '@/lib/dialogue';
 
@@ -22,25 +24,66 @@ import {
 
 const CHAR_MS = 45;
 
-export function DialogueWindow({ lines, onDone }: { lines: readonly DialogueLine[]; onDone: () => void }) {
+/** visually-hidden (スクリーンリーダーにだけ全文を渡す) */
+const SR_ONLY: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
+export function DialogueWindow({
+  lines,
+  plateIcon,
+  onDone,
+}: {
+  lines: readonly DialogueLine[];
+  /** 話者名プレートに添えるアイコン (例: ブルスコンは SpiritIcon — 他画面の
+   *  吹き出しと同じ顔で認識できるように)。NPC ごとの出し分けは呼び出し側の責務 */
+  plateIcon?: React.ReactNode;
+  onDone: () => void;
+}) {
   const [st, setSt] = useState(startDialogue);
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
   );
   const doneRef = useRef(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
-  // タイプ進行。reduced-motion では行頭で即全文にする
+  // 空の lines でも必ず done になる (呼び出し側は表示中 move ガード等を掛けるため、
+  // ここで止まると不可視のまま永久ブロックになる — 動的生成セリフ時代への契約。レビュー指摘)
+  useEffect(() => {
+    if (lines.length === 0) setSt((s) => (s.done ? s : { ...s, done: true }));
+  }, [lines.length]);
+
+  // ★ キーボード操作: mount 時にオーバーレイへフォーカス (Enter/Space で送れるように)
+  useEffect(() => {
+    overlayRef.current?.focus();
+  }, []);
+
+  // タイプ進行。interval は行単位で張る (依存に st 全体を入れると 1 文字ごとに
+  // clear→再生成される setTimeout チェーンになる — レビュー指摘)。tickDialogue は
+  // 全文表示後 no-op なので、行が変わるまで回り続けても状態は進まない。
+  // reduced-motion では行頭で即全文にする
   useEffect(() => {
     if (st.done) return;
     if (reduced) {
-      if (!lineComplete(lines, st)) setSt((s) => ({ ...s, chars: currentLine(lines, s)?.text.length ?? 0 }));
+      setSt((s) => {
+        const line = currentLine(lines, s);
+        return line ? { ...s, chars: charCount(line.text) } : s;
+      });
       return;
     }
-    if (lineComplete(lines, st)) return;
     const id = setInterval(() => setSt((s) => tickDialogue(lines, s)), CHAR_MS);
     return () => clearInterval(id);
-  }, [lines, st, reduced]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- interval は行 (index) 単位
+  }, [lines, st.index, st.done, reduced]);
 
   // done は effect 経由で一度だけ通知 (render 中の親 setState を避ける)
   useEffect(() => {
@@ -60,7 +103,9 @@ export function DialogueWindow({ lines, onDone }: { lines: readonly DialogueLine
     // 全面オーバーレイ: どこをタップしても会話が進む (DQ の会話送り)。
     // 背後の UI (スティック・ボタン) への誤タップもこれで防ぐ
     <div
+      ref={overlayRef}
       role="dialog"
+      aria-modal="true"
       aria-label={line.speaker ? `${line.speaker}のセリフ` : 'セリフ'}
       onClick={advance}
       onKeyDown={(e) => {
@@ -76,7 +121,7 @@ export function DialogueWindow({ lines, onDone }: { lines: readonly DialogueLine
         style={{
           position: 'absolute',
           left: '50%',
-          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 68px)',
+          bottom: 'calc(var(--footer-height, 4.5em) + 0.5em)', // footer 実測高 (app-shell が書き出す) に追従
           transform: 'translateX(-50%)',
           width: 'min(94vw, 520px)',
         }}
@@ -85,7 +130,9 @@ export function DialogueWindow({ lines, onDone }: { lines: readonly DialogueLine
           <div
             className="dq-window"
             style={{
-              display: 'inline-block',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35em',
               padding: '0.15em 0.8em',
               marginBottom: -2,
               marginLeft: 8,
@@ -95,17 +142,19 @@ export function DialogueWindow({ lines, onDone }: { lines: readonly DialogueLine
               zIndex: 1,
             }}
           >
+            {plateIcon}
             {line.speaker}
           </div>
         )}
         <div
           className="dq-window"
-          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '4.6em', fontSize: '0.92em', lineHeight: 1.7 }}
+          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', fontSize: '0.92em', lineHeight: 1.7 }}
         >
-          {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を aria-label で渡す */}
-          <span aria-label={line.text}>
-            <span aria-hidden>{line.text.slice(0, st.chars)}</span>
-          </span>
+          {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
+              先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は
+              多くの SR が無視する — レビュー指摘) */}
+          <span style={SR_ONLY}>{line.text}</span>
+          <span aria-hidden>{visibleText(line.text, st.chars)}</span>
           {complete && (
             <span aria-hidden className="aq-dialogue-next" style={{ float: 'right', marginTop: '0.6em' }}>
               ▼
