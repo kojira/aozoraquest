@@ -307,6 +307,20 @@ describe('resolveTurn', () => {
     expect(s.herbs).toBe(BATTLE_TUNING.herbCarryMax);
   });
 
+  it('carry で HP/MP を引き継いで開始できる (フィールド持続用)', () => {
+    const full = startBattle('warrior', 5, 10, '戦士', 1, 42);
+    const s = startBattle('warrior', 5, 10, '戦士', 1, 42, 0, { hp: 10, mp: 2 });
+    expect(s.player.hp).toBe(10);
+    expect(s.player.mp).toBe(2);
+    expect(s.player.maxHp).toBe(full.player.maxHp); // max は変わらない
+    // クランプ: 過大は max、過小は hp≥1 / mp≥0
+    const c = startBattle('warrior', 5, 10, '戦士', 1, 42, 0, { hp: 9999, mp: -5 });
+    expect(c.player.hp).toBe(c.player.maxHp);
+    expect(c.player.mp).toBe(0);
+    const d = startBattle('warrior', 5, 10, '戦士', 1, 42, 0, { hp: 0 });
+    expect(d.player.hp).toBe(1); // 0 で始まる (即敗北) 事故を防ぐ
+  });
+
   it('ぼうぎょで focus が立ち翌ターンまで持続する (回避ボーナスの根拠)', () => {
     const s0 = startBattle('guardian', 5, 10, '守護者', 1, 3);
     const s1 = resolveTurn(s0, 'guard');
