@@ -17,8 +17,11 @@ import {
   ITEMS,
   type BattleState,
   type Command,
+  levelUpGains,
+  playerStatsAt,
 } from '../battle.js';
 import { JOBS } from '../jobs.js';
+import type { Archetype, StatArray } from '../types.js';
 
 describe('createRng / turnRng', () => {
   it('同じ seed は同じ列を返す (決定的)', () => {
@@ -542,6 +545,43 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     expect(extreme.atk).toBeGreaterThanOrEqual(Math.floor((25 + 4) / 2));
     expect(extreme.atk).toBeLessThan(jobOnly.atk);
     expect(extreme.agi).toBeGreaterThan(jobOnly.agi); // 高い個人値は反映される
+  });
+
+  it('playerStatsAt は playerCombatant と丸めの点まで同期している', () => {
+    for (const [job, jobLv, plLv, base] of [
+      ['warrior', 1, 1, undefined],
+      ['bard', 5, 10, undefined],
+      ['sage', 8, 15, [4, 14, 5, 63, 14]],
+      ['ninja', 3, 7, [20, 20, 20, 20, 20]],
+    ] as Array<[Archetype, number, number, StatArray | undefined]>) {
+      const raw = playerStatsAt(job, jobLv, plLv, base);
+      const c = playerCombatant(job, jobLv, plLv, 'x', base);
+      expect(Math.round(raw.atk), `${job} atk`).toBe(c.atk);
+      expect(Math.round(raw.def), `${job} def`).toBe(c.def);
+      expect(Math.round(raw.agi), `${job} agi`).toBe(c.agi);
+      expect(Math.round(raw.int), `${job} int`).toBe(c.int);
+      expect(Math.round(raw.luk), `${job} luk`).toBe(c.luk);
+      expect(Math.round(raw.maxHp), `${job} maxHp`).toBe(c.maxHp);
+      expect(Math.round(raw.maxMp), `${job} maxMp`).toBe(c.maxMp);
+    }
+  });
+
+  it('levelUpGains: 上昇量を小数 1 桁で返し、0.1 未満と変化なしは出さない', () => {
+    // ジョブ Lv1→2: 全ステに jobLevelScale 4% が乗るので主要ステは上がる
+    const gains = levelUpGains('warrior', { jobLevel: 1, playerLevel: 1 }, { jobLevel: 2, playerLevel: 1 });
+    expect(gains.length).toBeGreaterThan(0);
+    const atk = gains.find((g) => g.key === 'atk');
+    expect(atk?.delta).toBeCloseTo(1.0, 5); // warrior atk25 × 0.04
+    for (const g of gains) {
+      expect(g.delta).toBeGreaterThanOrEqual(0.1);
+      expect(g.delta).toBe(Math.round(g.delta * 10) / 10);
+      expect(g.label.length).toBeGreaterThan(0);
+    }
+    // レベル変化なしは空 (全部 0 → フィルタで消える)
+    expect(levelUpGains('warrior', { jobLevel: 3, playerLevel: 5 }, { jobLevel: 3, playerLevel: 5 })).toEqual([]);
+    // 0.1 未満のみ落ちる: bard (atk7) の job Lv1→2 は atk +0.28 なので出る、
+    // 一方 agi の低い warrior (agi8) でも +0.32 — 全ステ 0.1 未満を作るのは
+    // 実カーブでは稀なので、フィルタ自体は変化なしケースで担保する
   });
 
   it('平坦レベル成長: 低ステータスほど相対的に伸びる (bard の atk が Lv で改善)', () => {

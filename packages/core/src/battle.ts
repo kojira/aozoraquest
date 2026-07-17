@@ -293,6 +293,98 @@ export function playerCombatant(
   return fromStats(displayName, grown, factor, playerLevel);
 }
 
+/** 丸め前の戦闘ステータス (レベルアップの上昇量表示用)。 */
+export interface CombatStatsRaw {
+  atk: number;
+  def: number;
+  agi: number;
+  int: number;
+  luk: number;
+  maxHp: number;
+  maxMp: number;
+}
+
+/**
+ * playerCombatant と同じ導出 (ブレンド + 平坦成長 + レベル係数) を **丸めずに** 返す。
+ * レベルアップの上昇量は 1 レベルあたり +0.2〜1.5 程度の小数なので、丸めた
+ * Combatant 同士の差分では 0 か 1 しか出ない。同期は「round(playerStatsAt) ==
+ * playerCombatant」のテストで固定する。
+ */
+export function playerStatsAt(
+  archetype: Archetype,
+  jobLevel: number,
+  playerLevel: number,
+  baseStats?: StatArray,
+): CombatStatsRaw {
+  const t = BATTLE_TUNING;
+  const job = JOBS_BY_ID[archetype].stats;
+  const w = t.baseStatsPersonalWeight;
+  const base: StatArray = baseStats
+    ? [
+        job[0] + (baseStats[0] - job[0]) * w,
+        job[1] + (baseStats[1] - job[1]) * w,
+        job[2] + (baseStats[2] - job[2]) * w,
+        job[3] + (baseStats[3] - job[3]) * w,
+        job[4] + (baseStats[4] - job[4]) * w,
+      ]
+    : job;
+  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
+  const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
+  const g = (i: number) => (base[i]! + flat) * factor;
+  return {
+    atk: g(0),
+    def: g(1),
+    agi: g(2),
+    int: g(3),
+    luk: g(4),
+    maxHp: t.hpBase + (base[1]! + flat) * t.hpDefScale * factor + playerLevel * t.hpLevelScale,
+    maxMp: t.mpBase + (base[3]! + flat) * t.mpIntScale * factor,
+  };
+}
+
+/** レベルアップの上昇量表示で、これ未満の上昇は出さない (オーナー指定 2026-07-17)。 */
+export const STAT_GAIN_MIN_DISPLAY = 0.1;
+
+export interface StatGain {
+  key: keyof CombatStatsRaw;
+  /** 表示名 (DQ 風かな) */
+  label: string;
+  /** 上昇量 (小数 1 桁に丸め済み) */
+  delta: number;
+}
+
+const STAT_GAIN_LABELS: Array<[keyof CombatStatsRaw, string]> = [
+  ['maxHp', 'さいだいHP'],
+  ['maxMp', 'さいだいMP'],
+  ['atk', 'こうげき'],
+  ['def', 'まもり'],
+  ['agi', 'すばやさ'],
+  ['int', 'かしこさ'],
+  ['luk', 'うん'],
+];
+
+/**
+ * レベルアップ (from → to) によるステータス上昇量。0.1 未満の上昇は出さない。
+ * ジョブとプレイヤーが同時に上がった場合は呼び出し側が区間を分ける
+ * (job: (jF,pF)→(jT,pF) / player: (jT,pF)→(jT,pT)) と二重計上しない。
+ */
+export function levelUpGains(
+  archetype: Archetype,
+  from: { jobLevel: number; playerLevel: number },
+  to: { jobLevel: number; playerLevel: number },
+  baseStats?: StatArray,
+): StatGain[] {
+  const a = playerStatsAt(archetype, from.jobLevel, from.playerLevel, baseStats);
+  const b = playerStatsAt(archetype, to.jobLevel, to.playerLevel, baseStats);
+  const gains: StatGain[] = [];
+  for (const [key, label] of STAT_GAIN_LABELS) {
+    const raw = b[key] - a[key];
+    if (raw < STAT_GAIN_MIN_DISPLAY) continue;
+    gains.push({ key, label, delta: Math.round(raw * 10) / 10 });
+  }
+  return gains;
+}
+
 // StatVector → StatArray 変換は jobs.ts の statVectorToArray を使う (重複定義しない)。
 
 // ─── モンスター ─────────────────────────────────────────────
