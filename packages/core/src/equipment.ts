@@ -202,6 +202,41 @@ export function gearBonus(archetype: Archetype, equipIds: readonly string[]): Ge
   return total;
 }
 
+// ─── 素材のひきとり (素材 → パワー変換) ─────────────────────
+
+/** ひきとりチューニング (オーナー決定 2026-07-18「素材を燃やしてあおぞらパワーに
+ *  変換する仕組みも必要。無限ループ防止のためレートは低め」)。
+ *  レート根拠: 1 戦 = パワー 1 で素材期待値 ~1.2 個 → 5:1 なら 1 パワー投資の
+ *  回収は ~0.24 パワーで強い赤字 = 戦闘→換金ループは成立しない。 */
+export const SALE_TUNING = {
+  /** この個数の素材 = パワー 1 */
+  materialsPerPower: 5,
+} as const;
+
+/** ひきとり対象 (モンスター素材のみ。やくそう・しずく・はね等の消耗品は対象外 —
+ *  それぞれ固有の使い道があるため)。battle.ts の MONSTERS drops と同期
+ *  (equipment→battle は循環になるため静的リスト。整合はテストで固定)。 */
+export const SELLABLE_MATERIALS: readonly string[] = [
+  'slime-drop',
+  'bat-wing',
+  'mush-spore',
+  'golem-core',
+  'wisp-ember',
+  'serpent-scale',
+  'raven-feather',
+  'oni-horn',
+  'dragon-fang',
+];
+
+export function isSellableMaterial(id: string): boolean {
+  return SELLABLE_MATERIALS.includes(id);
+}
+
+/** count 個ひきとってもらったときのパワー (端数は切り捨て — 5 個未満は 0)。 */
+export function salePowerFor(count: number): number {
+  return Math.floor(Math.max(0, count) / SALE_TUNING.materialsPerPower);
+}
+
 // ─── 制作 (クラフト) と品質 ─────────────────────────────────
 
 /** 強化値チューニング (docs/20。オーナー決定 2026-07-18: 品質は −1〜+10、

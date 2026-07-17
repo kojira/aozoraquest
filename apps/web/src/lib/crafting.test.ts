@@ -125,6 +125,20 @@ describe('loadCraftInventory (制作 + 合成の集計と検証)', () => {
     expect(inv.pieces[0]!.level).toBe(lv + 2);
   });
 
+  test('ひきとりレコードは素材消費に計上され、個体は生まれない', async () => {
+    const inv = await loadCraftInventory(
+      makeAgent([
+        craft('c-0', 'wp-knife', 0, 'slime-drop', 2),
+        { rkey: 's-0', value: { materialId: 'slime-drop', materialCount: 10, powerGained: 2, at: 'z' } },
+        // powerGained のない itemId 欠落レコードは従来どおりスキップ
+        { rkey: 'c-broken', value: { materialId: 'bat-wing', materialCount: 3 } },
+      ]),
+      'did:test',
+    );
+    expect(inv.pieces.length).toBe(1);
+    expect(inv.materialsSpent).toEqual({ 'slime-drop': 12 });
+  });
+
   test('未作成コレクションは空で返す', async () => {
     const agent = { com: { atproto: { repo: { listRecords: vi.fn(async () => { throw new Error('x'); }) } } } } as any;
     const inv = await loadCraftInventory(agent, 'did:test');

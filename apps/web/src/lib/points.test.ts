@@ -63,6 +63,7 @@ describe('loadPointsState', () => {
       cardDraws: 0,
       battles: 0,
       craftPowerSpent: 0,
+      salePowerEarned: 0,
       summoned: false,
       balance: 0,
       toSummon: SUMMON_THRESHOLD,

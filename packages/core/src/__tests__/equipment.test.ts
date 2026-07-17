@@ -140,6 +140,37 @@ describe('専用装備の弱点補完 (将軍)', () => {
   });
 });
 
+describe('素材のひきとり (SALE_TUNING)', () => {
+  it('ひきとり対象は MONSTERS の素材ドロップと同期している (消耗品は対象外)', async () => {
+    const { MONSTERS } = await import('../battle.js');
+    const { SELLABLE_MATERIALS, isSellableMaterial } = await import('../equipment.js');
+    const consumables = new Set(['herb', 'sky-dew', 'sky-feather']);
+    const dropIds = new Set<string>();
+    for (const m of MONSTERS) for (const d of m.drops) if (!consumables.has(d.item)) dropIds.add(d.item);
+    expect([...dropIds].sort()).toEqual([...SELLABLE_MATERIALS].sort());
+    expect(isSellableMaterial('herb')).toBe(false);
+    expect(isSellableMaterial('slime-drop')).toBe(true);
+  });
+
+  it('レートは戦闘→換金ループが赤字になる水準 (期待素材 × レート < 1 パワー)', async () => {
+    const { MONSTERS } = await import('../battle.js');
+    const { SALE_TUNING, salePowerFor } = await import('../equipment.js');
+    // 全モンスターの素材期待値の最大 (luk 上振れ +0.15 相当を上乗せしても) が
+    // 1 戦のパワー 1 を回収できないことを固定
+    let worst = 0;
+    const consumables = new Set(['herb', 'sky-dew', 'sky-feather']);
+    for (const m of MONSTERS) {
+      let ev = 0;
+      for (const d of m.drops) if (!consumables.has(d.item)) ev += Math.min(0.95, d.chance + 0.15);
+      worst = Math.max(worst, ev);
+    }
+    expect(worst / SALE_TUNING.materialsPerPower).toBeLessThan(1);
+    expect(salePowerFor(4)).toBe(0);
+    expect(salePowerFor(5)).toBe(1);
+    expect(salePowerFor(12)).toBe(2);
+  });
+});
+
 describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => {
   it('決定的で、制作ロールは −1〜+5 に収まる (+6 以上は制作では出ない)', async () => {
     const { craftLevelRoll, craftSeedFromRkey, CRAFT_TUNING } = await import('../equipment.js');

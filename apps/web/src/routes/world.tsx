@@ -35,7 +35,7 @@ import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
 import { formatGain, notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, type CraftedPiece } from '@/lib/crafting';
+import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
@@ -658,6 +658,30 @@ export function World() {
     [agent, did, craftBusy],
   );
 
+  // 素材のひきとり (素材 → パワー。docs/20 の低レート変換)
+  const onSell = useCallback(
+    async (materialId: string, count: number) => {
+      if (!agent || !did || craftBusy || count <= 0) return;
+      if ((materialsRef.current[materialId] ?? 0) < count) return;
+      setCraftBusy(true);
+      try {
+        const { powerGained } = await sellMaterials(agent, { materialId, materialCount: count });
+        void bumpPower(agent, did, { salePowerEarned: powerGained });
+        setPoints((p) => (p ? { ...p, salePowerEarned: p.salePowerEarned + powerGained, balance: p.balance + powerGained } : p));
+        subtractMaterial(materialId, count);
+        setMaterialsView({ ...materialsRef.current });
+        setLastShopAction(null);
+        setNotice(`${ITEMS[materialId]?.name ?? materialId} ×${count} をひきとってもらい、パワーが ${powerGained} ふえた!`);
+      } catch (e) {
+        console.warn('[world] sell failed', e);
+        setNotice('ひきとってもらえなかった (通信エラー)。もういちどどうぞ。');
+      } finally {
+        setCraftBusy(false);
+      }
+    },
+    [agent, did, craftBusy, subtractMaterial],
+  );
+
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -979,6 +1003,7 @@ export function World() {
           lastAction={lastShopAction}
           onCraft={(def) => void onCraft(def)}
           onForge={(def, level, rkeys) => void onForge(def, level, rkeys)}
+          onSell={(materialId, count) => void onSell(materialId, count)}
           onClose={() => setShopOpen(false)}
         />
       )}
