@@ -38,7 +38,7 @@ import { BattleView, HpBar, MpBar } from '@/components/battle-view';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
-import { VirtualStick } from '@/components/virtual-stick';
+import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -55,12 +55,12 @@ const VIEW = 16;
 const HALF = VIEW / 2;
 const TILE = 32;
 
-type Dir = 'up' | 'down' | 'left' | 'right';
-const DIRS: Record<Dir, { dx: number; dy: number; glyph: string; label: string }> = {
-  up: { dx: 0, dy: -1, glyph: '↑', label: '上に移動' },
-  down: { dx: 0, dy: 1, glyph: '↓', label: '下に移動' },
-  left: { dx: -1, dy: 0, glyph: '←', label: '左に移動' },
-  right: { dx: 1, dy: 0, glyph: '→', label: '右に移動' },
+type Dir = StickDir; // 仮想スティックと同一の 4 方向
+const DIRS: Record<Dir, { dx: number; dy: number }> = {
+  up: { dx: 0, dy: -1 },
+  down: { dx: 0, dy: 1 },
+  left: { dx: -1, dy: 0 },
+  right: { dx: 1, dy: 0 },
 };
 
 const DANGER_LABELS = ['おだやか', 'すこし危険', '危険', 'とても危険'] as const;
