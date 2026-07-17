@@ -3,11 +3,14 @@ import {
   CRAFT_TUNING,
   EQUIPMENT_BY_ID,
   ITEMS,
+  SALE_TUNING,
   canEquip,
   forgedLevel,
   isMasterwork,
+  isSellableMaterial,
   jobDisplayName,
   leveledName,
+  salePowerFor,
   townShopStock,
   type Archetype,
   type EquipmentDef,
@@ -74,6 +77,7 @@ export function ShopModal({
   lastAction,
   onCraft,
   onForge,
+  onSell,
   onClose,
 }: {
   town: Town;
@@ -87,6 +91,8 @@ export function ShopModal({
   lastAction: LastShopAction | null;
   onCraft: (def: EquipmentDef) => void;
   onForge: (def: EquipmentDef, level: number, rkeys: [string, string]) => void;
+  /** 素材のひきとり (count は materialsPerPower の倍数) */
+  onSell: (materialId: string, count: number) => void;
   onClose: () => void;
 }) {
   const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
@@ -274,6 +280,44 @@ export function ShopModal({
               </div>
             );
           })}
+          {/* 素材のひきとり (素材 → パワー。レートは無限ループ防止で低め — docs/20) */}
+          {(() => {
+            const sellable = Object.entries(materials).filter(
+              ([id, n]) => isSellableMaterial(id) && n >= SALE_TUNING.materialsPerPower,
+            );
+            if (sellable.length === 0) return null;
+            return (
+              <div style={{ border: '2px solid var(--color-border)', borderRadius: 4, padding: '0.4em 0.6em', fontSize: '0.85em' }}>
+                <div style={{ marginBottom: 4 }}>
+                  <strong>素材のひきとり</strong>{' '}
+                  <span style={{ color: 'var(--color-muted)', fontSize: '0.85em' }}>
+                    ({SALE_TUNING.materialsPerPower} 個 = パワー 1)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {sellable.map(([id, n]) => {
+                    const power = salePowerFor(n);
+                    const count = power * SALE_TUNING.materialsPerPower;
+                    return (
+                      <div key={id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
+                        <span>
+                          {ITEMS[id]?.name ?? id} ×{n}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => onSell(id, count)}
+                          style={{ fontSize: '0.85em', padding: '0.35em 0.8em', whiteSpace: 'nowrap' }}
+                        >
+                          ×{count} ひきとり → パワー {power}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
