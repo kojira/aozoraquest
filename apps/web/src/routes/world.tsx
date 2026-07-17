@@ -92,8 +92,15 @@ export function World() {
   const [tonicStock, setTonicStock] = useState(0);
   const [featherStock, setFeatherStock] = useState(0);
   /** 素材の全在庫 (敗北ロス抽選の母集団)。ロード時に battle stats から初期化し、
-   *  ドロップ/使用/敗北ロスをセッション内で追随する */
+   *  ドロップ/使用 (戦闘内・フィールドとも)/敗北ロスをセッション内で追随する */
   const materialsRef = useRef<Record<string, number>>({});
+  const subtractMaterial = useCallback((id: string, n: number) => {
+    if (!n) return;
+    const m = materialsRef.current;
+    const left = Math.max(0, (m[id] ?? 0) - n);
+    if (left > 0) m[id] = left;
+    else delete m[id];
+  }, []);
   /** そらのはね帰還のワイプ待ち (cover 完了時に onCoverDone がテレポートを実行する) */
   const featherDestRef = useRef<{ x: number; y: number } | null>(null);
   const [points, setPoints] = useState<PointsState | null>(null);
@@ -507,6 +514,7 @@ export function World() {
     const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
     const healed = Math.min(combat.maxHp, hpNow + heal);
     setHerbStock((n) => n - 1);
+    subtractMaterial('herb', 1);
     setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
     setNotice(`やくそうを使った! HP が ${healed - hpNow} 回復。`);
     scheduleSave();
@@ -525,6 +533,7 @@ export function World() {
     const gain = Math.max(1, Math.round(combat.maxMp * BATTLE_TUNING.tonicMpRatio));
     const restored = Math.min(combat.maxMp, mpNow + gain);
     setTonicStock((n) => n - 1);
+    subtractMaterial('sky-dew', 1);
     setWs({ ...cur, mp: restored >= combat.maxMp ? null : restored });
     setNotice(`そらのしずくを使った! MP が ${restored - mpNow} 回復。`);
     scheduleSave();
@@ -545,6 +554,7 @@ export function World() {
       return;
     }
     setFeatherStock((n) => n - 1);
+    subtractMaterial('sky-feather', 1);
     featherDestRef.current = dest;
     // cover が画面を覆うまでの間に「自分の操作の結果」と分かる一言を出す
     // (エンカウント演出と同一のワイプなので、無言だと戦闘が始まると誤解する)
@@ -620,7 +630,7 @@ export function World() {
         {/* 途中離脱 = 敗北の開示はヘッダ側 (低い端末ではコマンド下が fold 落ちする。レビュー指摘) */}
         <h2 style={{ margin: '0 0 0.1em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(パワー {BATTLE_TUNING.powerCost} 消費)</span></h2>
         <p style={{ margin: '0 0 0.2em', fontSize: '0.7em', color: 'var(--color-muted)' }}>
-          ※ とちゅうでやめる (画面を閉じる) と敗北あつかいになるよ。
+          ※ とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがあるよ。
         </p>
         <BattleView
           state={battle.state}
@@ -670,13 +680,18 @@ export function World() {
           )}
           {saveFailed && (
             <div style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>
-              ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残ることがある。
+              ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残り、
+              素材を落とした扱いになることがある。電波のよい場所で開き直すと在庫に反映される。
             </div>
           )}
         </div>
         {battleResult.materialsLost.length > 0 && (
           <div style={{ margin: '0.3em 0', fontSize: '0.9em', color: 'var(--color-danger)' }}>
-            たおれたひょうしに 素材を落としてしまった…: {battleResult.materialsLost.map((d) => ITEMS[d]?.name ?? d).join('、')}
+            たおれたひょうしに 素材を落としてしまった…: {(() => {
+              const counts = new Map<string, number>();
+              for (const d of battleResult.materialsLost) counts.set(d, (counts.get(d) ?? 0) + 1);
+              return [...counts.entries()].map(([d, n]) => `${ITEMS[d]?.name ?? d}${n > 1 ? ` ×${n}` : ''}`).join('、');
+            })()}
           </div>
         )}
         {state.outcome === 'fled' && (

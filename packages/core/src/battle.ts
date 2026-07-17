@@ -894,7 +894,9 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
  * - 手持ち (materials: id → 個数) から個数重みで 1 個は必ず落ちる (手持ちが空なら何も落ちない)。
  * - 以降は clamp(lossExtraBase − luk*lossExtraLukScale, lossExtraMin, 1) の確率で
  *   追加 1 個、最大 lossMax 個まで (luk が高いほど追加を引きにくい)。
- * - seed から決定的 (バトル seed を使えば記録から再現可能)。
+ * - seed から決定的。ただし入力の在庫スナップショットはレコードに残らないため、
+ *   記録単体からの再現・検証はできない (materialsLost は他の戦闘結果と同じく
+ *   クライアント申告値。検証可能化は W3 のサーバー権威で扱う)。
  */
 export function rollDefeatLoss(materials: Record<string, number>, luk: number, seed: number): string[] {
   const t = BATTLE_TUNING;
