@@ -6,6 +6,7 @@ import {
   MONSTERS_BY_ID,
   SKILL_KIND_LABELS,
   earnedTitles,
+  pickTrialTier,
   resolveTurn,
   rollDrops,
   startBattle,
@@ -84,12 +85,15 @@ export function TrialArena({
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
   const begin = useCallback(
-    async (tier: 1 | 2 | 3) => {
+    async (fixedTier?: 1 | 2 | 3) => {
       if (points.balance < BATTLE_TUNING.powerCost) return;
       setErr(null);
-      setPhase({ kind: 'starting', tier });
       // 32bit seed (Math.random で十分。決定性はエンジン側の性質)
       const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+      // 難易度は選ばせない: 初挑戦はやさしい敵、以降はレベルに応じて自動抽選。
+      // (再戦 = fixedTier は同じ tier でもう一度)
+      const tier = fixedTier ?? pickTrialTier(seed, playerLevel, stats?.total ?? 0);
+      setPhase({ kind: 'starting', tier });
       // やくそうは在庫から最大 herbCarryMax 個持ち込む (使用分は battle レコードで差し引く)
       const herbs = Math.min(BATTLE_TUNING.herbCarryMax, stats?.materials['herb'] ?? 0);
       const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed, herbs);
@@ -210,29 +214,24 @@ export function TrialArena({
           あおぞらパワー: <strong style={{ color: 'var(--color-fg)' }}>{points.balance}</strong>
           (投稿すると増える)
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6em', marginTop: '0.6em' }}>
-          {([1, 2, 3] as const).map((tier) => (
-            <button
-              key={tier}
-              type="button"
-              disabled={!canPlay || starting}
-              onClick={() => void begin(tier)}
-              style={{
-                padding: '0.9em 1em',
-                fontSize: '1em',
-                textAlign: 'left',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                opacity: canPlay && !starting ? 1 : 0.55,
-              }}
-            >
-              <span>
-                {starting && phase.tier === tier ? '呼び出している…' : `${'★'.repeat(tier)} ${TIER_LABELS[tier].name}`}
-              </span>
-              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{TIER_LABELS[tier].hint}</span>
-            </button>
-          ))}
+        <div style={{ marginTop: '0.6em', textAlign: 'center' }}>
+          <button
+            type="button"
+            disabled={!canPlay || starting}
+            onClick={() => void begin()}
+            style={{
+              padding: '0.9em 2em',
+              fontSize: '1.05em',
+              opacity: canPlay && !starting ? 1 : 0.55,
+            }}
+          >
+            {starting ? '呼び出している…' : '試練に挑む'}
+          </button>
+          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+            {(stats?.total ?? 0) === 0
+              ? 'はじめての試練は、やさしい相手を呼んでもらえる。'
+              : '相手はブルスコンが選ぶ。強くなるほど手強いのが来る。'}
+          </p>
         </div>
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
           ※ 試練の途中でやめる (画面を閉じる) と敗北あつかいになるよ。
@@ -257,6 +256,9 @@ export function TrialArena({
         {/* 敵エリア。key=turn で再マウントして被弾シェイクを毎ターン再生する
             (class 文字列が同じままだと CSS アニメは再始動しない)。 */}
         <div style={{ textAlign: 'center', paddingTop: '0.4em' }}>
+          <div style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>
+            {'★'.repeat(phase.tier)} {TIER_LABELS[phase.tier].name}
+          </div>
           <div
             key={state.turn}
             style={{ display: 'inline-block' }}

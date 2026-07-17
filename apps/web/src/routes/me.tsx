@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerLevelFromXp, playerXpToNextLevel, questXpScalar } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, playerLevelFromXp, playerXpToNextLevel, questXpScalar } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
@@ -167,6 +167,22 @@ export function MyProfile() {
               <span>全体:</span>{' '}
               <span style={{ fontFamily: 'ui-monospace, monospace' }}>LV{myPlayerLv}</span>
               <span style={{ marginLeft: '0.5em', opacity: 0.8 }}>(累計 {myPlayerXp} XP)</span>
+            </p>
+          )}
+          {state.status === 'done' && myArchetype && (
+            // 試練 (docs/18) と同じ導出で戦闘値の HP/MP を表示。バトル外でも自分の
+            // 強さが分かるように (ジョブ/レベルから決まる値で、消耗状態ではない)。
+            <p style={{ margin: '0.15em 0 0', fontSize: '0.8em', color: 'var(--color-muted)' }}>
+              {(() => {
+                const c = playerCombatant(myArchetype, myJobLv, myPlayerLv, '');
+                return (
+                  <>
+                    <span style={{ fontFamily: 'ui-monospace, monospace' }}>HP {c.maxHp}</span>
+                    <span style={{ marginLeft: '0.6em', fontFamily: 'ui-monospace, monospace' }}>MP {c.maxMp}</span>
+                    <span style={{ marginLeft: '0.6em', opacity: 0.8 }}>(ブルスコンの試練の戦闘値)</span>
+                  </>
+                );
+              })()}
             </p>
           )}
           <p style={{ margin: '0.15em 0 0', fontSize: '0.85em', color: 'var(--color-muted)' }}>

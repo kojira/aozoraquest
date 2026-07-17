@@ -276,6 +276,20 @@ export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
   MONSTERS.map((m) => [m.id, m]),
 );
 
+/**
+ * 挑戦する試練の tier を自動で決める (UI に難易度選択は出さない)。
+ * - 初挑戦 (戦績 0) は必ず tier1 (手習い) = やさしい敵。
+ * - 以降は seed から決定的に抽選。プレイヤーレベルが低いうちは tier3 が出ない。
+ */
+export function pickTrialTier(seed: number, playerLevel: number, totalBattles: number): 1 | 2 | 3 {
+  if (totalBattles <= 0) return 1;
+  const r = createRng((seed ^ 0x7f4a7c15) >>> 0)();
+  if (playerLevel < 5) return r < 0.6 ? 1 : 2;
+  if (r < 0.25) return 1;
+  if (r < 0.65) return 2;
+  return 3;
+}
+
 /** tier に応じたモンスター強化倍率。プレイヤーのレベル補正と釣り合いを取る。 */
 function monsterLevelFactor(tier: 1 | 2 | 3, playerLevel: number): number {
   const t = BATTLE_TUNING;
@@ -406,9 +420,16 @@ function doAttack(
   const final = Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
+  // 決着文はプレイヤー視点: 敵を倒した =「◯◯をたおした!」、自分が倒れた =
+  // 「◯◯はちからつきた!」(プレイヤーが「たおされる」対象になる文は視点が転倒する)。
+  const fatalText = fatal
+    ? actor === 'player'
+      ? `。${defender.name}をたおした!`
+      : `。${defender.name}はちからつきた…!`
+    : '';
   events.push({
     actor,
-    text: `${label}${crit ? ' 会心の一撃!!' : ''} ${defender.name}に ${final} のダメージ${fatal ? '。' + defender.name + 'をたおした!' : ''}`,
+    text: `${label}${crit ? ' 会心の一撃!!' : ''} ${defender.name}に ${final} のダメージ${fatalText}`,
     damage: final,
     ...(fatal ? { fatal: true } : {}),
   });
