@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { worldOverlay } from '@aozoraquest/core';
+import { REGION_COUNT, regionOf, regionsAround, worldOverlay } from '@aozoraquest/core';
 import { loadWorldState } from './world-state';
 
 function agentWithGetRecord(impl: () => Promise<unknown>): any {
@@ -41,5 +41,37 @@ describe('loadWorldState', () => {
     const spawn = worldOverlay().spawn;
     expect(s.x).toBe(spawn.x);
     expect(s.y).toBe(spawn.y);
+  });
+});
+
+describe('loadWorldState — ちずのかけら (regions)', () => {
+  test('保存済みの regions を検証つきで読む (範囲外・非整数・重複は除去)', async () => {
+    const agent = agentWithGetRecord(async () => ({
+      data: { value: { x: 10, y: 10, regions: [3, 3, 1, -1, 999, 1.5, 'x'] } },
+    }));
+    const s = await loadWorldState(agent, 'did:test');
+    expect(s.regions).toEqual([1, 3]);
+  });
+
+  test('旧レコード (regions なし) は lastTown の 3×3 でシードする (移行措置)', async () => {
+    const spawn = worldOverlay().spawn;
+    const agent = agentWithGetRecord(async () => ({
+      data: { value: { x: 10, y: 10, lastTownX: spawn.x, lastTownY: spawn.y } },
+    }));
+    const s = await loadWorldState(agent, 'did:test');
+    expect(s.regions).toEqual(regionsAround(regionOf(spawn.x, spawn.y)));
+  });
+
+  test('新規プレイヤーは はじまりの街の地方一帯 (3×3) だけ開示された状態から', async () => {
+    const agent = agentWithGetRecord(async () => {
+      const e = new Error('Could not locate record') as Error & { error?: string };
+      e.error = 'RecordNotFound';
+      throw e;
+    });
+    const s = await loadWorldState(agent, 'did:test');
+    const spawn = worldOverlay().spawn;
+    expect(s.regions).toEqual(regionsAround(spawn.region));
+    expect(s.regions.length).toBe(9);
+    expect(s.regions.length).toBeLessThan(REGION_COUNT); // 全図は見えない
   });
 });

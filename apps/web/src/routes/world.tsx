@@ -18,6 +18,7 @@ import {
   playerLevelFromXp,
   regionDanger,
   regionOf,
+  regionsAround,
   resolveTurn,
   rollDefeatLoss,
   rollDrops,
@@ -81,6 +82,8 @@ interface Vitals {
   hp: number | null;
   mp: number | null;
   lastTown: { x: number; y: number } | null;
+  /** ちずのかけらで解禁済みのリージョン (世界地図の開示範囲) */
+  regions: number[];
 }
 
 export function World() {
@@ -186,7 +189,7 @@ export function World() {
       try {
         const state = await loadWorldState(agent, did);
         if (cancelled) return;
-        setWs({ x: state.x, y: state.y, hp: state.hp, mp: state.mp, lastTown: state.lastTown });
+        setWs({ x: state.x, y: state.y, hp: state.hp, mp: state.mp, lastTown: state.lastTown, regions: state.regions });
         if (state.relocated) {
           // 歩行不能地形からの退避 (橋の再配置など)。無言で数百タイル動くと混乱する
           const t = townAt(state.x, state.y);
@@ -293,9 +296,17 @@ export function World() {
       // 街に入ったら全回復 + 「最後に立ち寄った街」を更新 (敗北時の帰還先)
       if (terrain === 'town') {
         const t = townAt(nx, ny);
-        setNotice(t ? `「${t.name}」で休んで、すっかり元気になった!` : null);
+        // ちずのかけら: 街に入るとその街の地方一帯 (3×3 リージョン) が地図に加わる
+        const around = regionsAround(regionOf(nx, ny));
+        const gained = around.some((r) => !s.regions.includes(r));
+        const regions = gained ? [...new Set([...s.regions, ...around])].sort((a, b) => a - b) : s.regions;
+        setNotice(
+          t
+            ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' このあたりの ちずのかけらを 手に入れた!' : ''}`
+            : null,
+        );
         // wsRef を即時更新 (長押し連打で render 前の tick が同座標から二重計算しないように)
-        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny } };
+        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny }, regions };
         setWs(wsRef.current);
         scheduleSave();
         return; // 街では遭遇しない
@@ -504,7 +515,7 @@ export function World() {
         const valid = lt && townAt(lt.x, lt.y) ? lt : null;
         const back = valid ?? { x: spawn.x, y: spawn.y };
         movedToTown = townAt(back.x, back.y)?.name ?? spawn.name;
-        setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: valid });
+        setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: valid, regions: s?.regions ?? [] });
       } else {
         // 勝利/引き分け/逃走: 減った HP/MP をフィールドに持ち帰る (持続)。
         // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
@@ -527,7 +538,7 @@ export function World() {
     if (dest) {
       featherDestRef.current = null;
       const name = townAt(dest.x, dest.y)?.name ?? worldOverlay().spawn.name;
-      wsRef.current = { x: dest.x, y: dest.y, hp: null, mp: null, lastTown: { x: dest.x, y: dest.y } };
+      wsRef.current = { x: dest.x, y: dest.y, hp: null, mp: null, lastTown: { x: dest.x, y: dest.y }, regions: wsRef.current?.regions ?? [] };
       setWs(wsRef.current);
       scheduleSave();
       setNotice(`そらのはねで「${name}」へ舞いもどった!`);
@@ -1053,7 +1064,7 @@ export function World() {
               : ' あおぞらパワーがないのでモンスターは出ません (ホームで投稿すると増える)。'
           : ''}
       </p>
-      {mapOpen && <WorldMapModal x={ws.x} y={ws.y} onClose={() => setMapOpen(false)} />}
+      {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
       {gearOpen && (
         <GearModal
           archetype={archetype}

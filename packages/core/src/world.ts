@@ -519,3 +519,19 @@ export function regionDanger(region: number): number {
 export function tierForDanger(danger: number): 1 | 2 | 3 {
   return danger <= 1 ? 1 : danger === 2 ? 2 : 3;
 }
+
+/** region とその周囲 8 リージョン (トーラス 3×3)。「ちずのかけら」1 枚の開示範囲 —
+ *  街に入るとその街の地方一帯の地図をもらえる (docs/19 W5)。重複なし・昇順。 */
+export function regionsAround(region: number): number[] {
+  const rx = region % REGIONS_PER_SIDE;
+  const ry = Math.floor(region / REGIONS_PER_SIDE);
+  const out = new Set<number>();
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = (rx + dx + REGIONS_PER_SIDE) % REGIONS_PER_SIDE;
+      const ny = (ry + dy + REGIONS_PER_SIDE) % REGIONS_PER_SIDE;
+      out.add(ny * REGIONS_PER_SIDE + nx);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
