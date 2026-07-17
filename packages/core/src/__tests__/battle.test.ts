@@ -249,30 +249,38 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('MP: 特技で消費し、たたかう +1 / ぼうぎょ +2 で回復する', () => {
+  it('MP: 特技で消費する。回復はジョブ特性のみ (特性なしジョブはぼうぎょでも回復 0)', () => {
     const s0 = startBattle('sage', 5, 10, '賢者', 1, 42);
     expect(s0.player.mp).toBe(s0.player.maxMp);
     const s1 = resolveTurn(s0, 'skill');
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
-    if (s1.outcome === 'ongoing') {
-      const s2 = resolveTurn(s1, 'guard');
-      expect(s2.player.mp).toBe(Math.min(s2.player.maxMp, s1.player.mp + BATTLE_TUNING.mpGuardGain));
-    }
+    expect(s1.outcome).toBe('ongoing');
+    // sage は特性なし → ぼうぎょで回復しない (全員一律回復はジョブ差をぼやけさせる
+    // ためオーナー決定 2026-07-17 で廃止)。ログにも MP 表記が出ない
+    const s2 = resolveTurn(s1, 'guard');
+    expect(s2.player.mp).toBe(s1.player.mp);
+    expect(s2.lastEvents.some((e) => e.text.includes('ぼうぎょのかまえ'))).toBe(true);
+    // 特性持ち (bard: ぼうぎょ +4) は回復し、ログに特性名が出る。
+    // skill 2 連発で headroom を作り、クランプ境界で過大回帰を見逃さない
+    // (mp+4 がちょうど maxMp だと guardGain 5 でも通ってしまう — レビュー指摘)
+    const b0 = startBattle('bard', 5, 10, '詩人', 1, 42, 0, { mp: 8 });
+    const b1 = resolveTurn(b0, 'skill');
+    expect(b1.outcome).toBe('ongoing');
+    const b2 = resolveTurn(b1, 'guard');
+    expect(b2.player.mp - b1.player.mp).toBe(4);
+    expect(b2.player.mp).toBeLessThan(b2.player.maxMp);
+    expect(b2.lastEvents.some((e) => e.text.includes('歌の余韻'))).toBe(true);
   });
 
   it('MP 不足の特技は「たたかう」にフォールバックし MP を消費しない', () => {
-    let s = startBattle('warrior', 1, 1, '戦士', 1, 7);
-    // MP を撃ち尽くす
-    for (let i = 0; i < 20 && s.outcome === 'ongoing' && s.player.mp >= BATTLE_TUNING.skillMpCost; i++) {
-      s = resolveTurn(s, 'skill');
-    }
-    if (s.outcome === 'ongoing' && s.player.mp < BATTLE_TUNING.skillMpCost) {
-      const mpBefore = s.player.mp;
-      const next = resolveTurn(s, 'skill');
-      expect(next.lastEvents.some((e) => e.text.includes('MP が足りない'))).toBe(true);
-      // フォールバック攻撃で +mpAttackGain される (消費はされない)
-      expect(next.player.mp).toBeGreaterThanOrEqual(mpBefore);
-    }
+    // carry.mp で MP 不足状態を決定的に作る (撃ち尽くしループは seed 次第で
+    // バトルが先に終わり、assert が一度も走らない構造だった — レビュー指摘)
+    const s = startBattle('warrior', 1, 1, '戦士', 1, 7, 0, { mp: BATTLE_TUNING.skillMpCost - 1 });
+    expect(s.player.mp).toBeLessThan(BATTLE_TUNING.skillMpCost);
+    const next = resolveTurn(s, 'skill');
+    expect(next.lastEvents.some((e) => e.text.includes('MP が足りない'))).toBe(true);
+    // フォールバック攻撃で MP は消費されない。warrior は特性なしなので回復もしない
+    expect(next.player.mp).toBe(s.player.mp);
   });
 
   it('int 型 (sage) は戦士型より maxMp が多い', () => {
