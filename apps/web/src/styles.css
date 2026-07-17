@@ -1017,6 +1017,15 @@ p { margin: 0.4em 0; }
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease, transform 60ms ease;
   -webkit-tap-highlight-color: transparent;
 }
+/* ブルスコンの試練 (trial-arena.tsx): 被弾時にモンスターを揺らす。 */
+@keyframes trial-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+.trial-hit { animation: trial-shake 0.35s ease; }
+
 /* 引用投稿カード (post-quote.tsx)。カード全体がタップ可能なので、初動の視覚
    フィードバック (ホバー着色 + 押下の沈み) とキーボードフォーカスリングを付ける。 */
 .dq-quote-card {

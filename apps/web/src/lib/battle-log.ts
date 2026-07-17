@@ -8,7 +8,7 @@
 
 import type { Agent } from '@atproto/api';
 import type { BattleOutcome, BattleRecordSummary } from '@aozoraquest/core';
-import { VIA } from './atproto';
+import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 
 export interface BattleLogRecord {
@@ -26,14 +26,42 @@ export interface BattleLogRecord {
   via: string;
 }
 
-/** 1 戦の結果を記録する (PDS に 1 レコード作成)。 */
-export async function recordBattle(
+/**
+ * 挑戦開始時に仮レコードを書く (支払いの記帳)。outcome は 'lose' で書いておき、
+ * 決着時に finishBattleRecord で確定へ上書きする。**途中離脱 = 棄権 = 敗北**
+ * (負けそうになったら閉じる、を無料・無記録にしない)。rkey を返す。
+ */
+export async function startBattleRecord(
   agent: Agent,
-  input: Omit<BattleLogRecord, '$type' | 'at' | 'via'>,
-): Promise<void> {
+  input: Pick<BattleLogRecord, 'seed' | 'tier' | 'monsterId'>,
+): Promise<string> {
   const did = agent.assertDid;
   const rkey = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
   await agent.com.atproto.repo.createRecord({
+    repo: did,
+    collection: COL.battle,
+    rkey,
+    record: {
+      $type: COL.battle,
+      ...input,
+      outcome: 'lose',
+      turns: 0,
+      drops: [],
+      at: new Date().toISOString(),
+      via: VIA,
+    } satisfies BattleLogRecord,
+  });
+  return rkey;
+}
+
+/** 決着時に仮レコードを確定内容で上書きする。 */
+export async function finishBattleRecord(
+  agent: Agent,
+  rkey: string,
+  input: Omit<BattleLogRecord, '$type' | 'at' | 'via'>,
+): Promise<void> {
+  const did = agent.assertDid;
+  await agent.com.atproto.repo.putRecord({
     repo: did,
     collection: COL.battle,
     rkey,
@@ -44,6 +72,36 @@ export async function recordBattle(
       via: VIA,
     } satisfies BattleLogRecord,
   });
+}
+
+/**
+ * バトルの経験値を analysis レコードに加算する (post-processor と同じ流儀:
+ * playerLevel.xp は常に、jobLevel.xp も現ジョブに積む)。失敗は warn して swallow。
+ */
+export async function awardBattleXp(agent: Agent, did: string, xp: number): Promise<void> {
+  try {
+    const analysis = await getRecord<{
+      archetype: string;
+      analyzedAt?: string;
+      playerLevel?: { xp: number; lastDailyBonusDate?: string; streakDays: number };
+      jobLevel?: { archetype: string; xp: number; joinedAt: string };
+      [k: string]: unknown;
+    }>(agent, did, COL.analysis, 'self');
+    if (!analysis) return;
+    const playerLevel = analysis.playerLevel ?? { xp: 0, streakDays: 0 };
+    const jobLevel = analysis.jobLevel ?? {
+      archetype: analysis.archetype,
+      xp: 0,
+      joinedAt: analysis.analyzedAt ?? new Date().toISOString(),
+    };
+    await putRecord(agent, COL.analysis, 'self', {
+      ...analysis,
+      playerLevel: { ...playerLevel, xp: playerLevel.xp + xp },
+      jobLevel: { ...jobLevel, xp: jobLevel.xp + xp },
+    });
+  } catch (e) {
+    console.warn('[battle] xp award failed', e);
+  }
 }
 
 /** 戦闘レコード数を数える (パワー再スキャン用。cardDraw と同じ最大 500 件)。 */
