@@ -83,11 +83,30 @@ export const JOB_EQUIP_KINDS: Record<Archetype, readonly EquipKind[]> = {
   miko: ['staff', 'lucky', 'robe'],
 };
 
-/** ジョブ専用武器 (中位 +8 / 上位 +14)。効果は支配ステータス。 */
-const JOB_WEAPONS: Array<{ job: Archetype; stat: 'atk' | 'def' | 'agi' | 'int' | 'luk'; mid: string; high: string }> = [
+/** ジョブ専用武器 (中位 +8 / 上位 +14)。効果は原則支配ステータスだが、職の
+ *  構造的弱点は bonusMid/bonusHigh の複合効果で補完できる (将軍: 支配ステの
+ *  こうげきを盛っても弱点の耐久が埋まらず、フル装備でも tier3 45% と唯一
+ *  破綻していた — 采配/大太刀に「兵が守る」耐久を付けて 65% に。sim 実測)。 */
+const JOB_WEAPONS: Array<{
+  job: Archetype;
+  stat: 'atk' | 'def' | 'agi' | 'int' | 'luk';
+  mid: string;
+  high: string;
+  bonusMid?: EquipmentDef['bonus'];
+  bonusHigh?: EquipmentDef['bonus'];
+}> = [
   { job: 'sage', stat: 'int', mid: '賢者の杖', high: '天啓の錫杖' },
   { job: 'mage', stat: 'int', mid: '魔法の杖', high: '星読みの大杖' },
-  { job: 'shogun', stat: 'atk', mid: '将軍の采配', high: '軍神の大太刀' },
+  {
+    job: 'shogun',
+    stat: 'atk',
+    mid: '将軍の采配',
+    high: '軍神の大太刀',
+    // 指揮官は兵に守られる: 弱点の耐久を装備で補完 (オーナー指摘 2026-07-18
+    // 「将軍アイテム手に入れてもよわくない?」への対応)
+    bonusMid: { atk: 6, def: 4, maxHp: 6 },
+    bonusHigh: { atk: 10, def: 7, maxHp: 14 },
+  },
   { job: 'bard', stat: 'luk', mid: '竪琴', high: '月夜の琴' },
   { job: 'seer', stat: 'int', mid: '占いの水晶', high: '水晶の宝珠' },
   { job: 'poet', stat: 'luk', mid: '詩人のペン', high: '心晴の筆' },
@@ -121,7 +140,7 @@ export const EQUIPMENT: EquipmentDef[] = [
       name: w.mid,
       slot: 'weapon',
       kind: 'exclusive', // jobOnly が判定の全て (カテゴリ不問 — オーナー決定 2026-07-18)
-      bonus: { [w.stat]: 8 },
+      bonus: w.bonusMid ?? { [w.stat]: 8 },
       jobOnly: w.job,
       grade: 2,
       price: { power: 20, materials: 4 },
@@ -131,7 +150,7 @@ export const EQUIPMENT: EquipmentDef[] = [
       name: w.high,
       slot: 'weapon',
       kind: 'exclusive',
-      bonus: { [w.stat]: 14 },
+      bonus: w.bonusHigh ?? { [w.stat]: 14 },
       jobOnly: w.job,
       grade: 3,
       price: { power: 40, materials: 6 },
