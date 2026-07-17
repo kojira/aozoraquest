@@ -16,6 +16,7 @@ import {
   type Archetype,
   type BattleState,
   type Command,
+  type GearSelection,
   type StatVector,
   type TurnEvent,
 } from '@aozoraquest/core';
@@ -34,6 +35,8 @@ import {
   type BattleStats,
 } from '@/lib/battle-log';
 import { formatGain, notifyLevelUp } from './level-up-overlay';
+import { loadCraftInventory } from '@/lib/crafting';
+import { loadGearRefs, resolveGear } from '@/lib/gear';
 
 /**
  * ブルスコンの試練 — アリーナ UI (docs/18-brusukon-trial.md)。
@@ -99,6 +102,10 @@ export function TrialArena({
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'select' });
   const [stats, setStats] = useState<BattleStats | null>(null);
+  const [gearSel, setGearSel] = useState<GearSelection>({});
+  const gearReadyRef = useRef(false);
+  const gearSelRef = useRef(gearSel);
+  gearSelRef.current = gearSel;
   const [err, setErr] = useState<string | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ。encounter-wipe.tsx)。cover → (hold) → reveal。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
@@ -107,7 +114,30 @@ export function TrialArena({
 
   const refreshStats = useCallback(() => {
     loadBattleStats(agent, did).then(setStats).catch(() => {});
-  }, [agent, did]);
+    // 装備 (gear/self の rkey 参照を所持個体で解決 — docs/20 W6c)
+    Promise.all([loadCraftInventory(agent, did), loadGearRefs(agent, did)])
+      .then(([inv, refs]) => {
+        setGearSel(resolveGear(refs, inv.pieces, archetype).selection);
+        gearReadyRef.current = true;
+      })
+      .catch(() => {}); // 失敗時は begin 側の ensureGear が再試行する
+  }, [agent, did, archetype]);
+
+  /** 開戦前に装備を確実に解決する (ロード完了前の挑戦で「装備なしの有料戦闘」が
+   *  確定する窓を塞ぐ — レビュー指摘)。ロード済みなら即返し、未了なら await。 */
+  const ensureGear = useCallback(async (): Promise<GearSelection> => {
+    if (gearReadyRef.current) return gearSelRef.current;
+    try {
+      const [inv, refs] = await Promise.all([loadCraftInventory(agent, did), loadGearRefs(agent, did)]);
+      const sel = resolveGear(refs, inv.pieces, archetype).selection;
+      setGearSel(sel);
+      gearReadyRef.current = true;
+      return sel;
+    } catch (e) {
+      console.warn('gear load failed (fighting bare)', e);
+      return {};
+    }
+  }, [agent, did, archetype]);
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
   const begin = useCallback(
@@ -124,10 +154,12 @@ export function TrialArena({
       // やくそう / そらのしずくは在庫から上限まで持ち込む (使用分は battle レコードで差し引く)
       const herbs = Math.min(BATTLE_TUNING.herbCarryMax, stats?.materials['herb'] ?? 0);
       const tonics = Math.min(BATTLE_TUNING.tonicCarryMax, stats?.materials['sky-dew'] ?? 0);
+      const gear = await ensureGear();
       const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed, herbs, undefined, {
         tonics,
         // プロフィールの個人パラメータを戦闘値の基底にする (オーナー指摘 2026-07-17)
         ...(rpgStats ? { baseStats: statVectorToArray(rpgStats) } : {}),
+        gear,
       });
       try {
         // 支払い + 仮レコード (棄権 = 敗北)。ここが失敗したらバトルを始めない。
@@ -147,7 +179,7 @@ export function TrialArena({
         setWipe((w) => (w ? 'reveal' : w));
       }
     },
-    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats],
+    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats, ensureGear],
   );
 
   const act = useCallback(

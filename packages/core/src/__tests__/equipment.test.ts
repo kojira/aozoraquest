@@ -232,6 +232,25 @@ describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => 
   });
 });
 
+describe('playerCombatant の gear (GearSelection) 適用', () => {
+  it('強化値つき個体のボーナスが乗り、raw 導出と同期する', async () => {
+    const { playerStatsAt: raw } = await import('../battle.js');
+    const bare = playerCombatant('bard', 1, 1, 'x');
+    const geared = playerCombatant('bard', 1, 1, 'x', undefined, undefined, {
+      weapon: { id: 'wp-bard-mid', level: 3 }, // 竪琴+3 = luk 8+3
+      charm: { id: 'ch-life', level: 0 },
+    });
+    expect(geared.luk).toBe(bare.luk + 11);
+    expect(geared.maxHp).toBe(bare.maxHp + 10);
+    const r = raw('bard', 1, 1, undefined, undefined, {
+      weapon: { id: 'wp-bard-mid', level: 3 },
+      charm: { id: 'ch-life', level: 0 },
+    });
+    expect(Math.round(r.luk)).toBe(geared.luk);
+    expect(Math.round(r.maxHp)).toBe(geared.maxHp);
+  });
+});
+
 describe('townShopStock (品揃えの決定的生成)', () => {
   const towns = worldOverlay().towns;
 
