@@ -93,6 +93,13 @@ export const BATTLE_TUNING = {
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
   dropLukScale: 0.003,
+  /** 敗北ペナルティ: 手持ち素材をランダムに落とす (オーナー決定 2026-07-18)。
+   *  1 個は必ず落ち、以降は lossExtraBase − luk*lossExtraLukScale の確率で
+   *  追加ドロップ (運が悪いと複数落ちる)。上限 lossMax。 */
+  lossExtraBase: 0.35,
+  lossExtraLukScale: 0.004,
+  lossExtraMin: 0.05,
+  lossMax: 3,
 } as const;
 
 // ─── 決定的乱数 (mulberry32) ────────────────────────────────
@@ -880,6 +887,32 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
 }
 
 // ─── ドロップ・称号 ─────────────────────────────────────────
+
+/**
+ * 敗北時に落とす素材を決定的に判定する (オーナー決定 2026-07-18「敗北ペナルティは
+ * ランダムで素材ドロップ。luk の影響あり。運が悪いと複数ドロップ」)。
+ * - 手持ち (materials: id → 個数) から個数重みで 1 個は必ず落ちる (手持ちが空なら何も落ちない)。
+ * - 以降は clamp(lossExtraBase − luk*lossExtraLukScale, lossExtraMin, 1) の確率で
+ *   追加 1 個、最大 lossMax 個まで (luk が高いほど追加を引きにくい)。
+ * - seed から決定的 (バトル seed を使えば記録から再現可能)。
+ */
+export function rollDefeatLoss(materials: Record<string, number>, luk: number, seed: number): string[] {
+  const t = BATTLE_TUNING;
+  const rng = createRng((seed ^ 0x7b0c9d21) >>> 0);
+  const pool: string[] = [];
+  for (const [id, n] of Object.entries(materials)) {
+    for (let i = 0; i < n; i++) pool.push(id);
+  }
+  const lost: string[] = [];
+  const extraChance = Math.min(1, Math.max(t.lossExtraMin, t.lossExtraBase - luk * t.lossExtraLukScale));
+  while (pool.length > 0 && lost.length < t.lossMax) {
+    if (lost.length > 0 && rng() >= extraChance) break;
+    const i = Math.floor(rng() * pool.length);
+    lost.push(pool[i]!);
+    pool.splice(i, 1);
+  }
+  return lost;
+}
 
 /** 勝利時のドロップ判定。luk で上振れ。決定的 (seed 依存)。 */
 export function rollDrops(monsterId: string, luk: number, seed: number): string[] {

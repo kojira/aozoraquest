@@ -10,6 +10,7 @@ import {
   pickTrialTier,
   startBattle,
   resolveTurn,
+  rollDefeatLoss,
   rollDrops,
   earnedTitles,
   MONSTERS,
@@ -608,6 +609,37 @@ describe('pickTrialTier', () => {
     for (let seed = 0; seed < 200; seed++) seen.add(pickTrialTier(seed, 20, 10));
     expect(seen).toEqual(new Set([1, 2, 3]));
     expect(pickTrialTier(7, 20, 10)).toBe(pickTrialTier(7, 20, 10));
+  });
+});
+
+describe('rollDefeatLoss (敗北時の素材ドロップ)', () => {
+  const inv = { herb: 2, 'slime-drop': 3, 'sky-dew': 1 };
+
+  it('決定的 (同じ seed で同じ結果) で、手持ちが空なら何も落ちない', () => {
+    expect(rollDefeatLoss(inv, 20, 42)).toEqual(rollDefeatLoss(inv, 20, 42));
+    expect(rollDefeatLoss({}, 5, 1)).toEqual([]);
+  });
+
+  it('手持ちがあれば必ず 1 個以上、lossMax 以下。落ちるのは手持ちにある物だけで個数を超えない', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const lost = rollDefeatLoss(inv, 20, seed);
+      expect(lost.length).toBeGreaterThanOrEqual(1);
+      expect(lost.length).toBeLessThanOrEqual(BATTLE_TUNING.lossMax);
+      const counts: Record<string, number> = {};
+      for (const id of lost) counts[id] = (counts[id] ?? 0) + 1;
+      for (const [id, n] of Object.entries(counts)) {
+        expect(inv[id as keyof typeof inv], id).toBeGreaterThanOrEqual(n);
+      }
+    }
+  });
+
+  it('luk が低いほど複数落ちやすい (統計)', () => {
+    const avg = (luk: number) => {
+      let total = 0;
+      for (let seed = 0; seed < 500; seed++) total += rollDefeatLoss(inv, luk, seed).length;
+      return total / 500;
+    };
+    expect(avg(5)).toBeGreaterThan(avg(40));
   });
 });
 
