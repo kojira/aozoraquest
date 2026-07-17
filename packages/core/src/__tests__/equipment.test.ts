@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
+import { isSellableMaterial,
   EQUIPMENT,
   EQUIPMENT_BY_ID,
   JOB_EQUIP_KINDS,
@@ -284,12 +284,23 @@ describe('townShopStock (品揃えの決定的生成)', () => {
     }
   });
 
-  it('店の素材種は決定的で、実在の素材 id を返す', () => {
+  it('店の素材種は決定的で、その街の危険度で狩れるモンスターの素材 (地元で稼げる)', async () => {
+    const { MONSTERS } = await import('../battle.js');
+    const { regionDanger, tierForDanger } = await import('../world.js');
+    // tier → その tier のモンスターがドロップする素材集合
+    const dropsOfTier = (tier: 1 | 2 | 3) => {
+      const set = new Set<string>();
+      for (const m of MONSTERS) if (m.tier === tier) for (const d of m.drops) set.add(d.item);
+      return set;
+    };
     towns.forEach((t, i) => {
       const stock = townShopStock(t, i);
-      expect(typeof stock.materialId).toBe('string');
-      expect(stock.materialId.length).toBeGreaterThan(0);
-      expect(townShopStock(t, i).materialId).toBe(stock.materialId);
+      expect(townShopStock(t, i).materialId).toBe(stock.materialId); // 決定的
+      const danger = regionDanger(t.region);
+      const tier = tierForDanger(danger);
+      expect(dropsOfTier(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
+      // 消耗品 (やくそう等) が値札に混入する回帰も塞ぐ — ドロップには含まれるため上の検証だけでは通ってしまう
+      expect(isSellableMaterial(stock.materialId), `${t.name} → ${stock.materialId} はひきとり可能素材ではない`).toBe(true);
     });
   });
 
