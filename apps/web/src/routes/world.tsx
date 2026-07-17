@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
+  tierForDanger,
   BATTLE_TUNING,
   ITEMS,
   MONSTERS_BY_ID,
@@ -311,7 +312,7 @@ export function World() {
       if (!agent || !did || !d || !pts || pts.balance < BATTLE_TUNING.powerCost) return;
       if (Math.random() < encounterRateFor(terrain)) {
         const danger = regionDanger(regionOf(nx, ny));
-        const tier = (danger <= 1 ? 1 : danger === 2 ? 2 : 3) as 1 | 2 | 3;
+        const tier = tierForDanger(danger);
         const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
         const jobLv = jobLevelFromXp(d.jobLevel?.xp ?? 0);
         const playerLv = playerLevelFromXp(d.playerLevel?.xp ?? 0);
