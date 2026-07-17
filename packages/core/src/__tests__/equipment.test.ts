@@ -111,6 +111,35 @@ describe('gearBonusFromGear (スロット検証つき入口)', () => {
   });
 });
 
+describe('専用装備の弱点補完 (将軍)', () => {
+  it('将軍の専用品は耐久複合で、フル装備の tier3 勝率が band に入る (≥55%)', async () => {
+    const { BATTLE_TUNING, resolveTurn, startBattle } = await import('../battle.js');
+    const gear = EQUIPMENT_BY_ID['wp-shogun-high']!;
+    expect(gear.bonus.def ?? 0).toBeGreaterThan(0);
+    expect(gear.bonus.maxHp ?? 0).toBeGreaterThan(0);
+    let wins = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      let s = startBattle('shogun', 8, 15, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
+        equipIds: ['wp-shogun-high', 'ar-iron', 'ch-life'],
+      });
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+        const p = s.player;
+        const cmd = s.monster.charging
+          ? 'guard'
+          : s.herbs > 0 && p.hp < p.maxHp * 0.45
+            ? 'herb'
+            : p.mp >= BATTLE_TUNING.skillMpCost
+              ? 'skill'
+              : 'attack';
+        s = resolveTurn(s, cmd);
+      }
+      if (s.outcome === 'win') wins++;
+    }
+    // 実測 65% (300 seed)。素の 45% (atk 単盛り) への回帰を検知する下限
+    expect(wins / 3).toBeGreaterThanOrEqual(55);
+  });
+});
+
 describe('townShopStock (品揃えの決定的生成)', () => {
   const towns = worldOverlay().towns;
 
