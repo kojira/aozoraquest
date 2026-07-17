@@ -47,15 +47,21 @@ if (baseIdx >= 0 && args[baseIdx + 1]) {
 
 function playPolicy(s: BattleState): BattleState {
   const t = BATTLE_TUNING;
+  const isParry = s.playerSkill.kind === 'parry';
   for (let i = 0; i < 80 && s.outcome === 'ongoing'; i++) {
     const p = s.player;
+    // parry (見切り) は「攻撃が来るターンに構える」のが正しい使い方。毎ターン
+    // 空打ちすると火力ゼロで作戦負けする (人間はそう使わない) ので、
+    // ため予告のターンだけ構え、それ以外は殴る。
     const cmd = s.monster.charging
-      ? 'guard'
+      ? isParry && p.mp >= t.skillMpCost
+        ? 'skill'
+        : 'guard'
       : s.herbs > 0 && p.hp < p.maxHp * 0.45
         ? 'herb'
         : s.tonics > 0 && p.mp < t.skillMpCost && p.maxMp >= t.skillMpCost * 2
           ? 'tonic'
-          : p.mp >= t.skillMpCost
+          : !isParry && p.mp >= t.skillMpCost
             ? 'skill'
             : 'attack';
     s = resolveTurn(s, cmd);
