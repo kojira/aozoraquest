@@ -16,6 +16,7 @@ import {
   type Archetype,
   type BattleState,
   type Command,
+  type GearSelection,
   type StatVector,
   type TurnEvent,
 } from '@aozoraquest/core';
@@ -34,6 +35,8 @@ import {
   type BattleStats,
 } from '@/lib/battle-log';
 import { formatGain, notifyLevelUp } from './level-up-overlay';
+import { loadCraftInventory } from '@/lib/crafting';
+import { loadGearRefs, resolveGear } from '@/lib/gear';
 
 /**
  * ブルスコンの試練 — アリーナ UI (docs/18-brusukon-trial.md)。
@@ -99,6 +102,7 @@ export function TrialArena({
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'select' });
   const [stats, setStats] = useState<BattleStats | null>(null);
+  const [gearSel, setGearSel] = useState<GearSelection>({});
   const [err, setErr] = useState<string | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ。encounter-wipe.tsx)。cover → (hold) → reveal。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
@@ -107,7 +111,11 @@ export function TrialArena({
 
   const refreshStats = useCallback(() => {
     loadBattleStats(agent, did).then(setStats).catch(() => {});
-  }, [agent, did]);
+    // 装備 (gear/self の rkey 参照を所持個体で解決 — docs/20 W6c)
+    Promise.all([loadCraftInventory(agent, did), loadGearRefs(agent, did)])
+      .then(([inv, refs]) => setGearSel(resolveGear(refs, inv.pieces, archetype).selection))
+      .catch(() => {});
+  }, [agent, did, archetype]);
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
   const begin = useCallback(
@@ -128,6 +136,7 @@ export function TrialArena({
         tonics,
         // プロフィールの個人パラメータを戦闘値の基底にする (オーナー指摘 2026-07-17)
         ...(rpgStats ? { baseStats: statVectorToArray(rpgStats) } : {}),
+        gear: gearSel,
       });
       try {
         // 支払い + 仮レコード (棄権 = 敗北)。ここが失敗したらバトルを始めない。
@@ -147,7 +156,7 @@ export function TrialArena({
         setWipe((w) => (w ? 'reveal' : w));
       }
     },
-    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats],
+    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats, gearSel],
   );
 
   const act = useCallback(

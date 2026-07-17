@@ -37,6 +37,8 @@ import { formatGain, notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
+import { GearModal } from '@/components/gear-modal';
+import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { BattleView, HpBar, MpBar } from '@/components/battle-view';
@@ -142,6 +144,10 @@ export function World() {
   const shopOpenRef = useRef(shopOpen);
   shopOpenRef.current = shopOpen;
   const [craftedPieces, setCraftedPieces] = useState<CraftedPiece[]>([]);
+  const [gearRefs, setGearRefs] = useState<GearRefs>({});
+  const [gearOpen, setGearOpen] = useState(false);
+  const gearOpenRef = useRef(gearOpen);
+  gearOpenRef.current = gearOpen;
   const [craftBusy, setCraftBusy] = useState(false);
   const [lastShopAction, setLastShopAction] = useState<LastShopAction | null>(null);
   /** 再試行の冪等化: 失敗した制作/合成/ひきとりの rkey を保持し、同条件の再試行で
@@ -154,6 +160,7 @@ export function World() {
 
   const archetype = diag?.archetype ?? null;
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
+  const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
   const combat = archetype
     ? playerCombatant(
         archetype,
@@ -161,6 +168,8 @@ export function World() {
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
         diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
+        undefined,
+        resolvedGear?.selection,
       )
     : null;
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
@@ -187,12 +196,13 @@ export function World() {
         if (!cancelled) setLoadErr(true);
         return;
       }
-      const [profile, d, stats, pts, craftInv] = await Promise.all([
+      const [profile, d, stats, pts, craftInv, refs] = await Promise.all([
         agent.getProfile({ actor: did }).catch(() => null),
         getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
         loadBattleStats(agent, did).catch(() => null),
         loadPointsState(agent, did).catch(() => null),
         loadCraftInventory(agent, did).catch(() => ({ pieces: [], materialsSpent: {} })),
+        loadGearRefs(agent, did).catch(() => ({})),
       ]);
       if (cancelled) return;
       setAvatarUrl(profile?.data.avatar ?? null);
@@ -211,6 +221,7 @@ export function World() {
         setMaterialsView({ ...m });
       }
       setCraftedPieces(craftInv.pieces);
+      setGearRefs(refs);
       setPoints(pts);
     })();
     return () => { cancelled = true; };
@@ -253,6 +264,8 @@ export function World() {
   battleResultRef.current = battleResult;
   const pointsRef = useRef(points);
   pointsRef.current = points;
+  const resolvedGearRef = useRef(resolvedGear);
+  resolvedGearRef.current = resolvedGear;
   const diagRef = useRef(diag);
   diagRef.current = diag;
   const wipeRef = useRef(wipe);
@@ -267,7 +280,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || wipeRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -316,7 +329,11 @@ export function World() {
           herbs,
           // フィールドの現在 HP/MP を引き継ぐ (戦闘をまたいで持続)
           { ...(cHp !== null && cHp !== undefined ? { hp: cHp } : {}), ...(cMp !== null && cMp !== undefined ? { mp: cMp } : {}) },
-          { tonics, ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}) },
+          {
+            tonics,
+            ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}),
+            ...(resolvedGearRef.current ? { gear: resolvedGearRef.current.selection } : {}),
+          },
         );
         // 敗北ペナルティの素材ロスを開戦時に確定 (seed から決定的)。持ち込み分の
         // 消耗品は母集団から除外 (herbsUsed/tonicsUsed と二重減算しないように)。
@@ -574,7 +591,7 @@ export function World() {
     const s = wsRef.current;
     // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
     // まま別の街へテレポートすると品揃えが無言で差し替わる — レビュー指摘)
-    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current) return;
+    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current) return;
     const lt = s.lastTown && townAt(s.lastTown.x, s.lastTown.y) ? s.lastTown : null;
     const spawn = worldOverlay().spawn;
     const dest = lt ?? { x: spawn.x, y: spawn.y };
@@ -691,6 +708,23 @@ export function World() {
       }
     },
     [agent, did, craftBusy, subtractMaterial],
+  );
+
+  // 装備の着脱 (gear/self は rkey 参照 — 強化値は直書きしない。docs/20 W6c 契約)
+  const onEquipChange = useCallback(
+    async (next: GearRefs) => {
+      if (!agent) return;
+      const prev = gearRefs;
+      setGearRefs(next); // 楽観更新 (HP/MP バーが即応する)
+      try {
+        await saveGearRefs(agent, next);
+      } catch (e) {
+        console.warn('[world] gear save failed', e);
+        setGearRefs(prev);
+        setNotice('そうびを保存できなかった (通信エラー)。');
+      }
+    },
+    [agent, gearRefs],
   );
 
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
@@ -982,6 +1016,13 @@ export function World() {
         >
           🗺 ちず
         </button>
+        <button
+          type="button"
+          onClick={() => setGearOpen(true)}
+          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
+        >
+          ⚔ そうび
+        </button>
       </div>
       {/* 一時メッセージ (やくそう使用 / 進めない / 街で回復 など)。操作した指の
           すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
@@ -1002,6 +1043,20 @@ export function World() {
           : ''}
       </p>
       {mapOpen && <WorldMapModal x={ws.x} y={ws.y} onClose={() => setMapOpen(false)} />}
+      {gearOpen && (
+        <GearModal
+          archetype={archetype}
+          pieces={craftedPieces}
+          refs={gearRefs}
+          onEquip={(slot, rkey) => void onEquipChange({ ...gearRefs, [slot]: rkey })}
+          onUnequip={(slot) => {
+            const next = { ...gearRefs };
+            delete next[slot];
+            void onEquipChange(next);
+          }}
+          onClose={() => setGearOpen(false)}
+        />
+      )}
       {shopOpen && town && (
         <ShopModal
           town={town}
@@ -1010,6 +1065,7 @@ export function World() {
           balance={points?.balance ?? 0}
           materials={materialsView}
           pieces={craftedPieces}
+          equippedRkeys={Object.values(gearRefs).filter((v): v is string => typeof v === 'string')}
           busy={craftBusy}
           lastAction={lastShopAction}
           onCraft={(def) => void onCraft(def)}
