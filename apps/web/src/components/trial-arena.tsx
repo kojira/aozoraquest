@@ -90,7 +90,9 @@ export function TrialArena({
       setPhase({ kind: 'starting', tier });
       // 32bit seed (Math.random で十分。決定性はエンジン側の性質)
       const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
-      const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed);
+      // やくそうは在庫から最大 herbCarryMax 個持ち込む (使用分は battle レコードで差し引く)
+      const herbs = Math.min(BATTLE_TUNING.herbCarryMax, stats?.materials['herb'] ?? 0);
+      const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed, herbs);
       try {
         // 支払い + 仮レコード (棄権 = 敗北)。ここが失敗したらバトルを始めない。
         const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
@@ -103,7 +105,7 @@ export function TrialArena({
         setPhase({ kind: 'select' });
       }
     },
-    [agent, did, archetype, jobLevel, playerLevel, playerName, points, onPointsChanged],
+    [agent, did, archetype, jobLevel, playerLevel, playerName, points, onPointsChanged, stats],
   );
 
   const act = useCallback(
@@ -127,6 +129,7 @@ export function TrialArena({
         outcome: next.outcome,
         turns: next.turn,
         drops,
+        herbsUsed: next.herbsUsed,
       };
       // 保存は 1 回リトライ。最終的に失敗したらリザルトで明示する
       // (仮レコードが敗北のままだと、勝ちと素材が記録に残らないため)。
@@ -154,6 +157,31 @@ export function TrialArena({
           })
         : [];
       const newTitles = after.filter((t) => !before.includes(t.id)).map((t) => t.name);
+      // stats を楽観更新する。refreshStats (listRecords 数往復) の完了を待たずに
+      // 「もういちど挑む」を押しても、やくそうの持ち込みが古い在庫で二重にならない
+      // (在庫超過は集計側で 0 止めされ、以後のドロップが黙って相殺される事故になる)。
+      setStats((s) => {
+        if (!s) return s;
+        const materials = { ...s.materials };
+        for (const d of drops) materials[d] = (materials[d] ?? 0) + 1;
+        if (next.herbsUsed > 0) {
+          const left = Math.max(0, (materials['herb'] ?? 0) - next.herbsUsed);
+          if (left > 0) materials['herb'] = left;
+          else delete materials['herb'];
+        }
+        const win = next.outcome === 'win';
+        const currentStreak = win ? s.currentStreak + 1 : 0;
+        return {
+          ...s,
+          total: s.total + 1,
+          wins: s.wins + (win ? 1 : 0),
+          losses: s.losses + (next.outcome === 'lose' ? 1 : 0),
+          tier3Wins: s.tier3Wins + (win && phase.tier === 3 ? 1 : 0),
+          currentStreak,
+          bestStreak: Math.max(s.bestStreak, currentStreak),
+          materials,
+        };
+      });
       setPhase({
         kind: 'result',
         state: next,
@@ -262,18 +290,30 @@ export function TrialArena({
           )}
         </div>
 
-        {/* 自分 HP */}
+        {/* 自分 HP + MP */}
         <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine />
+        <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
 
-        {/* コマンド (親指ゾーン) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5em', marginTop: '0.8em' }}>
-          <CommandButton label="たたかう" onClick={() => void act('attack')} disabled={phase.busy} />
-          <CommandButton label="ぼうぎょ" onClick={() => void act('guard')} disabled={phase.busy} />
+        {/* コマンド (親指ゾーン、2x2)。特技は MP、やくそうは残数で使用可否が決まる。 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.8em' }}>
+          <CommandButton label="たたかう" sub={`MP +${BATTLE_TUNING.mpAttackGain}`} onClick={() => void act('attack')} disabled={phase.busy} />
           <CommandButton
             label={state.playerSkill.name}
-            sub={SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}
+            sub={`MP ${BATTLE_TUNING.skillMpCost} / ${SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}`}
             onClick={() => void act('skill')}
+            disabled={phase.busy || state.player.mp < BATTLE_TUNING.skillMpCost}
+          />
+          <CommandButton
+            label="ぼうぎょ"
+            sub={`回避↑ / MP +${BATTLE_TUNING.mpGuardGain}`}
+            onClick={() => void act('guard')}
             disabled={phase.busy}
+          />
+          <CommandButton
+            label={`やくそう ×${state.herbs}`}
+            sub={`HP ${Math.round(BATTLE_TUNING.herbHealRatio * 100)}% 回復`}
+            onClick={() => void act('herb')}
+            disabled={phase.busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp}
           />
         </div>
       </div>
@@ -363,6 +403,21 @@ function HpBar({ name, hp, maxHp, mine = false }: { name: string; hp: number; ma
       </div>
       <div style={{ height: 8, background: 'var(--color-track-bg)', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{ width: `${ratio * 100}%`, height: '100%', background: color, transition: 'width 300ms ease' }} />
+      </div>
+    </div>
+  );
+}
+
+function MpBar({ mp, maxMp }: { mp: number; maxMp: number }) {
+  const ratio = maxMp > 0 ? mp / maxMp : 0;
+  return (
+    <div style={{ maxWidth: 340, margin: '0.25em auto 0', textAlign: 'left' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72em', color: 'var(--color-muted)' }}>
+        <span>MP</span>
+        <span style={{ fontFamily: 'ui-monospace, monospace' }}>{mp} / {maxMp}</span>
+      </div>
+      <div style={{ height: 6, background: 'var(--color-track-bg)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: `${ratio * 100}%`, height: '100%', background: '#5a9ae8', transition: 'width 300ms ease' }} />
       </div>
     </div>
   );
