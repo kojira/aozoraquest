@@ -215,6 +215,46 @@ describe('record lifecycle (start/finish/awardBattleXp)', () => {
     expect(saved.playerLevel.streakDays).toBe(3);
   });
 
+  test('awardBattleXp はレベルアップを検出して返す (境界をまたぐ/またがない/offset)', async () => {
+    const { playerLevelFromXp, jobLevelFromXp } = await import('@aozoraquest/core');
+    // +30 でプレイヤーレベル境界をまたぐ xp を決定的に探す
+    let crossing = -1;
+    for (let x = 0; x < 5000; x++) {
+      if (playerLevelFromXp(x) < playerLevelFromXp(x + 30)) { crossing = x; break; }
+    }
+    expect(crossing).toBeGreaterThanOrEqual(0);
+    const mkAgent = (playerXp: number, jobXp: number) => ({
+      assertDid: 'did:test',
+      com: { atproto: { repo: {
+        getRecord: vi.fn(async () => ({ data: { value: {
+          $type: 'x.analysis', archetype: 'sage', analyzedAt: '2026-01-01T00:00:00.000Z',
+          playerLevel: { xp: playerXp, streakDays: 0 },
+          jobLevel: { archetype: 'sage', xp: jobXp, joinedAt: '2026-01-01T00:00:00.000Z' },
+        } } })),
+        putRecord: vi.fn(async () => ({ data: {} })),
+      } } },
+    }) as any;
+    const { awardBattleXp } = await import('./battle-log');
+    // またぐ: player は from→to、job は同じ xp なら jobLevelFromXp 基準で判定される
+    const ups = await awardBattleXp(mkAgent(crossing, 0), 'did:test', 30);
+    expect(ups?.player).toEqual({ from: playerLevelFromXp(crossing), to: playerLevelFromXp(crossing + 30) });
+    // またがない: 直後 (crossing+30) から +30 が境界を再度またぐとは限らないので Lv1 序盤で確認
+    const flat = await awardBattleXp(mkAgent(0, 0), 'did:test', 1);
+    expect(flat?.player).toBeUndefined();
+    // offset: jobXpOffset を足した位置で判定される (表示レベルとの一致)
+    let jobCrossing = -1;
+    for (let x = 0; x < 5000; x++) {
+      if (jobLevelFromXp(x) < jobLevelFromXp(x + 30)) { jobCrossing = x; break; }
+    }
+    expect(jobCrossing).toBeGreaterThanOrEqual(0);
+    const withOffset = await awardBattleXp(mkAgent(0, 0), 'did:test', 30, { jobXpOffset: jobCrossing });
+    expect(withOffset?.job).toEqual({
+      from: jobLevelFromXp(jobCrossing),
+      to: jobLevelFromXp(jobCrossing + 30),
+      archetype: 'sage',
+    });
+  });
+
   test('awardBattleXp は analysis 未作成なら何も書かない', async () => {
     const getRecordFn = vi.fn(async () => { throw new Error('not found'); });
     const putRecordFn = vi.fn();
@@ -223,7 +263,8 @@ describe('record lifecycle (start/finish/awardBattleXp)', () => {
       com: { atproto: { repo: { getRecord: getRecordFn, putRecord: putRecordFn } } },
     } as any;
     const { awardBattleXp } = await import('./battle-log');
-    await awardBattleXp(agent, 'did:test', 30);
+    const r = await awardBattleXp(agent, 'did:test', 30);
+    expect(r).toBeNull();
     expect(putRecordFn).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@ import {
   BATTLE_TUNING,
   ITEMS,
   MONSTERS_BY_ID,
+  jobDisplayName,
   earnedTitles,
   pickTrialTier,
   resolveTurn,
@@ -27,8 +28,10 @@ import {
   finishBattleRecord,
   loadBattleStats,
   startBattleRecord,
+  type BattleLevelUps,
   type BattleStats,
 } from '@/lib/battle-log';
+import { notifyLevelUp } from './level-up-overlay';
 
 /**
  * ブルスコンの試練 — アリーナ UI (docs/18-brusukon-trial.md)。
@@ -51,6 +54,8 @@ type Phase =
       newTitles: string[];
       finalEvents: TurnEvent[];
       saveFailed: boolean;
+      /** XP 加算で確定したレベルアップ (非同期に届くので optional) */
+      levelUps?: BattleLevelUps;
     };
 
 const TIER_LABELS: Record<1 | 2 | 3, { name: string; hint: string }> = {
@@ -67,6 +72,7 @@ export function TrialArena({
   playerLevel,
   playerName,
   rpgStats,
+  jobXpOffset = 0,
   points,
   onPointsChanged,
 }: {
@@ -78,6 +84,9 @@ export function TrialArena({
   playerName: string;
   /** プロフィールの個人 5 パラメータ (戦闘値の基底)。未診断はジョブ基準にフォールバック */
   rpgStats?: StatVector | null;
+  /** ジョブレベル表示に含まれるレコード外 XP (クエスト報酬 questXp)。レベルアップ
+   *  判定を画面表示と一致させるために渡す */
+  jobXpOffset?: number;
   points: PointsState;
   onPointsChanged: (next: PointsState) => void;
 }) {
@@ -171,7 +180,23 @@ export function TrialArena({
           saveFailed = true;
         }
       }
-      if (xp > 0) void awardBattleXp(agent, did, xp);
+      if (xp > 0) {
+        void awardBattleXp(agent, did, xp, { jobXpOffset }).then((ups) => {
+          if (!ups) return;
+          // 全画面演出 (LevelUpOverlay は app 全体に常時マウント済み)
+          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
+          if (ups.job) {
+            notifyLevelUp({
+              kind: 'job',
+              from: ups.job.from,
+              to: ups.job.to,
+              jobName: jobDisplayName(ups.job.archetype as Archetype, 'default'),
+            });
+          }
+          // リザルトの文言にも残す (演出は 2 秒で消えるため)
+          setPhase((p) => (p.kind === 'result' ? { ...p, levelUps: ups } : p));
+        });
+      }
       // 称号の新規獲得判定 (確定前の stats と比較)。stats 未取得 (取得失敗) 時は
       // 称号トーストを出さないだけで戦績自体はレコードに残る。
       const before = stats ? earnedTitles(stats).map((t) => t.id) : [];
@@ -225,7 +250,7 @@ export function TrialArena({
       });
       refreshStats();
     },
-    [phase, agent, did, stats, refreshStats],
+    [phase, agent, did, stats, refreshStats, jobXpOffset],
   );
 
   // ワイプ進行: 覆い切った時点でバトル準備がまだなら hold でつなぐ
@@ -358,6 +383,16 @@ export function TrialArena({
       </SpiritBubble>
       <div style={{ margin: '0.8em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
         {xp > 0 && <div>経験値 +{xp}</div>}
+        {phase.levelUps?.player && (
+          <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+            レベルが {phase.levelUps.player.to} に あがった!
+          </div>
+        )}
+        {phase.levelUps?.job && (
+          <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+            {jobDisplayName(phase.levelUps.job.archetype as Archetype, 'default')}のジョブレベルが {phase.levelUps.job.to} に あがった!
+          </div>
+        )}
         {drops.length > 0 && (
           <div>
             素材を手に入れた: {drops.map((d) => ITEMS[d]?.name ?? d).join('、')}

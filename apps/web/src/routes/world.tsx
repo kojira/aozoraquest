@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
+import type { Archetype, BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   BATTLE_TUNING,
   ITEMS,
   MONSTERS_BY_ID,
+  jobDisplayName,
   encounterRateFor,
   isWalkable,
   jobLevelFromXp,
@@ -26,7 +27,8 @@ import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
-import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord } from '@/lib/battle-log';
+import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
+import { notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
@@ -94,6 +96,8 @@ export function World() {
     drops: string[];
     xp: number;
     saveFailed: boolean;
+    /** XP 加算で確定したレベルアップ (非同期に届く) */
+    levelUps?: BattleLevelUps;
   } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -318,7 +322,22 @@ export function World() {
           saveFailed = true;
         }
       }
-      if (xp > 0) void awardBattleXp(agent, did, xp);
+      if (xp > 0) {
+        void awardBattleXp(agent, did, xp).then((ups) => {
+          if (!ups) return;
+          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
+          if (ups.job) {
+            notifyLevelUp({
+              kind: 'job',
+              from: ups.job.from,
+              to: ups.job.to,
+              jobName: jobDisplayName(ups.job.archetype as Archetype, 'default'),
+            });
+          }
+          // 同じ戦闘のリザルトが出ている間だけ文言も反映 (次の遭遇に紛れ込ませない)
+          setBattleResult((r) => (r && r.state.seed === next.seed ? { ...r, levelUps: ups } : r));
+        });
+      }
       // 手持ちを更新: 使った分を引き、ドロップ分を足す。
       // TODO(W3): 在庫の正は Worker (DO) に移す (フィールド使用分が記録されない併走は
       // プレビュー限定の割り切り)。
@@ -511,6 +530,16 @@ export function World() {
         )}
         <div style={{ margin: '0.6em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
           {xp > 0 && <div>経験値 +{xp}</div>}
+          {battleResult.levelUps?.player && (
+            <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+              レベルが {battleResult.levelUps.player.to} に あがった!
+            </div>
+          )}
+          {battleResult.levelUps?.job && (
+            <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+              {jobDisplayName(battleResult.levelUps.job.archetype as Archetype, 'default')}のジョブレベルが {battleResult.levelUps.job.to} に あがった!
+            </div>
+          )}
           {drops.length > 0 && (
             <div>素材を手に入れた: {drops.map((d) => ITEMS[d]?.name ?? d).join('、')}</div>
           )}

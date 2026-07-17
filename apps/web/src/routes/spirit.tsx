@@ -246,6 +246,7 @@ export function Spirit() {
                 playerLevel={playerLevelFromXp(diag.playerLevel?.xp ?? 0)}
                 playerName={userName}
                 rpgStats={diag.rpgStats ?? null}
+                jobXpOffset={questXp}
                 points={points}
                 onPointsChanged={setPoints}
               />
