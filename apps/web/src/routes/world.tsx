@@ -269,19 +269,58 @@ export function World() {
   );
 }
 
+/** 長押しの連続移動: 最初の一歩の後、この間隔 (ms) で歩き続ける。 */
+const HOLD_REPEAT_DELAY = 350;
+const HOLD_REPEAT_INTERVAL = 170;
+
 function DirButton({ dir, onMove }: { dir: Dir; onMove: (d: Dir) => void }) {
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const movedByHold = useRef(false);
+
+  const stopHold = useCallback(() => {
+    if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+    if (repeatTimer.current) { clearInterval(repeatTimer.current); repeatTimer.current = null; }
+  }, []);
+  useEffect(() => stopHold, [stopHold]);
+
+  // pointerdown で 1 歩 + 長押しで連続移動 (クリック二重発火を防ぐため click は使わない)。
+  const startHold = useCallback(() => {
+    movedByHold.current = true;
+    onMove(dir);
+    holdTimer.current = setTimeout(() => {
+      repeatTimer.current = setInterval(() => onMove(dir), HOLD_REPEAT_INTERVAL);
+    }, HOLD_REPEAT_DELAY);
+  }, [dir, onMove]);
+
   return (
     <button
       type="button"
       aria-label={DIRS[dir].label}
-      onClick={() => onMove(dir)}
+      onPointerDown={(e) => {
+        e.preventDefault(); // 長押しの文字選択・拡大鏡を抑止 (iOS)
+        startHold();
+      }}
+      onPointerUp={stopHold}
+      onPointerLeave={stopHold}
+      onPointerCancel={stopHold}
+      onContextMenu={(e) => e.preventDefault()} // 長押しメニュー抑止
+      // キーボード操作 (Enter/Space) は click で 1 歩 (pointerdown 経由は movedByHold)
+      onClick={() => {
+        if (movedByHold.current) { movedByHold.current = false; return; }
+        onMove(dir);
+      }}
       style={{
         height: 56,
         fontSize: '1.4em',
         padding: 0,
         // 連打でダブルタップズームを誘発しない (iOS)
         touchAction: 'manipulation',
-      }}
+        // 長押しで矢印グリフが文字選択されるのを防ぐ (オーナー報告)
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+      } as React.CSSProperties}
     >
       {DIRS[dir].glyph}
     </button>
