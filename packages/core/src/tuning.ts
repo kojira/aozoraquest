@@ -9,6 +9,9 @@
  * - 値を変えると既存ユーザーの LV / XP や archetype 判定の結果が変わり得る。
  * - UI 側のメッセージと整合が取れているか確認すること。
  * - docs/03-game-design.md §XP とレベル、docs/04-diagnosis.md §処理 も同期更新する。
+ *
+ * 例外: ブルスコンの試練 (バトル) のバランス値は自己完結モジュールとして
+ * battle.ts の BATTLE_TUNING に集約している (docs/18-brusukon-trial.md)。
  */
 
 // ────────────────────────────────

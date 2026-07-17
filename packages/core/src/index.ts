@@ -12,3 +12,4 @@ export * from './user-quest.js';
 export * from './spirit.js';
 export * from './card-rarity.js';
 export * from './card.js';
+export * from './battle.js';
