@@ -35,7 +35,7 @@ import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
 import { formatGain, notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
+import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
@@ -144,8 +144,11 @@ export function World() {
   const [craftedPieces, setCraftedPieces] = useState<CraftedPiece[]>([]);
   const [craftBusy, setCraftBusy] = useState(false);
   const [lastShopAction, setLastShopAction] = useState<LastShopAction | null>(null);
-  /** 再試行の冪等化: 失敗した制作の rkey を保持し、同じ品の再試行で使い回す */
+  /** 再試行の冪等化: 失敗した制作/合成/ひきとりの rkey を保持し、同条件の再試行で
+   *  使い回す (createRecord は同 rkey で衝突するため 2 重記帳が構造的に起きない) */
   const pendingCraftRef = useRef<{ defId: string; rkey: string } | null>(null);
+  const pendingForgeRef = useRef<{ key: string; rkey: string } | null>(null);
+  const pendingSaleRef = useRef<{ key: string; rkey: string } | null>(null);
   /** ShopModal 用の素材スナップショット (materialsRef は ref なので再レンダ用に複製) */
   const [materialsView, setMaterialsView] = useState<Record<string, number>>({});
 
@@ -642,9 +645,13 @@ export function World() {
   const onForge = useCallback(
     async (def: EquipmentDef, resultLevel: number, rkeys: [string, string]) => {
       if (!agent || !did || craftBusy) return;
+      const forgeKey = `${def.id}:${rkeys[0]}:${rkeys[1]}`;
+      const frkey = pendingForgeRef.current?.key === forgeKey ? pendingForgeRef.current.rkey : newForgeRkey();
+      pendingForgeRef.current = { key: forgeKey, rkey: frkey };
       setCraftBusy(true);
       try {
-        const piece = await forgeItems(agent, { itemId: def.id, resultLevel, consumed: rkeys });
+        const piece = await forgeItems(agent, { itemId: def.id, resultLevel, consumed: rkeys }, frkey);
+        pendingForgeRef.current = null;
         setCraftedPieces((list) => [...list.filter((p) => p.rkey !== rkeys[0] && p.rkey !== rkeys[1]), piece]);
         setLastShopAction({ piece, kind: 'forge' });
       } catch (e) {
@@ -663,9 +670,13 @@ export function World() {
     async (materialId: string, count: number) => {
       if (!agent || !did || craftBusy || count <= 0) return;
       if ((materialsRef.current[materialId] ?? 0) < count) return;
+      const saleKey = `${materialId}:${count}`;
+      const srkey = pendingSaleRef.current?.key === saleKey ? pendingSaleRef.current.rkey : newSaleRkey();
+      pendingSaleRef.current = { key: saleKey, rkey: srkey };
       setCraftBusy(true);
       try {
-        const { powerGained } = await sellMaterials(agent, { materialId, materialCount: count });
+        const { powerGained } = await sellMaterials(agent, { materialId, materialCount: count }, srkey);
+        pendingSaleRef.current = null;
         void bumpPower(agent, did, { salePowerEarned: powerGained });
         setPoints((p) => (p ? { ...p, salePowerEarned: p.salePowerEarned + powerGained, balance: p.balance + powerGained } : p));
         subtractMaterial(materialId, count);

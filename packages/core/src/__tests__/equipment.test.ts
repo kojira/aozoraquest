@@ -144,7 +144,8 @@ describe('素材のひきとり (SALE_TUNING)', () => {
   it('ひきとり対象は MONSTERS の素材ドロップと同期している (消耗品は対象外)', async () => {
     const { MONSTERS } = await import('../battle.js');
     const { SELLABLE_MATERIALS, isSellableMaterial } = await import('../equipment.js');
-    const consumables = new Set(['herb', 'sky-dew', 'sky-feather']);
+    const { CONSUMABLE_ITEMS } = await import('../equipment.js');
+    const consumables = new Set(CONSUMABLE_ITEMS);
     const dropIds = new Set<string>();
     for (const m of MONSTERS) for (const d of m.drops) if (!consumables.has(d.item)) dropIds.add(d.item);
     expect([...dropIds].sort()).toEqual([...SELLABLE_MATERIALS].sort());
@@ -152,16 +153,16 @@ describe('素材のひきとり (SALE_TUNING)', () => {
     expect(isSellableMaterial('slime-drop')).toBe(true);
   });
 
-  it('レートは戦闘→換金ループが赤字になる水準 (期待素材 × レート < 1 パワー)', async () => {
+  it('レートは戦闘→換金ループが赤字になる水準 (cap 基準の最悪値で仮定フリー)', async () => {
     const { MONSTERS } = await import('../battle.js');
-    const { SALE_TUNING, salePowerFor } = await import('../equipment.js');
-    // 全モンスターの素材期待値の最大 (luk 上振れ +0.15 相当を上乗せしても) が
+    const { CONSUMABLE_ITEMS, SALE_TUNING, salePowerFor } = await import('../equipment.js');
+    // 各売却可能ドロップの率を cap 0.95 とみなす最悪値 (luk 仮定なし) でも
     // 1 戦のパワー 1 を回収できないことを固定
     let worst = 0;
-    const consumables = new Set(['herb', 'sky-dew', 'sky-feather']);
+    const consumables = new Set(CONSUMABLE_ITEMS);
     for (const m of MONSTERS) {
       let ev = 0;
-      for (const d of m.drops) if (!consumables.has(d.item)) ev += Math.min(0.95, d.chance + 0.15);
+      for (const d of m.drops) if (!consumables.has(d.item)) ev += 0.95;
       worst = Math.max(worst, ev);
     }
     expect(worst / SALE_TUNING.materialsPerPower).toBeLessThan(1);

@@ -53,6 +53,23 @@ describe('craftPowerSpent (制作の消費パワー)', () => {
   });
 });
 
+describe('salePowerEarned (ひきとりの獲得パワー)', () => {
+  test('残高に加算される', async () => {
+    const { loadPointsState } = await import('./points');
+    const agent = {
+      com: { atproto: { repo: {
+        getRecord: async () => ({ data: { value: {
+          viaPosts: 20, userMessages: 2, cardDraws: 1, battles: 4, craftPowerSpent: 8, salePowerEarned: 3,
+          summoned: true, updatedAt: 'x',
+        } } }),
+      } } },
+    } as any;
+    const p = await loadPointsState(agent, 'did:test');
+    expect(p.salePowerEarned).toBe(3);
+    expect(p.balance).toBe(20 - 2 - 1 - 4 - 8 + 3);
+  });
+});
+
 describe('loadPointsState', () => {
   test('空状態: 全部 0、summoned=false', async () => {
     const agent = makeAgent({ posts: [], spiritChat: [] });

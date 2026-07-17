@@ -23,6 +23,7 @@ import {
   BLUESKY_API_PAGE_LIMIT,
   POINTS_SCAN_PAGES,
   SUMMON_THRESHOLD as CORE_SUMMON_THRESHOLD,
+  salePowerFor,
 } from '@aozoraquest/core';
 import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
@@ -138,12 +139,27 @@ async function sumCraftPower(agent: Agent, did: string): Promise<{ craftPowerSpe
         ...(cursor !== undefined ? { cursor } : {}),
       });
       for (const r of res.data.records) {
-        const v = r.value as { power?: unknown; itemId?: unknown; powerGained?: unknown };
+        const v = r.value as {
+          power?: unknown;
+          itemId?: unknown;
+          powerGained?: unknown;
+          materialId?: unknown;
+          materialCount?: unknown;
+        };
         if (typeof v.itemId === 'string') {
           // 制作レコード (壊れたレコードの扱いを loadCraftInventory と揃える)
           if (typeof v.power === 'number' && Number.isFinite(v.power) && v.power > 0) craftPowerSpent += v.power;
-        } else if (typeof v.powerGained === 'number' && Number.isFinite(v.powerGained) && v.powerGained > 0) {
-          salePowerEarned += v.powerGained;
+        } else if (
+          // ひきとりレコード: powerGained の自己申告は信用せず materialCount から
+          // 再計算する (レート改竄・素材なし powerGained だけの偽造レコードを
+          // 正規集計から締め出す。loadCraftInventory と同じ 3 点セット要求)
+          typeof v.powerGained === 'number' &&
+          typeof v.materialId === 'string' &&
+          typeof v.materialCount === 'number' &&
+          Number.isFinite(v.materialCount) &&
+          v.materialCount > 0
+        ) {
+          salePowerEarned += salePowerFor(Math.floor(v.materialCount));
         }
       }
       const next = res.data.cursor;

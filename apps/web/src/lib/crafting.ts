@@ -11,7 +11,7 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { CRAFT_TUNING, craftLevelRoll, craftSeedFromRkey, salePowerFor } from '@aozoraquest/core';
+import { CRAFT_TUNING, SALE_TUNING, craftLevelRoll, craftSeedFromRkey, salePowerFor } from '@aozoraquest/core';
 import { VIA } from './atproto';
 import { COL } from './collections';
 
@@ -86,14 +86,20 @@ export async function craftItem(
   };
 }
 
+export function newForgeRkey(): string {
+  return `f-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
 /** 合成を記帳する。呼び出し側は同アイテム・同強化値の 2 個体を渡すこと
- *  (集計時にも再検証されるので、違反レコードは無効になるだけ)。 */
+ *  (集計時にも再検証されるので、違反レコードは無効になるだけ)。
+ *  rkey を渡すと再試行が冪等 (craft/sale と同じ流儀)。 */
 export async function forgeItems(
   agent: Agent,
   input: { itemId: string; resultLevel: number; consumed: [string, string] },
+  rkeyIn?: string,
 ): Promise<CraftedPiece> {
   const did = agent.assertDid;
-  const rkey = `f-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+  const rkey = rkeyIn ?? newForgeRkey();
   await agent.com.atproto.repo.createRecord({
     repo: did,
     collection: COL.craft,
@@ -121,14 +127,21 @@ export interface SaleRecord {
   via: string;
 }
 
-/** 素材をひきとってもらう (count は materialsPerPower の倍数を渡すこと)。 */
+export function newSaleRkey(): string {
+  return `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
+/** 素材をひきとってもらう。materialCount は倍数へ構造的に丸める (端数の無補償燃焼を
+ *  防ぐ)。rkey を渡すと再試行が冪等 (craft と同じ流儀 — レビュー指摘)。 */
 export async function sellMaterials(
   agent: Agent,
   input: { materialId: string; materialCount: number },
-): Promise<{ powerGained: number }> {
+  rkeyIn?: string,
+): Promise<{ powerGained: number; materialCount: number }> {
   const did = agent.assertDid;
   const powerGained = salePowerFor(input.materialCount);
-  const rkey = `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+  const materialCount = powerGained * SALE_TUNING.materialsPerPower;
+  const rkey = rkeyIn ?? newSaleRkey();
   await agent.com.atproto.repo.createRecord({
     repo: did,
     collection: COL.craft,
@@ -136,13 +149,13 @@ export async function sellMaterials(
     record: {
       $type: COL.craft,
       materialId: input.materialId,
-      materialCount: input.materialCount,
+      materialCount,
       powerGained,
       at: new Date().toISOString(),
       via: VIA,
     } satisfies SaleRecord,
   });
-  return { powerGained };
+  return { powerGained, materialCount };
 }
 
 export interface CraftInventory {
