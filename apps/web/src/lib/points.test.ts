@@ -36,6 +36,23 @@ function makeAgent(scenario: {
   return { com: { atproto: { repo: { listRecords } } } };
 }
 
+describe('craftPowerSpent (制作の消費パワー)', () => {
+  test('残高から累積額が引かれる', async () => {
+    const { loadPointsState } = await import('./points');
+    const agent = {
+      com: { atproto: { repo: {
+        getRecord: async () => ({ data: { value: {
+          viaPosts: 100, userMessages: 5, cardDraws: 3, battles: 2, craftPowerSpent: 44,
+          summoned: true, updatedAt: 'x',
+        } } }),
+      } } },
+    } as any;
+    const p = await loadPointsState(agent, 'did:test');
+    expect(p.craftPowerSpent).toBe(44);
+    expect(p.balance).toBe(100 - 5 - 3 - 2 - 44);
+  });
+});
+
 describe('loadPointsState', () => {
   test('空状態: 全部 0、summoned=false', async () => {
     const agent = makeAgent({ posts: [], spiritChat: [] });
@@ -45,6 +62,7 @@ describe('loadPointsState', () => {
       userMessages: 0,
       cardDraws: 0,
       battles: 0,
+      craftPowerSpent: 0,
       summoned: false,
       balance: 0,
       toSummon: SUMMON_THRESHOLD,
