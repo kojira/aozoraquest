@@ -22,6 +22,7 @@ import {
   playerStatsAt,
 } from '../battle.js';
 import { JOBS } from '../jobs.js';
+import { gearBonusFromGear } from '../equipment.js';
 import type { Archetype, StatArray } from '../types.js';
 
 describe('createRng / turnRng', () => {
@@ -76,6 +77,21 @@ describe('playerCombatant', () => {
     expect(lv10.atk).toBeGreaterThan(lv1.atk);
     expect(lv10.maxHp).toBeGreaterThan(lv1.maxHp);
     expect(lv1.hp).toBe(lv1.maxHp);
+  });
+
+  // つよさ画面の「そうび +N」は combat − combatBase で内訳を出す。この差が gear
+  // ボーナスそのものであることを固定する (base 引数が drift すると内訳が壊れる)
+  it('装備込み − 装備なし = gearBonus (つよさ画面の内訳の不変条件)', () => {
+    // baseArgs は 5 要素 (末尾 = baseStats)。gear は 7 番目の引数に入れる
+    const args = ['warrior', 5, 10, '戦士', undefined] as const;
+    const gear = { weapon: { id: 'wp-axe', level: 0 }, charm: { id: 'ch-life', level: 0 } };
+    const withGear = playerCombatant(...args, undefined, gear);
+    const bare = playerCombatant(...args);
+    const bonus = gearBonusFromGear('warrior', gear);
+    expect(withGear.atk - bare.atk).toBe(bonus.atk);
+    expect(withGear.def - bare.def).toBe(bonus.def);
+    expect(withGear.maxHp - bare.maxHp).toBe(bonus.maxHp);
+    expect(bonus.maxHp).toBeGreaterThan(0); // いのちのペンダントで HP 内訳が実際に出る
   });
 });
 
