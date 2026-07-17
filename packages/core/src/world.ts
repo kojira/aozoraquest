@@ -38,6 +38,9 @@ export const WORLD_TUNING = {
   pondNoise: 0.9,
   /** 池ができる最低湿度 */
   pondMoisture: 0.45,
+  /** 平地の「まだら林」: 高周波ノイズがこれ以上の平地は林に。広い平原でも数歩ごとに
+   *  景色が変わる (スタート周辺が単調というオーナー指摘 2026-07-17 への対応)。 */
+  groveSpeckle: 0.74,
   /** 橋: 幅がこれ以下の川にだけ架かる (これより広い水域 = 海、船で渡る) */
   bridgeMaxSpan: 3,
   /** 橋どうしの最小間隔 (マンハッタン距離) */
@@ -150,6 +153,7 @@ export const ALL_WAVELENGTHS: readonly number[] = [
   256, 64, 32,               // mountain ridge
   128,                       // warp
   8,                         // pond
+  16,                        // grove speckle (平地のまだら林)
 ];
 
 // ─── 地形 ───────────────────────────────────────────────────
@@ -168,6 +172,8 @@ export function baseTerrainAt(xIn: number, yIn: number): Exclude<Terrain, 'town'
   const m = moistureAt(x, y);
   if (m >= t.forestMoisture) return 'forest';
   if (m >= t.groveMoisture) return 'grove';
+  // 平地のまだら林 (小さな木立の群れ)。波長 16 の高周波で数タイル規模の斑を作る。
+  if (periodicNoise(x, y, 16, WORLD_SEED * 23 + 41) > t.groveSpeckle) return 'grove';
   return 'plains';
 }
 
@@ -353,8 +359,43 @@ export function computeWorldOverlay(): WorldOverlayData {
   for (let i = 1; i < componentSizes.length; i++) {
     if (componentSizes[i]! > componentSizes[bestComponent]!) bestComponent = i;
   }
-  const spawn = towns.find((tn) => componentOf[tn.y * WORLD_SIZE + tn.x] === bestComponent);
-  if (!spawn) throw new Error('no spawn town found in largest component');
+  // spawn: メイン大陸の街のうち「最初の視界が最も豊か」なもの (単調な大平原スタートを
+  // 避ける。オーナー指摘 2026-07-17)。**実際のビューポートと同じ ±8 タイル**の窓で:
+  //  - 通行不能 (水/山/池) が 30% 以上の街は除外 (海際・山際すぎて歩き出しが詰まる)
+  //  - 歩ける地形 (平地/林/森) のうち 8% 以上を占める種類が 2 つ未満の街も除外 (単調)
+  //  - スコア = 地形種類数 ×100 + 見どころ率 (森/水/山/池、上限 40)
+  // 同点はリージョン index 最小で決定的にタイブレーク。
+  const mainTowns = towns.filter((tn) => componentOf[tn.y * WORLD_SIZE + tn.x] === bestComponent);
+  if (mainTowns.length === 0) throw new Error('no spawn town found in largest component');
+  const spawnScore = (tn: Town): number => {
+    const counts = new Map<Terrain, number>();
+    let total = 0;
+    for (let dy = -8; dy <= 8; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        const t = baseTerrainAt(tn.x + dx, tn.y + dy);
+        counts.set(t, (counts.get(t) ?? 0) + 1);
+        total++;
+      }
+    }
+    const frac = (k: Terrain) => (counts.get(k) ?? 0) / total;
+    const impassable = frac('water') + frac('mountain') + frac('pond');
+    if (impassable >= 0.3) return -1;
+    const walkKinds = (['plains', 'grove', 'forest'] as const).filter((k) => frac(k) > 0.08).length;
+    if (walkKinds < 2) return -1;
+    const scenicPct = (frac('forest') + frac('water') + frac('mountain') + frac('pond')) * 100;
+    return counts.size * 100 + Math.min(scenicPct, 40);
+  };
+  let spawn: Town | null = null;
+  let bestScore = -1;
+  for (const tn of mainTowns) {
+    const s = spawnScore(tn);
+    if (s > bestScore || (s === bestScore && spawn !== null && tn.region < spawn.region)) {
+      spawn = tn;
+      bestScore = s;
+    }
+  }
+  // 全滅 (すべて除外) の保険: 先頭の街
+  if (!spawn) spawn = mainTowns[0]!;
 
   return { towns, bridgeTiles, bridgeSpans, spawn };
 }
