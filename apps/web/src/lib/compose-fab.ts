@@ -13,6 +13,8 @@ export const FAB_HIDDEN_PREFIXES = [
   '/tos',
   '/privacy',
   '/me/card',
+  // ゲーム画面: どうぐボタン・十字キーと被って誤タップの元 (オーナー報告 2026-07-17)
+  '/world',
 ] as const;
 
 /** その pathname で投稿 FAB を出してよいか (タイムライン系=true、フォーム/認証系=false)。 */
