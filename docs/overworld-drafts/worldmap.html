@@ -97,7 +97,8 @@ function ridged(x, y, seed, octaves) {
   return 1 - Math.abs(2 * n - 1); // 尾根線 (川筋・山脈に使う)
 }
 function riverValue(x, y) { return ridged(x, y, GLOBAL_SEED * 5 + 13, [[256, 1.0], [64, 0.3]]); }
-function mountainRidgeValue(x, y) { return ridged(x, y, GLOBAL_SEED * 17 + 29, [[256, 1.0], [96, 0.45], [32, 0.15]]); }
+// 波長は必ず WORLD の約数 (96 は非約数でトーラス継ぎ目が壊れるため 64 に修正済み。core と一致)
+function mountainRidgeValue(x, y) { return ridged(x, y, GLOBAL_SEED * 17 + 29, [[256, 1.0], [64, 0.45], [32, 0.15]]); }
 
 // terrain: 0=plains 1=grove 2=forest 3=pond 4=water 5=mountain 6=town 7=bridge
 function baseTerrain(x, y) {

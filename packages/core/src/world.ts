@@ -15,6 +15,8 @@
  * 全ユーザーの地図・位置の意味が変わるため、変更は世界のリセットに等しい。**
  */
 
+import { WORLD_DATA } from './world-data.js';
+
 // ─── 定数 ───────────────────────────────────────────────────
 
 export const WORLD_SIZE = 1024;
@@ -31,7 +33,11 @@ export const WORLD_TUNING = {
   forestMoisture: 0.565,
   groveMoisture: 0.46,
   riverRidge: 0.972,
+  /** 川が海岸ノイズ化しないよう、海面 + この余裕より高い陸にだけ川を刻む */
+  riverElevGuard: 0.02,
   pondNoise: 0.9,
+  /** 池ができる最低湿度 */
+  pondMoisture: 0.45,
   /** 橋: 幅がこれ以下の川にだけ架かる (これより広い水域 = 海、船で渡る) */
   bridgeMaxSpan: 3,
   /** 橋どうしの最小間隔 (マンハッタン距離) */
@@ -131,8 +137,20 @@ function riverValue(x: number, y: number): number {
 }
 
 function mountainRidgeValue(x: number, y: number): number {
-  return ridged(x, y, WORLD_SEED * 17 + 29, [[256, 1.0], [96, 0.45], [32, 0.15]]);
+  // 波長は必ず WORLD_SIZE の約数にする (96 のような非約数は格子 mod が壊れて
+  // トーラスの継ぎ目に不連続を作る。レビューで実測 250 倍の段差が出た教訓)。
+  return ridged(x, y, WORLD_SEED * 17 + 29, [[256, 1.0], [64, 0.45], [32, 0.15]]);
 }
+
+/** 生成に使う全波長 (テストで WORLD_SIZE の約数であることを固定する)。 */
+export const ALL_WAVELENGTHS: readonly number[] = [
+  512, 256, 128, 64, 32, 16, // ELEV
+  256, 128, 64, 32,          // MOIST
+  256, 64,                   // river
+  256, 64, 32,               // mountain ridge
+  128,                       // warp
+  8,                         // pond
+];
 
 // ─── 地形 ───────────────────────────────────────────────────
 
@@ -145,8 +163,8 @@ export function baseTerrainAt(xIn: number, yIn: number): Exclude<Terrain, 'town'
   if (e < t.seaLevel) return 'water';
   if (e >= t.peakLevel) return 'mountain';
   if (e >= t.mountainHigh && mountainRidgeValue(x, y) >= t.mountainRidge) return 'mountain';
-  if (e > t.seaLevel + 0.02 && riverValue(x, y) > t.riverRidge) return 'water';
-  if (periodicNoise(x, y, 8, WORLD_SEED * 7 + 3) > t.pondNoise && moistureAt(x, y) > 0.45) return 'pond';
+  if (e > t.seaLevel + t.riverElevGuard && riverValue(x, y) > t.riverRidge) return 'water';
+  if (periodicNoise(x, y, 8, WORLD_SEED * 7 + 3) > t.pondNoise && moistureAt(x, y) > t.pondMoisture) return 'pond';
   const m = moistureAt(x, y);
   if (m >= t.forestMoisture) return 'forest';
   if (m >= t.groveMoisture) return 'grove';
@@ -193,6 +211,8 @@ export interface WorldOverlay {
   spawn: Town;
   /** packed 座標 (y*W+x) → 'town' | 'bridge' */
   overlayMap: Map<number, 'town' | 'bridge'>;
+  /** packed 座標 → Town (街画面用の O(1) 逆引き) */
+  townMap: Map<number, Town>;
 }
 
 let cachedOverlay: WorldOverlay | null = null;
@@ -272,18 +292,29 @@ function computeBridges(): { tiles: { x: number; y: number }[]; spans: number } 
   return { tiles, spans: anchors.length };
 }
 
+/** 生成結果の永続形 (world-data.ts に埋め込む JSON 互換データ)。 */
+export interface WorldOverlayData {
+  towns: Town[];
+  bridgeTiles: { x: number; y: number }[];
+  bridgeSpans: number;
+  spawn: Town;
+}
+
 /**
- * 全域スキャン結果 (街・橋・spawn) を返す。初回のみ計算し以後メモ化。
- * 初回コストは 1024×1024 の走査 (~1-2 秒)。UI はワールド画面の初期化時に 1 回、
- * Worker は DO の初期化時に 1 回だけ呼ぶ。
+ * 全域スキャンで街・橋・spawn を**計算**する (~1-2 秒)。
+ * ランタイムでは呼ばない — scripts/gen-world-data.ts がこれを実行して
+ * world-data.ts に静的データとして埋め込み、テストが「再生成 = 埋め込みデータ」を
+ * 検証する (生成アルゴリズム/チューニング変更の検知)。
+ * ランタイムが毎回スキャンしない理由: Web は初回 terrainAt が数秒ブロックし、
+ * CF Worker/DO はハイバネーション毎の再計算 + CPU 時間制限に抵触するため。
  */
-export function worldOverlay(): WorldOverlay {
-  if (cachedOverlay) return cachedOverlay;
+export function computeWorldOverlay(): WorldOverlayData {
   const towns = computeTowns();
   const { tiles: bridgeTiles, spans: bridgeSpans } = computeBridges();
   const overlayMap = new Map<number, 'town' | 'bridge'>();
   for (const b of bridgeTiles) overlayMap.set(b.y * WORLD_SIZE + b.x, 'bridge');
   for (const tn of towns) overlayMap.set(tn.y * WORLD_SIZE + tn.x, 'town');
+  if (towns.length === 0) throw new Error('world generation produced no towns (tuning broken?)');
 
   // spawn: 最大の徒歩到達成分に属する街のうち、リージョン index 最小のもの。
   // (成分判定は「どの街から始めても同じ成分の街集合が最大」で近似せず、実際に
@@ -322,9 +353,27 @@ export function worldOverlay(): WorldOverlay {
   for (let i = 1; i < componentSizes.length; i++) {
     if (componentSizes[i]! > componentSizes[bestComponent]!) bestComponent = i;
   }
-  const spawn = towns.find((tn) => componentOf[tn.y * WORLD_SIZE + tn.x] === bestComponent) ?? towns[0]!;
+  const spawn = towns.find((tn) => componentOf[tn.y * WORLD_SIZE + tn.x] === bestComponent);
+  if (!spawn) throw new Error('no spawn town found in largest component');
 
-  cachedOverlay = { towns, bridgeTiles, bridgeSpans, spawn, overlayMap };
+  return { towns, bridgeTiles, bridgeSpans, spawn };
+}
+
+/**
+ * ランタイム用の全域スキャン結果 (街・橋・spawn)。**静的データ (world-data.ts) から
+ * Map を組むだけ**なので即座 (初回 <1ms、以後メモ化)。
+ */
+export function worldOverlay(): WorldOverlay {
+  if (cachedOverlay) return cachedOverlay;
+  const { towns, bridgeTiles, bridgeSpans, spawn } = WORLD_DATA;
+  const overlayMap = new Map<number, 'town' | 'bridge'>();
+  const townMap = new Map<number, Town>();
+  for (const b of bridgeTiles) overlayMap.set(b.y * WORLD_SIZE + b.x, 'bridge');
+  for (const tn of towns) {
+    overlayMap.set(tn.y * WORLD_SIZE + tn.x, 'town');
+    townMap.set(tn.y * WORLD_SIZE + tn.x, tn);
+  }
+  cachedOverlay = { towns: [...towns], bridgeTiles: [...bridgeTiles], bridgeSpans, spawn, overlayMap, townMap };
   return cachedOverlay;
 }
 
@@ -334,6 +383,23 @@ export function terrainAt(xIn: number, yIn: number): Terrain {
   const y = wrap(yIn);
   const o = worldOverlay().overlayMap.get(y * WORLD_SIZE + x);
   return o ?? baseTerrainAt(x, y);
+}
+
+/** その座標が街なら Town を返す (街画面・店のヘッダ用)。 */
+export function townAt(x: number, y: number): Town | null {
+  return worldOverlay().townMap.get(wrap(y) * WORLD_SIZE + wrap(x)) ?? null;
+}
+
+/** 地形別の遭遇率 (通行不能地形は 0)。 */
+export function encounterRateFor(t: Terrain): number {
+  const r = WORLD_TUNING.encounterRate as Partial<Record<Terrain, number>>;
+  return r[t] ?? 0;
+}
+
+/** 地形別のアイテム発見率 (通行不能地形は 0)。 */
+export function itemRateFor(t: Terrain): number {
+  const r = WORLD_TUNING.itemRate as Partial<Record<Terrain, number>>;
+  return r[t] ?? 0;
 }
 
 // ─── リージョン・危険度 ─────────────────────────────────────

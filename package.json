@@ -15,7 +15,8 @@
     "validate:llm:cls": "tsx scripts/validate-llm-cls-playwright.ts",
     "validate:data": "tsx scripts/validate-data.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "refresh:directory": "tsx scripts/refresh-directory.ts"
+    "refresh:directory": "tsx scripts/refresh-directory.ts",
+    "gen:world": "tsx scripts/gen-world-data.ts"
   },
   "devDependencies": {
     "@atproto/api": "^0.17",

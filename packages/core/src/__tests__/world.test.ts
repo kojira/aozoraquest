@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ALL_WAVELENGTHS,
   WORLD_SIZE,
   REGION_COUNT,
   REGIONS_PER_SIDE,
   TOWN_NAMES,
   baseTerrainAt,
+  computeWorldOverlay,
+  encounterRateFor,
+  itemRateFor,
   terrainAt,
+  townAt,
   elevationAt,
   isWalkable,
   regionDanger,
@@ -14,12 +19,30 @@ import {
   wrap,
   type Terrain,
 } from '../world.js';
+import { WORLD_DATA } from '../world-data.js';
+
+describe('生成の前提条件', () => {
+  it('全波長は WORLD_SIZE の約数 (非約数はトーラス継ぎ目に不連続を作る)', () => {
+    for (const w of ALL_WAVELENGTHS) {
+      expect(WORLD_SIZE % w).toBe(0);
+    }
+  });
+});
+
+describe('world-data.ts (静的データ)', () => {
+  it('再生成すると埋め込みデータと一致する (アルゴリズム/チューニング変更の検知)', () => {
+    const regenerated = computeWorldOverlay();
+    expect(regenerated).toEqual(WORLD_DATA);
+  }, 60_000);
+});
 
 describe('wrap / トーラス', () => {
-  it('座標は mod 1024 で丸まる', () => {
+  it('座標は mod 1024 で丸まる (複数周も)', () => {
     expect(wrap(-1)).toBe(WORLD_SIZE - 1);
     expect(wrap(WORLD_SIZE)).toBe(0);
     expect(wrap(WORLD_SIZE + 5)).toBe(5);
+    expect(wrap(-WORLD_SIZE - 1)).toBe(WORLD_SIZE - 1);
+    expect(wrap(WORLD_SIZE * 3 + 2)).toBe(2);
   });
   it('端の地形は逆側と連続する (継ぎ目なし = 同座標に丸めて同値)', () => {
     for (let i = 0; i < 50; i++) {
@@ -39,10 +62,11 @@ describe('wrap / トーラス', () => {
 describe('地形の分布 (シード固定の世界を統計で固定)', () => {
   // 32x32 間引きサンプリング (1024 点) で分布を確認する。
   // 閾値やシードを変えて世界が別物になったらこのテストが落ちる (意図的な保険)。
+  // stride は格子波長 (32/16) と非整合な 33 にして、格子点直上サンプリングの偏りを避ける
   const counts: Record<string, number> = {};
   let total = 0;
-  for (let y = 0; y < WORLD_SIZE; y += 32) {
-    for (let x = 0; x < WORLD_SIZE; x += 32) {
+  for (let y = 0; y < WORLD_SIZE; y += 33) {
+    for (let x = 0; x < WORLD_SIZE; x += 33) {
       const t = baseTerrainAt(x, y);
       counts[t] = (counts[t] ?? 0) + 1;
       total++;
@@ -102,6 +126,20 @@ describe('worldOverlay (街・橋・spawn)', () => {
 
   it('spawn はメイン大陸の街', () => {
     expect(overlay.towns.some((t) => t.x === overlay.spawn.x && t.y === overlay.spawn.y)).toBe(true);
+  });
+
+  it('townAt は街座標で Town を返し、それ以外は null', () => {
+    const t = overlay.towns[0]!;
+    expect(townAt(t.x, t.y)?.name).toBe(t.name);
+    expect(townAt(t.x + 1, t.y)).toBeNull(); // 隣は街でない前提 (街は 1 タイル)
+  });
+
+  it('encounterRateFor / itemRateFor は通行不能地形で 0', () => {
+    expect(encounterRateFor('water')).toBe(0);
+    expect(encounterRateFor('mountain')).toBe(0);
+    expect(encounterRateFor('forest')).toBeGreaterThan(encounterRateFor('plains'));
+    expect(itemRateFor('pond')).toBe(0);
+    expect(itemRateFor('forest')).toBeGreaterThan(0);
   });
 });
 
