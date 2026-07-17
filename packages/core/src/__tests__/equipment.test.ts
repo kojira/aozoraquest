@@ -140,6 +140,53 @@ describe('専用装備の弱点補完 (将軍)', () => {
   });
 });
 
+describe('制作の品質 (craftQuality / bonusWithQuality)', () => {
+  it('決定的 (同じ seed + luk で同じ品質)、0〜100 に収まる', async () => {
+    const { craftQuality, craftSeedFromRkey } = await import('../equipment.js');
+    const seed = craftSeedFromRkey('c-abc123');
+    expect(craftQuality(seed, 20)).toBe(craftQuality(seed, 20));
+    for (let i = 0; i < 500; i++) {
+      const q = craftQuality(i, 10);
+      expect(q).toBeGreaterThanOrEqual(0);
+      expect(q).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('luk が高いほど下振れしにくい (下限が上がる。統計)', async () => {
+    const { craftQuality, CRAFT_TUNING } = await import('../equipment.js');
+    let low = 0;
+    let high = 0;
+    let minHigh = 100;
+    for (let seed = 0; seed < 1000; seed++) {
+      low += craftQuality(seed, 5);
+      const q = craftQuality(seed, 40);
+      high += q;
+      minHigh = Math.min(minHigh, q);
+    }
+    expect(high / 1000).toBeGreaterThan(low / 1000);
+    // luk40 の下限 = 40×0.6 = 24 (床が効いている)
+    expect(minHigh).toBeGreaterThanOrEqual(Math.floor(40 * CRAFT_TUNING.qualityLukFloorScale));
+  });
+
+  it('品質が効果倍率に反映され (0.8〜1.25)、正のボーナスは 1 未満に潰れない', async () => {
+    const { bonusWithQuality, EQUIPMENT_BY_ID: BY_ID } = await import('../equipment.js');
+    const harp = BY_ID['wp-bard-mid']!; // luk +8
+    expect(bonusWithQuality(harp, 0).luk).toBe(Math.round(8 * 0.8)); // 6
+    expect(bonusWithQuality(harp, 100).luk).toBe(Math.round(8 * 1.25)); // 10
+    const knife = BY_ID['wp-knife']!; // atk +2
+    expect(bonusWithQuality(knife, 0).atk).toBeGreaterThanOrEqual(1);
+  });
+
+  it('gearBonusFromGear は品質つき個体を受け、名匠は接頭辞つき表示名になる', async () => {
+    const { craftedName, isMasterwork, EQUIPMENT_BY_ID: BY_ID } = await import('../equipment.js');
+    const g = gearBonusFromGear('bard', { weapon: { id: 'wp-bard-mid', quality: 100 } });
+    expect(g.luk).toBe(10); // 8 × 1.25
+    expect(isMasterwork(96)).toBe(true);
+    expect(craftedName(BY_ID['wp-bard-mid']!, 96)).toBe('名匠の竪琴');
+    expect(craftedName(BY_ID['wp-bard-mid']!, 50)).toBe('竪琴');
+  });
+});
+
 describe('townShopStock (品揃えの決定的生成)', () => {
   const towns = worldOverlay().towns;
 

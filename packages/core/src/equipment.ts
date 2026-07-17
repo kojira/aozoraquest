@@ -202,10 +202,81 @@ export function gearBonus(archetype: Archetype, equipIds: readonly string[]): Ge
   return total;
 }
 
+// ─── 制作 (クラフト) と品質 ─────────────────────────────────
+
+/** 品質チューニング (docs/20)。 */
+export const CRAFT_TUNING = {
+  /** 品質下限 = luk × qualityLukFloorScale (上限 qualityFloorMax)。
+   *  「うんが高いほど下振れしにくい」— gamble・敗北ドロップと同じ設計言語 */
+  qualityLukFloorScale: 0.6,
+  qualityFloorMax: 50,
+  /** 効果倍率 = multMin + (quality/100) × (multMax − multMin) */
+  multMin: 0.8,
+  multMax: 1.25,
+  /** これ以上の品質は「名匠の◯◯」 */
+  masterworkThreshold: 95,
+} as const;
+
+/** craft レコードの rkey (文字列) を決定的に u32 seed へ (FNV-1a)。 */
+export function craftSeedFromRkey(rkey: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < rkey.length; i++) {
+    h ^= rkey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * 制作品の品質 (0〜100)。seed から決定的 — craft レコードの rkey と制作時 luk が
+ * あれば誰でも再計算できる (品質の自己申告は不要 = 偽造耐性。docs/20)。
+ * luk が下限を引き上げる。上振れ (名匠) は誰でも引ける。
+ */
+export function craftQuality(seed: number, luk: number): number {
+  const t = CRAFT_TUNING;
+  const floor = Math.min(t.qualityFloorMax, Math.max(0, luk * t.qualityLukFloorScale));
+  const roll = shopRng((seed ^ 0x3c6ef372) >>> 0)();
+  return Math.round(floor + roll * (100 - floor));
+}
+
+/** 品質 → 効果倍率 (0.8×〜1.25×)。 */
+export function qualityMultiplier(quality: number): number {
+  const t = CRAFT_TUNING;
+  const q = Math.max(0, Math.min(100, quality));
+  return t.multMin + (q / 100) * (t.multMax - t.multMin);
+}
+
+/** 品質を適用した装備ボーナス (各値を倍率で丸め。元が 1 以上なら 1 未満に潰さない)。 */
+export function bonusWithQuality(def: EquipmentDef, quality: number): EquipmentDef['bonus'] {
+  const m = qualityMultiplier(quality);
+  const out: EquipmentDef['bonus'] = {};
+  for (const [k, v] of Object.entries(def.bonus)) {
+    if (v === undefined) continue;
+    out[k as keyof EquipmentDef['bonus']] = Math.max(v > 0 ? 1 : 0, Math.round(v * m));
+  }
+  return out;
+}
+
+/** 名匠品か。 */
+export function isMasterwork(quality: number): boolean {
+  return quality >= CRAFT_TUNING.masterworkThreshold;
+}
+
+/** 表示名 (名匠は接頭辞つき)。 */
+export function craftedName(def: EquipmentDef, quality: number): string {
+  return isMasterwork(quality) ? `名匠の${def.name}` : def.name;
+}
+
+/** 装備中の個体。quality 省略時は定義値そのまま (倍率 1.0 相当ではなく素の bonus)。 */
+export interface GearPiece {
+  id: string;
+  quality?: number;
+}
+
 export interface GearSelection {
-  weapon?: string;
-  armor?: string;
-  charm?: string;
+  weapon?: GearPiece | string;
+  armor?: GearPiece | string;
+  charm?: GearPiece | string;
 }
 
 /**
@@ -214,14 +285,20 @@ export interface GearSelection {
  * 同じ強武器を 3 枠に書く、といったレコード直編集チートを弾く。W6c の正式入口)。
  */
 export function gearBonusFromGear(archetype: Archetype, gear: GearSelection): GearBonus {
-  const ids: string[] = [];
+  const total: GearBonus = { atk: 0, def: 0, agi: 0, int: 0, luk: 0, maxHp: 0 };
   for (const slot of ['weapon', 'armor', 'charm'] as const) {
-    const id = gear[slot];
-    if (!id) continue;
+    const piece = gear[slot];
+    if (!piece) continue;
+    const id = typeof piece === 'string' ? piece : piece.id;
+    const quality = typeof piece === 'string' ? undefined : piece.quality;
     const def = EQUIPMENT_BY_ID[id];
-    if (def && def.slot === slot) ids.push(id);
+    if (!def || def.slot !== slot || !canEquip(archetype, def)) continue;
+    const bonus = quality !== undefined ? bonusWithQuality(def, quality) : def.bonus;
+    for (const [k, v] of Object.entries(bonus)) {
+      total[k as keyof GearBonus] += v ?? 0;
+    }
   }
-  return gearBonus(archetype, ids);
+  return total;
 }
 
 // ─── なんでも屋の品揃え (決定的生成) ────────────────────────
