@@ -39,8 +39,12 @@ export const WORLD_TUNING = {
   /** 池ができる最低湿度 */
   pondMoisture: 0.45,
   /** 平地の「まだら林」: 高周波ノイズがこれ以上の平地は林に。広い平原でも数歩ごとに
-   *  景色が変わる (スタート周辺が単調というオーナー指摘 2026-07-17 への対応)。 */
-  groveSpeckle: 0.74,
+   *  景色が変わる (スタート周辺が単調というオーナー指摘 2026-07-17 への対応)。
+   *  0.74 では視界ほぼ平地一色の地点が 66% 残った (実測) ため 0.62 に強化 +
+   *  forestSpeckle (小さな森の群れ) を追加。「平原だけが続くマップは無し」の指示。 */
+  groveSpeckle: 0.62,
+  /** 平地の小さな森の群れ (波長 32 のノイズ)。まだら林より稀で大きめの塊。 */
+  forestSpeckle: 0.84,
   /** 橋: 幅がこれ以下の川にだけ架かる (これより広い水域 = 海、船で渡る) */
   bridgeMaxSpan: 3,
   /** 橋どうしの最小間隔 (マンハッタン距離) */
@@ -154,6 +158,7 @@ export const ALL_WAVELENGTHS: readonly number[] = [
   128,                       // warp
   8,                         // pond
   16,                        // grove speckle (平地のまだら林)
+  32,                        // forest speckle (平地の小さな森)
 ];
 
 // ─── 地形 ───────────────────────────────────────────────────
@@ -172,9 +177,19 @@ export function baseTerrainAt(xIn: number, yIn: number): Exclude<Terrain, 'town'
   const m = moistureAt(x, y);
   if (m >= t.forestMoisture) return 'forest';
   if (m >= t.groveMoisture) return 'grove';
-  // 平地のまだら林 (小さな木立の群れ)。波長 16 の高周波で数タイル規模の斑を作る。
+  // 平地の小さな森の群れ (波長 32) と、まだら林 (波長 16)。広い平原を作らない。
+  if (periodicNoise(x, y, 32, WORLD_SEED * 29 + 53) > t.forestSpeckle) return 'forest';
   if (periodicNoise(x, y, 16, WORLD_SEED * 23 + 41) > t.groveSpeckle) return 'grove';
   return 'plains';
+}
+
+/**
+ * タイルの見た目バリエーション (0..3)。座標ハッシュで決定的。
+ * 平地の花・岩・草むら等、**地形は変えずに視覚的な単調さを消す** ための番号
+ * (「平原だけが続くマップは無し」への対応の一部。描画側が variant を持つ)。
+ */
+export function tileDetailAt(x: number, y: number): 0 | 1 | 2 | 3 {
+  return (Math.floor(hash2(wrap(x), wrap(y), WORLD_SEED * 31 + 71) * 4) & 3) as 0 | 1 | 2 | 3;
 }
 
 /** 川タイルか (水のうち海面より高いもの = 橋を架けられる)。 */

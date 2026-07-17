@@ -208,8 +208,8 @@ export const WORLD_DATA: WorldOverlayData = {
       "name": "はるかぜの村"
     },
     {
-      "x": 192,
-      "y": 704,
+      "x": 197,
+      "y": 699,
       "region": 41,
       "name": "あぜみちの里"
     },
@@ -268,8 +268,8 @@ export const WORLD_DATA: WorldOverlayData = {
       "name": "きつつきの杜"
     },
     {
-      "x": 444,
-      "y": 828,
+      "x": 439,
+      "y": 823,
       "region": 51,
       "name": "よあけの街"
     },
@@ -298,8 +298,8 @@ export const WORLD_DATA: WorldOverlayData = {
       "name": "はてしの灯台"
     },
     {
-      "x": 64,
-      "y": 960,
+      "x": 71,
+      "y": 966,
       "region": 56,
       "name": "あかつきの村"
     },
