@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { loadBattleStats, countBattles } from './battle-log';
 
 /** battle レコード列 (新しい順 = listRecords の返却順) を返す mock agent。 */
-function makeAgent(records: Array<{ outcome?: string; tier?: number; drops?: unknown; herbsUsed?: number }>): any {
+function makeAgent(records: Array<{ outcome?: string; tier?: number; drops?: unknown; herbsUsed?: number; tonicsUsed?: number }>): any {
   const listRecords = vi.fn(async ({ cursor }: { collection: string; cursor?: string }) => {
     if (cursor) return { data: { records: [] } };
     return {
@@ -112,6 +112,38 @@ describe('loadBattleStats', () => {
       'did:test',
     );
     expect(s2.materials['herb']).toBeUndefined(); // 使いすぎは 0 止め (負にならない)
+  });
+
+  test('fled は連勝を切るが敗北には数えない', async () => {
+    const s = await loadBattleStats(
+      makeAgent([
+        { outcome: 'fled', tier: 1 },
+        { outcome: 'win', tier: 1 },
+      ]),
+      'did:test',
+    );
+    expect(s.losses).toBe(0);
+    expect(s.wins).toBe(1);
+    expect(s.currentStreak).toBe(0); // 先頭が fled なので現在連勝は 0
+    expect(s.bestStreak).toBe(1);
+  });
+
+  test('そらのしずく在庫 = ドロップ獲得 − 使用 (tonicsUsed)、0 以下なら消える', async () => {
+    const s = await loadBattleStats(
+      makeAgent([
+        { outcome: 'win', tier: 2, drops: ['sky-dew', 'wisp-ember'] },
+        { outcome: 'fled', tier: 2, tonicsUsed: 1 }, // 逃げた戦でも使った分は消費
+        { outcome: 'win', tier: 2, drops: ['sky-dew'] },
+      ]),
+      'did:test',
+    );
+    expect(s.materials['sky-dew']).toBe(1); // 2 獲得 − 1 使用
+    expect(s.materials['wisp-ember']).toBe(1);
+    const s2 = await loadBattleStats(
+      makeAgent([{ outcome: 'win', tier: 2, drops: ['sky-dew'] }, { outcome: 'win', tier: 2, tonicsUsed: 3 }]),
+      'did:test',
+    );
+    expect(s2.materials['sky-dew']).toBeUndefined(); // 使いすぎは 0 止め
   });
 
   test('outcome 欠落は lose 扱い (中断された仮レコード = 棄権)', async () => {
