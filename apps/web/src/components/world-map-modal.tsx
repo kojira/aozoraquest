@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { WORLD_SIZE, terrainAt, worldOverlay, type Terrain } from '@aozoraquest/core';
+import { WORLD_SIZE, terrainAt, worldOverlay, type Terrain, type Town } from '@aozoraquest/core';
 
 /**
  * 世界地図モーダル (docs/19 — 地図確認機能)。
@@ -8,15 +8,20 @@ import { WORLD_SIZE, terrainAt, worldOverlay, type Terrain } from '@aozoraquest/
  * 本番リリース必須要件 #3)。プレビュー期は世界全図をそのまま見せる
  * (W5 の「地図のかけら」はこの画面の開示範囲を絞る機構として後から重ねる)。
  *
- * - 1024×1024 を 4 タイルごとにサンプリングした 256×256 の canvas (約 65k 回の
- *   terrainAt 評価 ≒ 数十 ms)。描画結果はモジュールスコープにキャッシュ
- *   (ワールドは静的データなので一度描けば十分)。
- * - 街 = 金色のドット、現在地 = 点滅する赤マーカー。
- * - タップ/クリックした位置の最寄りの街名を表示 (半径 24 タイル以内)。
+ * - 1024×1024 → 256×256 canvas。各ピクセルは 2 点サンプリングで水を優先
+ *   (細い川がサンプル格子から漏れて「渡れそうな陸」に見える誤読を防ぐ)。
+ * - 描画は 32 行ずつ rAF 分割 (同期一括だと実測 ~200ms、モバイルは数倍の
+ *   ロングタスクになる — レビュー指摘)。結果はモジュールキャッシュ。
+ * - 橋 = 茶のドット (渡河点はこの地図の主目的)、街 = 金ドット、現在地 = 点滅。
+ * - タップの街判定は **画面 px 基準** (ワールド固定半径だとモバイルで実質
+ *   7px になり当たらない — レビュー ★★★)。
  */
 
-const SAMPLE = 4; // 4 タイルごと
+const SAMPLE = 4;
 const MAP_PX = WORLD_SIZE / SAMPLE; // 256
+const ROWS_PER_CHUNK = 32;
+/** タップの街ヒット判定半径 (CSS px。指の接地面相当)。 */
+const PICK_RADIUS_CSS_PX = 24;
 
 const TERRAIN_COLORS: Record<Terrain, string> = {
   plains: '#9dd07f',
@@ -29,34 +34,30 @@ const TERRAIN_COLORS: Record<Terrain, string> = {
   bridge: '#c98d5a',
 };
 
+const TOWN_DOT = '#f5d442';
+const BRIDGE_DOT = '#c98d5a';
+
 let cachedMap: ImageData | null = null;
 
-function renderWorldToImageData(): ImageData {
-  if (cachedMap) return cachedMap;
-  const img = new ImageData(MAP_PX, MAP_PX);
-  const data = img.data;
-  const colorCache = new Map<string, [number, number, number]>();
-  const rgb = (hex: string): [number, number, number] => {
-    let c = colorCache.get(hex);
-    if (!c) {
-      c = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-      colorCache.set(hex, c);
-    }
-    return c;
-  };
-  for (let py = 0; py < MAP_PX; py++) {
-    for (let px = 0; px < MAP_PX; px++) {
-      const t = terrainAt(px * SAMPLE, py * SAMPLE);
-      const [r, g, b] = rgb(TERRAIN_COLORS[t] ?? '#000000');
-      const i = (py * MAP_PX + px) * 4;
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = 255;
-    }
+/** 1 ピクセル分の地形色 (2 点サンプリング、水優先)。 */
+function samplePixel(px: number, py: number): Terrain {
+  const t1 = terrainAt(px * SAMPLE, py * SAMPLE);
+  const t2 = terrainAt(px * SAMPLE + 2, py * SAMPLE + 2);
+  if (t1 === 'water' || t1 === 'pond') return t1;
+  if (t2 === 'water' || t2 === 'pond') return t2;
+  return t1;
+}
+
+/** 最寄りの街 (トーラス距離)。radiusWorld タイル以内、無ければ null。純関数 (テスト対象)。 */
+export function nearestTown(wx: number, wy: number, towns: readonly Town[], radiusWorld: number): Town | null {
+  let best: { town: Town; d: number } | null = null;
+  for (const t of towns) {
+    const dx = Math.min(Math.abs(t.x - wx), WORLD_SIZE - Math.abs(t.x - wx));
+    const dy = Math.min(Math.abs(t.y - wy), WORLD_SIZE - Math.abs(t.y - wy));
+    const d = Math.hypot(dx, dy);
+    if (d <= radiusWorld && (!best || d < best.d)) best = { town: t, d };
   }
-  cachedMap = img;
-  return img;
+  return best ? best.town : null;
 }
 
 export function WorldMapModal({
@@ -70,49 +71,100 @@ export function WorldMapModal({
   onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [picked, setPicked] = useState<string | null>(null);
-  const towns = useMemo(() => worldOverlay().towns, []);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const [picked, setPicked] = useState<Town | null>(null);
+  const [pickMiss, setPickMiss] = useState(false);
+  const overlay = useMemo(() => worldOverlay(), []);
 
-  // 地形の描画 (初回は ~数十 ms かかるので effect で。以降はキャッシュ即描)
+  // Escape で閉じる (既存モーダル群と同じ規約) + 開いた時に「とじる」へフォーカス
+  useEffect(() => {
+    closeBtnRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // 地形 + 街/橋の描画。地形は 32 行ずつ rAF 分割してメインスレッドを塞がない
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.putImageData(renderWorldToImageData(), 0, 0);
-    // 街 (金のドット 2px)
-    ctx.fillStyle = '#f5d442';
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    for (const t of towns) {
-      const tx = Math.round(t.x / SAMPLE);
-      const ty = Math.round(t.y / SAMPLE);
-      ctx.beginPath();
-      ctx.arc(tx, ty, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+    let raf = 0;
+    const drawOverlays = () => {
+      // 橋 (渡河点はこの地図の主目的のひとつ。1 タイル幅はサンプリングで消えるため明示描画)
+      ctx.fillStyle = BRIDGE_DOT;
+      for (const b of overlay.bridgeTiles) {
+        ctx.fillRect(Math.round(b.x / SAMPLE) % MAP_PX, Math.round(b.y / SAMPLE) % MAP_PX, 2, 2);
+      }
+      // 街 (金のドット)
+      ctx.fillStyle = TOWN_DOT;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      for (const t of overlay.towns) {
+        ctx.beginPath();
+        ctx.arc(Math.round(t.x / SAMPLE) % MAP_PX, Math.round(t.y / SAMPLE) % MAP_PX, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    };
+    if (cachedMap) {
+      ctx.putImageData(cachedMap, 0, 0);
+      drawOverlays();
+      return;
     }
-  }, [towns]);
-
-  const spawnName = useMemo(() => worldOverlay().spawn.name, []);
+    const img = new ImageData(MAP_PX, MAP_PX);
+    const data = img.data;
+    const colorCache = new Map<string, [number, number, number]>();
+    const rgb = (hex: string): [number, number, number] => {
+      let c = colorCache.get(hex);
+      if (!c) {
+        c = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+        colorCache.set(hex, c);
+      }
+      return c;
+    };
+    let row = 0;
+    const chunk = () => {
+      const end = Math.min(row + ROWS_PER_CHUNK, MAP_PX);
+      for (; row < end; row++) {
+        for (let px = 0; px < MAP_PX; px++) {
+          const [r, g, b] = rgb(TERRAIN_COLORS[samplePixel(px, row)] ?? '#000000');
+          const i = (row * MAP_PX + px) * 4;
+          data[i] = r;
+          data[i + 1] = g;
+          data[i + 2] = b;
+          data[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0); // 途中経過も見せる (上から順に現れる)
+      if (row < MAP_PX) {
+        raf = requestAnimationFrame(chunk);
+      } else {
+        cachedMap = img;
+        drawOverlays();
+      }
+    };
+    raf = requestAnimationFrame(chunk);
+    return () => cancelAnimationFrame(raf);
+  }, [overlay]);
 
   const pick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const wx = ((e.clientX - rect.left) / rect.width) * WORLD_SIZE;
     const wy = ((e.clientY - rect.top) / rect.height) * WORLD_SIZE;
-    // 最寄りの街 (トーラス距離、24 タイル以内)
-    let best: { name: string; d: number } | null = null;
-    for (const t of towns) {
-      const dx = Math.min(Math.abs(t.x - wx), WORLD_SIZE - Math.abs(t.x - wx));
-      const dy = Math.min(Math.abs(t.y - wy), WORLD_SIZE - Math.abs(t.y - wy));
-      const d = Math.hypot(dx, dy);
-      if (d <= 24 && (!best || d < best.d)) best = { name: t.name, d };
-    }
-    setPicked(best ? best.name : null);
+    // ヒット半径は画面 px を基準にワールド距離へ換算 (端末サイズに依存しない指相当)
+    const radiusWorld = (PICK_RADIUS_CSS_PX / rect.width) * WORLD_SIZE;
+    const t = nearestTown(wx, wy, overlay.towns, radiusWorld);
+    setPicked(t);
+    setPickMiss(!t);
   };
 
   return (
     <div
       role="dialog"
+      aria-modal="true"
       aria-label="世界地図"
       onClick={onClose}
       style={{
@@ -129,32 +181,50 @@ export function WorldMapModal({
       <div
         className="dq-window"
         onClick={(e) => e.stopPropagation()}
-        style={{ padding: 8, maxWidth: 'min(92vw, 520px)', width: '100%' }}
+        style={{
+          padding: 8,
+          // 横向き/低い窓でも正方形 canvas + ヘッダー + 凡例が収まる幅に
+          // (幅だけで縛ると「とじる」が画面外に出る — レビュー指摘)
+          width: 'min(92vw, 520px, calc(92svh - 110px))',
+        }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
           <strong style={{ fontSize: '0.95em' }}>せかいちず</strong>
-          <button type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
+          <button ref={closeBtnRef} type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
             とじる
           </button>
         </div>
-        <div style={{ position: 'relative' }}>
+        {/* border は wrapper 側 (canvas に付けると rect が border 込みになり座標が歪む) */}
+        <div style={{ position: 'relative', border: '2px solid var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
           <canvas
             ref={canvasRef}
             width={MAP_PX}
             height={MAP_PX}
             onClick={pick}
-            style={{
-              display: 'block',
-              width: '100%',
-              imageRendering: 'pixelated',
-              border: '2px solid var(--color-border)',
-              borderRadius: 4,
-              cursor: 'crosshair',
-            }}
+            style={{ display: 'block', width: '100%', imageRendering: 'pixelated', cursor: 'crosshair' }}
           />
-          {/* 現在地マーカー (canvas 外の HTML で点滅) */}
+          {/* 選択中の街のリング (どのドットの名前かを地図上でも示す) */}
+          {picked && (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `${(picked.x / WORLD_SIZE) * 100}%`,
+                top: `${(picked.y / WORLD_SIZE) * 100}%`,
+                width: 16,
+                height: 16,
+                transform: 'translate(-50%, -50%)',
+                borderRadius: '50%',
+                border: '2px solid #fff',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.7)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+          {/* 現在地マーカー (canvas 外の HTML で点滅。reduced-motion では点滅停止) */}
           <div
             aria-hidden
+            className="aq-map-here"
             style={{
               position: 'absolute',
               left: `${(x / WORLD_SIZE) * 100}%`,
@@ -166,19 +236,25 @@ export function WorldMapModal({
               background: '#e8566a',
               border: '2px solid #fff',
               boxShadow: '0 0 6px rgba(232, 86, 106, 0.9)',
-              animation: 'aq-map-blink 1.1s step-end infinite',
               pointerEvents: 'none',
             }}
           />
-          <style>{'@keyframes aq-map-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.35; } }'}</style>
+          <style>{`
+@keyframes aq-map-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.35; } }
+.aq-map-here { animation: aq-map-blink 1.1s step-end infinite; }
+@media (prefers-reduced-motion: reduce) { .aq-map-here { animation: none; } }
+`}</style>
         </div>
         <p style={{ margin: '0.5em 0 0', fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.6 }}>
           <span style={{ color: '#e8566a' }}>●</span> いまここ ({x}, {y}) /{' '}
-          <span style={{ color: '#c9a92e' }}>●</span> 街 ({towns.length})。地図をタップすると近くの街の名前が出ます。
+          <span style={{ color: TOWN_DOT, textShadow: '0 0 1px rgba(0,0,0,0.7)' }}>●</span> 街 ({overlay.towns.length}) /{' '}
+          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。地図をタップすると近くの街の名前が出ます。
           {picked ? (
-            <strong style={{ color: 'var(--color-fg)', marginLeft: '0.4em' }}>🏘 {picked}</strong>
+            <strong style={{ color: 'var(--color-fg)', marginLeft: '0.4em' }}>🏘 {picked.name}</strong>
+          ) : pickMiss ? (
+            <span style={{ marginLeft: '0.4em' }}>ちかくに 街は ない。</span>
           ) : (
-            <span style={{ marginLeft: '0.4em' }}>はじまりの街: {spawnName}</span>
+            <span style={{ marginLeft: '0.4em' }}>はじまりの街: {overlay.spawn.name}</span>
           )}
         </p>
       </div>
