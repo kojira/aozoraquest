@@ -107,6 +107,74 @@ describe('loadBattleStats', () => {
   });
 });
 
+describe('record lifecycle (start/finish/awardBattleXp)', () => {
+  test('startBattleRecord は仮敗北 (outcome=lose, turns=0) を createRecord し rkey を返す', async () => {
+    const createRecord = vi.fn(async (_args: any) => ({ data: { uri: 'at://x', cid: 'c' } }));
+    const agent = { assertDid: 'did:test', com: { atproto: { repo: { createRecord } } } } as any;
+    const { startBattleRecord } = await import('./battle-log');
+    const rkey = await startBattleRecord(agent, { seed: 42, tier: 2, monsterId: 'moss-golem' });
+    expect(rkey).toMatch(/^b-/);
+    const arg = createRecord.mock.calls[0]![0] as any;
+    expect(arg.rkey).toBe(rkey);
+    expect(arg.record.outcome).toBe('lose');
+    expect(arg.record.turns).toBe(0);
+    expect(arg.record.drops).toEqual([]);
+    expect(arg.record.seed).toBe(42);
+  });
+
+  test('finishBattleRecord は同じ rkey に putRecord で確定を上書きする', async () => {
+    const putRecord = vi.fn(async (_args: any) => ({ data: {} }));
+    const agent = { assertDid: 'did:test', com: { atproto: { repo: { putRecord } } } } as any;
+    const { finishBattleRecord } = await import('./battle-log');
+    await finishBattleRecord(agent, 'b-abc', {
+      seed: 42, tier: 2, monsterId: 'moss-golem', outcome: 'win', turns: 7, drops: ['golem-core'],
+    });
+    const arg = putRecord.mock.calls[0]![0] as any;
+    expect(arg.rkey).toBe('b-abc');
+    expect(arg.record.outcome).toBe('win');
+    expect(arg.record.drops).toEqual(['golem-core']);
+  });
+
+  test('awardBattleXp は analysis の未知フィールドを保持したまま XP を加算する', async () => {
+    let saved: any = null;
+    const getRecordFn = vi.fn(async () => ({
+      data: {
+        value: {
+          $type: 'x.analysis',
+          archetype: 'sage',
+          analyzedAt: '2026-01-01T00:00:00.000Z',
+          cognitiveScores: { Ni: 0.5 }, // 未知フィールド (型に無い) が消えないこと
+          playerLevel: { xp: 100, streakDays: 3 },
+          jobLevel: { archetype: 'sage', xp: 50, joinedAt: '2026-01-01T00:00:00.000Z' },
+        },
+      },
+    }));
+    const putRecordFn = vi.fn(async (args: any) => { saved = args.record; return { data: {} }; });
+    const agent = {
+      assertDid: 'did:test',
+      com: { atproto: { repo: { getRecord: getRecordFn, putRecord: putRecordFn } } },
+    } as any;
+    const { awardBattleXp } = await import('./battle-log');
+    await awardBattleXp(agent, 'did:test', 30);
+    expect(saved.playerLevel.xp).toBe(130);
+    expect(saved.jobLevel.xp).toBe(80);
+    expect(saved.cognitiveScores).toEqual({ Ni: 0.5 });
+    expect(saved.playerLevel.streakDays).toBe(3);
+  });
+
+  test('awardBattleXp は analysis 未作成なら何も書かない', async () => {
+    const getRecordFn = vi.fn(async () => { throw new Error('not found'); });
+    const putRecordFn = vi.fn();
+    const agent = {
+      assertDid: 'did:test',
+      com: { atproto: { repo: { getRecord: getRecordFn, putRecord: putRecordFn } } },
+    } as any;
+    const { awardBattleXp } = await import('./battle-log');
+    await awardBattleXp(agent, 'did:test', 30);
+    expect(putRecordFn).not.toHaveBeenCalled();
+  });
+});
+
 describe('countBattles', () => {
   test('件数を数える / エラー時は途中まで', async () => {
     expect(await countBattles(makeAgent([{ outcome: 'win' }, { outcome: 'lose' }]), 'did:test')).toBe(2);
