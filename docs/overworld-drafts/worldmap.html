@@ -132,28 +132,53 @@ function findTown(rx, ry) {
   return null; // 海ばかりのリージョンには街なし
 }
 
-// ── 橋: 各リージョンで「左右 or 上下が通行可能な川タイル」を中心に近い順に最大 2 本 ──
+// ── 橋: 幅 1〜3 タイルの川を横断できる「橋スパン」を川沿いに一定間隔で架ける ──
+// 川はたいてい幅 2-3 タイルなので、1 タイル橋では候補がほぼ出ない。水平/垂直の
+// 短い水域ラン (≤ maxSpan) の両端が通行可能なら、そのラン全体を橋にする。
+const BRIDGE_SPACING = 24; // これ未満の距離に他の橋があれば架けない
+const BRIDGE_MAX_SPAN = 3; // 橋の最大長 (これより広い水域は渡れない = 海)
 function passableBase(t) { return t === 0 || t === 1 || t === 2; }
-function findBridges(rx, ry) {
-  const cx = rx * REGION + REGION / 2, cy = ry * REGION + REGION / 2;
-  const found = [];
-  for (let r = 0; r <= 63 && found.length < 2; r++) {
-    for (let dy = -r; dy <= r && found.length < 2; dy++) {
-      for (let dx = -r; dx <= r && found.length < 2; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-        const x = (cx + dx + WORLD) % WORLD, y = (cy + dy + WORLD) % WORLD;
-        if (baseTerrain(x, y) !== 4) continue;
-        const e = elevation(x, y);
-        if (e < TUNE.seaLevel) continue; // 海には架けない (川のみ)
-        const L = baseTerrain((x - 1 + WORLD) % WORLD, y), R = baseTerrain((x + 1) % WORLD, y);
-        const U = baseTerrain(x, (y - 1 + WORLD) % WORLD), D = baseTerrain(x, (y + 1) % WORLD);
-        if ((passableBase(L) && passableBase(R)) || (passableBase(U) && passableBase(D))) {
-          found.push([x, y]);
-        }
-      }
+function isRiverTile(grid, x, y) {
+  return grid[y * WORLD + x] === 4 && elevation(x, y) >= TUNE.seaLevel;
+}
+function findAllBridges(grid) {
+  const bridges = []; // [x, y] のフラット列 (スパンの全タイル)
+  const anchors = []; // スパン代表点 (間隔判定用)
+  const nearAnchor = (x, y) => {
+    for (const [px, py] of anchors) {
+      const ddx = Math.min(Math.abs(px - x), WORLD - Math.abs(px - x));
+      const ddy = Math.min(Math.abs(py - y), WORLD - Math.abs(py - y));
+      if (ddx + ddy < BRIDGE_SPACING) return true;
+    }
+    return false;
+  };
+  const trySpan = (x, y, dx, dy) => {
+    // (x,y) はランの起点候補 (直前が通行可能陸地であること)
+    const px = (x - dx + WORLD) % WORLD, py = (y - dy + WORLD) % WORLD;
+    if (!passableBase(grid[py * WORLD + px])) return;
+    const run = [];
+    let cx = x, cy = y;
+    for (let len = 0; len < BRIDGE_MAX_SPAN; len++) {
+      if (!isRiverTile(grid, cx, cy)) break;
+      run.push([cx, cy]);
+      cx = (cx + dx + WORLD) % WORLD; cy = (cy + dy + WORLD) % WORLD;
+    }
+    if (run.length === 0 || run.length > BRIDGE_MAX_SPAN) return;
+    // ランの先が通行可能陸地なら橋成立
+    if (!passableBase(grid[cy * WORLD + cx])) return;
+    const [ax, ay] = run[Math.floor(run.length / 2)];
+    if (nearAnchor(ax, ay)) return;
+    anchors.push([ax, ay]);
+    for (const t of run) bridges.push(t);
+  };
+  for (let y = 0; y < WORLD; y++) {
+    for (let x = 0; x < WORLD; x++) {
+      if (!isRiverTile(grid, x, y)) continue;
+      trySpan(x, y, 1, 0); // 横断 (西→東)
+      trySpan(x, y, 0, 1); // 縦断 (北→南)
     }
   }
-  return found;
+  return { bridges, spans: anchors.length };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -185,16 +210,44 @@ for (let y = 0; y < WORLD; y++) {
   }
 }
 
-// 街と橋を上書き
+// 街と橋を上書き (橋は川沿い全域に一定間隔で)
 const towns = [];
-const bridges = [];
 for (let ry = 0; ry < 8; ry++) {
   for (let rx = 0; rx < 8; rx++) {
     const town = findTown(rx, ry);
     if (town) { towns.push(town); grid[town[1] * WORLD + town[0]] = 6; }
-    for (const b of findBridges(rx, ry)) { bridges.push(b); grid[b[1] * WORLD + b[0]] = 7; }
   }
 }
+const { bridges, spans } = findAllBridges(grid);
+for (const [x, y] of bridges) grid[y * WORLD + x] = 7;
+
+// ── 到達可能性の解析: 最初の街から歩ける陸地の割合 (flood fill) ──
+function passable(t) { return t === 0 || t === 1 || t === 2 || t === 6 || t === 7; }
+const reachable = new Uint8Array(WORLD * WORLD);
+{
+  const [sx, sy] = towns[0];
+  const stack = [sy * WORLD + sx];
+  reachable[sy * WORLD + sx] = 1;
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % WORLD, y = (i - x) / WORLD;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = (x + dx + WORLD) % WORLD, ny = (y + dy + WORLD) % WORLD;
+      const ni = ny * WORLD + nx;
+      if (reachable[ni] || !passable(grid[ni])) continue;
+      reachable[ni] = 1;
+      stack.push(ni);
+    }
+  }
+}
+let passableTotal = 0, reachableTotal = 0, reachableTowns = 0;
+for (let i = 0; i < WORLD * WORLD; i++) {
+  if (passable(grid[i])) {
+    passableTotal++;
+    if (reachable[i]) reachableTotal++;
+  }
+}
+for (const [x, y] of towns) if (reachable[y * WORLD + x]) reachableTowns++;
 
 for (let i = 0; i < WORLD * WORLD; i++) {
   const [r, g, b] = COLORS[grid[i]];
@@ -223,13 +276,35 @@ const total = WORLD * WORLD;
 const landTotal = counts[0] + counts[1] + counts[2] + counts[3] + counts[5];
 let statsHtml = '';
 for (let t = 0; t < 8; t++) {
-  const c = t === 6 ? towns.length : t === 7 ? bridges.length : counts[t];
+  const c = t === 6 ? towns.length : t === 7 ? spans : counts[t];
   const pct = t >= 6 ? `${c} 箇所` : `${((c / total) * 100).toFixed(1)}%`;
   const col = COLORS[t];
   statsHtml += `<div><span class="sw" style="background: rgb(${col.join(',')})"></span>${TERRAIN_NAMES[t]}: ${pct}</div>`;
 }
-statsHtml += `<div style="margin-top:6px">陸地率: ${((landTotal / total) * 100).toFixed(1)}% / 街: ${towns.length} / 橋: ${bridges.length}</div>`;
+statsHtml += `<div style="margin-top:6px">陸地率: ${((landTotal / total) * 100).toFixed(1)}% / 街: ${towns.length} / 橋: ${spans} 本</div>`;
+statsHtml += `<div><strong>到達可能性</strong> (最初の街から徒歩 + 橋のみ):<br>`
+  + `歩行可能タイルの ${((reachableTotal / passableTotal) * 100).toFixed(1)}% に到達可 / `
+  + `街 ${reachableTowns}/${towns.length} に到達可</div>`;
+statsHtml += `<div style="color:#ffcf7a">濃く沈んだ陸地 = 徒歩到達不能 (山・水に囲まれた飛び地 → 魔王の城などの後期コンテンツ候補)</div>`;
 document.getElementById('stats').innerHTML = statsHtml;
+
+// 到達不能な歩行可能タイルを暗く落とす (飛び地の可視化)
+const img2 = ctx.getImageData(0, 0, WORLD, WORLD);
+for (let i = 0; i < WORLD * WORLD; i++) {
+  if (passable(grid[i]) && !reachable[i]) {
+    img2.data[i * 4] = Math.floor(img2.data[i * 4] * 0.45);
+    img2.data[i * 4 + 1] = Math.floor(img2.data[i * 4 + 1] * 0.45);
+    img2.data[i * 4 + 2] = Math.floor(img2.data[i * 4 + 2] * 0.45);
+  }
+}
+ctx.putImageData(img2, 0, 0);
+// 街マーカーは再描画 (暗転処理の上に)
+for (const [x, y] of towns) {
+  ctx.fillStyle = reachable[y * WORLD + x] ? '#c9564a' : '#7a3b34';
+  ctx.fillRect(x - 2, y - 2, 5, 5);
+  ctx.strokeStyle = '#fff';
+  ctx.strokeRect(x - 2.5, y - 2.5, 6, 6);
+}
 
 // リージョン拡大 (街のあるリージョンをひとつ)
 const zoomCtx = document.getElementById('zoom').getContext('2d');
