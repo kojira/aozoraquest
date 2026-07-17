@@ -38,6 +38,7 @@ import { BattleView, HpBar, MpBar } from '@/components/battle-view';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
+import { VirtualStick } from '@/components/virtual-stick';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -688,19 +689,14 @@ export function World() {
           >
             <Avatar src={avatarUrl ?? undefined} size={avatarSize} archetype={archetype} />
           </div>
+          {/* 仮想スティック: マップ全面がタッチ領域。十字キーの置き換え
+              (スマホで非常に操作しづらい — オーナー報告 2026-07-17) */}
+          <VirtualStick onMove={move} />
         </div>
       </div>
 
-      {/* 十字キー (親指ゾーン) + どうぐ */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 64px)', gap: 6, justifyContent: 'center', marginTop: '0.8em' }}>
-        <span />
-        <DirButton dir="up" onMove={move} />
-        <span />
-        <DirButton dir="left" onMove={move} />
-        <DirButton dir="down" onMove={move} />
-        <DirButton dir="right" onMove={move} />
-      </div>
-      <div style={{ textAlign: 'center', marginTop: '0.5em', display: 'flex', gap: '0.5em', justifyContent: 'center', flexWrap: 'wrap' }}>
+      {/* どうぐ (移動は仮想スティック = マップ直接タッチ) */}
+      <div style={{ textAlign: 'center', marginTop: '0.6em', display: 'flex', gap: '0.5em', justifyContent: 'center', flexWrap: 'wrap' }}>
         {/* 満タン時は disabled にせず押下時 notice で理由を言う
             (disabled だと「在庫があるのに押せない理由」が読めない。レビュー指摘) */}
         <button
@@ -729,7 +725,7 @@ export function World() {
         {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
       </p>
       <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-        PC は矢印キーでも移動できます。街に入ると全回復。
+        マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。街に入ると全回復。
         {diag
           ? points === null
             ? ' パワー残高を読み込めなかった (通信エラー)。モンスターは出ません。再読み込みでもう一度どうぞ。'
@@ -740,63 +736,5 @@ export function World() {
       </p>
       {wipeOverlay}
     </div>
-  );
-}
-
-/** 長押しの連続移動: 最初の一歩の後、この間隔 (ms) で歩き続ける。 */
-const HOLD_REPEAT_DELAY = 350;
-const HOLD_REPEAT_INTERVAL = 170;
-
-function DirButton({ dir, onMove }: { dir: Dir; onMove: (d: Dir) => void }) {
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const movedByHold = useRef(false);
-
-  const stopHold = useCallback(() => {
-    if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
-    if (repeatTimer.current) { clearInterval(repeatTimer.current); repeatTimer.current = null; }
-  }, []);
-  useEffect(() => stopHold, [stopHold]);
-
-  // pointerdown で 1 歩 + 長押しで連続移動 (クリック二重発火を防ぐため click は使わない)。
-  const startHold = useCallback(() => {
-    movedByHold.current = true;
-    onMove(dir);
-    holdTimer.current = setTimeout(() => {
-      repeatTimer.current = setInterval(() => onMove(dir), HOLD_REPEAT_INTERVAL);
-    }, HOLD_REPEAT_DELAY);
-  }, [dir, onMove]);
-
-  return (
-    <button
-      type="button"
-      aria-label={DIRS[dir].label}
-      onPointerDown={(e) => {
-        e.preventDefault(); // 長押しの文字選択・拡大鏡を抑止 (iOS)
-        startHold();
-      }}
-      onPointerUp={stopHold}
-      onPointerLeave={stopHold}
-      onPointerCancel={stopHold}
-      onContextMenu={(e) => e.preventDefault()} // 長押しメニュー抑止
-      // キーボード操作 (Enter/Space) は click で 1 歩 (pointerdown 経由は movedByHold)
-      onClick={() => {
-        if (movedByHold.current) { movedByHold.current = false; return; }
-        onMove(dir);
-      }}
-      style={{
-        height: 56,
-        fontSize: '1.4em',
-        padding: 0,
-        // 連打でダブルタップズームを誘発しない (iOS)
-        touchAction: 'manipulation',
-        // 長押しで矢印グリフが文字選択されるのを防ぐ (オーナー報告)
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-        WebkitTouchCallout: 'none',
-      } as React.CSSProperties}
-    >
-      {DIRS[dir].glyph}
-    </button>
   );
 }
