@@ -512,3 +512,10 @@ export function regionDanger(region: number): number {
   const raw = dist / 2.5 + jitter * 0.9;
   return Math.max(0, Math.min(3, Math.floor(raw)));
 }
+
+/** danger → 遭遇モンスター tier の対応 (単一の正)。遭遇・店の素材プール・
+ *  テストはすべてこれを参照する — 3 箇所コピペで静かにデシンクした前科の再発防止
+ *  (PR #305 レビュー指摘)。 */
+export function tierForDanger(danger: number): 1 | 2 | 3 {
+  return danger <= 1 ? 1 : danger === 2 ? 2 : 3;
+}

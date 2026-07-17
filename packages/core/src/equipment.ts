@@ -15,7 +15,7 @@
  */
 
 import type { Archetype } from './types.js';
-import { regionDanger } from './world.js';
+import { regionDanger, tierForDanger } from './world.js';
 import type { Town } from './world.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
@@ -381,15 +381,18 @@ export interface ShopStock {
  *  モンスターの素材から選ぶ** — 初版は全素材からのハッシュ乱択で、低危険度の
  *  街 23 件中 11 件が周辺で狩れない tier2 素材を要求し「素材が必要だから装備まで
  *  たどり着けない」詰みを作っていた (オーナー報告 2026-07-18)。
- *  danger→tier の対応はワールドの遭遇 tier (danger≤1→tier1, 2→tier2, 3→tier3) と同じ。 */
-const SHOP_MATERIALS_BY_TIER: readonly (readonly string[])[] = [
+ *  danger→tier の対応は tierForDanger (遭遇と同じ単一の正)。
+ *  素材 id は battle.ts の MONSTERS ドロップ表の直書き複製 — battle → equipment の
+ *  既存依存があり MONSTERS から derive すると循環するため。テスト (equipment.test)
+ *  が全街ぶんドロップ表と突き合わせて同期を保証する。 */
+const SHOP_MATERIALS_BY_TIER: readonly [readonly string[], readonly string[], readonly string[]] = [
   ['slime-drop', 'bat-wing', 'mush-spore'], // tier1 (danger 0-1)
   ['golem-core', 'wisp-ember', 'serpent-scale'], // tier2 (danger 2)
   ['raven-feather', 'oni-horn', 'dragon-fang'], // tier3 (danger 3)
 ];
 export function shopMaterialFor(town: Town): string {
-  const danger = regionDanger(town.region);
-  const pool = SHOP_MATERIALS_BY_TIER[danger <= 1 ? 0 : danger === 2 ? 1 : 2]!;
+  const tier = tierForDanger(regionDanger(town.region));
+  const pool = tier === 1 ? SHOP_MATERIALS_BY_TIER[0] : tier === 2 ? SHOP_MATERIALS_BY_TIER[1] : SHOP_MATERIALS_BY_TIER[2];
   const rng = shopRng(((town.x * 40503) ^ (town.y * 89917)) >>> 0);
   return pool[Math.floor(rng() * pool.length)]!;
 }

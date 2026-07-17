@@ -3,6 +3,7 @@ import {
   CRAFT_TUNING,
   EQUIPMENT_BY_ID,
   ITEMS,
+  MONSTERS,
   SALE_TUNING,
   canEquip,
   forgedLevel,
@@ -103,6 +104,8 @@ export function ShopModal({
 }) {
   const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
   const materialName = ITEMS[stock.materialId]?.name ?? stock.materialId;
+  // 値札素材を落とすモンスター (店プールは全て単一モンスターの固有ドロップ)
+  const dropperName = MONSTERS.find((m) => m.drops.some((d) => d.item === stock.materialId))?.name;
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const piecesByItem = useMemo(() => {
@@ -166,7 +169,8 @@ export function ShopModal({
           <br />
           もちもの: パワー <strong style={{ color: 'var(--color-fg)' }}>{balance}</strong> / {materialName}{' '}
           <strong style={{ color: 'var(--color-fg)' }}>×{materials[stock.materialId] ?? 0}</strong>
-          {' '}({materialName}は このあたりのモンスターが おとす)
+          <br />
+          ({materialName}は このあたりの {dropperName ?? 'モンスター'}が おとす)
         </p>
         {/* live region は常設して中身を差し替える (条件付きマウントは初回読み上げが
             落ちることがある — レビュー指摘) */}
