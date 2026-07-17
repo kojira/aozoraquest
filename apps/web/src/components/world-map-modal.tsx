@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { WORLD_SIZE, terrainAt, worldOverlay, type Terrain, type Town } from '@aozoraquest/core';
+import { REGIONS_PER_SIDE, REGION_COUNT, REGION_SIZE, WORLD_SIZE, regionOf, terrainAt, worldOverlay, type Terrain, type Town } from '@aozoraquest/core';
 
 /**
  * 世界地図モーダル (docs/19 — 地図確認機能)。
  *
  * 「地図がないとどこに街があるのか全く分からない」(オーナー報告 2026-07-17、
- * 本番リリース必須要件 #3)。プレビュー期は世界全図をそのまま見せる
- * (W5 の「地図のかけら」はこの画面の開示範囲を絞る機構として後から重ねる)。
+ * 本番リリース必須要件 #3)。開示範囲は「ちずのかけら」(解禁済みリージョン、
+ * world/self の regions — docs/19 W5)。未解禁リージョンはフォグで覆い、
+ * その中の街・橋は描かずタップにも反応しない (全図が見えるとリリースできない —
+ * オーナー指摘 2026-07-18)。
  *
  * - 1024×1024 → 256×256 canvas。各ピクセルは 2 点サンプリングで水を優先
  *   (細い川がサンプル格子から漏れて「渡れそうな陸」に見える誤読を防ぐ)。
@@ -36,6 +38,9 @@ const TERRAIN_COLORS: Record<Terrain, string> = {
 
 const TOWN_DOT = '#f5d442';
 const BRIDGE_DOT = '#c98d5a';
+/** 未解禁リージョンのフォグ (地形色と紛れない暗色。dq-window の下地に馴染む) */
+const FOG_COLOR = '#23252e';
+const REGION_PX = REGION_SIZE / SAMPLE; // 32
 
 let cachedMap: ImageData | null = null;
 
@@ -46,6 +51,12 @@ function samplePixel(px: number, py: number): Terrain {
   if (t1 === 'water' || t1 === 'pond') return t1;
   if (t2 === 'water' || t2 === 'pond') return t2;
   return t1;
+}
+
+/** 解禁済みリージョンにある街だけ (フォグ内の街は描かない・タップさせない)。純関数 (テスト対象)。 */
+export function revealedTowns(towns: readonly Town[], regions: readonly number[]): Town[] {
+  const set = new Set(regions);
+  return towns.filter((t) => set.has(t.region));
 }
 
 /** 最寄りの街 (トーラス距離)。radiusWorld タイル以内、無ければ null。純関数 (テスト対象)。 */
@@ -63,18 +74,23 @@ export function nearestTown(wx: number, wy: number, towns: readonly Town[], radi
 export function WorldMapModal({
   x,
   y,
+  regions,
   onClose,
 }: {
   /** プレイヤーの現在地 (ワールド座標) */
   x: number;
   y: number;
+  /** ちずのかけらで解禁済みのリージョン */
+  regions: readonly number[];
   onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [picked, setPicked] = useState<Town | null>(null);
-  const [pickMiss, setPickMiss] = useState(false);
+  const [pickMiss, setPickMiss] = useState<'no-town' | 'fog' | null>(null);
   const overlay = useMemo(() => worldOverlay(), []);
+  const regionSet = useMemo(() => new Set(regions), [regions]);
+  const towns = useMemo(() => revealedTowns(overlay.towns, regions), [overlay, regions]);
 
   // Escape で閉じる (既存モーダル群と同じ規約) + 開いた時に「とじる」へフォーカス
   useEffect(() => {
@@ -93,16 +109,27 @@ export function WorldMapModal({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     let raf = 0;
+    // 未解禁リージョンをフォグで塗る。cachedMap は地形のみ (regions に依存させない —
+    // かけら入手のたびに 256×256 を再サンプリングしない) ので、putImageData の後に毎回かける
+    const drawFog = () => {
+      ctx.fillStyle = FOG_COLOR;
+      for (let r = 0; r < REGION_COUNT; r++) {
+        if (regionSet.has(r)) continue;
+        ctx.fillRect((r % REGIONS_PER_SIDE) * REGION_PX, Math.floor(r / REGIONS_PER_SIDE) * REGION_PX, REGION_PX, REGION_PX);
+      }
+    };
     const drawOverlays = () => {
+      drawFog();
       // 橋 (渡河点はこの地図の主目的のひとつ。1 タイル幅はサンプリングで消えるため明示描画)
       ctx.fillStyle = BRIDGE_DOT;
       for (const b of overlay.bridgeTiles) {
+        if (!regionSet.has(regionOf(b.x, b.y))) continue;
         ctx.fillRect(Math.round(b.x / SAMPLE) % MAP_PX, Math.round(b.y / SAMPLE) % MAP_PX, 2, 2);
       }
-      // 街 (金のドット)
+      // 街 (金のドット。フォグ内の街は revealedTowns で除外済み)
       ctx.fillStyle = TOWN_DOT;
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      for (const t of overlay.towns) {
+      for (const t of towns) {
         ctx.beginPath();
         ctx.arc(Math.round(t.x / SAMPLE) % MAP_PX, Math.round(t.y / SAMPLE) % MAP_PX, 2.2, 0, Math.PI * 2);
         ctx.fill();
@@ -139,6 +166,7 @@ export function WorldMapModal({
         }
       }
       ctx.putImageData(img, 0, 0); // 途中経過も見せる (上から順に現れる)
+      drawFog(); // 描画途中でも未解禁地方は見せない
       if (row < MAP_PX) {
         raf = requestAnimationFrame(chunk);
       } else {
@@ -148,7 +176,7 @@ export function WorldMapModal({
     };
     raf = requestAnimationFrame(chunk);
     return () => cancelAnimationFrame(raf);
-  }, [overlay]);
+  }, [overlay, towns, regionSet]);
 
   const pick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -156,9 +184,9 @@ export function WorldMapModal({
     const wy = ((e.clientY - rect.top) / rect.height) * WORLD_SIZE;
     // ヒット半径は画面 px を基準にワールド距離へ換算 (端末サイズに依存しない指相当)
     const radiusWorld = (PICK_RADIUS_CSS_PX / rect.width) * WORLD_SIZE;
-    const t = nearestTown(wx, wy, overlay.towns, radiusWorld);
+    const t = nearestTown(wx, wy, towns, radiusWorld);
     setPicked(t);
-    setPickMiss(!t);
+    setPickMiss(t ? null : regionSet.has(regionOf(Math.floor(wx), Math.floor(wy))) ? 'no-town' : 'fog');
   };
 
   return (
@@ -247,11 +275,14 @@ export function WorldMapModal({
         </div>
         <p style={{ margin: '0.5em 0 0', fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.6 }}>
           <span style={{ color: '#e8566a' }}>●</span> いまここ ({x}, {y}) /{' '}
-          <span style={{ color: TOWN_DOT, textShadow: '0 0 1px rgba(0,0,0,0.7)' }}>●</span> 街 ({overlay.towns.length}) /{' '}
-          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。地図をタップすると近くの街の名前が出ます。
+          <span style={{ color: TOWN_DOT, textShadow: '0 0 1px rgba(0,0,0,0.7)' }}>●</span> 街 ({towns.length}) /{' '}
+          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。くらいところは まだ ちずが ない (街に入ると ひろがる)。
+          ちずのかけら: {regions.length}/{REGION_COUNT} ちほう。
           {picked ? (
             <strong style={{ color: 'var(--color-fg)', marginLeft: '0.4em' }}>🏘 {picked.name}</strong>
-          ) : pickMiss ? (
+          ) : pickMiss === 'fog' ? (
+            <span style={{ marginLeft: '0.4em' }}>まだ ちずに ない ばしょだ。</span>
+          ) : pickMiss === 'no-town' ? (
             <span style={{ marginLeft: '0.4em' }}>ちかくに 街は ない。</span>
           ) : (
             <span style={{ marginLeft: '0.4em' }}>はじまりの街: {overlay.spawn.name}</span>

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  regionsAround,
   ALL_WAVELENGTHS,
   WORLD_SIZE,
   REGION_COUNT,
@@ -280,5 +281,23 @@ describe('terrainAt の網羅性', () => {
     for (const t of ['plains', 'grove', 'forest', 'pond', 'water', 'mountain', 'town', 'bridge'] as const) {
       expect(found.has(t)).toBe(true);
     }
+  });
+});
+
+describe('regionsAround (ちずのかけらの開示範囲)', () => {
+  it('中央のリージョンは 3×3 の 9 リージョンを返す (昇順・重複なし)', () => {
+    // region 9 = (rx=1, ry=1): 端に触れないので wrap なしの素直な 3×3
+    expect(regionsAround(9)).toEqual([0, 1, 2, 8, 9, 10, 16, 17, 18]);
+  });
+  it('角のリージョンはトーラスで wrap する', () => {
+    // region 0 = (0,0): 左と上は反対側 (rx=7, ry=7) に回り込む
+    const got = regionsAround(0);
+    expect(got.length).toBe(9);
+    expect(got).toContain(63); // (7,7)
+    expect(got).toContain(7); // (7,0)
+    expect(got).toContain(56); // (0,7)
+  });
+  it('全リージョンで常に 9 件 (縮退しない)', () => {
+    for (let r = 0; r < 64; r++) expect(regionsAround(r).length).toBe(9);
   });
 });

@@ -10,7 +10,7 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { worldOverlay, wrap, isWalkable, terrainAt, townAt } from '@aozoraquest/core';
+import { REGION_COUNT, regionOf, regionsAround, worldOverlay, wrap, isWalkable, terrainAt, townAt } from '@aozoraquest/core';
 import { getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 
@@ -23,6 +23,11 @@ export interface WorldState {
   mp: number | null;
   /** 最後に立ち寄った街 (敗北時の帰還先)。null = まだ街に入っていない (spawn 扱い)。 */
   lastTown: { x: number; y: number } | null;
+  /** ちずのかけらで解禁済みのリージョン (docs/19 W5)。世界地図はこの範囲だけ開示。
+   *  街に入るとその街の 3×3 が加わる。旧レコード (フィールドなし) は lastTown
+   *  (無ければ現在地) の 3×3 でシード = 既存プレイヤーが真っ暗な地図から
+   *  始まらないための移行措置。 */
+  regions: number[];
   /** ロード時に歩行不能地形から街へ退避した (UI が一言出す) */
   relocated?: boolean;
   updatedAt: string;
@@ -35,6 +40,7 @@ interface WorldRecordShape {
   mp?: unknown;
   lastTownX?: unknown;
   lastTownY?: unknown;
+  regions?: unknown;
   updatedAt?: unknown;
 }
 
@@ -46,6 +52,14 @@ interface WorldRecordShape {
  */
 export async function loadWorldState(agent: Agent, did: string): Promise<WorldState> {
   const rec = await getRecord<WorldRecordShape>(agent, did, COL.world, 'self');
+  // regions は座標より先にパースする — x/y が壊れて spawn に倒す場合でも、
+  // 蓄積型のかけら進捗まで一緒に破棄しない (レビュー指摘)
+  // 空配列 (全要素 invalid 含む) は missing 扱いでシードに落とす — 万一 [] が
+  // 保存されると「全面フォグ・自己修復なし」が永続するため
+  const parsed = rec && Array.isArray(rec.regions)
+    ? [...new Set(rec.regions.filter((r): r is number => typeof r === 'number' && Number.isInteger(r) && r >= 0 && r < REGION_COUNT))].sort((a, b) => a - b)
+    : null;
+  const rawRegions = parsed && parsed.length > 0 ? parsed : null;
   if (rec && typeof rec.x === 'number' && Number.isFinite(rec.x) && typeof rec.y === 'number' && Number.isFinite(rec.y)) {
     // lastTown は「今も街であること」を検証してから使う (ワールド再生成で街が
     // 動く/壊れたレコードで水上へ退避すると、脱出手段なしの詰みになる —
@@ -69,10 +83,18 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
         hp: null,
         mp: null,
         lastTown,
+        // 退避先の 3×3 は常に union (置かれた街が地図上フォグに浮くのを防ぐ)
+        regions: [...new Set([...(rawRegions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
         relocated: true,
         updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
       };
     }
+    // 移行シードは lastTown と現在地の両方の 3×3 の和 (どちらも実際に到達した
+    // 場所。lastTown だけだと遠征中のプレイヤーの「いまここ」がフォグに浮く)
+    const seed = [...new Set([
+      ...regionsAround(regionOf(px, py)),
+      ...(lastTown ? regionsAround(regionOf(lastTown.x, lastTown.y)) : []),
+    ])].sort((a, b) => a - b);
     return {
       x: px,
       y: py,
@@ -80,17 +102,22 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
       hp: typeof rec.hp === 'number' && Number.isFinite(rec.hp) ? Math.max(1, Math.floor(rec.hp)) : null,
       mp: typeof rec.mp === 'number' && Number.isFinite(rec.mp) ? Math.max(0, Math.floor(rec.mp)) : null,
       lastTown,
+      regions: rawRegions ?? seed,
       updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
     };
   }
   const spawn = worldOverlay().spawn;
-  return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, updatedAt: '' };
+  // 新規: はじまりの街の地方一帯だけ開示された状態から (「開始の街で最初に
+  // 必ずもらえる」のオーナー案の interim 実装。W6e でギルドが入手元になる)。
+  // x/y が壊れて spawn に倒す場合も、パースできた regions は union で保全する
+  const seeded = [...new Set([...(rawRegions ?? []), ...regionsAround(spawn.region)])].sort((a, b) => a - b);
+  return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, regions: seeded, updatedAt: '' };
 }
 
 /** 状態を保存する。失敗は warn して swallow (歩行体験を止めない)。 */
 export async function saveWorldState(
   agent: Agent,
-  state: { x: number; y: number; hp: number | null; mp: number | null; lastTown: { x: number; y: number } | null },
+  state: { x: number; y: number; hp: number | null; mp: number | null; lastTown: { x: number; y: number } | null; regions: number[] },
 ): Promise<void> {
   try {
     await putRecord(agent, COL.world, 'self', {
@@ -99,6 +126,7 @@ export async function saveWorldState(
       ...(state.hp !== null ? { hp: state.hp } : {}),
       ...(state.mp !== null ? { mp: state.mp } : {}),
       ...(state.lastTown ? { lastTownX: state.lastTown.x, lastTownY: state.lastTown.y } : {}),
+      regions: state.regions,
       updatedAt: new Date().toISOString(),
     });
   } catch (e) {

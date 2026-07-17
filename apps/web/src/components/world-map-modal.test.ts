@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nearestTown } from './world-map-modal';
+import { revealedTowns, nearestTown } from './world-map-modal';
 import type { Town } from '@aozoraquest/core';
 
 const towns: Town[] = [
@@ -19,5 +19,20 @@ describe('nearestTown (トーラス距離 + 半径)', () => {
   it('トーラスの継ぎ目をまたいで判定する', () => {
     // (2, 10) から (1020, 10) はラップ距離 6
     expect(nearestTown(2, 10, towns, 10)?.name).toBe('はしっこ');
+  });
+});
+
+describe('revealedTowns (ちずのかけらの開示フィルタ)', () => {
+  it('解禁済みリージョンの街だけ返す', () => {
+    const towns = [
+      { x: 10, y: 10, region: 0, name: 'a' },
+      { x: 200, y: 10, region: 1, name: 'b' },
+      { x: 10, y: 200, region: 8, name: 'c' },
+    ] as any[];
+    expect(revealedTowns(towns, [0, 8]).map((t) => t.name)).toEqual(['a', 'c']);
+  });
+  it('かけらゼロなら街もゼロ (全図が見える回帰を塞ぐ)', () => {
+    const towns = [{ x: 10, y: 10, region: 0, name: 'a' }] as any[];
+    expect(revealedTowns(towns, [])).toEqual([]);
   });
 });
