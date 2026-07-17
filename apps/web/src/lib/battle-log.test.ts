@@ -146,6 +146,21 @@ describe('loadBattleStats', () => {
     expect(s2.materials['sky-dew']).toBeUndefined(); // 使いすぎは 0 止め
   });
 
+  test('敗北の materialsLost は在庫から差し引かれる (勝利レコードの値は無視)', async () => {
+    const s = await loadBattleStats(
+      makeAgent([
+        { outcome: 'win', tier: 1, drops: ['slime-drop', 'slime-drop', 'herb'] },
+        { outcome: 'lose', tier: 1, materialsLost: ['slime-drop', 'herb'] },
+        // 勝利レコードに materialsLost が紛れても数えない (敗北のみ)
+        { outcome: 'win', tier: 1, drops: ['bat-wing'], materialsLost: ['bat-wing'] },
+      ] as any),
+      'did:test',
+    );
+    expect(s.materials['slime-drop']).toBe(1); // 2 獲得 − 1 ロス
+    expect(s.materials['herb']).toBeUndefined(); // 1 獲得 − 1 ロス
+    expect(s.materials['bat-wing']).toBe(1); // win の materialsLost は無視
+  });
+
   test('outcome 欠落は lose 扱い (中断された仮レコード = 棄権)', async () => {
     const s = await loadBattleStats(makeAgent([{ tier: 1 }]), 'did:test');
     expect(s.losses).toBe(1);

@@ -100,8 +100,10 @@
 ## 記録 (PDS)
 
 - `app.aozoraquest.battle` (tid rkey): 1 戦 1 レコード
-  `{ seed, tier, monsterId, outcome, turns, drops, herbsUsed, tonicsUsed, at, via }` —
-  消費の監査 + 戦績/称号/素材の集計ソース。outcome は win/lose/draw/fled。
+  `{ seed, tier, monsterId, outcome, turns, drops, herbsUsed, tonicsUsed,
+  materialsLost, at, via }` — 消費の監査 + 戦績/称号/素材の集計ソース。outcome は
+  win/lose/draw/fled。materialsLost はワールドの敗北ペナルティ (docs/19) で、
+  仮レコード時点で確定値を書く (途中離脱 = 棄権でもペナルティが効く)。
 - `app.aozoraquest.power/self`: `battles` カウンタを増分 (bumpPower 拡張)。
 - 集計 (`wins/losses/bestStreak/tier3Wins`) から称号 (`TITLES`) を導出。
 
