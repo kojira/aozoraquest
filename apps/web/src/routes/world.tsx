@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
@@ -188,27 +188,26 @@ export function World() {
   const archetype = diag?.archetype ?? null;
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
-  const combat = archetype
-    ? playerCombatant(
+  // combat (装備込み) と combatBase (装備なし) は gear 引数だけが違う。base 引数を
+  // 共有タプルにして「そうび +N = combat − combatBase」の不変条件を構造的に守る
+  // (5 行コピペだと片方の base 導出変更で内訳が黙って壊れる — レビュー ★★)
+  const baseArgs = archetype
+    ? ([
         archetype,
         jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
         diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
-        undefined,
-        resolvedGear?.selection,
-      )
+      ] as const)
     : null;
-  // 装備なしの素の値 (つよさ画面の「そうび +N」内訳用)
-  const combatBase = archetype
-    ? playerCombatant(
-        archetype,
-        jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
-        playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
-        '',
-        diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
-      )
-    : null;
+  const combat = baseArgs ? playerCombatant(...baseArgs, undefined, resolvedGear?.selection) : null;
+  // 装備なしの素の値 (つよさ画面の「そうび +N」内訳用)。つよさ画面を開いた時だけ
+  // 計算する (World は移動/HP バー更新で頻繁に再レンダーする — レビュー ★)
+  const combatBase = useMemo(
+    () => (statusOpen && baseArgs ? playerCombatant(...baseArgs) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- baseArgs は下記 diag/archetype で代表
+    [statusOpen, archetype, diag?.jobLevel?.xp, diag?.playerLevel?.xp, diag?.rpgStats],
+  );
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
 

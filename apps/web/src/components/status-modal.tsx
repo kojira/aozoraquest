@@ -130,67 +130,71 @@ export function StatusModal({
             </div>
           </div>
 
-          {/* HP/MP + 戦闘ステータス (DQ の 2 列風) */}
-          <div
-            style={{
-              border: '2px solid var(--color-border)',
-              borderRadius: 4,
-              padding: '0.5em 0.7em',
-              fontSize: '0.9em',
-              lineHeight: 1.9,
-            }}
-          >
-            <StatRow label="HP" value={`${hp ?? combat.maxHp} / ${combat.maxHp}`} />
-            <StatRow label="MP" value={`${mp ?? combat.maxMp} / ${combat.maxMp}`} />
+          {/* HP/MP — 主役なので大きめ・太字で立てる (レビュー ★)。装備で最大値が
+              上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
+          <Section>
+            <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
+            <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
+          </Section>
+
+          {/* 戦闘ステータス */}
+          <Section title="せんとうのうりょく">
             {STAT_ROWS.map(({ key, label }) => {
               const bonus = combat[key] - combatBase[key];
               return (
                 <StatRow
                   key={key}
                   label={label}
-                  value={String(combat[key])}
+                  value={combat[key]}
                   note={bonus !== 0 ? `そうび ${bonus > 0 ? '+' : ''}${bonus}` : undefined}
                 />
               );
             })}
-          </div>
+          </Section>
 
           {/* とくぎ / とくせい */}
-          <div style={{ fontSize: '0.82em', margin: '0.6em 0 0', lineHeight: 1.7 }}>
-            <div>
-              とくぎ: <strong>{skill.name}</strong>{' '}
-              <span style={{ color: 'var(--color-muted)' }}>({SKILL_KIND_LABELS[skill.kind]})</span>
-            </div>
-            {mpTrait.traitName && (
+          <Section title="とくぎ・とくせい">
+            <div style={{ lineHeight: 1.8 }}>
               <div>
-                とくせい: <strong>{mpTrait.traitName}</strong>{' '}
-                <span style={{ color: 'var(--color-muted)' }}>
-                  (たたかう MP +{mpTrait.attackGain} / ぼうぎょ MP +{mpTrait.guardGain})
-                </span>
+                とくぎ: <strong>{skill.name}</strong>{' '}
+                <span style={{ color: 'var(--color-muted)' }}>({SKILL_KIND_LABELS[skill.kind]})</span>
               </div>
-            )}
-          </div>
+              {mpTrait.traitName ? (
+                <div>
+                  とくせい: <strong>{mpTrait.traitName}</strong>{' '}
+                  <span style={{ color: 'var(--color-muted)' }}>
+                    (たたかう MP +{mpTrait.attackGain} / ぼうぎょ MP +{mpTrait.guardGain})
+                  </span>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--color-muted)' }}>とくせい: なし</div>
+              )}
+            </div>
+          </Section>
 
           {/* そうび */}
-          <div style={{ fontSize: '0.82em', margin: '0.5em 0 0', lineHeight: 1.7 }}>
-            {(['weapon', 'armor', 'charm'] as const).map((slot) => {
-              const piece = gearPieces[slot];
-              const def = piece ? EQUIPMENT_BY_ID[piece.itemId] : undefined;
-              return (
-                <div key={slot}>
-                  {SLOT_LABELS[slot]}: {piece && def ? <strong>{leveledName(def, piece.level)}</strong> : <span style={{ color: 'var(--color-muted)' }}>なし</span>}
-                </div>
-              );
-            })}
-          </div>
+          <Section title="そうび">
+            <div style={{ lineHeight: 1.8 }}>
+              {(['weapon', 'armor', 'charm'] as const).map((slot) => {
+                const piece = gearPieces[slot];
+                const def = piece ? EQUIPMENT_BY_ID[piece.itemId] : undefined;
+                return (
+                  <div key={slot} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em' }}>
+                    <span style={{ color: 'var(--color-muted)' }}>{SLOT_LABELS[slot]}</span>
+                    {piece && def ? <strong>{leveledName(def, piece.level)}</strong> : <span style={{ color: 'var(--color-muted)' }}>なし</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
 
           {/* つぎのレベルまで */}
           <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
             <div>
               {jobNext.next > 0 ? (
-                <>ジョブ Lv {jobNext.level + 1} まで あと <span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
+                <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1} まで あと <span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
               ) : (
-                <>ジョブ Lv はさいだいに たっした!</>
+                <>{jobDisplayName(archetype, 'default')} Lv はさいだいに たっした!</>
               )}
             </div>
             <div>
@@ -207,13 +211,56 @@ export function StatusModal({
   );
 }
 
-function StatRow({ label, value, note }: { label: string; value: string; note?: string | undefined }) {
+/** DQ の「つよさ」らしい枠付きセクション (枠の連なりを最後まで通す — レビュー ★★) */
+function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em' }}>
+    <div
+      style={{
+        border: '2px solid var(--color-border)',
+        borderRadius: 4,
+        padding: '0.4em 0.7em 0.5em',
+        marginTop: 8,
+        fontSize: '0.85em',
+      }}
+    >
+      {title && (
+        <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', letterSpacing: '0.04em', marginBottom: 2 }}>{title}</div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** HP/MP の主役行 (大きめ + バー) */
+function HeroRow({ label, value, max, bonus, color }: { label: string; value: number; max: number; bonus: number; color: string }) {
+  const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  return (
+    <div style={{ margin: '0.15em 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontWeight: 700, fontSize: '1.05em' }}>{label}</span>
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, fontSize: '1.05em', whiteSpace: 'nowrap' }}>
+          {value} <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>/ {max}</span>
+          {bonus !== 0 && (
+            <span style={{ fontFamily: 'inherit', fontSize: '0.68em', fontWeight: 400, color: 'var(--color-accent)', marginLeft: '0.5em' }}>
+              (そうび {bonus > 0 ? '+' : ''}{bonus})
+            </span>
+          )}
+        </span>
+      </div>
+      <div style={{ height: 6, background: 'var(--color-track-bg)', borderRadius: 3, overflow: 'hidden', marginTop: 2 }}>
+        <div style={{ width: `${ratio * 100}%`, height: '100%', background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function StatRow({ label, value, note }: { label: string; value: number; note?: string | undefined }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em', lineHeight: 1.9 }}>
       <span>{label}</span>
-      <span style={{ fontFamily: 'ui-monospace, monospace' }}>
-        {note && <span style={{ fontFamily: 'inherit', fontSize: '0.8em', color: 'var(--color-accent)', marginRight: '0.6em' }}>{note}</span>}
+      <span style={{ fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap' }}>
         {value}
+        {note && <span style={{ fontFamily: 'inherit', fontSize: '0.78em', color: 'var(--color-accent)', marginLeft: '0.5em' }}>({note})</span>}
       </span>
     </div>
   );
