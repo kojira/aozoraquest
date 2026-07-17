@@ -34,6 +34,15 @@ export const BATTLE_TUNING = {
   /** レベルによるステータス補正 = 1 + (jobLv-1)*jobLevelScale + (playerLv-1)*playerLevelScale */
   jobLevelScale: 0.04,
   playerLevelScale: 0.015,
+  /** プレイヤーの全ステータスに加わる平坦なレベル成長 (+flatLevelGain × (playerLv-1))。
+   *  乗算補正だけだと低い値は低いままで「弱いジョブがレベルでちゃんと強くならない」
+   *  (オーナー指摘 2026-07-17)。加算成長は低ステータスほど相対的に効く。 */
+  flatLevelGain: 0.25,
+  /** 個人 rpgStats とジョブ基準値のブレンド比 (0 = ジョブのみ / 1 = 個人のみ)。
+   *  診断は min-max 正規化で全員が極端プロフィールになるため、個人値 100% だと
+   *  atk 0〜80 のレンジになり勝率が 0〜100% に割れる (issue #279 実測)。
+   *  50:50 でジョブの型を保ちつつ個人の傾きを乗せる。 */
+  baseStatsPersonalWeight: 0.5,
   /** ダメージ = atk * roll(0.85..1.15) * damageScale / (damageSoften + def) */
   damageScale: 26,
   damageSoften: 14,
@@ -133,15 +142,51 @@ export interface JobSkill {
 }
 
 /** ジョブの支配ステータス (最大値の軸) から特技種を決める。
- *  同値タイは先勝ち (statOrder 順)。現状タイは artist の def=luk=26 のみで、
- *  parry になる (テストで固定)。 */
+ *  同値タイは後勝ち (statOrder 逆順)。現状タイは artist の def=luk=26 のみで、
+ *  gamble になる (テストで固定)。技名「色彩の閃き」の趣も gamble であり、
+ *  先勝ち (parry) だと防御空打ちしかできず tier3 で最弱に沈む (sim 実測 28%)。 */
 export function skillForJob(archetype: Archetype): JobSkill {
   const stats = JOBS_BY_ID[archetype].stats;
   let maxI = 0;
   for (let i = 1; i < stats.length; i++) {
-    if (stats[i]! > stats[maxI]!) maxI = i;
+    if (stats[i]! >= stats[maxI]!) maxI = i;
   }
   return { kind: STAT_TO_SKILL[maxI]!, name: JOB_SKILL_NAMES[archetype] };
+}
+
+/** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
+ *  強化して初期で弱いジョブに付ける。能力がジョブに合っているかも大事」)。
+ *  基本値は たたかう +1 / ぼうぎょ +2 (全員 —「たたかう」の存在意義は保つ)。
+ *  素の火力が低く特技依存になるジョブ (luk/agi 型) に、世界観に沿った特性名で
+ *  回復量ボーナスを与える。値は scripts/sim-battle-balance.ts の実測で調整
+ *  (Lv1 tier1 5 連戦生存率が全ジョブ 60〜100% のバンドに入る水準)。 */
+export interface MpTrait {
+  /** 特性名 (UI 表示用)。undefined = 特性なし (基本値) */
+  name?: string;
+  attackGain: number;
+  guardGain: number;
+}
+
+export const JOB_MP_TRAITS: Partial<Record<Archetype, MpTrait>> = {
+  bard: { name: '歌の余韻', attackGain: 3, guardGain: 4 },
+  paladin: { name: '祈りの加護', attackGain: 3, guardGain: 4 },
+  miko: { name: '神楽の集中', attackGain: 2, guardGain: 3 },
+  poet: { name: '心晴の呼吸', attackGain: 2, guardGain: 3 },
+  explorer: { name: '踏破の勘', attackGain: 2, guardGain: 3 },
+  ninja: { name: '印の呼吸', attackGain: 2, guardGain: 3 },
+  artist: { name: '色彩の集中', attackGain: 2, guardGain: 3 },
+};
+
+/** ジョブの MP 回復量 (特性がなければ基本値)。 */
+export function mpGainsFor(archetype: Archetype): { attackGain: number; guardGain: number; traitName?: string } {
+  const trait = JOB_MP_TRAITS[archetype];
+  if (!trait) return { attackGain: BATTLE_TUNING.mpAttackGain, guardGain: BATTLE_TUNING.mpGuardGain };
+  const r: { attackGain: number; guardGain: number; traitName?: string } = {
+    attackGain: trait.attackGain,
+    guardGain: trait.guardGain,
+  };
+  if (trait.name) r.traitName = trait.name;
+  return r;
 }
 
 export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
@@ -219,9 +264,24 @@ export function playerCombatant(
   baseStats?: StatArray,
 ): Combatant {
   const t = BATTLE_TUNING;
-  const base = baseStats ?? JOBS_BY_ID[archetype].stats;
+  const job = JOBS_BY_ID[archetype].stats;
+  // 個人 rpgStats はジョブ基準値とブレンドして使う (baseStatsPersonalWeight)。
+  // 個人値 100% は極端プロフィールで勝率 0〜100% に割れる (issue #279)。
+  const w = t.baseStatsPersonalWeight;
+  const base: StatArray = baseStats
+    ? [
+        job[0] + (baseStats[0] - job[0]) * w,
+        job[1] + (baseStats[1] - job[1]) * w,
+        job[2] + (baseStats[2] - job[2]) * w,
+        job[3] + (baseStats[3] - job[3]) * w,
+        job[4] + (baseStats[4] - job[4]) * w,
+      ]
+    : job;
   const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  return fromStats(displayName, base, factor, playerLevel);
+  // 平坦なレベル成長 (プレイヤーのみ)。低ステータスほど相対的に効く
+  const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
+  const grown: StatArray = [base[0] + flat, base[1] + flat, base[2] + flat, base[3] + flat, base[4] + flat];
+  return fromStats(displayName, grown, factor, playerLevel);
 }
 
 // StatVector → StatArray 変換は jobs.ts の statVectorToArray を使う (重複定義しない)。
@@ -313,9 +373,12 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
 /** tier に応じたモンスター強化倍率。プレイヤーのレベル補正と釣り合いを取る。 */
 function monsterLevelFactor(tier: 1 | 2 | 3, playerLevel: number): number {
   const t = BATTLE_TUNING;
-  // プレイヤーと同じ土俵 + tier による上乗せ (tier1 は少し弱め)
+  // プレイヤーと同じ土俵 + tier による上乗せ (tier1 は明確に弱め)。
+  // tier1 0.85 では Lv1 の 5 連戦生存率が中央値 ~76% で「序盤の敵が強すぎる」
+  // (オーナー実感 2026-07-17)。0.72 で中央値 ~90% / 最弱ジョブ ~75% に調整
+  // (scripts/sim-battle-balance.ts 実測)。
   const base = 1 + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  const tierBoost = tier === 1 ? 0.85 : tier === 2 ? 1.05 : 1.3;
+  const tierBoost = tier === 1 ? 0.72 : tier === 2 ? 1.1 : 1.42;
   return base * tierBoost;
 }
 
@@ -362,6 +425,11 @@ export interface BattleState {
   tonics: number;
   /** このバトルで使ったそらのしずく数 (記録用 → 在庫から差し引く)。 */
   tonicsUsed: number;
+  /** たたかう / ぼうぎょ の MP 回復量 (ジョブ特性 JOB_MP_TRAITS 込み。UI 表示用にも使う) */
+  mpAttackGain: number;
+  mpGuardGain: number;
+  /** MP 特性名 (特性なしジョブは undefined) */
+  mpTraitName?: string;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
 }
@@ -393,6 +461,7 @@ export function startBattle(
     player.mp = Math.max(0, Math.min(player.maxMp, Math.floor(carry.mp)));
   }
   const { def, combatant } = summonMonster(tier, playerLevel, seed);
+  const gains = mpGainsFor(archetype);
   return {
     seed,
     turn: 0,
@@ -405,11 +474,17 @@ export function startBattle(
     herbsUsed: 0,
     tonics: Math.max(0, Math.min(BATTLE_TUNING.tonicCarryMax, Math.floor(extras?.tonics ?? 0))),
     tonicsUsed: 0,
+    mpAttackGain: gains.attackGain,
+    mpGuardGain: gains.guardGain,
+    ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
     lastEvents: [],
   };
 }
 
 interface AttackOptions {
+  /** 攻撃力の基準値を上書き (特技を支配ステータス基準にする: gamble=luk, flurry=agi)。
+   *  素の atk が低い luk/agi 型ジョブでも「ジョブに合った能力」で火力が出るように。 */
+  atkOverride?: number;
   /** ダメージ倍率 */
   power?: number;
   /** 命中補正 (負で外れやすく) */
@@ -446,7 +521,7 @@ function doAttack(
     }
   }
 
-  const atkValue = opts.useInt ? attacker.int : attacker.atk;
+  const atkValue = opts.atkOverride ?? (opts.useInt ? attacker.int : attacker.atk);
   const defValue = defender.def * (opts.defFactor ?? 1);
   const roll = 0.85 + rng() * 0.3;
   let dmg = (atkValue * roll * t.damageScale * (opts.power ?? 1)) / (t.damageSoften + defValue);
@@ -479,7 +554,9 @@ function doAttack(
   if (!fatal && defender.parrying) {
     defender.parrying = false;
     const counterActor = actor === 'player' ? 'monster' : 'player';
-    doAttack(defender, attacker, rng, events, counterActor, { power: 1.2, label: 'はんげき' });
+    // 反撃は支配ステータス (def) 基準 — 守りの固さがそのまま反撃の重さになる
+    // (見切り職は atk が低く、atk 基準だと tier3 で火力が出ずジリ貧になる)
+    doAttack(defender, attacker, rng, events, counterActor, { power: 1.2, atkOverride: defender.def, label: 'はんげき' });
   }
 }
 
@@ -506,9 +583,10 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
       // 宣言は resolveTurn 冒頭 (行動順に関係なく効くように)。ここは no-op。
       break;
     case 'flurry':
-      doAttack(player, monster, rng, events, 'player', { power: 0.65, label: playerSkill.name });
+      // 支配ステータス (agi) 基準 — 素早さで手数を出すジョブの「らしさ」と火力を一致させる
+      doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: playerSkill.name });
       if (state.monster.hp > 0) {
-        doAttack(player, monster, rng, events, 'player', { power: 0.65, label: playerSkill.name });
+        doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: playerSkill.name });
       }
       break;
     case 'spell':
@@ -517,10 +595,11 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
       doAttack(player, monster, rng, events, 'player', { power: 1.0, useInt: true, defFactor: 0.5, label: playerSkill.name });
       break;
     case 'gamble': {
-      // 0〜2.6 倍。luk が高いほど下振れしにくい。
+      // 0〜2.6 倍。luk が高いほど下振れしにくい。基準値も支配ステータス (luk) —
+      // atk 7〜9 の luk 型ジョブが「運で殴る」ジョブとして成立するように。
       const floor = Math.min(0.6, player.luk * 0.012);
       const mult = floor + rng() * (2.6 - floor);
-      doAttack(player, monster, rng, events, 'player', { power: mult, label: playerSkill.name });
+      doAttack(player, monster, rng, events, 'player', { power: mult, atkOverride: player.luk, label: playerSkill.name });
       break;
     }
   }
@@ -588,8 +667,11 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     state.player.guarding = true;
     // 翌ターンまで相手の動きを読める (回避ボーナス)。このターン(1) + 次ターン(1) = 2。
     state.player.focus = 2;
-    state.player.mp = Math.min(state.player.maxMp, state.player.mp + t.mpGuardGain);
-    events.push({ actor: 'player', text: `${state.player.name}はぼうぎょして息を整えた。(MP +${t.mpGuardGain})` });
+    state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpGuardGain);
+    events.push({
+      actor: 'player',
+      text: `${state.player.name}はぼうぎょして息を整えた。(${state.mpTraitName ? `${state.mpTraitName}: ` : ''}MP +${state.mpGuardGain})`,
+    });
   }
   if (cmd === 'skill' && state.playerSkill.kind === 'parry') {
     state.player.parrying = true;
@@ -610,7 +692,7 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
-        state.player.mp = Math.min(state.player.maxMp, state.player.mp + t.mpAttackGain);
+        state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
       } else if (cmd === 'skill') {
         playerSkillAction(state, rng, events);
       } else if (cmd === 'herb') {

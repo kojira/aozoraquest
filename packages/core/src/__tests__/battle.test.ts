@@ -52,7 +52,7 @@ describe('skillForJob', () => {
       const skill = skillForJob(job.id);
       expect(skill.name).toBe(JOB_SKILL_NAMES[job.id]);
       let maxI = 0;
-      for (let i = 1; i < job.stats.length; i++) if (job.stats[i]! > job.stats[maxI]!) maxI = i;
+      for (let i = 1; i < job.stats.length; i++) if (job.stats[i]! >= job.stats[maxI]!) maxI = i;
       expect(skill.kind).toBe(kinds[maxI]);
     }
   });
@@ -222,8 +222,10 @@ describe('resolveTurn', () => {
     expect(skillWins).toBeGreaterThan(attackWins);
   });
 
-  it('artist の同値タイ (def=luk=26) は先勝ちで parry に固定', () => {
-    expect(skillForJob('artist').kind).toBe('parry');
+  it('artist の同値タイ (def=luk=26) は後勝ちで gamble に固定', () => {
+    // 技名「色彩の閃き」の趣に合わせて gamble。parry だと防御空打ちしか
+    // できず tier3 で全ジョブ最弱に沈む (sim 実測 28% → 80%)
+    expect(skillForJob('artist').kind).toBe('gamble');
   });
 
   it('ため予告の次ターンは必ずため攻撃 (または決着済み)', () => {
@@ -432,7 +434,9 @@ describe('resolveTurn', () => {
     };
     let wins = 0;
     for (let seed = 0; seed < 100; seed++) if (best(seed) === 'win') wins++;
-    expect(wins).toBeLessThan(90);
+    // 実測 90.3% (400 seed)。100 seed の標本ノイズ (±3) を見込んだ上限。
+    // 0.4/3 個時代の 97.6% (作業化) には戻さない
+    expect(wins).toBeLessThan(94);
     // やくそうが「意味はある」ことも同時に固定 (ガードのみ戦略より勝てる)
     let guardOnlyWins = 0;
     for (let seed = 0; seed < 100; seed++) {
@@ -443,6 +447,81 @@ describe('resolveTurn', () => {
       if (s.outcome === 'win') guardOnlyWins++;
     }
     expect(wins).toBeGreaterThan(guardOnlyWins);
+  });
+});
+
+describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強すぎる」への調整を固定)', () => {
+  /** 現実的な操作: ため予告に防御 (見切り職は構え)、HP45% 未満でやくそう、MP があれば特技 */
+  const play = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3, seed: number) => {
+    let s = startBattle(job, jobLv, playerLv, 'x', tier, seed);
+    const isParry = s.playerSkill.kind === 'parry';
+    for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+      const p = s.player;
+      const cmd = s.monster.charging
+        ? isParry && p.mp >= BATTLE_TUNING.skillMpCost
+          ? 'skill'
+          : 'guard'
+        : !isParry && p.mp >= BATTLE_TUNING.skillMpCost
+          ? 'skill'
+          : 'attack';
+      s = resolveTurn(s, cmd);
+    }
+    return s.outcome;
+  };
+  const winRate = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3) => {
+    let wins = 0;
+    for (let seed = 0; seed < 100; seed++) if (play(job, jobLv, playerLv, tier, seed) === 'win') wins++;
+    return wins;
+  };
+
+  it('Lv1 tier1: 全ジョブが単戦 80% 以上勝てる (はじまりの街近辺で詰まない)', () => {
+    for (const job of JOBS) {
+      expect(winRate(job.id, 1, 1, 1), job.id).toBeGreaterThanOrEqual(80);
+    }
+  });
+
+  it('luk/agi 型の弱ジョブがレベルでちゃんと強くなる (bard/ninja の tier2 中位レベル)', () => {
+    // 旧仕様 (特技 atk 基準 + MP 特性なし) では bard の tier2 は 2 割前後だった。
+    // 支配ステータス基準 + MP 特性 + 平坦レベル成長でまともに戦えることを固定
+    expect(winRate('bard', 5, 8, 2)).toBeGreaterThanOrEqual(60);
+    expect(winRate('ninja', 5, 8, 2)).toBeGreaterThanOrEqual(60);
+  });
+
+  it('MP 特性 (JOB_MP_TRAITS): 弱ジョブは回復量ボーナス + 特性名を持ち、state に載る', () => {
+    const bard = startBattle('bard', 1, 1, 'x', 1, 1);
+    expect(bard.mpAttackGain).toBe(3);
+    expect(bard.mpGuardGain).toBe(4);
+    expect(bard.mpTraitName).toBe('歌の余韻');
+    const warrior = startBattle('warrior', 1, 1, 'x', 1, 1);
+    expect(warrior.mpAttackGain).toBe(BATTLE_TUNING.mpAttackGain);
+    expect(warrior.mpGuardGain).toBe(BATTLE_TUNING.mpGuardGain);
+    expect(warrior.mpTraitName).toBeUndefined();
+    // たたかう で実際に特性分回復する
+    let s = startBattle('bard', 1, 1, 'x', 1, 5);
+    s = resolveTurn(s, 'skill'); // MP -4
+    if (s.outcome === 'ongoing') {
+      const before = s.player.mp;
+      const next = resolveTurn(s, 'attack');
+      if (next.outcome === 'ongoing' || next.outcome === 'win') {
+        expect(next.player.mp).toBe(Math.min(next.player.maxMp, before + 3));
+      }
+    }
+  });
+
+  it('個人 rpgStats はジョブ基準値と 50:50 ブレンド (極端ビルドの 0%/100% 割れ防止)', () => {
+    // 極端な個人値 (atk 4) でも warrior の基底 (atk 25) と混ざって半分までしか落ちない
+    const extreme = playerCombatant('warrior', 1, 1, 'x', [4, 7, 40, 7, 42]);
+    const jobOnly = playerCombatant('warrior', 1, 1, 'x');
+    expect(extreme.atk).toBeGreaterThanOrEqual(Math.floor((25 + 4) / 2));
+    expect(extreme.atk).toBeLessThan(jobOnly.atk);
+    expect(extreme.agi).toBeGreaterThan(jobOnly.agi); // 高い個人値は反映される
+  });
+
+  it('平坦レベル成長: 低ステータスほど相対的に伸びる (bard の atk が Lv で改善)', () => {
+    const lv1 = playerCombatant('bard', 1, 1, 'x');
+    const lv20 = playerCombatant('bard', 1, 20, 'x');
+    // 乗算のみなら atk7 → 9 程度。加算成長込みで明確に伸びることを固定
+    expect(lv20.atk).toBeGreaterThanOrEqual(lv1.atk + 5);
   });
 });
 
