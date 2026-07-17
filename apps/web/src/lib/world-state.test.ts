@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import { REGION_COUNT, regionOf, regionsAround, worldOverlay } from '@aozoraquest/core';
-import { loadWorldState } from './world-state';
+import { loadWorldState, saveWorldState } from './world-state';
 
 function agentWithGetRecord(impl: () => Promise<unknown>): any {
   return { com: { atproto: { repo: { getRecord: vi.fn(impl) } } } };
@@ -53,13 +53,40 @@ describe('loadWorldState — ちずのかけら (regions)', () => {
     expect(s.regions).toEqual([1, 3]);
   });
 
-  test('旧レコード (regions なし) は lastTown の 3×3 でシードする (移行措置)', async () => {
+  test('旧レコード (regions なし) は lastTown と現在地の両方の 3×3 でシードする (移行措置)', async () => {
     const spawn = worldOverlay().spawn;
     const agent = agentWithGetRecord(async () => ({
       data: { value: { x: 10, y: 10, lastTownX: spawn.x, lastTownY: spawn.y } },
     }));
     const s = await loadWorldState(agent, 'did:test');
-    expect(s.regions).toEqual(regionsAround(regionOf(spawn.x, spawn.y)));
+    const want = [...new Set([...regionsAround(regionOf(10, 10)), ...regionsAround(regionOf(spawn.x, spawn.y))])].sort((a, b) => a - b);
+    expect(s.regions).toEqual(want);
+    // 現在地もフォグに浮かない (レビュー指摘の回帰テスト)
+    expect(s.regions).toContain(regionOf(10, 10));
+  });
+
+  test('空配列の regions は missing 扱いでシードする (全面フォグの固定化を防ぐ)', async () => {
+    const agent = agentWithGetRecord(async () => ({
+      data: { value: { x: 10, y: 10, regions: [] } },
+    }));
+    const s = await loadWorldState(agent, 'did:test');
+    expect(s.regions.length).toBeGreaterThan(0);
+  });
+
+  test('x/y が壊れたレコードでも regions は保全される (spawn の 3×3 と union)', async () => {
+    const agent = agentWithGetRecord(async () => ({
+      data: { value: { x: 'a', y: null, regions: [42] } },
+    }));
+    const s = await loadWorldState(agent, 'did:test');
+    expect(s.regions).toContain(42);
+    expect(s.regions).toContain(worldOverlay().spawn.region);
+  });
+
+  test('saveWorldState は regions を常に書く (保存漏れの回帰テスト)', async () => {
+    const putRecord = vi.fn(async () => ({ data: {} }));
+    const agent = { assertDid: 'did:test', com: { atproto: { repo: { putRecord } } } } as any;
+    await saveWorldState(agent, { x: 1, y: 2, hp: null, mp: null, lastTown: null, regions: [3, 4] });
+    expect((putRecord.mock.calls as any[])[0][0].record.regions).toEqual([3, 4]);
   });
 
   test('新規プレイヤーは はじまりの街の地方一帯 (3×3) だけ開示された状態から', async () => {

@@ -52,6 +52,14 @@ interface WorldRecordShape {
  */
 export async function loadWorldState(agent: Agent, did: string): Promise<WorldState> {
   const rec = await getRecord<WorldRecordShape>(agent, did, COL.world, 'self');
+  // regions は座標より先にパースする — x/y が壊れて spawn に倒す場合でも、
+  // 蓄積型のかけら進捗まで一緒に破棄しない (レビュー指摘)
+  // 空配列 (全要素 invalid 含む) は missing 扱いでシードに落とす — 万一 [] が
+  // 保存されると「全面フォグ・自己修復なし」が永続するため
+  const parsed = rec && Array.isArray(rec.regions)
+    ? [...new Set(rec.regions.filter((r): r is number => typeof r === 'number' && Number.isInteger(r) && r >= 0 && r < REGION_COUNT))].sort((a, b) => a - b)
+    : null;
+  const rawRegions = parsed && parsed.length > 0 ? parsed : null;
   if (rec && typeof rec.x === 'number' && Number.isFinite(rec.x) && typeof rec.y === 'number' && Number.isFinite(rec.y)) {
     // lastTown は「今も街であること」を検証してから使う (ワールド再生成で街が
     // 動く/壊れたレコードで水上へ退避すると、脱出手段なしの詰みになる —
@@ -62,9 +70,6 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
         ? { x: wrap(rec.lastTownX), y: wrap(rec.lastTownY) }
         : null;
     const lastTown = rawLastTown && townAt(rawLastTown.x, rawLastTown.y) ? rawLastTown : null;
-    const rawRegions = Array.isArray(rec.regions)
-      ? [...new Set(rec.regions.filter((r): r is number => typeof r === 'number' && Number.isInteger(r) && r >= 0 && r < REGION_COUNT))].sort((a, b) => a - b)
-      : null;
     // 保存位置が歩行不能地形になっていたら最後の街 (無ければ spawn) に退避する。
     // ワールド再生成で橋タイルが移動した場合 (2026-07-17 の橋修正など)、
     // 旧橋の上に立っていたプレイヤーが水上に取り残されて詰むため
@@ -78,12 +83,18 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
         hp: null,
         mp: null,
         lastTown,
-        regions: rawRegions ?? regionsAround(regionOf(back.x, back.y)),
+        // 退避先の 3×3 は常に union (置かれた街が地図上フォグに浮くのを防ぐ)
+        regions: [...new Set([...(rawRegions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
         relocated: true,
         updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
       };
     }
-    const seedAt = lastTown ?? { x: px, y: py };
+    // 移行シードは lastTown と現在地の両方の 3×3 の和 (どちらも実際に到達した
+    // 場所。lastTown だけだと遠征中のプレイヤーの「いまここ」がフォグに浮く)
+    const seed = [...new Set([
+      ...regionsAround(regionOf(px, py)),
+      ...(lastTown ? regionsAround(regionOf(lastTown.x, lastTown.y)) : []),
+    ])].sort((a, b) => a - b);
     return {
       x: px,
       y: py,
@@ -91,14 +102,16 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
       hp: typeof rec.hp === 'number' && Number.isFinite(rec.hp) ? Math.max(1, Math.floor(rec.hp)) : null,
       mp: typeof rec.mp === 'number' && Number.isFinite(rec.mp) ? Math.max(0, Math.floor(rec.mp)) : null,
       lastTown,
-      regions: rawRegions ?? regionsAround(regionOf(seedAt.x, seedAt.y)),
+      regions: rawRegions ?? seed,
       updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
     };
   }
   const spawn = worldOverlay().spawn;
   // 新規: はじまりの街の地方一帯だけ開示された状態から (「開始の街で最初に
-  // 必ずもらえる」のオーナー案の interim 実装。W6e でギルドが入手元になる)
-  return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, regions: regionsAround(spawn.region), updatedAt: '' };
+  // 必ずもらえる」のオーナー案の interim 実装。W6e でギルドが入手元になる)。
+  // x/y が壊れて spawn に倒す場合も、パースできた regions は union で保全する
+  const seeded = [...new Set([...(rawRegions ?? []), ...regionsAround(spawn.region)])].sort((a, b) => a - b);
+  return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, regions: seeded, updatedAt: '' };
 }
 
 /** 状態を保存する。失敗は warn して swallow (歩行体験を止めない)。 */

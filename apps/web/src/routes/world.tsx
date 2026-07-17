@@ -302,13 +302,16 @@ export function World() {
         const regions = gained ? [...new Set([...s.regions, ...around])].sort((a, b) => a - b) : s.regions;
         setNotice(
           t
-            ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' このあたりの ちずのかけらを 手に入れた!' : ''}`
+            ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' ちずのかけらを 手に入れた!' : ''}`
             : null,
         );
         // wsRef を即時更新 (長押し連打で render 前の tick が同座標から二重計算しないように)
         wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny }, regions };
         setWs(wsRef.current);
         scheduleSave();
+        // かけら入手は離散イベントなのでデバウンスを待たず即時にも保存する
+        // (通知を見た直後のリロードで入手が消えない。二重保存は同内容の put で無害)
+        if (gained && agent) void saveWorldState(agent, wsRef.current);
         return; // 街では遭遇しない
       }
       setNotice(null);
@@ -515,7 +518,16 @@ export function World() {
         const valid = lt && townAt(lt.x, lt.y) ? lt : null;
         const back = valid ?? { x: spawn.x, y: spawn.y };
         movedToTown = townAt(back.x, back.y)?.name ?? spawn.name;
-        setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: valid, regions: s?.regions ?? [] });
+        // 帰還先の街のかけらも入手 (「街に入るとかけら入手」の一貫性 — 移行プレイヤーが
+        // spawn へ敗北帰還したとき「介抱された街が地図にない」を防ぐ。レビュー指摘)
+        setWs({
+          x: back.x,
+          y: back.y,
+          hp: null,
+          mp: null,
+          lastTown: valid,
+          regions: [...new Set([...(s?.regions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
+        });
       } else {
         // 勝利/引き分け/逃走: 減った HP/MP をフィールドに持ち帰る (持続)。
         // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
@@ -538,7 +550,14 @@ export function World() {
     if (dest) {
       featherDestRef.current = null;
       const name = townAt(dest.x, dest.y)?.name ?? worldOverlay().spawn.name;
-      wsRef.current = { x: dest.x, y: dest.y, hp: null, mp: null, lastTown: { x: dest.x, y: dest.y }, regions: wsRef.current?.regions ?? [] };
+      wsRef.current = {
+        x: dest.x,
+        y: dest.y,
+        hp: null,
+        mp: null,
+        lastTown: { x: dest.x, y: dest.y },
+        regions: [...new Set([...(wsRef.current?.regions ?? []), ...regionsAround(regionOf(dest.x, dest.y))])].sort((a, b) => a - b),
+      };
       setWs(wsRef.current);
       scheduleSave();
       setNotice(`そらのはねで「${name}」へ舞いもどった!`);
