@@ -5,6 +5,7 @@ import {
   JOB_EQUIP_KINDS,
   canEquip,
   gearBonus,
+  gearBonusFromGear,
   townShopStock,
 } from '../equipment.js';
 import { playerCombatant, playerStatsAt } from '../battle.js';
@@ -37,6 +38,7 @@ describe('canEquip (装備適性)', () => {
     expect(canEquip('warrior', EQUIPMENT_BY_ID['ar-iron']!)).toBe(true);
     expect(canEquip('warrior', EQUIPMENT_BY_ID['wp-novice-staff']!)).toBe(false);
     expect(canEquip('warrior', EQUIPMENT_BY_ID['wp-lucky-dice']!)).toBe(false);
+    expect(canEquip('warrior', EQUIPMENT_BY_ID['ar-scholar']!)).toBe(false); // ローブも不可
   });
 
   it('ジョブ専用品は自ジョブのみ (遊び人は忍者刀を装備できない — オーナー指摘)', () => {
@@ -96,6 +98,19 @@ describe('playerCombatant / playerStatsAt の装備加算', () => {
   });
 });
 
+describe('gearBonusFromGear (スロット検証つき入口)', () => {
+  it('スロットと slot が一致する品だけ数える (weapon 枠に武器以外・重複強化を弾く)', () => {
+    // 正常系
+    const ok = gearBonusFromGear('bard', { weapon: 'wp-bard-mid', armor: 'ar-fortune', charm: 'ch-life' });
+    expect(ok.luk).toBe(8 + 3);
+    expect(ok.maxHp).toBe(10);
+    // weapon 枠に charm を書いても効かない / 3 枠同一武器の重複強化も不成立
+    const cheat = gearBonusFromGear('bard', { weapon: 'ch-life', armor: 'wp-bard-high', charm: 'wp-bard-high' });
+    expect(cheat.luk).toBe(0);
+    expect(cheat.maxHp).toBe(0);
+  });
+});
+
 describe('townShopStock (品揃えの決定的生成)', () => {
   const towns = worldOverlay().towns;
 
@@ -111,15 +126,31 @@ describe('townShopStock (品揃えの決定的生成)', () => {
     });
   });
 
-  it('全 16 職の専用品が世界のどこかの店に必ず並ぶ (巡回割当)', () => {
-    const jobsSeen = new Set<string>();
+  it('全 16 職の専用品 (中位・上位とも) が世界のどこかの店に必ず並ぶ (巡回割当)', () => {
+    // 初版は上位がハッシュ乱択で sage/mage/guardian が全店欠品した (レビュー実測)。
+    // 中位・上位を別々にピンして再発を検知する
+    const midSeen = new Set<string>();
+    const highSeen = new Set<string>();
     towns.forEach((t, i) => {
       for (const id of townShopStock(t, i).equipment) {
         const def = EQUIPMENT_BY_ID[id];
-        if (def?.jobOnly) jobsSeen.add(def.jobOnly);
+        if (!def?.jobOnly) continue;
+        (def.grade === 2 ? midSeen : highSeen).add(def.jobOnly);
       }
     });
-    for (const job of JOBS) expect(jobsSeen.has(job.id), job.id).toBe(true);
+    for (const job of JOBS) {
+      expect(midSeen.has(job.id), `mid:${job.id}`).toBe(true);
+      expect(highSeen.has(job.id), `high:${job.id}`).toBe(true);
+    }
+  });
+
+  it('店の素材種は決定的で、実在の素材 id を返す', () => {
+    towns.forEach((t, i) => {
+      const stock = townShopStock(t, i);
+      expect(typeof stock.materialId).toBe('string');
+      expect(stock.materialId.length).toBeGreaterThan(0);
+      expect(townShopStock(t, i).materialId).toBe(stock.materialId);
+    });
   });
 
   it('品揃えの id はすべて実在し、店ごとに重複しない', () => {

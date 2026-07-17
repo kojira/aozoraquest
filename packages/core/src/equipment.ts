@@ -10,7 +10,8 @@
  * - **ジョブ専用品 (jobOnly) はマトリクス不問** — 自ジョブなら装備できる
  *   (神楽鈴に鈴カテゴリは要らない)。
  * - 効果はブレンド・レベル補正の**後に平坦加算** (playerCombatant/playerStatsAt)。
- * - 品揃えは (危険度, 街ハッシュ) から決定的に生成 (townShopInventory)。
+ * - 品揃えは決定的に生成 (townShopStock)。W6a 時点は「街ハッシュ + 巡回割当」のみ —
+ *   danger 階級・周辺地形の系統枠 (docs/20) は W6b で追加する。
  */
 
 import type { Archetype } from './types.js';
@@ -34,6 +35,7 @@ export type EquipSlot = 'weapon' | 'armor' | 'charm';
 /** 装備カテゴリ。common/cloth/charm は全ジョブ暗黙 ○。 */
 export type EquipKind =
   | 'common' // 共用武器 (ナイフ等)
+  | 'exclusive' // ジョブ専用品 (jobOnly が判定の全て。カテゴリ表示にも使わない)
   | 'sword'
   | 'axe'
   | 'shield'
@@ -118,7 +120,7 @@ export const EQUIPMENT: EquipmentDef[] = [
       id: `wp-${w.job}-mid`,
       name: w.mid,
       slot: 'weapon',
-      kind: 'common', // jobOnly が判定の全て (カテゴリ不問 — オーナー決定 2026-07-18)
+      kind: 'exclusive', // jobOnly が判定の全て (カテゴリ不問 — オーナー決定 2026-07-18)
       bonus: { [w.stat]: 8 },
       jobOnly: w.job,
       grade: 2,
@@ -128,7 +130,7 @@ export const EQUIPMENT: EquipmentDef[] = [
       id: `wp-${w.job}-high`,
       name: w.high,
       slot: 'weapon',
-      kind: 'common',
+      kind: 'exclusive',
       bonus: { [w.stat]: 14 },
       jobOnly: w.job,
       grade: 3,
@@ -154,6 +156,7 @@ export const EQUIPMENT_BY_ID: Record<string, EquipmentDef> = Object.fromEntries(
 /** 装備できるか。jobOnly があればそれだけで判定 (カテゴリ不問)。 */
 export function canEquip(archetype: Archetype, def: EquipmentDef): boolean {
   if (def.jobOnly) return def.jobOnly === archetype;
+  if (def.kind === 'exclusive') return false; // jobOnly の付け忘れは安全側 (誰も装備不可)
   if (def.kind === 'common' || def.kind === 'cloth' || def.kind === 'charm') return true;
   return JOB_EQUIP_KINDS[archetype].includes(def.kind);
 }
@@ -180,6 +183,28 @@ export function gearBonus(archetype: Archetype, equipIds: readonly string[]): Ge
   return total;
 }
 
+export interface GearSelection {
+  weapon?: string;
+  armor?: string;
+  charm?: string;
+}
+
+/**
+ * gear/self レコード形式 ({weapon?, armor?, charm?}) からのボーナス合算。
+ * **スロットと装備の slot が一致する品だけ**数える (weapon 枠に武器以外を書く・
+ * 同じ強武器を 3 枠に書く、といったレコード直編集チートを弾く。W6c の正式入口)。
+ */
+export function gearBonusFromGear(archetype: Archetype, gear: GearSelection): GearBonus {
+  const ids: string[] = [];
+  for (const slot of ['weapon', 'armor', 'charm'] as const) {
+    const id = gear[slot];
+    if (!id) continue;
+    const def = EQUIPMENT_BY_ID[id];
+    if (def && def.slot === slot) ids.push(id);
+  }
+  return gearBonus(archetype, ids);
+}
+
 // ─── なんでも屋の品揃え (決定的生成) ────────────────────────
 
 export interface ShopStock {
@@ -187,6 +212,17 @@ export interface ShopStock {
   consumables: string[];
   /** 装備 (EQUIPMENT の id)。特色枠のジョブ専用品を含む */
   equipment: string[];
+  /** この店の値札で要求される素材の種類 (price.materials の個数分)。
+   *  地域のモンスター素材から決定的に選ぶ — 「その地域で狩って買う」ループ */
+  materialId: string;
+}
+
+/** 店が値札に使う素材の種類 (街ハッシュから決定的)。tier1〜2 の基礎素材から選ぶ
+ *  (danger 連動の高位素材は W6b で階級と一緒に導入)。 */
+const SHOP_MATERIALS = ['slime-drop', 'bat-wing', 'mush-spore', 'golem-core', 'wisp-ember'] as const;
+export function shopMaterialFor(town: Town): string {
+  const rng = shopRng(((town.x * 40503) ^ (town.y * 89917)) >>> 0);
+  return SHOP_MATERIALS[Math.floor(rng() * SHOP_MATERIALS.length)]!;
 }
 
 /**
@@ -220,14 +256,16 @@ export function townShopStock(town: Town, townIndex: number): ShopStock {
   if (rng() < 0.4 && charms.length > 0) {
     equipment.push(charms[Math.floor(rng() * charms.length)]!.id);
   }
-  // 特色枠: ジョブ専用・中位は town index の巡回割当 (互いに素な歩幅 7 で分散)、
-  // 上位はハッシュ乱択で 50% (「あの街にしかない」レア枠)
+  // 特色枠: ジョブ専用・中位は town index の巡回割当 (互いに素な歩幅 7 で分散)。
+  // 上位は 1/3 の街だけが持つレア枠だが、こちらも巡回 (歩幅 11) で **全 16 職の
+  // 上位品が世界のどこかに必ず並ぶ** (初版のハッシュ乱択は sage/mage/guardian の
+  // 上位が全店欠品する恒久欠けを起こした — レビュー実測)
   const jobMid = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 2);
   const jobHigh = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 3);
   equipment.push(jobMid[(townIndex * 7) % jobMid.length]!.id);
-  if (rng() < 0.5 && jobHigh.length > 0) {
-    equipment.push(jobHigh[Math.floor(rng() * jobHigh.length)]!.id);
+  if (townIndex % 3 === 0 && jobHigh.length > 0) {
+    equipment.push(jobHigh[(Math.floor(townIndex / 3) * 11) % jobHigh.length]!.id);
   }
 
-  return { consumables, equipment };
+  return { consumables, equipment, materialId: shopMaterialFor(town) };
 }
