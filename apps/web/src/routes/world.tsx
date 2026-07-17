@@ -454,17 +454,6 @@ export function World() {
     scheduleSave();
   }, [combat, tonicStock, scheduleSave]);
 
-  // 位置リセット (プレビュー用): はじまりの街へ戻る (全快)
-  const resetToSpawn = useCallback(() => {
-    const spawn = worldOverlay().spawn;
-    setBattle(null);
-    setBattleResult(null);
-    setWipe(null);
-    setNotice(null);
-    setWs({ x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: { x: spawn.x, y: spawn.y } });
-    scheduleSave();
-  }, [scheduleSave]);
-
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -629,21 +618,28 @@ export function World() {
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.3em' }}>
-        <h2 style={{ margin: 0 }}>あおぞらワールド <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(散歩プレビュー)</span></h2>
-        <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
-          ({ws.x}, {ws.y})
+      {/* タイトルヘッダーは出さない (場所を取るだけ — オーナー指示 2026-07-17)。
+          場所情報 (街名 / 危険度) + 座標の 1 行だけ。一時メッセージ (notice) は
+          操作ボタンの直下 (下部ボタン操作の結果が上部だと見えない) */}
+      <p
+        style={{
+          margin: '0.2em 0 0.4em',
+          fontSize: '0.8em',
+          color: 'var(--color-muted)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          gap: '0.5em',
+        }}
+      >
+        <span>
+          {town ? (
+            <strong style={{ color: 'var(--color-fg)' }}>🏘 {town.name}</strong>
+          ) : (
+            <>このあたり: {DANGER_LABELS[danger]}{here === 'forest' ? ' / 深い森…' : ''}</>
+          )}
         </span>
-      </div>
-      {/* 場所情報 (街名 / 危険度)。一時メッセージ (notice) はここではなく
-          操作ボタンの直下に出す — アイテムボタンは画面下部にあるのに結果表示が
-          マップ上部だと視界に入らない (オーナー報告 2026-07-17、スクリーンショット付き) */}
-      <p style={{ margin: '0.2em 0 0.4em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        {town ? (
-          <strong style={{ color: 'var(--color-fg)' }}>🏘 {town.name}</strong>
-        ) : (
-          <>このあたり: {DANGER_LABELS[danger]}{here === 'forest' ? ' / 深い森…' : ''}</>
-        )}
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>({ws.x}, {ws.y})</span>
       </p>
 
       {/* フィールドの HP/MP (戦闘をまたいで持続) */}
@@ -734,16 +730,6 @@ export function World() {
               ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
               : ' あおぞらパワーがないのでモンスターは出ません (投稿すると増える)。'
           : ''}
-      </p>
-      <p style={{ textAlign: 'center', marginTop: '0.4em' }}>
-        <button
-          type="button"
-          className="secondary"
-          onClick={resetToSpawn}
-          style={{ fontSize: '0.8em', padding: '0.4em 1em' }}
-        >
-          はじまりの街へ戻る (位置リセット)
-        </button>
       </p>
       {wipeOverlay}
     </div>

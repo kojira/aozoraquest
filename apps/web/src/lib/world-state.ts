@@ -10,7 +10,7 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { worldOverlay, wrap } from '@aozoraquest/core';
+import { worldOverlay, wrap, isWalkable, terrainAt } from '@aozoraquest/core';
 import { getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 
@@ -49,9 +49,25 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
       typeof rec.lastTownX === 'number' && typeof rec.lastTownY === 'number'
         ? { x: wrap(rec.lastTownX), y: wrap(rec.lastTownY) }
         : null;
+    // 保存位置が歩行不能地形になっていたら最後の街 (無ければ spawn) に退避する。
+    // ワールド再生成で橋タイルが移動した場合 (2026-07-17 の橋修正など)、
+    // 旧橋の上に立っていたプレイヤーが水上に取り残されて詰むため
+    const px = wrap(rec.x);
+    const py = wrap(rec.y);
+    if (!isWalkable(terrainAt(px, py))) {
+      const back = lastTown ?? worldOverlay().spawn;
+      return {
+        x: back.x,
+        y: back.y,
+        hp: null,
+        mp: null,
+        lastTown,
+        updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
+      };
+    }
     return {
-      x: wrap(rec.x),
-      y: wrap(rec.y),
+      x: px,
+      y: py,
       // Number.isFinite: NaN/Infinity の壊れレコードで NaN バーを描かない
       hp: typeof rec.hp === 'number' && Number.isFinite(rec.hp) ? Math.max(1, Math.floor(rec.hp)) : null,
       mp: typeof rec.mp === 'number' && Number.isFinite(rec.mp) ? Math.max(0, Math.floor(rec.mp)) : null,

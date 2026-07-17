@@ -46,7 +46,7 @@ export const WORLD_TUNING = {
   /** 平地の小さな森の群れ (波長 32 のノイズ)。まだら林より稀で大きめの塊。 */
   forestSpeckle: 0.84,
   /** 橋: 幅がこれ以下の川にだけ架かる (これより広い水域 = 海、船で渡る) */
-  bridgeMaxSpan: 3,
+  bridgeMaxSpan: 5,
   /** 橋どうしの最小間隔 (マンハッタン距離) */
   bridgeSpacing: 24,
   /** 街探索の半径 (リージョン中心からのスパイラル) */
@@ -285,6 +285,31 @@ function computeBridges(): { tiles: { x: number; y: number }[]; spans: number } 
     }
     return false;
   };
+  /** 両端が「橋なしでも局所的に歩いて行き来できる」なら、その橋は海岸の
+   *  切れ込みを跨ぐだけの飾りになる (初版は 20 スパン中 19 がこれで、
+   *  オーナー報告 2026-07-17「発見した全ての橋が機能していない」の原因)。
+   *  半径 localDetourRadius の陸上 BFS で回り込めるかを判定する。 */
+  const locallyConnected = (ax: number, ay: number, bx: number, by: number): boolean => {
+    const R = 20;
+    const seen = new Set<number>([ay * WORLD_SIZE + ax]);
+    const queue: [number, number][] = [[ax, ay]];
+    while (queue.length > 0) {
+      const [cx2, cy2] = queue.shift()!;
+      if (cx2 === bx && cy2 === by) return true;
+      for (const [dx2, dy2] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = wrap(cx2 + dx2);
+        const ny = wrap(cy2 + dy2);
+        const ddx = Math.min(Math.abs(nx - ax), WORLD_SIZE - Math.abs(nx - ax));
+        const ddy = Math.min(Math.abs(ny - ay), WORLD_SIZE - Math.abs(ny - ay));
+        if (ddx > R || ddy > R) continue;
+        const k = ny * WORLD_SIZE + nx;
+        if (seen.has(k) || !isPassableLand(nx, ny)) continue;
+        seen.add(k);
+        queue.push([nx, ny]);
+      }
+    }
+    return false;
+  };
   const trySpan = (x: number, y: number, dx: number, dy: number) => {
     if (!isPassableLand(wrap(x - dx), wrap(y - dy))) return;
     const run: [number, number][] = [];
@@ -300,6 +325,8 @@ function computeBridges(): { tiles: { x: number; y: number }[]; spans: number } 
     if (!isPassableLand(cx, cy)) return;
     const mid = run[Math.floor(run.length / 2)]!;
     if (nearAnchor(mid[0], mid[1])) return;
+    // 回り込める切れ込みには架けない (本物の渡河点だけに架ける)
+    if (locallyConnected(wrap(x - dx), wrap(y - dy), cx, cy)) return;
     anchors.push(mid);
     for (const [bx, by] of run) tiles.push({ x: bx, y: by });
   };
