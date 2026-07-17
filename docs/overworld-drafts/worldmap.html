@@ -114,8 +114,9 @@ function baseTerrain(x, y) {
   const m = moisture(x, y);
   if (m >= TUNE.forestMoisture) return 2;
   if (m >= TUNE.groveMoisture) return 1;
-  // 平地のまだら林 (core の groveSpeckle=0.74 と一致)
-  if (periodicNoise(x, y, 16, GLOBAL_SEED * 23 + 41) > 0.74) return 1;
+  // 平地の小さな森 + まだら林 (core の forestSpeckle=0.84 / groveSpeckle=0.62 と一致)
+  if (periodicNoise(x, y, 32, GLOBAL_SEED * 29 + 53) > 0.84) return 2;
+  if (periodicNoise(x, y, 16, GLOBAL_SEED * 23 + 41) > 0.62) return 1;
   return 0;
 }
 

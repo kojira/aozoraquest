@@ -16,6 +16,40 @@ const PLAINS = (
   </>
 );
 
+/** 平地の見た目バリエーション (tileDetailAt(x,y) で選ぶ)。地形は同じ・絵だけ変える。
+ *  「平原だけが続くマップは無し」への対応: 花・岩・草むらで画面ごとに表情を変える。 */
+export const PLAINS_VARIANTS: readonly ReactElement[] = [
+  PLAINS,
+  // 花ばたけ (黄 + 白)
+  (
+    <>
+      <rect width="32" height="32" fill="#9dd07f" />
+      <circle cx="9" cy="11" r="2" fill="#f5d442" />
+      <circle cx="9" cy="11" r="0.9" fill="#c98d1e" />
+      <circle cx="22" cy="20" r="2" fill="#ffffff" />
+      <circle cx="22" cy="20" r="0.9" fill="#f5d442" />
+      <circle cx="15" cy="26" r="1.7" fill="#f5a3c0" />
+      <path d="M26 8 l1.6 -3 l1.6 3" stroke="#7db95f" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+    </>
+  ),
+  // 岩と草
+  (
+    <>
+      <rect width="32" height="32" fill="#9dd07f" />
+      <path d="M18 22 l3.5 -4 l4.5 1 l1.5 3.5 l-2 2 l-6 0 Z" fill="#a8a294" stroke="#7d786c" strokeWidth="1.2" />
+      <path d="M6 12 l2 -4 l2 4 M9 26 l2 -4 l2 4" stroke="#7db95f" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+    </>
+  ),
+  // 濃い草むら
+  (
+    <>
+      <rect width="32" height="32" fill="#98cc79" />
+      <path d="M5 14 l2 -4 l2 4 M13 8 l2 -4 l2 4 M22 16 l2 -4 l2 4 M10 26 l2 -4 l2 4 M24 27 l2 -4 l2 4"
+        stroke="#6fae52" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+    </>
+  ),
+];
+
 export const TERRAIN_TILES: Record<Terrain, ReactElement> = {
   plains: PLAINS,
   grove: (

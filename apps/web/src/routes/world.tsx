@@ -1,36 +1,48 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { DiagnosisResult } from '@aozoraquest/core';
+import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
+  BATTLE_TUNING,
+  MONSTERS_BY_ID,
+  encounterRateFor,
   isWalkable,
+  jobLevelFromXp,
+  playerCombatant,
+  playerLevelFromXp,
   regionDanger,
   regionOf,
+  resolveTurn,
+  startBattle,
   terrainAt,
+  tileDetailAt,
   townAt,
+  worldOverlay,
   wrap,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
+import { loadBattleStats } from '@/lib/battle-log';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
-import { TERRAIN_TILES } from '@/components/world-tiles';
+import { BattleView, HpBar, MpBar } from '@/components/battle-view';
+import { MonsterSvg } from '@/components/monster-svg';
+import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 
 /**
- * あおぞらワールド (docs/19-overworld.md) — PR-W2: 散歩プレビュー。
+ * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
  *
- * 16×16 ビューポートでプレイヤー中央固定、1 タップ 1 マス移動。トーラス wrap。
- * この段階では**パワー消費なし・遭遇なし** (消費と判定は PR-W3 で Worker に移る)。
- * 位置は PDS (world/self) に保存 (デバウンス)。dev 環境限定 (world-preview.ts)。
- *
- * プレイヤーのアバターは SVG の foreignObject ではなく **HTML オーバーレイ**で描く
- * (foreignObject は overflow:hidden でジョブ装備が切れる + iOS Safari の位置ズレ quirk)。
+ * - 16×16 ビューポート、1 タップ 1 マス、トーラス wrap。
+ * - **HP/MP は戦闘をまたいで持続** (オーナー決定)。街に立ち寄ると全回復 + その街が
+ *   「最後に立ち寄った街」= 敗北時の帰還先になる。フィールドでやくそうを使える。
+ * - 遭遇はプレビュー (Math.random / 消費・報酬・記録なし)。本実装は PR-W3 で
+ *   Worker (署名付き seed + パワー消費) に置換。dev 環境限定 (world-preview.ts)。
  */
 
-const VIEW = 16; // ビューポートの一辺 (タイル数)
+const VIEW = 16;
 const HALF = VIEW / 2;
-const TILE = 32; // SVG 内の 1 タイルサイズ (表示は width 100% で縮尺)
+const TILE = 32;
 
 type Dir = 'up' | 'down' | 'left' | 'right';
 const DIRS: Record<Dir, { dx: number; dy: number; glyph: string; label: string }> = {
@@ -42,23 +54,48 @@ const DIRS: Record<Dir, { dx: number; dy: number; glyph: string; label: string }
 
 const DANGER_LABELS = ['おだやか', 'すこし危険', '危険', 'とても危険'] as const;
 
+interface Vitals {
+  x: number;
+  y: number;
+  /** null = 全快 (最大値はジョブ/レベルから導出) */
+  hp: number | null;
+  mp: number | null;
+  lastTown: { x: number; y: number } | null;
+}
+
 export function World() {
   const session = useSession();
   const agent = session.agent ?? null;
   const did = session.did ?? null;
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [ws, setWs] = useState<Vitals | null>(null);
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
-  const [blocked, setBlocked] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [archetype, setArchetype] = useState<DiagnosisResult['archetype'] | null>(null);
+  const [diag, setDiag] = useState<DiagnosisResult | null>(null);
+  /** やくそうの手持ち (セッション内。プレビューなので消費は保存しない) */
+  const [herbStock, setHerbStock] = useState(0);
+  const [battle, setBattle] = useState<{ state: BattleState; busy: boolean } | null>(null);
+  const [battleResult, setBattleResult] = useState<{ state: BattleState; movedToTown: string | null } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // タイルの実表示サイズ (px)。アバターオーバーレイの寸法に使う。
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
 
-  // 初期ロード: 位置 + アバター + ジョブ。位置の読み込み失敗はエラー表示 + リトライ
-  // (spawn に倒すと「テレポート → 上書き保存」のデータ損失になるため倒さない)。
+  const archetype = diag?.archetype ?? null;
+  // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
+  const combat = archetype
+    ? playerCombatant(
+        archetype,
+        jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
+        playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
+        '',
+      )
+    : null;
+  const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
+  const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
+
+  // 初期ロード。位置の読み込み失敗はエラー表示 + リトライ (spawn に倒すと
+  // 「テレポート → 上書き保存」のデータ損失になるため倒さない)。
   useEffect(() => {
     if (session.status !== 'signed-in' || !agent || !did) return;
     let cancelled = false;
@@ -67,19 +104,21 @@ export function World() {
       try {
         const state = await loadWorldState(agent, did);
         if (cancelled) return;
-        setPos({ x: state.x, y: state.y });
+        setWs({ x: state.x, y: state.y, hp: state.hp, mp: state.mp, lastTown: state.lastTown });
       } catch (e) {
         console.warn('[world] load failed', e);
         if (!cancelled) setLoadErr(true);
         return;
       }
-      const [profile, diag] = await Promise.all([
+      const [profile, d, stats] = await Promise.all([
         agent.getProfile({ actor: did }).catch(() => null),
         getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
+        loadBattleStats(agent, did).catch(() => null),
       ]);
       if (cancelled) return;
       setAvatarUrl(profile?.data.avatar ?? null);
-      setArchetype(diag?.archetype ?? null);
+      setDiag(d);
+      setHerbStock(stats?.materials['herb'] ?? 0);
     })();
     return () => { cancelled = true; };
   }, [session.status, agent, did, retryNonce]);
@@ -93,51 +132,164 @@ export function World() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [pos === null]);
+  }, [ws === null, battle === null, battleResult === null]);
 
-  // 位置保存 (2 秒デバウンス + unmount 時に確定)
-  const posRef = useRef(pos);
-  posRef.current = pos;
+  // 状態保存 (2 秒デバウンス + unmount 時に確定)
+  const wsRef = useRef(ws);
+  wsRef.current = ws;
   const scheduleSave = useCallback(() => {
     if (!agent) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      const p = posRef.current;
-      if (p) void saveWorldState(agent, p.x, p.y);
+      const s = wsRef.current;
+      if (s) void saveWorldState(agent, s);
     }, 2000);
   }, [agent]);
   useEffect(() => () => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
-      const p = posRef.current;
-      if (agent && p) void saveWorldState(agent, p.x, p.y);
+      const s = wsRef.current;
+      if (agent && s) void saveWorldState(agent, s);
     }
   }, [agent]);
 
+  const battleRef = useRef(battle);
+  battleRef.current = battle;
+  const battleResultRef = useRef(battleResult);
+  battleResultRef.current = battleResult;
+
   const move = useCallback(
     (dir: Dir) => {
-      const p = posRef.current;
-      if (!p) return;
+      const s = wsRef.current;
+      // 戦闘中・リザルト表示中は移動不可 (リザルト中に矢印キーで見えない移動 +
+      // 新遭遇がリザルトを上書きする事故を防ぐ。レビュー指摘)
+      if (!s || battleRef.current || battleResultRef.current) return;
       const { dx, dy } = DIRS[dir];
-      const nx = wrap(p.x + dx);
-      const ny = wrap(p.y + dy);
-      if (!isWalkable(terrainAt(nx, ny))) {
-        setBlocked(true); // 「そっちには進めない」フィードバック
+      const nx = wrap(s.x + dx);
+      const ny = wrap(s.y + dy);
+      const terrain = terrainAt(nx, ny);
+      if (!isWalkable(terrain)) {
+        setNotice('そっちには進めない!');
         return; // 位置不変なので保存もしない
       }
-      setBlocked(false);
-      setPos({ x: nx, y: ny });
+      // 街に入ったら全回復 + 「最後に立ち寄った街」を更新 (敗北時の帰還先)
+      if (terrain === 'town') {
+        const t = townAt(nx, ny);
+        setNotice(t ? `「${t.name}」で休んで、すっかり元気になった!` : null);
+        // wsRef を即時更新 (長押し連打で render 前の tick が同座標から二重計算しないように)
+        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny } };
+        setWs(wsRef.current);
+        scheduleSave();
+        return; // 街では遭遇しない
+      }
+      setNotice(null);
+      wsRef.current = { ...s, x: nx, y: ny };
+      setWs(wsRef.current);
       scheduleSave();
+      // 野外遭遇 (プレビュー: Math.random。本実装は PR-W3 で Worker の署名付き seed に)
+      const d = diag;
+      if (d && Math.random() < encounterRateFor(terrain)) {
+        const danger = regionDanger(regionOf(nx, ny));
+        const tier = (danger <= 1 ? 1 : danger === 2 ? 2 : 3) as 1 | 2 | 3;
+        const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+        const jobLv = jobLevelFromXp(d.jobLevel?.xp ?? 0);
+        const playerLv = playerLevelFromXp(d.playerLevel?.xp ?? 0);
+        const herbs = Math.min(BATTLE_TUNING.herbCarryMax, herbStock);
+        const cHp = wsRef.current?.hp;
+        const cMp = wsRef.current?.mp;
+        const state = startBattle(
+          d.archetype,
+          jobLv,
+          playerLv,
+          session.handle?.split('.')[0] ?? 'あなた',
+          tier,
+          seed,
+          herbs,
+          // フィールドの現在 HP/MP を引き継ぐ (戦闘をまたいで持続)
+          { ...(cHp !== null && cHp !== undefined ? { hp: cHp } : {}), ...(cMp !== null && cMp !== undefined ? { mp: cMp } : {}) },
+        );
+        setBattle({ state, busy: false });
+      }
+    },
+    [scheduleSave, diag, session.handle, herbStock],
+  );
+
+  // 戦闘コマンド (プレビュー: クライアント解決。W3/W4 でサーバー権威に置換)
+  const onBattleCommand = useCallback(
+    async (command: Command) => {
+      const b = battleRef.current;
+      if (!b || b.busy) return;
+      const next = resolveTurn(b.state, command);
+      setBattle({ state: next, busy: true });
+      await new Promise((r) => setTimeout(r, 450));
+      if (next.outcome === 'ongoing') {
+        setBattle((cur) => (cur ? { state: next, busy: false } : cur));
+        return;
+      }
+      // 決着。プレビューでは報酬・記録なし。やくそうはセッション内で減らす。
+      // TODO(W3): 手持ちの正は Worker (DO) に移す (試練の実在庫と本画面のセッション値が
+      // 併走しているのはプレビュー限定の割り切り)。
+      setHerbStock((n) => Math.max(0, n - next.herbsUsed));
+      let movedToTown: string | null = null;
+      if (next.outcome === 'lose') {
+        // 敗北: 最後に立ち寄った街 (無ければはじまりの街) へ。宿で介抱 = 全快。
+        // lastTown はワールド再生成で街が動くと無効になりうるので townAt で検証し、
+        // 無効なら座標・名前とも spawn に倒す (レビュー指摘)。
+        const s = wsRef.current;
+        const spawn = worldOverlay().spawn;
+        const lt = s?.lastTown;
+        const valid = lt && townAt(lt.x, lt.y) ? lt : null;
+        const back = valid ?? { x: spawn.x, y: spawn.y };
+        movedToTown = townAt(back.x, back.y)?.name ?? spawn.name;
+        setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: valid });
+      } else {
+        // 勝利/引き分け: 減った HP/MP をフィールドに持ち帰る (持続)。
+        // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
+        const hp = next.player.hp >= next.player.maxHp ? null : Math.max(1, next.player.hp);
+        const mp = next.player.mp >= next.player.maxMp ? null : next.player.mp;
+        setWs((s) => (s ? { ...s, hp, mp } : s));
+      }
+      scheduleSave();
+      setBattle(null);
+      setBattleResult({ state: next, movedToTown });
     },
     [scheduleSave],
   );
+
+  // フィールドでやくそうを使う (移動せずに回復。プレビュー: 消費は保存しない)
+  const useHerbOnField = useCallback(() => {
+    if (!combat || herbStock <= 0) return;
+    const cur = wsRef.current;
+    if (!cur) return;
+    const hpNow = Math.min(cur.hp ?? combat.maxHp, combat.maxHp);
+    if (hpNow >= combat.maxHp) {
+      setNotice('HP は満タンだ。');
+      return;
+    }
+    const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
+    const healed = Math.min(combat.maxHp, hpNow + heal);
+    setHerbStock((n) => n - 1);
+    setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
+    setNotice(`やくそうを使った! HP が ${healed - hpNow} 回復。`);
+    scheduleSave();
+  }, [combat, herbStock, scheduleSave]);
+
+  // 位置リセット (プレビュー用): はじまりの街へ戻る (全快)
+  const resetToSpawn = useCallback(() => {
+    const spawn = worldOverlay().spawn;
+    setBattle(null);
+    setBattleResult(null);
+    setNotice(null);
+    setWs({ x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: { x: spawn.x, y: spawn.y } });
+    scheduleSave();
+  }, [scheduleSave]);
 
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      if (!posRef.current) return;
+      if (!wsRef.current || battleRef.current) return;
       const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
       const dir = map[e.key];
       if (dir) {
@@ -177,21 +329,65 @@ export function World() {
       </div>
     );
   }
-  if (!pos) return <p>世界を読み込んでいる…</p>;
+  if (!ws) return <p>世界を読み込んでいる…</p>;
 
-  const town = townAt(pos.x, pos.y);
-  const here = terrainAt(pos.x, pos.y);
-  const danger = regionDanger(regionOf(pos.x, pos.y));
+  // ─── 野外遭遇 (戦闘中はマップの代わりにバトル画面) ───
+  if (battle) {
+    const danger = regionDanger(regionOf(ws.x, ws.y));
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto' }}>
+        <h2 style={{ margin: '0 0 0.3em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(プレビュー: 報酬・記録なし)</span></h2>
+        <BattleView
+          state={battle.state}
+          busy={battle.busy}
+          onCommand={(c) => void onBattleCommand(c)}
+          headerNote={DANGER_LABELS[danger]}
+        />
+      </div>
+    );
+  }
+  if (battleResult) {
+    const { state, movedToTown } = battleResult;
+    const won = state.outcome === 'win';
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
+        <div style={{ opacity: won ? 0.45 : 1, display: 'inline-block', transform: won ? 'rotate(180deg)' : 'none' }}>
+          <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={110} />
+        </div>
+        <h3 style={{ margin: '0.4em 0' }}>
+          {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : 'ひきわけ'}
+        </h3>
+        {state.lastEvents.length > 0 && (
+          <div style={{ margin: '0.5em auto', maxWidth: 420, fontSize: '0.8em', lineHeight: 1.6, textAlign: 'left', padding: '0.4em 0.7em', border: '2px solid var(--color-border)', borderRadius: 4, background: 'var(--color-window-bg)' }}>
+            {state.lastEvents.map((e, i) => <div key={i}>{e.text}</div>)}
+          </div>
+        )}
+        {movedToTown && (
+          <p style={{ fontSize: '0.85em' }}>気がつくと「{movedToTown}」で介抱されていた… (全回復)</p>
+        )}
+        <p style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>※ プレビュー中の戦闘に報酬・記録・パワー消費はありません</p>
+        <button type="button" onClick={() => setBattleResult(null)} style={{ padding: '0.7em 1.6em' }}>
+          マップへ戻る
+        </button>
+      </div>
+    );
+  }
 
-  // ビューポートのタイル列 (プレイヤー中央固定)
+  const town = townAt(ws.x, ws.y);
+  const here = terrainAt(ws.x, ws.y);
+  const danger = regionDanger(regionOf(ws.x, ws.y));
+
+  // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
   const tiles = [];
   for (let vy = 0; vy < VIEW; vy++) {
     for (let vx = 0; vx < VIEW; vx++) {
-      const x = wrap(pos.x - HALF + vx);
-      const y = wrap(pos.y - HALF + vy);
+      const x = wrap(ws.x - HALF + vx);
+      const y = wrap(ws.y - HALF + vy);
+      const t = terrainAt(x, y);
+      const body = t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t];
       tiles.push(
         <g key={`${vx}-${vy}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
-          {TERRAIN_TILES[terrainAt(x, y)]}
+          {body}
         </g>,
       );
     }
@@ -204,19 +400,26 @@ export function World() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.3em' }}>
         <h2 style={{ margin: 0 }}>あおぞらワールド <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(散歩プレビュー)</span></h2>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
-          ({pos.x}, {pos.y})
+          ({ws.x}, {ws.y})
         </span>
       </div>
-      <p style={{ margin: '0.2em 0 0.5em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        {blocked ? (
-          <strong style={{ color: 'var(--color-fg)' }}>そっちには進めない!</strong>
+      <p style={{ margin: '0.2em 0 0.4em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
+        {notice ? (
+          <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>
         ) : town ? (
           <strong style={{ color: 'var(--color-fg)' }}>🏘 {town.name}</strong>
         ) : (
           <>このあたり: {DANGER_LABELS[danger]}{here === 'forest' ? ' / 深い森…' : ''}</>
         )}
-        <span style={{ marginLeft: '0.6em', opacity: 0.8 }}>※ プレビュー中はパワー消費・遭遇なし</span>
       </p>
+
+      {/* フィールドの HP/MP (戦闘をまたいで持続) */}
+      {combat && curHp !== null && curMp !== null && (
+        <div style={{ marginBottom: '0.5em' }}>
+          <HpBar name={session.handle?.split('.')[0] ?? 'あなた'} hp={curHp} maxHp={combat.maxHp} mine />
+          <MpBar mp={curMp} maxMp={combat.maxMp} />
+        </div>
+      )}
 
       {/* マップ本体。アバターは SVG 外の HTML オーバーレイ (装備が枠外に出るため)。 */}
       <div className="dq-window" style={{ padding: 4 }}>
@@ -227,7 +430,6 @@ export function World() {
             aria-label="ワールドマップ"
           >
             {tiles}
-            {/* プレイヤーの足元の影 */}
             <ellipse
               cx={HALF * TILE + TILE / 2}
               cy={HALF * TILE + TILE * 0.8}
@@ -253,7 +455,7 @@ export function World() {
         </div>
       </div>
 
-      {/* 十字キー (親指ゾーン) */}
+      {/* 十字キー (親指ゾーン) + どうぐ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 64px)', gap: 6, justifyContent: 'center', marginTop: '0.8em' }}>
         <span />
         <DirButton dir="up" onMove={move} />
@@ -262,8 +464,29 @@ export function World() {
         <DirButton dir="down" onMove={move} />
         <DirButton dir="right" onMove={move} />
       </div>
+      <div style={{ textAlign: 'center', marginTop: '0.5em' }}>
+        <button
+          type="button"
+          onClick={useHerbOnField}
+          disabled={herbStock <= 0 || !combat || (curHp !== null && combat !== null && curHp >= combat.maxHp)}
+          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
+        >
+          やくそうを使う ×{herbStock}
+        </button>
+      </div>
       <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-        PC は矢印キーでも移動できます。池・川・海・山は今は通れません。
+        PC は矢印キーでも移動できます。街に入ると全回復。
+        {diag ? ' 歩くとモンスターが出ることがあります (プレビュー: 報酬・記録なし)。' : ''}
+      </p>
+      <p style={{ textAlign: 'center', marginTop: '0.4em' }}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={resetToSpawn}
+          style={{ fontSize: '0.8em', padding: '0.4em 1em' }}
+        >
+          はじまりの街へ戻る (位置リセット)
+        </button>
       </p>
     </div>
   );

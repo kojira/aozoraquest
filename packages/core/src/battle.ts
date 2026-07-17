@@ -351,8 +351,17 @@ export function startBattle(
   tier: 1 | 2 | 3,
   seed: number,
   herbs = 0,
+  /** フィールドの現在 HP/MP を引き継いでバトルを始める (あおぞらワールドでは
+   *  HP/MP が戦闘をまたいで持続する。docs/19)。未指定は全快で開始 (試練)。 */
+  carry?: { hp?: number; mp?: number },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName);
+  if (carry?.hp !== undefined) {
+    player.hp = Math.max(1, Math.min(player.maxHp, Math.floor(carry.hp)));
+  }
+  if (carry?.mp !== undefined) {
+    player.mp = Math.max(0, Math.min(player.maxMp, Math.floor(carry.mp)));
+  }
   const { def, combatant } = summonMonster(tier, playerLevel, seed);
   return {
     seed,
