@@ -22,6 +22,7 @@ import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
+import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 
 /**
  * 精霊ブルスコンのページ (docs/18-brusukon-trial.md)。
@@ -257,14 +258,16 @@ export function Spirit() {
             )}
           </section>
 
-          {/* あおぞらワールド (docs/19) の入口。PR-W2 の散歩プレビュー段階。 */}
-          <section style={{ marginTop: '1.2em', textAlign: 'center' }}>
-            <Link to="/world">
-              <button type="button" style={{ padding: '0.6em 1.4em' }}>
-                🗺 あおぞらワールドを歩く (プレビュー)
-              </button>
-            </Link>
-          </section>
+          {/* あおぞらワールド (docs/19) の入口。散歩プレビュー段階 = dev 環境限定。 */}
+          {WORLD_PREVIEW_ENABLED && (
+            <section style={{ marginTop: '1.2em', textAlign: 'center' }}>
+              <Link to="/world">
+                <button type="button" style={{ padding: '0.6em 1.4em' }}>
+                  🗺 あおぞらワールドを歩く (プレビュー)
+                </button>
+              </Link>
+            </section>
+          )}
         </>
       )}
 
