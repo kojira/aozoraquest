@@ -23,6 +23,7 @@ import {
   BLUESKY_API_PAGE_LIMIT,
   POINTS_SCAN_PAGES,
   SUMMON_THRESHOLD as CORE_SUMMON_THRESHOLD,
+  salePowerFor,
 } from '@aozoraquest/core';
 import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
@@ -46,6 +47,8 @@ export interface PointsState {
   /** なんでも屋の制作で消費したパワー総量 (docs/20。制作費は品ごとに違うため
    *  件数でなく消費パワーの累積) */
   craftPowerSpent: number;
+  /** 素材のひきとりで得たパワー総量 (docs/20。レートは SALE_TUNING) */
+  salePowerEarned: number;
   /** 召喚済みか (spiritChat レコードが 1 件でもあるか) */
   summoned: boolean;
   /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws - battles) */
@@ -62,6 +65,7 @@ interface PowerRecord {
   cardDraws: number;
   battles?: number;
   craftPowerSpent?: number;
+  salePowerEarned?: number;
   summoned: boolean;
   updatedAt: string;
 }
@@ -69,7 +73,8 @@ interface PowerRecord {
 function deriveState(rec: PowerRecord): PointsState {
   const battles = rec.battles ?? 0;
   const craftPowerSpent = rec.craftPowerSpent ?? 0;
-  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws - battles - craftPowerSpent);
+  const salePowerEarned = rec.salePowerEarned ?? 0;
+  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws - battles - craftPowerSpent + salePowerEarned);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - rec.viaPosts);
   return {
     viaPosts: rec.viaPosts,
@@ -77,6 +82,7 @@ function deriveState(rec: PowerRecord): PointsState {
     cardDraws: rec.cardDraws,
     battles,
     craftPowerSpent,
+    salePowerEarned,
     summoned: rec.summoned,
     balance,
     toSummon,
@@ -96,14 +102,14 @@ async function writePowerRecord(agent: Agent, base: Omit<PowerRecord, 'updatedAt
 /** 旧方式: PDS の post / spiritChat / cardDraw を実際に走査して計算する。
  *  loadPointsState のマイグレーション用 + power レコード破損時の復旧用に残す。 */
 async function scanFullPoints(agent: Agent, did: string): Promise<PointsState> {
-  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws, battles, craftPowerSpent] = await Promise.all([
+  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws, battles, { craftPowerSpent, salePowerEarned }] = await Promise.all([
     countViaPosts(agent, did),
     countSpiritChat(agent, did),
     countCardDraws(agent, did),
     countBattles(agent, did),
     sumCraftPower(agent, did),
   ]);
-  const balance = Math.max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent);
+  const balance = Math.max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent + salePowerEarned);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - viaPosts);
   return {
     viaPosts,
@@ -111,16 +117,19 @@ async function scanFullPoints(agent: Agent, did: string): Promise<PointsState> {
     cardDraws,
     battles,
     craftPowerSpent,
+    salePowerEarned,
     summoned: hasAnySpiritChat,
     balance,
     toSummon,
   };
 }
 
-/** craft レコードの消費パワー合計 (再スキャン用。最大 500 件)。 */
-async function sumCraftPower(agent: Agent, did: string): Promise<number> {
+/** craft コレクションのパワー収支合計 (再スキャン用。最大 500 件)。
+ *  制作 = 消費 (power)、ひきとり = 獲得 (powerGained)。 */
+async function sumCraftPower(agent: Agent, did: string): Promise<{ craftPowerSpent: number; salePowerEarned: number }> {
   let cursor: string | undefined;
-  let total = 0;
+  let craftPowerSpent = 0;
+  let salePowerEarned = 0;
   for (let page = 0; page < 5; page++) {
     try {
       const res = await agent.com.atproto.repo.listRecords({
@@ -130,19 +139,37 @@ async function sumCraftPower(agent: Agent, did: string): Promise<number> {
         ...(cursor !== undefined ? { cursor } : {}),
       });
       for (const r of res.data.records) {
-        const v = r.value as { power?: unknown; itemId?: unknown };
-        // 壊れたレコードの扱いを loadCraftInventory と揃える (itemId 必須)
-        if (typeof v.itemId !== 'string') continue;
-        if (typeof v.power === 'number' && Number.isFinite(v.power) && v.power > 0) total += v.power;
+        const v = r.value as {
+          power?: unknown;
+          itemId?: unknown;
+          powerGained?: unknown;
+          materialId?: unknown;
+          materialCount?: unknown;
+        };
+        if (typeof v.itemId === 'string') {
+          // 制作レコード (壊れたレコードの扱いを loadCraftInventory と揃える)
+          if (typeof v.power === 'number' && Number.isFinite(v.power) && v.power > 0) craftPowerSpent += v.power;
+        } else if (
+          // ひきとりレコード: powerGained の自己申告は信用せず materialCount から
+          // 再計算する (レート改竄・素材なし powerGained だけの偽造レコードを
+          // 正規集計から締め出す。loadCraftInventory と同じ 3 点セット要求)
+          typeof v.powerGained === 'number' &&
+          typeof v.materialId === 'string' &&
+          typeof v.materialCount === 'number' &&
+          Number.isFinite(v.materialCount) &&
+          v.materialCount > 0
+        ) {
+          salePowerEarned += salePowerFor(Math.floor(v.materialCount));
+        }
       }
       const next = res.data.cursor;
       if (!next || next === cursor) break;
       cursor = next;
     } catch {
-      return total; // 未作成コレクション
+      return { craftPowerSpent, salePowerEarned }; // 未作成コレクション
     }
   }
-  return total;
+  return { craftPowerSpent, salePowerEarned };
 }
 
 /**
@@ -161,6 +188,7 @@ export async function loadPointsState(agent: Agent, did: string): Promise<Points
     cardDraws: scanned.cardDraws,
     battles: scanned.battles,
     craftPowerSpent: scanned.craftPowerSpent,
+    salePowerEarned: scanned.salePowerEarned,
     summoned: scanned.summoned,
   };
   try {
@@ -180,6 +208,8 @@ export interface PowerDelta {
   battles?: number;
   /** 制作で消費したパワー (品ごとに額が違うので件数でなく額) */
   craftPowerSpent?: number;
+  /** 素材のひきとりで得たパワー */
+  salePowerEarned?: number;
   /** 召喚状態を強制 true に立てるとき指定。下げる用途は今のところ無し。 */
   summoned?: true;
 }
@@ -195,6 +225,7 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
         cardDraws: scanned.cardDraws,
         battles: scanned.battles,
         craftPowerSpent: scanned.craftPowerSpent,
+        salePowerEarned: scanned.salePowerEarned,
         summoned: scanned.summoned,
         updatedAt: new Date().toISOString(),
       };
@@ -205,6 +236,7 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
       cardDraws: cur.cardDraws + (delta.cardDraws ?? 0),
       battles: (cur.battles ?? 0) + (delta.battles ?? 0),
       craftPowerSpent: (cur.craftPowerSpent ?? 0) + (delta.craftPowerSpent ?? 0),
+      salePowerEarned: (cur.salePowerEarned ?? 0) + (delta.salePowerEarned ?? 0),
       summoned: delta.summoned ?? cur.summoned,
     };
     await writePowerRecord(agent, next);

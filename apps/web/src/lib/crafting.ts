@@ -11,7 +11,7 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { CRAFT_TUNING, craftLevelRoll, craftSeedFromRkey } from '@aozoraquest/core';
+import { CRAFT_TUNING, SALE_TUNING, craftLevelRoll, craftSeedFromRkey, salePowerFor } from '@aozoraquest/core';
 import { VIA } from './atproto';
 import { COL } from './collections';
 
@@ -86,14 +86,20 @@ export async function craftItem(
   };
 }
 
+export function newForgeRkey(): string {
+  return `f-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
 /** 合成を記帳する。呼び出し側は同アイテム・同強化値の 2 個体を渡すこと
- *  (集計時にも再検証されるので、違反レコードは無効になるだけ)。 */
+ *  (集計時にも再検証されるので、違反レコードは無効になるだけ)。
+ *  rkey を渡すと再試行が冪等 (craft/sale と同じ流儀)。 */
 export async function forgeItems(
   agent: Agent,
   input: { itemId: string; resultLevel: number; consumed: [string, string] },
+  rkeyIn?: string,
 ): Promise<CraftedPiece> {
   const did = agent.assertDid;
-  const rkey = `f-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+  const rkey = rkeyIn ?? newForgeRkey();
   await agent.com.atproto.repo.createRecord({
     repo: did,
     collection: COL.craft,
@@ -108,6 +114,48 @@ export async function forgeItems(
     } satisfies ForgeRecord,
   });
   return { rkey, itemId: input.itemId, level: Math.min(CRAFT_TUNING.levelMax, input.resultLevel), at: new Date().toISOString() };
+}
+
+/** 素材のひきとりレコード (素材を燃やしてパワーへ。docs/20)。itemId を持たない。 */
+export interface SaleRecord {
+  $type: string;
+  materialId: string;
+  materialCount: number;
+  /** 得たパワー (salePowerFor(materialCount) と一致すべき値。集計側で再計算して検証) */
+  powerGained: number;
+  at: string;
+  via: string;
+}
+
+export function newSaleRkey(): string {
+  return `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
+/** 素材をひきとってもらう。materialCount は倍数へ構造的に丸める (端数の無補償燃焼を
+ *  防ぐ)。rkey を渡すと再試行が冪等 (craft と同じ流儀 — レビュー指摘)。 */
+export async function sellMaterials(
+  agent: Agent,
+  input: { materialId: string; materialCount: number },
+  rkeyIn?: string,
+): Promise<{ powerGained: number; materialCount: number }> {
+  const did = agent.assertDid;
+  const powerGained = salePowerFor(input.materialCount);
+  const materialCount = powerGained * SALE_TUNING.materialsPerPower;
+  const rkey = rkeyIn ?? newSaleRkey();
+  await agent.com.atproto.repo.createRecord({
+    repo: did,
+    collection: COL.craft,
+    rkey,
+    record: {
+      $type: COL.craft,
+      materialId: input.materialId,
+      materialCount,
+      powerGained,
+      at: new Date().toISOString(),
+      via: VIA,
+    } satisfies SaleRecord,
+  });
+  return { powerGained, materialCount };
 }
 
 export interface CraftInventory {
@@ -140,9 +188,21 @@ export async function loadCraftInventory(agent: Agent, did: string): Promise<Cra
       break; // 未作成
     }
     for (const r of res.data.records) {
-      const v = r.value as Partial<CraftRecord & ForgeRecord>;
+      const v = r.value as Partial<CraftRecord & ForgeRecord & SaleRecord>;
       const rkey = r.uri.split('/').pop() ?? '';
-      if (typeof v.itemId !== 'string' || rkey === '') continue;
+      if (rkey === '') continue;
+      if (typeof v.itemId !== 'string') {
+        // ひきとりレコード: 素材を燃やした分を消費として計上 (個体は生まれない)
+        if (
+          typeof v.powerGained === 'number' &&
+          typeof v.materialId === 'string' &&
+          typeof v.materialCount === 'number' &&
+          v.materialCount > 0
+        ) {
+          materialsSpent[v.materialId] = (materialsSpent[v.materialId] ?? 0) + Math.floor(v.materialCount);
+        }
+        continue;
+      }
       if (Array.isArray(v.consumed)) {
         // 合成レコード
         const [a, b] = v.consumed;
