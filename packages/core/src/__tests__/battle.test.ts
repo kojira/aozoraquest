@@ -249,15 +249,24 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('MP: 特技で消費し、たたかう +1 / ぼうぎょ +2 で回復する', () => {
+  it('MP: 特技で消費する。回復はジョブ特性のみ (特性なしジョブはぼうぎょでも回復 0)', () => {
     const s0 = startBattle('sage', 5, 10, '賢者', 1, 42);
     expect(s0.player.mp).toBe(s0.player.maxMp);
     const s1 = resolveTurn(s0, 'skill');
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
-    if (s1.outcome === 'ongoing') {
-      const s2 = resolveTurn(s1, 'guard');
-      expect(s2.player.mp).toBe(Math.min(s2.player.maxMp, s1.player.mp + BATTLE_TUNING.mpGuardGain));
-    }
+    expect(s1.outcome).toBe('ongoing');
+    // sage は特性なし → ぼうぎょで回復しない (全員一律回復はジョブ差をぼやけさせる
+    // ためオーナー決定 2026-07-17 で廃止)。ログにも MP 表記が出ない
+    const s2 = resolveTurn(s1, 'guard');
+    expect(s2.player.mp).toBe(s1.player.mp);
+    expect(s2.lastEvents.some((e) => e.text.includes('ぼうぎょのかまえ'))).toBe(true);
+    // 特性持ち (bard: ぼうぎょ +4) は回復し、ログに特性名が出る
+    const b0 = startBattle('bard', 5, 10, '詩人', 1, 42);
+    const b1 = resolveTurn(b0, 'skill');
+    expect(b1.outcome).toBe('ongoing');
+    const b2 = resolveTurn(b1, 'guard');
+    expect(b2.player.mp).toBe(Math.min(b2.player.maxMp, b1.player.mp + 4));
+    expect(b2.lastEvents.some((e) => e.text.includes('歌の余韻'))).toBe(true);
   });
 
   it('MP 不足の特技は「たたかう」にフォールバックし MP を消費しない', () => {

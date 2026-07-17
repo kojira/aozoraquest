@@ -64,13 +64,15 @@ export const BATTLE_TUNING = {
    *  (2.6 → 防御で 1.3 まで軽減 = 節約 1.3 発分 > 機会費用の自攻撃 1 発分)。
    *  防御に存在意義を与える読み合いの核。バランステストで「予告に防御 > attack 連打」を固定。 */
   chargedPower: 2.6,
-  /** MP: 特技のコスト。たたかう +1 / ぼうぎょ +2 で回復する (連発できないから
-   *  「たたかう」に意味が生まれる)。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。 */
+  /** MP: 特技のコスト。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。
+   *  戦闘中の MP 回復は **ジョブ特性 (JOB_MP_TRAITS) を持つジョブだけ** —
+   *  全員一律の回復はジョブの差をぼやけさせる (オーナー決定 2026-07-17)。
+   *  特性なしジョブは MP プール + そらのしずくでやりくりする。 */
   skillMpCost: 4,
   mpBase: 6,
-  mpIntScale: 0.35,
-  mpAttackGain: 1,
-  mpGuardGain: 2,
+  mpIntScale: 0.5,
+  mpAttackGain: 0,
+  mpGuardGain: 0,
   /** ぼうぎょの翌ターン回避ボーナス (身構えて相手の動きを読む)。 */
   guardFocusDodge: 0.15,
   /** やくそう: 使うと maxHp のこの割合を回復 (1 ターン消費)。持ち込み上限 herbCarryMax。
@@ -159,10 +161,11 @@ export function skillForJob(archetype: Archetype): JobSkill {
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
  *  強化して初期で弱いジョブに付ける。能力がジョブに合っているかも大事」)。
- *  基本値は たたかう +1 / ぼうぎょ +2 (全員 —「たたかう」の存在意義は保つ)。
- *  素の火力が低く特技依存になるジョブ (luk/agi 型) に、世界観に沿った特性名で
- *  回復量ボーナスを与える。値は scripts/sim-battle-balance.ts の実測で調整
- *  (Lv1 tier1 5 連戦生存率が全ジョブ 60〜100% のバンドに入る水準)。 */
+ *  **戦闘中に MP が回復するのは特性を持つジョブだけ** (全員一律の基本回復は
+ *  「ジョブの差がぼやける」ためオーナー決定 2026-07-17 で廃止)。特性なしジョブは
+ *  MP プール (int 由来) + そらのしずくでやりくりする。素の火力が低く特技依存に
+ *  なるジョブ (luk/agi 型) に、世界観に沿った特性名で回復を与える。値は
+ *  scripts/sim-battle-balance.ts の実測で調整。 */
 export interface MpTrait {
   /** 特性名 (UI 表示用)。undefined = 特性なし (基本値) */
   name?: string;
@@ -683,11 +686,15 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     state.player.guarding = true;
     // 翌ターンまで相手の動きを読める (回避ボーナス)。このターン(1) + 次ターン(1) = 2。
     state.player.focus = 2;
-    state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpGuardGain);
-    events.push({
-      actor: 'player',
-      text: `${state.player.name}はぼうぎょして息を整えた。(${state.mpTraitName ? `${state.mpTraitName}: ` : ''}MP +${state.mpGuardGain})`,
-    });
+    if (state.mpGuardGain > 0) {
+      state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpGuardGain);
+      events.push({
+        actor: 'player',
+        text: `${state.player.name}はぼうぎょして息を整えた。(${state.mpTraitName ? `${state.mpTraitName}: ` : ''}MP +${state.mpGuardGain})`,
+      });
+    } else {
+      events.push({ actor: 'player', text: `${state.player.name}はぼうぎょのかまえ!` });
+    }
   }
   if (cmd === 'skill' && state.playerSkill.kind === 'parry') {
     state.player.parrying = true;
@@ -708,7 +715,9 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
-        state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
+        if (state.mpAttackGain > 0) {
+          state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
+        }
       } else if (cmd === 'skill') {
         playerSkillAction(state, rng, events);
       } else if (cmd === 'herb') {
