@@ -35,7 +35,9 @@ export function BattleView({
           style={{ display: 'inline-block' }}
           className={state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
         >
-          <MonsterSvg species={monsterDef?.species ?? 'slime'} size={150} />
+          {/* 132px + ログ 3.6em: コマンド 3 段まで低背端末 (iPhone SE 級) で
+              fold 内に収めるための圧縮 (レビュー指摘)。 */}
+          <MonsterSvg species={monsterDef?.species ?? 'slime'} size={132} />
         </div>
         <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} />
       </div>
@@ -49,7 +51,7 @@ export function BattleView({
           border: '2px solid var(--color-border)',
           borderRadius: 4,
           background: 'var(--color-window-bg)',
-          minHeight: '4.5em',
+          minHeight: '3.6em',
           fontSize: '0.85em',
           lineHeight: 1.6,
         }}
@@ -96,7 +98,7 @@ export function BattleView({
         />
         <CommandButton
           label="にげる"
-          sub="失敗するとスキを見せる"
+          sub="失敗すると 1 ターン失う"
           onClick={() => onCommand('flee')}
           disabled={busy}
         />

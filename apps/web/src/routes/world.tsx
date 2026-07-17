@@ -264,7 +264,11 @@ export function World() {
       const b = battleRef.current;
       if (!b || b.busy || !agent || !did) return;
       const next = resolveTurn(b.state, command);
-      setBattle({ ...b, state: next, busy: true });
+      // battleRef も同期更新 (同一フレームの二重発火が busy=false を二重観測して
+      // レコード確定/XP が二重実行される穴を塞ぐ。move() と同じ流儀。レビュー指摘)
+      const acting = { ...b, state: next, busy: true };
+      battleRef.current = acting;
+      setBattle(acting);
       await new Promise((r) => setTimeout(r, 450));
       if (next.outcome === 'ongoing') {
         setBattle((cur) => (cur ? { ...cur, state: next, busy: false } : cur));
@@ -424,16 +428,17 @@ export function World() {
     const danger = regionDanger(regionOf(ws.x, ws.y));
     return (
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
-        <h2 style={{ margin: '0 0 0.3em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(パワー {BATTLE_TUNING.powerCost} 消費)</span></h2>
+        {/* 途中離脱 = 敗北の開示はヘッダ側 (低い端末ではコマンド下が fold 落ちする。レビュー指摘) */}
+        <h2 style={{ margin: '0 0 0.1em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(パワー {BATTLE_TUNING.powerCost} 消費)</span></h2>
+        <p style={{ margin: '0 0 0.2em', fontSize: '0.7em', color: 'var(--color-muted)' }}>
+          ※ とちゅうでやめる (画面を閉じる) と敗北あつかいになるよ。
+        </p>
         <BattleView
           state={battle.state}
           busy={battle.busy}
           onCommand={(c) => void onBattleCommand(c)}
           headerNote={DANGER_LABELS[danger]}
         />
-        <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.5em', textAlign: 'center' }}>
-          ※ とちゅうでやめる (画面を閉じる) と敗北あつかいになるよ。
-        </p>
       </div>
     );
   }
@@ -464,6 +469,11 @@ export function World() {
             </div>
           )}
         </div>
+        {state.outcome === 'fled' && (
+          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+            なにも手に入らなかったが、ぶじに逃げのびた。(つかったパワーは戻らない)
+          </p>
+        )}
         {movedToTown && (
           <p style={{ fontSize: '0.85em' }}>気がつくと「{movedToTown}」で介抱されていた… (全回復)</p>
         )}
@@ -566,29 +576,33 @@ export function World() {
         <DirButton dir="right" onMove={move} />
       </div>
       <div style={{ textAlign: 'center', marginTop: '0.5em', display: 'flex', gap: '0.5em', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {/* 満タン時は disabled にせず押下時 notice で理由を言う
+            (disabled だと「在庫があるのに押せない理由」が読めない。レビュー指摘) */}
         <button
           type="button"
           onClick={useHerbOnField}
-          disabled={herbStock <= 0 || !combat || (curHp !== null && combat !== null && curHp >= combat.maxHp)}
+          disabled={herbStock <= 0 || !combat}
           style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
         >
-          やくそう ×{herbStock}
+          やくそう ×{herbStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>HP回復</span>
         </button>
         <button
           type="button"
           onClick={useTonicOnField}
-          disabled={tonicStock <= 0 || !combat || (curMp !== null && combat !== null && curMp >= combat.maxMp)}
+          disabled={tonicStock <= 0 || !combat}
           style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
         >
-          そらのしずく ×{tonicStock}
+          そらのしずく ×{tonicStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>MP回復</span>
         </button>
       </div>
       <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
         PC は矢印キーでも移動できます。街に入ると全回復。
         {diag
-          ? points && points.balance >= BATTLE_TUNING.powerCost
-            ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
-            : ' あおぞらパワーがないのでモンスターは出ません (投稿すると増える)。'
+          ? points === null
+            ? ' パワー残高を読み込めなかった (通信エラー)。モンスターは出ません。再読み込みでもう一度どうぞ。'
+            : points.balance >= BATTLE_TUNING.powerCost
+              ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
+              : ' あおぞらパワーがないのでモンスターは出ません (投稿すると増える)。'
           : ''}
       </p>
       <p style={{ textAlign: 'center', marginTop: '0.4em' }}>

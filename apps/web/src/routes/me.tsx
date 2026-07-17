@@ -185,7 +185,7 @@ export function MyProfile() {
                   <>
                     <span style={{ fontFamily: 'ui-monospace, monospace' }}>HP {c.maxHp}</span>
                     <span style={{ marginLeft: '0.6em', fontFamily: 'ui-monospace, monospace' }}>MP {c.maxMp}</span>
-                    <span style={{ marginLeft: '0.6em', opacity: 0.8 }}>(ブルスコンの試練の戦闘値)</span>
+                    <span style={{ marginLeft: '0.6em', opacity: 0.8 }}>(きみのパラメータとレベルで決まる戦闘値)</span>
                   </>
                 );
               })()}

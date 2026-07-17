@@ -310,16 +310,18 @@ describe('resolveTurn', () => {
   it('そらのしずく: MP を回復し、残数と使用数が更新される。切れたらフォールバック', () => {
     let s = startBattle('sage', 5, 10, '賢者', 1, 42, 0, undefined, { tonics: 2 });
     expect(s.tonics).toBe(2);
-    // MP を減らしてから使う
+    // MP を減らしてから使う (seed 42 は 1 ターン目で決着しない前提を明示的に固定)
     s = resolveTurn(s, 'skill');
-    if (s.outcome === 'ongoing') {
-      const mpBefore = s.player.mp;
-      const next = resolveTurn(s, 'tonic');
-      expect(next.lastEvents.some((e) => e.text.includes('そらのしずく'))).toBe(true);
-      expect(next.tonics).toBe(1);
-      expect(next.tonicsUsed).toBe(1);
-      void mpBefore;
-    }
+    expect(s.outcome).toBe('ongoing');
+    const mpBefore = s.player.mp;
+    const next = resolveTurn(s, 'tonic');
+    expect(next.lastEvents.some((e) => e.text.includes('そらのしずく'))).toBe(true);
+    expect(next.tonics).toBe(1);
+    expect(next.tonicsUsed).toBe(1);
+    // 肝心の MP が仕様どおり増えること (maxMp * tonicMpRatio、上限クランプ)
+    const expectedGain = Math.max(1, Math.round(next.player.maxMp * BATTLE_TUNING.tonicMpRatio));
+    expect(next.player.mp).toBe(Math.min(next.player.maxMp, mpBefore + expectedGain));
+    expect(next.player.mp).toBeGreaterThan(mpBefore);
     const none = startBattle('sage', 5, 10, '賢者', 1, 7);
     const fb = resolveTurn(none, 'tonic');
     expect(fb.lastEvents.some((e) => e.text.includes('持っていない'))).toBe(true);
