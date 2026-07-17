@@ -5,6 +5,7 @@ import {
   BATTLE_TUNING,
   ITEMS,
   MONSTERS_BY_ID,
+  jobDisplayName,
   encounterRateFor,
   isWalkable,
   jobLevelFromXp,
@@ -26,7 +27,8 @@ import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
-import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord } from '@/lib/battle-log';
+import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
+import { notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
@@ -94,6 +96,8 @@ export function World() {
     drops: string[];
     xp: number;
     saveFailed: boolean;
+    /** XP 加算で確定したレベルアップ (非同期に届く) */
+    levelUps?: BattleLevelUps;
   } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -318,7 +322,28 @@ export function World() {
           saveFailed = true;
         }
       }
-      if (xp > 0) void awardBattleXp(agent, did, xp);
+      if (xp > 0) {
+        void awardBattleXp(agent, did, xp).then((ups) => {
+          if (!ups) return;
+          // 表示レベル (HP/MP バー分母・次戦の戦闘値) を追従させる。演出だけ出して
+          // maxHp が増えないと「LEVEL UP! なのに強くなってない」に見える (レビュー指摘)
+          void getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
+            .then((d) => { if (d) setDiag(d); })
+            .catch(() => {});
+          // 発火順は投稿フロー (compose-modal) と同じ job → player
+          if (ups.job) {
+            notifyLevelUp({
+              kind: 'job',
+              from: ups.job.from,
+              to: ups.job.to,
+              jobName: jobDisplayName(ups.job.archetype, 'default'),
+            });
+          }
+          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
+          // 同じ戦闘のリザルトが出ている間だけ文言も反映 (次の遭遇に紛れ込ませない)
+          setBattleResult((r) => (r && r.state.seed === next.seed ? { ...r, levelUps: ups } : r));
+        });
+      }
       // 手持ちを更新: 使った分を引き、ドロップ分を足す。
       // TODO(W3): 在庫の正は Worker (DO) に移す (フィールド使用分が記録されない併走は
       // プレビュー限定の割り切り)。
@@ -509,8 +534,18 @@ export function World() {
             {state.lastEvents.map((e, i) => <div key={i}>{e.text}</div>)}
           </div>
         )}
-        <div style={{ margin: '0.6em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+        <div aria-live="polite" style={{ margin: '0.6em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
           {xp > 0 && <div>経験値 +{xp}</div>}
+          {battleResult.levelUps?.player && (
+            <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+              レベルが {battleResult.levelUps.player.to} に あがった!
+            </div>
+          )}
+          {battleResult.levelUps?.job && (
+            <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+              {jobDisplayName(battleResult.levelUps.job.archetype, 'default')}のジョブレベルが {battleResult.levelUps.job.to} に あがった!
+            </div>
+          )}
           {drops.length > 0 && (
             <div>素材を手に入れた: {drops.map((d) => ITEMS[d]?.name ?? d).join('、')}</div>
           )}

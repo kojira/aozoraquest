@@ -8,6 +8,7 @@
 
 import type { Agent } from '@atproto/api';
 import type { BattleOutcome, BattleRecordSummary } from '@aozoraquest/core';
+import { jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
 import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 
@@ -80,11 +81,25 @@ export async function finishBattleRecord(
   });
 }
 
+/** awardBattleXp が検出したレベルアップ (演出 notifyLevelUp とリザルト文言用)。 */
+export interface BattleLevelUps {
+  player?: { from: number; to: number };
+  job?: { from: number; to: number; archetype: string };
+}
+
 /**
  * バトルの経験値を analysis レコードに加算する (post-processor と同じ流儀:
  * playerLevel.xp は常に、jobLevel.xp も現ジョブに積む)。失敗は warn して swallow。
+ * 戻り値でレベルアップの有無を返す (呼び出し側が演出を発火する)。
+ * offsets: 画面表示のレベルがレコード外 XP (クエスト報酬の questXp 等) を含む場合、
+ * 同じオフセットで判定しないと「表示 LV6 なのに 4→5 の演出」の食い違いが出る。
  */
-export async function awardBattleXp(agent: Agent, did: string, xp: number): Promise<void> {
+export async function awardBattleXp(
+  agent: Agent,
+  did: string,
+  xp: number,
+  offsets?: { jobXpOffset?: number; playerXpOffset?: number },
+): Promise<BattleLevelUps | null> {
   try {
     const analysis = await getRecord<{
       archetype: string;
@@ -93,7 +108,7 @@ export async function awardBattleXp(agent: Agent, did: string, xp: number): Prom
       jobLevel?: { archetype: string; xp: number; joinedAt: string };
       [k: string]: unknown;
     }>(agent, did, COL.analysis, 'self');
-    if (!analysis) return;
+    if (!analysis) return null;
     const playerLevel = analysis.playerLevel ?? { xp: 0, streakDays: 0 };
     const jobLevel = analysis.jobLevel ?? {
       archetype: analysis.archetype,
@@ -105,8 +120,19 @@ export async function awardBattleXp(agent: Agent, did: string, xp: number): Prom
       playerLevel: { ...playerLevel, xp: playerLevel.xp + xp },
       jobLevel: { ...jobLevel, xp: jobLevel.xp + xp },
     });
+    const jobOff = offsets?.jobXpOffset ?? 0;
+    const playerOff = offsets?.playerXpOffset ?? 0;
+    const ups: BattleLevelUps = {};
+    const pFrom = playerLevelFromXp(playerLevel.xp + playerOff);
+    const pTo = playerLevelFromXp(playerLevel.xp + xp + playerOff);
+    if (pTo > pFrom) ups.player = { from: pFrom, to: pTo };
+    const jFrom = jobLevelFromXp(jobLevel.xp + jobOff);
+    const jTo = jobLevelFromXp(jobLevel.xp + xp + jobOff);
+    if (jTo > jFrom) ups.job = { from: jFrom, to: jTo, archetype: jobLevel.archetype };
+    return ups;
   } catch (e) {
     console.warn('[battle] xp award failed', e);
+    return null;
   }
 }
 

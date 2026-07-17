@@ -246,6 +246,15 @@ export function Spirit() {
                 playerLevel={playerLevelFromXp(diag.playerLevel?.xp ?? 0)}
                 playerName={userName}
                 rpgStats={diag.rpgStats ?? null}
+                jobXpOffset={questXp}
+                onXpAwarded={() => {
+                  // バトル XP 反映後に表示レベルを追従 (演出と select 画面の LV 食い違い防止)
+                  if (agent && did) {
+                    getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
+                      .then((r) => { if (r) setDiag(r); })
+                      .catch(() => {});
+                  }
+                }}
                 points={points}
                 onPointsChanged={setPoints}
               />
