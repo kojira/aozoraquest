@@ -284,12 +284,21 @@ describe('townShopStock (品揃えの決定的生成)', () => {
     }
   });
 
-  it('店の素材種は決定的で、実在の素材 id を返す', () => {
+  it('店の素材種は決定的で、その街の危険度で狩れるモンスターの素材 (地元で稼げる)', async () => {
+    const { MONSTERS } = await import('../battle.js');
+    const { regionDanger } = await import('../world.js');
+    // tier → その tier のモンスターがドロップする素材集合
+    const dropsOfTier = (tier: 1 | 2 | 3) => {
+      const set = new Set<string>();
+      for (const m of MONSTERS) if (m.tier === tier) for (const d of m.drops) set.add(d.item);
+      return set;
+    };
     towns.forEach((t, i) => {
       const stock = townShopStock(t, i);
-      expect(typeof stock.materialId).toBe('string');
-      expect(stock.materialId.length).toBeGreaterThan(0);
-      expect(townShopStock(t, i).materialId).toBe(stock.materialId);
+      expect(townShopStock(t, i).materialId).toBe(stock.materialId); // 決定的
+      const danger = regionDanger(t.region);
+      const tier = (danger <= 1 ? 1 : danger === 2 ? 2 : 3) as 1 | 2 | 3;
+      expect(dropsOfTier(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
     });
   });
 

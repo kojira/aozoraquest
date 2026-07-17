@@ -166,6 +166,7 @@ export function ShopModal({
           <br />
           もちもの: パワー <strong style={{ color: 'var(--color-fg)' }}>{balance}</strong> / {materialName}{' '}
           <strong style={{ color: 'var(--color-fg)' }}>×{materials[stock.materialId] ?? 0}</strong>
+          {' '}({materialName}は このあたりのモンスターが おとす)
         </p>
         {/* live region は常設して中身を差し替える (条件付きマウントは初回読み上げが
             落ちることがある — レビュー指摘) */}
