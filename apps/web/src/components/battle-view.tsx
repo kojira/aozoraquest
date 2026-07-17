@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BattleState, Command, TurnEvent } from '@aozoraquest/core';
 import { BATTLE_TUNING, MONSTERS_BY_ID, SKILL_KIND_LABELS } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
@@ -56,13 +57,16 @@ export function BattleView({
           lineHeight: 1.6,
         }}
       >
-        {state.turn === 0 ? (
-          <div>
-            {state.monster.name}があらわれた! {monsterDef?.intro}
-          </div>
-        ) : (
-          state.lastEvents.map((e: TurnEvent, i: number) => <div key={i}>{e.text}</div>)
-        )}
+        {/* DQ1 風に 1 文字ずつ表示 (オーナー指示 2026-07-18)。key=turn で毎ターン
+            打ち直す。コマンドはブロックしない (テンポ優先、せっかちは次の入力で OK) */}
+        <TypedLines
+          key={state.turn}
+          lines={
+            state.turn === 0
+              ? [`${state.monster.name}があらわれた! ${monsterDef?.intro ?? ''}`]
+              : state.lastEvents.map((e: TurnEvent) => e.text)
+          }
+        />
       </div>
 
       {/* 自分 HP + MP */}
@@ -166,3 +170,72 @@ export function CommandButton({ label, sub, onClick, disabled }: { label: string
     </button>
   );
 }
+
+/** 戦闘ログの DQ1 風タイプライター表示。行を順に 1 文字ずつ出す。
+ *  reduced-motion では即時全文。セリフウィンドウ (dialogue-window) より速い
+ *  1 文字 22ms — 戦闘のテンポを削らない速度に留める。battle-view 専用。 */
+function TypedLines({ lines }: { lines: readonly string[] }) {
+  const reduced = useMemo(
+    () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+  // lines は毎レンダー新配列 (map で生成) なので、打ち直しの契機は内容文字列で
+  // 判定する — 親 (World) の notice 更新等の無関係な再レンダーで頭から
+  // タイプし直さない (レビュー指摘)
+  const joined = lines.join('\n');
+  // code point 単位 (絵文字がサロゲート半欠けで表示されない — レビュー指摘)
+  const cps = useMemo(() => lines.map((l) => Array.from(l)), [joined]); // eslint-disable-line react-hooks/exhaustive-deps
+  const total = cps.reduce((n, l) => n + l.length, 0);
+  const [chars, setChars] = useState(reduced ? total : 0);
+  const doneCharsRef = useRef(reduced ? total : 0);
+  doneCharsRef.current = chars;
+  useEffect(() => {
+    setChars(reduced ? total : 0);
+    if (reduced) return;
+    // updater 内で clearInterval しない (updater は純粋であるべき — レビュー指摘)。
+    // 打ち終わったら interval 自体を止める
+    const id = setInterval(() => {
+      if (doneCharsRef.current >= total) {
+        clearInterval(id);
+        return;
+      }
+      setChars((c) => Math.min(total, c + 1));
+    }, 22);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lines は joined で代表する
+  }, [joined, total, reduced]);
+  let used = 0;
+  return (
+    // タップで残りを即時全文 (セリフウィンドウと同じ「タップ = スキップ」作法。
+    // コマンドは非ブロックなので押し逃しの実害はないが、作法を統一する — レビュー指摘)
+    <div onClick={() => setChars(total)}>
+      {cps.map((cp, i) => {
+        const visible = Math.max(0, Math.min(cp.length, chars - used));
+        used += cp.length;
+        return (
+          <div key={i}>
+            {/* SR には全文を渡し、タイプ途中表示は aria-hidden (汎用要素の
+                aria-label は多くの SR が無視する — レビュー指摘) */}
+            <span style={SR_ONLY}>{lines[i]}</span>
+            <span aria-hidden>{cp.slice(0, visible).join('')}</span>
+            {/* 高さを先に確保 (行が出るたびにコマンド段が下へずれるのを防ぐ) */}
+            {visible === 0 && <span aria-hidden>&nbsp;</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** visually-hidden (スクリーンリーダーにだけ全文を渡す) */
+const SR_ONLY: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};

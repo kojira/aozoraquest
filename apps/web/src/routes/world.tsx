@@ -49,6 +49,9 @@ import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
+import { DialogueWindow } from '@/components/dialogue-window';
+import { SpiritIcon } from '@/components/spirit-icon';
+import type { DialogueLine } from '@/lib/dialogue';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -86,6 +89,19 @@ interface Vitals {
   regions: number[];
 }
 
+/** 初回オンボーディングを見終えたかの localStorage キー (スティックのヒントと同じ方式) */
+const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
+
+/** 初回オンボーディング (話者はブルスコン — 既存の案内役。オーナー指示 2026-07-18)。
+ *  操作 → 危険と回復 → ちずのかけら → ちずボタン、の順で旅の前提だけ伝える */
+const ONBOARDING_LINES: readonly DialogueLine[] = [
+  { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ! わたしは せいれいブルスコン。すこしだけ あんないするね。' },
+  { speaker: 'ブルスコン', text: 'マップを おしたまま ゆびを うごかすと あるけるよ。' },
+  { speaker: 'ブルスコン', text: 'そとには モンスターが いる。たたかいに まけると さいごに たちよった 街まで もどされちゃう。あぶなくなったら 街で やすもう。' },
+  { speaker: 'ブルスコン', text: '街に つくと「ちずのかけら」が 手に はいって、その街の まわりの ちずが ひろがっていくんだ。' },
+  { speaker: 'ブルスコン', text: '🗺 ちずボタンで いつでも たしかめられる。それじゃ、よい たびを!' },
+];
+
 export function World() {
   const session = useSession();
   const agent = session.agent ?? null;
@@ -94,6 +110,8 @@ export function World() {
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
+  const [onboarding, setOnboarding] = useState(false);
+  const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
   /** やくそう/そらのしずくの手持ち。戦闘内の使用と獲得は battle レコードに残る。
@@ -190,6 +208,12 @@ export function World() {
         const state = await loadWorldState(agent, did);
         if (cancelled) return;
         setWs({ x: state.x, y: state.y, hp: state.hp, mp: state.mp, lastTown: state.lastTown, regions: state.regions });
+        try {
+          if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
+            setOnboarding(true);
+            onboardingRef.current = true;
+          }
+        } catch { /* private mode */ }
         if (state.relocated) {
           // 歩行不能地形からの退避 (橋の再配置など)。無言で数百タイル動くと混乱する
           const t = townAt(state.x, state.y);
@@ -284,7 +308,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -618,6 +642,7 @@ export function World() {
   // そらのはねを使う: 最後に立ち寄った街 (無ければはじまりの街) へ帰還。
   // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
   const useFeatherOnField = useCallback(() => {
+    if (onboardingRef.current) return;
     if (featherStock <= 0) return;
     const s = wsRef.current;
     // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
@@ -1084,6 +1109,17 @@ export function World() {
           : ''}
       </p>
       {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
+      {onboarding && (
+        <DialogueWindow
+          lines={ONBOARDING_LINES}
+          plateIcon={<SpiritIcon size={20} />}
+          onDone={() => {
+            setOnboarding(false);
+            onboardingRef.current = false;
+            try { localStorage.setItem(ONBOARDING_DONE_KEY, '1'); } catch { /* private mode */ }
+          }}
+        />
+      )}
       {gearOpen && (
         <GearModal
           archetype={archetype}
