@@ -27,6 +27,10 @@ export interface BattleLogRecord {
   herbsUsed?: number;
   /** このバトルで使ったそらのしずく数 (素材在庫から差し引く)。旧レコードは欠落 = 0。 */
   tonicsUsed?: number;
+  /** 敗北ペナルティで落とした素材 (在庫から差し引く)。勝利時は空/欠落。
+   *  仮レコード時点で確定値を書く (途中離脱 = 棄権 = 敗北でもペナルティが効く
+   *  ように。値は seed から決定的なので決着時の確定と一致する)。 */
+  materialsLost?: string[];
   at: string;
   via: string;
 }
@@ -38,7 +42,7 @@ export interface BattleLogRecord {
  */
 export async function startBattleRecord(
   agent: Agent,
-  input: Pick<BattleLogRecord, 'seed' | 'tier' | 'monsterId'>,
+  input: Pick<BattleLogRecord, 'seed' | 'tier' | 'monsterId' | 'materialsLost'>,
 ): Promise<string> {
   const did = agent.assertDid;
   const rkey = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -186,7 +190,14 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
     currentStreak: 0,
     total: 0,
   };
-  const outcomes: { outcome: string; tier: number; drops: string[]; herbsUsed: number; tonicsUsed: number }[] = [];
+  const outcomes: {
+    outcome: string;
+    tier: number;
+    drops: string[];
+    herbsUsed: number;
+    tonicsUsed: number;
+    materialsLost: string[];
+  }[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 5; page++) {
     let res;
@@ -208,6 +219,9 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
         drops: Array.isArray(v.drops) ? v.drops.filter((d): d is string => typeof d === 'string') : [],
         herbsUsed: typeof v.herbsUsed === 'number' && v.herbsUsed > 0 ? v.herbsUsed : 0,
         tonicsUsed: typeof v.tonicsUsed === 'number' && v.tonicsUsed > 0 ? v.tonicsUsed : 0,
+        materialsLost: Array.isArray(v.materialsLost)
+          ? v.materialsLost.filter((d): d is string => typeof d === 'string')
+          : [],
       });
     }
     const next = res.data.cursor;
@@ -222,9 +236,14 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
   let running = 0;
   let herbsConsumed = 0;
   let tonicsConsumed = 0;
+  const lostCounts: Record<string, number> = {};
   for (const o of outcomes) {
     herbsConsumed += o.herbsUsed; // 使用は勝敗に関わらず消費 (持ち込んで使った分)
     tonicsConsumed += o.tonicsUsed;
+    // 敗北ペナルティで落とした素材 (敗北レコードのみ値を持つ。勝利は空)
+    if (o.outcome === 'lose') {
+      for (const id of o.materialsLost) lostCounts[id] = (lostCounts[id] ?? 0) + 1;
+    }
     if (o.outcome === 'win') {
       stats.wins++;
       if (o.tier === 3) stats.tier3Wins++;
@@ -235,16 +254,16 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
       counting = false;
     }
   }
-  // 消費アイテムの在庫 = ドロップ獲得数 − 使用数 (0 未満にはしない)
-  for (const [item, consumed] of [
-    ['herb', herbsConsumed],
-    ['sky-dew', tonicsConsumed],
-  ] as const) {
-    if (consumed <= 0) continue;
-    const left = Math.max(0, (stats.materials[item] ?? 0) - consumed);
+  // 在庫 = ドロップ獲得数 − 使用数 − 敗北で落とした数 (0 未満にはしない)
+  const subtract = (item: string, n: number) => {
+    if (n <= 0) return;
+    const left = Math.max(0, (stats.materials[item] ?? 0) - n);
     if (left > 0) stats.materials[item] = left;
     else delete stats.materials[item];
-  }
+  };
+  subtract('herb', herbsConsumed);
+  subtract('sky-dew', tonicsConsumed);
+  for (const [item, n] of Object.entries(lostCounts)) subtract(item, n);
   for (let i = outcomes.length - 1; i >= 0; i--) {
     if (outcomes[i]!.outcome === 'win') {
       running++;

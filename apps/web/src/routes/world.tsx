@@ -16,6 +16,7 @@ import {
   regionDanger,
   regionOf,
   resolveTurn,
+  rollDefeatLoss,
   rollDrops,
   startBattle,
   statVectorToArray,
@@ -90,10 +91,27 @@ export function World() {
   const [herbStock, setHerbStock] = useState(0);
   const [tonicStock, setTonicStock] = useState(0);
   const [featherStock, setFeatherStock] = useState(0);
+  /** 素材の全在庫 (敗北ロス抽選の母集団)。ロード時に battle stats から初期化し、
+   *  ドロップ/使用 (戦闘内・フィールドとも)/敗北ロスをセッション内で追随する */
+  const materialsRef = useRef<Record<string, number>>({});
+  const subtractMaterial = useCallback((id: string, n: number) => {
+    if (!n) return;
+    const m = materialsRef.current;
+    const left = Math.max(0, (m[id] ?? 0) - n);
+    if (left > 0) m[id] = left;
+    else delete m[id];
+  }, []);
   /** そらのはね帰還のワイプ待ち (cover 完了時に onCoverDone がテレポートを実行する) */
   const featherDestRef = useRef<{ x: number; y: number } | null>(null);
   const [points, setPoints] = useState<PointsState | null>(null);
-  const [battle, setBattle] = useState<{ state: BattleState; busy: boolean; rkey: string; tier: 1 | 2 | 3 } | null>(null);
+  const [battle, setBattle] = useState<{
+    state: BattleState;
+    busy: boolean;
+    rkey: string;
+    tier: 1 | 2 | 3;
+    /** 敗北した場合に落とす素材 (開戦時に seed から確定済み) */
+    materialsLost: string[];
+  } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
@@ -107,6 +125,8 @@ export function World() {
     levelUps?: BattleLevelUps;
     /** レベルアップによるステータス上昇 (合算、0.1 未満除外) */
     statGains?: StatGain[];
+    /** 敗北ペナルティで落とした素材 */
+    materialsLost: string[];
   } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -162,6 +182,7 @@ export function World() {
       setHerbStock(stats?.materials['herb'] ?? 0);
       setTonicStock(stats?.materials['sky-dew'] ?? 0);
       setFeatherStock(stats?.materials['sky-feather'] ?? 0);
+      materialsRef.current = { ...(stats?.materials ?? {}) };
       setPoints(pts);
     })();
     return () => { cancelled = true; };
@@ -269,16 +290,29 @@ export function World() {
           { ...(cHp !== null && cHp !== undefined ? { hp: cHp } : {}), ...(cMp !== null && cMp !== undefined ? { mp: cMp } : {}) },
           { tonics, ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}) },
         );
+        // 敗北ペナルティの素材ロスを開戦時に確定 (seed から決定的)。持ち込み分の
+        // 消耗品は母集団から除外 (herbsUsed/tonicsUsed と二重減算しないように)。
+        // 仮レコードに書いておくことで「負けそうになったら閉じる」でもペナルティが効く
+        const lossPool = { ...materialsRef.current };
+        const subtractPool = (id: string, n: number) => {
+          if (!n) return;
+          const left = Math.max(0, (lossPool[id] ?? 0) - n);
+          if (left > 0) lossPool[id] = left;
+          else delete lossPool[id];
+        };
+        subtractPool('herb', herbs);
+        subtractPool('sky-dew', tonics);
+        const materialsLost = rollDefeatLoss(lossPool, state.player.luk, seed);
         // 遭遇成立: ワイプ演出でマップを覆いながら支払いを進める (busy = コマンド不可)。
         // battleRef は即時更新して長押し連打の次 tick が移動 + 二重遭遇しないようにする。
-        const pending = { state, busy: true, rkey: '', tier };
+        const pending = { state, busy: true, rkey: '', tier, materialsLost };
         battleRef.current = pending;
         setBattle(pending);
         setWipe('cover');
         void (async () => {
           try {
             // 支払い + 仮レコード (途中離脱 = 棄権 = 敗北)。失敗したら遭遇なしに戻す。
-            const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
+            const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId, materialsLost });
             void bumpPower(agent, did, { battles: 1 });
             setPoints((p) => (p ? { ...p, battles: p.battles + 1, balance: p.balance - BATTLE_TUNING.powerCost } : p));
             setBattle((b) => {
@@ -324,6 +358,7 @@ export function World() {
       // 決着: レコード確定 + XP + ドロップ (試練と同じ)。逃走は XP もドロップも無し。
       const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
       const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
+      const lost = next.outcome === 'lose' ? b.materialsLost : [];
       const record = {
         seed: next.seed,
         tier: b.tier,
@@ -333,6 +368,7 @@ export function World() {
         drops,
         herbsUsed: next.herbsUsed,
         tonicsUsed: next.tonicsUsed,
+        materialsLost: lost,
       };
       // 保存は 1 回リトライ。失敗したらリザルトで明示 (仮レコードが敗北のまま残る)。
       let saveFailed = false;
@@ -392,9 +428,25 @@ export function World() {
       // 手持ちを更新: 使った分を引き、ドロップ分を足す。
       // TODO(W3): 在庫の正は Worker (DO) に移す (フィールド使用分が記録されない併走は
       // プレビュー限定の割り切り)。
-      setHerbStock((n) => Math.max(0, n - next.herbsUsed) + drops.filter((x) => x === 'herb').length);
-      setTonicStock((n) => Math.max(0, n - next.tonicsUsed) + drops.filter((x) => x === 'sky-dew').length);
-      setFeatherStock((n) => n + drops.filter((x) => x === 'sky-feather').length);
+      const lostOf = (id: string) => lost.filter((x) => x === id).length;
+      setHerbStock((n) => Math.max(0, n - next.herbsUsed - lostOf('herb')) + drops.filter((x) => x === 'herb').length);
+      setTonicStock((n) => Math.max(0, n - next.tonicsUsed - lostOf('sky-dew')) + drops.filter((x) => x === 'sky-dew').length);
+      setFeatherStock((n) => Math.max(0, n - lostOf('sky-feather')) + drops.filter((x) => x === 'sky-feather').length);
+      // 素材全体の在庫 (敗北ロス抽選の母集団) も追随
+      {
+        const m = { ...materialsRef.current };
+        for (const d of drops) m[d] = (m[d] ?? 0) + 1;
+        const sub = (id: string, n: number) => {
+          if (!n) return;
+          const left = Math.max(0, (m[id] ?? 0) - n);
+          if (left > 0) m[id] = left;
+          else delete m[id];
+        };
+        sub('herb', next.herbsUsed);
+        sub('sky-dew', next.tonicsUsed);
+        for (const id of lost) sub(id, 1);
+        materialsRef.current = m;
+      }
       let movedToTown: string | null = null;
       if (next.outcome === 'lose') {
         // 敗北: 最後に立ち寄った街 (無ければはじまりの街) へ。宿で介抱 = 全快。
@@ -416,7 +468,7 @@ export function World() {
       }
       scheduleSave();
       setBattle(null);
-      setBattleResult({ state: next, movedToTown, drops, xp, saveFailed });
+      setBattleResult({ state: next, movedToTown, drops, xp, saveFailed, materialsLost: lost });
     },
     [scheduleSave, agent, did],
   );
@@ -462,6 +514,7 @@ export function World() {
     const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
     const healed = Math.min(combat.maxHp, hpNow + heal);
     setHerbStock((n) => n - 1);
+    subtractMaterial('herb', 1);
     setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
     setNotice(`やくそうを使った! HP が ${healed - hpNow} 回復。`);
     scheduleSave();
@@ -480,6 +533,7 @@ export function World() {
     const gain = Math.max(1, Math.round(combat.maxMp * BATTLE_TUNING.tonicMpRatio));
     const restored = Math.min(combat.maxMp, mpNow + gain);
     setTonicStock((n) => n - 1);
+    subtractMaterial('sky-dew', 1);
     setWs({ ...cur, mp: restored >= combat.maxMp ? null : restored });
     setNotice(`そらのしずくを使った! MP が ${restored - mpNow} 回復。`);
     scheduleSave();
@@ -500,6 +554,7 @@ export function World() {
       return;
     }
     setFeatherStock((n) => n - 1);
+    subtractMaterial('sky-feather', 1);
     featherDestRef.current = dest;
     // cover が画面を覆うまでの間に「自分の操作の結果」と分かる一言を出す
     // (エンカウント演出と同一のワイプなので、無言だと戦闘が始まると誤解する)
@@ -575,7 +630,7 @@ export function World() {
         {/* 途中離脱 = 敗北の開示はヘッダ側 (低い端末ではコマンド下が fold 落ちする。レビュー指摘) */}
         <h2 style={{ margin: '0 0 0.1em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(パワー {BATTLE_TUNING.powerCost} 消費)</span></h2>
         <p style={{ margin: '0 0 0.2em', fontSize: '0.7em', color: 'var(--color-muted)' }}>
-          ※ とちゅうでやめる (画面を閉じる) と敗北あつかいになるよ。
+          ※ とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがあるよ。
         </p>
         <BattleView
           state={battle.state}
@@ -625,10 +680,20 @@ export function World() {
           )}
           {saveFailed && (
             <div style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>
-              ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残ることがある。
+              ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残り、
+              素材を落とした扱いになることがある。電波のよい場所で開き直すと在庫に反映される。
             </div>
           )}
         </div>
+        {battleResult.materialsLost.length > 0 && (
+          <div style={{ margin: '0.3em 0', fontSize: '0.9em', color: 'var(--color-danger)' }}>
+            たおれたひょうしに 素材を落としてしまった…: {(() => {
+              const counts = new Map<string, number>();
+              for (const d of battleResult.materialsLost) counts.set(d, (counts.get(d) ?? 0) + 1);
+              return [...counts.entries()].map(([d, n]) => `${ITEMS[d]?.name ?? d}${n > 1 ? ` ×${n}` : ''}`).join('、');
+            })()}
+          </div>
+        )}
         {state.outcome === 'fled' && (
           <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
             なにも手に入らなかったが、ぶじに逃げのびた。(つかったパワーは戻らない)
