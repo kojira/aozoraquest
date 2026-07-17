@@ -41,6 +41,9 @@ export const COL = {
   /** あおぞらパワーの累積カウンタ (rkey='self')。アクションごとに増分する。
    *  初回読み取り時に旧データから一度だけスキャン → 書き込みでマイグレーション。 */
   power: `${USER_PREFIX}.power`,
+  /** ブルスコンの試練の戦闘記録 (docs/18-brusukon-trial.md)。1 戦 1 レコード。
+   *  パワー消費の監査 + 戦績/称号/素材の集計ソース。 */
+  battle: `${USER_PREFIX}.battle`,
   /** 依頼クエスト (docs/15-user-quest.md)。tid key。発注者の PDS に書く。 */
   userQuest: `${USER_PREFIX}.userQuest`,
   /** 応募 (docs/15-user-quest.md)。tid key。応募者の PDS に書く。 */

@@ -44,10 +44,38 @@ describe('loadPointsState', () => {
       viaPosts: 0,
       userMessages: 0,
       cardDraws: 0,
+      battles: 0,
       summoned: false,
       balance: 0,
       toSummon: SUMMON_THRESHOLD,
     });
+  });
+
+  test('battle レコードは 1 件 1 パワー消費として balance から引かれる', async () => {
+    const agent = makeAgent({
+      posts: Array(10).fill({ via: 'AozoraQuest' }),
+      spiritChat: [],
+    });
+    // battle collection にレコード 4 件 (勝敗は消費量に関係しない)
+    const orig = agent.com.atproto.repo.listRecords;
+    agent.com.atproto.repo.listRecords = vi.fn(async (args: { collection: string; cursor?: string }) => {
+      if (args.collection.endsWith('.battle')) {
+        if (args.cursor) return { data: { records: [] } };
+        return {
+          data: {
+            records: Array.from({ length: 4 }, (_, i) => ({
+              uri: `at://did:test/battle/${i}`,
+              cid: `c${i}`,
+              value: { outcome: i % 2 ? 'win' : 'lose' },
+            })),
+          },
+        };
+      }
+      return orig(args);
+    });
+    const p = await loadPointsState(agent, 'did:test');
+    expect(p.battles).toBe(4);
+    expect(p.balance).toBe(10 - 4);
   });
 
   test('via 投稿 3 件 + チャットなし → toSummon 7', async () => {
