@@ -212,10 +212,13 @@ export function World() {
   const move = useCallback(
     (dir: Dir) => {
       const s = wsRef.current;
-      // 戦闘中・リザルト表示中・地図表示中は移動不可 (地図の裏で歩いて
-      // エンカウント → モーダルが戦闘に飲まれる事故を防ぐ。レビュー指摘)。
-      // move() 冒頭で塞ぐことでキーボード・仮想スティック両経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current) return;
+      // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可。
+      // wipe ガードが必要なのは そらのはね帰還が「wipe あり・battle なし」状態を
+      // 作るため — キャプチャ済みスティックの interval はイベント非依存で、
+      // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
+      // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
+      // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || wipeRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -487,7 +490,8 @@ export function World() {
   const useFeatherOnField = useCallback(() => {
     if (featherStock <= 0) return;
     const s = wsRef.current;
-    if (!s || battleRef.current || battleResultRef.current || wipeRef.current) return;
+    // mapOpen も塞ぐ (地図モーダルの裏へ Tab で抜けて発動できる — レビュー指摘)
+    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current) return;
     const lt = s.lastTown && townAt(s.lastTown.x, s.lastTown.y) ? s.lastTown : null;
     const spawn = worldOverlay().spawn;
     const dest = lt ?? { x: spawn.x, y: spawn.y };
@@ -497,6 +501,9 @@ export function World() {
     }
     setFeatherStock((n) => n - 1);
     featherDestRef.current = dest;
+    // cover が画面を覆うまでの間に「自分の操作の結果」と分かる一言を出す
+    // (エンカウント演出と同一のワイプなので、無言だと戦闘が始まると誤解する)
+    setNotice('そらのはねをつかった!');
     setWipe('cover'); // 覆い切ったら onCoverDone がテレポートする
   }, [featherStock]);
 
