@@ -9,9 +9,11 @@ import {
   resolveTurn,
   rollDrops,
   startBattle,
+  statVectorToArray,
   type Archetype,
   type BattleState,
   type Command,
+  type StatVector,
   type TurnEvent,
 } from '@aozoraquest/core';
 import { BattleView } from './battle-view';
@@ -63,6 +65,7 @@ export function TrialArena({
   jobLevel,
   playerLevel,
   playerName,
+  rpgStats,
   points,
   onPointsChanged,
 }: {
@@ -72,6 +75,8 @@ export function TrialArena({
   jobLevel: number;
   playerLevel: number;
   playerName: string;
+  /** プロフィールの個人 5 パラメータ (戦闘値の基底)。未診断はジョブ基準にフォールバック */
+  rpgStats?: StatVector | null;
   points: PointsState;
   onPointsChanged: (next: PointsState) => void;
 }) {
@@ -94,9 +99,14 @@ export function TrialArena({
       // (再戦 = fixedTier は同じ tier でもう一度)
       const tier = fixedTier ?? pickTrialTier(seed, playerLevel, stats?.total ?? 0);
       setPhase({ kind: 'starting', tier });
-      // やくそうは在庫から最大 herbCarryMax 個持ち込む (使用分は battle レコードで差し引く)
+      // やくそう / そらのしずくは在庫から上限まで持ち込む (使用分は battle レコードで差し引く)
       const herbs = Math.min(BATTLE_TUNING.herbCarryMax, stats?.materials['herb'] ?? 0);
-      const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed, herbs);
+      const tonics = Math.min(BATTLE_TUNING.tonicCarryMax, stats?.materials['sky-dew'] ?? 0);
+      const state = startBattle(archetype, jobLevel, playerLevel, playerName, tier, seed, herbs, undefined, {
+        tonics,
+        // プロフィールの個人パラメータを戦闘値の基底にする (オーナー指摘 2026-07-17)
+        ...(rpgStats ? { baseStats: statVectorToArray(rpgStats) } : {}),
+      });
       try {
         // 支払い + 仮レコード (棄権 = 敗北)。ここが失敗したらバトルを始めない。
         const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
@@ -109,7 +119,7 @@ export function TrialArena({
         setPhase({ kind: 'select' });
       }
     },
-    [agent, did, archetype, jobLevel, playerLevel, playerName, points, onPointsChanged, stats],
+    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats],
   );
 
   const act = useCallback(
@@ -123,9 +133,9 @@ export function TrialArena({
         setPhase((p) => (p.kind === 'battle' ? { ...p, state: next, busy: false } : p));
         return;
       }
-      // 決着: レコード確定 + XP + ドロップ
+      // 決着: レコード確定 + XP + ドロップ。逃走は無事に離脱しただけなので XP もドロップも無し。
       const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
-      const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : BATTLE_TUNING.xpLose;
+      const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
       const record = {
         seed: next.seed,
         tier: phase.tier,
@@ -134,6 +144,7 @@ export function TrialArena({
         turns: next.turn,
         drops,
         herbsUsed: next.herbsUsed,
+        tonicsUsed: next.tonicsUsed,
       };
       // 保存は 1 回リトライ。最終的に失敗したらリザルトで明示する
       // (仮レコードが敗北のままだと、勝ちと素材が記録に残らないため)。
@@ -148,7 +159,7 @@ export function TrialArena({
           saveFailed = true;
         }
       }
-      void awardBattleXp(agent, did, xp);
+      if (xp > 0) void awardBattleXp(agent, did, xp);
       // 称号の新規獲得判定 (確定前の stats と比較)。stats 未取得 (取得失敗) 時は
       // 称号トーストを出さないだけで戦績自体はレコードに残る。
       const before = stats ? earnedTitles(stats).map((t) => t.id) : [];
@@ -168,10 +179,14 @@ export function TrialArena({
         if (!s) return s;
         const materials = { ...s.materials };
         for (const d of drops) materials[d] = (materials[d] ?? 0) + 1;
-        if (next.herbsUsed > 0) {
-          const left = Math.max(0, (materials['herb'] ?? 0) - next.herbsUsed);
-          if (left > 0) materials['herb'] = left;
-          else delete materials['herb'];
+        for (const [item, used] of [
+          ['herb', next.herbsUsed],
+          ['sky-dew', next.tonicsUsed],
+        ] as const) {
+          if (used <= 0) continue;
+          const left = Math.max(0, (materials[item] ?? 0) - used);
+          if (left > 0) materials[item] = left;
+          else delete materials[item];
         }
         const win = next.outcome === 'win';
         const currentStreak = win ? s.currentStreak + 1 : 0;
@@ -269,7 +284,7 @@ export function TrialArena({
         <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={120} />
       </div>
       <h3 style={{ margin: '0.4em 0' }}>
-        {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : 'ひきわけ'}
+        {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ'}
       </h3>
       {/* 決着ターンのログ (「たおした!」や 30 ターン判定の口上) はここで読めるようにする */}
       {finalEvents.length > 0 && (
@@ -296,10 +311,12 @@ export function TrialArena({
           ? 'みごとだ! きみのジョブの力、しかと見せてもらったよ。'
           : state.outcome === 'lose'
             ? 'おしかったね。投稿を重ねて、また挑むといい。'
-            : 'いい勝負だった。次は決着をつけよう。'}
+            : state.outcome === 'fled'
+              ? '引きぎわを知るのも強さのうちさ。また挑んでおいで。'
+              : 'いい勝負だった。次は決着をつけよう。'}
       </SpiritBubble>
       <div style={{ margin: '0.8em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-        <div>経験値 +{xp}</div>
+        {xp > 0 && <div>経験値 +{xp}</div>}
         {drops.length > 0 && (
           <div>
             素材を手に入れた: {drops.map((d) => ITEMS[d]?.name ?? d).join('、')}

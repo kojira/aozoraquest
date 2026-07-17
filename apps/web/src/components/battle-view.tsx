@@ -67,7 +67,7 @@ export function BattleView({
       <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine />
       <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
 
-      {/* コマンド (親指ゾーン、2x2)。特技は MP、やくそうは残数で使用可否が決まる。 */}
+      {/* コマンド (親指ゾーン、2x3)。特技は MP、どうぐは残数で使用可否が決まる。 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.8em' }}>
         <CommandButton label="たたかう" sub={`MP +${BATTLE_TUNING.mpAttackGain}`} onClick={() => onCommand('attack')} disabled={busy} />
         <CommandButton
@@ -87,6 +87,18 @@ export function BattleView({
           sub={`HP ${Math.round(BATTLE_TUNING.herbHealRatio * 100)}% 回復`}
           onClick={() => onCommand('herb')}
           disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp}
+        />
+        <CommandButton
+          label={`そらのしずく ×${state.tonics}`}
+          sub={`MP ${Math.round(BATTLE_TUNING.tonicMpRatio * 100)}% 回復`}
+          onClick={() => onCommand('tonic')}
+          disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp}
+        />
+        <CommandButton
+          label="にげる"
+          sub="失敗するとスキを見せる"
+          onClick={() => onCommand('flee')}
+          disabled={busy}
         />
       </div>
     </div>

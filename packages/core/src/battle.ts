@@ -66,6 +66,15 @@ export const BATTLE_TUNING = {
    *  (レビューのシミュレーション実測) ため 0.3/2 個に抑制。天井はテストで固定。 */
   herbHealRatio: 0.3,
   herbCarryMax: 2,
+  /** そらのしずく (MP 回復薬): maxMp のこの割合を回復。持ち込み上限 tonicCarryMax。 */
+  tonicMpRatio: 0.5,
+  tonicCarryMax: 2,
+  /** にげる: 成功率 = clamp(fleeBase + (自agi − 敵agi) * fleeAgiScale, min, max)。
+   *  失敗するとターンを失い敵の攻撃を受ける。成功してもパワーは返さない。 */
+  fleeBase: 0.5,
+  fleeAgiScale: 0.012,
+  fleeMin: 0.25,
+  fleeMax: 0.95,
   /** 最大ターン数 (超えたら判定 = 残 HP 割合勝負) */
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
@@ -194,18 +203,28 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
   };
 }
 
-/** プレイヤーの戦闘値をジョブ + レベルから導出。 */
+/**
+ * プレイヤーの戦闘値を導出。
+ * 基底は **ユーザー個人の rpgStats (プロフィールの 5 パラメータ、合計 100)** を渡すのが
+ * 本則 (baseStats)。未診断などで無い場合はジョブの基準値にフォールバックする。
+ * どちらの場合も プレイヤーLV + 職業LV のボーナス (levelScale) が乗る。
+ * (オーナー指摘 2026-07-17: 「プロフィールの各パラメータをちゃんと使って、
+ *  レベルでボーナス」)
+ */
 export function playerCombatant(
   archetype: Archetype,
   jobLevel: number,
   playerLevel: number,
   displayName: string,
+  baseStats?: StatArray,
 ): Combatant {
   const t = BATTLE_TUNING;
-  const job = JOBS_BY_ID[archetype];
+  const base = baseStats ?? JOBS_BY_ID[archetype].stats;
   const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  return fromStats(displayName, job.stats, factor, playerLevel);
+  return fromStats(displayName, base, factor, playerLevel);
 }
+
+// StatVector → StatArray 変換は jobs.ts の statVectorToArray を使う (重複定義しない)。
 
 // ─── モンスター ─────────────────────────────────────────────
 
@@ -246,6 +265,7 @@ export interface MonsterDef {
 /** 素材カタログ (Step2 の装備素材)。 */
 export const ITEMS: Record<string, { name: string }> = {
   herb: { name: 'やくそう' },
+  'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'slime-drop': { name: 'スライムのしずく' },
   'bat-wing': { name: 'コウモリの翼膜' },
   'mush-spore': { name: 'ヒカリダケの胞子' },
@@ -261,13 +281,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   // tier1: 手習い (初心者でも勝てる)
   { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], drops: [{ item: 'slime-drop', chance: 0.7 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
   { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   // tier2: 修練
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ' },
-  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: 'ゆらゆらとこちらを見ている。', skillName: 'おにびのうず' },
+  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', skillName: 'おにびのうず' },
   { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負
-  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], drops: [{ item: 'raven-feather', chance: 0.45 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
+  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
   { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし' },
   { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', skillName: 'ほのおのブレス' },
 ];
@@ -311,9 +331,9 @@ export function summonMonster(tier: 1 | 2 | 3, playerLevel: number, seed: number
 
 // ─── バトル状態と解決 ───────────────────────────────────────
 
-export type Command = 'attack' | 'guard' | 'skill' | 'herb';
+export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee';
 
-export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'draw';
+export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'draw' | 'fled';
 
 export interface TurnEvent {
   /** 誰の行動か */
@@ -338,6 +358,10 @@ export interface BattleState {
   herbs: number;
   /** このバトルで使ったやくそう数 (記録用 → 在庫から差し引く)。 */
   herbsUsed: number;
+  /** 残りそらのしずく (MP 回復薬)。 */
+  tonics: number;
+  /** このバトルで使ったそらのしずく数 (記録用 → 在庫から差し引く)。 */
+  tonicsUsed: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
 }
@@ -354,8 +378,14 @@ export function startBattle(
   /** フィールドの現在 HP/MP を引き継いでバトルを始める (あおぞらワールドでは
    *  HP/MP が戦闘をまたいで持続する。docs/19)。未指定は全快で開始 (試練)。 */
   carry?: { hp?: number; mp?: number },
+  extras?: {
+    /** 持ち込むそらのしずく (MP 回復薬) 数 (0〜tonicCarryMax)。 */
+    tonics?: number;
+    /** プレイヤーの基底ステータス (プロフィールの rpgStats)。未指定はジョブ基準値。 */
+    baseStats?: StatArray;
+  },
 ): BattleState {
-  const player = playerCombatant(archetype, jobLevel, playerLevel, displayName);
+  const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats);
   if (carry?.hp !== undefined) {
     player.hp = Math.max(1, Math.min(player.maxHp, Math.floor(carry.hp)));
   }
@@ -373,6 +403,8 @@ export function startBattle(
     outcome: 'ongoing',
     herbs: Math.max(0, Math.min(BATTLE_TUNING.herbCarryMax, Math.floor(herbs))),
     herbsUsed: 0,
+    tonics: Math.max(0, Math.min(BATTLE_TUNING.tonicCarryMax, Math.floor(extras?.tonics ?? 0))),
+    tonicsUsed: 0,
     lastEvents: [],
   };
 }
@@ -526,9 +558,28 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
   } else if (command === 'herb' && state.herbs <= 0) {
     events.push({ actor: 'player', text: 'やくそうを持っていない!' });
     cmd = 'attack';
+  } else if (command === 'tonic' && state.tonics <= 0) {
+    events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
+    cmd = 'attack';
   }
   if (cmd === 'skill') {
     state.player.mp -= t.skillMpCost;
+  }
+
+  // ── にげる: 成功したら即離脱 (敵は行動しない)。失敗はターンを失い敵の行動を受ける。 ──
+  if (cmd === 'flee') {
+    const chance = Math.min(
+      t.fleeMax,
+      Math.max(t.fleeMin, t.fleeBase + (state.player.agi - state.monster.agi) * t.fleeAgiScale),
+    );
+    if (rng() < chance) {
+      state.outcome = 'fled';
+      events.push({ actor: 'player', text: `${state.player.name}はうまく逃げ切った!` });
+      state.lastEvents = events;
+      return state;
+    }
+    events.push({ actor: 'player', text: 'にげられない! 回り込まれてしまった!' });
+    // このターンは敵だけが行動する (下の act で player 分岐は cmd==='flee' により no-op)
   }
 
   // 防御系 (ぼうぎょ / 見切り) は行動順に関係なく先に立てる
@@ -568,8 +619,14 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
         state.herbs -= 1;
         state.herbsUsed += 1;
         events.push({ actor: 'player', text: `${state.player.name}はやくそうを使った! HP が ${heal} 回復。(残り ${state.herbs})` });
+      } else if (cmd === 'tonic') {
+        const gain = Math.round(state.player.maxMp * t.tonicMpRatio);
+        state.player.mp = Math.min(state.player.maxMp, state.player.mp + gain);
+        state.tonics -= 1;
+        state.tonicsUsed += 1;
+        events.push({ actor: 'player', text: `${state.player.name}はそらのしずくを飲んだ! MP が ${gain} 回復。(残り ${state.tonics})` });
       }
-      // guard は宣言済み
+      // guard は宣言済み / flee 失敗はこのターン行動なし
     } else {
       // ため中なら宣言どおり解放 (mCommand は無視)。予告 → 解放の 2 ターン制で、
       // プレイヤーが予告を見て防御する読み合いを作る。

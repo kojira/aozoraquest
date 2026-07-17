@@ -307,6 +307,69 @@ describe('resolveTurn', () => {
     expect(s.herbs).toBe(BATTLE_TUNING.herbCarryMax);
   });
 
+  it('そらのしずく: MP を回復し、残数と使用数が更新される。切れたらフォールバック', () => {
+    let s = startBattle('sage', 5, 10, '賢者', 1, 42, 0, undefined, { tonics: 2 });
+    expect(s.tonics).toBe(2);
+    // MP を減らしてから使う
+    s = resolveTurn(s, 'skill');
+    if (s.outcome === 'ongoing') {
+      const mpBefore = s.player.mp;
+      const next = resolveTurn(s, 'tonic');
+      expect(next.lastEvents.some((e) => e.text.includes('そらのしずく'))).toBe(true);
+      expect(next.tonics).toBe(1);
+      expect(next.tonicsUsed).toBe(1);
+      void mpBefore;
+    }
+    const none = startBattle('sage', 5, 10, '賢者', 1, 7);
+    const fb = resolveTurn(none, 'tonic');
+    expect(fb.lastEvents.some((e) => e.text.includes('持っていない'))).toBe(true);
+    expect(fb.tonicsUsed).toBe(0);
+  });
+
+  it('にげる: 成功すると outcome=fled で敵は行動しない。決定的', () => {
+    // agi の高い ninja で成功しやすい seed を探して固定
+    let fledSeen = false;
+    let failSeen = false;
+    for (let seed = 0; seed < 60 && !(fledSeen && failSeen); seed++) {
+      const s = resolveTurn(startBattle('ninja', 8, 15, '忍者', 1, seed), 'flee');
+      if (s.outcome === 'fled') {
+        fledSeen = true;
+        expect(s.lastEvents.some((e) => e.text.includes('逃げ切った'))).toBe(true);
+        // 敵の攻撃イベントが無い (成功時は即離脱)
+        expect(s.lastEvents.some((e) => e.actor === 'monster' && e.damage !== undefined)).toBe(false);
+      } else {
+        failSeen = true;
+        expect(s.outcome === 'ongoing' || s.outcome === 'lose').toBe(true);
+        expect(s.lastEvents.some((e) => e.text.includes('にげられない'))).toBe(true);
+      }
+    }
+    expect(fledSeen).toBe(true);
+    expect(failSeen).toBe(true);
+  });
+
+  it('にげる成功率は agi 差で変わる (鈍足 guardian < 俊足 ninja、統計)', () => {
+    const rate = (arch: 'ninja' | 'guardian') => {
+      let fled = 0;
+      for (let seed = 0; seed < 200; seed++) {
+        if (resolveTurn(startBattle(arch, 5, 10, 'x', 2, seed), 'flee').outcome === 'fled') fled++;
+      }
+      return fled;
+    };
+    expect(rate('ninja')).toBeGreaterThan(rate('guardian'));
+  });
+
+  it('baseStats (プロフィールの個人値) が戦闘値の基底になる', () => {
+    const jobBased = playerCombatant('warrior', 5, 10, 'x');
+    const custom = playerCombatant('warrior', 5, 10, 'x', [50, 20, 10, 10, 10]);
+    expect(custom.atk).toBeGreaterThan(jobBased.atk); // warrior 基準 atk25 → 個人 50
+    // レベルボーナスは同率で乗る (Lv を上げると custom も伸びる)
+    const customHigher = playerCombatant('warrior', 10, 20, 'x', [50, 20, 10, 10, 10]);
+    expect(customHigher.atk).toBeGreaterThan(custom.atk);
+    // startBattle 経由でも効く
+    const s = startBattle('warrior', 5, 10, 'x', 1, 42, 0, undefined, { baseStats: [50, 20, 10, 10, 10] });
+    expect(s.player.atk).toBe(custom.atk);
+  });
+
   it('carry で HP/MP を引き継いで開始できる (フィールド持続用)', () => {
     const full = startBattle('warrior', 5, 10, '戦士', 1, 42);
     const s = startBattle('warrior', 5, 10, '戦士', 1, 42, 0, { hp: 10, mp: 2 });

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   BATTLE_TUNING,
+  ITEMS,
   MONSTERS_BY_ID,
   encounterRateFor,
   isWalkable,
@@ -12,7 +13,9 @@ import {
   regionDanger,
   regionOf,
   resolveTurn,
+  rollDrops,
   startBattle,
+  statVectorToArray,
   terrainAt,
   tileDetailAt,
   townAt,
@@ -23,7 +26,8 @@ import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
-import { loadBattleStats } from '@/lib/battle-log';
+import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord } from '@/lib/battle-log';
+import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { BattleView, HpBar, MpBar } from '@/components/battle-view';
@@ -35,9 +39,10 @@ import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
  *
  * - 16×16 ビューポート、1 タップ 1 マス、トーラス wrap。
  * - **HP/MP は戦闘をまたいで持続** (オーナー決定)。街に立ち寄ると全回復 + その街が
- *   「最後に立ち寄った街」= 敗北時の帰還先になる。フィールドでやくそうを使える。
- * - 遭遇はプレビュー (Math.random / 消費・報酬・記録なし)。本実装は PR-W3 で
- *   Worker (署名付き seed + パワー消費) に置換。dev 環境限定 (world-preview.ts)。
+ *   「最後に立ち寄った街」= 敗北時の帰還先になる。フィールドでどうぐを使える。
+ * - 野外戦闘は試練と同じ機構で **1 戦 = パワー 1 消費 + 戦闘レコード + XP/素材の報酬**
+ *   (パワー不足だと遭遇しない = 散歩だけならタダ)。遭遇判定自体はまだプレビュー
+ *   (Math.random)。PR-W3 で移動ごと Worker (署名付き seed) に置換。dev 環境限定。
  */
 
 const VIEW = 16;
@@ -73,10 +78,19 @@ export function World() {
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
-  /** やくそうの手持ち (セッション内。プレビューなので消費は保存しない) */
+  /** やくそう/そらのしずくの手持ち。戦闘内の使用と獲得は battle レコードに残る。
+   *  フィールドでの使用はセッション内のみ (TODO(W3): 在庫の正を Worker/DO に移す)。 */
   const [herbStock, setHerbStock] = useState(0);
-  const [battle, setBattle] = useState<{ state: BattleState; busy: boolean } | null>(null);
-  const [battleResult, setBattleResult] = useState<{ state: BattleState; movedToTown: string | null } | null>(null);
+  const [tonicStock, setTonicStock] = useState(0);
+  const [points, setPoints] = useState<PointsState | null>(null);
+  const [battle, setBattle] = useState<{ state: BattleState; busy: boolean; rkey: string; tier: 1 | 2 | 3 } | null>(null);
+  const [battleResult, setBattleResult] = useState<{
+    state: BattleState;
+    movedToTown: string | null;
+    drops: string[];
+    xp: number;
+    saveFailed: boolean;
+  } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
@@ -89,6 +103,7 @@ export function World() {
         jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
+        diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
       )
     : null;
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
@@ -110,15 +125,18 @@ export function World() {
         if (!cancelled) setLoadErr(true);
         return;
       }
-      const [profile, d, stats] = await Promise.all([
+      const [profile, d, stats, pts] = await Promise.all([
         agent.getProfile({ actor: did }).catch(() => null),
         getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
         loadBattleStats(agent, did).catch(() => null),
+        loadPointsState(agent, did).catch(() => null),
       ]);
       if (cancelled) return;
       setAvatarUrl(profile?.data.avatar ?? null);
       setDiag(d);
       setHerbStock(stats?.materials['herb'] ?? 0);
+      setTonicStock(stats?.materials['sky-dew'] ?? 0);
+      setPoints(pts);
     })();
     return () => { cancelled = true; };
   }, [session.status, agent, did, retryNonce]);
@@ -158,6 +176,8 @@ export function World() {
   battleRef.current = battle;
   const battleResultRef = useRef(battleResult);
   battleResultRef.current = battleResult;
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
 
   const move = useCallback(
     (dir: Dir) => {
@@ -187,15 +207,20 @@ export function World() {
       wsRef.current = { ...s, x: nx, y: ny };
       setWs(wsRef.current);
       scheduleSave();
-      // 野外遭遇 (プレビュー: Math.random。本実装は PR-W3 で Worker の署名付き seed に)
+      // 野外遭遇 (遭遇判定はプレビュー: Math.random。PR-W3 で Worker の署名付き seed に)。
+      // 1 戦 = パワー 1 消費 + 戦闘レコード (試練と同じ機構)。パワー不足なら遭遇しない
+      // (= 散歩だけならタダ。無料戦闘で報酬だけ稼げる穴を作らない)。
       const d = diag;
-      if (d && Math.random() < encounterRateFor(terrain)) {
+      const pts = pointsRef.current;
+      if (!agent || !did || !d || !pts || pts.balance < BATTLE_TUNING.powerCost) return;
+      if (Math.random() < encounterRateFor(terrain)) {
         const danger = regionDanger(regionOf(nx, ny));
         const tier = (danger <= 1 ? 1 : danger === 2 ? 2 : 3) as 1 | 2 | 3;
         const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
         const jobLv = jobLevelFromXp(d.jobLevel?.xp ?? 0);
         const playerLv = playerLevelFromXp(d.playerLevel?.xp ?? 0);
         const herbs = Math.min(BATTLE_TUNING.herbCarryMax, herbStock);
+        const tonics = Math.min(BATTLE_TUNING.tonicCarryMax, tonicStock);
         const cHp = wsRef.current?.hp;
         const cMp = wsRef.current?.mp;
         const state = startBattle(
@@ -208,29 +233,74 @@ export function World() {
           herbs,
           // フィールドの現在 HP/MP を引き継ぐ (戦闘をまたいで持続)
           { ...(cHp !== null && cHp !== undefined ? { hp: cHp } : {}), ...(cMp !== null && cMp !== undefined ? { mp: cMp } : {}) },
+          { tonics, ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}) },
         );
-        setBattle({ state, busy: false });
+        // 即座に戦闘画面へ (busy = 支払い中はコマンド不可)。battleRef も即時更新して
+        // 長押し連打の次 tick が移動 + 二重遭遇しないようにする。
+        const pending = { state, busy: true, rkey: '', tier };
+        battleRef.current = pending;
+        setBattle(pending);
+        void (async () => {
+          try {
+            // 支払い + 仮レコード (途中離脱 = 棄権 = 敗北)。失敗したら遭遇なしに戻す。
+            const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
+            void bumpPower(agent, did, { battles: 1 });
+            setPoints((p) => (p ? { ...p, battles: p.battles + 1, balance: p.balance - BATTLE_TUNING.powerCost } : p));
+            setBattle((b) => (b && b.state.seed === seed ? { ...b, rkey, busy: false } : b));
+          } catch (e) {
+            console.warn('[world] field battle start failed', e);
+            setNotice('モンスターの気配がしたが、見失った… (通信エラー)');
+            setBattle((b) => (b && b.state.seed === seed ? null : b));
+          }
+        })();
       }
     },
-    [scheduleSave, diag, session.handle, herbStock],
+    [scheduleSave, diag, session.handle, herbStock, tonicStock, agent, did],
   );
 
-  // 戦闘コマンド (プレビュー: クライアント解決。W3/W4 でサーバー権威に置換)
+  // 戦闘コマンド (戦闘解決はクライアント。W3/W4 でサーバー権威に置換)
   const onBattleCommand = useCallback(
     async (command: Command) => {
       const b = battleRef.current;
-      if (!b || b.busy) return;
+      if (!b || b.busy || !agent || !did) return;
       const next = resolveTurn(b.state, command);
-      setBattle({ state: next, busy: true });
+      setBattle({ ...b, state: next, busy: true });
       await new Promise((r) => setTimeout(r, 450));
       if (next.outcome === 'ongoing') {
-        setBattle((cur) => (cur ? { state: next, busy: false } : cur));
+        setBattle((cur) => (cur ? { ...cur, state: next, busy: false } : cur));
         return;
       }
-      // 決着。プレビューでは報酬・記録なし。やくそうはセッション内で減らす。
-      // TODO(W3): 手持ちの正は Worker (DO) に移す (試練の実在庫と本画面のセッション値が
-      // 併走しているのはプレビュー限定の割り切り)。
-      setHerbStock((n) => Math.max(0, n - next.herbsUsed));
+      // 決着: レコード確定 + XP + ドロップ (試練と同じ)。逃走は XP もドロップも無し。
+      const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
+      const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
+      const record = {
+        seed: next.seed,
+        tier: b.tier,
+        monsterId: next.monsterId,
+        outcome: next.outcome,
+        turns: next.turn,
+        drops,
+        herbsUsed: next.herbsUsed,
+        tonicsUsed: next.tonicsUsed,
+      };
+      // 保存は 1 回リトライ。失敗したらリザルトで明示 (仮レコードが敗北のまま残る)。
+      let saveFailed = false;
+      try {
+        await finishBattleRecord(agent, b.rkey, record);
+      } catch {
+        try {
+          await finishBattleRecord(agent, b.rkey, record);
+        } catch (e) {
+          console.warn('[world] battle finish record failed (after retry)', e);
+          saveFailed = true;
+        }
+      }
+      if (xp > 0) void awardBattleXp(agent, did, xp);
+      // 手持ちを更新: 使った分を引き、ドロップ分を足す。
+      // TODO(W3): 在庫の正は Worker (DO) に移す (フィールド使用分が記録されない併走は
+      // プレビュー限定の割り切り)。
+      setHerbStock((n) => Math.max(0, n - next.herbsUsed) + drops.filter((x) => x === 'herb').length);
+      setTonicStock((n) => Math.max(0, n - next.tonicsUsed) + drops.filter((x) => x === 'sky-dew').length);
       let movedToTown: string | null = null;
       if (next.outcome === 'lose') {
         // 敗北: 最後に立ち寄った街 (無ければはじまりの街) へ。宿で介抱 = 全快。
@@ -244,7 +314,7 @@ export function World() {
         movedToTown = townAt(back.x, back.y)?.name ?? spawn.name;
         setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: valid });
       } else {
-        // 勝利/引き分け: 減った HP/MP をフィールドに持ち帰る (持続)。
+        // 勝利/引き分け/逃走: 減った HP/MP をフィールドに持ち帰る (持続)。
         // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
         const hp = next.player.hp >= next.player.maxHp ? null : Math.max(1, next.player.hp);
         const mp = next.player.mp >= next.player.maxMp ? null : next.player.mp;
@@ -252,12 +322,12 @@ export function World() {
       }
       scheduleSave();
       setBattle(null);
-      setBattleResult({ state: next, movedToTown });
+      setBattleResult({ state: next, movedToTown, drops, xp, saveFailed });
     },
-    [scheduleSave],
+    [scheduleSave, agent, did],
   );
 
-  // フィールドでやくそうを使う (移動せずに回復。プレビュー: 消費は保存しない)
+  // フィールドでやくそうを使う (移動せずに回復。消費の保存は TODO(W3) で DO に)
   const useHerbOnField = useCallback(() => {
     if (!combat || herbStock <= 0) return;
     const cur = wsRef.current;
@@ -274,6 +344,24 @@ export function World() {
     setNotice(`やくそうを使った! HP が ${healed - hpNow} 回復。`);
     scheduleSave();
   }, [combat, herbStock, scheduleSave]);
+
+  // フィールドでそらのしずくを使う (MP 回復)
+  const useTonicOnField = useCallback(() => {
+    if (!combat || tonicStock <= 0) return;
+    const cur = wsRef.current;
+    if (!cur) return;
+    const mpNow = Math.min(cur.mp ?? combat.maxMp, combat.maxMp);
+    if (mpNow >= combat.maxMp) {
+      setNotice('MP は満タンだ。');
+      return;
+    }
+    const gain = Math.max(1, Math.round(combat.maxMp * BATTLE_TUNING.tonicMpRatio));
+    const restored = Math.min(combat.maxMp, mpNow + gain);
+    setTonicStock((n) => n - 1);
+    setWs({ ...cur, mp: restored >= combat.maxMp ? null : restored });
+    setNotice(`そらのしずくを使った! MP が ${restored - mpNow} 回復。`);
+    scheduleSave();
+  }, [combat, tonicStock, scheduleSave]);
 
   // 位置リセット (プレビュー用): はじまりの街へ戻る (全快)
   const resetToSpawn = useCallback(() => {
@@ -336,18 +424,21 @@ export function World() {
     const danger = regionDanger(regionOf(ws.x, ws.y));
     return (
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
-        <h2 style={{ margin: '0 0 0.3em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(プレビュー: 報酬・記録なし)</span></h2>
+        <h2 style={{ margin: '0 0 0.3em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(パワー {BATTLE_TUNING.powerCost} 消費)</span></h2>
         <BattleView
           state={battle.state}
           busy={battle.busy}
           onCommand={(c) => void onBattleCommand(c)}
           headerNote={DANGER_LABELS[danger]}
         />
+        <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.5em', textAlign: 'center' }}>
+          ※ とちゅうでやめる (画面を閉じる) と敗北あつかいになるよ。
+        </p>
       </div>
     );
   }
   if (battleResult) {
-    const { state, movedToTown } = battleResult;
+    const { state, movedToTown, drops, xp, saveFailed } = battleResult;
     const won = state.outcome === 'win';
     return (
       <div style={{ maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
@@ -355,17 +446,27 @@ export function World() {
           <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={110} />
         </div>
         <h3 style={{ margin: '0.4em 0' }}>
-          {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : 'ひきわけ'}
+          {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ'}
         </h3>
         {state.lastEvents.length > 0 && (
           <div style={{ margin: '0.5em auto', maxWidth: 420, fontSize: '0.8em', lineHeight: 1.6, textAlign: 'left', padding: '0.4em 0.7em', border: '2px solid var(--color-border)', borderRadius: 4, background: 'var(--color-window-bg)' }}>
             {state.lastEvents.map((e, i) => <div key={i}>{e.text}</div>)}
           </div>
         )}
+        <div style={{ margin: '0.6em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+          {xp > 0 && <div>経験値 +{xp}</div>}
+          {drops.length > 0 && (
+            <div>素材を手に入れた: {drops.map((d) => ITEMS[d]?.name ?? d).join('、')}</div>
+          )}
+          {saveFailed && (
+            <div style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>
+              ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残ることがある。
+            </div>
+          )}
+        </div>
         {movedToTown && (
           <p style={{ fontSize: '0.85em' }}>気がつくと「{movedToTown}」で介抱されていた… (全回復)</p>
         )}
-        <p style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>※ プレビュー中の戦闘に報酬・記録・パワー消費はありません</p>
         <button type="button" onClick={() => setBattleResult(null)} style={{ padding: '0.7em 1.6em' }}>
           マップへ戻る
         </button>
@@ -464,19 +565,31 @@ export function World() {
         <DirButton dir="down" onMove={move} />
         <DirButton dir="right" onMove={move} />
       </div>
-      <div style={{ textAlign: 'center', marginTop: '0.5em' }}>
+      <div style={{ textAlign: 'center', marginTop: '0.5em', display: 'flex', gap: '0.5em', justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={useHerbOnField}
           disabled={herbStock <= 0 || !combat || (curHp !== null && combat !== null && curHp >= combat.maxHp)}
           style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
         >
-          やくそうを使う ×{herbStock}
+          やくそう ×{herbStock}
+        </button>
+        <button
+          type="button"
+          onClick={useTonicOnField}
+          disabled={tonicStock <= 0 || !combat || (curMp !== null && combat !== null && curMp >= combat.maxMp)}
+          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
+        >
+          そらのしずく ×{tonicStock}
         </button>
       </div>
       <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
         PC は矢印キーでも移動できます。街に入ると全回復。
-        {diag ? ' 歩くとモンスターが出ることがあります (プレビュー: 報酬・記録なし)。' : ''}
+        {diag
+          ? points && points.balance >= BATTLE_TUNING.powerCost
+            ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
+            : ' あおぞらパワーがないのでモンスターは出ません (投稿すると増える)。'
+          : ''}
       </p>
       <p style={{ textAlign: 'center', marginTop: '0.4em' }}>
         <button
