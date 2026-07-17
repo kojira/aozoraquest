@@ -241,18 +241,24 @@ describe('record lifecycle (start/finish/awardBattleXp)', () => {
     // またがない: 直後 (crossing+30) から +30 が境界を再度またぐとは限らないので Lv1 序盤で確認
     const flat = await awardBattleXp(mkAgent(0, 0), 'did:test', 1);
     expect(flat?.player).toBeUndefined();
-    // offset: jobXpOffset を足した位置で判定される (表示レベルとの一致)
-    let jobCrossing = -1;
-    for (let x = 0; x < 5000; x++) {
-      if (jobLevelFromXp(x) < jobLevelFromXp(x + 30)) { jobCrossing = x; break; }
+    // offset: jobXpOffset を足した位置で判定される (表示レベルとの一致)。
+    // 「offset なしなら境界をまたぐが、offset を足すとまたがない」xp を探すことで、
+    // 実装が offset を無視していたら fail する判別力を持たせる (レビュー指摘:
+    // 初版は offset 0 と同じ結果になる縮退ケースだった)
+    let discriminating = -1;
+    for (let off = 1; off < 5000; off++) {
+      const noOff = jobLevelFromXp(0) < jobLevelFromXp(30); // base 0 は +30 で必ずまたぐ (LV2 閾値 30)
+      const withOff = jobLevelFromXp(off) < jobLevelFromXp(off + 30);
+      if (noOff && !withOff) { discriminating = off; break; }
     }
-    expect(jobCrossing).toBeGreaterThanOrEqual(0);
-    const withOffset = await awardBattleXp(mkAgent(0, 0), 'did:test', 30, { jobXpOffset: jobCrossing });
-    expect(withOffset?.job).toEqual({
-      from: jobLevelFromXp(jobCrossing),
-      to: jobLevelFromXp(jobCrossing + 30),
-      archetype: 'sage',
-    });
+    expect(discriminating).toBeGreaterThan(0);
+    const noUp = await awardBattleXp(mkAgent(0, 0), 'did:test', 30, { jobXpOffset: discriminating });
+    expect(noUp?.job).toBeUndefined(); // offset 適用でまたがない
+    const withUp = await awardBattleXp(mkAgent(0, 0), 'did:test', 30);
+    expect(withUp?.job).toEqual({ from: 1, to: jobLevelFromXp(30), archetype: 'sage' }); // offset なしはまたぐ
+    // playerXpOffset も同様に判別力のあるケースで検証
+    const pNoUp = await awardBattleXp(mkAgent(crossing, 0), 'did:test', 30, { playerXpOffset: 5000 });
+    expect(pNoUp?.player?.from).not.toBe(playerLevelFromXp(crossing)); // offset が効いて基準が動く
   });
 
   test('awardBattleXp は analysis 未作成なら何も書かない', async () => {

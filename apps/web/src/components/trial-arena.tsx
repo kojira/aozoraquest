@@ -73,6 +73,7 @@ export function TrialArena({
   playerName,
   rpgStats,
   jobXpOffset = 0,
+  onXpAwarded,
   points,
   onPointsChanged,
 }: {
@@ -87,6 +88,8 @@ export function TrialArena({
   /** ジョブレベル表示に含まれるレコード外 XP (クエスト報酬 questXp)。レベルアップ
    *  判定を画面表示と一致させるために渡す */
   jobXpOffset?: number;
+  /** XP 加算が確定したとき呼ばれる (親は analysis を再取得して表示レベルを更新する) */
+  onXpAwarded?: () => void;
   points: PointsState;
   onPointsChanged: (next: PointsState) => void;
 }) {
@@ -183,18 +186,23 @@ export function TrialArena({
       if (xp > 0) {
         void awardBattleXp(agent, did, xp, { jobXpOffset }).then((ups) => {
           if (!ups) return;
-          // 全画面演出 (LevelUpOverlay は app 全体に常時マウント済み)
-          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
+          // 親に XP 反映を通知 (diag 再取得)。演出だけ出して表示レベルが古いままだと
+          // 「LEVEL UP! と言われたのに次戦も LV5」の矛盾が見える (レビュー指摘)
+          onXpAwarded?.();
+          // 全画面演出 (LevelUpOverlay は app 全体に常時マウント済み)。
+          // 発火順は投稿フロー (compose-modal) と同じ job → player
           if (ups.job) {
             notifyLevelUp({
               kind: 'job',
               from: ups.job.from,
               to: ups.job.to,
-              jobName: jobDisplayName(ups.job.archetype as Archetype, 'default'),
+              jobName: jobDisplayName(ups.job.archetype, 'default'),
             });
           }
-          // リザルトの文言にも残す (演出は 2 秒で消えるため)
-          setPhase((p) => (p.kind === 'result' ? { ...p, levelUps: ups } : p));
+          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
+          // リザルトの文言にも残す (演出は 2 秒で消えるため)。seed 照合で
+          // 再戦後の別リザルトに前戦の分を付けない (world 側と同じ防御)
+          setPhase((p) => (p.kind === 'result' && p.state.seed === next.seed ? { ...p, levelUps: ups } : p));
         });
       }
       // 称号の新規獲得判定 (確定前の stats と比較)。stats 未取得 (取得失敗) 時は
@@ -250,7 +258,7 @@ export function TrialArena({
       });
       refreshStats();
     },
-    [phase, agent, did, stats, refreshStats, jobXpOffset],
+    [phase, agent, did, stats, refreshStats, jobXpOffset, onXpAwarded],
   );
 
   // ワイプ進行: 覆い切った時点でバトル準備がまだなら hold でつなぐ
@@ -381,7 +389,7 @@ export function TrialArena({
               ? '引きぎわを知るのも強さのうちさ。また挑んでおいで。'
               : 'いい勝負だった。次は決着をつけよう。'}
       </SpiritBubble>
-      <div style={{ margin: '0.8em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+      <div aria-live="polite" style={{ margin: '0.8em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
         {xp > 0 && <div>経験値 +{xp}</div>}
         {phase.levelUps?.player && (
           <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
@@ -390,7 +398,7 @@ export function TrialArena({
         )}
         {phase.levelUps?.job && (
           <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
-            {jobDisplayName(phase.levelUps.job.archetype as Archetype, 'default')}のジョブレベルが {phase.levelUps.job.to} に あがった!
+            {jobDisplayName(phase.levelUps.job.archetype, 'default')}のジョブレベルが {phase.levelUps.job.to} に あがった!
           </div>
         )}
         {drops.length > 0 && (
