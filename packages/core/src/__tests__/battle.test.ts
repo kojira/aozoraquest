@@ -7,6 +7,7 @@ import {
   JOB_SKILL_NAMES,
   playerCombatant,
   summonMonster,
+  pickTrialTier,
   startBattle,
   resolveTurn,
   rollDrops,
@@ -363,6 +364,25 @@ describe('resolveTurn', () => {
       if (s.outcome === 'win') guardOnlyWins++;
     }
     expect(wins).toBeGreaterThan(guardOnlyWins);
+  });
+});
+
+describe('pickTrialTier', () => {
+  it('初挑戦 (戦績 0) は必ず tier1', () => {
+    for (let seed = 0; seed < 30; seed++) {
+      expect(pickTrialTier(seed, 50, 0)).toBe(1);
+    }
+  });
+  it('低レベル (LV<5) には tier3 が出ない', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      expect(pickTrialTier(seed, 3, 10)).toBeLessThanOrEqual(2);
+    }
+  });
+  it('高レベルでは全 tier が出る (決定的)', () => {
+    const seen = new Set<number>();
+    for (let seed = 0; seed < 200; seed++) seen.add(pickTrialTier(seed, 20, 10));
+    expect(seen).toEqual(new Set([1, 2, 3]));
+    expect(pickTrialTier(7, 20, 10)).toBe(pickTrialTier(7, 20, 10));
   });
 });
 
