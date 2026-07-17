@@ -182,6 +182,8 @@ export function World() {
   battleResultRef.current = battleResult;
   const pointsRef = useRef(points);
   pointsRef.current = points;
+  const wipeRef = useRef(wipe);
+  wipeRef.current = wipe;
 
   const move = useCallback(
     (dir: Dir) => {
@@ -251,14 +253,22 @@ export function World() {
             const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
             void bumpPower(agent, did, { battles: 1 });
             setPoints((p) => (p ? { ...p, battles: p.battles + 1, balance: p.balance - BATTLE_TUNING.powerCost } : p));
-            setBattle((b) => (b && b.state.seed === seed ? { ...b, rkey, busy: false } : b));
+            setBattle((b) => {
+              if (!(b && b.state.seed === seed)) return b;
+              // battleRef も即時更新 (onCoverDone のタイマーが render flush 前に
+              // 発火しても準備完了を読めるように。pending 生成時と同じ流儀)
+              const ready = { ...b, rkey, busy: false };
+              battleRef.current = ready;
+              return ready;
+            });
             // 覆い切って待機中 (hold) なら開く。cover 中なら onCoverDone 側が拾う。
             setWipe((w) => (w === 'hold' ? 'reveal' : w));
           } catch (e) {
             console.warn('[world] field battle start failed', e);
             setNotice('モンスターの気配がしたが、見失った… (通信エラー)');
             setBattle((b) => (b && b.state.seed === seed ? null : b));
-            // マップに向かって開き直す (演出は無かったことにせず閉じた分だけ開く)
+            // マップに向かって開き直す (注: CSS の都合で「いったん全面黒に跳んでから
+            // 開く」見え方になる。稀な経路なので許容 — レビュー確認済み)
             setWipe((w) => (w ? 'reveal' : w));
           }
         })();
@@ -347,6 +357,14 @@ export function World() {
     setWipe(b && b.rkey === '' && b.busy ? 'hold' : 'reveal');
   }, []);
   const onRevealDone = useCallback(() => setWipe(null), []);
+  // hold の上限 (10s) 到達 = 支払い通信ハング。遭遇をキャンセルしてマップに開き直す
+  // (全面黒でリロード以外の脱出手段がなくなるのを防ぐ。レコードが後から成立していた
+  // 場合は棄権 = 敗北の既存セマンティクスに落ちる)。
+  const onHoldTimeout = useCallback(() => {
+    setNotice('通信が不安定でモンスターを見失った…');
+    setBattle((b) => (b && b.busy && b.rkey === '' ? null : b));
+    setWipe('reveal');
+  }, []);
 
   // フィールドでやくそうを使う (移動せずに回復。消費の保存は TODO(W3) で DO に)
   const useHerbOnField = useCallback(() => {
@@ -399,7 +417,9 @@ export function World() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      if (!wsRef.current || battleRef.current) return;
+      // 演出 (wipe) 中もキーボード移動を止める (ポインタは overlay が吸うが
+      // キーボードは素通りするため。レビュー指摘)
+      if (!wsRef.current || battleRef.current || wipeRef.current) return;
       const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
       const dir = map[e.key];
       if (dir) {
@@ -443,7 +463,13 @@ export function World() {
 
   // エンカウント演出のオーバーレイ (cover/hold 中はマップの上、reveal 中はバトル画面の上)
   const wipeOverlay = wipe ? (
-    <EncounterWipe phase={wipe} onCoverDone={onCoverDone} onRevealDone={onRevealDone} />
+    <EncounterWipe
+      phase={wipe}
+      holdMessage="モンスターが あらわれようとしている…"
+      onCoverDone={onCoverDone}
+      onRevealDone={onRevealDone}
+      onHoldTimeout={onHoldTimeout}
+    />
   ) : null;
 
   // ─── 野外遭遇 (戦闘中はマップの代わりにバトル画面)。cover/hold 中はまだマップを
@@ -505,6 +531,9 @@ export function World() {
         <button type="button" onClick={() => setBattleResult(null)} style={{ padding: '0.7em 1.6em' }}>
           マップへ戻る
         </button>
+        {/* reveal 中に決着した場合でも演出を最後まで流す (無いと wipe='reveal' が
+            残留してマップ復帰時に再生される。レビュー指摘) */}
+        {wipeOverlay}
       </div>
     );
   }

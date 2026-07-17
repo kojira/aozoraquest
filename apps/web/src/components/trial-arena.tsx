@@ -118,14 +118,17 @@ export function TrialArena({
         const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
         void bumpPower(agent, did, { battles: 1 });
         onPointsChanged({ ...points, battles: points.battles + 1, balance: points.balance - BATTLE_TUNING.powerCost });
-        setPhase({ kind: 'battle', state, tier, rkey, busy: false });
+        // starting 中のときだけ battle へ (hold タイムアウトで select に戻した後に
+        // 遅れて届いた成功が戦闘に飛び込まないように。その場合レコードは棄権扱い)
+        setPhase((p) => (p.kind === 'starting' ? { kind: 'battle', state, tier, rkey, busy: false } : p));
         // 覆い切って待機中 (hold) なら開く。cover 中なら onCoverDone 側が拾う。
         setWipe((w) => (w === 'hold' ? 'reveal' : w));
       } catch (e) {
         console.warn('battle start failed', e);
         setErr('試練を始められなかった。通信を確認してもう一度どうぞ。');
         setPhase({ kind: 'select' });
-        setWipe((w) => (w ? 'reveal' : w)); // 閉じた分だけ select に向かって開き直す
+        // select に向かって開き直す (CSS の都合で一瞬全面黒に跳んでから開く。許容)
+        setWipe((w) => (w ? 'reveal' : w));
       }
     },
     [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats],
@@ -230,14 +233,30 @@ export function TrialArena({
     setWipe(phaseRef.current.kind === 'battle' ? 'reveal' : 'hold');
   }, []);
   const onRevealDone = useCallback(() => setWipe(null), []);
+  // hold の上限 (10s) 到達 = 支払い通信ハング。select に開き直す (全面黒ロック防止)
+  const onHoldTimeout = useCallback(() => {
+    setErr('試練を始められなかった (通信が不安定)。もう一度どうぞ。');
+    setPhase((p) => (p.kind === 'starting' ? { kind: 'select' } : p));
+    setWipe('reveal');
+  }, []);
   const wipeOverlay = wipe ? (
-    <EncounterWipe phase={wipe} onCoverDone={onCoverDone} onRevealDone={onRevealDone} />
+    <EncounterWipe
+      phase={wipe}
+      holdMessage="ブルスコンが 呼び出している…"
+      onCoverDone={onCoverDone}
+      onRevealDone={onRevealDone}
+      onHoldTimeout={onHoldTimeout}
+    />
   ) : null;
 
   // ─── select ───
-  if (phase.kind === 'select' || phase.kind === 'starting') {
+  // battle 準備完了でも cover/hold 中は select/starting 画面を描き続ける
+  // (覆い切る前に下がバトル画面へ差し替わると演出が崩れる — encounter-wipe の契約。
+  //  レビュー ★★★ 指摘: 支払いが cover より速いのが最頻パス)
+  const coveringBattle = phase.kind === 'battle' && wipe !== null && wipe !== 'reveal';
+  if (phase.kind === 'select' || phase.kind === 'starting' || coveringBattle) {
     const canPlay = points.balance >= BATTLE_TUNING.powerCost;
-    const starting = phase.kind === 'starting';
+    const starting = phase.kind !== 'select';
     return (
       <div>
         <SpiritBubble>
@@ -284,7 +303,7 @@ export function TrialArena({
   // ─── battle (表示は battle-view に共通化。world の野外遭遇と同じレンダラー) ───
   if (phase.kind === 'battle') {
     return (
-      <>
+      <div>
         <BattleView
           state={phase.state}
           busy={phase.busy}
@@ -292,7 +311,7 @@ export function TrialArena({
           headerNote={`${'★'.repeat(phase.tier)} ${TIER_LABELS[phase.tier].name}`}
         />
         {wipeOverlay}
-      </>
+      </div>
     );
   }
 

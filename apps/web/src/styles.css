@@ -1031,12 +1031,12 @@ p { margin: 0.4em 0; }
    タイルは中心からの距離で delay を散らす (--d)。GPU 合成のみ (transform)
    で低速端末でも 60fps を保つ。 */
 @keyframes enc-tile-in {
-  0% { transform: scale(0) rotate(-270deg); }
+  0% { transform: scale(0) rotate(-180deg); }
   100% { transform: scale(1.06) rotate(0deg); }
 }
 @keyframes enc-tile-out {
   0% { transform: scale(1.06) rotate(0deg); }
-  100% { transform: scale(0) rotate(270deg); }
+  100% { transform: scale(0) rotate(180deg); }
 }
 .enc-tile {
   position: absolute;
@@ -1045,12 +1045,35 @@ p { margin: 0.4em 0; }
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.3, 0, 0.7, 1);
 }
-.enc-cover .enc-tile { animation-name: enc-tile-in; animation-duration: 0.4s; animation-delay: var(--d); }
-.enc-reveal .enc-tile { animation-name: enc-tile-out; animation-duration: 0.4s; animation-delay: var(--d); }
+/* 時間は encounter-wipe.tsx の COVER_TILE_MS / REVEAL_TILE_MS と一致させる。
+   reveal は cover より短い (本家 DQ1 に reveal は無いのでテンポ優先で控えめに)。 */
+.enc-cover .enc-tile { animation-name: enc-tile-in; animation-duration: 0.4s; animation-delay: var(--dc); }
+.enc-reveal .enc-tile { animation-name: enc-tile-out; animation-duration: 0.28s; animation-delay: var(--dr); }
 /* 覆い切った待機中 (支払い通信が長いときのつなぎ) は全面を黒でホールド */
 .enc-hold .enc-tile { transform: scale(1.06); }
+/* hold が長引いたときの一行 (1.2s 後にフェードイン + ▼ 点滅。真っ黒無反応に見せない) */
+.enc-hold-msg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 0.9em;
+  white-space: nowrap;
+  opacity: 0;
+  animation: enc-msg-in 0.3s ease 1.2s forwards;
+}
+.enc-hold-msg::after {
+  content: '▼';
+  margin-left: 0.4em;
+  display: inline-block;
+  animation: enc-cursor-blink 1s step-end infinite;
+}
+@keyframes enc-msg-in { to { opacity: 1; } }
+@keyframes enc-cursor-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .enc-cover .enc-tile, .enc-reveal .enc-tile { animation-duration: 0.01s; animation-delay: 0s; }
+  .enc-hold-msg::after { animation: none; }
 }
 
 /* 引用投稿カード (post-quote.tsx)。カード全体がタップ可能なので、初動の視覚
