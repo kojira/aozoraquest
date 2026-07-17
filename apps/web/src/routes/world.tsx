@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
@@ -51,6 +51,7 @@ import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { SpiritIcon } from '@/components/spirit-icon';
+import { StatusModal } from '@/components/status-modal';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -113,6 +114,10 @@ export function World() {
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState('');
+  const [statusOpen, setStatusOpen] = useState(false);
+  const statusOpenRef = useRef(false);
+  statusOpenRef.current = statusOpen;
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
   /** やくそう/そらのしずくの手持ち。戦闘内の使用と獲得は battle レコードに残る。
    *  フィールドでの使用はセッション内のみ (TODO(W3): 在庫の正を Worker/DO に移す)。 */
@@ -183,17 +188,26 @@ export function World() {
   const archetype = diag?.archetype ?? null;
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
-  const combat = archetype
-    ? playerCombatant(
+  // combat (装備込み) と combatBase (装備なし) は gear 引数だけが違う。base 引数を
+  // 共有タプルにして「そうび +N = combat − combatBase」の不変条件を構造的に守る
+  // (5 行コピペだと片方の base 導出変更で内訳が黙って壊れる — レビュー ★★)
+  const baseArgs = archetype
+    ? ([
         archetype,
         jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
         diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
-        undefined,
-        resolvedGear?.selection,
-      )
+      ] as const)
     : null;
+  const combat = baseArgs ? playerCombatant(...baseArgs, undefined, resolvedGear?.selection) : null;
+  // 装備なしの素の値 (つよさ画面の「そうび +N」内訳用)。つよさ画面を開いた時だけ
+  // 計算する (World は移動/HP バー更新で頻繁に再レンダーする — レビュー ★)
+  const combatBase = useMemo(
+    () => (statusOpen && baseArgs ? playerCombatant(...baseArgs) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- baseArgs は下記 diag/archetype で代表
+    [statusOpen, archetype, diag?.jobLevel?.xp, diag?.playerLevel?.xp, diag?.rpgStats],
+  );
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
 
@@ -234,6 +248,7 @@ export function World() {
       ]);
       if (cancelled) return;
       setAvatarUrl(profile?.data.avatar ?? null);
+      setPlayerName(profile?.data.displayName || profile?.data.handle || '');
       setDiag(d);
       setHerbStock(stats?.materials['herb'] ?? 0);
       setTonicStock(stats?.materials['sky-dew'] ?? 0);
@@ -308,7 +323,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -647,7 +662,7 @@ export function World() {
     const s = wsRef.current;
     // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
     // まま別の街へテレポートすると品揃えが無言で差し替わる — レビュー指摘)
-    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current) return;
+    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || statusOpenRef.current) return;
     const lt = s.lastTown && townAt(s.lastTown.x, s.lastTown.y) ? s.lastTown : null;
     const spawn = worldOverlay().spawn;
     const dest = lt ?? { x: spawn.x, y: spawn.y };
@@ -1089,6 +1104,14 @@ export function World() {
         >
           ⚔ そうび
         </button>
+        <button
+          type="button"
+          disabled={wipe !== null || !combat || !archetype}
+          onClick={() => setStatusOpen(true)}
+          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
+        >
+          💪 つよさ
+        </button>
       </div>
       {/* 一時メッセージ (やくそう使用 / 進めない / 街で回復 など)。操作した指の
           すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
@@ -1109,6 +1132,23 @@ export function World() {
           : ''}
       </p>
       {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
+      {statusOpen && combat && combatBase && archetype && (
+        <StatusModal
+          name={playerName}
+          avatarUrl={avatarUrl}
+          archetype={archetype}
+          jobLv={jobLevelFromXp(diag?.jobLevel?.xp ?? 0)}
+          playerLv={playerLevelFromXp(diag?.playerLevel?.xp ?? 0)}
+          jobXp={diag?.jobLevel?.xp ?? 0}
+          playerXp={diag?.playerLevel?.xp ?? 0}
+          combat={combat}
+          combatBase={combatBase}
+          hp={curHp}
+          mp={curMp}
+          gearPieces={resolvedGear?.pieces ?? {}}
+          onClose={() => setStatusOpen(false)}
+        />
+      )}
       {onboarding && (
         <DialogueWindow
           lines={ONBOARDING_LINES}
