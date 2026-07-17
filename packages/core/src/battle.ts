@@ -48,6 +48,10 @@ export const BATTLE_TUNING = {
   critMultiplier: 1.5,
   /** ぼうぎょ: 被ダメージ半減 */
   guardReduction: 0.5,
+  /** ため攻撃 (tier2+ が 1 ターン予告してから放つ) の倍率。予告を見て防御するのが正解
+   *  (2.6 → 防御で 1.3 まで軽減 = 節約 1.3 発分 > 機会費用の自攻撃 1 発分)。
+   *  防御に存在意義を与える読み合いの核。バランステストで「予告に防御 > attack 連打」を固定。 */
+  chargedPower: 2.6,
   /** 最大ターン数 (超えたら判定 = 残 HP 割合勝負) */
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
@@ -140,6 +144,9 @@ export interface Combatant {
   guarding: boolean;
   /** 見切り (parry) 構え中: 防御 + 被弾時に反撃 */
   parrying: boolean;
+  /** ため中 (モンスター用): 次ターンに chargedPower のため攻撃を放つ。
+   *  予告が出るので、プレイヤーは防御で応じるのが正解 (防御の存在意義)。 */
+  charging: boolean;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -158,6 +165,7 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
     luk: s(luk),
     guarding: false,
     parrying: false,
+    charging: false,
   };
 }
 
@@ -468,10 +476,22 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
       else if (command === 'skill') playerSkillAction(state, rng, events);
       // guard は宣言済み
     } else {
-      if (mCommand === 'attack') doAttack(state.monster, state.player, rng, events, 'monster');
-      else if (mCommand === 'skill') {
+      // ため中なら宣言どおり解放 (mCommand は無視)。予告 → 解放の 2 ターン制で、
+      // プレイヤーが予告を見て防御する読み合いを作る。
+      if (state.monster.charging) {
+        state.monster.charging = false;
         const skillName = MONSTERS_BY_ID[state.monsterId]?.skillName ?? 'つよいこうげき';
-        doAttack(state.monster, state.player, rng, events, 'monster', { power: 1.5, hitBonus: -0.08, label: skillName });
+        doAttack(state.monster, state.player, rng, events, 'monster', {
+          power: BATTLE_TUNING.chargedPower,
+          hitBonus: -0.05,
+          label: skillName,
+        });
+      } else if (mCommand === 'attack') {
+        doAttack(state.monster, state.player, rng, events, 'monster');
+      } else if (mCommand === 'skill') {
+        // このターンは攻撃せず「ため」を予告する
+        state.monster.charging = true;
+        events.push({ actor: 'monster', text: `${state.monster.name}は力をためている…!` });
       }
       // guard は宣言済み
     }

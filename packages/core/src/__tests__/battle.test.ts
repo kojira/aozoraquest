@@ -224,6 +224,46 @@ describe('resolveTurn', () => {
   it('artist の同値タイ (def=luk=26) は先勝ちで parry に固定', () => {
     expect(skillForJob('artist').kind).toBe('parry');
   });
+
+  it('ため予告の次ターンは必ずため攻撃 (または決着済み)', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      let s = startBattle('warrior', 5, 10, '戦士', 3, seed);
+      let telegraphed = false;
+      for (let i = 0; i < 40 && s.outcome === 'ongoing'; i++) {
+        s = resolveTurn(s, 'attack');
+        const chargeNow = s.lastEvents.some((e) => e.text.includes('力をためている'));
+        if (telegraphed && s.outcome === 'ongoing' && !s.monster.charging) {
+          // 直前ターンに予告があった → このターンのイベントにため攻撃 (モンスター名の技) が出る
+          const def = MONSTERS_BY_ID[s.monsterId]!;
+          const unleashed = s.lastEvents.some(
+            (e) => e.actor === 'monster' && def.skillName !== undefined && e.text.includes(def.skillName),
+          );
+          // プレイヤー側が先に倒した場合 (monster.hp=0) は解放されないこともある
+          if (s.monster.hp > 0) expect(unleashed).toBe(true);
+        }
+        telegraphed = chargeNow;
+      }
+    }
+  });
+
+  it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
+    const reactive = (seed: number) => {
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed);
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+        // 直前のイベントに予告があれば防御、なければ攻撃
+        const telegraphed = s.monster.charging;
+        s = resolveTurn(s, telegraphed ? 'guard' : 'attack');
+      }
+      return s.outcome;
+    };
+    let reactiveWins = 0;
+    let spamWins = 0;
+    for (let seed = 0; seed < 100; seed++) {
+      if (reactive(seed) === 'win') reactiveWins++;
+      if (playOut(startBattle('warrior', 8, 15, '戦士', 3, seed), 'attack').outcome === 'win') spamWins++;
+    }
+    expect(reactiveWins).toBeGreaterThan(spamWins);
+  });
 });
 
 describe('rollDrops', () => {
