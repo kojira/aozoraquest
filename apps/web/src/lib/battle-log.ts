@@ -81,7 +81,10 @@ export interface BattleStats extends BattleRecordSummary {
 
 /**
  * 戦績を集計する (称号 / 素材在庫 / 連勝の計算ソース)。
- * listRecords は新しい順に返る前提で currentStreak を出す。最大 500 件。
+ * listRecords は新しい順 (rkey 降順) に返る前提で currentStreak を出す。これは参照
+ * PDS の既定挙動で lexicon 上の保証ではないが、万一順序が変わっても影響は
+ * currentStreak の表示のみ (bestStreak/称号は向きに依存しない)。最大 500 件。
+ * draw は連勝を切るが敗北には数えない。outcome 欠落 = 中断された仮レコード = 敗北扱い。
  */
 export async function loadBattleStats(agent: Agent, did: string): Promise<BattleStats> {
   const stats: BattleStats = {
