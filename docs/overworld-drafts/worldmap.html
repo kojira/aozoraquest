@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>あおぞらワールド 全マップ (1024x1024) 生成ドラフト</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #1b2530; color: #eef4f7; padding: 20px; }
+  h1 { font-size: 18px; } h2 { font-size: 15px; margin-top: 20px; }
+  canvas { border: 3px solid #fff; border-radius: 3px; image-rendering: pixelated; }
+  .row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .cap { font-size: 12px; color: #9db4c4; margin-top: 6px; max-width: 520px; }
+  #stats { font-size: 13px; line-height: 1.7; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<h1>あおぞらワールド — 全世界 1024×1024 (シード固定・決定的生成)</h1>
+<div class="row">
+  <div>
+    <canvas id="world" width="1024" height="1024" style="width:1024px;height:1024px"></canvas>
+    <div class="cap">1 ピクセル = 1 タイル。白い点線 = 128×128 リージョン境界 (8×8 = 64 リージョン)。
+    赤点 = 街 (見やすさのため 5×5 で強調)。左右・上下の端は繋がる (トーラス)。</div>
+  </div>
+  <div>
+    <h2>凡例と統計</h2>
+    <div id="stats"></div>
+    <h2>リージョン拡大 (128×128 を 4 倍)</h2>
+    <canvas id="zoom" width="512" height="512" style="width:512px;height:512px"></canvas>
+    <div class="cap" id="zoomcap"></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// 決定的ワールド生成 (PR-W1 で packages/core に移植する実装案)
+// ══════════════════════════════════════════════════════════════
+const WORLD = 1024;            // 一辺のタイル数 (トーラス)
+const REGION = 128;            // リージョンの一辺
+const GLOBAL_SEED = 20260717;  // 固定グローバルシード
+
+// ── 決定的ハッシュ (格子点 → [0,1)) ──
+function hash2(ix, iy, seed) {
+  let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed, 1274126177)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+const smooth = (t) => t * t * (3 - 2 * t);
+
+// ── 周期つき値ノイズ (格子 index を period で mod → トーラスで継ぎ目なし) ──
+function periodicNoise(x, y, wavelength, seed) {
+  const period = WORLD / wavelength;
+  const u = x / wavelength, v = y / wavelength;
+  const x0 = Math.floor(u), y0 = Math.floor(v);
+  const fx = smooth(u - x0), fy = smooth(v - y0);
+  const m = (i) => ((i % period) + period) % period;
+  const a = hash2(m(x0), m(y0), seed), b = hash2(m(x0 + 1), m(y0), seed);
+  const c = hash2(m(x0), m(y0 + 1), seed), d = hash2(m(x0 + 1), m(y0 + 1), seed);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+function fbm(x, y, seed, octaves) { // octaves: [wavelength, weight][]
+  let sum = 0, wsum = 0;
+  for (const [w, weight] of octaves) {
+    sum += periodicNoise(x, y, w, seed + w) * weight;
+    wsum += weight;
+  }
+  return sum / wsum;
+}
+
+// ── 地形パラメータ (WORLD_TUNING 相当) ──
+const TUNE = {
+  seaLevel: 0.40,        // これ未満は海
+  mountainRidge: 0.80,   // 尾根ノイズがこれ以上 + 高地 → 山脈
+  mountainHigh: 0.56,    // 山脈になりうる高地の下限
+  peakLevel: 0.735,      // これ以上は単独峰 (稀)
+  forestMoisture: 0.565, // 湿度がこれ以上で森
+  groveMoisture: 0.46,   // 湿度がこれ以上で林
+  riverRidge: 0.972,     // 川 (ridged noise の閾値)
+  pondNoise: 0.9,        // 池 (高周波ノイズの閾値)
+};
+
+const ELEV_OCT = [[512, 1.0], [256, 0.55], [128, 0.30], [64, 0.16], [32, 0.09], [16, 0.05]];
+const MOIST_OCT = [[256, 1.0], [128, 0.5], [64, 0.25], [32, 0.12]];
+
+// ドメインワープ: 座標を別ノイズで歪めてから標高を引く (丸いブロブ地形の回避)
+function warp(x, y) {
+  const wx = (periodicNoise(x, y, 128, GLOBAL_SEED * 11 + 5) - 0.5) * 48;
+  const wy = (periodicNoise(x, y, 128, GLOBAL_SEED * 13 + 9) - 0.5) * 48;
+  return [x + wx, y + wy];
+}
+function elevation(x, y) {
+  const [px, py] = warp(x, y);
+  return fbm(px, py, GLOBAL_SEED * 2 + 1, ELEV_OCT);
+}
+function moisture(x, y) { return fbm(x, y, GLOBAL_SEED * 3 + 7, MOIST_OCT); }
+function ridged(x, y, seed, octaves) {
+  const n = fbm(x, y, seed, octaves);
+  return 1 - Math.abs(2 * n - 1); // 尾根線 (川筋・山脈に使う)
+}
+function riverValue(x, y) { return ridged(x, y, GLOBAL_SEED * 5 + 13, [[256, 1.0], [64, 0.3]]); }
+function mountainRidgeValue(x, y) { return ridged(x, y, GLOBAL_SEED * 17 + 29, [[256, 1.0], [96, 0.45], [32, 0.15]]); }
+
+// terrain: 0=plains 1=grove 2=forest 3=pond 4=water 5=mountain 6=town 7=bridge
+function baseTerrain(x, y) {
+  const e = elevation(x, y);
+  if (e < TUNE.seaLevel) return 4;            // 海
+  // 山: 高地の上に尾根ノイズが走るところ = 山脈。極端な高所は単独峰。
+  if (e >= TUNE.peakLevel) return 5;
+  if (e >= TUNE.mountainHigh && mountainRidgeValue(x, y) >= TUNE.mountainRidge) return 5;
+  // 川: 中間標高の陸のみ。海抜すれすれでは削らない (海岸ノイズ化を防ぐ)
+  if (e > TUNE.seaLevel + 0.02 && riverValue(x, y) > TUNE.riverRidge) return 4;
+  // 池: 高周波ノイズの小さな塊
+  if (periodicNoise(x, y, 8, GLOBAL_SEED * 7 + 3) > TUNE.pondNoise && moisture(x, y) > 0.45) return 3;
+  const m = moisture(x, y);
+  if (m >= TUNE.forestMoisture) return 2;
+  if (m >= TUNE.groveMoisture) return 1;
+  return 0;
+}
+
+// ── 街: 各リージョン中心に最も近い平地/林 (スパイラル探索、半径 40) ──
+function findTown(rx, ry) {
+  const cx = rx * REGION + REGION / 2, cy = ry * REGION + REGION / 2;
+  for (let r = 0; r <= 40; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // リング状に
+        const x = (cx + dx + WORLD) % WORLD, y = (cy + dy + WORLD) % WORLD;
+        const t = baseTerrain(x, y);
+        if (t === 0 || t === 1) return [x, y];
+      }
+    }
+  }
+  return null; // 海ばかりのリージョンには街なし
+}
+
+// ── 橋: 幅 1〜3 タイルの川を横断できる「橋スパン」を川沿いに一定間隔で架ける ──
+// 川はたいてい幅 2-3 タイルなので、1 タイル橋では候補がほぼ出ない。水平/垂直の
+// 短い水域ラン (≤ maxSpan) の両端が通行可能なら、そのラン全体を橋にする。
+const BRIDGE_SPACING = 24; // これ未満の距離に他の橋があれば架けない
+const BRIDGE_MAX_SPAN = 3; // 橋の最大長 (これより広い水域は渡れない = 海)
+function passableBase(t) { return t === 0 || t === 1 || t === 2; }
+function isRiverTile(grid, x, y) {
+  return grid[y * WORLD + x] === 4 && elevation(x, y) >= TUNE.seaLevel;
+}
+function findAllBridges(grid) {
+  const bridges = []; // [x, y] のフラット列 (スパンの全タイル)
+  const anchors = []; // スパン代表点 (間隔判定用)
+  const nearAnchor = (x, y) => {
+    for (const [px, py] of anchors) {
+      const ddx = Math.min(Math.abs(px - x), WORLD - Math.abs(px - x));
+      const ddy = Math.min(Math.abs(py - y), WORLD - Math.abs(py - y));
+      if (ddx + ddy < BRIDGE_SPACING) return true;
+    }
+    return false;
+  };
+  const trySpan = (x, y, dx, dy) => {
+    // (x,y) はランの起点候補 (直前が通行可能陸地であること)
+    const px = (x - dx + WORLD) % WORLD, py = (y - dy + WORLD) % WORLD;
+    if (!passableBase(grid[py * WORLD + px])) return;
+    const run = [];
+    let cx = x, cy = y;
+    for (let len = 0; len < BRIDGE_MAX_SPAN; len++) {
+      if (!isRiverTile(grid, cx, cy)) break;
+      run.push([cx, cy]);
+      cx = (cx + dx + WORLD) % WORLD; cy = (cy + dy + WORLD) % WORLD;
+    }
+    if (run.length === 0 || run.length > BRIDGE_MAX_SPAN) return;
+    // ランの先が通行可能陸地なら橋成立
+    if (!passableBase(grid[cy * WORLD + cx])) return;
+    const [ax, ay] = run[Math.floor(run.length / 2)];
+    if (nearAnchor(ax, ay)) return;
+    anchors.push([ax, ay]);
+    for (const t of run) bridges.push(t);
+  };
+  for (let y = 0; y < WORLD; y++) {
+    for (let x = 0; x < WORLD; x++) {
+      if (!isRiverTile(grid, x, y)) continue;
+      trySpan(x, y, 1, 0); // 横断 (西→東)
+      trySpan(x, y, 0, 1); // 縦断 (北→南)
+    }
+  }
+  return { bridges, spans: anchors.length };
+}
+
+// ══════════════════════════════════════════════════════════════
+// 描画
+// ══════════════════════════════════════════════════════════════
+const COLORS = {
+  0: [0x9d, 0xd0, 0x7f], // 平地
+  1: [0x6f, 0xb0, 0x5c], // 林 (地図上では少し濃く)
+  2: [0x2f, 0x6e, 0x35], // 森
+  3: [0x7a, 0xc8, 0xf0], // 池 (川より明るい水色)
+  4: [0x57, 0xb7, 0xee], // 川・海
+  5: [0x8a, 0x7f, 0x74], // 山
+  6: [0xc9, 0x56, 0x4a], // 街
+  7: [0xb0, 0x8a, 0x5c], // 橋
+};
+const TERRAIN_NAMES = ['平地', '林', '森', '池', '川・海', '山', '街', '橋'];
+
+const canvas = document.getElementById('world');
+const ctx = canvas.getContext('2d');
+const img = ctx.createImageData(WORLD, WORLD);
+const counts = new Array(8).fill(0);
+const grid = new Uint8Array(WORLD * WORLD);
+
+for (let y = 0; y < WORLD; y++) {
+  for (let x = 0; x < WORLD; x++) {
+    const t = baseTerrain(x, y);
+    grid[y * WORLD + x] = t;
+    counts[t]++;
+  }
+}
+
+// 街と橋を上書き (橋は川沿い全域に一定間隔で)
+const towns = [];
+for (let ry = 0; ry < 8; ry++) {
+  for (let rx = 0; rx < 8; rx++) {
+    const town = findTown(rx, ry);
+    if (town) { towns.push(town); grid[town[1] * WORLD + town[0]] = 6; }
+  }
+}
+const { bridges, spans } = findAllBridges(grid);
+for (const [x, y] of bridges) grid[y * WORLD + x] = 7;
+
+// ── 到達可能性の解析: 最初の街から歩ける陸地の割合 (flood fill) ──
+function passable(t) { return t === 0 || t === 1 || t === 2 || t === 6 || t === 7; }
+const reachable = new Uint8Array(WORLD * WORLD);
+{
+  const [sx, sy] = towns[0];
+  const stack = [sy * WORLD + sx];
+  reachable[sy * WORLD + sx] = 1;
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % WORLD, y = (i - x) / WORLD;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = (x + dx + WORLD) % WORLD, ny = (y + dy + WORLD) % WORLD;
+      const ni = ny * WORLD + nx;
+      if (reachable[ni] || !passable(grid[ni])) continue;
+      reachable[ni] = 1;
+      stack.push(ni);
+    }
+  }
+}
+let passableTotal = 0, reachableTotal = 0, reachableTowns = 0;
+for (let i = 0; i < WORLD * WORLD; i++) {
+  if (passable(grid[i])) {
+    passableTotal++;
+    if (reachable[i]) reachableTotal++;
+  }
+}
+for (const [x, y] of towns) if (reachable[y * WORLD + x]) reachableTowns++;
+
+for (let i = 0; i < WORLD * WORLD; i++) {
+  const [r, g, b] = COLORS[grid[i]];
+  img.data[i * 4] = r; img.data[i * 4 + 1] = g; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = 255;
+}
+ctx.putImageData(img, 0, 0);
+
+// リージョン境界 (点線)
+ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+ctx.setLineDash([2, 4]);
+for (let i = 1; i < 8; i++) {
+  ctx.beginPath(); ctx.moveTo(i * REGION + 0.5, 0); ctx.lineTo(i * REGION + 0.5, WORLD); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, i * REGION + 0.5); ctx.lineTo(WORLD, i * REGION + 0.5); ctx.stroke();
+}
+// 街を 5x5 で強調
+ctx.setLineDash([]);
+for (const [x, y] of towns) {
+  ctx.fillStyle = '#c9564a';
+  ctx.fillRect(x - 2, y - 2, 5, 5);
+  ctx.strokeStyle = '#fff';
+  ctx.strokeRect(x - 2.5, y - 2.5, 6, 6);
+}
+
+// 統計
+const total = WORLD * WORLD;
+const landTotal = counts[0] + counts[1] + counts[2] + counts[3] + counts[5];
+let statsHtml = '';
+for (let t = 0; t < 8; t++) {
+  const c = t === 6 ? towns.length : t === 7 ? spans : counts[t];
+  const pct = t >= 6 ? `${c} 箇所` : `${((c / total) * 100).toFixed(1)}%`;
+  const col = COLORS[t];
+  statsHtml += `<div><span class="sw" style="background: rgb(${col.join(',')})"></span>${TERRAIN_NAMES[t]}: ${pct}</div>`;
+}
+statsHtml += `<div style="margin-top:6px">陸地率: ${((landTotal / total) * 100).toFixed(1)}% / 街: ${towns.length} / 橋: ${spans} 本</div>`;
+statsHtml += `<div><strong>到達可能性</strong> (最初の街から徒歩 + 橋のみ):<br>`
+  + `歩行可能タイルの ${((reachableTotal / passableTotal) * 100).toFixed(1)}% に到達可 / `
+  + `街 ${reachableTowns}/${towns.length} に到達可</div>`;
+statsHtml += `<div style="color:#ffcf7a">濃く沈んだ陸地 = 徒歩到達不能 (山・水に囲まれた飛び地 → 魔王の城などの後期コンテンツ候補)</div>`;
+document.getElementById('stats').innerHTML = statsHtml;
+
+// 到達不能な歩行可能タイルを暗く落とす (飛び地の可視化)
+const img2 = ctx.getImageData(0, 0, WORLD, WORLD);
+for (let i = 0; i < WORLD * WORLD; i++) {
+  if (passable(grid[i]) && !reachable[i]) {
+    img2.data[i * 4] = Math.floor(img2.data[i * 4] * 0.45);
+    img2.data[i * 4 + 1] = Math.floor(img2.data[i * 4 + 1] * 0.45);
+    img2.data[i * 4 + 2] = Math.floor(img2.data[i * 4 + 2] * 0.45);
+  }
+}
+ctx.putImageData(img2, 0, 0);
+// 街マーカーは再描画 (暗転処理の上に)
+for (const [x, y] of towns) {
+  ctx.fillStyle = reachable[y * WORLD + x] ? '#c9564a' : '#7a3b34';
+  ctx.fillRect(x - 2, y - 2, 5, 5);
+  ctx.strokeStyle = '#fff';
+  ctx.strokeRect(x - 2.5, y - 2.5, 6, 6);
+}
+
+// リージョン拡大 (街のあるリージョンをひとつ)
+const zoomCtx = document.getElementById('zoom').getContext('2d');
+const [zrx, zry] = [2, 3]; // 中央寄りのリージョン
+zoomCtx.imageSmoothingEnabled = false;
+const zoomImg = zoomCtx.createImageData(REGION, REGION);
+for (let y = 0; y < REGION; y++) {
+  for (let x = 0; x < REGION; x++) {
+    const t = grid[(zry * REGION + y) * WORLD + (zrx * REGION + x)];
+    const [r, g, b] = COLORS[t];
+    const i = (y * REGION + x) * 4;
+    zoomImg.data[i] = r; zoomImg.data[i + 1] = g; zoomImg.data[i + 2] = b; zoomImg.data[i + 3] = 255;
+  }
+}
+const off = new OffscreenCanvas(REGION, REGION);
+off.getContext('2d').putImageData(zoomImg, 0, 0);
+zoomCtx.drawImage(off, 0, 0, REGION, REGION, 0, 0, 512, 512);
+document.getElementById('zoomcap').textContent = `リージョン (${zrx},${zry}) の 128×128 を 4 倍表示。地図のかけら 1 枚で見える範囲。`;
+</script>
+</body>
+</html>
