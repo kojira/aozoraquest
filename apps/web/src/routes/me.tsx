@@ -9,6 +9,8 @@ import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
+import { loadCraftInventory, type CraftedPiece } from '@/lib/crafting';
+import { loadGearRefs, resolveGear, type GearRefs } from '@/lib/gear';
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { Avatar } from '@/components/avatar';
@@ -36,6 +38,7 @@ export function MyProfile() {
   const [targetArchetype, setTargetArchetype] = useState<Archetype | null>(null);
   const [summoned, setSummoned] = useState<boolean>(false);
   const [summonedLoaded, setSummonedLoaded] = useState<boolean>(false);
+  const [gearData, setGearData] = useState<{ refs: GearRefs; pieces: CraftedPiece[] } | null>(null);
   // 受託して完了したクエストから得た経験値 (全体 LV・現職 LV の両方に加算)。
   const [questXp, setQuestXp] = useState<number>(0);
 
@@ -77,6 +80,15 @@ export function MyProfile() {
         }
       } catch (e) {
         console.warn('target job load failed', e);
+      }
+    })();
+    // 装備 (HP/MP 表示に反映する。docs/20 W6c)
+    (async () => {
+      try {
+        const [inv, refs] = await Promise.all([loadCraftInventory(agent, did), loadGearRefs(agent, did)]);
+        if (!cancelled) setGearData({ refs, pieces: inv.pieces });
+      } catch (e) {
+        console.warn('gear load failed', e);
       }
     })();
     // ブルスコン召喚済みか (カード機能のゲート)。
@@ -174,12 +186,15 @@ export function MyProfile() {
             // 強さが分かるように (個人の rpgStats + レベルから決まる値で、消耗状態ではない)。
             <p style={{ margin: '0.15em 0 0', fontSize: '0.8em', color: 'var(--color-muted)' }}>
               {(() => {
+                const gearSel = gearData ? resolveGear(gearData.refs, gearData.pieces, myArchetype).selection : {};
                 const c = playerCombatant(
                   myArchetype,
                   myJobLv,
                   myPlayerLv,
                   '',
                   state.result.rpgStats ? statVectorToArray(state.result.rpgStats) : undefined,
+                  undefined,
+                  gearSel,
                 );
                 return (
                   <>

@@ -46,6 +46,8 @@ export const COL = {
   battle: `${USER_PREFIX}.battle`,
   /** なんでも屋の制作 (docs/20)。1 制作 = 1 レコード。品質は rkey + luk から導出 */
   craft: `${USER_PREFIX}.craft`,
+  /** 装備中 (docs/20 W6c)。rkey='self'。craft/forge の rkey 参照 (強化値は直書きしない) */
+  gear: `${USER_PREFIX}.gear`,
   /** あおぞらワールドの状態 (docs/19-overworld.md)。rkey='self'。位置・乗り物・
    *  解禁リージョン。PR-W3 以降は Worker (DO) が正で、これは表示キャッシュ + 監査線。 */
   world: `${USER_PREFIX}.world`,

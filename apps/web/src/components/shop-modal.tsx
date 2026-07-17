@@ -48,10 +48,13 @@ export interface LastShopAction {
   kind: 'craft' | 'forge';
 }
 
-/** アイテムごとの「合成できる最良の組」(同強化値 2 個体の最大レベル)。 */
-function bestForgePair(pieces: CraftedPiece[]): { level: number; rkeys: [string, string] } | null {
+/** アイテムごとの「合成できる最良の組」(同強化値 2 個体の最大レベル)。
+ *  装備中の個体は候補から除外 (そうび中の武器が黙って燃えるのを防ぐ)。 */
+function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[]): { level: number; rkeys: [string, string] } | null {
+  const equipped = new Set(equippedRkeys);
   const byLevel = new Map<number, CraftedPiece[]>();
   for (const p of pieces) {
+    if (equipped.has(p.rkey)) continue;
     if (p.level >= CRAFT_TUNING.levelMax) continue;
     const list = byLevel.get(p.level) ?? [];
     list.push(p);
@@ -73,6 +76,7 @@ export function ShopModal({
   balance,
   materials,
   pieces,
+  equippedRkeys,
   busy,
   lastAction,
   onCraft,
@@ -87,6 +91,8 @@ export function ShopModal({
   materials: Record<string, number>;
   /** 所持している制作品 (強化値つき個体) */
   pieces: CraftedPiece[];
+  /** 装備中の個体 rkey (合成候補から除外する) */
+  equippedRkeys: readonly string[];
   busy: boolean;
   lastAction: LastShopAction | null;
   onCraft: (def: EquipmentDef) => void;
@@ -188,7 +194,9 @@ export function ShopModal({
             const equipable = archetype ? canEquip(archetype, def) : false;
             const affordable = balance >= def.price.power && (materials[stock.materialId] ?? 0) >= def.price.materials;
             const owned = piecesByItem.get(id) ?? [];
-            const forge = bestForgePair(owned);
+            const forge = bestForgePair(owned, equippedRkeys);
+            // 装備を外せば鍛えられる組があるのに、装備中除外で不成立の場合の注記
+            const forgeBlockedByEquip = !forge && bestForgePair(owned, []) !== null;
             const bestOwned = owned.length > 0 ? Math.max(...owned.map((p) => p.level)) : null;
             return (
               <div
@@ -275,6 +283,11 @@ export function ShopModal({
                     >
                       きたえる ({forge.level > 0 ? `+${forge.level}` : forge.level}×2 → +{forgedLevel(forge.level)})
                     </button>
+                  )}
+                  {forgeBlockedByEquip && (
+                    <span style={{ fontSize: '0.7em', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>
+                      そうびを外すと きたえられる
+                    </span>
                   )}
                 </span>
               </div>
