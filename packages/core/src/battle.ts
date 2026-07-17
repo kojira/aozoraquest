@@ -92,12 +92,12 @@ export const JOB_SKILL_NAMES: Record<Archetype, string> = {
   explorer: '未踏の一歩',
   warrior: '鉄壁の構え',
   guardian: '大盾の護り',
-  fighter: '匠の見切り',
+  fighter: 'からくり仕掛け',
   artist: '色彩の閃き',
   captain: '突撃号令',
   miko: '神楽の祈り',
   ninja: '影分身',
-  performer: '大道芸の賭け',
+  performer: '曲芸乱舞',
 };
 
 export interface JobSkill {
@@ -105,7 +105,9 @@ export interface JobSkill {
   name: string;
 }
 
-/** ジョブの支配ステータス (最大値の軸) から特技種を決める。 */
+/** ジョブの支配ステータス (最大値の軸) から特技種を決める。
+ *  同値タイは先勝ち (statOrder 順)。現状タイは artist の def=luk=26 のみで、
+ *  parry になる (テストで固定)。 */
 export function skillForJob(archetype: Archetype): JobSkill {
   const stats = JOBS_BY_ID[archetype].stats;
   let maxI = 0;
@@ -204,6 +206,8 @@ export interface MonsterDef {
   drops: readonly DropDef[];
   /** ひとこと (召喚時の口上に使う) */
   intro: string;
+  /** 強攻撃 (tier2+ の skill 行動) の技名。tier1 は skill を使わないので省略可。 */
+  skillName?: string;
 }
 
 /** 素材カタログ (Step2 の装備素材)。 */
@@ -225,13 +229,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], drops: [{ item: 'bat-wing', chance: 0.6 }], intro: 'ばさばさと羽音を立てている。' },
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], drops: [{ item: 'mush-spore', chance: 0.6 }], intro: 'ほんのり光って動かない…?' },
   // tier2: 修練
-  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }], intro: '地響きを立てて起き上がった。' },
-  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }], intro: 'ゆらゆらとこちらを見ている。' },
-  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], drops: [{ item: 'serpent-scale', chance: 0.5 }], intro: '水面から鎌首をもたげた。' },
+  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ' },
+  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }], intro: 'ゆらゆらとこちらを見ている。', skillName: 'おにびのうず' },
+  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], drops: [{ item: 'serpent-scale', chance: 0.5 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負
-  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], drops: [{ item: 'raven-feather', chance: 0.45 }], intro: '月を背に静かに舞い降りた。' },
-  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。' },
-  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!' },
+  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], drops: [{ item: 'raven-feather', chance: 0.45 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
+  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし' },
+  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', skillName: 'ほのおのブレス' },
 ];
 
 export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
@@ -314,9 +318,9 @@ interface AttackOptions {
   power?: number;
   /** 命中補正 (負で外れやすく) */
   hitBonus?: number;
-  /** 防御力を無視する (魔撃) */
-  ignoreDef?: boolean;
-  /** int を攻撃力として使う (魔撃) */
+  /** 防御力に掛ける係数 (魔撃=0.5 で貫通気味に)。未指定は 1。 */
+  defFactor?: number;
+  /** int を攻撃力として使う (魔撃)。必中。 */
   useInt?: boolean;
   /** 技名 (テキストに使う)。無指定は通常攻撃 */
   label?: string;
@@ -346,7 +350,7 @@ function doAttack(
   }
 
   const atkValue = opts.useInt ? attacker.int : attacker.atk;
-  const defValue = opts.ignoreDef ? 0 : defender.def;
+  const defValue = defender.def * (opts.defFactor ?? 1);
   const roll = 0.85 + rng() * 0.3;
   let dmg = (atkValue * roll * t.damageScale * (opts.power ?? 1)) / (t.damageSoften + defValue);
 
@@ -395,8 +399,7 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
       doAttack(player, monster, rng, events, 'player', { power: 1.7, hitBonus: -0.1, label: playerSkill.name });
       break;
     case 'parry':
-      player.parrying = true;
-      events.push({ actor: 'player', text: `${player.name}は${playerSkill.name}の構え! (防御しつつ反撃)` });
+      // 宣言は resolveTurn 冒頭 (行動順に関係なく効くように)。ここは no-op。
       break;
     case 'flurry':
       doAttack(player, monster, rng, events, 'player', { power: 0.65, label: playerSkill.name });
@@ -405,7 +408,9 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
       }
       break;
     case 'spell':
-      doAttack(player, monster, rng, events, 'player', { power: 1.1, useInt: true, ignoreDef: true, label: playerSkill.name });
+      // 防御を半分だけ貫通 + 必中。完全無視 (旧仕様) は int 職が tier3 を蹂躙して
+      // 難易度設計が壊れたため 0.5 に緩和 (バランステストで固定)。
+      doAttack(player, monster, rng, events, 'player', { power: 1.0, useInt: true, defFactor: 0.5, label: playerSkill.name });
       break;
     case 'gamble': {
       // 0〜2.6 倍。luk が高いほど下振れしにくい。
@@ -424,7 +429,9 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
 export function resolveTurn(prev: BattleState, command: Command): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
 
-  // ディープコピー (Combatant は flat なので spread で足りる)
+  // コピー (Combatant は現状 flat なので spread で足りる)。
+  // 注意: 将来 Combatant に配列/オブジェクト (装備等) を足すときは deep copy に変えること
+  // (shallow spread のままだとイミュータブル性が壊れる)。
   const state: BattleState = {
     ...prev,
     turn: prev.turn + 1,
@@ -436,10 +443,15 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
   const rng = turnRng(state.seed, state.turn);
   const mCommand = monsterCommand(state, rng);
 
-  // 防御系は行動順に関係なく先に立てる (先手を取られても防御が意味を持つように)
+  // 防御系 (ぼうぎょ / 見切り) は行動順に関係なく先に立てる
+  // (先手を取られても防御・反撃が意味を持つように。見切り持ちは鈍足ジョブが多い)。
   if (command === 'guard') {
     state.player.guarding = true;
     events.push({ actor: 'player', text: `${state.player.name}はぼうぎょしている。` });
+  }
+  if (command === 'skill' && state.playerSkill.kind === 'parry') {
+    state.player.parrying = true;
+    events.push({ actor: 'player', text: `${state.player.name}は${state.playerSkill.name}の構え! (防御しつつ反撃)` });
   }
   if (mCommand === 'guard') {
     state.monster.guarding = true;
@@ -457,7 +469,10 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
       // guard は宣言済み
     } else {
       if (mCommand === 'attack') doAttack(state.monster, state.player, rng, events, 'monster');
-      else if (mCommand === 'skill') doAttack(state.monster, state.player, rng, events, 'monster', { power: 1.5, hitBonus: -0.08, label: 'つよいこうげき' });
+      else if (mCommand === 'skill') {
+        const skillName = MONSTERS_BY_ID[state.monsterId]?.skillName ?? 'つよいこうげき';
+        doAttack(state.monster, state.player, rng, events, 'monster', { power: 1.5, hitBonus: -0.08, label: skillName });
+      }
       // guard は宣言済み
     }
   };
@@ -477,7 +492,13 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     const pr = state.player.hp / state.player.maxHp;
     const mr = state.monster.hp / state.monster.maxHp;
     state.outcome = pr > mr ? 'win' : pr < mr ? 'lose' : 'draw';
-    events.push({ actor: 'monster', text: 'ブルスコン「そこまで! 見事な勝負だったよ」' });
+    const closing =
+      state.outcome === 'win'
+        ? 'ブルスコン「そこまで! 判定勝ちだ、見事だったよ」'
+        : state.outcome === 'lose'
+          ? 'ブルスコン「そこまで! 今回は相手が上手だったね」'
+          : 'ブルスコン「そこまで! 引き分けだ、いい勝負だったよ」';
+    events.push({ actor: 'monster', text: closing });
   }
 
   state.lastEvents = events;

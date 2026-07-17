@@ -174,6 +174,56 @@ describe('resolveTurn', () => {
       expect(s.outcome).not.toBe('ongoing');
     }
   });
+
+  it('見切り (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
+    // 鈍足 guardian (agi 9) で skill 連打 → 後手でも反撃イベントが出る seed があること
+    let counterSeen = 0;
+    for (let seed = 0; seed < 30; seed++) {
+      let s = startBattle('guardian', 5, 10, '守護者', 1, seed);
+      for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
+        s = resolveTurn(s, 'skill');
+        if (s.lastEvents.some((e) => e.text.includes('はんげき'))) counterSeen++;
+      }
+    }
+    expect(counterSeen).toBeGreaterThan(0);
+  });
+
+  it('parry 型 (guardian) は skill 連打が attack 連打より不利にならない (tier1 勝率)', () => {
+    let skillWins = 0;
+    let attackWins = 0;
+    for (let seed = 0; seed < 100; seed++) {
+      if (playOut(startBattle('guardian', 5, 10, '守護者', 1, seed), 'skill').outcome === 'win') skillWins++;
+      if (playOut(startBattle('guardian', 5, 10, '守護者', 1, seed), 'attack').outcome === 'win') attackWins++;
+    }
+    // 固有特技を使うほど弱くなる (旧実装は後手 no-op で skill 勝率 2.5%) を防ぐ回帰ガード
+    expect(skillWins).toBeGreaterThanOrEqual(attackWins - 10);
+  });
+
+  it('spell 型 (sage) Lv1 でも tier3 は skill 連打で突破できない (敗率 ≥60%)', () => {
+    // 旧実装 (防御完全無視) は Lv1 sage が tier3 に勝率 79.5% で難易度設計が壊れていた
+    let losses = 0;
+    for (let seed = 0; seed < 100; seed++) {
+      if (playOut(startBattle('sage', 1, 1, '賢者', 3, seed), 'skill').outcome === 'lose') losses++;
+    }
+    expect(losses).toBeGreaterThanOrEqual(60);
+  });
+
+  it('spell は高防御の敵 (golem) に対して通常攻撃より有効 (魔法の存在意義)', () => {
+    // moss-golem は def 36 の硬い敵。int 型はここで輝く
+    let skillWins = 0;
+    let attackWins = 0;
+    for (let seed = 0; seed < 100; seed++) {
+      const sSkill = playOut(startBattle('sage', 5, 10, '賢者', 2, seed), 'skill');
+      const sAttack = playOut(startBattle('sage', 5, 10, '賢者', 2, seed), 'attack');
+      if (sSkill.outcome === 'win') skillWins++;
+      if (sAttack.outcome === 'win') attackWins++;
+    }
+    expect(skillWins).toBeGreaterThan(attackWins);
+  });
+
+  it('artist の同値タイ (def=luk=26) は先勝ちで parry に固定', () => {
+    expect(skillForJob('artist').kind).toBe('parry');
+  });
 });
 
 describe('rollDrops', () => {
