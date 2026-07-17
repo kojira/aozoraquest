@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import {
   BATTLE_TUNING,
@@ -17,6 +17,7 @@ import {
   type TurnEvent,
 } from '@aozoraquest/core';
 import { BattleView } from './battle-view';
+import { EncounterWipe, type WipePhase } from './encounter-wipe';
 import { MonsterSvg } from './monster-svg';
 import { SpiritBubble } from './spirit-bubble';
 import type { PointsState } from '@/lib/points';
@@ -83,6 +84,10 @@ export function TrialArena({
   const [phase, setPhase] = useState<Phase>({ kind: 'select' });
   const [stats, setStats] = useState<BattleStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** エンカウント演出 (DQ1 風ワイプ。encounter-wipe.tsx)。cover → (hold) → reveal。 */
+  const [wipe, setWipe] = useState<WipePhase | null>(null);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   const refreshStats = useCallback(() => {
     loadBattleStats(agent, did).then(setStats).catch(() => {});
@@ -99,6 +104,7 @@ export function TrialArena({
       // (再戦 = fixedTier は同じ tier でもう一度)
       const tier = fixedTier ?? pickTrialTier(seed, playerLevel, stats?.total ?? 0);
       setPhase({ kind: 'starting', tier });
+      setWipe('cover'); // ワイプで画面を覆いながら支払いを進める (遅い通信は hold でつなぐ)
       // やくそう / そらのしずくは在庫から上限まで持ち込む (使用分は battle レコードで差し引く)
       const herbs = Math.min(BATTLE_TUNING.herbCarryMax, stats?.materials['herb'] ?? 0);
       const tonics = Math.min(BATTLE_TUNING.tonicCarryMax, stats?.materials['sky-dew'] ?? 0);
@@ -113,10 +119,13 @@ export function TrialArena({
         void bumpPower(agent, did, { battles: 1 });
         onPointsChanged({ ...points, battles: points.battles + 1, balance: points.balance - BATTLE_TUNING.powerCost });
         setPhase({ kind: 'battle', state, tier, rkey, busy: false });
+        // 覆い切って待機中 (hold) なら開く。cover 中なら onCoverDone 側が拾う。
+        setWipe((w) => (w === 'hold' ? 'reveal' : w));
       } catch (e) {
         console.warn('battle start failed', e);
         setErr('試練を始められなかった。通信を確認してもう一度どうぞ。');
         setPhase({ kind: 'select' });
+        setWipe((w) => (w ? 'reveal' : w)); // 閉じた分だけ select に向かって開き直す
       }
     },
     [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats],
@@ -216,6 +225,15 @@ export function TrialArena({
     [phase, agent, did, stats, refreshStats],
   );
 
+  // ワイプ進行: 覆い切った時点でバトル準備がまだなら hold でつなぐ
+  const onCoverDone = useCallback(() => {
+    setWipe(phaseRef.current.kind === 'battle' ? 'reveal' : 'hold');
+  }, []);
+  const onRevealDone = useCallback(() => setWipe(null), []);
+  const wipeOverlay = wipe ? (
+    <EncounterWipe phase={wipe} onCoverDone={onCoverDone} onRevealDone={onRevealDone} />
+  ) : null;
+
   // ─── select ───
   if (phase.kind === 'select' || phase.kind === 'starting') {
     const canPlay = points.balance >= BATTLE_TUNING.powerCost;
@@ -258,6 +276,7 @@ export function TrialArena({
         )}
         {err && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{err}</p>}
         {stats && stats.total > 0 && <RecordPanel stats={stats} />}
+        {wipeOverlay}
       </div>
     );
   }
@@ -265,12 +284,15 @@ export function TrialArena({
   // ─── battle (表示は battle-view に共通化。world の野外遭遇と同じレンダラー) ───
   if (phase.kind === 'battle') {
     return (
-      <BattleView
-        state={phase.state}
-        busy={phase.busy}
-        onCommand={(c) => void act(c)}
-        headerNote={`${'★'.repeat(phase.tier)} ${TIER_LABELS[phase.tier].name}`}
-      />
+      <>
+        <BattleView
+          state={phase.state}
+          busy={phase.busy}
+          onCommand={(c) => void act(c)}
+          headerNote={`${'★'.repeat(phase.tier)} ${TIER_LABELS[phase.tier].name}`}
+        />
+        {wipeOverlay}
+      </>
     );
   }
 
@@ -344,6 +366,7 @@ export function TrialArena({
           試練の間に戻る
         </button>
       </div>
+      {wipeOverlay}
     </div>
   );
 }

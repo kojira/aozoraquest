@@ -1026,6 +1026,33 @@ p { margin: 0.4em 0; }
 }
 .trial-hit { animation: trial-shake 0.35s ease; }
 
+/* エンカウント演出 (encounter-wipe.tsx): DQ1 風に黒い四角が回転しながら画面を
+   埋め、覆い切ったところでバトル画面に切り替えて逆再生で開く。
+   タイルは中心からの距離で delay を散らす (--d)。GPU 合成のみ (transform)
+   で低速端末でも 60fps を保つ。 */
+@keyframes enc-tile-in {
+  0% { transform: scale(0) rotate(-270deg); }
+  100% { transform: scale(1.06) rotate(0deg); }
+}
+@keyframes enc-tile-out {
+  0% { transform: scale(1.06) rotate(0deg); }
+  100% { transform: scale(0) rotate(270deg); }
+}
+.enc-tile {
+  position: absolute;
+  background: #000;
+  will-change: transform;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.3, 0, 0.7, 1);
+}
+.enc-cover .enc-tile { animation-name: enc-tile-in; animation-duration: 0.4s; animation-delay: var(--d); }
+.enc-reveal .enc-tile { animation-name: enc-tile-out; animation-duration: 0.4s; animation-delay: var(--d); }
+/* 覆い切った待機中 (支払い通信が長いときのつなぎ) は全面を黒でホールド */
+.enc-hold .enc-tile { transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .enc-cover .enc-tile, .enc-reveal .enc-tile { animation-duration: 0.01s; animation-delay: 0s; }
+}
+
 /* 引用投稿カード (post-quote.tsx)。カード全体がタップ可能なので、初動の視覚
    フィードバック (ホバー着色 + 押下の沈み) とキーボードフォーカスリングを付ける。 */
 .dq-quote-card {
