@@ -44,7 +44,7 @@ interface WorldRecordShape {
  */
 export async function loadWorldState(agent: Agent, did: string): Promise<WorldState> {
   const rec = await getRecord<WorldRecordShape>(agent, did, COL.world, 'self');
-  if (rec && typeof rec.x === 'number' && typeof rec.y === 'number') {
+  if (rec && typeof rec.x === 'number' && Number.isFinite(rec.x) && typeof rec.y === 'number' && Number.isFinite(rec.y)) {
     const lastTown =
       typeof rec.lastTownX === 'number' && typeof rec.lastTownY === 'number'
         ? { x: wrap(rec.lastTownX), y: wrap(rec.lastTownY) }
@@ -52,8 +52,9 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
     return {
       x: wrap(rec.x),
       y: wrap(rec.y),
-      hp: typeof rec.hp === 'number' ? Math.max(1, Math.floor(rec.hp)) : null,
-      mp: typeof rec.mp === 'number' ? Math.max(0, Math.floor(rec.mp)) : null,
+      // Number.isFinite: NaN/Infinity の壊れレコードで NaN バーを描かない
+      hp: typeof rec.hp === 'number' && Number.isFinite(rec.hp) ? Math.max(1, Math.floor(rec.hp)) : null,
+      mp: typeof rec.mp === 'number' && Number.isFinite(rec.mp) ? Math.max(0, Math.floor(rec.mp)) : null,
       lastTown,
       updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
     };

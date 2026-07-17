@@ -156,11 +156,15 @@ export function World() {
 
   const battleRef = useRef(battle);
   battleRef.current = battle;
+  const battleResultRef = useRef(battleResult);
+  battleResultRef.current = battleResult;
 
   const move = useCallback(
     (dir: Dir) => {
       const s = wsRef.current;
-      if (!s || battleRef.current) return; // 戦闘中は移動不可
+      // 戦闘中・リザルト表示中は移動不可 (リザルト中に矢印キーで見えない移動 +
+      // 新遭遇がリザルトを上書きする事故を防ぐ。レビュー指摘)
+      if (!s || battleRef.current || battleResultRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -173,12 +177,15 @@ export function World() {
       if (terrain === 'town') {
         const t = townAt(nx, ny);
         setNotice(t ? `「${t.name}」で休んで、すっかり元気になった!` : null);
-        setWs({ x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny } });
+        // wsRef を即時更新 (長押し連打で render 前の tick が同座標から二重計算しないように)
+        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny } };
+        setWs(wsRef.current);
         scheduleSave();
         return; // 街では遭遇しない
       }
       setNotice(null);
-      setWs({ ...s, x: nx, y: ny });
+      wsRef.current = { ...s, x: nx, y: ny };
+      setWs(wsRef.current);
       scheduleSave();
       // 野外遭遇 (プレビュー: Math.random。本実装は PR-W3 で Worker の署名付き seed に)
       const d = diag;
@@ -221,18 +228,27 @@ export function World() {
         return;
       }
       // 決着。プレビューでは報酬・記録なし。やくそうはセッション内で減らす。
+      // TODO(W3): 手持ちの正は Worker (DO) に移す (試練の実在庫と本画面のセッション値が
+      // 併走しているのはプレビュー限定の割り切り)。
       setHerbStock((n) => Math.max(0, n - next.herbsUsed));
       let movedToTown: string | null = null;
       if (next.outcome === 'lose') {
         // 敗北: 最後に立ち寄った街 (無ければはじまりの街) へ。宿で介抱 = 全快。
+        // lastTown はワールド再生成で街が動くと無効になりうるので townAt で検証し、
+        // 無効なら座標・名前とも spawn に倒す (レビュー指摘)。
         const s = wsRef.current;
-        const back = s?.lastTown ?? { x: worldOverlay().spawn.x, y: worldOverlay().spawn.y };
-        const t = townAt(back.x, back.y);
-        movedToTown = t?.name ?? 'はじまりの街';
-        setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: s?.lastTown ?? null });
+        const spawn = worldOverlay().spawn;
+        const lt = s?.lastTown;
+        const valid = lt && townAt(lt.x, lt.y) ? lt : null;
+        const back = valid ?? { x: spawn.x, y: spawn.y };
+        movedToTown = townAt(back.x, back.y)?.name ?? spawn.name;
+        setWs({ x: back.x, y: back.y, hp: null, mp: null, lastTown: valid });
       } else {
-        // 勝利/引き分け: 減った HP/MP をフィールドに持ち帰る (持続)
-        setWs((s) => (s ? { ...s, hp: Math.max(1, next.player.hp), mp: next.player.mp } : s));
+        // 勝利/引き分け: 減った HP/MP をフィールドに持ち帰る (持続)。
+        // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
+        const hp = next.player.hp >= next.player.maxHp ? null : Math.max(1, next.player.hp);
+        const mp = next.player.mp >= next.player.maxMp ? null : next.player.mp;
+        setWs((s) => (s ? { ...s, hp, mp } : s));
       }
       scheduleSave();
       setBattle(null);
