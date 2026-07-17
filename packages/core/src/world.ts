@@ -47,6 +47,8 @@ export const WORLD_TUNING = {
   forestSpeckle: 0.84,
   /** 橋: 幅がこれ以下の川にだけ架かる (これより広い水域 = 海、船で渡る) */
   bridgeMaxSpan: 5,
+  /** 橋の価値判定: この半径の陸上 BFS で回り込めるなら架けない (飾り橋防止)。 */
+  bridgeDetourRadius: 20,
   /** 橋どうしの最小間隔 (マンハッタン距離) */
   bridgeSpacing: 24,
   /** 街探索の半径 (リージョン中心からのスパイラル) */
@@ -288,9 +290,9 @@ function computeBridges(): { tiles: { x: number; y: number }[]; spans: number } 
   /** 両端が「橋なしでも局所的に歩いて行き来できる」なら、その橋は海岸の
    *  切れ込みを跨ぐだけの飾りになる (初版は 20 スパン中 19 がこれで、
    *  オーナー報告 2026-07-17「発見した全ての橋が機能していない」の原因)。
-   *  半径 localDetourRadius の陸上 BFS で回り込めるかを判定する。 */
+   *  半径 bridgeDetourRadius の陸上 BFS で回り込めるかを判定する。 */
   const locallyConnected = (ax: number, ay: number, bx: number, by: number): boolean => {
-    const R = 20;
+    const R = t.bridgeDetourRadius;
     const seen = new Set<number>([ay * WORLD_SIZE + ax]);
     const queue: [number, number][] = [[ax, ay]];
     while (queue.length > 0) {

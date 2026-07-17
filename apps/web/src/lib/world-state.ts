@@ -10,7 +10,7 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { worldOverlay, wrap, isWalkable, terrainAt } from '@aozoraquest/core';
+import { worldOverlay, wrap, isWalkable, terrainAt, townAt } from '@aozoraquest/core';
 import { getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 
@@ -23,6 +23,8 @@ export interface WorldState {
   mp: number | null;
   /** 最後に立ち寄った街 (敗北時の帰還先)。null = まだ街に入っていない (spawn 扱い)。 */
   lastTown: { x: number; y: number } | null;
+  /** ロード時に歩行不能地形から街へ退避した (UI が一言出す) */
+  relocated?: boolean;
   updatedAt: string;
 }
 
@@ -45,10 +47,15 @@ interface WorldRecordShape {
 export async function loadWorldState(agent: Agent, did: string): Promise<WorldState> {
   const rec = await getRecord<WorldRecordShape>(agent, did, COL.world, 'self');
   if (rec && typeof rec.x === 'number' && Number.isFinite(rec.x) && typeof rec.y === 'number' && Number.isFinite(rec.y)) {
-    const lastTown =
-      typeof rec.lastTownX === 'number' && typeof rec.lastTownY === 'number'
+    // lastTown は「今も街であること」を検証してから使う (ワールド再生成で街が
+    // 動く/壊れたレコードで水上へ退避すると、脱出手段なしの詰みになる —
+    // 敗北時帰還 world.tsx と同じ検証。レビュー指摘)
+    const rawLastTown =
+      typeof rec.lastTownX === 'number' && Number.isFinite(rec.lastTownX) &&
+      typeof rec.lastTownY === 'number' && Number.isFinite(rec.lastTownY)
         ? { x: wrap(rec.lastTownX), y: wrap(rec.lastTownY) }
         : null;
+    const lastTown = rawLastTown && townAt(rawLastTown.x, rawLastTown.y) ? rawLastTown : null;
     // 保存位置が歩行不能地形になっていたら最後の街 (無ければ spawn) に退避する。
     // ワールド再生成で橋タイルが移動した場合 (2026-07-17 の橋修正など)、
     // 旧橋の上に立っていたプレイヤーが水上に取り残されて詰むため
@@ -62,6 +69,7 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
         hp: null,
         mp: null,
         lastTown,
+        relocated: true,
         updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
       };
     }

@@ -132,6 +132,11 @@ export function World() {
         const state = await loadWorldState(agent, did);
         if (cancelled) return;
         setWs({ x: state.x, y: state.y, hp: state.hp, mp: state.mp, lastTown: state.lastTown });
+        if (state.relocated) {
+          // 歩行不能地形からの退避 (橋の再配置など)。無言で数百タイル動くと混乱する
+          const t = townAt(state.x, state.y);
+          setNotice(`気がつくと${t ? `「${t.name}」` : 'はじまりの街'}に運ばれていた… (地形が変わったようだ)`);
+        }
       } catch (e) {
         console.warn('[world] load failed', e);
         if (!cancelled) setLoadErr(true);
@@ -639,7 +644,9 @@ export function World() {
             <>このあたり: {DANGER_LABELS[danger]}{here === 'forest' ? ' / 深い森…' : ''}</>
           )}
         </span>
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>({ws.x}, {ws.y})</span>
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>
+          ({ws.x}, {ws.y}) <span style={{ opacity: 0.7 }}>プレビュー</span>
+        </span>
       </p>
 
       {/* フィールドの HP/MP (戦闘をまたいで持続) */}
@@ -728,7 +735,7 @@ export function World() {
             ? ' パワー残高を読み込めなかった (通信エラー)。モンスターは出ません。再読み込みでもう一度どうぞ。'
             : points.balance >= BATTLE_TUNING.powerCost
               ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
-              : ' あおぞらパワーがないのでモンスターは出ません (投稿すると増える)。'
+              : ' あおぞらパワーがないのでモンスターは出ません (ホームで投稿すると増える)。'
           : ''}
       </p>
       {wipeOverlay}

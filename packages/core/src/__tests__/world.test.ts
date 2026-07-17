@@ -18,6 +18,7 @@ import {
   worldOverlay,
   wrap,
   type Terrain,
+  WORLD_TUNING,
 } from '../world.js';
 import { WORLD_DATA } from '../world-data.js';
 
@@ -152,19 +153,18 @@ describe('worldOverlay (街・橋・spawn)', () => {
           if (bridgeSet.has(key(n.x, n.y)) && !seen.has(key(n.x, n.y))) stack.push(n);
         }
       }
-      // 両端の陸タイル
-      const ends: Array<{ x: number; y: number }> = [];
-      for (const c of grp) {
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-          const n = { x: wrap(c.x + dx), y: wrap(c.y + dy) };
-          if (landWalk(n.x, n.y)) ends.push(n);
-        }
-      }
-      expect(ends.length, `span at (${t.x},${t.y}) has two land ends`).toBeGreaterThanOrEqual(2);
-      const a = ends[0]!;
-      const b = ends[ends.length - 1]!;
-      // 橋なし陸上 BFS (半径 20) で到達できないこと
-      const R = 20;
+      // 両端の陸タイルはスパンの走行方向 (縦 or 横) から導出する
+      // (全タイルの陸近傍を集める方式だと側方の岸タイルを対岸と誤認しうる)
+      const horizontal = grp.every((c) => c.y === grp[0]!.y);
+      grp.sort((p1, p2) => (horizontal ? p1.x - p2.x : p1.y - p2.y));
+      const head = grp[0]!;
+      const tail = grp[grp.length - 1]!;
+      const a = horizontal ? { x: wrap(head.x - 1), y: head.y } : { x: head.x, y: wrap(head.y - 1) };
+      const b = horizontal ? { x: wrap(tail.x + 1), y: tail.y } : { x: tail.x, y: wrap(tail.y + 1) };
+      expect(landWalk(a.x, a.y), `span at (${t.x},${t.y}) west/north end is land`).toBe(true);
+      expect(landWalk(b.x, b.y), `span at (${t.x},${t.y}) east/south end is land`).toBe(true);
+      // 橋なし陸上 BFS で到達できないこと (半径は生成側と同じ knob を参照)
+      const R = WORLD_TUNING.bridgeDetourRadius;
       const vis = new Set<number>([key(a.x, a.y)]);
       const queue = [a];
       let reachable = false;
