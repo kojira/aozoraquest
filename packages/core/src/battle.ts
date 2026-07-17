@@ -17,6 +17,7 @@
 
 import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
+import { gearBonus } from './equipment.js';
 
 // ─── チューニング ───────────────────────────────────────────
 
@@ -278,6 +279,8 @@ export function playerCombatant(
   playerLevel: number,
   displayName: string,
   baseStats?: StatArray,
+  /** 装備中の装備 id 列 (EQUIPMENT)。丸めの後に平坦加算 (docs/20)。 */
+  equipIds?: readonly string[],
 ): Combatant {
   const t = BATTLE_TUNING;
   const job = JOBS_BY_ID[archetype].stats;
@@ -297,7 +300,20 @@ export function playerCombatant(
   // 平坦なレベル成長 (プレイヤーのみ)。低ステータスほど相対的に効く
   const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
   const grown: StatArray = [base[0] + flat, base[1] + flat, base[2] + flat, base[3] + flat, base[4] + flat];
-  return fromStats(displayName, grown, factor, playerLevel);
+  const c = fromStats(displayName, grown, factor, playerLevel);
+  if (equipIds && equipIds.length > 0) {
+    // 装備はすべての導出 (ブレンド・成長・丸め) の後に平坦加算 — 低ステータス
+    // ほど相対効果が大きく「装備で差をつける」が成立する (docs/20)
+    const g = gearBonus(archetype, equipIds);
+    c.atk += g.atk;
+    c.def += g.def;
+    c.agi += g.agi;
+    c.int += g.int;
+    c.luk += g.luk;
+    c.maxHp += g.maxHp;
+    c.hp = c.maxHp;
+  }
+  return c;
 }
 
 /** 丸め前の戦闘ステータス (レベルアップの上昇量表示用)。 */
@@ -322,6 +338,7 @@ export function playerStatsAt(
   jobLevel: number,
   playerLevel: number,
   baseStats?: StatArray,
+  equipIds?: readonly string[],
 ): CombatStatsRaw {
   const t = BATTLE_TUNING;
   const job = JOBS_BY_ID[archetype].stats;
@@ -338,13 +355,14 @@ export function playerStatsAt(
   const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
   const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
   const g = (i: number) => (base[i]! + flat) * factor;
+  const eq = equipIds && equipIds.length > 0 ? gearBonus(archetype, equipIds) : null;
   return {
-    atk: g(0),
-    def: g(1),
-    agi: g(2),
-    int: g(3),
-    luk: g(4),
-    maxHp: t.hpBase + (base[1]! + flat) * t.hpDefScale * factor + playerLevel * t.hpLevelScale,
+    atk: g(0) + (eq?.atk ?? 0),
+    def: g(1) + (eq?.def ?? 0),
+    agi: g(2) + (eq?.agi ?? 0),
+    int: g(3) + (eq?.int ?? 0),
+    luk: g(4) + (eq?.luk ?? 0),
+    maxHp: t.hpBase + (base[1]! + flat) * t.hpDefScale * factor + playerLevel * t.hpLevelScale + (eq?.maxHp ?? 0),
     maxMp: t.mpBase + (base[3]! + flat) * t.mpIntScale * factor,
   };
 }
@@ -571,9 +589,11 @@ export function startBattle(
     tonics?: number;
     /** プレイヤーの基底ステータス (プロフィールの rpgStats)。未指定はジョブ基準値。 */
     baseStats?: StatArray;
+    /** 装備中の装備 id 列 (EQUIPMENT)。 */
+    equipIds?: readonly string[];
   },
 ): BattleState {
-  const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats);
+  const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds);
   if (carry?.hp !== undefined) {
     player.hp = Math.max(1, Math.min(player.maxHp, Math.floor(carry.hp)));
   }
