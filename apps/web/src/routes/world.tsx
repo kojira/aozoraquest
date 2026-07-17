@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   BATTLE_TUNING,
-  EQUIPMENT_BY_ID,
   ITEMS,
   MONSTERS_BY_ID,
   jobDisplayName,
   levelUpGains,
+  townShopStock,
   type EquipmentDef,
   type StatGain,
   encounterRateFor,
@@ -35,8 +35,8 @@ import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
 import { formatGain, notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { craftItem, loadCraftInventory, type CraftedPiece } from '@/lib/crafting';
-import { ShopModal } from '@/components/shop-modal';
+import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, type CraftedPiece } from '@/lib/crafting';
+import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { BattleView, HpBar, MpBar } from '@/components/battle-view';
@@ -141,9 +141,11 @@ export function World() {
   const [shopOpen, setShopOpen] = useState(false);
   const shopOpenRef = useRef(shopOpen);
   shopOpenRef.current = shopOpen;
-  const [craftedCounts, setCraftedCounts] = useState<Record<string, number>>({});
+  const [craftedPieces, setCraftedPieces] = useState<CraftedPiece[]>([]);
   const [craftBusy, setCraftBusy] = useState(false);
-  const [lastCraft, setLastCraft] = useState<CraftedPiece | null>(null);
+  const [lastShopAction, setLastShopAction] = useState<LastShopAction | null>(null);
+  /** 再試行の冪等化: 失敗した制作の rkey を保持し、同じ品の再試行で使い回す */
+  const pendingCraftRef = useRef<{ defId: string; rkey: string } | null>(null);
   /** ShopModal 用の素材スナップショット (materialsRef は ref なので再レンダ用に複製) */
   const [materialsView, setMaterialsView] = useState<Record<string, number>>({});
 
@@ -182,11 +184,12 @@ export function World() {
         if (!cancelled) setLoadErr(true);
         return;
       }
-      const [profile, d, stats, pts] = await Promise.all([
+      const [profile, d, stats, pts, craftInv] = await Promise.all([
         agent.getProfile({ actor: did }).catch(() => null),
         getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
         loadBattleStats(agent, did).catch(() => null),
         loadPointsState(agent, did).catch(() => null),
+        loadCraftInventory(agent, did).catch(() => ({ pieces: [], materialsSpent: {} })),
       ]);
       if (cancelled) return;
       setAvatarUrl(profile?.data.avatar ?? null);
@@ -194,8 +197,6 @@ export function World() {
       setHerbStock(stats?.materials['herb'] ?? 0);
       setTonicStock(stats?.materials['sky-dew'] ?? 0);
       setFeatherStock(stats?.materials['sky-feather'] ?? 0);
-      const craftInv = await loadCraftInventory(agent, did).catch(() => ({ pieces: [], materialsSpent: {} }));
-      if (cancelled) return;
       {
         const m = { ...(stats?.materials ?? {}) };
         for (const [id, n] of Object.entries(craftInv.materialsSpent)) {
@@ -206,11 +207,7 @@ export function World() {
         materialsRef.current = m;
         setMaterialsView({ ...m });
       }
-      {
-        const counts: Record<string, number> = {};
-        for (const piece of craftInv.pieces) counts[piece.itemId] = (counts[piece.itemId] ?? 0) + 1;
-        setCraftedCounts(counts);
-      }
+      setCraftedPieces(craftInv.pieces);
       setPoints(pts);
     })();
     return () => { cancelled = true; };
@@ -572,8 +569,9 @@ export function World() {
   const useFeatherOnField = useCallback(() => {
     if (featherStock <= 0) return;
     const s = wsRef.current;
-    // mapOpen も塞ぐ (地図モーダルの裏へ Tab で抜けて発動できる — レビュー指摘)
-    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current) return;
+    // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
+    // まま別の街へテレポートすると品揃えが無言で差し替わる — レビュー指摘)
+    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current) return;
     const lt = s.lastTown && townAt(s.lastTown.x, s.lastTown.y) ? s.lastTown : null;
     const spawn = worldOverlay().spawn;
     const dest = lt ?? { x: spawn.x, y: spawn.y };
@@ -598,36 +596,66 @@ export function World() {
       const town = townAt(wsRef.current?.x ?? -1, wsRef.current?.y ?? -1);
       if (!town) return;
       const towns = worldOverlay().towns;
-      const townIndex = towns.findIndex((t) => t.x === town.x && t.y === town.y);
-      const { townShopStock } = await import('@aozoraquest/core');
-      const stock = townShopStock(town, Math.max(0, townIndex));
+      const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
+      const stock = townShopStock(town, townIndex);
       const pts = pointsRef.current;
       const have = materialsRef.current[stock.materialId] ?? 0;
       if (!pts || pts.balance < def.price.power || have < def.price.materials) return;
+      // 冪等化: 直前に同じ品で失敗していたら同じ rkey で再試行する
+      // (createRecord は同 rkey で衝突するため 2 重制作が構造的に起きない。レビュー指摘)
+      const rkey = pendingCraftRef.current?.defId === def.id ? pendingCraftRef.current.rkey : newCraftRkey();
+      pendingCraftRef.current = { defId: def.id, rkey };
       setCraftBusy(true);
       try {
-        const piece = await craftItem(agent, {
-          itemId: def.id,
-          materialId: stock.materialId,
-          materialCount: def.price.materials,
-          power: def.price.power,
-          luk: combat?.luk ?? 0,
-        });
+        const piece = await craftItem(
+          agent,
+          {
+            itemId: def.id,
+            materialId: stock.materialId,
+            materialCount: def.price.materials,
+            power: def.price.power,
+            luk: combat?.luk ?? 0,
+          },
+          rkey,
+        );
+        pendingCraftRef.current = null;
         void bumpPower(agent, did, { craftPowerSpent: def.price.power });
         setPoints((p) => (p ? { ...p, craftPowerSpent: p.craftPowerSpent + def.price.power, balance: Math.max(0, p.balance - def.price.power) } : p));
         subtractMaterial(stock.materialId, def.price.materials);
         setMaterialsView({ ...materialsRef.current });
-        setCraftedCounts((c) => ({ ...c, [def.id]: (c[def.id] ?? 0) + 1 }));
-        setLastCraft(piece);
+        setCraftedPieces((list) => [...list, piece]);
+        setLastShopAction({ piece, kind: 'craft' });
       } catch (e) {
+        // 失敗しても店は開いたまま (再試行させる。同 rkey なので 2 重にならない)
         console.warn('[world] craft failed', e);
+        setLastShopAction(null);
         setNotice('つくってもらえなかった (通信エラー)。もういちどどうぞ。');
-        setShopOpen(false);
       } finally {
         setCraftBusy(false);
       }
     },
     [agent, did, craftBusy, combat, subtractMaterial],
+  );
+
+  // 合成 (きたえる): 同アイテム・同強化値 2 個体 → +1。素材もパワーも不要
+  // (燃やす 2 個体そのものが対価 — docs/20 のシンク設計)
+  const onForge = useCallback(
+    async (def: EquipmentDef, resultLevel: number, rkeys: [string, string]) => {
+      if (!agent || !did || craftBusy) return;
+      setCraftBusy(true);
+      try {
+        const piece = await forgeItems(agent, { itemId: def.id, resultLevel, consumed: rkeys });
+        setCraftedPieces((list) => [...list.filter((p) => p.rkey !== rkeys[0] && p.rkey !== rkeys[1]), piece]);
+        setLastShopAction({ piece, kind: 'forge' });
+      } catch (e) {
+        console.warn('[world] forge failed', e);
+        setLastShopAction(null);
+        setNotice('きたえてもらえなかった (通信エラー)。もういちどどうぞ。');
+      } finally {
+        setCraftBusy(false);
+      }
+    },
+    [agent, did, craftBusy],
   );
 
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
@@ -880,7 +908,7 @@ export function World() {
         {town && (
           <button
             type="button"
-            onClick={() => { setLastCraft(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); }}
+            onClick={() => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); }}
             style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
           >
             🔨 なんでも屋
@@ -944,13 +972,13 @@ export function World() {
           town={town}
           townIndex={Math.max(0, worldOverlay().towns.findIndex((t) => t.x === town.x && t.y === town.y))}
           archetype={archetype}
-          luk={combat?.luk ?? 0}
           balance={points?.balance ?? 0}
           materials={materialsView}
-          craftedCounts={craftedCounts}
+          pieces={craftedPieces}
           busy={craftBusy}
-          lastResult={lastCraft}
+          lastAction={lastShopAction}
           onCraft={(def) => void onCraft(def)}
+          onForge={(def, level, rkeys) => void onForge(def, level, rkeys)}
           onClose={() => setShopOpen(false)}
         />
       )}

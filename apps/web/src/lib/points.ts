@@ -130,8 +130,10 @@ async function sumCraftPower(agent: Agent, did: string): Promise<number> {
         ...(cursor !== undefined ? { cursor } : {}),
       });
       for (const r of res.data.records) {
-        const p = (r.value as { power?: unknown }).power;
-        if (typeof p === 'number' && Number.isFinite(p) && p > 0) total += p;
+        const v = r.value as { power?: unknown; itemId?: unknown };
+        // 壊れたレコードの扱いを loadCraftInventory と揃える (itemId 必須)
+        if (typeof v.itemId !== 'string') continue;
+        if (typeof v.power === 'number' && Number.isFinite(v.power) && v.power > 0) total += v.power;
       }
       const next = res.data.cursor;
       if (!next || next === cursor) break;

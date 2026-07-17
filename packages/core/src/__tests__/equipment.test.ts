@@ -140,50 +140,63 @@ describe('専用装備の弱点補完 (将軍)', () => {
   });
 });
 
-describe('制作の品質 (craftQuality / bonusWithQuality)', () => {
-  it('決定的 (同じ seed + luk で同じ品質)、0〜100 に収まる', async () => {
-    const { craftQuality, craftSeedFromRkey } = await import('../equipment.js');
+describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => {
+  it('決定的で、制作ロールは −1〜+5 に収まる (+6 以上は制作では出ない)', async () => {
+    const { craftLevelRoll, craftSeedFromRkey, CRAFT_TUNING } = await import('../equipment.js');
     const seed = craftSeedFromRkey('c-abc123');
-    expect(craftQuality(seed, 20)).toBe(craftQuality(seed, 20));
-    for (let i = 0; i < 500; i++) {
-      const q = craftQuality(i, 10);
-      expect(q).toBeGreaterThanOrEqual(0);
-      expect(q).toBeLessThanOrEqual(100);
+    expect(craftLevelRoll(seed, 20)).toBe(craftLevelRoll(seed, 20));
+    for (let i = 0; i < 1000; i++) {
+      const lv = craftLevelRoll(i, 10);
+      expect(lv).toBeGreaterThanOrEqual(CRAFT_TUNING.craftMin);
+      expect(lv).toBeLessThanOrEqual(CRAFT_TUNING.craftMax);
     }
   });
 
-  it('luk が高いほど下振れしにくい (下限が上がる。統計)', async () => {
-    const { craftQuality, CRAFT_TUNING } = await import('../equipment.js');
+  it('luk が下限を引き上げる (luk 20 で失敗作 −1 が出なくなる。統計でも平均上昇)', async () => {
+    const { craftLevelRoll } = await import('../equipment.js');
     let low = 0;
     let high = 0;
-    let minHigh = 100;
+    let minHigh = 10;
     for (let seed = 0; seed < 1000; seed++) {
-      low += craftQuality(seed, 5);
-      const q = craftQuality(seed, 40);
-      high += q;
-      minHigh = Math.min(minHigh, q);
+      low += craftLevelRoll(seed, 0);
+      const lv = craftLevelRoll(seed, 40);
+      high += lv;
+      minHigh = Math.min(minHigh, lv);
     }
     expect(high / 1000).toBeGreaterThan(low / 1000);
-    // luk40 の下限 = 40×0.6 = 24 (床が効いている)
-    expect(minHigh).toBeGreaterThanOrEqual(Math.floor(40 * CRAFT_TUNING.qualityLukFloorScale));
+    expect(minHigh).toBeGreaterThanOrEqual(2); // luk40 → floor(40×0.05)=2
+    // luk 20 → floor 1 なので −1/0 は出ない
+    for (let seed = 0; seed < 300; seed++) {
+      expect(craftLevelRoll(seed, 20)).toBeGreaterThanOrEqual(1);
+    }
   });
 
-  it('品質が効果倍率に反映され (0.8〜1.25)、正のボーナスは 1 未満に潰れない', async () => {
-    const { bonusWithQuality, EQUIPMENT_BY_ID: BY_ID } = await import('../equipment.js');
+  it('強化値は主効果に加算され (「ナイフ+3」)、−1 でも 1 未満に潰れない', async () => {
+    const { bonusWithLevel, leveledName, EQUIPMENT_BY_ID: BY_ID } = await import('../equipment.js');
     const harp = BY_ID['wp-bard-mid']!; // luk +8
-    expect(bonusWithQuality(harp, 0).luk).toBe(Math.round(8 * 0.8)); // 6
-    expect(bonusWithQuality(harp, 100).luk).toBe(Math.round(8 * 1.25)); // 10
+    expect(bonusWithLevel(harp, 3).luk).toBe(11);
+    expect(bonusWithLevel(harp, -1).luk).toBe(7);
+    expect(bonusWithLevel(harp, 0)).toEqual(harp.bonus);
     const knife = BY_ID['wp-knife']!; // atk +2
-    expect(bonusWithQuality(knife, 0).atk).toBeGreaterThanOrEqual(1);
+    expect(bonusWithLevel(knife, -1).atk).toBe(1);
+    // 複合効果 (将軍の大太刀) は主効果 (maxHp 14) だけが伸びる
+    const taito = BY_ID['wp-shogun-high']!;
+    const b = bonusWithLevel(taito, 4);
+    expect(b.maxHp).toBe(18);
+    expect(b.atk).toBe(taito.bonus.atk);
+    expect(leveledName(harp, 3)).toBe('竪琴+3');
+    expect(leveledName(harp, -1)).toBe('竪琴-1');
+    expect(leveledName(harp, 0)).toBe('竪琴');
   });
 
-  it('gearBonusFromGear は品質つき個体を受け、名匠は接頭辞つき表示名になる', async () => {
-    const { craftedName, isMasterwork, EQUIPMENT_BY_ID: BY_ID } = await import('../equipment.js');
-    const g = gearBonusFromGear('bard', { weapon: { id: 'wp-bard-mid', quality: 100 } });
-    expect(g.luk).toBe(10); // 8 × 1.25
-    expect(isMasterwork(96)).toBe(true);
-    expect(craftedName(BY_ID['wp-bard-mid']!, 96)).toBe('名匠の竪琴');
-    expect(craftedName(BY_ID['wp-bard-mid']!, 50)).toBe('竪琴');
+  it('合成: +1 ずつ、上限 +10。gearBonusFromGear は強化値つき個体を受ける', async () => {
+    const { canForge, forgedLevel, CRAFT_TUNING } = await import('../equipment.js');
+    expect(forgedLevel(5)).toBe(6);
+    expect(forgedLevel(9)).toBe(10);
+    expect(canForge(10)).toBe(false);
+    expect(CRAFT_TUNING.levelMax).toBe(10);
+    const g = gearBonusFromGear('bard', { weapon: { id: 'wp-bard-mid', level: 10 } });
+    expect(g.luk).toBe(18); // 8 + 10
   });
 });
 
