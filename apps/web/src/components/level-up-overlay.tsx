@@ -16,6 +16,12 @@ export function formatGain(delta: number): string {
   return Number.isInteger(delta) ? String(delta) : delta.toFixed(1);
 }
 
+/** ステータス上昇行があるときの表示時間。7 行 + LV を 2.2 秒では読み切れない
+ *  (レビュー指摘。特に投稿経路はリザルト画面がなく読み逃すと消える)。 */
+function overlayDurationFor(ev: LevelUpEvent): number {
+  return LEVEL_UP_OVERLAY_DURATION_MS + (ev.gains && ev.gains.length > 0 ? 900 : 0);
+}
+
 type Listener = (ev: LevelUpEvent) => void;
 const listeners = new Set<Listener>();
 
@@ -45,7 +51,7 @@ export function LevelUpOverlay() {
       }
       playingRef.current = true;
       setCurrent(next);
-      window.setTimeout(playNext, LEVEL_UP_OVERLAY_DURATION_MS);
+      window.setTimeout(playNext, overlayDurationFor(next));
     };
     const listener: Listener = (ev) => {
       queueRef.current.push(ev);
@@ -83,7 +89,7 @@ export function LevelUpOverlay() {
           border: '3px solid var(--color-accent)',
           borderRadius: 6,
           textAlign: 'center',
-          animation: `lvup-pop ${LEVEL_UP_POP_DURATION_MS}ms cubic-bezier(0.2, 0.9, 0.4, 1.4) both, lvup-hold ${LEVEL_UP_OVERLAY_DURATION_MS}ms linear both`,
+          animation: `lvup-pop ${LEVEL_UP_POP_DURATION_MS}ms cubic-bezier(0.2, 0.9, 0.4, 1.4) both, lvup-hold ${overlayDurationFor(current)}ms linear both`,
           boxShadow: '0 0 24px rgba(159, 215, 255, 0.5)',
         }}
       >

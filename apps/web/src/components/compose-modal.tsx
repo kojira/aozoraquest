@@ -7,7 +7,7 @@ import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
-import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, playerLevelFromXp, statVectorToArray, type Archetype } from '@aozoraquest/core';
+import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, playerLevelFromXp, statVectorToArray } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -409,7 +409,7 @@ function ComposeDialog({
                 from: result.jobLeveledUp.from,
                 to: result.jobLeveledUp.to,
                 jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
-                ...(arch ? { gains: levelUpGains(arch as Archetype, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: result.jobLeveledUp.to, playerLevel: pFrom }, base) } : {}),
+                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: result.jobLeveledUp.to, playerLevel: pFrom }, base) } : {}),
               });
             }
             if (result.playerLeveledUp) {
@@ -417,7 +417,7 @@ function ComposeDialog({
                 kind: 'player',
                 from: result.playerLeveledUp.from,
                 to: result.playerLeveledUp.to,
-                ...(arch ? { gains: levelUpGains(arch as Archetype, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: result.playerLeveledUp.to }, base) } : {}),
+                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: result.playerLeveledUp.to }, base) } : {}),
               });
             }
           } catch (e) {
