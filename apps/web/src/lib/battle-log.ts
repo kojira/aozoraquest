@@ -24,6 +24,8 @@ export interface BattleLogRecord {
   drops: string[];
   /** このバトルで使ったやくそう数 (素材在庫から差し引く)。旧レコードは欠落 = 0。 */
   herbsUsed?: number;
+  /** このバトルで使ったそらのしずく数 (素材在庫から差し引く)。旧レコードは欠落 = 0。 */
+  tonicsUsed?: number;
   at: string;
   via: string;
 }
@@ -50,6 +52,7 @@ export async function startBattleRecord(
       turns: 0,
       drops: [],
       herbsUsed: 0,
+      tonicsUsed: 0,
       at: new Date().toISOString(),
       via: VIA,
     } satisfies BattleLogRecord,
@@ -145,7 +148,7 @@ export interface BattleStats extends BattleRecordSummary {
  * listRecords は新しい順 (rkey 降順) に返る前提で currentStreak を出す。これは参照
  * PDS の既定挙動で lexicon 上の保証ではないが、万一順序が変わっても影響は
  * currentStreak の表示のみ (bestStreak/称号は向きに依存しない)。最大 500 件。
- * draw は連勝を切るが敗北には数えない。outcome 欠落 = 中断された仮レコード = 敗北扱い。
+ * draw / fled は連勝を切るが敗北には数えない。outcome 欠落 = 中断された仮レコード = 敗北扱い。
  */
 export async function loadBattleStats(agent: Agent, did: string): Promise<BattleStats> {
   const stats: BattleStats = {
@@ -157,7 +160,7 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
     currentStreak: 0,
     total: 0,
   };
-  const outcomes: { outcome: string; tier: number; drops: string[]; herbsUsed: number }[] = [];
+  const outcomes: { outcome: string; tier: number; drops: string[]; herbsUsed: number; tonicsUsed: number }[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 5; page++) {
     let res;
@@ -178,6 +181,7 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
         tier: typeof v.tier === 'number' ? v.tier : 1,
         drops: Array.isArray(v.drops) ? v.drops.filter((d): d is string => typeof d === 'string') : [],
         herbsUsed: typeof v.herbsUsed === 'number' && v.herbsUsed > 0 ? v.herbsUsed : 0,
+        tonicsUsed: typeof v.tonicsUsed === 'number' && v.tonicsUsed > 0 ? v.tonicsUsed : 0,
       });
     }
     const next = res.data.cursor;
@@ -191,8 +195,10 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
   // bestStreak は古い順で数える
   let running = 0;
   let herbsConsumed = 0;
+  let tonicsConsumed = 0;
   for (const o of outcomes) {
     herbsConsumed += o.herbsUsed; // 使用は勝敗に関わらず消費 (持ち込んで使った分)
+    tonicsConsumed += o.tonicsUsed;
     if (o.outcome === 'win') {
       stats.wins++;
       if (o.tier === 3) stats.tier3Wins++;
@@ -203,12 +209,15 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
       counting = false;
     }
   }
-  // やくそうの在庫 = ドロップ獲得数 − 使用数 (0 未満にはしない)
-  if (herbsConsumed > 0) {
-    const have = stats.materials['herb'] ?? 0;
-    const left = Math.max(0, have - herbsConsumed);
-    if (left > 0) stats.materials['herb'] = left;
-    else delete stats.materials['herb'];
+  // 消費アイテムの在庫 = ドロップ獲得数 − 使用数 (0 未満にはしない)
+  for (const [item, consumed] of [
+    ['herb', herbsConsumed],
+    ['sky-dew', tonicsConsumed],
+  ] as const) {
+    if (consumed <= 0) continue;
+    const left = Math.max(0, (stats.materials[item] ?? 0) - consumed);
+    if (left > 0) stats.materials[item] = left;
+    else delete stats.materials[item];
   }
   for (let i = outcomes.length - 1; i >= 0; i--) {
     if (outcomes[i]!.outcome === 'win') {
