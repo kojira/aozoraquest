@@ -209,7 +209,8 @@ export interface Combatant {
   name: string;
   maxHp: number;
   hp: number;
-  /** MP (プレイヤー用)。特技で消費、たたかう/ぼうぎょで回復。モンスターは 0 固定
+  /** MP (プレイヤー用)。特技で消費。戦闘中の回復は MP 特性 (JOB_MP_TRAITS) を持つ
+   *  ジョブのみ (たたかう/ぼうぎょで回復)。モンスターは 0 固定
    *  (代わりに「ため」サイクルを持つ)。 */
   maxMp: number;
   mp: number;
