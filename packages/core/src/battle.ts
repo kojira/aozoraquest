@@ -52,6 +52,18 @@ export const BATTLE_TUNING = {
    *  (2.6 → 防御で 1.3 まで軽減 = 節約 1.3 発分 > 機会費用の自攻撃 1 発分)。
    *  防御に存在意義を与える読み合いの核。バランステストで「予告に防御 > attack 連打」を固定。 */
   chargedPower: 2.6,
+  /** MP: 特技のコスト。たたかう +1 / ぼうぎょ +2 で回復する (連発できないから
+   *  「たたかう」に意味が生まれる)。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。 */
+  skillMpCost: 4,
+  mpBase: 6,
+  mpIntScale: 0.35,
+  mpAttackGain: 1,
+  mpGuardGain: 2,
+  /** ぼうぎょの翌ターン回避ボーナス (身構えて相手の動きを読む)。 */
+  guardFocusDodge: 0.15,
+  /** やくそう: 使うと maxHp のこの割合を回復 (1 ターン消費)。持ち込み上限 herbCarryMax。 */
+  herbHealRatio: 0.4,
+  herbCarryMax: 3,
   /** 最大ターン数 (超えたら判定 = 残 HP 割合勝負) */
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
@@ -135,6 +147,10 @@ export interface Combatant {
   name: string;
   maxHp: number;
   hp: number;
+  /** MP (プレイヤー用)。特技で消費、たたかう/ぼうぎょで回復。モンスターは 0 固定
+   *  (代わりに「ため」サイクルを持つ)。 */
+  maxMp: number;
+  mp: number;
   atk: number;
   def: number;
   agi: number;
@@ -147,6 +163,9 @@ export interface Combatant {
   /** ため中 (モンスター用): 次ターンに chargedPower のため攻撃を放つ。
    *  予告が出るので、プレイヤーは防御で応じるのが正解 (防御の存在意義)。 */
   charging: boolean;
+  /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
+   *  防御した次のターンまで「相手の動きを読めている」状態。 */
+  focus: number;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -154,10 +173,13 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
   const [atk, def, agi, int, luk] = stats;
   const s = (v: number) => Math.round(v * levelFactor);
   const maxHp = Math.round(t.hpBase + def * t.hpDefScale * levelFactor + level * t.hpLevelScale);
+  const maxMp = Math.round(t.mpBase + int * t.mpIntScale * levelFactor);
   return {
     name,
     maxHp,
     hp: maxHp,
+    maxMp,
+    mp: maxMp,
     atk: s(atk),
     def: s(def),
     agi: s(agi),
@@ -166,6 +188,7 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
     guarding: false,
     parrying: false,
     charging: false,
+    focus: 0,
   };
 }
 
@@ -220,6 +243,7 @@ export interface MonsterDef {
 
 /** 素材カタログ (Step2 の装備素材)。 */
 export const ITEMS: Record<string, { name: string }> = {
+  herb: { name: 'やくそう' },
   'slime-drop': { name: 'スライムのしずく' },
   'bat-wing': { name: 'コウモリの翼膜' },
   'mush-spore': { name: 'ヒカリダケの胞子' },
@@ -233,13 +257,13 @@ export const ITEMS: Record<string, { name: string }> = {
 
 export const MONSTERS: readonly MonsterDef[] = [
   // tier1: 手習い (初心者でも勝てる)
-  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], drops: [{ item: 'slime-drop', chance: 0.7 }], intro: 'ぷるぷると跳ねている。' },
-  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], drops: [{ item: 'bat-wing', chance: 0.6 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], drops: [{ item: 'mush-spore', chance: 0.6 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], drops: [{ item: 'slime-drop', chance: 0.7 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
+  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }], intro: 'ほんのり光って動かない…?' },
   // tier2: 修練
-  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ' },
-  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }], intro: 'ゆらゆらとこちらを見ている。', skillName: 'おにびのうず' },
-  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], drops: [{ item: 'serpent-scale', chance: 0.5 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
+  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ' },
+  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: 'ゆらゆらとこちらを見ている。', skillName: 'おにびのうず' },
+  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負
   { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], drops: [{ item: 'raven-feather', chance: 0.45 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
   { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし' },
@@ -271,7 +295,7 @@ export function summonMonster(tier: 1 | 2 | 3, playerLevel: number, seed: number
 
 // ─── バトル状態と解決 ───────────────────────────────────────
 
-export type Command = 'attack' | 'guard' | 'skill';
+export type Command = 'attack' | 'guard' | 'skill' | 'herb';
 
 export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'draw';
 
@@ -294,11 +318,15 @@ export interface BattleState {
   monsterId: string;
   playerSkill: JobSkill;
   outcome: BattleOutcome;
+  /** 残りやくそう (持ち込み分)。使うと減る。 */
+  herbs: number;
+  /** このバトルで使ったやくそう数 (記録用 → 在庫から差し引く)。 */
+  herbsUsed: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
 }
 
-/** バトル開始状態を作る。 */
+/** バトル開始状態を作る。herbs = 持ち込むやくそう数 (0〜herbCarryMax)。 */
 export function startBattle(
   archetype: Archetype,
   jobLevel: number,
@@ -306,6 +334,7 @@ export function startBattle(
   displayName: string,
   tier: 1 | 2 | 3,
   seed: number,
+  herbs = 0,
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName);
   const { def, combatant } = summonMonster(tier, playerLevel, seed);
@@ -317,6 +346,8 @@ export function startBattle(
     monsterId: def.id,
     playerSkill: skillForJob(archetype),
     outcome: 'ongoing',
+    herbs: Math.max(0, Math.min(BATTLE_TUNING.herbCarryMax, Math.floor(herbs))),
+    herbsUsed: 0,
     lastEvents: [],
   };
 }
@@ -345,11 +376,12 @@ function doAttack(
   const t = BATTLE_TUNING;
   const label = opts.label ? `${attacker.name}の${opts.label}!` : `${attacker.name}のこうげき!`;
 
-  // 回避判定 (魔撃は必中)
+  // 回避判定 (魔撃は必中)。ぼうぎょの余韻 (focus) 中は「動きを読めている」ので回避が上がる。
   if (!opts.useInt) {
+    const focusBonus = defender.focus > 0 ? t.guardFocusDodge : 0;
     const dodge = Math.min(
-      t.dodgeMax,
-      Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - (opts.hitBonus ?? 0)),
+      t.dodgeMax + focusBonus,
+      Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - (opts.hitBonus ?? 0) + focusBonus),
     );
     if (rng() < dodge) {
       events.push({ actor, text: `${label} しかし ${defender.name}は身をかわした!` });
@@ -451,13 +483,32 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
   const rng = turnRng(state.seed, state.turn);
   const mCommand = monsterCommand(state, rng);
 
+  // ── コマンドの実効化 ──
+  // MP 不足の特技 / 在庫切れのやくそうは「たたかう」にフォールバック
+  // (UI は disabled にする前提。エンジン側の防御的措置で、ターンを無駄にしない)。
+  const t = BATTLE_TUNING;
+  let cmd: Command = command;
+  if (command === 'skill' && state.player.mp < t.skillMpCost) {
+    events.push({ actor: 'player', text: `MP が足りない! (${state.player.mp}/${t.skillMpCost})` });
+    cmd = 'attack';
+  } else if (command === 'herb' && state.herbs <= 0) {
+    events.push({ actor: 'player', text: 'やくそうを持っていない!' });
+    cmd = 'attack';
+  }
+  if (cmd === 'skill') {
+    state.player.mp -= t.skillMpCost;
+  }
+
   // 防御系 (ぼうぎょ / 見切り) は行動順に関係なく先に立てる
   // (先手を取られても防御・反撃が意味を持つように。見切り持ちは鈍足ジョブが多い)。
-  if (command === 'guard') {
+  if (cmd === 'guard') {
     state.player.guarding = true;
-    events.push({ actor: 'player', text: `${state.player.name}はぼうぎょしている。` });
+    // 翌ターンまで相手の動きを読める (回避ボーナス)。このターン(1) + 次ターン(1) = 2。
+    state.player.focus = 2;
+    state.player.mp = Math.min(state.player.maxMp, state.player.mp + t.mpGuardGain);
+    events.push({ actor: 'player', text: `${state.player.name}はぼうぎょして息を整えた。(MP +${t.mpGuardGain})` });
   }
-  if (command === 'skill' && state.playerSkill.kind === 'parry') {
+  if (cmd === 'skill' && state.playerSkill.kind === 'parry') {
     state.player.parrying = true;
     events.push({ actor: 'player', text: `${state.player.name}は${state.playerSkill.name}の構え! (防御しつつ反撃)` });
   }
@@ -472,8 +523,18 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
   const act = (who: 'player' | 'monster') => {
     if (state.player.hp === 0 || state.monster.hp === 0) return;
     if (who === 'player') {
-      if (command === 'attack') doAttack(state.player, state.monster, rng, events, 'player');
-      else if (command === 'skill') playerSkillAction(state, rng, events);
+      if (cmd === 'attack') {
+        doAttack(state.player, state.monster, rng, events, 'player');
+        state.player.mp = Math.min(state.player.maxMp, state.player.mp + t.mpAttackGain);
+      } else if (cmd === 'skill') {
+        playerSkillAction(state, rng, events);
+      } else if (cmd === 'herb') {
+        const heal = Math.round(state.player.maxHp * t.herbHealRatio);
+        state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
+        state.herbs -= 1;
+        state.herbsUsed += 1;
+        events.push({ actor: 'player', text: `${state.player.name}はやくそうを使った! HP が ${heal} 回復。(残り ${state.herbs})` });
+      }
       // guard は宣言済み
     } else {
       // ため中なら宣言どおり解放 (mCommand は無視)。予告 → 解放の 2 ターン制で、
@@ -500,9 +561,10 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
   act(playerFirst ? 'player' : 'monster');
   act(playerFirst ? 'monster' : 'player');
 
-  // 見切りは 1 ターン限り (発動しなかったら解除)
+  // 見切りは 1 ターン限り (発動しなかったら解除)。ぼうぎょの余韻 (focus) は 1 減衰。
   state.player.parrying = false;
   state.monster.parrying = false;
+  state.player.focus = Math.max(0, state.player.focus - 1);
 
   // 勝敗判定
   if (state.monster.hp === 0) state.outcome = 'win';

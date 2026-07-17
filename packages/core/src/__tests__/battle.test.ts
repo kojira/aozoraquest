@@ -246,6 +246,76 @@ describe('resolveTurn', () => {
     }
   });
 
+  it('MP: 特技で消費し、たたかう +1 / ぼうぎょ +2 で回復する', () => {
+    const s0 = startBattle('sage', 5, 10, '賢者', 1, 42);
+    expect(s0.player.mp).toBe(s0.player.maxMp);
+    const s1 = resolveTurn(s0, 'skill');
+    expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
+    if (s1.outcome === 'ongoing') {
+      const s2 = resolveTurn(s1, 'guard');
+      expect(s2.player.mp).toBe(Math.min(s2.player.maxMp, s1.player.mp + BATTLE_TUNING.mpGuardGain));
+    }
+  });
+
+  it('MP 不足の特技は「たたかう」にフォールバックし MP を消費しない', () => {
+    let s = startBattle('warrior', 1, 1, '戦士', 1, 7);
+    // MP を撃ち尽くす
+    for (let i = 0; i < 20 && s.outcome === 'ongoing' && s.player.mp >= BATTLE_TUNING.skillMpCost; i++) {
+      s = resolveTurn(s, 'skill');
+    }
+    if (s.outcome === 'ongoing' && s.player.mp < BATTLE_TUNING.skillMpCost) {
+      const mpBefore = s.player.mp;
+      const next = resolveTurn(s, 'skill');
+      expect(next.lastEvents.some((e) => e.text.includes('MP が足りない'))).toBe(true);
+      // フォールバック攻撃で +mpAttackGain される (消費はされない)
+      expect(next.player.mp).toBeGreaterThanOrEqual(mpBefore);
+    }
+  });
+
+  it('int 型 (sage) は戦士型より maxMp が多い', () => {
+    const sage = playerCombatant('sage', 5, 10, '賢者');
+    const warrior = playerCombatant('warrior', 5, 10, '戦士');
+    expect(sage.maxMp).toBeGreaterThan(warrior.maxMp);
+  });
+
+  it('やくそう: HP を回復し、残数と使用数が更新される', () => {
+    let s = startBattle('warrior', 5, 10, '戦士', 2, 99, 2);
+    expect(s.herbs).toBe(2);
+    // 何ターンか戦ってダメージを受ける
+    for (let i = 0; i < 6 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack');
+    if (s.outcome === 'ongoing' && s.player.hp < s.player.maxHp) {
+      const before = s.player.hp;
+      const next = resolveTurn(s, 'herb');
+      // 回復後に敵の攻撃を受ける可能性があるので「使った」イベントで検証
+      expect(next.lastEvents.some((e) => e.text.includes('やくそうを使った'))).toBe(true);
+      expect(next.herbs).toBe(s.herbs - 1);
+      expect(next.herbsUsed).toBe(s.herbsUsed + 1);
+      void before;
+    }
+  });
+
+  it('やくそう切れは「たたかう」にフォールバック', () => {
+    const s0 = startBattle('warrior', 5, 10, '戦士', 1, 11, 0);
+    const s1 = resolveTurn(s0, 'herb');
+    expect(s1.lastEvents.some((e) => e.text.includes('やくそうを持っていない'))).toBe(true);
+    expect(s1.herbsUsed).toBe(0);
+  });
+
+  it('持ち込みやくそうは herbCarryMax でクランプ', () => {
+    const s = startBattle('warrior', 1, 1, '戦士', 1, 1, 99);
+    expect(s.herbs).toBe(BATTLE_TUNING.herbCarryMax);
+  });
+
+  it('ぼうぎょで focus が立ち翌ターンまで持続する (回避ボーナスの根拠)', () => {
+    const s0 = startBattle('guardian', 5, 10, '守護者', 1, 3);
+    const s1 = resolveTurn(s0, 'guard');
+    expect(s1.player.focus).toBe(1); // 2 で立ててターン末に 1 減衰 → 翌ターン有効
+    if (s1.outcome === 'ongoing') {
+      const s2 = resolveTurn(s1, 'attack');
+      expect(s2.player.focus).toBe(0);
+    }
+  });
+
   it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
     const reactive = (seed: number) => {
       let s = startBattle('warrior', 8, 15, '戦士', 3, seed);

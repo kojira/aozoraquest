@@ -22,6 +22,8 @@ export interface BattleLogRecord {
   turns: number;
   /** ドロップした素材 ID (勝利時のみ非空) */
   drops: string[];
+  /** このバトルで使ったやくそう数 (素材在庫から差し引く)。旧レコードは欠落 = 0。 */
+  herbsUsed?: number;
   at: string;
   via: string;
 }
@@ -47,6 +49,7 @@ export async function startBattleRecord(
       outcome: 'lose',
       turns: 0,
       drops: [],
+      herbsUsed: 0,
       at: new Date().toISOString(),
       via: VIA,
     } satisfies BattleLogRecord,
@@ -154,7 +157,7 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
     currentStreak: 0,
     total: 0,
   };
-  const outcomes: { outcome: string; tier: number; drops: string[] }[] = [];
+  const outcomes: { outcome: string; tier: number; drops: string[]; herbsUsed: number }[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 5; page++) {
     let res;
@@ -174,6 +177,7 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
         outcome: typeof v.outcome === 'string' ? v.outcome : 'lose',
         tier: typeof v.tier === 'number' ? v.tier : 1,
         drops: Array.isArray(v.drops) ? v.drops.filter((d): d is string => typeof d === 'string') : [],
+        herbsUsed: typeof v.herbsUsed === 'number' && v.herbsUsed > 0 ? v.herbsUsed : 0,
       });
     }
     const next = res.data.cursor;
@@ -186,7 +190,9 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
   let counting = true;
   // bestStreak は古い順で数える
   let running = 0;
+  let herbsConsumed = 0;
   for (const o of outcomes) {
+    herbsConsumed += o.herbsUsed; // 使用は勝敗に関わらず消費 (持ち込んで使った分)
     if (o.outcome === 'win') {
       stats.wins++;
       if (o.tier === 3) stats.tier3Wins++;
@@ -196,6 +202,13 @@ export async function loadBattleStats(agent: Agent, did: string): Promise<Battle
       if (o.outcome === 'lose') stats.losses++;
       counting = false;
     }
+  }
+  // やくそうの在庫 = ドロップ獲得数 − 使用数 (0 未満にはしない)
+  if (herbsConsumed > 0) {
+    const have = stats.materials['herb'] ?? 0;
+    const left = Math.max(0, have - herbsConsumed);
+    if (left > 0) stats.materials['herb'] = left;
+    else delete stats.materials['herb'];
   }
   for (let i = outcomes.length - 1; i >= 0; i--) {
     if (outcomes[i]!.outcome === 'win') {

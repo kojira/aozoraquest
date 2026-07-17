@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { loadBattleStats, countBattles } from './battle-log';
 
 /** battle レコード列 (新しい順 = listRecords の返却順) を返す mock agent。 */
-function makeAgent(records: Array<{ outcome?: string; tier?: number; drops?: unknown }>): any {
+function makeAgent(records: Array<{ outcome?: string; tier?: number; drops?: unknown; herbsUsed?: number }>): any {
   const listRecords = vi.fn(async ({ cursor }: { collection: string; cursor?: string }) => {
     if (cursor) return { data: { records: [] } };
     return {
@@ -91,6 +91,27 @@ describe('loadBattleStats', () => {
       'did:test',
     );
     expect(s.materials).toEqual({ 'slime-drop': 2, 'golem-core': 1 });
+  });
+
+  test('やくそう在庫 = ドロップ獲得 − 使用 (herbsUsed)、0 以下なら消える', async () => {
+    const s = await loadBattleStats(
+      makeAgent([
+        { outcome: 'win', tier: 1, drops: ['herb', 'slime-drop'] },
+        { outcome: 'lose', tier: 2, herbsUsed: 1 }, // 負け戦でも使った分は消費
+        { outcome: 'win', tier: 1, drops: ['herb'] },
+      ]),
+      'did:test',
+    );
+    expect(s.materials['herb']).toBe(1); // 2 獲得 − 1 使用
+    expect(s.materials['slime-drop']).toBe(1);
+    const s2 = await loadBattleStats(
+      makeAgent([
+        { outcome: 'win', tier: 1, drops: ['herb'] },
+        { outcome: 'win', tier: 1, herbsUsed: 3 },
+      ]),
+      'did:test',
+    );
+    expect(s2.materials['herb']).toBeUndefined(); // 使いすぎは 0 止め (負にならない)
   });
 
   test('outcome 欠落は lose 扱い (中断された仮レコード = 棄権)', async () => {
