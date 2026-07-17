@@ -202,10 +202,103 @@ export function gearBonus(archetype: Archetype, equipIds: readonly string[]): Ge
   return total;
 }
 
+// ─── 制作 (クラフト) と品質 ─────────────────────────────────
+
+/** 強化値チューニング (docs/20。オーナー決定 2026-07-18: 品質は −1〜+10、
+ *  +6 以上は同アイテム同値 2 つの合成のみ = 過剰なアイテムを燃やすシンク)。 */
+export const CRAFT_TUNING = {
+  /** 制作ロールの範囲。+6 以上は合成 (forge) でしか作れない */
+  craftMin: -1,
+  craftMax: 5,
+  /** 強化値の絶対上限 */
+  levelMax: 10,
+  /** 制作ロールの下限 = floor(luk × lukFloorScale) (上限 lukFloorMax)。
+   *  「うんが高いほど下振れしにくい」— gamble・敗北ドロップと同じ設計言語。
+   *  luk 20 で −1 (失敗作) を引かなくなり、luk 40 で +2 が底になる */
+  lukFloorScale: 0.05,
+  lukFloorMax: 3,
+  /** 「名匠の」を名乗れる強化値 (制作で出る最高値) */
+  masterworkLevel: 5,
+} as const;
+
+/** craft レコードの rkey (文字列) を決定的に u32 seed へ (FNV-1a)。 */
+export function craftSeedFromRkey(rkey: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < rkey.length; i++) {
+    h ^= rkey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * 制作ロールの強化値 (−1〜+5)。seed から決定的 — craft レコードの rkey と制作時
+ * luk があれば誰でも再計算できる (自己申告フィールドを持たない = 正規クライアント
+ * 間の整合性保証。rkey はクライアント選択のため総当たりへの耐性は無い — 改竄の
+ * 最終防衛は W3 のサーバー権威)。
+ * 分布は低い値ほど出やすい重み付き。luk が下限を引き上げる (失敗作 −1 を回避)。
+ */
+export function craftLevelRoll(seed: number, luk: number): number {
+  const t = CRAFT_TUNING;
+  // 重み: -1:14, 0:22, +1:22, +2:16, +3:12, +4:9, +5:5 (計 100)
+  const weights: Array<[number, number]> = [[-1, 14], [0, 22], [1, 22], [2, 16], [3, 12], [4, 9], [5, 5]];
+  const floor = Math.min(t.lukFloorMax, Math.floor(Math.max(0, luk) * t.lukFloorScale));
+  const usable = weights.filter(([lv]) => lv >= Math.min(floor, t.craftMax) || lv === t.craftMax);
+  const pool = usable.length > 0 ? usable : weights;
+  const total = pool.reduce((a, [, w]) => a + w, 0);
+  let r = shopRng((seed ^ 0x3c6ef372) >>> 0)() * total;
+  for (const [lv, w] of pool) {
+    r -= w;
+    if (r < 0) return lv;
+  }
+  return pool[pool.length - 1]![0];
+}
+
+/** 強化値を適用した装備ボーナス: 主効果 (最大のボーナス) に +level (最低 1 は保証)。 */
+export function bonusWithLevel(def: EquipmentDef, level: number): EquipmentDef['bonus'] {
+  const lv = Math.max(CRAFT_TUNING.craftMin, Math.min(CRAFT_TUNING.levelMax, Math.round(level)));
+  const entries = Object.entries(def.bonus).filter(([, v]) => v !== undefined) as Array<[string, number]>;
+  if (entries.length === 0 || lv === 0) return { ...def.bonus };
+  let primary = entries[0]!;
+  for (const e of entries) if (e[1] > primary[1]) primary = e;
+  const out: EquipmentDef['bonus'] = { ...def.bonus };
+  out[primary[0] as keyof EquipmentDef['bonus']] = Math.max(1, primary[1] + lv);
+  return out;
+}
+
+/** 合成 (きたえる): 同じアイテム・同じ強化値 2 つ → +1。+6 以上への唯一の道。 */
+export function canForge(level: number): boolean {
+  return level < CRAFT_TUNING.levelMax;
+}
+export function forgedLevel(level: number): number {
+  return Math.min(CRAFT_TUNING.levelMax, level + 1);
+}
+
+/** 名匠品か (+5 = 制作で出る最高値。合成でそれ以上もある)。 */
+export function isMasterwork(level: number): boolean {
+  return level >= CRAFT_TUNING.masterworkLevel;
+}
+
+/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。 */
+export function leveledName(def: EquipmentDef, level: number): string {
+  if (level === 0) return def.name;
+  return `${def.name}${level > 0 ? `+${level}` : `${level}`}`;
+}
+
+/** 装備中の個体。level 省略時は定義値そのまま (±0 相当)。
+ *  **契約 (W6c)**: gear/self レコードには level を直書きせず craft/forge レコードの
+ *  rkey を参照し、集計 (loadCraftInventory) が再導出した level をここへ渡すこと。
+ *  level はあくまで導出済みの表示・計算用で、レコード上の自己申告値ではない
+ *  (レビュー指摘: 直書きを信用すると偽造耐性の建前が崩れる)。 */
+export interface GearPiece {
+  id: string;
+  level?: number;
+}
+
 export interface GearSelection {
-  weapon?: string;
-  armor?: string;
-  charm?: string;
+  weapon?: GearPiece | string;
+  armor?: GearPiece | string;
+  charm?: GearPiece | string;
 }
 
 /**
@@ -214,14 +307,23 @@ export interface GearSelection {
  * 同じ強武器を 3 枠に書く、といったレコード直編集チートを弾く。W6c の正式入口)。
  */
 export function gearBonusFromGear(archetype: Archetype, gear: GearSelection): GearBonus {
-  const ids: string[] = [];
+  const total: GearBonus = { atk: 0, def: 0, agi: 0, int: 0, luk: 0, maxHp: 0 };
   for (const slot of ['weapon', 'armor', 'charm'] as const) {
-    const id = gear[slot];
-    if (!id) continue;
+    const piece = gear[slot];
+    if (!piece) continue;
+    const id = typeof piece === 'string' ? piece : piece.id;
+    const rawLevel = typeof piece === 'string' ? undefined : piece.level;
+    // 非数値 (レコード直編集で JSON 文字列等) は NaN が全ステータスへ伝播するため
+    // 定義値フォールバック (レビュー実測指摘)
+    const level = typeof rawLevel === 'number' && Number.isFinite(rawLevel) ? rawLevel : undefined;
     const def = EQUIPMENT_BY_ID[id];
-    if (def && def.slot === slot) ids.push(id);
+    if (!def || def.slot !== slot || !canEquip(archetype, def)) continue;
+    const bonus = level !== undefined ? bonusWithLevel(def, level) : def.bonus;
+    for (const [k, v] of Object.entries(bonus)) {
+      total[k as keyof GearBonus] += v ?? 0;
+    }
   }
-  return gearBonus(archetype, ids);
+  return total;
 }
 
 // ─── なんでも屋の品揃え (決定的生成) ────────────────────────

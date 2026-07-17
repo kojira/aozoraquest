@@ -44,6 +44,8 @@ export const COL = {
   /** ブルスコンの試練の戦闘記録 (docs/18-brusukon-trial.md)。1 戦 1 レコード。
    *  パワー消費の監査 + 戦績/称号/素材の集計ソース。 */
   battle: `${USER_PREFIX}.battle`,
+  /** なんでも屋の制作 (docs/20)。1 制作 = 1 レコード。品質は rkey + luk から導出 */
+  craft: `${USER_PREFIX}.craft`,
   /** あおぞらワールドの状態 (docs/19-overworld.md)。rkey='self'。位置・乗り物・
    *  解禁リージョン。PR-W3 以降は Worker (DO) が正で、これは表示キャッシュ + 監査線。 */
   world: `${USER_PREFIX}.world`,
