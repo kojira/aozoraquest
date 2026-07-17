@@ -38,6 +38,9 @@ export const BATTLE_TUNING = {
    *  乗算補正だけだと低い値は低いままで「弱いジョブがレベルでちゃんと強くならない」
    *  (オーナー指摘 2026-07-17)。加算成長は低ステータスほど相対的に効く。 */
   flatLevelGain: 0.25,
+  /** モンスターがプレイヤーの職業レベルを追いかける率 (jobLevelScale の半分)。
+   *  0 だと jobLv20 で tier3 が全ポリシー 100% になり真剣勝負が作業化する。 */
+  monsterJobChaseScale: 0.01,
   /** 個人 rpgStats とジョブ基準値のブレンド比 (0 = ジョブのみ / 1 = 個人のみ)。
    *  診断は min-max 正規化で全員が極端プロフィールになるため、個人値 100% だと
    *  atk 0〜80 のレンジになり勝率が 0〜100% に割れる (issue #279 実測)。
@@ -250,11 +253,13 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
 
 /**
  * プレイヤーの戦闘値を導出。
- * 基底は **ユーザー個人の rpgStats (プロフィールの 5 パラメータ、合計 100)** を渡すのが
- * 本則 (baseStats)。未診断などで無い場合はジョブの基準値にフォールバックする。
- * どちらの場合も プレイヤーLV + 職業LV のボーナス (levelScale) が乗る。
- * (オーナー指摘 2026-07-17: 「プロフィールの各パラメータをちゃんと使って、
- *  レベルでボーナス」)
+ * 基底 = **ジョブ基準値と個人 rpgStats (プロフィールの 5 パラメータ、合計 100) の
+ * ブレンド** (baseStatsPersonalWeight = 0.5)。個人値 100% は診断の min-max 正規化で
+ * 極端ビルドが常態化し勝率が 0〜100% に割れるため (issue #279)。未診断は
+ * ジョブ基準値のみ。
+ * レベル補正 = 平坦加算 (+flatLevelGain × (playerLv−1)、レベル係数の乗算前に加算) の
+ * 後に乗算 (jobLv/playerLv の levelScale)。W4 のサーバー権威化ではこの関数を
+ * Worker 側で同じ入力 (analysis レコード) から再導出する。
  */
 export function playerCombatant(
   archetype: Archetype,
@@ -371,24 +376,35 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
 }
 
 /** tier に応じたモンスター強化倍率。プレイヤーのレベル補正と釣り合いを取る。 */
-function monsterLevelFactor(tier: 1 | 2 | 3, playerLevel: number): number {
+function monsterLevelFactor(tier: 1 | 2 | 3, playerLevel: number, jobLevel: number): number {
   const t = BATTLE_TUNING;
   // プレイヤーと同じ土俵 + tier による上乗せ (tier1 は明確に弱め)。
   // tier1 0.85 では Lv1 の 5 連戦生存率が中央値 ~76% で「序盤の敵が強すぎる」
-  // (オーナー実感 2026-07-17)。0.72 で中央値 ~90% / 最弱ジョブ ~75% に調整
+  // (オーナー実感 2026-07-17)。0.72 で中央値 ~90% / 最弱ジョブ ~86% に調整
   // (scripts/sim-battle-balance.ts 実測)。
-  const base = 1 + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  const tierBoost = tier === 1 ? 0.72 : tier === 2 ? 1.1 : 1.42;
+  // jobLevel 追随 (monsterJobChaseScale): プレイヤーの jobLevelScale 0.04 に対して
+  // 1/4 だけ追う。全く追わないと jobLv20 で tier3 が全ポリシー 100% (作業化)。
+  // 強く追うと適正帯 (jobLv8) の下位ジョブが 10% 台に沈む。運用想定帯は
+  // 〜plLv20/jobLv10 (それ以降は W6 装備・新コンテンツで再設計。issue 参照)。
+  const base =
+    1 + Math.max(0, playerLevel - 1) * t.playerLevelScale + Math.max(0, jobLevel - 1) * t.monsterJobChaseScale;
+  const tierBoost = tier === 1 ? 0.72 : tier === 2 ? 1.1 : 1.36;
   return base * tierBoost;
 }
 
-/** 試練モンスターを 1 体選んで戦闘値化する。seed から決定的。 */
-export function summonMonster(tier: 1 | 2 | 3, playerLevel: number, seed: number): { def: MonsterDef; combatant: Combatant } {
+/** 試練モンスターを 1 体選んで戦闘値化する。seed から決定的。
+ *  平坦レベル成長 (flatLevelGain) はモンスターにも同量与える —
+ *  プレイヤーだけ加算されると線形項を定数 tierBoost で相殺できず、
+ *  高レベル帯 (plLv40+) で tier3 が作業化する (レビュー指摘)。
+ *  ジョブ間の格差是正 (低ステ職の相対的な伸び) は同量加算でも保たれる。 */
+export function summonMonster(tier: 1 | 2 | 3, playerLevel: number, seed: number, jobLevel = 1): { def: MonsterDef; combatant: Combatant } {
   const pool = MONSTERS.filter((m) => m.tier === tier);
   const rng = createRng((seed ^ 0x51ed270b) >>> 0);
   const def = pool[Math.floor(rng() * pool.length)]!;
-  const factor = monsterLevelFactor(tier, playerLevel);
-  const combatant = fromStats(def.name, def.stats, factor, Math.max(1, Math.round(playerLevel * (tier === 3 ? 1.1 : 1))));
+  const factor = monsterLevelFactor(tier, playerLevel, jobLevel);
+  const flat = BATTLE_TUNING.flatLevelGain * Math.max(0, playerLevel - 1);
+  const grown = def.stats.map((v) => v + flat) as unknown as StatArray;
+  const combatant = fromStats(def.name, grown, factor, Math.max(1, Math.round(playerLevel * (tier === 3 ? 1.1 : 1))));
   return { def, combatant };
 }
 
@@ -460,7 +476,7 @@ export function startBattle(
   if (carry?.mp !== undefined) {
     player.mp = Math.max(0, Math.min(player.maxMp, Math.floor(carry.mp)));
   }
-  const { def, combatant } = summonMonster(tier, playerLevel, seed);
+  const { def, combatant } = summonMonster(tier, playerLevel, seed, jobLevel);
   const gains = mpGainsFor(archetype);
   return {
     seed,

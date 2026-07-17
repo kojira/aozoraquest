@@ -417,36 +417,57 @@ describe('resolveTurn', () => {
     expect(reactiveWins).toBeGreaterThan(spamWins);
   });
 
-  it('やくそう込みでも tier3 は作業化しない (最適戦略の勝率に天井)', () => {
-    // ガード + HP45% 未満でやくそう、が現状の最強ムーブ。0.4/3 個では勝率 97% まで
-    // 上がって真剣勝負が崩壊した (レビュー実測) ため、0.3/2 個で 90% 未満に抑える。
-    const best = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
-      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
-        const cmd = s.monster.charging
+  it('やくそう込みでも tier3 は作業化しない (複数ポリシーの最大勝率に天井)', () => {
+    // 単一ポリシーの固定だと、特技側のバフで最強ムーブが移動したときに天井破りを
+    // 検知できない (レビュー指摘: parry 反撃 def 基準化で旧テストの死角に 97% が
+    // 出現した)。{ガード+薬草 / 見切り+薬草 / 特技連打+薬草} の最大に上限を掛ける。
+    const policies: Array<(s: BattleState) => Command> = [
+      (s) => (s.monster.charging ? 'guard' : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45 ? 'herb' : 'attack'),
+      (s) =>
+        s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45
+          ? 'herb'
+          : s.player.mp >= BATTLE_TUNING.skillMpCost && s.playerSkill.kind === 'parry'
+            ? 'skill'
+            : s.monster.charging
+              ? 'guard'
+              : 'attack',
+      (s) =>
+        s.monster.charging
           ? 'guard'
           : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45
             ? 'herb'
-            : 'attack';
-        s = resolveTurn(s, cmd);
+            : s.player.mp >= BATTLE_TUNING.skillMpCost
+              ? 'skill'
+              : 'attack',
+    ];
+    const winRateOf = (job: Archetype, policy: (s: BattleState) => Command) => {
+      let wins = 0;
+      for (let seed = 0; seed < 300; seed++) {
+        let s = startBattle(job, 8, 15, 'x', 3, seed, BATTLE_TUNING.herbCarryMax);
+        for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, policy(s));
+        if (s.outcome === 'win') wins++;
       }
-      return s.outcome;
+      return wins / 3; // %
     };
-    let wins = 0;
-    for (let seed = 0; seed < 100; seed++) if (best(seed) === 'win') wins++;
-    // 実測 90.3% (400 seed)。100 seed の標本ノイズ (±3) を見込んだ上限。
-    // 0.4/3 個時代の 97.6% (作業化) には戻さない
-    expect(wins).toBeLessThan(94);
+    // 上位ジョブ代表 3 職 (実測 83〜87%、300 seed の σ≈2%)。<94 で作業化を防ぐ
+    for (const job of ['warrior', 'guardian', 'miko'] as const) {
+      const best = Math.max(...policies.map((p) => winRateOf(job, p)));
+      expect(best, job).toBeLessThan(94);
+    }
     // やくそうが「意味はある」ことも同時に固定 (ガードのみ戦略より勝てる)
+    let withHerb = 0;
     let guardOnlyWins = 0;
     for (let seed = 0; seed < 100; seed++) {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed);
-      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
-        s = resolveTurn(s, s.monster.charging ? 'guard' : 'attack');
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, policies[0]!(s));
+      if (s.outcome === 'win') withHerb++;
+      let g = startBattle('warrior', 8, 15, '戦士', 3, seed);
+      for (let i = 0; i < 60 && g.outcome === 'ongoing'; i++) {
+        g = resolveTurn(g, g.monster.charging ? 'guard' : 'attack');
       }
-      if (s.outcome === 'win') guardOnlyWins++;
+      if (g.outcome === 'win') guardOnlyWins++;
     }
-    expect(wins).toBeGreaterThan(guardOnlyWins);
+    expect(withHerb).toBeGreaterThan(guardOnlyWins);
   });
 });
 
@@ -496,16 +517,14 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     expect(warrior.mpAttackGain).toBe(BATTLE_TUNING.mpAttackGain);
     expect(warrior.mpGuardGain).toBe(BATTLE_TUNING.mpGuardGain);
     expect(warrior.mpTraitName).toBeUndefined();
-    // たたかう で実際に特性分回復する
+    // たたかう で実際に特性分回復する (seed 5 は 2 ターン目まで決着しないことを固定)
     let s = startBattle('bard', 1, 1, 'x', 1, 5);
     s = resolveTurn(s, 'skill'); // MP -4
-    if (s.outcome === 'ongoing') {
-      const before = s.player.mp;
-      const next = resolveTurn(s, 'attack');
-      if (next.outcome === 'ongoing' || next.outcome === 'win') {
-        expect(next.player.mp).toBe(Math.min(next.player.maxMp, before + 3));
-      }
-    }
+    expect(s.outcome).toBe('ongoing');
+    const before = s.player.mp;
+    const next = resolveTurn(s, 'attack');
+    expect(['ongoing', 'win']).toContain(next.outcome);
+    expect(next.player.mp).toBe(Math.min(next.player.maxMp, before + 3));
   });
 
   it('個人 rpgStats はジョブ基準値と 50:50 ブレンド (極端ビルドの 0%/100% 割れ防止)', () => {

@@ -73,7 +73,7 @@ export function BattleView({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.8em' }}>
         <CommandButton
           label="たたかう"
-          sub={`MP +${state.mpAttackGain}${state.mpTraitName ? ` ${state.mpTraitName}` : ''}`}
+          sub={`MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}`}
           onClick={() => onCommand('attack')}
           disabled={busy}
         />
