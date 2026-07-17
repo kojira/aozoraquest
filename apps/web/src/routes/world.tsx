@@ -721,7 +721,7 @@ export function World() {
           すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
       <p
         aria-live="polite"
-        style={{ textAlign: 'center', fontSize: '0.85em', minHeight: '1.4em', margin: '0.5em 0 0' }}
+        style={{ textAlign: 'center', fontSize: '0.85em', minHeight: '1.6em', margin: '0.5em 0 0' }}
       >
         {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
       </p>
