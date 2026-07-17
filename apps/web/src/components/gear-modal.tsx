@@ -10,7 +10,7 @@ import {
   type GearSelection,
 } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
-import type { GearRefs } from '@/lib/gear';
+import { resolveGear, type GearRefs } from '@/lib/gear';
 
 /**
  * そうび画面 (docs/20 W6c)。3 スロット (武器/防具/お守り) の着脱。
@@ -61,19 +61,9 @@ export function GearModal({
 
   const byRkey = useMemo(() => new Map(pieces.map((p) => [p.rkey, p])), [pieces]);
 
-  // 現装備の合計効果 (表示用)
-  const selection: GearSelection = useMemo(() => {
-    const sel: GearSelection = {};
-    if (!archetype) return sel;
-    for (const slot of ['weapon', 'armor', 'charm'] as const) {
-      const rkey = refs[slot];
-      const piece = rkey ? byRkey.get(rkey) : undefined;
-      if (!piece) continue;
-      const def = EQUIPMENT_BY_ID[piece.itemId];
-      if (def && def.slot === slot && canEquip(archetype, def)) sel[slot] = { id: piece.itemId, level: piece.level };
-    }
-    return sel;
-  }, [refs, byRkey, archetype]);
+  // 現装備の解決 (lib/gear.ts の resolveGear を再利用 — 失効条件の単一出所)
+  const resolved = useMemo(() => resolveGear(refs, pieces, archetype), [refs, pieces, archetype]);
+  const selection: GearSelection = resolved.selection;
 
   const total = useMemo(() => (archetype ? gearBonusFromGear(archetype, selection) : null), [archetype, selection]);
   const totalText = total
@@ -128,6 +118,13 @@ export function GearModal({
                   <span>
                     <strong>{SLOT_LABELS[slot]}</strong>:{' '}
                     {equipped && equippedDef ? leveledName(equippedDef, equipped.level) : 'なし'}
+                    {/* 参照は残っているが失効中 (転職などで装備不可) の注記 —
+                        「そうび中なのに効果なし」の矛盾を可視化 (レビュー指摘) */}
+                    {equipped && !resolved.pieces[slot] && (
+                      <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-danger)' }}>
+                        (いまのジョブでは効果なし)
+                      </span>
+                    )}
                   </span>
                   {equipped && (
                     <button type="button" onClick={() => onUnequip(slot)} style={{ fontSize: '0.8em', padding: '0.3em 0.7em' }}>

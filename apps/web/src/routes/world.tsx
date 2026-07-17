@@ -711,17 +711,22 @@ export function World() {
   );
 
   // 装備の着脱 (gear/self は rkey 参照 — 強化値は直書きしない。docs/20 W6c 契約)
+  const gearSavingRef = useRef(false);
   const onEquipChange = useCallback(
     async (next: GearRefs) => {
-      if (!agent) return;
+      if (!agent || gearSavingRef.current) return; // 並行保存で後勝ち巻き戻しを防ぐ
+      gearSavingRef.current = true;
       const prev = gearRefs;
       setGearRefs(next); // 楽観更新 (HP/MP バーが即応する)
       try {
         await saveGearRefs(agent, next);
       } catch (e) {
         console.warn('[world] gear save failed', e);
-        setGearRefs(prev);
+        // 失敗時のみ、まだ next のままなら巻き戻す (関数型で他更新を潰さない)
+        setGearRefs((cur) => (cur === next ? prev : cur));
         setNotice('そうびを保存できなかった (通信エラー)。');
+      } finally {
+        gearSavingRef.current = false;
       }
     },
     [agent, gearRefs],
@@ -977,6 +982,7 @@ export function World() {
         {town && (
           <button
             type="button"
+            disabled={wipe !== null}
             onClick={() => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); }}
             style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
           >
@@ -1009,8 +1015,11 @@ export function World() {
         >
           そらのはね ×{featherStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>街へ帰る</span>
         </button>
+        {/* ワイプ演出中はモーダル系を開かせない (cover 中に開くと戦闘遷移で
+            アンマウント → open フラグ残留でリザルト後に勝手に再出現する) */}
         <button
           type="button"
+          disabled={wipe !== null}
           onClick={() => setMapOpen(true)}
           style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
         >
@@ -1018,6 +1027,7 @@ export function World() {
         </button>
         <button
           type="button"
+          disabled={wipe !== null}
           onClick={() => setGearOpen(true)}
           style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
         >
@@ -1065,7 +1075,7 @@ export function World() {
           balance={points?.balance ?? 0}
           materials={materialsView}
           pieces={craftedPieces}
-          equippedRkeys={Object.values(gearRefs).filter((v): v is string => typeof v === 'string')}
+          equippedRkeys={Object.values(resolvedGear?.pieces ?? {}).map((p) => p.rkey)}
           busy={craftBusy}
           lastAction={lastShopAction}
           onCraft={(def) => void onCraft(def)}

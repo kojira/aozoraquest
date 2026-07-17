@@ -195,6 +195,8 @@ export function ShopModal({
             const affordable = balance >= def.price.power && (materials[stock.materialId] ?? 0) >= def.price.materials;
             const owned = piecesByItem.get(id) ?? [];
             const forge = bestForgePair(owned, equippedRkeys);
+            // 装備を外せば鍛えられる組があるのに、装備中除外で不成立の場合の注記
+            const forgeBlockedByEquip = !forge && bestForgePair(owned, []) !== null;
             const bestOwned = owned.length > 0 ? Math.max(...owned.map((p) => p.level)) : null;
             return (
               <div
@@ -281,6 +283,11 @@ export function ShopModal({
                     >
                       きたえる ({forge.level > 0 ? `+${forge.level}` : forge.level}×2 → +{forgedLevel(forge.level)})
                     </button>
+                  )}
+                  {forgeBlockedByEquip && (
+                    <span style={{ fontSize: '0.7em', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>
+                      そうびを外すと きたえられる
+                    </span>
                   )}
                 </span>
               </div>
