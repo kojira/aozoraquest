@@ -256,6 +256,15 @@ export function Spirit() {
               </div>
             )}
           </section>
+
+          {/* あおぞらワールド (docs/19) の入口。PR-W2 の散歩プレビュー段階。 */}
+          <section style={{ marginTop: '1.2em', textAlign: 'center' }}>
+            <Link to="/world">
+              <button type="button" style={{ padding: '0.6em 1.4em' }}>
+                🗺 あおぞらワールドを歩く (プレビュー)
+              </button>
+            </Link>
+          </section>
         </>
       )}
 
