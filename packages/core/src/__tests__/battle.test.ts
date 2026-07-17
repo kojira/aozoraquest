@@ -334,6 +334,36 @@ describe('resolveTurn', () => {
     }
     expect(reactiveWins).toBeGreaterThan(spamWins);
   });
+
+  it('やくそう込みでも tier3 は作業化しない (最適戦略の勝率に天井)', () => {
+    // ガード + HP45% 未満でやくそう、が現状の最強ムーブ。0.4/3 個では勝率 97% まで
+    // 上がって真剣勝負が崩壊した (レビュー実測) ため、0.3/2 個で 90% 未満に抑える。
+    const best = (seed: number) => {
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+        const cmd = s.monster.charging
+          ? 'guard'
+          : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45
+            ? 'herb'
+            : 'attack';
+        s = resolveTurn(s, cmd);
+      }
+      return s.outcome;
+    };
+    let wins = 0;
+    for (let seed = 0; seed < 100; seed++) if (best(seed) === 'win') wins++;
+    expect(wins).toBeLessThan(90);
+    // やくそうが「意味はある」ことも同時に固定 (ガードのみ戦略より勝てる)
+    let guardOnlyWins = 0;
+    for (let seed = 0; seed < 100; seed++) {
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed);
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+        s = resolveTurn(s, s.monster.charging ? 'guard' : 'attack');
+      }
+      if (s.outcome === 'win') guardOnlyWins++;
+    }
+    expect(wins).toBeGreaterThan(guardOnlyWins);
+  });
 });
 
 describe('rollDrops', () => {

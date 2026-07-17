@@ -61,9 +61,11 @@ export const BATTLE_TUNING = {
   mpGuardGain: 2,
   /** ぼうぎょの翌ターン回避ボーナス (身構えて相手の動きを読む)。 */
   guardFocusDodge: 0.15,
-  /** やくそう: 使うと maxHp のこの割合を回復 (1 ターン消費)。持ち込み上限 herbCarryMax。 */
-  herbHealRatio: 0.4,
-  herbCarryMax: 3,
+  /** やくそう: 使うと maxHp のこの割合を回復 (1 ターン消費)。持ち込み上限 herbCarryMax。
+   *  0.4/3 個ではガード+薬草の tier3 勝率が 97% まで上がり真剣勝負が作業化した
+   *  (レビューのシミュレーション実測) ため 0.3/2 個に抑制。天井はテストで固定。 */
+  herbHealRatio: 0.3,
+  herbCarryMax: 2,
   /** 最大ターン数 (超えたら判定 = 残 HP 割合勝負) */
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
@@ -512,7 +514,9 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     state.player.parrying = true;
     events.push({ actor: 'player', text: `${state.player.name}は${state.playerSkill.name}の構え! (防御しつつ反撃)` });
   }
-  if (mCommand === 'guard') {
+  // ため中は防御宣言しない (このターンは必ず解放する。宣言すると「身を固めた直後に
+  // ため攻撃」という矛盾イベント + 幻の防御半減が発生する)。
+  if (mCommand === 'guard' && !state.monster.charging) {
     state.monster.guarding = true;
     events.push({ actor: 'monster', text: `${state.monster.name}は身を固めている。` });
   }

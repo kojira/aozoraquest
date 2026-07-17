@@ -157,6 +157,31 @@ export function TrialArena({
           })
         : [];
       const newTitles = after.filter((t) => !before.includes(t.id)).map((t) => t.name);
+      // stats を楽観更新する。refreshStats (listRecords 数往復) の完了を待たずに
+      // 「もういちど挑む」を押しても、やくそうの持ち込みが古い在庫で二重にならない
+      // (在庫超過は集計側で 0 止めされ、以後のドロップが黙って相殺される事故になる)。
+      setStats((s) => {
+        if (!s) return s;
+        const materials = { ...s.materials };
+        for (const d of drops) materials[d] = (materials[d] ?? 0) + 1;
+        if (next.herbsUsed > 0) {
+          const left = Math.max(0, (materials['herb'] ?? 0) - next.herbsUsed);
+          if (left > 0) materials['herb'] = left;
+          else delete materials['herb'];
+        }
+        const win = next.outcome === 'win';
+        const currentStreak = win ? s.currentStreak + 1 : 0;
+        return {
+          ...s,
+          total: s.total + 1,
+          wins: s.wins + (win ? 1 : 0),
+          losses: s.losses + (next.outcome === 'lose' ? 1 : 0),
+          tier3Wins: s.tier3Wins + (win && phase.tier === 3 ? 1 : 0),
+          currentStreak,
+          bestStreak: Math.max(s.bestStreak, currentStreak),
+          materials,
+        };
+      });
       setPhase({
         kind: 'result',
         state: next,
