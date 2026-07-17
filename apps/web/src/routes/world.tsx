@@ -6,6 +6,8 @@ import {
   ITEMS,
   MONSTERS_BY_ID,
   jobDisplayName,
+  levelUpGains,
+  type StatGain,
   encounterRateFor,
   isWalkable,
   jobLevelFromXp,
@@ -28,7 +30,7 @@ import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
-import { notifyLevelUp } from '@/components/level-up-overlay';
+import { formatGain, notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
@@ -98,6 +100,8 @@ export function World() {
     saveFailed: boolean;
     /** XP 加算で確定したレベルアップ (非同期に届く) */
     levelUps?: BattleLevelUps;
+    /** レベルアップによるステータス上昇 (合算、0.1 未満除外) */
+    statGains?: StatGain[];
   } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -186,6 +190,8 @@ export function World() {
   battleResultRef.current = battleResult;
   const pointsRef = useRef(points);
   pointsRef.current = points;
+  const diagRef = useRef(diag);
+  diagRef.current = diag;
   const wipeRef = useRef(wipe);
   wipeRef.current = wipe;
 
@@ -325,10 +331,20 @@ export function World() {
       if (xp > 0) {
         void awardBattleXp(agent, did, xp).then((ups) => {
           if (!ups) return;
+          // ステータス上昇量は再取得前の diag (レベルアップ前の基準) から計算する
+          const d = diagRef.current;
+          const base = d?.rpgStats ? statVectorToArray(d.rpgStats) : undefined;
+          const arch = d?.archetype;
+          const jNow = jobLevelFromXp(d?.jobLevel?.xp ?? 0);
+          const pNow = playerLevelFromXp(d?.playerLevel?.xp ?? 0);
+          const jFrom = ups.job?.from ?? jNow;
+          const jTo = ups.job?.to ?? jNow;
+          const pFrom = ups.player?.from ?? pNow;
+          const pTo = ups.player?.to ?? pNow;
           // 表示レベル (HP/MP バー分母・次戦の戦闘値) を追従させる。演出だけ出して
           // maxHp が増えないと「LEVEL UP! なのに強くなってない」に見える (レビュー指摘)
           void getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
-            .then((d) => { if (d) setDiag(d); })
+            .then((nd) => { if (nd) setDiag(nd); })
             .catch(() => {});
           // 発火順は投稿フロー (compose-modal) と同じ job → player
           if (ups.job) {
@@ -337,11 +353,22 @@ export function World() {
               from: ups.job.from,
               to: ups.job.to,
               jobName: jobDisplayName(ups.job.archetype, 'default'),
+              ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pFrom }, base) } : {}),
             });
           }
-          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
+          if (ups.player) {
+            notifyLevelUp({
+              kind: 'player',
+              from: ups.player.from,
+              to: ups.player.to,
+              ...(arch ? { gains: levelUpGains(arch, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base) } : {}),
+            });
+          }
           // 同じ戦闘のリザルトが出ている間だけ文言も反映 (次の遭遇に紛れ込ませない)
-          setBattleResult((r) => (r && r.state.seed === next.seed ? { ...r, levelUps: ups } : r));
+          const statGains = arch
+            ? levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base)
+            : [];
+          setBattleResult((r) => (r && r.state.seed === next.seed ? { ...r, levelUps: ups, statGains } : r));
         });
       }
       // 手持ちを更新: 使った分を引き、ドロップ分を足す。
@@ -544,6 +571,11 @@ export function World() {
           {battleResult.levelUps?.job && (
             <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
               {jobDisplayName(battleResult.levelUps.job.archetype, 'default')}のジョブレベルが {battleResult.levelUps.job.to} に あがった!
+            </div>
+          )}
+          {battleResult.statGains && battleResult.statGains.length > 0 && (
+            <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+              {battleResult.statGains.map((g) => `${g.label} +${formatGain(g.delta)}`).join('、')}
             </div>
           )}
           {drops.length > 0 && (

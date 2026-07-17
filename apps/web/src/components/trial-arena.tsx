@@ -5,6 +5,8 @@ import {
   ITEMS,
   MONSTERS_BY_ID,
   jobDisplayName,
+  levelUpGains,
+  type StatGain,
   earnedTitles,
   pickTrialTier,
   resolveTurn,
@@ -31,7 +33,7 @@ import {
   type BattleLevelUps,
   type BattleStats,
 } from '@/lib/battle-log';
-import { notifyLevelUp } from './level-up-overlay';
+import { formatGain, notifyLevelUp } from './level-up-overlay';
 
 /**
  * ブルスコンの試練 — アリーナ UI (docs/18-brusukon-trial.md)。
@@ -56,6 +58,8 @@ type Phase =
       saveFailed: boolean;
       /** XP 加算で確定したレベルアップ (非同期に届くので optional) */
       levelUps?: BattleLevelUps;
+      /** レベルアップによるステータス上昇 (from 両軸 → to 両軸の合算、0.1 未満除外) */
+      statGains?: StatGain[];
     };
 
 const TIER_LABELS: Record<1 | 2 | 3, { name: string; hint: string }> = {
@@ -189,6 +193,13 @@ export function TrialArena({
           // 親に XP 反映を通知 (diag 再取得)。演出だけ出して表示レベルが古いままだと
           // 「LEVEL UP! と言われたのに次戦も LV5」の矛盾が見える (レビュー指摘)
           onXpAwarded?.();
+          // ステータス上昇量 (オーナー要望 2026-07-17: 何がいくつ上がったかを出す)。
+          // job → player の順に区間を分けて二重計上しない
+          const base = rpgStats ? statVectorToArray(rpgStats) : undefined;
+          const jFrom = ups.job?.from ?? jobLevel;
+          const jTo = ups.job?.to ?? jobLevel;
+          const pFrom = ups.player?.from ?? playerLevel;
+          const pTo = ups.player?.to ?? playerLevel;
           // 全画面演出 (LevelUpOverlay は app 全体に常時マウント済み)。
           // 発火順は投稿フロー (compose-modal) と同じ job → player
           if (ups.job) {
@@ -197,12 +208,21 @@ export function TrialArena({
               from: ups.job.from,
               to: ups.job.to,
               jobName: jobDisplayName(ups.job.archetype, 'default'),
+              gains: levelUpGains(archetype, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pFrom }, base),
             });
           }
-          if (ups.player) notifyLevelUp({ kind: 'player', from: ups.player.from, to: ups.player.to });
-          // リザルトの文言にも残す (演出は 2 秒で消えるため)。seed 照合で
-          // 再戦後の別リザルトに前戦の分を付けない (world 側と同じ防御)
-          setPhase((p) => (p.kind === 'result' && p.state.seed === next.seed ? { ...p, levelUps: ups } : p));
+          if (ups.player) {
+            notifyLevelUp({
+              kind: 'player',
+              from: ups.player.from,
+              to: ups.player.to,
+              gains: levelUpGains(archetype, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base),
+            });
+          }
+          // リザルトの文言にも残す (演出は 2 秒で消えるため)。文言は両軸まとめた合算。
+          // seed 照合で再戦後の別リザルトに前戦の分を付けない (world 側と同じ防御)
+          const statGains = levelUpGains(archetype, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base);
+          setPhase((p) => (p.kind === 'result' && p.state.seed === next.seed ? { ...p, levelUps: ups, statGains } : p));
         });
       }
       // 称号の新規獲得判定 (確定前の stats と比較)。stats 未取得 (取得失敗) 時は
@@ -258,7 +278,7 @@ export function TrialArena({
       });
       refreshStats();
     },
-    [phase, agent, did, stats, refreshStats, jobXpOffset, onXpAwarded],
+    [phase, agent, did, stats, refreshStats, jobXpOffset, onXpAwarded, archetype, jobLevel, playerLevel, rpgStats],
   );
 
   // ワイプ進行: 覆い切った時点でバトル準備がまだなら hold でつなぐ
@@ -399,6 +419,11 @@ export function TrialArena({
         {phase.levelUps?.job && (
           <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
             {jobDisplayName(phase.levelUps.job.archetype, 'default')}のジョブレベルが {phase.levelUps.job.to} に あがった!
+          </div>
+        )}
+        {phase.statGains && phase.statGains.length > 0 && (
+          <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+            {phase.statGains.map((g) => `${g.label} +${formatGain(g.delta)}`).join('、')}
           </div>
         )}
         {drops.length > 0 && (

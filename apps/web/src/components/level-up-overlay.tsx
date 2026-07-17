@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LEVEL_UP_OVERLAY_DURATION_MS, LEVEL_UP_POP_DURATION_MS } from '@aozoraquest/core';
+import { LEVEL_UP_OVERLAY_DURATION_MS, LEVEL_UP_POP_DURATION_MS, type StatGain } from '@aozoraquest/core';
 
 export interface LevelUpEvent {
   kind: 'job' | 'player';
@@ -7,6 +7,13 @@ export interface LevelUpEvent {
   to: number;
   /** ジョブレベルアップ時はジョブ表示名、プレイヤーは undefined */
   jobName?: string;
+  /** ステータス上昇量 (levelUpGains の出力。0.1 未満はヘルパ側で除外済み) */
+  gains?: StatGain[];
+}
+
+/** 上昇量の表示 (整数はそのまま、小数は 1 桁)。 */
+export function formatGain(delta: number): string {
+  return Number.isInteger(delta) ? String(delta) : delta.toFixed(1);
 }
 
 type Listener = (ev: LevelUpEvent) => void;
@@ -106,6 +113,30 @@ export function LevelUpOverlay() {
           <span style={{ color: 'var(--color-muted)', fontSize: '0.7em', margin: '0 0.1em' }}>→</span>
           <span style={{ color: 'var(--color-accent)' }}>{current.to}</span>
         </div>
+        {current.gains && current.gains.length > 0 && (
+          // ステータス上昇 (DQ の「ちからが あがった!」枠。2 列で 7 項目まで収める)
+          <div
+            style={{
+              marginTop: '0.5em',
+              display: 'grid',
+              gridTemplateColumns: 'auto auto',
+              columnGap: '1.2em',
+              rowGap: '0.15em',
+              fontSize: '0.85em',
+              textAlign: 'left',
+              justifyContent: 'center',
+            }}
+          >
+            {current.gains.map((g) => (
+              <div key={g.key} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6em' }}>
+                <span>{g.label}</span>
+                <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
+                  +{formatGain(g.delta)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {/* 後光的な光る粒 */}
       <div
