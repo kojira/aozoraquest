@@ -27,6 +27,7 @@ import {
 import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 import { countCardDraws } from './card-power';
+import { countBattles } from './battle-log';
 
 export const SUMMON_THRESHOLD = CORE_SUMMON_THRESHOLD;
 const POST_SCAN_PAGES = POINTS_SCAN_PAGES;
@@ -40,30 +41,36 @@ export interface PointsState {
   userMessages: number;
   /** カード引き直しで消費したパワー数 */
   cardDraws: number;
+  /** ブルスコンの試練で消費したパワー数 (docs/18-brusukon-trial.md) */
+  battles: number;
   /** 召喚済みか (spiritChat レコードが 1 件でもあるか) */
   summoned: boolean;
-  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws) */
+  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws - battles) */
   balance: number;
   /** 召喚に必要な残り投稿数 = max(0, SUMMON_THRESHOLD - viaPosts) */
   toSummon: number;
 }
 
-/** PDS に保存する累積カウンタ。`app.aozoraquest.power/self`。 */
+/** PDS に保存する累積カウンタ。`app.aozoraquest.power/self`。
+ *  battles は後付けフィールド (docs/18) — 旧レコードには無いので欠落 = 0 として読む。 */
 interface PowerRecord {
   viaPosts: number;
   userMessages: number;
   cardDraws: number;
+  battles?: number;
   summoned: boolean;
   updatedAt: string;
 }
 
 function deriveState(rec: PowerRecord): PointsState {
-  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws);
+  const battles = rec.battles ?? 0;
+  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws - battles);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - rec.viaPosts);
   return {
     viaPosts: rec.viaPosts,
     userMessages: rec.userMessages,
     cardDraws: rec.cardDraws,
+    battles,
     summoned: rec.summoned,
     balance,
     toSummon,
@@ -83,17 +90,19 @@ async function writePowerRecord(agent: Agent, base: Omit<PowerRecord, 'updatedAt
 /** 旧方式: PDS の post / spiritChat / cardDraw を実際に走査して計算する。
  *  loadPointsState のマイグレーション用 + power レコード破損時の復旧用に残す。 */
 async function scanFullPoints(agent: Agent, did: string): Promise<PointsState> {
-  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws] = await Promise.all([
+  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws, battles] = await Promise.all([
     countViaPosts(agent, did),
     countSpiritChat(agent, did),
     countCardDraws(agent, did),
+    countBattles(agent, did),
   ]);
-  const balance = Math.max(0, viaPosts - userMessages - cardDraws);
+  const balance = Math.max(0, viaPosts - userMessages - cardDraws - battles);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - viaPosts);
   return {
     viaPosts,
     userMessages,
     cardDraws,
+    battles,
     summoned: hasAnySpiritChat,
     balance,
     toSummon,
@@ -114,6 +123,7 @@ export async function loadPointsState(agent: Agent, did: string): Promise<Points
     viaPosts: scanned.viaPosts,
     userMessages: scanned.userMessages,
     cardDraws: scanned.cardDraws,
+    battles: scanned.battles,
     summoned: scanned.summoned,
   };
   try {
@@ -130,6 +140,7 @@ export interface PowerDelta {
   viaPosts?: number;
   userMessages?: number;
   cardDraws?: number;
+  battles?: number;
   /** 召喚状態を強制 true に立てるとき指定。下げる用途は今のところ無し。 */
   summoned?: true;
 }
@@ -143,6 +154,7 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
         viaPosts: scanned.viaPosts,
         userMessages: scanned.userMessages,
         cardDraws: scanned.cardDraws,
+        battles: scanned.battles,
         summoned: scanned.summoned,
         updatedAt: new Date().toISOString(),
       };
@@ -151,6 +163,7 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
       viaPosts: cur.viaPosts + (delta.viaPosts ?? 0),
       userMessages: cur.userMessages + (delta.userMessages ?? 0),
       cardDraws: cur.cardDraws + (delta.cardDraws ?? 0),
+      battles: (cur.battles ?? 0) + (delta.battles ?? 0),
       summoned: delta.summoned ?? cur.summoned,
     };
     await writePowerRecord(agent, next);
