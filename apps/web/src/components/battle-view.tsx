@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import type { BattleState, Command, TurnEvent } from '@aozoraquest/core';
 import { BATTLE_TUNING, MONSTERS_BY_ID, SKILL_KIND_LABELS } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
@@ -56,13 +57,16 @@ export function BattleView({
           lineHeight: 1.6,
         }}
       >
-        {state.turn === 0 ? (
-          <div>
-            {state.monster.name}があらわれた! {monsterDef?.intro}
-          </div>
-        ) : (
-          state.lastEvents.map((e: TurnEvent, i: number) => <div key={i}>{e.text}</div>)
-        )}
+        {/* DQ1 風に 1 文字ずつ表示 (オーナー指示 2026-07-18)。key=turn で毎ターン
+            打ち直す。コマンドはブロックしない (テンポ優先、せっかちは次の入力で OK) */}
+        <TypedLines
+          key={state.turn}
+          lines={
+            state.turn === 0
+              ? [`${state.monster.name}があらわれた! ${monsterDef?.intro ?? ''}`]
+              : state.lastEvents.map((e: TurnEvent) => e.text)
+          }
+        />
       </div>
 
       {/* 自分 HP + MP */}
@@ -164,5 +168,47 @@ export function CommandButton({ label, sub, onClick, disabled }: { label: string
       <span>{label}</span>
       {sub && <span style={{ fontSize: '0.68em', color: 'var(--color-muted)' }}>{sub}</span>}
     </button>
+  );
+}
+
+/** 戦闘ログの DQ1 風タイプライター表示。行を順に 1 文字ずつ出す。
+ *  reduced-motion では即時全文。セリフウィンドウ (dialogue-window) より速い
+ *  1 文字 22ms — 戦闘のテンポを削らない速度に留める。 */
+export function TypedLines({ lines }: { lines: readonly string[] }) {
+  const reduced = useMemo(
+    () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+  const total = useMemo(() => lines.reduce((n, l) => n + l.length, 0), [lines]);
+  const [chars, setChars] = useState(reduced ? total : 0);
+  useEffect(() => {
+    setChars(reduced ? total : 0);
+    if (reduced) return;
+    const id = setInterval(() => {
+      setChars((c) => {
+        if (c >= total) {
+          clearInterval(id);
+          return c;
+        }
+        return c + 1;
+      });
+    }, 22);
+    return () => clearInterval(id);
+  }, [lines, total, reduced]);
+  let used = 0;
+  return (
+    <>
+      {lines.map((l, i) => {
+        const visible = Math.max(0, Math.min(l.length, chars - used));
+        used += l.length;
+        return (
+          <div key={i} aria-label={l}>
+            <span aria-hidden>{l.slice(0, visible)}</span>
+            {/* 高さを先に確保 (行が出るたびにコマンド段が下へずれるのを防ぐ) */}
+            {visible === 0 && <span aria-hidden>&nbsp;</span>}
+          </div>
+        );
+      })}
+    </>
   );
 }
