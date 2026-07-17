@@ -18,6 +18,7 @@ import {
   worldOverlay,
   wrap,
   type Terrain,
+  WORLD_TUNING,
 } from '../world.js';
 import { WORLD_DATA } from '../world-data.js';
 
@@ -115,12 +116,73 @@ describe('worldOverlay (街・橋・spawn)', () => {
     expect(new Set(regions).size).toBe(regions.length);
   });
 
-  it('橋は 15 本以上あり、全タイルが川 (海ではない) の上', () => {
-    expect(overlay.bridgeSpans).toBeGreaterThanOrEqual(15);
+  it('橋は 8 本以上あり、全タイルが川 (海ではない) の上', () => {
+    // 旧固定値 15 は「海岸の切れ込みを跨ぐだけの飾り橋」込みの数 (20 中 19 が飾り
+    // だった — オーナー報告 2026-07-17)。局所連結チェック導入後は本物の渡河のみ
+    expect(overlay.bridgeSpans).toBeGreaterThanOrEqual(8);
     for (const b of overlay.bridgeTiles) {
       expect(terrainAt(b.x, b.y)).toBe('bridge');
       // 橋の下は海面より高い (= 川)
       expect(elevationAt(b.x, b.y)).toBeGreaterThanOrEqual(0.4);
+    }
+  });
+
+  it('全ての橋が本物の渡河点 (橋なしでは半径 20 で回り込めない両岸を結ぶ)', () => {
+    // 「発見した全ての橋が機能していない」(= 同じ陸地の切れ込みに架かる飾り橋) を
+    // 二度と出さないための固定。generation 側 locallyConnected と独立に検証する
+    const landWalk = (x: number, y: number) => {
+      const t = terrainAt(x, y);
+      return t === 'plains' || t === 'grove' || t === 'forest' || t === 'town';
+    };
+    const key = (x: number, y: number) => y * 1024 + x;
+    const bridgeSet = new Set(overlay.bridgeTiles.map((b) => key(b.x, b.y)));
+    const seen = new Set<number>();
+    for (const t of overlay.bridgeTiles) {
+      if (seen.has(key(t.x, t.y))) continue;
+      // スパンにグルーピング
+      const grp: Array<{ x: number; y: number }> = [];
+      const stack = [t];
+      while (stack.length > 0) {
+        const c = stack.pop()!;
+        const k = key(c.x, c.y);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        grp.push(c);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const n = { x: wrap(c.x + dx), y: wrap(c.y + dy) };
+          if (bridgeSet.has(key(n.x, n.y)) && !seen.has(key(n.x, n.y))) stack.push(n);
+        }
+      }
+      // 両端の陸タイルはスパンの走行方向 (縦 or 横) から導出する
+      // (全タイルの陸近傍を集める方式だと側方の岸タイルを対岸と誤認しうる)
+      const horizontal = grp.every((c) => c.y === grp[0]!.y);
+      grp.sort((p1, p2) => (horizontal ? p1.x - p2.x : p1.y - p2.y));
+      const head = grp[0]!;
+      const tail = grp[grp.length - 1]!;
+      const a = horizontal ? { x: wrap(head.x - 1), y: head.y } : { x: head.x, y: wrap(head.y - 1) };
+      const b = horizontal ? { x: wrap(tail.x + 1), y: tail.y } : { x: tail.x, y: wrap(tail.y + 1) };
+      expect(landWalk(a.x, a.y), `span at (${t.x},${t.y}) west/north end is land`).toBe(true);
+      expect(landWalk(b.x, b.y), `span at (${t.x},${t.y}) east/south end is land`).toBe(true);
+      // 橋なし陸上 BFS で到達できないこと (半径は生成側と同じ knob を参照)
+      const R = WORLD_TUNING.bridgeDetourRadius;
+      const vis = new Set<number>([key(a.x, a.y)]);
+      const queue = [a];
+      let reachable = false;
+      while (queue.length > 0) {
+        const c = queue.shift()!;
+        if (c.x === b.x && c.y === b.y) { reachable = true; break; }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const n = { x: wrap(c.x + dx), y: wrap(c.y + dy) };
+          const ddx = Math.min(Math.abs(n.x - a.x), 1024 - Math.abs(n.x - a.x));
+          const ddy = Math.min(Math.abs(n.y - a.y), 1024 - Math.abs(n.y - a.y));
+          if (ddx > R || ddy > R) continue;
+          if (!vis.has(key(n.x, n.y)) && landWalk(n.x, n.y)) {
+            vis.add(key(n.x, n.y));
+            queue.push(n);
+          }
+        }
+      }
+      expect(reachable, `span at (${t.x},${t.y}) must cross locally-disconnected land`).toBe(false);
     }
   });
 
