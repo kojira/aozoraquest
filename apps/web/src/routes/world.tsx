@@ -39,6 +39,7 @@ import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
+import { WorldMapModal } from '@/components/world-map-modal';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -107,6 +108,7 @@ export function World() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const archetype = diag?.archetype ?? null;
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
@@ -715,6 +717,13 @@ export function World() {
         >
           そらのしずく ×{tonicStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>MP回復</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setMapOpen(true)}
+          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
+        >
+          🗺 ちず
+        </button>
       </div>
       {/* 一時メッセージ (やくそう使用 / 進めない / 街で回復 など)。操作した指の
           すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
@@ -734,6 +743,7 @@ export function World() {
               : ' あおぞらパワーがないのでモンスターは出ません (ホームで投稿すると増える)。'
           : ''}
       </p>
+      {mapOpen && <WorldMapModal x={ws.x} y={ws.y} onClose={() => setMapOpen(false)} />}
       {wipeOverlay}
     </div>
   );
