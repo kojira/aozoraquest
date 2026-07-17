@@ -157,7 +157,11 @@ status: **draft v2 — 主要判断済み** (2026-07-17 オーナー回答反映
   読み味が悪い。判定負け専用の文言にする。
 - **baseStats のサーバー側導出**: W4 のサーバー権威バトルでは baseStats を
   クライアントから受けず、Worker が analysis レコードの rpgStats から自前で導出・
-  検証する (NaN/欠落キーの防御込み)。
+  検証する (NaN/欠落キーの防御込み。ブレンドは core の playerCombatant に実装済み)。
+- **BattleState の派生値スナップショット**: mpAttackGain/mpGuardGain/mpTraitName は
+  archetype から導出可能な値の state 内スナップショット。W4 で DO が state を長期
+  保持するとエンジン更新をまたぐ旧 state で欠落・旧値固定が起こりうる — state
+  スキーマのバージョニング or 復帰時の再導出を入れること。
 - **クライアント会計の既知ドリフト**: `startBattleRecord` 成功後の `bumpPower` は
   fire-and-forget のため、失敗すると battles カウンタが増えず残高が実質 +1 復活する
   (battle レコード自体は残るので再スキャンで自己修復)。逆に支払い pending 中の

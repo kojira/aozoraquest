@@ -71,7 +71,12 @@ export function BattleView({
 
       {/* コマンド (親指ゾーン、2x3)。特技は MP、どうぐは残数で使用可否が決まる。 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.8em' }}>
-        <CommandButton label="たたかう" sub={`MP +${BATTLE_TUNING.mpAttackGain}`} onClick={() => onCommand('attack')} disabled={busy} />
+        <CommandButton
+          label="たたかう"
+          sub={`MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}`}
+          onClick={() => onCommand('attack')}
+          disabled={busy}
+        />
         <CommandButton
           label={state.playerSkill.name}
           sub={`MP ${BATTLE_TUNING.skillMpCost} / ${SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}`}
@@ -80,7 +85,7 @@ export function BattleView({
         />
         <CommandButton
           label="ぼうぎょ"
-          sub={`回避↑ / MP +${BATTLE_TUNING.mpGuardGain}`}
+          sub={`回避↑ / MP +${state.mpGuardGain}`}
           onClick={() => onCommand('guard')}
           disabled={busy}
         />
