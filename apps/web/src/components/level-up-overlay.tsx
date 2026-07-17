@@ -63,7 +63,9 @@ export function LevelUpOverlay() {
         alignItems: 'center',
         justifyContent: 'center',
         pointerEvents: 'none',
-        zIndex: 500,
+        // エンカウントワイプ (encounter-wipe.tsx, 1000) より上 — 連続レベルアップの
+        // 2 発目が再戦のワイプに飲まれて見えなくなるのを防ぐ
+        zIndex: 1100,
       }}
     >
       <style>{LEVEL_UP_KEYFRAMES}</style>
