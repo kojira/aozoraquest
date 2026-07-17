@@ -7,7 +7,7 @@ import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
-import { POST_MAX_LENGTH, jobDisplayName } from '@aozoraquest/core';
+import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, playerLevelFromXp, statVectorToArray } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -395,12 +395,21 @@ function ComposeDialog({
         void (async () => {
           try {
             const result = await processSelfPost(agent, did, body, structure);
+            // ステータス上昇量 (バトルのレベルアップ演出と同じ表示。オーナー要望
+            // 2026-07-17)。区間は job → player の順で分けて二重計上しない
+            const arch = result.jobLevel?.archetype;
+            const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;
+            const jTo = result.jobLevel ? jobLevelFromXp(result.jobLevel.xp) : 1;
+            const jFrom = result.jobLeveledUp?.from ?? jTo;
+            const pTo = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
+            const pFrom = result.playerLeveledUp?.from ?? pTo;
             if (result.jobLeveledUp && result.jobLevel) {
               notifyLevelUp({
                 kind: 'job',
                 from: result.jobLeveledUp.from,
                 to: result.jobLeveledUp.to,
                 jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
+                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: result.jobLeveledUp.to, playerLevel: pFrom }, base) } : {}),
               });
             }
             if (result.playerLeveledUp) {
@@ -408,6 +417,7 @@ function ComposeDialog({
                 kind: 'player',
                 from: result.playerLeveledUp.from,
                 to: result.playerLeveledUp.to,
+                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: result.playerLeveledUp.to }, base) } : {}),
               });
             }
           } catch (e) {
