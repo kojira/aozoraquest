@@ -24,6 +24,12 @@ const DEADZONE_PX = 14;
 const KNOB_RADIUS_PX = 44;
 /** 連続歩行の間隔 (十字キー時代の HOLD_REPEAT_INTERVAL と同じ体感)。 */
 const STEP_INTERVAL_MS = 170;
+/** マップの外周この幅 (px) はスティックが反応しない素通しゾーン。
+ *  端から始まるタッチはページスクロールに渡る (「スクロールしたいのに移動に
+ *  なってしまう」— オーナー実機フィードバック 2026-07-17)。
+ *  注: touch-action は要素単位の宣言なので、イベントを無視するだけでは
+ *  スクロールは復活しない — 反応領域そのものを inset で絞る必要がある。 */
+const EDGE_PASS_PX = 36;
 /** 即時歩行 (方向転換時) の最小間隔。ジッタ由来の軸反転バーストを抑える。 */
 const MIN_STEP_GAP_MS = Math.floor(STEP_INTERVAL_MS / 2);
 /** 軸を切り替えるのに必要な優位マージン (現在軸の 1.25 倍を要求)。
@@ -164,8 +170,10 @@ export function VirtualStick({ onMove }: { onMove: (dir: StickDir) => void }) {
       onContextMenu={(e) => e.preventDefault()}
       style={{
         position: 'absolute',
-        inset: 0,
-        // スクロール/ピンチに食われず pointermove を受け続ける
+        // 外周 EDGE_PASS_PX はスクロール用の素通しゾーン (touch-action none を
+        // 全面に張るとマップから始まるスクロールが全部移動になる)
+        inset: EDGE_PASS_PX,
+        // スクロール/ピンチに食われず pointermove を受け続ける (この領域内のみ)
         touchAction: 'none',
         userSelect: 'none',
         WebkitUserSelect: 'none',
