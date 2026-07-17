@@ -635,10 +635,11 @@ export function World() {
           ({ws.x}, {ws.y})
         </span>
       </div>
+      {/* 場所情報 (街名 / 危険度)。一時メッセージ (notice) はここではなく
+          操作ボタンの直下に出す — アイテムボタンは画面下部にあるのに結果表示が
+          マップ上部だと視界に入らない (オーナー報告 2026-07-17、スクリーンショット付き) */}
       <p style={{ margin: '0.2em 0 0.4em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        {notice ? (
-          <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>
-        ) : town ? (
+        {town ? (
           <strong style={{ color: 'var(--color-fg)' }}>🏘 {town.name}</strong>
         ) : (
           <>このあたり: {DANGER_LABELS[danger]}{here === 'forest' ? ' / 深い森…' : ''}</>
@@ -716,6 +717,14 @@ export function World() {
           そらのしずく ×{tonicStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>MP回復</span>
         </button>
       </div>
+      {/* 一時メッセージ (やくそう使用 / 進めない / 街で回復 など)。操作した指の
+          すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
+      <p
+        aria-live="polite"
+        style={{ textAlign: 'center', fontSize: '0.85em', minHeight: '1.4em', margin: '0.5em 0 0' }}
+      >
+        {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
+      </p>
       <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
         PC は矢印キーでも移動できます。街に入ると全回復。
         {diag
