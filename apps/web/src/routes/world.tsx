@@ -31,6 +31,7 @@ import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { BattleView, HpBar, MpBar } from '@/components/battle-view';
+import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 
@@ -84,6 +85,9 @@ export function World() {
   const [tonicStock, setTonicStock] = useState(0);
   const [points, setPoints] = useState<PointsState | null>(null);
   const [battle, setBattle] = useState<{ state: BattleState; busy: boolean; rkey: string; tier: 1 | 2 | 3 } | null>(null);
+  /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
+   *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
+  const [wipe, setWipe] = useState<WipePhase | null>(null);
   const [battleResult, setBattleResult] = useState<{
     state: BattleState;
     movedToTown: string | null;
@@ -178,6 +182,8 @@ export function World() {
   battleResultRef.current = battleResult;
   const pointsRef = useRef(points);
   pointsRef.current = points;
+  const wipeRef = useRef(wipe);
+  wipeRef.current = wipe;
 
   const move = useCallback(
     (dir: Dir) => {
@@ -235,22 +241,35 @@ export function World() {
           { ...(cHp !== null && cHp !== undefined ? { hp: cHp } : {}), ...(cMp !== null && cMp !== undefined ? { mp: cMp } : {}) },
           { tonics, ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}) },
         );
-        // 即座に戦闘画面へ (busy = 支払い中はコマンド不可)。battleRef も即時更新して
-        // 長押し連打の次 tick が移動 + 二重遭遇しないようにする。
+        // 遭遇成立: ワイプ演出でマップを覆いながら支払いを進める (busy = コマンド不可)。
+        // battleRef は即時更新して長押し連打の次 tick が移動 + 二重遭遇しないようにする。
         const pending = { state, busy: true, rkey: '', tier };
         battleRef.current = pending;
         setBattle(pending);
+        setWipe('cover');
         void (async () => {
           try {
             // 支払い + 仮レコード (途中離脱 = 棄権 = 敗北)。失敗したら遭遇なしに戻す。
             const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
             void bumpPower(agent, did, { battles: 1 });
             setPoints((p) => (p ? { ...p, battles: p.battles + 1, balance: p.balance - BATTLE_TUNING.powerCost } : p));
-            setBattle((b) => (b && b.state.seed === seed ? { ...b, rkey, busy: false } : b));
+            setBattle((b) => {
+              if (!(b && b.state.seed === seed)) return b;
+              // battleRef も即時更新 (onCoverDone のタイマーが render flush 前に
+              // 発火しても準備完了を読めるように。pending 生成時と同じ流儀)
+              const ready = { ...b, rkey, busy: false };
+              battleRef.current = ready;
+              return ready;
+            });
+            // 覆い切って待機中 (hold) なら開く。cover 中なら onCoverDone 側が拾う。
+            setWipe((w) => (w === 'hold' ? 'reveal' : w));
           } catch (e) {
             console.warn('[world] field battle start failed', e);
             setNotice('モンスターの気配がしたが、見失った… (通信エラー)');
             setBattle((b) => (b && b.state.seed === seed ? null : b));
+            // マップに向かって開き直す (注: CSS の都合で「いったん全面黒に跳んでから
+            // 開く」見え方になる。稀な経路なので許容 — レビュー確認済み)
+            setWipe((w) => (w ? 'reveal' : w));
           }
         })();
       }
@@ -331,6 +350,22 @@ export function World() {
     [scheduleSave, agent, did],
   );
 
+  // ワイプ演出の進行。覆い切った時点で支払いがまだ終わっていなければ hold でつなぐ
+  // (通信の遅さが「固まった」に見えず、演出の一部になる)。
+  const onCoverDone = useCallback(() => {
+    const b = battleRef.current;
+    setWipe(b && b.rkey === '' && b.busy ? 'hold' : 'reveal');
+  }, []);
+  const onRevealDone = useCallback(() => setWipe(null), []);
+  // hold の上限 (10s) 到達 = 支払い通信ハング。遭遇をキャンセルしてマップに開き直す
+  // (全面黒でリロード以外の脱出手段がなくなるのを防ぐ。レコードが後から成立していた
+  // 場合は棄権 = 敗北の既存セマンティクスに落ちる)。
+  const onHoldTimeout = useCallback(() => {
+    setNotice('通信が不安定でモンスターを見失った…');
+    setBattle((b) => (b && b.busy && b.rkey === '' ? null : b));
+    setWipe('reveal');
+  }, []);
+
   // フィールドでやくそうを使う (移動せずに回復。消費の保存は TODO(W3) で DO に)
   const useHerbOnField = useCallback(() => {
     if (!combat || herbStock <= 0) return;
@@ -372,6 +407,7 @@ export function World() {
     const spawn = worldOverlay().spawn;
     setBattle(null);
     setBattleResult(null);
+    setWipe(null);
     setNotice(null);
     setWs({ x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: { x: spawn.x, y: spawn.y } });
     scheduleSave();
@@ -381,7 +417,9 @@ export function World() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      if (!wsRef.current || battleRef.current) return;
+      // 演出 (wipe) 中もキーボード移動を止める (ポインタは overlay が吸うが
+      // キーボードは素通りするため。レビュー指摘)
+      if (!wsRef.current || battleRef.current || wipeRef.current) return;
       const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
       const dir = map[e.key];
       if (dir) {
@@ -423,8 +461,20 @@ export function World() {
   }
   if (!ws) return <p>世界を読み込んでいる…</p>;
 
-  // ─── 野外遭遇 (戦闘中はマップの代わりにバトル画面) ───
-  if (battle) {
+  // エンカウント演出のオーバーレイ (cover/hold 中はマップの上、reveal 中はバトル画面の上)
+  const wipeOverlay = wipe ? (
+    <EncounterWipe
+      phase={wipe}
+      holdMessage="モンスターが あらわれようとしている…"
+      onCoverDone={onCoverDone}
+      onRevealDone={onRevealDone}
+      onHoldTimeout={onHoldTimeout}
+    />
+  ) : null;
+
+  // ─── 野外遭遇 (戦闘中はマップの代わりにバトル画面)。cover/hold 中はまだマップを
+  //     見せたままタイルで覆っていく (覆い切った瞬間にこちらへ切り替わる) ───
+  if (battle && (wipe === null || wipe === 'reveal')) {
     const danger = regionDanger(regionOf(ws.x, ws.y));
     return (
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
@@ -439,6 +489,7 @@ export function World() {
           onCommand={(c) => void onBattleCommand(c)}
           headerNote={DANGER_LABELS[danger]}
         />
+        {wipeOverlay}
       </div>
     );
   }
@@ -480,6 +531,9 @@ export function World() {
         <button type="button" onClick={() => setBattleResult(null)} style={{ padding: '0.7em 1.6em' }}>
           マップへ戻る
         </button>
+        {/* reveal 中に決着した場合でも演出を最後まで流す (無いと wipe='reveal' が
+            残留してマップ復帰時に再生される。レビュー指摘) */}
+        {wipeOverlay}
       </div>
     );
   }
@@ -615,6 +669,7 @@ export function World() {
           はじまりの街へ戻る (位置リセット)
         </button>
       </p>
+      {wipeOverlay}
     </div>
   );
 }
