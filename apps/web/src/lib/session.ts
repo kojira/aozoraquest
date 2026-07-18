@@ -126,15 +126,24 @@ async function setStateFromSession(
   //   ★ タイムアウト: 古い/壊れたセッションで getSession が**ハング**すると無限スプラッシュに
   //   なる (復元は本来 <1s)。一定時間で打ち切って signed-out に倒し、ログイン画面から復帰できる
   //   ようにする (失敗と同じ扱い。valid だが遅いだけのセッションを誤って切らないよう余裕を持たせる)。
+  //   ★ 診断 (intermittent な warmup ハングの真因究明): タイムアウト後も getSession の**最終結果**を
+  //   記録し、「一過性 (遅れて成功)」か「永続 (失敗し、そのエラー内容)」かを次回再発時に切り分ける。
+  const warmupStart = Date.now();
+  const warmup = agent.com.atproto.server.getSession();
+  warmup.then(
+    () => console.info('[session] warmup getSession resolved', { did, elapsedMs: Date.now() - warmupStart }),
+    (err) => console.warn('[session] warmup getSession rejected', { did, elapsedMs: Date.now() - warmupStart, error: String(err) }),
+  );
   try {
-    await withTimeout(agent.com.atproto.server.getSession(), WARMUP_TIMEOUT_MS, 'warmup');
+    await withTimeout(warmup, WARMUP_TIMEOUT_MS, 'warmup');
   } catch (e) {
     // 失敗 or タイムアウト → signed-out (= ログイン画面) に倒す。無限スプラッシュにしない。
-    // **セッションは消さない (revoke しない)**: このハングはリフレッシュの一過性スタックが主因で、
-    // 多くは時間が経てば回復する (=有効なセッション)。ここで revoke すると回復するはずのセッションを
+    // **セッションは消さない (revoke しない)**: このハングはリフレッシュの一過性スタックが主因のことが
+    // 多く、時間が経てば回復する (=有効なセッション)。ここで revoke すると回復するはずのセッションを
     // 消して不要な再ログインを強制してしまう。リロードで自然回復するか、必要なら再ログインで上書き
     // される。本当に死んだトークンは getSession が 401 で即失敗し、同じくここで signed-out になる。
-    console.warn('[session] warmup failed/timed out; signing out', e);
+    const timedOut = e instanceof Error && e.message === 'warmup-timeout';
+    console.warn('[session] warmup failed/timed out; signing out', { did, timedOut, elapsedMs: Date.now() - warmupStart, error: String(e) });
     if (!isCancelled()) setState({ status: 'signed-out' });
     return;
   }
