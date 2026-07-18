@@ -36,6 +36,7 @@ import { ComposeColumn } from '@/components/compose-modal';
 import { useComposePaneOpen, closeComposePane } from '@/lib/compose-pane';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { invalidateProfile } from '@/lib/profile-cache';
+import { oauthDebugEnabled, dumpOAuthState } from '@/lib/oauth-debug';
 
 /** picker の表示位置: 'end' = 末尾タイル、数値 = そのカラムの直右 */
 type PickerAnchor = number | 'end' | null;
@@ -183,7 +184,22 @@ export function Workspace() {
   useEffect(() => () => closeComposePane(), []);
 
   if (session.status === 'loading') {
-    return <p>準備しています...</p>;
+    return (
+      <>
+        <p>準備しています...</p>
+        {oauthDebugEnabled && (
+          // dev のみ: 復元がハングして固まったとき、コンソール (CSP で eval 不可な端末) を使わずに
+          // OAuth 状態 (伏字) + 未捕捉エラーを JSON 保存するための診断ボタン。
+          <button
+            type="button"
+            onClick={() => void dumpOAuthState()}
+            style={{ marginTop: '2em', fontSize: '0.8em', opacity: 0.7 }}
+          >
+            🔧 診断ダンプを保存
+          </button>
+        )}
+      </>
+    );
   }
 
   if (session.status === 'signed-out') {

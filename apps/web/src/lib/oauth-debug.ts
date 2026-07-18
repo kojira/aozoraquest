@@ -12,6 +12,25 @@
  */
 const OAUTH_DB = '@atproto-oauth-client';
 
+/** 起動中に飛んだ未捕捉エラー (「Script error.」= cross-origin マスク含む) をためるリングバッファ。
+ *  console (Eruda) が CSP の unsafe-eval で使えない端末でも、ダンプ JSON に含めて拾えるようにする。 */
+interface CapturedError { kind: 'error' | 'unhandledrejection'; message?: string | undefined; source?: string | undefined; line?: number | undefined; col?: number | undefined; stack?: string | undefined; at: string }
+const errorLog: CapturedError[] = [];
+let errorHandlersInstalled = false;
+
+function installErrorCapture(): void {
+  if (errorHandlersInstalled || typeof window === 'undefined') return;
+  errorHandlersInstalled = true;
+  const push = (e: CapturedError) => { errorLog.push(e); if (errorLog.length > 50) errorLog.shift(); };
+  window.addEventListener('error', (ev) => {
+    push({ kind: 'error', message: ev.message, source: ev.filename, line: ev.lineno, col: ev.colno, stack: ev.error?.stack, at: new Date().toISOString() });
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const r = ev.reason as { message?: string; stack?: string } | undefined;
+    push({ kind: 'unhandledrejection', message: r?.message ?? String(ev.reason), stack: r?.stack, at: new Date().toISOString() });
+  });
+}
+
 /** 秘密になりうるキー名。値を伏字にする (構造は残す)。 */
 const SECRET_KEY = /(^d$)|token|secret|password|refresh|access|dpop|jwk|_jwt|privatekey|nonce|(^code$)/i;
 
@@ -85,6 +104,8 @@ export async function collectOAuthState(): Promise<Record<string, unknown>> {
   return {
     capturedAt: new Date().toISOString(),
     href: location.href,
+    userAgent: navigator.userAgent,
+    capturedErrors: errorLog.slice(),
     databases: dbNames?.map((d) => d.name),
     locks: {
       held: locks?.held?.map((l) => ({ name: l.name, mode: l.mode, clientId: l.clientId })),
@@ -95,8 +116,8 @@ export async function collectOAuthState(): Promise<Record<string, unknown>> {
   };
 }
 
-/** dev 専用: 収集 → コンソール出力 + JSON ダウンロード。固まっていてもコンソールから叩ける。 */
-async function dumpOAuthState(): Promise<Record<string, unknown>> {
+/** dev 専用: 収集 → コンソール出力 + JSON ダウンロード。固まっていてもボタン/コンソールから叩ける。 */
+export async function dumpOAuthState(): Promise<Record<string, unknown>> {
   const state = await collectOAuthState();
   console.warn('[oauth-debug] state dump (tokens redacted)', state);
   try {
@@ -113,10 +134,15 @@ async function dumpOAuthState(): Promise<Record<string, unknown>> {
   return state;
 }
 
-/** dev / dev 環境 / ローカルのみ `window.__aozoraDumpOAuth()` を生やす (本番では何もしない)。 */
+/** dev 環境か (この debug 機能を出す条件)。 */
+export const oauthDebugEnabled =
+  import.meta.env.DEV || (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim() === 'dev';
+
+/** dev / dev 環境 / ローカルのみ: 未捕捉エラー捕捉を仕込み、`window.__aozoraDumpOAuth()` を生やす
+ *  (本番では何もしない)。エラー捕捉は session 復元より前に効かせたいので import 直後に呼ぶ。 */
 export function installOAuthDebug(): void {
-  const enabled = import.meta.env.DEV || (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim() === 'dev';
-  if (!enabled || typeof window === 'undefined') return;
+  if (!oauthDebugEnabled || typeof window === 'undefined') return;
+  installErrorCapture();
   (window as unknown as { __aozoraDumpOAuth?: () => Promise<unknown> }).__aozoraDumpOAuth = dumpOAuthState;
-  console.info('[oauth-debug] 固まったら DevTools コンソールで __aozoraDumpOAuth() を実行するとOAuth状態(伏字)をJSON保存できます');
+  console.info('[oauth-debug] 固まったら「準備しています」画面の診断ボタン (または __aozoraDumpOAuth()) でOAuth状態(伏字)をJSON保存できます');
 }
