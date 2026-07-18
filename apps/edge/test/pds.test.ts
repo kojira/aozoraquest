@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createSession, getRecord, putRecord, PdsError, type PdsSession } from '../src/pds';
+import { createSession, getRecord, putRecord, deleteRecord, PdsError, type PdsSession } from '../src/pds';
 
 /** fetch をモックして、送られたリクエストを記録しつつ用意した応答を返す。 */
 function mockFetch(handler: (url: string, init: RequestInit) => { status: number; body: unknown }) {
@@ -85,6 +85,31 @@ describe('PDS クライアント (fetch ベース XRPC)', () => {
     globalThis.fetch = m.fn;
     try {
       await expect(putRecord(session, 'c', 'rk', { a: 1 }, 'STALE')).rejects.toMatchObject({ xrpcError: 'InvalidSwap' });
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it('deleteRecord は repo=session.did + auth + swapRecord を統一 xrpc 経由で送る', async () => {
+    const orig = globalThis.fetch;
+    const m = mockFetch(() => ({ status: 200, body: {} }));
+    globalThis.fetch = m.fn;
+    try {
+      await deleteRecord(session, 'app.aozoraquest.battleGuard', 'rk', 'CID9');
+      expect(m.calls[0]!.url).toBe(`${PDS}/xrpc/com.atproto.repo.deleteRecord`);
+      expect((m.calls[0]!.init.headers as Record<string, string>).authorization).toBe('Bearer ACCESS');
+      expect(JSON.parse(m.calls[0]!.init.body as string)).toEqual({ repo: 'did:plc:server', collection: 'app.aozoraquest.battleGuard', rkey: 'rk', swapRecord: 'CID9' });
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it('deleteRecord の CAS 競合も PdsError.xrpcError=InvalidSwap で判別できる (統一ハンドラ)', async () => {
+    const orig = globalThis.fetch;
+    const m = mockFetch(() => ({ status: 400, body: { error: 'InvalidSwap', message: 'CID mismatch' } }));
+    globalThis.fetch = m.fn;
+    try {
+      await expect(deleteRecord(session, 'c', 'rk', 'STALE')).rejects.toMatchObject({ xrpcError: 'InvalidSwap' });
     } finally {
       globalThis.fetch = orig;
     }

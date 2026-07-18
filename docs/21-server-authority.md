@@ -88,16 +88,18 @@ snapshot のみ使い、commands 以外を戦闘計算に通さない。
 **毎ターン送信** (先読み・握りつぶし・やり直しを封じる):
 ```
 [1] POST /api/battle/encounter (JWT lxm=encounter, {x,y})
-    Worker: 権威 state 読取 → 遭遇判定 → playerSnapshot 封印 → rewarded=(power>=1) 確定+予約
-        → バトルガードを作成 (gameState 内 or 専用レコード: {battleId, turn:0, sealed})
-        → 初期 state を返す
-    ← {battleId, monster, 初期state(HP/MP), rewarded}
+    Worker: 権威 state 読取 → (x,y) から terrain/tier を core で導出 → 遭遇判定
+        → playerSnapshot 封印 (内部 seed も封印) → rewarded=(power>=1) 確定+予約
+        → 専用レコード battleGuard を作成 {battleId, turn:0, sealed, pendingTurnSeed}
+        → 初期 state を返す (seed は除去)
+    ← {battleId, monster, 初期state(HP/MP・seed なし), rewarded}
 
 [2] 各ターン: POST /api/battle/turn (JWT lxm=turn, {battleId, turn, command})
-    Worker: バトルガードの turn と一致を確認 (不一致=リプレイ/やり直し → 409)
-        → kuda から物理乱数を引く → resolveTurn(封印state, command, 乱数) を実行
-        → バトルガードを turn+1 に CAS 更新 (やり直し不可を確定) → 新 state/events を返す
-    ← {state, events, outcome}
+    Worker: バトルガードの battleId/turn 一致を確認 (不一致=リプレイ/やり直し → 409)
+        → 確定済み pendingTurnSeed で resolveTurn(封印state, command, turnSeed) を実行
+        → バトルガードを turn+1・解決後 state・次 pendingTurnSeed(entropyU32) に CAS 更新
+          (CAS 成否で応答をゲート。やり直し不可を確定) → 新 state/events を返す (seed なし)
+    ← {state(seed なし), events, outcome}
     決着なら Worker が報酬を権威 state に確定 (勝: XP+ドロップ / 負: xpLose+素材ロス、
     rewarded のみ・パワー1消費)。練習は付与も消費もペナルティも無し・記録なし。ガード削除。
 ```
@@ -112,9 +114,24 @@ snapshot のみ使い、commands 以外を戦闘計算に通さない。
   放置容認) は §9 の判断ポイント。
 - **並行/二重**: turn/決着は battleId+turn 一致 + swapRecord CAS で二重報酬を防ぐ。
 
-**resolveTurn への乱数注入**: 現 `core` は seed から `turnRng` を作る。**Worker が引いた物理乱数を
-毎ターン注入できるよう core に薄い口を足す** (seed 方式と両立。試練/テストは従来の seed で不変)。
-レイテンシ (PDS 読書 + kuda + 往復) は DQ メッセージ送りで隠す。
+**★★★ seed をクライアントに一切返さない (M3-part1 レビューで確定)**: `core` の
+`rollDrops` / `rollDefeatLoss` / `summonMonster` は**戦闘 seed から決定的**に導出され、その salt は
+クライアントバンドル (`packages/core`) にコンパイル済みで含まれる。したがって seed を client に返すと、
+クライアントは戦闘を確定する前にドロップ・敗北ロス・敵ステ (分散込み) を**先読み**でき、「良い seed の
+戦闘だけ確定し、悪ければ離脱」という選別チートが成立する (これは踏み倒し ★★ も悪化させる)。対策:
+1. **client 向け DTO から `state.seed` を除去**。seed はバトルガードの `sealed` (Worker 内) にのみ持つ。
+   client には `monster` / HP・MP / events / outcome だけ返す。
+2. **報酬 (ドロップ・敗北ロス) も「サーバーが独立に引いたエントロピー」で導出**する。戦闘 seed を
+   `rollDrops`/`rollDefeatLoss` に再利用しない (これらは既に seed 引数を取るので、Worker が別に引いた
+   32bit を渡すだけでよく、core の署名変更は不要)。ターン戦闘・召喚・ドロップ・敗北ロスで**別々の**
+   新鮮なエントロピーを使えば、可視の敵ステから召喚 seed を逆算されても他は漏れない。
+
+**resolveTurn への乱数注入 (M3-part1 で実装済み)**: 現 `core` は seed から `turnRng` を作る。Worker が
+毎ターン引いた新鮮なエントロピーを注入できるよう `resolveTurn(prev, command, turnSeed?)` の薄い口を
+足した (seed 方式と両立。省略時は従来 `turnRng` = 試練/テストは不変)。**turnSeed は 32bit の新鮮な
+エントロピーであること (8bit では 256 通りに縮退し総当たりで先読みされる ★★)**。`entropyU32()` を使う。
+バトルガードは次ターン分の `pendingTurnSeed` を CAS 確定時に事前採番して封じ、リトライ冪等かつ
+commands 送信前に client が次乱数を知り得ないようにする。レイテンシは DQ メッセージ送りで隠す。
 
 ## 6. XP は本番と共有 (オーナー決定 A: XP も権威化)
 `analysis/self` の XP/Lv は本番カード表示でも使う。A を採る:
