@@ -7,6 +7,7 @@ import {
   JOB_SKILL_NAMES,
   playerCombatant,
   summonMonster,
+  favoredMonsterFor,
   pickTrialTier,
   startBattle,
   resolveTurn,
@@ -149,6 +150,29 @@ describe('summonMonster', () => {
       expect(MONSTERS.filter((m) => m.tier === tier)).toHaveLength(3);
     }
   });
+  it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
+    // tier3 pool = [raven, oni, dragon]。affinity%3==0 は raven を favor
+    const count = (affinity: number | undefined) => {
+      let raven = 0;
+      for (let seed = 0; seed < 600; seed++) {
+        if (summonMonster(3, 15, seed, 1, affinity).def.id === 'night-raven') raven++;
+      }
+      return raven;
+    };
+    const uniform = count(undefined);
+    const ravenFavored = count(0); // 0 % 3 = 0 = raven
+    expect(ravenFavored).toBeGreaterThan(uniform);
+    // どの affinity でも必ず実在モンスターを favor (死に相性が無い)
+    for (let a = 0; a < 3; a++) {
+      expect(favoredMonsterFor(3, a).tier).toBe(3);
+    }
+  });
+
+  it('affinity 未指定は従来どおり一様抽選 (後方互換)', () => {
+    // 決定的: 同 seed で affinity 有無に関わらず、未指定は旧挙動と一致
+    expect(summonMonster(2, 10, 42).def.id).toBe(summonMonster(2, 10, 42, 1).def.id);
+  });
+
   it('モンスターのドロップ素材は全部 ITEMS に定義がある', () => {
     for (const m of MONSTERS) {
       for (const d of m.drops) expect(ITEMS[d.item]).toBeDefined();

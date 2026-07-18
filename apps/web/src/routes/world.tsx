@@ -11,10 +11,12 @@ import {
   townShopStock,
   type EquipmentDef,
   encounterRateFor,
+  favoredMonsterFor,
   isWalkable,
   jobLevelFromXp,
   playerCombatant,
   playerLevelFromXp,
+  regionAffinity,
   regionDanger,
   regionOf,
   regionsAround,
@@ -453,6 +455,8 @@ export function World() {
             tonics,
             ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}),
             ...(resolvedGearRef.current ? { gear: resolvedGearRef.current.selection } : {}),
+            // 地域の相性: その地方で出やすいモンスターの型を偏らせる (顔ぶれ・素材が変わる)
+            affinity: regionAffinity(regionOf(nx, ny)),
           },
         );
         // 敗北ペナルティの素材ロスを開戦時に確定 (seed から決定的)。持ち込み分の
@@ -982,6 +986,8 @@ export function World() {
   const town = townAt(ws.x, ws.y);
   const here = terrainAt(ws.x, ws.y);
   const danger = regionDanger(regionOf(ws.x, ws.y));
+  // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
+  const favoredMonsterName = favoredMonsterFor(tierForDanger(danger), regionAffinity(regionOf(ws.x, ws.y))).name;
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
   // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
@@ -1076,7 +1082,7 @@ export function World() {
               maxHp={combat.maxHp}
               mp={curMp}
               maxMp={combat.maxMp}
-              locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? ' / 深い森…' : ''}`}
+              locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}が多い`}
             />
           )}
           {menuHint && !onboarding && !menuOpen && (
