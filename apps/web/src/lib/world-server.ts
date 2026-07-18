@@ -13,6 +13,7 @@ const EDGE_DID = (import.meta.env.VITE_EDGE_DID as string | undefined)?.trim();
 
 const LXM_MOVE = 'app.aozoraquest.world.move';
 const LXM_TURN = 'app.aozoraquest.battle.turn';
+const LXM_STATE = 'app.aozoraquest.me.state';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -59,7 +60,10 @@ async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknow
 export interface ServerMonster { name: string; maxHp: number; hp: number; maxMp: number; mp: number; [k: string]: unknown }
 export interface ServerBattleState { player: ServerMonster; monster: ServerMonster; monsterId: string; outcome: string; turn: number; lastEvents: { actor: string; text: string }[]; [k: string]: unknown }
 export interface ServerEncounter { battleId: string; monsterId: string; state: ServerBattleState; rewarded: boolean }
-export interface ServerMoveResult { x: number; y: number; terrain: string; encounter?: ServerEncounter }
+export interface ServerMoveResult { x: number; y: number; terrain: string; healed?: boolean; encounter?: ServerEncounter }
+/** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
+export interface ServerStateResult { state: ServerGameState; initialized: boolean }
 export interface ServerAward { xp?: number; drops?: string[]; materialsLost?: string[]; powerSpent?: number }
 export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward }
 
@@ -71,4 +75,14 @@ export function serverMove(agent: Agent, dx: number, dy: number): Promise<Server
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
 export function serverTurn(agent: Agent, battleId: string, turn: number, command: string): Promise<ServerTurnResult> {
   return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command });
+}
+
+/** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */
+export async function serverState(agent: Agent): Promise<ServerStateResult> {
+  if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
+  const token = await serviceToken(agent, LXM_STATE);
+  const res = await fetch(`${EDGE_URL}/api/me/state`, { headers: { authorization: `Bearer ${token}` } });
+  const data = (await res.json().catch(() => ({}))) as ServerStateResult & { error?: string };
+  if (!res.ok) throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
+  return data;
 }

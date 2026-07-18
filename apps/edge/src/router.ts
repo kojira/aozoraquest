@@ -10,8 +10,8 @@
  *   /api/battle/* /api/xp/* /api/me/state (M2〜)。依頼クエスト集約 (docs/15) も。
  */
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
-import { getRecord, PdsError } from './pds';
-import { GAME_STATE_COLLECTION, rkeyForDid, emptyState } from './game-state';
+import { PdsError } from './pds';
+import { readState, emptyState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { handleMove, handleTurn, ResolverError } from './battle-resolver';
 import { ServerWriteError } from './server-pds';
@@ -100,10 +100,13 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    if (!env.SERVER_PDS_URL || !env.SERVER_DID) return cors(json({ error: 'server_not_configured' }, 503), allowedOrigin);
-    const rec = await getRecord(env.SERVER_PDS_URL, env.SERVER_DID, GAME_STATE_COLLECTION, rkeyForDid(did));
-    // 未作成なら初期値を返す (実 state 化は初回の書込み = M3 で。移行はそこでクランプ)
-    return cors(json({ state: rec?.value ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
+    // 読み書きとも repo はトークン由来 (readState)。未 bootstrap は 503 fail-closed。
+    try {
+      const rec = await readState(env, did);
+      return cors(json({ state: rec?.state ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
   }
 
   // ── サーバー権威 ワールド/戦闘 (docs/21 §5) ── 移動も攻撃も毎回 Worker が処理 = チート不可 ──

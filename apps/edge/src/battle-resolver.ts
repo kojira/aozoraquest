@@ -103,6 +103,8 @@ export interface MoveResult {
   x: number;
   y: number;
   terrain: string;
+  /** 街に入って全回復した (HP/MP が権威なのでサーバーが回復)。 */
+  healed?: boolean;
   /** サーバーが遭遇を判定した場合のみ。 */
   encounter?: EncounterInfo;
 }
@@ -122,12 +124,16 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   }
 
   // 権威位置を CAS 更新。移動先の歩行可否は mutate 内で検証 (CAS リトライで再検証される)。
-  const committed = { x: 0, y: 0 };
+  // 街に入ったら HP/MP を全回復 (carry を消す = 次戦全快。HP が権威なのでサーバーが行う)。
+  const committed = { x: 0, y: 0, healed: false };
   const moved = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
     const tx = cur.x + dx, ty = cur.y + dy;
-    if (!isWalkable(terrainAt(tx, ty))) throw new ResolverError('進めない地形', 400);
-    committed.x = tx; committed.y = ty;
-    return { ...cur, x: tx, y: ty };
+    const t = terrainAt(tx, ty);
+    if (!isWalkable(t)) throw new ResolverError('進めない地形', 400);
+    committed.x = tx; committed.y = ty; committed.healed = t === 'town';
+    const next: GameState = { ...cur, x: tx, y: ty };
+    if (t === 'town') { next.carryHp = undefined; next.carryMp = undefined; }
+    return next;
   }, { now });
 
   const terrain = terrainAt(committed.x, committed.y);
@@ -138,7 +144,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
       return { x: committed.x, y: committed.y, terrain, encounter };
     }
   }
-  return { x: committed.x, y: committed.y, terrain };
+  return { x: committed.x, y: committed.y, terrain, healed: committed.healed || undefined };
 }
 
 export interface TurnResult {
