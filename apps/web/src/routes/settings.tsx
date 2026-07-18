@@ -631,7 +631,7 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>管理者</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        ゲームの権威データを書き込むサーバーアカウントの連携。初回のみ実行します。
+        ゲームの権威データを書き込むサーバーアカウントの連携。
       </p>
       <button onClick={onLink} disabled={busy}>
         {busy ? '連携中…' : 'サーバーアカウントと連携'}

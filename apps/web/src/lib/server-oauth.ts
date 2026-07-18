@@ -25,7 +25,8 @@ export async function startServerOAuth(agent: Agent): Promise<void> {
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    throw new Error(`連携開始に失敗しました (${res.status}): ${body.error ?? ''} ${body.message ?? ''}`.trim());
+    const detail = [body.error, body.message].filter(Boolean).join(' ').trim();
+    throw new Error(`連携開始に失敗しました (${res.status})${detail ? `: ${detail}` : ''}`);
   }
   const { authorizeUrl } = (await res.json()) as { authorizeUrl: string };
   if (!authorizeUrl) throw new Error('authorizeUrl が返りませんでした');
