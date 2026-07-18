@@ -47,7 +47,7 @@ export function decodeMultikey(multibase: string): SigningKey {
   throw new ServiceAuthError(`未対応の multicodec prefix: ${bytes[0]?.toString(16)} ${bytes[1]?.toString(16)}`);
 }
 
-interface DidDocument {
+export interface DidDocument {
   id: string;
   verificationMethod?: { id: string; type: string; controller?: string; publicKeyMultibase?: string }[];
 }

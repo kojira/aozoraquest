@@ -12,17 +12,18 @@
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { getRecord } from './pds';
 import { GAME_STATE_COLLECTION, rkeyForDid, emptyState } from './game-state';
+import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 
-export interface Env {
+/** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
+export interface Env extends OAuthRoutesEnv {
   ENVIRONMENT?: string;
   /** カンマ区切り。空 or 未設定なら CORS 全許可 (dev 用)。production では必ず設定する */
   ALLOWED_ORIGINS?: string;
-  /** この Worker の DID (service auth JWT の aud)。既定 did:web:edge.aozoraquest.app */
-  WORKER_DID?: string;
-  /** 権威 state を置く app サーバーアカウントの PDS URL と DID (public read 用、非 secret)。 */
+  /** 権威 state を置く app サーバーアカウントの PDS URL (public read 用、非 secret)。SERVER_DID は継承。 */
   SERVER_PDS_URL?: string;
-  SERVER_DID?: string;
 }
+
+const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 /** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
 const LXM_WHOAMI = 'app.aozoraquest.whoami';
@@ -98,6 +99,20 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const rec = await getRecord(env.SERVER_PDS_URL, env.SERVER_DID, GAME_STATE_COLLECTION, rkeyForDid(did));
     // 未作成なら初期値を返す (実 state 化は初回の書込み = M3 で。移行はそこでクランプ)
     return cors(json({ state: rec?.value ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
+  }
+
+  // ── OAuth write 認証 (docs/21 §12) ──
+  // confidential client メタデータ (公開)。
+  if (req.method === 'GET' && url.pathname === '/client-metadata.json') {
+    return cors(handleClientMetadata(env), allowedOrigin);
+  }
+  // 管理者が OAuth 連携を開始 (service auth JWT + ADMIN_DIDS)。authorizeUrl を返す。
+  if (req.method === 'POST' && url.pathname === '/api/oauth/start') {
+    return cors(await handleOAuthStart(req, env, { now: nowSec() }), allowedOrigin);
+  }
+  // 認可サーバーからのリダイレクト先。ブラウザ遷移なので HTML を直接返す (CORS 不要)。
+  if (req.method === 'GET' && url.pathname === '/oauth/callback') {
+    return handleOAuthCallback(req, env, { now: nowSec() });
   }
 
   return cors(json({ error: 'not_found', path: url.pathname }, 404), allowedOrigin);
