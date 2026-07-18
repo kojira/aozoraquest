@@ -393,7 +393,7 @@ export async function loadRuntimeConfig() {
 {
   "name": "aozoraquest",
   "private": true,
-  "packageManager": "pnpm@9",
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
@@ -612,7 +612,7 @@ MVP は日本語のみ。将来の i18n 対応のため:
 ## 開発環境の推奨
 
 - Node.js 22+
-- pnpm 9+
+- pnpm 10.16+ (サプライチェーン cooldown `minimumReleaseAge` を使う。packageManager で固定)
 - Chrome Canary (WebGPU のデバッグが最良)
 - Firefox (WebGPU 互換性確認)
 - VS Code + Biome / ESLint / Tailwind IntelliSense
