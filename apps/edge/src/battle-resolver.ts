@@ -12,7 +12,7 @@
  */
 import {
   startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp,
-  terrainAt, isWalkable, regionOf, regionDanger, tierForDanger, BATTLE_TUNING,
+  terrainAt, isWalkable, regionOf, regionDanger, tierForDanger, encounterRateFor, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
@@ -64,7 +64,11 @@ async function readDiagnosis(userDid: string, fetchImpl?: typeof fetch): Promise
   return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats) };
 }
 
-export interface EncounterResult {
+/** バトルガードの寿命 (秒)。各ターンで更新。切れたガードは move 時に flush = クラッシュしても
+ *  永久ロックアウトしない (docs/21 §5 lazy 敗北)。 */
+export const GUARD_TTL_SEC = 900;
+
+export interface EncounterInfo {
   battleId: string;
   monsterId: string;
   /** seed を除いた戦闘 state (HP/MP・monster・events 等)。 */
@@ -72,44 +76,69 @@ export interface EncounterResult {
   rewarded: boolean;
 }
 
-/**
- * encounter: (x,y) で遭遇を成立させ、サーバーが snapshot を封印してバトルを開始する。
- * クライアントは監視 (どのモンスター・初期 HP/MP) しか受け取らない。1 ユーザー 1 戦闘。
- */
-export async function handleEncounter(env: ResolverEnv, userDid: string, x: number, y: number, now: number, fetchImpl?: typeof fetch): Promise<EncounterResult> {
-  const terrain = terrainAt(x, y);
-  if (!isWalkable(terrain) || terrain === 'town') throw new ResolverError('その地形では遭遇しない', 400);
-
-  // 既存ガードがあれば二重戦闘不可 (createGuard の swap=null が弾くが、明示的に 409)。
-  if (await readGuard<SealedMeta, BattleState>(env, userDid)) throw new ResolverError('既に戦闘中', 409);
-
-  const existing = await readState(env, userDid);
-  const state = existing?.state ?? emptyState(userDid, new Date(now * 1000).toISOString());
+/** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
+ *  move からのみ呼ばれる (client から直接遭遇を起こせない = 座標/遭遇を偽造不可)。export はテスト用。 */
+export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, now: number, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
   const { archetype, baseStats } = await readDiagnosis(userDid, fetchImpl);
-
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   const seed = (await entropyU32()).value; // 召喚/敵ステ用 (client には返さない)
   const jobLevel = jobLevelFromXp(state.jobXp[archetype] ?? 0);
   const playerLevel = playerLevelFromXp(state.playerXp);
-
   const battle = startBattle(archetype, jobLevel, playerLevel, userDid, tier, seed, state.herbs ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
-    baseStats,
-    equipIds: state.gear,
-    tonics: state.tonics ?? 0,
-    vitalsVariance: BATTLE_TUNING.monsterVitalsVariance ?? 0.15,
+    baseStats, equipIds: state.gear, tonics: state.tonics ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
-
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32()).value;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
   const guard: Guard = {
     did: userDid, battleId, turn: 0, sealed: { archetype, tier }, state: battle, pendingTurnSeed, rewarded,
-    expiresAt: new Date((now + 3600) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
+    expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
   await createGuard(env, now, guard); // 既存があれば InvalidSwap → 上位で 409
-
   return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
+}
+
+export interface MoveResult {
+  x: number;
+  y: number;
+  terrain: string;
+  /** サーバーが遭遇を判定した場合のみ。 */
+  encounter?: EncounterInfo;
+}
+
+/**
+ * move: **位置を Worker が権威更新し、遭遇もサーバーが判定する**。クライアントは方向 (隣接1マス) しか
+ * 送れず、座標も遭遇有無も tier も偽造できない (§5 のアンチチート核: 移動を毎回 Worker で処理)。
+ */
+export async function handleMove(env: ResolverEnv, userDid: string, dx: number, dy: number, now: number, fetchImpl?: typeof fetch): Promise<MoveResult> {
+  if (![-1, 0, 1].includes(dx) || ![-1, 0, 1].includes(dy) || (dx === 0 && dy === 0)) throw new ResolverError('不正な移動 (隣接1マスのみ)', 400);
+
+  // 未決着ガード: 期限内なら移動不可 (戦闘中)、期限切れは flush して先へ (クラッシュ復帰・ロックアウト回避)。
+  const g = await readGuard<SealedMeta, BattleState>(env, userDid);
+  if (g) {
+    if (now * 1000 < Date.parse(g.guard.expiresAt)) throw new ResolverError('戦闘中は移動不可', 409);
+    await deleteGuard(env, now, userDid, g.cid); // 期限切れ = lazy flush (踏み倒し容認 §5)
+  }
+
+  // 権威位置を CAS 更新。移動先の歩行可否は mutate 内で検証 (CAS リトライで再検証される)。
+  const committed = { x: 0, y: 0 };
+  const moved = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
+    const tx = cur.x + dx, ty = cur.y + dy;
+    if (!isWalkable(terrainAt(tx, ty))) throw new ResolverError('進めない地形', 400);
+    committed.x = tx; committed.y = ty;
+    return { ...cur, x: tx, y: ty };
+  }, { now });
+
+  const terrain = terrainAt(committed.x, committed.y);
+  if (terrain !== 'town') {
+    const roll = (await entropyU32()).value / 0x1_0000_0000; // [0,1)
+    if (roll < encounterRateFor(terrain)) {
+      const encounter = await sealEncounter(env, userDid, moved, committed.x, committed.y, now, fetchImpl);
+      return { x: committed.x, y: committed.y, terrain, encounter };
+    }
+  }
+  return { x: committed.x, y: committed.y, terrain };
 }
 
 export interface TurnResult {
@@ -134,13 +163,22 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   const next = resolveTurn(guard.state, command, guard.pendingTurnSeed);
 
   if (next.outcome !== 'ongoing') {
-    // ── 決着: 報酬を権威 state に fail-closed で確定 ──
+    // ── 決着: **まずガードを CAS 削除して「この決着ターンは自分が消費」を確定** ──
+    // これで並行/リプレイの重複リクエストは InvalidSwap → 409 になり、報酬確定に到達できるのは
+    // ガードを消せた 1 リクエストだけ = **二重報酬を防ぐ** (applyBattleOutcome は加算なので必須。§4.1c 冪等)。
+    // token 切れで delete が失敗 → ServerWriteError が伝播し上位で 503 (報酬なし・guard 残る=リトライ可、
+    // fail-closed)。この順序 (消費確定 → 報酬) が §4.1 の「CAS で先に確定 → その後 resolve/確定」。
     const decision = next.outcome as BattleDecision;
+    try {
+      await deleteGuard(env, now, userDid, cid);
+    } catch (e) {
+      if (e instanceof PdsError && e.xrpcError === 'InvalidSwap') throw new ResolverError('決着競合 (二重確定防止)', 409);
+      throw e; // ServerWriteError(token 切れ) 等 → 上位で 503 (報酬なし)
+    }
+    // ここに来られるのはガードを消せた 1 リクエストだけ → 報酬を fail-closed で確定。
     const rewardSeed = (await entropyU32()).value;
     const lossSeed = (await entropyU32()).value;
     let awarded: AwardBreakdown = {};
-    // readModifyWrite がトークン切れ等で throw したら報酬は付かず、ガードも消さない (リトライ可)。
-    // = クライアント権威へのフォールバックは存在しない。mutate は決定的なので awarded の取り込みは安全。
     await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       const r = applyBattleOutcome(cur, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
@@ -156,14 +194,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         tonics: next.tonics,
       };
     }, { now });
-    // 報酬確定後にガード削除 (ここで失敗しても報酬は確定済 = 二重報酬なし。次 encounter が flush)。
-    try { await deleteGuard(env, now, userDid, cid); } catch { /* CAS 不一致は無視 (別リクエストが消した) */ }
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded };
   }
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──
+  // expiresAt も更新し、長い戦闘が move の flush 対象にならないようにする (ターンごとに寿命を延ばす)。
   const nextPending = (await entropyU32()).value;
-  const advanced: Guard = { ...guard, turn: turn + 1, state: next, pendingTurnSeed: nextPending, updatedAt: new Date(now * 1000).toISOString() };
+  const nowIso = new Date(now * 1000).toISOString();
+  const advanced: Guard = { ...guard, turn: turn + 1, state: next, pendingTurnSeed: nextPending, expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), updatedAt: nowIso };
   try {
     await advanceGuard(env, now, advanced, cid);
   } catch (e) {
