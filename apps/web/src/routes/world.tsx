@@ -46,7 +46,7 @@ import { GearModal } from '@/components/gear-modal';
 import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
-import { BattleScene, BattleCommands } from '@/components/battle-view';
+import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { BattleResultPanel, type WorldBattleResult } from '@/components/world-battle-result';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
@@ -185,6 +185,8 @@ export function World() {
   const [battle, setBattle] = useState<{
     state: BattleState;
     busy: boolean;
+    /** DQ 風の交互表示。message = メッセージ窓 (コマンド非表示) / input = コマンド入力 */
+    phase: BattlePhase;
     rkey: string;
     tier: 1 | 2 | 3;
     /** 敗北した場合に落とす素材 (開戦時に seed から確定済み) */
@@ -473,7 +475,8 @@ export function World() {
         const materialsLost = rollDefeatLoss(lossPool, state.player.luk, seed);
         // 遭遇成立: ワイプ演出でマップを覆いながら支払いを進める (busy = コマンド不可)。
         // battleRef は即時更新して長押し連打の次 tick が移動 + 二重遭遇しないようにする。
-        const pending = { state, busy: true, rkey: '', tier, materialsLost };
+        // 開幕は「あらわれた！」メッセージから (DQ 風)。支払い中は busy でタップ送りを止める。
+        const pending = { state, busy: true, phase: 'message' as BattlePhase, rkey: '', tier, materialsLost };
         battleRef.current = pending;
         setBattle(pending);
         setWipe('cover');
@@ -508,21 +511,38 @@ export function World() {
   );
 
   // 戦闘コマンド (戦闘解決はクライアント。W3/W4 でサーバー権威に置換)
+  // コマンド選択 → ターン解決 → メッセージ窓へ (コマンドを消す)。決着処理はタップ送り
+  // (onMessageAdvance) 側で行う (DQ 風: 「〜のダメージ！」を読んでから結果に進む)。
   const onBattleCommand = useCallback(
-    async (command: Command) => {
+    (command: Command) => {
       const b = battleRef.current;
-      if (!b || b.busy || !agent || !did) return;
+      if (!b || b.busy || b.phase !== 'input') return;
       const next = resolveTurn(b.state, command);
-      // battleRef も同期更新 (同一フレームの二重発火が busy=false を二重観測して
-      // レコード確定/XP が二重実行される穴を塞ぐ。move() と同じ流儀。レビュー指摘)
-      const acting = { ...b, state: next, busy: true };
+      // battleRef も同期更新 (同一フレームの二重発火防止。move() と同じ流儀)
+      const acting = { ...b, state: next, phase: 'message' as BattlePhase };
       battleRef.current = acting;
       setBattle(acting);
-      await new Promise((r) => setTimeout(r, 450));
-      if (next.outcome === 'ongoing') {
-        setBattle((cur) => (cur ? { ...cur, state: next, busy: false } : cur));
+    },
+    [],
+  );
+
+  // メッセージ窓のタップ送り。開幕/継戦は入力へ、決着は確定処理してリザルトへ。
+  const onMessageAdvance = useCallback(
+    async () => {
+      const b = battleRef.current;
+      if (!b || b.busy || b.phase !== 'message' || !agent || !did) return;
+      const next = b.state;
+      // 開幕メッセージ (turn 0) と継戦は入力フェーズへ戻すだけ
+      if (next.turn === 0 || next.outcome === 'ongoing') {
+        const back = { ...b, phase: 'input' as BattlePhase };
+        battleRef.current = back;
+        setBattle(back);
         return;
       }
+      // 決着: 以降は確定処理。二重発火を busy で塞ぐ (レコード確定/XP の二重実行防止)
+      const acting = { ...b, busy: true };
+      battleRef.current = acting;
+      setBattle(acting);
       // 決着: レコード確定 + XP + ドロップ (試練と同じ)。逃走は XP もドロップも無し。
       const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
       const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
@@ -1131,22 +1151,14 @@ export function World() {
               }}
             >
               {inBattle && battle ? (
-                <>
-                  {/* 上: 敵+ログ (余白を占有・上寄せ = あふれても敵の頭でなくログ側で
-                      逃がす)、下: 注意書き (1 ターン目だけ) + コマンド段。敵 HP/MP は
-                      見抜ける職業のみ (canSeeEnemyVitals)。 */}
-                  <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
-                    <BattleScene state={battle.state} monsterSize={72} compact showEnemyVitals={canSeeEnemyVitals(archetype)} />
-                  </div>
-                  {battle.state.turn === 0 && (
-                    <p style={{ margin: '0.2em 0', fontSize: '0.62em', lineHeight: 1.3, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-                      とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがある。
-                    </p>
-                  )}
-                  <div style={{ flex: '0 0 auto' }}>
-                    <BattleCommands state={battle.state} busy={battle.busy} onCommand={(c) => void onBattleCommand(c)} compact />
-                  </div>
-                </>
+                <WorldBattleControls
+                  state={battle.state}
+                  phase={battle.phase}
+                  busy={battle.busy}
+                  showEnemyVitals={canSeeEnemyVitals(archetype)}
+                  onCommand={onBattleCommand}
+                  onAdvance={() => void onMessageAdvance()}
+                />
               ) : battleResult ? (
                 <BattleResultPanel result={battleResult} onClose={() => setBattleResult(null)} />
               ) : null}

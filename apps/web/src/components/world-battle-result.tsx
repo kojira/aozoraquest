@@ -25,28 +25,27 @@ const TEXT_SHADOW = '0 1px 3px rgba(0,0,0,0.9)';
 export function BattleResultPanel({ result, onClose }: { result: WorldBattleResult; onClose: () => void }) {
   const { state, movedToTown, drops, xp, saveFailed } = result;
   const win = state.outcome === 'win';
-  const title =
-    state.outcome === 'win' ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ';
   return (
-    // どこをタップしてもマップへ戻る (ボタンは置かない)。将来パネル内に
-    // リンク等のインタラクティブ要素を足す場合は、その要素で e.stopPropagation()
-    // して誤って閉じないようにする (今は子に操作要素が無いので素通しで安全)。
+    // どこをタップしてもマップへ戻る (ボタン・戻る促しは置かない = 情報量を減らす)。
+    // 決着ログ (「〜をたおした！」) は直前のメッセージ窓で読ませ済みなので、ここは
+    // 報酬 (経験値・素材・レベルアップ) だけを出す。将来パネル内にリンク等を足す場合は
+    // その要素で e.stopPropagation() する (今は子に操作要素が無いので素通しで安全)。
     <div onClick={onClose} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, color: '#fff', cursor: 'pointer' }}>
-      {/* 上段: たおした敵 (勝利なら反転+半透明)。小さめにしてメッセージ枠を広く取る */}
+      {/* 上段: たおした敵 (勝利なら反転+半透明)。小さめにして報酬枠を広く取る */}
       <div style={{ textAlign: 'center', flex: '0 0 auto' }}>
         <div style={{ opacity: win ? 0.45 : 1, display: 'inline-block', transform: win ? 'rotate(180deg)' : 'none' }}>
           <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={60} />
         </div>
       </div>
 
-      {/* 中段: 勝敗 + 決着ログ + 報酬をメッセージ枠内に。行数が多ければ枠内スクロール */}
+      {/* 中段: 報酬をメッセージ枠内に。行数が多ければ枠内スクロール */}
       <div
         aria-live="polite"
         style={{
           flex: '1 1 auto',
           minHeight: 0,
           overflowY: 'auto',
-          margin: '0.4em 0 0.2em',
+          margin: '0.4em 0 0',
           padding: '0.5em 0.7em',
           border: '2px solid rgba(255,255,255,0.35)',
           borderRadius: 4,
@@ -60,10 +59,6 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
           textShadow: TEXT_SHADOW,
         }}
       >
-        <div style={{ fontWeight: 700 }}>{title}</div>
-        {state.lastEvents.map((e, i) => (
-          <div key={i}>{e.text}</div>
-        ))}
         {xp > 0 && <div>経験値 +{xp}</div>}
         {result.levelUps?.player && (
           <div style={{ color: '#7ee08f', fontWeight: 700 }}>レベルが {result.levelUps.player.to} に あがった!</div>
@@ -95,11 +90,6 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
           </div>
         )}
       </div>
-
-      {/* 下段: ボタンでなく小さなタップ促し (どこを押しても戻る) */}
-      <p style={{ flex: '0 0 auto', margin: 0, textAlign: 'center', fontSize: '0.68em', color: 'rgba(255,255,255,0.65)', textShadow: TEXT_SHADOW }}>
-        タップで マップへ もどる
-      </p>
     </div>
   );
 }
