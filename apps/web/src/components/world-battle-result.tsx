@@ -28,7 +28,9 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
   const title =
     state.outcome === 'win' ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ';
   return (
-    // どこをタップしてもマップへ戻る (ボタンは置かない)
+    // どこをタップしてもマップへ戻る (ボタンは置かない)。将来パネル内に
+    // リンク等のインタラクティブ要素を足す場合は、その要素で e.stopPropagation()
+    // して誤って閉じないようにする (今は子に操作要素が無いので素通しで安全)。
     <div onClick={onClose} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, color: '#fff', cursor: 'pointer' }}>
       {/* 上段: たおした敵 (勝利なら反転+半透明)。小さめにしてメッセージ枠を広く取る */}
       <div style={{ textAlign: 'center', flex: '0 0 auto' }}>

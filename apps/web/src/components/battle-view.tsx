@@ -213,29 +213,17 @@ export function BattleCommands({
   );
 }
 
-/** DQ 風コマンド窓の 1 行 (フラットな文字コマンド、左寄せ、タイト)。compact 専用。 */
+/** DQ 風コマンド窓の 1 行 (フラットな文字コマンド、左寄せ、タイト)。compact 専用。
+ *  見た目・押下フィードバック・disabled は `.dq-command` (styles.css) に集約
+ *  (インライン background だと button:active の押下色を詳細度で潰す — レビュー ★★★)。 */
 function DqCommand({ label, onClick, disabled, span2 = false }: { label: string; onClick: () => void; disabled: boolean; span2?: boolean }) {
   return (
     <button
       type="button"
+      className="dq-command"
       onClick={onClick}
       disabled={disabled}
-      style={{
-        gridColumn: span2 ? '1 / -1' : undefined,
-        background: 'transparent',
-        border: 'none',
-        color: '#fff',
-        textAlign: 'left',
-        padding: '0.3em 0.3em',
-        fontSize: '0.95em',
-        lineHeight: 1.2,
-        minHeight: '2.2em',
-        display: 'flex',
-        alignItems: 'center',
-        touchAction: 'manipulation',
-        opacity: disabled ? 0.38 : 1,
-        textShadow: '0 1px 2px rgba(0,0,0,0.9)',
-      }}
+      style={span2 ? { gridColumn: '1 / -1' } : undefined}
     >
       {label}
     </button>
