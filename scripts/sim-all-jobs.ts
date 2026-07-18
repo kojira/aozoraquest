@@ -10,10 +10,15 @@ const play = (job: Archetype, jobLv: number, plLv: number, tier: 1 | 2 | 3, seed
   const isParry = s.playerSkill.kind === 'parry';
   for (let i = 0; i < 80 && s.outcome === 'ongoing'; i++) {
     const p = s.player;
-    const cmd: Command = s.monster.charging ? (isParry && p.mp >= 4 ? 'skill' : 'guard')
-      : s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb'
-      : s.tonics > 0 && p.mp < 4 && p.maxMp - p.mp >= 6 ? 'tonic'
-      : !isParry && p.mp >= 4 ? 'skill' : 'attack';
+    // 見切りジョブは能動的に見切る (通常攻撃も反撃で捌く = 最適プレイ)。他は
+    // ため予告に防御 / HP 危険で薬草 / MP 足りれば特技。
+    const cmd: Command =
+      s.herbs > 0 && p.hp < p.maxHp * 0.4 ? 'herb'
+      : isParry && p.mp >= BATTLE_TUNING.skillMpCost ? 'skill'
+      : s.monster.charging ? 'guard'
+      : s.tonics > 0 && p.mp < BATTLE_TUNING.skillMpCost && p.maxMp - p.mp >= 6 ? 'tonic'
+      : !isParry && p.mp >= BATTLE_TUNING.skillMpCost ? 'skill'
+      : 'attack';
     s = resolveTurn(s, cmd);
   }
   return s.outcome;
