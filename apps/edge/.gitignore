@@ -1,0 +1,5 @@
+# OAuth private 鍵 (gen-oauth-keys.mjs が書き出す。絶対に commit しない)
+.oauth-keys/
+# ローカル secret
+.dev.vars
+.dev.vars.*
