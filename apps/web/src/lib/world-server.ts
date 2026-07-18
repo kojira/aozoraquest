@@ -25,6 +25,10 @@ export class WorldServerError extends Error {
   }
 }
 
+/** edge への 1 リクエストのタイムアウト (ms)。応答が返らずハングしても busy が永久固着しないよう、
+ *  必ず fail-closed で throw させる (通信断/無応答でも報酬は付かない・クライアント権威にフォールバックしない)。 */
+const EDGE_TIMEOUT_MS = 8000;
+
 /** service auth JWT を lxm ごとにキャッシュ (毎アクション PDS 往復を避ける。exp 30s 前まで再利用)。 */
 const tokenCache = new Map<string, { token: string; exp: number }>();
 
@@ -44,13 +48,22 @@ async function serviceToken(agent: Agent, lxm: string): Promise<string> {
 async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknown): Promise<T> {
   if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
   const token = await serviceToken(agent, lxm);
-  const res = await fetch(`${EDGE_URL}${path}`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${EDGE_URL}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EDGE_TIMEOUT_MS),
+    });
+  } catch (e) {
+    // タイムアウト/通信断 = fail-closed (報酬なし)。status 0 で catch 側が busy を必ず解除できるようにする。
+    const timedOut = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw new WorldServerError(timedOut ? 'サーバーが応答しません' : '通信に失敗しました', 0, timedOut ? 'timeout' : 'network');
+  }
   const data = (await res.json().catch(() => ({}))) as T & { error?: string; message?: string; reason?: string };
   if (!res.ok) {
+    if (res.status === 401) tokenCache.delete(lxm); // 失効トークンを捨てて次アクションで再取得 (401 ループ回避)
     throw new WorldServerError(data.message ?? data.reason ?? data.error ?? `edge ${res.status}`, res.status, data.error);
   }
   return data as T;
@@ -81,8 +94,17 @@ export function serverTurn(agent: Agent, battleId: string, turn: number, command
 export async function serverState(agent: Agent): Promise<ServerStateResult> {
   if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
   const token = await serviceToken(agent, LXM_STATE);
-  const res = await fetch(`${EDGE_URL}/api/me/state`, { headers: { authorization: `Bearer ${token}` } });
+  let res: Response;
+  try {
+    res = await fetch(`${EDGE_URL}/api/me/state`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
+  } catch (e) {
+    const timedOut = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw new WorldServerError(timedOut ? 'サーバーが応答しません' : '通信に失敗しました', 0, timedOut ? 'timeout' : 'network');
+  }
   const data = (await res.json().catch(() => ({}))) as ServerStateResult & { error?: string };
-  if (!res.ok) throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
+  if (!res.ok) {
+    if (res.status === 401) tokenCache.delete(LXM_STATE);
+    throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
+  }
   return data;
 }

@@ -76,15 +76,20 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
   }
 
   if (o.outcome === 'lose') {
+    // 負けでも僅かな XP (§5「負: xpLose+素材ロス」/ 旧クライアントと同値) + 素材ロス + パワー消費。
+    const xp = BATTLE_TUNING.xpLose;
     const materialsLost = rollDefeatLoss(state.materials, o.luk, o.lossSeed);
     const next: GameState = {
       ...state,
+      playerXp: state.playerXp + xp,
+      jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp },
       materials: addItems(state.materials, materialsLost, -1),
       power: Math.max(0, state.power - POWER_COST),
     };
-    return { next, awarded: { materialsLost, powerSpent: POWER_COST } };
+    return { next, awarded: { xp, materialsLost, powerSpent: POWER_COST } };
   }
 
-  // draw / fled は決着扱いにしない (パワーも消費しない)。
+  // draw / fled は決着扱いにしない (パワー消費なし)。旧クライアントは draw にも xpLose を出したが、
+  // パワー消費のない draw を報酬対象にすると「ガードで引き分けを狙う無限 XP 稼ぎ」が成立するため付与しない。
   return { next: state, awarded: {} };
 }

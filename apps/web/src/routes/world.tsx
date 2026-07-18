@@ -190,6 +190,9 @@ export function World() {
     awarded?: ServerAward;
     /** result フェーズで出す報酬行 (経験値・素材など) */
     resultLines?: readonly string[];
+    /** コマンド送信失敗 (503/409/通信断) をバトル画面内に表示する一行。notice は戦闘中は
+     *  描画されない (戦闘オーバーレイの外) ので、fail-closed のエラーはここに出す。 */
+    errorText?: string;
   } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
@@ -428,8 +431,11 @@ export function World() {
             setWipe('cover');
           }
         } catch (e) {
-          if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
+          // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
+          if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
+          else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
           else if (e instanceof WorldServerError && e.status === 400) setNotice('そっちには進めない!');
+          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。すこし まってから もう一度。');
           else { console.warn('[world] serverMove failed', e); setNotice('移動できなかった (通信エラー)。'); }
         } finally {
           moveBusyRef.current = false;
@@ -446,27 +452,30 @@ export function World() {
     (command: Command) => {
       const b = battleRef.current;
       if (!b || b.busy || b.phase !== 'input') return;
-      if (!agent) { setNotice('サーバーに接続できないため戦えない。'); return; }
-      const busy = { ...b, busy: true };
+      if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず 戦えない。' }); return; }
+      const { errorText: _clear, ...bClean } = b; // 再送時は前回エラーを消す (exactOptional のため省略で落とす)
+      const busy = { ...bClean, busy: true };
       battleRef.current = busy;
       setBattle(busy);
       void (async () => {
         try {
           const res = await serverTurn(agent, b.battleId, b.state.turn, command);
-          const acting = { ...b, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false, ...(res.awarded ? { awarded: res.awarded } : {}) };
+          const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false, ...(res.awarded ? { awarded: res.awarded } : {}) };
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
           // 失敗しても**クライアント側で報酬を付けない** (fail-closed。busy を戻して再送させる)。
+          // エラーは戦闘オーバーレイ内に出す (notice は戦闘中は描画されない = 無言失敗になる)。
           const cur = battleRef.current;
-          if (cur) {
-            const revert = { ...cur, busy: false };
-            battleRef.current = revert;
-            setBattle(revert);
-          }
-          if (e instanceof WorldServerError && e.status === 503) setNotice('サーバーに記録できなかった (報酬なし)。でんぱのよい ばしょで もう一度どうぞ。');
-          else if (e instanceof WorldServerError && e.status === 409) setNotice('ターンが ずれた。もう一度どうぞ。');
-          else { console.warn('[world] serverTurn failed', e); setNotice('こうげきを 送れなかった (通信エラー)。'); }
+          if (!cur) return;
+          let errorText = 'こうげきを 送れなかった (通信エラー)。もう一度どうぞ。';
+          if (e instanceof WorldServerError && e.status === 503) errorText = 'サーバーに記録できなかった (報酬なし)。でんぱのよい ばしょで もう一度どうぞ。';
+          else if (e instanceof WorldServerError && e.status === 409) errorText = 'ターンが ずれた。もう一度どうぞ。';
+          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) errorText = 'サーバーが応答しない。でんぱのよい ばしょで もう一度どうぞ。';
+          else console.warn('[world] serverTurn failed', e);
+          const revert = { ...cur, busy: false, errorText };
+          battleRef.current = revert;
+          setBattle(revert);
         }
       })();
     },
@@ -1041,6 +1050,12 @@ export function World() {
                 onCommand={onBattleCommand}
                 onAdvance={() => void onMessageAdvance()}
               />
+              {/* コマンド送信失敗 (fail-closed = 報酬なし) を戦闘画面内に表示。notice はここには出ない。 */}
+              {battle.errorText && (
+                <p aria-live="assertive" style={{ textAlign: 'center', fontSize: '0.8em', color: 'var(--color-danger, #ff6b6b)', margin: '0.4em 0 0' }}>
+                  {battle.errorText}
+                </p>
+              )}
             </div>
           )}
         </div>

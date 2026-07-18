@@ -11,9 +11,9 @@
  */
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
-import { readState, emptyState } from './game-state';
+import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { handleMove, handleTurn, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, migrateInitState, ResolverError } from './battle-resolver';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
 
@@ -101,9 +101,12 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
     // 読み書きとも repo はトークン由来 (readState)。未 bootstrap は 503 fail-closed。
+    // 未初期化 (レコード無し) は §6-4 移行値を read-only で返す (power=0/Lv1 で表示が割れないように。
+    // PDS へは書かない = 初回 move で確定)。initialized はレコード実在を表す。
     try {
       const rec = await readState(env, did);
-      return cors(json({ state: rec?.state ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
+      const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString()));
+      return cors(json({ state, initialized: rec !== null }), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -156,7 +159,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 /** 戦闘エラーを HTTP に振り分ける。**トークン切れ/未設定 (ServerWriteError) は 503 で fail-closed**
  *  (報酬は付かない・クライアント権威へのフォールバックは無い §3-6)。ResolverError はその status。 */
 function battleError(e: unknown): Response {
-  if (e instanceof ResolverError) return json({ error: 'battle_error', message: e.message }, e.status);
+  if (e instanceof ResolverError) return json({ error: e.code ?? 'battle_error', message: e.message }, e.status);
   if (e instanceof ServerWriteError) return json({ error: 'server_write_unavailable', reason: e.reason }, 503);
   // 失効/無効トークンで PDS が 401/403 を返した場合も **fail-closed 503** (報酬なし。500 で誤魔化さない)。
   if (e instanceof PdsError && (e.status === 401 || e.status === 403)) return json({ error: 'server_write_unavailable', reason: 'auth' }, 503);

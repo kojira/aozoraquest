@@ -64,6 +64,25 @@ describe('world-server (サーバー権威 API クライアント)', () => {
     expect(calls()).toBe(1); // 同一 lxm はキャッシュ再利用
   });
 
+  it('タイムアウト/通信断は WorldServerError(status 0, code timeout/network) で throw (fail-closed)', async () => {
+    const { serverMove, WorldServerError } = await import('../world-server');
+    const { agent } = mockAgent(Date.now() / 1000 + 300);
+    globalThis.fetch = (async () => { throw new DOMException('timed out', 'TimeoutError'); }) as unknown as typeof fetch;
+    const err = await serverMove(agent, 1, 0).catch((e) => e);
+    expect(err).toBeInstanceOf(WorldServerError);
+    expect(err.status).toBe(0);
+    expect(err.code).toBe('timeout');
+  });
+
+  it('401 応答は該当 lxm のトークンキャッシュを捨てて次回再取得する (401 ループ回避)', async () => {
+    const { serverMove } = await import('../world-server');
+    const { agent, calls } = mockAgent(Date.now() / 1000 + 300);
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })) as unknown as typeof fetch;
+    await serverMove(agent, 1, 0).catch(() => {});
+    await serverMove(agent, 0, 1).catch(() => {});
+    expect(calls()).toBe(2); // 401 で evict → 2 回目も getServiceAuth し直す (キャッシュなら 1)
+  });
+
   it('worldServerEnabled は env 有無で決まる', async () => {
     const mod = await import('../world-server');
     expect(mod.worldServerEnabled).toBe(true);

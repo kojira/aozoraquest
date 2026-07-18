@@ -189,7 +189,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
       { playerLevel: { xp: 9_999_999 }, jobLevel: { archetype: 'mage', xp: 9_999_999 } },
     );
     const s2 = await migrateInitState(USER, '');
-    expect(s2.power).toBe(1000); // MAX_MIGRATE_POWER
+    expect(s2.power).toBe(100_000); // MAX_MIGRATE_POWER
     expect(s2.playerXp).toBe(500_000); // MAX_MIGRATE_PLAYER_XP
     expect(s2.jobXp).toEqual({ mage: 50_000 }); // MAX_MIGRATE_JOB_XP
 
