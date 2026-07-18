@@ -1,27 +1,26 @@
 /**
- * 依頼クエスト集約 Worker のリクエストハンドラ。
+ * aozoraquest edge Worker のリクエストハンドラ。
  *
- * Phase 1 (現在):
- *   - GET /healthz: 起動確認
- *   - GET /version: ビルド情報 (= deploy 検証用)
- *   - GET /probe/oauth: @atproto/oauth-client-node が Workers 上で
- *     import 解決できるかの PoC エンドポイント (Phase 1 着手時の検証用)
+ * 現在:
+ *   - GET  /healthz: 起動確認
+ *   - GET  /version: ビルド情報 (deploy 検証用)
+ *   - POST /api/whoami: service auth JWT を検証して呼び出し元 DID を返す (M1 認証基盤)
  *
- * Phase 1 後半で追加予定:
- *   - POST /index/quest: クエスト発行を index に追加
- *   - POST /index/application: 応募を index に追加
- *
- * docs/15-user-quest.md §集約インフラ を参照。
+ * 予定 (docs/21-server-authority): あおぞらワールドのゲーム経済をサーバー権威化する
+ *   /api/battle/* /api/xp/* /api/me/state (M2〜)。依頼クエスト集約 (docs/15) も。
  */
-import { probeOAuthLibrary } from './oauth-probe';
+import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 
 export interface Env {
   ENVIRONMENT?: string;
   /** カンマ区切り。空 or 未設定なら CORS 全許可 (dev 用)。production では必ず設定する */
   ALLOWED_ORIGINS?: string;
-  /** "1" なら /probe/oauth を有効化。dev 検証以外では disable する */
-  ENABLE_OAUTH_PROBE?: string;
+  /** この Worker の DID (service auth JWT の aud)。既定 did:web:edge.aozoraquest.app */
+  WORKER_DID?: string;
 }
+
+/** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
+const LXM_WHOAMI = 'app.aozoraquest.whoami';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -62,17 +61,30 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }), allowedOrigin);
   }
 
-  if (req.method === 'GET' && url.pathname === '/probe/oauth') {
-    // production の Worker で誰でも叩けると cold start で重い import が走る。
-    // 明示的に env で enable した場合のみ許可。
-    if (env.ENABLE_OAUTH_PROBE !== '1') {
-      return cors(json({ error: 'probe_disabled' }, 404), allowedOrigin);
+  // service auth JWT を検証して呼び出し元 DID を返す (M1 認証基盤の疎通確認)。
+  if (req.method === 'POST' && url.pathname === '/api/whoami') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    try {
+      const { iss } = await verifyServiceAuth(token, { audience, lxm: LXM_WHOAMI });
+      return cors(json({ did: iss }), allowedOrigin);
+    } catch (e) {
+      // fail-closed: 検証失敗は 401 (詳細は漏らしすぎない)
+      const msg = e instanceof ServiceAuthError ? e.message : 'verify_failed';
+      return cors(json({ error: 'unauthorized', reason: msg }, 401), allowedOrigin);
     }
-    const result = await probeOAuthLibrary();
-    return cors(json(result, result.ok ? 200 : 503), allowedOrigin);
   }
 
   return cors(json({ error: 'not_found', path: url.pathname }, 404), allowedOrigin);
+}
+
+/** Authorization: Bearer <jwt> を取り出す。 */
+function bearer(req: Request): string | null {
+  const h = req.headers.get('authorization');
+  if (!h) return null;
+  const m = /^Bearer\s+(.+)$/i.exec(h);
+  return m ? m[1]!.trim() : null;
 }
 
 function json(body: unknown, status = 200): Response {

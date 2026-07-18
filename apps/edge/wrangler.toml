@@ -1,8 +1,10 @@
-# aozoraquest 依頼クエスト集約 Worker (docs/15-user-quest.md §集約インフラ)
-#
-# 主管理者 PDS の app.aozoraquest.questIndex に書き込むサーバ側 client。
-# AT Proto OAuth confidential client (private_key_jwt, dpop_bound_access_tokens)
-# として動作するため、@atproto/oauth-client-node を nodejs_compat で読む。
+# aozoraquest edge Worker。
+# - M1 (docs/21-server-authority §4.2): AT Proto service auth JWT を検証して呼び出し元 DID を
+#   確定する認証基盤。secp256k1 検証は verify 専用 k256 WASM (Workers subtle は secp256k1 非対応)。
+# - 予定: あおぞらワールドのゲーム経済をサーバー権威化 (M2〜)、依頼クエスト集約 (docs/15)。
+#   これらは Worker が app サーバーアカウントの PDS を書く。
+# nodejs_compat は現状の M1 コードには不要だが、M2 で `@atproto/api` (PDS 書込) を読む際に
+# 要る想定なので残す。@atproto/oauth-client-node は Workers 非互換のため使わない (削除済)。
 
 name = "aozoraquest-edge"
 main = "src/index.ts"

@@ -60,17 +60,18 @@ describe('edge router', () => {
     expect(ng.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  it('/probe/oauth は default で 404 (production の cold start 防止)', async () => {
-    const res = await handleRequest(new Request('https://x/probe/oauth'), env);
-    expect(res.status).toBe(404);
+  it('POST /api/whoami は JWT 無しなら 401', async () => {
+    const res = await handleRequest(new Request('https://x/api/whoami', { method: 'POST' }), env);
+    expect(res.status).toBe(401);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe('probe_disabled');
+    expect(body.error).toBe('missing_token');
   });
 
-  it('/probe/oauth は ENABLE_OAUTH_PROBE=1 でのみ実行 (= dev 用)', async () => {
-    const probeEnv: Env = { ENABLE_OAUTH_PROBE: '1' };
-    const res = await handleRequest(new Request('https://x/probe/oauth'), probeEnv);
-    // 結果は ok / not ok いずれもあるが 404 ではない
-    expect(res.status).not.toBe(404);
+  it('POST /api/whoami は不正 JWT なら 401 (fail-closed)', async () => {
+    const res = await handleRequest(
+      new Request('https://x/api/whoami', { method: 'POST', headers: { authorization: 'Bearer not.a.jwt' } }),
+      env,
+    );
+    expect(res.status).toBe(401);
   });
 });
