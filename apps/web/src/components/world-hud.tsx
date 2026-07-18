@@ -47,6 +47,7 @@ export function WorldHud({
   mp,
   maxMp,
   locationLabel,
+  zIndex = HUD_Z,
 }: {
   hp: number;
   maxHp: number;
@@ -54,6 +55,9 @@ export function WorldHud({
   maxMp: number;
   /** 街名 or 危険度ラベル (右上に小さく) */
   locationLabel: string;
+  /** 通常は HUD_Z。戦闘オーバーレイ中は HP/MP を上枠で鮮明に見せるため
+   *  OVERLAY_Z より上に持ち上げる (表示専用なので操作は妨げない)。 */
+  zIndex?: number;
 }) {
   const hpRatio = maxHp > 0 ? hp / maxHp : 0;
   const panel: React.CSSProperties = {
@@ -65,7 +69,7 @@ export function WorldHud({
     borderRadius: 5,
   };
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: HUD_Z }}>
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex }}>
       {/* 左上: HP/MP パネル */}
       <div style={{ ...panel, left: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Bar label="HP" value={hp} max={maxHp} fill={hpColor(hpRatio)} labelColor="#7ee08f" />

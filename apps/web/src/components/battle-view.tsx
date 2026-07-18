@@ -41,12 +41,16 @@ export function BattleScene({
   headerNote,
   monsterSize = 132,
   compact = false,
+  showEnemyVitals = true,
 }: {
   state: BattleState;
   headerNote?: string | undefined;
   monsterSize?: number;
   /** 暗い背景に重ねるとき (マップ上オーバーレイ) は文字を明色にする */
   compact?: boolean;
+  /** 敵の残り HP/MP を見せるか。見抜ける職業のみ true (canSeeEnemyVitals)。
+   *  false のときは敵の名前だけ出し、HP バー・ため/回復ゲージは隠す (DQ1 風)。 */
+  showEnemyVitals?: boolean;
 }) {
   const monsterDef = MONSTERS_BY_ID[state.monsterId];
   const fg = compact ? '#fff' : 'var(--color-fg)';
@@ -66,11 +70,18 @@ export function BattleScene({
         >
           <MonsterSvg species={monsterDef?.species ?? 'slime'} size={monsterSize} />
         </div>
-        <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
+        {showEnemyVitals ? (
+          <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
+        ) : (
+          // 見抜けない職業: 名前だけ (敵の体力・MP は不明 = DQ1 風)
+          <div style={{ maxWidth: 340, margin: '0.3em auto 0', textAlign: 'center', fontSize: '0.85em', color: fg, textShadow: shadow }}>
+            {state.monster.name}
+          </div>
+        )}
         {/* ため/回復を使う敵は「あと何回撃てるか」をセグメントで見せる (尽きたら攻める
             読み合い)。通常攻撃だけの敵は MP を使わないので出さない (混乱防止)。
-            charger=赤系 / healer=緑系 で脅威の種別を色で区別。 */}
-        {monsterDef?.ability && state.monster.maxMp > 0 && (() => {
+            charger=赤系 / healer=緑系 で脅威の種別を色で区別。見抜ける職業のみ表示。 */}
+        {showEnemyVitals && monsterDef?.ability && state.monster.maxMp > 0 && (() => {
           const cost = monsterDef.ability === 'healer' ? BATTLE_TUNING.monsterHealMpCost : BATTLE_TUNING.monsterChargeMpCost;
           const total = Math.max(1, Math.floor(state.monster.maxMp / cost));
           const left = Math.floor(state.monster.mp / cost);
@@ -99,8 +110,10 @@ export function BattleScene({
           border: `2px solid ${compact ? 'rgba(255,255,255,0.35)' : 'var(--color-border)'}`,
           borderRadius: 4,
           background: compact ? 'rgba(20,22,30,0.72)' : 'var(--color-window-bg)',
-          minHeight: '3.6em',
-          ...(compact ? { maxHeight: '6em', overflowY: 'auto' as const } : {}),
+          // compact (マップ枠内) は縦の余白が限られるのでログ窓を低めにし、
+          // あふれは枠内スクロールへ逃がす (小型端末のはみ出し対策 — レビュー ★★★)
+          minHeight: compact ? '2.4em' : '3.6em',
+          ...(compact ? { maxHeight: '4.5em', overflowY: 'auto' as const } : {}),
           fontSize: '0.85em',
           lineHeight: 1.6,
           color: fg,
@@ -120,7 +133,11 @@ export function BattleScene({
   );
 }
 
-/** 自分 HP/MP + コマンド (親指ゾーン、2x3)。 */
+/** コマンド窓 (親指ゾーン)。
+ *  - compact (あおぞらワールド): HP/MP は上枠 WorldHud に集約するのでバーは出さない。
+ *  - 非 compact (試練): 従来どおり自分の HP/MP バーを上に出す。
+ *  「どうぐ」は階層化し、押すとアイテムのサブメニューに切り替わる (将来アイテムが
+ *  増えても最上段のコマンド数を増やさないため — オーナー要望 2026-07-18)。 */
 export function BattleCommands({
   state,
   busy,
@@ -132,47 +149,76 @@ export function BattleCommands({
   onCommand: (c: Command) => void;
   compact?: boolean;
 }) {
+  const [itemMenu, setItemMenu] = useState(false);
+  const canHerb = state.herbs > 0 && state.player.hp < state.player.maxHp;
+  const canTonic = state.tonics > 0 && state.player.mp < state.player.maxMp;
+  const hasItems = state.herbs > 0 || state.tonics > 0;
+  // アイテム使用でターンが解決したらメニューを閉じる (次ターンは通常コマンドから)。
+  // 関数名を use* にすると react-hooks が Hook 扱いするので applyItem とする。
+  const applyItem = (c: Command) => {
+    onCommand(c);
+    setItemMenu(false);
+  };
   return (
     <div>
-      <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine {...(compact ? { labelColor: '#fff' } : {})} />
-      <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.6em' }}>
-        <CommandButton
-          label="たたかう"
-          sub={state.mpAttackGain > 0 ? `MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}` : undefined}
-          onClick={() => onCommand('attack')}
-          disabled={busy}
-        />
-        <CommandButton
-          label={state.playerSkill.name}
-          sub={`MP ${BATTLE_TUNING.skillMpCost} / ${SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}`}
-          onClick={() => onCommand('skill')}
-          disabled={busy || state.player.mp < BATTLE_TUNING.skillMpCost}
-        />
-        <CommandButton
-          label="ぼうぎょ"
-          sub={state.mpGuardGain > 0 ? `回避↑ / MP +${state.mpGuardGain}` : '回避↑'}
-          onClick={() => onCommand('guard')}
-          disabled={busy}
-        />
-        <CommandButton
-          label={`やくそう ×${state.herbs}`}
-          sub={`HP ${Math.round(BATTLE_TUNING.herbHealRatio * 100)}% 回復`}
-          onClick={() => onCommand('herb')}
-          disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp}
-        />
-        <CommandButton
-          label={`そらのしずく ×${state.tonics}`}
-          sub={`MP ${Math.round(BATTLE_TUNING.tonicMpRatio * 100)}% 回復`}
-          onClick={() => onCommand('tonic')}
-          disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp}
-        />
-        <CommandButton
-          label="にげる"
-          sub="失敗すると 1 ターン失う"
-          onClick={() => onCommand('flee')}
-          disabled={busy}
-        />
+      {!compact && (
+        <>
+          <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine />
+          <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
+        </>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: compact ? '0.4em' : '0.5em', marginTop: compact ? 0 : '0.6em' }}>
+        {itemMenu ? (
+          <>
+            <CommandButton
+              label={`やくそう ×${state.herbs}`}
+              sub={`HP ${Math.round(BATTLE_TUNING.herbHealRatio * 100)}% 回復`}
+              onClick={() => applyItem('herb')}
+              disabled={busy || !canHerb}
+              compact={compact}
+            />
+            <CommandButton
+              label={`そらのしずく ×${state.tonics}`}
+              sub={`MP ${Math.round(BATTLE_TUNING.tonicMpRatio * 100)}% 回復`}
+              onClick={() => applyItem('tonic')}
+              disabled={busy || !canTonic}
+              compact={compact}
+            />
+            <CommandButton label="もどる" onClick={() => setItemMenu(false)} disabled={busy} span2 compact={compact} />
+          </>
+        ) : (
+          <>
+            <CommandButton
+              label="たたかう"
+              sub={state.mpAttackGain > 0 ? `MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}` : undefined}
+              onClick={() => onCommand('attack')}
+              disabled={busy}
+              compact={compact}
+            />
+            <CommandButton
+              label={state.playerSkill.name}
+              sub={`MP ${BATTLE_TUNING.skillMpCost} / ${SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}`}
+              onClick={() => onCommand('skill')}
+              disabled={busy || state.player.mp < BATTLE_TUNING.skillMpCost}
+              compact={compact}
+            />
+            <CommandButton
+              label="ぼうぎょ"
+              sub={state.mpGuardGain > 0 ? `回避↑ / MP +${state.mpGuardGain}` : '回避↑'}
+              onClick={() => onCommand('guard')}
+              disabled={busy}
+              compact={compact}
+            />
+            <CommandButton
+              label="どうぐ"
+              sub={hasItems ? `やくそう${state.herbs} / しずく${state.tonics}` : 'なし'}
+              onClick={() => setItemMenu(true)}
+              disabled={busy || !hasItems}
+              compact={compact}
+            />
+            <CommandButton label="にげる" sub="失敗すると 1 ターン失う" onClick={() => onCommand('flee')} disabled={busy} span2 compact={compact} />
+          </>
+        )}
       </div>
     </div>
   );
@@ -210,26 +256,27 @@ export function MpBar({ mp, maxMp }: { mp: number; maxMp: number }) {
   );
 }
 
-export function CommandButton({ label, sub, onClick, disabled }: { label: string; sub?: string | undefined; onClick: () => void; disabled: boolean }) {
+export function CommandButton({ label, sub, onClick, disabled, compact = false, span2 = false }: { label: string; sub?: string | undefined; onClick: () => void; disabled: boolean; compact?: boolean; span2?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       style={{
-        padding: '0.8em 0.2em',
-        fontSize: '0.9em',
-        lineHeight: 1.3,
+        gridColumn: span2 ? '1 / -1' : undefined,
+        padding: compact ? '0.45em 0.2em' : '0.8em 0.2em',
+        fontSize: compact ? '0.85em' : '0.9em',
+        lineHeight: 1.25,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '0.1em',
-        minHeight: '3.6em',
+        gap: compact ? 0 : '0.1em',
+        minHeight: compact ? '2.6em' : '3.6em',
         touchAction: 'manipulation',
       }}
     >
       <span>{label}</span>
-      {sub && <span style={{ fontSize: '0.68em', color: 'var(--color-muted)' }}>{sub}</span>}
+      {sub && <span style={{ fontSize: '0.66em', color: 'var(--color-muted)' }}>{sub}</span>}
     </button>
   );
 }
