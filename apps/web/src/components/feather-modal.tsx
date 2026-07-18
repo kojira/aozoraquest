@@ -53,7 +53,9 @@ export function FeatherModal({
             とじる
           </button>
         </div>
-        <p style={{ margin: '0 0 0.5em', fontSize: '0.78em', color: 'var(--color-muted)' }}>行ったことのある街へ もどれる。</p>
+        {dests.length > 0 && (
+          <p style={{ margin: '0 0 0.5em', fontSize: '0.78em', color: 'var(--color-muted)' }}>行ったことのある街へ もどれる。</p>
+        )}
         {dests.length === 0 ? (
           <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ 行き先がない。街を おとずれると えらべるよ。</p>
         ) : (

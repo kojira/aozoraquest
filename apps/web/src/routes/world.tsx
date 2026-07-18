@@ -153,6 +153,9 @@ export function World() {
   const searchMsgRef = useRef(false);
   searchMsgRef.current = searchMsg !== null;
   const [featherOpen, setFeatherOpen] = useState(false);
+  const [starterMsg, setStarterMsg] = useState<string | null>(null);
+  const starterMsgRef = useRef(false);
+  starterMsgRef.current = starterMsg !== null;
   const itemsOpenRef = useRef(false);
   itemsOpenRef.current = itemsOpen;
   const invOpenRef = useRef(false);
@@ -255,19 +258,30 @@ export function World() {
         // 冒険の初回に そらのはねを 1 個わたす (docs/19。gotStarterFeather で二重配布
         // 防止)。実際の +1 は下の featherStock 初期化 (stats ロード後) で足す
         grantStarter = !state.gotStarterFeather;
-        setWs({
+        // 今いる場所が街 (spawn 含む) なら訪問済みに含める。歩いて入る move 経路だけ
+        // だと、開始の街や そらのはね着地先が行き先候補に入らない (レビュー ★★)
+        const curTown = townAt(state.x, state.y);
+        const seededVisited = curTown && !state.visitedTowns.some((v) => v.x === state.x && v.y === state.y)
+          ? [...state.visitedTowns, { x: state.x, y: state.y }]
+          : state.visitedTowns;
+        const initialWs = {
           x: state.x,
           y: state.y,
           hp: state.hp,
           mp: state.mp,
           lastTown: state.lastTown,
           regions: state.regions,
-          visitedTowns: state.visitedTowns,
+          visitedTowns: seededVisited,
           gotStarterFeather: true,
-        });
+        };
+        setWs(initialWs);
         if (grantStarter) {
-          setNotice('たびの はじめに「そらのはね」を 1 つ もらった! (どうぐ から つかえる)');
-          scheduleSave(); // gotStarterFeather=true を保存 (次回配らない)
+          // 専用の DQ ウィンドウで見せる (notice だとオンボーディングに覆われ、
+          // relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)
+          setStarterMsg('たびの はじめに「そらのはね」を 1 つ もらった! こまったら どうぐ から つかって、行ったことのある街へ もどれるよ。');
+          // gotStarterFeather=true は即時保存 (デバウンス中リロードで二重配布しない —
+          // かけら/初訪問と同じ流儀。レビュー ★★)
+          void saveWorldState(agent, initialWs);
         }
         try {
           if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
@@ -372,7 +386,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -618,7 +632,10 @@ export function World() {
           mp: null,
           lastTown: valid,
           regions: [...new Set([...(s?.regions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
-          visitedTowns: s?.visitedTowns ?? [],
+          // 介抱された街も行き先候補に (lastTown 更新経路は visitedTowns も積む)
+          visitedTowns: (s?.visitedTowns ?? []).some((v) => v.x === back.x && v.y === back.y)
+            ? (s?.visitedTowns ?? [])
+            : [...(s?.visitedTowns ?? []), { x: back.x, y: back.y }],
           gotStarterFeather: s?.gotStarterFeather ?? true,
         });
       } else {
@@ -650,7 +667,10 @@ export function World() {
         mp: null,
         lastTown: { x: dest.x, y: dest.y },
         regions: [...new Set([...(wsRef.current?.regions ?? []), ...regionsAround(regionOf(dest.x, dest.y))])].sort((a, b) => a - b),
-        visitedTowns: wsRef.current?.visitedTowns ?? [],
+        // 着地先も行き先候補に (通常は既訪だが、念のため union)
+        visitedTowns: (wsRef.current?.visitedTowns ?? []).some((v) => v.x === dest.x && v.y === dest.y)
+          ? (wsRef.current?.visitedTowns ?? [])
+          : [...(wsRef.current?.visitedTowns ?? []), { x: dest.x, y: dest.y }],
         gotStarterFeather: wsRef.current?.gotStarterFeather ?? true,
       };
       setWs(wsRef.current);
@@ -726,10 +746,12 @@ export function World() {
     setFeatherOpen(true); // 行き先えらびを開く (選ぶと flyToTown が飛ばす)
   }, [featherStock]);
 
-  // 選んだ街へ飛ぶ (そらのはね消費 + ワイプ演出でテレポート)
+  // 選んだ街へ飛ぶ (そらのはね消費 + ワイプ演出でテレポート)。FeatherModal は選択時に
+  // 先に onClose するので二度押しは構造的に不可 (featherStock の stale closure 無害)
   const flyToTown = useCallback((dest: { x: number; y: number }) => {
     const s = wsRef.current;
     if (!s || featherStock <= 0) return;
+    // 今いる街は FeatherModal 側で候補除外済み。ここは防御の二重ガード (レビュー ★)
     if (s.x === dest.x && s.y === dest.y) {
       setNotice('もうその街にいる。');
       return;
@@ -1119,6 +1141,9 @@ export function World() {
       </div>
       {searchMsg !== null && (
         <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
+      )}
+      {starterMsg !== null && !onboarding && (
+        <DialogueWindow lines={[{ speaker: 'ブルスコン', text: starterMsg }]} plateIcon={<SpiritIcon size={20} />} onDone={() => setStarterMsg(null)} />
       )}
 
       {/* マップ下: 戦闘中はコマンド窓 (DQ1 の下段)、リザルト中は結果、通常は操作ヒント */}

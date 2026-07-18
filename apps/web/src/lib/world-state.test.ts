@@ -92,6 +92,26 @@ describe('loadWorldState — ちずのかけら (regions)', () => {
     expect(rec.gotStarterFeather).toBe(true);
   });
 
+  test('visitedTowns は 非オブジェクト/NaN/非街座標/重複を除去する', async () => {
+    const spawn = worldOverlay().spawn;
+    const agent = agentWithGetRecord(async () => ({
+      data: { value: {
+        x: 10, y: 10,
+        visitedTowns: [
+          { x: spawn.x, y: spawn.y },
+          { x: spawn.x, y: spawn.y }, // 重複
+          { x: 'a', y: 1 },           // NaN
+          'junk',                      // 非オブジェクト
+          null,
+          { x: 3, y: 3 },             // 非街座標 (townAt が無い想定)
+        ],
+      } },
+    }));
+    const s = await loadWorldState(agent, 'did:test');
+    // spawn (実在の街) が 1 件だけ残る。非街/壊れは除去
+    expect(s.visitedTowns).toEqual([{ x: spawn.x, y: spawn.y }]);
+  });
+
   test('新規プレイヤーは visitedTowns 空 / gotStarterFeather false (初回配布のトリガー)', async () => {
     const agent = agentWithGetRecord(async () => {
       const e = new Error('Could not locate record') as Error & { error?: string };
