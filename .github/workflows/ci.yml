@@ -56,6 +56,9 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @aozoraquest/web typecheck
 
+      - name: Lint (React フックのルール違反を検出 — #310 クラッシュ再発防止)
+        run: pnpm --filter @aozoraquest/web lint
+
       - name: Unit tests (core + web)
         run: |
           pnpm --filter @aozoraquest/core test
