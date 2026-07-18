@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyBattleOutcome, type BattleOutcomeInput } from '../src/battle-reward';
-import { MONSTERS, battleXpFor } from '@aozoraquest/core';
+import { MONSTERS, battleXpFor, BATTLE_TUNING } from '@aozoraquest/core';
 import { emptyState, type GameState } from '../src/game-state';
 
 const base = (over: Partial<GameState> = {}): GameState => ({ ...emptyState('did:plc:alice', '2026-07-19T00:00:00.000Z'), power: 5, ...over });
@@ -39,10 +39,12 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     expect(a.next).toEqual(b.next);
   });
 
-  it('負け: 素材ロス + パワー1消費 (XP は変えない)', () => {
-    const s = base({ power: 2, playerXp: 80, materials: { herb: 3, ore: 2 } });
+  it('負け: 素材ロス + パワー1消費 + 僅かな xpLose (§5)', () => {
+    const s = base({ power: 2, playerXp: 80, jobXp: { warrior: 20 }, materials: { herb: 3, ore: 2 } });
     const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'lose' }));
-    expect(next.playerXp).toBe(80); // XP 不変
+    expect(next.playerXp).toBe(80 + BATTLE_TUNING.xpLose); // 負けでも少し XP (player/job 両方)
+    expect(next.jobXp.warrior).toBe(20 + BATTLE_TUNING.xpLose);
+    expect(awarded.xp).toBe(BATTLE_TUNING.xpLose);
     expect(next.power).toBe(1); // 2-1
     expect(awarded.powerSpent).toBe(1);
     // materialsLost があれば materials が減っている

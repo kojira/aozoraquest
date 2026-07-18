@@ -37,9 +37,9 @@ interface SealedMeta {
 
 type Guard = BattleGuard<SealedMeta, BattleState>;
 
-/** 解決エラー。上位が HTTP status に振り分ける。 */
+/** 解決エラー。上位が HTTP status に振り分ける。code はクライアントが文言を出し分ける用 (任意)。 */
 export class ResolverError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
   }
 }
@@ -60,8 +60,58 @@ async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promis
 async function readDiagnosis(userDid: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray> }> {
   const pds = await resolveUserPds(userDid, fetchImpl);
   const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector }>(pds, userDid, ANALYSIS_COLLECTION, 'self');
-  if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409);
+  if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409, 'diagnosis_required');
   return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats) };
+}
+
+export const POWER_COLLECTION = 'app.aozoraquest.power';
+
+/** §6-4 移行の上限クランプ (偽造済みかもしれない PDS 現値を切り詰める)。**dev=owner は無害・一般ユーザー
+ *  移行は M5 で再検討 (§9-4 未解決)**。真の偽造対策は M4 の投稿 XP 権威化で、これは絶対値の暴走を切る
+ *  緩いサニティ上限。長期ユーザーの正当残高 (viaPosts 累積) を切り詰めない大きさにする。値の根拠はコミット参照。 */
+export const MAX_MIGRATE_POWER = 100_000; // 正当ユーザー (投稿数=残高上限) を十分上回る緩い上限
+export const MAX_MIGRATE_PLAYER_XP = 500_000; // lvl 99 ≈ 457k を上回る安全上限
+export const MAX_MIGRATE_JOB_XP = 50_000; // lvl 50 ≈ 40k を上回る安全上限
+
+const finiteNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+
+/** ユーザー PDS の power/self 累積カウンタ (points.ts と同じ形)。残高は client の deriveState と同式。 */
+interface MigratablePowerRecord {
+  viaPosts?: number; userMessages?: number; cardDraws?: number; battles?: number;
+  craftPowerSpent?: number; salePowerEarned?: number; searchPowerSpent?: number;
+}
+interface MigratableAnalysisRecord {
+  playerLevel?: { xp?: number };
+  jobLevel?: { archetype?: string; xp?: number };
+}
+
+/**
+ * 初回 gameState 生成時の移行 (§6-4)。ユーザー PDS の **既存 power 残高と分析 Lv を上限クランプして取り込む**
+ * (取り込まないと power=0 → 常に rewarded=false = 報酬が出ず、Lv=1 で弱すぎる)。**読取専用** (PDS へは書かない)
+ * ので、読めない/未診断でも fail-open で emptyState に倒す (書込 fail-closed とは別物)。**state が null の
+ * ときだけ**呼ばれる (readModifyWrite) = 通常経路にコストを乗せない。
+ */
+export async function migrateInitState(userDid: string, nowIso: string, fetchImpl?: typeof fetch): Promise<GameState> {
+  const base = emptyState(userDid, nowIso);
+  try {
+    const pds = await resolveUserPds(userDid, fetchImpl);
+    const [powerRec, analysisRec] = await Promise.all([
+      getRecord<MigratablePowerRecord>(pds, userDid, POWER_COLLECTION, 'self').catch(() => null),
+      getRecord<MigratableAnalysisRecord>(pds, userDid, ANALYSIS_COLLECTION, 'self').catch(() => null),
+    ]);
+    const p = powerRec?.value;
+    if (p) {
+      const bal = Math.max(0, finiteNum(p.viaPosts) - finiteNum(p.userMessages) - finiteNum(p.cardDraws)
+        - finiteNum(p.battles) - finiteNum(p.craftPowerSpent) - finiteNum(p.searchPowerSpent) + finiteNum(p.salePowerEarned));
+      base.power = Math.min(bal, MAX_MIGRATE_POWER);
+    }
+    const a = analysisRec?.value;
+    if (a) {
+      base.playerXp = Math.min(finiteNum(a.playerLevel?.xp), MAX_MIGRATE_PLAYER_XP);
+      if (a.jobLevel?.archetype) base.jobXp = { [a.jobLevel.archetype]: Math.min(finiteNum(a.jobLevel.xp), MAX_MIGRATE_JOB_XP) };
+    }
+  } catch { /* 読めない/未診断は power 0・Lv1 で開始 (読取のみ = 無害) */ }
+  return base;
 }
 
 /** バトルガードの寿命 (秒)。各ターンで更新。切れたガードは move 時に flush = クラッシュしても
@@ -103,6 +153,8 @@ export interface MoveResult {
   x: number;
   y: number;
   terrain: string;
+  /** 街に入って全回復した (HP/MP が権威なのでサーバーが回復)。 */
+  healed?: boolean;
   /** サーバーが遭遇を判定した場合のみ。 */
   encounter?: EncounterInfo;
 }
@@ -122,13 +174,17 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   }
 
   // 権威位置を CAS 更新。移動先の歩行可否は mutate 内で検証 (CAS リトライで再検証される)。
-  const committed = { x: 0, y: 0 };
+  // 街に入ったら HP/MP を全回復 (carry を消す = 次戦全快。HP が権威なのでサーバーが行う)。
+  const committed = { x: 0, y: 0, healed: false };
   const moved = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
     const tx = cur.x + dx, ty = cur.y + dy;
-    if (!isWalkable(terrainAt(tx, ty))) throw new ResolverError('進めない地形', 400);
-    committed.x = tx; committed.y = ty;
-    return { ...cur, x: tx, y: ty };
-  }, { now });
+    const t = terrainAt(tx, ty);
+    if (!isWalkable(t)) throw new ResolverError('進めない地形', 400);
+    committed.x = tx; committed.y = ty; committed.healed = t === 'town';
+    const next: GameState = { ...cur, x: tx, y: ty };
+    if (t === 'town') { next.carryHp = undefined; next.carryMp = undefined; }
+    return next;
+  }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, fetchImpl) });
 
   const terrain = terrainAt(committed.x, committed.y);
   if (terrain !== 'town') {
@@ -138,7 +194,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
       return { x: committed.x, y: committed.y, terrain, encounter };
     }
   }
-  return { x: committed.x, y: committed.y, terrain };
+  return { x: committed.x, y: committed.y, terrain, healed: committed.healed || undefined };
 }
 
 export interface TurnResult {
@@ -193,7 +249,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         herbs: next.herbs,
         tonics: next.tonics,
       };
-    }, { now });
+    }, { now, init: (did, nowIso) => migrateInitState(did, nowIso) });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded };
   }
 
