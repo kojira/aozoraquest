@@ -64,8 +64,20 @@ function isUnsafeDidWebHost(host: string): boolean {
   return false;
 }
 
-/** DID document を解決 (did:plc → plc.directory / did:web → .well-known)。fetchFn は差し替え可 (テスト)。 */
+/** DID document の isolate 内キャッシュ (署名鍵は滅多に変わらない)。歩行のたびに verifyServiceAuth →
+ *  plc.directory へ fetch すると 1 歩ごとにネットワーク往復が入り遅い。同一 isolate 内で TTL キャッシュする。 */
+const DID_DOC_TTL_MS = 10 * 60 * 1000;
+const didDocCache = new Map<string, { doc: DidDocument; expiresAt: number }>();
+
+/** DID document を解決 (did:plc → plc.directory / did:web → .well-known)。fetchFn は差し替え可 (テスト)。
+ *  結果は 10 分キャッシュ (テスト用に fetchFn を渡した場合はキャッシュしない)。 */
 export async function resolveDidDocument(did: string, fetchFn: typeof fetch = fetch): Promise<DidDocument> {
+  const useCache = fetchFn === fetch;
+  if (useCache) {
+    const hit = didDocCache.get(did);
+    // Date.now は resume 非対応環境で不可の場合があるが Worker では利用可。TTL 判定のみに使う。
+    if (hit && hit.expiresAt > Date.now()) return hit.doc;
+  }
   let url: string;
   if (did.startsWith('did:plc:')) {
     url = `https://plc.directory/${encodeURIComponent(did)}`;
@@ -80,7 +92,9 @@ export async function resolveDidDocument(did: string, fetchFn: typeof fetch = fe
   }
   const res = await fetchFn(url);
   if (!res.ok) throw new ServiceAuthError(`DID 解決失敗 ${res.status}: ${did}`);
-  return (await res.json()) as DidDocument;
+  const doc = (await res.json()) as DidDocument;
+  if (useCache) didDocCache.set(did, { doc, expiresAt: Date.now() + DID_DOC_TTL_MS });
+  return doc;
 }
 
 /** DID document から #atproto 署名鍵を取り出してデコード。fragment を厳密一致させ、
