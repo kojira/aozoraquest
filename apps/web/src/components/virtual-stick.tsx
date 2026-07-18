@@ -37,6 +37,21 @@ const MIN_STEP_GAP_MS = Math.floor(STEP_INTERVAL_MS / 2);
 const AXIS_HYSTERESIS = 1.25;
 /** 初回ガイド (ゴーストリング) を出したかの localStorage キー。 */
 const HINT_DONE_KEY = 'aq-world-stick-hint-done';
+/** タップ判定: 押してから離すまで、この px 未満の移動 + この ms 未満で「タップ」。 */
+const TAP_MAX_MOVE_PX = 12;
+const TAP_MAX_MS = 400;
+/** タップで「自分」を押したとみなす中央半径 (マップ短辺に対する割合)。
+ *  アバターは中央にいるので、その周辺のタップをメニュー起動に割り当てる。 */
+const TAP_CENTER_RATIO = 0.22;
+
+/** 「自分をタップした」ジェスチャか (歩行せず・短時間・小移動・中央付近)。純関数。 */
+export function isSelfTap(o: { elapsedMs: number; movedPx: number; fromCenterPx: number; minSide: number }): boolean {
+  return (
+    o.elapsedMs <= TAP_MAX_MS &&
+    o.movedPx <= TAP_MAX_MOVE_PX &&
+    o.fromCenterPx <= o.minSide * TAP_CENTER_RATIO
+  );
+}
 
 /**
  * 倒しベクトル → 方向 (純関数。デッドゾーン + 支配軸 + ヒステリシス)。
@@ -58,7 +73,7 @@ export function stickDirFor(dx: number, dy: number, current: StickDir | null): S
   return horizontal ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
 }
 
-export function VirtualStick({ onMove }: { onMove: (dir: StickDir) => void }) {
+export function VirtualStick({ onMove, onTapSelf }: { onMove: (dir: StickDir) => void; onTapSelf?: () => void }) {
   const [stick, setStick] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
   const [showHint, setShowHint] = useState(() => {
     try {
@@ -76,9 +91,15 @@ export function VirtualStick({ onMove }: { onMove: (dir: StickDir) => void }) {
   const onMoveRef = useRef(onMove);
   onMoveRef.current = onMove;
   const pointerIdRef = useRef<number | null>(null);
+  const onTapSelfRef = useRef(onTapSelf);
+  onTapSelfRef.current = onTapSelf;
+  // タップ判定用: 押下時刻・押下 client 座標・マップ中央 (client) と短辺・移動フラグ
+  const downRef = useRef<{ t: number; x: number; y: number; cx: number; cy: number; minSide: number } | null>(null);
+  const movedRef = useRef(false);
 
   const step = useCallback((dir: StickDir) => {
     lastStepAtRef.current = Date.now();
+    movedRef.current = true; // 1 歩でも歩いたらタップではない
     onMoveRef.current(dir);
   }, []);
 
@@ -129,6 +150,15 @@ export function VirtualStick({ onMove }: { onMove: (dir: StickDir) => void }) {
       const rect = e.currentTarget.getBoundingClientRect();
       setStick({ ox: e.clientX - rect.left, oy: e.clientY - rect.top, dx: 0, dy: 0 });
       dirRef.current = null;
+      movedRef.current = false;
+      downRef.current = {
+        t: Date.now(),
+        x: e.clientX,
+        y: e.clientY,
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2,
+        minSide: Math.min(rect.width, rect.height),
+      };
       restartInterval();
       dismissHint();
     },
@@ -155,6 +185,18 @@ export function VirtualStick({ onMove }: { onMove: (dir: StickDir) => void }) {
   const onPointerEnd = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerId !== pointerIdRef.current) return;
+      // タップ判定: 歩いておらず・短時間・小移動で、押下点がマップ中央 (自分) 付近
+      const d = downRef.current;
+      if (d && !movedRef.current && onTapSelfRef.current) {
+        const isTap = isSelfTap({
+          elapsedMs: Date.now() - d.t,
+          movedPx: Math.hypot(e.clientX - d.x, e.clientY - d.y),
+          fromCenterPx: Math.hypot(d.x - d.cx, d.y - d.cy),
+          minSide: d.minSide,
+        });
+        if (isTap) onTapSelfRef.current();
+      }
+      downRef.current = null;
       stop();
     },
     [stop],
