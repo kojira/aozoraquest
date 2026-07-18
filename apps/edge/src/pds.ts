@@ -106,3 +106,18 @@ export async function putRecord(
     body: JSON.stringify(body),
   });
 }
+
+/**
+ * レコード削除 (認証要)。`swapRecord` を渡すと compare-and-swap (期待 CID のときだけ消す。
+ * 不一致は InvalidSwap)。putRecord と同じく**唯一の `xrpc` ラッパ経由**でエラー処理を統一する
+ * (非 JSON 応答のラップ・xrpcError 抽出をここでも効かせ、ハンドラの重複/ドリフトを避ける)。
+ */
+export async function deleteRecord(session: PdsSession, collection: string, rkey: string, swapRecord?: string): Promise<void> {
+  const body: Record<string, unknown> = { repo: session.did, collection, rkey };
+  if (swapRecord !== undefined) body.swapRecord = swapRecord;
+  await xrpc(`${session.pdsUrl}/xrpc/com.atproto.repo.deleteRecord`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${session.accessJwt}` },
+    body: JSON.stringify(body),
+  });
+}
