@@ -267,8 +267,10 @@ export function Spirit() {
           )}
 
           {/* 管理者用: dev でパワーを付与してテストする。VITE_ADMIN_DIDS の DID かつ
-              プレビュー環境 (dev/local) のときだけ表示。本番では WORLD_PREVIEW_ENABLED=false
-              なので出ない (二重ゲート)。viaPosts を加算 = 残高がそのぶん増える。 */}
+              プレビュー環境 (dev/local) のときだけ表示。本番遮断は WORLD_PREVIEW_ENABLED
+              (本番ビルドでは false → dead-code) が担い、isAdminDid は dev 内での権限分離。
+              加算は残高に純増する salePowerEarned に乗せる (viaPosts は召喚進捗ゲージ・
+              toSummon も動かす別セマンティクスなので、残高だけ盛る用途では使わない)。 */}
           {WORLD_PREVIEW_ENABLED && agent && did && isAdminDid(did) && (
             <section style={{ marginTop: '1em', textAlign: 'center' }}>
               <div
@@ -283,7 +285,7 @@ export function Spirit() {
                   color: 'var(--color-muted)',
                 }}
               >
-                <span>管理者用 · あおぞらパワー {points.balance}</span>
+                <span>{grantingPower ? '管理者用 · 付与中…' : `管理者用 · あおぞらパワー ${points.balance}`}</span>
                 {[100, 1000].map((n) => (
                   <button
                     key={n}
@@ -292,7 +294,7 @@ export function Spirit() {
                     onClick={async () => {
                       setGrantingPower(true);
                       try {
-                        await bumpPower(agent, did, { viaPosts: n });
+                        await bumpPower(agent, did, { salePowerEarned: n });
                         const next = await loadPointsState(agent, did);
                         setPoints(next);
                       } catch (e) {

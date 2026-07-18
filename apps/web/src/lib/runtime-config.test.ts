@@ -31,6 +31,14 @@ describe('isAdminDid', () => {
     vi.stubEnv('VITE_ADMIN_DIDS', '');
     expect(isAdminDid('did:plc:aaa')).toBe(false);
   });
+
+  test('前後空白・空要素は正規化して判定する', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', ' did:plc:aaa ,, did:plc:bbb ,');
+    expect(isAdminDid('did:plc:aaa')).toBe(true);
+    expect(isAdminDid('did:plc:bbb')).toBe(true);
+    // 完全一致なので前後空白付きの引数は一致しない (session の did は正規化済み前提)
+    expect(isAdminDid(' did:plc:aaa ')).toBe(false);
+  });
 });
 
 describe('isFlagEnabled', () => {
