@@ -110,6 +110,41 @@ export async function restoreSession(): Promise<OAuthSession | null> {
   return initPromise;
 }
 
+/** @atproto/oauth-client-browser が sub (DID) を控える localStorage キー。ロック名の算出に使う。 */
+const OAUTH_SUB_LS_KEY = '@@atproto/oauth-client-browser(sub)';
+
+/**
+ * **無限「準備しています」/「リダイレクト中」の根本対策** (2026-07-19、実機 dump で確定)。
+ *
+ * トークン期限切れ時、`client.init()` はリフレッシュを排他ロック `@atproto-oauth-client-<sub>` で囲む
+ * (session-getter.js)。**ロック取得待ちには上限が無い**。iOS はバックグラウンドタブの JS/タイマーを凍結
+ * するため、別タブ (や凍結した前のタブ) がこのロックを握ったままだと、その中の 30s abort も凍結されて
+ * **ロックが永久に解放されず**、前面タブの init()/getSession が無限ハングする (dump: held×1 + pending×2)。
+ *
+ * 起動時、**まだ自分が何も acquire していない時点**でロックが held なら、それは他コンテキストの掴みっぱなし
+ * なので `navigator.locks` の **steal** で強制解放する (holder の callback は AbortError で reject → @atproto は
+ * refresh の並行性から回復する設計)。取得後は即手放し、待機者と自分の復元が進めるようにする。best-effort。
+ *
+ * @returns steal を実行したら true。
+ */
+export async function breakStaleOAuthLock(): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.locks?.query || !navigator.locks?.request) return false;
+    const sub = localStorage.getItem(OAUTH_SUB_LS_KEY);
+    if (!sub) return false;
+    const name = `@atproto-oauth-client-${sub}`;
+    const q = await navigator.locks.query();
+    // 自分はまだ acquire していないので、held = 他コンテキスト (凍結タブ等) の掴みっぱなし。
+    if (!q.held?.some((l) => l.name === name)) return false;
+    console.warn('[oauth] stale session lock held by another context; stealing to break deadlock', { name });
+    await navigator.locks.request(name, { steal: true }, async () => { /* 取れたら即解放 */ });
+    return true;
+  } catch (e) {
+    console.warn('[oauth] breakStaleOAuthLock failed', e);
+    return false;
+  }
+}
+
 /** 壊れた/不整合な永続 OAuth セッションを消す (init() がハングして無限「準備しています」になる
  *  ケースからの復旧用)。`@atproto/oauth-client-browser` は IndexedDB `@atproto-oauth-client` に
  *  session/token を保存する。**best-effort**: init() が接続を掴んでいると deleteDatabase は blocked に
