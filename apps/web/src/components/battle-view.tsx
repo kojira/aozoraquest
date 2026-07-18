@@ -22,43 +22,69 @@ export function BattleView({
   /** 敵の上に出す小さな注記 (試練の tier 表示など) */
   headerNote?: string | undefined;
 }) {
-  const monsterDef = MONSTERS_BY_ID[state.monsterId];
   return (
     <div>
+      <BattleScene state={state} headerNote={headerNote} monsterSize={132} />
+      <div style={{ marginTop: '0.7em' }}>
+        <BattleCommands state={state} busy={busy} onCommand={onCommand} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 敵エリア + ログ。あおぞらワールドでは「暗転したマップ枠内」に重ねて
+ * DQ1 風の戦闘シーンにする (world-battle-inline)。試練では BattleView が使う。
+ */
+export function BattleScene({
+  state,
+  headerNote,
+  monsterSize = 132,
+  compact = false,
+}: {
+  state: BattleState;
+  headerNote?: string | undefined;
+  monsterSize?: number;
+  /** 暗い背景に重ねるとき (マップ上オーバーレイ) は文字を明色にする */
+  compact?: boolean;
+}) {
+  const monsterDef = MONSTERS_BY_ID[state.monsterId];
+  const fg = compact ? '#fff' : 'var(--color-fg)';
+  const shadow = compact ? '0 1px 3px rgba(0,0,0,0.9)' : undefined;
+  return (
+    <>
       {/* 敵エリア。key=turn で再マウントして被弾シェイクを毎ターン再生する
           (class 文字列が同じままだと CSS アニメは再始動しない)。 */}
-      <div style={{ textAlign: 'center', paddingTop: '0.4em' }}>
+      <div style={{ textAlign: 'center' }}>
         {headerNote && (
-          <div style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{headerNote}</div>
+          <div style={{ fontSize: '0.75em', color: compact ? 'rgba(255,255,255,0.75)' : 'var(--color-muted)', textShadow: shadow }}>{headerNote}</div>
         )}
         <div
           key={state.turn}
           style={{ display: 'inline-block' }}
           className={state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
         >
-          {/* 132px + ログ 3.6em: コマンド 3 段まで低背端末 (iPhone SE 級) で
-              fold 内に収めるための圧縮 (レビュー指摘)。 */}
-          <MonsterSvg species={monsterDef?.species ?? 'slime'} size={132} />
+          <MonsterSvg species={monsterDef?.species ?? 'slime'} size={monsterSize} />
         </div>
-        <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} />
+        <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
       </div>
 
-      {/* ログ。1 ターン分だけ表示するので高さは内容に応じて伸ばす
-          (固定高 + 末尾スクロールだと冒頭行が隠れて経緯が読めない)。 */}
+      {/* ログ (DQ1 風に 1 文字ずつ表示、key=turn で毎ターン打ち直す。コマンドは
+          ブロックしない = テンポ優先)。暗転背景では半透明の暗パネルに白文字。 */}
       <div
         style={{
-          margin: '0.7em 0',
+          margin: compact ? '0.5em 0 0' : '0.7em 0',
           padding: '0.5em 0.7em',
-          border: '2px solid var(--color-border)',
+          border: `2px solid ${compact ? 'rgba(255,255,255,0.35)' : 'var(--color-border)'}`,
           borderRadius: 4,
-          background: 'var(--color-window-bg)',
+          background: compact ? 'rgba(20,22,30,0.72)' : 'var(--color-window-bg)',
           minHeight: '3.6em',
           fontSize: '0.85em',
           lineHeight: 1.6,
+          color: fg,
+          textShadow: shadow,
         }}
       >
-        {/* DQ1 風に 1 文字ずつ表示 (オーナー指示 2026-07-18)。key=turn で毎ターン
-            打ち直す。コマンドはブロックしない (テンポ優先、せっかちは次の入力で OK) */}
         <TypedLines
           key={state.turn}
           lines={
@@ -68,13 +94,27 @@ export function BattleView({
           }
         />
       </div>
+    </>
+  );
+}
 
-      {/* 自分 HP + MP */}
-      <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine />
+/** 自分 HP/MP + コマンド (親指ゾーン、2x3)。 */
+export function BattleCommands({
+  state,
+  busy,
+  onCommand,
+  compact = false,
+}: {
+  state: BattleState;
+  busy: boolean;
+  onCommand: (c: Command) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div>
+      <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine {...(compact ? { labelColor: '#fff' } : {})} />
       <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
-
-      {/* コマンド (親指ゾーン、2x3)。特技は MP、どうぐは残数で使用可否が決まる。 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.8em' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.6em' }}>
         <CommandButton
           label="たたかう"
           sub={state.mpAttackGain > 0 ? `MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}` : undefined}
@@ -116,12 +156,13 @@ export function BattleView({
   );
 }
 
-export function HpBar({ name, hp, maxHp, mine = false }: { name: string; hp: number; maxHp: number; mine?: boolean }) {
+export function HpBar({ name, hp, maxHp, mine = false, labelColor }: { name: string; hp: number; maxHp: number; mine?: boolean; labelColor?: string }) {
   const ratio = maxHp > 0 ? hp / maxHp : 0;
   const color = ratio > 0.5 ? '#5fc37e' : ratio > 0.25 ? '#f5c542' : '#e8566a';
+  const textShadow = labelColor ? '0 1px 2px rgba(0,0,0,0.9)' : undefined;
   return (
     <div style={{ maxWidth: 340, margin: '0.3em auto 0', textAlign: 'left' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78em' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78em', color: labelColor, textShadow }}>
         <span>{mine ? `▶ ${name}` : name}</span>
         <span style={{ fontFamily: 'ui-monospace, monospace' }}>{hp} / {maxHp}</span>
       </div>

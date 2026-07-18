@@ -37,7 +37,7 @@ import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
-import { formatGain, notifyLevelUp } from '@/components/level-up-overlay';
+import { notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
@@ -45,7 +45,8 @@ import { GearModal } from '@/components/gear-modal';
 import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
-import { BattleView } from '@/components/battle-view';
+import { BattleScene, BattleCommands } from '@/components/battle-view';
+import { BattleResultPanel } from '@/components/world-battle-result';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
@@ -928,96 +929,10 @@ export function World() {
     />
   ) : null;
 
-  // ─── 野外遭遇 (戦闘中はマップの代わりにバトル画面)。cover/hold 中はまだマップを
-  //     見せたままタイルで覆っていく (覆い切った瞬間にこちらへ切り替わる) ───
-  if (battle && (wipe === null || wipe === 'reveal')) {
-    const danger = regionDanger(regionOf(ws.x, ws.y));
-    return (
-      <div style={{ maxWidth: 560, margin: '0 auto' }}>
-        {/* 途中離脱 = 敗北の開示はヘッダ側 (低い端末ではコマンド下が fold 落ちする。レビュー指摘) */}
-        <h2 style={{ margin: '0 0 0.1em' }}>たたかい! <span style={{ fontSize: '0.6em', color: 'var(--color-muted)' }}>(パワー {BATTLE_TUNING.powerCost} 消費)</span></h2>
-        <p style={{ margin: '0 0 0.2em', fontSize: '0.7em', color: 'var(--color-muted)' }}>
-          ※ とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがあるよ。
-        </p>
-        <BattleView
-          state={battle.state}
-          busy={battle.busy}
-          onCommand={(c) => void onBattleCommand(c)}
-          headerNote={DANGER_LABELS[danger]}
-        />
-        {wipeOverlay}
-      </div>
-    );
-  }
-  if (battleResult) {
-    const { state, movedToTown, drops, xp, saveFailed } = battleResult;
-    const won = state.outcome === 'win';
-    return (
-      <div style={{ maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
-        <div style={{ opacity: won ? 0.45 : 1, display: 'inline-block', transform: won ? 'rotate(180deg)' : 'none' }}>
-          <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={110} />
-        </div>
-        <h3 style={{ margin: '0.4em 0' }}>
-          {won ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ'}
-        </h3>
-        {state.lastEvents.length > 0 && (
-          <div style={{ margin: '0.5em auto', maxWidth: 420, fontSize: '0.8em', lineHeight: 1.6, textAlign: 'left', padding: '0.4em 0.7em', border: '2px solid var(--color-border)', borderRadius: 4, background: 'var(--color-window-bg)' }}>
-            {state.lastEvents.map((e, i) => <div key={i}>{e.text}</div>)}
-          </div>
-        )}
-        <div aria-live="polite" style={{ margin: '0.6em 0', fontSize: '0.9em', display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
-          {xp > 0 && <div>経験値 +{xp}</div>}
-          {battleResult.levelUps?.player && (
-            <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
-              レベルが {battleResult.levelUps.player.to} に あがった!
-            </div>
-          )}
-          {battleResult.levelUps?.job && (
-            <div style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
-              {jobDisplayName(battleResult.levelUps.job.archetype, 'default')}のジョブレベルが {battleResult.levelUps.job.to} に あがった!
-            </div>
-          )}
-          {battleResult.statGains && battleResult.statGains.length > 0 && (
-            <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-              {battleResult.statGains.map((g) => `${g.label} +${formatGain(g.delta)}`).join('、')}
-            </div>
-          )}
-          {drops.length > 0 && (
-            <div>素材を手に入れた: {drops.map((d) => ITEMS[d]?.name ?? d).join('、')}</div>
-          )}
-          {saveFailed && (
-            <div style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>
-              ※ 結果の保存に失敗した (通信エラー)。この 1 戦は記録上「敗北」のまま残り、
-              素材を落とした扱いになることがある。電波のよい場所で開き直すと在庫に反映される。
-            </div>
-          )}
-        </div>
-        {battleResult.materialsLost.length > 0 && (
-          <div style={{ margin: '0.3em 0', fontSize: '0.9em', color: 'var(--color-danger)' }}>
-            たおれたひょうしに 素材を落としてしまった…: {(() => {
-              const counts = new Map<string, number>();
-              for (const d of battleResult.materialsLost) counts.set(d, (counts.get(d) ?? 0) + 1);
-              return [...counts.entries()].map(([d, n]) => `${ITEMS[d]?.name ?? d}${n > 1 ? ` ×${n}` : ''}`).join('、');
-            })()}
-          </div>
-        )}
-        {state.outcome === 'fled' && (
-          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-            なにも手に入らなかったが、ぶじに逃げのびた。(つかったパワーは戻らない)
-          </p>
-        )}
-        {movedToTown && (
-          <p style={{ fontSize: '0.85em' }}>気がつくと「{movedToTown}」で介抱されていた… (全回復)</p>
-        )}
-        <button type="button" onClick={() => setBattleResult(null)} style={{ padding: '0.7em 1.6em' }}>
-          マップへ戻る
-        </button>
-        {/* reveal 中に決着した場合でも演出を最後まで流す (無いと wipe='reveal' が
-            残留してマップ復帰時に再生される。レビュー指摘) */}
-        {wipeOverlay}
-      </div>
-    );
-  }
+  // 戦闘はページ遷移せず「暗転したマップ枠内」で行う (オーナー要望 2026-07-18)。
+  // シーン (敵+ログ) はマップ上オーバーレイ、コマンド/リザルトはマップ下に出す。
+  const inBattle = battle !== null && (wipe === null || wipe === 'reveal');
+  const battleDanger = regionDanger(regionOf(ws.x, ws.y));
 
   const town = townAt(ws.x, ws.y);
   const here = terrainAt(ws.x, ws.y);
@@ -1147,36 +1062,78 @@ export function World() {
             </div>
           )}
           {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
+          {/* 戦闘シーン: 暗転したマップ枠内に敵とログを重ねる (DQ1 風。ページ遷移なし) */}
+          {(inBattle || battleResult) && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: HUD_Z + 1,
+                background: 'rgba(8, 10, 16, 0.9)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                padding: '0.5em',
+                overflow: 'hidden',
+              }}
+            >
+              {inBattle && battle ? (
+                <BattleScene state={battle.state} headerNote={DANGER_LABELS[battleDanger]} monsterSize={104} compact />
+              ) : battleResult ? (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ opacity: battleResult.state.outcome === 'win' ? 0.45 : 1, display: 'inline-block', transform: battleResult.state.outcome === 'win' ? 'rotate(180deg)' : 'none' }}>
+                    <MonsterSvg species={MONSTERS_BY_ID[battleResult.state.monsterId]?.species ?? 'slime'} size={92} />
+                  </div>
+                  <h3 style={{ margin: '0.3em 0 0', color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
+                    {battleResult.state.outcome === 'win' ? '勝利!' : battleResult.state.outcome === 'lose' ? 'まけてしまった…' : battleResult.state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ'}
+                  </h3>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
       {searchMsg !== null && (
         <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
       )}
 
-      {/* コマンドは「自分をタップ」で開く DQ 風メニューに集約した (どうぐ列を廃止 —
-          縦スクロールを減らして没入感を上げる。オーナー要望 2026-07-18)。下の一言は
-          初見の操作手掛かり */}
-      <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
-        じぶんを タップすると コマンドが ひらくよ。
-      </p>
-      {/* 一時メッセージ (やくそう使用 / 進めない / 街で回復 など)。操作した指の
-          すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
-      <p
-        aria-live="polite"
-        style={{ textAlign: 'center', fontSize: '0.85em', minHeight: '1.6em', margin: '0.5em 0 0' }}
-      >
-        {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
-      </p>
-      <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-        マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。街に入ると全回復。
-        {diag
-          ? points === null
-            ? ' パワー残高を読み込めなかった (通信エラー)。モンスターは出ません。再読み込みでもう一度どうぞ。'
-            : points.balance >= BATTLE_TUNING.powerCost
-              ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
-              : ' あおぞらパワーがないのでモンスターは出ません (ホームで投稿すると増える)。'
-          : ''}
-      </p>
+      {/* マップ下: 戦闘中はコマンド窓 (DQ1 の下段)、リザルト中は結果、通常は操作ヒント */}
+      {inBattle && battle ? (
+        <div style={{ marginTop: '0.4em' }}>
+          <p style={{ margin: '0 0 0.3em', fontSize: '0.68em', color: 'var(--color-muted)', textAlign: 'center' }}>
+            ※ とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがあるよ。
+          </p>
+          <BattleCommands state={battle.state} busy={battle.busy} onCommand={(c) => void onBattleCommand(c)} />
+        </div>
+      ) : battleResult ? (
+        <BattleResultPanel result={battleResult} onClose={() => setBattleResult(null)} />
+      ) : (
+        <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
+          じぶんを タップすると コマンドが ひらくよ。
+        </p>
+      )}
+      {/* 一時メッセージ + 操作説明は戦闘/リザルト中は隠す (マップ枠内で完結・
+          縦スクロールをなくす。オーナー要望 2026-07-18) */}
+      {!inBattle && !battleResult && (
+        <>
+          <p
+            aria-live="polite"
+            style={{ textAlign: 'center', fontSize: '0.85em', minHeight: '1.6em', margin: '0.5em 0 0' }}
+          >
+            {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
+          </p>
+          <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+            マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。街に入ると全回復。
+            {diag
+              ? points === null
+                ? ' パワー残高を読み込めなかった (通信エラー)。モンスターは出ません。再読み込みでもう一度どうぞ。'
+                : points.balance >= BATTLE_TUNING.powerCost
+                  ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
+                  : ' あおぞらパワーがないのでモンスターは出ません (ホームで投稿すると増える)。'
+              : ''}
+          </p>
+        </>
+      )}
       {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
       {itemsOpen && (
         <ItemsModal
