@@ -239,8 +239,11 @@ export function Spirit() {
           {/* あおぞらワールド (docs/19) の入口。試練より上に置く (旅がメイン導線 —
               オーナー要望 2026-07-18)。プレビュー段階 = dev 環境限定。 */}
           {WORLD_PREVIEW_ENABLED && (
-            <section style={{ marginTop: '1.1em', textAlign: 'center' }}>
+            <section style={{ marginTop: '1.4em', textAlign: 'center' }}>
               <Link to="/world">
+                {/* 主導線として pill 枠 + 背景で目立たせる。発光グロー (boxShadow) は
+                    一度きりの「召喚の儀式」ボタン専用に温存し、最強調シグナルの
+                    希少性を保つ (レビュー ★★) */}
                 <button
                   type="button"
                   style={{
@@ -249,14 +252,13 @@ export function Spirit() {
                     background: 'var(--color-pill-bg)',
                     color: 'var(--color-fg)',
                     border: '3px solid var(--color-pill-border)',
-                    boxShadow: '0 0 16px rgba(159, 215, 255, 0.4)',
                   }}
                 >
                   🗺 あおぞらワールドを冒険する
                 </button>
               </Link>
-              <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-                街をめぐり、モンスターと戦い、そうびを整える旅へ。
+              <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em', maxWidth: 260, marginInline: 'auto' }}>
+                街をめぐり、戦い、そうびを整える旅へ。
               </p>
             </section>
           )}
