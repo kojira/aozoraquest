@@ -4,6 +4,15 @@ import { withTimeout } from '../session';
 describe('withTimeout (warmup ハング対策)', () => {
   afterEach(() => vi.useRealTimers());
 
+  it('restore ラベルのハングは restore-timeout で reject (無限「準備しています」を防ぐ)', async () => {
+    vi.useFakeTimers();
+    const hang = new Promise<string>(() => {}); // 解決しない = 壊れたセッションの client.init()
+    const p = withTimeout(hang, 8_000, 'restore');
+    const assertion = expect(p).rejects.toThrow('restore-timeout');
+    await vi.advanceTimersByTimeAsync(8_000);
+    await assertion;
+  });
+
   it('期限内に解決すれば値を返す', async () => {
     await expect(withTimeout(Promise.resolve('ok'), 1000, 'warmup')).resolves.toBe('ok');
   });
@@ -27,5 +36,35 @@ describe('withTimeout (warmup ハング対策)', () => {
     await expect(p).resolves.toBe('done');
     // タイマーが残っていないこと (finally の clearTimeout)。進めても何も起きない。
     await vi.advanceTimersByTimeAsync(20_000);
+  });
+});
+
+describe('clearOAuthStorage (壊れた永続セッションの復旧)', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetModules(); });
+
+  it('IDB @atproto-oauth-client を削除する (onsuccess で解決)', async () => {
+    let opened: string | undefined;
+    const del = vi.fn((name: string) => {
+      opened = name;
+      const req: { onsuccess?: () => void; onerror?: () => void; onblocked?: () => void } = {};
+      queueMicrotask(() => req.onsuccess?.());
+      return req;
+    });
+    vi.stubGlobal('indexedDB', { deleteDatabase: del } as unknown as IDBFactory);
+    const { clearOAuthStorage } = await import('../oauth');
+    await clearOAuthStorage();
+    expect(del).toHaveBeenCalledOnce();
+    expect(opened).toBe('@atproto-oauth-client');
+  });
+
+  it('blocked (init が接続保持) でも待ち続けず解決する', async () => {
+    const del = vi.fn(() => {
+      const req: { onsuccess?: () => void; onerror?: () => void; onblocked?: () => void } = {};
+      queueMicrotask(() => req.onblocked?.()); // 接続保持で blocked
+      return req;
+    });
+    vi.stubGlobal('indexedDB', { deleteDatabase: del } as unknown as IDBFactory);
+    const { clearOAuthStorage } = await import('../oauth');
+    await expect(clearOAuthStorage()).resolves.toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import { Agent, AtpAgent } from '@atproto/api';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { onSessionDeleted, restoreSession, signOut } from './oauth';
+import { clearOAuthStorage, onSessionDeleted, restoreSession, signOut } from './oauth';
 
 /**
  * 公開 AppView エンドポイント。OAuth セッションの PDS は app.bsky.* を
@@ -13,6 +13,12 @@ const PUBLIC_APPVIEW = 'https://api.bsky.app';
 /** warmup (getSession) の上限。復元は本来 <1s なので、これを超えたら「ハングした古い/壊れた
  *  セッション」とみなし signed-out へ倒す (遅いだけの valid セッションを誤って切らない余裕を持たせる)。 */
 const WARMUP_TIMEOUT_MS = 10_000;
+
+/** restoreSession (OAuth client.init) の上限。init は本来 <1s だが、**壊れた/不整合な永続セッションや
+ *  navigator.locks の詰まりで無応答ハング**すると、warmup 手前で止まり無限「準備しています」になる
+ *  (warmup と違い restore には従来タイムアウトが無かった)。超えたら壊れた OAuth ストレージを消して
+ *  signed-out に倒す (= ログイン画面へ抜け、再ログインでクリーン復帰)。 */
+const RESTORE_TIMEOUT_MS = 8_000;
 
 /** `promise` を `ms` でタイムアウトさせる。超えたら `Error('<label>-timeout')` で reject。
  *  勝敗どちらでもタイマーを片付ける (保留タイマー/unhandled rejection を残さない)。 */
@@ -80,7 +86,8 @@ export function useSessionLoader(): SessionState {
     });
     (async () => {
       try {
-        const session = await restoreSession();
+        // restore を必ずタイムアウトさせる (無応答ハングで「準備しています」が永久に消えないのを防ぐ)。
+        const session = await withTimeout(restoreSession(), RESTORE_TIMEOUT_MS, 'restore');
         if (cancelled) return;
         if (!session) {
           setState({ status: 'signed-out' });
@@ -88,7 +95,11 @@ export function useSessionLoader(): SessionState {
         }
         await setStateFromSession(session, setState, () => cancelled);
       } catch (err) {
-        console.error('session restore failed', err);
+        const timedOut = err instanceof Error && err.message === 'restore-timeout';
+        console.warn('[session] restore failed/timed out; signing out', { timedOut, err });
+        // タイムアウト = 壊れた/不整合な永続セッションで init() がハング。**IDB を消して**次回リロードや
+        // 再ログインがクリーンに通るようにする (did 不明なので warmup 側の revoke は使えない)。待たない。
+        if (timedOut) void clearOAuthStorage();
         if (!cancelled) setState({ status: 'signed-out' });
       }
     })();

@@ -110,6 +110,29 @@ export async function restoreSession(): Promise<OAuthSession | null> {
   return initPromise;
 }
 
+/** 壊れた/不整合な永続 OAuth セッションを消す (init() がハングして無限「準備しています」になる
+ *  ケースからの復旧用)。`@atproto/oauth-client-browser` は IndexedDB `@atproto-oauth-client` に
+ *  session/token を保存する。**best-effort**: init() が接続を掴んでいると deleteDatabase は blocked に
+ *  なるが、その場合も待たずに返す (次回リロードで実際に消える)。キャッシュした client/init も破棄して
+ *  次の restoreSession がクリーンな client を作り直せるようにする。 */
+export async function clearOAuthStorage(): Promise<void> {
+  initPromise = null;
+  clientPromise = null;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => { if (!settled) { settled = true; resolve(); } };
+    try {
+      const req = indexedDB.deleteDatabase('@atproto-oauth-client');
+      req.onsuccess = finish;
+      req.onerror = finish;
+      req.onblocked = finish; // 開いた接続で blocked でも永久待ちしない (次回リロードで消える)
+    } catch {
+      finish();
+    }
+    setTimeout(finish, 2_000); // 保険: イベントが来なくても 2s で諦める
+  });
+}
+
 /** ログインフローを開始 (authorize 画面にリダイレクト) */
 export async function signIn(handle: string): Promise<never> {
   const client = await getOAuthClient();
