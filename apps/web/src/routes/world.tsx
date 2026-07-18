@@ -984,27 +984,24 @@ export function World() {
   const danger = regionDanger(regionOf(ws.x, ws.y));
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
-  // 参照を安定させる (メニューは開いている間だけマウントされるが、将来キーボード
-  // ナビ等を足すときに毎レンダー別関数だと地雷 — レビュー ★★)
+  // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
+  // フック数が可変になり React error #310 でクラッシュする — 2026-07-18 事故)。
+  // 毎レンダー生成でも、メニューは開いている間だけマウントされるので実害は無い。
   const inTown = !!town;
   const statusReady = !!combat && !!archetype;
-  const menuCommands: WorldMenuCommand[] = useMemo(
-    () => [
-      // 並び順は「しらべる」(次 PR) を どうぐ の後に差し込む前提で固定 (筋肉記憶を裏切らない)
-      { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
-      // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
-      ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => setSearchMsg(searchHere()) } as WorldMenuCommand]),
-      { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
-      { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
-      { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
-      // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
-      ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
-      ...(inTown
-        ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
-        : []),
-    ],
-    [inTown, statusReady, searchHere],
-  );
+  const menuCommands: WorldMenuCommand[] = [
+    { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
+    // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
+    ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => setSearchMsg(searchHere()) } as WorldMenuCommand]),
+    { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
+    { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
+    { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
+    // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
+    ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
+    ...(inTown
+      ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
+      : []),
+  ];
 
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
   const tiles = [];
