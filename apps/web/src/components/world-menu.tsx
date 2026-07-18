@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { OVERLAY_Z } from './world-hud';
 
 /**
  * あおぞらワールドの DQ 風コマンドメニュー (オーナー要望 2026-07-18
@@ -37,7 +38,7 @@ export function WorldMenu({ commands, onClose }: { commands: readonly WorldMenuC
       aria-label="コマンド"
       onClick={onClose}
       onPointerDown={(e) => e.stopPropagation()}
-      style={{ position: 'absolute', inset: 0, zIndex: 3, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 8, background: 'rgba(0,0,0,0.25)' }}
+      style={{ position: 'absolute', inset: 0, zIndex: OVERLAY_Z, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 8, background: 'rgba(0,0,0,0.25)' }}
     >
       <div
         className="dq-window"
@@ -45,7 +46,7 @@ export function WorldMenu({ commands, onClose }: { commands: readonly WorldMenuC
         style={{ padding: 8, marginBottom: 4, minWidth: 180, maxWidth: '90%' }}
       >
         <div style={{ fontSize: 11, color: 'var(--color-muted)', marginBottom: 4, textAlign: 'center' }}>コマンド</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {commands.map((c, i) => (
             <button
               key={c.key}
@@ -57,8 +58,9 @@ export function WorldMenu({ commands, onClose }: { commands: readonly WorldMenuC
                 c.onSelect();
               }}
               style={{
-                padding: '0.6em 0.4em',
+                padding: '0.5em 1em',
                 fontSize: '0.9em',
+                textAlign: 'left',
                 touchAction: 'manipulation',
                 opacity: c.disabled ? 0.5 : 1,
               }}

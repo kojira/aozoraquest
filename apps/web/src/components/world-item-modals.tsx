@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EQUIPMENT_BY_ID, ITEMS, leveledName } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
 
@@ -61,12 +61,15 @@ export function ItemsModal({
   featherStock: number;
   /** 戦闘値が解決済み (HP/MP 回復が計算できる) か */
   canUse: boolean;
-  onUseHerb: () => void;
-  onUseTonic: () => void;
+  onUseHerb: () => string | void;
+  onUseTonic: () => string | void;
   onUseFeather: () => void;
   onClose: () => void;
 }) {
-  const row = (label: string, count: number, note: string, disabled: boolean, onUse: () => void) => (
+  // 回復系は使っても閉じない (満タン等の結果をモーダル内に留めて見せる — レビュー ★★)。
+  // そらのはねは街へ帰る (テレポート) ので閉じる。
+  const [msg, setMsg] = useState<string | null>(null);
+  const row = (label: string, count: number, note: string, disabled: boolean, onUse: () => string | void, closeAfter: boolean) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em', padding: '0.4em 0', borderBottom: '1px solid var(--color-border)' }}>
       <span style={{ fontSize: '0.9em' }}>
         {label} <span style={{ color: 'var(--color-muted)' }}>×{count}</span>
@@ -77,8 +80,9 @@ export function ItemsModal({
         type="button"
         disabled={disabled}
         onClick={() => {
-          onUse();
-          onClose();
+          const r = onUse();
+          if (closeAfter) onClose();
+          else setMsg(typeof r === 'string' ? r : null);
         }}
         style={{ fontSize: '0.82em', padding: '0.4em 1em', touchAction: 'manipulation' }}
       >
@@ -92,9 +96,12 @@ export function ItemsModal({
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>どうぐを もっていない。モンスターを たおすと 手に入る。</p>
       ) : (
         <>
-          {row('やくそう', herbStock, 'HP を かいふく', herbStock <= 0 || !canUse, onUseHerb)}
-          {row('そらのしずく', tonicStock, 'MP を かいふく', tonicStock <= 0 || !canUse, onUseTonic)}
-          {row('そらのはね', featherStock, '街へ もどる', featherStock <= 0, onUseFeather)}
+          {row('やくそう', herbStock, 'HP を かいふく', herbStock <= 0 || !canUse, onUseHerb, false)}
+          {row('そらのしずく', tonicStock, 'MP を かいふく', tonicStock <= 0 || !canUse, onUseTonic, false)}
+          {row('そらのはね', featherStock, '街へ もどる', featherStock <= 0, onUseFeather, true)}
+          <p aria-live="polite" style={{ fontSize: '0.82em', minHeight: '1.4em', margin: '0.4em 0 0', color: 'var(--color-fg)' }}>
+            {msg}
+          </p>
         </>
       )}
     </ModalShell>
