@@ -10,3 +10,11 @@ name = "aozoraquest-edge"
 main = "src/index.ts"
 compatibility_date = "2026-04-24"
 compatibility_flags = ["nodejs_compat"]
+
+# OAuth write 認証 (docs/21 §12) のトークンストア。cron refresher が書き、リクエスト Worker が読む。
+# 実行時に書き換えられる保管場所が要るので Secret/env でなく KV (Durable Object は Paid 要で不採用)。
+# Kojiran@gmail.com アカウントに作成 (wrangler kv namespace create OAUTH_TOKENS)。
+[[kv_namespaces]]
+binding = "OAUTH_TOKENS"
+id = "fa7215e005474e6cac81745c463333ba"
+preview_id = "c1f3e394d104413192a0dac7303b6443"
