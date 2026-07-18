@@ -214,6 +214,29 @@ button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* 戦闘の DQ 風コマンド窓の行 (battle-view DqCommand)。透明ボタンなので、
+   インライン background を持たせると button:active の押下フィードバックを詳細度で
+   潰してしまう。ここで背景と active/hover を定義し「押した感」を確保する
+   (暗転オーバーレイ上なので active は半透明白。opacity は button:disabled が担う)。 */
+.dq-command {
+  background: transparent;
+  border: none;
+  color: #fff;
+  text-align: left;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  padding: 0.3em;
+  font-size: 0.95em;
+  line-height: 1.2;
+  min-height: 2.4em;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+  touch-action: manipulation;
+}
+.dq-command:hover:not(:disabled),
+.dq-command:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
 button.secondary {
   background: transparent;
   color: var(--color-fg);

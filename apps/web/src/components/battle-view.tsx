@@ -159,68 +159,74 @@ export function BattleCommands({
     onCommand(c);
     setItemMenu(false);
   };
+
+  const skillMp = BATTLE_TUNING.skillMpCost;
+  type Cmd = { key: string; label: string; sub?: string | undefined; onClick: () => void; disabled: boolean; span2?: boolean };
+  const cmds: Cmd[] = itemMenu
+    ? [
+        { key: 'herb', label: `やくそう ×${state.herbs}`, sub: `HP ${Math.round(BATTLE_TUNING.herbHealRatio * 100)}% 回復`, onClick: () => applyItem('herb'), disabled: busy || !canHerb },
+        { key: 'tonic', label: `そらのしずく ×${state.tonics}`, sub: `MP ${Math.round(BATTLE_TUNING.tonicMpRatio * 100)}% 回復`, onClick: () => applyItem('tonic'), disabled: busy || !canTonic },
+        { key: 'back', label: 'もどる', onClick: () => setItemMenu(false), disabled: busy, span2: true },
+      ]
+    : [
+        { key: 'attack', label: 'たたかう', sub: state.mpAttackGain > 0 ? `MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}` : undefined, onClick: () => onCommand('attack'), disabled: busy },
+        { key: 'skill', label: state.playerSkill.name, sub: `MP ${skillMp} / ${SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}`, onClick: () => onCommand('skill'), disabled: busy || state.player.mp < skillMp },
+        { key: 'guard', label: 'ぼうぎょ', sub: state.mpGuardGain > 0 ? `回避↑ / MP +${state.mpGuardGain}` : '回避↑', onClick: () => onCommand('guard'), disabled: busy },
+        { key: 'item', label: 'どうぐ', sub: hasItems ? `やくそう${state.herbs} / しずく${state.tonics}` : 'なし', onClick: () => setItemMenu(true), disabled: busy || !hasItems },
+        { key: 'flee', label: 'にげる', sub: '失敗すると 1 ターン失う', onClick: () => onCommand('flee'), disabled: busy, span2: true },
+      ];
+
+  // compact (あおぞらワールド): DQ 風コマンド窓。枠付きウィンドウにフラットな文字
+  // コマンドを 2 列で詰める (立体ボタン + 2 段説明は背が高く狭苦しい — オーナー要望
+  // 2026-07-18「ドラクエの配置を真似して」)。効果説明は省き 1 行 1 コマンドに。
+  if (compact) {
+    return (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          columnGap: '0.6em',
+          border: '2px solid rgba(255,255,255,0.6)',
+          borderRadius: 4,
+          background: 'rgba(16,18,26,0.85)',
+          padding: '0.15em 0.5em',
+        }}
+      >
+        {cmds.map((c) => (
+          <DqCommand key={c.key} label={c.label} onClick={c.onClick} disabled={c.disabled} span2={c.span2 ?? false} />
+        ))}
+      </div>
+    );
+  }
+
+  // 非 compact (試練): 画面が広いので従来の説明付きボタン + 自分の HP/MP バー。
   return (
     <div>
-      {!compact && (
-        <>
-          <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine />
-          <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
-        </>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: compact ? '0.4em' : '0.5em', marginTop: compact ? 0 : '0.6em' }}>
-        {itemMenu ? (
-          <>
-            <CommandButton
-              label={`やくそう ×${state.herbs}`}
-              sub={`HP ${Math.round(BATTLE_TUNING.herbHealRatio * 100)}% 回復`}
-              onClick={() => applyItem('herb')}
-              disabled={busy || !canHerb}
-              compact={compact}
-            />
-            <CommandButton
-              label={`そらのしずく ×${state.tonics}`}
-              sub={`MP ${Math.round(BATTLE_TUNING.tonicMpRatio * 100)}% 回復`}
-              onClick={() => applyItem('tonic')}
-              disabled={busy || !canTonic}
-              compact={compact}
-            />
-            <CommandButton label="もどる" onClick={() => setItemMenu(false)} disabled={busy} span2 compact={compact} />
-          </>
-        ) : (
-          <>
-            <CommandButton
-              label="たたかう"
-              sub={state.mpAttackGain > 0 ? `MP +${state.mpAttackGain}${state.mpTraitName ? ` (${state.mpTraitName})` : ''}` : undefined}
-              onClick={() => onCommand('attack')}
-              disabled={busy}
-              compact={compact}
-            />
-            <CommandButton
-              label={state.playerSkill.name}
-              sub={`MP ${BATTLE_TUNING.skillMpCost} / ${SKILL_KIND_LABELS[state.playerSkill.kind].split(' ')[0]}`}
-              onClick={() => onCommand('skill')}
-              disabled={busy || state.player.mp < BATTLE_TUNING.skillMpCost}
-              compact={compact}
-            />
-            <CommandButton
-              label="ぼうぎょ"
-              sub={state.mpGuardGain > 0 ? `回避↑ / MP +${state.mpGuardGain}` : '回避↑'}
-              onClick={() => onCommand('guard')}
-              disabled={busy}
-              compact={compact}
-            />
-            <CommandButton
-              label="どうぐ"
-              sub={hasItems ? `やくそう${state.herbs} / しずく${state.tonics}` : 'なし'}
-              onClick={() => setItemMenu(true)}
-              disabled={busy || !hasItems}
-              compact={compact}
-            />
-            <CommandButton label="にげる" sub="失敗すると 1 ターン失う" onClick={() => onCommand('flee')} disabled={busy} span2 compact={compact} />
-          </>
-        )}
+      <HpBar name={state.player.name} hp={state.player.hp} maxHp={state.player.maxHp} mine />
+      <MpBar mp={state.player.mp} maxMp={state.player.maxMp} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5em', marginTop: '0.6em' }}>
+        {cmds.map((c) => (
+          <CommandButton key={c.key} label={c.label} sub={c.sub} onClick={c.onClick} disabled={c.disabled} span2={c.span2 ?? false} />
+        ))}
       </div>
     </div>
+  );
+}
+
+/** DQ 風コマンド窓の 1 行 (フラットな文字コマンド、左寄せ、タイト)。compact 専用。
+ *  見た目・押下フィードバック・disabled は `.dq-command` (styles.css) に集約
+ *  (インライン background だと button:active の押下色を詳細度で潰す — レビュー ★★★)。 */
+function DqCommand({ label, onClick, disabled, span2 = false }: { label: string; onClick: () => void; disabled: boolean; span2?: boolean }) {
+  return (
+    <button
+      type="button"
+      className="dq-command"
+      onClick={onClick}
+      disabled={disabled}
+      style={span2 ? { gridColumn: '1 / -1' } : undefined}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -256,7 +262,7 @@ export function MpBar({ mp, maxMp }: { mp: number; maxMp: number }) {
   );
 }
 
-export function CommandButton({ label, sub, onClick, disabled, compact = false, span2 = false }: { label: string; sub?: string | undefined; onClick: () => void; disabled: boolean; compact?: boolean; span2?: boolean }) {
+export function CommandButton({ label, sub, onClick, disabled, span2 = false }: { label: string; sub?: string | undefined; onClick: () => void; disabled: boolean; span2?: boolean }) {
   return (
     <button
       type="button"
@@ -264,14 +270,14 @@ export function CommandButton({ label, sub, onClick, disabled, compact = false, 
       disabled={disabled}
       style={{
         gridColumn: span2 ? '1 / -1' : undefined,
-        padding: compact ? '0.45em 0.2em' : '0.8em 0.2em',
-        fontSize: compact ? '0.85em' : '0.9em',
+        padding: '0.8em 0.2em',
+        fontSize: '0.9em',
         lineHeight: 1.25,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: compact ? 0 : '0.1em',
-        minHeight: compact ? '2.6em' : '3.6em',
+        gap: '0.1em',
+        minHeight: '3.6em',
         touchAction: 'manipulation',
       }}
     >
