@@ -18,3 +18,8 @@ compatibility_flags = ["nodejs_compat"]
 binding = "OAUTH_TOKENS"
 id = "fa7215e005474e6cac81745c463333ba"
 preview_id = "c1f3e394d104413192a0dac7303b6443"
+
+# OAuth トークンの唯一の refresh 実行者 (docs/21 §12)。10 分ごとに起動し、access token 失効前に
+# refresh_token で更新する (REFRESH_AHEAD_SEC=900 = 15 分前から。cron 間隔 < ahead で取りこぼし防止)。
+[triggers]
+crons = ["*/10 * * * *"]
