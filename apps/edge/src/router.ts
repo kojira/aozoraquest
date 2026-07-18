@@ -10,6 +10,8 @@
  *   /api/battle/* /api/xp/* /api/me/state (M2〜)。依頼クエスト集約 (docs/15) も。
  */
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
+import { getRecord } from './pds';
+import { GAME_STATE_COLLECTION, rkeyForDid, emptyState } from './game-state';
 
 export interface Env {
   ENVIRONMENT?: string;
@@ -17,10 +19,14 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
   /** この Worker の DID (service auth JWT の aud)。既定 did:web:edge.aozoraquest.app */
   WORKER_DID?: string;
+  /** 権威 state を置く app サーバーアカウントの PDS URL と DID (public read 用、非 secret)。 */
+  SERVER_PDS_URL?: string;
+  SERVER_DID?: string;
 }
 
 /** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
 const LXM_WHOAMI = 'app.aozoraquest.whoami';
+const LXM_ME_STATE = 'app.aozoraquest.me.state';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -74,6 +80,24 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const msg = e instanceof ServiceAuthError ? e.message : 'verify_failed';
       return cors(json({ error: 'unauthorized', reason: msg }, 401), allowedOrigin);
     }
+  }
+
+  // 権威 state (ゲーム経済) の読み取り。自分の DID の分だけ返す (JWT で本人確認)。
+  // 読みは public getRecord なので session 不要。書き込みは M3 の battle 系で行う。
+  if (req.method === 'GET' && url.pathname === '/api/me/state') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_ME_STATE }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    if (!env.SERVER_PDS_URL || !env.SERVER_DID) return cors(json({ error: 'server_not_configured' }, 503), allowedOrigin);
+    const rec = await getRecord(env.SERVER_PDS_URL, env.SERVER_DID, GAME_STATE_COLLECTION, rkeyForDid(did));
+    // 未作成なら初期値を返す (実 state 化は初回の書込み = M3 で。移行はそこでクランプ)
+    return cors(json({ state: rec?.value ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
   }
 
   return cors(json({ error: 'not_found', path: url.pathname }, 404), allowedOrigin);

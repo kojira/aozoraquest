@@ -74,4 +74,10 @@ describe('edge router', () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it('GET /api/me/state は JWT 無しなら 401', async () => {
+    const res = await handleRequest(new Request('https://x/api/me/state'), env);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('missing_token');
+  });
 });
