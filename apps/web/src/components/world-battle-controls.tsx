@@ -53,7 +53,8 @@ export function WorldBattleControls({
             <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu} />
             <DqRow label={state.playerSkill.name} onClick={() => onCommand('skill')} disabled={busy || itemMenu || state.player.mp < BATTLE_TUNING.skillMpCost} />
             <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
-            <DqRow label="どうぐ" onClick={() => setItemMenu(true)} disabled={busy || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
+            {/* どうぐ: 再タップでアイテム窓を閉じる (DQ の「戻る」慣習に合わせる — レビュー ★★) */}
+            <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
             <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />
           </div>
           {/* 右: どうぐ選択中はアイテム、それ以外は敵リスト */}
@@ -147,6 +148,7 @@ function DqMessageWindow({ state, busy, onAdvance }: { state: BattleState; busy:
   const [typed, setTyped] = useState(false);
   return (
     <div
+      className="dq-message"
       onClick={() => {
         if (busy) return; // 処理中は送らない
         if (typed) onAdvance(); // 全文表示済み → 送り

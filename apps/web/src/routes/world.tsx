@@ -530,9 +530,12 @@ export function World() {
   const onMessageAdvance = useCallback(
     async () => {
       const b = battleRef.current;
-      if (!b || b.busy || b.phase !== 'message' || !agent || !did) return;
+      // agent/did は決着の確定処理 (レコード/XP) だけに要るので、ここでは要求しない。
+      // 継戦のタップ送りまで塞ぐと、稀にセッションが切れた時にメッセージが送れず詰む。
+      if (!b || b.busy || b.phase !== 'message') return;
       const next = b.state;
-      // 開幕メッセージ (turn 0) と継戦は入力フェーズへ戻すだけ
+      // 開幕メッセージ (turn 0 = 開幕専用。resolveTurn は turn を必ず +1 するので決着は
+      // 常に turn>=1) と継戦は入力フェーズへ戻すだけ
       if (next.turn === 0 || next.outcome === 'ongoing') {
         const back = { ...b, phase: 'input' as BattlePhase };
         battleRef.current = back;
@@ -559,18 +562,24 @@ export function World() {
         materialsLost: lost,
       };
       // 保存は 1 回リトライ。失敗したらリザルトで明示 (仮レコードが敗北のまま残る)。
+      // agent/did は通常この時点で必ず在る (遭遇成立に必須) が、稀にセッションが切れて
+      // いても詰ませない: 保存/XP をスキップして saveFailed 扱いで結果まで進める。
       let saveFailed = false;
-      try {
-        await finishBattleRecord(agent, b.rkey, record);
-      } catch {
+      if (agent && did) {
         try {
           await finishBattleRecord(agent, b.rkey, record);
-        } catch (e) {
-          console.warn('[world] battle finish record failed (after retry)', e);
-          saveFailed = true;
+        } catch {
+          try {
+            await finishBattleRecord(agent, b.rkey, record);
+          } catch (e) {
+            console.warn('[world] battle finish record failed (after retry)', e);
+            saveFailed = true;
+          }
         }
+      } else {
+        saveFailed = true;
       }
-      if (xp > 0) {
+      if (xp > 0 && agent && did) {
         void awardBattleXp(agent, did, xp).then((ups) => {
           if (!ups) return;
           // ステータス上昇量は再取得前の diag (レベルアップ前の基準) から計算する
@@ -670,7 +679,14 @@ export function World() {
       }
       scheduleSave();
       setBattle(null);
-      setBattleResult({ state: next, movedToTown, drops, xp, saveFailed, materialsLost: lost });
+      // リザルトに出す中身が何も無いなら (逃走・引き分けで報酬も損失も無い)、空の
+      // パネルを見せず即マップへ戻す (「にげだした！」は直前のメッセージ窓で読ませ済み。
+      // 情報量を減らす — レビュー ★★)。レベルアップは xp>0 の勝利時のみ後追いで届く
+      // ので、ここで空判定に含めなくてよい。
+      const hasResult = xp > 0 || drops.length > 0 || !!movedToTown || lost.length > 0 || saveFailed;
+      if (hasResult) {
+        setBattleResult({ state: next, movedToTown, drops, xp, saveFailed, materialsLost: lost });
+      }
     },
     [scheduleSave, agent, did],
   );
