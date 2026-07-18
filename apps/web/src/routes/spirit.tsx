@@ -236,7 +236,32 @@ export function Spirit() {
             ))}
           </section>
 
-          <section style={{ marginTop: '1em' }}>
+          {/* あおぞらワールド (docs/19) の入口。試練より上に置く (旅がメイン導線 —
+              オーナー要望 2026-07-18)。プレビュー段階 = dev 環境限定。 */}
+          {WORLD_PREVIEW_ENABLED && (
+            <section style={{ marginTop: '1.1em', textAlign: 'center' }}>
+              <Link to="/world">
+                <button
+                  type="button"
+                  style={{
+                    padding: '0.8em 1.8em',
+                    fontSize: '1.05em',
+                    background: 'var(--color-pill-bg)',
+                    color: 'var(--color-fg)',
+                    border: '3px solid var(--color-pill-border)',
+                    boxShadow: '0 0 16px rgba(159, 215, 255, 0.4)',
+                  }}
+                >
+                  🗺 あおぞらワールドを冒険する
+                </button>
+              </Link>
+              <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+                街をめぐり、モンスターと戦い、そうびを整える旅へ。
+              </p>
+            </section>
+          )}
+
+          <section style={{ marginTop: '1.2em' }}>
             {agent && did && diag ? (
               <TrialArena
                 agent={agent}
@@ -267,17 +292,6 @@ export function Spirit() {
               </div>
             )}
           </section>
-
-          {/* あおぞらワールド (docs/19) の入口。散歩プレビュー段階 = dev 環境限定。 */}
-          {WORLD_PREVIEW_ENABLED && (
-            <section style={{ marginTop: '1.2em', textAlign: 'center' }}>
-              <Link to="/world">
-                <button type="button" style={{ padding: '0.6em 1.4em' }}>
-                  🗺 あおぞらワールドを歩く (プレビュー)
-                </button>
-              </Link>
-            </section>
-          )}
         </>
       )}
 
