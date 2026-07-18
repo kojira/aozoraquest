@@ -68,6 +68,33 @@ describe('salePowerEarned (ひきとりの獲得パワー)', () => {
     expect(p.salePowerEarned).toBe(3);
     expect(p.balance).toBe(20 - 2 - 1 - 4 - 8 + 3);
   });
+
+  test('searchPowerSpent (しらべる消費) が balance から引かれる', async () => {
+    const agent = {
+      com: { atproto: { repo: {
+        getRecord: async () => ({ data: { value: {
+          viaPosts: 30, userMessages: 0, cardDraws: 0, battles: 0, craftPowerSpent: 0,
+          salePowerEarned: 0, searchPowerSpent: 5, summoned: true, updatedAt: 'x',
+        } } }),
+      } } },
+    } as any;
+    const p = await loadPointsState(agent, 'did:test');
+    expect(p.searchPowerSpent).toBe(5);
+    expect(p.balance).toBe(25); // 30 - 5
+  });
+
+  test('旧レコード (searchPowerSpent 欠落) は 0 扱い', async () => {
+    const agent = {
+      com: { atproto: { repo: {
+        getRecord: async () => ({ data: { value: {
+          viaPosts: 10, userMessages: 0, cardDraws: 0, summoned: true, updatedAt: 'x',
+        } } }),
+      } } },
+    } as any;
+    const p = await loadPointsState(agent, 'did:test');
+    expect(p.searchPowerSpent).toBe(0);
+    expect(p.balance).toBe(10);
+  });
 });
 
 describe('loadPointsState', () => {
@@ -81,6 +108,7 @@ describe('loadPointsState', () => {
       battles: 0,
       craftPowerSpent: 0,
       salePowerEarned: 0,
+      searchPowerSpent: 0,
       summoned: false,
       balance: 0,
       toSummon: SUMMON_THRESHOLD,

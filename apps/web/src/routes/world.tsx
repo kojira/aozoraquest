@@ -22,6 +22,8 @@ import {
   resolveTurn,
   rollDefeatLoss,
   rollDrops,
+  rollSearch,
+  SEARCH_TUNING,
   startBattle,
   statVectorToArray,
   terrainAt,
@@ -142,6 +144,9 @@ export function World() {
   }, []);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
+  const [searchMsg, setSearchMsg] = useState<string | null>(null);
+  const searchMsgRef = useRef(false);
+  searchMsgRef.current = searchMsg !== null;
   const itemsOpenRef = useRef(false);
   itemsOpenRef.current = itemsOpen;
   const invOpenRef = useRef(false);
@@ -337,6 +342,8 @@ export function World() {
   pointsRef.current = points;
   const resolvedGearRef = useRef(resolvedGear);
   resolvedGearRef.current = resolvedGear;
+  const combatRef = useRef(combat);
+  combatRef.current = combat;
   const diagRef = useRef(diag);
   diagRef.current = diag;
   const wipeRef = useRef(wipe);
@@ -351,7 +358,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -711,6 +718,33 @@ export function World() {
     setWipe('cover'); // 覆い切ったら onCoverDone がテレポートする
   }, [featherStock]);
 
+  // しらべる: パワー 1 を使って足元を調べる。luk 連動でアイテムが手に入ることがある
+  // (見つからないこともある)。発見物はセッション内在庫に加える (消費の正は TODO(W3))。
+  const searchHere = useCallback((): string => {
+    const s = wsRef.current;
+    const pts = pointsRef.current;
+    if (!s || !agent || !did) return 'いま しらべられない (つうしんを かくにんして)。';
+    if (!pts || pts.balance < SEARCH_TUNING.powerCost) return `パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`;
+    const luk = combatRef.current?.luk ?? 0;
+    const tier = tierForDanger(regionDanger(regionOf(s.x, s.y)));
+    const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+    const found = rollSearch(seed, luk, tier);
+    // パワーを 1 消費 (見つかっても見つからなくても。無料の無限試行を作らない)
+    const left = Math.max(0, pts.balance - SEARCH_TUNING.powerCost);
+    void bumpPower(agent, did, { searchPowerSpent: SEARCH_TUNING.powerCost });
+    setPoints((p) => (p ? { ...p, searchPowerSpent: p.searchPowerSpent + SEARCH_TUNING.powerCost, balance: Math.max(0, p.balance - SEARCH_TUNING.powerCost) } : p));
+    if (!found) return `あたりを しらべたが、なにも なかった… (のこりパワー ${left})`;
+    // 在庫に加える。消耗品 (やくそう/しずく) は「どうぐ」で使え、素材は「もちもの」に入る
+    const isConsumable = found === 'herb' || found === 'sky-dew';
+    if (found === 'herb') setHerbStock((n) => n + 1);
+    else if (found === 'sky-dew') setTonicStock((n) => n + 1);
+    const m = materialsRef.current;
+    m[found] = (m[found] ?? 0) + 1;
+    setMaterialsView({ ...m });
+    const where = isConsumable ? 'どうぐ' : 'もちもの';
+    return `しらべると、${ITEMS[found]?.name ?? found} を 1 つ 見つけた! (${where}で かくにん / のこりパワー ${left})`;
+  }, [agent, did]);
+
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
   // 素材 (craft レコードの集計で差し引き)。品質は rkey + luk から決定的
   const onCraft = useCallback(
@@ -998,6 +1032,8 @@ export function World() {
     () => [
       // 並び順は「しらべる」(次 PR) を どうぐ の後に差し込む前提で固定 (筋肉記憶を裏切らない)
       { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
+      // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
+      ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => setSearchMsg(searchHere()) } as WorldMenuCommand]),
       { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
       { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
       { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
@@ -1007,7 +1043,7 @@ export function World() {
         ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
         : []),
     ],
-    [inTown, statusReady],
+    [inTown, statusReady, searchHere],
   );
 
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
@@ -1113,6 +1149,9 @@ export function World() {
           {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
         </div>
       </div>
+      {searchMsg !== null && (
+        <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
+      )}
 
       {/* コマンドは「自分をタップ」で開く DQ 風メニューに集約した (どうぐ列を廃止 —
           縦スクロールを減らして没入感を上げる。オーナー要望 2026-07-18)。下の一言は
