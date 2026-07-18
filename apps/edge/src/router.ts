@@ -13,6 +13,9 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { getRecord } from './pds';
 import { GAME_STATE_COLLECTION, rkeyForDid, emptyState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
+import { handleEncounter, handleTurn, ResolverError } from './battle-resolver';
+import { ServerWriteError } from './server-pds';
+import type { Command } from '@aozoraquest/core';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
 export interface Env extends OAuthRoutesEnv {
@@ -28,6 +31,8 @@ const nowSec = (): number => Math.floor(Date.now() / 1000);
 /** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
 const LXM_WHOAMI = 'app.aozoraquest.whoami';
 const LXM_ME_STATE = 'app.aozoraquest.me.state';
+const LXM_BATTLE_ENCOUNTER = 'app.aozoraquest.battle.encounter';
+const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -101,6 +106,33 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     return cors(json({ state: rec?.value ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
   }
 
+  // ── サーバー権威 戦闘 (docs/21 §5) ── 移動遭遇/攻撃を毎回 Worker が処理 = チート不可 ──
+  if (req.method === 'POST' && (url.pathname === '/api/battle/encounter' || url.pathname === '/api/battle/turn')) {
+    const isTurn = url.pathname === '/api/battle/turn';
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: isTurn ? LXM_BATTLE_TURN : LXM_BATTLE_ENCOUNTER }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { x?: number; y?: number; battleId?: string; turn?: number; command?: string };
+    try {
+      if (isTurn) {
+        if (typeof body.battleId !== 'string' || typeof body.turn !== 'number' || typeof body.command !== 'string') {
+          return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+        }
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec())), allowedOrigin);
+      }
+      if (typeof body.x !== 'number' || typeof body.y !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+      return cors(json(await handleEncounter(env, did, body.x, body.y, nowSec())), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
   // ── OAuth write 認証 (docs/21 §12) ──
   // confidential client メタデータ (公開)。
   if (req.method === 'GET' && url.pathname === '/client-metadata.json') {
@@ -116,6 +148,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   }
 
   return cors(json({ error: 'not_found', path: url.pathname }, 404), allowedOrigin);
+}
+
+/** 戦闘エラーを HTTP に振り分ける。**トークン切れ/未設定 (ServerWriteError) は 503 で fail-closed**
+ *  (報酬は付かない・クライアント権威へのフォールバックは無い §3-6)。ResolverError はその status。 */
+function battleError(e: unknown): Response {
+  if (e instanceof ResolverError) return json({ error: 'battle_error', message: e.message }, e.status);
+  if (e instanceof ServerWriteError) return json({ error: 'server_write_unavailable', reason: e.reason }, 503);
+  return json({ error: 'internal' }, 500);
 }
 
 /** Authorization: Bearer <jwt> を取り出す。 */

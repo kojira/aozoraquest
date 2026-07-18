@@ -92,6 +92,17 @@ describe('edge router', () => {
     expect(res.status).toBe(503);
   });
 
+  it('POST /api/battle/encounter は JWT 無しなら 401 (毎回 Worker 認証)', async () => {
+    const res = await handleRequest(new Request('https://x/api/battle/encounter', { method: 'POST' }), env);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('missing_token');
+  });
+
+  it('POST /api/battle/turn は JWT 無しなら 401', async () => {
+    const res = await handleRequest(new Request('https://x/api/battle/turn', { method: 'POST' }), env);
+    expect(res.status).toBe(401);
+  });
+
   it('GET /oauth/callback は code 欠落なら 400 (HTML)', async () => {
     const res = await handleRequest(new Request('https://x/oauth/callback'), env);
     expect(res.status).toBe(400);
