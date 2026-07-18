@@ -4,6 +4,7 @@ import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForDanger,
   BATTLE_TUNING,
+  canSeeEnemyVitals,
   ITEMS,
   jobDisplayName,
   levelUpGains,
@@ -1131,13 +1132,17 @@ export function World() {
             >
               {inBattle && battle ? (
                 <>
-                  {/* 上: 敵+ログ (余白を占有し中央寄せ)、下: 注意書き + コマンド段 */}
-                  <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <BattleScene state={battle.state} headerNote={DANGER_LABELS[danger]} monsterSize={84} compact />
+                  {/* 上: 敵+ログ (余白を占有・上寄せ = あふれても敵の頭でなくログ側で
+                      逃がす)、下: 注意書き (1 ターン目だけ) + コマンド段。敵 HP/MP は
+                      見抜ける職業のみ (canSeeEnemyVitals)。 */}
+                  <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                    <BattleScene state={battle.state} monsterSize={72} compact showEnemyVitals={canSeeEnemyVitals(archetype)} />
                   </div>
-                  <p style={{ margin: '0.2em 0', fontSize: '0.6em', lineHeight: 1.3, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-                    とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがある。
-                  </p>
+                  {battle.state.turn === 0 && (
+                    <p style={{ margin: '0.2em 0', fontSize: '0.62em', lineHeight: 1.3, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
+                      とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがある。
+                    </p>
+                  )}
                   <div style={{ flex: '0 0 auto' }}>
                     <BattleCommands state={battle.state} busy={battle.busy} onCommand={(c) => void onBattleCommand(c)} compact />
                   </div>

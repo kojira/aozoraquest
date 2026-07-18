@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { JOBS, archetypeFromFunctionPair, currentJob, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
+import { JOBS, archetypeFromFunctionPair, canSeeEnemyVitals, currentJob, ENEMY_VITALS_ARCHETYPES, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
 import { COGNITIVE_TO_RPG } from '../diagnosis.js';
 import { STATS, type CogFunction, type StatArray } from '../types.js';
 
@@ -109,5 +109,31 @@ describe('jobDisplayName', () => {
     expect(jobDisplayName('sage', 'default')).toBe('賢者');
     expect(jobDisplayName('sage', 'maker')).toBe('建築家');
     expect(jobDisplayName('sage', 'alt')).toBe('戦略家');
+  });
+});
+
+describe('canSeeEnemyVitals', () => {
+  test('見抜ける 5 職は true (賢者/予言者/巫女/魔法使い/忍者)', () => {
+    for (const id of ['sage', 'seer', 'miko', 'mage', 'ninja']) {
+      expect(canSeeEnemyVitals(id)).toBe(true);
+    }
+    expect(ENEMY_VITALS_ARCHETYPES.size).toBe(5);
+  });
+
+  test('それ以外の職は false', () => {
+    for (const id of ['warrior', 'guardian', 'shogun', 'bard', 'poet', 'paladin', 'explorer', 'fighter', 'artist', 'captain', 'performer']) {
+      expect(canSeeEnemyVitals(id)).toBe(false);
+    }
+  });
+
+  test('null / undefined / 未知 ID は false', () => {
+    expect(canSeeEnemyVitals(null)).toBe(false);
+    expect(canSeeEnemyVitals(undefined)).toBe(false);
+    expect(canSeeEnemyVitals('traveler')).toBe(false);
+  });
+
+  test('対象は実在するジョブ ID のみ', () => {
+    const ids = new Set(JOBS.map((j) => j.id));
+    for (const id of ENEMY_VITALS_ARCHETYPES) expect(ids.has(id)).toBe(true);
   });
 });

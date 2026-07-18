@@ -41,12 +41,16 @@ export function BattleScene({
   headerNote,
   monsterSize = 132,
   compact = false,
+  showEnemyVitals = true,
 }: {
   state: BattleState;
   headerNote?: string | undefined;
   monsterSize?: number;
   /** 暗い背景に重ねるとき (マップ上オーバーレイ) は文字を明色にする */
   compact?: boolean;
+  /** 敵の残り HP/MP を見せるか。見抜ける職業のみ true (canSeeEnemyVitals)。
+   *  false のときは敵の名前だけ出し、HP バー・ため/回復ゲージは隠す (DQ1 風)。 */
+  showEnemyVitals?: boolean;
 }) {
   const monsterDef = MONSTERS_BY_ID[state.monsterId];
   const fg = compact ? '#fff' : 'var(--color-fg)';
@@ -66,11 +70,18 @@ export function BattleScene({
         >
           <MonsterSvg species={monsterDef?.species ?? 'slime'} size={monsterSize} />
         </div>
-        <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
+        {showEnemyVitals ? (
+          <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
+        ) : (
+          // 見抜けない職業: 名前だけ (敵の体力・MP は不明 = DQ1 風)
+          <div style={{ maxWidth: 340, margin: '0.3em auto 0', textAlign: 'center', fontSize: '0.85em', color: fg, textShadow: shadow }}>
+            {state.monster.name}
+          </div>
+        )}
         {/* ため/回復を使う敵は「あと何回撃てるか」をセグメントで見せる (尽きたら攻める
             読み合い)。通常攻撃だけの敵は MP を使わないので出さない (混乱防止)。
-            charger=赤系 / healer=緑系 で脅威の種別を色で区別。 */}
-        {monsterDef?.ability && state.monster.maxMp > 0 && (() => {
+            charger=赤系 / healer=緑系 で脅威の種別を色で区別。見抜ける職業のみ表示。 */}
+        {showEnemyVitals && monsterDef?.ability && state.monster.maxMp > 0 && (() => {
           const cost = monsterDef.ability === 'healer' ? BATTLE_TUNING.monsterHealMpCost : BATTLE_TUNING.monsterChargeMpCost;
           const total = Math.max(1, Math.floor(state.monster.maxMp / cost));
           const left = Math.floor(state.monster.mp / cost);
@@ -99,8 +110,10 @@ export function BattleScene({
           border: `2px solid ${compact ? 'rgba(255,255,255,0.35)' : 'var(--color-border)'}`,
           borderRadius: 4,
           background: compact ? 'rgba(20,22,30,0.72)' : 'var(--color-window-bg)',
-          minHeight: '3.6em',
-          ...(compact ? { maxHeight: '6em', overflowY: 'auto' as const } : {}),
+          // compact (マップ枠内) は縦の余白が限られるのでログ窓を低めにし、
+          // あふれは枠内スクロールへ逃がす (小型端末のはみ出し対策 — レビュー ★★★)
+          minHeight: compact ? '2.4em' : '3.6em',
+          ...(compact ? { maxHeight: '4.5em', overflowY: 'auto' as const } : {}),
           fontSize: '0.85em',
           lineHeight: 1.6,
           color: fg,
