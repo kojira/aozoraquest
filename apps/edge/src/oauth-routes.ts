@@ -65,10 +65,16 @@ export async function handleOAuthStart(req: Request, env: OAuthRoutesEnv, deps: 
   }
   if (!isEdgeAdmin(env, iss)) return json({ error: 'forbidden' }, 403);
 
-  const { pdsUrl, authServer } = await discoverForDid(cfg.serverDid, deps.fetchImpl);
-  const { url, state, verifier } = await buildAuthorizeUrl({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, authServer, { loginHint: cfg.serverDid });
-  await putPendingAuth(env.OAUTH_TOKENS, state, { verifier, authServer, pdsUrl, createdAt: deps.now });
-  return json({ authorizeUrl: url });
+  // discovery / PAR は失敗しうる (認可サーバーが client-metadata を弾く等)。**catch して JSON で返す**
+  // — 未処理例外だと 500 が CORS ヘッダ無しで返り、ブラウザ側が「Load failed」になり原因が見えない。
+  try {
+    const { pdsUrl, authServer } = await discoverForDid(cfg.serverDid, deps.fetchImpl);
+    const { url, state, verifier } = await buildAuthorizeUrl({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, authServer, { loginHint: cfg.serverDid });
+    await putPendingAuth(env.OAUTH_TOKENS, state, { verifier, authServer, pdsUrl, createdAt: deps.now });
+    return json({ authorizeUrl: url });
+  } catch (e) {
+    return json({ error: 'oauth_start_failed', message: e instanceof Error ? e.message : String(e) }, 502);
+  }
 }
 
 /** GET /oauth/callback — 認可サーバーからのリダイレクト。code→token 交換し KV 格納。 */
