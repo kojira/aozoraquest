@@ -17,10 +17,24 @@ import { ADMIN_COL } from './collections';
 
 const PLC_DIRECTORY = 'https://plc.directory';
 
+/** VITE_ADMIN_DIDS (カンマ区切り) を trim + 空要素除去して配列化。
+ *  パース仕様を 1 箇所に集約し getPrimaryAdminDid / isAdminDid の食い違いを防ぐ。 */
+function getAdminDids(): string[] {
+  return (import.meta.env.VITE_ADMIN_DIDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function getPrimaryAdminDid(): string | null {
-  const raw = import.meta.env.VITE_ADMIN_DIDS ?? '';
-  const first = raw.split(',').map((s) => s.trim()).find(Boolean);
-  return first ?? null;
+  return getAdminDids()[0] ?? null;
+}
+
+/** ログイン中の DID が管理者許可リスト (VITE_ADMIN_DIDS) に含まれるか。
+ *  管理者限定 UI (dev のパワー付与など) のゲートに使う。未設定/空なら常に false。 */
+export function isAdminDid(did: string | null | undefined): boolean {
+  if (!did) return false;
+  return getAdminDids().includes(did);
 }
 
 /** DID を PDS エンドポイントに解決する (公開 read の宛先決定に使う唯一の実装)。
