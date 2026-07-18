@@ -8,3 +8,10 @@ packages:
 # トレードオフ。pnpm 10.16+ の機能。緊急で必要になったら該当パッケージだけ
 # minimumReleaseAgeExclude に足す。
 minimumReleaseAge: 10080
+
+# pnpm 10 は依存の postinstall 等ビルドスクリプトを既定でブロックする (approve-builds で
+# 明示許可した依存のみ実行)。本 workspace は esbuild/onnxruntime-node/sharp/core-js/protobufjs/
+# playwright 等がブロックされるが、build/test/typecheck は全て通ることを検証済み (esbuild は
+# platform 別 optional dep で解決、playwright のブラウザは CI で別途 install)。よって
+# onlyBuiltDependencies は空のまま = postinstall を走らせない (攻撃面を減らす、サプライチェーン
+# 対策と一致)。特定依存の build script が必要になったらここに列挙する。
