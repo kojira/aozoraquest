@@ -57,6 +57,7 @@ import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
+import { FeatherModal } from '@/components/feather-modal';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -93,6 +94,10 @@ interface Vitals {
   lastTown: { x: number; y: number } | null;
   /** ちずのかけらで解禁済みのリージョン (世界地図の開示範囲) */
   regions: number[];
+  /** 訪れたことのある街 (そらのはねの行き先候補) */
+  visitedTowns: { x: number; y: number }[];
+  /** 初回に そらのはねを 1 個もらったか */
+  gotStarterFeather: boolean;
 }
 
 /** 初回オンボーディングを見終えたかの localStorage キー (スティックのヒントと同じ方式) */
@@ -147,10 +152,13 @@ export function World() {
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const searchMsgRef = useRef(false);
   searchMsgRef.current = searchMsg !== null;
+  const [featherOpen, setFeatherOpen] = useState(false);
   const itemsOpenRef = useRef(false);
   itemsOpenRef.current = itemsOpen;
   const invOpenRef = useRef(false);
   invOpenRef.current = invOpen;
+  const featherOpenRef = useRef(false);
+  featherOpenRef.current = featherOpen;
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
   /** やくそう/そらのしずくの手持ち。戦闘内の使用と獲得は battle レコードに残る。
    *  フィールドでの使用はセッション内のみ (TODO(W3): 在庫の正を Worker/DO に移す)。 */
@@ -239,11 +247,28 @@ export function World() {
     if (session.status !== 'signed-in' || !agent || !did) return;
     let cancelled = false;
     setLoadErr(false);
+    let grantStarter = false;
     (async () => {
       try {
         const state = await loadWorldState(agent, did);
         if (cancelled) return;
-        setWs({ x: state.x, y: state.y, hp: state.hp, mp: state.mp, lastTown: state.lastTown, regions: state.regions });
+        // 冒険の初回に そらのはねを 1 個わたす (docs/19。gotStarterFeather で二重配布
+        // 防止)。実際の +1 は下の featherStock 初期化 (stats ロード後) で足す
+        grantStarter = !state.gotStarterFeather;
+        setWs({
+          x: state.x,
+          y: state.y,
+          hp: state.hp,
+          mp: state.mp,
+          lastTown: state.lastTown,
+          regions: state.regions,
+          visitedTowns: state.visitedTowns,
+          gotStarterFeather: true,
+        });
+        if (grantStarter) {
+          setNotice('たびの はじめに「そらのはね」を 1 つ もらった! (どうぐ から つかえる)');
+          scheduleSave(); // gotStarterFeather=true を保存 (次回配らない)
+        }
         try {
           if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
             setOnboarding(true);
@@ -274,7 +299,7 @@ export function World() {
       setDiag(d);
       setHerbStock(stats?.materials['herb'] ?? 0);
       setTonicStock(stats?.materials['sky-dew'] ?? 0);
-      setFeatherStock(stats?.materials['sky-feather'] ?? 0);
+      setFeatherStock((stats?.materials['sky-feather'] ?? 0) + (grantStarter ? 1 : 0));
       {
         const m = { ...(stats?.materials ?? {}) };
         for (const [id, n] of Object.entries(craftInv.materialsSpent)) {
@@ -347,7 +372,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -363,18 +388,21 @@ export function World() {
         const around = regionsAround(regionOf(nx, ny));
         const gained = around.some((r) => !s.regions.includes(r));
         const regions = gained ? [...new Set([...s.regions, ...around])].sort((a, b) => a - b) : s.regions;
+        // 訪問済みの街に追加 (そらのはねの行き先候補。重複しない)
+        const newlyVisited = !s.visitedTowns.some((v) => v.x === nx && v.y === ny);
+        const visitedTowns = newlyVisited ? [...s.visitedTowns, { x: nx, y: ny }] : s.visitedTowns;
         setNotice(
           t
             ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' ちずのかけらを 手に入れた!' : ''}`
             : null,
         );
         // wsRef を即時更新 (長押し連打で render 前の tick が同座標から二重計算しないように)
-        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny }, regions };
+        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny }, regions, visitedTowns, gotStarterFeather: s.gotStarterFeather };
         setWs(wsRef.current);
         scheduleSave();
-        // かけら入手は離散イベントなのでデバウンスを待たず即時にも保存する
+        // かけら入手/初訪問は離散イベントなのでデバウンスを待たず即時にも保存する
         // (通知を見た直後のリロードで入手が消えない。二重保存は同内容の put で無害)
-        if (gained && agent) void saveWorldState(agent, wsRef.current);
+        if ((gained || newlyVisited) && agent) void saveWorldState(agent, wsRef.current);
         return; // 街では遭遇しない
       }
       setNotice(null);
@@ -590,6 +618,8 @@ export function World() {
           mp: null,
           lastTown: valid,
           regions: [...new Set([...(s?.regions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
+          visitedTowns: s?.visitedTowns ?? [],
+          gotStarterFeather: s?.gotStarterFeather ?? true,
         });
       } else {
         // 勝利/引き分け/逃走: 減った HP/MP をフィールドに持ち帰る (持続)。
@@ -620,6 +650,8 @@ export function World() {
         mp: null,
         lastTown: { x: dest.x, y: dest.y },
         regions: [...new Set([...(wsRef.current?.regions ?? []), ...regionsAround(regionOf(dest.x, dest.y))])].sort((a, b) => a - b),
+        visitedTowns: wsRef.current?.visitedTowns ?? [],
+        gotStarterFeather: wsRef.current?.gotStarterFeather ?? true,
       };
       setWs(wsRef.current);
       scheduleSave();
@@ -682,7 +714,7 @@ export function World() {
     return m;
   }, [combat, tonicStock, scheduleSave]);
 
-  // そらのはねを使う: 最後に立ち寄った街 (無ければはじまりの街) へ帰還。
+  // そらのはねを使う: 訪問済みの街から行き先を選ぶ (オーナー要望 2026-07-18)。
   // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
   const useFeatherOnField = useCallback(() => {
     if (onboardingRef.current) return;
@@ -691,9 +723,13 @@ export function World() {
     // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
     // まま別の街へテレポートすると品揃えが無言で差し替わる — レビュー指摘)
     if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || statusOpenRef.current) return;
-    const lt = s.lastTown && townAt(s.lastTown.x, s.lastTown.y) ? s.lastTown : null;
-    const spawn = worldOverlay().spawn;
-    const dest = lt ?? { x: spawn.x, y: spawn.y };
+    setFeatherOpen(true); // 行き先えらびを開く (選ぶと flyToTown が飛ばす)
+  }, [featherStock]);
+
+  // 選んだ街へ飛ぶ (そらのはね消費 + ワイプ演出でテレポート)
+  const flyToTown = useCallback((dest: { x: number; y: number }) => {
+    const s = wsRef.current;
+    if (!s || featherStock <= 0) return;
     if (s.x === dest.x && s.y === dest.y) {
       setNotice('もうその街にいる。');
       return;
@@ -705,7 +741,7 @@ export function World() {
     // (エンカウント演出と同一のワイプなので、無言だと戦闘が始まると誤解する)
     setNotice('そらのはねをつかった!');
     setWipe('cover'); // 覆い切ったら onCoverDone がテレポートする
-  }, [featherStock]);
+  }, [featherStock, subtractMaterial]);
 
   // しらべる: パワー 1 を使って足元を調べる。luk 連動でアイテムが手に入ることがある
   // (見つからないこともある)。発見物はセッション内在庫に加える (消費の正は TODO(W3))。
@@ -1137,6 +1173,14 @@ export function World() {
       )}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />
+      )}
+      {featherOpen && (
+        <FeatherModal
+          visitedTowns={ws.visitedTowns}
+          current={{ x: ws.x, y: ws.y }}
+          onSelect={flyToTown}
+          onClose={() => setFeatherOpen(false)}
+        />
       )}
       {statusOpen && combat && combatBase && archetype && (
         <StatusModal

@@ -28,6 +28,10 @@ export interface WorldState {
    *  (無ければ現在地) の 3×3 でシード = 既存プレイヤーが真っ暗な地図から
    *  始まらないための移行措置。 */
   regions: number[];
+  /** 訪れたことのある街 (そらのはねの行き先候補)。街に入るたび追加。 */
+  visitedTowns: { x: number; y: number }[];
+  /** 冒険の初回に そらのはねを 1 個もらったか (docs/19。二重配布防止)。 */
+  gotStarterFeather: boolean;
   /** ロード時に歩行不能地形から街へ退避した (UI が一言出す) */
   relocated?: boolean;
   updatedAt: string;
@@ -41,6 +45,8 @@ interface WorldRecordShape {
   lastTownX?: unknown;
   lastTownY?: unknown;
   regions?: unknown;
+  visitedTowns?: unknown;
+  gotStarterFeather?: unknown;
   updatedAt?: unknown;
 }
 
@@ -60,6 +66,27 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
     ? [...new Set(rec.regions.filter((r): r is number => typeof r === 'number' && Number.isInteger(r) && r >= 0 && r < REGION_COUNT))].sort((a, b) => a - b)
     : null;
   const rawRegions = parsed && parsed.length > 0 ? parsed : null;
+  // 訪問済みの街 (今も街である座標だけ採用・重複除去)。
+  const rawVisited: { x: number; y: number }[] = Array.isArray(rec?.visitedTowns)
+    ? (() => {
+        const seen = new Set<string>();
+        const out: { x: number; y: number }[] = [];
+        for (const v of rec!.visitedTowns as unknown[]) {
+          if (v && typeof v === 'object' && 'x' in v && 'y' in v) {
+            const vx = (v as { x: unknown }).x;
+            const vy = (v as { y: unknown }).y;
+            if (typeof vx === 'number' && typeof vy === 'number' && Number.isFinite(vx) && Number.isFinite(vy)) {
+              const x = wrap(vx);
+              const y = wrap(vy);
+              const key = `${x},${y}`;
+              if (!seen.has(key) && townAt(x, y)) { seen.add(key); out.push({ x, y }); }
+            }
+          }
+        }
+        return out;
+      })()
+    : [];
+  const gotStarterFeather = rec?.gotStarterFeather === true;
   if (rec && typeof rec.x === 'number' && Number.isFinite(rec.x) && typeof rec.y === 'number' && Number.isFinite(rec.y)) {
     // lastTown は「今も街であること」を検証してから使う (ワールド再生成で街が
     // 動く/壊れたレコードで水上へ退避すると、脱出手段なしの詰みになる —
@@ -85,6 +112,8 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
         lastTown,
         // 退避先の 3×3 は常に union (置かれた街が地図上フォグに浮くのを防ぐ)
         regions: [...new Set([...(rawRegions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
+        visitedTowns: rawVisited,
+        gotStarterFeather,
         relocated: true,
         updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
       };
@@ -103,6 +132,8 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
       mp: typeof rec.mp === 'number' && Number.isFinite(rec.mp) ? Math.max(0, Math.floor(rec.mp)) : null,
       lastTown,
       regions: rawRegions ?? seed,
+      visitedTowns: rawVisited,
+      gotStarterFeather,
       updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : '',
     };
   }
@@ -111,13 +142,13 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
   // 必ずもらえる」のオーナー案の interim 実装。W6e でギルドが入手元になる)。
   // x/y が壊れて spawn に倒す場合も、パースできた regions は union で保全する
   const seeded = [...new Set([...(rawRegions ?? []), ...regionsAround(spawn.region)])].sort((a, b) => a - b);
-  return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, regions: seeded, updatedAt: '' };
+  return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, regions: seeded, visitedTowns: [], gotStarterFeather: false, updatedAt: '' };
 }
 
 /** 状態を保存する。失敗は warn して swallow (歩行体験を止めない)。 */
 export async function saveWorldState(
   agent: Agent,
-  state: { x: number; y: number; hp: number | null; mp: number | null; lastTown: { x: number; y: number } | null; regions: number[] },
+  state: { x: number; y: number; hp: number | null; mp: number | null; lastTown: { x: number; y: number } | null; regions: number[]; visitedTowns: { x: number; y: number }[]; gotStarterFeather: boolean },
 ): Promise<void> {
   try {
     await putRecord(agent, COL.world, 'self', {
@@ -127,6 +158,8 @@ export async function saveWorldState(
       ...(state.mp !== null ? { mp: state.mp } : {}),
       ...(state.lastTown ? { lastTownX: state.lastTown.x, lastTownY: state.lastTown.y } : {}),
       regions: state.regions,
+      visitedTowns: state.visitedTowns,
+      gotStarterFeather: state.gotStarterFeather,
       updatedAt: new Date().toISOString(),
     });
   } catch (e) {

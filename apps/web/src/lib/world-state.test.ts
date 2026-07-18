@@ -82,11 +82,25 @@ describe('loadWorldState — ちずのかけら (regions)', () => {
     expect(s.regions).toContain(worldOverlay().spawn.region);
   });
 
-  test('saveWorldState は regions を常に書く (保存漏れの回帰テスト)', async () => {
+  test('saveWorldState は regions / visitedTowns / gotStarterFeather を書く (保存漏れの回帰テスト)', async () => {
     const putRecord = vi.fn(async () => ({ data: {} }));
     const agent = { assertDid: 'did:test', com: { atproto: { repo: { putRecord } } } } as any;
-    await saveWorldState(agent, { x: 1, y: 2, hp: null, mp: null, lastTown: null, regions: [3, 4] });
-    expect((putRecord.mock.calls as any[])[0][0].record.regions).toEqual([3, 4]);
+    await saveWorldState(agent, { x: 1, y: 2, hp: null, mp: null, lastTown: null, regions: [3, 4], visitedTowns: [{ x: 5, y: 6 }], gotStarterFeather: true });
+    const rec = (putRecord.mock.calls as any[])[0][0].record;
+    expect(rec.regions).toEqual([3, 4]);
+    expect(rec.visitedTowns).toEqual([{ x: 5, y: 6 }]);
+    expect(rec.gotStarterFeather).toBe(true);
+  });
+
+  test('新規プレイヤーは visitedTowns 空 / gotStarterFeather false (初回配布のトリガー)', async () => {
+    const agent = agentWithGetRecord(async () => {
+      const e = new Error('Could not locate record') as Error & { error?: string };
+      e.error = 'RecordNotFound';
+      throw e;
+    });
+    const s = await loadWorldState(agent, 'did:test');
+    expect(s.visitedTowns).toEqual([]);
+    expect(s.gotStarterFeather).toBe(false);
   });
 
   test('新規プレイヤーは はじまりの街の地方一帯 (3×3) だけ開示された状態から', async () => {
