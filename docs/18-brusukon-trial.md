@@ -115,6 +115,13 @@
   MP バーを敵の下に表示 (「ためる力 / かいふくの力」)。
   割り当て: tier1 全 plain / tier2 golem=charger・wisp=healer・serpent=plain /
   tier3 oni=charger・dragon=healer・raven=plain。
+  設計メモ (レビュー): 実難度で最も厳しいのは healer より **charger (oni) × 低火力
+  低 agi の def タンク** (手数で押し切られる) だが、tonics/herbs 込みの本則プレイでは
+  破綻せず快適帯に収まる。healer は「低火力ジョブほど回復回数を許す」= タンクが
+  やや苦戦する相性 (意図的。フル装備で 95%+ に戻る)。tier1 が全 plain なのは
+  「初戦は必ず勝てる」設計と両立 (ため/回復の読み合いは tier2 から登場)。
+  戦闘 UI は charger/healer の「あと何回撃てるか」をセグメント (charger=橙/healer=緑)
+  で表示し、資源を読んで押し引きできるようにする。
 - **見切り (parry) の再測定 + 調整 (同 2026-07-18)**: モンスター変化で「ためない敵」が
   増え、見切りは能動的に構えるのが最適 (通常攻撃も反撃で捌く) と判明。sim の方針を
   能動的見切りに修正したところ def タンク (warrior/guardian) が過小評価されていたと分かり

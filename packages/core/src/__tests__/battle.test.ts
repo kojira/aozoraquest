@@ -116,24 +116,24 @@ describe('モンスターの行動バリエーション (charger/healer + MP)', 
     const wisp = summonMonster(2, 15, 42).combatant;
     expect(wisp.maxMp).toBeGreaterThan(0);
     // 回復すると MP が減る: healer を低 HP・MP 満タンから 1 手進めて確認
-    let s = startBattle('warrior', 8, 15, 'x', 2, 42);
-    // will-o-wisp が出る seed を探す
+    // will-o-wisp が出る seed を探す (見つからないと空 pass になるので存在を明示検証)
+    let s = startBattle('warrior', 8, 15, 'x', 2, 0);
+    let found = false;
     for (let seed = 0; seed < 50; seed++) {
       const t = startBattle('warrior', 8, 15, 'x', 2, seed);
-      if (t.monsterId === 'will-o-wisp') { s = t; break; }
+      if (t.monsterId === 'will-o-wisp') { s = t; found = true; break; }
     }
-    if (s.monsterId === 'will-o-wisp') {
-      s.monster.hp = Math.floor(s.monster.maxHp * 0.3); // 低 HP に
-      const mpBefore = s.monster.mp;
-      // 数ターン回して回復が起きたら MP が減っているはず (決定的なので回復が出るまで進める)
-      let healedMpDropped = false;
-      for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
-        const hpBefore = s.monster.hp;
-        s = resolveTurn(s, 'guard'); // プレイヤーは防御に徹して長引かせる
-        if (s.monster.hp > hpBefore && s.monster.mp < mpBefore) { healedMpDropped = true; break; }
-      }
-      expect(healedMpDropped).toBe(true);
+    expect(found).toBe(true);
+    s.monster.hp = Math.floor(s.monster.maxHp * 0.3); // 低 HP に
+    const mpBefore = s.monster.mp;
+    // 回復が起きたら MP が減っているはず (決定的なので回復が出るまで進める)
+    let healedMpDropped = false;
+    for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
+      const hpBefore = s.monster.hp;
+      s = resolveTurn(s, 'guard'); // プレイヤーは防御に徹して長引かせる
+      if (s.monster.hp > hpBefore && s.monster.mp < mpBefore) { healedMpDropped = true; break; }
     }
+    expect(healedMpDropped).toBe(true);
   });
 });
 

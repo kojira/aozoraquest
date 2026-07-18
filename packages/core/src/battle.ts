@@ -594,8 +594,6 @@ export interface BattleState {
   mpGuardGain: number;
   /** MP 特性名 (特性なしジョブは undefined) */
   mpTraitName?: string;
-  /** healer が回復した回数 (healerHealMax で打ち止め = バースト窓の読み合いを作る)。 */
-  monsterHeals: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
 }
@@ -647,7 +645,6 @@ export function startBattle(
     mpAttackGain: gains.attackGain,
     mpGuardGain: gains.guardGain,
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
-    monsterHeals: 0,
     lastEvents: [],
   };
 }
@@ -923,7 +920,6 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
         const healed = Math.round(state.monster.maxHp * BATTLE_TUNING.healerHealRatio);
         const before = state.monster.hp;
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
-        state.monsterHeals += 1;
         const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';
         events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HP が ${state.monster.hp - before} 回復。` });
       } else if (mCommand === 'attack') {
