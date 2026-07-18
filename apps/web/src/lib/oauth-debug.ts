@@ -138,11 +138,32 @@ export async function dumpOAuthState(): Promise<Record<string, unknown>> {
 export const oauthDebugEnabled =
   import.meta.env.DEV || (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim() === 'dev';
 
-/** dev / dev 環境 / ローカルのみ: 未捕捉エラー捕捉を仕込み、`window.__aozoraDumpOAuth()` を生やす
- *  (本番では何もしない)。エラー捕捉は session 復元より前に効かせたいので import 直後に呼ぶ。 */
+/** React の外に固定ボタンを直接生やす。どの画面 (準備しています / ログイン / リダイレクト中) で
+ *  固まっても・React 自体が固まっても押せるようにする (route 配置漏れ・レンダリング停止に強い)。 */
+function injectFloatingButton(): void {
+  if (typeof document === 'undefined') return;
+  const add = () => {
+    if (document.getElementById('__aozora-oauth-dump-btn')) return;
+    if (!document.body) return;
+    const btn = document.createElement('button');
+    btn.id = '__aozora-oauth-dump-btn';
+    btn.textContent = '🔧診断';
+    btn.style.cssText =
+      'position:fixed;right:8px;bottom:76px;z-index:2147483647;padding:10px 12px;' +
+      'font-size:13px;background:#c0392b;color:#fff;border:none;border-radius:10px;opacity:0.9;box-shadow:0 2px 8px rgba(0,0,0,.4)';
+    btn.addEventListener('click', (e) => { e.preventDefault(); void dumpOAuthState(); });
+    document.body.appendChild(btn);
+  };
+  if (document.body) add();
+  else document.addEventListener('DOMContentLoaded', add, { once: true });
+}
+
+/** dev / dev 環境 / ローカルのみ: 未捕捉エラー捕捉を仕込み、固定診断ボタン + `window.__aozoraDumpOAuth()`
+ *  を生やす (本番では何もしない)。エラー捕捉は session 復元より前に効かせたいので import 直後に呼ぶ。 */
 export function installOAuthDebug(): void {
   if (!oauthDebugEnabled || typeof window === 'undefined') return;
   installErrorCapture();
+  injectFloatingButton();
   (window as unknown as { __aozoraDumpOAuth?: () => Promise<unknown> }).__aozoraDumpOAuth = dumpOAuthState;
-  console.info('[oauth-debug] 固まったら「準備しています」画面の診断ボタン (または __aozoraDumpOAuth()) でOAuth状態(伏字)をJSON保存できます');
+  console.info('[oauth-debug] 右下の🔧診断ボタン (または __aozoraDumpOAuth()) でOAuth状態(伏字)をJSON保存できます');
 }
