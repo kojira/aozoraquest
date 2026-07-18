@@ -67,6 +67,27 @@ export function BattleScene({
           <MonsterSvg species={monsterDef?.species ?? 'slime'} size={monsterSize} />
         </div>
         <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
+        {/* ため/回復を使う敵は「あと何回撃てるか」をセグメントで見せる (尽きたら攻める
+            読み合い)。通常攻撃だけの敵は MP を使わないので出さない (混乱防止)。
+            charger=赤系 / healer=緑系 で脅威の種別を色で区別。 */}
+        {monsterDef?.ability && state.monster.maxMp > 0 && (() => {
+          const cost = monsterDef.ability === 'healer' ? BATTLE_TUNING.monsterHealMpCost : BATTLE_TUNING.monsterChargeMpCost;
+          const total = Math.max(1, Math.floor(state.monster.maxMp / cost));
+          const left = Math.floor(state.monster.mp / cost);
+          const color = monsterDef.ability === 'healer' ? '#5fc37e' : '#e8802e';
+          return (
+            <div style={{ maxWidth: 340, margin: '0.15em auto 0', display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
+              <span style={{ fontSize: '0.68em', color: compact ? 'rgba(255,255,255,0.8)' : 'var(--color-muted)', textShadow: shadow }}>
+                {monsterDef.ability === 'healer' ? 'かいふく' : 'ため'} あと{left}
+              </span>
+              <div style={{ display: 'flex', gap: 2 }}>
+                {Array.from({ length: Math.min(total, 6) }, (_, i) => (
+                  <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: i < left ? color : 'rgba(0,0,0,0.35)', border: i < left ? 'none' : '1px solid rgba(255,255,255,0.25)' }} />
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ログ (DQ1 風に 1 文字ずつ表示、key=turn で毎ターン打ち直す。コマンドは
