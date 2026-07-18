@@ -11,6 +11,7 @@ import type { BattleOutcome, BattleRecordSummary } from '@aozoraquest/core';
 import { jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
 import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
+import { countTrialsToday, jstDayKey } from './trial-limit';
 
 export interface BattleLogRecord {
   $type: string;
@@ -33,6 +34,9 @@ export interface BattleLogRecord {
   materialsLost?: string[];
   at: string;
   via: string;
+  /** 挑戦の出所。試練の 1 日上限カウント (trial-limit) の対象判定に使う。
+   *  旧レコードは欠落 = 試練扱い (本番の過去戦闘は全て試練)。 */
+  source?: 'trial' | 'world';
 }
 
 /**
@@ -42,7 +46,7 @@ export interface BattleLogRecord {
  */
 export async function startBattleRecord(
   agent: Agent,
-  input: Pick<BattleLogRecord, 'seed' | 'tier' | 'monsterId' | 'materialsLost'>,
+  input: Pick<BattleLogRecord, 'seed' | 'tier' | 'monsterId' | 'materialsLost' | 'source'>,
 ): Promise<string> {
   const did = agent.assertDid;
   const rkey = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -138,6 +142,40 @@ export async function awardBattleXp(
     console.warn('[battle] xp award failed', e);
     return null;
   }
+}
+
+/**
+ * 今日 (JST) の試練の挑戦回数を数える (1 日上限の判定用)。listRecords は新しい順
+ * に返るので、今日の JST 開始より前のレコードに達したら早期に打ち切る。
+ */
+export async function loadTrialsToday(agent: Agent, did: string, nowIso: string): Promise<number> {
+  const records: { at?: string; source?: string }[] = [];
+  const todayKey = jstDayKey(nowIso);
+  let cursor: string | undefined;
+  outer: for (let page = 0; page < 5; page++) {
+    let res;
+    try {
+      res = await agent.com.atproto.repo.listRecords({
+        repo: did,
+        collection: COL.battle,
+        limit: 100,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+    } catch {
+      break; // 未作成
+    }
+    for (const r of res.data.records) {
+      const v = r.value as Partial<BattleLogRecord>;
+      const at = typeof v.at === 'string' ? v.at : undefined;
+      // 今日より前に達したら以降は全て過去 (新しい順) なので打ち切る
+      if (at && jstDayKey(at) < todayKey) break outer;
+      records.push({ ...(at ? { at } : {}), ...(v.source ? { source: v.source } : {}) });
+    }
+    const next = res.data.cursor;
+    if (!next || next === cursor) break;
+    cursor = next;
+  }
+  return countTrialsToday(records, nowIso);
 }
 
 /** 戦闘レコード数を数える (パワー再スキャン用。cardDraw と同じ最大 500 件)。 */

@@ -31,9 +31,11 @@ import {
   finishBattleRecord,
   loadBattleStats,
   startBattleRecord,
+  loadTrialsToday,
   type BattleLevelUps,
   type BattleStats,
 } from '@/lib/battle-log';
+import { TRIAL_DAILY_LIMIT, trialsRemaining } from '@/lib/trial-limit';
 import { formatGain, notifyLevelUp } from './level-up-overlay';
 import { loadCraftInventory } from '@/lib/crafting';
 import { loadGearRefs, resolveGear } from '@/lib/gear';
@@ -102,6 +104,7 @@ export function TrialArena({
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'select' });
   const [stats, setStats] = useState<BattleStats | null>(null);
+  const [trialsToday, setTrialsToday] = useState<number | null>(null);
   const [gearSel, setGearSel] = useState<GearSelection>({});
   const gearReadyRef = useRef(false);
   const gearSelRef = useRef(gearSel);
@@ -114,6 +117,7 @@ export function TrialArena({
 
   const refreshStats = useCallback(() => {
     loadBattleStats(agent, did).then(setStats).catch(() => {});
+    loadTrialsToday(agent, did, new Date().toISOString()).then(setTrialsToday).catch(() => {});
     // 装備 (gear/self の rkey 参照を所持個体で解決 — docs/20 W6c)
     Promise.all([loadCraftInventory(agent, did), loadGearRefs(agent, did)])
       .then(([inv, refs]) => {
@@ -143,6 +147,11 @@ export function TrialArena({
   const begin = useCallback(
     async (fixedTier?: 1 | 2 | 3) => {
       if (points.balance < BATTLE_TUNING.powerCost) return;
+      // 1 日の挑戦上限 (未取得 null のときは通す — 表示側でボタンを塞ぐ)
+      if (trialsToday !== null && trialsToday >= TRIAL_DAILY_LIMIT) {
+        setErr(`今日の試練はここまで。また明日 (1 日 ${TRIAL_DAILY_LIMIT} 回まで)。`);
+        return;
+      }
       setErr(null);
       // 32bit seed (Math.random で十分。決定性はエンジン側の性質)
       const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
@@ -163,7 +172,8 @@ export function TrialArena({
       });
       try {
         // 支払い + 仮レコード (棄権 = 敗北)。ここが失敗したらバトルを始めない。
-        const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId });
+        const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId, source: 'trial' });
+        setTrialsToday((n) => (n ?? 0) + 1);
         void bumpPower(agent, did, { battles: 1 });
         onPointsChanged({ ...points, battles: points.battles + 1, balance: points.balance - BATTLE_TUNING.powerCost });
         // starting 中のときだけ battle へ (hold タイムアウトで select に戻した後に
@@ -179,7 +189,7 @@ export function TrialArena({
         setWipe((w) => (w ? 'reveal' : w));
       }
     },
-    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats, ensureGear],
+    [agent, did, archetype, jobLevel, playerLevel, playerName, rpgStats, points, onPointsChanged, stats, ensureGear, trialsToday],
   );
 
   const act = useCallback(
@@ -340,8 +350,10 @@ export function TrialArena({
   //  レビュー ★★★ 指摘: 支払いが cover より速いのが最頻パス)
   const coveringBattle = phase.kind === 'battle' && wipe !== null && wipe !== 'reveal';
   if (phase.kind === 'select' || phase.kind === 'starting' || coveringBattle) {
-    const canPlay = points.balance >= BATTLE_TUNING.powerCost;
+    const capped = trialsToday !== null && trialsToday >= TRIAL_DAILY_LIMIT;
+    const canPlay = points.balance >= BATTLE_TUNING.powerCost && !capped;
     const starting = phase.kind !== 'select';
+    const remaining = trialsToday !== null ? trialsRemaining(trialsToday) : null;
     return (
       <div>
         <SpiritBubble>
@@ -350,6 +362,12 @@ export function TrialArena({
         <div style={{ margin: '0.8em 0 0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
           あおぞらパワー: <strong style={{ color: 'var(--color-fg)' }}>{points.balance}</strong>
           (投稿すると増える)
+          {remaining !== null && (
+            <>
+              {' / '}きょうの試練: のこり{' '}
+              <strong style={{ color: remaining > 0 ? 'var(--color-fg)' : 'var(--color-danger)' }}>{remaining}</strong> 回
+            </>
+          )}
         </div>
         <div style={{ marginTop: '0.6em', textAlign: 'center' }}>
           <button
@@ -373,11 +391,15 @@ export function TrialArena({
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
           ※ 試練の途中でやめる (画面を閉じる) と敗北あつかいになるよ。
         </p>
-        {!canPlay && (
+        {capped ? (
+          <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
+            今日の試練は {TRIAL_DAILY_LIMIT} 回まで。また明日ちょうせんできるよ (あおぞらワールドの冒険はいつでも OK)。
+          </p>
+        ) : points.balance < BATTLE_TUNING.powerCost ? (
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
             パワーが足りない。あおぞらくえすとから投稿すると 1 つ増えるよ。
           </p>
-        )}
+        ) : null}
         {err && <p style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}>{err}</p>}
         {stats && stats.total > 0 && <RecordPanel stats={stats} />}
         {wipeOverlay}
