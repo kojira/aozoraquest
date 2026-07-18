@@ -10,7 +10,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   {
-    files: ['src/**/*.{ts,tsx}'],
+    files: ['src/**/*.{js,jsx,ts,tsx}'], // .jsx/.js も網羅 (現状 0 件だが将来の漏れ防止)
     ignores: ['**/*.test.ts', '**/*.test.tsx'],
     languageOptions: {
       parser: babelParser,
