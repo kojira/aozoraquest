@@ -116,6 +116,10 @@ export async function restoreSession(): Promise<OAuthSession | null> {
  *  なるが、その場合も待たずに返す (次回リロードで実際に消える)。キャッシュした client/init も破棄して
  *  次の restoreSession がクリーンな client を作り直せるようにする。 */
 export async function clearOAuthStorage(): Promise<void> {
+  // キャッシュを捨てて次の restoreSession が client を作り直せるようにする。ハング中の init() 自体は
+  // abort できないので orphan として裏で走り続けるが、UI はもうログイン画面なので無害
+  // (真の復旧レバーは下の IDB 削除)。IDB '@atproto-oauth-client' は全アカウント共通の単一 DB なので
+  // これは「このブラウザの全 Bluesky OAuth セッション」を消す (現状シングルアカウントなので実害なし)。
   initPromise = null;
   clientPromise = null;
   await new Promise<void>((resolve) => {

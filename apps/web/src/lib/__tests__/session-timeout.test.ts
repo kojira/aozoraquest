@@ -67,4 +67,14 @@ describe('clearOAuthStorage (壊れた永続セッションの復旧)', () => {
     const { clearOAuthStorage } = await import('../oauth');
     await expect(clearOAuthStorage()).resolves.toBeUndefined();
   });
+
+  it('IDB が一切イベントを出さなくても 2s 保険で解決する (永久待ちしない)', async () => {
+    const del = vi.fn(() => ({} as unknown as IDBOpenDBRequest)); // ハンドラを一切呼ばない実装
+    vi.stubGlobal('indexedDB', { deleteDatabase: del } as unknown as IDBFactory);
+    const { clearOAuthStorage } = await import('../oauth');
+    vi.useFakeTimers();
+    const p = clearOAuthStorage();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(p).resolves.toBeUndefined();
+  });
 });
