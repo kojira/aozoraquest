@@ -1,3 +1,10 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# サプライチェーン対策: 公開から日が浅いバージョンは入れない (cooldown)。
+# 悪意ある npm パッケージは公開後 数日以内に検出・削除されることが多いので、
+# 一定期間 (7 日 = 10080 分) 寝かせてから解決する。security patch の取得は最大 7 日遅れる
+# トレードオフ。pnpm 10.16+ の機能。緊急で必要になったら該当パッケージだけ
+# minimumReleaseAgeExclude に足す。
+minimumReleaseAge: 10080
