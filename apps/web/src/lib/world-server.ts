@@ -73,16 +73,17 @@ async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknow
 export interface ServerMonster { name: string; maxHp: number; hp: number; maxMp: number; mp: number; [k: string]: unknown }
 export interface ServerBattleState { player: ServerMonster; monster: ServerMonster; monsterId: string; outcome: string; turn: number; lastEvents: { actor: string; text: string }[]; [k: string]: unknown }
 export interface ServerEncounter { battleId: string; monsterId: string; state: ServerBattleState; rewarded: boolean }
-export interface ServerMoveResult { x: number; y: number; terrain: string; healed?: boolean; encounter?: ServerEncounter }
+export interface ServerMoveResult { x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean }
 export interface ServerAward { xp?: number; drops?: string[]; materialsLost?: string[]; powerSpent?: number }
 export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward }
 
-/** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置更新 + 遭遇判定はサーバー。 */
-export function serverMove(agent: Agent, dx: number, dy: number): Promise<ServerMoveResult> {
-  return callEdge<ServerMoveResult>(agent, LXM_MOVE, '/api/world/move', { dx, dy });
+/** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
+ *  token 未指定 (初回) はサーバーが gameState から位置を再同期する。歩行では PDS を触らないので高速。 */
+export function serverMove(agent: Agent, dx: number, dy: number, token?: string): Promise<ServerMoveResult> {
+  return callEdge<ServerMoveResult>(agent, LXM_MOVE, '/api/world/move', token ? { dx, dy, token } : { dx, dy });
 }
 
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */

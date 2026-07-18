@@ -12,12 +12,13 @@
  */
 import {
   startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp,
-  terrainAt, isWalkable, regionOf, regionDanger, tierForDanger, encounterRateFor, BATTLE_TUNING,
+  terrainAt, isWalkable, wrap, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
 import { readState, readModifyWrite, emptyState, type GameStateEnv, type GameState } from './game-state';
+import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -29,10 +30,12 @@ export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', '
 /** 戦闘解決に必要な env (権威 state 読み書き + ユーザー診断 fetch)。 */
 export type ResolverEnv = GameStateEnv;
 
-/** ガードに封印する startBattle 由来のメタ (turn では state を使うが、報酬用に archetype を残す)。 */
+/** ガードに封印する startBattle 由来のメタ (turn では state を使うが、報酬/撃破記録用に残す)。 */
 interface SealedMeta {
   archetype: string;
   tier: 1 | 2 | 3;
+  /** 遭遇したタイル "x,y" (撃破時に defeated へ入れ、その枠で再エンカウントさせない)。 */
+  tile: string;
 }
 
 type Guard = BattleGuard<SealedMeta, BattleState>;
@@ -84,6 +87,8 @@ interface MigratableAnalysisRecord {
   playerLevel?: { xp?: number };
   jobLevel?: { archetype?: string; xp?: number };
 }
+interface MigratableWorldRecord { x?: number; y?: number }
+export const WORLD_COLLECTION = 'app.aozoraquest.world';
 
 /**
  * 初回 gameState 生成時の移行 (§6-4)。ユーザー PDS の **既存 power 残高と分析 Lv を上限クランプして取り込む**
@@ -95,10 +100,18 @@ export async function migrateInitState(userDid: string, nowIso: string, fetchImp
   const base = emptyState(userDid, nowIso);
   try {
     const pds = await resolveUserPds(userDid, fetchImpl);
-    const [powerRec, analysisRec] = await Promise.all([
+    const [powerRec, analysisRec, worldRec] = await Promise.all([
       getRecord<MigratablePowerRecord>(pds, userDid, POWER_COLLECTION, 'self').catch(() => null),
       getRecord<MigratableAnalysisRecord>(pds, userDid, ANALYSIS_COLLECTION, 'self').catch(() => null),
+      getRecord<MigratableWorldRecord>(pds, userDid, WORLD_COLLECTION, 'self').catch(() => null),
     ]);
+    // 位置: 旧クライアント world-record から引き継ぐ (ワープ防止)。無ければ spawn。歩ける所に限る。
+    const w = worldRec?.value;
+    const spawn = worldOverlay().spawn;
+    const px = typeof w?.x === 'number' && Number.isFinite(w.x) ? wrap(w.x) : spawn.x;
+    const py = typeof w?.y === 'number' && Number.isFinite(w.y) ? wrap(w.y) : spawn.y;
+    base.x = isWalkable(terrainAt(px, py)) ? px : spawn.x;
+    base.y = isWalkable(terrainAt(px, py)) ? py : spawn.y;
     const p = powerRec?.value;
     if (p) {
       const bal = Math.max(0, finiteNum(p.viaPosts) - finiteNum(p.userMessages) - finiteNum(p.cardDraws)
@@ -127,25 +140,28 @@ export interface EncounterInfo {
 }
 
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
- *  move からのみ呼ばれる (client から直接遭遇を起こせない = 座標/遭遇を偽造不可)。export はテスト用。 */
-export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, now: number, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
+ *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
+export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
   const { archetype, baseStats } = await readDiagnosis(userDid, fetchImpl);
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
-  const seed = (await entropyU32()).value; // 召喚/敵ステ用 (client には返さない)
   const jobLevel = jobLevelFromXp(state.jobXp[archetype] ?? 0);
   const playerLevel = playerLevelFromXp(state.playerXp);
-  const battle = startBattle(archetype, jobLevel, playerLevel, userDid, tier, seed, state.herbs ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
+  const battle = startBattle(archetype, jobLevel, playerLevel, userDid, tier, monsterSeed, state.herbs ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, equipIds: state.gear, tonics: state.tonics ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32()).value;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
+  // move では毎歩ガードを読まない (ステートレス高速化)。ここで、期限切れの古いガードが残っていたら
+  // flush してから作る (クラッシュ復帰)。期限内の生きたガードが残っていれば createGuard が InvalidSwap → 409。
+  const existing = await readGuard<SealedMeta, BattleState>(env, userDid);
+  if (existing && now * 1000 >= Date.parse(existing.guard.expiresAt)) await deleteGuard(env, now, userDid, existing.cid);
   const guard: Guard = {
-    did: userDid, battleId, turn: 0, sealed: { archetype, tier }, state: battle, pendingTurnSeed, rewarded,
+    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: `${x},${y}` }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
-  await createGuard(env, now, guard); // 既存があれば InvalidSwap → 上位で 409
+  await createGuard(env, now, guard); // 生きたガードがあれば InvalidSwap → 上位で 409
   return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
 }
 
@@ -155,46 +171,61 @@ export interface MoveResult {
   terrain: string;
   /** 街に入って全回復した (HP/MP が権威なのでサーバーが回復)。 */
   healed?: boolean;
+  /** 次の move に渡す新しい位置トークン (署名済み = 改竄不可)。 */
+  token: string;
   /** サーバーが遭遇を判定した場合のみ。 */
   encounter?: EncounterInfo;
 }
 
 /**
- * move: **位置を Worker が権威更新し、遭遇もサーバーが判定する**。クライアントは方向 (隣接1マス) しか
- * 送れず、座標も遭遇有無も tier も偽造できない (§5 のアンチチート核: 移動を毎回 Worker で処理)。
+ * move: **位置トークン (署名済み) を検証 → 隣接検証 → 決定的エンカウント判定 → 新トークン発行**。
+ * 歩行では PDS を触らない (街/エンカウントの時だけ書く) = 高速。座標・遭遇・tier は署名/秘密で偽造不可。
+ * token 未指定/失効時は gameState から位置を再同期する (稀な PDS 読み)。
  */
-export async function handleMove(env: ResolverEnv, userDid: string, dx: number, dy: number, now: number, fetchImpl?: typeof fetch): Promise<MoveResult> {
+export async function handleMove(env: ResolverEnv, userDid: string, dx: number, dy: number, token: string | undefined, now: number, fetchImpl?: typeof fetch): Promise<MoveResult> {
   if (![-1, 0, 1].includes(dx) || ![-1, 0, 1].includes(dy) || (dx === 0 && dy === 0)) throw new ResolverError('不正な移動 (隣接1マスのみ)', 400);
 
-  // 未決着ガード: 期限内なら移動不可 (戦闘中)、期限切れは flush して先へ (クラッシュ復帰・ロックアウト回避)。
-  const g = await readGuard<SealedMeta, BattleState>(env, userDid);
-  if (g) {
-    if (now * 1000 < Date.parse(g.guard.expiresAt)) throw new ResolverError('戦闘中は移動不可', 409);
-    await deleteGuard(env, now, userDid, g.cid); // 期限切れ = lazy flush (踏み倒し容認 §5)
+  // 現在位置: 署名トークンが権威。無効/失効なら gameState から再同期 (位置偽造は署名で不可)。
+  let cx: number, cy: number, counter = 0;
+  try {
+    const claim = verifyPosition(env, token ?? '', userDid, now);
+    cx = claim.x; cy = claim.y; counter = claim.counter;
+  } catch {
+    const rec = await readState(env, userDid);
+    const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), fetchImpl));
+    cx = s.x; cy = s.y;
   }
 
-  // 権威位置を CAS 更新。移動先の歩行可否は mutate 内で検証 (CAS リトライで再検証される)。
-  // 街に入ったら HP/MP を全回復 (carry を消す = 次戦全快。HP が権威なのでサーバーが行う)。
-  const committed = { x: 0, y: 0, healed: false };
-  const moved = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
-    const tx = cur.x + dx, ty = cur.y + dy;
-    const t = terrainAt(tx, ty);
-    if (!isWalkable(t)) throw new ResolverError('進めない地形', 400);
-    committed.x = tx; committed.y = ty; committed.healed = t === 'town';
-    const next: GameState = { ...cur, x: tx, y: ty };
-    if (t === 'town') { next.carryHp = undefined; next.carryMp = undefined; }
-    return next;
-  }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, fetchImpl) });
+  const nx = wrap(cx + dx), ny = wrap(cy + dy);
+  const terrain = terrainAt(nx, ny);
+  if (!isWalkable(terrain)) throw new ResolverError('進めない地形', 400);
 
-  const terrain = terrainAt(committed.x, committed.y);
+  let healed = false;
+  if (terrain === 'town') {
+    // 街: HP/MP 全回復 + 位置を gameState に確定 (稀なので PDS 書き OK。失効時の再同期先にもなる)。
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: nx, y: ny, carryHp: undefined, carryMp: undefined }),
+      { now, init: (d, iso) => migrateInitState(d, iso, fetchImpl) });
+    healed = true;
+  }
+
+  const nextToken = signPosition(env, { did: userDid, x: nx, y: ny, counter: counter + 1, iat: now });
+
+  // エンカウント: tile+30分枠+秘密から決定的 (見えない・予測不可・30分でリポップ)。街では出さない。
   if (terrain !== 'town') {
-    const roll = (await entropyU32()).value / 0x1_0000_0000; // [0,1)
+    const window = enemyWindow(now);
+    const { roll, monsterSeed } = tileEncounter(env, nx, ny, window);
     if (roll < encounterRateFor(terrain)) {
-      const encounter = await sealEncounter(env, userDid, moved, committed.x, committed.y, now, fetchImpl);
-      return { x: committed.x, y: committed.y, terrain, encounter };
+      const rec = await readState(env, userDid);
+      const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), fetchImpl));
+      // その 30 分枠で撃破済みのタイルには敵が居ない (同一敵の無限狩り防止)。
+      const defeated = state.defeatedWindow === window ? (state.defeated ?? []) : [];
+      if (!defeated.includes(`${nx},${ny}`)) {
+        const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, fetchImpl);
+        return { x: nx, y: ny, terrain, token: nextToken, encounter };
+      }
     }
   }
-  return { x: committed.x, y: committed.y, terrain, healed: committed.healed || undefined };
+  return { x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
 }
 
 export interface TurnResult {
@@ -235,12 +266,19 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const rewardSeed = (await entropyU32()).value;
     const lossSeed = (await entropyU32()).value;
     let awarded: AwardBreakdown = {};
+    const window = enemyWindow(now);
     await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       const r = applyBattleOutcome(cur, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, rewardSeed, lossSeed, rewarded: guard.rewarded,
       });
       awarded = r.awarded;
+      // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
+      // 枠が変わっていたら defeated をリセット (敵配置が入れ替わる)。
+      const prevDefeated = cur.defeatedWindow === window ? (cur.defeated ?? []) : [];
+      const defeated = decision === 'win' && guard.sealed.tile
+        ? [...prevDefeated.filter((t) => t !== guard.sealed.tile), guard.sealed.tile].slice(-256)
+        : prevDefeated;
       // 戦闘をまたぐ HP/MP・消費アイテムも権威 state に反映 (負けは全快で復帰)。
       return {
         ...r.next,
@@ -248,6 +286,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         carryMp: decision === 'lose' ? undefined : next.player.mp,
         herbs: next.herbs,
         tonics: next.tonics,
+        defeated,
+        defeatedWindow: window,
       };
     }, { now, init: (did, nowIso) => migrateInitState(did, nowIso) });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded };
