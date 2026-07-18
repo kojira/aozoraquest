@@ -47,7 +47,6 @@ import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/ge
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
-import { BattleResultPanel, type WorldBattleResult } from '@/components/world-battle-result';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
@@ -185,18 +184,19 @@ export function World() {
   const [battle, setBattle] = useState<{
     state: BattleState;
     busy: boolean;
-    /** DQ 風の交互表示。message = メッセージ窓 (コマンド非表示) / input = コマンド入力 */
+    /** DQ 風の交互表示。message=メッセージ窓 / input=コマンド入力 / result=決着後の報酬メッセージ
+     *  (別パネルを出さず同じ固定サイズのメッセージ窓に畳む = 枠が伸縮せず敵の位置も動かない) */
     phase: BattlePhase;
     rkey: string;
     tier: 1 | 2 | 3;
     /** 敗北した場合に落とす素材 (開戦時に seed から確定済み) */
     materialsLost: string[];
+    /** result フェーズで出す報酬行 (経験値・素材など) */
+    resultLines?: readonly string[];
   } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
-  // 型は world-battle-result の WorldBattleResult に一本化 (二重定義の drift 防止)
-  const [battleResult, setBattleResult] = useState<WorldBattleResult | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
@@ -343,7 +343,7 @@ export function World() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ws === null, battle === null, battleResult === null]);
+  }, [ws === null, battle === null]);
 
   // 状態保存 (2 秒デバウンス + unmount 時に確定)
   const wsRef = useRef(ws);
@@ -367,8 +367,6 @@ export function World() {
 
   const battleRef = useRef(battle);
   battleRef.current = battle;
-  const battleResultRef = useRef(battleResult);
-  battleResultRef.current = battleResult;
   const pointsRef = useRef(points);
   pointsRef.current = points;
   const resolvedGearRef = useRef(resolvedGear);
@@ -389,7 +387,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
+      if (!s || battleRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -530,9 +528,16 @@ export function World() {
   const onMessageAdvance = useCallback(
     async () => {
       const b = battleRef.current;
+      if (!b || b.busy) return;
+      // result フェーズ (決着後の報酬メッセージ) はタップでマップへ戻る
+      if (b.phase === 'result') {
+        battleRef.current = null;
+        setBattle(null);
+        return;
+      }
       // agent/did は決着の確定処理 (レコード/XP) だけに要るので、ここでは要求しない。
       // 継戦のタップ送りまで塞ぐと、稀にセッションが切れた時にメッセージが送れず詰む。
-      if (!b || b.busy || b.phase !== 'message') return;
+      if (b.phase !== 'message') return;
       const next = b.state;
       // 開幕メッセージ (turn 0 = 開幕専用。resolveTurn は turn を必ず +1 するので決着は
       // 常に turn>=1) と継戦は入力フェーズへ戻すだけ
@@ -615,11 +620,8 @@ export function World() {
               ...(arch ? { gains: levelUpGains(arch, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base) } : {}),
             });
           }
-          // 同じ戦闘のリザルトが出ている間だけ文言も反映 (次の遭遇に紛れ込ませない)
-          const statGains = arch
-            ? levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base)
-            : [];
-          setBattleResult((r) => (r && r.state.seed === next.seed ? { ...r, levelUps: ups, statGains } : r));
+          // レベルアップ/ステータス上昇は notifyLevelUp の演出で出す (報酬メッセージ窓
+          // には載せない = 情報量を減らす。旧: リザルトパネルに追記していた)
         });
       }
       // 手持ちを更新: 使った分を引き、ドロップ分を足す。
@@ -678,14 +680,29 @@ export function World() {
         setWs((s) => (s ? { ...s, hp, mp } : s));
       }
       scheduleSave();
-      setBattle(null);
-      // リザルトに出す中身が何も無いなら (逃走・引き分けで報酬も損失も無い)、空の
-      // パネルを見せず即マップへ戻す (「にげだした！」は直前のメッセージ窓で読ませ済み。
-      // 情報量を減らす — レビュー ★★)。レベルアップは xp>0 の勝利時のみ後追いで届く
-      // ので、ここで空判定に含めなくてよい。
-      const hasResult = xp > 0 || drops.length > 0 || !!movedToTown || lost.length > 0 || saveFailed;
-      if (hasResult) {
-        setBattleResult({ state: next, movedToTown, drops, xp, saveFailed, materialsLost: lost });
+      // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
+      // でかくなり認知負荷 — オーナー指摘)。レベルアップ/ステータス上昇は notifyLevelUp
+      // の演出が別に出るのでここには載せない (情報量を減らす)。resultLines が空になる
+      // のは実質「逃走 (fled = 経験値もドロップも無し)」のみ。その時は報酬メッセージを
+      // 出さず即マップへ戻す (引き分け draw は経験値 xpLose が出るので窓が出る)。
+      const dropCounts = new Map<string, number>();
+      for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
+      const lostCounts = new Map<string, number>();
+      for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
+      const nameOf = (id: string) => ITEMS[id]?.name ?? id;
+      const resultLines: string[] = [];
+      if (xp > 0) resultLines.push(`けいけんち を ${xp} かくとく！`);
+      for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を てにいれた！`);
+      for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を おとしてしまった…`);
+      if (movedToTown) resultLines.push(`きがつくと「${movedToTown}」で かいほうされていた…`);
+      if (saveFailed) resultLines.push('※ けっかの ほぞんに しっぱいした (つうしんエラー)。でんぱのよい ばしょで ひらきなおしてね。');
+      if (resultLines.length === 0) {
+        battleRef.current = null;
+        setBattle(null);
+      } else {
+        const done = { ...b, state: next, busy: false, phase: 'result' as BattlePhase, resultLines };
+        battleRef.current = done;
+        setBattle(done);
       }
     },
     [scheduleSave, agent, did],
@@ -781,7 +798,7 @@ export function World() {
     const s = wsRef.current;
     // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
     // まま別の街へテレポートすると品揃えが無言で差し替わる — レビュー指摘)
-    if (!s || battleRef.current || battleResultRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || statusOpenRef.current) return;
+    if (!s || battleRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || statusOpenRef.current) return;
     setFeatherOpen(true); // 行き先えらびを開く (選ぶと flyToTown が飛ばす)
   }, [featherStock]);
 
@@ -1106,7 +1123,7 @@ export function World() {
               // map/shop/gear/status) 中はそもそもスティックがそれらの背面シートで
               // 遮断されタップが届かないので、ここでは wipe/battle だけ見れば足りる
               // (move() ガードとは条件集合が非対称 — 意図的)
-              if (wipeRef.current || battleRef.current || battleResultRef.current) return;
+              if (wipeRef.current || battleRef.current) return;
               dismissMenuHint();
               setMenuOpen(true);
             }}
@@ -1120,7 +1137,7 @@ export function World() {
               locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}が多い`}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)
-              zIndex={inBattle || battleResult ? OVERLAY_Z + 1 : HUD_Z}
+              zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
             />
           )}
           {menuHint && !onboarding && !menuOpen && (
@@ -1151,7 +1168,7 @@ export function World() {
           {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。
               敵+ログ+コマンド、リザルトの報酬まで全部この枠内に畳む。上枠 (paddingTop)
               は WorldHud の HP/MP 帯を空けておく。 */}
-          {(inBattle || battleResult) && (
+          {inBattle && battle && (
             <div
               style={{
                 position: 'absolute',
@@ -1166,18 +1183,15 @@ export function World() {
                 overflow: 'hidden',
               }}
             >
-              {inBattle && battle ? (
-                <WorldBattleControls
-                  state={battle.state}
-                  phase={battle.phase}
-                  busy={battle.busy}
-                  showEnemyVitals={canSeeEnemyVitals(archetype)}
-                  onCommand={onBattleCommand}
-                  onAdvance={() => void onMessageAdvance()}
-                />
-              ) : battleResult ? (
-                <BattleResultPanel result={battleResult} onClose={() => setBattleResult(null)} />
-              ) : null}
+              <WorldBattleControls
+                state={battle.state}
+                phase={battle.phase}
+                busy={battle.busy}
+                showEnemyVitals={canSeeEnemyVitals(archetype)}
+                resultLines={battle.resultLines ?? []}
+                onCommand={onBattleCommand}
+                onAdvance={() => void onMessageAdvance()}
+              />
             </div>
           )}
         </div>
@@ -1191,14 +1205,14 @@ export function World() {
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
           をなくす — オーナー要望 2026-07-18)。通常時のみ操作ヒント。 */}
-      {!inBattle && !battleResult && (
+      {!inBattle && (
         <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
           じぶんを タップすると コマンドが ひらくよ。
         </p>
       )}
       {/* 一時メッセージ + 操作説明は戦闘/リザルト中は隠す (マップ枠内で完結・
           縦スクロールをなくす。オーナー要望 2026-07-18) */}
-      {!inBattle && !battleResult && (
+      {!inBattle && (
         <>
           <p
             aria-live="polite"
