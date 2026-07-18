@@ -67,6 +67,18 @@ export function BattleScene({
           <MonsterSvg species={monsterDef?.species ?? 'slime'} size={monsterSize} />
         </div>
         <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} {...(compact ? { labelColor: '#fff' } : {})} />
+        {/* ため/回復を使う敵は MP を見せる (尽きるまで耐える/尽きたら攻める読み合い)。
+            通常攻撃だけの敵は MP を使わないので出さない (混乱防止)。 */}
+        {monsterDef?.ability && state.monster.maxMp > 0 && (
+          <div style={{ maxWidth: 340, margin: '0.15em auto 0', display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: '0.68em', color: compact ? 'rgba(255,255,255,0.8)' : 'var(--color-muted)', textShadow: shadow }}>
+              {monsterDef.ability === 'healer' ? 'かいふくの力' : 'ためる力'}
+            </span>
+            <div style={{ width: 60, height: 4, background: 'rgba(0,0,0,0.4)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${(state.monster.mp / state.monster.maxMp) * 100}%`, height: '100%', background: '#b98ae8', transition: 'width 300ms ease' }} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ログ (DQ1 風に 1 文字ずつ表示、key=turn で毎ターン打ち直す。コマンドは

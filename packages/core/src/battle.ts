@@ -66,6 +66,18 @@ export const BATTLE_TUNING = {
    *  (2.6 → 防御で 1.3 まで軽減 = 節約 1.3 発分 > 機会費用の自攻撃 1 発分)。
    *  防御に存在意義を与える読み合いの核。バランステストで「予告に防御 > attack 連打」を固定。 */
   chargedPower: 2.6,
+  /** charger が「ため」を宣言する確率 (ため中でないとき毎ターン判定)。 */
+  chargerChargeChance: 0.4,
+  /** healer が自己回復する条件と量。HP がこの割合を下回ると healChance で回復し、
+   *  maxHp の healRatio ぶん戻す (削り切る前に倒す読み合い。無限回復にはしない)。 */
+  healerLowHpRatio: 0.55,
+  healerHealChance: 0.5,
+  healerHealRatio: 0.14,
+  /** モンスターの特技 MP コスト。MP は int から算出 (fromStats) 済み。ため/回復を
+   *  MP 制にすることで「int の高い敵ほど特技を多用でき、尽きたら通常攻撃に落ちる」
+   *  = MP を削り切る/尽きるのを待つ読み合いを作る (オーナー提案 2026-07-18)。 */
+  monsterChargeMpCost: 5,
+  monsterHealMpCost: 7,
   /** MP: 特技のコスト。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。
    *  戦闘中の MP 回復は **ジョブ特性 (JOB_MP_TRAITS) を持つジョブだけ** —
    *  全員一律の回復はジョブの差をぼやけさせる (オーナー決定 2026-07-17)。
@@ -218,9 +230,9 @@ export interface Combatant {
   name: string;
   maxHp: number;
   hp: number;
-  /** MP (プレイヤー用)。特技で消費。戦闘中の回復は MP 特性 (JOB_MP_TRAITS) を持つ
-   *  ジョブのみ (たたかう/ぼうぎょで回復)。モンスターは 0 固定
-   *  (代わりに「ため」サイクルを持つ)。 */
+  /** MP。特技で消費。プレイヤーは MP 特性 (JOB_MP_TRAITS) を持つジョブのみ回復。
+   *  モンスターも int から MP を持ち (fromStats)、ため/回復の特技コストに使う
+   *  (尽きると通常攻撃に落ちる = 資源の読み合い。オーナー提案 2026-07-18)。 */
   maxMp: number;
   mp: number;
   atk: number;
@@ -451,8 +463,15 @@ export interface MonsterDef {
   drops: readonly DropDef[];
   /** ひとこと (召喚時の口上に使う) */
   intro: string;
-  /** 強攻撃 (tier2+ の skill 行動) の技名。tier1 は skill を使わないので省略可。 */
+  /** 強攻撃 (charger の ため攻撃) の技名。charger 以外は省略可。 */
   skillName?: string;
+  /** 行動タイプ (戦略性のためのバリエーション。オーナー要望 2026-07-18)。
+   *  未指定 = plain (通常攻撃 + 低 HP でたまに防御)。
+   *  'charger' = 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)。
+   *  'healer' = 低 HP でたまに自己回復 (削り切る前に倒す読み合い)。 */
+  ability?: 'charger' | 'healer';
+  /** healer の回復技名 (省略時デフォルト)。 */
+  healName?: string;
 }
 
 /** 素材カタログ (Step2 の装備素材)。 */
@@ -477,13 +496,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   // tier2: 修練
-  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ' },
-  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', skillName: 'おにびのうず' },
+  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
+  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
   { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負
   { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
-  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし' },
-  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', skillName: 'ほのおのブレス' },
+  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
+  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
 ];
 
 export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
@@ -575,6 +594,8 @@ export interface BattleState {
   mpGuardGain: number;
   /** MP 特性名 (特性なしジョブは undefined) */
   mpTraitName?: string;
+  /** healer が回復した回数 (healerHealMax で打ち止め = バースト窓の読み合いを作る)。 */
+  monsterHeals: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
 }
@@ -626,6 +647,7 @@ export function startBattle(
     mpAttackGain: gains.attackGain,
     mpGuardGain: gains.guardGain,
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
+    monsterHeals: 0,
     lastEvents: [],
   };
 }
@@ -705,20 +727,35 @@ function doAttack(
     const counterActor = actor === 'player' ? 'monster' : 'player';
     // 反撃は支配ステータス (def) 基準 — 守りの固さがそのまま反撃の重さになる
     // (見切り職は atk が低く、atk 基準だと tier3 で火力が出ずジリ貧になる)
-    doAttack(defender, attacker, rng, events, counterActor, { power: 1.2, atkOverride: defender.def, label: 'はんげき' });
+    doAttack(defender, attacker, rng, events, counterActor, { power: 0.75, atkOverride: defender.def, label: 'はんげき' });
   }
 }
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
-function monsterCommand(state: BattleState, rng: () => number): Command {
+/** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
+type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal';
+
+/** モンスターの行動を能力 (ability) で分岐する (オーナー要望 2026-07-18: ため攻撃は
+ *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。 */
+function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   const def = MONSTERS_BY_ID[state.monsterId];
-  const tier = def?.tier ?? 1;
+  const t = BATTLE_TUNING;
   const r = rng();
-  // HP が減ってきたら防御が混ざる。tier3 は強攻撃 (skill 相当) 多め。
   const hpRatio = state.monster.hp / state.monster.maxHp;
-  if (tier >= 2 && hpRatio < 0.35 && r < 0.25) return 'guard';
-  if (tier === 3 && r < 0.3) return 'skill';
-  if (tier === 2 && r < 0.2) return 'skill';
+  // 低 HP でたまに身を固める (charger のため中は別処理なのでここでは除外)
+  const canGuard = (def?.tier ?? 1) >= 2 && hpRatio < 0.35 && !state.monster.charging;
+  if (def?.ability === 'charger') {
+    if (state.monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
+    if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
+    return 'attack';
+  }
+  if (def?.ability === 'healer') {
+    if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
+    if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
+    return 'attack';
+  }
+  // plain: 通常攻撃 + 低 HP でたまに防御
+  if (canGuard && r < 0.25) return 'guard';
   return 'attack';
 }
 
@@ -875,12 +912,22 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
           hitBonus: -0.05,
           label: skillName,
         });
-      } else if (mCommand === 'attack') {
-        doAttack(state.monster, state.player, rng, events, 'monster');
-      } else if (mCommand === 'skill') {
-        // このターンは攻撃せず「ため」を予告する
+      } else if (mCommand === 'charge') {
+        // このターンは攻撃せず「ため」を予告する (charger、MP 消費)
+        state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterChargeMpCost);
         state.monster.charging = true;
         events.push({ actor: 'monster', text: `${state.monster.name}は力をためている…!` });
+      } else if (mCommand === 'heal') {
+        // healer の自己回復 (MP 消費)。MP が尽きるまでの読み合いを作る
+        state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterHealMpCost);
+        const healed = Math.round(state.monster.maxHp * BATTLE_TUNING.healerHealRatio);
+        const before = state.monster.hp;
+        state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
+        state.monsterHeals += 1;
+        const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';
+        events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HP が ${state.monster.hp - before} 回復。` });
+      } else if (mCommand === 'attack') {
+        doAttack(state.monster, state.player, rng, events, 'monster');
       }
       // guard は宣言済み
     }
