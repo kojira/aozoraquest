@@ -10,10 +10,10 @@
  *   /api/battle/* /api/xp/* /api/me/state (M2〜)。依頼クエスト集約 (docs/15) も。
  */
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
-import { getRecord, PdsError } from './pds';
-import { GAME_STATE_COLLECTION, rkeyForDid, emptyState } from './game-state';
+import { PdsError } from './pds';
+import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { handleMove, handleTurn, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, migrateInitState, ResolverError } from './battle-resolver';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
 
@@ -100,10 +100,16 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    if (!env.SERVER_PDS_URL || !env.SERVER_DID) return cors(json({ error: 'server_not_configured' }, 503), allowedOrigin);
-    const rec = await getRecord(env.SERVER_PDS_URL, env.SERVER_DID, GAME_STATE_COLLECTION, rkeyForDid(did));
-    // 未作成なら初期値を返す (実 state 化は初回の書込み = M3 で。移行はそこでクランプ)
-    return cors(json({ state: rec?.value ?? emptyState(did, new Date().toISOString()), initialized: rec !== null }), allowedOrigin);
+    // 読み書きとも repo はトークン由来 (readState)。未 bootstrap は 503 fail-closed。
+    // 未初期化 (レコード無し) は §6-4 移行値を read-only で返す (power=0/Lv1 で表示が割れないように。
+    // PDS へは書かない = 初回 move で確定)。initialized はレコード実在を表す。
+    try {
+      const rec = await readState(env, did);
+      const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString()));
+      return cors(json({ state, initialized: rec !== null }), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
   }
 
   // ── サーバー権威 ワールド/戦闘 (docs/21 §5) ── 移動も攻撃も毎回 Worker が処理 = チート不可 ──
@@ -153,7 +159,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 /** 戦闘エラーを HTTP に振り分ける。**トークン切れ/未設定 (ServerWriteError) は 503 で fail-closed**
  *  (報酬は付かない・クライアント権威へのフォールバックは無い §3-6)。ResolverError はその status。 */
 function battleError(e: unknown): Response {
-  if (e instanceof ResolverError) return json({ error: 'battle_error', message: e.message }, e.status);
+  if (e instanceof ResolverError) return json({ error: e.code ?? 'battle_error', message: e.message }, e.status);
   if (e instanceof ServerWriteError) return json({ error: 'server_write_unavailable', reason: e.reason }, 503);
   // 失効/無効トークンで PDS が 401/403 を返した場合も **fail-closed 503** (報酬なし。500 で誤魔化さない)。
   if (e instanceof PdsError && (e.status === 401 || e.status === 403)) return json({ error: 'server_write_unavailable', reason: 'auth' }, 503);

@@ -4,14 +4,10 @@ import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForDanger,
   BATTLE_TUNING,
-  battleXpFor,
   canSeeEnemyVitals,
   ITEMS,
-  jobDisplayName,
-  levelUpGains,
   townShopStock,
   type EquipmentDef,
-  encounterRateFor,
   favoredMonsterFor,
   isWalkable,
   jobLevelFromXp,
@@ -21,12 +17,8 @@ import {
   regionDanger,
   regionOf,
   regionsAround,
-  resolveTurn,
-  rollDefeatLoss,
-  rollDrops,
   rollSearch,
   SEARCH_TUNING,
-  startBattle,
   statVectorToArray,
   terrainAt,
   tileDetailAt,
@@ -38,9 +30,9 @@ import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
-import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord } from '@/lib/battle-log';
-import { notifyLevelUp } from '@/components/level-up-overlay';
+import { loadBattleStats } from '@/lib/battle-log';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
+import { serverMove, serverTurn, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -85,6 +77,9 @@ const DIRS: Record<Dir, { dx: number; dy: number }> = {
 };
 
 const DANGER_LABELS = ['おだやか', 'すこし危険', '危険', 'とても危険'] as const;
+
+/** サーバーの ServerBattleState を描画用 BattleState として扱う (seed は実行時に存在しない = UI 未使用)。 */
+const asBattleState = (s: ServerBattleState): BattleState => s as unknown as BattleState;
 
 interface Vitals {
   x: number;
@@ -183,17 +178,21 @@ export function World() {
   const featherDestRef = useRef<{ x: number; y: number } | null>(null);
   const [points, setPoints] = useState<PointsState | null>(null);
   const [battle, setBattle] = useState<{
+    /** サーバー権威の戦闘 state (seed は含まれない = 先読み不可)。描画のみに使う。 */
     state: BattleState;
     busy: boolean;
     /** DQ 風の交互表示。message=メッセージ窓 / input=コマンド入力 / result=決着後の報酬メッセージ
      *  (別パネルを出さず同じ固定サイズのメッセージ窓に畳む = 枠が伸縮せず敵の位置も動かない) */
     phase: BattlePhase;
-    rkey: string;
-    tier: 1 | 2 | 3;
-    /** 敗北した場合に落とす素材 (開戦時に seed から確定済み) */
-    materialsLost: string[];
+    /** サーバーが採番した戦闘 ID (ターン送信に必須)。 */
+    battleId: string;
+    /** 決着ターンでサーバーが確定した報酬 (result フェーズの表示に使う)。 */
+    awarded?: ServerAward;
     /** result フェーズで出す報酬行 (経験値・素材など) */
     resultLines?: readonly string[];
+    /** コマンド送信失敗 (503/409/通信断) をバトル画面内に表示する一行。notice は戦闘中は
+     *  描画されない (戦闘オーバーレイの外) ので、fail-closed のエラーはここに出す。 */
+    errorText?: string;
   } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
@@ -370,161 +369,117 @@ export function World() {
   battleRef.current = battle;
   const pointsRef = useRef(points);
   pointsRef.current = points;
-  const resolvedGearRef = useRef(resolvedGear);
-  resolvedGearRef.current = resolvedGear;
   const combatRef = useRef(combat);
   combatRef.current = combat;
-  const diagRef = useRef(diag);
-  diagRef.current = diag;
   const wipeRef = useRef(wipe);
   wipeRef.current = wipe;
+  /** 移動中フラグ。移動は毎回サーバー往復するので、連打で並行 serverMove が飛ばないよう塞ぐ。 */
+  const moveBusyRef = useRef(false);
 
+  // 移動は**毎回サーバー (edge Worker) が権威処理する** (docs/21 §5)。クライアントは方向 (隣接1マス)
+  // しか送れず、位置も遭遇有無も tier も報酬もサーバーが決める = 改造してもチートできない。
+  // クライアント側は結果を描画するだけ (街のかけら/訪問済みは表示用の探索メモなので client 保存)。
   const move = useCallback(
     (dir: Dir) => {
       const s = wsRef.current;
-      // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可。
-      // wipe ガードが必要なのは そらのはね帰還が「wipe あり・battle なし」状態を
-      // 作るため — キャプチャ済みスティックの interval はイベント非依存で、
-      // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
-      // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
-      // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
+      // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可 (全入力経路を一括ガード)。
       if (!s || battleRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
+      if (moveBusyRef.current) return; // 直前の移動がサーバー往復中 (連打の並行実行を塞ぐ)
+      if (!worldServerEnabled || !agent) { setNotice('サーバーに接続できないため移動できない。'); return; }
       const { dx, dy } = DIRS[dir];
+      // 即時フィードバック用のローカル先読み (権威はサーバー。壁ドンだけ即返す)。
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
-      const terrain = terrainAt(nx, ny);
-      if (!isWalkable(terrain)) {
+      if (!isWalkable(terrainAt(nx, ny))) {
         setNotice('そっちには進めない!');
-        return; // 位置不変なので保存もしない
+        return;
       }
-      // 街に入ったら全回復 + 「最後に立ち寄った街」を更新 (敗北時の帰還先)
-      if (terrain === 'town') {
-        const t = townAt(nx, ny);
-        // ちずのかけら: 街に入るとその街の地方一帯 (3×3 リージョン) が地図に加わる
-        const around = regionsAround(regionOf(nx, ny));
-        const gained = around.some((r) => !s.regions.includes(r));
-        const regions = gained ? [...new Set([...s.regions, ...around])].sort((a, b) => a - b) : s.regions;
-        // 訪問済みの街に追加 (そらのはねの行き先候補。重複しない)
-        const newlyVisited = !s.visitedTowns.some((v) => v.x === nx && v.y === ny);
-        const visitedTowns = newlyVisited ? [...s.visitedTowns, { x: nx, y: ny }] : s.visitedTowns;
-        setNotice(
-          t
-            ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' ちずのかけらを 手に入れた!' : ''}`
-            : null,
-        );
-        // wsRef を即時更新 (長押し連打で render 前の tick が同座標から二重計算しないように)
-        wsRef.current = { x: nx, y: ny, hp: null, mp: null, lastTown: { x: nx, y: ny }, regions, visitedTowns, gotStarterFeather: s.gotStarterFeather };
-        setWs(wsRef.current);
-        scheduleSave();
-        // かけら入手/初訪問は離散イベントなのでデバウンスを待たず即時にも保存する
-        // (通知を見た直後のリロードで入手が消えない。二重保存は同内容の put で無害)
-        if ((gained || newlyVisited) && agent) void saveWorldState(agent, wsRef.current);
-        return; // 街では遭遇しない
-      }
-      setNotice(null);
-      wsRef.current = { ...s, x: nx, y: ny };
-      setWs(wsRef.current);
-      scheduleSave();
-      // 野外遭遇 (遭遇判定はプレビュー: Math.random。PR-W3 で Worker の署名付き seed に)。
-      // 1 戦 = パワー 1 消費 + 戦闘レコード (試練と同じ機構)。パワー不足なら遭遇しない
-      // (= 散歩だけならタダ。無料戦闘で報酬だけ稼げる穴を作らない)。
-      const d = diag;
-      const pts = pointsRef.current;
-      if (!agent || !did || !d || !pts || pts.balance < BATTLE_TUNING.powerCost) return;
-      if (Math.random() < encounterRateFor(terrain)) {
-        const danger = regionDanger(regionOf(nx, ny));
-        const tier = tierForDanger(danger);
-        const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
-        const jobLv = jobLevelFromXp(d.jobLevel?.xp ?? 0);
-        const playerLv = playerLevelFromXp(d.playerLevel?.xp ?? 0);
-        const herbs = Math.min(BATTLE_TUNING.herbCarryMax, herbStock);
-        const tonics = Math.min(BATTLE_TUNING.tonicCarryMax, tonicStock);
-        const cHp = wsRef.current?.hp;
-        const cMp = wsRef.current?.mp;
-        const state = startBattle(
-          d.archetype,
-          jobLv,
-          playerLv,
-          session.handle?.split('.')[0] ?? 'あなた',
-          tier,
-          seed,
-          herbs,
-          // フィールドの現在 HP/MP を引き継ぐ (戦闘をまたいで持続)
-          { ...(cHp !== null && cHp !== undefined ? { hp: cHp } : {}), ...(cMp !== null && cMp !== undefined ? { mp: cMp } : {}) },
-          {
-            tonics,
-            ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}),
-            ...(resolvedGearRef.current ? { gear: resolvedGearRef.current.selection } : {}),
-            // 地域の相性: その地方で出やすいモンスターの型を偏らせる (顔ぶれ・素材が変わる)
-            affinity: regionAffinity(regionOf(nx, ny)),
-            // 敵 HP/MP に遭遇ごとの分散 (値を覚えられないように = 予想させる。world のみ)
-            vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
-          },
-        );
-        // 敗北ペナルティの素材ロスを開戦時に確定 (seed から決定的)。持ち込み分の
-        // 消耗品は母集団から除外 (herbsUsed/tonicsUsed と二重減算しないように)。
-        // 仮レコードに書いておくことで「負けそうになったら閉じる」でもペナルティが効く
-        const lossPool = { ...materialsRef.current };
-        const subtractPool = (id: string, n: number) => {
-          if (!n) return;
-          const left = Math.max(0, (lossPool[id] ?? 0) - n);
-          if (left > 0) lossPool[id] = left;
-          else delete lossPool[id];
-        };
-        subtractPool('herb', herbs);
-        subtractPool('sky-dew', tonics);
-        const materialsLost = rollDefeatLoss(lossPool, state.player.luk, seed);
-        // 遭遇成立: ワイプ演出でマップを覆いながら支払いを進める (busy = コマンド不可)。
-        // battleRef は即時更新して長押し連打の次 tick が移動 + 二重遭遇しないようにする。
-        // 開幕は「あらわれた！」メッセージから (DQ 風)。支払い中は busy でタップ送りを止める。
-        const pending = { state, busy: true, phase: 'message' as BattlePhase, rkey: '', tier, materialsLost };
-        battleRef.current = pending;
-        setBattle(pending);
-        setWipe('cover');
-        void (async () => {
-          try {
-            // 支払い + 仮レコード (途中離脱 = 棄権 = 敗北)。失敗したら遭遇なしに戻す。
-            const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId, materialsLost, source: 'world' });
-            void bumpPower(agent, did, { battles: 1 });
-            setPoints((p) => (p ? { ...p, battles: p.battles + 1, balance: p.balance - BATTLE_TUNING.powerCost } : p));
-            setBattle((b) => {
-              if (!(b && b.state.seed === seed)) return b;
-              // battleRef も即時更新 (onCoverDone のタイマーが render flush 前に
-              // 発火しても準備完了を読めるように。pending 生成時と同じ流儀)
-              const ready = { ...b, rkey, busy: false };
-              battleRef.current = ready;
-              return ready;
-            });
-            // 覆い切って待機中 (hold) なら開く。cover 中なら onCoverDone 側が拾う。
-            setWipe((w) => (w === 'hold' ? 'reveal' : w));
-          } catch (e) {
-            console.warn('[world] field battle start failed', e);
-            setNotice('モンスターの気配がしたが、見失った… (通信エラー)');
-            setBattle((b) => (b && b.state.seed === seed ? null : b));
-            // マップに向かって開き直す (注: CSS の都合で「いったん全面黒に跳んでから
-            // 開く」見え方になる。稀な経路なので許容 — レビュー確認済み)
-            setWipe((w) => (w ? 'reveal' : w));
+      moveBusyRef.current = true;
+      void (async () => {
+        try {
+          const res = await serverMove(agent, dx, dy);
+          const cur = wsRef.current ?? s;
+          const t = townAt(res.x, res.y);
+          let next: Vitals = { ...cur, x: res.x, y: res.y };
+          if (res.healed) { next.hp = null; next.mp = null; }
+          if (res.terrain === 'town') {
+            // ちずのかけら: 街に入るとその街の地方一帯 (3×3 リージョン) が地図に加わる。
+            // 訪問済みの街 (そらのはねの行き先候補) も積む。どちらも表示用の探索メモ。
+            const around = regionsAround(regionOf(res.x, res.y));
+            const gained = around.some((r) => !cur.regions.includes(r));
+            const regions = gained ? [...new Set([...cur.regions, ...around])].sort((a, b) => a - b) : cur.regions;
+            const newlyVisited = !cur.visitedTowns.some((v) => v.x === res.x && v.y === res.y);
+            const visitedTowns = newlyVisited ? [...cur.visitedTowns, { x: res.x, y: res.y }] : cur.visitedTowns;
+            next = { ...next, hp: null, mp: null, lastTown: { x: res.x, y: res.y }, regions, visitedTowns };
+            setNotice(t ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' ちずのかけらを 手に入れた!' : ''}` : null);
+            wsRef.current = next;
+            setWs(next);
+            scheduleSave();
+            // 離散イベント (かけら/初訪問) はデバウンスを待たず即時にも保存する
+            if ((gained || newlyVisited) && agent) void saveWorldState(agent, next);
+          } else {
+            setNotice(null);
+            wsRef.current = next;
+            setWs(next);
+            scheduleSave();
           }
-        })();
-      }
+          // 遭遇: サーバーが封印済み (guard 作成・seed 非公開)。ワイプで覆ってからバトルへ。
+          if (res.encounter) {
+            const pending = { state: asBattleState(res.encounter.state), busy: false, phase: 'message' as BattlePhase, battleId: res.encounter.battleId };
+            battleRef.current = pending;
+            setBattle(pending);
+            setWipe('cover');
+          }
+        } catch (e) {
+          // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
+          if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
+          else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
+          else if (e instanceof WorldServerError && e.status === 400) setNotice('そっちには進めない!');
+          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。すこし まってから もう一度。');
+          else { console.warn('[world] serverMove failed', e); setNotice('移動できなかった (通信エラー)。'); }
+        } finally {
+          moveBusyRef.current = false;
+        }
+      })();
     },
-    [scheduleSave, diag, session.handle, herbStock, tonicStock, agent, did],
+    [scheduleSave, agent],
   );
 
-  // 戦闘コマンド (戦闘解決はクライアント。W3/W4 でサーバー権威に置換)
-  // コマンド選択 → ターン解決 → メッセージ窓へ (コマンドを消す)。決着処理はタップ送り
-  // (onMessageAdvance) 側で行う (DQ 風: 「〜のダメージ！」を読んでから結果に進む)。
+  // 戦闘コマンドも**毎回サーバーが解決する** (docs/21 §5)。クライアントは battleId + turn + command を送るだけ。
+  // 決着ターンの報酬 (XP/ドロップ/素材ロス) はサーバーが権威 state に確定し、awarded として返す。
+  // タップ送り (onMessageAdvance) で「〜のダメージ！」を読んでから結果へ進む (DQ 風)。
   const onBattleCommand = useCallback(
     (command: Command) => {
       const b = battleRef.current;
       if (!b || b.busy || b.phase !== 'input') return;
-      const next = resolveTurn(b.state, command);
-      // battleRef も同期更新 (同一フレームの二重発火防止。move() と同じ流儀)
-      const acting = { ...b, state: next, phase: 'message' as BattlePhase };
-      battleRef.current = acting;
-      setBattle(acting);
+      if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず 戦えない。' }); return; }
+      const { errorText: _clear, ...bClean } = b; // 再送時は前回エラーを消す (exactOptional のため省略で落とす)
+      const busy = { ...bClean, busy: true };
+      battleRef.current = busy;
+      setBattle(busy);
+      void (async () => {
+        try {
+          const res = await serverTurn(agent, b.battleId, b.state.turn, command);
+          const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false, ...(res.awarded ? { awarded: res.awarded } : {}) };
+          battleRef.current = acting;
+          setBattle(acting);
+        } catch (e) {
+          // 失敗しても**クライアント側で報酬を付けない** (fail-closed。busy を戻して再送させる)。
+          // エラーは戦闘オーバーレイ内に出す (notice は戦闘中は描画されない = 無言失敗になる)。
+          const cur = battleRef.current;
+          if (!cur) return;
+          let errorText = 'こうげきを 送れなかった (通信エラー)。もう一度どうぞ。';
+          if (e instanceof WorldServerError && e.status === 503) errorText = 'サーバーに記録できなかった (報酬なし)。でんぱのよい ばしょで もう一度どうぞ。';
+          else if (e instanceof WorldServerError && e.status === 409) errorText = 'ターンが ずれた。もう一度どうぞ。';
+          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) errorText = 'サーバーが応答しない。でんぱのよい ばしょで もう一度どうぞ。';
+          else console.warn('[world] serverTurn failed', e);
+          const revert = { ...cur, busy: false, errorText };
+          battleRef.current = revert;
+          setBattle(revert);
+        }
+      })();
     },
-    [],
+    [agent],
   );
 
   // メッセージ窓のタップ送り。開幕/継戦は入力へ、決着は確定処理してリザルトへ。
@@ -550,155 +505,52 @@ export function World() {
         setBattle(back);
         return;
       }
-      // 決着: 以降は確定処理。二重発火を busy で塞ぐ (レコード確定/XP の二重実行防止)
-      const acting = { ...b, busy: true };
-      battleRef.current = acting;
-      setBattle(acting);
-      // 決着: レコード確定 + XP + ドロップ (試練と同じ)。逃走は XP もドロップも無し。
-      const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
-      const xp = next.outcome === 'win' ? battleXpFor(next.monsterId) : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
-      const lost = next.outcome === 'lose' ? b.materialsLost : [];
-      const record = {
-        seed: next.seed,
-        tier: b.tier,
-        monsterId: next.monsterId,
-        outcome: next.outcome,
-        turns: next.turn,
-        drops,
-        herbsUsed: next.herbsUsed,
-        tonicsUsed: next.tonicsUsed,
-        materialsLost: lost,
-      };
-      // 保存は 1 回リトライ。失敗したらリザルトで明示 (仮レコードが敗北のまま残る)。
-      // agent/did は通常この時点で必ず在る (遭遇成立に必須) が、稀にセッションが切れて
-      // いても詰ませない: 保存/XP をスキップして saveFailed 扱いで結果まで進める。
-      let saveFailed = false;
-      if (agent && did) {
-        try {
-          await finishBattleRecord(agent, b.rkey, record);
-        } catch {
-          try {
-            await finishBattleRecord(agent, b.rkey, record);
-          } catch (e) {
-            console.warn('[world] battle finish record failed (after retry)', e);
-            saveFailed = true;
-          }
-        }
-      } else {
-        saveFailed = true;
-      }
-      if (xp > 0 && agent && did) {
-        void awardBattleXp(agent, did, xp).then((ups) => {
-          if (!ups) return;
-          // ステータス上昇量は再取得前の diag (レベルアップ前の基準) から計算する
-          const d = diagRef.current;
-          const base = d?.rpgStats ? statVectorToArray(d.rpgStats) : undefined;
-          const arch = d?.archetype;
-          const jNow = jobLevelFromXp(d?.jobLevel?.xp ?? 0);
-          const pNow = playerLevelFromXp(d?.playerLevel?.xp ?? 0);
-          const jFrom = ups.job?.from ?? jNow;
-          const jTo = ups.job?.to ?? jNow;
-          const pFrom = ups.player?.from ?? pNow;
-          const pTo = ups.player?.to ?? pNow;
-          // 表示レベル (HP/MP バー分母・次戦の戦闘値) を追従させる。演出だけ出して
-          // maxHp が増えないと「LEVEL UP! なのに強くなってない」に見える (レビュー指摘)
-          void getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
-            .then((nd) => { if (nd) setDiag(nd); })
-            .catch(() => {});
-          // 発火順は投稿フロー (compose-modal) と同じ job → player
-          if (ups.job) {
-            notifyLevelUp({
-              kind: 'job',
-              from: ups.job.from,
-              to: ups.job.to,
-              jobName: jobDisplayName(ups.job.archetype, 'default'),
-              ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pFrom }, base) } : {}),
-            });
-          }
-          if (ups.player) {
-            notifyLevelUp({
-              kind: 'player',
-              from: ups.player.from,
-              to: ups.player.to,
-              ...(arch ? { gains: levelUpGains(arch, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: pTo }, base) } : {}),
-            });
-          }
-          // レベルアップ/ステータス上昇は notifyLevelUp の演出で出す (報酬メッセージ窓
-          // には載せない = 情報量を減らす。旧: リザルトパネルに追記していた)
-        });
-      }
-      // 手持ちを更新: 使った分を引き、ドロップ分を足す。
-      // TODO(W3): 在庫の正は Worker (DO) に移す (フィールド使用分が記録されない併走は
-      // プレビュー限定の割り切り)。
-      const lostOf = (id: string) => lost.filter((x) => x === id).length;
-      setHerbStock((n) => Math.max(0, n - next.herbsUsed - lostOf('herb')) + drops.filter((x) => x === 'herb').length);
-      setTonicStock((n) => Math.max(0, n - next.tonicsUsed - lostOf('sky-dew')) + drops.filter((x) => x === 'sky-dew').length);
-      setFeatherStock((n) => Math.max(0, n - lostOf('sky-feather')) + drops.filter((x) => x === 'sky-feather').length);
-      // 素材全体の在庫 (敗北ロス抽選の母集団) も追随
-      {
-        const m = { ...materialsRef.current };
-        for (const d of drops) m[d] = (m[d] ?? 0) + 1;
-        const sub = (id: string, n: number) => {
-          if (!n) return;
-          const left = Math.max(0, (m[id] ?? 0) - n);
-          if (left > 0) m[id] = left;
-          else delete m[id];
-        };
-        sub('herb', next.herbsUsed);
-        sub('sky-dew', next.tonicsUsed);
-        for (const id of lost) sub(id, 1);
-        materialsRef.current = m;
-      }
-      let movedToTown: string | null = null;
+      // 決着: 報酬は**サーバーが権威 state に確定済み** (onBattleCommand の serverTurn が返した
+      // awarded)。ここではクライアント表示を更新するだけ = 一切 XP/パワー/素材を書かない (改造不可)。
+      const awarded = b.awarded ?? {};
+      const drops = awarded.drops ?? [];
+      const lost = awarded.materialsLost ?? [];
+      // HP/MP をフィールドに持ち帰る (持続)。敗北はサーバーが carry を消す = 全快なので null に。
+      // (注: サーバーは敗北で位置を街へ戻さない。街帰還は今後のサーバー実装課題。ここでは
+      //  その場で回復させ、次の serverMove がサーバー権威の位置を返す。)
       if (next.outcome === 'lose') {
-        // 敗北: 最後に立ち寄った街 (無ければはじまりの街) へ。宿で介抱 = 全快。
-        // lastTown はワールド再生成で街が動くと無効になりうるので townAt で検証し、
-        // 無効なら座標・名前とも spawn に倒す (レビュー指摘)。
-        const s = wsRef.current;
-        const spawn = worldOverlay().spawn;
-        const lt = s?.lastTown;
-        const valid = lt && townAt(lt.x, lt.y) ? lt : null;
-        const back = valid ?? { x: spawn.x, y: spawn.y };
-        movedToTown = townAt(back.x, back.y)?.name ?? spawn.name;
-        // 帰還先の街のかけらも入手 (「街に入るとかけら入手」の一貫性 — 移行プレイヤーが
-        // spawn へ敗北帰還したとき「介抱された街が地図にない」を防ぐ。レビュー指摘)
-        setWs({
-          x: back.x,
-          y: back.y,
-          hp: null,
-          mp: null,
-          lastTown: valid,
-          regions: [...new Set([...(s?.regions ?? []), ...regionsAround(regionOf(back.x, back.y))])].sort((a, b) => a - b),
-          // 介抱された街も行き先候補に (lastTown 更新経路は visitedTowns も積む)
-          visitedTowns: (s?.visitedTowns ?? []).some((v) => v.x === back.x && v.y === back.y)
-            ? (s?.visitedTowns ?? [])
-            : [...(s?.visitedTowns ?? []), { x: back.x, y: back.y }],
-          gotStarterFeather: s?.gotStarterFeather ?? true,
-        });
+        setWs((s) => (s ? { ...s, hp: null, mp: null } : s));
       } else {
-        // 勝利/引き分け/逃走: 減った HP/MP をフィールドに持ち帰る (持続)。
         // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
         const hp = next.player.hp >= next.player.maxHp ? null : Math.max(1, next.player.hp);
         const mp = next.player.mp >= next.player.maxMp ? null : next.player.mp;
         setWs((s) => (s ? { ...s, hp, mp } : s));
       }
       scheduleSave();
+      // クライアント在庫はサーバー報酬 (awarded) をミラーするだけ (表示用。正はサーバー state)。
+      // TODO: 在庫表示もサーバー state を正にする移行 (別 PR)。ここは UX を合わせる best-effort。
+      const countOf = (arr: readonly string[], id: string) => arr.filter((x) => x === id).length;
+      setHerbStock((n) => Math.max(0, n - countOf(lost, 'herb')) + countOf(drops, 'herb'));
+      setTonicStock((n) => Math.max(0, n - countOf(lost, 'sky-dew')) + countOf(drops, 'sky-dew'));
+      setFeatherStock((n) => Math.max(0, n - countOf(lost, 'sky-feather')) + countOf(drops, 'sky-feather'));
+      {
+        const m = { ...materialsRef.current };
+        for (const d of drops) m[d] = (m[d] ?? 0) + 1;
+        for (const id of lost) {
+          const left = Math.max(0, (m[id] ?? 0) - 1);
+          if (left > 0) m[id] = left;
+          else delete m[id];
+        }
+        materialsRef.current = m;
+      }
       // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
-      // でかくなり認知負荷 — オーナー指摘)。レベルアップ/ステータス上昇は notifyLevelUp
-      // の演出が別に出るのでここには載せない (情報量を減らす)。resultLines が空になる
-      // のは実質「逃走 (fled = 経験値もドロップも無し)」のみ。その時は報酬メッセージを
-      // 出さず即マップへ戻す (引き分け draw は経験値 xpLose が出るので窓が出る)。
+      // でかくなり認知負荷 — オーナー指摘)。resultLines が空になるのは実質「逃走
+      // (fled = 経験値もドロップも無し)」のみ。その時は即マップへ戻す。
       const dropCounts = new Map<string, number>();
       for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
       const lostCounts = new Map<string, number>();
       for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
       const nameOf = (id: string) => ITEMS[id]?.name ?? id;
       const resultLines: string[] = [];
-      if (xp > 0) resultLines.push(`けいけんち を ${xp} かくとく！`);
+      if (awarded.xp && awarded.xp > 0) resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
       for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を てにいれた！`);
       for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を おとしてしまった…`);
-      if (movedToTown) resultLines.push(`きがつくと「${movedToTown}」で かいほうされていた…`);
-      if (saveFailed) resultLines.push('※ けっかの ほぞんに しっぱいした (つうしんエラー)。でんぱのよい ばしょで ひらきなおしてね。');
+      if (next.outcome === 'lose') resultLines.push('たおれてしまった… 気がつくと きずが いえていた。');
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);
@@ -708,7 +560,7 @@ export function World() {
         setBattle(done);
       }
     },
-    [scheduleSave, agent, did],
+    [scheduleSave],
   );
 
   // ワイプ演出の進行。覆い切った時点で支払いがまだ終わっていなければ hold でつなぐ
@@ -738,16 +590,14 @@ export function World() {
       setWipe('reveal');
       return;
     }
-    const b = battleRef.current;
-    setWipe(b && b.rkey === '' && b.busy ? 'hold' : 'reveal');
+    // エンカウントは serverMove が既に封印済み (battle は準備完了) なので覆い切ったら開くだけ。
+    setWipe('reveal');
   }, [scheduleSave]);
   const onRevealDone = useCallback(() => setWipe(null), []);
-  // hold の上限 (10s) 到達 = 支払い通信ハング。遭遇をキャンセルしてマップに開き直す
-  // (全面黒でリロード以外の脱出手段がなくなるのを防ぐ。レコードが後から成立していた
-  // 場合は棄権 = 敗北の既存セマンティクスに落ちる)。
+  // hold タイムアウト (通常は到達しない。serverMove は遭遇 state を同期で返すので hold に入らない)。
+  // 保険としてマップに開き直す。
   const onHoldTimeout = useCallback(() => {
     setNotice('通信が不安定でモンスターを見失った…');
-    setBattle((b) => (b && b.busy && b.rkey === '' ? null : b));
     setWipe('reveal');
   }, []);
 
@@ -1200,6 +1050,12 @@ export function World() {
                 onCommand={onBattleCommand}
                 onAdvance={() => void onMessageAdvance()}
               />
+              {/* コマンド送信失敗 (fail-closed = 報酬なし) を戦闘画面内に表示。notice はここには出ない。 */}
+              {battle.errorText && (
+                <p aria-live="assertive" style={{ textAlign: 'center', fontSize: '0.8em', color: 'var(--color-danger, #ff6b6b)', margin: '0.4em 0 0' }}>
+                  {battle.errorText}
+                </p>
+              )}
             </div>
           )}
         </div>

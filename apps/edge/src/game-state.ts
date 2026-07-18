@@ -75,8 +75,9 @@ export interface RmwOptions {
   now: number;
   /** CAS 競合時の最大リトライ回数。 */
   retries?: number;
-  /** state が無いときの初期値 (移行値など)。省略時 emptyState。 */
-  init?: (did: string, nowIso: string) => GameState;
+  /** state が無いときの初期値 (移行値など)。省略時 emptyState。**state が null のときだけ**呼ばれるので、
+   *  PDS 読取など非同期の移行 (§6-4) も可 (共通経路にはコストを乗せない)。 */
+  init?: (did: string, nowIso: string) => GameState | Promise<GameState>;
 }
 
 /**
@@ -98,7 +99,7 @@ export async function readModifyWrite(
   const nowIso = new Date(opts.now * 1000).toISOString();
   for (let attempt = 0; attempt <= retries; attempt++) {
     const existing = await readState(env, targetDid);
-    const current = existing?.state ?? init(targetDid, nowIso);
+    const current = existing?.state ?? (await init(targetDid, nowIso));
     const next: GameState = { ...mutate(current), did: targetDid, version: GAME_STATE_VERSION, updatedAt: nowIso };
     // 既存があればその CID を期待 (CAS)、無ければ null (新規作成のみ) で二重作成も防ぐ。
     const swap = existing ? existing.cid : null;
