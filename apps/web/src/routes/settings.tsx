@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AtpAgent } from '@atproto/api';
+import { AtpAgent, type Agent } from '@atproto/api';
 import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
+import { isAdminDid } from '@/lib/runtime-config';
+import { startServerOAuth, serverOAuthConfigured } from '@/lib/server-oauth';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
@@ -335,6 +337,10 @@ export function Settings() {
         <PostQuestNotificationsToggle />
       </section>
 
+      {isAdminDid(session.did) && serverOAuthConfigured && session.agent && (
+        <ServerOAuthAdmin agent={session.agent} />
+      )}
+
       <section style={{ marginTop: '2em' }}>
         <h3 style={{ fontSize: '0.95em' }}>アカウント</h3>
         {session.status === 'signed-in' && (
@@ -604,5 +610,33 @@ function AnalyzePostsToggle() {
         URL とハッシュタグを取り除いた本文を ONNX 分類器で解析し、Fe / Ni などの心理機能スコア上位 3 を投稿下に表示します。ブラウザ内推論なので外部送信はありませんが、初回ロードでモデル (~30MB) がダウンロードされます。OFF にした場合も各投稿下の「🧠 気質を分析」ボタンから個別に解析できます。
       </p>
     </div>
+  );
+}
+
+/** 管理者専用: サーバーアカウント (権威 state の持ち主) の OAuth 連携を開始する。docs/21 §12。 */
+function ServerOAuthAdmin({ agent }: { agent: Agent }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const onLink = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await startServerOAuth(agent); // 成功時は認可サーバーへ遷移する
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '連携に失敗しました');
+      setBusy(false);
+    }
+  };
+  return (
+    <section style={{ marginTop: '2em' }}>
+      <h3 style={{ fontSize: '0.95em' }}>管理者</h3>
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
+        ゲームの権威データを書き込むサーバーアカウントの連携。
+      </p>
+      <button onClick={onLink} disabled={busy}>
+        {busy ? '連携中…' : 'サーバーアカウントと連携'}
+      </button>
+      {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
+    </section>
   );
 }
