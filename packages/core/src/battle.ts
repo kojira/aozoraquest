@@ -957,6 +957,50 @@ export function rollDrops(monsterId: string, luk: number, seed: number): string[
   return out;
 }
 
+/** 「しらべる」(フィールドコマンド) の調整値。オーナー要望 2026-07-18:
+ *  「しらべるを使うと luk に連動してアイテムが手に入ることがあるがパワーを 1 使う」。 */
+export const SEARCH_TUNING = {
+  powerCost: 1,
+  /** 何か見つかる基礎確率 (luk 0)。 */
+  baseFindChance: 0.4,
+  /** luk 1 あたりの発見確率上乗せ。 */
+  findLukScale: 0.006,
+  /** 発見確率の上限。 */
+  maxFindChance: 0.75,
+  /** 見つかったとき「その地方の素材 (tier ドロップ)」になる確率。残りは消耗品。
+   *  luk でこの比率が上がる (良い運ほど素材が出やすい)。 */
+  materialBase: 0.35,
+  materialLukScale: 0.006,
+  materialMax: 0.7,
+} as const;
+
+/** tier のモンスターが落とす素材 (しらべるで見つかる地方素材の母集団)。 */
+function tierMaterials(tier: 1 | 2 | 3): string[] {
+  const set = new Set<string>();
+  for (const m of MONSTERS) if (m.tier === tier) for (const d of m.drops) set.add(d.item);
+  // 消耗品ドロップ (herb/sky-dew/sky-feather) は除き、純粋な素材だけ
+  return [...set].filter((id) => id !== 'herb' && id !== 'sky-dew' && id !== 'sky-feather');
+}
+
+/**
+ * 「しらべる」の結果 (決定的)。luk が高いほど「見つかる確率」と「素材が出る比率」が
+ * 上がる。見つからなければ null。seed はプレビューでは Math.random、W3 で Worker の
+ * 署名付き seed に置き換える (rollDrops と同じ扱い)。
+ */
+export function rollSearch(seed: number, luk: number, tier: 1 | 2 | 3): string | null {
+  const t = SEARCH_TUNING;
+  const rng = createRng((seed ^ 0x51ed270b) >>> 0);
+  const findChance = Math.min(t.maxFindChance, t.baseFindChance + luk * t.findLukScale);
+  if (rng() >= findChance) return null; // 何も見つからなかった
+  const matChance = Math.min(t.materialMax, t.materialBase + luk * t.materialLukScale);
+  if (rng() < matChance) {
+    const pool = tierMaterials(tier);
+    if (pool.length > 0) return pool[Math.floor(rng() * pool.length)]!;
+  }
+  // 消耗品: やくそう多め、そらのしずく少なめ
+  return rng() < 0.7 ? 'herb' : 'sky-dew';
+}
+
 /** 通算戦績 (UI/記録側で集計して渡す)。 */
 export interface BattleRecordSummary {
   wins: number;
