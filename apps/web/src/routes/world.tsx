@@ -682,8 +682,9 @@ export function World() {
       scheduleSave();
       // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
       // でかくなり認知負荷 — オーナー指摘)。レベルアップ/ステータス上昇は notifyLevelUp
-      // の演出が別に出るのでここには載せない (情報量を減らす)。中身が無いなら (逃走・
-      // 引き分けで報酬も損失も無い) 報酬メッセージを出さず即マップへ戻す。
+      // の演出が別に出るのでここには載せない (情報量を減らす)。resultLines が空になる
+      // のは実質「逃走 (fled = 経験値もドロップも無し)」のみ。その時は報酬メッセージを
+      // 出さず即マップへ戻す (引き分け draw は経験値 xpLose が出るので窓が出る)。
       const dropCounts = new Map<string, number>();
       for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
       const lostCounts = new Map<string, number>();

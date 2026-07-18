@@ -15,8 +15,9 @@ import { HpBar, TypedLines } from './battle-view';
  */
 export type BattlePhase = 'message' | 'input' | 'result';
 
-/** 下段 (コマンド窓 / メッセージ窓) の固定高さ = メッセージ 4 行 + 余白。全フェーズ共通。 */
-const BOTTOM_H = '7em';
+/** 下段 (コマンド窓 / メッセージ窓) の固定高さ = メッセージ 4 行 + 余白。全フェーズ共通。
+ *  コマンド 2 列 3 行のタップ target を確保するため少し高めに (実機の誤タップ対策)。 */
+const BOTTOM_H = '7.8em';
 const WINDOW: React.CSSProperties = {
   border: '2px solid rgba(255,255,255,0.55)',
   borderRadius: 4,
@@ -148,7 +149,9 @@ function DqRow({ label, onClick, disabled, cursor = false }: { label: string; on
 
 /** 全幅メッセージ窓 (固定 4 行高さ)。タップで「1 回目=全文 / 2 回目=送り」。 */
 function DqMessageWindow({ lines, busy, onAdvance }: { lines: readonly string[]; busy: boolean; onAdvance: () => void }) {
-  const [typed, setTyped] = useState(false);
+  // 表示文字が 1 つも無いと TypedLines の onDone が発火せず送り不能で詰む (レビュー ★)。
+  // 空行のみのときは最初から「送れる」状態にしておく (防御)。key remount で毎回再評価。
+  const [typed, setTyped] = useState(() => !lines.join('').trim());
   return (
     <div
       className="dq-message"
