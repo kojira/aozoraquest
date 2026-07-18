@@ -12,16 +12,14 @@
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
+import { readServerTokens } from './oauth-store';
 import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
 
 export const GAME_STATE_COLLECTION = 'app.aozoraquest.gameState';
 export const GAME_STATE_VERSION = 1;
 
-/** 権威 state の読み書きに必要な env (読み取り config + OAuth 書き込み)。 */
-export interface GameStateEnv extends ServerPdsEnv {
-  /** 読み取り用 (public getRecord)。SERVER_DID は ServerPdsEnv(OAuthEnv) から。 */
-  SERVER_PDS_URL?: string;
-}
+/** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
+export type GameStateEnv = ServerPdsEnv;
 
 export interface GameState {
   /** どのユーザーの state か (監査用。rkey は DID のハッシュなので値に DID を残す)。 */
@@ -53,10 +51,16 @@ export function emptyState(did: string, now: string): GameState {
   return { did, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, version: GAME_STATE_VERSION, updatedAt: now };
 }
 
-/** 権威 state を取得 (無ければ null)。読みは public getRecord (認証不要)。 */
+/**
+ * 権威 state を取得 (無ければ null)。読みは public getRecord (認証不要) だが、**書き込みと同じ
+ * トークン由来の pdsUrl/did を repo に使う**ことで、config と書込先の食い違い (別 repo を読んで CAS が
+ * 常に外れる/誤 repo へ書く) を構造的に防ぐ (レビュー ★★)。
+ */
 export async function readState(env: GameStateEnv, targetDid: string): Promise<{ state: GameState; cid: string } | null> {
-  if (!env.SERVER_PDS_URL || !env.SERVER_DID) throw new ServerWriteError('SERVER_PDS_URL/SERVER_DID 未設定', 'not-configured');
-  const rec = await getRecord<GameState>(env.SERVER_PDS_URL, env.SERVER_DID, GAME_STATE_COLLECTION, rkeyForDid(targetDid));
+  if (!env.OAUTH_TOKENS) throw new ServerWriteError('KV 未 binding', 'no-kv');
+  const tokens = await readServerTokens(env.OAUTH_TOKENS);
+  if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
+  const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, GAME_STATE_COLLECTION, rkeyForDid(targetDid));
   return rec ? { state: rec.value, cid: rec.cid } : null;
 }
 

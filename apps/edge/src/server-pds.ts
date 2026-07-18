@@ -42,10 +42,11 @@ async function authedXrpc<T>(env: ServerPdsEnv, now: number, nsid: string, body:
 
   const nonce = (await readPdsNonce(kv)) ?? undefined;
   let latest = nonce;
-  // repo は常にサーバーアカウント (kojira.io) の DID。呼び出し側は指定不要。
+  // repo は常にサーバーアカウント (kojira.io) の DID。**body の後に置き**、呼び出し側が誤って
+  // repo を含めても上書きできないようにする (認証境界の固定。レビュー ★)。
   const res = await dpopFetch(
     `${tokens.pdsUrl}/xrpc/${nsid}`,
-    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo: tokens.did, ...body }) },
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, repo: tokens.did }) },
     { jwk: cfg.dpopJwk, accessToken: tokens.accessToken, now, nonce, onNonce: (n) => { latest = n; } },
   );
   if (latest && latest !== nonce) await writePdsNonce(kv, latest); // 次回のため保存 (別キー)

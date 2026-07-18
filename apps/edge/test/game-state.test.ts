@@ -22,7 +22,7 @@ function mockKv() {
 async function makeEnv(): Promise<GameStateEnv> {
   const kv = mockKv();
   await writeServerTokens(kv, { did: SERVER_DID, accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: NOW });
-  return { SERVER_PDS_URL: PDS, SERVER_DID, OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), WORKER_DID: 'did:web:edge.aozoraquest.app', OAUTH_TOKENS: kv };
+  return { SERVER_DID, OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), WORKER_DID: 'did:web:edge.aozoraquest.app', OAUTH_TOKENS: kv };
 }
 
 /** ステートフルな PDS モック: public getRecord + DPoP putRecord の swapRecord CAS を実装。
@@ -148,6 +148,18 @@ describe('game-state (OAuth 権威書き込み)', () => {
     let mutateCalls = 0;
     await readModifyWrite(env, DID, (c) => { mutateCalls++; return { ...c, power: c.power + 1 }; }, { now: NOW });
     expect(mutateCalls).toBe(2);
+  });
+
+  it('最初の InvalidSwap 後にトークン失効 (401) が来たら即 throw (mid-retry を握りつぶさない)', async () => {
+    const env = await makeEnv();
+    let puts = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('getRecord')) return jsonRes(200, { uri: 'x', cid: `c${puts}`, value: existingRec });
+      puts++;
+      return puts === 1 ? jsonRes(400, { error: 'InvalidSwap' }) : jsonRes(401, { error: 'ExpiredToken' });
+    }) as unknown as typeof fetch;
+    await expect(readModifyWrite(env, DID, (c) => ({ ...c, power: c.power + 1 }), { now: NOW })).rejects.toMatchObject({ xrpcError: 'ExpiredToken' });
+    expect(puts).toBe(2); // 1回目 InvalidSwap で再試行 → 2回目 401 で打ち止め (spin しない)
   });
 
   it('書き込みトークン未 bootstrap は fail-closed (ServerWriteError)', async () => {
