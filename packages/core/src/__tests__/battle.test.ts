@@ -7,6 +7,7 @@ import {
   JOB_SKILL_NAMES,
   playerCombatant,
   summonMonster,
+  battleXpFor,
   favoredMonsterFor,
   pickTrialTier,
   startBattle,
@@ -177,6 +178,25 @@ describe('summonMonster', () => {
     for (const m of MONSTERS) {
       for (const d of m.drops) expect(ITEMS[d.item]).toBeDefined();
     }
+  });
+
+  describe('勝利 XP はモンスター個別 (battleXpFor)', () => {
+    it('全モンスターに xp>0 が定義されている', () => {
+      for (const m of MONSTERS) expect(m.xp).toBeGreaterThan(0);
+    });
+
+    it('XP は一律でなく幅がある / 強い tier ほど上限が高い', () => {
+      expect(new Set(MONSTERS.map((m) => m.xp)).size).toBeGreaterThan(1);
+      const maxOf = (t: 1 | 2 | 3) => Math.max(...MONSTERS.filter((m) => m.tier === t).map((m) => m.xp));
+      expect(maxOf(2)).toBeGreaterThan(maxOf(1));
+      expect(maxOf(3)).toBeGreaterThan(maxOf(2));
+    });
+
+    it('battleXpFor は個別 xp を返し、未知 id は xpWin フォールバック', () => {
+      expect(battleXpFor('sky-slime')).toBe(MONSTERS_BY_ID['sky-slime']!.xp);
+      expect(battleXpFor('sky-dragon')).toBe(MONSTERS_BY_ID['sky-dragon']!.xp);
+      expect(battleXpFor('no-such-monster')).toBe(BATTLE_TUNING.xpWin);
+    });
   });
 
   describe('HP/MP 分散 (vitalsVariance)', () => {

@@ -4,6 +4,7 @@ import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForDanger,
   BATTLE_TUNING,
+  battleXpFor,
   canSeeEnemyVitals,
   ITEMS,
   jobDisplayName,
@@ -555,7 +556,7 @@ export function World() {
       setBattle(acting);
       // 決着: レコード確定 + XP + ドロップ (試練と同じ)。逃走は XP もドロップも無し。
       const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
-      const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
+      const xp = next.outcome === 'win' ? battleXpFor(next.monsterId) : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
       const lost = next.outcome === 'lose' ? b.materialsLost : [];
       const record = {
         seed: next.seed,
