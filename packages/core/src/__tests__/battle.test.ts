@@ -882,3 +882,36 @@ describe('rollSearch (しらべる — luk 連動でアイテム発見)', () => 
     expect(sawT3).toBe(true);
   });
 });
+
+describe('resolveTurn: 外部 seed 注入 (サーバー権威 §5)', () => {
+  const fresh = () => startBattle('warrior', 5, 5, 'テスト勇者', 1, 12345, 0, undefined, { vitalsVariance: 0 });
+
+  it('turnSeed 省略時は従来どおり turnRng(seed,turn) で決定的 (試練/テスト不変)', () => {
+    const a = resolveTurn(fresh(), 'attack');
+    const b = resolveTurn(fresh(), 'attack');
+    expect(a).toEqual(b);
+  });
+
+  it('同じ turnSeed なら同じ結果 (再現性: Worker のリトライで一致)', () => {
+    const a = resolveTurn(fresh(), 'attack', 0xabcdef);
+    const b = resolveTurn(fresh(), 'attack', 0xabcdef);
+    expect(a).toEqual(b);
+  });
+
+  it('turnSeed が違えば別の乱数列 (先読み不可: 少なくとも一部の seed で結果が変わる)', () => {
+    // 同一初期 state・同一コマンドでも turnSeed 次第で分岐すること。複数 seed で差が出るのを確認。
+    const base = resolveTurn(fresh(), 'attack');
+    let diverged = false;
+    for (let s = 1; s <= 40 && !diverged; s++) {
+      if (JSON.stringify(resolveTurn(fresh(), 'attack', s)) !== JSON.stringify(base)) diverged = true;
+    }
+    expect(diverged).toBe(true);
+  });
+
+  it('turnSeed 注入でも state を破壊しない (イミュータブル)', () => {
+    const s0 = fresh();
+    const snap = JSON.stringify(s0);
+    resolveTurn(s0, 'attack', 777);
+    expect(JSON.stringify(s0)).toBe(snap);
+  });
+});

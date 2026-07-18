@@ -861,8 +861,13 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
 /**
  * 1 ターンを解決する。player のコマンドを受け、素早さ順に両者が行動する。
  * state は**破壊しない** (新しい state を返す)。
+ *
+ * `turnSeed` を渡すと、そのターンの乱数を seed 由来 (`turnRng`) ではなく**外部供給の seed**で
+ * 回す (docs/21-server-authority §5)。サーバー権威戦闘で Worker が毎ターン新鮮なエントロピー
+ * (CSPRNG/kuda) を注入し「先読み・引き直し」を封じるための薄い口。省略時は従来どおり
+ * `turnRng(seed, turn)` = 完全決定的 (試練/テストは seed 方式のまま不変)。
  */
-export function resolveTurn(prev: BattleState, command: Command): BattleState {
+export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
 
   // コピー (Combatant は現状 flat なので spread で足りる)。
@@ -876,7 +881,8 @@ export function resolveTurn(prev: BattleState, command: Command): BattleState {
     lastEvents: [],
   };
   const events: TurnEvent[] = [];
-  const rng = turnRng(state.seed, state.turn);
+  // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
+  const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
   const mCommand = monsterCommand(state, rng);
 
   // ── コマンドの実効化 ──
