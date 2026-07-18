@@ -3,7 +3,7 @@
  * 目標帯: 装備なし tier3 = 挑戦的 (概ね 45-65%) / フル装備 = 快適だが自明でない (80-92%)。
  * 実行: pnpm exec tsx scripts/sim-all-jobs.ts
  */
-import { ARCHETYPES, BATTLE_TUNING, resolveTurn, startBattle, type Archetype, type BattleState, type Command } from '../packages/core/src/index.js';
+import { ARCHETYPES, BATTLE_TUNING, EQUIPMENT_BY_ID, canEquip, resolveTurn, startBattle, type Archetype, type Command } from '../packages/core/src/index.js';
 
 const play = (job: Archetype, jobLv: number, plLv: number, tier: 1 | 2 | 3, seed: number, equip: string[]): string => {
   let s = startBattle(job, jobLv, plLv, 'x', tier, seed, BATTLE_TUNING.herbCarryMax, undefined, { tonics: BATTLE_TUNING.tonicCarryMax, equipIds: equip });
@@ -26,8 +26,13 @@ const rate = (job: Archetype, jobLv: number, plLv: number, tier: 1 | 2 | 3, equi
   return Math.round((w / N) * 1000) / 10;
 };
 
-// フル装備 = 専用武器(上位) + 鉄のよろい(def8) + いのちのペンダント(maxHp10)
-const fullGear = (job: Archetype) => [`wp-${job}-high`, 'ar-iron', 'ch-life'];
+// フル装備 = 専用武器(上位) + そのジョブが着られる最良防具 + いのちのペンダント。
+// ar-iron(heavy,def8) は非 heavy 職では canEquip=false で無視されるため、着られる
+// 防具の中から def の高い順に選ぶ (装備適性マトリクスを尊重した現実の最善ロードアウト)。
+const ARMORS = ['ar-iron', 'ar-travel-cloak', 'ar-nimble', 'ar-scholar', 'ar-fortune', 'ar-leather', 'ar-cloth'];
+const bestArmor = (job: Archetype): string =>
+  ARMORS.find((id) => canEquip(job, EQUIPMENT_BY_ID[id]!)) ?? 'ar-cloth';
+const fullGear = (job: Archetype) => [`wp-${job}-high`, bestArmor(job), 'ch-life'];
 
 const rows: { job: string; t1: number; t3bare: number; t3full: number }[] = [];
 for (const job of ARCHETYPES) {

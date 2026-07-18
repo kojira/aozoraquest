@@ -54,6 +54,7 @@ export const BATTLE_TUNING = {
   dodgeBase: 0.04,
   agiDodgeScale: 0.009,
   dodgeMin: 0.02,
+  // focus 込みの実効上限は dodgeMax + guardFocusDodge (ぼうぎょ直後の高 agi 職で最大 0.47)
   dodgeMax: 0.32,
   /** クリティカル率 = critBase + luk*critLukScale (1.5 倍) */
   critBase: 0.04,
