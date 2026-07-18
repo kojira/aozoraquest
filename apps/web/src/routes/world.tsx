@@ -267,7 +267,12 @@ export function World() {
         let px = state.x, py = state.y;
         try {
           const ss = await serverState(agent);
-          if (!cancelled && Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) { px = ss.state.x; py = ss.state.y; }
+          if (!cancelled && Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
+            px = ss.state.x; py = ss.state.y;
+            // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
+            // 再同期・ワープが起きない (impl レビュー指摘)。
+            if (ss.token) tokenRef.current = ss.token;
+          }
         } catch (e) { console.warn('[world] serverState failed; using local position', e); }
         if (cancelled) return;
         // 今いる場所が街 (spawn 含む) なら訪問済みに含める。歩いて入る move 経路だけ
