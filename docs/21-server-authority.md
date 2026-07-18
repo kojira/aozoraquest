@@ -9,8 +9,9 @@
 - **Durable Object を使わない。** 権威データは **Worker が管理する app サーバー用アカウントの
   PDS** に置く (ユーザーは書けない = 偽造不可)。ATP ネイティブ。既存の依頼クエスト集約
   (docs/15) が「edge Worker が主管理者 PDS に questIndex を書く」のと同じ構図。
-- **seed の先読み対策は物理乱数** (`https://kuda.kojiran.workers.dev/drop`, ANU 量子乱数プール、
-  428lab/kuda) を Worker が引く。物理乱数は構造的に予測不能なので、秘匿 seed を守る工夫が不要。
+- **seed 先読み対策は「Worker がサーバー側で乱数を引き、クライアントに seed を渡さない (毎ターン)」**。
+  既定は CSPRNG。物理乱数 (`kuda.kojiran.workers.dev/drop`, ANU 量子乱数, 428lab/kuda) は付加価値の
+  任意オプション (障害/枯渇時は CSPRNG フォールバック、クリティカルパスに必須で置かない)。
 
 参照: [[19-overworld]], [[02-architecture]] (要更新), [[15-user-quest]] (Worker→管理者 PDS の前例)。
 
@@ -28,7 +29,10 @@
 1. 権威データは **app サーバー用アカウントの PDS** (Worker だけが書ける)。ユーザー PDS には
    表示用ミラーを置いてよいが正本はサーバー側アカウント。
 2. **Worker が戦闘を解決** (`packages/core` は決定的・環境独立)。
-3. **乱数は物理乱数 (kuda) を Worker が引く** → クライアントは事前に知り得ない (先読み不可)。
+3. **乱数は Worker がサーバー側で引き、クライアントに seed を渡さない (毎ターン方式)** → 先読み不可。
+   これが先読み不可の**必要十分条件**で、物理乱数か否かには依らない。既定は CSPRNG
+   (`crypto.getRandomValues`、Worker 内秘匿)。物理乱数 (kuda) は付加価値の任意エントロピー源で、
+   障害/枯渇時は CSPRNG にフォールバックし戦闘のクリティカルパスに外部依存を必須で置かない (§4.3)。
 4. **戦闘への入力はクライアントからは commands のみ**。ステ/装備/Lv/HP/MP は権威 state のみ。
 5. 呼び出し元 DID を検証 (自分の state しか触れない)。
 6. **fail-closed**: 認証失敗・PDS 失敗・kuda 失敗・通信断は「報酬を与えない」に倒す。
@@ -45,7 +49,16 @@
   **要 PoC**: `@atproto/api` (base Agent, fetch ベース) が Workers で動くか (oauth-client-node は
   非互換だったが api base は別)。M2 冒頭で確認。
 - **並行制御 (二重使用防止)**: `putRecord` の **`swapRecord` (期待 CID) による compare-and-swap**。
-  CID 不一致ならリトライ。DO の直列化の代わりにこれで通貨の二重消費を防ぐ。
+  DO の直列化の代わりにこれで通貨の二重消費を防ぐ。
+- **CAS の read-modify-write 契約 (DO input-gate 直列化の代替として必須。レビュー ★★★)**:
+  swapRecord は楽観的なので、CID 不一致 (409) 時は**単にリトライしてはいけない**。必ず
+  (a) 最新 state を再読込 → (b) パワー予約・報酬・claim・turn ガードを**再評価** → (c) 冪等キー
+  (battleId+turn / post rkey / quest claim id) で二重適用を弾く → (d) 再 put、の RMW ループにする。
+  これを怠ると古い意思決定のまま新 CID で上書きし、二重報酬・二重消費が実装依存で通る (= DO が
+  暗黙に守っていた不変条件が復活しない)。**外部 fetch (kuda 等) を挟む場合は取得後に state を
+  再検証してから確定**する。**乱数と state の順序**: encounter/turn で seed 採番・turn ガードを CAS
+  で先に確定 → その後に乱数を引いて resolve、の順にし、放置/並行で乱数バイトの二重消費/取りこぼし
+  を防ぐ。
 
 ### 4.2 認証 (呼び出し元 DID) — service auth JWT
 クライアントが `agent.com.atproto.server.getServiceAuth({aud: <Worker DID>, lxm, exp})` で短命 JWT
@@ -56,14 +69,15 @@
 リプレイは下記バトルガード・claim 冪等で実害を消す。Worker の DID は `did:web:edge.aozoraquest.app`
 (edge 自身が `/.well-known/did.json` 配信)。
 
-### 4.3 物理乱数 (kuda)
-- Worker が `GET https://kuda.kojiran.workers.dev/drop` で 1 バイト (0–255, `value`) を引く。ANU
-  量子乱数プール。**クライアントは介在しない** (Worker→kuda のみ) ので予測不能。
-- 戦闘の各乱数消費点でバイトを引く (または戦闘開始時にまとめて N バイト引き、権威 state 側に
-  秘匿保持して消費)。`drop_seq`/`batch` を監査ログに残す。
-- **依存/枯渇対策**: kuda はプール有限 (`pool_remaining` 逓減)・外部依存。**kuda 応答不能時は
-  fail-closed (戦闘を進めない)**。負荷が上がるならローカルの CSPRNG (`crypto.getRandomValues`)
-  併用を検討 (物理乱数でなくてもサーバー秘匿なら先読みは防げる — kuda は"物理"の付加価値)。
+### 4.3 乱数 (既定 CSPRNG、物理乱数 kuda は任意)
+- **既定は CSPRNG** (`crypto.getRandomValues`、Worker 内秘匿)。サーバー秘匿 + 毎ターンで先読み不可を
+  担保する (§3-3)。戦闘の各乱数消費点で必要バイトを引く (または encounter 時にまとめて引き権威
+  state に秘匿保持して消費)。
+- **物理乱数 (kuda) は付加価値の任意オプション**: `GET https://kuda.kojiran.workers.dev/drop` で
+  ANU 量子乱数 1 バイト (0–255)。使う場合も**クライアントは介在しない** (Worker→kuda のみ)。ただし
+  プール有限 (`pool_remaining` 逓減)・外部依存・レイテンシがあるので、**戦闘のクリティカルパスに
+  必須で置かず、障害/枯渇時は CSPRNG にフォールバック** (kuda 障害=全戦闘停止を避ける)。使ったソース
+  (`drop_seq`/`batch` or CSPRNG) を監査ログに残す。
 
 ## 5. 戦闘プロトコル (毎ターン・サーバー乱数)
 
@@ -92,6 +106,10 @@ snapshot のみ使い、commands 以外を戦闘計算に通さない。
   ない (turn 不一致で 409)。→ 物理乱数 + turn ガードで「引き直し厳選」も「分岐総当たり」も封じる。
 - **リロード離脱**: 未決着ガードは encounter 時に先に敗北 flush してから新規発行。ガードに
   `expiresAt` を持たせ、経過分は次アクセス時に lazy 敗北確定 (DO Alarm は使わない = DO 無し)。
+  **残リスク (レビュー ★★)**: lazy 方式は離脱ユーザーの再アクセスに依存するので、二度と戻らない
+  ユーザーの**負けロス (xpLose/素材ロス) は永久に確定しない (踏み倒し)**。パワーは encounter で
+  reserve 予約するので二重消費は防げる。負けロスの扱い (練習相当に丸める / 次回ログイン時に flush /
+  放置容認) は §9 の判断ポイント。
 - **並行/二重**: turn/決着は battleId+turn 一致 + swapRecord CAS で二重報酬を防ぐ。
 
 **resolveTurn への乱数注入**: 現 `core` は seed から `turnRng` を作る。**Worker が引いた物理乱数を
@@ -135,11 +153,16 @@ snapshot のみ使い、commands 以外を戦闘計算に通さない。
 各 M は feature ブランチ → dev → §1.5 レビュー → dev 確認。M1 から順に。
 
 ## 9. 未解決の判断ポイント
-1. **サーバーアカウント**: 依頼クエスト集約と同じ主管理者アカウントを使うか、専用ゲームアカウント
-   を用意するか (権威 state の置き場)。
-2. **kuda 依存**: 物理乱数を必須にするか、負荷/枯渇時は `crypto.getRandomValues` にフォールバックか
-   (サーバー秘匿なら先読みは防げる。物理は付加価値)。
-3. 移行の信頼方針 (クランプ/リセット)、カードミラー方針、通信断 UX (fail-closed)。
+1. **権威 state の置き方 (スケール、レビュー ★★)**: 全ユーザーを**単一 repo に per-DID レコードで
+   集約**すると、PDS の commit は repo 単位で直列化され事実上のグローバルロックになりスループットが
+   頭打ちになりうる (per-DID CAS で狙った並行性と両立しない)。**per-DID の別 repo** (ユーザーごとに
+   サーバー管理の repo を作る) と比較して決める。加えて 1 repo の MST 肥大・PDS レート制限も要検証。
+   → M2 の PoC 合格条件に「N ユーザー相当の書込負荷での commit レイテンシ実測」を入れる。
+   アカウント (主管理者と共用 / 専用ゲームアカウント) はこの下位の判断。
+2. **kuda**: 既定 CSPRNG + kuda は任意付加価値 (§4.3)。kuda をどこまで使うか (監査エントロピー源のみ /
+   非同期補充プール / 使わない)。
+3. **負けロスの踏み倒し** (§5 リロード離脱の残リスク): 練習相当に丸める / 次回ログイン flush / 容認。
+4. 移行の信頼方針 (クランプ/リセット)、カードミラー方針、通信断 UX (fail-closed)。
 
 ## 10. レート制限 / DoS / kuda 枯渇
 service auth は本人確認まで。本人連打の DoS/無料枠食い潰しは権威 state 内カウンタで**レート制限**。
@@ -148,6 +171,6 @@ kuda は `pool_remaining` を監視し、枯渇/障害時は fail-closed か CSP
 
 ## 11. 実装しない選択肢との比較
 - 現状 (ユーザー PDS のまま): チート可 → リリース不可。
-- **本設計 (Worker + サーバーアカウント PDS 権威 + 物理乱数 + 毎ターン + snapshot 封印)**: DO 不要・
+- **本設計 (Worker + サーバーアカウント PDS 権威 + サーバー乱数(既定CSPRNG/任意kuda) + 毎ターン + snapshot 封印)**: DO 不要・
   課金不要・ATP ネイティブ。`packages/core` 決定性と既存 edge Worker と kuda を活かす。AT Proto の
   "PDS が正本" のまま、**正本の repo をユーザーから app サーバーアカウントへ移す**のが要点。

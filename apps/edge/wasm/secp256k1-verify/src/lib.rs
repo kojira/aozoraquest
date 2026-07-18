@@ -15,5 +15,10 @@ pub fn verify(msg: &[u8], pubkey: &[u8], sig: &[u8]) -> bool {
     let Ok(signature) = Signature::from_slice(sig) else {
         return false;
     };
+    // low-S を強制 (署名 malleability 対策)。normalize_s が Some = 元が high-S なので拒否。
+    // AT Proto 準拠署名は必ず low-S なので正規トークンは落ちない。
+    if signature.normalize_s().is_some() {
+        return false;
+    }
     vk.verify(msg, &signature).is_ok()
 }

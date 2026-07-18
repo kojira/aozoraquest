@@ -1,17 +1,13 @@
 /**
- * 依頼クエスト集約 Worker のリクエストハンドラ。
+ * aozoraquest edge Worker のリクエストハンドラ。
  *
- * Phase 1 (現在):
- *   - GET /healthz: 起動確認
- *   - GET /version: ビルド情報 (= deploy 検証用)
- *   - GET /probe/oauth: @atproto/oauth-client-node が Workers 上で
- *     import 解決できるかの PoC エンドポイント (Phase 1 着手時の検証用)
+ * 現在:
+ *   - GET  /healthz: 起動確認
+ *   - GET  /version: ビルド情報 (deploy 検証用)
+ *   - POST /api/whoami: service auth JWT を検証して呼び出し元 DID を返す (M1 認証基盤)
  *
- * Phase 1 後半で追加予定:
- *   - POST /index/quest: クエスト発行を index に追加
- *   - POST /index/application: 応募を index に追加
- *
- * docs/15-user-quest.md §集約インフラ を参照。
+ * 予定 (docs/21-server-authority): あおぞらワールドのゲーム経済をサーバー権威化する
+ *   /api/battle/* /api/xp/* /api/me/state (M2〜)。依頼クエスト集約 (docs/15) も。
  */
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 
