@@ -37,6 +37,12 @@ export interface GameState {
   /** 位置。 */
   x: number;
   y: number;
+  /** 戦闘をまたいで持続する HP/MP (docs/19)。未設定は全快で開始。 */
+  carryHp?: number;
+  carryMp?: number;
+  /** 持ち込み消費アイテム (やくそう / そらのしずく)。 */
+  herbs?: number;
+  tonics?: number;
   version: number;
   updatedAt: string;
 }
