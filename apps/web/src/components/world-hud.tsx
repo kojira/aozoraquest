@@ -14,6 +14,8 @@
  */
 
 export const HUD_Z = 2;
+/** 操作オーバーレイ (コマンドメニュー・戦闘、pointerEvents: auto)。HUD の 1 つ上。 */
+export const OVERLAY_Z = HUD_Z + 1;
 
 /** 残量比で緑→黄→赤 (battle-view の HpBar と同じ閾値。フィールドで瀕死が
  *  分からない退化を防ぐ — レビュー ★★★)。 */

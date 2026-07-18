@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stickDirFor } from './virtual-stick';
+import { isSelfTap, stickDirFor } from './virtual-stick';
 
 describe('stickDirFor (デッドゾーン + 支配軸 + ヒステリシス)', () => {
   it('デッドゾーン未満は null (タップ誤爆防止)', () => {
@@ -29,5 +29,21 @@ describe('stickDirFor (デッドゾーン + 支配軸 + ヒステリシス)', ()
   it('同軸内の反転 (right → left) はヒステリシスなしで即時', () => {
     expect(stickDirFor(-30, 5, 'right')).toBe('left');
     expect(stickDirFor(5, -30, 'down')).toBe('up');
+  });
+});
+
+describe('isSelfTap (自分タップでコマンドメニュー)', () => {
+  const base = { elapsedMs: 100, movedPx: 3, fromCenterPx: 10, minSide: 360 }; // 中央半径 = 79.2px
+  it('短時間・小移動・中央付近ならタップ', () => {
+    expect(isSelfTap(base)).toBe(true);
+  });
+  it('長押し (400ms 超) はタップにしない', () => {
+    expect(isSelfTap({ ...base, elapsedMs: 500 })).toBe(false);
+  });
+  it('大きく動いた (12px 超) はタップにしない (= ドラッグ移動)', () => {
+    expect(isSelfTap({ ...base, movedPx: 20 })).toBe(false);
+  });
+  it('中央から遠い (半径外) タップは無視 (端はスクロール/移動用)', () => {
+    expect(isSelfTap({ ...base, fromCenterPx: 100 })).toBe(false); // > 79.2
   });
 });

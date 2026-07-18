@@ -52,7 +52,9 @@ import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { StatusModal } from '@/components/status-modal';
-import { WorldHud } from '@/components/world-hud';
+import { WorldHud, HUD_Z } from '@/components/world-hud';
+import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
+import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -93,12 +95,17 @@ interface Vitals {
 
 /** 初回オンボーディングを見終えたかの localStorage キー (スティックのヒントと同じ方式) */
 const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
+/** 「自分タップでコマンド」コーチマークを出したか。操作 UI が不可視 (スティックも
+ *  コマンドもタップ起動) なので、オンボーディングを読み飛ばしても実際にマップへ
+ *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
+const MENU_HINT_DONE_KEY = 'aq-world-menu-hint-done';
 
 /** 初回オンボーディング (話者はブルスコン — 既存の案内役。オーナー指示 2026-07-18)。
  *  操作 → 危険と回復 → ちずのかけら → ちずボタン、の順で旅の前提だけ伝える */
 const ONBOARDING_LINES: readonly DialogueLine[] = [
   { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ! わたしは せいれいブルスコン。すこしだけ あんないするね。' },
   { speaker: 'ブルスコン', text: 'マップを おしたまま ゆびを うごかすと あるけるよ。' },
+  { speaker: 'ブルスコン', text: 'じぶんを ちょんと おすと、どうぐ・そうび・つよさ などの コマンドが ひらくよ。' },
   { speaker: 'ブルスコン', text: 'そとには モンスターが いる。たたかいに まけると さいごに たちよった 街まで もどされちゃう。あぶなくなったら 街で やすもう。' },
   { speaker: 'ブルスコン', text: '街に つくと「ちずのかけら」が 手に はいって、その街の まわりの ちずが ひろがっていくんだ。' },
   { speaker: 'ブルスコン', text: '🗺 ちずボタンで いつでも たしかめられる。それじゃ、よい たびを!' },
@@ -119,6 +126,26 @@ export function World() {
   const [statusOpen, setStatusOpen] = useState(false);
   const statusOpenRef = useRef(false);
   statusOpenRef.current = statusOpen;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuOpenRef = useRef(false);
+  menuOpenRef.current = menuOpen;
+  const [menuHint, setMenuHint] = useState(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem(MENU_HINT_DONE_KEY) !== '1';
+    } catch {
+      return false;
+    }
+  });
+  const dismissMenuHint = useCallback(() => {
+    setMenuHint(false);
+    try { localStorage.setItem(MENU_HINT_DONE_KEY, '1'); } catch { /* private mode */ }
+  }, []);
+  const [itemsOpen, setItemsOpen] = useState(false);
+  const [invOpen, setInvOpen] = useState(false);
+  const itemsOpenRef = useRef(false);
+  itemsOpenRef.current = itemsOpen;
+  const invOpenRef = useRef(false);
+  invOpenRef.current = invOpen;
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
   /** やくそう/そらのしずくの手持ち。戦闘内の使用と獲得は battle レコードに残る。
    *  フィールドでの使用はセッション内のみ (TODO(W3): 在庫の正を Worker/DO に移す)。 */
@@ -324,7 +351,7 @@ export function World() {
       // cover 中も歩けてしまい、テレポート直後に戦闘が開く / featherDestRef が
       // 残留して次のエンカウントをハイジャックする (レビュー指摘)。
       // move() 冒頭で塞ぐことでキーボード・スティック・AT ボタン全経路を一括ガード
-      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current) return;
+      if (!s || battleRef.current || battleResultRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current) return;
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
@@ -618,41 +645,45 @@ export function World() {
   }, []);
 
   // フィールドでやくそうを使う (移動せずに回復。消費の保存は TODO(W3) で DO に)
-  const useHerbOnField = useCallback(() => {
+  const useHerbOnField = useCallback((): string | void => {
     if (!combat || herbStock <= 0) return;
     const cur = wsRef.current;
     if (!cur) return;
     const hpNow = Math.min(cur.hp ?? combat.maxHp, combat.maxHp);
     if (hpNow >= combat.maxHp) {
       setNotice('HP は満タンだ。');
-      return;
+      return 'HP は満タンだ。';
     }
     const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
     const healed = Math.min(combat.maxHp, hpNow + heal);
     setHerbStock((n) => n - 1);
     subtractMaterial('herb', 1);
     setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
-    setNotice(`やくそうを使った! HP が ${healed - hpNow} 回復。`);
+    const m = `やくそうを使った! HP が ${healed - hpNow} 回復。`;
+    setNotice(m);
     scheduleSave();
+    return m;
   }, [combat, herbStock, scheduleSave]);
 
   // フィールドでそらのしずくを使う (MP 回復)
-  const useTonicOnField = useCallback(() => {
+  const useTonicOnField = useCallback((): string | void => {
     if (!combat || tonicStock <= 0) return;
     const cur = wsRef.current;
     if (!cur) return;
     const mpNow = Math.min(cur.mp ?? combat.maxMp, combat.maxMp);
     if (mpNow >= combat.maxMp) {
       setNotice('MP は満タンだ。');
-      return;
+      return 'MP は満タンだ。';
     }
     const gain = Math.max(1, Math.round(combat.maxMp * BATTLE_TUNING.tonicMpRatio));
     const restored = Math.min(combat.maxMp, mpNow + gain);
     setTonicStock((n) => n - 1);
     subtractMaterial('sky-dew', 1);
     setWs({ ...cur, mp: restored >= combat.maxMp ? null : restored });
-    setNotice(`そらのしずくを使った! MP が ${restored - mpNow} 回復。`);
+    const m = `そらのしずくを使った! MP が ${restored - mpNow} 回復。`;
+    setNotice(m);
     scheduleSave();
+    return m;
   }, [combat, tonicStock, scheduleSave]);
 
   // そらのはねを使う: 最後に立ち寄った街 (無ければはじまりの街) へ帰還。
@@ -958,6 +989,27 @@ export function World() {
   const here = terrainAt(ws.x, ws.y);
   const danger = regionDanger(regionOf(ws.x, ws.y));
 
+  // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
+  // 参照を安定させる (メニューは開いている間だけマウントされるが、将来キーボード
+  // ナビ等を足すときに毎レンダー別関数だと地雷 — レビュー ★★)
+  const inTown = !!town;
+  const statusReady = !!combat && !!archetype;
+  const menuCommands: WorldMenuCommand[] = useMemo(
+    () => [
+      // 並び順は「しらべる」(次 PR) を どうぐ の後に差し込む前提で固定 (筋肉記憶を裏切らない)
+      { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
+      { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
+      { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
+      { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
+      // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
+      ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
+      ...(inTown
+        ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
+        : []),
+    ],
+    [inTown, statusReady],
+  );
+
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
   const tiles = [];
   for (let vy = 0; vy < VIEW; vy++) {
@@ -1013,7 +1065,18 @@ export function World() {
           </div>
           {/* 仮想スティック: マップ全面がタッチ領域。十字キーの置き換え
               (スマホで非常に操作しづらい — オーナー報告 2026-07-17) */}
-          <VirtualStick onMove={move} />
+          <VirtualStick
+            onMove={move}
+            onTapSelf={() => {
+              // 演出中・戦闘中はメニューを開かない。他オーバーレイ (menu/items/inv/
+              // map/shop/gear/status) 中はそもそもスティックがそれらの背面シートで
+              // 遮断されタップが届かないので、ここでは wipe/battle だけ見れば足りる
+              // (move() ガードとは条件集合が非対称 — 意図的)
+              if (wipeRef.current || battleRef.current || battleResultRef.current) return;
+              dismissMenuHint();
+              setMenuOpen(true);
+            }}
+          />
           {combat && curHp !== null && curMp !== null && (
             <WorldHud
               hp={curHp}
@@ -1023,74 +1086,40 @@ export function World() {
               locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? ' / 深い森…' : ''}`}
             />
           )}
+          {menuHint && !onboarding && !menuOpen && (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                zIndex: HUD_Z,
+                textAlign: 'center',
+              }}
+            >
+              <div className="aq-menu-hint-ring" style={{ width: 64, height: 64, borderRadius: '50%', border: '3px solid #fff', margin: '0 auto', boxShadow: '0 0 8px rgba(0,0,0,0.6)' }} />
+              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
+                じぶんを タップ → コマンド
+              </div>
+              <style>{`
+@keyframes aq-menu-hint { 0% { transform: scale(0.8); opacity: 0.9; } 70% { transform: scale(1.25); opacity: 0; } 100% { opacity: 0; } }
+.aq-menu-hint-ring { animation: aq-menu-hint 1.5s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .aq-menu-hint-ring { animation: none; } }
+`}</style>
+            </div>
+          )}
+          {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
         </div>
       </div>
 
-      {/* どうぐ (移動は仮想スティック = マップ直接タッチ) */}
-      <div style={{ textAlign: 'center', marginTop: '0.6em', display: 'flex', gap: '0.5em', justifyContent: 'center', flexWrap: 'wrap' }}>
-        {town && (
-          <button
-            type="button"
-            disabled={wipe !== null}
-            onClick={() => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); }}
-            style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-          >
-            🔨 なんでも屋
-          </button>
-        )}
-        {/* 満タン時は disabled にせず押下時 notice で理由を言う
-            (disabled だと「在庫があるのに押せない理由」が読めない。レビュー指摘) */}
-        <button
-          type="button"
-          onClick={useHerbOnField}
-          disabled={herbStock <= 0 || !combat}
-          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-        >
-          やくそう ×{herbStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>HP回復</span>
-        </button>
-        <button
-          type="button"
-          onClick={useTonicOnField}
-          disabled={tonicStock <= 0 || !combat}
-          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-        >
-          そらのしずく ×{tonicStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>MP回復</span>
-        </button>
-        <button
-          type="button"
-          onClick={useFeatherOnField}
-          disabled={featherStock <= 0}
-          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-        >
-          そらのはね ×{featherStock} <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>街へ帰る</span>
-        </button>
-        {/* ワイプ演出中はモーダル系を開かせない (cover 中に開くと戦闘遷移で
-            アンマウント → open フラグ残留でリザルト後に勝手に再出現する) */}
-        <button
-          type="button"
-          disabled={wipe !== null}
-          onClick={() => setMapOpen(true)}
-          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-        >
-          🗺 ちず
-        </button>
-        <button
-          type="button"
-          disabled={wipe !== null}
-          onClick={() => setGearOpen(true)}
-          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-        >
-          ⚔ そうび
-        </button>
-        <button
-          type="button"
-          disabled={wipe !== null || !combat || !archetype}
-          onClick={() => setStatusOpen(true)}
-          style={{ fontSize: '0.85em', padding: '0.5em 1.2em', touchAction: 'manipulation' }}
-        >
-          💪 つよさ
-        </button>
-      </div>
+      {/* コマンドは「自分をタップ」で開く DQ 風メニューに集約した (どうぐ列を廃止 —
+          縦スクロールを減らして没入感を上げる。オーナー要望 2026-07-18)。下の一言は
+          初見の操作手掛かり */}
+      <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
+        じぶんを タップすると コマンドが ひらくよ。
+      </p>
       {/* 一時メッセージ (やくそう使用 / 進めない / 街で回復 など)。操作した指の
           すぐ近くに出す。minHeight 常設で出現時のレイアウトシフトを防ぐ */}
       <p
@@ -1110,6 +1139,21 @@ export function World() {
           : ''}
       </p>
       {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
+      {itemsOpen && (
+        <ItemsModal
+          herbStock={herbStock}
+          tonicStock={tonicStock}
+          featherStock={featherStock}
+          canUse={!!combat}
+          onUseHerb={useHerbOnField}
+          onUseTonic={useTonicOnField}
+          onUseFeather={useFeatherOnField}
+          onClose={() => setItemsOpen(false)}
+        />
+      )}
+      {invOpen && (
+        <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />
+      )}
       {statusOpen && combat && combatBase && archetype && (
         <StatusModal
           name={playerName}
