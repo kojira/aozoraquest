@@ -10,7 +10,6 @@ import {
   levelUpGains,
   townShopStock,
   type EquipmentDef,
-  type StatGain,
   encounterRateFor,
   isWalkable,
   jobLevelFromXp,
@@ -36,7 +35,7 @@ import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
-import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord, type BattleLevelUps } from '@/lib/battle-log';
+import { awardBattleXp, finishBattleRecord, loadBattleStats, startBattleRecord } from '@/lib/battle-log';
 import { notifyLevelUp } from '@/components/level-up-overlay';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
@@ -46,7 +45,7 @@ import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/ge
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { BattleScene, BattleCommands } from '@/components/battle-view';
-import { BattleResultPanel } from '@/components/world-battle-result';
+import { BattleResultPanel, type WorldBattleResult } from '@/components/world-battle-result';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
@@ -55,7 +54,7 @@ import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { StatusModal } from '@/components/status-modal';
-import { WorldHud, HUD_Z } from '@/components/world-hud';
+import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import type { DialogueLine } from '@/lib/dialogue';
@@ -182,19 +181,8 @@ export function World() {
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
-  const [battleResult, setBattleResult] = useState<{
-    state: BattleState;
-    movedToTown: string | null;
-    drops: string[];
-    xp: number;
-    saveFailed: boolean;
-    /** XP 加算で確定したレベルアップ (非同期に届く) */
-    levelUps?: BattleLevelUps;
-    /** レベルアップによるステータス上昇 (合算、0.1 未満除外) */
-    statGains?: StatGain[];
-    /** 敗北ペナルティで落とした素材 */
-    materialsLost: string[];
-  } | null>(null);
+  // 型は world-battle-result の WorldBattleResult に一本化 (二重定義の drift 防止)
+  const [battleResult, setBattleResult] = useState<WorldBattleResult | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
@@ -932,7 +920,6 @@ export function World() {
   // 戦闘はページ遷移せず「暗転したマップ枠内」で行う (オーナー要望 2026-07-18)。
   // シーン (敵+ログ) はマップ上オーバーレイ、コマンド/リザルトはマップ下に出す。
   const inBattle = battle !== null && (wipe === null || wipe === 'reveal');
-  const battleDanger = regionDanger(regionOf(ws.x, ws.y));
 
   const town = townAt(ws.x, ws.y);
   const here = terrainAt(ws.x, ws.y);
@@ -1068,7 +1055,8 @@ export function World() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                zIndex: HUD_Z + 1,
+                zIndex: OVERLAY_Z,
+                pointerEvents: 'auto', // 操作オーバーレイ層: 背面スティックへの貫通を吸う
                 background: 'rgba(8, 10, 16, 0.9)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -1078,7 +1066,7 @@ export function World() {
               }}
             >
               {inBattle && battle ? (
-                <BattleScene state={battle.state} headerNote={DANGER_LABELS[battleDanger]} monsterSize={104} compact />
+                <BattleScene state={battle.state} headerNote={DANGER_LABELS[danger]} monsterSize={104} compact />
               ) : battleResult ? (
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ opacity: battleResult.state.outcome === 'win' ? 0.45 : 1, display: 'inline-block', transform: battleResult.state.outcome === 'win' ? 'rotate(180deg)' : 'none' }}>

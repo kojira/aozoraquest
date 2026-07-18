@@ -21,6 +21,27 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
   const { state, movedToTown, drops, xp, saveFailed } = result;
   return (
     <div style={{ textAlign: 'center', marginTop: '0.4em' }}>
+      {/* 決着ターンのログ (「〜にとどめをさした!」等)。マップ内化で暗転シーンから
+          消えたので、リザルト側で読めるように残す (レビュー ★★) */}
+      {state.lastEvents.length > 0 && (
+        <div
+          style={{
+            margin: '0 auto 0.4em',
+            maxWidth: 420,
+            fontSize: '0.8em',
+            lineHeight: 1.6,
+            textAlign: 'left',
+            padding: '0.4em 0.7em',
+            border: '2px solid var(--color-border)',
+            borderRadius: 4,
+            background: 'var(--color-window-bg)',
+          }}
+        >
+          {state.lastEvents.map((e, i) => (
+            <div key={i}>{e.text}</div>
+          ))}
+        </div>
+      )}
       <div aria-live="polite" style={{ margin: '0.2em 0', fontSize: '0.88em', display: 'flex', flexDirection: 'column', gap: '0.2em' }}>
         {xp > 0 && <div>経験値 +{xp}</div>}
         {result.levelUps?.player && (

@@ -79,6 +79,7 @@ export function BattleScene({
           borderRadius: 4,
           background: compact ? 'rgba(20,22,30,0.72)' : 'var(--color-window-bg)',
           minHeight: '3.6em',
+          ...(compact ? { maxHeight: '6em', overflowY: 'auto' as const } : {}),
           fontSize: '0.85em',
           lineHeight: 1.6,
           color: fg,
