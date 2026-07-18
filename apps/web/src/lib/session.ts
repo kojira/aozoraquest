@@ -1,7 +1,7 @@
 import { Agent, AtpAgent } from '@atproto/api';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { onSessionDeleted, restoreSession } from './oauth';
+import { onSessionDeleted, restoreSession, signOut } from './oauth';
 
 /**
  * 公開 AppView エンドポイント。OAuth セッションの PDS は app.bsky.* を
@@ -130,8 +130,16 @@ async function setStateFromSession(
     await withTimeout(agent.com.atproto.server.getSession(), WARMUP_TIMEOUT_MS, 'warmup');
   } catch (e) {
     // 失敗 or タイムアウト → signed-out (= ログイン画面) に倒す。無限スプラッシュにしない。
+    const timedOut = e instanceof Error && e.message === 'warmup-timeout';
     console.warn('[session] warmup failed/timed out; signing out', e);
     if (!isCancelled()) setState({ status: 'signed-out' });
+    // タイムアウト = リフレッシュがハングする壊れたセッション。**ストレージから除去**して、次回以降の
+    // 10s ハングと「手動でサイトデータ削除しないと復旧できない」状態を防ぐ (再ログインで即復帰できる)。
+    // 待たない・失敗許容 (revoke がハングしても UI はもうログイン画面)。通常の失敗 (401 等) は OAuth
+    // client 側が既に無効化するので、ここでは timeout ケースのみ明示 revoke する。
+    if (timedOut) {
+      void signOut(did).catch((err) => console.warn('[session] revoke after warmup timeout failed', err));
+    }
     return;
   }
   if (isCancelled()) return;
