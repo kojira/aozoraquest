@@ -10,6 +10,20 @@ import { onSessionDeleted, restoreSession } from './oauth';
  */
 const PUBLIC_APPVIEW = 'https://api.bsky.app';
 
+/** warmup (getSession) の上限。復元は本来 <1s なので、これを超えたら「ハングした古い/壊れた
+ *  セッション」とみなし signed-out へ倒す (遅いだけの valid セッションを誤って切らない余裕を持たせる)。 */
+const WARMUP_TIMEOUT_MS = 10_000;
+
+/** `promise` を `ms` でタイムアウトさせる。超えたら `Error('<label>-timeout')` で reject。
+ *  勝敗どちらでもタイマーを片付ける (保留タイマー/unhandled rejection を残さない)。 */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'op'): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}-timeout`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export interface SessionState {
   status: 'loading' | 'signed-in' | 'signed-out';
   did?: string;
@@ -109,10 +123,14 @@ async function setStateFromSession(
   //   全部 fresh token を SessionStore から読むだけで race が原理的に発生
   //   しなくなる。失敗したら signed-out に倒し、下流の useEffect が
   //   agent を一切触らないようにする。
+  //   ★ タイムアウト: 古い/壊れたセッションで getSession が**ハング**すると無限スプラッシュに
+  //   なる (復元は本来 <1s)。一定時間で打ち切って signed-out に倒し、ログイン画面から復帰できる
+  //   ようにする (失敗と同じ扱い。valid だが遅いだけのセッションを誤って切らないよう余裕を持たせる)。
   try {
-    await agent.com.atproto.server.getSession();
+    await withTimeout(agent.com.atproto.server.getSession(), WARMUP_TIMEOUT_MS, 'warmup');
   } catch (e) {
-    console.warn('[session] warmup failed; signing out', e);
+    // 失敗 or タイムアウト → signed-out (= ログイン画面) に倒す。無限スプラッシュにしない。
+    console.warn('[session] warmup failed/timed out; signing out', e);
     if (!isCancelled()) setState({ status: 'signed-out' });
     return;
   }
