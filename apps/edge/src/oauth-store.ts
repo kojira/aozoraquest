@@ -60,3 +60,34 @@ export async function updateServerNonce(kv: KVNamespace, nonce: string, now: num
 export async function clearServerTokens(kv: KVNamespace): Promise<void> {
   await kv.delete(SERVER_OAUTH_KEY);
 }
+
+/** authorize→callback 間で保持する PKCE/state (CSRF)。TTL 付きで短命に持つ。 */
+export interface PendingAuth {
+  /** PKCE code_verifier。 */
+  verifier: string;
+  /** 交換に使う認可サーバー (authorize 時に discovery したものを固定)。 */
+  authServer: import('./oauth-metadata').AuthServerMetadata;
+  createdAt: number;
+}
+
+const PENDING_PREFIX = 'oauth-pending:';
+/** pending の既定 TTL (秒)。authorize→callback は数分で終わる。 */
+export const PENDING_TTL_SEC = 600;
+
+/** pending を保存 (state をキーに、TTL 付き)。 */
+export async function putPendingAuth(kv: KVNamespace, state: string, data: PendingAuth, ttlSec = PENDING_TTL_SEC): Promise<void> {
+  await kv.put(PENDING_PREFIX + state, JSON.stringify(data), { expirationTtl: ttlSec });
+}
+
+/** pending を取り出して削除 (使い捨て = リプレイ防止)。無効/期限切れは null。 */
+export async function takePendingAuth(kv: KVNamespace, state: string): Promise<PendingAuth | null> {
+  const key = PENDING_PREFIX + state;
+  const raw = await kv.get(key);
+  if (!raw) return null;
+  await kv.delete(key);
+  try {
+    return JSON.parse(raw) as PendingAuth;
+  } catch {
+    return null;
+  }
+}

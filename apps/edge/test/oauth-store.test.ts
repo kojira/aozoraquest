@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readServerTokens, writeServerTokens, updateServerNonce, clearServerTokens, SERVER_OAUTH_KEY, type ServerOAuthTokens } from '../src/oauth-store';
+import { readServerTokens, writeServerTokens, updateServerNonce, clearServerTokens, putPendingAuth, takePendingAuth, SERVER_OAUTH_KEY, type ServerOAuthTokens } from '../src/oauth-store';
+import type { AuthServerMetadata } from '../src/oauth-metadata';
 
 /** 最小の in-memory KVNamespace モック (get/put/delete のみ)。 */
 function mockKv() {
@@ -58,5 +59,22 @@ describe('oauth-store', () => {
     await writeServerTokens(kv, tokens());
     await clearServerTokens(kv);
     expect(await readServerTokens(kv)).toBeNull();
+  });
+
+  const authServer: AuthServerMetadata = { issuer: 'https://bsky.social', authorization_endpoint: 'a', token_endpoint: 't', pushed_authorization_request_endpoint: 'p' };
+
+  it('pending は state キーで保存し、take で取り出して削除 (使い捨て=リプレイ防止)', async () => {
+    const { kv } = mockKv();
+    await putPendingAuth(kv, 'STATE1', { verifier: 'VER', authServer, createdAt: 1000 });
+    const p = await takePendingAuth(kv, 'STATE1');
+    expect(p?.verifier).toBe('VER');
+    expect(p?.authServer.issuer).toBe('https://bsky.social');
+    // 2 回目は消えている (リプレイ不可)
+    expect(await takePendingAuth(kv, 'STATE1')).toBeNull();
+  });
+
+  it('未知の state は null', async () => {
+    const { kv } = mockKv();
+    expect(await takePendingAuth(kv, 'nope')).toBeNull();
   });
 });
