@@ -150,7 +150,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
     baseStats, equipIds: state.gear, tonics: state.tonics ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
-  const pendingTurnSeed = (await entropyU32()).value;
+  const pendingTurnSeed = (await entropyU32({ useKuda: true })).value;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
   // move では毎歩ガードを読まない (ステートレス高速化)。ここで、期限切れの古いガードが残っていたら
@@ -263,8 +263,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       throw e; // ServerWriteError(token 切れ) 等 → 上位で 503 (報酬なし)
     }
     // ここに来られるのはガードを消せた 1 リクエストだけ → 報酬を fail-closed で確定。
-    const rewardSeed = (await entropyU32()).value;
-    const lossSeed = (await entropyU32()).value;
+    const rewardSeed = (await entropyU32({ useKuda: true })).value;
+    const lossSeed = (await entropyU32({ useKuda: true })).value;
     let awarded: AwardBreakdown = {};
     const window = enemyWindow(now);
     await readModifyWrite(env, userDid, (cur: GameState): GameState => {
@@ -279,9 +279,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       const defeated = decision === 'win' && guard.sealed.tile
         ? [...prevDefeated.filter((t) => t !== guard.sealed.tile), guard.sealed.tile].slice(-256)
         : prevDefeated;
+      // 位置も権威 state に確定 (歩行では書かないので、戦闘のたびにここで同期 = トークン失効時の
+      // 再同期先が「最後の街」でなく「直近の戦闘地点」になり、ワープを防ぐ)。tile は "x,y"。
+      const [tx, ty] = guard.sealed.tile.split(',').map(Number);
+      const pos = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : {};
       // 戦闘をまたぐ HP/MP・消費アイテムも権威 state に反映 (負けは全快で復帰)。
       return {
         ...r.next,
+        ...pos,
         carryHp: decision === 'lose' ? undefined : next.player.hp,
         carryMp: decision === 'lose' ? undefined : next.player.mp,
         herbs: next.herbs,
@@ -295,7 +300,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──
   // expiresAt も更新し、長い戦闘が move の flush 対象にならないようにする (ターンごとに寿命を延ばす)。
-  const nextPending = (await entropyU32()).value;
+  const nextPending = (await entropyU32({ useKuda: true })).value;
   const nowIso = new Date(now * 1000).toISOString();
   const advanced: Guard = { ...guard, turn: turn + 1, state: next, pendingTurnSeed: nextPending, expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), updatedAt: nowIso };
   try {

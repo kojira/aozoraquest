@@ -76,7 +76,7 @@ export interface ServerEncounter { battleId: string; monsterId: string; state: S
 export interface ServerMoveResult { x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
-export interface ServerStateResult { state: ServerGameState; initialized: boolean }
+export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward { xp?: number; drops?: string[]; materialsLost?: string[]; powerSpent?: number }
 export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward }
 

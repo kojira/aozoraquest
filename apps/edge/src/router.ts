@@ -14,6 +14,7 @@ import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { handleMove, handleTurn, migrateInitState, ResolverError } from './battle-resolver';
+import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
 
@@ -106,7 +107,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     try {
       const rec = await readState(env, did);
       const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString()));
-      return cors(json({ state, initialized: rec !== null }), allowedOrigin);
+      // 位置トークンも一緒に返す → client は初回から有効トークンを持て、初手 move の再同期/ワープを防ぐ。
+      const token = signPosition(env, { did, x: state.x, y: state.y, counter: 0, iat: nowSec() });
+      return cors(json({ state, initialized: rec !== null, token }), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
