@@ -98,7 +98,12 @@ export function ItemsModal({
         <>
           {row('やくそう', herbStock, 'HP を かいふく', herbStock <= 0 || !canUse, onUseHerb, false)}
           {row('そらのしずく', tonicStock, 'MP を かいふく', tonicStock <= 0 || !canUse, onUseTonic, false)}
-          {row('そらのはね', featherStock, '街へ もどる', featherStock <= 0, onUseFeather, true)}
+          {row('そらのはね', featherStock, '行った街へ とぶ', featherStock <= 0, onUseFeather, true)}
+          {featherStock <= 0 && (
+            <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
+              そらのはねは たたかいで まれに 手に入る。
+            </p>
+          )}
           <p aria-live="polite" style={{ fontSize: '0.82em', minHeight: '1.4em', margin: '0.4em 0 0', color: 'var(--color-fg)' }}>
             {msg}
           </p>
