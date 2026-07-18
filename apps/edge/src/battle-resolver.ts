@@ -64,6 +64,55 @@ async function readDiagnosis(userDid: string, fetchImpl?: typeof fetch): Promise
   return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats) };
 }
 
+export const POWER_COLLECTION = 'app.aozoraquest.power';
+
+/** §6-4 移行の上限クランプ (偽造済みかもしれない PDS 現値を切り詰める)。**dev=owner は無害・一般ユーザー
+ *  移行は M5 で再検討 (§9-4 未解決)**。値の根拠はコミットメッセージ参照。 */
+export const MAX_MIGRATE_POWER = 1000;
+export const MAX_MIGRATE_PLAYER_XP = 500_000; // lvl 99 ≈ 457k を上回る安全上限
+export const MAX_MIGRATE_JOB_XP = 50_000; // lvl 50 ≈ 40k を上回る安全上限
+
+const finiteNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+
+/** ユーザー PDS の power/self 累積カウンタ (points.ts と同じ形)。残高は client の deriveState と同式。 */
+interface MigratablePowerRecord {
+  viaPosts?: number; userMessages?: number; cardDraws?: number; battles?: number;
+  craftPowerSpent?: number; salePowerEarned?: number; searchPowerSpent?: number;
+}
+interface MigratableAnalysisRecord {
+  playerLevel?: { xp?: number };
+  jobLevel?: { archetype?: string; xp?: number };
+}
+
+/**
+ * 初回 gameState 生成時の移行 (§6-4)。ユーザー PDS の **既存 power 残高と分析 Lv を上限クランプして取り込む**
+ * (取り込まないと power=0 → 常に rewarded=false = 報酬が出ず、Lv=1 で弱すぎる)。**読取専用** (PDS へは書かない)
+ * ので、読めない/未診断でも fail-open で emptyState に倒す (書込 fail-closed とは別物)。**state が null の
+ * ときだけ**呼ばれる (readModifyWrite) = 通常経路にコストを乗せない。
+ */
+export async function migrateInitState(userDid: string, nowIso: string, fetchImpl?: typeof fetch): Promise<GameState> {
+  const base = emptyState(userDid, nowIso);
+  try {
+    const pds = await resolveUserPds(userDid, fetchImpl);
+    const [powerRec, analysisRec] = await Promise.all([
+      getRecord<MigratablePowerRecord>(pds, userDid, POWER_COLLECTION, 'self').catch(() => null),
+      getRecord<MigratableAnalysisRecord>(pds, userDid, ANALYSIS_COLLECTION, 'self').catch(() => null),
+    ]);
+    const p = powerRec?.value;
+    if (p) {
+      const bal = Math.max(0, finiteNum(p.viaPosts) - finiteNum(p.userMessages) - finiteNum(p.cardDraws)
+        - finiteNum(p.battles) - finiteNum(p.craftPowerSpent) - finiteNum(p.searchPowerSpent) + finiteNum(p.salePowerEarned));
+      base.power = Math.min(bal, MAX_MIGRATE_POWER);
+    }
+    const a = analysisRec?.value;
+    if (a) {
+      base.playerXp = Math.min(finiteNum(a.playerLevel?.xp), MAX_MIGRATE_PLAYER_XP);
+      if (a.jobLevel?.archetype) base.jobXp = { [a.jobLevel.archetype]: Math.min(finiteNum(a.jobLevel.xp), MAX_MIGRATE_JOB_XP) };
+    }
+  } catch { /* 読めない/未診断は power 0・Lv1 で開始 (読取のみ = 無害) */ }
+  return base;
+}
+
 /** バトルガードの寿命 (秒)。各ターンで更新。切れたガードは move 時に flush = クラッシュしても
  *  永久ロックアウトしない (docs/21 §5 lazy 敗北)。 */
 export const GUARD_TTL_SEC = 900;
@@ -134,7 +183,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     const next: GameState = { ...cur, x: tx, y: ty };
     if (t === 'town') { next.carryHp = undefined; next.carryMp = undefined; }
     return next;
-  }, { now });
+  }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, fetchImpl) });
 
   const terrain = terrainAt(committed.x, committed.y);
   if (terrain !== 'town') {

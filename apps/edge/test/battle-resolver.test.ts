@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { sealEncounter, handleMove, handleTurn, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
+import { sealEncounter, handleMove, handleTurn, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { terrainAt, isWalkable, type Command } from '@aozoraquest/core';
 import type { GameState } from '../src/game-state';
@@ -114,7 +114,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const env = await makeEnv();
     const m = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10 }) });
     globalThis.fetch = m.fn;
-    await sealEncounter(env, USER, GS({ x: 10, y: 10 }), 10, 10, NOW); // guard 作成 (expiresAt=NOW+TTL)
+    const enc0 = await sealEncounter(env, USER, GS({ x: 10, y: 10 }), 10, 10, NOW); // guard 作成 (expiresAt=NOW+TTL)
     // 期限内: 移動不可
     for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]] as const) {
       if (isWalkable(terrainAt(10 + dx, 10 + dy))) { await expect(handleMove(env, USER, dx, dy, NOW)).rejects.toMatchObject({ status: 409 }); break; }
@@ -123,7 +123,10 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]] as const) {
       if (isWalkable(terrainAt(10 + dx, 10 + dy))) { const r = await handleMove(env, USER, dx, dy, NOW + GUARD_TTL_SEC + 10); expect(r.x).toBe(10 + dx); break; }
     }
-    expect(m.store.has('guard')).toBe(false); // flush 済み
+    // flush 済み: 元の期限切れガードは消えている。移動先で新たに遭遇した場合は別 battleId の新ガードが張られる
+    // (遭遇ロールは非決定的なので「消えた or 別戦闘に置き換わった」で flush を検証する)。
+    const gAfter = m.store.get('guard');
+    if (gAfter) expect((gAfter.value as { battleId: string }).battleId).not.toBe(enc0.battleId);
   });
 
   it('turn: battleId/turn 不一致は 409 / 不正コマンド 400 / 戦闘中でなければ 409', async () => {
@@ -157,5 +160,44 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     }
     // 決着後に同じターンを再送 → guard 無し = 409 (二重報酬不可)
     await expect(handleTurn(env, USER, enc.battleId, 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('migrateInitState: PDS の power 残高と分析 Lv を上限クランプして初回 state に取り込む (§6-4)', async () => {
+    const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
+    const migrateFetch = (power: unknown, analysis: unknown) => (async (url: string) => {
+      if (url.includes('plc.directory')) return json(200, { id: USER, service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: USER_PDS }] });
+      const col = new URL(url).searchParams.get('collection');
+      if (col === 'app.aozoraquest.power') return power ? json(200, { uri: 'x', cid: 'p', value: power }) : json(400, { error: 'RecordNotFound' });
+      if (col === 'app.aozoraquest.analysis') return analysis ? json(200, { uri: 'x', cid: 'a', value: analysis }) : json(400, { error: 'RecordNotFound' });
+      return json(400, { error: 'RecordNotFound' });
+    }) as unknown as typeof fetch;
+
+    // getRecord は globalThis.fetch を使う (fetchImpl 引数は DID 解決のみ) ので mock を差し込む。
+    // 残高 = viaPosts - userMessages - cardDraws - battles - craft - search + sale = 100-10-5-3-2-1+6 = 85
+    globalThis.fetch = migrateFetch(
+      { viaPosts: 100, userMessages: 10, cardDraws: 5, battles: 3, craftPowerSpent: 2, searchPowerSpent: 1, salePowerEarned: 6 },
+      { playerLevel: { xp: 1234 }, jobLevel: { archetype: 'warrior', xp: 567 } },
+    );
+    const s1 = await migrateInitState(USER, '');
+    expect(s1.power).toBe(85);
+    expect(s1.playerXp).toBe(1234);
+    expect(s1.jobXp).toEqual({ warrior: 567 });
+
+    // 偽造された巨大値は上限クランプされる (MAX_MIGRATE_*)
+    globalThis.fetch = migrateFetch(
+      { viaPosts: 9_999_999 },
+      { playerLevel: { xp: 9_999_999 }, jobLevel: { archetype: 'mage', xp: 9_999_999 } },
+    );
+    const s2 = await migrateInitState(USER, '');
+    expect(s2.power).toBe(1000); // MAX_MIGRATE_POWER
+    expect(s2.playerXp).toBe(500_000); // MAX_MIGRATE_PLAYER_XP
+    expect(s2.jobXp).toEqual({ mage: 50_000 }); // MAX_MIGRATE_JOB_XP
+
+    // レコード無し (未診断・power 無し) は power 0・Lv1 で fail-open
+    globalThis.fetch = migrateFetch(null, null);
+    const s3 = await migrateInitState(USER, '');
+    expect(s3.power).toBe(0);
+    expect(s3.playerXp).toBe(0);
+    expect(s3.jobXp).toEqual({});
   });
 });
