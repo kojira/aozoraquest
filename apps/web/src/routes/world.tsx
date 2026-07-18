@@ -32,7 +32,7 @@ import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { serverMove, serverTurn, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
+import { serverMove, serverTurn, serverState, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -261,15 +261,24 @@ export function World() {
         // 冒険の初回に そらのはねを 1 個わたす (docs/19。gotStarterFeather で二重配布
         // 防止)。実際の +1 は下の featherStock 初期化 (stats ロード後) で足す
         grantStarter = !state.gotStarterFeather;
+        // 位置は**サーバー権威**を正とする (docs/21 再設計)。サーバーの gameState 位置を初期位置に
+        // 使うことで、初回移動でクライアント位置とサーバー位置がズレて「ワープ」するのを防ぐ。
+        // 街/地図/HP 等の探索メモは従来どおり client の world-record を使う。取得失敗時は world-record 位置。
+        let px = state.x, py = state.y;
+        try {
+          const ss = await serverState(agent);
+          if (!cancelled && Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) { px = ss.state.x; py = ss.state.y; }
+        } catch (e) { console.warn('[world] serverState failed; using local position', e); }
+        if (cancelled) return;
         // 今いる場所が街 (spawn 含む) なら訪問済みに含める。歩いて入る move 経路だけ
         // だと、開始の街や そらのはね着地先が行き先候補に入らない (レビュー ★★)
-        const curTown = townAt(state.x, state.y);
-        const seededVisited = curTown && !state.visitedTowns.some((v) => v.x === state.x && v.y === state.y)
-          ? [...state.visitedTowns, { x: state.x, y: state.y }]
+        const curTown = townAt(px, py);
+        const seededVisited = curTown && !state.visitedTowns.some((v) => v.x === px && v.y === py)
+          ? [...state.visitedTowns, { x: px, y: py }]
           : state.visitedTowns;
         const initialWs = {
-          x: state.x,
-          y: state.y,
+          x: px,
+          y: py,
           hp: state.hp,
           mp: state.mp,
           lastTown: state.lastTown,
@@ -375,30 +384,38 @@ export function World() {
   wipeRef.current = wipe;
   /** 移動中フラグ。移動は毎回サーバー往復するので、連打で並行 serverMove が飛ばないよう塞ぐ。 */
   const moveBusyRef = useRef(false);
+  // サーバー権威の位置トークン (署名済み)。毎歩これを渡し、新トークンを受け取る。初回は undefined
+  // (サーバーが gameState から再同期する)。位置はトークンが権威なので歩行では PDS を触らない = 高速。
+  const tokenRef = useRef<string | undefined>(undefined);
 
-  // 移動は**毎回サーバー (edge Worker) が権威処理する** (docs/21 §5)。クライアントは方向 (隣接1マス)
-  // しか送れず、位置も遭遇有無も tier も報酬もサーバーが決める = 改造してもチートできない。
-  // クライアント側は結果を描画するだけ (街のかけら/訪問済みは表示用の探索メモなので client 保存)。
+  // 移動は**サーバー (edge Worker) が権威判定する** (docs/21 §5 再設計)。クライアントは方向 (隣接1マス) と
+  // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
+  // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
   const move = useCallback(
     (dir: Dir) => {
       const s = wsRef.current;
       // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可 (全入力経路を一括ガード)。
       if (!s || battleRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
-      if (moveBusyRef.current) return; // 直前の移動がサーバー往復中 (連打の並行実行を塞ぐ)
+      if (moveBusyRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
       if (!worldServerEnabled || !agent) { setNotice('サーバーに接続できないため移動できない。'); return; }
       const { dx, dy } = DIRS[dir];
-      // 即時フィードバック用のローカル先読み (権威はサーバー。壁ドンだけ即返す)。
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
       if (!isWalkable(terrainAt(nx, ny))) {
         setNotice('そっちには進めない!');
         return;
       }
+      // 楽観描画: サーバー応答を待たずに即座に1マス進める (歩行を軽快に)。位置はサーバーが権威だが
+      // client/server とも同じ wrap+地形なので通常は一致する。失敗時だけ元位置へロールバック。
+      const optimistic: Vitals = { ...s, x: nx, y: ny };
+      wsRef.current = optimistic;
+      setWs(optimistic);
       moveBusyRef.current = true;
       void (async () => {
         try {
-          const res = await serverMove(agent, dx, dy);
-          const cur = wsRef.current ?? s;
+          const res = await serverMove(agent, dx, dy, tokenRef.current);
+          tokenRef.current = res.token;
+          const cur = wsRef.current ?? optimistic;
           const t = townAt(res.x, res.y);
           let next: Vitals = { ...cur, x: res.x, y: res.y };
           if (res.healed) { next.hp = null; next.mp = null; }
@@ -431,6 +448,9 @@ export function World() {
             setWipe('cover');
           }
         } catch (e) {
+          // 失敗: 楽観移動をロールバック (元の位置へ戻す)。トークンは前回成功時のまま = 次歩で再同期される。
+          wsRef.current = s;
+          setWs(s);
           // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
           if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
           else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');

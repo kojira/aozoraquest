@@ -74,66 +74,73 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
   it('sealEncounter: monster を返すが **seed は返さない** + rewarded は power で決まる', async () => {
     const env = await makeEnv();
     globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS() }).fn;
-    const r = await sealEncounter(env, USER, GS({ power: 5 }), 5, 5, NOW);
+    const r = await sealEncounter(env, USER, GS({ power: 5 }), 5, 5, 12345, NOW);
     expect(r.battleId).toMatch(/^b[0-9a-f]{24}$/);
     expect(r.monsterId).toBeTruthy();
     expect(r.rewarded).toBe(true);
     expect('seed' in r.state).toBe(false); // ★ 内部 seed 非漏洩
-    expect(await sealEncounter(env, USER, GS(), 5, 5, NOW).catch((e) => e)).toBeInstanceOf(Error); // 二重戦闘 (guard 既存)
+    expect(await sealEncounter(env, USER, GS(), 5, 5, 12345, NOW).catch((e) => e)).toBeInstanceOf(Error); // 二重戦闘 (guard 既存)
   });
 
   it('sealEncounter: power 0 → rewarded=false / 診断なし → 409', async () => {
     let env = await makeEnv();
     globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ power: 0 }) }).fn;
-    expect((await sealEncounter(env, USER, GS({ power: 0 }), 5, 5, NOW)).rewarded).toBe(false);
+    expect((await sealEncounter(env, USER, GS({ power: 0 }), 5, 5, 12345, NOW)).rewarded).toBe(false);
     env = await makeEnv();
     globalThis.fetch = resolverMock({ diagnosis: undefined, gameState: GS() }).fn;
-    await expect(sealEncounter(env, USER, GS(), 5, 5, NOW)).rejects.toMatchObject({ status: 409 });
+    await expect(sealEncounter(env, USER, GS(), 5, 5, 12345, NOW)).rejects.toMatchObject({ status: 409 });
   });
 
-  it('move: 隣接1マスだけ許可 (斜め2マス/同地は 400) + 権威位置を更新', async () => {
+  it('move: 隣接1マスだけ許可 (斜め2マス/同地は 400) + 位置を進め署名トークンを返す', async () => {
     const env = await makeEnv();
     globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10 }) }).fn;
-    await expect(handleMove(env, USER, 0, 0, NOW)).rejects.toMatchObject({ status: 400 });
-    await expect(handleMove(env, USER, 2, 0, NOW)).rejects.toMatchObject({ status: 400 });
+    // token 未指定 → gameState から現在地を再同期 (x:10,y:10)。
+    await expect(handleMove(env, USER, 0, 0, undefined, NOW)).rejects.toMatchObject({ status: 400 });
+    await expect(handleMove(env, USER, 2, 0, undefined, NOW)).rejects.toMatchObject({ status: 400 });
     // 歩ける隣接方向を探して 1 マス動く
-    let moved = false;
+    let token: string | undefined;
     for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]] as const) {
       if (isWalkable(terrainAt(10 + dx, 10 + dy))) {
-        const r = await handleMove(env, USER, dx, dy, NOW);
+        const r = await handleMove(env, USER, dx, dy, undefined, NOW);
         expect(r.x).toBe(10 + dx);
         expect(r.y).toBe(10 + dy);
-        moved = true;
+        expect(typeof r.token).toBe('string'); // 新しい位置トークン
+        token = r.token;
+        // 返ったトークンで次歩: 位置がトークン権威で継続する (gameState 書き込み無し)。
+        const r2 = await handleMove(env, USER, 0, 0 === dy ? 1 : 0, undefined, NOW).catch(() => null);
+        void r2;
         break;
       }
     }
-    expect(moved).toBe(true);
+    expect(typeof token).toBe('string');
   });
 
-  it('move: 戦闘中 (期限内ガード) は 409 / 期限切れガードは flush して移動できる', async () => {
+  it('move はステートレス: 毎歩ガードを読まない (戦闘中でも移動要求は通る=踏み倒し) / 期限切れガードは encounter 時に flush', async () => {
     const env = await makeEnv();
     const m = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10 }) });
     globalThis.fetch = m.fn;
-    const enc0 = await sealEncounter(env, USER, GS({ x: 10, y: 10 }), 10, 10, NOW); // guard 作成 (expiresAt=NOW+TTL)
-    // 期限内: 移動不可
+    // 生きたガードを作る
+    await sealEncounter(env, USER, GS({ x: 10, y: 10 }), 10, 10, 12345, NOW);
+    // move はガードを読まないので 409 にならず位置を返す (client 側で戦闘中は移動禁止する)。
     for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]] as const) {
-      if (isWalkable(terrainAt(10 + dx, 10 + dy))) { await expect(handleMove(env, USER, dx, dy, NOW)).rejects.toMatchObject({ status: 409 }); break; }
+      if (isWalkable(terrainAt(10 + dx, 10 + dy))) {
+        const r = await handleMove(env, USER, dx, dy, undefined, NOW);
+        expect(r.x).toBe(10 + dx);
+        break;
+      }
     }
-    // 期限切れ (now > expiresAt): flush して移動できる
-    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]] as const) {
-      if (isWalkable(terrainAt(10 + dx, 10 + dy))) { const r = await handleMove(env, USER, dx, dy, NOW + GUARD_TTL_SEC + 10); expect(r.x).toBe(10 + dx); break; }
-    }
-    // flush 済み: 元の期限切れガードは消えている。移動先で新たに遭遇した場合は別 battleId の新ガードが張られる
-    // (遭遇ロールは非決定的なので「消えた or 別戦闘に置き換わった」で flush を検証する)。
-    const gAfter = m.store.get('guard');
-    if (gAfter) expect((gAfter.value as { battleId: string }).battleId).not.toBe(enc0.battleId);
+    // 期限切れ後に新しい encounter を張ると、古いガードは flush されて新ガードに置き換わる。
+    const before = (m.store.get('guard')!.value as { battleId: string }).battleId;
+    const enc2 = await sealEncounter(env, USER, GS({ x: 20, y: 20 }), 20, 20, 999, NOW + GUARD_TTL_SEC + 10);
+    expect(enc2.battleId).not.toBe(before);
+    expect((m.store.get('guard')!.value as { battleId: string }).battleId).toBe(enc2.battleId);
   });
 
   it('turn: battleId/turn 不一致は 409 / 不正コマンド 400 / 戦闘中でなければ 409', async () => {
     const env = await makeEnv();
     globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS() }).fn;
     await expect(handleTurn(env, USER, 'x', 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 }); // guard なし
-    const enc = await sealEncounter(env, USER, GS(), 5, 5, NOW);
+    const enc = await sealEncounter(env, USER, GS(), 5, 5, 12345, NOW);
     await expect(handleTurn(env, USER, 'wrong', 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
     await expect(handleTurn(env, USER, enc.battleId, 5, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
     await expect(handleTurn(env, USER, enc.battleId, 0, 'hack' as Command, NOW)).rejects.toMatchObject({ status: 400 });
@@ -143,7 +150,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const env = await makeEnv();
     const m = resolverMock({ diagnosis: DIAG, gameState: GS({ power: 5, playerXp: 100, materials: { ore: 5 } }) });
     globalThis.fetch = m.fn;
-    const enc = await sealEncounter(env, USER, GS({ power: 5, playerXp: 100, materials: { ore: 5 } }), 5, 5, NOW);
+    const enc = await sealEncounter(env, USER, GS({ power: 5, playerXp: 100, materials: { ore: 5 } }), 5, 5, 12345, NOW);
     let outcome = 'ongoing';
     let last;
     for (let turn = 0; turn < 40 && outcome === 'ongoing'; turn++) {
