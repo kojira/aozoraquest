@@ -16,17 +16,23 @@ export interface ServerOAuthTokens {
   tokenType: string;
   /** access token 失効時刻 (epoch 秒)。cron はこれより前に refresh する。 */
   expiresAt: number;
-  /** 直近の DPoP-Nonce (あれば次リクエストで再利用)。 */
-  dpopNonce?: string;
+  /** 書き込み先 PDS URL (DID→#atproto_pds を discovery した結果)。M3 の書込がここに putRecord する。
+   *  レコードに持たせておくことで書込ごとの DID doc 再解決を避ける (レビュー ★★)。 */
+  pdsUrl: string;
   /** 認可サーバー issuer (refresh / token エンドポイント解決に使う)。 */
   authServer: string;
   scope?: string;
+  /** refresh 進行中マーカー (epoch 秒。cron の二重 refresh = ローテーション競合を抑えるソフトロック)。 */
+  refreshingUntil?: number;
   /** 最終更新 (epoch 秒、監査用)。 */
   updatedAt: number;
 }
 
 /** KV のキー (単一サーバーアカウント運用なので固定キー)。 */
 export const SERVER_OAUTH_KEY = 'server-oauth';
+/** PDS 用 DPoP-Nonce のキー。トークンレコードとは**別キー**にし、リクエスト Worker が nonce を
+ *  更新してもトークン本体 (cron が書く) を巻き込まない (レビュー ★★: 第二の書き手クロバー回避)。 */
+export const PDS_NONCE_KEY = 'oauth-pds-nonce';
 
 /** トークンを読む (無ければ null = 未 bootstrap)。 */
 export async function readServerTokens(kv: KVNamespace): Promise<ServerOAuthTokens | null> {
@@ -45,15 +51,16 @@ export async function writeServerTokens(kv: KVNamespace, tokens: ServerOAuthToke
 }
 
 /**
- * DPoP-Nonce だけを更新 (read-modify-write)。リクエスト Worker が新 nonce を受けたときに使う。
- * トークン本体が無ければ何もしない (書き手競合を避けるため nonce のみ触る)。
+ * PDS 用 DPoP-Nonce を読む (無ければ null)。**トークンレコードとは別キー**なので、リクエスト
+ * Worker がこれを更新しても cron が書くトークン本体を巻き込まない (レビュー ★★)。
  */
-export async function updateServerNonce(kv: KVNamespace, nonce: string, now: number): Promise<void> {
-  const t = await readServerTokens(kv);
-  if (!t || t.dpopNonce === nonce) return;
-  t.dpopNonce = nonce;
-  t.updatedAt = now;
-  await writeServerTokens(kv, t);
+export async function readPdsNonce(kv: KVNamespace): Promise<string | null> {
+  return kv.get(PDS_NONCE_KEY);
+}
+
+/** PDS 用 DPoP-Nonce を保存 (リクエスト Worker が新 nonce を受けたとき)。単一フィールドの上書きのみ。 */
+export async function writePdsNonce(kv: KVNamespace, nonce: string): Promise<void> {
+  await kv.put(PDS_NONCE_KEY, nonce);
 }
 
 /** トークンを消す (ロックアウト検知時・再 OAuth 前のクリーンアップ)。 */
@@ -67,6 +74,8 @@ export interface PendingAuth {
   verifier: string;
   /** 交換に使う認可サーバー (authorize 時に discovery したものを固定)。 */
   authServer: import('./oauth-metadata').AuthServerMetadata;
+  /** 書き込み先 PDS URL (authorize 時に discovery。callback でトークンレコードに載せる)。 */
+  pdsUrl: string;
   createdAt: number;
 }
 

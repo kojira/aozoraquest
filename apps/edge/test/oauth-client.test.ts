@@ -54,8 +54,8 @@ describe('oauth-client', () => {
   it('exchangeCode は token を正規化 (sub→did, expiresAt=now+expires_in)', async () => {
     let body = '';
     const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:kojira', scope: 'atproto' }); }) as unknown as typeof fetch;
-    const t = await exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'CODE', 'VER');
-    expect(t).toMatchObject({ did: 'did:plc:kojira', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, authServer: AS.issuer });
+    const t = await exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'CODE', 'VER', 'https://pds.example', 'did:plc:kojira');
+    expect(t).toMatchObject({ did: 'did:plc:kojira', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, authServer: AS.issuer, pdsUrl: 'https://pds.example' });
     const form = new URLSearchParams(body);
     expect(form.get('grant_type')).toBe('authorization_code');
     expect(form.get('code')).toBe('CODE');
@@ -65,7 +65,7 @@ describe('oauth-client', () => {
   it('refreshTokens は grant_type=refresh_token で更新する', async () => {
     let body = '';
     const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ access_token: 'AT2', token_type: 'DPoP', refresh_token: 'RT2', expires_in: 100, sub: 'did:plc:kojira' }); }) as unknown as typeof fetch;
-    const t = await refreshTokens({ ...cfg(), fetchImpl: f }, AS, 'OLD_RT');
+    const t = await refreshTokens({ ...cfg(), fetchImpl: f }, AS, 'OLD_RT', 'https://pds.example', 'did:plc:kojira');
     expect(t.accessToken).toBe('AT2');
     expect(t.refreshToken).toBe('RT2');
     expect(new URLSearchParams(body).get('refresh_token')).toBe('OLD_RT');
@@ -73,7 +73,20 @@ describe('oauth-client', () => {
 
   it('refresh_token が無い応答はエラー', async () => {
     const f = (async () => json({ access_token: 'AT', token_type: 'DPoP', sub: 'did:plc:x' })) as unknown as typeof fetch;
-    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V')).rejects.toThrow(/refresh_token/);
+    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:x')).rejects.toThrow(/refresh_token/);
+  });
+
+  it('sub が期待アカウントと違えば拒否 (アカウント取り違え/セッション固定対策)', async () => {
+    const f = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60, sub: 'did:plc:attacker' })) as unknown as typeof fetch;
+    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:kojira')).rejects.toThrow(/予期しないアカウント/);
+    // 一致すれば通る
+    const ok = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60, sub: 'did:plc:kojira' })) as unknown as typeof fetch;
+    await expect(exchangeCode({ ...cfg(), fetchImpl: ok }, AS, 'C', 'V', 'https://pds.example', 'did:plc:kojira')).resolves.toMatchObject({ did: 'did:plc:kojira' });
+  });
+
+  it('bootstrap (exchangeCode) は sub 欠落を serverDid で埋めず拒否する', async () => {
+    const f = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60 })) as unknown as typeof fetch; // sub なし
+    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:kojira')).rejects.toThrow(/sub/);
   });
 
   it('use_dpop_nonce チャレンジは nonce を付けて再送し成功する', async () => {
@@ -83,13 +96,13 @@ describe('oauth-client', () => {
       if (calls === 1) return json({ error: 'use_dpop_nonce' }, 400, { 'DPoP-Nonce': 'N1' });
       return json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60, sub: 'did:plc:x' });
     }) as unknown as typeof fetch;
-    const t = await exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V');
+    const t = await exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:x');
     expect(calls).toBe(2);
     expect(t.accessToken).toBe('AT');
   });
 
   it('OAuth エラー応答 (invalid_grant 等) は throw', async () => {
     const f = (async () => json({ error: 'invalid_grant', error_description: 'bad code' }, 400)) as unknown as typeof fetch;
-    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V')).rejects.toThrow(/invalid_grant/);
+    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:x')).rejects.toThrow(/invalid_grant/);
   });
 });

@@ -17,7 +17,7 @@ const AS = 'https://bsky.social';
 const env = (kv?: KVNamespace): CronEnv => ({ OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), SERVER_DID: 'did:plc:kojira', WORKER_DID: 'did:web:edge.aozoraquest.app', OAUTH_TOKENS: kv });
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
 const NOW = 100000;
-const tokens = (over: Partial<ServerOAuthTokens> = {}): ServerOAuthTokens => ({ did: 'did:plc:kojira', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, authServer: AS, updatedAt: NOW, ...over });
+const tokens = (over: Partial<ServerOAuthTokens> = {}): ServerOAuthTokens => ({ did: 'did:plc:kojira', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, pdsUrl: 'https://pds.example', authServer: AS, updatedAt: NOW, ...over });
 
 const refreshFetch = (tokenResp: () => Response) => (async (url: string) => {
   if (url.includes('plc.directory')) return json({ id: 'did:plc:kojira', service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example' }] });
@@ -39,15 +39,22 @@ describe('oauth-cron', () => {
     expect((await runCronRefresh(env(kv), NOW)).status).toBe('not-due');
   });
 
-  it('期限が近ければ refresh して KV を更新 (dpopNonce は保持)', async () => {
+  it('期限が近ければ refresh して KV を更新 (refreshingUntil は解除)', async () => {
     const kv = mockKv();
-    await writeServerTokens(kv, tokens({ expiresAt: NOW + 60, dpopNonce: 'PDS-NONCE' }));
+    await writeServerTokens(kv, tokens({ expiresAt: NOW + 60 }));
     const f = refreshFetch(() => json({ access_token: 'AT2', token_type: 'DPoP', refresh_token: 'RT2', expires_in: 3600, sub: 'did:plc:kojira' }));
     const r = await runCronRefresh(env(kv), NOW, f);
     expect(r.status).toBe('refreshed');
     const saved = await readServerTokens(kv);
-    expect(saved).toMatchObject({ accessToken: 'AT2', refreshToken: 'RT2', dpopNonce: 'PDS-NONCE' });
+    expect(saved).toMatchObject({ accessToken: 'AT2', refreshToken: 'RT2', pdsUrl: 'https://pds.example' });
     expect(saved!.expiresAt).toBe(NOW + 3600);
+    expect(saved!.refreshingUntil).toBeUndefined(); // ロック解除
+  });
+
+  it('別 tick が refresh 中 (refreshingUntil) ならスキップ (二重 refresh 回避)', async () => {
+    const kv = mockKv();
+    await writeServerTokens(kv, tokens({ expiresAt: NOW + 60, refreshingUntil: NOW + 100 }));
+    expect((await runCronRefresh(env(kv), NOW)).status).toBe('refreshing');
   });
 
   it('refresh 失敗 (invalid_grant) は error を返しトークンは残す (診断用)', async () => {

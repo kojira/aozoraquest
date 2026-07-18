@@ -217,12 +217,15 @@ Cron Trigger Worker 1 つだけ**に限定 (書き手を直列化)。リクエ�
   client-metadata の `jwks` に載せる。署名は `@noble/curves` (M1 と同じ道具、重い依存を足さない)。
 - **DPoP 鍵 (P-256)**: 全トークン/PDS リクエストは DPoP バインド (sender-constrained)。毎リクエストで
   DPoP proof JWT を生成。安定鍵なので Worker Secret。
-- **トークンストア (Cloudflare KV)**: `{accessToken, refreshToken, expiresAt, dpopNonce}` を 1 箇所に。
-  cron が唯一の書き手、リクエスト Worker は読み手。KV は結果整合だが、access token は refresh 後も
-  期限まで有効なので少し古くても可 (refresh token の単回性が効くのは cron のみ)。
+- **トークンストア (Cloudflare KV)**: `{accessToken, refreshToken, expiresAt, pdsUrl, authServer}` を
+  1 レコードに。**PDS 用 DPoP-Nonce は別キー** (トークン本体は cron が書き手、nonce はリクエスト
+  Worker が更新するので、同一レコードにすると RMW でトークンを巻き込むため分離。レビュー ★★)。
+  `pdsUrl` を持たせて M3 書込が DID doc を毎回再解決せずに済むようにする。KV は結果整合だが、access
+  token は refresh 後も期限まで有効なので少し古くても可 (refresh token の単回性が効くのは cron のみ)。
 - **Cron refresher Worker**: access token 失効前に refresh → 新トークンを KV へ。**refresh 成功後の
-  KV 保存失敗 = 旧 refresh token 消費済みでロックアウト**が唯一の弱点 → 保存を確認してから確定、
-  失敗は監査ログ + 管理画面で再 OAuth 導線。
+  KV 保存失敗 = 旧 refresh token 消費済みでロックアウト**が弱点 → 失敗は監査ログ + 管理画面で再 OAuth。
+  cron の tick は重なりうる (KV に CAS が無い) ので、refresh 前に `refreshingUntil` ソフトロックを立てて
+  他 tick を控えさせる (厳密でないが二重 refresh を大幅に抑える。レビュー ★★)。
 - **管理画面 (アプリ内設定)**: 初回だけ owner が authorize (code+PKCE) → callback で初期 refresh token
   を KV に格納。**別アプリ (apps/admin) ではなく、メインアプリの設定画面内に「管理者 DID でログイン
   している時だけ」表示する管理者リンク**から入る (owner 要望)。ロックアウト時も同じ導線で再 OAuth。
@@ -235,10 +238,14 @@ putRecord/deleteRecord。token 失効 (401) は **fail-closed (503)** に倒し�
 「失効時リトライを1箇所に閉じ込める」構造は流用)。
 
 ### 12.4 owner セットアップ (app-password の "Secret 1個" より増える)
-1. Cloudflare KV namespace 作成 + wrangler binding。
-2. クライアント鍵・DPoP 鍵を Secret 設定 (鍵生成はこちらでスクリプト用意)。
-3. アプリ内設定 → 管理者リンク → 1 回 OAuth ログイン (初期 refresh token を格納)。
-`SERVER_HANDLE` は廃止 (createSession の identifier は不要、OAuth は DID/handle 解決で処理)。
+1. Cloudflare KV namespace 作成 + wrangler binding。**(済: アシスタントが作成・binding)**
+2. クライアント鍵・DPoP 鍵を Secret 設定 (鍵生成スクリプト `scripts/gen-oauth-keys.mjs`)。SERVER_DID
+   (=kojira.io の DID)・ADMIN_DIDS を Variable 設定。
+3. **edge Worker を初回デプロイ** — 認可サーバーが authorize/PAR 時に `client_id`
+   (=`/client-metadata.json` の URL) を fetch するので、**OAuth ログインより前に edge が serve
+   している必要がある** (deploy → Secret 投入 → OAuth の順)。
+4. アプリ内設定 → 管理者リンク → 1 回 OAuth ログイン (初期 refresh token を格納)。
+`SERVER_HANDLE` は廃止 (OAuth は DID/handle 解決で処理)。サーバーアカウントは **kojira.io** (§9-1 確定)。
 
 ### 12.5 実装順 (mock で単体テスト、owner セットアップ後に dev 疎通)
 1. DPoP / private_key_jwt の JWT 生成・検証ユーティリティ (@noble、単体テスト)。

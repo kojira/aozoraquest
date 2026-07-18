@@ -72,7 +72,7 @@ describe('oauth-routes', () => {
 
   it('callback: 正しい state で code を token に交換し KV に保存する', async () => {
     const kv = mockKv();
-    await putPendingAuth(kv, 'ST', { verifier: 'VER', authServer: meta, createdAt: NOW });
+    await putPendingAuth(kv, 'ST', { verifier: 'VER', authServer: meta, pdsUrl: 'https://pds.example', createdAt: NOW });
     const f = discoveryFetch({ '/oauth/token': () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:kojira' }) });
     const res = await handleOAuthCallback(new Request('https://x/oauth/callback?code=CODE&state=ST'), env(kv), { now: NOW, fetchImpl: f });
     expect(res.status).toBe(200);

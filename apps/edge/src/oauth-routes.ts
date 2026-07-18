@@ -65,9 +65,9 @@ export async function handleOAuthStart(req: Request, env: OAuthRoutesEnv, deps: 
   }
   if (!isEdgeAdmin(env, iss)) return json({ error: 'forbidden' }, 403);
 
-  const { authServer } = await discoverForDid(cfg.serverDid, deps.fetchImpl);
+  const { pdsUrl, authServer } = await discoverForDid(cfg.serverDid, deps.fetchImpl);
   const { url, state, verifier } = await buildAuthorizeUrl({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, authServer, { loginHint: cfg.serverDid });
-  await putPendingAuth(env.OAUTH_TOKENS, state, { verifier, authServer, createdAt: deps.now });
+  await putPendingAuth(env.OAUTH_TOKENS, state, { verifier, authServer, pdsUrl, createdAt: deps.now });
   return json({ authorizeUrl: url });
 }
 
@@ -91,7 +91,7 @@ export async function handleOAuthCallback(req: Request, env: OAuthRoutesEnv, dep
     if (e instanceof OAuthConfigError) return html('<h1>設定エラー</h1>', 503);
     throw e;
   }
-  const tokens = await exchangeCode({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, pending.authServer, code, pending.verifier, cfg.serverDid);
+  const tokens = await exchangeCode({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, pending.authServer, code, pending.verifier, pending.pdsUrl, cfg.serverDid);
   await writeServerTokens(env.OAUTH_TOKENS, tokens);
   return html(`<h1>連携できました ✅</h1><p>サーバーアカウント (${tokens.did}) の書き込み認証を保存しました。このタブは閉じて構いません。</p>`);
 }

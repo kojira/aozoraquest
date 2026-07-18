@@ -92,29 +92,35 @@ export async function buildAuthorizeUrl(
   return { url, state, verifier: pkce.verifier };
 }
 
-function normalize(t: TokenResponse, authServer: AuthServerMetadata, now: number, fallbackDid?: string): ServerOAuthTokens {
-  const did = t.sub ?? fallbackDid;
-  if (!did) throw new Error('トークン応答に sub が無く DID を確定できない');
-  if (!t.refresh_token) throw new Error('refresh_token が無い(offline_access スコープ要確認)');
+function normalize(t: TokenResponse, authServer: AuthServerMetadata, now: number, pdsUrl: string, expectedDid: string, opts: { requireSub?: boolean } = {}): ServerOAuthTokens {
+  // bootstrap (code 交換) では sub 必須。sub 欠落を serverDid で埋めない (別アカウントの取り違え防止)。
+  if (opts.requireSub && !t.sub) throw new Error('トークン応答に sub が無い (bootstrap では必須)');
+  const did = t.sub ?? expectedDid;
+  // アカウント取り違え/セッション固定対策: 認可されたアカウントが期待するサーバーアカウント
+  // (kojira.io) と一致することを必須にする。別アカウントでログインされてもトークンを保存しない。
+  if (did !== expectedDid) throw new Error(`予期しないアカウント: ${did} ≠ ${expectedDid}`);
+  if (!t.refresh_token) throw new Error('refresh_token が無い(atproto スコープの refresh 発行を要確認)');
   return {
     did,
     accessToken: t.access_token,
     refreshToken: t.refresh_token,
     tokenType: t.token_type || 'DPoP',
     expiresAt: now + (t.expires_in ?? 3600),
+    pdsUrl,
     authServer: authServer.issuer,
     scope: t.scope,
     updatedAt: now,
   };
 }
 
-/** callback の authorization code を token に交換する。 */
+/** callback の authorization code を token に交換する。sub は expectedDid と厳密一致必須。 */
 export async function exchangeCode(
   cfg: ClientConfig,
   authServer: AuthServerMetadata,
   code: string,
   verifier: string,
-  fallbackDid?: string,
+  pdsUrl: string,
+  expectedDid: string,
 ): Promise<ServerOAuthTokens> {
   const form = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -126,15 +132,16 @@ export async function exchangeCode(
     client_assertion: assertion(cfg, authServer),
   });
   const t = await postForm<TokenResponse>(authServer.token_endpoint, form, cfg);
-  return normalize(t, authServer, cfg.now, fallbackDid);
+  return normalize(t, authServer, cfg.now, pdsUrl, expectedDid, { requireSub: true });
 }
 
-/** refresh_token でトークンを更新する(cron が使う)。 */
+/** refresh_token でトークンを更新する(cron が使う)。アカウントは bootstrap 済なので sub は任意。 */
 export async function refreshTokens(
   cfg: ClientConfig,
   authServer: AuthServerMetadata,
   refreshToken: string,
-  fallbackDid?: string,
+  pdsUrl: string,
+  expectedDid: string,
 ): Promise<ServerOAuthTokens> {
   const form = new URLSearchParams({
     grant_type: 'refresh_token',
@@ -144,5 +151,5 @@ export async function refreshTokens(
     client_assertion: assertion(cfg, authServer),
   });
   const t = await postForm<TokenResponse>(authServer.token_endpoint, form, cfg);
-  return normalize(t, authServer, cfg.now, fallbackDid);
+  return normalize(t, authServer, cfg.now, pdsUrl, expectedDid);
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readServerTokens, writeServerTokens, updateServerNonce, clearServerTokens, putPendingAuth, takePendingAuth, SERVER_OAUTH_KEY, type ServerOAuthTokens } from '../src/oauth-store';
+import { readServerTokens, writeServerTokens, readPdsNonce, writePdsNonce, clearServerTokens, putPendingAuth, takePendingAuth, SERVER_OAUTH_KEY, type ServerOAuthTokens } from '../src/oauth-store';
 import type { AuthServerMetadata } from '../src/oauth-metadata';
 
 /** 最小の in-memory KVNamespace モック (get/put/delete のみ)。 */
@@ -15,7 +15,7 @@ function mockKv() {
 
 const tokens = (over: Partial<ServerOAuthTokens> = {}): ServerOAuthTokens => ({
   did: 'did:plc:server', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP',
-  expiresAt: 2000, authServer: 'https://bsky.social', updatedAt: 1000, ...over,
+  expiresAt: 2000, pdsUrl: 'https://pds.example', authServer: 'https://bsky.social', updatedAt: 1000, ...over,
 });
 
 describe('oauth-store', () => {
@@ -33,25 +33,14 @@ describe('oauth-store', () => {
     expect(await readServerTokens(kv)).toBeNull();
   });
 
-  it('updateServerNonce は nonce だけ更新し他フィールドは保つ', async () => {
+  it('PDS nonce は別キーで読み書きし、トークンレコードを巻き込まない (★★)', async () => {
     const { kv } = mockKv();
-    await writeServerTokens(kv, tokens({ dpopNonce: 'OLD' }));
-    await updateServerNonce(kv, 'NEW', 1500);
-    const t = await readServerTokens(kv);
-    expect(t?.dpopNonce).toBe('NEW');
-    expect(t?.accessToken).toBe('AT'); // 本体は不変
-    expect(t?.updatedAt).toBe(1500);
-  });
-
-  it('updateServerNonce は同一 nonce や未 bootstrap では書かない', async () => {
-    const { kv, m } = mockKv();
-    // 未 bootstrap: 何もしない
-    await updateServerNonce(kv, 'X', 1);
-    expect(m.has(SERVER_OAUTH_KEY)).toBe(false);
-    // 同一 nonce: 無駄書きしない (updatedAt が動かないことで確認)
-    await writeServerTokens(kv, tokens({ dpopNonce: 'SAME', updatedAt: 1000 }));
-    await updateServerNonce(kv, 'SAME', 9999);
-    expect((await readServerTokens(kv))?.updatedAt).toBe(1000);
+    await writeServerTokens(kv, tokens());
+    expect(await readPdsNonce(kv)).toBeNull();
+    await writePdsNonce(kv, 'NONCE-1');
+    expect(await readPdsNonce(kv)).toBe('NONCE-1');
+    // トークン本体は無傷 (別キーなので cron の書き込みとぶつからない)
+    expect((await readServerTokens(kv))?.accessToken).toBe('AT');
   });
 
   it('clearServerTokens で消える (再 OAuth 前クリーンアップ)', async () => {
@@ -65,7 +54,7 @@ describe('oauth-store', () => {
 
   it('pending は state キーで保存し、take で取り出して削除 (使い捨て=リプレイ防止)', async () => {
     const { kv } = mockKv();
-    await putPendingAuth(kv, 'STATE1', { verifier: 'VER', authServer, createdAt: 1000 });
+    await putPendingAuth(kv, 'STATE1', { verifier: 'VER', authServer, pdsUrl: 'https://pds.example', createdAt: 1000 });
     const p = await takePendingAuth(kv, 'STATE1');
     expect(p?.verifier).toBe('VER');
     expect(p?.authServer.issuer).toBe('https://bsky.social');

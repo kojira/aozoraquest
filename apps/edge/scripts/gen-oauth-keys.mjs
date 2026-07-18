@@ -37,11 +37,12 @@ const dpopPath = join(outDir, 'dpop-private.jwk.json');
 writeFileSync(clientPath, JSON.stringify(client.priv));
 writeFileSync(dpopPath, JSON.stringify(dpop.priv));
 
-const acct = 'CLOUDFLARE_ACCOUNT_ID=b9cec3916d500760a7c7b9c31c720d80';
+// account ID はソースに直書きしない (プロジェクトルール §4)。env にあれば使い、無ければプレースホルダ。
+const acct = process.env.CLOUDFLARE_ACCOUNT_ID ? `CLOUDFLARE_ACCOUNT_ID=${process.env.CLOUDFLARE_ACCOUNT_ID} ` : 'CLOUDFLARE_ACCOUNT_ID=<account-id> ';
 console.log(`\n✅ private 鍵を書き出しました (gitignore 下・commit されません):\n  ${clientPath}\n  ${dpopPath}\n`);
 console.log('── client-metadata.json の jwks に載せる公開鍵 (client 署名鍵) ──');
 console.log(JSON.stringify(client.pubJwk));
 console.log('\n── Secret 設定コマンド (apps/edge から) ──');
-console.log(`  ${acct} pnpm exec wrangler secret put OAUTH_CLIENT_PRIVATE_JWK < ${clientPath}`);
-console.log(`  ${acct} pnpm exec wrangler secret put OAUTH_DPOP_PRIVATE_JWK < ${dpopPath}`);
+console.log(`  ${acct}pnpm exec wrangler secret put OAUTH_CLIENT_PRIVATE_JWK < ${clientPath}`);
+console.log(`  ${acct}pnpm exec wrangler secret put OAUTH_DPOP_PRIVATE_JWK < ${dpopPath}`);
 console.log('\n設定後は .oauth-keys/ を消して構いません (Secret に入れば復元は再生成でなく再 OAuth 不要)。\n');
