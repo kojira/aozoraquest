@@ -2,6 +2,10 @@ import { StrictMode, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { Workspace } from '@/components/workspace';
+import { installOAuthDebug } from '@/lib/oauth-debug';
+
+// dev のみ: 固まったらコンソールで __aozoraDumpOAuth() を叩ける (session 復元前に登録)。
+installOAuthDebug();
 // 初回に必要な shell + workspace(ホーム) だけ eager。それ以外のルートは lazy 分割して
 // 初期バンドルから外す (初回表示の JS を軽くする)。named export を default に写す。
 const Profile = lazy(() => import('@/routes/profile').then(m => ({ default: m.Profile })));

@@ -1,7 +1,7 @@
 import { Agent, AtpAgent } from '@atproto/api';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { onSessionDeleted, restoreSession, signOut } from './oauth';
+import { clearOAuthStorage, onSessionDeleted, restoreSession, signOut } from './oauth';
 
 /**
  * 公開 AppView エンドポイント。OAuth セッションの PDS は app.bsky.* を
@@ -14,6 +14,12 @@ const PUBLIC_APPVIEW = 'https://api.bsky.app';
  *  セッション」とみなし signed-out へ倒す (遅いだけの valid セッションを誤って切らない余裕を持たせる)。 */
 const WARMUP_TIMEOUT_MS = 10_000;
 
+/** restoreSession (OAuth client.init) の上限。init は本来 <1s だが、**壊れた/不整合な永続セッションや
+ *  navigator.locks の詰まりで無応答ハング**すると、warmup 手前で止まり無限「準備しています」になる
+ *  (warmup と違い restore には従来タイムアウトが無かった)。超えたら壊れた OAuth ストレージを消して
+ *  signed-out に倒す (= ログイン画面へ抜け、再ログインでクリーン復帰)。 */
+const RESTORE_TIMEOUT_MS = 8_000;
+
 /** `promise` を `ms` でタイムアウトさせる。超えたら `Error('<label>-timeout')` で reject。
  *  勝敗どちらでもタイマーを片付ける (保留タイマー/unhandled rejection を残さない)。 */
 export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'op'): Promise<T> {
@@ -22,6 +28,23 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'op'): P
     timer = setTimeout(() => reject(new Error(`${label}-timeout`)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** restore タイムアウト時、ハングの主因 (Web Locks 取得待ち vs 壊れた IDB) を次回で確定するための
+ *  診断ダンプ。読み取りのみ・best-effort。held に `@atproto-oauth-client-<sub>` が残っていれば lock 主因。 */
+async function logStorageDiagnostics(): Promise<void> {
+  try {
+    const locks = await navigator.locks?.query?.();
+    const dbs = await (indexedDB as { databases?: () => Promise<{ name?: string }[]> }).databases?.();
+    console.warn('[session] restore-timeout diagnostics', {
+      locksHeld: locks?.held?.map((l) => l.name),
+      locksPending: locks?.pending?.map((l) => l.name),
+      databases: dbs?.map((d) => d.name),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn('[session] diagnostics failed', e);
+  }
 }
 
 export interface SessionState {
@@ -79,8 +102,17 @@ export function useSessionLoader(): SessionState {
       });
     });
     (async () => {
+      // OAuth callback (URL に ?code=... 在り) は client.init() が **single-use code を消費してトークン
+      // 交換 (auth server への実ネットワーク往復)** をする。ここに短い timeout + IDB 削除をかけると、
+      // 遅い回線で valid な初回ログインを 8s で打ち切り code を巻き込んで壊す (回帰リスク)。
+      // 無限「準備しています」のバグは**通常ロードで既存セッションを復元する restore** が対象なので、
+      // callback は従来どおり (本 PR 前と同じ) timeout 無しで通す。
+      const onOAuthCallback = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('code');
+      const startedAt = Date.now();
       try {
-        const session = await restoreSession();
+        const session = onOAuthCallback
+          ? await restoreSession()
+          : await withTimeout(restoreSession(), RESTORE_TIMEOUT_MS, 'restore');
         if (cancelled) return;
         if (!session) {
           setState({ status: 'signed-out' });
@@ -88,7 +120,18 @@ export function useSessionLoader(): SessionState {
         }
         await setStateFromSession(session, setState, () => cancelled);
       } catch (err) {
-        console.error('session restore failed', err);
+        const timedOut = err instanceof Error && err.message === 'restore-timeout';
+        // 経過時間も出す (誤爆=遅いだけの valid セッションか、真のハングかを後で切り分けられるように)。
+        console.warn('[session] restore failed/timed out; signing out', { timedOut, elapsedMs: Date.now() - startedAt, onOAuthCallback, err });
+        if (timedOut) {
+          // ハングの主因を次回で確定するための診断 (読み取りのみ)。navigator.locks が held のままなら
+          // 詰まりは Web Locks 取得待ち (@atproto は token refresh を `@atproto-oauth-client-<sub>` の
+          // exclusive lock で囲み、取得待ちに上限が無い) = IDB 削除では解けない、と判別できる。
+          void logStorageDiagnostics();
+          // 壊れた永続 token が主因のケースの自己修復 (best-effort。lock 主因なら効かないが無害)。
+          // 次回 restore は空 IDB を読んで即 signed-out に落ちる (lock を取りに行かない)。待たない。
+          void clearOAuthStorage();
+        }
         if (!cancelled) setState({ status: 'signed-out' });
       }
     })();
