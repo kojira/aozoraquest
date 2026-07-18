@@ -43,7 +43,7 @@ import { GearModal } from '@/components/gear-modal';
 import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
-import { BattleView, HpBar, MpBar } from '@/components/battle-view';
+import { BattleView } from '@/components/battle-view';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
@@ -52,6 +52,7 @@ import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { StatusModal } from '@/components/status-modal';
+import { WorldHud } from '@/components/world-hud';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -977,41 +978,9 @@ export function World() {
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto' }}>
-      {/* タイトルヘッダーは出さない (場所を取るだけ — オーナー指示 2026-07-17)。
-          場所情報 (街名 / 危険度) + 座標の 1 行だけ。一時メッセージ (notice) は
-          操作ボタンの直下 (下部ボタン操作の結果が上部だと見えない) */}
-      <p
-        style={{
-          margin: '0.2em 0 0.4em',
-          fontSize: '0.8em',
-          color: 'var(--color-muted)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          gap: '0.5em',
-        }}
-      >
-        <span>
-          {town ? (
-            <strong style={{ color: 'var(--color-fg)' }}>🏘 {town.name}</strong>
-          ) : (
-            <>このあたり: {DANGER_LABELS[danger]}{here === 'forest' ? ' / 深い森…' : ''}</>
-          )}
-        </span>
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>
-          ({ws.x}, {ws.y}) <span style={{ opacity: 0.7 }}>プレビュー</span>
-        </span>
-      </p>
-
-      {/* フィールドの HP/MP (戦闘をまたいで持続) */}
-      {combat && curHp !== null && curMp !== null && (
-        <div style={{ marginBottom: '0.5em' }}>
-          <HpBar name={session.handle?.split('.')[0] ?? 'あなた'} hp={curHp} maxHp={combat.maxHp} mine />
-          <MpBar mp={curMp} maxMp={combat.maxMp} />
-        </div>
-      )}
-
-      {/* マップ本体。アバターは SVG 外の HTML オーバーレイ (装備が枠外に出るため)。 */}
+      {/* HUD (HP/MP + 現在地) はマップ上にオーバーレイ表示する — 縦スクロールを
+          なくして没入感を上げるため (オーナー要望 2026-07-18)。マップ外に置いて
+          いた HP/MP バー・場所ヘッダーは廃止し、下記 WorldHud に集約した。 */}
       <div className="dq-window" style={{ padding: 4 }}>
         <div ref={mapRef} style={{ position: 'relative' }}>
           <svg
@@ -1045,6 +1014,15 @@ export function World() {
           {/* 仮想スティック: マップ全面がタッチ領域。十字キーの置き換え
               (スマホで非常に操作しづらい — オーナー報告 2026-07-17) */}
           <VirtualStick onMove={move} />
+          {combat && curHp !== null && curMp !== null && (
+            <WorldHud
+              hp={curHp}
+              maxHp={combat.maxHp}
+              mp={curMp}
+              maxMp={combat.maxMp}
+              locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? ' / 深い森…' : ''}`}
+            />
+          )}
         </div>
       </div>
 
