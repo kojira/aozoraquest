@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import {
   BATTLE_TUNING,
+  battleXpFor,
   ITEMS,
   MONSTERS_BY_ID,
   jobDisplayName,
@@ -220,7 +221,7 @@ export function TrialArena({
       }
       // 決着: レコード確定 + XP + ドロップ。逃走は無事に離脱しただけなので XP もドロップも無し。
       const drops = next.outcome === 'win' ? rollDrops(next.monsterId, next.player.luk, next.seed) : [];
-      const xp = next.outcome === 'win' ? BATTLE_TUNING.xpWin : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
+      const xp = next.outcome === 'win' ? battleXpFor(next.monsterId) : next.outcome === 'fled' ? 0 : BATTLE_TUNING.xpLose;
       const record = {
         seed: next.seed,
         tier: phase.tier,
