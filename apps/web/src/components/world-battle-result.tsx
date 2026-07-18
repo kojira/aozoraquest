@@ -4,9 +4,10 @@ import { MonsterSvg } from './monster-svg';
 import type { BattleLevelUps } from '@/lib/battle-log';
 
 /**
- * 野外戦闘のリザルト。DQ1 風に「暗転したマップ枠内」で完結させ、報酬 (経験値・
- * 素材・レベルアップ等) もメッセージ枠内に出す (オーナー要望 2026-07-18
- * 「経験値・素材の表示もすべてメッセージ枠内で出すべき」)。ページ遷移しない。
+ * 野外戦闘のリザルト。DQ1 風に「暗転したマップ枠内」で完結させ、勝敗も報酬 (経験値・
+ * 素材・レベルアップ等) もメッセージ枠内に出す。見出し・ボタンは置かず、どこかを
+ * タップしたら自然にマップへ戻るだけ (オーナー要望 2026-07-18「勝利の文字を枠外に
+ * 出すのをやめ、マップへ戻るボタンも不要、タップで戻るだけで十分」)。
  */
 export interface WorldBattleResult {
   state: BattleState;
@@ -27,29 +28,30 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
   const title =
     state.outcome === 'win' ? '勝利!' : state.outcome === 'lose' ? 'まけてしまった…' : state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, color: '#fff' }}>
-      {/* 上段: たおした敵 (勝利なら反転+半透明) + 見出し */}
+    // どこをタップしてもマップへ戻る (ボタンは置かない)。将来パネル内に
+    // リンク等のインタラクティブ要素を足す場合は、その要素で e.stopPropagation()
+    // して誤って閉じないようにする (今は子に操作要素が無いので素通しで安全)。
+    <div onClick={onClose} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, color: '#fff', cursor: 'pointer' }}>
+      {/* 上段: たおした敵 (勝利なら反転+半透明)。小さめにしてメッセージ枠を広く取る */}
       <div style={{ textAlign: 'center', flex: '0 0 auto' }}>
         <div style={{ opacity: win ? 0.45 : 1, display: 'inline-block', transform: win ? 'rotate(180deg)' : 'none' }}>
-          <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={72} />
+          <MonsterSvg species={MONSTERS_BY_ID[state.monsterId]?.species ?? 'slime'} size={60} />
         </div>
-        <h3 style={{ margin: '0.1em 0 0', color: '#fff', textShadow: TEXT_SHADOW }}>{title}</h3>
       </div>
 
-      {/* 中段: 決着ログ + 報酬をメッセージ枠内に。行数が多ければ枠内スクロール
-          (ページは伸ばさない = マップ枠に収める) */}
+      {/* 中段: 勝敗 + 決着ログ + 報酬をメッセージ枠内に。行数が多ければ枠内スクロール */}
       <div
         aria-live="polite"
         style={{
           flex: '1 1 auto',
           minHeight: 0,
           overflowY: 'auto',
-          margin: '0.4em 0',
+          margin: '0.4em 0 0.2em',
           padding: '0.5em 0.7em',
           border: '2px solid rgba(255,255,255,0.35)',
           borderRadius: 4,
           background: 'rgba(20,22,30,0.72)',
-          fontSize: '0.82em',
+          fontSize: '0.85em',
           lineHeight: 1.6,
           textAlign: 'left',
           display: 'flex',
@@ -58,6 +60,7 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
           textShadow: TEXT_SHADOW,
         }}
       >
+        <div style={{ fontWeight: 700 }}>{title}</div>
         {state.lastEvents.map((e, i) => (
           <div key={i}>{e.text}</div>
         ))}
@@ -93,10 +96,10 @@ export function BattleResultPanel({ result, onClose }: { result: WorldBattleResu
         )}
       </div>
 
-      {/* 下段: マップへ戻る */}
-      <button type="button" onClick={onClose} style={{ flex: '0 0 auto', padding: '0.7em 1.6em', width: '100%' }}>
-        マップへ戻る
-      </button>
+      {/* 下段: ボタンでなく小さなタップ促し (どこを押しても戻る) */}
+      <p style={{ flex: '0 0 auto', margin: 0, textAlign: 'center', fontSize: '0.68em', color: 'rgba(255,255,255,0.65)', textShadow: TEXT_SHADOW }}>
+        タップで マップへ もどる
+      </p>
     </div>
   );
 }
