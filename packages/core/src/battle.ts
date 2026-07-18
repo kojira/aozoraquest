@@ -32,6 +32,10 @@ export const BATTLE_TUNING = {
   hpBase: 66,
   hpDefScale: 0.32,
   hpLevelScale: 2,
+  /** 敵の HP/MP に遭遇ごとの分散 (±この割合)。値を毎回固定にせず、「あと何回
+   *  使えるか」をプレイヤーに予想させる (オーナー要望 2026-07-18)。seed 決定的。
+   *  world 遭遇のみ適用し、バランステスト対象の trial は 0 (固定) に保つ。 */
+  monsterVitalsVariance: 0.15,
   /** レベルによるステータス補正 = 1 + (jobLv-1)*jobLevelScale + (playerLv-1)*playerLevelScale */
   jobLevelScale: 0.04,
   playerLevelScale: 0.015,
@@ -567,6 +571,9 @@ export function summonMonster(
   seed: number,
   jobLevel = 1,
   affinity?: number,
+  /** HP/MP の分散 (±割合)。0 のとき従来どおり固定 (rng も引かないので試練/既存テスト
+   *  の乱数ストリームは不変)。world は BATTLE_TUNING.monsterVitalsVariance を渡す。 */
+  variance = 0,
 ): { def: MonsterDef; combatant: Combatant } {
   const pool = MONSTERS.filter((m) => m.tier === tier);
   const rng = createRng((seed ^ 0x51ed270b) >>> 0);
@@ -590,6 +597,15 @@ export function summonMonster(
   const flat = BATTLE_TUNING.flatLevelGain * Math.max(0, playerLevel - 1);
   const grown = def.stats.map((v) => v + flat) as unknown as StatArray;
   const combatant = fromStats(def.name, grown, factor, Math.max(1, Math.round(playerLevel * (tier === 3 ? 1.1 : 1))));
+  // 遭遇ごとに HP/MP をバラつかせる (値を覚えられないように = 予想の余地を残す)。
+  // variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ trial/テスト不変)。
+  if (variance > 0) {
+    const jitter = () => 1 + (rng() * 2 - 1) * variance;
+    combatant.maxHp = Math.max(1, Math.round(combatant.maxHp * jitter()));
+    combatant.hp = combatant.maxHp;
+    combatant.maxMp = Math.max(0, Math.round(combatant.maxMp * jitter()));
+    combatant.mp = combatant.maxMp;
+  }
   return { def, combatant };
 }
 
@@ -658,6 +674,8 @@ export function startBattle(
     gear?: GearSelection;
     /** 地域の相性 (regionAffinity)。指定するとその型のモンスターが出やすくなる。 */
     affinity?: number;
+    /** 敵 HP/MP の分散 (±割合)。world 遭遇のみ指定、trial は未指定 = 0 (固定)。 */
+    vitalsVariance?: number;
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -667,7 +685,7 @@ export function startBattle(
   if (carry?.mp !== undefined) {
     player.mp = Math.max(0, Math.min(player.maxMp, Math.floor(carry.mp)));
   }
-  const { def, combatant } = summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity);
+  const { def, combatant } = summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, extras?.vitalsVariance ?? 0);
   const gains = mpGainsFor(archetype);
   return {
     seed,

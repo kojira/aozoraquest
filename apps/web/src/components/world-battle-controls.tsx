@@ -113,24 +113,20 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
       {showEnemyVitals && !defeated && (
         <>
           <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} labelColor="#fff" />
-          {monsterDef?.ability && state.monster.maxMp > 0 && (() => {
-            const cost = monsterDef.ability === 'healer' ? BATTLE_TUNING.monsterHealMpCost : BATTLE_TUNING.monsterChargeMpCost;
-            const total = Math.max(1, Math.floor(state.monster.maxMp / cost));
-            const left = Math.floor(state.monster.mp / cost);
-            const color = monsterDef.ability === 'healer' ? '#5fc37e' : '#e8802e';
-            return (
-              <div style={{ maxWidth: 340, margin: '0.15em auto 0', display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: '0.68em', color: 'rgba(255,255,255,0.8)', textShadow: TEXT_SHADOW }}>
-                  {monsterDef.ability === 'healer' ? 'かいふく' : 'ため'} あと{left}
-                </span>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  {Array.from({ length: Math.min(total, 6) }, (_, i) => (
-                    <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: i < left ? color : 'rgba(0,0,0,0.35)', border: i < left ? 'none' : '1px solid rgba(255,255,255,0.25)' }} />
-                  ))}
-                </div>
+          {/* ため/回復を使う敵は生の MP を「バー」で見せる (「あと何回」の答えは出さず、
+              残量から尽きるタイミングを予想させる — オーナー要望 2026-07-18)。通常攻撃
+              だけの敵は MP を使わないので出さない (混乱防止)。 */}
+          {monsterDef?.ability && state.monster.maxMp > 0 && (
+            <div style={{ maxWidth: 340, margin: '0.1em auto 0', textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68em', color: 'rgba(255,255,255,0.85)', textShadow: TEXT_SHADOW }}>
+                <span>MP</span>
+                <span style={{ fontFamily: 'ui-monospace, monospace' }}>{state.monster.mp} / {state.monster.maxMp}</span>
               </div>
-            );
-          })()}
+              <div style={{ height: 5, background: 'var(--color-track-bg)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${(state.monster.mp / state.monster.maxMp) * 100}%`, height: '100%', background: '#8ab6f0', transition: 'width 300ms ease' }} />
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
