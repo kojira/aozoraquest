@@ -27,7 +27,9 @@
 └─────────────┘ └─────────────┘ └──────────┘
 ```
 
-サーバー層は存在しない。Aozora Quest の開発者が運用するホストは **Cloudflare Workers Builds (静的配信) のみ**。Worker や独自 API、クラウド LLM API への中継も用意しない。
+サーバー層は原則存在しない。Aozora Quest の開発者が運用するホストは基本 **Cloudflare Workers Builds (静的配信)** で、クラウド LLM API への中継も用意しない。
+
+**例外 — サーバー権威が必要な領域**: あおぞらワールドのゲーム経済 (パワー・XP・素材・戦闘報酬) は、クライアント権威 (ユーザー PDS 直書き) だと偽造できてしまうため、**edge Worker (`apps/edge`) が app サーバー用アカウントの PDS を操作して権威化する** ([[21-server-authority]])。依頼クエスト集約 ([[15-user-quest]]) も同様に Worker が主管理者 PDS を書く。これらは「Worker は無い」原則の明示的な例外で、対象はゲーム経済とクエスト集約に限る (診断・カード等はクライアント + ユーザー PDS のまま)。
 
 - ユーザーデータはユーザーの PDS に保存
 - 運用コンフィグ (フラグ、プロンプト、メンテ、BAN) は主管理者 DID の PDS に保存し、全クライアント が boot 時に読み取る (14-admin.md)
@@ -326,4 +328,4 @@ aozoraquest/
 └── tsconfig.base.json
 ```
 
-pnpm ワークスペース推奨。`packages/core` が最も共有される実装単位で、Web / 管理画面 / 将来の Native から参照される。サーバー層 (Worker) は存在しない。
+pnpm ワークスペース推奨。`packages/core` が最も共有される実装単位で、Web / 管理画面 / 将来の Native、そして **edge Worker (`apps/edge`)** から参照される (core は環境非依存なので Worker でも戦闘再シミュに使う)。サーバー層は原則無いが、ゲーム経済とクエスト集約だけ edge Worker が権威を持つ (上記例外 / [[21-server-authority]])。
