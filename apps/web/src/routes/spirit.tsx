@@ -236,7 +236,34 @@ export function Spirit() {
             ))}
           </section>
 
-          <section style={{ marginTop: '1em' }}>
+          {/* あおぞらワールド (docs/19) の入口。試練より上に置く (旅がメイン導線 —
+              オーナー要望 2026-07-18)。プレビュー段階 = dev 環境限定。 */}
+          {WORLD_PREVIEW_ENABLED && (
+            <section style={{ marginTop: '1.4em', textAlign: 'center' }}>
+              <Link to="/world">
+                {/* 主導線として pill 枠 + 背景で目立たせる。発光グロー (boxShadow) は
+                    一度きりの「召喚の儀式」ボタン専用に温存し、最強調シグナルの
+                    希少性を保つ (レビュー ★★) */}
+                <button
+                  type="button"
+                  style={{
+                    padding: '0.8em 1.8em',
+                    fontSize: '1.05em',
+                    background: 'var(--color-pill-bg)',
+                    color: 'var(--color-fg)',
+                    border: '3px solid var(--color-pill-border)',
+                  }}
+                >
+                  🗺 あおぞらワールドを冒険する
+                </button>
+              </Link>
+              <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em', maxWidth: 260, marginInline: 'auto' }}>
+                街をめぐり、戦い、そうびを整える旅へ。
+              </p>
+            </section>
+          )}
+
+          <section style={{ marginTop: '1.2em' }}>
             {agent && did && diag ? (
               <TrialArena
                 agent={agent}
@@ -267,17 +294,6 @@ export function Spirit() {
               </div>
             )}
           </section>
-
-          {/* あおぞらワールド (docs/19) の入口。散歩プレビュー段階 = dev 環境限定。 */}
-          {WORLD_PREVIEW_ENABLED && (
-            <section style={{ marginTop: '1.2em', textAlign: 'center' }}>
-              <Link to="/world">
-                <button type="button" style={{ padding: '0.6em 1.4em' }}>
-                  🗺 あおぞらワールドを歩く (プレビュー)
-                </button>
-              </Link>
-            </section>
-          )}
         </>
       )}
 
