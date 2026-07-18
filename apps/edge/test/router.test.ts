@@ -80,4 +80,21 @@ describe('edge router', () => {
     expect(res.status).toBe(401);
     expect(((await res.json()) as { error: string }).error).toBe('missing_token');
   });
+
+  it('GET /client-metadata.json は OAuth 未設定なら 503', async () => {
+    const res = await handleRequest(new Request('https://x/client-metadata.json'), env);
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toBe('oauth_not_configured');
+  });
+
+  it('POST /api/oauth/start は OAuth 未設定 (KV 無し) なら 503', async () => {
+    const res = await handleRequest(new Request('https://x/api/oauth/start', { method: 'POST' }), env);
+    expect(res.status).toBe(503);
+  });
+
+  it('GET /oauth/callback は code 欠落なら 400 (HTML)', async () => {
+    const res = await handleRequest(new Request('https://x/oauth/callback'), env);
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toContain('text/html');
+  });
 });
