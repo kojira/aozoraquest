@@ -29,8 +29,8 @@ export const BATTLE_TUNING = {
   /** 敗北 XP (挑んだこと自体に少額) */
   xpLose: 5,
   /** HP = hpBase + def*hpDefScale + level*hpLevelScale */
-  hpBase: 46,
-  hpDefScale: 0.9,
+  hpBase: 66,
+  hpDefScale: 0.32,
   hpLevelScale: 2,
   /** レベルによるステータス補正 = 1 + (jobLv-1)*jobLevelScale + (playerLv-1)*playerLevelScale */
   jobLevelScale: 0.04,
@@ -48,13 +48,13 @@ export const BATTLE_TUNING = {
    *  50:50 でジョブの型を保ちつつ個人の傾きを乗せる。 */
   baseStatsPersonalWeight: 0.5,
   /** ダメージ = atk * roll(0.85..1.15) * damageScale / (damageSoften + def) */
-  damageScale: 26,
-  damageSoften: 14,
+  damageScale: 30,
+  damageSoften: 26,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
-  agiDodgeScale: 0.006,
+  agiDodgeScale: 0.009,
   dodgeMin: 0.02,
-  dodgeMax: 0.25,
+  dodgeMax: 0.32,
   /** クリティカル率 = critBase + luk*critLukScale (1.5 倍) */
   critBase: 0.04,
   critLukScale: 0.004,

@@ -429,20 +429,32 @@ describe('resolveTurn', () => {
   });
 
   it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
+    // やくそう持ち (現実的な tier3 挑戦) + 300 seed で計測。無回復・少 seed だと
+    // 勝率が floor 近く (~13%) で分散に埋もれて拮抗する (2026-07-18 のアイテム調整で
+    // HP/被ダメを再調整したため。防御の優位そのものは chargedPower 2.6 で健在)。
+    const HERBS = 2;
     const reactive = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed);
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
-        // 直前のイベントに予告があれば防御、なければ攻撃
-        const telegraphed = s.monster.charging;
-        s = resolveTurn(s, telegraphed ? 'guard' : 'attack');
+        const p = s.player;
+        // 予告があれば防御、HP 危険域なら やくそう、なければ攻撃
+        s = resolveTurn(s, s.monster.charging ? 'guard' : s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
+      }
+      return s.outcome;
+    };
+    const spam = (seed: number) => {
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+        const p = s.player;
+        s = resolveTurn(s, s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
       }
       return s.outcome;
     };
     let reactiveWins = 0;
     let spamWins = 0;
-    for (let seed = 0; seed < 100; seed++) {
+    for (let seed = 0; seed < 300; seed++) {
       if (reactive(seed) === 'win') reactiveWins++;
-      if (playOut(startBattle('warrior', 8, 15, '戦士', 3, seed), 'attack').outcome === 'win') spamWins++;
+      if (spam(seed) === 'win') spamWins++;
     }
     expect(reactiveWins).toBeGreaterThan(spamWins);
   });
