@@ -289,8 +289,9 @@ export function CommandButton({ label, sub, onClick, disabled, span2 = false }: 
 
 /** 戦闘ログの DQ1 風タイプライター表示。行を順に 1 文字ずつ出す。
  *  reduced-motion では即時全文。セリフウィンドウ (dialogue-window) より速い
- *  1 文字 22ms — 戦闘のテンポを削らない速度に留める。battle-view 専用。 */
-function TypedLines({ lines }: { lines: readonly string[] }) {
+ *  1 文字 22ms — 戦闘のテンポを削らない速度に留める。battle-view 専用。
+ *  onDone: 全文表示し終えた時に一度呼ぶ (DQ 風メッセージ送りの「送り可」判定用)。 */
+export function TypedLines({ lines, onDone }: { lines: readonly string[]; onDone?: () => void }) {
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
@@ -320,10 +321,19 @@ function TypedLines({ lines }: { lines: readonly string[] }) {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- lines は joined で代表する
   }, [joined, total, reduced]);
+  // 全文表示し終えたら onDone を content ごとに一度だけ通知
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  const firedRef = useRef('');
+  useEffect(() => {
+    if (total > 0 && chars >= total && firedRef.current !== joined) {
+      firedRef.current = joined;
+      onDoneRef.current?.();
+    }
+  }, [chars, total, joined]);
   let used = 0;
   return (
-    // タップで残りを即時全文 (セリフウィンドウと同じ「タップ = スキップ」作法。
-    // コマンドは非ブロックなので押し逃しの実害はないが、作法を統一する — レビュー指摘)
+    // タップで残りを即時全文 (セリフウィンドウと同じ「タップ = スキップ」作法)
     <div onClick={() => setChars(total)}>
       {cps.map((cp, i) => {
         const visible = Math.max(0, Math.min(cp.length, chars - used));

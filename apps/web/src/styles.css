@@ -237,6 +237,12 @@ button:disabled {
 .dq-command:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.16);
 }
+/* 戦闘の全幅メッセージ窓。タップ送りの押下感を極短で返す (▼ 等の記号は足さず、
+   沈み込み + 明るさだけで「送れた」を伝える — 情報量を増やさない方針)。 */
+.dq-message:active {
+  transform: translateY(1px);
+  filter: brightness(1.15);
+}
 button.secondary {
   background: transparent;
   color: var(--color-fg);
