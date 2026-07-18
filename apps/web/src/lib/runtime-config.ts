@@ -23,6 +23,18 @@ function getPrimaryAdminDid(): string | null {
   return first ?? null;
 }
 
+/** ログイン中の DID が管理者許可リスト (VITE_ADMIN_DIDS, カンマ区切り) に含まれるか。
+ *  管理者限定 UI (dev のパワー付与など) のゲートに使う。未設定/空なら常に false。 */
+export function isAdminDid(did: string | null | undefined): boolean {
+  if (!did) return false;
+  const raw = import.meta.env.VITE_ADMIN_DIDS ?? '';
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(did);
+}
+
 /** DID を PDS エンドポイントに解決する (公開 read の宛先決定に使う唯一の実装)。
  *  did:plc:* は plc.directory、did:web:* はドメイン直 .well-known/did.json。 */
 export async function resolveDidToPds(did: string): Promise<string> {

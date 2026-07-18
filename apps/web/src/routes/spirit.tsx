@@ -23,6 +23,7 @@ import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { isAdminDid } from '@/lib/runtime-config';
 
 /**
  * 精霊ブルスコンのページ (docs/18-brusukon-trial.md)。
@@ -51,6 +52,8 @@ export function Spirit() {
   const [questXp, setQuestXp] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
+  // 管理者用パワー付与の書込み中フラグ (dev 限定・多重押し防止)
+  const [grantingPower, setGrantingPower] = useState(false);
 
   const agent = session.agent ?? null;
   const did = session.did ?? null;
@@ -260,6 +263,50 @@ export function Spirit() {
               <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em', maxWidth: 260, marginInline: 'auto' }}>
                 街をめぐり、戦い、そうびを整える旅へ。
               </p>
+            </section>
+          )}
+
+          {/* 管理者用: dev でパワーを付与してテストする。VITE_ADMIN_DIDS の DID かつ
+              プレビュー環境 (dev/local) のときだけ表示。本番では WORLD_PREVIEW_ENABLED=false
+              なので出ない (二重ゲート)。viaPosts を加算 = 残高がそのぶん増える。 */}
+          {WORLD_PREVIEW_ENABLED && agent && did && isAdminDid(did) && (
+            <section style={{ marginTop: '1em', textAlign: 'center' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  gap: '0.5em',
+                  alignItems: 'center',
+                  fontSize: '0.78em',
+                  border: '1px dashed var(--color-muted)',
+                  borderRadius: 6,
+                  padding: '0.45em 0.7em',
+                  color: 'var(--color-muted)',
+                }}
+              >
+                <span>管理者用 · あおぞらパワー {points.balance}</span>
+                {[100, 1000].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={grantingPower}
+                    onClick={async () => {
+                      setGrantingPower(true);
+                      try {
+                        await bumpPower(agent, did, { viaPosts: n });
+                        const next = await loadPointsState(agent, did);
+                        setPoints(next);
+                      } catch (e) {
+                        console.warn('admin power grant failed', e);
+                      } finally {
+                        setGrantingPower(false);
+                      }
+                    }}
+                    style={{ fontSize: '1em', padding: '0.2em 0.6em' }}
+                  >
+                    +{n}
+                  </button>
+                ))}
+              </div>
             </section>
           )}
 
