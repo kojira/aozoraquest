@@ -66,12 +66,38 @@ export async function drawKudaByte(opts: { timeoutMs?: number; fetchImpl?: typeo
 /**
  * エントロピー 1 バイト取得。`useKuda` が真なら kuda を試み、**失敗時は CSPRNG に必ずフォールバック**
  * (fail-safe。報酬 fail-closed とは別で、乱数源の障害は戦闘を止めない)。既定は CSPRNG のみ。
+ * kuda の障害は監査可能にするため `onFallback` で通知する (呼び出し側で csprng フォールバック回数を
+ * 数え、kuda アウテージを可視化できるように)。
  */
-export async function entropyByte(opts: { useKuda?: boolean; timeoutMs?: number; fetchImpl?: typeof fetch } = {}): Promise<EntropyByte> {
+export async function entropyByte(
+  opts: { useKuda?: boolean; timeoutMs?: number; fetchImpl?: typeof fetch; onFallback?: (err: unknown) => void } = {},
+): Promise<EntropyByte> {
   if (!opts.useKuda) return csprngByte();
   try {
     return await drawKudaByte(opts);
-  } catch {
-    return csprngByte(); // kuda 障害/枯渇/タイムアウト → CSPRNG
+  } catch (err) {
+    opts.onFallback?.(err); // kuda 障害/枯渇/タイムアウト → CSPRNG (可観測にする)
+    return csprngByte();
   }
+}
+
+/**
+ * 32bit のエントロピー seed を取得 (`resolveTurn` の turnSeed 等に使う)。**1 ターンの乱数は
+ * `createRng(seed)` の 32bit seed から stream を展開するので、8bit では 256 通りしか無く総当たり
+ * で先読みされうる (レビュー ★★)。必ず 32bit 分の新鮮なエントロピーを供給すること。**
+ * 常に CSPRNG で 4 バイトを確保し、`useKuda` 時は物理乱数 1 バイトを最下位に XOR して混ぜる
+ * (kuda 障害でも 32bit の質は CSPRNG が担保 = fail-safe)。返り値は符号なし 32bit。
+ */
+export async function entropyU32(
+  opts: { useKuda?: boolean; timeoutMs?: number; fetchImpl?: typeof fetch; onFallback?: (err: unknown) => void } = {},
+): Promise<{ value: number; source: 'kuda+csprng' | 'csprng'; meta?: EntropyByte['meta'] }> {
+  const buf = new Uint8Array(4);
+  crypto.getRandomValues(buf);
+  let value = ((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]) >>> 0;
+  if (opts.useKuda) {
+    const b = await entropyByte(opts); // kuda 成功なら物理 1 バイト、失敗なら csprng 1 バイト
+    value = (value ^ b.value) >>> 0;
+    if (b.source === 'kuda') return { value, source: 'kuda+csprng', meta: b.meta };
+  }
+  return { value, source: 'csprng' };
 }

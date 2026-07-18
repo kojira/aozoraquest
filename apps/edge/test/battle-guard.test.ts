@@ -8,7 +8,7 @@ const DID = 'did:plc:alice';
 const NOW = '2026-07-19T00:00:00.000Z';
 
 const guard = (turn: number): BattleGuard => ({
-  did: DID, battleId: 'btl-1', turn, sealed: { s: 1 }, state: { hp: 10 }, rewarded: true,
+  did: DID, battleId: 'btl-1', turn, sealed: { s: 1 }, state: { hp: 10 }, pendingTurnSeed: 0x12345678, rewarded: true,
   expiresAt: NOW, createdAt: NOW, updatedAt: NOW,
 });
 

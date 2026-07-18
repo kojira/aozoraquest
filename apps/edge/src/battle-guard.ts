@@ -11,7 +11,7 @@
  * 封印内容 (`sealed`) と現戦闘 state (`state`) は `packages/core` の型だが、本モジュールは中身を
  * 解釈しない (opaque)。core 型は battle.ts が所有する。
  */
-import { getRecord, putRecord, PdsError, type PdsSession } from './pds';
+import { getRecord, putRecord, deleteRecord, type PdsSession } from './pds';
 import { rkeyForDid } from './game-state';
 
 export const BATTLE_GUARD_COLLECTION = 'app.aozoraquest.battleGuard';
@@ -23,10 +23,19 @@ export interface BattleGuard<Sealed = unknown, State = unknown> {
   battleId: string;
   /** 次に受理するターン番号 (0 始まり)。turn リクエストの turn と一致必須。 */
   turn: number;
-  /** encounter で封印した startBattle 入力 (playerSnapshot + monster + seed 等)。以後不変。 */
+  /** encounter で封印した startBattle 入力 (playerSnapshot + monster + 内部 seed 等)。以後不変。
+   *  **クライアントには一切返さない**。とくに内部 seed を返すと、rollDrops/rollDefeatLoss/
+   *  summonMonster が seed 由来で決定的なため、クライアントが seed からドロップ/敗北ロス/敵ステを
+   *  先読みして「良い seed の戦闘だけ確定・悪ければ離脱」の選別チートが可能になる (レビュー ★★★)。
+   *  → 報酬計算も**サーバーが独立に引いたエントロピー**で行い、seed は Worker 内に封じる。 */
   sealed: Sealed;
-  /** 現在の戦闘 state (HP/MP 等)。毎ターン更新。 */
+  /** 現在の戦闘 state (HP/MP 等)。毎ターン更新。**client 向け DTO では seed を除去して返す**。 */
   state: State;
+  /** 次ターンに使う**サーバー事前採番のエントロピー** (32bit)。encounter / 各 turn の CAS 確定時に
+   *  次ターン分を引いて封じておくことで、(a) リトライ時に同じ seed を再利用でき冪等 (同一ターンで
+   *  二重エントロピー消費/取りこぼしを防ぐ)、(b) クライアントは commands 送信前に次ターン乱数を
+   *  知り得ない (先読み不可)。決着ターンではドロップ/敗北ロスもこの seed から独立に導出する。 */
+  pendingTurnSeed: number;
   /** この戦闘で報酬対象か (encounter 時 power>=1 で確定+予約)。 */
   rewarded: boolean;
   /** 離脱ロス lazy 確定用の期限 (ISO)。 */
@@ -54,28 +63,20 @@ export async function createGuard(session: PdsSession, guard: BattleGuard): Prom
 }
 
 /**
- * ガードを turn+1 に進める (turn 決着前)。`expectedCid` で CAS。競合 (InvalidSwap) は「やり直し/
- * リプレイ」= 409 として上位に投げる。
+ * ガードを次ターンへ進める (= そのターンの解決結果を確定)。`expectedCid` で CAS。
+ *
+ * **順序 (docs/21 §4.1/§5)**: 部分2 の resolver は「ガード読取 → **確定 turnSeed** で resolveTurn →
+ * `advanceGuard({turn+1, 解決後 state, 次の pendingTurnSeed})`」を 1 CAS 書込で行い、**CAS の成否で
+ * クライアント応答をゲートする** (解決結果を返してから遅れて CAS を投げると、同一 turn の並行
+ * リクエストが別エントロピーで二重解決し「良い方を採用」される)。競合 (InvalidSwap) は「やり直し/
+ * リプレイ」= 409 として上位に投げ、**応答は返さない**。
  */
 export async function advanceGuard(session: PdsSession, guard: BattleGuard, expectedCid: string): Promise<{ cid: string }> {
   const { cid } = await putRecord(session, BATTLE_GUARD_COLLECTION, rkeyForDid(guard.did), guard, expectedCid);
   return { cid };
 }
 
-/** ガードを削除 (決着時)。CAS 付きで確実に「その CID のときだけ」消す。 */
+/** ガードを削除 (決着時)。CAS 付きで確実に「その CID のときだけ」消す (pds.ts の統一 xrpc 経由)。 */
 export async function deleteGuard(session: PdsSession, did: string, expectedCid: string): Promise<void> {
   await deleteRecord(session, BATTLE_GUARD_COLLECTION, rkeyForDid(did), expectedCid);
-}
-
-/** com.atproto.repo.deleteRecord (swapRecord 対応)。pds.ts に無いのでここで薄く。 */
-async function deleteRecord(session: PdsSession, collection: string, rkey: string, swapRecord: string): Promise<void> {
-  const res = await fetch(`${session.pdsUrl}/xrpc/com.atproto.repo.deleteRecord`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${session.accessJwt}` },
-    body: JSON.stringify({ repo: session.did, collection, rkey, swapRecord }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    throw new PdsError(`deleteRecord ${res.status}: ${body.message ?? ''}`, res.status, body.error);
-  }
 }
