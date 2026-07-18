@@ -172,6 +172,12 @@ a:active {
   opacity: 0.7;
 }
 
+/* <button> を内包するリンクは、テキストリンク用の下線 (border-bottom) を出さない。
+   これが無いとボタン直下に dotted の横線が走って見える (精霊画面の「冒険する」等)。 */
+a:has(button) {
+  border-bottom: none;
+}
+
 button {
   font-family: inherit;
   font-size: 1em;
