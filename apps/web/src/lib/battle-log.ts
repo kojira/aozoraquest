@@ -145,8 +145,12 @@ export async function awardBattleXp(
 }
 
 /**
- * 今日 (JST) の試練の挑戦回数を数える (1 日上限の判定用)。listRecords は新しい順
- * に返るので、今日の JST 開始より前のレコードに達したら早期に打ち切る。
+ * 今日 (JST) の試練の挑戦回数を数える (1 日上限の判定用)。listRecords は rkey 降順
+ * (= 新しい順) に返り、rkey は `b-${Date.now().toString(36)}-...` の時刻ベースなので
+ * `at` と単調一致する。ゆえに `at` が今日の JST 開始より前に達したら以降は全て過去と
+ * みなして打ち切れる (日付境界の finishBattleRecord による at 上書きで最大 1 分の
+ * ずれは生じうるが、count 側は at===today のみ数えるので過剰カウントにはならない)。
+ * 上限は 10 なので今日ぶんは実質 1 ページ目で境界に達する。
  */
 export async function loadTrialsToday(agent: Agent, did: string, nowIso: string): Promise<number> {
   const records: { at?: string; source?: string }[] = [];

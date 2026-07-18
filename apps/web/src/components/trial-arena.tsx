@@ -35,7 +35,7 @@ import {
   type BattleLevelUps,
   type BattleStats,
 } from '@/lib/battle-log';
-import { TRIAL_DAILY_LIMIT, trialsRemaining } from '@/lib/trial-limit';
+import { TRIAL_DAILY_LIMIT, isTrialCapped, trialsRemaining } from '@/lib/trial-limit';
 import { formatGain, notifyLevelUp } from './level-up-overlay';
 import { loadCraftInventory } from '@/lib/crafting';
 import { loadGearRefs, resolveGear } from '@/lib/gear';
@@ -105,6 +105,9 @@ export function TrialArena({
   const [phase, setPhase] = useState<Phase>({ kind: 'select' });
   const [stats, setStats] = useState<BattleStats | null>(null);
   const [trialsToday, setTrialsToday] = useState<number | null>(null);
+  // begin の連打レース対策: state 反映は await 後で非同期なので、同期的に読める
+  // ref で「今日ぶんの確定 + 進行中」を数えてガードする (state は表示用)
+  const trialsTodayRef = useRef<number | null>(null);
   const [gearSel, setGearSel] = useState<GearSelection>({});
   const gearReadyRef = useRef(false);
   const gearSelRef = useRef(gearSel);
@@ -117,7 +120,12 @@ export function TrialArena({
 
   const refreshStats = useCallback(() => {
     loadBattleStats(agent, did).then(setStats).catch(() => {});
-    loadTrialsToday(agent, did, new Date().toISOString()).then(setTrialsToday).catch(() => {});
+    loadTrialsToday(agent, did, new Date().toISOString())
+      .then((n) => {
+        setTrialsToday(n);
+        trialsTodayRef.current = n;
+      })
+      .catch(() => {});
     // 装備 (gear/self の rkey 参照を所持個体で解決 — docs/20 W6c)
     Promise.all([loadCraftInventory(agent, did), loadGearRefs(agent, did)])
       .then(([inv, refs]) => {
@@ -147,11 +155,15 @@ export function TrialArena({
   const begin = useCallback(
     async (fixedTier?: 1 | 2 | 3) => {
       if (points.balance < BATTLE_TUNING.powerCost) return;
-      // 1 日の挑戦上限 (未取得 null のときは通す — 表示側でボタンを塞ぐ)
-      if (trialsToday !== null && trialsToday >= TRIAL_DAILY_LIMIT) {
+      // 1 日の挑戦上限。ref は同期的に読めるので連打しても超過しない
+      // (state 反映は await 後で遅れる — 複数 begin が同じ古い値を読む穴を塞ぐ)。
+      // 未取得 (null) のときは通す (表示側でボタンを塞ぐ)
+      if (isTrialCapped(trialsTodayRef.current)) {
         setErr(`今日の試練はここまで。また明日 (1 日 ${TRIAL_DAILY_LIMIT} 回まで)。`);
         return;
       }
+      // 挑戦を確定する前に ref を先押しで +1 (楽観)。失敗時はロールバックする
+      trialsTodayRef.current = (trialsTodayRef.current ?? 0) + 1;
       setErr(null);
       // 32bit seed (Math.random で十分。決定性はエンジン側の性質)
       const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
@@ -173,7 +185,8 @@ export function TrialArena({
       try {
         // 支払い + 仮レコード (棄権 = 敗北)。ここが失敗したらバトルを始めない。
         const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId, source: 'trial' });
-        setTrialsToday((n) => (n ?? 0) + 1);
+        // 表示 state を ref に合わせる (ref は begin 冒頭で先押し済み)
+        setTrialsToday(trialsTodayRef.current);
         void bumpPower(agent, did, { battles: 1 });
         onPointsChanged({ ...points, battles: points.battles + 1, balance: points.balance - BATTLE_TUNING.powerCost });
         // starting 中のときだけ battle へ (hold タイムアウトで select に戻した後に
@@ -183,6 +196,8 @@ export function TrialArena({
         setWipe((w) => (w === 'hold' ? 'reveal' : w));
       } catch (e) {
         console.warn('battle start failed', e);
+        // 先押しした ref を戻す (レコードが書かれなかったので消費しない)
+        trialsTodayRef.current = Math.max(0, (trialsTodayRef.current ?? 1) - 1);
         setErr('試練を始められなかった。通信を確認してもう一度どうぞ。');
         setPhase({ kind: 'select' });
         // select に向かって開き直す (CSS の都合で一瞬全面黒に跳んでから開く。許容)
@@ -350,10 +365,13 @@ export function TrialArena({
   //  レビュー ★★★ 指摘: 支払いが cover より速いのが最頻パス)
   const coveringBattle = phase.kind === 'battle' && wipe !== null && wipe !== 'reveal';
   if (phase.kind === 'select' || phase.kind === 'starting' || coveringBattle) {
-    const capped = trialsToday !== null && trialsToday >= TRIAL_DAILY_LIMIT;
+    const capped = isTrialCapped(trialsToday);
     const canPlay = points.balance >= BATTLE_TUNING.powerCost && !capped;
     const starting = phase.kind !== 'select';
     const remaining = trialsToday !== null ? trialsRemaining(trialsToday) : null;
+    // 残数の色: 3 回以上=通常、1-2 回=注意 (accent)、0=danger (レビュー ★★)
+    const remainingColor =
+      remaining === null || remaining > 2 ? 'var(--color-fg)' : remaining > 0 ? 'var(--color-accent)' : 'var(--color-danger)';
     return (
       <div>
         <SpiritBubble>
@@ -365,7 +383,7 @@ export function TrialArena({
           {remaining !== null && (
             <>
               {' / '}きょうの試練: のこり{' '}
-              <strong style={{ color: remaining > 0 ? 'var(--color-fg)' : 'var(--color-danger)' }}>{remaining}</strong> 回
+              <strong style={{ color: remainingColor }}>{remaining}</strong> 回
             </>
           )}
         </div>
@@ -389,11 +407,11 @@ export function TrialArena({
           </p>
         </div>
         <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-          ※ 試練の途中でやめる (画面を閉じる) と敗北あつかいになるよ。
+          ※ 試練の途中でやめる (画面を閉じる) と敗北あつかい + きょうの のこり回数も 1 へるよ。
         </p>
         {capped ? (
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
-            今日の試練は {TRIAL_DAILY_LIMIT} 回まで。また明日ちょうせんできるよ (あおぞらワールドの冒険はいつでも OK)。
+            今日の試練は {TRIAL_DAILY_LIMIT} 回まで。よなかの 0 時 (日本時間) に また {TRIAL_DAILY_LIMIT} 回 もらえるよ (あおぞらワールドの冒険はいつでも OK)。
           </p>
         ) : points.balance < BATTLE_TUNING.powerCost ? (
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.5em' }}>
@@ -497,7 +515,7 @@ export function TrialArena({
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"
-          disabled={points.balance < BATTLE_TUNING.powerCost}
+          disabled={points.balance < BATTLE_TUNING.powerCost || isTrialCapped(trialsToday)}
           onClick={() => void begin(tier)}
           style={{ padding: '0.7em 1.4em' }}
         >
@@ -507,6 +525,11 @@ export function TrialArena({
           試練の間に戻る
         </button>
       </div>
+      {isTrialCapped(trialsToday) && (
+        <p style={{ fontSize: '0.78em', color: 'var(--color-muted)', textAlign: 'center', marginTop: '0.5em' }}>
+          今日の試練は {TRIAL_DAILY_LIMIT} 回まで。よなかの 0 時 (日本時間) に また ちょうせんできるよ。
+        </p>
+      )}
       {wipeOverlay}
     </div>
   );

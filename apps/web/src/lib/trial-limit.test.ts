@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { countTrialsToday, jstDayKey, TRIAL_DAILY_LIMIT, trialsRemaining } from './trial-limit';
+import { countTrialsToday, isTrialCapped, jstDayKey, TRIAL_DAILY_LIMIT, trialsRemaining } from './trial-limit';
 
 describe('jstDayKey', () => {
   test('JST 暦日に変換する (UTC+9)', () => {
@@ -46,5 +46,15 @@ describe('trialsRemaining', () => {
     expect(trialsRemaining(0)).toBe(TRIAL_DAILY_LIMIT);
     expect(trialsRemaining(TRIAL_DAILY_LIMIT)).toBe(0);
     expect(trialsRemaining(TRIAL_DAILY_LIMIT + 3)).toBe(0);
+  });
+});
+
+describe('isTrialCapped', () => {
+  test('未取得 (null) は未達扱い / 上限で true', () => {
+    expect(isTrialCapped(null)).toBe(false);
+    expect(isTrialCapped(0)).toBe(false);
+    expect(isTrialCapped(TRIAL_DAILY_LIMIT - 1)).toBe(false);
+    expect(isTrialCapped(TRIAL_DAILY_LIMIT)).toBe(true);
+    expect(isTrialCapped(TRIAL_DAILY_LIMIT + 5)).toBe(true);
   });
 });

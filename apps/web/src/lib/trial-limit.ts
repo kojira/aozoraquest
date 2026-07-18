@@ -43,3 +43,8 @@ export function countTrialsToday(
 export function trialsRemaining(usedToday: number): number {
   return Math.max(0, TRIAL_DAILY_LIMIT - usedToday);
 }
+
+/** 上限に達しているか (判定を 1 箇所に集約。null = 未取得は false)。 */
+export function isTrialCapped(usedToday: number | null): boolean {
+  return usedToday !== null && usedToday >= TRIAL_DAILY_LIMIT;
+}
