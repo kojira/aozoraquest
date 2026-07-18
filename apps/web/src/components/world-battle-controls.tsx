@@ -115,7 +115,10 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
           <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} labelColor="#fff" />
           {/* ため/回復を使う敵は生の MP を「バー」で見せる (「あと何回」の答えは出さず、
               残量から尽きるタイミングを予想させる — オーナー要望 2026-07-18)。通常攻撃
-              だけの敵は MP を使わないので出さない (混乱防止)。 */}
+              だけの敵は MP を使わないので出さない (混乱防止)。数値は残す (オーナーは「MP が
+              見える」を要望。maxMp は遭遇ごとに分散 + 発動は確率なので厳密予想は不可)。
+              fill 色だけ脅威種別で出し分ける (回復=緑/ため=橙。色は"答え"でなく"何を警戒
+              するか"の手がかり — レビュー ★★)。 */}
           {monsterDef?.ability && state.monster.maxMp > 0 && (
             <div style={{ maxWidth: 340, margin: '0.1em auto 0', textAlign: 'left' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68em', color: 'rgba(255,255,255,0.85)', textShadow: TEXT_SHADOW }}>
@@ -123,7 +126,7 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
                 <span style={{ fontFamily: 'ui-monospace, monospace' }}>{state.monster.mp} / {state.monster.maxMp}</span>
               </div>
               <div style={{ height: 5, background: 'var(--color-track-bg)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(state.monster.mp / state.monster.maxMp) * 100}%`, height: '100%', background: '#8ab6f0', transition: 'width 300ms ease' }} />
+                <div style={{ width: `${(state.monster.mp / state.monster.maxMp) * 100}%`, height: '100%', background: monsterDef.ability === 'healer' ? '#5fc37e' : '#e8802e', transition: 'width 300ms ease' }} />
               </div>
             </div>
           )}

@@ -196,6 +196,14 @@ describe('summonMonster', () => {
       expect(a.combatant.mp).toBe(a.combatant.maxMp);
     });
 
+    it('分散は def 抽選を変えない (同 seed なら variance 有無で同じモンスター)', () => {
+      // jitter は def 抽選の後に rng を引く前提。この順序が崩れると world の敵顔ぶれが
+      // 変わるので回帰で固定する (レビュー ★★)。
+      for (let s = 1; s <= 30; s++) {
+        expect(summonMonster(2, 10, s, 1, undefined, 0.15).def.id).toBe(summonMonster(2, 10, s, 1, undefined, 0).def.id);
+      }
+    });
+
     it('同 seed でも variance の有無で HP がばらつく (jitter が効く)', () => {
       // def 選択は jitter より前なので同 seed なら def は同一 → 差は jitter 由来
       let changed = 0;

@@ -1141,7 +1141,9 @@ export function World() {
               maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
               locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}が多い`}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
-              // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)
+              // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)。
+              // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る
+              // inBattle を使う — wipe='cover' の一瞬は値=battle 由来 / z=HUD_Z で意図的に非対称。
               zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
             />
           )}
