@@ -12,6 +12,8 @@ import {
   resolveTurn,
   rollDefeatLoss,
   rollDrops,
+  rollSearch,
+  SEARCH_TUNING,
   earnedTitles,
   MONSTERS,
   MONSTERS_BY_ID,
@@ -698,5 +700,40 @@ describe('earnedTitles', () => {
   it('上位条件で複数獲得 (単調)', () => {
     const titles = earnedTitles({ wins: 100, losses: 10, bestStreak: 12, tier3Wins: 15 });
     expect(titles.length).toBe(7);
+  });
+});
+
+describe('rollSearch (しらべる — luk 連動でアイテム発見)', () => {
+  it('決定的 (同 seed/luk/tier で同結果)', () => {
+    expect(rollSearch(12345, 20, 1)).toBe(rollSearch(12345, 20, 1));
+  });
+  it('見つかったものは実在の素材 or 消耗品 id', () => {
+    const valid = new Set(['herb', 'sky-dew', ...MONSTERS.filter((m) => m.tier === 1).flatMap((m) => m.drops.map((d) => d.item))]);
+    for (let seed = 0; seed < 200; seed++) {
+      const r = rollSearch(seed, 10, 1);
+      if (r !== null) expect(valid.has(r)).toBe(true);
+    }
+  });
+  it('luk が高いほど発見率が上がる', () => {
+    const findRate = (luk: number) => {
+      let found = 0;
+      for (let seed = 0; seed < 500; seed++) if (rollSearch(seed, luk, 1) !== null) found++;
+      return found / 500;
+    };
+    expect(findRate(60)).toBeGreaterThan(findRate(0));
+  });
+  it('発見率は上限を超えない (luk 極大でも maxFindChance 以下)', () => {
+    let found = 0;
+    for (let seed = 0; seed < 1000; seed++) if (rollSearch(seed, 999, 1) !== null) found++;
+    expect(found / 1000).toBeLessThanOrEqual(SEARCH_TUNING.maxFindChance + 0.05);
+  });
+  it('tier3 では tier3 素材が出うる (地方連動)', () => {
+    const t3 = new Set(MONSTERS.filter((m) => m.tier === 3).flatMap((m) => m.drops.map((d) => d.item)));
+    let sawT3 = false;
+    for (let seed = 0; seed < 500 && !sawT3; seed++) {
+      const r = rollSearch(seed, 80, 3);
+      if (r && t3.has(r)) sawT3 = true;
+    }
+    expect(sawT3).toBe(true);
   });
 });

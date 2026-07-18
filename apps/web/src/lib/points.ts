@@ -49,9 +49,12 @@ export interface PointsState {
   craftPowerSpent: number;
   /** 素材のひきとりで得たパワー総量 (docs/20。レートは SALE_TUNING) */
   salePowerEarned: number;
+  /** 「しらべる」で消費したパワー総量 (docs/19。1 回 = SEARCH_TUNING.powerCost)。
+   *  専用レコードは持たず累積カウンタのみ (プレビュー限定。正は W3)。 */
+  searchPowerSpent: number;
   /** 召喚済みか (spiritChat レコードが 1 件でもあるか) */
   summoned: boolean;
-  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws - battles) */
+  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent - searchPowerSpent + salePowerEarned) */
   balance: number;
   /** 召喚に必要な残り投稿数 = max(0, SUMMON_THRESHOLD - viaPosts) */
   toSummon: number;
@@ -66,6 +69,7 @@ interface PowerRecord {
   battles?: number;
   craftPowerSpent?: number;
   salePowerEarned?: number;
+  searchPowerSpent?: number;
   summoned: boolean;
   updatedAt: string;
 }
@@ -74,7 +78,8 @@ function deriveState(rec: PowerRecord): PointsState {
   const battles = rec.battles ?? 0;
   const craftPowerSpent = rec.craftPowerSpent ?? 0;
   const salePowerEarned = rec.salePowerEarned ?? 0;
-  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws - battles - craftPowerSpent + salePowerEarned);
+  const searchPowerSpent = rec.searchPowerSpent ?? 0;
+  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws - battles - craftPowerSpent - searchPowerSpent + salePowerEarned);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - rec.viaPosts);
   return {
     viaPosts: rec.viaPosts,
@@ -83,6 +88,7 @@ function deriveState(rec: PowerRecord): PointsState {
     battles,
     craftPowerSpent,
     salePowerEarned,
+    searchPowerSpent,
     summoned: rec.summoned,
     balance,
     toSummon,
@@ -102,14 +108,18 @@ async function writePowerRecord(agent: Agent, base: Omit<PowerRecord, 'updatedAt
 /** 旧方式: PDS の post / spiritChat / cardDraw を実際に走査して計算する。
  *  loadPointsState のマイグレーション用 + power レコード破損時の復旧用に残す。 */
 async function scanFullPoints(agent: Agent, did: string): Promise<PointsState> {
-  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws, battles, { craftPowerSpent, salePowerEarned }] = await Promise.all([
+  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws, battles, { craftPowerSpent, salePowerEarned }, existing] = await Promise.all([
     countViaPosts(agent, did),
     countSpiritChat(agent, did),
     countCardDraws(agent, did),
     countBattles(agent, did),
     sumCraftPower(agent, did),
+    readPowerRecord(agent, did),
   ]);
-  const balance = Math.max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent + salePowerEarned);
+  // しらべる消費は専用レコードから再構築できないので、既存 record の値を carry
+  // (破損復旧時に消えないように。record 無し = 初回マイグレーションなら 0)。
+  const searchPowerSpent = existing?.searchPowerSpent ?? 0;
+  const balance = Math.max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent - searchPowerSpent + salePowerEarned);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - viaPosts);
   return {
     viaPosts,
@@ -118,6 +128,7 @@ async function scanFullPoints(agent: Agent, did: string): Promise<PointsState> {
     battles,
     craftPowerSpent,
     salePowerEarned,
+    searchPowerSpent,
     summoned: hasAnySpiritChat,
     balance,
     toSummon,
@@ -189,6 +200,7 @@ export async function loadPointsState(agent: Agent, did: string): Promise<Points
     battles: scanned.battles,
     craftPowerSpent: scanned.craftPowerSpent,
     salePowerEarned: scanned.salePowerEarned,
+    searchPowerSpent: scanned.searchPowerSpent,
     summoned: scanned.summoned,
   };
   try {
@@ -210,6 +222,8 @@ export interface PowerDelta {
   craftPowerSpent?: number;
   /** 素材のひきとりで得たパワー */
   salePowerEarned?: number;
+  /** 「しらべる」で消費したパワー */
+  searchPowerSpent?: number;
   /** 召喚状態を強制 true に立てるとき指定。下げる用途は今のところ無し。 */
   summoned?: true;
 }
@@ -226,6 +240,7 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
         battles: scanned.battles,
         craftPowerSpent: scanned.craftPowerSpent,
         salePowerEarned: scanned.salePowerEarned,
+        searchPowerSpent: scanned.searchPowerSpent,
         summoned: scanned.summoned,
         updatedAt: new Date().toISOString(),
       };
@@ -237,6 +252,7 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
       battles: (cur.battles ?? 0) + (delta.battles ?? 0),
       craftPowerSpent: (cur.craftPowerSpent ?? 0) + (delta.craftPowerSpent ?? 0),
       salePowerEarned: (cur.salePowerEarned ?? 0) + (delta.salePowerEarned ?? 0),
+      searchPowerSpent: (cur.searchPowerSpent ?? 0) + (delta.searchPowerSpent ?? 0),
       summoned: delta.summoned ?? cur.summoned,
     };
     await writePowerRecord(agent, next);
