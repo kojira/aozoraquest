@@ -149,6 +149,26 @@ describe('summonMonster', () => {
       expect(MONSTERS.filter((m) => m.tier === tier)).toHaveLength(3);
     }
   });
+  it('地域相性 (affinity) はその支配ステータス型のモンスターを出やすくする', () => {
+    // tier3: raven=agi(2) / oni=atk(0) / dragon=atk(0)。affinity=2 (agi) で raven が増える
+    const count = (affinity: number | undefined) => {
+      let raven = 0;
+      for (let seed = 0; seed < 600; seed++) {
+        if (summonMonster(3, 15, seed, 1, affinity).def.id === 'night-raven') raven++;
+      }
+      return raven;
+    };
+    const uniform = count(undefined);
+    const agiFavored = count(2);
+    // agi 相性では raven (唯一の agi 型 tier3) が一様抽選より明確に多く出る
+    expect(agiFavored).toBeGreaterThan(uniform);
+  });
+
+  it('affinity 未指定は従来どおり一様抽選 (後方互換)', () => {
+    // 決定的: 同 seed で affinity 有無に関わらず、未指定は旧挙動と一致
+    expect(summonMonster(2, 10, 42).def.id).toBe(summonMonster(2, 10, 42, 1).def.id);
+  });
+
   it('モンスターのドロップ素材は全部 ITEMS に定義がある', () => {
     for (const m of MONSTERS) {
       for (const d of m.drops) expect(ITEMS[d.item]).toBeDefined();

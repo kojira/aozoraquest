@@ -520,6 +520,16 @@ export function tierForDanger(danger: number): 1 | 2 | 3 {
   return danger <= 1 ? 1 : danger === 2 ? 2 : 3;
 }
 
+/** 地域の「相性」= その地域で出やすいモンスターの支配ステータス (0=atk/1=def/2=agi/
+ *  3=int/4=luk)。region から決定的。同じ tier でも地域ごとに出る顔ぶれが変わり、
+ *  ドロップ素材も偏る (「ジョブと相性のある地域 / その素材は別ジョブ用でトレード」の
+ *  土台。オーナー要望 2026-07-18)。遭遇はこの型のモンスターを重み付けで選ぶ。 */
+export function regionAffinity(region: number): 0 | 1 | 2 | 3 | 4 {
+  const rx = region % REGIONS_PER_SIDE;
+  const ry = Math.floor(region / REGIONS_PER_SIDE);
+  return (Math.floor(hash2(rx, ry, WORLD_SEED * 29 + 13) * 5) % 5) as 0 | 1 | 2 | 3 | 4;
+}
+
 /** region とその周囲 8 リージョン (トーラス 3×3)。「ちずのかけら」1 枚の開示範囲 —
  *  街に入るとその街の地方一帯の地図をもらえる (docs/19 W5)。重複なし・昇順。 */
 export function regionsAround(region: number): number[] {

@@ -15,6 +15,7 @@ import {
   jobLevelFromXp,
   playerCombatant,
   playerLevelFromXp,
+  regionAffinity,
   regionDanger,
   regionOf,
   regionsAround,
@@ -453,6 +454,8 @@ export function World() {
             tonics,
             ...(d.rpgStats ? { baseStats: statVectorToArray(d.rpgStats) } : {}),
             ...(resolvedGearRef.current ? { gear: resolvedGearRef.current.selection } : {}),
+            // 地域の相性: その地方で出やすいモンスターの型を偏らせる (顔ぶれ・素材が変わる)
+            affinity: regionAffinity(regionOf(nx, ny)),
           },
         );
         // 敗北ペナルティの素材ロスを開戦時に確定 (seed から決定的)。持ち込み分の

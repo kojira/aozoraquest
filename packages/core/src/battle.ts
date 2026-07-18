@@ -545,10 +545,46 @@ function monsterLevelFactor(tier: 1 | 2 | 3, playerLevel: number, jobLevel: numb
  *  プレイヤーだけ加算されると線形項を定数 tierBoost で相殺できず、
  *  高レベル帯 (plLv40+) で tier3 が作業化する (レビュー指摘)。
  *  ジョブ間の格差是正 (低ステ職の相対的な伸び) は同量加算でも保たれる。 */
-export function summonMonster(tier: 1 | 2 | 3, playerLevel: number, seed: number, jobLevel = 1): { def: MonsterDef; combatant: Combatant } {
+/** モンスターの支配ステータス index (0=atk/1=def/2=agi/3=int/4=luk)。地域相性の
+ *  重み付けに使う (regionAffinity と同じ軸)。 */
+function monsterDominantStat(def: MonsterDef): number {
+  let maxI = 0;
+  for (let i = 1; i < def.stats.length; i++) if (def.stats[i]! > def.stats[maxI]!) maxI = i;
+  return maxI;
+}
+
+/** 地域相性の重み (支配ステータスが affinity と一致するモンスターをこの倍率で優遇)。 */
+const AFFINITY_WEIGHT = 3;
+
+/**
+ * tier のプールからモンスターを選ぶ。affinity (地域の相性 = regionAffinity) が指定
+ * されると、その支配ステータスのモンスターを AFFINITY_WEIGHT 倍で重み付け抽選する
+ * (同じ tier でも地域ごとに顔ぶれが変わる = ドロップ素材も偏る。オーナー要望 2026-07-18)。
+ */
+export function summonMonster(
+  tier: 1 | 2 | 3,
+  playerLevel: number,
+  seed: number,
+  jobLevel = 1,
+  affinity?: number,
+): { def: MonsterDef; combatant: Combatant } {
   const pool = MONSTERS.filter((m) => m.tier === tier);
   const rng = createRng((seed ^ 0x51ed270b) >>> 0);
-  const def = pool[Math.floor(rng() * pool.length)]!;
+  let def: MonsterDef;
+  if (affinity === undefined) {
+    def = pool[Math.floor(rng() * pool.length)]!;
+  } else {
+    // 相性一致は重く。重み付き累積抽選 (決定的)
+    const weights = pool.map((m) => (monsterDominantStat(m) === affinity ? AFFINITY_WEIGHT : 1));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let pick = rng() * total;
+    let idx = 0;
+    for (; idx < pool.length; idx++) {
+      pick -= weights[idx]!;
+      if (pick < 0) break;
+    }
+    def = pool[Math.min(idx, pool.length - 1)]!;
+  }
   const factor = monsterLevelFactor(tier, playerLevel, jobLevel);
   const flat = BATTLE_TUNING.flatLevelGain * Math.max(0, playerLevel - 1);
   const grown = def.stats.map((v) => v + flat) as unknown as StatArray;
@@ -619,6 +655,8 @@ export function startBattle(
     equipIds?: readonly string[];
     /** 装備中の個体 (強化値つき)。アプリ本則 */
     gear?: GearSelection;
+    /** 地域の相性 (regionAffinity)。指定するとその型のモンスターが出やすくなる。 */
+    affinity?: number;
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -628,7 +666,7 @@ export function startBattle(
   if (carry?.mp !== undefined) {
     player.mp = Math.max(0, Math.min(player.maxMp, Math.floor(carry.mp)));
   }
-  const { def, combatant } = summonMonster(tier, playerLevel, seed, jobLevel);
+  const { def, combatant } = summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity);
   const gains = mpGainsFor(archetype);
   return {
     seed,
