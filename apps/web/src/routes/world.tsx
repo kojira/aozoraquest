@@ -456,6 +456,8 @@ export function World() {
             ...(resolvedGearRef.current ? { gear: resolvedGearRef.current.selection } : {}),
             // 地域の相性: その地方で出やすいモンスターの型を偏らせる (顔ぶれ・素材が変わる)
             affinity: regionAffinity(regionOf(nx, ny)),
+            // 敵 HP/MP に遭遇ごとの分散 (値を覚えられないように = 予想させる。world のみ)
+            vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
           },
         );
         // 敗北ペナルティの素材ロスを開戦時に確定 (seed から決定的)。持ち込み分の
@@ -1130,13 +1132,18 @@ export function World() {
           />
           {combat && curHp !== null && curMp !== null && (
             <WorldHud
-              hp={curHp}
-              maxHp={combat.maxHp}
-              mp={curMp}
-              maxMp={combat.maxMp}
+              // 戦闘中は上枠 HP/MP を「戦闘中の実 HP/MP」(battle.state.player) に追従させる。
+              // ws.hp/ws.mp は戦闘終了時にしか更新されないので、それを見ると結果画面まで
+              // 減らないバグになる (オーナー報告 2026-07-18)。フィールドでは ws 由来。
+              hp={battle ? battle.state.player.hp : curHp}
+              maxHp={battle ? battle.state.player.maxHp : combat.maxHp}
+              mp={battle ? battle.state.player.mp : curMp}
+              maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
               locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}が多い`}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
-              // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)
+              // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)。
+              // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る
+              // inBattle を使う — wipe='cover' の一瞬は値=battle 由来 / z=HUD_Z で意図的に非対称。
               zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
             />
           )}
