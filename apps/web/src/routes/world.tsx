@@ -723,24 +723,26 @@ export function World() {
   const searchHere = useCallback((): string => {
     const s = wsRef.current;
     const pts = pointsRef.current;
-    if (!s || !agent || !did) return 'いま しらべられない。';
-    if (!pts || pts.balance < SEARCH_TUNING.powerCost) return 'パワーが たりない (しらべるには 1 いる)。';
+    if (!s || !agent || !did) return 'いま しらべられない (つうしんを かくにんして)。';
+    if (!pts || pts.balance < SEARCH_TUNING.powerCost) return `パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`;
     const luk = combatRef.current?.luk ?? 0;
     const tier = tierForDanger(regionDanger(regionOf(s.x, s.y)));
     const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
     const found = rollSearch(seed, luk, tier);
     // パワーを 1 消費 (見つかっても見つからなくても。無料の無限試行を作らない)
+    const left = Math.max(0, pts.balance - SEARCH_TUNING.powerCost);
     void bumpPower(agent, did, { searchPowerSpent: SEARCH_TUNING.powerCost });
     setPoints((p) => (p ? { ...p, searchPowerSpent: p.searchPowerSpent + SEARCH_TUNING.powerCost, balance: Math.max(0, p.balance - SEARCH_TUNING.powerCost) } : p));
-    if (!found) return 'あたりを しらべたが、なにも なかった…';
-    // 在庫に加える (消耗品はスタック表示、素材は materialsRef)
+    if (!found) return `あたりを しらべたが、なにも なかった… (のこりパワー ${left})`;
+    // 在庫に加える。消耗品 (やくそう/しずく) は「どうぐ」で使え、素材は「もちもの」に入る
+    const isConsumable = found === 'herb' || found === 'sky-dew';
     if (found === 'herb') setHerbStock((n) => n + 1);
     else if (found === 'sky-dew') setTonicStock((n) => n + 1);
-    else if (found === 'sky-feather') setFeatherStock((n) => n + 1);
     const m = materialsRef.current;
     m[found] = (m[found] ?? 0) + 1;
     setMaterialsView({ ...m });
-    return `しらべると、${ITEMS[found]?.name ?? found} を 1 つ 見つけた!`;
+    const where = isConsumable ? 'どうぐ' : 'もちもの';
+    return `しらべると、${ITEMS[found]?.name ?? found} を 1 つ 見つけた! (${where}で かくにん / のこりパワー ${left})`;
   }, [agent, did]);
 
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
@@ -1030,7 +1032,8 @@ export function World() {
     () => [
       // 並び順は「しらべる」(次 PR) を どうぐ の後に差し込む前提で固定 (筋肉記憶を裏切らない)
       { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
-      { key: 'search', label: 'しらべる', onSelect: () => setSearchMsg(searchHere()) },
+      // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
+      ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => setSearchMsg(searchHere()) } as WorldMenuCommand]),
       { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
       { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
       { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },

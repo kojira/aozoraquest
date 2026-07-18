@@ -989,7 +989,9 @@ function tierMaterials(tier: 1 | 2 | 3): string[] {
  */
 export function rollSearch(seed: number, luk: number, tier: 1 | 2 | 3): string | null {
   const t = SEARCH_TUNING;
-  const rng = createRng((seed ^ 0x51ed270b) >>> 0);
+  // salt は他の roll (summonMonster/rollDrops/rollDefeatLoss) と別値にして、W3 で
+  // seed を共有したときに rng ストリームが相関しないようにする (レビュー ★)
+  const rng = createRng((seed ^ 0x3c6ef35f) >>> 0);
   const findChance = Math.min(t.maxFindChance, t.baseFindChance + luk * t.findLukScale);
   if (rng() >= findChance) return null; // 何も見つからなかった
   const matChance = Math.min(t.materialMax, t.materialBase + luk * t.materialLukScale);
