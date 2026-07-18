@@ -411,7 +411,7 @@ export function World() {
         void (async () => {
           try {
             // 支払い + 仮レコード (途中離脱 = 棄権 = 敗北)。失敗したら遭遇なしに戻す。
-            const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId, materialsLost });
+            const rkey = await startBattleRecord(agent, { seed, tier, monsterId: state.monsterId, materialsLost, source: 'world' });
             void bumpPower(agent, did, { battles: 1 });
             setPoints((p) => (p ? { ...p, battles: p.battles + 1, balance: p.balance - BATTLE_TUNING.powerCost } : p));
             setBattle((b) => {
