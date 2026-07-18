@@ -81,7 +81,8 @@ export function buildClientMetadata(cfg: OAuthConfig): Record<string, unknown> {
   return {
     client_id: cfg.clientId,
     client_name: 'aozoraquest',
-    client_uri: 'https://aozoraquest.app',
+    // client_uri は client_id と**同一オリジン必須** (AT Proto OAuth)。edge のオリジンにする。
+    client_uri: cfg.publicOrigin,
     redirect_uris: [cfg.redirectUri],
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
