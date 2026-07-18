@@ -14,6 +14,14 @@
   (`app.aozoraquest.power/self` に `battles` カウンタを追加。旧レコードは欠落 → 0 扱い)。
 - 勝利でパワーは**返さない** (インフレ防止)。報酬は XP / 戦績 / 称号 / 素材ドロップ。
 - 挑戦条件: ブルスコン召喚済み (従来の SUMMON_THRESHOLD ゲートを流用)。
+- **1 日の挑戦上限 = 10 回** (`TRIAL_DAILY_LIMIT`、JST 暦日区切り。オーナー要望
+  2026-07-18)。上限は試練 (`source='trial'`) のみで、あおぞらワールドの野外遭遇
+  (`source='world'`) は対象外。カウントは battle レコードをその日ぶん集計 (専用
+  カウンタは持たない)。途中離脱 (棄権) も仮レコードが残るので 1 回と数える。
+  実装は `apps/web/src/lib/trial-limit.ts`。**W3 (Worker/DO 権威化) 時に上限判定を
+  サーバへ移す**まで、複数端末同時挑戦の厳密な超過防止はできない (クライアント
+  自己申告のため数回超過し得る。パワー消費は正しく引かれるので無料無制限ではない)。
+  その際は `TRIAL_DAILY_LIMIT` を core tuning へ移す想定。
 
 ## バトルエンジン (packages/core/src/battle.ts)
 
