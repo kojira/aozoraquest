@@ -1,7 +1,7 @@
 import { Agent, AtpAgent } from '@atproto/api';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { clearOAuthStorage, onSessionDeleted, restoreSession, signOut } from './oauth';
+import { breakStaleOAuthLock, clearOAuthStorage, onSessionDeleted, restoreSession, signOut } from './oauth';
 
 /**
  * 公開 AppView エンドポイント。OAuth セッションの PDS は app.bsky.* を
@@ -110,6 +110,11 @@ export function useSessionLoader(): SessionState {
       const onOAuthCallback = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('code');
       const startedAt = Date.now();
       try {
+        // **根本対策**: 復元前に、他コンテキスト (凍結した背景タブ等) が OAuth セッションロックを握った
+        // ままなら steal で解放する。これをしないと期限切れトークンのリフレッシュがロック取得待ちで
+        // 無限ハングする (実機 dump で確定)。callback (新規ログイン) では既存ロックは無関係なので触らない。
+        // 自身の 2s 上限付き best-effort (ここで固まらせない)。
+        if (!onOAuthCallback) await withTimeout(breakStaleOAuthLock(), 2_000, 'lockcheck').catch(() => {});
         const session = onOAuthCallback
           ? await restoreSession()
           : await withTimeout(restoreSession(), RESTORE_TIMEOUT_MS, 'restore');
