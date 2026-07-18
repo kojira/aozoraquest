@@ -467,7 +467,8 @@ export interface MonsterDef {
   stats: StatArray;
   /** 勝利時に得る XP。tier を目安にモンスター個別に設定して幅を持たせる (tier だけで
    *  決めると はぐれメタルのような「同 tier で飛び抜けて高 XP」の敵が作れない —
-   *  オーナー要望 2026-07-18)。 */
+   *  オーナー要望 2026-07-18)。なお本格的なはぐれメタル型 (高 xp + 高回避 + 低 HP +
+   *  高逃走) には別途モンスター側の逃走挙動が要る (未実装。#341)。 */
   xp: number;
   drops: readonly DropDef[];
   /** ひとこと (召喚時の口上に使う) */
@@ -500,18 +501,19 @@ export const ITEMS: Record<string, { name: string }> = {
 };
 
 export const MONSTERS: readonly MonsterDef[] = [
-  // tier1: 手習い (初心者でも勝てる)。xp 16〜24
-  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], xp: 16, drops: [{ item: 'slime-drop', chance: 0.7 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
-  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], xp: 20, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 24, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
-  // tier2: 修練。xp 34〜44 (healer は削り合いが長引くぶん高め)
+  // tier1: 手習い (初心者でも勝てる)。xp 14〜30。同 tier 内も体感できる幅を持たせる
+  // (レビュー: 差が小さすぎると誤差に埋もれる)。tier をまたぐ差はさらに大きい。
+  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], xp: 14, drops: [{ item: 'slime-drop', chance: 0.7 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
+  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], xp: 22, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 30, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
-  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], xp: 44, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
-  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], xp: 38, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
-  // tier3: 真剣勝負。xp 55〜72
-  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], xp: 55, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
-  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], xp: 64, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
-  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], xp: 72, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
+  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
+  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [30, 18, 22, 10, 10], xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
+  // tier3: 真剣勝負。xp 62〜96
+  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [26, 14, 34, 16, 14], xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
+  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [40, 28, 12, 8, 12], xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
+  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [32, 24, 18, 26, 10], xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
 ];
 
 export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
