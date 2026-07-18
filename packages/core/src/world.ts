@@ -520,14 +520,17 @@ export function tierForDanger(danger: number): 1 | 2 | 3 {
   return danger <= 1 ? 1 : danger === 2 ? 2 : 3;
 }
 
-/** 地域の「相性」= その地域で出やすいモンスターの支配ステータス (0=atk/1=def/2=agi/
- *  3=int/4=luk)。region から決定的。同じ tier でも地域ごとに出る顔ぶれが変わり、
- *  ドロップ素材も偏る (「ジョブと相性のある地域 / その素材は別ジョブ用でトレード」の
- *  土台。オーナー要望 2026-07-18)。遭遇はこの型のモンスターを重み付けで選ぶ。 */
-export function regionAffinity(region: number): 0 | 1 | 2 | 3 | 4 {
+/** 地域の「相性」= その地域で出やすくなるモンスターを **その tier のプール内 index** で
+ *  指す (0 起点、summonMonster が pool.length で mod)。region から決定的。
+ *  stat 型ではなく実在モンスターの index にするのは、各 tier のプール (3 種) が 5 stat 型を
+ *  網羅せず「該当型ゼロ = 相性が無効」になる死角を避けるため (レビュー ★★★)。これで
+ *  全地域が必ず特定のモンスターを favor し、顔ぶれ・ドロップ素材が地域ごとに偏る
+ *  (「ジョブと相性のある地域」の土台。オーナー要望 2026-07-18)。 */
+export function regionAffinity(region: number): number {
   const rx = region % REGIONS_PER_SIDE;
   const ry = Math.floor(region / REGIONS_PER_SIDE);
-  return (Math.floor(hash2(rx, ry, WORLD_SEED * 29 + 13) * 5) % 5) as 0 | 1 | 2 | 3 | 4;
+  // 0..255 の決定的ハッシュ。favor する index は summonMonster 側で pool.length mod
+  return Math.floor(hash2(rx, ry, WORLD_SEED * 29 + 13) * 256);
 }
 
 /** region とその周囲 8 リージョン (トーラス 3×3)。「ちずのかけら」1 枚の開示範囲 —

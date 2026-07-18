@@ -7,6 +7,7 @@ import {
   JOB_SKILL_NAMES,
   playerCombatant,
   summonMonster,
+  favoredMonsterFor,
   pickTrialTier,
   startBattle,
   resolveTurn,
@@ -149,8 +150,8 @@ describe('summonMonster', () => {
       expect(MONSTERS.filter((m) => m.tier === tier)).toHaveLength(3);
     }
   });
-  it('地域相性 (affinity) はその支配ステータス型のモンスターを出やすくする', () => {
-    // tier3: raven=agi(2) / oni=atk(0) / dragon=atk(0)。affinity=2 (agi) で raven が増える
+  it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
+    // tier3 pool = [raven, oni, dragon]。affinity%3==0 は raven を favor
     const count = (affinity: number | undefined) => {
       let raven = 0;
       for (let seed = 0; seed < 600; seed++) {
@@ -159,9 +160,12 @@ describe('summonMonster', () => {
       return raven;
     };
     const uniform = count(undefined);
-    const agiFavored = count(2);
-    // agi 相性では raven (唯一の agi 型 tier3) が一様抽選より明確に多く出る
-    expect(agiFavored).toBeGreaterThan(uniform);
+    const ravenFavored = count(0); // 0 % 3 = 0 = raven
+    expect(ravenFavored).toBeGreaterThan(uniform);
+    // どの affinity でも必ず実在モンスターを favor (死に相性が無い)
+    for (let a = 0; a < 3; a++) {
+      expect(favoredMonsterFor(3, a).tier).toBe(3);
+    }
   });
 
   it('affinity 未指定は従来どおり一様抽選 (後方互換)', () => {
