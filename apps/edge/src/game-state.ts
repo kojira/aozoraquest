@@ -84,9 +84,13 @@ export async function readModifyWrite(
       await putRecord(session, GAME_STATE_COLLECTION, rkey, next, swap);
       return next;
     } catch (e) {
-      if (e instanceof PdsError && e.xrpcError === 'InvalidSwap' && attempt < retries) continue; // 競合 → 再読込してやり直し
-      throw e;
+      if (e instanceof PdsError && e.xrpcError === 'InvalidSwap') {
+        if (attempt < retries) continue; // 競合 → 再読込して mutate をやり直し
+        // 最終試行も競合 = 枯渇。上位が「503 相当」に振り分けられるよう sentinel を付ける
+        throw new PdsError('CAS リトライ上限 (競合が解消しない)', 409, 'CasExhausted');
+      }
+      throw e; // 非 InvalidSwap は即 throw (リトライしない)
     }
   }
-  throw new PdsError('CAS リトライ上限 (競合が解消しない)');
+  throw new PdsError('unreachable'); // ループは必ず return/throw する
 }

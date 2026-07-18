@@ -31,7 +31,16 @@ export interface PdsSession {
 async function xrpc<T>(url: string, init: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   const text = await res.text();
-  const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  // 非 JSON 応答 (502 HTML / プロキシエラー等) の JSON.parse 例外を PdsError にラップして
+  // 上位が「PDS 由来」と識別できるようにする (素の SyntaxError を漏らさない)。
+  let body: Record<string, unknown> = {};
+  if (text) {
+    try {
+      body = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new PdsError(`XRPC 非 JSON 応答 (${res.status})`, res.status);
+    }
+  }
   if (!res.ok) {
     throw new PdsError(`XRPC ${res.status}: ${(body.message as string) ?? url}`, res.status, body.error as string | undefined);
   }
@@ -69,7 +78,8 @@ export async function getRecord<T = unknown>(pdsUrl: string, repo: string, colle
   try {
     return await xrpc<RecordResult<T>>(`${pdsUrl}/xrpc/com.atproto.repo.getRecord?${q}`, { method: 'GET' });
   } catch (e) {
-    if (e instanceof PdsError && (e.status === 400 || e.xrpcError === 'RecordNotFound')) return null;
+    // 不在は RecordNotFound のみで null に。他の 400 (InvalidRequest 等) は握り潰さず throw。
+    if (e instanceof PdsError && e.xrpcError === 'RecordNotFound') return null;
     throw e;
   }
 }

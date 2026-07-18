@@ -104,4 +104,36 @@ describe('game-state', () => {
     // 100-30=70 でなく、競合後の 50-30=20 になっていること (= 古い値のまま上書きしていない)
     expect(result.power).toBe(20);
   });
+
+  const jsonRes = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
+  const existingRec = { did: DID, power: 5, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: NOW };
+
+  it('CAS 競合が解消しなければ CasExhausted で throw', async () => {
+    globalThis.fetch = (async (url: string) =>
+      url.includes('getRecord') ? jsonRes(200, { uri: 'x', cid: 'cidA', value: existingRec }) : jsonRes(400, { error: 'InvalidSwap' })) as unknown as typeof fetch;
+    await expect(readModifyWrite(session, DID, (c) => ({ ...c, power: c.power + 1 }), { now: NOW, retries: 2 })).rejects.toMatchObject({ xrpcError: 'CasExhausted' });
+  });
+
+  it('InvalidSwap 以外のエラー (トークン失効等) は即 throw しリトライしない', async () => {
+    let puts = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('getRecord')) return jsonRes(400, { error: 'RecordNotFound' });
+      puts++;
+      return jsonRes(401, { error: 'ExpiredToken' });
+    }) as unknown as typeof fetch;
+    await expect(readModifyWrite(session, DID, (c) => c, { now: NOW, retries: 5 })).rejects.toMatchObject({ xrpcError: 'ExpiredToken' });
+    expect(puts).toBe(1);
+  });
+
+  it('CAS 競合時に mutate が再実行される (契約の可視化)', async () => {
+    let puts = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('getRecord')) return jsonRes(200, { uri: 'x', cid: `c${puts}`, value: existingRec });
+      puts++;
+      return puts === 1 ? jsonRes(400, { error: 'InvalidSwap' }) : jsonRes(200, { uri: 'x', cid: 'cFinal' });
+    }) as unknown as typeof fetch;
+    let mutateCalls = 0;
+    await readModifyWrite(session, DID, (c) => { mutateCalls++; return { ...c, power: c.power + 1 }; }, { now: NOW });
+    expect(mutateCalls).toBe(2);
+  });
 });
