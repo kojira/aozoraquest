@@ -162,8 +162,12 @@ commands 送信前に client が次乱数を知り得ないようにする。レ
   アカウント認証情報 (Secret) で putRecord。`app.aozoraquest.gameState` レコード (per DID)。
   `GET /api/me/state` (JWT 必須・自分のみ)。初回はクランプ移行。compare-and-swap 実装。**課金不要
   (DO 無し)。**
+- **M2.5 — OAuth write 認証基盤 (§12)**: app-password が legacy 廃止トレンドのため、書き込み認証を
+  AT Proto OAuth (confidential client) + DPoP + cron refresher で組む。client-metadata + KV トークン
+  ストア + アプリ内設定の管理者リンクからの初回 OAuth。M3 の書き込みはこれを消費。
 - **M3 — 戦闘の権威化**: §5 の毎ターンプロトコル (encounter/turn) + kuda 物理乱数 + core への乱数
   注入口。playerSnapshot 封印、パワー/素材/gear/戦闘 XP を権威 state に。§7 パワーモデル。
+  part1 (乱数機構) ✅ #347 / part2 (resolver、M2.5 の write 認証を消費)。
 - **M4 — 投稿 XP の権威化**: `/api/xp/post` + 冪等化 + レート制限。「アプリ経由」要件緩和。
 - **M5 — リリース判断**、**M6+ — 対人 (トレード #327/ランキング)**。
 
@@ -191,3 +195,54 @@ kuda は `pool_remaining` を監視し、枯渇/障害時は fail-closed か CSP
 - **本設計 (Worker + サーバーアカウント PDS 権威 + サーバー乱数(既定CSPRNG/任意kuda) + 毎ターン + snapshot 封印)**: DO 不要・
   課金不要・ATP ネイティブ。`packages/core` 決定性と既存 edge Worker と kuda を活かす。AT Proto の
   "PDS が正本" のまま、**正本の repo をユーザーから app サーバーアカウントへ移す**のが要点。
+
+## 12. OAuth write 認証基盤 (M2.5、app-password を使わない)
+
+**背景 (方針変更)**: 当初は権威 state への書き込みをサーバーアカウントの **app-password** (Worker
+Secret) + `createSession` で行う設計だった (§4.1)。しかし **app-password は Bluesky が OAuth へ移行する
+流れで legacy 扱い → 将来廃止の可能性**があるため、書き込み認証を **AT Protocol OAuth (confidential
+client) + DPoP** で組み直す。これを M3-part2 (resolver) の前段 **M2.5** として先に作る。
+
+### 12.1 なぜ cron refresher か
+OAuth の refresh token は **単回使用でローテーション**する。stateless な Worker は複数 isolate で
+並行するので、複数箇所が同時に refresh すると token が壊れてロックアウトする。→ **refresh するのは
+Cron Trigger Worker 1 つだけ**に限定 (書き手を直列化)。リクエスト処理 Worker は現在の access token を
+**読むだけ**で refresh しない。Cron Trigger は無料プランで使え、DO/Paid 不要の方針を維持する。
+
+### 12.2 構成要素
+- **client-metadata.json**: edge に公開する confidential client メタデータ (`client_id` = その URL)。
+  M1 の `did:web:edge.aozoraquest.app` + well-known 配信インフラを流用。トークン寿命を延ばすため
+  **`private_key_jwt`** でクライアント認証する。
+- **クライアント鍵 (ES256 JWK)**: `private_key_jwt` 署名用。安定なので Worker Secret。公開鍵は
+  client-metadata の `jwks` に載せる。署名は `@noble/curves` (M1 と同じ道具、重い依存を足さない)。
+- **DPoP 鍵 (P-256)**: 全トークン/PDS リクエストは DPoP バインド (sender-constrained)。毎リクエストで
+  DPoP proof JWT を生成。安定鍵なので Worker Secret。
+- **トークンストア (Cloudflare KV)**: `{accessToken, refreshToken, expiresAt, dpopNonce}` を 1 箇所に。
+  cron が唯一の書き手、リクエスト Worker は読み手。KV は結果整合だが、access token は refresh 後も
+  期限まで有効なので少し古くても可 (refresh token の単回性が効くのは cron のみ)。
+- **Cron refresher Worker**: access token 失効前に refresh → 新トークンを KV へ。**refresh 成功後の
+  KV 保存失敗 = 旧 refresh token 消費済みでロックアウト**が唯一の弱点 → 保存を確認してから確定、
+  失敗は監査ログ + 管理画面で再 OAuth 導線。
+- **管理画面 (アプリ内設定)**: 初回だけ owner が authorize (code+PKCE) → callback で初期 refresh token
+  を KV に格納。**別アプリ (apps/admin) ではなく、メインアプリの設定画面内に「管理者 DID でログイン
+  している時だけ」表示する管理者リンク**から入る (owner 要望)。ロックアウト時も同じ導線で再 OAuth。
+
+### 12.3 リクエスト時の書き込み経路
+encounter/turn 等の書き込み Worker: KV から access token + DPoP 鍵を読む → PDS へ DPoP 認証付き
+putRecord/deleteRecord。token 失効 (401) は **fail-closed (503)** に倒し、次の cron 補充を待つ
+(request Worker は refresh しない = 直列化維持)。cron 間隔 << token 寿命にしてダウンタイムを避ける。
+`server-session.ts` (app-password 版) はこの OAuth トークン読取に置き換える (`withServerAuth` の
+「失効時リトライを1箇所に閉じ込める」構造は流用)。
+
+### 12.4 owner セットアップ (app-password の "Secret 1個" より増える)
+1. Cloudflare KV namespace 作成 + wrangler binding。
+2. クライアント鍵・DPoP 鍵を Secret 設定 (鍵生成はこちらでスクリプト用意)。
+3. アプリ内設定 → 管理者リンク → 1 回 OAuth ログイン (初期 refresh token を格納)。
+`SERVER_HANDLE` は廃止 (createSession の identifier は不要、OAuth は DID/handle 解決で処理)。
+
+### 12.5 実装順 (mock で単体テスト、owner セットアップ後に dev 疎通)
+1. DPoP / private_key_jwt の JWT 生成・検証ユーティリティ (@noble、単体テスト)。
+2. client-metadata.json 配信 + OAuth authorize/callback ルート (PKCE)。
+3. KV トークンストア抽象 + cron refresher。
+4. 書き込み経路を OAuth トークン読取へ (server-session 置換)。
+5. アプリ内設定の管理者リンク (管理者 DID 限定表示) → OAuth 開始導線。
