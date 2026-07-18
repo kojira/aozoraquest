@@ -75,6 +75,25 @@ export function jobTagline(id: string): string | null {
   return id in JOB_TAGLINES ? JOB_TAGLINES[id as Archetype] : null;
 }
 
+/**
+ * 戦闘中に敵の残り HP/MP を見抜ける職業 (オーナー選定 2026-07-18)。
+ * 見通し (Ni: 賢者・予言者)、霊視 (巫女)、解析 (魔法使い=仕組みを解く研究者)、
+ * 看破 (忍者=一瞬の見切り) のテーマ。非対応職は DQ1 のように敵の体力が見えず、
+ * 「見抜けること」自体が職業の個性・パーティ編成の価値になる。
+ */
+export const ENEMY_VITALS_ARCHETYPES: ReadonlySet<Archetype> = new Set<Archetype>([
+  'sage',
+  'seer',
+  'miko',
+  'mage',
+  'ninja',
+]);
+
+/** その職業が戦闘中に敵の残り HP/MP を見抜けるか。未知 ID は false。 */
+export function canSeeEnemyVitals(archetype: string | null | undefined): boolean {
+  return !!archetype && ENEMY_VITALS_ARCHETYPES.has(archetype as Archetype);
+}
+
 /** ベクトル (配列) を StatVector (オブジェクト) に変換 */
 export function statArrayToVector(arr: StatArray): StatVector {
   return { atk: arr[0], def: arr[1], agi: arr[2], int: arr[3], luk: arr[4] };

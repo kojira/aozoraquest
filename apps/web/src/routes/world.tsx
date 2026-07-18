@@ -4,8 +4,8 @@ import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForDanger,
   BATTLE_TUNING,
+  canSeeEnemyVitals,
   ITEMS,
-  MONSTERS_BY_ID,
   jobDisplayName,
   levelUpGains,
   townShopStock,
@@ -49,7 +49,6 @@ import { Avatar } from '@/components/avatar';
 import { BattleScene, BattleCommands } from '@/components/battle-view';
 import { BattleResultPanel, type WorldBattleResult } from '@/components/world-battle-result';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
-import { MonsterSvg } from '@/components/monster-svg';
 import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
@@ -1083,6 +1082,9 @@ export function World() {
               mp={curMp}
               maxMp={combat.maxMp}
               locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}が多い`}
+              // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
+              // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)
+              zIndex={inBattle || battleResult ? OVERLAY_Z + 1 : HUD_Z}
             />
           )}
           {menuHint && !onboarding && !menuOpen && (
@@ -1110,7 +1112,9 @@ export function World() {
             </div>
           )}
           {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
-          {/* 戦闘シーン: 暗転したマップ枠内に敵とログを重ねる (DQ1 風。ページ遷移なし) */}
+          {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。
+              敵+ログ+コマンド、リザルトの報酬まで全部この枠内に畳む。上枠 (paddingTop)
+              は WorldHud の HP/MP 帯を空けておく。 */}
           {(inBattle || battleResult) && (
             <div
               style={{
@@ -1118,25 +1122,33 @@ export function World() {
                 inset: 0,
                 zIndex: OVERLAY_Z,
                 pointerEvents: 'auto', // 操作オーバーレイ層: 背面スティックへの貫通を吸う
-                background: 'rgba(8, 10, 16, 0.9)',
+                background: 'rgba(8, 10, 16, 0.92)',
                 display: 'flex',
                 flexDirection: 'column',
-                justifyContent: 'center',
                 padding: '0.5em',
+                paddingTop: '2.7em', // 上枠 WorldHud (HP/MP) の帯を避ける
                 overflow: 'hidden',
               }}
             >
               {inBattle && battle ? (
-                <BattleScene state={battle.state} headerNote={DANGER_LABELS[danger]} monsterSize={104} compact />
-              ) : battleResult ? (
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ opacity: battleResult.state.outcome === 'win' ? 0.45 : 1, display: 'inline-block', transform: battleResult.state.outcome === 'win' ? 'rotate(180deg)' : 'none' }}>
-                    <MonsterSvg species={MONSTERS_BY_ID[battleResult.state.monsterId]?.species ?? 'slime'} size={92} />
+                <>
+                  {/* 上: 敵+ログ (余白を占有・上寄せ = あふれても敵の頭でなくログ側で
+                      逃がす)、下: 注意書き (1 ターン目だけ) + コマンド段。敵 HP/MP は
+                      見抜ける職業のみ (canSeeEnemyVitals)。 */}
+                  <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                    <BattleScene state={battle.state} monsterSize={72} compact showEnemyVitals={canSeeEnemyVitals(archetype)} />
                   </div>
-                  <h3 style={{ margin: '0.3em 0 0', color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
-                    {battleResult.state.outcome === 'win' ? '勝利!' : battleResult.state.outcome === 'lose' ? 'まけてしまった…' : battleResult.state.outcome === 'fled' ? 'にげだした!' : 'ひきわけ'}
-                  </h3>
-                </div>
+                  {battle.state.turn === 0 && (
+                    <p style={{ margin: '0.2em 0', fontSize: '0.62em', lineHeight: 1.3, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
+                      とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがある。
+                    </p>
+                  )}
+                  <div style={{ flex: '0 0 auto' }}>
+                    <BattleCommands state={battle.state} busy={battle.busy} onCommand={(c) => void onBattleCommand(c)} compact />
+                  </div>
+                </>
+              ) : battleResult ? (
+                <BattleResultPanel result={battleResult} onClose={() => setBattleResult(null)} />
               ) : null}
             </div>
           )}
@@ -1149,17 +1161,9 @@ export function World() {
         <DialogueWindow lines={[{ speaker: 'ブルスコン', text: starterMsg }]} plateIcon={<SpiritIcon size={20} />} onDone={() => setStarterMsg(null)} />
       )}
 
-      {/* マップ下: 戦闘中はコマンド窓 (DQ1 の下段)、リザルト中は結果、通常は操作ヒント */}
-      {inBattle && battle ? (
-        <div style={{ marginTop: '0.4em' }}>
-          <p style={{ margin: '0 0 0.3em', fontSize: '0.68em', color: 'var(--color-muted)', textAlign: 'center' }}>
-            ※ とちゅうでやめる (画面を閉じる) と敗北あつかい。まけると素材を落とすことがあるよ。
-          </p>
-          <BattleCommands state={battle.state} busy={battle.busy} onCommand={(c) => void onBattleCommand(c)} />
-        </div>
-      ) : battleResult ? (
-        <BattleResultPanel result={battleResult} onClose={() => setBattleResult(null)} />
-      ) : (
+      {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
+          をなくす — オーナー要望 2026-07-18)。通常時のみ操作ヒント。 */}
+      {!inBattle && !battleResult && (
         <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
           じぶんを タップすると コマンドが ひらくよ。
         </p>
