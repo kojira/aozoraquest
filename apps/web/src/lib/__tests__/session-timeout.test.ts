@@ -78,3 +78,39 @@ describe('clearOAuthStorage (壊れた永続セッションの復旧)', () => {
     await expect(p).resolves.toBeUndefined();
   });
 });
+
+describe('breakStaleOAuthLock (多重タブ/凍結タブのロック詰まり解除)', () => {
+  const DID = 'did:plc:abc';
+  const NAME = `@atproto-oauth-client-${DID}`;
+  afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
+
+  function stubLocks(held: { name: string }[]) {
+    const request = vi.fn(async (_n: string, _o: unknown, cb: () => Promise<void>) => { await cb(); });
+    vi.stubGlobal('navigator', { locks: { query: async () => ({ held, pending: [] }), request } } as unknown as Navigator);
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === '@@atproto/oauth-client-browser(sub)' ? DID : null) } as unknown as Storage);
+    return request;
+  }
+
+  it('他コンテキストがセッションロックを held のとき steal で解放する', async () => {
+    const request = stubLocks([{ name: NAME }]);
+    const { breakStaleOAuthLock } = await import('../oauth');
+    await expect(breakStaleOAuthLock()).resolves.toBe(true);
+    expect(request).toHaveBeenCalledWith(NAME, { steal: true }, expect.any(Function));
+  });
+
+  it('ロックが held でなければ何もしない (通常時は無干渉)', async () => {
+    const request = stubLocks([]); // 誰も握っていない
+    const { breakStaleOAuthLock } = await import('../oauth');
+    await expect(breakStaleOAuthLock()).resolves.toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('sub が localStorage に無ければ何もしない', async () => {
+    const request = vi.fn();
+    vi.stubGlobal('navigator', { locks: { query: async () => ({ held: [{ name: NAME }], pending: [] }), request } } as unknown as Navigator);
+    vi.stubGlobal('localStorage', { getItem: () => null } as unknown as Storage);
+    const { breakStaleOAuthLock } = await import('../oauth');
+    await expect(breakStaleOAuthLock()).resolves.toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+});
