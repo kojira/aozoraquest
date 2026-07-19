@@ -102,7 +102,7 @@ describe('playerCombatant', () => {
 describe('モンスターの行動バリエーション (charger/healer + MP)', () => {
   it('ため攻撃は一部 (~20%) のモンスターに限定 (charger)', () => {
     const chargers = MONSTERS.filter((m) => m.ability === 'charger');
-    // 全 9 種中 2 種 = ~22%。全モンスターが力をためる状態は解消 (オーナー要望 2026-07-18)
+    // 全 12 種中 2 種 = ~17%。全モンスターが力をためる状態は解消 (オーナー要望 2026-07-18)
     expect(chargers.length).toBe(2);
     expect(chargers.length / MONSTERS.length).toBeLessThanOrEqual(0.25);
   });
@@ -156,6 +156,25 @@ describe('summonMonster', () => {
     expect(stray?.ability).toBe('fleer');
     expect(stray?.spawnWeight).toBeLessThan(1);
     expect(stray?.hp).toBeDefined();
+  });
+
+  it('色違い強い版: tint + 専用素材 + レア出現 (spawnWeight<1) で差別化されている', () => {
+    // 強い版と専用素材の対応 (変種ごとに専用素材 — オーナー決定 2026-07-19)
+    const variants: Array<[string, string]> = [
+      ['red-slime', 'red-jelly'],
+      ['dusk-bat', 'dusk-wing'],
+      ['crimson-shroom', 'crimson-spore'],
+    ];
+    for (const [id, mat] of variants) {
+      const m = MONSTERS_BY_ID[id];
+      expect(m?.tier).toBe(1);
+      expect(m?.tint).toMatch(/^#[0-9a-f]{6}$/i); // 色違い (明示色)
+      expect(m?.spawnWeight).toBeLessThan(1); // 出現は base より稀
+      expect(m?.drops.some((d) => d.item === mat)).toBe(true); // 専用素材を落とす
+      expect(ITEMS[mat]).toBeDefined();
+    }
+    // そらいろスライムは最弱の練習敵 (xp 3)
+    expect(MONSTERS_BY_ID['sky-slime']?.xp).toBe(3);
   });
 
   it('はぐれスライム: HP 明示で低い + fleer は逃走して monster-fled で決着 (勝敗なし)', () => {
