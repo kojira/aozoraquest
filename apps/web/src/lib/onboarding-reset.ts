@@ -24,10 +24,14 @@ import { serverReset } from './world-server';
 /** 歓迎付与するあおぞらパワー (演出とともに加算)。 */
 export const WELCOME_POWER = 20;
 
-/** あるコレクションの全レコードを削除。records が尽きるまでページングする
- *  (途中で打ち切ると「完全ワイプ」にならず、直後の power 再集計に残留分が混ざる)。
- *  未作成コレクションは何もしない。安全上限 10000 件 (暴走防止)。 */
-async function deleteAllRecords(agent: Agent, did: string, collection: string): Promise<void> {
+/** あるコレクションの全レコードを削除。**applyWrites でバッチ削除**する — 1 件ずつ
+ *  逐次 deleteRecord すると、レコードが多いアカウントで数十〜数百往復かかり実質ハングする
+ *  (アクティブなアカウントでリセットが固まる不具合。所持記録が多いほど顕著)。
+ *  records が尽きるまでページングして rkey を集め、200 件ずつ applyWrites で一括削除する。
+ *  未作成コレクションは何もしない。安全上限 10000 件 (暴走防止)。
+ *  @internal export はテスト用 (バッチ削除の回帰防止)。 */
+export async function deleteAllRecords(agent: Agent, did: string, collection: string): Promise<void> {
+  const rkeys: string[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 100; page++) {
     let res;
@@ -36,14 +40,22 @@ async function deleteAllRecords(agent: Agent, did: string, collection: string): 
     } catch {
       return; // 未作成
     }
-    if (res.data.records.length === 0) break;
     for (const r of res.data.records) {
       const rkey = r.uri.split('/').pop();
-      if (rkey) await agent.com.atproto.repo.deleteRecord({ repo: did, collection, rkey }).catch(() => {});
+      if (rkey) rkeys.push(rkey);
     }
     const next = res.data.cursor;
-    if (!next || next === cursor) break;
+    if (!next || next === cursor || res.data.records.length === 0) break;
     cursor = next;
+  }
+  // 200 件/リクエストの applyWrites で一括削除 (逐次 deleteRecord の N 往復 → ceil(N/200) 往復)。
+  for (let i = 0; i < rkeys.length; i += 200) {
+    const writes = rkeys.slice(i, i + 200).map((rkey) => ({
+      $type: 'com.atproto.repo.applyWrites#delete' as const,
+      collection,
+      rkey,
+    }));
+    await agent.com.atproto.repo.applyWrites({ repo: did, writes }).catch(() => {});
   }
 }
 
