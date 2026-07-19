@@ -65,11 +65,14 @@ async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promis
 
 /** ユーザーの診断 (archetype + baseStats) + handle を PDS から読む。無ければ ResolverError(409)。
  *  `ns` は NSID prefix (dev は `app.aozoraquest.dev`)。edge は 1 デプロイで dev/prod を捌くので Origin から決める。 */
-async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray>; handle: string }> {
+async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray>; handle: string; jobXp: number; playerXp: number }> {
   const { pds, handle } = await resolveUserPds(userDid, fetchImpl);
-  const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector }>(pds, userDid, `${ns}.analysis`, 'self');
+  const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector; jobLevel?: { xp?: number }; playerLevel?: { xp?: number } }>(pds, userDid, `${ns}.analysis`, 'self');
   if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409, 'diagnosis_required');
-  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats), handle };
+  // Lv は analysis を正とする (archetype/素ステと同じ)。gameState 移行は env prefix 前の古い値で固まりうるため。
+  const jobXp = typeof rec.value.jobLevel?.xp === 'number' && rec.value.jobLevel.xp > 0 ? rec.value.jobLevel.xp : 0;
+  const playerXp = typeof rec.value.playerLevel?.xp === 'number' && rec.value.playerLevel.xp > 0 ? rec.value.playerLevel.xp : 0;
+  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats), handle, jobXp, playerXp };
 }
 
 export const POWER_COLLECTION = 'app.aozoraquest.power';
@@ -148,10 +151,11 @@ export interface EncounterInfo {
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
 export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
-  const { archetype, baseStats, handle } = await readDiagnosis(userDid, ns, fetchImpl);
+  const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
-  const jobLevel = jobLevelFromXp(state.jobXp[archetype] ?? 0);
-  const playerLevel = playerLevelFromXp(state.playerXp);
+  // Lv は analysis 由来 (表示と一致。gameState 移行が env prefix 前の古い値で固まる問題を回避)。
+  const jobLevel = jobLevelFromXp(jobXp);
+  const playerLevel = playerLevelFromXp(playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
@@ -274,8 +278,8 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const matId = item === 'herb' ? 'herb' : 'sky-dew';
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
-  const { archetype, baseStats, handle } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(state.jobXp[archetype] ?? 0), playerLevelFromXp(state.playerXp), handle, baseStats, state.gear);
+  const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  const c = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, state.gear, state.gearSel);
   let healed = 0;
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
@@ -314,8 +318,8 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   }
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-  const { archetype, baseStats, handle } = await readDiagnosis(userDid, ns, fetchImpl);
-  const luk = playerCombatant(archetype, jobLevelFromXp(state.jobXp[archetype] ?? 0), playerLevelFromXp(state.playerXp), handle, baseStats, state.gear, state.gearSel).luk;
+  const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  const luk = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, state.gear, state.gearSel).luk;
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   const found = rollSearch((await entropyU32({ useKuda: true })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };
