@@ -32,6 +32,21 @@ const BODIES: Record<MonsterSpecies, ReactElement> = {
       <path d="M42 68 Q50 74 58 68" fill="none" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
     </g>
   ),
+  // はぐれスライム: 同じ形の金属色 (銀) + きらめきのハイライトでレア感を出す。
+  'metal-slime': (
+    <g>
+      <path d="M50 18 C74 18 84 42 84 58 C84 76 68 84 50 84 C32 84 16 76 16 58 C16 42 26 18 50 18Z" fill="#c2ccd6" stroke={OUT} strokeWidth="4" />
+      <path d="M28 60 C30 74 42 80 50 80 C58 80 70 74 74 60 C70 70 60 74 50 74 C40 74 32 70 28 60Z" fill="#93a1b0" />
+      {/* 金属の明るい反射面 (ギラつき) */}
+      <path d="M24 46 C24 34 34 24 46 24 C40 30 34 40 34 50 C30 50 26 49 24 46Z" fill="#eaf1f8" opacity="0.85" />
+      <path d="M30 34 C36 26 46 24 50 24" fill="none" stroke="#ffffff" strokeWidth="6" strokeLinecap="round" />
+      <path d="M66 28 l3.2 5.4 l5.4 2.2 l-5.4 2.2 l-3.2 5.4 l-3.2 -5.4 l-5.4 -2.2 l5.4 -2.2Z" fill="#ffffff" />
+      <path d="M22 62 l2 3.4 l3.4 1.4 l-3.4 1.4 l-2 3.4 l-2 -3.4 l-3.4 -1.4 l3.4 -1.4Z" fill="#ffffff" opacity="0.9" />
+      <circle cx="38" cy="54" r="5" fill={OUT} />
+      <circle cx="62" cy="54" r="5" fill={OUT} />
+      <path d="M42 70 Q50 64 58 70" fill="none" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
+    </g>
+  ),
   bat: (
     <g>
       <path d="M8 40 Q20 26 34 34 L38 44 Q28 42 24 48Z" fill="#8f7ad6" stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />

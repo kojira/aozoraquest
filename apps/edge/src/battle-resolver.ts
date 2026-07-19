@@ -389,7 +389,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     // ガードを消せた 1 リクエストだけ = **二重報酬を防ぐ** (applyBattleOutcome は加算なので必須。§4.1c 冪等)。
     // token 切れで delete が失敗 → ServerWriteError が伝播し上位で 503 (報酬なし・guard 残る=リトライ可、
     // fail-closed)。この順序 (消費確定 → 報酬) が §4.1 の「CAS で先に確定 → その後 resolve/確定」。
-    const decision = next.outcome as BattleDecision;
+    // next.outcome は上の `!== 'ongoing'` で BattleDecision に絞り込み済み (キャスト不要 = 網羅を型で保証)。
+    const decision: BattleDecision = next.outcome;
     try {
       await deleteGuard(env, now, userDid, cid);
     } catch (e) {
