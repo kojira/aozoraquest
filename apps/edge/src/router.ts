@@ -29,6 +29,16 @@ export interface Env extends OAuthRoutesEnv {
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
+/** リクエストの Origin から NSID prefix を決める (#363: edge は 1 デプロイで dev/prod を捌く)。
+ *  client の VITE_NSID_ENV と一致させる: dev.aozoraquest.app→`app.aozoraquest.dev`、
+ *  localhost→`app.aozoraquest.local`、本番→`app.aozoraquest`。 */
+function nsFromOrigin(req: Request): string {
+  const origin = req.headers.get('origin') ?? '';
+  if (origin.includes('dev.aozoraquest.app')) return 'app.aozoraquest.dev';
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return 'app.aozoraquest.local';
+  return 'app.aozoraquest';
+}
+
 /** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
 const LXM_WHOAMI = 'app.aozoraquest.whoami';
 const LXM_ME_STATE = 'app.aozoraquest.me.state';
@@ -106,7 +116,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     // PDS へは書かない = 初回 move で確定)。initialized はレコード実在を表す。
     try {
       const rec = await readState(env, did);
-      const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString()));
+      const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString(), nsFromOrigin(req)));
       // 位置トークンも一緒に返す → client は初回から有効トークンを持て、初手 move の再同期/ワープを防ぐ。
       const token = signPosition(env, { did, x: state.x, y: state.y, counter: 0, iat: nowSec() });
       return cors(json({ state, initialized: rec !== null, token }), allowedOrigin);
@@ -133,10 +143,10 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
         if (typeof body.battleId !== 'string' || typeof body.turn !== 'number' || typeof body.command !== 'string') {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
-        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec())), allowedOrigin);
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req))), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
-      return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec())), allowedOrigin);
+      return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
