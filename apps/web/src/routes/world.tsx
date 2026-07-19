@@ -819,7 +819,10 @@ export function World() {
       window.setTimeout(() => window.location.reload(), WELCOME_TOTAL_MS + 900);
     } catch (e) {
       console.warn('[world] onboarding reset failed', e);
-      setNotice('リセットに失敗した (通信エラー)。もう一度どうぞ。');
+      // 失敗したステップ/理由を出す。resetOnboarding は `step: message` 形式 (WorldServerError も
+      // その message にラップ済み) で throw するので、message をそのまま出せば原因が分かる。
+      const detail = e instanceof Error ? e.message : '';
+      setNotice(`リセットに失敗した (${detail || '通信エラー'})。もう一度どうぞ。`);
       setResetting(false);
     } finally {
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);

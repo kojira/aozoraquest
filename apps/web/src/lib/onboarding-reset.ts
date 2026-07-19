@@ -24,12 +24,13 @@ import { serverReset } from './world-server';
 /** 歓迎付与するあおぞらパワー (演出とともに加算)。 */
 export const WELCOME_POWER = 20;
 
-/** あるコレクションの全レコードを削除。**applyWrites でバッチ削除**する — 1 件ずつ
- *  逐次 deleteRecord すると、レコードが多いアカウントで数十〜数百往復かかり実質ハングする
- *  (アクティブなアカウントでリセットが固まる不具合。所持記録が多いほど顕著)。
- *  records が尽きるまでページングして rkey を集め、200 件ずつ applyWrites で一括削除する。
+/** あるコレクションの全レコードを削除。**並列バッチの deleteRecord** で消す —
+ *  1 件ずつ逐次 await するとレコードが多いアカウントで数十〜数百往復かかり実質ハングする
+ *  (リセットが固まる不具合)。records を集めてから 25 件ずつ並列に削除する。
+ *  applyWrites の一括削除はバッチ全体が落ちる/入力検証で同期 throw する事故があり、
+ *  独立した deleteRecord を並列に投げる方が堅牢 (存在しない rkey は個別に無視)。
  *  未作成コレクションは何もしない。安全上限 10000 件 (暴走防止)。
- *  @internal export はテスト用 (バッチ削除の回帰防止)。 */
+ *  @internal export はテスト用 (並列削除の回帰防止)。 */
 export async function deleteAllRecords(agent: Agent, did: string, collection: string): Promise<void> {
   const rkeys: string[] = [];
   let cursor: string | undefined;
@@ -48,14 +49,13 @@ export async function deleteAllRecords(agent: Agent, did: string, collection: st
     if (!next || next === cursor || res.data.records.length === 0) break;
     cursor = next;
   }
-  // 200 件/リクエストの applyWrites で一括削除 (逐次 deleteRecord の N 往復 → ceil(N/200) 往復)。
-  for (let i = 0; i < rkeys.length; i += 200) {
-    const writes = rkeys.slice(i, i + 200).map((rkey) => ({
-      $type: 'com.atproto.repo.applyWrites#delete' as const,
-      collection,
-      rkey,
-    }));
-    await agent.com.atproto.repo.applyWrites({ repo: did, writes }).catch(() => {});
+  const BATCH = 25;
+  for (let i = 0; i < rkeys.length; i += BATCH) {
+    await Promise.all(
+      rkeys.slice(i, i + BATCH).map((rkey) =>
+        agent.com.atproto.repo.deleteRecord({ repo: did, collection, rkey }).catch(() => {}),
+      ),
+    );
   }
 }
 
@@ -87,11 +87,20 @@ async function zeroAnalysisXp(agent: Agent, did: string): Promise<void> {
  * 5. サーバー権威 gameState + 戦闘ガードを削除 → 次のワールド入場で初期状態を生成 (最後に実行)。
  */
 export async function resetOnboarding(agent: Agent, did: string): Promise<void> {
-  await deleteAllRecords(agent, did, COL.craft);
-  await deleteAllRecords(agent, did, COL.battle);
-  await deleteSelf(agent, did, COL.gear);
-  await deleteSelf(agent, did, COL.world);
-  await zeroAnalysisXp(agent, did);
-  await resetWorldPower(agent, did, WELCOME_POWER);
-  await serverReset(agent);
+  // 各ステップを label 付きで実行 — どのステップで失敗したかをエラーに載せて UI で分かるようにする
+  // (「リセットに失敗」だけだと原因が特定できない不具合対応)。
+  const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await fn();
+    } catch (e) {
+      throw new Error(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  await step('craft', () => deleteAllRecords(agent, did, COL.craft));
+  await step('battle', () => deleteAllRecords(agent, did, COL.battle));
+  await step('gear', () => deleteSelf(agent, did, COL.gear));
+  await step('world', () => deleteSelf(agent, did, COL.world));
+  await step('analysisXp', () => zeroAnalysisXp(agent, did));
+  await step('power', () => resetWorldPower(agent, did, WELCOME_POWER));
+  await step('serverReset', () => serverReset(agent));
 }
