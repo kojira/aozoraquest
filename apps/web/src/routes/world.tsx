@@ -803,10 +803,16 @@ export function World() {
   const doReset = useCallback(async () => {
     if (!agent || !did || resetting) return;
     if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化されます (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
-    setResetting(true); // 重い直列 I/O の間、進行オーバーレイを出す (無反応に見せない)
+    setResetting(true); // I/O の間、進行オーバーレイを出す (無反応に見せない)
     setMenuOpen(false);
     try {
-      await resetOnboarding(agent, did);
+      // 全体タイムアウト (30s)。PDS 応答が返らない等でも進行オーバーレイが永久に
+      // 固着しないよう fail-safe で throw する (実機で「もどしています…」から進めなく
+      // なる不具合の再発防止)。
+      await Promise.race([
+        resetOnboarding(agent, did),
+        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('reset timeout')), 30_000)),
+      ]);
       notifyWelcome({ power: WELCOME_POWER });
       // 演出 (フェード込み ≈ 3.3s) を見せ切って余韻を残してから初期状態で再入場
       window.setTimeout(() => window.location.reload(), WELCOME_TOTAL_MS + 900);
