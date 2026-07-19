@@ -11,7 +11,7 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant,
+  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch,
   terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
@@ -296,6 +296,32 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
     return { ...cur, materials: m, carryMp: newMp >= c.maxMp ? undefined : newMp };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed };
+}
+
+export interface SearchResult { found: string | null; materials: Record<string, number> }
+
+/** しらべる: サーバーが luk (装備込み) + tier (位置) + 物理乱数で判定し、当たれば gameState.materials に付与。
+ *  これで拾ったアイテムがサーバー在庫の正になる (client のみの幻ではなくなる)。パワー消費は当面 client 側。 */
+export async function handleSearch(env: ResolverEnv, userDid: string, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<SearchResult> {
+  let x: number, y: number;
+  try {
+    const c = verifyPosition(env, token ?? '', userDid, now);
+    x = c.x; y = c.y;
+  } catch {
+    const rec = await readState(env, userDid);
+    const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
+    x = s.x; y = s.y;
+  }
+  const rec = await readState(env, userDid);
+  const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
+  const { archetype, baseStats, handle } = await readDiagnosis(userDid, ns, fetchImpl);
+  const luk = playerCombatant(archetype, jobLevelFromXp(state.jobXp[archetype] ?? 0), playerLevelFromXp(state.playerXp), handle, baseStats, state.gear, state.gearSel).luk;
+  const tier = tierForDanger(regionDanger(regionOf(x, y)));
+  const found = rollSearch((await entropyU32({ useKuda: true })).value, luk, tier);
+  if (!found) return { found: null, materials: state.materials };
+  const written = await readModifyWrite(env, userDid, (cur) => ({ ...cur, materials: { ...cur.materials, [found]: (cur.materials[found] ?? 0) + 1 } }),
+    { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  return { found, materials: written.materials };
 }
 
 /** 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。
