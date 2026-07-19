@@ -506,7 +506,7 @@ export const ITEMS: Record<string, { name: string }> = {
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
   'slime-drop': { name: 'スライムのしずく' },
-  'metal-shard': { name: 'はぐれのかけら' }, // はぐれスライムの希少ドロップ (レア装備素材)
+  'metal-shard': { name: 'はぐれのかけら' }, // はぐれスライムの希少ドロップ。現状は換金専用 (将来レア装備素材に転用予定)
   'bat-wing': { name: 'コウモリの翼膜' },
   'mush-spore': { name: 'ヒカリダケの胞子' },
   'golem-core': { name: 'ゴーレムの核片' },
@@ -525,7 +525,7 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 30, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   // はぐれメタル型: レア出現・低 HP・高 XP・毎ターン逃走。倒せれば旨いが逃げられると何も残らない
   // (オーナー要望 2026-07-19)。HP は明示 (導出だと def なりに増えるため)。高 agi で逃げ足も速い。
-  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 45, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと光った。逃げ足が速そうだ!' },
+  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 45, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
@@ -610,10 +610,14 @@ export function summonMonster(
 ): { def: MonsterDef; combatant: Combatant } {
   const pool = MONSTERS.filter((m) => m.tier === tier);
   const rng = createRng((seed ^ 0x51ed270b) >>> 0);
-  // 出現重み = spawnWeight (default 1) × affinity 補正 (favor 対象を重く)。レア敵
-  // (spawnWeight<1) は favor されても稀なまま。重み付き累積抽選 (決定的)。
+  // 出現重み = spawnWeight (default 1) × affinity 補正 (favor 対象を重く)。ただし
+  // レア敵 (spawnWeight<1) は favor 対象にしない = どの地域でもごく稀のまま
+  // (地域相性で「はぐれメタルが出やすい街」を作らない — レビュー ★★)。重み付き累積抽選 (決定的)。
   const favored = affinity === undefined ? -1 : ((affinity % pool.length) + pool.length) % pool.length;
-  const weights = pool.map((m, i) => (m.spawnWeight ?? 1) * (i === favored ? AFFINITY_WEIGHT : 1));
+  const weights = pool.map((m, i) => {
+    const w = m.spawnWeight ?? 1;
+    return w * (i === favored && w >= 1 ? AFFINITY_WEIGHT : 1);
+  });
   const total = weights.reduce((a, b) => a + b, 0);
   let pick = rng() * total;
   let idx = 0;
@@ -842,8 +846,11 @@ function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
     return 'attack';
   }
   if (def?.ability === 'fleer') {
-    // 毎ターン逃走を試みる (agi が高いほど逃げやすい)。逃げられなければ通常攻撃。
-    const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + state.monster.agi * t.monsterFleeAgiScale));
+    // 毎ターン逃走を試みる。逃走率は**基準 agi (レベル非依存)** で決める — factor で
+    // スケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
+    // 上がって「成長するほど倒せない」逆進になる (レビュー ★★)。常に同じ緊張感にする。
+    const baseAgi = def.stats[2] ?? 0;
+    const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
     if (r < fleeChance) return 'flee';
     return 'attack';
   }

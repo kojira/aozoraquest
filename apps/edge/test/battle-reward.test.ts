@@ -11,7 +11,7 @@ const input = (over: Partial<BattleOutcomeInput> = {}): BattleOutcomeInput => ({
 describe('battle-reward (fail-closed 報酬確定)', () => {
   it('rewarded=false は勝敗どちらも何も変えない (パワー無し=練習)', () => {
     const s = base({ power: 0, playerXp: 100 });
-    for (const outcome of ['win', 'lose', 'draw', 'fled'] as const) {
+    for (const outcome of ['win', 'lose', 'draw', 'fled', 'monster-fled'] as const) {
       const { next, awarded } = applyBattleOutcome(s, input({ outcome, rewarded: false }));
       expect(next).toBe(s); // 参照ごと不変
       expect(awarded).toEqual({});
@@ -61,11 +61,15 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     for (const v of Object.values(next.materials)) expect(v).toBeGreaterThan(0);
   });
 
-  it('引き分け / 逃走は決着扱いにしない (パワーも消費しない)', () => {
-    const s = base({ power: 3 });
-    for (const outcome of ['draw', 'fled'] as const) {
+  it('引き分け / 逃走 / 敵の逃走は決着扱いにしない (XP・ドロップ・パワー消費なし)', () => {
+    // rewarded=true でも monster-fled は無報酬 = はぐれメタルに逃げられたら XP も素材もゼロ。
+    const s = base({ power: 3, playerXp: 100, jobXp: { warrior: 20 }, materials: { herb: 2 } });
+    for (const outcome of ['draw', 'fled', 'monster-fled'] as const) {
       const { next, awarded } = applyBattleOutcome(s, input({ outcome }));
-      expect(next.power).toBe(3);
+      expect(next.power).toBe(3); // パワー温存
+      expect(next.playerXp).toBe(100); // XP 変わらず
+      expect(next.jobXp.warrior).toBe(20);
+      expect(next.materials).toEqual({ herb: 2 }); // 素材変わらず
       expect(awarded).toEqual({});
     }
   });
