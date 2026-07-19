@@ -32,7 +32,7 @@ import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { serverMove, serverTurn, serverState, serverTeleport, serverItem, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
+import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -232,6 +232,13 @@ export function World() {
   const archetype = diag?.archetype ?? null;
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
+  // 装備をサーバーにミラー (戦闘に反映 #377)。解決結果が変わるたび送る = 初回ロード + 装備変更を一括カバー。
+  // 参照でなく内容キーで発火 (resolveGear は毎回新オブジェクトを返すため)。
+  const gearKey = JSON.stringify(resolvedGear?.selection ?? null);
+  useEffect(() => {
+    if (!agent || !worldServerEnabled || gearKey === 'null') return;
+    void serverGear(agent, JSON.parse(gearKey)).catch((e) => console.warn('[world] gear sync failed', e));
+  }, [agent, gearKey]);
   // combat (装備込み) と combatBase (装備なし) は gear 引数だけが違う。base 引数を
   // 共有タプルにして「そうび +N = combat − combatBase」の不変条件を構造的に守る
   // (5 行コピペだと片方の base 導出変更で内訳が黙って壊れる — レビュー ★★)
