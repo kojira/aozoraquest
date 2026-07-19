@@ -1,17 +1,16 @@
 /**
- * ブルスコンの試練の戦闘記録 (docs/18-brusukon-trial.md)。
+ * 戦闘記録 (`COL.battle`) の集計。
  *
- * 1 戦 = 1 レコードを `COL.battle` に書く。パワー消費の監査であり、
- * 戦績 (勝敗/連勝/称号) と素材ドロップの集計ソースでもある。
+ * 過去にブルスコンの試練 (端末で resolve するターン制バトル) が 1 戦 1 レコードを
+ * 書いていた歴史があり、その戦績 (勝敗/連勝/称号) と素材ドロップの集計ソースとして
+ * 残っている。試練撤去後は新規レコードの書き込み経路は無いが、過去レコードの読み取り
+ * (戦績表示・在庫フォールバック・パワー再スキャン) はそのまま生きている。
  * cardDraw と同じく端末には保存しない (端末を変えても整合する)。
  */
 
 import type { Agent } from '@atproto/api';
 import type { BattleOutcome, BattleRecordSummary } from '@aozoraquest/core';
-import { jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
-import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
-import { countTrialsToday, jstDayKey } from './trial-limit';
 
 export interface BattleLogRecord {
   $type: string;
@@ -34,152 +33,8 @@ export interface BattleLogRecord {
   materialsLost?: string[];
   at: string;
   via: string;
-  /** 挑戦の出所。試練の 1 日上限カウント (trial-limit) の対象判定に使う。
-   *  旧レコードは欠落 = 試練扱い (本番の過去戦闘は全て試練)。 */
+  /** 挑戦の出所。旧レコードは欠落 = 試練 (本番の過去戦闘は全て試練だった)。 */
   source?: 'trial' | 'world';
-}
-
-/**
- * 挑戦開始時に仮レコードを書く (支払いの記帳)。outcome は 'lose' で書いておき、
- * 決着時に finishBattleRecord で確定へ上書きする。**途中離脱 = 棄権 = 敗北**
- * (負けそうになったら閉じる、を無料・無記録にしない)。rkey を返す。
- */
-export async function startBattleRecord(
-  agent: Agent,
-  input: Pick<BattleLogRecord, 'seed' | 'tier' | 'monsterId' | 'materialsLost' | 'source'>,
-): Promise<string> {
-  const did = agent.assertDid;
-  const rkey = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-  await agent.com.atproto.repo.createRecord({
-    repo: did,
-    collection: COL.battle,
-    rkey,
-    record: {
-      $type: COL.battle,
-      ...input,
-      outcome: 'lose',
-      turns: 0,
-      drops: [],
-      herbsUsed: 0,
-      tonicsUsed: 0,
-      at: new Date().toISOString(),
-      via: VIA,
-    } satisfies BattleLogRecord,
-  });
-  return rkey;
-}
-
-/** 決着時に仮レコードを確定内容で上書きする。 */
-export async function finishBattleRecord(
-  agent: Agent,
-  rkey: string,
-  input: Omit<BattleLogRecord, '$type' | 'at' | 'via'>,
-): Promise<void> {
-  const did = agent.assertDid;
-  await agent.com.atproto.repo.putRecord({
-    repo: did,
-    collection: COL.battle,
-    rkey,
-    record: {
-      $type: COL.battle,
-      ...input,
-      at: new Date().toISOString(),
-      via: VIA,
-    } satisfies BattleLogRecord,
-  });
-}
-
-/** awardBattleXp が検出したレベルアップ (演出 notifyLevelUp とリザルト文言用)。 */
-export interface BattleLevelUps {
-  player?: { from: number; to: number };
-  job?: { from: number; to: number; archetype: string };
-}
-
-/**
- * バトルの経験値を analysis レコードに加算する (post-processor と同じ流儀:
- * playerLevel.xp は常に、jobLevel.xp も現ジョブに積む)。失敗は warn して swallow。
- * 戻り値でレベルアップの有無を返す (呼び出し側が演出を発火する)。
- * offsets: 画面表示のレベルがレコード外 XP (クエスト報酬の questXp 等) を含む場合、
- * 同じオフセットで判定しないと「表示 LV6 なのに 4→5 の演出」の食い違いが出る。
- */
-export async function awardBattleXp(
-  agent: Agent,
-  did: string,
-  xp: number,
-  offsets?: { jobXpOffset?: number; playerXpOffset?: number },
-): Promise<BattleLevelUps | null> {
-  try {
-    const analysis = await getRecord<{
-      archetype: string;
-      analyzedAt?: string;
-      playerLevel?: { xp: number; lastDailyBonusDate?: string; streakDays: number };
-      jobLevel?: { archetype: string; xp: number; joinedAt: string };
-      [k: string]: unknown;
-    }>(agent, did, COL.analysis, 'self');
-    if (!analysis) return null;
-    const playerLevel = analysis.playerLevel ?? { xp: 0, streakDays: 0 };
-    const jobLevel = analysis.jobLevel ?? {
-      archetype: analysis.archetype,
-      xp: 0,
-      joinedAt: analysis.analyzedAt ?? new Date().toISOString(),
-    };
-    await putRecord(agent, COL.analysis, 'self', {
-      ...analysis,
-      playerLevel: { ...playerLevel, xp: playerLevel.xp + xp },
-      jobLevel: { ...jobLevel, xp: jobLevel.xp + xp },
-    });
-    const jobOff = offsets?.jobXpOffset ?? 0;
-    const playerOff = offsets?.playerXpOffset ?? 0;
-    const ups: BattleLevelUps = {};
-    const pFrom = playerLevelFromXp(playerLevel.xp + playerOff);
-    const pTo = playerLevelFromXp(playerLevel.xp + xp + playerOff);
-    if (pTo > pFrom) ups.player = { from: pFrom, to: pTo };
-    const jFrom = jobLevelFromXp(jobLevel.xp + jobOff);
-    const jTo = jobLevelFromXp(jobLevel.xp + xp + jobOff);
-    if (jTo > jFrom) ups.job = { from: jFrom, to: jTo, archetype: jobLevel.archetype };
-    return ups;
-  } catch (e) {
-    console.warn('[battle] xp award failed', e);
-    return null;
-  }
-}
-
-/**
- * 今日 (JST) の試練の挑戦回数を数える (1 日上限の判定用)。listRecords は rkey 降順
- * (= 新しい順) に返り、rkey は `b-${Date.now().toString(36)}-...` の時刻ベースなので
- * `at` と単調一致する。ゆえに `at` が今日の JST 開始より前に達したら以降は全て過去と
- * みなして打ち切れる (日付境界の finishBattleRecord による at 上書きで最大 1 分の
- * ずれは生じうるが、count 側は at===today のみ数えるので過剰カウントにはならない)。
- * 上限は 10 なので今日ぶんは実質 1 ページ目で境界に達する。
- */
-export async function loadTrialsToday(agent: Agent, did: string, nowIso: string): Promise<number> {
-  const records: { at?: string; source?: string }[] = [];
-  const todayKey = jstDayKey(nowIso);
-  let cursor: string | undefined;
-  outer: for (let page = 0; page < 5; page++) {
-    let res;
-    try {
-      res = await agent.com.atproto.repo.listRecords({
-        repo: did,
-        collection: COL.battle,
-        limit: 100,
-        ...(cursor !== undefined ? { cursor } : {}),
-      });
-    } catch {
-      break; // 未作成
-    }
-    for (const r of res.data.records) {
-      const v = r.value as Partial<BattleLogRecord>;
-      const at = typeof v.at === 'string' ? v.at : undefined;
-      // 今日より前に達したら以降は全て過去 (新しい順) なので打ち切る
-      if (at && jstDayKey(at) < todayKey) break outer;
-      records.push({ ...(at ? { at } : {}), ...(v.source ? { source: v.source } : {}) });
-    }
-    const next = res.data.cursor;
-    if (!next || next === cursor) break;
-    cursor = next;
-  }
-  return countTrialsToday(records, nowIso);
 }
 
 /** 戦闘レコード数を数える (パワー再スキャン用。cardDraw と同じ最大 500 件)。 */

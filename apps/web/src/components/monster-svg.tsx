@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { MonsterSpecies } from '@aozoraquest/core';
 
 /**
- * 試練モンスターの SVG (docs/18-brusukon-trial.md)。
+ * モンスターの SVG (あおぞらワールドの野外遭遇で使う)。
  * 画像アセットなしのインライン SVG = 軽量・省メモリ (モバイル方針)。
  * species ごとに 1 枚、viewBox 100x100。ドット RPG 風の太い輪郭とシンプルな形。
  */
