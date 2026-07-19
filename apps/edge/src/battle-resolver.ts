@@ -12,7 +12,7 @@
  */
 import {
   startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp,
-  terrainAt, isWalkable, wrap, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
+  terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
@@ -234,6 +234,24 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     }
   }
   return { x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
+}
+
+export interface TeleportResult { x: number; y: number; token: string }
+
+/**
+ * そらのはねワープ: 街タイルへテレポートし、権威位置 + トークンを更新する (client だけで飛ぶと 1 歩で
+ * サーバーの旧位置に戻される)。**街タイルのみ許可**なので高tier地帯への任意ワープはできない (街=安全地帯)。
+ * 全回復 + lastTown 更新 (街到着なので)。孤立ガードがあれば破棄。消費 (そらのはね) は当面 client 側 (#372)。
+ */
+export async function handleTeleport(env: ResolverEnv, userDid: string, x: number, y: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<TeleportResult> {
+  const tx = wrap(x), ty = wrap(y);
+  if (!townAt(tx, ty)) throw new ResolverError('そこは街ではない (そらのはねは街へのみ)', 400);
+  const g = await readGuard<SealedMeta, BattleState>(env, userDid);
+  if (g) await deleteGuard(env, now, userDid, g.cid); // 念のため孤立ガードを破棄
+  await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: tx, y: ty, carryHp: undefined, carryMp: undefined, lastTown: { x: tx, y: ty } }),
+    { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  const token = signPosition(env, { did: userDid, x: tx, y: ty, counter: 0, iat: now });
+  return { x: tx, y: ty, token };
 }
 
 export interface TurnResult {

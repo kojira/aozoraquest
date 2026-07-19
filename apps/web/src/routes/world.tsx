@@ -32,7 +32,7 @@ import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { serverMove, serverTurn, serverState, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
+import { serverMove, serverTurn, serverState, serverTeleport, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -626,11 +626,24 @@ export function World() {
       scheduleSave();
       setNotice(`そらのはねで「${name}」へ舞いもどった!`);
       setWipe('reveal');
+      // サーバー権威の位置 + トークンも更新 (しないと 1 歩でサーバーの旧位置に戻される)。
+      // 同期完了まで移動をブロックし、古いトークンで move されないようにする。
+      if (agent) {
+        moveBusyRef.current = true;
+        void serverTeleport(agent, dest.x, dest.y)
+          .then((res) => {
+            tokenRef.current = res.token;
+            wsRef.current = wsRef.current ? { ...wsRef.current, x: res.x, y: res.y } : wsRef.current;
+            setWs(wsRef.current);
+          })
+          .catch((e) => { console.warn('[world] teleport sync failed', e); setNotice('ワープをサーバーに反映できなかった (通信エラー)。'); })
+          .finally(() => { moveBusyRef.current = false; });
+      }
       return;
     }
     // エンカウントは serverMove が既に封印済み (battle は準備完了) なので覆い切ったら開くだけ。
     setWipe('reveal');
-  }, [scheduleSave]);
+  }, [scheduleSave, agent]);
   const onRevealDone = useCallback(() => setWipe(null), []);
   // hold タイムアウト (通常は到達しない。serverMove は遭遇 state を同期で返すので hold に入らない)。
   // 保険としてマップに開き直す。
