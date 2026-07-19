@@ -12,6 +12,7 @@ const EDGE_URL = (import.meta.env.VITE_EDGE_URL as string | undefined)?.trim();
 const EDGE_DID = (import.meta.env.VITE_EDGE_DID as string | undefined)?.trim();
 
 const LXM_MOVE = 'app.aozoraquest.world.move';
+const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_TURN = 'app.aozoraquest.battle.turn';
 const LXM_STATE = 'app.aozoraquest.me.state';
 
@@ -89,6 +90,11 @@ export function serverMove(agent: Agent, dx: number, dy: number, token?: string)
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
 export function serverTurn(agent: Agent, battleId: string, turn: number, command: string): Promise<ServerTurnResult> {
   return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command });
+}
+
+/** そらのはねワープ: 街 (x,y) へテレポート。位置と署名トークンをサーバーが更新して返す (1歩で戻されない)。 */
+export function serverTeleport(agent: Agent, x: number, y: number): Promise<{ x: number; y: number; token: string }> {
+  return callEdge<{ x: number; y: number; token: string }>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
 }
 
 /** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */

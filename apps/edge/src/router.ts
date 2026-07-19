@@ -13,7 +13,7 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { handleMove, handleTurn, migrateInitState, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
@@ -43,6 +43,7 @@ function nsFromOrigin(req: Request): string {
 const LXM_WHOAMI = 'app.aozoraquest.whoami';
 const LXM_ME_STATE = 'app.aozoraquest.me.state';
 const LXM_WORLD_MOVE = 'app.aozoraquest.world.move';
+const LXM_WORLD_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 
 const AOZORA_ORIGINS = new Set([
@@ -147,6 +148,26 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
       return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // そらのはねワープ: 街タイルへテレポート (位置トークンを更新して 1 歩で戻されないようにする)。
+  if (req.method === 'POST' && url.pathname === '/api/world/teleport') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_TELEPORT }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { x?: number; y?: number };
+    if (typeof body.x !== 'number' || typeof body.y !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      return cors(json(await handleTeleport(env, did, body.x, body.y, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
