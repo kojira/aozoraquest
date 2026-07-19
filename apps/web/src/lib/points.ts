@@ -261,6 +261,32 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
   }
 }
 
+/**
+ * オンボードリセット用: world 由来の消費/獲得 (battles / craftPowerSpent / salePowerEarned /
+ * searchPowerSpent) を 0 に戻し、歓迎ボーナスだけを salePowerEarned に載せた power レコードを
+ * **絶対値で書き込む**。投稿由来 (viaPosts / userMessages / cardDraws) と summoned は保持。
+ *
+ * 絶対値書き込みなので**冪等** — 途中失敗で再実行しても +welcome が二重に乗らない。
+ * bumpPower(+welcome) を使うと (a) 残存する battles 消費が引かれ続けて「投稿残高保持」が崩れ、
+ * (b) リトライで二重加算される、という問題があるため専用関数にした。失敗は throw する
+ * (呼び出し側の reset フローがエラーを検知してリトライ導線に載せられるように)。
+ */
+export async function resetWorldPower(agent: Agent, did: string, welcomeBonus: number): Promise<void> {
+  const cur = await readPowerRecord(agent, did);
+  const base: { viaPosts: number; userMessages: number; cardDraws: number; summoned: boolean } =
+    cur ?? (await scanFullPoints(agent, did));
+  await writePowerRecord(agent, {
+    viaPosts: base.viaPosts,
+    userMessages: base.userMessages,
+    cardDraws: base.cardDraws,
+    battles: 0,
+    craftPowerSpent: 0,
+    salePowerEarned: welcomeBonus,
+    searchPowerSpent: 0,
+    summoned: base.summoned,
+  });
+}
+
 export async function countViaPosts(agent: Agent, did: string): Promise<number> {
   let cursor: string | undefined;
   let count = 0;

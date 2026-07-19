@@ -16,25 +16,38 @@ export function notifyWelcome(ev: WelcomeEvent) {
   }
 }
 
-const WELCOME_DURATION_MS = 3200;
+/** 演出の見せ時間 (フェード開始まで) と フェードの尺。合計 ≈ 3.3s。
+ *  呼び出し側の reload はこの合計より後 (余韻込み) にずらすこと (パッと消えて即リロードだと締まらない)。 */
+export const WELCOME_VISIBLE_MS = 2800;
+export const WELCOME_FADE_MS = 500;
+export const WELCOME_TOTAL_MS = WELCOME_VISIBLE_MS + WELCOME_FADE_MS;
 
 /**
  * オンボード完了時に「はじまりの祝福」を全面オーバーレイで演出する
  * (level-up-overlay と同じ作法。旅立ちの祝福 + 付与パワーを一度だけ流す)。
+ * **単一マウント前提** (world ルートに 1 つ)。複数マウントすると notifyWelcome が全 listener に
+ * 配られ二重演出になる (cleanup はしているので実害は薄いが 1 箇所に留めること)。
  */
 export function WelcomeBlessingOverlay() {
   const [current, setCurrent] = useState<WelcomeEvent | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const [leaving, setLeaving] = useState(false); // フェードアウト中 (opacity→0)
+  const fadeRef = useRef<number | null>(null);
+  const endRef = useRef<number | null>(null);
   useEffect(() => {
     const listener: Listener = (ev) => {
+      if (fadeRef.current) window.clearTimeout(fadeRef.current);
+      if (endRef.current) window.clearTimeout(endRef.current);
       setCurrent(ev);
-      if (timerRef.current) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => setCurrent(null), WELCOME_DURATION_MS);
+      setLeaving(false);
+      // 見せ切ってからフェード → 消灯 (パッと消えず、余韻を残す)
+      fadeRef.current = window.setTimeout(() => setLeaving(true), WELCOME_VISIBLE_MS);
+      endRef.current = window.setTimeout(() => setCurrent(null), WELCOME_TOTAL_MS);
     };
     listeners.add(listener);
     return () => {
       listeners.delete(listener);
-      if (timerRef.current) window.clearTimeout(timerRef.current);
+      if (fadeRef.current) window.clearTimeout(fadeRef.current);
+      if (endRef.current) window.clearTimeout(endRef.current);
     };
   }, []);
 
@@ -52,6 +65,8 @@ export function WelcomeBlessingOverlay() {
         justifyContent: 'center',
         pointerEvents: 'none',
         zIndex: 1100,
+        opacity: leaving ? 0 : 1,
+        transition: `opacity ${WELCOME_FADE_MS}ms ease`,
       }}
     >
       <style>{WELCOME_KEYFRAMES}</style>

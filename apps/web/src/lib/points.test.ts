@@ -183,3 +183,42 @@ describe('loadPointsState', () => {
     expect(p.balance).toBe(0);
   });
 });
+
+describe('resetWorldPower (オンボードリセット)', () => {
+  test('world 消費/獲得を 0 にし、投稿由来 + summoned を保持、歓迎ボーナスを絶対値で載せる', async () => {
+    const { resetWorldPower } = await import('./points');
+    let written: any = null;
+    const agent = {
+      assertDid: 'did:test',
+      com: { atproto: { repo: {
+        getRecord: async () => ({ data: { value: {
+          viaPosts: 100, userMessages: 5, cardDraws: 3, battles: 7, craftPowerSpent: 40, salePowerEarned: 12, searchPowerSpent: 6,
+          summoned: true, updatedAt: 'x',
+        } } }),
+        putRecord: vi.fn(async (args: any) => { written = args.record; return { data: {} }; }),
+      } } },
+    } as any;
+    await resetWorldPower(agent, 'did:test', 20);
+    // 投稿由来 (viaPosts/userMessages/cardDraws) と summoned は保持
+    expect(written).toMatchObject({ viaPosts: 100, userMessages: 5, cardDraws: 3, summoned: true });
+    // world 由来の消費/獲得は全部 0、歓迎ボーナスだけ salePowerEarned に (絶対値)
+    expect(written.battles).toBe(0);
+    expect(written.craftPowerSpent).toBe(0);
+    expect(written.searchPowerSpent).toBe(0);
+    expect(written.salePowerEarned).toBe(20);
+  });
+
+  test('冪等: 書き込み後の record を読んで再実行しても +20 が二重にならない', async () => {
+    const { resetWorldPower } = await import('./points');
+    let written: any = { viaPosts: 100, userMessages: 5, cardDraws: 3, battles: 0, craftPowerSpent: 0, salePowerEarned: 20, searchPowerSpent: 0, summoned: true, updatedAt: 'x' };
+    const agent = {
+      assertDid: 'did:test',
+      com: { atproto: { repo: {
+        getRecord: async () => ({ data: { value: written } }),
+        putRecord: vi.fn(async (args: any) => { written = { ...args.record, updatedAt: 'y' }; return { data: {} }; }),
+      } } },
+    } as any;
+    await resetWorldPower(agent, 'did:test', 20);
+    expect(written.salePowerEarned).toBe(20); // += でなく絶対値なので二重加算しない
+  });
+});
