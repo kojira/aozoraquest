@@ -5,7 +5,6 @@ import {
   GREETING_HOUR_BOUNDARIES,
   jobDisplayName,
   jobLevelFromXp,
-  playerLevelFromXp,
   pickSpiritLine,
   questXpScalar,
   type SpiritSituation,
@@ -17,7 +16,6 @@ import { COL } from '@/lib/collections';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { SpiritBubble } from '@/components/spirit-bubble';
 import { SummoningRitual } from '@/components/summoning-ritual';
-import { TrialArena } from '@/components/trial-arena';
 import { useOnPosted } from '@/components/compose-modal';
 import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
@@ -26,12 +24,13 @@ import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { isAdminDid } from '@/lib/runtime-config';
 
 /**
- * 精霊ブルスコンのページ (docs/18-brusukon-trial.md)。
+ * 精霊ブルスコンのページ。
  *
- * かつてはブルスコンとの LLM チャットだったが、「ブルスコンの試練」(パワー消費の
- * ターン制バトル) に置き換えた (オーナー決定 2026-07-17)。召喚の儀式 (E1/E2) は
- * 従来どおりのゲート。過去の spiritChat レコードは消さない (パワー式の userMessages
- * も従来どおり数える = 残高は変わらない)。
+ * かつてはブルスコンとの LLM チャット → 「ブルスコンの試練」(ターン制バトル) と
+ * 変遷したが、いずれも撤去し、召喚後の主導線を「あおぞらワールド」(docs/19) に
+ * 一本化した (オーナー決定 2026-07-19。試練の戦闘画面が旧仕様で表示崩れのため)。
+ * 召喚の儀式 (E1/E2) は従来どおりのゲート。過去の spiritChat レコードは消さない
+ * (パワー式の userMessages も従来どおり数える = 残高は変わらない)。
  */
 
 type GreetingSituation = 'greeting.morning' | 'greeting.daytime' | 'greeting.night';
@@ -180,7 +179,7 @@ export function Spirit() {
         <div>
           <h2 style={{ margin: 0 }}>精霊ブルスコン</h2>
           <p style={{ margin: 0, fontSize: '0.8em', color: 'var(--color-muted)' }}>
-            {jobLabel ? `あなたは今「${jobLabel}」の姿` : '気質を調べると試練に挑める'}
+            {jobLabel ? `あなたは今「${jobLabel}」の姿` : 'じぶんのページで気質を調べよう'}
           </p>
         </div>
       </div>
@@ -230,7 +229,7 @@ export function Spirit() {
         </section>
       )}
 
-      {/* ─── E3: summoned = ブルスコンの試練 ─── */}
+      {/* ─── E3: summoned = あおぞらワールドへの入口 ─── */}
       {points.summoned && (
         <>
           <section style={{ marginTop: '1em', display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
@@ -263,6 +262,18 @@ export function Spirit() {
               <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em', maxWidth: 260, marginInline: 'auto' }}>
                 街をめぐり、戦い、そうびを整える旅へ。
               </p>
+            </section>
+          )}
+
+          {/* 本番 (WORLD_PREVIEW_ENABLED=false) ではワールド入口を出さないため、
+              このままだと召喚後が挨拶のみの行き止まりになる (レビュー ★★★)。
+              旅の解禁を匂わせる精霊の一言だけ置いて「無」を避ける (DQ 風に最小限)。
+              ワールドを本番解禁する判断はオーナー領分なので、ここでは入口を出さない。 */}
+          {!WORLD_PREVIEW_ENABLED && (
+            <section style={{ marginTop: '1.4em', textAlign: 'center' }}>
+              <SpiritBubble>
+                次の旅の支度をしている。もう少しだけ、待っておくれ。
+              </SpiritBubble>
             </section>
           )}
 
@@ -311,38 +322,6 @@ export function Spirit() {
               </div>
             </section>
           )}
-
-          <section style={{ marginTop: '1.2em' }}>
-            {agent && did && diag ? (
-              <TrialArena
-                agent={agent}
-                did={did}
-                archetype={diag.archetype}
-                jobLevel={jobLevelFromXp((diag.jobLevel?.xp ?? 0) + questXp)}
-                playerLevel={playerLevelFromXp(diag.playerLevel?.xp ?? 0)}
-                playerName={userName}
-                rpgStats={diag.rpgStats ?? null}
-                jobXpOffset={questXp}
-                onXpAwarded={() => {
-                  // バトル XP 反映後に表示レベルを追従 (演出と select 画面の LV 食い違い防止)
-                  if (agent && did) {
-                    getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
-                      .then((r) => { if (r) setDiag(r); })
-                      .catch(() => {});
-                  }
-                }}
-                points={points}
-                onPointsChanged={setPoints}
-              />
-            ) : (
-              <div>
-                <SpiritBubble>
-                  試練に挑むには、まずきみの気質を知る必要がある。じぶんのページで気質を調べておいで。
-                </SpiritBubble>
-                <Link to="/me"><button style={{ marginTop: '0.8em' }}>気質を調べる</button></Link>
-              </div>
-            )}
-          </section>
         </>
       )}
 

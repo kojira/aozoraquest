@@ -41,8 +41,10 @@ export const COL = {
   /** あおぞらパワーの累積カウンタ (rkey='self')。アクションごとに増分する。
    *  初回読み取り時に旧データから一度だけスキャン → 書き込みでマイグレーション。 */
   power: `${USER_PREFIX}.power`,
-  /** ブルスコンの試練の戦闘記録 (docs/18-brusukon-trial.md)。1 戦 1 レコード。
-   *  パワー消費の監査 + 戦績/称号/素材の集計ソース。 */
+  /** 戦闘記録 (1 戦 1 レコード)。旧ブルスコンの試練が書いていた履歴。試練撤去後は
+   *  新規書き込み経路は無いが、読み取りは生きている: world の在庫フォールバック
+   *  (loadBattleStats の materials) と パワー再スキャン (countBattles)。
+   *  wins/連勝/称号系フィールドは現状どの UI からも未使用 (整理は #383)。 */
   battle: `${USER_PREFIX}.battle`,
   /** なんでも屋の制作 (docs/20)。1 制作 = 1 レコード。品質は rkey + luk から導出 */
   craft: `${USER_PREFIX}.craft`,

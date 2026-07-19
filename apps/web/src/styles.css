@@ -1052,7 +1052,8 @@ p { margin: 0.4em 0; }
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease, transform 60ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-/* ブルスコンの試練 (trial-arena.tsx): 被弾時にモンスターを揺らす。 */
+/* 被弾時にモンスターを揺らす (battle-view / world-battle-controls。
+   class 名は旧試練由来の trial-hit のまま = world 戦闘で流用)。 */
 @keyframes trial-shake {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
