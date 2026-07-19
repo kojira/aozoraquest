@@ -43,6 +43,8 @@ export interface GameState {
   /** 持ち込み消費アイテム (やくそう / そらのしずく)。 */
   herbs?: number;
   tonics?: number;
+  /** 最後に立ち寄った街 (敗北時の帰還先)。街に入るたびに更新。 */
+  lastTown?: { x: number; y: number };
   /** 撃破済みタイル ("x,y") の集合 (その 30 分枠内で再エンカウントさせない = 同一敵の無限狩り防止)。 */
   defeated?: string[];
   /** defeated が属する 30 分エンカウント枠。枠が変わったら defeated をリセットする。 */

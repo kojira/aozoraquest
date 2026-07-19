@@ -208,8 +208,8 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   let healed = false;
   if (terrain === 'town') {
-    // 街: HP/MP 全回復 + 位置を gameState に確定 (稀なので PDS 書き OK。失効時の再同期先にもなる)。
-    await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: nx, y: ny, carryHp: undefined, carryMp: undefined }),
+    // 街: HP/MP 全回復 + 位置 + 最後の街 (敗北帰還先) を gameState に確定 (稀なので PDS 書き OK)。
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
   }
@@ -239,6 +239,10 @@ export interface TurnResult {
   events: BattleState['lastEvents'];
   outcome: BattleState['outcome'];
   awarded?: AwardBreakdown;
+  /** 決着後の権威位置 (敗北は最後の街へ帰還)。client はここへ移動。 */
+  position?: { x: number; y: number };
+  /** 決着後の位置に対応する新しい署名トークン (敗北帰還で位置が変わるため)。 */
+  token?: string;
 }
 
 /**
@@ -272,6 +276,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const rewardSeed = (await entropyU32({ useKuda: true })).value;
     const lossSeed = (await entropyU32({ useKuda: true })).value;
     let awarded: AwardBreakdown = {};
+    let finalPos = { x: 0, y: 0 };
     const window = enemyWindow(now);
     await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       const r = applyBattleOutcome(cur, {
@@ -280,19 +285,19 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       });
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
-      // 枠が変わっていたら defeated をリセット (敵配置が入れ替わる)。
       const prevDefeated = cur.defeatedWindow === window ? (cur.defeated ?? []) : [];
       const defeated = decision === 'win' && guard.sealed.tile
         ? [...prevDefeated.filter((t) => t !== guard.sealed.tile), guard.sealed.tile].slice(-256)
         : prevDefeated;
-      // 位置も権威 state に確定 (歩行では書かないので、戦闘のたびにここで同期 = トークン失効時の
-      // 再同期先が「最後の街」でなく「直近の戦闘地点」になり、ワープを防ぐ)。tile は "x,y"。
+      // 位置を権威 state に確定。**敗北は最後の街へ帰還** (無ければ spawn)。勝ち/引き分けは戦闘タイルに留まる。
       const [tx, ty] = guard.sealed.tile.split(',').map(Number);
-      const pos = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : {};
-      // 戦闘をまたぐ HP/MP・消費アイテムも権威 state に反映 (負けは全快で復帰)。
+      const battleTile = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : { x: cur.x, y: cur.y };
+      const spawn = worldOverlay().spawn;
+      finalPos = decision === 'lose' ? (cur.lastTown ?? { x: spawn.x, y: spawn.y }) : battleTile;
       return {
         ...r.next,
-        ...pos,
+        x: finalPos.x,
+        y: finalPos.y,
         carryHp: decision === 'lose' ? undefined : next.player.hp,
         carryMp: decision === 'lose' ? undefined : next.player.mp,
         herbs: next.herbs,
@@ -301,7 +306,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         defeatedWindow: window,
       };
     }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, ns) });
-    return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded };
+    // 決着後の位置に対応する新トークンを発行 (敗北帰還で位置が変わるので client はこれで同期)。
+    const token = signPosition(env, { did: userDid, x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
+    return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token };
   }
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──
