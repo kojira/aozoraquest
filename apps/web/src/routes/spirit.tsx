@@ -265,6 +265,18 @@ export function Spirit() {
             </section>
           )}
 
+          {/* 本番 (WORLD_PREVIEW_ENABLED=false) ではワールド入口を出さないため、
+              このままだと召喚後が挨拶のみの行き止まりになる (レビュー ★★★)。
+              旅の解禁を匂わせる精霊の一言だけ置いて「無」を避ける (DQ 風に最小限)。
+              ワールドを本番解禁する判断はオーナー領分なので、ここでは入口を出さない。 */}
+          {!WORLD_PREVIEW_ENABLED && (
+            <section style={{ marginTop: '1.4em', textAlign: 'center' }}>
+              <SpiritBubble>
+                次の旅の支度をしている。もう少しだけ、待っておくれ。
+              </SpiritBubble>
+            </section>
+          )}
+
           {/* 管理者用: dev でパワーを付与してテストする。VITE_ADMIN_DIDS の DID かつ
               プレビュー環境 (dev/local) のときだけ表示。本番遮断は WORLD_PREVIEW_ENABLED
               (本番ビルドでは false → dead-code) が担い、isAdminDid は dev 内での権限分離。
