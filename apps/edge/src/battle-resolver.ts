@@ -159,10 +159,12 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const pendingTurnSeed = (await entropyU32({ useKuda: true })).value;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
-  // move では毎歩ガードを読まない (ステートレス高速化)。ここで、期限切れの古いガードが残っていたら
-  // flush してから作る (クラッシュ復帰)。期限内の生きたガードが残っていれば createGuard が InvalidSwap → 409。
+  // move では毎歩ガードを読まない (ステートレス高速化)。**client は戦闘中は move しない**ので、ここに
+  // 来た時点で既存ガードは必ず孤立 (戦闘を終えず離脱した残骸)。期限内でも破棄して新しい遭遇を成立させる。
+  // これをしないと、離脱後にエンカウントタイル (30分固定=特定の場所) を踏むたび createGuard が InvalidSwap
+  // → 500「移動できなかった」で詰まる。孤立ガードの戦闘は未報酬なので破棄しても二重報酬にならない。
   const existing = await readGuard<SealedMeta, BattleState>(env, userDid);
-  if (existing && now * 1000 >= Date.parse(existing.guard.expiresAt)) await deleteGuard(env, now, userDid, existing.cid);
+  if (existing) await deleteGuard(env, now, userDid, existing.cid);
   const guard: Guard = {
     did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: `${x},${y}` }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
