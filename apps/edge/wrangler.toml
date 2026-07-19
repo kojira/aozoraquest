@@ -23,3 +23,31 @@ preview_id = "c1f3e394d104413192a0dac7303b6443"
 # refresh_token で更新する (REFRESH_AHEAD_SEC=900 = 15 分前から。cron 間隔 < ahead で取りこぼし防止)。
 [triggers]
 crons = ["*/10 * * * *"]
+
+# ─────────────────────────────────────────────────────────────────
+# dev 環境: 本番と**完全分離**した別 Worker。dev が本番に触れる構成は不可 (オーナー方針
+# 2026-07-19)。dev.aozoraquest.app の web が VITE_EDGE_URL でここを叩く。
+#   デプロイ: wrangler deploy --env dev   /  本番: wrangler deploy (top-level, main リリース時のみ)
+#   URL は worker 名から自動: https://aozoraquest-edge-dev.<account>.workers.dev
+#   セットアップ手順は docs/22-edge-env-separation.md。
+# サーバーアカウントは本番と同じでよいが、**KV/OAuth セッション/cron/secrets はすべて dev 専用**
+# (client_id = dev の client-metadata URL = 別 grant なので refresh が本番と干渉しない)。
+[env.dev]
+name = "aozoraquest-edge-dev"
+
+# dev 専用の OAuth トークン KV (本番と物理的に別 = 二重 refresh 事故を構造的に排除)。
+# 作成: wrangler kv namespace create OAUTH_TOKENS --env dev → 出力の id をここに貼る。
+[[env.dev.kv_namespaces]]
+binding = "OAUTH_TOKENS"
+id = "REPLACE_WITH_DEV_KV_ID"
+
+# dev 専用 cron (自分のセッションのトークンだけ refresh)。
+[env.dev.triggers]
+crons = ["*/10 * * * *"]
+
+# 非 secret の env var (edge インフラ値。personal な SERVER_DID/ADMIN_DIDS と secret は
+# wrangler secret put --env dev / CF で別途設定。docs/22 参照)。
+[env.dev.vars]
+WORKER_DID = "did:web:aozoraquest-edge-dev.kojiran.workers.dev"
+PUBLIC_ORIGIN = "https://aozoraquest-edge-dev.kojiran.workers.dev"
+ALLOWED_ORIGINS = "https://dev.aozoraquest.app"
