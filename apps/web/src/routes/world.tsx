@@ -193,6 +193,10 @@ export function World() {
     /** コマンド送信失敗 (503/409/通信断) をバトル画面内に表示する一行。notice は戦闘中は
      *  描画されない (戦闘オーバーレイの外) ので、fail-closed のエラーはここに出す。 */
     errorText?: string;
+    /** 決着後の権威位置 (敗北は最後の街へ帰還)。決着タップでここへ移動する。 */
+    resultPos?: { x: number; y: number };
+    /** 決着後の位置に対応する新トークン。 */
+    resultToken?: string;
   } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
@@ -485,7 +489,10 @@ export function World() {
       void (async () => {
         try {
           const res = await serverTurn(agent, b.battleId, b.state.turn, command);
-          const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false, ...(res.awarded ? { awarded: res.awarded } : {}) };
+          const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
+            ...(res.awarded ? { awarded: res.awarded } : {}),
+            ...(res.position ? { resultPos: res.position } : {}),
+            ...(res.token ? { resultToken: res.token } : {}) };
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
@@ -535,16 +542,19 @@ export function World() {
       const awarded = b.awarded ?? {};
       const drops = awarded.drops ?? [];
       const lost = awarded.materialsLost ?? [];
+      // 決着後の権威位置 (敗北は最後の街へ帰還) に移動し、対応トークンで同期する。
+      const resultPos = b.resultPos;
+      if (b.resultToken) tokenRef.current = b.resultToken;
       // HP/MP をフィールドに持ち帰る (持続)。敗北はサーバーが carry を消す = 全快なので null に。
-      // (注: サーバーは敗北で位置を街へ戻さない。街帰還は今後のサーバー実装課題。ここでは
-      //  その場で回復させ、次の serverMove がサーバー権威の位置を返す。)
       if (next.outcome === 'lose') {
-        setWs((s) => (s ? { ...s, hp: null, mp: null } : s));
+        // 敗北: 最後の街へ帰還 + 全回復。lastTown を更新して次の敗北帰還先も揃える。
+        setWs((s) => (s ? { ...s, hp: null, mp: null, ...(resultPos ? { x: resultPos.x, y: resultPos.y, lastTown: resultPos } : {}) } : s));
+        if (resultPos) { const t = townAt(resultPos.x, resultPos.y); setNotice(t ? `気がつくと「${t.name}」に はこばれていた…` : '気がつくと 街に はこばれていた…'); }
       } else {
         // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
         const hp = next.player.hp >= next.player.maxHp ? null : Math.max(1, next.player.hp);
         const mp = next.player.mp >= next.player.maxMp ? null : next.player.mp;
-        setWs((s) => (s ? { ...s, hp, mp } : s));
+        setWs((s) => (s ? { ...s, hp, mp, ...(resultPos ? { x: resultPos.x, y: resultPos.y } : {}) } : s));
       }
       scheduleSave();
       // クライアント在庫はサーバー報酬 (awarded) をミラーするだけ (表示用。正はサーバー state)。
@@ -575,7 +585,10 @@ export function World() {
       if (awarded.xp && awarded.xp > 0) resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
       for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を てにいれた！`);
       for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を おとしてしまった…`);
-      if (next.outcome === 'lose') resultLines.push('たおれてしまった… 気がつくと きずが いえていた。');
+      if (next.outcome === 'lose') {
+        const t = b.resultPos ? townAt(b.resultPos.x, b.resultPos.y) : null;
+        resultLines.push(t ? `たおれてしまった… 気がつくと「${t.name}」で 手当てされていた。` : 'たおれてしまった… 気がつくと 街で 手当てされていた。');
+      }
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);
