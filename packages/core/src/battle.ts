@@ -108,6 +108,12 @@ export const BATTLE_TUNING = {
   fleeAgiScale: 0.012,
   fleeMin: 0.25,
   fleeMax: 0.95,
+  /** モンスターの逃走 (ability='fleer')。毎ターン flee 判定する。逃走率 =
+   *  clamp(monsterFleeBase + 自agi*monsterFleeAgiScale, 0, monsterFleeMax)。
+   *  はぐれメタル型 (高XP・低HP・すぐ逃げる) 用: 倒す前に逃げられると報酬ゼロ。 */
+  monsterFleeBase: 0.35,
+  monsterFleeAgiScale: 0.006,
+  monsterFleeMax: 0.75,
   /** 最大ターン数 (超えたら判定 = 残 HP 割合勝負) */
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
@@ -441,6 +447,7 @@ export function levelUpGains(
 /** SVG 描画のキー (UI 側が species ごとに絵を持つ)。 */
 export type MonsterSpecies =
   | 'slime'
+  | 'metal-slime'
   | 'bat'
   | 'mushroom'
   | 'golem'
@@ -465,6 +472,14 @@ export interface MonsterDef {
   tier: 1 | 2 | 3;
   /** [atk, def, agi, int, luk] — 合計はおおむね 100 で職と同尺度 */
   stats: StatArray;
+  /** HP/MP を明示する (プレイヤーと同じ完全ステータスブロック — オーナー要望 2026-07-19)。
+   *  省略時は従来どおり def/int から導出 (後方互換)。はぐれメタル型のように
+   *  「導出だと def なりに HP が出てしまう」敵を低 HP に手調整するのに使う。
+   *  値は tier/レベル係数で従来同様にスケールする (基準値のみ明示)。 */
+  hp?: number;
+  mp?: number;
+  /** 出現の重み (default 1)。レア敵 (はぐれメタル等) は 1 未満にして稀にする。 */
+  spawnWeight?: number;
   /** 勝利時に得る XP。tier を目安にモンスター個別に設定して幅を持たせる (tier だけで
    *  決めると はぐれメタルのような「同 tier で飛び抜けて高 XP」の敵が作れない —
    *  オーナー要望 2026-07-18)。なお本格的なはぐれメタル型 (高 xp + 高回避 + 低 HP +
@@ -478,8 +493,9 @@ export interface MonsterDef {
   /** 行動タイプ (戦略性のためのバリエーション。オーナー要望 2026-07-18)。
    *  未指定 = plain (通常攻撃 + 低 HP でたまに防御)。
    *  'charger' = 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)。
-   *  'healer' = 低 HP でたまに自己回復 (削り切る前に倒す読み合い)。 */
-  ability?: 'charger' | 'healer';
+   *  'healer' = 低 HP でたまに自己回復 (削り切る前に倒す読み合い)。
+   *  'fleer' = 毎ターン逃走を試みる (はぐれメタル型。倒す前に逃げられると報酬ゼロ)。 */
+  ability?: 'charger' | 'healer' | 'fleer';
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
 }
@@ -490,6 +506,7 @@ export const ITEMS: Record<string, { name: string }> = {
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
   'slime-drop': { name: 'スライムのしずく' },
+  'metal-shard': { name: 'はぐれのかけら' }, // はぐれスライムの希少ドロップ。現状は換金専用 (将来レア装備素材に転用予定)
   'bat-wing': { name: 'コウモリの翼膜' },
   'mush-spore': { name: 'ヒカリダケの胞子' },
   'golem-core': { name: 'ゴーレムの核片' },
@@ -506,6 +523,9 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], xp: 14, drops: [{ item: 'slime-drop', chance: 0.7 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
   { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], xp: 22, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 30, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  // はぐれメタル型: レア出現・低 HP・高 XP・毎ターン逃走。倒せれば旨いが逃げられると何も残らない
+  // (オーナー要望 2026-07-19)。HP は明示 (導出だと def なりに増えるため)。高 agi で逃げ足も速い。
+  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 45, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
@@ -590,26 +610,30 @@ export function summonMonster(
 ): { def: MonsterDef; combatant: Combatant } {
   const pool = MONSTERS.filter((m) => m.tier === tier);
   const rng = createRng((seed ^ 0x51ed270b) >>> 0);
-  let def: MonsterDef;
-  if (affinity === undefined) {
-    def = pool[Math.floor(rng() * pool.length)]!;
-  } else {
-    // favor 対象を重く。重み付き累積抽選 (決定的)
-    const favored = ((affinity % pool.length) + pool.length) % pool.length;
-    const weights = pool.map((_, i) => (i === favored ? AFFINITY_WEIGHT : 1));
-    const total = weights.reduce((a, b) => a + b, 0);
-    let pick = rng() * total;
-    let idx = 0;
-    for (; idx < pool.length; idx++) {
-      pick -= weights[idx]!;
-      if (pick < 0) break;
-    }
-    def = pool[Math.min(idx, pool.length - 1)]!;
+  // 出現重み = spawnWeight (default 1) × affinity 補正 (favor 対象を重く)。ただし
+  // レア敵 (spawnWeight<1) は favor 対象にしない = どの地域でもごく稀のまま
+  // (地域相性で「はぐれメタルが出やすい街」を作らない — レビュー ★★)。重み付き累積抽選 (決定的)。
+  const favored = affinity === undefined ? -1 : ((affinity % pool.length) + pool.length) % pool.length;
+  const weights = pool.map((m, i) => {
+    const w = m.spawnWeight ?? 1;
+    return w * (i === favored && w >= 1 ? AFFINITY_WEIGHT : 1);
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  let pick = rng() * total;
+  let idx = 0;
+  for (; idx < pool.length; idx++) {
+    pick -= weights[idx]!;
+    if (pick < 0) break;
   }
+  const def = pool[Math.min(idx, pool.length - 1)]!;
   const factor = monsterLevelFactor(tier, playerLevel, jobLevel);
   const flat = BATTLE_TUNING.flatLevelGain * Math.max(0, playerLevel - 1);
   const grown = def.stats.map((v) => v + flat) as unknown as StatArray;
   const combatant = fromStats(def.name, grown, factor, Math.max(1, Math.round(playerLevel * (tier === 3 ? 1.1 : 1))));
+  // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
+  // tier/レベル係数 (factor) で従来同様にスケールさせ、はぐれメタル型の低 HP を保つ。
+  if (def.hp !== undefined) { combatant.maxHp = Math.max(1, Math.round(def.hp * factor)); combatant.hp = combatant.maxHp; }
+  if (def.mp !== undefined) { combatant.maxMp = Math.max(0, Math.round(def.mp * factor)); combatant.mp = combatant.maxMp; }
   // 遭遇ごとに HP/MP をバラつかせる (値を覚えられないように = 予想の余地を残す)。
   // variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ trial/テスト不変)。
   if (variance > 0) {
@@ -626,7 +650,7 @@ export function summonMonster(
 
 export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee';
 
-export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'draw' | 'fled';
+export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'draw' | 'fled' | 'monster-fled';
 
 export interface TurnEvent {
   /** 誰の行動か */
@@ -800,7 +824,7 @@ function doAttack(
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
-type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal';
+type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee';
 
 /** モンスターの行動を能力 (ability) で分岐する (オーナー要望 2026-07-18: ため攻撃は
  *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。 */
@@ -819,6 +843,15 @@ function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   if (def?.ability === 'healer') {
     if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
     if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
+    return 'attack';
+  }
+  if (def?.ability === 'fleer') {
+    // 毎ターン逃走を試みる。逃走率は**基準 agi (レベル非依存)** で決める — factor で
+    // スケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
+    // 上がって「成長するほど倒せない」逆進になる (レビュー ★★)。常に同じ緊張感にする。
+    const baseAgi = def.stats[2] ?? 0;
+    const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
+    if (r < fleeChance) return 'flee';
     return 'attack';
   }
   // plain: 通常攻撃 + 低 HP でたまに防御
@@ -951,6 +984,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   const playerFirst = state.player.agi + rng() * 20 >= state.monster.agi + rng() * 20;
 
   const act = (who: 'player' | 'monster') => {
+    if (state.outcome !== 'ongoing') return; // 敵が逃げる等で決着済みなら以降の行動をスキップ
     if (state.player.hp === 0 || state.monster.hp === 0) return;
     if (who === 'player') {
       if (cmd === 'attack') {
@@ -998,6 +1032,10 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
         const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';
         events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HP が ${state.monster.hp - before} 回復。` });
+      } else if (mCommand === 'flee') {
+        // はぐれメタル型: 逃走成功 → 即決着 (報酬なし)。倒せなかった悔しさを残す。
+        state.outcome = 'monster-fled';
+        events.push({ actor: 'monster', text: `${state.monster.name}は にげだした!` });
       } else if (mCommand === 'attack') {
         doAttack(state.monster, state.player, rng, events, 'monster');
       }
@@ -1013,8 +1051,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   state.monster.parrying = false;
   state.player.focus = Math.max(0, state.player.focus - 1);
 
-  // 勝敗判定
-  if (state.monster.hp === 0) state.outcome = 'win';
+  // 勝敗判定 (敵の逃走 = monster-fled で既に決着している場合は上書きしない)
+  if (state.outcome !== 'ongoing') { /* monster-fled 等: 確定済み */ }
+  else if (state.monster.hp === 0) state.outcome = 'win';
   else if (state.player.hp === 0) state.outcome = 'lose';
   else if (state.turn >= BATTLE_TUNING.maxTurns) {
     // 引き分け規定: 残 HP 割合が高い方の勝ち。同率は draw。

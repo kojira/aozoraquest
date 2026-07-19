@@ -613,6 +613,8 @@ export function World() {
         const t = b.resultPos ? townAt(b.resultPos.x, b.resultPos.y) : null;
         resultLines.push(t ? `たおれてしまった… 気がつくと「${t.name}」で 手当てされていた。` : 'たおれてしまった… 気がつくと 街で 手当てされていた。');
       }
+      // 敵に逃げられた: 悔しさを一言で残す (無言でマップへ戻さない)。
+      if (next.outcome === 'monster-fled') resultLines.push('あいてに にげられてしまった…');
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);

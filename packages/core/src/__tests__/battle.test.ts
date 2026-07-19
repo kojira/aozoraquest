@@ -146,10 +146,35 @@ describe('summonMonster', () => {
     expect(a.def.id).toBe(b.def.id);
     expect(a.def.tier).toBe(1);
   });
-  it('全 tier にモンスターが 3 体ずついる', () => {
+  it('各 tier に最低 3 体いる + はぐれスライムは tier1 のレア逃走敵', () => {
     for (const tier of [1, 2, 3] as const) {
-      expect(MONSTERS.filter((m) => m.tier === tier)).toHaveLength(3);
+      expect(MONSTERS.filter((m) => m.tier === tier).length).toBeGreaterThanOrEqual(3);
     }
+    // はぐれメタル型: tier1・レア出現 (spawnWeight<1)・逃走 (fleer)・HP 明示・高 XP
+    const stray = MONSTERS_BY_ID['stray-slime'];
+    expect(stray?.tier).toBe(1);
+    expect(stray?.ability).toBe('fleer');
+    expect(stray?.spawnWeight).toBeLessThan(1);
+    expect(stray?.hp).toBeDefined();
+  });
+
+  it('はぐれスライム: HP 明示で低い + fleer は逃走して monster-fled で決着 (勝敗なし)', () => {
+    // レア出現なので stray-slime を引く seed を探す
+    let battle: import('../battle.js').BattleState | null = null;
+    for (let seed = 0; seed < 4000; seed++) {
+      const b = startBattle('warrior', 1, 1, 'テスト', 1, seed, 0);
+      if (b.monsterId === 'stray-slime') { battle = b; break; }
+    }
+    expect(battle).not.toBeNull();
+    // HP 明示 (12) × tier1 係数 → 通常 tier1 (~70) より大幅に低い
+    expect(battle!.monster.maxHp).toBeLessThan(25);
+    // 逃走する turnSeed があり、そのとき outcome は monster-fled (win/lose ではない)
+    let fled = false;
+    for (let ts = 0; ts < 500; ts++) {
+      const next = resolveTurn(battle!, 'guard', ts); // guard で自分から倒しに行かない
+      if (next.outcome === 'monster-fled') { fled = true; break; }
+    }
+    expect(fled).toBe(true);
   });
   it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
     // tier3 pool = [raven, oni, dragon]。affinity%3==0 は raven を favor

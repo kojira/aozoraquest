@@ -16,7 +16,8 @@
 import { battleXpFor, rollDrops, rollDefeatLoss, BATTLE_TUNING } from '@aozoraquest/core';
 import type { GameState } from './game-state';
 
-export type BattleDecision = 'win' | 'lose' | 'draw' | 'fled';
+/** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
+export type BattleDecision = 'win' | 'lose' | 'draw' | 'fled' | 'monster-fled';
 
 export interface BattleOutcomeInput {
   outcome: BattleDecision;
@@ -89,7 +90,9 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
     return { next, awarded: { xp, materialsLost, powerSpent: POWER_COST } };
   }
 
-  // draw / fled は決着扱いにしない (パワー消費なし)。旧クライアントは draw にも xpLose を出したが、
-  // パワー消費のない draw を報酬対象にすると「ガードで引き分けを狙う無限 XP 稼ぎ」が成立するため付与しない。
+  // draw / fled / monster-fled は決着扱いにしない (XP もドロップもパワー消費も無し)。
+  // - draw: パワー消費のない draw を報酬対象にすると「ガードで引き分けを狙う無限 XP 稼ぎ」が成立するため付与しない。
+  // - fled (プレイヤーが逃走) / monster-fled (敵が逃走): どちらも決着していないので無報酬・無消費。
+  //   特にはぐれメタル型に逃げられたときはここに落ちる (高 XP をみすみす逃した = 悔しさが残る設計)。
   return { next: state, awarded: {} };
 }
