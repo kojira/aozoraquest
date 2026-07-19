@@ -13,7 +13,7 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { handleMove, handleTurn, handleTeleport, handleItem, migrateInitState, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
@@ -45,6 +45,7 @@ const LXM_ME_STATE = 'app.aozoraquest.me.state';
 const LXM_WORLD_MOVE = 'app.aozoraquest.world.move';
 const LXM_WORLD_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_WORLD_ITEM = 'app.aozoraquest.world.item';
+const LXM_WORLD_GEAR = 'app.aozoraquest.world.gear';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 
 const AOZORA_ORIGINS = new Set([
@@ -189,6 +190,26 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     if (body.item !== 'herb' && body.item !== 'tonic') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req))), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。
+  if (req.method === 'POST' && url.pathname === '/api/world/gear') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_GEAR }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { gear?: unknown };
+    if (typeof body.gear !== 'object' || body.gear === null) return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      return cors(json(await handleGear(env, did, body.gear as Parameters<typeof handleGear>[2], nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
