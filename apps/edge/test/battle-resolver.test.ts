@@ -79,7 +79,11 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     expect(r.monsterId).toBeTruthy();
     expect(r.rewarded).toBe(true);
     expect('seed' in r.state).toBe(false); // ★ 内部 seed 非漏洩
-    expect(await sealEncounter(env, USER, GS(), 5, 5, 12345, NOW).catch((e) => e)).toBeInstanceOf(Error); // 二重戦闘 (guard 既存)
+    // 既存ガードがあっても、新しい遭遇は**孤立ガードを破棄して成立**する (離脱後にエンカウントタイルで
+    // 詰まる=「移動できなかった」の解消)。client は戦闘中は move しないので既存ガードは必ず孤立。
+    const r2 = await sealEncounter(env, USER, GS(), 5, 5, 12345, NOW);
+    expect(r2.battleId).toMatch(/^b[0-9a-f]{24}$/);
+    expect(r2.battleId).not.toBe(r.battleId);
   });
 
   it('sealEncounter: power 0 → rewarded=false / 診断なし → 409', async () => {
