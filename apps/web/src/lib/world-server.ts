@@ -78,7 +78,7 @@ export interface ServerMoveResult { x: number; y: number; terrain: string; heale
 export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward { xp?: number; drops?: string[]; materialsLost?: string[]; powerSpent?: number }
-export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward }
+export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string }
 
 /** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
  *  token 未指定 (初回) はサーバーが gameState から位置を再同期する。歩行では PDS を触らないので高速。 */
