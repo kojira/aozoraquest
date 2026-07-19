@@ -63,12 +63,26 @@ POST https://aozoraquest-edge-dev.kojiran.workers.dev/api/oauth/start   (ADMIN_D
 ```
 
 ### 5. dev web を dev エッジに向ける
-- `apps/web/.env.development`: `VITE_EDGE_URL` / `VITE_EDGE_DID` を dev エッジに。
-- CF Workers Build `aozoraquest-dev` の Variables も同様に (dev web ビルドが拾う値)。
+**重要**: 現状 `apps/web/.env.development` には `VITE_EDGE_*` 行が**無い** → Vite は
+`.env` の値 (= 本番エッジ `aozoraquest-edge.kojiran.workers.dev`) を継承する。
+**これが「dev web が共有/本番エッジを叩いていた」現状の原因**。dev エッジに向けるには
+`.env.development` に以下 2 行を**追記**して `.env` の本番値を上書きする:
 ```
 VITE_EDGE_URL=https://aozoraquest-edge-dev.kojiran.workers.dev
 VITE_EDGE_DID=did:web:aozoraquest-edge-dev.kojiran.workers.dev
 ```
+- CF Workers Build `aozoraquest-dev` の Variables にも同じ 2 値を設定 (dev web の本番ビルドが拾う値)。
+- 本番 web (`aozoraquest` / `.env.production`) は本番エッジのままにする (変更しない)。
+
+## 補足
+
+- **ALLOWED_ORIGINS** はブラウザ fetch 経路 (dev web / localhost) の CORS 許可のみ。
+  `/oauth/callback` と `/client-metadata.json` はサーバー間 fetch なので CORS 対象外
+  (ALLOWED_ORIGINS に callback URL を足す必要はない)。
+- **WORLD_TOKEN_SECRET** を本番と別鍵にするので、dev の既存位置トークン/セッションは
+  無効化される (初回セットアップなので実害なし)。
+- wrangler.toml の `REPLACE_WITH_DEV_KV_ID` を実 id に差し替えるまで `wrangler deploy --env dev`
+  は失敗する (step 1 → step 3 の順で回す)。
 
 ### 6. 確認
 - dev.aozoraquest.app でワールド移動/戦闘/リセットが dev エッジ経由で動く。

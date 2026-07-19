@@ -50,4 +50,6 @@ crons = ["*/10 * * * *"]
 [env.dev.vars]
 WORKER_DID = "did:web:aozoraquest-edge-dev.kojiran.workers.dev"
 PUBLIC_ORIGIN = "https://aozoraquest-edge-dev.kojiran.workers.dev"
-ALLOWED_ORIGINS = "https://dev.aozoraquest.app"
+# CORS 許可オリジン = ブラウザ fetch 経路のみ (OAuth callback / client-metadata は
+# サーバー間 fetch = CORS 対象外)。ローカル開発 (127.0.0.1:9999) も dev エッジを叩くので許可。
+ALLOWED_ORIGINS = "https://dev.aozoraquest.app,http://127.0.0.1:9999"
