@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { sealEncounter, handleMove, handleTurn, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
+import { sealEncounter, handleMove, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { terrainAt, isWalkable, type Command } from '@aozoraquest/core';
 import type { GameState } from '../src/game-state';
@@ -210,5 +210,25 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     expect(s3.power).toBe(0);
     expect(s3.playerXp).toBe(0);
     expect(s3.jobXp).toEqual({});
+    // 冒険はじめの持ち物: やくそう 1 + そらのはね 1 (どのケースでも初期付与される)。
+    expect(s3.materials).toEqual({ herb: 1, 'sky-feather': 1 });
+    expect(s1.materials).toEqual({ herb: 1, 'sky-feather': 1 });
+  });
+
+  it('handleReset: 認証済み本人の権威 gameState + 戦闘ガードを削除する (次入場で初期化)', async () => {
+    const env = await makeEnv();
+    const mock = resolverMock({ diagnosis: DIAG, gameState: GS() });
+    globalThis.fetch = mock.fn;
+    // 遭遇でガードを作る → gameState と guard が store に居る状態を作る
+    await sealEncounter(env, USER, GS(), 5, 5, 12345, NOW);
+    expect(mock.store.has('gs')).toBe(true);
+    expect(mock.store.has('guard')).toBe(true);
+    // リセット: 両方消える
+    const r = await handleReset(env, USER, NOW);
+    expect(r).toEqual({ ok: true });
+    expect(mock.store.has('gs')).toBe(false);
+    expect(mock.store.has('guard')).toBe(false);
+    // 冪等: state/guard 無しでも例外を投げない
+    await expect(handleReset(env, USER, NOW)).resolves.toEqual({ ok: true });
   });
 });

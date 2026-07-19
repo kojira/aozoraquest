@@ -13,7 +13,7 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, migrateInitState, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
@@ -47,6 +47,7 @@ const LXM_WORLD_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_WORLD_ITEM = 'app.aozoraquest.world.item';
 const LXM_WORLD_GEAR = 'app.aozoraquest.world.gear';
 const LXM_WORLD_SEARCH = 'app.aozoraquest.world.search';
+const LXM_WORLD_RESET = 'app.aozoraquest.world.reset';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 
 const AOZORA_ORIGINS = new Set([
@@ -230,6 +231,25 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { token?: string };
     try {
       return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // オンボード用リセット: 認証済み本人の権威 gameState + 戦闘ガードを削除する (他人は消せない)。
+  // client 側 PDS レコードの初期化は client が本人トークンで行う。UI は dev + 管理者に限定。
+  if (req.method === 'POST' && url.pathname === '/api/world/reset') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_RESET }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    try {
+      return cors(json(await handleReset(env, did, nowSec())), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
