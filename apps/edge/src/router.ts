@@ -13,7 +13,7 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, migrateInitState, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import type { Command } from '@aozoraquest/core';
@@ -46,6 +46,7 @@ const LXM_WORLD_MOVE = 'app.aozoraquest.world.move';
 const LXM_WORLD_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_WORLD_ITEM = 'app.aozoraquest.world.item';
 const LXM_WORLD_GEAR = 'app.aozoraquest.world.gear';
+const LXM_WORLD_SEARCH = 'app.aozoraquest.world.search';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 
 const AOZORA_ORIGINS = new Set([
@@ -210,6 +211,25 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     if (typeof body.gear !== 'object' || body.gear === null) return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       return cors(json(await handleGear(env, did, body.gear as Parameters<typeof handleGear>[2], nowSec(), nsFromOrigin(req))), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // しらべる: サーバーがアイテムを判定して gameState 在庫に付与 (client のみの幻を解消)。
+  if (req.method === 'POST' && url.pathname === '/api/world/search') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_SEARCH }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { token?: string };
+    try {
+      return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }

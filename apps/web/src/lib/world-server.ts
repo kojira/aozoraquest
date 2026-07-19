@@ -15,6 +15,7 @@ const LXM_MOVE = 'app.aozoraquest.world.move';
 const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_ITEM = 'app.aozoraquest.world.item';
 const LXM_GEAR = 'app.aozoraquest.world.gear';
+const LXM_SEARCH = 'app.aozoraquest.world.search';
 const LXM_TURN = 'app.aozoraquest.battle.turn';
 const LXM_STATE = 'app.aozoraquest.me.state';
 
@@ -109,6 +110,11 @@ export function serverItem(agent: Agent, item: 'herb' | 'tonic'): Promise<Server
 /** 装備ミラー: client が解決した装備 (GearSelection: 強化値つき) をサーバーへ送り、戦闘に反映させる (#377)。 */
 export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
   return callEdge<{ ok: true }>(agent, LXM_GEAR, '/api/world/gear', { gear });
+}
+
+/** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
+export function serverSearch(agent: Agent, token?: string): Promise<{ found: string | null; materials: Record<string, number> }> {
+  return callEdge<{ found: string | null; materials: Record<string, number> }>(agent, LXM_SEARCH, '/api/world/search', token ? { token } : {});
 }
 
 /** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */

@@ -32,7 +32,7 @@ import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
+import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, serverSearch, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -765,29 +765,31 @@ export function World() {
 
   // しらべる: パワー 1 を使って足元を調べる。luk 連動でアイテムが手に入ることがある
   // (見つからないこともある)。発見物はセッション内在庫に加える (消費の正は TODO(W3))。
-  const searchHere = useCallback((): string => {
+  // しらべる: **サーバーがアイテムを判定して gameState 在庫に付与** (client のみの幻を解消)。パワー消費は
+  // 当面 client (points 経済)。結果 (found/materials) はサーバー応答で確定し表示を同期する。
+  const searchHere = useCallback(async (): Promise<void> => {
     const s = wsRef.current;
     const pts = pointsRef.current;
-    if (!s || !agent || !did) return 'いま しらべられない (つうしんを かくにんして)。';
-    if (!pts || pts.balance < SEARCH_TUNING.powerCost) return `パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`;
-    const luk = combatRef.current?.luk ?? 0;
-    const tier = tierForDanger(regionDanger(regionOf(s.x, s.y)));
-    const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
-    const found = rollSearch(seed, luk, tier);
-    // パワーを 1 消費 (見つかっても見つからなくても。無料の無限試行を作らない)
+    if (!s || !agent || !did) { setSearchMsg('いま しらべられない (つうしんを かくにんして)。'); return; }
+    if (!pts || pts.balance < SEARCH_TUNING.powerCost) { setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`); return; }
     const left = Math.max(0, pts.balance - SEARCH_TUNING.powerCost);
     void bumpPower(agent, did, { searchPowerSpent: SEARCH_TUNING.powerCost });
     setPoints((p) => (p ? { ...p, searchPowerSpent: p.searchPowerSpent + SEARCH_TUNING.powerCost, balance: Math.max(0, p.balance - SEARCH_TUNING.powerCost) } : p));
-    if (!found) return `あたりを しらべたが、なにも なかった… (のこりパワー ${left})`;
-    // 在庫に加える。消耗品 (やくそう/しずく) は「どうぐ」で使え、素材は「もちもの」に入る
-    const isConsumable = found === 'herb' || found === 'sky-dew';
-    if (found === 'herb') setHerbStock((n) => n + 1);
-    else if (found === 'sky-dew') setTonicStock((n) => n + 1);
-    const m = materialsRef.current;
-    m[found] = (m[found] ?? 0) + 1;
-    setMaterialsView({ ...m });
-    const where = isConsumable ? 'どうぐ' : 'もちもの';
-    return `しらべると、${ITEMS[found]?.name ?? found} を 1 つ 見つけた! (${where}で かくにん / のこりパワー ${left})`;
+    setSearchMsg('あたりを しらべている…');
+    try {
+      const res = await serverSearch(agent, tokenRef.current);
+      setHerbStock(res.materials['herb'] ?? 0);
+      setTonicStock(res.materials['sky-dew'] ?? 0);
+      setFeatherStock(res.materials['sky-feather'] ?? 0);
+      materialsRef.current = res.materials;
+      setMaterialsView({ ...res.materials });
+      if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${left})`); return; }
+      const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
+      setSearchMsg(`しらべると、${ITEMS[res.found]?.name ?? res.found} を 1 つ 見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で かくにん / のこりパワー ${left})`);
+    } catch (e) {
+      console.warn('[world] search failed', e);
+      setSearchMsg('しらべられなかった (通信エラー)。もういちどどうぞ。');
+    }
   }, [agent, did]);
 
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
@@ -992,7 +994,7 @@ export function World() {
   const menuCommands: WorldMenuCommand[] = [
     { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
-    ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => setSearchMsg(searchHere()) } as WorldMenuCommand]),
+    ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => void searchHere() } as WorldMenuCommand]),
     { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
     { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
     { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
