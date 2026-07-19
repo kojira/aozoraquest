@@ -6,14 +6,16 @@ import type { MonsterSpecies } from '@aozoraquest/core';
  * 画像アセットなしのインライン SVG = 軽量・省メモリ (モバイル方針)。
  * species ごとに 1 枚、viewBox 100x100。ドット RPG 風の太い輪郭とシンプルな形。
  */
-export function MonsterSvg({ species, size = 160 }: { species: MonsterSpecies; size?: number }) {
+export function MonsterSvg({ species, size = 160, hue = 0 }: { species: MonsterSpecies; size?: number; hue?: number }) {
+  // 色違い変種は hue-rotate で塗り替える (同じ形の「あかいスライム」等を安価に作る)。
+  const dropShadow = 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))';
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 100 100"
       aria-hidden
-      style={{ display: 'block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))' }}
+      style={{ display: 'block', filter: hue ? `hue-rotate(${hue}deg) ${dropShadow}` : dropShadow }}
     >
       {BODIES[species]}
     </svg>

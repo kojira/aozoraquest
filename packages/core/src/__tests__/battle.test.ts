@@ -158,6 +158,25 @@ describe('summonMonster', () => {
     expect(stray?.hp).toBeDefined();
   });
 
+  it('色違い強い版: hue + 専用素材 + レア出現 (spawnWeight<1) で差別化されている', () => {
+    // 強い版と専用素材の対応 (変種ごとに専用素材 — オーナー決定 2026-07-19)
+    const variants: Array<[string, string]> = [
+      ['red-slime', 'red-jelly'],
+      ['dusk-bat', 'dusk-wing'],
+      ['crimson-shroom', 'crimson-spore'],
+    ];
+    for (const [id, mat] of variants) {
+      const m = MONSTERS_BY_ID[id];
+      expect(m?.tier).toBe(1);
+      expect(m?.hue).toBeGreaterThan(0); // 色違い (hue-rotate)
+      expect(m?.spawnWeight).toBeLessThan(1); // 出現は base より稀
+      expect(m?.drops.some((d) => d.item === mat)).toBe(true); // 専用素材を落とす
+      expect(ITEMS[mat]).toBeDefined();
+    }
+    // そらいろスライムは最弱の練習敵 (xp 3)
+    expect(MONSTERS_BY_ID['sky-slime']?.xp).toBe(3);
+  });
+
   it('はぐれスライム: HP 明示で低い + fleer は逃走して monster-fled で決着 (勝敗なし)', () => {
     // レア出現なので stray-slime を引く seed を探す
     let battle: import('../battle.js').BattleState | null = null;

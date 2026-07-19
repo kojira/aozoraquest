@@ -108,7 +108,7 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
         style={{ display: 'inline-block', opacity: defeated ? 0.35 : 1, transform: defeated ? 'rotate(180deg)' : 'none', transition: 'opacity 300ms ease' }}
         className={!defeated && state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
       >
-        <MonsterSvg species={monsterDef?.species ?? 'slime'} size={84} />
+        <MonsterSvg species={monsterDef?.species ?? 'slime'} hue={monsterDef?.hue ?? 0} size={84} />
       </div>
       {showEnemyVitals && !defeated && (
         <>

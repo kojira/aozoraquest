@@ -480,6 +480,9 @@ export interface MonsterDef {
   mp?: number;
   /** 出現の重み (default 1)。レア敵 (はぐれメタル等) は 1 未満にして稀にする。 */
   spawnWeight?: number;
+  /** 色違い変種の色相回転 (度)。同じ species の SVG を hue-rotate で塗り替えて
+   *  「あかいスライム」等の強い版/レッサーを安価に作る (オーナー要望 2026-07-19)。 */
+  hue?: number;
   /** 勝利時に得る XP。tier を目安にモンスター個別に設定して幅を持たせる (tier だけで
    *  決めると はぐれメタルのような「同 tier で飛び抜けて高 XP」の敵が作れない —
    *  オーナー要望 2026-07-18)。なお本格的なはぐれメタル型 (高 xp + 高回避 + 低 HP +
@@ -506,7 +509,10 @@ export const ITEMS: Record<string, { name: string }> = {
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
   'slime-drop': { name: 'スライムのしずく' },
+  'red-jelly': { name: 'あかいゼリー' }, // あかいスライム (強い版) の素材
   'metal-shard': { name: 'はぐれのかけら' }, // はぐれスライムの希少ドロップ。現状は換金専用 (将来レア装備素材に転用予定)
+  'dusk-wing': { name: 'よいやみの翼膜' }, // よるのコウモリ (強い版) の素材
+  'crimson-spore': { name: 'べにの胞子' }, // べにヒカリダケ (強い版) の素材
   'bat-wing': { name: 'コウモリの翼膜' },
   'mush-spore': { name: 'ヒカリダケの胞子' },
   'golem-core': { name: 'ゴーレムの核片' },
@@ -520,9 +526,15 @@ export const ITEMS: Record<string, { name: string }> = {
 export const MONSTERS: readonly MonsterDef[] = [
   // tier1: 手習い (初心者でも勝てる)。xp 14〜30。同 tier 内も体感できる幅を持たせる
   // (レビュー: 差が小さすぎると誤差に埋もれる)。tier をまたぐ差はさらに大きい。
-  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [14, 12, 10, 8, 16], xp: 14, drops: [{ item: 'slime-drop', chance: 0.7 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
-  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], xp: 22, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 30, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  // そらいろスライム: 最弱の練習敵 (xp3・低ドロップ)。「初期からスライムが強すぎる」を解消
+  // し、はぐれメタルの通常版という位置づけに (オーナー要望 2026-07-19)。
+  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], xp: 3, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.08 }], intro: 'ぷるぷると跳ねている。' },
+  // 色違い強い版 (hue-rotate)。base より手強く XP/素材も上。専用素材 red-jelly。
+  { id: 'red-slime', name: 'あかいスライム', species: 'slime', hue: 150, spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], xp: 10, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって、さっきのより手強そうだ。' },
+  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], xp: 16, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.1 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', hue: 90, spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], xp: 20, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
+  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 24, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.12 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', hue: 150, spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], xp: 26, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型: レア出現・低 HP・高 XP・毎ターン逃走。倒せれば旨いが逃げられると何も残らない
   // (オーナー要望 2026-07-19)。HP は明示 (導出だと def なりに増えるため)。高 agi で逃げ足も速い。
   { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 45, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
