@@ -805,13 +805,14 @@ export function World() {
     if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化されます (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
     setResetting(true); // I/O の間、進行オーバーレイを出す (無反応に見せない)
     setMenuOpen(false);
+    let timeoutId: number | undefined;
     try {
       // 全体タイムアウト (30s)。PDS 応答が返らない等でも進行オーバーレイが永久に
       // 固着しないよう fail-safe で throw する (実機で「もどしています…」から進めなく
-      // なる不具合の再発防止)。
+      // なる不具合の再発防止)。勝った側で必ず timer を片付ける (finally)。
       await Promise.race([
         resetOnboarding(agent, did),
-        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('reset timeout')), 30_000)),
+        new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
       ]);
       notifyWelcome({ power: WELCOME_POWER });
       // 演出 (フェード込み ≈ 3.3s) を見せ切って余韻を残してから初期状態で再入場
@@ -820,6 +821,8 @@ export function World() {
       console.warn('[world] onboarding reset failed', e);
       setNotice('リセットに失敗した (通信エラー)。もう一度どうぞ。');
       setResetting(false);
+    } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     }
   }, [agent, did, resetting]);
 
@@ -1318,7 +1321,9 @@ export function World() {
             fontSize: '0.95em', letterSpacing: '0.04em',
           }}
         >
-          はじめの地へ もどしています…
+          {/* 明滅させて「処理中」を伝える (静止だと固まって見える = 今回直したい症状そのもの)。 */}
+          <style>{'@keyframes reset-pulse{0%,100%{opacity:0.45}50%{opacity:1}}'}</style>
+          <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ もどしています…</span>
         </div>
       )}
       <WelcomeBlessingOverlay />

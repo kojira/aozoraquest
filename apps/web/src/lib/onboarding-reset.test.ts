@@ -3,8 +3,8 @@ import { deleteAllRecords } from './onboarding-reset';
 
 /** listRecords が n 件 (100 件/ページ) 返すモック agent。applyWrites/deleteRecord を記録。 */
 function makeAgent(total: number) {
-  const applyWrites = vi.fn(async () => ({ data: {} }));
-  const deleteRecord = vi.fn(async () => ({ data: {} }));
+  const applyWrites = vi.fn(async (_args: { repo: string; writes: unknown[] }) => ({ data: {} }));
+  const deleteRecord = vi.fn(async (_args: unknown) => ({ data: {} }));
   const listRecords = vi.fn(async ({ cursor }: { cursor?: string }) => {
     const start = cursor ? Number(cursor) : 0;
     const end = Math.min(start + 100, total);
