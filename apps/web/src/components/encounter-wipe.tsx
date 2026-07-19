@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
  * エンカウント演出 (DQ1 オマージュ): 黒い四角が中心から渦を巻くように画面を埋め、
  * 覆い切った瞬間に下のコンテンツをバトル画面へ差し替えて、逆再生で開く。
  *
- * 使い方 (world.tsx / trial-arena.tsx):
+ * 使い方 (world.tsx):
  *   phase: 'cover'  — 元画面の上でタイルが閉じていく
  *   phase: 'hold'   — 全面黒のまま待機 (支払い通信が cover より長いときのつなぎ)
  *   phase: 'reveal' — バトル画面の上でタイルが開いていく (cover より短くテンポ優先)
