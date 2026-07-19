@@ -9,6 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
+import type { GearSelection } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -34,6 +35,8 @@ export interface GameState {
   materials: Record<string, number>;
   /** 装備中の gear id。 */
   gear: string[];
+  /** 装備中の個体 (強化値つき GearSelection)。client がミラー送信。戦闘の実効装備はこちら (#377)。 */
+  gearSel?: GearSelection;
   /** 位置。 */
   x: number;
   y: number;

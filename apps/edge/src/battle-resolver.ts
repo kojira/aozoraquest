@@ -13,7 +13,7 @@
 import {
   startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant,
   terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
-  type BattleState, type Command, type Archetype, type StatVector,
+  type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
@@ -155,7 +155,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
-    baseStats, equipIds: state.gear, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
+    baseStats, equipIds: state.gear, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32({ useKuda: true })).value;
@@ -296,6 +296,13 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
     return { ...cur, materials: m, carryMp: newMp >= c.maxMp ? undefined : newMp };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed };
+}
+
+/** 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。
+ *  forgeable だが §6-4 dev 無害・archetype と同じ信用レベル (M5 で再検討)。 */
+export async function handleGear(env: ResolverEnv, userDid: string, gear: GearSelection, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<{ ok: true }> {
+  await readModifyWrite(env, userDid, (cur) => ({ ...cur, gearSel: gear }), { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  return { ok: true };
 }
 
 export interface TurnResult {
