@@ -51,6 +51,9 @@ import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
+import { WelcomeBlessingOverlay, notifyWelcome, WELCOME_TOTAL_MS } from '@/components/welcome-blessing';
+import { resetOnboarding, WELCOME_POWER } from '@/lib/onboarding-reset';
+import { isAdminDid } from '@/lib/runtime-config';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -131,6 +134,7 @@ export function World() {
   statusOpenRef.current = statusOpen;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuOpenRef = useRef(false);
+  const [resetting, setResetting] = useState(false); // オンボード用リセット中 (dev+管理者)
   menuOpenRef.current = menuOpen;
   const [menuHint, setMenuHint] = useState(() => {
     try {
@@ -792,6 +796,25 @@ export function World() {
     }
   }, [agent, did]);
 
+  // オンボード用リセット (dev + 管理者のみ)。完全ワイプ → 初期状態 + はじまりの祝福 (+20 パワー)。
+  // 演出を見せてから再読込して確実に初期状態を反映する。
+  const doReset = useCallback(async () => {
+    if (!agent || !did || resetting) return;
+    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化されます (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
+    setResetting(true); // 重い直列 I/O の間、進行オーバーレイを出す (無反応に見せない)
+    setMenuOpen(false);
+    try {
+      await resetOnboarding(agent, did);
+      notifyWelcome({ power: WELCOME_POWER });
+      // 演出 (フェード込み ≈ 3.3s) を見せ切って余韻を残してから初期状態で再入場
+      window.setTimeout(() => window.location.reload(), WELCOME_TOTAL_MS + 900);
+    } catch (e) {
+      console.warn('[world] onboarding reset failed', e);
+      setNotice('リセットに失敗した (通信エラー)。もう一度どうぞ。');
+      setResetting(false);
+    }
+  }, [agent, did, resetting]);
+
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
   // 素材 (craft レコードの集計で差し引き)。品質は rkey + luk から決定的
   const onCraft = useCallback(
@@ -1002,6 +1025,12 @@ export function World() {
     ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
     ...(inTown
       ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
+      : []),
+    // 管理者用: オンボードを体験するための「はじめから」。破壊的なので confirm 付き。
+    // world ルート自体が WORLD_PREVIEW_ENABLED (dev/local 限定) で早期 return されるので、
+    // ここは追加で管理者 (isAdminDid) に絞るだけ = 実質 dev + 管理者。
+    ...(did && isAdminDid(did)
+      ? [{ key: 'reset', label: resetting ? 'リセット中…' : '⟲ はじめから (管理)', onSelect: () => void doReset() } as WorldMenuCommand]
       : []),
   ];
 
@@ -1271,6 +1300,20 @@ export function World() {
         />
       )}
       {wipeOverlay}
+      {/* リセット中の進行表示 (重い直列 I/O の間、無反応に見せない)。祝福演出 (z1100) の下に敷く。 */}
+      {resetting && (
+        <div
+          aria-live="polite"
+          style={{
+            position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(6, 12, 24, 0.82)', color: 'var(--color-fg)', zIndex: 1050,
+            fontSize: '0.95em', letterSpacing: '0.04em',
+          }}
+        >
+          はじめの地へ もどしています…
+        </div>
+      )}
+      <WelcomeBlessingOverlay />
     </div>
   );
 }

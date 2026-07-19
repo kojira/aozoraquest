@@ -16,6 +16,7 @@ const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_ITEM = 'app.aozoraquest.world.item';
 const LXM_GEAR = 'app.aozoraquest.world.gear';
 const LXM_SEARCH = 'app.aozoraquest.world.search';
+const LXM_RESET = 'app.aozoraquest.world.reset';
 const LXM_TURN = 'app.aozoraquest.battle.turn';
 const LXM_STATE = 'app.aozoraquest.me.state';
 
@@ -115,6 +116,12 @@ export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
 /** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
 export function serverSearch(agent: Agent, token?: string): Promise<{ found: string | null; materials: Record<string, number> }> {
   return callEdge<{ found: string | null; materials: Record<string, number> }>(agent, LXM_SEARCH, '/api/world/search', token ? { token } : {});
+}
+
+/** オンボード用リセット: 権威 gameState + 戦闘ガードをサーバーで削除する (本人のみ)。次の入場で初期状態に戻る。
+ *  client 側 PDS レコード (制作/装備/世界/パワー/分析XP) の初期化は呼び出し側 (resetOnboarding) が行う。 */
+export function serverReset(agent: Agent): Promise<{ ok: true }> {
+  return callEdge<{ ok: true }>(agent, LXM_RESET, '/api/world/reset', {});
 }
 
 /** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */

@@ -17,7 +17,8 @@ import {
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
-import { readState, readModifyWrite, emptyState, type GameStateEnv, type GameState } from './game-state';
+import { readState, readModifyWrite, emptyState, rkeyForDid, GAME_STATE_COLLECTION, type GameStateEnv, type GameState } from './game-state';
+import { serverDeleteRecord } from './server-pds';
 import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
 import { resolveDidDocument } from './service-auth';
@@ -106,7 +107,8 @@ export const WORLD_COLLECTION = 'app.aozoraquest.world';
  */
 export async function migrateInitState(userDid: string, nowIso: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<GameState> {
   const base = emptyState(userDid, nowIso);
-  base.materials = { 'sky-feather': 1 }; // 冒険はじめに そらのはね 1 個 (困ったら街へ戻れる。Option B リセット)
+  // 冒険はじめの持ち物: やくそう 1 (最初の回復) + そらのはね 1 (困ったら街へ戻れる)。
+  base.materials = { herb: 1, 'sky-feather': 1 };
   try {
     const { pds } = await resolveUserPds(userDid, fetchImpl);
     const [powerRec, analysisRec, worldRec] = await Promise.all([
@@ -134,6 +136,23 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
     }
   } catch { /* 読めない/未診断は power 0・Lv1 で開始 (読取のみ = 無害) */ }
   return base;
+}
+
+/**
+ * オンボード用リセット: サーバー権威データ (gameState + 戦闘ガード) を消す。
+ * 次の move/state で migrateInitState が走り、初期状態 (spawn + やくそう&そらのはね + Lv1) から再開する。
+ * client 側の PDS レコード (制作/装備/世界/パワー/分析XP) の初期化は client が本人トークンで行う
+ * (自分の repo は本人が書ける)。ここはユーザーが書けない権威データだけを担当する。
+ * **認証済み本人 (userDid) の state しか消せない** = 破壊範囲は呼び出し本人に限定 (他人を初期化できない)。
+ */
+export async function handleReset(env: ResolverEnv, userDid: string, now: number): Promise<{ ok: true }> {
+  // 進行中の戦闘ガードがあれば破棄 (未報酬なので二重報酬にはならない)。
+  const guard = await readGuard<SealedMeta, BattleState>(env, userDid);
+  if (guard) await deleteGuard(env, now, userDid, guard.cid);
+  // gameState レコードを削除 → 次の move/state で migrateInitState が初期状態を生成する。
+  const existing = await readState(env, userDid);
+  if (existing) await serverDeleteRecord(env, now, GAME_STATE_COLLECTION, rkeyForDid(userDid), existing.cid);
+  return { ok: true };
 }
 
 /** バトルガードの寿命 (秒)。各ターンで更新。切れたガードは move 時に flush = クラッシュしても
