@@ -36,7 +36,6 @@ import { ComposeColumn } from '@/components/compose-modal';
 import { useComposePaneOpen, closeComposePane } from '@/lib/compose-pane';
 import { refreshQuestIndex } from '@/lib/quest-index-cache';
 import { invalidateProfile } from '@/lib/profile-cache';
-import { oauthDebugEnabled, dumpOAuthState } from '@/lib/oauth-debug';
 
 /** picker の表示位置: 'end' = 末尾タイル、数値 = そのカラムの直右 */
 type PickerAnchor = number | 'end' | null;
@@ -183,21 +182,8 @@ export function Workspace() {
   // `/` 離脱時は投稿カラムを閉じる (ルート跨ぎ・モバイル幅で開きっぱなしを防ぐ)
   useEffect(() => () => closeComposePane(), []);
 
-  // dev 限定: 復元ハングの診断ダンプ (コンソールが CSP eval 不可な端末向け)。捕捉した未捕捉エラーは
-  // page load 以降ずっと保持されるので、8s タイムアウトで login に抜けた後でも「Script error.」を拾える。
-  const debugDumpButton = oauthDebugEnabled ? (
-    <button type="button" onClick={() => void dumpOAuthState()} style={{ marginTop: '2em', fontSize: '0.8em', opacity: 0.7 }}>
-      🔧 診断ダンプを保存
-    </button>
-  ) : null;
-
   if (session.status === 'loading') {
-    return (
-      <>
-        <p>準備しています...</p>
-        {debugDumpButton}
-      </>
-    );
+    return <p>準備しています...</p>;
   }
 
   if (session.status === 'signed-out') {
@@ -213,7 +199,6 @@ export function Workspace() {
         <p style={{ marginTop: '1.5em', fontSize: '0.85em' }}>
           <Link to="/board">ログインせずにクエスト掲示板をのぞく →</Link>
         </p>
-        {debugDumpButton}
       </div>
     );
   }
