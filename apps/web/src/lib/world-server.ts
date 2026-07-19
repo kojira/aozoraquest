@@ -13,6 +13,7 @@ const EDGE_DID = (import.meta.env.VITE_EDGE_DID as string | undefined)?.trim();
 
 const LXM_MOVE = 'app.aozoraquest.world.move';
 const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
+const LXM_ITEM = 'app.aozoraquest.world.item';
 const LXM_TURN = 'app.aozoraquest.battle.turn';
 const LXM_STATE = 'app.aozoraquest.me.state';
 
@@ -79,7 +80,9 @@ export interface ServerMoveResult { x: number; y: number; terrain: string; heale
 export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward { xp?: number; drops?: string[]; materialsLost?: string[]; powerSpent?: number }
-export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string }
+export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number }
+export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
+export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 
 /** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
  *  token 未指定 (初回) はサーバーが gameState から位置を再同期する。歩行では PDS を触らないので高速。 */
@@ -92,9 +95,14 @@ export function serverTurn(agent: Agent, battleId: string, turn: number, command
   return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command });
 }
 
-/** そらのはねワープ: 街 (x,y) へテレポート。位置と署名トークンをサーバーが更新して返す (1歩で戻されない)。 */
-export function serverTeleport(agent: Agent, x: number, y: number): Promise<{ x: number; y: number; token: string }> {
-  return callEdge<{ x: number; y: number; token: string }>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
+/** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
+export function serverTeleport(agent: Agent, x: number, y: number): Promise<ServerTeleportResult> {
+  return callEdge<ServerTeleportResult>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
+}
+
+/** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。 */
+export function serverItem(agent: Agent, item: 'herb' | 'tonic'): Promise<ServerItemResult> {
+  return callEdge<ServerItemResult>(agent, LXM_ITEM, '/api/world/item', { item });
 }
 
 /** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */

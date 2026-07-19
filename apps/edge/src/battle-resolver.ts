@@ -11,7 +11,7 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp,
+  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant,
   terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector,
 } from '@aozoraquest/core';
@@ -103,6 +103,7 @@ export const WORLD_COLLECTION = 'app.aozoraquest.world';
  */
 export async function migrateInitState(userDid: string, nowIso: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<GameState> {
   const base = emptyState(userDid, nowIso);
+  base.materials = { 'sky-feather': 1 }; // 冒険はじめに そらのはね 1 個 (困ったら街へ戻れる。Option B リセット)
   try {
     const { pds } = await resolveUserPds(userDid, fetchImpl);
     const [powerRec, analysisRec, worldRec] = await Promise.all([
@@ -152,8 +153,9 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const jobLevel = jobLevelFromXp(state.jobXp[archetype] ?? 0);
   const playerLevel = playerLevelFromXp(state.playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
-  const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.herbs ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
-    baseStats, equipIds: state.gear, tonics: state.tonics ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
+  // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
+  const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
+    baseStats, equipIds: state.gear, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32({ useKuda: true })).value;
@@ -236,7 +238,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   return { x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
 }
 
-export interface TeleportResult { x: number; y: number; token: string }
+export interface TeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 
 /**
  * そらのはねワープ: 街タイルへテレポートし、権威位置 + トークンを更新する (client だけで飛ぶと 1 歩で
@@ -248,10 +250,52 @@ export async function handleTeleport(env: ResolverEnv, userDid: string, x: numbe
   if (!townAt(tx, ty)) throw new ResolverError('そこは街ではない (そらのはねは街へのみ)', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (g) await deleteGuard(env, now, userDid, g.cid); // 念のため孤立ガードを破棄
-  await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: tx, y: ty, carryHp: undefined, carryMp: undefined, lastTown: { x: tx, y: ty } }),
-    { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  // そらのはね (sky-feather) をサーバー在庫から 1 消費。持っていなければ 400。全回復 + lastTown 更新。
+  let materials: Record<string, number> = {};
+  const written = await readModifyWrite(env, userDid, (cur) => {
+    const have = cur.materials['sky-feather'] ?? 0;
+    if (have <= 0) throw new ResolverError('そらのはねを もっていない', 400);
+    const m: Record<string, number> = { ...cur.materials };
+    m['sky-feather'] = have - 1;
+    if (m['sky-feather'] <= 0) delete m['sky-feather'];
+    return { ...cur, x: tx, y: ty, carryHp: undefined, carryMp: undefined, lastTown: { x: tx, y: ty }, materials: m };
+  }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  materials = written.materials;
   const token = signPosition(env, { did: userDid, x: tx, y: ty, counter: 0, iat: now });
-  return { x: tx, y: ty, token };
+  return { x: tx, y: ty, token, materials };
+}
+
+export interface ItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
+
+/** フィールドの道具使用 (やくそう=herb / そらのしずく=tonic)。サーバー在庫を 1 消費して carryHp/Mp を回復。
+ *  maxHp/Mp はプレイヤーの archetype+Lv+装備から算出 (playerCombatant)。満タン/在庫切れは 400。 */
+export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb' | 'tonic', now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<ItemResult> {
+  const rec = await readState(env, userDid);
+  const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
+  const matId = item === 'herb' ? 'herb' : 'sky-dew';
+  if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
+  const { archetype, baseStats, handle } = await readDiagnosis(userDid, ns, fetchImpl);
+  const c = playerCombatant(archetype, jobLevelFromXp(state.jobXp[archetype] ?? 0), playerLevelFromXp(state.playerXp), handle, baseStats, state.gear);
+  let healed = 0;
+  const written = await readModifyWrite(env, userDid, (cur) => {
+    const have = cur.materials[matId] ?? 0;
+    if (have <= 0) throw new ResolverError('在庫切れ', 400);
+    const m = { ...cur.materials, [matId]: have - 1 };
+    if ((m[matId] ?? 0) <= 0) delete m[matId];
+    if (item === 'herb') {
+      const curHp = cur.carryHp ?? c.maxHp;
+      if (curHp >= c.maxHp) throw new ResolverError('HP は満タン', 400);
+      const newHp = Math.min(c.maxHp, curHp + Math.round(c.maxHp * BATTLE_TUNING.herbHealRatio));
+      healed = newHp - curHp;
+      return { ...cur, materials: m, carryHp: newHp >= c.maxHp ? undefined : newHp };
+    }
+    const curMp = cur.carryMp ?? c.maxMp;
+    if (curMp >= c.maxMp) throw new ResolverError('MP は満タン', 400);
+    const newMp = Math.min(c.maxMp, curMp + Math.max(1, Math.round(c.maxMp * BATTLE_TUNING.tonicMpRatio)));
+    healed = newMp - curMp;
+    return { ...cur, materials: m, carryMp: newMp >= c.maxMp ? undefined : newMp };
+  }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed };
 }
 
 export interface TurnResult {
@@ -263,6 +307,10 @@ export interface TurnResult {
   position?: { x: number; y: number };
   /** 決着後の位置に対応する新しい署名トークン (敗北帰還で位置が変わるため)。 */
   token?: string;
+  /** 決着後の権威在庫/HP (client は表示をこれで同期。materials 一本化 = やくそう herb / しずく sky-dew)。 */
+  materials?: Record<string, number>;
+  carryHp?: number;
+  carryMp?: number;
 }
 
 /**
@@ -298,8 +346,13 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     let awarded: AwardBreakdown = {};
     let finalPos = { x: 0, y: 0 };
     const window = enemyWindow(now);
-    await readModifyWrite(env, userDid, (cur: GameState): GameState => {
-      const r = applyBattleOutcome(cur, {
+    const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
+      // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
+      const consumedMaterials = { ...cur.materials };
+      const setCount = (id: string, n: number) => { if (n > 0) consumedMaterials[id] = n; else delete consumedMaterials[id]; };
+      setCount('herb', next.herbs ?? 0);
+      setCount('sky-dew', next.tonics ?? 0);
+      const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, rewardSeed, lossSeed, rewarded: guard.rewarded,
       });
@@ -320,15 +373,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         y: finalPos.y,
         carryHp: decision === 'lose' ? undefined : next.player.hp,
         carryMp: decision === 'lose' ? undefined : next.player.mp,
-        herbs: next.herbs,
-        tonics: next.tonics,
         defeated,
         defeatedWindow: window,
       };
     }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, ns) });
     // 決着後の位置に対応する新トークンを発行 (敗北帰還で位置が変わるので client はこれで同期)。
     const token = signPosition(env, { did: userDid, x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
-    return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token };
+    return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
+      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp };
   }
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──

@@ -32,7 +32,7 @@ import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
 import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { serverMove, serverTurn, serverState, serverTeleport, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
+import { serverMove, serverTurn, serverState, serverTeleport, serverItem, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -197,6 +197,10 @@ export function World() {
     resultPos?: { x: number; y: number };
     /** 決着後の位置に対応する新トークン。 */
     resultToken?: string;
+    /** 決着後の権威在庫/HP (materials 一本化)。決着タップで表示を同期する。 */
+    resultMaterials?: Record<string, number>;
+    resultCarryHp?: number;
+    resultCarryMp?: number;
   } | null>(null);
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
@@ -258,6 +262,8 @@ export function World() {
     let cancelled = false;
     setLoadErr(false);
     let grantStarter = false;
+    // サーバー gameState の在庫/HP (取得できれば表示の正)。try の内外で使うのでここで宣言。
+    let serverInv: { materials: Record<string, number>; carryHp?: number | undefined; carryMp?: number | undefined } | null = null;
     (async () => {
       try {
         const state = await loadWorldState(agent, did);
@@ -269,13 +275,17 @@ export function World() {
         // 使うことで、初回移動でクライアント位置とサーバー位置がズレて「ワープ」するのを防ぐ。
         // 街/地図/HP 等の探索メモは従来どおり client の world-record を使う。取得失敗時は world-record 位置。
         let px = state.x, py = state.y;
+        // サーバー gameState を在庫/HP/位置の**唯一の正**とする (#372)。取得失敗時のみ world-record にフォールバック。
         try {
           const ss = await serverState(agent);
-          if (!cancelled && Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
-            px = ss.state.x; py = ss.state.y;
-            // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
-            // 再同期・ワープが起きない (impl レビュー指摘)。
-            if (ss.token) tokenRef.current = ss.token;
+          if (!cancelled) {
+            serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
+            if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
+              px = ss.state.x; py = ss.state.y;
+              // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
+              // 再同期・ワープが起きない (impl レビュー指摘)。
+              if (ss.token) tokenRef.current = ss.token;
+            }
           }
         } catch (e) { console.warn('[world] serverState failed; using local position', e); }
         if (cancelled) return;
@@ -288,8 +298,9 @@ export function World() {
         const initialWs = {
           x: px,
           y: py,
-          hp: state.hp,
-          mp: state.mp,
+          // HP/MP はサーバー権威 (carryHp/Mp)。undefined=満タンなので null に。取得失敗時のみ world-record。
+          hp: serverInv ? (serverInv.carryHp ?? null) : state.hp,
+          mp: serverInv ? (serverInv.carryMp ?? null) : state.mp,
           lastTown: state.lastTown,
           regions: state.regions,
           visitedTowns: seededVisited,
@@ -332,19 +343,23 @@ export function World() {
       setAvatarUrl(profile?.data.avatar ?? null);
       setPlayerName(profile?.data.displayName || profile?.data.handle || '');
       setDiag(d);
-      setHerbStock(stats?.materials['herb'] ?? 0);
-      setTonicStock(stats?.materials['sky-dew'] ?? 0);
-      setFeatherStock((stats?.materials['sky-feather'] ?? 0) + (grantStarter ? 1 : 0));
-      {
-        const m = { ...(stats?.materials ?? {}) };
+      // 在庫はサーバー gameState を正とする (#372)。やくそう=herb / しずく=sky-dew / はね=sky-feather。
+      // サーバー取得失敗時のみ従来のクライアント集計 (stats+craft) にフォールバック。
+      let inv: Record<string, number>;
+      if (serverInv) {
+        inv = { ...serverInv.materials };
+      } else {
+        inv = { ...(stats?.materials ?? {}) };
         for (const [id, n] of Object.entries(craftInv.materialsSpent)) {
-          const left = Math.max(0, (m[id] ?? 0) - n);
-          if (left > 0) m[id] = left;
-          else delete m[id];
+          const left = Math.max(0, (inv[id] ?? 0) - n);
+          if (left > 0) inv[id] = left; else delete inv[id];
         }
-        materialsRef.current = m;
-        setMaterialsView({ ...m });
       }
+      setHerbStock(inv['herb'] ?? 0);
+      setTonicStock(inv['sky-dew'] ?? 0);
+      setFeatherStock(inv['sky-feather'] ?? 0);
+      materialsRef.current = inv;
+      setMaterialsView({ ...inv });
       setCraftedPieces(craftInv.pieces);
       setGearRefs(refs);
       setPoints(pts);
@@ -492,7 +507,8 @@ export function World() {
           const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
             ...(res.awarded ? { awarded: res.awarded } : {}),
             ...(res.position ? { resultPos: res.position } : {}),
-            ...(res.token ? { resultToken: res.token } : {}) };
+            ...(res.token ? { resultToken: res.token } : {}),
+            ...(res.materials ? { resultMaterials: res.materials, resultCarryHp: res.carryHp, resultCarryMp: res.carryMp } : {}) };
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
@@ -545,32 +561,29 @@ export function World() {
       // 決着後の権威位置 (敗北は最後の街へ帰還) に移動し、対応トークンで同期する。
       const resultPos = b.resultPos;
       if (b.resultToken) tokenRef.current = b.resultToken;
-      // HP/MP をフィールドに持ち帰る (持続)。敗北はサーバーが carry を消す = 全快なので null に。
+      // HP/MP + 在庫はサーバー権威 (turn 結果)。carry は undefined=満タン → null。敗北は最後の街へ帰還。
       if (next.outcome === 'lose') {
-        // 敗北: 最後の街へ帰還 + 全回復。lastTown を更新して次の敗北帰還先も揃える。
-        setWs((s) => (s ? { ...s, hp: null, mp: null, ...(resultPos ? { x: resultPos.x, y: resultPos.y, lastTown: resultPos } : {}) } : s));
+        setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y, lastTown: resultPos } : {}) } : s));
         if (resultPos) { const t = townAt(resultPos.x, resultPos.y); setNotice(t ? `気がつくと「${t.name}」に はこばれていた…` : '気がつくと 街に はこばれていた…'); }
       } else {
-        // 満タンは null に正規化 (絶対値で焼くと後のレベルアップで「減って見える」)。
-        const hp = next.player.hp >= next.player.maxHp ? null : Math.max(1, next.player.hp);
-        const mp = next.player.mp >= next.player.maxMp ? null : next.player.mp;
-        setWs((s) => (s ? { ...s, hp, mp, ...(resultPos ? { x: resultPos.x, y: resultPos.y } : {}) } : s));
+        setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y } : {}) } : s));
       }
       scheduleSave();
-      // クライアント在庫はサーバー報酬 (awarded) をミラーするだけ (表示用。正はサーバー state)。
-      // TODO: 在庫表示もサーバー state を正にする移行 (別 PR)。ここは UX を合わせる best-effort。
-      const countOf = (arr: readonly string[], id: string) => arr.filter((x) => x === id).length;
-      setHerbStock((n) => Math.max(0, n - countOf(lost, 'herb')) + countOf(drops, 'herb'));
-      setTonicStock((n) => Math.max(0, n - countOf(lost, 'sky-dew')) + countOf(drops, 'sky-dew'));
-      setFeatherStock((n) => Math.max(0, n - countOf(lost, 'sky-feather')) + countOf(drops, 'sky-feather'));
-      {
+      // 在庫表示をサーバー権威 (turn 結果の materials) で同期。取得できなければ従来のミラーで best-effort。
+      if (b.resultMaterials) {
+        const m = b.resultMaterials;
+        setHerbStock(m['herb'] ?? 0);
+        setTonicStock(m['sky-dew'] ?? 0);
+        setFeatherStock(m['sky-feather'] ?? 0);
+        materialsRef.current = { ...m };
+      } else {
+        const countOf = (arr: readonly string[], id: string) => arr.filter((x) => x === id).length;
+        setHerbStock((n) => Math.max(0, n - countOf(lost, 'herb')) + countOf(drops, 'herb'));
+        setTonicStock((n) => Math.max(0, n - countOf(lost, 'sky-dew')) + countOf(drops, 'sky-dew'));
+        setFeatherStock((n) => Math.max(0, n - countOf(lost, 'sky-feather')) + countOf(drops, 'sky-feather'));
         const m = { ...materialsRef.current };
         for (const d of drops) m[d] = (m[d] ?? 0) + 1;
-        for (const id of lost) {
-          const left = Math.max(0, (m[id] ?? 0) - 1);
-          if (left > 0) m[id] = left;
-          else delete m[id];
-        }
+        for (const id of lost) { const left = Math.max(0, (m[id] ?? 0) - 1); if (left > 0) m[id] = left; else delete m[id]; }
         materialsRef.current = m;
       }
       // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
@@ -635,6 +648,10 @@ export function World() {
             tokenRef.current = res.token;
             wsRef.current = wsRef.current ? { ...wsRef.current, x: res.x, y: res.y } : wsRef.current;
             setWs(wsRef.current);
+            // そらのはね消費はサーバー確定 → 在庫を応答で同期。
+            setFeatherStock(res.materials['sky-feather'] ?? 0);
+            materialsRef.current = res.materials;
+            setMaterialsView({ ...res.materials });
           })
           .catch((e) => { console.warn('[world] teleport sync failed', e); setNotice('ワープをサーバーに反映できなかった (通信エラー)。'); })
           .finally(() => { moveBusyRef.current = false; });
@@ -664,14 +681,21 @@ export function World() {
     }
     const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
     const healed = Math.min(combat.maxHp, hpNow + heal);
+    // 楽観更新 (即応) → サーバー権威で確定 (在庫消費 + HP 回復を gameState に)。失敗ならロールバック。
     setHerbStock((n) => n - 1);
     subtractMaterial('herb', 1);
     setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
+    if (agent) void serverItem(agent, 'herb').then((res) => {
+      setHerbStock(res.materials['herb'] ?? 0);
+      materialsRef.current = res.materials;
+      setMaterialsView({ ...res.materials });
+      setWs((s) => (s ? { ...s, hp: res.carryHp ?? null } : s));
+    }).catch((e) => { console.warn('[world] herb use failed', e); setHerbStock((n) => n + 1); setNotice('やくそうを つかえなかった (通信エラー)。'); });
     const m = `やくそうを使った! HP が ${healed - hpNow} 回復。`;
     setNotice(m);
     scheduleSave();
     return m;
-  }, [combat, herbStock, scheduleSave]);
+  }, [combat, herbStock, agent, scheduleSave, subtractMaterial]);
 
   // フィールドでそらのしずくを使う (MP 回復)
   const useTonicOnField = useCallback((): string | void => {
@@ -688,11 +712,17 @@ export function World() {
     setTonicStock((n) => n - 1);
     subtractMaterial('sky-dew', 1);
     setWs({ ...cur, mp: restored >= combat.maxMp ? null : restored });
+    if (agent) void serverItem(agent, 'tonic').then((res) => {
+      setTonicStock(res.materials['sky-dew'] ?? 0);
+      materialsRef.current = res.materials;
+      setMaterialsView({ ...res.materials });
+      setWs((s) => (s ? { ...s, mp: res.carryMp ?? null } : s));
+    }).catch((e) => { console.warn('[world] tonic use failed', e); setTonicStock((n) => n + 1); setNotice('そらのしずくを つかえなかった (通信エラー)。'); });
     const m = `そらのしずくを使った! MP が ${restored - mpNow} 回復。`;
     setNotice(m);
     scheduleSave();
     return m;
-  }, [combat, tonicStock, scheduleSave]);
+  }, [combat, tonicStock, agent, scheduleSave, subtractMaterial]);
 
   // そらのはねを使う: 訪問済みの街から行き先を選ぶ (オーナー要望 2026-07-18)。
   // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
@@ -716,8 +746,9 @@ export function World() {
       setNotice('もうその街にいる。');
       return;
     }
-    setFeatherStock((n) => n - 1);
-    subtractMaterial('sky-feather', 1);
+    // そらのはねの消費はサーバー (handleTeleport) が行う → onCoverDone の serverTeleport 応答で在庫更新。
+    // ここでは楽観的に featherStock だけ即減らす (材料 map はサーバー応答で確定)。
+    setFeatherStock((n) => Math.max(0, n - 1));
     featherDestRef.current = dest;
     // cover が画面を覆うまでの間に「自分の操作の結果」と分かる一言を出す
     // (エンカウント演出と同一のワイプなので、無言だと戦闘が始まると誤解する)
