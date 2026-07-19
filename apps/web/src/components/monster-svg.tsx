@@ -6,34 +6,84 @@ import type { MonsterSpecies } from '@aozoraquest/core';
  * 画像アセットなしのインライン SVG = 軽量・省メモリ (モバイル方針)。
  * species ごとに 1 枚、viewBox 100x100。ドット RPG 風の太い輪郭とシンプルな形。
  */
-export function MonsterSvg({ species, size = 160, hue = 0 }: { species: MonsterSpecies; size?: number; hue?: number }) {
-  // 色違い変種は hue-rotate で塗り替える (同じ形の「あかいスライム」等を安価に作る)。
-  const dropShadow = 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))';
+export function MonsterSvg({ species, size = 160, tint }: { species: MonsterSpecies; size?: number; tint?: string | undefined }) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 100 100"
       aria-hidden
-      style={{ display: 'block', filter: hue ? `hue-rotate(${hue}deg) ${dropShadow}` : dropShadow }}
+      style={{ display: 'block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))' }}
     >
-      {BODIES[species]}
+      {bodyFor(species, tint)}
     </svg>
   );
 }
 
 const OUT = '#1b2530'; // 輪郭色
 
-const BODIES: Record<MonsterSpecies, ReactElement> = {
-  slime: (
+// 色違い変種は tint (明示色) で主要な塗りを差し替える。CSS hue-rotate は輝度保存で
+// 「紅のつもりが青緑」になる等の事故があるため、狙った色を直接指定する (レビュー ★)。
+function bodyFor(species: MonsterSpecies, tint?: string): ReactElement {
+  switch (species) {
+    case 'slime':
+      return slimeBody(tint);
+    case 'bat':
+      return batBody(tint);
+    case 'mushroom':
+      return mushroomBody(tint);
+    default:
+      return BODIES[species];
+  }
+}
+
+function slimeBody(tint?: string): ReactElement {
+  return (
     <g>
-      <path d="M50 18 C74 18 84 42 84 58 C84 76 68 84 50 84 C32 84 16 76 16 58 C16 42 26 18 50 18Z" fill="#57b7ee" stroke={OUT} strokeWidth="4" />
-      <path d="M30 34 C36 26 46 24 50 24" fill="none" stroke="#bfe6ff" strokeWidth="5" strokeLinecap="round" />
+      <path d="M50 18 C74 18 84 42 84 58 C84 76 68 84 50 84 C32 84 16 76 16 58 C16 42 26 18 50 18Z" fill={tint ?? '#57b7ee'} stroke={OUT} strokeWidth="4" />
+      <path d="M30 34 C36 26 46 24 50 24" fill="none" stroke={tint ? 'rgba(255,255,255,0.7)' : '#bfe6ff'} strokeWidth="5" strokeLinecap="round" />
       <circle cx="38" cy="54" r="5" fill={OUT} />
       <circle cx="62" cy="54" r="5" fill={OUT} />
       <path d="M42 68 Q50 74 58 68" fill="none" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
     </g>
-  ),
+  );
+}
+
+function batBody(tint?: string): ReactElement {
+  const wing = tint ?? '#8f7ad6';
+  const body = tint ?? '#a58ff0';
+  return (
+    <g>
+      <path d="M8 40 Q20 26 34 34 L38 44 Q28 42 24 48Z" fill={wing} stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
+      <path d="M92 40 Q80 26 66 34 L62 44 Q72 42 76 48Z" fill={wing} stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
+      <ellipse cx="50" cy="54" rx="20" ry="22" fill={body} stroke={OUT} strokeWidth="4" />
+      <path d="M40 34 L44 24 L48 34Z M52 34 L56 24 L60 34Z" fill={body} stroke={OUT} strokeWidth="3" strokeLinejoin="round" />
+      <circle cx="43" cy="50" r="4.5" fill={OUT} />
+      <circle cx="57" cy="50" r="4.5" fill={OUT} />
+      <path d="M44 64 L48 60 L50 64 L52 60 L56 64" fill="none" stroke={OUT} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </g>
+  );
+}
+
+function mushroomBody(tint?: string): ReactElement {
+  return (
+    <g>
+      <path d="M18 48 C18 28 34 16 50 16 C66 16 82 28 82 48 C82 54 76 56 68 56 L32 56 C24 56 18 54 18 48Z" fill={tint ?? '#e8734f'} stroke={OUT} strokeWidth="4" />
+      <circle cx="34" cy="34" r="6" fill="#ffe1b3" />
+      <circle cx="58" cy="28" r="7" fill="#ffe1b3" />
+      <circle cx="68" cy="42" r="5" fill="#ffe1b3" />
+      <path d="M36 56 C36 72 40 82 50 82 C60 82 64 72 64 56Z" fill="#fff3da" stroke={OUT} strokeWidth="4" />
+      <circle cx="44" cy="66" r="4" fill={OUT} />
+      <circle cx="56" cy="66" r="4" fill={OUT} />
+      <path d="M46 75 Q50 78 54 75" fill="none" stroke={OUT} strokeWidth="3" strokeLinecap="round" />
+    </g>
+  );
+}
+
+const BODIES: Record<MonsterSpecies, ReactElement> = {
+  slime: slimeBody(),
+  bat: batBody(),
+  mushroom: mushroomBody(),
   // はぐれスライム: 同じ形の金属色 (銀) + きらめきのハイライトでレア感を出す。
   'metal-slime': (
     <g>
@@ -47,29 +97,6 @@ const BODIES: Record<MonsterSpecies, ReactElement> = {
       <circle cx="38" cy="54" r="5" fill={OUT} />
       <circle cx="62" cy="54" r="5" fill={OUT} />
       <path d="M42 70 Q50 64 58 70" fill="none" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
-    </g>
-  ),
-  bat: (
-    <g>
-      <path d="M8 40 Q20 26 34 34 L38 44 Q28 42 24 48Z" fill="#8f7ad6" stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
-      <path d="M92 40 Q80 26 66 34 L62 44 Q72 42 76 48Z" fill="#8f7ad6" stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
-      <ellipse cx="50" cy="54" rx="20" ry="22" fill="#a58ff0" stroke={OUT} strokeWidth="4" />
-      <path d="M40 34 L44 24 L48 34Z M52 34 L56 24 L60 34Z" fill="#a58ff0" stroke={OUT} strokeWidth="3" strokeLinejoin="round" />
-      <circle cx="43" cy="50" r="4.5" fill={OUT} />
-      <circle cx="57" cy="50" r="4.5" fill={OUT} />
-      <path d="M44 64 L48 60 L50 64 L52 60 L56 64" fill="none" stroke={OUT} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-    </g>
-  ),
-  mushroom: (
-    <g>
-      <path d="M18 48 C18 28 34 16 50 16 C66 16 82 28 82 48 C82 54 76 56 68 56 L32 56 C24 56 18 54 18 48Z" fill="#e8734f" stroke={OUT} strokeWidth="4" />
-      <circle cx="34" cy="34" r="6" fill="#ffe1b3" />
-      <circle cx="58" cy="28" r="7" fill="#ffe1b3" />
-      <circle cx="68" cy="42" r="5" fill="#ffe1b3" />
-      <path d="M36 56 C36 72 40 82 50 82 C60 82 64 72 64 56Z" fill="#fff3da" stroke={OUT} strokeWidth="4" />
-      <circle cx="44" cy="66" r="4" fill={OUT} />
-      <circle cx="56" cy="66" r="4" fill={OUT} />
-      <path d="M46 75 Q50 78 54 75" fill="none" stroke={OUT} strokeWidth="3" strokeLinecap="round" />
     </g>
   ),
   golem: (
