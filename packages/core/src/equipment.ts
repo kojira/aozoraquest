@@ -222,6 +222,7 @@ export const CONSUMABLE_ITEMS: readonly string[] = ['herb', 'sky-dew', 'sky-feat
  *  (equipment→battle は循環になるため静的リスト。整合はテストで固定)。 */
 export const SELLABLE_MATERIALS: readonly string[] = [
   'slime-drop',
+  'metal-shard',
   'bat-wing',
   'mush-spore',
   'golem-core',
