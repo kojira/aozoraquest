@@ -24,7 +24,9 @@ import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 import { getRecord, PdsError } from './pds';
 
-export const ANALYSIS_COLLECTION = 'app.aozoraquest.analysis';
+/** NSID の既定 prefix (本番)。dev は `app.aozoraquest.dev`。edge は 1 デプロイで dev/prod を捌くので、
+ *  リクエストの Origin から prefix を決めて渡す (#363)。既定=本番なのでテスト/既存呼び出しは従来通り。 */
+export const DEFAULT_NS = 'app.aozoraquest';
 export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', 'herb', 'tonic', 'flee'];
 
 /** 戦闘解決に必要な env (権威 state 読み書き + ユーザー診断 fetch)。 */
@@ -53,18 +55,21 @@ function stripState(s: BattleState) {
   return rest;
 }
 
-/** ユーザーの PDS を DID から解決 (診断の public 読取用)。 */
-async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promise<string> {
-  const doc = (await resolveDidDocument(userDid, fetchImpl)) as { id: string; service?: { id: string; type: string; serviceEndpoint: string }[] };
-  return pdsEndpointFromDoc(doc, userDid);
+/** ユーザーの PDS + handle を DID document から解決 (handle は alsoKnownAs の at:// から)。 */
+async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promise<{ pds: string; handle: string }> {
+  const doc = (await resolveDidDocument(userDid, fetchImpl)) as { id: string; alsoKnownAs?: string[]; service?: { id: string; type: string; serviceEndpoint: string }[] };
+  const aka = doc.alsoKnownAs?.find((a) => a.startsWith('at://'));
+  const handle = aka ? aka.slice('at://'.length) : userDid;
+  return { pds: pdsEndpointFromDoc(doc, userDid), handle };
 }
 
-/** ユーザーの診断 (archetype + baseStats) を PDS から読む。無ければ ResolverError(409)。 */
-async function readDiagnosis(userDid: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray> }> {
-  const pds = await resolveUserPds(userDid, fetchImpl);
-  const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector }>(pds, userDid, ANALYSIS_COLLECTION, 'self');
+/** ユーザーの診断 (archetype + baseStats) + handle を PDS から読む。無ければ ResolverError(409)。
+ *  `ns` は NSID prefix (dev は `app.aozoraquest.dev`)。edge は 1 デプロイで dev/prod を捌くので Origin から決める。 */
+async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray>; handle: string }> {
+  const { pds, handle } = await resolveUserPds(userDid, fetchImpl);
+  const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector }>(pds, userDid, `${ns}.analysis`, 'self');
   if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409, 'diagnosis_required');
-  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats) };
+  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats), handle };
 }
 
 export const POWER_COLLECTION = 'app.aozoraquest.power';
@@ -96,14 +101,14 @@ export const WORLD_COLLECTION = 'app.aozoraquest.world';
  * ので、読めない/未診断でも fail-open で emptyState に倒す (書込 fail-closed とは別物)。**state が null の
  * ときだけ**呼ばれる (readModifyWrite) = 通常経路にコストを乗せない。
  */
-export async function migrateInitState(userDid: string, nowIso: string, fetchImpl?: typeof fetch): Promise<GameState> {
+export async function migrateInitState(userDid: string, nowIso: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<GameState> {
   const base = emptyState(userDid, nowIso);
   try {
-    const pds = await resolveUserPds(userDid, fetchImpl);
+    const { pds } = await resolveUserPds(userDid, fetchImpl);
     const [powerRec, analysisRec, worldRec] = await Promise.all([
-      getRecord<MigratablePowerRecord>(pds, userDid, POWER_COLLECTION, 'self').catch(() => null),
-      getRecord<MigratableAnalysisRecord>(pds, userDid, ANALYSIS_COLLECTION, 'self').catch(() => null),
-      getRecord<MigratableWorldRecord>(pds, userDid, WORLD_COLLECTION, 'self').catch(() => null),
+      getRecord<MigratablePowerRecord>(pds, userDid, `${ns}.power`, 'self').catch(() => null),
+      getRecord<MigratableAnalysisRecord>(pds, userDid, `${ns}.analysis`, 'self').catch(() => null),
+      getRecord<MigratableWorldRecord>(pds, userDid, `${ns}.world`, 'self').catch(() => null),
     ]);
     // 位置: 旧クライアント world-record から引き継ぐ (ワープ防止)。無ければ spawn。歩ける所に限る。
     const w = worldRec?.value;
@@ -141,12 +146,13 @@ export interface EncounterInfo {
 
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
-export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
-  const { archetype, baseStats } = await readDiagnosis(userDid, fetchImpl);
+export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
+  const { archetype, baseStats, handle } = await readDiagnosis(userDid, ns, fetchImpl);
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   const jobLevel = jobLevelFromXp(state.jobXp[archetype] ?? 0);
   const playerLevel = playerLevelFromXp(state.playerXp);
-  const battle = startBattle(archetype, jobLevel, playerLevel, userDid, tier, monsterSeed, state.herbs ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
+  // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
+  const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.herbs ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, equipIds: state.gear, tonics: state.tonics ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
@@ -182,7 +188,7 @@ export interface MoveResult {
  * 歩行では PDS を触らない (街/エンカウントの時だけ書く) = 高速。座標・遭遇・tier は署名/秘密で偽造不可。
  * token 未指定/失効時は gameState から位置を再同期する (稀な PDS 読み)。
  */
-export async function handleMove(env: ResolverEnv, userDid: string, dx: number, dy: number, token: string | undefined, now: number, fetchImpl?: typeof fetch): Promise<MoveResult> {
+export async function handleMove(env: ResolverEnv, userDid: string, dx: number, dy: number, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<MoveResult> {
   if (![-1, 0, 1].includes(dx) || ![-1, 0, 1].includes(dy) || (dx === 0 && dy === 0)) throw new ResolverError('不正な移動 (隣接1マスのみ)', 400);
 
   // 現在位置: 署名トークンが権威。無効/失効なら gameState から再同期 (位置偽造は署名で不可)。
@@ -192,7 +198,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     cx = claim.x; cy = claim.y; counter = claim.counter;
   } catch {
     const rec = await readState(env, userDid);
-    const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), fetchImpl));
+    const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
     cx = s.x; cy = s.y;
   }
 
@@ -204,7 +210,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   if (terrain === 'town') {
     // 街: HP/MP 全回復 + 位置を gameState に確定 (稀なので PDS 書き OK。失効時の再同期先にもなる)。
     await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: nx, y: ny, carryHp: undefined, carryMp: undefined }),
-      { now, init: (d, iso) => migrateInitState(d, iso, fetchImpl) });
+      { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
   }
 
@@ -216,11 +222,11 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     const { roll, monsterSeed } = tileEncounter(env, nx, ny, window);
     if (roll < encounterRateFor(terrain)) {
       const rec = await readState(env, userDid);
-      const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), fetchImpl));
+      const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
       // その 30 分枠で撃破済みのタイルには敵が居ない (同一敵の無限狩り防止)。
       const defeated = state.defeatedWindow === window ? (state.defeated ?? []) : [];
       if (!defeated.includes(`${nx},${ny}`)) {
-        const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, fetchImpl);
+        const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, ns, fetchImpl);
         return { x: nx, y: ny, terrain, token: nextToken, encounter };
       }
     }
@@ -239,7 +245,7 @@ export interface TurnResult {
  * turn: 1 コマンドを**サーバーが**確定 pendingTurnSeed で解決する。
  * 決着なら報酬を fail-closed で確定 + ガード削除。未決着なら CAS で turn を進めてから応答。
  */
-export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number): Promise<TurnResult> {
+export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS): Promise<TurnResult> {
   if (!VALID_COMMANDS.includes(command)) throw new ResolverError('不正なコマンド', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (!g) throw new ResolverError('戦闘中でない', 409);
@@ -294,7 +300,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         defeated,
         defeatedWindow: window,
       };
-    }, { now, init: (did, nowIso) => migrateInitState(did, nowIso) });
+    }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, ns) });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded };
   }
 
