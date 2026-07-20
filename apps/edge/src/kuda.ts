@@ -6,9 +6,16 @@
  * プール有限・外部依存・レイテンシがあるので**戦闘のクリティカルパスに必須で置かない**。
  * 障害/枯渇/タイムアウト時は必ず CSPRNG にフォールバックする (kuda 障害 = 全戦闘停止を避ける)。
  * クライアントは介在しない (Worker→kuda のみ)。
+ *
+ * **API キー認証 (429lab/kuda 新仕様)**: `/drop` は `Authorization: Bearer kuda_...` が必須。
+ * キーは Worker Secret (`KUDA_API_KEY`) から渡す。**ソースに直書きしない** (§4)。キー未設定なら
+ * kuda は使わず CSPRNG のみ (fail-safe)。
  */
 
 export const KUDA_URL = 'https://kuda.kojiran.workers.dev/drop';
+
+/** kuda 監査用のクライアント識別子 (429lab/kuda の ?client_id)。秘密ではない。 */
+const KUDA_CLIENT_ID = 'aozoraquest-edge';
 
 /** kuda /drop の応答 (1 バイト 0–255 + 監査メタ)。 */
 export interface KudaDrop {
@@ -41,13 +48,17 @@ export function csprngByte(): EntropyByte {
  * kuda から物理乱数 1 バイトを引く。タイムアウト・非2xx・不正値は throw。
  * **クリティカルパスでは直接使わず** `entropyByte` 経由でフォールバックさせること。
  */
-export async function drawKudaByte(opts: { timeoutMs?: number; fetchImpl?: typeof fetch } = {}): Promise<EntropyByte> {
+export async function drawKudaByte(opts: { apiKey?: string; timeoutMs?: number; fetchImpl?: typeof fetch } = {}): Promise<EntropyByte> {
   const timeoutMs = opts.timeoutMs ?? 1500;
   const f = opts.fetchImpl ?? fetch;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await f(KUDA_URL, { signal: ctrl.signal });
+    // API キー認証 (新仕様): Authorization: Bearer kuda_...。キーは env (Secret) から。ソース直書き禁止。
+    const headers: Record<string, string> = {};
+    if (opts.apiKey) headers['Authorization'] = `Bearer ${opts.apiKey}`;
+    const url = `${KUDA_URL}?client_id=${KUDA_CLIENT_ID}`;
+    const res = await f(url, { signal: ctrl.signal, headers });
     if (!res.ok) throw new Error(`kuda ${res.status}`);
     const d = (await res.json()) as Partial<KudaDrop>;
     if (typeof d.value !== 'number' || !Number.isInteger(d.value) || d.value < 0 || d.value > 255) {
@@ -70,9 +81,10 @@ export async function drawKudaByte(opts: { timeoutMs?: number; fetchImpl?: typeo
  * 数え、kuda アウテージを可視化できるように)。
  */
 export async function entropyByte(
-  opts: { useKuda?: boolean; timeoutMs?: number; fetchImpl?: typeof fetch; onFallback?: (err: unknown) => void } = {},
+  opts: { useKuda?: boolean; apiKey?: string; timeoutMs?: number; fetchImpl?: typeof fetch; onFallback?: (err: unknown) => void } = {},
 ): Promise<EntropyByte> {
-  if (!opts.useKuda) return csprngByte();
+  // kuda は API キー必須 (新仕様)。useKuda 無効 or キー未設定なら CSPRNG のみ (fetch しない = fail-safe)。
+  if (!opts.useKuda || !opts.apiKey) return csprngByte();
   try {
     return await drawKudaByte(opts);
   } catch (err) {
@@ -89,7 +101,7 @@ export async function entropyByte(
  * (kuda 障害でも 32bit の質は CSPRNG が担保 = fail-safe)。返り値は符号なし 32bit。
  */
 export async function entropyU32(
-  opts: { useKuda?: boolean; timeoutMs?: number; fetchImpl?: typeof fetch; onFallback?: (err: unknown) => void } = {},
+  opts: { useKuda?: boolean; apiKey?: string; timeoutMs?: number; fetchImpl?: typeof fetch; onFallback?: (err: unknown) => void } = {},
 ): Promise<{ value: number; source: 'kuda+csprng' | 'csprng'; meta?: EntropyByte['meta'] }> {
   const buf = new Uint8Array(4);
   crypto.getRandomValues(buf);

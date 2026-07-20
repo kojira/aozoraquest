@@ -24,6 +24,7 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
 
 - ✅ step1 dev KV 作成 (`ef1a0429afc34c7da4ee5183752a5f3e`) → wrangler.toml 反映
 - ✅ step2 dev secret set (OAUTH_CLIENT/DPOP_JWK・WORLD_TOKEN_SECRET・SERVER_DID・ADMIN_DIDS=kojira.io の DID)
+- ⬜ `KUDA_API_KEY` を prod/dev 両方に set (kuda API キー化。未設定でも CSPRNG で動く)
 - ✅ step3 `wrangler deploy --env dev` → `https://aozoraquest-edge-dev.kojiran.workers.dev` 稼働
       (`/api/world/reset` が 401 = ルート存在。共有エッジは 404 だった)
 - ✅ step5 ローカル: `.env.development` に VITE_EDGE_URL/DID を dev エッジで追記
@@ -58,8 +59,13 @@ wrangler secret put WORLD_TOKEN_SECRET --env dev
 wrangler secret put SERVER_DID --env dev        # サーバーアカウントの DID (本番と同じ)
 wrangler secret put ADMIN_DIDS --env dev         # 管理者 DID (本番と同じ)
 wrangler secret put OAUTH_SCOPE --env dev         # 本番と同じ (例 "atproto transition:generic")
+wrangler secret put KUDA_API_KEY --env dev        # kuda 物理乱数 API キー (Bearer, kuda_...)。未設定なら CSPRNG のみで動く
 ```
 (`WORKER_DID` / `PUBLIC_ORIGIN` / `ALLOWED_ORIGINS` は wrangler.toml の `[env.dev.vars]` に記載済み = secret 不要。)
+
+**本番も同様に** `wrangler secret put KUDA_API_KEY` (top-level、`--env dev` なし) で set する。kuda は
+API キー必須 (429lab/kuda 新仕様、`Authorization: Bearer`)。キー未設定でも戦闘は CSPRNG で成立する
+(fail-safe) が、物理乱数エントロピーを混ぜたいなら prod/dev 両方に set すること。
 
 ### 3. dev エッジをデプロイ
 ```
