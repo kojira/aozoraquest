@@ -5,7 +5,7 @@ import { rkeyForDid, readModifyWrite, type GameState, type GameStateEnv } from '
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice'; // 対象ユーザー
-const SERVER_DID = 'did:plc:kojira'; // 権威 repo の持ち主 (kojira.io)
+const SERVER_DID = 'did:plc:testserver'; // 権威 repo の持ち主 (テスト用サーバーアカウント)
 const PDS = 'https://pds.example';
 const NOW = 1_700_000_000; // epoch 秒 (固定)
 

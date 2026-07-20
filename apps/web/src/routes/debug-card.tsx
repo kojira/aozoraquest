@@ -25,7 +25,7 @@ async function fetchAsDataUrl(url: string): Promise<string | null> {
  * 実カードのサイズ計測用 debug ルート (本番では辿る導線なし、Playwright から /debug/card で開く)。
  *
  * `?handle=xxx.bsky.social` で表示するアバター/displayName を Bluesky 公開 API から取得する。
- * 未指定なら kojira.io をデフォルトに使う。
+ * 未指定ならログイン中ユーザーの handle を使う。
  *
  * window.__cardSvg に SVG ref を露出するので、テスト側で本物の cardToShareBlob で
  * 圧縮 + サイズ計測ができる。

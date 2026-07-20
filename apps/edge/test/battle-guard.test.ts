@@ -7,7 +7,7 @@ import { writeServerTokens } from '../src/oauth-store';
 import type { ServerPdsEnv } from '../src/server-pds';
 
 const DID = 'did:plc:alice';
-const SERVER_DID = 'did:plc:kojira';
+const SERVER_DID = 'did:plc:testserver';
 const PDS = 'https://pds.example';
 const NOW = 1_700_000_000;
 

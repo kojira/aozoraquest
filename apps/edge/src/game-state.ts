@@ -1,7 +1,7 @@
 /**
  * ゲーム経済の権威 state (docs/21-server-authority §4.1/§6)。
  *
- * サーバーアカウント (kojira.io) の repo に **ユーザー DID をキーにした 1 レコード/人**で持つ。
+ * サーバーアカウントの repo に **ユーザー DID をキーにした 1 レコード/人**で持つ。
  * ユーザーはこの repo に書けない = 偽造不可。二重使用防止は swapRecord (CAS) + 本モジュールの
  * **read-modify-write 契約** (レビュー ★★★) で担保: CID 不一致 (InvalidSwap) 時は最新を再読込 →
  * 副作用を再評価 → 再 put、をループする (楽観ロック)。

@@ -17,10 +17,10 @@ function mockKv() {
 const AS = 'https://bsky.social';
 const meta: AuthServerMetadata = { issuer: AS, authorization_endpoint: `${AS}/oauth/authorize`, token_endpoint: `${AS}/oauth/token`, pushed_authorization_request_endpoint: `${AS}/oauth/par` };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
-const env = (kv?: KVNamespace): OAuthRoutesEnv => ({ OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), SERVER_DID: 'did:plc:kojira', WORKER_DID: 'did:web:edge.aozoraquest.app', ADMIN_DIDS: 'did:plc:admin1', OAUTH_TOKENS: kv });
+const env = (kv?: KVNamespace): OAuthRoutesEnv => ({ OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), SERVER_DID: 'did:plc:testserver', WORKER_DID: 'did:web:edge.aozoraquest.app', ADMIN_DIDS: 'did:plc:admin1', OAUTH_TOKENS: kv });
 
 const discoveryFetch = (extra: Record<string, () => Response> = {}) => (async (url: string) => {
-  if (url.includes('plc.directory')) return json({ id: 'did:plc:kojira', service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example' }] });
+  if (url.includes('plc.directory')) return json({ id: 'did:plc:testserver', service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example' }] });
   if (url.includes('oauth-protected-resource')) return json({ authorization_servers: [AS] });
   if (url.includes('oauth-authorization-server')) return json(meta);
   for (const [frag, fn] of Object.entries(extra)) if (url.includes(frag)) return fn();
@@ -73,10 +73,10 @@ describe('oauth-routes', () => {
   it('callback: 正しい state で code を token に交換し KV に保存する', async () => {
     const kv = mockKv();
     await putPendingAuth(kv, 'ST', { verifier: 'VER', authServer: meta, pdsUrl: 'https://pds.example', createdAt: NOW });
-    const f = discoveryFetch({ '/oauth/token': () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:kojira' }) });
+    const f = discoveryFetch({ '/oauth/token': () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:testserver' }) });
     const res = await handleOAuthCallback(new Request('https://x/oauth/callback?code=CODE&state=ST'), env(kv), { now: NOW, fetchImpl: f });
     expect(res.status).toBe(200);
     const saved = await readServerTokens(kv);
-    expect(saved).toMatchObject({ did: 'did:plc:kojira', accessToken: 'AT', refreshToken: 'RT' });
+    expect(saved).toMatchObject({ did: 'did:plc:testserver', accessToken: 'AT', refreshToken: 'RT' });
   });
 });

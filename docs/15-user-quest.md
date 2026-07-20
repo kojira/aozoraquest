@@ -29,10 +29,10 @@ Aozora Quest のユーザー同士が **自分でクエストを発行・受託�
 | **受託者 (Assignee)** | 応募者の中から発注者が選んで合意した人 |
 | **完了報告 (Report)** | 受託者が「終わりました」を発注者に通知する書き込み |
 | **承認 (Approval)** | 発注者が完了報告を受け入れる行為。この時点で報酬移動 + XP 付与が確定する |
-| **個人ポイント (Personal Point)** | aozoraquest の通貨は **発注者ごとに別通貨**。kojira が出すクエストの報酬は「kojiraポイント」、sato が出すなら「satoポイント」。内部識別子は発注者の DID。**ポイントは合算されず、種類別に独立で保持・表示する**。実装上は整数 |
-| **持ち主表記** | 表示名は「<handle>ポイント」(例「kojiraポイント」)。handle は Bluesky 側で変更され得るので、内部キーは常に DID |
-| **報酬価格** | 発注者は自分のクエストにつき任意の数を指定できる (例: 「claudeポイント 500」「kojiraポイント 12000」)。**発行上限は設けない**。価値は発注者の信用に依存し、「割に合わない」と感じた応募者が応募しないことで市場原理的に均衡する |
-| **新規ユーザーの不利と bootstrap** | **正直に書くと**: 個人発行通貨は信用が事後的につくため、新規ユーザーの発行ポイントには初期は需要がない。「動かなさ」を前提に、対策として:<br>(a) システム XP は誰でも均等に得られるので、最初は「ポイントは将来の信用残高、まずは XP で動こう」と UI で誘導<br>(b) 完了 N 件で「ポイント+1」のような bootstrap 補助 (Phase 5+ で検討)。**正直に書くと**: これは「誰が発行するか」が未解決で、システム発行にすると「個人発行通貨」原則を壊す。本人が自分のポイントを自動 mint するのは「上限なし」を超えるものではない。妥協案は「受託者の所持ポイント残高に応じて、応募時に発注者が指定した報酬量に最低保証を加算」だが MVP では実装しない<br>(c) 既存信用者 (= 有名ユーザー) のポイントは受け取り手が多いので、新規ユーザーは最初は「有名ユーザーのクエストに応募」で信用を獲得し、自分発行に進む二段ロケットを誘導<br>(d) `kojiraポイント` 等のインフレが進んだら相対指標 (= シェア%) で価値が伝わる仕組みは既に組み込んでいる<br>これは設計の限界であって、市場原理だけで均衡する保証はないことを明示しておく |
+| **個人ポイント (Personal Point)** | aozoraquest の通貨は **発注者ごとに別通貨**。alice が出すクエストの報酬は「aliceポイント」、sato が出すなら「satoポイント」。内部識別子は発注者の DID。**ポイントは合算されず、種類別に独立で保持・表示する**。実装上は整数 |
+| **持ち主表記** | 表示名は「<handle>ポイント」(例「aliceポイント」)。handle は Bluesky 側で変更され得るので、内部キーは常に DID |
+| **報酬価格** | 発注者は自分のクエストにつき任意の数を指定できる (例: 「claudeポイント 500」「aliceポイント 12000」)。**発行上限は設けない**。価値は発注者の信用に依存し、「割に合わない」と感じた応募者が応募しないことで市場原理的に均衡する |
+| **新規ユーザーの不利と bootstrap** | **正直に書くと**: 個人発行通貨は信用が事後的につくため、新規ユーザーの発行ポイントには初期は需要がない。「動かなさ」を前提に、対策として:<br>(a) システム XP は誰でも均等に得られるので、最初は「ポイントは将来の信用残高、まずは XP で動こう」と UI で誘導<br>(b) 完了 N 件で「ポイント+1」のような bootstrap 補助 (Phase 5+ で検討)。**正直に書くと**: これは「誰が発行するか」が未解決で、システム発行にすると「個人発行通貨」原則を壊す。本人が自分のポイントを自動 mint するのは「上限なし」を超えるものではない。妥協案は「受託者の所持ポイント残高に応じて、応募時に発注者が指定した報酬量に最低保証を加算」だが MVP では実装しない<br>(c) 既存信用者 (= 有名ユーザー) のポイントは受け取り手が多いので、新規ユーザーは最初は「有名ユーザーのクエストに応募」で信用を獲得し、自分発行に進む二段ロケットを誘導<br>(d) `aliceポイント` 等のインフレが進んだら相対指標 (= シェア%) で価値が伝わる仕組みは既に組み込んでいる<br>これは設計の限界であって、市場原理だけで均衡する保証はないことを明示しておく |
 
 ## ユーザーストーリー
 
@@ -48,12 +48,12 @@ Aozora Quest のユーザー同士が **自分でクエストを発行・受託�
 
 ### 応募者側
 
-1. 募集中のクエスト一覧からタグやジョブで絞り込む。各クエストには「kojiraポイント 12000」のように発注者ごとの単位で報酬が示される
+1. 募集中のクエスト一覧からタグやジョブで絞り込む。各クエストには「aliceポイント 12000」のように発注者ごとの単位で報酬が示される
 2. 自分にとってその発注者のポイントに価値があるか判断 (= 過去の発注実績・信用) して応募コメントを投稿
 3. 発注者から「受託者に指定」されたら通知が来る
 4. やり取りして作業
 5. 終わったら「完了報告」をマーク + 成果物リンクや一言コメントを添える
-6. 発注者の承認が下りたら、その発注者の名前のポイント + 共通 XP が入る (例: 「kojiraポイント +12000」)
+6. 発注者の承認が下りたら、その発注者の名前のポイント + 共通 XP が入る (例: 「aliceポイント +12000」)
 7. やり直し指示が来たら作業を続けて再度報告
 
 ### 横断ストーリー
@@ -128,7 +128,7 @@ Aozora Quest のユーザー同士が **自分でクエストを発行・受託�
 - `visibility` の権限制御はクライアント側でフィルタ (AT Proto は record 単位のアクセス制御を持たない。`private` はクライアントで隠すだけで、技術的には誰でも読める前提で運用)
 - `assignee` を field として持つことで、受託状態を 1 record で表現する。複数応募者管理は別 record (下記 `questApplication`)
 - `rewardPoints` は発注者発行の整数 pt。報酬は **金銭以外** に限定 (モデレーション複雑化と法的責任を避けるため)
-- **ポイントの通貨種類はこの record の owner DID で識別する**。`rewardPoints: 12000` の record が `did:plc:kojira...` の PDS にあれば「kojira ポイント 12000」を意味する
+- **ポイントの通貨種類はこの record の owner DID で識別する**。`rewardPoints: 12000` の record が `did:plc:alice...` の PDS にあれば「alice ポイント 12000」を意味する
 
 ### app.aozoraquest.questApplication
 
@@ -339,7 +339,7 @@ AT Proto には逆引き API がないため、「公開クエスト一覧」「
                                                               ▼
                                                      ┌──────────────────┐
                                                      │ 主管理者 PDS      │
-                                                     │ (kojira)         │
+                                                     │ (alice)         │
                                                      │  questIndex/self │
                                                      └──────────────────┘
                                                               ▲
@@ -356,7 +356,7 @@ AT Proto には逆引き API がないため、「公開クエスト一覧」「
 |---|---|
 | **クライアント (発注/応募 直後)** | 原本を自分の PDS に PUT した後、Worker に「URI + 最小サマリ」を POST する。失敗時はバックグラウンドでリトライ |
 | **Cloudflare Worker** | (a) クライアントからの POST を受ける、(b) その URI が本当に存在するか発注者 PDS に検証 fetch する、(c) 主管理者 PDS の `app.aozoraquest.questIndex` を `putRecord` で更新する |
-| **主管理者 PDS (kojira)** | インデックス本体を保持。公開 read 可能なので、全クライアントが認証なしで取得できる |
+| **主管理者 PDS (alice)** | インデックス本体を保持。公開 read 可能なので、全クライアントが認証なしで取得できる |
 | **他クライアント** | 一覧画面表示時に管理者 PDS から questIndex を読む。詳細表示時は各 quest 原本 PDS から fetch |
 
 ### 認証 (検証済み: 2026-06-05)
@@ -374,18 +374,18 @@ AT Proto には逆引き API がないため、「公開クエスト一覧」「
 1. **ES256 鍵ペア生成** (NIST P-256)。秘密鍵は Cloudflare Worker secret として保管 (=「Bindings → Secrets」に PEM 文字列で投入)
 2. **client-metadata.json を `https://aozoraquest.app/oauth/quest-worker/client-metadata.json` で公開**。中身は `token_endpoint_auth_method: 'private_key_jwt'`, `dpop_bound_access_tokens: true`, `jwks_uri`, `redirect_uris: ['https://aozoraquest.app/oauth/quest-worker/callback']` 等
 3. **JWKS エンドポイント `https://aozoraquest.app/oauth/quest-worker/jwks.json`** で公開鍵を配信 (鍵ローテーション対応)
-4. **kojira が初回 1 回だけブラウザで認可フローを完遂** → 取得した refresh token (3 ヶ月寿命) を Worker の sessionStore (Cloudflare KV) に永続化
+4. **alice が初回 1 回だけブラウザで認可フローを完遂** → 取得した refresh token (3 ヶ月寿命) を Worker の sessionStore (Cloudflare KV) に永続化
 5. Worker の **Cron Trigger (1 日 1 回)** で refresh token を更新。session 失効間近 (例: 残り 7 日) でアラート
 
 既存 `apps/admin` の OAuth client_id とは別 client_id にする (admin SPA は public client、quest Worker は confidential client、混在不可)。
 
-**単一障害点の緩和** (= リリース前に潰すべき運用課題): 上の構成では Worker → 主管理者 PDS (kojira) の 1 本に全機能が紐づいており、kojira アカウント停止 / PDS 障害 / refresh token 失効が全機能停止に直結する。緩和策として:
+**単一障害点の緩和** (= リリース前に潰すべき運用課題): 上の構成では Worker → 主管理者 PDS (alice) の 1 本に全機能が紐づいており、alice アカウント停止 / PDS 障害 / refresh token 失効が全機能停止に直結する。緩和策として:
 
-1. **`VITE_ADMIN_DIDS` を複数登録** (例: `did:plc:kojira,did:plc:sub1,did:plc:sub2`)。Worker は順に各 DID の confidential client session を持っておき、書き込み時に最初の `available` な PDS に index を書く
+1. **`VITE_ADMIN_DIDS` を複数登録** (例: `did:plc:alice,did:plc:sub1,did:plc:sub2`)。Worker は順に各 DID の confidential client session を持っておき、書き込み時に最初の `available` な PDS に index を書く
 2. クライアントは read 時に **登録された admin DID 順に questIndex を取り、最初に取れたものを採用**。同じ rkey が複数 admin にあれば updatedAt 新しい方を採用
 3. **再構築ツール**: index が壊れた / 別 admin に切替えた直後は、Worker が `app.aozoraquest.userQuest` を発見できる範囲で listRecords → 各 admin に再書き込み
 
-これによりリーダー / フォロワー的な多重化が成立し、kojira が消えても新しい admin が引き継げる。Phase 1 段階では admin 1 名で OK だが、index レキシコンと Worker 実装は「複数 admin 想定の I/F」で書いておくこと。
+これによりリーダー / フォロワー的な多重化が成立し、alice が消えても新しい admin が引き継げる。Phase 1 段階では admin 1 名で OK だが、index レキシコンと Worker 実装は「複数 admin 想定の I/F」で書いておくこと。
 
 **split-brain と書き手競合の解決ルール** (= 第三者レビューで指摘):
 - **書き手の選択順** は `VITE_ADMIN_DIDS` の配列順 (先頭が primary)。Worker は primary から順に「session が valid」「直近 60 秒で書き込み成功した記録あり」を満たす最初の admin に書く
@@ -475,7 +475,7 @@ const isCompleted = (q: UserQuest, approvals: QuestCompletion[]) =>
 | 認証期限切れ (= Bluesky session expired) | 既存の signed-out フローに乗る | session.ts が `signed-out` に倒す、UI は再ログインを促す |
 | 検証 fetch で record 不一致 | Worker が 4xx 返す | クライアントが原本 PDS との不整合を再検出。typically race condition、ユーザーには「もう一度試してください」 |
 | index の record サイズ上限到達 | putRecord が 400 | Worker が最古を切る or ページング rkey に切替 (Phase 3 で実装、MVP では切替なし) |
-| 主管理者の refresh token 失効 | Worker cron が refresh に失敗 | kojira に DM / Slack で通知。kojira が手動再ログインで復旧 |
+| 主管理者の refresh token 失効 | Worker cron が refresh に失敗 | alice に DM / Slack で通知。alice が手動再ログインで復旧 |
 
 ## UI 設計
 
@@ -495,11 +495,11 @@ const isCompleted = (q: UserQuest, approvals: QuestCompletion[]) =>
 
 - 大きく 4 タブ: 「募集中」「自分が出した」「自分が応募した」「過去のクエスト (ポートフォリオ)」
 - フィルタ: タグ / ジョブ / 締切ありなし / フォロー中のみ / 報酬ポイント発注者 (チップ選択)
-- 各カードに: タイトル、発注者の avatar+job バッジ、本文冒頭 100 字、tag chip、応募数、締切までの残日数、**報酬表記** (例: `kojira ⓟ 12000`)
+- 各カードに: タイトル、発注者の avatar+job バッジ、本文冒頭 100 字、tag chip、応募数、締切までの残日数、**報酬表記** (例: `alice ⓟ 12000`)
 
 ### C. クエスト詳細 (`/quests/:uri`)
 
-- ヘッダー: 発注者の avatar + handle + ジョブバッジ + LV + 報酬ポイント (`kojiraポイント 12000`)
+- ヘッダー: 発注者の avatar + handle + ジョブバッジ + LV + 報酬ポイント (`aliceポイント 12000`)
 - タイトル + 本文 + tag + 募集期限 (残り時間 or 「期限切れ」表示)
 - 状態表示 (`open` / `assigned` / `reported` / `completed` / `cancelled`、+ 期限切れバッジ)
 - 応募者リスト (発注者本人のみ展開して見える。応募メッセージ + 「受託者に指定」ボタン)
@@ -517,7 +517,7 @@ aozoraquest 利用者の **「これまでの活動の証」** を集約表示�
 
 #### 受託履歴 (うけたクエスト)
 
-- 一覧 (新しい順): タイトル / 発注者 avatar+handle / 状態 / 完了日 / 獲得ポイント (例: `kojiraポイント +12000`) / 自分の成果物リンク
+- 一覧 (新しい順): タイトル / 発注者 avatar+handle / 状態 / 完了日 / 獲得ポイント (例: `aliceポイント +12000`) / 自分の成果物リンク
 - フィルタ: タグ / 発注者別 / 期間
 - **サマリ指標**:
   - 受託総数 (= 受託者に指定された全クエスト数)
@@ -531,8 +531,8 @@ aozoraquest 利用者の **「これまでの活動の証」** を集約表示�
 - **サマリ指標**:
   - 発注総数 (= 自分が出した全クエスト数)
   - 内訳: **成功** (`completed`) / **失敗** (`cancelled` かつ assignee 指定済みだった = 途中で頓挫) / **キャンセル** (`cancelled` かつ assignee 未指定 = 応募ゼロ・自主取り下げ・期限切れ)
-  - **何人に発行したか** (= 完了時に報酬を渡したユニーク受取人 DID 数): 例「47 件のクエスト完了で、12 人に kojira ポイントを発行」
-  - **累計発行ポイント** (= 自分発行ポイントの総流通量): 例 `kojiraポイント 累計発行 152,000 pt / 47 件`
+  - **何人に発行したか** (= 完了時に報酬を渡したユニーク受取人 DID 数): 例「47 件のクエスト完了で、12 人に alice ポイントを発行」
+  - **累計発行ポイント** (= 自分発行ポイントの総流通量): 例 `aliceポイント 累計発行 152,000 pt / 47 件`
   - 発行頻度の推移 (月別グラフ、Phase 3+)
 
 「失敗」と「キャンセル」の区別は **assignee 指定の有無** で機械判定する。schema 上のステータスは `cancelled` 1 種で持ち、UI 側で分類して表示する。意図的に別 status を立てないのは、Phase 1 のスコープを膨らませないため。
@@ -544,7 +544,7 @@ aozoraquest 利用者の **「これまでの活動の証」** を集約表示�
 ```
 🏅 保有ポイントランキング (発行者別)
 
-1.  kojiraポイント    18,400 pt   (kojira 総発行 152,000 中、シェア 12.1%)
+1.  aliceポイント    18,400 pt   (alice 総発行 152,000 中、シェア 12.1%)
 2.  claudeポイント       950 pt   (claude 総発行 4,800 中、シェア 19.8%)
 3.  satoポイント         500 pt   (sato   総発行 12,000 中、シェア  4.2%)
 ...
@@ -584,19 +584,19 @@ const outcomeOf = (q: UserQuest): 'success' | 'failure' | 'cancelled' => {
   return 'inProgress' as never; // 進行中はサマリ集計から除く
 };
 
-// 「sato が持つ kojira ポイント」: kojira の completed quest のうち assignee=sato
+// 「sato が持つ alice ポイント」: alice の completed quest のうち assignee=sato
 const holdings = (issuerQuests: UserQuest[], me: Did) =>
   issuerQuests
     .filter(q => q.status === 'completed' && q.assignee === me)
     .reduce((sum, q) => sum + (q.rewardPoints ?? 0), 0);
 
-// 「kojira の総発行 (= 発行ポイント流通量)」
+// 「alice の総発行 (= 発行ポイント流通量)」
 const totalIssued = (issuerQuests: UserQuest[]) =>
   issuerQuests
     .filter(q => q.status === 'completed')
     .reduce((sum, q) => sum + (q.rewardPoints ?? 0), 0);
 
-// 「sato が持つ kojira ポイントのシェア %」
+// 「sato が持つ alice ポイントのシェア %」
 const shareOf = (issuerQuests: UserQuest[], me: Did) => {
   const total = totalIssued(issuerQuests);
   return total === 0 ? 0 : (holdings(issuerQuests, me) / total) * 100;
@@ -619,7 +619,7 @@ const distinctRequesters = (myReceivedQuests: UserQuest[]) =>
 |---|---|---|
 | 自分の発注した quest | 自分の PDS `listRecords(app.aozoraquest.userQuest)` | localStorage 24h, ETag で差分 |
 | 自分が受託した quest | 自分の PDS のうち assignee=self のもの (= 受託履歴は自分の `questCompletion` から questUri を逆引き) | localStorage 24h |
-| 特定発行者 (例: kojira) の総発行 | 発行者 PDS `listRecords(app.aozoraquest.userQuest)` | localStorage 24h |
+| 特定発行者 (例: alice) の総発行 | 発行者 PDS `listRecords(app.aozoraquest.userQuest)` | localStorage 24h |
 | 公開クエスト一覧 (募集中) | 主管理者 PDS `getRecord(app.aozoraquest.questIndex/self)` | ETag 駆動、画面開く毎に再取得 |
 
 **MVP の規模仮定**: 1 ユーザーあたり生涯発注 < 1000 件、受託 < 1000 件、保有他人ポイント < 100 種類 を想定。in-memory 集計で十分回る。これを超える規模 (= 数千〜万) になった場合は Phase 3 で:
@@ -637,7 +637,7 @@ const distinctRequesters = (myReceivedQuests: UserQuest[]) =>
 - **応募中**: 自分が応募したもの
 - **特定ジョブの募集**: 例「賢者ジョブからの依頼だけ」
 - **タグフィルタ**: 例「#art #illust」
-- **特定の発行者のポイントが付くクエスト**: 例「kojiraポイントの出るクエストだけ」
+- **特定の発行者のポイントが付くクエスト**: 例「aliceポイントの出るクエストだけ」
 
 各カラムは独立に refresh / scroll する。
 
@@ -669,7 +669,7 @@ aozoraquest 内のクエスト一覧 / 詳細画面でも未読バッジを出�
 - 発注時に発注者が任意の整数 pt を指定
 - 完了 (発注者承認) 時、受託者の **「発注者DID ポイント」保有量に +N pt**
 - 通貨種類は発注者 DID で識別。**ポイントは合算されず、種類別に独立**
-- 例: 「kojira → sato への 12000 pt 発行」「claude → sato への 500 pt 発行」は別物として両方計上
+- 例: 「alice → sato への 12000 pt 発行」「claude → sato への 500 pt 発行」は別物として両方計上
 - 発行上限なし。価値は発注者の信用に依存
 - **承認時の増減は不可**。応募時点で受託者が見ていた値で固定発行する (透明性のため)
 
@@ -682,7 +682,7 @@ aozoraquest 内のクエスト一覧 / 詳細画面でも未読バッジを出�
 | 応募 | +5 XP (一日 3 件まで) | - |
 | 受託者指定 | - | - |
 
-ステータス軸への配分は **依頼内容のタグから推定** する (例: タグに `#illust` `#art` があれば LUK、`#code` `#review` があれば INT)。タグ→ステータスのマッピングは **オーナー (kojira) が管理する固定マップ** をアプリ内定数として持ち、PR で更新する。LLM 動的判定は使わない (運用の予測可能性のため)。Phase 2 で実装。
+ステータス軸への配分は **依頼内容のタグから推定** する (例: タグに `#illust` `#art` があれば LUK、`#code` `#review` があれば INT)。タグ→ステータスのマッピングは **オーナー (alice) が管理する固定マップ** をアプリ内定数として持ち、PR で更新する。LLM 動的判定は使わない (運用の予測可能性のため)。Phase 2 で実装。
 
 ### バッジ案 (Phase 2 以降)
 
@@ -726,7 +726,7 @@ aozoraquest 内のクエスト一覧 / 詳細画面でも未読バッジを出�
 - [ ] `app.aozoraquest.userQuest` レキシコン定義 & 永続化
 - [ ] `app.aozoraquest.questIndex` レキシコン定義
 - [ ] Cloudflare Worker (`apps/edge` 新設) に `POST /index/quest` + 認証 + 検証 fetch + putRecord
-- [ ] Worker の kojira セッション保持 + 1 日 1 回の refresh Cron Trigger
+- [ ] Worker の alice セッション保持 + 1 日 1 回の refresh Cron Trigger
 - [ ] クエスト発行 UI (`/quests/new`) + Worker への登録呼び出し
 - [ ] クエスト一覧 (`/quests` の「募集中」「自分が出した」タブ、questIndex から取得)
 - [ ] クエスト詳細 (`/quests/:uri`) 表示 (原本 PDS から fetch)
@@ -832,7 +832,7 @@ aozoraquest 内のクエスト一覧 / 詳細画面でも未読バッジを出�
 
 ```
 【クエスト】精霊のイラストを描いてくれる人募集
-報酬: kojiraポイント 12000 pt
+報酬: aliceポイント 12000 pt
 〆切: 6/15
 #illust #art #aozoraquest
 https://aozoraquest.app/quests/at://did:plc:.../app.aozoraquest.userQuest/3lp...
