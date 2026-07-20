@@ -591,6 +591,27 @@ describe('resolveTurn', () => {
     expect(failSeen).toBe(true);
   });
 
+  it('会心: 守備力を無視して非会心の理論最大を超える (DQ 流。攻撃力1.5倍 + 守備無視)', () => {
+    // 高 def の敵 (ヒカリダケ) にプレイヤーが会心する (seed, turnSeed) を探す。会心は守備無視 +
+    // 1.5 倍なので、非会心の理論最大 (roll 1.15、守備軽減あり) を必ず超える。
+    const t = BATTLE_TUNING;
+    let found: { atk: number; def: number; dmg: number } | null = null;
+    for (let seed = 0; seed < 300 && !found; seed++) {
+      const b0 = startBattle('warrior', 3, 5, '戦士', 1, seed, 0, undefined, { monsterId: 'glow-shroom' });
+      for (let ts = 0; ts < 120; ts++) {
+        const next = resolveTurn(b0, 'attack', ts);
+        const ev = next.lastEvents.find(
+          (e) => e.actor === 'player' && e.damage !== undefined && e.text.includes('会心の一撃'),
+        );
+        if (ev) { found = { atk: b0.player.atk, def: b0.monster.def, dmg: ev.damage! }; break; }
+      }
+    }
+    expect(found).not.toBeNull();
+    // 守備無視が効いている証拠: 非会心の理論最大 (守備軽減あり) を会心が上回る。
+    const maxNonCrit = Math.round((found!.atk * 1.15 * t.damageScale) / (t.damageSoften + found!.def));
+    expect(found!.dmg).toBeGreaterThan(maxNonCrit);
+  });
+
   it('にげる成功率は agi 差で変わる (鈍足 guardian < 俊足 ninja、統計)', () => {
     const rate = (arch: 'ninja' | 'guardian') => {
       let fled = 0;
