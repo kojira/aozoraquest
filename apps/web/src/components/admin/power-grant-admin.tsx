@@ -33,6 +33,9 @@ export function PowerGrantAdmin({ agent, did }: { agent: Agent; did: string }) {
   return (
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>パワー付与 (テスト)</h3>
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
+        テスト用に残高を加算する (召喚ゲージ viaPosts は動かさない)。
+      </p>
       <div
         style={{
           display: 'inline-flex',

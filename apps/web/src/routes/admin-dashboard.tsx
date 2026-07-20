@@ -71,7 +71,12 @@ export function AdminDashboard() {
   if (session.status === 'loading') {
     return <p style={{ padding: '1em' }}>読み込み中…</p>;
   }
-  const isAdmin = WORLD_PREVIEW_ENABLED && isAdminDid(session.did);
+  // ダッシュボード自体は**管理者なら本番でも開ける** (isAdminDid のみ)。中の露出は 2 層:
+  //  - コンテンツ CRUD + dev ツール (パワー付与/リセット/模擬戦) は WORLD_PREVIEW_ENABLED (dev 限定)。
+  //  - サーバー連携 (ServerOAuthAdmin) は**本番でも到達可能** — トークン失効時の再連携が本番運用
+  //    タスクだから (docs/21 §12。旧 settings も WORLD_PREVIEW に依らず出していた — レビュー ★★)。
+  const isAdmin = isAdminDid(session.did);
+  const devTools = WORLD_PREVIEW_ENABLED;
 
   if (!isAdmin) {
     return (
@@ -94,23 +99,27 @@ export function AdminDashboard() {
         ゲーム内容の編集ハブ (エピック #416)。CRUD の中身は データ化 (#418) 後に各セクションへ実装。
       </p>
 
-      <h3 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>コンテンツ</h3>
-      <div style={grid}>
-        {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
-      </div>
+      {devTools && (
+        <>
+          <h3 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>コンテンツ (準備中)</h3>
+          <div style={grid}>
+            {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
+          </div>
+        </>
+      )}
 
       {/* 管理ツールはここに**集約 (埋め込み)** する。別画面へ飛ばさない (ハブの意味がなくなる —
-          オーナー指摘 2026-07-20)。CRUD が実装されたら上のカードもここに埋め込みで生えていく。 */}
+          オーナー指摘 2026-07-20)。並びは軽いもの順、重い模擬戦フォームを末尾に (レビュー ★★)。 */}
       <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>ツール</h3>
       {agent && did ? (
         <>
-          <PowerGrantAdmin agent={agent} did={did} />
-          <WorldResetAdmin agent={agent} did={did} />
-          <DebugBattleSim />
           {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
+          {devTools && <PowerGrantAdmin agent={agent} did={did} />}
+          {devTools && <WorldResetAdmin agent={agent} did={did} />}
+          {devTools && <DebugBattleSim />}
         </>
       ) : (
-        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>ログインが必要です。</p>
+        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>セッションを準備中…</p>
       )}
     </div>
   );

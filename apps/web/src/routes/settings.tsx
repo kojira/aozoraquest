@@ -5,7 +5,6 @@ import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
@@ -337,7 +336,9 @@ export function Settings() {
         <PostQuestNotificationsToggle />
       </section>
 
-      {isAdminDid(session.did) && WORLD_PREVIEW_ENABLED && (
+      {/* 管理者なら本番でも出す (ダッシュボード内でサーバー連携=本番運用タスクへ入れるように)。
+          コンテンツ CRUD・dev ツールはダッシュボード側で dev 限定にゲートする。 */}
+      {isAdminDid(session.did) && (
         <section style={{ marginTop: '2em' }}>
           <h3 style={{ fontSize: '0.95em' }}>あおぞらワールド 管理</h3>
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
