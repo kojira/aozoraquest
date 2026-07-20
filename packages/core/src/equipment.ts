@@ -105,8 +105,8 @@ const JOB_WEAPONS: Array<{
     high: '軍神の大太刀',
     // 指揮官は兵に守られる: 弱点の耐久を装備で補完 (オーナー指摘 2026-07-18
     // 「将軍アイテム手に入れてもよわくない?」への対応)
-    bonusMid: { atk: 6, def: 4, maxHp: 6 },
-    bonusHigh: { atk: 10, def: 7, maxHp: 14 },
+    bonusMid: { atk: 6, def: 4, maxHp: 2 },
+    bonusHigh: { atk: 10, def: 7, maxHp: 4 },
   },
   { job: 'bard', stat: 'luk', mid: '竪琴', high: '月夜の琴' },
   { job: 'seer', stat: 'int', mid: '占いの水晶', high: '水晶の宝珠' },
@@ -167,7 +167,7 @@ export const EQUIPMENT: EquipmentDef[] = [
   { id: 'ar-fortune', name: 'しあわせの衣', slot: 'armor', kind: 'light', bonus: { def: 4, luk: 3 }, grade: 2, price: { power: 20, materials: 4 } },
   // ─── お守り (W6a はステータス系のみ。挙動系 (回避/にげる/ドロップ/MP減) は
   //     戦闘エンジンへのフック実装とセットで後続 PR — 効かない品は店に出さない) ───
-  { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 10 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 3 }, grade: 2, price: { power: 16, materials: 3 } },
   { id: 'ch-traveler', name: 'たびびとのおまもり', slot: 'charm', kind: 'charm', bonus: { def: 2 }, grade: 1, price: { power: 6, materials: 1 } },
 ];
 
