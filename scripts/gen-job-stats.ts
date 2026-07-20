@@ -12,6 +12,10 @@
  *   かつ最小値 FLOOR を保証する。
  *
  * 実行: pnpm tsx scripts/gen-job-stats.ts
+ *
+ * 注意: guardian は減算式ダメージ (#435) の戦闘都合で atk を戦士級に手動 override して
+ * いる (jobs.ts のコメント参照)。本生成器の理論値と guardian だけは一致しない (意図的)。
+ * jobs.ts をこの出力で上書きする際は guardian の override を保持すること。
  */
 import { JOBS, COGNITIVE_TO_RPG, STATS, type CogFunction } from '@aozoraquest/core';
 

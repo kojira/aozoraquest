@@ -49,9 +49,12 @@ export const BATTLE_TUNING = {
    *  atk 0〜80 のレンジになり勝率が 0〜100% に割れる (issue #279 実測)。
    *  50:50 でジョブの型を保ちつつ個人の傾きを乗せる。 */
   baseStatsPersonalWeight: 0.5,
-  /** ダメージ = atk * roll(0.85..1.15) * damageScale / (damageSoften + def) */
-  damageScale: 30,
-  damageSoften: 26,
+  /** ダメージ = max(minDamage, (atk*atkCoef*power − def*defCoef) * roll(0.85..1.15))。DQ の減算式
+   *  (攻撃÷2 − 防御÷4) 流。**防御の係数を攻撃の半分 (2:1)** にしてインフレを抑える。会心は def 項 0
+   *  (守備無視)。高守備の敵 (メタル) は通常 minDamage しか通らず、会心のみ貫通できる。数値は sim で調整。 */
+  atkCoef: 0.7,
+  defCoef: 0.35,
+  minDamage: 1,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
   agiDodgeScale: 0.009,
@@ -61,8 +64,10 @@ export const BATTLE_TUNING = {
   /** クリティカル率 = critBase + luk*critLukScale。会心 (かいしんのいちげき) は DQ 流に
    *  **攻撃力 critAtkMultiplier 倍**。守備力 (def) 無視は**プレイヤーの会心のみ** (敵の会心は
    *  1.5 倍のみ = タンク職を守る。バランス ★★★)。倍率は控えめ 1.5 (2 は高すぎ — オーナー指摘
-   *  2026-07-20)。守備の高い敵ほど効く一発逆転。ぼうぎょコマンドの半減は貫通しない。値は
-   *  模擬戦シミュレータで調整可。 */
+   *  2026-07-20)。ただし**減算式では会心の守備無視は def 項 (def*defCoef) を消すだけ**なので、
+   *  除算式時代 (分母消滅で桁が変わる) ほど劇的ではない = 守備の高い敵には「効くが一撃逆転
+   *  までは行かない」控えめな貫通。超高守備メタルの一撃逆転演出は #408 で会心倍率と併せ再評価。
+   *  ぼうぎょコマンドの半減は貫通しない。値は模擬戦シミュレータで調整可。 */
   critBase: 0.04,
   critLukScale: 0.004,
   critAtkMultiplier: 1.5,
@@ -537,8 +542,11 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 40, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 62, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 56, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
-  // はぐれメタル型: レア出現・低 HP・**高 XP (100)**・毎ターン逃走。倒せれば旨いが逃げられると何も
-  // 残らない (オーナー要望 2026-07-20)。低 HP なので式では低 XP になる → ジャックポットとして xp を明示。
+  // はぐれメタル型: レア出現・低 HP・高 XP (100)・毎ターン逃走。倒せれば旨いが逃げられると何も残らない。
+  // 現 def22 では通常攻撃も普通に通る (超高守備ではない)。減算式なら守備を上げるだけで
+  // 「通常 1・会心で貫通」が成立するが、超高守備にすると通常が効かず
+  // 会心前に必ず逃げて討伐 0% になる (先制/メタル斬り等の噛み合わせが要る) → 高守備メタル化は #408 で
+  // 逃走/会心チューニングと一緒に扱う。この PR (減算式移行) では現状ステータス据え置き。
   { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
@@ -833,11 +841,17 @@ function doAttack(
   const crit = rng() < t.critBase + attacker.luk * t.critLukScale;
   const critAtk = crit ? t.critAtkMultiplier : 1;
   const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
-  let dmg = (atkValue * critAtk * roll * t.damageScale * (opts.power ?? 1)) / (t.damageSoften + defValue);
+  // DQ の減算式 (攻撃÷2 − 防御÷4) 流: **防御の係数 (defCoef) を攻撃の半分 (2:1)** にしてインフレを
+  // 抑える (オーナー要望 2026-07-20)。高守備の敵 (メタル) は atkTerm−defTerm が負に沈み minDamage
+  // しか通らず、会心 (defValue=0) のみ貫通できる = 専用ロジック不要で「守備が硬い」が表現される。
+  const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1);
+  let dmg = Math.max(t.minDamage, (atkTerm - defValue * t.defCoef) * roll);
 
   // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
 
+  // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
+  // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
   const final = Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
