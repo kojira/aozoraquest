@@ -43,13 +43,31 @@ describe('kuda', () => {
 
   it('entropyByte(useKuda:true) は kuda 障害時 CSPRNG にフォールバック', async () => {
     const f = (async () => { throw new Error('down'); }) as unknown as typeof fetch;
-    const b = await entropyByte({ useKuda: true, fetchImpl: f });
+    const b = await entropyByte({ useKuda: true, apiKey: 'kuda_test', fetchImpl: f });
     expect(b.source).toBe('csprng'); // 障害でも戦闘は止めない
   });
 
   it('entropyByte(useKuda:true) は成功時 kuda を返す', async () => {
-    const b = await entropyByte({ useKuda: true, fetchImpl: (async () => okDrop(200)) as unknown as typeof fetch });
+    const b = await entropyByte({ useKuda: true, apiKey: 'kuda_test', fetchImpl: (async () => okDrop(200)) as unknown as typeof fetch });
     expect(b).toMatchObject({ value: 200, source: 'kuda' });
+  });
+
+  it('entropyByte(useKuda:true) は apiKey 未設定なら kuda を使わず CSPRNG (fetch しない)', async () => {
+    let called = false;
+    const f = (async () => { called = true; return okDrop(1); }) as unknown as typeof fetch;
+    const b = await entropyByte({ useKuda: true, fetchImpl: f }); // apiKey なし
+    expect(b.source).toBe('csprng');
+    expect(called).toBe(false); // キー無しで kuda を叩かない (無駄な 401 を避ける)
+  });
+
+  it('drawKudaByte は apiKey を Authorization: Bearer で送る', async () => {
+    let authHeader: string | null = null;
+    const f = (async (_url: string, init?: RequestInit) => {
+      authHeader = new Headers(init?.headers).get('Authorization');
+      return okDrop(5);
+    }) as unknown as typeof fetch;
+    await drawKudaByte({ apiKey: 'kuda_abc', fetchImpl: f });
+    expect(authHeader).toBe('Bearer kuda_abc');
   });
 
   it('drawKudaByte は 2xx でも非 JSON 本文なら throw (プロキシ HTML 等)', async () => {
@@ -59,9 +77,9 @@ describe('kuda', () => {
 
   it('entropyByte の onFallback は kuda 障害時に呼ばれ、正常時は呼ばれない', async () => {
     let fell = 0;
-    await entropyByte({ useKuda: true, onFallback: () => { fell++; }, fetchImpl: (async () => { throw new Error('x'); }) as unknown as typeof fetch });
+    await entropyByte({ useKuda: true, apiKey: 'kuda_test', onFallback: () => { fell++; }, fetchImpl: (async () => { throw new Error('x'); }) as unknown as typeof fetch });
     expect(fell).toBe(1);
-    await entropyByte({ useKuda: true, onFallback: () => { fell++; }, fetchImpl: (async () => okDrop(9)) as unknown as typeof fetch });
+    await entropyByte({ useKuda: true, apiKey: 'kuda_test', onFallback: () => { fell++; }, fetchImpl: (async () => okDrop(9)) as unknown as typeof fetch });
     expect(fell).toBe(1); // 正常時は増えない
   });
 
@@ -84,7 +102,7 @@ describe('kuda', () => {
   });
 
   it('entropyU32(useKuda:true) は kuda 成功で物理バイトを混ぜ source を kuda+csprng に', async () => {
-    const r = await entropyU32({ useKuda: true, fetchImpl: (async () => okDrop(200)) as unknown as typeof fetch });
+    const r = await entropyU32({ useKuda: true, apiKey: 'kuda_test', fetchImpl: (async () => okDrop(200)) as unknown as typeof fetch });
     expect(r.source).toBe('kuda+csprng');
     expect(r.meta).toBeTruthy();
     expect(r.value).toBeGreaterThanOrEqual(0);
@@ -92,7 +110,7 @@ describe('kuda', () => {
   });
 
   it('entropyU32(useKuda:true) は kuda 障害でも 32bit CSPRNG で成立 (fail-safe)', async () => {
-    const r = await entropyU32({ useKuda: true, fetchImpl: (async () => { throw new Error('down'); }) as unknown as typeof fetch });
+    const r = await entropyU32({ useKuda: true, apiKey: 'kuda_test', fetchImpl: (async () => { throw new Error('down'); }) as unknown as typeof fetch });
     expect(r.source).toBe('csprng');
     expect(r.value).toBeLessThanOrEqual(0xffffffff);
   });
