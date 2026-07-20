@@ -484,11 +484,10 @@ export interface MonsterDef {
    *  「あかいスライム」等の強い版/レッサーを安価に作る (オーナー要望 2026-07-19)。
    *  hue-rotate は輝度保存で狙った色にならない事故があるため明示色を持たせる。 */
   tint?: string;
-  /** 勝利時に得る XP。tier を目安にモンスター個別に設定して幅を持たせる (tier だけで
-   *  決めると はぐれメタルのような「同 tier で飛び抜けて高 XP」の敵が作れない —
-   *  オーナー要望 2026-07-18)。なお本格的なはぐれメタル型 (高 xp + 高回避 + 低 HP +
-   *  高逃走) には別途モンスター側の逃走挙動が要る (未実装。#341)。 */
-  xp: number;
+  /** 勝利時に得る XP の**個別上書き**。省略時は `baselineXp(def)` が実効的な強さ (基準 HP +
+   *  atk/agi) から算出する (式＋個別調整 — オーナー要望 2026-07-20)。低 HP なのに高 XP の
+   *  はぐれメタル型ジャックポットや、式が合わない上位 tier はここで明示する。 */
+  xp?: number;
   drops: readonly DropDef[];
   /** ひとこと (召喚時の口上に使う) */
   intro: string;
@@ -525,20 +524,21 @@ export const ITEMS: Record<string, { name: string }> = {
 };
 
 export const MONSTERS: readonly MonsterDef[] = [
-  // tier1: 手習い (初心者でも勝てる)。xp 14〜30。同 tier 内も体感できる幅を持たせる
-  // (レビュー: 差が小さすぎると誤差に埋もれる)。tier をまたぐ差はさらに大きい。
-  // そらいろスライム: 最弱の練習敵 (xp3・低ドロップ)。「初期からスライムが強すぎる」を解消
-  // し、はぐれメタルの通常版という位置づけに (オーナー要望 2026-07-19)。
-  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], xp: 3, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
-  // 色違い強い版 (tint で塗り替え)。base より手強く XP/素材も上。専用素材 red-jelly。
-  { id: 'red-slime', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], xp: 10, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
-  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], xp: 22, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], xp: 20, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], xp: 30, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
-  { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], xp: 26, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
-  // はぐれメタル型: レア出現・低 HP・高 XP・毎ターン逃走。倒せれば旨いが逃げられると何も残らない
-  // (オーナー要望 2026-07-19)。HP は明示 (導出だと def なりに増えるため)。高 agi で逃げ足も速い。
-  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 45, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  // tier1: 手習い (初心者でも勝てる)。**HP を明示して弱い敵は本当に弱く**した (以前は hpBase=66 が
+  // 支配的で全 tier1 が HP~70 横並び → 序盤が重い真因。オーナー指摘 2026-07-20)。XP は xp を省いて
+  // baselineXp (基準 HP + atk/agi) で自動算出 = 敵の強さと XP が構造的に連動する (スライム 2・
+  // ヒカリダケ 8 程度)。個別に効かせたい敵だけ xp を明示する。
+  // そらいろスライム: 最弱の練習敵 (低 HP・低 XP・低ドロップ)。序盤の的。
+  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], hp: 20, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
+  // 色違い強い版 (tint で塗り替え)。base より少し硬く XP/素材も上。専用素材 red-jelly。
+  { id: 'red-slime', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], hp: 30, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
+  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], hp: 44, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 40, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
+  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 62, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 56, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
+  // はぐれメタル型: レア出現・低 HP・**高 XP (100)**・毎ターン逃走。倒せれば旨いが逃げられると何も
+  // 残らない (オーナー要望 2026-07-20)。低 HP なので式では低 XP になる → ジャックポットとして xp を明示。
+  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
@@ -553,10 +553,34 @@ export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
   MONSTERS.map((m) => [m.id, m]),
 );
 
-/** 勝利時に得る XP (モンスター個別)。未知 id は BATTLE_TUNING.xpWin にフォールバック。
- *  world / 試練の両方でこれを使う (勝利 XP を一律固定にしない)。 */
+/** XP 算出式の係数 (式＋個別調整の「式」側)。倒す手間 (基準 HP) と脅威 (atk+agi) から出す。
+ *  tier1 帯 (基準 HP 12〜62) でおおむね 2〜9 になるよう校正 (オーナー要望 2026-07-20)。 */
+const XP_HP_FLOOR = 10; // これ以下の基準 HP は XP に寄与しない (最弱の下限を作る)
+const XP_HP_SCALE = 0.15; // 基準 HP 1 あたりの XP
+const XP_OFFENSE_SCALE = 0.04; // (atk+agi) 1 あたりの XP (素早い/強い敵を少し厚く)
+
+/** モンスターの XP 既定値を「実効的な強さ」から算出する (式＋個別調整の式側)。基準 HP は
+ *  def.hp があればそれ、無ければ従来の導出 (hpBase + def*hpDefScale)。敵の強さと XP を
+ *  構造的に連動させる (スライム=低 HP=低 XP、硬い敵=高 HP=高 XP。オーナー要望 2026-07-20)。
+ *
+ *  **校正は tier1 帯のみ** (基準 HP 12〜62 でおおむね 2〜9)。tier2/3 に生で使うと過小になる
+ *  (例: sky-dragon 式 ~12 vs 現行 96) ので、**tier2/3 は必ず def.xp を明示する** (回帰テスト
+ *  「tier2/3 は xp を明示」で固定)。tier をまたいで式化したくなったら tier 係数が要る。
+ *
+ *  **基準 HP はレベル 1 相当の名目値**。実 HP は factor でレベルに応じ伸びるが、XP は
+ *  レベル非依存に固定する (サーバーが monsterId だけから決定的に再導出できるため — docs/21)。 */
+export function baselineXp(def: MonsterDef): number {
+  const baseHp = def.hp ?? BATTLE_TUNING.hpBase + def.stats[1] * BATTLE_TUNING.hpDefScale;
+  const [atk, , agi] = def.stats;
+  return Math.max(1, Math.round(Math.max(0, baseHp - XP_HP_FLOOR) * XP_HP_SCALE + (atk + agi) * XP_OFFENSE_SCALE));
+}
+
+/** 勝利時に得る XP。def.xp があればそれ (個別上書き)、無ければ baselineXp。
+ *  未知 id は BATTLE_TUNING.xpWin にフォールバック。world / 試練の両方でこれを使う。 */
 export function battleXpFor(monsterId: string): number {
-  return MONSTERS_BY_ID[monsterId]?.xp ?? BATTLE_TUNING.xpWin;
+  const def = MONSTERS_BY_ID[monsterId];
+  if (!def) return BATTLE_TUNING.xpWin;
+  return def.xp ?? baselineXp(def);
 }
 
 /**
