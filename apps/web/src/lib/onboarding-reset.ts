@@ -24,6 +24,24 @@ import { serverReset } from './world-server';
 /** 歓迎付与するあおぞらパワー (演出とともに加算)。 */
 export const WELCOME_POWER = 20;
 
+/** 通常オンボードのイントロ (ONBOARDING_LINES overlay) を「見終えた」フラグの localStorage キー。
+ *  これが '1' だとイントロは再生されない。リセット時に消すと新規と同じ導入から始まる。 */
+export const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
+/** リセットで +20 を付与した直後だけ、再入場後のブルスコン手渡しの最後に祝福演出を出すためのマーク
+ *  (sessionStorage はリロードをまたいで残り、タブを閉じれば消える。使い捨て)。 */
+export const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
+
+/**
+ * リセット完了後、**通常の新規オンボードルートを丸ごと再生**させる準備。
+ * - イントロ overlay を再表示するため onboarding-done を消す (これが無いと「いきなり地図」になる)。
+ * - 祝福 (+20) 演出を再入場後に出すためのマークを立てる (実際に +20 を付与したときだけ呼ぶ)。
+ * 呼び出し後に /world へフルロード遷移すると、新規ユーザーと同じ「イントロ→手渡し→祝福」を辿る。
+ */
+export function armOnboardingReplay(): void {
+  try { localStorage.removeItem(ONBOARDING_DONE_KEY); } catch { /* private mode 等は諦める */ }
+  try { sessionStorage.setItem(WELCOME_BLESSING_PENDING_KEY, '1'); } catch { /* private mode 等は諦める */ }
+}
+
 /** あるコレクションの全レコードを削除。**並列バッチの deleteRecord** で消す —
  *  1 件ずつ逐次 await するとレコードが多いアカウントで数十〜数百往復かかり実質ハングする
  *  (リセットが固まる不具合)。records を集めてから 25 件ずつ並列に削除する。

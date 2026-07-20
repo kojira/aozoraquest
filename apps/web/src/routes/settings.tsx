@@ -6,6 +6,8 @@ import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector }
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { startServerOAuth, serverOAuthConfigured, getServerOAuthStatus, type ServerOAuthStatus } from '@/lib/server-oauth';
+import { resetOnboarding, armOnboardingReplay } from '@/lib/onboarding-reset';
+import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
@@ -339,6 +341,10 @@ export function Settings() {
 
       {isAdminDid(session.did) && serverOAuthConfigured && session.agent && (
         <ServerOAuthAdmin agent={session.agent} />
+      )}
+
+      {isAdminDid(session.did) && WORLD_PREVIEW_ENABLED && session.agent && session.did && (
+        <WorldResetAdmin agent={session.agent} did={session.did} />
       )}
 
       <section style={{ marginTop: '2em' }}>
@@ -687,6 +693,57 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
       </div>
       <button onClick={onLink} disabled={busy}>
         {busy ? '連携中…' : status?.linked ? '再連携する' : 'サーバーアカウントと連携'}
+      </button>
+      {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
+    </section>
+  );
+}
+
+/**
+ * 管理者専用 (dev のみ): あおぞらワールドを「はじめから」やり直す完全ワイプ。
+ * 地図メニューから**設定画面へ移設**した (地図上でリセットすると「いきなり地図」から再開し、
+ * 新規のオンボードルートと食い違うため — オーナー指摘 2026-07-20)。リセット後は
+ * armOnboardingReplay でイントロ再表示フラグと祝福マークを立て、/world へ**フルロード遷移**して
+ * 新規と同じ「イントロ→ブルスコンの手渡し→祝福」を辿る。
+ */
+function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onReset = async () => {
+    if (busy) return;
+    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化されます (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
+    setBusy(true);
+    setErr(null);
+    let timeoutId: number | undefined;
+    try {
+      // 30s の全体タイムアウト (PDS 無応答でも「リセット中…」で固着しない fail-safe)。
+      await Promise.race([
+        resetOnboarding(agent, did),
+        new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
+      ]);
+      // 新規と同じ導入を再生する準備 (イントロ再表示 + 祝福マーク) → /world へフルロードで入場。
+      armOnboardingReplay();
+      window.location.assign('/world');
+    } catch (e) {
+      console.warn('[settings] onboarding reset failed', e);
+      const detail = e instanceof Error ? e.message : '';
+      setErr(`リセットに失敗しました (${detail || '通信エラー'})。もう一度どうぞ。`);
+      setBusy(false);
+    } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    }
+  };
+
+  return (
+    <section style={{ marginTop: '2em' }}>
+      <h3 style={{ fontSize: '0.95em' }}>あおぞらワールド (管理)</h3>
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
+        ワールドを「はじめから」やり直し、新規と同じ導入 (イントロ→手渡し→祝福) を確認する。
+        所持品・装備・レベル・位置を初期化 (投稿で貯めたパワー残高は残る)。
+      </p>
+      <button onClick={onReset} disabled={busy}>
+        {busy ? 'リセット中…' : '⟲ あおぞらワールドを はじめから'}
       </button>
       {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
     </section>
