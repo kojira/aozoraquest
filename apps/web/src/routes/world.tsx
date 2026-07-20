@@ -516,7 +516,7 @@ export function World() {
   // 決着ターンの報酬 (XP/ドロップ/素材ロス) はサーバーが権威 state に確定し、awarded として返す。
   // タップ送り (onMessageAdvance) で「〜のダメージ！」を読んでから結果へ進む (DQ 風)。
   const onBattleCommand = useCallback(
-    (command: Command) => {
+    (command: Command, skillIndex?: number) => {
       const b = battleRef.current;
       if (!b || b.busy || b.phase !== 'input') return;
       if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず 戦えない。' }); return; }
@@ -526,7 +526,7 @@ export function World() {
       setBattle(busy);
       void (async () => {
         try {
-          const res = await serverTurn(agent, b.battleId, b.state.turn, command);
+          const res = await serverTurn(agent, b.battleId, b.state.turn, command, skillIndex);
           const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
             ...(res.awarded ? { awarded: res.awarded } : {}),
             ...(res.position ? { resultPos: res.position } : {}),

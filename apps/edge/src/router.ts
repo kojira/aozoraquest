@@ -142,13 +142,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string };
+    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number };
     try {
       if (isTurn) {
         if (typeof body.battleId !== 'string' || typeof body.turn !== 'number' || typeof body.command !== 'string') {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
-        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req))), allowedOrigin);
+        const skillIndex = typeof body.skillIndex === 'number' ? body.skillIndex : 0; // とくぎ選択 (#436)。既定 0=署名
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
       return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);

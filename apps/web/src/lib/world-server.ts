@@ -94,8 +94,9 @@ export function serverMove(agent: Agent, dx: number, dy: number, token?: string)
 }
 
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
-export function serverTurn(agent: Agent, battleId: string, turn: number, command: string): Promise<ServerTurnResult> {
-  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command });
+export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number): Promise<ServerTurnResult> {
+  // skillIndex: とくぎ選択 (#436)。command==='skill' のときどのとくぎか。省略/0 は署名スキル。
+  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}) });
 }
 
 /** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
