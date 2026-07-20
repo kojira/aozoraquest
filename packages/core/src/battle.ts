@@ -1020,8 +1020,10 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     monster: { ...prev.monster, guarding: false },
     lastEvents: [],
   };
-  // command==='skill' のとき使う特技 (#436: 毎ターン選択)。範囲外は署名スキル [0] に安全側フォールバック。
-  const selectedSkill = state.playerSkills[skillIndex] ?? state.playerSkills[0] ?? state.playerSkill;
+  // command==='skill' のとき使う特技 (#436: 毎ターン選択)。範囲外/未設定 (デプロイ跨ぎの旧 sealed
+  // state で playerSkills が無い) は署名スキル playerSkill に安全側フォールバック。
+  const skills = state.playerSkills ?? [state.playerSkill];
+  const selectedSkill = skills[skillIndex] ?? skills[0] ?? state.playerSkill;
   const events: TurnEvent[] = [];
   // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);

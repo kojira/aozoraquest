@@ -373,7 +373,7 @@ export interface TurnResult {
  * turn: 1 コマンドを**サーバーが**確定 pendingTurnSeed で解決する。
  * 決着なら報酬を fail-closed で確定 + ガード削除。未決着なら CAS で turn を進めてから応答。
  */
-export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS): Promise<TurnResult> {
+export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0): Promise<TurnResult> {
   if (!VALID_COMMANDS.includes(command)) throw new ResolverError('不正なコマンド', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (!g) throw new ResolverError('戦闘中でない', 409);
@@ -381,7 +381,11 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   // battleId / turn 不一致 = リプレイ/やり直し → 409 (応答しない)。
   if (guard.battleId !== battleId || guard.turn !== turn) throw new ResolverError('ターン不一致 (やり直し/リプレイ)', 409);
 
-  const next = resolveTurn(guard.state, command, guard.pendingTurnSeed);
+  // とくぎ選択 (#436) はサーバー権威の sealed state で検証: 実際に習得済みのとくぎだけ選べる
+  // (client が持っていない index を偽っても署名スキル [0] に落とす。詐称防止)。
+  const skills = guard.state.playerSkills ?? [];
+  const idx = Number.isInteger(skillIndex) && skillIndex >= 0 && skillIndex < skills.length ? skillIndex : 0;
+  const next = resolveTurn(guard.state, command, guard.pendingTurnSeed, idx);
 
   if (next.outcome !== 'ongoing') {
     // ── 決着: **まずガードを CAS 削除して「この決着ターンは自分が消費」を確定** ──
