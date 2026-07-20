@@ -383,7 +383,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
 
   // とくぎ選択 (#436) はサーバー権威の sealed state で検証: 実際に習得済みのとくぎだけ選べる
   // (client が持っていない index を偽っても署名スキル [0] に落とす。詐称防止)。
-  const skills = guard.state.playerSkills ?? [];
+  const skills = guard.state.playerSkills ?? [guard.state.playerSkill];
   const idx = Number.isInteger(skillIndex) && skillIndex >= 0 && skillIndex < skills.length ? skillIndex : 0;
   const next = resolveTurn(guard.state, command, guard.pendingTurnSeed, idx);
 

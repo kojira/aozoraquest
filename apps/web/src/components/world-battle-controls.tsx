@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
 import { BATTLE_TUNING, MONSTERS_BY_ID } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
@@ -46,6 +46,11 @@ export function WorldBattleControls({
 }) {
   const [itemMenu, setItemMenu] = useState(false);
   const [skillMenu, setSkillMenu] = useState(false);
+  // 入力フェーズを離れたら (メッセージ送り/リザルト) サブメニューを閉じておく。
+  // 描画上は input のときだけ出るが、state が開きっぱなしだと次の入力で一瞬開いて見えうる (レビュー ★★)。
+  useEffect(() => {
+    if (phase !== 'input') { setItemMenu(false); setSkillMenu(false); }
+  }, [phase]);
   const lowMp = state.player.mp < BATTLE_TUNING.skillMpCost;
   // デプロイ跨ぎの旧 sealed state は playerSkills が無いことがある → 署名スキル 1 個にフォールバック。
   const skills = state.playerSkills ?? [state.playerSkill];
