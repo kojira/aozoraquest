@@ -20,6 +20,20 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
   分けるのは「別 KV (別トークン保管) / 別 cron / 別 secrets」であって「別アカウント」ではない。
 - **KV / cron / secrets はすべて dev 専用**。dev の cron は自分のセッションのトークンだけ refresh する。
 
+## 進捗 (2026-07-20)
+
+- ✅ step1 dev KV 作成 (`ef1a0429afc34c7da4ee5183752a5f3e`) → wrangler.toml 反映
+- ✅ step2 dev secret set (OAUTH_CLIENT/DPOP_JWK・WORLD_TOKEN_SECRET・SERVER_DID・ADMIN_DIDS=kojira.io の DID)
+- ✅ step3 `wrangler deploy --env dev` → `https://aozoraquest-edge-dev.kojiran.workers.dev` 稼働
+      (`/api/world/reset` が 401 = ルート存在。共有エッジは 404 だった)
+- ✅ step5 ローカル: `.env.development` に VITE_EDGE_URL/DID を dev エッジで追記
+- ⬜ **step5 (dev デプロイ)** CF Workers Builds `aozoraquest-dev` の Variables に
+      `VITE_EDGE_URL=https://aozoraquest-edge-dev.kojiran.workers.dev` /
+      `VITE_EDGE_DID=did:web:aozoraquest-edge-dev.kojiran.workers.dev` を設定 → dev push で反映。**オーナー操作**。
+- ⬜ **step4 OAuth bootstrap** dev エッジに向いた web (ローカル or dev.aozoraquest.app) で
+      管理者ログイン → 設定 → 「サーバーアカウント OAuth 連携」ボタン → kojira.io を承認 →
+      dev KV にトークン保存。**オーナー操作 (ブラウザ)**。
+
 ## セットアップ手順 (runbook)
 
 前提: `wrangler whoami` が CF アカウント (account id は CF ダッシュボード参照) にログイン済み。
