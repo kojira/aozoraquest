@@ -702,13 +702,16 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
 /**
  * 管理者専用 (dev のみ): あおぞらワールドを「はじめから」やり直す完全ワイプ。
  * 地図メニューから**設定画面へ移設**した (地図上でリセットすると「いきなり地図」から再開し、
- * 新規のオンボードルートと食い違うため — オーナー指摘 2026-07-20)。リセット後は
- * armOnboardingReplay でイントロ再表示フラグと祝福マークを立て、**精霊ブルスコンの画面 (/spirit)**
- * へフルロード遷移する。一般ユーザーはそこの「あおぞらワールドを冒険する」から入場するので、
- * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」の導線をそのまま確認できる。
+ * 新規のオンボードルートと食い違うため — オーナー指摘 2026-07-20)。
+ *
+ * **リセットするだけ**で遷移はしない (この設定画面に留まる — オーナー指摘 2026-07-20)。
+ * armOnboardingReplay でイントロ再表示フラグと祝福マークを storage に立てておくので、管理者が
+ * 自分で通常どおり精霊ブルスコン→「冒険する」→ワールドと進めば、新規ユーザーと同じ
+ * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」を頭から辿れる。
  */
 function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const onReset = async () => {
@@ -716,6 +719,7 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
     if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化され、元に戻せません (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
     setBusy(true);
     setErr(null);
+    setDone(false);
     let timeoutId: number | undefined;
     try {
       // 30s の全体タイムアウト (PDS 無応答でも「リセット中…」で固着しない fail-safe)。
@@ -723,18 +727,16 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
         resetOnboarding(agent, did),
         new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
       ]);
-      // 新規と同じ導入を再生する準備 (イントロ再表示 + 祝福マーク) → **精霊ブルスコンの画面**へ。
-      // 一般ユーザーは /spirit の「あおぞらワールドを冒険する」から入場するので、そこへ戻して
-      // 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」の導線を丸ごと辿れるようにする
-      // (/world へ直接飛ばすと 2D 地図にいきなり出て一般導線と食い違う — オーナー指摘 2026-07-20)。
+      // 次に管理者が自分でワールドへ入ったとき新規と同じ導入を再生するための準備 (イントロ再表示 +
+      // 祝福マーク)。ここでは遷移しない — この設定画面に留まる (オーナー指摘 2026-07-20)。
       armOnboardingReplay();
-      window.location.assign('/spirit');
+      setDone(true);
     } catch (e) {
       console.warn('[settings] onboarding reset failed', e);
       const detail = e instanceof Error ? e.message : '';
       setErr(`リセットに失敗しました (${detail || '通信エラー'})。もう一度どうぞ。`);
-      setBusy(false);
     } finally {
+      setBusy(false);
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     }
   };
@@ -743,9 +745,8 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>管理者 (ワールド)</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        ワールドを「はじめから」やり直し、精霊ブルスコンの画面から一般ユーザーと同じ導線
-        (冒険する→イントロ→手渡し→祝福) を確認する。所持品・装備・レベル・位置を初期化
-        (投稿で貯めたパワー残高は残る)。
+        ワールドを「はじめから」やり直す。所持品・装備・レベル・位置を初期化 (投稿で貯めたパワー
+        残高は残る)。リセット後、精霊ブルスコンの画面から冒険すると新規と同じ導入を辿れる。
       </p>
       <button onClick={onReset} disabled={busy}>
         {busy ? 'リセット中…' : '⟲ あおぞらワールドを はじめから'}
@@ -756,6 +757,11 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
         <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
           <style>{'@keyframes reset-pulse{0%,100%{opacity:0.4}50%{opacity:1}}'}</style>
           <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ もどしています…</span>
+        </p>
+      )}
+      {done && !busy && (
+        <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-accent)', marginTop: '0.4em' }}>
+          リセットしました ✅ 精霊ブルスコンの画面から冒険できます。
         </p>
       )}
       {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
