@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AtpAgent, type Agent } from '@atproto/api';
+import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { startServerOAuth, serverOAuthConfigured, getServerOAuthStatus, type ServerOAuthStatus } from '@/lib/server-oauth';
-import { resetOnboarding, armOnboardingReplay } from '@/lib/onboarding-reset';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
@@ -345,16 +343,11 @@ export function Settings() {
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
             モンスター・アイテム・マップ・店・クエストの編集ハブ (管理者専用)。
           </p>
+          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+            サーバー連携・ワールドリセット・模擬戦・パワー付与はダッシュボードに集約しました。
+          </p>
           <button onClick={() => navigate('/admin')}>管理ダッシュボードを開く</button>
         </section>
-      )}
-
-      {isAdminDid(session.did) && serverOAuthConfigured && session.agent && (
-        <ServerOAuthAdmin agent={session.agent} />
-      )}
-
-      {isAdminDid(session.did) && WORLD_PREVIEW_ENABLED && session.agent && session.did && (
-        <WorldResetAdmin agent={session.agent} did={session.did} />
       )}
 
       <section style={{ marginTop: '2em' }}>
@@ -629,160 +622,3 @@ function AnalyzePostsToggle() {
   );
 }
 
-/** 管理者専用: サーバーアカウント (権威 state の持ち主) の OAuth 連携を開始する。docs/21 §12。 */
-function ServerOAuthAdmin({ agent }: { agent: Agent }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [status, setStatus] = useState<ServerOAuthStatus | null>(null);
-  const [statusErr, setStatusErr] = useState<string | null>(null);
-  const [justLinked, setJustLinked] = useState(false);
-
-  // 認可 callback から ?serverOAuth=linked で戻ってきたら「連携できました」を出し、param を掃除する。
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    if (p.get('serverOAuth') === 'linked') {
-      setJustLinked(true);
-      p.delete('serverOAuth');
-      const q = p.toString();
-      window.history.replaceState(null, '', window.location.pathname + (q ? `?${q}` : ''));
-    }
-  }, []);
-
-  // 連携状態を確認して表示する (以前は状態が画面に出ず「連携できたか分からない」だった)。
-  useEffect(() => {
-    let cancelled = false;
-    setStatus(null);
-    setStatusErr(null);
-    getServerOAuthStatus(agent)
-      .then((s) => { if (!cancelled) setStatus(s); })
-      .catch((e) => { if (!cancelled) setStatusErr(e instanceof Error ? e.message : '状態取得に失敗しました'); });
-    return () => { cancelled = true; };
-  }, [agent]);
-
-  const onLink = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      await startServerOAuth(agent); // 成功時は認可サーバーへ遷移する
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : '連携に失敗しました');
-      setBusy(false);
-    }
-  };
-
-  const fmt = (sec?: number) => (sec ? new Date(sec * 1000).toLocaleString('ja-JP') : '—');
-  const expired = status?.linked && status.expiresAt !== undefined && status.expiresAt * 1000 < Date.now();
-
-  return (
-    <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>管理者 (サーバー連携)</h3>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        ゲームの権威データを書き込むサーバーアカウントの連携。
-      </p>
-      {justLinked && (
-        <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', marginBottom: '0.5em' }}>連携できました ✅</p>
-      )}
-      {/* 連携状態 */}
-      <div style={{ fontSize: '0.8em', marginBottom: '0.6em' }}>
-        {statusErr ? (
-          <span style={{ color: 'var(--color-muted)' }}>状態を確認できません: {statusErr}</span>
-        ) : status === null ? (
-          <span style={{ color: 'var(--color-muted)' }}>状態を確認中…</span>
-        ) : status.linked ? (
-          <span style={{ color: expired ? 'var(--color-danger, crimson)' : 'var(--color-accent)' }}>
-            {expired ? '⚠ 連携済み (アクセストークン失効・cron 更新待ち)' : '✓ 連携済み'}
-            {status.did ? <span style={{ color: 'var(--color-muted)' }}> ({status.did})</span> : null}
-            <br />
-            <span style={{ color: 'var(--color-muted)' }}>
-              トークン失効: {fmt(status.expiresAt)} / 最終更新: {fmt(status.updatedAt)}
-            </span>
-          </span>
-        ) : (
-          <span style={{ color: 'var(--color-muted)' }}>未連携</span>
-        )}
-      </div>
-      <button onClick={onLink} disabled={busy}>
-        {busy ? '連携中…' : status?.linked ? '再連携する' : 'サーバーアカウントと連携'}
-      </button>
-      {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
-    </section>
-  );
-}
-
-/**
- * 管理者専用 (dev のみ): あおぞらワールドを「はじめから」やり直す完全ワイプ。
- * 地図メニューから**設定画面へ移設**した (地図上でリセットすると「いきなり地図」から再開し、
- * 新規のオンボードルートと食い違うため — オーナー指摘 2026-07-20)。
- *
- * **リセットするだけ**で遷移はしない (この設定画面に留まる — オーナー指摘 2026-07-20)。
- * armOnboardingReplay でイントロ再表示フラグと祝福マークを storage に立てておくので、管理者が
- * 自分で通常どおり精霊ブルスコン→「冒険する」→ワールドと進めば、新規ユーザーと同じ
- * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」を頭から辿れる。
- */
-function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  // 成功表示は数秒で自然に消す (この設定画面に留まって他操作を続けても居座らせない — レビュー ★★)。
-  useEffect(() => {
-    if (!done) return;
-    const t = window.setTimeout(() => setDone(false), 6000);
-    return () => window.clearTimeout(t);
-  }, [done]);
-
-  const onReset = async () => {
-    if (busy) return;
-    // 前回の成功/失敗メッセージはボタンを押した時点で消す (confirm でキャンセルしても残像を残さない)。
-    setErr(null);
-    setDone(false);
-    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化され、元に戻せません (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
-    setBusy(true);
-    let timeoutId: number | undefined;
-    try {
-      // 30s の全体タイムアウト (PDS 無応答でも「リセット中…」で固着しない fail-safe)。
-      await Promise.race([
-        resetOnboarding(agent, did),
-        new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
-      ]);
-      // 次に管理者が自分でワールドへ入ったとき新規と同じ導入を再生するための準備 (イントロ再表示 +
-      // 祝福マーク)。ここでは遷移しない — この設定画面に留まる (オーナー指摘 2026-07-20)。
-      armOnboardingReplay();
-      setDone(true);
-    } catch (e) {
-      console.warn('[settings] onboarding reset failed', e);
-      const detail = e instanceof Error ? e.message : '';
-      setErr(`リセットに失敗しました (${detail || '通信エラー'})。もう一度どうぞ。`);
-    } finally {
-      setBusy(false);
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    }
-  };
-
-  return (
-    <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>管理者 (ワールド)</h3>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        ワールドを「はじめから」やり直す。所持品・装備・レベル・位置を初期化 (投稿で貯めたパワー
-        残高は残る)。リセット後、精霊ブルスコンの画面から冒険すると新規と同じ導入を辿れる。
-      </p>
-      <button onClick={onReset} disabled={busy}>
-        {busy ? 'リセット中…' : '⟲ あおぞらワールドを はじめから'}
-      </button>
-      {/* 重い I/O (最大 30s) 中は「固まった?」に見えないよう明滅で処理継続を示す
-          (旧地図の全画面オーバーレイの脈動を最小構成で踏襲 — レビュー ★★)。 */}
-      {busy && (
-        <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-          <style>{'@keyframes reset-pulse{0%,100%{opacity:0.4}50%{opacity:1}}'}</style>
-          <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ もどしています…</span>
-        </p>
-      )}
-      {done && !busy && (
-        <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-accent)', marginTop: '0.4em' }}>
-          はじめの地へ もどりました。精霊ブルスコンから 冒険できます。
-        </p>
-      )}
-      {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
-    </section>
-  );
-}

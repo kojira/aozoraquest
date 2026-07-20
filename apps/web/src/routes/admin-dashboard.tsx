@@ -2,6 +2,11 @@ import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { serverOAuthConfigured } from '@/lib/server-oauth';
+import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
+import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
+import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
+import { DebugBattleSim } from '@/components/debug-battle-sim';
 
 /**
  * あおぞらワールド 管理ダッシュボードの土台 (issue #417 / エピック #416)。
@@ -34,14 +39,6 @@ const CONTENT_SECTIONS: Section[] = [
   { key: 'quests', title: 'クエスト', desc: 'ゲーム内クエストの作成・編集', issue: 423 },
   { key: 'npc', title: 'NPC (将来)', desc: 'NPC の CRUD と配置', issue: 425 },
   { key: 'flags', title: 'フラグ (将来)', desc: '進行フラグでゲート', issue: 426 },
-];
-
-/** 既に別画面にある管理ツール (当面はリンクで集約。将来 /admin へ移設するかは #416 で判断)。
- *  リンク先はページ下部の該当セクションなので、着地点を desc で明示する (アンカー未対応)。 */
-const EXISTING_TOOLS: Section[] = [
-  { key: 'sim', title: '模擬戦シミュレータ', desc: 'バランス検証 → 精霊ページ下部', to: '/spirit' },
-  { key: 'server', title: 'サーバー連携', desc: 'サーバーアカウント連携 → 設定ページ下部', to: '/settings' },
-  { key: 'reset', title: 'ワールドリセット', desc: 'はじめからやり直す → 設定ページ下部', to: '/settings' },
 ];
 
 function Card({ s }: { s: Section }) {
@@ -86,6 +83,8 @@ export function AdminDashboard() {
     );
   }
 
+  const agent = session.agent ?? null;
+  const did = session.did ?? null;
   const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.6em', marginTop: '0.5em' };
 
   return (
@@ -100,10 +99,19 @@ export function AdminDashboard() {
         {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
       </div>
 
-      <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>既存の管理ツール</h3>
-      <div style={grid}>
-        {EXISTING_TOOLS.map((s) => (<Card key={s.key} s={s} />))}
-      </div>
+      {/* 管理ツールはここに**集約 (埋め込み)** する。別画面へ飛ばさない (ハブの意味がなくなる —
+          オーナー指摘 2026-07-20)。CRUD が実装されたら上のカードもここに埋め込みで生えていく。 */}
+      <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>ツール</h3>
+      {agent && did ? (
+        <>
+          <PowerGrantAdmin agent={agent} did={did} />
+          <WorldResetAdmin agent={agent} did={did} />
+          <DebugBattleSim />
+          {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
+        </>
+      ) : (
+        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>ログインが必要です。</p>
+      )}
     </div>
   );
 }
