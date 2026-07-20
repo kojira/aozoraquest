@@ -27,9 +27,8 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
 - ✅ step3 `wrangler deploy --env dev` → `https://aozoraquest-edge-dev.kojiran.workers.dev` 稼働
       (`/api/world/reset` が 401 = ルート存在。共有エッジは 404 だった)
 - ✅ step5 ローカル: `.env.development` に VITE_EDGE_URL/DID を dev エッジで追記
-- ⬜ **step5 (dev デプロイ)** CF Workers Builds `aozoraquest-dev` の Variables に
-      `VITE_EDGE_URL=https://aozoraquest-edge-dev.kojiran.workers.dev` /
-      `VITE_EDGE_DID=did:web:aozoraquest-edge-dev.kojiran.workers.dev` を設定 → dev push で反映。**オーナー操作**。
+- ✅ **step5 (dev デプロイ)** CF 変数は**不要にした**: world-server.ts で `VITE_NSID_ENV=dev` の
+      とき dev エッジを**コードで強制** (#396)。dev push で dev.aozoraquest.app が自動的に dev エッジへ。
 - ⬜ **step4 OAuth bootstrap** dev エッジに向いた web (ローカル or dev.aozoraquest.app) で
       管理者ログイン → 設定 → 「サーバーアカウント OAuth 連携」ボタン → kojira.io を承認 →
       dev KV にトークン保存。**オーナー操作 (ブラウザ)**。
@@ -85,8 +84,9 @@ POST https://aozoraquest-edge-dev.kojiran.workers.dev/api/oauth/start   (ADMIN_D
 VITE_EDGE_URL=https://aozoraquest-edge-dev.kojiran.workers.dev
 VITE_EDGE_DID=did:web:aozoraquest-edge-dev.kojiran.workers.dev
 ```
-- CF Workers Build `aozoraquest-dev` の Variables にも同じ 2 値を設定 (dev web の本番ビルドが拾う値)。
-- 本番 web (`aozoraquest` / `.env.production`) は本番エッジのままにする (変更しない)。
+- **dev.aozoraquest.app デプロイ**: CF Variables は不要。world-server.ts が `VITE_NSID_ENV=dev`
+  (dev ビルドに既に入っている) を見て dev エッジを強制する (#396)。dev push で自動反映。
+- 本番 web (`aozoraquest` / `.env.production`) は本番エッジのまま (world-server.ts の else 枝)。
 
 ## 補足
 
@@ -101,6 +101,11 @@ VITE_EDGE_DID=did:web:aozoraquest-edge-dev.kojiran.workers.dev
 ### 6. 確認
 - dev.aozoraquest.app でワールド移動/戦闘/リセットが dev エッジ経由で動く。
 - 本番 (aozoraquest.app) は無傷 (本番エッジ・本番 KV 不変)。
+
+
+- **dev エッジをリネーム/再デプロイした時**は、`apps/web/src/lib/world-server.ts` の
+  `DEV_EDGE_URL`/`DEV_EDGE_DID` 定数と `.env.development` の VITE_EDGE_URL/DID も直す
+  (dev は VITE_NSID_ENV=dev のときコード側の定数でエッジを強制しているため)。
 
 ## 再発防止
 

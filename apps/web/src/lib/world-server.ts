@@ -18,6 +18,9 @@ const DEV_EDGE_DID = 'did:web:aozoraquest-edge-dev.kojiran.workers.dev';
 const EDGE_URL = NSID_ENV === 'dev' ? DEV_EDGE_URL : (import.meta.env.VITE_EDGE_URL as string | undefined)?.trim();
 const EDGE_DID = NSID_ENV === 'dev' ? DEV_EDGE_DID : (import.meta.env.VITE_EDGE_DID as string | undefined)?.trim();
 
+/** @internal テスト用: 環境別に解決したエッジ設定 (dev が本番エッジを叩かない回帰防止)。 */
+export const __edgeForTest = { url: EDGE_URL, did: EDGE_DID };
+
 const LXM_MOVE = 'app.aozoraquest.world.move';
 const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
 const LXM_ITEM = 'app.aozoraquest.world.item';
