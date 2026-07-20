@@ -186,7 +186,7 @@ describe('summonMonster', () => {
       if (b.monsterId === 'stray-slime') { battle = b; break; }
     }
     expect(battle).not.toBeNull();
-    // HP 明示 (12) × tier1 係数 → 通常 tier1 (~70) より大幅に低い
+    // HP 明示 (6) × tier1 係数 → 通常 tier1 (~70) より大幅に低い (会心一撃圏)
     expect(battle!.monster.maxHp).toBeLessThan(25);
     // 逃走する turnSeed があり、そのとき outcome は monster-fled (win/lose ではない)
     let fled = false;
@@ -195,6 +195,25 @@ describe('summonMonster', () => {
       if (next.outcome === 'monster-fled') { fled = true; break; }
     }
     expect(fled).toBe(true);
+  });
+  it('はぐれメタル: 超高守備で通常攻撃は 1 ダメージ・会心 (def無視) のみ貫通', () => {
+    // メタルは守備 240 で減算式が minDamage に沈む。プレイヤーの会心だけが def を無視して
+    // 貫通する (#432)。専用ロジックなし = 守備の数値だけで「硬い」を表現。高 atk の shogun でも通常は 1。
+    let normalMax = 0;
+    let critDealt = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      let s = startBattle('shogun', 8, 15, 'x', 1, seed, 0, undefined, { monsterId: 'stray-slime' });
+      for (let i = 0; i < 6 && s.outcome === 'ongoing'; i++) {
+        const before = s.monster.hp;
+        s = resolveTurn(s, 'attack', seed * 100 + i);
+        const dealt = before - s.monster.hp;
+        if (dealt <= 0) continue;
+        if (s.lastEvents.some((e) => e.text.includes('会心'))) critDealt = Math.max(critDealt, dealt);
+        else normalMax = Math.max(normalMax, dealt);
+      }
+    }
+    expect(normalMax).toBe(1); // 通常攻撃は必ず 1 (守備で沈む)
+    expect(critDealt).toBeGreaterThan(1); // 会心は貫通して低 HP を一撃
   });
   it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
     // tier3 pool = [raven, oni, dragon]。affinity%3==0 は raven を favor

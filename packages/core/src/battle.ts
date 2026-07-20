@@ -542,12 +542,15 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 40, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 62, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 56, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
-  // はぐれメタル型: レア出現・低 HP・高 XP (100)・毎ターン逃走。倒せれば旨いが逃げられると何も残らない。
-  // 現 def22 では通常攻撃も普通に通る (超高守備ではない)。減算式なら守備を上げるだけで
-  // 「通常 1・会心で貫通」が成立するが、超高守備にすると通常が効かず
-  // 会心前に必ず逃げて討伐 0% になる (先制/メタル斬り等の噛み合わせが要る) → 高守備メタル化は #408 で
-  // 逃走/会心チューニングと一緒に扱う。この PR (減算式移行) では現状ステータス据え置き。
-  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  // はぐれメタル型 (DQ のメタルスライム): レア出現・高 XP (100)・毎ターン逃走。
+  //   - **超高守備 (def240)**: 減算式で通常攻撃は atkTerm−defTerm が深く負に沈み minDamage(1) しか
+  //     通らない = 「当たってもダメージがほとんど通らない」(オーナー要望 2026-07-21)。魔撃 (spell,
+  //     defFactor0.5) でも def が大きすぎて 1 = メタルは魔法も効かない (DQ 準拠)。
+  //   - **高 agi (38)**: 回避 (最大 dodgeMax) が張り付き「避けられる」。
+  //   - **低 HP (6→tier係数で実質4)**: 仕留める道は**会心の一撃のみ** (プレイヤーの会心は def 無視
+  //     #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。専用ロジックは使わず
+  //     守備/agi/HP の数値だけで「メタル」を表現 (オーナー: 専用ロジック禁止 2026-07-20)。
+  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 240, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [26, 36, 6, 10, 8], xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [10, 12, 24, 34, 12], xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
