@@ -41,13 +41,19 @@ export function DialogueWindow({
   lines,
   plateIcon,
   onDone,
+  anchor = 'viewport',
 }: {
   lines: readonly DialogueLine[];
   /** 話者名プレートに添えるアイコン (例: ブルスコンは SpiritIcon — 他画面の
    *  吹き出しと同じ顔で認識できるように)。NPC ごとの出し分けは呼び出し側の責務 */
   plateIcon?: React.ReactNode;
   onDone: () => void;
+  /** 出す位置。'viewport' = 画面下端 (footer 際) に固定 (既定)。'map' = 直近の
+   *  position:relative 祖先 (ワールドの地図枠) の下部にオーバーレイし、DQ 風に
+   *  「マップ上」へ会話窓を出す (オーナー指摘 2026-07-20)。 */
+  anchor?: 'viewport' | 'map';
 }) {
+  const onMap = anchor === 'map';
   const [st, setSt] = useState(startDialogue);
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -115,15 +121,25 @@ export function DialogueWindow({
         }
       }}
       tabIndex={0}
-      style={{ position: 'fixed', inset: 0, zIndex: 900, cursor: 'pointer', background: 'transparent' }}
+      style={{
+        // 'map' は地図枠内 (absolute) に敷く。z は地図内の HUD/戦闘 (HUD_Z=2/OVERLAY_Z=3)
+        // より上。'viewport' は従来どおり画面全体に固定。
+        position: onMap ? 'absolute' : 'fixed',
+        inset: 0,
+        zIndex: onMap ? 12 : 900,
+        cursor: 'pointer',
+        background: 'transparent',
+      }}
     >
       <div
         style={{
           position: 'absolute',
           left: '50%',
-          bottom: 'calc(var(--footer-height, 4.5em) + 0.5em)', // footer 実測高 (app-shell が書き出す) に追従
+          // 'map': 地図枠の下端に貼る (DQ 風)。'viewport': footer 実測高 (app-shell) に追従
+          bottom: onMap ? '0.5em' : 'calc(var(--footer-height, 4.5em) + 0.5em)',
           transform: 'translateX(-50%)',
-          width: 'min(94vw, 520px)',
+          width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
+          maxWidth: 520,
         }}
       >
         {line.speaker && (

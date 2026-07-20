@@ -1172,28 +1172,44 @@ export function World() {
               )}
             </div>
           )}
+          {/* 会話ウィンドウは**地図枠内**にオーバーレイする (DQ 風。以前は画面下端の footer 際に
+              出て「マップ上」に見えなかった — オーナー指摘 2026-07-20)。anchor="map" で、この
+              position:relative の地図枠の下部に貼る。一度に出るのは 1 つ (相互にガード)。 */}
+          {onboarding && (
+            <DialogueWindow
+              anchor="map"
+              lines={ONBOARDING_LINES}
+              plateIcon={<SpiritIcon size={20} />}
+              onDone={() => {
+                setOnboarding(false);
+                onboardingRef.current = false;
+                try { localStorage.setItem(ONBOARDING_DONE_KEY, '1'); } catch { /* private mode */ }
+              }}
+            />
+          )}
+          {showStarter && !onboarding && (
+            // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
+            // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
+            // 分からなかった — オーナー指摘 2026-07-20)。starterBlessed は入場時にマークから確定済み。
+            // 声はブルスコンのトーンに合わせ ひらがな主体で統一 (UX レビュー ★)。
+            <DialogueWindow
+              anchor="map"
+              lines={[
+                { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を もたせよう。' },
+                { speaker: 'ブルスコン', text: 'やくそうは きずを いやす。そらのはねは いったことの ある街へ もどれる。こまったら どうぐ から つかうといい。' },
+                starterBlessed
+                  ? { speaker: 'ブルスコン', text: 'それと、はじまりの しゅくふくを。あおぞらパワーを 20 さずけるよ。よい たびを。' }
+                  : { speaker: 'ブルスコン', text: 'よい たびを。' },
+              ]}
+              plateIcon={<SpiritIcon size={20} />}
+              onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
+            />
+          )}
+          {searchMsg !== null && (
+            <DialogueWindow anchor="map" lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
+          )}
         </div>
       </div>
-      {searchMsg !== null && (
-        <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
-      )}
-      {showStarter && !onboarding && (
-        // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
-        // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
-        // 分からなかった — オーナー指摘 2026-07-20)。starterBlessed は入場時にマークから確定済み。
-        // 声はブルスコンのトーンに合わせ ひらがな主体で統一 (UX レビュー ★)。
-        <DialogueWindow
-          lines={[
-            { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を もたせよう。' },
-            { speaker: 'ブルスコン', text: 'やくそうは きずを いやす。そらのはねは いったことの ある街へ もどれる。こまったら どうぐ から つかうといい。' },
-            starterBlessed
-              ? { speaker: 'ブルスコン', text: 'それと、はじまりの しゅくふくを。あおぞらパワーを 20 さずけるよ。よい たびを。' }
-              : { speaker: 'ブルスコン', text: 'よい たびを。' },
-          ]}
-          plateIcon={<SpiritIcon size={20} />}
-          onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
-        />
-      )}
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
           をなくす — オーナー要望 2026-07-18)。通常時のみ操作ヒント。 */}
@@ -1263,17 +1279,6 @@ export function World() {
           mp={curMp}
           gearPieces={resolvedGear?.pieces ?? {}}
           onClose={() => setStatusOpen(false)}
-        />
-      )}
-      {onboarding && (
-        <DialogueWindow
-          lines={ONBOARDING_LINES}
-          plateIcon={<SpiritIcon size={20} />}
-          onDone={() => {
-            setOnboarding(false);
-            onboardingRef.current = false;
-            try { localStorage.setItem(ONBOARDING_DONE_KEY, '1'); } catch { /* private mode */ }
-          }}
         />
       )}
       {gearOpen && (
