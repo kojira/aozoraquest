@@ -181,7 +181,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
     baseStats, equipIds: state.gear, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
-  const pendingTurnSeed = (await entropyU32({ useKuda: true })).value;
+  const pendingTurnSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
   // move では毎歩ガードを読まない (ステートレス高速化)。**client は戦闘中は move しない**ので、ここに
@@ -340,7 +340,7 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const luk = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, state.gear, state.gearSel).luk;
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
-  const found = rollSearch((await entropyU32({ useKuda: true })).value, luk, tier);
+  const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };
   const written = await readModifyWrite(env, userDid, (cur) => ({ ...cur, materials: { ...cur.materials, [found]: (cur.materials[found] ?? 0) + 1 } }),
     { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
@@ -398,8 +398,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       throw e; // ServerWriteError(token 切れ) 等 → 上位で 503 (報酬なし)
     }
     // ここに来られるのはガードを消せた 1 リクエストだけ → 報酬を fail-closed で確定。
-    const rewardSeed = (await entropyU32({ useKuda: true })).value;
-    const lossSeed = (await entropyU32({ useKuda: true })).value;
+    const rewardSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
+    const lossSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
     let awarded: AwardBreakdown = {};
     let finalPos = { x: 0, y: 0 };
     const window = enemyWindow(now);
@@ -442,7 +442,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──
   // expiresAt も更新し、長い戦闘が move の flush 対象にならないようにする (ターンごとに寿命を延ばす)。
-  const nextPending = (await entropyU32({ useKuda: true })).value;
+  const nextPending = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
   const nowIso = new Date(now * 1000).toISOString();
   const advanced: Guard = { ...guard, turn: turn + 1, state: next, pendingTurnSeed: nextPending, expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), updatedAt: nowIso };
   try {

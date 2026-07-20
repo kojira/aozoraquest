@@ -22,6 +22,8 @@ export interface OAuthEnv {
   PUBLIC_ORIGIN?: string;
   /** OAuth scope。既定 'atproto transition:generic'。 */
   OAUTH_SCOPE?: string;
+  /** kuda 物理乱数 API のキー (Bearer)。Secret。未設定なら kuda を使わず CSPRNG のみ (fail-safe)。 */
+  KUDA_API_KEY?: string;
 }
 
 export class OAuthConfigError extends Error {}
