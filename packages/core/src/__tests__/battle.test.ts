@@ -607,8 +607,8 @@ describe('resolveTurn', () => {
       }
     }
     expect(found).not.toBeNull();
-    // 守備無視が効いている証拠: 非会心の理論最大 (守備軽減あり) を会心が上回る。
-    const maxNonCrit = Math.round((found!.atk * 1.15 * t.damageScale) / (t.damageSoften + found!.def));
+    // 守備無視が効いている証拠: 非会心の理論最大 (減算式・守備あり・roll 1.15) を会心が上回る。
+    const maxNonCrit = Math.max(t.minDamage, Math.round((found!.atk * t.atkCoef - found!.def * t.defCoef) * 1.15));
     expect(found!.dmg).toBeGreaterThan(maxNonCrit);
   });
 
