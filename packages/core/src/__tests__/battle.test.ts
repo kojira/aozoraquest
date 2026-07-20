@@ -682,6 +682,7 @@ describe('resolveTurn', () => {
       expect(hi.def).toBe(lo.def);
       expect(hi.agi).toBe(lo.agi);
       expect(hi.int).toBe(lo.int);
+      expect(hi.luk).toBe(lo.luk);
       expect(hi.maxMp).toBe(lo.maxMp);
     }
   });

@@ -44,9 +44,6 @@ export const BATTLE_TUNING = {
    *  乗算補正だけだと低い値は低いままで「弱いジョブがレベルでちゃんと強くならない」
    *  (オーナー指摘 2026-07-17)。加算成長は低ステータスほど相対的に効く。 */
   flatLevelGain: 0.25,
-  /** モンスターがプレイヤーの職業レベルを追いかける率 (jobLevelScale の半分)。
-   *  0 だと jobLv20 で tier3 が全ポリシー 100% になり真剣勝負が作業化する。 */
-  monsterJobChaseScale: 0.01,
   /** 個人 rpgStats とジョブ基準値のブレンド比 (0 = ジョブのみ / 1 = 個人のみ)。
    *  診断は min-max 正規化で全員が極端プロフィールになるため、個人値 100% だと
    *  atk 0〜80 のレンジになり勝率が 0〜100% に割れる (issue #279 実測)。
@@ -597,7 +594,6 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
   return 3;
 }
 
-/** tier に応じたモンスター強化倍率。プレイヤーのレベル補正と釣り合いを取る。 */
 /** tier = エリアの固定難易度。tier1 は明確に弱め (0.72 で Lv1 の 5 連戦生存が健全)。 */
 const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.1, 3: 1.36 };
 
@@ -610,11 +606,6 @@ function monsterLevelFactor(tier: 1 | 2 | 3): number {
   return TIER_STRENGTH[tier];
 }
 
-/** 試練モンスターを 1 体選んで戦闘値化する。seed から決定的。
- *  平坦レベル成長 (flatLevelGain) はモンスターにも同量与える —
- *  プレイヤーだけ加算されると線形項を定数 tierBoost で相殺できず、
- *  高レベル帯 (plLv40+) で tier3 が作業化する (レビュー指摘)。
- *  ジョブ間の格差是正 (低ステ職の相対的な伸び) は同量加算でも保たれる。 */
 /** 地域相性の重み (favor 対象のモンスターをこの倍率で優遇)。3 = そのモンスターが
  *  約 6 割 (残り 2 種が各 2 割) で出る = 地域の顔が立つ水準。 */
 const AFFINITY_WEIGHT = 3;
