@@ -339,6 +339,16 @@ export function Settings() {
         <PostQuestNotificationsToggle />
       </section>
 
+      {isAdminDid(session.did) && WORLD_PREVIEW_ENABLED && (
+        <section style={{ marginTop: '2em' }}>
+          <h3 style={{ fontSize: '0.95em' }}>あおぞらワールド 管理</h3>
+          <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
+            モンスター・アイテム・マップ・店・クエストの編集ハブ (管理者専用)。
+          </p>
+          <button onClick={() => navigate('/admin')}>管理ダッシュボードを開く</button>
+        </section>
+      )}
+
       {isAdminDid(session.did) && serverOAuthConfigured && session.agent && (
         <ServerOAuthAdmin agent={session.agent} />
       )}
