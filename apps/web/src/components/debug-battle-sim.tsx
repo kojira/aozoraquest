@@ -140,8 +140,8 @@ export function DebugBattleSim() {
     // (summonMonster を通らず monsterCombatant の jitter も効かない)。戦闘中の乱数だけ下で新鮮に。
     setDuel(start(1, 0));
   };
-  const duelCmd = (cmd: Command) =>
-    setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, cmd, freshSeed()) : s));
+  const duelCmd = (cmd: Command, skillIndex = 0) =>
+    setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, cmd, freshSeed(), skillIndex) : s));
   const duelAuto = () =>
     setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, autoBattleCommand(s), freshSeed()) : s));
 
@@ -237,7 +237,21 @@ export function DebugBattleSim() {
           </div>
           {duel.outcome === 'ongoing' ? (
             <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap' }}>
-              {(['attack', 'guard', 'skill', 'herb', 'tonic', 'flee'] as const).map((c) => (
+              <button onClick={() => duelCmd('attack')} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{CMD_LABEL.attack}</button>
+              <button onClick={() => duelCmd('guard')} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{CMD_LABEL.guard}</button>
+              {/* とくぎは習得済みぶんを 1 個ずつボタン化 (#436 の複数とくぎを模擬戦で選べるように)。
+                  複数無いジョブは署名 1 個だけ出る。MP 不足 / heal 満タンは disabled。 */}
+              {(duel.playerSkills ?? [duel.playerSkill]).map((sk, i) => (
+                <button
+                  key={i}
+                  onClick={() => duelCmd('skill', i)}
+                  disabled={duel.player.mp < BATTLE_TUNING.skillMpCost || (sk.kind === 'heal' && duel.player.hp >= duel.player.maxHp)}
+                  style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}
+                >
+                  {sk.name}
+                </button>
+              ))}
+              {(['herb', 'tonic', 'flee'] as const).map((c) => (
                 <button key={c} onClick={() => duelCmd(c)} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{CMD_LABEL[c]}</button>
               ))}
               <button onClick={duelAuto} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>自動1手</button>
