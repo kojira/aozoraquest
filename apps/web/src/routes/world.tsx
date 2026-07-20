@@ -156,9 +156,12 @@ export function World() {
   const searchMsgRef = useRef(false);
   searchMsgRef.current = searchMsg !== null;
   const [featherOpen, setFeatherOpen] = useState(false);
-  const [starterMsg, setStarterMsg] = useState<string | null>(null);
+  const [showStarter, setShowStarter] = useState(false);
+  // リセット (= 実際に +20 を付与した経路) からの入場か。祝福セリフ/演出の有無を実付与と
+  // 一致させるための旗。入場時に sessionStorage マークから確定する。
+  const [starterBlessed, setStarterBlessed] = useState(false);
   const starterMsgRef = useRef(false);
-  starterMsgRef.current = starterMsg !== null;
+  starterMsgRef.current = showStarter;
   const itemsOpenRef = useRef(false);
   itemsOpenRef.current = itemsOpen;
   const invOpenRef = useRef(false);
@@ -322,13 +325,25 @@ export function World() {
         };
         setWs(initialWs);
         if (grantStarter) {
-          // 専用の DQ ウィンドウで見せる (notice だとオンボーディングに覆われ、
-          // relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)。
-          // 中身は下の render の固定セリフ (ブルスコンの手渡し + 祝福)。ここは表示トリガのみ。
-          setStarterMsg('start');
+          // 専用の DQ ウィンドウでブルスコンの手渡しを見せる (notice だとオンボーディングに
+          // 覆われ、relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)。
+          // リセット (実 +20 付与) 経由かをマークで判定 → 祝福セリフ/演出の有無を実付与に一致させる。
+          // マークは**ここで読み捨てる**。set 側 (doReset) との間にリロードを挟んでも、入場時に
+          // 必ず消費/掃除されるので残留・誤発火しない (レビュー ★★)。
+          let blessed = false;
+          try {
+            blessed = sessionStorage.getItem(WELCOME_BLESSING_PENDING_KEY) === '1';
+            if (blessed) sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY);
+          } catch { /* private mode 等は演出だけ諦める (+20 付与自体は済んでいる) */ }
+          setStarterBlessed(blessed);
+          setShowStarter(true);
           // gotStarterFeather=true は即時保存 (デバウンス中リロードで二重配布しない —
           // かけら/初訪問と同じ流儀。レビュー ★★)
           void saveWorldState(agent, initialWs);
+        } else {
+          // 手渡しダイアログを出さない入場では祝福マークを掃除する (set したのに演出へ
+          // 到達しなかった残留マークによる誤発火を防ぐ — レビュー ★★)。
+          try { sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY); } catch { /* ignore */ }
         }
         try {
           if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
@@ -822,8 +837,10 @@ export function World() {
       // (以前は地図でいきなり +20 が出てフローが分からなかった — オーナー指摘 2026-07-20)。
       // 祝福 (+20) の演出はリロードをまたいで出すため sessionStorage にマークを置く。
       // resetOnboarding が実際に +20 を付与したときだけ立てる → 演出と実際の付与が必ず一致する
-      // (通常の新規入場では +20 は付かないので演出も出さない)。
+      // (通常の新規入場では +20 は付かないので演出も出さない)。マークは再入場時に必ず消費/掃除される。
       try { sessionStorage.setItem(WELCOME_BLESSING_PENDING_KEY, '1'); } catch { /* private mode 等は演出だけ諦める */ }
+      // resetting オーバーレイをひと呼吸見せてから初期状態で再入場する。sessionStorage の set は
+      // 同期なので反映待ちは不要 — この 300ms は体感 (急に画面が飛ばない) のためだけ。
       window.setTimeout(() => window.location.reload(), 300);
     } catch (e) {
       console.warn('[world] onboarding reset failed', e);
@@ -1205,25 +1222,21 @@ export function World() {
       {searchMsg !== null && (
         <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
       )}
-      {starterMsg !== null && !onboarding && (
-        // ブルスコンが やくそう と そらのはね を手渡し、最後に はじまりの祝福 (+20 パワー) を授ける。
-        // 祝福の演出は**ダイアログを読み終えた瞬間**に出す (以前は地図画面でいきなり出て
-        // フローが分からなかった — オーナー指摘 2026-07-20)。
+      {showStarter && !onboarding && (
+        // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
+        // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
+        // 分からなかった — オーナー指摘 2026-07-20)。starterBlessed は入場時にマークから確定済み。
+        // 声はブルスコンのトーンに合わせ ひらがな主体で統一 (UX レビュー ★)。
         <DialogueWindow
           lines={[
-            { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を 持たせよう。' },
-            { speaker: 'ブルスコン', text: 'やくそうは 傷を癒す。そらのはねは 行ったことのある街へ もどれる。こまったら どうぐ から つかうといい。' },
-            { speaker: 'ブルスコン', text: 'それと、はじまりの祝福を。あおぞらパワーを 20 授けるよ。よい旅を。' },
+            { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を もたせよう。' },
+            { speaker: 'ブルスコン', text: 'やくそうは きずを いやす。そらのはねは いったことの ある街へ もどれる。こまったら どうぐ から つかうといい。' },
+            starterBlessed
+              ? { speaker: 'ブルスコン', text: 'それと、はじまりの しゅくふくを。あおぞらパワーを 20 さずけるよ。よい たびを。' }
+              : { speaker: 'ブルスコン', text: 'よい たびを。' },
           ]}
           plateIcon={<SpiritIcon size={20} />}
-          onDone={() => {
-            setStarterMsg(null);
-            // 祝福 (+20) の演出は、リセットで実際に +20 を付与したときだけ (マーク有り)。
-            // 使い捨て (removeItem) で二重演出を防ぐ。
-            let blessed = false;
-            try { blessed = sessionStorage.getItem(WELCOME_BLESSING_PENDING_KEY) === '1'; if (blessed) sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY); } catch { /* ignore */ }
-            if (blessed) notifyWelcome({ power: WELCOME_POWER });
-          }}
+          onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
         />
       )}
 
