@@ -73,6 +73,9 @@ const router = createBrowserRouter([
       { path: 'search', element: <Search /> },
       { path: 'settings', element: <Settings /> },
       { path: 'spirit', element: <Spirit /> },
+      // /admin は /world と同じく無条件登録 + コンポーネント内ゲート (WORLD_PREVIEW_ENABLED &&
+      // isAdminDid)。dev 限定なのでこの段階は表示ゲートで足りる。#418 で実データ CRUD (edge 権限
+      // 検証) を入れる際、/debug/* のような本番除外の条件登録へ寄せるか再検討する。
       { path: 'admin', element: <AdminDashboard /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
