@@ -404,7 +404,7 @@ describe('resolveTurn', () => {
   });
 
   it('見切り (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
-    // 鈍足 guardian (agi 9) で skill 連打 → 後手でも反撃イベントが出る seed があること
+    // 鈍足 guardian (agi 6 = 最遅) で skill 連打 → 後手でも反撃イベントが出る seed があること
     let counterSeen = 0;
     for (let seed = 0; seed < 30; seed++) {
       let s = startBattle('guardian', 5, 10, '守護者', 1, seed);

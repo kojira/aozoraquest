@@ -32,9 +32,17 @@ describe('JOBS', () => {
     }
   });
 
+  // guardian は減算式ダメージ (#435) の戦闘都合で atk を戦士級に手動 override している
+  // (根拠は jobs.ts のコメント)。生成器の理論値からの意図的逸脱なので、ドリフト検出の
+  // 期待値もこの override で上書きする (guardian 自身の意図せぬドリフトはここで検出される)。
+  const COMBAT_STAT_OVERRIDES: Partial<Record<string, number[]>> = {
+    guardian: [24, 43, 6, 15, 12],
+  };
+
   test('stats は認知機能スタックの floor 付き理論値と一致 (gen-job-stats.ts と同式・ドリフト検出)', () => {
     for (const j of JOBS) {
-      expect([...j.stats], `${j.id} stats`).toEqual(expectedStats(j.dominantFunction, j.auxiliaryFunction));
+      const expected = COMBAT_STAT_OVERRIDES[j.id] ?? expectedStats(j.dominantFunction, j.auxiliaryFunction);
+      expect([...j.stats], `${j.id} stats`).toEqual(expected);
     }
   });
 

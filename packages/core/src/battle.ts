@@ -64,8 +64,10 @@ export const BATTLE_TUNING = {
   /** クリティカル率 = critBase + luk*critLukScale。会心 (かいしんのいちげき) は DQ 流に
    *  **攻撃力 critAtkMultiplier 倍**。守備力 (def) 無視は**プレイヤーの会心のみ** (敵の会心は
    *  1.5 倍のみ = タンク職を守る。バランス ★★★)。倍率は控えめ 1.5 (2 は高すぎ — オーナー指摘
-   *  2026-07-20)。守備の高い敵ほど効く一発逆転。ぼうぎょコマンドの半減は貫通しない。値は
-   *  模擬戦シミュレータで調整可。 */
+   *  2026-07-20)。ただし**減算式では会心の守備無視は def 項 (def*defCoef) を消すだけ**なので、
+   *  除算式時代 (分母消滅で桁が変わる) ほど劇的ではない = 守備の高い敵には「効くが一撃逆転
+   *  までは行かない」控えめな貫通。超高守備メタルの一撃逆転演出は #408 で会心倍率と併せ再評価。
+   *  ぼうぎょコマンドの半減は貫通しない。値は模擬戦シミュレータで調整可。 */
   critBase: 0.04,
   critLukScale: 0.004,
   critAtkMultiplier: 1.5,
@@ -541,7 +543,8 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 62, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 56, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型: レア出現・低 HP・高 XP (100)・毎ターン逃走。倒せれば旨いが逃げられると何も残らない。
-  // 減算式なら守備を上げるだけで「通常 1・会心で貫通」が成立するが、超高守備にすると通常が効かず
+  // 現 def22 では通常攻撃も普通に通る (超高守備ではない)。減算式なら守備を上げるだけで
+  // 「通常 1・会心で貫通」が成立するが、超高守備にすると通常が効かず
   // 会心前に必ず逃げて討伐 0% になる (先制/メタル斬り等の噛み合わせが要る) → 高守備メタル化は #408 で
   // 逃走/会心チューニングと一緒に扱う。この PR (減算式移行) では現状ステータス据え置き。
   { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 22, 38, 6, 34], hp: 12, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
@@ -847,6 +850,8 @@ function doAttack(
   // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
 
+  // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
+  // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
   const final = Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
