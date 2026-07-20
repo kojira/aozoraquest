@@ -559,9 +559,16 @@ const XP_HP_FLOOR = 10; // これ以下の基準 HP は XP に寄与しない (�
 const XP_HP_SCALE = 0.15; // 基準 HP 1 あたりの XP
 const XP_OFFENSE_SCALE = 0.04; // (atk+agi) 1 あたりの XP (素早い/強い敵を少し厚く)
 
-/** モンスターの XP 既定値を「実効的な強さ」から算出する。基準 HP は def.hp があればそれ、
- *  無ければ従来の導出 (hpBase + def*hpDefScale)。敵の強さと XP を構造的に連動させる
- *  (スライム=低 HP=低 XP、硬い敵=高 HP=高 XP。オーナー要望 2026-07-20)。 */
+/** モンスターの XP 既定値を「実効的な強さ」から算出する (式＋個別調整の式側)。基準 HP は
+ *  def.hp があればそれ、無ければ従来の導出 (hpBase + def*hpDefScale)。敵の強さと XP を
+ *  構造的に連動させる (スライム=低 HP=低 XP、硬い敵=高 HP=高 XP。オーナー要望 2026-07-20)。
+ *
+ *  **校正は tier1 帯のみ** (基準 HP 12〜62 でおおむね 2〜9)。tier2/3 に生で使うと過小になる
+ *  (例: sky-dragon 式 ~12 vs 現行 96) ので、**tier2/3 は必ず def.xp を明示する** (回帰テスト
+ *  「tier2/3 は xp を明示」で固定)。tier をまたいで式化したくなったら tier 係数が要る。
+ *
+ *  **基準 HP はレベル 1 相当の名目値**。実 HP は factor でレベルに応じ伸びるが、XP は
+ *  レベル非依存に固定する (サーバーが monsterId だけから決定的に再導出できるため — docs/21)。 */
 export function baselineXp(def: MonsterDef): number {
   const baseHp = def.hp ?? BATTLE_TUNING.hpBase + def.stats[1] * BATTLE_TUNING.hpDefScale;
   const [atk, , agi] = def.stats;

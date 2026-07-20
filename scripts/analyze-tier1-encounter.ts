@@ -33,7 +33,8 @@ let trials = 0;
 for (const job of jobs) {
   let found = 0;
   for (let seed = 0; seed < 200_000 && found < 600; seed++) {
-    const b0 = startBattle(job, 1, 1, 't', 1, seed, VARIANCE);
+    // variance は extras.vitalsVariance で渡す (第7引数は herbs)。world と同じ分散モデルで討伐率を測る。
+    const b0 = startBattle(job, 1, 1, 't', 1, seed, 0, undefined, { vitalsVariance: VARIANCE });
     if (b0.monsterId !== 'stray-slime') continue;
     found++;
     trials++;

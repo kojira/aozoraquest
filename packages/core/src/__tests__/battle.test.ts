@@ -234,11 +234,27 @@ describe('summonMonster', () => {
       // tier1 内: 硬い ヒカリダケ > 最弱 そらいろスライム (HP 連動)
       expect(battleXpFor('glow-shroom')).toBeGreaterThan(battleXpFor('sky-slime'));
       expect(new Set(MONSTERS.map((m) => battleXpFor(m.id))).size).toBeGreaterThan(1);
-      // レアなジャックポット (はぐれメタル型 spawnWeight<0.1) を除けば tier が上ほど上限が高い
+      // レアなジャックポット (はぐれメタル型) を除けば tier が上ほど上限が高い。閾値未満の
+      // spawnWeight = 「tier 単調性の対象外にするレア敵」の境界 (stray=0.06 を除外)。
+      const RARE_JACKPOT_MAX_SPAWN = 0.1;
       const maxOf = (t: 1 | 2 | 3) =>
-        Math.max(...MONSTERS.filter((m) => m.tier === t && (m.spawnWeight ?? 1) >= 0.1).map((m) => battleXpFor(m.id)));
+        Math.max(
+          ...MONSTERS.filter((m) => m.tier === t && (m.spawnWeight ?? 1) >= RARE_JACKPOT_MAX_SPAWN).map((m) => battleXpFor(m.id)),
+        );
       expect(maxOf(2)).toBeGreaterThan(maxOf(1));
       expect(maxOf(3)).toBeGreaterThan(maxOf(2));
+    });
+
+    it('tier2/3 は xp を明示している (式は tier1 校正なので省略すると過小になる — 回帰防止)', () => {
+      // baselineXp は tier1 帯校正。tier2/3 で xp を省くと式が ~1/3〜1/8 に崩落するため、
+      // 上位 tier は必ず明示 xp を持たせる契約 (レビュー ★★)。
+      for (const m of MONSTERS) {
+        if (m.tier >= 2) {
+          expect(m.xp, `${m.id} (tier${m.tier}) は xp を明示すべき`).toBeGreaterThan(0);
+          // 式より十分高い (明示の意味がある) ことも確認
+          expect(m.xp!).toBeGreaterThan(baselineXp(m));
+        }
+      }
     });
 
     it('式 baselineXp: 基準 HP + atk/agi から算出 (xp 省略時のデフォルト)', () => {
