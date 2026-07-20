@@ -598,20 +598,16 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
 }
 
 /** tier に応じたモンスター強化倍率。プレイヤーのレベル補正と釣り合いを取る。 */
-function monsterLevelFactor(tier: 1 | 2 | 3, playerLevel: number, jobLevel: number): number {
-  const t = BATTLE_TUNING;
-  // プレイヤーと同じ土俵 + tier による上乗せ (tier1 は明確に弱め)。
-  // tier1 0.85 では Lv1 の 5 連戦生存率が中央値 ~76% で「序盤の敵が強すぎる」
-  // (オーナー実感 2026-07-17)。0.72 で中央値 ~90% / 最弱ジョブ ~86% に調整
-  // (scripts/sim-battle-balance.ts 実測)。
-  // jobLevel 追随 (monsterJobChaseScale): プレイヤーの jobLevelScale 0.04 に対して
-  // 1/4 だけ追う。全く追わないと jobLv20 で tier3 が全ポリシー 100% (作業化)。
-  // 強く追うと適正帯 (jobLv8) の下位ジョブが 10% 台に沈む。運用想定帯は
-  // 〜plLv20/jobLv10 (それ以降は W6 装備・新コンテンツで再設計。issue 参照)。
-  const base =
-    1 + Math.max(0, playerLevel - 1) * t.playerLevelScale + Math.max(0, jobLevel - 1) * t.monsterJobChaseScale;
-  const tierBoost = tier === 1 ? 0.72 : tier === 2 ? 1.1 : 1.36;
-  return base * tierBoost;
+/** tier = エリアの固定難易度。tier1 は明確に弱め (0.72 で Lv1 の 5 連戦生存が健全)。 */
+const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.1, 3: 1.36 };
+
+/** モンスターの強化倍率。**プレイヤー/ジョブのレベルには追従しない = 固定強度**
+ *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20)。tier は
+ *  エリアの固定難易度で、プレイヤーが強くなれば相対的に楽になる。後半の難易度は
+ *  レベル追従ではなく「エリアごとに強い敵を配置」で作る。将来エンドコンテンツで追従を
+ *  戻すなら、tier 限定でここに足す。 */
+function monsterLevelFactor(tier: 1 | 2 | 3): number {
+  return TIER_STRENGTH[tier];
 }
 
 /** 試練モンスターを 1 体選んで戦闘値化する。seed から決定的。
@@ -663,10 +659,13 @@ export function summonMonster(
     if (pick < 0) break;
   }
   const def = pool[Math.min(idx, pool.length - 1)]!;
-  const factor = monsterLevelFactor(tier, playerLevel, jobLevel);
-  const flat = BATTLE_TUNING.flatLevelGain * Math.max(0, playerLevel - 1);
-  const grown = def.stats.map((v) => v + flat) as unknown as StatArray;
-  const combatant = fromStats(def.name, grown, factor, Math.max(1, Math.round(playerLevel * (tier === 3 ? 1.1 : 1))));
+  // 固定強度: プレイヤー/ジョブレベルに追従しない (オーナー要望 2026-07-20)。factor は tier のみ、
+  // 平坦成長 (flatLevelGain) も与えず、HP の level 項も固定 1 にする。playerLevel/jobLevel 引数は
+  // 呼び出し文脈として残すが強度計算には使わない (将来のエンドコンテンツ追従の受け皿)。
+  void playerLevel;
+  void jobLevel;
+  const factor = monsterLevelFactor(tier);
+  const combatant = fromStats(def.name, def.stats, factor, 1);
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
   // tier/レベル係数 (factor) で従来同様にスケールさせ、はぐれメタル型の低 HP を保つ。
   if (def.hp !== undefined) { combatant.maxHp = Math.max(1, Math.round(def.hp * factor)); combatant.hp = combatant.maxHp; }

@@ -479,7 +479,9 @@ describe('resolveTurn', () => {
   });
 
   it('MP: 特技で消費する。回復はジョブ特性のみ (特性なしジョブはぼうぎょでも回復 0)', () => {
-    const s0 = startBattle('sage', 5, 10, '賢者', 1, 42);
+    // tier3 (硬い敵) で戦う: 固定強度化 (プレイヤーLvに追従しない) 後は tier1 の敵が弱く、
+    // jobLv5/plLv10 の特技で 1 撃死して outcome が win になり MP 検証が回らないため。
+    const s0 = startBattle('sage', 5, 10, '賢者', 3, 42);
     expect(s0.player.mp).toBe(s0.player.maxMp);
     const s1 = resolveTurn(s0, 'skill');
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
@@ -492,7 +494,7 @@ describe('resolveTurn', () => {
     // 特性持ち (bard: ぼうぎょ +4) は回復し、ログに特性名が出る。
     // skill 2 連発で headroom を作り、クランプ境界で過大回帰を見逃さない
     // (mp+4 がちょうど maxMp だと guardGain 5 でも通ってしまう — レビュー指摘)
-    const b0 = startBattle('bard', 5, 10, '詩人', 1, 42, 0, { mp: 8 });
+    const b0 = startBattle('bard', 5, 10, '詩人', 3, 42, 0, { mp: 8 });
     const b1 = resolveTurn(b0, 'skill');
     expect(b1.outcome).toBe('ongoing');
     const b2 = resolveTurn(b1, 'guard');
@@ -547,7 +549,8 @@ describe('resolveTurn', () => {
   });
 
   it('そらのしずく: MP を回復し、残数と使用数が更新される。切れたらフォールバック', () => {
-    let s = startBattle('sage', 5, 10, '賢者', 1, 42, 0, undefined, { tonics: 2 });
+    // tier3 (硬い敵) で戦う: 固定強度化後は tier1 が弱く 1 撃で決着して MP 回復検証が回らない。
+    let s = startBattle('sage', 5, 10, '賢者', 3, 42, 0, undefined, { tonics: 2 });
     expect(s.tonics).toBe(2);
     // MP を減らしてから使う (seed 42 は 1 ターン目で決着しない前提を明示的に固定)
     s = resolveTurn(s, 'skill');
@@ -561,7 +564,7 @@ describe('resolveTurn', () => {
     const expectedGain = Math.max(1, Math.round(next.player.maxMp * BATTLE_TUNING.tonicMpRatio));
     expect(next.player.mp).toBe(Math.min(next.player.maxMp, mpBefore + expectedGain));
     expect(next.player.mp).toBeGreaterThan(mpBefore);
-    const none = startBattle('sage', 5, 10, '賢者', 1, 7);
+    const none = startBattle('sage', 5, 10, '賢者', 3, 7);
     const fb = resolveTurn(none, 'tonic');
     expect(fb.lastEvents.some((e) => e.text.includes('持っていない'))).toBe(true);
     expect(fb.tonicsUsed).toBe(0);
@@ -636,12 +639,12 @@ describe('resolveTurn', () => {
   });
 
   it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
-    // やくそう持ち (現実的な tier3 挑戦) + 300 seed で計測。無回復・少 seed だと
-    // 勝率が floor 近く (~13%) で分散に埋もれて拮抗する (2026-07-18 のアイテム調整で
-    // HP/被ダメを再調整したため。防御の優位そのものは chargedPower 2.6 で健在)。
+    // やくそう持ち + 300 seed で計測。難易度は「拮抗帯」に合わせる: 固定強度化 (Lv 追従なし)
+    // 後は jobLv8/plLv15 だと tier3 も 100% で差が出ないため、tier3 が競り合う jobLv5/plLv8 で
+    // 測る (reactive ~92% vs spam ~81%、+10pt の明確な差 — 防御の存在意義が見える帯)。
     const HERBS = 2;
     const reactive = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         // 予告があれば防御、HP 危険域なら やくそう、なければ攻撃
@@ -650,7 +653,7 @@ describe('resolveTurn', () => {
       return s.outcome;
     };
     const spam = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         s = resolveTurn(s, s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
@@ -666,51 +669,34 @@ describe('resolveTurn', () => {
     expect(reactiveWins).toBeGreaterThan(spamWins);
   });
 
-  it('やくそう込みでも tier3 は作業化しない (複数ポリシーの最大勝率に天井)', () => {
-    // 単一ポリシーの固定だと、特技側のバフで最強ムーブが移動したときに天井破りを
-    // 検知できない (レビュー指摘: parry 反撃 def 基準化で旧テストの死角に 97% が
-    // 出現した)。{ガード+薬草 / 見切り+薬草 / 特技連打+薬草} の最大に上限を掛ける。
-    const policies: Array<(s: BattleState) => Command> = [
-      (s) => (s.monster.charging ? 'guard' : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45 ? 'herb' : 'attack'),
-      (s) =>
-        s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45
-          ? 'herb'
-          : s.player.mp >= BATTLE_TUNING.skillMpCost && s.playerSkill.kind === 'parry'
-            ? 'skill'
-            : s.monster.charging
-              ? 'guard'
-              : 'attack',
-      (s) =>
-        s.monster.charging
-          ? 'guard'
-          : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45
-            ? 'herb'
-            : s.player.mp >= BATTLE_TUNING.skillMpCost
-              ? 'skill'
-              : 'attack',
-    ];
-    const winRateOf = (job: Archetype, policy: (s: BattleState) => Command) => {
-      let wins = 0;
-      for (let seed = 0; seed < 300; seed++) {
-        let s = startBattle(job, 8, 15, 'x', 3, seed, BATTLE_TUNING.herbCarryMax);
-        for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, policy(s));
-        if (s.outcome === 'win') wins++;
-      }
-      return wins / 3; // %
-    };
-    // 上位ジョブ代表 3 職 (実測 83〜87%、300 seed の σ≈2%)。<94 で作業化を防ぐ
-    for (const job of ['warrior', 'guardian', 'miko'] as const) {
-      const best = Math.max(...policies.map((p) => winRateOf(job, p)));
-      expect(best, job).toBeLessThan(94);
+  it('固定強度: モンスターはプレイヤー/ジョブレベルに追従しない (オーナー要望 2026-07-20)', () => {
+    // 「自分の強さに合わせて敵も強くなるのはダメ」。同 seed = 同モンスターで、playerLevel/
+    // jobLevel を 1→30 に振っても combatant の強さ (HP/atk/def/agi/int/MP) が完全に一致する
+    // = 敵は tier (エリア) 固定強度で、プレイヤーが伸びれば相対的に楽になる。
+    for (const tier of [1, 2, 3] as const) {
+      const lo = summonMonster(tier, 1, 42, 1, undefined, 0).combatant;
+      const hi = summonMonster(tier, 30, 42, 20, undefined, 0).combatant;
+      expect(hi.name).toBe(lo.name);
+      expect(hi.maxHp).toBe(lo.maxHp);
+      expect(hi.atk).toBe(lo.atk);
+      expect(hi.def).toBe(lo.def);
+      expect(hi.agi).toBe(lo.agi);
+      expect(hi.int).toBe(lo.int);
+      expect(hi.maxMp).toBe(lo.maxMp);
     }
-    // やくそうが「意味はある」ことも同時に固定 (ガードのみ戦略より勝てる)
+  });
+
+  it('やくそうは tier3 で意味がある (やくそう有り > ガードのみ) — 拮抗帯 jobLv5/plLv8', () => {
+    // 固定強度化後、tier3 が競り合う帯 (jobLv5/plLv8) で「やくそう込み」が「ガードのみ」に勝る。
+    const reactiveHerb = (s: BattleState): Command =>
+      s.monster.charging ? 'guard' : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45 ? 'herb' : 'attack';
     let withHerb = 0;
     let guardOnlyWins = 0;
-    for (let seed = 0; seed < 100; seed++) {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
-      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, policies[0]!(s));
+    for (let seed = 0; seed < 200; seed++) {
+      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, reactiveHerb(s));
       if (s.outcome === 'win') withHerb++;
-      let g = startBattle('warrior', 8, 15, '戦士', 3, seed);
+      let g = startBattle('warrior', 5, 8, '戦士', 3, seed);
       for (let i = 0; i < 60 && g.outcome === 'ongoing'; i++) {
         g = resolveTurn(g, g.monster.charging ? 'guard' : 'attack');
       }
