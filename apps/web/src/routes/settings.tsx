@@ -5,7 +5,7 @@ import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { startServerOAuth, serverOAuthConfigured } from '@/lib/server-oauth';
+import { startServerOAuth, serverOAuthConfigured, getServerOAuthStatus, type ServerOAuthStatus } from '@/lib/server-oauth';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
@@ -617,6 +617,20 @@ function AnalyzePostsToggle() {
 function ServerOAuthAdmin({ agent }: { agent: Agent }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [status, setStatus] = useState<ServerOAuthStatus | null>(null);
+  const [statusErr, setStatusErr] = useState<string | null>(null);
+
+  // 連携状態を確認して表示する (以前は状態が画面に出ず「連携できたか分からない」だった)。
+  useEffect(() => {
+    let cancelled = false;
+    setStatus(null);
+    setStatusErr(null);
+    getServerOAuthStatus(agent)
+      .then((s) => { if (!cancelled) setStatus(s); })
+      .catch((e) => { if (!cancelled) setStatusErr(e instanceof Error ? e.message : '状態取得に失敗しました'); });
+    return () => { cancelled = true; };
+  }, [agent]);
+
   const onLink = async () => {
     setBusy(true);
     setErr(null);
@@ -627,14 +641,37 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
       setBusy(false);
     }
   };
+
+  const fmt = (sec?: number) => (sec ? new Date(sec * 1000).toLocaleString('ja-JP') : '—');
+  const expired = status?.linked && status.expiresAt !== undefined && status.expiresAt * 1000 < Date.now();
+
   return (
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>管理者</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         ゲームの権威データを書き込むサーバーアカウントの連携。
       </p>
+      {/* 連携状態 */}
+      <div style={{ fontSize: '0.8em', marginBottom: '0.6em' }}>
+        {statusErr ? (
+          <span style={{ color: 'var(--color-muted)' }}>状態を確認できません: {statusErr}</span>
+        ) : status === null ? (
+          <span style={{ color: 'var(--color-muted)' }}>状態を確認中…</span>
+        ) : status.linked ? (
+          <span style={{ color: expired ? 'var(--color-danger, crimson)' : 'var(--color-accent)' }}>
+            {expired ? '⚠ 連携済み (アクセストークン失効・cron 更新待ち)' : '✓ 連携済み'}
+            {status.did ? <span style={{ color: 'var(--color-muted)' }}> ({status.did})</span> : null}
+            <br />
+            <span style={{ color: 'var(--color-muted)' }}>
+              トークン失効: {fmt(status.expiresAt)} / 最終更新: {fmt(status.updatedAt)}
+            </span>
+          </span>
+        ) : (
+          <span style={{ color: 'var(--color-muted)' }}>未連携</span>
+        )}
+      </div>
       <button onClick={onLink} disabled={busy}>
-        {busy ? '連携中…' : 'サーバーアカウントと連携'}
+        {busy ? '連携中…' : status?.linked ? '再連携する' : 'サーバーアカウントと連携'}
       </button>
       {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
     </section>
