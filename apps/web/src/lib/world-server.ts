@@ -8,8 +8,18 @@
  */
 import type { Agent } from '@atproto/api';
 
-const EDGE_URL = (import.meta.env.VITE_EDGE_URL as string | undefined)?.trim();
-const EDGE_DID = (import.meta.env.VITE_EDGE_DID as string | undefined)?.trim();
+// エッジ URL の環境別解決。dev branch デプロイ (VITE_NSID_ENV=dev) は **dev エッジを強制**する。
+// .env.production は本番/dev 両ビルドが読むため VITE_EDGE_URL が共有エッジを指してしまい、
+// dev が本番エッジを叩く事故が起きる (#396)。dev は必ず dev エッジ、と**コードで構造的に保証**する。
+// エッジ URL は secret でなくインフラ値 (既に .env に commit 済) なのでコードに置いてよい。
+const NSID_ENV = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
+const DEV_EDGE_URL = 'https://aozoraquest-edge-dev.kojiran.workers.dev';
+const DEV_EDGE_DID = 'did:web:aozoraquest-edge-dev.kojiran.workers.dev';
+const EDGE_URL = NSID_ENV === 'dev' ? DEV_EDGE_URL : (import.meta.env.VITE_EDGE_URL as string | undefined)?.trim();
+const EDGE_DID = NSID_ENV === 'dev' ? DEV_EDGE_DID : (import.meta.env.VITE_EDGE_DID as string | undefined)?.trim();
+
+/** @internal テスト用: 環境別に解決したエッジ設定 (dev が本番エッジを叩かない回帰防止)。 */
+export const __edgeForTest = { url: EDGE_URL, did: EDGE_DID };
 
 const LXM_MOVE = 'app.aozoraquest.world.move';
 const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
