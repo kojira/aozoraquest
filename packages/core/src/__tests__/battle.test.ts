@@ -404,7 +404,7 @@ describe('resolveTurn', () => {
   });
 
   it('見切り (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
-    // 鈍足 guardian (agi 9) で skill 連打 → 後手でも反撃イベントが出る seed があること
+    // 鈍足 guardian (agi 6 = 最遅) で skill 連打 → 後手でも反撃イベントが出る seed があること
     let counterSeen = 0;
     for (let seed = 0; seed < 30; seed++) {
       let s = startBattle('guardian', 5, 10, '守護者', 1, seed);
@@ -607,8 +607,8 @@ describe('resolveTurn', () => {
       }
     }
     expect(found).not.toBeNull();
-    // 守備無視が効いている証拠: 非会心の理論最大 (守備軽減あり) を会心が上回る。
-    const maxNonCrit = Math.round((found!.atk * 1.15 * t.damageScale) / (t.damageSoften + found!.def));
+    // 守備無視が効いている証拠: 非会心の理論最大 (減算式・守備あり・roll 1.15) を会心が上回る。
+    const maxNonCrit = Math.max(t.minDamage, Math.round((found!.atk * t.atkCoef - found!.def * t.defCoef) * 1.15));
     expect(found!.dmg).toBeGreaterThan(maxNonCrit);
   });
 

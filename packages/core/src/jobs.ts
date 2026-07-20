@@ -21,7 +21,13 @@ export const JOBS: readonly JobDefinition[] = [
   { id: 'paladin',   names: { default: '聖騎士',   maker: '教育者',   alt: '案内人' },   stats: [ 9, 19, 13, 25, 34], dominantFunction: 'Fe', auxiliaryFunction: 'Ni', primaryColor: 'W' },
   { id: 'explorer',  names: { default: '冒険者',   maker: '触媒',     alt: '旅芸人' },   stats: [14, 19, 25,  8, 34], dominantFunction: 'Ne', auxiliaryFunction: 'Fi', primaryColor: 'G' },
   { id: 'warrior',   names: { default: '戦士',     maker: '書記',     alt: '鍛冶師' },   stats: [25, 41,  8, 13, 13], dominantFunction: 'Si', auxiliaryFunction: 'Te', primaryColor: 'R' },
-  { id: 'guardian',  names: { default: '守護者',   maker: '司書',     alt: '家守' },     stats: [10, 43,  9, 17, 21], dominantFunction: 'Si', auxiliaryFunction: 'Fe', primaryColor: 'W' },
+  // guardian の atk は認知機能マッピングだと 10 だが、減算式ダメージ (#435) では
+  // atk10 が敵の防御項に食われ通常攻撃も見切り反撃も常に 1 ダメージ = 敵を倒せず進行不能
+  // になる。atk が低い戦闘上の根拠は無い (Si-Fe 防御プロファイルの副産物) ため、戦士級 atk に
+  // 底上げしつつ agi を最遅にして「重いが鈍い前衛」のトレードオフにする (オーナー決定 2026-07-20)。
+  // def43 は据え置きで壁の個性を維持。合計は 100 のまま (int/luk で相殺)。生成器の理論値から
+  // 意図的に逸脱した手動値なので、gen-job-stats.ts の再生成時はこの override を保持すること。
+  { id: 'guardian',  names: { default: '守護者',   maker: '司書',     alt: '家守' },     stats: [24, 43,  6, 15, 12], dominantFunction: 'Si', auxiliaryFunction: 'Fe', primaryColor: 'W' },
   // ISTP は 16personalities でも「巨匠 (Virtuoso)」。Ti 支配で知力が高いのは設計通りなので、
   // 物理を想起させる旧称「武闘家」をやめ、知力型の職人名「匠」に改名 (MBTI 分類は不変)。
   { id: 'fighter',   names: { default: '匠',       maker: '技師',     alt: '達人' },     stats: [12, 12, 23, 43, 10], dominantFunction: 'Ti', auxiliaryFunction: 'Se', primaryColor: 'R' },
