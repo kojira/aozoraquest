@@ -100,6 +100,8 @@ export const BATTLE_TUNING = {
    *  全員一律の回復はジョブの差をぼやけさせる (オーナー決定 2026-07-17)。
    *  特性なしジョブは MP プール + そらのしずくでやりくりする。 */
   skillMpCost: 4,
+  /** heal とくぎ (#436): 使うと maxHp のこの割合を回復 (MP 制。やくそうと違い在庫でなく MP を消費)。 */
+  skillHealRatio: 0.35,
   mpBase: 6,
   mpIntScale: 0.5,
   mpAttackGain: 0,
@@ -161,8 +163,9 @@ export function turnRng(seed: number, turn: number): () => number {
 
 // ─── 特技 (ジョブの支配ステータスで決まる) ──────────────────
 
-export type SkillKind = 'smash' | 'parry' | 'flurry' | 'spell' | 'gamble';
+export type SkillKind = 'smash' | 'parry' | 'flurry' | 'spell' | 'gamble' | 'heal';
 
+// 支配ステータス (atk/def/agi/int/luk) → 署名スキル。heal は署名ではなく「習得」する副スキル。
 const STAT_TO_SKILL: readonly SkillKind[] = ['smash', 'parry', 'flurry', 'spell', 'gamble'];
 
 /** ジョブ固有の特技名。kind はそのジョブの支配ステータスから導出。 */
@@ -201,6 +204,31 @@ export function skillForJob(archetype: Archetype): JobSkill {
     if (stats[i]! >= stats[maxI]!) maxI = i;
   }
   return { kind: STAT_TO_SKILL[maxI]!, name: JOB_SKILL_NAMES[archetype] };
+}
+
+/** 複数とくぎ (#436, エピック #434)。署名スキル (skillForJob) は常に [0]。ジョブは**レベルアップで
+ *  副スキルを習得**する (learnAt = 習得 jobLevel)。弱いジョブほど多く・早く覚えて戦術の幅を持つ
+ *  (オーナー方針。docs/24)。#436 では実装容易な `heal` (HP 回復) を配って複数選択を成立させ、
+ *  眠り/デバフ/バフ等の状態異常は #437 で状態エンジンと共に足す。 */
+interface LearnedSkill { kind: SkillKind; name: string; learnAt: number }
+const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
+  // 回復役・低攻撃ジョブに「いのり (HP 回復)」を配る。攻撃が弱い職ほど早く覚える。
+  miko: [{ kind: 'heal', name: '神楽の癒し', learnAt: 3 }],
+  paladin: [{ kind: 'heal', name: '聖光の癒し', learnAt: 3 }],
+  seer: [{ kind: 'heal', name: '癒しの予言', learnAt: 4 }],
+  sage: [{ kind: 'heal', name: '天啓の癒し', learnAt: 5 }],
+  bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
+  mage: [{ kind: 'heal', name: '回生の術式', learnAt: 5 }],
+};
+
+/** その jobLevel 時点で使えるとくぎ列。[0] は署名スキル (skillForJob と一致 = 後方互換)、
+ *  以降は習得済みの副スキル (learnAt <= jobLevel)。UI/エンジンはこの列から毎ターン選ぶ。 */
+export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
+  const signature = skillForJob(archetype);
+  const learned = (LEARNED_SKILLS[archetype] ?? [])
+    .filter((s) => jobLevel >= s.learnAt)
+    .map((s) => ({ kind: s.kind, name: s.name }));
+  return [signature, ...learned];
 }
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
@@ -245,6 +273,7 @@ export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
   flurry: '連撃 (2 回攻撃)',
   spell: '魔撃 (防御無視)',
   gamble: '大博打 (0〜2.6 倍)',
+  heal: 'いのり (HP 回復)',
 };
 
 // ─── 戦闘参加者 ─────────────────────────────────────────────
@@ -719,7 +748,10 @@ export interface BattleState {
   player: Combatant;
   monster: Combatant;
   monsterId: string;
+  /** 署名スキル ([0])。後方互換 (parry 判定・autoBattle 等はこれ)。 */
   playerSkill: JobSkill;
+  /** その jobLevel で使える全とくぎ ([0]=署名 + 習得済み副スキル)。UI は毎ターンここから選ぶ (#436)。 */
+  playerSkills: JobSkill[];
   outcome: BattleOutcome;
   /** 残りやくそう (持ち込み分)。使うと減る。 */
   herbs: number;
@@ -788,6 +820,7 @@ export function startBattle(
     monster: combatant,
     monsterId: def.id,
     playerSkill: skillForJob(archetype),
+    playerSkills: skillsForJob(archetype, jobLevel),
     outcome: 'ongoing',
     herbs: Math.max(0, Math.min(BATTLE_TUNING.herbCarryMax, Math.floor(herbs))),
     herbsUsed: 0,
@@ -925,33 +958,41 @@ function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   return 'attack';
 }
 
-function playerSkillAction(state: BattleState, rng: () => number, events: TurnEvent[]): void {
-  const { player, monster, playerSkill } = state;
-  switch (playerSkill.kind) {
+function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
+  const { player, monster } = state;
+  const t = BATTLE_TUNING;
+  switch (skill.kind) {
     case 'smash':
-      doAttack(player, monster, rng, events, 'player', { power: 1.7, hitBonus: -0.1, label: playerSkill.name });
+      doAttack(player, monster, rng, events, 'player', { power: 1.7, hitBonus: -0.1, label: skill.name });
       break;
     case 'parry':
       // 宣言は resolveTurn 冒頭 (行動順に関係なく効くように)。ここは no-op。
       break;
     case 'flurry':
       // 支配ステータス (agi) 基準 — 素早さで手数を出すジョブの「らしさ」と火力を一致させる
-      doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: playerSkill.name });
+      doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: skill.name });
       if (state.monster.hp > 0) {
-        doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: playerSkill.name });
+        doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: skill.name });
       }
       break;
     case 'spell':
       // 防御を半分だけ貫通 + 必中。完全無視 (旧仕様) は int 職が tier3 を蹂躙して
       // 難易度設計が壊れたため 0.5 に緩和 (バランステストで固定)。
-      doAttack(player, monster, rng, events, 'player', { power: 1.0, useInt: true, defFactor: 0.5, label: playerSkill.name });
+      doAttack(player, monster, rng, events, 'player', { power: 1.0, useInt: true, defFactor: 0.5, label: skill.name });
       break;
     case 'gamble': {
       // 0〜2.6 倍。luk が高いほど下振れしにくい。基準値も支配ステータス (luk) —
       // atk 7〜9 の luk 型ジョブが「運で殴る」ジョブとして成立するように。
       const floor = Math.min(0.6, player.luk * 0.012);
       const mult = floor + rng() * (2.6 - floor);
-      doAttack(player, monster, rng, events, 'player', { power: mult, atkOverride: player.luk, label: playerSkill.name });
+      doAttack(player, monster, rng, events, 'player', { power: mult, atkOverride: player.luk, label: skill.name });
+      break;
+    }
+    case 'heal': {
+      // 習得スキル (#436): MP を払って maxHp の割合ぶん回復。攻撃しないターンなので削り合いの読み合い。
+      const heal = Math.round(player.maxHp * t.skillHealRatio);
+      player.hp = Math.min(player.maxHp, player.hp + heal);
+      events.push({ actor: 'player', text: `${player.name}は${skill.name}! HP が ${heal} 回復。` });
       break;
     }
   }
@@ -966,7 +1007,7 @@ function playerSkillAction(state: BattleState, rng: () => number, events: TurnEv
  * (CSPRNG/kuda) を注入し「先読み・引き直し」を封じるための薄い口。省略時は従来どおり
  * `turnRng(seed, turn)` = 完全決定的 (試練/テストは seed 方式のまま不変)。
  */
-export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number): BattleState {
+export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number, skillIndex = 0): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
 
   // コピー (Combatant は現状 flat なので spread で足りる)。
@@ -979,6 +1020,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     monster: { ...prev.monster, guarding: false },
     lastEvents: [],
   };
+  // command==='skill' のとき使う特技 (#436: 毎ターン選択)。範囲外は署名スキル [0] に安全側フォールバック。
+  const selectedSkill = state.playerSkills[skillIndex] ?? state.playerSkills[0] ?? state.playerSkill;
   const events: TurnEvent[] = [];
   // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
@@ -1035,9 +1078,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       events.push({ actor: 'player', text: `${state.player.name}はぼうぎょのかまえ!` });
     }
   }
-  if (cmd === 'skill' && state.playerSkill.kind === 'parry') {
+  if (cmd === 'skill' && selectedSkill.kind === 'parry') {
     state.player.parrying = true;
-    events.push({ actor: 'player', text: `${state.player.name}は${state.playerSkill.name}の構え! (防御しつつ反撃)` });
+    events.push({ actor: 'player', text: `${state.player.name}は${selectedSkill.name}の構え! (防御しつつ反撃)` });
   }
   // ため中は防御宣言しない (このターンは必ず解放する。宣言すると「身を固めた直後に
   // ため攻撃」という矛盾イベント + 幻の防御半減が発生する)。
@@ -1059,7 +1102,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
           state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
         }
       } else if (cmd === 'skill') {
-        playerSkillAction(state, rng, events);
+        playerSkillAction(state, selectedSkill, rng, events);
       } else if (cmd === 'herb') {
         const heal = Math.round(state.player.maxHp * t.herbHealRatio);
         state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
