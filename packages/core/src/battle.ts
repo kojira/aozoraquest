@@ -59,9 +59,10 @@ export const BATTLE_TUNING = {
   // focus 込みの実効上限は dodgeMax + guardFocusDodge (ぼうぎょ直後の高 agi 職で最大 0.47)
   dodgeMax: 0.32,
   /** クリティカル率 = critBase + luk*critLukScale。会心 (かいしんのいちげき) は DQ 流に
-   *  **攻撃力 critAtkMultiplier 倍 + 相手のぼうぎょ無視** (守備力もぼうぎょ半減も貫通)。
-   *  守備無視だけで大幅増なので倍率は控えめ 1.5 (2 は高すぎ — オーナー指摘 2026-07-20)。
-   *  高防御の敵ほど効く一発逆転の一撃。値は模擬戦シミュレータで調整可。 */
+   *  **攻撃力 critAtkMultiplier 倍**。守備力 (def) 無視は**プレイヤーの会心のみ** (敵の会心は
+   *  1.5 倍のみ = タンク職を守る。バランス ★★★)。倍率は控えめ 1.5 (2 は高すぎ — オーナー指摘
+   *  2026-07-20)。守備の高い敵ほど効く一発逆転。ぼうぎょコマンドの半減は貫通しない。値は
+   *  模擬戦シミュレータで調整可。 */
   critBase: 0.04,
   critLukScale: 0.004,
   critAtkMultiplier: 1.5,
@@ -824,16 +825,18 @@ function doAttack(
 
   const atkValue = opts.atkOverride ?? (opts.useInt ? attacker.int : attacker.atk);
   const roll = 0.85 + rng() * 0.3;
-  // クリティカル (luk)。会心は DQ のかいしんのいちげき流: **攻撃力 critAtkMultiplier 倍 +
-  // 相手のぼうぎょ無視** = ダメージ式の防御項を 0 にし、ぼうぎょ/見切りの半減も貫通する
-  // (守備の高い敵ほど効く一発逆転。オーナー要望 2026-07-20)。
+  // クリティカル (luk)。会心は DQ のかいしんのいちげき流: **攻撃力 critAtkMultiplier 倍**。
+  // **守備力 (def) 無視はプレイヤーの会心のみ** (守備の高い敵を貫く一発逆転。オーナー要望
+  // 2026-07-20)。敵の会心を守備無視にすると、タンク職 (guardian) の「固く受ける」存在意義が
+  // 壊れ拮抗帯で事故死が倍増するため、敵の会心は 1.5 倍のみ (バランス ★★★)。ぼうぎょ/見切り
+  // **コマンドの半減はどちらも貫通しない** — 貫くと「予告を見て防御」の読み合いが崩れる (設計 ★★★)。
   const crit = rng() < t.critBase + attacker.luk * t.critLukScale;
   const critAtk = crit ? t.critAtkMultiplier : 1;
-  const defValue = crit ? 0 : defender.def * (opts.defFactor ?? 1);
+  const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
   let dmg = (atkValue * critAtk * roll * t.damageScale * (opts.power ?? 1)) / (t.damageSoften + defValue);
 
-  // 防御 / 見切りで半減 (会心は貫通 = ぼうぎょ無視)
-  if (!crit && (defender.guarding || defender.parrying)) dmg *= t.guardReduction;
+  // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
+  if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
 
   const final = Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
