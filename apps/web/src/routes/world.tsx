@@ -52,8 +52,7 @@ import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
 import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
-import { resetOnboarding, WELCOME_POWER } from '@/lib/onboarding-reset';
-import { isAdminDid } from '@/lib/runtime-config';
+import { WELCOME_POWER, ONBOARDING_DONE_KEY, WELCOME_BLESSING_PENDING_KEY } from '@/lib/onboarding-reset';
 import type { DialogueLine } from '@/lib/dialogue';
 
 /**
@@ -99,11 +98,6 @@ interface Vitals {
   gotStarterFeather: boolean;
 }
 
-/** 初回オンボーディングを見終えたかの localStorage キー (スティックのヒントと同じ方式) */
-const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
-/** リセットで +20 を付与した直後だけ、再入場後のブルスコン手渡しの最後に祝福演出を出すためのマーク
- *  (sessionStorage はリロードをまたいで残り、タブを閉じれば消える。使い捨て)。 */
-const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
 /** 「自分タップでコマンド」コーチマークを出したか。操作 UI が不可視 (スティックも
  *  コマンドもタップ起動) なので、オンボーディングを読み飛ばしても実際にマップへ
  *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
@@ -137,7 +131,6 @@ export function World() {
   statusOpenRef.current = statusOpen;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuOpenRef = useRef(false);
-  const [resetting, setResetting] = useState(false); // オンボード用リセット中 (dev+管理者)
   menuOpenRef.current = menuOpen;
   const [menuHint, setMenuHint] = useState(() => {
     try {
@@ -817,42 +810,9 @@ export function World() {
     }
   }, [agent, did]);
 
-  // オンボード用リセット (dev + 管理者のみ)。完全ワイプ → 初期状態 + はじまりの祝福 (+20 パワー)。
-  // 演出を見せてから再読込して確実に初期状態を反映する。
-  const doReset = useCallback(async () => {
-    if (!agent || !did || resetting) return;
-    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化されます (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
-    setResetting(true); // I/O の間、進行オーバーレイを出す (無反応に見せない)
-    setMenuOpen(false);
-    let timeoutId: number | undefined;
-    try {
-      // 全体タイムアウト (30s)。PDS 応答が返らない等でも進行オーバーレイが永久に
-      // 固着しないよう fail-safe で throw する (実機で「もどしています…」から進めなく
-      // なる不具合の再発防止)。勝った側で必ず timer を片付ける (finally)。
-      await Promise.race([
-        resetOnboarding(agent, did),
-        new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
-      ]);
-      // 初期状態で再入場 → 再入場後に**ブルスコンが やくそう/そらのはね を手渡し + 祝福を演出**する
-      // (以前は地図でいきなり +20 が出てフローが分からなかった — オーナー指摘 2026-07-20)。
-      // 祝福 (+20) の演出はリロードをまたいで出すため sessionStorage にマークを置く。
-      // resetOnboarding が実際に +20 を付与したときだけ立てる → 演出と実際の付与が必ず一致する
-      // (通常の新規入場では +20 は付かないので演出も出さない)。マークは再入場時に必ず消費/掃除される。
-      try { sessionStorage.setItem(WELCOME_BLESSING_PENDING_KEY, '1'); } catch { /* private mode 等は演出だけ諦める */ }
-      // resetting オーバーレイをひと呼吸見せてから初期状態で再入場する。sessionStorage の set は
-      // 同期なので反映待ちは不要 — この 300ms は体感 (急に画面が飛ばない) のためだけ。
-      window.setTimeout(() => window.location.reload(), 300);
-    } catch (e) {
-      console.warn('[world] onboarding reset failed', e);
-      // 失敗したステップ/理由を出す。resetOnboarding は `step: message` 形式 (WorldServerError も
-      // その message にラップ済み) で throw するので、message をそのまま出せば原因が分かる。
-      const detail = e instanceof Error ? e.message : '';
-      setNotice(`リセットに失敗した (${detail || '通信エラー'})。もう一度どうぞ。`);
-      setResetting(false);
-    } finally {
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    }
-  }, [agent, did, resetting]);
+  // オンボード用リセットは**設定画面**へ移設した (地図メニューから消し、新規と同じ
+  // 「イントロ→手渡し→祝福」導入を辿れるようにするため — オーナー指摘 2026-07-20)。
+  // world 側は再入場時にマーク/フラグを読むだけ (WELCOME_BLESSING_PENDING_KEY / ONBOARDING_DONE_KEY)。
 
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
   // 素材 (craft レコードの集計で差し引き)。品質は rkey + luk から決定的
@@ -1065,12 +1025,7 @@ export function World() {
     ...(inTown
       ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
       : []),
-    // 管理者用: オンボードを体験するための「はじめから」。破壊的なので confirm 付き。
-    // world ルート自体が WORLD_PREVIEW_ENABLED (dev/local 限定) で早期 return されるので、
-    // ここは追加で管理者 (isAdminDid) に絞るだけ = 実質 dev + 管理者。
-    ...(did && isAdminDid(did)
-      ? [{ key: 'reset', label: resetting ? 'リセット中…' : '⟲ はじめから (管理)', onSelect: () => void doReset() } as WorldMenuCommand]
-      : []),
+    // 「はじめから (管理)」は設定画面へ移設 (新規と同じ導入を辿らせるため)。ここには出さない。
   ];
 
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
@@ -1353,21 +1308,6 @@ export function World() {
         />
       )}
       {wipeOverlay}
-      {/* リセット中の進行表示 (重い直列 I/O の間、無反応に見せない)。祝福演出 (z1100) の下に敷く。 */}
-      {resetting && (
-        <div
-          aria-live="polite"
-          style={{
-            position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(6, 12, 24, 0.82)', color: 'var(--color-fg)', zIndex: 1050,
-            fontSize: '0.95em', letterSpacing: '0.04em',
-          }}
-        >
-          {/* 明滅させて「処理中」を伝える (静止だと固まって見える = 今回直したい症状そのもの)。 */}
-          <style>{'@keyframes reset-pulse{0%,100%{opacity:0.45}50%{opacity:1}}'}</style>
-          <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ もどしています…</span>
-        </div>
-      )}
       <WelcomeBlessingOverlay />
     </div>
   );
