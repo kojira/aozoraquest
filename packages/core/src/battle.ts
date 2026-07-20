@@ -655,22 +655,24 @@ export function summonMonster(
   // 呼び出し文脈として残すが強度計算には使わない (将来のエンドコンテンツ追従の受け皿)。
   void playerLevel;
   void jobLevel;
-  const factor = monsterLevelFactor(tier);
-  const combatant = fromStats(def.name, def.stats, factor, 1);
+  return { def, combatant: monsterCombatant(def, variance, rng) };
+}
+
+/** モンスター def から戦闘値 (Combatant) を作る。tier 固定強度 (factor) + 明示 HP/MP 上書き +
+ *  遭遇ごとの分散ジッター。variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ
+ *  テスト/決定論を保つ)。summonMonster (tier 抽選) と、模擬戦の敵指定の双方から使う。 */
+export function monsterCombatant(def: MonsterDef, variance: number, rng: () => number): Combatant {
+  const factor = monsterLevelFactor(def.tier);
+  const c = fromStats(def.name, def.stats, factor, 1);
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
-  // tier/レベル係数 (factor) で従来同様にスケールさせ、はぐれメタル型の低 HP を保つ。
-  if (def.hp !== undefined) { combatant.maxHp = Math.max(1, Math.round(def.hp * factor)); combatant.hp = combatant.maxHp; }
-  if (def.mp !== undefined) { combatant.maxMp = Math.max(0, Math.round(def.mp * factor)); combatant.mp = combatant.maxMp; }
-  // 遭遇ごとに HP/MP をバラつかせる (値を覚えられないように = 予想の余地を残す)。
-  // variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ trial/テスト不変)。
+  if (def.hp !== undefined) { c.maxHp = Math.max(1, Math.round(def.hp * factor)); c.hp = c.maxHp; }
+  if (def.mp !== undefined) { c.maxMp = Math.max(0, Math.round(def.mp * factor)); c.mp = c.maxMp; }
   if (variance > 0) {
     const jitter = () => 1 + (rng() * 2 - 1) * variance;
-    combatant.maxHp = Math.max(1, Math.round(combatant.maxHp * jitter()));
-    combatant.hp = combatant.maxHp;
-    combatant.maxMp = Math.max(0, Math.round(combatant.maxMp * jitter()));
-    combatant.mp = combatant.maxMp;
+    c.maxHp = Math.max(1, Math.round(c.maxHp * jitter())); c.hp = c.maxHp;
+    c.maxMp = Math.max(0, Math.round(c.maxMp * jitter())); c.mp = c.maxMp;
   }
-  return { def, combatant };
+  return c;
 }
 
 // ─── バトル状態と解決 ───────────────────────────────────────
@@ -740,6 +742,9 @@ export function startBattle(
     affinity?: number;
     /** 敵 HP/MP の分散 (±割合)。world 遭遇のみ指定、trial は未指定 = 0 (固定)。 */
     vitalsVariance?: number;
+    /** 出現を tier 抽選せず**この id のモンスターに固定**する (模擬戦シミュレータ用)。
+     *  未知 id は無視して従来どおり tier 抽選。 */
+    monsterId?: string;
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -749,7 +754,11 @@ export function startBattle(
   if (carry?.mp !== undefined) {
     player.mp = Math.max(0, Math.min(player.maxMp, Math.floor(carry.mp)));
   }
-  const { def, combatant } = summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, extras?.vitalsVariance ?? 0);
+  const variance = extras?.vitalsVariance ?? 0;
+  const forced = extras?.monsterId ? MONSTERS_BY_ID[extras.monsterId] : undefined;
+  const { def, combatant } = forced
+    ? { def: forced, combatant: monsterCombatant(forced, variance, createRng((seed ^ 0x2a9f) >>> 0)) }
+    : summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, variance);
   const gains = mpGainsFor(archetype);
   return {
     seed,
@@ -1112,6 +1121,28 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
  *   記録単体からの再現・検証はできない (materialsLost は他の戦闘結果と同じく
  *   クライアント申告値。検証可能化は W3 のサーバー権威で扱う)。
  */
+/** 模擬戦の自動プレイ方針 (現実的な「上手い操作」の代表)。1 ターン分のコマンドを返す。
+ *  ため予告 → (見切り職は特技/それ以外は防御) / HP<45% かつ薬草 → 薬草 /
+ *  MP 不足かつしずく → しずく / MP 足りれば特技 / それ以外 たたかう。
+ *  scripts/sim-battle-balance.ts と /spirit 模擬戦シミュレータで共有する。 */
+export function autoBattleCommand(s: BattleState): Command {
+  const t = BATTLE_TUNING;
+  const isParry = s.playerSkill.kind === 'parry';
+  const p = s.player;
+  if (s.monster.charging) return isParry && p.mp >= t.skillMpCost ? 'skill' : 'guard';
+  if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return 'herb';
+  if (s.tonics > 0 && p.mp < t.skillMpCost && p.maxMp >= t.skillMpCost * 2) return 'tonic';
+  if (!isParry && p.mp >= t.skillMpCost) return 'skill';
+  return 'attack';
+}
+
+/** 自動プレイで決着まで進める (最大 maxTurns)。turnSeed は渡さず state 由来で決定的。 */
+export function runAutoBattle(state: BattleState, maxTurns = 80): BattleState {
+  let s = state;
+  for (let i = 0; i < maxTurns && s.outcome === 'ongoing'; i++) s = resolveTurn(s, autoBattleCommand(s));
+  return s;
+}
+
 export function rollDefeatLoss(materials: Record<string, number>, luk: number, seed: number): string[] {
   const t = BATTLE_TUNING;
   const rng = createRng((seed ^ 0x7b0c9d21) >>> 0);
