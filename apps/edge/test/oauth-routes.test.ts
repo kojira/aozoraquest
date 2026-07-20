@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from '../src/oauth-routes';
-import { putPendingAuth, readServerTokens } from '../src/oauth-store';
+import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from '../src/oauth-routes';
+import { putPendingAuth, readServerTokens, writeServerTokens } from '../src/oauth-store';
 import type { AuthServerMetadata } from '../src/oauth-metadata';
 
 function jwkJson(fill: number): string {
@@ -58,6 +58,30 @@ describe('oauth-routes', () => {
     const body = (await res.json()) as { authorizeUrl: string };
     expect(body.authorizeUrl).toContain(`${AS}/oauth/authorize`);
     expect(body.authorizeUrl).toContain('request_uri=urn%3Areq%3A1');
+  });
+
+  it('status: 認証ゲート (401/403) + トークン本体を絶対に返さない', async () => {
+    const url = 'https://x/api/oauth/status';
+    // トークン無し → 401
+    expect((await handleOAuthStatus(new Request(url), env(mockKv()), { now: NOW })).status).toBe(401);
+    const req = new Request(url, { headers: { authorization: 'Bearer T' } });
+    // 非管理者 → 403
+    expect((await handleOAuthStatus(req, env(mockKv()), { now: NOW, verify: async () => ({ iss: 'did:plc:someone' }) })).status).toBe(403);
+    // 未連携 (KV にトークン無し) → linked:false
+    const unlinked = await handleOAuthStatus(req, env(mockKv()), { now: NOW, verify: okVerify });
+    expect(await unlinked.json()).toEqual({ linked: false });
+    // 連携済み → did/pdsUrl/失効/更新のみ、**トークン本体 (accessToken/refreshToken/authServer) は返さない**
+    const kv = mockKv();
+    await writeServerTokens(kv, { did: 'did:plc:testserver', accessToken: 'SECRET_AT', refreshToken: 'SECRET_RT', tokenType: 'DPoP', expiresAt: NOW + 3600, pdsUrl: 'https://pds.example', authServer: AS, updatedAt: NOW });
+    const linked = await handleOAuthStatus(req, env(kv), { now: NOW, verify: okVerify });
+    const body = (await linked.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ linked: true, did: 'did:plc:testserver', pdsUrl: 'https://pds.example', expiresAt: NOW + 3600, updatedAt: NOW });
+    const s = JSON.stringify(body);
+    expect(s).not.toContain('SECRET_AT');
+    expect(s).not.toContain('SECRET_RT');
+    expect(body).not.toHaveProperty('accessToken');
+    expect(body).not.toHaveProperty('refreshToken');
+    expect(body).not.toHaveProperty('authServer');
   });
 
   it('callback: error パラメータは失敗ページ / code|state 欠落は 400', async () => {
