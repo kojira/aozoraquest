@@ -77,10 +77,10 @@ describe('canEquip (装備適性)', () => {
 describe('gearBonus', () => {
   it('装備の合計を返し、未知 id と装備不可の品は無視する', () => {
     const g = gearBonus('ninja', ['wp-ninja-mid', 'ar-nimble', 'ch-life', 'no-such-item', 'wp-axe']);
-    // wp-axe は ninja 装備不可 → 無視。忍者刀 +8 agi、かるわざ +4 def +3 agi、ペンダント +10 maxHp
+    // wp-axe は ninja 装備不可 → 無視。忍者刀 +8 agi、かるわざ +4 def +3 agi、ペンダント +3 maxHp
     expect(g.agi).toBe(11);
     expect(g.def).toBe(4);
-    expect(g.maxHp).toBe(10);
+    expect(g.maxHp).toBe(3);
     expect(g.atk).toBe(0);
   });
 });
@@ -90,7 +90,7 @@ describe('playerCombatant / playerStatsAt の装備加算', () => {
     const bare = playerCombatant('bard', 1, 1, 'x');
     const geared = playerCombatant('bard', 1, 1, 'x', undefined, ['wp-bard-mid', 'ch-life']);
     expect(geared.luk).toBe(bare.luk + 8); // 竪琴
-    expect(geared.maxHp).toBe(bare.maxHp + 10);
+    expect(geared.maxHp).toBe(bare.maxHp + 3);
     expect(geared.hp).toBe(geared.maxHp);
     const raw = playerStatsAt('bard', 1, 1, undefined, ['wp-bard-mid', 'ch-life']);
     expect(Math.round(raw.luk)).toBe(geared.luk);
@@ -103,7 +103,7 @@ describe('gearBonusFromGear (スロット検証つき入口)', () => {
     // 正常系
     const ok = gearBonusFromGear('bard', { weapon: 'wp-bard-mid', armor: 'ar-fortune', charm: 'ch-life' });
     expect(ok.luk).toBe(8 + 3);
-    expect(ok.maxHp).toBe(10);
+    expect(ok.maxHp).toBe(3);
     // weapon 枠に charm を書いても効かない / 3 枠同一武器の重複強化も不成立
     const cheat = gearBonusFromGear('bard', { weapon: 'ch-life', armor: 'wp-bard-high', charm: 'wp-bard-high' });
     expect(cheat.luk).toBe(0);
@@ -211,11 +211,12 @@ describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => 
     expect(bonusWithLevel(harp, 0)).toEqual(harp.bonus);
     const knife = BY_ID['wp-knife']!; // atk +2
     expect(bonusWithLevel(knife, -1).atk).toBe(1);
-    // 複合効果 (将軍の大太刀) は主効果 (maxHp 14) だけが伸びる
+    // 複合効果 (軍神の大太刀 atk10/def7/maxHp4) は主効果 (最大値の atk) だけが伸びる。
+    // DQ 級スケールで maxHp を 14→4 に縮めたため、primary は maxHp から atk に移った。
     const taito = BY_ID['wp-shogun-high']!;
     const b = bonusWithLevel(taito, 4);
-    expect(b.maxHp).toBe(18);
-    expect(b.atk).toBe(taito.bonus.atk);
+    expect(b.atk).toBe(taito.bonus.atk! + 4); // 主効果 atk が +4
+    expect(b.maxHp).toBe(taito.bonus.maxHp); // 副効果 maxHp は据え置き (4)
     expect(leveledName(harp, 3)).toBe('竪琴+3');
     expect(leveledName(harp, -1)).toBe('竪琴-1');
     expect(leveledName(harp, 0)).toBe('竪琴');
@@ -241,7 +242,7 @@ describe('playerCombatant の gear (GearSelection) 適用', () => {
       charm: { id: 'ch-life', level: 0 },
     });
     expect(geared.luk).toBe(bare.luk + 11);
-    expect(geared.maxHp).toBe(bare.maxHp + 10);
+    expect(geared.maxHp).toBe(bare.maxHp + 3);
     const r = raw('bard', 1, 1, undefined, undefined, {
       weapon: { id: 'wp-bard-mid', level: 3 },
       charm: { id: 'ch-life', level: 0 },
