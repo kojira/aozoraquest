@@ -22,7 +22,7 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
 
 ## セットアップ手順 (runbook)
 
-前提: `wrangler whoami` が kojiran@gmail.com (account b9cec3916d500760a7c7b9c31c720d80)。
+前提: `wrangler whoami` が CF アカウント (account id は CF ダッシュボード参照) にログイン済み。
 `cd apps/edge` で実行。secret 値はチャット/リポジトリに残さない (§4)。
 
 ### 1. dev 専用 KV を作る

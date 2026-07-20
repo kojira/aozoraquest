@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useSession } from '@/lib/session';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, playerLevelFromXp } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
@@ -31,7 +32,9 @@ interface AozoraProfile {
 
 export function DebugMe() {
   const [params] = useSearchParams();
-  const handle = params.get('handle') ?? 'kojira.io';
+  const session = useSession();
+  // 個人 handle はソースに直書きしない (§4)。既定はログイン中ユーザー、無ければ ?handle= を要求。
+  const handle = params.get('handle') ?? session.handle ?? '';
   const [profile, setProfile] = useState<BskyProfile | null>(null);
   const [analysis, setAnalysis] = useState<DiagnosisResult | null>(null);
   const [aozoraProfile, setAozoraProfile] = useState<AozoraProfile | null>(null);
@@ -40,6 +43,7 @@ export function DebugMe() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!handle) { setErr('?handle=xxx.bsky.social を指定 (またはログイン)'); return; }
     (async () => {
       try {
         // 1) handle → DID + Bluesky プロフィール

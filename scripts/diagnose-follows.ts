@@ -3,7 +3,7 @@
  * かけて、結果を HTML レポートとして出力する。
  *
  * 使い方:
- *   pnpm tsx scripts/diagnose-follows.ts kojira.io [outfile]
+ *   pnpm tsx scripts/diagnose-follows.ts <seed-handle> [outfile]
  */
 
 import { pipeline, env } from '@huggingface/transformers';
@@ -149,7 +149,7 @@ function renderHtml(
   }
   const distRows = [...dist.entries()].sort((a, b) => b[1] - a[1]);
 
-  // 相性 (kojira 側の archetype が分かっていれば計算)
+  // 相性 (シード側の archetype が分かっていれば計算)
   const withCompat = ok.map((r) => {
     if (!ownerArchetype || !r.result) return { ...r, compat: null };
     const compat = resonance(
@@ -288,7 +288,8 @@ ${skippedHtml}
 }
 
 async function main() {
-  const targetHandle = process.argv[2] ?? 'kojira.io';
+  const targetHandle = process.argv[2] ?? process.env.SEED_HANDLE;
+  if (!targetHandle) { console.error('handle を argv か SEED_HANDLE env で指定 (個人 handle をソースに書かない)'); process.exit(1); }
   const maxFollows = Number(process.argv[3] ?? '0') || Infinity; // 0 or missing = no limit
   const outFile = process.argv[4] ?? path.join(repoRoot, `diagnose-follows-${targetHandle.replace(/[^a-z0-9]/gi, '_')}.html`);
 

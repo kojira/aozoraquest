@@ -173,7 +173,7 @@ typecheck / build / test 緑は **十分条件ではない**。実際の UI を�
 
 - API キー、トークン、URL、handle、DID、メールアドレス → 全部 NG
 - 環境変数経由にして、値は外部に置く
-- 過去事例: kojira.io を debug コードに直書き → user に怒られた
+- 過去事例: 個人 handle を debug コードに直書き → user に怒られた
 
 ### 環境変数の置き場所
 
@@ -287,7 +287,7 @@ build 時必須にした env vars を CI workflow に追加し忘れ、CI 落ち
 
 ### 2026-04-28: 個人 handle をソースに直書き
 
-debug-card のデフォルトに `kojira.io` を直書き → 個人情報がリポジトリに残る。
+debug-card のデフォルトに個人 handle を直書き → 個人情報がリポジトリに残る。
 **学び**: handle / DID / email 等の固有情報は環境変数か query 経由で。
 
 ### 2026-06-10: ブランチ運用を feature ブランチ方式へ移行

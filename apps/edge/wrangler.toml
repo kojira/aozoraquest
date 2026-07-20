@@ -13,7 +13,7 @@ compatibility_flags = ["nodejs_compat"]
 
 # OAuth write 認証 (docs/21 §12) のトークンストア。cron refresher が書き、リクエスト Worker が読む。
 # 実行時に書き換えられる保管場所が要るので Secret/env でなく KV (Durable Object は Paid 要で不採用)。
-# Kojiran@gmail.com アカウントに作成 (wrangler kv namespace create OAUTH_TOKENS)。
+# CF アカウントに作成 (wrangler kv namespace create OAUTH_TOKENS)。
 [[kv_namespaces]]
 binding = "OAUTH_TOKENS"
 id = "fa7215e005474e6cac81745c463333ba"
@@ -39,7 +39,7 @@ name = "aozoraquest-edge-dev"
 # 作成: wrangler kv namespace create OAUTH_TOKENS --env dev → 出力の id をここに貼る。
 [[env.dev.kv_namespaces]]
 binding = "OAUTH_TOKENS"
-id = "REPLACE_WITH_DEV_KV_ID"
+id = "ef1a0429afc34c7da4ee5183752a5f3e"
 
 # dev 専用 cron (自分のセッションのトークンだけ refresh)。
 [env.dev.triggers]

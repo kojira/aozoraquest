@@ -38,7 +38,7 @@ describe('oauth-client', () => {
   it('buildAuthorizeUrl は PAR して authorize URL を返し、正しい form を送る', async () => {
     let body = '';
     const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ request_uri: 'urn:req:abc' }); }) as unknown as typeof fetch;
-    const r = await buildAuthorizeUrl({ ...cfg(), fetchImpl: f }, AS, { loginHint: 'kojira.io', state: 'ST', pkce: { verifier: 'VER', challenge: 'CHAL' } });
+    const r = await buildAuthorizeUrl({ ...cfg(), fetchImpl: f }, AS, { loginHint: 'server.example', state: 'ST', pkce: { verifier: 'VER', challenge: 'CHAL' } });
     expect(r.url).toBe(`https://bsky.social/oauth/authorize?client_id=${encodeURIComponent(cfg().clientId)}&request_uri=urn%3Areq%3Aabc`);
     expect(r.state).toBe('ST');
     expect(r.verifier).toBe('VER');
@@ -46,16 +46,16 @@ describe('oauth-client', () => {
     expect(form.get('response_type')).toBe('code');
     expect(form.get('code_challenge')).toBe('CHAL');
     expect(form.get('code_challenge_method')).toBe('S256');
-    expect(form.get('login_hint')).toBe('kojira.io');
+    expect(form.get('login_hint')).toBe('server.example');
     expect(form.get('client_assertion_type')).toBe('urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
     expect(form.get('client_assertion')).toBeTruthy();
   });
 
   it('exchangeCode は token を正規化 (sub→did, expiresAt=now+expires_in)', async () => {
     let body = '';
-    const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:kojira', scope: 'atproto' }); }) as unknown as typeof fetch;
-    const t = await exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'CODE', 'VER', 'https://pds.example', 'did:plc:kojira');
-    expect(t).toMatchObject({ did: 'did:plc:kojira', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, authServer: AS.issuer, pdsUrl: 'https://pds.example' });
+    const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:testserver', scope: 'atproto' }); }) as unknown as typeof fetch;
+    const t = await exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'CODE', 'VER', 'https://pds.example', 'did:plc:testserver');
+    expect(t).toMatchObject({ did: 'did:plc:testserver', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, authServer: AS.issuer, pdsUrl: 'https://pds.example' });
     const form = new URLSearchParams(body);
     expect(form.get('grant_type')).toBe('authorization_code');
     expect(form.get('code')).toBe('CODE');
@@ -64,8 +64,8 @@ describe('oauth-client', () => {
 
   it('refreshTokens は grant_type=refresh_token で更新する', async () => {
     let body = '';
-    const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ access_token: 'AT2', token_type: 'DPoP', refresh_token: 'RT2', expires_in: 100, sub: 'did:plc:kojira' }); }) as unknown as typeof fetch;
-    const t = await refreshTokens({ ...cfg(), fetchImpl: f }, AS, 'OLD_RT', 'https://pds.example', 'did:plc:kojira');
+    const f = (async (_u: string, init: RequestInit) => { body = init.body as string; return json({ access_token: 'AT2', token_type: 'DPoP', refresh_token: 'RT2', expires_in: 100, sub: 'did:plc:testserver' }); }) as unknown as typeof fetch;
+    const t = await refreshTokens({ ...cfg(), fetchImpl: f }, AS, 'OLD_RT', 'https://pds.example', 'did:plc:testserver');
     expect(t.accessToken).toBe('AT2');
     expect(t.refreshToken).toBe('RT2');
     expect(new URLSearchParams(body).get('refresh_token')).toBe('OLD_RT');
@@ -78,15 +78,15 @@ describe('oauth-client', () => {
 
   it('sub が期待アカウントと違えば拒否 (アカウント取り違え/セッション固定対策)', async () => {
     const f = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60, sub: 'did:plc:attacker' })) as unknown as typeof fetch;
-    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:kojira')).rejects.toThrow(/予期しないアカウント/);
+    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:testserver')).rejects.toThrow(/予期しないアカウント/);
     // 一致すれば通る
-    const ok = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60, sub: 'did:plc:kojira' })) as unknown as typeof fetch;
-    await expect(exchangeCode({ ...cfg(), fetchImpl: ok }, AS, 'C', 'V', 'https://pds.example', 'did:plc:kojira')).resolves.toMatchObject({ did: 'did:plc:kojira' });
+    const ok = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60, sub: 'did:plc:testserver' })) as unknown as typeof fetch;
+    await expect(exchangeCode({ ...cfg(), fetchImpl: ok }, AS, 'C', 'V', 'https://pds.example', 'did:plc:testserver')).resolves.toMatchObject({ did: 'did:plc:testserver' });
   });
 
   it('bootstrap (exchangeCode) は sub 欠落を serverDid で埋めず拒否する', async () => {
     const f = (async () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 60 })) as unknown as typeof fetch; // sub なし
-    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:kojira')).rejects.toThrow(/sub/);
+    await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:testserver')).rejects.toThrow(/sub/);
   });
 
   it('use_dpop_nonce チャレンジは nonce を付けて再送し成功する', async () => {

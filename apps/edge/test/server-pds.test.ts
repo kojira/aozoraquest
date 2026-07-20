@@ -15,8 +15,8 @@ function mockKv() {
 }
 const PDS = 'https://pds.example';
 const NOW = 100000;
-const tokens = (over: Partial<ServerOAuthTokens> = {}): ServerOAuthTokens => ({ did: 'did:plc:kojira', accessToken: 'ATOKEN', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: NOW, ...over });
-const env = (kv?: KVNamespace): ServerPdsEnv => ({ OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), SERVER_DID: 'did:plc:kojira', WORKER_DID: 'did:web:edge.aozoraquest.app', OAUTH_TOKENS: kv });
+const tokens = (over: Partial<ServerOAuthTokens> = {}): ServerOAuthTokens => ({ did: 'did:plc:testserver', accessToken: 'ATOKEN', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: NOW, ...over });
+const env = (kv?: KVNamespace): ServerPdsEnv => ({ OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), SERVER_DID: 'did:plc:testserver', WORKER_DID: 'did:web:edge.aozoraquest.app', OAUTH_TOKENS: kv });
 const json = (b: unknown, s = 200, h: Record<string, string> = {}) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json', ...h } });
 
 describe('server-pds (OAuth DPoP 書き込み)', () => {
@@ -33,7 +33,7 @@ describe('server-pds (OAuth DPoP 書き込み)', () => {
     expect(seen!.url).toBe(`${PDS}/xrpc/com.atproto.repo.putRecord`);
     expect(seen!.headers.get('DPoP')).toBeTruthy();
     expect(seen!.headers.get('Authorization')).toBe('DPoP ATOKEN');
-    expect(seen!.body).toMatchObject({ repo: 'did:plc:kojira', collection: 'app.aozoraquest.gameState', rkey: 'u123', record: { power: 5 }, swapRecord: null });
+    expect(seen!.body).toMatchObject({ repo: 'did:plc:testserver', collection: 'app.aozoraquest.gameState', rkey: 'u123', record: { power: 5 }, swapRecord: null });
   });
 
   it('未 bootstrap / KV 無し / 失効 / 設定不備は fail-closed (ServerWriteError)', async () => {
@@ -73,6 +73,6 @@ describe('server-pds (OAuth DPoP 書き込み)', () => {
     let body: unknown;
     globalThis.fetch = (async (_u: string, init: RequestInit) => { body = JSON.parse(init.body as string); return json({}); }) as unknown as typeof fetch;
     await serverDeleteRecord(env(kv), NOW, 'c', 'r', 'CID9');
-    expect(body).toMatchObject({ repo: 'did:plc:kojira', collection: 'c', rkey: 'r', swapRecord: 'CID9' });
+    expect(body).toMatchObject({ repo: 'did:plc:testserver', collection: 'c', rkey: 'r', swapRecord: 'CID9' });
   });
 });

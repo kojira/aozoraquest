@@ -63,7 +63,7 @@ export function ColumnPicker({
         return;
       }
       if (!handle.includes('.') && !handle.startsWith('did:')) {
-        setParamErr('ハンドルは kojira.example のようなドット入りの形式です。');
+        setParamErr('ハンドルは alice.example のようなドット入りの形式です。');
         return;
       }
       onAdd(makeAppColumn('profile', { param: handle }));
@@ -96,7 +96,7 @@ export function ColumnPicker({
       {paramFor && (
         <div style={{ marginTop: '0.5em' }}>
           <label htmlFor="column-picker-param" style={{ display: 'block', fontSize: '0.78em', color: 'var(--color-muted)', marginBottom: '0.2em' }}>
-            {paramFor === 'search' ? '検索キーワード (空でも OK)' : 'ハンドル (例: kojira.example)'}
+            {paramFor === 'search' ? '検索キーワード (空でも OK)' : 'ハンドル (例: alice.example)'}
           </label>
           <div style={{ display: 'flex', gap: '0.3em' }}>
             <input

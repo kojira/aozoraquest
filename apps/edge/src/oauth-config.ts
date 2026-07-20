@@ -3,7 +3,7 @@
  *
  * 秘密鍵 (client 署名鍵 / DPoP 鍵) は Worker Secret に JWK(JSON) で入れる。client_id / redirect_uri は
  * edge の公開 origin から導出。管理者判定 (ADMIN_DIDS) は /oauth/start のゲートに使う。
- * サーバーアカウント (kojira.io) の DID は SERVER_DID (Variable)。**ソースに直書きしない**。
+ * サーバーアカウントの DID は SERVER_DID (Variable)。**ソースに直書きしない**。
  */
 import { publicJwk, type EcJwk } from './oauth-jwt';
 
@@ -12,7 +12,7 @@ export interface OAuthEnv {
   OAUTH_CLIENT_PRIVATE_JWK?: string;
   /** DPoP 鍵。Secret。JWK JSON。 */
   OAUTH_DPOP_PRIVATE_JWK?: string;
-  /** サーバーアカウント DID (権威データの持ち主 = kojira.io)。Variable。 */
+  /** サーバーアカウント DID (権威データの持ち主 = サーバーアカウント)。Variable。 */
   SERVER_DID?: string;
   /** 管理者 DID 許可リスト (カンマ区切り)。/oauth/start ゲート用。Variable。 */
   ADMIN_DIDS?: string;

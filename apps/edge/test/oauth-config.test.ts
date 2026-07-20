@@ -11,7 +11,7 @@ function jwkJson(fill: number): string {
 const baseEnv = (): OAuthEnv => ({
   OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3),
   OAUTH_DPOP_PRIVATE_JWK: jwkJson(5),
-  SERVER_DID: 'did:plc:kojira',
+  SERVER_DID: 'did:plc:testserver',
   WORKER_DID: 'did:web:edge.aozoraquest.app',
   ADMIN_DIDS: 'did:plc:admin1, did:plc:admin2',
 });
@@ -28,7 +28,7 @@ describe('oauth-config', () => {
     expect(c.clientId).toBe('https://edge.aozoraquest.app/client-metadata.json');
     expect(c.redirectUri).toBe('https://edge.aozoraquest.app/oauth/callback');
     expect(c.scope).toBe('atproto transition:generic');
-    expect(c.serverDid).toBe('did:plc:kojira');
+    expect(c.serverDid).toBe('did:plc:testserver');
     expect(c.clientJwk.d).toBeTruthy();
   });
 

@@ -1,6 +1,6 @@
 /**
  * README ヒーロー画像の 3 枚目 (me ページ全体) を生成。
- * /debug/me ルートを開いて、kojira の analysis + profile を public API から
+ * /debug/me ルートを開いて、指定ユーザーの analysis + profile を public API から
  * 取得・me 相当の見た目で描画 → wrap div を PNG 化して docs/hero-me.png に保存。
  *
  * vite dev (localhost:9999) が事前に起動している前提。
@@ -14,7 +14,8 @@ import { dirname, resolve } from 'node:path';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/hero-me.png');
 const DEV_BASE = process.env.DEV_BASE ?? 'http://localhost:9999';
-const HANDLE = 'kojira.io';
+const HANDLE = process.env.HERO_HANDLE ?? '';
+if (!HANDLE) { console.error('HERO_HANDLE env が必要 (個人 handle をソースに書かない)'); process.exit(1); }
 
 async function main() {
   const url = new URL('/debug/me', DEV_BASE);
