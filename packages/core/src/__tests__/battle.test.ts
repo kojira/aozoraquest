@@ -8,6 +8,7 @@ import {
   playerCombatant,
   summonMonster,
   battleXpFor,
+  baselineXp,
   favoredMonsterFor,
   pickTrialTier,
   startBattle,
@@ -173,8 +174,8 @@ describe('summonMonster', () => {
       expect(m?.drops.some((d) => d.item === mat)).toBe(true); // 専用素材を落とす
       expect(ITEMS[mat]).toBeDefined();
     }
-    // そらいろスライムは最弱の練習敵 (xp 3)
-    expect(MONSTERS_BY_ID['sky-slime']?.xp).toBe(3);
+    // そらいろスライムは最弱の練習敵 (式で最低クラスの XP)。強い版 (red-slime) より低い。
+    expect(battleXpFor('sky-slime')).toBeLessThan(battleXpFor('red-slime'));
   });
 
   it('はぐれスライム: HP 明示で低い + fleer は逃走して monster-fled で決着 (勝敗なし)', () => {
@@ -224,21 +225,34 @@ describe('summonMonster', () => {
     }
   });
 
-  describe('勝利 XP はモンスター個別 (battleXpFor)', () => {
-    it('全モンスターに xp>0 が定義されている', () => {
-      for (const m of MONSTERS) expect(m.xp).toBeGreaterThan(0);
+  describe('勝利 XP は式＋個別調整 (battleXpFor / baselineXp)', () => {
+    it('全モンスターの勝利 XP は 0 より大きい (式 or 個別上書き)', () => {
+      for (const m of MONSTERS) expect(battleXpFor(m.id)).toBeGreaterThan(0);
     });
 
-    it('XP は一律でなく幅がある / 強い tier ほど上限が高い', () => {
-      expect(new Set(MONSTERS.map((m) => m.xp)).size).toBeGreaterThan(1);
-      const maxOf = (t: 1 | 2 | 3) => Math.max(...MONSTERS.filter((m) => m.tier === t).map((m) => m.xp));
+    it('XP は敵の強さと連動する: 硬い敵ほど高い / 上位 tier ほど上限が高い (レア除く)', () => {
+      // tier1 内: 硬い ヒカリダケ > 最弱 そらいろスライム (HP 連動)
+      expect(battleXpFor('glow-shroom')).toBeGreaterThan(battleXpFor('sky-slime'));
+      expect(new Set(MONSTERS.map((m) => battleXpFor(m.id))).size).toBeGreaterThan(1);
+      // レアなジャックポット (はぐれメタル型 spawnWeight<0.1) を除けば tier が上ほど上限が高い
+      const maxOf = (t: 1 | 2 | 3) =>
+        Math.max(...MONSTERS.filter((m) => m.tier === t && (m.spawnWeight ?? 1) >= 0.1).map((m) => battleXpFor(m.id)));
       expect(maxOf(2)).toBeGreaterThan(maxOf(1));
       expect(maxOf(3)).toBeGreaterThan(maxOf(2));
     });
 
-    it('battleXpFor は個別 xp を返し、未知 id は xpWin フォールバック', () => {
-      expect(battleXpFor('sky-slime')).toBe(MONSTERS_BY_ID['sky-slime']!.xp);
-      expect(battleXpFor('sky-dragon')).toBe(MONSTERS_BY_ID['sky-dragon']!.xp);
+    it('式 baselineXp: 基準 HP + atk/agi から算出 (xp 省略時のデフォルト)', () => {
+      // sky-slime は xp 未指定 → 式で算出。低 HP なので低 XP。
+      expect(MONSTERS_BY_ID['sky-slime']!.xp).toBeUndefined();
+      expect(battleXpFor('sky-slime')).toBe(baselineXp(MONSTERS_BY_ID['sky-slime']!));
+      expect(battleXpFor('sky-slime')).toBeLessThanOrEqual(3);
+    });
+
+    it('個別上書き: はぐれスライムは低 HP でも xp=100 (ジャックポット)、未知 id は xpWin', () => {
+      expect(MONSTERS_BY_ID['stray-slime']!.xp).toBe(100);
+      expect(battleXpFor('stray-slime')).toBe(100);
+      // 低 HP なので式なら低 XP になる = 上書きが効いている証拠
+      expect(baselineXp(MONSTERS_BY_ID['stray-slime']!)).toBeLessThan(100);
       expect(battleXpFor('no-such-monster')).toBe(BATTLE_TUNING.xpWin);
     });
   });
