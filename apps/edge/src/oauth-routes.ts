@@ -11,9 +11,10 @@ import { verifyServiceAuth, resolveDidDocument, type DidDocument } from './servi
 import { loadOAuthConfig, buildClientMetadata, isEdgeAdmin, OAuthConfigError, type OAuthEnv } from './oauth-config';
 import { discoverForDid } from './oauth-metadata';
 import { buildAuthorizeUrl, exchangeCode } from './oauth-client';
-import { putPendingAuth, takePendingAuth, writeServerTokens } from './oauth-store';
+import { putPendingAuth, takePendingAuth, writeServerTokens, readServerTokens } from './oauth-store';
 
 export const LXM_OAUTH_START = 'app.aozoraquest.oauth.start';
+export const LXM_OAUTH_STATUS = 'app.aozoraquest.oauth.status';
 
 /** router.ts の Env のうち OAuth ルートが使う部分 + KV。 */
 export interface OAuthRoutesEnv extends OAuthEnv {
@@ -75,6 +76,27 @@ export async function handleOAuthStart(req: Request, env: OAuthRoutesEnv, deps: 
   } catch (e) {
     return json({ error: 'oauth_start_failed', message: e instanceof Error ? e.message : String(e) }, 502);
   }
+}
+
+/** GET /api/oauth/status — 管理者のみ。サーバーアカウント連携の状態を返す (トークン本体は返さない)。 */
+export async function handleOAuthStatus(req: Request, env: OAuthRoutesEnv, deps: Deps): Promise<Response> {
+  if (!env.OAUTH_TOKENS) return json({ error: 'oauth_not_configured', message: 'KV 未 binding' }, 503);
+  const audience = env.WORKER_DID;
+  if (!audience) return json({ error: 'oauth_not_configured', message: 'WORKER_DID 未設定' }, 503);
+  const token = bearer(req);
+  if (!token) return json({ error: 'missing_token' }, 401);
+  const verify = deps.verify ?? verifyServiceAuth;
+  let iss: string;
+  try {
+    ({ iss } = await verify(token, { audience, lxm: LXM_OAUTH_STATUS, now: deps.now, resolveDid: (d) => resolveDidDocument(d, deps.fetchImpl) }));
+  } catch {
+    return json({ error: 'invalid_token' }, 401);
+  }
+  if (!isEdgeAdmin(env, iss)) return json({ error: 'forbidden' }, 403);
+  // トークン**本体は返さない** — 連携有無・アカウント DID・失効時刻・更新時刻のみ (監査/UI 表示用)。
+  const tokens = await readServerTokens(env.OAUTH_TOKENS);
+  if (!tokens) return json({ linked: false });
+  return json({ linked: true, did: tokens.did, pdsUrl: tokens.pdsUrl, expiresAt: tokens.expiresAt, updatedAt: tokens.updatedAt });
 }
 
 /** GET /oauth/callback — 認可サーバーからのリダイレクト。code→token 交換し KV 格納。 */
