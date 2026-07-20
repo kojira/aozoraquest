@@ -17,6 +17,7 @@ const OUT = resolve(ROOT, 'docs/hero-radar.png');
 const DEV_BASE = process.env.DEV_BASE ?? 'http://localhost:9999';
 
 const HANDLE = process.env.HERO_HANDLE ?? '';
+if (!HANDLE) { console.error('HERO_HANDLE env が必要 (個人 handle をソースに書かない)'); process.exit(1); }
 
 async function main() {
   const url = new URL('/debug/radar', DEV_BASE);

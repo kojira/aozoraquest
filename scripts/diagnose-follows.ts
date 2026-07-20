@@ -288,7 +288,8 @@ ${skippedHtml}
 }
 
 async function main() {
-  const targetHandle = process.argv[2] ?? process.env.SEED_HANDLE ?? '';
+  const targetHandle = process.argv[2] ?? process.env.SEED_HANDLE;
+  if (!targetHandle) { console.error('handle を argv か SEED_HANDLE env で指定 (個人 handle をソースに書かない)'); process.exit(1); }
   const maxFollows = Number(process.argv[3] ?? '0') || Infinity; // 0 or missing = no limit
   const outFile = process.argv[4] ?? path.join(repoRoot, `diagnose-follows-${targetHandle.replace(/[^a-z0-9]/gi, '_')}.html`);
 

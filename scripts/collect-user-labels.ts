@@ -190,7 +190,9 @@ async function main() {
   console.log(`[resume] 既存 ${existing.size} 人、目標 ${target} 人`);
 
   console.log('\nユーザープール構築...');
-  const follows = await collectFollows(process.env.SEED_HANDLE ?? '');
+  const seed = process.env.SEED_HANDLE;
+  if (!seed) { console.error('SEED_HANDLE env が必要 (シード handle をソースに書かない)'); process.exit(1); }
+  const follows = await collectFollows(seed);
   console.log(`  シードのフォロー ${follows.length} 人`);
   const pool = shuffle(follows).filter((u) => !existing.has(u.did));
   console.log(`  未ラベル ${pool.length} 人`);

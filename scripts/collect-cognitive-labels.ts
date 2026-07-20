@@ -201,7 +201,9 @@ async function main() {
 
   console.log(`\n[1/3] ユーザープール構築`);
   console.log(`  シードユーザーのフォロー取得中...`);
-  const follows = await collectFollows(process.env.SEED_HANDLE ?? '');
+  const seed = process.env.SEED_HANDLE;
+  if (!seed) { console.error('SEED_HANDLE env が必要 (シード handle をソースに書かない)'); process.exit(1); }
+  const follows = await collectFollows(seed);
   console.log(`    ${follows.length} 人`);
   console.log(`  bluesky-ranking 上位取得中...`);
   const ranking = await collectRankingHandles();
