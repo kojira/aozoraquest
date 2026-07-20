@@ -77,6 +77,8 @@ export interface PendingAuth {
   /** 書き込み先 PDS URL (authorize 時に discovery。callback でトークンレコードに載せる)。 */
   pdsUrl: string;
   createdAt: number;
+  /** 認可完了後にブラウザを戻す web アプリの URL (start 時に origin 検証済み)。省略時は完了 HTML。 */
+  returnTo?: string;
 }
 
 const PENDING_PREFIX = 'oauth-pending:';

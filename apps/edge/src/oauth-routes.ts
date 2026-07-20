@@ -19,6 +19,26 @@ export const LXM_OAUTH_STATUS = 'app.aozoraquest.oauth.status';
 /** router.ts の Env のうち OAuth ルートが使う部分 + KV。 */
 export interface OAuthRoutesEnv extends OAuthEnv {
   OAUTH_TOKENS?: KVNamespace;
+  /** 連携完了後の戻り先 origin の許可リスト (open-redirect 防止)。 */
+  ALLOWED_ORIGINS?: string;
+}
+
+/** 連携完了後の戻り先 URL を検証する。origin が ALLOWED_ORIGINS に含まれる http(s) URL のみ許可
+ *  (open-redirect 防止)。不正/未指定は undefined。export はテスト用。 */
+export function validateReturnTo(raw: unknown, allowed?: string): string | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return undefined;
+  // userinfo (user:pass@) 付きは拒否。origin 比較は userinfo を無視するので許可されうるが、
+  // toString() が保持し 302 location に認証情報が載る非対称を塞ぐ。
+  if (u.username || u.password) return undefined;
+  const list = (allowed ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  return list.includes(u.origin) ? u.toString() : undefined;
 }
 
 interface Deps {
@@ -66,12 +86,16 @@ export async function handleOAuthStart(req: Request, env: OAuthRoutesEnv, deps: 
   }
   if (!isEdgeAdmin(env, iss)) return json({ error: 'forbidden' }, 403);
 
+  // 連携完了後の戻り先 (web アプリの設定画面等)。origin を ALLOWED_ORIGINS で検証 (open-redirect 防止)。
+  const reqBody = (await req.json().catch(() => ({}))) as { returnTo?: unknown };
+  const returnTo = validateReturnTo(reqBody.returnTo, env.ALLOWED_ORIGINS);
+
   // discovery / PAR は失敗しうる (認可サーバーが client-metadata を弾く等)。**catch して JSON で返す**
   // — 未処理例外だと 500 が CORS ヘッダ無しで返り、ブラウザ側が「Load failed」になり原因が見えない。
   try {
     const { pdsUrl, authServer } = await discoverForDid(cfg.serverDid, deps.fetchImpl);
     const { url, state, verifier } = await buildAuthorizeUrl({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, authServer, { loginHint: cfg.serverDid });
-    await putPendingAuth(env.OAUTH_TOKENS, state, { verifier, authServer, pdsUrl, createdAt: deps.now });
+    await putPendingAuth(env.OAUTH_TOKENS, state, { verifier, authServer, pdsUrl, createdAt: deps.now, ...(returnTo ? { returnTo } : {}) });
     return json({ authorizeUrl: url });
   } catch (e) {
     return json({ error: 'oauth_start_failed', message: e instanceof Error ? e.message : String(e) }, 502);
@@ -121,5 +145,12 @@ export async function handleOAuthCallback(req: Request, env: OAuthRoutesEnv, dep
   }
   const tokens = await exchangeCode({ ...cfg, now: deps.now, fetchImpl: deps.fetchImpl }, pending.authServer, code, pending.verifier, pending.pdsUrl, cfg.serverDid);
   await writeServerTokens(env.OAUTH_TOKENS, tokens);
+  // 戻り先が指定されていれば web アプリの元画面 (設定等) へ 302 で返す (workers.dev に留まらない)。
+  // returnTo は start 時に origin 検証済み。付与時は連携成功が確定した後なのでトークンは既に保存済み。
+  if (pending.returnTo) {
+    const to = new URL(pending.returnTo);
+    to.searchParams.set('serverOAuth', 'linked'); // 戻り先で「連携できました」を表示するヒント
+    return new Response(null, { status: 302, headers: { location: to.toString() } });
+  }
   return html(`<h1>連携できました ✅</h1><p>サーバーアカウント (${tokens.did}) の書き込み認証を保存しました。このタブは閉じて構いません。</p>`);
 }
