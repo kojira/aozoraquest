@@ -37,12 +37,20 @@ export const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
  * - イントロ overlay を再表示するため onboarding-done を消す (これが無いと「いきなり地図」になる)。
  * - 祝福 (+20) 演出を再入場後に出すためのマークを立てる (実際に +20 を付与したときだけ呼ぶ)。
  *
- * **契約**: 祝福マークの**消費・掃除は world 入場時が唯一の責任者** (world.tsx の grantStarter 分岐で
- * 読み捨て、手渡しダイアログを出さない入場では else で削除)。ここは「立てる」だけを担う。
+ * **契約**: 2 つのフラグの**再セット/消費・掃除の責任者はいずれも world 入場時**。ここは「立てる」だけ。
+ * - 祝福マーク (sessionStorage): world 入場で grantStarter 分岐なら読み捨て、else 分岐でも削除 (必ず掃除)。
+ * - onboarding-done (localStorage): world 入場でイントロを見終えたときに再び `'1'` に戻る。
+ * この非対称のため、`/spirit` に着地して**ワールドに入らず離脱**すると onboarding-done が消えたまま残り、
+ * 次回どこかで /world を開くとイントロが 1 回だけ再生される (閉じれば `'1'` に戻り自己回復)。祝福マークも
+ * 同じ「離脱」窓に属するが sessionStorage なのでタブを閉じれば自然消滅する。対象は dev+管理者限定なので許容。
  *
- * 呼び出し後は必ず `/world` へ**フルロード遷移** (`location.assign`) すること。SPA navigate では
- * world.tsx の in-memory state (ws / serverInv / tokenRef / onboardingRef) が初期化されず、
- * まっさらな入場フローにならないため。フルロードでも localStorage/sessionStorage は保持される。
+ * 呼び出し後は**精霊ブルスコンの画面 (`/spirit`) へフルロード遷移** (`location.assign`) すること。
+ * 一般ユーザーは /spirit の「あおぞらワールドを冒険する」から入場するので、そこへ戻せば
+ * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」を新規と同じ順で辿れる (/world へ直接飛ばすと
+ * 2D 地図にいきなり出て一般導線と食い違う)。フルロード遷移は着地先 /spirit を確実に再初期化するため。
+ * その後 /spirit→/world は route 切替で world.tsx が fresh mount され、mount 時に storage/サーバーから
+ * 状態を読み直すので in-memory state も初期化される (フルロードだからではなく fresh mount による)。
+ * localStorage/sessionStorage のフラグはフルロードをまたいで保持される。
  */
 export function armOnboardingReplay(): void {
   try { localStorage.removeItem(ONBOARDING_DONE_KEY); } catch { /* private mode 等は諦める */ }
