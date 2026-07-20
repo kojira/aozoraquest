@@ -51,7 +51,7 @@ import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
-import { WelcomeBlessingOverlay, notifyWelcome, WELCOME_TOTAL_MS } from '@/components/welcome-blessing';
+import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
 import { resetOnboarding, WELCOME_POWER } from '@/lib/onboarding-reset';
 import { isAdminDid } from '@/lib/runtime-config';
 import type { DialogueLine } from '@/lib/dialogue';
@@ -101,6 +101,9 @@ interface Vitals {
 
 /** 初回オンボーディングを見終えたかの localStorage キー (スティックのヒントと同じ方式) */
 const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
+/** リセットで +20 を付与した直後だけ、再入場後のブルスコン手渡しの最後に祝福演出を出すためのマーク
+ *  (sessionStorage はリロードをまたいで残り、タブを閉じれば消える。使い捨て)。 */
+const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
 /** 「自分タップでコマンド」コーチマークを出したか。操作 UI が不可視 (スティックも
  *  コマンドもタップ起動) なので、オンボーディングを読み飛ばしても実際にマップへ
  *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
@@ -320,8 +323,9 @@ export function World() {
         setWs(initialWs);
         if (grantStarter) {
           // 専用の DQ ウィンドウで見せる (notice だとオンボーディングに覆われ、
-          // relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)
-          setStarterMsg('たびの はじめに「そらのはね」を 1 つ もらった! こまったら どうぐ から つかって、行ったことのある街へ もどれるよ。');
+          // relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)。
+          // 中身は下の render の固定セリフ (ブルスコンの手渡し + 祝福)。ここは表示トリガのみ。
+          setStarterMsg('start');
           // gotStarterFeather=true は即時保存 (デバウンス中リロードで二重配布しない —
           // かけら/初訪問と同じ流儀。レビュー ★★)
           void saveWorldState(agent, initialWs);
@@ -814,9 +818,13 @@ export function World() {
         resetOnboarding(agent, did),
         new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
       ]);
-      notifyWelcome({ power: WELCOME_POWER });
-      // 演出 (フェード込み ≈ 3.3s) を見せ切って余韻を残してから初期状態で再入場
-      window.setTimeout(() => window.location.reload(), WELCOME_TOTAL_MS + 900);
+      // 初期状態で再入場 → 再入場後に**ブルスコンが やくそう/そらのはね を手渡し + 祝福を演出**する
+      // (以前は地図でいきなり +20 が出てフローが分からなかった — オーナー指摘 2026-07-20)。
+      // 祝福 (+20) の演出はリロードをまたいで出すため sessionStorage にマークを置く。
+      // resetOnboarding が実際に +20 を付与したときだけ立てる → 演出と実際の付与が必ず一致する
+      // (通常の新規入場では +20 は付かないので演出も出さない)。
+      try { sessionStorage.setItem(WELCOME_BLESSING_PENDING_KEY, '1'); } catch { /* private mode 等は演出だけ諦める */ }
+      window.setTimeout(() => window.location.reload(), 300);
     } catch (e) {
       console.warn('[world] onboarding reset failed', e);
       // 失敗したステップ/理由を出す。resetOnboarding は `step: message` 形式 (WorldServerError も
@@ -1198,7 +1206,25 @@ export function World() {
         <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
       )}
       {starterMsg !== null && !onboarding && (
-        <DialogueWindow lines={[{ speaker: 'ブルスコン', text: starterMsg }]} plateIcon={<SpiritIcon size={20} />} onDone={() => setStarterMsg(null)} />
+        // ブルスコンが やくそう と そらのはね を手渡し、最後に はじまりの祝福 (+20 パワー) を授ける。
+        // 祝福の演出は**ダイアログを読み終えた瞬間**に出す (以前は地図画面でいきなり出て
+        // フローが分からなかった — オーナー指摘 2026-07-20)。
+        <DialogueWindow
+          lines={[
+            { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を 持たせよう。' },
+            { speaker: 'ブルスコン', text: 'やくそうは 傷を癒す。そらのはねは 行ったことのある街へ もどれる。こまったら どうぐ から つかうといい。' },
+            { speaker: 'ブルスコン', text: 'それと、はじまりの祝福を。あおぞらパワーを 20 授けるよ。よい旅を。' },
+          ]}
+          plateIcon={<SpiritIcon size={20} />}
+          onDone={() => {
+            setStarterMsg(null);
+            // 祝福 (+20) の演出は、リセットで実際に +20 を付与したときだけ (マーク有り)。
+            // 使い捨て (removeItem) で二重演出を防ぐ。
+            let blessed = false;
+            try { blessed = sessionStorage.getItem(WELCOME_BLESSING_PENDING_KEY) === '1'; if (blessed) sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY); } catch { /* ignore */ }
+            if (blessed) notifyWelcome({ power: WELCOME_POWER });
+          }}
+        />
       )}
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
