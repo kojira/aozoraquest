@@ -12,7 +12,7 @@
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
-import { handleClientMetadata, handleOAuthStart, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
+import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
@@ -263,6 +263,10 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // 管理者が OAuth 連携を開始 (service auth JWT + ADMIN_DIDS)。authorizeUrl を返す。
   if (req.method === 'POST' && url.pathname === '/api/oauth/start') {
     return cors(await handleOAuthStart(req, env, { now: nowSec() }), allowedOrigin);
+  }
+  // 管理者が連携状態を確認 (トークン本体は返さない)。設定画面の表示用。
+  if (req.method === 'GET' && url.pathname === '/api/oauth/status') {
+    return cors(await handleOAuthStatus(req, env, { now: nowSec() }), allowedOrigin);
   }
   // 認可サーバーからのリダイレクト先。ブラウザ遷移なので HTML を直接返す (CORS 不要)。
   if (req.method === 'GET' && url.pathname === '/oauth/callback') {
