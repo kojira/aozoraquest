@@ -22,8 +22,10 @@ import {
  * 管理者デバッグ模擬戦シミュレータ (issue #414)。/spirit の管理者セクションから使う。
  *
  * 敵をリスト選択、プレイヤー側もジョブ/装備/レベルを選択し、
- *  - バッチ: N 戦を自動プレイ → 勝率・平均 XP・平均ターン・生存時残 HP・次 Lv まで何戦
- *  - 決定論 1 戦: variance 0 + 固定 seed で自分でコマンドを選び挙動確認
+ *  - バッチ: N 戦 (seed 0..N-1) を自動プレイ → 勝率・平均 XP・平均ターン・生存時残 HP・次 Lv まで何戦。
+ *    catch 率 (fleer の討伐率) もここに出る (逃走 = 非 win)。統計はこちらで見る。
+ *  - 1 戦: 敵ステータスは variance 0 で固定しつつ、**戦闘中の乱数は毎ターン揺らす** (seed = 時刻)
+ *    ことで本番同様に fleer 等が毎回変わる。自分でコマンドを選び挙動確認 (#441 で固定 seed を廃止)。
  * を行う。固定強度化 (#409) の上でエリア/順路/XP カーブ (#412/#413) の数値を詰める道具。
  */
 
@@ -34,7 +36,7 @@ const WORLD_TONIC_MAX = 3;
 const clampInt = (v: number, def: number, min: number, max: number) =>
   Number.isFinite(v) ? Math.min(max, Math.max(min, Math.floor(v))) : def;
 
-/** 決定論1戦のコマンド表示名 (world 戦闘と同じ日本語で手触りを揃える)。 */
+/** 1戦モードのコマンド表示名 (world 戦闘と同じ日本語で手触りを揃える)。 */
 const CMD_LABEL: Record<Command, string> = {
   attack: 'たたかう', guard: 'ぼうぎょ', skill: 'とくぎ', herb: 'やくそう', tonic: 'しずく', flee: 'にげる',
 };
@@ -127,12 +129,21 @@ export function DebugBattleSim() {
     });
   };
 
+  // 固定 seed だと fleer が毎ターン同じ判定 = 100%逃走に見える乖離があった (#441)。1戦モードは
+  // 「毎ターン判定が揺れる」だけでよく、本番 (edge) のような先読み防止 CSPRNG は不要 — seed を
+  // 時刻にするだけで十分 (オーナー指摘)。手動/自動1手はクリック駆動なので ms 衝突しない。
+  // 敵の初期ステータスは variance 0 で固定 (再現性)、戦闘中の乱数だけ毎ターン揺らす。
+  const freshSeed = () => Date.now();
   const startDuel = () => {
     setBatch(null);
-    setDuel(start(1, 0)); // 決定論: variance 0 + 固定 seed
+    // 初期 seed は固定でよい: monsterId 固定 + variance 0 なので敵ステータスは seed 非依存で一定
+    // (summonMonster を通らず monsterCombatant の jitter も効かない)。戦闘中の乱数だけ下で新鮮に。
+    setDuel(start(1, 0));
   };
-  const duelCmd = (cmd: Command) => setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, cmd) : s));
-  const duelAuto = () => setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, autoBattleCommand(s)) : s));
+  const duelCmd = (cmd: Command) =>
+    setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, cmd, freshSeed()) : s));
+  const duelAuto = () =>
+    setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, autoBattleCommand(s), freshSeed()) : s));
 
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
@@ -140,7 +151,8 @@ export function DebugBattleSim() {
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>模擬戦</h3>
       <p style={{ fontSize: '0.78em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        物理ランダムなしの模擬戦。敵・ジョブ・装備・レベルを選んで、バランスを数値で確認する。
+        敵・ジョブ・装備・レベルを選んでバランスを数値で確認する。バッチは多数試行の統計 (catch 率も)、
+        1 戦は本番同様の乱数で自分で操作。
       </p>
 
       {/* 入力フォーム */}
@@ -196,7 +208,7 @@ export function DebugBattleSim() {
         <label style={{ fontSize: '0.8em' }}>N
           <input type="number" min={1} max={2000} value={trials} onChange={(e) => setTrials(Number(e.target.value))} style={{ width: '4em', marginLeft: '0.3em' }} />
         </label>
-        <button onClick={startDuel}>決定論1戦</button>
+        <button onClick={startDuel}>1戦プレイ</button>
       </div>
 
       {/* バッチ結果 */}
@@ -214,7 +226,7 @@ export function DebugBattleSim() {
         </div>
       )}
 
-      {/* 決定論 1 戦 */}
+      {/* 1 戦プレイ (本番同様の per-turn 乱数) */}
       {duel && (
         <div className="dq-window" style={{ marginTop: '0.6em', fontSize: '0.82em', padding: '0.6em 0.8em' }}>
           <div style={{ fontWeight: 700 }}>{`${jobDisplayName(job)} vs ${duel.monster.name}`}</div>
