@@ -86,17 +86,44 @@
 
 **要検討 (§9)**: client は PDS を直読みするか、edge 経由の集約 API から読むか。直読みは速いが
 PDS レート/blob 取得が分散。edge 集約はキャッシュ一元化できるが edge に読み API が要る。
+ページング (`listRecords` は 1 ページ ~100 件 + cursor) とレート耐性を考え、**client は
+schemaVersion をキーにした長期キャッシュ (localStorage) で毎回全読みを避ける**。content と
+gameState が同一 repo なら **PDS レート枠を食い合う**点も評価軸 (docs/21 §9-1 の警告と同根)。
 
 ---
+
+## 5.5 core への content 注入 (最重要 — レビュー ★★★)
+
+**現状の穴**: 戦闘値は PDS ではなく **`packages/core` にコンパイル済みの `MONSTERS`/`MONSTERS_BY_ID`
+定数を同期参照**して決まる。`summonMonster(tier,...)` は `MONSTERS.filter(...)` で pool を組んで
+重み付き抽選、`battleXpFor(id)`/`rollDrops(id,...)` も `MONSTERS_BY_ID[id]` を引く。つまり
+**PDS で monster を編集しても、この定数を実行時に上書きしない限り戦闘は一切変わらない**。
+ここを設計しないと #419 は「PDS には書けるが戦闘に効かない」宙ぶらりんになる。
+
+**方針: グローバル可変状態を避け、content を引数で注入** (docs/21「core は環境独立な純粋関数」を守る):
+- `summonMonster(monsters, tier, seed, ...)` / `battleXpFor(monsters, id)` / `rollDrops(monsters, id, ...)`
+  のように content (monster 配列) を**引数で受ける**形へリファクタ。グローバル差し替えは決定論・
+  テスト再現性を崩すので採らない。
+- **pool の並び順の決定論**: `listRecords` の返却順は無保証。抽選は pool index に依存 → content
+  ロード時に**必ず安定ソート (rkey 昇順)**。無いと client/edge で pool 順がズレ、同 seed で別敵/
+  別ドロップ = 「表示と違う敵と戦った」バグ。
+- **edge の読みタイミング**: encounter ごと getRecord はレイテンシが乗る → **Worker 起動時 (短 TTL)
+  に全 content をロードして in-memory テーブル化**し、同期の core 関数へ引数で渡す。
+- **戦闘中の定義変更の封印**: encounter 時に敵ステ**+ XP/ドロップテーブル**も `guard.sealed` に封印し
+  決着まで同一定義 (docs/21 の snapshot 封印を monster def に拡張)。1 戦の整合を保証、次戦から新定義。
 
 ## 6. 書き込み (CRUD の認可)
 
 管理ダッシュボード (#417) の CRUD は:
 1. 管理者が UI で編集 → **edge の管理 API** (`/api/content/...`) に service-auth JWT (ADMIN_DIDS
-   検証、OAuth start と同じ方式) で送る。
+   検証、OAuth start と同じ方式) で送る。**CRUD 種別ごとに一意な lxm (method NSID、例
+   `app.aozoraquest.content.putMonster`) を割り当て、service-auth で aud/lxm を厳格一致検証**する
+   (read 用トークンで write を叩く等の越境を塞ぐ — レビュー ★★)。
 2. edge が**管理者を検証**し、サーバーアカウントの OAuth トークンで content レコードを
-   `putRecord`/`deleteRecord`、画像は `uploadBlob`。
-3. 書き込み後、キャッシュ (KV) をバスト (`schemaVersion` 更新)。
+   `putRecord`/`deleteRecord`、画像は `uploadBlob`。**参照整合性** (drops→item id、shop→item id、
+   spawnSet→monster id) を CRUD 時に検証し、dangling 参照を弾く (delete 時の孤児化防止 — レビュー ★)。
+3. 書き込み後、キャッシュ (KV) をバスト (`schemaVersion` 更新)。client は起動時に updatedAt/
+   schemaVersion を薄く確認し、変化時のみ full fetch。
 
 → **UI の isAdminDid は入口の表示ゲート。実際の認可は edge が握る** (詐称防止)。
 
@@ -124,9 +151,17 @@ PDS レート/blob 取得が分散。edge 集約はキャッシュ一元化で�
 
 ## 9. 要決定 (オーナーレビュー)
 
+**基盤 (レビューで昇格した最重要):**
+- [ ] **core への content 注入方式** (§5.5): `summonMonster(monsters, ...)` 等に**引数注入** (推奨) で
+      よいか。pool は rkey 昇順で安定ソート、edge は起動時ロードで同期テーブル化。
+- [ ] **edge の content NSID env 配線**: 現状 edge は `GAME_STATE_COLLECTION` をハードコードし env
+      分離機構が無い。content NSID の env (dev/prod) を edge に渡す env var (例 `CONTENT_NS_ENV`) を
+      新設し、**dev/prod で分離**する (共有だと dev の敵編集が prod 戦闘に漏れる)。→ §2 と統一。
+- [ ] **1 repo レート枠の競合**: content 読みと gameState 書きが同一 server PDS repo のレート枠を
+      食い合う点 (docs/21 §9-1)。許容か、content 用に別 repo/キャッシュで緩和するか。
+
+**その他:**
 - [ ] **保存先**: サーバーアカウント PDS の content コレクション (§2) でよいか。
-- [ ] **dev/prod 分離**: env suffix (`app.aozoraquest.dev.content.*`) で分けるか、共有か。
-- [ ] **client の読み経路**: PDS 直読み vs edge 集約 API 経由 (§5 要検討)。推奨は当面 **PDS 直読み +
-      静的フォールバック** (シンプル)、edge キャッシュは権威側のみ。
+- [ ] **client の読み経路**: PDS 直読み + 静的フォールバック + schemaVersion 長期キャッシュ (§5) でよいか。
 - [ ] **画像フォールバック**: image blob 無しは従来の species SVG に落とす (§4) でよいか。
 - [ ] **移行の入口**: seed スクリプトを一度流す運用 (§7) でよいか。
