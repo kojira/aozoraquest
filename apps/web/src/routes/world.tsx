@@ -51,7 +51,7 @@ import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
-import { WelcomeBlessingOverlay, notifyWelcome, WELCOME_TOTAL_MS } from '@/components/welcome-blessing';
+import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
 import { resetOnboarding, WELCOME_POWER } from '@/lib/onboarding-reset';
 import { isAdminDid } from '@/lib/runtime-config';
 import type { DialogueLine } from '@/lib/dialogue';
@@ -101,6 +101,9 @@ interface Vitals {
 
 /** 初回オンボーディングを見終えたかの localStorage キー (スティックのヒントと同じ方式) */
 const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
+/** リセットで +20 を付与した直後だけ、再入場後のブルスコン手渡しの最後に祝福演出を出すためのマーク
+ *  (sessionStorage はリロードをまたいで残り、タブを閉じれば消える。使い捨て)。 */
+const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
 /** 「自分タップでコマンド」コーチマークを出したか。操作 UI が不可視 (スティックも
  *  コマンドもタップ起動) なので、オンボーディングを読み飛ばしても実際にマップへ
  *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
@@ -153,9 +156,12 @@ export function World() {
   const searchMsgRef = useRef(false);
   searchMsgRef.current = searchMsg !== null;
   const [featherOpen, setFeatherOpen] = useState(false);
-  const [starterMsg, setStarterMsg] = useState<string | null>(null);
+  const [showStarter, setShowStarter] = useState(false);
+  // リセット (= 実際に +20 を付与した経路) からの入場か。祝福セリフ/演出の有無を実付与と
+  // 一致させるための旗。入場時に sessionStorage マークから確定する。
+  const [starterBlessed, setStarterBlessed] = useState(false);
   const starterMsgRef = useRef(false);
-  starterMsgRef.current = starterMsg !== null;
+  starterMsgRef.current = showStarter;
   const itemsOpenRef = useRef(false);
   itemsOpenRef.current = itemsOpen;
   const invOpenRef = useRef(false);
@@ -319,12 +325,25 @@ export function World() {
         };
         setWs(initialWs);
         if (grantStarter) {
-          // 専用の DQ ウィンドウで見せる (notice だとオンボーディングに覆われ、
-          // relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)
-          setStarterMsg('たびの はじめに「そらのはね」を 1 つ もらった! こまったら どうぐ から つかって、行ったことのある街へ もどれるよ。');
+          // 専用の DQ ウィンドウでブルスコンの手渡しを見せる (notice だとオンボーディングに
+          // 覆われ、relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)。
+          // リセット (実 +20 付与) 経由かをマークで判定 → 祝福セリフ/演出の有無を実付与に一致させる。
+          // マークは**ここで読み捨てる**。set 側 (doReset) との間にリロードを挟んでも、入場時に
+          // 必ず消費/掃除されるので残留・誤発火しない (レビュー ★★)。
+          let blessed = false;
+          try {
+            blessed = sessionStorage.getItem(WELCOME_BLESSING_PENDING_KEY) === '1';
+            if (blessed) sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY);
+          } catch { /* private mode 等は演出だけ諦める (+20 付与自体は済んでいる) */ }
+          setStarterBlessed(blessed);
+          setShowStarter(true);
           // gotStarterFeather=true は即時保存 (デバウンス中リロードで二重配布しない —
           // かけら/初訪問と同じ流儀。レビュー ★★)
           void saveWorldState(agent, initialWs);
+        } else {
+          // 手渡しダイアログを出さない入場では祝福マークを掃除する (set したのに演出へ
+          // 到達しなかった残留マークによる誤発火を防ぐ — レビュー ★★)。
+          try { sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY); } catch { /* ignore */ }
         }
         try {
           if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
@@ -814,9 +833,15 @@ export function World() {
         resetOnboarding(agent, did),
         new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
       ]);
-      notifyWelcome({ power: WELCOME_POWER });
-      // 演出 (フェード込み ≈ 3.3s) を見せ切って余韻を残してから初期状態で再入場
-      window.setTimeout(() => window.location.reload(), WELCOME_TOTAL_MS + 900);
+      // 初期状態で再入場 → 再入場後に**ブルスコンが やくそう/そらのはね を手渡し + 祝福を演出**する
+      // (以前は地図でいきなり +20 が出てフローが分からなかった — オーナー指摘 2026-07-20)。
+      // 祝福 (+20) の演出はリロードをまたいで出すため sessionStorage にマークを置く。
+      // resetOnboarding が実際に +20 を付与したときだけ立てる → 演出と実際の付与が必ず一致する
+      // (通常の新規入場では +20 は付かないので演出も出さない)。マークは再入場時に必ず消費/掃除される。
+      try { sessionStorage.setItem(WELCOME_BLESSING_PENDING_KEY, '1'); } catch { /* private mode 等は演出だけ諦める */ }
+      // resetting オーバーレイをひと呼吸見せてから初期状態で再入場する。sessionStorage の set は
+      // 同期なので反映待ちは不要 — この 300ms は体感 (急に画面が飛ばない) のためだけ。
+      window.setTimeout(() => window.location.reload(), 300);
     } catch (e) {
       console.warn('[world] onboarding reset failed', e);
       // 失敗したステップ/理由を出す。resetOnboarding は `step: message` 形式 (WorldServerError も
@@ -1197,8 +1222,22 @@ export function World() {
       {searchMsg !== null && (
         <DialogueWindow lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
       )}
-      {starterMsg !== null && !onboarding && (
-        <DialogueWindow lines={[{ speaker: 'ブルスコン', text: starterMsg }]} plateIcon={<SpiritIcon size={20} />} onDone={() => setStarterMsg(null)} />
+      {showStarter && !onboarding && (
+        // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
+        // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
+        // 分からなかった — オーナー指摘 2026-07-20)。starterBlessed は入場時にマークから確定済み。
+        // 声はブルスコンのトーンに合わせ ひらがな主体で統一 (UX レビュー ★)。
+        <DialogueWindow
+          lines={[
+            { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を もたせよう。' },
+            { speaker: 'ブルスコン', text: 'やくそうは きずを いやす。そらのはねは いったことの ある街へ もどれる。こまったら どうぐ から つかうといい。' },
+            starterBlessed
+              ? { speaker: 'ブルスコン', text: 'それと、はじまりの しゅくふくを。あおぞらパワーを 20 さずけるよ。よい たびを。' }
+              : { speaker: 'ブルスコン', text: 'よい たびを。' },
+          ]}
+          plateIcon={<SpiritIcon size={20} />}
+          onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
+        />
       )}
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール

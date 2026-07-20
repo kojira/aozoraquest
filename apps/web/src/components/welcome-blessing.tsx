@@ -93,8 +93,9 @@ export function WelcomeBlessingOverlay() {
         >
           はじまりの祝福
         </div>
+        {/* アイテムの受け渡しは手前のブルスコンのセリフで済んでいるので、この演出は
+            あおぞらパワー授与の儀式に純化する (重複を避ける — UX レビュー ★★)。 */}
         <div style={{ marginTop: '0.6em', fontSize: '0.95em', color: '#ffffff', lineHeight: 1.7 }}>
-          <div>やくそう と そらのはね を手にした</div>
           <div style={{ marginTop: '0.2em' }}>
             あおぞらパワー{' '}
             <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', fontWeight: 700 }}>
