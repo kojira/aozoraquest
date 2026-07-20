@@ -2,6 +2,11 @@ import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { serverOAuthConfigured } from '@/lib/server-oauth';
+import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
+import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
+import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
+import { DebugBattleSim } from '@/components/debug-battle-sim';
 
 /**
  * あおぞらワールド 管理ダッシュボードの土台 (issue #417 / エピック #416)。
@@ -36,14 +41,6 @@ const CONTENT_SECTIONS: Section[] = [
   { key: 'flags', title: 'フラグ (将来)', desc: '進行フラグでゲート', issue: 426 },
 ];
 
-/** 既に別画面にある管理ツール (当面はリンクで集約。将来 /admin へ移設するかは #416 で判断)。
- *  リンク先はページ下部の該当セクションなので、着地点を desc で明示する (アンカー未対応)。 */
-const EXISTING_TOOLS: Section[] = [
-  { key: 'sim', title: '模擬戦シミュレータ', desc: 'バランス検証 → 精霊ページ下部', to: '/spirit' },
-  { key: 'server', title: 'サーバー連携', desc: 'サーバーアカウント連携 → 設定ページ下部', to: '/settings' },
-  { key: 'reset', title: 'ワールドリセット', desc: 'はじめからやり直す → 設定ページ下部', to: '/settings' },
-];
-
 function Card({ s }: { s: Section }) {
   const pending = !s.to;
   const body = (
@@ -74,7 +71,12 @@ export function AdminDashboard() {
   if (session.status === 'loading') {
     return <p style={{ padding: '1em' }}>読み込み中…</p>;
   }
-  const isAdmin = WORLD_PREVIEW_ENABLED && isAdminDid(session.did);
+  // ダッシュボード自体は**管理者なら本番でも開ける** (isAdminDid のみ)。中の露出は 2 層:
+  //  - コンテンツ CRUD + dev ツール (パワー付与/リセット/模擬戦) は WORLD_PREVIEW_ENABLED (dev 限定)。
+  //  - サーバー連携 (ServerOAuthAdmin) は**本番でも到達可能** — トークン失効時の再連携が本番運用
+  //    タスクだから (docs/21 §12。旧 settings も WORLD_PREVIEW に依らず出していた — レビュー ★★)。
+  const isAdmin = isAdminDid(session.did);
+  const devTools = WORLD_PREVIEW_ENABLED;
 
   if (!isAdmin) {
     return (
@@ -86,6 +88,8 @@ export function AdminDashboard() {
     );
   }
 
+  const agent = session.agent ?? null;
+  const did = session.did ?? null;
   const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.6em', marginTop: '0.5em' };
 
   return (
@@ -95,15 +99,28 @@ export function AdminDashboard() {
         ゲーム内容の編集ハブ (エピック #416)。CRUD の中身は データ化 (#418) 後に各セクションへ実装。
       </p>
 
-      <h3 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>コンテンツ</h3>
-      <div style={grid}>
-        {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
-      </div>
+      {devTools && (
+        <>
+          <h3 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>コンテンツ (準備中)</h3>
+          <div style={grid}>
+            {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
+          </div>
+        </>
+      )}
 
-      <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>既存の管理ツール</h3>
-      <div style={grid}>
-        {EXISTING_TOOLS.map((s) => (<Card key={s.key} s={s} />))}
-      </div>
+      {/* 管理ツールはここに**集約 (埋め込み)** する。別画面へ飛ばさない (ハブの意味がなくなる —
+          オーナー指摘 2026-07-20)。並びは軽いもの順、重い模擬戦フォームを末尾に (レビュー ★★)。 */}
+      <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>ツール</h3>
+      {agent && did ? (
+        <>
+          {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
+          {devTools && <PowerGrantAdmin agent={agent} did={did} />}
+          {devTools && <WorldResetAdmin agent={agent} did={did} />}
+          {devTools && <DebugBattleSim />}
+        </>
+      ) : (
+        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>セッションを準備中…</p>
+      )}
     </div>
   );
 }
