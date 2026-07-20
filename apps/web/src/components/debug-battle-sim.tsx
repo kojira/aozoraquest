@@ -24,8 +24,8 @@ import {
  * 敵をリスト選択、プレイヤー側もジョブ/装備/レベルを選択し、
  *  - バッチ: N 戦 (seed 0..N-1) を自動プレイ → 勝率・平均 XP・平均ターン・生存時残 HP・次 Lv まで何戦。
  *    catch 率 (fleer の討伐率) もここに出る (逃走 = 非 win)。統計はこちらで見る。
- *  - 1 戦: 敵ステータスは variance 0 で固定しつつ、**戦闘中の乱数は本番同様に毎ターン新鮮**
- *    (edge の pendingTurnSeed と同じ) にして自分でコマンドを選び挙動確認 (#441 で固定 seed を廃止)。
+ *  - 1 戦: 敵ステータスは variance 0 で固定しつつ、**戦闘中の乱数は毎ターン揺らす** (seed = 時刻)
+ *    ことで本番同様に fleer 等が毎回変わる。自分でコマンドを選び挙動確認 (#441 で固定 seed を廃止)。
  * を行う。固定強度化 (#409) の上でエリア/順路/XP カーブ (#412/#413) の数値を詰める道具。
  */
 
@@ -129,14 +129,11 @@ export function DebugBattleSim() {
     });
   };
 
-  // 本番 world 戦闘は edge が毎ターン新鮮な CSPRNG (entropyU32) を turnSeed に注入するので
-  // (battle-resolver.ts)、逃走/会心/回避は毎ターン揺れる。1戦モードも同じく毎ターン新鮮な
-  // エントロピーを渡して本番に一致させる (固定 seed だと fleer が毎回同じ判定 = 100%逃走に
-  // 見える乖離。#441)。敵の初期ステータスは variance 0 で固定 (再現性のため) にしつつ、
-  // 戦闘中の乱数だけ本番同様に揺らす。
-  // crypto はブラウザ Web Crypto (edge の kuda と同系)。このコンポーネントは
-  // WORLD_PREVIEW_ENABLED (dev + 管理者) でしか表示されずクライアント専用なので可用性は担保。
-  const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0]!;
+  // 固定 seed だと fleer が毎ターン同じ判定 = 100%逃走に見える乖離があった (#441)。1戦モードは
+  // 「毎ターン判定が揺れる」だけでよく、本番 (edge) のような先読み防止 CSPRNG は不要 — seed を
+  // 時刻にするだけで十分 (オーナー指摘)。手動/自動1手はクリック駆動なので ms 衝突しない。
+  // 敵の初期ステータスは variance 0 で固定 (再現性)、戦闘中の乱数だけ毎ターン揺らす。
+  const freshSeed = () => Date.now();
   const startDuel = () => {
     setBatch(null);
     // 初期 seed は固定でよい: monsterId 固定 + variance 0 なので敵ステータスは seed 非依存で一定
