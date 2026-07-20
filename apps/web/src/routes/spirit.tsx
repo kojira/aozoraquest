@@ -297,7 +297,7 @@ export function Spirit() {
                   color: 'var(--color-muted)',
                 }}
               >
-                <span>{grantingPower ? '管理者用 · 付与中…' : `管理者用 · あおぞらパワー ${points.balance}`}</span>
+                <span>{grantingPower ? '管理者 · 付与中…' : `管理者 · パワー ${points.balance}`}</span>
                 {[100, 1000].map((n) => (
                   <button
                     key={n}

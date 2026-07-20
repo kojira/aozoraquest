@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ARCHETYPES,
+  BATTLE_TUNING,
   EQUIPMENT,
   JOB_XP_CURVE,
   MONSTERS,
@@ -29,6 +30,15 @@ import {
 const WORLD_HERB_MAX = 3;
 const WORLD_TONIC_MAX = 3;
 
+/** number 入力の NaN/範囲外を潰す (空欄 = NaN が startBattle に渡ると勝率 0% のゴミ結果になる)。 */
+const clampInt = (v: number, def: number, min: number, max: number) =>
+  Number.isFinite(v) ? Math.min(max, Math.max(min, Math.floor(v))) : def;
+
+/** 決定論1戦のコマンド表示名 (world 戦闘と同じ日本語で手触りを揃える)。 */
+const CMD_LABEL: Record<Command, string> = {
+  attack: 'たたかう', guard: 'ぼうぎょ', skill: 'とくぎ', herb: 'やくそう', tonic: 'しずく', flee: 'にげる',
+};
+
 /** その職の JobLv L→L+1 に必要な XP 差 (JOB_XP_CURVE の閾値差)。 */
 function jobLevelGap(level: number): number {
   const cur = JOB_XP_CURVE.find((e) => e[0] === level)?.[1] ?? 0;
@@ -40,6 +50,8 @@ const bySlot = (slot: 'weapon' | 'armor' | 'charm') => EQUIPMENT.filter((e) => e
 
 interface BatchResult {
   trials: number;
+  plLv: number;
+  jobLv: number;
   winRate: number;
   avgXpPerWin: number;
   avgXpPerFight: number;
@@ -68,14 +80,20 @@ export function DebugBattleSim() {
     [weapon, armor, charm],
   );
 
-  /** 1 戦を開始 (variance を指定)。tier は敵に付随 (monsterId 固定なので抽選はされない)。 */
+  /** 1 戦を開始 (variance を指定)。tier は敵に付随 (monsterId 固定なので抽選はされない)。
+   *  入力は clampInt で NaN/範囲外を潰してから渡す。 */
   const start = (seed: number, variance: number): BattleState =>
-    startBattle(job, jobLv, playerLv, 'sim', enemy.tier, seed, herbs, undefined, {
-      monsterId: enemyId,
-      gear,
-      tonics,
-      vitalsVariance: variance,
-    });
+    startBattle(
+      job,
+      clampInt(jobLv, 1, 1, 50),
+      clampInt(playerLv, 1, 1, 99),
+      'sim',
+      enemy.tier,
+      seed,
+      clampInt(herbs, 0, 0, WORLD_HERB_MAX),
+      undefined,
+      { monsterId: enemyId, gear, tonics: clampInt(tonics, 0, 0, WORLD_TONIC_MAX), vitalsVariance: variance },
+    );
 
   const runBatch = () => {
     setDuel(null);
@@ -85,7 +103,7 @@ export function DebugBattleSim() {
     let turnSum = 0;
     let hpPctSum = 0;
     for (let seed = 0; seed < n; seed++) {
-      const end = runAutoBattle(start(seed, 0.15)); // world と同じ ±15% 分散
+      const end = runAutoBattle(start(seed, BATTLE_TUNING.monsterVitalsVariance)); // world と同じ分散
       turnSum += end.turn;
       if (end.outcome === 'win') {
         wins++;
@@ -94,9 +112,12 @@ export function DebugBattleSim() {
       }
     }
     const avgXpPerFight = xpSum / n;
-    const gap = jobLevelGap(jobLv);
+    const jl = clampInt(jobLv, 1, 1, 50);
+    const gap = jobLevelGap(jl);
     setBatch({
       trials: n,
+      plLv: clampInt(playerLv, 1, 1, 99),
+      jobLv: jl,
       winRate: wins / n,
       avgXpPerWin: wins ? xpSum / wins : 0,
       avgXpPerFight,
@@ -117,7 +138,7 @@ export function DebugBattleSim() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>管理者 (模擬戦)</h3>
+      <h3 style={{ fontSize: '0.95em' }}>管理者 · 模擬戦</h3>
       <p style={{ fontSize: '0.78em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         物理ランダムなしの模擬戦。敵・ジョブ・装備・レベルを選んで、バランスを数値で確認する。
       </p>
@@ -181,14 +202,14 @@ export function DebugBattleSim() {
       {/* バッチ結果 */}
       {batch && (
         <div className="dq-window" style={{ marginTop: '0.6em', fontSize: '0.82em', padding: '0.6em 0.8em' }}>
-          <div style={{ fontWeight: 700, marginBottom: '0.3em' }}>{`${jobDisplayName(job)} (plLv${playerLv}/jobLv${jobLv}) vs ${enemy.name} — ${batch.trials} 戦`}</div>
+          <div style={{ fontWeight: 700, marginBottom: '0.3em' }}>{`${jobDisplayName(job)} (plLv${batch.plLv}/jobLv${batch.jobLv}) vs ${enemy.name} — ${batch.trials} 戦`}</div>
           <div>勝率 <b>{pct(batch.winRate)}</b> / 平均 {batch.avgTurns.toFixed(1)} ターン</div>
           <div>勝利時 残 HP <b>{pct(batch.avgHpPctOnWin)}</b></div>
           <div>XP: 勝利 {batch.avgXpPerWin.toFixed(1)} / 1 戦平均 {batch.avgXpPerFight.toFixed(2)}</div>
           <div>
-            次 JobLv{jobLv + 1} まで{' '}
+            次 JobLv{batch.jobLv + 1} まで{' '}
             <b>{batch.fightsToNextJobLv === null ? '—' : `約 ${batch.fightsToNextJobLv} 戦`}</b>
-            <span style={{ color: 'var(--color-muted)' }}>{' '}(戦闘 XP が JobLv に入ると仮定)</span>
+            <span style={{ color: 'var(--color-muted)' }}>{' '}(勝利 XP は JobLv/PlayerLv に加算。敗北の xpLose は不算入の楽観値)</span>
           </div>
         </div>
       )}
@@ -196,7 +217,7 @@ export function DebugBattleSim() {
       {/* 決定論 1 戦 */}
       {duel && (
         <div className="dq-window" style={{ marginTop: '0.6em', fontSize: '0.82em', padding: '0.6em 0.8em' }}>
-          <div style={{ fontWeight: 700 }}>{`${duel.player.name ?? jobDisplayName(job)} vs ${duel.monster.name}`}</div>
+          <div style={{ fontWeight: 700 }}>{`${jobDisplayName(job)} vs ${duel.monster.name}`}</div>
           <div>じぶん HP {duel.player.hp}/{duel.player.maxHp} · MP {duel.player.mp}/{duel.player.maxMp} · やくそう{duel.herbs} しずく{duel.tonics}</div>
           <div>てき HP {duel.monster.hp}/{duel.monster.maxHp}{duel.monster.charging ? ' · ⚡ため中' : ''}</div>
           <div style={{ margin: '0.3em 0', minHeight: '2.4em', color: 'var(--color-muted)' }}>
@@ -205,9 +226,9 @@ export function DebugBattleSim() {
           {duel.outcome === 'ongoing' ? (
             <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap' }}>
               {(['attack', 'guard', 'skill', 'herb', 'tonic', 'flee'] as const).map((c) => (
-                <button key={c} onClick={() => duelCmd(c)} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{c}</button>
+                <button key={c} onClick={() => duelCmd(c)} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{CMD_LABEL[c]}</button>
               ))}
-              <button onClick={duelAuto} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>auto1</button>
+              <button onClick={duelAuto} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>自動1手</button>
             </div>
           ) : (
             <div style={{ fontWeight: 700, color: 'var(--color-accent)' }}>決着: {duel.outcome} ({duel.turn} ターン)</div>

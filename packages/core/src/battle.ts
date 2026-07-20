@@ -1131,7 +1131,8 @@ export function autoBattleCommand(s: BattleState): Command {
   const p = s.player;
   if (s.monster.charging) return isParry && p.mp >= t.skillMpCost ? 'skill' : 'guard';
   if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return 'herb';
-  if (s.tonics > 0 && p.mp < t.skillMpCost && p.maxMp >= t.skillMpCost * 2) return 'tonic';
+  // 見切り (parry) 職は特技を撃たない → MP 回復しても無駄なので しずくを飲まない。
+  if (!isParry && s.tonics > 0 && p.mp < t.skillMpCost && p.maxMp >= t.skillMpCost * 2) return 'tonic';
   if (!isParry && p.mp >= t.skillMpCost) return 'skill';
   return 'attack';
 }
