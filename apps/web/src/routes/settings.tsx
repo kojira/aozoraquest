@@ -703,8 +703,9 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
  * 管理者専用 (dev のみ): あおぞらワールドを「はじめから」やり直す完全ワイプ。
  * 地図メニューから**設定画面へ移設**した (地図上でリセットすると「いきなり地図」から再開し、
  * 新規のオンボードルートと食い違うため — オーナー指摘 2026-07-20)。リセット後は
- * armOnboardingReplay でイントロ再表示フラグと祝福マークを立て、/world へ**フルロード遷移**して
- * 新規と同じ「イントロ→ブルスコンの手渡し→祝福」を辿る。
+ * armOnboardingReplay でイントロ再表示フラグと祝福マークを立て、**精霊ブルスコンの画面 (/spirit)**
+ * へフルロード遷移する。一般ユーザーはそこの「あおぞらワールドを冒険する」から入場するので、
+ * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」の導線をそのまま確認できる。
  */
 function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
   const [busy, setBusy] = useState(false);
@@ -722,9 +723,12 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
         resetOnboarding(agent, did),
         new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
       ]);
-      // 新規と同じ導入を再生する準備 (イントロ再表示 + 祝福マーク) → /world へフルロードで入場。
+      // 新規と同じ導入を再生する準備 (イントロ再表示 + 祝福マーク) → **精霊ブルスコンの画面**へ。
+      // 一般ユーザーは /spirit の「あおぞらワールドを冒険する」から入場するので、そこへ戻して
+      // 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」の導線を丸ごと辿れるようにする
+      // (/world へ直接飛ばすと 2D 地図にいきなり出て一般導線と食い違う — オーナー指摘 2026-07-20)。
       armOnboardingReplay();
-      window.location.assign('/world');
+      window.location.assign('/spirit');
     } catch (e) {
       console.warn('[settings] onboarding reset failed', e);
       const detail = e instanceof Error ? e.message : '';
@@ -739,8 +743,9 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>管理者 (ワールド)</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        ワールドを「はじめから」やり直し、新規と同じ導入 (イントロ→手渡し→祝福) を確認する。
-        所持品・装備・レベル・位置を初期化 (投稿で貯めたパワー残高は残る)。
+        ワールドを「はじめから」やり直し、精霊ブルスコンの画面から一般ユーザーと同じ導線
+        (冒険する→イントロ→手渡し→祝福) を確認する。所持品・装備・レベル・位置を初期化
+        (投稿で貯めたパワー残高は残る)。
       </p>
       <button onClick={onReset} disabled={busy}>
         {busy ? 'リセット中…' : '⟲ あおぞらワールドを はじめから'}
