@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from '../src/oauth-routes';
+import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, validateReturnTo, type OAuthRoutesEnv } from '../src/oauth-routes';
 import { putPendingAuth, readServerTokens, writeServerTokens } from '../src/oauth-store';
 import type { AuthServerMetadata } from '../src/oauth-metadata';
 
@@ -102,5 +102,32 @@ describe('oauth-routes', () => {
     expect(res.status).toBe(200);
     const saved = await readServerTokens(kv);
     expect(saved).toMatchObject({ did: 'did:plc:testserver', accessToken: 'AT', refreshToken: 'RT' });
+  });
+
+  it('callback: returnTo 付き pending は web アプリへ 302 で戻す (serverOAuth=linked)', async () => {
+    const kv = mockKv();
+    await putPendingAuth(kv, 'ST', { verifier: 'VER', authServer: meta, pdsUrl: 'https://pds.example', createdAt: NOW, returnTo: 'https://dev.aozoraquest.app/settings' });
+    const f = discoveryFetch({ '/oauth/token': () => json({ access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:testserver' }) });
+    const res = await handleOAuthCallback(new Request('https://x/oauth/callback?code=CODE&state=ST'), env(kv), { now: NOW, fetchImpl: f });
+    expect(res.status).toBe(302);
+    const loc = res.headers.get('location') ?? '';
+    expect(loc).toContain('https://dev.aozoraquest.app/settings');
+    expect(loc).toContain('serverOAuth=linked');
+    expect(await readServerTokens(kv)).toMatchObject({ did: 'did:plc:testserver' }); // 戻す前に保存済み
+  });
+
+  it('validateReturnTo: ALLOWED_ORIGINS の origin の http(s) URL のみ許可 (open-redirect 防止)', () => {
+    const allowed = 'https://dev.aozoraquest.app,http://127.0.0.1:9999';
+    // 許可 origin
+    expect(validateReturnTo('https://dev.aozoraquest.app/settings', allowed)).toBe('https://dev.aozoraquest.app/settings');
+    expect(validateReturnTo('http://127.0.0.1:9999/settings?x=1', allowed)).toBe('http://127.0.0.1:9999/settings?x=1');
+    // 不許可 origin / スキーム / 不正値 → undefined
+    expect(validateReturnTo('https://evil.example/steal', allowed)).toBeUndefined();
+    expect(validateReturnTo('javascript:alert(1)', allowed)).toBeUndefined();
+    expect(validateReturnTo('/relative/path', allowed)).toBeUndefined();
+    expect(validateReturnTo('', allowed)).toBeUndefined();
+    expect(validateReturnTo(undefined, allowed)).toBeUndefined();
+    expect(validateReturnTo(123, allowed)).toBeUndefined();
+    expect(validateReturnTo('https://dev.aozoraquest.app/settings', undefined)).toBeUndefined(); // 許可リスト無し
   });
 });

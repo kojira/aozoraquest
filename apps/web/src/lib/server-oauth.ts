@@ -46,7 +46,9 @@ export async function startServerOAuth(agent: Agent): Promise<void> {
   const { data } = await agent.com.atproto.server.getServiceAuth({ aud: EDGE_DID, lxm: LXM_OAUTH_START });
   const res = await fetch(`${EDGE_URL}/api/oauth/start`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${data.token}` },
+    headers: { authorization: `Bearer ${data.token}`, 'content-type': 'application/json' },
+    // 認可完了後にこの設定画面へ戻すための戻り先 (edge が origin を検証してから使う)。
+    body: JSON.stringify({ returnTo: window.location.href }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
