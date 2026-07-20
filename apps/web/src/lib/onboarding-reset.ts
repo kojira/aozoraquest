@@ -40,9 +40,11 @@ export const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
  * **契約**: 祝福マークの**消費・掃除は world 入場時が唯一の責任者** (world.tsx の grantStarter 分岐で
  * 読み捨て、手渡しダイアログを出さない入場では else で削除)。ここは「立てる」だけを担う。
  *
- * 呼び出し後は必ず `/world` へ**フルロード遷移** (`location.assign`) すること。SPA navigate では
- * world.tsx の in-memory state (ws / serverInv / tokenRef / onboardingRef) が初期化されず、
- * まっさらな入場フローにならないため。フルロードでも localStorage/sessionStorage は保持される。
+ * 呼び出し後は**精霊ブルスコンの画面 (`/spirit`) へフルロード遷移** (`location.assign`) すること。
+ * 一般ユーザーは /spirit の「あおぞらワールドを冒険する」から入場するので、そこへ戻せば
+ * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」を新規と同じ順で辿れる (/world へ直接飛ばすと
+ * 2D 地図にいきなり出て一般導線と食い違う)。フルロードなら world.tsx の in-memory state も確実に
+ * 初期化され、localStorage/sessionStorage のフラグは保持される。
  */
 export function armOnboardingReplay(): void {
   try { localStorage.removeItem(ONBOARDING_DONE_KEY); } catch { /* private mode 等は諦める */ }
