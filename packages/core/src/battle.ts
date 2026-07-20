@@ -29,10 +29,16 @@ export const BATTLE_TUNING = {
   xpWin: 30,
   /** 敗北 XP (挑んだこと自体に少額) */
   xpLose: 5,
-  /** HP = hpBase + def*hpDefScale + level*hpLevelScale */
-  hpBase: 66,
-  hpDefScale: 0.32,
-  hpLevelScale: 2,
+  /** HP = hpBase + def*hpDefScale + level*hpLevelScale。
+   *  DQ 級の小さいスケール (プレイヤー Lv1 ~18-21・敵ひとけた) にして、レベルアップ/装備の
+   *  +数の恩恵を体感させる (オーナー方針 2026-07-21。小さい母数ほど +2 が効く)。ダメージ係数
+   *  (atkCoef/defCoef) と全モンスター HP も同じ ~1/4 スケールで、手数 (倒す回数) は保つ。 */
+  hpBase: 17,
+  hpDefScale: 0.08,
+  // レベルアップの HP 上昇を「毎回 +1〜2 の体感できる整数」にする (DQ 級スケールの狙いは
+  // 成長を体感させること。0.5 だと半分のレベルで +0 になり逆効果 — レビュー ★★★)。母数が
+  // 小さいので +1.5/level でも Lv1→30 で HP が 2〜3 倍に伸び、成長の手応えが強い。
+  hpLevelScale: 1.5,
   /** 敵の HP/MP に遭遇ごとの分散 (±この割合)。値を毎回固定にせず、「あと何回
    *  使えるか」をプレイヤーに予想させる (オーナー要望 2026-07-18)。seed 決定的。
    *  world 遭遇のみ適用し、バランステスト対象の trial は 0 (固定) に保つ。 */
@@ -52,8 +58,8 @@ export const BATTLE_TUNING = {
   /** ダメージ = max(minDamage, (atk*atkCoef*power − def*defCoef) * roll(0.85..1.15))。DQ の減算式
    *  (攻撃÷2 − 防御÷4) 流。**防御の係数を攻撃の半分 (2:1)** にしてインフレを抑える。会心は def 項 0
    *  (守備無視)。高守備の敵 (メタル) は通常 minDamage しか通らず、会心のみ貫通できる。数値は sim で調整。 */
-  atkCoef: 0.7,
-  defCoef: 0.35,
+  atkCoef: 0.18,
+  defCoef: 0.09,
   minDamage: 1,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
@@ -535,13 +541,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   // baselineXp (基準 HP + atk/agi) で自動算出 = 敵の強さと XP が構造的に連動する (スライム 2・
   // ヒカリダケ 8 程度)。個別に効かせたい敵だけ xp を明示する。
   // そらいろスライム: 最弱の練習敵 (低 HP・低 XP・低ドロップ)。序盤の的。
-  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], hp: 20, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
+  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], hp: 5, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
   // 色違い強い版 (tint で塗り替え)。base より少し硬く XP/素材も上。専用素材 red-jelly。
-  { id: 'red-slime', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], hp: 30, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
-  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], hp: 44, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 40, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 62, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
-  { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 56, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
+  { id: 'red-slime', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], hp: 8, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
+  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 10, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
+  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型 (DQ のメタルスライム): レア出現・高 XP (100)・毎ターン逃走。
   //   - **超高守備 (def240)**: 減算式で通常攻撃は atkTerm−defTerm が深く負に沈み minDamage(1) しか
   //     通らない = 「当たってもダメージがほとんど通らない」(オーナー要望 2026-07-21)。魔撃 (spell,
@@ -566,9 +572,9 @@ export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
 );
 
 /** XP 算出式の係数 (式＋個別調整の「式」側)。倒す手間 (基準 HP) と脅威 (atk+agi) から出す。
- *  tier1 帯 (基準 HP 12〜62) でおおむね 2〜9 になるよう校正 (オーナー要望 2026-07-20)。 */
-const XP_HP_FLOOR = 10; // これ以下の基準 HP は XP に寄与しない (最弱の下限を作る)
-const XP_HP_SCALE = 0.15; // 基準 HP 1 あたりの XP
+ *  tier1 帯 (DQ 級スケールで基準 HP 5〜14) でおおむね 2〜9 になるよう校正 (オーナー要望 2026-07-20)。 */
+const XP_HP_FLOOR = 3; // これ以下の基準 HP は XP に寄与しない (最弱の下限を作る)。DQ 級スケール (敵 HP ひとけた) に合わせ 10→3
+const XP_HP_SCALE = 0.6; // 基準 HP 1 あたりの XP。HP が ~1/4 に縮んだぶん係数を ~4倍 (0.15→0.6) して XP 出力を保つ
 const XP_OFFENSE_SCALE = 0.04; // (atk+agi) 1 あたりの XP (素早い/強い敵を少し厚く)
 
 /** モンスターの XP 既定値を「実効的な強さ」から算出する (式＋個別調整の式側)。基準 HP は
