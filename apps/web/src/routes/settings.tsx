@@ -665,7 +665,7 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>管理者</h3>
+      <h3 style={{ fontSize: '0.95em' }}>管理者 (サーバー連携)</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         ゲームの権威データを書き込むサーバーアカウントの連携。
       </p>
@@ -712,7 +712,7 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
 
   const onReset = async () => {
     if (busy) return;
-    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化されます (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
+    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化され、元に戻せません (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
     setBusy(true);
     setErr(null);
     let timeoutId: number | undefined;
@@ -737,7 +737,7 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>あおぞらワールド (管理)</h3>
+      <h3 style={{ fontSize: '0.95em' }}>管理者 (ワールド)</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         ワールドを「はじめから」やり直し、新規と同じ導入 (イントロ→手渡し→祝福) を確認する。
         所持品・装備・レベル・位置を初期化 (投稿で貯めたパワー残高は残る)。
@@ -745,6 +745,14 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
       <button onClick={onReset} disabled={busy}>
         {busy ? 'リセット中…' : '⟲ あおぞらワールドを はじめから'}
       </button>
+      {/* 重い I/O (最大 30s) 中は「固まった?」に見えないよう明滅で処理継続を示す
+          (旧地図の全画面オーバーレイの脈動を最小構成で踏襲 — レビュー ★★)。 */}
+      {busy && (
+        <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+          <style>{'@keyframes reset-pulse{0%,100%{opacity:0.4}50%{opacity:1}}'}</style>
+          <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ もどしています…</span>
+        </p>
+      )}
       {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
     </section>
   );

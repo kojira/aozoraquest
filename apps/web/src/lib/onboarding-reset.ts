@@ -11,7 +11,8 @@
  * analysis(XP)/world(位置)/power(残高) を読んで初期状態を作るので、それらを先に掃除してから
  * gameState を消す。こうすると途中失敗しても「gameState は残る=旧状態のまま」で止まり、
  * 半端に古い Lv/位置で復帰しない。各ステップは冪等 (削除は no-op 安全、power は絶対値書き込み)
- * なので、失敗時は同じ操作を再実行すれば収束する (doReset がエラーを拾ってリトライ導線にする)。
+ * なので、失敗時は同じ操作を再実行すれば収束する (呼び出し側 UI = WorldResetAdmin (設定画面) が
+ * エラーを拾ってリトライ導線にする)。
  *
  * dev + 管理者のみが UI から呼べる。自分の repo と自分の gameState しか触らない。
  */
@@ -35,7 +36,13 @@ export const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
  * リセット完了後、**通常の新規オンボードルートを丸ごと再生**させる準備。
  * - イントロ overlay を再表示するため onboarding-done を消す (これが無いと「いきなり地図」になる)。
  * - 祝福 (+20) 演出を再入場後に出すためのマークを立てる (実際に +20 を付与したときだけ呼ぶ)。
- * 呼び出し後に /world へフルロード遷移すると、新規ユーザーと同じ「イントロ→手渡し→祝福」を辿る。
+ *
+ * **契約**: 祝福マークの**消費・掃除は world 入場時が唯一の責任者** (world.tsx の grantStarter 分岐で
+ * 読み捨て、手渡しダイアログを出さない入場では else で削除)。ここは「立てる」だけを担う。
+ *
+ * 呼び出し後は必ず `/world` へ**フルロード遷移** (`location.assign`) すること。SPA navigate では
+ * world.tsx の in-memory state (ws / serverInv / tokenRef / onboardingRef) が初期化されず、
+ * まっさらな入場フローにならないため。フルロードでも localStorage/sessionStorage は保持される。
  */
 export function armOnboardingReplay(): void {
   try { localStorage.removeItem(ONBOARDING_DONE_KEY); } catch { /* private mode 等は諦める */ }
