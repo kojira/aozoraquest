@@ -1,0 +1,92 @@
+import { Link } from 'react-router-dom';
+import { useSession } from '@/lib/session';
+import { isAdminDid } from '@/lib/runtime-config';
+import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+
+/**
+ * あおぞらワールド 管理ダッシュボードの土台 (issue #417 / エピック #416)。
+ *
+ * 設定ページから遷移してくる管理者専用のハブ。各コンテンツ CRUD (モンスター/アイテム/
+ * マップ/店/クエスト…) の入口を並べる骨組み。中身の CRUD は #418 (データ化) の後に各サブ
+ * issue で実装するので、ここではセクションの枠 + 状態 (準備中/既存ツールへのリンク) だけ。
+ * 露出は dev + 管理者のみ。
+ */
+
+interface Section {
+  key: string;
+  title: string;
+  desc: string;
+  /** 既存機能への遷移先 (無ければ準備中)。 */
+  to?: string;
+  /** 準備中セクションの追跡 issue 番号。 */
+  issue?: number;
+}
+
+const CONTENT_SECTIONS: Section[] = [
+  { key: 'monsters', title: 'モンスター', desc: 'ステータス・ドロップ・画像を CRUD', issue: 419 },
+  { key: 'items', title: 'アイテム', desc: '装備 / 消費 / 素材を CRUD', issue: 420 },
+  { key: 'map', title: 'マップ / タイル', desc: '地形・エリア・出現配置・パーツ編集', issue: 421 },
+  { key: 'shops', title: 'お店', desc: 'ラインナップ・合成素材・店主セリフ', issue: 422 },
+  { key: 'quests', title: 'クエスト', desc: 'ゲーム内クエストの作成・編集', issue: 423 },
+  { key: 'npc', title: 'NPC (将来)', desc: 'NPC の CRUD と配置', issue: 425 },
+  { key: 'flags', title: 'フラグ (将来)', desc: '進行フラグでゲート', issue: 426 },
+];
+
+/** 既に別画面にある管理ツール (ダッシュボードから辿れるように集約)。 */
+const EXISTING_TOOLS: Section[] = [
+  { key: 'sim', title: '模擬戦シミュレータ', desc: 'バランス検証 (敵/ジョブ/装備を選んでバッチ・1戦)', to: '/spirit' },
+  { key: 'server', title: 'サーバー連携 / ワールドリセット', desc: '設定ページの管理者セクション', to: '/settings' },
+];
+
+function Card({ s }: { s: Section }) {
+  const body = (
+    <div className="dq-window" style={{ padding: '0.7em 0.9em', height: '100%' }}>
+      <div style={{ fontWeight: 700 }}>{s.title}</div>
+      <div style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.2em' }}>{s.desc}</div>
+      <div style={{ fontSize: '0.75em', marginTop: '0.4em', color: s.to ? 'var(--color-accent)' : 'var(--color-muted)' }}>
+        {s.to ? '開く →' : `準備中${s.issue ? ` (#${s.issue})` : ''}`}
+      </div>
+    </div>
+  );
+  return s.to ? (
+    <Link to={s.to} style={{ textDecoration: 'none', color: 'inherit' }}>{body}</Link>
+  ) : (
+    body
+  );
+}
+
+export function AdminDashboard() {
+  const session = useSession();
+  const isAdmin = WORLD_PREVIEW_ENABLED && isAdminDid(session.did);
+
+  if (!isAdmin) {
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '1em' }}>
+        <h2>管理ダッシュボード</h2>
+        <p style={{ fontSize: '0.9em', color: 'var(--color-muted)' }}>この画面は管理者専用です。</p>
+        <Link to="/settings"><button>設定へ戻る</button></Link>
+      </div>
+    );
+  }
+
+  const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.6em', marginTop: '0.5em' };
+
+  return (
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '1em' }}>
+      <h2>あおぞらワールド 管理</h2>
+      <p style={{ fontSize: '0.82em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
+        ゲーム内容の編集ハブ (エピック #416)。CRUD の中身は データ化 (#418) 後に各セクションへ実装。
+      </p>
+
+      <h3 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>コンテンツ</h3>
+      <div style={grid}>
+        {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
+      </div>
+
+      <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>既存の管理ツール</h3>
+      <div style={grid}>
+        {EXISTING_TOOLS.map((s) => (<Card key={s.key} s={s} />))}
+      </div>
+    </div>
+  );
+}

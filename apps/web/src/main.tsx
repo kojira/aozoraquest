@@ -18,6 +18,7 @@ const Quests = lazy(() => import('@/routes/quests').then(m => ({ default: m.Ques
 const Search = lazy(() => import('@/routes/search').then(m => ({ default: m.Search })));
 const Settings = lazy(() => import('@/routes/settings').then(m => ({ default: m.Settings })));
 const Spirit = lazy(() => import('@/routes/spirit').then(m => ({ default: m.Spirit })));
+const AdminDashboard = lazy(() => import('@/routes/admin-dashboard').then(m => ({ default: m.AdminDashboard })));
 const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
 const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
 const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
       { path: 'search', element: <Search /> },
       { path: 'settings', element: <Settings /> },
       { path: 'spirit', element: <Spirit /> },
+      { path: 'admin', element: <AdminDashboard /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
       { path: 'oauth/callback', element: <OAuthCallback /> },
