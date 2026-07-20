@@ -619,6 +619,18 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState<ServerOAuthStatus | null>(null);
   const [statusErr, setStatusErr] = useState<string | null>(null);
+  const [justLinked, setJustLinked] = useState(false);
+
+  // 認可 callback から ?serverOAuth=linked で戻ってきたら「連携できました」を出し、param を掃除する。
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('serverOAuth') === 'linked') {
+      setJustLinked(true);
+      p.delete('serverOAuth');
+      const q = p.toString();
+      window.history.replaceState(null, '', window.location.pathname + (q ? `?${q}` : ''));
+    }
+  }, []);
 
   // 連携状態を確認して表示する (以前は状態が画面に出ず「連携できたか分からない」だった)。
   useEffect(() => {
@@ -651,6 +663,9 @@ function ServerOAuthAdmin({ agent }: { agent: Agent }) {
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         ゲームの権威データを書き込むサーバーアカウントの連携。
       </p>
+      {justLinked && (
+        <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', marginBottom: '0.5em' }}>連携できました ✅</p>
+      )}
       {/* 連携状態 */}
       <div style={{ fontSize: '0.8em', marginBottom: '0.6em' }}>
         {statusErr ? (
