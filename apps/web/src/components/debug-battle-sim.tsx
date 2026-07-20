@@ -138,7 +138,7 @@ export function DebugBattleSim() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>管理者 · 模擬戦</h3>
+      <h3 style={{ fontSize: '0.95em' }}>模擬戦</h3>
       <p style={{ fontSize: '0.78em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         物理ランダムなしの模擬戦。敵・ジョブ・装備・レベルを選んで、バランスを数値で確認する。
       </p>
