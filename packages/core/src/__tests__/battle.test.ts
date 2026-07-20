@@ -4,6 +4,7 @@ import {
   createRng,
   turnRng,
   skillForJob,
+  skillsForJob,
   JOB_SKILL_NAMES,
   playerCombatant,
   summonMonster,
@@ -72,6 +73,44 @@ describe('skillForJob', () => {
     expect(skillForJob('ninja').kind).toBe('flurry');
     expect(skillForJob('sage').kind).toBe('spell');
     expect(skillForJob('miko').kind).toBe('gamble');
+  });
+});
+
+describe('skillsForJob (複数とくぎ #436)', () => {
+  it('[0] は常に署名スキル (skillForJob と一致 = 後方互換)', () => {
+    for (const job of JOBS) {
+      const sig = skillForJob(job.id);
+      const list1 = skillsForJob(job.id, 1);
+      expect(list1[0]).toEqual(sig);
+    }
+  });
+  it('副スキルはレベルアップで習得する (learnAt 未満は出ない)', () => {
+    // miko は jobLv3 で heal (神楽の癒し) を習得
+    expect(skillsForJob('miko', 1).map((s) => s.kind)).toEqual(['gamble']);
+    expect(skillsForJob('miko', 2).map((s) => s.kind)).toEqual(['gamble']);
+    expect(skillsForJob('miko', 3).map((s) => s.kind)).toEqual(['gamble', 'heal']);
+    // heal 未配布のジョブは署名のみ (warrior)
+    expect(skillsForJob('warrior', 30)).toHaveLength(1);
+  });
+  it('heal とくぎは MP を払って maxHp の割合ぶん回復する', () => {
+    // miko(jobLv5) は [gamble, heal]。HP を削ってから heal を選ぶ (skillIndex=1)
+    let s = startBattle('miko', 5, 8, '巫女', 2, 3, 0);
+    const healIdx = s.playerSkills.findIndex((x) => x.kind === 'heal');
+    expect(healIdx).toBeGreaterThan(0);
+    for (let i = 0; i < 3 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack', i * 7 + 1);
+    if (s.outcome === 'ongoing' && s.player.hp < s.player.maxHp) {
+      const before = s.player.hp;
+      const mpBefore = s.player.mp;
+      s = resolveTurn(s, 'skill', 999, healIdx);
+      expect(s.player.hp).toBeGreaterThan(before); // 回復した
+      expect(s.player.hp).toBeLessThanOrEqual(s.player.maxHp); // maxHp を超えない
+      expect(s.player.mp).toBeLessThan(mpBefore); // MP を消費した
+    }
+  });
+  it('範囲外の skillIndex は署名スキルに安全側フォールバック (例外にしない)', () => {
+    const s = startBattle('warrior', 5, 8, '戦士', 1, 5, 0);
+    const next = resolveTurn(s, 'skill', 1, 99); // 存在しない index → [0] にフォールバック
+    expect(next.turn).toBe(1); // 例外を投げず 1 ターン進む
   });
 });
 
