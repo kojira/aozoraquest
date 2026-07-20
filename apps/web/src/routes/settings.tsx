@@ -714,12 +714,20 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // 成功表示は数秒で自然に消す (この設定画面に留まって他操作を続けても居座らせない — レビュー ★★)。
+  useEffect(() => {
+    if (!done) return;
+    const t = window.setTimeout(() => setDone(false), 6000);
+    return () => window.clearTimeout(t);
+  }, [done]);
+
   const onReset = async () => {
     if (busy) return;
-    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化され、元に戻せません (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
-    setBusy(true);
+    // 前回の成功/失敗メッセージはボタンを押した時点で消す (confirm でキャンセルしても残像を残さない)。
     setErr(null);
     setDone(false);
+    if (!window.confirm('あおぞらワールドを「はじめから」やり直します。\n所持品・装備・レベル・位置がすべて初期化され、元に戻せません (投稿で貯めたパワー残高は残ります)。よろしいですか?')) return;
+    setBusy(true);
     let timeoutId: number | undefined;
     try {
       // 30s の全体タイムアウト (PDS 無応答でも「リセット中…」で固着しない fail-safe)。
@@ -761,7 +769,7 @@ function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
       )}
       {done && !busy && (
         <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-accent)', marginTop: '0.4em' }}>
-          リセットしました ✅ 精霊ブルスコンの画面から冒険できます。
+          はじめの地へ もどりました。精霊ブルスコンから 冒険できます。
         </p>
       )}
       {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}
