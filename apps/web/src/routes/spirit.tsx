@@ -21,6 +21,7 @@ import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { DebugBattleSim } from '@/components/debug-battle-sim';
 import { isAdminDid } from '@/lib/runtime-config';
 
 /**
@@ -296,7 +297,7 @@ export function Spirit() {
                   color: 'var(--color-muted)',
                 }}
               >
-                <span>{grantingPower ? '管理者用 · 付与中…' : `管理者用 · あおぞらパワー ${points.balance}`}</span>
+                <span>{grantingPower ? '管理者 · 付与中…' : `管理者 · パワー ${points.balance}`}</span>
                 {[100, 1000].map((n) => (
                   <button
                     key={n}
@@ -322,6 +323,9 @@ export function Spirit() {
               </div>
             </section>
           )}
+
+          {/* 管理者デバッグ模擬戦 (issue #414)。dev + 管理者のみ。 */}
+          {WORLD_PREVIEW_ENABLED && did && isAdminDid(did) && <DebugBattleSim />}
         </>
       )}
 
