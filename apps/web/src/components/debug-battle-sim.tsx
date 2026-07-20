@@ -134,10 +134,14 @@ export function DebugBattleSim() {
   // エントロピーを渡して本番に一致させる (固定 seed だと fleer が毎回同じ判定 = 100%逃走に
   // 見える乖離。#441)。敵の初期ステータスは variance 0 で固定 (再現性のため) にしつつ、
   // 戦闘中の乱数だけ本番同様に揺らす。
+  // crypto はブラウザ Web Crypto (edge の kuda と同系)。このコンポーネントは
+  // WORLD_PREVIEW_ENABLED (dev + 管理者) でしか表示されずクライアント専用なので可用性は担保。
   const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0]!;
   const startDuel = () => {
     setBatch(null);
-    setDuel(start(freshSeed(), 0)); // 敵ステータスは variance 0 で固定、per-turn 乱数は下で新鮮に
+    // 初期 seed は固定でよい: monsterId 固定 + variance 0 なので敵ステータスは seed 非依存で一定
+    // (summonMonster を通らず monsterCombatant の jitter も効かない)。戦闘中の乱数だけ下で新鮮に。
+    setDuel(start(1, 0));
   };
   const duelCmd = (cmd: Command) =>
     setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, cmd, freshSeed()) : s));
