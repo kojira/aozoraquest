@@ -338,13 +338,13 @@ describe('formatQuestAnnouncement', () => {
     const out = formatQuestAnnouncement({
       title: '精霊のイラストを描いてくれる人募集',
       rewardPoints: 12000,
-      handle: 'kojira.io',
+      handle: 'alice.test',
       deadline: '2026-06-15T00:00:00Z',
       tags: ['illust', 'art'],
       questUrl: 'https://aozoraquest.app/quests/at://x',
     });
     expect(out).toContain('精霊のイラストを描いてくれる人募集');
-    expect(out).toContain('kojira.ioポイント 12000 pt');
+    expect(out).toContain('alice.testポイント 12000 pt');
     expect(out).toContain('〆切: 6/15');
     expect(out).toContain('#illust');
     expect(out).toContain('https://aozoraquest.app/');

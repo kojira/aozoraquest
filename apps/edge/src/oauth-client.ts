@@ -97,7 +97,7 @@ function normalize(t: TokenResponse, authServer: AuthServerMetadata, now: number
   if (opts.requireSub && !t.sub) throw new Error('トークン応答に sub が無い (bootstrap では必須)');
   const did = t.sub ?? expectedDid;
   // アカウント取り違え/セッション固定対策: 認可されたアカウントが期待するサーバーアカウント
-  // (kojira.io) と一致することを必須にする。別アカウントでログインされてもトークンを保存しない。
+  // サーバーアカウントと一致することを必須にする。別アカウントでログインされてもトークンを保存しない。
   if (did !== expectedDid) throw new Error(`予期しないアカウント: ${did} ≠ ${expectedDid}`);
   if (!t.refresh_token) throw new Error('refresh_token が無い(atproto スコープの refresh 発行を要確認)');
   return {

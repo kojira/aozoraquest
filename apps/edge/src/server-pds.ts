@@ -1,7 +1,7 @@
 /**
  * サーバーアカウント PDS への **OAuth (DPoP) 認証付き書き込み** — docs/21 §12.3 / M3。
  *
- * M2.5 で取得・保管した OAuth トークン (KV) を使い、サーバーアカウント (kojira.io) の PDS に
+ * M2.5 で取得・保管した OAuth トークン (KV) を使い、サーバーアカウントの PDS に
  * putRecord / deleteRecord する。書き込みは DPoP バインド (sender-constrained) で、access token +
  * DPoP 鍵 (Worker Secret) + PDS 用 DPoP-Nonce (別 KV キー) を使う。
  *
@@ -42,7 +42,7 @@ async function authedXrpc<T>(env: ServerPdsEnv, now: number, nsid: string, body:
 
   const nonce = (await readPdsNonce(kv)) ?? undefined;
   let latest = nonce;
-  // repo は常にサーバーアカウント (kojira.io) の DID。**body の後に置き**、呼び出し側が誤って
+  // repo は常にサーバーアカウントの DID。**body の後に置き**、呼び出し側が誤って
   // repo を含めても上書きできないようにする (認証境界の固定。レビュー ★)。
   const res = await dpopFetch(
     `${tokens.pdsUrl}/xrpc/${nsid}`,

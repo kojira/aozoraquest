@@ -2,7 +2,7 @@
  * バトルガード — docs/21-server-authority §5 の「毎ターン・やり直し不可」を担保する永続レコード。
  *
  * encounter 時に **Worker が封印した playerSnapshot + monster + 現 state + turn** をサーバー
- * アカウント (kojira.io) の PDS に 1 ユーザー 1 アクティブ戦闘で持つ。ユーザーは書けない = 偽造不可。
+ * サーバーアカウントの PDS に 1 ユーザー 1 アクティブ戦闘で持つ。ユーザーは書けない = 偽造不可。
  * 書き込みは M2.5 の OAuth (DPoP) トークン経由 (server-pds)。読みは token 由来 pds の public getRecord。
  *
  * **やり直し不可の要点**: turn を `swapRecord` (CAS) で進める。同じターンを別コマンドで引き直そう

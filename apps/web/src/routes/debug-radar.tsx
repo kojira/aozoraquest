@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useSession } from '@/lib/session';
 import { RadarChart } from '@/components/radar-chart';
 import type { StatVector } from '@aozoraquest/core';
 
 /**
- * ヒーロー画像 (README) 用に、kojira (もしくは指定ハンドル) の analysis を
+ * ヒーロー画像 (README) 用に、指定ハンドル (もしくはログイン中ユーザー) の analysis を
  * Bluesky 公開 API + PDS から読んでレーダーチャートを描画する dev ルート。
  *
  * 必要なのは:
@@ -18,12 +19,15 @@ import type { StatVector } from '@aozoraquest/core';
 export function DebugRadar() {
   const svgWrapRef = useRef<HTMLDivElement>(null);
   const [params] = useSearchParams();
-  const handle = params.get('handle') ?? 'kojira.io';
+  const session = useSession();
+  // 個人 handle はソースに直書きしない (§4)。既定はログイン中ユーザー、無ければ ?handle= を要求。
+  const handle = params.get('handle') ?? session.handle ?? '';
   const [stats, setStats] = useState<StatVector | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    if (!handle) { setErr('?handle=xxx.bsky.social を指定 (またはログイン)'); return; }
     (async () => {
       try {
         // 1) handle → DID

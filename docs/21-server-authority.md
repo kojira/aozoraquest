@@ -240,12 +240,12 @@ putRecord/deleteRecord。token 失効 (401) は **fail-closed (503)** に倒し�
 ### 12.4 owner セットアップ (app-password の "Secret 1個" より増える)
 1. Cloudflare KV namespace 作成 + wrangler binding。**(済: アシスタントが作成・binding)**
 2. クライアント鍵・DPoP 鍵を Secret 設定 (鍵生成スクリプト `scripts/gen-oauth-keys.mjs`)。SERVER_DID
-   (=kojira.io の DID)・ADMIN_DIDS を Variable 設定。
+   (= サーバーアカウントの DID)・ADMIN_DIDS を Variable 設定。
 3. **edge Worker を初回デプロイ** — 認可サーバーが authorize/PAR 時に `client_id`
    (=`/client-metadata.json` の URL) を fetch するので、**OAuth ログインより前に edge が serve
    している必要がある** (deploy → Secret 投入 → OAuth の順)。
 4. アプリ内設定 → 管理者リンク → 1 回 OAuth ログイン (初期 refresh token を格納)。
-`SERVER_HANDLE` は廃止 (OAuth は DID/handle 解決で処理)。サーバーアカウントは **kojira.io** (§9-1 確定)。
+`SERVER_HANDLE` は廃止 (OAuth は DID/handle 解決で処理)。サーバーアカウントの handle/DID は Secret/Variable で持ち、ソースに書かない (§9-1 確定)。
 
 ### 12.5 実装順 (mock で単体テスト、owner セットアップ後に dev 疎通)
 1. DPoP / private_key_jwt の JWT 生成・検証ユーティリティ (@noble、単体テスト)。

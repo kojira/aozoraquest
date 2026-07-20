@@ -1,6 +1,6 @@
 /**
  * README ヒーロー画像の 2 枚目 (レーダーチャート) を生成。
- * /debug/radar ルートを開いて、kojira の analysis レコードから 5 ステータス
+ * /debug/radar ルートを開いて、指定ユーザーの analysis レコードから 5 ステータス
  * (攻 / 守 / 速 / 知 / 運) を取得・描画 → SVG を PNG 化して docs/hero-radar.png に保存。
  *
  * vite dev (localhost:9999) が事前に起動している前提。
@@ -16,7 +16,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/hero-radar.png');
 const DEV_BASE = process.env.DEV_BASE ?? 'http://localhost:9999';
 
-const HANDLE = 'kojira.io';
+const HANDLE = process.env.HERO_HANDLE ?? '';
 
 async function main() {
   const url = new URL('/debug/radar', DEV_BASE);

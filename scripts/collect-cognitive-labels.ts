@@ -6,7 +6,7 @@
  * 構築する。
  *
  * パイプライン:
- *   1. kojira.io のフォロー + ランキング上位からユーザープール構築
+ *   1. シードユーザーのフォロー + ランキング上位からユーザープール構築
  *   2. 各ユーザーから最大 30 投稿取得 (text + createdAt)
  *   3. Gemini に top-3 認知機能 (+ none) を判定させ逐次 JSONL 保存
  *   4. checkpoint ファイルから resume 可
@@ -200,8 +200,8 @@ async function main() {
   console.log(`[resume] 既存ラベル付け ${existing.size} 件、目標 ${targetCount} 件`);
 
   console.log(`\n[1/3] ユーザープール構築`);
-  console.log(`  kojira.io のフォロー取得中...`);
-  const follows = await collectFollows('kojira.io');
+  console.log(`  シードユーザーのフォロー取得中...`);
+  const follows = await collectFollows(process.env.SEED_HANDLE ?? '');
   console.log(`    ${follows.length} 人`);
   console.log(`  bluesky-ranking 上位取得中...`);
   const ranking = await collectRankingHandles();

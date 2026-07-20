@@ -63,13 +63,13 @@ describe('loadAppColumns / saveAppColumns', () => {
   it('save → load で同じ内容が戻る', () => {
     const cols = [
       makeAppColumn('search', { param: 'illust', mode: 'posts' }),
-      makeAppColumn('profile', { param: 'kojira.example', section: 'portfolio' }),
+      makeAppColumn('profile', { param: 'alice.example', section: 'portfolio' }),
     ];
     saveAppColumns(cols);
     const loaded = loadAppColumns(true);
     expect(loaded.map(c => ({ kind: c.kind, param: 'param' in c ? c.param : undefined }))).toEqual([
       { kind: 'search', param: 'illust' },
-      { kind: 'profile', param: 'kojira.example' },
+      { kind: 'profile', param: 'alice.example' },
     ]);
   });
 
@@ -257,7 +257,7 @@ describe('appColumnTitle', () => {
     expect(appColumnTitle({ id: '1', kind: 'search', param: 'foo' })).toBe('検索: foo');
     expect(appColumnTitle({ id: '1', kind: 'search' })).toBe('検索');
     expect(appColumnTitle({ id: '1', kind: 'board' })).toBe('クエスト掲示板');
-    expect(appColumnTitle({ id: '1', kind: 'profile', param: 'kojira.example' })).toBe('@kojira.example');
+    expect(appColumnTitle({ id: '1', kind: 'profile', param: 'alice.example' })).toBe('@alice.example');
     expect(appColumnTitle({ id: '1', kind: 'profile' })).toBe('プロフィール');
   });
 });

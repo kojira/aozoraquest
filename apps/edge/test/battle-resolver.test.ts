@@ -7,7 +7,7 @@ import { terrainAt, isWalkable, type Command } from '@aozoraquest/core';
 import type { GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
-const SERVER_DID = 'did:plc:kojira';
+const SERVER_DID = 'did:plc:testserver';
 const SERVER_PDS = 'https://server-pds.example';
 const USER_PDS = 'https://user-pds.example';
 const NOW = 1_700_000_000;

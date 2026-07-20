@@ -1,5 +1,5 @@
 /**
- * サーバーアカウント (kojira.io) の OAuth 連携を管理者が開始する導線 — docs/21 §12。
+ * サーバーアカウントの OAuth 連携を管理者が開始する導線 — docs/21 §12。
  *
  * 管理者がログイン中に、自分の OAuth セッション (Agent) で **service auth JWT** (aud=edge Worker,
  * lxm=oauth.start) を発行 → edge の `/api/oauth/start` に渡すと、edge が PAR して authorize URL を
