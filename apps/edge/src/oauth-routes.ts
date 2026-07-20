@@ -34,6 +34,9 @@ export function validateReturnTo(raw: unknown, allowed?: string): string | undef
     return undefined;
   }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return undefined;
+  // userinfo (user:pass@) 付きは拒否。origin 比較は userinfo を無視するので許可されうるが、
+  // toString() が保持し 302 location に認証情報が載る非対称を塞ぐ。
+  if (u.username || u.password) return undefined;
   const list = (allowed ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   return list.includes(u.origin) ? u.toString() : undefined;
 }

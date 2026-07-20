@@ -125,6 +125,12 @@ describe('oauth-routes', () => {
     expect(validateReturnTo('https://evil.example/steal', allowed)).toBeUndefined();
     expect(validateReturnTo('javascript:alert(1)', allowed)).toBeUndefined();
     expect(validateReturnTo('/relative/path', allowed)).toBeUndefined();
+    // open-redirect バイパス系はすべて弾く
+    expect(validateReturnTo('https://dev.aozoraquest.app@evil.example/x', allowed)).toBeUndefined(); // userinfo トリック (origin=evil)
+    expect(validateReturnTo('https://dev.aozoraquest.app.evil.example/x', allowed)).toBeUndefined(); // サブドメイン suffix
+    expect(validateReturnTo('https://dev.aozoraquest.app:8443/x', allowed)).toBeUndefined(); // ポート違い
+    expect(validateReturnTo('https://user:pass@dev.aozoraquest.app/settings', allowed)).toBeUndefined(); // 許可 origin でも userinfo は拒否
+    expect(validateReturnTo('data:text/html,x', allowed)).toBeUndefined();
     expect(validateReturnTo('', allowed)).toBeUndefined();
     expect(validateReturnTo(undefined, allowed)).toBeUndefined();
     expect(validateReturnTo(123, allowed)).toBeUndefined();
