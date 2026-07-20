@@ -24,6 +24,13 @@ import {
 
 const CHAR_MS = 45;
 
+/** 会話レイヤーの z。送り面 (透明背景) は footer 等の背後 UI より上に全画面で敷き、窓本体は
+ *  さらにその上。地図内の HUD/戦闘 (world-hud の HUD_Z=2 / OVERLAY_Z=3) や地図枠より十分上、
+ *  祝福の全画面演出 (welcome-blessing z=1100) よりは下。祖先に transform/filter が無いので
+ *  position:fixed は viewport に貼れる (footer まで覆える) — anchor='map' でも同じ。 */
+const DIALOGUE_BACKDROP_Z = 900;
+const DIALOGUE_WINDOW_Z = 901;
+
 /** visually-hidden (スクリーンリーダーにだけ全文を渡す) */
 const SR_ONLY: React.CSSProperties = {
   position: 'absolute',
@@ -106,40 +113,39 @@ export function DialogueWindow({
   const complete = lineComplete(lines, st);
 
   return (
-    // 全面オーバーレイ: どこをタップしても会話が進む (DQ の会話送り)。
-    // 背後の UI (スティック・ボタン) への誤タップもこれで防ぐ
-    <div
-      ref={overlayRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label={line.speaker ? `${line.speaker}のセリフ` : 'セリフ'}
-      onClick={advance}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          advance();
-        }
-      }}
-      tabIndex={0}
-      style={{
-        // 'map' は地図枠内 (absolute) に敷く。z は地図内の HUD/戦闘 (HUD_Z=2/OVERLAY_Z=3)
-        // より上。'viewport' は従来どおり画面全体に固定。
-        position: onMap ? 'absolute' : 'fixed',
-        inset: 0,
-        zIndex: onMap ? 12 : 900,
-        cursor: 'pointer',
-        background: 'transparent',
-      }}
-    >
+    <>
+      {/* 送り面: **常に画面全体を覆う** 透明レイヤー。どこをタップしても会話が進み、footer や
+          スティック等の背後 UI への誤タップ・誤遷移を防ぐ。anchor='map' で窓を地図に貼っても
+          この送り面は viewport 全面のままなので、画面下端 (footer 際) を送ろうとしても効く
+          (地図枠だけを覆うと footer 遷移で会話が中断する回帰があった — レビュー ★★)。 */}
       <div
+        ref={overlayRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={line.speaker ? `${line.speaker}のセリフ` : 'セリフ'}
+        onClick={advance}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            advance();
+          }
+        }}
+        tabIndex={0}
+        style={{ position: 'fixed', inset: 0, zIndex: DIALOGUE_BACKDROP_Z, cursor: 'pointer', background: 'transparent' }}
+      />
+      {/* 窓本体: 'viewport' は footer 際に固定、'map' は直近の position:relative 祖先
+          (ワールドの地図枠) の下端に貼る (DQ 風。オーナー指摘 2026-07-20)。送り面より上 (z)。 */}
+      <div
+        onClick={advance}
         style={{
-          position: 'absolute',
+          position: onMap ? 'absolute' : 'fixed',
           left: '50%',
           // 'map': 地図枠の下端に貼る (DQ 風)。'viewport': footer 実測高 (app-shell) に追従
           bottom: onMap ? '0.5em' : 'calc(var(--footer-height, 4.5em) + 0.5em)',
           transform: 'translateX(-50%)',
           width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
           maxWidth: 520,
+          zIndex: DIALOGUE_WINDOW_Z,
         }}
       >
         {line.speaker && (
@@ -164,7 +170,10 @@ export function DialogueWindow({
         )}
         <div
           className="dq-window"
-          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', fontSize: '0.92em', lineHeight: 1.7 }}
+          // maxHeight/overflowY: 将来の長い NPC セリフでも窓がアバターに被らないよう上限を設ける
+          //   (DQ も 1 窓は数行で固定 — レビュー ★★)。marginBottom:0: dq-window 既定の 0.9em を
+          //   打ち消し、地図枠の下端 (bottom:0.5em) にぴったり寄せる (レビュー ★)。
+          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', maxHeight: '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7 }}
         >
           {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
               先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は
@@ -183,6 +192,6 @@ export function DialogueWindow({
 @media (prefers-reduced-motion: reduce) { .aq-dialogue-next { animation: none; } }
 `}</style>
       </div>
-    </div>
+    </>
   );
 }

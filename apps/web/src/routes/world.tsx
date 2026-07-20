@@ -1174,8 +1174,10 @@ export function World() {
           )}
           {/* 会話ウィンドウは**地図枠内**にオーバーレイする (DQ 風。以前は画面下端の footer 際に
               出て「マップ上」に見えなかった — オーナー指摘 2026-07-20)。anchor="map" で、この
-              position:relative の地図枠の下部に貼る。一度に出るのは 1 つ (相互にガード)。 */}
-          {onboarding && (
+              position:relative の地図枠の下部に貼る。一度に出るのは 1 つ (相互にガード)。
+              会話は z が戦闘オーバーレイ (OVERLAY_Z) より上なので、状態機械のガードに加えて
+              !battle でも囲い、万一の同時表示で戦闘操作が塞がれる事故を防ぐ (レビュー ★★)。 */}
+          {!battle && onboarding && (
             <DialogueWindow
               anchor="map"
               lines={ONBOARDING_LINES}
@@ -1187,7 +1189,7 @@ export function World() {
               }}
             />
           )}
-          {showStarter && !onboarding && (
+          {!battle && showStarter && !onboarding && (
             // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
             // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
             // 分からなかった — オーナー指摘 2026-07-20)。starterBlessed は入場時にマークから確定済み。
@@ -1205,7 +1207,7 @@ export function World() {
               onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
             />
           )}
-          {searchMsg !== null && (
+          {!battle && searchMsg !== null && (
             <DialogueWindow anchor="map" lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
           )}
         </div>
