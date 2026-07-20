@@ -680,11 +680,12 @@ describe('resolveTurn', () => {
 
   it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
     // やくそう持ち + 300 seed で計測。難易度は「拮抗帯」に合わせる: 固定強度化 (Lv 追従なし)
-    // 後は jobLv8/plLv15 だと tier3 も 100% で差が出ないため、tier3 が競り合う jobLv5/plLv8 で
-    // 測る (reactive ~92% vs spam ~81%、+10pt の明確な差 — 防御の存在意義が見える帯)。
+    // + T2/T3 強化 (#444 の敵 atk 底上げ) 後は tier3 の競り合い帯が上がり、warrior は
+    // jobLv8/plLv15 (T3 ~47%) が拮抗帯。ここで予告防御 (reactive) が attack 連打 (spam) を上回る
+    // = 防御の存在意義。強化された charger の予告を防がないと事故死するため差が明確に出る。
     const HERBS = 2;
     const reactive = (seed: number) => {
-      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         // 予告があれば防御、HP 危険域なら やくそう、なければ攻撃
@@ -693,7 +694,7 @@ describe('resolveTurn', () => {
       return s.outcome;
     };
     const spam = (seed: number) => {
-      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         s = resolveTurn(s, s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
