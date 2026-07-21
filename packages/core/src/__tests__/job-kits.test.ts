@@ -29,9 +29,9 @@ describe('魔法使い 確定キット (#456)', () => {
   });
 
   it('他ジョブ (キット未登録) は従来どおり基本 6 種の署名スキル', () => {
-    // warrior はキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
+    // guardian はキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
     const base = ['smash', 'parry', 'flurry', 'spell', 'gamble', 'heal'];
-    expect(base).toContain(skillsForJob('warrior', 10)[0]!.kind);
+    expect(base).toContain(skillsForJob('guardian', 10)[0]!.kind);
   });
 
   it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す (mage)', () => {
@@ -137,5 +137,27 @@ describe('詩人 確定キット (#456)', () => {
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'restraint')) bound = true;
     }
     expect(bound).toBe(true);
+  });
+});
+
+describe('戦士 確定キット (#456)', () => {
+  it('レベルでみだれ突き〜全力斬りを習得 (全体技は後続なので Lv3-4 は署名)', () => {
+    expect(skillsForJob('warrior', 4)[0]!.kind).not.toMatch(/^warrior-/); // Lv5 未満は署名フォールバック
+    expect(skillsForJob('warrior', 18).map((s) => s.name)).toEqual(['みだれ突き', 'かぶとわり', 'ためる', '全力斬り']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('warrior', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('かぶとわりは命中で守備力↓を付与 (継続戦)', () => {
+    let debuffed = false;
+    for (let seed = 0; seed < 40 && !debuffed; seed++) {
+      const s = startBattle('warrior', 10, 15, '戦', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === 'かぶとわり');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'defDown')) debuffed = true;
+    }
+    expect(debuffed).toBe(true);
   });
 });

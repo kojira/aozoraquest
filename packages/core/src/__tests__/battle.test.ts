@@ -89,8 +89,8 @@ describe('skillsForJob (複数とくぎ #436)', () => {
     expect(skillsForJob('miko', 1).map((s) => s.kind)).toEqual(['gamble']);
     expect(skillsForJob('miko', 2).map((s) => s.kind)).toEqual(['gamble']);
     expect(skillsForJob('miko', 3).map((s) => s.kind)).toEqual(['gamble', 'heal']);
-    // heal 未配布のジョブは署名のみ (warrior)
-    expect(skillsForJob('warrior', 30)).toHaveLength(1);
+    // heal 未配布・キット未登録のジョブは署名のみ (guardian)
+    expect(skillsForJob('guardian', 30)).toHaveLength(1);
   });
   it('heal とくぎは MP を払って maxHp の割合ぶん回復する', () => {
     // miko(jobLv5) は [gamble, heal]。HP を削ってから heal を選ぶ (skillIndex=1)

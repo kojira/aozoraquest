@@ -320,6 +320,17 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'status', status: 'agiUp', target: 'self', turns: 3 },
     ],
   },
+
+  // ─── 戦士 確定キット (#456 / docs/25 §12。純物理ブルーザー・無属性) ───
+  // 数値は sim 調整前提の暫定値。なぎ払い/一騎当千(全体)・剣豪(P) は後続。かばう/挑発は §12 で一旦保留。
+  'warrior-thrust': { id: 'warrior-thrust', effects: [{ kind: 'damage', stat: 'atk', power: 0.7, hits: 2 }] }, // みだれ突き Lv5
+  // かぶとわり Lv10: atk 1.3 倍 + 命中で守備力↓ (継続戦の布石)
+  'warrior-helmsplit': {
+    id: 'warrior-helmsplit',
+    effects: [{ kind: 'damage', stat: 'atk', power: 1.3, inflict: { status: 'defDown', chance: 0.8, turns: 3 } }],
+  },
+  'warrior-charge': { id: 'warrior-charge', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 2 }] }, // ためる Lv15 (次撃強化)
+  'warrior-fullslash': { id: 'warrior-fullslash', effects: [{ kind: 'damage', stat: 'atk', power: 2.0 }] }, // 全力斬り Lv18
 };
 
 /** SkillDef の全効果を順に解決する (プラグイン実行のエントリポイント)。 */
