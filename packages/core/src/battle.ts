@@ -18,9 +18,9 @@
 import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
-import { SKILLS, runSkill } from './skills.js';
+import { SKILLS, runSkill, runSkillMulti } from './skills.js';
 import { elementMultiplier, type Element } from './elements.js';
-import type { CombatSides } from './combat-target.js';
+import { resolveTargets, type CombatSides } from './combat-target.js';
 import {
   type StatusInstance,
   type HookCtx,
@@ -1402,6 +1402,179 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     events.push({ actor: 'monster', text: closing });
   }
 
+  state.lastEvents = events;
+  return state;
+}
+
+/** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
+function copyCombatant(c: Combatant): Combatant {
+  return { ...c, guarding: false, ...(c.statuses ? { statuses: c.statuses.map((s) => ({ ...s })) } : {}) };
+}
+
+/** 生存者からランダムに 1 体 (全滅なら undefined)。 */
+function randomLiving(arr: readonly Combatant[], rng: () => number): Combatant | undefined {
+  const living = arr.filter((c) => c.hp > 0);
+  return living.length ? living[Math.floor(rng() * living.length)] : undefined;
+}
+
+/**
+ * マルチ戦闘のターン解決 (#453 / docs/25 §14.8)。**allies[] vs enemies[]** を全員 agi+乱数で
+ * 並べ、順に行動させる。ソロ用 resolveTurn とは**別経路** (1v1 は一切変更しない)。
+ *
+ * 現ブロックの AI: プレイヤーは command + skillIndex + targetIndex、召喚/NPC 味方はランダムな敵へ
+ * 通常攻撃、敵はランダムな味方へ通常攻撃 (敵の charge/heal ability・挑発/かばうは後続ブロック)。
+ */
+export function resolveTurnMulti(
+  prev: BattleState,
+  command: Command,
+  turnSeed?: number,
+  skillIndex = 0,
+  targetIndex = 0,
+): BattleState {
+  if (prev.outcome !== 'ongoing') return prev;
+  const t = BATTLE_TUNING;
+  const allies = (prev.allies && prev.allies.length ? prev.allies : [prev.player]).map(copyCombatant);
+  const enemies = (prev.enemies && prev.enemies.length ? prev.enemies : [prev.monster]).map(copyCombatant);
+  const state: BattleState = { ...prev, turn: prev.turn + 1, allies, enemies, player: allies[0]!, monster: enemies[0]!, lastEvents: [] };
+  const sides: CombatSides = { allies, enemies };
+  const player = allies[0]!;
+  const isAlly = (c: Combatant) => allies.includes(c);
+  const events: TurnEvent[] = [];
+  const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
+
+  const skills = state.playerSkills ?? [state.playerSkill];
+  const selectedSkill = skills[skillIndex] ?? skills[0] ?? state.playerSkill;
+
+  // ── コマンド実効化 (ソロと同じ防御的措置) ──
+  let cmd: Command = command;
+  if (command === 'skill' && player.mp < t.skillMpCost) {
+    events.push({ actor: 'player', text: `MP が足りない! (${player.mp}/${t.skillMpCost})` });
+    cmd = 'attack';
+  } else if (command === 'herb' && state.herbs <= 0) {
+    events.push({ actor: 'player', text: 'やくそうを持っていない!' });
+    cmd = 'attack';
+  } else if (command === 'tonic' && state.tonics <= 0) {
+    events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
+    cmd = 'attack';
+  }
+  if (cmd === 'skill') player.mp -= t.skillMpCost;
+
+  // 防御宣言 (行動順に依存しない)
+  if (cmd === 'guard') {
+    player.guarding = true;
+    player.focus = 2;
+    if (state.mpGuardGain > 0) {
+      player.mp = Math.min(player.maxMp, player.mp + state.mpGuardGain);
+      events.push({ actor: 'player', text: `${player.name}はぼうぎょして息を整えた。(MP +${state.mpGuardGain})` });
+    } else {
+      events.push({ actor: 'player', text: `${player.name}はぼうぎょのかまえ!` });
+    }
+  }
+  if (cmd === 'skill' && selectedSkill.kind === 'parry') {
+    player.parrying = true;
+    events.push({ actor: 'player', text: `${player.name}は${selectedSkill.name}の構え! (防御しつつ反撃)` });
+  }
+
+  // にげる (味方全員で離脱)
+  if (cmd === 'flee') {
+    const fastestFoe = Math.max(...enemies.filter((e) => e.hp > 0).map((e) => e.agi), 0);
+    const chance = Math.min(t.fleeMax, Math.max(t.fleeMin, t.fleeBase + (player.agi - fastestFoe) * t.fleeAgiScale));
+    if (rng() < chance) {
+      state.outcome = 'fled';
+      events.push({ actor: 'player', text: `${player.name}たちはうまく逃げ切った!` });
+      state.lastEvents = events;
+      return state;
+    }
+    events.push({ actor: 'player', text: 'にげられない! 回り込まれてしまった!' });
+  }
+
+  // 行動順: 全参加者を agi + 乱数で並べる (playerFirst 撤廃)
+  const order = [...allies, ...enemies]
+    .filter((c) => c.hp > 0)
+    .map((c) => ({ c, roll: c.agi + rng() * 20 }))
+    .sort((a, b) => b.roll - a.roll)
+    .map((x) => x.c);
+
+  const alliesDown = () => allies.every((a) => a.hp <= 0);
+  const enemiesDown = () => enemies.every((e) => e.hp <= 0);
+
+  for (const actor of order) {
+    if (state.outcome !== 'ongoing' || alliesDown() || enemiesDown()) break;
+    if (actor.hp <= 0) continue; // このターン中に倒された
+    const side: 'player' | 'monster' = isAlly(actor) ? 'player' : 'monster';
+    if (applyBeforeAct(actor, { rng, events, actor: side })) continue; // 行動不能
+    const consumed = (actor.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
+
+    if (actor === player) {
+      if (cmd === 'attack') {
+        const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex })[0];
+        if (target) {
+          doAttack(player, target, rng, events, 'player');
+          if (state.mpAttackGain > 0) player.mp = Math.min(player.maxMp, player.mp + state.mpAttackGain);
+        }
+      } else if (cmd === 'skill') {
+        const def = SKILLS[selectedSkill.kind];
+        if (def) {
+          runSkillMulti(
+            def,
+            player,
+            sides,
+            (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
+            { targetIndex },
+          );
+        }
+      } else if (cmd === 'herb') {
+        const heal = Math.round(player.maxHp * t.herbHealRatio);
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        state.herbs -= 1;
+        state.herbsUsed += 1;
+        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! HP が ${heal} 回復。(残り ${state.herbs})` });
+      } else if (cmd === 'tonic') {
+        const gain = Math.round(player.maxMp * t.tonicMpRatio);
+        player.mp = Math.min(player.maxMp, player.mp + gain);
+        state.tonics -= 1;
+        state.tonicsUsed += 1;
+        events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MP が ${gain} 回復。(残り ${state.tonics})` });
+      }
+      // guard / flee 失敗はこのターン行動なし
+    } else if (isAlly(actor)) {
+      // 召喚/NPC 味方: ランダムな敵へ通常攻撃 (味方版 autoBattle は後続で拡張)
+      const target = randomLiving(enemies, rng);
+      if (target) doAttack(actor, target, rng, events, 'player');
+    } else {
+      // 敵: ランダムな味方へ通常攻撃 (charge/heal ability は後続ブロック)
+      const target = randomLiving(allies, rng);
+      if (target) doAttack(actor, target, rng, events, 'monster');
+    }
+
+    if (consumed.length && actor.statuses) actor.statuses = actor.statuses.filter((s) => !consumed.includes(s));
+  }
+
+  // ターン終了処理 (毒等)
+  if (state.outcome === 'ongoing') {
+    for (const c of [...allies, ...enemies]) {
+      tickStatuses(c, { rng, events, actor: isAlly(c) ? 'player' : 'monster' });
+    }
+  }
+  // 見切り/余韻の後始末
+  for (const c of [...allies, ...enemies]) c.parrying = false;
+  player.focus = Math.max(0, player.focus - 1);
+
+  // 勝敗判定
+  if (state.outcome !== 'ongoing') {
+    /* fled 等: 確定済み */
+  } else if (enemiesDown()) {
+    state.outcome = 'win';
+  } else if (alliesDown()) {
+    state.outcome = 'lose';
+  } else if (state.turn >= t.maxTurns) {
+    const pr = allies.reduce((s, c) => s + c.hp, 0) / allies.reduce((s, c) => s + c.maxHp, 0);
+    const mr = enemies.reduce((s, c) => s + c.hp, 0) / enemies.reduce((s, c) => s + c.maxHp, 0);
+    state.outcome = pr > mr ? 'win' : pr < mr ? 'lose' : 'draw';
+  }
+
+  state.player = allies[0]!;
+  state.monster = enemies[0]!;
   state.lastEvents = events;
   return state;
 }
