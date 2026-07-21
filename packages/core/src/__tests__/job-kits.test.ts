@@ -34,7 +34,7 @@ describe('魔法使い 確定キット (#456)', () => {
     expect(base).toContain(skillsForJob('warrior', 10)[0]!.kind);
   });
 
-  it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す', () => {
+  it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す (mage)', () => {
     // 高 def の敵に対し、物理は通りにくいが魔法 (fixedDamage) は def を無視して範囲ダメを通す。
     const s = startBattle('mage', 3, 8, '魔', 2, 12345, 0);
     const skills = s.playerSkills;
@@ -48,5 +48,35 @@ describe('魔法使い 確定キット (#456)', () => {
     expect(next.monster.hp).toBeLessThan(before);
     expect(next.lastEvents.some((e) => e.text.includes('火炎術式'))).toBe(true);
     void dealt;
+  });
+});
+
+describe('忍者 確定キット (#456)', () => {
+  it('レベルで毒手→かくれみ→火遁→急所狙い→九字切りを習得', () => {
+    expect(skillsForJob('ninja', 3).map((s) => s.name)).toContain('毒手');
+    expect(skillsForJob('ninja', 15).map((s) => s.name)).toEqual(['毒手', 'かくれみ', '火遁', '急所狙い', '九字切り']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('ninja', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('毒手が実戦で毒を付与する (inflict)', () => {
+    // chance 0.7 なので複数 seed で少なくとも1回は毒が乗る。
+    let poisoned = false;
+    for (let seed = 0; seed < 20 && !poisoned; seed++) {
+      const s = startBattle('ninja', 3, 8, '忍', 1, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === '毒手');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.statuses?.some((st) => st.id === 'poison')) poisoned = true;
+    }
+    expect(poisoned).toBe(true);
+  });
+
+  it('かくれみ / 九字切りは自分に状態を付与 (self)', () => {
+    const s = startBattle('ninja', 15, 20, '忍', 1, 7, 0);
+    const hideIdx = s.playerSkills.findIndex((sk) => sk.name === 'かくれみ');
+    const afterHide: BattleState = resolveTurn(s, 'skill', undefined, hideIdx);
+    expect(afterHide.player.statuses?.some((st) => st.id === 'hidden')).toBe(true);
   });
 });

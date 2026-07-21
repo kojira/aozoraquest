@@ -57,6 +57,8 @@ export type SkillEffect =
       inflict?: InflictSpec;
       /** 攻撃属性 (火遁=fire 等)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
       element?: Element;
+      /** 会心率への加算 (急所狙い等)。 */
+      critBonus?: number;
     }
   | {
       kind: 'fixedDamage';
@@ -141,6 +143,7 @@ const damageHandler: EffectHandler = (effect, ctx) => {
     if (effect.hitBonus !== undefined) opts.hitBonus = effect.hitBonus;
     if (effect.defFactor !== undefined) opts.defFactor = effect.defFactor;
     if (effect.element !== undefined) opts.element = effect.element;
+    if (effect.critBonus !== undefined) opts.critBonus = effect.critBonus;
     switch (effect.stat) {
       case 'atk':
         break; // 素の atk (default)
@@ -275,6 +278,22 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   'mage-meteor': { id: 'mage-meteor', effects: [{ kind: 'fixedDamage', min: 30, max: 45, intBonus: 0.4 }] }, // メテオ Lv25 (無属性大砲)
   // 魔力障壁 Lv30 (常時 被ダメ軽減) はパッシブ。PASSIVES + player.passives 配線が要るため後続で追加 (TODO)。
+
+  // ─── 忍者 確定キット (#456 / docs/25 §7・§14.1。agi型・毒/隠密/会心) ───
+  // 数値は sim 調整前提の暫定値。影分身 Lv20 / 首狩り Lv30 (P) は後続 (要 evade多重/召喚 or passive)。
+  // 毒手 Lv3: agi 物理 (軽) + 高確率で毒
+  'ninja-poison-hand': {
+    id: 'ninja-poison-hand',
+    effects: [{ kind: 'damage', stat: 'agi', power: 0.8, inflict: { status: 'poison', chance: 0.7, turns: 3, magnitude: 2 } }],
+  },
+  // かくれみ Lv5: 自分にかくれみ (回避↑。安全に やくそう 回復するための布石。行動 or 被弾で解除)
+  'ninja-hide': { id: 'ninja-hide', effects: [{ kind: 'status', status: 'hidden', target: 'self', turns: 3 }] },
+  // 火遁 Lv8: 火属性の術 (必中・def無視)。忍者は int 低めなので intBonus 控えめ
+  'ninja-katon': { id: 'ninja-katon', effects: [{ kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.12, element: 'fire' }] },
+  // 急所狙い Lv12: agi 物理・会心率大幅上昇 (メタル狩りの布石)
+  'ninja-vitals': { id: 'ninja-vitals', effects: [{ kind: 'damage', stat: 'agi', power: 1.0, critBonus: 0.35 }] },
+  // 九字切り Lv15: 次の一撃を確定会心 (メタル系を会心で貫く。critCharge は行動で解除)
+  'ninja-kuji': { id: 'ninja-kuji', effects: [{ kind: 'status', status: 'critCharge', target: 'self', turns: 1 }] },
 };
 
 /** SkillDef の全効果を順に解決する (プラグイン実行のエントリポイント)。 */

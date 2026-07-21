@@ -23,6 +23,7 @@ import { elementMultiplier, type Element } from './elements.js';
 import {
   type StatusInstance,
   type HookCtx,
+  STATUS_REGISTRY,
   applyBeforeAct,
   applyDodgeCalc,
   applyPowerCalc,
@@ -30,7 +31,6 @@ import {
   applyIncomingCalc,
   applyOnHit,
   tickStatuses,
-  clearActedStatuses,
   clearHitStatuses,
 } from './statuses.js';
 
@@ -259,6 +259,14 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'mage-quake', name: 'じわれ', learnAt: 18 },
     { id: 'mage-permafrost', name: '永久凍土', learnAt: 20 },
     { id: 'mage-meteor', name: 'メテオ', learnAt: 25 },
+  ],
+  // 忍者: agi 型・毒/隠密/会心 (§7 パイロット)。影分身20/首狩り30(P) は後続。
+  ninja: [
+    { id: 'ninja-poison-hand', name: '毒手', learnAt: 3 },
+    { id: 'ninja-hide', name: 'かくれみ', learnAt: 5 },
+    { id: 'ninja-katon', name: '火遁', learnAt: 8 },
+    { id: 'ninja-vitals', name: '急所狙い', learnAt: 12 },
+    { id: 'ninja-kuji', name: '九字切り', learnAt: 15 },
   ],
 };
 
@@ -912,6 +920,8 @@ export interface AttackOptions {
   label?: string;
   /** 攻撃属性 (#452 / docs/25 §1)。防御側の element と相性判定。未指定 (無属性) は等倍。 */
   element?: Element;
+  /** 会心率への加算 (急所狙い等)。crit 判定 rng < critBase + luk*scale + critBonus。 */
+  critBonus?: number;
 }
 
 /** 攻撃 1 回の結果 (とくぎの inflict-on-hit 等が参照)。 */
@@ -971,7 +981,7 @@ function doAttack(
   // 2026-07-20)。敵の会心を守備無視にすると、タンク職 (guardian) の「固く受ける」存在意義が
   // 壊れ拮抗帯で事故死が倍増するため、敵の会心は 1.5 倍のみ (バランス ★★★)。ぼうぎょ/見切り
   // **コマンドの半減はどちらも貫通しない** — 貫くと「予告を見て防御」の読み合いが崩れる (設計 ★★★)。
-  const crit = applyCritCalc(rng() < t.critBase + attacker.luk * t.critLukScale, attacker, atkCtx); // 九字切り=確定会心
+  const crit = applyCritCalc(rng() < t.critBase + attacker.luk * t.critLukScale + (opts.critBonus ?? 0), attacker, atkCtx); // 会心 (急所狙い=critBonus / 九字切り=確定)
   const critAtk = crit ? t.critAtkMultiplier : 1;
   const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
   // DQ の減算式 (攻撃÷2 − 防御÷4) 流: **防御の係数 (defCoef) を攻撃の半分 (2:1)** にしてインフレを
@@ -1258,6 +1268,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     const self = who === 'player' ? state.player : state.monster;
     // 行動不能 (眠り/麻痺/転倒/束縛)。none なら false = 従来どおり行動。
     if (applyBeforeAct(self, { rng, events, actor: who })) return;
+    // 行動前に存在した clearOnAct 状態 (前ターンからのかくれみ/九字切り) を記録。行動で「消費」し
+    // 末尾で除去する。この行動中に付与した自己バフ (かくれみ/九字切りを張る等) は消さない。
+    const consumedOnAct = (self.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
@@ -1313,8 +1326,11 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       }
       // guard は宣言済み
     }
-    // 行動したら解ける状態 (かくれみ/九字切り)。none なら no-op。
-    clearActedStatuses(self);
+    // 行動で消費された状態 (前ターンからのかくれみ/九字切り) のみ除去。この行動で張った
+    // 自己バフは残す (かくれみ→次ターンの攻撃で解除、が正しい)。none なら no-op。
+    if (consumedOnAct.length && self.statuses) {
+      self.statuses = self.statuses.filter((s) => !consumedOnAct.includes(s));
+    }
   };
 
   act(playerFirst ? 'player' : 'monster');
