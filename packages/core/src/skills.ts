@@ -11,7 +11,7 @@
  */
 
 import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
-import { applyStatus, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
+import { applyStatus, statusApplyText, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
 import type { Element } from './elements.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
@@ -59,6 +59,16 @@ export type SkillEffect =
       element?: Element;
     }
   | {
+      kind: 'fixedDamage';
+      /** ダメージの下限・上限 (DQ 流の範囲魔法。例 15〜20)。 */
+      min: number;
+      max: number;
+      /** int 連動ボーナス: +attacker.int × intBonus (キャスターの int を伸ばす意味を出す)。 */
+      intBonus?: number;
+      /** 攻撃属性 (火水地風空)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
+      element?: Element;
+    }
+  | {
       kind: 'heal';
       /** maxHp に対する回復割合 */
       ratio: number;
@@ -82,6 +92,7 @@ export interface SkillDef {
 
 /** ハンドラに注入するエンジン一次関数 (循環 import 回避のための依存注入)。 */
 export interface SkillEngine {
+  /** 物理攻撃 (回避・会心・def 減算・反撃あり)。 */
   doAttack: (
     attacker: Combatant,
     defender: Combatant,
@@ -89,6 +100,15 @@ export interface SkillEngine {
     events: TurnEvent[],
     actor: 'player' | 'monster',
     opts?: AttackOptions,
+  ) => AttackResult;
+  /** 魔法ダメージ (範囲ベース・必中・def 無視)。amount は算出済みの生ダメージ。 */
+  doMagic: (
+    attacker: Combatant,
+    defender: Combatant,
+    rng: () => number,
+    events: TurnEvent[],
+    actor: 'player' | 'monster',
+    opts: { amount: number; element?: Element; label?: string },
   ) => AttackResult;
 }
 
@@ -149,6 +169,7 @@ const damageHandler: EffectHandler = (effect, ctx) => {
           turns: inf.turns ?? DEFAULT_STATUS_TURNS,
           ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}),
         });
+        events.push({ actor, text: statusApplyText(inf.status, defender.name) });
       }
     }
   }
@@ -157,13 +178,34 @@ const damageHandler: EffectHandler = (effect, ctx) => {
 /** status: 使用者 (self) or 相手 (enemy) に状態異常を付与 (バフ/デバフ/かくれみ)。 */
 const statusHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'status') return;
-  const { attacker, defender, rng } = ctx;
+  const { attacker, defender, rng, events } = ctx;
+  const actor = ctx.actorSide ?? 'player';
+  // 倒した相手にデバフを乗せない (fixedDamage で致死後に走る多段技のため。self バフは対象外)。
+  if (effect.target === 'enemy' && defender.hp <= 0) return;
   if (rng() >= (effect.chance ?? 1)) return;
   const target = effect.target === 'self' ? attacker : defender;
   applyStatus(target, {
     id: effect.status,
     turns: effect.turns ?? DEFAULT_STATUS_TURNS,
     ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}),
+  });
+  // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。
+  events.push({ actor, text: statusApplyText(effect.status, target.name) });
+};
+
+/** fixedDamage: 範囲ロール + int 連動 → doMagic (必中・def無視・属性相性)。DQ 流の魔法。 */
+const fixedDamageHandler: EffectHandler = (effect, ctx) => {
+  if (effect.kind !== 'fixedDamage') return;
+  const { attacker, defender, rng, events, engine, skillName } = ctx;
+  const actor = ctx.actorSide ?? 'player';
+  if (defender.hp <= 0) return;
+  const span = effect.max - effect.min;
+  let amount = effect.min + Math.floor(rng() * (span + 1));
+  if (effect.intBonus) amount += attacker.int * effect.intBonus;
+  engine.doMagic(attacker, defender, rng, events, actor, {
+    amount,
+    ...(effect.element ? { element: effect.element } : {}),
+    label: skillName,
   });
 };
 
@@ -179,6 +221,7 @@ const healHandler: EffectHandler = (effect, ctx) => {
 /** 効果種別 → ハンドラ。ここに 1 行足す = 新しい効果プリミティブが使えるようになる。 */
 export const EFFECT_HANDLERS: Record<SkillEffect['kind'], EffectHandler> = {
   damage: damageHandler,
+  fixedDamage: fixedDamageHandler,
   heal: healHandler,
   status: statusHandler,
 };
@@ -203,6 +246,62 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   // 回復 (#436): maxHp の 0.35 (= 旧 BATTLE_TUNING.skillHealRatio を移行)
   heal: { id: 'heal', effects: [{ kind: 'heal', ratio: 0.35 }] },
+
+  // ─── 魔法使い 確定キット (#456 / docs/25 §12。単体・int型・必中・def無視) ───
+  // 数値 (範囲/intBonus/デバフ turns) は **sim 調整前提の暫定値**。覚える Lv に見合う endgame 敵
+  // (#455) が要る高 Lv 技は数値を圧縮しない (オーナー方針)。属性の輪は §1。
+  'mage-flame': { id: 'mage-flame', effects: [{ kind: 'fixedDamage', min: 4, max: 8, intBonus: 0.2, element: 'fire' }] }, // 火炎術式 Lv3
+  'mage-decode': { id: 'mage-decode', effects: [{ kind: 'fixedDamage', min: 6, max: 11, intBonus: 0.2 }] }, // 解式マギア Lv5 (無属性)
+  'mage-stone': { id: 'mage-stone', effects: [{ kind: 'fixedDamage', min: 7, max: 12, intBonus: 0.2, element: 'earth' }] }, // 石射 Lv6
+  // 氷結術式 Lv8: 水 + 素早さ↓
+  'mage-freeze': {
+    id: 'mage-freeze',
+    effects: [
+      { kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.25, element: 'water' },
+      { kind: 'status', status: 'agiDown', target: 'enemy', turns: 3 },
+    ],
+  },
+  // メルティ Lv12: 火 + 敵 def↓
+  'mage-melt': {
+    id: 'mage-melt',
+    effects: [
+      { kind: 'fixedDamage', min: 10, max: 16, intBonus: 0.25, element: 'fire' },
+      { kind: 'status', status: 'defDown', target: 'enemy', turns: 3 },
+    ],
+  },
+  'mage-blaze': { id: 'mage-blaze', effects: [{ kind: 'fixedDamage', min: 16, max: 24, intBonus: 0.3, element: 'fire' }] }, // 爆炎術式 Lv15
+  'mage-quake': { id: 'mage-quake', effects: [{ kind: 'fixedDamage', min: 20, max: 28, intBonus: 0.35, element: 'earth' }] }, // じわれ Lv18 (飛行無効は #455)
+  // 永久凍土 Lv20: 水 + 3T 行動不可 (stun turns=3)
+  'mage-permafrost': {
+    id: 'mage-permafrost',
+    effects: [
+      { kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.3, element: 'water' },
+      { kind: 'status', status: 'stun', target: 'enemy', turns: 3 },
+    ],
+  },
+  'mage-meteor': { id: 'mage-meteor', effects: [{ kind: 'fixedDamage', min: 30, max: 45, intBonus: 0.4 }] }, // メテオ Lv25 (無属性大砲)
+  // 魔力障壁 Lv30 (常時 被ダメ軽減) はパッシブ。PASSIVES + player.passives 配線が要るため後続で追加 (TODO)。
+
+  // ─── 忍者 確定キット (#456 / docs/25 §7・§14.1。agi型・毒/隠密/会心) ───
+  // 数値は sim 調整前提の暫定値。影分身 Lv20 / 首狩り Lv30 (P) は後続 (要 evade多重/召喚 or passive)。
+  // 毒手 Lv3: agi 物理 (軽) + 高確率で毒 (§7: power0.7 / chance0.8 / turns3)。
+  // magnitude は §7 では範囲 [1,3] だが poison の範囲ロールは未実装のため固定 2 (範囲対応は別 issue)。
+  'ninja-poison-hand': {
+    id: 'ninja-poison-hand',
+    effects: [{ kind: 'damage', stat: 'agi', power: 0.7, inflict: { status: 'poison', chance: 0.8, turns: 3, magnitude: 2 } }],
+  },
+  // かくれみ Lv5: 自分にかくれみ (回避↑。安全に やくそう 回復するための布石。行動 or 被弾で解除)
+  'ninja-hide': { id: 'ninja-hide', effects: [{ kind: 'status', status: 'hidden', target: 'self', turns: 3 }] },
+  // 火遁 Lv8: 火属性の術 (必中・def無視)。忍者は int 低めなので intBonus 控えめ
+  'ninja-katon': { id: 'ninja-katon', effects: [{ kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.12, element: 'fire' }] },
+  // 急所狙い Lv12: agi 物理 1.5 倍 + 命中で 1 ターン麻痺 (§7 確定版どおり)
+  'ninja-vitals': {
+    id: 'ninja-vitals',
+    effects: [{ kind: 'damage', stat: 'agi', power: 1.5, inflict: { status: 'stun', chance: 1.0, turns: 1 } }],
+  },
+  // 九字切り Lv15: 次の一撃を確定会心 (メタル系を会心で貫く)。turns:1 = fresh スキップにより付与ターンは
+  // 畳まれず、次ターンの攻撃で確定会心 → clearOnAct で除去。
+  'ninja-kuji': { id: 'ninja-kuji', effects: [{ kind: 'status', status: 'critCharge', target: 'self', turns: 1 }] },
 };
 
 /** SkillDef の全効果を順に解決する (プラグイン実行のエントリポイント)。 */

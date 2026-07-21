@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import {
   EQUIPMENT_BY_ID,
-  SKILL_KIND_LABELS,
+  skillKindLabel,
+  skillsForJob,
   jobDisplayName,
   jobXpToNextLevel,
   leveledName,
   mpGainsFor,
   playerXpToNextLevel,
-  skillForJob,
   type Archetype,
   type Combatant,
   type EquipSlot,
@@ -83,7 +83,8 @@ export function StatusModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const skill = useMemo(() => skillForJob(archetype), [archetype]);
+  // キット持ちジョブ (#456) では署名スキル [0] が実技と一致しないため、現在の習得済みとくぎ列を出す。
+  const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
   const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
   const jobNext = useMemo(() => jobXpToNextLevel(jobXp), [jobXp]);
   const playerNext = useMemo(() => playerXpToNextLevel(playerXp), [playerXp]);
@@ -156,8 +157,10 @@ export function StatusModal({
           <Section title="とくぎ・とくせい">
             <div style={{ lineHeight: 1.8 }}>
               <div>
-                とくぎ: <strong>{skill.name}</strong>{' '}
-                <span style={{ color: 'var(--color-muted)' }}>({SKILL_KIND_LABELS[skill.kind]})</span>
+                とくぎ: <strong>{skills.map((s) => s.name).join('、')}</strong>{' '}
+                {skills.length === 1 && skillKindLabel(skills[0]!.kind) ? (
+                  <span style={{ color: 'var(--color-muted)' }}>({skillKindLabel(skills[0]!.kind)})</span>
+                ) : null}
               </div>
               {mpTrait.traitName ? (
                 <div>
