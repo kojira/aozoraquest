@@ -11,7 +11,8 @@
  */
 
 import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
-import { applyStatus, type StatusId } from './statuses.js';
+import { applyStatus, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
+import type { Element } from './elements.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
 export type DamageStat = 'atk' | 'int' | 'agi' | 'luk';
@@ -54,6 +55,8 @@ export type SkillEffect =
       gamble?: GambleSpec;
       /** 命中した攻撃に状態異常を乗せる (毒手など)。miss/即死には乗らない。 */
       inflict?: InflictSpec;
+      /** 攻撃属性 (火遁=fire 等)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
+      element?: Element;
     }
   | {
       kind: 'heal';
@@ -98,6 +101,9 @@ export interface SkillContext {
   /** テキストに使うとくぎ名 */
   skillName: string;
   engine: SkillEngine;
+  /** 使用者の陣営 (#453 マルチ戦闘で敵もとくぎを撃つ時に使う。未指定は 'player')。
+   *  今は単体戦闘なので常に 'player' 相当だが、doAttack へ渡す actor を将来書き換えずに済ませる。 */
+  actorSide?: 'player' | 'monster';
 }
 
 type EffectHandler = (effect: SkillEffect, ctx: SkillContext) => void;
@@ -106,6 +112,7 @@ type EffectHandler = (effect: SkillEffect, ctx: SkillContext) => void;
 const damageHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'damage') return;
   const { attacker, defender, rng, events, engine, skillName } = ctx;
+  const actor = ctx.actorSide ?? 'player';
   const hits = effect.hits ?? 1;
   for (let i = 0; i < hits; i++) {
     // 対象が倒れていたら以降の追撃は無駄撃ちしない (flurry の 2 撃目 = 従来挙動)。
@@ -113,6 +120,7 @@ const damageHandler: EffectHandler = (effect, ctx) => {
     const opts: AttackOptions = { label: skillName, power: effect.power ?? 1 };
     if (effect.hitBonus !== undefined) opts.hitBonus = effect.hitBonus;
     if (effect.defFactor !== undefined) opts.defFactor = effect.defFactor;
+    if (effect.element !== undefined) opts.element = effect.element;
     switch (effect.stat) {
       case 'atk':
         break; // 素の atk (default)
@@ -131,12 +139,16 @@ const damageHandler: EffectHandler = (effect, ctx) => {
       const floor = Math.min(g.lukFloorCap, attacker.luk * g.lukFloorScale);
       opts.power = floor + rng() * (g.max - floor);
     }
-    const res = engine.doAttack(attacker, defender, rng, events, 'player', opts);
+    const res = engine.doAttack(attacker, defender, rng, events, actor, opts);
     // 命中した攻撃にだけ状態異常を乗せる (miss/即死には乗らない)。
     if (effect.inflict && res.hit && !res.fatal) {
       const inf = effect.inflict;
       if (rng() < (inf.chance ?? 1)) {
-        applyStatus(defender, { id: inf.status, turns: inf.turns ?? 2, ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}) });
+        applyStatus(defender, {
+          id: inf.status,
+          turns: inf.turns ?? DEFAULT_STATUS_TURNS,
+          ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}),
+        });
       }
     }
   }
@@ -150,7 +162,7 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   const target = effect.target === 'self' ? attacker : defender;
   applyStatus(target, {
     id: effect.status,
-    turns: effect.turns ?? 2,
+    turns: effect.turns ?? DEFAULT_STATUS_TURNS,
     ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}),
   });
 };

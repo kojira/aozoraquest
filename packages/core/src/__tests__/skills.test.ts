@@ -165,4 +165,33 @@ describe('効果 ↔ 状態異常の接続 (#452)', () => {
     );
     expect(dead.statuses ?? []).toHaveLength(0);
   });
+
+  it('element: damage 効果が攻撃属性を AttackOptions に渡す (doAttack が相性判定に使う)', () => {
+    const { calls } = runWithSpy2({ id: 'x', effects: [{ kind: 'damage', stat: 'int', element: 'fire' }] });
+    expect(calls[0]!.element).toBe('fire');
+  });
+
+  it('element: 未指定なら opts.element も undefined (無属性=等倍)', () => {
+    const { calls } = runWithSpy2({ id: 'x', effects: [{ kind: 'damage', stat: 'atk' }] });
+    expect(calls[0]!.element).toBeUndefined();
+  });
 });
+
+/** 任意の SkillDef を spy で実行し、doAttack に渡った opts 列を返す。 */
+function runWithSpy2(def: SkillDef, rng = () => 0.5) {
+  const calls: AttackOptions[] = [];
+  runSkill(def, {
+    attacker: makeCombatant(),
+    defender: makeCombatant(),
+    rng,
+    events: [],
+    skillName: 'x',
+    engine: {
+      doAttack: (_a, d, _r, _e, _actor, opts = {}) => {
+        calls.push(opts);
+        return { hit: d.hp > 0, damage: 5, fatal: false, crit: false };
+      },
+    },
+  });
+  return { calls };
+}

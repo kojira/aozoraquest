@@ -19,6 +19,7 @@ import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
 import { SKILLS, runSkill } from './skills.js';
+import { elementMultiplier, type Element } from './elements.js';
 import {
   type StatusInstance,
   type HookCtx,
@@ -320,6 +321,9 @@ export interface Combatant {
   statuses?: StatusInstance[];
   /** ジョブ innate パッシブ id (#452 / docs/25 §4)。省略可。 */
   passives?: string[];
+  /** 防御属性 (#452 / docs/25 §1)。被弾時の属性相性に使う。未設定 (無属性) は等倍。
+   *  モンスターへの付与は #455、プレイヤー装備由来は後続で配線 (現状は全員 undefined = 等倍)。 */
+  element?: Element;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -867,6 +871,8 @@ export interface AttackOptions {
   useInt?: boolean;
   /** 技名 (テキストに使う)。無指定は通常攻撃 */
   label?: string;
+  /** 攻撃属性 (#452 / docs/25 §1)。防御側の element と相性判定。未指定 (無属性) は等倍。 */
+  element?: Element;
 }
 
 /** 攻撃 1 回の結果 (とくぎの inflict-on-hit 等が参照)。 */
@@ -940,6 +946,9 @@ function doAttack(
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
   // 被ダメバフ (defUp/defDown/転倒)。none なら ×1。
   dmg *= applyIncomingCalc(1, defender, defCtx);
+  // 属性相性 (#452 §1): 攻撃属性 × 防御属性。両者 undefined (無属性) なら ×1 = 従来挙動。
+  // モンスター/装備への属性付与は #455/#456 で配線。現状は常に ×1 (behavior-preserving)。
+  dmg *= elementMultiplier(opts.element, defender.element);
 
   // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
   // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
@@ -1234,7 +1243,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   act(playerFirst ? 'monster' : 'player');
 
   // ターン終了の状態処理 (毒ダメージ等) → turns 減衰・除去。none なら no-op。
-  // 毒で HP0 になった場合は下の勝敗判定 (hp===0) が拾う。
+  // 毒で HP0 になった場合は下の勝敗判定 (hp===0) が拾う。両者が同ターンの毒で相討ちになった
+  // 場合、勝敗判定は monster.hp===0 を player より先に見るため win を優先する (仕様。決定的)。
   if (state.outcome === 'ongoing') {
     tickStatuses(state.player, { rng, events, actor: 'player' });
     tickStatuses(state.monster, { rng, events, actor: 'monster' });

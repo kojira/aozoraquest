@@ -27,11 +27,15 @@ export type StatusId =
   | 'agiUp'
   | 'agiDown'; // 回避 magnitude 倍
 
+/** 付与時に turns 未指定なら使う既定持続 (毒手/デバフ等の共通デフォルト)。 */
+export const DEFAULT_STATUS_TURNS = 2;
+
 export interface StatusInstance {
   id: StatusId;
   /** 残りターン数。ターン終了で 1 減り、0 で除去。 */
   turns: number;
-  /** 効果量 (毒=ダメージ / バフ=倍率)。未指定は各状態のデフォルト。 */
+  /** 効果量。**単位は状態ごとに異なる**: poison=1 ターンあたりのダメージ量 (絶対値) /
+   *  atk・def・agi の Up/Down=倍率 (例 1.3)。付与側は取り違えに注意。未指定は各状態のデフォルト。 */
   magnitude?: number;
 }
 
@@ -136,7 +140,10 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
     name: 'かくれみ',
     clearOnAct: true,
     clearOnHit: true,
-    dodgeCalc: (dodge) => Math.max(dodge, 0.75), // 実質 agi 大幅上昇 (数値は sim で調整)
+    // 注意: agiUp/agiDown が乗算なのに対し hidden は「下限床」で異質。回避 cap (dodgeMax≒0.32)
+    // を意図的に踏み越えて確実に隠れる。agiDown と重なると hooksOf の順序依存になる (床 vs 乗算は
+    // 非可換)。値と床/乗算のどちらにするかは #456 パイロット (忍者) で sim 確定 (レビュー ★)。
+    dodgeCalc: (dodge) => Math.max(dodge, 0.75),
   },
   critCharge: {
     id: 'critCharge',
