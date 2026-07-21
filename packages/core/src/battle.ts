@@ -23,6 +23,7 @@ import { elementMultiplier, type Element } from './elements.js';
 import {
   type StatusInstance,
   type HookCtx,
+  STATUS_REGISTRY,
   applyBeforeAct,
   applyDodgeCalc,
   applyPowerCalc,
@@ -30,7 +31,6 @@ import {
   applyIncomingCalc,
   applyOnHit,
   tickStatuses,
-  clearActedStatuses,
   clearHitStatuses,
 } from './statuses.js';
 
@@ -204,7 +204,9 @@ export const JOB_SKILL_NAMES: Record<Archetype, string> = {
 };
 
 export interface JobSkill {
-  kind: SkillKind;
+  /** SKILLS レジストリのキー。基本 6 種は SkillKind、ジョブ確定キット (#456) は
+   *  'mage-flame' 等の固有 id。エンジンは SKILLS[kind] で解決するので string に緩めた。 */
+  kind: string;
   name: string;
 }
 
@@ -233,12 +235,54 @@ const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   seer: [{ kind: 'heal', name: '癒しの予言', learnAt: 4 }],
   sage: [{ kind: 'heal', name: '天啓の癒し', learnAt: 5 }],
   bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
-  mage: [{ kind: 'heal', name: '回生の術式', learnAt: 5 }],
+  // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
+  // JOB_KITS.mage が skillsForJob を早期 return するため到達不能 = 意図的に撤去 (レビュー ★★)。
 };
 
-/** その jobLevel 時点で使えるとくぎ列。[0] は署名スキル (skillForJob と一致 = 後方互換)、
- *  以降は習得済みの副スキル (learnAt <= jobLevel)。UI/エンジンはこの列から毎ターン選ぶ。 */
+/** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
+ *  キットを持つジョブは skillsForJob がこれを返す (旧 署名+LEARNED 方式より優先)。未登録のジョブは
+ *  従来どおり。**段階投入**: まず単体戦闘で成立するジョブから (全体/召喚技は #453 マルチ戦闘後)。 */
+interface KitSkill {
+  /** SKILLS のキー */
+  id: string;
+  name: string;
+  learnAt: number;
+}
+const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
+  // 魔法使い: 単体・int型・必中・def無視の大砲 (脆い)。パイロット (#456)。魔力障壁 Lv30 (P) は後続。
+  mage: [
+    { id: 'mage-flame', name: '火炎術式', learnAt: 3 },
+    { id: 'mage-decode', name: '解式マギア', learnAt: 5 },
+    { id: 'mage-stone', name: '石射', learnAt: 6 },
+    { id: 'mage-freeze', name: '氷結術式', learnAt: 8 },
+    { id: 'mage-melt', name: 'メルティ', learnAt: 12 },
+    { id: 'mage-blaze', name: '爆炎術式', learnAt: 15 },
+    { id: 'mage-quake', name: 'じわれ', learnAt: 18 },
+    { id: 'mage-permafrost', name: '永久凍土', learnAt: 20 },
+    { id: 'mage-meteor', name: 'メテオ', learnAt: 25 },
+  ],
+  // 忍者: agi 型・毒/隠密/会心 (§7 パイロット)。影分身20/首狩り30(P) は後続。
+  ninja: [
+    { id: 'ninja-poison-hand', name: '毒手', learnAt: 3 },
+    { id: 'ninja-hide', name: 'かくれみ', learnAt: 5 },
+    { id: 'ninja-katon', name: '火遁', learnAt: 8 },
+    { id: 'ninja-vitals', name: '急所狙い', learnAt: 12 },
+    { id: 'ninja-kuji', name: '九字切り', learnAt: 15 },
+  ],
+};
+
+/** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。
+ *  - **キット未登録ジョブ**: [0] = 署名スキル (skillForJob と一致 = 後方互換)、以降は習得済み副スキル。
+ *  - **確定キット (#456) 持ちジョブ**: learnAt<=level のキット技 (未習得帯のみ署名にフォールバック)。
+ *    この場合 [0] は署名と一致しない (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を
+ *    前提にするコードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
 export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
+  const kit = JOB_KITS[archetype];
+  if (kit) {
+    const learned = kit.filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
+    // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
+    return learned.length ? learned : [skillForJob(archetype)];
+  }
   const signature = skillForJob(archetype);
   const learned = (LEARNED_SKILLS[archetype] ?? [])
     .filter((s) => jobLevel >= s.learnAt)
@@ -290,6 +334,12 @@ export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
   gamble: '大博打 (0〜2.6 倍)',
   heal: 'いのり (HP 回復)',
 };
+
+/** とくぎ種別のカテゴリ説明ラベル (UI の補足)。基本 6 種のみ定義があり、確定キット (#456) の
+ *  固有 id は名前自体が説明的なため undefined を返す (UI は補足を出さない)。 */
+export function skillKindLabel(kind: string): string | undefined {
+  return (SKILL_KIND_LABELS as Record<string, string>)[kind];
+}
 
 // ─── 戦闘参加者 ─────────────────────────────────────────────
 
@@ -983,6 +1033,45 @@ function doAttack(
   return result;
 }
 
+/**
+ * 魔法ダメージ (#456 / docs/25 §14.6・§423)。**範囲ベース・必中・def 無視** (DQ 流)。
+ * `amount` は呼び出し側 (とくぎ) が範囲 roll + int 連動で算出済みの生ダメージ。ここで
+ * **属性相性 (§1) と被ダメバフ (defUp/defDown)** を掛けて確定・適用する。会心・回避・反撃なし。
+ * 物理 (doAttack) と違い defender の def を一切見ないため、守備の高い敵にも通る (メタルの魔法無効は
+ * #455 で monster resist として別途)。
+ */
+function doMagic(
+  attacker: Combatant,
+  defender: Combatant,
+  rng: () => number,
+  events: TurnEvent[],
+  actor: 'player' | 'monster',
+  opts: { amount: number; element?: Element; label?: string },
+): AttackResult {
+  const label = opts.label ? `${attacker.name}の${opts.label}!` : `${attacker.name}の魔法!`;
+  const defenderSide: 'player' | 'monster' = actor === 'player' ? 'monster' : 'player';
+  const defCtx: HookCtx = { rng, events, actor: defenderSide };
+  let dmg = opts.amount;
+  dmg *= elementMultiplier(opts.element, defender.element); // 属性相性 (無属性は ×1)
+  dmg *= applyIncomingCalc(1, defender, defCtx); // defUp/defDown/転倒
+  const final = Math.max(1, Math.round(dmg));
+  defender.hp = Math.max(0, defender.hp - final);
+  const fatal = defender.hp === 0;
+  if (!fatal) clearHitStatuses(defender); // 被弾で解ける状態 (かくれみ/眠り)
+  const fatalText = fatal
+    ? actor === 'player'
+      ? `。${defender.name}をたおした!`
+      : `。${defender.name}はちからつきた…!`
+    : '';
+  events.push({
+    actor,
+    text: `${label} ${defender.name}に ${final} のダメージ${fatalText}`,
+    damage: final,
+    ...(fatal ? { fatal: true } : {}),
+  });
+  return { hit: true, damage: final, fatal, crit: false };
+}
+
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
 type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee';
@@ -1065,7 +1154,7 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
   // 見切り (parry) 等の「宣言型」とくぎは effects 空で、宣言は resolveTurn 冒頭が担う。
   const def = SKILLS[skill.kind];
   if (!def) return;
-  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack } });
+  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack, doMagic } });
 }
 
 /**
@@ -1180,6 +1269,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     const self = who === 'player' ? state.player : state.monster;
     // 行動不能 (眠り/麻痺/転倒/束縛)。none なら false = 従来どおり行動。
     if (applyBeforeAct(self, { rng, events, actor: who })) return;
+    // 行動前に存在した clearOnAct 状態 (前ターンからのかくれみ/九字切り) を記録。行動で「消費」し
+    // 末尾で除去する。この行動中に付与した自己バフ (かくれみ/九字切りを張る等) は消さない。
+    const consumedOnAct = (self.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
@@ -1235,8 +1327,11 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       }
       // guard は宣言済み
     }
-    // 行動したら解ける状態 (かくれみ/九字切り)。none なら no-op。
-    clearActedStatuses(self);
+    // 行動で消費された状態 (前ターンからのかくれみ/九字切り) のみ除去。この行動で張った
+    // 自己バフは残す (かくれみ→次ターンの攻撃で解除、が正しい)。none なら no-op。
+    if (consumedOnAct.length && self.statuses) {
+      self.statuses = self.statuses.filter((s) => !consumedOnAct.includes(s));
+    }
   };
 
   act(playerFirst ? 'player' : 'monster');

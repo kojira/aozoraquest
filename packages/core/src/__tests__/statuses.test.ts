@@ -151,4 +151,27 @@ describe('状態異常エンジン (#452)', () => {
     tickStatuses(dead, ctx());
     expect(dead.hp).toBe(0); // 追撃なし
   });
+
+  it('applyStatus した状態は付与ターンの tick を fresh スキップし、次の tick から効く', () => {
+    const target = c({ hp: 100 });
+    applyStatus(target, st('poison', 2, 5));
+    // 付与ターン末の tick: fresh を畳むだけ (ダメージ・減衰なし)。
+    tickStatuses(target, ctx());
+    expect(target.hp).toBe(100); // 付与ターンは毒ダメージ無し
+    expect(target.statuses![0]!.turns).toBe(2); // 減衰なし
+    expect(target.statuses![0]!.fresh).toBe(false);
+    // 次ターン以降は通常どおり効く。
+    tickStatuses(target, ctx());
+    expect(target.hp).toBe(95);
+    expect(target.statuses![0]!.turns).toBe(1);
+  });
+
+  it('turns:1 の麻痺は fresh スキップで付与ターンを生き延び、次ターンで消える', () => {
+    const target = c();
+    applyStatus(target, st('stun', 1));
+    tickStatuses(target, ctx()); // 付与ターン: fresh 畳むのみ → 残る
+    expect(target.statuses?.some((s) => s.id === 'stun')).toBe(true);
+    tickStatuses(target, ctx()); // 次ターン: turns 1→0 で除去
+    expect(target.statuses ?? []).toHaveLength(0);
+  });
 });

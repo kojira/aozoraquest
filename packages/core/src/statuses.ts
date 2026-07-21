@@ -37,6 +37,10 @@ export interface StatusInstance {
   /** 効果量。**単位は状態ごとに異なる**: poison=1 ターンあたりのダメージ量 (絶対値) /
    *  atk・def・agi の Up/Down=倍率 (例 1.3)。付与側は取り違えに注意。未指定は各状態のデフォルト。 */
   magnitude?: number;
+  /** 付与された当ターンだけ true。そのターンの tickStatuses では turnEnd 発火・turns 減衰を
+   *  スキップする (turns:1 の麻痺が「付与ターン末に即消え」で無効化されるのを防ぐ)。これにより
+   *  turns=N が「対象の以後 N ターンに効く」の直感どおりになる。applyStatus が立て、最初の tick が畳む。 */
+  fresh?: boolean;
 }
 
 /** フック呼び出しの文脈。ディスパッチャが「処理中の状態インスタンス」と「c 側」を差し込む。 */
@@ -162,6 +166,29 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
 /** パッシブレジストリ (ジョブ innate)。#456 で首狩り等を追加。今は枠だけ。 */
 export const PASSIVES: Record<string, PassiveDef> = {};
 
+/** 状態付与時の告知テキスト (対象名の後に続ける)。プレイヤーが状態変化を認識できるように
+ *  (無告知だと忍者のかくれみ/九字切り等が「何も起きていない」ように見える。レビュー ★★)。 */
+const STATUS_APPLY_TEXT: Record<StatusId, string> = {
+  poison: 'は毒におかされた!',
+  sleep: 'は眠ってしまった!',
+  stun: 'は麻痺した!',
+  tumble: 'は転倒した!',
+  restraint: 'は束縛された!',
+  hidden: 'は かくれみ に身を隠した!',
+  critCharge: 'は精神を研ぎ澄ませた!',
+  atkUp: 'の攻撃力があがった!',
+  atkDown: 'の攻撃力がさがった!',
+  defUp: 'の守備力があがった!',
+  defDown: 'の守備力がさがった!',
+  agiUp: 'の素早さがあがった!',
+  agiDown: 'の素早さがさがった!',
+};
+
+/** 状態付与の告知文 (対象名 + テキスト)。 */
+export function statusApplyText(id: StatusId, targetName: string): string {
+  return `${targetName}${STATUS_APPLY_TEXT[id]}`;
+}
+
 /** ctx にいま処理中の status を差し込む (exactOptional: undefined は明示せず省略)。 */
 function ctxFor(ctx: HookCtx, inst?: StatusInstance): HookCtx {
   return inst ? { ...ctx, status: inst } : ctx;
@@ -229,18 +256,33 @@ export function applyOnHit(atk: Combatant, def_: Combatant, ctx: HookCtx): boole
   return kill;
 }
 
-/** ターン終了: turnEnd フック (毒等) → turns-- → 0 で除去。生存者のみ turnEnd を受ける。 */
+/** ターン終了: turnEnd フック (毒等) → turns-- → 0 で除去。生存者のみ turnEnd を受ける。
+ *  付与された当ターン (fresh) は turnEnd・減衰をスキップし fresh を畳む (次ターンから効き始める)。 */
 export function tickStatuses(c: Combatant, ctx: HookCtx): void {
   if (!c.statuses || c.statuses.length === 0) return;
   for (const inst of c.statuses) {
     if (c.hp <= 0) break;
+    if (inst.fresh) continue; // 付与ターンは turnEnd を発火しない (毒は次ターンから)
     STATUS_REGISTRY[inst.id]?.turnEnd?.(c, ctxFor(ctx, inst));
   }
-  for (const inst of c.statuses) inst.turns -= 1;
+  for (const inst of c.statuses) {
+    if (inst.fresh) {
+      inst.fresh = false; // 付与ターンの tick は「消費」せず fresh だけ畳む
+      continue;
+    }
+    inst.turns -= 1;
+  }
   c.statuses = c.statuses.filter((s) => s.turns > 0);
 }
 
-/** 自分が行動したときに clearOnAct 状態を除去 (かくれみ/九字切り)。 */
+/**
+ * clearOnAct 状態を一律除去するユーティリティ。
+ *
+ * **非推奨 (resolveTurn では使わない)**: 「行動したら即消す」は、行動中に付与した自己バフ
+ * (かくれみ/九字切りを張る等) まで同ターンに消してしまう。resolveTurn は行動前スナップショット
+ * (`consumedOnAct`) 方式で「前ターンから持ち越した clearOnAct のみ消費」する。この関数は
+ * clearOnAct セマンティクスの単体テスト用途にのみ残す。
+ */
 export function clearActedStatuses(c: Combatant): void {
   if (!c.statuses || c.statuses.length === 0) return;
   c.statuses = c.statuses.filter((s) => !STATUS_REGISTRY[s.id]?.clearOnAct);
@@ -268,9 +310,10 @@ export function applyStatus(c: Combatant, inst: StatusInstance): void {
     if (mode === 'refresh') {
       existing.turns = Math.max(existing.turns, inst.turns);
       if (inst.magnitude !== undefined) existing.magnitude = inst.magnitude;
+      existing.fresh = true; // 再付与も当ターンは効かせ始めない (直感的な turns 意味を維持)
       return;
     }
     // stack: 別インスタンスとして追加
   }
-  c.statuses.push({ ...inst });
+  c.statuses.push({ ...inst, fresh: true });
 }
