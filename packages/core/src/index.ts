@@ -14,6 +14,7 @@ export * from './card-rarity.js';
 export * from './card.js';
 export * from './battle.js';
 export * from './skills.js';
+export * from './statuses.js';
 export * from './elements.js';
 export * from './world.js';
 export * from './equipment.js';

@@ -19,6 +19,19 @@ import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
 import { SKILLS, runSkill } from './skills.js';
+import {
+  type StatusInstance,
+  type HookCtx,
+  applyBeforeAct,
+  applyDodgeCalc,
+  applyPowerCalc,
+  applyCritCalc,
+  applyIncomingCalc,
+  applyOnHit,
+  tickStatuses,
+  clearActedStatuses,
+  clearHitStatuses,
+} from './statuses.js';
 
 // ─── チューニング ───────────────────────────────────────────
 
@@ -303,6 +316,10 @@ export interface Combatant {
   /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
    *  防御した次のターンまで「相手の動きを読めている」状態。 */
   focus: number;
+  /** 状態異常 (#452 / docs/25 §3)。省略可 (旧 sealed state 互換)。エンジンが空/未定義を no-op 扱い。 */
+  statuses?: StatusInstance[];
+  /** ジョブ innate パッシブ id (#452 / docs/25 §4)。省略可。 */
+  passives?: string[];
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -326,6 +343,8 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
     parrying: false,
     charging: false,
     focus: 0,
+    statuses: [],
+    passives: [],
   };
 }
 
@@ -860,18 +879,31 @@ function doAttack(
 ): void {
   const t = BATTLE_TUNING;
   const label = opts.label ? `${attacker.name}の${opts.label}!` : `${attacker.name}のこうげき!`;
+  // 状態異常/パッシブのフック文脈 (#452)。空 statuses なら applyXxx は入力そのまま = 従来挙動。
+  const defenderSide: 'player' | 'monster' = actor === 'player' ? 'monster' : 'player';
+  const atkCtx: HookCtx = { rng, events, actor };
+  const defCtx: HookCtx = { rng, events, actor: defenderSide };
 
   // 回避判定 (魔撃は必中)。ぼうぎょの余韻 (focus) 中は「動きを読めている」ので回避が上がる。
   if (!opts.useInt) {
     const focusBonus = defender.focus > 0 ? t.guardFocusDodge : 0;
-    const dodge = Math.min(
+    let dodge = Math.min(
       t.dodgeMax + focusBonus,
       Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - (opts.hitBonus ?? 0) + focusBonus),
     );
+    dodge = applyDodgeCalc(dodge, defender, defCtx); // かくれみ/agi バフ
     if (rng() < dodge) {
       events.push({ actor, text: `${label} しかし ${defender.name}は身をかわした!` });
       return;
     }
+  }
+
+  // 命中確定後、即死パッシブ (首狩り等) の判定。none なら false。
+  if (applyOnHit(attacker, defender, atkCtx)) {
+    defender.hp = 0;
+    clearHitStatuses(defender);
+    events.push({ actor, text: `${label} ${defender.name}を一撃で仕留めた!`, damage: defender.maxHp, fatal: true });
+    return;
   }
 
   const atkValue = opts.atkOverride ?? (opts.useInt ? attacker.int : attacker.atk);
@@ -881,23 +913,28 @@ function doAttack(
   // 2026-07-20)。敵の会心を守備無視にすると、タンク職 (guardian) の「固く受ける」存在意義が
   // 壊れ拮抗帯で事故死が倍増するため、敵の会心は 1.5 倍のみ (バランス ★★★)。ぼうぎょ/見切り
   // **コマンドの半減はどちらも貫通しない** — 貫くと「予告を見て防御」の読み合いが崩れる (設計 ★★★)。
-  const crit = rng() < t.critBase + attacker.luk * t.critLukScale;
+  const crit = applyCritCalc(rng() < t.critBase + attacker.luk * t.critLukScale, attacker, atkCtx); // 九字切り=確定会心
   const critAtk = crit ? t.critAtkMultiplier : 1;
   const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
   // DQ の減算式 (攻撃÷2 − 防御÷4) 流: **防御の係数 (defCoef) を攻撃の半分 (2:1)** にしてインフレを
   // 抑える (オーナー要望 2026-07-20)。高守備の敵 (メタル) は atkTerm−defTerm が負に沈み minDamage
   // しか通らず、会心 (defValue=0) のみ貫通できる = 専用ロジック不要で「守備が硬い」が表現される。
-  const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1);
+  // 攻撃威力バフ (atkUp/atkDown)。none なら ×1。
+  const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1) * applyPowerCalc(1, attacker, atkCtx);
   let dmg = Math.max(t.minDamage, (atkTerm - defValue * t.defCoef) * roll);
 
   // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
+  // 被ダメバフ (defUp/defDown/転倒)。none なら ×1。
+  dmg *= applyIncomingCalc(1, defender, defCtx);
 
   // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
   // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
   const final = Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
+  // 被弾で解ける状態 (かくれみ解除・眠り起床)。none なら no-op。
+  if (!fatal) clearHitStatuses(defender);
   // 決着文はプレイヤー視点: 敵を倒した =「◯◯をたおした!」、自分が倒れた =
   // 「◯◯はちからつきた!」(プレイヤーが「たおされる」対象になる文は視点が転倒する)。
   const fatalText = fatal
@@ -986,8 +1023,18 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   const state: BattleState = {
     ...prev,
     turn: prev.turn + 1,
-    player: { ...prev.player, guarding: false },
-    monster: { ...prev.monster, guarding: false },
+    // statuses は tick で破壊的に更新するため deep copy (passives は不変なので参照共有で可)。
+    // 旧 sealed state で statuses 未定義なら省略 (exactOptional 準拠・エンジンは undefined を no-op 扱い)。
+    player: {
+      ...prev.player,
+      guarding: false,
+      ...(prev.player.statuses ? { statuses: prev.player.statuses.map((s) => ({ ...s })) } : {}),
+    },
+    monster: {
+      ...prev.monster,
+      guarding: false,
+      ...(prev.monster.statuses ? { statuses: prev.monster.statuses.map((s) => ({ ...s })) } : {}),
+    },
     lastEvents: [],
   };
   // command==='skill' のとき使う特技 (#436: 毎ターン選択)。範囲外/未設定 (デプロイ跨ぎの旧 sealed
@@ -1067,6 +1114,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   const act = (who: 'player' | 'monster') => {
     if (state.outcome !== 'ongoing') return; // 敵が逃げる等で決着済みなら以降の行動をスキップ
     if (state.player.hp === 0 || state.monster.hp === 0) return;
+    const self = who === 'player' ? state.player : state.monster;
+    // 行動不能 (眠り/麻痺/転倒/束縛)。none なら false = 従来どおり行動。
+    if (applyBeforeAct(self, { rng, events, actor: who })) return;
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
@@ -1122,10 +1172,19 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       }
       // guard は宣言済み
     }
+    // 行動したら解ける状態 (かくれみ/九字切り)。none なら no-op。
+    clearActedStatuses(self);
   };
 
   act(playerFirst ? 'player' : 'monster');
   act(playerFirst ? 'monster' : 'player');
+
+  // ターン終了の状態処理 (毒ダメージ等) → turns 減衰・除去。none なら no-op。
+  // 毒で HP0 になった場合は下の勝敗判定 (hp===0) が拾う。
+  if (state.outcome === 'ongoing') {
+    tickStatuses(state.player, { rng, events, actor: 'player' });
+    tickStatuses(state.monster, { rng, events, actor: 'monster' });
+  }
 
   // 見切りは 1 ターン限り (発動しなかったら解除)。ぼうぎょの余韻 (focus) は 1 減衰。
   state.player.parrying = false;
