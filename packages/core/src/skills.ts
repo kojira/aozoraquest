@@ -59,6 +59,16 @@ export type SkillEffect =
       element?: Element;
     }
   | {
+      kind: 'fixedDamage';
+      /** ダメージの下限・上限 (DQ 流の範囲魔法。例 15〜20)。 */
+      min: number;
+      max: number;
+      /** int 連動ボーナス: +attacker.int × intBonus (キャスターの int を伸ばす意味を出す)。 */
+      intBonus?: number;
+      /** 攻撃属性 (火水地風空)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
+      element?: Element;
+    }
+  | {
       kind: 'heal';
       /** maxHp に対する回復割合 */
       ratio: number;
@@ -82,6 +92,7 @@ export interface SkillDef {
 
 /** ハンドラに注入するエンジン一次関数 (循環 import 回避のための依存注入)。 */
 export interface SkillEngine {
+  /** 物理攻撃 (回避・会心・def 減算・反撃あり)。 */
   doAttack: (
     attacker: Combatant,
     defender: Combatant,
@@ -89,6 +100,15 @@ export interface SkillEngine {
     events: TurnEvent[],
     actor: 'player' | 'monster',
     opts?: AttackOptions,
+  ) => AttackResult;
+  /** 魔法ダメージ (範囲ベース・必中・def 無視)。amount は算出済みの生ダメージ。 */
+  doMagic: (
+    attacker: Combatant,
+    defender: Combatant,
+    rng: () => number,
+    events: TurnEvent[],
+    actor: 'player' | 'monster',
+    opts: { amount: number; element?: Element; label?: string },
   ) => AttackResult;
 }
 
@@ -167,6 +187,22 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   });
 };
 
+/** fixedDamage: 範囲ロール + int 連動 → doMagic (必中・def無視・属性相性)。DQ 流の魔法。 */
+const fixedDamageHandler: EffectHandler = (effect, ctx) => {
+  if (effect.kind !== 'fixedDamage') return;
+  const { attacker, defender, rng, events, engine, skillName } = ctx;
+  const actor = ctx.actorSide ?? 'player';
+  if (defender.hp <= 0) return;
+  const span = effect.max - effect.min;
+  let amount = effect.min + Math.floor(rng() * (span + 1));
+  if (effect.intBonus) amount += attacker.int * effect.intBonus;
+  engine.doMagic(attacker, defender, rng, events, actor, {
+    amount,
+    ...(effect.element ? { element: effect.element } : {}),
+    label: skillName,
+  });
+};
+
 /** heal: maxHp の割合ぶん回復 (攻撃しないターン)。 */
 const healHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'heal') return;
@@ -179,6 +215,7 @@ const healHandler: EffectHandler = (effect, ctx) => {
 /** 効果種別 → ハンドラ。ここに 1 行足す = 新しい効果プリミティブが使えるようになる。 */
 export const EFFECT_HANDLERS: Record<SkillEffect['kind'], EffectHandler> = {
   damage: damageHandler,
+  fixedDamage: fixedDamageHandler,
   heal: healHandler,
   status: statusHandler,
 };

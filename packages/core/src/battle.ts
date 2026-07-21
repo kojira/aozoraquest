@@ -983,6 +983,45 @@ function doAttack(
   return result;
 }
 
+/**
+ * 魔法ダメージ (#456 / docs/25 §14.6・§423)。**範囲ベース・必中・def 無視** (DQ 流)。
+ * `amount` は呼び出し側 (とくぎ) が範囲 roll + int 連動で算出済みの生ダメージ。ここで
+ * **属性相性 (§1) と被ダメバフ (defUp/defDown)** を掛けて確定・適用する。会心・回避・反撃なし。
+ * 物理 (doAttack) と違い defender の def を一切見ないため、守備の高い敵にも通る (メタルの魔法無効は
+ * #455 で monster resist として別途)。
+ */
+function doMagic(
+  attacker: Combatant,
+  defender: Combatant,
+  rng: () => number,
+  events: TurnEvent[],
+  actor: 'player' | 'monster',
+  opts: { amount: number; element?: Element; label?: string },
+): AttackResult {
+  const label = opts.label ? `${attacker.name}の${opts.label}!` : `${attacker.name}の魔法!`;
+  const defenderSide: 'player' | 'monster' = actor === 'player' ? 'monster' : 'player';
+  const defCtx: HookCtx = { rng, events, actor: defenderSide };
+  let dmg = opts.amount;
+  dmg *= elementMultiplier(opts.element, defender.element); // 属性相性 (無属性は ×1)
+  dmg *= applyIncomingCalc(1, defender, defCtx); // defUp/defDown/転倒
+  const final = Math.max(1, Math.round(dmg));
+  defender.hp = Math.max(0, defender.hp - final);
+  const fatal = defender.hp === 0;
+  if (!fatal) clearHitStatuses(defender); // 被弾で解ける状態 (かくれみ/眠り)
+  const fatalText = fatal
+    ? actor === 'player'
+      ? `。${defender.name}をたおした!`
+      : `。${defender.name}はちからつきた…!`
+    : '';
+  events.push({
+    actor,
+    text: `${label} ${defender.name}に ${final} のダメージ${fatalText}`,
+    damage: final,
+    ...(fatal ? { fatal: true } : {}),
+  });
+  return { hit: true, damage: final, fatal, crit: false };
+}
+
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
 type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee';
@@ -1065,7 +1104,7 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
   // 見切り (parry) 等の「宣言型」とくぎは effects 空で、宣言は resolveTurn 冒頭が担う。
   const def = SKILLS[skill.kind];
   if (!def) return;
-  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack } });
+  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack, doMagic } });
 }
 
 /**

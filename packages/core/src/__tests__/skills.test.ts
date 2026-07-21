@@ -36,6 +36,7 @@ function runWithSpy(skillId: string, attacker: Combatant, defender: Combatant, r
         calls.push(opts);
         return { hit: d.hp > 0, damage: 5, fatal: false, crit: false };
       },
+      doMagic: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
     },
   };
   runSkill(SKILLS[skillId]!, ctx);
@@ -122,6 +123,7 @@ function runDef(def: SkillDef, attacker: Combatant, defender: Combatant, rng = (
     skillName: 'test',
     engine: {
       doAttack: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
+      doMagic: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
     },
   };
   runSkill(def, ctx);
@@ -191,7 +193,56 @@ function runWithSpy2(def: SkillDef, rng = () => 0.5) {
         calls.push(opts);
         return { hit: d.hp > 0, damage: 5, fatal: false, crit: false };
       },
+      doMagic: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
     },
   });
   return { calls };
 }
+
+/** fixedDamage を spy で実行し、doMagic に渡った opts (amount/element) を返す。 */
+function runMagicSpy(def: SkillDef, attacker: Combatant, defender: Combatant, rng = () => 0.5) {
+  const calls: Array<{ amount: number; element?: string }> = [];
+  runSkill(def, {
+    attacker,
+    defender,
+    rng,
+    events: [],
+    skillName: 'x',
+    engine: {
+      doAttack: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
+      doMagic: (_a, d, _r, _e, _actor, opts) => {
+        calls.push(opts);
+        return { hit: d.hp > 0, damage: opts.amount, fatal: false, crit: false };
+      },
+    },
+  });
+  return { calls };
+}
+
+describe('fixedDamage (範囲魔法 #456)', () => {
+  it('min〜max の範囲でロールし doMagic に渡す (rng=0 で min)', () => {
+    const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 15, max: 20 }] }, makeCombatant(), makeCombatant(), () => 0);
+    expect(calls[0]!.amount).toBe(15);
+  });
+
+  it('rng≈1 で max 近辺', () => {
+    const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 15, max: 20 }] }, makeCombatant(), makeCombatant(), () => 0.999);
+    expect(calls[0]!.amount).toBe(20);
+  });
+
+  it('intBonus: +attacker.int × intBonus を加算', () => {
+    const atk = makeCombatant({ int: 25 });
+    const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 10, max: 10, intBonus: 0.4 }] }, atk, makeCombatant(), () => 0);
+    expect(calls[0]!.amount).toBe(10 + 25 * 0.4); // 20
+  });
+
+  it('element を doMagic に渡す (属性相性)', () => {
+    const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 5, max: 5, element: 'fire' }] }, makeCombatant(), makeCombatant(), () => 0);
+    expect(calls[0]!.element).toBe('fire');
+  });
+
+  it('対象が倒れていれば撃たない', () => {
+    const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 5, max: 5 }] }, makeCombatant(), makeCombatant({ hp: 0 }), () => 0);
+    expect(calls).toHaveLength(0);
+  });
+});
