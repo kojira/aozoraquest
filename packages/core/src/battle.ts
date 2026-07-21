@@ -978,8 +978,61 @@ function doAttack(
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
 type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee';
 
-/** モンスターの行動を能力 (ability) で分岐する (オーナー要望 2026-07-18: ため攻撃は
- *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。 */
+/** モンスター能力プラグイン (#452 / docs/25 §5)。行動 AI を ability id → データ定義に置き、
+ *  monsterCommand の if 分岐を排す。null を返すと通常判定 (plain) にフォールバック。 */
+interface AbilityDecisionCtx {
+  state: BattleState;
+  /** そのターンの単一乱数 (全 ability で共有 = 決定性維持)。 */
+  r: number;
+  t: typeof BATTLE_TUNING;
+  hpRatio: number;
+  /** 低 HP で身を固める余地があるか (tier2+ かつ HP<35% かつ非ため中)。 */
+  canGuard: boolean;
+  monsterDef: MonsterDef | undefined;
+}
+
+interface AbilityDef {
+  id: string;
+  decideAction(ctx: AbilityDecisionCtx): MonsterAction | null;
+}
+
+/** 能力レジストリ。新しい敵 AI は CombatHook 同様「ここに 1 エントリ足すだけ」。 */
+const MONSTER_ABILITIES: Record<string, AbilityDef> = {
+  // charger: 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)
+  charger: {
+    id: 'charger',
+    decideAction: ({ state, r, t, canGuard }) => {
+      if (state.monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
+      if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
+      return 'attack';
+    },
+  },
+  // healer: 低 HP でたまに自己回復 (削り切る前に倒す読み合い)
+  healer: {
+    id: 'healer',
+    decideAction: ({ state, r, t, hpRatio, canGuard }) => {
+      if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
+      if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
+      return 'attack';
+    },
+  },
+  // fleer: 毎ターン逃走を試みる (はぐれメタル型)。逃走率は**基準 agi (レベル非依存)** で決める —
+  // factor でスケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
+  // 上がって「成長するほど倒せない」逆進になる (レビュー ★★)。常に同じ緊張感にする。
+  fleer: {
+    id: 'fleer',
+    decideAction: ({ r, t, monsterDef }) => {
+      const baseAgi = monsterDef?.stats[2] ?? 0;
+      const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
+      if (r < fleeChance) return 'flee';
+      return 'attack';
+    },
+  },
+};
+
+/** モンスターの行動を能力 (ability) で決める (オーナー要望 2026-07-18: ため攻撃は
+ *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。
+ *  #452: if 分岐でなく MONSTER_ABILITIES レジストリ引き (プラグイン化)。 */
 function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   const def = MONSTERS_BY_ID[state.monsterId];
   const t = BATTLE_TUNING;
@@ -987,26 +1040,12 @@ function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   const hpRatio = state.monster.hp / state.monster.maxHp;
   // 低 HP でたまに身を固める (charger のため中は別処理なのでここでは除外)
   const canGuard = (def?.tier ?? 1) >= 2 && hpRatio < 0.35 && !state.monster.charging;
-  if (def?.ability === 'charger') {
-    if (state.monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
-    if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
-    return 'attack';
-  }
-  if (def?.ability === 'healer') {
-    if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
-    if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
-    return 'attack';
-  }
-  if (def?.ability === 'fleer') {
-    // 毎ターン逃走を試みる。逃走率は**基準 agi (レベル非依存)** で決める — factor で
-    // スケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
-    // 上がって「成長するほど倒せない」逆進になる (レビュー ★★)。常に同じ緊張感にする。
-    const baseAgi = def.stats[2] ?? 0;
-    const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
-    if (r < fleeChance) return 'flee';
-    return 'attack';
-  }
-  // plain: 通常攻撃 + 低 HP でたまに防御
+
+  const ability = def?.ability ? MONSTER_ABILITIES[def.ability] : undefined;
+  const action = ability?.decideAction({ state, r, t, hpRatio, canGuard, monsterDef: def });
+  if (action) return action;
+
+  // plain (ability 無し / null): 通常攻撃 + 低 HP でたまに防御
   if (canGuard && r < 0.25) return 'guard';
   return 'attack';
 }
