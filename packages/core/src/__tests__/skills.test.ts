@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { SKILLS, runSkill, EFFECT_HANDLERS, type SkillContext, type SkillDef } from '../skills.js';
+import { SKILLS, runSkill, runSkillMulti, effectTarget, EFFECT_HANDLERS, type SkillContext, type SkillDef } from '../skills.js';
 import type { Combatant, AttackOptions } from '../battle.js';
+import type { CombatSides } from '../combat-target.js';
 
 function makeCombatant(over: Partial<Combatant> = {}): Combatant {
   return {
@@ -266,5 +267,79 @@ describe('fixedDamage (範囲魔法 #456)', () => {
     const buffAmt = runMagicSpy(def, buffed, makeCombatant(), () => 0).calls[0]!.amount;
     expect(bareAmt).toBe(10); // バフ 0 → ×1
     expect(buffAmt).toBe(10 * (1 + 2 * 0.5)); // バフ 2 → ×2 = 20
+  });
+});
+
+describe('runSkillMulti (マルチ対象解決 #453)', () => {
+  const makeSides = (): CombatSides => ({
+    allies: [makeCombatant({ name: 'P' })],
+    enemies: [makeCombatant({ name: 'E1' }), makeCombatant({ name: 'E2' })],
+  });
+
+  /** runSkillMulti を spy で回し、doAttack が当たった defender 名 + status 付与対象を集める。 */
+  function runMulti(def: SkillDef, attacker: Combatant, sides: CombatSides) {
+    const hits: string[] = [];
+    runSkillMulti(def, attacker, sides, (defender) => ({
+      attacker,
+      defender,
+      rng: () => 0.5,
+      events: [],
+      skillName: 'x',
+      engine: {
+        doAttack: (_a, d) => {
+          hits.push(d.name);
+          return { hit: true, damage: 3, fatal: false, crit: false };
+        },
+        doMagic: (_a, d) => {
+          hits.push(d.name);
+          return { hit: true, damage: 3, fatal: false, crit: false };
+        },
+      },
+    }));
+    return hits;
+  }
+
+  it('effectTarget: damage=oneEnemy / heal=self / status(enemy)=oneEnemy / status(self)=self', () => {
+    expect(effectTarget({ kind: 'damage', stat: 'atk' })).toBe('oneEnemy');
+    expect(effectTarget({ kind: 'damage', stat: 'atk', target: 'allEnemies' })).toBe('allEnemies');
+    expect(effectTarget({ kind: 'heal', ratio: 0.3 })).toBe('self');
+    expect(effectTarget({ kind: 'status', status: 'poison', target: 'enemy' })).toBe('oneEnemy');
+    expect(effectTarget({ kind: 'status', status: 'atkUp', target: 'self' })).toBe('self');
+  });
+
+  const noop = () => ({ hit: true, damage: 0, fatal: false as const, crit: false });
+  const buffCtx = (attacker: Combatant) => (defender: Combatant): SkillContext => ({
+    attacker,
+    defender,
+    rng: () => 0.5,
+    events: [],
+    skillName: 'x',
+    engine: { doAttack: noop, doMagic: noop },
+  });
+
+  it('allEnemies 物理は敵全員に当たる', () => {
+    const sides = makeSides();
+    const hits = runMulti({ id: 'x', effects: [{ kind: 'damage', stat: 'atk', target: 'allEnemies' }] }, sides.allies[0]!, sides);
+    expect(hits.sort()).toEqual(['E1', 'E2']);
+  });
+
+  it('oneEnemy は敵先頭のみ', () => {
+    const sides = makeSides();
+    const hits = runMulti({ id: 'x', effects: [{ kind: 'damage', stat: 'atk' }] }, sides.allies[0]!, sides);
+    expect(hits).toEqual(['E1']);
+  });
+
+  it('self バフは敵人数に関係なく 1 回だけ使用者に付与', () => {
+    const sides = makeSides();
+    const p = sides.allies[0]!;
+    runSkillMulti({ id: 'x', effects: [{ kind: 'status', status: 'atkUp', target: 'self' }] }, p, sides, buffCtx(p));
+    expect(p.statuses?.filter((s) => s.id === 'atkUp')).toHaveLength(1); // 2 回付与されない
+  });
+
+  it('allEnemies デバフは敵全員に付与', () => {
+    const sides = makeSides();
+    const p = sides.allies[0]!;
+    runSkillMulti({ id: 'x', effects: [{ kind: 'status', status: 'agiDown', target: 'allEnemies' }] }, p, sides, buffCtx(p));
+    expect(sides.enemies.every((e) => e.statuses?.some((s) => s.id === 'agiDown'))).toBe(true);
   });
 });
