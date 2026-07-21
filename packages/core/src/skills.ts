@@ -302,6 +302,24 @@ export const SKILLS: Record<string, SkillDef> = {
   // 九字切り Lv15: 次の一撃を確定会心 (メタル系を会心で貫く)。turns:1 = fresh スキップにより付与ターンは
   // 畳まれず、次ターンの攻撃で確定会心 → clearOnAct で除去。
   'ninja-kuji': { id: 'ninja-kuji', effects: [{ kind: 'status', status: 'critCharge', target: 'self', turns: 1 }] },
+
+  // ─── 詩人 確定キット (#456 / docs/25 §12。水属性・自己バフ火力・言葉の拘束) ───
+  // 数値は sim 調整前提の暫定値。感傷(会心↑)/感情爆発(scaleBy)/全体技/詩心(P) は後続 (要 新語彙)。
+  'poet-verse': { id: 'poet-verse', effects: [{ kind: 'fixedDamage', min: 5, max: 10, intBonus: 0.12, element: 'water' }] }, // 心晴の韻 Lv3
+  'poet-calm': { id: 'poet-calm', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3 }] }, // 静心 Lv5
+  'poet-rouse': { id: 'poet-rouse', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 3 }] }, // 昂ぶりの詩 Lv7
+  // 言の葉縛り Lv8: 敵を束縛 (1-2T 行動不可・被弾で解けない)
+  'poet-bind': { id: 'poet-bind', effects: [{ kind: 'status', status: 'restraint', target: 'enemy', chance: 0.7, turns: 2 }] },
+  'poet-mushin': { id: 'poet-mushin', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3 }] }, // 無心 Lv12 (回避↑。次被ダメ半減は barrier 未実装で後続)
+  // 心の詩 Lv22: 自分の全能力↑ (atk/def/agi を一括バフ = 複数 effect 合成)
+  'poet-song': {
+    id: 'poet-song',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'self', turns: 3 },
+      { kind: 'status', status: 'defUp', target: 'self', turns: 3 },
+      { kind: 'status', status: 'agiUp', target: 'self', turns: 3 },
+    ],
+  },
 };
 
 /** SkillDef の全効果を順に解決する (プラグイン実行のエントリポイント)。 */

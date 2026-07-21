@@ -106,3 +106,36 @@ describe('忍者 確定キット (#456)', () => {
     expect(stunned).toBe(true);
   });
 });
+
+describe('詩人 確定キット (#456)', () => {
+  it('レベルで心晴の韻〜心の詩を習得', () => {
+    expect(skillsForJob('poet', 3).map((s) => s.name)).toContain('心晴の韻');
+    expect(skillsForJob('poet', 12).map((s) => s.name)).toEqual(['心晴の韻', '静心', '昂ぶりの詩', '言の葉縛り', '無心']);
+    expect(skillsForJob('poet', 22).map((s) => s.name)).toContain('心の詩');
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('poet', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('心の詩は自分に atk/def/agi の3バフを一括付与 (複数 effect 合成)', () => {
+    const s = startBattle('poet', 22, 25, '詩', 1, 3, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '心の詩');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    const ids = new Set(next.player.statuses?.map((st) => st.id));
+    expect(ids.has('atkUp')).toBe(true);
+    expect(ids.has('defUp')).toBe(true);
+    expect(ids.has('agiUp')).toBe(true);
+  });
+
+  it('言の葉縛りは敵に束縛を付与 (被弾で解けない拘束)', () => {
+    let bound = false;
+    for (let seed = 0; seed < 20 && !bound; seed++) {
+      const s = startBattle('poet', 8, 12, '詩', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === '言の葉縛り');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'restraint')) bound = true;
+    }
+    expect(bound).toBe(true);
+  });
+});
