@@ -235,7 +235,8 @@ const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   seer: [{ kind: 'heal', name: '癒しの予言', learnAt: 4 }],
   sage: [{ kind: 'heal', name: '天啓の癒し', learnAt: 5 }],
   bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
-  mage: [{ kind: 'heal', name: '回生の術式', learnAt: 5 }],
+  // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
+  // JOB_KITS.mage が skillsForJob を早期 return するため到達不能 = 意図的に撤去 (レビュー ★★)。
 };
 
 /** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
@@ -270,9 +271,11 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
   ],
 };
 
-/** その jobLevel 時点で使えるとくぎ列。[0] は署名スキル (skillForJob と一致 = 後方互換)、
- *  以降は習得済みの副スキル (learnAt <= jobLevel)。UI/エンジンはこの列から毎ターン選ぶ。
- *  確定キット (#456) を持つジョブは learnAt<=level のキット技を返す (未習得帯は署名にフォールバック)。 */
+/** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。
+ *  - **キット未登録ジョブ**: [0] = 署名スキル (skillForJob と一致 = 後方互換)、以降は習得済み副スキル。
+ *  - **確定キット (#456) 持ちジョブ**: learnAt<=level のキット技 (未習得帯のみ署名にフォールバック)。
+ *    この場合 [0] は署名と一致しない (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を
+ *    前提にするコードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
 export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
   const kit = JOB_KITS[archetype];
   if (kit) {
@@ -920,8 +923,6 @@ export interface AttackOptions {
   label?: string;
   /** 攻撃属性 (#452 / docs/25 §1)。防御側の element と相性判定。未指定 (無属性) は等倍。 */
   element?: Element;
-  /** 会心率への加算 (急所狙い等)。crit 判定 rng < critBase + luk*scale + critBonus。 */
-  critBonus?: number;
 }
 
 /** 攻撃 1 回の結果 (とくぎの inflict-on-hit 等が参照)。 */
@@ -981,7 +982,7 @@ function doAttack(
   // 2026-07-20)。敵の会心を守備無視にすると、タンク職 (guardian) の「固く受ける」存在意義が
   // 壊れ拮抗帯で事故死が倍増するため、敵の会心は 1.5 倍のみ (バランス ★★★)。ぼうぎょ/見切り
   // **コマンドの半減はどちらも貫通しない** — 貫くと「予告を見て防御」の読み合いが崩れる (設計 ★★★)。
-  const crit = applyCritCalc(rng() < t.critBase + attacker.luk * t.critLukScale + (opts.critBonus ?? 0), attacker, atkCtx); // 会心 (急所狙い=critBonus / 九字切り=確定)
+  const crit = applyCritCalc(rng() < t.critBase + attacker.luk * t.critLukScale, attacker, atkCtx); // 九字切り=確定会心
   const critAtk = crit ? t.critAtkMultiplier : 1;
   const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
   // DQ の減算式 (攻撃÷2 − 防御÷4) 流: **防御の係数 (defCoef) を攻撃の半分 (2:1)** にしてインフレを

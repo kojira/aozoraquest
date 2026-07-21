@@ -79,4 +79,30 @@ describe('忍者 確定キット (#456)', () => {
     const afterHide: BattleState = resolveTurn(s, 'skill', undefined, hideIdx);
     expect(afterHide.player.statuses?.some((st) => st.id === 'hidden')).toBe(true);
   });
+
+  it('九字切りの critCharge は付与ターンを生き延び、次ターン頭に残っている (turns:2 回帰)', () => {
+    // turns:1 だと付与ターン末の tickStatuses で即消え、次の攻撃で会心にならない空撃ちだった。
+    const s = startBattle('ninja', 15, 20, '忍', 1, 7, 0);
+    const kujiIdx = s.playerSkills.findIndex((sk) => sk.name === '九字切り');
+    const afterKuji: BattleState = resolveTurn(s, 'skill', undefined, kujiIdx);
+    expect(afterKuji.player.statuses?.some((st) => st.id === 'critCharge')).toBe(true);
+    // 付与を告知している (無告知回帰の防止)。
+    expect(afterKuji.lastEvents.some((e) => e.text.includes('研ぎ澄ま'))).toBe(true);
+  });
+
+  it('急所狙いは命中で麻痺を付与 + 告知が出る (§7)。fresh スキップで付与ターンに消えない', () => {
+    // 一撃で倒すと inflict は乗らない (res.fatal ガード) ので、生き残る tier3 の敵で検証。
+    let stunned = false;
+    for (let seed = 0; seed < 40 && !stunned; seed++) {
+      const s = startBattle('ninja', 12, 18, '忍', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === '急所狙い');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      // fresh スキップにより turns:1 の麻痺が付与ターン末の tick で消えず残る。
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'stun')) {
+        stunned = true;
+        expect(next.lastEvents.some((e) => e.text.includes('麻痺'))).toBe(true);
+      }
+    }
+    expect(stunned).toBe(true);
+  });
 });

@@ -11,7 +11,7 @@
  */
 
 import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
-import { applyStatus, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
+import { applyStatus, statusApplyText, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
 import type { Element } from './elements.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
@@ -57,8 +57,6 @@ export type SkillEffect =
       inflict?: InflictSpec;
       /** 攻撃属性 (火遁=fire 等)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
       element?: Element;
-      /** 会心率への加算 (急所狙い等)。 */
-      critBonus?: number;
     }
   | {
       kind: 'fixedDamage';
@@ -143,7 +141,6 @@ const damageHandler: EffectHandler = (effect, ctx) => {
     if (effect.hitBonus !== undefined) opts.hitBonus = effect.hitBonus;
     if (effect.defFactor !== undefined) opts.defFactor = effect.defFactor;
     if (effect.element !== undefined) opts.element = effect.element;
-    if (effect.critBonus !== undefined) opts.critBonus = effect.critBonus;
     switch (effect.stat) {
       case 'atk':
         break; // 素の atk (default)
@@ -172,6 +169,7 @@ const damageHandler: EffectHandler = (effect, ctx) => {
           turns: inf.turns ?? DEFAULT_STATUS_TURNS,
           ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}),
         });
+        events.push({ actor, text: statusApplyText(inf.status, defender.name) });
       }
     }
   }
@@ -180,7 +178,10 @@ const damageHandler: EffectHandler = (effect, ctx) => {
 /** status: 使用者 (self) or 相手 (enemy) に状態異常を付与 (バフ/デバフ/かくれみ)。 */
 const statusHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'status') return;
-  const { attacker, defender, rng } = ctx;
+  const { attacker, defender, rng, events } = ctx;
+  const actor = ctx.actorSide ?? 'player';
+  // 倒した相手にデバフを乗せない (fixedDamage で致死後に走る多段技のため。self バフは対象外)。
+  if (effect.target === 'enemy' && defender.hp <= 0) return;
   if (rng() >= (effect.chance ?? 1)) return;
   const target = effect.target === 'self' ? attacker : defender;
   applyStatus(target, {
@@ -188,6 +189,8 @@ const statusHandler: EffectHandler = (effect, ctx) => {
     turns: effect.turns ?? DEFAULT_STATUS_TURNS,
     ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}),
   });
+  // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。
+  events.push({ actor, text: statusApplyText(effect.status, target.name) });
 };
 
 /** fixedDamage: 範囲ロール + int 連動 → doMagic (必中・def無視・属性相性)。DQ 流の魔法。 */
@@ -281,18 +284,23 @@ export const SKILLS: Record<string, SkillDef> = {
 
   // ─── 忍者 確定キット (#456 / docs/25 §7・§14.1。agi型・毒/隠密/会心) ───
   // 数値は sim 調整前提の暫定値。影分身 Lv20 / 首狩り Lv30 (P) は後続 (要 evade多重/召喚 or passive)。
-  // 毒手 Lv3: agi 物理 (軽) + 高確率で毒
+  // 毒手 Lv3: agi 物理 (軽) + 高確率で毒 (§7: power0.7 / chance0.8 / turns3)。
+  // magnitude は §7 では範囲 [1,3] だが poison の範囲ロールは未実装のため固定 2 (範囲対応は別 issue)。
   'ninja-poison-hand': {
     id: 'ninja-poison-hand',
-    effects: [{ kind: 'damage', stat: 'agi', power: 0.8, inflict: { status: 'poison', chance: 0.7, turns: 3, magnitude: 2 } }],
+    effects: [{ kind: 'damage', stat: 'agi', power: 0.7, inflict: { status: 'poison', chance: 0.8, turns: 3, magnitude: 2 } }],
   },
   // かくれみ Lv5: 自分にかくれみ (回避↑。安全に やくそう 回復するための布石。行動 or 被弾で解除)
   'ninja-hide': { id: 'ninja-hide', effects: [{ kind: 'status', status: 'hidden', target: 'self', turns: 3 }] },
   // 火遁 Lv8: 火属性の術 (必中・def無視)。忍者は int 低めなので intBonus 控えめ
   'ninja-katon': { id: 'ninja-katon', effects: [{ kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.12, element: 'fire' }] },
-  // 急所狙い Lv12: agi 物理・会心率大幅上昇 (メタル狩りの布石)
-  'ninja-vitals': { id: 'ninja-vitals', effects: [{ kind: 'damage', stat: 'agi', power: 1.0, critBonus: 0.35 }] },
-  // 九字切り Lv15: 次の一撃を確定会心 (メタル系を会心で貫く。critCharge は行動で解除)
+  // 急所狙い Lv12: agi 物理 1.5 倍 + 命中で 1 ターン麻痺 (§7 確定版どおり)
+  'ninja-vitals': {
+    id: 'ninja-vitals',
+    effects: [{ kind: 'damage', stat: 'agi', power: 1.5, inflict: { status: 'stun', chance: 1.0, turns: 1 } }],
+  },
+  // 九字切り Lv15: 次の一撃を確定会心 (メタル系を会心で貫く)。turns:1 = fresh スキップにより付与ターンは
+  // 畳まれず、次ターンの攻撃で確定会心 → clearOnAct で除去。
   'ninja-kuji': { id: 'ninja-kuji', effects: [{ kind: 'status', status: 'critCharge', target: 'self', turns: 1 }] },
 };
 
