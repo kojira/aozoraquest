@@ -452,3 +452,57 @@ AoE は対象をループするだけ (プラグインで吸収)。**とくぎ�
 (将軍/隊長/巫女/吟遊詩人/戦士/聖騎士/予言者/芸術家/詩人/匠/冒険者は §11 と異なる。§7 の忍者、遊び人/守護者も含め全16確定)。
 実装は #437 以降で: (1) プラグイン基盤+属性+状態エンジン → (2) マルチ戦闘(パーティvs敵グループ) → (3) 装備連携 →
 (4) モンスター拡張(属性/飛行/耐性+endgame強敵) → (5) 全ジョブ とくぎデータ投入+sim調整 → (6) UI+edge。issue を段階分割する。
+
+---
+
+## 14. レビュー反映・仕様の穴埋め (第三者レビュー3本の統合 2026-07-22)
+
+整合性/アーキ/バランスの3レビューで判明した「定義漏れ・書けないとくぎ・大穴」を埋める。**§12 と本節が正**。
+
+### 14.1 §12 に不足していた3職 (忍者/遊び人/守護者の確定キット)
+- **忍者**: §7 参照 (毒手3/かくれみ5/火遁8火/急所狙い12/九字切り15/影分身20/首狩り30P)。
+- **遊び人**: ぶんどり3(gain)/サボる5(restoreMp+heal)/ルーレット8(random)/いちかばちか12(damage+recoil)/曲芸乱舞15(agi連撃)/大道芸20(random豪華)/せっとく30(resolve和解30%・XPなし素材)。
+- **守護者**: 盾殴り3(def基準)/大盾の護り5(parry反撃)/とげの盾8(thorns=onDamaged)/仁王立ち12(被ダメ≒0の1T)/守護の祈り15(defUp)/フルカウンター25(累積被ダメ返し)/不動30(P onLethal50%・物理致死のみ耐)。
+
+### 14.2 StatusId 完全版 (使用中の状態を全部登録)
+`poison / sleep / stun / tumble(転倒) / restraint(束縛) / confusion(混乱) / flinch(怯み) / hidden / critCharge / magicEvade(必中回避) / atkUp/atkDown / defUp/defDown / agiUp/agiDown / intUp/intDown / evadeUp / accDown(命中↓) / doomMark(遅延) / weaponThrown`。定義の要点:
+- **tumble(転倒)**: beforeAct=block + incomingCalc ×1.2 + restack:ignore。
+- **restraint(束縛)**: beforeAct=block・**clearOnHit=false(被弾で解けない)**・clearOnAct=true。sleep/stun と別。
+- **confusion(混乱)**: overrideAction で乱択[何もしない/敵味方ランダム攻撃/プレイヤー回復]・被弾で高確率解除。
+- **flinch(怯み)**: 1T beforeAct=block(軽い) + agiDown。**doomMark**: turnEnd でカウントダウン→0で大ダメージ(破滅の予言)。
+- **accDown**: 攻撃側の命中に modifyHit で効く(目くらまし/幻惑/煙玉/かく乱)。
+
+### 14.3 CombatHook 完全版
+既存(beforeAct/dodgeCalc/powerCalc/critCalc/onHit/incomingCalc/turnEnd)+ 追加:
+- **overrideAction**(混乱)/ **modifyHit**(命中率デバフ)/ **onIncomingMagic**(見切りの必中回避・清き心の魔法反射)/
+  **onEnemyCast**(鬼神斬りの魔法かき消し=マルチでは殴った1体の詠唱をキャンセル)/ **onLethal**(覇王=物理限定/不動=50%)。
+
+### 14.4 target と適用ループ
+`SkillDef.target: 'self'|'oneEnemy'|'allEnemies'|'oneAlly'|'allAllies'`(効果ごとに変えたい場合は SkillEffect 側にも)。
+resolveTurn が target を解決して対象集合を作り、**各対象に EFFECT_HANDLER を適用(ループはエンジン側・ハンドラは1対象分)**。ソロは allies=[player] の特殊ケース。
+
+### 14.5 計算値 (静的プリミティブで足りない分)
+effect の数値に **`scaleBy`** を許す(データ駆動を保つ限定的な参照): `'buffCount'`(感情爆発)/`'missingHpRatio'`(背水の陣)/`'weaponPower'`(武器投げ)。ハンドラが ctx から引く。任意関数は使わない(=プラグイン原則維持)。
+
+### 14.6 resolve(決着効果)
+`{ kind:'resolve', outcome:'win'|'reconciled', chance?, grantXp, grantDrops, dropBonus? }`。ハンドラが rng<chance で
+outcome を state に set(以降のターン処理打ち切り)。reward 層が outcome+フラグを読む(分岐でなくフラグ駆動)。
+BattleOutcome に **reconciled** 追加。首狩り=resolve win(即死)/せっとく=resolve reconciled(XPなし素材)。
+
+### 14.7 バフ計算の順序と上限
+最終 = **(基礎 + フラット加算バフ合計) × 倍率バフ**。倍率はステータスごとに合算し **×2 で頭打ち**(全能力2倍もここに収まる)。
+パッシブ常時(名将+10%)も倍率側にカウント。フラット(光の加護+5)は別枠で先に加算(値が小さいので上限は緩め)。デバフも係数で対称。
+
+### 14.8 マルチ戦闘の AI・行動順 (最大の穴・ここで方針決定)
+- **行動順**: 全参加者(味方[player+召喚+NPC]/敵[複数])を毎ターン agi+乱数で並べる(現行 playerFirst ブールを撤廃)。
+- **敵AI**: 各敵が `MONSTER_ABILITIES[ability].decideAction` で「自分1体分」を決める(単体前提から改修)。ターゲットは AI が味方集合から選ぶ(弱い味方/ランダム)。
+- **召喚/NPC味方AI**: 一時味方(からくり兵/創造の絵筆/NPC)は autoBattleCommand の味方版で自動行動。
+- **ターゲット上書き**: 挑発/かばう(将来)で選択を上書き。
+- **BattleState/edge**: `allies[] / enemies[]` に再構築。旧 sealed state は #436 同様フォールバック(単体戦闘として解決)。edge の skillId 検証も味方ごとに。
+
+### 14.9 次ステップ (この仕様のスコープ外・別 issue)
+- **endgame の強敵 = tier を増やす**(オーナー: 「tier がまだ少なすぎる。モンスター調整は次のステップ」)。高Lv技(80-120)に
+  見合う上位 tier/ボス(高HP・強攻撃・属性/耐性)を**別 workstream**で用意。数値は圧縮しない。
+- **武器投げ = そのまま維持**(オーナー決定)。3層連結(装備/インベントリ/報酬)を受け入れ、バランスは sim。
+- **balance watch(sim/実装で監視・数値でなく機構)**: 支援職の全体バフ過密 vs 回復2職 / 死の宣告(ザコ即殺)/ 覇王・不動(対物理ほぼ不死)/
+  吟遊・芸術家の火力 / 属性の駆け引きが飾りにならない導線(敵属性を見せる)。
