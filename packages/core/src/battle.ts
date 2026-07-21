@@ -18,6 +18,7 @@
 import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
+import { SKILLS, runSkill } from './skills.js';
 
 // ─── チューニング ───────────────────────────────────────────
 
@@ -833,7 +834,7 @@ export function startBattle(
   };
 }
 
-interface AttackOptions {
+export interface AttackOptions {
   /** 攻撃力の基準値を上書き (特技を支配ステータス基準にする: gamble=luk, flurry=agi)。
    *  素の atk が低い luk/agi 型ジョブでも「ジョブに合った能力」で火力が出るように。 */
   atkOverride?: number;
@@ -960,42 +961,11 @@ function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
   const { player, monster } = state;
-  const t = BATTLE_TUNING;
-  switch (skill.kind) {
-    case 'smash':
-      doAttack(player, monster, rng, events, 'player', { power: 1.7, hitBonus: -0.1, label: skill.name });
-      break;
-    case 'parry':
-      // 宣言は resolveTurn 冒頭 (行動順に関係なく効くように)。ここは no-op。
-      break;
-    case 'flurry':
-      // 支配ステータス (agi) 基準 — 素早さで手数を出すジョブの「らしさ」と火力を一致させる
-      doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: skill.name });
-      if (state.monster.hp > 0) {
-        doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: skill.name });
-      }
-      break;
-    case 'spell':
-      // 防御を半分だけ貫通 + 必中。完全無視 (旧仕様) は int 職が tier3 を蹂躙して
-      // 難易度設計が壊れたため 0.5 に緩和 (バランステストで固定)。
-      doAttack(player, monster, rng, events, 'player', { power: 1.0, useInt: true, defFactor: 0.5, label: skill.name });
-      break;
-    case 'gamble': {
-      // 0〜2.6 倍。luk が高いほど下振れしにくい。基準値も支配ステータス (luk) —
-      // atk 7〜9 の luk 型ジョブが「運で殴る」ジョブとして成立するように。
-      const floor = Math.min(0.6, player.luk * 0.012);
-      const mult = floor + rng() * (2.6 - floor);
-      doAttack(player, monster, rng, events, 'player', { power: mult, atkOverride: player.luk, label: skill.name });
-      break;
-    }
-    case 'heal': {
-      // 習得スキル (#436): MP を払って maxHp の割合ぶん回復。攻撃しないターンなので削り合いの読み合い。
-      const heal = Math.round(player.maxHp * t.skillHealRatio);
-      player.hp = Math.min(player.maxHp, player.hp + heal);
-      events.push({ actor: 'player', text: `${player.name}は${skill.name}! HP が ${heal} 回復。` });
-      break;
-    }
-  }
+  // プラグイン実行 (#452): とくぎは SKILLS[kind] のデータ定義を EFFECT_HANDLERS で解決する。
+  // 見切り (parry) 等の「宣言型」とくぎは effects 空で、宣言は resolveTurn 冒頭が担う。
+  const def = SKILLS[skill.kind];
+  if (!def) return;
+  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack } });
 }
 
 /**
