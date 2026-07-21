@@ -29,9 +29,9 @@ describe('魔法使い 確定キット (#456)', () => {
   });
 
   it('他ジョブ (キット未登録) は従来どおり基本 6 種の署名スキル', () => {
-    // warrior はキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
+    // guardian はキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
     const base = ['smash', 'parry', 'flurry', 'spell', 'gamble', 'heal'];
-    expect(base).toContain(skillsForJob('warrior', 10)[0]!.kind);
+    expect(base).toContain(skillsForJob('guardian', 10)[0]!.kind);
   });
 
   it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す (mage)', () => {
@@ -104,5 +104,70 @@ describe('忍者 確定キット (#456)', () => {
       }
     }
     expect(stunned).toBe(true);
+  });
+});
+
+describe('詩人 確定キット (#456)', () => {
+  it('レベルで心晴の韻〜心の詩を習得', () => {
+    expect(skillsForJob('poet', 3).map((s) => s.name)).toContain('心晴の韻');
+    expect(skillsForJob('poet', 12).map((s) => s.name)).toEqual(['心晴の韻', '静心', '昂ぶりの詩', '言の葉縛り', '無心']);
+    expect(skillsForJob('poet', 20).map((s) => s.name)).toContain('感情爆発');
+    expect(skillsForJob('poet', 22).map((s) => s.name)).toContain('心の詩');
+  });
+
+  it('感情爆発が実戦で水属性の大ダメージを通す (scaleBy の威力伸長は skills.test で単体検証)', () => {
+    const s = startBattle('poet', 20, 25, '詩', 3, 11, 0);
+    const burstIdx = s.playerSkills.findIndex((sk) => sk.name === '感情爆発');
+    expect(burstIdx).toBeGreaterThanOrEqual(0);
+    const next: BattleState = resolveTurn(s, 'skill', undefined, burstIdx);
+    expect(next.monster.hp).toBeLessThan(s.monster.hp);
+    expect(next.lastEvents.some((e) => e.text.includes('感情爆発'))).toBe(true);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('poet', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('心の詩は自分に atk/def/agi の3バフを一括付与 (複数 effect 合成)', () => {
+    const s = startBattle('poet', 22, 25, '詩', 1, 3, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '心の詩');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    const ids = new Set(next.player.statuses?.map((st) => st.id));
+    expect(ids.has('atkUp')).toBe(true);
+    expect(ids.has('defUp')).toBe(true);
+    expect(ids.has('agiUp')).toBe(true);
+  });
+
+  it('言の葉縛りは敵に束縛を付与 (被弾で解けない拘束)', () => {
+    let bound = false;
+    for (let seed = 0; seed < 20 && !bound; seed++) {
+      const s = startBattle('poet', 8, 12, '詩', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === '言の葉縛り');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'restraint')) bound = true;
+    }
+    expect(bound).toBe(true);
+  });
+});
+
+describe('戦士 確定キット (#456)', () => {
+  it('レベルでみだれ突き〜全力斬りを習得 (全体技は後続なので Lv3-4 は署名)', () => {
+    expect(skillsForJob('warrior', 4)[0]!.kind).not.toMatch(/^warrior-/); // Lv5 未満は署名フォールバック
+    expect(skillsForJob('warrior', 18).map((s) => s.name)).toEqual(['みだれ突き', 'かぶとわり', 'ためる', '全力斬り']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('warrior', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('かぶとわりは命中で守備力↓を付与 (継続戦)', () => {
+    let debuffed = false;
+    for (let seed = 0; seed < 40 && !debuffed; seed++) {
+      const s = startBattle('warrior', 10, 15, '戦', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === 'かぶとわり');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'defDown')) debuffed = true;
+    }
+    expect(debuffed).toBe(true);
   });
 });
