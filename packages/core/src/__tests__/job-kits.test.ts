@@ -111,7 +111,17 @@ describe('詩人 確定キット (#456)', () => {
   it('レベルで心晴の韻〜心の詩を習得', () => {
     expect(skillsForJob('poet', 3).map((s) => s.name)).toContain('心晴の韻');
     expect(skillsForJob('poet', 12).map((s) => s.name)).toEqual(['心晴の韻', '静心', '昂ぶりの詩', '言の葉縛り', '無心']);
+    expect(skillsForJob('poet', 20).map((s) => s.name)).toContain('感情爆発');
     expect(skillsForJob('poet', 22).map((s) => s.name)).toContain('心の詩');
+  });
+
+  it('感情爆発が実戦で水属性の大ダメージを通す (scaleBy の威力伸長は skills.test で単体検証)', () => {
+    const s = startBattle('poet', 20, 25, '詩', 3, 11, 0);
+    const burstIdx = s.playerSkills.findIndex((sk) => sk.name === '感情爆発');
+    expect(burstIdx).toBeGreaterThanOrEqual(0);
+    const next: BattleState = resolveTurn(s, 'skill', undefined, burstIdx);
+    expect(next.monster.hp).toBeLessThan(s.monster.hp);
+    expect(next.lastEvents.some((e) => e.text.includes('感情爆発'))).toBe(true);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {

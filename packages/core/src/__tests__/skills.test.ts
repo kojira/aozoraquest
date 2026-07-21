@@ -245,4 +245,26 @@ describe('fixedDamage (範囲魔法 #456)', () => {
     const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 5, max: 5 }] }, makeCombatant(), makeCombatant({ hp: 0 }), () => 0);
     expect(calls).toHaveLength(0);
   });
+
+  it('luckScale: +attacker.luk × luckScale を加算 (luk 型魔法)', () => {
+    const atk = makeCombatant({ luk: 30 });
+    const { calls } = runMagicSpy({ id: 'x', effects: [{ kind: 'fixedDamage', min: 10, max: 10, luckScale: 0.2 }] }, atk, makeCombatant(), () => 0);
+    expect(calls[0]!.amount).toBe(10 + 30 * 0.2); // 16
+  });
+
+  it('scaleBy buffCount: 自己バフ数で威力が伸びる (感情爆発)', () => {
+    const bare = makeCombatant({ luk: 0, statuses: [] });
+    const buffed = makeCombatant({
+      luk: 0,
+      statuses: [
+        { id: 'atkUp', turns: 3 },
+        { id: 'defUp', turns: 3 },
+      ],
+    });
+    const def = { id: 'x', effects: [{ kind: 'fixedDamage' as const, min: 10, max: 10, scaleBy: 'buffCount' as const, scaleFactor: 0.5 }] };
+    const bareAmt = runMagicSpy(def, bare, makeCombatant(), () => 0).calls[0]!.amount;
+    const buffAmt = runMagicSpy(def, buffed, makeCombatant(), () => 0).calls[0]!.amount;
+    expect(bareAmt).toBe(10); // バフ 0 → ×1
+    expect(buffAmt).toBe(10 * (1 + 2 * 0.5)); // バフ 2 → ×2 = 20
+  });
 });

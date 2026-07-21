@@ -276,6 +276,7 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'poet-rouse', name: '昂ぶりの詩', learnAt: 7 },
     { id: 'poet-bind', name: '言の葉縛り', learnAt: 8 },
     { id: 'poet-mushin', name: '無心', learnAt: 12 },
+    { id: 'poet-outburst', name: '感情爆発', learnAt: 20 },
     { id: 'poet-song', name: '心の詩', learnAt: 22 },
   ],
   // 戦士: 純物理ブルーザー・無属性。なぎ払い/一騎当千(全体)・剣豪(P) は後続。

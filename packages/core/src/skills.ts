@@ -63,10 +63,16 @@ export type SkillEffect =
       /** ダメージの下限・上限 (DQ 流の範囲魔法。例 15〜20)。 */
       min: number;
       max: number;
-      /** int 連動ボーナス: +attacker.int × intBonus (キャスターの int を伸ばす意味を出す)。 */
+      /** int 連動ボーナス: +attacker.int × intBonus (int キャスター)。 */
       intBonus?: number;
+      /** luk 連動ボーナス: +attacker.luk × luckScale (luk 型魔法: 巫女/芸術家/詩人。§423)。 */
+      luckScale?: number;
       /** 攻撃属性 (火水地風空)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
       element?: Element;
+      /** データ駆動の計算値参照 (§14.5)。'buffCount' = 使用者の自己バフ数 (感情爆発)。 */
+      scaleBy?: 'buffCount';
+      /** scaleBy の1件あたり倍率: amount ×= 1 + count × scaleFactor。未指定 0.4。 */
+      scaleFactor?: number;
     }
   | {
       kind: 'heal';
@@ -193,7 +199,15 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   events.push({ actor, text: statusApplyText(effect.status, target.name) });
 };
 
-/** fixedDamage: 範囲ロール + int 連動 → doMagic (必中・def無視・属性相性)。DQ 流の魔法。 */
+/** 自己バフとして数える状態 (感情爆発の buffCount)。積み重ねてダメージに変換する。 */
+const BUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>(['atkUp', 'defUp', 'agiUp']);
+
+/** 使用者の自己バフ数 (scaleBy: 'buffCount' 用)。 */
+function countBuffs(c: Combatant): number {
+  return (c.statuses ?? []).filter((s) => BUFF_STATUSES.has(s.id)).length;
+}
+
+/** fixedDamage: 範囲ロール + int/luk 連動 → doMagic (必中・def無視・属性相性)。DQ 流の魔法。 */
 const fixedDamageHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'fixedDamage') return;
   const { attacker, defender, rng, events, engine, skillName } = ctx;
@@ -202,6 +216,8 @@ const fixedDamageHandler: EffectHandler = (effect, ctx) => {
   const span = effect.max - effect.min;
   let amount = effect.min + Math.floor(rng() * (span + 1));
   if (effect.intBonus) amount += attacker.int * effect.intBonus;
+  if (effect.luckScale) amount += attacker.luk * effect.luckScale;
+  if (effect.scaleBy === 'buffCount') amount *= 1 + countBuffs(attacker) * (effect.scaleFactor ?? 0.4);
   engine.doMagic(attacker, defender, rng, events, actor, {
     amount,
     ...(effect.element ? { element: effect.element } : {}),
@@ -305,12 +321,19 @@ export const SKILLS: Record<string, SkillDef> = {
 
   // ─── 詩人 確定キット (#456 / docs/25 §12。水属性・自己バフ火力・言葉の拘束) ───
   // 数値は sim 調整前提の暫定値。感傷(会心↑)/感情爆発(scaleBy)/全体技/詩心(P) は後続 (要 新語彙)。
-  'poet-verse': { id: 'poet-verse', effects: [{ kind: 'fixedDamage', min: 5, max: 10, intBonus: 0.12, element: 'water' }] }, // 心晴の韻 Lv3
+  // 心晴の韻 Lv3: 水属性魔法。詩人の強み luk (34) 連動 (int8 は最低クラスなので luckScale に。§423 luk型)。
+  'poet-verse': { id: 'poet-verse', effects: [{ kind: 'fixedDamage', min: 4, max: 12, luckScale: 0.2, element: 'water' }] },
   'poet-calm': { id: 'poet-calm', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3 }] }, // 静心 Lv5
   'poet-rouse': { id: 'poet-rouse', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 3 }] }, // 昂ぶりの詩 Lv7
   // 言の葉縛り Lv8: 敵を束縛 (1-2T 行動不可・被弾で解けない)
   'poet-bind': { id: 'poet-bind', effects: [{ kind: 'status', status: 'restraint', target: 'enemy', chance: 0.7, turns: 2 }] },
   'poet-mushin': { id: 'poet-mushin', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3 }] }, // 無心 Lv12 (回避↑。次被ダメ半減は barrier 未実装で後続)
+  // 感情爆発 Lv20: 水属性・単体大ダメージ。**今の自己バフ数 × 係数**で威力が伸びる (§12/§14.5 scaleBy)。
+  // 自己バフを積んでから撃つ = 詩人「自己バフ火力」の核 (buff→爆発ループの payoff)。
+  'poet-outburst': {
+    id: 'poet-outburst',
+    effects: [{ kind: 'fixedDamage', min: 12, max: 22, luckScale: 0.2, element: 'water', scaleBy: 'buffCount', scaleFactor: 0.5 }],
+  },
   // 心の詩 Lv22: 自分の全能力↑ (atk/def/agi を一括バフ = 複数 effect 合成)
   'poet-song': {
     id: 'poet-song',
