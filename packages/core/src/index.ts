@@ -16,5 +16,6 @@ export * from './battle.js';
 export * from './skills.js';
 export * from './statuses.js';
 export * from './elements.js';
+export * from './combat-target.js';
 export * from './world.js';
 export * from './equipment.js';

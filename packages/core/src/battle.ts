@@ -20,6 +20,7 @@ import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
 import { SKILLS, runSkill } from './skills.js';
 import { elementMultiplier, type Element } from './elements.js';
+import type { CombatSides } from './combat-target.js';
 import {
   type StatusInstance,
   type HookCtx,
@@ -839,6 +840,11 @@ export interface BattleState {
   player: Combatant;
   monster: Combatant;
   monsterId: string;
+  /** マルチ戦闘の味方陣 (player + 召喚 + NPC)。#453 / docs/25 §14.8。省略時はソロ = [player]。
+   *  慣例として allies[0] === player (player 固有資源 herbs/tonics 等は BattleState 側に残す)。 */
+  allies?: Combatant[];
+  /** マルチ戦闘の敵陣 (モンスター群)。省略時はソロ = [monster]。慣例として enemies[0] === monster。 */
+  enemies?: Combatant[];
   /** 署名スキル ([0])。後方互換 (parry 判定・autoBattle 等はこれ)。 */
   playerSkill: JobSkill;
   /** その jobLevel で使える全とくぎ ([0]=署名 + 習得済み副スキル)。UI は毎ターンここから選ぶ (#436)。 */
@@ -859,6 +865,17 @@ export interface BattleState {
   mpTraitName?: string;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
+}
+
+/**
+ * 戦闘の両陣営を取り出す (#453)。マルチ戦闘なら allies/enemies 配列、ソロ (未設定 or 旧 sealed
+ * state) なら [player]/[monster] に退避する。ターゲット解決・行動順の単一窓口。
+ */
+export function combatSides(state: BattleState): CombatSides {
+  return {
+    allies: state.allies && state.allies.length > 0 ? state.allies : [state.player],
+    enemies: state.enemies && state.enemies.length > 0 ? state.enemies : [state.monster],
+  };
 }
 
 /** バトル開始状態を作る。herbs = 持ち込むやくそう数 (0〜herbCarryMax)。 */
