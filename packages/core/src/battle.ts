@@ -18,6 +18,21 @@
 import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
+import { SKILLS, runSkill } from './skills.js';
+import { elementMultiplier, type Element } from './elements.js';
+import {
+  type StatusInstance,
+  type HookCtx,
+  applyBeforeAct,
+  applyDodgeCalc,
+  applyPowerCalc,
+  applyCritCalc,
+  applyIncomingCalc,
+  applyOnHit,
+  tickStatuses,
+  clearActedStatuses,
+  clearHitStatuses,
+} from './statuses.js';
 
 // ─── チューニング ───────────────────────────────────────────
 
@@ -302,6 +317,13 @@ export interface Combatant {
   /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
    *  防御した次のターンまで「相手の動きを読めている」状態。 */
   focus: number;
+  /** 状態異常 (#452 / docs/25 §3)。省略可 (旧 sealed state 互換)。エンジンが空/未定義を no-op 扱い。 */
+  statuses?: StatusInstance[];
+  /** ジョブ innate パッシブ id (#452 / docs/25 §4)。省略可。 */
+  passives?: string[];
+  /** 防御属性 (#452 / docs/25 §1)。被弾時の属性相性に使う。未設定 (無属性) は等倍。
+   *  モンスターへの付与は #455、プレイヤー装備由来は後続で配線 (現状は全員 undefined = 等倍)。 */
+  element?: Element;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -325,6 +347,8 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
     parrying: false,
     charging: false,
     focus: 0,
+    statuses: [],
+    passives: [],
   };
 }
 
@@ -833,7 +857,7 @@ export function startBattle(
   };
 }
 
-interface AttackOptions {
+export interface AttackOptions {
   /** 攻撃力の基準値を上書き (特技を支配ステータス基準にする: gamble=luk, flurry=agi)。
    *  素の atk が低い luk/agi 型ジョブでも「ジョブに合った能力」で火力が出るように。 */
   atkOverride?: number;
@@ -847,6 +871,20 @@ interface AttackOptions {
   useInt?: boolean;
   /** 技名 (テキストに使う)。無指定は通常攻撃 */
   label?: string;
+  /** 攻撃属性 (#452 / docs/25 §1)。防御側の element と相性判定。未指定 (無属性) は等倍。 */
+  element?: Element;
+}
+
+/** 攻撃 1 回の結果 (とくぎの inflict-on-hit 等が参照)。 */
+export interface AttackResult {
+  /** 命中したか (回避されたら false)。 */
+  hit: boolean;
+  /** 与えたダメージ (miss は 0)。 */
+  damage: number;
+  /** 対象を倒したか。 */
+  fatal: boolean;
+  /** 会心だったか。 */
+  crit: boolean;
 }
 
 function doAttack(
@@ -856,21 +894,35 @@ function doAttack(
   events: TurnEvent[],
   actor: 'player' | 'monster',
   opts: AttackOptions = {},
-): void {
+): AttackResult {
   const t = BATTLE_TUNING;
   const label = opts.label ? `${attacker.name}の${opts.label}!` : `${attacker.name}のこうげき!`;
+  // 状態異常/パッシブのフック文脈 (#452)。空 statuses なら applyXxx は入力そのまま = 従来挙動。
+  const defenderSide: 'player' | 'monster' = actor === 'player' ? 'monster' : 'player';
+  const atkCtx: HookCtx = { rng, events, actor };
+  const defCtx: HookCtx = { rng, events, actor: defenderSide };
 
   // 回避判定 (魔撃は必中)。ぼうぎょの余韻 (focus) 中は「動きを読めている」ので回避が上がる。
   if (!opts.useInt) {
     const focusBonus = defender.focus > 0 ? t.guardFocusDodge : 0;
-    const dodge = Math.min(
+    let dodge = Math.min(
       t.dodgeMax + focusBonus,
       Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - (opts.hitBonus ?? 0) + focusBonus),
     );
+    dodge = applyDodgeCalc(dodge, defender, defCtx); // かくれみ/agi バフ
     if (rng() < dodge) {
       events.push({ actor, text: `${label} しかし ${defender.name}は身をかわした!` });
-      return;
+      return { hit: false, damage: 0, fatal: false, crit: false };
     }
+  }
+
+  // 命中確定後、即死パッシブ (首狩り等) の判定。none なら false。
+  if (applyOnHit(attacker, defender, atkCtx)) {
+    const killDmg = defender.hp;
+    defender.hp = 0;
+    clearHitStatuses(defender);
+    events.push({ actor, text: `${label} ${defender.name}を一撃で仕留めた!`, damage: killDmg, fatal: true });
+    return { hit: true, damage: killDmg, fatal: true, crit: false };
   }
 
   const atkValue = opts.atkOverride ?? (opts.useInt ? attacker.int : attacker.atk);
@@ -880,23 +932,31 @@ function doAttack(
   // 2026-07-20)。敵の会心を守備無視にすると、タンク職 (guardian) の「固く受ける」存在意義が
   // 壊れ拮抗帯で事故死が倍増するため、敵の会心は 1.5 倍のみ (バランス ★★★)。ぼうぎょ/見切り
   // **コマンドの半減はどちらも貫通しない** — 貫くと「予告を見て防御」の読み合いが崩れる (設計 ★★★)。
-  const crit = rng() < t.critBase + attacker.luk * t.critLukScale;
+  const crit = applyCritCalc(rng() < t.critBase + attacker.luk * t.critLukScale, attacker, atkCtx); // 九字切り=確定会心
   const critAtk = crit ? t.critAtkMultiplier : 1;
   const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
   // DQ の減算式 (攻撃÷2 − 防御÷4) 流: **防御の係数 (defCoef) を攻撃の半分 (2:1)** にしてインフレを
   // 抑える (オーナー要望 2026-07-20)。高守備の敵 (メタル) は atkTerm−defTerm が負に沈み minDamage
   // しか通らず、会心 (defValue=0) のみ貫通できる = 専用ロジック不要で「守備が硬い」が表現される。
-  const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1);
+  // 攻撃威力バフ (atkUp/atkDown)。none なら ×1。
+  const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1) * applyPowerCalc(1, attacker, atkCtx);
   let dmg = Math.max(t.minDamage, (atkTerm - defValue * t.defCoef) * roll);
 
   // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
+  // 被ダメバフ (defUp/defDown/転倒)。none なら ×1。
+  dmg *= applyIncomingCalc(1, defender, defCtx);
+  // 属性相性 (#452 §1): 攻撃属性 × 防御属性。両者 undefined (無属性) なら ×1 = 従来挙動。
+  // モンスター/装備への属性付与は #455/#456 で配線。現状は常に ×1 (behavior-preserving)。
+  dmg *= elementMultiplier(opts.element, defender.element);
 
   // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
   // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
   const final = Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
+  // 被弾で解ける状態 (かくれみ解除・眠り起床)。none なら no-op。
+  if (!fatal) clearHitStatuses(defender);
   // 決着文はプレイヤー視点: 敵を倒した =「◯◯をたおした!」、自分が倒れた =
   // 「◯◯はちからつきた!」(プレイヤーが「たおされる」対象になる文は視点が転倒する)。
   const fatalText = fatal
@@ -910,6 +970,7 @@ function doAttack(
     damage: final,
     ...(fatal ? { fatal: true } : {}),
   });
+  const result: AttackResult = { hit: true, damage: final, fatal, crit };
 
   // 見切り反撃 (倒れていなければ)
   if (!fatal && defender.parrying) {
@@ -919,14 +980,68 @@ function doAttack(
     // (見切り職は atk が低く、atk 基準だと tier3 で火力が出ずジリ貧になる)
     doAttack(defender, attacker, rng, events, counterActor, { power: 0.75, atkOverride: defender.def, label: 'はんげき' });
   }
+  return result;
 }
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
 type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee';
 
-/** モンスターの行動を能力 (ability) で分岐する (オーナー要望 2026-07-18: ため攻撃は
- *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。 */
+/** モンスター能力プラグイン (#452 / docs/25 §5)。行動 AI を ability id → データ定義に置き、
+ *  monsterCommand の if 分岐を排す。null を返すと通常判定 (plain) にフォールバック。 */
+interface AbilityDecisionCtx {
+  state: BattleState;
+  /** そのターンの単一乱数 (全 ability で共有 = 決定性維持)。 */
+  r: number;
+  t: typeof BATTLE_TUNING;
+  hpRatio: number;
+  /** 低 HP で身を固める余地があるか (tier2+ かつ HP<35% かつ非ため中)。 */
+  canGuard: boolean;
+  monsterDef: MonsterDef | undefined;
+}
+
+interface AbilityDef {
+  id: string;
+  decideAction(ctx: AbilityDecisionCtx): MonsterAction | null;
+}
+
+/** 能力レジストリ。新しい敵 AI は CombatHook 同様「ここに 1 エントリ足すだけ」。 */
+const MONSTER_ABILITIES: Record<string, AbilityDef> = {
+  // charger: 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)
+  charger: {
+    id: 'charger',
+    decideAction: ({ state, r, t, canGuard }) => {
+      if (state.monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
+      if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
+      return 'attack';
+    },
+  },
+  // healer: 低 HP でたまに自己回復 (削り切る前に倒す読み合い)
+  healer: {
+    id: 'healer',
+    decideAction: ({ state, r, t, hpRatio, canGuard }) => {
+      if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
+      if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
+      return 'attack';
+    },
+  },
+  // fleer: 毎ターン逃走を試みる (はぐれメタル型)。逃走率は**基準 agi (レベル非依存)** で決める —
+  // factor でスケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
+  // 上がって「成長するほど倒せない」逆進になる (レビュー ★★)。常に同じ緊張感にする。
+  fleer: {
+    id: 'fleer',
+    decideAction: ({ r, t, monsterDef }) => {
+      const baseAgi = monsterDef?.stats[2] ?? 0;
+      const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
+      if (r < fleeChance) return 'flee';
+      return 'attack';
+    },
+  },
+};
+
+/** モンスターの行動を能力 (ability) で決める (オーナー要望 2026-07-18: ため攻撃は
+ *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。
+ *  #452: if 分岐でなく MONSTER_ABILITIES レジストリ引き (プラグイン化)。 */
 function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   const def = MONSTERS_BY_ID[state.monsterId];
   const t = BATTLE_TUNING;
@@ -934,68 +1049,23 @@ function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
   const hpRatio = state.monster.hp / state.monster.maxHp;
   // 低 HP でたまに身を固める (charger のため中は別処理なのでここでは除外)
   const canGuard = (def?.tier ?? 1) >= 2 && hpRatio < 0.35 && !state.monster.charging;
-  if (def?.ability === 'charger') {
-    if (state.monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
-    if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
-    return 'attack';
-  }
-  if (def?.ability === 'healer') {
-    if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
-    if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
-    return 'attack';
-  }
-  if (def?.ability === 'fleer') {
-    // 毎ターン逃走を試みる。逃走率は**基準 agi (レベル非依存)** で決める — factor で
-    // スケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
-    // 上がって「成長するほど倒せない」逆進になる (レビュー ★★)。常に同じ緊張感にする。
-    const baseAgi = def.stats[2] ?? 0;
-    const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
-    if (r < fleeChance) return 'flee';
-    return 'attack';
-  }
-  // plain: 通常攻撃 + 低 HP でたまに防御
+
+  const ability = def?.ability ? MONSTER_ABILITIES[def.ability] : undefined;
+  const action = ability?.decideAction({ state, r, t, hpRatio, canGuard, monsterDef: def });
+  if (action) return action;
+
+  // plain (ability 無し / null): 通常攻撃 + 低 HP でたまに防御
   if (canGuard && r < 0.25) return 'guard';
   return 'attack';
 }
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
   const { player, monster } = state;
-  const t = BATTLE_TUNING;
-  switch (skill.kind) {
-    case 'smash':
-      doAttack(player, monster, rng, events, 'player', { power: 1.7, hitBonus: -0.1, label: skill.name });
-      break;
-    case 'parry':
-      // 宣言は resolveTurn 冒頭 (行動順に関係なく効くように)。ここは no-op。
-      break;
-    case 'flurry':
-      // 支配ステータス (agi) 基準 — 素早さで手数を出すジョブの「らしさ」と火力を一致させる
-      doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: skill.name });
-      if (state.monster.hp > 0) {
-        doAttack(player, monster, rng, events, 'player', { power: 0.65, atkOverride: player.agi, label: skill.name });
-      }
-      break;
-    case 'spell':
-      // 防御を半分だけ貫通 + 必中。完全無視 (旧仕様) は int 職が tier3 を蹂躙して
-      // 難易度設計が壊れたため 0.5 に緩和 (バランステストで固定)。
-      doAttack(player, monster, rng, events, 'player', { power: 1.0, useInt: true, defFactor: 0.5, label: skill.name });
-      break;
-    case 'gamble': {
-      // 0〜2.6 倍。luk が高いほど下振れしにくい。基準値も支配ステータス (luk) —
-      // atk 7〜9 の luk 型ジョブが「運で殴る」ジョブとして成立するように。
-      const floor = Math.min(0.6, player.luk * 0.012);
-      const mult = floor + rng() * (2.6 - floor);
-      doAttack(player, monster, rng, events, 'player', { power: mult, atkOverride: player.luk, label: skill.name });
-      break;
-    }
-    case 'heal': {
-      // 習得スキル (#436): MP を払って maxHp の割合ぶん回復。攻撃しないターンなので削り合いの読み合い。
-      const heal = Math.round(player.maxHp * t.skillHealRatio);
-      player.hp = Math.min(player.maxHp, player.hp + heal);
-      events.push({ actor: 'player', text: `${player.name}は${skill.name}! HP が ${heal} 回復。` });
-      break;
-    }
-  }
+  // プラグイン実行 (#452): とくぎは SKILLS[kind] のデータ定義を EFFECT_HANDLERS で解決する。
+  // 見切り (parry) 等の「宣言型」とくぎは effects 空で、宣言は resolveTurn 冒頭が担う。
+  const def = SKILLS[skill.kind];
+  if (!def) return;
+  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack } });
 }
 
 /**
@@ -1016,8 +1086,18 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   const state: BattleState = {
     ...prev,
     turn: prev.turn + 1,
-    player: { ...prev.player, guarding: false },
-    monster: { ...prev.monster, guarding: false },
+    // statuses は tick で破壊的に更新するため deep copy (passives は不変なので参照共有で可)。
+    // 旧 sealed state で statuses 未定義なら省略 (exactOptional 準拠・エンジンは undefined を no-op 扱い)。
+    player: {
+      ...prev.player,
+      guarding: false,
+      ...(prev.player.statuses ? { statuses: prev.player.statuses.map((s) => ({ ...s })) } : {}),
+    },
+    monster: {
+      ...prev.monster,
+      guarding: false,
+      ...(prev.monster.statuses ? { statuses: prev.monster.statuses.map((s) => ({ ...s })) } : {}),
+    },
     lastEvents: [],
   };
   // command==='skill' のとき使う特技 (#436: 毎ターン選択)。範囲外/未設定 (デプロイ跨ぎの旧 sealed
@@ -1097,6 +1177,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   const act = (who: 'player' | 'monster') => {
     if (state.outcome !== 'ongoing') return; // 敵が逃げる等で決着済みなら以降の行動をスキップ
     if (state.player.hp === 0 || state.monster.hp === 0) return;
+    const self = who === 'player' ? state.player : state.monster;
+    // 行動不能 (眠り/麻痺/転倒/束縛)。none なら false = 従来どおり行動。
+    if (applyBeforeAct(self, { rng, events, actor: who })) return;
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
@@ -1152,10 +1235,20 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       }
       // guard は宣言済み
     }
+    // 行動したら解ける状態 (かくれみ/九字切り)。none なら no-op。
+    clearActedStatuses(self);
   };
 
   act(playerFirst ? 'player' : 'monster');
   act(playerFirst ? 'monster' : 'player');
+
+  // ターン終了の状態処理 (毒ダメージ等) → turns 減衰・除去。none なら no-op。
+  // 毒で HP0 になった場合は下の勝敗判定 (hp===0) が拾う。両者が同ターンの毒で相討ちになった
+  // 場合、勝敗判定は monster.hp===0 を player より先に見るため win を優先する (仕様。決定的)。
+  if (state.outcome === 'ongoing') {
+    tickStatuses(state.player, { rng, events, actor: 'player' });
+    tickStatuses(state.monster, { rng, events, actor: 'monster' });
+  }
 
   // 見切りは 1 ターン限り (発動しなかったら解除)。ぼうぎょの余韻 (focus) は 1 減衰。
   state.player.parrying = false;
