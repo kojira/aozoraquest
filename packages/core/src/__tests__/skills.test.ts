@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SKILLS, runSkill, EFFECT_HANDLERS, type SkillContext } from '../skills.js';
+import { SKILLS, runSkill, EFFECT_HANDLERS, type SkillContext, type SkillDef } from '../skills.js';
 import type { Combatant, AttackOptions } from '../battle.js';
 
 function makeCombatant(over: Partial<Combatant> = {}): Combatant {
@@ -32,12 +32,13 @@ function runWithSpy(skillId: string, attacker: Combatant, defender: Combatant, r
     events: [],
     skillName: skillId,
     engine: {
-      doAttack: (_a, _d, _r, _e, _actor, opts = {}) => {
+      doAttack: (_a, d, _r, _e, _actor, opts = {}) => {
         calls.push(opts);
+        return { hit: d.hp > 0, damage: 5, fatal: false, crit: false };
       },
     },
   };
-  runSkill(SKILLS[skillId], ctx);
+  runSkill(SKILLS[skillId]!, ctx);
   return { calls, ctx };
 }
 
@@ -45,7 +46,7 @@ describe('とくぎプラグイン基盤 (#452)', () => {
   it('既存 6 種すべてが SKILLS に登録されている', () => {
     for (const id of ['smash', 'parry', 'flurry', 'spell', 'gamble', 'heal']) {
       expect(SKILLS[id], id).toBeDefined();
-      expect(SKILLS[id].id).toBe(id);
+      expect(SKILLS[id]!.id).toBe(id);
     }
   });
 
@@ -53,8 +54,8 @@ describe('とくぎプラグイン基盤 (#452)', () => {
     const { calls } = runWithSpy('smash', makeCombatant(), makeCombatant());
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ power: 1.7, hitBonus: -0.1 });
-    expect(calls[0].useInt).toBeUndefined();
-    expect(calls[0].atkOverride).toBeUndefined(); // 素の atk
+    expect(calls[0]!.useInt).toBeUndefined();
+    expect(calls[0]!.atkOverride).toBeUndefined(); // 素の atk
   });
 
   it('parry: 効果なし (宣言は resolveTurn 側)', () => {
@@ -83,8 +84,8 @@ describe('とくぎプラグイン基盤 (#452)', () => {
 
   it('gamble: luk 基準・power は floor〜max で抽選 (rng で変わる)', () => {
     const atk = makeCombatant({ luk: 30 }); // floor = min(0.6, 30*0.012=0.36) = 0.36
-    const lo = runWithSpy('gamble', atk, makeCombatant(), () => 0).calls[0];
-    const hi = runWithSpy('gamble', atk, makeCombatant(), () => 1).calls[0];
+    const lo = runWithSpy('gamble', atk, makeCombatant(), () => 0).calls[0]!;
+    const hi = runWithSpy('gamble', atk, makeCombatant(), () => 1).calls[0]!;
     expect(lo.atkOverride).toBe(30);
     expect(lo.power).toBeCloseTo(0.36); // rng=0 → floor
     expect(hi.power).toBeCloseTo(2.6); // rng=1 → max
@@ -104,8 +105,64 @@ describe('とくぎプラグイン基盤 (#452)', () => {
     expect(atk.hp).toBe(100);
   });
 
-  it('EFFECT_HANDLERS は damage/heal をカバー', () => {
+  it('EFFECT_HANDLERS は damage/heal/status をカバー', () => {
     expect(EFFECT_HANDLERS.damage).toBeTypeOf('function');
     expect(EFFECT_HANDLERS.heal).toBeTypeOf('function');
+    expect(EFFECT_HANDLERS.status).toBeTypeOf('function');
+  });
+});
+
+/** 任意の SkillDef を spy エンジンで実行 (hit=defender.hp>0)。 */
+function runDef(def: SkillDef, attacker: Combatant, defender: Combatant, rng = () => 0) {
+  const ctx: SkillContext = {
+    attacker,
+    defender,
+    rng,
+    events: [],
+    skillName: 'test',
+    engine: {
+      doAttack: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
+    },
+  };
+  runSkill(def, ctx);
+}
+
+describe('効果 ↔ 状態異常の接続 (#452)', () => {
+  it('status(self): 使用者にバフを付与', () => {
+    const atk = makeCombatant();
+    runDef({ id: 'x', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 3 }] }, atk, makeCombatant());
+    expect(atk.statuses?.map((s) => s.id)).toContain('atkUp');
+  });
+
+  it('status(enemy): 相手にデバフを付与', () => {
+    const def = makeCombatant();
+    runDef({ id: 'x', effects: [{ kind: 'status', status: 'poison', target: 'enemy', turns: 3, magnitude: 4 }] }, makeCombatant(), def);
+    expect(def.statuses?.find((s) => s.id === 'poison')?.magnitude).toBe(4);
+  });
+
+  it('status: chance=0 なら付与されない', () => {
+    const def = makeCombatant();
+    runDef({ id: 'x', effects: [{ kind: 'status', status: 'poison', target: 'enemy', chance: 0 }] }, makeCombatant(), def, () => 0.5);
+    expect(def.statuses ?? []).toHaveLength(0);
+  });
+
+  it('inflict: 命中した攻撃に状態を乗せる (毒手)', () => {
+    const def = makeCombatant({ hp: 100 });
+    runDef(
+      { id: 'x', effects: [{ kind: 'damage', stat: 'atk', power: 1, inflict: { status: 'poison', chance: 1, turns: 3, magnitude: 2 } }] },
+      makeCombatant(),
+      def,
+    );
+    expect(def.statuses?.some((s) => s.id === 'poison')).toBe(true);
+  });
+
+  it('inflict: 対象が既に倒れている (miss) なら状態を乗せない', () => {
+    const dead = makeCombatant({ hp: 0 });
+    runDef(
+      { id: 'x', effects: [{ kind: 'damage', stat: 'atk', power: 1, inflict: { status: 'poison', chance: 1 } }] },
+      makeCombatant(),
+      dead,
+    );
+    expect(dead.statuses ?? []).toHaveLength(0);
   });
 });

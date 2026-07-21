@@ -869,6 +869,18 @@ export interface AttackOptions {
   label?: string;
 }
 
+/** 攻撃 1 回の結果 (とくぎの inflict-on-hit 等が参照)。 */
+export interface AttackResult {
+  /** 命中したか (回避されたら false)。 */
+  hit: boolean;
+  /** 与えたダメージ (miss は 0)。 */
+  damage: number;
+  /** 対象を倒したか。 */
+  fatal: boolean;
+  /** 会心だったか。 */
+  crit: boolean;
+}
+
 function doAttack(
   attacker: Combatant,
   defender: Combatant,
@@ -876,7 +888,7 @@ function doAttack(
   events: TurnEvent[],
   actor: 'player' | 'monster',
   opts: AttackOptions = {},
-): void {
+): AttackResult {
   const t = BATTLE_TUNING;
   const label = opts.label ? `${attacker.name}の${opts.label}!` : `${attacker.name}のこうげき!`;
   // 状態異常/パッシブのフック文脈 (#452)。空 statuses なら applyXxx は入力そのまま = 従来挙動。
@@ -894,16 +906,17 @@ function doAttack(
     dodge = applyDodgeCalc(dodge, defender, defCtx); // かくれみ/agi バフ
     if (rng() < dodge) {
       events.push({ actor, text: `${label} しかし ${defender.name}は身をかわした!` });
-      return;
+      return { hit: false, damage: 0, fatal: false, crit: false };
     }
   }
 
   // 命中確定後、即死パッシブ (首狩り等) の判定。none なら false。
   if (applyOnHit(attacker, defender, atkCtx)) {
+    const killDmg = defender.hp;
     defender.hp = 0;
     clearHitStatuses(defender);
-    events.push({ actor, text: `${label} ${defender.name}を一撃で仕留めた!`, damage: defender.maxHp, fatal: true });
-    return;
+    events.push({ actor, text: `${label} ${defender.name}を一撃で仕留めた!`, damage: killDmg, fatal: true });
+    return { hit: true, damage: killDmg, fatal: true, crit: false };
   }
 
   const atkValue = opts.atkOverride ?? (opts.useInt ? attacker.int : attacker.atk);
@@ -948,6 +961,7 @@ function doAttack(
     damage: final,
     ...(fatal ? { fatal: true } : {}),
   });
+  const result: AttackResult = { hit: true, damage: final, fatal, crit };
 
   // 見切り反撃 (倒れていなければ)
   if (!fatal && defender.parrying) {
@@ -957,6 +971,7 @@ function doAttack(
     // (見切り職は atk が低く、atk 基準だと tier3 で火力が出ずジリ貧になる)
     doAttack(defender, attacker, rng, events, counterActor, { power: 0.75, atkOverride: defender.def, label: 'はんげき' });
   }
+  return result;
 }
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */

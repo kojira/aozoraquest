@@ -10,7 +10,8 @@
  * (battle.ts が SKILLS/runSkill を import する値依存 ⇔ skills.ts は battle.ts の *型* だけ import)。
  */
 
-import type { Combatant, TurnEvent, AttackOptions } from './battle.js';
+import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
+import { applyStatus, type StatusId } from './statuses.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
 export type DamageStat = 'atk' | 'int' | 'agi' | 'luk';
@@ -22,6 +23,17 @@ export interface GambleSpec {
   /** 下限 = min(lukFloorCap, luk × lukFloorScale) */
   lukFloorScale: number;
   lukFloorCap: number;
+}
+
+/** 命中時に状態異常を付与する指定 (毒手など)。 */
+export interface InflictSpec {
+  status: StatusId;
+  /** 付与確率 (0〜1、未指定=1)。 */
+  chance?: number;
+  /** 持続ターン (未指定=2)。 */
+  turns?: number;
+  /** 効果量 (毒ダメージ/バフ倍率)。省略時は状態のデフォルト。 */
+  magnitude?: number;
 }
 
 /** とくぎの効果プリミティブ。ここに種類を足す = 新しい効果の語彙が増える。 */
@@ -40,11 +52,23 @@ export type SkillEffect =
       defFactor?: number;
       /** 指定すると power を luk 依存で抽選 (運ジョブ) */
       gamble?: GambleSpec;
+      /** 命中した攻撃に状態異常を乗せる (毒手など)。miss/即死には乗らない。 */
+      inflict?: InflictSpec;
     }
   | {
       kind: 'heal';
       /** maxHp に対する回復割合 */
       ratio: number;
+    }
+  | {
+      kind: 'status';
+      /** 付与する状態異常 */
+      status: StatusId;
+      /** self=使用者に (バフ/かくれみ/九字切り)、enemy=相手に (デバフ/毒/眠り) */
+      target: 'self' | 'enemy';
+      chance?: number;
+      turns?: number;
+      magnitude?: number;
     };
 
 export interface SkillDef {
@@ -62,7 +86,7 @@ export interface SkillEngine {
     events: TurnEvent[],
     actor: 'player' | 'monster',
     opts?: AttackOptions,
-  ) => void;
+  ) => AttackResult;
 }
 
 /** 効果を解決するための文脈 (誰が誰に、どの乱数で)。 */
@@ -107,8 +131,28 @@ const damageHandler: EffectHandler = (effect, ctx) => {
       const floor = Math.min(g.lukFloorCap, attacker.luk * g.lukFloorScale);
       opts.power = floor + rng() * (g.max - floor);
     }
-    engine.doAttack(attacker, defender, rng, events, 'player', opts);
+    const res = engine.doAttack(attacker, defender, rng, events, 'player', opts);
+    // 命中した攻撃にだけ状態異常を乗せる (miss/即死には乗らない)。
+    if (effect.inflict && res.hit && !res.fatal) {
+      const inf = effect.inflict;
+      if (rng() < (inf.chance ?? 1)) {
+        applyStatus(defender, { id: inf.status, turns: inf.turns ?? 2, ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}) });
+      }
+    }
   }
+};
+
+/** status: 使用者 (self) or 相手 (enemy) に状態異常を付与 (バフ/デバフ/かくれみ)。 */
+const statusHandler: EffectHandler = (effect, ctx) => {
+  if (effect.kind !== 'status') return;
+  const { attacker, defender, rng } = ctx;
+  if (rng() >= (effect.chance ?? 1)) return;
+  const target = effect.target === 'self' ? attacker : defender;
+  applyStatus(target, {
+    id: effect.status,
+    turns: effect.turns ?? 2,
+    ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}),
+  });
 };
 
 /** heal: maxHp の割合ぶん回復 (攻撃しないターン)。 */
@@ -124,6 +168,7 @@ const healHandler: EffectHandler = (effect, ctx) => {
 export const EFFECT_HANDLERS: Record<SkillEffect['kind'], EffectHandler> = {
   damage: damageHandler,
   heal: healHandler,
+  status: statusHandler,
 };
 
 /**

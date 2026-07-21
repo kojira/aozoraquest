@@ -61,7 +61,9 @@ describe('状態異常エンジン (#452)', () => {
   });
 
   it('statuses undefined (旧 sealed state) でも落ちず no-op', () => {
-    const legacy = c({ statuses: undefined, passives: undefined });
+    const legacy = c();
+    delete (legacy as { statuses?: unknown }).statuses;
+    delete (legacy as { passives?: unknown }).passives;
     expect(applyBeforeAct(legacy, ctx())).toBe(false);
     expect(applyPowerCalc(1, legacy, ctx())).toBe(1);
     expect(() => tickStatuses(legacy, ctx())).not.toThrow();
@@ -72,7 +74,7 @@ describe('状態異常エンジン (#452)', () => {
     const p = c({ statuses: [st('poison', 2, 5)] });
     tickStatuses(p, ctx());
     expect(p.hp).toBe(95);
-    expect(p.statuses![0].turns).toBe(1);
+    expect(p.statuses![0]!.turns).toBe(1);
     tickStatuses(p, ctx());
     expect(p.hp).toBe(90);
     expect(p.statuses).toHaveLength(0); // turns 0 で除去
@@ -134,14 +136,14 @@ describe('状態異常エンジン (#452)', () => {
     applyStatus(p, st('poison', 2, 3));
     applyStatus(p, st('poison', 5, 4)); // refresh: turns=max, magnitude 更新
     expect(p.statuses).toHaveLength(1);
-    expect(p.statuses![0].turns).toBe(5);
-    expect(p.statuses![0].magnitude).toBe(4);
+    expect(p.statuses![0]!.turns).toBe(5);
+    expect(p.statuses![0]!.magnitude).toBe(4);
 
     const t = c();
     applyStatus(t, st('tumble', 2));
     applyStatus(t, st('tumble', 9)); // ignore: 据え置き
     expect(t.statuses).toHaveLength(1);
-    expect(t.statuses![0].turns).toBe(2);
+    expect(t.statuses![0]!.turns).toBe(2);
   });
 
   it('poison は生存者のみ tick (HP0 の死体は毒で追撃しない)', () => {
