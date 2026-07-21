@@ -269,6 +269,23 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'ninja-vitals', name: '急所狙い', learnAt: 12 },
     { id: 'ninja-kuji', name: '九字切り', learnAt: 15 },
   ],
+  // 詩人: 水属性・自己バフ火力・言葉の拘束。感傷/感情爆発/全体技/詩心(P) は後続 (要 新語彙)。
+  poet: [
+    { id: 'poet-verse', name: '心晴の韻', learnAt: 3 },
+    { id: 'poet-calm', name: '静心', learnAt: 5 },
+    { id: 'poet-rouse', name: '昂ぶりの詩', learnAt: 7 },
+    { id: 'poet-bind', name: '言の葉縛り', learnAt: 8 },
+    { id: 'poet-mushin', name: '無心', learnAt: 12 },
+    { id: 'poet-outburst', name: '感情爆発', learnAt: 20 },
+    { id: 'poet-song', name: '心の詩', learnAt: 22 },
+  ],
+  // 戦士: 純物理ブルーザー・無属性。なぎ払い/一騎当千(全体)・剣豪(P) は後続。
+  warrior: [
+    { id: 'warrior-thrust', name: 'みだれ突き', learnAt: 5 },
+    { id: 'warrior-helmsplit', name: 'かぶとわり', learnAt: 10 },
+    { id: 'warrior-charge', name: 'ためる', learnAt: 15 },
+    { id: 'warrior-fullslash', name: '全力斬り', learnAt: 18 },
+  ],
 };
 
 /** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。
