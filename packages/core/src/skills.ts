@@ -240,6 +240,41 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   // 回復 (#436): maxHp の 0.35 (= 旧 BATTLE_TUNING.skillHealRatio を移行)
   heal: { id: 'heal', effects: [{ kind: 'heal', ratio: 0.35 }] },
+
+  // ─── 魔法使い 確定キット (#456 / docs/25 §12。単体・int型・必中・def無視) ───
+  // 数値 (範囲/intBonus/デバフ turns) は **sim 調整前提の暫定値**。覚える Lv に見合う endgame 敵
+  // (#455) が要る高 Lv 技は数値を圧縮しない (オーナー方針)。属性の輪は §1。
+  'mage-flame': { id: 'mage-flame', effects: [{ kind: 'fixedDamage', min: 4, max: 8, intBonus: 0.2, element: 'fire' }] }, // 火炎術式 Lv3
+  'mage-decode': { id: 'mage-decode', effects: [{ kind: 'fixedDamage', min: 6, max: 11, intBonus: 0.2 }] }, // 解式マギア Lv5 (無属性)
+  'mage-stone': { id: 'mage-stone', effects: [{ kind: 'fixedDamage', min: 7, max: 12, intBonus: 0.2, element: 'earth' }] }, // 石射 Lv6
+  // 氷結術式 Lv8: 水 + 素早さ↓
+  'mage-freeze': {
+    id: 'mage-freeze',
+    effects: [
+      { kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.25, element: 'water' },
+      { kind: 'status', status: 'agiDown', target: 'enemy', turns: 3 },
+    ],
+  },
+  // メルティ Lv12: 火 + 敵 def↓
+  'mage-melt': {
+    id: 'mage-melt',
+    effects: [
+      { kind: 'fixedDamage', min: 10, max: 16, intBonus: 0.25, element: 'fire' },
+      { kind: 'status', status: 'defDown', target: 'enemy', turns: 3 },
+    ],
+  },
+  'mage-blaze': { id: 'mage-blaze', effects: [{ kind: 'fixedDamage', min: 16, max: 24, intBonus: 0.3, element: 'fire' }] }, // 爆炎術式 Lv15
+  'mage-quake': { id: 'mage-quake', effects: [{ kind: 'fixedDamage', min: 20, max: 28, intBonus: 0.35, element: 'earth' }] }, // じわれ Lv18 (飛行無効は #455)
+  // 永久凍土 Lv20: 水 + 3T 行動不可 (stun turns=3)
+  'mage-permafrost': {
+    id: 'mage-permafrost',
+    effects: [
+      { kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.3, element: 'water' },
+      { kind: 'status', status: 'stun', target: 'enemy', turns: 3 },
+    ],
+  },
+  'mage-meteor': { id: 'mage-meteor', effects: [{ kind: 'fixedDamage', min: 30, max: 45, intBonus: 0.4 }] }, // メテオ Lv25 (無属性大砲)
+  // 魔力障壁 Lv30 (常時 被ダメ軽減) はパッシブ。PASSIVES + player.passives 配線が要るため後続で追加 (TODO)。
 };
 
 /** SkillDef の全効果を順に解決する (プラグイン実行のエントリポイント)。 */

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import {
   EQUIPMENT_BY_ID,
-  SKILL_KIND_LABELS,
+  skillKindLabel,
   jobDisplayName,
   jobXpToNextLevel,
   leveledName,
@@ -157,7 +157,9 @@ export function StatusModal({
             <div style={{ lineHeight: 1.8 }}>
               <div>
                 とくぎ: <strong>{skill.name}</strong>{' '}
-                <span style={{ color: 'var(--color-muted)' }}>({SKILL_KIND_LABELS[skill.kind]})</span>
+                {skillKindLabel(skill.kind) ? (
+                  <span style={{ color: 'var(--color-muted)' }}>({skillKindLabel(skill.kind)})</span>
+                ) : null}
               </div>
               {mpTrait.traitName ? (
                 <div>

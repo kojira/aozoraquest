@@ -204,7 +204,9 @@ export const JOB_SKILL_NAMES: Record<Archetype, string> = {
 };
 
 export interface JobSkill {
-  kind: SkillKind;
+  /** SKILLS レジストリのキー。基本 6 種は SkillKind、ジョブ確定キット (#456) は
+   *  'mage-flame' 等の固有 id。エンジンは SKILLS[kind] で解決するので string に緩めた。 */
+  kind: string;
   name: string;
 }
 
@@ -236,9 +238,40 @@ const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   mage: [{ kind: 'heal', name: '回生の術式', learnAt: 5 }],
 };
 
+/** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
+ *  キットを持つジョブは skillsForJob がこれを返す (旧 署名+LEARNED 方式より優先)。未登録のジョブは
+ *  従来どおり。**段階投入**: まず単体戦闘で成立するジョブから (全体/召喚技は #453 マルチ戦闘後)。 */
+interface KitSkill {
+  /** SKILLS のキー */
+  id: string;
+  name: string;
+  learnAt: number;
+}
+const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
+  // 魔法使い: 単体・int型・必中・def無視の大砲 (脆い)。パイロット (#456)。魔力障壁 Lv30 (P) は後続。
+  mage: [
+    { id: 'mage-flame', name: '火炎術式', learnAt: 3 },
+    { id: 'mage-decode', name: '解式マギア', learnAt: 5 },
+    { id: 'mage-stone', name: '石射', learnAt: 6 },
+    { id: 'mage-freeze', name: '氷結術式', learnAt: 8 },
+    { id: 'mage-melt', name: 'メルティ', learnAt: 12 },
+    { id: 'mage-blaze', name: '爆炎術式', learnAt: 15 },
+    { id: 'mage-quake', name: 'じわれ', learnAt: 18 },
+    { id: 'mage-permafrost', name: '永久凍土', learnAt: 20 },
+    { id: 'mage-meteor', name: 'メテオ', learnAt: 25 },
+  ],
+};
+
 /** その jobLevel 時点で使えるとくぎ列。[0] は署名スキル (skillForJob と一致 = 後方互換)、
- *  以降は習得済みの副スキル (learnAt <= jobLevel)。UI/エンジンはこの列から毎ターン選ぶ。 */
+ *  以降は習得済みの副スキル (learnAt <= jobLevel)。UI/エンジンはこの列から毎ターン選ぶ。
+ *  確定キット (#456) を持つジョブは learnAt<=level のキット技を返す (未習得帯は署名にフォールバック)。 */
 export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
+  const kit = JOB_KITS[archetype];
+  if (kit) {
+    const learned = kit.filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
+    // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
+    return learned.length ? learned : [skillForJob(archetype)];
+  }
   const signature = skillForJob(archetype);
   const learned = (LEARNED_SKILLS[archetype] ?? [])
     .filter((s) => jobLevel >= s.learnAt)
@@ -290,6 +323,12 @@ export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
   gamble: '大博打 (0〜2.6 倍)',
   heal: 'いのり (HP 回復)',
 };
+
+/** とくぎ種別のカテゴリ説明ラベル (UI の補足)。基本 6 種のみ定義があり、確定キット (#456) の
+ *  固有 id は名前自体が説明的なため undefined を返す (UI は補足を出さない)。 */
+export function skillKindLabel(kind: string): string | undefined {
+  return (SKILL_KIND_LABELS as Record<string, string>)[kind];
+}
 
 // ─── 戦闘参加者 ─────────────────────────────────────────────
 
