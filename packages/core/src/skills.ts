@@ -526,7 +526,9 @@ export const SKILLS: Record<string, SkillDef> = {
   // ─── 隊長 確定キット (#456 / docs/25 §12。タフな前衛指揮官・鼓舞) ───
   // 数値は sim 調整前提の暫定値。全体バフ/デバフ (allAllies/allEnemies) はソロでは自己バフ/敵デバフに
   // 退化し、マルチ (#453) で味方全体/敵全体に効く。名将 (P atk/def+10%) は passive 配線待ちで後続。
-  // 突撃号令 Lv3: atk×1.5 + 味方に atk 微上昇 (allAllies=ソロは自分)
+  // 突撃号令 Lv3: atk×1.5 + 味方に atk 微上昇 (allAllies=ソロは自分)。
+  // 注意: atkUp は restack refresh なので、鼓舞 (1.30) の後に突撃号令 (1.15) を撃つとバフが下がる。
+  // sim 調整時に「オマケ側を鼓舞と同値」or「refresh を max 採用」を検討 (#460)。
   'captain-charge': {
     id: 'captain-charge',
     effects: [
@@ -575,7 +577,8 @@ export function isPureHealSkill(kind: string): boolean {
   return !!def && def.effects.length > 0 && def.effects.every((e) => e.kind === 'heal');
 }
 
-/** SkillDef の全効果を順に解決する (ソロ戦闘のエントリポイント。ctx.defender 固定)。 */
+/** SkillDef の全効果を単一 ctx.defender に解決する低レベル API (テスト用)。**production の解決は
+ *  runSkillMulti** (ソロ/マルチとも効果ごとに resolveTargets で対象解決する) に統一済み (#456)。 */
 export function runSkill(def: SkillDef, ctx: SkillContext): void {
   for (const effect of def.effects) {
     EFFECT_HANDLERS[effect.kind](effect, ctx);
