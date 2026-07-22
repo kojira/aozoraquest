@@ -400,6 +400,24 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
   return learned.length ? learned : [skillForJob(archetype)];
 }
 
+/** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
+ *  フック実装済みの7職のみ (onLethal/onIncomingMagic/属性シナジー/非戦闘 待ちの9職は後続)。 */
+const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
+  warrior: 'warrior-blademaster', // 剣豪: 会心率↑
+  mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
+  ninja: 'kubikari', // 首狩り: 格下を一撃
+  captain: 'captain-command', // 名将: 常時 atk/def+10%
+  seer: 'seer-omniscience', // 全知: 常時回避↑
+  explorer: 'explorer-instinct', // 旅の勘: 回避↑
+  poet: 'poet-muse', // 詩心: 自己バフ中 与ダメ↑
+};
+
+/** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
+export function jobPassives(archetype: Archetype, jobLevel: number): string[] {
+  const pid = JOB_PASSIVES[archetype];
+  return pid && jobLevel >= 30 ? [pid] : [];
+}
+
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
  *  強化して初期で弱いジョブに付ける。能力がジョブに合っているかも大事」)。
  *  **戦闘中に MP が回復するのは特性を持つジョブだけ** (全員一律の基本回復は
@@ -567,6 +585,7 @@ export function playerCombatant(
     c.maxHp += (a?.maxHp ?? 0) + (b?.maxHp ?? 0);
     c.hp = c.maxHp;
   }
+  c.passives = jobPassives(archetype, jobLevel); // ジョブ Lv30 の innate パッシブ
   return c;
 }
 

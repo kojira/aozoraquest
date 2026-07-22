@@ -206,8 +206,77 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   },
 };
 
-/** パッシブレジストリ (ジョブ innate)。#456 で首狩り等を追加。今は枠だけ。 */
-export const PASSIVES: Record<string, PassiveDef> = {};
+/** 自己バフとみなす状態異常 (詩心の「自己バフ中 与ダメ↑」判定用)。 */
+const SELF_BUFF_IDS: ReadonlySet<StatusId> = new Set<StatusId>([
+  'atkUp',
+  'defUp',
+  'agiUp',
+  'critCharge',
+  'hidden',
+  'ironWall',
+  'thorns',
+]);
+function hasSelfBuff(c: Combatant): boolean {
+  return (c.statuses ?? []).some((s) => SELF_BUFF_IDS.has(s.id));
+}
+
+/**
+ * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの7職を
+ * ここで登録。onLethal (覇王/不動)・onIncomingMagic (清き心)・属性シナジー (慧眼)・対象状態参照
+ * (審美眼)・MP消費割引 (発明家)・非戦闘 (巫女の直感/名演) は追加フック待ちで #456 の後続に残す。
+ */
+export const PASSIVES: Record<string, PassiveDef> = {
+  // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
+  // isWeaker は maxHp 比で判定 (中ボス/敵は maxHp が高く成立しない = 事故ワンパン防止)。
+  kubikari: {
+    id: 'kubikari',
+    name: '首狩り',
+    onHit(atk, def, ctx) {
+      if (def.resistAllMagic) return; // メタル系は即死無効 (高防御ザコの存在意義)
+      if (def.maxHp > atk.maxHp * 0.6) return; // 明確に格下でなければ発動しない
+      const chance = Math.min(0.35, Math.max(0.05, 0.2 + (atk.luk - def.luk) * 0.004));
+      if (ctx.rng() < chance) return { instakill: true };
+    },
+  },
+  // 魔法使い 魔力障壁: 常時被ダメ軽減 (§12「常時10-20%軽減」→ ×0.85)。脆い大砲の生存補助。
+  'mage-barrier': {
+    id: 'mage-barrier',
+    name: '魔力障壁',
+    incomingCalc: (power) => power * 0.85,
+  },
+  // 戦士 剣豪: 会心率↑ (§12 Lv30)。critCalc は bool なので rng で確率的に会心へ引き上げる。
+  'warrior-blademaster': {
+    id: 'warrior-blademaster',
+    name: '剣豪',
+    critCalc: (willCrit, _c, ctx) => willCrit || ctx.rng() < 0.15,
+  },
+  // 隊長 名将: 常時 atk/def +10% (§12 Lv30)。攻撃は powerCalc ×1.1、被弾は incomingCalc ×0.9。
+  'captain-command': {
+    id: 'captain-command',
+    name: '名将',
+    powerCalc: (power) => power * 1.1,
+    incomingCalc: (power) => power * 0.9,
+  },
+  // 予言者 全知: 常時回避↑ (§12 Lv30)。低 agi を補い「当たらなければどうということはない」型。
+  'seer-omniscience': {
+    id: 'seer-omniscience',
+    name: '全知',
+    dodgeCalc: (dodge) => Math.min(0.9, dodge + 0.15),
+  },
+  // 冒険者 旅の勘: 回避↑ (§12 Lv30 の戦闘部分。ドロップ↑/逃走↑は非戦闘のため別途)。
+  'explorer-instinct': {
+    id: 'explorer-instinct',
+    name: '旅の勘',
+    dodgeCalc: (dodge) => Math.min(0.9, dodge + 0.12),
+  },
+  // 詩人 詩心: 自己バフ中 与ダメ↑ (§12 Lv30)。バフ orbiter 型の詩人が撃つときだけ乗る。
+  'poet-muse': {
+    id: 'poet-muse',
+    name: '詩心',
+    powerCalc: (power, c) => (hasSelfBuff(c) ? power * 1.25 : power),
+  },
+};
 
 /** 状態付与時の告知テキスト (対象名の後に続ける)。プレイヤーが状態変化を認識できるように
  *  (無告知だと忍者のかくれみ/九字切り等が「何も起きていない」ように見える。レビュー ★★)。 */
