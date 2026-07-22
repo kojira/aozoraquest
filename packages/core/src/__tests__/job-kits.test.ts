@@ -150,6 +150,28 @@ describe('詩人 確定キット (#456)', () => {
   });
 });
 
+describe('将軍 確定キット (#456)', () => {
+  it('レベルで一閃〜鬼神斬りを習得', () => {
+    expect(skillsForJob('shogun', 3).map((s) => s.name)).toContain('一閃');
+    expect(skillsForJob('shogun', 20).map((s) => s.name)).toEqual(['一閃', '足払い', '見切り', '鬼神斬り']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('shogun', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('足払いは命中で転倒を付与 (次行動不可 + 被ダメ↑)', () => {
+    let tumbled = false;
+    for (let seed = 0; seed < 40 && !tumbled; seed++) {
+      const s = startBattle('shogun', 8, 12, '将', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === '足払い');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'tumble')) tumbled = true;
+    }
+    expect(tumbled).toBe(true);
+  });
+});
+
 describe('予言者 確定キット (#456)', () => {
   it('レベルで未来スイッチ〜蠱毒の王を習得', () => {
     expect(skillsForJob('seer', 3).map((s) => s.name)).toContain('未来スイッチ');
