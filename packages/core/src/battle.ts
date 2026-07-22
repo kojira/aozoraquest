@@ -32,6 +32,7 @@ import {
   applyIncomingCalc,
   applyOnHit,
   applyOnDamaged,
+  applyModifyHit,
   tickStatuses,
   clearHitStatuses,
 } from './statuses.js';
@@ -289,6 +290,38 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'shogun-sweep', name: '足払い', learnAt: 8 },
     { id: 'shogun-guard', name: '見切り', learnAt: 15 },
     { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
+  ],
+  // 冒険者: 万能スカーミッシャー・luk34/agi25。武器投げ(装備)/秘境探索(random)/全体技/旅の勘(P)は後続。
+  explorer: [
+    { id: 'explorer-pebble', name: '石つぶて', learnAt: 3 },
+    { id: 'explorer-snare', name: '足がらめ', learnAt: 5 },
+    { id: 'explorer-reveal', name: 'みやぶる', learnAt: 7 },
+    { id: 'explorer-survival', name: 'サバイバル', learnAt: 8 },
+    { id: 'explorer-gale', name: '疾風の一撃', learnAt: 10 },
+    { id: 'explorer-confuse', name: 'かく乱', learnAt: 15 },
+    { id: 'explorer-hitrun', name: '一撃離脱', learnAt: 18 },
+    { id: 'explorer-lastditch', name: '背水の陣', learnAt: 25 },
+  ],
+  // 芸術家: 幻術師・luk/def26・空属性。だまし討ち/幻影の分身/創造の絵筆(summon)/混乱系/傑作/審美眼(P)は後続。
+  artist: [
+    { id: 'artist-bolt', name: '色彩の弾', learnAt: 3 },
+    { id: 'artist-daze', name: '幻惑の色', learnAt: 5 },
+    { id: 'artist-trompe', name: 'だまし絵', learnAt: 7 },
+    { id: 'artist-mist', name: '極彩の霧', learnAt: 8 },
+    { id: 'artist-blind', name: '目くらまし', learnAt: 10 },
+    { id: 'artist-blade', name: '原色の刃', learnAt: 12 },
+    { id: 'artist-explosion', name: '芸術は爆発だ', learnAt: 15 },
+  ],
+  // 匠: からくり技師・int43・罠と装置。自爆人形/からくり兵(summon)/大発破/兵器解放/発明家(P)は後続。
+  fighter: [
+    { id: 'fighter-contraption', name: 'からくり仕掛け', learnAt: 3 },
+    { id: 'fighter-smoke', name: '煙玉', learnAt: 5 },
+    { id: 'fighter-poisongas', name: '毒煙装置', learnAt: 7 },
+    { id: 'fighter-pitfall', name: '落とし穴', learnAt: 8 },
+    { id: 'fighter-ironball', name: '鉄球投擲', learnAt: 10 },
+    { id: 'fighter-flamethrower', name: '火炎放射器', learnAt: 12 },
+    { id: 'fighter-net', name: '拘束網', learnAt: 15 },
+    { id: 'fighter-waterjet', name: '高圧放水', learnAt: 18 },
   ],
   // 守護者: 壁役・def43最強。盾殴りは def 基準。フルカウンター/不動(P)/かばう・挑発(マルチ)は後続。
   guardian: [
@@ -1065,9 +1098,11 @@ function doAttack(
   // 回避判定 (魔撃は必中)。ぼうぎょの余韻 (focus) 中は「動きを読めている」ので回避が上がる。
   if (!opts.useInt) {
     const focusBonus = defender.focus > 0 ? t.guardFocusDodge : 0;
+    // 命中補正 (accDown: 攻撃側の命中が下がる)。none なら opts.hitBonus のまま。
+    const effHitBonus = applyModifyHit(opts.hitBonus ?? 0, attacker, atkCtx);
     let dodge = Math.min(
       t.dodgeMax + focusBonus,
-      Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - (opts.hitBonus ?? 0) + focusBonus),
+      Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - effHitBonus + focusBonus),
     );
     dodge = applyDodgeCalc(dodge, defender, defCtx); // かくれみ/agi バフ
     if (rng() < dodge) {
