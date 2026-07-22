@@ -192,8 +192,9 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'status') return;
   const { attacker, defender, rng, events } = ctx;
   const actor = ctx.actorSide ?? 'player';
-  // 倒した相手にデバフを乗せない (fixedDamage で致死後に走る多段技のため。self バフは対象外)。
-  if (effect.target === 'enemy' && defender.hp <= 0) return;
+  // 倒した相手にデバフを乗せない (fixedDamage で致死後に走る多段技のため)。self 以外は死体スキップ
+  // (enemy/allEnemies/oneEnemy をまとめて。self バフは生死問わず対象)。
+  if (effect.target !== 'self' && defender.hp <= 0) return;
   if (rng() >= (effect.chance ?? 1)) return;
   const target = effect.target === 'self' ? attacker : defender;
   applyStatus(target, {
@@ -237,7 +238,8 @@ const healHandler: EffectHandler = (effect, ctx) => {
   const { attacker, events, skillName } = ctx;
   const heal = Math.round(attacker.maxHp * effect.ratio);
   attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
-  events.push({ actor: 'player', text: `${attacker.name}は${skillName}! HP が ${heal} 回復。` });
+  // actorSide を尊重 (他ハンドラと統一)。将来マルチで敵が自己回復を撃っても視点が転倒しない。
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! HP が ${heal} 回復。` });
 };
 
 /** 効果種別 → ハンドラ。ここに 1 行足す = 新しい効果プリミティブが使えるようになる。 */

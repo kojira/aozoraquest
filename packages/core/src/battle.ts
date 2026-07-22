@@ -1433,8 +1433,10 @@ export function resolveTurnMulti(
 ): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
   const t = BATTLE_TUNING;
-  const allies = (prev.allies && prev.allies.length ? prev.allies : [prev.player]).map(copyCombatant);
-  const enemies = (prev.enemies && prev.enemies.length ? prev.enemies : [prev.monster]).map(copyCombatant);
+  // combatSides を単一窓口に (ソロ退避のロジックを二重実装しない)。各体は 1 ターン分 deep copy。
+  const prevSides = combatSides(prev);
+  const allies = prevSides.allies.map(copyCombatant);
+  const enemies = prevSides.enemies.map(copyCombatant);
   const state: BattleState = { ...prev, turn: prev.turn + 1, allies, enemies, player: allies[0]!, monster: enemies[0]!, lastEvents: [] };
   const sides: CombatSides = { allies, enemies };
   const player = allies[0]!;

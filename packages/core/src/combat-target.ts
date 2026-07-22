@@ -47,6 +47,8 @@ export function resolveTargets(
     case 'allEnemies':
       return alive(foeSide);
     case 'oneAlly': {
+      // 味方単体。全滅時は caster に退避 (味方対象は最低でも自分に効く)。将来「戦闘不能の味方を
+      // 蘇生」等を足す場合はここで死者を許容する分岐が要る (現状は生存者から選ぶ)。
       const list = alive(ownSide);
       return [list[opts.targetIndex ?? 0] ?? caster];
     }
