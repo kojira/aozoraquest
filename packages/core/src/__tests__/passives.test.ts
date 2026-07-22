@@ -216,6 +216,18 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     const enemy2 = c({ name: '敵' });
     runSkill(song, mkCtx(c(), enemy2));
     expect(enemy2.statuses?.find((s) => s.id === 'atkDown')?.turns).toBe(3);
+
+    // 自己バフの歌 (target:'self' → attacker に付与) にも名演が乗る。
+    const selfSong: SkillDef = { id: 'self', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 3 }] };
+    const singer = c({ passives: ['bard-encore'], name: '詩人' });
+    runSkill(selfSong, mkCtx(singer, c({ name: '敵' })));
+    expect(singer.statuses?.find((s) => s.id === 'atkUp')?.turns).toBe(4);
+
+    // restack refresh は max 挙動: 名演(4)の後に名演なし(3)を重ねても 4 が維持され短縮されない。
+    const enemy3 = c({ name: '敵' });
+    runSkill(song, mkCtx(c({ passives: ['bard-encore'] }), enemy3)); // 4
+    runSkill(song, mkCtx(c(), enemy3)); // 3 を重ねる → max(4,3)=4
+    expect(enemy3.statuses?.find((s) => s.id === 'atkDown')?.turns).toBe(4);
   });
 
   it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入り、切り札は毎戦闘 未使用から始まる', () => {

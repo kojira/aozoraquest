@@ -364,6 +364,8 @@ export const PASSIVES: Record<string, PassiveDef> = {
   // 吟遊詩人 名演: 自分がかける歌 (状態異常) の効果ターン +1 (§12 Lv30)。吟遊詩人のキットは味方バフ
   // (プレリュード/スケルツォ/ラプソディ) と敵デバフ (ディスコード/ララバイ) の「歌」中心なので、全ての歌が
   // 1 ターン長く続く support の要。バフ・デバフどちらの歌にも乗る (どちらも吟遊詩人の「歌の効果」)。
+  // 注: 付与する側 (attacker) スコープなので、現キットに無い doomMark 等を将来 bard に持たせると炸裂も
+  // 1 ターン遅れる (弱体化方向)。現状 bard キットに doomMark はなく inert。
   'bard-encore': {
     id: 'bard-encore',
     name: '名演',
@@ -483,7 +485,8 @@ export function applyTargetBonus(mult: number, c: Combatant, target: Combatant, 
   return v;
 }
 
-/** 付与する状態の持続ターン補正 (c=付与する側)。名演など。none なら入力そのまま。 */
+/** 付与する状態の持続ターン補正 (c=付与する側)。名演など。none なら入力そのまま。ctx は現状の名演では
+ *  未使用だが、将来「確率で +2」等の rng 連動 encore を書けるよう他フックと同じく通している。 */
 export function applyStatusDurationBonus(turns: number, c: Combatant, ctx: HookCtx): number {
   let v = turns;
   for (const { def, inst } of hooksOf(c)) v = def.statusDurationBonus?.(v, c, ctxFor(ctx, inst)) ?? v;
