@@ -150,6 +150,65 @@ describe('詩人 確定キット (#456)', () => {
   });
 });
 
+describe('巫女 確定キット (#456。luk支援・全体技のソロ退化)', () => {
+  it('レベルで癒しの鈴〜払串を習得', () => {
+    expect(skillsForJob('miko', 3).map((s) => s.name)).toContain('癒しの鈴');
+    expect(skillsForJob('miko', 22).map((s) => s.name)).toEqual(['癒しの鈴', '風の舞', '眠りの鈴', '加護', '破魔の舞', '癒し神楽', '払串']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('miko', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('癒しの鈴 (heal allAllies) はソロで自分を回復する', () => {
+    const s = startBattle('miko', 3, 8, '巫', 1, 5, 0);
+    s.player.hp = Math.max(1, s.player.maxHp - 20);
+    const before = s.player.hp;
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '癒しの鈴');
+    const next: BattleState = resolveTurn(s, 'skill', 999, idx);
+    expect(next.player.hp).toBeGreaterThan(before);
+  });
+
+  it('眠りの鈴 (sleep allEnemies) はソロで敵を眠らせる', () => {
+    let slept = false;
+    for (let seed = 0; seed < 30 && !slept; seed++) {
+      const s = startBattle('miko', 8, 12, '巫', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === '眠りの鈴');
+      const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+      if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'sleep')) slept = true;
+    }
+    expect(slept).toBe(true);
+  });
+});
+
+describe('吟遊詩人 確定キット (#456。空属性・歌支援)', () => {
+  it('レベルでプレリュード〜アプローズを習得', () => {
+    expect(skillsForJob('bard', 3).map((s) => s.name)).toContain('プレリュード');
+    expect(skillsForJob('bard', 25).map((s) => s.name)).toEqual(['プレリュード', 'デスペラード', 'ララバイ', 'スケルツォ', 'ディスコード', 'ラプソディ', 'アプローズ']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('bard', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('プレリュード (atkUp+agiUp allAllies) はソロで自分に2バフ', () => {
+    const s = startBattle('bard', 3, 8, '吟', 1, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'プレリュード');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    const ids = new Set(next.player.statuses?.map((st) => st.id));
+    expect(ids.has('atkUp')).toBe(true);
+    expect(ids.has('agiUp')).toBe(true);
+  });
+
+  it('デスペラード (void 魔法 allEnemies) が敵にダメージ', () => {
+    const s = startBattle('bard', 5, 8, '吟', 2, 3, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'デスペラード');
+    const before = s.monster.hp;
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.monster.hp).toBeLessThan(before);
+  });
+});
+
 describe('隊長 確定キット (#456。全体バフはソロで自己/敵に退化)', () => {
   it('レベルで突撃号令〜攻陣を習得', () => {
     expect(skillsForJob('captain', 3).map((s) => s.name)).toContain('突撃号令');

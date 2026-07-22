@@ -94,17 +94,18 @@ describe('とくぎプラグイン基盤 (#452)', () => {
   });
 
   it('heal: doAttack を呼ばず maxHp の 0.35 回復 (上限クランプ)', () => {
-    const atk = makeCombatant({ maxHp: 100, hp: 50 });
-    const { calls, ctx } = runWithSpy('heal', atk, makeCombatant());
+    // heal は ctx.defender (解決済み対象) を回復する。runSkill 低レベル呼びでは 3 番目の引数が対象。
+    const target = makeCombatant({ maxHp: 100, hp: 50 });
+    const { calls, ctx } = runWithSpy('heal', makeCombatant(), target);
     expect(calls).toHaveLength(0); // 攻撃しない
-    expect(atk.hp).toBe(85); // 50 + round(100*0.35)=85
+    expect(target.hp).toBe(85); // 50 + round(100*0.35)=85
     expect(ctx.events.some((e) => e.text.includes('回復'))).toBe(true);
   });
 
   it('heal: maxHp を超えない', () => {
-    const atk = makeCombatant({ maxHp: 100, hp: 90 });
-    runWithSpy('heal', atk, makeCombatant());
-    expect(atk.hp).toBe(100);
+    const target = makeCombatant({ maxHp: 100, hp: 90 });
+    runWithSpy('heal', makeCombatant(), target);
+    expect(target.hp).toBe(100);
   });
 
   it('EFFECT_HANDLERS は damage/heal/status をカバー', () => {
