@@ -7,6 +7,7 @@ import {
   applyIncomingCalc,
   applyOnHit,
   applyOnLethal,
+  applyOnIncomingMagic,
   applyElementBonus,
   applyTargetBonus,
   applyStatusDurationBonus,
@@ -54,8 +55,9 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(jobPassives('guardian', 30)).toEqual(['guardian-immovable']);
     expect(jobPassives('sage', 30)).toEqual(['sage-insight']);
     expect(jobPassives('artist', 30)).toEqual(['artist-aesthete']);
-    // フック未実装/inert の職 (清き心=敵魔法待ち/発明家/非戦闘) は Lv30 でもまだ空 (後続 #483)。
-    expect(jobPassives('paladin', 30)).toEqual([]);
+    expect(jobPassives('paladin', 30)).toEqual(['paladin-purity']);
+    // フック未実装の職 (発明家=MP割引/巫女=非戦闘) は Lv30 でもまだ空 (後続 #483)。
+    expect(jobPassives('fighter', 30)).toEqual([]);
     expect(jobPassives('miko', 30)).toEqual([]);
   });
 
@@ -63,8 +65,8 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(playerCombatant('warrior', 30, 30, 'w').passives).toEqual(['warrior-blademaster']);
     expect(playerCombatant('warrior', 29, 30, 'w').passives).toEqual([]);
     expect(playerCombatant('captain', 30, 30, 'cap').passives).toEqual(['captain-command']);
-    // 未実装/inert 職は Lv30 でも空 (清き心=敵魔法待ち)。キット化とは別軸。
-    expect(playerCombatant('paladin', 30, 30, 'p').passives).toEqual([]);
+    // 未実装職は Lv30 でも空 (発明家=MP割引/巫女=非戦闘)。キット化とは別軸。
+    expect(playerCombatant('fighter', 30, 30, 'f').passives).toEqual([]);
   });
 
   // ── 各パッシブの効果 (dispatcher 経由) ──
@@ -148,6 +150,25 @@ describe('パッシブ (#456 各職 Lv30)', () => {
 
   it('onLethal: パッシブなしは survive せず (通常どおり死ぬ)', () => {
     expect(applyOnLethal(c(), c(), 50, ctx())).toBe(false);
+  });
+
+  it('清き心 (paladin-purity): rng<0.25 で魔法反射 (被弾側フック・術者へ跳ね返し)', () => {
+    const pal = c({ passives: ['paladin-purity'], name: '聖騎士' });
+    const caster = c({ name: '術者', hp: 100 });
+    const ev = ctx(0.1);
+    expect(applyOnIncomingMagic(pal, caster, 30, ev)).toBe(true); // 反射成立
+    expect(caster.hp).toBe(70); // 30 跳ね返し
+    expect(ev.events.some((e) => e.text.includes('はね返した'))).toBe(true);
+    // rng>=0.25 は反射せず通常被弾。
+    const caster2 = c({ name: '術者2', hp: 100 });
+    expect(applyOnIncomingMagic(c({ passives: ['paladin-purity'] }), caster2, 30, ctx(0.5))).toBe(false);
+    expect(caster2.hp).toBe(100);
+    // パッシブなしは no-op。
+    expect(applyOnIncomingMagic(c(), caster2, 30, ctx(0.1))).toBe(false);
+  });
+
+  it('playerCombatant: 聖騎士 Lv30 で清き心が入る', () => {
+    expect(playerCombatant('paladin', 30, 30, 'pl').passives).toEqual(['paladin-purity']);
   });
 
   it('慧眼 (sage-insight): 弱点 (相性倍率>=1.5) のみ ×1.25 増幅、等倍/耐性/空 1.2 は素通し', () => {

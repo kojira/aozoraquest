@@ -88,6 +88,9 @@ export interface CombatHook {
   /** 物理致死の直前 (c=倒れかけている側)。survive=true で HP1 生存 (覇王/不動)。魔法致死には効かない
    *  (doAttack の物理経路からのみ呼ばれる)。反射など攻撃者への副作用はハンドラ内で atk を直接操作。 */
   onLethal?(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): { survive?: boolean } | void;
+  /** 魔法被弾の直前 (c=被弾側/atk=術者)。reflect=true で被弾を無効化 (攻撃者への反射などはハンドラ内で
+   *  atk を操作)。清き心: 低確率で魔法反射。doMagic の魔法経路からのみ呼ばれる。 */
+  onIncomingMagic?(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): { reflect?: boolean } | void;
   /** ターン終了。毒ダメージ等。 */
   turnEnd?(c: Combatant, ctx: HookCtx): void;
 }
@@ -261,9 +264,9 @@ function boostDodge(dodge: number, bonus: number): number {
 
 /**
  * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
- * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの12職を
- * ここで登録 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演)。
- * onIncomingMagic (清き心・敵魔法待ちで inert)・MP消費割引 (発明家)・非戦闘 (巫女の直感) は後続 (#483)。
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの13職を
+ * ここで登録 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演
+ * + onIncomingMagic 清き心)。MP消費割引 (発明家)・非戦闘 (巫女の直感) は後続 (#483)。
  */
 export const PASSIVES: Record<string, PassiveDef> = {
   // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
@@ -343,6 +346,18 @@ export const PASSIVES: Record<string, PassiveDef> = {
       self.lethalGuardUsed = true;
       ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 不動の構えで持ちこたえた!` });
       return { survive: true };
+    },
+  },
+  // 聖騎士 清き心: 低確率 (25%) で魔法をはね返す (§12 Lv30)。敵魔法 (#456 caster) の登場で意味を持つ。
+  // 反射時は被弾 0 で術者へ同ダメージ (覇王の反射と同じ idiom)。数値は sim 前提の暫定値 (#495)。
+  'paladin-purity': {
+    id: 'paladin-purity',
+    name: '清き心',
+    onIncomingMagic(self, atk, damage, ctx) {
+      if (ctx.rng() >= 0.25) return; // 75% は通常どおり被弾
+      atk.hp = Math.max(0, atk.hp - damage);
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 清き心で魔法をはね返した! ${atk.name}に ${damage} のダメージ!`, damage });
+      return { reflect: true };
     },
   },
   // 賢者 慧眼: 弱点属性 (相性倍率 >=1.5) を突いたときさらに与ダメ↑ (§12 Lv30)。int40 の属性キャスターが
@@ -502,6 +517,16 @@ export function applyOnLethal(c: Combatant, atk: Combatant, damage: number, ctx:
     if (def.onLethal?.(c, atk, damage, ctxFor(ctx, inst))?.survive) survive = true;
   }
   return survive;
+}
+
+/** 魔法被弾の直前: 被弾側のフック (清き心) を回し、いずれかが reflect を返したら true (被弾を無効化)。
+ *  反射など攻撃者への副作用はハンドラ内で atk を操作する (覇王 onLethal と同じ idiom)。 */
+export function applyOnIncomingMagic(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): boolean {
+  let reflect = false;
+  for (const { def, inst } of hooksOf(c)) {
+    if (def.onIncomingMagic?.(c, atk, damage, ctxFor(ctx, inst))?.reflect) reflect = true;
+  }
+  return reflect;
 }
 
 /** 命中時: いずれかのパッシブ/状態が即死を返したら true。 */

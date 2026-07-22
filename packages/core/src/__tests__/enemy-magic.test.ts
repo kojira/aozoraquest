@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { startBattle, resolveTurn, MONSTERS_BY_ID, type BattleState } from '../index.js';
 
 /** night-raven (tier3 caster) が出る戦闘を探す。 */
-function findRavenBattle(job: 'warrior' | 'shogun', jobLv: number, plLv: number): BattleState | null {
+function findRavenBattle(job: 'warrior' | 'shogun' | 'paladin', jobLv: number, plLv: number): BattleState | null {
   for (let seed = 0; seed < 120; seed++) {
     const s = startBattle(job, jobLv, plLv, 'x', 3, seed, 0, undefined, { monsterId: 'night-raven' });
     if (s.monsterId === 'night-raven') return s;
@@ -72,5 +72,26 @@ describe('敵の魔法 (caster ability #456)', () => {
     }
     expect(magicKilled).toBe(true); // 魔法致死で覇王将軍が敗北した = 魔法は覇王を貫く
     expect(physicalSaved).toBe(true); // 物理致死は覇王で耐えた = 物理耐性は健在
+  });
+
+  it('清き心 (聖騎士 Lv30) は敵魔法を実戦で反射する (敵魔法 content との統合)', () => {
+    const spellName = MONSTERS_BY_ID['night-raven']!.spell!.name;
+    // 複数 seed × 多ターンで、清き心の反射 (25%) × 敵の詠唱 が少なくとも 1 回起きることを確認。
+    // 聖騎士の HP を毎ターン満タンに戻して戦闘を長引かせ、詠唱機会を稼ぐ。
+    let reflected = false;
+    for (let seed = 0; seed < 20 && !reflected; seed++) {
+      let s = startBattle('paladin', 30, 30, 'x', 3, seed, 0, undefined, { monsterId: 'night-raven' });
+      expect(s.player.passives).toContain('paladin-purity');
+      for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+        s.player.hp = s.player.maxHp; // 倒し切らず長引かせる (詠唱機会を稼ぐ)
+        s.monster.mp = s.monster.maxMp; // 敵 MP も戻して詠唱を続けさせる
+        s = resolveTurn(s, 'guard');
+        if (s.lastEvents.some((e) => e.text.includes('はね返した'))) {
+          reflected = true;
+          break;
+        }
+      }
+    }
+    expect(reflected).toBe(true); // 敵魔法を清き心で反射した = onIncomingMagic 経路が実戦で発火
   });
 });
