@@ -83,6 +83,8 @@ export type SkillEffect =
       kind: 'heal';
       /** maxHp に対する回復割合 */
       ratio: number;
+      /** 対象。self=使用者 / allAllies=味方全体 (巫女の全体回復)。未指定は self。 */
+      target?: 'self' | 'allAllies';
     }
   | {
       kind: 'cleanse';
@@ -270,14 +272,14 @@ const fixedDamageHandler: EffectHandler = (effect, ctx) => {
   });
 };
 
-/** heal: maxHp の割合ぶん回復 (攻撃しないターン)。 */
+/** heal: 対象 (resolveTargets 済みの ctx.defender) の maxHp 割合ぶん回復。self は defender=attacker、
+ *  allAllies は各味方に解決される (runSkillMulti が対象ごとに defender を差し替える)。 */
 const healHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'heal') return;
-  const { attacker, events, skillName } = ctx;
-  const heal = Math.round(attacker.maxHp * effect.ratio);
-  attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
-  // actorSide を尊重 (他ハンドラと統一)。将来マルチで敵が自己回復を撃っても視点が転倒しない。
-  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! HP が ${heal} 回復。` });
+  const { defender, events, skillName } = ctx;
+  const heal = Math.round(defender.maxHp * effect.ratio);
+  defender.hp = Math.min(defender.maxHp, defender.hp + heal);
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${defender.name}は${skillName}! HP が ${heal} 回復。` });
 };
 
 /** cleanse: 味方対象のデバフを除去 (浄化)。バフは残す。self は使用者、それ以外は解決済みの味方。 */
@@ -567,6 +569,56 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'status', status: 'agiDown', target: 'allEnemies', turns: 3 },
     ],
   },
+
+  // ─── 巫女 確定キット (#456 / docs/25 §12。luk型・霊的支援・物理攻撃なし・全体技) ───
+  // 数値は sim 調整前提の暫定値。全体技はソロで自己/敵単体に退化、マルチで全体化。luk37 最強なので
+  // 攻撃は wind luckScale。魅惑の神楽(confusion)/神楽乱舞/神託の光/巫女の直感(P) は後続。
+  'miko-heal-bell': { id: 'miko-heal-bell', effects: [{ kind: 'heal', ratio: 0.2, target: 'allAllies' }] }, // 癒しの鈴 Lv3
+  'miko-wind-dance': { id: 'miko-wind-dance', effects: [{ kind: 'fixedDamage', min: 5, max: 12, luckScale: 0.2, element: 'wind', target: 'allEnemies' }] }, // 風の舞 Lv5
+  'miko-sleep-bell': { id: 'miko-sleep-bell', effects: [{ kind: 'status', status: 'sleep', target: 'allEnemies', chance: 0.6, turns: 3 }] }, // 眠りの鈴 Lv8
+  // 加護 Lv12: 味方 atk↑ + def↑
+  'miko-blessing': {
+    id: 'miko-blessing',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3 },
+      { kind: 'status', status: 'defUp', target: 'allAllies', turns: 3 },
+    ],
+  },
+  'miko-purify-dance': { id: 'miko-purify-dance', effects: [{ kind: 'fixedDamage', min: 8, max: 16, luckScale: 0.25, element: 'wind', target: 'allEnemies' }] }, // 破魔の舞 Lv15
+  'miko-heal-kagura': { id: 'miko-heal-kagura', effects: [{ kind: 'heal', ratio: 0.4, target: 'allAllies' }] }, // 癒し神楽 Lv18
+  'miko-cleanse': { id: 'miko-cleanse', effects: [{ kind: 'cleanse', target: 'allAllies' }] }, // 払串 Lv22
+
+  // ─── 吟遊詩人 確定キット (#456 / docs/25 §12。agi/luk型・空属性・歌でバフ/デバフ/眠り・回復なし) ───
+  // 数値は sim 調整前提の暫定値。luk31 最強で空属性 luckScale。スタッカート/カプリッチョ(random)/
+  // 英雄叙事詩(全能力2倍)/名演(P) は後続。**新プリミティブ追加なし**。
+  // プレリュード Lv3: 味方 atk↑ + agi↑
+  'bard-prelude': {
+    id: 'bard-prelude',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3 },
+      { kind: 'status', status: 'agiUp', target: 'allAllies', turns: 3 },
+    ],
+  },
+  'bard-desperado': { id: 'bard-desperado', effects: [{ kind: 'fixedDamage', min: 3, max: 10, luckScale: 0.2, element: 'void', target: 'allEnemies' }] }, // デスペラード Lv5
+  'bard-lullaby': { id: 'bard-lullaby', effects: [{ kind: 'status', status: 'sleep', target: 'allEnemies', chance: 0.6, turns: 3 }] }, // ララバイ Lv8
+  'bard-scherzo': { id: 'bard-scherzo', effects: [{ kind: 'status', status: 'agiUp', target: 'allAllies', turns: 3, magnitude: 2.0 }] }, // スケルツォ Lv12 (agi 2倍)
+  // ディスコード Lv14: 敵 atk↓ + def↓
+  'bard-discord': {
+    id: 'bard-discord',
+    effects: [
+      { kind: 'status', status: 'atkDown', target: 'allEnemies', turns: 3 },
+      { kind: 'status', status: 'defDown', target: 'allEnemies', turns: 3 },
+    ],
+  },
+  // ラプソディ Lv15: 味方 atk・def を強化 (1.5倍/被ダメ減)
+  'bard-rhapsody': {
+    id: 'bard-rhapsody',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3, magnitude: 1.5 },
+      { kind: 'status', status: 'defUp', target: 'allAllies', turns: 3, magnitude: 0.7 },
+    ],
+  },
+  'bard-applause': { id: 'bard-applause', effects: [{ kind: 'fixedDamage', min: 10, max: 18, luckScale: 0.3, element: 'void', target: 'allEnemies' }] }, // アプローズ Lv25
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく
@@ -593,6 +645,7 @@ export function effectTarget(effect: SkillEffect): SkillTarget {
     case 'fixedDamage':
       return effect.target ?? 'oneEnemy';
     case 'heal':
+      return effect.target ?? 'self';
     case 'restoreMp':
     case 'recoil':
       return 'self';

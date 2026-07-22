@@ -231,11 +231,8 @@ export function skillForJob(archetype: Archetype): JobSkill {
 interface LearnedSkill { kind: SkillKind; name: string; learnAt: number }
 const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   // 回復役・低攻撃ジョブに「いのり (HP 回復)」を配る。攻撃が弱い職ほど早く覚える。
-  miko: [{ kind: 'heal', name: '神楽の癒し', learnAt: 3 }],
-  // paladin は確定キット (#456) で聖光の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
-  // seer は §12 で「回復なしの破滅オラクル」= 確定キットに heal を持たないため LEARNED を撤去。
-  // sage は確定キット (#456) で賢者の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
-  bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
+  // paladin/seer/sage/mage/miko/bard は確定キット (#456) を持つため LEARNED は撤去 (JOB_KITS が優先)。
+  //   miko は癒しの鈴/癒し神楽をキットに持つ。bard は §12「回復なし」の歌職。
   // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
   // JOB_KITS.mage が skillsForJob を早期 return するため到達不能 = 意図的に撤去 (レビュー ★★)。
 };
@@ -301,6 +298,26 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'shogun-sweep', name: '足払い', learnAt: 8 },
     { id: 'shogun-guard', name: '見切り', learnAt: 15 },
     { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
+  ],
+  // 巫女: luk型・霊的支援・物理攻撃なし・全体技。魅惑の神楽(confusion)/神楽乱舞/神託の光/巫女の直感(P)は後続。
+  miko: [
+    { id: 'miko-heal-bell', name: '癒しの鈴', learnAt: 3 },
+    { id: 'miko-wind-dance', name: '風の舞', learnAt: 5 },
+    { id: 'miko-sleep-bell', name: '眠りの鈴', learnAt: 8 },
+    { id: 'miko-blessing', name: '加護', learnAt: 12 },
+    { id: 'miko-purify-dance', name: '破魔の舞', learnAt: 15 },
+    { id: 'miko-heal-kagura', name: '癒し神楽', learnAt: 18 },
+    { id: 'miko-cleanse', name: '払串', learnAt: 22 },
+  ],
+  // 吟遊詩人: agi/luk型・空属性・歌でバフ/デバフ/眠り・回復なし。スタッカート/カプリッチョ/英雄叙事詩/名演(P)は後続。
+  bard: [
+    { id: 'bard-prelude', name: 'プレリュード', learnAt: 3 },
+    { id: 'bard-desperado', name: 'デスペラード', learnAt: 5 },
+    { id: 'bard-lullaby', name: 'ララバイ', learnAt: 8 },
+    { id: 'bard-scherzo', name: 'スケルツォ', learnAt: 12 },
+    { id: 'bard-discord', name: 'ディスコード', learnAt: 14 },
+    { id: 'bard-rhapsody', name: 'ラプソディ', learnAt: 15 },
+    { id: 'bard-applause', name: 'アプローズ', learnAt: 25 },
   ],
   // 隊長: タフな前衛指揮官・鼓舞。全体バフ/デバフはソロで自己/敵単体に退化、マルチで全体化。名将(P)は後続。
   captain: [

@@ -84,19 +84,19 @@ describe('skillsForJob (複数とくぎ #436)', () => {
       expect(list1[0]).toEqual(sig);
     }
   });
-  it('副スキルはレベルアップで習得する (learnAt 未満は出ない)', () => {
-    // miko は jobLv3 で heal (神楽の癒し) を習得
-    expect(skillsForJob('miko', 1).map((s) => s.kind)).toEqual(['gamble']);
-    expect(skillsForJob('miko', 2).map((s) => s.kind)).toEqual(['gamble']);
-    expect(skillsForJob('miko', 3).map((s) => s.kind)).toEqual(['gamble', 'heal']);
-    // heal 未配布・キット未登録のジョブは署名のみ (guardian)
+  it('キット職はレベルで習得、未習得帯は署名にフォールバック (#456)', () => {
+    // miko は確定キット職。Lv1-2 は未習得帯で署名にフォールバック、Lv3 で癒しの鈴を習得。
+    expect(skillsForJob('miko', 1)).toHaveLength(1); // 署名のみ
+    expect(skillsForJob('miko', 2)).toHaveLength(1);
+    expect(skillsForJob('miko', 3).map((s) => s.name)).toContain('癒しの鈴');
+    // キット未登録のジョブ (guardian) は署名のみ (旧 LEARNED 機構は全職キット化で空)。
     expect(skillsForJob('guardian', 30)).toHaveLength(1);
   });
-  it('heal とくぎは MP を払って maxHp の割合ぶん回復する', () => {
-    // miko(jobLv5) は [gamble, heal]。HP を削ってから heal を選ぶ (skillIndex=1)
-    let s = startBattle('miko', 5, 8, '巫女', 2, 3, 0);
-    const healIdx = s.playerSkills.findIndex((x) => x.kind === 'heal');
-    expect(healIdx).toBeGreaterThan(0);
+  it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
+    // paladin(jobLv5) は聖光の癒し (heal) を持つ。HP を削ってから回復を選ぶ。
+    let s = startBattle('paladin', 5, 8, '聖', 2, 3, 0);
+    const healIdx = s.playerSkills.findIndex((x) => x.name === '聖光の癒し');
+    expect(healIdx).toBeGreaterThanOrEqual(0);
     for (let i = 0; i < 3 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack', i * 7 + 1);
     if (s.outcome === 'ongoing' && s.player.hp < s.player.maxHp) {
       const before = s.player.hp;
@@ -817,10 +817,13 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     }
   });
 
-  it('luk/agi 型の弱ジョブがレベルでちゃんと強くなる (bard/ninja の tier2 中位レベル)', () => {
-    // 旧仕様 (特技 atk 基準 + MP 特性なし) では bard の tier2 は 2 割前後だった。
-    // 支配ステータス基準 + MP 特性 + 平坦レベル成長でまともに戦えることを固定
-    expect(winRate('bard', 5, 8, 2)).toBeGreaterThanOrEqual(60);
+  it('luk/agi 型の弱ジョブがレベルでちゃんと強くなる (explorer/ninja の tier2 中位レベル)', () => {
+    // 旧仕様 (特技 atk 基準 + MP 特性なし) では tier2 は 2 割前後だった。
+    // 支配ステータス基準 + MP 特性 + 平坦レベル成長でまともに戦えることを固定。
+    // 注: bard は #456 で「歌の支援職」にキット化され skill[0] がバフ = ソロの naive auto-battle
+    // (skillIndex0) では攻撃せず弱い (支援職はパーティ前提。マルチ #453 で本領)。ここでは攻撃系の
+    // 弱 luk/agi ジョブ (explorer=非キット agi 署名 / ninja=毒手) で「レベルで戦える」ことを固定する。
+    expect(winRate('explorer', 5, 8, 2)).toBeGreaterThanOrEqual(60);
     expect(winRate('ninja', 5, 8, 2)).toBeGreaterThanOrEqual(60);
   });
 
