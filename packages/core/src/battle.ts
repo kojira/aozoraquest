@@ -404,8 +404,8 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  フック実装済みの11職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼)。
- *  onIncomingMagic (清き心・敵魔法が無いと inert のため保留)/MP割引 (発明家)/非戦闘 (巫女/名演) は後続 (#483)。 */
+ *  フック実装済みの12職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 +
+ *  statusDurationBonus 名演)。onIncomingMagic (清き心・敵魔法が無いと inert)/MP割引 (発明家)/非戦闘 (巫女) は後続 (#483)。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -418,6 +418,7 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   guardian: 'guardian-immovable', // 不動: 物理致死を1回確定で耐える
   sage: 'sage-insight', // 慧眼: 弱点属性で追加ダメ
   artist: 'artist-aesthete', // 審美眼: 状態異常の敵に与ダメ↑
+  bard: 'bard-encore', // 名演: 自分の歌 (状態) の効果ターン+1
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
