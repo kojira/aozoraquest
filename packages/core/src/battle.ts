@@ -233,7 +233,7 @@ const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   // 回復役・低攻撃ジョブに「いのり (HP 回復)」を配る。攻撃が弱い職ほど早く覚える。
   miko: [{ kind: 'heal', name: '神楽の癒し', learnAt: 3 }],
   // paladin は確定キット (#456) で聖光の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
-  seer: [{ kind: 'heal', name: '癒しの予言', learnAt: 4 }],
+  // seer は §12 で「回復なしの破滅オラクル」= 確定キットに heal を持たないため LEARNED を撤去。
   // sage は確定キット (#456) で賢者の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
   bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
   // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
@@ -300,6 +300,15 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'performer-slack', name: 'サボる', learnAt: 5 },
     { id: 'performer-gamble', name: 'いちかばちか', learnAt: 12 },
     { id: 'performer-acrobat', name: '曲芸乱舞', learnAt: 15 },
+  ],
+  // 予言者: 最高 int・破滅のオラクル・遅延。全体予言 (地震/嵐/日照り/水難/アポカリプス) はマルチ待ち。
+  //   死の宣告 (毎ターンHP半分)/未来予知 (magicEvade)/全知(P) は後続。
+  seer: [
+    { id: 'seer-switch', name: '未来スイッチ', learnAt: 3 },
+    { id: 'seer-thunder', name: '雷の予言', learnAt: 4 },
+    { id: 'seer-poison', name: '毒の予言', learnAt: 7 },
+    { id: 'seer-doom', name: '破滅の予言', learnAt: 12 },
+    { id: 'seer-king', name: '蠱毒の王', learnAt: 20 },
   ],
   // 賢者: 最高 int・全5属性・支援。イディオット/知恵の加護/星辰以外の全体技/慧眼(P) は後続。
   sage: [
