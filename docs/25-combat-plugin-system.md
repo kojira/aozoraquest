@@ -300,6 +300,10 @@ export const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   分岐なしに表現。**1 戦闘 1 回のみ**発動する切り札 (`Combatant.lethalGuardUsed` フラグ。オーナー判断
   2026-07-22: 敵が物理のみの現状で毎回発動だと対モンスター完全不死になるため)。覇王=1回耐えて同ダメ反射、
   不動=1回確定で耐える (旧 50% 運要素は壁役の capstone に合わないため確定 1 回に変更)。
+- `targetBonus(mult, c, target, ctx) → mult` — 対象の状態に応じた与ダメ倍率補正 (c=攻撃側/target=被弾側)。
+  実装済み (#456)。審美眼 (芸術家): 状態異常 (AILMENT_IDS) の敵に与ダメ **×1.3** (sim 調整前提の暫定値)。
+  基準 1 に対する乗数を返し doAttack/doMagic 双方で dmg に乗算。芸術家の fixedDamage は doMagic を通るので
+  実効。会心↑ (必中 fixedDamage に乗らない)・良素材↑ (非戦闘) は §12 の残部分で別途 (#483)。
 - `elementBonus(mult, c, ctx) → mult` — 属性相性倍率の補正 (c=攻撃側)。実装済み (#456)。慧眼 (賢者): 弱点
   (mult>=1.5) を突いたとき **×1.25 増幅** (1.5→1.875)。1.25 の根拠 = 弱点を突く能動プレイへの報酬。大賢者
   の一撃 (×2.5) と合わせても過剰にならない範囲で、閾値 1.5/倍率 1.25 とも sim 調整余地を残す暫定値。

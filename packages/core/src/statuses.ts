@@ -71,6 +71,8 @@ export interface CombatHook {
   powerCalc?(power: number, c: Combatant, ctx: HookCtx): number;
   /** 属性相性倍率の補正 (c=攻撃側)。慧眼: 弱点 (mult>=1.5) を突いたときさらに増幅。mult=現在の属性倍率。 */
   elementBonus?(mult: number, c: Combatant, ctx: HookCtx): number;
+  /** 対象の状態に応じた与ダメ倍率補正 (c=攻撃側, target=被弾側)。審美眼: 状態異常の敵に与ダメ↑。 */
+  targetBonus?(mult: number, c: Combatant, target: Combatant, ctx: HookCtx): number;
   /** 命中補正 (c=攻撃側)。accDown: hitBonus を下げて当てにくく。 */
   modifyHit?(hitBonus: number, c: Combatant, ctx: HookCtx): number;
   /** 会心の可否 (c=攻撃側)。九字切り=確定会心。 */
@@ -226,6 +228,25 @@ function hasSelfBuff(c: Combatant): boolean {
   return (c.statuses ?? []).some((s) => SELF_BUFF_IDS.has(s.id));
 }
 
+/** 負の状態異常 (デバフ/弱体) の正準集合。浄化 (cleanse) が除去する対象であり、審美眼が「状態異常の敵」
+ *  と判定する対象でもある = 同じ概念なので単一の出所とする (skills.ts はこれを import して使う)。 */
+export const AILMENT_IDS: ReadonlySet<StatusId> = new Set<StatusId>([
+  'poison',
+  'sleep',
+  'stun',
+  'tumble',
+  'restraint',
+  'atkDown',
+  'defDown',
+  'agiDown',
+  'doomMark',
+  'accDown',
+]);
+/** c が何らかの状態異常 (ailment) を負っているか (審美眼の「状態異常の敵」判定)。 */
+function hasAilment(c: Combatant): boolean {
+  return (c.statuses ?? []).some((s) => AILMENT_IDS.has(s.id));
+}
+
 /** 回避パッシブ (全知/旅の勘) の実効回避上限。通常の dodgeMax(0.32) は回避職の identity として超える
  *  が、ここで頭打ちにして「絶対に当たらない」化を防ぐ (レビュー ★★: かくれみ 0.75 と積んで 0.9 化する
  *  懸念への対処)。数値は sim 前提の暫定値。 */
@@ -238,9 +259,9 @@ function boostDodge(dodge: number, bonus: number): number {
 
 /**
  * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
- * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの9職を
- * ここで登録 (基本7職 + onLethal 追加で覇王/不動)。onIncomingMagic (清き心)・属性シナジー (慧眼)・
- * 対象状態参照 (審美眼)・MP消費割引 (発明家)・非戦闘 (巫女の直感/名演) は追加フック待ちで後続 (#483)。
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの11職を
+ * ここで登録 (基本7職 + onLethal で覇王/不動 + elementBonus で慧眼 + targetBonus で審美眼)。
+ * onIncomingMagic (清き心・敵魔法待ちで inert)・MP消費割引 (発明家)・非戦闘 (巫女の直感/名演) は後続 (#483)。
  */
 export const PASSIVES: Record<string, PassiveDef> = {
   // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
@@ -329,6 +350,14 @@ export const PASSIVES: Record<string, PassiveDef> = {
     id: 'sage-insight',
     name: '慧眼',
     elementBonus: (mult) => (mult >= 1.5 ? mult * 1.25 : mult),
+  },
+  // 芸術家 審美眼: 状態異常の敵に与ダメ↑ (§12 Lv30 の与ダメ部分。会心↑は必中 fixedDamage の芸術家キットに
+  // 乗らず・良素材↑は非戦闘のため別途)。芸術家は幻惑/毒煙/拘束網で敵を弱らせる debuffer なので、自分で
+  // 撒いた状態異常を突いて追撃する『崩してから仕留める』シナジー。fixedDamage は doMagic を通るので両経路で効く。
+  'artist-aesthete': {
+    id: 'artist-aesthete',
+    name: '審美眼',
+    targetBonus: (mult, _c, target) => (hasAilment(target) ? mult * 1.3 : mult),
   },
 };
 
@@ -433,6 +462,14 @@ export function applyOnDamaged(c: Combatant, atk: Combatant, damage: number, ctx
 export function applyElementBonus(mult: number, c: Combatant, ctx: HookCtx): number {
   let v = mult;
   for (const { def, inst } of hooksOf(c)) v = def.elementBonus?.(v, c, ctxFor(ctx, inst)) ?? v;
+  return v;
+}
+
+/** 対象の状態に応じた与ダメ倍率補正 (c=攻撃側, target=被弾側)。審美眼など。基準 1 に対する乗数を返す
+ *  (属性倍率とは独立した別軸なので基点 1 から始め、呼び出し側が dmg に乗算する)。none なら入力そのまま。 */
+export function applyTargetBonus(mult: number, c: Combatant, target: Combatant, ctx: HookCtx): number {
+  let v = mult;
+  for (const { def, inst } of hooksOf(c)) v = def.targetBonus?.(v, c, target, ctxFor(ctx, inst)) ?? v;
   return v;
 }
 
