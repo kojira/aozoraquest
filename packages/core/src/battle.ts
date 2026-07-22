@@ -717,8 +717,8 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'river-serpent', element: 'water', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [42, 18, 22, 10, 10], hp: 22, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負。xp 62〜96
   { id: 'night-raven', element: 'wind', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
-  { id: 'blue-oni', element: 'earth', name: 'あおおに', species: 'oni', tier: 3, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
-  { id: 'sky-dragon', element: 'wind', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
+  { id: 'blue-oni', element: 'water', name: 'あおおに', species: 'oni', tier: 3, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
+  { id: 'sky-dragon', element: 'void', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
 ];
 
 export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(

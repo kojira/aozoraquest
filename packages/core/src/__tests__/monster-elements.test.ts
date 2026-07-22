@@ -47,11 +47,9 @@ describe('モンスター属性・魔法耐性 (#455)', () => {
       const idx = s.playerSkills.findIndex((sk) => sk.name === '疾風');
       return resolveTurn(s, 'skill', 777, idx);
     };
-    const earth = gale('moss-golem'); // wind ×1.5 (弱点)
-    const fire = gale('will-o-wisp'); // wind ×0.5 (耐性)
-    const earthDealt = MONSTERS_BY_ID['moss-golem']!.hp! * 1; // 参考: 実 hp は factor 込みなので比較で見る
-    void earthDealt;
-    // 弱点を突いた方がダメージが大きく、告知メッセージも出る。
+    const earth = gale('moss-golem'); // earth 敵 → wind は弱点 ×1.5
+    const fire = gale('will-o-wisp'); // fire 敵 → wind は耐性 ×0.5
+    // 弱点/耐性の告知が正しく出る (相性適用の証跡)。
     expect(earth.lastEvents.some((e) => e.text.includes('弱点を突いた'))).toBe(true);
     expect(fire.lastEvents.some((e) => e.text.includes('効果がいまひとつ'))).toBe(true);
   });
