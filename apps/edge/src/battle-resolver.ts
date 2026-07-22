@@ -11,7 +11,7 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch,
+  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
   terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
@@ -415,7 +415,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       setCount('sky-dew', next.tonics ?? 0);
       const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
-        luk: next.player.luk, rewardSeed, lossSeed, rewarded: guard.rewarded,
+        luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
       });
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。

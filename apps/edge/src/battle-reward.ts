@@ -27,6 +27,8 @@ export interface BattleOutcomeInput {
   archetype: string;
   /** ドロップ/敗北ロスの luk ボーナス。 */
   luk: number;
+  /** 巫女の直感 (#456) 等のドロップ確率加算ボーナス。未指定は 0。 */
+  dropBonus?: number;
   /** サーバーが独立に引いたドロップ用エントロピー (32bit)。 */
   rewardSeed: number;
   /** サーバーが独立に引いた敗北ロス用エントロピー (32bit)。 */
@@ -65,7 +67,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
 
   if (o.outcome === 'win') {
     const xp = battleXpFor(o.monsterId);
-    const drops = rollDrops(o.monsterId, o.luk, o.rewardSeed);
+    const drops = rollDrops(o.monsterId, o.luk, o.rewardSeed, o.dropBonus ?? 0);
     const next: GameState = {
       ...state,
       playerXp: state.playerXp + xp,
