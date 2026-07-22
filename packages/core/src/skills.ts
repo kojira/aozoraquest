@@ -631,7 +631,8 @@ export const SKILLS: Record<string, SkillDef> = {
   // 不動(P onLethal)/かばう・挑発(パーティ前提=マルチ #453) は後続。
   'guardian-bash': { id: 'guardian-bash', effects: [{ kind: 'damage', stat: 'def', power: 1.0 }] }, // 盾殴り Lv3
   'guardian-prayer': { id: 'guardian-prayer', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3, magnitude: 0.6 }] }, // 守護の祈り Lv5
-  'guardian-thorns': { id: 'guardian-thorns', effects: [{ kind: 'status', status: 'thorns', target: 'self', turns: 3, magnitude: 0.3 }] }, // とげの盾 Lv8
+  // とげの盾 Lv8: 物理被弾のみ反射 (doMagic では非発火。§14.1 の「物理被弾時」に準拠)。
+  'guardian-thorns': { id: 'guardian-thorns', effects: [{ kind: 'status', status: 'thorns', target: 'self', turns: 3, magnitude: 0.3 }] },
   'guardian-stand': { id: 'guardian-stand', effects: [{ kind: 'status', status: 'ironWall', target: 'self', turns: 1 }] }, // 仁王立ち Lv12 (被ダメ≒0 1T)
   'guardian-shield': { id: 'guardian-shield', effects: [], parry: true }, // 大盾の護り Lv15 (parry: 防御しつつ反撃)
 };

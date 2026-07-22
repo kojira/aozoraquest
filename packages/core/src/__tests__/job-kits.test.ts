@@ -153,7 +153,7 @@ describe('詩人 確定キット (#456)', () => {
 describe('守護者 確定キット (#456。壁役・def基準)', () => {
   it('レベルで盾殴り〜大盾の護りを習得', () => {
     expect(skillsForJob('guardian', 3).map((s) => s.name)).toContain('盾殴り');
-    expect(skillsForJob('guardian', 15).map((s) => s.name)).toEqual(['盾殴り', '守護の祈り', 'とげの盾', '仁王立ち', '大盾の護り']);
+    expect(skillsForJob('guardian', 15).map((s) => s.name)).toEqual(['盾殴り', '大盾の護り', 'とげの盾', '仁王立ち', '守護の祈り']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {

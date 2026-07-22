@@ -293,10 +293,10 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
   // 守護者: 壁役・def43最強。盾殴りは def 基準。フルカウンター/不動(P)/かばう・挑発(マルチ)は後続。
   guardian: [
     { id: 'guardian-bash', name: '盾殴り', learnAt: 3 },
-    { id: 'guardian-prayer', name: '守護の祈り', learnAt: 5 },
+    { id: 'guardian-shield', name: '大盾の護り', learnAt: 5 }, // parry反撃 (§14.1: Lv5)
     { id: 'guardian-thorns', name: 'とげの盾', learnAt: 8 },
     { id: 'guardian-stand', name: '仁王立ち', learnAt: 12 },
-    { id: 'guardian-shield', name: '大盾の護り', learnAt: 15 },
+    { id: 'guardian-prayer', name: '守護の祈り', learnAt: 15 }, // defUp (§14.1: Lv15)
   ],
   // 巫女: luk型・霊的支援・物理攻撃なし・全体技。魅惑の神楽(confusion)/神楽乱舞/神託の光/巫女の直感(P)は後続。
   miko: [
@@ -368,7 +368,7 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
     // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
     return learned.length ? learned : [skillForJob(archetype)];
   }
-  // キット未登録ジョブ (guardian/artist/fighter 等) は署名スキルのみ。旧 LEARNED_SKILLS (弱職に heal
+  // キット未登録ジョブ (artist/fighter 等) は署名スキルのみ。旧 LEARNED_SKILLS (弱職に heal
   // 副スキルを配る機構) は全 heal 職のキット化で不要になり撤去した (#456)。
   return [skillForJob(archetype)];
 }
