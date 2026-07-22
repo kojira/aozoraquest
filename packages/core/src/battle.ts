@@ -224,21 +224,8 @@ export function skillForJob(archetype: Archetype): JobSkill {
   return { kind: STAT_TO_SKILL[maxI]!, name: JOB_SKILL_NAMES[archetype] };
 }
 
-/** 複数とくぎ (#436, エピック #434)。署名スキル (skillForJob) は常に [0]。ジョブは**レベルアップで
- *  副スキルを習得**する (learnAt = 習得 jobLevel)。弱いジョブほど多く・早く覚えて戦術の幅を持つ
- *  (オーナー方針。docs/24)。#436 では実装容易な `heal` (HP 回復) を配って複数選択を成立させ、
- *  眠り/デバフ/バフ等の状態異常は #437 で状態エンジンと共に足す。 */
-interface LearnedSkill { kind: SkillKind; name: string; learnAt: number }
-const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
-  // 回復役・低攻撃ジョブに「いのり (HP 回復)」を配る。攻撃が弱い職ほど早く覚える。
-  miko: [{ kind: 'heal', name: '神楽の癒し', learnAt: 3 }],
-  // paladin は確定キット (#456) で聖光の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
-  // seer は §12 で「回復なしの破滅オラクル」= 確定キットに heal を持たないため LEARNED を撤去。
-  // sage は確定キット (#456) で賢者の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
-  bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
-  // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
-  // JOB_KITS.mage が skillsForJob を早期 return するため到達不能 = 意図的に撤去 (レビュー ★★)。
-};
+// 旧 LEARNED_SKILLS (#436: 弱職に heal 副スキルを配る機構) は #456 で全 heal 職がキット化されたため
+// 撤去した。副スキルは JOB_KITS (確定キット) が担う。非キット職は署名スキルのみ (skillsForJob 参照)。
 
 /** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
  *  キットを持つジョブは skillsForJob がこれを返す (旧 署名+LEARNED 方式より優先)。未登録のジョブは
@@ -302,6 +289,26 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'shogun-guard', name: '見切り', learnAt: 15 },
     { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
   ],
+  // 巫女: luk型・霊的支援・物理攻撃なし・全体技。魅惑の神楽(confusion)/神楽乱舞/神託の光/巫女の直感(P)は後続。
+  miko: [
+    { id: 'miko-heal-bell', name: '癒しの鈴', learnAt: 3 },
+    { id: 'miko-wind-dance', name: '風の舞', learnAt: 5 },
+    { id: 'miko-sleep-bell', name: '眠りの鈴', learnAt: 8 },
+    { id: 'miko-blessing', name: '加護', learnAt: 12 },
+    { id: 'miko-purify-dance', name: '破魔の舞', learnAt: 15 },
+    { id: 'miko-heal-kagura', name: '癒し神楽', learnAt: 18 },
+    { id: 'miko-cleanse', name: '払串', learnAt: 22 },
+  ],
+  // 吟遊詩人: agi/luk型・空属性・歌でバフ/デバフ/眠り・回復なし。スタッカート/カプリッチョ/英雄叙事詩/名演(P)は後続。
+  bard: [
+    { id: 'bard-prelude', name: 'プレリュード', learnAt: 3 },
+    { id: 'bard-desperado', name: 'デスペラード', learnAt: 5 },
+    { id: 'bard-lullaby', name: 'ララバイ', learnAt: 8 },
+    { id: 'bard-scherzo', name: 'スケルツォ', learnAt: 12 },
+    { id: 'bard-discord', name: 'ディスコード', learnAt: 14 },
+    { id: 'bard-rhapsody', name: 'ラプソディ', learnAt: 15 },
+    { id: 'bard-applause', name: 'アプローズ', learnAt: 25 },
+  ],
   // 隊長: タフな前衛指揮官・鼓舞。全体バフ/デバフはソロで自己/敵単体に退化、マルチで全体化。名将(P)は後続。
   captain: [
     { id: 'captain-charge', name: '突撃号令', learnAt: 3 },
@@ -352,11 +359,9 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
     // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
     return learned.length ? learned : [skillForJob(archetype)];
   }
-  const signature = skillForJob(archetype);
-  const learned = (LEARNED_SKILLS[archetype] ?? [])
-    .filter((s) => jobLevel >= s.learnAt)
-    .map((s) => ({ kind: s.kind, name: s.name }));
-  return [signature, ...learned];
+  // キット未登録ジョブ (guardian/artist/fighter 等) は署名スキルのみ。旧 LEARNED_SKILLS (弱職に heal
+  // 副スキルを配る機構) は全 heal 職のキット化で不要になり撤去した (#456)。
+  return [skillForJob(archetype)];
 }
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
