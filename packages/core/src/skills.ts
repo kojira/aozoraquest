@@ -522,6 +522,51 @@ export const SKILLS: Record<string, SkillDef> = {
   // ため強めに。§12 の「次の敵魔法100%回避」は magicEvade (敵魔法詠唱 #455後続) が入るまで後続。
   'shogun-guard': { id: 'shogun-guard', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3, magnitude: 2.5 }] },
   'shogun-oni': { id: 'shogun-oni', effects: [{ kind: 'damage', stat: 'atk', power: 2.5 }] }, // 鬼神斬り Lv20 (かき消しは後続)
+
+  // ─── 隊長 確定キット (#456 / docs/25 §12。タフな前衛指揮官・鼓舞) ───
+  // 数値は sim 調整前提の暫定値。全体バフ/デバフ (allAllies/allEnemies) はソロでは自己バフ/敵デバフに
+  // 退化し、マルチ (#453) で味方全体/敵全体に効く。名将 (P atk/def+10%) は passive 配線待ちで後続。
+  // 突撃号令 Lv3: atk×1.5 + 味方に atk 微上昇 (allAllies=ソロは自分)。
+  // 注意: atkUp は restack refresh なので、鼓舞 (1.30) の後に突撃号令 (1.15) を撃つとバフが下がる。
+  // sim 調整時に「オマケ側を鼓舞と同値」or「refresh を max 採用」を検討 (#460)。
+  'captain-charge': {
+    id: 'captain-charge',
+    effects: [
+      { kind: 'damage', stat: 'atk', power: 1.5 },
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3, magnitude: 1.15 },
+    ],
+  },
+  'captain-inspire': { id: 'captain-inspire', effects: [{ kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3 }] }, // 鼓舞 Lv5
+  'captain-defense': { id: 'captain-defense', effects: [{ kind: 'status', status: 'defUp', target: 'allAllies', turns: 3 }] }, // 防陣 Lv8
+  // 突進 Lv12: atk×1.5 + 中確率で転倒
+  'captain-rush': {
+    id: 'captain-rush',
+    effects: [{ kind: 'damage', stat: 'atk', power: 1.5, inflict: { status: 'tumble', chance: 0.5, turns: 1 } }],
+  },
+  // 檄 Lv15: 味方全体 atk↑ + agi↑
+  'captain-rally': {
+    id: 'captain-rally',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3 },
+      { kind: 'status', status: 'agiUp', target: 'allAllies', turns: 3 },
+    ],
+  },
+  // 捨て身攻撃 Lv18: 敵全体 atk×1.6・自 def↓ (リスク)。§12 の「会心↑」は critUp 語彙が未整備で後続。
+  'captain-desperate': {
+    id: 'captain-desperate',
+    effects: [
+      { kind: 'damage', stat: 'atk', power: 1.6, target: 'allEnemies' },
+      { kind: 'status', status: 'defDown', target: 'self', turns: 1 },
+    ],
+  },
+  // 攻陣 Lv25: 敵を囲い 味方 atk↑ + 敵 agi↓ (§12 確定版: 鼓舞と包囲のハイブリッド陣形)
+  'captain-encircle': {
+    id: 'captain-encircle',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3 },
+      { kind: 'status', status: 'agiDown', target: 'allEnemies', turns: 3 },
+    ],
+  },
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく
@@ -532,7 +577,8 @@ export function isPureHealSkill(kind: string): boolean {
   return !!def && def.effects.length > 0 && def.effects.every((e) => e.kind === 'heal');
 }
 
-/** SkillDef の全効果を順に解決する (ソロ戦闘のエントリポイント。ctx.defender 固定)。 */
+/** SkillDef の全効果を単一 ctx.defender に解決する低レベル API (テスト用)。**production の解決は
+ *  runSkillMulti** (ソロ/マルチとも効果ごとに resolveTargets で対象解決する) に統一済み (#456)。 */
 export function runSkill(def: SkillDef, ctx: SkillContext): void {
   for (const effect of def.effects) {
     EFFECT_HANDLERS[effect.kind](effect, ctx);
