@@ -110,29 +110,45 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(applyOnHit(ninja, metal, ctx(0.01))).toBe(false);
   });
 
-  it('覇王 (shogun-overlord): 物理致死をHP1で耐え、受けた分を攻撃者へ反射', () => {
+  it('覇王 (shogun-overlord): 物理致死をHP1で耐え反射、ただし 1 戦闘 1 回だけ (2 回目は死ぬ)', () => {
     const shogun = c({ passives: ['shogun-overlord'], name: '将軍' });
     const atk = c({ name: '敵', hp: 100 });
     const ev = ctx();
-    expect(applyOnLethal(shogun, atk, 30, ev)).toBe(true); // 生存
+    expect(applyOnLethal(shogun, atk, 30, ev)).toBe(true); // 初回: 生存
     expect(atk.hp).toBe(70); // 30 反射
+    expect(shogun.lethalGuardUsed).toBe(true); // 発動済みフラグ
     expect(ev.events.some((e) => e.text.includes('反射'))).toBe(true);
+    // 2 回目の物理致死は耐えられない (切り札は 1 回)。反射も起きない。
+    const atk2 = c({ name: '敵2', hp: 100 });
+    expect(applyOnLethal(shogun, atk2, 30, ctx())).toBe(false);
+    expect(atk2.hp).toBe(100);
   });
 
-  it('不動 (guardian-immovable): 物理致死を 50% で耐える (反射なし)', () => {
+  it('不動 (guardian-immovable): 物理致死を 1 回だけ確定で耐える (反射なし・運要素なし・2 回目は死ぬ)', () => {
     const g = c({ passives: ['guardian-immovable'], name: '守護者' });
     const atk = c({ name: '敵', hp: 100 });
-    expect(applyOnLethal(g, atk, 40, ctx(0.3))).toBe(true); // rng<0.5 = 耐える
+    expect(applyOnLethal(g, atk, 40, ctx(0.99))).toBe(true); // rng に依らず確定で耐える
     expect(atk.hp).toBe(100); // 反射なし
-    expect(applyOnLethal(g, atk, 40, ctx(0.7))).toBe(false); // rng>=0.5 = 死ぬ
+    expect(g.lethalGuardUsed).toBe(true);
+    expect(applyOnLethal(g, atk, 40, ctx(0.01))).toBe(false); // 2 回目は死ぬ
+  });
+
+  it('onLethal: オーバーキル (残HP<<ダメージ) でも survive すれば HP1 固定 (呼び出し側 battle.ts で hp=1)', () => {
+    // applyOnLethal 自体は survive 可否のみ返す。ダメージ量に依らず初回は耐える (HP1 化は doAttack 側)。
+    const shogun = c({ passives: ['shogun-overlord'], hp: 10, name: '将軍' });
+    const atk = c({ name: '敵', hp: 500 });
+    expect(applyOnLethal(shogun, atk, 9999, ctx())).toBe(true); // 超過ダメージでも初回は耐える
+    expect(atk.hp).toBe(0); // 9999 反射で攻撃者は即死 (Math.max(0,...))
   });
 
   it('onLethal: パッシブなしは survive せず (通常どおり死ぬ)', () => {
     expect(applyOnLethal(c(), c(), 50, ctx())).toBe(false);
   });
 
-  it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入る', () => {
-    expect(playerCombatant('shogun', 30, 30, 'sh').passives).toEqual(['shogun-overlord']);
+  it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入り、切り札は毎戦闘 未使用から始まる', () => {
+    const sh = playerCombatant('shogun', 30, 30, 'sh');
+    expect(sh.passives).toEqual(['shogun-overlord']);
+    expect(sh.lethalGuardUsed).toBeUndefined(); // 新しい戦闘 = 未発動 (once-per-battle のリセット)
     expect(playerCombatant('guardian', 30, 30, 'gd').passives).toEqual(['guardian-immovable']);
   });
 

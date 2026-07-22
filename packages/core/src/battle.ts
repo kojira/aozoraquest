@@ -402,7 +402,8 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  フック実装済みの7職のみ (onLethal/onIncomingMagic/属性シナジー/非戦闘 待ちの9職は後続)。 */
+ *  フック実装済みの9職 (基本7職 + onLethal で覇王/不動)。onIncomingMagic/属性シナジー/対象状態参照/
+ *  MP割引/非戦闘 待ちの残職は後続 (#483)。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -507,6 +508,9 @@ export interface Combatant {
   element?: Element;
   /** すべての魔法を無効化 (メタル系。#455)。true だと fixedDamage/doMagic が最小 1。 */
   resistAllMagic?: boolean;
+  /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
+   *  playerCombatant で毎戦闘 undefined から始まり、初回発動でハンドラが true にする。 */
+  lethalGuardUsed?: boolean;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {

@@ -294,23 +294,28 @@ export const PASSIVES: Record<string, PassiveDef> = {
     name: '詩心',
     powerCalc: (power, c) => (hasSelfBuff(c) ? power * 1.25 : power),
   },
-  // 将軍 覇王: 物理致死をHP1で耐え、受けた分を攻撃者へ反射 (§12 Lv30)。魔法致死は doAttack を通らない
-  // ため耐えられず普通に死ぬ (int28 の魔法耐性で対キャスターを補う設計)。対物理ほぼ不死の看板。
+  // 将軍 覇王: 物理致死をHP1で耐え、受けた分を攻撃者へ反射 (§12 Lv30)。**1 戦闘 1 回だけ**の切り札
+  // (オーナー判断 2026-07-22: 毎回発動だと敵が物理のみの現状で対モンスター完全不死になるため)。魔法致死は
+  // doAttack を通らず耐えられない (int28 の魔法耐性で対キャスターを補う設計)。2 回目以降の物理致死は普通に死ぬ。
   'shogun-overlord': {
     id: 'shogun-overlord',
     name: '覇王',
     onLethal(self, atk, damage, ctx) {
+      if (self.lethalGuardUsed) return; // 発動済み: 2 回目の物理致死は耐えられない
+      self.lethalGuardUsed = true;
       atk.hp = Math.max(0, atk.hp - damage); // 同ダメージ反射
       ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 覇王の意地で耐えた! ${atk.name}に ${damage} 反射!`, damage });
       return { survive: true };
     },
   },
-  // 守護者 不動: 物理致死を 50% でHP1耐え (§12 Lv30)。反射はなし。魔法致死は覇王同様に死ぬ。
+  // 守護者 不動: 物理致死を **1 戦闘 1 回だけ確定で** HP1 耐える (§12 Lv30。オーナー判断 2026-07-22: 壁役の
+  // capstone に 50% 運要素は噛み合わないため確定 1 回に。once-per-battle で対モンスター完全不死も防ぐ)。反射なし。
   'guardian-immovable': {
     id: 'guardian-immovable',
     name: '不動',
     onLethal(self, _atk, _damage, ctx) {
-      if (ctx.rng() >= 0.5) return; // 50% は耐えられず死ぬ
+      if (self.lethalGuardUsed) return; // 発動済み: 2 回目の物理致死は耐えられない
+      self.lethalGuardUsed = true;
       ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 不動の構えで持ちこたえた!` });
       return { survive: true };
     },
@@ -415,7 +420,8 @@ export function applyOnDamaged(c: Combatant, atk: Combatant, damage: number, ctx
 }
 
 /** 物理致死の直前: 被弾側のフック (覇王/不動) を回し、いずれかが survive を返したら true (HP1 生存)。
- *  反射等の攻撃者への副作用はハンドラ内で atk を操作する (ここでは生存可否だけ集約)。 */
+ *  反射等の攻撃者への副作用はハンドラ内で atk を操作する (ここでは生存可否だけ集約)。複数の onLethal
+ *  が共存する場合は全ハンドラが走る (副作用も全部発火) — 現状 1 職 1 パッシブなので単一発火。 */
 export function applyOnLethal(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): boolean {
   let survive = false;
   for (const { def, inst } of hooksOf(c)) {
