@@ -532,6 +532,9 @@ export interface Combatant {
   /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
    *  playerCombatant で毎戦闘 undefined から始まり、初回発動でハンドラが true にする。 */
   lethalGuardUsed?: boolean;
+  /** モンスター個体の def id (#453 マルチ戦闘で敵ごとに ability/spell を引くため)。プレイヤー/召喚は未設定。
+   *  monsterCombatant が def.id を載せる。1v1 では state.monsterId と一致する。 */
+  monsterId?: string;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -970,6 +973,7 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   // 属性・魔法耐性 (#455)。属性相性はキャスターの弱点突き、resistAllMagic はメタルの魔法無効。
   if (def.element !== undefined) c.element = def.element;
   if (def.resistAllMagic) c.resistAllMagic = true;
+  c.monsterId = def.id; // マルチ戦闘で敵個体ごとに ability/spell を引く (#453)
   return c;
 }
 
@@ -1062,6 +1066,9 @@ export function startBattle(
     /** 出現を tier 抽選せず**この id のモンスターに固定**する (模擬戦シミュレータ用)。
      *  未知 id は無視して従来どおり tier 抽選。 */
     monsterId?: string;
+    /** 追加の敵数 (#453 マルチ戦闘: 群れ)。0=ソロ (従来・enemies 未設定)、1〜2 で計 2〜3 体。
+     *  各追加敵は同 tier から別 seed で抽選し monsterId を保持。allies=[player]・enemies=[主敵, …追加] を設定。 */
+    extraEnemies?: number;
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -1077,12 +1084,24 @@ export function startBattle(
     ? { def: forced, combatant: monsterCombatant(forced, variance, createRng((seed ^ 0x2a9f) >>> 0)) }
     : summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, variance);
   const gains = mpGainsFor(archetype);
+  // #453 群れ: 追加の敵を別 seed で抽選 (最大 +2 = 計 3 体)。0 のとき enemies 未設定 = 従来ソロ。
+  const extraCount = Math.max(0, Math.min(2, Math.floor(extras?.extraEnemies ?? 0)));
+  const enemies: Combatant[] = [combatant];
+  for (let i = 0; i < extraCount; i++) {
+    const es = (seed ^ (0x9e3779b1 * (i + 1))) >>> 0;
+    enemies.push(
+      forced
+        ? monsterCombatant(forced, variance, createRng((es ^ 0x2a9f) >>> 0))
+        : summonMonster(tier, playerLevel, es, jobLevel, extras?.affinity, variance).combatant,
+    );
+  }
   return {
     seed,
     turn: 0,
     player,
     monster: combatant,
     monsterId: def.id,
+    ...(extraCount > 0 ? { allies: [player], enemies } : {}),
     playerSkill: skillForJob(archetype),
     playerSkills: skillsForJob(archetype, jobLevel),
     outcome: 'ongoing',
@@ -1300,6 +1319,8 @@ type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee' | 'cast';
  *  monsterCommand の if 分岐を排す。null を返すと通常判定 (plain) にフォールバック。 */
 interface AbilityDecisionCtx {
   state: BattleState;
+  /** 行動する敵個体 (#453: マルチ戦闘で敵ごとに判断。1v1 では state.monster と同じ)。 */
+  monster: Combatant;
   /** そのターンの単一乱数 (全 ability で共有 = 決定性維持)。 */
   r: number;
   t: typeof BATTLE_TUNING;
@@ -1319,8 +1340,8 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   // charger: 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)
   charger: {
     id: 'charger',
-    decideAction: ({ state, r, t, canGuard }) => {
-      if (state.monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
+    decideAction: ({ monster, r, t, canGuard }) => {
+      if (monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
       if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
       return 'attack';
     },
@@ -1328,8 +1349,8 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   // healer: 低 HP でたまに自己回復 (削り切る前に倒す読み合い)
   healer: {
     id: 'healer',
-    decideAction: ({ state, r, t, hpRatio, canGuard }) => {
-      if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
+    decideAction: ({ monster, r, t, hpRatio, canGuard }) => {
+      if (monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
       if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
       return 'attack';
     },
@@ -1338,8 +1359,8 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   // 成立させる (int 職の魔法耐性・聖騎士の魔法反射=清き心 は後続 #483 の前提)。MP 切れで通常攻撃に落ちる。
   caster: {
     id: 'caster',
-    decideAction: ({ state, r, t, canGuard, monsterDef }) => {
-      if (monsterDef?.spell && state.monster.mp >= t.monsterCastMpCost && r < t.casterCastChance) return 'cast';
+    decideAction: ({ monster, r, t, canGuard, monsterDef }) => {
+      if (monsterDef?.spell && monster.mp >= t.monsterCastMpCost && r < t.casterCastChance) return 'cast';
       // guard バンドは charger/healer (+0.15) よりやや狭い +0.1 — caster は攻撃寄りに保ち、魔法を撃てない
       // (MP 枯渇) ターンも殴りに来る威圧感を残すため (守りに籠らせない)。
       if (canGuard && r < t.casterCastChance + 0.1) return 'guard';
@@ -1363,16 +1384,17 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
 /** モンスターの行動を能力 (ability) で決める (オーナー要望 2026-07-18: ため攻撃は
  *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。
  *  #452: if 分岐でなく MONSTER_ABILITIES レジストリ引き (プラグイン化)。 */
-function monsterCommand(state: BattleState, rng: () => number): MonsterAction {
-  const def = MONSTERS_BY_ID[state.monsterId];
+function monsterCommand(monster: Combatant, state: BattleState, rng: () => number): MonsterAction {
+  // 敵個体の monsterId で def を引く (#453: マルチ戦闘は敵ごとに別 def。1v1 は state.monsterId と一致)。
+  const def = MONSTERS_BY_ID[monster.monsterId ?? state.monsterId];
   const t = BATTLE_TUNING;
   const r = rng();
-  const hpRatio = state.monster.hp / state.monster.maxHp;
+  const hpRatio = monster.hp / monster.maxHp;
   // 低 HP でたまに身を固める (charger のため中は別処理なのでここでは除外)
-  const canGuard = (def?.tier ?? 1) >= 2 && hpRatio < 0.35 && !state.monster.charging;
+  const canGuard = (def?.tier ?? 1) >= 2 && hpRatio < 0.35 && !monster.charging;
 
   const ability = def?.ability ? MONSTER_ABILITIES[def.ability] : undefined;
-  const action = ability?.decideAction({ state, r, t, hpRatio, canGuard, monsterDef: def });
+  const action = ability?.decideAction({ state, monster, r, t, hpRatio, canGuard, monsterDef: def });
   if (action) return action;
 
   // plain (ability 無し / null): 通常攻撃 + 低 HP でたまに防御
@@ -1441,7 +1463,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   const events: TurnEvent[] = [];
   // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
-  const mCommand = monsterCommand(state, rng);
+  const mCommand = monsterCommand(state.monster, state, rng);
 
   // ── コマンドの実効化 ──
   // MP 不足の特技 / 在庫切れのやくそうは「たたかう」にフォールバック
@@ -1645,12 +1667,59 @@ function randomLiving(arr: readonly Combatant[], rng: () => number): Combatant |
   return living.length ? living[Math.floor(rng() * living.length)] : undefined;
 }
 
+/** マルチ戦闘での敵1体の行動 (#453)。1v1 の monster act と同じ ability (charger/healer/caster) を、
+ *  敵個体の monsterId で引いて実行する。ターゲットはランダムな生存味方 (挑発/かばうは後続)。
+ *  flee は集団戦では意味が薄いので通常攻撃に退避する。 */
+function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState, rng: () => number, events: TurnEvent[]): void {
+  const t = BATTLE_TUNING;
+  const def = MONSTERS_BY_ID[enemy.monsterId ?? state.monsterId];
+  // ため中なら宣言どおり強攻撃を解放 (mCommand は無視)。
+  if (enemy.charging) {
+    enemy.charging = false;
+    const target = randomLiving(allies, rng);
+    if (target) doAttack(enemy, target, rng, events, 'monster', { power: t.chargedPower, hitBonus: -0.05, label: def?.skillName ?? 'つよいこうげき' });
+    return;
+  }
+  const action = monsterCommand(enemy, state, rng);
+  if (action === 'guard') {
+    enemy.guarding = true; // 被ダメ軽減の宣言 (turn 頭で全体リセット済み)
+    return;
+  }
+  if (action === 'charge') {
+    enemy.mp = Math.max(0, enemy.mp - t.monsterChargeMpCost);
+    enemy.charging = true;
+    events.push({ actor: 'monster', text: `${enemy.name}は力をためている…!` });
+    return;
+  }
+  if (action === 'heal') {
+    enemy.mp = Math.max(0, enemy.mp - t.monsterHealMpCost);
+    const healed = Math.round(enemy.maxHp * t.healerHealRatio);
+    const before = enemy.hp;
+    enemy.hp = Math.min(enemy.maxHp, enemy.hp + healed);
+    events.push({ actor: 'monster', text: `${enemy.name}は${def?.healName ?? 'きずをいやす'}! HP が ${enemy.hp - before} 回復。` });
+    return;
+  }
+  if (action === 'cast' && def?.spell) {
+    enemy.mp = Math.max(0, enemy.mp - t.monsterCastMpCost);
+    const spell = def.spell;
+    const span = spell.max - spell.min;
+    const amount = spell.min + Math.floor(rng() * (span + 1)) + Math.round(enemy.int * (spell.intScale ?? 0));
+    const target = randomLiving(allies, rng);
+    if (target) doMagic(enemy, target, rng, events, 'monster', { amount, ...(spell.element ? { element: spell.element } : {}), label: spell.name });
+    return;
+  }
+  // attack / flee (集団戦は通常攻撃に退避) / spell 未定義の cast。
+  const target = randomLiving(allies, rng);
+  if (target) doAttack(enemy, target, rng, events, 'monster');
+}
+
 /**
  * マルチ戦闘のターン解決 (#453 / docs/25 §14.8)。**allies[] vs enemies[]** を全員 agi+乱数で
  * 並べ、順に行動させる。ソロ用 resolveTurn とは**別経路** (1v1 は一切変更しない)。
  *
  * 現ブロックの AI: プレイヤーは command + skillIndex + targetIndex、召喚/NPC 味方はランダムな敵へ
- * 通常攻撃、敵はランダムな味方へ通常攻撃 (敵の charge/heal ability・挑発/かばうは後続ブロック)。
+ * 通常攻撃、敵は個体ごとの ability (charger/healer/caster) でランダムな味方へ行動 (#453。挑発/かばう・
+ * 味方 autoBattle は後続)。
  */
 export function resolveTurnMulti(
   prev: BattleState,
@@ -1668,6 +1737,7 @@ export function resolveTurnMulti(
   const state: BattleState = { ...prev, turn: prev.turn + 1, allies, enemies, player: allies[0]!, monster: enemies[0]!, lastEvents: [] };
   const sides: CombatSides = { allies, enemies };
   const player = allies[0]!;
+  // ぼうぎょは 1 ターン限り: copyCombatant が guarding:false でコピーするので、このターンの宣言/AI で立て直す。
   const isAlly = (c: Combatant) => allies.includes(c);
   const events: TurnEvent[] = [];
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
@@ -1773,9 +1843,8 @@ export function resolveTurnMulti(
       const target = randomLiving(enemies, rng);
       if (target) doAttack(actor, target, rng, events, 'player');
     } else {
-      // 敵: ランダムな味方へ通常攻撃 (charge/heal ability は後続ブロック)
-      const target = randomLiving(allies, rng);
-      if (target) doAttack(actor, target, rng, events, 'monster');
+      // 敵: 個体ごとの ability (charger/healer/caster) で行動 (#453)。
+      multiEnemyAct(actor, allies, state, rng, events);
     }
 
     if (consumed.length && actor.statuses) actor.statuses = actor.statuses.filter((s) => !consumed.includes(s));
