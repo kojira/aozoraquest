@@ -300,8 +300,11 @@ export const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   分岐なしに表現。**1 戦闘 1 回のみ**発動する切り札 (`Combatant.lethalGuardUsed` フラグ。オーナー判断
   2026-07-22: 敵が物理のみの現状で毎回発動だと対モンスター完全不死になるため)。覇王=1回耐えて同ダメ反射、
   不動=1回確定で耐える (旧 50% 運要素は壁役の capstone に合わないため確定 1 回に変更)。
-- `elementBonus(mult, self, ctx) → mult` — 属性相性倍率の補正 (self=攻撃側)。実装済み (#456)。慧眼 (賢者):
-  弱点 (mult>=1.5) を突いたとき ×1.25 増幅。doAttack/doMagic 双方の属性倍率適用点で発火。none なら素通し。
+- `elementBonus(mult, c, ctx) → mult` — 属性相性倍率の補正 (c=攻撃側)。実装済み (#456)。慧眼 (賢者): 弱点
+  (mult>=1.5) を突いたとき **×1.25 増幅** (1.5→1.875)。1.25 の根拠 = 弱点を突く能動プレイへの報酬。大賢者
+  の一撃 (×2.5) と合わせても過剰にならない範囲で、閾値 1.5/倍率 1.25 とも sim 調整余地を残す暫定値。
+  doAttack/doMagic 双方の属性倍率適用点で発火。none なら素通し。**告知テキストは増幅時も共通の「弱点を突
+  いた!」のまま** (賢者専用の別演出は出さず、跳ねる数値で実感させる = 情報量を増やさない方針)。
 
 **Combatant フィールド:** `statuses: StatusInstance[]` / `passives: string[]` / `damageTaken: number`(累積)
 **BattleOutcome 追加:** `reconciled`(和解 = XP なし・素材あり)。battle-reward は outcome + `resolve` の
