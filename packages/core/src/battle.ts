@@ -302,6 +302,16 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'shogun-guard', name: '見切り', learnAt: 15 },
     { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
   ],
+  // 隊長: タフな前衛指揮官・鼓舞。全体バフ/デバフはソロで自己/敵単体に退化、マルチで全体化。名将(P)は後続。
+  captain: [
+    { id: 'captain-charge', name: '突撃号令', learnAt: 3 },
+    { id: 'captain-inspire', name: '鼓舞', learnAt: 5 },
+    { id: 'captain-defense', name: '防陣', learnAt: 8 },
+    { id: 'captain-rush', name: '突進', learnAt: 12 },
+    { id: 'captain-rally', name: '檄', learnAt: 15 },
+    { id: 'captain-desperate', name: '捨て身攻撃', learnAt: 18 },
+    { id: 'captain-encircle', name: '攻陣', learnAt: 25 },
+  ],
   // 遊び人: luk/agi 型・運任せ。ぶんどり(gain)/ルーレット・大道芸(random)/せっとく(resolve) は後続。
   performer: [
     { id: 'performer-slack', name: 'サボる', learnAt: 5 },
@@ -1248,7 +1258,20 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
   // 見切り (parry) 等の「宣言型」とくぎは effects 空で、宣言は resolveTurn 冒頭が担う。
   const def = SKILLS[skill.kind];
   if (!def) return;
-  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack, doMagic } });
+  // ソロでも runSkillMulti で**効果ごとに対象解決**する (#453/#456)。ソロ陣営は allies=[player] /
+  // enemies=[monster] の退化ケース。これにより allAllies (=自分) / allEnemies (=敵) を使うパーティ
+  // 支援職 (隊長/巫女/吟遊詩人) の全体技がソロでは自己バフ/敵デバフとして機能する。既存の
+  // self/oneEnemy 技は [player]/[monster] に解決され**挙動不変**。
+  const sides: CombatSides = { allies: [player], enemies: [monster] };
+  runSkillMulti(def, player, sides, (defender) => ({
+    attacker: player,
+    defender,
+    rng,
+    events,
+    skillName: skill.name,
+    actorSide: 'player',
+    engine: { doAttack, doMagic },
+  }));
 }
 
 /**

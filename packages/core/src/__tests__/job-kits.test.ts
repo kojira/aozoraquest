@@ -150,6 +150,34 @@ describe('詩人 確定キット (#456)', () => {
   });
 });
 
+describe('隊長 確定キット (#456。全体バフはソロで自己/敵に退化)', () => {
+  it('レベルで突撃号令〜攻陣を習得', () => {
+    expect(skillsForJob('captain', 3).map((s) => s.name)).toContain('突撃号令');
+    expect(skillsForJob('captain', 25).map((s) => s.name)).toEqual(['突撃号令', '鼓舞', '防陣', '突進', '檄', '捨て身攻撃', '攻陣']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('captain', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('鼓舞 (atkUp allAllies) はソロで自分に atk バフを付与', () => {
+    const s = startBattle('captain', 5, 8, '隊', 1, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '鼓舞');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.player.statuses?.some((st) => st.id === 'atkUp')).toBe(true);
+    expect(next.monster.statuses?.some((st) => st.id === 'atkUp')).toBe(false); // 敵には付かない
+  });
+
+  it('攻陣 (§12: 味方atk↑+敵agi↓) はソロで自分に atkUp・敵に agiDown を付与', () => {
+    const s = startBattle('captain', 25, 28, '隊', 3, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '攻陣');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.player.statuses?.some((st) => st.id === 'atkUp')).toBe(true); // 味方 (自分) に atk↑
+    expect(next.monster.statuses?.some((st) => st.id === 'agiDown')).toBe(true); // 敵に agi↓
+    expect(next.monster.statuses?.some((st) => st.id === 'atkUp')).toBe(false); // 敵にはバフが付かない
+  });
+});
+
 describe('将軍 確定キット (#456)', () => {
   it('レベルで一閃〜鬼神斬りを習得', () => {
     expect(skillsForJob('shogun', 3).map((s) => s.name)).toContain('一閃');
