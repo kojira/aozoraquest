@@ -118,6 +118,8 @@ export interface PassiveDef extends CombatHook {
   name: string;
   /** とくぎ MP コストの倍率 (発明家/巫女の直感)。0.7 なら 30% 引き。複数パッシブは乗算。 */
   mpCostFactor?: number;
+  /** ドロップ確率への加算ボーナス (巫女の直感)。0.1 なら各ドロップの確率 +0.1 (上限は rollDrops 側で clamp)。 */
+  dropBonus?: number;
 }
 
 /** c の全パッシブの mpCostFactor を掛け合わせた倍率 (none は 1)。発明家/巫女の MP 割引。 */
@@ -125,6 +127,13 @@ export function mpCostFactorOf(c: Combatant): number {
   let f = 1;
   for (const pid of c.passives ?? []) f *= PASSIVES[pid]?.mpCostFactor ?? 1;
   return f;
+}
+
+/** c の全パッシブの dropBonus を合算 (none は 0)。巫女の直感のドロップ↑。 */
+export function dropBonusOf(c: Combatant): number {
+  let b = 0;
+  for (const pid of c.passives ?? []) b += PASSIVES[pid]?.dropBonus ?? 0;
+  return b;
 }
 
 function blockedActing(c: Combatant, ctx: HookCtx, label: string): { block?: boolean } {
@@ -274,9 +283,9 @@ function boostDodge(dodge: number, bonus: number): number {
 
 /**
  * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
- * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。実装済みの14職を登録 (基本7職 +
- * onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演 + onIncomingMagic
- * 清き心 + mpCostFactor 発明家)。残 巫女の直感 (ドロップ↑=drop reward 配線 + MP off) は後続 (#483)。
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。**Lv30 パッシブを持つ全15職を実装済み**
+ * (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演 +
+ * onIncomingMagic 清き心 + mpCostFactor 発明家/巫女 + dropBonus 巫女)。遊び人の Lv30 はせっとくでパッシブ無し。
  */
 export const PASSIVES: Record<string, PassiveDef> = {
   // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
@@ -392,6 +401,14 @@ export const PASSIVES: Record<string, PassiveDef> = {
     id: 'fighter-inventor',
     name: '発明家',
     mpCostFactor: 0.7,
+  },
+  // 巫女 巫女の直感: ドロップ↑ + とくぎ MP 消費 30% 引き (§12 Lv30)。回復/浄化の支援職が素材集めと手数を
+  // 支える。どちらも戦闘フック点でない非戦闘/報酬メタデータ (mpCostFactor は resolveTurn・dropBonus は rollDrops)。
+  'miko-intuition': {
+    id: 'miko-intuition',
+    name: '巫女の直感',
+    mpCostFactor: 0.7,
+    dropBonus: 0.1,
   },
   // 吟遊詩人 名演: 自分がかける歌 (状態異常) の効果ターン +1 (§12 Lv30)。吟遊詩人のキットは味方バフ
   // (プレリュード/スケルツォ/ラプソディ) と敵デバフ (ディスコード/ララバイ) の「歌」中心なので、全ての歌が

@@ -411,9 +411,9 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  実装済みの14職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 +
- *  statusDurationBonus 名演 + onIncomingMagic 清き心 + mpCostFactor 発明家)。残 巫女の直感 (ドロップ↑=drop
- *  reward 経路の配線が要る + MP off) は #483。performer(遊び人)は Lv30=せっとくでパッシブ無し。 */
+ *  **Lv30 パッシブを持つ全15職を実装済み** (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 +
+ *  targetBonus 審美眼 + statusDurationBonus 名演 + onIncomingMagic 清き心 + mpCostFactor 発明家/巫女 +
+ *  dropBonus 巫女)。performer(遊び人)は Lv30=せっとく(resolve スキル)でパッシブ無し = 全職キット化完了。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -429,6 +429,7 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   bard: 'bard-encore', // 名演: 自分の歌 (状態) の効果ターン+1
   paladin: 'paladin-purity', // 清き心: 低確率で魔法反射
   fighter: 'fighter-inventor', // 発明家: とくぎ MP 消費 30% 引き
+  miko: 'miko-intuition', // 巫女の直感: ドロップ↑ + MP 消費 30% 引き
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
@@ -1862,14 +1863,17 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
   return lost;
 }
 
-/** 勝利時のドロップ判定。luk で上振れ。決定的 (seed 依存)。 */
-export function rollDrops(monsterId: string, luk: number, seed: number): string[] {
+/** 勝利時のドロップ判定。luk で上振れ。決定的 (seed 依存)。dropBonus = 巫女の直感の加算 (#456)。 */
+export function rollDrops(monsterId: string, luk: number, seed: number, dropBonus = 0): string[] {
   const def = MONSTERS_BY_ID[monsterId];
   if (!def) return [];
   const rng = createRng((seed ^ 0x2545f491) >>> 0);
   const out: string[] = [];
   for (const d of def.drops) {
-    const chance = Math.min(0.95, d.chance + luk * BATTLE_TUNING.dropLukScale);
+    // luk ボーナス + 巫女の直感 dropBonus を合算し 0.95 で clamp。dropBonus は luk 補正と天井 (0.95) を
+    // **共有**するので、高 luk 職 (巫女=luk37) では既にドロップ率が高い素材で +0.1 の限界効用が逓減する
+    // (青天井を防ぐ意図的な設計。数値は sim 前提の暫定値)。
+    const chance = Math.min(0.95, d.chance + luk * BATTLE_TUNING.dropLukScale + dropBonus);
     if (rng() < chance) out.push(d.item);
   }
   return out;
