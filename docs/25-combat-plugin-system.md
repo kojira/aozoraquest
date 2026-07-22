@@ -308,6 +308,10 @@ night-raven (tier3・かまいたち/wind) の 1 体・控えめな数値 (def �
   分岐なしに表現。**1 戦闘 1 回のみ**発動する切り札 (`Combatant.lethalGuardUsed` フラグ。オーナー判断
   2026-07-22: 敵が物理のみの現状で毎回発動だと対モンスター完全不死になるため)。覇王=1回耐えて同ダメ反射、
   不動=1回確定で耐える (旧 50% 運要素は壁役の capstone に合わないため確定 1 回に変更)。
+- `onIncomingMagic(self, atk, damage, ctx) → { reflect? }` — 魔法被弾の直前 (self=被弾側/atk=術者)。実装済み
+  (#456)。reflect=true で被弾 0 に無効化 (術者への反射などはハンドラ内で atk を操作。onLethal と同じ idiom)。
+  **魔法経路 (doMagic) のみで発火**。清き心 (聖騎士): 低確率 (25%・暫定) で敵魔法を術者へ跳ね返す。見切りの
+  必中回避 (魔法をミス化) も将来このフックに乗せられる (§14.6)。
 - `targetBonus(mult, c, target, ctx) → mult` — 対象の状態に応じた与ダメ倍率補正 (c=攻撃側/target=被弾側)。
   実装済み (#456)。審美眼 (芸術家): 状態異常 (AILMENT_IDS) の敵に与ダメ **×1.3** (sim 調整前提の暫定値)。
   基準 1 に対する乗数を返し doAttack/doMagic 双方で dmg に乗算。芸術家の fixedDamage は doMagic を通るので
