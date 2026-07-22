@@ -302,6 +302,16 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'shogun-guard', name: '見切り', learnAt: 15 },
     { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
   ],
+  // 隊長: タフな前衛指揮官・鼓舞。全体バフ/デバフはソロで自己/敵単体に退化、マルチで全体化。名将(P)は後続。
+  captain: [
+    { id: 'captain-charge', name: '突撃号令', learnAt: 3 },
+    { id: 'captain-inspire', name: '鼓舞', learnAt: 5 },
+    { id: 'captain-defense', name: '防陣', learnAt: 8 },
+    { id: 'captain-rush', name: '突進', learnAt: 12 },
+    { id: 'captain-rally', name: '檄', learnAt: 15 },
+    { id: 'captain-desperate', name: '捨て身攻撃', learnAt: 18 },
+    { id: 'captain-encircle', name: '攻陣', learnAt: 25 },
+  ],
   // 遊び人: luk/agi 型・運任せ。ぶんどり(gain)/ルーレット・大道芸(random)/せっとく(resolve) は後続。
   performer: [
     { id: 'performer-slack', name: 'サボる', learnAt: 5 },
