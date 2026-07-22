@@ -7,6 +7,7 @@ import {
   applyCritCalc,
   applyIncomingCalc,
   applyOnDamaged,
+  applyModifyHit,
   tickStatuses,
   clearActedStatuses,
   clearHitStatuses,
@@ -156,6 +157,12 @@ describe('状態異常エンジン (#452)', () => {
 
   it('ironWall: 被ダメをほぼ 0 に (incomingCalc ×0.05)', () => {
     expect(applyIncomingCalc(1, c({ statuses: [st('ironWall', 1)] }), ctx())).toBeCloseTo(0.05);
+  });
+
+  it('accDown: 攻撃側の hitBonus を下げる (modifyHit)', () => {
+    expect(applyModifyHit(0, c({ statuses: [st('accDown', 3)] }), ctx())).toBeCloseTo(-0.2);
+    expect(applyModifyHit(0.1, c({ statuses: [st('accDown', 3, 0.3)] }), ctx())).toBeCloseTo(-0.2);
+    expect(applyModifyHit(0, c(), ctx())).toBe(0); // なしは no-op
   });
 
   it('poison は生存者のみ tick (HP0 の死体は毒で追撃しない)', () => {

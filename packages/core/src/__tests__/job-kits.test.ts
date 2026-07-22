@@ -28,10 +28,13 @@ describe('魔法使い 確定キット (#456)', () => {
     }
   });
 
-  it('他ジョブ (キット未登録) は従来どおり基本 6 種の署名スキル', () => {
-    // fighter (匠) はまだキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
+  it('全16職キット化済み — 未習得帯 (Lv1) は署名スキル (基本6種) にフォールバック', () => {
+    // 全職が確定キットを持つ。最初の習得 (Lv3) 未満は署名スキルにフォールバックする。
     const base = ['smash', 'parry', 'flurry', 'spell', 'gamble', 'heal'];
-    expect(base).toContain(skillsForJob('fighter', 10)[0]!.kind);
+    for (const job of ['mage', 'guardian', 'fighter', 'artist', 'explorer'] as const) {
+      expect(skillsForJob(job, 1), job).toHaveLength(1);
+      expect(base, job).toContain(skillsForJob(job, 1)[0]!.kind);
+    }
   });
 
   it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す (mage)', () => {
@@ -147,6 +150,51 @@ describe('詩人 確定キット (#456)', () => {
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'restraint')) bound = true;
     }
     expect(bound).toBe(true);
+  });
+});
+
+describe('冒険者・芸術家・匠 確定キット (#456。全16職完成)', () => {
+  it('3職ともレベルで習得し、全技が SKILLS に定義がある', () => {
+    expect(skillsForJob('explorer', 25).map((s) => s.name)).toContain('背水の陣');
+    expect(skillsForJob('artist', 15).map((s) => s.name)).toContain('芸術は爆発だ');
+    expect(skillsForJob('fighter', 18).map((s) => s.name)).toContain('高圧放水');
+    for (const job of ['explorer', 'artist', 'fighter'] as const) {
+      for (const sk of skillsForJob(job, 30)) expect(SKILLS[sk.kind], `${job}:${sk.kind}`).toBeDefined();
+    }
+  });
+
+  it('全16職が確定キットを持つ', () => {
+    const all = ['mage', 'ninja', 'poet', 'warrior', 'paladin', 'performer', 'sage', 'seer', 'shogun', 'captain', 'miko', 'bard', 'guardian', 'explorer', 'artist', 'fighter'] as const;
+    for (const job of all) {
+      // Lv30 でキット技 (署名でない = kind が SKILLS の固有 id) を持つ。
+      const skills = skillsForJob(job, 30);
+      expect(skills.length, job).toBeGreaterThan(1);
+    }
+  });
+
+  it('背水の陣は自 HP が低いほど威力が上がる (scaleBy missingHpRatio)', () => {
+    const full = startBattle('explorer', 25, 28, '冒', 3, 5, 0);
+    const idx = full.playerSkills.findIndex((sk) => sk.name === '背水の陣');
+    const fullDmg = full.monster.hp - resolveTurn(full, 'skill', 111, idx).monster.hp;
+    const hurt = startBattle('explorer', 25, 28, '冒', 3, 5, 0);
+    hurt.player.hp = Math.max(1, Math.round(hurt.player.maxHp * 0.2)); // 瀕死
+    const hurtDmg = hurt.monster.hp - resolveTurn(hurt, 'skill', 111, idx).monster.hp;
+    expect(hurtDmg).toBeGreaterThan(fullDmg); // HP 低いほど大きい
+  });
+
+  it('かく乱 (accDown) を撒くと敵の命中が下がる (回避しやすくなる)', () => {
+    const s = startBattle('explorer', 15, 20, '冒', 3, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'かく乱');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.monster.statuses?.some((st) => st.id === 'accDown')).toBe(true);
+  });
+
+  it('匠のからくり仕掛けは int 連動の必中魔法 (int43 型)', () => {
+    const s = startBattle('fighter', 3, 8, '匠', 2, 3, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'からくり仕掛け');
+    const before = s.monster.hp;
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.monster.hp).toBeLessThan(before);
   });
 });
 

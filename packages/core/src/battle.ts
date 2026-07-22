@@ -32,6 +32,7 @@ import {
   applyIncomingCalc,
   applyOnHit,
   applyOnDamaged,
+  applyModifyHit,
   tickStatuses,
   clearHitStatuses,
 } from './statuses.js';
@@ -225,19 +226,19 @@ export function skillForJob(archetype: Archetype): JobSkill {
   return { kind: STAT_TO_SKILL[maxI]!, name: JOB_SKILL_NAMES[archetype] };
 }
 
-// 旧 LEARNED_SKILLS (#436: 弱職に heal 副スキルを配る機構) は #456 で全 heal 職がキット化されたため
-// 撤去した。副スキルは JOB_KITS (確定キット) が担う。非キット職は署名スキルのみ (skillsForJob 参照)。
+// 旧 LEARNED_SKILLS (#436: 弱職に heal 副スキルを配る機構) は #456 で全職キット化されたため撤去した。
+// とくぎは全て JOB_KITS (確定キット) が担う。
 
 /** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
- *  キットを持つジョブは skillsForJob がこれを返す (旧 署名+LEARNED 方式より優先)。未登録のジョブは
- *  従来どおり。**段階投入**: まず単体戦闘で成立するジョブから (全体/召喚技は #453 マルチ戦闘後)。 */
+ *  **全16職が確定キットを持つ** (Record 全キー必須。職を足したらここにも必須)。skillsForJob が返す。
+ *  未習得帯 (最初の learnAt 未満) のみ署名スキルにフォールバックする。 */
 interface KitSkill {
   /** SKILLS のキー */
   id: string;
   name: string;
   learnAt: number;
 }
-const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
+const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   // 魔法使い: 単体・int型・必中・def無視の大砲 (脆い)。パイロット (#456)。魔力障壁 Lv30 (P) は後続。
   mage: [
     { id: 'mage-flame', name: '火炎術式', learnAt: 3 },
@@ -289,6 +290,38 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'shogun-sweep', name: '足払い', learnAt: 8 },
     { id: 'shogun-guard', name: '見切り', learnAt: 15 },
     { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
+  ],
+  // 冒険者: 万能スカーミッシャー・luk34/agi25。武器投げ(装備)/秘境探索(random)/全体技/旅の勘(P)は後続。
+  explorer: [
+    { id: 'explorer-pebble', name: '石つぶて', learnAt: 3 },
+    { id: 'explorer-snare', name: '足がらめ', learnAt: 5 },
+    { id: 'explorer-reveal', name: 'みやぶる', learnAt: 7 },
+    { id: 'explorer-survival', name: 'サバイバル', learnAt: 8 },
+    { id: 'explorer-gale', name: '疾風の一撃', learnAt: 10 },
+    { id: 'explorer-confuse', name: 'かく乱', learnAt: 15 },
+    { id: 'explorer-hitrun', name: '一撃離脱', learnAt: 18 },
+    { id: 'explorer-lastditch', name: '背水の陣', learnAt: 25 },
+  ],
+  // 芸術家: 幻術師・luk/def26・空属性。だまし討ち/幻影の分身/創造の絵筆(summon)/混乱系/傑作/審美眼(P)は後続。
+  artist: [
+    { id: 'artist-bolt', name: '色彩の弾', learnAt: 3 },
+    { id: 'artist-daze', name: '幻惑の色', learnAt: 5 },
+    { id: 'artist-trompe', name: 'だまし絵', learnAt: 7 },
+    { id: 'artist-mist', name: '極彩の霧', learnAt: 8 },
+    { id: 'artist-blind', name: '目くらまし', learnAt: 10 },
+    { id: 'artist-blade', name: '原色の刃', learnAt: 12 },
+    { id: 'artist-explosion', name: '芸術は爆発だ', learnAt: 15 },
+  ],
+  // 匠: からくり技師・int43・罠と装置。自爆人形/からくり兵(summon)/大発破/兵器解放/発明家(P)は後続。
+  fighter: [
+    { id: 'fighter-contraption', name: 'からくり仕掛け', learnAt: 3 },
+    { id: 'fighter-smoke', name: '煙玉', learnAt: 5 },
+    { id: 'fighter-poisongas', name: '毒煙装置', learnAt: 7 },
+    { id: 'fighter-pitfall', name: '落とし穴', learnAt: 8 },
+    { id: 'fighter-ironball', name: '鉄球投擲', learnAt: 10 },
+    { id: 'fighter-flamethrower', name: '火炎放射器', learnAt: 12 },
+    { id: 'fighter-net', name: '拘束網', learnAt: 15 },
+    { id: 'fighter-waterjet', name: '高圧放水', learnAt: 18 },
   ],
   // 守護者: 壁役・def43最強。盾殴りは def 基準。フルカウンター/不動(P)/かばう・挑発(マルチ)は後続。
   guardian: [
@@ -356,21 +389,15 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
   ],
 };
 
-/** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。
- *  - **キット未登録ジョブ**: [0] = 署名スキル (skillForJob と一致 = 後方互換)、以降は習得済み副スキル。
- *  - **確定キット (#456) 持ちジョブ**: learnAt<=level のキット技 (未習得帯のみ署名にフォールバック)。
- *    この場合 [0] は署名と一致しない (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を
- *    前提にするコードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
+/** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。全16職キット化済み (#456)。
+ *  learnAt<=level のキット技を返す。未習得帯 (最初の技より前の Lv) のみ署名スキルにフォールバック。
+ *  **[0] は署名と一致しない** (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を前提にする
+ *  コードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
 export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
-  const kit = JOB_KITS[archetype];
-  if (kit) {
-    const learned = kit.filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
-    // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
-    return learned.length ? learned : [skillForJob(archetype)];
-  }
-  // キット未登録ジョブ (artist/fighter 等) は署名スキルのみ。旧 LEARNED_SKILLS (弱職に heal
-  // 副スキルを配る機構) は全 heal 職のキット化で不要になり撤去した (#456)。
-  return [skillForJob(archetype)];
+  // 全16職が確定キットを持つ (#456)。learnAt<=level のキット技を返し、未習得帯 (最初の技より前) は
+  // 署名スキル (Lv1 の基本技) にフォールバックする。
+  const learned = JOB_KITS[archetype].filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
+  return learned.length ? learned : [skillForJob(archetype)];
 }
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
@@ -1065,9 +1092,11 @@ function doAttack(
   // 回避判定 (魔撃は必中)。ぼうぎょの余韻 (focus) 中は「動きを読めている」ので回避が上がる。
   if (!opts.useInt) {
     const focusBonus = defender.focus > 0 ? t.guardFocusDodge : 0;
+    // 命中補正 (accDown: 攻撃側の命中が下がる)。none なら opts.hitBonus のまま。
+    const effHitBonus = applyModifyHit(opts.hitBonus ?? 0, attacker, atkCtx);
     let dodge = Math.min(
       t.dodgeMax + focusBonus,
-      Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - (opts.hitBonus ?? 0) + focusBonus),
+      Math.max(t.dodgeMin, t.dodgeBase + (defender.agi - attacker.agi) * t.agiDodgeScale - effHitBonus + focusBonus),
     );
     dodge = applyDodgeCalc(dodge, defender, defCtx); // かくれみ/agi バフ
     if (rng() < dodge) {

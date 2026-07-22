@@ -60,6 +60,10 @@ export type SkillEffect =
       element?: Element;
       /** 対象 (マルチ戦闘 #453)。未指定は oneEnemy。allEnemies で全体物理 (なぎ払い等)。 */
       target?: SkillTarget;
+      /** 計算値参照 (§14.5)。'missingHpRatio' = 使用者の失った HP 割合 (背水の陣: HP 低いほど威力↑)。 */
+      scaleBy?: 'missingHpRatio';
+      /** scaleBy の倍率: power ×= 1 + value × scaleFactor。未指定 1.0。 */
+      scaleFactor?: number;
     }
   | {
       kind: 'fixedDamage';
@@ -74,7 +78,9 @@ export type SkillEffect =
       element?: Element;
       /** 対象 (マルチ戦闘 #453)。未指定は oneEnemy。allEnemies で全体魔法 (メテオ全体版等)。 */
       target?: SkillTarget;
-      /** データ駆動の計算値参照 (§14.5)。'buffCount' = 使用者の自己バフ数 (感情爆発)。 */
+      /** データ駆動の計算値参照 (§14.5)。'buffCount' = 使用者の自己バフ数 (感情爆発)。
+       *  TODO: damage 側の 'missingHpRatio' と将来の 'weaponPower' を含め、§14.5 の scaleBy を
+       *  共通型に寄せる (現状は effect 種別ごとに使う参照だけを許して二重定義になっている)。 */
       scaleBy?: 'buffCount';
       /** scaleBy の1件あたり倍率: amount ×= 1 + count × scaleFactor。未指定 0.4。 */
       scaleFactor?: number;
@@ -169,10 +175,16 @@ const damageHandler: EffectHandler = (effect, ctx) => {
   const { attacker, defender, rng, events, engine, skillName } = ctx;
   const actor = ctx.actorSide ?? 'player';
   const hits = effect.hits ?? 1;
+  // 背水の陣: 使用者の失った HP 割合ぶん power を伸ばす (HP 低いほど威力↑)。
+  let basePower = effect.power ?? 1;
+  if (effect.scaleBy === 'missingHpRatio') {
+    const missing = attacker.maxHp > 0 ? 1 - attacker.hp / attacker.maxHp : 0;
+    basePower *= 1 + missing * (effect.scaleFactor ?? 1.0);
+  }
   for (let i = 0; i < hits; i++) {
     // 対象が倒れていたら以降の追撃は無駄撃ちしない (flurry の 2 撃目 = 従来挙動)。
     if (defender.hp <= 0) break;
-    const opts: AttackOptions = { label: skillName, power: effect.power ?? 1 };
+    const opts: AttackOptions = { label: skillName, power: basePower };
     if (effect.hitBonus !== undefined) opts.hitBonus = effect.hitBonus;
     if (effect.defFactor !== undefined) opts.defFactor = effect.defFactor;
     if (effect.element !== undefined) opts.element = effect.element;
@@ -253,6 +265,7 @@ const DEBUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>([
   'defDown',
   'agiDown',
   'doomMark',
+  'accDown',
 ]);
 
 /** 使用者の自己バフ数 (scaleBy: 'buffCount' 用)。 */
@@ -635,6 +648,82 @@ export const SKILLS: Record<string, SkillDef> = {
   'guardian-thorns': { id: 'guardian-thorns', effects: [{ kind: 'status', status: 'thorns', target: 'self', turns: 3, magnitude: 0.3 }] },
   'guardian-stand': { id: 'guardian-stand', effects: [{ kind: 'status', status: 'ironWall', target: 'self', turns: 1 }] }, // 仁王立ち Lv12 (被ダメ≒0 1T)
   'guardian-shield': { id: 'guardian-shield', effects: [], parry: true }, // 大盾の護り Lv15 (parry: 防御しつつ反撃)
+
+  // ─── 冒険者 確定キット (#456 / docs/25 §12。万能スカーミッシャー・luk34/agi25・生存/逆転) ───
+  // 数値は sim 調整前提の暫定値。武器投げ(装備 #454)/秘境探索(random)/全体技/旅の勘(P) は後続。
+  'explorer-pebble': { id: 'explorer-pebble', effects: [{ kind: 'fixedDamage', min: 4, max: 12, luckScale: 0.2, element: 'earth' }] }, // 石つぶて Lv3
+  'explorer-snare': { id: 'explorer-snare', effects: [{ kind: 'status', status: 'agiDown', target: 'enemy', turns: 3 }] }, // 足がらめ Lv5
+  'explorer-reveal': { id: 'explorer-reveal', effects: [{ kind: 'status', status: 'defDown', target: 'enemy', turns: 3 }] }, // みやぶる Lv7 (弱点表示は後続)
+  // サバイバル Lv8: HP 回復 + MP 少回復 (旅の知恵)
+  'explorer-survival': {
+    id: 'explorer-survival',
+    effects: [
+      { kind: 'heal', ratio: 0.25 },
+      { kind: 'restoreMp', ratio: 0.2 },
+    ],
+  },
+  'explorer-gale': { id: 'explorer-gale', effects: [{ kind: 'fixedDamage', min: 8, max: 16, luckScale: 0.25, element: 'wind' }] }, // 疾風の一撃 Lv10 (先制は後続)
+  'explorer-confuse': { id: 'explorer-confuse', effects: [{ kind: 'status', status: 'accDown', target: 'allEnemies', turns: 3 }] }, // かく乱 Lv15
+  // 一撃離脱 Lv18: 攻撃 + 自回避↑ (ヒットアンドアウェイ)
+  'explorer-hitrun': {
+    id: 'explorer-hitrun',
+    effects: [
+      { kind: 'fixedDamage', min: 12, max: 22, luckScale: 0.3 },
+      { kind: 'status', status: 'agiUp', target: 'self', turns: 2 },
+    ],
+  },
+  // 背水の陣 Lv25: luk 基準の特大 + 自 HP が低いほど威力↑ (scaleBy missingHpRatio)
+  'explorer-lastditch': { id: 'explorer-lastditch', effects: [{ kind: 'damage', stat: 'luk', power: 1.5, scaleBy: 'missingHpRatio', scaleFactor: 2.0 }] },
+
+  // ─── 芸術家 確定キット (#456 / docs/25 §12。幻術師・luk/def26・空属性魔法) ───
+  // 数値は sim 調整前提の暫定値。だまし討ち/幻影の分身(evade-next)/創造の絵筆(summon)/混乱系/傑作(random)/
+  // 審美眼(P) は後続 (要 新語彙)。
+  'artist-bolt': { id: 'artist-bolt', effects: [{ kind: 'fixedDamage', min: 3, max: 12, luckScale: 0.2, element: 'void' }] }, // 色彩の弾 Lv3
+  // 幻惑の色 Lv5: 敵の命中↓ + 攻撃↓
+  'artist-daze': {
+    id: 'artist-daze',
+    effects: [
+      { kind: 'status', status: 'accDown', target: 'enemy', turns: 3 },
+      { kind: 'status', status: 'atkDown', target: 'enemy', turns: 3 },
+    ],
+  },
+  'artist-trompe': { id: 'artist-trompe', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3 }] }, // だまし絵 Lv7 (自回避↑)
+  'artist-mist': { id: 'artist-mist', effects: [{ kind: 'fixedDamage', min: 4, max: 10, luckScale: 0.2, element: 'void', target: 'allEnemies' }] }, // 極彩の霧 Lv8 (混乱は後続)
+  'artist-blind': { id: 'artist-blind', effects: [{ kind: 'status', status: 'accDown', target: 'allEnemies', turns: 3 }] }, // 目くらまし Lv10
+  // 原色の刃 Lv12: 空 + 高確率で攻撃↓
+  'artist-blade': {
+    id: 'artist-blade',
+    effects: [
+      { kind: 'fixedDamage', min: 10, max: 20, luckScale: 0.25, element: 'void' },
+      { kind: 'status', status: 'atkDown', target: 'enemy', chance: 0.7, turns: 3 },
+    ],
+  },
+  'artist-explosion': { id: 'artist-explosion', effects: [{ kind: 'fixedDamage', min: 15, max: 25, luckScale: 0.3, element: 'fire', target: 'allEnemies' }] }, // 芸術は爆発だ Lv15
+
+  // ─── 匠 確定キット (#456 / docs/25 §12。からくり技師・罠と装置・int43・範囲) ───
+  // 数値は sim 調整前提の暫定値。自爆人形(遅延全体)/からくり兵(summon)/大発破/兵器解放(全体)/発明家(P) は後続。
+  'fighter-contraption': { id: 'fighter-contraption', effects: [{ kind: 'fixedDamage', min: 4, max: 12, intBonus: 0.2 }] }, // からくり仕掛け Lv3 (無属性・必中)
+  'fighter-smoke': { id: 'fighter-smoke', effects: [{ kind: 'status', status: 'accDown', target: 'allEnemies', turns: 3 }] }, // 煙玉 Lv5
+  'fighter-poisongas': { id: 'fighter-poisongas', effects: [{ kind: 'status', status: 'poison', target: 'enemy', turns: 4, magnitude: 3 }] }, // 毒煙装置 Lv7
+  // 落とし穴 Lv8: 地属性 + 高確率で転倒
+  'fighter-pitfall': {
+    id: 'fighter-pitfall',
+    effects: [
+      { kind: 'fixedDamage', min: 5, max: 12, intBonus: 0.2, element: 'earth' },
+      { kind: 'status', status: 'tumble', target: 'enemy', chance: 0.7, turns: 1 },
+    ],
+  },
+  'fighter-ironball': { id: 'fighter-ironball', effects: [{ kind: 'fixedDamage', min: 8, max: 16, intBonus: 0.25 }] }, // 鉄球投擲 Lv10 (防御無視=fixedDamage は元々 def 無視)
+  'fighter-flamethrower': { id: 'fighter-flamethrower', effects: [{ kind: 'fixedDamage', min: 10, max: 18, intBonus: 0.25, element: 'fire', target: 'allEnemies' }] }, // 火炎放射器 Lv12
+  'fighter-net': { id: 'fighter-net', effects: [{ kind: 'status', status: 'restraint', target: 'enemy', chance: 0.7, turns: 2 }] }, // 拘束網 Lv15
+  // 高圧放水 Lv18: 全体水 + 押し流し転倒
+  'fighter-waterjet': {
+    id: 'fighter-waterjet',
+    effects: [
+      { kind: 'fixedDamage', min: 10, max: 18, intBonus: 0.3, element: 'water', target: 'allEnemies' },
+      { kind: 'status', status: 'tumble', target: 'allEnemies', chance: 0.5, turns: 1 },
+    ],
+  },
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく
