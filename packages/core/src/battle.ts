@@ -234,7 +234,7 @@ const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   miko: [{ kind: 'heal', name: '神楽の癒し', learnAt: 3 }],
   // paladin は確定キット (#456) で聖光の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
   seer: [{ kind: 'heal', name: '癒しの予言', learnAt: 4 }],
-  sage: [{ kind: 'heal', name: '天啓の癒し', learnAt: 5 }],
+  // sage は確定キット (#456) で賢者の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
   bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
   // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
   // JOB_KITS.mage が skillsForJob を早期 return するため到達不能 = 意図的に撤去 (レビュー ★★)。
@@ -300,6 +300,17 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'performer-slack', name: 'サボる', learnAt: 5 },
     { id: 'performer-gamble', name: 'いちかばちか', learnAt: 12 },
     { id: 'performer-acrobat', name: '曲芸乱舞', learnAt: 15 },
+  ],
+  // 賢者: 最高 int・全5属性・支援。イディオット/知恵の加護/星辰以外の全体技/慧眼(P) は後続。
+  sage: [
+    { id: 'sage-flame', name: '火炎', learnAt: 3 },
+    { id: 'sage-decode', name: '解式', learnAt: 5 },
+    { id: 'sage-stone', name: '石射', learnAt: 6 },
+    { id: 'sage-frost', name: '氷結', learnAt: 8 },
+    { id: 'sage-gale', name: '疾風', learnAt: 10 },
+    { id: 'sage-revelation', name: '天啓', learnAt: 12 },
+    { id: 'sage-heal', name: '賢者の癒し', learnAt: 16 },
+    { id: 'sage-starlight', name: '星辰の大魔法', learnAt: 22 },
   ],
 };
 

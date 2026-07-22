@@ -470,6 +470,25 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   // 曲芸乱舞 Lv15: agi 基準 3 連撃
   'performer-acrobat': { id: 'performer-acrobat', effects: [{ kind: 'damage', stat: 'agi', power: 0.6, hits: 3 }] },
+
+  // ─── 賢者 確定キット (#456 / docs/25 §12。最高 int・全5属性・支援) ───
+  // 数値は sim 調整前提の暫定値。全属性魔法 (火水地風空) を必中・def無視で撃つ。イディオット(intDown)/
+  // 知恵の加護(intUp)/星辰以外の全体技/慧眼(P) は要 新語彙のため後続。属性の輪 (§1) をフル活用。
+  'sage-flame': { id: 'sage-flame', effects: [{ kind: 'fixedDamage', min: 5, max: 10, intBonus: 0.25, element: 'fire' }] }, // 火炎 Lv3
+  'sage-decode': { id: 'sage-decode', effects: [{ kind: 'fixedDamage', min: 6, max: 11, intBonus: 0.25 }] }, // 解式 Lv5 (無属性)
+  'sage-stone': { id: 'sage-stone', effects: [{ kind: 'fixedDamage', min: 7, max: 12, intBonus: 0.25, element: 'earth' }] }, // 石射 Lv6
+  // 氷結 Lv8: 水 + 素早さ↓
+  'sage-frost': {
+    id: 'sage-frost',
+    effects: [
+      { kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.3, element: 'water' },
+      { kind: 'status', status: 'agiDown', target: 'enemy', turns: 3 },
+    ],
+  },
+  'sage-gale': { id: 'sage-gale', effects: [{ kind: 'fixedDamage', min: 10, max: 16, intBonus: 0.3, element: 'wind' }] }, // 疾風 Lv10
+  'sage-revelation': { id: 'sage-revelation', effects: [{ kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.3, element: 'void' }] }, // 天啓 Lv12 (空)
+  'sage-heal': { id: 'sage-heal', effects: [{ kind: 'heal', ratio: 0.35 }] }, // 賢者の癒し Lv16
+  'sage-starlight': { id: 'sage-starlight', effects: [{ kind: 'fixedDamage', min: 25, max: 40, intBonus: 0.4, element: 'void' }] }, // 星辰の大魔法 Lv22
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく

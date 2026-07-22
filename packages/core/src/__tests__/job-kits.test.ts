@@ -150,6 +150,38 @@ describe('詩人 確定キット (#456)', () => {
   });
 });
 
+describe('賢者 確定キット (#456)', () => {
+  it('レベルで火炎〜星辰の大魔法を習得 (全5属性)', () => {
+    expect(skillsForJob('sage', 3).map((s) => s.name)).toContain('火炎');
+    expect(skillsForJob('sage', 22).map((s) => s.name)).toEqual([
+      '火炎', '解式', '石射', '氷結', '疾風', '天啓', '賢者の癒し', '星辰の大魔法',
+    ]);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('sage', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('全5属性 (fire/water/earth/wind/void) を網羅する', () => {
+    const els = new Set<string>();
+    for (const sk of skillsForJob('sage', 22)) {
+      for (const e of SKILLS[sk.kind]!.effects) {
+        if (e.kind === 'fixedDamage' && e.element) els.add(e.element);
+      }
+    }
+    expect(els).toEqual(new Set(['fire', 'earth', 'water', 'wind', 'void']));
+  });
+
+  it('天啓 (void) が実戦でダメージを通す (空属性の初使用)', () => {
+    const s = startBattle('sage', 12, 18, '賢', 2, 3, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '天啓');
+    const before = s.monster.hp;
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.monster.hp).toBeLessThan(before);
+    expect(next.lastEvents.some((e) => e.text.includes('天啓'))).toBe(true);
+  });
+});
+
 describe('聖騎士 確定キット (#456)', () => {
   it('レベルで聖光の癒し〜浄化を習得', () => {
     expect(skillsForJob('paladin', 3).map((s) => s.name)).toContain('聖光の癒し');
