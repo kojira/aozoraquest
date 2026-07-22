@@ -232,7 +232,7 @@ interface LearnedSkill { kind: SkillKind; name: string; learnAt: number }
 const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
   // 回復役・低攻撃ジョブに「いのり (HP 回復)」を配る。攻撃が弱い職ほど早く覚える。
   miko: [{ kind: 'heal', name: '神楽の癒し', learnAt: 3 }],
-  paladin: [{ kind: 'heal', name: '聖光の癒し', learnAt: 3 }],
+  // paladin は確定キット (#456) で聖光の癒しを持つため LEARNED は撤去 (JOB_KITS が優先)。
   seer: [{ kind: 'heal', name: '癒しの予言', learnAt: 4 }],
   sage: [{ kind: 'heal', name: '天啓の癒し', learnAt: 5 }],
   bard: [{ kind: 'heal', name: '癒しの旋律', learnAt: 4 }],
@@ -286,6 +286,20 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'warrior-helmsplit', name: 'かぶとわり', learnAt: 10 },
     { id: 'warrior-charge', name: 'ためる', learnAt: 15 },
     { id: 'warrior-fullslash', name: '全力斬り', learnAt: 18 },
+  ],
+  // 聖騎士: 前衛・聖なる支援・holy(無属性)。全体技/聖光斬/清き心(P) は後続。
+  paladin: [
+    { id: 'paladin-heal', name: '聖光の癒し', learnAt: 3 },
+    { id: 'paladin-blessing', name: '光の加護', learnAt: 5 },
+    { id: 'paladin-lightblade', name: '光の剣', learnAt: 8 },
+    { id: 'paladin-guard', name: '聖なる守り', learnAt: 15 },
+    { id: 'paladin-purify', name: '浄化', learnAt: 18 },
+  ],
+  // 遊び人: luk/agi 型・運任せ。ぶんどり(gain)/ルーレット・大道芸(random)/せっとく(resolve) は後続。
+  performer: [
+    { id: 'performer-slack', name: 'サボる', learnAt: 5 },
+    { id: 'performer-gamble', name: 'いちかばちか', learnAt: 12 },
+    { id: 'performer-acrobat', name: '曲芸乱舞', learnAt: 15 },
   ],
 };
 
