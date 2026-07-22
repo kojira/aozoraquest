@@ -111,10 +111,20 @@ export interface StatusDef extends CombatHook {
   wakeOnHit?: boolean;
 }
 
-/** パッシブ = ジョブ innate な常時フック (turns なし)。 */
+/** パッシブ = ジョブ innate な常時フック (turns なし)。CombatHook に加え、戦闘ライフサイクル外の
+ *  非フック効果 (MP コスト割引など) はメタデータフィールドで表す (発明家/巫女の直感)。 */
 export interface PassiveDef extends CombatHook {
   id: string;
   name: string;
+  /** とくぎ MP コストの倍率 (発明家/巫女の直感)。0.7 なら 30% 引き。複数パッシブは乗算。 */
+  mpCostFactor?: number;
+}
+
+/** c の全パッシブの mpCostFactor を掛け合わせた倍率 (none は 1)。発明家/巫女の MP 割引。 */
+export function mpCostFactorOf(c: Combatant): number {
+  let f = 1;
+  for (const pid of c.passives ?? []) f *= PASSIVES[pid]?.mpCostFactor ?? 1;
+  return f;
 }
 
 function blockedActing(c: Combatant, ctx: HookCtx, label: string): { block?: boolean } {
@@ -264,9 +274,9 @@ function boostDodge(dodge: number, bonus: number): number {
 
 /**
  * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
- * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの13職を
- * ここで登録 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演
- * + onIncomingMagic 清き心)。MP消費割引 (発明家)・非戦闘 (巫女の直感) は後続 (#483)。
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。実装済みの14職を登録 (基本7職 +
+ * onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演 + onIncomingMagic
+ * 清き心 + mpCostFactor 発明家)。残 巫女の直感 (ドロップ↑=drop reward 配線 + MP off) は後続 (#483)。
  */
 export const PASSIVES: Record<string, PassiveDef> = {
   // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
@@ -375,6 +385,13 @@ export const PASSIVES: Record<string, PassiveDef> = {
     id: 'artist-aesthete',
     name: '審美眼',
     targetBonus: (mult, _c, target) => (hasAilment(target) ? mult * 1.3 : mult),
+  },
+  // 匠 発明家: とくぎの MP 消費 30% 引き (§12 Lv30)。int43 の罠/装置キャスターが手数を伸ばす。フックでなく
+  // mpCostFactor メタデータで表す (MP コストは戦闘ライフサイクルのフック点でなく resolveTurn の消費計算)。
+  'fighter-inventor': {
+    id: 'fighter-inventor',
+    name: '発明家',
+    mpCostFactor: 0.7,
   },
   // 吟遊詩人 名演: 自分がかける歌 (状態異常) の効果ターン +1 (§12 Lv30)。吟遊詩人のキットは味方バフ
   // (プレリュード/スケルツォ/ラプソディ) と敵デバフ (ディスコード/ララバイ) の「歌」中心なので、全ての歌が
