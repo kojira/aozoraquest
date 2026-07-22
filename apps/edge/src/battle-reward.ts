@@ -29,6 +29,9 @@ export interface BattleOutcomeInput {
   luk: number;
   /** 巫女の直感 (#456) 等のドロップ確率加算ボーナス。未指定は 0。 */
   dropBonus?: number;
+  /** マルチ戦闘 (#453 群れ) の全敵の monsterId。指定時は勝利報酬を頭数分 (XP 合算・各敵でドロップ試行)。
+   *  未指定/1体は従来どおり monsterId 単体で計算 (完全互換)。 */
+  enemyIds?: string[];
   /** サーバーが独立に引いたドロップ用エントロピー (32bit)。 */
   rewardSeed: number;
   /** サーバーが独立に引いた敗北ロス用エントロピー (32bit)。 */
@@ -66,8 +69,16 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
   if (!o.rewarded) return { next: state, awarded: {} };
 
   if (o.outcome === 'win') {
-    const xp = battleXpFor(o.monsterId);
-    const drops = rollDrops(o.monsterId, o.luk, o.rewardSeed, o.dropBonus ?? 0);
+    // 群れ (#453) は倒した全敵ぶん。XP 合算・各敵で別 seed のドロップ試行。1体 (従来) は monsterId 単体 =
+    // rewardSeed をそのまま使い完全互換。
+    const ids = o.enemyIds && o.enemyIds.length > 0 ? o.enemyIds : [o.monsterId];
+    let xp = 0;
+    const drops: string[] = [];
+    ids.forEach((id, i) => {
+      xp += battleXpFor(id);
+      const seed = i === 0 ? o.rewardSeed : (o.rewardSeed ^ (0x9e3779b1 * (i + 1))) >>> 0;
+      drops.push(...rollDrops(id, o.luk, seed, o.dropBonus ?? 0));
+    });
     const next: GameState = {
       ...state,
       playerXp: state.playerXp + xp,
