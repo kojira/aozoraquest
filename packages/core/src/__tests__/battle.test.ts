@@ -89,8 +89,9 @@ describe('skillsForJob (複数とくぎ #436)', () => {
     expect(skillsForJob('miko', 1)).toHaveLength(1); // 署名のみ
     expect(skillsForJob('miko', 2)).toHaveLength(1);
     expect(skillsForJob('miko', 3).map((s) => s.name)).toContain('癒しの鈴');
-    // キット未登録のジョブ (fighter=匠) は署名のみ (旧 LEARNED 機構は全職キット化で空)。
-    expect(skillsForJob('fighter', 30)).toHaveLength(1);
+    // 全16職キット化済み。fighter (匠) も Lv3 でキット技を習得する (Lv1-2 は署名のみ)。
+    expect(skillsForJob('fighter', 1)).toHaveLength(1);
+    expect(skillsForJob('fighter', 3).map((s) => s.name)).toContain('からくり仕掛け');
   });
   it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
     // paladin(jobLv5) は聖光の癒し (heal) を持つ。HP を削ってから回復を選ぶ。

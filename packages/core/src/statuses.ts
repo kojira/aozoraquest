@@ -28,7 +28,8 @@ export type StatusId =
   | 'agiDown' // 回避 magnitude 倍
   | 'doomMark' // 破滅の予言: turnEnd でカウントダウン、0 で magnitude の大ダメージ
   | 'thorns' // とげの盾: 物理被弾時に攻撃者へ magnitude 割合を反射
-  | 'ironWall'; // 仁王立ち: 被ダメをほぼ 0 に (incomingCalc ×magnitude、既定 0.05)
+  | 'ironWall' // 仁王立ち: 被ダメをほぼ 0 に (incomingCalc ×magnitude、既定 0.05)
+  | 'accDown'; // 命中低下 (煙玉/かく乱/幻惑): 保持者の攻撃が当たりにくくなる (modifyHit)
 
 /** 付与時に turns 未指定なら使う既定持続 (毒手/デバフ等の共通デフォルト)。 */
 export const DEFAULT_STATUS_TURNS = 2;
@@ -68,6 +69,8 @@ export interface CombatHook {
   dodgeCalc?(dodge: number, c: Combatant, ctx: HookCtx): number;
   /** 攻撃威力の倍率補正 (c=攻撃側)。atkUp/atkDown。 */
   powerCalc?(power: number, c: Combatant, ctx: HookCtx): number;
+  /** 命中補正 (c=攻撃側)。accDown: hitBonus を下げて当てにくく。 */
+  modifyHit?(hitBonus: number, c: Combatant, ctx: HookCtx): number;
   /** 会心の可否 (c=攻撃側)。九字切り=確定会心。 */
   critCalc?(willCrit: boolean, c: Combatant, ctx: HookCtx): boolean;
   /** 命中時 (atk→def)。首狩り等の即死パッシブ。 */
@@ -182,6 +185,8 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   },
   // 仁王立ち (守護者): 被ダメをほぼ 0 に (incomingCalc ×0.05)。turns 1 の完全防御。
   ironWall: { id: 'ironWall', name: '仁王立ち', incomingCalc: (p, _c, ctx) => p * (ctx.status?.magnitude ?? 0.05) },
+  // 命中低下 (煙玉/かく乱/幻惑): 保持者が攻撃する際 hitBonus を下げて当てにくく (magnitude=低下量、既定 0.2)。
+  accDown: { id: 'accDown', name: '命中低下', restack: 'refresh', modifyHit: (hb, _c, ctx) => hb - (ctx.status?.magnitude ?? 0.2) },
   doomMark: {
     id: 'doomMark',
     name: '破滅の予言',
@@ -223,6 +228,7 @@ const STATUS_APPLY_TEXT: Record<StatusId, string> = {
   doomMark: 'に 破滅の刻印が刻まれた…!',
   thorns: 'は とげの盾をかまえた!',
   ironWall: 'は 仁王立ちした! (被ダメージ激減)',
+  accDown: 'の命中が下がった!',
 };
 
 /** 状態付与の告知文 (対象名 + テキスト)。 */
@@ -271,6 +277,13 @@ export function applyDodgeCalc(dodge: number, c: Combatant, ctx: HookCtx): numbe
 export function applyPowerCalc(base: number, c: Combatant, ctx: HookCtx): number {
   let v = base;
   for (const { def, inst } of hooksOf(c)) v = def.powerCalc?.(v, c, ctxFor(ctx, inst)) ?? v;
+  return v;
+}
+
+/** 命中補正 (c=攻撃側)。accDown で hitBonus を下げる。 */
+export function applyModifyHit(hitBonus: number, c: Combatant, ctx: HookCtx): number {
+  let v = hitBonus;
+  for (const { def, inst } of hooksOf(c)) v = def.modifyHit?.(v, c, ctxFor(ctx, inst)) ?? v;
   return v;
 }
 
