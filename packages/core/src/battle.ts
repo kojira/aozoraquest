@@ -111,6 +111,11 @@ export const BATTLE_TUNING = {
   healerLowHpRatio: 0.55,
   healerHealChance: 0.5,
   healerHealRatio: 0.14,
+  /** caster が魔法を撃つ確率 (MP があるとき毎ターン判定)。残りは通常攻撃。数値は sim 前提の暫定値
+   *  (def 無視の魔法は def タンクに刺さるため、初期投入は控えめ。full 調整は #479 sim)。 */
+  casterCastChance: 0.3,
+  /** caster の魔法 MP コスト。 */
+  monsterCastMpCost: 6,
   /** モンスターの特技 MP コスト。MP は int から算出 (fromStats) 済み。ため/回復を
    *  MP 制にすることで「int の高い敵ほど特技を多用でき、尽きたら通常攻撃に落ちる」
    *  = MP を削り切る/尽きるのを待つ読み合いを作る (オーナー提案 2026-07-18)。 */
@@ -755,10 +760,15 @@ export interface MonsterDef {
    *  未指定 = plain (通常攻撃 + 低 HP でたまに防御)。
    *  'charger' = 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)。
    *  'healer' = 低 HP でたまに自己回復 (削り切る前に倒す読み合い)。
-   *  'fleer' = 毎ターン逃走を試みる (はぐれメタル型。倒す前に逃げられると報酬ゼロ)。 */
-  ability?: 'charger' | 'healer' | 'fleer';
+   *  'fleer' = 毎ターン逃走を試みる (はぐれメタル型。倒す前に逃げられると報酬ゼロ)。
+   *  'caster' = たまに魔法を撃つ (def 無視の属性魔撃。#456: 対物理型の看板 覇王/不動 の弱点=魔法を
+   *    成立させ、聖騎士の清き心を活かす。要 spell 定義)。 */
+  ability?: 'charger' | 'healer' | 'fleer' | 'caster';
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
+  /** caster の魔法 (#456)。def 無視・属性つきの int スケール魔撃。ダメージ = min〜max + int*intScale。
+   *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。 */
+  spell?: { name: string; element?: Element; min: number; max: number; intScale?: number };
   /** 防御属性 (#455 / docs/25 §1)。被弾時の属性相性に使う。未指定 = 無属性 (常に等倍)。
    *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
   element?: Element;
@@ -814,7 +824,7 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
   { id: 'river-serpent', element: 'water', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [42, 18, 22, 10, 10], hp: 22, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負。xp 62〜96
-  { id: 'night-raven', element: 'wind', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
+  { id: 'night-raven', element: 'wind', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', ability: 'caster', spell: { name: 'かまいたち', element: 'wind', min: 4, max: 8, intScale: 0.1 } },
   { id: 'blue-oni', element: 'water', name: 'あおおに', species: 'oni', tier: 3, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
   { id: 'sky-dragon', element: 'void', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
 ];
@@ -1266,7 +1276,7 @@ function doMagic(
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
-type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee';
+type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee' | 'cast';
 
 /** モンスター能力プラグイン (#452 / docs/25 §5)。行動 AI を ability id → データ定義に置き、
  *  monsterCommand の if 分岐を排す。null を返すと通常判定 (plain) にフォールバック。 */
@@ -1303,6 +1313,16 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
     decideAction: ({ state, r, t, hpRatio, canGuard }) => {
       if (state.monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
       if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
+      return 'attack';
+    },
+  },
+  // caster: MP があるうちは高確率で def 無視の属性魔撃を撃つ (#456)。対物理型 (覇王/不動) の弱点=魔法を
+  // 成立させ、int 職の魔法耐性・聖騎士の魔法反射 (清き心) に意味を与える。MP 切れで通常攻撃に落ちる。
+  caster: {
+    id: 'caster',
+    decideAction: ({ state, r, t, canGuard, monsterDef }) => {
+      if (monsterDef?.spell && state.monster.mp >= t.monsterCastMpCost && r < t.casterCastChance) return 'cast';
+      if (canGuard && r < t.casterCastChance + 0.1) return 'guard';
       return 'attack';
     },
   },
@@ -1527,6 +1547,22 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         // はぐれメタル型: 逃走成功 → 即決着 (報酬なし)。倒せなかった悔しさを残す。
         state.outcome = 'monster-fled';
         events.push({ actor: 'monster', text: `${state.monster.name}は にげだした!` });
+      } else if (mCommand === 'cast') {
+        // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
+        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。清き心 (魔法反射) はここで効く。
+        const spell = MONSTERS_BY_ID[state.monsterId]?.spell;
+        if (spell) {
+          state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterCastMpCost);
+          const span = spell.max - spell.min;
+          const amount = spell.min + Math.floor(rng() * (span + 1)) + Math.round(state.monster.int * (spell.intScale ?? 0));
+          doMagic(state.monster, state.player, rng, events, 'monster', {
+            amount,
+            ...(spell.element ? { element: spell.element } : {}),
+            label: spell.name,
+          });
+        } else {
+          doAttack(state.monster, state.player, rng, events, 'monster');
+        }
       } else if (mCommand === 'attack') {
         doAttack(state.monster, state.player, rng, events, 'monster');
       }
