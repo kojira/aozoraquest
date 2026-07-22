@@ -8,6 +8,7 @@ import {
   applyOnHit,
   applyOnLethal,
   applyElementBonus,
+  applyTargetBonus,
   type HookCtx,
 } from '../statuses.js';
 import { jobPassives, playerCombatant, type Combatant } from '../battle.js';
@@ -50,9 +51,10 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(jobPassives('shogun', 30)).toEqual(['shogun-overlord']);
     expect(jobPassives('guardian', 30)).toEqual(['guardian-immovable']);
     expect(jobPassives('sage', 30)).toEqual(['sage-insight']);
-    // フック未実装/inert の職 (清き心=敵魔法待ち/審美眼/発明家/非戦闘) は Lv30 でもまだ空 (後続 #483)。
+    expect(jobPassives('artist', 30)).toEqual(['artist-aesthete']);
+    // フック未実装/inert の職 (清き心=敵魔法待ち/発明家/非戦闘) は Lv30 でもまだ空 (後続 #483)。
     expect(jobPassives('paladin', 30)).toEqual([]);
-    expect(jobPassives('artist', 30)).toEqual([]);
+    expect(jobPassives('miko', 30)).toEqual([]);
   });
 
   it('playerCombatant: 実装済み職は Lv30 で passives が入り、Lv29 では空', () => {
@@ -157,6 +159,27 @@ describe('パッシブ (#456 各職 Lv30)', () => {
 
   it('playerCombatant: 賢者 Lv30 で慧眼が入る', () => {
     expect(playerCombatant('sage', 30, 30, 'sg').passives).toEqual(['sage-insight']);
+  });
+
+  it('審美眼 (artist-aesthete): 状態異常の敵に与ダメ ×1.3、無傷の敵は素通し', () => {
+    const artist = c({ passives: ['artist-aesthete'] });
+    const healthy = c({ name: '敵', statuses: [] });
+    const poisoned = c({ name: '毒敵', statuses: [{ id: 'poison', turns: 3, magnitude: 5 }] });
+    const dazed = c({ name: '幻惑敵', statuses: [{ id: 'accDown', turns: 3 }] }); // 芸術家が撒くデバフ
+    expect(applyTargetBonus(1, artist, healthy, ctx())).toBeCloseTo(1); // 無傷 = 素通し
+    expect(applyTargetBonus(1, artist, poisoned, ctx())).toBeCloseTo(1.3); // 状態異常 = 増幅
+    expect(applyTargetBonus(1, artist, dazed, ctx())).toBeCloseTo(1.3);
+    // バフ (atkUp) しか持たない敵は「状態異常」ではないので素通し。
+    const buffed = c({ name: 'バフ敵', statuses: [{ id: 'atkUp', turns: 3 }] });
+    expect(applyTargetBonus(1, artist, buffed, ctx())).toBeCloseTo(1);
+    // バフ+状態異常の混在敵 (バフ持ちに芸術家がデバフを足した実戦形) は状態異常があるので発火。
+    const mixed = c({ name: '混在敵', statuses: [{ id: 'atkUp', turns: 3 }, { id: 'poison', turns: 3, magnitude: 5 }] });
+    expect(applyTargetBonus(1, artist, mixed, ctx())).toBeCloseTo(1.3);
+    expect(applyTargetBonus(1, c(), poisoned, ctx())).toBeCloseTo(1); // パッシブなしは no-op
+  });
+
+  it('playerCombatant: 芸術家 Lv30 で審美眼が入る', () => {
+    expect(playerCombatant('artist', 30, 30, 'ar').passives).toEqual(['artist-aesthete']);
   });
 
   it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入り、切り札は毎戦闘 未使用から始まる', () => {

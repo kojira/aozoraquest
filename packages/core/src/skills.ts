@@ -11,7 +11,7 @@
  */
 
 import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
-import { applyStatus, statusApplyText, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
+import { applyStatus, statusApplyText, DEFAULT_STATUS_TURNS, AILMENT_IDS, type StatusId } from './statuses.js';
 import type { Element } from './elements.js';
 import { resolveTargets, type SkillTarget, type CombatSides } from './combat-target.js';
 
@@ -252,21 +252,9 @@ const statusHandler: EffectHandler = (effect, ctx) => {
 /** 自己バフとして数える状態 (感情爆発の buffCount)。積み重ねてダメージに変換する。 */
 const BUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>(['atkUp', 'defUp', 'agiUp']);
 
-/** デバフ (浄化 cleanse で除去する状態)。バフ (atk/def/agiUp) は残す。
- *  **注意**: StatusId に新しいデバフ (confusion/flinch/accDown/doomMark/intDown 等) を足したら、
- *  ここにも追記すること (型では検出できない。将来 BUFF/DEBUFF を StatusId 側の1テーブルに寄せたい)。 */
-const DEBUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>([
-  'poison',
-  'sleep',
-  'stun',
-  'tumble',
-  'restraint',
-  'atkDown',
-  'defDown',
-  'agiDown',
-  'doomMark',
-  'accDown',
-]);
+/** デバフ (浄化 cleanse で除去する状態)。負の状態異常の正準集合は statuses.ts の AILMENT_IDS に一本化
+ *  (審美眼の「状態異常の敵」判定と同概念)。新デバフを足すときは AILMENT_IDS 側に追記する。 */
+const DEBUFF_STATUSES = AILMENT_IDS;
 
 /** 使用者の自己バフ数 (scaleBy: 'buffCount' 用)。 */
 function countBuffs(c: Combatant): number {

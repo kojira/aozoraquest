@@ -33,6 +33,7 @@ import {
   applyOnHit,
   applyOnLethal,
   applyElementBonus,
+  applyTargetBonus,
   applyOnDamaged,
   applyModifyHit,
   tickStatuses,
@@ -403,8 +404,8 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  フック実装済みの10職 (基本7職 + onLethal で覇王/不動 + elementBonus で慧眼)。onIncomingMagic (清き心・
- *  敵魔法が無いと inert のため保留)/対象状態参照 (審美眼)/MP割引 (発明家)/非戦闘 (巫女/名演) は後続 (#483)。 */
+ *  フック実装済みの11職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼)。
+ *  onIncomingMagic (清き心・敵魔法が無いと inert のため保留)/MP割引 (発明家)/非戦闘 (巫女/名演) は後続 (#483)。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -416,6 +417,7 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   shogun: 'shogun-overlord', // 覇王: 物理致死をHP1で耐え+反射 (1戦闘1回)
   guardian: 'guardian-immovable', // 不動: 物理致死を1回確定で耐える
   sage: 'sage-insight', // 慧眼: 弱点属性で追加ダメ
+  artist: 'artist-aesthete', // 審美眼: 状態異常の敵に与ダメ↑
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
@@ -1166,6 +1168,8 @@ function doAttack(
   // 属性相性 (#452 §1): 攻撃属性 × 防御属性。両者 undefined (無属性) なら ×1 = 従来挙動。
   // モンスター/装備への属性付与は #455/#456 で配線。慧眼 (賢者) は弱点時さらに増幅 (none なら素通し)。
   dmg *= applyElementBonus(elementMultiplier(opts.element, defender.element), attacker, atkCtx);
+  // 対象状態シナジー: 審美眼 (芸術家) は状態異常の敵に与ダメ↑ (none なら素通し)。
+  dmg *= applyTargetBonus(1, attacker, defender, atkCtx);
 
   // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
   // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
@@ -1232,6 +1236,7 @@ function doMagic(
   // 属性相性 (無属性は ×1)。慧眼 (賢者) は弱点時さらに増幅 (none なら素通し)。
   const eMult = applyElementBonus(elementMultiplier(opts.element, defender.element), attacker, atkCtx);
   dmg *= eMult;
+  dmg *= applyTargetBonus(1, attacker, defender, atkCtx); // 審美眼: 状態異常の敵に与ダメ↑ (none 素通し)
   dmg *= applyIncomingCalc(1, defender, defCtx); // defUp/defDown/転倒
   // メタル系の魔法無効 (#455 / DQ 準拠): def 無視の魔法でも最小 1 に抑える (会心物理でしか倒せない)。
   const final = defender.resistAllMagic ? 1 : Math.max(1, Math.round(dmg));
