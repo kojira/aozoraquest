@@ -70,10 +70,14 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(applyIncomingCalc(1, cap, ctx())).toBeCloseTo(0.9);
   });
 
-  it('全知/旅の勘: 回避を底上げ (上限 0.9)', () => {
+  it('全知/旅の勘: 回避を底上げ (通常上限 0.32 は超えるが EVASION_PASSIVE_CAP 0.55 で頭打ち)', () => {
+    // 通常帯: dodgeMax(0.32) を超えて底上げ = 回避職の identity。
     expect(applyDodgeCalc(0.2, c({ passives: ['seer-omniscience'] }), ctx())).toBeCloseTo(0.35);
     expect(applyDodgeCalc(0.2, c({ passives: ['explorer-instinct'] }), ctx())).toBeCloseTo(0.32);
-    expect(applyDodgeCalc(0.85, c({ passives: ['seer-omniscience'] }), ctx())).toBeCloseTo(0.9); // clamp
+    // cap 帯: 0.45 + 0.15 = 0.6 → 0.55 で頭打ち (絶対回避化を防ぐ)。
+    expect(applyDodgeCalc(0.45, c({ passives: ['seer-omniscience'] }), ctx())).toBeCloseTo(0.55);
+    // 既に cap 超の高回避 (将来のかくれみ 0.75 等) はパッシブで下げない (max 保護)。
+    expect(applyDodgeCalc(0.75, c({ passives: ['seer-omniscience'] }), ctx())).toBeCloseTo(0.75);
   });
 
   it('詩心 (poet-muse): 自己バフ中のみ 与ダメ ×1.25', () => {

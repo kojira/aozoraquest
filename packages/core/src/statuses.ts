@@ -206,18 +206,29 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   },
 };
 
-/** 自己バフとみなす状態異常 (詩心の「自己バフ中 与ダメ↑」判定用)。 */
+/** 自己バフとみなす状態異常 (詩心の「自己バフ中 与ダメ↑」判定用)。「自分を強化した状態」= 攻撃/
+ *  守備/素早さ up・会心チャージ・隠密のみ。守護スタンス系 (thorns=とげの盾 / ironWall=仁王立ち) は
+ *  守護者の防御姿勢であって「盛って撃つ」詩人の自己強化とは概念が別なので**含めない** (将来マルチで
+ *  他職の状態が混ざったときの誤発火も避ける。レビュー ★)。デバフ (atkDown 等) は当然含めない。 */
 const SELF_BUFF_IDS: ReadonlySet<StatusId> = new Set<StatusId>([
   'atkUp',
   'defUp',
   'agiUp',
   'critCharge',
   'hidden',
-  'ironWall',
-  'thorns',
 ]);
 function hasSelfBuff(c: Combatant): boolean {
   return (c.statuses ?? []).some((s) => SELF_BUFF_IDS.has(s.id));
+}
+
+/** 回避パッシブ (全知/旅の勘) の実効回避上限。通常の dodgeMax(0.32) は回避職の identity として超える
+ *  が、ここで頭打ちにして「絶対に当たらない」化を防ぐ (レビュー ★★: かくれみ 0.75 と積んで 0.9 化する
+ *  懸念への対処)。数値は sim 前提の暫定値。 */
+const EVASION_PASSIVE_CAP = 0.55;
+/** 回避を bonus ぶん底上げするが EVASION_PASSIVE_CAP を超えさせない。ただし既に cap 超の高回避は
+ *  下げない (max 保護: パッシブが既存の高回避状態を弱めてはならない)。 */
+function boostDodge(dodge: number, bonus: number): number {
+  return Math.max(dodge, Math.min(EVASION_PASSIVE_CAP, dodge + bonus));
 }
 
 /**
@@ -246,6 +257,8 @@ export const PASSIVES: Record<string, PassiveDef> = {
     incomingCalc: (power) => power * 0.85,
   },
   // 戦士 剣豪: 会心率↑ (§12 Lv30)。critCalc は bool なので rng で確率的に会心へ引き上げる。
+  // 注: base 会心が外れたときだけ ctx.rng() を追加 1 消費する (短絡評価)。剣豪持ちの戦士は同 seed でも
+  // 乱数系列が変わるが、client/edge とも同じ playerCombatant でパッシブを再導出するため replay は一致。
   'warrior-blademaster': {
     id: 'warrior-blademaster',
     name: '剣豪',
@@ -259,16 +272,18 @@ export const PASSIVES: Record<string, PassiveDef> = {
     incomingCalc: (power) => power * 0.9,
   },
   // 予言者 全知: 常時回避↑ (§12 Lv30)。低 agi を補い「当たらなければどうということはない」型。
+  // 回避職の identity として通常の回避上限 (dodgeMax=0.32) は意図的に超えるが、EVASION_PASSIVE_CAP
+  // で頭打ちにし「絶対当たらない」化は防ぐ。既に上限超の高回避 (将来のかくれみ等) は下げない (max 保護)。
   'seer-omniscience': {
     id: 'seer-omniscience',
     name: '全知',
-    dodgeCalc: (dodge) => Math.min(0.9, dodge + 0.15),
+    dodgeCalc: (dodge) => boostDodge(dodge, 0.15),
   },
   // 冒険者 旅の勘: 回避↑ (§12 Lv30 の戦闘部分。ドロップ↑/逃走↑は非戦闘のため別途)。
   'explorer-instinct': {
     id: 'explorer-instinct',
     name: '旅の勘',
-    dodgeCalc: (dodge) => Math.min(0.9, dodge + 0.12),
+    dodgeCalc: (dodge) => boostDodge(dodge, 0.12),
   },
   // 詩人 詩心: 自己バフ中 与ダメ↑ (§12 Lv30)。バフ orbiter 型の詩人が撃つときだけ乗る。
   'poet-muse': {
