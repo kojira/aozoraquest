@@ -31,6 +31,7 @@ import {
   applyCritCalc,
   applyIncomingCalc,
   applyOnHit,
+  applyOnLethal,
   applyOnDamaged,
   applyModifyHit,
   tickStatuses,
@@ -410,6 +411,8 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   seer: 'seer-omniscience', // 全知: 常時回避↑
   explorer: 'explorer-instinct', // 旅の勘: 回避↑
   poet: 'poet-muse', // 詩心: 自己バフ中 与ダメ↑
+  shogun: 'shogun-overlord', // 覇王: 物理致死をHP1で耐え+反射
+  guardian: 'guardian-immovable', // 不動: 物理致死を50%で耐える
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
@@ -1161,7 +1164,13 @@ function doAttack(
   // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
   // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
   const final = Math.max(1, Math.round(dmg));
-  defender.hp = Math.max(0, defender.hp - final);
+  // 物理致死の直前に onLethal フック (覇王/不動) を確認。survive なら HP1 で耐える (反射等は
+  // ハンドラ内で処理済み)。魔法致死は doMagic を通るためここには来ず、耐えられず死ぬ (§12)。
+  if (defender.hp - final <= 0 && applyOnLethal(defender, attacker, final, defCtx)) {
+    defender.hp = 1;
+  } else {
+    defender.hp = Math.max(0, defender.hp - final);
+  }
   const fatal = defender.hp === 0;
   // 被弾で解ける状態 (かくれみ解除・眠り起床)。none なら no-op。
   if (!fatal) clearHitStatuses(defender);

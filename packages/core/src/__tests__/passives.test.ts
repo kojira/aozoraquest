@@ -6,6 +6,7 @@ import {
   applyCritCalc,
   applyIncomingCalc,
   applyOnHit,
+  applyOnLethal,
   type HookCtx,
 } from '../statuses.js';
 import { jobPassives, playerCombatant, type Combatant } from '../battle.js';
@@ -45,10 +46,12 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(jobPassives('warrior', 29)).toEqual([]);
     expect(jobPassives('mage', 30)).toEqual(['mage-barrier']);
     expect(jobPassives('ninja', 30)).toEqual(['kubikari']);
-    // フック未実装の職 (慧眼/清き心/覇王 等) は Lv30 でもまだ空 (後続で追加)。
+    expect(jobPassives('shogun', 30)).toEqual(['shogun-overlord']);
+    expect(jobPassives('guardian', 30)).toEqual(['guardian-immovable']);
+    // フック未実装の職 (慧眼/清き心/審美眼/発明家/非戦闘) は Lv30 でもまだ空 (後続 #483)。
     expect(jobPassives('sage', 30)).toEqual([]);
     expect(jobPassives('paladin', 30)).toEqual([]);
-    expect(jobPassives('guardian', 30)).toEqual([]);
+    expect(jobPassives('artist', 30)).toEqual([]);
   });
 
   it('playerCombatant: 実装済み職は Lv30 で passives が入り、Lv29 では空', () => {
@@ -107,6 +110,32 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(applyOnHit(ninja, metal, ctx(0.01))).toBe(false);
   });
 
+  it('覇王 (shogun-overlord): 物理致死をHP1で耐え、受けた分を攻撃者へ反射', () => {
+    const shogun = c({ passives: ['shogun-overlord'], name: '将軍' });
+    const atk = c({ name: '敵', hp: 100 });
+    const ev = ctx();
+    expect(applyOnLethal(shogun, atk, 30, ev)).toBe(true); // 生存
+    expect(atk.hp).toBe(70); // 30 反射
+    expect(ev.events.some((e) => e.text.includes('反射'))).toBe(true);
+  });
+
+  it('不動 (guardian-immovable): 物理致死を 50% で耐える (反射なし)', () => {
+    const g = c({ passives: ['guardian-immovable'], name: '守護者' });
+    const atk = c({ name: '敵', hp: 100 });
+    expect(applyOnLethal(g, atk, 40, ctx(0.3))).toBe(true); // rng<0.5 = 耐える
+    expect(atk.hp).toBe(100); // 反射なし
+    expect(applyOnLethal(g, atk, 40, ctx(0.7))).toBe(false); // rng>=0.5 = 死ぬ
+  });
+
+  it('onLethal: パッシブなしは survive せず (通常どおり死ぬ)', () => {
+    expect(applyOnLethal(c(), c(), 50, ctx())).toBe(false);
+  });
+
+  it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入る', () => {
+    expect(playerCombatant('shogun', 30, 30, 'sh').passives).toEqual(['shogun-overlord']);
+    expect(playerCombatant('guardian', 30, 30, 'gd').passives).toEqual(['guardian-immovable']);
+  });
+
   it('パッシブなしの Combatant は全ディスパッチ no-op (回帰防止)', () => {
     const bare = c();
     expect(applyIncomingCalc(1, bare, ctx())).toBe(1);
@@ -114,5 +143,6 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(applyDodgeCalc(0.2, bare, ctx())).toBe(0.2);
     expect(applyCritCalc(false, bare, ctx(0.1))).toBe(false);
     expect(applyOnHit(bare, c(), ctx(0.01))).toBe(false);
+    expect(applyOnLethal(bare, c(), 50, ctx())).toBe(false);
   });
 });
