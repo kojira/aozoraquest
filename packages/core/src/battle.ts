@@ -1826,14 +1826,14 @@ export function resolveTurnMulti(
  *  MP 不足かつしずく → しずく / MP 足りれば特技 / それ以外 たたかう。
  *  scripts/sim-battle-balance.ts と /spirit 模擬戦シミュレータで共有する。 */
 export function autoBattleCommand(s: BattleState): Command {
-  const t = BATTLE_TUNING;
   const isParry = s.playerSkill.kind === 'parry';
   const p = s.player;
-  if (s.monster.charging) return isParry && p.mp >= t.skillMpCost ? 'skill' : 'guard';
+  const skillCost = skillMpCostOf(p); // 発明家 (匠) の割引を実消費と揃える (sim 判断が過小評価しないよう)
+  if (s.monster.charging) return isParry && p.mp >= skillCost ? 'skill' : 'guard';
   if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return 'herb';
   // 見切り (parry) 職は特技を撃たない → MP 回復しても無駄なので しずくを飲まない。
-  if (!isParry && s.tonics > 0 && p.mp < t.skillMpCost && p.maxMp >= t.skillMpCost * 2) return 'tonic';
-  if (!isParry && p.mp >= t.skillMpCost) return 'skill';
+  if (!isParry && s.tonics > 0 && p.mp < skillCost && p.maxMp >= skillCost * 2) return 'tonic';
+  if (!isParry && p.mp >= skillCost) return 'skill';
   return 'attack';
 }
 
