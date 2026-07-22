@@ -610,12 +610,12 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'status', status: 'defDown', target: 'allEnemies', turns: 3 },
     ],
   },
-  // ラプソディ Lv15: 味方 atk・def を強化 (1.5倍/被ダメ減)
+  // ラプソディ Lv15: 味方 atk を強めに (1.5倍) + def は標準 (被ダメ ×0.7)。数値は sim 調整前提。
   'bard-rhapsody': {
     id: 'bard-rhapsody',
     effects: [
       { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3, magnitude: 1.5 },
-      { kind: 'status', status: 'defUp', target: 'allAllies', turns: 3, magnitude: 0.7 },
+      { kind: 'status', status: 'defUp', target: 'allAllies', turns: 3 },
     ],
   },
   'bard-applause': { id: 'bard-applause', effects: [{ kind: 'fixedDamage', min: 10, max: 18, luckScale: 0.3, element: 'void', target: 'allEnemies' }] }, // アプローズ Lv25

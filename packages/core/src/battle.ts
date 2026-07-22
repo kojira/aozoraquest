@@ -224,18 +224,8 @@ export function skillForJob(archetype: Archetype): JobSkill {
   return { kind: STAT_TO_SKILL[maxI]!, name: JOB_SKILL_NAMES[archetype] };
 }
 
-/** 複数とくぎ (#436, エピック #434)。署名スキル (skillForJob) は常に [0]。ジョブは**レベルアップで
- *  副スキルを習得**する (learnAt = 習得 jobLevel)。弱いジョブほど多く・早く覚えて戦術の幅を持つ
- *  (オーナー方針。docs/24)。#436 では実装容易な `heal` (HP 回復) を配って複数選択を成立させ、
- *  眠り/デバフ/バフ等の状態異常は #437 で状態エンジンと共に足す。 */
-interface LearnedSkill { kind: SkillKind; name: string; learnAt: number }
-const LEARNED_SKILLS: Partial<Record<Archetype, readonly LearnedSkill[]>> = {
-  // 回復役・低攻撃ジョブに「いのり (HP 回復)」を配る。攻撃が弱い職ほど早く覚える。
-  // paladin/seer/sage/mage/miko/bard は確定キット (#456) を持つため LEARNED は撤去 (JOB_KITS が優先)。
-  //   miko は癒しの鈴/癒し神楽をキットに持つ。bard は §12「回復なし」の歌職。
-  // mage は確定キット (#456/§12) で「自己回復を持たない脆い int 大砲」に。旧 heal (回生の術式) は
-  // JOB_KITS.mage が skillsForJob を早期 return するため到達不能 = 意図的に撤去 (レビュー ★★)。
-};
+// 旧 LEARNED_SKILLS (#436: 弱職に heal 副スキルを配る機構) は #456 で全 heal 職がキット化されたため
+// 撤去した。副スキルは JOB_KITS (確定キット) が担う。非キット職は署名スキルのみ (skillsForJob 参照)。
 
 /** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
  *  キットを持つジョブは skillsForJob がこれを返す (旧 署名+LEARNED 方式より優先)。未登録のジョブは
@@ -369,11 +359,9 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
     // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
     return learned.length ? learned : [skillForJob(archetype)];
   }
-  const signature = skillForJob(archetype);
-  const learned = (LEARNED_SKILLS[archetype] ?? [])
-    .filter((s) => jobLevel >= s.learnAt)
-    .map((s) => ({ kind: s.kind, name: s.name }));
-  return [signature, ...learned];
+  // キット未登録ジョブ (guardian/artist/fighter 等) は署名スキルのみ。旧 LEARNED_SKILLS (弱職に heal
+  // 副スキルを配る機構) は全 heal 職のキット化で不要になり撤去した (#456)。
+  return [skillForJob(archetype)];
 }
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
