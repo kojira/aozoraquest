@@ -89,8 +89,8 @@ describe('skillsForJob (複数とくぎ #436)', () => {
     expect(skillsForJob('miko', 1)).toHaveLength(1); // 署名のみ
     expect(skillsForJob('miko', 2)).toHaveLength(1);
     expect(skillsForJob('miko', 3).map((s) => s.name)).toContain('癒しの鈴');
-    // キット未登録のジョブ (guardian) は署名のみ (旧 LEARNED 機構は全職キット化で空)。
-    expect(skillsForJob('guardian', 30)).toHaveLength(1);
+    // キット未登録のジョブ (fighter=匠) は署名のみ (旧 LEARNED 機構は全職キット化で空)。
+    expect(skillsForJob('fighter', 30)).toHaveLength(1);
   });
   it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
     // paladin(jobLv5) は聖光の癒し (heal) を持つ。HP を削ってから回復を選ぶ。
@@ -461,27 +461,28 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('見切り (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
-    // 鈍足 guardian (agi 6 = 最遅) で skill 連打 → 後手でも反撃イベントが出る seed があること
+  it('大盾の護り (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
+    // 守護者は #456 で大盾の護り (parry フラグ技) を Lv15 で習得。鈍足 (agi6) でも後手で反撃が出る。
     let counterSeen = 0;
     for (let seed = 0; seed < 30; seed++) {
-      let s = startBattle('guardian', 5, 10, '守護者', 1, seed);
+      let s = startBattle('guardian', 15, 20, '守護者', 1, seed);
+      const parryIdx = s.playerSkills.findIndex((sk) => sk.name === '大盾の護り');
       for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
-        s = resolveTurn(s, 'skill');
+        s = resolveTurn(s, 'skill', undefined, parryIdx);
         if (s.lastEvents.some((e) => e.text.includes('はんげき'))) counterSeen++;
       }
     }
     expect(counterSeen).toBeGreaterThan(0);
   });
 
-  it('parry 型 (guardian) は skill 連打が attack 連打より不利にならない (tier1 勝率)', () => {
+  it('守護者の盾殴り (def 基準) 連打が attack 連打より不利にならない (tier1 勝率)', () => {
+    // 守護者は skill[0]=盾殴り (def43 基準)。固有特技を使うほど弱くなる回帰を防ぐ。
     let skillWins = 0;
     let attackWins = 0;
     for (let seed = 0; seed < 100; seed++) {
       if (playOut(startBattle('guardian', 5, 10, '守護者', 1, seed), 'skill').outcome === 'win') skillWins++;
       if (playOut(startBattle('guardian', 5, 10, '守護者', 1, seed), 'attack').outcome === 'win') attackWins++;
     }
-    // 固有特技を使うほど弱くなる (旧実装は後手 no-op で skill 勝率 2.5%) を防ぐ回帰ガード
     expect(skillWins).toBeGreaterThanOrEqual(attackWins - 10);
   });
 

@@ -26,7 +26,9 @@ export type StatusId =
   | 'defDown' // 被ダメ magnitude 倍
   | 'agiUp'
   | 'agiDown' // 回避 magnitude 倍
-  | 'doomMark'; // 破滅の予言: turnEnd でカウントダウン、0 で magnitude の大ダメージ
+  | 'doomMark' // 破滅の予言: turnEnd でカウントダウン、0 で magnitude の大ダメージ
+  | 'thorns' // とげの盾: 物理被弾時に攻撃者へ magnitude 割合を反射
+  | 'ironWall'; // 仁王立ち: 被ダメをほぼ 0 に (incomingCalc ×magnitude、既定 0.05)
 
 /** 付与時に turns 未指定なら使う既定持続 (毒手/デバフ等の共通デフォルト)。 */
 export const DEFAULT_STATUS_TURNS = 2;
@@ -72,6 +74,8 @@ export interface CombatHook {
   onHit?(atk: Combatant, def: Combatant, ctx: HookCtx): { instakill?: boolean } | void;
   /** 被ダメージの倍率補正 (c=被弾側)。defUp/defDown/転倒。 */
   incomingCalc?(power: number, c: Combatant, ctx: HookCtx): number;
+  /** 物理被弾後 (c=被弾側)。とげの盾: 攻撃者 atk へ反射。damage=食らった最終ダメージ。 */
+  onDamaged?(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): void;
   /** ターン終了。毒ダメージ等。 */
   turnEnd?(c: Combatant, ctx: HookCtx): void;
 }
@@ -164,6 +168,20 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   agiDown: { id: 'agiDown', name: '素早さ低下', restack: 'refresh', dodgeCalc: (d, _c, ctx) => d * (ctx.status?.magnitude ?? 0.6) },
   // 破滅の予言 (予言者): turnEnd でカウントダウン、最終ターン (turns===1) に magnitude の大ダメージ。
   // fresh スキップにより付与ターンは進まず、以後 N ターンかけて破滅が訪れる (予告 → 炸裂の緊張)。
+  // とげの盾 (守護者): 物理被弾で攻撃者に反射 (magnitude=反射割合、既定 0.3)。
+  thorns: {
+    id: 'thorns',
+    name: 'とげの盾',
+    restack: 'refresh',
+    onDamaged: (c, atk, damage, ctx) => {
+      if (atk.hp <= 0) return;
+      const reflect = Math.max(1, Math.round(damage * (ctx.status?.magnitude ?? 0.3)));
+      atk.hp = Math.max(0, atk.hp - reflect);
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${atk.name}は とげに ${reflect} のダメージを受けた!`, damage: reflect });
+    },
+  },
+  // 仁王立ち (守護者): 被ダメをほぼ 0 に (incomingCalc ×0.05)。turns 1 の完全防御。
+  ironWall: { id: 'ironWall', name: '仁王立ち', incomingCalc: (p, _c, ctx) => p * (ctx.status?.magnitude ?? 0.05) },
   doomMark: {
     id: 'doomMark',
     name: '破滅の予言',
@@ -203,6 +221,8 @@ const STATUS_APPLY_TEXT: Record<StatusId, string> = {
   agiUp: 'の素早さがあがった!',
   agiDown: 'の素早さがさがった!',
   doomMark: 'に 破滅の刻印が刻まれた…!',
+  thorns: 'は とげの盾をかまえた!',
+  ironWall: 'は 仁王立ちした! (被ダメージ激減)',
 };
 
 /** 状態付与の告知文 (対象名 + テキスト)。 */
@@ -266,6 +286,11 @@ export function applyIncomingCalc(base: number, c: Combatant, ctx: HookCtx): num
   let v = base;
   for (const { def, inst } of hooksOf(c)) v = def.incomingCalc?.(v, c, ctxFor(ctx, inst)) ?? v;
   return v;
+}
+
+/** 物理被弾後: 被弾側のフック (とげの盾) を回す (攻撃者へ反射など)。 */
+export function applyOnDamaged(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): void {
+  for (const { def, inst } of hooksOf(c)) def.onDamaged?.(c, atk, damage, ctxFor(ctx, inst));
 }
 
 /** 命中時: いずれかのパッシブ/状態が即死を返したら true。 */

@@ -29,9 +29,9 @@ describe('魔法使い 確定キット (#456)', () => {
   });
 
   it('他ジョブ (キット未登録) は従来どおり基本 6 種の署名スキル', () => {
-    // guardian はキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
+    // fighter (匠) はまだキット未登録 → 支配ステータス由来の基本 6 種の署名を返す (挙動不変)。
     const base = ['smash', 'parry', 'flurry', 'spell', 'gamble', 'heal'];
-    expect(base).toContain(skillsForJob('guardian', 10)[0]!.kind);
+    expect(base).toContain(skillsForJob('fighter', 10)[0]!.kind);
   });
 
   it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す (mage)', () => {
@@ -147,6 +147,44 @@ describe('詩人 確定キット (#456)', () => {
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'restraint')) bound = true;
     }
     expect(bound).toBe(true);
+  });
+});
+
+describe('守護者 確定キット (#456。壁役・def基準)', () => {
+  it('レベルで盾殴り〜大盾の護りを習得', () => {
+    expect(skillsForJob('guardian', 3).map((s) => s.name)).toContain('盾殴り');
+    expect(skillsForJob('guardian', 15).map((s) => s.name)).toEqual(['盾殴り', '大盾の護り', 'とげの盾', '仁王立ち', '守護の祈り']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('guardian', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('盾殴りは def 基準でダメージを与える (守りの固さで殴る)', () => {
+    const s = startBattle('guardian', 3, 8, '守', 1, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '盾殴り');
+    const before = s.monster.hp;
+    const next: BattleState = resolveTurn(s, 'skill', 999, idx);
+    expect(next.monster.hp).toBeLessThan(before); // def43 型なので通常攻撃(atk24)より重い
+  });
+
+  it('とげの盾を張ると敵の攻撃を反射する', () => {
+    // とげの盾 (self) を張ってから、敵が殴ってくるターンで敵 HP が反射ぶん減る。
+    let reflected = false;
+    for (let seed = 0; seed < 20 && !reflected; seed++) {
+      let s = startBattle('guardian', 8, 12, '守', 3, seed, 0);
+      const idx = s.playerSkills.findIndex((sk) => sk.name === 'とげの盾');
+      s = resolveTurn(s, 'skill', undefined, idx); // とげの盾を張る
+      if (s.outcome !== 'ongoing' || !s.player.statuses?.some((st) => st.id === 'thorns')) continue;
+      const monBefore = s.monster.hp;
+      // ぼうぎょして敵の攻撃を受ける (反射狙い)。
+      const next: BattleState = resolveTurn(s, 'guard');
+      if (next.lastEvents.some((e) => e.text.includes('とげに'))) {
+        reflected = true;
+        expect(next.monster.hp).toBeLessThanOrEqual(monBefore);
+      }
+    }
+    expect(reflected).toBe(true);
   });
 });
 
