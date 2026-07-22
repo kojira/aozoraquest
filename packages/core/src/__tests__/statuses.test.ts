@@ -6,6 +6,7 @@ import {
   applyPowerCalc,
   applyCritCalc,
   applyIncomingCalc,
+  applyOnDamaged,
   tickStatuses,
   clearActedStatuses,
   clearHitStatuses,
@@ -144,6 +145,17 @@ describe('状態異常エンジン (#452)', () => {
     applyStatus(t, st('tumble', 9)); // ignore: 据え置き
     expect(t.statuses).toHaveLength(1);
     expect(t.statuses![0]!.turns).toBe(2);
+  });
+
+  it('thorns: 物理被弾で攻撃者に反射 (onDamaged)', () => {
+    const guard = c({ statuses: [st('thorns', 3, 0.3)] });
+    const attacker = c({ name: 'atk', hp: 100 });
+    applyOnDamaged(guard, attacker, 20, ctx()); // 20 ダメージ食らった → 攻撃者に 20×0.3=6 反射
+    expect(attacker.hp).toBe(94);
+  });
+
+  it('ironWall: 被ダメをほぼ 0 に (incomingCalc ×0.05)', () => {
+    expect(applyIncomingCalc(1, c({ statuses: [st('ironWall', 1)] }), ctx())).toBeCloseTo(0.05);
   });
 
   it('poison は生存者のみ tick (HP0 の死体は毒で追撃しない)', () => {

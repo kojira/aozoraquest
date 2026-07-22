@@ -16,7 +16,7 @@ import type { Element } from './elements.js';
 import { resolveTargets, type SkillTarget, type CombatSides } from './combat-target.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
-export type DamageStat = 'atk' | 'int' | 'agi' | 'luk';
+export type DamageStat = 'atk' | 'int' | 'agi' | 'luk' | 'def';
 
 /** ギャンブル倍率 (0〜max、luk が高いほど下振れしにくい)。 */
 export interface GambleSpec {
@@ -120,6 +120,9 @@ export interface SkillDef {
   /** とくぎ ID (JobSkill.kind と一致させる) */
   id: string;
   effects: SkillEffect[];
+  /** 見切り/大盾の護り: 「防御しつつ反撃」を宣言する (resolveTurn が parrying フラグを立てる)。
+   *  宣言型なので effects は空でよい (反撃は doAttack の parrying 経路)。 */
+  parry?: boolean;
 }
 
 /** ハンドラに注入するエンジン一次関数 (循環 import 回避のための依存注入)。 */
@@ -184,6 +187,9 @@ const damageHandler: EffectHandler = (effect, ctx) => {
         break;
       case 'luk':
         opts.atkOverride = attacker.luk;
+        break;
+      case 'def':
+        opts.atkOverride = attacker.def; // 守護者の盾殴り: 守りの固さで殴る (def43 型)
         break;
     }
     if (effect.gamble) {
@@ -332,8 +338,8 @@ export const EFFECT_HANDLERS: Record<SkillEffect['kind'], EffectHandler> = {
 export const SKILLS: Record<string, SkillDef> = {
   // 強打: atk 基準 1.7 倍・やや当てにくい
   smash: { id: 'smash', effects: [{ kind: 'damage', stat: 'atk', power: 1.7, hitBonus: -0.1 }] },
-  // 見切り: 宣言は resolveTurn 冒頭 (行動順に依存しない)。ここでは効果なし。
-  parry: { id: 'parry', effects: [] },
+  // 見切り: 宣言は resolveTurn 冒頭 (行動順に依存しない)。防御しつつ反撃。
+  parry: { id: 'parry', effects: [], parry: true },
   // 連撃: agi 基準 0.65 倍 × 2 撃 (素早さで手数)
   flurry: { id: 'flurry', effects: [{ kind: 'damage', stat: 'agi', power: 0.65, hits: 2 }] },
   // 魔撃: int 基準・必中・防御半減
@@ -619,6 +625,15 @@ export const SKILLS: Record<string, SkillDef> = {
     ],
   },
   'bard-applause': { id: 'bard-applause', effects: [{ kind: 'fixedDamage', min: 10, max: 18, luckScale: 0.3, element: 'void', target: 'allEnemies' }] }, // アプローズ Lv25
+
+  // ─── 守護者 確定キット (#456 / docs/25 §12・§14.1。壁役・def43最強) ───
+  // 数値は sim 調整前提の暫定値。盾殴りは def 基準 (守りの固さで殴る)。フルカウンター(累積反射)/
+  // 不動(P onLethal)/かばう・挑発(パーティ前提=マルチ #453) は後続。
+  'guardian-bash': { id: 'guardian-bash', effects: [{ kind: 'damage', stat: 'def', power: 1.0 }] }, // 盾殴り Lv3
+  'guardian-prayer': { id: 'guardian-prayer', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3, magnitude: 0.6 }] }, // 守護の祈り Lv5
+  'guardian-thorns': { id: 'guardian-thorns', effects: [{ kind: 'status', status: 'thorns', target: 'self', turns: 3, magnitude: 0.3 }] }, // とげの盾 Lv8
+  'guardian-stand': { id: 'guardian-stand', effects: [{ kind: 'status', status: 'ironWall', target: 'self', turns: 1 }] }, // 仁王立ち Lv12 (被ダメ≒0 1T)
+  'guardian-shield': { id: 'guardian-shield', effects: [], parry: true }, // 大盾の護り Lv15 (parry: 防御しつつ反撃)
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく
