@@ -160,6 +160,15 @@ describe('聖騎士 確定キット (#456)', () => {
     for (const sk of skillsForJob('paladin', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
   });
 
+  it('isPureHealSkill: 純回復技のみ true (サボる=restoreMp混在は false)', async () => {
+    const { isPureHealSkill } = await import('../index.js');
+    expect(isPureHealSkill('paladin-heal')).toBe(true); // heal のみ
+    expect(isPureHealSkill('heal')).toBe(true); // 基本 heal
+    expect(isPureHealSkill('performer-slack')).toBe(false); // restoreMp+heal
+    expect(isPureHealSkill('paladin-lightblade')).toBe(false); // 攻撃
+    expect(isPureHealSkill('unknown')).toBe(false);
+  });
+
   it('浄化は自分のデバフを回復するがバフは残す (cleanse)', () => {
     const s = startBattle('paladin', 18, 25, '聖', 1, 5, 0);
     // 手動でデバフ + バフを乗せてから浄化。
@@ -215,6 +224,14 @@ describe('遊び人 確定キット (#456)', () => {
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
     expect(next.lastEvents.some((e) => e.text.includes('反動'))).toBe(true);
     expect(next.player.hp).toBeGreaterThanOrEqual(1);
+  });
+
+  it('いちかばちかは agi 基準 (遊び人の最強ステ)。luk 基準の弱火力ではない', () => {
+    // gamble の抽選を最大に固定 (turnSeed) しても、agi 基準なので luk 型より火力が出る想定。
+    // ここでは stat が agi であることを SKILLS 定義で担保 (実火力は sim)。
+    const def = SKILLS['performer-gamble']!;
+    const dmg = def.effects.find((e) => e.kind === 'damage');
+    expect(dmg && dmg.kind === 'damage' ? dmg.stat : undefined).toBe('agi');
   });
 });
 

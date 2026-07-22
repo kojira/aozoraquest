@@ -224,7 +224,9 @@ const statusHandler: EffectHandler = (effect, ctx) => {
 /** 自己バフとして数える状態 (感情爆発の buffCount)。積み重ねてダメージに変換する。 */
 const BUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>(['atkUp', 'defUp', 'agiUp']);
 
-/** デバフ (浄化 cleanse で除去する状態)。バフ (atk/def/agiUp) は残す。 */
+/** デバフ (浄化 cleanse で除去する状態)。バフ (atk/def/agiUp) は残す。
+ *  **注意**: StatusId に新しいデバフ (confusion/flinch/accDown/doomMark/intDown 等) を足したら、
+ *  ここにも追記すること (型では検出できない。将来 BUFF/DEBUFF を StatusId 側の1テーブルに寄せたい)。 */
 const DEBUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>([
   'poison',
   'sleep',
@@ -438,8 +440,9 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'status', status: 'agiUp', target: 'self', turns: 3 },
     ],
   },
-  // 光の剣 Lv8: 無属性 (holy) 魔法・必中・def無視・int 連動
-  'paladin-lightblade': { id: 'paladin-lightblade', effects: [{ kind: 'fixedDamage', min: 8, max: 14, intBonus: 0.3 }] },
+  // 光の剣 Lv8: 無属性 (holy) 魔法・必中・def無視。§12 の "int差luck" と聖騎士の最強ステ luk34 を活かし
+  // int + luk の両刀に (int 単独だと最強 luk を無視してしまう。レビュー ★★)。範囲は §12 の 15-20 に寄せた。
+  'paladin-lightblade': { id: 'paladin-lightblade', effects: [{ kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.2, luckScale: 0.2 }] },
   // 聖なる守り Lv15: 自 def を強めに上げる (defUp magnitude 0.6 = 被ダメ ×0.6)
   'paladin-guard': { id: 'paladin-guard', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3, magnitude: 0.6 }] },
   // 浄化 Lv18: 自分のデバフを回復 (cleanse)
@@ -456,17 +459,26 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'heal', ratio: 0.15 },
     ],
   },
-  // いちかばちか Lv12: luk 基準の大博打 + 反動 (一か八か)
+  // いちかばちか Lv12: **agi 基準** (遊び人の最強ステ) の大博打 + 反動。運任せ感は gamble の抽選幅と
+  // luk 依存の下限 (lukFloorScale) で表現する。基準を弱ステ luk にすると看板技が最弱火力になる (レビュー ★★★)。
   'performer-gamble': {
     id: 'performer-gamble',
     effects: [
-      { kind: 'damage', stat: 'luk', gamble: { max: 3.0, lukFloorScale: 0.012, lukFloorCap: 0.6 } },
+      { kind: 'damage', stat: 'agi', gamble: { max: 3.0, lukFloorScale: 0.012, lukFloorCap: 0.6 } },
       { kind: 'recoil', ratio: 0.15 },
     ],
   },
   // 曲芸乱舞 Lv15: agi 基準 3 連撃
   'performer-acrobat': { id: 'performer-acrobat', effects: [{ kind: 'damage', stat: 'agi', power: 0.6, hits: 3 }] },
 };
+
+/** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく
+ *  効果ベースで判定するため、キット技 (paladin-heal 等) でも正しく効く。restoreMp+heal の
+ *  サボる等は「純回復でない」= false (満タンでも MP 回復に撃てる)。 */
+export function isPureHealSkill(kind: string): boolean {
+  const def = SKILLS[kind];
+  return !!def && def.effects.length > 0 && def.effects.every((e) => e.kind === 'heal');
+}
 
 /** SkillDef の全効果を順に解決する (ソロ戦闘のエントリポイント。ctx.defender 固定)。 */
 export function runSkill(def: SkillDef, ctx: SkillContext): void {

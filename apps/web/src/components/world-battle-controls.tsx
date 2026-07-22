@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
-import { BATTLE_TUNING, MONSTERS_BY_ID } from '@aozoraquest/core';
+import { BATTLE_TUNING, MONSTERS_BY_ID, isPureHealSkill } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 
@@ -98,8 +98,8 @@ export function WorldBattleControls({
                       key={i}
                       label={`${sk.name} (MP${BATTLE_TUNING.skillMpCost})`}
                       onClick={() => { setSkillMenu(false); onCommand('skill', i); }}
-                      // heal は満タンなら無意味 → 無効化 (やくそうと同じ配慮)
-                      disabled={busy || lowMp || (sk.kind === 'heal' && state.player.hp >= state.player.maxHp)}
+                      // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)
+                      disabled={busy || lowMp || (isPureHealSkill(sk.kind) && state.player.hp >= state.player.maxHp)}
                     />
                   ))}
                   <DqRow label="もどる" onClick={() => setSkillMenu(false)} disabled={busy} />
