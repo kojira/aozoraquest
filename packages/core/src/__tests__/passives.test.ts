@@ -172,6 +172,9 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     // バフ (atkUp) しか持たない敵は「状態異常」ではないので素通し。
     const buffed = c({ name: 'バフ敵', statuses: [{ id: 'atkUp', turns: 3 }] });
     expect(applyTargetBonus(1, artist, buffed, ctx())).toBeCloseTo(1);
+    // バフ+状態異常の混在敵 (バフ持ちに芸術家がデバフを足した実戦形) は状態異常があるので発火。
+    const mixed = c({ name: '混在敵', statuses: [{ id: 'atkUp', turns: 3 }, { id: 'poison', turns: 3, magnitude: 5 }] });
+    expect(applyTargetBonus(1, artist, mixed, ctx())).toBeCloseTo(1.3);
     expect(applyTargetBonus(1, c(), poisoned, ctx())).toBeCloseTo(1); // パッシブなしは no-op
   });
 

@@ -465,7 +465,8 @@ export function applyElementBonus(mult: number, c: Combatant, ctx: HookCtx): num
   return v;
 }
 
-/** 対象の状態に応じた与ダメ倍率補正 (c=攻撃側, target=被弾側)。審美眼など。none なら入力そのまま。 */
+/** 対象の状態に応じた与ダメ倍率補正 (c=攻撃側, target=被弾側)。審美眼など。基準 1 に対する乗数を返す
+ *  (属性倍率とは独立した別軸なので基点 1 から始め、呼び出し側が dmg に乗算する)。none なら入力そのまま。 */
 export function applyTargetBonus(mult: number, c: Combatant, target: Combatant, ctx: HookCtx): number {
   let v = mult;
   for (const { def, inst } of hooksOf(c)) v = def.targetBonus?.(v, c, target, ctxFor(ctx, inst)) ?? v;
