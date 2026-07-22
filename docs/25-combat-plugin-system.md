@@ -205,9 +205,17 @@ export const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   charger: { id: 'charger', decideAction: /* ため予告→解放 */ },
   healer:  { id: 'healer',  decideAction: /* 低HPで回復 */ },
   fleer:   { id: 'fleer',   decideAction: /* 毎ターン逃走判定 */ },
+  caster:  { id: 'caster',  decideAction: /* MPあるうちは def無視の属性魔撃 */ }, // #456
 };
 ```
 `monsterCommand` は `MONSTER_ABILITIES[def.ability]?.decideAction(...)` を呼ぶだけ (switch なし)。
+
+**caster (#456)**: `MonsterDef.spell { name, element?, min, max, intScale? }` を持つ敵が MP を消費して
+`doMagic` で def 無視の属性魔撃を撃つ。**対物理型 (覇王/不動) の弱点=魔法を成立させる要**の content で、
+魔法致死は `onLethal` を通らないため覇王将軍も魔法では死ぬ (§14.6)。聖騎士の清き心 (魔法反射) は**後続
+(#483) で `onIncomingMagic` を配線すればこの経路に乗る**前提が整う (本 PR 時点では清き心は未実装)。初期投入は
+night-raven (tier3・かまいたち/wind) の 1 体・控えめな数値 (def 無視は def タンクに刺さるため)。full 配置・
+数値・int 対 int 軽減 (低 def の支援職に過剰に刺さらない配分) は #479 sim 待ち。
 
 ---
 
