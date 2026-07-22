@@ -13,6 +13,7 @@
 import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
 import { applyStatus, statusApplyText, DEFAULT_STATUS_TURNS, type StatusId } from './statuses.js';
 import type { Element } from './elements.js';
+import { resolveTargets, type SkillTarget, type CombatSides } from './combat-target.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
 export type DamageStat = 'atk' | 'int' | 'agi' | 'luk';
@@ -57,6 +58,8 @@ export type SkillEffect =
       inflict?: InflictSpec;
       /** 攻撃属性 (火遁=fire 等)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
       element?: Element;
+      /** 対象 (マルチ戦闘 #453)。未指定は oneEnemy。allEnemies で全体物理 (なぎ払い等)。 */
+      target?: SkillTarget;
     }
   | {
       kind: 'fixedDamage';
@@ -69,6 +72,8 @@ export type SkillEffect =
       luckScale?: number;
       /** 攻撃属性 (火水地風空)。防御側の element と相性判定。未指定は無属性 (等倍)。 */
       element?: Element;
+      /** 対象 (マルチ戦闘 #453)。未指定は oneEnemy。allEnemies で全体魔法 (メテオ全体版等)。 */
+      target?: SkillTarget;
       /** データ駆動の計算値参照 (§14.5)。'buffCount' = 使用者の自己バフ数 (感情爆発)。 */
       scaleBy?: 'buffCount';
       /** scaleBy の1件あたり倍率: amount ×= 1 + count × scaleFactor。未指定 0.4。 */
@@ -83,8 +88,9 @@ export type SkillEffect =
       kind: 'status';
       /** 付与する状態異常 */
       status: StatusId;
-      /** self=使用者に (バフ/かくれみ/九字切り)、enemy=相手に (デバフ/毒/眠り) */
-      target: 'self' | 'enemy';
+      /** 対象。self=使用者 / enemy=単体敵 / allEnemies=敵全体 (デバフ) / allAllies=味方全体 (バフ)。
+       *  マルチ戦闘 (#453) 用に allEnemies/allAllies を追加。ソロでは enemy=allEnemies=単体。 */
+      target: 'self' | 'enemy' | 'allEnemies' | 'allAllies';
       chance?: number;
       turns?: number;
       magnitude?: number;
@@ -186,8 +192,9 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'status') return;
   const { attacker, defender, rng, events } = ctx;
   const actor = ctx.actorSide ?? 'player';
-  // 倒した相手にデバフを乗せない (fixedDamage で致死後に走る多段技のため。self バフは対象外)。
-  if (effect.target === 'enemy' && defender.hp <= 0) return;
+  // 倒した相手にデバフを乗せない (fixedDamage で致死後に走る多段技のため)。self 以外は死体スキップ
+  // (enemy/allEnemies/oneEnemy をまとめて。self バフは生死問わず対象)。
+  if (effect.target !== 'self' && defender.hp <= 0) return;
   if (rng() >= (effect.chance ?? 1)) return;
   const target = effect.target === 'self' ? attacker : defender;
   applyStatus(target, {
@@ -231,7 +238,8 @@ const healHandler: EffectHandler = (effect, ctx) => {
   const { attacker, events, skillName } = ctx;
   const heal = Math.round(attacker.maxHp * effect.ratio);
   attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
-  events.push({ actor: 'player', text: `${attacker.name}は${skillName}! HP が ${heal} 回復。` });
+  // actorSide を尊重 (他ハンドラと統一)。将来マルチで敵が自己回復を撃っても視点が転倒しない。
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! HP が ${heal} 回復。` });
 };
 
 /** 効果種別 → ハンドラ。ここに 1 行足す = 新しい効果プリミティブが使えるようになる。 */
@@ -356,9 +364,43 @@ export const SKILLS: Record<string, SkillDef> = {
   'warrior-fullslash': { id: 'warrior-fullslash', effects: [{ kind: 'damage', stat: 'atk', power: 2.0 }] }, // 全力斬り Lv18
 };
 
-/** SkillDef の全効果を順に解決する (プラグイン実行のエントリポイント)。 */
+/** SkillDef の全効果を順に解決する (ソロ戦闘のエントリポイント。ctx.defender 固定)。 */
 export function runSkill(def: SkillDef, ctx: SkillContext): void {
   for (const effect of def.effects) {
     EFFECT_HANDLERS[effect.kind](effect, ctx);
+  }
+}
+
+/** 各効果の対象種別 (SkillTarget) を導く。damage/fixedDamage は target 指定 or oneEnemy、
+ *  heal は self、status は自身の target ('enemy'=oneEnemy に正規化)。 */
+export function effectTarget(effect: SkillEffect): SkillTarget {
+  switch (effect.kind) {
+    case 'damage':
+    case 'fixedDamage':
+      return effect.target ?? 'oneEnemy';
+    case 'heal':
+      return 'self';
+    case 'status':
+      return effect.target === 'enemy' ? 'oneEnemy' : effect.target;
+  }
+}
+
+/**
+ * マルチ戦闘のとくぎ解決 (#453 / docs/25 §14.4)。**効果ごとに対象集合を解決**し、各対象に
+ * ハンドラを適用する (self 効果は使用者 1 回、allEnemies は敵全員に、など)。ソロの runSkill と違い
+ * ctx.defender を対象ごとに差し替える。`makeCtx` は対象 1 体分の SkillContext を組む注入関数。
+ */
+export function runSkillMulti(
+  def: SkillDef,
+  attacker: Combatant,
+  sides: CombatSides,
+  makeCtx: (defender: Combatant) => SkillContext,
+  opts: { targetIndex?: number } = {},
+): void {
+  for (const effect of def.effects) {
+    const targets = resolveTargets(attacker, effectTarget(effect), sides, opts);
+    for (const target of targets) {
+      EFFECT_HANDLERS[effect.kind](effect, makeCtx(target));
+    }
   }
 }
