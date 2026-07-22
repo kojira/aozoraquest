@@ -11,7 +11,15 @@
  */
 
 import type { Combatant, TurnEvent, AttackOptions, AttackResult } from './battle.js';
-import { applyStatus, statusApplyText, DEFAULT_STATUS_TURNS, AILMENT_IDS, type StatusId } from './statuses.js';
+import {
+  applyStatus,
+  statusApplyText,
+  applyStatusDurationBonus,
+  DEFAULT_STATUS_TURNS,
+  AILMENT_IDS,
+  type StatusId,
+  type HookCtx,
+} from './statuses.js';
 import type { Element } from './elements.js';
 import { resolveTargets, type SkillTarget, type CombatSides } from './combat-target.js';
 
@@ -240,9 +248,12 @@ const statusHandler: EffectHandler = (effect, ctx) => {
     effect.magnitude !== undefined || effect.magIntBonus !== undefined
       ? (effect.magnitude ?? 0) + (effect.magIntBonus ? Math.round(attacker.int * effect.magIntBonus) : 0)
       : undefined;
+  // 名演 (吟遊詩人): 付与する側 (attacker) の持続延長パッシブを適用 (none なら素通し)。歌の効果 +1 ターン。
+  const hookCtx: HookCtx = { rng, events, actor };
+  const turns = applyStatusDurationBonus(effect.turns ?? DEFAULT_STATUS_TURNS, attacker, hookCtx);
   applyStatus(target, {
     id: effect.status,
-    turns: effect.turns ?? DEFAULT_STATUS_TURNS,
+    turns,
     ...(mag !== undefined ? { magnitude: mag } : {}),
   });
   // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。
