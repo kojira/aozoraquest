@@ -1737,8 +1737,7 @@ export function resolveTurnMulti(
   const state: BattleState = { ...prev, turn: prev.turn + 1, allies, enemies, player: allies[0]!, monster: enemies[0]!, lastEvents: [] };
   const sides: CombatSides = { allies, enemies };
   const player = allies[0]!;
-  // ぼうぎょは 1 ターン限り。前ターンから copy された guarding をリセットし、このターンの宣言/AI で立て直す。
-  for (const c of [...allies, ...enemies]) c.guarding = false;
+  // ぼうぎょは 1 ターン限り: copyCombatant が guarding:false でコピーするので、このターンの宣言/AI で立て直す。
   const isAlly = (c: Combatant) => allies.includes(c);
   const events: TurnEvent[] = [];
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);

@@ -81,4 +81,34 @@ describe('マルチ戦闘ターンループ (#453)', () => {
     }
     expect(cast).toBe(true); // マルチでも night-raven が ability (cast) を使った = 個体 AI が効いている
   });
+
+  it('敵の charger がマルチで「ため」→ 強攻撃を放つ (#453 個体 AI)', () => {
+    let charged = false;
+    for (let seed = 0; seed < 40 && !charged; seed++) {
+      // moss-golem (charger)。プレイヤーは防御で長引かせる。
+      let s = startBattle('warrior', 30, 30, '勇者', 2, seed, 0, undefined, { monsterId: 'moss-golem', extraEnemies: 1 });
+      for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
+        s.player.hp = s.player.maxHp;
+        for (const e of s.enemies!) e.mp = e.maxMp;
+        s = resolveTurnMulti(s, 'guard');
+        if (s.lastEvents.some((ev) => ev.text.includes('力をためている'))) { charged = true; break; }
+      }
+    }
+    expect(charged).toBe(true); // マルチでも charger が ため宣言 = per-enemy AI (multiEnemyAct)
+  });
+
+  it('敵の healer がマルチで自己回復する (#453 個体 AI)', () => {
+    let healed = false;
+    for (let seed = 0; seed < 40 && !healed; seed++) {
+      // sky-dragon (healer)。低 HP に固定して回復判定を誘発。
+      let s = startBattle('warrior', 30, 30, '勇者', 3, seed, 0, undefined, { monsterId: 'sky-dragon', extraEnemies: 1 });
+      for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
+        s.player.hp = s.player.maxHp;
+        for (const e of s.enemies!) { e.hp = Math.max(1, Math.floor(e.maxHp * 0.2)); e.mp = e.maxMp; }
+        s = resolveTurnMulti(s, 'guard');
+        if (s.lastEvents.some((ev) => ev.text.includes('回復'))) { healed = true; break; }
+      }
+    }
+    expect(healed).toBe(true); // マルチでも healer が自己回復 = per-enemy AI
+  });
 });
