@@ -163,8 +163,10 @@ export interface StatusDef extends CombatHook {
   immuneIf?(c: Combatant): boolean;   // 毒無効・睡眠耐性
   clearOnAct?: boolean; clearOnHit?: boolean; wakeOnHit?: boolean;
 }
-// パッシブ = ジョブ innate な常時フック (turns なし)
-export interface PassiveDef extends CombatHook { id: string; name: string }
+// パッシブ = ジョブ innate な常時フック (turns なし)。加えて、戦闘ライフサイクルのフック点でない
+// 非戦闘効果は**メタデータフィールド**で表す: mpCostFactor (発明家/巫女=とくぎMP割引・resolveTurn で乗算)、
+// dropBonus (巫女=ドロップ↑・rollDrops で加算)。フック点でないものを無理にフック化しない (#456)。
+export interface PassiveDef extends CombatHook { id: string; name: string; mpCostFactor?: number; dropBonus?: number }
 
 export const STATUS_REGISTRY: Record<StatusId, StatusDef> = { /* poison/sleep/hidden/critCharge/… */ };
 export const PASSIVES: Record<string, PassiveDef> = {

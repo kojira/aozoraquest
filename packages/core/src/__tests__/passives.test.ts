@@ -13,7 +13,8 @@ import {
   applyStatusDurationBonus,
   type HookCtx,
 } from '../statuses.js';
-import { jobPassives, playerCombatant, skillMpCostOf, startBattle, resolveTurn, BATTLE_TUNING, type Combatant } from '../battle.js';
+import { jobPassives, playerCombatant, skillMpCostOf, rollDrops, startBattle, resolveTurn, BATTLE_TUNING, type Combatant } from '../battle.js';
+import { dropBonusOf } from '../statuses.js';
 import { runSkill, type SkillContext, type SkillDef } from '../skills.js';
 
 function c(over: Partial<Combatant> = {}): Combatant {
@@ -57,8 +58,8 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(jobPassives('artist', 30)).toEqual(['artist-aesthete']);
     expect(jobPassives('paladin', 30)).toEqual(['paladin-purity']);
     expect(jobPassives('fighter', 30)).toEqual(['fighter-inventor']);
-    // 残 巫女 (ドロップ↑=drop 配線待ち) は Lv30 でもまだ空 (後続 #483)。遊び人は Lv30 パッシブ無し。
-    expect(jobPassives('miko', 30)).toEqual([]);
+    expect(jobPassives('miko', 30)).toEqual(['miko-intuition']);
+    // 遊び人は Lv30=せっとく(resolve スキル)でパッシブ無し。
     expect(jobPassives('performer', 30)).toEqual([]);
   });
 
@@ -66,8 +67,9 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(playerCombatant('warrior', 30, 30, 'w').passives).toEqual(['warrior-blademaster']);
     expect(playerCombatant('warrior', 29, 30, 'w').passives).toEqual([]);
     expect(playerCombatant('captain', 30, 30, 'cap').passives).toEqual(['captain-command']);
-    // 未実装職は Lv30 でも空 (巫女=ドロップ配線待ち)。キット化とは別軸。
-    expect(playerCombatant('miko', 30, 30, 'mk').passives).toEqual([]);
+    expect(playerCombatant('miko', 30, 30, 'mk').passives).toEqual(['miko-intuition']);
+    // 遊び人は Lv30 パッシブ無し (せっとく=resolve スキル)。
+    expect(playerCombatant('performer', 30, 30, 'pf').passives).toEqual([]);
   });
 
   // ── 各パッシブの効果 (dispatcher 経由) ──
@@ -194,6 +196,29 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(mageCost).toBe(BATTLE_TUNING.skillMpCost);
     expect(fighterCost).toBe(Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * 0.7)));
     expect(fighterCost).toBeLessThan(mageCost);
+  });
+
+  it('巫女の直感 (miko-intuition): MP 割引 (0.7) + ドロップ加算 (0.1) の複合パッシブ', () => {
+    const miko = c({ passives: ['miko-intuition'] });
+    expect(skillMpCostOf(miko)).toBe(Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * 0.7))); // MP off
+    expect(dropBonusOf(miko)).toBeCloseTo(0.1); // ドロップ↑
+    expect(dropBonusOf(c())).toBe(0); // パッシブなしは 0
+    const mk = playerCombatant('miko', 30, 30, 'mk');
+    expect(mk.passives).toEqual(['miko-intuition']);
+    expect(dropBonusOf(mk)).toBeCloseTo(0.1);
+  });
+
+  it('rollDrops: dropBonus (巫女の直感) がドロップ確率を上げる (統合)', () => {
+    // 同 seed 群で dropBonus あり/なしのドロップ総数を比較 → 巫女の方が多い。
+    let base = 0;
+    let boosted = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      base += rollDrops('moss-golem', 0, seed, 0).length;
+      boosted += rollDrops('moss-golem', 0, seed, 0.1).length;
+    }
+    expect(boosted).toBeGreaterThan(base); // dropBonus で総ドロップ数が増える
+    // dropBonus なしは従来と完全一致 (回帰なし)。
+    expect(rollDrops('moss-golem', 5, 42)).toEqual(rollDrops('moss-golem', 5, 42, 0));
   });
 
   it('慧眼 (sage-insight): 弱点 (相性倍率>=1.5) のみ ×1.25 増幅、等倍/耐性/空 1.2 は素通し', () => {
