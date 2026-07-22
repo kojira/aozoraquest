@@ -150,6 +150,91 @@ describe('詩人 確定キット (#456)', () => {
   });
 });
 
+describe('聖騎士 確定キット (#456)', () => {
+  it('レベルで聖光の癒し〜浄化を習得', () => {
+    expect(skillsForJob('paladin', 3).map((s) => s.name)).toContain('聖光の癒し');
+    expect(skillsForJob('paladin', 18).map((s) => s.name)).toEqual(['聖光の癒し', '光の加護', '光の剣', '聖なる守り', '浄化']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('paladin', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('isPureHealSkill: 純回復技のみ true (サボる=restoreMp混在は false)', async () => {
+    const { isPureHealSkill } = await import('../index.js');
+    expect(isPureHealSkill('paladin-heal')).toBe(true); // heal のみ
+    expect(isPureHealSkill('heal')).toBe(true); // 基本 heal
+    expect(isPureHealSkill('performer-slack')).toBe(false); // restoreMp+heal
+    expect(isPureHealSkill('paladin-lightblade')).toBe(false); // 攻撃
+    expect(isPureHealSkill('unknown')).toBe(false);
+  });
+
+  it('浄化は自分のデバフを回復するがバフは残す (cleanse)', () => {
+    const s = startBattle('paladin', 18, 25, '聖', 1, 5, 0);
+    // 手動でデバフ + バフを乗せてから浄化。
+    s.player.statuses = [
+      { id: 'poison', turns: 3, magnitude: 2 },
+      { id: 'atkDown', turns: 3 },
+      { id: 'atkUp', turns: 3 },
+    ];
+    const purifyIdx = s.playerSkills.findIndex((sk) => sk.name === '浄化');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, purifyIdx);
+    const ids = next.player.statuses?.map((st) => st.id) ?? [];
+    expect(ids).not.toContain('poison'); // デバフ除去
+    expect(ids).not.toContain('atkDown');
+    expect(ids).toContain('atkUp'); // バフは残る
+    expect(next.lastEvents.some((e) => e.text.includes('状態異常が回復'))).toBe(true);
+  });
+
+  it('光の剣が holy (無属性) 魔法で def 無視ダメージ', () => {
+    const s = startBattle('paladin', 8, 12, '聖', 2, 3, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '光の剣');
+    const before = s.monster.hp;
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.monster.hp).toBeLessThan(before);
+    expect(next.lastEvents.some((e) => e.text.includes('光の剣'))).toBe(true);
+  });
+});
+
+describe('遊び人 確定キット (#456)', () => {
+  it('レベルでサボる〜曲芸乱舞を習得', () => {
+    expect(skillsForJob('performer', 5).map((s) => s.name)).toContain('サボる');
+    expect(skillsForJob('performer', 15).map((s) => s.name)).toEqual(['サボる', 'いちかばちか', '曲芸乱舞']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('performer', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('サボるは MP を回復する (restoreMp)', () => {
+    const s = startBattle('performer', 5, 8, '遊', 1, 5, 0);
+    s.player.mp = 0; // MP を空に
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'サボる');
+    // MP0 だと skill が attack にフォールバックするので、サボる自体は MP コストを踏むが回復で上回る想定。
+    // ここでは MP を skillMpCost 以上にしてから撃つ。
+    s.player.mp = 6;
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.player.mp).toBeGreaterThan(6 - 4); // 消費4を上回って回復
+    expect(next.lastEvents.some((e) => e.text.includes('MP が'))).toBe(true);
+  });
+
+  it('いちかばちかは反動で自分もダメージを受ける (recoil、HP1未満にはしない)', () => {
+    const s = startBattle('performer', 12, 18, '遊', 1, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'いちかばちか');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.lastEvents.some((e) => e.text.includes('反動'))).toBe(true);
+    expect(next.player.hp).toBeGreaterThanOrEqual(1);
+  });
+
+  it('いちかばちかは agi 基準 (遊び人の最強ステ)。luk 基準の弱火力ではない', () => {
+    // gamble の抽選を最大に固定 (turnSeed) しても、agi 基準なので luk 型より火力が出る想定。
+    // ここでは stat が agi であることを SKILLS 定義で担保 (実火力は sim)。
+    const def = SKILLS['performer-gamble']!;
+    const dmg = def.effects.find((e) => e.kind === 'damage');
+    expect(dmg && dmg.kind === 'damage' ? dmg.stat : undefined).toBe('agi');
+  });
+});
+
 describe('戦士 確定キット (#456)', () => {
   it('レベルでみだれ突き〜全力斬りを習得 (全体技は後続なので Lv3-4 は署名)', () => {
     expect(skillsForJob('warrior', 4)[0]!.kind).not.toMatch(/^warrior-/); // Lv5 未満は署名フォールバック

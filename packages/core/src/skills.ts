@@ -85,6 +85,21 @@ export type SkillEffect =
       ratio: number;
     }
   | {
+      kind: 'cleanse';
+      /** 状態異常回復 (浄化/払串)。self=使用者 / allAllies=味方全体。デバフのみ除去 (バフは残す)。 */
+      target: 'self' | 'allAllies';
+    }
+  | {
+      kind: 'restoreMp';
+      /** maxMp に対する MP 回復割合 (サボる/野営)。使用者に。 */
+      ratio: number;
+    }
+  | {
+      kind: 'recoil';
+      /** maxHp に対する反動ダメージ割合 (いちかばちか/絶唱)。使用者に。HP 1 未満にはしない。 */
+      ratio: number;
+    }
+  | {
       kind: 'status';
       /** 付与する状態異常 */
       status: StatusId;
@@ -209,6 +224,20 @@ const statusHandler: EffectHandler = (effect, ctx) => {
 /** 自己バフとして数える状態 (感情爆発の buffCount)。積み重ねてダメージに変換する。 */
 const BUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>(['atkUp', 'defUp', 'agiUp']);
 
+/** デバフ (浄化 cleanse で除去する状態)。バフ (atk/def/agiUp) は残す。
+ *  **注意**: StatusId に新しいデバフ (confusion/flinch/accDown/doomMark/intDown 等) を足したら、
+ *  ここにも追記すること (型では検出できない。将来 BUFF/DEBUFF を StatusId 側の1テーブルに寄せたい)。 */
+const DEBUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>([
+  'poison',
+  'sleep',
+  'stun',
+  'tumble',
+  'restraint',
+  'atkDown',
+  'defDown',
+  'agiDown',
+]);
+
 /** 使用者の自己バフ数 (scaleBy: 'buffCount' 用)。 */
 function countBuffs(c: Combatant): number {
   return (c.statuses ?? []).filter((s) => BUFF_STATUSES.has(s.id)).length;
@@ -242,12 +271,47 @@ const healHandler: EffectHandler = (effect, ctx) => {
   events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! HP が ${heal} 回復。` });
 };
 
+/** cleanse: 味方対象のデバフを除去 (浄化)。バフは残す。self は使用者、それ以外は解決済みの味方。 */
+const cleanseHandler: EffectHandler = (effect, ctx) => {
+  if (effect.kind !== 'cleanse') return;
+  const { attacker, defender, events } = ctx;
+  const actor = ctx.actorSide ?? 'player';
+  // ソロ runSkill は ctx.defender=敵 固定なので、self は attacker を対象にする (敵を浄化しない)。
+  // マルチ runSkillMulti は allAllies を各味方に解決して defender に載せる。
+  const target = effect.target === 'self' ? attacker : defender;
+  if (!target.statuses || target.statuses.length === 0) return;
+  const had = target.statuses.some((s) => DEBUFF_STATUSES.has(s.id));
+  target.statuses = target.statuses.filter((s) => !DEBUFF_STATUSES.has(s.id));
+  if (had) events.push({ actor, text: `${target.name}の状態異常が回復した!` });
+};
+
+/** restoreMp: 使用者の MP を maxMp の割合ぶん回復 (サボる/野営)。 */
+const restoreMpHandler: EffectHandler = (effect, ctx) => {
+  if (effect.kind !== 'restoreMp') return;
+  const { attacker, events, skillName } = ctx;
+  const gain = Math.round(attacker.maxMp * effect.ratio);
+  attacker.mp = Math.min(attacker.maxMp, attacker.mp + gain);
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! MP が ${gain} 回復。` });
+};
+
+/** recoil: 使用者に反動ダメージ (maxHp 割合)。HP 1 未満にはしない (自滅は sim 調整後に検討)。 */
+const recoilHandler: EffectHandler = (effect, ctx) => {
+  if (effect.kind !== 'recoil') return;
+  const { attacker, events } = ctx;
+  const dmg = Math.round(attacker.maxHp * effect.ratio);
+  attacker.hp = Math.max(1, attacker.hp - dmg);
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は反動で ${dmg} のダメージ!` });
+};
+
 /** 効果種別 → ハンドラ。ここに 1 行足す = 新しい効果プリミティブが使えるようになる。 */
 export const EFFECT_HANDLERS: Record<SkillEffect['kind'], EffectHandler> = {
   damage: damageHandler,
   fixedDamage: fixedDamageHandler,
   heal: healHandler,
   status: statusHandler,
+  cleanse: cleanseHandler,
+  restoreMp: restoreMpHandler,
+  recoil: recoilHandler,
 };
 
 /**
@@ -362,7 +426,59 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   'warrior-charge': { id: 'warrior-charge', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 2 }] }, // ためる Lv15 (次撃強化)
   'warrior-fullslash': { id: 'warrior-fullslash', effects: [{ kind: 'damage', stat: 'atk', power: 2.0 }] }, // 全力斬り Lv18
+
+  // ─── 聖騎士 確定キット (#456 / docs/25 §12。前衛・聖なる支援・holy=無属性) ───
+  // 数値は sim 調整前提の暫定値。裁きの光/女神降臨(全体)・聖光斬(int補正物理)・清き心(P魔法反射) は後続。
+  // 光の加護は §14.7 のフラット加算バフだが、フラット機構は未実装のため暫定で乗算バフ (atk/def/agiUp)。
+  'paladin-heal': { id: 'paladin-heal', effects: [{ kind: 'heal', ratio: 0.3 }] }, // 聖光の癒し Lv3
+  // 光の加護 Lv5: 自分の攻/守/速を強化 (§14.7 フラット化は後続 issue)
+  'paladin-blessing': {
+    id: 'paladin-blessing',
+    effects: [
+      { kind: 'status', status: 'atkUp', target: 'self', turns: 3 },
+      { kind: 'status', status: 'defUp', target: 'self', turns: 3 },
+      { kind: 'status', status: 'agiUp', target: 'self', turns: 3 },
+    ],
+  },
+  // 光の剣 Lv8: 無属性 (holy) 魔法・必中・def無視。§12 の "int差luck" と聖騎士の最強ステ luk34 を活かし
+  // int + luk の両刀に (int 単独だと最強 luk を無視してしまう。レビュー ★★)。範囲は §12 の 15-20 に寄せた。
+  'paladin-lightblade': { id: 'paladin-lightblade', effects: [{ kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.2, luckScale: 0.2 }] },
+  // 聖なる守り Lv15: 自 def を強めに上げる (defUp magnitude 0.6 = 被ダメ ×0.6)
+  'paladin-guard': { id: 'paladin-guard', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3, magnitude: 0.6 }] },
+  // 浄化 Lv18: 自分のデバフを回復 (cleanse)
+  'paladin-purify': { id: 'paladin-purify', effects: [{ kind: 'cleanse', target: 'self' }] },
+
+  // ─── 遊び人 確定キット (#456 / docs/25 §12・§14.1。luk/agi 型・運任せ) ───
+  // 数値は sim 調整前提の暫定値。ぶんどり(gain)/ルーレット・大道芸(random)/せっとく(resolve) は
+  // 要 新語彙のため後続。ここは restoreMp/recoil/連撃で成立する単体サブセット。
+  // サボる Lv5: MP 回復 + 少し HP 回復 (怠けて休む)
+  'performer-slack': {
+    id: 'performer-slack',
+    effects: [
+      { kind: 'restoreMp', ratio: 0.4 },
+      { kind: 'heal', ratio: 0.15 },
+    ],
+  },
+  // いちかばちか Lv12: **agi 基準** (遊び人の最強ステ) の大博打 + 反動。運任せ感は gamble の抽選幅と
+  // luk 依存の下限 (lukFloorScale) で表現する。基準を弱ステ luk にすると看板技が最弱火力になる (レビュー ★★★)。
+  'performer-gamble': {
+    id: 'performer-gamble',
+    effects: [
+      { kind: 'damage', stat: 'agi', gamble: { max: 3.0, lukFloorScale: 0.012, lukFloorCap: 0.6 } },
+      { kind: 'recoil', ratio: 0.15 },
+    ],
+  },
+  // 曲芸乱舞 Lv15: agi 基準 3 連撃
+  'performer-acrobat': { id: 'performer-acrobat', effects: [{ kind: 'damage', stat: 'agi', power: 0.6, hits: 3 }] },
 };
+
+/** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく
+ *  効果ベースで判定するため、キット技 (paladin-heal 等) でも正しく効く。restoreMp+heal の
+ *  サボる等は「純回復でない」= false (満タンでも MP 回復に撃てる)。 */
+export function isPureHealSkill(kind: string): boolean {
+  const def = SKILLS[kind];
+  return !!def && def.effects.length > 0 && def.effects.every((e) => e.kind === 'heal');
+}
 
 /** SkillDef の全効果を順に解決する (ソロ戦闘のエントリポイント。ctx.defender 固定)。 */
 export function runSkill(def: SkillDef, ctx: SkillContext): void {
@@ -379,7 +495,11 @@ export function effectTarget(effect: SkillEffect): SkillTarget {
     case 'fixedDamage':
       return effect.target ?? 'oneEnemy';
     case 'heal':
+    case 'restoreMp':
+    case 'recoil':
       return 'self';
+    case 'cleanse':
+      return effect.target;
     case 'status':
       return effect.target === 'enemy' ? 'oneEnemy' : effect.target;
   }
