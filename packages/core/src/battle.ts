@@ -226,19 +226,19 @@ export function skillForJob(archetype: Archetype): JobSkill {
   return { kind: STAT_TO_SKILL[maxI]!, name: JOB_SKILL_NAMES[archetype] };
 }
 
-// 旧 LEARNED_SKILLS (#436: 弱職に heal 副スキルを配る機構) は #456 で全 heal 職がキット化されたため
-// 撤去した。副スキルは JOB_KITS (確定キット) が担う。非キット職は署名スキルのみ (skillsForJob 参照)。
+// 旧 LEARNED_SKILLS (#436: 弱職に heal 副スキルを配る機構) は #456 で全職キット化されたため撤去した。
+// とくぎは全て JOB_KITS (確定キット) が担う。
 
 /** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
- *  キットを持つジョブは skillsForJob がこれを返す (旧 署名+LEARNED 方式より優先)。未登録のジョブは
- *  従来どおり。**段階投入**: まず単体戦闘で成立するジョブから (全体/召喚技は #453 マルチ戦闘後)。 */
+ *  **全16職が確定キットを持つ** (Record 全キー必須。職を足したらここにも必須)。skillsForJob が返す。
+ *  未習得帯 (最初の learnAt 未満) のみ署名スキルにフォールバックする。 */
 interface KitSkill {
   /** SKILLS のキー */
   id: string;
   name: string;
   learnAt: number;
 }
-const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
+const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   // 魔法使い: 単体・int型・必中・def無視の大砲 (脆い)。パイロット (#456)。魔力障壁 Lv30 (P) は後続。
   mage: [
     { id: 'mage-flame', name: '火炎術式', learnAt: 3 },
@@ -389,21 +389,15 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
   ],
 };
 
-/** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。
- *  - **キット未登録ジョブ**: [0] = 署名スキル (skillForJob と一致 = 後方互換)、以降は習得済み副スキル。
- *  - **確定キット (#456) 持ちジョブ**: learnAt<=level のキット技 (未習得帯のみ署名にフォールバック)。
- *    この場合 [0] は署名と一致しない (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を
- *    前提にするコードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
+/** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。全16職キット化済み (#456)。
+ *  learnAt<=level のキット技を返す。未習得帯 (最初の技より前の Lv) のみ署名スキルにフォールバック。
+ *  **[0] は署名と一致しない** (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を前提にする
+ *  コードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
 export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
-  const kit = JOB_KITS[archetype];
-  if (kit) {
-    const learned = kit.filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
-    // まだ何も習得していない低 Lv 帯は署名スキル (Lv1 の基本技) にフォールバック。
-    return learned.length ? learned : [skillForJob(archetype)];
-  }
-  // キット未登録ジョブ (artist/fighter 等) は署名スキルのみ。旧 LEARNED_SKILLS (弱職に heal
-  // 副スキルを配る機構) は全 heal 職のキット化で不要になり撤去した (#456)。
-  return [skillForJob(archetype)];
+  // 全16職が確定キットを持つ (#456)。learnAt<=level のキット技を返し、未習得帯 (最初の技より前) は
+  // 署名スキル (Lv1 の基本技) にフォールバックする。
+  const learned = JOB_KITS[archetype].filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
+  return learned.length ? learned : [skillForJob(archetype)];
 }
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。

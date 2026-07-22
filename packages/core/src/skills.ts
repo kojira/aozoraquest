@@ -78,7 +78,9 @@ export type SkillEffect =
       element?: Element;
       /** 対象 (マルチ戦闘 #453)。未指定は oneEnemy。allEnemies で全体魔法 (メテオ全体版等)。 */
       target?: SkillTarget;
-      /** データ駆動の計算値参照 (§14.5)。'buffCount' = 使用者の自己バフ数 (感情爆発)。 */
+      /** データ駆動の計算値参照 (§14.5)。'buffCount' = 使用者の自己バフ数 (感情爆発)。
+       *  TODO: damage 側の 'missingHpRatio' と将来の 'weaponPower' を含め、§14.5 の scaleBy を
+       *  共通型に寄せる (現状は effect 種別ごとに使う参照だけを許して二重定義になっている)。 */
       scaleBy?: 'buffCount';
       /** scaleBy の1件あたり倍率: amount ×= 1 + count × scaleFactor。未指定 0.4。 */
       scaleFactor?: number;
