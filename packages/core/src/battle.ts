@@ -33,6 +33,7 @@ import {
   applyOnHit,
   applyOnLethal,
   applyOnIncomingMagic,
+  mpCostFactorOf,
   applyElementBonus,
   applyTargetBonus,
   applyOnDamaged,
@@ -410,8 +411,9 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  フック実装済みの13職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 +
- *  statusDurationBonus 名演 + onIncomingMagic 清き心)。MP割引 (発明家)/非戦闘 (巫女の直感) は後続 (#483)。 */
+ *  実装済みの14職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 +
+ *  statusDurationBonus 名演 + onIncomingMagic 清き心 + mpCostFactor 発明家)。残 巫女の直感 (ドロップ↑=drop
+ *  reward 経路の配線が要る + MP off) は #483。performer(遊び人)は Lv30=せっとくでパッシブ無し。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -426,12 +428,18 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   artist: 'artist-aesthete', // 審美眼: 状態異常の敵に与ダメ↑
   bard: 'bard-encore', // 名演: 自分の歌 (状態) の効果ターン+1
   paladin: 'paladin-purity', // 清き心: 低確率で魔法反射
+  fighter: 'fighter-inventor', // 発明家: とくぎ MP 消費 30% 引き
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
 export function jobPassives(archetype: Archetype, jobLevel: number): string[] {
   const pid = JOB_PASSIVES[archetype];
   return pid && jobLevel >= 30 ? [pid] : [];
+}
+
+/** c のとくぎ MP コスト (発明家/巫女の直感の割引を反映)。最低 1。 */
+export function skillMpCostOf(c: Combatant): number {
+  return Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * mpCostFactorOf(c)));
 }
 
 /** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
@@ -1439,8 +1447,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   // (UI は disabled にする前提。エンジン側の防御的措置で、ターンを無駄にしない)。
   const t = BATTLE_TUNING;
   let cmd: Command = command;
-  if (command === 'skill' && state.player.mp < t.skillMpCost) {
-    events.push({ actor: 'player', text: `MP が足りない! (${state.player.mp}/${t.skillMpCost})` });
+  const skillCost = skillMpCostOf(state.player); // 発明家/巫女の MP 割引を反映
+  if (command === 'skill' && state.player.mp < skillCost) {
+    events.push({ actor: 'player', text: `MP が足りない! (${state.player.mp}/${skillCost})` });
     cmd = 'attack';
   } else if (command === 'herb' && state.herbs <= 0) {
     events.push({ actor: 'player', text: 'やくそうを持っていない!' });
@@ -1450,7 +1459,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     cmd = 'attack';
   }
   if (cmd === 'skill') {
-    state.player.mp -= t.skillMpCost;
+    state.player.mp -= skillCost;
   }
 
   // ── にげる: 成功したら即離脱 (敵は行動しない)。失敗はターンを失い敵の行動を受ける。 ──
@@ -1667,8 +1676,9 @@ export function resolveTurnMulti(
 
   // ── コマンド実効化 (ソロと同じ防御的措置) ──
   let cmd: Command = command;
-  if (command === 'skill' && player.mp < t.skillMpCost) {
-    events.push({ actor: 'player', text: `MP が足りない! (${player.mp}/${t.skillMpCost})` });
+  const skillCost = skillMpCostOf(player); // 発明家/巫女の MP 割引を反映
+  if (command === 'skill' && player.mp < skillCost) {
+    events.push({ actor: 'player', text: `MP が足りない! (${player.mp}/${skillCost})` });
     cmd = 'attack';
   } else if (command === 'herb' && state.herbs <= 0) {
     events.push({ actor: 'player', text: 'やくそうを持っていない!' });
@@ -1677,7 +1687,7 @@ export function resolveTurnMulti(
     events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
     cmd = 'attack';
   }
-  if (cmd === 'skill') player.mp -= t.skillMpCost;
+  if (cmd === 'skill') player.mp -= skillCost;
 
   // 防御宣言 (行動順に依存しない)
   if (cmd === 'guard') {
@@ -1816,14 +1826,14 @@ export function resolveTurnMulti(
  *  MP 不足かつしずく → しずく / MP 足りれば特技 / それ以外 たたかう。
  *  scripts/sim-battle-balance.ts と /spirit 模擬戦シミュレータで共有する。 */
 export function autoBattleCommand(s: BattleState): Command {
-  const t = BATTLE_TUNING;
   const isParry = s.playerSkill.kind === 'parry';
   const p = s.player;
-  if (s.monster.charging) return isParry && p.mp >= t.skillMpCost ? 'skill' : 'guard';
+  const skillCost = skillMpCostOf(p); // 発明家 (匠) の割引を実消費と揃える (sim 判断が過小評価しないよう)
+  if (s.monster.charging) return isParry && p.mp >= skillCost ? 'skill' : 'guard';
   if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return 'herb';
   // 見切り (parry) 職は特技を撃たない → MP 回復しても無駄なので しずくを飲まない。
-  if (!isParry && s.tonics > 0 && p.mp < t.skillMpCost && p.maxMp >= t.skillMpCost * 2) return 'tonic';
-  if (!isParry && p.mp >= t.skillMpCost) return 'skill';
+  if (!isParry && s.tonics > 0 && p.mp < skillCost && p.maxMp >= skillCost * 2) return 'tonic';
+  if (!isParry && p.mp >= skillCost) return 'skill';
   return 'attack';
 }
 

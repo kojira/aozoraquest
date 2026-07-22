@@ -3,7 +3,7 @@
  * 目標帯: 装備なし tier3 = 挑戦的 (概ね 45-65%) / フル装備 = 快適だが自明でない (80-92%)。
  * 実行: pnpm exec tsx scripts/sim-all-jobs.ts
  */
-import { ARCHETYPES, BATTLE_TUNING, EQUIPMENT_BY_ID, canEquip, resolveTurn, startBattle, type Archetype, type Command } from '../packages/core/src/index.js';
+import { ARCHETYPES, BATTLE_TUNING, EQUIPMENT_BY_ID, canEquip, resolveTurn, skillMpCostOf, startBattle, type Archetype, type Command } from '../packages/core/src/index.js';
 
 const play = (job: Archetype, jobLv: number, plLv: number, tier: 1 | 2 | 3, seed: number, equip: string[]): string => {
   let s = startBattle(job, jobLv, plLv, 'x', tier, seed, BATTLE_TUNING.herbCarryMax, undefined, { tonics: BATTLE_TUNING.tonicCarryMax, equipIds: equip });
@@ -12,12 +12,13 @@ const play = (job: Archetype, jobLv: number, plLv: number, tier: 1 | 2 | 3, seed
     const p = s.player;
     // 見切りジョブは能動的に見切る (通常攻撃も反撃で捌く = 最適プレイ)。他は
     // ため予告に防御 / HP 危険で薬草 / MP 足りれば特技。
+    const skillCost = skillMpCostOf(p); // 発明家 (匠) の割引を実消費と揃える
     const cmd: Command =
       s.herbs > 0 && p.hp < p.maxHp * 0.4 ? 'herb'
-      : isParry && p.mp >= BATTLE_TUNING.skillMpCost ? 'skill'
+      : isParry && p.mp >= skillCost ? 'skill'
       : s.monster.charging ? 'guard'
-      : s.tonics > 0 && p.mp < BATTLE_TUNING.skillMpCost && p.maxMp - p.mp >= 6 ? 'tonic'
-      : !isParry && p.mp >= BATTLE_TUNING.skillMpCost ? 'skill'
+      : s.tonics > 0 && p.mp < skillCost && p.maxMp - p.mp >= 6 ? 'tonic'
+      : !isParry && p.mp >= skillCost ? 'skill'
       : 'attack';
     s = resolveTurn(s, cmd);
   }

@@ -12,6 +12,7 @@ import {
   jobDisplayName,
   resolveTurn,
   runAutoBattle,
+  skillMpCostOf,
   startBattle,
   type Archetype,
   type BattleState,
@@ -246,7 +247,7 @@ export function DebugBattleSim() {
                 <button
                   key={i}
                   onClick={() => duelCmd('skill', i)}
-                  disabled={duel.player.mp < BATTLE_TUNING.skillMpCost || (isPureHealSkill(sk.kind) && duel.player.hp >= duel.player.maxHp)}
+                  disabled={duel.player.mp < skillMpCostOf(duel.player) || (isPureHealSkill(sk.kind) && duel.player.hp >= duel.player.maxHp)}
                   style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}
                 >
                   {sk.name}

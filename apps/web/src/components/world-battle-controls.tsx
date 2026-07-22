@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
-import { BATTLE_TUNING, MONSTERS_BY_ID, isPureHealSkill } from '@aozoraquest/core';
+import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 
@@ -51,7 +51,8 @@ export function WorldBattleControls({
   useEffect(() => {
     if (phase !== 'input') { setItemMenu(false); setSkillMenu(false); }
   }, [phase]);
-  const lowMp = state.player.mp < BATTLE_TUNING.skillMpCost;
+  const skillCost = skillMpCostOf(state.player); // 発明家 (匠) の MP 割引を反映
+  const lowMp = state.player.mp < skillCost;
   // デプロイ跨ぎの旧 sealed state は playerSkills が無いことがある → 署名スキル 1 個にフォールバック。
   const skills = state.playerSkills ?? [state.playerSkill];
   const multiSkill = skills.length > 1;
@@ -96,7 +97,7 @@ export function WorldBattleControls({
                   {skills.map((sk, i) => (
                     <DqRow
                       key={i}
-                      label={`${sk.name} (MP${BATTLE_TUNING.skillMpCost})`}
+                      label={`${sk.name} (MP${skillCost})`}
                       onClick={() => { setSkillMenu(false); onCommand('skill', i); }}
                       // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)
                       disabled={busy || lowMp || (isPureHealSkill(sk.kind) && state.player.hp >= state.player.maxHp)}
