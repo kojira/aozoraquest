@@ -32,6 +32,7 @@ import {
   applyIncomingCalc,
   applyOnHit,
   applyOnLethal,
+  applyOnIncomingMagic,
   applyElementBonus,
   applyTargetBonus,
   applyOnDamaged,
@@ -409,8 +410,8 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  フック実装済みの12職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 +
- *  statusDurationBonus 名演)。onIncomingMagic (清き心・敵魔法が無いと inert)/MP割引 (発明家)/非戦闘 (巫女) は後続 (#483)。 */
+ *  フック実装済みの13職 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 +
+ *  statusDurationBonus 名演 + onIncomingMagic 清き心)。MP割引 (発明家)/非戦闘 (巫女の直感) は後続 (#483)。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -424,6 +425,7 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   sage: 'sage-insight', // 慧眼: 弱点属性で追加ダメ
   artist: 'artist-aesthete', // 審美眼: 状態異常の敵に与ダメ↑
   bard: 'bard-encore', // 名演: 自分の歌 (状態) の効果ターン+1
+  paladin: 'paladin-purity', // 清き心: 低確率で魔法反射
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
@@ -1252,6 +1254,12 @@ function doMagic(
   dmg *= applyIncomingCalc(1, defender, defCtx); // defUp/defDown/転倒
   // メタル系の魔法無効 (#455 / DQ 準拠): def 無視の魔法でも最小 1 に抑える (会心物理でしか倒せない)。
   const final = defender.resistAllMagic ? 1 : Math.max(1, Math.round(dmg));
+  // 清き心 (聖騎士): 低確率で魔法反射 (被弾側フック)。reflect なら被弾 0・術者へ跳ね返し済み (ハンドラ内)。
+  // 被弾 0 なので clearHitStatuses (かくれみ/眠り解除) も弱点告知も出さないのが正 (被弾していない扱い)。
+  // 将来の見切り (魔法ミス化=回避) も同じ「被弾 0」結果なので、必要なら返り値に nullify を足して分岐する。
+  if (!defender.resistAllMagic && applyOnIncomingMagic(defender, attacker, final, defCtx)) {
+    return { hit: true, damage: 0, fatal: false, crit: false };
+  }
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
   if (!fatal) clearHitStatuses(defender); // 被弾で解ける状態 (かくれみ/眠り)
@@ -1552,7 +1560,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         events.push({ actor: 'monster', text: `${state.monster.name}は にげだした!` });
       } else if (mCommand === 'cast') {
         // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
-        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。清き心 (魔法反射) は後続 #483 でこの経路に乗る。
+        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。
         const spell = MONSTERS_BY_ID[state.monsterId]?.spell;
         if (spell) {
           state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterCastMpCost);
