@@ -549,7 +549,7 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'status', status: 'agiUp', target: 'allAllies', turns: 3 },
     ],
   },
-  // 捨て身攻撃 Lv18: 敵全体 atk×1.6・自 def↓ (リスク)
+  // 捨て身攻撃 Lv18: 敵全体 atk×1.6・自 def↓ (リスク)。§12 の「会心↑」は critUp 語彙が未整備で後続。
   'captain-desperate': {
     id: 'captain-desperate',
     effects: [
@@ -557,11 +557,11 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'status', status: 'defDown', target: 'self', turns: 1 },
     ],
   },
-  // 攻陣 Lv25: 敵全体 atk↓ + agi↓
+  // 攻陣 Lv25: 敵を囲い 味方 atk↑ + 敵 agi↓ (§12 確定版: 鼓舞と包囲のハイブリッド陣形)
   'captain-encircle': {
     id: 'captain-encircle',
     effects: [
-      { kind: 'status', status: 'atkDown', target: 'allEnemies', turns: 3 },
+      { kind: 'status', status: 'atkUp', target: 'allAllies', turns: 3 },
       { kind: 'status', status: 'agiDown', target: 'allEnemies', turns: 3 },
     ],
   },

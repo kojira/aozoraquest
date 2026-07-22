@@ -168,14 +168,13 @@ describe('隊長 確定キット (#456。全体バフはソロで自己/敵に�
     expect(next.monster.statuses?.some((st) => st.id === 'atkUp')).toBe(false); // 敵には付かない
   });
 
-  it('攻陣 (atkDown allEnemies) はソロで敵に atk/agi デバフを付与', () => {
+  it('攻陣 (§12: 味方atk↑+敵agi↓) はソロで自分に atkUp・敵に agiDown を付与', () => {
     const s = startBattle('captain', 25, 28, '隊', 3, 5, 0);
     const idx = s.playerSkills.findIndex((sk) => sk.name === '攻陣');
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
-    const ids = new Set(next.monster.statuses?.map((st) => st.id));
-    expect(ids.has('atkDown')).toBe(true);
-    expect(ids.has('agiDown')).toBe(true);
-    expect(next.player.statuses?.some((st) => st.id === 'atkDown')).toBe(false); // 自分には付かない
+    expect(next.player.statuses?.some((st) => st.id === 'atkUp')).toBe(true); // 味方 (自分) に atk↑
+    expect(next.monster.statuses?.some((st) => st.id === 'agiDown')).toBe(true); // 敵に agi↓
+    expect(next.monster.statuses?.some((st) => st.id === 'atkUp')).toBe(false); // 敵にはバフが付かない
   });
 });
 
