@@ -415,8 +415,10 @@ export interface Combatant {
   /** ジョブ innate パッシブ id (#452 / docs/25 §4)。省略可。 */
   passives?: string[];
   /** 防御属性 (#452 / docs/25 §1)。被弾時の属性相性に使う。未設定 (無属性) は等倍。
-   *  モンスターへの付与は #455、プレイヤー装備由来は後続で配線 (現状は全員 undefined = 等倍)。 */
+   *  モンスターへの付与は #455 (monsterCombatant で def.element から)、プレイヤー装備由来は後続。 */
   element?: Element;
+  /** すべての魔法を無効化 (メタル系。#455)。true だと fixedDamage/doMagic が最小 1。 */
+  resistAllMagic?: boolean;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -659,6 +661,12 @@ export interface MonsterDef {
   ability?: 'charger' | 'healer' | 'fleer';
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
+  /** 防御属性 (#455 / docs/25 §1)。被弾時の属性相性に使う。未指定 = 無属性 (常に等倍)。
+   *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
+  element?: Element;
+  /** すべての魔法を無効化 (メタル系。DQ 準拠)。true だと fixedDamage/doMagic が最小 1 になる。
+   *  物理は既に超高 def で 1 に沈むが、魔法は def 無視のため別途この旗で止める。 */
+  resistAllMagic?: boolean;
 }
 
 /** 素材カタログ (Step2 の装備素材)。 */
@@ -687,13 +695,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   // baselineXp (基準 HP + atk/agi) で自動算出 = 敵の強さと XP が構造的に連動する (スライム 2・
   // ヒカリダケ 8 程度)。個別に効かせたい敵だけ xp を明示する。
   // そらいろスライム: 最弱の練習敵 (低 HP・低 XP・低ドロップ)。序盤の的。
-  { id: 'sky-slime', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], hp: 5, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
+  { id: 'sky-slime', element: 'water', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], hp: 5, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
   // 色違い強い版 (tint で塗り替え)。base より少し硬く XP/素材も上。専用素材 red-jelly。
-  { id: 'red-slime', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], hp: 8, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
-  { id: 'cave-bat', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'dusk-bat', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 10, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
-  { id: 'glow-shroom', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
-  { id: 'crimson-shroom', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
+  { id: 'red-slime', element: 'fire', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], hp: 8, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
+  { id: 'cave-bat', element: 'wind', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'dusk-bat', element: 'wind', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 10, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
+  { id: 'glow-shroom', element: 'earth', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'crimson-shroom', element: 'earth', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型 (DQ のメタルスライム): レア出現・高 XP (100)・毎ターン逃走。
   //   - **超高守備 (def240)**: 減算式で通常攻撃は atkTerm−defTerm が深く負に沈み minDamage(1) しか
   //     通らない = 「当たってもダメージがほとんど通らない」(オーナー要望 2026-07-21)。魔撃 (spell,
@@ -702,15 +710,15 @@ export const MONSTERS: readonly MonsterDef[] = [
   //   - **低 HP (6→tier係数で実質4)**: 仕留める道は**会心の一撃のみ** (プレイヤーの会心は def 無視
   //     #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。専用ロジックは使わず
   //     守備/agi/HP の数値だけで「メタル」を表現 (オーナー: 専用ロジック禁止 2026-07-20)。
-  { id: 'stray-slime', name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 240, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  { id: 'stray-slime', resistAllMagic: true, name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 240, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
-  { id: 'moss-golem', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
-  { id: 'will-o-wisp', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
-  { id: 'river-serpent', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [42, 18, 22, 10, 10], hp: 22, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
+  { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
+  { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
+  { id: 'river-serpent', element: 'water', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [42, 18, 22, 10, 10], hp: 22, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負。xp 62〜96
-  { id: 'night-raven', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
-  { id: 'blue-oni', name: 'あおおに', species: 'oni', tier: 3, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
-  { id: 'sky-dragon', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
+  { id: 'night-raven', element: 'wind', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', skillName: 'かまいたち' },
+  { id: 'blue-oni', element: 'earth', name: 'あおおに', species: 'oni', tier: 3, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
+  { id: 'sky-dragon', element: 'wind', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
 ];
 
 export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
@@ -839,6 +847,9 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
     c.maxHp = Math.max(1, Math.round(c.maxHp * jitter())); c.hp = c.maxHp;
     c.maxMp = Math.max(0, Math.round(c.maxMp * jitter())); c.mp = c.maxMp;
   }
+  // 属性・魔法耐性 (#455)。属性相性はキャスターの弱点突き、resistAllMagic はメタルの魔法無効。
+  if (def.element !== undefined) c.element = def.element;
+  if (def.resistAllMagic) c.resistAllMagic = true;
   return c;
 }
 
@@ -1111,9 +1122,11 @@ function doMagic(
   const defenderSide: 'player' | 'monster' = actor === 'player' ? 'monster' : 'player';
   const defCtx: HookCtx = { rng, events, actor: defenderSide };
   let dmg = opts.amount;
-  dmg *= elementMultiplier(opts.element, defender.element); // 属性相性 (無属性は ×1)
+  const eMult = elementMultiplier(opts.element, defender.element); // 属性相性 (無属性は ×1)
+  dmg *= eMult;
   dmg *= applyIncomingCalc(1, defender, defCtx); // defUp/defDown/転倒
-  const final = Math.max(1, Math.round(dmg));
+  // メタル系の魔法無効 (#455 / DQ 準拠): def 無視の魔法でも最小 1 に抑える (会心物理でしか倒せない)。
+  const final = defender.resistAllMagic ? 1 : Math.max(1, Math.round(dmg));
   defender.hp = Math.max(0, defender.hp - final);
   const fatal = defender.hp === 0;
   if (!fatal) clearHitStatuses(defender); // 被弾で解ける状態 (かくれみ/眠り)
@@ -1128,6 +1141,12 @@ function doMagic(
     damage: final,
     ...(fatal ? { fatal: true } : {}),
   });
+  // 属性相性のフィードバック (DQ 流)。弱点=1.5 / 耐性=0.5 のみ告知 (空の 1.2 は普遍なので出さない)。
+  // 撃破時も出す (弱点を突いて倒した実感)。メタルの魔法無効時は出さず「効かない」を数値 1 で伝える。
+  if (!defender.resistAllMagic) {
+    if (eMult >= 1.5) events.push({ actor, text: `${defender.name}の弱点を突いた!` });
+    else if (eMult <= 0.5) events.push({ actor, text: `${defender.name}には 効果がいまひとつのようだ…` });
+  }
   return { hit: true, damage: final, fatal, crit: false };
 }
 
