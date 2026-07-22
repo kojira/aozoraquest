@@ -267,7 +267,7 @@ export function DebugBattleSim() {
             const multi = (duel.enemies?.length ?? 1) > 1;
             const targeted = multi && !dead && liveTarget(duel) === i;
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4em', opacity: dead ? 0.4 : 1 }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4em', opacity: dead ? 0.4 : 1, background: targeted ? 'rgba(211,51,51,0.12)' : undefined, borderRadius: 3 }}>
                 {multi && !dead && (
                   <button
                     onClick={() => setTargetIndex(i)}
