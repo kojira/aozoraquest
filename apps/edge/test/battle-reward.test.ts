@@ -53,6 +53,14 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     expect(awarded.xp!).toBeGreaterThan(solo.awarded.xp!); // 3体 > 1体
   });
 
+  it('群れ勝ち: 異なる id の敵は各 id の XP を正しく合算 (id 取り違えなし)', () => {
+    const withDrops = MONSTERS.filter((m) => m.tier === 1 && m.drops.length > 0);
+    const [a, b] = [withDrops[0]!, withDrops[1]!];
+    const s = base({ playerXp: 0, jobXp: {} });
+    const { next } = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [a.id, b.id] }));
+    expect(next.playerXp).toBe(battleXpFor(a.id) + battleXpFor(b.id)); // A+B の XP (取り違えなら 2*A 等になる)
+  });
+
   it('群れ報酬の後方互換: enemyIds 省略 = enemyIds:[monsterId] = 従来の単体計算', () => {
     const s = base();
     const omitted = applyBattleOutcome(s, input({ outcome: 'win' }));

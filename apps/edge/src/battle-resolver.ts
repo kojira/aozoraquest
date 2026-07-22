@@ -386,7 +386,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   const skills = guard.state.playerSkills ?? [guard.state.playerSkill];
   const idx = Number.isInteger(skillIndex) && skillIndex >= 0 && skillIndex < skills.length ? skillIndex : 0;
   // 群れ (#453): enemies が 2 体以上なら resolveTurnMulti で解決 + targetIndex を検証。1 体 (従来) は
-  // resolveTurn (1v1・挙動不変)。client が偽った targetIndex は生存敵の範囲に clamp (詐称防止)。
+  // resolveTurn (1v1・挙動不変)。client が偽った targetIndex は敵配列の範囲に clamp、範囲外/非整数は
+  // 主敵 [0] に落とす (詐称防止の fail-safe。死体を指定しても core の resolveTargets が空振りにする)。
   const enemies = guard.state.enemies;
   const isMulti = (enemies?.length ?? 0) > 1;
   const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < enemies!.length ? targetIndex : 0;
@@ -423,8 +424,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
-        // 群れ (#453): 倒した全敵ぶんの報酬。1 体戦は enemies 未設定なので従来どおり monsterId 単体。
-        ...(isMulti ? { enemyIds: next.enemies!.map((e) => e.monsterId ?? next.monsterId) } : {}),
+        // 群れ (#453): **倒した敵 (hp<=0) ぶんだけ**報酬。maxTurns 勝ち (HP 比で win・敵が生存) のとき
+        // 生存敵に報酬を出さない (レビュー ★★)。全滅勝ちなら全敵が hp<=0 で全頭ぶん。1 体戦は monsterId 単体。
+        ...(isMulti ? { enemyIds: next.enemies!.filter((e) => e.hp <= 0).map((e) => e.monsterId ?? next.monsterId) } : {}),
       });
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
