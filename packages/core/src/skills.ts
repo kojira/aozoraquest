@@ -508,6 +508,20 @@ export const SKILLS: Record<string, SkillDef> = {
   // 破滅の予言 Lv12: doomMark を付与 (数ターン後に大ダメージ炸裂)。炸裂は int 連動 (基礎15 + int×0.3)。
   'seer-doom': { id: 'seer-doom', effects: [{ kind: 'status', status: 'doomMark', target: 'enemy', turns: 3, magnitude: 15, magIntBonus: 0.3 }] },
   'seer-king': { id: 'seer-king', effects: [{ kind: 'fixedDamage', min: 28, max: 42, intBonus: 0.4 }] }, // 蠱毒の王 Lv20 (必中大砲)
+
+  // ─── 将軍 確定キット (#456 / docs/25 §12。最強 atk39・最脆 def10・物理一本・対キャスター) ───
+  // 数値は sim 調整前提の暫定値。なぎ倒し/勝鬨(全体)・覇王(P onLethal)・見切り/鬼神斬りの魔法かき消し
+  // (magicEvade/onEnemyCast) は後続。int28 の魔法耐性活用も敵魔法詠唱 (#455後続) 待ち。
+  'shogun-flash': { id: 'shogun-flash', effects: [{ kind: 'damage', stat: 'atk', power: 1.5 }] }, // 一閃 Lv3
+  // 足払い Lv8: atk 1.2 + 高確率で転倒 (次行動不可 + 被ダメ↑)
+  'shogun-sweep': {
+    id: 'shogun-sweep',
+    effects: [{ kind: 'damage', stat: 'atk', power: 1.2, inflict: { status: 'tumble', chance: 0.7, turns: 1 } }],
+  },
+  // 見切り Lv15: 回避を大きく上げる構え (magnitude 2.5)。将軍は素の agi13 が低く乗算バフが効きにくい
+  // ため強めに。§12 の「次の敵魔法100%回避」は magicEvade (敵魔法詠唱 #455後続) が入るまで後続。
+  'shogun-guard': { id: 'shogun-guard', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3, magnitude: 2.5 }] },
+  'shogun-oni': { id: 'shogun-oni', effects: [{ kind: 'damage', stat: 'atk', power: 2.5 }] }, // 鬼神斬り Lv20 (かき消しは後続)
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく

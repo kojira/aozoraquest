@@ -295,6 +295,13 @@ const JOB_KITS: Partial<Record<Archetype, readonly KitSkill[]>> = {
     { id: 'paladin-guard', name: '聖なる守り', learnAt: 15 },
     { id: 'paladin-purify', name: '浄化', learnAt: 18 },
   ],
+  // 将軍: 最強 atk・最脆 def・物理一本・対キャスター。全体技/覇王(P)/魔法かき消し・見切りの魔法回避は後続。
+  shogun: [
+    { id: 'shogun-flash', name: '一閃', learnAt: 3 },
+    { id: 'shogun-sweep', name: '足払い', learnAt: 8 },
+    { id: 'shogun-guard', name: '見切り', learnAt: 15 },
+    { id: 'shogun-oni', name: '鬼神斬り', learnAt: 20 },
+  ],
   // 遊び人: luk/agi 型・運任せ。ぶんどり(gain)/ルーレット・大道芸(random)/せっとく(resolve) は後続。
   performer: [
     { id: 'performer-slack', name: 'サボる', learnAt: 5 },
