@@ -11,6 +11,7 @@ import {
   isPureHealSkill,
   jobDisplayName,
   resolveTurn,
+  resolveTurnMulti,
   runAutoBattle,
   skillMpCostOf,
   startBattle,
@@ -77,6 +78,9 @@ export function DebugBattleSim() {
   const [trials, setTrials] = useState(300);
   const [batch, setBatch] = useState<BatchResult | null>(null);
   const [duel, setDuel] = useState<BattleState | null>(null);
+  // #453 マルチ戦: 追加の敵数 (0=ソロ, 1〜2 で計 2〜3 体) と単体技のターゲット (敵 index)。
+  const [extraEnemies, setExtraEnemies] = useState(0);
+  const [targetIndex, setTargetIndex] = useState(0);
 
   const enemy = MONSTERS_BY_ID[enemyId]!;
   const gear = useMemo<GearSelection>(
@@ -86,7 +90,8 @@ export function DebugBattleSim() {
 
   /** 1 戦を開始 (variance を指定)。tier は敵に付随 (monsterId 固定なので抽選はされない)。
    *  入力は clampInt で NaN/範囲外を潰してから渡す。 */
-  const start = (seed: number, variance: number): BattleState =>
+  // extra = 追加の敵数。バッチ (runAutoBattle) は 1v1 専用なので 0 固定で呼ぶ (群れ統計は未対応)。
+  const start = (seed: number, variance: number, extra = clampInt(extraEnemies, 0, 0, 2)): BattleState =>
     startBattle(
       job,
       clampInt(jobLv, 1, 1, 50),
@@ -96,7 +101,7 @@ export function DebugBattleSim() {
       seed,
       clampInt(herbs, 0, 0, WORLD_HERB_MAX),
       undefined,
-      { monsterId: enemyId, gear, tonics: clampInt(tonics, 0, 0, WORLD_TONIC_MAX), vitalsVariance: variance },
+      { monsterId: enemyId, gear, tonics: clampInt(tonics, 0, 0, WORLD_TONIC_MAX), vitalsVariance: variance, extraEnemies: extra },
     );
 
   const runBatch = () => {
@@ -107,7 +112,7 @@ export function DebugBattleSim() {
     let turnSum = 0;
     let hpPctSum = 0;
     for (let seed = 0; seed < n; seed++) {
-      const end = runAutoBattle(start(seed, BATTLE_TUNING.monsterVitalsVariance)); // world と同じ分散
+      const end = runAutoBattle(start(seed, BATTLE_TUNING.monsterVitalsVariance, 0)); // 1v1 統計 (群れは未対応)
       turnSum += end.turn;
       if (end.outcome === 'win') {
         wins++;
@@ -138,14 +143,26 @@ export function DebugBattleSim() {
   const freshSeed = () => Date.now();
   const startDuel = () => {
     setBatch(null);
+    setTargetIndex(0);
     // 初期 seed は固定でよい: monsterId 固定 + variance 0 なので敵ステータスは seed 非依存で一定
     // (summonMonster を通らず monsterCombatant の jitter も効かない)。戦闘中の乱数だけ下で新鮮に。
     setDuel(start(1, 0));
   };
+  // #453: 群れ (enemies が複数) なら resolveTurnMulti + targetIndex、それ以外は 1v1 resolveTurn。
+  const isMultiDuel = (s: BattleState) => (s.enemies?.length ?? 0) > 1;
+  // 狙う敵が倒れていたら生存する先頭に寄せる (単体技の空振りを避ける)。
+  const liveTarget = (s: BattleState) => {
+    const es = s.enemies ?? [s.monster];
+    if ((es[targetIndex]?.hp ?? 0) > 0) return targetIndex;
+    const i = es.findIndex((e) => e.hp > 0);
+    return i >= 0 ? i : 0;
+  };
+  const step = (s: BattleState, cmd: Command, skillIndex: number): BattleState =>
+    isMultiDuel(s) ? resolveTurnMulti(s, cmd, freshSeed(), skillIndex, liveTarget(s)) : resolveTurn(s, cmd, freshSeed(), skillIndex);
   const duelCmd = (cmd: Command, skillIndex = 0) =>
-    setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, cmd, freshSeed(), skillIndex) : s));
+    setDuel((s) => (s && s.outcome === 'ongoing' ? step(s, cmd, skillIndex) : s));
   const duelAuto = () =>
-    setDuel((s) => (s && s.outcome === 'ongoing' ? resolveTurn(s, autoBattleCommand(s), freshSeed()) : s));
+    setDuel((s) => (s && s.outcome === 'ongoing' ? step(s, autoBattleCommand(s), 0) : s));
 
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
@@ -203,6 +220,13 @@ export function DebugBattleSim() {
             <input type="number" min={0} max={WORLD_TONIC_MAX} value={tonics} onChange={(e) => setTonics(Number(e.target.value))} style={{ width: '3em' }} />
           </span>
         </label>
+        <label>追加の敵 (#453 群れ・1戦のみ)
+          <select value={extraEnemies} onChange={(e) => setExtraEnemies(Number(e.target.value))} style={{ width: '100%' }}>
+            <option value={0}>0 (ソロ 1 体)</option>
+            <option value={1}>+1 (計 2 体)</option>
+            <option value={2}>+2 (計 3 体)</option>
+          </select>
+        </label>
       </div>
 
       <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', marginTop: '0.6em', flexWrap: 'wrap' }}>
@@ -231,9 +255,35 @@ export function DebugBattleSim() {
       {/* 1 戦プレイ (本番同様の per-turn 乱数) */}
       {duel && (
         <div className="dq-window" style={{ marginTop: '0.6em', fontSize: '0.82em', padding: '0.6em 0.8em' }}>
-          <div style={{ fontWeight: 700 }}>{`${jobDisplayName(job)} vs ${duel.monster.name}`}</div>
+          <div style={{ fontWeight: 700 }}>
+            {`${jobDisplayName(job)} vs `}
+            {(duel.enemies ?? [duel.monster]).map((e) => e.name).join('・')}
+            {(duel.enemies?.length ?? 1) > 1 ? ` (${duel.enemies!.length}体)` : ''}
+          </div>
           <div>じぶん HP {duel.player.hp}/{duel.player.maxHp} · MP {duel.player.mp}/{duel.player.maxMp} · やくそう{duel.herbs} しずく{duel.tonics}</div>
-          <div>てき HP {duel.monster.hp}/{duel.monster.maxHp}{duel.monster.charging ? ' · ⚡ため中' : ''}</div>
+          {/* 敵は複数対応: 各敵の HP + ⚡ため中。群れでは単体技の「狙う」対象を選ぶ (生存敵のみ)。 */}
+          {(duel.enemies ?? [duel.monster]).map((e, i) => {
+            const dead = e.hp <= 0;
+            const multi = (duel.enemies?.length ?? 1) > 1;
+            const targeted = multi && !dead && liveTarget(duel) === i;
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4em', opacity: dead ? 0.4 : 1, background: targeted ? 'rgba(211,51,51,0.12)' : undefined, borderRadius: 3 }}>
+                {multi && !dead && (
+                  <button
+                    onClick={() => setTargetIndex(i)}
+                    title="この敵を単体技/たたかうの対象にする"
+                    style={{ fontSize: '0.75em', padding: '0 0.4em', border: targeted ? '2px solid var(--color-accent, #d33)' : '1px solid #999', borderRadius: 3 }}
+                  >
+                    {targeted ? '◉狙う' : '狙う'}
+                  </button>
+                )}
+                <span>
+                  てき{multi ? i + 1 : ''} {e.name} HP {Math.max(0, e.hp)}/{e.maxHp}
+                  {e.charging ? ' · ⚡ため中' : ''}{dead ? ' · ✕' : ''}
+                </span>
+              </div>
+            );
+          })}
           <div style={{ margin: '0.3em 0', minHeight: '2.4em', color: 'var(--color-muted)' }}>
             {duel.lastEvents.map((ev, i) => (<div key={i}>{ev.text}</div>))}
           </div>
