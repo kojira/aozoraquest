@@ -31,6 +31,7 @@ import {
   applyCritCalc,
   applyIncomingCalc,
   applyOnHit,
+  applyOnLethal,
   applyOnDamaged,
   applyModifyHit,
   tickStatuses,
@@ -401,7 +402,8 @@ export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[]
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。
- *  フック実装済みの7職のみ (onLethal/onIncomingMagic/属性シナジー/非戦闘 待ちの9職は後続)。 */
+ *  フック実装済みの9職 (基本7職 + onLethal で覇王/不動)。onIncomingMagic/属性シナジー/対象状態参照/
+ *  MP割引/非戦闘 待ちの残職は後続 (#483)。 */
 const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   warrior: 'warrior-blademaster', // 剣豪: 会心率↑
   mage: 'mage-barrier', // 魔力障壁: 常時被ダメ軽減
@@ -410,6 +412,8 @@ const JOB_PASSIVES: Partial<Record<Archetype, string>> = {
   seer: 'seer-omniscience', // 全知: 常時回避↑
   explorer: 'explorer-instinct', // 旅の勘: 回避↑
   poet: 'poet-muse', // 詩心: 自己バフ中 与ダメ↑
+  shogun: 'shogun-overlord', // 覇王: 物理致死をHP1で耐え+反射
+  guardian: 'guardian-immovable', // 不動: 物理致死を50%で耐える
 };
 
 /** その jobLevel 時点で有効なパッシブ id 列。Lv30 到達で innate パッシブが1つ有効になる。 */
@@ -504,6 +508,9 @@ export interface Combatant {
   element?: Element;
   /** すべての魔法を無効化 (メタル系。#455)。true だと fixedDamage/doMagic が最小 1。 */
   resistAllMagic?: boolean;
+  /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
+   *  playerCombatant で毎戦闘 undefined から始まり、初回発動でハンドラが true にする。 */
+  lethalGuardUsed?: boolean;
 }
 
 function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
@@ -1161,7 +1168,13 @@ function doAttack(
   // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
   // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
   const final = Math.max(1, Math.round(dmg));
-  defender.hp = Math.max(0, defender.hp - final);
+  // 物理致死の直前に onLethal フック (覇王/不動) を確認。survive なら HP1 で耐える (反射等は
+  // ハンドラ内で処理済み)。魔法致死は doMagic を通るためここには来ず、耐えられず死ぬ (§12)。
+  if (defender.hp - final <= 0 && applyOnLethal(defender, attacker, final, defCtx)) {
+    defender.hp = 1;
+  } else {
+    defender.hp = Math.max(0, defender.hp - final);
+  }
   const fatal = defender.hp === 0;
   // 被弾で解ける状態 (かくれみ解除・眠り起床)。none なら no-op。
   if (!fatal) clearHitStatuses(defender);

@@ -79,6 +79,9 @@ export interface CombatHook {
   incomingCalc?(power: number, c: Combatant, ctx: HookCtx): number;
   /** 物理被弾後 (c=被弾側)。とげの盾: 攻撃者 atk へ反射。damage=食らった最終ダメージ。 */
   onDamaged?(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): void;
+  /** 物理致死の直前 (c=倒れかけている側)。survive=true で HP1 生存 (覇王/不動)。魔法致死には効かない
+   *  (doAttack の物理経路からのみ呼ばれる)。反射など攻撃者への副作用はハンドラ内で atk を直接操作。 */
+  onLethal?(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): { survive?: boolean } | void;
   /** ターン終了。毒ダメージ等。 */
   turnEnd?(c: Combatant, ctx: HookCtx): void;
 }
@@ -233,9 +236,9 @@ function boostDodge(dodge: number, bonus: number): number {
 
 /**
  * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
- * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの7職を
- * ここで登録。onLethal (覇王/不動)・onIncomingMagic (清き心)・属性シナジー (慧眼)・対象状態参照
- * (審美眼)・MP消費割引 (発明家)・非戦闘 (巫女の直感/名演) は追加フック待ちで #456 の後続に残す。
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの9職を
+ * ここで登録 (基本7職 + onLethal 追加で覇王/不動)。onIncomingMagic (清き心)・属性シナジー (慧眼)・
+ * 対象状態参照 (審美眼)・MP消費割引 (発明家)・非戦闘 (巫女の直感/名演) は追加フック待ちで後続 (#483)。
  */
 export const PASSIVES: Record<string, PassiveDef> = {
   // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
@@ -290,6 +293,32 @@ export const PASSIVES: Record<string, PassiveDef> = {
     id: 'poet-muse',
     name: '詩心',
     powerCalc: (power, c) => (hasSelfBuff(c) ? power * 1.25 : power),
+  },
+  // 将軍 覇王: 物理致死をHP1で耐え、受けた分を攻撃者へ反射 (§12 Lv30)。**1 戦闘 1 回だけ**の切り札
+  // (オーナー判断 2026-07-22: 毎回発動だと敵が物理のみの現状で対モンスター完全不死になるため)。魔法致死は
+  // doAttack を通らず耐えられない (int28 の魔法耐性で対キャスターを補う設計)。2 回目以降の物理致死は普通に死ぬ。
+  'shogun-overlord': {
+    id: 'shogun-overlord',
+    name: '覇王',
+    onLethal(self, atk, damage, ctx) {
+      if (self.lethalGuardUsed) return; // 発動済み: 2 回目の物理致死は耐えられない
+      self.lethalGuardUsed = true;
+      atk.hp = Math.max(0, atk.hp - damage); // 同ダメージ反射
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 覇王の意地で耐えた! ${atk.name}に ${damage} 反射!`, damage });
+      return { survive: true };
+    },
+  },
+  // 守護者 不動: 物理致死を **1 戦闘 1 回だけ確定で** HP1 耐える (§12 Lv30。オーナー判断 2026-07-22: 壁役の
+  // capstone に 50% 運要素は噛み合わないため確定 1 回に。once-per-battle で対モンスター完全不死も防ぐ)。反射なし。
+  'guardian-immovable': {
+    id: 'guardian-immovable',
+    name: '不動',
+    onLethal(self, _atk, _damage, ctx) {
+      if (self.lethalGuardUsed) return; // 発動済み: 2 回目の物理致死は耐えられない
+      self.lethalGuardUsed = true;
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 不動の構えで持ちこたえた!` });
+      return { survive: true };
+    },
   },
 };
 
@@ -388,6 +417,17 @@ export function applyIncomingCalc(base: number, c: Combatant, ctx: HookCtx): num
 /** 物理被弾後: 被弾側のフック (とげの盾) を回す (攻撃者へ反射など)。 */
 export function applyOnDamaged(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): void {
   for (const { def, inst } of hooksOf(c)) def.onDamaged?.(c, atk, damage, ctxFor(ctx, inst));
+}
+
+/** 物理致死の直前: 被弾側のフック (覇王/不動) を回し、いずれかが survive を返したら true (HP1 生存)。
+ *  反射等の攻撃者への副作用はハンドラ内で atk を操作する (ここでは生存可否だけ集約)。複数の onLethal
+ *  が共存する場合は全ハンドラが走る (副作用も全部発火) — 現状 1 職 1 パッシブなので単一発火。 */
+export function applyOnLethal(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): boolean {
+  let survive = false;
+  for (const { def, inst } of hooksOf(c)) {
+    if (def.onLethal?.(c, atk, damage, ctxFor(ctx, inst))?.survive) survive = true;
+  }
+  return survive;
 }
 
 /** 命中時: いずれかのパッシブ/状態が即死を返したら true。 */

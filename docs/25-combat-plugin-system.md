@@ -294,7 +294,12 @@ export const MONSTER_ABILITIES: Record<string, AbilityDef> = {
 - `onDamaged(self, attacker, damage, ctx)` — 物理被弾後のリアクティブ反応 (とげの盾=攻撃者へ反射)。実装済み
   (#456)。**damage 引数 = 食らった最終ダメージ**で反射割合の計算に使う。**フルカウンター (累積被ダメ返し) は
   別途 `Combatant.damageTaken` の積算が要る** (このフック単体では書けない = 後続バッチ)。
-- `onLethal(self, incoming, ctx) → { survive? }` — 致死を耐える (不動)
+- `onLethal(self, atk, damage, ctx) → { survive? }` — 物理致死を耐える。実装済み (#456)。onDamaged と同じ
+  `(self, attacker, damage, ctx)` 並びで、反射など攻撃者への副作用はハンドラ内で `atk` を直接操作する。
+  **物理経路 (doAttack) のみで発火**し魔法致死 (doMagic) には効かない = 「物理耐性・魔法貫通」を経路分離で
+  分岐なしに表現。**1 戦闘 1 回のみ**発動する切り札 (`Combatant.lethalGuardUsed` フラグ。オーナー判断
+  2026-07-22: 敵が物理のみの現状で毎回発動だと対モンスター完全不死になるため)。覇王=1回耐えて同ダメ反射、
+  不動=1回確定で耐える (旧 50% 運要素は壁役の capstone に合わないため確定 1 回に変更)。
 
 **Combatant フィールド:** `statuses: StatusInstance[]` / `passives: string[]` / `damageTaken: number`(累積)
 **BattleOutcome 追加:** `reconciled`(和解 = XP なし・素材あり)。battle-reward は outcome + `resolve` の
@@ -408,7 +413,7 @@ AoE は対象をループするだけ (プラグインで吸収)。**とくぎ�
 新部品: フラット加算バフ / 無属性魔法(属性の輪外・int型必中) / atk主+int補正の物理 / 魔法反射フック。holy系(聖騎士/巫女の聖)は属性外。
 **将軍** (最強atk39・最脆def10・物理一本・対キャスター): 一閃3(単体 atk×1.5)/なぎ倒し6(敵全体 atk×0.8+中確率で転倒)/足払い8(敵単体 atk×1.2+高確率で転倒)/
 勝鬨12(味方全体 atk↑3T+低確率で敵怯み agi↓)/見切り15(自 agi+10+次の敵魔法を100%回避=必中無効)/鬼神斬り20(敵単体 atk×2.5+敵の詠唱魔法をかき消す)/
-覇王30(P: 物理致死を耐えHP1+同ダメ反射。魔法致死は普通に死ぬ)。int28は**魔法耐性(int対int式)として活用=魔法が通らない対キャスター**。見切り/かき消しは100%固定(int連動しない)。
+覇王30(P: 物理致死を**1戦闘1回**HP1で耐え+同ダメ反射。2回目以降と魔法致死は普通に死ぬ。once化はオーナー判断 2026-07-22 = 敵魔法が無い現状で毎回発動だと完全不死のため)。int28は**魔法耐性(int対int式)として活用=魔法が通らない対キャスター**。見切り/かき消しは100%固定(int連動しない)。
 新部品・全体ルール: **転倒(status: 次行動不可 + 被ダメ×1.2、誰の攻撃でも)** / 必中回避(次の魔法をミス化) / 魔法かき消し(詠唱割り込みキャンセル) / 物理限定onLethal+反射 / 怯み(flinch)。
 **隊長** (タフな前衛指揮官 def23・鼓舞): 突撃号令3(単体atk×1.5+味方atk少↑)/鼓舞5(味方atk↑3T)/防陣8(味方def↑3T)/突進12(単体atk×1.5+中確率転倒)/
 檄15(味方atk↑agi↑3T)/捨て身攻撃18(敵全体atk×1.6+会心↑・自def↓1T=リスク)/攻陣25(敵を囲い 味方atk中↑+敵agi中↓3T)/名将30(P: 常時atk/def+10%)。
@@ -464,7 +469,7 @@ AoE は対象をループするだけ (プラグインで吸収)。**とくぎ�
 ### 14.1 §12 に不足していた3職 (忍者/遊び人/守護者の確定キット)
 - **忍者**: §7 参照 (毒手3/かくれみ5/火遁8火/急所狙い12/九字切り15/影分身20/首狩り30P)。
 - **遊び人**: ぶんどり3(gain)/サボる5(restoreMp+heal)/ルーレット8(random)/いちかばちか12(damage+recoil)/曲芸乱舞15(agi連撃)/大道芸20(random豪華)/せっとく30(resolve和解30%・XPなし素材)。
-- **守護者**: 盾殴り3(def基準)/大盾の護り5(parry反撃)/とげの盾8(thorns=onDamaged)/仁王立ち12(被ダメ≒0の1T)/守護の祈り15(defUp)/フルカウンター25(累積被ダメ返し)/不動30(P onLethal50%・物理致死のみ耐)。
+- **守護者**: 盾殴り3(def基準)/大盾の護り5(parry反撃)/とげの盾8(thorns=onDamaged)/仁王立ち12(被ダメ≒0の1T)/守護の祈り15(defUp)/フルカウンター25(累積被ダメ返し)/不動30(P onLethal・物理致死を**1戦闘1回確定で**耐える。旧50%運要素は壁役に合わず確定化・オーナー判断 2026-07-22)。
 
 ### 14.2 StatusId 完全版 (使用中の状態を全部登録)
 `poison / sleep / stun / tumble(転倒) / restraint(束縛) / confusion(混乱) / flinch(怯み) / hidden / critCharge / magicEvade(必中回避) / atkUp/atkDown / defUp/defDown / agiUp/agiDown / intUp/intDown / evadeUp / accDown(命中↓) / doomMark(遅延) / weaponThrown`。定義の要点:
@@ -477,7 +482,7 @@ AoE は対象をループするだけ (プラグインで吸収)。**とくぎ�
 ### 14.3 CombatHook 完全版
 既存(beforeAct/dodgeCalc/powerCalc/critCalc/onHit/incomingCalc/turnEnd)+ 追加:
 - **overrideAction**(混乱)/ **modifyHit**(命中率デバフ)/ **onIncomingMagic**(見切りの必中回避・清き心の魔法反射)/
-  **onEnemyCast**(鬼神斬りの魔法かき消し=マルチでは殴った1体の詠唱をキャンセル)/ **onLethal**(覇王=物理限定/不動=50%)。
+  **onEnemyCast**(鬼神斬りの魔法かき消し=マルチでは殴った1体の詠唱をキャンセル)/ **onLethal**(覇王=物理限定・1戦闘1回+反射/不動=物理限定・1戦闘1回確定)。
 
 ### 14.4 target と適用ループ
 `SkillDef.target: 'self'|'oneEnemy'|'allEnemies'|'oneAlly'|'allAllies'`(効果ごとに変えたい場合は SkillEffect 側にも)。
