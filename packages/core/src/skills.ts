@@ -518,7 +518,9 @@ export const SKILLS: Record<string, SkillDef> = {
     id: 'shogun-sweep',
     effects: [{ kind: 'damage', stat: 'atk', power: 1.2, inflict: { status: 'tumble', chance: 0.7, turns: 1 } }],
   },
-  'shogun-guard': { id: 'shogun-guard', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3 }] }, // 見切り Lv15 (agi↑。魔法100%回避は後続)
+  // 見切り Lv15: 回避を大きく上げる構え (magnitude 2.5)。将軍は素の agi13 が低く乗算バフが効きにくい
+  // ため強めに。§12 の「次の敵魔法100%回避」は magicEvade (敵魔法詠唱 #455後続) が入るまで後続。
+  'shogun-guard': { id: 'shogun-guard', effects: [{ kind: 'status', status: 'agiUp', target: 'self', turns: 3, magnitude: 2.5 }] },
   'shogun-oni': { id: 'shogun-oni', effects: [{ kind: 'damage', stat: 'atk', power: 2.5 }] }, // 鬼神斬り Lv20 (かき消しは後続)
 };
 
