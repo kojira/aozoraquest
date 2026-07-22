@@ -762,12 +762,13 @@ export interface MonsterDef {
    *  'healer' = 低 HP でたまに自己回復 (削り切る前に倒す読み合い)。
    *  'fleer' = 毎ターン逃走を試みる (はぐれメタル型。倒す前に逃げられると報酬ゼロ)。
    *  'caster' = たまに魔法を撃つ (def 無視の属性魔撃。#456: 対物理型の看板 覇王/不動 の弱点=魔法を
-   *    成立させ、聖騎士の清き心を活かす。要 spell 定義)。 */
+   *    成立させ、後続 (#483) の清き心 (魔法反射) の前提にもなる。要 spell 定義)。 */
   ability?: 'charger' | 'healer' | 'fleer' | 'caster';
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
   /** caster の魔法 (#456)。def 無視・属性つきの int スケール魔撃。ダメージ = min〜max + int*intScale。
-   *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。 */
+   *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。
+   *  データ規約: min <= max (span 負を避ける)。caster の攻撃ラベルは skillName でなくこの name を使う。 */
   spell?: { name: string; element?: Element; min: number; max: number; intScale?: number };
   /** 防御属性 (#455 / docs/25 §1)。被弾時の属性相性に使う。未指定 = 無属性 (常に等倍)。
    *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
@@ -1317,11 +1318,13 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
     },
   },
   // caster: MP があるうちは高確率で def 無視の属性魔撃を撃つ (#456)。対物理型 (覇王/不動) の弱点=魔法を
-  // 成立させ、int 職の魔法耐性・聖騎士の魔法反射 (清き心) に意味を与える。MP 切れで通常攻撃に落ちる。
+  // 成立させる (int 職の魔法耐性・聖騎士の魔法反射=清き心 は後続 #483 の前提)。MP 切れで通常攻撃に落ちる。
   caster: {
     id: 'caster',
     decideAction: ({ state, r, t, canGuard, monsterDef }) => {
       if (monsterDef?.spell && state.monster.mp >= t.monsterCastMpCost && r < t.casterCastChance) return 'cast';
+      // guard バンドは charger/healer (+0.15) よりやや狭い +0.1 — caster は攻撃寄りに保ち、魔法を撃てない
+      // (MP 枯渇) ターンも殴りに来る威圧感を残すため (守りに籠らせない)。
       if (canGuard && r < t.casterCastChance + 0.1) return 'guard';
       return 'attack';
     },
@@ -1549,7 +1552,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         events.push({ actor: 'monster', text: `${state.monster.name}は にげだした!` });
       } else if (mCommand === 'cast') {
         // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
-        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。清き心 (魔法反射) はここで効く。
+        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。清き心 (魔法反射) は後続 #483 でこの経路に乗る。
         const spell = MONSTERS_BY_ID[state.monsterId]?.spell;
         if (spell) {
           state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterCastMpCost);

@@ -63,8 +63,12 @@ describe('敵の魔法 (caster ability #456)', () => {
         magicKilled = true;
         break;
       }
-      // 生存 (HP1 に固定し直される前) = 物理を覇王で耐えた or 魔法を回避
-      if (!magic && s.player.hp >= 1) physicalSaved = true;
+      // 敵が実際に物理ダメージを与えた (spell でない monster ダメージイベント) のに HP1 で生存 =
+      // 物理致死を覇王が耐えた実績 (guard 空振り/回避ターンでは true にしない = 厳密化)。
+      const physHit = s.lastEvents.some(
+        (e) => e.actor === 'monster' && typeof e.damage === 'number' && !e.text.includes(spellName),
+      );
+      if (!magic && physHit && s.outcome === 'ongoing') physicalSaved = true;
     }
     expect(magicKilled).toBe(true); // 魔法致死で覇王将軍が敗北した = 魔法は覇王を貫く
     expect(physicalSaved).toBe(true); // 物理致死は覇王で耐えた = 物理耐性は健在
