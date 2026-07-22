@@ -1870,7 +1870,9 @@ export function rollDrops(monsterId: string, luk: number, seed: number, dropBonu
   const rng = createRng((seed ^ 0x2545f491) >>> 0);
   const out: string[] = [];
   for (const d of def.drops) {
-    // luk ボーナス + 巫女の直感 dropBonus を合算し 0.95 で clamp。
+    // luk ボーナス + 巫女の直感 dropBonus を合算し 0.95 で clamp。dropBonus は luk 補正と天井 (0.95) を
+    // **共有**するので、高 luk 職 (巫女=luk37) では既にドロップ率が高い素材で +0.1 の限界効用が逓減する
+    // (青天井を防ぐ意図的な設計。数値は sim 前提の暫定値)。
     const chance = Math.min(0.95, d.chance + luk * BATTLE_TUNING.dropLukScale + dropBonus);
     if (rng() < chance) out.push(d.item);
   }
