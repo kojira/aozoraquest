@@ -291,7 +291,9 @@ export const MONSTER_ABILITIES: Record<string, AbilityDef> = {
 - `damage.stat` に **'def'** を追加 (盾殴り)、`damage` に「累積被ダメ基準」オプション (フルカウンター)
 
 **共通フック (CombatHook) 追加:**
-- `onDamaged(self, attacker, ctx)` — 被弾時のリアクティブ反応 (とげの盾/カウンター/見切り反撃を一般化)
+- `onDamaged(self, attacker, damage, ctx)` — 物理被弾後のリアクティブ反応 (とげの盾=攻撃者へ反射)。実装済み
+  (#456)。**damage 引数 = 食らった最終ダメージ**で反射割合の計算に使う。**フルカウンター (累積被ダメ返し) は
+  別途 `Combatant.damageTaken` の積算が要る** (このフック単体では書けない = 後続バッチ)。
 - `onLethal(self, incoming, ctx) → { survive? }` — 致死を耐える (不動)
 
 **Combatant フィールド:** `statuses: StatusInstance[]` / `passives: string[]` / `damageTaken: number`(累積)
