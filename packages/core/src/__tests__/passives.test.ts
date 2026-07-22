@@ -9,9 +9,11 @@ import {
   applyOnLethal,
   applyElementBonus,
   applyTargetBonus,
+  applyStatusDurationBonus,
   type HookCtx,
 } from '../statuses.js';
 import { jobPassives, playerCombatant, type Combatant } from '../battle.js';
+import { runSkill, type SkillContext, type SkillDef } from '../skills.js';
 
 function c(over: Partial<Combatant> = {}): Combatant {
   return {
@@ -180,6 +182,52 @@ describe('パッシブ (#456 各職 Lv30)', () => {
 
   it('playerCombatant: 芸術家 Lv30 で審美眼が入る', () => {
     expect(playerCombatant('artist', 30, 30, 'ar').passives).toEqual(['artist-aesthete']);
+  });
+
+  it('名演 (bard-encore): 付与する状態の持続を +1 ターン (バフ・デバフどちらの歌も)', () => {
+    const bard = c({ passives: ['bard-encore'] });
+    expect(applyStatusDurationBonus(3, bard, ctx())).toBe(4); // 味方バフ (プレリュード等) の歌
+    expect(applyStatusDurationBonus(1, bard, ctx())).toBe(2); // 短い歌も +1
+    expect(applyStatusDurationBonus(3, c(), ctx())).toBe(3); // パッシブなしは no-op
+  });
+
+  it('playerCombatant: 吟遊詩人 Lv30 で名演が入る', () => {
+    expect(playerCombatant('bard', 30, 30, 'bd').passives).toEqual(['bard-encore']);
+  });
+
+  it('名演: runSkill 経由で実際に付与される状態の turns が +1 される (統合)', () => {
+    const song: SkillDef = { id: 'song', effects: [{ kind: 'status', status: 'atkDown', target: 'enemy', turns: 3 }] };
+    const mkCtx = (attacker: Combatant, defender: Combatant): SkillContext => ({
+      attacker,
+      defender,
+      rng: () => 0.5,
+      events: [],
+      skillName: 'テストの歌',
+      engine: {
+        doAttack: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
+        doMagic: (_a, d) => ({ hit: d.hp > 0, damage: 5, fatal: false, crit: false }),
+      },
+    });
+    // 名演あり: atkDown が turns 4 で付く。
+    const enemy1 = c({ name: '敵' });
+    runSkill(song, mkCtx(c({ passives: ['bard-encore'] }), enemy1));
+    expect(enemy1.statuses?.find((s) => s.id === 'atkDown')?.turns).toBe(4);
+    // 名演なし: 従来どおり turns 3。
+    const enemy2 = c({ name: '敵' });
+    runSkill(song, mkCtx(c(), enemy2));
+    expect(enemy2.statuses?.find((s) => s.id === 'atkDown')?.turns).toBe(3);
+
+    // 自己バフの歌 (target:'self' → attacker に付与) にも名演が乗る。
+    const selfSong: SkillDef = { id: 'self', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 3 }] };
+    const singer = c({ passives: ['bard-encore'], name: '詩人' });
+    runSkill(selfSong, mkCtx(singer, c({ name: '敵' })));
+    expect(singer.statuses?.find((s) => s.id === 'atkUp')?.turns).toBe(4);
+
+    // restack refresh は max 挙動: 名演(4)の後に名演なし(3)を重ねても 4 が維持され短縮されない。
+    const enemy3 = c({ name: '敵' });
+    runSkill(song, mkCtx(c({ passives: ['bard-encore'] }), enemy3)); // 4
+    runSkill(song, mkCtx(c(), enemy3)); // 3 を重ねる → max(4,3)=4
+    expect(enemy3.statuses?.find((s) => s.id === 'atkDown')?.turns).toBe(4);
   });
 
   it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入り、切り札は毎戦闘 未使用から始まる', () => {

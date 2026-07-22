@@ -73,6 +73,8 @@ export interface CombatHook {
   elementBonus?(mult: number, c: Combatant, ctx: HookCtx): number;
   /** 対象の状態に応じた与ダメ倍率補正 (c=攻撃側, target=被弾側)。審美眼: 状態異常の敵に与ダメ↑。 */
   targetBonus?(mult: number, c: Combatant, target: Combatant, ctx: HookCtx): number;
+  /** 付与する状態異常の持続ターン補正 (c=付与する側)。名演: 自分がかける歌 (状態) の効果ターン+1。 */
+  statusDurationBonus?(turns: number, c: Combatant, ctx: HookCtx): number;
   /** 命中補正 (c=攻撃側)。accDown: hitBonus を下げて当てにくく。 */
   modifyHit?(hitBonus: number, c: Combatant, ctx: HookCtx): number;
   /** 会心の可否 (c=攻撃側)。九字切り=確定会心。 */
@@ -259,9 +261,9 @@ function boostDodge(dodge: number, bonus: number): number {
 
 /**
  * パッシブレジストリ (ジョブ innate な常時フック。docs/25 §12 の各職 Lv30)。エンジンは
- * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの11職を
- * ここで登録 (基本7職 + onLethal で覇王/不動 + elementBonus で慧眼 + targetBonus で審美眼)。
- * onIncomingMagic (清き心・敵魔法待ちで inert)・MP消費割引 (発明家)・非戦闘 (巫女の直感/名演) は後続 (#483)。
+ * hooksOf でこれを状態異常と同じフック点に流すだけ (専用分岐なし)。フック実装済みの12職を
+ * ここで登録 (基本7職 + onLethal 覇王/不動 + elementBonus 慧眼 + targetBonus 審美眼 + statusDurationBonus 名演)。
+ * onIncomingMagic (清き心・敵魔法待ちで inert)・MP消費割引 (発明家)・非戦闘 (巫女の直感) は後続 (#483)。
  */
 export const PASSIVES: Record<string, PassiveDef> = {
   // 忍者 首狩り: 自分より明確に弱い敵 (メタル除く) を luk 補正つき低確率で一撃 (§7/§12 Lv30)。
@@ -358,6 +360,16 @@ export const PASSIVES: Record<string, PassiveDef> = {
     id: 'artist-aesthete',
     name: '審美眼',
     targetBonus: (mult, _c, target) => (hasAilment(target) ? mult * 1.3 : mult),
+  },
+  // 吟遊詩人 名演: 自分がかける歌 (状態異常) の効果ターン +1 (§12 Lv30)。吟遊詩人のキットは味方バフ
+  // (プレリュード/スケルツォ/ラプソディ) と敵デバフ (ディスコード/ララバイ) の「歌」中心なので、全ての歌が
+  // 1 ターン長く続く support の要。バフ・デバフどちらの歌にも乗る (どちらも吟遊詩人の「歌の効果」)。
+  // 注: 付与する側 (attacker) スコープなので、現キットに無い doomMark 等を将来 bard に持たせると炸裂も
+  // 1 ターン遅れる (弱体化方向)。現状 bard キットに doomMark はなく inert。
+  'bard-encore': {
+    id: 'bard-encore',
+    name: '名演',
+    statusDurationBonus: (turns) => turns + 1,
   },
 };
 
@@ -470,6 +482,14 @@ export function applyElementBonus(mult: number, c: Combatant, ctx: HookCtx): num
 export function applyTargetBonus(mult: number, c: Combatant, target: Combatant, ctx: HookCtx): number {
   let v = mult;
   for (const { def, inst } of hooksOf(c)) v = def.targetBonus?.(v, c, target, ctxFor(ctx, inst)) ?? v;
+  return v;
+}
+
+/** 付与する状態の持続ターン補正 (c=付与する側)。名演など。none なら入力そのまま。ctx は現状の名演では
+ *  未使用だが、将来「確率で +2」等の rng 連動 encore を書けるよう他フックと同じく通している。 */
+export function applyStatusDurationBonus(turns: number, c: Combatant, ctx: HookCtx): number {
+  let v = turns;
+  for (const { def, inst } of hooksOf(c)) v = def.statusDurationBonus?.(v, c, ctxFor(ctx, inst)) ?? v;
   return v;
 }
 
