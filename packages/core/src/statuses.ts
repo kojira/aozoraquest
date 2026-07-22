@@ -356,7 +356,7 @@ export const PASSIVES: Record<string, PassiveDef> = {
     onIncomingMagic(self, atk, damage, ctx) {
       if (ctx.rng() >= 0.25) return; // 75% は通常どおり被弾
       atk.hp = Math.max(0, atk.hp - damage);
-      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 清き心で魔法をはね返した! ${atk.name}に ${damage}!`, damage });
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 清き心で魔法をはね返した! ${atk.name}に ${damage} のダメージ!`, damage });
       return { reflect: true };
     },
   },

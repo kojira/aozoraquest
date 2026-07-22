@@ -1255,6 +1255,8 @@ function doMagic(
   // メタル系の魔法無効 (#455 / DQ 準拠): def 無視の魔法でも最小 1 に抑える (会心物理でしか倒せない)。
   const final = defender.resistAllMagic ? 1 : Math.max(1, Math.round(dmg));
   // 清き心 (聖騎士): 低確率で魔法反射 (被弾側フック)。reflect なら被弾 0・術者へ跳ね返し済み (ハンドラ内)。
+  // 被弾 0 なので clearHitStatuses (かくれみ/眠り解除) も弱点告知も出さないのが正 (被弾していない扱い)。
+  // 将来の見切り (魔法ミス化=回避) も同じ「被弾 0」結果なので、必要なら返り値に nullify を足して分岐する。
   if (!defender.resistAllMagic && applyOnIncomingMagic(defender, attacker, final, defCtx)) {
     return { hit: true, damage: 0, fatal: false, crit: false };
   }
@@ -1558,7 +1560,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         events.push({ actor: 'monster', text: `${state.monster.name}は にげだした!` });
       } else if (mCommand === 'cast') {
         // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
-        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。清き心 (魔法反射) は後続 #483 でこの経路に乗る。
+        // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。
         const spell = MONSTERS_BY_ID[state.monsterId]?.spell;
         if (spell) {
           state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterCastMpCost);
