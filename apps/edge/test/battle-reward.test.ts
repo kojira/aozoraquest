@@ -39,6 +39,28 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     expect(a.next).toEqual(b.next);
   });
 
+  it('群れ勝ち (#453): enemyIds の頭数分 XP を合算し各敵でドロップ試行', () => {
+    const s = base({ power: 3, playerXp: 0, jobXp: {} });
+    const ids = [mon.id, mon.id, mon.id]; // 3体
+    const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: ids }));
+    const expectXp = ids.reduce((a, id) => a + battleXpFor(id), 0);
+    expect(next.playerXp).toBe(expectXp); // 3体分の XP 合算
+    expect(next.jobXp.warrior).toBe(expectXp);
+    expect(awarded.xp).toBe(expectXp);
+    expect(next.power).toBe(2); // パワー消費は 1 戦闘 1 回 (頭数に依らない)
+    // 各敵で別 seed のドロップ試行 → 単体戦より総ドロップ数は増える傾向 (seed 固定なので決定的)。
+    const solo = applyBattleOutcome(s, input({ outcome: 'win' }));
+    expect(awarded.xp!).toBeGreaterThan(solo.awarded.xp!); // 3体 > 1体
+  });
+
+  it('群れ報酬の後方互換: enemyIds 省略 = enemyIds:[monsterId] = 従来の単体計算', () => {
+    const s = base();
+    const omitted = applyBattleOutcome(s, input({ outcome: 'win' }));
+    const single = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [mon.id] }));
+    expect(omitted.next).toEqual(single.next); // 完全一致 (rewardSeed をそのまま使う)
+    expect(omitted.awarded).toEqual(single.awarded);
+  });
+
   it('負け: 素材ロス + パワー1消費 + 僅かな xpLose (§5)', () => {
     const s = base({ power: 2, playerXp: 80, jobXp: { warrior: 20 }, materials: { herb: 3, ore: 2 } });
     const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'lose' }));

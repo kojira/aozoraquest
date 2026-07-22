@@ -11,7 +11,7 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
+  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
   terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
   type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
@@ -373,7 +373,7 @@ export interface TurnResult {
  * turn: 1 コマンドを**サーバーが**確定 pendingTurnSeed で解決する。
  * 決着なら報酬を fail-closed で確定 + ガード削除。未決着なら CAS で turn を進めてから応答。
  */
-export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0): Promise<TurnResult> {
+export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0): Promise<TurnResult> {
   if (!VALID_COMMANDS.includes(command)) throw new ResolverError('不正なコマンド', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (!g) throw new ResolverError('戦闘中でない', 409);
@@ -385,7 +385,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   // (client が持っていない index を偽っても署名スキル [0] に落とす。詐称防止)。
   const skills = guard.state.playerSkills ?? [guard.state.playerSkill];
   const idx = Number.isInteger(skillIndex) && skillIndex >= 0 && skillIndex < skills.length ? skillIndex : 0;
-  const next = resolveTurn(guard.state, command, guard.pendingTurnSeed, idx);
+  // 群れ (#453): enemies が 2 体以上なら resolveTurnMulti で解決 + targetIndex を検証。1 体 (従来) は
+  // resolveTurn (1v1・挙動不変)。client が偽った targetIndex は生存敵の範囲に clamp (詐称防止)。
+  const enemies = guard.state.enemies;
+  const isMulti = (enemies?.length ?? 0) > 1;
+  const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < enemies!.length ? targetIndex : 0;
+  const next = isMulti
+    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx)
+    : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx);
 
   if (next.outcome !== 'ongoing') {
     // ── 決着: **まずガードを CAS 削除して「この決着ターンは自分が消費」を確定** ──
@@ -416,6 +423,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
+        // 群れ (#453): 倒した全敵ぶんの報酬。1 体戦は enemies 未設定なので従来どおり monsterId 単体。
+        ...(isMulti ? { enemyIds: next.enemies!.map((e) => e.monsterId ?? next.monsterId) } : {}),
       });
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
