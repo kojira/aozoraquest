@@ -1248,7 +1248,20 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
   // 見切り (parry) 等の「宣言型」とくぎは effects 空で、宣言は resolveTurn 冒頭が担う。
   const def = SKILLS[skill.kind];
   if (!def) return;
-  runSkill(def, { attacker: player, defender: monster, rng, events, skillName: skill.name, engine: { doAttack, doMagic } });
+  // ソロでも runSkillMulti で**効果ごとに対象解決**する (#453/#456)。ソロ陣営は allies=[player] /
+  // enemies=[monster] の退化ケース。これにより allAllies (=自分) / allEnemies (=敵) を使うパーティ
+  // 支援職 (隊長/巫女/吟遊詩人) の全体技がソロでは自己バフ/敵デバフとして機能する。既存の
+  // self/oneEnemy 技は [player]/[monster] に解決され**挙動不変**。
+  const sides: CombatSides = { allies: [player], enemies: [monster] };
+  runSkillMulti(def, player, sides, (defender) => ({
+    attacker: player,
+    defender,
+    rng,
+    events,
+    skillName: skill.name,
+    actorSide: 'player',
+    engine: { doAttack, doMagic },
+  }));
 }
 
 /**
