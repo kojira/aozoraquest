@@ -166,6 +166,17 @@ describe('状態異常エンジン (#452)', () => {
     expect(target.statuses![0]!.turns).toBe(1);
   });
 
+  it('doomMark は restack ignore: 再付与でカウントダウンが巻き戻らない', () => {
+    const target = c();
+    applyStatus(target, st('doomMark', 3, 25));
+    tickStatuses(target, ctx()); // fresh 畳み (turns 3)
+    tickStatuses(target, ctx()); // turns 3→2
+    const before = target.statuses![0]!.turns;
+    applyStatus(target, st('doomMark', 3, 99)); // 再付与 → ignore で無視
+    expect(target.statuses![0]!.turns).toBe(before); // 巻き戻らない
+    expect(target.statuses![0]!.magnitude).toBe(25); // 上書きされない
+  });
+
   it('doomMark: カウントダウンの末に magnitude の大ダメージが炸裂', () => {
     const target = c({ hp: 100 });
     applyStatus(target, st('doomMark', 3, 25));

@@ -160,11 +160,14 @@ describe('予言者 確定キット (#456)', () => {
     for (const sk of skillsForJob('seer', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
   });
 
-  it('破滅の予言は doomMark を敵に付与する', () => {
+  it('破滅の予言は doomMark を敵に付与し、炸裂は int 連動 (基礎15超)', () => {
     const s = startBattle('seer', 12, 18, '予', 3, 5, 0);
     const idx = s.playerSkills.findIndex((sk) => sk.name === '破滅の予言');
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
-    expect(next.monster.statuses?.some((st) => st.id === 'doomMark')).toBe(true);
+    const doom = next.monster.statuses?.find((st) => st.id === 'doomMark');
+    expect(doom).toBeDefined();
+    // 炸裂ダメージ = 15 + int×0.3。seer は int 最高なので基礎 15 を上回る。
+    expect(doom!.magnitude).toBeGreaterThan(15);
     expect(next.lastEvents.some((e) => e.text.includes('破滅の刻印'))).toBe(true);
   });
 });

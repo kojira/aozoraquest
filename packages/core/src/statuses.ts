@@ -167,7 +167,9 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   doomMark: {
     id: 'doomMark',
     name: '破滅の予言',
-    restack: 'refresh',
+    // ignore: 既に刻まれた予言は上書きしない (再詠唱でカウントダウンが巻き戻り永久に炸裂しない自己
+    // 妨害を防ぐ。「予言は一度告げたら覆らない」像とも一致。レビュー ★★)。
+    restack: 'ignore',
     turnEnd: (c, ctx) => {
       const remaining = ctx.status?.turns ?? 1;
       if (remaining <= 1) {

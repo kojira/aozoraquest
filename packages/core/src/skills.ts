@@ -109,6 +109,9 @@ export type SkillEffect =
       chance?: number;
       turns?: number;
       magnitude?: number;
+      /** magnitude への int 連動 (破滅の予言など。付与時に +round(attacker.int × magIntBonus))。
+       *  ダメージ系状態 (doomMark/poison) を int キャスターのステで伸ばすのに使う。 */
+      magIntBonus?: number;
     };
 
 export interface SkillDef {
@@ -212,10 +215,15 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   if (effect.target !== 'self' && defender.hp <= 0) return;
   if (rng() >= (effect.chance ?? 1)) return;
   const target = effect.target === 'self' ? attacker : defender;
+  // magnitude に int 連動を足す (破滅の予言の炸裂を int キャスターのステで伸ばす。レビュー ★★)。
+  const mag =
+    effect.magnitude !== undefined || effect.magIntBonus !== undefined
+      ? (effect.magnitude ?? 0) + (effect.magIntBonus ? Math.round(attacker.int * effect.magIntBonus) : 0)
+      : undefined;
   applyStatus(target, {
     id: effect.status,
     turns: effect.turns ?? DEFAULT_STATUS_TURNS,
-    ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}),
+    ...(mag !== undefined ? { magnitude: mag } : {}),
   });
   // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。
   events.push({ actor, text: statusApplyText(effect.status, target.name) });
@@ -497,8 +505,8 @@ export const SKILLS: Record<string, SkillDef> = {
   'seer-switch': { id: 'seer-switch', effects: [{ kind: 'fixedDamage', min: 4, max: 10, intBonus: 0.2 }] }, // 未来スイッチ Lv3 (回避不能=必中)
   'seer-thunder': { id: 'seer-thunder', effects: [{ kind: 'fixedDamage', min: 6, max: 12, intBonus: 0.3 }] }, // 雷の予言 Lv4 (無属性・必中)
   'seer-poison': { id: 'seer-poison', effects: [{ kind: 'status', status: 'poison', target: 'enemy', turns: 4, magnitude: 3 }] }, // 毒の予言 Lv7
-  // 破滅の予言 Lv12: doomMark を付与 (数ターン後に大ダメージ炸裂)
-  'seer-doom': { id: 'seer-doom', effects: [{ kind: 'status', status: 'doomMark', target: 'enemy', turns: 3, magnitude: 25 }] },
+  // 破滅の予言 Lv12: doomMark を付与 (数ターン後に大ダメージ炸裂)。炸裂は int 連動 (基礎15 + int×0.3)。
+  'seer-doom': { id: 'seer-doom', effects: [{ kind: 'status', status: 'doomMark', target: 'enemy', turns: 3, magnitude: 15, magIntBonus: 0.3 }] },
   'seer-king': { id: 'seer-king', effects: [{ kind: 'fixedDamage', min: 28, max: 42, intBonus: 0.4 }] }, // 蠱毒の王 Lv20 (必中大砲)
 };
 
