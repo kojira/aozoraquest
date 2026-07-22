@@ -236,6 +236,7 @@ const DEBUFF_STATUSES: ReadonlySet<StatusId> = new Set<StatusId>([
   'atkDown',
   'defDown',
   'agiDown',
+  'doomMark',
 ]);
 
 /** 使用者の自己バフ数 (scaleBy: 'buffCount' 用)。 */
@@ -489,6 +490,16 @@ export const SKILLS: Record<string, SkillDef> = {
   'sage-revelation': { id: 'sage-revelation', effects: [{ kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.3, element: 'void' }] }, // 天啓 Lv12 (空)
   'sage-heal': { id: 'sage-heal', effects: [{ kind: 'heal', ratio: 0.35 }] }, // 賢者の癒し Lv16
   'sage-starlight': { id: 'sage-starlight', effects: [{ kind: 'fixedDamage', min: 25, max: 40, intBonus: 0.4, element: 'void' }] }, // 星辰の大魔法 Lv22
+
+  // ─── 予言者 確定キット (#456 / docs/25 §12。最高 int・破滅のオラクル・遅延) ───
+  // 数値は sim 調整前提の暫定値。int 連動の必中魔法 + 破滅の予言 (doomMark)。全体予言 (地震/嵐/日照り/
+  // 水難/アポカリプス) はマルチ (#453) 待ち。死の宣告 (毎ターンHP半分)/未来予知 (magicEvade)/全知(P) は後続。
+  'seer-switch': { id: 'seer-switch', effects: [{ kind: 'fixedDamage', min: 4, max: 10, intBonus: 0.2 }] }, // 未来スイッチ Lv3 (回避不能=必中)
+  'seer-thunder': { id: 'seer-thunder', effects: [{ kind: 'fixedDamage', min: 6, max: 12, intBonus: 0.3 }] }, // 雷の予言 Lv4 (無属性・必中)
+  'seer-poison': { id: 'seer-poison', effects: [{ kind: 'status', status: 'poison', target: 'enemy', turns: 4, magnitude: 3 }] }, // 毒の予言 Lv7
+  // 破滅の予言 Lv12: doomMark を付与 (数ターン後に大ダメージ炸裂)
+  'seer-doom': { id: 'seer-doom', effects: [{ kind: 'status', status: 'doomMark', target: 'enemy', turns: 3, magnitude: 25 }] },
+  'seer-king': { id: 'seer-king', effects: [{ kind: 'fixedDamage', min: 28, max: 42, intBonus: 0.4 }] }, // 蠱毒の王 Lv20 (必中大砲)
 };
 
 /** そのとくぎが「HP 回復のみ」か (UI が満タン時に無効化するかの判定に使う)。kind 文字列でなく

@@ -25,7 +25,8 @@ export type StatusId =
   | 'defUp'
   | 'defDown' // 被ダメ magnitude 倍
   | 'agiUp'
-  | 'agiDown'; // 回避 magnitude 倍
+  | 'agiDown' // 回避 magnitude 倍
+  | 'doomMark'; // 破滅の予言: turnEnd でカウントダウン、0 で magnitude の大ダメージ
 
 /** 付与時に turns 未指定なら使う既定持続 (毒手/デバフ等の共通デフォルト)。 */
 export const DEFAULT_STATUS_TURNS = 2;
@@ -161,6 +162,23 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   defDown: { id: 'defDown', name: '守備力低下', restack: 'refresh', incomingCalc: (p, _c, ctx) => p * (ctx.status?.magnitude ?? 1.3) },
   agiUp: { id: 'agiUp', name: '素早さ上昇', restack: 'refresh', dodgeCalc: (d, _c, ctx) => d * (ctx.status?.magnitude ?? 1.5) },
   agiDown: { id: 'agiDown', name: '素早さ低下', restack: 'refresh', dodgeCalc: (d, _c, ctx) => d * (ctx.status?.magnitude ?? 0.6) },
+  // 破滅の予言 (予言者): turnEnd でカウントダウン、最終ターン (turns===1) に magnitude の大ダメージ。
+  // fresh スキップにより付与ターンは進まず、以後 N ターンかけて破滅が訪れる (予告 → 炸裂の緊張)。
+  doomMark: {
+    id: 'doomMark',
+    name: '破滅の予言',
+    restack: 'refresh',
+    turnEnd: (c, ctx) => {
+      const remaining = ctx.status?.turns ?? 1;
+      if (remaining <= 1) {
+        const dmg = ctx.status?.magnitude ?? 20;
+        c.hp = Math.max(0, c.hp - dmg);
+        ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}に 破滅が訪れた! ${dmg} のダメージ`, damage: dmg });
+      } else {
+        ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}に 破滅の刻が近づいている… (あと${remaining - 1})` });
+      }
+    },
+  },
 };
 
 /** パッシブレジストリ (ジョブ innate)。#456 で首狩り等を追加。今は枠だけ。 */
@@ -182,6 +200,7 @@ const STATUS_APPLY_TEXT: Record<StatusId, string> = {
   defDown: 'の守備力がさがった!',
   agiUp: 'の素早さがあがった!',
   agiDown: 'の素早さがさがった!',
+  doomMark: 'に 破滅の刻印が刻まれた…!',
 };
 
 /** 状態付与の告知文 (対象名 + テキスト)。 */

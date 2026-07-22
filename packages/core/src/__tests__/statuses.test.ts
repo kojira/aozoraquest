@@ -166,6 +166,22 @@ describe('状態異常エンジン (#452)', () => {
     expect(target.statuses![0]!.turns).toBe(1);
   });
 
+  it('doomMark: カウントダウンの末に magnitude の大ダメージが炸裂', () => {
+    const target = c({ hp: 100 });
+    applyStatus(target, st('doomMark', 3, 25));
+    // 付与ターン (fresh) は畳むだけ・ダメージなし。
+    tickStatuses(target, ctx());
+    expect(target.hp).toBe(100);
+    // 以後 turns 3→2→1 とカウントダウン、turns===1 の tick で炸裂。
+    tickStatuses(target, ctx()); // turns 3→2 (近づいている)
+    expect(target.hp).toBe(100);
+    tickStatuses(target, ctx()); // turns 2→1 (近づいている)
+    expect(target.hp).toBe(100);
+    tickStatuses(target, ctx()); // turns 1 → 炸裂 25 → 除去
+    expect(target.hp).toBe(75);
+    expect(target.statuses ?? []).toHaveLength(0);
+  });
+
   it('turns:1 の麻痺は fresh スキップで付与ターンを生き延び、次ターンで消える', () => {
     const target = c();
     applyStatus(target, st('stun', 1));

@@ -150,6 +150,25 @@ describe('詩人 確定キット (#456)', () => {
   });
 });
 
+describe('予言者 確定キット (#456)', () => {
+  it('レベルで未来スイッチ〜蠱毒の王を習得', () => {
+    expect(skillsForJob('seer', 3).map((s) => s.name)).toContain('未来スイッチ');
+    expect(skillsForJob('seer', 20).map((s) => s.name)).toEqual(['未来スイッチ', '雷の予言', '毒の予言', '破滅の予言', '蠱毒の王']);
+  });
+
+  it('キット技はすべて SKILLS に定義がある', () => {
+    for (const sk of skillsForJob('seer', 30)) expect(SKILLS[sk.kind], sk.kind).toBeDefined();
+  });
+
+  it('破滅の予言は doomMark を敵に付与する', () => {
+    const s = startBattle('seer', 12, 18, '予', 3, 5, 0);
+    const idx = s.playerSkills.findIndex((sk) => sk.name === '破滅の予言');
+    const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
+    expect(next.monster.statuses?.some((st) => st.id === 'doomMark')).toBe(true);
+    expect(next.lastEvents.some((e) => e.text.includes('破滅の刻印'))).toBe(true);
+  });
+});
+
 describe('賢者 確定キット (#456)', () => {
   it('レベルで火炎〜星辰の大魔法を習得 (全5属性)', () => {
     expect(skillsForJob('sage', 3).map((s) => s.name)).toContain('火炎');
