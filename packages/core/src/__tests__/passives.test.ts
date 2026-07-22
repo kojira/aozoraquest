@@ -13,7 +13,7 @@ import {
   applyStatusDurationBonus,
   type HookCtx,
 } from '../statuses.js';
-import { jobPassives, playerCombatant, type Combatant } from '../battle.js';
+import { jobPassives, playerCombatant, skillMpCostOf, startBattle, resolveTurn, BATTLE_TUNING, type Combatant } from '../battle.js';
 import { runSkill, type SkillContext, type SkillDef } from '../skills.js';
 
 function c(over: Partial<Combatant> = {}): Combatant {
@@ -56,17 +56,18 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(jobPassives('sage', 30)).toEqual(['sage-insight']);
     expect(jobPassives('artist', 30)).toEqual(['artist-aesthete']);
     expect(jobPassives('paladin', 30)).toEqual(['paladin-purity']);
-    // フック未実装の職 (発明家=MP割引/巫女=非戦闘) は Lv30 でもまだ空 (後続 #483)。
-    expect(jobPassives('fighter', 30)).toEqual([]);
+    expect(jobPassives('fighter', 30)).toEqual(['fighter-inventor']);
+    // 残 巫女 (ドロップ↑=drop 配線待ち) は Lv30 でもまだ空 (後続 #483)。遊び人は Lv30 パッシブ無し。
     expect(jobPassives('miko', 30)).toEqual([]);
+    expect(jobPassives('performer', 30)).toEqual([]);
   });
 
   it('playerCombatant: 実装済み職は Lv30 で passives が入り、Lv29 では空', () => {
     expect(playerCombatant('warrior', 30, 30, 'w').passives).toEqual(['warrior-blademaster']);
     expect(playerCombatant('warrior', 29, 30, 'w').passives).toEqual([]);
     expect(playerCombatant('captain', 30, 30, 'cap').passives).toEqual(['captain-command']);
-    // 未実装職は Lv30 でも空 (発明家=MP割引/巫女=非戦闘)。キット化とは別軸。
-    expect(playerCombatant('fighter', 30, 30, 'f').passives).toEqual([]);
+    // 未実装職は Lv30 でも空 (巫女=ドロップ配線待ち)。キット化とは別軸。
+    expect(playerCombatant('miko', 30, 30, 'mk').passives).toEqual([]);
   });
 
   // ── 各パッシブの効果 (dispatcher 経由) ──
@@ -169,6 +170,30 @@ describe('パッシブ (#456 各職 Lv30)', () => {
 
   it('playerCombatant: 聖騎士 Lv30 で清き心が入る', () => {
     expect(playerCombatant('paladin', 30, 30, 'pl').passives).toEqual(['paladin-purity']);
+  });
+
+  it('発明家 (fighter-inventor): とくぎ MP コストを 30% 引き (skillMpCostOf)', () => {
+    const base = BATTLE_TUNING.skillMpCost; // 4
+    expect(skillMpCostOf(c())).toBe(base); // パッシブなし = 素通し (4)
+    expect(skillMpCostOf(c({ passives: ['fighter-inventor'] }))).toBe(Math.max(1, Math.round(base * 0.7))); // 3
+    expect(playerCombatant('fighter', 30, 30, 'fi').passives).toEqual(['fighter-inventor']);
+  });
+
+  it('発明家: resolveTurn の実 MP 消費が割引される (統合)', () => {
+    // 匠 Lv30 vs 非割引職で同条件のとくぎ 1 発の MP 消費を比較。
+    const cast = (job: 'fighter' | 'mage'): number => {
+      const s = startBattle(job, 30, 30, 'x', 1, 3, 0, undefined, { monsterId: 'sky-slime' });
+      const before = s.player.mp;
+      const idx = 0;
+      const n = resolveTurn(s, 'skill', undefined, idx);
+      // とくぎが撃てた (MP 不足フォールバックでない) ことを確認しつつ消費量を返す
+      return before - n.player.mp;
+    };
+    const fighterCost = cast('fighter'); // 発明家 = 3
+    const mageCost = cast('mage'); // 割引なし = 4
+    expect(mageCost).toBe(BATTLE_TUNING.skillMpCost);
+    expect(fighterCost).toBe(Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * 0.7)));
+    expect(fighterCost).toBeLessThan(mageCost);
   });
 
   it('慧眼 (sage-insight): 弱点 (相性倍率>=1.5) のみ ×1.25 増幅、等倍/耐性/空 1.2 は素通し', () => {
