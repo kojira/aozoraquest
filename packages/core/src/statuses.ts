@@ -69,6 +69,8 @@ export interface CombatHook {
   dodgeCalc?(dodge: number, c: Combatant, ctx: HookCtx): number;
   /** 攻撃威力の倍率補正 (c=攻撃側)。atkUp/atkDown。 */
   powerCalc?(power: number, c: Combatant, ctx: HookCtx): number;
+  /** 属性相性倍率の補正 (c=攻撃側)。慧眼: 弱点 (mult>=1.5) を突いたときさらに増幅。mult=現在の属性倍率。 */
+  elementBonus?(mult: number, c: Combatant, ctx: HookCtx): number;
   /** 命中補正 (c=攻撃側)。accDown: hitBonus を下げて当てにくく。 */
   modifyHit?(hitBonus: number, c: Combatant, ctx: HookCtx): number;
   /** 会心の可否 (c=攻撃側)。九字切り=確定会心。 */
@@ -320,6 +322,14 @@ export const PASSIVES: Record<string, PassiveDef> = {
       return { survive: true };
     },
   },
+  // 賢者 慧眼: 弱点属性 (相性倍率 >=1.5) を突いたときさらに与ダメ↑ (§12 Lv30)。int40 の属性キャスターが
+  // 属性の輪 (§1) を読み切って弱点を的確に突く知恵の職。空 (void ×1.2) の普遍的優位は「弱点」ではないので
+  // 対象外 (>=1.5 のみ)。等倍/耐性時は素通し = 弱点を突けたときだけのご褒美。
+  'sage-insight': {
+    id: 'sage-insight',
+    name: '慧眼',
+    elementBonus: (mult) => (mult >= 1.5 ? mult * 1.25 : mult),
+  },
 };
 
 /** 状態付与時の告知テキスト (対象名の後に続ける)。プレイヤーが状態変化を認識できるように
@@ -417,6 +427,13 @@ export function applyIncomingCalc(base: number, c: Combatant, ctx: HookCtx): num
 /** 物理被弾後: 被弾側のフック (とげの盾) を回す (攻撃者へ反射など)。 */
 export function applyOnDamaged(c: Combatant, atk: Combatant, damage: number, ctx: HookCtx): void {
   for (const { def, inst } of hooksOf(c)) def.onDamaged?.(c, atk, damage, ctxFor(ctx, inst));
+}
+
+/** 属性相性倍率の補正 (c=攻撃側)。慧眼など。none なら入力そのまま。 */
+export function applyElementBonus(mult: number, c: Combatant, ctx: HookCtx): number {
+  let v = mult;
+  for (const { def, inst } of hooksOf(c)) v = def.elementBonus?.(v, c, ctxFor(ctx, inst)) ?? v;
+  return v;
 }
 
 /** 物理致死の直前: 被弾側のフック (覇王/不動) を回し、いずれかが survive を返したら true (HP1 生存)。

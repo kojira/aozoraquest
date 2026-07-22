@@ -7,6 +7,7 @@ import {
   applyIncomingCalc,
   applyOnHit,
   applyOnLethal,
+  applyElementBonus,
   type HookCtx,
 } from '../statuses.js';
 import { jobPassives, playerCombatant, type Combatant } from '../battle.js';
@@ -48,8 +49,8 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(jobPassives('ninja', 30)).toEqual(['kubikari']);
     expect(jobPassives('shogun', 30)).toEqual(['shogun-overlord']);
     expect(jobPassives('guardian', 30)).toEqual(['guardian-immovable']);
-    // フック未実装の職 (慧眼/清き心/審美眼/発明家/非戦闘) は Lv30 でもまだ空 (後続 #483)。
-    expect(jobPassives('sage', 30)).toEqual([]);
+    expect(jobPassives('sage', 30)).toEqual(['sage-insight']);
+    // フック未実装/inert の職 (清き心=敵魔法待ち/審美眼/発明家/非戦闘) は Lv30 でもまだ空 (後続 #483)。
     expect(jobPassives('paladin', 30)).toEqual([]);
     expect(jobPassives('artist', 30)).toEqual([]);
   });
@@ -58,8 +59,8 @@ describe('パッシブ (#456 各職 Lv30)', () => {
     expect(playerCombatant('warrior', 30, 30, 'w').passives).toEqual(['warrior-blademaster']);
     expect(playerCombatant('warrior', 29, 30, 'w').passives).toEqual([]);
     expect(playerCombatant('captain', 30, 30, 'cap').passives).toEqual(['captain-command']);
-    // 未実装職は Lv30 でも空 (キット化と別軸)。
-    expect(playerCombatant('sage', 30, 30, 's').passives).toEqual([]);
+    // 未実装/inert 職は Lv30 でも空 (清き心=敵魔法待ち)。キット化とは別軸。
+    expect(playerCombatant('paladin', 30, 30, 'p').passives).toEqual([]);
   });
 
   // ── 各パッシブの効果 (dispatcher 経由) ──
@@ -143,6 +144,19 @@ describe('パッシブ (#456 各職 Lv30)', () => {
 
   it('onLethal: パッシブなしは survive せず (通常どおり死ぬ)', () => {
     expect(applyOnLethal(c(), c(), 50, ctx())).toBe(false);
+  });
+
+  it('慧眼 (sage-insight): 弱点 (相性倍率>=1.5) のみ ×1.25 増幅、等倍/耐性/空 1.2 は素通し', () => {
+    const sage = c({ passives: ['sage-insight'] });
+    expect(applyElementBonus(1.5, sage, ctx())).toBeCloseTo(1.875); // 弱点 → さらに増幅
+    expect(applyElementBonus(1.0, sage, ctx())).toBeCloseTo(1.0); // 等倍は素通し
+    expect(applyElementBonus(0.5, sage, ctx())).toBeCloseTo(0.5); // 耐性は素通し (弱点でない)
+    expect(applyElementBonus(1.2, sage, ctx())).toBeCloseTo(1.2); // 空の普遍優位は「弱点」でない
+    expect(applyElementBonus(1.5, c(), ctx())).toBeCloseTo(1.5); // パッシブなしは no-op
+  });
+
+  it('playerCombatant: 賢者 Lv30 で慧眼が入る', () => {
+    expect(playerCombatant('sage', 30, 30, 'sg').passives).toEqual(['sage-insight']);
   });
 
   it('playerCombatant: 将軍/守護者 Lv30 で onLethal パッシブが入り、切り札は毎戦闘 未使用から始まる', () => {

@@ -300,6 +300,8 @@ export const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   分岐なしに表現。**1 戦闘 1 回のみ**発動する切り札 (`Combatant.lethalGuardUsed` フラグ。オーナー判断
   2026-07-22: 敵が物理のみの現状で毎回発動だと対モンスター完全不死になるため)。覇王=1回耐えて同ダメ反射、
   不動=1回確定で耐える (旧 50% 運要素は壁役の capstone に合わないため確定 1 回に変更)。
+- `elementBonus(mult, self, ctx) → mult` — 属性相性倍率の補正 (self=攻撃側)。実装済み (#456)。慧眼 (賢者):
+  弱点 (mult>=1.5) を突いたとき ×1.25 増幅。doAttack/doMagic 双方の属性倍率適用点で発火。none なら素通し。
 
 **Combatant フィールド:** `statuses: StatusInstance[]` / `passives: string[]` / `damageTaken: number`(累積)
 **BattleOutcome 追加:** `reconciled`(和解 = XP なし・素材あり)。battle-reward は outcome + `resolve` の
