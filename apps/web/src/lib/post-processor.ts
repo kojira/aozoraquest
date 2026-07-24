@@ -358,7 +358,8 @@ export async function confirmJobChange(agent: Agent, did: string, newArchetype: 
  * confirmJobChange と同じく本人の PDS (analysis/self) を本人トークンで書く = サーバー権威の詐称に
  * ならない (通常プレイヤーも再診断で自分の archetype を書き換える)。各ジョブのキット/パッシブ
  * (特に Lv30) を実プレイで確かめるため、jobLevel を目標レベルの XP しきい値で直接セットする。
- * playerLevel (個人累積) は維持。pending 転職候補はクリア。
+ * playerLevel (個人累積) は維持。pending 転職候補はクリア。反映は次の戦闘から (edge が戦闘開始時に
+ * analysis の archetype を読む — 進行中の戦闘は旧ジョブのまま)。
  */
 export async function adminSetJob(agent: Agent, did: string, newArchetype: Archetype, targetJobLevel: number): Promise<DiagnosisResult | null> {
   const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');

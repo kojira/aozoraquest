@@ -11,8 +11,9 @@ import { adminSetJob } from '@/lib/post-processor';
  *
  * confirmJobChange と同じく**本人の PDS (analysis/self) を本人トークンで書く**ので、サーバー権威の
  * 詐称にならない (通常プレイヤーも再診断で自分の archetype を書き換える)。表示ゲートは admin-dashboard
- * の `WORLD_PREVIEW_ENABLED && isAdminDid`。次の戦闘から新ジョブが適用される (進行中の戦闘ガードは
- * sealed.archetype で封印済みなので、切替後に新ジョブで戦うには一度戦闘を終える or リセットが要る)。
+ * の `WORLD_PREVIEW_ENABLED && isAdminDid`。**次の戦闘から新ジョブが適用される** (edge は戦闘開始時に
+ * analysis の archetype を読んでガードに封じるため、進行中の戦闘は旧ジョブのまま・切替後に新ジョブで
+ * 戦うには一度戦闘を終える)。
  */
 export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
   const [current, setCurrent] = useState<{ archetype: Archetype; jobLevel: number } | null>(null);
@@ -64,7 +65,15 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
         </select>
         <label>
           Lv
-          <input type="number" min={1} max={50} value={level} onChange={(e) => setLevel(Number(e.target.value))} disabled={busy} style={{ width: '3.5em', marginLeft: '0.3em' }} />
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={level}
+            onChange={(e) => { const n = Number(e.target.value); setLevel(Number.isFinite(n) ? n : 1); }}
+            disabled={busy}
+            style={{ width: '3.5em', marginLeft: '0.3em' }}
+          />
         </label>
         <button type="button" disabled={busy} onClick={() => void apply()} style={{ padding: '0.2em 0.7em' }}>
           {busy ? '変更中…' : 'このジョブに変更'}
