@@ -23,6 +23,7 @@ import {
   DAILY_BONUS_DAY_MARGIN_FACTOR,
   DEFAULT_QUEST_TEMPLATES,
   JOB_CHANGE_STREAK_THRESHOLD as CORE_JOB_CHANGE_STREAK_THRESHOLD,
+  JOB_XP_CURVE,
   XP_REWARDS,
   cognitiveToRpg,
   determineArchetype,
@@ -345,6 +346,32 @@ export async function confirmJobChange(agent: Agent, did: string, newArchetype: 
     ...analysis,
     archetype: newArchetype,
     jobLevel: { archetype: newArchetype, xp: 0, joinedAt: now },
+  };
+  delete (next as Partial<DiagnosisResult>).pendingArchetype;
+  delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
+  await putRecord(agent, COL.analysis, 'self', next);
+  return next;
+}
+
+/**
+ * 管理者用: 自分のジョブを即座に任意の archetype + jobLevel に切り替える (dev の /admin から)。
+ * confirmJobChange と同じく本人の PDS (analysis/self) を本人トークンで書く = サーバー権威の詐称に
+ * ならない (通常プレイヤーも再診断で自分の archetype を書き換える)。各ジョブのキット/パッシブ
+ * (特に Lv30) を実プレイで確かめるため、jobLevel を目標レベルの XP しきい値で直接セットする。
+ * playerLevel (個人累積) は維持。pending 転職候補はクリア。
+ */
+export async function adminSetJob(agent: Agent, did: string, newArchetype: Archetype, targetJobLevel: number): Promise<DiagnosisResult | null> {
+  const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
+  if (!analysis) return null;
+  const maxLv = JOB_XP_CURVE[JOB_XP_CURVE.length - 1]?.[0] ?? 50;
+  const lv = Math.max(1, Math.min(maxLv, Math.floor(targetJobLevel)));
+  // 目標 LV の XP しきい値 (JOB_XP_CURVE)。LV1 は 0。jobLevelFromXp(xp) がこの LV を返す最小 XP。
+  const xp = JOB_XP_CURVE.find((e) => e[0] === lv)?.[1] ?? 0;
+  const now = new Date().toISOString();
+  const next: DiagnosisResult = {
+    ...analysis,
+    archetype: newArchetype,
+    jobLevel: { archetype: newArchetype, xp, joinedAt: now },
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
