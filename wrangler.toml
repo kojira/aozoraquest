@@ -3,7 +3,7 @@
 # SPA ルーティング (/profile/:handle/post/:rkey 等) は
 # not_found_handling = "single-page-application" で index.html にフォールバック。
 
-name = "aozoraquest"
+name = "aozoraquest-dev"
 compatibility_date = "2026-04-24"
 
 [assets]
