@@ -570,7 +570,9 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
  * どちらも無ければ null (呼び出し側は加算をスキップ)。
  */
 function gearFlatBonus(archetype: Archetype, equipIds?: readonly string[], gear?: GearSelection): GearBonus | null {
-  if (gear) return gearBonusFromGear(archetype, gear);
+  // 「中身のある方」を採る。空の gear ({}) で equipIds を無視すると、両方渡した呼び出しで装備が
+  // 黙って消える (実測 def 17 → 15)。空判定を equipIds 側と対称にしてこの罠を構造的に潰す。
+  if (gear && Object.keys(gear).length > 0) return gearBonusFromGear(archetype, gear);
   if (equipIds && equipIds.length > 0) return gearBonus(archetype, equipIds);
   return null;
 }

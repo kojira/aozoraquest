@@ -123,6 +123,9 @@ describe('装備ボーナスの二重加算防止 (#511)', () => {
     // 両方渡しても gear のみと同値 (旧実装は a+b で二重に加算していた: def 15→17→19)
     expect(both.def).toBe(viaGear.def);
     expect(both.maxHp).toBe(viaGear.maxHp);
+    // 空の gear ({}) では equipIds が活きる (空判定を対称にしないと装備が黙って消える)
+    const emptyGear = playerCombatant('sage', 1, 1, 'x', undefined, [armor.id], {});
+    expect(emptyGear.def).toBe(viaIds.def);
     // playerStatsAt (丸め前) も同じ規則で解決する
     const bothRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id], { armor: armor.id });
     const gearRaw = playerStatsAt('sage', 1, 1, undefined, undefined, { armor: armor.id });
