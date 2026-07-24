@@ -7,6 +7,41 @@
 
 ---
 
+## 0. issue-first (実装は必ず issue に紐づける)
+
+**どんな修正・機能追加も、着手前に issue を立てる。issue の無い PR を作らない。**
+
+- 順序は **issue → トピックブランチ → PR**。PR description に必ず issue 番号を書く。
+- issue には **「なぜ直すか」** を書く。実測値・再現手順・オーナーの指摘があれば添える
+  (後から「何を直したか」だけでなく「なぜ直すと決めたか」を追えるようにする)。
+
+### `Closes` と `Refs` の使い分け (誤クローズ防止)
+
+| PR の性質 | 書き方 |
+|---|---|
+| **その PR で issue が完結する** | `Closes #N` (マージで自動クローズ) |
+| **epic を分割した PR の途中** | `Refs #N` |
+| epic を分割した PR の**最後** | `Closes #N` |
+
+**1 issue : N PR が普通**にある (例: `#456` は職ごとのパッシブで 8 PR、`#453` はマルチ戦 PR1/3〜3a)。
+途中の PR に `Closes` を書くと **残作業を抱えたまま epic が自動クローズされる**ので `Refs` を使う。
+
+### 例外 (issue 不要 / まとめ issue に集約)
+
+- typo・コメント・書式だけ → 「雑務」issue に集約
+- §1.5 の **CSS / 文言 / docs 高速パス**でバッチ処理する見た目調整 → 「見た目調整」issue に集約
+- 依存更新 (`chore/*`) → 「依存更新」issue に集約
+- **リリース PR (dev → main)** — 複数 feature の束なので対応する単一 issue が存在しない (§1 の手順どおり)
+- **PR 内で対応するレビュー指摘** (§1.5 の ★★★ / ★★) — 元 issue に含まれる。
+  **別 PR に切り出すときだけ** issue 化する (= §1.5 の既存ルール。§0 はそれを全実装に広げたもの)
+- **本番障害の緊急修正** — 先に直してよい。ただし**同日中に事後 issue** を立てて経緯を残す
+- 判断に迷ったら立てる
+
+**なぜ**: issue が無いと作業の重複・取りこぼしが起き、判断の経緯も残らない
+(→ §10 の 2026-07-25 の事例)。
+
+---
+
 ## 1. ブランチ運用
 
 ### 厳守事項
@@ -28,6 +63,7 @@
 ### 作業開始時のルーティン
 
 ```bash
+gh issue create --title "<なぜ直すか>"   # §0 issue-first: 着手前に必ず (例外は §0 参照)
 git branch --show-current        # main / dev に居たら止める
 git checkout dev
 git pull --rebase origin dev     # 最新の dev を取り込む
@@ -247,6 +283,7 @@ Conventional Commits に従う:
 
 実行前に毎回:
 
+- [ ] **issue を立てた** (§0 issue-first。無ければ着手前に作る。些細な変更は「雑務」issue に集約可)
 - [ ] `git branch --show-current` で **トピックブランチ** に居ることを確認 (dev / main 直接編集禁止)
 - [ ] トピックブランチに居なければ `git checkout dev && git pull --rebase origin dev && git checkout -b feature/<topic>` で切る
 - [ ] 修正の意図をユーザーと共有・合意済み
@@ -255,6 +292,7 @@ Conventional Commits に従う:
 - [ ] commit message に Why を書いた
 - [ ] push 前にユーザーの明示許可を取った (本番に影響する変更は特に)
 - [ ] PR 作成は `gh pr create --base dev --head feature/<topic>` で
+- [ ] PR description に issue 番号を書いた — **完結なら `Closes #N` / epic 分割の途中なら `Refs #N`** (§0)
 - [ ] PR 作成後、**§1.5 の必須レビュー (3 並列 subagent) を回す**
 - [ ] レビュー指摘の ★★★ をすべて PR 内で修正、★★ は対応 or issue 化、PR description の Review セクションに記録
 - [ ] 全対応完了後にマージ承認 (= ここまで来てから merge ボタン)
@@ -304,3 +342,10 @@ PR #25 で 3 並列レビューが実際に効いた (★★★ 13 件を未然�
 レビューを回し、★★★ は PR 内で必ず修正、★★ は対応 or issue 化、★ は柔軟
 の原則で対応する。PR description の Review セクションにどう処理したかを
 記録する。
+
+### 2026-07-25: issue 無しで PR を作りマージ (§0 制定)
+
+管理者ジョブ変更 PR #506 を issue 無しで作成・マージした。CLAUDE.md の issue 言及は
+§1.5 (レビュー指摘の切り出し) だけで、**実装を issue に紐づける規範が成文化されていなかった**。
+運用方針自体は 2026-07-20 に出ていたが、書かれていなかったため守られなかった。
+**学び**: 運用方針は口頭でなく CLAUDE.md に書く。**書いていないルールは守られない**。
