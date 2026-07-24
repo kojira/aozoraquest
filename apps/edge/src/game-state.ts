@@ -33,7 +33,10 @@ export interface GameState {
   jobXp: Record<string, number>;
   /** 素材インベントリ (item id → 個数)。 */
   materials: Record<string, number>;
-  /** 装備中の gear id。 */
+  /** @deprecated 装備中の gear id。**どこからも書き込まれない死んだフィールド** (emptyState が [] に
+   *  初期化するだけ)。装備の実効値は gearSel が単一の出所。**戦闘に渡さないこと** — gearSel と併せて
+   *  渡すと同じ装備が二重加算される経路だった (#511 で core 側も gear 優先に修正)。
+   *  既存 state との互換のためフィールド自体は残す。 */
   gear: string[];
   /** 装備中の個体 (強化値つき GearSelection)。client がミラー送信。戦闘の実効装備はこちら (#377)。 */
   gearSel?: GearSelection;

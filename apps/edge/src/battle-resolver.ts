@@ -178,7 +178,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
-    baseStats, equipIds: state.gear, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
+    baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
@@ -298,7 +298,7 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   const matId = item === 'herb' ? 'herb' : 'sky-dew';
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, state.gear, state.gearSel);
+  const c = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
   let healed = 0;
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
@@ -338,7 +338,7 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const luk = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, state.gear, state.gearSel).luk;
+  const luk = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };
