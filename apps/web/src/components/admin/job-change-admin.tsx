@@ -43,7 +43,7 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
       if (!next) { setMsg('診断レコードが無い (先に診断が要る)'); return; }
       const jl = jobLevelFromXp(next.jobLevel?.xp ?? 0);
       setCurrent({ archetype: next.archetype, jobLevel: jl });
-      setMsg(`${jobDisplayName(next.archetype)} Lv${jl} に変更した`);
+      setMsg(`${jobDisplayName(next.archetype)} Lv${jl} に変更 (戦闘中なら次戦から)`);
     } catch (e) {
       console.warn('admin job change failed', e);
       setMsg('変更に失敗した (コンソール参照)');

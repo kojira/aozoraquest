@@ -355,11 +355,12 @@ export async function confirmJobChange(agent: Agent, did: string, newArchetype: 
 
 /**
  * 管理者用: 自分のジョブを即座に任意の archetype + jobLevel に切り替える (dev の /admin から)。
- * confirmJobChange と同じく本人の PDS (analysis/self) を本人トークンで書く = サーバー権威の詐称に
- * ならない (通常プレイヤーも再診断で自分の archetype を書き換える)。各ジョブのキット/パッシブ
- * (特に Lv30) を実プレイで確かめるため、jobLevel を目標レベルの XP しきい値で直接セットする。
- * playerLevel (個人累積) は維持。pending 転職候補はクリア。反映は次の戦闘から (edge が戦闘開始時に
- * analysis の archetype を読む — 進行中の戦闘は旧ジョブのまま)。
+ * confirmJobChange と同じく本人の PDS (analysis/self) を本人トークンで書く。**新しい攻撃面は増やさない**:
+ * edge は戦闘開始時に本人 analysis の archetype/jobLevel.xp を**無検証で権威値として読む** (battle-resolver.ts /
+ * docs/21 §6-4 の既知の未解決事項。真の偽造対策は M4)。よって本人が任意 Lv を書ける状態は元々あり
+ * (zeroAnalysisXp や直接 putRecord で到達可能)、この関数はその同経路に UI を付けただけ。各ジョブの
+ * キット/パッシブ (特に Lv30) を実プレイで確かめるため jobLevel を目標レベルの XP しきい値で直接セットする。
+ * playerLevel (個人累積) は維持。pending 転職候補はクリア。反映は次の戦闘から (進行中の戦闘は旧ジョブのまま)。
  */
 export async function adminSetJob(agent: Agent, did: string, newArchetype: Archetype, targetJobLevel: number): Promise<DiagnosisResult | null> {
   const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
