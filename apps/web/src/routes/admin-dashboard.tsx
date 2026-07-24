@@ -6,6 +6,7 @@ import { serverOAuthConfigured } from '@/lib/server-oauth';
 import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
 import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
 import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
+import { JobChangeAdmin } from '@/components/admin/job-change-admin';
 import { DebugBattleSim } from '@/components/debug-battle-sim';
 
 /**
@@ -115,6 +116,7 @@ export function AdminDashboard() {
         <>
           {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
           {devTools && <PowerGrantAdmin agent={agent} did={did} />}
+          {devTools && <JobChangeAdmin agent={agent} did={did} />}
           {devTools && <WorldResetAdmin agent={agent} did={did} />}
           {devTools && <DebugBattleSim />}
         </>
