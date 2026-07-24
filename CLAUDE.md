@@ -7,6 +7,24 @@
 
 ---
 
+## 0. issue-first (実装は必ず issue に紐づける)
+
+**どんな修正・機能追加も、着手前に issue を立てる。issue の無い PR を作らない。**
+
+- 順序は **issue → トピックブランチ → PR**。PR description に `Closes #N` を書き、issue と PR を
+  1 対 1 で対応させる。
+- issue には **「なぜ直すか」** を書く。実測値・再現手順・オーナーの指摘があれば添える
+  (後から「何を直したか」だけでなく「なぜ直すと決めたか」を追えるようにする)。
+- レビュー指摘 (§1.5 の ★★ / ★) を切り出すときに issue 化するのは既存ルール。**同じ流儀を全実装に広げる**
+  のがこのルール。
+- **例外**: typo / コメント / 書式だけの些細な変更は、まとめ issue (「雑務」) に集約してよい。
+  1 変更ごとに issue を立てる必要はない。判断に迷ったら立てる。
+
+**なぜ**: issue が無いと作業の重複・取りこぼしが起き、判断の経緯も残らない。
+過去に issue 無しで PR を作りマージした例がある (2026-07-25 に発覚し、このルールを成文化)。
+
+---
+
 ## 1. ブランチ運用
 
 ### 厳守事項
@@ -247,6 +265,7 @@ Conventional Commits に従う:
 
 実行前に毎回:
 
+- [ ] **issue を立てた** (§0 issue-first。無ければ着手前に作る。些細な変更は「雑務」issue に集約可)
 - [ ] `git branch --show-current` で **トピックブランチ** に居ることを確認 (dev / main 直接編集禁止)
 - [ ] トピックブランチに居なければ `git checkout dev && git pull --rebase origin dev && git checkout -b feature/<topic>` で切る
 - [ ] 修正の意図をユーザーと共有・合意済み
@@ -255,6 +274,7 @@ Conventional Commits に従う:
 - [ ] commit message に Why を書いた
 - [ ] push 前にユーザーの明示許可を取った (本番に影響する変更は特に)
 - [ ] PR 作成は `gh pr create --base dev --head feature/<topic>` で
+- [ ] PR description に **`Closes #N`** を書いた (§0 issue-first)
 - [ ] PR 作成後、**§1.5 の必須レビュー (3 並列 subagent) を回す**
 - [ ] レビュー指摘の ★★★ をすべて PR 内で修正、★★ は対応 or issue 化、PR description の Review セクションに記録
 - [ ] 全対応完了後にマージ承認 (= ここまで来てから merge ボタン)
