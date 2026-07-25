@@ -1272,9 +1272,7 @@ export function World() {
           avatarUrl={avatarUrl}
           archetype={archetype}
           jobLv={jobLevelFromXp(diag?.jobLevel?.xp ?? 0)}
-          playerLv={playerLevelFromXp(diag?.playerLevel?.xp ?? 0)}
           jobXp={diag?.jobLevel?.xp ?? 0}
-          playerXp={diag?.playerLevel?.xp ?? 0}
           combat={combat}
           combatBase={combatBase}
           hp={curHp}

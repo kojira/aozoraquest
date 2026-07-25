@@ -81,7 +81,9 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
     });
     const next: GameState = {
       ...state,
-      playerXp: state.playerXp + xp,
+      // #507/#508: プレイヤー XP は**加算しない**。プレイヤーレベルは戦闘力に一切影響しない
+      // ことにしたので (docs/19)、増え続ける数字だけが残ると「上げると強くなる」と誤解させる。
+      // 既存の値は互換のため保持する (state からフィールドを消すと古い client が壊れる)。
       jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp },
       materials: addItems(state.materials, drops, 1),
       power: Math.max(0, state.power - POWER_COST),
@@ -95,8 +97,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
     const materialsLost = rollDefeatLoss(state.materials, o.luk, o.lossSeed);
     const next: GameState = {
       ...state,
-      playerXp: state.playerXp + xp,
-      jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp },
+      jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp }, // playerXp は増やさない (#507/#508)
       materials: addItems(state.materials, materialsLost, -1),
       power: Math.max(0, state.power - POWER_COST),
     };

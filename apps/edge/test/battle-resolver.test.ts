@@ -165,7 +165,8 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     expect(m.store.has('guard')).toBe(false); // ガードは決着で消える
     const gs = m.store.get('gs')!.value as GameState;
     if (outcome === 'win') {
-      expect(gs.playerXp).toBeGreaterThan(100); // XP が権威 state に加算された
+      expect(gs.playerXp).toBe(100); // プレイヤー XP は増えない (#507/#508)
+      expect(Object.values(gs.jobXp).some((v) => v > 0)).toBe(true); // ジョブ XP が権威 state に加算された
       expect(gs.power).toBe(4); // パワー 1 消費
       expect(last!.awarded?.xp).toBeGreaterThan(0);
     }

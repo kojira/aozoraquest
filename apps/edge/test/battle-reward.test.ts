@@ -22,7 +22,7 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     const s = base({ power: 3, playerXp: 50, jobXp: { warrior: 20 } });
     const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'win' }));
     const xp = battleXpFor(mon.id);
-    expect(next.playerXp).toBe(50 + xp);
+    expect(next.playerXp).toBe(50); // #507/#508: プレイヤー XP は増えない (戦闘力に影響しないため)
     expect(next.jobXp.warrior).toBe(20 + xp);
     expect(next.power).toBe(2); // 3-1
     expect(awarded.xp).toBe(xp);
@@ -44,7 +44,8 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     const ids = [mon.id, mon.id, mon.id]; // 3体
     const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: ids }));
     const expectXp = ids.reduce((a, id) => a + battleXpFor(id), 0);
-    expect(next.playerXp).toBe(expectXp); // 3体分の XP 合算
+    expect(next.jobXp.warrior).toBe(expectXp); // 3体分の XP 合算 (ジョブ XP のみ)
+    expect(next.playerXp).toBe(0); // プレイヤー XP は増えない (#507/#508)
     expect(next.jobXp.warrior).toBe(expectXp);
     expect(awarded.xp).toBe(expectXp);
     expect(next.power).toBe(2); // パワー消費は 1 戦闘 1 回 (頭数に依らない)
@@ -58,7 +59,8 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     const [a, b] = [withDrops[0]!, withDrops[1]!];
     const s = base({ playerXp: 0, jobXp: {} });
     const { next } = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [a.id, b.id] }));
-    expect(next.playerXp).toBe(battleXpFor(a.id) + battleXpFor(b.id)); // A+B の XP (取り違えなら 2*A 等になる)
+    expect(next.jobXp.warrior).toBe(battleXpFor(a.id) + battleXpFor(b.id)); // A+B の XP (取り違えなら 2*A 等になる)
+    expect(next.playerXp).toBe(0); // プレイヤー XP は増えない (#507/#508)
   });
 
   it('群れ報酬の後方互換: enemyIds 省略 = enemyIds:[monsterId] = 従来の単体計算', () => {
@@ -72,7 +74,8 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
   it('負け: 素材ロス + パワー1消費 + 僅かな xpLose (§5)', () => {
     const s = base({ power: 2, playerXp: 80, jobXp: { warrior: 20 }, materials: { herb: 3, ore: 2 } });
     const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'lose' }));
-    expect(next.playerXp).toBe(80 + BATTLE_TUNING.xpLose); // 負けでも少し XP (player/job 両方)
+    expect(next.jobXp.warrior).toBe(20 + BATTLE_TUNING.xpLose); // 負けでも少しジョブ XP
+    expect(next.playerXp).toBe(80); // プレイヤー XP は増えない (#507/#508)
     expect(next.jobXp.warrior).toBe(20 + BATTLE_TUNING.xpLose);
     expect(awarded.xp).toBe(BATTLE_TUNING.xpLose);
     expect(next.power).toBe(1); // 2-1

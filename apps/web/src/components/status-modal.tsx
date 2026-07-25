@@ -7,7 +7,6 @@ import {
   jobXpToNextLevel,
   leveledName,
   mpGainsFor,
-  playerXpToNextLevel,
   type Archetype,
   type Combatant,
   type EquipSlot,
@@ -46,9 +45,7 @@ export function StatusModal({
   avatarUrl,
   archetype,
   jobLv,
-  playerLv,
   jobXp,
-  playerXp,
   combat,
   combatBase,
   hp,
@@ -61,9 +58,7 @@ export function StatusModal({
   avatarUrl: string | null;
   archetype: Archetype;
   jobLv: number;
-  playerLv: number;
   jobXp: number;
-  playerXp: number;
   /** 装備込みの実効値 (戦闘に渡すものと同一) */
   combat: Combatant;
   /** 装備なしの素の値 (装備ぶんの内訳表示用) */
@@ -89,7 +84,6 @@ export function StatusModal({
   const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
   const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
   const jobNext = useMemo(() => jobXpToNextLevel(jobXp), [jobXp]);
-  const playerNext = useMemo(() => playerXpToNextLevel(playerXp), [playerXp]);
 
   const num = { fontFamily: 'ui-monospace, monospace' as const };
 
@@ -200,13 +194,6 @@ export function StatusModal({
                 <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1} まで あと <span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
               ) : (
                 <>{jobDisplayName(archetype, 'default')} Lv はさいだいに たっした!</>
-              )}
-            </div>
-            <div>
-              {playerNext.next > 0 ? (
-                <>ぼうけん Lv {playerNext.level + 1} まで あと <span style={num}>{Math.max(0, playerNext.next - playerNext.current)}</span></>
-              ) : (
-                <>ぼうけん Lv はさいだいに たっした!</>
               )}
             </div>
           </div>
