@@ -924,12 +924,14 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     }
   });
 
-  it('HP はジョブの def に比例する = 硬い職が実際に硬い (#507)', () => {
-    // 旧式は全職 HP≈20 横並びだった (def43 の守護者と def15 の賢者で差 5)
+  it('HP はジョブの たいりょく に比例する = 硬い職が実際に硬い (#507/#518)', () => {
+    // 旧式は全職 HP≈20 横並びだった。**HP の出所は def ではなく vit** (#518) — 守護者は
+    // def も vit も高いので def 基準でも通ってしまうが、因果は vit。
+    // (vit → HP の関係そのものは「たいりょく (vit) が HP の単一の出所」で全職固定している)
     const tank = playerCombatant('guardian', 30, 1, 'x').maxHp;
     const caster = playerCombatant('sage', 30, 1, 'x').maxHp;
-    expect(tank).toBeGreaterThan(caster * 1.5); // 実測 68 vs 35
-    // MP は int に比例する (賢者は守護者より MP が多い)
+    expect(tank).toBeGreaterThan(caster * 1.5); // vit 45 対 20 の差がそのまま出る
+    // MP は かしこさ に比例する (賢者は守護者より MP が多い)
     expect(playerCombatant('sage', 30, 1, 'x').maxMp).toBeGreaterThan(playerCombatant('guardian', 30, 1, 'x').maxMp * 1.5);
   });
 });
@@ -1197,6 +1199,15 @@ describe('ダメージ 0 は正当な結果 (#518)', () => {
       const p = playerCombatant(j.id, 50, 1, 'x');
       expect(p.atk * BATTLE_TUNING.atkCoef - metal.def * BATTLE_TUNING.defCoef, `${j.id}`)
         .toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('全モンスターが hp を明示している (省略時フォールバックを到達不能に保つ)', () => {
+    // `MonsterDef.hp` は optional なので省略できてしまう。省略すると monsterMaxHp と
+    // baselineXp が MONSTER_DEFAULT_VIT にフォールバックし、意図しない HP/XP になる。
+    // 新しい敵を足すときに hp を書き忘れないよう、ここで名指しで固定する。
+    for (const m of MONSTERS) {
+      expect(m.hp, `${m.id} は hp を明示すること`).toBeGreaterThan(0);
     }
   });
 

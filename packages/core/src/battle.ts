@@ -960,8 +960,9 @@ const XP_OFFENSE_SCALE = 0.04; // (atk+agi) 1 あたりの XP (素早い/強い�
  *  レベル非依存に固定する (サーバーが monsterId だけから決定的に再導出できるため — docs/21)。 */
 export function baselineXp(def: MonsterDef): number {
   // 全モンスターが hp を明示しているのでフォールバックは実質未使用 (回帰テストで固定)。
-  // 万一 hp 省略の敵を足したときも XP が跳ねないよう、明示値と同じ桁の導出にしておく。
-  const baseHp = def.hp ?? def.stats[1];
+  // 万一 hp 省略の敵を足したときも XP が跳ねないよう、monsterMaxHp と同じ既定値を使う
+  // (stats[1] = まもり比率 を流用すると、メタル系のような極端な比率で XP が暴発する)。
+  const baseHp = def.hp ?? MONSTER_DEFAULT_VIT;
   const [atk, , agi] = def.stats;
   return Math.max(1, Math.round(Math.max(0, baseHp - XP_HP_FLOOR) * XP_HP_SCALE + (atk + agi) * XP_OFFENSE_SCALE));
 }
@@ -1037,15 +1038,14 @@ function monsterLevelFactor(tier: 1 | 2 | 3): number {
 function monsterMaxHp(def: MonsterDef): number {
   const t = BATTLE_TUNING;
   const g = t.statBase + t.statGrow * (TIER_LEVEL[def.tier] - 1);
-  return Math.max(1, Math.round(t.hpBase + (def.hp ?? def.stats[1]) * g * t.hpVitScale));
+  // hp 省略時に stats[1] (まもり **比率**) を「たいりょく生値」として流用すると、メタル系の
+  // ような極端な比率 (240) で HP が暴発する。現状は全モンスターが hp を明示しており到達
+  // しない (「全モンスターが hp を持つ」テストで固定) が、安全側の既定値に倒しておく。
+  return Math.max(1, Math.round(t.hpBase + (def.hp ?? MONSTER_DEFAULT_VIT) * g * t.hpVitScale));
 }
 
-/** hp/mp は比率ではなく **絶対値** で 1 体ずつ手で設計されており (tier1 は 5〜14、tier2 は 28〜、
- *  tier3 は 40〜)、tier 差はその値自体に既に入っている。ここに更に tier 倍率を掛けると
- *  **二重計上**になって上位 tier が理不尽になる (#509)。よって vitals は素の値を使う。 */
-function monsterVitalsFactor(_tier: 1 | 2 | 3): number {
-  return 1;
-}
+/** `MonsterDef.hp` 省略時の たいりょく 既定値。tier1 の敵 (5〜14) の下限側に合わせた控えめな値。 */
+const MONSTER_DEFAULT_VIT = 8;
 
 /** 地域相性の重み (favor 対象のモンスターをこの倍率で優遇)。3 = そのモンスターが
  *  約 6 割 (残り 2 種が各 2 割) で出る = 地域の顔が立つ水準。 */
@@ -1115,7 +1115,9 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
   if (def.flatDef !== undefined) c.def = def.flatDef; // tier 倍率を通さない (メタル系)
   c.maxHp = monsterMaxHp(def); c.hp = c.maxHp;
-  if (def.mp !== undefined) { c.maxMp = Math.max(0, Math.round(def.mp * monsterVitalsFactor(def.tier))); c.mp = c.maxMp; }
+  // MP は 1 体ずつ手で設計された絶対値なのでそのまま使う (tier 倍率を掛けると、tier 差が
+  // 既に値自体に入っているぶんと二重計上になる)。HP は monsterMaxHp が別途担当。
+  if (def.mp !== undefined) { c.maxMp = Math.max(0, def.mp); c.mp = c.maxMp; }
   if (variance > 0) {
     const jitter = () => 1 + (rng() * 2 - 1) * variance;
     c.maxHp = Math.max(1, Math.round(c.maxHp * jitter())); c.hp = c.maxHp;
