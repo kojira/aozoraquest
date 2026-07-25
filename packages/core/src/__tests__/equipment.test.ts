@@ -111,6 +111,33 @@ describe('gearBonusFromGear (スロット検証つき入口)', () => {
   });
 });
 
+describe('装備ボーナスの二重加算防止 (#511)', () => {
+  it('equipIds と gear を両方渡しても二重加算されない (gear 優先)', () => {
+    const armor = EQUIPMENT.find((e) => e.slot === 'armor' && (e.bonus.def ?? 0) > 0)!;
+    const none = playerCombatant('sage', 1, 1, 'x');
+    const viaIds = playerCombatant('sage', 1, 1, 'x', undefined, [armor.id]);
+    const viaGear = playerCombatant('sage', 1, 1, 'x', undefined, undefined, { armor: armor.id });
+    const both = playerCombatant('sage', 1, 1, 'x', undefined, [armor.id], { armor: armor.id });
+    expect(viaIds.def).toBeGreaterThan(none.def); // 単独ならボーナスが乗る
+    expect(viaGear.def).toBeGreaterThan(none.def);
+    // 両方渡しても gear のみと同値 (旧実装は a+b で二重に加算していた: def 15→17→19)
+    expect(both.def).toBe(viaGear.def);
+    expect(both.maxHp).toBe(viaGear.maxHp);
+    // 空の gear ({}) では equipIds が活きる (空判定を対称にしないと装備が黙って消える)
+    const emptyGear = playerCombatant('sage', 1, 1, 'x', undefined, [armor.id], {});
+    expect(emptyGear.def).toBe(viaIds.def);
+    // playerStatsAt (丸め前) も同じ規則で解決する
+    const bothRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id], { armor: armor.id });
+    const gearRaw = playerStatsAt('sage', 1, 1, undefined, undefined, { armor: armor.id });
+    const idsRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id]);
+    expect(bothRaw.def).toBe(gearRaw.def); // 同一経路なので厳密一致 (toBeCloseTo だと微差を見逃す)
+    expect(bothRaw.maxHp).toBe(gearRaw.maxHp);
+    // 空 gear では equipIds が活きる (playerCombatant と同じ規則であることを raw 側でも固定)
+    const emptyRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id], {});
+    expect(emptyRaw.def).toBe(idsRaw.def);
+  });
+});
+
 describe('専用装備の弱点補完 (将軍)', () => {
   it('将軍の専用品は耐久複合で、フル装備の tier3 勝率が band に入る (≥55%)', async () => {
     const { BATTLE_TUNING, resolveTurn, startBattle } = await import('../battle.js');

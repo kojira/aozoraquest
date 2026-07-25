@@ -17,7 +17,7 @@
 
 import type { Archetype, StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
-import { gearBonus, gearBonusFromGear, type GearSelection } from './equipment.js';
+import { gearBonus, gearBonusFromGear, type GearBonus, type GearSelection } from './equipment.js';
 import { SKILLS, runSkill, runSkillMulti } from './skills.js';
 import { elementMultiplier, type Element } from './elements.js';
 import { resolveTargets, type CombatSides } from './combat-target.js';
@@ -564,6 +564,20 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
 }
 
 /**
+ * 装備の平坦ボーナスを 1 箇所で解決する (#511)。**gear (GearSelection) と equipIds が両方来たら
+ * gear を優先し equipIds は無視する** — 両方を加算すると同じ装備が二重に効くため (実測: def 15 →
+ * 単一 17 → 両方 19)。gear がアプリ本則 (強化値つき個体)、equipIds は sim 用の簡易形。
+ * どちらも無ければ null (呼び出し側は加算をスキップ)。
+ */
+function gearFlatBonus(archetype: Archetype, equipIds?: readonly string[], gear?: GearSelection): GearBonus | null {
+  // 「中身のある方」を採る。空の gear ({}) で equipIds を無視すると、両方渡した呼び出しで装備が
+  // 黙って消える (実測 def 17 → 15)。空判定を equipIds 側と対称にしてこの罠を構造的に潰す。
+  if (gear && Object.keys(gear).length > 0) return gearBonusFromGear(archetype, gear);
+  if (equipIds && equipIds.length > 0) return gearBonus(archetype, equipIds);
+  return null;
+}
+
+/**
  * プレイヤーの戦闘値を導出。
  * 基底 = **ジョブ基準値と個人 rpgStats (プロフィールの 5 パラメータ、合計 100) の
  * ブレンド** (baseStatsPersonalWeight = 0.5)。個人値 100% は診断の min-max 正規化で
@@ -579,9 +593,10 @@ export function playerCombatant(
   playerLevel: number,
   displayName: string,
   baseStats?: StatArray,
-  /** 装備中の装備 id 列 (EQUIPMENT)。丸めの後に平坦加算 (docs/20)。sim 用の簡易形 */
+  /** 装備中の装備 id 列 (EQUIPMENT)。丸めの後に平坦加算 (docs/20)。sim 用の簡易形。
+   *  **gear を渡した場合は無視される** (下記 gearFlatBonus 参照 — 二重加算の防止)。 */
   equipIds?: readonly string[],
-  /** 装備中の個体 (強化値つき)。アプリ本則はこちら (gear/self の解決結果) */
+  /** 装備中の個体 (強化値つき)。アプリ本則はこちら (gear/self の解決結果)。equipIds より優先。 */
   gear?: GearSelection,
 ): Combatant {
   const t = BATTLE_TUNING;
@@ -603,17 +618,16 @@ export function playerCombatant(
   const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
   const grown: StatArray = [base[0] + flat, base[1] + flat, base[2] + flat, base[3] + flat, base[4] + flat];
   const c = fromStats(displayName, grown, factor, playerLevel);
-  if ((equipIds && equipIds.length > 0) || gear) {
+  const bonus = gearFlatBonus(archetype, equipIds, gear);
+  if (bonus) {
     // 装備はすべての導出 (ブレンド・成長・丸め) の後に平坦加算 — 低ステータス
     // ほど相対効果が大きく「装備で差をつける」が成立する (docs/20)
-    const a = equipIds && equipIds.length > 0 ? gearBonus(archetype, equipIds) : null;
-    const b = gear ? gearBonusFromGear(archetype, gear) : null;
-    c.atk += (a?.atk ?? 0) + (b?.atk ?? 0);
-    c.def += (a?.def ?? 0) + (b?.def ?? 0);
-    c.agi += (a?.agi ?? 0) + (b?.agi ?? 0);
-    c.int += (a?.int ?? 0) + (b?.int ?? 0);
-    c.luk += (a?.luk ?? 0) + (b?.luk ?? 0);
-    c.maxHp += (a?.maxHp ?? 0) + (b?.maxHp ?? 0);
+    c.atk += bonus.atk;
+    c.def += bonus.def;
+    c.agi += bonus.agi;
+    c.int += bonus.int;
+    c.luk += bonus.luk;
+    c.maxHp += bonus.maxHp;
     c.hp = c.maxHp;
   }
   c.passives = jobPassives(archetype, jobLevel); // ジョブ Lv30 の innate パッシブ
@@ -660,9 +674,9 @@ export function playerStatsAt(
   const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
   const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
   const g = (i: number) => (base[i]! + flat) * factor;
-  const a = equipIds && equipIds.length > 0 ? gearBonus(archetype, equipIds) : null;
-  const b = gear ? gearBonusFromGear(archetype, gear) : null;
-  const eq = (k: 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp') => (a?.[k] ?? 0) + (b?.[k] ?? 0);
+  // 装備は gearFlatBonus で 1 箇所解決 (gear 優先・二重加算なし。#511)。playerCombatant と同じ規則。
+  const bonus = gearFlatBonus(archetype, equipIds, gear);
+  const eq = (k: 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp') => bonus?.[k] ?? 0;
   return {
     atk: g(0) + eq('atk'),
     def: g(1) + eq('def'),
