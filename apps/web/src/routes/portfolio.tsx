@@ -206,7 +206,7 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
             <strong style={{ color: 'var(--color-accent)' }}> {questXpTotal.toLocaleString()} XP</strong>{' '}
             を獲得しました (1 件あたり 100 XP)。
             <span style={{ display: 'block', marginTop: '0.3em', fontSize: '0.92em' }}>
-              ※ この経験値は<strong>全体 LV</strong> と<strong>現職 LV</strong> の両方に加算されます。
+              ※ この経験値は<strong>現職 LV</strong> に加算されます。
             </span>
           </div>
         </section>

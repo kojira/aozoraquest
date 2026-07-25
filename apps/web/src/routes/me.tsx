@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, playerLevelFromXp, playerXpToNextLevel, questXpScalar, statVectorToArray } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questXpScalar, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
@@ -155,8 +155,6 @@ export function MyProfile() {
   // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を全体・現職とも加算する。
   const myJobXp = (state.status === 'done' ? (state.result.jobLevel?.xp ?? 0) : 0) + questXp;
   const myJobLv = jobLevelFromXp(myJobXp);
-  const myPlayerXp = (state.status === 'done' ? (state.result.playerLevel?.xp ?? 0) : 0) + questXp;
-  const myPlayerLv = playerLevelFromXp(myPlayerXp);
 
   return (
     <div style={{ textAlign: 'center' }}>
@@ -174,13 +172,6 @@ export function MyProfile() {
               <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(myArchetype)}</span>
             </p>
           )}
-          {state.status === 'done' && (
-            <p style={{ margin: '0.15em 0 0', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-              <span>全体:</span>{' '}
-              <span style={{ fontFamily: 'ui-monospace, monospace' }}>LV{myPlayerLv}</span>
-              <span style={{ marginLeft: '0.5em', opacity: 0.8 }}>(累計 {myPlayerXp} XP)</span>
-            </p>
-          )}
           {state.status === 'done' && myArchetype && (
             // 試練 (docs/18) と同じ導出で戦闘値の HP/MP を表示。バトル外でも自分の
             // 強さが分かるように (個人の rpgStats + レベルから決まる値で、消耗状態ではない)。
@@ -190,7 +181,7 @@ export function MyProfile() {
                 const c = playerCombatant(
                   myArchetype,
                   myJobLv,
-                  myPlayerLv,
+                  1, // プレイヤー Lv は戦闘値に影響しない (#507) ので固定値でよい
                   '',
                   state.result.rpgStats ? statVectorToArray(state.result.rpgStats) : undefined,
                   undefined,
@@ -386,9 +377,6 @@ export function ResultView({ result, questXp = 0, onRerun }: { result: Diagnosis
   const jobXp = (result.jobLevel?.xp ?? 0) + questXp;
   const jobLv = jobXpToNextLevel(jobXp);
   const jobPct = jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
-  const playerXp = (result.playerLevel?.xp ?? 0) + questXp;
-  const playerLv = playerXpToNextLevel(playerXp);
-  const playerPct = playerLv.next > 0 ? Math.min(1, playerLv.current / playerLv.next) * 100 : 100;
   return (
     <section style={{ marginTop: '1em' }}>
       <h3 style={{ fontSize: '1em' }}>
@@ -419,15 +407,6 @@ export function ResultView({ result, questXp = 0, onRerun }: { result: Diagnosis
           </div>
           <div style={{ height: 5, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden', marginTop: '0.2em' }}>
             <div style={{ width: `${jobPct}%`, height: '100%', background: 'var(--color-accent)' }} />
-          </div>
-        </div>
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
-            <span>全体 LV{playerLv.level} → LV{playerLv.level + 1}</span>
-            <span>{playerLv.next > 0 ? `${playerLv.current} / ${playerLv.next} XP` : `MAX (累計 ${playerXp} XP)`}</span>
-          </div>
-          <div style={{ height: 5, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden', marginTop: '0.2em' }}>
-            <div style={{ width: `${playerPct}%`, height: '100%', background: 'var(--color-luk)' }} />
           </div>
         </div>
       </div>

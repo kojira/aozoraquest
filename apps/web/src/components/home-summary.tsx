@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import type { DiagnosisResult, Quest, StatVector } from '@aozoraquest/core';
-import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobLevelFromXp, playerLevelFromXp } from '@aozoraquest/core';
+import { DEFAULT_QUEST_TEMPLATES, actionLabel, generateDailyQuests, jobDisplayName, jobLevelFromXp } from '@aozoraquest/core';
 import { RadarChart } from './radar-chart';
 import { PersonIcon, ScrollIcon } from './icons';
 import { SpiritBubble } from './spirit-bubble';
@@ -113,7 +113,6 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
 
   const jobName = jobDisplayName(diag.archetype, 'default');
   const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0);
-  const playerLv = playerLevelFromXp(diag.playerLevel?.xp ?? 0);
 
   // master 畳み: サマリ全体を隠し、細い 1 行のバーだけにする (TL がすぐ上に来る)。
   // dq-window の箱ごと消すので「遊び人 LV… / 今日のクエスト…」の 2 行も見えなくなる。
@@ -173,7 +172,6 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
           <PersonIcon size={14} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
           <span style={{ fontSize: '0.95em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{jobName}</span>
           <span style={{ fontSize: '0.78em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', whiteSpace: 'nowrap', flexShrink: 0 }}>LV{jobLv}</span>
-          <span style={{ fontSize: '0.72em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>全体{playerLv}</span>
           <span style={{ marginLeft: 'auto', color: 'var(--color-muted)', flexShrink: 0 }}>{open ? '▾' : '▸'}</span>
         </button>
 
