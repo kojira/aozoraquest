@@ -129,8 +129,12 @@ describe('装備ボーナスの二重加算防止 (#511)', () => {
     // playerStatsAt (丸め前) も同じ規則で解決する
     const bothRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id], { armor: armor.id });
     const gearRaw = playerStatsAt('sage', 1, 1, undefined, undefined, { armor: armor.id });
-    expect(bothRaw.def).toBeCloseTo(gearRaw.def);
-    expect(bothRaw.maxHp).toBeCloseTo(gearRaw.maxHp);
+    const idsRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id]);
+    expect(bothRaw.def).toBe(gearRaw.def); // 同一経路なので厳密一致 (toBeCloseTo だと微差を見逃す)
+    expect(bothRaw.maxHp).toBe(gearRaw.maxHp);
+    // 空 gear では equipIds が活きる (playerCombatant と同じ規則であることを raw 側でも固定)
+    const emptyRaw = playerStatsAt('sage', 1, 1, undefined, [armor.id], {});
+    expect(emptyRaw.def).toBe(idsRaw.def);
   });
 });
 
