@@ -161,13 +161,17 @@ export function DebugBattleSim() {
     isMultiDuel(s) ? resolveTurnMulti(s, cmd, freshSeed(), skillIndex, liveTarget(s)) : resolveTurn(s, cmd, freshSeed(), skillIndex);
   const duelCmd = (cmd: Command, skillIndex = 0) =>
     setDuel((s) => (s && s.outcome === 'ongoing' ? step(s, cmd, skillIndex) : s));
-  // 1 ターン送りも先読み込みの autoBattleAction を使う (#521)。旧 autoBattleCommand は
-  // とくぎ index を選ばず常に [0] を撃つので、バッチ統計と手動送りで挙動が食い違っていた。
+  // 1 ターン送りも先読みの autoBattleAction を使う (#521)。**先読みと実行に同じ seed を渡す**
+  // のが要点 — 渡さないと先読みは state 由来の seed、実行は freshSeed() になり、
+  // 「別の乱数の下での最良手」を撃つことになる (バッチ統計と手動送りが食い違う原因)。
   const duelAuto = () =>
     setDuel((s) => {
       if (!s || s.outcome !== 'ongoing') return s;
-      const a = autoBattleAction(s);
-      return step(s, a.command, a.skillIndex);
+      const seed = freshSeed();
+      const a = autoBattleAction(s, seed);
+      return isMultiDuel(s)
+        ? resolveTurnMulti(s, a.command, seed, a.skillIndex, liveTarget(s))
+        : resolveTurn(s, a.command, seed, a.skillIndex);
     });
 
   const pct = (x: number) => `${Math.round(x * 100)}%`;

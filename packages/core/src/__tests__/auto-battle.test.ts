@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { startBattle, resolveTurn, runAutoBattle, autoBattleAction, autoBattleCommand, JOBS } from '../index.js';
+import { startBattle, resolveTurn, runAutoBattle, autoBattleAction, skillMpCostOf, SKILLS, JOBS, type BattleState, type Command } from '../index.js';
 
 /**
  * 自動戦闘の**とくぎ選択** (#521)。
@@ -40,8 +40,20 @@ describe('autoBattleAction (#521)', () => {
     expect(win / 60).toBeGreaterThan(0.5);
   });
 
-  it('複数とくぎを持つ職で [0] 固定より強い手を選ぶ', () => {
-    // 賢者は Lv20 で 5 種のとくぎを持つ。[0] 固定と先読みで勝率が変わることを固定する。
+  it('複数とくぎを持つ職で、旧実装 (常に [0] を撃つ) より強い手を選ぶ', () => {
+    // 賢者は Lv20 で 5 種のとくぎを持つ。比較対象は **#521 以前の実装をそのまま書き写したもの**。
+    // 現行 API 経由で「commandだけ使う」形にすると先読みの影響が混ざり、退行検知にならない
+    // (先読みを丸ごと壊しても両方が一緒に劣化して差が保たれてしまう)。
+    const legacyCommand = (s: BattleState): Command => {
+      const isParry = s.playerSkill.kind === 'parry';
+      const p = s.player;
+      const cost = skillMpCostOf(p);
+      if (s.monster.charging) return isParry && p.mp >= cost ? 'skill' : 'guard';
+      if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return 'herb';
+      if (!isParry && s.tonics > 0 && p.mp < cost && p.maxMp >= cost * 2) return 'tonic';
+      if (!isParry && p.mp >= cost) return 'skill';
+      return 'attack';
+    };
     const run = (useLookahead: boolean) => {
       let win = 0;
       for (let seed = 0; seed < 60; seed++) {
@@ -51,7 +63,7 @@ describe('autoBattleAction (#521)', () => {
             const a = autoBattleAction(s);
             s = resolveTurn(s, a.command, undefined, a.skillIndex);
           } else {
-            s = resolveTurn(s, autoBattleCommand(s)); // skillIndex 既定 0 = 旧挙動
+            s = resolveTurn(s, legacyCommand(s)); // skillIndex 既定 0 = 常に最初のとくぎ
           }
         }
         if (s.outcome === 'win') win++;
@@ -59,6 +71,30 @@ describe('autoBattleAction (#521)', () => {
       return win;
     };
     expect(run(true)).toBeGreaterThan(run(false));
+  });
+
+  it('ため予告には防御で受ける — キットに parry 技があるならそれで (署名スキルで判定しない)', () => {
+    // 戦士は「署名が parry」なのにキットに parry 技を持たない。署名で判定していた頃は
+    // ため予告に殴りかかって被ダメが 1.5 倍になっていた。
+    for (const job of ['warrior', 'guardian'] as const) {
+      let charges = 0;
+      for (let seed = 0; seed < 40 && charges < 5; seed++) {
+        // ため (charger) を持つ敵を名指しで出す。tier 抽選任せだと当たらないことがある。
+        let s = startBattle(job, 20, 1, 'x', 3, seed, 3, undefined, { equipIds: ['ar-travel-cloak'], monsterId: 'blue-oni' });
+        for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
+          if (s.monster.charging) {
+            const a = autoBattleAction(s);
+            charges++;
+            // guard そのもの、または parry 技 (防御 + 反撃) のどちらかであること
+            const isParrySkill = a.command === 'skill' && !!SKILLS[s.playerSkills[a.skillIndex]!.kind]?.parry;
+            expect(a.command === 'guard' || isParrySkill, `${job} がため予告に ${a.command}`).toBe(true);
+          }
+          const a = autoBattleAction(s);
+          s = resolveTurn(s, a.command, undefined, a.skillIndex);
+        }
+      }
+      expect(charges, `${job} のため予告が観測できていない`).toBeGreaterThan(0);
+    }
   });
 
   it('全16職が想定レベル帯で成立する (tier1=Lv1 / tier2=Lv10 / tier3=Lv20)', () => {
