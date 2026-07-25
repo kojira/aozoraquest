@@ -744,7 +744,11 @@ export function playerStatsAt(
     int: g(3) + eq('int'),
     luk: g(4) + eq('luk'),
     maxHp: t.hpBase + Math.round(JOBS_BY_ID[archetype].vit * gr) * t.hpVitScale + eq('maxHp'),
-    maxMp: t.mpBase + g(3) * t.mpIntScale, // g() は statFloor 込み = playerCombatant と同一
+    // g() は statFloor 込み。playerCombatant は丸めた int から出すが、mpIntScale が整数かつ
+    // mpBase が整数の間は round(mpBase + round(x)) === round(mpBase + x) で一致する
+    // (「playerStatsAt は playerCombatant と丸めの点まで同期している」テストが固定)。
+    // **mpIntScale を非整数にするならこの一致が崩れるので両方を丸め済み int 基準に揃えること。**
+    maxMp: t.mpBase + g(3) * t.mpIntScale,
   };
 }
 
@@ -911,14 +915,19 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'glow-shroom', element: 'earth', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   { id: 'crimson-shroom', element: 'earth', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型 (DQ のメタルスライム): レア出現・高 XP (100)・毎ターン逃走。
-  //   - **超高守備 (def240)**: 減算式で通常攻撃は atkTerm−defTerm が深く負に沈み minDamage(1) しか
-  //     通らない = 「当たってもダメージがほとんど通らない」(オーナー要望 2026-07-21)。魔撃 (spell,
-  //     defFactor0.5) でも def が大きすぎて 1 = メタルは魔法も効かない (DQ 準拠)。
+  //   - **`flatDef: 255`**: DQ2 のメタルスライム/はぐれメタルと同値。tier 倍率を通さない実効 def
+  //     なので、どのレベルの相手にも identity が成立する (最高の Lv50 将軍でも atk 108 <
+  //     255×defCoef/atkCoef = 127 なので通常攻撃は **0**)。`stats[1]` は flatDef に上書きされる
+  //     ので実効値には効かない (プロファイルの見た目を他 tier1 と揃えてある)。
+  //   - **通常攻撃も魔法も 0**: minDamage=0 なので守備を上回れなければ 1 も通らない。魔法は
+  //     def 無視で通るため `resistAllMagic` で別途 0 にする (オーナー指摘 2026-07-25:
+  //     「攻撃力が低くても必ず 1 通る」は仕様の読み違いだった)。
   //   - **高 agi (38)**: 回避 (最大 dodgeMax) が張り付き「避けられる」。
-  //   - **低 HP (6→tier係数で実質4)**: 仕留める道は**会心の一撃のみ** (プレイヤーの会心は def 無視
-  //     #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。専用ロジックは使わず
-  //     守備/agi/HP の数値だけで「メタル」を表現 (オーナー: 専用ロジック禁止 2026-07-20)。
-  { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 240, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  //   - **低 HP (hp6 → monsterMaxHp で実質 8)**: 仕留める道は**会心の一撃のみ** (プレイヤーの
+  //     会心は def 無視 #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。
+  //     専用ロジックは使わず守備/agi/HP の数値だけで「メタル」を表現する方針は不変
+  //     (オーナー: 専用ロジック禁止 2026-07-20)。特殊武器での貫通は #519。
+  { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 24, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
@@ -992,7 +1001,12 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
  *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20) は不変。 */
 const TIER_LEVEL: Record<1 | 2 | 3, number> = { 1: 1, 2: 10, 3: 20 };
 
-/** tier 内の微調整。tier1 は明確に弱め (Lv1 の 5 連戦生存が健全な水準)。 */
+/** tier 内の微調整。tier1 は明確に弱め (Lv1 の 5 連戦生存が健全な水準)。
+ *
+ *  **`MONSTER_POWER` との役割分担**: こちらは **tier ごと**の相対難易度 (「このエリアは
+ *  想定レベルより少し優しい/厳しい」)、`MONSTER_POWER` は **全モンスター共通**の出力補正
+ *  (職とモンスターの profile 配分の違いを吸収する係数)。特定エリアだけ調整したいときは
+ *  こちら、戦闘全体のテンポを変えたいときは `MONSTER_POWER` を触る。 */
 const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.0, 3: 1.0 };
 
 /** モンスター全体の出力倍率 (#509)。
