@@ -30,9 +30,7 @@ const SLOT_LABELS: Record<EquipSlot, string> = {
   charm: 'おまもり',
 };
 
-// たいりょく (#518) は HP の元。「HP がなぜその数字か」を見せるため先頭に置く (オーナー要望)。
-const STAT_ROWS: readonly { key: 'vit' | 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
-  { key: 'vit', label: 'たいりょく' },
+const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
   { key: 'atk', label: 'こうげき' },
   { key: 'def', label: 'まもり' },
   { key: 'agi', label: 'すばやさ' },
@@ -131,6 +129,12 @@ export function StatusModal({
               上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
           <Section>
             <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
+            {/* たいりょく (#518) は HP の元 (HP = 6 + たいりょく × 2)。せんとうのうりょくに
+                並べると HP と離れて「何の数字か」が伝わらないので、HP の直下に小さく添える
+                (行を増やさず派生関係だけ見せる)。 */}
+            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.1em' }}>
+              たいりょく <span style={num}>{combat.vit}</span>
+            </div>
             <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
           </Section>
 
