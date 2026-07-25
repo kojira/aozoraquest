@@ -406,8 +406,9 @@ export function summarize(quests: UserQuest[]): OutcomeSummary {
  * 派生 = 二重加算が原理的に起きない)。
  *
  * 完了 1 件あたり固定 `XP_REWARDS.questComplete` を加算する。`me` が受託者で、かつ
- * 承認済み (`status==='completed'`) のクエストのみ対象。この XP は全体 LV (playerLevel) と
- * 現職 LV (jobLevel) の両方に乗せて表示する (= 冒険で確かにレベルが上がる)。
+ * 承認済み (`status==='completed'`) のクエストのみ対象。この XP は **現職 LV (jobLevel)** に
+ * 乗せて表示する (= 冒険で確かにレベルが上がる)。プレイヤー Lv (playerLevel) は戦闘力に
+ * 影響しないため #507/#508 で廃止しており、加算先ではない。
  *
  * 複数受託対応: completions マップを渡すと「me がその quest で承認された (per-assignee
  * COMPLETED)」件数を数える。省略時は従来どおり `status==='completed'` かつ me が受託者集合に

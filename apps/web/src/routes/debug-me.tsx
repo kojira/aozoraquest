@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, playerLevelFromXp } from '@aozoraquest/core';
+import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { ResultView } from './me';
 
@@ -103,8 +103,6 @@ export function DebugMe() {
       : null;
   const myJobXp = analysis.jobLevel?.xp ?? 0;
   const myJobLv = jobLevelFromXp(myJobXp);
-  const myPlayerXp = analysis.playerLevel?.xp ?? 0;
-  const myPlayerLv = playerLevelFromXp(myPlayerXp);
 
   return (
     // README 用のヒーロー画像なので、本物の AppShell + 背景なしで content だけ
@@ -140,11 +138,6 @@ export function DebugMe() {
                 <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(myArchetype)}</span>
               </p>
             )}
-            <p style={{ margin: '0.15em 0 0', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-              <span>全体:</span>{' '}
-              <span style={{ fontFamily: 'ui-monospace, monospace' }}>LV{myPlayerLv}</span>
-              <span style={{ marginLeft: '0.5em', opacity: 0.8 }}>(累計 {myPlayerXp} XP)</span>
-            </p>
             <p style={{ margin: '0.15em 0 0', fontSize: '0.85em', color: 'var(--color-muted)' }}>
               <span style={{ color: 'var(--color-muted)' }}>目指す:</span>{' '}
               {targetArchetype ? (

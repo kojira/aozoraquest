@@ -167,7 +167,7 @@ describe.skipIf(!HAS_CREDS)('依頼クエスト 2 アカウント フル E2E (AP
     expect(isCompleted(finalQuest, compsAfter)).toBe(true);
     expect(effectiveState(finalQuest, compsAfter)).toBe('COMPLETED');
 
-    // 11) 報酬: B が受託完了した分の経験値 (固定 100 XP/件)。全体/現職 LV に加算される。
+    // 11) 報酬: B が受託完了した分の経験値 (固定 100 XP/件)。現職 LV に加算される。
     const xp = questXpScalar([finalQuest], didB);
     expect(xp).toBe(100); // 完了 1 件 × XP_REWARDS.questComplete
   });

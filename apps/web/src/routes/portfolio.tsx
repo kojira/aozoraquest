@@ -132,7 +132,7 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
     () => (received ?? []).filter(q => rewardForMe(q, did ?? '', compMap.get(q.uri)) > 0),
     [received, compMap, did],
   );
-  // 受託して承認された分の累計経験値 (固定 100 XP/件)。全体 LV と現職 LV の両方に加算。
+  // 受託して承認された分の累計経験値 (固定 100 XP/件)。現職 LV に加算。
   const questXpTotal = useMemo(() => questXpScalar(received ?? [], did ?? '', compMap), [received, compMap, did]);
 
   /** 受託者視点: 発注者 DID → 獲得 pt の合計 (per-assignee 承認ベース) */

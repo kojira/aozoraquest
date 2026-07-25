@@ -791,7 +791,7 @@ aozoraquest 内のクエスト一覧 / 詳細画面でも未読バッジを出�
 |---|---|---|
 | **visibility** | **public のみ** | followers / private は実装しない。schema 上 `visibility` enum も `["public"]` 単独にする |
 | **Bluesky 自動告知** | **default ON、文面はユーザーが編集可能** | 編集テンプレを発行画面に出して、必要に応じて書き換えてから post |
-| **受託完了の経験値** | **固定 XP (`XP_REWARDS.questComplete` = 100)** | 受託して完了 (発注者が承認) した 1 件あたり一律 100 XP。**全体 LV (playerLevel) と現職 LV (jobLevel) の両方に加算**する。内容 (タグ) で配分を変える「ステータス XP」概念は廃止 (オーナー判断 2026-06: クエストで入るのはレベルアップ用の経験値だけ)。`questXpScalar` が完了集合から派生算出 (二重加算なし) |
+| **受託完了の経験値** | **固定 XP (`XP_REWARDS.questComplete` = 100)** | 受託して完了 (発注者が承認) した 1 件あたり一律 100 XP。**現職 LV (jobLevel) に加算**する (プレイヤー Lv は戦闘力に影響しないため #507/#508 で廃止)。内容 (タグ) で配分を変える「ステータス XP」概念は廃止 (オーナー判断 2026-06: クエストで入るのはレベルアップ用の経験値だけ)。`questXpScalar` が完了集合から派生算出 (二重加算なし) |
 | **通知システム** | **Bluesky notification に乗せる (= aozoraquest が通知 post を生成)** | 専用 NSID は作らない。通知 post を mention 付きで出すことで、ユーザーの Bluesky 標準クライアントでも気付ける |
 | **タイトル/本文の最大長** | **タイトル 80 字 / 本文 1500 字** | 妥当と判断、これで進める |
 | **承認時の報酬調整幅** | **増減なし**。元クエストの `rewardPoints` でそのまま発行する | `questCompletion.rewardPoints` は別途持たず、元 record の値を信頼する |
@@ -807,7 +807,7 @@ aozoraquest 内のクエスト一覧 / 詳細画面でも未読バッジを出�
 > クエストで入るのは**レベルアップ用の経験値だけ**、というオーナーの方針に合わせる。
 
 現仕様: 受託して完了 (発注者が承認) した 1 件あたり **固定 `XP_REWARDS.questComplete` (= 100) XP**
-を獲得し、**全体 LV (playerLevel) と現職 LV (jobLevel) の両方に加算**する。タグによる差は無い。
+を獲得し、**現職 LV (jobLevel) に加算**する (プレイヤー Lv は #507/#508 で廃止)。タグによる差は無い。
 
 実装は `questXpScalar(receivedQuests, me)` が「完了済み (`status==='completed'`) かつ自分が
 受託者 (`assignee===me`) のクエスト数 × 100」を完了集合から派生算出する (`holdings` と同様に

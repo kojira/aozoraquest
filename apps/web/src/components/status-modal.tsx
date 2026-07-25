@@ -129,10 +129,12 @@ export function StatusModal({
               上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
           <Section>
             <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
-            {/* たいりょく (#518) は HP の元 (HP = 6 + たいりょく × 2)。せんとうのうりょくに
-                並べると HP と離れて「何の数字か」が伝わらないので、HP の直下に小さく添える
-                (行を増やさず派生関係だけ見せる)。 */}
-            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.1em' }}>
+            {/* たいりょく (#518) は HP の元。せんとうのうりょくに並べると HP と離れて
+                「何の数字か」が伝わらないので、HP の直下に小さく添える (行を増やさず
+                派生関係だけ見せる)。**装備の maxHp ボーナスは vit を経由せず HP に直接
+                加算される**ので、装備時は HP ≠ 6 + たいりょく × 2 になる (HP 行の
+                「そうび +N」がその差分)。関係を画面に出すかは #526。 */}
+            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.2em', marginBottom: '0.7em' }}>
               たいりょく <span style={num}>{combat.vit}</span>
             </div>
             <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />

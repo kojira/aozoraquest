@@ -39,7 +39,7 @@ export function MyProfile() {
   const [summoned, setSummoned] = useState<boolean>(false);
   const [summonedLoaded, setSummonedLoaded] = useState<boolean>(false);
   const [gearData, setGearData] = useState<{ refs: GearRefs; pieces: CraftedPiece[] } | null>(null);
-  // 受託して完了したクエストから得た経験値 (全体 LV・現職 LV の両方に加算)。
+  // 受託して完了したクエストから得た経験値 (現職 LV に加算)。
   const [questXp, setQuestXp] = useState<number>(0);
 
   useEffect(() => {
@@ -152,7 +152,8 @@ export function MyProfile() {
     state.status === 'done' && state.result.archetype && state.result.archetype in JOBS_BY_ID
       ? (state.result.archetype as Archetype)
       : null;
-  // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を全体・現職とも加算する。
+  // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を現職 LV へ加算する
+  // (プレイヤー Lv は #507/#508 で廃止したので加算先は現職のみ)。
   const myJobXp = (state.status === 'done' ? (state.result.jobLevel?.xp ?? 0) : 0) + questXp;
   const myJobLv = jobLevelFromXp(myJobXp);
 
@@ -373,7 +374,7 @@ export function ResultView({ result, questXp = 0, onRerun }: { result: Diagnosis
   const jobName = jobDisplayName(result.archetype, 'default');
   const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
-  // 受託完了クエストの経験値を全体・現職とも加算 (ヘッダの LV 表示と揃える)。
+  // 受託完了クエストの経験値を現職 LV に加算 (ヘッダの LV 表示と揃える)。
   const jobXp = (result.jobLevel?.xp ?? 0) + questXp;
   const jobLv = jobXpToNextLevel(jobXp);
   const jobPct = jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
@@ -541,8 +542,7 @@ function JobChangeBanner({
       </p>
       <p style={{ margin: '0.3em 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
         今は「{jobDisplayName(current, 'default')}」のまま。{streak} 投稿連続で {jobDisplayName(pending, 'default')} 寄りに判定されました。
-        転職すると現ジョブの LV・XP はリセットされ、新しいジョブで 0 から育て直しになります
-        (全体 LV は維持されます)。
+        転職すると、<strong>投稿で貯めた</strong>現ジョブの XP がリセットされます (受託クエストで得た経験値は残ります)。
       </p>
       <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
         <button disabled={busy} onClick={() => void handle(onConfirm)}>
