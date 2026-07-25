@@ -542,7 +542,7 @@ function JobChangeBanner({
       </p>
       <p style={{ margin: '0.3em 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
         今は「{jobDisplayName(current, 'default')}」のまま。{streak} 投稿連続で {jobDisplayName(pending, 'default')} 寄りに判定されました。
-        転職すると、<strong>投稿で貯めた</strong>現ジョブの XP がリセットされます (受託クエストで得た経験値は残ります)。
+        <strong>{jobDisplayName(current, 'default')}</strong> のレベルはそのまま保持されます。戻ればその続きから育てられます。
       </p>
       <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
         <button disabled={busy} onClick={() => void handle(onConfirm)}>

@@ -100,6 +100,18 @@ export interface DiagnosisResult {
   analyzedPostCount: number;
   analyzedAt: string; // ISO datetime
   jobLevel?: JobLevelState;
+  /**
+   * **職ごとの投稿由来 XP の保管庫** (#531)。転職時に現職ぶんをここへ退避し、
+   * その職に戻ったら取り出す。**現職ぶんは `jobLevel.xp` が正**で、ここには入れない
+   * (二重計上を防ぐため。読む側は今までどおり `jobLevel.xp` だけ見ればよい)。
+   *
+   * これが無かった頃は転職のたびに XP が 0 に捨てられていた。戦闘由来の XP
+   * (`GameState.jobXp`) は職ごとのキーで元から保持されていたので、
+   * 「戦闘ぶんは戻るのに投稿ぶんは消える」という非対称になっていた。
+   *
+   * 未設定 (既存ユーザー) は「過去分ゼロ」として扱う = 後方互換。
+   */
+  jobXpByArchetype?: Partial<Record<Archetype, number>>;
   playerLevel?: PlayerLevelState;
   /** 投稿ごとの cognitive 再判定で、現 archetype と異なる候補が出ているときに埋まる。 */
   pendingArchetype?: Archetype;

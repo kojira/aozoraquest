@@ -1,6 +1,6 @@
 import { statGap, sortStatsByRelativeGap } from './stats.js';
 import { JOB_LEVEL_TUNING, PLAYER_LEVEL_TUNING, XP_REWARDS } from './tuning.js';
-import type { ActionType, Quest, Stat, StatVector } from './types.js';
+import type { ActionType, Archetype, JobLevelState, Quest, Stat, StatVector } from './types.js';
 
 /**
  * クエストテンプレート (03-game-design.md §クエストテンプレートプール)。
@@ -203,6 +203,40 @@ export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: num
   JOB_LEVEL_TUNING.coefficient,
   JOB_LEVEL_TUNING.exponent,
 );
+
+/**
+ * 転職時のジョブ XP の付け替え (#531)。**転職しても職ごとのレベルは保持される。**
+ *
+ * `jobLevel` は現職 1 つぶんしか持てないので、転職のたびに現職の XP を
+ * `jobXpByArchetype` へ退避し、新しい職の過去分を取り出す。これが無かった頃は
+ * 転職のたびに XP が 0 に捨てられており、**戦闘由来の XP (`GameState.jobXp`) は
+ * 職ごとのキーで保持されるのに投稿由来だけ消える**という非対称になっていた。
+ *
+ * 同じ職への「転職」は no-op (XP を保ったまま)。退避先に現職を書かないので、
+ * `jobLevel.xp` と保管庫で二重計上されることはない。
+ *
+ * @param opts.keepXp 復元せずこの XP を使う (管理ツールの LV 直接指定用)。
+ *                    退避は行うので、元の職のレベルは失われない。
+ */
+export function switchJobXp(
+  prev: { jobLevel?: JobLevelState | undefined; jobXpByArchetype?: Partial<Record<Archetype, number>> | undefined },
+  newArchetype: Archetype,
+  joinedAt: string,
+  opts: { keepXp?: number } = {},
+): { jobLevel: JobLevelState; jobXpByArchetype: Partial<Record<Archetype, number>> } {
+  const bank: Partial<Record<Archetype, number>> = { ...(prev.jobXpByArchetype ?? {}) };
+  const cur = prev.jobLevel;
+  // 現職ぶんを退避 (同じ職への転職なら退避も復元も不要)。max を取るのは、保管庫に
+  // 既により大きい値がある異常系で XP を減らさないため。
+  if (cur && cur.archetype !== newArchetype) {
+    bank[cur.archetype] = Math.max(bank[cur.archetype] ?? 0, cur.xp);
+  }
+  const restored = cur?.archetype === newArchetype ? cur.xp : (bank[newArchetype] ?? 0);
+  const xp = opts.keepXp ?? restored;
+  // 現職ぶんは jobLevel.xp が正なので保管庫からは外す (二重計上の防止)。
+  delete bank[newArchetype];
+  return { jobLevel: { archetype: newArchetype, xp, joinedAt }, jobXpByArchetype: bank };
+}
 
 /** 累計 XP から現職 LV を計算。 */
 export function jobLevelFromXp(xp: number): number {

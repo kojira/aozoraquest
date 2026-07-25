@@ -29,6 +29,7 @@ import {
   determineArchetype,
   jobLevelFromXp,
   playerLevelFromXp,
+  switchJobXp,
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
@@ -342,10 +343,12 @@ export async function confirmJobChange(agent: Agent, did: string, newArchetype: 
   const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
   if (!analysis) return null;
   const now = new Date().toISOString();
+  // 転職しても職ごとのレベルは保持する (#531)。現職ぶんを保管庫へ退避し、
+  // 新しい職を過去に育てていればそのレベルから再開する。
   const next: DiagnosisResult = {
     ...analysis,
     archetype: newArchetype,
-    jobLevel: { archetype: newArchetype, xp: 0, joinedAt: now },
+    ...switchJobXp(analysis, newArchetype, now),
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
@@ -370,10 +373,12 @@ export async function adminSetJob(agent: Agent, did: string, newArchetype: Arche
   // 目標 LV の XP しきい値 (JOB_XP_CURVE)。LV1 は 0。jobLevelFromXp(xp) がこの LV を返す最小 XP。
   const xp = JOB_XP_CURVE.find((e) => e[0] === lv)?.[1] ?? 0;
   const now = new Date().toISOString();
+  // 管理ツールは LV を直接指定するので復元はしない (keepXp)。ただし**退避はする**ので
+  // 元の職のレベルは失われない (#531)。
   const next: DiagnosisResult = {
     ...analysis,
     archetype: newArchetype,
-    jobLevel: { archetype: newArchetype, xp, joinedAt: now },
+    ...switchJobXp(analysis, newArchetype, now, { keepXp: xp }),
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;

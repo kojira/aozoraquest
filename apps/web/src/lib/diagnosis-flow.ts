@@ -5,6 +5,7 @@ import {
   DIAGNOSIS_POST_LIMIT,
   diagnose,
   diagnoseFromPerPostScores,
+  switchJobXp,
   type DiagnosisResult,
 } from '@aozoraquest/core';
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
@@ -135,10 +136,9 @@ export async function runDiagnosis(
   const divergent = userChosenArchetype && userChosenArchetype !== suggestedArchetype;
 
   const finalArchetype = divergent ? userChosenArchetype : suggestedArchetype;
-  const jobLevel =
-    existing?.jobLevel && existing.jobLevel.archetype === finalArchetype
-      ? existing.jobLevel
-      : { archetype: finalArchetype, xp: 0, joinedAt: result.analyzedAt };
+  // 職が変わる場合も**元の職の XP は保管庫に退避され、その職に戻れば復元される** (#531)。
+  // 同じ職ならそのまま (switchJobXp が no-op)。
+  const { jobLevel, jobXpByArchetype } = switchJobXp(existing ?? {}, finalArchetype, result.analyzedAt);
 
   // divergent 時の pending 扱い: 既存の streak が同じ候補を指していれば +1、
   // 別候補なら 1 にリセット。一致時 (divergent でない) は pending をクリア。
@@ -150,6 +150,7 @@ export async function runDiagnosis(
     analyzedPostCount: result.analyzedPostCount,
     analyzedAt: result.analyzedAt,
     jobLevel,
+    jobXpByArchetype,
     playerLevel,
   };
   if (divergent) {
