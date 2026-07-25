@@ -616,16 +616,6 @@ function gearFlatBonus(archetype: Archetype, equipIds?: readonly string[], gear?
 }
 
 /**
- * プレイヤーの戦闘値を導出。
- * 基底 = **ジョブ基準値と個人 rpgStats (プロフィールの 5 パラメータ、合計 100) の
- * ブレンド** (baseStatsPersonalWeight = 0.5)。個人値 100% は診断の min-max 正規化で
- * 極端ビルドが常態化し勝率が 0〜100% に割れるため (issue #279)。未診断は
- * ジョブ基準値のみ。
- * レベル補正 = 平坦加算 (+flatLevelGain × (playerLv−1)、レベル係数の乗算前に加算) の
- * 後に乗算 (jobLv/playerLv の levelScale)。W4 のサーバー権威化ではこの関数を
- * Worker 側で同じ入力 (analysis レコード) から再導出する。
- */
-/**
  * 成長式の**単一の出所** (#520)。`playerCombatant` (丸めて Combatant にする) と
  * `playerStatsAt` (丸めずに上昇量表示に使う) の両方がこれを使う。
  *
@@ -656,15 +646,27 @@ function growthOf(archetype: Archetype, jobLevel: number, baseStats?: StatArray)
   return {
     /** 5 ステータスの生値。**まもり (index 1) だけ statFloor 無し・def 系統の伸び率** — 守備は
      *  防具が主役という設計を下駄で薄めないため (docs/19 §6.4.5)。 */
-    stat: (i: number): number => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr),
+    stat: (i: 0 | 1 | 2 | 3 | 4): number => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr),
     /** たいりょく。**丸めた値**を返す — ステータス画面に出す たいりょく が HP を説明できる
      *  必要があるため (「たいりょく 4」なのに HP 13 では表示の意味が無い)。 */
     vit: Math.round(JOBS_BY_ID[archetype].vit * gr),
-    /** MP。`intValue` の基準 (丸め済み / 生値) は呼び出し側が決める。 */
-    maxMp: (intValue: number): number => t.mpBase + intValue * t.mpIntScale,
+    /** MP の**生値**。丸めるかどうかは呼び出し側が決める (playerCombatant だけが丸める)。
+     *  基準を helper 内に固定してあるので、`round(playerStatsAt.maxMp) === playerCombatant.maxMp`
+     *  が `mpIntScale` の値に依らず構造的に成立する。 */
+    maxMp: (): number => t.mpBase + (t.statFloor + base[3]! * gr) * t.mpIntScale,
   };
 }
 
+/**
+ * プレイヤーの戦闘値を導出。
+ * 基底 = **ジョブ基準値と個人 rpgStats (プロフィールの 5 パラメータ、合計 100) の
+ * ブレンド** (baseStatsPersonalWeight = 0.5)。個人値 100% は診断の min-max 正規化で
+ * 極端ビルドが常態化し勝率が 0〜100% に割れるため (issue #279)。未診断は
+ * ジョブ基準値のみ。
+ * レベル補正は `growthOf` が持つ (**ジョブ Lv のみ**。旧 flatLevelGain / levelScale による
+ * プレイヤー Lv 追従は #507 で撤廃済み)。W4 のサーバー権威化ではこの関数を
+ * Worker 側で同じ入力 (analysis レコード) から再導出する。
+ */
 export function playerCombatant(
   archetype: Archetype,
   jobLevel: number,
@@ -686,13 +688,14 @@ export function playerCombatant(
     Math.round(g.stat(0)), Math.round(g.stat(1)), Math.round(g.stat(2)),
     Math.round(g.stat(3)), Math.round(g.stat(4)),
   ];
-  // HP は たいりょく の 2 倍 (DQ 準拠)、MP は かしこさ から。**どちらも丸めた整数を基準にする**
-  // — 画面に出す たいりょく / かしこさ が HP / MP を説明できる必要があるため。
+  // HP は たいりょく の 2 倍 (DQ 準拠)、MP は かしこさ から。**HP だけ丸めた たいりょく を
+  // 基準にする** — 画面に出す たいりょく が HP を説明できる必要があるため (「たいりょく 4」
+  // なのに HP 13 では表示の意味が無い)。MP は生値から丸めるので playerStatsAt と厳密に一致する。
   const c = makeCombatant(
     displayName,
     grown,
     Math.round(t.hpBase + g.vit * t.hpVitScale),
-    Math.round(g.maxMp(grown[3])),
+    Math.round(g.maxMp()),
     g.vit,
   );
   const bonus = gearFlatBonus(archetype, equipIds, gear);
@@ -750,10 +753,12 @@ export function playerStatsAt(
     agi: g.stat(2) + eq('agi'),
     int: g.stat(3) + eq('int'),
     luk: g.stat(4) + eq('luk'),
-    // HP/MP は playerCombatant と同じく **丸めた たいりょく / かしこさ** を基準にする。
-    // ここだけ生値を使うと「丸めの点まで同期している」不変条件が mpIntScale 次第で崩れる。
+    // HP は playerCombatant と同じく丸めた たいりょく 基準 (画面表示との整合)。
+    // MP は生値のまま — この関数の存在理由が「上昇量を小数 1 桁で見せる」ことなので、
+    // ここで整数に量子化すると「毎レベル +1.5」が「+2 / +1」とガタつき、表示から MP 行が
+    // 消えるケースも出る (レビューで実測 4,464/4,704 ケースが変化)。
     maxHp: t.hpBase + g.vit * t.hpVitScale + eq('maxHp'),
-    maxMp: g.maxMp(Math.round(g.stat(3))),
+    maxMp: g.maxMp(),
   };
 }
 
