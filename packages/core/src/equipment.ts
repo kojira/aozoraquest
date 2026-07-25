@@ -158,13 +158,13 @@ export const EQUIPMENT: EquipmentDef[] = [
     },
   ]),
   // ─── 防具 ───
-  { id: 'ar-cloth', name: 'ぬののふく', slot: 'armor', kind: 'cloth', bonus: { def: 2 }, grade: 1, price: { power: 4, materials: 1 } },
-  { id: 'ar-leather', name: 'かわのよろい', slot: 'armor', kind: 'cloth', bonus: { def: 4 }, grade: 1, price: { power: 8, materials: 2 } },
-  { id: 'ar-travel-cloak', name: 'たびのマント', slot: 'armor', kind: 'cloth', bonus: { def: 6 }, grade: 2, price: { power: 14, materials: 3 } },
-  { id: 'ar-iron', name: '鉄のよろい', slot: 'armor', kind: 'heavy', bonus: { def: 8 }, grade: 2, price: { power: 20, materials: 4 } },
-  { id: 'ar-nimble', name: 'かるわざの衣', slot: 'armor', kind: 'light', bonus: { def: 4, agi: 3 }, grade: 2, price: { power: 20, materials: 4 } },
-  { id: 'ar-scholar', name: 'まなびのローブ', slot: 'armor', kind: 'robe', bonus: { def: 4, int: 3 }, grade: 2, price: { power: 20, materials: 4 } },
-  { id: 'ar-fortune', name: 'しあわせの衣', slot: 'armor', kind: 'light', bonus: { def: 4, luk: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-cloth', name: 'ぬののふく', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 4, materials: 1 } },
+  { id: 'ar-leather', name: 'かわのよろい', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 8, materials: 2 } },
+  { id: 'ar-travel-cloak', name: 'たびのマント', slot: 'armor', kind: 'cloth', bonus: { def: 15 }, grade: 2, price: { power: 14, materials: 3 } },
+  { id: 'ar-iron', name: '鉄のよろい', slot: 'armor', kind: 'heavy', bonus: { def: 15 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-nimble', name: 'かるわざの衣', slot: 'armor', kind: 'light', bonus: { def: 15, agi: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-scholar', name: 'まなびのローブ', slot: 'armor', kind: 'robe', bonus: { def: 15, int: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-fortune', name: 'しあわせの衣', slot: 'armor', kind: 'light', bonus: { def: 15, luk: 3 }, grade: 2, price: { power: 20, materials: 4 } },
   // ─── お守り (W6a はステータス系のみ。挙動系 (回避/にげる/ドロップ/MP減) は
   //     戦闘エンジンへのフック実装とセットで後続 PR — 効かない品は店に出さない) ───
   { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 3 }, grade: 2, price: { power: 16, materials: 3 } },

@@ -21,22 +21,21 @@ describe('モンスター属性・魔法耐性 (#455)', () => {
     }
   });
 
-  it('魔法 (賢者の火炎) はメタルに最小 1 しか通らない (DQ の魔法無効)', () => {
-    // はぐれスライムは fleer で高確率逃走するため、火炎が実際に当たったターンを探して検証する。
-    let landed = false;
-    for (let seed = 0; seed < 40 && !landed; seed++) {
+  it('魔法 (賢者の火炎) はメタルに 1 も通らない (DQ の魔法無効)', () => {
+    // 魔法無効 = **HP が 1 も減らない** (minDamage=0。オーナー指摘 2026-07-25)。
+    // 逃走・回避で「そもそも撃てなかった」ケースと区別するため、火炎の着弾ログが出た
+    // ターンが 1 回以上あることも確かめる (ログは出るがダメージだけ 0、が正しい姿)。
+    let cast = false;
+    for (let seed = 0; seed < 40; seed++) {
       const s = startBattle('sage', 8, 12, '賢', 1, seed, 0, undefined, { monsterId: 'stray-slime' });
       expect(s.monster.resistAllMagic).toBe(true);
       const idx = s.playerSkills.findIndex((sk) => sk.name === '火炎');
       const before = s.monster.hp;
       const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
-      const dealt = before - next.monster.hp;
-      if (dealt > 0) {
-        landed = true;
-        expect(dealt).toBe(1); // 魔法無効 = 最小 1 のみ。会心物理でしか削れない。
-      }
+      expect(before - next.monster.hp).toBe(0); // 何があっても魔法では削れない
+      if (next.lastEvents.some((e) => e.text.includes('火炎'))) cast = true;
     }
-    expect(landed).toBe(true);
+    expect(cast).toBe(true);
   });
 
   it('弱点属性は 1.5 倍、逆は 0.5 倍 (賢者の疾風=wind)', () => {

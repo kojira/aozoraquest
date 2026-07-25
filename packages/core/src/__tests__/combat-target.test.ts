@@ -17,6 +17,7 @@ function mk(name: string, hp = 10): Combatant {
     agi: 8,
     int: 8,
     luk: 8,
+    vit: 0,
     guarding: false,
     parrying: false,
     charging: false,

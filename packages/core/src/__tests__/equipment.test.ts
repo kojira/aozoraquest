@@ -77,9 +77,10 @@ describe('canEquip (装備適性)', () => {
 describe('gearBonus', () => {
   it('装備の合計を返し、未知 id と装備不可の品は無視する', () => {
     const g = gearBonus('ninja', ['wp-ninja-mid', 'ar-nimble', 'ch-life', 'no-such-item', 'wp-axe']);
-    // wp-axe は ninja 装備不可 → 無視。忍者刀 +8 agi、かるわざ +4 def +3 agi、ペンダント +3 maxHp
+    // wp-axe は ninja 装備不可 → 無視。忍者刀 +8 agi、かるわざの衣 +15 def +3 agi、ペンダント +3 maxHp
+    // (#518 で防具の def を grade1 +5 / grade2 +15 / grade3 +35 に引き上げ = 守備は防具が主役)
     expect(g.agi).toBe(11);
-    expect(g.def).toBe(4);
+    expect(g.def).toBe(15);
     expect(g.maxHp).toBe(3);
     expect(g.atk).toBe(0);
   });
@@ -146,7 +147,7 @@ describe('専用装備の弱点補完 (将軍)', () => {
     expect(gear.bonus.maxHp ?? 0).toBeGreaterThan(0);
     let wins = 0;
     for (let seed = 0; seed < 300; seed++) {
-      let s = startBattle('shogun', 8, 15, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
+      let s = startBattle('shogun', 15, 1, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
         equipIds: ['wp-shogun-high', 'ar-iron', 'ch-life'],
       });
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
@@ -162,7 +163,8 @@ describe('専用装備の弱点補完 (将軍)', () => {
       }
       if (s.outcome === 'win') wins++;
     }
-    // 実測 65% (300 seed)。素の 45% (atk 単盛り) への回帰を検知する下限
+    // #507 でジョブ Lv 基準に貼り直し (jobLv15)。実測 **装備なし 15% → フル装備 67%** =
+    // 専用品 (def+maxHp 複合) の効果が明確。素の atk 単盛りへの回帰を検知する下限
     expect(wins / 3).toBeGreaterThanOrEqual(55);
   });
 });

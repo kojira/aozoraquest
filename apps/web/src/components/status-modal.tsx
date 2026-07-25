@@ -7,7 +7,6 @@ import {
   jobXpToNextLevel,
   leveledName,
   mpGainsFor,
-  playerXpToNextLevel,
   type Archetype,
   type Combatant,
   type EquipSlot,
@@ -44,9 +43,7 @@ export function StatusModal({
   avatarUrl,
   archetype,
   jobLv,
-  playerLv,
   jobXp,
-  playerXp,
   combat,
   combatBase,
   hp,
@@ -59,9 +56,7 @@ export function StatusModal({
   avatarUrl: string | null;
   archetype: Archetype;
   jobLv: number;
-  playerLv: number;
   jobXp: number;
-  playerXp: number;
   /** 装備込みの実効値 (戦闘に渡すものと同一) */
   combat: Combatant;
   /** 装備なしの素の値 (装備ぶんの内訳表示用) */
@@ -87,7 +82,6 @@ export function StatusModal({
   const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
   const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
   const jobNext = useMemo(() => jobXpToNextLevel(jobXp), [jobXp]);
-  const playerNext = useMemo(() => playerXpToNextLevel(playerXp), [playerXp]);
 
   const num = { fontFamily: 'ui-monospace, monospace' as const };
 
@@ -126,7 +120,7 @@ export function StatusModal({
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || 'ぼうけんしゃ'}</div>
               <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span> / ぼうけん Lv <span style={num}>{playerLv}</span>
+                {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span>
               </div>
             </div>
           </div>
@@ -135,6 +129,12 @@ export function StatusModal({
               上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
           <Section>
             <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
+            {/* たいりょく (#518) は HP の元 (HP = 6 + たいりょく × 2)。せんとうのうりょくに
+                並べると HP と離れて「何の数字か」が伝わらないので、HP の直下に小さく添える
+                (行を増やさず派生関係だけ見せる)。 */}
+            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.1em' }}>
+              たいりょく <span style={num}>{combat.vit}</span>
+            </div>
             <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
           </Section>
 
@@ -198,13 +198,6 @@ export function StatusModal({
                 <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1} まで あと <span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
               ) : (
                 <>{jobDisplayName(archetype, 'default')} Lv はさいだいに たっした!</>
-              )}
-            </div>
-            <div>
-              {playerNext.next > 0 ? (
-                <>ぼうけん Lv {playerNext.level + 1} まで あと <span style={num}>{Math.max(0, playerNext.next - playerNext.current)}</span></>
-              ) : (
-                <>ぼうけん Lv はさいだいに たっした!</>
               )}
             </div>
           </div>

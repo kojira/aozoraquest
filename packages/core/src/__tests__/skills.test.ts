@@ -15,6 +15,7 @@ function makeCombatant(over: Partial<Combatant> = {}): Combatant {
     agi: 15,
     int: 25,
     luk: 30,
+    vit: 0,
     guarding: false,
     parrying: false,
     charging: false,

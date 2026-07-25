@@ -52,27 +52,49 @@ export const BATTLE_TUNING = {
   xpWin: 30,
   /** 敗北 XP (挑んだこと自体に少額) */
   xpLose: 5,
-  /** HP = hpBase + def*hpDefScale + level*hpLevelScale。
-   *  DQ 級の小さいスケール (プレイヤー Lv1 ~18-21・敵ひとけた) にして、レベルアップ/装備の
-   *  +数の恩恵を体感させる (オーナー方針 2026-07-21。小さい母数ほど +2 が効く)。ダメージ係数
-   *  (atkCoef/defCoef) と全モンスター HP も同じ ~1/4 スケールで、手数 (倒す回数) は保つ。 */
-  hpBase: 17,
-  hpDefScale: 0.08,
-  // レベルアップの HP 上昇を「毎回 +1〜2 の体感できる整数」にする (DQ 級スケールの狙いは
-  // 成長を体感させること。0.5 だと半分のレベルで +0 になり逆効果 — レビュー ★★★)。母数が
-  // 小さいので +1.5/level でも Lv1→30 で HP が 2〜3 倍に伸び、成長の手応えが強い。
-  hpLevelScale: 1.5,
+  /** HP = hpBase + def × hpDefScale × ジョブ Lv 係数 (#507)。
+   *  DQ 級の小さいスケール (敵ひとけた) にして、レベルアップ/装備の +数の恩恵を体感させる
+   *  (オーナー方針 2026-07-21。小さい母数ほど +2 が効く)。
+   *
+   *  **hpDefScale はジョブごとの HP 伸び率そのもの** (#507): HP が def に比例するので、def43 の
+   *  守護者は def15 の賢者より素で硬く、ジョブ Lv が上がるほど差が開く (= 職の個性が HP に出る)。
+   *  旧式は `+ プレイヤーLv × hpLevelScale` が支配項で、(a) 職差がほぼ無い (b) ジョブ Lv で伸びない
+   *  (c) プレイヤー Lv で同じ職の HP が変わる、を同時に起こしていたので撤廃した。 */
+  hpBase: 6,
+  /** HP = hpBase + たいりょく × hpVitScale (#518。DQ 準拠「体力の約 2 倍まで HP が上昇」)。
+   *  たいりょく自体が statBase/statGrow でレベル成長するので、**HP も毎レベル +2〜4 動く**。 */
+  hpVitScale: 2,
   /** 敵の HP/MP に遭遇ごとの分散 (±この割合)。値を毎回固定にせず、「あと何回
    *  使えるか」をプレイヤーに予想させる (オーナー要望 2026-07-18)。seed 決定的。
    *  world 遭遇のみ適用し、バランステスト対象の trial は 0 (固定) に保つ。 */
   monsterVitalsVariance: 0.15,
-  /** レベルによるステータス補正 = 1 + (jobLv-1)*jobLevelScale + (playerLv-1)*playerLevelScale */
+  /** レベルによるステータス補正 = 1 + (jobLv-1) × jobLevelScale。
+   *  **成長軸はジョブ Lv のみ** (#507)。旧 playerLevelScale / flatLevelGain (プレイヤー Lv 由来) は
+   *  撤廃した — 同じ職・同じジョブ Lv でもプレイヤー Lv で強さが変わり、「その職の強さ」が
+   *  定まらなかったため (オーナー方針 2026-07-25)。 */
   jobLevelScale: 0.04,
-  playerLevelScale: 0.015,
-  /** プレイヤーの全ステータスに加わる平坦なレベル成長 (+flatLevelGain × (playerLv-1))。
-   *  乗算補正だけだと低い値は低いままで「弱いジョブがレベルでちゃんと強くならない」
-   *  (オーナー指摘 2026-07-17)。加算成長は低ステータスほど相対的に効く。 */
-  flatLevelGain: 0.25,
+  /** ステータス = 比率 × (statBase + statGrow × (jobLv−1))  (#518)。
+   *  **比率 (合計 100 の職プロファイル) は「伸び率」に掛ける**。以前は比率をそのまま Lv1 の絶対値に
+   *  使っていたため「大きく始まってほとんど伸びない」(Lv1 int40 → Lv50 118 の 3 倍) 状態だった。
+   *  DQ は小さく始まって 15〜20 倍に伸びるので、それに寄せた (Lv1 int8 → Lv50 106 の 13 倍)。 */
+  statBase: 0.20,
+  /** 全ステータス共通の下駄 (#518)。
+   *
+   *  職の比率は atk だけで 7 (魔法使い) 〜 39 (将軍) と 5.6 倍の開きがある。これを Lv1 で
+   *  そのまま比率 × 0.20 にすると atk 1 対 8 になり、**減算式 (atk*0.9 − def*0.45) が
+   *  低い側で 0 に潰れて何をしても 1 も通らない**。DQ の Lv1 も単純な数値だが、勇者の
+   *  ちから 4 + 武器 のように**全員が一定の底上げ**を持つので潰れない。それを再現する。
+   *
+   *  Lv50 では比率 × 2.65 が 20〜103 になるので下駄は誤差に薄まる = 職差は保たれる。
+   *  **まもり (def) には掛けない** — 守備は防具が主役という設計 (defBase 参照) を、
+   *  下駄で薄めてしまわないため。モンスターは防具を持たないので 5 ステとも掛ける。 */
+  statFloor: 5,
+  statGrow: 0.05,
+  /** まもりだけ伸びを抑える (#518)。**守備力は防具が主役**という DQ の構造に寄せるため
+   *  (FC版〜:「すばやさ÷2 + 防具」/ DQ3 HD-2D〜:「みのまもり + 防具」— いずれも防具が大きい)。
+   *  素のまもりが小さいので、HP (たいりょく) と守備の二重取りが起きない。 */
+  defBase: 0.06,
+  defGrow: 0.015,
   /** 個人 rpgStats とジョブ基準値のブレンド比 (0 = ジョブのみ / 1 = 個人のみ)。
    *  診断は min-max 正規化で全員が極端プロフィールになるため、個人値 100% だと
    *  atk 0〜80 のレンジになり勝率が 0〜100% に割れる (issue #279 実測)。
@@ -80,10 +102,14 @@ export const BATTLE_TUNING = {
   baseStatsPersonalWeight: 0.5,
   /** ダメージ = max(minDamage, (atk*atkCoef*power − def*defCoef) * roll(0.85..1.15))。DQ の減算式
    *  (攻撃÷2 − 防御÷4) 流。**防御の係数を攻撃の半分 (2:1)** にしてインフレを抑える。会心は def 項 0
-   *  (守備無視)。高守備の敵 (メタル) は通常 minDamage しか通らず、会心のみ貫通できる。数値は sim で調整。 */
-  atkCoef: 0.18,
-  defCoef: 0.09,
-  minDamage: 1,
+   *  (守備無視)。数値は sim で調整。 */
+  atkCoef: 0.9,
+  defCoef: 0.45,
+  /** **0 = 守備力を上回れなければ 1 も通らない** (オーナー指摘 2026-07-25)。
+   *  以前は 1 で「必ず最低 1 は通る」仕様だったが、これはメタル系の identity
+   *  (「かいしんのいちげき か 特殊武器 でしか倒せない」) を壊す読み違いだった。
+   *  0 にすることで高守備の敵は専用ロジックなしに「通常攻撃が効かない」を表現できる。 */
+  minDamage: 0,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
   agiDodgeScale: 0.009,
@@ -130,8 +156,9 @@ export const BATTLE_TUNING = {
   skillMpCost: 4,
   /** heal とくぎ (#436): 使うと maxHp のこの割合を回復 (MP 制。やくそうと違い在庫でなく MP を消費)。 */
   skillHealRatio: 0.35,
-  mpBase: 6,
-  mpIntScale: 0.5,
+  mpBase: 3,
+  /** MP = mpBase + かしこさ × mpIntScale (#518。DQ 準拠「かしこさが高いほど MP 上昇量が上がる」)。 */
+  mpIntScale: 1,
   mpAttackGain: 0,
   mpGuardGain: 0,
   /** ぼうぎょの翌ターン回避ボーナス (身構えて相手の動きを読む)。 */
@@ -510,6 +537,10 @@ export interface Combatant {
   agi: number;
   int: number;
   luk: number;
+  /** たいりょく (#518)。**HP の元になるだけで、命中/ダメージ式には出てこない**表示用の値。
+   *  「HP がなぜその数字なのか」をプレイヤーに見せるために持つ (オーナー要望)。
+   *  モンスターは 0 (プレイヤーのステータス画面でしか使わない)。 */
+  vit: number;
   /** このターン防御中 (被ダメ半減) */
   guarding: boolean;
   /** 見切り (parry) 構え中: 防御 + 被弾時に反撃 */
@@ -537,23 +568,22 @@ export interface Combatant {
   monsterId?: string;
 }
 
-function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
-  const t = BATTLE_TUNING;
+/** stats と HP/MP から Combatant を組む。HP/MP の導出は呼び出し側の責務 (プレイヤーと
+ *  モンスターで式が違うため — #518)。 */
+function makeCombatant(name: string, stats: StatArray, maxHp: number, maxMp: number, vit = 0): Combatant {
   const [atk, def, agi, int, luk] = stats;
-  const s = (v: number) => Math.round(v * levelFactor);
-  const maxHp = Math.round(t.hpBase + def * t.hpDefScale * levelFactor + level * t.hpLevelScale);
-  const maxMp = Math.round(t.mpBase + int * t.mpIntScale * levelFactor);
   return {
     name,
     maxHp,
     hp: maxHp,
     maxMp,
     mp: maxMp,
-    atk: s(atk),
-    def: s(def),
-    agi: s(agi),
-    int: s(int),
-    luk: s(luk),
+    atk,
+    def,
+    agi,
+    int,
+    luk,
+    vit,
     guarding: false,
     parrying: false,
     charging: false,
@@ -561,6 +591,14 @@ function fromStats(name: string, stats: StatArray, levelFactor: number, level: n
     statuses: [],
     passives: [],
   };
+}
+
+/** モンスターの戦闘値。stats は tier 係数の**乗算**でスケールする (プレイヤーとは別式)。
+ *  HP/MP は MonsterDef の明示値 (全モンスターが持つ) を使い、無い場合だけ def/int から導出。 */
+function monsterStats(stats: StatArray, tierFactor: number): StatArray {
+  // モンスターは防具を持たないので def にも下駄を掛ける (プレイヤーとの非対称は statFloor 参照)。
+  const s = (v: number) => Math.round(BATTLE_TUNING.statFloor + v * tierFactor);
+  return [s(stats[0]), s(stats[1]), s(stats[2]), s(stats[3]), s(stats[4])];
 }
 
 /**
@@ -613,11 +651,29 @@ export function playerCombatant(
         job[4] + (baseStats[4] - job[4]) * w,
       ]
     : job;
-  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  // 平坦なレベル成長 (プレイヤーのみ)。低ステータスほど相対的に効く
-  const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
-  const grown: StatArray = [base[0] + flat, base[1] + flat, base[2] + flat, base[3] + flat, base[4] + flat];
-  const c = fromStats(displayName, grown, factor, playerLevel);
+  // **成長軸はジョブ Lv のみ** (#507)。プレイヤー Lv 由来の倍率・平坦加算は撤廃した
+  // (同じ Lv1 賢者がプレイヤー Lv で HP 20→65 に変わる = 「その職の強さ」が定まらなかった)。
+  void playerLevel; // 引数は呼び出し文脈として残す (強さには使わない。#507)
+  // #518: 比率 (合計 100 の職プロファイル) を **伸び率** に掛ける。まもりだけ伸びを抑え防具を主役に。
+  const lv = Math.max(0, jobLevel - 1);
+  const gr = t.statBase + t.statGrow * lv;
+  const dr = t.defBase + t.defGrow * lv;
+  const f = t.statFloor;
+  const grown: StatArray = [
+    Math.round(f + base[0] * gr), Math.round(base[1] * dr), Math.round(f + base[2] * gr),
+    Math.round(f + base[3] * gr), Math.round(f + base[4] * gr),
+  ];
+  // たいりょくも同じ式で伸び、その 2 倍が HP (DQ 準拠)。MP は かしこさ から。
+  // **丸めた vit から HP を出す**: ステータス画面に出す たいりょく が HP を正しく説明できないと
+  // (「たいりょく 4 なのに HP が 6+4*2=14 でなく 13」) 表示する意味がない。
+  const vit = Math.round(JOBS_BY_ID[archetype].vit * gr);
+  const c = makeCombatant(
+    displayName,
+    grown,
+    Math.round(t.hpBase + vit * t.hpVitScale),
+    Math.round(t.mpBase + grown[3] * t.mpIntScale),
+    vit,
+  );
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   if (bonus) {
     // 装備はすべての導出 (ブレンド・成長・丸め) の後に平坦加算 — 低ステータス
@@ -671,9 +727,13 @@ export function playerStatsAt(
         job[4] + (baseStats[4] - job[4]) * w,
       ]
     : job;
-  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
-  const g = (i: number) => (base[i]! + flat) * factor;
+  // playerCombatant と同じ規則: 成長はジョブ Lv のみ (#507)。
+  void playerLevel;
+  // playerCombatant と同じ式 (#518)。丸める前の生値を返す (レベルアップの上昇量表示用)。
+  const lv = Math.max(0, jobLevel - 1);
+  const gr = t.statBase + t.statGrow * lv;
+  const dr = t.defBase + t.defGrow * lv;
+  const g = (i: number) => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr);
   // 装備は gearFlatBonus で 1 箇所解決 (gear 優先・二重加算なし。#511)。playerCombatant と同じ規則。
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   const eq = (k: 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp') => bonus?.[k] ?? 0;
@@ -683,8 +743,12 @@ export function playerStatsAt(
     agi: g(2) + eq('agi'),
     int: g(3) + eq('int'),
     luk: g(4) + eq('luk'),
-    maxHp: t.hpBase + (base[1]! + flat) * t.hpDefScale * factor + playerLevel * t.hpLevelScale + eq('maxHp'),
-    maxMp: t.mpBase + (base[3]! + flat) * t.mpIntScale * factor,
+    maxHp: t.hpBase + Math.round(JOBS_BY_ID[archetype].vit * gr) * t.hpVitScale + eq('maxHp'),
+    // g() は statFloor 込み。playerCombatant は丸めた int から出すが、mpIntScale が整数かつ
+    // mpBase が整数の間は round(mpBase + round(x)) === round(mpBase + x) で一致する
+    // (「playerStatsAt は playerCombatant と丸めの点まで同期している」テストが固定)。
+    // **mpIntScale を非整数にするならこの一致が崩れるので両方を丸め済み int 基準に揃えること。**
+    maxMp: t.mpBase + g(3) * t.mpIntScale,
   };
 }
 
@@ -802,8 +866,19 @@ export interface MonsterDef {
    *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
   element?: Element;
   /** すべての魔法を無効化 (メタル系。DQ 準拠)。true だと fixedDamage/doMagic が最小 1 になる。
-   *  物理は既に超高 def で 1 に沈むが、魔法は def 無視のため別途この旗で止める。 */
+   *  物理は flatDef で 1 に沈むが、魔法は def 無視のため別途この旗で止める。 */
   resistAllMagic?: boolean;
+  /** **tier 倍率を通さない実効 def** (メタル系専用)。
+   *
+   *  通常 def は `stats` の比率 × tier 倍率で決まるが、メタル系の「通常攻撃は常に 1・
+   *  会心 (def 無視) のみ貫通」という識別子は**どのレベルの相手にも成立**しなければ壊れる。
+   *  比率経由だと tier1 倍率で潰れて Lv1 の戦士にすら殴り倒されてしまうため、ここだけ
+   *  実効値を直接指定する。最大 atk (Lv50 の将軍 103) × atkCoef を defCoef で割った値
+   *  値は **DQ2 のメタルスライム/はぐれメタルと同じ 255** に揃える。DQ の式
+   *  `(攻撃力 − 守備力/2)` は攻撃力が守備力の半分を下回ると 0 になり、本作の
+   *  `atk*0.9 − def*0.45` も同じ 2:1 なので、255 なら atk 127 以下の全員が 0 になる
+   *  (最高の Lv50 将軍でも atk 103) = 会心のみが道。 */
+  flatDef?: number;
 }
 
 /** 素材カタログ (Step2 の装備素材)。 */
@@ -840,14 +915,19 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'glow-shroom', element: 'earth', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
   { id: 'crimson-shroom', element: 'earth', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型 (DQ のメタルスライム): レア出現・高 XP (100)・毎ターン逃走。
-  //   - **超高守備 (def240)**: 減算式で通常攻撃は atkTerm−defTerm が深く負に沈み minDamage(1) しか
-  //     通らない = 「当たってもダメージがほとんど通らない」(オーナー要望 2026-07-21)。魔撃 (spell,
-  //     defFactor0.5) でも def が大きすぎて 1 = メタルは魔法も効かない (DQ 準拠)。
+  //   - **`flatDef: 255`**: DQ2 のメタルスライム/はぐれメタルと同値。tier 倍率を通さない実効 def
+  //     なので、どのレベルの相手にも identity が成立する (最高の Lv50 将軍でも atk 108 <
+  //     255×defCoef/atkCoef = 127 なので通常攻撃は **0**)。`stats[1]` は flatDef に上書きされる
+  //     ので実効値には効かない (プロファイルの見た目を他 tier1 と揃えてある)。
+  //   - **通常攻撃も魔法も 0**: minDamage=0 なので守備を上回れなければ 1 も通らない。魔法は
+  //     def 無視で通るため `resistAllMagic` で別途 0 にする (オーナー指摘 2026-07-25:
+  //     「攻撃力が低くても必ず 1 通る」は仕様の読み違いだった)。
   //   - **高 agi (38)**: 回避 (最大 dodgeMax) が張り付き「避けられる」。
-  //   - **低 HP (6→tier係数で実質4)**: 仕留める道は**会心の一撃のみ** (プレイヤーの会心は def 無視
-  //     #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。専用ロジックは使わず
-  //     守備/agi/HP の数値だけで「メタル」を表現 (オーナー: 専用ロジック禁止 2026-07-20)。
-  { id: 'stray-slime', resistAllMagic: true, name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 240, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  //   - **低 HP (hp6 → monsterMaxHp で実質 8)**: 仕留める道は**会心の一撃のみ** (プレイヤーの
+  //     会心は def 無視 #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。
+  //     専用ロジックは使わず守備/agi/HP の数値だけで「メタル」を表現する方針は不変
+  //     (オーナー: 専用ロジック禁止 2026-07-20)。特殊武器での貫通は #519。
+  { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 24, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
   { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
@@ -879,7 +959,10 @@ const XP_OFFENSE_SCALE = 0.04; // (atk+agi) 1 あたりの XP (素早い/強い�
  *  **基準 HP はレベル 1 相当の名目値**。実 HP は factor でレベルに応じ伸びるが、XP は
  *  レベル非依存に固定する (サーバーが monsterId だけから決定的に再導出できるため — docs/21)。 */
 export function baselineXp(def: MonsterDef): number {
-  const baseHp = def.hp ?? BATTLE_TUNING.hpBase + def.stats[1] * BATTLE_TUNING.hpDefScale;
+  // 全モンスターが hp を明示しているのでフォールバックは実質未使用 (回帰テストで固定)。
+  // 万一 hp 省略の敵を足したときも XP が跳ねないよう、monsterMaxHp と同じ既定値を使う
+  // (stats[1] = まもり比率 を流用すると、メタル系のような極端な比率で XP が暴発する)。
+  const baseHp = def.hp ?? MONSTER_DEFAULT_VIT;
   const [atk, , agi] = def.stats;
   return Math.max(1, Math.round(Math.max(0, baseHp - XP_HP_FLOOR) * XP_HP_SCALE + (atk + agi) * XP_OFFENSE_SCALE));
 }
@@ -906,8 +989,37 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
   return 3;
 }
 
-/** tier = エリアの固定難易度。tier1 は明確に弱め (0.72 で Lv1 の 5 連戦生存が健全)。 */
-const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.1, 3: 1.36 };
+/** tier = エリアの **想定プレイヤーレベル** (#518/#509)。
+ *
+ *  モンスターの `stats` は職と同じ **合計 100 の比率**なので、プレイヤーと同じ成長式
+ *  `statBase + statGrow*(lv-1)` に載せないとスケールが合わない。#518 でプレイヤー側を
+ *  「比率 × 伸び率」に変えた結果、Lv1 の atk が 25 → 1〜8 に下がり、旧スケール
+ *  (比率 × 0.72〜1.36) のままのモンスターが**桁違いに強い**状態になっていた。これが
+ *  「序盤から敵が強すぎる」(#509) の構造的な原因。
+ *
+ *  tier をレベルで表すことで、プレイヤーの成長レンジ (Lv1→30 で約 8 倍) と同じ幅を
+ *  モンスター側も持てる。**プレイヤーのレベルには追従しない = エリア固定難易度**
+ *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20) は不変。 */
+const TIER_LEVEL: Record<1 | 2 | 3, number> = { 1: 1, 2: 10, 3: 20 };
+
+/** tier 内の微調整。tier1 は明確に弱め (Lv1 の 5 連戦生存が健全な水準)。
+ *
+ *  **`MONSTER_POWER` との役割分担**: こちらは **tier ごと**の相対難易度 (「このエリアは
+ *  想定レベルより少し優しい/厳しい」)、`MONSTER_POWER` は **全モンスター共通**の出力補正
+ *  (職とモンスターの profile 配分の違いを吸収する係数)。特定エリアだけ調整したいときは
+ *  こちら、戦闘全体のテンポを変えたいときは `MONSTER_POWER` を触る。 */
+const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.0, 3: 1.0 };
+
+/** モンスター全体の出力倍率 (#509)。
+ *
+ *  職の profile は合計 100 を atk/def/agi/int/luk に**配分**するので、戦士でも atk は 25 程度。
+ *  一方モンスターは utility (int/luk) に予算を割く必要がないため atk に偏り、あおおには
+ *  126 中 66 (52%) が atk = 戦士の 2.6 倍。同じ倍率で並べると**殴り合いが 2 ターンで終わる**
+ *  大味な戦闘になり、序盤ほど事故死が増える (= 「敵が強すぎる」の体感)。
+ *
+ *  profile の形 (敵ごとの個性) は保ったまま、出力だけを職と同水準に均す係数。0.5 で
+ *  「想定レベルのプレイヤーが 5〜7 ターンで勝ち、HP を 3〜4 割持っていかれる」水準になる。 */
+const MONSTER_POWER = 0.5;
 
 /** モンスターの強化倍率。**プレイヤー/ジョブのレベルには追従しない = 固定強度**
  *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20)。tier は
@@ -915,8 +1027,25 @@ const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.1, 3: 1.36 };
  *  レベル追従ではなく「エリアごとに強い敵を配置」で作る。将来エンドコンテンツで追従を
  *  戻すなら、tier 限定でここに足す。 */
 function monsterLevelFactor(tier: 1 | 2 | 3): number {
-  return TIER_STRENGTH[tier];
+  const t = BATTLE_TUNING;
+  return (t.statBase + t.statGrow * (TIER_LEVEL[tier] - 1)) * TIER_STRENGTH[tier] * MONSTER_POWER;
 }
+
+/** モンスターの HP。`def.hp` は職の vit と同じ **たいりょく相当の生値** として扱い、
+ *  プレイヤーと同じ `hpBase + vit * hpVitScale` に載せる (#518)。旧実装は hp をそのまま
+ *  絶対 HP にしていたので tier2 (22〜28) → tier3 (24〜30) とほぼ伸びず、上位ほど瞬殺される
+ *  = レベルを上げる意味が薄い状態だった。 */
+function monsterMaxHp(def: MonsterDef): number {
+  const t = BATTLE_TUNING;
+  const g = t.statBase + t.statGrow * (TIER_LEVEL[def.tier] - 1);
+  // hp 省略時に stats[1] (まもり **比率**) を「たいりょく生値」として流用すると、メタル系の
+  // ような極端な比率 (240) で HP が暴発する。現状は全モンスターが hp を明示しており到達
+  // しない (「全モンスターが hp を持つ」テストで固定) が、安全側の既定値に倒しておく。
+  return Math.max(1, Math.round(t.hpBase + (def.hp ?? MONSTER_DEFAULT_VIT) * g * t.hpVitScale));
+}
+
+/** `MonsterDef.hp` 省略時の たいりょく 既定値。tier1 の敵 (5〜14) の下限側に合わせた控えめな値。 */
+const MONSTER_DEFAULT_VIT = 8;
 
 /** 地域相性の重み (favor 対象のモンスターをこの倍率で優遇)。3 = そのモンスターが
  *  約 6 割 (残り 2 種が各 2 割) で出る = 地域の顔が立つ水準。 */
@@ -975,10 +1104,20 @@ export function summonMonster(
  *  テスト/決定論を保つ)。summonMonster (tier 抽選) と、模擬戦の敵指定の双方から使う。 */
 export function monsterCombatant(def: MonsterDef, variance: number, rng: () => number): Combatant {
   const factor = monsterLevelFactor(def.tier);
-  const c = fromStats(def.name, def.stats, factor, 1);
+  // モンスターは tier 係数の乗算 (プレイヤーとは別式)。HP/MP は明示値 (全モンスターが持つ)。
+  const ms = monsterStats(def.stats, factor);
+  const c = makeCombatant(
+    def.name,
+    ms,
+    Math.round(BATTLE_TUNING.hpBase + ms[1] * BATTLE_TUNING.hpVitScale), // 明示 hp が無い敵のみ (直後に上書き)
+    Math.round(BATTLE_TUNING.mpBase + ms[3]),
+  );
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
-  if (def.hp !== undefined) { c.maxHp = Math.max(1, Math.round(def.hp * factor)); c.hp = c.maxHp; }
-  if (def.mp !== undefined) { c.maxMp = Math.max(0, Math.round(def.mp * factor)); c.mp = c.maxMp; }
+  if (def.flatDef !== undefined) c.def = def.flatDef; // tier 倍率を通さない (メタル系)
+  c.maxHp = monsterMaxHp(def); c.hp = c.maxHp;
+  // MP は 1 体ずつ手で設計された絶対値なのでそのまま使う (tier 倍率を掛けると、tier 差が
+  // 既に値自体に入っているぶんと二重計上になる)。HP は monsterMaxHp が別途担当。
+  if (def.mp !== undefined) { c.maxMp = Math.max(0, def.mp); c.mp = c.maxMp; }
   if (variance > 0) {
     const jitter = () => 1 + (rng() * 2 - 1) * variance;
     c.maxHp = Math.max(1, Math.round(c.maxHp * jitter())); c.hp = c.maxHp;
@@ -1227,9 +1366,10 @@ function doAttack(
   // 対象状態シナジー: 審美眼 (芸術家) は状態異常の敵に与ダメ↑ (none なら素通し)。
   dmg *= applyTargetBonus(1, attacker, defender, atkCtx);
 
-  // 丸めの後にも最低 1 を保証 (guardReduction で 0.5 に落ちて round(0) になる境界対策)。
-  // minDamage を将来 0 等に変える場合、この行のハード 1 も一緒に見直すこと (二重下限の注意)。
-  const final = Math.max(1, Math.round(dmg));
+  // **ダメージ 0 は正当な結果** (オーナー指摘 2026-07-25)。守備力を上回れなければ 1 も通らない
+  // = メタル系が「かいしんのいちげき (守備無視) でしか倒せない」identity を持てる。以前は
+  // 最低 1 を保証していたため、atk 1 の魔法使いでも殴り続ければメタルを削り切れてしまっていた。
+  const final = Math.max(0, Math.round(dmg));
   // 物理致死の直前に onLethal フック (覇王/不動) を確認。survive なら HP1 で耐える (反射等は
   // ハンドラ内で処理済み)。魔法致死は doMagic を通るためここには来ず、耐えられず死ぬ (§12)。
   if (defender.hp - final <= 0 && applyOnLethal(defender, attacker, final, defCtx)) {
@@ -1295,7 +1435,8 @@ function doMagic(
   dmg *= applyTargetBonus(1, attacker, defender, atkCtx); // 審美眼: 状態異常の敵に与ダメ↑ (none 素通し)
   dmg *= applyIncomingCalc(1, defender, defCtx); // defUp/defDown/転倒
   // メタル系の魔法無効 (#455 / DQ 準拠): def 無視の魔法でも最小 1 に抑える (会心物理でしか倒せない)。
-  const final = defender.resistAllMagic ? 1 : Math.max(1, Math.round(dmg));
+  // resistAllMagic (メタル系) は魔法を **完全無効 = 0**。物理と同じく「通らない」を表現する。
+  const final = defender.resistAllMagic ? 0 : Math.max(0, Math.round(dmg));
   // 清き心 (聖騎士): 低確率で魔法反射 (被弾側フック)。reflect なら被弾 0・術者へ跳ね返し済み (ハンドラ内)。
   // 被弾 0 なので clearHitStatuses (かくれみ/眠り解除) も弱点告知も出さないのが正 (被弾していない扱い)。
   // 将来の見切り (魔法ミス化=回避) も同じ「被弾 0」結果なので、必要なら返り値に nullify を足して分岐する。

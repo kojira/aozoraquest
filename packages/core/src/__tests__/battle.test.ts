@@ -20,6 +20,7 @@ import {
   SEARCH_TUNING,
   earnedTitles,
   MONSTERS,
+  monsterCombatant,
   MONSTERS_BY_ID,
   ITEMS,
   type BattleState,
@@ -27,8 +28,8 @@ import {
   levelUpGains,
   playerStatsAt,
 } from '../battle.js';
-import { JOBS } from '../jobs.js';
-import { gearBonusFromGear } from '../equipment.js';
+import { JOBS, JOBS_BY_ID } from '../jobs.js';
+import { gearBonus, gearBonusFromGear } from '../equipment.js';
 import type { Archetype, StatArray } from '../types.js';
 
 describe('createRng / turnRng', () => {
@@ -94,12 +95,16 @@ describe('skillsForJob (複数とくぎ #436)', () => {
     expect(skillsForJob('fighter', 3).map((s) => s.name)).toContain('からくり仕掛け');
   });
   it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
-    // paladin(jobLv5) は聖光の癒し (heal) を持つ。HP を削ってから回復を選ぶ。
-    let s = startBattle('paladin', 5, 8, '聖', 2, 3, 0);
+    // paladin は聖光の癒し (heal) を Lv5 で覚える。HP を削ってから回復を選ぶ。
+    // tier は想定プレイヤーレベル (#518) なので tier2 には jobLv10 を当てる
+    // (jobLv5 だと格上すぎて回復ターンに落とされ、検証が回らない)。
+    let s = startBattle('paladin', 10, 8, '聖', 2, 3, 0);
     const healIdx = s.playerSkills.findIndex((x) => x.name === '聖光の癒し');
     expect(healIdx).toBeGreaterThanOrEqual(0);
     for (let i = 0; i < 3 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack', i * 7 + 1);
-    if (s.outcome === 'ongoing' && s.player.hp < s.player.maxHp) {
+    expect(s.outcome).toBe('ongoing'); // 想定レベル帯なら 3 ターンで決着しない
+    expect(s.player.hp).toBeLessThan(s.player.maxHp); // 削られている = 回復の検証が意味を持つ
+    {
       const before = s.player.hp;
       const mpBefore = s.player.mp;
       s = resolveTurn(s, 'skill', 999, healIdx);
@@ -236,9 +241,11 @@ describe('summonMonster', () => {
     }
     expect(fled).toBe(true);
   });
-  it('はぐれメタル: 超高守備で通常攻撃は 1 ダメージ・会心 (def無視) のみ貫通', () => {
-    // メタルは守備 240 で減算式が minDamage に沈む。プレイヤーの会心だけが def を無視して
-    // 貫通する (#432)。専用ロジックなし = 守備の数値だけで「硬い」を表現。高 atk の shogun でも通常は 1。
+  it('はぐれメタル: 超高守備で通常攻撃は 0 ダメージ・会心 (def無視) のみ貫通', () => {
+    // メタルは flatDef で減算式が負に沈み、**通常攻撃は 1 も通らない** (minDamage=0。
+    // オーナー指摘 2026-07-25「攻撃力が低くても必ず 1 通るのは仕様の読み違い」)。
+    // プレイヤーの会心だけが def を無視して貫通する (#432)。専用ロジックなし = 守備の数値だけで
+    // 「硬い」を表現。最高 atk の shogun でも通常攻撃は 0。
     let normalMax = 0;
     let critDealt = 0;
     for (let seed = 0; seed < 300; seed++) {
@@ -252,7 +259,7 @@ describe('summonMonster', () => {
         else normalMax = Math.max(normalMax, dealt);
       }
     }
-    expect(normalMax).toBe(1); // 通常攻撃は必ず 1 (守備で沈む)
+    expect(normalMax).toBe(0); // 通常攻撃は 1 も通らない (守備を上回れない)
     expect(critDealt).toBeGreaterThan(1); // 会心は貫通して低 HP を一撃
   });
   it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
@@ -539,9 +546,9 @@ describe('resolveTurn', () => {
   });
 
   it('MP: 特技で消費する。回復はジョブ特性のみ (特性なしジョブはぼうぎょでも回復 0)', () => {
-    // tier3 (硬い敵) で戦う: 固定強度化 (プレイヤーLvに追従しない) 後は tier1 の敵が弱く、
-    // jobLv5/plLv10 の特技で 1 撃死して outcome が win になり MP 検証が回らないため。
-    const s0 = startBattle('sage', 5, 10, '賢者', 3, 42);
+    // tier は想定プレイヤーレベル (#518) なので、tier2 には **jobLv10** を当てるのが拮抗帯。
+    // tier1 では特技 1 撃で決着して MP 検証が回らず、格上 tier では数ターンで負ける。
+    const s0 = startBattle('sage', 10, 10, '賢者', 2, 42);
     expect(s0.player.mp).toBe(s0.player.maxMp);
     const s1 = resolveTurn(s0, 'skill');
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
@@ -554,7 +561,7 @@ describe('resolveTurn', () => {
     // 特性持ち (bard: ぼうぎょ +4) は回復し、ログに特性名が出る。
     // skill 2 連発で headroom を作り、クランプ境界で過大回帰を見逃さない
     // (mp+4 がちょうど maxMp だと guardGain 5 でも通ってしまう — レビュー指摘)
-    const b0 = startBattle('bard', 5, 10, '詩人', 3, 42, 0, { mp: 8 });
+    const b0 = startBattle('bard', 10, 10, '詩人', 2, 42, 0, { mp: 8 });
     const b1 = resolveTurn(b0, 'skill');
     expect(b1.outcome).toBe('ongoing');
     const b2 = resolveTurn(b1, 'guard');
@@ -609,8 +616,10 @@ describe('resolveTurn', () => {
   });
 
   it('そらのしずく: MP を回復し、残数と使用数が更新される。切れたらフォールバック', () => {
-    // tier3 (硬い敵) で戦う: 固定強度化後は tier1 が弱く 1 撃で決着して MP 回復検証が回らない。
-    let s = startBattle('sage', 5, 10, '賢者', 3, 42, 0, undefined, { tonics: 2 });
+    // tier2 = 想定 Lv10 (#518) なので jobLv10 を当てる。tier1 では 1 撃決着して回復検証が回らない。
+    // 職は guardian: 賢者は素の HP が低く、防具なしの検証条件だと 2 ターン目に落ちて
+    // しずくを飲む前に決着してしまう (キャスターは防具前提という設計。#518)。
+    let s = startBattle('guardian', 10, 10, '守', 2, 42, 0, undefined, { tonics: 2 });
     expect(s.tonics).toBe(2);
     // MP を減らしてから使う (seed 42 は 1 ターン目で決着しない前提を明示的に固定)
     s = resolveTurn(s, 'skill');
@@ -624,7 +633,7 @@ describe('resolveTurn', () => {
     const expectedGain = Math.max(1, Math.round(next.player.maxMp * BATTLE_TUNING.tonicMpRatio));
     expect(next.player.mp).toBe(Math.min(next.player.maxMp, mpBefore + expectedGain));
     expect(next.player.mp).toBeGreaterThan(mpBefore);
-    const none = startBattle('sage', 5, 10, '賢者', 3, 7);
+    const none = startBattle('sage', 5, 10, '賢者', 1, 7); // 所持 0 の分岐だけ見るので tier は軽くてよい
     const fb = resolveTurn(none, 'tonic');
     expect(fb.lastEvents.some((e) => e.text.includes('持っていない'))).toBe(true);
     expect(fb.tonicsUsed).toBe(0);
@@ -722,11 +731,11 @@ describe('resolveTurn', () => {
   it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
     // やくそう持ち + 300 seed で計測。難易度は「拮抗帯」に合わせる: 固定強度化 (Lv 追従なし)
     // + T2/T3 強化 (#444 の敵 atk 底上げ) 後は tier3 の競り合い帯が上がり、warrior は
-    // jobLv8/plLv15 (T3 ~47%) が拮抗帯。ここで予告防御 (reactive) が attack 連打 (spam) を上回る
+    // jobLv15 (T3 ~42%) が拮抗帯 (#507 でジョブ Lv 基準に貼り直し)。ここで予告防御 (reactive) が attack 連打 (spam) を上回る
     // = 防御の存在意義。強化された charger の予告を防がないと事故死するため差が明確に出る。
     const HERBS = 2;
     const reactive = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 15, 1, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         // 予告があれば防御、HP 危険域なら やくそう、なければ攻撃
@@ -735,7 +744,7 @@ describe('resolveTurn', () => {
       return s.outcome;
     };
     const spam = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 15, 1, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         s = resolveTurn(s, s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
@@ -769,17 +778,18 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('やくそうは tier3 で意味がある (やくそう有り > ガードのみ) — 拮抗帯 jobLv5/plLv8', () => {
-    // 固定強度化後、tier3 が競り合う帯 (jobLv5/plLv8) で「やくそう込み」が「ガードのみ」に勝る。
+  it('やくそうは拮抗帯で意味がある (やくそう有り > ガードのみ) — tier2 / jobLv5', () => {
+    // tier が想定プレイヤーレベル化した (#518) ので、jobLv5 が競り合う帯は tier2 (想定 Lv10)。
+    // そこで「やくそう込み」が「ガードのみ」に勝ることを固定する。
     const reactiveHerb = (s: BattleState): Command =>
       s.monster.charging ? 'guard' : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45 ? 'herb' : 'attack';
     let withHerb = 0;
     let guardOnlyWins = 0;
     for (let seed = 0; seed < 200; seed++) {
-      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
+      let s = startBattle('warrior', 5, 8, '戦士', 2, seed, BATTLE_TUNING.herbCarryMax);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, reactiveHerb(s));
       if (s.outcome === 'win') withHerb++;
-      let g = startBattle('warrior', 5, 8, '戦士', 3, seed);
+      let g = startBattle('warrior', 5, 8, '戦士', 2, seed);
       for (let i = 0; i < 60 && g.outcome === 'ongoing'; i++) {
         g = resolveTurn(g, g.monster.charging ? 'guard' : 'attack');
       }
@@ -825,8 +835,10 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     // 注: bard は #456 で「歌の支援職」にキット化され skill[0] がバフ = ソロの naive auto-battle
     // (skillIndex0) では攻撃せず弱い (支援職はパーティ前提。マルチ #453 で本領)。ここでは攻撃系の
     // 弱 luk/agi ジョブ (explorer=非キット agi 署名 / ninja=毒手) で「レベルで戦える」ことを固定する。
-    expect(winRate('explorer', 5, 8, 2)).toBeGreaterThanOrEqual(60);
-    expect(winRate('ninja', 5, 8, 2)).toBeGreaterThanOrEqual(60);
+    // #507 で成長軸がジョブ Lv のみになったため、旧 jobLv5/plLv8 から **jobLv15** に貼り直し
+    // (プレイヤー Lv は強さに効かない)。実測 explorer 100% / ninja 78%。
+    expect(winRate('explorer', 15, 1, 2)).toBeGreaterThanOrEqual(60);
+    expect(winRate('ninja', 15, 1, 2)).toBeGreaterThanOrEqual(60);
   });
 
   it('MP 特性 (JOB_MP_TRAITS): 弱ジョブは回復量ボーナス + 特性名を持ち、state に載る', () => {
@@ -838,8 +850,9 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     expect(warrior.mpAttackGain).toBe(BATTLE_TUNING.mpAttackGain);
     expect(warrior.mpGuardGain).toBe(BATTLE_TUNING.mpGuardGain);
     expect(warrior.mpTraitName).toBeUndefined();
-    // たたかう で実際に特性分回復する (seed 5 は 2 ターン目まで決着しないことを固定)
-    let s = startBattle('bard', 1, 1, 'x', 1, 5);
+    // たたかう で実際に特性分回復する (seed 6 は 2 ターン目まで決着しないことを固定。
+    // #518 でステータスが上がり、seed 5 は 1 ターン目で決着するようになった)
+    let s = startBattle('bard', 1, 1, 'x', 1, 6);
     s = resolveTurn(s, 'skill'); // MP -4
     expect(s.outcome).toBe('ongoing');
     const before = s.player.mp;
@@ -849,10 +862,12 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
   });
 
   it('個人 rpgStats はジョブ基準値と 50:50 ブレンド (極端ビルドの 0%/100% 割れ防止)', () => {
-    // 極端な個人値 (atk 4) でも warrior の基底 (atk 25) と混ざって半分までしか落ちない
-    const extreme = playerCombatant('warrior', 1, 1, 'x', [4, 7, 40, 7, 42]);
-    const jobOnly = playerCombatant('warrior', 1, 1, 'x');
-    expect(extreme.atk).toBeGreaterThanOrEqual(Math.floor((25 + 4) / 2));
+    // 極端な個人値 (atk 比率 4) でも warrior の基底と混ざって半分までしか落ちない。
+    // #518 以降ステータスは「比率 × 伸び率」なので、絶対値ではなく **ジョブ単独との比** で見る
+    // (伸び率が変わってもテストが腐らない)。Lv30 で見るのは Lv1 の整数丸めを避けるため。
+    const extreme = playerCombatant('warrior', 30, 1, 'x', [4, 7, 40, 7, 42]);
+    const jobOnly = playerCombatant('warrior', 30, 1, 'x');
+    expect(extreme.atk / jobOnly.atk).toBeGreaterThan(0.45); // 半減より悪くはならない
     expect(extreme.atk).toBeLessThan(jobOnly.atk);
     expect(extreme.agi).toBeGreaterThan(jobOnly.agi); // 高い個人値は反映される
   });
@@ -877,11 +892,12 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
   });
 
   it('levelUpGains: 上昇量を小数 1 桁で返し、0.1 未満と変化なしは出さない', () => {
-    // ジョブ Lv1→2: 全ステに jobLevelScale 4% が乗るので主要ステは上がる
+    // ジョブ Lv1→2: 全ステに statGrow ぶんの伸び率が乗るので主要ステは上がる (#518)
     const gains = levelUpGains('warrior', { jobLevel: 1, playerLevel: 1 }, { jobLevel: 2, playerLevel: 1 });
     expect(gains.length).toBeGreaterThan(0);
     const atk = gains.find((g) => g.key === 'atk');
-    expect(atk?.delta).toBeCloseTo(1.0, 5); // warrior atk25 × 0.04
+    const warriorAtkRatio = JOBS_BY_ID.warrior.stats[0];
+    expect(atk?.delta).toBeCloseTo(Math.round(warriorAtkRatio * BATTLE_TUNING.statGrow * 10) / 10, 5);
     for (const g of gains) {
       expect(g.delta).toBeGreaterThanOrEqual(0.1);
       expect(g.delta).toBe(Math.round(g.delta * 10) / 10);
@@ -894,11 +910,29 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     // 実カーブでは稀なので、フィルタ自体は変化なしケースで担保する
   });
 
-  it('平坦レベル成長: 低ステータスほど相対的に伸びる (bard の atk が Lv で改善)', () => {
+  it('成長軸はジョブ Lv のみ — プレイヤー Lv は強さに一切影響しない (#507)', () => {
     const lv1 = playerCombatant('bard', 1, 1, 'x');
-    const lv20 = playerCombatant('bard', 1, 20, 'x');
-    // 乗算のみなら atk7 → 9 程度。加算成長込みで明確に伸びることを固定
-    expect(lv20.atk).toBeGreaterThanOrEqual(lv1.atk + 5);
+    // ジョブ Lv では伸びる
+    expect(playerCombatant('bard', 20, 1, 'x').atk).toBeGreaterThan(lv1.atk);
+    expect(playerCombatant('guardian', 30, 1, 'x').maxHp).toBeGreaterThan(playerCombatant('guardian', 1, 1, 'x').maxHp);
+    // プレイヤー Lv をいくら上げても同じ (旧 playerLevelScale / flatLevelGain / hpLevelScale は撤廃)
+    for (const pl of [10, 50, 99]) {
+      const c = playerCombatant('bard', 1, pl, 'x');
+      expect(c.atk, `plLv${pl}`).toBe(lv1.atk);
+      expect(c.maxHp, `plLv${pl}`).toBe(lv1.maxHp);
+      expect(c.maxMp, `plLv${pl}`).toBe(lv1.maxMp);
+    }
+  });
+
+  it('HP はジョブの たいりょく に比例する = 硬い職が実際に硬い (#507/#518)', () => {
+    // 旧式は全職 HP≈20 横並びだった。**HP の出所は def ではなく vit** (#518) — 守護者は
+    // def も vit も高いので def 基準でも通ってしまうが、因果は vit。
+    // (vit → HP の関係そのものは「たいりょく (vit) が HP の単一の出所」で全職固定している)
+    const tank = playerCombatant('guardian', 30, 1, 'x').maxHp;
+    const caster = playerCombatant('sage', 30, 1, 'x').maxHp;
+    expect(tank).toBeGreaterThan(caster * 1.5); // vit 45 対 20 の差がそのまま出る
+    // MP は かしこさ に比例する (賢者は守護者より MP が多い)
+    expect(playerCombatant('sage', 30, 1, 'x').maxMp).toBeGreaterThan(playerCombatant('guardian', 30, 1, 'x').maxMp * 1.5);
   });
 });
 
@@ -1059,5 +1093,126 @@ describe('resolveTurn: 外部 seed 注入 (サーバー権威 §5)', () => {
     const snap = JSON.stringify(s0);
     resolveTurn(s0, 'attack', 777);
     expect(JSON.stringify(s0)).toBe(snap);
+  });
+});
+
+describe('成長モデル (#518)', () => {
+  it('たいりょく (vit) が HP の単一の出所 — HP = hpBase + vit * hpVitScale', () => {
+    // 「将軍が賢者より HP が低い」逆転 (HP が まもり 由来だった旧実装) の再発防止。
+    for (const j of JOBS) {
+      for (const lv of [1, 10, 30, 50]) {
+        const c = playerCombatant(j.id, lv, 1, 'x');
+        expect(c.maxHp, `${j.id} Lv${lv}`).toBe(
+          Math.round(BATTLE_TUNING.hpBase + c.vit * BATTLE_TUNING.hpVitScale),
+        );
+      }
+    }
+    // vit の順序がそのまま HP の順序になる (同レベル比較)
+    const byVit = [...JOBS].sort((a, b) => b.vit - a.vit).map((j) => j.id);
+    const hps = byVit.map((id) => playerCombatant(id, 30, 1, 'x').maxHp);
+    expect(hps).toEqual([...hps].sort((a, b) => b - a));
+    // 将軍 > 賢者 (逆転していないこと自体を名指しで固定)
+    expect(playerCombatant('shogun', 30, 1, 'x').maxHp)
+      .toBeGreaterThan(playerCombatant('sage', 30, 1, 'x').maxHp);
+  });
+
+  it('レベルを上げると全職の HP が必ず伸び、他ステも数レベルで必ず動く (成長の手応え)', () => {
+    // 旧モデルは jobLevelScale 4% しか乗らず、14/16 職が「HP +0」のレベルが大半だった。
+    // **HP は毎レベル必ず伸びる** (vit 18〜45 × statGrow 0.05 × hpVitScale 2 = 最低 +1.8)。
+    // こうげき/MP は比率が低い職 (魔法使い atk 7 = 0.35/Lv) だと毎レベルは動かない。
+    // DQ でも魔法使いの ちから はほとんど伸びないので、これは仕様。3 レベルの幅で固定する。
+    for (const j of JOBS) {
+      for (const lv of [1, 5, 15, 29, 49]) {
+        const a = playerCombatant(j.id, lv, 1, 'x');
+        expect(playerCombatant(j.id, lv + 1, 1, 'x').maxHp, `${j.id} Lv${lv}→${lv + 1} HP`)
+          .toBeGreaterThan(a.maxHp);
+        const c3 = playerCombatant(j.id, lv + 3, 1, 'x');
+        expect(c3.maxMp, `${j.id} Lv${lv}→${lv + 3} MP`).toBeGreaterThan(a.maxMp);
+        expect(c3.atk, `${j.id} Lv${lv}→${lv + 3} atk`).toBeGreaterThan(a.atk);
+      }
+    }
+  });
+
+  it('まもりだけ伸びを抑え、守備は防具が主役になっている', () => {
+    // 素の まもり は他ステより明確に伸びが遅い (docs/19 §6.4.5)。
+    const g1 = playerCombatant('guardian', 1, 1, 'x');
+    const g50 = playerCombatant('guardian', 50, 1, 'x');
+    expect((g50.def - g1.def) / (g50.atk - g1.atk)).toBeLessThan(0.6);
+    // grade1 防具 (+5) が Lv1 の素の まもり を上回る = 序盤は防具が守備の主役
+    expect(gearBonus('guardian', ['ar-cloth']).def).toBeGreaterThan(g1.def);
+  });
+
+  it('statFloor があるので低 atk 職でも tier1 に damage を通せる', () => {
+    // 下駄が無いと比率 7 (魔法使い) は Lv1 で atk 1 に潰れ、減算式で 0 に沈んで詰む。
+    for (const j of JOBS) {
+      const p = playerCombatant(j.id, 1, 1, 'x');
+      const m = monsterCombatant(MONSTERS.find((x) => x.id === 'sky-slime')!, 0, () => 0.5);
+      expect(p.atk * BATTLE_TUNING.atkCoef - m.def * BATTLE_TUNING.defCoef, `${j.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('プレイヤーレベルは戦闘値に一切影響しない (#507)', () => {
+    for (const j of JOBS) {
+      for (const jobLv of [1, 20]) {
+        const a = playerCombatant(j.id, jobLv, 1, 'x');
+        const b = playerCombatant(j.id, jobLv, 99, 'x');
+        expect({ ...b }, `${j.id} jobLv${jobLv}`).toEqual({ ...a });
+      }
+    }
+  });
+});
+
+describe('モンスターの tier = 想定プレイヤーレベル (#518/#509)', () => {
+  it('tier が上がるほど強く、想定レベルのプレイヤーと同じ成長式に乗っている', () => {
+    const avg = (t: 1 | 2 | 3, k: 'atk' | 'def' | 'maxHp') => {
+      const ms = MONSTERS.filter((m) => m.tier === t && m.id !== 'stray-slime');
+      return ms.reduce((s, m) => s + monsterCombatant(m, 0, () => 0.5)[k], 0) / ms.length;
+    };
+    for (const k of ['atk', 'def', 'maxHp'] as const) {
+      expect(avg(2, k), `tier2 ${k}`).toBeGreaterThan(avg(1, k));
+      expect(avg(3, k), `tier3 ${k}`).toBeGreaterThan(avg(2, k));
+    }
+    // HP が tier2→3 でほぼ横ばい (旧実装の欠陥) に戻っていないこと
+    expect(avg(3, 'maxHp')).toBeGreaterThan(avg(2, 'maxHp') * 1.3);
+  });
+
+  it('tier1 は Lv1 の全職が通常攻撃だけで勝ち越せる (序盤に詰まない #509)', () => {
+    for (const j of JOBS) {
+      let win = 0;
+      for (let seed = 0; seed < 120; seed++) {
+        let s = startBattle(j.id, 1, 1, 'x', 1, seed, 0);
+        for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack');
+        if (s.outcome === 'win') win++;
+      }
+      // キャスターは物理が通りにくい設計なので閾値は控えめ。「詰まない」ことの固定。
+      expect(win / 120, `${j.id} tier1 勝率`).toBeGreaterThan(0.35);
+    }
+  });
+});
+
+describe('ダメージ 0 は正当な結果 (#518)', () => {
+  it('守備を上回れなければ 0 — メタルは通常攻撃も魔法も通らない', () => {
+    const metal = monsterCombatant(MONSTERS.find((m) => m.id === 'stray-slime')!, 0, () => 0.5);
+    expect(metal.def).toBe(255); // DQ2 のメタルスライム/はぐれメタルと同値
+    // 全職の最高レベルでも通常攻撃の素の値が 0 に沈む (flatDef は tier 倍率を通さない)
+    for (const j of JOBS) {
+      const p = playerCombatant(j.id, 50, 1, 'x');
+      expect(p.atk * BATTLE_TUNING.atkCoef - metal.def * BATTLE_TUNING.defCoef, `${j.id}`)
+        .toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('全モンスターが hp を明示している (省略時フォールバックを到達不能に保つ)', () => {
+    // `MonsterDef.hp` は optional なので省略できてしまう。省略すると monsterMaxHp と
+    // baselineXp が MONSTER_DEFAULT_VIT にフォールバックし、意図しない HP/XP になる。
+    // 新しい敵を足すときに hp を書き忘れないよう、ここで名指しで固定する。
+    for (const m of MONSTERS) {
+      expect(m.hp, `${m.id} は hp を明示すること`).toBeGreaterThan(0);
+    }
+  });
+
+  it('minDamage は 0、defCoef は atkCoef の半分 (DQ の 2:1)', () => {
+    expect(BATTLE_TUNING.minDamage).toBe(0);
+    expect(BATTLE_TUNING.defCoef).toBeCloseTo(BATTLE_TUNING.atkCoef / 2, 5);
   });
 });

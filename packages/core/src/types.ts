@@ -30,6 +30,11 @@ export interface JobDefinition {
   id: Archetype;
   names: { default: string; maker: string; alt: string };
   stats: StatArray;
+  /** たいりょく (#518)。**診断由来の 5 パラメータ (合計 100) とは別枠のジョブ専用ゲームパラメータ**。
+   *  体力は性格特性ではないので stats に混ぜず、ジョブの役割から手で設計する。他ステータスと同じ式で
+   *  レベル成長し、**HP = 6 + たいりょく × 2** の元になる (DQ 準拠:「体力の約 2 倍まで HP が上昇」)。
+   *  スケールは stats と揃えてある (18〜45)。 */
+  vit: number;
   dominantFunction: CogFunction;
   auxiliaryFunction: CogFunction;
   /** MTG カラーパイの primary color (WUBRG 1 文字)。LLM が能力生成時に最低 1 色含める制約として使う。 */

@@ -7,7 +7,7 @@ import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
-import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, playerLevelFromXp, statVectorToArray } from '@aozoraquest/core';
+import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, statVectorToArray } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -396,30 +396,24 @@ function ComposeDialog({
           try {
             const result = await processSelfPost(agent, did, body, structure);
             // ステータス上昇量 (バトルのレベルアップ演出と同じ表示。オーナー要望
-            // 2026-07-17)。区間は job → player の順で分けて二重計上しない
+            // 2026-07-17)。プレイヤー Lv は戦闘値に影響しない (#507) ので区間はジョブ Lv だけ。
             const arch = result.jobLevel?.archetype;
             const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;
             const jTo = result.jobLevel ? jobLevelFromXp(result.jobLevel.xp) : 1;
             const jFrom = result.jobLeveledUp?.from ?? jTo;
-            const pTo = result.playerLevel ? playerLevelFromXp(result.playerLevel.xp) : 1;
-            const pFrom = result.playerLeveledUp?.from ?? pTo;
             if (result.jobLeveledUp && result.jobLevel) {
               notifyLevelUp({
                 kind: 'job',
                 from: result.jobLeveledUp.from,
                 to: result.jobLeveledUp.to,
                 jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
-                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: pFrom }, { jobLevel: result.jobLeveledUp.to, playerLevel: pFrom }, base) } : {}),
+                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: 1 }, { jobLevel: result.jobLeveledUp.to, playerLevel: 1 }, base) } : {}),
               });
             }
-            if (result.playerLeveledUp) {
-              notifyLevelUp({
-                kind: 'player',
-                from: result.playerLeveledUp.from,
-                to: result.playerLeveledUp.to,
-                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jTo, playerLevel: pFrom }, { jobLevel: jTo, playerLevel: result.playerLeveledUp.to }, base) } : {}),
-              });
-            }
+            // プレイヤー Lv のアップ演出は出さない (#507/#508)。プレイヤー Lv は戦闘力に
+            // 一切影響しなくなったので levelUpGains が必ず空配列になり、「レベルアップ!」と
+            // 出しておいて上昇ステータスが 1 件も無い壊れた演出になる。成長の演出は
+            // ジョブ Lv に一本化する。
           } catch (e) {
             console.warn('post-processor failed', e);
           }
