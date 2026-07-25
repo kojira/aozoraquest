@@ -616,13 +616,57 @@ function gearFlatBonus(archetype: Archetype, equipIds?: readonly string[], gear?
 }
 
 /**
+ * 成長式の**単一の出所** (#520)。`playerCombatant` (丸めて Combatant にする) と
+ * `playerStatsAt` (丸めずに上昇量表示に使う) の両方がこれを使う。
+ *
+ * 以前は同じ規則を 2 箇所で別々に書いており (配列リテラルの index1 別扱い / `i === 1` の三項)、
+ * 片方だけ直す事故が実際に起きた (#518 の実装中に playerStatsAt 側へ statFloor を入れ忘れ、
+ * 「丸めの点まで同期している」テストが検出)。表現を 1 つにして構造的に防ぐ。
+ *
+ * 式の意味は docs/19-overworld.md §6.4.5 を参照。
+ */
+function growthOf(archetype: Archetype, jobLevel: number, baseStats?: StatArray) {
+  const t = BATTLE_TUNING;
+  const job = JOBS_BY_ID[archetype].stats;
+  // 個人 rpgStats はジョブ基準値とブレンドして使う (baseStatsPersonalWeight)。
+  // 個人値 100% は極端プロフィールで勝率 0〜100% に割れる (issue #279)。
+  const w = t.baseStatsPersonalWeight;
+  const base: StatArray = baseStats
+    ? [
+        job[0] + (baseStats[0] - job[0]) * w,
+        job[1] + (baseStats[1] - job[1]) * w,
+        job[2] + (baseStats[2] - job[2]) * w,
+        job[3] + (baseStats[3] - job[3]) * w,
+        job[4] + (baseStats[4] - job[4]) * w,
+      ]
+    : job;
+  const lv = Math.max(0, jobLevel - 1);
+  const gr = t.statBase + t.statGrow * lv;
+  const dr = t.defBase + t.defGrow * lv;
+  /** 5 ステータスの生値。**まもり (index 1) だけ statFloor 無し・def 系統の伸び率** — 守備は
+   *  防具が主役という設計を下駄で薄めないため (docs/19 §6.4.5)。 */
+  const stat = (i: 0 | 1 | 2 | 3 | 4): number => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr);
+  return {
+    stat,
+    /** たいりょく。**丸めた値**を返す — ステータス画面に出す たいりょく が HP を説明できる
+     *  必要があるため (「たいりょく 4」なのに HP 13 では表示の意味が無い)。 */
+    vit: Math.round(JOBS_BY_ID[archetype].vit * gr),
+    /** MP の**生値** (装備ボーナス適用**前**の素の かしこさ 基準)。丸めるかどうかは呼び出し側が
+     *  決める (playerCombatant だけが丸める)。`stat(3)` をそのまま使うので式は 1 つしかなく、
+     *  `round(playerStatsAt.maxMp) === playerCombatant.maxMp` が `mpIntScale` の値に依らず
+     *  構造的に成立する。 */
+    maxMp: (): number => t.mpBase + stat(3) * t.mpIntScale,
+  };
+}
+
+/**
  * プレイヤーの戦闘値を導出。
  * 基底 = **ジョブ基準値と個人 rpgStats (プロフィールの 5 パラメータ、合計 100) の
  * ブレンド** (baseStatsPersonalWeight = 0.5)。個人値 100% は診断の min-max 正規化で
  * 極端ビルドが常態化し勝率が 0〜100% に割れるため (issue #279)。未診断は
  * ジョブ基準値のみ。
- * レベル補正 = 平坦加算 (+flatLevelGain × (playerLv−1)、レベル係数の乗算前に加算) の
- * 後に乗算 (jobLv/playerLv の levelScale)。W4 のサーバー権威化ではこの関数を
+ * レベル補正は `growthOf` が持つ (**ジョブ Lv のみ**。旧 flatLevelGain / levelScale による
+ * プレイヤー Lv 追従は #507 で撤廃済み)。W4 のサーバー権威化ではこの関数を
  * Worker 側で同じ入力 (analysis レコード) から再導出する。
  */
 export function playerCombatant(
@@ -638,41 +682,23 @@ export function playerCombatant(
   gear?: GearSelection,
 ): Combatant {
   const t = BATTLE_TUNING;
-  const job = JOBS_BY_ID[archetype].stats;
-  // 個人 rpgStats はジョブ基準値とブレンドして使う (baseStatsPersonalWeight)。
-  // 個人値 100% は極端プロフィールで勝率 0〜100% に割れる (issue #279)。
-  const w = t.baseStatsPersonalWeight;
-  const base: StatArray = baseStats
-    ? [
-        job[0] + (baseStats[0] - job[0]) * w,
-        job[1] + (baseStats[1] - job[1]) * w,
-        job[2] + (baseStats[2] - job[2]) * w,
-        job[3] + (baseStats[3] - job[3]) * w,
-        job[4] + (baseStats[4] - job[4]) * w,
-      ]
-    : job;
   // **成長軸はジョブ Lv のみ** (#507)。プレイヤー Lv 由来の倍率・平坦加算は撤廃した
   // (同じ Lv1 賢者がプレイヤー Lv で HP 20→65 に変わる = 「その職の強さ」が定まらなかった)。
   void playerLevel; // 引数は呼び出し文脈として残す (強さには使わない。#507)
-  // #518: 比率 (合計 100 の職プロファイル) を **伸び率** に掛ける。まもりだけ伸びを抑え防具を主役に。
-  const lv = Math.max(0, jobLevel - 1);
-  const gr = t.statBase + t.statGrow * lv;
-  const dr = t.defBase + t.defGrow * lv;
-  const f = t.statFloor;
+  const g = growthOf(archetype, jobLevel, baseStats);
   const grown: StatArray = [
-    Math.round(f + base[0] * gr), Math.round(base[1] * dr), Math.round(f + base[2] * gr),
-    Math.round(f + base[3] * gr), Math.round(f + base[4] * gr),
+    Math.round(g.stat(0)), Math.round(g.stat(1)), Math.round(g.stat(2)),
+    Math.round(g.stat(3)), Math.round(g.stat(4)),
   ];
-  // たいりょくも同じ式で伸び、その 2 倍が HP (DQ 準拠)。MP は かしこさ から。
-  // **丸めた vit から HP を出す**: ステータス画面に出す たいりょく が HP を正しく説明できないと
-  // (「たいりょく 4 なのに HP が 6+4*2=14 でなく 13」) 表示する意味がない。
-  const vit = Math.round(JOBS_BY_ID[archetype].vit * gr);
+  // HP は たいりょく の 2 倍 (DQ 準拠)、MP は かしこさ から。**HP だけ丸めた たいりょく を
+  // 基準にする** — 画面に出す たいりょく が HP を説明できる必要があるため (「たいりょく 4」
+  // なのに HP 13 では表示の意味が無い)。MP は生値から丸めるので playerStatsAt と厳密に一致する。
   const c = makeCombatant(
     displayName,
     grown,
-    Math.round(t.hpBase + vit * t.hpVitScale),
-    Math.round(t.mpBase + grown[3] * t.mpIntScale),
-    vit,
+    Math.round(t.hpBase + g.vit * t.hpVitScale),
+    Math.round(g.maxMp()), // grown[3] を使うと mpIntScale 非整数時に playerStatsAt と割れる
+    g.vit,
   );
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   if (bonus) {
@@ -716,39 +742,25 @@ export function playerStatsAt(
   gear?: GearSelection,
 ): CombatStatsRaw {
   const t = BATTLE_TUNING;
-  const job = JOBS_BY_ID[archetype].stats;
-  const w = t.baseStatsPersonalWeight;
-  const base: StatArray = baseStats
-    ? [
-        job[0] + (baseStats[0] - job[0]) * w,
-        job[1] + (baseStats[1] - job[1]) * w,
-        job[2] + (baseStats[2] - job[2]) * w,
-        job[3] + (baseStats[3] - job[3]) * w,
-        job[4] + (baseStats[4] - job[4]) * w,
-      ]
-    : job;
-  // playerCombatant と同じ規則: 成長はジョブ Lv のみ (#507)。
-  void playerLevel;
-  // playerCombatant と同じ式 (#518)。丸める前の生値を返す (レベルアップの上昇量表示用)。
-  const lv = Math.max(0, jobLevel - 1);
-  const gr = t.statBase + t.statGrow * lv;
-  const dr = t.defBase + t.defGrow * lv;
-  const g = (i: number) => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr);
+  // playerCombatant と**同じ growthOf** を使う (#520)。違うのは丸めるかどうかだけで、
+  // ここは丸める前の生値を返す (レベルアップの上昇量を小数 1 桁で見せるため)。
+  void playerLevel; // 成長はジョブ Lv のみ (#507)
+  const g = growthOf(archetype, jobLevel, baseStats);
   // 装備は gearFlatBonus で 1 箇所解決 (gear 優先・二重加算なし。#511)。playerCombatant と同じ規則。
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   const eq = (k: 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp') => bonus?.[k] ?? 0;
   return {
-    atk: g(0) + eq('atk'),
-    def: g(1) + eq('def'),
-    agi: g(2) + eq('agi'),
-    int: g(3) + eq('int'),
-    luk: g(4) + eq('luk'),
-    maxHp: t.hpBase + Math.round(JOBS_BY_ID[archetype].vit * gr) * t.hpVitScale + eq('maxHp'),
-    // g() は statFloor 込み。playerCombatant は丸めた int から出すが、mpIntScale が整数かつ
-    // mpBase が整数の間は round(mpBase + round(x)) === round(mpBase + x) で一致する
-    // (「playerStatsAt は playerCombatant と丸めの点まで同期している」テストが固定)。
-    // **mpIntScale を非整数にするならこの一致が崩れるので両方を丸め済み int 基準に揃えること。**
-    maxMp: t.mpBase + g(3) * t.mpIntScale,
+    atk: g.stat(0) + eq('atk'),
+    def: g.stat(1) + eq('def'),
+    agi: g.stat(2) + eq('agi'),
+    int: g.stat(3) + eq('int'),
+    luk: g.stat(4) + eq('luk'),
+    // HP は playerCombatant と同じく丸めた たいりょく 基準 (画面表示との整合)。
+    // MP は生値のまま — この関数の存在理由が「上昇量を小数 1 桁で見せる」ことなので、
+    // ここで整数に量子化すると「毎レベル +1.5」が「+2 / +1」とガタつき、表示から MP 行が
+    // 消えるケースも出る (レビューで実測 4,464/4,704 ケースが変化)。
+    maxHp: t.hpBase + g.vit * t.hpVitScale + eq('maxHp'),
+    maxMp: g.maxMp(),
   };
 }
 
