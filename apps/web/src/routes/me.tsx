@@ -39,7 +39,7 @@ export function MyProfile() {
   const [summoned, setSummoned] = useState<boolean>(false);
   const [summonedLoaded, setSummonedLoaded] = useState<boolean>(false);
   const [gearData, setGearData] = useState<{ refs: GearRefs; pieces: CraftedPiece[] } | null>(null);
-  // 受託して完了したクエストから得た経験値 (全体 LV・現職 LV の両方に加算)。
+  // 受託して完了したクエストから得た経験値 (現職 LV に加算)。
   const [questXp, setQuestXp] = useState<number>(0);
 
   useEffect(() => {
@@ -541,8 +541,7 @@ function JobChangeBanner({
       </p>
       <p style={{ margin: '0.3em 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
         今は「{jobDisplayName(current, 'default')}」のまま。{streak} 投稿連続で {jobDisplayName(pending, 'default')} 寄りに判定されました。
-        転職すると現ジョブの LV・XP はリセットされ、新しいジョブで 0 から育て直しになります
-        (全体 LV は維持されます)。
+        転職すると現ジョブの LV・XP はリセットされ、新しいジョブで 0 から育て直しになります。
       </p>
       <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
         <button disabled={busy} onClick={() => void handle(onConfirm)}>

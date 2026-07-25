@@ -132,7 +132,7 @@ export function StatusModal({
             {/* たいりょく (#518) は HP の元 (HP = 6 + たいりょく × 2)。せんとうのうりょくに
                 並べると HP と離れて「何の数字か」が伝わらないので、HP の直下に小さく添える
                 (行を増やさず派生関係だけ見せる)。 */}
-            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.1em' }}>
+            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.2em', marginBottom: '0.45em' }}>
               たいりょく <span style={num}>{combat.vit}</span>
             </div>
             <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
