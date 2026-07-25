@@ -6,7 +6,7 @@ import {
   JOB_XP_CURVE,
   MONSTERS,
   MONSTERS_BY_ID,
-  autoBattleCommand,
+  autoBattleAction,
   battleXpFor,
   isPureHealSkill,
   jobDisplayName,
@@ -161,8 +161,14 @@ export function DebugBattleSim() {
     isMultiDuel(s) ? resolveTurnMulti(s, cmd, freshSeed(), skillIndex, liveTarget(s)) : resolveTurn(s, cmd, freshSeed(), skillIndex);
   const duelCmd = (cmd: Command, skillIndex = 0) =>
     setDuel((s) => (s && s.outcome === 'ongoing' ? step(s, cmd, skillIndex) : s));
+  // 1 ターン送りも先読み込みの autoBattleAction を使う (#521)。旧 autoBattleCommand は
+  // とくぎ index を選ばず常に [0] を撃つので、バッチ統計と手動送りで挙動が食い違っていた。
   const duelAuto = () =>
-    setDuel((s) => (s && s.outcome === 'ongoing' ? step(s, autoBattleCommand(s), 0) : s));
+    setDuel((s) => {
+      if (!s || s.outcome !== 'ongoing') return s;
+      const a = autoBattleAction(s);
+      return step(s, a.command, a.skillIndex);
+    });
 
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
