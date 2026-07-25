@@ -52,27 +52,25 @@ export const BATTLE_TUNING = {
   xpWin: 30,
   /** 敗北 XP (挑んだこと自体に少額) */
   xpLose: 5,
-  /** HP = hpBase + def*hpDefScale + level*hpLevelScale。
-   *  DQ 級の小さいスケール (プレイヤー Lv1 ~18-21・敵ひとけた) にして、レベルアップ/装備の
-   *  +数の恩恵を体感させる (オーナー方針 2026-07-21。小さい母数ほど +2 が効く)。ダメージ係数
-   *  (atkCoef/defCoef) と全モンスター HP も同じ ~1/4 スケールで、手数 (倒す回数) は保つ。 */
+  /** HP = hpBase + def × hpDefScale × ジョブ Lv 係数 (#507)。
+   *  DQ 級の小さいスケール (敵ひとけた) にして、レベルアップ/装備の +数の恩恵を体感させる
+   *  (オーナー方針 2026-07-21。小さい母数ほど +2 が効く)。
+   *
+   *  **hpDefScale はジョブごとの HP 伸び率そのもの** (#507): HP が def に比例するので、def43 の
+   *  守護者は def15 の賢者より素で硬く、ジョブ Lv が上がるほど差が開く (= 職の個性が HP に出る)。
+   *  旧式は `+ プレイヤーLv × hpLevelScale` が支配項で、(a) 職差がほぼ無い (b) ジョブ Lv で伸びない
+   *  (c) プレイヤー Lv で同じ職の HP が変わる、を同時に起こしていたので撤廃した。 */
   hpBase: 17,
-  hpDefScale: 0.08,
-  // レベルアップの HP 上昇を「毎回 +1〜2 の体感できる整数」にする (DQ 級スケールの狙いは
-  // 成長を体感させること。0.5 だと半分のレベルで +0 になり逆効果 — レビュー ★★★)。母数が
-  // 小さいので +1.5/level でも Lv1→30 で HP が 2〜3 倍に伸び、成長の手応えが強い。
-  hpLevelScale: 1.5,
+  hpDefScale: 0.55,
   /** 敵の HP/MP に遭遇ごとの分散 (±この割合)。値を毎回固定にせず、「あと何回
    *  使えるか」をプレイヤーに予想させる (オーナー要望 2026-07-18)。seed 決定的。
    *  world 遭遇のみ適用し、バランステスト対象の trial は 0 (固定) に保つ。 */
   monsterVitalsVariance: 0.15,
-  /** レベルによるステータス補正 = 1 + (jobLv-1)*jobLevelScale + (playerLv-1)*playerLevelScale */
+  /** レベルによるステータス補正 = 1 + (jobLv-1) × jobLevelScale。
+   *  **成長軸はジョブ Lv のみ** (#507)。旧 playerLevelScale / flatLevelGain (プレイヤー Lv 由来) は
+   *  撤廃した — 同じ職・同じジョブ Lv でもプレイヤー Lv で強さが変わり、「その職の強さ」が
+   *  定まらなかったため (オーナー方針 2026-07-25)。 */
   jobLevelScale: 0.04,
-  playerLevelScale: 0.015,
-  /** プレイヤーの全ステータスに加わる平坦なレベル成長 (+flatLevelGain × (playerLv-1))。
-   *  乗算補正だけだと低い値は低いままで「弱いジョブがレベルでちゃんと強くならない」
-   *  (オーナー指摘 2026-07-17)。加算成長は低ステータスほど相対的に効く。 */
-  flatLevelGain: 0.25,
   /** 個人 rpgStats とジョブ基準値のブレンド比 (0 = ジョブのみ / 1 = 個人のみ)。
    *  診断は min-max 正規化で全員が極端プロフィールになるため、個人値 100% だと
    *  atk 0〜80 のレンジになり勝率が 0〜100% に割れる (issue #279 実測)。
@@ -537,11 +535,17 @@ export interface Combatant {
   monsterId?: string;
 }
 
-function fromStats(name: string, stats: StatArray, levelFactor: number, level: number): Combatant {
+function fromStats(name: string, stats: StatArray, levelFactor: number): Combatant {
   const t = BATTLE_TUNING;
   const [atk, def, agi, int, luk] = stats;
   const s = (v: number) => Math.round(v * levelFactor);
-  const maxHp = Math.round(t.hpBase + def * t.hpDefScale * levelFactor + level * t.hpLevelScale);
+  // HP は **def**、MP は **int** から伸ばす (#507)。旧式の「レベル × hpLevelScale」の平坦項は撤廃した。
+  // その項 (プレイヤー Lv 由来) が HP 成長のほぼ全部を作っており、次の 3 つを同時に起こしていた:
+  //  (a) 同じ Lv1 賢者でもプレイヤー Lv で HP が 20→65 に変わる (「Lv1 賢者の HP」が一意に決まらない)
+  //  (b) ジョブ Lv では HP がほぼ伸びない (jobLv1→50 で 22→28)
+  //  (c) def43 の守護者と def15 の賢者で HP 差が 5 しかない (硬い職が硬くない)
+  // def/int 由来なら **ジョブごとに伸び率が変わり**、硬い職は硬く・int 職は MP が多い が自然に成立する。
+  const maxHp = Math.round(t.hpBase + def * t.hpDefScale * levelFactor);
   const maxMp = Math.round(t.mpBase + int * t.mpIntScale * levelFactor);
   return {
     name,
@@ -613,11 +617,11 @@ export function playerCombatant(
         job[4] + (baseStats[4] - job[4]) * w,
       ]
     : job;
-  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  // 平坦なレベル成長 (プレイヤーのみ)。低ステータスほど相対的に効く
-  const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
-  const grown: StatArray = [base[0] + flat, base[1] + flat, base[2] + flat, base[3] + flat, base[4] + flat];
-  const c = fromStats(displayName, grown, factor, playerLevel);
+  // **成長軸はジョブ Lv のみ** (#507)。プレイヤー Lv 由来の倍率・平坦加算は撤廃した
+  // (同じ Lv1 賢者がプレイヤー Lv で HP 20→65 に変わる = 「その職の強さ」が定まらなかった)。
+  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale;
+  void playerLevel; // 引数は呼び出し文脈として残す (強さには使わない)
+  const c = fromStats(displayName, base, factor);
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   if (bonus) {
     // 装備はすべての導出 (ブレンド・成長・丸め) の後に平坦加算 — 低ステータス
@@ -671,9 +675,10 @@ export function playerStatsAt(
         job[4] + (baseStats[4] - job[4]) * w,
       ]
     : job;
-  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale + Math.max(0, playerLevel - 1) * t.playerLevelScale;
-  const flat = t.flatLevelGain * Math.max(0, playerLevel - 1);
-  const g = (i: number) => (base[i]! + flat) * factor;
+  // playerCombatant と同じ規則: 成長はジョブ Lv のみ (#507)。
+  const factor = 1 + Math.max(0, jobLevel - 1) * t.jobLevelScale;
+  void playerLevel;
+  const g = (i: number) => base[i]! * factor;
   // 装備は gearFlatBonus で 1 箇所解決 (gear 優先・二重加算なし。#511)。playerCombatant と同じ規則。
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   const eq = (k: 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp') => bonus?.[k] ?? 0;
@@ -683,8 +688,8 @@ export function playerStatsAt(
     agi: g(2) + eq('agi'),
     int: g(3) + eq('int'),
     luk: g(4) + eq('luk'),
-    maxHp: t.hpBase + (base[1]! + flat) * t.hpDefScale * factor + playerLevel * t.hpLevelScale + eq('maxHp'),
-    maxMp: t.mpBase + (base[3]! + flat) * t.mpIntScale * factor,
+    maxHp: t.hpBase + base[1]! * t.hpDefScale * factor + eq('maxHp'),
+    maxMp: t.mpBase + base[3]! * t.mpIntScale * factor,
   };
 }
 
@@ -975,7 +980,7 @@ export function summonMonster(
  *  テスト/決定論を保つ)。summonMonster (tier 抽選) と、模擬戦の敵指定の双方から使う。 */
 export function monsterCombatant(def: MonsterDef, variance: number, rng: () => number): Combatant {
   const factor = monsterLevelFactor(def.tier);
-  const c = fromStats(def.name, def.stats, factor, 1);
+  const c = fromStats(def.name, def.stats, factor);
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
   if (def.hp !== undefined) { c.maxHp = Math.max(1, Math.round(def.hp * factor)); c.hp = c.maxHp; }
   if (def.mp !== undefined) { c.maxMp = Math.max(0, Math.round(def.mp * factor)); c.mp = c.maxMp; }

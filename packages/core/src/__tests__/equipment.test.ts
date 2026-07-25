@@ -146,7 +146,7 @@ describe('専用装備の弱点補完 (将軍)', () => {
     expect(gear.bonus.maxHp ?? 0).toBeGreaterThan(0);
     let wins = 0;
     for (let seed = 0; seed < 300; seed++) {
-      let s = startBattle('shogun', 8, 15, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
+      let s = startBattle('shogun', 15, 1, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
         equipIds: ['wp-shogun-high', 'ar-iron', 'ch-life'],
       });
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
@@ -162,7 +162,8 @@ describe('専用装備の弱点補完 (将軍)', () => {
       }
       if (s.outcome === 'win') wins++;
     }
-    // 実測 65% (300 seed)。素の 45% (atk 単盛り) への回帰を検知する下限
+    // #507 でジョブ Lv 基準に貼り直し (jobLv15)。実測 **装備なし 15% → フル装備 67%** =
+    // 専用品 (def+maxHp 複合) の効果が明確。素の atk 単盛りへの回帰を検知する下限
     expect(wins / 3).toBeGreaterThanOrEqual(55);
   });
 });

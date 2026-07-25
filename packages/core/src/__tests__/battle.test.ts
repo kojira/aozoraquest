@@ -722,11 +722,11 @@ describe('resolveTurn', () => {
   it('予告に防御で応じる戦略は attack 連打より tier3 勝率が上がる (防御の存在意義)', () => {
     // やくそう持ち + 300 seed で計測。難易度は「拮抗帯」に合わせる: 固定強度化 (Lv 追従なし)
     // + T2/T3 強化 (#444 の敵 atk 底上げ) 後は tier3 の競り合い帯が上がり、warrior は
-    // jobLv8/plLv15 (T3 ~47%) が拮抗帯。ここで予告防御 (reactive) が attack 連打 (spam) を上回る
+    // jobLv15 (T3 ~42%) が拮抗帯 (#507 でジョブ Lv 基準に貼り直し)。ここで予告防御 (reactive) が attack 連打 (spam) を上回る
     // = 防御の存在意義。強化された charger の予告を防がないと事故死するため差が明確に出る。
     const HERBS = 2;
     const reactive = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 15, 1, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         // 予告があれば防御、HP 危険域なら やくそう、なければ攻撃
@@ -735,7 +735,7 @@ describe('resolveTurn', () => {
       return s.outcome;
     };
     const spam = (seed: number) => {
-      let s = startBattle('warrior', 8, 15, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 15, 1, '戦士', 3, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         s = resolveTurn(s, s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
@@ -825,8 +825,10 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     // 注: bard は #456 で「歌の支援職」にキット化され skill[0] がバフ = ソロの naive auto-battle
     // (skillIndex0) では攻撃せず弱い (支援職はパーティ前提。マルチ #453 で本領)。ここでは攻撃系の
     // 弱 luk/agi ジョブ (explorer=非キット agi 署名 / ninja=毒手) で「レベルで戦える」ことを固定する。
-    expect(winRate('explorer', 5, 8, 2)).toBeGreaterThanOrEqual(60);
-    expect(winRate('ninja', 5, 8, 2)).toBeGreaterThanOrEqual(60);
+    // #507 で成長軸がジョブ Lv のみになったため、旧 jobLv5/plLv8 から **jobLv15** に貼り直し
+    // (プレイヤー Lv は強さに効かない)。実測 explorer 100% / ninja 78%。
+    expect(winRate('explorer', 15, 1, 2)).toBeGreaterThanOrEqual(60);
+    expect(winRate('ninja', 15, 1, 2)).toBeGreaterThanOrEqual(60);
   });
 
   it('MP 特性 (JOB_MP_TRAITS): 弱ジョブは回復量ボーナス + 特性名を持ち、state に載る', () => {
@@ -894,11 +896,27 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     // 実カーブでは稀なので、フィルタ自体は変化なしケースで担保する
   });
 
-  it('平坦レベル成長: 低ステータスほど相対的に伸びる (bard の atk が Lv で改善)', () => {
+  it('成長軸はジョブ Lv のみ — プレイヤー Lv は強さに一切影響しない (#507)', () => {
     const lv1 = playerCombatant('bard', 1, 1, 'x');
-    const lv20 = playerCombatant('bard', 1, 20, 'x');
-    // 乗算のみなら atk7 → 9 程度。加算成長込みで明確に伸びることを固定
-    expect(lv20.atk).toBeGreaterThanOrEqual(lv1.atk + 5);
+    // ジョブ Lv では伸びる
+    expect(playerCombatant('bard', 20, 1, 'x').atk).toBeGreaterThan(lv1.atk);
+    expect(playerCombatant('guardian', 30, 1, 'x').maxHp).toBeGreaterThan(playerCombatant('guardian', 1, 1, 'x').maxHp);
+    // プレイヤー Lv をいくら上げても同じ (旧 playerLevelScale / flatLevelGain / hpLevelScale は撤廃)
+    for (const pl of [10, 50, 99]) {
+      const c = playerCombatant('bard', 1, pl, 'x');
+      expect(c.atk, `plLv${pl}`).toBe(lv1.atk);
+      expect(c.maxHp, `plLv${pl}`).toBe(lv1.maxHp);
+      expect(c.maxMp, `plLv${pl}`).toBe(lv1.maxMp);
+    }
+  });
+
+  it('HP はジョブの def に比例する = 硬い職が実際に硬い (#507)', () => {
+    // 旧式は全職 HP≈20 横並びだった (def43 の守護者と def15 の賢者で差 5)
+    const tank = playerCombatant('guardian', 30, 1, 'x').maxHp;
+    const caster = playerCombatant('sage', 30, 1, 'x').maxHp;
+    expect(tank).toBeGreaterThan(caster * 1.5); // 実測 68 vs 35
+    // MP は int に比例する (賢者は守護者より MP が多い)
+    expect(playerCombatant('sage', 30, 1, 'x').maxMp).toBeGreaterThan(playerCombatant('guardian', 30, 1, 'x').maxMp * 1.5);
   });
 });
 
