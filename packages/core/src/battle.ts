@@ -643,17 +643,19 @@ function growthOf(archetype: Archetype, jobLevel: number, baseStats?: StatArray)
   const lv = Math.max(0, jobLevel - 1);
   const gr = t.statBase + t.statGrow * lv;
   const dr = t.defBase + t.defGrow * lv;
+  /** 5 ステータスの生値。**まもり (index 1) だけ statFloor 無し・def 系統の伸び率** — 守備は
+   *  防具が主役という設計を下駄で薄めないため (docs/19 §6.4.5)。 */
+  const stat = (i: 0 | 1 | 2 | 3 | 4): number => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr);
   return {
-    /** 5 ステータスの生値。**まもり (index 1) だけ statFloor 無し・def 系統の伸び率** — 守備は
-     *  防具が主役という設計を下駄で薄めないため (docs/19 §6.4.5)。 */
-    stat: (i: 0 | 1 | 2 | 3 | 4): number => (i === 1 ? base[i]! * dr : t.statFloor + base[i]! * gr),
+    stat,
     /** たいりょく。**丸めた値**を返す — ステータス画面に出す たいりょく が HP を説明できる
      *  必要があるため (「たいりょく 4」なのに HP 13 では表示の意味が無い)。 */
     vit: Math.round(JOBS_BY_ID[archetype].vit * gr),
-    /** MP の**生値**。丸めるかどうかは呼び出し側が決める (playerCombatant だけが丸める)。
-     *  基準を helper 内に固定してあるので、`round(playerStatsAt.maxMp) === playerCombatant.maxMp`
-     *  が `mpIntScale` の値に依らず構造的に成立する。 */
-    maxMp: (): number => t.mpBase + (t.statFloor + base[3]! * gr) * t.mpIntScale,
+    /** MP の**生値** (装備ボーナス適用**前**の素の かしこさ 基準)。丸めるかどうかは呼び出し側が
+     *  決める (playerCombatant だけが丸める)。`stat(3)` をそのまま使うので式は 1 つしかなく、
+     *  `round(playerStatsAt.maxMp) === playerCombatant.maxMp` が `mpIntScale` の値に依らず
+     *  構造的に成立する。 */
+    maxMp: (): number => t.mpBase + stat(3) * t.mpIntScale,
   };
 }
 
@@ -695,7 +697,7 @@ export function playerCombatant(
     displayName,
     grown,
     Math.round(t.hpBase + g.vit * t.hpVitScale),
-    Math.round(g.maxMp()),
+    Math.round(g.maxMp()), // grown[3] を使うと mpIntScale 非整数時に playerStatsAt と割れる
     g.vit,
   );
   const bonus = gearFlatBonus(archetype, equipIds, gear);

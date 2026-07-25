@@ -49,7 +49,10 @@ describe('成長式の一貫性 (#520)', () => {
     expect(hasFraction).toBe(true);
   });
 
-  it('MP の式は mpBase + かしこさ × mpIntScale (丸めを挟まない)', () => {
+  it('MP の式は mpBase + かしこさ × mpIntScale (丸めを挟まない。装備ボーナス適用**前**の素の値基準)', () => {
+    // 装備で かしこさ が上がっても さいだいMP は増えない (杖の int ボーナスは MP に乗らない)。
+    // これは #520 以前からの挙動で、ここで検証しているのは素の値の式のみ。装備込みのケースを
+    // 足すと落ちるので注意 (仕様として妥当かは別途 #525)。
     const t = BATTLE_TUNING;
     for (const j of JOBS) {
       for (const lv of [1, 13, 37]) {
