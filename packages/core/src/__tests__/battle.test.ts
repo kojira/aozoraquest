@@ -27,7 +27,7 @@ import {
   levelUpGains,
   playerStatsAt,
 } from '../battle.js';
-import { JOBS } from '../jobs.js';
+import { JOBS, JOBS_BY_ID } from '../jobs.js';
 import { gearBonusFromGear } from '../equipment.js';
 import type { Archetype, StatArray } from '../types.js';
 
@@ -94,12 +94,16 @@ describe('skillsForJob (複数とくぎ #436)', () => {
     expect(skillsForJob('fighter', 3).map((s) => s.name)).toContain('からくり仕掛け');
   });
   it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
-    // paladin(jobLv5) は聖光の癒し (heal) を持つ。HP を削ってから回復を選ぶ。
-    let s = startBattle('paladin', 5, 8, '聖', 2, 3, 0);
+    // paladin は聖光の癒し (heal) を Lv5 で覚える。HP を削ってから回復を選ぶ。
+    // tier は想定プレイヤーレベル (#518) なので tier2 には jobLv10 を当てる
+    // (jobLv5 だと格上すぎて回復ターンに落とされ、検証が回らない)。
+    let s = startBattle('paladin', 10, 8, '聖', 2, 3, 0);
     const healIdx = s.playerSkills.findIndex((x) => x.name === '聖光の癒し');
     expect(healIdx).toBeGreaterThanOrEqual(0);
     for (let i = 0; i < 3 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack', i * 7 + 1);
-    if (s.outcome === 'ongoing' && s.player.hp < s.player.maxHp) {
+    expect(s.outcome).toBe('ongoing'); // 想定レベル帯なら 3 ターンで決着しない
+    expect(s.player.hp).toBeLessThan(s.player.maxHp); // 削られている = 回復の検証が意味を持つ
+    {
       const before = s.player.hp;
       const mpBefore = s.player.mp;
       s = resolveTurn(s, 'skill', 999, healIdx);
@@ -236,9 +240,11 @@ describe('summonMonster', () => {
     }
     expect(fled).toBe(true);
   });
-  it('はぐれメタル: 超高守備で通常攻撃は 1 ダメージ・会心 (def無視) のみ貫通', () => {
-    // メタルは守備 240 で減算式が minDamage に沈む。プレイヤーの会心だけが def を無視して
-    // 貫通する (#432)。専用ロジックなし = 守備の数値だけで「硬い」を表現。高 atk の shogun でも通常は 1。
+  it('はぐれメタル: 超高守備で通常攻撃は 0 ダメージ・会心 (def無視) のみ貫通', () => {
+    // メタルは flatDef で減算式が負に沈み、**通常攻撃は 1 も通らない** (minDamage=0。
+    // オーナー指摘 2026-07-25「攻撃力が低くても必ず 1 通るのは仕様の読み違い」)。
+    // プレイヤーの会心だけが def を無視して貫通する (#432)。専用ロジックなし = 守備の数値だけで
+    // 「硬い」を表現。最高 atk の shogun でも通常攻撃は 0。
     let normalMax = 0;
     let critDealt = 0;
     for (let seed = 0; seed < 300; seed++) {
@@ -252,7 +258,7 @@ describe('summonMonster', () => {
         else normalMax = Math.max(normalMax, dealt);
       }
     }
-    expect(normalMax).toBe(1); // 通常攻撃は必ず 1 (守備で沈む)
+    expect(normalMax).toBe(0); // 通常攻撃は 1 も通らない (守備を上回れない)
     expect(critDealt).toBeGreaterThan(1); // 会心は貫通して低 HP を一撃
   });
   it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
@@ -539,9 +545,9 @@ describe('resolveTurn', () => {
   });
 
   it('MP: 特技で消費する。回復はジョブ特性のみ (特性なしジョブはぼうぎょでも回復 0)', () => {
-    // tier3 (硬い敵) で戦う: 固定強度化 (プレイヤーLvに追従しない) 後は tier1 の敵が弱く、
-    // jobLv5/plLv10 の特技で 1 撃死して outcome が win になり MP 検証が回らないため。
-    const s0 = startBattle('sage', 5, 10, '賢者', 3, 42);
+    // tier は想定プレイヤーレベル (#518) なので、tier2 には **jobLv10** を当てるのが拮抗帯。
+    // tier1 では特技 1 撃で決着して MP 検証が回らず、格上 tier では数ターンで負ける。
+    const s0 = startBattle('sage', 10, 10, '賢者', 2, 42);
     expect(s0.player.mp).toBe(s0.player.maxMp);
     const s1 = resolveTurn(s0, 'skill');
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
@@ -554,7 +560,7 @@ describe('resolveTurn', () => {
     // 特性持ち (bard: ぼうぎょ +4) は回復し、ログに特性名が出る。
     // skill 2 連発で headroom を作り、クランプ境界で過大回帰を見逃さない
     // (mp+4 がちょうど maxMp だと guardGain 5 でも通ってしまう — レビュー指摘)
-    const b0 = startBattle('bard', 5, 10, '詩人', 3, 42, 0, { mp: 8 });
+    const b0 = startBattle('bard', 10, 10, '詩人', 2, 42, 0, { mp: 8 });
     const b1 = resolveTurn(b0, 'skill');
     expect(b1.outcome).toBe('ongoing');
     const b2 = resolveTurn(b1, 'guard');
@@ -609,8 +615,10 @@ describe('resolveTurn', () => {
   });
 
   it('そらのしずく: MP を回復し、残数と使用数が更新される。切れたらフォールバック', () => {
-    // tier3 (硬い敵) で戦う: 固定強度化後は tier1 が弱く 1 撃で決着して MP 回復検証が回らない。
-    let s = startBattle('sage', 5, 10, '賢者', 3, 42, 0, undefined, { tonics: 2 });
+    // tier2 = 想定 Lv10 (#518) なので jobLv10 を当てる。tier1 では 1 撃決着して回復検証が回らない。
+    // 職は guardian: 賢者は素の HP が低く、防具なしの検証条件だと 2 ターン目に落ちて
+    // しずくを飲む前に決着してしまう (キャスターは防具前提という設計。#518)。
+    let s = startBattle('guardian', 10, 10, '守', 2, 42, 0, undefined, { tonics: 2 });
     expect(s.tonics).toBe(2);
     // MP を減らしてから使う (seed 42 は 1 ターン目で決着しない前提を明示的に固定)
     s = resolveTurn(s, 'skill');
@@ -624,7 +632,7 @@ describe('resolveTurn', () => {
     const expectedGain = Math.max(1, Math.round(next.player.maxMp * BATTLE_TUNING.tonicMpRatio));
     expect(next.player.mp).toBe(Math.min(next.player.maxMp, mpBefore + expectedGain));
     expect(next.player.mp).toBeGreaterThan(mpBefore);
-    const none = startBattle('sage', 5, 10, '賢者', 3, 7);
+    const none = startBattle('sage', 5, 10, '賢者', 1, 7); // 所持 0 の分岐だけ見るので tier は軽くてよい
     const fb = resolveTurn(none, 'tonic');
     expect(fb.lastEvents.some((e) => e.text.includes('持っていない'))).toBe(true);
     expect(fb.tonicsUsed).toBe(0);
@@ -769,17 +777,18 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('やくそうは tier3 で意味がある (やくそう有り > ガードのみ) — 拮抗帯 jobLv5/plLv8', () => {
-    // 固定強度化後、tier3 が競り合う帯 (jobLv5/plLv8) で「やくそう込み」が「ガードのみ」に勝る。
+  it('やくそうは拮抗帯で意味がある (やくそう有り > ガードのみ) — tier2 / jobLv5', () => {
+    // tier が想定プレイヤーレベル化した (#518) ので、jobLv5 が競り合う帯は tier2 (想定 Lv10)。
+    // そこで「やくそう込み」が「ガードのみ」に勝ることを固定する。
     const reactiveHerb = (s: BattleState): Command =>
       s.monster.charging ? 'guard' : s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45 ? 'herb' : 'attack';
     let withHerb = 0;
     let guardOnlyWins = 0;
     for (let seed = 0; seed < 200; seed++) {
-      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
+      let s = startBattle('warrior', 5, 8, '戦士', 2, seed, BATTLE_TUNING.herbCarryMax);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, reactiveHerb(s));
       if (s.outcome === 'win') withHerb++;
-      let g = startBattle('warrior', 5, 8, '戦士', 3, seed);
+      let g = startBattle('warrior', 5, 8, '戦士', 2, seed);
       for (let i = 0; i < 60 && g.outcome === 'ongoing'; i++) {
         g = resolveTurn(g, g.monster.charging ? 'guard' : 'attack');
       }
@@ -840,8 +849,9 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     expect(warrior.mpAttackGain).toBe(BATTLE_TUNING.mpAttackGain);
     expect(warrior.mpGuardGain).toBe(BATTLE_TUNING.mpGuardGain);
     expect(warrior.mpTraitName).toBeUndefined();
-    // たたかう で実際に特性分回復する (seed 5 は 2 ターン目まで決着しないことを固定)
-    let s = startBattle('bard', 1, 1, 'x', 1, 5);
+    // たたかう で実際に特性分回復する (seed 6 は 2 ターン目まで決着しないことを固定。
+    // #518 でステータスが上がり、seed 5 は 1 ターン目で決着するようになった)
+    let s = startBattle('bard', 1, 1, 'x', 1, 6);
     s = resolveTurn(s, 'skill'); // MP -4
     expect(s.outcome).toBe('ongoing');
     const before = s.player.mp;
@@ -851,10 +861,12 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
   });
 
   it('個人 rpgStats はジョブ基準値と 50:50 ブレンド (極端ビルドの 0%/100% 割れ防止)', () => {
-    // 極端な個人値 (atk 4) でも warrior の基底 (atk 25) と混ざって半分までしか落ちない
-    const extreme = playerCombatant('warrior', 1, 1, 'x', [4, 7, 40, 7, 42]);
-    const jobOnly = playerCombatant('warrior', 1, 1, 'x');
-    expect(extreme.atk).toBeGreaterThanOrEqual(Math.floor((25 + 4) / 2));
+    // 極端な個人値 (atk 比率 4) でも warrior の基底と混ざって半分までしか落ちない。
+    // #518 以降ステータスは「比率 × 伸び率」なので、絶対値ではなく **ジョブ単独との比** で見る
+    // (伸び率が変わってもテストが腐らない)。Lv30 で見るのは Lv1 の整数丸めを避けるため。
+    const extreme = playerCombatant('warrior', 30, 1, 'x', [4, 7, 40, 7, 42]);
+    const jobOnly = playerCombatant('warrior', 30, 1, 'x');
+    expect(extreme.atk / jobOnly.atk).toBeGreaterThan(0.45); // 半減より悪くはならない
     expect(extreme.atk).toBeLessThan(jobOnly.atk);
     expect(extreme.agi).toBeGreaterThan(jobOnly.agi); // 高い個人値は反映される
   });
@@ -879,11 +891,12 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
   });
 
   it('levelUpGains: 上昇量を小数 1 桁で返し、0.1 未満と変化なしは出さない', () => {
-    // ジョブ Lv1→2: 全ステに jobLevelScale 4% が乗るので主要ステは上がる
+    // ジョブ Lv1→2: 全ステに statGrow ぶんの伸び率が乗るので主要ステは上がる (#518)
     const gains = levelUpGains('warrior', { jobLevel: 1, playerLevel: 1 }, { jobLevel: 2, playerLevel: 1 });
     expect(gains.length).toBeGreaterThan(0);
     const atk = gains.find((g) => g.key === 'atk');
-    expect(atk?.delta).toBeCloseTo(1.0, 5); // warrior atk25 × 0.04
+    const warriorAtkRatio = JOBS_BY_ID.warrior.stats[0];
+    expect(atk?.delta).toBeCloseTo(Math.round(warriorAtkRatio * BATTLE_TUNING.statGrow * 10) / 10, 5);
     for (const g of gains) {
       expect(g.delta).toBeGreaterThanOrEqual(0.1);
       expect(g.delta).toBe(Math.round(g.delta * 10) / 10);

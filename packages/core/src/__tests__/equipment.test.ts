@@ -77,9 +77,10 @@ describe('canEquip (装備適性)', () => {
 describe('gearBonus', () => {
   it('装備の合計を返し、未知 id と装備不可の品は無視する', () => {
     const g = gearBonus('ninja', ['wp-ninja-mid', 'ar-nimble', 'ch-life', 'no-such-item', 'wp-axe']);
-    // wp-axe は ninja 装備不可 → 無視。忍者刀 +8 agi、かるわざ +4 def +3 agi、ペンダント +3 maxHp
+    // wp-axe は ninja 装備不可 → 無視。忍者刀 +8 agi、かるわざの衣 +15 def +3 agi、ペンダント +3 maxHp
+    // (#518 で防具の def を grade1 +5 / grade2 +15 / grade3 +35 に引き上げ = 守備は防具が主役)
     expect(g.agi).toBe(11);
-    expect(g.def).toBe(4);
+    expect(g.def).toBe(15);
     expect(g.maxHp).toBe(3);
     expect(g.atk).toBe(0);
   });

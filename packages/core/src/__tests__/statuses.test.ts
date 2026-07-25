@@ -29,6 +29,7 @@ function c(over: Partial<Combatant> = {}): Combatant {
     agi: 15,
     int: 20,
     luk: 10,
+    vit: 0,
     guarding: false,
     parrying: false,
     charging: false,

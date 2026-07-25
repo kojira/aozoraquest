@@ -31,7 +31,9 @@ const SLOT_LABELS: Record<EquipSlot, string> = {
   charm: 'おまもり',
 };
 
-const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
+// たいりょく (#518) は HP の元。「HP がなぜその数字か」を見せるため先頭に置く (オーナー要望)。
+const STAT_ROWS: readonly { key: 'vit' | 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
+  { key: 'vit', label: 'たいりょく' },
   { key: 'atk', label: 'こうげき' },
   { key: 'def', label: 'まもり' },
   { key: 'agi', label: 'すばやさ' },
@@ -126,7 +128,7 @@ export function StatusModal({
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || 'ぼうけんしゃ'}</div>
               <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span> / ぼうけん Lv <span style={num}>{playerLv}</span>
+                {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span>
               </div>
             </div>
           </div>

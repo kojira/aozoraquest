@@ -247,7 +247,9 @@ describe('巫女 確定キット (#456。luk支援・全体技のソロ退化)',
   });
 
   it('癒しの鈴 (heal allAllies) はソロで自分を回復する', () => {
-    const s = startBattle('miko', 3, 8, '巫', 1, 5, 0);
+    // jobLv10: Lv3 だと maxHp が 22 しかなく、回復量 (maxHp 割合) を敵の 1 撃が相殺して
+    // 「回復したか」が測れない (#518 で HP がレベル依存に変わったため)。
+    const s = startBattle('miko', 10, 8, '巫', 1, 5, 0);
     s.player.hp = Math.max(1, s.player.maxHp - 20);
     const before = s.player.hp;
     const idx = s.playerSkills.findIndex((sk) => sk.name === '癒しの鈴');
@@ -356,7 +358,8 @@ describe('予言者 確定キット (#456)', () => {
   });
 
   it('破滅の予言は doomMark を敵に付与し、炸裂は int 連動 (基礎15超)', () => {
-    const s = startBattle('seer', 12, 18, '予', 3, 5, 0);
+    // tier は想定プレイヤーレベル (#518) なので jobLv12 には tier2 を当てる。
+    const s = startBattle('seer', 12, 18, '予', 2, 5, 0);
     const idx = s.playerSkills.findIndex((sk) => sk.name === '破滅の予言');
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
     const doom = next.monster.statuses?.find((st) => st.id === 'doomMark');
