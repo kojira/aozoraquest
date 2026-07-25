@@ -11,6 +11,7 @@ import {
   favoredMonsterFor,
   isWalkable,
   jobLevelFromXp,
+  effectiveJobXp,
   playerCombatant,
   playerLevelFromXp,
   regionAffinity,
@@ -119,6 +120,8 @@ export function World() {
   const agent = session.agent ?? null;
   const did = session.did ?? null;
   const [ws, setWs] = useState<Vitals | null>(null);
+  /** 権威 state の戦闘由来ジョブ XP (#529)。現職 Lv は analysis + これ の合算。 */
+  const [battleJobXp, setBattleJobXp] = useState(0);
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
@@ -245,10 +248,13 @@ export function World() {
   // combat (装備込み) と combatBase (装備なし) は gear 引数だけが違う。base 引数を
   // 共有タプルにして「そうび +N = combat − combatBase」の不変条件を構造的に守る
   // (5 行コピペだと片方の base 導出変更で内訳が黙って壊れる — レビュー ★★)
+  // 現職 XP は **投稿由来 (analysis) + 戦闘由来 (権威 state)** の合算 (#529)。
+  // 片方だけ見ると、画面の Lv とサーバーが戦闘に使う Lv が食い違う。
+  const jobXpTotal = effectiveJobXp({ analysisXp: diag?.jobLevel?.xp, battleXp: battleJobXp });
   const baseArgs = archetype
     ? ([
         archetype,
-        jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
+        jobLevelFromXp(jobXpTotal),
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
         diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
@@ -260,7 +266,7 @@ export function World() {
   const combatBase = useMemo(
     () => (statusOpen && baseArgs ? playerCombatant(...baseArgs) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- baseArgs は下記 diag/archetype で代表
-    [statusOpen, archetype, diag?.jobLevel?.xp, diag?.playerLevel?.xp, diag?.rpgStats],
+    [statusOpen, archetype, jobXpTotal, diag?.playerLevel?.xp, diag?.rpgStats],
   );
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
@@ -290,6 +296,7 @@ export function World() {
           const ss = await serverState(agent);
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
+            setBattleJobXp(ss.state.jobXp?.[archetype ?? ''] ?? 0); // 戦闘由来 XP (#529)
             if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
               px = ss.state.x; py = ss.state.y;
               // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
@@ -1271,8 +1278,8 @@ export function World() {
           name={playerName}
           avatarUrl={avatarUrl}
           archetype={archetype}
-          jobLv={jobLevelFromXp(diag?.jobLevel?.xp ?? 0)}
-          jobXp={diag?.jobLevel?.xp ?? 0}
+          jobLv={jobLevelFromXp(jobXpTotal)}
+          jobXp={jobXpTotal}
           combat={combat}
           combatBase={combatBase}
           hp={curHp}

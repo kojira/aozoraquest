@@ -112,6 +112,9 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   }
 
   const jobName = jobDisplayName(diag.archetype, 'default');
+  // ホームは権威 state を取らないので **投稿由来の XP だけ**の概算 LV (#529)。
+  // 戦闘で稼いだぶんは含まれず、つよさ画面/あおぞらワールドより低く出る。ホームは
+  // サマリなので追加の往復を避ける判断 (正確な LV は つよさ画面 で見せる)。
   const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0);
 
   // master 畳み: サマリ全体を隠し、細い 1 行のバーだけにする (TL がすぐ上に来る)。

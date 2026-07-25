@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questXpScalar, statVectorToArray } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questXpScalar, effectiveJobXp, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
+import { serverState, worldServerEnabled } from '@/lib/world-server';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
@@ -41,6 +42,7 @@ export function MyProfile() {
   const [gearData, setGearData] = useState<{ refs: GearRefs; pieces: CraftedPiece[] } | null>(null);
   // 受託して完了したクエストから得た経験値 (現職 LV に加算)。
   const [questXp, setQuestXp] = useState<number>(0);
+  const [battleXpByJob, setBattleXpByJob] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -115,6 +117,17 @@ export function MyProfile() {
         console.warn('quest xp load failed', e);
       }
     })();
+    // 戦闘で得た経験値 (権威 state。#529)。ここを足さないと、この画面の LV が
+    // 実際に戦うときの強さより低く出る。取れなければ 0 のまま (概算表示に劣化)。
+    (async () => {
+      if (!worldServerEnabled) return;
+      try {
+        const ss = await serverState(agent);
+        if (!cancelled) setBattleXpByJob(ss.state.jobXp ?? {});
+      } catch (e) {
+        console.warn('battle xp load failed', e);
+      }
+    })();
     return () => { cancelled = true; };
   }, [session.status, session.agent, session.did]);
 
@@ -154,7 +167,11 @@ export function MyProfile() {
       : null;
   // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を現職 LV へ加算する
   // (プレイヤー Lv は #507/#508 で廃止したので加算先は現職のみ)。
-  const myJobXp = (state.status === 'done' ? (state.result.jobLevel?.xp ?? 0) : 0) + questXp;
+  const myJobXp = effectiveJobXp({
+    analysisXp: state.status === 'done' ? state.result.jobLevel?.xp : 0,
+    battleXp: myArchetype ? battleXpByJob[myArchetype] : 0,
+    questXp,
+  });
   const myJobLv = jobLevelFromXp(myJobXp);
 
   return (
@@ -308,7 +325,14 @@ export function MyProfile() {
         </div>
       )}
 
-      {state.status === 'done' && <ResultView result={state.result} questXp={questXp} onRerun={runAgain} />}
+      {state.status === 'done' && (
+        <ResultView
+          result={state.result}
+          questXp={questXp}
+          battleXp={myArchetype ? (battleXpByJob[myArchetype] ?? 0) : 0}
+          onRerun={runAgain}
+        />
+      )}
 
       {state.status === 'done' && (
         <div style={{ marginTop: '1.5em', display: 'flex', flexDirection: 'column', gap: '0.6em', alignItems: 'center' }}>
@@ -370,12 +394,12 @@ const COGNITIVE_LABEL: Record<string, string> = {
   Fe: '場の調和',
 };
 
-export function ResultView({ result, questXp = 0, onRerun }: { result: DiagnosisResult; questXp?: number; onRerun: () => void }) {
+export function ResultView({ result, questXp = 0, battleXp = 0, onRerun }: { result: DiagnosisResult; questXp?: number; battleXp?: number; onRerun: () => void }) {
   const jobName = jobDisplayName(result.archetype, 'default');
   const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
-  // 受託完了クエストの経験値を現職 LV に加算 (ヘッダの LV 表示と揃える)。
-  const jobXp = (result.jobLevel?.xp ?? 0) + questXp;
+  // 現職 LV は 3 つの出所の合算 (#529)。ヘッダの LV 表示と揃える。
+  const jobXp = effectiveJobXp({ analysisXp: result.jobLevel?.xp, battleXp, questXp });
   const jobLv = jobXpToNextLevel(jobXp);
   const jobPct = jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
   return (

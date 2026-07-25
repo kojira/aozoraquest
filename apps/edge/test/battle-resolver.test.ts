@@ -86,6 +86,18 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     expect(r2.battleId).not.toBe(r.battleId);
   });
 
+  it('戦闘で得た XP が次の戦闘の強さに反映される (#529)', async () => {
+    // 以前は Lv を analysis (投稿由来) だけから出しており、権威 state に積んだ戦闘 XP が
+    // どこにも効いていなかった (「けいけんち を N かくとく！」と出してレベルが上がらない)。
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS() }).fn;
+    // 同じ analysis・同じ座標・同じ seed で、権威 state の戦闘 XP だけを変える。
+    const weak = await sealEncounter(env, USER, GS({ jobXp: { warrior: 0 } }), 5, 5, 12345, NOW);
+    const strong = await sealEncounter(env, USER, GS({ jobXp: { warrior: 20000 } }), 5, 5, 12345, NOW);
+    expect(strong.state.player.maxHp).toBeGreaterThan(weak.state.player.maxHp);
+    expect(strong.state.player.atk).toBeGreaterThan(weak.state.player.atk);
+  });
+
   it('sealEncounter: power 0 → rewarded=false / 診断なし → 409', async () => {
     let env = await makeEnv();
     globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ power: 0 }) }).fn;

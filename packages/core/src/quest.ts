@@ -204,7 +204,36 @@ export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: num
   JOB_LEVEL_TUNING.exponent,
 );
 
-/** 累計 XP から現職 LV を計算。 */
+/**
+ * **現職 XP の単一の出所** (#529)。ジョブ XP は保存場所が 3 つに分かれているので、
+ * レベルを出すときは必ずここで合算する。
+ *
+ * | 出所 | 保存場所 | なぜそこにあるか |
+ * |---|---|---|
+ * | 投稿・診断 | `analysis.jobLevel.xp` (ユーザー PDS) | client が投稿を分類して書く |
+ * | **戦闘** | `GameState.jobXp[archetype]` (サーバー権威) | 改竄されるとゲームが壊れるので権威 state (docs/21) |
+ * | 依頼クエスト | 完了クエスト集合からの派生 (`questXpScalar`) | 二重加算が原理的に起きない |
+ *
+ * これを作る前は**場所ごとに違う値を使っていた** — `/me` は投稿 + クエスト、ホームと
+ * つよさ画面は投稿だけ、実際の戦闘計算も投稿だけ。**戦闘で得た XP はどこにも効かず**、
+ * 「けいけんち を N かくとく！」と表示しておいて実際にはレベルが上がらない状態だった。
+ *
+ * 引数はすべて任意。取得できないものは 0 として扱う (例: ホーム画面が権威 state を
+ * 取らない選択をしてもクラッシュしない)。**ただし省略すると表示 LV が実際の強さより
+ * 低く出る**ので、省略してよいのは「その画面では概算で足りる」と判断したときだけ。
+ */
+export function effectiveJobXp(src: {
+  /** `analysis.jobLevel.xp` — 投稿・診断由来。転職でリセットされる。 */
+  analysisXp?: number | undefined;
+  /** `GameState.jobXp[archetype]` — 戦闘由来 (サーバー権威)。 */
+  battleXp?: number | undefined;
+  /** `questXpScalar()` の戻り値 — 依頼クエスト由来。 */
+  questXp?: number | undefined;
+}): number {
+  return Math.max(0, (src.analysisXp ?? 0) + (src.battleXp ?? 0) + (src.questXp ?? 0));
+}
+
+/** 累計 XP から現職 LV を計算。**合算前の値を渡さないこと** — `effectiveJobXp` を通す (#529)。 */
 export function jobLevelFromXp(xp: number): number {
   let lv = 1;
   for (const [l, threshold] of JOB_XP_CURVE) {
