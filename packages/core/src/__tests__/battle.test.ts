@@ -20,6 +20,7 @@ import {
   SEARCH_TUNING,
   earnedTitles,
   MONSTERS,
+  monsterCombatant,
   MONSTERS_BY_ID,
   ITEMS,
   type BattleState,
@@ -28,7 +29,7 @@ import {
   playerStatsAt,
 } from '../battle.js';
 import { JOBS, JOBS_BY_ID } from '../jobs.js';
-import { gearBonusFromGear } from '../equipment.js';
+import { gearBonus, gearBonusFromGear } from '../equipment.js';
 import type { Archetype, StatArray } from '../types.js';
 
 describe('createRng / turnRng', () => {
@@ -1090,5 +1091,117 @@ describe('resolveTurn: 外部 seed 注入 (サーバー権威 §5)', () => {
     const snap = JSON.stringify(s0);
     resolveTurn(s0, 'attack', 777);
     expect(JSON.stringify(s0)).toBe(snap);
+  });
+});
+
+describe('成長モデル (#518)', () => {
+  it('たいりょく (vit) が HP の単一の出所 — HP = hpBase + vit * hpVitScale', () => {
+    // 「将軍が賢者より HP が低い」逆転 (HP が まもり 由来だった旧実装) の再発防止。
+    for (const j of JOBS) {
+      for (const lv of [1, 10, 30, 50]) {
+        const c = playerCombatant(j.id, lv, 1, 'x');
+        expect(c.maxHp, `${j.id} Lv${lv}`).toBe(
+          Math.round(BATTLE_TUNING.hpBase + c.vit * BATTLE_TUNING.hpVitScale),
+        );
+      }
+    }
+    // vit の順序がそのまま HP の順序になる (同レベル比較)
+    const byVit = [...JOBS].sort((a, b) => b.vit - a.vit).map((j) => j.id);
+    const hps = byVit.map((id) => playerCombatant(id, 30, 1, 'x').maxHp);
+    expect(hps).toEqual([...hps].sort((a, b) => b - a));
+    // 将軍 > 賢者 (逆転していないこと自体を名指しで固定)
+    expect(playerCombatant('shogun', 30, 1, 'x').maxHp)
+      .toBeGreaterThan(playerCombatant('sage', 30, 1, 'x').maxHp);
+  });
+
+  it('レベルを上げると全職の HP が必ず伸び、他ステも数レベルで必ず動く (成長の手応え)', () => {
+    // 旧モデルは jobLevelScale 4% しか乗らず、14/16 職が「HP +0」のレベルが大半だった。
+    // **HP は毎レベル必ず伸びる** (vit 18〜45 × statGrow 0.05 × hpVitScale 2 = 最低 +1.8)。
+    // こうげき/MP は比率が低い職 (魔法使い atk 7 = 0.35/Lv) だと毎レベルは動かない。
+    // DQ でも魔法使いの ちから はほとんど伸びないので、これは仕様。3 レベルの幅で固定する。
+    for (const j of JOBS) {
+      for (const lv of [1, 5, 15, 29, 49]) {
+        const a = playerCombatant(j.id, lv, 1, 'x');
+        expect(playerCombatant(j.id, lv + 1, 1, 'x').maxHp, `${j.id} Lv${lv}→${lv + 1} HP`)
+          .toBeGreaterThan(a.maxHp);
+        const c3 = playerCombatant(j.id, lv + 3, 1, 'x');
+        expect(c3.maxMp, `${j.id} Lv${lv}→${lv + 3} MP`).toBeGreaterThan(a.maxMp);
+        expect(c3.atk, `${j.id} Lv${lv}→${lv + 3} atk`).toBeGreaterThan(a.atk);
+      }
+    }
+  });
+
+  it('まもりだけ伸びを抑え、守備は防具が主役になっている', () => {
+    // 素の まもり は他ステより明確に伸びが遅い (docs/19 §6.4.5)。
+    const g1 = playerCombatant('guardian', 1, 1, 'x');
+    const g50 = playerCombatant('guardian', 50, 1, 'x');
+    expect((g50.def - g1.def) / (g50.atk - g1.atk)).toBeLessThan(0.6);
+    // grade1 防具 (+5) が Lv1 の素の まもり を上回る = 序盤は防具が守備の主役
+    expect(gearBonus('guardian', ['ar-cloth']).def).toBeGreaterThan(g1.def);
+  });
+
+  it('statFloor があるので低 atk 職でも tier1 に damage を通せる', () => {
+    // 下駄が無いと比率 7 (魔法使い) は Lv1 で atk 1 に潰れ、減算式で 0 に沈んで詰む。
+    for (const j of JOBS) {
+      const p = playerCombatant(j.id, 1, 1, 'x');
+      const m = monsterCombatant(MONSTERS.find((x) => x.id === 'sky-slime')!, 0, () => 0.5);
+      expect(p.atk * BATTLE_TUNING.atkCoef - m.def * BATTLE_TUNING.defCoef, `${j.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('プレイヤーレベルは戦闘値に一切影響しない (#507)', () => {
+    for (const j of JOBS) {
+      for (const jobLv of [1, 20]) {
+        const a = playerCombatant(j.id, jobLv, 1, 'x');
+        const b = playerCombatant(j.id, jobLv, 99, 'x');
+        expect({ ...b }, `${j.id} jobLv${jobLv}`).toEqual({ ...a });
+      }
+    }
+  });
+});
+
+describe('モンスターの tier = 想定プレイヤーレベル (#518/#509)', () => {
+  it('tier が上がるほど強く、想定レベルのプレイヤーと同じ成長式に乗っている', () => {
+    const avg = (t: 1 | 2 | 3, k: 'atk' | 'def' | 'maxHp') => {
+      const ms = MONSTERS.filter((m) => m.tier === t && m.id !== 'stray-slime');
+      return ms.reduce((s, m) => s + monsterCombatant(m, 0, () => 0.5)[k], 0) / ms.length;
+    };
+    for (const k of ['atk', 'def', 'maxHp'] as const) {
+      expect(avg(2, k), `tier2 ${k}`).toBeGreaterThan(avg(1, k));
+      expect(avg(3, k), `tier3 ${k}`).toBeGreaterThan(avg(2, k));
+    }
+    // HP が tier2→3 でほぼ横ばい (旧実装の欠陥) に戻っていないこと
+    expect(avg(3, 'maxHp')).toBeGreaterThan(avg(2, 'maxHp') * 1.3);
+  });
+
+  it('tier1 は Lv1 の全職が通常攻撃だけで勝ち越せる (序盤に詰まない #509)', () => {
+    for (const j of JOBS) {
+      let win = 0;
+      for (let seed = 0; seed < 120; seed++) {
+        let s = startBattle(j.id, 1, 1, 'x', 1, seed, 0);
+        for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack');
+        if (s.outcome === 'win') win++;
+      }
+      // キャスターは物理が通りにくい設計なので閾値は控えめ。「詰まない」ことの固定。
+      expect(win / 120, `${j.id} tier1 勝率`).toBeGreaterThan(0.35);
+    }
+  });
+});
+
+describe('ダメージ 0 は正当な結果 (#518)', () => {
+  it('守備を上回れなければ 0 — メタルは通常攻撃も魔法も通らない', () => {
+    const metal = monsterCombatant(MONSTERS.find((m) => m.id === 'stray-slime')!, 0, () => 0.5);
+    expect(metal.def).toBe(255); // DQ2 のメタルスライム/はぐれメタルと同値
+    // 全職の最高レベルでも通常攻撃の素の値が 0 に沈む (flatDef は tier 倍率を通さない)
+    for (const j of JOBS) {
+      const p = playerCombatant(j.id, 50, 1, 'x');
+      expect(p.atk * BATTLE_TUNING.atkCoef - metal.def * BATTLE_TUNING.defCoef, `${j.id}`)
+        .toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('minDamage は 0、defCoef は atkCoef の半分 (DQ の 2:1)', () => {
+    expect(BATTLE_TUNING.minDamage).toBe(0);
+    expect(BATTLE_TUNING.defCoef).toBeCloseTo(BATTLE_TUNING.atkCoef / 2, 5);
   });
 });

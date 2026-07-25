@@ -664,13 +664,15 @@ export function playerCombatant(
     Math.round(f + base[3] * gr), Math.round(f + base[4] * gr),
   ];
   // たいりょくも同じ式で伸び、その 2 倍が HP (DQ 準拠)。MP は かしこさ から。
-  const vit = JOBS_BY_ID[archetype].vit * gr;
+  // **丸めた vit から HP を出す**: ステータス画面に出す たいりょく が HP を正しく説明できないと
+  // (「たいりょく 4 なのに HP が 6+4*2=14 でなく 13」) 表示する意味がない。
+  const vit = Math.round(JOBS_BY_ID[archetype].vit * gr);
   const c = makeCombatant(
     displayName,
     grown,
     Math.round(t.hpBase + vit * t.hpVitScale),
     Math.round(t.mpBase + grown[3] * t.mpIntScale),
-    Math.round(vit),
+    vit,
   );
   const bonus = gearFlatBonus(archetype, equipIds, gear);
   if (bonus) {
@@ -741,7 +743,7 @@ export function playerStatsAt(
     agi: g(2) + eq('agi'),
     int: g(3) + eq('int'),
     luk: g(4) + eq('luk'),
-    maxHp: t.hpBase + JOBS_BY_ID[archetype].vit * gr * t.hpVitScale + eq('maxHp'),
+    maxHp: t.hpBase + Math.round(JOBS_BY_ID[archetype].vit * gr) * t.hpVitScale + eq('maxHp'),
     maxMp: t.mpBase + g(3) * t.mpIntScale, // g() は statFloor 込み = playerCombatant と同一
   };
 }
