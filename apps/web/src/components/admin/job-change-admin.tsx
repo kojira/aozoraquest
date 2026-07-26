@@ -33,7 +33,7 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
     ])
       .then(([a, xpMap]) => {
         if (cancelled || !a) return;
-        const jl = jobLevelFromXp(xpOfJob(xpMap, a.archetype), a.archetype);
+        const jl = jobLevelFromXp(xpOfJob(xpMap, a.archetype) ?? 0, a.archetype);
         setCurrent({ archetype: a.archetype, jobLevel: jl });
         setPick(a.archetype);
       })
@@ -45,11 +45,20 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
     setBusy(true);
     setMsg(null);
     try {
-      // 職は analysis を書き換え、LV は権威 state に書く (#534)。
-      // analysis 側だけ書いてもレベルは動かない (XP の記録先が一本化されたため)。
-      const next = await adminSetJob(agent, did, pick, level);
+      // 職は analysis / LV は権威 state と、書き先が 2 つに分かれる (#534)。
+      // **片方だけ成功した状態を「失敗」で片付けない** — 職だけ変わって Lv1 のまま、が
+      // いちばんデバッグしづらいので、どこまで進んだかを文言で切り分ける。
+      const next = await adminSetJob(agent, did, pick);
       if (!next) { setMsg('診断レコードが無い (先に診断が要る)'); return; }
-      const set = await serverAdminSetJobLevel(agent, pick, level);
+      let set: { level: number };
+      try {
+        set = await serverAdminSetJobLevel(agent, pick, level);
+      } catch (e) {
+        console.warn('admin job level set failed', e);
+        setCurrent({ archetype: next.archetype, jobLevel: 1 });
+        setMsg(`${jobDisplayName(next.archetype)} に変更したが、LV の設定に失敗した (現在 Lv1 相当)`);
+        return;
+      }
       await refreshJobXp(agent, did);
       setCurrent({ archetype: next.archetype, jobLevel: set.level });
       setMsg(`${jobDisplayName(next.archetype)} Lv${set.level} に変更 (戦闘中なら次戦から)`);

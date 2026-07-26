@@ -452,11 +452,13 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         ...r.next,
         x: finalPos.x,
         y: finalPos.y,
-        // **レベルアップしたら HP/MP 全回復** (#534。オーナー要望「気持ちいい」)。carryHp/carryMp は
-        // 未設定 = 全快で開始なので、消すだけで全回復になる (次の戦闘の maxHp は新 Lv で計算される)。
-        // 敗北時も同じ扱い (街へ帰還するので元から全快)。
-        carryHp: decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
-        carryMp: decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
+        // **レベルアップ時の全回復はここには入れない** (#547)。入れて実測したところ、
+        // tier1 の連戦数が平均 9.1 → 46.7 戦 (5.1 倍) に伸び、隊長/将軍は上限なしだと
+        // 876〜941 戦 = 事実上無限になった (「上がる → 全快 → 長く生きる → XP が増える →
+        // また上がる」の正のフィードバック)。#536 で連戦数から決めた monsterStatFloor と
+        // JOB_LEVEL_PACE の前提が壊れるので、係数の引き直しとセットで別途入れる。
+        carryHp: decision === 'lose' ? undefined : next.player.hp,
+        carryMp: decision === 'lose' ? undefined : next.player.mp,
         defeated,
         defeatedWindow: window,
       };

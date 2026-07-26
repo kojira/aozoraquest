@@ -18,7 +18,7 @@
  * 再度通る。**上限クランプが効いているので 1 回あたりの被害は 1 件分**に留まり、
  * 現状 (client が自分の PDS に好きな値を書ける) より悪くはならない。真の偽造対策は M4。
  */
-import { XP_REWARDS, jobXpCurveFor, JOB_LEVEL_TUNING } from '@aozoraquest/core';
+import { XP_REWARDS, MAX_DAILY_QUEST_XP, JOBS_BY_ID, jobXpCurveFor, JOB_LEVEL_TUNING } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
 
 /** 申告の種類。種類ごとに 1 回あたりの上限が違う。 */
@@ -35,11 +35,22 @@ export function maxXpFor(kind: XpClaimKind): number {
   switch (kind) {
     case 'post':
       // 1 投稿で入りうる最大 = 分類成功 + その日の初回ボーナス + streak 上限
-      return XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap;
+      // **+ その日のデイリークエスト完了ぶん**。post-processor は 1 回の申告に
+      // クエスト完了 XP (1 件 20〜135、1 投稿で複数同時完了あり) を含めるので、
+      // ここに入れ忘れると「クエストを達成した日の XP が毎日クランプで消える」。
+      return XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap + MAX_DAILY_QUEST_XP;
     case 'quest':
       // 承認 1 件ぶん
       return XP_REWARDS.questComplete;
   }
+}
+
+/** **実在する職か**を検証する。長さだけ見ていると任意の 64 文字キーを無制限に生やせて、
+ *  権威レコードが PDS のサイズ上限に当たった時点でそのユーザーが**プレイ不能**になる
+ *  (書き込みが全部 fail-closed になる)。client が権威レコードのキー空間に触れる経路は
+ *  #534 で初めてできたので、ここで閉じる。 */
+function assertArchetype(archetype: string): void {
+  if (!archetype || !(archetype in JOBS_BY_ID)) throw new XpClaimError('archetype が不正', 400);
 }
 
 export class XpClaimError extends Error {
@@ -73,7 +84,7 @@ export async function claimXp(
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<XpClaimResult> {
   const { kind, archetype, key } = input;
-  if (!archetype || archetype.length > 64) throw new XpClaimError('archetype が不正', 400);
+  assertArchetype(archetype);
   if (!key || key.length > 256) throw new XpClaimError('冪等キーが不正', 400);
   if (!Number.isFinite(input.xp) || input.xp < 0) throw new XpClaimError('xp が不正', 400);
 
@@ -130,7 +141,7 @@ export async function adminSetJobXp(
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<{ jobXp: number; level: number }> {
-  if (!archetype || archetype.length > 64) throw new XpClaimError('archetype が不正', 400);
+  assertArchetype(archetype);
   const maxLv = JOB_LEVEL_TUNING.maxLevel;
   const lv = Math.floor(targetLevel);
   if (!Number.isFinite(lv) || lv < 1 || lv > maxLv) throw new XpClaimError(`レベルは 1〜${maxLv}`, 400);

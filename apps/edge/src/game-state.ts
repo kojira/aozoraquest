@@ -17,12 +17,24 @@ import { readServerTokens } from './oauth-store';
 import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
 
 export const GAME_STATE_COLLECTION = 'app.aozoraquest.gameState';
-/** 権威 state のスキーマ版。**上げると `normalizeState` の移行が走る。**
- *  v2 (#534): XP の記録先を権威 state に一本化するにあたり、ベータの区切りとして
- *  `jobXp` を一度リセットする (全員 Lv1 から再スタート。オーナー判断 2026-07-26)。
- *  v1 の `jobXp` は「移行時に焼き込んだ投稿 XP + 戦闘 XP」が混ざっており、
- *  そのまま新方式 (投稿もクエストも戦闘もすべて jobXp に積む) に持ち越すと投稿ぶんが二重に効く。 */
-export const GAME_STATE_VERSION = 2;
+export const GAME_STATE_VERSION = 1;
+
+/**
+ * **XP の区切り世代** (#534)。この値と `GameState.xpEpoch` が違う state は、
+ * `normalizeState` が `jobXp` を一度リセットする (全員 Lv1 から再スタート)。
+ *
+ * **`version` を使ってはいけない。** `readModifyWrite` は書き込みのたびに `version` を
+ * 現在値で上書きするので、片道の移行マーカーにならない。実際に困るのは 2 つ:
+ *
+ * - **dev と本番が同じ権威レコードを共有している** (`GAME_STATE_COLLECTION` は ns 前置きされず、
+ *   repo はサーバーアカウント。docs/22)。dev だけ新コードの期間、本番で 1 歩動くたびに
+ *   旧 version が刻まれ、次に dev を開くと **jobXp がまた 0 になる**
+ * - 本番をロールバックすると同じことが起きる
+ *
+ * `xpEpoch` は旧コードが知らないフィールドだが、`{...cur}` のスプレッドで保存されるので
+ * 一度書けば残る = 移行が二度走らない。
+ */
+export const XP_EPOCH = 1;
 
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
@@ -63,6 +75,9 @@ export interface GameState {
   /** 適用済みの XP 申告の冪等キー (`kind:key`)。直近 `MAX_CLAIM_KEYS` 件のリング。
    *  同じ投稿/クエスト承認で二重に XP が積まれるのを防ぐ (#534。詳細は xp-claim.ts)。 */
   xpClaims?: string[];
+  /** XP の区切り世代 (#534)。`XP_EPOCH` と違えば `normalizeState` が jobXp をリセットする。
+   *  version と別に持つ理由は `XP_EPOCH` の doc を参照 (片道マーカーが要る)。 */
+  xpEpoch?: number;
   version: number;
   updatedAt: string;
 }
@@ -74,7 +89,9 @@ export function rkeyForDid(did: string): string {
 }
 
 export function emptyState(did: string, now: string): GameState {
-  return { did, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, version: GAME_STATE_VERSION, updatedAt: now };
+  // **新規 state は現行 epoch を刻む** (#534)。刻まないと `normalizeState` が
+  // 「区切り前の state」と見なして、書くたびに次の読みで jobXp が消える。
+  return { did, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: GAME_STATE_VERSION, updatedAt: now };
 }
 
 /**
@@ -95,12 +112,14 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
  * 書き戻されるまで古い値が使われる期間ができない (書き込み経路にだけ移行を置くと、
  * 読むだけの画面が古い値を表示してしまう)。
  *
- * v1 → v2: `jobXp` と `xpClaims` をリセット。過去の到達レベルは `analysis.jobLevel.xp` に
- * 残っており、/me の「ベータ期間の記録」として表示する (オーナー判断 2026-07-26)。
+ * XP の区切り: `xpEpoch` が現行と違えば `jobXp` と `xpClaims` をリセットする。
+ * 旧値は「移行時に焼き込んだ投稿 XP + 戦闘 XP」の混合で、新方式に持ち越すと投稿ぶんが
+ * 二重に効く。過去の到達レベルは `analysis.jobLevel.xp` に残しており、
+ * /me の「ベータ期間の記録」として表示する (オーナー判断 2026-07-26)。
  */
 export function normalizeState(state: GameState): GameState {
-  if ((state.version ?? 1) >= 2) return state;
-  return { ...state, jobXp: {}, xpClaims: [], version: GAME_STATE_VERSION };
+  if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
+  return { ...state, jobXp: {}, xpClaims: [], xpEpoch: XP_EPOCH };
 }
 
 export interface RmwOptions {

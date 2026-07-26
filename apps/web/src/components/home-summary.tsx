@@ -10,7 +10,8 @@ import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
 import { getDailyQuestsOpen, setDailyQuestsOpen, getHomeSummaryOpen, setHomeSummaryOpen } from '@/lib/prefs';
 import { formatTime } from '@/lib/format-datetime';
-import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
+import { refreshJobXp, useJobXp, xpOfJob } from '@/lib/use-job-xp';
+import { BetaResetNotice } from './beta-reset-notice';
 
 interface HomeSummaryProps {
   agent: Agent | null;
@@ -69,13 +70,16 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
     return () => { cancelled = true; };
   }, [agent, userDid, generatedQuests]);
 
-  // 投稿直後に questLog を再フェッチして進捗反映
+  // 投稿直後に questLog を再フェッチして進捗反映。**LV も取り直す** (#534) —
+  // XP の記録先が権威 state に移ったので、ここで取り直さないと
+  // 「レベルアップ演出が出た直後に、同じ画面のサマリが前の LV のまま」になる。
   useOnPosted(() => {
     if (!agent || !userDid) return;
     setTimeout(() => {
       loadTodayQuestLog(agent, userDid).then((rec) => {
         if (rec) setQuestLog(rec);
       }).catch((e) => console.warn('reload questLog failed', e));
+      void refreshJobXp(agent, userDid);
     }, 300);
   });
 
@@ -115,7 +119,9 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
 
   const jobName = jobDisplayName(diag.archetype, 'default');
   // LV は権威 state 由来 (#534)。analysis.jobLevel.xp はベータ期間の記録として凍結済み。
-  const jobLv = jobLevelFromXp(xpOfJob(jobXp, diag.archetype), diag.archetype);
+  // **まだ取れていないうちは出さない** — 0 に丸めると通信断が「Lv1 に戻された」に見える。
+  const myXp = xpOfJob(jobXp, diag.archetype);
+  const jobLv = myXp === null ? null : jobLevelFromXp(myXp, diag.archetype);
 
   // master 畳み: サマリ全体を隠し、細い 1 行のバーだけにする (TL がすぐ上に来る)。
   // dq-window の箱ごと消すので「遊び人 LV… / 今日のクエスト…」の 2 行も見えなくなる。
@@ -147,6 +153,10 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   }
 
   return (
+    <>
+    {/* ベータの区切りで LV が 1 に戻ったことを一度だけ伝える (#534)。
+        レベルを実際に失った人 (ベータ期間の記録がある人) にだけ出す。 */}
+    <BetaResetNotice hadLegacyLevel={(diag.jobLevel?.xp ?? 0) > 0} />
     <section className="dq-window" style={{ display: 'flex', flexDirection: 'column', gap: '0.6em' }}>
       {/* 静的サマリー (折り畳み) */}
       <div>
@@ -174,7 +184,7 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
               1 行 (nowrap) に収める。長いジョブ名はジョブ名側だけ省略する。 */}
           <PersonIcon size={14} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
           <span style={{ fontSize: '0.95em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{jobName}</span>
-          <span style={{ fontSize: '0.78em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', whiteSpace: 'nowrap', flexShrink: 0 }}>LV{jobLv}</span>
+          {jobLv !== null && <span style={{ fontSize: '0.78em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', whiteSpace: 'nowrap', flexShrink: 0 }}>LV{jobLv}</span>}
           <span style={{ marginLeft: 'auto', color: 'var(--color-muted)', flexShrink: 0 }}>{open ? '▾' : '▸'}</span>
         </button>
 
@@ -276,6 +286,7 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
         ▴ 畳む
       </button>
     </section>
+    </>
   );
 }
 

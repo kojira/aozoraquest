@@ -258,7 +258,13 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     }
     try {
-      const result = await claimXp(env, did, { kind: body.kind, archetype: body.archetype, xp: body.xp, key: body.key }, nowSec());
+      // **init を必ず渡す** — 省略すると emptyState で権威 state が新規作成され、
+      // ユーザー PDS のパワー残高・冒険はじめの持ち物・開始位置が取り込まれないまま固定される
+      // (以後 readState が null を返さないので migrateInitState は二度と走らない)。
+      // 「世界を開く前にホームから投稿する」だけで踏む経路なので致命的。
+      const ns = nsFromOrigin(req);
+      const result = await claimXp(env, did, { kind: body.kind, archetype: body.archetype, xp: body.xp, key: body.key }, nowSec(),
+        (d, iso) => migrateInitState(d, iso, ns));
       return cors(json(result), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
@@ -280,13 +286,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
     if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
-    const body = (await req.json().catch(() => ({}))) as { archetype?: unknown; level?: unknown; target?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { archetype?: unknown; level?: unknown };
     if (typeof body.archetype !== 'string' || typeof body.level !== 'number') {
       return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     }
     // 対象は自分のみ (他人の state は動かせない)。管理でも他人のデータは触らせない。
     try {
-      const r = await adminSetJobXp(env, did, body.archetype, body.level, nowSec());
+      const ns = nsFromOrigin(req);
+      const r = await adminSetJobXp(env, did, body.archetype, body.level, nowSec(), (d, iso) => migrateInitState(d, iso, ns));
       return cors(json(r), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);

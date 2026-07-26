@@ -62,7 +62,9 @@ export function Spirit() {
   const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
   const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
   // LV は権威 state 由来 (#534)。投稿もクエストも戦闘もここに積まれる。
-  const levelStr = diag ? String(jobLevelFromXp(xpOfJob(jobXp, diag.archetype), diag.archetype)) : undefined;
+  // **取れていないうちは渡さない** — 精霊が「あなたは LV1 ですね」と言い出す。
+  const spiritXp = diag ? xpOfJob(jobXp, diag.archetype) : null;
+  const levelStr = diag && spiritXp !== null ? String(jobLevelFromXp(spiritXp, diag.archetype)) : undefined;
   const systemPrompt = useMemo(
     () =>
       applyPromptTemplate(systemPromptRaw, {

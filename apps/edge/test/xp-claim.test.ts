@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { XP_REWARDS, jobLevelFromXp } from '@aozoraquest/core';
+import { XP_REWARDS, MAX_DAILY_QUEST_XP, DEFAULT_QUEST_TEMPLATES, JOB_LEVEL_TUNING, jobLevelFromXp } from '@aozoraquest/core';
 import { claimXp, adminSetJobXp, maxXpFor, MAX_CLAIM_KEYS, XpClaimError } from '../src/xp-claim';
-import { normalizeState, rkeyForDid, readState, type GameState, type GameStateEnv } from '../src/game-state';
+import { normalizeState, rkeyForDid, readState, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice';
@@ -52,8 +52,16 @@ function statefulPds() {
 const stored = (store: Map<string, { value: unknown; cid: string }>) => store.get(rkeyForDid(DID))!.value as GameState;
 
 describe('XP 申告の上限 (maxXpFor)', () => {
-  it('投稿は「分類成功 + 日次ボーナス + streak 上限」まで', () => {
-    expect(maxXpFor('post')).toBe(XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap);
+  it('投稿は「分類成功 + 日次ボーナス + streak 上限 + デイリークエスト」まで', () => {
+    expect(maxXpFor('post')).toBe(XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap + MAX_DAILY_QUEST_XP);
+  });
+
+  it('デイリークエストを 1 件でも完了した投稿がクランプされない', () => {
+    // post-processor は 1 回の申告にクエスト完了 XP を含める。上限にこれを入れ忘れると
+    // 「クエストを達成した日の XP が毎日消える」という正常系のデータ欠損になる。
+    const heaviest = Math.max(...DEFAULT_QUEST_TEMPLATES.map((t) => t.xpRewardFn(t.requiredCountFn(JOB_LEVEL_TUNING.maxLevel))));
+    const realistic = XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap + heaviest;
+    expect(maxXpFor('post')).toBeGreaterThanOrEqual(realistic);
   });
 
   it('クエストは承認 1 件ぶんまで', () => {
@@ -149,11 +157,11 @@ describe('normalizeState (ベータの区切り)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; });
 
-  it('v1 の state は jobXp をリセットして v2 にする', () => {
+  it('区切り前の state は jobXp をリセットして epoch を刻む', () => {
     const v1 = { did: DID, power: 5, playerXp: 100, jobXp: { warrior: 9999 }, materials: { herb: 2 }, gear: [], x: 1, y: 2, version: 1, updatedAt: '' } as GameState;
     const out = normalizeState(v1);
     expect(out.jobXp).toEqual({});
-    expect(out.version).toBe(2);
+    expect(out.xpEpoch).toBe(XP_EPOCH);
     // XP 以外は触らない (持ち物・位置・パワーまで巻き戻すと「全部消えた」になる)
     expect(out.power).toBe(5);
     expect(out.playerXp).toBe(100);
@@ -161,9 +169,17 @@ describe('normalizeState (ベータの区切り)', () => {
     expect(out.x).toBe(1);
   });
 
-  it('v2 の state はそのまま (再リセットしない)', () => {
-    const v2 = { did: DID, power: 5, playerXp: 0, jobXp: { warrior: 42 }, materials: {}, gear: [], x: 0, y: 0, version: 2, updatedAt: '' } as GameState;
+  it('区切り済みの state はそのまま (再リセットしない)', () => {
+    const v2 = { did: DID, power: 5, playerXp: 0, jobXp: { warrior: 42 }, materials: {}, gear: [], x: 0, y: 0, version: 1, xpEpoch: XP_EPOCH, updatedAt: '' } as GameState;
     expect(normalizeState(v2)).toBe(v2);
+  });
+
+  it('version が旧コードに書き戻されても再リセットしない (dev↔本番の往復対策)', () => {
+    // dev と本番は同じ権威レコードを共有する。version を移行マーカーにすると、
+    // 本番 (旧コード) で 1 歩動くたび version が巻き戻り、次の dev アクセスで
+    // jobXp がまた 0 になる。xpEpoch は旧コードが知らないので保存されて残る。
+    const rolledBack = { did: DID, power: 0, playerXp: 0, jobXp: { warrior: 500 }, materials: {}, gear: [], x: 0, y: 0, version: 1, xpEpoch: XP_EPOCH, updatedAt: '' } as GameState;
+    expect(normalizeState(rolledBack).jobXp).toEqual({ warrior: 500 });
   });
 
   it('readState が読みの時点で正規化する (書き戻し前でも古い値を使わない)', async () => {
@@ -176,7 +192,7 @@ describe('normalizeState (ベータの区切り)', () => {
     });
     const got = await readState(env, DID);
     expect(got!.state.jobXp).toEqual({});
-    expect(got!.state.version).toBe(2);
+    expect(got!.state.xpEpoch).toBe(XP_EPOCH);
   });
 });
 
@@ -223,5 +239,36 @@ describe('adminSetJobXp (管理者がレベルを直接セット)', () => {
     await expect(adminSetJobXp(env, DID, 'warrior', 0, NOW)).rejects.toBeInstanceOf(XpClaimError);
     await expect(adminSetJobXp(env, DID, 'warrior', 999, NOW)).rejects.toBeInstanceOf(XpClaimError);
     await expect(adminSetJobXp(env, DID, '', 10, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+});
+
+describe('権威 state の新規作成 (init)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('init を渡せばそこから作られる (パワー・持ち物・位置が失われない)', async () => {
+    // init を渡し忘れると emptyState で作られ、ユーザー PDS のパワー残高・冒険はじめの
+    // 持ち物・開始位置が取り込まれないまま固定される。以後 readState が null を返さないので
+    // 移行は二度と走らない = 恒久的なデータ喪失。router が必ず渡すことを型でなく契約で担保する。
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    const migrated = async (did: string, iso: string): Promise<GameState> => ({
+      did, power: 42, playerXp: 7, jobXp: {}, materials: { herb: 1, 'sky-feather': 1 },
+      gear: [], x: 211, y: 340, xpEpoch: XP_EPOCH, version: 1, updatedAt: iso,
+    });
+    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 10, key: 'k' }, NOW, migrated);
+    const st = stored(m.store);
+    expect(st.power).toBe(42);
+    expect(st.materials).toEqual({ herb: 1, 'sky-feather': 1 });
+    expect(st.x).toBe(211);
+    expect(st.jobXp).toEqual({ warrior: 10 });
+  });
+
+  it('実在しない職は 400 (権威レコードのキー空間を汚させない)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds().fn;
+    await expect(claimXp(env, DID, { kind: 'post', archetype: 'not-a-job', xp: 1, key: 'k' }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+    await expect(adminSetJobXp(env, DID, 'not-a-job', 10, NOW)).rejects.toBeInstanceOf(XpClaimError);
   });
 });

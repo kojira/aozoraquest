@@ -166,14 +166,13 @@ export function MyProfile() {
     state.status === 'done' && state.result.archetype && state.result.archetype in JOBS_BY_ID
       ? (state.result.archetype as Archetype)
       : null;
-  // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を現職 LV へ加算する
-  // (プレイヤー Lv は #507/#508 で廃止したので加算先は現職のみ)。
   // **LV は権威 state 由来** (#534)。投稿もデイリークエストも依頼クエストも戦闘も、XP は
   // すべて GameState.jobXp に積む。analysis.jobLevel.xp はベータ期間の記録として凍結済み。
   // 職が確定していないうちは LV を出さない — 基準曲線にフォールバックすると、職ごとの
   // 曲線 (#536) とずれた LV が一瞬だけ出る = サーバーの数え方と食い違う値を見せることになる。
+  // 取得できていないうちは null。0 に丸めると、通信断が「Lv1 に戻された」に見えてしまう。
   const myJobXp = xpOfJob(jobXp, myArchetype);
-  const myJobLv = myArchetype ? jobLevelFromXp(myJobXp, myArchetype) : null;
+  const myJobLv = myArchetype && myJobXp !== null ? jobLevelFromXp(myJobXp, myArchetype) : null;
 
   return (
     <div style={{ textAlign: 'center' }}>
@@ -326,7 +325,7 @@ export function MyProfile() {
         </div>
       )}
 
-      {state.status === 'done' && <ResultView result={state.result} jobXp={myJobXp} questXp={questXp} onRerun={runAgain} />}
+      {state.status === 'done' && <ResultView result={state.result} jobXp={myJobXp} onRerun={runAgain} />}
 
       {state.status === 'done' && (
         <div style={{ marginTop: '1.5em', display: 'flex', flexDirection: 'column', gap: '0.6em', alignItems: 'center' }}>
@@ -395,12 +394,13 @@ const COGNITIVE_LABEL: Record<string, string> = {
  *   analysis に凍結された記録値を渡す
  * hook で内部から取ると後者が LV1 に落ちるので、明示的に受け取る形にしてある。
  */
-export function ResultView({ result, jobXp, questXp = 0, onRerun }: { result: DiagnosisResult; jobXp: number; questXp?: number; onRerun: () => void }) {
+export function ResultView({ result, jobXp, onRerun }: { result: DiagnosisResult; jobXp: number | null; onRerun: () => void }) {
   const jobName = jobDisplayName(result.archetype, 'default');
   const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
-  const jobLv = jobXpToNextLevel(jobXp, result.archetype);
-  const jobPct = jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
+  // jobXp が null = 権威 state をまだ読めていない。LV は出さない (#534)。
+  const jobLv = jobXp === null ? null : jobXpToNextLevel(jobXp, result.archetype);
+  const jobPct = jobLv && jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
   // ベータ期間の記録 (#534)。XP の記録先を一本化したとき、それまでの到達レベルは
   // analysis.jobLevel.xp に凍結して残した。今の LV とは別枠で「これまで」を見せる。
   const legacyXp = result.jobLevel?.xp ?? 0;
@@ -409,7 +409,7 @@ export function ResultView({ result, jobXp, questXp = 0, onRerun }: { result: Di
     <section style={{ marginTop: '1em' }}>
       <h3 style={{ fontSize: '1em' }}>
         今の姿: {jobName}
-        <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', marginLeft: '0.4em' }}>LV{jobLv.level}</span>
+        {jobLv && <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', marginLeft: '0.4em' }}>LV{jobLv.level}</span>}
         {tagline && <span style={{ fontSize: '0.8em', fontWeight: 400, color: 'var(--color-muted)', marginLeft: '0.5em' }}>{tagline}</span>}
       </h3>
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
@@ -421,7 +421,6 @@ export function ResultView({ result, jobXp, questXp = 0, onRerun }: { result: Di
         // それまでの到達点を消さずに残す (#534)。
         <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
           ベータ期間の記録: {jobDisplayName(result.jobLevel?.archetype ?? result.archetype, 'default')} LV{legacy.level}
-          {questXp > 0 && <> · 受託クエスト {questXp.toLocaleString()} XP</>}
         </p>
       )}
 
@@ -437,15 +436,17 @@ export function ResultView({ result, jobXp, questXp = 0, onRerun }: { result: Di
       </div>
 
       <div style={{ margin: '0.8em auto 0', maxWidth: '28em', display: 'flex', flexDirection: 'column', gap: '0.5em' }}>
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
-            <span>{jobName} LV{jobLv.level} → LV{jobLv.level + 1}</span>
-            <span>{jobLv.next > 0 ? `${jobLv.current} / ${jobLv.next} XP` : `MAX (累計 ${jobXp} XP)`}</span>
+        {jobLv && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8em', color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
+              <span>{jobName} LV{jobLv.level} → LV{jobLv.level + 1}</span>
+              <span>{jobLv.next > 0 ? `${jobLv.current} / ${jobLv.next} XP` : `MAX (累計 ${jobXp} XP)`}</span>
+            </div>
+            <div style={{ height: 5, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden', marginTop: '0.2em' }}>
+              <div style={{ width: `${jobPct}%`, height: '100%', background: 'var(--color-accent)' }} />
+            </div>
           </div>
-          <div style={{ height: 5, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden', marginTop: '0.2em' }}>
-            <div style={{ width: `${jobPct}%`, height: '100%', background: 'var(--color-accent)' }} />
-          </div>
-        </div>
+        )}
       </div>
 
       <h4 style={{ fontSize: '0.95em', marginTop: '1em' }}>考え方のクセ</h4>
@@ -578,7 +579,8 @@ function JobChangeBanner({
       </p>
       <p style={{ margin: '0.3em 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
         今は「{jobDisplayName(current, 'default')}」のまま。{streak} 投稿連続で {jobDisplayName(pending, 'default')} 寄りに判定されました。
-        転職すると、<strong>投稿で貯めた</strong>現ジョブの XP がリセットされます (受託クエストで得た経験値は残ります)。
+        転職しても、今のジョブで貯めた XP は<strong>残ります</strong>。戻れば その LV から再開できます
+        (経験値はジョブごとに別々に記録されます)。
       </p>
       <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
         <button disabled={busy} onClick={() => void handle(onConfirm)}>
