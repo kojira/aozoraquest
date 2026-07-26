@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, effectiveStateForAssignee, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questAssignees, questXpScalar, statVectorToArray } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questXpScalar, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
@@ -11,8 +11,6 @@ import { COL } from '@/lib/collections';
 import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
 import { loadCraftInventory, type CraftedPiece } from '@/lib/crafting';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
-import { loadSelfDiagnosis } from '@/lib/use-self-diagnosis';
-import { claimQuestXp } from '@/lib/claim-quest-xp';
 import { loadGearRefs, resolveGear, type GearRefs } from '@/lib/gear';
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
@@ -108,23 +106,15 @@ export function MyProfile() {
         if (!cancelled) setSummonedLoaded(true);
       }
     })();
-    // 受託して完了したクエストの経験値を**権威 state に申告する** (#534/#533)。
-    // 承認を観測できるのは受託者の client だけなので、ここが唯一の入口。
-    // 申告済みかはサーバーが冪等キー (クエスト URI) で判定するので、何度通っても二重に入らない。
+    // 受託して完了したクエストの件数 (表示用)。
     (async () => {
       try {
         const received = await listReceivedQuests(agent, did);
         // 複数受託で一部だけ承認 (quest 未完了) のときも、自分が承認済みなら XP に計上する。
         const compMap = await loadCompletionsByUri(received);
         if (cancelled) return;
+        // 完了件数の表示用。**XP には効かない** (2026-07-27 にクエスト完了の XP を廃止)。
         setQuestXp(questXpScalar(received, did, compMap));
-        const mine = received.filter((q) => {
-          const comps = compMap.get(q.uri);
-          return comps ? effectiveStateForAssignee(q, comps, did) === 'COMPLETED'
-            : q.status === 'completed' && questAssignees(q).includes(did);
-        });
-        const arch = (await loadSelfDiagnosis(agent, did))?.archetype;
-        if (arch) await claimQuestXp(agent, did, arch, mine.map((q) => q.uri));
       } catch (e) {
         console.warn('quest xp load failed', e);
       }

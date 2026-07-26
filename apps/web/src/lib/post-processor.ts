@@ -68,6 +68,7 @@ export interface QuestLogRecord {
   quests: QuestLogEntry[];
   /** 今日分類された投稿の履歴 (古い順)。最新 50 件までを保持。 */
   activity?: ActivityEntry[];
+  /** @deprecated クエスト完了では XP が増えない (2026-07-27)。過去ログの互換のために残す。 */
   totalXpGained?: number;
   updatedAt: string;
 }
@@ -76,6 +77,7 @@ export interface ProcessResult {
   action: ActionCategory | null;
   incremented: string[];
   completed: string[];
+  /** @deprecated 完了したクエストの報酬値の合計。**成長には効かない** (2026-07-27)。 */
   xpGained: number;
   updatedRpgStats?: StatVector | undefined;
   updatedCognitive?: CognitiveScores | undefined;
@@ -250,7 +252,10 @@ export async function processSelfPost(
 
       let gainedXp = 0;
       if (actionType) gainedXp += XP_REWARDS.postMatch;
-      gainedXp += xpGained; // クエスト完了分
+      // **クエスト完了では XP を増やさない** (オーナー判断 2026-07-27)。
+      // 達成の判定は端末内 ONNX の分類に依存していて**サーバーが同じ判定を再現できない**ため、
+      // 申告された額を検証する手段が原理的に無かった (1 投稿で 245 XP を申告できた)。
+      // クエストは「何を書くか」の道しるべとして残し、XP は投稿そのものと戦闘から出す。
 
       // 日次ボーナス (playerLevel で判定、1 日 1 回)
       const prevBonusDate = oldPlayer.lastDailyBonusDate;

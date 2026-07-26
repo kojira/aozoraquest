@@ -18,11 +18,12 @@
  * 再度通る。**上限クランプが効いているので 1 回あたりの被害は 1 件分**に留まり、
  * 現状 (client が自分の PDS に好きな値を書ける) より悪くはならない。真の偽造対策は M4。
  */
-import { XP_REWARDS, MAX_DAILY_QUEST_XP, JOBS_BY_ID, jobXpCurveFor, JOB_LEVEL_TUNING } from '@aozoraquest/core';
+import { XP_REWARDS, JOBS_BY_ID, jobXpCurveFor, JOB_LEVEL_TUNING } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
 
-/** 申告の種類。種類ごとに 1 回あたりの上限が違う。 */
-export type XpClaimKind = 'post' | 'quest';
+/** 申告の種類。**投稿だけ** — クエスト完了では XP が増えない (オーナー判断 2026-07-27)。
+ *  達成の判定が端末内 ONNX なのでサーバーが再現できず、申告額を検証する手段が無かった。 */
+export type XpClaimKind = 'post';
 
 /** 冪等キーを覚えておく件数。1 人あたりのレコードサイズと、再送の窓の広さのトレードオフ。 */
 export const MAX_CLAIM_KEYS = 200;
@@ -62,14 +63,9 @@ export const MAX_DAILY_CLAIM_XP = 1200;
 export function maxXpFor(kind: XpClaimKind): number {
   switch (kind) {
     case 'post':
-      // 1 投稿で入りうる最大 = 分類成功 + その日の初回ボーナス + streak 上限
-      // **+ その日のデイリークエスト完了ぶん**。post-processor は 1 回の申告に
-      // クエスト完了 XP (1 件 20〜135、1 投稿で複数同時完了あり) を含めるので、
-      // ここに入れ忘れると「クエストを達成した日の XP が毎日クランプで消える」。
-      return XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap + MAX_DAILY_QUEST_XP;
-    case 'quest':
-      // 承認 1 件ぶん
-      return XP_REWARDS.questComplete;
+      // 1 投稿で入りうる最大 = 分類成功 + その日の初回ボーナス + streak 上限。
+      // クエスト完了ぶんは含めない (XP が出なくなったため)。
+      return XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap;
   }
 }
 
@@ -79,12 +75,6 @@ export function maxXpFor(kind: XpClaimKind): number {
  *  #534 で初めてできたので、ここで閉じる。 */
 function assertArchetype(archetype: string): void {
   if (!archetype || !(archetype in JOBS_BY_ID)) throw new XpClaimError('archetype が不正', 400);
-}
-
-/** `at://<did>/<collection>/<rkey>` から発注者の DID を取り出す。形式が違えば null。 */
-export function ownerOfAtUri(uri: string): string | null {
-  const m = /^at:\/\/([^/]+)\//.exec(uri);
-  return m?.[1] ?? null;
 }
 
 export class XpClaimError extends Error {
@@ -121,13 +111,6 @@ export async function claimXp(
 ): Promise<XpClaimResult> {
   const { kind, archetype, key } = input;
   assertArchetype(archetype);
-  // **自作自演を弾く** (#551)。依頼クエストの冪等キーはクエストの URI
-  // (`at://<発注者の DID>/app.aozoraquest.userQuest/<rkey>`) なので、発注者が申告者本人なら
-  // 「自分で依頼を作って自分で受けて自分で承認する」経路。1 日 5 件作れるので放置すると
-  // 500 XP/日 が湧く。サーバーは URI から発注者を読めるので、ここだけは検証できる。
-  if (kind === 'quest' && ownerOfAtUri(key) === did) {
-    throw new XpClaimError('自分の依頼では経験値は入らない', 400);
-  }
   if (!key || key.length > 256) throw new XpClaimError('冪等キーが不正', 400);
   if (!Number.isFinite(input.xp) || input.xp < 0) throw new XpClaimError('xp が不正', 400);
 
@@ -165,9 +148,9 @@ export async function claimXp(
         claimDay: today,
         claimedToday: usedToday + give,
         jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + give },
-        // **投稿ならあおぞらパワーを回復する** (docs/19 §3)。ここが無いとパワーが枯れて
+        // **投稿はあおぞらパワーを回復する** (docs/19 §3)。ここが無いとパワーが枯れて
         // 勝っても報酬が入らなくなり、「何回戦ってもレベルが上がらない」になる。
-        ...(kind === 'post' ? { power: Math.min(MAX_POWER, cur.power + POWER_PER_POST) } : {}),
+        power: Math.min(MAX_POWER, cur.power + POWER_PER_POST),
         // 新しいキーを末尾に足し、古いほうから落とす
         xpClaims: [...claims, claimKey].slice(-MAX_CLAIM_KEYS),
       };

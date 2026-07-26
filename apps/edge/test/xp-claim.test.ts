@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { XP_REWARDS, MAX_DAILY_QUEST_XP, DEFAULT_QUEST_TEMPLATES, JOB_LEVEL_TUNING, jobLevelFromXp } from '@aozoraquest/core';
+import { XP_REWARDS, jobLevelFromXp } from '@aozoraquest/core';
 import { claimXp, adminSetJobXp, adminGrantPower, maxXpFor, MAX_CLAIM_KEYS, MAX_DAILY_CLAIM_XP, POWER_PER_POST, XpClaimError } from '../src/xp-claim';
 import { normalizeState, rkeyForDid, readState, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
@@ -52,26 +52,14 @@ function statefulPds() {
 const stored = (store: Map<string, { value: unknown; cid: string }>) => store.get(rkeyForDid(DID))!.value as GameState;
 
 describe('XP 申告の上限 (maxXpFor)', () => {
-  it('投稿は「分類成功 + 日次ボーナス + streak 上限 + デイリークエスト」まで', () => {
-    expect(maxXpFor('post')).toBe(XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap + MAX_DAILY_QUEST_XP);
-  });
-
-  it('デイリークエストを 1 件でも完了した投稿がクランプされない', () => {
-    // post-processor は 1 回の申告にクエスト完了 XP を含める。上限にこれを入れ忘れると
-    // 「クエストを達成した日の XP が毎日消える」という正常系のデータ欠損になる。
-    const heaviest = Math.max(...DEFAULT_QUEST_TEMPLATES.map((t) => t.xpRewardFn(t.requiredCountFn(JOB_LEVEL_TUNING.maxLevel))));
-    const realistic = XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap + heaviest;
-    expect(maxXpFor('post')).toBeGreaterThanOrEqual(realistic);
-  });
-
-  it('クエストは承認 1 件ぶんまで', () => {
-    expect(maxXpFor('quest')).toBe(XP_REWARDS.questComplete);
+  it('投稿は「分類成功 + 日次ボーナス + streak 上限」まで', () => {
+    // クエスト完了では XP が増えない (2026-07-27) ので、その分は含まない。
+    expect(maxXpFor('post')).toBe(XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap);
   });
 
   it('上限は報酬定数から導く (数値の書き写しになっていない)', () => {
     // 報酬を変えたら上限も動くこと。片方だけ直すと「正当な申告が切られる」事故になる。
     expect(maxXpFor('post')).toBeGreaterThan(XP_REWARDS.postMatch);
-    expect(maxXpFor('quest')).toBeGreaterThan(0);
   });
 });
 
@@ -98,16 +86,6 @@ describe('claimXp (クライアント申告 XP)', () => {
     expect(again).toMatchObject({ granted: 0, jobXp: 35, duplicate: true });
     expect(again.power).toBe(POWER_PER_POST); // 重複申告ではパワーも増えない
     expect(stored(m.store).jobXp).toEqual({ warrior: 35 });
-  });
-
-  it('種類が違えば同じキーでも別扱い (投稿 rkey とクエスト URI の衝突を避ける)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 10, key: 'same' }, NOW);
-    const q = await claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 10, key: 'same' }, NOW);
-    expect(q.granted).toBe(10);
-    expect(stored(m.store).jobXp).toEqual({ warrior: 20 });
   });
 
   it('上限を超える申告は切り捨てる (拒否ではない)', async () => {
@@ -301,14 +279,6 @@ describe('あおぞらパワーの回復 (#549)', () => {
     expect(stored(m.store).power).toBe(3 * POWER_PER_POST);
   });
 
-  it('クエストの申告ではパワーは回復しない (投稿がパワーの出所)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 100, key: 'q1' }, NOW);
-    expect(stored(m.store).power).toBe(0);
-  });
-
   it('同じ投稿の再送ではパワーも二重に増えない', async () => {
     const env = await makeEnv();
     const m = statefulPds();
@@ -384,21 +354,4 @@ describe('申告の抑止 (#551)', () => {
     expect(r.granted).toBe(50);
   });
 
-  it('自分で作った依頼クエストでは経験値が入らない', async () => {
-    // クエストの URI に発注者の DID が入っているので、ここだけはサーバーが検証できる。
-    // 1 日 5 件作れるので、放置すると 500 XP/日 が湧く。
-    const env = await makeEnv();
-    globalThis.fetch = statefulPds().fn;
-    const own = `at://${DID}/app.aozoraquest.userQuest/abc`;
-    await expect(claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 100, key: own }, NOW)).rejects.toBeInstanceOf(XpClaimError);
-  });
-
-  it('他人が発注した依頼クエストなら入る', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    const other = 'at://did:plc:bob/app.aozoraquest.userQuest/abc';
-    const r = await claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 100, key: other }, NOW);
-    expect(r.granted).toBe(100);
-  });
 });

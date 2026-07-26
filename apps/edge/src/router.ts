@@ -261,7 +261,8 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
     const body = (await req.json().catch(() => ({}))) as { kind?: unknown; archetype?: unknown; xp?: unknown; key?: unknown };
-    if ((body.kind !== 'post' && body.kind !== 'quest') || typeof body.archetype !== 'string' || typeof body.xp !== 'number' || typeof body.key !== 'string') {
+    // クエスト完了では XP が増えないので `kind` は投稿のみ (2026-07-27)。
+    if (body.kind !== 'post' || typeof body.archetype !== 'string' || typeof body.xp !== 'number' || typeof body.key !== 'string') {
       return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     }
     try {

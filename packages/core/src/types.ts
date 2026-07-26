@@ -65,6 +65,9 @@ export interface Quest {
   description: string;
   requiredCount: number;
   currentCount: number;
+  /** @deprecated クエスト完了では XP が増えない (2026-07-27)。達成の判定が端末内 ONNX の
+   *  分類に依存していて、サーバーが同じ判定を再現できない = 申告額を検証できなかったため。
+   *  値は生成時の名残で、**どこにも表示されず成長にも効かない**。 */
   xpReward: number;
   forbiddenActionTypes?: ActionType[];
   issuedDate: string; // YYYY-MM-DD
