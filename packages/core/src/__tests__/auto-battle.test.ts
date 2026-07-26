@@ -113,8 +113,13 @@ describe('autoBattleAction (#521)', () => {
             // 勝てる手が存在するなら、選んだ手も勝つ手でなければならない
             const winning: Array<{ command: 'attack' | 'skill'; skillIndex: number }> = [];
             if (resolveTurn(s, 'attack').outcome === 'win') winning.push({ command: 'attack', skillIndex: 0 });
-            for (let i = 0; i < s.playerSkills.length; i++) {
-              if (resolveTurn(s, 'skill', undefined, i).outcome === 'win') winning.push({ command: 'skill', skillIndex: i });
+            // MP ガードを実装と揃える: resolveTurn は MP 不足のとくぎを通常攻撃に
+            // フォールバックするので、囲まないと「とくぎ i で勝てる」が実体は全部
+            // 通常攻撃、という水増しになる。
+            if (s.player.mp >= skillMpCostOf(s.player)) {
+              for (let i = 0; i < s.playerSkills.length; i++) {
+                if (resolveTurn(s, 'skill', undefined, i).outcome === 'win') winning.push({ command: 'skill', skillIndex: i });
+              }
             }
             if (winning.length > 0) {
               expect(resolveTurn(s, a.command, undefined, a.skillIndex).outcome, `${j.id} tier${tier} seed${seed} turn${t}`).toBe('win');

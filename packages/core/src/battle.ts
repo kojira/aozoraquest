@@ -2094,9 +2094,16 @@ export function autoBattleAction(s: BattleState, turnSeed?: number): { command: 
   // 捨てていた (実測: やくそうを選んだ 303 ターンのうち 201 = 66%、防御 459 のうち 228 = 50%)。
   // しかも取りこぼしは「決め手のある職」= キャスターに偏って効き、#521 で直した誤診バイアスと
   // **同じ方向**に勝率を下げていた (賢者 70→82% / 予言者 78→89% と、直すとキャスターだけ伸びる)。
+  //
+  // **この決着ショートカットは「呼び出し元が同じ `turnSeed` でそのターンを解決する」場合にのみ
+  // 健全**。先読みと本番で seed が食い違うと、外れた予測のぶんだけ防御を捨てて ためた一撃を
+  // まともに食らう。docs/21 §5 のサーバー権威は**毎ターン新鮮な CSPRNG を注入する**ので、
+  // その経路から呼ぶなら必ず同じ seed を渡すこと (debug-battle-sim.tsx の duelAuto が実例)。
   const cands = candidateActions(s, turnSeed, skillCost);
-  const finisher = cands.find((c) => c.after.outcome === 'win');
-  if (finisher) return finisher.action;
+  // 勝ち手があるなら決め打ちより前に出る。**選ぶのは bestOf に任せる** — scoreOf は勝ちに
+  // +1e6 を与えるので bestOf 自体が勝ち手を優先し、勝ち手が複数あるときはより有利な方
+  // (残 HP が多い等) を選べる。`find` の先頭優先だと選択規則が 2 本に分かれる。
+  if (cands.some((c) => c.after.outcome === 'win')) return bestOf(cands, s);
 
   if (s.monster.charging) return parryIdx >= 0 && p.mp >= skillCost ? { command: 'skill', skillIndex: parryIdx } : none('guard');
   if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return none('herb');
@@ -2109,8 +2116,16 @@ export function autoBattleAction(s: BattleState, turnSeed?: number): { command: 
  * 攻撃手 (通常攻撃 + 撃てるとくぎ) を 1 手先読みして、それぞれの結果を返す (#538)。
  *
  * 決着判定と最良手の選択で**同じ試行結果を使い回す**ため、`resolveTurn` の呼び出しは
- * 1 ターンにつき (1 + とくぎ数) 回で済む。マルチ戦 (群れ) では `resolveTurn` が 1v1 専用で
- * `enemies` に触れないため試行が無意味なので空を返す (呼び出し側が従来の決め打ちに落ちる)。
+ * 1 ターンにつき **最大** (1 + とくぎ数) 回に収まる。
+ *
+ * **通常攻撃も候補に入れる**のが要点。とくぎが常に通常攻撃より強いとは限らない — 遊び人は
+ * Lv10 で `サボる` しか持たず、撃ち続けると tier2 の勝率が 0% だが、通常攻撃だけなら 97% 勝てる。
+ * 「MP があればとくぎ」と決め打つと、こういう職を「詰んでいる」と誤判定する (#521)。
+ *
+ * マルチ戦 (群れ) では `resolveTurn` が 1v1 専用で `enemies` に触れないため試行が無意味。
+ * 空を返して呼び出し側を従来の決め打ちに落とす。**`>= 1` でなく `> 1` で見る**のは、
+ * 将来 1v1 でも `enemies: [monster]` を持たせたときに「1v1 なのに先読みだけ飛ばす」
+ * 静かな退行を避けるため。
  */
 function candidateActions(
   s: BattleState,
