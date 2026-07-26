@@ -161,7 +161,10 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
       last = await handleTurn(env, USER, enc.battleId, turn, 'attack', NOW);
       outcome = last.outcome;
     }
-    expect(['win', 'lose', 'draw']).toContain(outcome); // 30 ターンで必ず決着
+    // 30 ターンで必ず決着する。**逃走 (monster-fled) も決着**で、#536 で はぐれスライムの帯が
+    // 変わり (5,5) の座標でも引けるようになったため候補に含める。逃走は無報酬・無消費なので
+    // 下の分岐は win のときだけ検証する。
+    expect(['win', 'lose', 'draw', 'monster-fled']).toContain(outcome);
     expect(m.store.has('guard')).toBe(false); // ガードは決着で消える
     const gs = m.store.get('gs')!.value as GameState;
     if (outcome === 'win') {

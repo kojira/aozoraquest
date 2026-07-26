@@ -389,14 +389,17 @@ export interface ShopStock {
  *  素材 id は battle.ts の MONSTERS ドロップ表の直書き複製 — battle → equipment の
  *  既存依存があり MONSTERS から derive すると循環するため。テスト (equipment.test)
  *  が全街ぶんドロップ表と突き合わせて同期を保証する。 */
+/** 店の素材は tier 帯ごと (#536 で tier が 6 段階になったので 3 帯に丸めて引く)。
+ *  素材の種類はモンスターのドロップに紐づくので、敵が増えたら帯も細分できる。 */
 const SHOP_MATERIALS_BY_TIER: readonly [readonly string[], readonly string[], readonly string[]] = [
-  ['slime-drop', 'bat-wing', 'mush-spore'], // tier1 (danger 0-1)
-  ['golem-core', 'wisp-ember', 'serpent-scale'], // tier2 (danger 2)
-  ['raven-feather', 'oni-horn', 'dragon-fang'], // tier3 (danger 3)
+  ['slime-drop', 'bat-wing', 'mush-spore'], // tier1-2 (spawn 近辺)
+  ['golem-core', 'wisp-ember', 'serpent-scale'], // tier3-4 (中盤)
+  ['raven-feather', 'oni-horn', 'dragon-fang'], // tier5-6 (奥地)
 ];
 export function shopMaterialFor(town: Town): string {
   const tier = tierForDanger(regionDanger(town.region));
-  const pool = tier === 1 ? SHOP_MATERIALS_BY_TIER[0] : tier === 2 ? SHOP_MATERIALS_BY_TIER[1] : SHOP_MATERIALS_BY_TIER[2];
+  const band = tier <= 2 ? 0 : tier <= 4 ? 1 : 2;
+  const pool = SHOP_MATERIALS_BY_TIER[band]!;
   const rng = shopRng(((town.x * 40503) ^ (town.y * 89917)) >>> 0);
   return pool[Math.floor(rng() * pool.length)]!;
 }

@@ -89,6 +89,15 @@ export const BATTLE_TUNING = {
    *  **まもり (def) には掛けない** — 守備は防具が主役という設計 (defBase 参照) を、
    *  下駄で薄めてしまわないため。モンスターは防具を持たないので 5 ステとも掛ける。 */
   statFloor: 5,
+  /** モンスター専用の下駄 (#536)。プレイヤーの `statFloor` (5) をそのまま使うと、
+   *  **tier1 では実効値がほぼ下駄だけになる** (raw 比率 × 0.072 = 0.5〜1.6 しかないため)。
+   *  結果 tier1 の敵が全部 `atk6 def6` に横並びし、**Lv1 の低 HP 職が 1 戦もたない**
+   *  (魔法使い HP14 に対して 1 戦の消耗が 15〜25)。オーナー指摘「最初から強すぎる」の実体。
+   *
+   *  モンスターは職と違って「比率の合計」が敵ごとに大きく違う (tier1 は 38〜71、
+   *  tier3 は 126〜136) ので、下駄を小さくしても 0 に潰れない。入口を緩めつつ
+   *  敵ごとの個性 (硬い/素早い) が出るようにする。 */
+  monsterStatFloor: 4,
   statGrow: 0.05,
   /** まもりだけ伸びを抑える (#518)。**守備力は防具が主役**という DQ の構造に寄せるため
    *  (FC版〜:「すばやさ÷2 + 防具」/ DQ3 HD-2D〜:「みのまもり + 防具」— いずれも防具が大きい)。
@@ -597,7 +606,8 @@ function makeCombatant(name: string, stats: StatArray, maxHp: number, maxMp: num
  *  HP/MP は MonsterDef の明示値 (全モンスターが持つ) を使い、無い場合だけ def/int から導出。 */
 function monsterStats(stats: StatArray, tierFactor: number): StatArray {
   // モンスターは防具を持たないので def にも下駄を掛ける (プレイヤーとの非対称は statFloor 参照)。
-  const s = (v: number) => Math.round(BATTLE_TUNING.statFloor + v * tierFactor);
+  // 下駄はモンスター専用の小さい値 (monsterStatFloor) — 詳細はその doc を参照 (#536)。
+  const s = (v: number) => Math.round(BATTLE_TUNING.monsterStatFloor + v * tierFactor);
   return [s(stats[0]), s(stats[1]), s(stats[2]), s(stats[3]), s(stats[4])];
 }
 
@@ -831,12 +841,31 @@ export interface DropDef {
   chance: number;
 }
 
+/**
+ * エリアの難易度段階 (#536)。**3 段階では雑すぎる**ので 6 段階に広げた。
+ *
+ * DQ は序盤 4 XP → 中盤 35 → 終盤 12200 と連続的に伸びるのに、3 バケツだと
+ * tier1 内 (2〜7 XP) と tier2 内 (34〜52) の間に断絶ができる。tier を増やし、
+ * さらに敵ごとの `level` (想定プレイヤーレベル) と組み合わせることで、
+ * 「同じエリアの中でも敵ごとに強さが違う」DQ らしい階段になる。
+ *
+ * **プールが薄い tier がある** (現状 tier4/tier6 は 1 体)。敵を足すまでは
+ * その帯の顔ぶれが単調になる — 構造は用意したので、あとは敵の追加で埋める。
+ */
+export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+/** **魔王の城がある山あいのリージョン** (#536。オーナー指定 2026-07-26)。
+ *  左上を (1,1) としたときの (4,4) と (5,4)。山に囲まれた閉領域で、region#28 は山 68%、
+ *  周囲のリージョンも山 44〜68% と、地形として明確に隔離されている。
+ *  ここは spawn からの距離では測らず **tier7 固定** (最果ての難度)。城の内部は tier8。 */
+export const DEMON_CASTLE_REGIONS: readonly number[] = [27, 28];
+
 export interface MonsterDef {
   id: string;
   name: string;
   species: MonsterSpecies;
   /** 試練の階級。1=手習い 2=修練 3=真剣勝負 */
-  tier: 1 | 2 | 3;
+  tier: Tier;
   /** [atk, def, agi, int, luk] — 合計はおおむね 100 で職と同尺度 */
   stats: StatArray;
   /** HP/MP を明示する (プレイヤーと同じ完全ステータスブロック — オーナー要望 2026-07-19)。
@@ -880,6 +909,16 @@ export interface MonsterDef {
   /** すべての魔法を無効化 (メタル系。DQ 準拠)。true だと fixedDamage/doMagic が最小 1 になる。
    *  物理は flatDef で 1 に沈むが、魔法は def 無視のため別途この旗で止める。 */
   resistAllMagic?: boolean;
+  /** **この敵の想定プレイヤーレベル** (#536)。省略時は `TIER_LEVEL[tier]`。
+   *
+   *  tier は 3 段階しかないので、そのままだと敵の強さと XP が 3 バケツに丸まる。
+   *  DQ3 は序盤 4 XP → 中盤 35 → 終盤 12200 と**連続的に伸びる**のに対し、
+   *  3 段階だと tier1 内 (2〜7 XP) と tier2 内 (34〜52) の間に断絶ができる。
+   *
+   *  敵ごとに想定レベルを持たせることで、**同じ tier の中でも「弱い敵/強い敵」の階段**を
+   *  作れる (スライム Lv1 → ヒカリダケ Lv5 のように)。tier は「どのエリアに出るか」の
+   *  括りとして残し、強さと XP はこの値で決まる。 */
+  level?: number;
   /** **tier 倍率を通さない実効 def** (メタル系専用)。
    *
    *  通常 def は `stats` の比率 × tier 倍率で決まるが、メタル系の「通常攻撃は常に 1・
@@ -919,13 +958,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   // baselineXp (基準 HP + atk/agi) で自動算出 = 敵の強さと XP が構造的に連動する (スライム 2・
   // ヒカリダケ 8 程度)。個別に効かせたい敵だけ xp を明示する。
   // そらいろスライム: 最弱の練習敵 (低 HP・低 XP・低ドロップ)。序盤の的。
-  { id: 'sky-slime', element: 'water', name: 'そらいろスライム', species: 'slime', tier: 1, stats: [7, 7, 8, 6, 10], hp: 5, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
+  { id: 'sky-slime', element: 'water', name: 'そらいろスライム', species: 'slime', level: 1, tier: 1, stats: [7, 7, 8, 6, 10], hp: 5, drops: [{ item: 'slime-drop', chance: 0.3 }, { item: 'herb', chance: 0.35 }], intro: 'ぷるぷると跳ねている。' },
   // 色違い強い版 (tint で塗り替え)。base より少し硬く XP/素材も上。専用素材 red-jelly。
-  { id: 'red-slime', element: 'fire', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, tier: 1, stats: [13, 12, 10, 8, 12], hp: 8, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
-  { id: 'cave-bat', element: 'wind', name: 'ほらあなコウモリ', species: 'bat', tier: 1, stats: [12, 8, 26, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
-  { id: 'dusk-bat', element: 'wind', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, tier: 1, stats: [14, 9, 28, 7, 13], hp: 10, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
-  { id: 'glow-shroom', element: 'earth', name: 'ヒカリダケ', species: 'mushroom', tier: 1, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
-  { id: 'crimson-shroom', element: 'earth', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, tier: 1, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
+  { id: 'red-slime', element: 'fire', name: 'あかいスライム', species: 'slime', tint: '#e0574a', spawnWeight: 0.4, level: 2, tier: 1, stats: [13, 12, 10, 8, 12], hp: 8, drops: [{ item: 'red-jelly', chance: 0.5 }, { item: 'herb', chance: 0.08 }], intro: '赤くぬめって 脈打っている。' },
+  { id: 'cave-bat', element: 'wind', name: 'ほらあなコウモリ', species: 'bat', level: 3, tier: 1, stats: [12, 8, 26, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.6 }, { item: 'herb', chance: 0.3 }, { item: 'sky-feather', chance: 0.12 }], intro: 'ばさばさと羽音を立てている。' },
+  { id: 'dusk-bat', element: 'wind', name: 'よるのコウモリ', species: 'bat', tint: '#5b6bd0', spawnWeight: 0.4, level: 4, tier: 2, stats: [14, 9, 28, 7, 13], hp: 10, drops: [{ item: 'dusk-wing', chance: 0.5 }, { item: 'sky-feather', chance: 0.12 }], intro: '夜色の翼で 音もなく舞う。' },
+  { id: 'glow-shroom', element: 'earth', name: 'ヒカリダケ', species: 'mushroom', level: 5, tier: 2, stats: [8, 20, 4, 18, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.6 }, { item: 'herb', chance: 0.4 }, { item: 'sky-dew', chance: 0.25 }], intro: 'ほんのり光って動かない…?' },
+  { id: 'crimson-shroom', element: 'earth', name: 'べにヒカリダケ', species: 'mushroom', tint: '#c23a5b', spawnWeight: 0.4, level: 6, tier: 2, stats: [9, 22, 4, 20, 12], hp: 12, drops: [{ item: 'crimson-spore', chance: 0.5 }, { item: 'sky-dew', chance: 0.2 }], intro: '毒々しい紅に 明滅している。' },
   // はぐれメタル型 (DQ のメタルスライム): レア出現・高 XP (100)・毎ターン逃走。
   //   - **`flatDef: 255`**: DQ2 のメタルスライム/はぐれメタルと同値。tier 倍率を通さない実効 def
   //     なので、どのレベルの相手にも identity が成立する (最高の Lv50 将軍でも atk 108 <
@@ -939,15 +978,30 @@ export const MONSTERS: readonly MonsterDef[] = [
   //     会心は def 無視 #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。
   //     専用ロジックは使わず守備/agi/HP の数値だけで「メタル」を表現する方針は不変
   //     (オーナー: 専用ロジック禁止 2026-07-20)。特殊武器での貫通は #519。
-  { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', tier: 1, stats: [8, 24, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', level: 4, tier: 2, stats: [8, 24, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
+  // ── tier1 追加 (#536)。DQ3 序盤 (スライム4 / おおがらす6 / いっかくうさぎ8) の XP 帯に合わせる。
+  //    species は既存 10 種のみ使う (MonsterSvg が species ごとに絵を持つ)。色違いは tint で作る。
+  { id: 'grass-slime', element: 'earth', name: 'くさいろスライム', species: 'slime', tint: '#6fbf5a', level: 1, tier: 1, stats: [8, 8, 7, 6, 10], hp: 9, drops: [{ item: 'slime-drop', chance: 0.35 }, { item: 'herb', chance: 0.4 }], intro: '草にまぎれて ぷるぷるしている。' },
+  { id: 'dawn-bat', element: 'wind', name: 'あさやけコウモリ', species: 'bat', tint: '#e8a06a', level: 2, tier: 1, stats: [11, 8, 22, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.5 }, { item: 'herb', chance: 0.3 }], intro: '朝日を嫌って飛びまわる。' },
+  { id: 'pale-shroom', element: 'earth', name: 'しろヒカリダケ', species: 'mushroom', tint: '#d8d2c0', level: 3, tier: 1, stats: [9, 16, 4, 14, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.55 }, { item: 'herb', chance: 0.35 }], intro: '白くぼんやり光っている。' },
+  // ── tier2 追加。DQ3 の おおありくい(12) 相当まで。
+  { id: 'moss-slime', element: 'earth', name: 'こけスライム', species: 'slime', tint: '#4a7c3f', level: 5, tier: 2, stats: [16, 18, 9, 8, 12], hp: 17, xp: 9, drops: [{ item: 'slime-drop', chance: 0.4 }, { item: 'mush-spore', chance: 0.3 }], intro: 'こけをまとって じっとしている。' },
+  { id: 'gale-raven', element: 'wind', name: 'かぜきりガラス', species: 'raven', tint: '#7a8fb0', level: 6, tier: 2, stats: [20, 10, 30, 10, 14], hp: 21, xp: 13, drops: [{ item: 'raven-feather', chance: 0.4 }, { item: 'sky-feather', chance: 0.25 }], intro: '風を切って急降下してくる。' },
+  // ── tier3 追加。DQ3 中盤 (キャタピラー/ぐんたいガニ = 35) の帯。
+  { id: 'stone-golem', element: 'earth', name: 'いわのゴーレム', species: 'golem', tint: '#9b8f80', level: 8, tier: 3, stats: [32, 30, 8, 10, 8], hp: 26, xp: 20, drops: [{ item: 'golem-core', chance: 0.45 }, { item: 'metal-shard', chance: 0.25 }], intro: 'ごろりと岩が起き上がった。' },
+  { id: 'marsh-serpent', element: 'water', name: 'ぬまの大蛇', species: 'serpent', tint: '#5f8f6a', level: 10, tier: 3, stats: [34, 14, 20, 10, 10], hp: 30, xp: 28, drops: [{ item: 'serpent-scale', chance: 0.45 }, { item: 'sky-dew', chance: 0.2 }], intro: '沼底から ぬるりと現れた。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
-  { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', tier: 2, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
-  { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'healer', healName: 'いやしのゆらめき' },
-  { id: 'river-serpent', element: 'water', name: 'かわながれ大蛇', species: 'serpent', tier: 2, stats: [42, 18, 22, 10, 10], hp: 22, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
+  { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', level: 9, tier: 3, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
+  // 鬼火は tier2 の caster (#536)。**魔法は回避判定を通らない** (doAttack の `if (!opts.useInt)`) ので、
+  // 回避特化 (忍者) が一方的に無傷で勝ち続けるのを止める役。int 34 は tier2 最高で、
+  // 「鬼火が魔法を撃つ」のは回復役より自然。入口 (tier1) には置かず、**tier2 から**回避が
+  // 通用しなくなる = 先へ進むほど別の備えが要る、という学びの山にする (オーナー判断 2026-07-26)。
+  { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', level: 11, tier: 3, stats: [18, 12, 24, 34, 12], hp: 24, xp: 52, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'caster', spell: { name: 'あおい炎', element: 'fire', min: 3, max: 7, intScale: 0.12 } },
+  { id: 'river-serpent', element: 'water', name: 'かわながれ大蛇', species: 'serpent', level: 13, tier: 4, stats: [42, 18, 22, 10, 10], hp: 22, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負。xp 62〜96
-  { id: 'night-raven', element: 'wind', name: 'よるのおおガラス', species: 'raven', tier: 3, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', ability: 'caster', spell: { name: 'かまいたち', element: 'wind', min: 4, max: 8, intScale: 0.1 } },
-  { id: 'blue-oni', element: 'water', name: 'あおおに', species: 'oni', tier: 3, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
-  { id: 'sky-dragon', element: 'void', name: 'そらのりゅう', species: 'dragon', tier: 3, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
+  { id: 'night-raven', element: 'wind', name: 'よるのおおガラス', species: 'raven', level: 17, tier: 5, stats: [48, 14, 34, 16, 14], hp: 24, xp: 62, drops: [{ item: 'raven-feather', chance: 0.45 }, { item: 'sky-dew', chance: 0.3 }, { item: 'sky-feather', chance: 0.25 }], intro: '月を背に静かに舞い降りた。', ability: 'caster', spell: { name: 'かまいたち', element: 'wind', min: 4, max: 8, intScale: 0.1 } },
+  { id: 'blue-oni', element: 'water', name: 'あおおに', species: 'oni', level: 21, tier: 5, stats: [66, 28, 12, 8, 12], hp: 30, xp: 78, drops: [{ item: 'oni-horn', chance: 0.45 }], intro: '金棒を担いで笑っている。', skillName: 'かなぼうふりまわし', ability: 'charger' },
+  { id: 'sky-dragon', element: 'void', name: 'そらのりゅう', species: 'dragon', level: 25, tier: 6, stats: [58, 24, 18, 26, 10], hp: 30, xp: 96, drops: [{ item: 'dragon-fang', chance: 0.4 }], intro: '雲を裂いて姿を現した!', ability: 'healer', healName: 'りゅうの いこい' },
 ];
 
 export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
@@ -992,7 +1046,7 @@ export function battleXpFor(monsterId: string): number {
  * - 初挑戦 (戦績 0) は必ず tier1 (手習い) = やさしい敵。
  * - 以降は seed から決定的に抽選。プレイヤーレベルが低いうちは tier3 が出ない。
  */
-export function pickTrialTier(seed: number, playerLevel: number, totalBattles: number): 1 | 2 | 3 {
+export function pickTrialTier(seed: number, playerLevel: number, totalBattles: number): Tier {
   if (totalBattles <= 0) return 1;
   const r = createRng((seed ^ 0x7f4a7c15) >>> 0)();
   if (playerLevel < 5) return r < 0.6 ? 1 : 2;
@@ -1012,7 +1066,7 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
  *  tier をレベルで表すことで、プレイヤーの成長レンジ (Lv1→30 で約 8 倍) と同じ幅を
  *  モンスター側も持てる。**プレイヤーのレベルには追従しない = エリア固定難易度**
  *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20) は不変。 */
-const TIER_LEVEL: Record<1 | 2 | 3, number> = { 1: 1, 2: 10, 3: 20 };
+const TIER_LEVEL: Record<Tier, number> = { 1: 1, 2: 4, 3: 8, 4: 13, 5: 19, 6: 26, 7: 34, 8: 42 };
 
 /** tier 内の微調整。tier1 は明確に弱め (Lv1 の 5 連戦生存が健全な水準)。
  *
@@ -1020,7 +1074,7 @@ const TIER_LEVEL: Record<1 | 2 | 3, number> = { 1: 1, 2: 10, 3: 20 };
  *  想定レベルより少し優しい/厳しい」)、`MONSTER_POWER` は **全モンスター共通**の出力補正
  *  (職とモンスターの profile 配分の違いを吸収する係数)。特定エリアだけ調整したいときは
  *  こちら、戦闘全体のテンポを変えたいときは `MONSTER_POWER` を触る。 */
-const TIER_STRENGTH: Record<1 | 2 | 3, number> = { 1: 0.72, 2: 1.0, 3: 1.0 };
+const TIER_STRENGTH: Record<Tier, number> = { 1: 0.72, 2: 0.85, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.1 };
 
 /** モンスター全体の出力倍率 (#509)。
  *
@@ -1038,9 +1092,14 @@ const MONSTER_POWER = 0.5;
  *  エリアの固定難易度で、プレイヤーが強くなれば相対的に楽になる。後半の難易度は
  *  レベル追従ではなく「エリアごとに強い敵を配置」で作る。将来エンドコンテンツで追従を
  *  戻すなら、tier 限定でここに足す。 */
-function monsterLevelFactor(tier: 1 | 2 | 3): number {
+/** この敵の想定プレイヤーレベル。個体指定 (`level`) があればそれ、無ければ tier の代表値 (#536)。 */
+function monsterLevelOf(def: MonsterDef): number {
+  return def.level ?? TIER_LEVEL[def.tier];
+}
+
+function monsterLevelFactor(def: MonsterDef): number {
   const t = BATTLE_TUNING;
-  return (t.statBase + t.statGrow * (TIER_LEVEL[tier] - 1)) * TIER_STRENGTH[tier] * MONSTER_POWER;
+  return (t.statBase + t.statGrow * (monsterLevelOf(def) - 1)) * TIER_STRENGTH[def.tier] * MONSTER_POWER;
 }
 
 /** モンスターの HP。`def.hp` は職の vit と同じ **たいりょく相当の生値** として扱い、
@@ -1049,7 +1108,7 @@ function monsterLevelFactor(tier: 1 | 2 | 3): number {
  *  = レベルを上げる意味が薄い状態だった。 */
 function monsterMaxHp(def: MonsterDef): number {
   const t = BATTLE_TUNING;
-  const g = t.statBase + t.statGrow * (TIER_LEVEL[def.tier] - 1);
+  const g = t.statBase + t.statGrow * (monsterLevelOf(def) - 1);
   // hp 省略時に stats[1] (まもり **比率**) を「たいりょく生値」として流用すると、メタル系の
   // ような極端な比率 (240) で HP が暴発する。現状は全モンスターが hp を明示しており到達
   // しない (「全モンスターが hp を持つ」テストで固定) が、安全側の既定値に倒しておく。
@@ -1064,7 +1123,7 @@ const MONSTER_DEFAULT_VIT = 8;
 const AFFINITY_WEIGHT = 3;
 
 /** その tier で affinity が最も出やすくするモンスター (地域相性の「○○が多い」導線用)。 */
-export function favoredMonsterFor(tier: 1 | 2 | 3, affinity: number): MonsterDef {
+export function favoredMonsterFor(tier: Tier, affinity: number): MonsterDef {
   const pool = MONSTERS.filter((m) => m.tier === tier);
   return pool[((affinity % pool.length) + pool.length) % pool.length]!;
 }
@@ -1076,7 +1135,7 @@ export function favoredMonsterFor(tier: 1 | 2 | 3, affinity: number): MonsterDef
  * index 方式なので favor 対象は必ず実在し、相性が死ぬ地域が無い (レビュー ★★★)。
  */
 export function summonMonster(
-  tier: 1 | 2 | 3,
+  tier: Tier,
   playerLevel: number,
   seed: number,
   jobLevel = 1,
@@ -1115,7 +1174,7 @@ export function summonMonster(
  *  遭遇ごとの分散ジッター。variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ
  *  テスト/決定論を保つ)。summonMonster (tier 抽選) と、模擬戦の敵指定の双方から使う。 */
 export function monsterCombatant(def: MonsterDef, variance: number, rng: () => number): Combatant {
-  const factor = monsterLevelFactor(def.tier);
+  const factor = monsterLevelFactor(def);
   // モンスターは tier 係数の乗算 (プレイヤーとは別式)。HP/MP は明示値 (全モンスターが持つ)。
   const ms = monsterStats(def.stats, factor);
   const c = makeCombatant(
@@ -1209,7 +1268,7 @@ export function startBattle(
   jobLevel: number,
   playerLevel: number,
   displayName: string,
-  tier: 1 | 2 | 3,
+  tier: Tier,
   seed: number,
   herbs = 0,
   /** フィールドの現在 HP/MP を引き継いでバトルを始める (あおぞらワールドでは
@@ -2242,7 +2301,7 @@ export const SEARCH_TUNING = {
 } as const;
 
 /** tier のモンスターが落とす素材 (しらべるで見つかる地方素材の母集団)。 */
-function tierMaterials(tier: 1 | 2 | 3): string[] {
+function tierMaterials(tier: Tier): string[] {
   const set = new Set<string>();
   for (const m of MONSTERS) if (m.tier === tier) for (const d of m.drops) set.add(d.item);
   // 消耗品ドロップ (herb/sky-dew/sky-feather) は除き、純粋な素材だけ
@@ -2254,7 +2313,7 @@ function tierMaterials(tier: 1 | 2 | 3): string[] {
  * 上がる。見つからなければ null。seed はプレビューでは Math.random、W3 で Worker の
  * 署名付き seed に置き換える (rollDrops と同じ扱い)。
  */
-export function rollSearch(seed: number, luk: number, tier: 1 | 2 | 3): string | null {
+export function rollSearch(seed: number, luk: number, tier: Tier): string | null {
   const t = SEARCH_TUNING;
   // salt は他の roll (summonMonster/rollDrops/rollDefeatLoss) と別値にして、W3 で
   // seed を共有したときに rng ストリームが相関しないようにする (レビュー ★)

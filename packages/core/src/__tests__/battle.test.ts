@@ -98,7 +98,7 @@ describe('skillsForJob (複数とくぎ #436)', () => {
     // paladin は聖光の癒し (heal) を Lv5 で覚える。HP を削ってから回復を選ぶ。
     // tier は想定プレイヤーレベル (#518) なので tier2 には jobLv10 を当てる
     // (jobLv5 だと格上すぎて回復ターンに落とされ、検証が回らない)。
-    let s = startBattle('paladin', 10, 8, '聖', 2, 3, 0);
+    let s = startBattle('paladin', 10, 8, '聖', 3, 3, 0);
     const healIdx = s.playerSkills.findIndex((x) => x.name === '聖光の癒し');
     expect(healIdx).toBeGreaterThanOrEqual(0);
     for (let i = 0; i < 3 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack', i * 7 + 1);
@@ -160,16 +160,18 @@ describe('モンスターの行動バリエーション (charger/healer + MP)', 
   });
 
   it('モンスターは int から MP を持ち、特技 (ため/回復) に MP を消費する', () => {
-    // will-o-wisp (healer, int34) は MP を持つ
-    const wisp = summonMonster(2, 15, 42).combatant;
+    // healer は tier3 の そらのりゅう (#536 で あおい鬼火 は caster に変更した)。
+    const wisp = summonMonster(6, 15, 42).combatant;
     expect(wisp.maxMp).toBeGreaterThan(0);
     // 回復すると MP が減る: healer を低 HP・MP 満タンから 1 手進めて確認
-    // will-o-wisp が出る seed を探す (見つからないと空 pass になるので存在を明示検証)
-    let s = startBattle('warrior', 8, 15, 'x', 2, 0);
+    // sky-dragon が出る seed を探す (見つからないと空 pass になるので存在を明示検証)
+    // そらのりゅう (healer) は tier6 = 想定 Lv26 (#536)。jobLv も帯に合わせないと即死して
+    // 回復を観測できない。
+    let s = startBattle('warrior', 26, 15, 'x', 6, 0);
     let found = false;
     for (let seed = 0; seed < 50; seed++) {
-      const t = startBattle('warrior', 8, 15, 'x', 2, seed);
-      if (t.monsterId === 'will-o-wisp') { s = t; found = true; break; }
+      const t = startBattle('warrior', 26, 15, 'x', 6, seed);
+      if (t.monsterId === 'sky-dragon') { s = t; found = true; break; }
     }
     expect(found).toBe(true);
     s.monster.hp = Math.floor(s.monster.maxHp * 0.3); // 低 HP に
@@ -192,13 +194,19 @@ describe('summonMonster', () => {
     expect(a.def.id).toBe(b.def.id);
     expect(a.def.tier).toBe(1);
   });
-  it('各 tier に最低 3 体いる + はぐれスライムは tier1 のレア逃走敵', () => {
+  it('序盤の tier に最低 3 体いる + はぐれスライムはレア逃走敵', () => {
+    // tier は 6 段階になった (#536)。**まず tier1〜3 を固める**方針 (オーナー 2026-07-26) なので、
+    // 顔ぶれの厚みを保証するのは序盤 3 帯。上位 tier は敵を足しながら埋める。
     for (const tier of [1, 2, 3] as const) {
-      expect(MONSTERS.filter((m) => m.tier === tier).length).toBeGreaterThanOrEqual(3);
+      expect(MONSTERS.filter((m) => m.tier === tier).length, `tier${tier} の顔ぶれ`).toBeGreaterThanOrEqual(3);
     }
-    // はぐれメタル型: tier1・レア出現 (spawnWeight<1)・逃走 (fleer)・HP 明示・高 XP
+    // 全 tier に最低 1 体は必要 (プールが空だと summonMonster が壊れる)
+    for (const tier of [4, 5, 6] as const) {
+      expect(MONSTERS.filter((m) => m.tier === tier).length, `tier${tier} の顔ぶれ`).toBeGreaterThanOrEqual(1);
+    }
+    // はぐれメタル型: 序盤帯・レア出現 (spawnWeight<1)・逃走 (fleer)・HP 明示・高 XP
     const stray = MONSTERS_BY_ID['stray-slime'];
-    expect(stray?.tier).toBe(1);
+    expect(stray?.tier).toBeLessThanOrEqual(2);
     expect(stray?.ability).toBe('fleer');
     expect(stray?.spawnWeight).toBeLessThan(1);
     expect(stray?.hp).toBeDefined();
@@ -213,7 +221,8 @@ describe('summonMonster', () => {
     ];
     for (const [id, mat] of variants) {
       const m = MONSTERS_BY_ID[id];
-      expect(m?.tier).toBe(1);
+      // tier は 6→8 段階になった (#536)。色違いは序盤帯 (tier1-2) にいることを固定する。
+      expect(m?.tier).toBeLessThanOrEqual(2);
       expect(m?.tint).toMatch(/^#[0-9a-f]{6}$/i); // 色違い (明示色)
       expect(m?.spawnWeight).toBeLessThan(1); // 出現は base より稀
       expect(m?.drops.some((d) => d.item === mat)).toBe(true); // 専用素材を落とす
@@ -227,11 +236,11 @@ describe('summonMonster', () => {
     // レア出現なので stray-slime を引く seed を探す
     let battle: import('../battle.js').BattleState | null = null;
     for (let seed = 0; seed < 4000; seed++) {
-      const b = startBattle('warrior', 1, 1, 'テスト', 1, seed, 0);
+      const b = startBattle('warrior', 1, 1, 'テスト', 2, seed, 0); // #536 で tier2 に移った
       if (b.monsterId === 'stray-slime') { battle = b; break; }
     }
     expect(battle).not.toBeNull();
-    // HP 明示 (6) × tier1 係数 → 通常 tier1 (~70) より大幅に低い (会心一撃圏)
+    // HP 明示 (6) × 想定 Lv 係数 → 同帯の敵より明確に低い (会心一撃圏)
     expect(battle!.monster.maxHp).toBeLessThan(25);
     // 逃走する turnSeed があり、そのとき outcome は monster-fled (win/lose ではない)
     let fled = false;
@@ -249,7 +258,7 @@ describe('summonMonster', () => {
     let normalMax = 0;
     let critDealt = 0;
     for (let seed = 0; seed < 300; seed++) {
-      let s = startBattle('shogun', 8, 15, 'x', 1, seed, 0, undefined, { monsterId: 'stray-slime' });
+      let s = startBattle('shogun', 8, 15, 'x', 2, seed, 0, undefined, { monsterId: 'stray-slime' });
       for (let i = 0; i < 6 && s.outcome === 'ongoing'; i++) {
         const before = s.monster.hp;
         s = resolveTurn(s, 'attack', seed * 100 + i);
@@ -263,20 +272,22 @@ describe('summonMonster', () => {
     expect(critDealt).toBeGreaterThan(1); // 会心は貫通して低 HP を一撃
   });
   it('地域相性 (affinity) は tier プール内の favor 対象を出やすくする (index 方式、死角なし)', () => {
-    // tier3 pool = [raven, oni, dragon]。affinity%3==0 は raven を favor
+    // tier5 pool = [raven, oni]。#536 で tier が 8 段階になり、よるのおおガラスは tier5 に移った。
     const count = (affinity: number | undefined) => {
       let raven = 0;
       for (let seed = 0; seed < 600; seed++) {
-        if (summonMonster(3, 15, seed, 1, affinity).def.id === 'night-raven') raven++;
+        if (summonMonster(5, 15, seed, 1, affinity).def.id === 'night-raven') raven++;
       }
       return raven;
     };
+    const pool = MONSTERS.filter((m) => m.tier === 5);
+    const ravenIdx = pool.findIndex((m) => m.id === 'night-raven');
     const uniform = count(undefined);
-    const ravenFavored = count(0); // 0 % 3 = 0 = raven
+    const ravenFavored = count(ravenIdx); // その index の敵を favor
     expect(ravenFavored).toBeGreaterThan(uniform);
     // どの affinity でも必ず実在モンスターを favor (死に相性が無い)
     for (let a = 0; a < 3; a++) {
-      expect(favoredMonsterFor(3, a).tier).toBe(3);
+      expect(favoredMonsterFor(5, a).tier).toBe(5);
     }
   });
 
@@ -311,12 +322,14 @@ describe('summonMonster', () => {
       expect(maxOf(3)).toBeGreaterThan(maxOf(2));
     });
 
-    it('tier2/3 は xp を明示している (式は tier1 校正なので省略すると過小になる — 回帰防止)', () => {
-      // baselineXp は tier1 帯校正。tier2/3 で xp を省くと式が ~1/3〜1/8 に崩落するため、
-      // 上位 tier は必ず明示 xp を持たせる契約 (レビュー ★★)。
+    it('想定 Lv8 以上は xp を明示している (式は序盤校正なので省略すると過小になる — 回帰防止)', () => {
+      // baselineXp は序盤帯 (Lv1-6) 校正。強い敵で xp を省くと式が ~1/3〜1/8 に崩落するため、
+      // 上位は必ず明示 xp を持たせる契約 (レビュー ★★)。
+      // **tier ではなく想定 Lv で判定する** — #536 で tier が 8 段階になり、
+      // 旧 tier1 の敵が tier2 に移ったため、tier 基準だと弱い敵にも明示を強いてしまう。
       for (const m of MONSTERS) {
-        if (m.tier >= 2) {
-          expect(m.xp, `${m.id} (tier${m.tier}) は xp を明示すべき`).toBeGreaterThan(0);
+        if ((m.level ?? 1) >= 8) {
+          expect(m.xp, `${m.id} (Lv${m.level}) は xp を明示すべき`).toBeGreaterThan(0);
           // 式より十分高い (明示の意味がある) ことも確認
           expect(m.xp!).toBeGreaterThan(baselineXp(m));
         }
@@ -455,7 +468,7 @@ describe('resolveTurn', () => {
   it('低レベルプレイヤーは tier3 に苦戦する (100 seed 中 60 敗以上)', () => {
     let losses = 0;
     for (let seed = 0; seed < 100; seed++) {
-      const s = playOut(startBattle('poet', 1, 1, '詩人', 3, seed), 'attack');
+      const s = playOut(startBattle('poet', 1, 1, '詩人', 5, seed), 'attack');
       if (s.outcome === 'lose') losses++;
     }
     expect(losses).toBeGreaterThanOrEqual(60);
@@ -500,7 +513,7 @@ describe('resolveTurn', () => {
     // (ため攻撃を ~20% に限定) で tier3 が僅かに易化し敗率 60→59 になったため緩和。
     let losses = 0;
     for (let seed = 0; seed < 100; seed++) {
-      if (playOut(startBattle('sage', 1, 1, '賢者', 3, seed), 'skill').outcome === 'lose') losses++;
+      if (playOut(startBattle('sage', 1, 1, '賢者', 5, seed), 'skill').outcome === 'lose') losses++;
     }
     expect(losses).toBeGreaterThanOrEqual(55);
   });
@@ -526,7 +539,7 @@ describe('resolveTurn', () => {
 
   it('ため予告の次ターンは必ずため攻撃 (または決着済み)', () => {
     for (let seed = 0; seed < 40; seed++) {
-      let s = startBattle('warrior', 5, 10, '戦士', 3, seed);
+      let s = startBattle('warrior', 5, 10, '戦士', 5, seed);
       let telegraphed = false;
       for (let i = 0; i < 40 && s.outcome === 'ongoing'; i++) {
         s = resolveTurn(s, 'attack');
@@ -548,7 +561,7 @@ describe('resolveTurn', () => {
   it('MP: 特技で消費する。回復はジョブ特性のみ (特性なしジョブはぼうぎょでも回復 0)', () => {
     // tier は想定プレイヤーレベル (#518) なので、tier2 には **jobLv10** を当てるのが拮抗帯。
     // tier1 では特技 1 撃で決着して MP 検証が回らず、格上 tier では数ターンで負ける。
-    const s0 = startBattle('sage', 10, 10, '賢者', 2, 42);
+    const s0 = startBattle('sage', 10, 10, '賢者', 3, 42);
     expect(s0.player.mp).toBe(s0.player.maxMp);
     const s1 = resolveTurn(s0, 'skill');
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
@@ -561,7 +574,7 @@ describe('resolveTurn', () => {
     // 特性持ち (bard: ぼうぎょ +4) は回復し、ログに特性名が出る。
     // skill 2 連発で headroom を作り、クランプ境界で過大回帰を見逃さない
     // (mp+4 がちょうど maxMp だと guardGain 5 でも通ってしまう — レビュー指摘)
-    const b0 = startBattle('bard', 10, 10, '詩人', 2, 42, 0, { mp: 8 });
+    const b0 = startBattle('bard', 10, 10, '詩人', 3, 42, 0, { mp: 8 });
     const b1 = resolveTurn(b0, 'skill');
     expect(b1.outcome).toBe('ongoing');
     const b2 = resolveTurn(b1, 'guard');
@@ -619,7 +632,7 @@ describe('resolveTurn', () => {
     // tier2 = 想定 Lv10 (#518) なので jobLv10 を当てる。tier1 では 1 撃決着して回復検証が回らない。
     // 職は guardian: 賢者は素の HP が低く、防具なしの検証条件だと 2 ターン目に落ちて
     // しずくを飲む前に決着してしまう (キャスターは防具前提という設計。#518)。
-    let s = startBattle('guardian', 10, 10, '守', 2, 42, 0, undefined, { tonics: 2 });
+    let s = startBattle('guardian', 10, 10, '守', 3, 42, 0, undefined, { tonics: 2 });
     expect(s.tonics).toBe(2);
     // MP を減らしてから使う (seed 42 は 1 ターン目で決着しない前提を明示的に固定)
     s = resolveTurn(s, 'skill');
@@ -735,7 +748,7 @@ describe('resolveTurn', () => {
     // = 防御の存在意義。強化された charger の予告を防がないと事故死するため差が明確に出る。
     const HERBS = 2;
     const reactive = (seed: number) => {
-      let s = startBattle('warrior', 15, 1, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 15, 1, '戦士', 5, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         // 予告があれば防御、HP 危険域なら やくそう、なければ攻撃
@@ -744,7 +757,7 @@ describe('resolveTurn', () => {
       return s.outcome;
     };
     const spam = (seed: number) => {
-      let s = startBattle('warrior', 15, 1, '戦士', 3, seed, HERBS);
+      let s = startBattle('warrior', 15, 1, '戦士', 5, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         const p = s.player;
         s = resolveTurn(s, s.herbs > 0 && p.hp < p.maxHp * 0.45 ? 'herb' : 'attack');
@@ -778,7 +791,7 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('やくそうは拮抗帯で意味がある (やくそう有り > ガードのみ) — tier2 / jobLv5', () => {
+  it('やくそうは拮抗帯で意味がある (やくそう有り > ガードのみ) — tier3 / jobLv5', () => {
     // tier が想定プレイヤーレベル化した (#518) ので、jobLv5 が競り合う帯は tier2 (想定 Lv10)。
     // そこで「やくそう込み」が「ガードのみ」に勝ることを固定する。
     const reactiveHerb = (s: BattleState): Command =>
@@ -786,10 +799,10 @@ describe('resolveTurn', () => {
     let withHerb = 0;
     let guardOnlyWins = 0;
     for (let seed = 0; seed < 200; seed++) {
-      let s = startBattle('warrior', 5, 8, '戦士', 2, seed, BATTLE_TUNING.herbCarryMax);
+      let s = startBattle('warrior', 5, 8, '戦士', 3, seed, BATTLE_TUNING.herbCarryMax);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, reactiveHerb(s));
       if (s.outcome === 'win') withHerb++;
-      let g = startBattle('warrior', 5, 8, '戦士', 2, seed);
+      let g = startBattle('warrior', 5, 8, '戦士', 3, seed);
       for (let i = 0; i < 60 && g.outcome === 'ongoing'; i++) {
         g = resolveTurn(g, g.monster.charging ? 'guard' : 'attack');
       }

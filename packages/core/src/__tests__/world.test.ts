@@ -252,18 +252,20 @@ describe('リージョン・危険度', () => {
     expect(regionOf(130, 0)).toBe(1);
     expect(regionOf(0, 130)).toBe(REGIONS_PER_SIDE);
   });
-  it('spawn リージョンの危険度は低く、全リージョンで 0..3', () => {
+  it('spawn リージョンの危険度は低く、全リージョンで 0..7', () => {
+    // danger は 0..7 に広げた (#536)。3 段階では敵の強さと XP が 3 バケツに丸まり、
+    // 「同じエリアなのに全部同じ強さ」になっていた。距離 0..8 の解像度を活かす。
     const overlay = worldOverlay();
     expect(regionDanger(overlay.spawn.region)).toBeLessThanOrEqual(1);
     const seen = new Set<number>();
     for (let r = 0; r < REGION_COUNT; r++) {
       const d = regionDanger(r);
       expect(d).toBeGreaterThanOrEqual(0);
-      expect(d).toBeLessThanOrEqual(3);
+      expect(d).toBeLessThanOrEqual(7);
       seen.add(d);
     }
-    // 世界に難度の勾配がある (少なくとも 3 段階)
-    expect(seen.size).toBeGreaterThanOrEqual(3);
+    // 世界に難度の勾配がある (段階が広がったぶん多くの段が出るはず)
+    expect(seen.size).toBeGreaterThanOrEqual(5);
   });
 });
 

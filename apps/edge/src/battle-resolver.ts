@@ -12,7 +12,7 @@
  */
 import {
   startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
-  terrainAt, isWalkable, wrap, townAt, regionOf, regionDanger, tierForDanger, encounterRateFor, worldOverlay, BATTLE_TUNING,
+  terrainAt, isWalkable, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
@@ -36,7 +36,7 @@ export type ResolverEnv = GameStateEnv;
 /** ガードに封印する startBattle 由来のメタ (turn では state を使うが、報酬/撃破記録用に残す)。 */
 interface SealedMeta {
   archetype: string;
-  tier: 1 | 2 | 3;
+  tier: Tier;
   /** 遭遇したタイル "x,y" (撃破時に defeated へ入れ、その枠で再エンカウントさせない)。 */
   tile: string;
 }
@@ -171,7 +171,7 @@ export interface EncounterInfo {
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
 export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const tier = tierForDanger(regionDanger(regionOf(x, y)));
+  const tier = tierForRegion(regionOf(x, y));
   // Lv は analysis 由来 (表示と一致。gameState 移行が env prefix 前の古い値で固まる問題を回避)。
   const jobLevel = jobLevelFromXp(jobXp);
   const playerLevel = playerLevelFromXp(playerXp);
@@ -339,7 +339,7 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const luk = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
-  const tier = tierForDanger(regionDanger(regionOf(x, y)));
+  const tier = tierForRegion(regionOf(x, y));
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };
   const written = await readModifyWrite(env, userDid, (cur) => ({ ...cur, materials: { ...cur.materials, [found]: (cur.materials[found] ?? 0) + 1 } }),

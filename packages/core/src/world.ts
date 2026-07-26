@@ -1,3 +1,4 @@
+import { DEMON_CASTLE_REGIONS, type Tier } from './battle.js';
 /**
  * あおぞらワールド — 決定的ワールド生成 (docs/19-overworld.md)。
  *
@@ -509,15 +510,32 @@ export function regionDanger(region: number): number {
   const dy = Math.min(Math.abs(ry - sy), REGIONS_PER_SIDE - Math.abs(ry - sy));
   const dist = dx + dy; // 0..8
   const jitter = hash2(rx, ry, WORLD_SEED * 19 + 23); // 0..1
-  const raw = dist / 2.5 + jitter * 0.9;
-  return Math.max(0, Math.min(3, Math.floor(raw)));
+  // spawn からの距離 0..8 を danger 0..7 に伸ばす (#536)。以前は 0..3 に潰しており、
+  // せっかくの距離解像度を捨てて全ワールドが 3 段階しか持てなかった。
+  const raw = dist / 1.15 + jitter * 0.9;
+  return Math.max(0, Math.min(7, Math.floor(raw)));
 }
 
 /** danger → 遭遇モンスター tier の対応 (単一の正)。遭遇・店の素材プール・
  *  テストはすべてこれを参照する — 3 箇所コピペで静かにデシンクした前科の再発防止
  *  (PR #305 レビュー指摘)。 */
-export function tierForDanger(danger: number): 1 | 2 | 3 {
-  return danger <= 1 ? 1 : danger === 2 ? 2 : 3;
+export function tierForDanger(danger: number): Tier {
+  // danger 0..7 → tier 1..6 (#536)。3 段階では敵の強さと XP が 3 バケツに丸まって
+  // 「同じエリアなのに全部同じ強さ」になっていた。spawn から遠いほど段階的に上がる。
+  const t = Math.max(1, Math.min(6, danger === 0 ? 1 : danger)) as Tier;
+  return t;
+}
+
+/**
+ * リージョンの tier (#536)。**魔王の城がある山あいだけは距離を無視して tier7 固定**。
+ *
+ * spawn からの距離で測ると、地形として隔離されている場所でも「たまたま近い」と弱い敵に
+ * なってしまう。魔王の城は最果てとして扱いたいので、地形の意味を距離より優先する。
+ * 城の内部 (tier8) は城が実装されたら `tierForTile` 側で扱う。
+ */
+export function tierForRegion(region: number): Tier {
+  if (DEMON_CASTLE_REGIONS.includes(region)) return 7;
+  return tierForDanger(regionDanger(region));
 }
 
 /** 地域の「相性」= その地域で出やすくなるモンスターを **その tier のプール内 index** で

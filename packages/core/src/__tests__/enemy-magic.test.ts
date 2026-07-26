@@ -80,7 +80,7 @@ describe('敵の魔法 (caster ability #456)', () => {
     // 聖騎士の HP を毎ターン満タンに戻して戦闘を長引かせ、詠唱機会を稼ぐ。
     let reflected = false;
     for (let seed = 0; seed < 20 && !reflected; seed++) {
-      let s = startBattle('paladin', 30, 30, 'x', 3, seed, 0, undefined, { monsterId: 'night-raven' });
+      let s = startBattle('paladin', 30, 30, 'x', 5, seed, 0, undefined, { monsterId: 'night-raven' });
       expect(s.player.passives).toContain('paladin-purity');
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
         s.player.hp = s.player.maxHp; // 倒し切らず長引かせる (詠唱機会を稼ぐ)

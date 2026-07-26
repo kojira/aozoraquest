@@ -39,7 +39,9 @@ describe('魔法使い 確定キット (#456)', () => {
 
   it('火炎術式が実戦で魔法ダメージ (必中・def無視・範囲) を通す (mage)', () => {
     // 高 def の敵に対し、物理は通りにくいが魔法 (fixedDamage) は def を無視して範囲ダメを通す。
-    const s = startBattle('mage', 3, 8, '魔', 2, 12345, 0);
+    // 敵を明示する: #536 で はぐれスライム (resistAllMagic = 魔法完全無効) が tier2 に移り、
+    // tier 抽選任せだと「魔法が通らない敵」を引いてテストが落ちる。
+    const s = startBattle('mage', 3, 8, '魔', 2, 12345, 0, undefined, { monsterId: 'glow-shroom' });
     const skills = s.playerSkills;
     const flameIdx = skills.findIndex((sk) => sk.name === '火炎術式');
     expect(flameIdx).toBeGreaterThanOrEqual(0);
@@ -97,7 +99,7 @@ describe('忍者 確定キット (#456)', () => {
     // 一撃で倒すと inflict は乗らない (res.fatal ガード) ので、生き残る tier3 の敵で検証。
     let stunned = false;
     for (let seed = 0; seed < 40 && !stunned; seed++) {
-      const s = startBattle('ninja', 12, 18, '忍', 3, seed, 0);
+      const s = startBattle('ninja', 12, 18, '忍', 5, seed, 0);
       const idx = s.playerSkills.findIndex((sk) => sk.name === '急所狙い');
       const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
       // fresh スキップにより turns:1 の麻痺が付与ターン末の tick で消えず残る。
@@ -119,7 +121,7 @@ describe('詩人 確定キット (#456)', () => {
   });
 
   it('感情爆発が実戦で水属性の大ダメージを通す (scaleBy の威力伸長は skills.test で単体検証)', () => {
-    const s = startBattle('poet', 20, 25, '詩', 3, 11, 0);
+    const s = startBattle('poet', 20, 25, '詩', 5, 11, 0);
     const burstIdx = s.playerSkills.findIndex((sk) => sk.name === '感情爆発');
     expect(burstIdx).toBeGreaterThanOrEqual(0);
     const next: BattleState = resolveTurn(s, 'skill', undefined, burstIdx);
@@ -144,7 +146,7 @@ describe('詩人 確定キット (#456)', () => {
   it('言の葉縛りは敵に束縛を付与 (被弾で解けない拘束)', () => {
     let bound = false;
     for (let seed = 0; seed < 20 && !bound; seed++) {
-      const s = startBattle('poet', 8, 12, '詩', 3, seed, 0);
+      const s = startBattle('poet', 8, 12, '詩', 5, seed, 0);
       const idx = s.playerSkills.findIndex((sk) => sk.name === '言の葉縛り');
       const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'restraint')) bound = true;
@@ -173,17 +175,17 @@ describe('冒険者・芸術家・匠 確定キット (#456。全16職完成)', 
   });
 
   it('背水の陣は自 HP が低いほど威力が上がる (scaleBy missingHpRatio)', () => {
-    const full = startBattle('explorer', 25, 28, '冒', 3, 5, 0);
+    const full = startBattle('explorer', 25, 28, '冒', 5, 5, 0);
     const idx = full.playerSkills.findIndex((sk) => sk.name === '背水の陣');
     const fullDmg = full.monster.hp - resolveTurn(full, 'skill', 111, idx).monster.hp;
-    const hurt = startBattle('explorer', 25, 28, '冒', 3, 5, 0);
+    const hurt = startBattle('explorer', 25, 28, '冒', 5, 5, 0);
     hurt.player.hp = Math.max(1, Math.round(hurt.player.maxHp * 0.2)); // 瀕死
     const hurtDmg = hurt.monster.hp - resolveTurn(hurt, 'skill', 111, idx).monster.hp;
     expect(hurtDmg).toBeGreaterThan(fullDmg); // HP 低いほど大きい
   });
 
   it('かく乱 (accDown) を撒くと敵の命中が下がる (回避しやすくなる)', () => {
-    const s = startBattle('explorer', 15, 20, '冒', 3, 5, 0);
+    const s = startBattle('explorer', 15, 20, '冒', 5, 5, 0);
     const idx = s.playerSkills.findIndex((sk) => sk.name === 'かく乱');
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
     expect(next.monster.statuses?.some((st) => st.id === 'accDown')).toBe(true);
@@ -220,7 +222,7 @@ describe('守護者 確定キット (#456。壁役・def基準)', () => {
     // とげの盾 (self) を張ってから、敵が殴ってくるターンで敵 HP が反射ぶん減る。
     let reflected = false;
     for (let seed = 0; seed < 20 && !reflected; seed++) {
-      let s = startBattle('guardian', 8, 12, '守', 3, seed, 0);
+      let s = startBattle('guardian', 8, 12, '守', 5, seed, 0);
       const idx = s.playerSkills.findIndex((sk) => sk.name === 'とげの盾');
       s = resolveTurn(s, 'skill', undefined, idx); // とげの盾を張る
       if (s.outcome !== 'ongoing' || !s.player.statuses?.some((st) => st.id === 'thorns')) continue;
@@ -260,7 +262,7 @@ describe('巫女 確定キット (#456。luk支援・全体技のソロ退化)',
   it('眠りの鈴 (sleep allEnemies) はソロで敵を眠らせる', () => {
     let slept = false;
     for (let seed = 0; seed < 30 && !slept; seed++) {
-      const s = startBattle('miko', 8, 12, '巫', 3, seed, 0);
+      const s = startBattle('miko', 8, 12, '巫', 5, seed, 0);
       const idx = s.playerSkills.findIndex((sk) => sk.name === '眠りの鈴');
       const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'sleep')) slept = true;
@@ -316,7 +318,7 @@ describe('隊長 確定キット (#456。全体バフはソロで自己/敵に�
   });
 
   it('攻陣 (§12: 味方atk↑+敵agi↓) はソロで自分に atkUp・敵に agiDown を付与', () => {
-    const s = startBattle('captain', 25, 28, '隊', 3, 5, 0);
+    const s = startBattle('captain', 25, 28, '隊', 5, 5, 0);
     const idx = s.playerSkills.findIndex((sk) => sk.name === '攻陣');
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
     expect(next.player.statuses?.some((st) => st.id === 'atkUp')).toBe(true); // 味方 (自分) に atk↑
@@ -338,7 +340,7 @@ describe('将軍 確定キット (#456)', () => {
   it('足払いは命中で転倒を付与 (次行動不可 + 被ダメ↑)', () => {
     let tumbled = false;
     for (let seed = 0; seed < 40 && !tumbled; seed++) {
-      const s = startBattle('shogun', 8, 12, '将', 3, seed, 0);
+      const s = startBattle('shogun', 8, 12, '将', 5, seed, 0);
       const idx = s.playerSkills.findIndex((sk) => sk.name === '足払い');
       const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'tumble')) tumbled = true;
@@ -500,7 +502,7 @@ describe('戦士 確定キット (#456)', () => {
   it('かぶとわりは命中で守備力↓を付与 (継続戦)', () => {
     let debuffed = false;
     for (let seed = 0; seed < 40 && !debuffed; seed++) {
-      const s = startBattle('warrior', 10, 15, '戦', 3, seed, 0);
+      const s = startBattle('warrior', 10, 15, '戦', 5, seed, 0);
       const idx = s.playerSkills.findIndex((sk) => sk.name === 'かぶとわり');
       const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
       if (next.monster.hp > 0 && next.monster.statuses?.some((st) => st.id === 'defDown')) debuffed = true;

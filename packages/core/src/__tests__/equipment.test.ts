@@ -147,7 +147,7 @@ describe('専用装備の弱点補完 (将軍)', () => {
     expect(gear.bonus.maxHp ?? 0).toBeGreaterThan(0);
     let wins = 0;
     for (let seed = 0; seed < 300; seed++) {
-      let s = startBattle('shogun', 15, 1, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
+      let s = startBattle('shogun', 15, 1, 'x', 5, seed, BATTLE_TUNING.herbCarryMax, undefined, {
         equipIds: ['wp-shogun-high', 'ar-iron', 'ch-life'],
       });
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
@@ -318,9 +318,13 @@ describe('townShopStock (品揃えの決定的生成)', () => {
     const { MONSTERS } = await import('../battle.js');
     const { regionDanger, tierForDanger } = await import('../world.js');
     // tier → その tier のモンスターがドロップする素材集合
-    const dropsOfTier = (tier: 1 | 2 | 3) => {
+    // 店の素材は tier を 3 帯に丸めて引く (#536 で tier が 6 段階になった)。
+    // 期待値も同じ帯で作る = 「その帯の敵が落とす素材か」を検証する。
+    const dropsOfBand = (tier: number) => {
+      const lo = tier <= 2 ? 1 : tier <= 4 ? 3 : 5;
+      const hi = tier <= 2 ? 2 : tier <= 4 ? 4 : 6;
       const set = new Set<string>();
-      for (const m of MONSTERS) if (m.tier === tier) for (const d of m.drops) set.add(d.item);
+      for (const m of MONSTERS) if (m.tier >= lo && m.tier <= hi) for (const d of m.drops) set.add(d.item);
       return set;
     };
     towns.forEach((t, i) => {
@@ -328,7 +332,7 @@ describe('townShopStock (品揃えの決定的生成)', () => {
       expect(townShopStock(t, i).materialId).toBe(stock.materialId); // 決定的
       const danger = regionDanger(t.region);
       const tier = tierForDanger(danger);
-      expect(dropsOfTier(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
+      expect(dropsOfBand(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
       // 消耗品 (やくそう等) が値札に混入する回帰も塞ぐ — ドロップには含まれるため上の検証だけでは通ってしまう
       expect(isSellableMaterial(stock.materialId), `${t.name} → ${stock.materialId} はひきとり可能素材ではない`).toBe(true);
     });
