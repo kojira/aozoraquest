@@ -11,14 +11,14 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
+  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
   terrainAt, isWalkable, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
 import { readState, readModifyWrite, emptyState, rkeyForDid, GAME_STATE_COLLECTION, type GameStateEnv, type GameState } from './game-state';
-import { SEARCH_POWER_COST } from './shop';
+import { SEARCH_POWER_COST, MAX_SHOP_OPS } from './shop';
 import type { OwnedPiece } from './game-state';
 import { serverDeleteRecord } from './server-pds';
 import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
@@ -74,9 +74,21 @@ async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fet
   if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409, 'diagnosis_required');
   // **ジョブ XP はここから読まない** (#534)。XP の記録先は権威 state (`GameState.jobXp`) に
   // 一本化した。`analysis.jobLevel.xp` はベータ期間の記録として凍結され、成長には効かない。
-  // ユーザー PDS 由来なのは職と素ステだけ = 診断の結果そのもの。
+  //
+  // **素ステはサーバーで正規化し直す** (#551 段階 3)。`analysis` はユーザー自身の PDS に
+  // あり本人が自由に書けるので、そのまま信じると `{atk: 9999, ...}` で戦闘力を盛れた。
+  // 正当な診断結果は `computeStats` が最後に `normalizeStats` を通すので**必ず合計 100**
+  // になる。同じ正規化をここでも掛ければ、**形 (どのステに寄っているか = 診断の結果) は
+  // 残り、大きさだけ盛れなくなる**。サーバーが投稿から診断をやり直すまでの間、
+  // これで「盛る」経路は実質閉じる。
   const playerXp = typeof rec.value.playerLevel?.xp === 'number' && rec.value.playerLevel.xp > 0 ? rec.value.playerLevel.xp : 0;
-  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats), handle, playerXp };
+  return { archetype: rec.value.archetype, baseStats: statVectorToArray(normalizeStats(sanitizeStatVector(rec.value.rpgStats))), handle, playerXp };
+}
+
+/** 数値でない/負/非有限を 0 に倒してから正規化に渡す (`normalizeStats` は数値を前提にしている)。 */
+function sanitizeStatVector(v: StatVector): StatVector {
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? x : 0);
+  return { atk: n(v?.atk), def: n(v?.def), agi: n(v?.agi), int: n(v?.int), luk: n(v?.luk) };
 }
 
 /** 権威 state から、その職の累計 XP を読む (#534)。戦闘・表示・報酬がすべてここを見る。 */
@@ -346,7 +358,7 @@ export interface SearchResult { found: string | null; materials: Record<string, 
 /** しらべる: サーバーが luk (装備込み) + tier (位置) + 物理乱数で判定し、当たれば gameState.materials に付与。
  *  これで拾ったアイテムがサーバー在庫の正になる (client のみの幻ではなくなる)。
  *  **パワーの消費も権威側** (#551) — client の台帳だけで引いていた頃は、いくらでも しらべられた。 */
-export async function handleSearch(env: ResolverEnv, userDid: string, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<SearchResult> {
+export async function handleSearch(env: ResolverEnv, userDid: string, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, opKey?: string): Promise<SearchResult> {
   let x: number, y: number;
   try {
     const c = verifyPosition(env, token ?? '', userDid, now);
@@ -365,11 +377,20 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   // power は動いていなかった = いくらでも しらべられた。
   if (state.power < SEARCH_POWER_COST) throw new ResolverError('あおぞらパワーが たりない', 400, 'no_power');
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
+  // **冪等キー** (#551 レビュー指摘)。応答だけ落ちて client が押し直すと、無キーだと
+  // 権威側は 2 回引かれるのに画面は 1 回ぶんしか反映されない = 「パワーが勝手に消えた」。
+  const key = opKey ? `search:${opKey}` : null;
   const written = await readModifyWrite(env, userDid, (cur) => {
+    if (key && (cur.shopOps ?? []).includes(key)) return cur; // 処理済み: 何も引かない
     // 再読み込み後にも残高を確かめる (CAS リトライで別の消費が割り込みうる)。
     if (cur.power < SEARCH_POWER_COST) throw new ResolverError('あおぞらパワーが たりない', 400, 'no_power');
     const materials = found ? { ...cur.materials, [found]: (cur.materials[found] ?? 0) + 1 } : cur.materials;
-    return { ...cur, power: cur.power - SEARCH_POWER_COST, materials };
+    return {
+      ...cur,
+      power: cur.power - SEARCH_POWER_COST,
+      materials,
+      ...(key ? { shopOps: [...(cur.shopOps ?? []), key].slice(-MAX_SHOP_OPS) } : {}),
+    };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { found, materials: written.materials, power: written.power };
 }

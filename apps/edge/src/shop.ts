@@ -55,9 +55,16 @@ export interface ShopResult {
   pieces?: OwnedPiece[];
 }
 
-/** その場所の店。街の上に居ないと買えない。 */
-function shopAt(state: GameState) {
-  const town = townAt(state.x, state.y);
+/**
+ * その場所の店。街の上に居ないと買えない。
+ *
+ * **位置は署名トークンを優先する。** `GameState.x/y` は「街に入ったとき」と
+ * テレポート・戦闘決着でしか書かれない (`handleMove` は街のときだけ書く) ので、
+ * 街から野外へ数歩あるいても state の座標は街のまま残る = 世界のどこからでも
+ * 買えてしまう。トークンが無い/無効なときだけ state に倒す (`handleSearch` と同じ作法)。
+ */
+function shopAt(state: GameState, pos?: { x: number; y: number }) {
+  const town = townAt(pos?.x ?? state.x, pos?.y ?? state.y);
   if (!town) throw new ShopError('街の外では買えない', 400, 'not_in_town');
   const towns = worldOverlay().towns;
   const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
@@ -86,7 +93,7 @@ function withOp(state: GameState, key: string): string[] {
 export async function shopCraft(
   env: GameStateEnv,
   did: string,
-  input: { itemId: string; rkey: string; luk: number },
+  input: { itemId: string; rkey: string; luk: number; pos?: { x: number; y: number } },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {
@@ -101,9 +108,15 @@ export async function shopCraft(
     env,
     did,
     (cur) => {
-      if (alreadyDone(cur, opKey)) { duplicate = true; return cur; }
+      if (alreadyDone(cur, opKey)) {
+        duplicate = true;
+        // **強化値は所持個体から引き直す。** 0 を返すと「ナイフ+3」が「ナイフ」として
+        // 演出され、リロードで突然 +3 に化ける (名匠 +5 の演出も消える)。
+        level = (cur.pieces ?? []).find((p) => p.rkey === input.rkey)?.level ?? 0;
+        return cur;
+      }
       duplicate = false;
-      const { stock } = shopAt(cur);
+      const { stock } = shopAt(cur, input.pos);
       if (!stock.equipment.includes(def.id)) throw new ShopError('この街では扱っていない', 400, 'not_in_stock');
       if (cur.power < def.price.power) throw new ShopError('あおぞらパワーが たりない', 400, 'no_power');
       const have = cur.materials[stock.materialId] ?? 0;
@@ -120,8 +133,6 @@ export async function shopCraft(
     },
     init ? { now, init } : { now },
   );
-  // 重複時は level を引き直せない (state に残していない)。client は自分が記帳済みの
-  // レコードを持っているので、duplicate を見て再記帳しない。
   return { power: next.power, materials: next.materials, level, duplicate, pieces: next.pieces ?? [] };
 }
 
@@ -129,7 +140,7 @@ export async function shopCraft(
 export async function shopSell(
   env: GameStateEnv,
   did: string,
-  input: { materialId: string; count: number; rkey: string },
+  input: { materialId: string; count: number; rkey: string; pos?: { x: number; y: number } },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {
@@ -147,7 +158,7 @@ export async function shopSell(
     (cur) => {
       if (alreadyDone(cur, opKey)) { duplicate = true; return cur; }
       duplicate = false;
-      shopAt(cur); // 街の外ではひきとってもらえない
+      shopAt(cur, input.pos); // 街の外ではひきとってもらえない
       const have = cur.materials[input.materialId] ?? 0;
       if (have < count) throw new ShopError('素材が たりない', 400, 'no_material');
       // 端数は切り捨て (レートは core が単一の正)。実際に減らすのは換算できたぶんだけ。
@@ -174,7 +185,7 @@ export async function shopSell(
 export async function shopForge(
   env: GameStateEnv,
   did: string,
-  input: { rkeys: [string, string]; rkey: string },
+  input: { rkeys: [string, string]; rkey: string; pos?: { x: number; y: number } },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {
@@ -189,9 +200,13 @@ export async function shopForge(
     env,
     did,
     (cur) => {
-      if (alreadyDone(cur, opKey)) { duplicate = true; return cur; }
+      if (alreadyDone(cur, opKey)) {
+        duplicate = true;
+        level = (cur.pieces ?? []).find((p) => p.rkey === input.rkey)?.level ?? 0;
+        return cur;
+      }
       duplicate = false;
-      shopAt(cur); // 街の外では きたえてもらえない
+      shopAt(cur, input.pos); // 街の外では きたえてもらえない
       const owned = cur.pieces ?? [];
       const pa = owned.find((p) => p.rkey === a);
       const pb = owned.find((p) => p.rkey === b);

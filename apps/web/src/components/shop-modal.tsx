@@ -80,6 +80,7 @@ export function ShopModal({
   equippedRkeys,
   busy,
   lastAction,
+  errorText,
   onCraft,
   onForge,
   onSell,
@@ -96,6 +97,9 @@ export function ShopModal({
   equippedRkeys: readonly string[];
   busy: boolean;
   lastAction: LastShopAction | null;
+  /** 失敗の理由 (#551)。**モーダル内に出す** — ページ本体の通知行に出しても、
+   *  この全画面オーバーレイの背面に描かれてプレイヤーには見えない。 */
+  errorText: string | null;
   onCraft: (def: EquipmentDef) => void;
   onForge: (def: EquipmentDef, level: number, rkeys: [string, string]) => void;
   /** 素材のひきとり (count は materialsPerPower の倍数) */
@@ -181,10 +185,12 @@ export function ShopModal({
             fontSize: '0.85em',
             fontWeight: 700,
             minHeight: '1.4em',
-            color: lastAction && isMasterwork(lastAction.piece.level) ? 'var(--color-accent)' : 'var(--color-fg)',
+            color: errorText
+              ? 'var(--color-danger, #e8566a)'
+              : lastAction && isMasterwork(lastAction.piece.level) ? 'var(--color-accent)' : 'var(--color-fg)',
           }}
         >
-          {lastAction && lastDef && (
+          {errorText ? errorText : lastAction && lastDef && (
             <>
               {isMasterwork(lastAction.piece.level) ? '✨ ' : ''}
               {leveledName(lastDef, lastAction.piece.level)}

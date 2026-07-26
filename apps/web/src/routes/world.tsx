@@ -153,6 +153,13 @@ export function World() {
   // client 側の points (PDS の viaPosts 由来) ではなくこちらを表示する。
   // 両者がずれていると「画面には残っているのに報酬が出ない」という見えない失敗になる。
   const [serverPower, setServerPower] = useState<number | null>(null);
+  // **deps の狭い callback から読むための ref。** searchHere / onCraft は deps に
+  // serverPower を入れていないので、直接参照すると初回生成時の null を掴んだままになる
+  // (この形の退行を実際に出した — 「パワーが たりない」が一度も出ず常に通信エラーになった)。
+  /** しらべるの冪等キー (成功するまで同じ鍵で再送する)。 */
+  const pendingSearchRef = useRef<string | null>(null);
+  const serverPowerRef = useRef<number | null>(null);
+  serverPowerRef.current = serverPower;
   const [statusOpen, setStatusOpen] = useState(false);
   const statusOpenRef = useRef(false);
   statusOpenRef.current = statusOpen;
@@ -258,6 +265,8 @@ export function World() {
   const gearOpenRef = useRef(gearOpen);
   gearOpenRef.current = gearOpen;
   const [craftBusy, setCraftBusy] = useState(false);
+  /** お店の失敗理由 (#551)。ページ本体の通知行はモーダルの背面に隠れるので、モーダル内に出す。 */
+  const [shopError, setShopError] = useState<string | null>(null);
   const [lastShopAction, setLastShopAction] = useState<LastShopAction | null>(null);
   /** 再試行の冪等化: 失敗した制作/合成/ひきとりの rkey を保持し、同条件の再試行で
    *  使い回す (createRecord は同 rkey で衝突するため 2 重記帳が構造的に起きない) */
@@ -860,13 +869,16 @@ export function World() {
     if (!s || !agent || !did) { setSearchMsg('いま しらべられない (つうしんを かくにんして)。'); return; }
     // **残高の判定も消費もサーバー** (#551)。client 台帳で引いていた頃は権威 power が
     // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
-    if (serverPower !== null && serverPower < SEARCH_TUNING.powerCost) {
+    if (serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
       setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`);
       return;
     }
     setSearchMsg('あたりを しらべている…');
     try {
-      const res = await serverSearch(agent, tokenRef.current);
+      // 冪等キー: 応答だけ落ちて押し直したときに二重に引かれないよう、成功するまで同じ鍵を使う。
+      const sKey = pendingSearchRef.current ?? (pendingSearchRef.current = `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`);
+      const res = await serverSearch(agent, tokenRef.current, sKey);
+      pendingSearchRef.current = null;
       applyServerMaterials(res.materials);
       setServerPower(res.power); // 残高もサーバーが正
       if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${res.power})`); return; }
@@ -894,11 +906,12 @@ export function World() {
       const stock = townShopStock(town, townIndex);
       const have = materialsRef.current[stock.materialId] ?? 0;
       // 残高と素材の判定は**サーバーが正**。ここは押せるかの目安 (先読み) だけ。
-      if ((serverPower ?? 0) < def.price.power || have < def.price.materials) return;
+      if ((serverPowerRef.current ?? 0) < def.price.power || have < def.price.materials) return;
       // 冪等化: 直前に同じ品で失敗していたら同じ rkey で再試行する
       // (createRecord は同 rkey で衝突するため 2 重制作が構造的に起きない。レビュー指摘)
       const rkey = pendingCraftRef.current?.defId === def.id ? pendingCraftRef.current.rkey : newCraftRkey();
       pendingCraftRef.current = { defId: def.id, rkey };
+      setShopError(null);
       setCraftBusy(true);
       try {
         // **費用の支払いと強化値の抽選はサーバー** (#551)。素材もパワーも権威側から引かれ、
@@ -908,6 +921,8 @@ export function World() {
         applyServerMaterials(res.materials);
         // 個体そのもの (強化値つきレコード) はまだユーザー PDS。サーバーが決めた level を記帳する。
         // 個体の権威化は #551 段階 2。
+        // 記帳 (ユーザー PDS の履歴)。所持の根拠はサーバーなので、ここが落ちても品は手元にある。
+        // ただし黙って終わると「パワーだけ減って何も起きなかった」に見えるので必ず伝える。
         const piece = await craftItem(
           agent,
           {
@@ -919,7 +934,11 @@ export function World() {
             level: res.level ?? 0,
           },
           rkey,
-        );
+        ).catch((e) => {
+          console.warn('[world] craft log failed', e);
+          setShopError('つくれたが、記録に失敗した (もちものには入っている)。');
+          return { rkey, itemId: def.id, level: res.level ?? 0, at: new Date().toISOString() };
+        });
         pendingCraftRef.current = null;
         if (res.pieces) setCraftedPieces(res.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
         setLastShopAction({ piece, kind: 'craft' });
@@ -927,7 +946,7 @@ export function World() {
         // 失敗しても店は開いたまま (再試行させる。同 rkey なので 2 重にならない)
         console.warn('[world] craft failed', e);
         setLastShopAction(null);
-        setNotice(shopErrorText(e, 'つくってもらえなかった'));
+        setShopError(shopErrorText(e, 'つくってもらえなかった'));
       } finally {
         setCraftBusy(false);
       }
@@ -943,6 +962,7 @@ export function World() {
       const forgeKey = `${def.id}:${rkeys[0]}:${rkeys[1]}`;
       const frkey = pendingForgeRef.current?.key === forgeKey ? pendingForgeRef.current.rkey : newForgeRkey();
       pendingForgeRef.current = { key: forgeKey, rkey: frkey };
+      setShopError(null);
       setCraftBusy(true);
       try {
         // **合成もサーバー** (#551 段階 2)。消費する個体は権威側の所持から探すので、
@@ -958,7 +978,7 @@ export function World() {
       } catch (e) {
         console.warn('[world] forge failed', e);
         setLastShopAction(null);
-        setNotice(shopErrorText(e, 'きたえてもらえなかった'));
+        setShopError(shopErrorText(e, 'きたえてもらえなかった'));
       } finally {
         setCraftBusy(false);
       }
@@ -974,6 +994,7 @@ export function World() {
       const saleKey = `${materialId}:${count}`;
       const srkey = pendingSaleRef.current?.key === saleKey ? pendingSaleRef.current.rkey : newSaleRkey();
       pendingSaleRef.current = { key: saleKey, rkey: srkey };
+      setShopError(null);
       setCraftBusy(true);
       try {
         // **在庫と残高の増減はサーバー** (#551)。client 台帳だけだと「パワーが 5 ふえた!」と
@@ -988,7 +1009,7 @@ export function World() {
         setNotice(`${ITEMS[materialId]?.name ?? materialId} ×${count} をひきとってもらい、パワーが ${res.powerGained ?? 0} ふえた!`);
       } catch (e) {
         console.warn('[world] sell failed', e);
-        setNotice(shopErrorText(e, 'ひきとってもらえなかった'));
+        setShopError(shopErrorText(e, 'ひきとってもらえなかった'));
       } finally {
         setCraftBusy(false);
       }
@@ -1104,7 +1125,20 @@ export function World() {
     // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
     ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
     ...(inTown
-      ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => { setLastShopAction(null); setMaterialsView({ ...materialsRef.current }); setShopOpen(true); } } as WorldMenuCommand]
+      ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => {
+          setLastShopAction(null);
+          setShopError(null);
+          setMaterialsView({ ...materialsRef.current });
+          // 入場時に serverState が落ちていると残高が null のまま復旧経路が無く、
+          // 店が「パワー 0」で全品グレーアウトして死んで見える (#551 レビュー指摘)。
+          // 開くたびに取り直す。
+          if (serverPowerRef.current === null && agent) {
+            void serverState(agent)
+              .then((s) => { setServerPower(s.state.power ?? 0); if (s.state.pieces) setCraftedPieces(s.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' }))); })
+              .catch((e) => { console.warn('[world] shop reload failed', e); setShopError('パワー残高を読み込めなかった (通信を確認して開き直して)。'); });
+          }
+          setShopOpen(true);
+        } } as WorldMenuCommand]
       : []),
     // 「はじめから (管理)」は設定画面へ移設 (新規と同じ導入を辿らせるため)。ここには出さない。
   ];
@@ -1319,9 +1353,11 @@ export function World() {
                 「いまのパワー: 152」が出ていた)。遭遇判定はサーバーが権威 power で行うので、
                 client 台帳を根拠に「モンスターは出ません」と書くのも嘘になる。 */}
             {diag
-              ? serverPower !== null && serverPower < BATTLE_TUNING.powerCost
-                ? ' あおぞらパワーが ないので、勝っても経験値や素材は もらえません (投稿すると増える)。'
-                : ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。`
+              ? serverPower === null
+                ? ' パワー残高を読み込めなかった (通信を確認して開き直して)。'
+                : serverPower < BATTLE_TUNING.powerCost
+                  ? ' あおぞらパワーが ないので、勝っても経験値や素材は もらえません (投稿すると増える)。'
+                  : ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。`
               : ''}
           </p>
         </>
@@ -1390,6 +1426,7 @@ export function World() {
           equippedRkeys={Object.values(resolvedGear?.pieces ?? {}).map((p) => p.rkey)}
           busy={craftBusy}
           lastAction={lastShopAction}
+          errorText={shopError}
           onCraft={(def) => void onCraft(def)}
           onForge={(def, level, rkeys) => void onForge(def, level, rkeys)}
           onSell={(materialId, count) => void onSell(materialId, count)}

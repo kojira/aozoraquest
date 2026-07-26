@@ -7,7 +7,8 @@ import { getRecord, putRecord, fetchFirstPageFollows } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import type { Rarity } from '@aozoraquest/core';
 import { CARD_TYPES, COLORS, isArchetype, isRarity, jobDisplayName, manaCostColors, rollRarity } from '@aozoraquest/core';
-import { bumpPower, hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
+import { hasSummoned, loadPointsState, type PointsState } from '@/lib/points';
+import { serverSpendPower, serverState, worldServerEnabled, WorldServerError } from '@/lib/world-server';
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { pickLocalLLM } from '@/lib/local-llm';
@@ -50,6 +51,9 @@ export function Card() {
   //  そもそも引けないようにする。)
   const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
   const [power, setPower] = useState<PointsState | null>(null);
+  /** **権威側のパワー残高** (#551)。引き直しの可否はこちらで決める。 */
+  const [serverPower, setServerPower] = useState<number | null>(null);
+  const [powerMsg, setPowerMsg] = useState<string | null>(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<'idle' | 'downloading' | 'preparing' | 'posting' | 'posted'>('idle');
   const [shareErr, setShareErr] = useState<string | null>(null);
@@ -88,10 +92,16 @@ export function Card() {
         if (cancelled) return;
         if (!analysis) { setLoad({ status: 'no-diagnosis' }); return; }
         if (!summoned) { setLoad({ status: 'not-summoned' }); return; }
-        // フル points を裏で取る (引き直しボタンの balance 表示に使う)。
+        // 召喚ゲージ (viaPosts) の判定に使う client 台帳。**残高には使わない** (#551)。
         void loadPointsState(agent, did)
           .then((p) => { if (!cancelled) setPower(p); })
           .catch((e) => console.warn('points load failed', e));
+        // **残高は権威 state** — 引き直しの可否も表示もこちらで決める。
+        if (worldServerEnabled) {
+          void serverState(agent)
+            .then((r) => { if (!cancelled) setServerPower(r.state.power ?? 0); })
+            .catch((e) => { console.warn('server power load failed', e); if (!cancelled) setPowerMsg('残高を読み込めなかった。'); });
+        }
         const pb: ProfileBrief = {
           did,
           handle: profile?.handle ?? session.handle ?? 'you',
@@ -232,19 +242,20 @@ export function Card() {
     // 明示的な引き直し (initial でない) は 1 あおぞらパワーを消費する。
     // ローカル開発時 (IS_DEV) は残量チェックも記録も丸ごとスキップして何枚でも引ける。
     if (!opts.initial && !IS_DEV) {
-      if (!power || power.balance < 1) {
-        console.warn('[card] power insufficient');
-        return;
-      }
+      // **消費は権威側** (#551)。以前はユーザー PDS の台帳だけを引いていたので、
+      // ワールド側でパワーを使い切っても台帳は減っておらず、**同じ投稿で二重に使えた**。
+      // 値段はサーバーが決める (client が金額を送らない)。
+      const key = `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
       try {
-        await recordCardDraw(agent, 'flavor-reroll');
+        const r = await serverSpendPower(agent, 'card-draw', key);
+        setServerPower(r.power);
       } catch (e) {
-        console.warn('[card] recordCardDraw failed', e);
+        console.warn('[card] power spend failed', e);
+        setPowerMsg(e instanceof WorldServerError ? `${e.message}。` : 'パワーを使えなかった (通信を確認して)。');
         return;
       }
-      // 累積カウンタも +cardDraws (record 自体は recordCardDraw が書いた)
-      if (session.did) void bumpPower(agent, session.did, { cardDraws: 1 });
-      setPower((p) => p ? { ...p, cardDraws: p.cardDraws + 1, balance: Math.max(0, p.balance - 1) } : p);
+      // 履歴の記帳 (所持の根拠ではない)。失敗しても引き直し自体は成立している。
+      recordCardDraw(agent, 'flavor-reroll').catch((e) => console.warn('[card] recordCardDraw failed', e));
     }
 
     setFlavorBusy(true);
@@ -491,10 +502,13 @@ export function Card() {
        *  null → 値 で行が突然出現してレイアウトがズレる体感を防ぐ。 */}
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em', minHeight: '1.6em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4em' }}>
         あおぞらパワー:
-        {power ? (
+        {serverPower !== null ? (
           <>
-            <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{power.balance}</span>
+            {/* **権威側の残高**を出す (#551)。client 台帳を出すと、ワールドで使った分が
+                反映されず「あるのに引けない / ないのに引ける」になる。 */}
+            <span style={{ color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>{serverPower}</span>
             <span style={{ opacity: 0.6 }}>(引き直しで 1 消費)</span>
+            {powerMsg && <span style={{ color: 'var(--color-danger, #e8566a)' }}>{powerMsg}</span>}
           </>
         ) : (
           <Spinner size={14} label="計測中…" />
@@ -509,12 +523,12 @@ export function Card() {
 
       <div style={{ display: 'flex', gap: '0.6em', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1em' }}>
         <button
-          disabled={flavorBusy || !!drawing || llmAvailable !== true || (!IS_DEV && (!power || power.balance < 1))}
+          disabled={flavorBusy || !!drawing || llmAvailable !== true || (!IS_DEV && (serverPower === null || serverPower < 1))}
           onClick={() => void regenerateCard({ initial: false })}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'AI 確認中…' : llmAvailable === false ? 'AI 不可で引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (power && power.balance < 1) ? '引き直せない' : '引き直す (−1)'}
+            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'AI 確認中…' : llmAvailable === false ? 'AI 不可で引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (serverPower !== null && serverPower < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>

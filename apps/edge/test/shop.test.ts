@@ -233,3 +233,46 @@ describe('sanitizeGear (持っていない装備は着られない)', () => {
     expect(sanitizeGear({ armor: ITEM.id }, mine)).toEqual({ armor: { id: ITEM.id, level: 1 } });
   });
 });
+
+describe('素ステの正規化 (#551 段階 3)', () => {
+  it('盛った素ステは形だけ残り、大きさは正規化される', async () => {
+    const { normalizeStats } = await import('@aozoraquest/core');
+    // analysis はユーザー自身の PDS にあり本人が自由に書ける。そのまま信じると
+    // {atk: 9999} で戦闘力を盛れた。正当な診断結果は必ず合計 100 になるので、
+    // 同じ正規化を掛ければ形は残って大きさだけ盛れなくなる。
+    const cheated = normalizeStats({ atk: 9999, def: 1, agi: 1, int: 1, luk: 1 });
+    const sum = cheated.atk + cheated.def + cheated.agi + cheated.int + cheated.luk;
+    expect(sum).toBe(100);
+    expect(cheated.atk).toBe(100); // 形 (atk 寄り) は残る
+    // 正当な値はそのまま (べき等)
+    const honest = { atk: 3, def: 19, agi: 45, int: 9, luk: 24 };
+    expect(normalizeStats(honest)).toEqual(honest);
+  });
+});
+
+describe('レビュー指摘の回帰 (#551)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('再送でも強化値が返る (「+0」になって装備が弱くならない)', async () => {
+    // duplicate で level 0 を返していた頃は、再試行した装備が +0 として表示・装備され、
+    // リロードすると本来の値に化けた。
+    const env = await makeEnv();
+    const m = statefulPds(stateAt());
+    globalThis.fetch = m.fn;
+    const first = await shopCraft(env, DID, { itemId: ITEM.id, rkey: 'c1', luk: 10 }, NOW);
+    const again = await shopCraft(env, DID, { itemId: ITEM.id, rkey: 'c1', luk: 10 }, NOW);
+    expect(again.duplicate).toBe(true);
+    expect(again.level).toBe(first.level);
+  });
+
+  it('街から出たあとは買えない (位置は署名トークンが優先)', async () => {
+    // GameState.x/y は「街に入ったとき」しか書かれないので、野外に歩き出しても
+    // 街の座標が残る = どこからでも買えた。
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(stateAt()).fn;
+    await expect(
+      shopCraft(env, DID, { itemId: ITEM.id, rkey: 'p1', luk: 0, pos: { x: TOWN.x + 9, y: TOWN.y + 9 } }, NOW),
+    ).rejects.toMatchObject({ code: 'not_in_town' });
+  });
+});

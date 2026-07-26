@@ -25,6 +25,7 @@ const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
 const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
+const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -132,8 +133,9 @@ export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
 }
 
 /** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
-export function serverSearch(agent: Agent, token?: string): Promise<{ found: string | null; materials: Record<string, number>; power: number }> {
-  return callEdge<{ found: string | null; materials: Record<string, number>; power: number }>(agent, LXM_SEARCH, '/api/world/search', token ? { token } : {});
+/** しらべる。`key` は冪等キー — 応答だけ落ちて押し直したときに二重に引かれないため。 */
+export function serverSearch(agent: Agent, token?: string, key?: string): Promise<{ found: string | null; materials: Record<string, number>; power: number }> {
+  return callEdge<{ found: string | null; materials: Record<string, number>; power: number }>(agent, LXM_SEARCH, '/api/world/search', { ...(token ? { token } : {}), ...(key ? { key } : {}) });
 }
 
 /** オンボード用リセット: 権威 gameState + 戦闘ガードをサーバーで削除する (本人のみ)。次の入場で初期状態に戻る。
@@ -190,6 +192,12 @@ export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: str
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */
 export function serverShopSell(agent: Agent, materialId: string, count: number, rkey: string): Promise<ServerShopResult> {
   return callEdge<ServerShopResult>(agent, LXM_SHOP_SELL, '/api/shop/sell', { materialId, count, rkey });
+}
+
+/** あおぞらパワーを消費する (#551)。**値段はサーバーが決める** — client が金額を送らない。
+ *  `key` は冪等キー (同じ引き直しで二重に引かれない)。 */
+export function serverSpendPower(agent: Agent, reason: 'card-draw', key: string): Promise<{ power: number; spent: number; duplicate: boolean }> {
+  return callEdge<{ power: number; spent: number; duplicate: boolean }>(agent, LXM_POWER_SPEND, '/api/power/spend', { reason, key });
 }
 
 /** **管理者専用**: あおぞらパワーを権威 state に付与する。
