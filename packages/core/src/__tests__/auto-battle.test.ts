@@ -87,7 +87,10 @@ describe('autoBattleAction (#521)', () => {
             charges++;
             // guard そのもの、または parry 技 (防御 + 反撃) のどちらかであること
             const isParrySkill = a.command === 'skill' && !!SKILLS[s.playerSkills[a.skillIndex]!.kind]?.parry;
-            expect(a.command === 'guard' || isParrySkill, `${job} がため予告に ${a.command}`).toBe(true);
+            // **その場で倒せる手があるならそちらが優先される** (#538)。予告への防御は
+            // 「他に決め手が無いとき」の話で、勝てるなら勝つのが上手い操作。
+            const finishes = resolveTurn(s, a.command, undefined, a.skillIndex).outcome === 'win';
+            expect(a.command === 'guard' || isParrySkill || finishes, `${job} がため予告に ${a.command}`).toBe(true);
           }
           const a = autoBattleAction(s);
           s = resolveTurn(s, a.command, undefined, a.skillIndex);
@@ -95,6 +98,34 @@ describe('autoBattleAction (#521)', () => {
       }
       expect(charges, `${job} のため予告が観測できていない`).toBeGreaterThan(0);
     }
+  });
+
+  it('その場で倒せる手があれば、やくそう・防御の決め打ちより優先する (#538)', () => {
+    // 決め打ちが「勝てる手」を握り潰していた (全ターンの 7.4%)。しかも取りこぼしは
+    // 決め手のある職 (キャスター) に偏って効き、#521 で直した誤診と同じ方向に働いていた。
+    let checked = 0;
+    for (const j of JOBS) {
+      for (const tier of [1, 2, 3] as const) {
+        for (let seed = 0; seed < 12; seed++) {
+          let s = startBattle(j.id, tier === 1 ? 1 : tier === 2 ? 10 : 20, 1, 'x', tier, seed, 3);
+          for (let t = 0; t < 40 && s.outcome === 'ongoing'; t++) {
+            const a = autoBattleAction(s);
+            // 勝てる手が存在するなら、選んだ手も勝つ手でなければならない
+            const winning: Array<{ command: 'attack' | 'skill'; skillIndex: number }> = [];
+            if (resolveTurn(s, 'attack').outcome === 'win') winning.push({ command: 'attack', skillIndex: 0 });
+            for (let i = 0; i < s.playerSkills.length; i++) {
+              if (resolveTurn(s, 'skill', undefined, i).outcome === 'win') winning.push({ command: 'skill', skillIndex: i });
+            }
+            if (winning.length > 0) {
+              expect(resolveTurn(s, a.command, undefined, a.skillIndex).outcome, `${j.id} tier${tier} seed${seed} turn${t}`).toBe('win');
+              checked++;
+            }
+            s = resolveTurn(s, a.command, undefined, a.skillIndex);
+          }
+        }
+      }
+    }
+    expect(checked, '勝てる場面が 1 度も観測できていない (テストが空回り)').toBeGreaterThan(50);
   });
 
   it('全16職が想定レベル帯で成立する (tier1=Lv1 / tier2=Lv10 / tier3=Lv20)', () => {

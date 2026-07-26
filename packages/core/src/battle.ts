@@ -2086,36 +2086,62 @@ export function autoBattleAction(s: BattleState, turnSeed?: number): { command: 
   // 戦士は「署名が parry」なのにキットに parry 技を 1 つも持たない。署名で判定していた頃は
   // 戦士が「ため予告に殴りかかる」(被ダメ +49%) 上に、全とくぎが sim で一度も撃たれなかった。
   const parryIdx = s.playerSkills.findIndex((k) => SKILLS[k.kind]?.parry);
+
+  // **その場で倒せる手があるなら、決め打ちより優先する** (#538)。
+  //
+  // やくそう (HP<45%) と ため予告への防御は「上手い操作」の近似として置いているが、
+  // **同ターンに勝てる手があっても無条件で割り込む**ため、全ターンの 7.4% で確定勝利を
+  // 捨てていた (実測: やくそうを選んだ 303 ターンのうち 201 = 66%、防御 459 のうち 228 = 50%)。
+  // しかも取りこぼしは「決め手のある職」= キャスターに偏って効き、#521 で直した誤診バイアスと
+  // **同じ方向**に勝率を下げていた (賢者 70→82% / 予言者 78→89% と、直すとキャスターだけ伸びる)。
+  const cands = candidateActions(s, turnSeed, skillCost);
+  const finisher = cands.find((c) => c.after.outcome === 'win');
+  if (finisher) return finisher.action;
+
   if (s.monster.charging) return parryIdx >= 0 && p.mp >= skillCost ? { command: 'skill', skillIndex: parryIdx } : none('guard');
   if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return none('herb');
   if (s.tonics > 0 && p.mp < skillCost && p.maxMp >= skillCost * 2) return none('tonic');
   if (p.mp < skillCost) return none('attack');
-  return bestAction(s, turnSeed);
+  return bestOf(cands, s);
 }
 
 /**
- * 1 手先読みで最良の攻撃手を選ぶ。**通常攻撃も候補に入れる**のが要点。
+ * 攻撃手 (通常攻撃 + 撃てるとくぎ) を 1 手先読みして、それぞれの結果を返す (#538)。
  *
- * とくぎが常に通常攻撃より強いとは限らない。実例: 遊び人は Lv10 で `サボる` しか持たず、
- * これを撃ち続けると tier2 の勝率が **0%** になるが、通常攻撃だけなら **97%** 勝てる。
- * 「MP があればとくぎ」と決め打つと、こういう職を「詰んでいる」と誤判定する (#521)。
- *
- * **マルチ戦 (enemies あり) では先読みしない**。試行に使う `resolveTurn` は 1v1 専用で
- * `enemies` に一切触れないため、群れの状態では結果が意味を持たない (対象選択という別次元も要る)。
- * `runAutoBattle` は 1v1 専用と明記されているので実害は無い。群れの sim を足すときは
- * `resolveTurnMulti` で targetIndex も含めて評価すること。
+ * 決着判定と最良手の選択で**同じ試行結果を使い回す**ため、`resolveTurn` の呼び出しは
+ * 1 ターンにつき (1 + とくぎ数) 回で済む。マルチ戦 (群れ) では `resolveTurn` が 1v1 専用で
+ * `enemies` に触れないため試行が無意味なので空を返す (呼び出し側が従来の決め打ちに落ちる)。
  */
-function bestAction(s: BattleState, turnSeed?: number): { command: Command; skillIndex: number } {
-  // 群れは従来どおり (上記コメント)。`length > 1` で見るのは、将来 1v1 でも enemies:[monster] を
-  // 持たせたときに「1v1 なのに先読みだけ飛ばす」静かな退行を避けるため。
-  if ((s.enemies?.length ?? 0) > 1) return { command: 'skill', skillIndex: 0 };
-  let best = { command: 'attack' as Command, skillIndex: 0 };
-  let bestScore = scoreOf(s, resolveTurn(s, 'attack', turnSeed));
-  for (let i = 0; i < s.playerSkills.length; i++) {
-    const score = scoreOf(s, resolveTurn(s, 'skill', turnSeed, i));
-    if (score > bestScore) { bestScore = score; best = { command: 'skill', skillIndex: i }; }
+function candidateActions(
+  s: BattleState,
+  turnSeed: number | undefined,
+  skillCost: number,
+): Array<{ action: { command: Command; skillIndex: number }; after: BattleState }> {
+  if ((s.enemies?.length ?? 0) > 1) return [];
+  const out: Array<{ action: { command: Command; skillIndex: number }; after: BattleState }> = [
+    { action: { command: 'attack', skillIndex: 0 }, after: resolveTurn(s, 'attack', turnSeed) },
+  ];
+  if (s.player.mp >= skillCost) {
+    for (let i = 0; i < s.playerSkills.length; i++) {
+      out.push({ action: { command: 'skill', skillIndex: i }, after: resolveTurn(s, 'skill', turnSeed, i) });
+    }
   }
-  return best;
+  return out;
+}
+
+/** 先読み済みの候補から最良を選ぶ。同点なら先頭 (通常攻撃) が勝つ = MP を温存する。 */
+function bestOf(
+  cands: Array<{ action: { command: Command; skillIndex: number }; after: BattleState }>,
+  before: BattleState,
+): { command: Command; skillIndex: number } {
+  if (cands.length === 0) return { command: 'skill', skillIndex: 0 }; // 群れ: 従来どおり
+  let best = cands[0]!;
+  let bestScore = scoreOf(before, best.after);
+  for (const c of cands.slice(1)) {
+    const sc = scoreOf(before, c.after);
+    if (sc > bestScore) { bestScore = sc; best = c; }
+  }
+  return best.action;
 }
 
 /**
@@ -2127,7 +2153,7 @@ function bestAction(s: BattleState, turnSeed?: number): { command: Command; skil
  * 一度も選ばれない。**これらのとくぎの設計が妥当かは sim では測れない**ので、
  * 職バランスを見るときはこの盲点を踏まえること (N 手先読み化は将来課題)。
  *
- * `bestAction` は通常攻撃を先に評価し比較が strict `>` なので、**同点なら通常攻撃が勝つ
+ * `bestOf` は通常攻撃を先頭に置き比較が strict `>` なので、**同点なら通常攻撃が勝つ
  * = MP を温存する**。`>=` に変えるとこの性質が壊れるので注意。
  */
 function scoreOf(before: BattleState, after: BattleState): number {
