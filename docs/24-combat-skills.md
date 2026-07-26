@@ -117,7 +117,10 @@ poison?: { damage: number; turns: number };                  // 継続ダメー�
 
 - `playerSkill` (単数) → `playerSkills: SkillDef[]` + 現在選択の一時状態は UI 側。
   sealed state には `playerSkills` を保存 (archetype から再導出可能なので id 列だけでも可)。
-- `autoBattleCommand` (battle.ts:1149) を複数とくぎ対応に (眠り→デバフ→攻撃の優先度付け)。
+- ~~`autoBattleCommand` を複数とくぎ対応に~~ → **完了** (#521)。`autoBattleAction` が
+  **1 手先読み** (各候補を同じ seed で resolveTurn して比較) で選ぶ。優先度の決め打ちより
+  回復・属性相性・敵の行動まで含めて評価できる。ただし**毒/デバフ/自己バフのような遅効性の
+  効果は 1 手では評価できない**ので、それらのとくぎは sim で選ばれない (限界)。
   模擬戦シミュレータ (debug-battle-sim / sim-*.ts) が新戦術で回るようにする。
 - 既存テスト (skillForJob 全16・skill 完走・parry 回帰・spell 優位) は
   `skillsForJob()[0]` が旧 `skillForJob()` と一致する形で緑を維持。
@@ -136,7 +139,7 @@ poison?: { damage: number; turns: number };                  // 継続ダメー�
    MP 不足で disabled。
 5. サーバー権威: `handleTurn` skill_id 検証 (`skillsForJob(archetype, jobLevel)` に含まれるか) +
    `VALID_COMMANDS` 拡張。
-6. `autoBattleCommand` 複数対応 + sim 更新。テスト緑維持。
+6. ~~`autoBattleCommand` 複数対応 + sim 更新~~ → **完了** (#521。`autoBattleAction`)。
 
    ※ #436 単体では既存の**攻撃系とくぎ + レベルで増える枠組み**が入る (状態異常の中身は #437)。
    テスト可能な最小形として、各ジョブに攻撃系のバリエーション or 既存 1 種のみでも framework は成立。

@@ -2062,22 +2062,90 @@ export function resolveTurnMulti(
  *  ため予告 → (見切り職は特技/それ以外は防御) / HP<45% かつ薬草 → 薬草 /
  *  MP 不足かつしずく → しずく / MP 足りれば特技 / それ以外 たたかう。
  *  scripts/sim-battle-balance.ts と /spirit 模擬戦シミュレータで共有する。 */
-export function autoBattleCommand(s: BattleState): Command {
-  const isParry = s.playerSkill.kind === 'parry';
+/**
+ * 自動戦闘の 1 手 (**とくぎの選択込み**)。バランス sim (`runAutoBattle` / debug-battle-sim) が使う。
+ *
+ * **なぜ選択が要るか (#521)**: 以前は `Command` だけを返しており、`resolveTurn` の
+ * `skillIndex` は既定の 0 が使われていた = **常に最初のとくぎしか撃たなかった**。
+ * とくぎを 1〜2 種しか持たない物理職では問題にならないが、5 種持つ賢者のような職では
+ * 「たまたま [0] が弱い技だと壊滅的に見える」。実際これで「キャスターは tier2 以降で
+ * 成立しない」という**誤った結論**を出しかけた (技を選べば魔法使い 0% → 99%)。
+ *
+ * 選び方は **1 手先読み**: 撃てる各とくぎについて同じ turnSeed で `resolveTurn` を回し、
+ * 結果が最も良いものを選ぶ。`resolveTurn` は純関数なので試行に副作用は無く、同じ seed を
+ * 使うので比較は公平。ヒューリスティック (「威力の高い技」等) だと回復・状態異常・属性相性を
+ * 評価できず、キットの設計意図を測れないため採らない。
+ */
+export function autoBattleAction(s: BattleState, turnSeed?: number): { command: Command; skillIndex: number } {
   const p = s.player;
   const skillCost = skillMpCostOf(p); // 発明家 (匠) の割引を実消費と揃える (sim 判断が過小評価しないよう)
-  if (s.monster.charging) return isParry && p.mp >= skillCost ? 'skill' : 'guard';
-  if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return 'herb';
-  // 見切り (parry) 職は特技を撃たない → MP 回復しても無駄なので しずくを飲まない。
-  if (!isParry && s.tonics > 0 && p.mp < skillCost && p.maxMp >= skillCost * 2) return 'tonic';
-  if (!isParry && p.mp >= skillCost) return 'skill';
-  return 'attack';
+  const none = (command: Command) => ({ command, skillIndex: 0 });
+  // ため予告には「防御」が正解 (resolveTurn の設計意図)。ただし **実際に持っている**とくぎに
+  // parry 技があるならそれで受ける (防御 + 反撃で上位互換)。**署名スキル (playerSkill) で
+  // 判定してはいけない** — #456 のキット化以降、署名と保有とくぎ (playerSkills) は別物で、
+  // 戦士は「署名が parry」なのにキットに parry 技を 1 つも持たない。署名で判定していた頃は
+  // 戦士が「ため予告に殴りかかる」(被ダメ +49%) 上に、全とくぎが sim で一度も撃たれなかった。
+  const parryIdx = s.playerSkills.findIndex((k) => SKILLS[k.kind]?.parry);
+  if (s.monster.charging) return parryIdx >= 0 && p.mp >= skillCost ? { command: 'skill', skillIndex: parryIdx } : none('guard');
+  if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return none('herb');
+  if (s.tonics > 0 && p.mp < skillCost && p.maxMp >= skillCost * 2) return none('tonic');
+  if (p.mp < skillCost) return none('attack');
+  return bestAction(s, turnSeed);
+}
+
+/**
+ * 1 手先読みで最良の攻撃手を選ぶ。**通常攻撃も候補に入れる**のが要点。
+ *
+ * とくぎが常に通常攻撃より強いとは限らない。実例: 遊び人は Lv10 で `サボる` しか持たず、
+ * これを撃ち続けると tier2 の勝率が **0%** になるが、通常攻撃だけなら **97%** 勝てる。
+ * 「MP があればとくぎ」と決め打つと、こういう職を「詰んでいる」と誤判定する (#521)。
+ *
+ * **マルチ戦 (enemies あり) では先読みしない**。試行に使う `resolveTurn` は 1v1 専用で
+ * `enemies` に一切触れないため、群れの状態では結果が意味を持たない (対象選択という別次元も要る)。
+ * `runAutoBattle` は 1v1 専用と明記されているので実害は無い。群れの sim を足すときは
+ * `resolveTurnMulti` で targetIndex も含めて評価すること。
+ */
+function bestAction(s: BattleState, turnSeed?: number): { command: Command; skillIndex: number } {
+  // 群れは従来どおり (上記コメント)。`length > 1` で見るのは、将来 1v1 でも enemies:[monster] を
+  // 持たせたときに「1v1 なのに先読みだけ飛ばす」静かな退行を避けるため。
+  if ((s.enemies?.length ?? 0) > 1) return { command: 'skill', skillIndex: 0 };
+  let best = { command: 'attack' as Command, skillIndex: 0 };
+  let bestScore = scoreOf(s, resolveTurn(s, 'attack', turnSeed));
+  for (let i = 0; i < s.playerSkills.length; i++) {
+    const score = scoreOf(s, resolveTurn(s, 'skill', turnSeed, i));
+    if (score > bestScore) { bestScore = score; best = { command: 'skill', skillIndex: i }; }
+  }
+  return best;
+}
+
+/**
+ * 1 ターン後の良さ。与ダメージ + 自分の回復 − 被ダメージ。決着は最優先/最劣先。
+ *
+ * **限界**: 1 ターンで damage/heal に現れない効果 — 毒・デバフ・自己バフ — は**評価できない**。
+ * 眠りのように「敵の行動が消える → 被ダメが減る」形なら同ターンに現れるので拾えるが、
+ * `九字切り` / `加護` / `毒の予言` / `破滅の予言` のような遅効性のとくぎは sim では
+ * 一度も選ばれない。**これらのとくぎの設計が妥当かは sim では測れない**ので、
+ * 職バランスを見るときはこの盲点を踏まえること (N 手先読み化は将来課題)。
+ *
+ * `bestAction` は通常攻撃を先に評価し比較が strict `>` なので、**同点なら通常攻撃が勝つ
+ * = MP を温存する**。`>=` に変えるとこの性質が壊れるので注意。
+ */
+function scoreOf(before: BattleState, after: BattleState): number {
+  return (
+    (after.outcome === 'win' ? 1e6 : 0) -
+    (after.outcome === 'lose' ? 1e6 : 0) +
+    (before.monster.hp - after.monster.hp) +
+    (after.player.hp - before.player.hp)
+  );
 }
 
 /** 自動プレイで決着まで進める (最大 maxTurns)。turnSeed は渡さず state 由来で決定的。 */
 export function runAutoBattle(state: BattleState, maxTurns = 80): BattleState {
   let s = state;
-  for (let i = 0; i < maxTurns && s.outcome === 'ongoing'; i++) s = resolveTurn(s, autoBattleCommand(s));
+  for (let i = 0; i < maxTurns && s.outcome === 'ongoing'; i++) {
+    const a = autoBattleAction(s); // とくぎ選択込み (#521)
+    s = resolveTurn(s, a.command, undefined, a.skillIndex);
+  }
   return s;
 }
 

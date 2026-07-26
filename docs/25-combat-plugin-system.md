@@ -527,7 +527,7 @@ BattleOutcome に **reconciled** 追加。首狩り=resolve win(即死)/せっ�
 ### 14.8 マルチ戦闘の AI・行動順 (最大の穴・ここで方針決定)
 - **行動順**: 全参加者(味方[player+召喚+NPC]/敵[複数])を毎ターン agi+乱数で並べる(現行 playerFirst ブールを撤廃)。
 - **敵AI**: 各敵が `MONSTER_ABILITIES[ability].decideAction` で「自分1体分」を決める(単体前提から改修)。ターゲットは AI が味方集合から選ぶ(弱い味方/ランダム)。
-- **召喚/NPC味方AI**: 一時味方(からくり兵/創造の絵筆/NPC)は autoBattleCommand の味方版で自動行動。
+- **召喚/NPC味方AI**: 一時味方(からくり兵/創造の絵筆/NPC)は `autoBattleAction` の味方版で自動行動。
 - **ターゲット上書き**: 挑発/かばう(将来)で選択を上書き。
 - **BattleState/edge**: `allies[] / enemies[]` に再構築。旧 sealed state は #436 同様フォールバック(単体戦闘として解決)。edge の skillId 検証も味方ごとに。
 
