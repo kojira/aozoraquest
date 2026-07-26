@@ -57,7 +57,9 @@ describe('autoBattleAction (#521)', () => {
     const run = (useLookahead: boolean) => {
       let win = 0;
       for (let seed = 0; seed < 60; seed++) {
-        let s = startBattle('sage', 20, 1, 'x', 3, seed, 3, undefined, { equipIds: ['ar-travel-cloak'] });
+        // #536 で tier が 8 段階になり tier3 = 想定 Lv8 になった。jobLv20 の拮抗帯は tier5。
+        // 格下だと旧実装でも勝ててしまい、先読みの差が出ない (テストが空回りする)。
+        let s = startBattle('sage', 20, 1, 'x', 5, seed, 3, undefined, { equipIds: ['ar-travel-cloak'] });
         for (let i = 0; i < 80 && s.outcome === 'ongoing'; i++) {
           if (useLookahead) {
             const a = autoBattleAction(s);

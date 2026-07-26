@@ -155,7 +155,9 @@ export function MyProfile() {
   // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を現職 LV へ加算する
   // (プレイヤー Lv は #507/#508 で廃止したので加算先は現職のみ)。
   const myJobXp = (state.status === 'done' ? (state.result.jobLevel?.xp ?? 0) : 0) + questXp;
-  const myJobLv = jobLevelFromXp(myJobXp);
+  // 職が確定していないうちは LV を出さない。基準曲線にフォールバックすると、職ごとの
+  // 曲線 (#536) とずれた LV が一瞬だけ出る = サーバーの数え方と食い違う値を見せることになる。
+  const myJobLv = myArchetype ? jobLevelFromXp(myJobXp, myArchetype) : null;
 
   return (
     <div style={{ textAlign: 'center' }}>
@@ -181,7 +183,7 @@ export function MyProfile() {
                 const gearSel = gearData ? resolveGear(gearData.refs, gearData.pieces, myArchetype).selection : {};
                 const c = playerCombatant(
                   myArchetype,
-                  myJobLv,
+                  myJobLv ?? 1,
                   1, // プレイヤー Lv は戦闘値に影響しない (#507) ので固定値でよい
                   '',
                   state.result.rpgStats ? statVectorToArray(state.result.rpgStats) : undefined,
@@ -376,7 +378,7 @@ export function ResultView({ result, questXp = 0, onRerun }: { result: Diagnosis
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
   // 受託完了クエストの経験値を現職 LV に加算 (ヘッダの LV 表示と揃える)。
   const jobXp = (result.jobLevel?.xp ?? 0) + questXp;
-  const jobLv = jobXpToNextLevel(jobXp);
+  const jobLv = jobXpToNextLevel(jobXp, result.archetype);
   const jobPct = jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
   return (
     <section style={{ marginTop: '1em' }}>

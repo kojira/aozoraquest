@@ -271,9 +271,9 @@ export async function processSelfPost(
       finalPlayerLevel = nextPlayerLevel;
 
       // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)
-      const prevJobLv = jobLevelFromXp(oldJob.xp);
+      const prevJobLv = jobLevelFromXp(oldJob.xp, oldJob.archetype);
       const nextJobXp = oldJob.xp + gainedXp;
-      const nextJobLv = jobLevelFromXp(nextJobXp);
+      const nextJobLv = jobLevelFromXp(nextJobXp, oldJob.archetype);
       if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
       const nextJobLevel: JobLevelState = {
         archetype: oldJob.archetype,

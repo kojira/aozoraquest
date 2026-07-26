@@ -7,6 +7,7 @@ import { isSellableMaterial,
   gearBonus,
   gearBonusFromGear,
   townShopStock,
+  shopMaterialBand,
 } from '../equipment.js';
 import { playerCombatant, playerStatsAt } from '../battle.js';
 import { worldOverlay } from '../world.js';
@@ -147,7 +148,7 @@ describe('専用装備の弱点補完 (将軍)', () => {
     expect(gear.bonus.maxHp ?? 0).toBeGreaterThan(0);
     let wins = 0;
     for (let seed = 0; seed < 300; seed++) {
-      let s = startBattle('shogun', 15, 1, 'x', 3, seed, BATTLE_TUNING.herbCarryMax, undefined, {
+      let s = startBattle('shogun', 15, 1, 'x', 5, seed, BATTLE_TUNING.herbCarryMax, undefined, {
         equipIds: ['wp-shogun-high', 'ar-iron', 'ch-life'],
       });
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
@@ -316,19 +317,24 @@ describe('townShopStock (品揃えの決定的生成)', () => {
 
   it('店の素材種は決定的で、その街の危険度で狩れるモンスターの素材 (地元で稼げる)', async () => {
     const { MONSTERS } = await import('../battle.js');
-    const { regionDanger, tierForDanger } = await import('../world.js');
+    const { regionDanger, tierForRegion } = await import('../world.js');
     // tier → その tier のモンスターがドロップする素材集合
-    const dropsOfTier = (tier: 1 | 2 | 3) => {
+    // 店の素材は tier を 3 帯に丸めて引く (#536 で tier が 6 段階になった)。
+    // 期待値も同じ帯で作る = 「その帯の敵が落とす素材か」を検証する。
+    // 帯の定義は equipment.ts の `shopMaterialBand` が単一の正。ここで同じ式を書くと
+    // 敵の tier を動かしたときに片方だけ直して事故る (#536 で実際に起きた)。
+    const dropsOfBand = (tier: number) => {
+      const band = shopMaterialBand(tier);
       const set = new Set<string>();
-      for (const m of MONSTERS) if (m.tier === tier) for (const d of m.drops) set.add(d.item);
+      for (const m of MONSTERS) if (shopMaterialBand(m.tier) === band) for (const d of m.drops) set.add(d.item);
       return set;
     };
     towns.forEach((t, i) => {
       const stock = townShopStock(t, i);
       expect(townShopStock(t, i).materialId).toBe(stock.materialId); // 決定的
       const danger = regionDanger(t.region);
-      const tier = tierForDanger(danger);
-      expect(dropsOfTier(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
+      const tier = tierForRegion(t.region); // 店も遭遇も tierForRegion が単一の正
+      expect(dropsOfBand(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
       // 消耗品 (やくそう等) が値札に混入する回帰も塞ぐ — ドロップには含まれるため上の検証だけでは通ってしまう
       expect(isSellableMaterial(stock.materialId), `${t.name} → ${stock.materialId} はひきとり可能素材ではない`).toBe(true);
     });

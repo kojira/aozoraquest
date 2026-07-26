@@ -59,7 +59,7 @@ export function Spirit() {
   // 性格・口調は admin の prompts/spiritChat の領分のまま。
   const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
   const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
-  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp + questXp)) : undefined;
+  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp + questXp, diag.archetype)) : undefined;
   const systemPrompt = useMemo(
     () =>
       applyPromptTemplate(systemPromptRaw, {

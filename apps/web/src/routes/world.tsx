@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
 import {
-  tierForDanger,
+  tierForRegion,
   BATTLE_TUNING,
   canSeeEnemyVitals,
   ITEMS,
@@ -78,7 +78,15 @@ const DIRS: Record<Dir, { dx: number; dy: number }> = {
   right: { dx: 1, dy: 0 },
 };
 
+// **ラベルは danger でなく tier から引く** (#536)。danger は 0..7 だが遭遇に使う tier は
+// `MAX_POPULATED_TIER` までにクランプされるので、danger をそのまま言葉にすると
+// 「とても危険」と「危険」で出る敵が 1 体残らず同じ、という嘘の見出しになる。逆に
+// danger を 2 段階ずつ畳むと、唯一実在する難易度の壁 (tier2→tier3) がラベルの内側に
+// 隠れてしまう (spawn から 3 歩の距離に、同じ語をまたぐ 16 倍の崖ができていた)。
+// tier から引けば表示と実態が定義上ずれず、敵を足して帯が解放されれば語も自動で増える。
 const DANGER_LABELS = ['おだやか', 'すこし危険', '危険', 'とても危険'] as const;
+const dangerLabel = (tier: number) =>
+  DANGER_LABELS[Math.min(DANGER_LABELS.length - 1, Math.max(0, tier - 1))];
 
 /** サーバーの ServerBattleState を描画用 BattleState として扱う (seed は実行時に存在しない = UI 未使用)。 */
 const asBattleState = (s: ServerBattleState): BattleState => s as unknown as BattleState;
@@ -248,7 +256,7 @@ export function World() {
   const baseArgs = archetype
     ? ([
         archetype,
-        jobLevelFromXp(diag?.jobLevel?.xp ?? 0),
+        jobLevelFromXp(diag?.jobLevel?.xp ?? 0, archetype),
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
         diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
@@ -1003,9 +1011,10 @@ export function World() {
 
   const town = townAt(ws.x, ws.y);
   const here = terrainAt(ws.x, ws.y);
-  const danger = regionDanger(regionOf(ws.x, ws.y));
   // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
-  const favoredMonsterName = favoredMonsterFor(tierForDanger(danger), regionAffinity(regionOf(ws.x, ws.y))).name;
+  // 「このあたり」の見出しと「何が多いか」は同じ tier を見る (ラベルと中身が食い違わないように)。
+  const hereTier = tierForRegion(regionOf(ws.x, ws.y));
+  const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y))).name;
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
   // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
@@ -1104,7 +1113,7 @@ export function World() {
               maxHp={battle ? battle.state.player.maxHp : combat.maxHp}
               mp={battle ? battle.state.player.mp : curMp}
               maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
-              locationLabel={town ? `🏘 ${town.name}` : `このあたり: ${DANGER_LABELS[danger]}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}が多い`}
+              locationLabel={town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)。
               // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る
@@ -1271,7 +1280,7 @@ export function World() {
           name={playerName}
           avatarUrl={avatarUrl}
           archetype={archetype}
-          jobLv={jobLevelFromXp(diag?.jobLevel?.xp ?? 0)}
+          jobLv={jobLevelFromXp(diag?.jobLevel?.xp ?? 0, archetype)}
           jobXp={diag?.jobLevel?.xp ?? 0}
           combat={combat}
           combatBase={combatBase}

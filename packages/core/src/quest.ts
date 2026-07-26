@@ -1,5 +1,5 @@
 import { statGap, sortStatsByRelativeGap } from './stats.js';
-import { JOB_LEVEL_TUNING, PLAYER_LEVEL_TUNING, XP_REWARDS } from './tuning.js';
+import { JOB_LEVEL_PACE, JOB_LEVEL_PACE_DECAY, JOB_LEVEL_TUNING, PLAYER_LEVEL_TUNING, XP_REWARDS } from './tuning.js';
 import type { ActionType, Quest, Stat, StatVector } from './types.js';
 
 /**
@@ -204,14 +204,55 @@ export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: num
   JOB_LEVEL_TUNING.exponent,
 );
 
-/** 累計 XP から現職 LV を計算。 */
-export function jobLevelFromXp(xp: number): number {
+/**
+ * **職ごとの XP 曲線** (#536)。基準曲線に `JOB_LEVEL_PACE[archetype]` を掛ける。
+ * 強い職ほど倍率が大きい = 同じレベルに必要な XP が多い = 上がりにくい。
+ * 未知の職 (将来追加) は 1.0 = 基準どおり。
+ */
+export function jobXpCurveFor(archetype: string): ReadonlyArray<readonly [level: number, threshold: number]> {
+  const pace = JOB_LEVEL_PACE[archetype] ?? 1;
+  if (pace === 1) return JOB_XP_CURVE;
+  const maxLv = JOB_LEVEL_TUNING.maxLevel;
+  return JOB_XP_CURVE.map(([lv, th]) => {
+    // **職差は序盤に大きく、後半に収束する** (DQ3 準拠)。DQ3 の職業別必要経験値は
+    // Lv10 で最大 2.5 倍の開きがあるのに、Lv50 では 1.46 倍まで縮まる。
+    // 「序盤は職の個性が強く出て、終盤は皆が同じ地平に立つ」という形。
+    // 定数倍だと後半も開いたままで、強い職がいつまでも追いつけない。
+    const t = Math.min(1, (lv - 1) / (maxLv - 1));
+    return [lv, Math.round(th * Math.pow(pace, 1 - t * JOB_LEVEL_PACE_DECAY))] as const;
+  });
+}
+
+/**
+ * 累計 XP から現職 LV を計算。
+ *
+ * **`archetype` は必須** (#536)。職ごとに曲線が違うので、渡し忘れると
+ * 「サーバーが数えたレベルと UI に出るレベルが食い違う」という最悪の壊れ方をする。
+ * 省略可能にすると必ずどこかで抜けるため、型で強制して全呼び出し元に配らせる。
+ */
+export function jobLevelFromXp(xp: number, archetype: string): number {
+  return jobLevelFromXpFor(archetype, xp);
+}
+
+/** 累計 XP から現職 LV を計算 (**職ごとの曲線**。#536)。 */
+export function jobLevelFromXpFor(archetype: string, xp: number): number {
   let lv = 1;
-  for (const [l, threshold] of JOB_XP_CURVE) {
+  for (const [l, threshold] of jobXpCurveFor(archetype)) {
     if (xp >= threshold) lv = l;
     else break;
   }
   return lv;
+}
+
+/** 現職 LV の UI 進捗バー用 (**職ごとの曲線**。#536)。 */
+export function jobXpToNextLevelFor(archetype: string, xp: number): { level: number; current: number; next: number } {
+  const curve = jobXpCurveFor(archetype);
+  const level = jobLevelFromXpFor(archetype, xp);
+  const idx = curve.findIndex((e) => e[0] === level);
+  const curThreshold = idx >= 0 ? curve[idx]![1] : 0;
+  const nextEntry = idx >= 0 && idx + 1 < curve.length ? curve[idx + 1] : undefined;
+  if (!nextEntry) return { level, current: xp - curThreshold, next: 0 };
+  return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
 }
 
 /**
@@ -221,15 +262,8 @@ export function jobLevelFromXp(xp: number): number {
  * - next: 次 LV までに必要な XP (現 LV 内の分母)
  * LV 50 に到達後は next = 0 (打ち止め)
  */
-export function jobXpToNextLevel(xp: number): { level: number; current: number; next: number } {
-  const level = jobLevelFromXp(xp);
-  const curEntry = JOB_XP_CURVE.find((e) => e[0] === level);
-  const nextEntry = JOB_XP_CURVE.find((e) => e[0] === level + 1);
-  const curThreshold = curEntry ? curEntry[1] : 0;
-  if (!nextEntry) {
-    return { level, current: xp - curThreshold, next: 0 };
-  }
-  return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
+export function jobXpToNextLevel(xp: number, archetype: string): { level: number; current: number; next: number } {
+  return jobXpToNextLevelFor(archetype, xp);
 }
 
 /** 現職 LV 用の XP 加算定数 (後方互換の別名。実体は tuning.XP_REWARDS)。 */

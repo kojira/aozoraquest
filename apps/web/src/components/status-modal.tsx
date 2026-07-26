@@ -81,7 +81,7 @@ export function StatusModal({
   // キット持ちジョブ (#456) では署名スキル [0] が実技と一致しないため、現在の習得済みとくぎ列を出す。
   const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
   const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
-  const jobNext = useMemo(() => jobXpToNextLevel(jobXp), [jobXp]);
+  const jobNext = useMemo(() => jobXpToNextLevel(jobXp, archetype), [jobXp, archetype]);
 
   const num = { fontFamily: 'ui-monospace, monospace' as const };
 

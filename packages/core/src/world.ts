@@ -1,3 +1,4 @@
+import { MAX_POPULATED_TIER, type Tier } from './battle.js';
 /**
  * あおぞらワールド — 決定的ワールド生成 (docs/19-overworld.md)。
  *
@@ -496,8 +497,8 @@ export function regionOf(x: number, y: number): number {
 }
 
 /**
- * リージョンの危険度 (0..3)。spawn リージョンからのトーラス距離 + ノイズで決まり、
- * 遭遇モンスターの tier に対応する (0-1 → tier1 中心, 2 → tier2, 3 → tier3)。
+ * リージョンの危険度 (**0..7**)。spawn リージョンからのトーラス距離 + ノイズで決まる。
+ * tier への対応は `tierForDanger` が単一の正 (ここは「spawn からどれだけ遠いか」だけを表す)。
  */
 export function regionDanger(region: number): number {
   const spawnRegion = worldOverlay().spawn.region;
@@ -509,15 +510,57 @@ export function regionDanger(region: number): number {
   const dy = Math.min(Math.abs(ry - sy), REGIONS_PER_SIDE - Math.abs(ry - sy));
   const dist = dx + dy; // 0..8
   const jitter = hash2(rx, ry, WORLD_SEED * 19 + 23); // 0..1
-  const raw = dist / 2.5 + jitter * 0.9;
-  return Math.max(0, Math.min(3, Math.floor(raw)));
+  // spawn からの距離 0..8 を danger 0..7 に伸ばす (#536)。以前は 0..3 に潰しており、
+  // せっかくの距離解像度を捨てて全ワールドが 3 段階しか持てなかった。
+  const raw = dist / 1.15 + jitter * 0.9;
+  return Math.max(0, Math.min(7, Math.floor(raw)));
 }
+
+/** 敵の顔ぶれが揃っている帯のうち、**距離で到達できる最大 tier** (#536)。
+ *  tier7/8 は魔王の城の専用枠なので距離では出さない (`tierForRegion` が別途返す)。
+ *  battle → equipment → world → battle の循環があるので、**関数の中で読む**
+ *  (トップレベルで評価すると `MAX_POPULATED_TIER` の初期化前に触って落ちる)。 */
+const maxTierByDistance = () => Math.min(6, MAX_POPULATED_TIER) as Tier;
 
 /** danger → 遭遇モンスター tier の対応 (単一の正)。遭遇・店の素材プール・
  *  テストはすべてこれを参照する — 3 箇所コピペで静かにデシンクした前科の再発防止
  *  (PR #305 レビュー指摘)。 */
-export function tierForDanger(danger: number): 1 | 2 | 3 {
-  return danger <= 1 ? 1 : danger === 2 ? 2 : 3;
+export function tierForDanger(danger: number): Tier {
+  // **danger の帯を tier の数に合わせて引き伸ばす** (#536)。
+  //
+  // danger をそのまま tier にして上限で切ると、敵が足りないぶんが全部いちばん上の帯に
+  // 詰まってしまう。実際それをやったとき、入口 (tier1) が 30 リージョン / 23 街から
+  // 7 / 6 に縮み、世界の 73% が tier3 一色になった。spawn から 3 リージョン歩けば
+  // 想定 Lv8 の帯、という「入口が一番大事」に真っ向から反する地形になる。
+  //
+  // 引き伸ばしなら、敵が 3 体しか揃っていない今は tier1 が danger 0..3 (= 30 リージョン)
+  // を占め、敵を足して帯が増えるほど**傾斜が細かくなるだけで世界の形は変わらない**。
+  //
+  // danger 0..2 を一律 tier1 にするのは、spawn 周辺に「ノイズで急に強くなる」場所を
+  // 作らないため (jitter が 0.9 あるので距離 2 までは揺れで前後する)。
+  const maxTier = maxTierByDistance();
+  const span = maxTier - 1;
+  if (span <= 0) return 1;
+  const t = 1 + Math.round((Math.max(0, danger - 2) * span) / 5);
+  return Math.max(1, Math.min(maxTier, t)) as Tier;
+}
+
+/**
+ * リージョンの tier (#536)。**遭遇・店の素材・現地ヒントはすべてここを見る**
+ * (`tierForDanger` を直接呼ぶと、リージョン固有の上書きが反映されず静かにデシンクする)。
+ *
+ * 将来は魔王の城のリージョンだけ距離を無視して tier7 を返す。今は保留 (下記)。
+ */
+export function tierForRegion(region: number): Tier {
+  // **魔王の城 (tier7) はまだ適用しない** (#536)。オーナー指定のリージョンを地形で確かめたところ、
+  // 「山に囲まれた閉領域」ではなかった:
+  //   - region#27 は歩行可能 52%、tier1/tier2 のリージョンと 109 タイル接している
+  //   - region#28 には**街「おおたきの宿」がある** (歩行可能 26% / 49 タイル接触)
+  // つまり今のままでは「tier2 (想定 Lv5) から 1 歩で tier7 (想定 Lv34)」に入れてしまい、
+  // しかも城が未実装で tier7 の敵が 0 体なので `summonMonster` が落ちて move が 500 になる
+  // (= その街から出られなくなる)。城の実装と、そこへ至る段階 (tier5→6) の配置ができてから
+  // 有効化する。`DEMON_CASTLE_REGIONS` は場所の記録として残す。
+  return tierForDanger(regionDanger(region));
 }
 
 /** 地域の「相性」= その地域で出やすくなるモンスターを **その tier のプール内 index** で

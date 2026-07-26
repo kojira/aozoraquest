@@ -102,7 +102,7 @@ export function DebugMe() {
       ? (aozoraProfile.targetArchetype as Archetype)
       : null;
   const myJobXp = analysis.jobLevel?.xp ?? 0;
-  const myJobLv = jobLevelFromXp(myJobXp);
+  const myJobLv = jobLevelFromXp(myJobXp, analysis.archetype);
 
   return (
     // README 用のヒーロー画像なので、本物の AppShell + 背景なしで content だけ

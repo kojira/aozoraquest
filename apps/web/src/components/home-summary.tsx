@@ -112,7 +112,7 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   }
 
   const jobName = jobDisplayName(diag.archetype, 'default');
-  const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0);
+  const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0, diag.archetype);
 
   // master 畳み: サマリ全体を隠し、細い 1 行のバーだけにする (TL がすぐ上に来る)。
   // dq-window の箱ごと消すので「遊び人 LV… / 今日のクエスト…」の 2 行も見えなくなる。

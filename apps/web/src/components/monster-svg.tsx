@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import type { MonsterSpecies } from '@aozoraquest/core';
+import type { MonsterSpecies, TintableSpecies } from '@aozoraquest/core';
 
 /**
  * モンスターの SVG (あおぞらワールドの野外遭遇で使う)。
@@ -32,9 +32,71 @@ function bodyFor(species: MonsterSpecies, tint?: string): ReactElement {
       return batBody(tint);
     case 'mushroom':
       return mushroomBody(tint);
+    case 'golem':
+      return golemBody(tint);
+    case 'serpent':
+      return serpentBody(tint);
+    case 'raven':
+      return ravenBody(tint);
     default:
       return BODIES[species];
   }
+}
+
+/** tint を暗く/明るくして陰影用の第 2 色を作る。tint を持つ種は本体色と陰色の
+ *  2 色で塗り分けているので、片方だけ差し替えると同じ絵に見えてしまう。 */
+function shade(hex: string, factor: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1]!, 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) =>
+    Math.max(0, Math.min(255, Math.round(v * factor))),
+  );
+  return `#${ch.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function golemBody(tint?: string): ReactElement {
+  return (
+    <g>
+      <rect x="26" y="18" width="48" height="38" rx="9" fill={tint ?? '#8fa08a'} stroke={OUT} strokeWidth="4" />
+      <rect x="18" y="52" width="64" height="30" rx="8" fill={shade(tint ?? '#8fa08a', 0.86)} stroke={OUT} strokeWidth="4" />
+      <rect x="6" y="50" width="14" height="24" rx="6" fill={tint ?? '#8fa08a'} stroke={OUT} strokeWidth="3.5" />
+      <rect x="80" y="50" width="14" height="24" rx="6" fill={tint ?? '#8fa08a'} stroke={OUT} strokeWidth="3.5" />
+      <rect x="34" y="32" width="10" height="8" rx="2" fill="#f5e663" stroke={OUT} strokeWidth="2.5" />
+      <rect x="56" y="32" width="10" height="8" rx="2" fill="#f5e663" stroke={OUT} strokeWidth="2.5" />
+      <path d="M40 48 L60 48" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
+      <path d="M30 62 L38 66 M62 66 L70 62" stroke={shade(tint ?? '#8fa08a', 0.66)} strokeWidth="4" strokeLinecap="round" />
+      <circle cx="50" cy="68" r="5" fill="#4fc3f7" stroke={OUT} strokeWidth="2.5" />
+    </g>
+  );
+}
+
+function serpentBody(tint?: string): ReactElement {
+  return (
+    <g>
+      <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke={OUT} strokeWidth="18" strokeLinecap="round" />
+      <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke={shade(tint ?? '#5fc37e', 0.9)} strokeWidth="14" strokeLinecap="round" />
+      <ellipse cx="42" cy="26" rx="15" ry="12" fill={tint ?? '#5fc37e'} stroke={OUT} strokeWidth="4" />
+      <circle cx="36" cy="24" r="4" fill={OUT} />
+      <path d="M27 30 L18 32 L26 35" fill="none" stroke="#e8566a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M52 20 L58 14 M54 32 L62 34" stroke={OUT} strokeWidth="3" strokeLinecap="round" />
+    </g>
+  );
+}
+
+function ravenBody(tint?: string): ReactElement {
+  return (
+    <g>
+      <path d="M14 46 Q30 30 50 34 L46 46 Q30 44 22 52Z" fill={shade(tint ?? '#4a5478', 0.84)} stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
+      <ellipse cx="56" cy="52" rx="24" ry="20" fill={tint ?? '#4a5478'} stroke={OUT} strokeWidth="4" />
+      <circle cx="66" cy="40" r="13" fill={tint ?? '#4a5478'} stroke={OUT} strokeWidth="4" />
+      <path d="M77 38 L90 42 L77 46Z" fill="#f5c542" stroke={OUT} strokeWidth="3" strokeLinejoin="round" />
+      <circle cx="68" cy="38" r="4" fill="#f0f4ff" />
+      <circle cx="69" cy="38" r="2.2" fill={OUT} />
+      <path d="M40 68 L36 80 M52 70 L52 82 M62 68 L66 80" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
+      <path d="M34 56 Q44 62 54 58" fill="none" stroke={shade(tint ?? '#4a5478', 0.7)} strokeWidth="4" strokeLinecap="round" />
+    </g>
+  );
 }
 
 function slimeBody(tint?: string): ReactElement {
@@ -80,10 +142,9 @@ function mushroomBody(tint?: string): ReactElement {
   );
 }
 
-const BODIES: Record<MonsterSpecies, ReactElement> = {
-  slime: slimeBody(),
-  bat: batBody(),
-  mushroom: mushroomBody(),
+/** tint を持てない (= 色違い変種が居ない) 種の静的な絵。tint 対応種は `bodyFor` の
+ *  switch で関数側に分岐するので、ここには載せない。 */
+const BODIES: Record<Exclude<MonsterSpecies, TintableSpecies>, ReactElement> = {
   // はぐれスライム: 同じ形の金属色 (銀) + きらめきのハイライトでレア感を出す。
   'metal-slime': (
     <g>
@@ -99,19 +160,6 @@ const BODIES: Record<MonsterSpecies, ReactElement> = {
       <path d="M42 70 Q50 64 58 70" fill="none" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
     </g>
   ),
-  golem: (
-    <g>
-      <rect x="26" y="18" width="48" height="38" rx="9" fill="#8fa08a" stroke={OUT} strokeWidth="4" />
-      <rect x="18" y="52" width="64" height="30" rx="8" fill="#7b8f78" stroke={OUT} strokeWidth="4" />
-      <rect x="6" y="50" width="14" height="24" rx="6" fill="#8fa08a" stroke={OUT} strokeWidth="3.5" />
-      <rect x="80" y="50" width="14" height="24" rx="6" fill="#8fa08a" stroke={OUT} strokeWidth="3.5" />
-      <rect x="34" y="32" width="10" height="8" rx="2" fill="#f5e663" stroke={OUT} strokeWidth="2.5" />
-      <rect x="56" y="32" width="10" height="8" rx="2" fill="#f5e663" stroke={OUT} strokeWidth="2.5" />
-      <path d="M40 48 L60 48" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
-      <path d="M30 62 L38 66 M62 66 L70 62" stroke="#5d6e5a" strokeWidth="4" strokeLinecap="round" />
-      <circle cx="50" cy="68" r="5" fill="#4fc3f7" stroke={OUT} strokeWidth="2.5" />
-    </g>
-  ),
   wisp: (
     // slime (青) と紛れないよう紫寄りの炎色にする
     <g>
@@ -120,29 +168,6 @@ const BODIES: Record<MonsterSpecies, ReactElement> = {
       <circle cx="42" cy="56" r="4.5" fill={OUT} />
       <circle cx="58" cy="56" r="4.5" fill={OUT} />
       <path d="M44 68 Q50 64 56 68" fill="none" stroke={OUT} strokeWidth="3" strokeLinecap="round" />
-    </g>
-  ),
-  serpent: (
-    // 輪郭 (太い暗ストローク) を先に描き、胴体を上に重ねる (逆だと暗色が体に被って濁る)
-    <g>
-      <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke={OUT} strokeWidth="18" strokeLinecap="round" />
-      <path d="M22 78 C10 70 12 52 26 48 C40 44 56 52 62 42 C68 32 58 24 46 26" fill="none" stroke="#4fae6d" strokeWidth="14" strokeLinecap="round" />
-      <ellipse cx="42" cy="26" rx="15" ry="12" fill="#5fc37e" stroke={OUT} strokeWidth="4" />
-      <circle cx="36" cy="24" r="4" fill={OUT} />
-      <path d="M27 30 L18 32 L26 35" fill="none" stroke="#e8566a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M52 20 L58 14 M54 32 L62 34" stroke={OUT} strokeWidth="3" strokeLinecap="round" />
-    </g>
-  ),
-  raven: (
-    <g>
-      <path d="M14 46 Q30 30 50 34 L46 46 Q30 44 22 52Z" fill="#3d4666" stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
-      <ellipse cx="56" cy="52" rx="24" ry="20" fill="#4a5478" stroke={OUT} strokeWidth="4" />
-      <circle cx="66" cy="40" r="13" fill="#4a5478" stroke={OUT} strokeWidth="4" />
-      <path d="M77 38 L90 42 L77 46Z" fill="#f5c542" stroke={OUT} strokeWidth="3" strokeLinejoin="round" />
-      <circle cx="68" cy="38" r="4" fill="#f0f4ff" />
-      <circle cx="69" cy="38" r="2.2" fill={OUT} />
-      <path d="M40 68 L36 80 M52 70 L52 82 M62 68 L66 80" stroke={OUT} strokeWidth="3.5" strokeLinecap="round" />
-      <path d="M34 56 Q44 62 54 58" fill="none" stroke="#323a56" strokeWidth="4" strokeLinecap="round" />
     </g>
   ),
   oni: (

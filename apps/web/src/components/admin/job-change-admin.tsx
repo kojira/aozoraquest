@@ -27,7 +27,7 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
     getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
       .then((a) => {
         if (cancelled || !a) return;
-        const jl = jobLevelFromXp(a.jobLevel?.xp ?? 0);
+        const jl = jobLevelFromXp(a.jobLevel?.xp ?? 0, a.archetype);
         setCurrent({ archetype: a.archetype, jobLevel: jl });
         setPick(a.archetype);
       })
@@ -41,7 +41,7 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
     try {
       const next = await adminSetJob(agent, did, pick, level);
       if (!next) { setMsg('診断レコードが無い (先に診断が要る)'); return; }
-      const jl = jobLevelFromXp(next.jobLevel?.xp ?? 0);
+      const jl = jobLevelFromXp(next.jobLevel?.xp ?? 0, next.archetype);
       setCurrent({ archetype: next.archetype, jobLevel: jl });
       setMsg(`${jobDisplayName(next.archetype)} Lv${jl} に変更 (戦闘中なら次戦から)`);
     } catch (e) {
