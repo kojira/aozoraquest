@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { XP_REWARDS, MAX_DAILY_QUEST_XP, DEFAULT_QUEST_TEMPLATES, JOB_LEVEL_TUNING, jobLevelFromXp } from '@aozoraquest/core';
-import { claimXp, adminSetJobXp, maxXpFor, MAX_CLAIM_KEYS, XpClaimError } from '../src/xp-claim';
+import { claimXp, adminSetJobXp, adminGrantPower, maxXpFor, MAX_CLAIM_KEYS, POWER_PER_POST, XpClaimError } from '../src/xp-claim';
 import { normalizeState, rkeyForDid, readState, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
@@ -84,7 +84,8 @@ describe('claimXp (クライアント申告 XP)', () => {
     const m = statefulPds();
     globalThis.fetch = m.fn;
     const r = await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 35, key: 'rk1' }, NOW);
-    expect(r).toEqual({ granted: 35, jobXp: 35, duplicate: false });
+    expect(r).toMatchObject({ granted: 35, jobXp: 35, duplicate: false });
+    expect(r.power).toBe(POWER_PER_POST); // 投稿はパワーも回復する
     expect(stored(m.store).jobXp).toEqual({ warrior: 35 });
   });
 
@@ -94,7 +95,8 @@ describe('claimXp (クライアント申告 XP)', () => {
     globalThis.fetch = m.fn;
     await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 35, key: 'rk1' }, NOW);
     const again = await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 35, key: 'rk1' }, NOW);
-    expect(again).toEqual({ granted: 0, jobXp: 35, duplicate: true });
+    expect(again).toMatchObject({ granted: 0, jobXp: 35, duplicate: true });
+    expect(again.power).toBe(POWER_PER_POST); // 重複申告ではパワーも増えない
     expect(stored(m.store).jobXp).toEqual({ warrior: 35 });
   });
 
@@ -269,7 +271,7 @@ describe('権威 state の新規作成 (init)', () => {
     });
     await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 10, key: 'k' }, NOW, migrated);
     const st = stored(m.store);
-    expect(st.power).toBe(42);
+    expect(st.power).toBe(42 + POWER_PER_POST); // 投稿ぶんのパワーが乗る
     expect(st.materials).toEqual({ herb: 1, 'sky-feather': 1 });
     expect(st.x).toBe(211);
     expect(st.jobXp).toEqual({ warrior: 10 });
@@ -280,5 +282,71 @@ describe('権威 state の新規作成 (init)', () => {
     globalThis.fetch = statefulPds().fn;
     await expect(claimXp(env, DID, { kind: 'post', archetype: 'not-a-job', xp: 1, key: 'k' }, NOW)).rejects.toBeInstanceOf(XpClaimError);
     await expect(adminSetJobXp(env, DID, 'not-a-job', 10, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+});
+
+describe('あおぞらパワーの回復 (#549)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('投稿の申告でパワーが回復する', async () => {
+    // 権威 state の power は戦闘で減るだけで、増える経路が一つも無かった。
+    // 0 になると rewarded=false になり、勝っても XP もドロップも一切入らなくなる。
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    for (let i = 0; i < 3; i++) {
+      await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: `p${i}` }, NOW);
+    }
+    expect(stored(m.store).power).toBe(3 * POWER_PER_POST);
+  });
+
+  it('クエストの申告ではパワーは回復しない (投稿がパワーの出所)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 100, key: 'q1' }, NOW);
+    expect(stored(m.store).power).toBe(0);
+  });
+
+  it('同じ投稿の再送ではパワーも二重に増えない', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: 'same' }, NOW);
+    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: 'same' }, NOW);
+    expect(stored(m.store).power).toBe(POWER_PER_POST);
+  });
+});
+
+describe('adminGrantPower (管理者のパワー付与)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('権威 state の power が増える', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    const r = await adminGrantPower(env, DID, 100, NOW);
+    expect(r.power).toBe(100);
+    expect(stored(m.store).power).toBe(100);
+  });
+
+  it('負の値で減らせる。0 未満にはならない', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await adminGrantPower(env, DID, 50, NOW);
+    expect((await adminGrantPower(env, DID, -20, NOW)).power).toBe(30);
+    expect((await adminGrantPower(env, DID, -999, NOW)).power).toBe(0);
+  });
+
+  it('XP や持ち物は触らない', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 20, key: 'k' }, NOW);
+    await adminGrantPower(env, DID, 100, NOW);
+    expect(stored(m.store).jobXp).toEqual({ warrior: 20 });
   });
 });

@@ -9,13 +9,23 @@ const mon = MONSTERS.find((m) => m.tier === 1 && m.drops.length > 0)!;
 const input = (over: Partial<BattleOutcomeInput> = {}): BattleOutcomeInput => ({ outcome: 'win', monsterId: mon.id, archetype: 'warrior', luk: 10, rewardSeed: 12345, lossSeed: 67890, rewarded: true, ...over });
 
 describe('battle-reward (fail-closed 報酬確定)', () => {
-  it('rewarded=false は勝敗どちらも何も変えない (パワー無し=練習)', () => {
+  it('rewarded=false は state を一切変えない (パワー無し=練習)', () => {
     const s = base({ power: 0, playerXp: 100 });
     for (const outcome of ['win', 'lose', 'draw', 'fled', 'monster-fled'] as const) {
-      const { next, awarded } = applyBattleOutcome(s, input({ outcome, rewarded: false }));
+      const { next } = applyBattleOutcome(s, input({ outcome, rewarded: false }));
       expect(next).toBe(s); // 参照ごと不変
-      expect(awarded).toEqual({});
     }
+  });
+
+  it('rewarded=false でも決着したなら unrewarded を返す (無言で終わらせない)', () => {
+    // 「勝ったのに何も起きない」を黙って通すと、経験値が入ったように見えて実は
+    // 入っていない、という最悪の見え方になる (オーナー指摘 2026-07-26)。
+    const s = base({ power: 0 });
+    for (const outcome of ['win', 'lose', 'draw', 'fled'] as const) {
+      expect(applyBattleOutcome(s, input({ outcome, rewarded: false })).awarded, outcome).toEqual({ unrewarded: true });
+    }
+    // 敵が逃げたのは決着していないので、理由を出す対象でもない
+    expect(applyBattleOutcome(s, input({ outcome: 'monster-fled', rewarded: false })).awarded).toEqual({});
   });
 
   it('勝ち: +XP (player/job 両方) + ドロップ + パワー1消費', () => {

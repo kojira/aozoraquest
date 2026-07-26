@@ -21,6 +21,7 @@ const LXM_TURN = 'app.aozoraquest.battle.turn';
 const LXM_STATE = 'app.aozoraquest.me.state';
 const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
 const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
+const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -85,6 +86,8 @@ export interface ServerMoveResult { x: number; y: number; terrain: string; heale
 export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
+  /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
+  unrewarded?: true;
   xp?: number;
   drops?: string[];
   materialsLost?: string[];
@@ -152,6 +155,13 @@ export function serverClaimXp(agent: Agent, input: { kind: 'post' | 'quest'; arc
  *  edge 側が ADMIN_DIDS でゲートする (client の isAdminDid は表示ゲートに過ぎない)。 */
 export function serverAdminSetJobLevel(agent: Agent, archetype: string, level: number): Promise<{ jobXp: number; level: number }> {
   return callEdge<{ jobXp: number; level: number }>(agent, LXM_XP_ADMIN_SET, '/api/xp/admin-set', { archetype, level });
+}
+
+/** **管理者専用**: あおぞらパワーを権威 state に付与する。
+ *  管理画面のパワー付与は client 側の PDS レコードしか書いておらず、報酬の可否を決める
+ *  `GameState.power` は動いていなかった (= 画面にはあるのに勝っても報酬が出ない)。 */
+export function serverAdminGrantPower(agent: Agent, amount: number): Promise<{ power: number }> {
+  return callEdge<{ power: number }>(agent, LXM_POWER_ADMIN_GRANT, '/api/power/admin-grant', { amount });
 }
 
 /** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */

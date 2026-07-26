@@ -13,7 +13,7 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { claimXp, adminSetJobXp, XpClaimError } from './xp-claim';
+import { claimXp, adminSetJobXp, adminGrantPower, XpClaimError } from './xp-claim';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
@@ -53,6 +53,7 @@ const LXM_WORLD_RESET = 'app.aozoraquest.world.reset';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
 const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
+const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -295,6 +296,31 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const ns = nsFromOrigin(req);
       const r = await adminSetJobXp(env, did, body.archetype, body.level, nowSec(), (d, iso) => migrateInitState(d, iso, ns));
       return cors(json(r), allowedOrigin);
+    } catch (e) {
+      if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // 管理者があおぞらパワーを権威 state に付与する。管理画面のパワー付与は client 側の
+  // PDS レコードしか書いておらず、報酬の可否を決める GameState.power は 0 のままだった
+  // (= 画面にはパワーがあるのに勝っても報酬が出ない)。
+  if (req.method === 'POST' && url.pathname === '/api/power/admin-grant') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_POWER_ADMIN_GRANT }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
+    const body = (await req.json().catch(() => ({}))) as { amount?: unknown };
+    if (typeof body.amount !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      return cors(json(await adminGrantPower(env, did, body.amount, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

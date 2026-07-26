@@ -139,6 +139,10 @@ export function World() {
   // **共有キャッシュ (use-job-xp) を使う** — ここだけ独自 state を持つと、戦闘で上げた直後に
   // /me を開いたとき戦闘前の LV が出る (SPA なので module キャッシュはリロードまで残る)。
   const { jobXp: serverJobXp } = useJobXp();
+  // **権威 state のパワー残高**。報酬の可否 (rewarded) はこの値で決まるので、
+  // client 側の points (PDS の viaPosts 由来) ではなくこちらを表示する。
+  // 両者がずれていると「画面には残っているのに報酬が出ない」という見えない失敗になる。
+  const [serverPower, setServerPower] = useState<number | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const statusOpenRef = useRef(false);
   statusOpenRef.current = statusOpen;
@@ -312,6 +316,7 @@ export function World() {
           const ss = await serverState(agent);
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
+            setServerPower(ss.state.power ?? 0);
             if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
               px = ss.state.x; py = ss.state.y;
               // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
@@ -640,6 +645,15 @@ export function World() {
       for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
       const nameOf = (id: string) => ITEMS[id]?.name ?? id;
       const resultLines: string[] = [];
+      if (awarded.powerSpent) setServerPower((p) => (p === null ? p : Math.max(0, p - awarded.powerSpent!)));
+      // **パワー不足で報酬が出なかったことを必ず言う** (オーナー指摘 2026-07-26)。
+      // 黙って何も起きないと「経験値が入ったように見えて実は入っていない」になる。
+      if (awarded.unrewarded) {
+        setServerPower(0);
+        resultLines.push('あおぞらパワーが たりなかった…');
+        resultLines.push('けいけんちも そざいも えられなかった。');
+        resultLines.push('とうこう すると パワーが たまる。');
+      }
       if (awarded.xp && awarded.xp > 0) {
         resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
         // 権威 state の jobXp に加算されたぶんを共有キャッシュにも反映 (再取得の往復を省く)。
@@ -1139,6 +1153,7 @@ export function World() {
               hp={battle ? battle.state.player.hp : curHp}
               maxHp={battle ? battle.state.player.maxHp : combat.maxHp}
               mp={battle ? battle.state.player.mp : curMp}
+              power={serverPower}
               maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
               locationLabel={town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
