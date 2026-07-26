@@ -317,7 +317,7 @@ describe('townShopStock (品揃えの決定的生成)', () => {
 
   it('店の素材種は決定的で、その街の危険度で狩れるモンスターの素材 (地元で稼げる)', async () => {
     const { MONSTERS } = await import('../battle.js');
-    const { regionDanger, tierForDanger } = await import('../world.js');
+    const { regionDanger, tierForRegion } = await import('../world.js');
     // tier → その tier のモンスターがドロップする素材集合
     // 店の素材は tier を 3 帯に丸めて引く (#536 で tier が 6 段階になった)。
     // 期待値も同じ帯で作る = 「その帯の敵が落とす素材か」を検証する。
@@ -333,7 +333,7 @@ describe('townShopStock (品揃えの決定的生成)', () => {
       const stock = townShopStock(t, i);
       expect(townShopStock(t, i).materialId).toBe(stock.materialId); // 決定的
       const danger = regionDanger(t.region);
-      const tier = tierForDanger(danger);
+      const tier = tierForRegion(t.region); // 店も遭遇も tierForRegion が単一の正
       expect(dropsOfBand(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
       // 消耗品 (やくそう等) が値札に混入する回帰も塞ぐ — ドロップには含まれるため上の検証だけでは通ってしまう
       expect(isSellableMaterial(stock.materialId), `${t.name} → ${stock.materialId} はひきとり可能素材ではない`).toBe(true);

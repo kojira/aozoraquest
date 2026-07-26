@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sim:endurance": "tsx ../../scripts/sim-endurance.mts"
   },
   "devDependencies": {
     "vitest": "^2",

@@ -98,9 +98,22 @@ export const BATTLE_TUNING = {
    *  tier3 は 126〜136) ので、下駄を小さくしても 0 に潰れない。入口を緩めつつ
    *  敵ごとの個性 (硬い/素早い) が出るようにする。
    *
-   *  **値はオーナー判断 (2026-07-26)**。「街を出てから何戦できるか」(街に入ると全回復)で
-   *  測り、入口 (Lv1・装備なし) が**平均 4.4 戦**になる水準を選んだ。
-   *  参考: 下駄5 なら 6.9 戦 / 下駄4 なら 11.5 戦。 */
+   *  値は「街を出てから何戦できるか」(街に入ると全回復) の実測で決める。
+   *  再現は `pnpm --filter @aozoraquest/core sim:endurance` (scripts/sim-endurance.mts)。
+   *
+   *  | 下駄 | tier1 Lv1 裸 | tier2 Lv5 布の服 | tier3 Lv9 旅の外套 |
+   *  |---|---|---|---|
+   *  | 6 | 2.25 戦 | — | — |
+   *  | 4 | 4.65 戦 | 13.99 戦 | 5.84 戦 |
+   *  | **3 (現在)** | **7.24 戦** | 17.81 戦 | 7.87 戦 |
+   *
+   *  3 を採るのは、入口 (7.24) と中盤 (7.87) が揃うから。4 だと入口 4.65 に対し
+   *  tier3 が 5.84 で「入口が一番きつい」逆転が残る。
+   *
+   *  **注記**: 2026-07-26 にオーナーへ「平均 4.4 戦の水準」として提示した数値は、
+   *  ハーネスの不備で実際の約 2 倍だった (真値は下駄6 = 2.25 戦)。dev のベースライン
+   *  (2.79 戦) も測っていなかったため、「緩める」指示に対して逆に厳しい方を提示していた。
+   *  上の表は dev と同一ハーネスで測り直したもの。**最終的な水準はオーナー判断に返す**。 */
   monsterStatFloor: 3,
   statGrow: 0.05,
   /** まもりだけ伸びを抑える (#518)。**守備力は防具が主役**という DQ の構造に寄せるため
@@ -860,15 +873,18 @@ export interface DropDef {
  * さらに敵ごとの `level` (想定プレイヤーレベル) と組み合わせることで、
  * 「同じエリアの中でも敵ごとに強さが違う」DQ らしい階段になる。
  *
- * **プールが薄い tier がある** (現状 tier4/tier6 は 1 体)。敵を足すまでは
- * その帯の顔ぶれが単調になる — 構造は用意したので、あとは敵の追加で埋める。
+ * **敵が 3 体以上揃った帯までしか遭遇に使わない** (`MAX_POPULATED_TIER`)。現状 tier4 以上は
+ * 1〜2 体しかいないので、距離が上限に達しても tier3 止まりになる。敵を足せば自動で伸びる。
  */
 export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
-/** **魔王の城がある山あいのリージョン** (#536。オーナー指定 2026-07-26)。
- *  左上を (1,1) としたときの (4,4) と (5,4)。山に囲まれた閉領域で、region#28 は山 68%、
- *  周囲のリージョンも山 44〜68% と、地形として明確に隔離されている。
- *  ここは spawn からの距離では測らず **tier7 固定** (最果ての難度)。城の内部は tier8。 */
+/** **魔王の城を置く予定のリージョン** (#536。オーナー指定 2026-07-26)。
+ *  左上を (1,1) としたときの (4,4) と (5,4)。
+ *
+ *  **まだ tier7 として扱っていない。** 地形を実測したところ「山に囲まれた閉領域」では
+ *  なく、region#27 は歩行可能 52% / tier1-2 と 109 タイル接し、region#28 は歩行可能 26% で
+ *  **街「おおたきの宿」がある** (計測: 4 近傍で歩行可能タイル同士が接する数)。
+ *  詳しい経緯と有効化の条件は `tierForRegion` と docs/19 §6.4.7 を参照。 */
 export const DEMON_CASTLE_REGIONS: readonly number[] = [27, 28];
 
 
@@ -1003,7 +1019,7 @@ export const MONSTERS: readonly MonsterDef[] = [
   { id: 'stone-golem', element: 'earth', name: 'いわのゴーレム', species: 'golem', tint: '#9b8f80', level: 8, tier: 3, stats: [32, 30, 8, 10, 8], hp: 26, xp: 28, drops: [{ item: 'golem-core', chance: 0.45 }, { item: 'metal-shard', chance: 0.25 }], intro: 'ごろりと岩が起き上がった。' },
   { id: 'marsh-serpent', element: 'water', name: 'ぬまの大蛇', species: 'serpent', tint: '#5f8f6a', level: 10, tier: 3, stats: [34, 14, 20, 10, 10], hp: 30, xp: 42, drops: [{ item: 'serpent-scale', chance: 0.45 }, { item: 'sky-dew', chance: 0.2 }], intro: '沼底から ぬるりと現れた。' },
   // tier2: 修練。xp 34〜52 (healer は削り合いが長引くぶん高め)
-  { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', level: 9, tier: 3, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
+  { id: 'moss-golem', element: 'earth', name: 'こけむしゴーレム', species: 'golem', tint: '#6f9b5e', level: 9, tier: 3, stats: [38, 36, 6, 10, 8], hp: 28, xp: 34, drops: [{ item: 'golem-core', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '地響きを立てて起き上がった。', skillName: 'いわなだれ', ability: 'charger' },
   // 鬼火は tier2 の caster (#536)。**魔法は回避判定を通らない** (doAttack の `if (!opts.useInt)`) ので、
   // 回避特化 (忍者) が一方的に無傷で勝ち続けるのを止める役。int 34 は tier2 最高で、
   // 「鬼火が魔法を撃つ」のは回復役より自然。入口 (tier1) には置かず、**tier2 から**回避が
@@ -1091,7 +1107,7 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
  *  tier をレベルで表すことで、プレイヤーの成長レンジ (Lv1→30 で約 8 倍) と同じ幅を
  *  モンスター側も持てる。**プレイヤーのレベルには追従しない = エリア固定難易度**
  *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20) は不変。 */
-const TIER_LEVEL: Record<Tier, number> = { 1: 1, 2: 4, 3: 8, 4: 13, 5: 19, 6: 26, 7: 34, 8: 42 };
+export const TIER_LEVEL: Record<Tier, number> = { 1: 1, 2: 4, 3: 8, 4: 13, 5: 19, 6: 26, 7: 34, 8: 42 };
 
 /** tier 内の微調整。tier1 は明確に弱め (Lv1 の 5 連戦生存が健全な水準)。
  *

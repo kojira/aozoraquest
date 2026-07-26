@@ -9,6 +9,8 @@ import {
   tierForDanger,
   tierForRegion,
   battleXpFor,
+  pickTrialTier,
+  TIER_LEVEL,
 } from '../index.js';
 
 /**
@@ -54,6 +56,30 @@ describe('モンスタープールの充足', () => {
     for (const region of REGIONS) expect(regionDanger(region)).toBeLessThanOrEqual(7);
   });
 
+  it('試練の tier も敵が揃っている帯までに収まる', () => {
+    // 世界と同じ穴 (空プール → 落ちる) が試練側にも空く。上限が手書きなので
+    // 敵を足したときに追随させ忘れないよう、ここで結んでおく。
+    for (let seed = 0; seed < 200; seed++) {
+      for (const lv of [1, 5, 20, 50]) {
+        const t = pickTrialTier(seed, lv, 5);
+        expect(t, `seed${seed} Lv${lv}`).toBeLessThanOrEqual(MAX_POPULATED_TIER);
+        expect(MONSTERS.filter((m) => m.tier === t).length).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it('遭遇できない敵がいるなら、それは薄いプールが理由であること', () => {
+    // 「定義したのに世界に出ない敵」は静かに増える。理由が「3 体揃っていない帯だから」
+    // 以外 (= 帯の割り当てミス) なら落とす。城の枠 (tier7/8) は敵が居ないので対象外。
+    const unreachable = MONSTERS.filter((m) => m.tier > MAX_POPULATED_TIER);
+    for (const m of unreachable) {
+      expect(
+        MONSTERS.filter((x) => x.tier === m.tier).length,
+        `${m.name} (tier${m.tier}) は 3 体揃っているのに遭遇できない`,
+      ).toBeLessThan(3);
+    }
+  });
+
   it('魔王の城リージョンは、敵を置くまで通常の危険度どおりに扱う', () => {
     // 城が未実装のうちに tier7 を強制すると、そこに在る街 (おおたきの宿) から
     // 出られなくなる。実装したら「tier7 を返す」に反転させる。
@@ -94,12 +120,15 @@ describe('モンスターの見た目と数値の整合', () => {
   it('想定プレイヤーレベル (level) は tier の帯の中に収まっている', () => {
     // level は「この敵に当たる頃のプレイヤー Lv」。tier の想定と食い違うと
     // 成長モデル (#518) の前提が崩れる。
-    const bands: Record<number, [number, number]> = {
-      1: [1, 3], 2: [4, 7], 3: [8, 12], 4: [13, 18], 5: [19, 25], 6: [26, 33], 7: [34, 41], 8: [42, 99],
-    };
+    // 帯は `TIER_LEVEL` から組む (ここに数字を書き写すと、tier の想定 Lv を変えたとき
+    // 片方だけ直して緑のまま食い違う)。
+    const band = (t: number): [number, number] => [
+      TIER_LEVEL[t as 1]!,
+      t >= 8 ? 99 : TIER_LEVEL[(t + 1) as 2]! - 1,
+    ];
     for (const m of MONSTERS) {
       if (m.level === undefined) continue;
-      const [lo, hi] = bands[m.tier]!;
+      const [lo, hi] = band(m.tier);
       expect(m.level, `${m.name} (tier${m.tier}) の想定 Lv${m.level}`).toBeGreaterThanOrEqual(lo);
       expect(m.level, `${m.name} (tier${m.tier}) の想定 Lv${m.level}`).toBeLessThanOrEqual(hi);
     }

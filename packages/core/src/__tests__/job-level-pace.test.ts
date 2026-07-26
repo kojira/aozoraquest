@@ -16,13 +16,17 @@ describe('職ごとのレベル曲線 (#536)', () => {
   });
 
   it('持久力の高い職ほどレベルが上がりにくい', () => {
-    // #535 の実測 (tier1 Lv1 装備あり連戦数) の順序が必要 XP に反映されていること。
-    // 魔法使い8.5 < 賢者11.3 < 忍者24.5 < 戦士35.4 < 将軍39.1
+    // 連戦数の実測順 (scripts/sim-endurance.mts。tier1 Lv1 装備なし) が
+    // 必要 XP の順序に反映されていること。**全 16 職の全順序**を見る — 5 職だけ
+    // 抜き出すと、間の職を入れ替えても緑のまま通ってしまう。
+    const ORDER = Object.entries(JOB_LEVEL_PACE).sort((a, b) => a[1] - b[1]).map(([id]) => id);
+    expect(ORDER.length).toBe(JOBS.length); // 職を足したら pace も足す
     for (const lv of [5, 10, 30]) {
-      expect(th('mage', lv)).toBeLessThan(th('sage', lv));
-      expect(th('sage', lv)).toBeLessThan(th('ninja', lv));
-      expect(th('ninja', lv)).toBeLessThan(th('warrior', lv));
-      expect(th('warrior', lv)).toBeLessThan(th('shogun', lv));
+      for (let i = 1; i < ORDER.length; i++) {
+        const [prev, cur] = [ORDER[i - 1]!, ORDER[i]!];
+        if (JOB_LEVEL_PACE[prev] === JOB_LEVEL_PACE[cur]) continue; // 同値は順不同
+        expect(th(prev, lv), `${prev} < ${cur} (Lv${lv})`).toBeLessThan(th(cur, lv));
+      }
     }
   });
 

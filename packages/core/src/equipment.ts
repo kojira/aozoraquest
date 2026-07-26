@@ -15,7 +15,7 @@
  */
 
 import type { Archetype } from './types.js';
-import { regionDanger, tierForDanger } from './world.js';
+import { tierForRegion } from './world.js';
 import type { Town } from './world.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
@@ -385,25 +385,27 @@ export interface ShopStock {
  *  モンスターの素材から選ぶ** — 初版は全素材からのハッシュ乱択で、低危険度の
  *  街 23 件中 11 件が周辺で狩れない tier2 素材を要求し「素材が必要だから装備まで
  *  たどり着けない」詰みを作っていた (オーナー報告 2026-07-18)。
- *  danger→tier の対応は tierForDanger (遭遇と同じ単一の正)。
+ *  街の tier は `tierForRegion` (遭遇と同じ単一の正)。`tierForDanger` を直接呼ぶと
+ *  リージョン固有の上書きが反映されず、遭遇 tier7 の街が tier3 の素材を要求する。
  *  素材 id は battle.ts の MONSTERS ドロップ表の直書き複製 — battle → equipment の
  *  既存依存があり MONSTERS から derive すると循環するため。テスト (equipment.test)
  *  が全街ぶんドロップ表と突き合わせて同期を保証する。 */
-/** 店の素材は tier 帯ごと (#536 で tier が 8 段階になったので 3 帯に丸めて引く)。
- *  素材の種類はモンスターのドロップに紐づくので、敵が増えたら帯も細分できる。 */
+/** 店の素材は tier ごと。**その帯の敵が実際に落とすものだけ**を並べる。
+ *  帯を 2 tier ぶん幅で丸めていた頃は、tier1 の街が tier2 でしか落ちない
+ *  wisp-ember を要求していた (= 一段上の地方まで行かないと値札が読めない)。 */
 const SHOP_MATERIALS_BY_TIER: readonly [readonly string[], readonly string[], readonly string[]] = [
-  ['slime-drop', 'bat-wing', 'mush-spore', 'wisp-ember'], // tier1-2 (spawn 近辺)
-  ['golem-core', 'serpent-scale'], // tier3-4 (中盤)
-  ['raven-feather', 'oni-horn', 'dragon-fang'], // tier5-8 (奥地)
+  ['slime-drop', 'bat-wing', 'mush-spore'], // tier1 (spawn 近辺)
+  ['dusk-wing', 'crimson-spore', 'wisp-ember'], // tier2
+  ['golem-core', 'serpent-scale', 'metal-shard'], // tier3 以上 (中盤〜)
 ];
 /** tier → 素材帯。**equipment.test がこの関数で期待値を組む**ので、帯の定義を
  *  ここ 1 か所に閉じる (テスト側に同じ式を複製すると、敵の tier を動かしたときに
  *  片方だけ直して「テストは緑なのに店が地元で狩れない素材を要求する」に戻る)。 */
 export function shopMaterialBand(tier: number): 0 | 1 | 2 {
-  return tier <= 2 ? 0 : tier <= 4 ? 1 : 2;
+  return Math.min(2, Math.max(0, tier - 1)) as 0 | 1 | 2;
 }
 export function shopMaterialFor(town: Town): string {
-  const tier = tierForDanger(regionDanger(town.region));
+  const tier = tierForRegion(town.region);
   const pool = SHOP_MATERIALS_BY_TIER[shopMaterialBand(tier)]!;
   const rng = shopRng(((town.x * 40503) ^ (town.y * 89917)) >>> 0);
   return pool[Math.floor(rng() * pool.length)]!;
