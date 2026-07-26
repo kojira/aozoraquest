@@ -13,7 +13,7 @@
  * **seed 秘匿 (#348)**: ドロップ/敗北ロスの seed は**サーバーが独立に引いた rewardSeed/lossSeed** を使う
  * (戦闘 seed は client に返さない・再利用しない)。呼び出し側が entropyU32 で引いて渡す。
  */
-import { battleXpFor, rollDrops, rollDefeatLoss, BATTLE_TUNING } from '@aozoraquest/core';
+import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, BATTLE_TUNING } from '@aozoraquest/core';
 import type { GameState } from './game-state';
 
 /** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
@@ -43,6 +43,8 @@ export interface BattleOutcomeInput {
 /** 適用結果 (client 表示・監査用の内訳)。 */
 export interface AwardBreakdown {
   xp?: number;
+  /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復する。 */
+  leveledUp?: { from: number; to: number };
   drops?: string[];
   materialsLost?: string[];
   powerSpent?: number;
@@ -58,6 +60,13 @@ function addItems(materials: Record<string, number>, items: string[], delta: 1 |
     else next[item] = v;
   }
   return next;
+}
+
+/** XP 加算の前後でジョブ Lv が上がったか (#534)。上がっていなければ undefined。 */
+function levelUpOf(before: GameState, after: GameState, archetype: string): { from: number; to: number } | undefined {
+  const from = jobLevelFromXp(before.jobXp[archetype] ?? 0, archetype);
+  const to = jobLevelFromXp(after.jobXp[archetype] ?? 0, archetype);
+  return to > from ? { from, to } : undefined;
 }
 
 /**
@@ -88,7 +97,8 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       materials: addItems(state.materials, drops, 1),
       power: Math.max(0, state.power - POWER_COST),
     };
-    return { next, awarded: { xp, drops, powerSpent: POWER_COST } };
+    const lv = levelUpOf(state, next, o.archetype);
+    return { next, awarded: { xp, drops, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
   }
 
   if (o.outcome === 'lose') {
@@ -101,7 +111,9 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       materials: addItems(state.materials, materialsLost, -1),
       power: Math.max(0, state.power - POWER_COST),
     };
-    return { next, awarded: { xp, materialsLost, powerSpent: POWER_COST } };
+    // 負けでも僅かに XP が入るので、そこで上がることもある (演出は勝ち負けの後に出る)。
+    const lv = levelUpOf(state, next, o.archetype);
+    return { next, awarded: { xp, materialsLost, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
   }
 
   // draw / fled / monster-fled は決着扱いにしない (XP もドロップもパワー消費も無し)。

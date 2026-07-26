@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questXpScalar, statVectorToArray } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, effectiveStateForAssignee, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questAssignees, questXpScalar, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
@@ -10,6 +10,9 @@ import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { JOB_CHANGE_STREAK_THRESHOLD, confirmJobChange, dismissPendingArchetype } from '@/lib/post-processor';
 import { loadCraftInventory, type CraftedPiece } from '@/lib/crafting';
+import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
+import { loadSelfDiagnosis } from '@/lib/use-self-diagnosis';
+import { claimQuestXp } from '@/lib/claim-quest-xp';
 import { loadGearRefs, resolveGear, type GearRefs } from '@/lib/gear';
 import { RadarChart } from '@/components/radar-chart';
 import { SpiritBubble } from '@/components/spirit-bubble';
@@ -41,6 +44,7 @@ export function MyProfile() {
   const [gearData, setGearData] = useState<{ refs: GearRefs; pieces: CraftedPiece[] } | null>(null);
   // 受託して完了したクエストから得た経験値 (現職 LV に加算)。
   const [questXp, setQuestXp] = useState<number>(0);
+  const { jobXp } = useJobXp();
 
   useEffect(() => {
     if (session.status !== 'signed-in' || !session.agent || !session.did) return;
@@ -104,13 +108,23 @@ export function MyProfile() {
         if (!cancelled) setSummonedLoaded(true);
       }
     })();
-    // 受託して完了したクエストの経験値 (LV に加算)。失敗時は 0 のまま (LV は投稿 XP のみ)。
+    // 受託して完了したクエストの経験値を**権威 state に申告する** (#534/#533)。
+    // 承認を観測できるのは受託者の client だけなので、ここが唯一の入口。
+    // 申告済みかはサーバーが冪等キー (クエスト URI) で判定するので、何度通っても二重に入らない。
     (async () => {
       try {
         const received = await listReceivedQuests(agent, did);
         // 複数受託で一部だけ承認 (quest 未完了) のときも、自分が承認済みなら XP に計上する。
         const compMap = await loadCompletionsByUri(received);
-        if (!cancelled) setQuestXp(questXpScalar(received, did, compMap));
+        if (cancelled) return;
+        setQuestXp(questXpScalar(received, did, compMap));
+        const mine = received.filter((q) => {
+          const comps = compMap.get(q.uri);
+          return comps ? effectiveStateForAssignee(q, comps, did) === 'COMPLETED'
+            : q.status === 'completed' && questAssignees(q).includes(did);
+        });
+        const arch = (await loadSelfDiagnosis(agent, did))?.archetype;
+        if (arch) await claimQuestXp(agent, did, arch, mine.map((q) => q.uri));
       } catch (e) {
         console.warn('quest xp load failed', e);
       }
@@ -154,9 +168,11 @@ export function MyProfile() {
       : null;
   // 投稿で貯めた XP に、受託完了クエストの経験値 (questXp) を現職 LV へ加算する
   // (プレイヤー Lv は #507/#508 で廃止したので加算先は現職のみ)。
-  const myJobXp = (state.status === 'done' ? (state.result.jobLevel?.xp ?? 0) : 0) + questXp;
-  // 職が確定していないうちは LV を出さない。基準曲線にフォールバックすると、職ごとの
+  // **LV は権威 state 由来** (#534)。投稿もデイリークエストも依頼クエストも戦闘も、XP は
+  // すべて GameState.jobXp に積む。analysis.jobLevel.xp はベータ期間の記録として凍結済み。
+  // 職が確定していないうちは LV を出さない — 基準曲線にフォールバックすると、職ごとの
   // 曲線 (#536) とずれた LV が一瞬だけ出る = サーバーの数え方と食い違う値を見せることになる。
+  const myJobXp = xpOfJob(jobXp, myArchetype);
   const myJobLv = myArchetype ? jobLevelFromXp(myJobXp, myArchetype) : null;
 
   return (
@@ -310,7 +326,7 @@ export function MyProfile() {
         </div>
       )}
 
-      {state.status === 'done' && <ResultView result={state.result} questXp={questXp} onRerun={runAgain} />}
+      {state.status === 'done' && <ResultView result={state.result} jobXp={myJobXp} questXp={questXp} onRerun={runAgain} />}
 
       {state.status === 'done' && (
         <div style={{ marginTop: '1.5em', display: 'flex', flexDirection: 'column', gap: '0.6em', alignItems: 'center' }}>
@@ -372,14 +388,23 @@ const COGNITIVE_LABEL: Record<string, string> = {
   Fe: '場の調和',
 };
 
-export function ResultView({ result, questXp = 0, onRerun }: { result: DiagnosisResult; questXp?: number; onRerun: () => void }) {
+/**
+ * 診断結果の表示。**`jobXp` は呼び出し側が渡す** (#534)。
+ * - `/me` は権威 state (`GameState.jobXp`) から渡す = 実際に戦闘で使われる LV と一致する
+ * - `/debug-me` (README 画像用) はセッションが無く権威 state を読めないので、
+ *   analysis に凍結された記録値を渡す
+ * hook で内部から取ると後者が LV1 に落ちるので、明示的に受け取る形にしてある。
+ */
+export function ResultView({ result, jobXp, questXp = 0, onRerun }: { result: DiagnosisResult; jobXp: number; questXp?: number; onRerun: () => void }) {
   const jobName = jobDisplayName(result.archetype, 'default');
   const tagline = jobTagline(result.archetype);
   const conf = CONFIDENCE_LABEL[result.confidence] ?? result.confidence;
-  // 受託完了クエストの経験値を現職 LV に加算 (ヘッダの LV 表示と揃える)。
-  const jobXp = (result.jobLevel?.xp ?? 0) + questXp;
   const jobLv = jobXpToNextLevel(jobXp, result.archetype);
   const jobPct = jobLv.next > 0 ? Math.min(1, jobLv.current / jobLv.next) * 100 : 100;
+  // ベータ期間の記録 (#534)。XP の記録先を一本化したとき、それまでの到達レベルは
+  // analysis.jobLevel.xp に凍結して残した。今の LV とは別枠で「これまで」を見せる。
+  const legacyXp = result.jobLevel?.xp ?? 0;
+  const legacy = legacyXp > 0 ? jobXpToNextLevel(legacyXp, result.jobLevel?.archetype ?? result.archetype) : null;
   return (
     <section style={{ marginTop: '1em' }}>
       <h3 style={{ fontSize: '1em' }}>
@@ -390,6 +415,15 @@ export function ResultView({ result, questXp = 0, onRerun }: { result: Diagnosis
       <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
         {result.analyzedPostCount} 件の投稿から読み取りました · {conf}
       </p>
+
+      {legacy && (
+        // ベータ期間の記録。経験値の記録先を変えたときに LV1 から数え直したので、
+        // それまでの到達点を消さずに残す (#534)。
+        <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
+          ベータ期間の記録: {jobDisplayName(result.jobLevel?.archetype ?? result.archetype, 'default')} LV{legacy.level}
+          {questXp > 0 && <> · 受託クエスト {questXp.toLocaleString()} XP</>}
+        </p>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1em', marginTop: '0.8em', flexWrap: 'wrap' }}>
         <RadarChart stats={result.rpgStats} size={180} normalize showValues={false} />

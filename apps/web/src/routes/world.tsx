@@ -27,6 +27,7 @@ import {
   wrap,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
+import { xpOfJob } from '@/lib/use-job-xp';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
@@ -134,6 +135,9 @@ export function World() {
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState('');
+  // **ジョブ XP は権威 state 由来** (#534)。analysis.jobLevel.xp は凍結済みなので読まない。
+  // 戦闘のたびに再取得すると往復が増えるので、決着で返る awarded.xp をその場で足す。
+  const [serverJobXp, setServerJobXp] = useState<Record<string, number> | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const statusOpenRef = useRef(false);
   statusOpenRef.current = statusOpen;
@@ -241,6 +245,9 @@ export function World() {
   const [materialsView, setMaterialsView] = useState<Record<string, number>>({});
 
   const archetype = diag?.archetype ?? null;
+  // 決着コールバックは deps が狭いので、archetype は ref 経由で最新を読む (上記の理由)。
+  const archetypeRef = useRef<string | null>(null);
+  archetypeRef.current = archetype;
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
   // 装備をサーバーにミラー (戦闘に反映 #377)。解決結果が変わるたび送る = 初回ロード + 装備変更を一括カバー。
@@ -256,7 +263,7 @@ export function World() {
   const baseArgs = archetype
     ? ([
         archetype,
-        jobLevelFromXp(diag?.jobLevel?.xp ?? 0, archetype),
+        jobLevelFromXp(xpOfJob(serverJobXp, archetype), archetype),
         playerLevelFromXp(diag?.playerLevel?.xp ?? 0),
         '',
         diag?.rpgStats ? statVectorToArray(diag.rpgStats) : undefined,
@@ -298,6 +305,7 @@ export function World() {
           const ss = await serverState(agent);
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
+            setServerJobXp(ss.state.jobXp ?? {});
             if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
               px = ss.state.x; py = ss.state.y;
               // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
@@ -626,7 +634,18 @@ export function World() {
       for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
       const nameOf = (id: string) => ITEMS[id]?.name ?? id;
       const resultLines: string[] = [];
-      if (awarded.xp && awarded.xp > 0) resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
+      if (awarded.xp && awarded.xp > 0) {
+        resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
+        // 権威 state の jobXp に加算されたぶんを手元にも反映 (再取得の往復を省く)。
+        // **archetype は ref から読む。** この callback は deps が狭く、直接参照すると
+        // 診断ロード前に固まったクロージャが null を掴んで加算が黙って消える
+        // (同じ形のバグを #529 で踏んでいる)。
+        const arch = archetypeRef.current;
+        if (arch) setServerJobXp((prev) => ({ ...(prev ?? {}), [arch]: (prev?.[arch] ?? 0) + awarded.xp! }));
+      }
+      // レベルアップは HP/MP 全回復つき (#534)。回復したことを言葉で出さないと
+      // 「なぜか全快している」になるので 1 行足す。
+      if (awarded.leveledUp) resultLines.push(`レベルが ${awarded.leveledUp.to} に あがった！ ちからが みなぎってきた！`);
       for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を てにいれた！`);
       for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を おとしてしまった…`);
       if (next.outcome === 'lose') {
@@ -1280,8 +1299,8 @@ export function World() {
           name={playerName}
           avatarUrl={avatarUrl}
           archetype={archetype}
-          jobLv={jobLevelFromXp(diag?.jobLevel?.xp ?? 0, archetype)}
-          jobXp={diag?.jobLevel?.xp ?? 0}
+          jobLv={jobLevelFromXp(xpOfJob(serverJobXp, archetype), archetype)}
+          jobXp={xpOfJob(serverJobXp, archetype)}
           combat={combat}
           combatBase={combatBase}
           hp={curHp}

@@ -334,7 +334,8 @@ export async function createPostWithImages(
   text: string,
   images: Array<{ blob: Blob; alt: string }>,
   tag?: string,
-): Promise<void> {
+  // 戻り値は投稿の URI/CID。URI は XP 申告の冪等キーに使う (#534)。
+): Promise<{ uri: string; cid: string }> {
   void tag; // facet 検出は自動化済み。引数は呼び出し側互換のため受けるだけ。
   // 呼び出し側 (UI) を信頼せず lib 側でも 4 枚に切り詰める最終ガード。
   const picked = images.slice(0, MAX_POST_IMAGES);
@@ -356,7 +357,7 @@ export async function createPostWithImages(
   // picked が空なら embed を付けない (空 images embed は不正なので作らない)。
   const facets = await detectPostFacets(agent, text);
   if (facets) record['facets'] = facets;
-  await agent.post(record as unknown as Parameters<Agent['post']>[0]);
+  return agent.post(record as unknown as Parameters<Agent['post']>[0]);
 }
 
 /** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする)。

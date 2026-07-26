@@ -34,6 +34,7 @@ import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { Embedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
+import { serverClaimXp } from './world-server';
 import { deriveActionTypes, type PostStructure } from './structural-action';
 
 export interface QuestLogEntry {
@@ -109,6 +110,8 @@ export async function processSelfPost(
   did: string,
   text: string,
   structure?: PostStructure,
+  /** この投稿の URI。XP 申告の冪等キーに使う (#534)。省略すると XP は申告されない。 */
+  postUri?: string,
 ): Promise<ProcessResult> {
   const trimmed = text.trim();
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
@@ -270,17 +273,30 @@ export async function processSelfPost(
       };
       finalPlayerLevel = nextPlayerLevel;
 
-      // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)
-      const prevJobLv = jobLevelFromXp(oldJob.xp, oldJob.archetype);
-      const nextJobXp = oldJob.xp + gainedXp;
-      const nextJobLv = jobLevelFromXp(nextJobXp, oldJob.archetype);
-      if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
-      const nextJobLevel: JobLevelState = {
-        archetype: oldJob.archetype,
-        xp: nextJobXp,
-        joinedAt: oldJob.joinedAt,
-      };
+      // **ジョブ XP は analysis に積まない** (#534)。記録先を権威 state (GameState.jobXp) に
+      // 一本化したので、ここは**申告するだけ**。`analysis.jobLevel.xp` はベータ期間の記録として
+      // 凍結し、/me の「これまでの記録」に出す。
+      //
+      // 申告は best-effort — 失敗しても投稿処理自体は続ける。edge が落ちている間に投稿しても
+      // 投稿は成立させたい。**同じ投稿 URI で再申告しても二重に入らない**ので、将来
+      // リトライを足すのも安全 (冪等キーはサーバー側が直近 200 件覚えている)。
+      const nextJobLevel: JobLevelState = oldJob; // 凍結 (値を変えない)
       finalJobLevel = nextJobLevel;
+      if (postUri && gainedXp > 0) {
+        try {
+          const r = await serverClaimXp(agent, { kind: 'post', archetype: oldJob.archetype, xp: gainedXp, key: postUri });
+          if (r.granted > 0) {
+            // レベルアップ判定は**権威 state の値**で行う。申告前後の XP はサーバーが返すので、
+            // client 側の推測 (analysis の凍結値) と食い違わない。
+            const before = jobLevelFromXp(r.jobXp - r.granted, oldJob.archetype);
+            const after = jobLevelFromXp(r.jobXp, oldJob.archetype);
+            if (after > before) jobLeveledUp = { from: before, to: after };
+            finalJobLevel = { ...oldJob, xp: r.jobXp };
+          }
+        } catch (e) {
+          console.warn('xp claim failed', e);
+        }
+      }
 
       // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
       // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。

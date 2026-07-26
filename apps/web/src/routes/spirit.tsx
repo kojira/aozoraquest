@@ -10,6 +10,7 @@ import {
   type SpiritSituation,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
+import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { getRecord } from '@/lib/atproto';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
 import { COL } from '@/lib/collections';
@@ -48,6 +49,7 @@ export function Spirit() {
   const [points, setPoints] = useState<PointsState | null>(null);
   // 受託完了クエストの経験値 (現職 LV に加算)。
   const [questXp, setQuestXp] = useState(0);
+  const { jobXp } = useJobXp();
   const [loaded, setLoaded] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
 
@@ -59,7 +61,8 @@ export function Spirit() {
   // 性格・口調は admin の prompts/spiritChat の領分のまま。
   const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
   const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
-  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp + questXp, diag.archetype)) : undefined;
+  // LV は権威 state 由来 (#534)。投稿もクエストも戦闘もここに積まれる。
+  const levelStr = diag ? String(jobLevelFromXp(xpOfJob(jobXp, diag.archetype), diag.archetype)) : undefined;
   const systemPrompt = useMemo(
     () =>
       applyPromptTemplate(systemPromptRaw, {

@@ -18,7 +18,7 @@
  * 再度通る。**上限クランプが効いているので 1 回あたりの被害は 1 件分**に留まり、
  * 現状 (client が自分の PDS に好きな値を書ける) より悪くはならない。真の偽造対策は M4。
  */
-import { XP_REWARDS } from '@aozoraquest/core';
+import { XP_REWARDS, jobXpCurveFor, JOB_LEVEL_TUNING } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
 
 /** 申告の種類。種類ごとに 1 回あたりの上限が違う。 */
@@ -108,4 +108,40 @@ export async function claimXp(
   );
 
   return { granted, jobXp: next.jobXp[archetype] ?? 0, duplicate };
+}
+
+/**
+ * **管理者専用**: 対象ユーザーのジョブ XP を、指定レベルちょうどの値に直接セットする (#534)。
+ *
+ * XP を権威 state に一本化した結果、`analysis.jobLevel.xp` を書き換える従来の管理ツールでは
+ * レベルを動かせなくなった。各ジョブのキット / パッシブ (特に Lv30) を実プレイで確かめる
+ * のは開発に必要なので、権威側に同じ操作を用意する。
+ *
+ * **呼び出し側 (router) が `isEdgeAdmin` で必ずゲートすること。** この関数自体は認可しない。
+ *
+ * XP は**その職の曲線** (#536) から引く。基準曲線を使うと、pace が 1 未満の職では
+ * 指定より高いレベルになり「Lv30 を確かめたいのに Lv34 になる」ことになる。
+ */
+export async function adminSetJobXp(
+  env: GameStateEnv,
+  did: string,
+  archetype: string,
+  targetLevel: number,
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<{ jobXp: number; level: number }> {
+  if (!archetype || archetype.length > 64) throw new XpClaimError('archetype が不正', 400);
+  const maxLv = JOB_LEVEL_TUNING.maxLevel;
+  const lv = Math.floor(targetLevel);
+  if (!Number.isFinite(lv) || lv < 1 || lv > maxLv) throw new XpClaimError(`レベルは 1〜${maxLv}`, 400);
+
+  const curve = jobXpCurveFor(archetype);
+  const xp = curve.find((e) => e[0] === lv)?.[1] ?? 0;
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => ({ ...cur, jobXp: { ...cur.jobXp, [archetype]: xp } }),
+    init ? { now, init } : { now },
+  );
+  return { jobXp: next.jobXp[archetype] ?? 0, level: lv };
 }

@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { XP_REWARDS } from '@aozoraquest/core';
-import { claimXp, maxXpFor, MAX_CLAIM_KEYS, XpClaimError } from '../src/xp-claim';
-import { rkeyForDid, type GameState, type GameStateEnv } from '../src/game-state';
+import { XP_REWARDS, jobLevelFromXp } from '@aozoraquest/core';
+import { claimXp, adminSetJobXp, maxXpFor, MAX_CLAIM_KEYS, XpClaimError } from '../src/xp-claim';
+import { normalizeState, rkeyForDid, readState, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice';
@@ -142,5 +142,86 @@ describe('claimXp (クライアント申告 XP)', () => {
     await expect(bad({ kind: 'post', archetype: '', xp: 1, key: 'k' })).rejects.toBeInstanceOf(XpClaimError);
     await expect(bad({ kind: 'post', archetype: 'warrior', xp: 1, key: 'x'.repeat(300) })).rejects.toBeInstanceOf(XpClaimError);
     await expect(bad({ kind: 'post', archetype: 'warrior', xp: Number.NaN, key: 'k' })).rejects.toBeInstanceOf(XpClaimError);
+  });
+});
+
+describe('normalizeState (ベータの区切り)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('v1 の state は jobXp をリセットして v2 にする', () => {
+    const v1 = { did: DID, power: 5, playerXp: 100, jobXp: { warrior: 9999 }, materials: { herb: 2 }, gear: [], x: 1, y: 2, version: 1, updatedAt: '' } as GameState;
+    const out = normalizeState(v1);
+    expect(out.jobXp).toEqual({});
+    expect(out.version).toBe(2);
+    // XP 以外は触らない (持ち物・位置・パワーまで巻き戻すと「全部消えた」になる)
+    expect(out.power).toBe(5);
+    expect(out.playerXp).toBe(100);
+    expect(out.materials).toEqual({ herb: 2 });
+    expect(out.x).toBe(1);
+  });
+
+  it('v2 の state はそのまま (再リセットしない)', () => {
+    const v2 = { did: DID, power: 5, playerXp: 0, jobXp: { warrior: 42 }, materials: {}, gear: [], x: 0, y: 0, version: 2, updatedAt: '' } as GameState;
+    expect(normalizeState(v2)).toBe(v2);
+  });
+
+  it('readState が読みの時点で正規化する (書き戻し前でも古い値を使わない)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    m.store.set(rkeyForDid(DID), {
+      cid: 'c1',
+      value: { did: DID, power: 0, playerXp: 0, jobXp: { warrior: 12345 }, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: '' },
+    });
+    const got = await readState(env, DID);
+    expect(got!.state.jobXp).toEqual({});
+    expect(got!.state.version).toBe(2);
+  });
+});
+
+describe('adminSetJobXp (管理者がレベルを直接セット)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('指定レベルちょうどの XP になる (その職の曲線から引く)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    for (const job of ['warrior', 'mage', 'shogun']) {
+      const r = await adminSetJobXp(env, DID, job, 30, NOW);
+      expect(r.level).toBe(30);
+      // 職ごとに曲線が違う (#536) ので、基準曲線で引くと指定と違うレベルになる。
+      // セットした XP から引き直したレベルが 30 に一致すること。
+      expect(jobLevelFromXp(r.jobXp, job)).toBe(30);
+    }
+  });
+
+  it('前の値を足すのではなく置き換える (何度押しても同じレベル)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await adminSetJobXp(env, DID, 'warrior', 30, NOW);
+    const again = await adminSetJobXp(env, DID, 'warrior', 30, NOW);
+    expect(jobLevelFromXp(again.jobXp, 'warrior')).toBe(30);
+    const down = await adminSetJobXp(env, DID, 'warrior', 5, NOW);
+    expect(jobLevelFromXp(down.jobXp, 'warrior')).toBe(5); // 下げられる
+  });
+
+  it('他の職の XP は触らない', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await claimXp(env, DID, { kind: 'post', archetype: 'mage', xp: 40, key: 'k' }, NOW);
+    await adminSetJobXp(env, DID, 'warrior', 10, NOW);
+    expect(stored(m.store).jobXp['mage']).toBe(40);
+  });
+
+  it('範囲外のレベルは 400', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds().fn;
+    await expect(adminSetJobXp(env, DID, 'warrior', 0, NOW)).rejects.toBeInstanceOf(XpClaimError);
+    await expect(adminSetJobXp(env, DID, 'warrior', 999, NOW)).rejects.toBeInstanceOf(XpClaimError);
+    await expect(adminSetJobXp(env, DID, '', 10, NOW)).rejects.toBeInstanceOf(XpClaimError);
   });
 });

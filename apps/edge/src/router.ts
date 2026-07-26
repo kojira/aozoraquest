@@ -13,10 +13,11 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
-import { claimXp, XpClaimError } from './xp-claim';
+import { claimXp, adminSetJobXp, XpClaimError } from './xp-claim';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
+import { isEdgeAdmin } from './oauth-config';
 import type { Command } from '@aozoraquest/core';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
@@ -51,6 +52,7 @@ const LXM_WORLD_SEARCH = 'app.aozoraquest.world.search';
 const LXM_WORLD_RESET = 'app.aozoraquest.world.reset';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
+const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -258,6 +260,34 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     try {
       const result = await claimXp(env, did, { kind: body.kind, archetype: body.archetype, xp: body.xp, key: body.key }, nowSec());
       return cors(json(result), allowedOrigin);
+    } catch (e) {
+      if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // 管理者がジョブ Lv を直接セットする (#534)。XP を権威 state に一本化したので、
+  // analysis を書き換える従来の管理ツールではレベルが動かせない。Lv30 パッシブ等の
+  // 実プレイ確認に必要なので、**ADMIN_DIDS ゲート付き**で権威側に用意する。
+  if (req.method === 'POST' && url.pathname === '/api/xp/admin-set') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_XP_ADMIN_SET }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
+    const body = (await req.json().catch(() => ({}))) as { archetype?: unknown; level?: unknown; target?: unknown };
+    if (typeof body.archetype !== 'string' || typeof body.level !== 'number') {
+      return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    }
+    // 対象は自分のみ (他人の state は動かせない)。管理でも他人のデータは触らせない。
+    try {
+      const r = await adminSetJobXp(env, did, body.archetype, body.level, nowSec());
+      return cors(json(r), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

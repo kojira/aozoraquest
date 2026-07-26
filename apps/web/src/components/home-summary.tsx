@@ -10,6 +10,7 @@ import { useOnPosted } from './compose-modal';
 import { ensureTodayQuestLog, loadTodayQuestLog, type ActivityEntry, type QuestLogRecord } from '@/lib/post-processor';
 import { getDailyQuestsOpen, setDailyQuestsOpen, getHomeSummaryOpen, setHomeSummaryOpen } from '@/lib/prefs';
 import { formatTime } from '@/lib/format-datetime';
+import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 
 interface HomeSummaryProps {
   agent: Agent | null;
@@ -31,6 +32,7 @@ interface HomeSummaryProps {
  * - 動的 (今日のクエスト): 常時表示。
  */
 export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryProps) {
+  const { jobXp } = useJobXp();
   const [open, setOpen] = useState(false);
   // 「今日のクエスト」アコーディオンの開閉。localStorage に永続化し次回もその状態で開く。
   const [questsOpen, setQuestsOpen] = useState(getDailyQuestsOpen);
@@ -112,7 +114,8 @@ export function HomeSummary({ agent, diag, userDid, targetStats }: HomeSummaryPr
   }
 
   const jobName = jobDisplayName(diag.archetype, 'default');
-  const jobLv = jobLevelFromXp(diag.jobLevel?.xp ?? 0, diag.archetype);
+  // LV は権威 state 由来 (#534)。analysis.jobLevel.xp はベータ期間の記録として凍結済み。
+  const jobLv = jobLevelFromXp(xpOfJob(jobXp, diag.archetype), diag.archetype);
 
   // master 畳み: サマリ全体を隠し、細い 1 行のバーだけにする (TL がすぐ上に来る)。
   // dq-window の箱ごと消すので「遊び人 LV… / 今日のクエスト…」の 2 行も見えなくなる。

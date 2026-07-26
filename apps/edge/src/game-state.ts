@@ -17,7 +17,12 @@ import { readServerTokens } from './oauth-store';
 import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
 
 export const GAME_STATE_COLLECTION = 'app.aozoraquest.gameState';
-export const GAME_STATE_VERSION = 1;
+/** 権威 state のスキーマ版。**上げると `normalizeState` の移行が走る。**
+ *  v2 (#534): XP の記録先を権威 state に一本化するにあたり、ベータの区切りとして
+ *  `jobXp` を一度リセットする (全員 Lv1 から再スタート。オーナー判断 2026-07-26)。
+ *  v1 の `jobXp` は「移行時に焼き込んだ投稿 XP + 戦闘 XP」が混ざっており、
+ *  そのまま新方式 (投稿もクエストも戦闘もすべて jobXp に積む) に持ち越すと投稿ぶんが二重に効く。 */
+export const GAME_STATE_VERSION = 2;
 
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
@@ -82,7 +87,20 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
   const tokens = await readServerTokens(env.OAUTH_TOKENS);
   if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
   const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, GAME_STATE_COLLECTION, rkeyForDid(targetDid));
-  return rec ? { state: rec.value, cid: rec.cid } : null;
+  return rec ? { state: normalizeState(rec.value), cid: rec.cid } : null;
+}
+
+/**
+ * 読み出した state を現行スキーマに合わせる (#534)。**読みの側で寄せる**ので、
+ * 書き戻されるまで古い値が使われる期間ができない (書き込み経路にだけ移行を置くと、
+ * 読むだけの画面が古い値を表示してしまう)。
+ *
+ * v1 → v2: `jobXp` と `xpClaims` をリセット。過去の到達レベルは `analysis.jobLevel.xp` に
+ * 残っており、/me の「ベータ期間の記録」として表示する (オーナー判断 2026-07-26)。
+ */
+export function normalizeState(state: GameState): GameState {
+  if ((state.version ?? 1) >= 2) return state;
+  return { ...state, jobXp: {}, xpClaims: [], version: GAME_STATE_VERSION };
 }
 
 export interface RmwOptions {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyBattleOutcome, type BattleOutcomeInput } from '../src/battle-reward';
-import { MONSTERS, battleXpFor, BATTLE_TUNING } from '@aozoraquest/core';
+import { MONSTERS, battleXpFor, jobXpToNextLevelFor, BATTLE_TUNING } from '@aozoraquest/core';
 import { emptyState, type GameState } from '../src/game-state';
 
 const base = (over: Partial<GameState> = {}): GameState => ({ ...emptyState('did:plc:alice', '2026-07-19T00:00:00.000Z'), power: 5, ...over });
@@ -105,5 +105,47 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
       expect(next.materials).toEqual({ herb: 2 }); // 素材変わらず
       expect(awarded).toEqual({});
     }
+  });
+});
+
+describe('レベルアップで HP/MP 全回復 (#534)', () => {
+  const at = (jobXp: number): GameState => ({
+    did: 'did:plc:x', power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
+    gear: [], x: 0, y: 0, carryHp: 3, carryMp: 1, version: 2, updatedAt: '',
+  });
+  const win = (state: GameState) => applyBattleOutcome(state, {
+    outcome: 'win', monsterId: 'sky-slime', archetype: 'warrior', luk: 0,
+    rewardSeed: 1, lossSeed: 2, rewarded: true,
+  });
+
+  it('Lv が上がった決着では leveledUp が返る', () => {
+    // warrior の Lv2 しきい値の 1 手前から、そらいろスライム (XP3) を倒して超える
+    const th = jobXpToNextLevelFor('warrior', 0).next;
+    const r = win(at(th - 1));
+    expect(r.awarded.leveledUp).toEqual({ from: 1, to: 2 });
+  });
+
+  it('Lv が上がらない決着では leveledUp を返さない', () => {
+    const r = win(at(0));
+    expect(r.awarded.leveledUp).toBeUndefined();
+  });
+
+  it('負けでも Lv が上がれば leveledUp が返る (僅かな XP が入るため)', () => {
+    const th = jobXpToNextLevelFor('warrior', 0).next;
+    const r = applyBattleOutcome(at(th - 1), {
+      outcome: 'lose', monsterId: 'sky-slime', archetype: 'warrior', luk: 0,
+      rewardSeed: 1, lossSeed: 2, rewarded: true,
+    });
+    expect(r.awarded.leveledUp).toEqual({ from: 1, to: 2 });
+  });
+
+  it('パワー無し (練習) では Lv も上がらない', () => {
+    const th = jobXpToNextLevelFor('warrior', 0).next;
+    const r = applyBattleOutcome(at(th - 1), {
+      outcome: 'win', monsterId: 'sky-slime', archetype: 'warrior', luk: 0,
+      rewardSeed: 1, lossSeed: 2, rewarded: false,
+    });
+    expect(r.awarded.leveledUp).toBeUndefined();
+    expect(r.next.jobXp).toEqual({ warrior: th - 1 });
   });
 });

@@ -360,15 +360,17 @@ function ComposeDialog({
     setLoading(true);
     setErr(null);
     try {
+      // 投稿の URI は XP 申告の冪等キーに使う (#534)。同じ投稿で二重に XP が入らない。
+      let postUri: string | undefined;
       if (images.length > 0) {
         // カード共有画像が含まれていれば #AozoraQuest facet を付ける。
         const tag = images.some((im) => im.source === 'card') ? 'AozoraQuest' : undefined;
-        await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag);
+        postUri = (await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag))?.uri;
       } else {
         const reply: ReplyRef | undefined = replyTo
           ? { root: replyTo.root, parent: replyTo.parent }
           : undefined;
-        await createPost(agent, body, reply);
+        postUri = (await createPost(agent, body, reply))?.uri;
       }
       // via=AozoraQuest で投稿が作成されたので power 累積カウンタを +1。
       // 失敗しても投稿自体は成功してるので UI は閉じる方向で進む。
@@ -394,7 +396,7 @@ function ComposeDialog({
         };
         void (async () => {
           try {
-            const result = await processSelfPost(agent, did, body, structure);
+            const result = await processSelfPost(agent, did, body, structure, postUri);
             // ステータス上昇量 (バトルのレベルアップ演出と同じ表示。オーナー要望
             // 2026-07-17)。プレイヤー Lv は戦闘値に影響しない (#507) ので区間はジョブ Lv だけ。
             const arch = result.jobLevel?.archetype;
