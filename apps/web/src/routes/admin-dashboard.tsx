@@ -7,6 +7,7 @@ import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
 import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
 import { JobChangeAdmin } from '@/components/admin/job-change-admin';
 import { PdsUsageAdmin } from '@/components/admin/pds-usage-admin';
+import { DirectoryAdmin, PromptsAdmin, MaintenanceAdmin, BansAdmin, FlagsAdmin } from '@/components/admin/config-admin';
 import { DebugBattleSim } from '@/components/debug-battle-sim';
 
 /**
@@ -124,6 +125,13 @@ export function AdminDashboard() {
         <>
           {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
           <PdsUsageAdmin agent={agent} />
+          {/* 主管理者 PDS の設定 (旧 apps/admin。デプロイ設定が無く pnpm dev でしか
+              開けなかったので、ここに取り込んだ — オーナー要望 2026-07-27)。 */}
+          <DirectoryAdmin agent={agent} />
+          <MaintenanceAdmin />
+          <BansAdmin />
+          <FlagsAdmin />
+          <PromptsAdmin />
           <PowerGrantAdmin agent={agent} did={did} />
           <JobChangeAdmin agent={agent} did={did} />
           <WorldResetAdmin agent={agent} did={did} />

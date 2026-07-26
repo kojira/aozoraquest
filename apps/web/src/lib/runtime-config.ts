@@ -26,7 +26,8 @@ function getAdminDids(): string[] {
     .filter(Boolean);
 }
 
-function getPrimaryAdminDid(): string | null {
+/** 主管理者の DID。admin 設定レコードの**書き込み先**でもある。 */
+export function getPrimaryAdminDid(): string | null {
   return getAdminDids()[0] ?? null;
 }
 
