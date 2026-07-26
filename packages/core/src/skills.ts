@@ -770,8 +770,15 @@ export function runSkillMulti(
   attacker: Combatant,
   sides: CombatSides,
   makeCtx: (defender: Combatant) => SkillContext,
-  opts: { targetIndex?: number } = {},
+  opts: { targetIndex?: number; label?: string; events?: TurnEvent[]; actor?: TurnEvent['actor'] } = {},
 ): void {
+  // **技名を名乗る。** damage は doAttack、fixedDamage は doMagic が `${名前}の${技名}!` を
+  // 出すが、純バフ・純回復の技はそこを通らないので、以前は「xの素早さがあがった!」だけが
+  // 出ていた。選んだ技が本当に出たのか分からず、複数のとくぎを持つ職ほど困る
+  // (オーナー報告 2026-07-27)。
+  if (opts.label && opts.events && !def.effects.some((e) => e.kind === 'damage' || e.kind === 'fixedDamage')) {
+    opts.events.push({ actor: opts.actor ?? 'player', text: `${attacker.name}の${opts.label}!` });
+  }
   for (const effect of def.effects) {
     const targets = resolveTargets(attacker, effectTarget(effect), sides, opts);
     for (const target of targets) {

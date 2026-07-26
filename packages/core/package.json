@@ -11,7 +11,8 @@
     "lint": "biome check src",
     "typecheck": "tsc --noEmit",
     "sim:endurance": "tsx ../../scripts/sim-endurance.mts",
-    "sim:endurance-lv": "tsx ../../scripts/sim-endurance-levelup.mts"
+    "sim:endurance-lv": "tsx ../../scripts/sim-endurance-levelup.mts",
+    "sim:gear-early": "tsx ../../scripts/sim-gear-early.mts"
   },
   "devDependencies": {
     "vitest": "^2",

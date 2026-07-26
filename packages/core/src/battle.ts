@@ -136,6 +136,20 @@ export const BATTLE_TUNING = {
    *  (「かいしんのいちげき か 特殊武器 でしか倒せない」) を壊す読み違いだった。
    *  0 にすることで高守備の敵は専用ロジックなしに「通常攻撃が効かない」を表現できる。 */
   minDamage: 0,
+  /** **かすりダメージ**: 減算の結果が 0 に沈んだとき、`攻撃力 × この比率` を最低保証する
+   *  (`ironDef` = メタル系だけは対象外で、従来どおり完全に 0)。
+   *
+   *  なぜ要るか: minDamage=0 はメタル系のためのものだったが、**プレイヤー側の守備でも
+   *  同じ崖に届いてしまう**。grade2 の防具 1 点 (def+15) で Lv5 の守備は 2 → 18 になり、
+   *  tier1 のモンスターは実効 atk が最大 9 = `9×0.9 < 18×0.45` で **1 も通らない**。
+   *  実測で tier1 は被ダメ 0・無傷率 100%・連戦 300+ 戦 (= 無限) になっていた
+   *  (オーナー報告 2026-07-27「レベル5でこの装備だと tier1 だと敵なし」)。
+   *  「硬い相手には通らない」は敵の identity として設計したものであって、
+   *  **プレイヤーが不死身になってよいという意味ではない**。
+   *
+   *  0.1 の根拠: tier1 の実効 atk 7〜9 → かすり 1。素手の被ダメ (平均 1.81/戦) に近い
+   *  持久力に戻り、かつ tier2 以降の数値には実質影響しない (減算が既に正なので通らない)。 */
+  scratchRatio: 0.1,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
   agiDodgeScale: 0.009,
@@ -577,6 +591,10 @@ export interface Combatant {
   /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
    *  防御した次のターンまで「相手の動きを読めている」状態。 */
   focus: number;
+  /** **守備が桁違い (メタル系)**。`MonsterDef.flatDef` を持つ敵だけに立つ。
+   *  この旗が立っている相手にだけ「ダメージ 0」が起きてよい (かすりダメージの対象外。
+   *  BATTLE_TUNING.scratchRatio 参照)。 */
+  ironDef?: boolean;
   /** 状態異常 (#452 / docs/25 §3)。省略可 (旧 sealed state 互換)。エンジンが空/未定義を no-op 扱い。 */
   statuses?: StatusInstance[];
   /** ジョブ innate パッシブ id (#452 / docs/25 §4)。省略可。 */
@@ -1225,7 +1243,8 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
     Math.round(BATTLE_TUNING.mpBase + ms[3]),
   );
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
-  if (def.flatDef !== undefined) c.def = def.flatDef; // tier 倍率を通さない (メタル系)
+  // tier 倍率を通さない (メタル系)。ダメージ 0 が許されるのはこの旗が立つ相手だけ。
+  if (def.flatDef !== undefined) { c.def = def.flatDef; c.ironDef = true; }
   c.maxHp = monsterMaxHp(def); c.hp = c.maxHp;
   // MP は 1 体ずつ手で設計された絶対値なのでそのまま使う (tier 倍率を掛けると、tier 差が
   // 既に値自体に入っているぶんと二重計上になる)。HP は monsterMaxHp が別途担当。
@@ -1481,7 +1500,12 @@ function doAttack(
   // **ダメージ 0 は正当な結果** (オーナー指摘 2026-07-25)。守備力を上回れなければ 1 も通らない
   // = メタル系が「かいしんのいちげき (守備無視) でしか倒せない」identity を持てる。以前は
   // 最低 1 を保証していたため、atk 1 の魔法使いでも殴り続ければメタルを削り切れてしまっていた。
-  const final = Math.max(0, Math.round(dmg));
+  //
+  // ただし **0 が許されるのは ironDef (メタル系) だけ**。通常の守備力で 0 に沈むと、grade2 の
+  // 防具 1 点で tier1 が「絶対に当たらない」= 無限連戦になっていた (scratchRatio の doc に実測)。
+  // 沈んだぶんは「かすった」扱いで攻撃力に比例した最小ダメージを通す。
+  const scratched = dmg < 1 && !defender.ironDef ? Math.max(dmg, atkValue * t.scratchRatio * roll) : dmg;
+  const final = Math.max(0, Math.round(scratched));
   // 物理致死の直前に onLethal フック (覇王/不動) を確認。survive なら HP1 で耐える (反射等は
   // ハンドラ内で処理済み)。魔法致死は doMagic を通るためここには来ず、耐えられず死ぬ (§12)。
   if (defender.hp - final <= 0 && applyOnLethal(defender, attacker, final, defCtx)) {
@@ -1688,7 +1712,7 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
     skillName: skill.name,
     actorSide: 'player',
     engine: { doAttack, doMagic },
-  }));
+  }), { label: skill.name, events, actor: 'player' });
 }
 
 /**
@@ -2088,7 +2112,7 @@ export function resolveTurnMulti(
             player,
             sides,
             (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
-            { targetIndex },
+            { targetIndex, label: selectedSkill.name, events, actor: 'player' },
           );
         }
       } else if (cmd === 'herb') {
