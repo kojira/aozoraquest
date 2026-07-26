@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import type { GearSelection } from '@aozoraquest/core';
+import { worldOverlay, type GearSelection } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -18,6 +18,23 @@ import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-p
 
 export const GAME_STATE_COLLECTION = 'app.aozoraquest.gameState';
 export const GAME_STATE_VERSION = 1;
+
+/**
+ * **XP の区切り世代** (#534)。この値と `GameState.xpEpoch` が違う state は、
+ * `normalizeState` が `jobXp` を一度リセットする (全員 Lv1 から再スタート)。
+ *
+ * **`version` を使ってはいけない。** `readModifyWrite` は書き込みのたびに `version` を
+ * 現在値で上書きするので、片道の移行マーカーにならない。実際に困るのは 2 つ:
+ *
+ * - **dev と本番が同じ権威レコードを共有している** (`GAME_STATE_COLLECTION` は ns 前置きされず、
+ *   repo はサーバーアカウント。docs/22)。dev だけ新コードの期間、本番で 1 歩動くたびに
+ *   旧 version が刻まれ、次に dev を開くと **jobXp がまた 0 になる**
+ * - 本番をロールバックすると同じことが起きる
+ *
+ * `xpEpoch` は旧コードが知らないフィールドだが、`{...cur}` のスプレッドで保存されるので
+ * 一度書けば残る = 移行が二度走らない。
+ */
+export const XP_EPOCH = 1;
 
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
@@ -55,6 +72,12 @@ export interface GameState {
   defeated?: string[];
   /** defeated が属する 30 分エンカウント枠。枠が変わったら defeated をリセットする。 */
   defeatedWindow?: number;
+  /** 適用済みの XP 申告の冪等キー (`kind:key`)。直近 `MAX_CLAIM_KEYS` 件のリング。
+   *  同じ投稿/クエスト承認で二重に XP が積まれるのを防ぐ (#534。詳細は xp-claim.ts)。 */
+  xpClaims?: string[];
+  /** XP の区切り世代 (#534)。`XP_EPOCH` と違えば `normalizeState` が jobXp をリセットする。
+   *  version と別に持つ理由は `XP_EPOCH` の doc を参照 (片道マーカーが要る)。 */
+  xpEpoch?: number;
   version: number;
   updatedAt: string;
 }
@@ -66,7 +89,9 @@ export function rkeyForDid(did: string): string {
 }
 
 export function emptyState(did: string, now: string): GameState {
-  return { did, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, version: GAME_STATE_VERSION, updatedAt: now };
+  // **新規 state は現行 epoch を刻む** (#534)。刻まないと `normalizeState` が
+  // 「区切り前の state」と見なして、書くたびに次の読みで jobXp が消える。
+  return { did, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: GAME_STATE_VERSION, updatedAt: now };
 }
 
 /**
@@ -79,7 +104,37 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
   const tokens = await readServerTokens(env.OAUTH_TOKENS);
   if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
   const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, GAME_STATE_COLLECTION, rkeyForDid(targetDid));
-  return rec ? { state: rec.value, cid: rec.cid } : null;
+  return rec ? { state: normalizeState(rec.value), cid: rec.cid } : null;
+}
+
+/**
+ * 読み出した state を現行スキーマに合わせる (#534)。**読みの側で寄せる**ので、
+ * 書き戻されるまで古い値が使われる期間ができない (書き込み経路にだけ移行を置くと、
+ * 読むだけの画面が古い値を表示してしまう)。
+ *
+ * XP の区切り: `xpEpoch` が現行と違えば `jobXp` と `xpClaims` をリセットする。
+ * 旧値は「移行時に焼き込んだ投稿 XP + 戦闘 XP」の混合で、新方式に持ち越すと投稿ぶんが
+ * 二重に効く。過去の到達レベルは `analysis.jobLevel.xp` に残しており、
+ * /me の「ベータ期間の記録」として表示する (オーナー判断 2026-07-26)。
+ */
+export function normalizeState(state: GameState): GameState {
+  if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
+  // **位置も spawn に戻す。** Lv1 に戻したのに立ち位置が奥地のままだと、想定 Lv8 以上の
+  // 敵に Lv1 で遭遇し、負けるたびに素材を失う死にループに入る (帰還先の lastTown も
+  // その地方なので抜け出せない)。「Lv1 から再スタート」なら出発点も揃えるのが筋。
+  // 持ち物・パワー・装備は触らない (XP 以外を巻き添えにしない)。
+  const spawn = worldOverlay().spawn;
+  return {
+    ...state,
+    jobXp: {},
+    xpClaims: [],
+    xpEpoch: XP_EPOCH,
+    x: spawn.x,
+    y: spawn.y,
+    lastTown: { x: spawn.x, y: spawn.y },
+    carryHp: undefined,
+    carryMp: undefined,
+  };
 }
 
 export interface RmwOptions {

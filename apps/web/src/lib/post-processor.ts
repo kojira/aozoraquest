@@ -34,6 +34,7 @@ import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { Embedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
+import { serverClaimXp } from './world-server';
 import { deriveActionTypes, type PostStructure } from './structural-action';
 
 export interface QuestLogEntry {
@@ -109,8 +110,12 @@ export async function processSelfPost(
   did: string,
   text: string,
   structure?: PostStructure,
+  /** この投稿の URI。XP 申告の冪等キーに使う (#534)。省略すると XP は申告されない。 */
+  postUri?: string,
 ): Promise<ProcessResult> {
   const trimmed = text.trim();
+  /** XP 申告。analysis の書き込みが終わってから走らせる (edge の待ちで PDS 更新を落とさない)。 */
+  let claim: () => Promise<void> = async () => {};
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
   if (trimmed.length === 0) return empty;
 
@@ -270,17 +275,41 @@ export async function processSelfPost(
       };
       finalPlayerLevel = nextPlayerLevel;
 
-      // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)
-      const prevJobLv = jobLevelFromXp(oldJob.xp, oldJob.archetype);
-      const nextJobXp = oldJob.xp + gainedXp;
-      const nextJobLv = jobLevelFromXp(nextJobXp, oldJob.archetype);
-      if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
-      const nextJobLevel: JobLevelState = {
-        archetype: oldJob.archetype,
-        xp: nextJobXp,
-        joinedAt: oldJob.joinedAt,
-      };
+      // **ジョブ XP は analysis に積まない** (#534)。記録先を権威 state (GameState.jobXp) に
+      // 一本化したので、ここは**申告するだけ**。`analysis.jobLevel.xp` はベータ期間の記録として
+      // 凍結し、/me の「これまでの記録」に出す。
+      //
+      // 申告は best-effort — 失敗しても投稿処理自体は続ける。edge が落ちている間に投稿しても
+      // 投稿は成立させたい。**同じ投稿 URI で再申告しても二重に入らない**ので、将来
+      // リトライを足すのも安全 (冪等キーはサーバー側が直近 200 件覚えている)。
+      const nextJobLevel: JobLevelState = oldJob; // 凍結 (値を変えない)
       finalJobLevel = nextJobLevel;
+      // 申告そのものは analysis を書いた**後**に行う (下の claim(): putRecord の後で await)。
+      // 先に待つと、edge のタイムアウト (最大 8 秒) の間にタブを閉じられたとき、
+      // 認知スコアのブレンド・streak・playerLevel の更新ごと失われる。
+      claim = async () => {
+        if (!postUri || gainedXp <= 0) return;
+        try {
+          // **今の職 (analysis.archetype) に積む。** `oldJob.archetype` は凍結された
+          // ベータ期間の記録側の職なので、転職後は前の職を指す = XP が前職のバケツに入る。
+          const r = await serverClaimXp(agent, { kind: 'post', archetype: analysis.archetype, xp: gainedXp, key: postUri });
+          if (r.granted > 0 && r.granted < gainedXp) {
+            // 上限クランプで切られた = 上限の導出に漏れがある (デイリークエスト報酬を
+            // 足し忘れる等)。黙って消えると「投稿したのにレベルが上がらない」になるので残す。
+            console.warn(`xp claim clamped: ${gainedXp} -> ${r.granted}`);
+          }
+          if (r.granted > 0) {
+            // レベルアップ判定は**権威 state の値**で行う。申告前後の XP はサーバーが返すので、
+            // client 側の推測 (analysis の凍結値) と食い違わない。
+            const before = jobLevelFromXp(r.jobXp - r.granted, analysis.archetype);
+            const after = jobLevelFromXp(r.jobXp, analysis.archetype);
+            if (after > before) jobLeveledUp = { from: before, to: after };
+            finalJobLevel = { archetype: analysis.archetype, xp: r.jobXp, joinedAt: oldJob.joinedAt };
+          }
+        } catch (e) {
+          console.warn('xp claim failed', e);
+        }
+      };
 
       // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
       // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。
@@ -315,6 +344,8 @@ export async function processSelfPost(
   } catch (e) {
     console.warn('analysis update failed', e);
   }
+  // XP 申告は analysis を書き終えてから (上記の理由)。
+  await claim();
 
   return {
     action,
@@ -341,11 +372,13 @@ export async function processSelfPost(
 export async function confirmJobChange(agent: Agent, did: string, newArchetype: Archetype): Promise<DiagnosisResult | null> {
   const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
   if (!analysis) return null;
-  const now = new Date().toISOString();
+  // **`jobLevel` は触らない** (#534)。ここはベータ期間の記録として凍結された値で、
+  // 上書きすると `/me` の「ベータ期間の記録」が消える (PDS ごと書き換わるので復元不能)。
+  // 現職の XP は権威 state (`GameState.jobXp[archetype]`) が持っており、archetype キーなので
+  // 転職しても前職のぶんは残り、戻れば復活する (#531 が構造的に解決)。
   const next: DiagnosisResult = {
     ...analysis,
     archetype: newArchetype,
-    jobLevel: { archetype: newArchetype, xp: 0, joinedAt: now },
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
@@ -354,26 +387,23 @@ export async function confirmJobChange(agent: Agent, did: string, newArchetype: 
 }
 
 /**
- * 管理者用: 自分のジョブを即座に任意の archetype + jobLevel に切り替える (dev の /admin から)。
- * confirmJobChange と同じく本人の PDS (analysis/self) を本人トークンで書く。**新しい攻撃面は増やさない**:
- * edge は戦闘開始時に本人 analysis の archetype/jobLevel.xp を**無検証で権威値として読む** (battle-resolver.ts /
- * docs/21 §6-4 の既知の未解決事項。真の偽造対策は M4)。よって本人が任意 Lv を書ける状態は元々あり
- * (zeroAnalysisXp や直接 putRecord で到達可能)、この関数はその同経路に UI を付けただけ。各ジョブの
- * キット/パッシブ (特に Lv30) を実プレイで確かめるため jobLevel を目標レベルの XP しきい値で直接セットする。
- * playerLevel (個人累積) は維持。pending 転職候補はクリア。反映は次の戦闘から (進行中の戦闘は旧ジョブのまま)。
+ * 管理者用: 自分のジョブを即座に任意の archetype に切り替える (dev の /admin から)。
+ * 本人の PDS (analysis/self) を本人トークンで書く。
+ *
+ * **レベルはここでは動かない** (#534)。XP の記録先を権威 state に一本化したので、
+ * `analysis.jobLevel.xp` はベータ期間の記録として凍結され、成長には効かない。
+ * レベルの設定は `serverAdminSetJobLevel` (edge の ADMIN_DIDS ゲート付きエンドポイント) が担当し、
+ * 呼び出し側 (job-change-admin) が職とレベルの両方を順に設定する。
+ *
+ * `jobLevel` を書き換えないのは、そこが `/me` の「ベータ期間の記録」の表示元だから
+ * (上書きすると PDS ごと消えて復元できない)。
  */
-export async function adminSetJob(agent: Agent, did: string, newArchetype: Archetype, targetJobLevel: number): Promise<DiagnosisResult | null> {
+export async function adminSetJob(agent: Agent, did: string, newArchetype: Archetype): Promise<DiagnosisResult | null> {
   const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
   if (!analysis) return null;
-  const maxLv = JOB_XP_CURVE[JOB_XP_CURVE.length - 1]?.[0] ?? 50;
-  const lv = Math.max(1, Math.min(maxLv, Math.floor(targetJobLevel)));
-  // 目標 LV の XP しきい値 (JOB_XP_CURVE)。LV1 は 0。jobLevelFromXp(xp) がこの LV を返す最小 XP。
-  const xp = JOB_XP_CURVE.find((e) => e[0] === lv)?.[1] ?? 0;
-  const now = new Date().toISOString();
   const next: DiagnosisResult = {
     ...analysis,
     archetype: newArchetype,
-    jobLevel: { archetype: newArchetype, xp, joinedAt: now },
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;

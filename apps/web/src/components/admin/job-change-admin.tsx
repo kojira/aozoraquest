@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { ARCHETYPES, jobDisplayName, jobLevelFromXp, type Archetype, type DiagnosisResult } from '@aozoraquest/core';
 import { COL } from '@/lib/collections';
+import { serverAdminSetJobLevel } from '@/lib/world-server';
+import { loadJobXp, refreshJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { getRecord } from '@/lib/atproto';
 import { adminSetJob } from '@/lib/post-processor';
 
@@ -24,10 +26,14 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self')
-      .then((a) => {
+    // 職は analysis (診断の結果) / LV は権威 state (#534) — 出所が違うので両方読む。
+    Promise.all([
+      getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self'),
+      loadJobXp(agent, did),
+    ])
+      .then(([a, xpMap]) => {
         if (cancelled || !a) return;
-        const jl = jobLevelFromXp(a.jobLevel?.xp ?? 0, a.archetype);
+        const jl = jobLevelFromXp(xpOfJob(xpMap, a.archetype) ?? 0, a.archetype);
         setCurrent({ archetype: a.archetype, jobLevel: jl });
         setPick(a.archetype);
       })
@@ -39,11 +45,23 @@ export function JobChangeAdmin({ agent, did }: { agent: Agent; did: string }) {
     setBusy(true);
     setMsg(null);
     try {
-      const next = await adminSetJob(agent, did, pick, level);
+      // 職は analysis / LV は権威 state と、書き先が 2 つに分かれる (#534)。
+      // **片方だけ成功した状態を「失敗」で片付けない** — 職だけ変わって Lv1 のまま、が
+      // いちばんデバッグしづらいので、どこまで進んだかを文言で切り分ける。
+      const next = await adminSetJob(agent, did, pick);
       if (!next) { setMsg('診断レコードが無い (先に診断が要る)'); return; }
-      const jl = jobLevelFromXp(next.jobLevel?.xp ?? 0, next.archetype);
-      setCurrent({ archetype: next.archetype, jobLevel: jl });
-      setMsg(`${jobDisplayName(next.archetype)} Lv${jl} に変更 (戦闘中なら次戦から)`);
+      let set: { level: number };
+      try {
+        set = await serverAdminSetJobLevel(agent, pick, level);
+      } catch (e) {
+        console.warn('admin job level set failed', e);
+        setCurrent({ archetype: next.archetype, jobLevel: 1 });
+        setMsg(`${jobDisplayName(next.archetype)} に変更したが、LV の設定に失敗した (現在 Lv1 相当)`);
+        return;
+      }
+      await refreshJobXp(agent, did);
+      setCurrent({ archetype: next.archetype, jobLevel: set.level });
+      setMsg(`${jobDisplayName(next.archetype)} Lv${set.level} に変更 (戦闘中なら次戦から)`);
     } catch (e) {
       console.warn('admin job change failed', e);
       setMsg('変更に失敗した (コンソール参照)');

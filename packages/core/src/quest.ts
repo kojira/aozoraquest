@@ -181,6 +181,26 @@ export function generateDailyQuests(input: QuestGenInput): Quest[] {
   return quests;
 }
 
+/** 1 日に発行されるデイリークエストの最大枠数 (`generateDailyQuests` の slot 数)。
+ *  成長 2 (ギャップの大きい stat 2 つ) + 節制 1。 */
+export const MAX_DAILY_QUEST_SLOTS = 3;
+
+/**
+ * **1 日のデイリークエストで得られる XP の上限**。
+ *
+ * XP 申告の上限クランプ (#534) がこれを含まないと、**クエストを完了した日の XP が
+ * 毎日クランプで消える**。デイリークエストは 1 件 20〜135 XP あり、1 投稿で複数同時に
+ * 完了しうるので、「投稿 1 回ぶんの上限」に収まらない。
+ *
+ * テンプレート表から導く (数値を書き写すと報酬を変えたときに片方だけ直して事故る)。
+ */
+export const MAX_DAILY_QUEST_XP: number = (() => {
+  const per = DEFAULT_QUEST_TEMPLATES
+    .map((t) => t.xpRewardFn(t.requiredCountFn(JOB_LEVEL_TUNING.maxLevel)))
+    .sort((a, b) => b - a);
+  return per.slice(0, MAX_DAILY_QUEST_SLOTS).reduce((a, b) => a + b, 0);
+})();
+
 /** 累計 XP から LV を計算 (03-game-design.md §XP とレベル)。グローバル用 (現状未使用)。 */
 const XP_CURVE: Array<[number, number]> = [
   [1, 0], [2, 100], [5, 800], [10, 3500], [20, 15000], [30, 40000], [50, 150000],

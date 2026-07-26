@@ -66,14 +66,21 @@ async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promis
 
 /** ユーザーの診断 (archetype + baseStats) + handle を PDS から読む。無ければ ResolverError(409)。
  *  `ns` は NSID prefix (dev は `app.aozoraquest.dev`)。edge は 1 デプロイで dev/prod を捌くので Origin から決める。 */
-async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray>; handle: string; jobXp: number; playerXp: number }> {
+async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray>; handle: string; playerXp: number }> {
   const { pds, handle } = await resolveUserPds(userDid, fetchImpl);
   const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector; jobLevel?: { xp?: number }; playerLevel?: { xp?: number } }>(pds, userDid, `${ns}.analysis`, 'self');
   if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409, 'diagnosis_required');
-  // Lv は analysis を正とする (archetype/素ステと同じ)。gameState 移行は env prefix 前の古い値で固まりうるため。
-  const jobXp = typeof rec.value.jobLevel?.xp === 'number' && rec.value.jobLevel.xp > 0 ? rec.value.jobLevel.xp : 0;
+  // **ジョブ XP はここから読まない** (#534)。XP の記録先は権威 state (`GameState.jobXp`) に
+  // 一本化した。`analysis.jobLevel.xp` はベータ期間の記録として凍結され、成長には効かない。
+  // ユーザー PDS 由来なのは職と素ステだけ = 診断の結果そのもの。
   const playerXp = typeof rec.value.playerLevel?.xp === 'number' && rec.value.playerLevel.xp > 0 ? rec.value.playerLevel.xp : 0;
-  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats), handle, jobXp, playerXp };
+  return { archetype: rec.value.archetype, baseStats: statVectorToArray(rec.value.rpgStats), handle, playerXp };
+}
+
+/** 権威 state から、その職の累計 XP を読む (#534)。戦闘・表示・報酬がすべてここを見る。 */
+export function jobXpOf(state: GameState, archetype: string): number {
+  const v = state.jobXp[archetype];
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
 }
 
 export const POWER_COLLECTION = 'app.aozoraquest.power';
@@ -83,7 +90,6 @@ export const POWER_COLLECTION = 'app.aozoraquest.power';
  *  緩いサニティ上限。長期ユーザーの正当残高 (viaPosts 累積) を切り詰めない大きさにする。値の根拠はコミット参照。 */
 export const MAX_MIGRATE_POWER = 100_000; // 正当ユーザー (投稿数=残高上限) を十分上回る緩い上限
 export const MAX_MIGRATE_PLAYER_XP = 500_000; // lvl 99 ≈ 457k を上回る安全上限
-export const MAX_MIGRATE_JOB_XP = 50_000; // lvl 50 ≈ 40k を上回る安全上限
 
 const finiteNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
 
@@ -132,7 +138,10 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
     const a = analysisRec?.value;
     if (a) {
       base.playerXp = Math.min(finiteNum(a.playerLevel?.xp), MAX_MIGRATE_PLAYER_XP);
-      if (a.jobLevel?.archetype) base.jobXp = { [a.jobLevel.archetype]: Math.min(finiteNum(a.jobLevel.xp), MAX_MIGRATE_JOB_XP) };
+      // **ジョブ XP は取り込まない** (#534)。XP を権威 state に一本化するにあたり、
+      // ベータの区切りとして全員 Lv1 から再スタートする (オーナー判断 2026-07-26)。
+      // ここで取り込むと、投稿由来の XP が新方式の申告と足し合わさって二重に効く。
+      // 過去の到達レベルは analysis.jobLevel.xp に残り、/me の記録として表示する。
     }
   } catch { /* 読めない/未診断は power 0・Lv1 で開始 (読取のみ = 無害) */ }
   return base;
@@ -170,10 +179,10 @@ export interface EncounterInfo {
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
 export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
-  const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const tier = tierForRegion(regionOf(x, y));
-  // Lv は analysis 由来 (表示と一致。gameState 移行が env prefix 前の古い値で固まる問題を回避)。
-  const jobLevel = jobLevelFromXp(jobXp, archetype);
+  // Lv は権威 state 由来 (#534)。戦闘で使うレベルと、報酬を積む先が同じレコードになる。
+  const jobLevel = jobLevelFromXp(jobXpOf(state, archetype), archetype);
   const playerLevel = playerLevelFromXp(playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
@@ -297,8 +306,8 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const matId = item === 'herb' ? 'herb' : 'sky-dew';
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
-  const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(jobXp, archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
+  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  const c = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
   let healed = 0;
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
@@ -337,8 +346,8 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   }
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-  const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const luk = playerCombatant(archetype, jobLevelFromXp(jobXp, archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
+  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  const luk = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
   const tier = tierForRegion(regionOf(x, y));
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };
@@ -443,6 +452,11 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         ...r.next,
         x: finalPos.x,
         y: finalPos.y,
+        // **レベルアップ時の全回復はここには入れない** (#547)。入れて実測したところ、
+        // tier1 の連戦数が平均 9.1 → 46.7 戦 (5.1 倍) に伸び、隊長/将軍は上限なしだと
+        // 876〜941 戦 = 事実上無限になった (「上がる → 全快 → 長く生きる → XP が増える →
+        // また上がる」の正のフィードバック)。#536 で連戦数から決めた monsterStatFloor と
+        // JOB_LEVEL_PACE の前提が壊れるので、係数の引き直しとセットで別途入れる。
         carryHp: decision === 'lose' ? undefined : next.player.hp,
         carryMp: decision === 'lose' ? undefined : next.player.mp,
         defeated,

@@ -19,6 +19,8 @@ const LXM_SEARCH = 'app.aozoraquest.world.search';
 const LXM_RESET = 'app.aozoraquest.world.reset';
 const LXM_TURN = 'app.aozoraquest.battle.turn';
 const LXM_STATE = 'app.aozoraquest.me.state';
+const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
+const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -82,7 +84,14 @@ export interface ServerMoveResult { x: number; y: number; terrain: string; heale
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
-export interface ServerAward { xp?: number; drops?: string[]; materialsLost?: string[]; powerSpent?: number }
+export interface ServerAward {
+  xp?: number;
+  drops?: string[];
+  materialsLost?: string[];
+  powerSpent?: number;
+  /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復している。 */
+  leveledUp?: { from: number; to: number };
+}
 export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
 export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
@@ -123,6 +132,26 @@ export function serverSearch(agent: Agent, token?: string): Promise<{ found: str
  *  client 側 PDS レコード (制作/装備/世界/パワー/分析XP) の初期化は呼び出し側 (resetOnboarding) が行う。 */
 export function serverReset(agent: Agent): Promise<{ ok: true }> {
   return callEdge<{ ok: true }>(agent, LXM_RESET, '/api/world/reset', {});
+}
+
+export interface XpClaimResult { granted: number; jobXp: number; duplicate: boolean }
+
+/**
+ * 投稿 / クエストの XP を権威 state に申告する (#534)。
+ *
+ * `key` は**その出来事を一意に指すもの** — 投稿なら post の URI、クエストなら完了レコードの URI。
+ * サーバーが直近 200 件を覚えていて、同じキーの再送では積まない。リトライしても二重に入らない。
+ * サーバー側で種類ごとの上限にクランプされるので、戻り値の `granted` が申告額と違うことがある。
+ */
+export function serverClaimXp(agent: Agent, input: { kind: 'post' | 'quest'; archetype: string; xp: number; key: string }): Promise<XpClaimResult> {
+  return callEdge<XpClaimResult>(agent, LXM_XP_CLAIM, '/api/xp/claim', input);
+}
+
+/** **管理者専用**: 自分のジョブ Lv を権威 state に直接セットする (#534)。
+ *  XP を一本化した結果、analysis を書き換えるだけではレベルが動かないため。
+ *  edge 側が ADMIN_DIDS でゲートする (client の isAdminDid は表示ゲートに過ぎない)。 */
+export function serverAdminSetJobLevel(agent: Agent, archetype: string, level: number): Promise<{ jobXp: number; level: number }> {
+  return callEdge<{ jobXp: number; level: number }>(agent, LXM_XP_ADMIN_SET, '/api/xp/admin-set', { archetype, level });
 }
 
 /** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */

@@ -101,6 +101,7 @@ export function DebugMe() {
     aozoraProfile?.targetArchetype && aozoraProfile.targetArchetype in JOBS_BY_ID
       ? (aozoraProfile.targetArchetype as Archetype)
       : null;
+  // README 画像用。権威 state は読めないので analysis の凍結値 (#534) を使う。
   const myJobXp = analysis.jobLevel?.xp ?? 0;
   const myJobLv = jobLevelFromXp(myJobXp, analysis.archetype);
 
@@ -153,7 +154,9 @@ export function DebugMe() {
         </div>
 
         {/* 本体 (レーダー + 認知機能 + 相性) */}
-        <ResultView result={analysis} onRerun={() => undefined} />
+        {/* 権威 state (GameState.jobXp) はセッションが要るので、この public な画面からは
+            読めない。analysis に凍結されたベータ期間の記録値を渡す (#534)。 */}
+        <ResultView result={analysis} jobXp={myJobXp} onRerun={() => undefined} />
       </div>
     </div>
   );

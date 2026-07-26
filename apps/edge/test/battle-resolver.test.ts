@@ -4,7 +4,7 @@ import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { terrainAt, isWalkable, type Command } from '@aozoraquest/core';
-import type { GameState } from '../src/game-state';
+import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
 const SERVER_DID = 'did:plc:testserver';
@@ -28,7 +28,9 @@ async function makeEnv(): Promise<ResolverEnv> {
 }
 
 const DIAG = { archetype: 'warrior', rpgStats: { atk: 30, def: 25, agi: 15, int: 15, luk: 15 } };
-const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, power: 5, playerXp: 100, jobXp: { warrior: 50 }, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: '', ...over });
+// xpEpoch 済みの state (= ベータの区切りを通過済み)。省くと normalizeState が
+// 「区切り前」と見なして jobXp と位置をリセットしてしまう (#534)。
+const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, power: 5, playerXp: 100, jobXp: { warrior: 50 }, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: 1, updatedAt: '', ...over });
 
 /** 診断 + サーバー PDS (gameState + guard) の CAS を実装する統合モック。 */
 function resolverMock(opts: { diagnosis?: unknown; gameState?: GameState } = {}) {
@@ -177,7 +179,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     await expect(handleTurn(env, USER, enc.battleId, 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
   });
 
-  it('migrateInitState: PDS の power 残高と分析 Lv を上限クランプして初回 state に取り込む (§6-4)', async () => {
+  it('migrateInitState: power 残高は取り込むが、ジョブ XP は取り込まない (§6-4 / #534)', async () => {
     const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
     const migrateFetch = (power: unknown, analysis: unknown) => (async (url: string) => {
       if (url.includes('plc.directory')) return json(200, { id: USER, service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: USER_PDS }] });
@@ -196,7 +198,9 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const s1 = await migrateInitState(USER, '');
     expect(s1.power).toBe(85);
     expect(s1.playerXp).toBe(1234);
-    expect(s1.jobXp).toEqual({ warrior: 567 });
+    // **ジョブ XP は取り込まない** (#534)。XP を権威 state に一本化したので、投稿由来の XP を
+    // 種として焼き込むと申告ぶんと二重に効く。ベータの区切りとして全員 Lv1 から再スタート。
+    expect(s1.jobXp).toEqual({});
 
     // 偽造された巨大値は上限クランプされる (MAX_MIGRATE_*)
     globalThis.fetch = migrateFetch(
@@ -206,7 +210,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const s2 = await migrateInitState(USER, '');
     expect(s2.power).toBe(100_000); // MAX_MIGRATE_POWER
     expect(s2.playerXp).toBe(500_000); // MAX_MIGRATE_PLAYER_XP
-    expect(s2.jobXp).toEqual({ mage: 50_000 }); // MAX_MIGRATE_JOB_XP
+    expect(s2.jobXp).toEqual({}); // 偽造された巨大な投稿 XP も、そもそも取り込まないので無害
 
     // レコード無し (未診断・power 無し) は power 0・Lv1 で fail-open
     globalThis.fetch = migrateFetch(null, null);
