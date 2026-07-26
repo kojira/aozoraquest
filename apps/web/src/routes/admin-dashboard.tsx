@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { serverOAuthConfigured } from '@/lib/server-oauth';
 import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
 import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
@@ -17,10 +16,9 @@ import { DebugBattleSim } from '@/components/debug-battle-sim';
  * マップ/店/クエスト…) の入口を並べる骨組み。中身の CRUD は #418 (データ化) の後に各サブ
  * issue で実装するので、ここではセクションの枠 + 状態 (準備中/既存ツールへのリンク) だけ。
  *
- * **重要**: `WORLD_PREVIEW_ENABLED && isAdminDid` は**表示ゲートであって認可 (セキュリティ境界)
- * ではない**。isAdminDid はクライアント公開 env との文字列一致で詐称可能。実データ CRUD を
- * 実装する #418 以降では、**書き込みは必ず edge/サーバー側で権限検証**すること (この UI ゲートを
- * 認可と誤認しない)。露出は dev + 管理者のみ。
+ * **重要**: `isAdminDid` は**表示ゲートであって認可 (セキュリティ境界) ではない**。
+ * クライアント公開 env との文字列一致なので詐称できる。**書き込みは必ず edge 側で
+ * ADMIN_DIDS を検証する** (この UI ゲートを認可と誤認しない)。
  */
 
 interface Section {
@@ -34,13 +32,17 @@ interface Section {
 }
 
 const CONTENT_SECTIONS: Section[] = [
-  { key: 'monsters', title: 'モンスター', desc: 'ステータス・ドロップ・画像を CRUD', issue: 419 },
-  { key: 'items', title: 'アイテム', desc: '装備 / 消費 / 素材を CRUD', issue: 420 },
-  { key: 'map', title: 'マップ / タイル', desc: '地形・エリア・出現配置・パーツ編集', issue: 421 },
-  { key: 'shops', title: 'お店', desc: 'ラインナップ・合成素材・店主セリフ', issue: 422 },
+  // 並びはオーナーが挙げた優先順 (2026-07-26)。#418 (データ化) が全部の前提。
+  { key: 'monsters', title: 'モンスター', desc: '絵・パラメータ・能力・出現エリア', issue: 419 },
+  { key: 'map', title: 'マップ', desc: '地形・エリア・出現配置・パーツ編集', issue: 421 },
+  { key: 'jobs', title: 'ジョブ', desc: '各種パラメータ設定 + 模擬戦', issue: 544 },
+  { key: 'npc', title: 'NPC', desc: '位置・絵・名前・セリフ・フラグ制御', issue: 425 },
+  { key: 'places', title: '街 / ダンジョン / 城', desc: '内部マップの編集', issue: 424 },
   { key: 'quests', title: 'クエスト', desc: 'ゲーム内クエストの作成・編集', issue: 423 },
-  { key: 'npc', title: 'NPC (将来)', desc: 'NPC の CRUD と配置', issue: 425 },
-  { key: 'flags', title: 'フラグ (将来)', desc: '進行フラグでゲート', issue: 426 },
+  { key: 'scenario', title: 'シナリオ', desc: '進行の筋書き', issue: 545 },
+  { key: 'items', title: 'アイテム', desc: '装備 / 消費 / 素材を CRUD', issue: 420 },
+  { key: 'shops', title: 'お店', desc: 'ラインナップ・合成素材・店主セリフ', issue: 422 },
+  { key: 'flags', title: 'フラグ', desc: '進行フラグでゲート', issue: 426 },
 ];
 
 function Card({ s }: { s: Section }) {
@@ -71,18 +73,16 @@ export function AdminDashboard() {
   // セッション復元中は認可判定より前に「読み込み中」を出す (world/spirit と同様。復元中は
   // did が undefined で isAdmin=false になり、一瞬「管理者専用」がちらつくのを防ぐ)。
   if (session.status === 'loading') {
-    return <p style={{ padding: '1em' }}>読み込み中…</p>;
+    return <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</p>;
   }
-  // ダッシュボード自体は**管理者なら本番でも開ける** (isAdminDid のみ)。中の露出は 2 層:
-  //  - コンテンツ CRUD + dev ツール (パワー付与/リセット/模擬戦) は WORLD_PREVIEW_ENABLED (dev 限定)。
-  //  - サーバー連携 (ServerOAuthAdmin) は**本番でも到達可能** — トークン失効時の再連携が本番運用
-  //    タスクだから (docs/21 §12。旧 settings も WORLD_PREVIEW に依らず出していた — レビュー ★★)。
+  // **管理者なら本番でも中身まで開ける** (オーナー要望 2026-07-27)。以前は dev 限定の層を
+  // 設けていたが、書き込みを伴うものは全部 edge 側で ADMIN_DIDS を検証するようになったので、
+  // 表示ゲートに認可を負わせる必要がなくなった (詳細は下の JSX のコメント)。
   const isAdmin = isAdminDid(session.did);
-  const devTools = WORLD_PREVIEW_ENABLED;
 
   if (!isAdmin) {
     return (
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '1em' }}>
+      <div>
         <h2>管理ダッシュボード</h2>
         <p style={{ fontSize: '0.9em', color: 'var(--color-muted)' }}>この画面は管理者専用です。</p>
         <Link to="/settings"><button>設定へ戻る</button></Link>
@@ -95,33 +95,39 @@ export function AdminDashboard() {
   const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.6em', marginTop: '0.5em' };
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '1em' }}>
+    // 幅と余白は app-shell が持っている。ここで独自の maxWidth/padding を足すと
+    // 他のルート (/settings 等) と字下げがずれるので置かない。
+    <div>
       <h2>あおぞらワールド 管理</h2>
       <p style={{ fontSize: '0.82em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
         ゲーム内容の編集ハブ (エピック #416)。CRUD の中身は データ化 (#418) 後に各セクションへ実装。
       </p>
 
-      {devTools && (
-        <>
-          <h3 style={{ fontSize: '0.95em', marginTop: '1.2em' }}>コンテンツ (準備中)</h3>
-          <div style={grid}>
-            {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
-          </div>
-        </>
-      )}
+      <section style={{ marginTop: '2em' }}>
+        <h3 style={{ fontSize: '0.95em' }}>コンテンツ (準備中)</h3>
+        <div style={grid}>
+          {CONTENT_SECTIONS.map((s) => (<Card key={s.key} s={s} />))}
+        </div>
+      </section>
 
       {/* 管理ツールはここに**集約 (埋め込み)** する。別画面へ飛ばさない (ハブの意味がなくなる —
-          オーナー指摘 2026-07-20)。並びは軽いもの順、重い模擬戦フォームを末尾に (レビュー ★★)。 */}
-      <h3 style={{ fontSize: '0.95em', marginTop: '1.4em' }}>ツール</h3>
+          オーナー指摘 2026-07-20)。並びは軽いもの順、重い模擬戦フォームを末尾に (レビュー ★★)。
+
+          **本番でも管理者に出す** (オーナー要望 2026-07-27)。以前は dev 限定にしていたが、
+          書き込みを伴うものは**すべて edge 側で ADMIN_DIDS を検証する**ようになったので、
+          この UI ゲートに認可を負わせる必要がなくなった:
+            - パワー付与 / ジョブ変更 / PDS 残量 → edge が ADMIN_DIDS で検証
+            - ワールドリセット → **本人の state しか消せない** (他人は消せない)
+            - 模擬戦 → client 内の計算だけ (何も書かない)
+          `isAdminDid` は今も**表示ゲートであって認可ではない** (公開 env との文字列一致で詐称可能)。 */}
       {agent && did ? (
         <>
           {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
-          {/* PDS 分割の潮時を判断するための数字。本番でも見たいので devTools ゲートに入れない。 */}
           <PdsUsageAdmin agent={agent} />
-          {devTools && <PowerGrantAdmin agent={agent} did={did} />}
-          {devTools && <JobChangeAdmin agent={agent} did={did} />}
-          {devTools && <WorldResetAdmin agent={agent} did={did} />}
-          {devTools && <DebugBattleSim />}
+          <PowerGrantAdmin agent={agent} did={did} />
+          <JobChangeAdmin agent={agent} did={did} />
+          <WorldResetAdmin agent={agent} did={did} />
+          <DebugBattleSim />
         </>
       ) : (
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>セッションを準備中…</p>
