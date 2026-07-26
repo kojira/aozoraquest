@@ -73,9 +73,10 @@ const router = createBrowserRouter([
       { path: 'search', element: <Search /> },
       { path: 'settings', element: <Settings /> },
       { path: 'spirit', element: <Spirit /> },
-      // /admin は /world と同じく無条件登録 + コンポーネント内ゲート (WORLD_PREVIEW_ENABLED &&
-      // isAdminDid)。dev 限定なのでこの段階は表示ゲートで足りる。#418 で実データ CRUD (edge 権限
-      // 検証) を入れる際、/debug/* のような本番除外の条件登録へ寄せるか再検討する。
+      // /admin は無条件登録 + コンポーネント内の表示ゲート (isAdminDid)。
+      // **本番でも管理者は中身まで開ける** (2026-07-27)。書き込みを伴う操作は
+      // すべて edge 側で ADMIN_DIDS を検証しているので、表示ゲートに認可を負わせていない
+      // (isAdminDid は公開 env との文字列一致なので詐称できる = 守りにはならない)。
       { path: 'admin', element: <AdminDashboard /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
