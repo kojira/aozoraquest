@@ -7,11 +7,13 @@ import {
   jobLevelFromXp,
   pickSpiritLine,
   questXpScalar,
+  effectiveJobXp,
   type SpiritSituation,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
+import { serverState, worldServerEnabled } from '@/lib/world-server';
 import { COL } from '@/lib/collections';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { SpiritBubble } from '@/components/spirit-bubble';
@@ -48,6 +50,7 @@ export function Spirit() {
   const [points, setPoints] = useState<PointsState | null>(null);
   // 受託完了クエストの経験値 (現職 LV に加算)。
   const [questXp, setQuestXp] = useState(0);
+  const [battleXpByJob, setBattleXpByJob] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
 
@@ -59,7 +62,10 @@ export function Spirit() {
   // 性格・口調は admin の prompts/spiritChat の領分のまま。
   const systemPromptRaw = (config.prompts?.spiritChat?.body ?? '').trim();
   const archetypeName = diag ? jobDisplayName(diag.archetype, 'default') : undefined;
-  const levelStr = diag?.jobLevel?.xp !== undefined ? String(jobLevelFromXp(diag.jobLevel.xp + questXp)) : undefined;
+  const levelStr =
+    diag?.jobLevel?.xp !== undefined
+      ? String(jobLevelFromXp(effectiveJobXp({ analysisXp: diag.jobLevel.xp, battleXp: battleXpByJob[diag.archetype], questXp })))
+      : undefined;
   const systemPrompt = useMemo(
     () =>
       applyPromptTemplate(systemPromptRaw, {
@@ -79,15 +85,18 @@ export function Spirit() {
     let cancelled = false;
     (async () => {
       try {
-        const [r, p, rxp] = await Promise.all([
+        const [r, p, rxp, bxp] = await Promise.all([
           getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
           loadPointsState(agent, did),
           listReceivedQuests(agent, did).then(async (qs) => questXpScalar(qs, did, await loadCompletionsByUri(qs))).catch(() => 0),
+          // 戦闘由来のジョブ XP (#530)。これを足さないと、精霊が実際より低いレベルで話しかけてくる。
+          worldServerEnabled ? serverState(agent).then((ss) => ss.state.jobXp ?? {}).catch(() => ({})) : Promise.resolve({}),
         ]);
         if (cancelled) return;
         setDiag(r);
         setPoints(p);
         setQuestXp(rxp);
+        setBattleXpByJob(bxp as Record<string, number>);
       } catch (e) {
         console.warn('spirit init failed', e);
       } finally {

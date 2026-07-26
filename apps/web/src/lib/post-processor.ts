@@ -109,6 +109,11 @@ export async function processSelfPost(
   did: string,
   text: string,
   structure?: PostStructure,
+  /** 戦闘由来のジョブ XP (権威 state。#529/#530)。**レベルアップ判定にだけ**使う。
+   *  これを渡さないと、戦闘で稼いだ人に「レベルアップ! Lv3 → Lv4」と出るのに
+   *  ステータス画面は Lv12、という食い違いが起きる (実際のレベルは合算値なので)。
+   *  取得できないときは 0 のままでよい (演出が出ないだけで、保存する XP は変わらない)。 */
+  battleXp = 0,
 ): Promise<ProcessResult> {
   const trimmed = text.trim();
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
@@ -270,10 +275,12 @@ export async function processSelfPost(
       };
       finalPlayerLevel = nextPlayerLevel;
 
-      // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)
-      const prevJobLv = jobLevelFromXp(oldJob.xp);
+      // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)。
+      // **判定は合算値、保存は投稿由来のみ** — 保存に battleXp を混ぜると
+      // GameState.jobXp と二重計上になる (#530)。
+      const prevJobLv = jobLevelFromXp(oldJob.xp + battleXp);
       const nextJobXp = oldJob.xp + gainedXp;
-      const nextJobLv = jobLevelFromXp(nextJobXp);
+      const nextJobLv = jobLevelFromXp(nextJobXp + battleXp);
       if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
       const nextJobLevel: JobLevelState = {
         archetype: oldJob.archetype,

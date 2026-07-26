@@ -35,6 +35,22 @@ describe('effectiveJobXp (#529)', () => {
     expect(jobLevelFromXp(withBattles)).toBeGreaterThan(1);
   });
 
+  it('レベルアップ判定は合算値・保存は出所ごと (二重計上の防止)', () => {
+    // 投稿でレベルが上がったかは **合算値** で判定しないと、戦闘で稼いだ人に
+    // 「レベルアップ! Lv3 → Lv4」と出るのにステータス画面は Lv12、という食い違いになる。
+    // 一方 analysis に**保存する**のは投稿由来のみ — 合算値を保存すると
+    // GameState.jobXp と二重計上になる。
+    const battleXp = 5000;
+    const before = 100;
+    const after = 100 + 30; // 投稿で 30 稼いだ
+    // 判定は合算値で
+    expect(jobLevelFromXp(effectiveJobXp({ analysisXp: after, battleXp })))
+      .toBeGreaterThanOrEqual(jobLevelFromXp(effectiveJobXp({ analysisXp: before, battleXp })));
+    // 合算値は投稿由来より必ず大きい (= 判定が投稿だけのときとズレる)
+    expect(jobLevelFromXp(effectiveJobXp({ analysisXp: after, battleXp })))
+      .toBeGreaterThan(jobLevelFromXp(after));
+  });
+
   it('戦闘 XP のスケールが投稿 XP と噛み合っている (オーナー確認 2026-07-25)', () => {
     // 「戦闘を楽しむために投稿する」= 1 投稿 = 1 パワー = 1 戦闘 で、戦闘の方が実入りが大きい、
     // という設計。tier1 は投稿と同程度、上位 tier ほど濃い、という関係を固定する。
