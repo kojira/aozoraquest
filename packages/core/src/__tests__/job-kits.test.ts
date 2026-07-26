@@ -211,11 +211,14 @@ describe('守護者 確定キット (#456。壁役・def基準)', () => {
   });
 
   it('盾殴りは def 基準でダメージを与える (守りの固さで殴る)', () => {
-    const s = startBattle('guardian', 3, 8, '守', 1, 5, 0);
+    // **防具が要る。** まもりは防具が主役という設計 (#518: defBase/defGrow を意図的に抑えている)
+    // なので、Lv3・装備なしだと守護者でも def 2 しかなく、def 基準の技が 0 ダメージになる。
+    // 「固さで殴る」技が「まず固くなってから」効くのは設計として正しい。
+    const s = startBattle('guardian', 3, 8, '守', 1, 5, 0, undefined, { equipIds: ['ar-cloth'] });
     const idx = s.playerSkills.findIndex((sk) => sk.name === '盾殴り');
     const before = s.monster.hp;
     const next: BattleState = resolveTurn(s, 'skill', 999, idx);
-    expect(next.monster.hp).toBeLessThan(before); // def43 型なので通常攻撃(atk24)より重い
+    expect(next.monster.hp).toBeLessThan(before);
   });
 
   it('とげの盾を張ると敵の攻撃を反射する', () => {

@@ -14,6 +14,7 @@ import {
   pickTrialTier,
   startBattle,
   resolveTurn,
+  runAutoBattle,
   rollDefeatLoss,
   rollDrops,
   rollSearch,
@@ -1189,16 +1190,16 @@ describe('モンスターの tier = 想定プレイヤーレベル (#518/#509)',
     expect(avg(3, 'maxHp')).toBeGreaterThan(avg(2, 'maxHp') * 1.3);
   });
 
-  it('tier1 は Lv1 の全職が通常攻撃だけで勝ち越せる (序盤に詰まない #509)', () => {
+  it('tier1 は Lv1 の全職が「持てる手を使えば」勝てる (序盤に詰まない #509)', () => {
+    // **とくぎ込みで測る。** 通常攻撃だけを基準にすると、魔法使い (atk 比率 7) のような
+    // 「殴るべきでない職」を詰み扱いしてしまう (実測 15%)。とくぎを使えば 95% 勝てるので
+    // 詰んでいない。#521/#538 で自動戦闘が手を選べるようになったので、それを使って測る。
     for (const j of JOBS) {
       let win = 0;
       for (let seed = 0; seed < 120; seed++) {
-        let s = startBattle(j.id, 1, 1, 'x', 1, seed, 0);
-        for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack');
-        if (s.outcome === 'win') win++;
+        if (runAutoBattle(startBattle(j.id, 1, 1, 'x', 1, seed, 2)).outcome === 'win') win++;
       }
-      // キャスターは物理が通りにくい設計なので閾値は控えめ。「詰まない」ことの固定。
-      expect(win / 120, `${j.id} tier1 勝率`).toBeGreaterThan(0.35);
+      expect(win / 120, `${j.id} tier1 勝率`).toBeGreaterThan(0.8);
     }
   });
 });
