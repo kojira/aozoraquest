@@ -708,9 +708,13 @@ export function World() {
       if (awarded.leveledUp) {
         const lv = awarded.leveledUp;
         resultLines.push(`レベルが ${lv.to} に あがった！`);
-        // **上がった数値を 1 つずつ**出す (オーナー要望 2026-07-27)。「上がった」だけだと
-        // 何が良くなったのか分からない。
-        for (const g of lv.gains ?? []) resultLines.push(`${g.label}が ${g.delta} あがった！`);
+        // **上がった数値は 1 行にまとめる** (オーナー要望 2026-07-27「上がったパラメータと
+        // 数値を一つ一つ表示」)。1 ステータス 1 行にすると 7 行になり、メッセージ窓は
+        // 実測 5 行しか見えないので、**肝心の「おぼえた!」「きずが いえた!」が窓の外へ
+        // 押し出されて誰も読めない** (タップ 1 回でマップに戻るので二度と読めない)。
+        // 数値は全部出しつつ、窓に収める。
+        const gains = lv.gains ?? [];
+        if (gains.length) resultLines.push(gains.map((g) => `${g.label}+${g.delta}`).join('　'));
         // 覚えたとくぎ。気づかないと使われないので必ず出す。
         for (const name of lv.learned ?? []) resultLines.push(`${name} を おぼえた！`);
         resultLines.push('きずが すっかり いえた！');

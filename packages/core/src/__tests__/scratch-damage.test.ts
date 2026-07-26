@@ -43,21 +43,48 @@ describe('かすりダメージ (装備で不死身にならない)', () => {
     expect(nonCritHits, 'メタルに会心以外でダメージが通ってはいけない').toBe(0);
   });
 
-  it('grade2 防具の Lv5 賢者は tier1 で無敵にならない (回復なしの連戦が有限)', () => {
-    let worst = 0;
-    for (let t = 0; t < 20; t++) {
-      let hp: number | undefined, mp: number | undefined, n = 0;
-      // 300 戦まで見て、そこまで無傷なら「実質無限」= 退行とみなす。
-      for (let b = 0; b < 300; b++) {
-        const s = startBattle('sage', 5, 1, 'x', 1, t * 977 + b, 0,
-          hp !== undefined ? { hp, mp: mp! } : undefined, { gear: GRADE2_ROBE });
-        const r = runAutoBattle(s);
-        if (r.outcome !== 'win') break;
-        n++; hp = r.player.hp; mp = r.player.mp;
-      }
-      worst = Math.max(worst, n);
+  it('grade2 防具の Lv5 賢者でも tier1 の敵の攻撃が通る (無傷率 100% にならない)', () => {
+    // **「連戦が有限か」で測ってはいけない。** レベルアップ全回復があるので、わずかでも
+    // 削られる状態なら連戦数は「レベルが上がる速さ」で決まってしまい、かすりが効いて
+    // いるかどうかを見ていない。**1 戦あたり削られるか**を直接見る。
+    let unhurt = 0, lost = 0;
+    const N = 200;
+    for (let t = 0; t < N; t++) {
+      const s = startBattle('sage', 5, 1, 'x', 1, t * 7919, 0, undefined, { gear: GRADE2_ROBE });
+      const r = runAutoBattle(s);
+      const d = s.player.maxHp - r.player.hp;
+      if (d === 0) unhurt++;
+      lost += d;
     }
-    expect(worst, '回復なしで 300 戦連勝できるなら不死身 (かすりが効いていない)').toBeLessThan(300);
+    // 修正前は 200/200 が無傷・被ダメ合計 0 だった (守備 18 に対し tier1 の実効 atk は 5〜6 で
+    // `6×0.9 < 18×0.45` → 1 も通らない)。装備で有利になるのは当然だが、**一度も当たらない**
+    // のは別物なので、そこだけを固定する。
+    expect(lost, 'grade2 防具を着けると tier1 から 1 ダメージも受けない = 不死身').toBeGreaterThan(0);
+    expect(unhurt / N, '無傷率が 100% = かすりが効いていない').toBeLessThan(0.95);
+  });
+
+  it('ぼうぎょすると被ダメが増える、が起きない (床を減算の段階に置いていること)', () => {
+    // 床を全ての軽減倍率の**後**に max で入れると、0 沈み域でぼうぎょ半減・属性耐性・
+    // 被ダメ軽減パッシブが丸ごと無効になり、素受けより被ダメが大きくなる組み合わせが
+    // 実際に 66 通り存在した (レビュー実測: ぬまの大蛇 atk15 vs def28 → 素受け 1 / ぼうぎょ 2)。
+    const t = BATTLE_TUNING;
+    const dmg = (atkV: number, defV: number, guard: boolean, roll: number) => {
+      const floor = atkV * t.scratchRatio; // ironDef でない相手
+      let d = Math.max(floor, atkV * t.atkCoef - defV * t.defCoef) * roll;
+      if (guard) d *= t.guardReduction;
+      return Math.max(0, Math.round(d));
+    };
+    const inversions: string[] = [];
+    for (const m of MONSTERS) {
+      if (m.flatDef !== undefined) continue;
+      const a = monsterCombatant(m, 0, () => 0.5).atk;
+      for (let def = 0; def <= 140; def++) {
+        for (const roll of [0.85, 0.925, 1.0, 1.075, 1.15]) {
+          if (dmg(a, def, true, roll) > dmg(a, def, false, roll)) inversions.push(`${m.name} atk${a} def${def}`);
+        }
+      }
+    }
+    expect(inversions.slice(0, 3), 'ぼうぎょで被ダメが増える組み合わせ').toEqual([]);
   });
 
   it('比率は攻撃力比例で、0 は ironDef だけの特権', () => {

@@ -92,8 +92,14 @@ function levelUpOf(
   const to = jobLevelFromXp(after.jobXp[archetype] ?? 0, archetype);
   if (to <= from) return undefined;
   const arch = archetype as Archetype;
-  const gains = levelUpGains(arch, { jobLevel: from, playerLevel: 1 }, { jobLevel: to, playerLevel: 1 }, baseStats)
-    .map((g) => ({ key: String(g.key), label: g.label, delta: g.delta }));
+  // **baseStats が無ければ内訳を省く** — 職の基準値だけで出すと、その人の実際の伸びと
+  // 違う数値を見せることになる (実測: あり MP+1.1/こうげき+1.1 → なし MP+0.7/こうげき+1.3)。
+  // `SealedMeta.baseStats` は optional なので、デプロイを跨いだ進行中のガードで実際に
+  // この経路に入る。以前は条件が書かれておらず素通ししていた (レビュー ★★ 2026-07-27)。
+  const gains = baseStats
+    ? levelUpGains(arch, { jobLevel: from, playerLevel: 1 }, { jobLevel: to, playerLevel: 1 }, baseStats)
+        .map((g) => ({ key: String(g.key), label: g.label, delta: g.delta }))
+    : [];
   // 覚えたとくぎ = 新 Lv の一覧から旧 Lv の一覧を引いたもの。
   const had = new Set(skillsForJob(arch, from).map((s) => s.name));
   const learned = skillsForJob(arch, to).map((s) => s.name).filter((n) => !had.has(n));

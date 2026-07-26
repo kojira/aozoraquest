@@ -141,15 +141,25 @@ export const BATTLE_TUNING = {
    *
    *  なぜ要るか: minDamage=0 はメタル系のためのものだったが、**プレイヤー側の守備でも
    *  同じ崖に届いてしまう**。grade2 の防具 1 点 (def+15) で Lv5 の守備は 2 → 18 になり、
-   *  tier1 のモンスターは実効 atk が最大 9 = `9×0.9 < 18×0.45` で **1 も通らない**。
-   *  実測で tier1 は被ダメ 0・無傷率 100%・連戦 300+ 戦 (= 無限) になっていた
+   *  tier1 のモンスターは実効 atk が 5〜6 = `6×0.9 = 5.4 < 18×0.45 = 8.1` で **1 も通らない**。
+   *  実測で tier1 は被ダメ 0・無傷率 100%・連戦は打ち切りまで無敗になっていた
    *  (オーナー報告 2026-07-27「レベル5でこの装備だと tier1 だと敵なし」)。
    *  「硬い相手には通らない」は敵の identity として設計したものであって、
    *  **プレイヤーが不死身になってよいという意味ではない**。
    *
-   *  0.1 の根拠: tier1 の実効 atk 7〜9 → かすり 1。素手の被ダメ (平均 1.81/戦) に近い
-   *  持久力に戻り、かつ tier2 以降の数値には実質影響しない (減算が既に正なので通らない)。 */
-  scratchRatio: 0.1,
+   *  0.25 の根拠 (装備 + レベルアップ全回復ありで再導出。全職平均の連戦数):
+   *
+   *  | ratio | 素手 t1 | 素手 t2 | ローブ t1 | ローブ t2 | ローブ t3 |
+   *  |---|---|---|---|---|---|
+   *  | 0.00 (旧) | 39.7 | 5.0 | 224 | 47.6 | 0.9 |
+   *  | 0.10 | 39.7 | 5.0 | 211 | 26.2 | 0.9 |
+   *  | **0.25** | **39.7** | **5.0** | **148** | **7.0** | **0.9** |
+   *  | 0.30 | 39.7 | 5.0 | 80 | 5.9 | 0.9 |
+   *
+   *  **素手と tier3 は ratio を動かしても 1 も変わらない** — 減算が既に正なので床が効かない。
+   *  つまりこの値は「装備した低 tier」だけに効く。0.25 で装備 tier2 (7.0) が素手 tier2 (5.0) に
+   *  並ぶところまで締まり、かつ装備した意味は残る。0.30 まで上げると装備の価値が消える。 */
+  scratchRatio: 0.25,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
   agiDodgeScale: 0.009,
@@ -845,9 +855,13 @@ export function levelUpGains(
   const b = playerStatsAt(archetype, to.jobLevel, to.playerLevel, baseStats);
   const gains: StatGain[] = [];
   for (const [key, label] of STAT_GAIN_LABELS) {
-    const raw = b[key] - a[key];
-    if (raw < STAT_GAIN_MIN_DISPLAY) continue;
-    gains.push({ key, label, delta: Math.round(raw * 10) / 10 });
+    // **画面に出るのは丸めた値なので、上昇量も丸めた差で出す。** 生値の差を小数 1 桁で
+    // 出していたため「まもりが 0.4 あがった!」と言われてステータス画面を見ても
+    // **何も変わっていない** (実測: 戦士 Lv1→2 まもり 表示 0.4 / 実差 0、Lv3→4
+    // さいだいMP 表示 1.1 / 実差 2) という食い違いが起きていた。
+    const delta = Math.round(b[key]) - Math.round(a[key]);
+    if (delta < 1) continue; // 丸めて変わらない項目は出さない (嘘の行を作らない)
+    gains.push({ key, label, delta });
   }
   return gains;
 }
@@ -1485,7 +1499,12 @@ function doAttack(
   // しか通らず、会心 (defValue=0) のみ貫通できる = 専用ロジック不要で「守備が硬い」が表現される。
   // 攻撃威力バフ (atkUp/atkDown)。none なら ×1。
   const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1) * applyPowerCalc(1, attacker, atkCtx);
-  let dmg = Math.max(t.minDamage, (atkTerm - defValue * t.defCoef) * roll);
+  // **かすりの床は減算の段階で入れる** (乗算補正より前)。後ろで max を取ると、ぼうぎょ半減・
+  // 属性耐性・被ダメ軽減パッシブが 0 沈み域で丸ごと無効になり、**ぼうぎょすると被ダメが増える**
+  // 逆転すら起きる (実測 66 通り。例: ぬまの大蛇 atk15 vs def28 → 素受け 1 / ぼうぎょ 2)。
+  // ここに置けば従来どおり全部が乗算され、ironDef の 0 も維持される。
+  const floor = defender.ironDef ? t.minDamage : atkValue * t.scratchRatio;
+  let dmg = Math.max(floor, atkTerm - defValue * t.defCoef) * roll;
 
   // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
@@ -1501,11 +1520,8 @@ function doAttack(
   // = メタル系が「かいしんのいちげき (守備無視) でしか倒せない」identity を持てる。以前は
   // 最低 1 を保証していたため、atk 1 の魔法使いでも殴り続ければメタルを削り切れてしまっていた。
   //
-  // ただし **0 が許されるのは ironDef (メタル系) だけ**。通常の守備力で 0 に沈むと、grade2 の
-  // 防具 1 点で tier1 が「絶対に当たらない」= 無限連戦になっていた (scratchRatio の doc に実測)。
-  // 沈んだぶんは「かすった」扱いで攻撃力に比例した最小ダメージを通す。
-  const scratched = dmg < 1 && !defender.ironDef ? Math.max(dmg, atkValue * t.scratchRatio * roll) : dmg;
-  const final = Math.max(0, Math.round(scratched));
+  // ただし **0 が許されるのは ironDef (メタル系) だけ**。床は上の減算の段階で入れてある。
+  const final = Math.max(0, Math.round(dmg));
   // 物理致死の直前に onLethal フック (覇王/不動) を確認。survive なら HP1 で耐える (反射等は
   // ハンドラ内で処理済み)。魔法致死は doMagic を通るためここには来ず、耐えられず死ぬ (§12)。
   if (defender.hp - final <= 0 && applyOnLethal(defender, attacker, final, defCtx)) {
