@@ -11,7 +11,7 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
+  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
   terrainAt, isWalkable, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
 } from '@aozoraquest/core';
@@ -72,6 +72,10 @@ async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fet
   const { pds, handle } = await resolveUserPds(userDid, fetchImpl);
   const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector; jobLevel?: { xp?: number }; playerLevel?: { xp?: number } }>(pds, userDid, `${ns}.analysis`, 'self');
   if (!rec?.value?.archetype || !rec.value.rpgStats) throw new ResolverError('診断が未実施 (先に気質診断が必要)', 409, 'diagnosis_required');
+  // **実在する職か確かめる** (#551)。ここが無いと、ユーザーが自分の PDS に書いた任意の
+  // 文字列がそのまま職として使われ、`JOB_KITS[archetype]` 等が undefined を返して
+  // 「とくぎが 1 つも無い」「パッシブが効かない」といった無言の壊れ方をする。
+  if (!(rec.value.archetype in JOBS_BY_ID)) throw new ResolverError('職が不正 (診断をやり直して)', 409, 'invalid_archetype');
   // **ジョブ XP はここから読まない** (#534)。XP の記録先は権威 state (`GameState.jobXp`) に
   // 一本化した。`analysis.jobLevel.xp` はベータ期間の記録として凍結され、成長には効かない。
   //

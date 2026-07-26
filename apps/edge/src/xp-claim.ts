@@ -43,6 +43,19 @@ export const POWER_PER_POST = 1;
 export const MAX_POWER = 100_000;
 
 /**
+ * **1 日に申告できる XP の上限** (#551)。
+ *
+ * 申告の額の根拠 (投稿の分類結果・デイリークエストの達成) は client にあり、サーバーは
+ * それを検証できない (post の実在・本人検証は M4)。1 回あたりの上限クランプはあるが、
+ * **回数の制限が無いので何回でも申告できた**。正直なプレイの上限に近い値で日次の蓋をする。
+ *
+ * 根拠: 1 日の正直な上限 ≒ 日次ボーナス + streak 上限 + デイリークエスト全枠 +
+ * 投稿 1 件あたり 5 XP × 現実的な投稿数 (100 件) ≒ 600。倍の余裕をみて 1200。
+ * ここに当たるのは異常な使い方なので、当たったことをログに残す。
+ */
+export const MAX_DAILY_CLAIM_XP = 1200;
+
+/**
  * 種類ごとの 1 回あたり上限。**core の報酬定数から導く** — ここに数値を書き写すと、
  * 報酬を変えたときに片方だけ直して「正当な申告が切られる」か「上限が緩む」になる。
  */
@@ -66,6 +79,12 @@ export function maxXpFor(kind: XpClaimKind): number {
  *  #534 で初めてできたので、ここで閉じる。 */
 function assertArchetype(archetype: string): void {
   if (!archetype || !(archetype in JOBS_BY_ID)) throw new XpClaimError('archetype が不正', 400);
+}
+
+/** `at://<did>/<collection>/<rkey>` から発注者の DID を取り出す。形式が違えば null。 */
+export function ownerOfAtUri(uri: string): string | null {
+  const m = /^at:\/\/([^/]+)\//.exec(uri);
+  return m?.[1] ?? null;
 }
 
 export class XpClaimError extends Error {
@@ -102,6 +121,13 @@ export async function claimXp(
 ): Promise<XpClaimResult> {
   const { kind, archetype, key } = input;
   assertArchetype(archetype);
+  // **自作自演を弾く** (#551)。依頼クエストの冪等キーはクエストの URI
+  // (`at://<発注者の DID>/app.aozoraquest.userQuest/<rkey>`) なので、発注者が申告者本人なら
+  // 「自分で依頼を作って自分で受けて自分で承認する」経路。1 日 5 件作れるので放置すると
+  // 500 XP/日 が湧く。サーバーは URI から発注者を読めるので、ここだけは検証できる。
+  if (kind === 'quest' && ownerOfAtUri(key) === did) {
+    throw new XpClaimError('自分の依頼では経験値は入らない', 400);
+  }
   if (!key || key.length > 256) throw new XpClaimError('冪等キーが不正', 400);
   if (!Number.isFinite(input.xp) || input.xp < 0) throw new XpClaimError('xp が不正', 400);
 
@@ -110,8 +136,12 @@ export async function claimXp(
   const xp = Math.min(Math.floor(input.xp), maxXpFor(kind));
   const claimKey = `${kind}:${key}`;
 
+  // 日次カウンタの日付 (UTC)。サーバーの時計で決めるので client からは動かせない。
+  const today = new Date(now * 1000).toISOString().slice(0, 10);
+
   let granted = 0;
   let duplicate = false;
+  let capped = false;
   const next = await readModifyWrite(
     env,
     did,
@@ -123,11 +153,18 @@ export async function claimXp(
         duplicate = true;
         return cur;
       }
-      granted = xp;
+      // **日次の蓋** (#551)。1 回あたりの上限だけだと回数無制限で盛れる。
+      const usedToday = cur.claimDay === today ? (cur.claimedToday ?? 0) : 0;
+      const room = Math.max(0, MAX_DAILY_CLAIM_XP - usedToday);
+      const give = Math.min(xp, room);
+      capped = give < xp;
+      granted = give;
       duplicate = false;
       return {
         ...cur,
-        jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + xp },
+        claimDay: today,
+        claimedToday: usedToday + give,
+        jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + give },
         // **投稿ならあおぞらパワーを回復する** (docs/19 §3)。ここが無いとパワーが枯れて
         // 勝っても報酬が入らなくなり、「何回戦ってもレベルが上がらない」になる。
         ...(kind === 'post' ? { power: Math.min(MAX_POWER, cur.power + POWER_PER_POST) } : {}),
@@ -138,6 +175,7 @@ export async function claimXp(
     init ? { now, init } : { now },
   );
 
+  if (capped) console.warn(`xp daily cap hit: did=${did} day=${today}`);
   return { granted, jobXp: next.jobXp[archetype] ?? 0, duplicate, power: next.power };
 }
 

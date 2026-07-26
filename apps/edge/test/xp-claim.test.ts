@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { XP_REWARDS, MAX_DAILY_QUEST_XP, DEFAULT_QUEST_TEMPLATES, JOB_LEVEL_TUNING, jobLevelFromXp } from '@aozoraquest/core';
-import { claimXp, adminSetJobXp, adminGrantPower, maxXpFor, MAX_CLAIM_KEYS, POWER_PER_POST, XpClaimError } from '../src/xp-claim';
+import { claimXp, adminSetJobXp, adminGrantPower, maxXpFor, MAX_CLAIM_KEYS, MAX_DAILY_CLAIM_XP, POWER_PER_POST, XpClaimError } from '../src/xp-claim';
 import { normalizeState, rkeyForDid, readState, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
@@ -348,5 +348,57 @@ describe('adminGrantPower (管理者のパワー付与)', () => {
     await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 20, key: 'k' }, NOW);
     await adminGrantPower(env, DID, 100, NOW);
     expect(stored(m.store).jobXp).toEqual({ warrior: 20 });
+  });
+});
+
+describe('申告の抑止 (#551)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('1 日に申告できる XP に上限がある (回数無制限で盛れない)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    let total = 0;
+    for (let i = 0; i < 40; i++) {
+      const r = await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: maxXpFor('post'), key: `k${i}` }, NOW);
+      total += r.granted;
+    }
+    expect(total).toBe(MAX_DAILY_CLAIM_XP);
+    expect(stored(m.store).jobXp['warrior']).toBe(MAX_DAILY_CLAIM_XP);
+  });
+
+  it('日付が変われば上限がリセットされる (サーバーの時計で決める)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    for (let i = 0; i < 40; i++) {
+      await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: maxXpFor('post'), key: `a${i}` }, NOW);
+    }
+    // 翌日ぶんのトークンを持つ env で叩く (テスト用トークンは NOW+3600 で切れるため)
+    const nextDay = NOW + 24 * 3600;
+    const kv = mockKv();
+    await writeServerTokens(kv, { did: SERVER_DID, accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: nextDay + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: nextDay });
+    const envNext: GameStateEnv = { ...env, OAUTH_TOKENS: kv };
+    const r = await claimXp(envNext, DID, { kind: 'post', archetype: 'warrior', xp: 50, key: 'b1' }, nextDay);
+    expect(r.granted).toBe(50);
+  });
+
+  it('自分で作った依頼クエストでは経験値が入らない', async () => {
+    // クエストの URI に発注者の DID が入っているので、ここだけはサーバーが検証できる。
+    // 1 日 5 件作れるので、放置すると 500 XP/日 が湧く。
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds().fn;
+    const own = `at://${DID}/app.aozoraquest.userQuest/abc`;
+    await expect(claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 100, key: own }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+
+  it('他人が発注した依頼クエストなら入る', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    const other = 'at://did:plc:bob/app.aozoraquest.userQuest/abc';
+    const r = await claimXp(env, DID, { kind: 'quest', archetype: 'warrior', xp: 100, key: other }, NOW);
+    expect(r.granted).toBe(100);
   });
 });
