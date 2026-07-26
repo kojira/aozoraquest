@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import type { GearSelection } from '@aozoraquest/core';
+import { worldOverlay, type GearSelection } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -119,7 +119,22 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
  */
 export function normalizeState(state: GameState): GameState {
   if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
-  return { ...state, jobXp: {}, xpClaims: [], xpEpoch: XP_EPOCH };
+  // **位置も spawn に戻す。** Lv1 に戻したのに立ち位置が奥地のままだと、想定 Lv8 以上の
+  // 敵に Lv1 で遭遇し、負けるたびに素材を失う死にループに入る (帰還先の lastTown も
+  // その地方なので抜け出せない)。「Lv1 から再スタート」なら出発点も揃えるのが筋。
+  // 持ち物・パワー・装備は触らない (XP 以外を巻き添えにしない)。
+  const spawn = worldOverlay().spawn;
+  return {
+    ...state,
+    jobXp: {},
+    xpClaims: [],
+    xpEpoch: XP_EPOCH,
+    x: spawn.x,
+    y: spawn.y,
+    lastTown: { x: spawn.x, y: spawn.y },
+    carryHp: undefined,
+    carryMp: undefined,
+  };
 }
 
 export interface RmwOptions {

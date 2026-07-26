@@ -162,11 +162,21 @@ describe('normalizeState (ベータの区切り)', () => {
     const out = normalizeState(v1);
     expect(out.jobXp).toEqual({});
     expect(out.xpEpoch).toBe(XP_EPOCH);
-    // XP 以外は触らない (持ち物・位置・パワーまで巻き戻すと「全部消えた」になる)
+    // 持ち物・パワーは触らない (「全部消えた」にしない)
     expect(out.power).toBe(5);
     expect(out.playerXp).toBe(100);
     expect(out.materials).toEqual({ herb: 2 });
-    expect(out.x).toBe(1);
+  });
+
+  it('区切りでは位置も spawn に戻す (Lv1 で奥地に取り残さない)', async () => {
+    const { worldOverlay } = await import('@aozoraquest/core');
+    const spawn = worldOverlay().spawn;
+    const v1 = { did: DID, power: 0, playerXp: 0, jobXp: { warrior: 9999 }, materials: {}, gear: [], x: 900, y: 900, lastTown: { x: 900, y: 900 }, carryHp: 3, version: 1, updatedAt: '' } as GameState;
+    const out = normalizeState(v1);
+    expect(out.x).toBe(spawn.x);
+    expect(out.y).toBe(spawn.y);
+    expect(out.lastTown).toEqual({ x: spawn.x, y: spawn.y });
+    expect(out.carryHp).toBeUndefined(); // 全快で再開
   });
 
   it('区切り済みの state はそのまま (再リセットしない)', () => {

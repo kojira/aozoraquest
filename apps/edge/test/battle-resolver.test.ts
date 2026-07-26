@@ -4,7 +4,7 @@ import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { terrainAt, isWalkable, type Command } from '@aozoraquest/core';
-import type { GameState } from '../src/game-state';
+import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
 const SERVER_DID = 'did:plc:testserver';
@@ -28,7 +28,9 @@ async function makeEnv(): Promise<ResolverEnv> {
 }
 
 const DIAG = { archetype: 'warrior', rpgStats: { atk: 30, def: 25, agi: 15, int: 15, luk: 15 } };
-const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, power: 5, playerXp: 100, jobXp: { warrior: 50 }, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: '', ...over });
+// xpEpoch 済みの state (= ベータの区切りを通過済み)。省くと normalizeState が
+// 「区切り前」と見なして jobXp と位置をリセットしてしまう (#534)。
+const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, power: 5, playerXp: 100, jobXp: { warrior: 50 }, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: 1, updatedAt: '', ...over });
 
 /** 診断 + サーバー PDS (gameState + guard) の CAS を実装する統合モック。 */
 function resolverMock(opts: { diagnosis?: unknown; gameState?: GameState } = {}) {
