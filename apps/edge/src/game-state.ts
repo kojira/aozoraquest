@@ -39,6 +39,15 @@ export const XP_EPOCH = 1;
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
 
+/** 所持装備の 1 個体 (#551 段階 2)。rkey は制作時に client が採番した冪等キーと同じ値で、
+ *  ユーザー PDS 側の記帳レコードと対応づけるために持つ。 */
+export interface OwnedPiece {
+  rkey: string;
+  itemId: string;
+  /** 強化値 (+N)。サーバーが抽選/合成して決めた値だけが入る。 */
+  level: number;
+}
+
 export interface GameState {
   /** どのユーザーの state か (監査用。rkey は DID のハッシュなので値に DID を残す)。 */
   did: string;
@@ -78,6 +87,14 @@ export interface GameState {
   /** XP の区切り世代 (#534)。`XP_EPOCH` と違えば `normalizeState` が jobXp をリセットする。
    *  version と別に持つ理由は `XP_EPOCH` の doc を参照 (片道マーカーが要る)。 */
   xpEpoch?: number;
+  /** 処理済みのお店操作の冪等キー (`craft:<rkey>` / `sell:<rkey>` / `forge:<rkey>`)。
+   *  直近 `MAX_SHOP_OPS` 件。再送・二重送信で二重に課金/入金しないため (#551。詳細は shop.ts)。 */
+  shopOps?: string[];
+  /** **所持している装備の個体** (#551 段階 2)。`/api/shop/craft` と `/api/shop/forge` だけが作る。
+   *  以前は個体がユーザー PDS の `craft` レコードにあり、しかも `/api/world/gear` が
+   *  client の申告を**所持の検証なしで**保存していたため、`{weapon:{id:'wp-shogun-high',plus:99}}`
+   *  を送るだけで戦闘に効いた。ここに無い個体は装備できない。 */
+  pieces?: OwnedPiece[];
   version: number;
   updatedAt: string;
 }

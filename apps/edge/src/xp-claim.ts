@@ -205,3 +205,49 @@ export async function adminGrantPower(
   );
   return { power: next.power };
 }
+
+/**
+ * **あおぞらパワーを消費する** (#551 段階 1)。カードの引き直しなど、サーバーが結果を
+ * 決めるわけではないが費用だけは権威側で引きたい操作のための入口。
+ *
+ * 用途 (`reason`) ごとに**サーバーが値段を決める** — client が金額を送ってこない。
+ * 冪等キーで再送の二重消費を防ぐ。
+ */
+export type PowerSpendReason = 'card-draw';
+
+/** 用途ごとの費用。core の定数から導けるものはそこから引く。 */
+export function powerCostFor(reason: PowerSpendReason): number {
+  switch (reason) {
+    case 'card-draw':
+      return 1; // カード 1 枚引き直すたびに 1 (docs/19 §3)
+  }
+}
+
+export async function spendPower(
+  env: GameStateEnv,
+  did: string,
+  input: { reason: PowerSpendReason; key: string },
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<{ power: number; spent: number; duplicate: boolean }> {
+  if (input.reason !== 'card-draw') throw new XpClaimError('用途が不正', 400);
+  if (!input.key || input.key.length > 256) throw new XpClaimError('冪等キーが不正', 400);
+  const cost = powerCostFor(input.reason);
+  const opKey = `spend:${input.reason}:${input.key}`;
+
+  let spent = 0;
+  let duplicate = false;
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => {
+      if ((cur.xpClaims ?? []).includes(opKey)) { duplicate = true; spent = 0; return cur; }
+      if (cur.power < cost) throw new XpClaimError('あおぞらパワーが たりない', 400);
+      duplicate = false;
+      spent = cost;
+      return { ...cur, power: cur.power - cost, xpClaims: [...(cur.xpClaims ?? []), opKey].slice(-MAX_CLAIM_KEYS) };
+    },
+    init ? { now, init } : { now },
+  );
+  return { power: next.power, spent, duplicate };
+}

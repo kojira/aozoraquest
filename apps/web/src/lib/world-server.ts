@@ -22,6 +22,10 @@ const LXM_STATE = 'app.aozoraquest.me.state';
 const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
 const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
 const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
+const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
+const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
+const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
+const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -83,7 +87,9 @@ export interface ServerBattleState { player: ServerMonster; monster: ServerMonst
 export interface ServerEncounter { battleId: string; monsterId: string; state: ServerBattleState; rewarded: boolean }
 export interface ServerMoveResult { x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
+/** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
+export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -127,8 +133,9 @@ export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
 }
 
 /** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
-export function serverSearch(agent: Agent, token?: string): Promise<{ found: string | null; materials: Record<string, number> }> {
-  return callEdge<{ found: string | null; materials: Record<string, number> }>(agent, LXM_SEARCH, '/api/world/search', token ? { token } : {});
+/** しらべる。`key` は冪等キー — 応答だけ落ちて押し直したときに二重に引かれないため。 */
+export function serverSearch(agent: Agent, token?: string, key?: string): Promise<{ found: string | null; materials: Record<string, number>; power: number }> {
+  return callEdge<{ found: string | null; materials: Record<string, number>; power: number }>(agent, LXM_SEARCH, '/api/world/search', { ...(token ? { token } : {}), ...(key ? { key } : {}) });
 }
 
 /** オンボード用リセット: 権威 gameState + 戦闘ガードをサーバーで削除する (本人のみ)。次の入場で初期状態に戻る。
@@ -155,6 +162,42 @@ export function serverClaimXp(agent: Agent, input: { kind: 'post' | 'quest'; arc
  *  edge 側が ADMIN_DIDS でゲートする (client の isAdminDid は表示ゲートに過ぎない)。 */
 export function serverAdminSetJobLevel(agent: Agent, archetype: string, level: number): Promise<{ jobXp: number; level: number }> {
   return callEdge<{ jobXp: number; level: number }>(agent, LXM_XP_ADMIN_SET, '/api/xp/admin-set', { archetype, level });
+}
+
+export interface ServerShopResult {
+  power: number;
+  materials: Record<string, number>;
+  /** 制作したときだけ: サーバーが抽選した強化値。 */
+  level?: number;
+  /** ひきとりのときだけ: 得たパワー。 */
+  powerGained?: number;
+  /** 同じ rkey の再送だったか。 */
+  duplicate?: boolean;
+  /** 操作後の所持個体 (#551 段階 2)。client はこれを正として表示する。 */
+  pieces?: ServerOwnedPiece[];
+}
+
+/** なんでも屋: 装備を作ってもらう (#551)。**費用も強化値もサーバーが決める**。
+ *  client は返ってきた level を craft レコードに記帳するだけ。 */
+export function serverShopCraft(agent: Agent, itemId: string, rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_CRAFT, '/api/shop/craft', { itemId, rkey });
+}
+
+/** なんでも屋: きたえる (#551 段階 2)。同じ品・同じ強化値の 2 個体 → +1。
+ *  消費する個体は**権威側の所持から**探すので、持っていない rkey は通らない。 */
+export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_FORGE, '/api/shop/forge', { rkeys, rkey });
+}
+
+/** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */
+export function serverShopSell(agent: Agent, materialId: string, count: number, rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_SELL, '/api/shop/sell', { materialId, count, rkey });
+}
+
+/** あおぞらパワーを消費する (#551)。**値段はサーバーが決める** — client が金額を送らない。
+ *  `key` は冪等キー (同じ引き直しで二重に引かれない)。 */
+export function serverSpendPower(agent: Agent, reason: 'card-draw', key: string): Promise<{ power: number; spent: number; duplicate: boolean }> {
+  return callEdge<{ power: number; spent: number; duplicate: boolean }>(agent, LXM_POWER_SPEND, '/api/power/spend', { reason, key });
 }
 
 /** **管理者専用**: あおぞらパワーを権威 state に付与する。
