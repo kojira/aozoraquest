@@ -173,7 +173,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const tier = tierForRegion(regionOf(x, y));
   // Lv は analysis 由来 (表示と一致。gameState 移行が env prefix 前の古い値で固まる問題を回避)。
-  const jobLevel = jobLevelFromXp(jobXp);
+  const jobLevel = jobLevelFromXp(jobXp, archetype);
   const playerLevel = playerLevelFromXp(playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
@@ -298,7 +298,7 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   const matId = item === 'herb' ? 'herb' : 'sky-dew';
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
+  const c = playerCombatant(archetype, jobLevelFromXp(jobXp, archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
   let healed = 0;
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
@@ -338,7 +338,7 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const luk = playerCombatant(archetype, jobLevelFromXp(jobXp), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
+  const luk = playerCombatant(archetype, jobLevelFromXp(jobXp, archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
   const tier = tierForRegion(regionOf(x, y));
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };

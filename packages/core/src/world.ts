@@ -1,4 +1,4 @@
-import { DEMON_CASTLE_REGIONS, type Tier } from './battle.js';
+import { DEMON_CASTLE_REGIONS, MAX_POPULATED_TIER, type Tier } from './battle.js';
 /**
  * あおぞらワールド — 決定的ワールド生成 (docs/19-overworld.md)。
  *
@@ -522,7 +522,12 @@ export function regionDanger(region: number): number {
 export function tierForDanger(danger: number): Tier {
   // danger 0..7 → tier 1..6 (#536)。3 段階では敵の強さと XP が 3 バケツに丸まって
   // 「同じエリアなのに全部同じ強さ」になっていた。spawn から遠いほど段階的に上がる。
-  const t = Math.max(1, Math.min(6, danger === 0 ? 1 : danger)) as Tier;
+  // **敵が 3 体以上いる tier までにクランプする** (#536)。tier を 8 段階に広げたが敵が
+  // 追いついておらず、プールが 1 体だと「毎回まったく同じ敵しか出ない」帯になる
+  // (地域相性の「○○が多い」ヒントも常に同じ名前になって導線として死ぬ)。
+  // 空プールなら `summonMonster` が落ちて move が 500 になる。敵を足したぶんだけ
+  // 自動的に上の段階が解放される。
+  const t = Math.max(1, Math.min(MAX_POPULATED_TIER, danger === 0 ? 1 : danger)) as Tier;
   return t;
 }
 
@@ -534,7 +539,14 @@ export function tierForDanger(danger: number): Tier {
  * 城の内部 (tier8) は城が実装されたら `tierForTile` 側で扱う。
  */
 export function tierForRegion(region: number): Tier {
-  if (DEMON_CASTLE_REGIONS.includes(region)) return 7;
+  // **魔王の城 (tier7) はまだ適用しない** (#536)。オーナー指定のリージョンを地形で確かめたところ、
+  // 「山に囲まれた閉領域」ではなかった:
+  //   - region#27 は歩行可能 51%、tier1/tier2 のリージョンと 87 / 49 タイル接している
+  //   - region#28 には**街「おおたきの宿」がある**
+  // つまり今のままでは「tier2 (想定 Lv5) から 1 歩で tier7 (想定 Lv34)」に入れてしまい、
+  // しかも城が未実装で tier7 の敵が 0 体なので `summonMonster` が落ちて move が 500 になる
+  // (= その街から出られなくなる)。城の実装と、そこへ至る段階 (tier5→6) の配置ができてから
+  // 有効化する。`DEMON_CASTLE_REGIONS` は場所の記録として残す。
   return tierForDanger(regionDanger(region));
 }
 

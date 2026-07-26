@@ -399,7 +399,7 @@ function ComposeDialog({
             // 2026-07-17)。プレイヤー Lv は戦闘値に影響しない (#507) ので区間はジョブ Lv だけ。
             const arch = result.jobLevel?.archetype;
             const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;
-            const jTo = result.jobLevel ? jobLevelFromXp(result.jobLevel.xp) : 1;
+            const jTo = result.jobLevel ? jobLevelFromXp(result.jobLevel.xp, result.jobLevel.archetype) : 1;
             const jFrom = result.jobLeveledUp?.from ?? jTo;
             if (result.jobLeveledUp && result.jobLevel) {
               notifyLevelUp({

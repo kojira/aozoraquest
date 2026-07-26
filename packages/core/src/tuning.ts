@@ -53,26 +53,28 @@ export const JOB_LEVEL_TUNING = {
 export const JOB_LEVEL_PACE_DECAY = 0.6;
 
 export const JOB_LEVEL_PACE: Record<string, number> = {
+  // 値は「tier1・Lv1・装備なしで街を出てから何戦もつか」の実測 (30 試行 × 全職) を
+  // 幾何平均で正規化し、0.35 乗して圧縮したもの。持久力の開き 3.8 倍に対して
+  // 必要 XP の開きは 1.6 倍に留める — 等倍にすると弱職が育ちすぎて逆に追い越す。
   // 持久力が低い = レベルが上がりやすい
-  mage: 0.85,
-  seer: 0.88,
-  sage: 0.90,
-  bard: 0.92,
-  fighter: 1.00,
-  poet: 1.06,
-  ninja: 1.12,
-  performer: 1.13,
-  miko: 1.14,
+  mage: 0.78, // 3.4 戦
+  seer: 0.87, // 4.6 戦
+  sage: 0.89, // 4.9 戦
+  bard: 0.90, // 5.1 戦
+  poet: 0.90, // 5.1 戦
+  miko: 0.94, // 5.8 戦
+  fighter: 0.95, // 5.9 戦
+  performer: 0.99, // 6.6 戦
+  artist: 1.00, // 6.9 戦
+  ninja: 1.06, // 8.1 戦
+  explorer: 1.08, // 8.4 戦
+  paladin: 1.09, // 8.7 戦
+  warrior: 1.09, // 8.8 戦
+  captain: 1.13, // 9.7 戦
   // 持久力が高い = レベルが上がりにくい
-  artist: 1.28,
-  explorer: 1.29,
-  warrior: 1.30,
-  paladin: 1.31,
-  guardian: 1.32,
-  captain: 1.34,
-  shogun: 1.36,
+  guardian: 1.19, // 11.2 戦
+  shogun: 1.25, // 12.8 戦
 };
-
 /**
  * 個人 (プレイヤー) LV 用 XP 曲線のパラメータ。JobLV より緩やかで
  * 上限も高くし、長期プレイで積み上げられるようにする。

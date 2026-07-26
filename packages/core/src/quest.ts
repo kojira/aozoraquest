@@ -223,14 +223,15 @@ export function jobXpCurveFor(archetype: string): ReadonlyArray<readonly [level:
   });
 }
 
-/** 累計 XP から現職 LV を計算。 */
-export function jobLevelFromXp(xp: number): number {
-  let lv = 1;
-  for (const [l, threshold] of JOB_XP_CURVE) {
-    if (xp >= threshold) lv = l;
-    else break;
-  }
-  return lv;
+/**
+ * 累計 XP から現職 LV を計算。
+ *
+ * **`archetype` は必須** (#536)。職ごとに曲線が違うので、渡し忘れると
+ * 「サーバーが数えたレベルと UI に出るレベルが食い違う」という最悪の壊れ方をする。
+ * 省略可能にすると必ずどこかで抜けるため、型で強制して全呼び出し元に配らせる。
+ */
+export function jobLevelFromXp(xp: number, archetype: string): number {
+  return jobLevelFromXpFor(archetype, xp);
 }
 
 /** 累計 XP から現職 LV を計算 (**職ごとの曲線**。#536)。 */
@@ -261,15 +262,8 @@ export function jobXpToNextLevelFor(archetype: string, xp: number): { level: num
  * - next: 次 LV までに必要な XP (現 LV 内の分母)
  * LV 50 に到達後は next = 0 (打ち止め)
  */
-export function jobXpToNextLevel(xp: number): { level: number; current: number; next: number } {
-  const level = jobLevelFromXp(xp);
-  const curEntry = JOB_XP_CURVE.find((e) => e[0] === level);
-  const nextEntry = JOB_XP_CURVE.find((e) => e[0] === level + 1);
-  const curThreshold = curEntry ? curEntry[1] : 0;
-  if (!nextEntry) {
-    return { level, current: xp - curThreshold, next: 0 };
-  }
-  return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
+export function jobXpToNextLevel(xp: number, archetype: string): { level: number; current: number; next: number } {
+  return jobXpToNextLevelFor(archetype, xp);
 }
 
 /** 現職 LV 用の XP 加算定数 (後方互換の別名。実体は tuning.XP_REWARDS)。 */

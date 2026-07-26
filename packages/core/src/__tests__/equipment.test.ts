@@ -7,6 +7,7 @@ import { isSellableMaterial,
   gearBonus,
   gearBonusFromGear,
   townShopStock,
+  shopMaterialBand,
 } from '../equipment.js';
 import { playerCombatant, playerStatsAt } from '../battle.js';
 import { worldOverlay } from '../world.js';
@@ -320,11 +321,12 @@ describe('townShopStock (品揃えの決定的生成)', () => {
     // tier → その tier のモンスターがドロップする素材集合
     // 店の素材は tier を 3 帯に丸めて引く (#536 で tier が 6 段階になった)。
     // 期待値も同じ帯で作る = 「その帯の敵が落とす素材か」を検証する。
+    // 帯の定義は equipment.ts の `shopMaterialBand` が単一の正。ここで同じ式を書くと
+    // 敵の tier を動かしたときに片方だけ直して事故る (#536 で実際に起きた)。
     const dropsOfBand = (tier: number) => {
-      const lo = tier <= 2 ? 1 : tier <= 4 ? 3 : 5;
-      const hi = tier <= 2 ? 2 : tier <= 4 ? 4 : 6;
+      const band = shopMaterialBand(tier);
       const set = new Set<string>();
-      for (const m of MONSTERS) if (m.tier >= lo && m.tier <= hi) for (const d of m.drops) set.add(d.item);
+      for (const m of MONSTERS) if (shopMaterialBand(m.tier) === band) for (const d of m.drops) set.add(d.item);
       return set;
     };
     towns.forEach((t, i) => {

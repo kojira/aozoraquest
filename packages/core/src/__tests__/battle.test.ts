@@ -97,9 +97,10 @@ describe('skillsForJob (複数とくぎ #436)', () => {
   });
   it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
     // paladin は聖光の癒し (heal) を Lv5 で覚える。HP を削ってから回復を選ぶ。
-    // tier は想定プレイヤーレベル (#518) なので tier2 には jobLv10 を当てる
-    // (jobLv5 だと格上すぎて回復ターンに落とされ、検証が回らない)。
-    let s = startBattle('paladin', 10, 8, '聖', 3, 3, 0);
+    // tier は想定プレイヤーレベル (#518)。tier3 の想定は Lv8 なので、そこに
+    // 少し余裕を持たせた jobLv12 + 布の服を当てる (格下すぎると 3 ターンで倒して
+    // しまい、格上すぎると回復ターンに落とされて、どちらでも検証が回らない)。
+    let s = startBattle('paladin', 12, 8, '聖', 3, 3, 0, undefined, { equipIds: ['ar-cloth'] });
     const healIdx = s.playerSkills.findIndex((x) => x.name === '聖光の癒し');
     expect(healIdx).toBeGreaterThanOrEqual(0);
     for (let i = 0; i < 3 && s.outcome === 'ongoing'; i++) s = resolveTurn(s, 'attack', i * 7 + 1);
@@ -337,11 +338,16 @@ describe('summonMonster', () => {
       }
     });
 
-    it('式 baselineXp: 基準 HP + atk/agi から算出 (xp 省略時のデフォルト)', () => {
-      // sky-slime は xp 未指定 → 式で算出。低 HP なので低 XP。
-      expect(MONSTERS_BY_ID['sky-slime']!.xp).toBeUndefined();
-      expect(battleXpFor('sky-slime')).toBe(baselineXp(MONSTERS_BY_ID['sky-slime']!));
-      expect(battleXpFor('sky-slime')).toBeLessThanOrEqual(3);
+    it('式 baselineXp: 基準 HP + atk/agi から算出 (xp 省略時のフォールバック)', () => {
+      // tier1-6 の敵は #536 で全て xp を明示した (DQ の刻みに合わせるため。式まかせだと
+      // tier2 の敵が tier1 の敵より低い XP になる逆転が起きていた)。式は「xp を書かずに
+      // 敵を足したとき」の保険として残っているので、式そのものを直接検証する。
+      const def = MONSTERS_BY_ID['sky-slime']!;
+      const { xp: _omitted, ...noXp } = def;
+      expect(baselineXp(noXp)).toBeGreaterThan(0);
+      expect(baselineXp(noXp)).toBeLessThanOrEqual(3); // 低 HP なので低 XP
+      // 明示値があるときは式より明示が優先される
+      expect(battleXpFor('sky-slime')).toBe(def.xp);
     });
 
     it('個別上書き: はぐれスライムは低 HP でも xp=100 (ジャックポット)、未知 id は xpWin', () => {
