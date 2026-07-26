@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { EQUIPMENT_BY_ID, SALE_TUNING, townShopStock, worldOverlay } from '@aozoraquest/core';
-import { shopCraft, shopSell, ShopError, MAX_SHOP_OPS } from '../src/shop';
+import { shopCraft, shopSell, shopForge, ShopError, MAX_SHOP_OPS } from '../src/shop';
+import { sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
@@ -166,5 +167,69 @@ describe('shopSell (素材のひきとり)', () => {
       await shopSell(env, DID, { materialId: STOCK.materialId, count: RATE, rkey: `s${i}` }, NOW);
     }
     expect(stored(m.store).shopOps!.length).toBe(MAX_SHOP_OPS);
+  });
+});
+
+describe('shopForge (きたえる) と装備の所持検証 (#551 段階 2)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  const owned = (...ps: Array<{ rkey: string; itemId: string; level: number }>) => stateAt({ pieces: ps });
+
+  it('同じ品・同じ強化値の 2 個体が +1 の 1 個体になる', async () => {
+    const env = await makeEnv();
+    const m = statefulPds(owned({ rkey: 'a', itemId: ITEM.id, level: 1 }, { rkey: 'b', itemId: ITEM.id, level: 1 }));
+    globalThis.fetch = m.fn;
+    const r = await shopForge(env, DID, { rkeys: ['a', 'b'], rkey: 'f1' }, NOW);
+    expect(r.level).toBe(2);
+    expect(r.pieces).toEqual([{ rkey: 'f1', itemId: ITEM.id, level: 2 }]);
+  });
+
+  it('持っていない個体は きたえられない (client が rkey を偽っても通らない)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(owned({ rkey: 'a', itemId: ITEM.id, level: 1 })).fn;
+    await expect(shopForge(env, DID, { rkeys: ['a', 'nope'], rkey: 'f' }, NOW)).rejects.toMatchObject({ code: 'not_owned' });
+  });
+
+  it('品や強化値が違うと きたえられない', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(owned({ rkey: 'a', itemId: ITEM.id, level: 1 }, { rkey: 'b', itemId: ITEM.id, level: 2 })).fn;
+    await expect(shopForge(env, DID, { rkeys: ['a', 'b'], rkey: 'f' }, NOW)).rejects.toMatchObject({ code: 'mismatch' });
+  });
+
+  it('同じ rkey の再送では二重に合成しない', async () => {
+    const env = await makeEnv();
+    const m = statefulPds(owned({ rkey: 'a', itemId: ITEM.id, level: 1 }, { rkey: 'b', itemId: ITEM.id, level: 1 }));
+    globalThis.fetch = m.fn;
+    await shopForge(env, DID, { rkeys: ['a', 'b'], rkey: 'f1' }, NOW);
+    const again = await shopForge(env, DID, { rkeys: ['a', 'b'], rkey: 'f1' }, NOW);
+    expect(again.duplicate).toBe(true);
+    expect(stored(m.store).pieces).toEqual([{ rkey: 'f1', itemId: ITEM.id, level: 2 }]);
+  });
+
+  it('制作すると所持個体が権威側に増える', async () => {
+    const env = await makeEnv();
+    const m = statefulPds(stateAt());
+    globalThis.fetch = m.fn;
+    const r = await shopCraft(env, DID, { itemId: ITEM.id, rkey: 'c1', luk: 10 }, NOW);
+    expect(stored(m.store).pieces).toEqual([{ rkey: 'c1', itemId: ITEM.id, level: r.level }]);
+  });
+});
+
+describe('sanitizeGear (持っていない装備は着られない)', () => {
+  it('所持していない品は落とす', () => {
+    // それまでは client の申告を無検証で保存していたので、これだけで戦闘に効いた
+    expect(sanitizeGear({ weapon: { id: 'wp-shogun-high', level: 99 } }, [])).toEqual({});
+  });
+
+  it('持っていても、その強化値の個体が無ければ落とす', () => {
+    const mine = [{ rkey: 'a', itemId: ITEM.id, level: 1 }];
+    expect(sanitizeGear({ armor: { id: ITEM.id, level: 9 } }, mine)).toEqual({});
+    expect(sanitizeGear({ armor: { id: ITEM.id, level: 1 } }, mine)).toEqual({ armor: { id: ITEM.id, level: 1 } });
+  });
+
+  it('強化値の指定が無い旧形式は、持っている中でいちばん低い個体で通す', () => {
+    const mine = [{ rkey: 'a', itemId: ITEM.id, level: 3 }, { rkey: 'b', itemId: ITEM.id, level: 1 }];
+    expect(sanitizeGear({ armor: ITEM.id }, mine)).toEqual({ armor: { id: ITEM.id, level: 1 } });
   });
 });

@@ -35,11 +35,19 @@ import { loadBattleStats } from '@/lib/battle-log';
 import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, serverSearch, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward,
   serverShopCraft,
   serverShopSell,
+  serverShopForge,
 } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
 import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
+
+/** お店のエラーを、サーバーが返した理由でそのまま伝える。「通信エラー」で片付けると
+ *  「パワーが足りない」「街の外」といった直せる理由が消える (#551)。 */
+function shopErrorText(e: unknown, fallback: string): string {
+  const msg = e instanceof WorldServerError ? e.message : '';
+  return msg ? `${msg}。` : `${fallback} (通信エラー)。もういちどどうぞ。`;
+}
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -327,6 +335,9 @@ export function World() {
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
             setServerPower(ss.state.power ?? 0);
+            // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
+            // 記帳 (履歴) であって所持の根拠ではない。
+            if (ss.state.pieces) setCraftedPieces(ss.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
             if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
               px = ss.state.x; py = ss.state.y;
               // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
@@ -421,7 +432,9 @@ export function World() {
       setFeatherStock(inv['sky-feather'] ?? 0);
       materialsRef.current = inv;
       setMaterialsView({ ...inv });
-      setCraftedPieces(craftInv.pieces);
+      // **所持個体はサーバーが正** (#551 段階 2)。ここで入れるのは、サーバーから
+      // 取れなかったときの表示フォールバックだけ (装備しても edge が弾く)。
+      if (!serverInv) setCraftedPieces(craftInv.pieces);
       setGearRefs(refs);
     })();
     return () => { cancelled = true; };
@@ -908,13 +921,13 @@ export function World() {
           rkey,
         );
         pendingCraftRef.current = null;
-        setCraftedPieces((list) => [...list, piece]);
+        if (res.pieces) setCraftedPieces(res.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
         setLastShopAction({ piece, kind: 'craft' });
       } catch (e) {
         // 失敗しても店は開いたまま (再試行させる。同 rkey なので 2 重にならない)
         console.warn('[world] craft failed', e);
         setLastShopAction(null);
-        setNotice('つくってもらえなかった (通信エラー)。もういちどどうぞ。');
+        setNotice(shopErrorText(e, 'つくってもらえなかった'));
       } finally {
         setCraftBusy(false);
       }
@@ -932,14 +945,20 @@ export function World() {
       pendingForgeRef.current = { key: forgeKey, rkey: frkey };
       setCraftBusy(true);
       try {
-        const piece = await forgeItems(agent, { itemId: def.id, resultLevel, consumed: rkeys }, frkey);
+        // **合成もサーバー** (#551 段階 2)。消費する個体は権威側の所持から探すので、
+        // 持っていない rkey や強化値の食い違いは通らない。
+        const res = await serverShopForge(agent, rkeys, frkey);
         pendingForgeRef.current = null;
-        setCraftedPieces((list) => [...list.filter((p) => p.rkey !== rkeys[0] && p.rkey !== rkeys[1]), piece]);
+        if (res.pieces) setCraftedPieces(res.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
+        const piece: CraftedPiece = { rkey: frkey, itemId: def.id, level: res.level ?? resultLevel, at: new Date().toISOString() };
+        // 記帳 (履歴)。所持の根拠ではないので、失敗しても進める。
+        void forgeItems(agent, { itemId: def.id, resultLevel: piece.level, consumed: rkeys }, frkey)
+          .catch((e) => console.warn('[world] forge log failed', e));
         setLastShopAction({ piece, kind: 'forge' });
       } catch (e) {
         console.warn('[world] forge failed', e);
         setLastShopAction(null);
-        setNotice('きたえてもらえなかった (通信エラー)。もういちどどうぞ。');
+        setNotice(shopErrorText(e, 'きたえてもらえなかった'));
       } finally {
         setCraftBusy(false);
       }
@@ -969,7 +988,7 @@ export function World() {
         setNotice(`${ITEMS[materialId]?.name ?? materialId} ×${count} をひきとってもらい、パワーが ${res.powerGained ?? 0} ふえた!`);
       } catch (e) {
         console.warn('[world] sell failed', e);
-        setNotice('ひきとってもらえなかった (通信エラー)。もういちどどうぞ。');
+        setNotice(shopErrorText(e, 'ひきとってもらえなかった'));
       } finally {
         setCraftBusy(false);
       }

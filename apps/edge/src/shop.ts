@@ -15,6 +15,7 @@
  * ただし**強化値の抽選はサーバーが行い**、client はその結果を記帳するだけにしてある。
  */
 import {
+  CRAFT_TUNING,
   EQUIPMENT_BY_ID,
   SALE_TUNING,
   SEARCH_TUNING,
@@ -26,7 +27,7 @@ import {
   townShopStock,
   worldOverlay,
 } from '@aozoraquest/core';
-import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
+import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece } from './game-state';
 
 /** 冪等キーを覚えておく件数 (`xpClaims` と同じ考え方)。再送・二重送信で二重に課金しない。 */
 export const MAX_SHOP_OPS = 100;
@@ -50,6 +51,8 @@ export interface ShopResult {
   powerGained?: number;
   /** 同じ rkey の再送だったか (client はリトライを止める)。 */
   duplicate?: boolean;
+  /** 操作後の所持個体 (#551 段階 2)。client はこれを正として表示する。 */
+  pieces?: OwnedPiece[];
 }
 
 /** その場所の店。街の上に居ないと買えない。 */
@@ -111,13 +114,15 @@ export async function shopCraft(
       const left = have - def.price.materials;
       if (left > 0) materials[stock.materialId] = left;
       else delete materials[stock.materialId];
-      return { ...cur, power: cur.power - def.price.power, materials, shopOps: withOp(cur, opKey) };
+      // **個体も権威側で持つ** (#551 段階 2)。ここに無い個体は装備できない。
+      const pieces: OwnedPiece[] = [...(cur.pieces ?? []), { rkey: input.rkey, itemId: def.id, level }];
+      return { ...cur, power: cur.power - def.price.power, materials, pieces, shopOps: withOp(cur, opKey) };
     },
     init ? { now, init } : { now },
   );
   // 重複時は level を引き直せない (state に残していない)。client は自分が記帳済みの
   // レコードを持っているので、duplicate を見て再記帳しない。
-  return { power: next.power, materials: next.materials, level, duplicate };
+  return { power: next.power, materials: next.materials, level, duplicate, pieces: next.pieces ?? [] };
 }
 
 /** 素材をひきとってもらう (素材 → パワー)。 */
@@ -157,7 +162,52 @@ export async function shopSell(
     },
     init ? { now, init } : { now },
   );
-  return { power: next.power, materials: next.materials, powerGained, duplicate };
+  return { power: next.power, materials: next.materials, powerGained, duplicate, pieces: next.pieces ?? [] };
+}
+
+/**
+ * きたえる (合成): **同じ品・同じ強化値の 2 個体 → +1 の 1 個体**。素材もパワーも要らない。
+ *
+ * 消費する個体は `GameState.pieces` から探す — client が「持っている」と言い張る rkey では
+ * なく、権威側にある個体だけを対象にする。
+ */
+export async function shopForge(
+  env: GameStateEnv,
+  did: string,
+  input: { rkeys: [string, string]; rkey: string },
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<ShopResult> {
+  assertRkey(input.rkey);
+  const [a, b] = input.rkeys;
+  if (!a || !b || a === b) throw new ShopError('個体の指定が不正', 400);
+  const opKey = `forge:${input.rkey}`;
+
+  let level = 0;
+  let duplicate = false;
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => {
+      if (alreadyDone(cur, opKey)) { duplicate = true; return cur; }
+      duplicate = false;
+      shopAt(cur); // 街の外では きたえてもらえない
+      const owned = cur.pieces ?? [];
+      const pa = owned.find((p) => p.rkey === a);
+      const pb = owned.find((p) => p.rkey === b);
+      if (!pa || !pb) throw new ShopError('その品を もっていない', 400, 'not_owned');
+      if (pa.itemId !== pb.itemId || pa.level !== pb.level) throw new ShopError('同じ品・同じ強化値でないと きたえられない', 400, 'mismatch');
+      if (pa.level >= CRAFT_TUNING.levelMax) throw new ShopError('これ以上は きたえられない', 400, 'max_level');
+      level = pa.level + 1;
+      const pieces: OwnedPiece[] = [
+        ...owned.filter((p) => p.rkey !== a && p.rkey !== b),
+        { rkey: input.rkey, itemId: pa.itemId, level },
+      ];
+      return { ...cur, pieces, shopOps: withOp(cur, opKey) };
+    },
+    init ? { now, init } : { now },
+  );
+  return { power: next.power, materials: next.materials, level, duplicate, pieces: next.pieces ?? [] };
 }
 
 /** しらべるの費用。発見の判定は `handleSearch` 側 (エントロピーが要るため)。 */

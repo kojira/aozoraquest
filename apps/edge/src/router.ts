@@ -14,7 +14,7 @@ import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, XpClaimError } from './xp-claim';
-import { shopCraft, shopSell, ShopError } from './shop';
+import { shopCraft, shopSell, shopForge, ShopError } from './shop';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
@@ -57,6 +57,7 @@ const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
 const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
 const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
+const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -349,6 +350,30 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       // luk はサーバーが権威 state + 診断から出す (client 申告を使わない = 強化値を盛れない)。
       const luk = await playerLuk(env, did, ns);
       return cors(json(await shopCraft(env, did, { itemId: body.itemId, rkey: body.rkey, luk }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // なんでも屋: きたえる (同じ品・同じ強化値の 2 個体 → +1)。消費する個体は権威側から探す。
+  if (req.method === 'POST' && url.pathname === '/api/shop/forge') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_FORGE }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { rkeys?: unknown; rkey?: unknown };
+    const pair = Array.isArray(body.rkeys) && body.rkeys.length === 2 && body.rkeys.every((v) => typeof v === 'string')
+      ? (body.rkeys as [string, string]) : null;
+    if (!pair || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      return cors(json(await shopForge(env, did, { rkeys: pair, rkey: body.rkey }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
