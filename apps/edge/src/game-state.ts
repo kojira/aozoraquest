@@ -91,6 +91,9 @@ export interface GameState {
   claimDay?: string;
   /** 連続投稿日数。**サーバーが数える** — client の申告を使わない。 */
   streakDays?: number;
+  /** 申告済みの投稿のうち最も新しい `createdAt` (ms)。**これより古い投稿は申告できない**。
+   *  冪等キーのリングが溢れたあとの再送を塞ぐ (#551。詳細は xp-claim.ts)。 */
+  lastPostAt?: number;
   /** 処理済みのお店操作の冪等キー (`craft:<rkey>` / `sell:<rkey>` / `forge:<rkey>`)。
    *  直近 `MAX_SHOP_OPS` 件。再送・二重送信で二重に課金/入金しないため (#551。詳細は shop.ts)。 */
   shopOps?: string[];

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readRateLimitHeaders, recordPdsUsage, readPdsUsage, opsRemaining, resetPdsUsageThrottle, PERSIST_INTERVAL_SEC, PUT_RECORD_POINTS } from '../src/pds-usage';
+import { readRateLimitHeaders, recordPdsUsage, readPdsUsage, opsRemaining, resetPdsUsageThrottle, PERSIST_INTERVAL_SEC, TIGHT_INTERVAL_SEC, PUT_RECORD_POINTS } from '../src/pds-usage';
 
 function mockKv() {
   const m = new Map<string, string>();
@@ -37,11 +37,17 @@ describe('PDS 書き込みレートの計測 (#548)', () => {
     expect((await readPdsUsage(kv))!.writes).toBe(51);
   });
 
-  it('残量が 2 割を切ったら間引かずに毎回残す', async () => {
+  it('残量が 2 割を切ったら間隔を詰める。ただし毎回は書かない', async () => {
+    // 毎回書くと KV 側 (同一キー 1 write/秒・1,000 write/日) が先に溢れ、しかも本体の
+    // 書き込み経路に KV 往復が毎回乗る。逼迫時ほど落としてはいけない。
     const { kv, puts } = mockKv();
     const tight = readRateLimitHeaders(headers({ 'ratelimit-limit': '5000', 'ratelimit-remaining': '500' }));
     for (let i = 0; i < 5; i++) await recordPdsUsage(kv, tight, NOW);
-    expect(puts()).toBe(5);
+    expect(puts()).toBe(1); // 10 秒の窓の中なので 1 回
+    for (let i = 0; i < 5; i++) await recordPdsUsage(kv, tight, NOW + TIGHT_INTERVAL_SEC);
+    expect(puts()).toBe(2);
+    // 通常時 (5 分) より頻繁であることを確かめる
+    expect(TIGHT_INTERVAL_SEC).toBeLessThan(PERSIST_INTERVAL_SEC);
   });
 
   it('残量から「あと何操作できるか」を出す', () => {

@@ -100,10 +100,12 @@ describe('claimXp (投稿の申告)', () => {
   it('同じ日の 2 件目以降は投稿ぶんだけ。**回数に上限は無い**', async () => {
     const env = await makeEnv();
     const store = new Map<string, { value: unknown; cid: string }>();
-    globalThis.fetch = pdsWithPost(store);
-    await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    let t = NOW - 3600;
+    const fetchAt = () => { globalThis.fetch = pdsWithPost(store, { createdAt: new Date((t += 1) * 1000).toISOString() }); };
+    fetchAt(); await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
     let total = 0;
     for (let i = 0; i < 50; i++) {
+      fetchAt();
       total += (await claimXp(env, DID, { archetype: 'warrior', postUri: postUri(`p${i}`) }, NOW)).granted;
     }
     // 投稿が実在するなら何件でも入る (日次上限で正直な人を罰しない)
@@ -163,8 +165,9 @@ describe('claimXp (投稿の申告)', () => {
   it('投稿でパワーが回復する。**残高に上限は無い**', async () => {
     const env = await makeEnv();
     const store = new Map<string, { value: unknown; cid: string }>();
-    globalThis.fetch = pdsWithPost(store);
+    let t = NOW - 3600;
     for (let i = 0; i < 30; i++) {
+      globalThis.fetch = pdsWithPost(store, { createdAt: new Date((t += 1) * 1000).toISOString() });
       await claimXp(env, DID, { archetype: 'warrior', postUri: postUri(`x${i}`) }, NOW);
     }
     expect((store.get(rkeyForDid(DID))!.value as GameState).power).toBe(30 * POWER_PER_POST);
@@ -259,3 +262,59 @@ describe('adminGrantPower (管理者のパワー付与)', () => {
   });
 });
 
+
+describe('レビュー指摘の回帰 (#551)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  it('**冪等リングが溢れても過去の投稿を再送できない** (無限に回せない)', async () => {
+    // リングは直近 200 件しか覚えていないので、201 件申告してから 1 件目を再送すると
+    // 通ってしまい、巡回させれば XP もパワーも無限に湧いた (レビューが実際に再現)。
+    // 投稿は時間順にしか増えないので「前回より新しい投稿だけ」を通せば全部落ちる。
+    const env = await makeEnv();
+    const store = new Map<string, { value: unknown; cid: string }>();
+    const at = (i: number) => new Date((NOW - 3600 + i) * 1000).toISOString();
+    let cur = 0;
+    globalThis.fetch = ((url: string, init?: RequestInit) =>
+      (pdsWithPost(store, { createdAt: at(cur) }) as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init)) as unknown as typeof fetch;
+    for (let i = 0; i < 205; i++) { cur = i; await claimXp(env, DID, { archetype: 'warrior', postUri: postUri(`p${i}`) }, NOW); }
+    const before = (store.get(rkeyForDid(DID))!.value as GameState).jobXp['warrior'];
+    // 1 件目を再送 (リングからは押し出されている)
+    cur = 0;
+    const replay = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('p0') }, NOW);
+    expect(replay.granted).toBe(0);
+    expect(replay.duplicate).toBe(true);
+    expect((store.get(rkeyForDid(DID))!.value as GameState).jobXp['warrior']).toBe(before);
+  });
+
+  it('**日次ボーナスは JST の 1 日で 1 回**', async () => {
+    // UTC で切ると 09:00 JST が境界になり、「朝 8 時 → 10 時」で 2 回付いた。
+    const store = new Map<string, { value: unknown; cid: string }>();
+    const jst = (h: number) => Math.floor(Date.UTC(2026, 10, 17, h - 9, 0, 0) / 1000); // JST h 時
+    const morning = jst(8);
+    const later = jst(10);
+    const kv = mockKv();
+    await writeServerTokens(kv, { did: SERVER_DID, accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: later + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: morning });
+    const env: GameStateEnv = { ...(await makeEnv()), OAUTH_TOKENS: kv };
+    globalThis.fetch = pdsWithPost(store, { createdAt: new Date(morning * 1000).toISOString() });
+    const a = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('m1') }, morning);
+    globalThis.fetch = pdsWithPost(store, { createdAt: new Date(later * 1000).toISOString() });
+    const b = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('m2') }, later);
+    expect(a.granted).toBeGreaterThan(XP_REWARDS.postMatch); // 初回はボーナスつき
+    expect(b.granted).toBe(XP_REWARDS.postMatch); // 同じ JST 日なのでボーナス無し
+    expect(b.streakDays).toBe(a.streakDays);
+  });
+
+  it('**createdAt が読めない投稿は拒否**する (省略するだけで年齢チェックを飛ばせた)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = pdsWithPost(new Map(), { createdAt: 'not-a-date' });
+    await expect(claimXp(env, DID, { archetype: 'warrior', postUri: postUri('bad') }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+
+  it('未来の日時の投稿は拒否する', async () => {
+    const env = await makeEnv();
+    const future = new Date((NOW + 86400) * 1000).toISOString();
+    globalThis.fetch = pdsWithPost(new Map(), { createdAt: future });
+    await expect(claimXp(env, DID, { archetype: 'warrior', postUri: postUri('fut') }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+});

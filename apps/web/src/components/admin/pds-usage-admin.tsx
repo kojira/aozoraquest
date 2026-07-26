@@ -64,7 +64,7 @@ export function PdsUsageAdmin({ agent }: { agent: Agent }) {
             {u.reset !== null && <>・{new Date(u.reset * 1000).toLocaleTimeString()} にリセット</>}
           </div>
           <div style={{ color: 'var(--color-muted)', fontSize: '0.92em' }}>
-            方式 {u.policy ?? '—'} ・ 観測した書き込み {u.writes.toLocaleString()} 回 ・
+            方式 {u.policy ?? '—'} ・ 観測した書き込み 約 {u.writes.toLocaleString()} 回 (取りこぼしあり) ・
             最終観測 {new Date(u.at * 1000).toLocaleString()}
           </div>
           {tight && (

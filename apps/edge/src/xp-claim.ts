@@ -47,9 +47,21 @@ export const POWER_PER_POST = 1;
  *  桁を飛ばしたときに戻せなくなるのを防ぐためだけの、入力側のガード。 */
 export const MAX_ADMIN_GRANT = 100_000;
 
-/** 投稿として認める最大の古さ (日)。これより古い投稿は申告できない。
- *  過去ログを遡って一気に申告する経路を塞ぐ (冪等キーのリングは 200 件しか覚えていない)。 */
+/** 投稿として認める最大の古さ (日)。これより古い投稿は申告できない。 */
 export const MAX_POST_AGE_DAYS = 3;
+
+/** 未来日の許容ずれ (秒)。端末の時計ずれぶんだけ見る。 */
+export const FUTURE_SKEW_SEC = 300;
+
+/** 日付の境界。**UTC ではなく JST で切る** — UTC だと 09:00 JST が日付の変わり目になり、
+ *  「朝 8 時に投稿 → 10 時に投稿」で日次ボーナスが同じ日に 2 回付く。移設前の client 実装は
+ *  ローカル日で切っていたので、UTC 固定にしたのは移設時の退行だった。 */
+export const DAY_OFFSET_SEC = 9 * 3600;
+
+/** epoch 秒 → その日の日付 (JST 基準の YYYY-MM-DD)。 */
+export function dayKey(epochSec: number): string {
+  return new Date((epochSec + DAY_OFFSET_SEC) * 1000).toISOString().slice(0, 10);
+}
 
 /**
  * 種類ごとの 1 回あたり上限。**core の報酬定数から導く** — ここに数値を書き写すと、
@@ -120,11 +132,11 @@ export async function claimXp(
 ): Promise<XpClaimResult> {
   const { archetype, postUri } = input;
   assertArchetype(archetype);
-  await assertOwnPost(did, postUri, now, fetchImpl);
+  const postedAt = await assertOwnPost(did, postUri, now, fetchImpl);
 
   const claimKey = `post:${postUri}`;
-  const today = new Date(now * 1000).toISOString().slice(0, 10);
-  const yesterday = new Date((now - 86400) * 1000).toISOString().slice(0, 10);
+  const today = dayKey(now);
+  const yesterday = dayKey(now - 86400);
 
   let granted = 0;
   let duplicate = false;
@@ -134,6 +146,14 @@ export async function claimXp(
     (cur) => {
       const claims = cur.xpClaims ?? [];
       if (claims.includes(claimKey)) { granted = 0; duplicate = true; return cur; }
+      // **単調性で replay を塞ぐ** (#551 レビュー指摘)。冪等キーのリングは直近 200 件しか
+      // 覚えていないので、201 件申告してから 1 件目を再送すると通ってしまい、
+      // 巡回させれば XP もパワーも無限に湧いた (レビューが実際に再現した)。
+      // 投稿は時間順にしか増えないので「前回より新しい投稿だけ」を通せば、
+      // リングの大きさに関係なく過去の再送が全部落ちる。
+      // 同時刻 (同じミリ秒) の投稿は通す — 落とすと、連投した 2 件目が黙って入らなくなる。
+      // 同時刻での再送はリングが捕まえる (直前に申告した投稿は必ずリングに居る)。
+      if (postedAt < (cur.lastPostAt ?? 0)) { granted = 0; duplicate = true; return cur; }
       duplicate = false;
       let xp = XP_REWARDS.postMatch;
       let streak = cur.streakDays ?? 0;
@@ -147,6 +167,7 @@ export async function claimXp(
       granted = xp;
       return {
         ...cur,
+        lastPostAt: postedAt,
         ...(bonusDay ? { claimDay: bonusDay } : {}),
         streakDays: streak,
         jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + xp },
@@ -168,7 +189,7 @@ export async function claimXp(
  * (`via` は client が自由に書ける)。実在と本人性だけで、
  * 「投稿していないのに XP が入る」経路は閉じる。
  */
-async function assertOwnPost(did: string, uri: string, now: number, fetchImpl?: typeof fetch): Promise<void> {
+async function assertOwnPost(did: string, uri: string, now: number, fetchImpl?: typeof fetch): Promise<number> {
   const m = /^at:\/\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(uri);
   if (!m) throw new XpClaimError('投稿の指定が不正', 400);
   const [, owner, collection, rkey] = m as unknown as [string, string, string, string];
@@ -181,12 +202,14 @@ async function assertOwnPost(did: string, uri: string, now: number, fetchImpl?: 
   // **実在の検証。** 消された投稿・でっち上げた URI はここで落ちる。
   if (!rec?.value) throw new XpClaimError('その投稿が見つからない', 400);
 
+  // **createdAt は必須。** client が書ける値なので「読めなければ素通し」にすると、
+  // 省略するだけで年齢チェックを丸ごと飛ばせた (レビュー指摘)。fail-closed にする。
   const createdAt = Date.parse(rec.value.createdAt ?? '');
-  if (Number.isFinite(createdAt)) {
-    const ageDays = (now * 1000 - createdAt) / 86_400_000;
-    // 古い投稿を遡って一気に申告する経路を塞ぐ (冪等キーのリングは 200 件しか覚えていない)。
-    if (ageDays > MAX_POST_AGE_DAYS) throw new XpClaimError('古い投稿では経験値は入らない', 400);
-  }
+  if (!Number.isFinite(createdAt)) throw new XpClaimError('投稿の日時が読めない', 400);
+  if (createdAt > (now + FUTURE_SKEW_SEC) * 1000) throw new XpClaimError('未来の日時の投稿は認められない', 400);
+  const ageDays = (now * 1000 - createdAt) / 86_400_000;
+  if (ageDays > MAX_POST_AGE_DAYS) throw new XpClaimError('古い投稿では経験値は入らない', 400);
+  return createdAt;
 }
 
 /**

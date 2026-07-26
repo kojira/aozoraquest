@@ -35,6 +35,7 @@ import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { Embedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
 import { serverClaimXp } from './world-server';
+import { flushPendingClaims, forgetPendingClaim, rememberPendingClaim } from './pending-claims';
 import { deriveActionTypes, type PostStructure } from './structural-action';
 
 export interface QuestLogEntry {
@@ -271,19 +272,26 @@ export async function processSelfPost(
       // 先に待つと、edge のタイムアウト (最大 8 秒) の間にタブを閉じられたとき、
       // 認知スコアのブレンド・streak・playerLevel の更新ごと失われる。
       claim = async () => {
+        const arch = analysis.archetype;
+        // 前に落ちた申告があれば先に出し直す (サーバーは冪等なので安全)。
+        await flushPendingClaims((c) => serverClaimXp(agent, { archetype: c.archetype, postUri: c.postUri }).then(() => undefined));
         if (!postUri) return;
         try {
           // **額は送らない。** サーバーが投稿の実在を確かめてから決める (#551)。
-          const r = await serverClaimXp(agent, { archetype: analysis.archetype, postUri });
+          const r = await serverClaimXp(agent, { archetype: arch, postUri });
+          forgetPendingClaim(postUri);
           if (r.granted > 0) {
             // レベルアップ判定は**権威 state の値**で行う。
-            const before = jobLevelFromXp(r.jobXp - r.granted, analysis.archetype);
-            const after = jobLevelFromXp(r.jobXp, analysis.archetype);
+            const before = jobLevelFromXp(r.jobXp - r.granted, arch);
+            const after = jobLevelFromXp(r.jobXp, arch);
             if (after > before) jobLeveledUp = { from: before, to: after };
-            finalJobLevel = { archetype: analysis.archetype, xp: r.jobXp, joinedAt: oldJob.joinedAt };
+            finalJobLevel = { archetype: arch, xp: r.jobXp, joinedAt: oldJob.joinedAt };
           }
         } catch (e) {
           console.warn('xp claim failed', e);
+          // **覚えておいて次の投稿で出し直す。** ここで諦めると、PDS の一時障害だけで
+          // その投稿の XP が永久に消える (申告は投稿時にしか走らないため)。
+          rememberPendingClaim({ postUri, archetype: arch, at: Date.now() });
         }
       };
 

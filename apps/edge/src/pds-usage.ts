@@ -34,7 +34,8 @@ export interface PdsUsage {
   policy: string | null;
   /** このスナップショットを取った時刻 (epoch 秒)。 */
   at: number;
-  /** 起動以来この Worker が観測した書き込み回数 (KV 上で積む。目安)。 */
+  /** 観測できた書き込み回数の**目安**。間引きの状態は isolate ローカルなので、
+   *  複数 isolate では取りこぼす。確定値ではない。 */
   writes: number;
 }
 
@@ -76,15 +77,18 @@ export async function recordPdsUsage(kv: KVNamespace | undefined, snap: Omit<Pds
 
 /** KV への保存を間引く間隔 (秒)。isolate ごとに効く。 */
 export const PERSIST_INTERVAL_SEC = 300;
-/** この割合を下回ったら間引かずに毎回残す (逼迫しているときこそ数字が要る)。 */
+/** この割合を下回ったら間隔を詰める (逼迫しているときこそ数字が要る)。 */
 export const TIGHT_RATIO = 0.2;
+/** 逼迫時でも守る最短間隔 (秒)。**毎回書くと KV 側 (同一キー 1 write/秒・1,000 write/日) が
+ *  先に溢れ**、しかも本体の書き込み経路に KV 往復が毎回乗る。逼迫時ほど落としてはいけない。 */
+export const TIGHT_INTERVAL_SEC = 10;
 
 let lastPersistAt = 0;
 let pendingWrites = 0;
 
 function shouldPersist(snap: Omit<PdsUsage, 'at' | 'writes'>, now: number): boolean {
-  if (snap.limit && snap.remaining !== null && snap.remaining / snap.limit < TIGHT_RATIO) return true;
-  return now - lastPersistAt >= PERSIST_INTERVAL_SEC;
+  const tight = Boolean(snap.limit && snap.remaining !== null && snap.remaining / snap.limit < TIGHT_RATIO);
+  return now - lastPersistAt >= (tight ? TIGHT_INTERVAL_SEC : PERSIST_INTERVAL_SEC);
 }
 
 /** テスト用: 間引きの状態をリセットする。 */
