@@ -770,12 +770,28 @@ export function runSkillMulti(
   attacker: Combatant,
   sides: CombatSides,
   makeCtx: (defender: Combatant) => SkillContext,
-  opts: { targetIndex?: number } = {},
+  opts: { targetIndex?: number; label?: string; events?: TurnEvent[]; actor?: TurnEvent['actor'] } = {},
 ): void {
+  // **技名を名乗る** (オーナー報告 2026-07-27)。純バフ・純回復の技は doAttack/doMagic を
+  // 通らないので、以前は「xの素早さがあがった!」だけが出て、選んだ技が本当に出たのか
+  // 分からなかった。複数のとくぎを持つ職ほど困る。
+  //
+  // **「効果の種類」で名乗るかを決めてはいけない。** 最初はそうしたが、heal / restoreMp /
+  // 一部の status ハンドラや parry (resolveTurn がターン頭に「◯◯の構え!」を出す) は
+  // **既に技名入りの文を出している**ので、35 パターンで二重・三重に名乗った
+  // (例: 「xのサボる!」「xはサボる! MP が 5 回復。」「xはサボる! HP が 5 回復。」)。
+  // 代わりに**このターンのログに技名がまだ一度も出ていないときだけ**名乗る。これなら
+  // 新しいとくぎを足しても、ハンドラ側の文言を変えても、自動的に正しい側に倒れる。
+  const at = opts.events?.length ?? 0;
   for (const effect of def.effects) {
     const targets = resolveTargets(attacker, effectTarget(effect), sides, opts);
     for (const target of targets) {
       EFFECT_HANDLERS[effect.kind](effect, makeCtx(target));
     }
+  }
+  const label = opts.label;
+  if (label && opts.events && !opts.events.some((e) => e.text.includes(label))) {
+    // 効果の行より前に差し込む (「◯◯の△△!」→ 結果、の順)。
+    opts.events.splice(at, 0, { actor: opts.actor ?? 'player', text: `${attacker.name}の${label}!` });
   }
 }

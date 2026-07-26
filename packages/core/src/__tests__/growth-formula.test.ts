@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { playerCombatant, playerStatsAt, JOBS, BATTLE_TUNING, type StatArray } from '../index.js';
+import { playerCombatant, playerStatsAt, levelUpGains, JOBS, BATTLE_TUNING, type StatArray } from '../index.js';
 
 /**
  * `growthOf` に一本化した後 (#520) も、`playerCombatant` と `playerStatsAt` が
@@ -58,6 +58,33 @@ describe('成長式の一貫性 (#520)', () => {
       for (const lv of [1, 13, 37]) {
         const raw = playerStatsAt(j.id, lv, 1);
         expect(raw.maxMp, `${j.id} Lv${lv}`).toBeCloseTo(t.mpBase + raw.int * t.mpIntScale, 10);
+      }
+    }
+  });
+
+  it('レベルアップの上昇量は、ステータス画面の実差と 1 も食い違わない', () => {
+    // 生値の差を小数 1 桁で出していたため「まもりが 0.4 あがった!」と言われて画面を見ても
+    // **何も変わっていない**、逆に「さいだいMPが 1.1」で実際は +2、という食い違いが
+    // 全職・全レベルで起きていた (レビュー実測 2026-07-27)。プレイヤーが見るのは
+    // playerCombatant の丸めた値なので、上昇量もそれと同じ差でなければ嘘になる。
+    const base: StatArray = [20, 18, 22, 30, 15];
+    const keys = ['maxHp', 'maxMp', 'atk', 'def', 'agi', 'int', 'luk'] as const;
+    for (const j of JOBS) {
+      for (let lv = 1; lv < 30; lv++) {
+        const a = playerCombatant(j.id, lv, 1, 'x', base);
+        const b = playerCombatant(j.id, lv + 1, 1, 'x', base);
+        const real = Object.fromEntries(keys.map((k) => [k, b[k] - a[k]])) as Record<string, number>;
+        const gains = levelUpGains(j.id, { jobLevel: lv, playerLevel: 1 }, { jobLevel: lv + 1, playerLevel: 1 }, base);
+        for (const g of gains) {
+          expect(g.delta, `${j.id} Lv${lv}->${lv + 1} ${g.label}`).toBe(real[String(g.key)]);
+        }
+        // 実際に上がっているのに表示されない項目も無いこと
+        for (const k of keys) {
+          const d = real[k] ?? 0;
+          if (d > 0) {
+            expect(gains.some((g) => g.key === k), `${j.id} Lv${lv}->${lv + 1} ${k} が +${d} なのに未表示`).toBe(true);
+          }
+        }
       }
     }
   });

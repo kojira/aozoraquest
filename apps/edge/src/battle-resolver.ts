@@ -13,7 +13,7 @@
 import {
   startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
   terrainAt, isWalkable, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
-  type BattleState, type Command, type Archetype, type StatVector, type GearSelection,
+  type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
@@ -41,6 +41,9 @@ interface SealedMeta {
   tier: Tier;
   /** 遭遇したタイル "x,y" (撃破時に defeated へ入れ、その枠で再エンカウントさせない)。 */
   tile: string;
+  /** 遭遇時の素ステ。**決着でレベルアップの内訳を出すために封じておく** —
+   *  ここに無いと handleTurn が診断を読み直すことになり、決着のたびに PDS 往復が増える。 */
+  baseStats?: number[];
 }
 
 type Guard = BattleGuard<SealedMeta, BattleState>;
@@ -218,7 +221,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const existing = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (existing) await deleteGuard(env, now, userDid, existing.cid);
   const guard: Guard = {
-    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: `${x},${y}` }, state: battle, pendingTurnSeed, rewarded,
+    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: `${x},${y}`, baseStats: [...baseStats] }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
   await createGuard(env, now, guard); // 生きたガードがあれば InvalidSwap → 上位で 409
@@ -508,6 +511,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
+        // レベルアップの内訳 (「ちから +2」) を素ステ込みで出すため。
+        ...(guard.sealed.baseStats ? { baseStats: guard.sealed.baseStats as unknown as StatArray } : {}),
         // 群れ (#453): **倒した敵 (hp<=0) ぶんだけ**報酬。maxTurns 勝ち (HP 比で win・敵が生存) のとき
         // 生存敵に報酬を出さない (レビュー ★★)。全滅勝ちなら全敵が hp<=0 で全頭ぶん。1 体戦は monsterId 単体。
         ...(isMulti ? { enemyIds: next.enemies!.filter((e) => e.hp <= 0).map((e) => e.monsterId ?? next.monsterId) } : {}),
@@ -527,13 +532,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         ...r.next,
         x: finalPos.x,
         y: finalPos.y,
-        // **レベルアップ時の全回復はここには入れない** (#547)。入れて実測したところ、
-        // tier1 の連戦数が平均 9.1 → 46.7 戦 (5.1 倍) に伸び、隊長/将軍は上限なしだと
-        // 876〜941 戦 = 事実上無限になった (「上がる → 全快 → 長く生きる → XP が増える →
-        // また上がる」の正のフィードバック)。#536 で連戦数から決めた monsterStatFloor と
-        // JOB_LEVEL_PACE の前提が壊れるので、係数の引き直しとセットで別途入れる。
-        carryHp: decision === 'lose' ? undefined : next.player.hp,
-        carryMp: decision === 'lose' ? undefined : next.player.mp,
+        // **レベルアップしたら HP/MP 全回復** (#547。オーナー要望 2026-07-27)。
+        // carryHp/carryMp は未設定 = 全快で開始なので、消すだけで全回復になる
+        // (次の戦闘の maxHp は新しい Lv で計算される)。敗北時も同じ (街へ帰るので元から全快)。
+        //
+        // これは連戦数を大きく伸ばす (実測: tier1 で 9.1 → 46.7 戦)。#536 で連戦数から
+        // 決めた monsterStatFloor と JOB_LEVEL_PACE は引き直しが要る (#547)。
+        carryHp: decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
+        carryMp: decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
         defeated,
         defeatedWindow: window,
       };

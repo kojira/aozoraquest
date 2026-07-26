@@ -705,7 +705,20 @@ export function World() {
       // レベルアップは**最後**に出す。DQ は「経験値 → アイテム → レベルアップ」の順で、
       // レベルアップが締めになる。負けでも僅かな XP で上がりうるので、その場合は
       // 「たおれてしまった…」の後 = 「力がみなぎった直後に倒れる」順序を避ける。
-      if (awarded.leveledUp) resultLines.push(`レベルが ${awarded.leveledUp.to} に あがった！`);
+      if (awarded.leveledUp) {
+        const lv = awarded.leveledUp;
+        resultLines.push(`レベルが ${lv.to} に あがった！`);
+        // **上がった数値は 1 行にまとめる** (オーナー要望 2026-07-27「上がったパラメータと
+        // 数値を一つ一つ表示」)。1 ステータス 1 行にすると 7 行になり、メッセージ窓は
+        // 実測 5 行しか見えないので、**肝心の「おぼえた!」「きずが いえた!」が窓の外へ
+        // 押し出されて誰も読めない** (タップ 1 回でマップに戻るので二度と読めない)。
+        // 数値は全部出しつつ、窓に収める。
+        const gains = lv.gains ?? [];
+        if (gains.length) resultLines.push(gains.map((g) => `${g.label}+${g.delta}`).join('　'));
+        // 覚えたとくぎ。気づかないと使われないので必ず出す。
+        for (const name of lv.learned ?? []) resultLines.push(`${name} を おぼえた！`);
+        resultLines.push('きずが すっかり いえた！');
+      }
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);

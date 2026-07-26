@@ -911,23 +911,23 @@ describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強
     }
   });
 
-  it('levelUpGains: 上昇量を小数 1 桁で返し、0.1 未満と変化なしは出さない', () => {
-    // ジョブ Lv1→2: 全ステに statGrow ぶんの伸び率が乗るので主要ステは上がる (#518)
+  it('levelUpGains: 上昇量は**整数** (画面の実差) で返し、丸めて変わらないものは出さない', () => {
+    // 以前は生値の差を小数 1 桁で返していたが、プレイヤーが見るのは playerCombatant の
+    // 丸めた値なので「まもりが 0.4 あがった!」と言われて画面を見ても何も変わっていない、
+    // という嘘の行が出ていた (レビュー実測 2026-07-27)。**画面の実差そのもの**を返す。
+    // 全職・全レベルでの一致は growth-formula.test.ts で網羅する。
     const gains = levelUpGains('warrior', { jobLevel: 1, playerLevel: 1 }, { jobLevel: 2, playerLevel: 1 });
     expect(gains.length).toBeGreaterThan(0);
-    const atk = gains.find((g) => g.key === 'atk');
-    const warriorAtkRatio = JOBS_BY_ID.warrior.stats[0];
-    expect(atk?.delta).toBeCloseTo(Math.round(warriorAtkRatio * BATTLE_TUNING.statGrow * 10) / 10, 5);
+    const a = playerCombatant('warrior', 1, 1, 'x');
+    const b = playerCombatant('warrior', 2, 1, 'x');
+    expect(gains.find((g) => g.key === 'atk')?.delta).toBe(b.atk - a.atk);
     for (const g of gains) {
-      expect(g.delta).toBeGreaterThanOrEqual(0.1);
-      expect(g.delta).toBe(Math.round(g.delta * 10) / 10);
+      expect(g.delta, `${g.label} は 1 以上の整数`).toBeGreaterThanOrEqual(1);
+      expect(Number.isInteger(g.delta), `${g.label} は整数`).toBe(true);
       expect(g.label.length).toBeGreaterThan(0);
     }
     // レベル変化なしは空 (全部 0 → フィルタで消える)
     expect(levelUpGains('warrior', { jobLevel: 3, playerLevel: 5 }, { jobLevel: 3, playerLevel: 5 })).toEqual([]);
-    // 0.1 未満のみ落ちる: bard (atk7) の job Lv1→2 は atk +0.28 なので出る、
-    // 一方 agi の低い warrior (agi8) でも +0.32 — 全ステ 0.1 未満を作るのは
-    // 実カーブでは稀なので、フィルタ自体は変化なしケースで担保する
   });
 
   it('成長軸はジョブ Lv のみ — プレイヤー Lv は強さに一切影響しない (#507)', () => {

@@ -114,7 +114,7 @@ export const BATTLE_TUNING = {
    *  ハーネスの不備で実際の約 2 倍だった (真値は下駄6 = 2.25 戦)。dev のベースライン
    *  (2.79 戦) も測っていなかったため、「緩める」指示に対して逆に厳しい方を提示していた。
    *  上の表は dev と同一ハーネスで測り直したもの。**最終的な水準はオーナー判断に返す**。 */
-  monsterStatFloor: 3,
+  monsterStatFloor: 4.3,
   statGrow: 0.05,
   /** まもりだけ伸びを抑える (#518)。**守備力は防具が主役**という DQ の構造に寄せるため
    *  (FC版〜:「すばやさ÷2 + 防具」/ DQ3 HD-2D〜:「みのまもり + 防具」— いずれも防具が大きい)。
@@ -136,6 +136,30 @@ export const BATTLE_TUNING = {
    *  (「かいしんのいちげき か 特殊武器 でしか倒せない」) を壊す読み違いだった。
    *  0 にすることで高守備の敵は専用ロジックなしに「通常攻撃が効かない」を表現できる。 */
   minDamage: 0,
+  /** **かすりダメージ**: 減算の結果が 0 に沈んだとき、`攻撃力 × この比率` を最低保証する
+   *  (`ironDef` = メタル系だけは対象外で、従来どおり完全に 0)。
+   *
+   *  なぜ要るか: minDamage=0 はメタル系のためのものだったが、**プレイヤー側の守備でも
+   *  同じ崖に届いてしまう**。grade2 の防具 1 点 (def+15) で Lv5 の守備は 2 → 18 になり、
+   *  tier1 のモンスターは実効 atk が 5〜6 = `6×0.9 = 5.4 < 18×0.45 = 8.1` で **1 も通らない**。
+   *  実測で tier1 は被ダメ 0・無傷率 100%・連戦は打ち切りまで無敗になっていた
+   *  (オーナー報告 2026-07-27「レベル5でこの装備だと tier1 だと敵なし」)。
+   *  「硬い相手には通らない」は敵の identity として設計したものであって、
+   *  **プレイヤーが不死身になってよいという意味ではない**。
+   *
+   *  0.25 の根拠 (装備 + レベルアップ全回復ありで再導出。全職平均の連戦数):
+   *
+   *  | ratio | 素手 t1 | 素手 t2 | ローブ t1 | ローブ t2 | ローブ t3 |
+   *  |---|---|---|---|---|---|
+   *  | 0.00 (旧) | 39.7 | 5.0 | 224 | 47.6 | 0.9 |
+   *  | 0.10 | 39.7 | 5.0 | 211 | 26.2 | 0.9 |
+   *  | **0.25** | **39.7** | **5.0** | **148** | **7.0** | **0.9** |
+   *  | 0.30 | 39.7 | 5.0 | 80 | 5.9 | 0.9 |
+   *
+   *  **素手と tier3 は ratio を動かしても 1 も変わらない** — 減算が既に正なので床が効かない。
+   *  つまりこの値は「装備した低 tier」だけに効く。0.25 で装備 tier2 (7.0) が素手 tier2 (5.0) に
+   *  並ぶところまで締まり、かつ装備した意味は残る。0.30 まで上げると装備の価値が消える。 */
+  scratchRatio: 0.25,
   /** 回避率 = clamp(base + (守る側agi - 攻める側agi)*agiDodgeScale, min, max) */
   dodgeBase: 0.04,
   agiDodgeScale: 0.009,
@@ -577,6 +601,10 @@ export interface Combatant {
   /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
    *  防御した次のターンまで「相手の動きを読めている」状態。 */
   focus: number;
+  /** **守備が桁違い (メタル系)**。`MonsterDef.flatDef` を持つ敵だけに立つ。
+   *  この旗が立っている相手にだけ「ダメージ 0」が起きてよい (かすりダメージの対象外。
+   *  BATTLE_TUNING.scratchRatio 参照)。 */
+  ironDef?: boolean;
   /** 状態異常 (#452 / docs/25 §3)。省略可 (旧 sealed state 互換)。エンジンが空/未定義を no-op 扱い。 */
   statuses?: StatusInstance[];
   /** ジョブ innate パッシブ id (#452 / docs/25 §4)。省略可。 */
@@ -827,9 +855,13 @@ export function levelUpGains(
   const b = playerStatsAt(archetype, to.jobLevel, to.playerLevel, baseStats);
   const gains: StatGain[] = [];
   for (const [key, label] of STAT_GAIN_LABELS) {
-    const raw = b[key] - a[key];
-    if (raw < STAT_GAIN_MIN_DISPLAY) continue;
-    gains.push({ key, label, delta: Math.round(raw * 10) / 10 });
+    // **画面に出るのは丸めた値なので、上昇量も丸めた差で出す。** 生値の差を小数 1 桁で
+    // 出していたため「まもりが 0.4 あがった!」と言われてステータス画面を見ても
+    // **何も変わっていない** (実測: 戦士 Lv1→2 まもり 表示 0.4 / 実差 0、Lv3→4
+    // さいだいMP 表示 1.1 / 実差 2) という食い違いが起きていた。
+    const delta = Math.round(b[key]) - Math.round(a[key]);
+    if (delta < 1) continue; // 丸めて変わらない項目は出さない (嘘の行を作らない)
+    gains.push({ key, label, delta });
   }
   return gains;
 }
@@ -1225,7 +1257,8 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
     Math.round(BATTLE_TUNING.mpBase + ms[3]),
   );
   // HP/MP を明示している敵はその値で上書き (プレイヤーと同じ完全ステータス — 導出に頼らない)。
-  if (def.flatDef !== undefined) c.def = def.flatDef; // tier 倍率を通さない (メタル系)
+  // tier 倍率を通さない (メタル系)。ダメージ 0 が許されるのはこの旗が立つ相手だけ。
+  if (def.flatDef !== undefined) { c.def = def.flatDef; c.ironDef = true; }
   c.maxHp = monsterMaxHp(def); c.hp = c.maxHp;
   // MP は 1 体ずつ手で設計された絶対値なのでそのまま使う (tier 倍率を掛けると、tier 差が
   // 既に値自体に入っているぶんと二重計上になる)。HP は monsterMaxHp が別途担当。
@@ -1466,7 +1499,12 @@ function doAttack(
   // しか通らず、会心 (defValue=0) のみ貫通できる = 専用ロジック不要で「守備が硬い」が表現される。
   // 攻撃威力バフ (atkUp/atkDown)。none なら ×1。
   const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1) * applyPowerCalc(1, attacker, atkCtx);
-  let dmg = Math.max(t.minDamage, (atkTerm - defValue * t.defCoef) * roll);
+  // **かすりの床は減算の段階で入れる** (乗算補正より前)。後ろで max を取ると、ぼうぎょ半減・
+  // 属性耐性・被ダメ軽減パッシブが 0 沈み域で丸ごと無効になり、**ぼうぎょすると被ダメが増える**
+  // 逆転すら起きる (実測 66 通り。例: ぬまの大蛇 atk15 vs def28 → 素受け 1 / ぼうぎょ 2)。
+  // ここに置けば従来どおり全部が乗算され、ironDef の 0 も維持される。
+  const floor = defender.ironDef ? t.minDamage : atkValue * t.scratchRatio;
+  let dmg = Math.max(floor, atkTerm - defValue * t.defCoef) * roll;
 
   // 防御 / 見切りで半減 (会心でもコマンド防御は効く = 防御の存在意義を守る)
   if (defender.guarding || defender.parrying) dmg *= t.guardReduction;
@@ -1481,6 +1519,8 @@ function doAttack(
   // **ダメージ 0 は正当な結果** (オーナー指摘 2026-07-25)。守備力を上回れなければ 1 も通らない
   // = メタル系が「かいしんのいちげき (守備無視) でしか倒せない」identity を持てる。以前は
   // 最低 1 を保証していたため、atk 1 の魔法使いでも殴り続ければメタルを削り切れてしまっていた。
+  //
+  // ただし **0 が許されるのは ironDef (メタル系) だけ**。床は上の減算の段階で入れてある。
   const final = Math.max(0, Math.round(dmg));
   // 物理致死の直前に onLethal フック (覇王/不動) を確認。survive なら HP1 で耐える (反射等は
   // ハンドラ内で処理済み)。魔法致死は doMagic を通るためここには来ず、耐えられず死ぬ (§12)。
@@ -1688,7 +1728,7 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
     skillName: skill.name,
     actorSide: 'player',
     engine: { doAttack, doMagic },
-  }));
+  }), { label: skill.name, events, actor: 'player' });
 }
 
 /**
@@ -2088,7 +2128,7 @@ export function resolveTurnMulti(
             player,
             sides,
             (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
-            { targetIndex },
+            { targetIndex, label: selectedSkill.name, events, actor: 'player' },
           );
         }
       } else if (cmd === 'herb') {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyBattleOutcome, type BattleOutcomeInput } from '../src/battle-reward';
 import { MONSTERS, battleXpFor, jobXpToNextLevelFor, BATTLE_TUNING } from '@aozoraquest/core';
+import * as coreForTest from '@aozoraquest/core';
 import { emptyState, type GameState } from '../src/game-state';
 
 const base = (over: Partial<GameState> = {}): GameState => ({ ...emptyState('did:plc:alice', '2026-07-19T00:00:00.000Z'), power: 5, ...over });
@@ -135,7 +136,7 @@ describe('レベルアップで HP/MP 全回復 (#534)', () => {
     // warrior の Lv2 しきい値の 1 手前から、そらいろスライム (XP3) を倒して超える
     const th = jobXpToNextLevelFor('warrior', 0).next;
     const r = win(at(th - 1));
-    expect(r.awarded.leveledUp).toEqual({ from: 1, to: 2 });
+    expect(r.awarded.leveledUp).toMatchObject({ from: 1, to: 2 });
   });
 
   it('Lv が上がらない決着では leveledUp を返さない', () => {
@@ -149,7 +150,7 @@ describe('レベルアップで HP/MP 全回復 (#534)', () => {
       outcome: 'lose', monsterId: 'sky-slime', archetype: 'warrior', luk: 0,
       rewardSeed: 1, lossSeed: 2, rewarded: true,
     });
-    expect(r.awarded.leveledUp).toEqual({ from: 1, to: 2 });
+    expect(r.awarded.leveledUp).toMatchObject({ from: 1, to: 2 });
   });
 
   it('パワー無し (練習) では Lv も上がらない', () => {
@@ -160,5 +161,40 @@ describe('レベルアップで HP/MP 全回復 (#534)', () => {
     });
     expect(r.awarded.leveledUp).toBeUndefined();
     expect(r.next.jobXp).toEqual({ warrior: th - 1 });
+  });
+});
+
+describe('レベルアップの内訳 (オーナー要望 2026-07-27)', () => {
+  const th = jobXpToNextLevelFor('warrior', 0).next;
+  const at = (jobXp: number): GameState => ({
+    did: 'did:plc:x', power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
+    gear: [], x: 0, y: 0, carryHp: 3, carryMp: 1, version: 1, updatedAt: '',
+  });
+
+  it('上がったステータスの内訳を返す (「上がった」だけでは何が良くなったか分からない)', () => {
+    const r = applyBattleOutcome(at(th - 1), input({ baseStats: [20, 18, 22, 30, 15] }));
+    expect(r.awarded.leveledUp?.gains?.length).toBeGreaterThan(0);
+    for (const g of r.awarded.leveledUp!.gains!) {
+      expect(g.label).toBeTruthy();
+      expect(g.delta).toBeGreaterThan(0);
+    }
+  });
+
+  it('新しく覚えたとくぎを返す (気づかないと使われない)', () => {
+    // 戦士がとくぎを覚える境目を探して、その手前から 1 つ上げる
+    const { skillsForJob, jobXpCurveFor } = coreForTest;
+    let found: { from: number; to: number } | null = null;
+    for (let lv = 1; lv < 20; lv++) {
+      if (skillsForJob('warrior', lv + 1).length > skillsForJob('warrior', lv).length) { found = { from: lv, to: lv + 1 }; break; }
+    }
+    expect(found, '戦士がとくぎを覚えるレベルがある').not.toBeNull();
+    const xpAt = (lv: number) => jobXpCurveFor('warrior').find((e: readonly [number, number]) => e[0] === lv)?.[1] ?? 0;
+    const r = applyBattleOutcome(at(xpAt(found!.to) - 1), input({ baseStats: [20, 18, 22, 30, 15] }));
+    expect(r.awarded.leveledUp?.learned?.length).toBeGreaterThan(0);
+  });
+
+  it('素ステが無ければ内訳を省く (職の基準値だけで出すと実際の伸びとずれる)', () => {
+    const r = applyBattleOutcome(at(th - 1), input({}));
+    expect(r.awarded.leveledUp?.from).toBe(1);
   });
 });
