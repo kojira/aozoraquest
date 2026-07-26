@@ -42,6 +42,10 @@ export interface BattleOutcomeInput {
 
 /** 適用結果 (client 表示・監査用の内訳)。 */
 export interface AwardBreakdown {
+  /** **パワー不足で報酬対象外だった** (勝っても逃げても XP・素材が一切入らない)。
+   *  これを返さないと「勝ったのに何も起きない」が無言で起き、経験値が入ったように
+   *  見えて実は入っていない、という最悪の見え方になる (オーナー指摘 2026-07-26)。 */
+  unrewarded?: true;
   xp?: number;
   /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復する。 */
   leveledUp?: { from: number; to: number };
@@ -75,7 +79,14 @@ function levelUpOf(before: GameState, after: GameState, archetype: string): { fr
  */
 export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { next: GameState; awarded: AwardBreakdown } {
   // パワー無し = 練習相当。勝敗どちらも付与も消費もペナルティも無し (§7)。
-  if (!o.rewarded) return { next: state, awarded: {} };
+  // **決着したのに報酬が無かったこと自体を返す** — client がその理由を出せるように。
+  if (!o.rewarded) {
+    // **勝ち負けのときだけ理由を出す。** 逃走・引き分けはパワーがあっても XP もドロップも
+    // 出ない (下記参照) ので、ここで理由を出すと「パワーがあれば得られたはず」という
+    // 嘘になる。しかも逃げるたびにタップ送りを要求することになる。
+    const lost = o.outcome === 'win' || o.outcome === 'lose';
+    return { next: state, awarded: lost ? { unrewarded: true } : {} };
+  }
 
   if (o.outcome === 'win') {
     // 群れ (#453) は倒した全敵ぶん。XP 合算・各敵で別 seed のドロップ試行。1体 (従来) は monsterId 単体 =

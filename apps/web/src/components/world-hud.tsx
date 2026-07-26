@@ -46,6 +46,7 @@ export function WorldHud({
   maxHp,
   mp,
   maxMp,
+  power,
   locationLabel,
   zIndex = HUD_Z,
 }: {
@@ -53,6 +54,10 @@ export function WorldHud({
   maxHp: number;
   mp: number;
   maxMp: number;
+  /** あおぞらパワー残高。**所持金に近い役割**なので HP/MP と並べて常時見せる
+   *  (オーナー要望 2026-07-26)。以前は本文の注意書きの末尾に埋もれていて、
+   *  「1 戦 = 1 消費」なのに残りが見えなかった。未取得なら省く。 */
+  power?: number | null;
   /** 街名 or 危険度ラベル (右上に小さく) */
   locationLabel: string;
   /** 通常は HUD_Z。戦闘オーバーレイ中は HP/MP を上枠で鮮明に見せるため
@@ -74,6 +79,15 @@ export function WorldHud({
       <div style={{ ...panel, left: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Bar label="HP" value={hp} max={maxHp} fill={hpColor(hpRatio)} labelColor="#7ee08f" />
         <Bar label="MP" value={mp} max={maxMp} fill="#8ab6f0" labelColor="#8ab6f0" />
+        {power !== null && power !== undefined && (
+          // バーではなく数値だけ (上限が無いので比率を描けない)。DQ の G 表示と同じ立ち位置。
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, lineHeight: 1.2 }}>
+            <span style={{ width: '1.4em', fontWeight: 700, color: '#f5c542', textShadow: TEXT_SHADOW }}>P</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: power < 1 ? '#e8566a' : '#fff', textShadow: TEXT_SHADOW }}>
+              {Math.max(0, power).toLocaleString()}
+            </span>
+          </div>
+        )}
       </div>
       {/* 右上: 現在地 */}
       <div

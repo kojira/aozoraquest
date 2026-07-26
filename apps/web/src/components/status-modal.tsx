@@ -193,8 +193,14 @@ export function StatusModal({
             </div>
           </Section>
 
-          {/* つぎのレベルまで */}
+          {/* けいけんち: **いまの累計**と、つぎのレベルまで。
+              「あと N」だけだと、戦って本当に入っているのかが分からない
+              (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。
+              オーナー要望 2026-07-26。 */}
           <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
+            <div>
+              けいけんち <span style={num}>{jobXp.toLocaleString()}</span>
+            </div>
             <div>
               {jobNext.next > 0 ? (
                 <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1} まで あと <span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>

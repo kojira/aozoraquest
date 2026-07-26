@@ -28,6 +28,21 @@ export type XpClaimKind = 'post' | 'quest';
 export const MAX_CLAIM_KEYS = 200;
 
 /**
+ * **1 投稿で回復するあおぞらパワー** (docs/19 §3)。
+ *
+ * パワーは戦闘 1 回で 1 消費し、**0 になると勝っても報酬が一切入らない**
+ * (`rewarded = power >= powerCost`)。client 側のモデルでは「投稿 1 件 = パワー 1」で
+ * 回復していたが、**権威 state 側にその経路が無く、初回移行で取り込んだきり減る一方**だった。
+ * その結果「何回戦ってもレベルが上がらない」状態になる (オーナー報告 2026-07-26)。
+ *
+ * 投稿の XP 申告と同じ冪等キーで配るので、同じ投稿で二重に配られることはない。
+ */
+export const POWER_PER_POST = 1;
+
+/** パワーの上限。無制限にすると桁が壊れたときに戻せないので、緩いサニティ上限を置く。 */
+export const MAX_POWER = 100_000;
+
+/**
  * 種類ごとの 1 回あたり上限。**core の報酬定数から導く** — ここに数値を書き写すと、
  * 報酬を変えたときに片方だけ直して「正当な申告が切られる」か「上限が緩む」になる。
  */
@@ -69,6 +84,8 @@ export interface XpClaimResult {
   jobXp: number;
   /** 重複申告として弾かれたか (client はこれを見てリトライを止める)。 */
   duplicate: boolean;
+  /** 申告後のあおぞらパワー残高 (投稿なら回復している)。 */
+  power: number;
 }
 
 /**
@@ -111,6 +128,9 @@ export async function claimXp(
       return {
         ...cur,
         jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + xp },
+        // **投稿ならあおぞらパワーを回復する** (docs/19 §3)。ここが無いとパワーが枯れて
+        // 勝っても報酬が入らなくなり、「何回戦ってもレベルが上がらない」になる。
+        ...(kind === 'post' ? { power: Math.min(MAX_POWER, cur.power + POWER_PER_POST) } : {}),
         // 新しいキーを末尾に足し、古いほうから落とす
         xpClaims: [...claims, claimKey].slice(-MAX_CLAIM_KEYS),
       };
@@ -118,7 +138,7 @@ export async function claimXp(
     init ? { now, init } : { now },
   );
 
-  return { granted, jobXp: next.jobXp[archetype] ?? 0, duplicate };
+  return { granted, jobXp: next.jobXp[archetype] ?? 0, duplicate, power: next.power };
 }
 
 /**
@@ -155,4 +175,33 @@ export async function adminSetJobXp(
     init ? { now, init } : { now },
   );
   return { jobXp: next.jobXp[archetype] ?? 0, level: lv };
+}
+
+/**
+ * **管理者専用**: あおぞらパワーを権威 state に付与する。
+ *
+ * 管理画面のパワー付与は**ユーザー PDS の power レコードしか書いていなかった** (client 側のモデル)。
+ * 報酬の可否は `GameState.power` (権威側) が決めるので、画面には 152 と出ているのに
+ * 権威側は 0 = 勝っても XP もドロップも入らない、という見えない失敗が起きていた
+ * (オーナー報告 2026-07-26)。テスト用に権威側を直接動かす経路が要る。
+ *
+ * **呼び出し側 (router) が `isEdgeAdmin` で必ずゲートすること。**
+ */
+export async function adminGrantPower(
+  env: GameStateEnv,
+  did: string,
+  amount: number,
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<{ power: number }> {
+  if (!Number.isFinite(amount)) throw new XpClaimError('amount が不正', 400);
+  const delta = Math.trunc(amount);
+  if (Math.abs(delta) > MAX_POWER) throw new XpClaimError(`amount は ±${MAX_POWER} まで`, 400);
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => ({ ...cur, power: Math.max(0, Math.min(MAX_POWER, cur.power + delta)) }),
+    init ? { now, init } : { now },
+  );
+  return { power: next.power };
 }

@@ -288,7 +288,12 @@ export async function processSelfPost(
       // 先に待つと、edge のタイムアウト (最大 8 秒) の間にタブを閉じられたとき、
       // 認知スコアのブレンド・streak・playerLevel の更新ごと失われる。
       claim = async () => {
-        if (!postUri || gainedXp <= 0) return;
+        // **XP が 0 でも申告する。** 権威側のあおぞらパワーはこの申告でしか増えないので、
+        // ここで抜けると「分類が付かなかった投稿」ではパワーが 1 も増えない
+        // (その日 2 本目以降の雑談は action=null で gainedXp=0 になる)。
+        // client 台帳は投稿のたびに +1 するので、残高だけ増えて権威側は増えず、
+        // 「投稿すればパワーがたまる」と画面に出しながら実際はたまらない状態になる。
+        if (!postUri) return;
         try {
           // **今の職 (analysis.archetype) に積む。** `oldJob.archetype` は凍結された
           // ベータ期間の記録側の職なので、転職後は前の職を指す = XP が前職のバケツに入る。
