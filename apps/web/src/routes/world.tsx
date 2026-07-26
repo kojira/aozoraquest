@@ -1283,12 +1283,14 @@ export function World() {
           </p>
           <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
             マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。街に入ると全回復。
+            {/* **残高は HUD の P だけに出す。** ここに client 台帳 (points) の数字を併記すると、
+                権威側と食い違ったときに同じ画面に別々の残高が並ぶ (実際に「P 0」の 3cm 下に
+                「いまのパワー: 152」が出ていた)。遭遇判定はサーバーが権威 power で行うので、
+                client 台帳を根拠に「モンスターは出ません」と書くのも嘘になる。 */}
             {diag
-              ? points === null
-                ? ' パワー残高を読み込めなかった (通信エラー)。モンスターは出ません。再読み込みでもう一度どうぞ。'
-                : points.balance >= BATTLE_TUNING.powerCost
-                  ? ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。いまのパワー: ${points.balance}`
-                  : ' あおぞらパワーがないのでモンスターは出ません (ホームで投稿すると増える)。'
+              ? serverPower !== null && serverPower < BATTLE_TUNING.powerCost
+                ? ' あおぞらパワーが ないので、勝っても経験値や素材は もらえません (投稿すると増える)。'
+                : ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。`
               : ''}
           </p>
         </>

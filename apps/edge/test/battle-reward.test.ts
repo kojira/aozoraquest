@@ -21,11 +21,14 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     // 「勝ったのに何も起きない」を黙って通すと、経験値が入ったように見えて実は
     // 入っていない、という最悪の見え方になる (オーナー指摘 2026-07-26)。
     const s = base({ power: 0 });
-    for (const outcome of ['win', 'lose', 'draw', 'fled'] as const) {
+    for (const outcome of ['win', 'lose'] as const) {
       expect(applyBattleOutcome(s, input({ outcome, rewarded: false })).awarded, outcome).toEqual({ unrewarded: true });
     }
-    // 敵が逃げたのは決着していないので、理由を出す対象でもない
-    expect(applyBattleOutcome(s, input({ outcome: 'monster-fled', rewarded: false })).awarded).toEqual({});
+    // 逃走・引き分け・敵の逃走は、パワーがあっても元から無報酬。ここで理由を出すと
+    // 「パワーがあれば得られたはず」という嘘になる。
+    for (const outcome of ['draw', 'fled', 'monster-fled'] as const) {
+      expect(applyBattleOutcome(s, input({ outcome, rewarded: false })).awarded, outcome).toEqual({});
+    }
   });
 
   it('勝ち: +XP (player/job 両方) + ドロップ + パワー1消費', () => {

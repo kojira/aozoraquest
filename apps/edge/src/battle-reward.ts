@@ -81,8 +81,11 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
   // パワー無し = 練習相当。勝敗どちらも付与も消費もペナルティも無し (§7)。
   // **決着したのに報酬が無かったこと自体を返す** — client がその理由を出せるように。
   if (!o.rewarded) {
-    const decided = o.outcome === 'win' || o.outcome === 'lose' || o.outcome === 'fled' || o.outcome === 'draw';
-    return { next: state, awarded: decided ? { unrewarded: true } : {} };
+    // **勝ち負けのときだけ理由を出す。** 逃走・引き分けはパワーがあっても XP もドロップも
+    // 出ない (下記参照) ので、ここで理由を出すと「パワーがあれば得られたはず」という
+    // 嘘になる。しかも逃げるたびにタップ送りを要求することになる。
+    const lost = o.outcome === 'win' || o.outcome === 'lose';
+    return { next: state, awarded: lost ? { unrewarded: true } : {} };
   }
 
   if (o.outcome === 'win') {
