@@ -1,0 +1,64 @@
+# エッジ Worker (apps/edge) の自動デプロイ。
+#
+# **なぜ要るか**: web (dev.aozoraquest.app / aozoraquest.app) は Cloudflare Workers Builds が
+# push で自動デプロイするが、**エッジ Worker には自動デプロイが無く手動 `wrangler deploy` だけ**
+# だった。結果、画面は最新・戦闘の計算は数週間前という状態が起き、
+# 「フィールドと戦闘で数値が全然違う」「敵の HP が高すぎる」「レベルが上がらない」が同時に出た
+# (2026-07-26 オーナー報告。#512)。片方だけ自動化されている構成は必ずまた同じ事故を起こす。
+#
+# **必要な設定** (未設定だとこの workflow は fail する):
+#   - repository secret `CLOUDFLARE_API_TOKEN` — Workers Scripts:Edit 権限のトークン
+#   - repository secret `CLOUDFLARE_ACCOUNT_ID`
+# Worker の secrets (SERVER_DID / ADMIN_DIDS / KUDA_API_KEY 等) は Worker 側に保持され、
+# デプロイでは消えないので再設定は不要。
+name: edge-deploy
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      # エッジの動作に効くものだけ。web だけの変更で無駄にデプロイしない。
+      - 'apps/edge/**'
+      - 'packages/core/**'
+      - 'packages/lexicons/**'
+      - '.github/workflows/edge-deploy.yml'
+  # 手動でも流せるようにする (デプロイ漏れに気付いたときの復旧経路)。
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # デプロイ前に型と単体テストを通す。エッジは戦闘の権威なので、壊れたものを
+      # 出すと全ユーザーの戦闘が止まる (fail-closed で 500)。
+      - run: pnpm --filter @aozoraquest/core test
+      - run: pnpm --filter @aozoraquest/edge typecheck
+      - run: pnpm --filter @aozoraquest/edge test
+
+      # dev ブランチ → aozoraquest-edge-dev / main → aozoraquest-edge (top-level env)。
+      # 本番と dev は完全に別 Worker (docs/22)。
+      - name: Deploy (dev)
+        if: github.ref == 'refs/heads/dev'
+        working-directory: apps/edge
+        run: npx wrangler deploy --env dev
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy (production)
+        if: github.ref == 'refs/heads/main'
+        working-directory: apps/edge
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
