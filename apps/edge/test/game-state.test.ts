@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { rkeyForDid, readModifyWrite, type GameState, type GameStateEnv } from '../src/game-state';
+import { rkeyForDid, readModifyWrite, normalizeState, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice'; // 対象ユーザー
@@ -167,5 +167,30 @@ describe('game-state (OAuth 権威書き込み)', () => {
     (env as { OAUTH_TOKENS?: KVNamespace }).OAUTH_TOKENS = mockKv(); // 空 = 未 bootstrap
     globalThis.fetch = (async (url: string) => jsonRes(url.includes('getRecord') ? 400 : 200, url.includes('getRecord') ? { error: 'RecordNotFound' } : {})) as unknown as typeof fetch;
     await expect(readModifyWrite(env, DID, (c) => c, { now: NOW })).rejects.toMatchObject({ reason: 'not-bootstrapped' });
+  });
+});
+
+describe('normalizeState — v1 の jobXp を捨てる (#530)', () => {
+  it('v1 の jobXp は空にする (移行時に焼き込んだ投稿 XP の二重計上を防ぐ)', () => {
+    const v1 = { did: 'did:x', power: 5, playerXp: 100, jobXp: { warrior: 5000 }, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: '' };
+    expect(normalizeState(v1).jobXp).toEqual({});
+    // 他のフィールドは触らない
+    expect(normalizeState(v1).power).toBe(5);
+    expect(normalizeState(v1).playerXp).toBe(100);
+  });
+
+  it('v2 以降はそのまま通す (戦闘由来だけが入っている)', () => {
+    const v2 = { did: 'did:x', power: 5, playerXp: 100, jobXp: { warrior: 5000 }, materials: {}, gear: [], x: 0, y: 0, version: 2, updatedAt: '' };
+    expect(normalizeState(v2).jobXp).toEqual({ warrior: 5000 });
+  });
+
+  it('version 欠落は v1 扱い (古いレコードを安全側に倒す)', () => {
+    const noVer = { did: 'did:x', power: 0, playerXp: 0, jobXp: { sage: 999 }, materials: {}, gear: [], x: 0, y: 0, updatedAt: '' } as never;
+    expect(normalizeState(noVer).jobXp).toEqual({});
+  });
+
+  it('冪等 (何度読んでも同じ)', () => {
+    const v1 = { did: 'did:x', power: 0, playerXp: 0, jobXp: { sage: 999 }, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: '' };
+    expect(normalizeState(normalizeState(v1))).toEqual(normalizeState(v1));
   });
 });

@@ -14,14 +14,15 @@ describe('effectiveJobXp (#529)', () => {
   });
 
   it('省略された出所は 0 として扱う (画面が取得できなくてもクラッシュしない)', () => {
-    expect(effectiveJobXp({})).toBe(0);
-    expect(effectiveJobXp({ analysisXp: 100 })).toBe(100);
-    expect(effectiveJobXp({ battleXp: 40 })).toBe(40);
+    expect(effectiveJobXp({ analysisXp: undefined, battleXp: undefined, questXp: undefined })).toBe(0);
+    expect(effectiveJobXp({ analysisXp: 100, battleXp: undefined, questXp: undefined })).toBe(100);
+    expect(effectiveJobXp({ analysisXp: undefined, battleXp: 40, questXp: undefined })).toBe(40);
     expect(effectiveJobXp({ analysisXp: undefined, battleXp: undefined, questXp: 7 })).toBe(7);
   });
 
   it('負にならない (壊れた state を渡されても LV 計算が壊れない)', () => {
-    expect(effectiveJobXp({ analysisXp: -999, battleXp: 10 })).toBe(0);
+    // 出所ごとにクランプするので、偽装された負の analysis で権威側の戦闘 XP を打ち消せない
+    expect(effectiveJobXp({ analysisXp: -999, battleXp: 10, questXp: undefined })).toBe(10);
   });
 
   it('戦闘 XP が実際にレベルを押し上げる', () => {
@@ -29,8 +30,8 @@ describe('effectiveJobXp (#529)', () => {
     const lv2 = JOB_XP_CURVE.find((e) => e[0] === 2)![1];
     const oni = battleXpFor('blue-oni');
     expect(oni).toBeGreaterThan(0);
-    const postsOnly = effectiveJobXp({ analysisXp: lv2 - 1 });
-    const withBattles = effectiveJobXp({ analysisXp: lv2 - 1, battleXp: oni });
+    const postsOnly = effectiveJobXp({ analysisXp: lv2 - 1, battleXp: undefined, questXp: undefined });
+    const withBattles = effectiveJobXp({ analysisXp: lv2 - 1, battleXp: oni, questXp: undefined });
     expect(jobLevelFromXp(postsOnly)).toBe(1);
     expect(jobLevelFromXp(withBattles)).toBeGreaterThan(1);
   });

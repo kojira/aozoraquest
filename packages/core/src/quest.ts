@@ -218,19 +218,24 @@ export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: num
  * つよさ画面は投稿だけ、実際の戦闘計算も投稿だけ。**戦闘で得た XP はどこにも効かず**、
  * 「けいけんち を N かくとく！」と表示しておいて実際にはレベルが上がらない状態だった。
  *
- * 引数はすべて任意。取得できないものは 0 として扱う (例: ホーム画面が権威 state を
- * 取らない選択をしてもクラッシュしない)。**ただし省略すると表示 LV が実際の強さより
- * 低く出る**ので、省略してよいのは「その画面では概算で足りる」と判断したときだけ。
+ * **キーは必須・値は undefined 可**。全部 optional にすると「黙って足し忘れても型が通る」
+ * ことになり、実際にそれで 3 箇所 (ワールド / サーバー / 投稿の演出) が足し忘れた。
+ * `questXp: undefined, // ホーム: サマリなので概算` のように**意図的な省略を書かせる**ことで、
+ * 「省略してよいのは概算で足りると判断したときだけ」という規約を型で強制する。
+ *
+ * 出所ごとに 0 クランプするのは、**偽装可能な analysis に負値を入れて権威側の戦闘 XP を
+ * 打ち消せない**ようにするため (合計だけをクランプすると打ち消せてしまう)。
  */
 export function effectiveJobXp(src: {
   /** `analysis.jobLevel.xp` — 投稿・診断由来。転職でリセットされる。 */
-  analysisXp?: number | undefined;
+  analysisXp: number | undefined;
   /** `GameState.jobXp[archetype]` — 戦闘由来 (サーバー権威)。 */
-  battleXp?: number | undefined;
-  /** `questXpScalar()` の戻り値 — 依頼クエスト由来。 */
-  questXp?: number | undefined;
+  battleXp: number | undefined;
+  /** `questXpScalar()` の戻り値 — 依頼クエスト由来。サーバーは持たない (#533)。 */
+  questXp: number | undefined;
 }): number {
-  return Math.max(0, (src.analysisXp ?? 0) + (src.battleXp ?? 0) + (src.questXp ?? 0));
+  const nn = (v: number | undefined) => (Number.isFinite(v) ? Math.max(0, v as number) : 0);
+  return nn(src.analysisXp) + nn(src.battleXp) + nn(src.questXp);
 }
 
 /**
@@ -250,8 +255,8 @@ export function applyPostXp(
   battleXp = 0,
 ): { savedXp: number; leveledUp?: { from: number; to: number } } {
   const savedXp = oldXp + gained; // ← battleXp を足さない (二重計上の防止)
-  const from = jobLevelFromXp(effectiveJobXp({ analysisXp: oldXp, battleXp }));
-  const to = jobLevelFromXp(effectiveJobXp({ analysisXp: savedXp, battleXp }));
+  const from = jobLevelFromXp(effectiveJobXp({ analysisXp: oldXp, battleXp, questXp: undefined }));
+  const to = jobLevelFromXp(effectiveJobXp({ analysisXp: savedXp, battleXp, questXp: undefined }));
   return to > from ? { savedXp, leveledUp: { from, to } } : { savedXp };
 }
 

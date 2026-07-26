@@ -17,7 +17,11 @@ import { readServerTokens } from './oauth-store';
 import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
 
 export const GAME_STATE_COLLECTION = 'app.aozoraquest.gameState';
-export const GAME_STATE_VERSION = 1;
+/** v2 (#530): `jobXp` を「**戦闘由来のみ**」に定義し直した。v1 では `migrateInitState` が
+ *  `analysis.jobLevel.xp` (投稿由来) を種として焼き込んでいたため、#530 で
+ *  `analysisXp + battleXp` を合算すると**投稿 XP が二重計上**になる (既存ユーザーの Lv がほぼ倍)。
+ *  v1 レコードは読むときに `jobXp` を空にして正す (`normalizeState`)。 */
+export const GAME_STATE_VERSION = 2;
 
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
@@ -79,7 +83,25 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
   const tokens = await readServerTokens(env.OAUTH_TOKENS);
   if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
   const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, GAME_STATE_COLLECTION, rkeyForDid(targetDid));
-  return rec ? { state: rec.value, cid: rec.cid } : null;
+  return rec ? { state: normalizeState(rec.value), cid: rec.cid } : null;
+}
+
+/**
+ * 古い版の state を現行の意味に直す (#530)。
+ *
+ * **v1 → v2**: `jobXp` は v1 では「移行時に焼き込んだ投稿 XP + それ以降の戦闘 XP」の混合
+ * だった。#530 で `analysis.jobLevel.xp + jobXp` を合算するようになったので、そのままだと
+ * 投稿 XP が二重に乗り、Lv30 のプレイヤーが Lv43 相当に跳ねる。
+ *
+ * **空にして捨てる**のが正しい。v1 の `jobXp` は**一度も LV に効いたことがない**
+ * (読み出し経路が存在しなかった) ので、プレイヤーが失うものは無い。混合値から戦闘ぶんだけを
+ * 分離する術も無い。
+ *
+ * 冪等: 何度読んでも同じ結果になる。書き戻しは `readModifyWrite` が version を打ち直す。
+ */
+export function normalizeState(s: GameState): GameState {
+  if ((s.version ?? 1) >= 2) return s;
+  return { ...s, jobXp: {} };
 }
 
 export interface RmwOptions {

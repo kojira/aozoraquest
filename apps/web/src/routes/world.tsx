@@ -11,6 +11,7 @@ import {
   favoredMonsterFor,
   isWalkable,
   jobLevelFromXp,
+  jobDisplayName,
   effectiveJobXp,
   playerCombatant,
   playerLevelFromXp,
@@ -256,6 +257,9 @@ export function World() {
   const jobXpTotal = effectiveJobXp({
     analysisXp: diag?.jobLevel?.xp,
     battleXp: archetype ? battleXpByJob[archetype] : 0,
+    // クエスト XP はサーバーの戦闘計算に入っていない (#533) ので、ここでも足さない。
+    // 足すと「つよさ画面の Lv > 実際に戦う Lv」になり、#529 と同じ食い違いを作ってしまう。
+    questXp: undefined,
   });
   const baseArgs = archetype
     ? ([
@@ -638,6 +642,13 @@ export function World() {
         // Lv が食い違う**。サーバーが返した確定値を足すだけなので追加の往復は不要。
         if (archetype) {
           const gained = awarded.xp;
+          // **レベルが上がったら結果窓に 1 行出す** (#529)。これが無いと「けいけんち を
+          // かくとく！」だけ出てレベルアップが見えず、元のバグ (表示だけでレベルが上がらない)
+          // と同じ体感になる。全画面オーバーレイでなく既存の固定サイズ窓に畳むのは、
+          // 報酬をまとめて見せる方針 (上記) と DQ 的な見せ方に合わせるため。
+          const beforeLv = jobLevelFromXp(jobXpTotal);
+          const afterLv = jobLevelFromXp(jobXpTotal + gained);
+          if (afterLv > beforeLv) resultLines.push(`${jobDisplayName(archetype, 'default')} の LV が ${afterLv} に あがった！`);
           setBattleXpByJob((prev) => ({ ...prev, [archetype]: (prev[archetype] ?? 0) + gained }));
         }
       }

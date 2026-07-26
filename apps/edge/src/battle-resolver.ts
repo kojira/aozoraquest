@@ -83,7 +83,6 @@ export const POWER_COLLECTION = 'app.aozoraquest.power';
  *  緩いサニティ上限。長期ユーザーの正当残高 (viaPosts 累積) を切り詰めない大きさにする。値の根拠はコミット参照。 */
 export const MAX_MIGRATE_POWER = 100_000; // 正当ユーザー (投稿数=残高上限) を十分上回る緩い上限
 export const MAX_MIGRATE_PLAYER_XP = 500_000; // lvl 99 ≈ 457k を上回る安全上限
-export const MAX_MIGRATE_JOB_XP = 50_000; // lvl 50 ≈ 40k を上回る安全上限
 
 const finiteNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
 
@@ -132,7 +131,9 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
     const a = analysisRec?.value;
     if (a) {
       base.playerXp = Math.min(finiteNum(a.playerLevel?.xp), MAX_MIGRATE_PLAYER_XP);
-      if (a.jobLevel?.archetype) base.jobXp = { [a.jobLevel.archetype]: Math.min(finiteNum(a.jobLevel.xp), MAX_MIGRATE_JOB_XP) };
+      // **jobXp に analysis の XP を種として書かない** (#530)。jobXp は「戦闘由来のみ」に
+      // 定義し直したので、投稿由来を焼き込むと `analysisXp + battleXp` の合算で二重計上になる
+      // (Lv30 が Lv43 相当に跳ねる)。投稿由来は読むときに analysis から足される。
     }
   } catch { /* 読めない/未診断は power 0・Lv1 で開始 (読取のみ = 無害) */ }
   return base;
@@ -173,9 +174,10 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   // 現職 Lv は **投稿由来 (analysis) + 戦闘由来 (権威 state)** の合算 (#529)。
+  // 依頼クエスト XP は完了集合からの派生値で edge が持っていないため入っていない (#533)。
   // 以前は analysis だけを見ていたので、戦闘で稼いだ XP が強さに一切反映されていなかった
   // (「けいけんち を N かくとく！」と表示しておいてレベルが上がらない)。
-  const jobLevel = jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype] }));
+  const jobLevel = jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype], questXp: undefined }));
   const playerLevel = playerLevelFromXp(playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
@@ -300,7 +302,7 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   const matId = item === 'herb' ? 'herb' : 'sky-dew';
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype] })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
+  const c = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype], questXp: undefined })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
   let healed = 0;
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
@@ -340,7 +342,7 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const luk = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype] })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
+  const luk = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype], questXp: undefined })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };

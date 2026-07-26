@@ -421,7 +421,9 @@ function ComposeDialog({
             const arch = result.jobLevel?.archetype;
             const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;
             const jTo = result.jobLevel
-              ? jobLevelFromXp(effectiveJobXp({ analysisXp: result.jobLevel.xp, battleXp }))
+              // クエスト XP はサーバー側に無いので判定にも入れない (#533)。ここだけ足すと
+              // 「演出の Lv > 実際に戦う Lv」になる。
+              ? jobLevelFromXp(effectiveJobXp({ analysisXp: result.jobLevel.xp, battleXp, questXp: undefined }))
               : 1;
             const jFrom = result.jobLeveledUp?.from ?? jTo;
             if (battleXpKnown && result.jobLeveledUp && result.jobLevel) {

@@ -205,7 +205,10 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const s1 = await migrateInitState(USER, '');
     expect(s1.power).toBe(85);
     expect(s1.playerXp).toBe(1234);
-    expect(s1.jobXp).toEqual({ warrior: 567 });
+    // **jobXp に analysis の XP を種として書かない** (#530)。jobXp は「戦闘由来のみ」に
+    // 定義し直したので、投稿由来を焼き込むと合算 (analysisXp + battleXp) で二重計上になる。
+    // 以前はここで { warrior: 567 } を期待しており、その挙動を仕様として固定してしまっていた。
+    expect(s1.jobXp).toEqual({});
 
     // 偽造された巨大値は上限クランプされる (MAX_MIGRATE_*)
     globalThis.fetch = migrateFetch(
@@ -215,7 +218,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const s2 = await migrateInitState(USER, '');
     expect(s2.power).toBe(100_000); // MAX_MIGRATE_POWER
     expect(s2.playerXp).toBe(500_000); // MAX_MIGRATE_PLAYER_XP
-    expect(s2.jobXp).toEqual({ mage: 50_000 }); // MAX_MIGRATE_JOB_XP
+    expect(s2.jobXp).toEqual({}); // 種を書かないので偽造値も入らない (#530)
 
     // レコード無し (未診断・power 無し) は power 0・Lv1 で fail-open
     globalThis.fetch = migrateFetch(null, null);
