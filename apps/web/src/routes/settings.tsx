@@ -336,16 +336,14 @@ export function Settings() {
         <PostQuestNotificationsToggle />
       </section>
 
-      {/* 管理者なら本番でも出す (ダッシュボード内でサーバー連携=本番運用タスクへ入れるように)。
-          コンテンツ CRUD・dev ツールはダッシュボード側で dev 限定にゲートする。 */}
+      {/* 管理者なら本番でも出す。ダッシュボードの中身も本番で開ける (2026-07-27) —
+          書き込みを伴う操作は edge 側で ADMIN_DIDS を検証しているので、表示で隠す必要がない。 */}
       {isAdminDid(session.did) && (
         <section style={{ marginTop: '2em' }}>
           <h3 style={{ fontSize: '0.95em' }}>あおぞらワールド 管理</h3>
           <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-            モンスター・アイテム・マップ・店・クエストの編集ハブ (管理者専用)。
-          </p>
-          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-            サーバー連携・ワールドリセット・模擬戦・パワー付与はダッシュボードに集約しました。
+            モンスター・マップ・ジョブ・NPC・クエストの編集ハブ (管理者専用)。
+            サーバー連携・PDS の書き込み残量・パワー付与・ジョブ変更・模擬戦もここに集約しています。
           </p>
           <button onClick={() => navigate('/admin')}>管理ダッシュボードを開く</button>
         </section>
