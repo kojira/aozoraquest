@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "sim:endurance": "tsx ../../scripts/sim-endurance.mts",
     "sim:endurance-lv": "tsx ../../scripts/sim-endurance-levelup.mts",
-    "sim:gear-early": "tsx ../../scripts/sim-gear-early.mts"
+    "sim:gear-early": "tsx ../../scripts/sim-gear-early.mts",
+    "sim:gear-matrix": "tsx ../../scripts/sim-gear-matrix.mts"
   },
   "devDependencies": {
     "vitest": "^2",
