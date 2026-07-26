@@ -18,23 +18,36 @@ import { useAdminConfig } from '@/lib/use-admin-config';
 /**
  * 共通の保存バー。5 画面で同じものを書かない。
  *
- * **`loaded` が来るまで保存させない。** ここを開けておくと、読み込み前 (または読み込みに
- * 失敗した状態) で押されたときに、画面の state = 空のまま保存されて
+ * **読めるまで保存させない。** ここを開けておくと、読み込み前 (または読み込みに失敗した
+ * 状態) で押されたときに、画面の state = 空のまま保存されて
  * **BAN リスト / ディレクトリ / フラグが全消しになる**。旧 admin アプリから引き継いだ穴で、
  * あちらはローカルでしか開けなかったが、本番の画面に置く以上は塞ぐ。
- * レコードが存在しない (value=null) のは正常なので、`loaded` だけ見る。
+ *
+ * **`loaded` だけでは足りない** — あれは「読み終えた (失敗含む)」なので、通信が落ちても
+ * true になる。レコードが無い (value=null) のは正常、読めなかったのは異常、と分けて扱う。
  */
-function SaveBar({ loaded, saving, savedMark, err, canWrite, onSave, label = '保存する' }: {
-  loaded: boolean; saving: boolean; savedMark: boolean; err: string | null; canWrite: boolean; onSave: () => void; label?: string;
+function SaveBar({ loaded, loadFailed, saving, savedMark, err, canWrite, onSave, label = '保存する' }: {
+  loaded: boolean; loadFailed: boolean; saving: boolean; savedMark: boolean; err: string | null; canWrite: boolean; onSave: () => void; label?: string;
 }) {
-  const ready = loaded && canWrite && !saving;
+  const ready = loaded && !loadFailed && canWrite && !saving;
   return (
     <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', marginTop: '0.5em', flexWrap: 'wrap' }}>
       <button onClick={onSave} disabled={!ready}>{saving ? '保存中…' : label}</button>
       {!loaded && <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込むまで保存できない</span>}
+      {loadFailed && <span style={{ fontSize: '0.85em', color: 'var(--color-danger, #e8566a)' }}>読み込めていないので保存できない (上書きで全消しになるため)</span>}
       {savedMark && <span style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>✓ 保存した</span>}
       {err && <span style={{ fontSize: '0.85em', color: 'var(--color-danger, #e8566a)' }}>{err}</span>}
     </div>
+  );
+}
+
+/** **保存しても効かない**画面の印。判定関数はあるが production の呼び出し元が無い (#561)。
+ *  「メンテを開始した」と信じて破壊的作業に入られるのが一番まずいので、見出しに出す。 */
+function NotWired() {
+  return (
+    <span style={{ fontSize: '0.75em', color: 'var(--color-danger, #e8566a)', marginLeft: '0.4em', fontWeight: 400 }}>
+      未配線 (保存しても効かない)
+    </span>
   );
 }
 
@@ -59,7 +72,7 @@ const OPTIN_TAG = 'aozoraquest';
 const MAX_PAGES = 5;
 
 export function DirectoryAdmin({ agent }: { agent: Agent }) {
-  const { loaded, value, save, saving, err, savedMark, canWrite } = useAdminConfig<DirectoryRecord>(ADMIN_COL.directory, 'self');
+  const { loaded, loadFailed, value, save, reload, saving, err, savedMark, canWrite } = useAdminConfig<DirectoryRecord>(ADMIN_COL.directory, 'self');
   const [entries, setEntries] = useState<Entry[]>([]);
   const [didInput, setDidInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
@@ -111,6 +124,28 @@ export function DirectoryAdmin({ agent }: { agent: Agent }) {
     }
   };
 
+  /**
+   * 保存。**直前に読み直して、画面を開いてから cron が足したぶんを取りこぼさない。**
+   * `putRecord` は無条件上書き (CAS 無し) なので、10:05 に開いて 11:10 に保存すると
+   * 11:00 の cron が足した人が消える。この画面で明示的に「外した」人だけを引く。
+   */
+  const saveMerged = async () => {
+    const removed = new Set((value?.users ?? []).filter((o) => !entries.some((e) => e.did === o.did)).map((o) => o.did));
+    let latest: Entry[] = entries;
+    try {
+      const fresh = await reload();
+      if (fresh) {
+        const byDid = new Map(entries.map((e) => [e.did, e]));
+        for (const u of fresh.users ?? []) if (!byDid.has(u.did) && !removed.has(u.did)) byDid.set(u.did, u);
+        latest = [...byDid.values()].filter((u) => !removed.has(u.did));
+      }
+    } catch {
+      // 読み直せなければ手元のまま保存する (保存自体を諦めるほうが体験が悪い)
+    }
+    setEntries(latest);
+    await save({ users: latest, updatedAt: new Date().toISOString() } satisfies DirectoryRecord);
+  };
+
   return (
     <section style={{ marginTop: '2em' }}>
       <h3 style={{ fontSize: '0.95em' }}>参加者ディレクトリ ({entries.length} 人)</h3>
@@ -148,8 +183,8 @@ export function DirectoryAdmin({ agent }: { agent: Agent }) {
         </div>
       )}
 
-      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
-        onSave={() => void save({ users: entries, updatedAt: new Date().toISOString() } satisfies DirectoryRecord)} />
+      <SaveBar loaded={loaded} loadFailed={loadFailed} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
+        onSave={() => void saveMerged()} />
     </section>
   );
 }
@@ -161,7 +196,7 @@ interface PromptRecord { id: 'spiritChat'; body: string; maxNewTokens?: number; 
 const MAX_NEW_TOKENS_UPPER = 200;
 
 export function PromptsAdmin() {
-  const { loaded, value, save, saving, err, savedMark, canWrite } = useAdminConfig<PromptRecord>(ADMIN_COL.configPrompts, 'spiritChat');
+  const { loaded, loadFailed, value, save, saving, err, savedMark, canWrite } = useAdminConfig<PromptRecord>(ADMIN_COL.configPrompts, 'spiritChat');
   const [body, setBody] = useState('');
   const [tokens, setTokens] = useState('');
 
@@ -197,7 +232,7 @@ export function PromptsAdmin() {
         {tokenErr && <span style={{ color: 'var(--color-danger, #e8566a)' }}>{tokenErr}</span>}
       </div>
 
-      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && !tokenErr}
+      <SaveBar loaded={loaded} loadFailed={loadFailed} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && !tokenErr}
         onSave={() => {
           if (tokenErr) return;
           void save({ id: 'spiritChat', body, ...(typeof parsed === 'number' ? { maxNewTokens: parsed } : {}), updatedAt: new Date().toISOString() } satisfies PromptRecord);
@@ -211,7 +246,7 @@ export function PromptsAdmin() {
 interface MaintRecord { enabled: boolean; message?: string; until?: string; allowedDids?: string[]; updatedAt: string }
 
 export function MaintenanceAdmin() {
-  const { loaded, value, save, saving, err, savedMark, canWrite } = useAdminConfig<MaintRecord>(ADMIN_COL.configMaintenance, 'self');
+  const { loaded, loadFailed, value, save, saving, err, savedMark, canWrite } = useAdminConfig<MaintRecord>(ADMIN_COL.configMaintenance, 'self');
   const [enabled, setEnabled] = useState(false);
   const [message, setMessage] = useState('メンテナンス中です。しばらくお待ちください。');
   const [until, setUntil] = useState('');
@@ -229,9 +264,13 @@ export function MaintenanceAdmin() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>メンテナンスモード</h3>
+      <h3 style={{ fontSize: '0.95em' }}>メンテナンスモード <NotWired /></h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        有効にすると、次の起動から<strong>管理者以外の全ユーザー</strong>が一時停止画面になる。
+        「メンテ中」の印を残すだけで、<strong>いまは誰も止まらない</strong>。
+        `isUnderMaintenance` を実際に見ている画面がまだ無い (#561)。
+        <br />
+        配線するときは注意: 現在の判定は <code>allowedDids</code> しか通さないので、
+        そのまま繋ぐと<strong>主管理者自身も締め出されて解除できなくなる</strong>。
       </p>
       <WriteGuard canWrite={canWrite} />
       {!loaded && <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</p>}
@@ -251,7 +290,7 @@ export function MaintenanceAdmin() {
         </div>
       )}
 
-      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && armed}
+      <SaveBar loaded={loaded} loadFailed={loadFailed} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && armed}
         label={enabled ? 'メンテナンスを開始' : '保存する'}
         onSave={() => void save({
           enabled,
@@ -271,7 +310,7 @@ export function MaintenanceAdmin() {
 interface BansRecord { dids: string[]; updatedAt: string }
 
 export function BansAdmin() {
-  const { loaded, value, save, saving, err, savedMark, canWrite } = useAdminConfig<BansRecord>(ADMIN_COL.configBans, 'self');
+  const { loaded, loadFailed, value, save, saving, err, savedMark, canWrite } = useAdminConfig<BansRecord>(ADMIN_COL.configBans, 'self');
   const [dids, setDids] = useState<string[]>([]);
   const [input, setInput] = useState('');
 
@@ -286,9 +325,11 @@ export function BansAdmin() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>BAN リスト ({dids.length})</h3>
+      <h3 style={{ fontSize: '0.95em' }}>BAN リスト ({dids.length}) <NotWired /></h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        ここに入れた DID の投稿は、全ユーザーのタイムライン・共鳴 TL・バッジから外れる。
+        名簿を残すだけで、<strong>いまは何も除外されない</strong>。
+        `isBanned` を実際に見ている画面がまだ無い (#561)。
+        <br />
         <strong>このレコードは公開される</strong> (主管理者 PDS の公開レコード) ことに注意。
       </p>
       <WriteGuard canWrite={canWrite} />
@@ -312,7 +353,7 @@ export function BansAdmin() {
         </div>
       )}
 
-      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
+      <SaveBar loaded={loaded} loadFailed={loadFailed} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
         onSave={() => void save({ dids, updatedAt: new Date().toISOString() } satisfies BansRecord)} />
     </section>
   );
@@ -330,14 +371,16 @@ const INITIAL_FLAGS: FlagDraft[] = [
 ];
 
 export function FlagsAdmin() {
-  const { loaded, value, save, saving, err, savedMark, canWrite } = useAdminConfig<FlagsRecord>(ADMIN_COL.configFlags, 'self');
+  const { loaded, loadFailed, value, save, saving, err, savedMark, canWrite } = useAdminConfig<FlagsRecord>(ADMIN_COL.configFlags, 'self');
   const [flags, setFlags] = useState<FlagDraft[]>(INITIAL_FLAGS);
   const [newId, setNewId] = useState('');
 
   useEffect(() => {
-    if (!value) return;
-    const list = Object.entries(value.flags ?? {}).map(([id, v]) => ({ id, enabled: v.enabled, rollout: v.rollout, description: v.description }));
-    if (list.length > 0) setFlags(list);
+    // **レコードがあるなら中身が空でもそのまま反映する。** 空を INITIAL_FLAGS にすり替えると、
+    // 全部外して保存した後に開き直したとき「compatibilityMap 有効 100%」と表示され、
+    // その状態で別のフラグを足して保存すると**実際に全ユーザーへ開いてしまう**。
+    if (value === null) return; // 未作成のときだけ初期値のまま
+    setFlags(Object.entries(value.flags ?? {}).map(([id, v]) => ({ id, enabled: v.enabled, rollout: v.rollout, description: v.description })));
   }, [value]);
 
   const patch = (id: string, p: Partial<FlagDraft>) => setFlags((fs) => fs.map((f) => (f.id === id ? { ...f, ...p } : f)));
@@ -378,7 +421,7 @@ export function FlagsAdmin() {
         }}>追加</button>
       </div>
 
-      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
+      <SaveBar loaded={loaded} loadFailed={loadFailed} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
         onSave={() => void save({
           flags: Object.fromEntries(flags.map((f) => [f.id, { enabled: f.enabled, rollout: f.rollout, description: f.description }])),
           updatedAt: new Date().toISOString(),
