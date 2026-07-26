@@ -44,3 +44,7 @@ diagnose-ranking-*.html
 # cognitive-onnx は HuggingFace Hub (kojira/aozoraquest-cognitive) から取得する。
 # ローカルには置かない (Cloudflare Pages の 25MB/file 制限対策 + dev/prod 統一)。
 apps/web/public/cognitive-onnx/
+
+# Playwright の実行結果 (成果物。コミットしない)
+test-results/
+apps/*/test-results/
