@@ -72,7 +72,10 @@ describe('職ごとのレベル曲線 (#536)', () => {
 
   it('1 レベル上げるのに必要な戦闘数が現実的な範囲に収まる', () => {
     // DQ3 は中盤以降 1 レベルに数十戦かかる。極端に速い/遅いと成長の手触りが壊れるので、
-    // その帯の敵で 3〜60 戦に収まることを固定する。
+    // その帯の敵で 2〜60 戦に収まることを固定する。
+    // **下限を 3 → 2 に下げた** (#547)。レベルアップ全回復を入れたぶん弱職の pace を
+    // 速くしたので、最序盤 (Lv1→2) だけ 2.7 戦になる。ここは「1 戦で上がる」を防げれば十分で、
+    // 最初の 1 レベルが速いのはむしろ DQ の手触りに近い。
     const avgXp = (tier: number) => {
       const m = MONSTERS.filter((x) => x.tier === tier && x.species !== 'metal-slime');
       return m.reduce((s, x) => s + battleXpFor(x.id), 0) / m.length;
@@ -82,7 +85,7 @@ describe('職ごとのレベル曲線 (#536)', () => {
       for (const [lv, tier] of [[2, 1], [5, 2], [10, 3], [20, 5], [30, 6], [50, 6]] as const) {
         const need = th(j.id, lv) - th(j.id, lv - 1);
         const battles = need / avgXp(tier);
-        expect(battles, `${j.id} Lv${lv - 1}→${lv} (tier${tier})`).toBeGreaterThan(3);
+        expect(battles, `${j.id} Lv${lv - 1}→${lv} (tier${tier})`).toBeGreaterThan(2);
         expect(battles, `${j.id} Lv${lv - 1}→${lv} (tier${tier})`).toBeLessThan(60);
       }
     }

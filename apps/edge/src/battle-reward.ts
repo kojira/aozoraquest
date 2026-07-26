@@ -13,7 +13,7 @@
  * **seed 秘匿 (#348)**: ドロップ/敗北ロスの seed は**サーバーが独立に引いた rewardSeed/lossSeed** を使う
  * (戦闘 seed は client に返さない・再利用しない)。呼び出し側が entropyU32 で引いて渡す。
  */
-import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, BATTLE_TUNING } from '@aozoraquest/core';
+import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, skillsForJob, BATTLE_TUNING, type Archetype, type StatArray } from '@aozoraquest/core';
 import type { GameState } from './game-state';
 
 /** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
@@ -38,6 +38,8 @@ export interface BattleOutcomeInput {
   lossSeed: number;
   /** encounter 時に power>=1 で確定した「報酬対象」フラグ。 */
   rewarded: boolean;
+  /** レベルアップの内訳を出すための素ステ。無ければ内訳を省く。 */
+  baseStats?: StatArray;
 }
 
 /** 適用結果 (client 表示・監査用の内訳)。 */
@@ -48,7 +50,14 @@ export interface AwardBreakdown {
   unrewarded?: true;
   xp?: number;
   /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復する。 */
-  leveledUp?: { from: number; to: number };
+  leveledUp?: {
+    from: number;
+    to: number;
+    /** 上がったステータスの内訳 (「ちから +2」を 1 行ずつ出すため)。 */
+    gains?: Array<{ key: string; label: string; delta: number }>;
+    /** このレベルアップで**新しく覚えた**とくぎの名前。 */
+    learned?: string[];
+  };
   drops?: string[];
   materialsLost?: string[];
   powerSpent?: number;
@@ -66,11 +75,29 @@ function addItems(materials: Record<string, number>, items: string[], delta: 1 |
   return next;
 }
 
-/** XP 加算の前後でジョブ Lv が上がったか (#534)。上がっていなければ undefined。 */
-function levelUpOf(before: GameState, after: GameState, archetype: string): { from: number; to: number } | undefined {
+/**
+ * XP 加算の前後でジョブ Lv が上がったか (#534)。上がっていなければ undefined。
+ *
+ * **上がった内訳と覚えたとくぎも返す** (オーナー要望 2026-07-27)。「レベルが上がった」だけだと
+ * 何が良くなったのか分からず、覚えたとくぎにも気づけない。`baseStats` が無いときは
+ * 内訳を省く (職の基準値だけで出すと実際の伸びとずれるため)。
+ */
+function levelUpOf(
+  before: GameState,
+  after: GameState,
+  archetype: string,
+  baseStats?: StatArray,
+): NonNullable<AwardBreakdown['leveledUp']> | undefined {
   const from = jobLevelFromXp(before.jobXp[archetype] ?? 0, archetype);
   const to = jobLevelFromXp(after.jobXp[archetype] ?? 0, archetype);
-  return to > from ? { from, to } : undefined;
+  if (to <= from) return undefined;
+  const arch = archetype as Archetype;
+  const gains = levelUpGains(arch, { jobLevel: from, playerLevel: 1 }, { jobLevel: to, playerLevel: 1 }, baseStats)
+    .map((g) => ({ key: String(g.key), label: g.label, delta: g.delta }));
+  // 覚えたとくぎ = 新 Lv の一覧から旧 Lv の一覧を引いたもの。
+  const had = new Set(skillsForJob(arch, from).map((s) => s.name));
+  const learned = skillsForJob(arch, to).map((s) => s.name).filter((n) => !had.has(n));
+  return { from, to, ...(gains.length ? { gains } : {}), ...(learned.length ? { learned } : {}) };
 }
 
 /**
@@ -108,7 +135,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       materials: addItems(state.materials, drops, 1),
       power: Math.max(0, state.power - POWER_COST),
     };
-    const lv = levelUpOf(state, next, o.archetype);
+    const lv = levelUpOf(state, next, o.archetype, o.baseStats);
     return { next, awarded: { xp, drops, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
   }
 
@@ -123,7 +150,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       power: Math.max(0, state.power - POWER_COST),
     };
     // 負けでも僅かに XP が入るので、そこで上がることもある (演出は勝ち負けの後に出る)。
-    const lv = levelUpOf(state, next, o.archetype);
+    const lv = levelUpOf(state, next, o.archetype, o.baseStats);
     return { next, awarded: { xp, materialsLost, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
   }
 

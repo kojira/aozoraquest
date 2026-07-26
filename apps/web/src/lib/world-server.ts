@@ -100,7 +100,14 @@ export interface ServerAward {
   materialsLost?: string[];
   powerSpent?: number;
   /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復している。 */
-  leveledUp?: { from: number; to: number };
+  leveledUp?: {
+    from: number;
+    to: number;
+    /** 上がったステータスの内訳 (1 行ずつ出す)。 */
+    gains?: Array<{ key: string; label: string; delta: number }>;
+    /** 新しく覚えたとくぎの名前。 */
+    learned?: string[];
+  };
 }
 export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }

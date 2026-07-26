@@ -45,17 +45,15 @@ export function WorldBattleControls({
   onAdvance: () => void;
 }) {
   const [itemMenu, setItemMenu] = useState(false);
-  const [skillMenu, setSkillMenu] = useState(false);
-  // 入力フェーズを離れたら (メッセージ送り/リザルト) サブメニューを閉じておく。
+  // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
   // 描画上は input のときだけ出るが、state が開きっぱなしだと次の入力で一瞬開いて見えうる (レビュー ★★)。
   useEffect(() => {
-    if (phase !== 'input') { setItemMenu(false); setSkillMenu(false); }
+    if (phase !== 'input') setItemMenu(false);
   }, [phase]);
   const skillCost = skillMpCostOf(state.player); // 発明家 (匠) の MP 割引を反映
   const lowMp = state.player.mp < skillCost;
   // デプロイ跨ぎの旧 sealed state は playerSkills が無いことがある → 署名スキル 1 個にフォールバック。
   const skills = state.playerSkills ?? [state.playerSkill];
-  const multiSkill = skills.length > 1;
   const monsterDef = MONSTERS_BY_ID[state.monsterId];
   const messageLines =
     phase === 'result'
@@ -75,46 +73,37 @@ export function WorldBattleControls({
       <div style={{ flex: `0 0 ${BOTTOM_H}`, height: BOTTOM_H }}>
         {phase === 'input' ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4em', height: '100%' }}>
-            {/* 左: コマンド (2 列 3 行に詰める = 4 行メッセージ枠と同じ高さに収める) */}
-            <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'repeat(3, 1fr)', gridAutoFlow: 'column', columnGap: '0.2em' }}>
-              <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu || skillMenu} />
-              {/* とくぎ: 複数持ちはサブメニューを開いて選ぶ (#436)。1 個だけの職は従来どおり即発動。 */}
-              <DqRow
-                label={multiSkill ? 'とくぎ' : state.playerSkill.name}
-                onClick={() => (multiSkill ? (setItemMenu(false), setSkillMenu((v) => !v)) : onCommand('skill', 0))}
-                disabled={busy || itemMenu || lowMp}
-                cursor={skillMenu}
-              />
-              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu || skillMenu} />
-              {/* どうぐ: 再タップで閉じる (DQ の戻る慣習) */}
-              <DqRow label="どうぐ" onClick={() => (setSkillMenu(false), setItemMenu((v) => !v))} disabled={busy || skillMenu || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
-              <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu || skillMenu} />
+            {/* 左: 基本コマンド。**「とくぎ」は置かない** — とくぎは右にいつも出ているので、
+                1 タップ挟むだけ無駄だった (オーナー要望 2026-07-27「最初からとくぎ→個別特技を
+                選択する UI に」)。空いたぶん 1 行を大きく使える。 */}
+            <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', rowGap: '0.1em' }}>
+              <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu} />
+              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
+              {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
+              <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
+              <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />
             </div>
-            {/* 右: どうぐ選択中はアイテム、それ以外は敵リスト */}
-            <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.4em', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              {skillMenu ? (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
-                  {skills.map((sk, i) => (
-                    <DqRow
-                      key={i}
-                      label={`${sk.name} (MP${skillCost})`}
-                      onClick={() => { setSkillMenu(false); onCommand('skill', i); }}
-                      // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)
-                      disabled={busy || lowMp || (isPureHealSkill(sk.kind) && state.player.hp >= state.player.maxHp)}
-                    />
-                  ))}
-                  <DqRow label="もどる" onClick={() => setSkillMenu(false)} disabled={busy} />
-                </div>
-              ) : itemMenu ? (
+            {/* 右: **既定でとくぎ一覧**。どうぐを開いている間だけ道具に入れ替わる。 */}
+            <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.4em', display: 'flex', flexDirection: 'column' }}>
+              {itemMenu ? (
                 <>
                   <DqRow label={`やくそう ×${state.herbs}`} onClick={() => { setItemMenu(false); onCommand('herb'); }} disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp} />
                   <DqRow label={`そらのしずく ×${state.tonics}`} onClick={() => { setItemMenu(false); onCommand('tonic'); }} disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp} />
                   <DqRow label="もどる" onClick={() => setItemMenu(false)} disabled={busy} />
                 </>
               ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', fontSize: '0.9em', textShadow: TEXT_SHADOW }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{state.monster.name}</span>
-                  <span style={{ fontFamily: 'ui-monospace, monospace', opacity: 0.85, flex: '0 0 auto', marginLeft: '0.3em' }}>1ぴき</span>
+                // とくぎが増えるほど縦に伸びるのでスクロールさせる。狭い枠に詰め込んで
+                // 押せなくなるより、はみ出したぶんを送れるほうがよい。
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', rowGap: '0.1em' }}>
+                  {skills.map((sk, i) => (
+                    <DqRow
+                      key={`${sk.name}-${i}`}
+                      label={`${sk.name} (MP${skillCost})`}
+                      onClick={() => onCommand('skill', i)}
+                      // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)
+                      disabled={busy || lowMp || (isPureHealSkill(sk.kind) && state.player.hp >= state.player.maxHp)}
+                    />
+                  ))}
                 </div>
               )}
             </div>

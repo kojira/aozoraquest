@@ -705,7 +705,16 @@ export function World() {
       // レベルアップは**最後**に出す。DQ は「経験値 → アイテム → レベルアップ」の順で、
       // レベルアップが締めになる。負けでも僅かな XP で上がりうるので、その場合は
       // 「たおれてしまった…」の後 = 「力がみなぎった直後に倒れる」順序を避ける。
-      if (awarded.leveledUp) resultLines.push(`レベルが ${awarded.leveledUp.to} に あがった！`);
+      if (awarded.leveledUp) {
+        const lv = awarded.leveledUp;
+        resultLines.push(`レベルが ${lv.to} に あがった！`);
+        // **上がった数値を 1 つずつ**出す (オーナー要望 2026-07-27)。「上がった」だけだと
+        // 何が良くなったのか分からない。
+        for (const g of lv.gains ?? []) resultLines.push(`${g.label}が ${g.delta} あがった！`);
+        // 覚えたとくぎ。気づかないと使われないので必ず出す。
+        for (const name of lv.learned ?? []) resultLines.push(`${name} を おぼえた！`);
+        resultLines.push('きずが すっかり いえた！');
+      }
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);
