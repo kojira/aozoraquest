@@ -15,13 +15,23 @@ import { useAdminConfig } from '@/lib/use-admin-config';
  * ずれると cron と画面が互いの結果を踏み合う。
  */
 
-/** 共通の保存バー。5 画面で同じものを書かない。 */
-function SaveBar({ saving, savedMark, err, canWrite, onSave, label = '保存する' }: {
-  saving: boolean; savedMark: boolean; err: string | null; canWrite: boolean; onSave: () => void; label?: string;
+/**
+ * 共通の保存バー。5 画面で同じものを書かない。
+ *
+ * **`loaded` が来るまで保存させない。** ここを開けておくと、読み込み前 (または読み込みに
+ * 失敗した状態) で押されたときに、画面の state = 空のまま保存されて
+ * **BAN リスト / ディレクトリ / フラグが全消しになる**。旧 admin アプリから引き継いだ穴で、
+ * あちらはローカルでしか開けなかったが、本番の画面に置く以上は塞ぐ。
+ * レコードが存在しない (value=null) のは正常なので、`loaded` だけ見る。
+ */
+function SaveBar({ loaded, saving, savedMark, err, canWrite, onSave, label = '保存する' }: {
+  loaded: boolean; saving: boolean; savedMark: boolean; err: string | null; canWrite: boolean; onSave: () => void; label?: string;
 }) {
+  const ready = loaded && canWrite && !saving;
   return (
     <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', marginTop: '0.5em', flexWrap: 'wrap' }}>
-      <button onClick={onSave} disabled={saving || !canWrite}>{saving ? '保存中…' : label}</button>
+      <button onClick={onSave} disabled={!ready}>{saving ? '保存中…' : label}</button>
+      {!loaded && <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込むまで保存できない</span>}
       {savedMark && <span style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>✓ 保存した</span>}
       {err && <span style={{ fontSize: '0.85em', color: 'var(--color-danger, #e8566a)' }}>{err}</span>}
     </div>
@@ -138,7 +148,7 @@ export function DirectoryAdmin({ agent }: { agent: Agent }) {
         </div>
       )}
 
-      <SaveBar saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
+      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
         onSave={() => void save({ users: entries, updatedAt: new Date().toISOString() } satisfies DirectoryRecord)} />
     </section>
   );
@@ -187,7 +197,7 @@ export function PromptsAdmin() {
         {tokenErr && <span style={{ color: 'var(--color-danger, #e8566a)' }}>{tokenErr}</span>}
       </div>
 
-      <SaveBar saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && !tokenErr}
+      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && !tokenErr}
         onSave={() => {
           if (tokenErr) return;
           void save({ id: 'spiritChat', body, ...(typeof parsed === 'number' ? { maxNewTokens: parsed } : {}), updatedAt: new Date().toISOString() } satisfies PromptRecord);
@@ -241,9 +251,17 @@ export function MaintenanceAdmin() {
         </div>
       )}
 
-      <SaveBar saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && armed}
+      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite && armed}
         label={enabled ? 'メンテナンスを開始' : '保存する'}
-        onSave={() => void save({ enabled, ...(message ? { message } : {}), ...(until ? { until } : {}), updatedAt: new Date().toISOString() } satisfies MaintRecord)} />
+        onSave={() => void save({
+          enabled,
+          ...(message ? { message } : {}),
+          ...(until ? { until } : {}),
+          // **この画面で編集しない項目を落とさない。** allowedDids (メンテ中でも通す DID) を
+          // 省くと、保存のたびに既存の設定が消える。
+          ...(value?.allowedDids ? { allowedDids: value.allowedDids } : {}),
+          updatedAt: new Date().toISOString(),
+        } satisfies MaintRecord)} />
     </section>
   );
 }
@@ -294,7 +312,7 @@ export function BansAdmin() {
         </div>
       )}
 
-      <SaveBar saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
+      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
         onSave={() => void save({ dids, updatedAt: new Date().toISOString() } satisfies BansRecord)} />
     </section>
   );
@@ -360,7 +378,7 @@ export function FlagsAdmin() {
         }}>追加</button>
       </div>
 
-      <SaveBar saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
+      <SaveBar loaded={loaded} saving={saving} savedMark={savedMark} err={err} canWrite={canWrite}
         onSave={() => void save({
           flags: Object.fromEntries(flags.map((f) => [f.id, { enabled: f.enabled, rollout: f.rollout, description: f.description }])),
           updatedAt: new Date().toISOString(),
