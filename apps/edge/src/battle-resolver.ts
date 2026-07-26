@@ -18,6 +18,7 @@ import {
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
 import { readState, readModifyWrite, emptyState, rkeyForDid, GAME_STATE_COLLECTION, type GameStateEnv, type GameState } from './game-state';
+import { SEARCH_POWER_COST } from './shop';
 import { serverDeleteRecord } from './server-pds';
 import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
@@ -330,10 +331,20 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed };
 }
 
-export interface SearchResult { found: string | null; materials: Record<string, number> }
+/** 権威 state + 診断から luk (装備込み) を出す。**client 申告を使わない** —
+ *  強化値の抽選に luk が効くので、client の値を信じると盛れる (#551)。 */
+export async function playerLuk(env: ResolverEnv, userDid: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<number> {
+  const rec = await readState(env, userDid);
+  const state = rec?.state ?? (await migrateInitState(userDid, new Date().toISOString(), ns, fetchImpl));
+  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  return playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
+}
+
+export interface SearchResult { found: string | null; materials: Record<string, number>; power: number }
 
 /** しらべる: サーバーが luk (装備込み) + tier (位置) + 物理乱数で判定し、当たれば gameState.materials に付与。
- *  これで拾ったアイテムがサーバー在庫の正になる (client のみの幻ではなくなる)。パワー消費は当面 client 側。 */
+ *  これで拾ったアイテムがサーバー在庫の正になる (client のみの幻ではなくなる)。
+ *  **パワーの消費も権威側** (#551) — client の台帳だけで引いていた頃は、いくらでも しらべられた。 */
 export async function handleSearch(env: ResolverEnv, userDid: string, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<SearchResult> {
   let x: number, y: number;
   try {
@@ -349,11 +360,17 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const luk = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
   const tier = tierForRegion(regionOf(x, y));
+  // **パワーは権威側から引く** (#551)。それまで消費は client の台帳だけで、権威 state の
+  // power は動いていなかった = いくらでも しらべられた。
+  if (state.power < SEARCH_POWER_COST) throw new ResolverError('あおぞらパワーが たりない', 400, 'no_power');
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
-  if (!found) return { found: null, materials: state.materials };
-  const written = await readModifyWrite(env, userDid, (cur) => ({ ...cur, materials: { ...cur.materials, [found]: (cur.materials[found] ?? 0) + 1 } }),
-    { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
-  return { found, materials: written.materials };
+  const written = await readModifyWrite(env, userDid, (cur) => {
+    // 再読み込み後にも残高を確かめる (CAS リトライで別の消費が割り込みうる)。
+    if (cur.power < SEARCH_POWER_COST) throw new ResolverError('あおぞらパワーが たりない', 400, 'no_power');
+    const materials = found ? { ...cur.materials, [found]: (cur.materials[found] ?? 0) + 1 } : cur.materials;
+    return { ...cur, power: cur.power - SEARCH_POWER_COST, materials };
+  }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+  return { found, materials: written.materials, power: written.power };
 }
 
 /** 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。

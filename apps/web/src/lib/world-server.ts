@@ -22,6 +22,8 @@ const LXM_STATE = 'app.aozoraquest.me.state';
 const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
 const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
 const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
+const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
+const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -127,8 +129,8 @@ export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
 }
 
 /** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
-export function serverSearch(agent: Agent, token?: string): Promise<{ found: string | null; materials: Record<string, number> }> {
-  return callEdge<{ found: string | null; materials: Record<string, number> }>(agent, LXM_SEARCH, '/api/world/search', token ? { token } : {});
+export function serverSearch(agent: Agent, token?: string): Promise<{ found: string | null; materials: Record<string, number>; power: number }> {
+  return callEdge<{ found: string | null; materials: Record<string, number>; power: number }>(agent, LXM_SEARCH, '/api/world/search', token ? { token } : {});
 }
 
 /** オンボード用リセット: 権威 gameState + 戦闘ガードをサーバーで削除する (本人のみ)。次の入場で初期状態に戻る。
@@ -155,6 +157,28 @@ export function serverClaimXp(agent: Agent, input: { kind: 'post' | 'quest'; arc
  *  edge 側が ADMIN_DIDS でゲートする (client の isAdminDid は表示ゲートに過ぎない)。 */
 export function serverAdminSetJobLevel(agent: Agent, archetype: string, level: number): Promise<{ jobXp: number; level: number }> {
   return callEdge<{ jobXp: number; level: number }>(agent, LXM_XP_ADMIN_SET, '/api/xp/admin-set', { archetype, level });
+}
+
+export interface ServerShopResult {
+  power: number;
+  materials: Record<string, number>;
+  /** 制作したときだけ: サーバーが抽選した強化値。 */
+  level?: number;
+  /** ひきとりのときだけ: 得たパワー。 */
+  powerGained?: number;
+  /** 同じ rkey の再送だったか。 */
+  duplicate?: boolean;
+}
+
+/** なんでも屋: 装備を作ってもらう (#551)。**費用も強化値もサーバーが決める**。
+ *  client は返ってきた level を craft レコードに記帳するだけ。 */
+export function serverShopCraft(agent: Agent, itemId: string, rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_CRAFT, '/api/shop/craft', { itemId, rkey });
+}
+
+/** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */
+export function serverShopSell(agent: Agent, materialId: string, count: number, rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_SELL, '/api/shop/sell', { materialId, count, rkey });
 }
 
 /** **管理者専用**: あおぞらパワーを権威 state に付与する。

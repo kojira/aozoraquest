@@ -32,8 +32,10 @@ import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
-import { bumpPower, loadPointsState, type PointsState } from '@/lib/points';
-import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, serverSearch, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward } from '@/lib/world-server';
+import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, serverSearch, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward,
+  serverShopCraft,
+  serverShopSell,
+} from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
@@ -187,6 +189,15 @@ export function World() {
   /** 素材の全在庫 (敗北ロス抽選の母集団)。ロード時に battle stats から初期化し、
    *  ドロップ/使用 (戦闘内・フィールドとも)/敗北ロスをセッション内で追随する */
   const materialsRef = useRef<Record<string, number>>({});
+  /** サーバーが返した在庫をそのまま正として反映する (#551)。client 側で引き算しない —
+   *  引き算だけだとリロードで権威側の在庫が戻り、素材が複製できてしまう。 */
+  const applyServerMaterials = useCallback((m: Record<string, number>) => {
+    materialsRef.current = { ...m };
+    setMaterialsView({ ...m });
+    setHerbStock(m['herb'] ?? 0);
+    setTonicStock(m['sky-dew'] ?? 0);
+    setFeatherStock(m['sky-feather'] ?? 0);
+  }, []);
   const subtractMaterial = useCallback((id: string, n: number) => {
     if (!n) return;
     const m = materialsRef.current;
@@ -196,7 +207,6 @@ export function World() {
   }, []);
   /** そらのはね帰還のワイプ待ち (cover 完了時に onCoverDone がテレポートを実行する) */
   const featherDestRef = useRef<{ x: number; y: number } | null>(null);
-  const [points, setPoints] = useState<PointsState | null>(null);
   const [battle, setBattle] = useState<{
     /** サーバー権威の戦闘 state (seed は含まれない = 先読み不可)。描画のみに使う。 */
     state: BattleState;
@@ -381,11 +391,12 @@ export function World() {
         if (!cancelled) setLoadErr(true);
         return;
       }
-      const [profile, d, stats, pts, craftInv, refs] = await Promise.all([
+      // パワー残高はここで読まない (#551)。**権威 state (serverPower) が唯一の正**で、
+      // client 台帳 (points) を並べて持つと、片方だけ更新される経路が生えて食い違う。
+      const [profile, d, stats, craftInv, refs] = await Promise.all([
         agent.getProfile({ actor: did }).catch(() => null),
         getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
         loadBattleStats(agent, did).catch(() => null),
-        loadPointsState(agent, did).catch(() => null),
         loadCraftInventory(agent, did).catch(() => ({ pieces: [], materialsSpent: {} })),
         loadGearRefs(agent, did).catch(() => ({})),
       ]);
@@ -412,7 +423,6 @@ export function World() {
       setMaterialsView({ ...inv });
       setCraftedPieces(craftInv.pieces);
       setGearRefs(refs);
-      setPoints(pts);
     })();
     return () => { cancelled = true; };
   }, [session.status, agent, did, retryNonce]);
@@ -450,8 +460,6 @@ export function World() {
 
   const battleRef = useRef(battle);
   battleRef.current = battle;
-  const pointsRef = useRef(points);
-  pointsRef.current = points;
   const combatRef = useRef(combat);
   combatRef.current = combat;
   const wipeRef = useRef(wipe);
@@ -836,23 +844,21 @@ export function World() {
   // 当面 client (points 経済)。結果 (found/materials) はサーバー応答で確定し表示を同期する。
   const searchHere = useCallback(async (): Promise<void> => {
     const s = wsRef.current;
-    const pts = pointsRef.current;
     if (!s || !agent || !did) { setSearchMsg('いま しらべられない (つうしんを かくにんして)。'); return; }
-    if (!pts || pts.balance < SEARCH_TUNING.powerCost) { setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`); return; }
-    const left = Math.max(0, pts.balance - SEARCH_TUNING.powerCost);
-    void bumpPower(agent, did, { searchPowerSpent: SEARCH_TUNING.powerCost });
-    setPoints((p) => (p ? { ...p, searchPowerSpent: p.searchPowerSpent + SEARCH_TUNING.powerCost, balance: Math.max(0, p.balance - SEARCH_TUNING.powerCost) } : p));
+    // **残高の判定も消費もサーバー** (#551)。client 台帳で引いていた頃は権威 power が
+    // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
+    if (serverPower !== null && serverPower < SEARCH_TUNING.powerCost) {
+      setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`);
+      return;
+    }
     setSearchMsg('あたりを しらべている…');
     try {
       const res = await serverSearch(agent, tokenRef.current);
-      setHerbStock(res.materials['herb'] ?? 0);
-      setTonicStock(res.materials['sky-dew'] ?? 0);
-      setFeatherStock(res.materials['sky-feather'] ?? 0);
-      materialsRef.current = res.materials;
-      setMaterialsView({ ...res.materials });
-      if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${left})`); return; }
+      applyServerMaterials(res.materials);
+      setServerPower(res.power); // 残高もサーバーが正
+      if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${res.power})`); return; }
       const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
-      setSearchMsg(`しらべると、${ITEMS[res.found]?.name ?? res.found} を 1 つ 見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で かくにん / のこりパワー ${left})`);
+      setSearchMsg(`しらべると、${ITEMS[res.found]?.name ?? res.found} を 1 つ 見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で かくにん / のこりパワー ${res.power})`);
     } catch (e) {
       console.warn('[world] search failed', e);
       setSearchMsg('しらべられなかった (通信エラー)。もういちどどうぞ。');
@@ -873,15 +879,22 @@ export function World() {
       const towns = worldOverlay().towns;
       const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
       const stock = townShopStock(town, townIndex);
-      const pts = pointsRef.current;
       const have = materialsRef.current[stock.materialId] ?? 0;
-      if (!pts || pts.balance < def.price.power || have < def.price.materials) return;
+      // 残高と素材の判定は**サーバーが正**。ここは押せるかの目安 (先読み) だけ。
+      if ((serverPower ?? 0) < def.price.power || have < def.price.materials) return;
       // 冪等化: 直前に同じ品で失敗していたら同じ rkey で再試行する
       // (createRecord は同 rkey で衝突するため 2 重制作が構造的に起きない。レビュー指摘)
       const rkey = pendingCraftRef.current?.defId === def.id ? pendingCraftRef.current.rkey : newCraftRkey();
       pendingCraftRef.current = { defId: def.id, rkey };
       setCraftBusy(true);
       try {
+        // **費用の支払いと強化値の抽選はサーバー** (#551)。素材もパワーも権威側から引かれ、
+        // 結果の在庫がそのまま返る (client の減算だけでは、リロードで素材が戻る = 複製できた)。
+        const res = await serverShopCraft(agent, def.id, rkey);
+        setServerPower(res.power);
+        applyServerMaterials(res.materials);
+        // 個体そのもの (強化値つきレコード) はまだユーザー PDS。サーバーが決めた level を記帳する。
+        // 個体の権威化は #551 段階 2。
         const piece = await craftItem(
           agent,
           {
@@ -890,14 +903,11 @@ export function World() {
             materialCount: def.price.materials,
             power: def.price.power,
             luk: combat?.luk ?? 0,
+            level: res.level ?? 0,
           },
           rkey,
         );
         pendingCraftRef.current = null;
-        void bumpPower(agent, did, { craftPowerSpent: def.price.power });
-        setPoints((p) => (p ? { ...p, craftPowerSpent: p.craftPowerSpent + def.price.power, balance: Math.max(0, p.balance - def.price.power) } : p));
-        subtractMaterial(stock.materialId, def.price.materials);
-        setMaterialsView({ ...materialsRef.current });
         setCraftedPieces((list) => [...list, piece]);
         setLastShopAction({ piece, kind: 'craft' });
       } catch (e) {
@@ -947,14 +957,16 @@ export function World() {
       pendingSaleRef.current = { key: saleKey, rkey: srkey };
       setCraftBusy(true);
       try {
-        const { powerGained } = await sellMaterials(agent, { materialId, materialCount: count }, srkey);
+        // **在庫と残高の増減はサーバー** (#551)。client 台帳だけだと「パワーが 5 ふえた!」と
+        // 出ても権威側は動かず、戦闘の報酬にも効かなかった。
+        const res = await serverShopSell(agent, materialId, count, srkey);
         pendingSaleRef.current = null;
-        void bumpPower(agent, did, { salePowerEarned: powerGained });
-        setPoints((p) => (p ? { ...p, salePowerEarned: p.salePowerEarned + powerGained, balance: p.balance + powerGained } : p));
-        subtractMaterial(materialId, count);
-        setMaterialsView({ ...materialsRef.current });
+        setServerPower(res.power);
+        applyServerMaterials(res.materials);
+        // 記帳 (履歴)。数量とパワーはサーバーが確定した値で書く。
+        await sellMaterials(agent, { materialId, materialCount: count }, srkey).catch((e) => console.warn('[world] sale log failed', e));
         setLastShopAction(null);
-        setNotice(`${ITEMS[materialId]?.name ?? materialId} ×${count} をひきとってもらい、パワーが ${powerGained} ふえた!`);
+        setNotice(`${ITEMS[materialId]?.name ?? materialId} ×${count} をひきとってもらい、パワーが ${res.powerGained ?? 0} ふえた!`);
       } catch (e) {
         console.warn('[world] sell failed', e);
         setNotice('ひきとってもらえなかった (通信エラー)。もういちどどうぞ。');
@@ -1353,7 +1365,7 @@ export function World() {
           town={town}
           townIndex={Math.max(0, worldOverlay().towns.findIndex((t) => t.x === town.x && t.y === town.y))}
           archetype={archetype}
-          balance={points?.balance ?? 0}
+          balance={serverPower ?? 0} // 残高は権威側が正 (#551)
           materials={materialsView}
           pieces={craftedPieces}
           equippedRkeys={Object.values(resolvedGear?.pieces ?? {}).map((p) => p.rkey)}

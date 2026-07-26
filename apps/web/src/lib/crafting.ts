@@ -62,18 +62,23 @@ export function newCraftRkey(): string {
  *  「サーバー成立 + 応答喪失 → 再試行」の 2 重制作を構造的に防げる。レビュー指摘)。 */
 export async function craftItem(
   agent: Agent,
-  input: Pick<CraftRecord, 'itemId' | 'materialId' | 'materialCount' | 'power' | 'luk'>,
+  input: Pick<CraftRecord, 'itemId' | 'materialId' | 'materialCount' | 'power' | 'luk'> & {
+    /** サーバーが抽選した強化値 (#551)。client では引き直さない — rkey と luk から
+     *  同じ式で出るので値は一致するが、**正はサーバー**という関係をコードで表すため。 */
+    level?: number;
+  },
   rkeyIn?: string,
 ): Promise<CraftedPiece> {
   const did = agent.assertDid;
   const rkey = rkeyIn ?? newCraftRkey();
+  const { level: serverLevel, ...record } = input;
   await agent.com.atproto.repo.createRecord({
     repo: did,
     collection: COL.craft,
     rkey,
     record: {
       $type: COL.craft,
-      ...input,
+      ...record,
       at: new Date().toISOString(),
       via: VIA,
     } satisfies CraftRecord,
@@ -81,7 +86,7 @@ export async function craftItem(
   return {
     rkey,
     itemId: input.itemId,
-    level: craftLevelRoll(craftSeedFromRkey(rkey), input.luk),
+    level: serverLevel ?? craftLevelRoll(craftSeedFromRkey(rkey), input.luk),
     at: new Date().toISOString(),
   };
 }

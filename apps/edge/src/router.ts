@@ -14,7 +14,8 @@ import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, XpClaimError } from './xp-claim';
-import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, ResolverError } from './battle-resolver';
+import { shopCraft, shopSell, ShopError } from './shop';
+import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
@@ -54,6 +55,8 @@ const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
 const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
 const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
 const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
+const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
+const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -323,6 +326,55 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json(await adminGrantPower(env, did, body.amount, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // なんでも屋: 装備を作ってもらう。**費用 (パワー + 素材) を権威側から引く** (#551)。
+  // 品揃えも値段も強化値もサーバーが決める — client が送ってきた値段を信じない。
+  if (req.method === 'POST' && url.pathname === '/api/shop/craft') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_CRAFT }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { itemId?: unknown; rkey?: unknown };
+    if (typeof body.itemId !== 'string' || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      // luk はサーバーが権威 state + 診断から出す (client 申告を使わない = 強化値を盛れない)。
+      const luk = await playerLuk(env, did, ns);
+      return cors(json(await shopCraft(env, did, { itemId: body.itemId, rkey: body.rkey, luk }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // なんでも屋: 素材のひきとり (素材 → パワー)。権威側の在庫と残高を動かす。
+  if (req.method === 'POST' && url.pathname === '/api/shop/sell') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_SELL }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { materialId?: unknown; count?: unknown; rkey?: unknown };
+    if (typeof body.materialId !== 'string' || typeof body.count !== 'number' || typeof body.rkey !== 'string') {
+      return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    }
+    try {
+      const ns = nsFromOrigin(req);
+      return cors(json(await shopSell(env, did, { materialId: body.materialId, count: body.count, rkey: body.rkey }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
     }
   }
