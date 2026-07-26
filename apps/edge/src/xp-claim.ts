@@ -20,6 +20,8 @@
  */
 import { XP_REWARDS, JOBS_BY_ID, jobXpCurveFor, JOB_LEVEL_TUNING } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
+import { getRecord } from './pds';
+import { resolveUserPds } from './battle-resolver';
 
 /** 申告の種類。**投稿だけ** — クエスト完了では XP が増えない (オーナー判断 2026-07-27)。
  *  達成の判定が端末内 ONNX なのでサーバーが再現できず、申告額を検証する手段が無かった。 */
@@ -40,21 +42,14 @@ export const MAX_CLAIM_KEYS = 200;
  */
 export const POWER_PER_POST = 1;
 
-/** パワーの上限。無制限にすると桁が壊れたときに戻せないので、緩いサニティ上限を置く。 */
-export const MAX_POWER = 100_000;
+/** 管理付与で 1 回に動かせる量の上限。**残高そのものに上限は無い** —
+ *  投稿が実在するなら貯まってよい (オーナー判断 2026-07-27)。ここは打ち間違いで
+ *  桁を飛ばしたときに戻せなくなるのを防ぐためだけの、入力側のガード。 */
+export const MAX_ADMIN_GRANT = 100_000;
 
-/**
- * **1 日に申告できる XP の上限** (#551)。
- *
- * 申告の額の根拠 (投稿の分類結果・デイリークエストの達成) は client にあり、サーバーは
- * それを検証できない (post の実在・本人検証は M4)。1 回あたりの上限クランプはあるが、
- * **回数の制限が無いので何回でも申告できた**。正直なプレイの上限に近い値で日次の蓋をする。
- *
- * 根拠: 1 日の正直な上限 ≒ 日次ボーナス + streak 上限 + デイリークエスト全枠 +
- * 投稿 1 件あたり 5 XP × 現実的な投稿数 (100 件) ≒ 600。倍の余裕をみて 1200。
- * ここに当たるのは異常な使い方なので、当たったことをログに残す。
- */
-export const MAX_DAILY_CLAIM_XP = 1200;
+/** 投稿として認める最大の古さ (日)。これより古い投稿は申告できない。
+ *  過去ログを遡って一気に申告する経路を塞ぐ (冪等キーのリングは 200 件しか覚えていない)。 */
+export const MAX_POST_AGE_DAYS = 3;
 
 /**
  * 種類ごとの 1 回あたり上限。**core の報酬定数から導く** — ここに数値を書き写すと、
@@ -87,79 +82,111 @@ export class XpClaimError extends Error {
 }
 
 export interface XpClaimResult {
-  /** 実際に積まれた XP (クランプ後。重複申告なら 0)。 */
+  /** 実際に積まれた XP (重複申告なら 0)。**額はサーバーが決める**。 */
   granted: number;
   /** 申告後の、その職の累計 XP。 */
   jobXp: number;
   /** 重複申告として弾かれたか (client はこれを見てリトライを止める)。 */
   duplicate: boolean;
-  /** 申告後のあおぞらパワー残高 (投稿なら回復している)。 */
+  /** 申告後のあおぞらパワー残高 (投稿で回復する)。 */
   power: number;
+  /** 連続投稿日数 (サーバーが数える)。 */
+  streakDays: number;
 }
 
 /**
- * XP を申告して `GameState.jobXp[archetype]` に積む。
+ * **投稿を申告して XP を積む。** 額は client が送らない — **サーバーが決める**。
  *
- * @param key 冪等キー。投稿なら rkey、クエストなら完了レコードの URI。
+ * 投稿が実在し、本人のもので、新しいことを PDS に問い合わせて確かめる。
+ * これが通れば「投稿した」は真実なので、**上限を設ける必要がない**
+ * (以前は額を検証できないぶんを日次上限で抑えていたが、それは正直に沢山書く人を
+ * 罰するだけで、根本ではなかった。オーナー指摘 2026-07-27)。
+ *
+ * サーバーが出す額:
+ * - 投稿 1 件につき `postMatch`
+ * - その日の初回なら `dailyBonus` + streak ボーナス (連続日数は権威 state が数える)
+ *
+ * 端末内 ONNX の分類結果は**使わない**。分類できたかどうかで額を変えていたが、
+ * それは client にしか分からない = 検証できない値だった。分類の有無に関わらず
+ * 「書いた」ことに対して払う。
  */
 export async function claimXp(
   env: GameStateEnv,
   did: string,
-  input: { kind: XpClaimKind; archetype: string; xp: number; key: string },
+  input: { archetype: string; postUri: string },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
+  fetchImpl?: typeof fetch,
 ): Promise<XpClaimResult> {
-  const { kind, archetype, key } = input;
+  const { archetype, postUri } = input;
   assertArchetype(archetype);
-  if (!key || key.length > 256) throw new XpClaimError('冪等キーが不正', 400);
-  if (!Number.isFinite(input.xp) || input.xp < 0) throw new XpClaimError('xp が不正', 400);
+  await assertOwnPost(did, postUri, now, fetchImpl);
 
-  // **切り捨てであって拒否ではない。** 報酬定数の解釈が client と server でずれたときに
-  // 「正当な申告が 400 で落ちて XP が永久に入らない」より、上限まで入るほうが被害が小さい。
-  const xp = Math.min(Math.floor(input.xp), maxXpFor(kind));
-  const claimKey = `${kind}:${key}`;
-
-  // 日次カウンタの日付 (UTC)。サーバーの時計で決めるので client からは動かせない。
+  const claimKey = `post:${postUri}`;
   const today = new Date(now * 1000).toISOString().slice(0, 10);
+  const yesterday = new Date((now - 86400) * 1000).toISOString().slice(0, 10);
 
   let granted = 0;
   let duplicate = false;
-  let capped = false;
   const next = await readModifyWrite(
     env,
     did,
     (cur) => {
       const claims = cur.xpClaims ?? [];
-      if (claims.includes(claimKey)) {
-        // 冪等: 何も変えずに現状を返す (CAS も無駄打ちになるが、結果の一貫性を優先)
-        granted = 0;
-        duplicate = true;
-        return cur;
-      }
-      // **日次の蓋** (#551)。1 回あたりの上限だけだと回数無制限で盛れる。
-      const usedToday = cur.claimDay === today ? (cur.claimedToday ?? 0) : 0;
-      const room = Math.max(0, MAX_DAILY_CLAIM_XP - usedToday);
-      const give = Math.min(xp, room);
-      capped = give < xp;
-      granted = give;
+      if (claims.includes(claimKey)) { granted = 0; duplicate = true; return cur; }
       duplicate = false;
+      let xp = XP_REWARDS.postMatch;
+      let streak = cur.streakDays ?? 0;
+      let bonusDay = cur.claimDay;
+      if (cur.claimDay !== today) {
+        // 連続日数は**サーバーが数える** (client の申告を使わない)。
+        streak = cur.claimDay === yesterday ? streak + 1 : 1;
+        xp += XP_REWARDS.dailyBonus + Math.min(XP_REWARDS.streakBonusCap, streak * XP_REWARDS.streakBonusPerDay);
+        bonusDay = today;
+      }
+      granted = xp;
       return {
         ...cur,
-        claimDay: today,
-        claimedToday: usedToday + give,
-        jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + give },
-        // **投稿はあおぞらパワーを回復する** (docs/19 §3)。ここが無いとパワーが枯れて
-        // 勝っても報酬が入らなくなり、「何回戦ってもレベルが上がらない」になる。
-        power: Math.min(MAX_POWER, cur.power + POWER_PER_POST),
-        // 新しいキーを末尾に足し、古いほうから落とす
+        ...(bonusDay ? { claimDay: bonusDay } : {}),
+        streakDays: streak,
+        jobXp: { ...cur.jobXp, [archetype]: (cur.jobXp[archetype] ?? 0) + xp },
+        // 投稿はあおぞらパワーを回復する (docs/19 §3)。枯れると勝っても報酬が入らなくなる。
+        power: cur.power + POWER_PER_POST,
         xpClaims: [...claims, claimKey].slice(-MAX_CLAIM_KEYS),
       };
     },
     init ? { now, init } : { now },
   );
 
-  if (capped) console.warn(`xp daily cap hit: did=${did} day=${today}`);
-  return { granted, jobXp: next.jobXp[archetype] ?? 0, duplicate, power: next.power };
+  return { granted, jobXp: next.jobXp[archetype] ?? 0, duplicate, power: next.power, streakDays: next.streakDays ?? 0 };
+}
+
+/**
+ * その投稿が**実在し・本人のもので・新しい**ことを確かめる (docs/21 §6-2 / M4)。
+ *
+ * 「アプリ経由か」は AT Proto では原理的に検証できないので、そこは緩める
+ * (`via` は client が自由に書ける)。実在と本人性だけで、
+ * 「投稿していないのに XP が入る」経路は閉じる。
+ */
+async function assertOwnPost(did: string, uri: string, now: number, fetchImpl?: typeof fetch): Promise<void> {
+  const m = /^at:\/\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(uri);
+  if (!m) throw new XpClaimError('投稿の指定が不正', 400);
+  const [, owner, collection, rkey] = m as unknown as [string, string, string, string];
+  // **他人の投稿では申告できない。** ここが本人性の検証。
+  if (owner !== did) throw new XpClaimError('自分の投稿ではない', 400);
+  if (collection !== 'app.bsky.feed.post') throw new XpClaimError('投稿ではない', 400);
+
+  const { pds } = await resolveUserPds(did, fetchImpl);
+  const rec = await getRecord<{ createdAt?: string }>(pds, did, collection, rkey);
+  // **実在の検証。** 消された投稿・でっち上げた URI はここで落ちる。
+  if (!rec?.value) throw new XpClaimError('その投稿が見つからない', 400);
+
+  const createdAt = Date.parse(rec.value.createdAt ?? '');
+  if (Number.isFinite(createdAt)) {
+    const ageDays = (now * 1000 - createdAt) / 86_400_000;
+    // 古い投稿を遡って一気に申告する経路を塞ぐ (冪等キーのリングは 200 件しか覚えていない)。
+    if (ageDays > MAX_POST_AGE_DAYS) throw new XpClaimError('古い投稿では経験値は入らない', 400);
+  }
 }
 
 /**
@@ -217,11 +244,11 @@ export async function adminGrantPower(
 ): Promise<{ power: number }> {
   if (!Number.isFinite(amount)) throw new XpClaimError('amount が不正', 400);
   const delta = Math.trunc(amount);
-  if (Math.abs(delta) > MAX_POWER) throw new XpClaimError(`amount は ±${MAX_POWER} まで`, 400);
+  if (Math.abs(delta) > MAX_ADMIN_GRANT) throw new XpClaimError(`amount は ±${MAX_ADMIN_GRANT} まで`, 400);
   const next = await readModifyWrite(
     env,
     did,
-    (cur) => ({ ...cur, power: Math.max(0, Math.min(MAX_POWER, cur.power + delta)) }),
+    (cur) => ({ ...cur, power: Math.max(0, cur.power + delta) }),
     init ? { now, init } : { now },
   );
   return { power: next.power };

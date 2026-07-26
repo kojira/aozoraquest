@@ -59,7 +59,7 @@ function stripState(s: BattleState) {
 }
 
 /** ユーザーの PDS + handle を DID document から解決 (handle は alsoKnownAs の at:// から)。 */
-async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promise<{ pds: string; handle: string }> {
+export async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch): Promise<{ pds: string; handle: string }> {
   const doc = (await resolveDidDocument(userDid, fetchImpl)) as { id: string; alsoKnownAs?: string[]; service?: { id: string; type: string; serviceEndpoint: string }[] };
   const aka = doc.alsoKnownAs?.find((a) => a.startsWith('at://'));
   const handle = aka ? aka.slice('at://'.length) : userDid;

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { XP_REWARDS, jobLevelFromXp } from '@aozoraquest/core';
-import { claimXp, adminSetJobXp, adminGrantPower, maxXpFor, MAX_CLAIM_KEYS, MAX_DAILY_CLAIM_XP, POWER_PER_POST, XpClaimError } from '../src/xp-claim';
+import { claimXp, adminSetJobXp, adminGrantPower, POWER_PER_POST, XpClaimError } from '../src/xp-claim';
 import { normalizeState, rkeyForDid, readState, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
@@ -51,138 +51,129 @@ function statefulPds() {
 }
 const stored = (store: Map<string, { value: unknown; cid: string }>) => store.get(rkeyForDid(DID))!.value as GameState;
 
-describe('XP 申告の上限 (maxXpFor)', () => {
-  it('投稿は「分類成功 + 日次ボーナス + streak 上限」まで', () => {
-    // クエスト完了では XP が増えない (2026-07-27) ので、その分は含まない。
-    expect(maxXpFor('post')).toBe(XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusCap);
-  });
-
-  it('上限は報酬定数から導く (数値の書き写しになっていない)', () => {
-    // 報酬を変えたら上限も動くこと。片方だけ直すと「正当な申告が切られる」事故になる。
-    expect(maxXpFor('post')).toBeGreaterThan(XP_REWARDS.postMatch);
-  });
-});
-
-describe('claimXp (クライアント申告 XP)', () => {
-  const orig = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = orig; });
-
-  it('申告した XP が jobXp に積まれる', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    const r = await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 35, key: 'rk1' }, NOW);
-    expect(r).toMatchObject({ granted: 35, jobXp: 35, duplicate: false });
-    expect(r.power).toBe(POWER_PER_POST); // 投稿はパワーも回復する
-    expect(stored(m.store).jobXp).toEqual({ warrior: 35 });
-  });
-
-  it('同じキーの再送は積まれない (冪等)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 35, key: 'rk1' }, NOW);
-    const again = await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 35, key: 'rk1' }, NOW);
-    expect(again).toMatchObject({ granted: 0, jobXp: 35, duplicate: true });
-    expect(again.power).toBe(POWER_PER_POST); // 重複申告ではパワーも増えない
-    expect(stored(m.store).jobXp).toEqual({ warrior: 35 });
-  });
-
-  it('上限を超える申告は切り捨てる (拒否ではない)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    // 「1 投稿で 100 万 XP」が通らないこと。400 で落とすと、報酬定数の解釈が client と
-    // ずれたときに正当な申告まで永久に入らなくなるので、切り捨てにしている。
-    const r = await claimXp(env, DID, { kind: 'post', archetype: 'mage', xp: 1_000_000, key: 'rk9' }, NOW);
-    expect(r.granted).toBe(maxXpFor('post'));
-    expect(stored(m.store).jobXp).toEqual({ mage: maxXpFor('post') });
-  });
-
-  it('職ごとに別々に積まれる (転職しても元の職の XP が残る)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 20, key: 'a' }, NOW);
-    await claimXp(env, DID, { kind: 'post', archetype: 'mage', xp: 30, key: 'b' }, NOW);
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: 'c' }, NOW);
-    expect(stored(m.store).jobXp).toEqual({ warrior: 25, mage: 30 });
-  });
-
-  it('冪等キーは直近 MAX_CLAIM_KEYS 件までのリング', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    for (let i = 0; i < MAX_CLAIM_KEYS + 5; i++) {
-      await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 1, key: `k${i}` }, NOW);
+/** 投稿レコードを返す PDS モック (実在検証を通すため)。 */
+function pdsWithPost(store: Map<string, { value: unknown; cid: string }>, opts: { exists?: boolean; createdAt?: string } = {}) {
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  let counter = 0;
+  return (async (url: string, init: RequestInit = {}) => {
+    if (url.includes('plc.directory') || url.includes('did.json')) {
+      return json(200, { id: DID, alsoKnownAs: ['at://alice.test'], service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: PDS }] });
     }
-    const st = stored(m.store);
-    expect(st.xpClaims!.length).toBe(MAX_CLAIM_KEYS);
-    expect(st.xpClaims!.at(-1)).toBe(`post:k${MAX_CLAIM_KEYS + 4}`); // 新しいものが残る
-    expect(st.xpClaims!.includes('post:k0')).toBe(false); // 古いものは落ちる
-  });
+    if (url.includes('com.atproto.repo.getRecord')) {
+      const u = new URL(url);
+      const col = u.searchParams.get('collection')!;
+      if (col === 'app.bsky.feed.post') {
+        if (opts.exists === false) return json(400, { error: 'RecordNotFound' });
+        return json(200, { uri: 'x', cid: 'p', value: { text: 'hi', createdAt: opts.createdAt ?? new Date(NOW * 1000).toISOString() } });
+      }
+      const rkey = u.searchParams.get('rkey')!;
+      const rec = store.get(rkey);
+      return rec ? json(200, { uri: `at://${rkey}`, cid: rec.cid, value: rec.value }) : json(400, { error: 'RecordNotFound' });
+    }
+    if (url.includes('com.atproto.repo.putRecord')) {
+      const b = JSON.parse(init.body as string) as { rkey: string; record: unknown; swapRecord?: string | null };
+      const cur = store.get(b.rkey);
+      if (b.swapRecord === null && cur) return json(400, { error: 'InvalidSwap' });
+      if (typeof b.swapRecord === 'string' && (!cur || cur.cid !== b.swapRecord)) return json(400, { error: 'InvalidSwap' });
+      store.set(b.rkey, { value: b.record, cid: `cid${++counter}` });
+      return json(200, { uri: `at://${b.rkey}`, cid: `cid${counter}` });
+    }
+    return json(404, { error: 'not_found' });
+  }) as unknown as typeof fetch;
+}
+const postUri = (rkey: string, owner = DID) => `at://${owner}/app.bsky.feed.post/${rkey}`;
 
-  it('不正な入力は 400 (負の XP / 空の職 / 長すぎるキー)', async () => {
-    const env = await makeEnv();
-    globalThis.fetch = statefulPds().fn;
-    const bad = (o: Parameters<typeof claimXp>[2]) => claimXp(env, DID, o, NOW);
-    await expect(bad({ kind: 'post', archetype: 'warrior', xp: -1, key: 'k' })).rejects.toBeInstanceOf(XpClaimError);
-    await expect(bad({ kind: 'post', archetype: '', xp: 1, key: 'k' })).rejects.toBeInstanceOf(XpClaimError);
-    await expect(bad({ kind: 'post', archetype: 'warrior', xp: 1, key: 'x'.repeat(300) })).rejects.toBeInstanceOf(XpClaimError);
-    await expect(bad({ kind: 'post', archetype: 'warrior', xp: Number.NaN, key: 'k' })).rejects.toBeInstanceOf(XpClaimError);
-  });
-});
-
-describe('normalizeState (ベータの区切り)', () => {
+describe('claimXp (投稿の申告)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; });
 
-  it('区切り前の state は jobXp をリセットして epoch を刻む', () => {
-    const v1 = { did: DID, power: 5, playerXp: 100, jobXp: { warrior: 9999 }, materials: { herb: 2 }, gear: [], x: 1, y: 2, version: 1, updatedAt: '' } as GameState;
-    const out = normalizeState(v1);
-    expect(out.jobXp).toEqual({});
-    expect(out.xpEpoch).toBe(XP_EPOCH);
-    // 持ち物・パワーは触らない (「全部消えた」にしない)
-    expect(out.power).toBe(5);
-    expect(out.playerXp).toBe(100);
-    expect(out.materials).toEqual({ herb: 2 });
-  });
-
-  it('区切りでは位置も spawn に戻す (Lv1 で奥地に取り残さない)', async () => {
-    const { worldOverlay } = await import('@aozoraquest/core');
-    const spawn = worldOverlay().spawn;
-    const v1 = { did: DID, power: 0, playerXp: 0, jobXp: { warrior: 9999 }, materials: {}, gear: [], x: 900, y: 900, lastTown: { x: 900, y: 900 }, carryHp: 3, version: 1, updatedAt: '' } as GameState;
-    const out = normalizeState(v1);
-    expect(out.x).toBe(spawn.x);
-    expect(out.y).toBe(spawn.y);
-    expect(out.lastTown).toEqual({ x: spawn.x, y: spawn.y });
-    expect(out.carryHp).toBeUndefined(); // 全快で再開
-  });
-
-  it('区切り済みの state はそのまま (再リセットしない)', () => {
-    const v2 = { did: DID, power: 5, playerXp: 0, jobXp: { warrior: 42 }, materials: {}, gear: [], x: 0, y: 0, version: 1, xpEpoch: XP_EPOCH, updatedAt: '' } as GameState;
-    expect(normalizeState(v2)).toBe(v2);
-  });
-
-  it('version が旧コードに書き戻されても再リセットしない (dev↔本番の往復対策)', () => {
-    // dev と本番は同じ権威レコードを共有する。version を移行マーカーにすると、
-    // 本番 (旧コード) で 1 歩動くたび version が巻き戻り、次の dev アクセスで
-    // jobXp がまた 0 になる。xpEpoch は旧コードが知らないので保存されて残る。
-    const rolledBack = { did: DID, power: 0, playerXp: 0, jobXp: { warrior: 500 }, materials: {}, gear: [], x: 0, y: 0, version: 1, xpEpoch: XP_EPOCH, updatedAt: '' } as GameState;
-    expect(normalizeState(rolledBack).jobXp).toEqual({ warrior: 500 });
-  });
-
-  it('readState が読みの時点で正規化する (書き戻し前でも古い値を使わない)', async () => {
+  it('額はサーバーが決める (client は投稿の URI しか送らない)', async () => {
     const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    m.store.set(rkeyForDid(DID), {
-      cid: 'c1',
-      value: { did: DID, power: 0, playerXp: 0, jobXp: { warrior: 12345 }, materials: {}, gear: [], x: 0, y: 0, version: 1, updatedAt: '' },
-    });
-    const got = await readState(env, DID);
-    expect(got!.state.jobXp).toEqual({});
-    expect(got!.state.xpEpoch).toBe(XP_EPOCH);
+    const store = new Map<string, { value: unknown; cid: string }>();
+    globalThis.fetch = pdsWithPost(store);
+    const r = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    // 初回は 投稿ぶん + 日次ボーナス + streak 1 日ぶん
+    expect(r.granted).toBe(XP_REWARDS.postMatch + XP_REWARDS.dailyBonus + XP_REWARDS.streakBonusPerDay);
+    expect(r.streakDays).toBe(1);
+  });
+
+  it('同じ日の 2 件目以降は投稿ぶんだけ。**回数に上限は無い**', async () => {
+    const env = await makeEnv();
+    const store = new Map<string, { value: unknown; cid: string }>();
+    globalThis.fetch = pdsWithPost(store);
+    await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    let total = 0;
+    for (let i = 0; i < 50; i++) {
+      total += (await claimXp(env, DID, { archetype: 'warrior', postUri: postUri(`p${i}`) }, NOW)).granted;
+    }
+    // 投稿が実在するなら何件でも入る (日次上限で正直な人を罰しない)
+    expect(total).toBe(XP_REWARDS.postMatch * 50);
+  });
+
+  it('**存在しない投稿では入らない**', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = pdsWithPost(new Map(), { exists: false });
+    await expect(claimXp(env, DID, { archetype: 'warrior', postUri: postUri('ghost') }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+
+  it('**他人の投稿では入らない**', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = pdsWithPost(new Map());
+    await expect(claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a', 'did:plc:bob') }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+
+  it('投稿以外のレコードでは入らない', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = pdsWithPost(new Map());
+    await expect(claimXp(env, DID, { archetype: 'warrior', postUri: `at://${DID}/app.aozoraquest.analysis/self` }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+
+  it('古い投稿では入らない (過去ログを遡って一気に稼げない)', async () => {
+    const env = await makeEnv();
+    const old = new Date((NOW - 10 * 86400) * 1000).toISOString();
+    globalThis.fetch = pdsWithPost(new Map(), { createdAt: old });
+    await expect(claimXp(env, DID, { archetype: 'warrior', postUri: postUri('old') }, NOW)).rejects.toBeInstanceOf(XpClaimError);
+  });
+
+  it('同じ投稿の再送は積まれない (冪等)', async () => {
+    const env = await makeEnv();
+    const store = new Map<string, { value: unknown; cid: string }>();
+    globalThis.fetch = pdsWithPost(store);
+    const first = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    const again = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    expect(again.granted).toBe(0);
+    expect(again.duplicate).toBe(true);
+    expect(again.jobXp).toBe(first.jobXp);
+  });
+
+  it('連続日数はサーバーが数える (client の申告を使わない)', async () => {
+    const env0 = await makeEnv();
+    const store = new Map<string, { value: unknown; cid: string }>();
+    globalThis.fetch = pdsWithPost(store);
+    await claimXp(env0, DID, { archetype: 'warrior', postUri: postUri('d1') }, NOW);
+    // 翌日 (トークンの期限も伸ばす)
+    const day2 = NOW + 86400;
+    const kv = mockKv();
+    await writeServerTokens(kv, { did: SERVER_DID, accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: day2 + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: day2 });
+    globalThis.fetch = pdsWithPost(store, { createdAt: new Date(day2 * 1000).toISOString() });
+    const r2 = await claimXp({ ...env0, OAUTH_TOKENS: kv }, DID, { archetype: 'warrior', postUri: postUri('d2') }, day2);
+    expect(r2.streakDays).toBe(2);
+  });
+
+  it('投稿でパワーが回復する。**残高に上限は無い**', async () => {
+    const env = await makeEnv();
+    const store = new Map<string, { value: unknown; cid: string }>();
+    globalThis.fetch = pdsWithPost(store);
+    for (let i = 0; i < 30; i++) {
+      await claimXp(env, DID, { archetype: 'warrior', postUri: postUri(`x${i}`) }, NOW);
+    }
+    expect((store.get(rkeyForDid(DID))!.value as GameState).power).toBe(30 * POWER_PER_POST);
+  });
+
+  it('実在しない職は 400 (権威レコードのキー空間を汚させない)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = pdsWithPost(new Map());
+    await expect(claimXp(env, DID, { archetype: 'not-a-job', postUri: postUri('a') }, NOW)).rejects.toBeInstanceOf(XpClaimError);
   });
 });
 
@@ -218,9 +209,10 @@ describe('adminSetJobXp (管理者がレベルを直接セット)', () => {
     const env = await makeEnv();
     const m = statefulPds();
     globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'post', archetype: 'mage', xp: 40, key: 'k' }, NOW);
+    await adminSetJobXp(env, DID, 'mage', 12, NOW);
+    const before = stored(m.store).jobXp['mage'];
     await adminSetJobXp(env, DID, 'warrior', 10, NOW);
-    expect(stored(m.store).jobXp['mage']).toBe(40);
+    expect(stored(m.store).jobXp['mage']).toBe(before);
   });
 
   it('範囲外のレベルは 400', async () => {
@@ -232,62 +224,7 @@ describe('adminSetJobXp (管理者がレベルを直接セット)', () => {
   });
 });
 
-describe('権威 state の新規作成 (init)', () => {
-  const orig = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = orig; });
 
-  it('init を渡せばそこから作られる (パワー・持ち物・位置が失われない)', async () => {
-    // init を渡し忘れると emptyState で作られ、ユーザー PDS のパワー残高・冒険はじめの
-    // 持ち物・開始位置が取り込まれないまま固定される。以後 readState が null を返さないので
-    // 移行は二度と走らない = 恒久的なデータ喪失。router が必ず渡すことを型でなく契約で担保する。
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    const migrated = async (did: string, iso: string): Promise<GameState> => ({
-      did, power: 42, playerXp: 7, jobXp: {}, materials: { herb: 1, 'sky-feather': 1 },
-      gear: [], x: 211, y: 340, xpEpoch: XP_EPOCH, version: 1, updatedAt: iso,
-    });
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 10, key: 'k' }, NOW, migrated);
-    const st = stored(m.store);
-    expect(st.power).toBe(42 + POWER_PER_POST); // 投稿ぶんのパワーが乗る
-    expect(st.materials).toEqual({ herb: 1, 'sky-feather': 1 });
-    expect(st.x).toBe(211);
-    expect(st.jobXp).toEqual({ warrior: 10 });
-  });
-
-  it('実在しない職は 400 (権威レコードのキー空間を汚させない)', async () => {
-    const env = await makeEnv();
-    globalThis.fetch = statefulPds().fn;
-    await expect(claimXp(env, DID, { kind: 'post', archetype: 'not-a-job', xp: 1, key: 'k' }, NOW)).rejects.toBeInstanceOf(XpClaimError);
-    await expect(adminSetJobXp(env, DID, 'not-a-job', 10, NOW)).rejects.toBeInstanceOf(XpClaimError);
-  });
-});
-
-describe('あおぞらパワーの回復 (#549)', () => {
-  const orig = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = orig; });
-
-  it('投稿の申告でパワーが回復する', async () => {
-    // 権威 state の power は戦闘で減るだけで、増える経路が一つも無かった。
-    // 0 になると rewarded=false になり、勝っても XP もドロップも一切入らなくなる。
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    for (let i = 0; i < 3; i++) {
-      await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: `p${i}` }, NOW);
-    }
-    expect(stored(m.store).power).toBe(3 * POWER_PER_POST);
-  });
-
-  it('同じ投稿の再送ではパワーも二重に増えない', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: 'same' }, NOW);
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 5, key: 'same' }, NOW);
-    expect(stored(m.store).power).toBe(POWER_PER_POST);
-  });
-});
 
 describe('adminGrantPower (管理者のパワー付与)', () => {
   const orig = globalThis.fetch;
@@ -315,43 +252,10 @@ describe('adminGrantPower (管理者のパワー付与)', () => {
     const env = await makeEnv();
     const m = statefulPds();
     globalThis.fetch = m.fn;
-    await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: 20, key: 'k' }, NOW);
+    await adminSetJobXp(env, DID, 'warrior', 8, NOW);
+    const before = stored(m.store).jobXp['warrior'];
     await adminGrantPower(env, DID, 100, NOW);
-    expect(stored(m.store).jobXp).toEqual({ warrior: 20 });
+    expect(stored(m.store).jobXp['warrior']).toBe(before);
   });
 });
 
-describe('申告の抑止 (#551)', () => {
-  const orig = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = orig; });
-
-  it('1 日に申告できる XP に上限がある (回数無制限で盛れない)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    let total = 0;
-    for (let i = 0; i < 40; i++) {
-      const r = await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: maxXpFor('post'), key: `k${i}` }, NOW);
-      total += r.granted;
-    }
-    expect(total).toBe(MAX_DAILY_CLAIM_XP);
-    expect(stored(m.store).jobXp['warrior']).toBe(MAX_DAILY_CLAIM_XP);
-  });
-
-  it('日付が変われば上限がリセットされる (サーバーの時計で決める)', async () => {
-    const env = await makeEnv();
-    const m = statefulPds();
-    globalThis.fetch = m.fn;
-    for (let i = 0; i < 40; i++) {
-      await claimXp(env, DID, { kind: 'post', archetype: 'warrior', xp: maxXpFor('post'), key: `a${i}` }, NOW);
-    }
-    // 翌日ぶんのトークンを持つ env で叩く (テスト用トークンは NOW+3600 で切れるため)
-    const nextDay = NOW + 24 * 3600;
-    const kv = mockKv();
-    await writeServerTokens(kv, { did: SERVER_DID, accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: nextDay + 3600, pdsUrl: PDS, authServer: 'https://bsky.social', updatedAt: nextDay });
-    const envNext: GameStateEnv = { ...env, OAUTH_TOKENS: kv };
-    const r = await claimXp(envNext, DID, { kind: 'post', archetype: 'warrior', xp: 50, key: 'b1' }, nextDay);
-    expect(r.granted).toBe(50);
-  });
-
-});

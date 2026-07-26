@@ -19,6 +19,7 @@ import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleS
 import { signPosition, verifyPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
+import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
 import type { Command } from '@aozoraquest/core';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
@@ -59,6 +60,7 @@ const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
 const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
+const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -260,9 +262,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { kind?: unknown; archetype?: unknown; xp?: unknown; key?: unknown };
-    // クエスト完了では XP が増えないので `kind` は投稿のみ (2026-07-27)。
-    if (body.kind !== 'post' || typeof body.archetype !== 'string' || typeof body.xp !== 'number' || typeof body.key !== 'string') {
+    // **額は client が送らない** — サーバーが決める (2026-07-27)。送るのは投稿の URI だけ。
+    const body = (await req.json().catch(() => ({}))) as { archetype?: unknown; postUri?: unknown };
+    if (typeof body.archetype !== 'string' || typeof body.postUri !== 'string') {
       return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     }
     try {
@@ -271,7 +273,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       // (以後 readState が null を返さないので migrateInitState は二度と走らない)。
       // 「世界を開く前にホームから投稿する」だけで踏む経路なので致命的。
       const ns = nsFromOrigin(req);
-      const result = await claimXp(env, did, { kind: body.kind, archetype: body.archetype, xp: body.xp, key: body.key }, nowSec(),
+      const result = await claimXp(env, did, { archetype: body.archetype, postUri: body.postUri }, nowSec(),
         (d, iso) => migrateInitState(d, iso, ns));
       return cors(json(result), allowedOrigin);
     } catch (e) {
@@ -307,6 +309,25 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
     }
+  }
+
+  // 管理者が PDS の書き込みレート消費を見る (#548)。**PDS 分割の潮時を判断するため**。
+  // 権威 state は全ユーザーが 1 つのサーバーアカウント repo を共有しており、
+  // Bluesky の上限は DID ごと 5,000 points/時・35,000 points/日、putRecord は 2 points。
+  // = 全ユーザー合計で 1 時間 2,500 操作 / 1 日 17,500 操作が天井。
+  if (req.method === 'GET' && url.pathname === '/api/admin/pds-usage') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_ADMIN_PDS_USAGE }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
+    const usage = await readPdsUsage(env.OAUTH_TOKENS);
+    return cors(json({ usage, opsRemaining: opsRemaining(usage), pointsPerOp: PUT_RECORD_POINTS }), allowedOrigin);
   }
 
   // パワーの消費 (カードの引き直しなど)。**値段はサーバーが決める** — client が金額を送らない。

@@ -11,6 +11,7 @@
  */
 import { dpopFetch } from './dpop-fetch';
 import { readServerTokens, readPdsNonce, writePdsNonce } from './oauth-store';
+import { readRateLimitHeaders, recordPdsUsage } from './pds-usage';
 import { loadOAuthConfig, OAuthConfigError, type OAuthEnv } from './oauth-config';
 import { PdsError } from './pds';
 
@@ -50,6 +51,10 @@ async function authedXrpc<T>(env: ServerPdsEnv, now: number, nsid: string, body:
     { jwk: cfg.dpopJwk, accessToken: tokens.accessToken, now, nonce, onNonce: (n) => { latest = n; } },
   );
   if (latest && latest !== nonce) await writePdsNonce(kv, latest); // 次回のため保存 (別キー)
+
+  // **レート上限のヘッダを拾って残す** (#548)。全ユーザーが 1 つのサーバーアカウント repo を
+  // 共有しているので、ここが天井に近づいたら PDS を分割する必要がある。best-effort。
+  await recordPdsUsage(kv, readRateLimitHeaders(res), now);
 
   const text = await res.text();
   let json: Record<string, unknown> = {};
