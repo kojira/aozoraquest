@@ -58,6 +58,50 @@ describe('switchJobXp (#531)', () => {
     expect(r.jobXpByArchetype.warrior).toBe(5000); // 元の職は失われない
   });
 
+  it('keepXp は転職先の過去分も壊さない (admin で往復しても消えない)', () => {
+    // 戦士 Lv30 → admin で賢者 → admin で戦士 Lv5 と往復したとき、
+    // 保管庫を消す実装だと戦士の 5000 XP が黙って消える (復旧手段なし)。
+    const a = switchJobXp({ jobLevel: { archetype: 'warrior', xp: 5000, joinedAt: 'x' } }, 'sage', NOW);
+    expect(a.jobXpByArchetype.warrior).toBe(5000);
+    const b = switchJobXp({ jobLevel: a.jobLevel, jobXpByArchetype: a.jobXpByArchetype }, 'warrior', NOW, { keepXp: 300 });
+    expect(b.jobLevel.xp).toBe(300); // 指定 LV で戦う
+    expect(b.jobXpByArchetype.warrior).toBe(5000); // 過去分は保管庫に残っている
+    // 離れて戻れば最大値に復帰する (指定は一時的な上書き)
+    const c = switchJobXp({ jobLevel: b.jobLevel, jobXpByArchetype: b.jobXpByArchetype }, 'sage', NOW);
+    const d = switchJobXp({ jobLevel: c.jobLevel, jobXpByArchetype: c.jobXpByArchetype }, 'warrior', NOW);
+    expect(d.jobLevel.xp).toBe(5000);
+  });
+
+  it('同じ職への no-op で保管庫の方が大きければそちらを採る (自己修復)', () => {
+    const r = switchJobXp(
+      { jobLevel: { archetype: 'sage', xp: 10, joinedAt: 'x' }, jobXpByArchetype: { sage: 9999 } },
+      'sage',
+      NOW,
+    );
+    expect(r.jobLevel.xp).toBe(9999);
+    expect(r.jobXpByArchetype.sage).toBeUndefined();
+  });
+
+  it('同じ職への no-op では joinedAt を維持する', () => {
+    // 再診断のたびに joinedAt が書き換わると「この職になった日時」の意味が壊れる。
+    const r = switchJobXp({ jobLevel: { archetype: 'sage', xp: 5, joinedAt: '2020-01-01T00:00:00Z' } }, 'sage', NOW);
+    expect(r.jobLevel.joinedAt).toBe('2020-01-01T00:00:00Z');
+    // 職が変われば更新される
+    expect(switchJobXp({ jobLevel: { archetype: 'sage', xp: 5, joinedAt: '2020-01-01T00:00:00Z' } }, 'mage', NOW).jobLevel.joinedAt).toBe(NOW);
+  });
+
+  it('3 ホップ以上でも全職の XP が生き残る (A→B→C→A)', () => {
+    let r: any = { jobLevel: { archetype: 'warrior', xp: 100, joinedAt: 'x' } };
+    r = { ...r, ...switchJobXp(r, 'sage', NOW) };
+    r = { ...r, jobLevel: { ...r.jobLevel, xp: 200 } };
+    r = { ...r, ...switchJobXp(r, 'ninja', NOW) };
+    r = { ...r, jobLevel: { ...r.jobLevel, xp: 300 } };
+    r = { ...r, ...switchJobXp(r, 'warrior', NOW) };
+    expect(r.jobLevel.xp).toBe(100);            // 戦士は元どおり
+    expect(r.jobXpByArchetype.sage).toBe(200);  // 賢者も
+    expect(r.jobXpByArchetype.ninja).toBe(300); // 忍者も
+  });
+
   it('保管庫に大きい値があるとき現職の退避で減らさない', () => {
     // 異常系 (保管庫と jobLevel が食い違う) でも XP を削らない
     const r = switchJobXp(

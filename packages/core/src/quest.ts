@@ -216,7 +216,10 @@ export const JOB_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: num
  * `jobLevel.xp` と保管庫で二重計上されることはない。
  *
  * @param opts.keepXp 復元せずこの XP を使う (管理ツールの LV 直接指定用)。
- *                    退避は行うので、元の職のレベルは失われない。
+ *                    退避は行うので**元の職**のレベルは失われない。**転職先**の過去分も
+ *                    保管庫に残す (指定 LV は一時的な上書きで、離れて戻れば最大値に復帰する)。
+ *                    残さない実装だと「戦士 Lv30 → admin で賢者 → admin で戦士 Lv5」で
+ *                    戦士の 5000 XP が黙って消える。
  */
 export function switchJobXp(
   prev: { jobLevel?: JobLevelState | undefined; jobXpByArchetype?: Partial<Record<Archetype, number>> | undefined },
@@ -231,11 +234,21 @@ export function switchJobXp(
   if (cur && cur.archetype !== newArchetype) {
     bank[cur.archetype] = Math.max(bank[cur.archetype] ?? 0, cur.xp);
   }
-  const restored = cur?.archetype === newArchetype ? cur.xp : (bank[newArchetype] ?? 0);
+  // 同じ職への no-op でも保管庫を見る (異常系で保管庫の方が大きいときに減らさない)。
+  const banked = bank[newArchetype] ?? 0;
+  const restored = cur?.archetype === newArchetype ? Math.max(cur.xp, banked) : banked;
   const xp = opts.keepXp ?? restored;
-  // 現職ぶんは jobLevel.xp が正なので保管庫からは外す (二重計上の防止)。
-  delete bank[newArchetype];
-  return { jobLevel: { archetype: newArchetype, xp, joinedAt }, jobXpByArchetype: bank };
+  if (opts.keepXp === undefined) {
+    // 現職ぶんは jobLevel.xp が正なので保管庫からは外す (二重計上の防止)。
+    delete bank[newArchetype];
+  } else {
+    // LV 直接指定は**一時的な上書き**。過去分を消すと戻ったときに失われるので保管庫に残す。
+    // 二重計上にはならない — 戻るときの restored が max を取るため。
+    bank[newArchetype] = Math.max(banked, restored);
+  }
+  // 同じ職への no-op では joinedAt を維持する (「この archetype になった日時」の意味を壊さない)。
+  const keptJoinedAt = cur?.archetype === newArchetype ? cur.joinedAt : joinedAt;
+  return { jobLevel: { archetype: newArchetype, xp, joinedAt: keptJoinedAt }, jobXpByArchetype: bank };
 }
 
 /** 累計 XP から現職 LV を計算。 */

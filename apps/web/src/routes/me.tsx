@@ -542,7 +542,8 @@ function JobChangeBanner({
       </p>
       <p style={{ margin: '0.3em 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)' }}>
         今は「{jobDisplayName(current, 'default')}」のまま。{streak} 投稿連続で {jobDisplayName(pending, 'default')} 寄りに判定されました。
-        <strong>{jobDisplayName(current, 'default')}</strong> のレベルはそのまま保持されます。戻ればその続きから育てられます。
+        <strong>{jobDisplayName(pending, 'default')}</strong> は育てた分から (はじめてなら最初から) 再開します。
+        <strong>{jobDisplayName(current, 'default')}</strong> のレベルは保持されるので、戻ればその続きから育てられます。
       </p>
       <div style={{ display: 'flex', gap: '0.5em', flexWrap: 'wrap' }}>
         <button disabled={busy} onClick={() => void handle(onConfirm)}>

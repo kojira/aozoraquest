@@ -29,6 +29,7 @@
           "analyzedAt": { "type": "string", "format": "datetime" },
           "public": { "type": "boolean", "default": false },
           "jobLevel": { "type": "ref", "ref": "#jobLevel" },
+          "jobXpByArchetype": { "type": "ref", "ref": "#jobXpByArchetype" },
           "playerLevel": { "type": "ref", "ref": "#playerLevel" },
           "pendingArchetype": {
             "type": "string",
@@ -41,6 +42,28 @@
           },
           "pendingArchetypeStreak": { "type": "integer", "minimum": 0 }
         }
+      }
+    },
+    "jobXpByArchetype": {
+      "type": "object",
+      "description": "Per-archetype bank of post-derived job XP. On job change the current job's XP is stashed here and the new job's past XP is restored, so switching jobs no longer discards levels. The CURRENT job's XP lives in jobLevel.xp and is NOT duplicated here.",
+      "properties": {
+        "sage": { "type": "integer", "minimum": 0 },
+        "mage": { "type": "integer", "minimum": 0 },
+        "shogun": { "type": "integer", "minimum": 0 },
+        "bard": { "type": "integer", "minimum": 0 },
+        "seer": { "type": "integer", "minimum": 0 },
+        "poet": { "type": "integer", "minimum": 0 },
+        "paladin": { "type": "integer", "minimum": 0 },
+        "explorer": { "type": "integer", "minimum": 0 },
+        "warrior": { "type": "integer", "minimum": 0 },
+        "guardian": { "type": "integer", "minimum": 0 },
+        "fighter": { "type": "integer", "minimum": 0 },
+        "artist": { "type": "integer", "minimum": 0 },
+        "captain": { "type": "integer", "minimum": 0 },
+        "miko": { "type": "integer", "minimum": 0 },
+        "ninja": { "type": "integer", "minimum": 0 },
+        "performer": { "type": "integer", "minimum": 0 }
       }
     },
     "jobLevel": {

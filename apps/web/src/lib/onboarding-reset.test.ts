@@ -113,3 +113,40 @@ describe('zeroAnalysisXp (完全ワイプ)', () => {
     expect(written['rpgStats']).toBeDefined();
   });
 });
+
+describe('confirmJobChange (転職時のレコード保存)', () => {
+  test('保管庫が退避され、他のフィールドは壊れない (#531)', async () => {
+    // ここで守るのは **spread の順序**。`{ ...analysis, ...switchJobXp(...) }` の順を
+    // 逆にすると古い jobXpByArchetype が残り、退避が消える。core のテストでは検出できない。
+    const { getRecord, putRecord } = await import('./atproto');
+    vi.mocked(getRecord).mockResolvedValue({
+      archetype: 'warrior',
+      jobLevel: { archetype: 'warrior', xp: 5000, joinedAt: 'x' },
+      jobXpByArchetype: { ninja: 3000 },
+      playerLevel: { xp: 700, streakDays: 12 },
+      rpgStats: { atk: 1, def: 1, agi: 1, int: 1, luk: 1 },
+      cognitiveScores: { Ni: 1, Ne: 1, Si: 1, Se: 1, Ti: 1, Te: 1, Fi: 1, Fe: 1 },
+      cardName: 'のこすべきカード',
+      pendingArchetype: 'sage',
+      pendingArchetypeStreak: 3,
+    } as never);
+    vi.mocked(putRecord).mockResolvedValue(undefined as never);
+
+    const { confirmJobChange } = await import('./post-processor');
+    await confirmJobChange({} as never, 'did:test', 'sage');
+
+    const w = vi.mocked(putRecord).mock.calls.at(-1)![3] as Record<string, unknown>;
+    // 転職: 戦士ぶんが退避され、賢者は 0 から
+    expect((w['jobXpByArchetype'] as Record<string, number>)['warrior']).toBe(5000);
+    expect((w['jobXpByArchetype'] as Record<string, number>)['ninja']).toBe(3000); // 既存の退避も残る
+    expect(w['jobLevel']).toMatchObject({ archetype: 'sage', xp: 0 });
+    // 転職で消してはいけないもの
+    expect(w['cognitiveScores']).toBeDefined();
+    expect(w['rpgStats']).toBeDefined();
+    expect(w['playerLevel']).toMatchObject({ xp: 700 });
+    expect(w['cardName']).toBe('のこすべきカード');
+    // 転職で消すもの
+    expect(w['pendingArchetype']).toBeUndefined();
+    expect(w['pendingArchetypeStreak']).toBeUndefined();
+  });
+});
