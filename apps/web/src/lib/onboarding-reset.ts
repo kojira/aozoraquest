@@ -94,8 +94,9 @@ async function deleteSelf(agent: Agent, did: string, collection: string): Promis
   await agent.com.atproto.repo.deleteRecord({ repo: did, collection, rkey: 'self' }).catch(() => {});
 }
 
-/** 分析レコードの XP を 0 に (= Lv1)。archetype / cognitiveScores / rpgStats 等は保持。 */
-async function zeroAnalysisXp(agent: Agent, did: string): Promise<void> {
+/** 分析レコードの XP を 0 に (= Lv1)。archetype / cognitiveScores / rpgStats 等は保持。
+ *  export はテスト用 (「完全ワイプ」の網羅を固定するため)。 */
+export async function zeroAnalysisXp(agent: Agent, did: string): Promise<void> {
   const a = await getRecord<Record<string, unknown>>(agent, did, COL.analysis, 'self').catch(() => null);
   if (!a) return;
   const next: Record<string, unknown> = { ...a };
@@ -103,6 +104,9 @@ async function zeroAnalysisXp(agent: Agent, did: string): Promise<void> {
   if (pl && typeof pl === 'object') next.playerLevel = { ...(pl as object), xp: 0, streakDays: 0 };
   const jl = a.jobLevel;
   if (jl && typeof jl === 'object') next.jobLevel = { ...(jl as object), xp: 0 };
+  // **職ごとの XP 保管庫も消す** (#531)。ここを消し忘れると「完全ワイプ」したのに
+  // 転職した瞬間に過去のレベルが蘇る (現職ぶんだけ 0 にしても保管庫が生き残るため)。
+  delete next.jobXpByArchetype;
   await putRecord(agent, COL.analysis, 'self', next);
 }
 

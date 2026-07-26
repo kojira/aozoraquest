@@ -80,3 +80,36 @@ describe('armOnboardingReplay (オンボード再生の準備)', () => {
     expect(() => armOnboardingReplay()).not.toThrow();
   });
 });
+
+vi.mock('./atproto', async (orig) => ({
+  ...(await orig<typeof import('./atproto')>()),
+  getRecord: vi.fn(),
+  putRecord: vi.fn(),
+}));
+
+describe('zeroAnalysisXp (完全ワイプ)', () => {
+  test('職ごとの XP 保管庫も消す (#531)', async () => {
+    // 保管庫を消し忘れると「完全ワイプ」したのに転職した瞬間に過去のレベルが蘇る
+    // (現職ぶんの jobLevel.xp だけ 0 にしても、保管庫が生き残るため)。
+    const { getRecord, putRecord } = await import('./atproto');
+    vi.mocked(getRecord).mockResolvedValue({
+      archetype: 'warrior',
+      jobLevel: { archetype: 'warrior', xp: 5000, joinedAt: 'x' },
+      jobXpByArchetype: { sage: 9000, ninja: 3000 },
+      playerLevel: { xp: 700, streakDays: 12 },
+      rpgStats: { atk: 1, def: 1, agi: 1, int: 1, luk: 1 },
+    } as never);
+    vi.mocked(putRecord).mockResolvedValue(undefined as never);
+
+    const { zeroAnalysisXp } = await import('./onboarding-reset');
+    await zeroAnalysisXp({} as never, 'did:test');
+
+    const written = vi.mocked(putRecord).mock.calls[0]![3] as Record<string, unknown>;
+    expect(written['jobXpByArchetype']).toBeUndefined();
+    expect((written['jobLevel'] as { xp: number }).xp).toBe(0);
+    expect((written['playerLevel'] as { xp: number; streakDays: number })).toMatchObject({ xp: 0, streakDays: 0 });
+    // 消してはいけないものは残る
+    expect(written['archetype']).toBe('warrior');
+    expect(written['rpgStats']).toBeDefined();
+  });
+});
