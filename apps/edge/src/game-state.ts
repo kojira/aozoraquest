@@ -55,6 +55,9 @@ export interface GameState {
   defeated?: string[];
   /** defeated が属する 30 分エンカウント枠。枠が変わったら defeated をリセットする。 */
   defeatedWindow?: number;
+  /** 適用済みの XP 申告の冪等キー (`kind:key`)。直近 `MAX_CLAIM_KEYS` 件のリング。
+   *  同じ投稿/クエスト承認で二重に XP が積まれるのを防ぐ (#534。詳細は xp-claim.ts)。 */
+  xpClaims?: string[];
   version: number;
   updatedAt: string;
 }

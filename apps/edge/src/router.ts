@@ -13,6 +13,7 @@ import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
+import { claimXp, XpClaimError } from './xp-claim';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, ResolverError } from './battle-resolver';
 import { signPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
@@ -49,6 +50,7 @@ const LXM_WORLD_GEAR = 'app.aozoraquest.world.gear';
 const LXM_WORLD_SEARCH = 'app.aozoraquest.world.search';
 const LXM_WORLD_RESET = 'app.aozoraquest.world.reset';
 const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
+const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -233,6 +235,31 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     try {
       return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // XP 申告: 投稿・クエストの XP を権威 state の jobXp に積む (#534)。
+  // 種類ごとの上限クランプ + 冪等キーで、client 由来でも青天井にならないようにする。
+  if (req.method === 'POST' && url.pathname === '/api/xp/claim') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_XP_CLAIM }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { kind?: unknown; archetype?: unknown; xp?: unknown; key?: unknown };
+    if ((body.kind !== 'post' && body.kind !== 'quest') || typeof body.archetype !== 'string' || typeof body.xp !== 'number' || typeof body.key !== 'string') {
+      return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    }
+    try {
+      const result = await claimXp(env, did, { kind: body.kind, archetype: body.archetype, xp: body.xp, key: body.key }, nowSec());
+      return cors(json(result), allowedOrigin);
+    } catch (e) {
+      if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
     }
   }
