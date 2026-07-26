@@ -40,6 +40,18 @@ describe('職ごとのレベル曲線 (#536)', () => {
     expect(spread(2)).toBeGreaterThan(1.4); // 序盤は明確に差がある
   });
 
+  it('**どの職も基準曲線よりレベルが下がらない** (既存プレイヤーの巻き戻し防止)', () => {
+    // レベルは XP から毎回導出するので、曲線を差し替えるだけで到達点が遡って動く。
+    // pace が 1 を超える職があると、同じ XP のまま表示 Lv が下がる = 習得済みのとくぎと
+    // Lv30 パッシブが説明なく消える。pace の正規化を最大値にしてある理由がこれ。
+    for (const j of JOBS) {
+      expect(JOB_LEVEL_PACE[j.id], `${j.id} の pace は 1.0 以下`).toBeLessThanOrEqual(1);
+      for (const [lv, base] of JOB_XP_CURVE) {
+        expect(th(j.id, lv), `${j.id} Lv${lv} の必要 XP が基準を超えた`).toBeLessThanOrEqual(base);
+      }
+    }
+  });
+
   it('未知の職は基準曲線をそのまま使う (将来の職追加で落ちない)', () => {
     expect(jobXpCurveFor('unknown-job')).toEqual(JOB_XP_CURVE);
   });
