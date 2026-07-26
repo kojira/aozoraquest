@@ -35,6 +35,7 @@ import { classifyCognitiveFromVec } from './cognitive-classifier';
 import { Embedder } from './embedder';
 import { getRecord, putRecord } from './atproto';
 import { serverClaimXp } from './world-server';
+import { flushPendingClaims, forgetPendingClaim, rememberPendingClaim } from './pending-claims';
 import { deriveActionTypes, type PostStructure } from './structural-action';
 
 export interface QuestLogEntry {
@@ -68,6 +69,7 @@ export interface QuestLogRecord {
   quests: QuestLogEntry[];
   /** 今日分類された投稿の履歴 (古い順)。最新 50 件までを保持。 */
   activity?: ActivityEntry[];
+  /** @deprecated クエスト完了では XP が増えない (2026-07-27)。過去ログの互換のために残す。 */
   totalXpGained?: number;
   updatedAt: string;
 }
@@ -76,6 +78,7 @@ export interface ProcessResult {
   action: ActionCategory | null;
   incremented: string[];
   completed: string[];
+  /** @deprecated 完了したクエストの報酬値の合計。**成長には効かない** (2026-07-27)。 */
   xpGained: number;
   updatedRpgStats?: StatVector | undefined;
   updatedCognitive?: CognitiveScores | undefined;
@@ -248,32 +251,13 @@ export async function processSelfPost(
         joinedAt: analysis.analyzedAt,
       };
 
-      let gainedXp = 0;
-      if (actionType) gainedXp += XP_REWARDS.postMatch;
-      gainedXp += xpGained; // クエスト完了分
-
-      // 日次ボーナス (playerLevel で判定、1 日 1 回)
-      const prevBonusDate = oldPlayer.lastDailyBonusDate;
-      let newStreak = oldPlayer.streakDays;
-      let newBonusDate = prevBonusDate;
-      if (prevBonusDate !== today) {
-        newStreak = prevBonusDate && isYesterday(prevBonusDate, today) ? newStreak + 1 : 1;
-        const streakBonus = Math.min(XP_REWARDS.streakBonusCap, newStreak * XP_REWARDS.streakBonusPerDay);
-        gainedXp += XP_REWARDS.dailyBonus + streakBonus;
-        newBonusDate = today;
-      }
-
-      // playerLevel 更新 (常に積む)
-      const prevPlayerLv = playerLevelFromXp(oldPlayer.xp);
-      const nextPlayerXp = oldPlayer.xp + gainedXp;
-      const nextPlayerLv = playerLevelFromXp(nextPlayerXp);
-      if (nextPlayerLv > prevPlayerLv) playerLeveledUp = { from: prevPlayerLv, to: nextPlayerLv };
-      const nextPlayerLevel: PlayerLevelState = {
-        xp: nextPlayerXp,
-        ...(newBonusDate ? { lastDailyBonusDate: newBonusDate } : {}),
-        streakDays: newStreak,
-      };
-      finalPlayerLevel = nextPlayerLevel;
+      // **XP の額はここで計算しない** (#551)。分類できたか / 日次ボーナスか / 連続何日目かは、
+      // どれも client にしか分からない値だった = サーバーが検証できなかった。
+      // いまはサーバーが**投稿の実在を確かめてから額を決める**ので、client は申告するだけ。
+      // 連続日数もサーバーが数える (`GameState.streakDays`)。
+      //
+      // `playerLevel` は #507/#508 で戦闘力から外れており、ここは互換のため値を据え置く。
+      finalPlayerLevel = oldPlayer;
 
       // **ジョブ XP は analysis に積まない** (#534)。記録先を権威 state (GameState.jobXp) に
       // 一本化したので、ここは**申告するだけ**。`analysis.jobLevel.xp` はベータ期間の記録として
@@ -288,31 +272,26 @@ export async function processSelfPost(
       // 先に待つと、edge のタイムアウト (最大 8 秒) の間にタブを閉じられたとき、
       // 認知スコアのブレンド・streak・playerLevel の更新ごと失われる。
       claim = async () => {
-        // **XP が 0 でも申告する。** 権威側のあおぞらパワーはこの申告でしか増えないので、
-        // ここで抜けると「分類が付かなかった投稿」ではパワーが 1 も増えない
-        // (その日 2 本目以降の雑談は action=null で gainedXp=0 になる)。
-        // client 台帳は投稿のたびに +1 するので、残高だけ増えて権威側は増えず、
-        // 「投稿すればパワーがたまる」と画面に出しながら実際はたまらない状態になる。
+        const arch = analysis.archetype;
+        // 前に落ちた申告があれば先に出し直す (サーバーは冪等なので安全)。
+        await flushPendingClaims((c) => serverClaimXp(agent, { archetype: c.archetype, postUri: c.postUri }).then(() => undefined));
         if (!postUri) return;
         try {
-          // **今の職 (analysis.archetype) に積む。** `oldJob.archetype` は凍結された
-          // ベータ期間の記録側の職なので、転職後は前の職を指す = XP が前職のバケツに入る。
-          const r = await serverClaimXp(agent, { kind: 'post', archetype: analysis.archetype, xp: gainedXp, key: postUri });
-          if (r.granted > 0 && r.granted < gainedXp) {
-            // 上限クランプで切られた = 上限の導出に漏れがある (デイリークエスト報酬を
-            // 足し忘れる等)。黙って消えると「投稿したのにレベルが上がらない」になるので残す。
-            console.warn(`xp claim clamped: ${gainedXp} -> ${r.granted}`);
-          }
+          // **額は送らない。** サーバーが投稿の実在を確かめてから決める (#551)。
+          const r = await serverClaimXp(agent, { archetype: arch, postUri });
+          forgetPendingClaim(postUri);
           if (r.granted > 0) {
-            // レベルアップ判定は**権威 state の値**で行う。申告前後の XP はサーバーが返すので、
-            // client 側の推測 (analysis の凍結値) と食い違わない。
-            const before = jobLevelFromXp(r.jobXp - r.granted, analysis.archetype);
-            const after = jobLevelFromXp(r.jobXp, analysis.archetype);
+            // レベルアップ判定は**権威 state の値**で行う。
+            const before = jobLevelFromXp(r.jobXp - r.granted, arch);
+            const after = jobLevelFromXp(r.jobXp, arch);
             if (after > before) jobLeveledUp = { from: before, to: after };
-            finalJobLevel = { archetype: analysis.archetype, xp: r.jobXp, joinedAt: oldJob.joinedAt };
+            finalJobLevel = { archetype: arch, xp: r.jobXp, joinedAt: oldJob.joinedAt };
           }
         } catch (e) {
           console.warn('xp claim failed', e);
+          // **覚えておいて次の投稿で出し直す。** ここで諦めると、PDS の一時障害だけで
+          // その投稿の XP が永久に消える (申告は投稿時にしか走らないため)。
+          rememberPendingClaim({ postUri, archetype: arch, at: Date.now() });
         }
       };
 
@@ -339,7 +318,7 @@ export async function processSelfPost(
         // archetype は固定 (post ごとには変えない)
         analyzedAt: analysis.analyzedAt,
         jobLevel: nextJobLevel,
-        playerLevel: nextPlayerLevel,
+        playerLevel: oldPlayer, // #551: XP は権威側。ここは据え置き
         ...(nextPendingArchetype
           ? { pendingArchetype: nextPendingArchetype, pendingArchetypeStreak: nextPendingStreak }
           : { pendingArchetype: undefined, pendingArchetypeStreak: undefined }),

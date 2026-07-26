@@ -132,7 +132,8 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
     () => (received ?? []).filter(q => rewardForMe(q, did ?? '', compMap.get(q.uri)) > 0),
     [received, compMap, did],
   );
-  // 受託して承認された分の累計経験値 (固定 100 XP/件)。現職 LV に加算。
+  // 受託して承認された件数 (questXpScalar は 件数 × 100 を返すので 100 で割る)。
+  // **XP には効かない** — クエスト完了の経験値は 2026-07-27 に廃止した。
   const questXpTotal = useMemo(() => questXpScalar(received ?? [], did ?? '', compMap), [received, compMap, did]);
 
   /** 受託者視点: 発注者 DID → 獲得 pt の合計 (per-assignee 承認ベース) */
@@ -200,14 +201,10 @@ function PortfolioView({ did, agent, isSelf, signedIn }: PortfolioViewProps) {
 
       {questXpTotal > 0 && (
         <section style={{ marginTop: '1em' }} className="dq-window">
-          <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>クエストで得た経験値</h3>
+          <h3 style={{ marginTop: 0, fontSize: '0.95em' }}>完了した依頼クエスト</h3>
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-            受託して完了したクエストで、累計
-            <strong style={{ color: 'var(--color-accent)' }}> {questXpTotal.toLocaleString()} XP</strong>{' '}
-            を獲得しました (1 件あたり 100 XP)。
-            <span style={{ display: 'block', marginTop: '0.3em', fontSize: '0.92em' }}>
-              ※ この経験値は<strong>現職 LV</strong> に加算されます。
-            </span>
+            受託して完了したクエストは{' '}
+            <strong style={{ color: 'var(--color-accent)' }}>{Math.round(questXpTotal / 100).toLocaleString()} 件</strong>。
           </div>
         </section>
       )}

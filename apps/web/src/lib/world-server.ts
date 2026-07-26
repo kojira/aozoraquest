@@ -26,6 +26,7 @@ const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
 const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
+const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
@@ -144,16 +145,16 @@ export function serverReset(agent: Agent): Promise<{ ok: true }> {
   return callEdge<{ ok: true }>(agent, LXM_RESET, '/api/world/reset', {});
 }
 
-export interface XpClaimResult { granted: number; jobXp: number; duplicate: boolean }
+export interface XpClaimResult { granted: number; jobXp: number; duplicate: boolean; power: number; streakDays: number }
 
 /**
- * 投稿 / クエストの XP を権威 state に申告する (#534)。
+ * 投稿を申告して XP を積む (#534 / #551)。
  *
- * `key` は**その出来事を一意に指すもの** — 投稿なら post の URI、クエストなら完了レコードの URI。
- * サーバーが直近 200 件を覚えていて、同じキーの再送では積まない。リトライしても二重に入らない。
- * サーバー側で種類ごとの上限にクランプされるので、戻り値の `granted` が申告額と違うことがある。
+ * **額は送らない — サーバーが決める。** 送るのは投稿の URI だけで、サーバーが
+ * 「実在する / 本人のもの / 新しい」を PDS に問い合わせて確かめてから払う。
+ * 同じ投稿の再送は積まれない (冪等)。
  */
-export function serverClaimXp(agent: Agent, input: { kind: 'post' | 'quest'; archetype: string; xp: number; key: string }): Promise<XpClaimResult> {
+export function serverClaimXp(agent: Agent, input: { archetype: string; postUri: string }): Promise<XpClaimResult> {
   return callEdge<XpClaimResult>(agent, LXM_XP_CLAIM, '/api/xp/claim', input);
 }
 
@@ -198,6 +199,25 @@ export function serverShopSell(agent: Agent, materialId: string, count: number, 
  *  `key` は冪等キー (同じ引き直しで二重に引かれない)。 */
 export function serverSpendPower(agent: Agent, reason: 'card-draw', key: string): Promise<{ power: number; spent: number; duplicate: boolean }> {
   return callEdge<{ power: number; spent: number; duplicate: boolean }>(agent, LXM_POWER_SPEND, '/api/power/spend', { reason, key });
+}
+
+export interface ServerPdsUsage {
+  usage: { limit: number | null; remaining: number | null; reset: number | null; policy: string | null; at: number; writes: number } | null;
+  /** 残量から計算した「あと何操作できるか」。 */
+  opsRemaining: number | null;
+  /** 1 操作あたりの point。 */
+  pointsPerOp: number;
+}
+
+/** **管理者専用**: PDS の書き込みレート残量を見る (#548)。**PDS 分割の潮時の判断材料**。
+ *  読み取りなので PDS の point は消費しない。 */
+export async function serverPdsUsage(agent: Agent): Promise<ServerPdsUsage> {
+  if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
+  const token = await serviceToken(agent, LXM_ADMIN_PDS_USAGE);
+  const res = await fetch(`${EDGE_URL}/api/admin/pds-usage`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
+  const data = (await res.json().catch(() => ({}))) as ServerPdsUsage & { error?: string };
+  if (!res.ok) throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
+  return data;
 }
 
 /** **管理者専用**: あおぞらパワーを権威 state に付与する。

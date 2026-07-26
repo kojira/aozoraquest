@@ -7,6 +7,7 @@ import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
 import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
 import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
 import { JobChangeAdmin } from '@/components/admin/job-change-admin';
+import { PdsUsageAdmin } from '@/components/admin/pds-usage-admin';
 import { DebugBattleSim } from '@/components/debug-battle-sim';
 
 /**
@@ -115,6 +116,8 @@ export function AdminDashboard() {
       {agent && did ? (
         <>
           {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
+          {/* PDS 分割の潮時を判断するための数字。本番でも見たいので devTools ゲートに入れない。 */}
+          <PdsUsageAdmin agent={agent} />
           {devTools && <PowerGrantAdmin agent={agent} did={did} />}
           {devTools && <JobChangeAdmin agent={agent} did={did} />}
           {devTools && <WorldResetAdmin agent={agent} did={did} />}
