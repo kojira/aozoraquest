@@ -233,6 +233,28 @@ export function effectiveJobXp(src: {
   return Math.max(0, (src.analysisXp ?? 0) + (src.battleXp ?? 0) + (src.questXp ?? 0));
 }
 
+/**
+ * 投稿で XP を得たときの「保存する値」と「レベルアップ判定」(#529/#530)。
+ *
+ * **この 2 つを取り違えると不可逆な事故になる**ので、1 つの関数にまとめて式を固定する:
+ *
+ * - **保存するのは投稿由来のみ** (`oldXp + gained`)。ここに `battleXp` を混ぜると
+ *   `GameState.jobXp` と**二重計上**になり、しかも次の投稿でさらに合算されて
+ *   指数的に増える。書き込み先はユーザー PDS なので**巻き戻せない**。
+ * - **判定は合算値**。投稿由来だけで判定すると、戦闘で稼いだ人に
+ *   「レベルアップ! Lv3 → Lv4」と出るのにステータス画面は Lv12、という食い違いになる。
+ */
+export function applyPostXp(
+  oldXp: number,
+  gained: number,
+  battleXp = 0,
+): { savedXp: number; leveledUp?: { from: number; to: number } } {
+  const savedXp = oldXp + gained; // ← battleXp を足さない (二重計上の防止)
+  const from = jobLevelFromXp(effectiveJobXp({ analysisXp: oldXp, battleXp }));
+  const to = jobLevelFromXp(effectiveJobXp({ analysisXp: savedXp, battleXp }));
+  return to > from ? { savedXp, leveledUp: { from, to } } : { savedXp };
+}
+
 /** 累計 XP から現職 LV を計算。**合算前の値を渡さないこと** — `effectiveJobXp` を通す (#529)。 */
 export function jobLevelFromXp(xp: number): number {
   let lv = 1;

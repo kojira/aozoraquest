@@ -175,7 +175,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   // 現職 Lv は **投稿由来 (analysis) + 戦闘由来 (権威 state)** の合算 (#529)。
   // 以前は analysis だけを見ていたので、戦闘で稼いだ XP が強さに一切反映されていなかった
   // (「けいけんち を N かくとく！」と表示しておいてレベルが上がらない)。
-  const jobLevel = jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp[archetype] }));
+  const jobLevel = jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype] }));
   const playerLevel = playerLevelFromXp(playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
@@ -300,7 +300,7 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   const matId = item === 'herb' ? 'herb' : 'sky-dew';
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp[archetype] })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
+  const c = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype] })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
   let healed = 0;
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
@@ -340,7 +340,7 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, jobXp, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const luk = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp[archetype] })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
+  const luk = playerCombatant(archetype, jobLevelFromXp(effectiveJobXp({ analysisXp: jobXp, battleXp: state.jobXp?.[archetype] })), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
   const tier = tierForDanger(regionDanger(regionOf(x, y)));
   const found = rollSearch((await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value, luk, tier);
   if (!found) return { found: null, materials: state.materials };

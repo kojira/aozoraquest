@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { effectiveJobXp, jobLevelFromXp, JOB_XP_CURVE, battleXpFor, XP_REWARDS, MONSTERS } from '../index.js';
+import { effectiveJobXp, applyPostXp, jobLevelFromXp, JOB_XP_CURVE, battleXpFor, XP_REWARDS, MONSTERS } from '../index.js';
 
 /**
  * 現職 XP の合算 (#529)。
@@ -35,20 +35,39 @@ describe('effectiveJobXp (#529)', () => {
     expect(jobLevelFromXp(withBattles)).toBeGreaterThan(1);
   });
 
-  it('レベルアップ判定は合算値・保存は出所ごと (二重計上の防止)', () => {
-    // 投稿でレベルが上がったかは **合算値** で判定しないと、戦闘で稼いだ人に
-    // 「レベルアップ! Lv3 → Lv4」と出るのにステータス画面は Lv12、という食い違いになる。
-    // 一方 analysis に**保存する**のは投稿由来のみ — 合算値を保存すると
-    // GameState.jobXp と二重計上になる。
-    const battleXp = 5000;
-    const before = 100;
-    const after = 100 + 30; // 投稿で 30 稼いだ
-    // 判定は合算値で
-    expect(jobLevelFromXp(effectiveJobXp({ analysisXp: after, battleXp })))
-      .toBeGreaterThanOrEqual(jobLevelFromXp(effectiveJobXp({ analysisXp: before, battleXp })));
-    // 合算値は投稿由来より必ず大きい (= 判定が投稿だけのときとズレる)
-    expect(jobLevelFromXp(effectiveJobXp({ analysisXp: after, battleXp })))
-      .toBeGreaterThan(jobLevelFromXp(after));
+  describe('applyPostXp — 保存は投稿由来のみ / 判定は合算値', () => {
+    // **保存側に battleXp が混ざると不可逆な事故になる**: GameState.jobXp と二重計上になり、
+    // しかも次の投稿でさらに合算されて指数的に増える。書き込み先はユーザー PDS なので
+    // 巻き戻せない。ここが唯一の防波堤なので厚めに固定する。
+
+    it('保存する XP に battleXp を混ぜない', () => {
+      for (const battleXp of [0, 1, 5000, 999999]) {
+        expect(applyPostXp(100, 30, battleXp).savedXp, `battleXp=${battleXp}`).toBe(130);
+      }
+    });
+
+    it('投稿を繰り返しても保存値が発散しない (二重計上が起きていない)', () => {
+      // 二重計上があると、保存値が battleXp を取り込んで指数的に増える。
+      let xp = 0;
+      for (let i = 0; i < 50; i++) xp = applyPostXp(xp, 5, 5000).savedXp;
+      expect(xp).toBe(250); // 5 XP × 50 回ぴったり
+    });
+
+    it('レベルアップ判定は合算値で行う', () => {
+      // 投稿由来だけでは Lv1→1 (上がらない) だが、戦闘 XP と合わせるとしきい値を跨ぐケース。
+      const lv2 = JOB_XP_CURVE.find((e) => e[0] === 2)![1];
+      const lv3 = JOB_XP_CURVE.find((e) => e[0] === 3)![1];
+      const battleXp = lv2;
+      const r = applyPostXp(lv3 - lv2 - 1, 2, battleXp); // 合算で lv3 を跨ぐ
+      expect(r.leveledUp).toBeDefined();
+      expect(r.leveledUp!.to).toBeGreaterThan(r.leveledUp!.from);
+      // 同じ投稿でも battleXp が無ければ跨がない = 判定が合算値である証拠
+      expect(applyPostXp(lv3 - lv2 - 1, 2, 0).leveledUp).toBeUndefined();
+    });
+
+    it('レベルが上がらなければ leveledUp を返さない', () => {
+      expect(applyPostXp(0, 1, 0).leveledUp).toBeUndefined();
+    });
   });
 
   it('戦闘 XP のスケールが投稿 XP と噛み合っている (オーナー確認 2026-07-25)', () => {
@@ -56,7 +75,7 @@ describe('effectiveJobXp (#529)', () => {
     // という設計。tier1 は投稿と同程度、上位 tier ほど濃い、という関係を固定する。
     // ここが崩れると「どこで XP を稼ぐのが正解か」の設計が黙って変わる。
     const avgOf = (tier: 1 | 2 | 3) => {
-      const ms = MONSTERS.filter((m) => m.tier === tier && m.id !== 'stray-slime');
+      const ms = MONSTERS.filter((m) => m.tier === tier && m.species !== 'metal-slime');
       return ms.reduce((s, m) => s + battleXpFor(m.id), 0) / ms.length;
     };
     const post = XP_REWARDS.postMatch;

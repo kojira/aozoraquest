@@ -28,6 +28,7 @@ import {
   cognitiveToRpg,
   determineArchetype,
   jobLevelFromXp,
+  applyPostXp,
   playerLevelFromXp,
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
@@ -276,12 +277,12 @@ export async function processSelfPost(
       finalPlayerLevel = nextPlayerLevel;
 
       // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)。
-      // **判定は合算値、保存は投稿由来のみ** — 保存に battleXp を混ぜると
-      // GameState.jobXp と二重計上になる (#530)。
-      const prevJobLv = jobLevelFromXp(oldJob.xp + battleXp);
-      const nextJobXp = oldJob.xp + gainedXp;
-      const nextJobLv = jobLevelFromXp(nextJobXp + battleXp);
-      if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
+      // 「保存は投稿由来のみ・判定は合算値」は applyPostXp が担保する (#530)。
+      // 保存に battleXp を混ぜると GameState.jobXp と二重計上になり、しかもユーザー PDS に
+      // 書かれるので巻き戻せない — なので式を core に固定してテストで守っている。
+      const applied = applyPostXp(oldJob.xp, gainedXp, battleXp);
+      const nextJobXp = applied.savedXp;
+      if (applied.leveledUp) jobLeveledUp = applied.leveledUp;
       const nextJobLevel: JobLevelState = {
         archetype: oldJob.archetype,
         xp: nextJobXp,

@@ -90,13 +90,13 @@ export function Spirit() {
           loadPointsState(agent, did),
           listReceivedQuests(agent, did).then(async (qs) => questXpScalar(qs, did, await loadCompletionsByUri(qs))).catch(() => 0),
           // 戦闘由来のジョブ XP (#530)。これを足さないと、精霊が実際より低いレベルで話しかけてくる。
-          worldServerEnabled ? serverState(agent).then((ss) => ss.state.jobXp ?? {}).catch(() => ({})) : Promise.resolve({}),
+          worldServerEnabled ? serverState(agent).then((ss) => ss.state.jobXp ?? {}).catch((): Record<string, number> => ({})) : Promise.resolve({}),
         ]);
         if (cancelled) return;
         setDiag(r);
         setPoints(p);
         setQuestXp(rxp);
-        setBattleXpByJob(bxp as Record<string, number>);
+        setBattleXpByJob(bxp);
       } catch (e) {
         console.warn('spirit init failed', e);
       } finally {

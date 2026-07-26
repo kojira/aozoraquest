@@ -9,7 +9,7 @@ import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
-import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, statVectorToArray, type DiagnosisResult } from '@aozoraquest/core';
+import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, effectiveJobXp, statVectorToArray, type DiagnosisResult } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -397,24 +397,34 @@ function ComposeDialog({
         void (async () => {
           try {
             // 戦闘由来の XP を先に取っておく (#530)。レベルアップ判定は合算値で行わないと、
-            // 戦闘で稼いだ人に「Lv3 → Lv4」と出るのにステータス画面は Lv12、という
-            // 食い違いになる。取れなければ 0 のまま (演出が出ないだけで保存値は変わらない)。
+            // 戦闘で稼いだ人に「Lv3 → Lv4」と出るのにステータス画面は Lv12、という食い違いになる。
+            //
+            // **取れなかったときは演出そのものを出さない**。0 で代用すると「edge が不調なときだけ
+            // 嘘の数字が出る」ことになり、症状は修正前と同じになるため。保存する XP は
+            // battleXp に依らないので、演出を省いてもデータは正しい。
             let battleXp = 0;
+            let battleXpKnown = !worldServerEnabled; // 権威 state 自体が無い構成では合算不要
             if (worldServerEnabled) {
               try {
-                const ss = await serverState(agent);
-                const arch0 = (await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self'))?.jobLevel?.archetype;
+                const [ss, analysis] = await Promise.all([
+                  serverState(agent),
+                  getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self'),
+                ]);
+                const arch0 = analysis?.jobLevel?.archetype;
                 if (arch0) battleXp = ss.state.jobXp?.[arch0] ?? 0;
-              } catch { /* best-effort — 取れなければ従来どおり投稿由来だけで判定 */ }
+                battleXpKnown = true;
+              } catch { /* best-effort — 演出を諦める (下の battleXpKnown 判定) */ }
             }
             const result = await processSelfPost(agent, did, body, structure, battleXp);
             // ステータス上昇量 (バトルのレベルアップ演出と同じ表示。オーナー要望
             // 2026-07-17)。プレイヤー Lv は戦闘値に影響しない (#507) ので区間はジョブ Lv だけ。
             const arch = result.jobLevel?.archetype;
             const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;
-            const jTo = result.jobLevel ? jobLevelFromXp(result.jobLevel.xp + battleXp) : 1;
+            const jTo = result.jobLevel
+              ? jobLevelFromXp(effectiveJobXp({ analysisXp: result.jobLevel.xp, battleXp }))
+              : 1;
             const jFrom = result.jobLeveledUp?.from ?? jTo;
-            if (result.jobLeveledUp && result.jobLevel) {
+            if (battleXpKnown && result.jobLeveledUp && result.jobLevel) {
               notifyLevelUp({
                 kind: 'job',
                 from: result.jobLeveledUp.from,

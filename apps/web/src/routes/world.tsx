@@ -120,8 +120,11 @@ export function World() {
   const agent = session.agent ?? null;
   const did = session.did ?? null;
   const [ws, setWs] = useState<Vitals | null>(null);
-  /** 権威 state の戦闘由来ジョブ XP (#529)。現職 Lv は analysis + これ の合算。 */
-  const [battleJobXp, setBattleJobXp] = useState(0);
+  /** 権威 state の**職ごと**戦闘 XP (#529)。現職 Lv は analysis + これ の合算。
+   *  **マップのまま持ち、キーの解決は描画時に行う** — fetch 時に `archetype` で引くと、
+   *  同じ effect 内で `setDiag` がまだ走っておらず `archetype` が null なので
+   *  常に 0 になる (レビューで検出。effect の deps に diag は入っていない)。 */
+  const [battleXpByJob, setBattleXpByJob] = useState<Record<string, number>>({});
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
@@ -250,7 +253,10 @@ export function World() {
   // (5 行コピペだと片方の base 導出変更で内訳が黙って壊れる — レビュー ★★)
   // 現職 XP は **投稿由来 (analysis) + 戦闘由来 (権威 state)** の合算 (#529)。
   // 片方だけ見ると、画面の Lv とサーバーが戦闘に使う Lv が食い違う。
-  const jobXpTotal = effectiveJobXp({ analysisXp: diag?.jobLevel?.xp, battleXp: battleJobXp });
+  const jobXpTotal = effectiveJobXp({
+    analysisXp: diag?.jobLevel?.xp,
+    battleXp: archetype ? battleXpByJob[archetype] : 0,
+  });
   const baseArgs = archetype
     ? ([
         archetype,
@@ -296,7 +302,7 @@ export function World() {
           const ss = await serverState(agent);
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
-            setBattleJobXp(ss.state.jobXp?.[archetype ?? ''] ?? 0); // 戦闘由来 XP (#529)
+            setBattleXpByJob(ss.state.jobXp ?? {}); // 戦闘由来 XP (#529)。キー解決は描画時
             if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
               px = ss.state.x; py = ss.state.y;
               // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
@@ -625,7 +631,16 @@ export function World() {
       for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
       const nameOf = (id: string) => ITEMS[id]?.name ?? id;
       const resultLines: string[] = [];
-      if (awarded.xp && awarded.xp > 0) resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
+      if (awarded.xp && awarded.xp > 0) {
+        resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
+        // 権威 state に確定したぶんを手元にも反映する (#529)。入場時のスナップショットのままだと、
+        // ワールドに入りっぱなしで戦い続けたときに **つよさ画面の Lv とサーバーが次の戦闘で使う
+        // Lv が食い違う**。サーバーが返した確定値を足すだけなので追加の往復は不要。
+        if (archetype) {
+          const gained = awarded.xp;
+          setBattleXpByJob((prev) => ({ ...prev, [archetype]: (prev[archetype] ?? 0) + gained }));
+        }
+      }
       for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を てにいれた！`);
       for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を おとしてしまった…`);
       if (next.outcome === 'lose') {
