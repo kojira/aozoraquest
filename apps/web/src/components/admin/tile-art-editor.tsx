@@ -34,11 +34,13 @@ import { saveTileArts } from '@/lib/world-authoring';
 /** 編集中の拡大率 (1 画素を何 px で見せるか)。 */
 const CELL = 22;
 
-export function TileArtEditor() {
+export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: string; name: string }[] } = {}) {
   const session = useSession();
   // **パーツ index ごとに絵を持つ。** 「縦の橋」のように通行判定は同じで絵だけ違う
   // パーツを足せるようにするため、地形 id ではなく index をキーにする。
-  const parts = worldParts();
+  // 呼び出し元 (マップ編集画面) が持つ一覧を優先する。別々に読むと、増やした直後に
+  // 片方だけ古い一覧を見て「足したパーツが絵タブに出てこない」になる。
+  const parts = partsIn ?? worldParts();
   const [partIndex, setPartIndex] = useState(0);
   const terrain = partKey(partIndex);
   const [size, setSize] = useState<number>(16);

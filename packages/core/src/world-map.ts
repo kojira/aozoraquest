@@ -164,7 +164,10 @@ export function registerWorldMapInvalidator(fn: () => void): void {
  */
 export function setWorldMap(map: WorldMap | null): void {
   if (!map) {
+    // **完全な解除は既定に戻す。** 地図が無い状態で増設パーツだけ残ると、
+    // index が指す先が無くなって palette と食い違う。
     loaded = null;
+    loadedParts = [...BASE_PARTS];
     invalidate?.();
     return;
   }
@@ -174,8 +177,13 @@ export function setWorldMap(map: WorldMap | null): void {
     throw new WorldMapError(`タイル数が合わない (${tiles.length} ≠ ${size}×${size})`);
   }
   // parts があればそれが正 (palette は後方互換)。
-  const palette = map.parts ? map.parts.map((p) => p.terrain) : (map.palette ?? BASE_PALETTE);
-  loadedParts = map.parts ? [...map.parts] : (map.palette ? map.palette.map((t) => ({ terrain: t, name: t })) : [...BASE_PARTS]);
+  //
+  // **指定が無いときは今のパーツを消さない。** 以前は BASE_PARTS に戻していたため、
+  // 増やしたパーツ (「たての橋」等) が、地図を読み直した瞬間に一覧から消えていた
+  // (`loadStaticWorldMap` は parts を渡さない)。パーツは地図とは別の寿命を持つ。
+  if (map.parts) loadedParts = [...map.parts];
+  else if (map.palette) loadedParts = map.palette.map((t) => ({ terrain: t, name: t }));
+  const palette = loadedParts.map((p) => p.terrain);
   if (palette.length > PALETTE_MAX) {
     throw new WorldMapError(`パレットが多すぎる (${palette.length} > ${PALETTE_MAX})`);
   }

@@ -201,4 +201,22 @@ describe('地形の地図 (#421)', () => {
     setWorldParts([...BASE_PARTS, { terrain: 'bridge', name: 'はし', walkable: false }]);
     expect(isWalkableAt(0, 0)).toBe(false);
   });
+
+  it('**地図を読み直しても増やしたパーツが消えない**', () => {
+    // 「たての橋」を足したあと別のパーツを編集して保存したら一覧から消えた、という
+    // 事故が起きた。setWorldMap が parts 未指定のときに既定へ戻していたため
+    // (loadStaticWorldMap は parts を渡さない)。パーツは地図とは別の寿命を持つ。
+    const tiles = new Uint8Array(SIZE * SIZE);
+    setWorldMap({ tiles, size: SIZE, parts: [...BASE_PARTS, { terrain: 'bridge', name: 'たての橋' }] });
+    expect(worldParts()).toHaveLength(9);
+
+    // 地図だけ読み直す (parts を渡さない)
+    setWorldMap({ tiles: new Uint8Array(SIZE * SIZE), size: SIZE });
+    expect(worldParts(), '地図の読み直しでパーツが消えた').toHaveLength(9);
+    expect(worldParts()[8]?.name).toBe('たての橋');
+
+    // 明示的に渡したときだけ入れ替わる
+    setWorldMap({ tiles, size: SIZE, parts: [...BASE_PARTS] });
+    expect(worldParts()).toHaveLength(8);
+  });
 });
