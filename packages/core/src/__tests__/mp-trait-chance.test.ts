@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { startBattle, resolveTurn, resolveTurnMulti, JOB_MP_TRAITS, mpGainsFor, JOBS, type Command } from '../index.js';
+import { startBattle, resolveTurn, resolveTurnMulti, mpTraitChanceOf, BATTLE_TUNING, JOB_MP_TRAITS, mpGainsFor, JOBS, type Command } from '../index.js';
 
 /**
  * **パラディンの MP 回復は確率発動** (#564)。回復とくぎ (聖光の癒し) と
@@ -34,9 +34,12 @@ describe('MP 特性の確率発動 (#564)', () => {
       if (after.player.mp > s.player.mp) fired++;
     }
     const rate = fired / N;
-    // 従来は 1.0 (毎回)。0 でも 1 でもないこと + 設定値の周辺であることを見る。
-    expect(rate, `発動率 ${rate}`).toBeGreaterThan(0.35);
-    expect(rate, `発動率 ${rate}`).toBeLessThan(0.65);
+    // **state が持つ実効確率と突き合わせる。** 固定値と比べると、うんの係数を変えたときに
+    // どちらが正しいのか分からなくなる。0 でも 1 でもないことも同時に見る。
+    const expected = startBattle('paladin', 10, 1, 'x', 1, 0, 0).mpTraitChance!;
+    expect(expected, '実効確率').toBeGreaterThan(0);
+    expect(expected, '実効確率').toBeLessThan(1);
+    expect(Math.abs(rate - expected), `発動率 ${rate} / 期待 ${expected}`).toBeLessThan(0.08);
   });
 
   it('chance の無いジョブは毎ターン必ず回復する (退行検知)', () => {
@@ -95,14 +98,46 @@ describe('MP 特性の確率発動 (#564)', () => {
       }
       return fired / N;
     };
+    const expected = startBattle('paladin', 10, 1, 'x', 1, 0, 0).mpTraitChance!;
     for (const [label, r] of [
       ['ソロ ぼうぎょ', rate('guard', false)],
       ['ソロ たたかう', rate('attack', false)],
       ['マルチ ぼうぎょ', rate('guard', true)],
       ['マルチ たたかう', rate('attack', true)],
     ] as Array<[string, number]>) {
-      expect(r, `${label} の発動率 ${r} — 1.0 なら確率ゲートが外れている`).toBeGreaterThan(0.35);
-      expect(r, `${label} の発動率 ${r} — 1.0 なら確率ゲートが外れている`).toBeLessThan(0.65);
+      expect(Math.abs(r - expected), `${label} の発動率 ${r} (期待 ${expected}) — 1.0 ならゲートが外れている`)
+        .toBeLessThan(0.09);
     }
+  });
+
+  it('うん が高いほど出やすく、上限で頭打ちになる', () => {
+    const t = BATTLE_TUNING;
+    // 基準値 + うん × 係数。うん 0 なら基準値そのもの。
+    expect(mpTraitChanceOf(0.5, 0)).toBe(0.5);
+    expect(mpTraitChanceOf(0.5, 50)).toBeCloseTo(0.5 + 50 * t.mpTraitLukScale, 10);
+    // 上限を超えない (Lv50 のパラディンは装備込みで うん 112 まで伸びる)
+    expect(mpTraitChanceOf(0.5, 1000)).toBe(t.mpTraitChanceMax);
+    // 特性なし (chance 未指定) は undefined のまま = 毎ターン確実
+    expect(mpTraitChanceOf(undefined, 50)).toBeUndefined();
+
+    // 実戦の state にも効いている: レベルが上がる = うんが上がる = 確率が上がる
+    const at = (lv: number) => startBattle('paladin', lv, 1, 'x', 1, 1).mpTraitChance!;
+    expect(at(1)).toBeLessThan(at(20));
+    expect(at(20)).toBeLessThan(at(30));
+    // **上限に早く届かせない**: 裸の最高レベルでもまだ頭打ちになっていないこと
+    // (届いてしまうとそこから先は うん を盛っても確率が動かず、装備を選ぶ動機が消える)
+    expect(at(50), '裸 Lv50 で頭打ちになっている').toBeLessThan(t.mpTraitChanceMax);
+
+    // **装備のうんも乗る** (パラディンの専用武器は luk 型なので、盛ると祈りが通りやすくなる)
+    const bare = startBattle('paladin', 20, 1, 'x', 1, 1).mpTraitChance!;
+    const geared = startBattle('paladin', 20, 1, 'x', 1, 1, 0, undefined,
+      { gear: { weapon: { id: 'wp-paladin-high', level: 3 } } }).mpTraitChance!;
+    expect(geared).toBeGreaterThan(bare);
+
+    // 到達しうる最大 (Lv50 × 最良装備 +10) でちょうど上限に触れる = 全域で うん が効く
+    const maxed = startBattle('paladin', 50, 1, 'x', 1, 1, 0, undefined, {
+      gear: { weapon: { id: 'wp-paladin-high', level: 10 }, armor: { id: 'ar-cloth', level: 10 }, charm: { id: 'ch-life', level: 10 } },
+    }).mpTraitChance!;
+    expect(maxed).toBe(t.mpTraitChanceMax);
   });
 });

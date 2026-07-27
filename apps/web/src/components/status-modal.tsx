@@ -168,8 +168,9 @@ export function StatusModal({
                   とくせい: <strong>{mpTrait.traitName}</strong>{' '}
                   <span style={{ color: 'var(--color-muted)' }}>
                     {/* 確率発動の特性は「ときどき」を付ける (毎回もらえると誤読させない)。
-                        確率の数値そのものは出さない。 */}
-                    ({mpTrait.chance !== undefined ? 'ときどき ' : ''}
+                        確率の数値は出さないが、**うんで上がることは出す** — 装備で
+                        うんを盛る動機になる情報で、知らないと選べない。 */}
+                    ({mpTrait.chance !== undefined ? 'ときどき (うん で上がる) ' : ''}
                     たたかう MP +{mpTrait.attackGain} / ぼうぎょ MP +{mpTrait.guardGain})
                   </span>
                 </div>
