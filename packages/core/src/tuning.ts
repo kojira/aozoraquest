@@ -64,6 +64,7 @@ export const JOB_LEVEL_PACE: Record<string, number> = {
   bard: 0.48, // 3.6 戦
   poet: 0.52, // 4.3 戦
   miko: 0.53, // 4.6 戦
+  paladin: 0.53, // 7.2 戦 (MP 回復を確率化して 12.5 → 7.2。poet 7.0 と artist 7.9 の間に補間)
   sage: 0.54, // 5.0 戦
   seer: 0.55, // 5.2 戦
   artist: 0.57, // 5.8 戦
@@ -73,7 +74,6 @@ export const JOB_LEVEL_PACE: Record<string, number> = {
   fighter: 0.67, // 9.2 戦
   explorer: 0.67, // 9.2 戦
   guardian: 0.70, // 10.3 戦
-  paladin: 0.75, // 12.5 戦
   captain: 0.87, // 19.3 戦
   shogun: 1.0, // 28.6 戦 (= 基準。ここが上限なので誰も基準曲線より遅くならない)
 };
