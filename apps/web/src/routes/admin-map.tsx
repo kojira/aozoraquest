@@ -16,6 +16,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveWorldMap } from '@/lib/world-authoring';
 import { TERRAIN_TILES, fallbackTile, pixelTile } from '@/components/world-tiles';
+import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
 /**
  * **マップエディタ (専用画面)** (#421)。
@@ -52,6 +53,8 @@ export function AdminMap() {
   const [tick, setTick] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // 地図とパーツの絵は**同じ画面で行き来する**もの (置いてみて絵を直す、の繰り返し)。
+  const [tab, setTab] = useState<'map' | 'art'>('map');
   const painting = useRef(false);
 
   useEffect(() => {
@@ -159,7 +162,22 @@ export function AdminMap() {
       <p style={{ fontSize: '0.85em', marginBottom: '0.4em' }}>
         <Link to="/admin">← 管理ダッシュボード</Link>
       </p>
-      <h2 style={{ fontSize: '1.05em', margin: '0 0 0.3em' }}>マップエディタ</h2>
+      <h2 style={{ fontSize: '1.05em', margin: '0 0 0.4em' }}>マップエディタ</h2>
+      <div style={{ display: 'flex', gap: '0.3em', marginBottom: '0.6em' }}>
+        {([['map', '地図を編集'], ['art', 'パーツの絵']] as const).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            style={{
+              fontSize: '0.85em', padding: '0.3em 0.8em',
+              border: tab === k ? '3px solid var(--color-accent)' : '1px solid var(--color-border)',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em', lineHeight: 1.8 }}>
         パーツを選んで置く。置いただけでは何も起きない。<br />
         <strong>ためす</strong> = 自分のブラウザでだけ反映する。この状態で <code>/world</code> を開くと
@@ -170,7 +188,9 @@ export function AdminMap() {
 
       {note && <p style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>{note}</p>}
 
-      {!ready ? (
+      {tab === 'art' ? (
+        <TileArtEditor />
+      ) : !ready ? (
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>地図を読み込んでいる…</p>
       ) : (
         <>

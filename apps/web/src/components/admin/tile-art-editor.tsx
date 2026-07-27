@@ -35,7 +35,9 @@ export function TileArtEditor() {
   const session = useSession();
   const [terrain, setTerrain] = useState<string>(BASE_PALETTE[0]!);
   const [size, setSize] = useState<number>(16);
-  const [art, setArt] = useState<TileArt>(() => tileArtFor(BASE_PALETTE[0]!) ?? emptyTileArt(16));
+  // **初期表示も代表色の下敷きから始める。** emptyTileArt だと全画素が透明で、
+  // 開いた瞬間は市松模様しか出ず「壊れている」ように見える (実機で確認)。
+  const [art, setArt] = useState<TileArt>(() => tileArtFor(BASE_PALETTE[0]!) ?? seedFromColor(BASE_PALETTE[0]!, 16));
   const [color, setColor] = useState(1);
   const [note, setNote] = useState<string | null>(null);
   const painting = useRef(false);
@@ -91,7 +93,7 @@ export function TileArtEditor() {
     void file.text().then((txt) => {
       try {
         loadTileArts(JSON.parse(txt));
-        setArt(tileArtFor(terrain) ?? emptyTileArt(size));
+        setArt(tileArtFor(terrain) ?? seedFromColor(terrain, size));
         setNote('読み込んだ');
       } catch (e) {
         setNote(`読み込めなかった: ${String(e)}`);
@@ -110,7 +112,7 @@ export function TileArtEditor() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>タイルのドット絵</h3>
+      <h3 style={{ fontSize: '0.95em', marginTop: 0 }}>パーツの絵 (ドット絵)</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         地形の見た目を画素で描く。描いた絵は<strong>従来の SVG より優先</strong>して使われ、
         絵が無い地形は代表色のべた塗りになるので、<strong>描く前でも編集は止まらない</strong>。
@@ -134,7 +136,7 @@ export function TileArtEditor() {
             onChange={(e) => {
               const n = Number(e.target.value);
               setSize(n);
-              setArt(emptyTileArt(n));
+              setArt(tileArtFor(terrain) ?? seedFromColor(terrain, n));
             }}
           >
             {TILE_ART_SIZES.map((n) => <option key={n} value={n}>{n}×{n}</option>)}
