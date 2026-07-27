@@ -3,8 +3,11 @@ import { Link } from 'react-router-dom';
 import {
   BASE_PALETTE,
   WORLD_SIZE,
+  MAX_TOWN_NAME,
   editorColorAt,
   encodeWorldMap,
+  setTownOverrides,
+  worldTownOverrides,
   loadStaticWorldMap,
   setWorldMap,
   worldMapTiles,
@@ -55,6 +58,11 @@ export function AdminMap() {
   const [note, setNote] = useState<string | null>(null);
   // 地図とパーツの絵は**同じ画面で行き来する**もの (置いてみて絵を直す、の繰り返し)。
   const [tab, setTab] = useState<'map' | 'art'>('map');
+  // **街モード**。地形の「街」パーツを置いただけでは、名前も店も宿も無い
+  // 「街に見えるだけの通れるマス」にしかならない。街そのものは別データなので、
+  // 置くときに名前を聞いて差分に積む。
+  const [townMode, setTownMode] = useState(false);
+  const [townTick, setTownTick] = useState(0);
   const painting = useRef(false);
 
   useEffect(() => {
@@ -83,6 +91,41 @@ export function AdminMap() {
     setDirty(true);
     setTick((n) => n + 1);
   }, [brush, origin]);
+
+  /**
+   * 街を置く / 消す。**地形と街データの両方を動かす。**
+   * 地形だけ「街」にすると名前も店も宿も無いマスになり、街データだけ足すと
+   * 地形が海のままの街ができる。片方だけ触れないようにここでまとめる。
+   */
+  const editTown = useCallback((cx: number, cy: number) => {
+    const tiles = draftRef.current;
+    if (!tiles) return;
+    const wx = wrap(origin.x + cx);
+    const wy = wrap(origin.y + cy);
+    const existing = worldOverlay().townMap.get(wy * WORLD_SIZE + wx);
+    const input = window.prompt(
+      existing ? `街の名前 (空にすると消す)` : `新しい街の名前 (最大 ${MAX_TOWN_NAME} 文字)`,
+      existing?.name ?? '',
+    );
+    if (input === null) return; // キャンセル
+    const name = input.trim();
+    const rest = worldTownOverrides().filter((t) => wrap(t.x) !== wx || wrap(t.y) !== wy);
+    try {
+      if (name === '') {
+        setTownOverrides([...rest, { x: wx, y: wy }]); // 名前なし = 消す
+        setNote(`(${wx}, ${wy}) の街を消した`);
+      } else {
+        setTownOverrides([...rest, { x: wx, y: wy, name }]);
+        tiles[wy * WORLD_SIZE + wx] = BASE_PALETTE.indexOf('town');
+        setNote(`(${wx}, ${wy}) に「${name}」を置いた。店の品揃えは座標から決まる`);
+      }
+      setDirty(true);
+      setTick((n) => n + 1);
+      setTownTick((n) => n + 1);
+    } catch (e) {
+      setNote(String(e));
+    }
+  }, [origin]);
 
   /**
    * **保存せずに、自分のブラウザでだけ試す。**
@@ -129,6 +172,7 @@ export function AdminMap() {
     const tiles = draftRef.current;
     if (!tiles) return [];
     void tick;
+    void townTick;
     const out: Array<{ cx: number; cy: number; t: Terrain; town: string | null }> = [];
     for (let cy = 0; cy < ROWS; cy++) {
       for (let cx = 0; cx < COLS; cx++) {
@@ -141,7 +185,7 @@ export function AdminMap() {
       }
     }
     return out;
-  }, [origin, tick, ready]);
+  }, [origin, tick, townTick, ready]);
 
   if (!admin) {
     return (
@@ -183,7 +227,10 @@ export function AdminMap() {
         <strong>ためす</strong> = 自分のブラウザでだけ反映する。この状態で <code>/world</code> を開くと
         歩いて確かめられる。他の人には見えず、リロードすると戻る。<br />
         <strong>みんなに反映</strong> = 保存して全員に配る。移動判定はサーバーが正なので、
-        サーバーが拾うまで最大 5 分かかる。
+        サーバーが拾うまで最大 5 分かかる。<br />
+        <strong>街をおく</strong> にすると、押したマスに街を作る (名前を聞く)。
+        <strong>地形の「街」パーツを置いただけでは街にならない</strong> —
+        名前も店も宿も無い、通れるだけのマスになる。
       </p>
 
       {note && <p style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>{note}</p>}
@@ -222,6 +269,9 @@ export function AdminMap() {
             </label>
             <label>
               <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} /> グリッド
+            </label>
+            <label title="マスを押すと名前を聞く。空にすると街を消す">
+              <input type="checkbox" checked={townMode} onChange={(e) => setTownMode(e.target.checked)} /> 街をおく
             </label>
             <span style={{ color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
               ({origin.x}, {origin.y}) 〜 ({wrap(origin.x + COLS - 1)}, {wrap(origin.y + ROWS - 1)})
@@ -273,8 +323,12 @@ export function AdminMap() {
                   key={`h-${cx}-${cy}`}
                   x={cx * 32} y={cy * 32} width={32} height={32}
                   fill="transparent"
-                  onMouseDown={() => { painting.current = true; place(cx, cy); }}
-                  onMouseEnter={() => { if (painting.current) place(cx, cy); }}
+                  onMouseDown={() => {
+                    if (townMode) { editTown(cx, cy); return; }
+                    painting.current = true;
+                    place(cx, cy);
+                  }}
+                  onMouseEnter={() => { if (painting.current && !townMode) place(cx, cy); }}
                 />
               ))}
             </svg>

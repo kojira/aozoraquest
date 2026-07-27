@@ -247,3 +247,50 @@ export function loadStaticWorldMap(size = 1024): Promise<void> {
   });
   return staticLoad;
 }
+
+// ─── 街の差分 ─────────────────────────────────────────────
+//
+// **街は画像で表せない。** 地形は 1 タイル 1 バイトで済むが、街は名前を持ち、
+// 店の品揃えも座標から導出される。地図に「街」パーツを置いただけでは
+// **街に見えるだけの通れるマス**にしかならない (名前も店も宿も無い) ので、
+// 街そのものは別のデータとして差分で持つ。
+
+/** 街 1 件の差分。`name` が無ければ「その座標の街を消す」。 */
+export interface TownOverride {
+  x: number;
+  y: number;
+  name?: string;
+}
+
+/** 街の差分の上限。既定は 53 件なので、増やすとしても現実的な範囲に収める。 */
+export const MAX_TOWN_OVERRIDES = 500;
+/** 街の名前の最大長 (UI と PDS レコードが破綻しない範囲)。 */
+export const MAX_TOWN_NAME = 24;
+
+let townOverrides: TownOverride[] = [];
+
+/**
+ * 街の差分を差し替える。`null` / 空配列で解除。
+ * **壊れた 1 件で全体を落とす** — 一部だけ通すと、どれが落ちたか分からない。
+ */
+export function setTownOverrides(next: TownOverride[] | null): void {
+  const list = next ?? [];
+  if (list.length > MAX_TOWN_OVERRIDES) {
+    throw new WorldMapError(`街の差分が多すぎる (${list.length} > ${MAX_TOWN_OVERRIDES})`);
+  }
+  for (const t of list) {
+    if (!Number.isInteger(t.x) || !Number.isInteger(t.y)) {
+      throw new WorldMapError(`街の座標が整数でない (${t.x}, ${t.y})`);
+    }
+    if (t.name !== undefined && (t.name.trim() === '' || t.name.length > MAX_TOWN_NAME)) {
+      throw new WorldMapError(`街の名前が不正 (${JSON.stringify(t.name)})`);
+    }
+  }
+  townOverrides = list.map((t) => ({ ...t }));
+  invalidate?.();
+}
+
+/** 適用中の街の差分。 */
+export function worldTownOverrides(): readonly TownOverride[] {
+  return townOverrides;
+}

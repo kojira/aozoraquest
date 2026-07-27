@@ -17,7 +17,7 @@ import { MAX_POPULATED_TIER, type Tier } from './battle.js';
  */
 
 import { WORLD_DATA } from './world-data.js';
-import { mappedTerrainAt, registerWorldMapInvalidator } from './world-map.js';
+import { mappedTerrainAt, registerWorldMapInvalidator, worldTownOverrides } from './world-map.js';
 
 // ─── 定数 ───────────────────────────────────────────────────
 
@@ -452,7 +452,19 @@ export function computeWorldOverlay(): WorldOverlayData {
  */
 export function worldOverlay(): WorldOverlay {
   if (cachedOverlay) return cachedOverlay;
-  const { towns, bridgeTiles, bridgeSpans, spawn } = WORLD_DATA;
+  const { bridgeTiles, bridgeSpans, spawn } = WORLD_DATA;
+  // **街は手編集の差分を重ねてから組む** (#421)。名前の無い差分はその座標の街を消す。
+  // 座標をキーにするので、動かす = 元の座標を消して新しい座標に足す。
+  const byKey = new Map<number, Town>();
+  for (const tn of WORLD_DATA.towns) byKey.set(tn.y * WORLD_SIZE + tn.x, tn);
+  for (const o of worldTownOverrides()) {
+    const x = wrap(o.x);
+    const y = wrap(o.y);
+    const k = y * WORLD_SIZE + x;
+    if (o.name === undefined) byKey.delete(k);
+    else byKey.set(k, { x, y, region: regionOf(x, y), name: o.name });
+  }
+  const towns = [...byKey.values()];
   const overlayMap = new Map<number, 'town' | 'bridge'>();
   const townMap = new Map<number, Town>();
   for (const b of bridgeTiles) overlayMap.set(b.y * WORLD_SIZE + b.x, 'bridge');
@@ -460,7 +472,7 @@ export function worldOverlay(): WorldOverlay {
     overlayMap.set(tn.y * WORLD_SIZE + tn.x, 'town');
     townMap.set(tn.y * WORLD_SIZE + tn.x, tn);
   }
-  cachedOverlay = { towns: [...towns], bridgeTiles: [...bridgeTiles], bridgeSpans, spawn, overlayMap, townMap };
+  cachedOverlay = { towns, bridgeTiles: [...bridgeTiles], bridgeSpans, spawn, overlayMap, townMap };
   return cachedOverlay;
 }
 

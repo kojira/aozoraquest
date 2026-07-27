@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setWorldMap, WORLD_SIZE } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setTownOverrides, setWorldMap, WORLD_SIZE, type TownOverride } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -26,6 +26,8 @@ interface WorldMapRecord {
   size?: number;
   gz?: string;
   palette?: string[];
+  /** 街の差分。**地形の画像では表せない**ので別枠 (名前・店の導出元になる)。 */
+  towns?: TownOverride[];
 }
 interface TileArtCollectionRecord {
   arts?: Record<string, { size: number; palette: string[]; pixels: string }>;
@@ -78,6 +80,7 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
         size: map.value.size || WORLD_SIZE,
         ...(map.value.palette ? { palette: map.value.palette } : {}),
       });
+      setTownOverrides(map.value.towns ?? null);
     }
     const art = await getRecord<TileArtCollectionRecord>(pds, did, `${nsid}.world.tileArt`, RKEY);
     if (art?.value?.arts) loadTileArts(art.value.arts);
