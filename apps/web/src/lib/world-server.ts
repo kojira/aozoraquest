@@ -25,6 +25,7 @@ const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
 const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
+const LXM_SHOP_DISCARD = 'app.aozoraquest.shop.discard';
 const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
 const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
 
@@ -195,6 +196,17 @@ export function serverShopCraft(agent: Agent, itemId: string, rkey: string): Pro
  *  消費する個体は**権威側の所持から**探すので、持っていない rkey は通らない。 */
 export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: string): Promise<ServerShopResult> {
   return callEdge<ServerShopResult>(agent, LXM_SHOP_FORGE, '/api/shop/forge', { rkeys, rkey });
+}
+
+/**
+ * もちもの: 装備を すてる (#575)。
+ *
+ * **街の外でも呼べる** — 所持上限に達すると制作も購入も断られるので、街に着くまで
+ * 整理できないと詰む。**パワーは返らない** (返すと「作る → すてる」でパワーが増える)。
+ * まとめて渡せる (1 個ずつだと 100 個の整理で 100 往復になる)。
+ */
+export function serverShopDiscard(agent: Agent, rkeys: string[], rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_DISCARD, '/api/shop/discard', { rkeys, rkey });
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */

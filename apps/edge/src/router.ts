@@ -14,7 +14,7 @@ import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } from './xp-claim';
-import { shopCraft, shopSell, shopForge, ShopError } from './shop';
+import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { signPosition, verifyPosition } from './world-token';
 import { ServerWriteError } from './server-pds';
@@ -59,6 +59,7 @@ const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
 const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
+const LXM_SHOP_DISCARD = 'app.aozoraquest.shop.discard';
 const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
 const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
 
@@ -422,6 +423,31 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const ns = nsFromOrigin(req);
       const pos = positionFrom(env, body.token, did);
       return cors(json(await shopForge(env, did, { rkeys: pair, rkey: body.rkey, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // もちもの: 装備を すてる (#575)。**街の外でもできる** — 上限に達すると制作も購入も
+  // 断られるので、街に着くまで整理できないと詰む。パワーは返さない。
+  if (req.method === 'POST' && url.pathname === '/api/shop/discard') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_DISCARD }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { rkeys?: unknown; rkey?: unknown };
+    const rkeys = Array.isArray(body.rkeys) && body.rkeys.length > 0 && body.rkeys.every((v) => typeof v === 'string')
+      ? (body.rkeys as string[]) : null;
+    if (!rkeys || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      return cors(json(await shopDiscard(env, did, { rkeys, rkey: body.rkey }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

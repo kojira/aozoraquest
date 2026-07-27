@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { EQUIPMENT_BY_ID, SALE_TUNING, townShopStock, worldOverlay } from '@aozoraquest/core';
-import { shopCraft, shopSell, shopForge, ShopError, MAX_SHOP_OPS } from '../src/shop';
+import { shopCraft, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES } from '../src/shop';
 import { sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
@@ -274,5 +274,91 @@ describe('レビュー指摘の回帰 (#551)', () => {
     await expect(
       shopCraft(env, DID, { itemId: ITEM.id, rkey: 'p1', luk: 0, pos: { x: TOWN.x + 9, y: TOWN.y + 9 } }, NOW),
     ).rejects.toMatchObject({ code: 'not_in_town' });
+  });
+});
+
+describe('所持上限と すてる (#575)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+
+  const fullPieces = () =>
+    Array.from({ length: MAX_OWNED_PIECES }, (_, i) => ({ rkey: `p${i}`, itemId: ITEM.id, level: 0 }));
+
+  it('上限に達したら制作を断る (黙って古い個体を消さない)', async () => {
+    const pieces = fullPieces();
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await expect(shopCraft(env, DID, { itemId: ITEM.id, rkey: 'new', luk: 10, pos: { x: TOWN.x, y: TOWN.y } }, NOW))
+      .rejects.toMatchObject({ code: 'pieces_full' });
+    // **1 個も消えていない**こと (リングにして古いものを捨てる実装への退行検知)
+    expect(stored(store).pieces).toHaveLength(MAX_OWNED_PIECES);
+    expect(stored(store).pieces!.map((x) => x.rkey)).toContain('p0');
+    // パワーも引かれていない
+    expect(stored(store).power).toBe(999);
+  });
+
+  it('上限の 1 つ手前なら作れる (オフバイワンで作れなくなっていない)', async () => {
+    const pieces = fullPieces().slice(0, MAX_OWNED_PIECES - 1);
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await shopCraft(await Promise.resolve(env), DID, { itemId: ITEM.id, rkey: 'new', luk: 10, pos: { x: TOWN.x, y: TOWN.y } }, NOW);
+    expect(stored(store).pieces).toHaveLength(MAX_OWNED_PIECES);
+  });
+
+  it('すてると個体が減り、パワーは返らない', async () => {
+    const pieces = [
+      { rkey: 'a', itemId: ITEM.id, level: 0 },
+      { rkey: 'b', itemId: ITEM.id, level: 3 },
+      { rkey: 'c', itemId: ITEM.id, level: 1 },
+    ];
+    const { fn, store } = statefulPds(stateAt({ pieces, power: 50 }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    const r = await shopDiscard(env, DID, { rkeys: ['a', 'c'], rkey: 'd1' }, NOW);
+    expect(r.pieces!.map((x) => x.rkey)).toEqual(['b']);
+    // **パワーは返らない** (返すと「作る → すてる」でパワーが増える経路になる)
+    expect(stored(store).power).toBe(50);
+  });
+
+  it('街の外でも すてられる (上限で詰まないため)', async () => {
+    const { fn } = statefulPds(stateAt({ pieces: [{ rkey: 'a', itemId: ITEM.id, level: 0 }], x: TOWN.x + 9, y: TOWN.y + 9 }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    const r = await shopDiscard(env, DID, { rkeys: ['a'], rkey: 'd2' }, NOW);
+    expect(r.pieces).toEqual([]);
+  });
+
+  it('持っていない個体が 1 つでも混ざっていたら全部断る (部分適用しない)', async () => {
+    const pieces = [{ rkey: 'a', itemId: ITEM.id, level: 0 }, { rkey: 'b', itemId: ITEM.id, level: 0 }];
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await expect(shopDiscard(env, DID, { rkeys: ['a', 'zzz'], rkey: 'd3' }, NOW))
+      .rejects.toMatchObject({ code: 'not_owned' });
+    expect(stored(store).pieces).toHaveLength(2); // a も残っている
+  });
+
+  it('同じ rkey で 2 回すてても二重に減らない (冪等)', async () => {
+    const pieces = [{ rkey: 'a', itemId: ITEM.id, level: 0 }, { rkey: 'b', itemId: ITEM.id, level: 0 }];
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await shopDiscard(env, DID, { rkeys: ['a'], rkey: 'd4' }, NOW);
+    const again = await shopDiscard(env, DID, { rkeys: ['a'], rkey: 'd4' }, NOW);
+    expect(again.duplicate).toBe(true);
+    expect(stored(store).pieces!.map((x) => x.rkey)).toEqual(['b']);
+  });
+
+  it('きたえるは上限に当たらない (個体が減る操作なので)', async () => {
+    const pieces = fullPieces();
+    pieces[0] = { rkey: 'x1', itemId: ITEM.id, level: 2 };
+    pieces[1] = { rkey: 'x2', itemId: ITEM.id, level: 2 };
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await shopForge(env, DID, { rkeys: ['x1', 'x2'], rkey: 'f1', pos: { x: TOWN.x, y: TOWN.y } }, NOW);
+    expect(stored(store).pieces).toHaveLength(MAX_OWNED_PIECES - 1);
   });
 });

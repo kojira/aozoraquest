@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EQUIPMENT_BY_ID,
   canEquip,
@@ -38,6 +38,8 @@ export function GearModal({
   refs,
   onEquip,
   onUnequip,
+  onDiscard,
+  busy = false,
   onClose,
 }: {
   archetype: Archetype | null;
@@ -47,9 +49,14 @@ export function GearModal({
   refs: GearRefs;
   onEquip: (slot: EquipSlot, rkey: string) => void;
   onUnequip: (slot: EquipSlot) => void;
+  /** すてる (#575)。所持上限があるので整理できないと詰む。街の外でもできる。 */
+  onDiscard: (rkey: string) => void;
+  busy?: boolean;
   onClose: () => void;
 }) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  // すてるは取り消せないので 2 段階。強化した品を 1 タップで失わせない。
+  const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
   useEffect(() => {
     closeBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
@@ -155,15 +162,47 @@ export function GearModal({
                           </span>
                           {isEquipped ? (
                             <span style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>そうび中</span>
+                          ) : confirmDiscard === p.rkey ? (
+                            <span style={{ display: 'flex', gap: '0.3em', whiteSpace: 'nowrap' }}>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => { setConfirmDiscard(null); onDiscard(p.rkey); }}
+                                style={{ fontSize: '0.8em', padding: '0.3em 0.7em' }}
+                              >
+                                すてる!
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => setConfirmDiscard(null)}
+                                style={{ fontSize: '0.8em', padding: '0.3em 0.6em' }}
+                              >
+                                やめる
+                              </button>
+                            </span>
                           ) : (
-                            <button
-                              type="button"
-                              disabled={!equipable}
-                              onClick={() => onEquip(slot, p.rkey)}
-                              style={{ fontSize: '0.8em', padding: '0.3em 0.8em', whiteSpace: 'nowrap' }}
-                            >
-                              そうびする
-                            </button>
+                            <span style={{ display: 'flex', gap: '0.3em', whiteSpace: 'nowrap' }}>
+                              <button
+                                type="button"
+                                disabled={!equipable || busy}
+                                onClick={() => onEquip(slot, p.rkey)}
+                                style={{ fontSize: '0.8em', padding: '0.3em 0.8em' }}
+                              >
+                                そうびする
+                              </button>
+                              {/* そうび中のものは捨てられない (先に はずす)。誤操作で
+                                  戦闘中の装備が消えるのを構造的に防ぐ。 */}
+                              <button
+                                type="button"
+                                className="secondary"
+                                disabled={busy}
+                                onClick={() => setConfirmDiscard(p.rkey)}
+                                style={{ fontSize: '0.8em', padding: '0.3em 0.6em' }}
+                              >
+                                すてる
+                              </button>
+                            </span>
                           )}
                         </div>
                       );

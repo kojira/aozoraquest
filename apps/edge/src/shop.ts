@@ -32,6 +32,21 @@ import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece } f
 /** 冪等キーを覚えておく件数 (`xpClaims` と同じ考え方)。再送・二重送信で二重に課金しない。 */
 export const MAX_SHOP_OPS = 100;
 
+/**
+ * **所持できる装備個体の上限** (#575)。
+ *
+ * `GameState.pieces` は制作のたびに 1 個ずつ増え、減るのは合成 (2 個 → 1 個) だけだった。
+ * 上限が無いと権威レコードが PDS のサイズ上限に当たり、**そのユーザーの書き込みが
+ * 全部 fail-closed になってプレイ不能**になる (同じ経路の警告が xp-claim.ts にある)。
+ *
+ * `xpClaims` (200) や `shopOps` (100) と違って**リングにはできない** — 古いものを黙って
+ * 消したら装備が消えるため。上限に達したら断り、`shopDiscard` で自分で減らしてもらう。
+ *
+ * 100 の根拠: 装備スロットは 3 (weapon/armor/charm)。16 職ぶん持ち替えても 48 で、
+ * 合成用の予備を足しても 100 で窮屈にならない。1 個体 ~60 バイトなので 100 個で ~6 KB。
+ */
+export const MAX_OWNED_PIECES = 100;
+
 export class ShopError extends Error {
   constructor(
     message: string,
@@ -128,6 +143,7 @@ export async function shopCraft(
       if (left > 0) materials[stock.materialId] = left;
       else delete materials[stock.materialId];
       // **個体も権威側で持つ** (#551 段階 2)。ここに無い個体は装備できない。
+      assertRoomForPiece(cur);
       const pieces: OwnedPiece[] = [...(cur.pieces ?? []), { rkey: input.rkey, itemId: def.id, level }];
       return { ...cur, power: cur.power - def.price.power, materials, pieces, shopOps: withOp(cur, opKey) };
     },
@@ -223,6 +239,62 @@ export async function shopForge(
     init ? { now, init } : { now },
   );
   return { power: next.power, materials: next.materials, level, duplicate, pieces: next.pieces ?? [] };
+}
+
+/**
+ * 所持上限に空きがあるか。**上限に達したら黙って古いものを消さず、断る。**
+ * 消すと「知らないうちに装備が無くなっていた」になり、原因も追えない。
+ */
+function assertRoomForPiece(state: GameState): void {
+  if ((state.pieces ?? []).length >= MAX_OWNED_PIECES) {
+    throw new ShopError(`もちものが いっぱいだ (${MAX_OWNED_PIECES} 個)。すてるか きたえて へらしてほしい`, 400, 'pieces_full');
+  }
+}
+
+/**
+ * 装備を**すてる** (#575)。
+ *
+ * 合成は「同じ品・同じ強化値が 2 個」要るので、1 個しかない不要品は今まで
+ * **永久に持ち続けるしかなかった**。所持上限を入れるとそれが手詰まりになるため対で入れる。
+ *
+ * **パワーは返さない。** 返すと「作る → すてる」でパワーが増える経路になる
+ * (制作費より返す額を小さくしても、素材のひきとりと合わせて抜け道を探す余地が残る)。
+ */
+export async function shopDiscard(
+  env: GameStateEnv,
+  did: string,
+  input: { rkeys: string[]; rkey: string },
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<ShopResult> {
+  assertRkey(input.rkey);
+  if (!input.rkeys?.length) throw new ShopError('個体の指定が不正', 400);
+  // まとめて捨てられるようにする (1 個ずつだと 100 個の整理で 100 往復になる)。
+  const targets = new Set(input.rkeys);
+  if (targets.size !== input.rkeys.length) throw new ShopError('個体の指定が重複している', 400);
+  const opKey = `discard:${input.rkey}`;
+
+  let duplicate = false;
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => {
+      if (alreadyDone(cur, opKey)) {
+        duplicate = true;
+        return cur;
+      }
+      duplicate = false;
+      const owned = cur.pieces ?? [];
+      // **持っていない個体を混ぜてきたら全部断る。** 部分適用すると client 側の
+      // 表示と権威がずれ、何が消えたのか誰にも分からなくなる。
+      for (const r of targets) {
+        if (!owned.some((p) => p.rkey === r)) throw new ShopError('その品を もっていない', 400, 'not_owned');
+      }
+      return { ...cur, pieces: owned.filter((p) => !targets.has(p.rkey)), shopOps: withOp(cur, opKey) };
+    },
+    init ? { now, init } : { now },
+  );
+  return { power: next.power, materials: next.materials, duplicate, pieces: next.pieces ?? [] };
 }
 
 /** しらべるの費用。発見の判定は `handleSearch` 側 (エントロピーが要るため)。 */

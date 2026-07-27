@@ -36,6 +36,7 @@ import { serverMove, serverTurn, serverState, serverTeleport, serverItem, server
   serverShopCraft,
   serverShopSell,
   serverShopForge,
+  serverShopDiscard,
 } from '@/lib/world-server';
 import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
@@ -1418,6 +1419,25 @@ export function World() {
           archetype={archetype}
           pieces={craftedPieces}
           refs={gearRefs}
+          busy={craftBusy}
+          onDiscard={(rkey) => {
+            // **すてるは街の外でもできる** (#575)。所持上限に達すると制作も購入も
+            // 断られるので、街に着くまで整理できないと詰む。パワーは返らない。
+            if (!agent) return;
+            setShopError(null);
+            setCraftBusy(true);
+            void (async () => {
+              try {
+                const res = await serverShopDiscard(agent, [rkey], newCraftRkey());
+                if (res.pieces) setCraftedPieces(res.pieces.map((x) => ({ rkey: x.rkey, itemId: x.itemId, level: x.level, at: '' })));
+              } catch (e) {
+                console.warn('[world] discard failed', e);
+                setShopError(shopErrorText(e, 'すてられなかった'));
+              } finally {
+                setCraftBusy(false);
+              }
+            })();
+          }}
           onEquip={(slot, rkey) => void onEquipChange({ ...gearRefs, [slot]: rkey })}
           onUnequip={(slot) => {
             const next = { ...gearRefs };
