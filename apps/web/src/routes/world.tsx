@@ -70,7 +70,7 @@ import type { DialogueLine } from '@/lib/dialogue';
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
  *
  * - 16×16 ビューポート、1 タップ 1 マス、トーラス wrap。
- * - **HP/MP は戦闘をまたいで持続** (オーナー決定)。街に立ち寄ると全回復 + その街が
+ * - **HP/MP は戦闘をまたいで持続**。街に立ち寄ると全回復 + その街が
  *   「最後に立ち寄った街」= 敗北時の帰還先になる。フィールドでどうぐを使える。
  * - 野外戦闘は試練と同じ機構で **1 戦 = パワー 1 消費 + 戦闘レコード + XP/素材の報酬**
  *   (パワー不足だと遭遇しない = 散歩だけならタダ)。遭遇判定自体はまだプレビュー
@@ -122,7 +122,7 @@ interface Vitals {
  *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
 const MENU_HINT_DONE_KEY = 'aq-world-menu-hint-done';
 
-/** 初回オンボーディング (話者はブルスコン — 既存の案内役。オーナー指示 2026-07-18)。
+/** 初回オンボーディング (話者はブルスコン — 既存の案内役)。
  *  操作 → 危険と回復 → ちずのかけら → ちずボタン、の順で旅の前提だけ伝える */
 const ONBOARDING_LINES: readonly DialogueLine[] = [
   { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ! わたしは せいれいブルスコン。すこしだけ あんないするね。' },
@@ -667,7 +667,7 @@ export function World() {
         materialsRef.current = m;
       }
       // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
-      // でかくなり認知負荷 — オーナー指摘)。resultLines が空になるのは実質「逃走
+      // でかくなり認知負荷)。resultLines が空になるのは実質「逃走
       // (fled = 経験値もドロップも無し)」のみ。その時は即マップへ戻す。
       const dropCounts = new Map<string, number>();
       for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
@@ -676,7 +676,7 @@ export function World() {
       const nameOf = (id: string) => ITEMS[id]?.name ?? id;
       const resultLines: string[] = [];
       if (awarded.powerSpent) setServerPower((p) => (p === null ? p : Math.max(0, p - awarded.powerSpent!)));
-      // **パワー不足で報酬が出なかったことを必ず言う** (オーナー指摘 2026-07-26)。
+      // **パワー不足で報酬が出なかったことを必ず言う**。
       // 黙って何も起きないと「経験値が入ったように見えて実は入っていない」になる。
       if (awarded.unrewarded) {
         setServerPower(0);
@@ -708,8 +708,7 @@ export function World() {
       if (awarded.leveledUp) {
         const lv = awarded.leveledUp;
         resultLines.push(`レベルが ${lv.to} に あがった！`);
-        // **上がった数値は 1 行にまとめる** (オーナー要望 2026-07-27「上がったパラメータと
-        // 数値を一つ一つ表示」)。1 ステータス 1 行にすると 7 行になり、メッセージ窓は
+        // **上がった数値は 1 行にまとめる**。1 ステータス 1 行にすると 7 行になり、メッセージ窓は
         // 実測 5 行しか見えないので、**肝心の「おぼえた!」「きずが いえた!」が窓の外へ
         // 押し出されて誰も読めない** (タップ 1 回でマップに戻るので二度と読めない)。
         // 数値は全部出しつつ、窓に収める。
@@ -841,7 +840,7 @@ export function World() {
     return m;
   }, [combat, tonicStock, agent, scheduleSave, subtractMaterial]);
 
-  // そらのはねを使う: 訪問済みの街から行き先を選ぶ (オーナー要望 2026-07-18)。
+  // そらのはねを使う: 訪問済みの街から行き先を選ぶ。
   // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
   const useFeatherOnField = useCallback(() => {
     if (onboardingRef.current) return;
@@ -904,7 +903,7 @@ export function World() {
   }, [agent, did]);
 
   // オンボード用リセットは**設定画面**へ移設した (地図メニューから消し、新規と同じ
-  // 「イントロ→手渡し→祝福」導入を辿れるようにするため — オーナー指摘 2026-07-20)。
+  // 「イントロ→手渡し→祝福」導入を辿れるようにするため)。
   // world 側は再入場時にマーク/フラグを読むだけ (WELCOME_BLESSING_PENDING_KEY / ONBOARDING_DONE_KEY)。
 
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
@@ -1111,7 +1110,7 @@ export function World() {
     />
   ) : null;
 
-  // 戦闘はページ遷移せず「暗転したマップ枠内」で行う (オーナー要望 2026-07-18)。
+  // 戦闘はページ遷移せず「暗転したマップ枠内」で行う。
   // シーン (敵+ログ) はマップ上オーバーレイ、コマンド/リザルトはマップ下に出す。
   const inBattle = battle !== null && (wipe === null || wipe === 'reveal');
 
@@ -1177,7 +1176,7 @@ export function World() {
   return (
     <div style={{ maxWidth: 560, margin: '0 auto' }}>
       {/* HUD (HP/MP + 現在地) はマップ上にオーバーレイ表示する — 縦スクロールを
-          なくして没入感を上げるため (オーナー要望 2026-07-18)。マップ外に置いて
+          なくして没入感を上げるため。マップ外に置いて
           いた HP/MP バー・場所ヘッダーは廃止し、下記 WorldHud に集約した。 */}
       <div className="dq-window" style={{ padding: 4 }}>
         <div ref={mapRef} style={{ position: 'relative' }}>
@@ -1210,7 +1209,7 @@ export function World() {
             <Avatar src={avatarUrl ?? undefined} size={avatarSize} archetype={archetype} />
           </div>
           {/* 仮想スティック: マップ全面がタッチ領域。十字キーの置き換え
-              (スマホで非常に操作しづらい — オーナー報告 2026-07-17) */}
+              (十字キーはスマホで非常に操作しづらい) */}
           <VirtualStick
             onMove={move}
             onTapSelf={() => {
@@ -1227,7 +1226,7 @@ export function World() {
             <WorldHud
               // 戦闘中は上枠 HP/MP を「戦闘中の実 HP/MP」(battle.state.player) に追従させる。
               // ws.hp/ws.mp は戦闘終了時にしか更新されないので、それを見ると結果画面まで
-              // 減らないバグになる (オーナー報告 2026-07-18)。フィールドでは ws 由来。
+              // 減らないバグになる。フィールドでは ws 由来。
               hp={battle ? battle.state.player.hp : curHp}
               maxHp={battle ? battle.state.player.maxHp : combat.maxHp}
               mp={battle ? battle.state.player.mp : curMp}
@@ -1235,7 +1234,7 @@ export function World() {
               maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
               locationLabel={town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
-              // 見せる (下段の重複バーは廃止し上枠へ一本化 — オーナー要望 2026-07-18)。
+              // 見せる (下段の重複バーは廃止し上枠へ一本化)。
               // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る
               // inBattle を使う — wipe='cover' の一瞬は値=battle 由来 / z=HUD_Z で意図的に非対称。
               zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
@@ -1302,7 +1301,7 @@ export function World() {
             </div>
           )}
           {/* 会話ウィンドウは**地図枠内**にオーバーレイする (DQ 風。以前は画面下端の footer 際に
-              出て「マップ上」に見えなかった — オーナー指摘 2026-07-20)。anchor="map" で、この
+              出て「マップ上」に見えなかった)。anchor="map" で、この
               position:relative の地図枠の下部に貼る。一度に出るのは 1 つ (相互にガード)。
               会話は z が戦闘オーバーレイ (OVERLAY_Z) より上なので、状態機械のガードに加えて
               !battle でも囲い、万一の同時表示で戦闘操作が塞がれる事故を防ぐ (レビュー ★★)。 */}
@@ -1321,7 +1320,7 @@ export function World() {
           {!battle && showStarter && !onboarding && (
             // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
             // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
-            // 分からなかった — オーナー指摘 2026-07-20)。starterBlessed は入場時にマークから確定済み。
+            // 分からなかった)。starterBlessed は入場時にマークから確定済み。
             // 声はブルスコンのトーンに合わせ ひらがな主体で統一 (UX レビュー ★)。
             <DialogueWindow
               anchor="map"
@@ -1343,14 +1342,14 @@ export function World() {
       </div>
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
-          をなくす — オーナー要望 2026-07-18)。通常時のみ操作ヒント。 */}
+          をなくす)。通常時のみ操作ヒント。 */}
       {!inBattle && (
         <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
           じぶんを タップすると コマンドが ひらくよ。
         </p>
       )}
       {/* 一時メッセージ + 操作説明は戦闘/リザルト中は隠す (マップ枠内で完結・
-          縦スクロールをなくす。オーナー要望 2026-07-18) */}
+          縦スクロールをなくす) */}
       {!inBattle && (
         <>
           <p

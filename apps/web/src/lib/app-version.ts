@@ -8,7 +8,7 @@
  *
  * リリース手順 (dev → main):
  *   1. この APP_VERSION を「リリース日 + 枝番」に更新してコミット (feature ブランチで)
- *   2. dev → main の PR をマージ (オーナーのリリース判断)
+ *   2. dev → main の PR をマージ (リリース判断)
  *   3. 同じ値で git tag を打つ:
  *        git tag v2026.06.14-1 && git push origin v2026.06.14-1
  */

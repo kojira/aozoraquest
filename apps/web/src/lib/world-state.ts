@@ -5,7 +5,7 @@
  * PR-W3 以降は Worker (Durable Object) が正となり、このレコードは
  * 「表示キャッシュ + 監査線」に格下げされる (書き込み元が DO 応答になる)。
  *
- * HP/MP は**戦闘をまたいで持続**する (オーナー決定 2026-07-17)。回復手段は
+ * HP/MP は**戦闘をまたいで持続**する。回復手段は
  * 街に立ち寄る (全快) / やくそう。敗北時は最後に立ち寄った街へ戻される。
  */
 
@@ -138,8 +138,7 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
     };
   }
   const spawn = worldOverlay().spawn;
-  // 新規: はじまりの街の地方一帯だけ開示された状態から (「開始の街で最初に
-  // 必ずもらえる」のオーナー案の interim 実装。W6e でギルドが入手元になる)。
+  // 新規: はじまりの街の地方一帯だけ開示された状態から (W6e でギルドが入手元になるまでの暫定)。
   // x/y が壊れて spawn に倒す場合も、パースできた regions は union で保全する
   const seeded = [...new Set([...(rawRegions ?? []), ...regionsAround(spawn.region)])].sort((a, b) => a - b);
   return { x: spawn.x, y: spawn.y, hp: null, mp: null, lastTown: null, regions: seeded, visitedTowns: [], gotStarterFeather: false, updatedAt: '' };

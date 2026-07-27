@@ -301,7 +301,7 @@ export function outcomeOf(q: UserQuest): Outcome {
 
 // ─── ポイント集計 ──────────────────────────────────────────
 //
-// 複数受託では「各受託者が個別に承認された時点でそれぞれ満額」付与する (オーナー仕様)。
+// 複数受託では「各受託者が個別に承認された時点でそれぞれ満額」付与する。
 // よって報酬は quest.status ではなく **受託者ごとの承認 (completion record)** が真実。
 // completions マップを渡すと per-assignee 承認ベースで判定し、省略時は従来の status ベースに
 // fallback する (legacy 単数クエストは status='completed' のままなので壊れない)。

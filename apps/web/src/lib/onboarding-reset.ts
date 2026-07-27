@@ -44,7 +44,7 @@ export const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
  * 次回どこかで /world を開くとイントロが 1 回だけ再生される (閉じれば `'1'` に戻り自己回復)。祝福マークも
  * 同じ窓に属するが sessionStorage なのでタブを閉じれば自然消滅する。対象は dev+管理者限定なので許容。
  *
- * **呼び出し側は遷移しない** (リセットするだけ — オーナー指摘 2026-07-20)。フラグを storage に立てるだけで、
+ * **呼び出し側は遷移しない** (リセットするだけ)。フラグを storage に立てるだけで、
  * 管理者が自分で通常どおり精霊ブルスコン→「冒険する」→ワールドと進めば、world.tsx が入場時に
  * storage/サーバーから状態を読み直し、イントロ→手渡し→祝福を新規と同じ順で再生する。フラグは
  * localStorage/sessionStorage なのでその後の SPA 遷移をまたいで保持される。

@@ -54,7 +54,7 @@ export const BATTLE_TUNING = {
   xpLose: 5,
   /** HP = hpBase + def × hpDefScale × ジョブ Lv 係数 (#507)。
    *  DQ 級の小さいスケール (敵ひとけた) にして、レベルアップ/装備の +数の恩恵を体感させる
-   *  (オーナー方針 2026-07-21。小さい母数ほど +2 が効く)。
+   *  (小さい母数ほど +2 が効く)。
    *
    *  **hpDefScale はジョブごとの HP 伸び率そのもの** (#507): HP が def に比例するので、def43 の
    *  守護者は def15 の賢者より素で硬く、ジョブ Lv が上がるほど差が開く (= 職の個性が HP に出る)。
@@ -65,13 +65,13 @@ export const BATTLE_TUNING = {
    *  たいりょく自体が statBase/statGrow でレベル成長するので、**HP も毎レベル +2〜4 動く**。 */
   hpVitScale: 2,
   /** 敵の HP/MP に遭遇ごとの分散 (±この割合)。値を毎回固定にせず、「あと何回
-   *  使えるか」をプレイヤーに予想させる (オーナー要望 2026-07-18)。seed 決定的。
+   *  使えるか」をプレイヤーに予想させる。seed 決定的。
    *  world 遭遇のみ適用し、バランステスト対象の trial は 0 (固定) に保つ。 */
   monsterVitalsVariance: 0.15,
   /** レベルによるステータス補正 = 1 + (jobLv-1) × jobLevelScale。
    *  **成長軸はジョブ Lv のみ** (#507)。旧 playerLevelScale / flatLevelGain (プレイヤー Lv 由来) は
    *  撤廃した — 同じ職・同じジョブ Lv でもプレイヤー Lv で強さが変わり、「その職の強さ」が
-   *  定まらなかったため (オーナー方針 2026-07-25)。 */
+   *  定まらなかったため。 */
   jobLevelScale: 0.04,
   /** ステータス = 比率 × (statBase + statGrow × (jobLv−1))  (#518)。
    *  **比率 (合計 100 の職プロファイル) は「伸び率」に掛ける**。以前は比率をそのまま Lv1 の絶対値に
@@ -92,7 +92,7 @@ export const BATTLE_TUNING = {
   /** モンスター専用の下駄 (#536)。プレイヤーの `statFloor` (5) をそのまま使うと、
    *  **tier1 では実効値がほぼ下駄だけになる** (raw 比率 × 0.072 = 0.5〜1.6 しかないため)。
    *  結果 tier1 の敵が全部 `atk6 def6` に横並びし、**Lv1 の低 HP 職が 1 戦もたない**
-   *  (魔法使い HP14 に対して 1 戦の消耗が 15〜25)。オーナー指摘「最初から強すぎる」の実体。
+   *  (魔法使い HP14 に対して 1 戦の消耗が 15〜25) = 「最初から強すぎる」の実体。
    *
    *  モンスターは職と違って「比率の合計」が敵ごとに大きく違う (tier1 は 38〜71、
    *  tier3 は 126〜136) ので、下駄を小さくしても 0 に潰れない。入口を緩めつつ
@@ -110,10 +110,7 @@ export const BATTLE_TUNING = {
    *  3 を採るのは、入口 (7.24) と中盤 (7.87) が揃うから。4 だと入口 4.65 に対し
    *  tier3 が 5.84 で「入口が一番きつい」逆転が残る。
    *
-   *  **注記**: 2026-07-26 にオーナーへ「平均 4.4 戦の水準」として提示した数値は、
-   *  ハーネスの不備で実際の約 2 倍だった (真値は下駄6 = 2.25 戦)。dev のベースライン
-   *  (2.79 戦) も測っていなかったため、「緩める」指示に対して逆に厳しい方を提示していた。
-   *  上の表は dev と同一ハーネスで測り直したもの。**最終的な水準はオーナー判断に返す**。 */
+   *  上の表は dev と同一ハーネスで測ったもの。 */
   monsterStatFloor: 4.3,
   statGrow: 0.05,
   /** まもりだけ伸びを抑える (#518)。**守備力は防具が主役**という DQ の構造に寄せるため
@@ -131,7 +128,7 @@ export const BATTLE_TUNING = {
    *  (守備無視)。数値は sim で調整。 */
   atkCoef: 0.9,
   defCoef: 0.45,
-  /** **0 = 守備力を上回れなければ 1 も通らない** (オーナー指摘 2026-07-25)。
+  /** **0 = 守備力を上回れなければ 1 も通らない**。
    *  以前は 1 で「必ず最低 1 は通る」仕様だったが、これはメタル系の identity
    *  (「かいしんのいちげき か 特殊武器 でしか倒せない」) を壊す読み違いだった。
    *  0 にすることで高守備の敵は専用ロジックなしに「通常攻撃が効かない」を表現できる。 */
@@ -143,8 +140,7 @@ export const BATTLE_TUNING = {
    *  同じ崖に届いてしまう**。grade2 の防具 1 点 (def+15) で Lv5 の守備は 2 → 18 になり、
    *  tier1 のモンスターは実効 atk が 5〜6 = `6×0.9 = 5.4 < 18×0.45 = 8.1` で **1 も通らない**。
    *  実測で tier1 は被ダメ 0・無傷率 100%・連戦は打ち切りまで無敗になっていた
-   *  (オーナー報告 2026-07-27「レベル5でこの装備だと tier1 だと敵なし」)。
-   *  「硬い相手には通らない」は敵の identity として設計したものであって、
+     *  「硬い相手には通らない」は敵の identity として設計したものであって、
    *  **プレイヤーが不死身になってよいという意味ではない**。
    *
    *  0.25 の根拠 (装備 + レベルアップ全回復ありで再導出。全職平均の連戦数):
@@ -168,7 +164,7 @@ export const BATTLE_TUNING = {
   dodgeMax: 0.32,
   /** クリティカル率 = critBase + luk*critLukScale。会心 (かいしんのいちげき) は DQ 流に
    *  **攻撃力 critAtkMultiplier 倍**。守備力 (def) 無視は**プレイヤーの会心のみ** (敵の会心は
-   *  1.5 倍のみ = タンク職を守る。バランス ★★★)。倍率は控えめ 1.5 (2 は高すぎ — オーナー指摘
+   *  1.5 倍のみ = タンク職を守る。バランス ★★★)。倍率は控えめ 1.5 (2 は高すぎ
    *  2026-07-20)。ただし**減算式では会心の守備無視は def 項 (def*defCoef) を消すだけ**なので、
    *  除算式時代 (分母消滅で桁が変わる) ほど劇的ではない = 守備の高い敵には「効くが一撃逆転
    *  までは行かない」控えめな貫通。超高守備メタルの一撃逆転演出は #408 で会心倍率と併せ再評価。
@@ -196,12 +192,12 @@ export const BATTLE_TUNING = {
   monsterCastMpCost: 6,
   /** モンスターの特技 MP コスト。MP は int から算出 (fromStats) 済み。ため/回復を
    *  MP 制にすることで「int の高い敵ほど特技を多用でき、尽きたら通常攻撃に落ちる」
-   *  = MP を削り切る/尽きるのを待つ読み合いを作る (オーナー提案 2026-07-18)。 */
+   *  = MP を削り切る/尽きるのを待つ読み合いを作る。 */
   monsterChargeMpCost: 5,
   monsterHealMpCost: 7,
   /** MP: 特技のコスト。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。
    *  戦闘中の MP 回復は **ジョブ特性 (JOB_MP_TRAITS) を持つジョブだけ** —
-   *  全員一律の回復はジョブの差をぼやけさせる (オーナー決定 2026-07-17)。
+   *  全員一律の回復はジョブの差をぼやけさせる。
    *  特性なしジョブは MP プール + そらのしずくでやりくりする。 */
   skillMpCost: 4,
   /** heal とくぎ (#436): 使うと maxHp のこの割合を回復 (MP 制。やくそうと違い在庫でなく MP を消費)。 */
@@ -237,7 +233,7 @@ export const BATTLE_TUNING = {
   maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
   dropLukScale: 0.003,
-  /** 敗北ペナルティ: 手持ち素材をランダムに落とす (オーナー決定 2026-07-18)。
+  /** 敗北ペナルティ: 手持ち素材をランダムに落とす。
    *  1 個は必ず落ち、以降は lossExtraBase − luk*lossExtraLukScale の確率で
    *  追加ドロップ (運が悪いと複数落ちる)。上限 lossMax。 */
   lossExtraBase: 0.35,
@@ -520,10 +516,9 @@ export function skillMpCostOf(c: Combatant): number {
   return Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * mpCostFactorOf(c)));
 }
 
-/** MP 回復のジョブ特性 (オーナー提案 2026-07-17「MP 回復はジョブの特別な要素に。
- *  強化して初期で弱いジョブに付ける。能力がジョブに合っているかも大事」)。
+/** MP 回復のジョブ特性。
  *  **戦闘中に MP が回復するのは特性を持つジョブだけ** (全員一律の基本回復は
- *  「ジョブの差がぼやける」ためオーナー決定 2026-07-17 で廃止)。特性なしジョブは
+ *  「ジョブの差がぼやける」ため)。特性なしジョブは
  *  MP プール (int 由来) + そらのしずくでやりくりする。素の火力が低く特技依存に
  *  なるジョブ (luk/agi 型) に、世界観に沿った特性名で回復を与える。値は
  *  scripts/sim-battle-balance.ts の実測で調整。 */
@@ -579,7 +574,7 @@ export interface Combatant {
   hp: number;
   /** MP。特技で消費。プレイヤーは MP 特性 (JOB_MP_TRAITS) を持つジョブのみ回復。
    *  モンスターも int から MP を持ち (fromStats)、ため/回復の特技コストに使う
-   *  (尽きると通常攻撃に落ちる = 資源の読み合い。オーナー提案 2026-07-18)。 */
+   *  (尽きると通常攻撃に落ちる = 資源の読み合い)。 */
   maxMp: number;
   mp: number;
   atk: number;
@@ -588,7 +583,7 @@ export interface Combatant {
   int: number;
   luk: number;
   /** たいりょく (#518)。**HP の元になるだけで、命中/ダメージ式には出てこない**表示用の値。
-   *  「HP がなぜその数字なのか」をプレイヤーに見せるために持つ (オーナー要望)。
+   *  「HP がなぜその数字なのか」をプレイヤーに見せるために持つ。
    *  モンスターは 0 (プレイヤーのステータス画面でしか使わない)。 */
   vit: number;
   /** このターン防御中 (被ダメ半減) */
@@ -819,7 +814,7 @@ export function playerStatsAt(
   };
 }
 
-/** レベルアップの上昇量表示で、これ未満の上昇は出さない (オーナー指定 2026-07-17)。 */
+/** レベルアップの上昇量表示で、これ未満の上昇は出さない。 */
 export const STAT_GAIN_MIN_DISPLAY = 0.1;
 
 export interface StatGain {
@@ -910,7 +905,7 @@ export interface DropDef {
  */
 export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
-/** **魔王の城を置く予定のリージョン** (#536。オーナー指定 2026-07-26)。
+/** **魔王の城を置く予定のリージョン** (#536)。
  *  左上を (1,1) としたときの (4,4) と (5,4)。
  *
  *  **まだ tier7 として扱っていない。** 地形を実測したところ「山に囲まれた閉領域」では
@@ -928,7 +923,7 @@ export interface MonsterDef {
   tier: Tier;
   /** [atk, def, agi, int, luk] — 合計はおおむね 100 で職と同尺度 */
   stats: StatArray;
-  /** HP/MP を明示する (プレイヤーと同じ完全ステータスブロック — オーナー要望 2026-07-19)。
+  /** HP/MP を明示する (プレイヤーと同じ完全ステータスブロック)。
    *  省略時は従来どおり def/int から導出 (後方互換)。はぐれメタル型のように
    *  「導出だと def なりに HP が出てしまう」敵を低 HP に手調整するのに使う。
    *  値は tier/レベル係数で従来同様にスケールする (基準値のみ明示)。 */
@@ -937,11 +932,11 @@ export interface MonsterDef {
   /** 出現の重み (default 1)。レア敵 (はぐれメタル等) は 1 未満にして稀にする。 */
   spawnWeight?: number;
   /** 色違い変種の主要な塗り色 (CSS color)。同じ species の SVG の主体色を差し替えて
-   *  「あかいスライム」等の強い版/レッサーを安価に作る (オーナー要望 2026-07-19)。
+   *  「あかいスライム」等の強い版/レッサーを安価に作る。
    *  hue-rotate は輝度保存で狙った色にならない事故があるため明示色を持たせる。 */
   tint?: string;
   /** 勝利時に得る XP の**個別上書き**。省略時は `baselineXp(def)` が実効的な強さ (基準 HP +
-   *  atk/agi) から算出する (式＋個別調整 — オーナー要望 2026-07-20)。低 HP なのに高 XP の
+   *  atk/agi) から算出する (式＋個別調整)。低 HP なのに高 XP の
    *  はぐれメタル型ジャックポットや、式が合わない上位 tier はここで明示する。 */
   xp?: number;
   drops: readonly DropDef[];
@@ -949,7 +944,7 @@ export interface MonsterDef {
   intro: string;
   /** 強攻撃 (charger の ため攻撃) の技名。charger 以外は省略可。 */
   skillName?: string;
-  /** 行動タイプ (戦略性のためのバリエーション。オーナー要望 2026-07-18)。
+  /** 行動タイプ (戦略性のためのバリエーション)。
    *  未指定 = plain (通常攻撃 + 低 HP でたまに防御)。
    *  'charger' = 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)。
    *  'healer' = 低 HP でたまに自己回復 (削り切る前に倒す読み合い)。
@@ -1014,7 +1009,7 @@ export const ITEMS: Record<string, { name: string }> = {
 
 export const MONSTERS: readonly MonsterDef[] = [
   // tier1: 手習い (初心者でも勝てる)。**HP を明示して弱い敵は本当に弱く**した (以前は hpBase=66 が
-  // 支配的で全 tier1 が HP~70 横並び → 序盤が重い真因。オーナー指摘 2026-07-20)。XP は xp を省いて
+  // 支配的で全 tier1 が HP~70 横並び → 序盤が重い真因)。XP は xp を省いて
   // baselineXp (基準 HP + atk/agi) で自動算出 = 敵の強さと XP が構造的に連動する (スライム 2・
   // ヒカリダケ 8 程度)。個別に効かせたい敵だけ xp を明示する。
   // そらいろスライム: 最弱の練習敵 (低 HP・低 XP・低ドロップ)。序盤の的。
@@ -1031,13 +1026,13 @@ export const MONSTERS: readonly MonsterDef[] = [
   //     255×defCoef/atkCoef = 127 なので通常攻撃は **0**)。`stats[1]` は flatDef に上書きされる
   //     ので実効値には効かない (プロファイルの見た目を他 tier1 と揃えてある)。
   //   - **通常攻撃も魔法も 0**: minDamage=0 なので守備を上回れなければ 1 も通らない。魔法は
-  //     def 無視で通るため `resistAllMagic` で別途 0 にする (オーナー指摘 2026-07-25:
+  //     def 無視で通るため `resistAllMagic` で別途 0 にする (
   //     「攻撃力が低くても必ず 1 通る」は仕様の読み違いだった)。
   //   - **高 agi (38)**: 回避 (最大 dodgeMax) が張り付き「避けられる」。
   //   - **低 HP (hp6 → monsterMaxHp で実質 8)**: 仕留める道は**会心の一撃のみ** (プレイヤーの
   //     会心は def 無視 #432 → フルダメージで一撃)。通常/魔撃では削り切る前に逃げる。
   //     専用ロジックは使わず守備/agi/HP の数値だけで「メタル」を表現する方針は不変
-  //     (オーナー: 専用ロジック禁止 2026-07-20)。特殊武器での貫通は #519。
+  //     (専用ロジック禁止 2026-07-20)。特殊武器での貫通は #519。
   { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', level: 4, tier: 2, stats: [8, 24, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // ── tier1 追加 (#536)。DQ3 序盤 (スライム4 / おおがらす6 / いっかくうさぎ8) の XP 帯に合わせる。
   //    species は既存 10 種のみ使う (MonsterSvg が species ごとに絵を持つ)。色違いは tint で作る。
@@ -1055,7 +1050,7 @@ export const MONSTERS: readonly MonsterDef[] = [
   // 鬼火は tier2 の caster (#536)。**魔法は回避判定を通らない** (doAttack の `if (!opts.useInt)`) ので、
   // 回避特化 (忍者) が一方的に無傷で勝ち続けるのを止める役。int 34 は tier2 最高で、
   // 「鬼火が魔法を撃つ」のは回復役より自然。入口 (tier1) には置かず、**tier2 から**回避が
-  // 通用しなくなる = 先へ進むほど別の備えが要る、という学びの山にする (オーナー判断 2026-07-26)。
+  // 通用しなくなる = 先へ進むほど別の備えが要る、という学びの山にする。
   { id: 'will-o-wisp', element: 'fire', name: 'あおい鬼火', species: 'wisp', level: 6, tier: 2, stats: [18, 12, 24, 34, 12], hp: 24, xp: 21, drops: [{ item: 'wisp-ember', chance: 0.5 }, { item: 'sky-dew', chance: 0.35 }], intro: 'ゆらゆらとこちらを見ている。', ability: 'caster', spell: { name: 'あおい炎', element: 'fire', min: 3, max: 7, intScale: 0.12 } },
   { id: 'river-serpent', element: 'water', name: 'かわながれ大蛇', species: 'serpent', level: 13, tier: 4, stats: [42, 18, 22, 10, 10], hp: 22, xp: 60, drops: [{ item: 'serpent-scale', chance: 0.5 }, { item: 'herb', chance: 0.2 }], intro: '水面から鎌首をもたげた。', skillName: 'まきつき' },
   // tier3: 真剣勝負。xp 62〜96
@@ -1082,14 +1077,14 @@ export const MAX_POPULATED_TIER: Tier = (() => {
 })();
 
 /** XP 算出式の係数 (式＋個別調整の「式」側)。倒す手間 (基準 HP) と脅威 (atk+agi) から出す。
- *  tier1 帯 (DQ 級スケールで基準 HP 5〜14) でおおむね 2〜9 になるよう校正 (オーナー要望 2026-07-20)。 */
+ *  tier1 帯 (DQ 級スケールで基準 HP 5〜14) でおおむね 2〜9 になるよう校正。 */
 const XP_HP_FLOOR = 3; // これ以下の基準 HP は XP に寄与しない (最弱の下限を作る)。DQ 級スケール (敵 HP ひとけた) に合わせ 10→3
 const XP_HP_SCALE = 0.6; // 基準 HP 1 あたりの XP。HP が ~1/4 に縮んだぶん係数を ~4倍 (0.15→0.6) して XP 出力を保つ
 const XP_OFFENSE_SCALE = 0.04; // (atk+agi) 1 あたりの XP (素早い/強い敵を少し厚く)
 
 /** モンスターの XP 既定値を「実効的な強さ」から算出する (式＋個別調整の式側)。基準 HP は
  *  def.hp があればそれ、無ければ従来の導出 (hpBase + def*hpDefScale)。敵の強さと XP を
- *  構造的に連動させる (スライム=低 HP=低 XP、硬い敵=高 HP=高 XP。オーナー要望 2026-07-20)。
+ *  構造的に連動させる (スライム=低 HP=低 XP、硬い敵=高 HP=高 XP)。
  *
  *  **校正は tier1 帯のみ** (基準 HP 12〜62 でおおむね 2〜9)。tier2/3 に生で使うと過小になる
  *  (例: sky-dragon 式 ~12 vs 現行 96) ので、**tier2/3 は必ず def.xp を明示する** (回帰テスト
@@ -1138,7 +1133,7 @@ export function pickTrialTier(seed: number, playerLevel: number, totalBattles: n
  *
  *  tier をレベルで表すことで、プレイヤーの成長レンジ (Lv1→30 で約 8 倍) と同じ幅を
  *  モンスター側も持てる。**プレイヤーのレベルには追従しない = エリア固定難易度**
- *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20) は不変。 */
+ *  (「自分の強さに合わせて敵も強くなるのはダメ」) は不変。 */
 export const TIER_LEVEL: Record<Tier, number> = { 1: 1, 2: 4, 3: 8, 4: 13, 5: 19, 6: 26, 7: 34, 8: 42 };
 
 /** tier 内の微調整。tier1 は明確に弱め (Lv1 の 5 連戦生存が健全な水準)。
@@ -1161,7 +1156,7 @@ const TIER_STRENGTH: Record<Tier, number> = { 1: 0.72, 2: 0.85, 3: 1.0, 4: 1.0, 
 const MONSTER_POWER = 0.5;
 
 /** モンスターの強化倍率。**プレイヤー/ジョブのレベルには追従しない = 固定強度**
- *  (「自分の強さに合わせて敵も強くなるのはダメ」— オーナー要望 2026-07-20)。tier は
+ *  (「自分の強さに合わせて敵も強くなるのはダメ」)。tier は
  *  エリアの固定難易度で、プレイヤーが強くなれば相対的に楽になる。後半の難易度は
  *  レベル追従ではなく「エリアごとに強い敵を配置」で作る。将来エンドコンテンツで追従を
  *  戻すなら、tier 限定でここに足す。 */
@@ -1204,7 +1199,7 @@ export function favoredMonsterFor(tier: Tier, affinity: number): MonsterDef {
 /**
  * tier のプールからモンスターを選ぶ。affinity (地域の相性 = regionAffinity) が指定
  * されると `pool[affinity % pool.length]` を AFFINITY_WEIGHT 倍で重み付け抽選する
- * (同じ tier でも地域ごとに顔ぶれが変わる = ドロップ素材も偏る。オーナー要望 2026-07-18)。
+ * (同じ tier でも地域ごとに顔ぶれが変わる = ドロップ素材も偏る)。
  * index 方式なので favor 対象は必ず実在し、相性が死ぬ地域が無い (レビュー ★★★)。
  */
 export function summonMonster(
@@ -1235,7 +1230,7 @@ export function summonMonster(
     if (pick < 0) break;
   }
   const def = pool[Math.min(idx, pool.length - 1)]!;
-  // 固定強度: プレイヤー/ジョブレベルに追従しない (オーナー要望 2026-07-20)。factor は tier のみ、
+  // 固定強度: プレイヤー/ジョブレベルに追従しない。factor は tier のみ、
   // 平坦成長 (flatLevelGain) も与えず、HP の level 項も固定 1 にする。playerLevel/jobLevel 引数は
   // 呼び出し文脈として残すが強度計算には使わない (将来のエンドコンテンツ追従の受け皿)。
   void playerLevel;
@@ -1487,7 +1482,7 @@ function doAttack(
   const atkValue = opts.atkOverride ?? (opts.useInt ? attacker.int : attacker.atk);
   const roll = 0.85 + rng() * 0.3;
   // クリティカル (luk)。会心は DQ のかいしんのいちげき流: **攻撃力 critAtkMultiplier 倍**。
-  // **守備力 (def) 無視はプレイヤーの会心のみ** (守備の高い敵を貫く一発逆転。オーナー要望
+  // **守備力 (def) 無視はプレイヤーの会心のみ** (守備の高い敵を貫く一発逆転
   // 2026-07-20)。敵の会心を守備無視にすると、タンク職 (guardian) の「固く受ける」存在意義が
   // 壊れ拮抗帯で事故死が倍増するため、敵の会心は 1.5 倍のみ (バランス ★★★)。ぼうぎょ/見切り
   // **コマンドの半減はどちらも貫通しない** — 貫くと「予告を見て防御」の読み合いが崩れる (設計 ★★★)。
@@ -1495,7 +1490,7 @@ function doAttack(
   const critAtk = crit ? t.critAtkMultiplier : 1;
   const defValue = crit && actor === 'player' ? 0 : defender.def * (opts.defFactor ?? 1);
   // DQ の減算式 (攻撃÷2 − 防御÷4) 流: **防御の係数 (defCoef) を攻撃の半分 (2:1)** にしてインフレを
-  // 抑える (オーナー要望 2026-07-20)。高守備の敵 (メタル) は atkTerm−defTerm が負に沈み minDamage
+  // 抑える。高守備の敵 (メタル) は atkTerm−defTerm が負に沈み minDamage
   // しか通らず、会心 (defValue=0) のみ貫通できる = 専用ロジック不要で「守備が硬い」が表現される。
   // 攻撃威力バフ (atkUp/atkDown)。none なら ×1。
   const atkTerm = atkValue * t.atkCoef * critAtk * (opts.power ?? 1) * applyPowerCalc(1, attacker, atkCtx);
@@ -1516,7 +1511,7 @@ function doAttack(
   // 対象状態シナジー: 審美眼 (芸術家) は状態異常の敵に与ダメ↑ (none なら素通し)。
   dmg *= applyTargetBonus(1, attacker, defender, atkCtx);
 
-  // **ダメージ 0 は正当な結果** (オーナー指摘 2026-07-25)。守備力を上回れなければ 1 も通らない
+  // **ダメージ 0 は正当な結果**。守備力を上回れなければ 1 も通らない
   // = メタル系が「かいしんのいちげき (守備無視) でしか倒せない」identity を持てる。以前は
   // 最低 1 を保証していたため、atk 1 の魔法使いでも殴り続ければメタルを削り切れてしまっていた。
   //
@@ -1688,7 +1683,7 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   },
 };
 
-/** モンスターの行動を能力 (ability) で決める (オーナー要望 2026-07-18: ため攻撃は
+/** モンスターの行動を能力 (ability) で決める (ため攻撃は
  *  一部 (~20%) に限定し、回復する敵などバリエーションで戦略性を出す)。
  *  #452: if 分岐でなく MONSTER_ABILITIES レジストリ引き (プラグイン化)。 */
 function monsterCommand(monster: Combatant, state: BattleState, rng: () => number): MonsterAction {
@@ -2189,8 +2184,7 @@ export function resolveTurnMulti(
 // ─── ドロップ・称号 ─────────────────────────────────────────
 
 /**
- * 敗北時に落とす素材を決定的に判定する (オーナー決定 2026-07-18「敗北ペナルティは
- * ランダムで素材ドロップ。luk の影響あり。運が悪いと複数ドロップ」)。
+ * 敗北時に落とす素材を決定的に判定する (luk が高いほど落としにくい)。
  * - 手持ち (materials: id → 個数) から個数重みで 1 個は必ず落ちる (手持ちが空なら何も落ちない)。
  * - 以降は clamp(lossExtraBase − luk*lossExtraLukScale, lossExtraMin, 1) の確率で
  *   追加 1 個、最大 lossMax 個まで (luk が高いほど追加を引きにくい)。
@@ -2364,8 +2358,7 @@ export function rollDrops(monsterId: string, luk: number, seed: number, dropBonu
   return out;
 }
 
-/** 「しらべる」(フィールドコマンド) の調整値。オーナー要望 2026-07-18:
- *  「しらべるを使うと luk に連動してアイテムが手に入ることがあるがパワーを 1 使う」。 */
+/** 「しらべる」(フィールドコマンド) の調整値。luk に連動して入手、パワーを 1 消費。 */
 export const SEARCH_TUNING = {
   powerCost: 1,
   /** 何か見つかる基礎確率 (luk 0)。 */

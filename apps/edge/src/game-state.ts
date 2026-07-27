@@ -139,7 +139,7 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
  * XP の区切り: `xpEpoch` が現行と違えば `jobXp` と `xpClaims` をリセットする。
  * 旧値は「移行時に焼き込んだ投稿 XP + 戦闘 XP」の混合で、新方式に持ち越すと投稿ぶんが
  * 二重に効く。過去の到達レベルは `analysis.jobLevel.xp` に残しており、
- * /me の「ベータ期間の記録」として表示する (オーナー判断 2026-07-26)。
+ * /me の「ベータ期間の記録」として表示する。
  */
 export function normalizeState(state: GameState): GameState {
   if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;

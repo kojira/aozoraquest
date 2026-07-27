@@ -8,7 +8,7 @@ import { getRecord, putRecord } from './atproto';
  *
  * 元は独立した admin アプリ (`apps/admin`) にあった `useAdminConfig` の移植。
  * あちらは**デプロイ設定が無く `pnpm dev` でしか開けなかった**ので、web の `/admin` に
- * 取り込んだ (オーナー要望 2026-07-27)。書き込み仕様 (`$type` を付ける) は
+ * 取り込んだ。書き込み仕様 (`$type` を付ける) は
  * `apps/admin/src/lib/pds.ts` と `scripts/refresh-directory.ts` に揃えること —
  * ずれると毎時の cron と画面が互いの結果を踏み合う。
  */

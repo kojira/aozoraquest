@@ -9,7 +9,7 @@ import { serverAdminGrantPower, serverState } from '@/lib/world-server';
  *
  *  **client 側 (PDS の power レコード) と権威 state の両方に付与する。** 以前は client 側
  *  だけを書いており、画面にはパワーがあるのに `GameState.power` が 0 = 勝っても XP も
- *  ドロップも入らない、という見えない失敗になっていた (オーナー報告 2026-07-26)。 */
+ *  ドロップも入らない、という見えない失敗になっていた。 */
 export function PowerGrantAdmin({ agent, did }: { agent: Agent; did: string }) {
   const [points, setPoints] = useState<PointsState | null>(null);
   const [serverPower, setServerPower] = useState<number | null>(null);

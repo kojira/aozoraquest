@@ -33,7 +33,7 @@ interface Section {
 }
 
 const CONTENT_SECTIONS: Section[] = [
-  // 並びはオーナーが挙げた優先順 (2026-07-26)。#418 (データ化) が全部の前提。
+  // 並びは着手の優先順。#418 (データ化) が全部の前提。
   { key: 'monsters', title: 'モンスター', desc: '絵・パラメータ・能力・出現エリア', issue: 419 },
   { key: 'map', title: 'マップ', desc: '地形・エリア・出現配置・パーツ編集', issue: 421 },
   { key: 'jobs', title: 'ジョブ', desc: '各種パラメータ設定 + 模擬戦', issue: 544 },
@@ -76,7 +76,7 @@ export function AdminDashboard() {
   if (session.status === 'loading') {
     return <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</p>;
   }
-  // **管理者なら本番でも中身まで開ける** (オーナー要望 2026-07-27)。以前は dev 限定の層を
+  // **管理者なら本番でも中身まで開ける**。以前は dev 限定の層を
   // 設けていたが、書き込みを伴うものは全部 edge 側で ADMIN_DIDS を検証するようになったので、
   // 表示ゲートに認可を負わせる必要がなくなった (詳細は下の JSX のコメント)。
   const isAdmin = isAdminDid(session.did);
@@ -111,10 +111,10 @@ export function AdminDashboard() {
         </div>
       </section>
 
-      {/* 管理ツールはここに**集約 (埋め込み)** する。別画面へ飛ばさない (ハブの意味がなくなる —
-          オーナー指摘 2026-07-20)。並びは軽いもの順、重い模擬戦フォームを末尾に (レビュー ★★)。
+      {/* 管理ツールはここに**集約 (埋め込み)** する。別画面へ飛ばさない (ハブの意味がなくなる)。
+          並びは軽いもの順、重い模擬戦フォームを末尾に。
 
-          **本番でも管理者に出す** (オーナー要望 2026-07-27)。以前は dev 限定にしていたが、
+          **本番でも管理者に出す**。以前は dev 限定にしていたが、
           書き込みを伴うものは**すべて edge 側で ADMIN_DIDS を検証する**ようになったので、
           この UI ゲートに認可を負わせる必要がなくなった:
             - パワー付与 / ジョブ変更 / PDS 残量 → edge が ADMIN_DIDS で検証
@@ -126,7 +126,7 @@ export function AdminDashboard() {
           {serverOAuthConfigured && <ServerOAuthAdmin agent={agent} />}
           <PdsUsageAdmin agent={agent} />
           {/* 主管理者 PDS の設定 (旧 apps/admin。デプロイ設定が無く pnpm dev でしか
-              開けなかったので、ここに取り込んだ — オーナー要望 2026-07-27)。 */}
+              開けなかったので、ここに取り込んだ)。 */}
           <DirectoryAdmin agent={agent} />
           <MaintenanceAdmin />
           <BansAdmin />

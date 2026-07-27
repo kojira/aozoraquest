@@ -13,7 +13,7 @@ export const FAB_HIDDEN_PREFIXES = [
   '/tos',
   '/privacy',
   '/me/card',
-  // ゲーム画面: どうぐボタン・十字キーと被って誤タップの元 (オーナー報告 2026-07-17)
+  // ゲーム画面: どうぐボタン・十字キーと被って誤タップの元
   '/world',
 ] as const;
 

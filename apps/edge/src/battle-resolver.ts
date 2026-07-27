@@ -160,7 +160,7 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
     if (a) {
       base.playerXp = Math.min(finiteNum(a.playerLevel?.xp), MAX_MIGRATE_PLAYER_XP);
       // **ジョブ XP は取り込まない** (#534)。XP を権威 state に一本化するにあたり、
-      // ベータの区切りとして全員 Lv1 から再スタートする (オーナー判断 2026-07-26)。
+      // ベータの区切りとして全員 Lv1 から再スタートする。
       // ここで取り込むと、投稿由来の XP が新方式の申告と足し合わさって二重に効く。
       // 過去の到達レベルは analysis.jobLevel.xp に残り、/me の記録として表示する。
     }
@@ -532,7 +532,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         ...r.next,
         x: finalPos.x,
         y: finalPos.y,
-        // **レベルアップしたら HP/MP 全回復** (#547。オーナー要望 2026-07-27)。
+        // **レベルアップしたら HP/MP 全回復** (#547)。
         // carryHp/carryMp は未設定 = 全快で開始なので、消すだけで全回復になる
         // (次の戦闘の maxHp は新しい Lv で計算される)。敗北時も同じ (街へ帰るので元から全快)。
         //

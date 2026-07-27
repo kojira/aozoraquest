@@ -11,7 +11,7 @@ import {
 } from '@/lib/dialogue';
 
 /**
- * DQ 風セリフウィンドウ (オーナー指示 2026-07-18)。
+ * DQ 風セリフウィンドウ。
  *
  * 画面下部のウィンドウに話者名プレート + セリフを 1 文字ずつ表示する。
  * どこをタップしても進む (タイプ中 → 全文表示、全文表示中 → 次の行)。
@@ -57,7 +57,7 @@ export function DialogueWindow({
   onDone: () => void;
   /** 出す位置。'viewport' = 画面下端 (footer 際) に固定 (既定)。'map' = 直近の
    *  position:relative 祖先 (ワールドの地図枠) の下部にオーバーレイし、DQ 風に
-   *  「マップ上」へ会話窓を出す (オーナー指摘 2026-07-20)。 */
+   *  「マップ上」へ会話窓を出す。 */
   anchor?: 'viewport' | 'map';
 }) {
   const onMap = anchor === 'map';
@@ -134,7 +134,7 @@ export function DialogueWindow({
         style={{ position: 'fixed', inset: 0, zIndex: DIALOGUE_BACKDROP_Z, cursor: 'pointer', background: 'transparent' }}
       />
       {/* 窓本体: 'viewport' は footer 際に固定、'map' は直近の position:relative 祖先
-          (ワールドの地図枠) の下端に貼る (DQ 風。オーナー指摘 2026-07-20)。送り面より上 (z)。 */}
+          (ワールドの地図枠) の下端に貼る (DQ 風)。送り面より上 (z)。 */}
       <div
         onClick={advance}
         style={{

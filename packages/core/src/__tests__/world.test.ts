@@ -119,7 +119,7 @@ describe('worldOverlay (街・橋・spawn)', () => {
 
   it('橋は 8 本以上あり、全タイルが川 (海ではない) の上', () => {
     // 旧固定値 15 は「海岸の切れ込みを跨ぐだけの飾り橋」込みの数 (20 中 19 が飾り
-    // だった — オーナー報告 2026-07-17)。局所連結チェック導入後は本物の渡河のみ
+    // だった)。局所連結チェック導入後は本物の渡河のみ
     expect(overlay.bridgeSpans).toBeGreaterThanOrEqual(8);
     for (const b of overlay.bridgeTiles) {
       expect(terrainAt(b.x, b.y)).toBe('bridge');

@@ -15,8 +15,7 @@ import { Avatar } from './avatar';
 import type { CraftedPiece } from '@/lib/crafting';
 
 /**
- * つよさ画面 (オーナー要望 2026-07-18「つよさコマンドでかっこよく全ステータスを
- * 確認できるようにしたい」 — issue #285 の戦闘ステータス可視化)。
+ * つよさ画面 (戦闘ステータスの可視化。issue #285)。
  *
  * DQ の「つよさ」に寄せた 1 枚窓: 名前/ジョブ/レベル → HP/MP → 戦闘ステータス
  * (装備込みの実効値 + 装備ぶんの内訳) → とくぎ/とくせい → そうび。
@@ -195,8 +194,7 @@ export function StatusModal({
 
           {/* けいけんち: **いまの累計**と、つぎのレベルまで。
               「あと N」だけだと、戦って本当に入っているのかが分からない
-              (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。
-              オーナー要望 2026-07-26。 */}
+              (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。 */}
           <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
             <div>
               けいけんち <span style={num}>{jobXp.toLocaleString()}</span>

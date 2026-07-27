@@ -42,13 +42,13 @@ describe('canEquip (装備適性)', () => {
     expect(canEquip('warrior', EQUIPMENT_BY_ID['ar-scholar']!)).toBe(false); // ローブも不可
   });
 
-  it('ジョブ専用品は自ジョブのみ (遊び人は忍者刀を装備できない — オーナー指摘)', () => {
+  it('ジョブ専用品は自ジョブのみ (遊び人は忍者刀を装備できない)', () => {
     expect(canEquip('ninja', EQUIPMENT_BY_ID['wp-ninja-mid']!)).toBe(true);
     expect(canEquip('performer', EQUIPMENT_BY_ID['wp-ninja-mid']!)).toBe(false);
     expect(canEquip('warrior', EQUIPMENT_BY_ID['wp-ninja-mid']!)).toBe(false);
   });
 
-  it('専用品はカテゴリ不問 — 巫女は鈴カテゴリが無くても神楽鈴を装備できる (オーナー決定)', () => {
+  it('専用品はカテゴリ不問 — 巫女は鈴カテゴリが無くても神楽鈴を装備できる', () => {
     const bell = EQUIPMENT_BY_ID['wp-miko-mid']!;
     expect(bell.name).toBe('神楽鈴');
     expect(canEquip('miko', bell)).toBe(true);

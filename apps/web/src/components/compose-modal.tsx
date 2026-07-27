@@ -397,7 +397,7 @@ function ComposeDialog({
         void (async () => {
           try {
             const result = await processSelfPost(agent, did, body, structure, postUri);
-            // ステータス上昇量 (バトルのレベルアップ演出と同じ表示。オーナー要望
+            // ステータス上昇量 (バトルのレベルアップ演出と同じ表示
             // 2026-07-17)。プレイヤー Lv は戦闘値に影響しない (#507) ので区間はジョブ Lv だけ。
             const arch = result.jobLevel?.archetype;
             const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;

@@ -1,7 +1,7 @@
 /**
  * 装備品となんでも屋の品揃え (docs/20-shop-equipment.md, W6a)。
  *
- * 設計 (オーナー決定 2026-07-17〜18):
+ * 設計:
  * - **4 層**: 共用 (誰でも) → 系統カテゴリ品 (装備適性マトリクス) →
  *   ジョブ専用・中位 → ジョブ専用・上位 (特色枠)。
  * - **装備適性はカテゴリ × ジョブのマトリクス** (JOB_EQUIP_KINDS)。戦士は
@@ -64,7 +64,7 @@ export interface EquipmentDef {
   price: { power: number; materials: number };
 }
 
-/** 装備適性マトリクス (オーナー承認 2026-07-18)。common/cloth/charm は暗黙 ○。 */
+/** 装備適性マトリクス。common/cloth/charm は暗黙 ○。 */
 export const JOB_EQUIP_KINDS: Record<Archetype, readonly EquipKind[]> = {
   warrior: ['sword', 'axe', 'shield', 'dagger', 'heavy', 'light'], // 杖と運具以外ぜんぶ
   guardian: ['sword', 'axe', 'shield', 'heavy'],
@@ -103,8 +103,7 @@ const JOB_WEAPONS: Array<{
     stat: 'atk',
     mid: '将軍の采配',
     high: '軍神の大太刀',
-    // 指揮官は兵に守られる: 弱点の耐久を装備で補完 (オーナー指摘 2026-07-18
-    // 「将軍アイテム手に入れてもよわくない?」への対応)
+    // 指揮官は兵に守られる: 支配ステータスだけ盛っても埋まらない弱点の耐久を装備で補完する。
     bonusMid: { atk: 6, def: 4, maxHp: 2 },
     bonusHigh: { atk: 10, def: 7, maxHp: 4 },
   },
@@ -140,7 +139,7 @@ export const EQUIPMENT: EquipmentDef[] = [
       id: `wp-${w.job}-mid`,
       name: w.mid,
       slot: 'weapon',
-      kind: 'exclusive', // jobOnly が判定の全て (カテゴリ不問 — オーナー決定 2026-07-18)
+      kind: 'exclusive', // jobOnly が判定の全て (カテゴリ不問)
       bonus: w.bonusMid ?? { [w.stat]: 8 },
       jobOnly: w.job,
       grade: 2,
@@ -205,8 +204,7 @@ export function gearBonus(archetype: Archetype, equipIds: readonly string[]): Ge
 
 // ─── 素材のひきとり (素材 → パワー変換) ─────────────────────
 
-/** ひきとりチューニング (オーナー決定 2026-07-18「素材を燃やしてあおぞらパワーに
- *  変換する仕組みも必要。無限ループ防止のためレートは低め」)。
+/** ひきとりチューニング (素材 → あおぞらパワー。無限ループ防止のためレートは低め)。
  *  レート根拠: 1 戦 = パワー 1 に対し**売却可能素材** (消耗品除く) の期待値は
  *  最大 ~0.7 個 (luk 上振れ cap 0.95) → 5:1 なら回収 ≤0.19 パワーの強い赤字 =
  *  戦闘→換金ループは成立しない (テストで cap 基準の最悪値を固定)。 */
@@ -247,8 +245,8 @@ export function salePowerFor(count: number): number {
 
 // ─── 制作 (クラフト) と品質 ─────────────────────────────────
 
-/** 強化値チューニング (docs/20。オーナー決定 2026-07-18: 品質は −1〜+10、
- *  +6 以上は同アイテム同値 2 つの合成のみ = 過剰なアイテムを燃やすシンク)。 */
+/** 強化値チューニング (docs/20)。品質は −1〜+10 で、+6 以上は同アイテム同値 2 つの
+ *  合成のみ = 過剰なアイテムを燃やすシンク。 */
 export const CRAFT_TUNING = {
   /** 制作ロールの範囲。+6 以上は合成 (forge) でしか作れない */
   craftMin: -1,
@@ -384,7 +382,7 @@ export interface ShopStock {
 /** 店が値札に使う素材の種類 (街ハッシュから決定的)。**その街の危険度で狩れる
  *  モンスターの素材から選ぶ** — 初版は全素材からのハッシュ乱択で、低危険度の
  *  街 23 件中 11 件が周辺で狩れない tier2 素材を要求し「素材が必要だから装備まで
- *  たどり着けない」詰みを作っていた (オーナー報告 2026-07-18)。
+ *  たどり着けない」詰みを作っていた。
  *  街の tier は `tierForRegion` (遭遇と同じ単一の正)。`tierForDanger` を直接呼ぶと
  *  リージョン固有の上書きが反映されず、遭遇 tier7 の街が tier3 の素材を要求する。
  *  素材 id は battle.ts の MONSTERS ドロップ表の直書き複製 — battle → equipment の

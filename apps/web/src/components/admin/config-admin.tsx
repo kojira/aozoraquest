@@ -8,7 +8,7 @@ import { useAdminConfig } from '@/lib/use-admin-config';
  *
  * 元は独立した admin アプリ (`apps/admin`) にあったが、**デプロイ設定が無く
  * `pnpm dev` でしか開けなかった**。ローカルでなくても開けるように、そして見た目を
- * 今のフロントに揃えるために `/admin` に取り込んだ (オーナー要望 2026-07-27)。
+ * 今のフロントに揃えるために `/admin` に取り込んだ。
  *
  * 書き込み仕様 (`$type` を付ける / 既存を保持して追加) は
  * `scripts/refresh-directory.ts` (毎時の GitHub Actions) と揃えること —

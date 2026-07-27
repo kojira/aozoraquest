@@ -2,7 +2,7 @@
  * 状態異常 + パッシブのフック機構 (戦闘刷新 #452 / docs/25 §3・§4)。
  *
  * 状態異常もパッシブも「戦闘ライフサイクルのフック点に反応する `CombatHook` 実装」という
- * 同じ枠組みで扱う (オーナー方針 2026-07-22: 首狩り専用メソッドを作らず汎用フックにする)。
+ * 同じ枠組みで扱う (首狩り専用メソッドを作らず汎用フックにする)。
  * エンジンは各フック点で「いま有効なフック (statuses→STATUS_REGISTRY + passives→PASSIVES) を
  * 全部集めて回す」だけ。`if (status==='poison')` の分岐は書かない。
  *
@@ -342,7 +342,7 @@ export const PASSIVES: Record<string, PassiveDef> = {
     powerCalc: (power, c) => (hasSelfBuff(c) ? power * 1.25 : power),
   },
   // 将軍 覇王: 物理致死をHP1で耐え、受けた分を攻撃者へ反射 (§12 Lv30)。**1 戦闘 1 回だけ**の切り札
-  // (オーナー判断 2026-07-22: 毎回発動だと敵が物理のみの現状で対モンスター完全不死になるため)。魔法致死は
+  // (毎回発動だと敵が物理のみの現状で対モンスター完全不死になるため)。魔法致死は
   // doAttack を通らず耐えられない (int28 の魔法耐性で対キャスターを補う設計)。2 回目以降の物理致死は普通に死ぬ。
   'shogun-overlord': {
     id: 'shogun-overlord',
@@ -355,8 +355,8 @@ export const PASSIVES: Record<string, PassiveDef> = {
       return { survive: true };
     },
   },
-  // 守護者 不動: 物理致死を **1 戦闘 1 回だけ確定で** HP1 耐える (§12 Lv30。オーナー判断 2026-07-22: 壁役の
-  // capstone に 50% 運要素は噛み合わないため確定 1 回に。once-per-battle で対モンスター完全不死も防ぐ)。反射なし。
+  // 守護者 不動: 物理致死を **1 戦闘 1 回だけ確定で** HP1 耐える (§12 Lv30)。確率ではなく確定 1 回。
+  // once-per-battle にしないと対モンスター完全不死になる。反射なし。
   'guardian-immovable': {
     id: 'guardian-immovable',
     name: '不動',
