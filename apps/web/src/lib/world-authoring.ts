@@ -89,11 +89,18 @@ export async function saveWorldMap(agent: Agent, palette?: string[]): Promise<nu
   return gz.length;
 }
 
-/** 描いたドット絵をまとめて保存する。 */
+/**
+ * 描いたドット絵をまとめて保存する。
+ *
+ * **パーツ一覧 (地図レコード) も一緒に書く。** 絵タブで保存したのに増やしたパーツが
+ * 保存されず、次に読み込んだとき一覧から消える、という事故が起きた。
+ * 「絵を保存したのにパーツが消える」は追いようがないので、ここで揃えて書く。
+ */
 export async function saveTileArts(agent: Agent): Promise<number> {
   const arts = dumpTileArts();
   const rec: TileArtCollectionRecord = { arts, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.tileArt, RKEY, rec);
+  if (worldMapTiles()) await saveWorldMap(agent);
   return Object.keys(arts).length;
 }
 

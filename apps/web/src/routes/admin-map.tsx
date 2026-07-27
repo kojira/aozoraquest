@@ -91,6 +91,7 @@ export function AdminMap() {
         // **編集はコピーの上で。** 実体を直接書くと、この画面を開いて置いただけで
         // ワールドの地形が変わる (core は SPA 内で単一インスタンス)。
         draftRef.current = new Uint8Array(src);
+        setParts([...worldParts()]); // 保存済みの増設ぶんを拾う
         // spawn 付近から始める (いきなり (0,0) の海を見せない)
         const sp = worldOverlay().spawn;
         const v = viewTiles(24);
@@ -247,7 +248,7 @@ export function AdminMap() {
       {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.3em' }}>{note}</p>}
 
       {tab === 'art' ? (
-        <TileArtEditor />
+        <TileArtEditor parts={parts} />
       ) : !ready ? (
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>地図を読み込んでいる…</p>
       ) : (
