@@ -15,6 +15,8 @@ export const FAB_HIDDEN_PREFIXES = [
   '/me/card',
   // ゲーム画面: どうぐボタン・十字キーと被って誤タップの元
   '/world',
+  // 管理画面: 編集操作しかしないので投稿の導線は邪魔 (地図の十字キーとも被る)
+  '/admin',
 ] as const;
 
 /** その pathname で投稿 FAB を出してよいか (タイムライン系=true、フォーム/認証系=false)。 */

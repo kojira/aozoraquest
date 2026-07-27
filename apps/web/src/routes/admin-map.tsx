@@ -34,9 +34,15 @@ import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
 /** 1 タイルを何 px で描くか (倍率の候補)。パーツが見える大きさが下限。 */
 const TILE_PX = [16, 24, 32, 48] as const;
-/** 一度に見せるタイル数 (横 × 縦)。広く見せるほど 1 タイルは小さくなる。 */
-const COLS = 24;
-const ROWS = 16;
+/**
+ * 地図を出す枠のおおよその一辺 (px)。**タイル数はここから割り出す**ので、
+ * どの倍率でも**正方形**になる (24×16 固定だと 16px で横長に潰れていた)。
+ */
+const BOX = 384;
+/** 表示するタイル数 (縦横とも同じ = 正方形)。倍率が小さいほど広く見える。 */
+function viewTiles(tilePx: number): number {
+  return Math.max(8, Math.round(BOX / tilePx));
+}
 
 /** その地形のパーツ (ワールド画面と同じ絵)。ドット絵 → SVG → 代表色の順に倒す。 */
 function partOf(t: Terrain) {
@@ -63,6 +69,8 @@ export function AdminMap() {
   const [townMode, setTownMode] = useState(false);
   const [townTick, setTownTick] = useState(0);
   const painting = useRef(false);
+  /** 表示タイル数 (正方形)。倍率で変わる。 */
+  const view = viewTiles(tilePx);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -78,7 +86,8 @@ export function AdminMap() {
         draftRef.current = new Uint8Array(src);
         // spawn 付近から始める (いきなり (0,0) の海を見せない)
         const sp = worldOverlay().spawn;
-        setOrigin({ x: wrap(sp.x - Math.floor(COLS / 2)), y: wrap(sp.y - Math.floor(ROWS / 2)) });
+        const v = viewTiles(24);
+        setOrigin({ x: wrap(sp.x - Math.floor(v / 2)), y: wrap(sp.y - Math.floor(v / 2)) });
         setReady(true);
       })
       .catch((e) => setNote(`地図を読めなかった: ${String(e)}`));
@@ -149,9 +158,9 @@ export function AdminMap() {
     const svg = svgRef.current;
     if (!svg) return;
     const r = svg.getBoundingClientRect();
-    const cx = Math.floor(((clientX - r.left) / r.width) * COLS);
-    const cy = Math.floor(((clientY - r.top) / r.height) * ROWS);
-    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return;
+    const cx = Math.floor(((clientX - r.left) / r.width) * view);
+    const cy = Math.floor(((clientY - r.top) / r.height) * view);
+    if (cx < 0 || cy < 0 || cx >= view || cy >= view) return;
     place(cx, cy);
   }, [place]);
 
@@ -195,8 +204,8 @@ export function AdminMap() {
     void tick;
     void townTick;
     const out: Array<{ cx: number; cy: number; t: Terrain; town: string | null }> = [];
-    for (let cy = 0; cy < ROWS; cy++) {
-      for (let cx = 0; cx < COLS; cx++) {
+    for (let cy = 0; cy < view; cy++) {
+      for (let cx = 0; cx < view; cx++) {
         const wx = wrap(origin.x + cx);
         const wy = wrap(origin.y + cy);
         const idx = tiles[wy * WORLD_SIZE + wx]!;
@@ -217,8 +226,8 @@ export function AdminMap() {
     );
   }
 
-  const W = COLS * tilePx;
-  const H = ROWS * tilePx;
+  const W = view * tilePx;
+  const H = view * tilePx;
   const pan = (dx: number, dy: number) =>
     setOrigin((o) => ({ x: wrap(o.x + dx), y: wrap(o.y + dy) }));
 
@@ -226,11 +235,8 @@ export function AdminMap() {
     // **文字選択を止める。** 地図をドラッグすると近くの文字が選択され、iOS では
     // 選択が解除できずボタンも押せなくなる (実機で発生)。
     <div style={{ padding: '0.8em', maxWidth: '100%', userSelect: 'none', WebkitUserSelect: 'none' }}>
-      <p style={{ fontSize: '0.85em', marginBottom: '0.4em' }}>
-        <Link to="/admin">← 管理ダッシュボード</Link>
-      </p>
-      <h2 style={{ fontSize: '1.05em', margin: '0 0 0.4em' }}>マップエディタ</h2>
-      <div style={{ display: 'flex', gap: '0.3em', marginBottom: '0.6em' }}>
+      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', marginBottom: '0.4em' }}>
+        <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         {([['map', '地図を編集'], ['art', 'パーツの絵']] as const).map(([k, label]) => (
           <button
             key={k}
@@ -245,18 +251,8 @@ export function AdminMap() {
           </button>
         ))}
       </div>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em', lineHeight: 1.8 }}>
-        パーツを選んで置く。置いただけでは何も起きない。<br />
-        <strong>ためす</strong> = 自分のブラウザでだけ反映する。この状態で <code>/world</code> を開くと
-        歩いて確かめられる。他の人には見えず、リロードすると戻る。<br />
-        <strong>みんなに反映</strong> = 保存して全員に配る。移動判定はサーバーが正なので、
-        サーバーが拾うまで最大 5 分かかる。<br />
-        <strong>街をおく</strong> にすると、押したマスに街を作る (名前を聞く)。
-        <strong>地形の「街」パーツを置いただけでは街にならない</strong> —
-        名前も店も宿も無い、通れるだけのマスになる。
-      </p>
 
-      {note && <p style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>{note}</p>}
+      {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.3em' }}>{note}</p>}
 
       {tab === 'art' ? (
         <TileArtEditor />
@@ -265,7 +261,7 @@ export function AdminMap() {
       ) : (
         <>
           {/* パーツ選び。色ではなく**実際の絵**を並べる。 */}
-          <div style={{ display: 'flex', gap: '0.4em', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.5em' }}>
+          <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.3em' }}>
             {BASE_PALETTE.map((t, i) => (
               <button
                 key={t}
@@ -283,7 +279,7 @@ export function AdminMap() {
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: '0.6em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4em', fontSize: '0.8em' }}>
+          <div style={{ display: 'flex', gap: '0.6em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.3em', fontSize: '0.8em' }}>
             <label>
               おおきさ{' '}
               <select value={tilePx} onChange={(e) => setTilePx(Number(e.target.value))}>
@@ -297,7 +293,7 @@ export function AdminMap() {
               <input type="checkbox" checked={townMode} onChange={(e) => setTownMode(e.target.checked)} /> 街をおく
             </label>
             <span style={{ color: 'var(--color-muted)', fontFamily: 'ui-monospace, monospace' }}>
-              ({origin.x}, {origin.y}) 〜 ({wrap(origin.x + COLS - 1)}, {wrap(origin.y + ROWS - 1)})
+              {origin.x},{origin.y}
             </span>
           </div>
 
@@ -310,7 +306,7 @@ export function AdminMap() {
               ref={svgRef}
               width={W}
               height={H}
-              viewBox={`0 0 ${COLS * 32} ${ROWS * 32}`}
+              viewBox={`0 0 ${view * 32} ${view * 32}`}
               onPointerDown={(e) => {
                 e.preventDefault(); // 文字選択とスクロールを始めさせない
                 if (townMode) return; // 街は 1 マスずつ (名前を聞くので連続配置しない)
@@ -341,15 +337,15 @@ export function AdminMap() {
               {/* グリッド。座標を数えられるよう 8 タイルごとに濃くする。 */}
               {grid && (
                 <g pointerEvents="none">
-                  {Array.from({ length: COLS + 1 }, (_, i) => (
+                  {Array.from({ length: view + 1 }, (_, i) => (
                     <line
-                      key={`v${i}`} x1={i * 32} y1={0} x2={i * 32} y2={ROWS * 32}
+                      key={`v${i}`} x1={i * 32} y1={0} x2={i * 32} y2={view * 32}
                       stroke="#000" strokeOpacity={(origin.x + i) % 8 === 0 ? 0.55 : 0.22} strokeWidth={1}
                     />
                   ))}
-                  {Array.from({ length: ROWS + 1 }, (_, i) => (
+                  {Array.from({ length: view + 1 }, (_, i) => (
                     <line
-                      key={`h${i}`} x1={0} y1={i * 32} x2={COLS * 32} y2={i * 32}
+                      key={`h${i}`} x1={0} y1={i * 32} x2={view * 32} y2={i * 32}
                       stroke="#000" strokeOpacity={(origin.y + i) % 8 === 0 ? 0.55 : 0.22} strokeWidth={1}
                     />
                   ))}
@@ -376,13 +372,13 @@ export function AdminMap() {
             }}
           >
             <span />
-            <PanBtn label="↑" onClick={() => pan(0, -Math.floor(ROWS / 2))} />
+            <PanBtn label="↑" onClick={() => pan(0, -Math.floor(view / 2))} />
             <span />
-            <PanBtn label="←" onClick={() => pan(-Math.floor(COLS / 2), 0)} />
+            <PanBtn label="←" onClick={() => pan(-Math.floor(view / 2), 0)} />
             <span />
-            <PanBtn label="→" onClick={() => pan(Math.floor(COLS / 2), 0)} />
+            <PanBtn label="→" onClick={() => pan(Math.floor(view / 2), 0)} />
             <span />
-            <PanBtn label="↓" onClick={() => pan(0, Math.floor(ROWS / 2))} />
+            <PanBtn label="↓" onClick={() => pan(0, Math.floor(view / 2))} />
             <span />
           </div>
 
@@ -407,8 +403,9 @@ export function AdminMap() {
           <WorldMinimap
             tiles={draftRef.current}
             origin={origin}
+            view={view}
             townTick={townTick}
-            onJump={(x, y) => setOrigin({ x: wrap(x - Math.floor(COLS / 2)), y: wrap(y - Math.floor(ROWS / 2)) })}
+            onJump={(x, y) => setOrigin({ x: wrap(x - Math.floor(view / 2)), y: wrap(y - Math.floor(view / 2)) })}
           />
 
           {/* 移動 */}
@@ -425,7 +422,7 @@ export function AdminMap() {
               type="button"
               onClick={() => {
                 const sp = worldOverlay().spawn;
-                setOrigin({ x: wrap(sp.x - Math.floor(COLS / 2)), y: wrap(sp.y - Math.floor(ROWS / 2)) });
+                setOrigin({ x: wrap(sp.x - Math.floor(view / 2)), y: wrap(sp.y - Math.floor(view / 2)) });
               }}
               style={{ padding: '0.2em 0.6em' }}
             >
@@ -471,11 +468,14 @@ function PanBtn({ label, onClick }: { label: string; onClick: () => void }) {
 function WorldMinimap({
   tiles,
   origin,
+  view,
   townTick,
   onJump,
 }: {
   tiles: Uint8Array | null;
   origin: { x: number; y: number };
+  /** いま見ているタイル数 (白枠の大きさ)。 */
+  view: number;
   /** 街を編集したら描き直すためのカウンタ (街は別データなので tiles の変化では拾えない)。 */
   townTick: number;
   onJump: (x: number, y: number) => void;
@@ -529,15 +529,12 @@ function WorldMinimap({
     // 今どこを見ているか
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(origin.x / SAMPLE, origin.y / SAMPLE, COLS / SAMPLE, ROWS / SAMPLE);
+    ctx.strokeRect(origin.x / SAMPLE, origin.y / SAMPLE, view / SAMPLE, view / SAMPLE);
   }, [tiles, origin, SAMPLE, townTick]);
 
   return (
     <div style={{ marginTop: '0.6em' }}>
-      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginBottom: '0.2em' }}>
-        全体マップ (押すとその場所へ飛ぶ)。<span style={{ color: '#f5d442' }}>●</span> が街、
-        白い丸が はじまりの街、白い枠が今見ている範囲。
-      </div>
+
       <canvas
         ref={ref}
         width={PX}
