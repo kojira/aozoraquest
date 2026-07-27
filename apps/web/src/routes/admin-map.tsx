@@ -223,7 +223,9 @@ export function AdminMap() {
     setOrigin((o) => ({ x: wrap(o.x + dx), y: wrap(o.y + dy) }));
 
   return (
-    <div style={{ padding: '0.8em', maxWidth: '100%' }}>
+    // **文字選択を止める。** 地図をドラッグすると近くの文字が選択され、iOS では
+    // 選択が解除できずボタンも押せなくなる (実機で発生)。
+    <div style={{ padding: '0.8em', maxWidth: '100%', userSelect: 'none', WebkitUserSelect: 'none' }}>
       <p style={{ fontSize: '0.85em', marginBottom: '0.4em' }}>
         <Link to="/admin">← 管理ダッシュボード</Link>
       </p>
@@ -300,6 +302,9 @@ export function AdminMap() {
           </div>
 
           {/* 地図本体 */}
+          {/* **操作は地図の上に置く。** 下に並べると、置くたびに画面をスクロールして
+              戻る羽目になる (実機で「鬼めんどい」との指摘)。 */}
+          <div style={{ position: 'relative', width: 'fit-content', maxWidth: '100%' }}>
           <div style={{ overflow: 'auto', maxWidth: '100%', border: '2px solid var(--color-border)', width: 'fit-content' }}>
             <svg
               ref={svgRef}
@@ -307,6 +312,7 @@ export function AdminMap() {
               height={H}
               viewBox={`0 0 ${COLS * 32} ${ROWS * 32}`}
               onPointerDown={(e) => {
+                e.preventDefault(); // 文字選択とスクロールを始めさせない
                 if (townMode) return; // 街は 1 マスずつ (名前を聞くので連続配置しない)
                 painting.current = true;
                 (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
@@ -361,6 +367,41 @@ export function AdminMap() {
             </svg>
           </div>
 
+          {/* 十字キー (地図の左下に重ねる)。半画面ずつ動く。 */}
+          <div
+            style={{
+              position: 'absolute', left: 6, bottom: 6,
+              display: 'grid', gridTemplateColumns: 'repeat(3, 34px)', gridTemplateRows: 'repeat(3, 34px)',
+              gap: 2, opacity: 0.9,
+            }}
+          >
+            <span />
+            <PanBtn label="↑" onClick={() => pan(0, -Math.floor(ROWS / 2))} />
+            <span />
+            <PanBtn label="←" onClick={() => pan(-Math.floor(COLS / 2), 0)} />
+            <span />
+            <PanBtn label="→" onClick={() => pan(Math.floor(COLS / 2), 0)} />
+            <span />
+            <PanBtn label="↓" onClick={() => pan(0, Math.floor(ROWS / 2))} />
+            <span />
+          </div>
+
+          {/* 反映・保存も地図の上に重ねる (下までスクロールしないで済むように) */}
+          <div style={{ position: 'absolute', right: 6, bottom: 6, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+            {dirty && (
+              <span style={{ fontSize: '0.7em', color: '#fff', background: 'rgba(180,40,40,0.85)', padding: '0.1em 0.4em', borderRadius: 3 }}>
+                未保存
+              </span>
+            )}
+            <button type="button" onClick={preview} style={{ fontSize: '0.75em', padding: '0.25em 0.6em', opacity: 0.92 }}>
+              ためす
+            </button>
+            <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.75em', padding: '0.25em 0.6em', opacity: 0.92 }}>
+              みんなに反映
+            </button>
+          </div>
+          </div>
+
           {/* **全体マップ。** 1024 タイルを 1 画素ずつ縮めて出し、押した場所へ飛ぶ。
               ボタン移動だけだと世界の端から端まで数十回押すことになる。 */}
           <WorldMinimap
@@ -372,11 +413,8 @@ export function AdminMap() {
 
           {/* 移動 */}
           <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', marginTop: '0.5em', fontSize: '0.85em' }}>
-            {/* **半画面ずつ動かす。** 1 画面まるごと切り替えると接合部が一度も見えず、
-                端をまたぐ地形をつなげられない。 */}
+            {/* 1 マス微調整 (半画面ぶんは地図に重ねた十字キー)。 */}
             {([
-              ['←', -Math.floor(COLS / 2), 0], ['→', Math.floor(COLS / 2), 0],
-              ['↑', 0, -Math.floor(ROWS / 2)], ['↓', 0, Math.floor(ROWS / 2)],
               ['←1', -1, 0], ['→1', 1, 0], ['↑1', 0, -1], ['↓1', 0, 1],
             ] as const).map(([label, dx, dy]) => (
               <button key={label} type="button" onClick={() => pan(dx, dy)} style={{ padding: '0.2em 0.6em' }}>
@@ -408,6 +446,24 @@ export function AdminMap() {
         </>
       )}
     </div>
+  );
+}
+
+/** 地図に重ねる十字キー 1 つ。押しやすさ優先で大きめ・半透明。 */
+function PanBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onClick={onClick}
+      style={{
+        width: 34, height: 34, padding: 0, fontSize: '1em', lineHeight: 1,
+        background: 'rgba(20,22,30,0.85)', color: '#fff',
+        border: '1px solid rgba(255,255,255,0.5)', borderRadius: 4,
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
