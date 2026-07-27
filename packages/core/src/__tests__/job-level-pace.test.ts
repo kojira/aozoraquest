@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { jobXpCurveFor, jobLevelFromXpFor, jobXpToNextLevelFor, JOB_XP_CURVE, JOB_LEVEL_PACE, JOBS, MONSTERS, battleXpFor } from '../index.js';
+import { jobXpCurveFor, jobLevelFromXpFor, jobXpToNextLevelFor, JOB_XP_CURVE, JOB_LEVEL_PACE, JOB_LEVEL_PACE_BASIS, JOBS, MONSTERS, battleXpFor } from '../index.js';
 
 /**
  * 職ごとのレベル曲線 (#536)。**DQ3 を参照して設計した** — DQ3 も職業ごとに必要経験値が違い、
@@ -88,6 +88,39 @@ describe('職ごとのレベル曲線 (#536)', () => {
         expect(battles, `${j.id} Lv${lv - 1}→${lv} (tier${tier})`).toBeGreaterThan(2);
         expect(battles, `${j.id} Lv${lv - 1}→${lv} (tier${tier})`).toBeLessThan(60);
       }
+    }
+  });
+
+  it('pace の順序が**実測の耐久順**と一致する (導出元とずれていない)', () => {
+    // 従来の順序テストは「pace で並べたら必要 XP も増える」しか見ておらず、
+    // **pace が実測とずれていても緑のまま通っていた** (実際 poet/sage・performer/fighter・
+    // warrior/explorer・guardian/paladin の 4 組で「粘るのに上がりやすい」逆転が起きていた)。
+    // 導出元データ (JOB_LEVEL_PACE_BASIS) と突き合わせて、そこを塞ぐ。
+    const byPace = Object.entries(JOB_LEVEL_PACE).sort((a, b) => a[1] - b[1]);
+    expect(Object.keys(JOB_LEVEL_PACE_BASIS).sort()).toEqual(Object.keys(JOB_LEVEL_PACE).sort());
+    for (let i = 1; i < byPace.length; i++) {
+      const [prev, pPrev] = byPace[i - 1]!;
+      const [cur, pCur] = byPace[i]!;
+      if (pPrev === pCur) continue; // 同値は順不同
+      // pace が大きい = 上がりにくい = より長く粘れる職でなければならない
+      expect(JOB_LEVEL_PACE_BASIS[cur]!, `${cur} (pace ${pCur}) は ${prev} (pace ${pPrev}) より長く粘るはず`)
+        .toBeGreaterThanOrEqual(JOB_LEVEL_PACE_BASIS[prev]!);
+    }
+  });
+
+  it('導出式を再現できる (pace = 正規化した 連戦数^0.35)', () => {
+    // テーブルを手で書き換えたときに、導出式から外れていないかを見る。
+    const min = Math.min(...Object.values(JOB_LEVEL_PACE_BASIS));
+    const raw = Object.fromEntries(
+      Object.entries(JOB_LEVEL_PACE_BASIS).map(([k, v]) => [k, (v / min) ** 0.35]),
+    );
+    const max = Math.max(...Object.values(raw));
+    for (const [k, v] of Object.entries(raw)) {
+      const expected = Math.round((v / max) * 100) / 100;
+      // 反復導出の残差 (緩和係数 0.5 で止めたぶん + 丸め幅 0.01 + sim のばらつき) を許容。
+      // 実際の最大ずれは captain の 0.03。浮動小数の誤差を避けて小数 2 桁で比べる。
+      const gap = Math.round(Math.abs(JOB_LEVEL_PACE[k]! - expected) * 100) / 100;
+      expect(gap, `${k}: 表 ${JOB_LEVEL_PACE[k]} / 式 ${expected}`).toBeLessThanOrEqual(0.03);
     }
   });
 });
