@@ -167,9 +167,8 @@ export function StatusModal({
                 <div>
                   とくせい: <strong>{mpTrait.traitName}</strong>{' '}
                   <span style={{ color: 'var(--color-muted)' }}>
-                    {/* 確率発動の特性 (パラディンの祈りの加護) は「ときどき」と書く。
-                        毎回もらえるかのように +3 とだけ出すと嘘になる (#564)。
-                        確率の数値そのものは出さない (DQ 流に手触りで掴ませる)。 */}
+                    {/* 確率発動の特性は「ときどき」を付ける (毎回もらえると誤読させない)。
+                        確率の数値そのものは出さない。 */}
                     ({mpTrait.chance !== undefined ? 'ときどき ' : ''}
                     たたかう MP +{mpTrait.attackGain} / ぼうぎょ MP +{mpTrait.guardGain})
                   </span>

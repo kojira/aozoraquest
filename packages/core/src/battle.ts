@@ -528,24 +528,17 @@ export interface MpTrait {
   attackGain: number;
   guardGain: number;
   /**
-   * **発動確率** (0〜1)。未指定 = 毎ターン確実に回復 (従来どおり)。
-   *
-   * パラディンは回復とくぎ (聖光の癒し) を持ちながら MP が毎ターン確実に戻るため、
-   * **資源が尽きず tier1 を無限に周回できていた** (#564。素手・装備なし・回復なしで
-   * 10 試行すべて 300 戦連勝、MP は 18/18 のまま張り付き)。「祈りが通じるかは
-   * そのとき次第」= 確率にする (オーナー決定 2026-07-27)。
+   * **発動確率** (0〜1)。未指定 = 毎ターン確実に回復。
    *
    * **未指定のジョブでは乱数を 1 つも引かない。** 引くと乱数ストリームがずれて
-   * 他ジョブの戦闘結果まで変わる (テストと world-data の決定論が壊れる)。
+   * 他ジョブの戦闘結果まで変わる (world-data の決定論テストが落ちる)。
    */
   chance?: number;
 }
 
 export const JOB_MP_TRAITS: Partial<Record<Archetype, MpTrait>> = {
   bard: { name: '歌の余韻', attackGain: 3, guardGain: 4 },
-  // **パラディンだけ「ときどき 1」** (オーナー決定 2026-07-27)。他の特性ジョブは
-  // 毎ターン確実に +2〜+4。回復とくぎ (聖光の癒し) を持つぶん、MP が資源として
-  // 効くようにここだけ絞る (#564)。
+  // 回復とくぎ (聖光の癒し) を持つぶん、ここだけ「ときどき +1」に絞ってある。
   paladin: { name: '祈りの加護', attackGain: 1, guardGain: 1, chance: 0.5 },
   miko: { name: '神楽の集中', attackGain: 2, guardGain: 3 },
   poet: { name: '心晴の呼吸', attackGain: 2, guardGain: 3 },
