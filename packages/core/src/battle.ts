@@ -527,11 +527,26 @@ export interface MpTrait {
   name?: string;
   attackGain: number;
   guardGain: number;
+  /**
+   * **発動確率** (0〜1)。未指定 = 毎ターン確実に回復 (従来どおり)。
+   *
+   * パラディンは回復とくぎ (聖光の癒し) を持ちながら MP が毎ターン確実に戻るため、
+   * **資源が尽きず tier1 を無限に周回できていた** (#564。素手・装備なし・回復なしで
+   * 10 試行すべて 300 戦連勝、MP は 18/18 のまま張り付き)。「祈りが通じるかは
+   * そのとき次第」= 確率にする (オーナー決定 2026-07-27)。
+   *
+   * **未指定のジョブでは乱数を 1 つも引かない。** 引くと乱数ストリームがずれて
+   * 他ジョブの戦闘結果まで変わる (テストと world-data の決定論が壊れる)。
+   */
+  chance?: number;
 }
 
 export const JOB_MP_TRAITS: Partial<Record<Archetype, MpTrait>> = {
   bard: { name: '歌の余韻', attackGain: 3, guardGain: 4 },
-  paladin: { name: '祈りの加護', attackGain: 3, guardGain: 4 },
+  // **パラディンだけ「ときどき 1」** (オーナー決定 2026-07-27)。他の特性ジョブは
+  // 毎ターン確実に +2〜+4。回復とくぎ (聖光の癒し) を持つぶん、MP が資源として
+  // 効くようにここだけ絞る (#564)。
+  paladin: { name: '祈りの加護', attackGain: 1, guardGain: 1, chance: 0.5 },
   miko: { name: '神楽の集中', attackGain: 2, guardGain: 3 },
   poet: { name: '心晴の呼吸', attackGain: 2, guardGain: 3 },
   explorer: { name: '踏破の勘', attackGain: 2, guardGain: 3 },
@@ -540,15 +555,24 @@ export const JOB_MP_TRAITS: Partial<Record<Archetype, MpTrait>> = {
 };
 
 /** ジョブの MP 回復量 (特性がなければ基本値)。 */
-export function mpGainsFor(archetype: Archetype): { attackGain: number; guardGain: number; traitName?: string } {
+export function mpGainsFor(archetype: Archetype): { attackGain: number; guardGain: number; traitName?: string; chance?: number } {
   const trait = JOB_MP_TRAITS[archetype];
   if (!trait) return { attackGain: BATTLE_TUNING.mpAttackGain, guardGain: BATTLE_TUNING.mpGuardGain };
-  const r: { attackGain: number; guardGain: number; traitName?: string } = {
+  const r: { attackGain: number; guardGain: number; traitName?: string; chance?: number } = {
     attackGain: trait.attackGain,
     guardGain: trait.guardGain,
   };
   if (trait.name) r.traitName = trait.name;
+  if (trait.chance !== undefined) r.chance = trait.chance;
   return r;
+}
+
+/**
+ * MP 特性がこのターン発動するか。**確率を持つジョブのときだけ乱数を引く** —
+ * 無条件に引くと他ジョブの乱数ストリームがずれて戦闘結果まで変わる。
+ */
+function mpTraitFires(chance: number | undefined, rng: () => number): boolean {
+  return chance === undefined || rng() < chance;
 }
 
 export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
@@ -1316,6 +1340,8 @@ export interface BattleState {
   mpGuardGain: number;
   /** MP 特性名 (特性なしジョブは undefined) */
   mpTraitName?: string;
+  /** MP 特性の発動確率 (0〜1)。undefined = 毎ターン確実 (従来どおり)。JOB_MP_TRAITS.chance を参照。 */
+  mpTraitChance?: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
 }
@@ -1405,6 +1431,7 @@ export function startBattle(
     mpAttackGain: gains.attackGain,
     mpGuardGain: gains.guardGain,
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
+    ...(gains.chance !== undefined ? { mpTraitChance: gains.chance } : {}),
     lastEvents: [],
   };
 }
@@ -1809,7 +1836,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     state.player.guarding = true;
     // 翌ターンまで相手の動きを読める (回避ボーナス)。このターン(1) + 次ターン(1) = 2。
     state.player.focus = 2;
-    if (state.mpGuardGain > 0) {
+    if (state.mpGuardGain > 0 && mpTraitFires(state.mpTraitChance, rng)) {
       state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpGuardGain);
       events.push({
         actor: 'player',
@@ -1845,7 +1872,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     if (who === 'player') {
       if (cmd === 'attack') {
         doAttack(state.player, state.monster, rng, events, 'player');
-        if (state.mpAttackGain > 0) {
+        if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) {
           state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
         }
       } else if (cmd === 'skill') {
@@ -2066,7 +2093,7 @@ export function resolveTurnMulti(
   if (cmd === 'guard') {
     player.guarding = true;
     player.focus = 2;
-    if (state.mpGuardGain > 0) {
+    if (state.mpGuardGain > 0 && mpTraitFires(state.mpTraitChance, rng)) {
       player.mp = Math.min(player.maxMp, player.mp + state.mpGuardGain);
       events.push({ actor: 'player', text: `${player.name}はぼうぎょして息を整えた。(MP +${state.mpGuardGain})` });
     } else {
@@ -2113,7 +2140,7 @@ export function resolveTurnMulti(
         const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex })[0];
         if (target) {
           doAttack(player, target, rng, events, 'player');
-          if (state.mpAttackGain > 0) player.mp = Math.min(player.maxMp, player.mp + state.mpAttackGain);
+          if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) player.mp = Math.min(player.maxMp, player.mp + state.mpAttackGain);
         }
       } else if (cmd === 'skill') {
         const def = SKILLS[selectedSkill.kind];
