@@ -171,6 +171,10 @@ export const BATTLE_TUNING = {
    *  ぼうぎょコマンドの半減は貫通しない。値は模擬戦シミュレータで調整可。 */
   critBase: 0.04,
   critLukScale: 0.004,
+  /** MP 特性の発動確率に効く うん の係数と上限 (`MpTrait.chance` が基準値)。
+   *  うんの高い職ほど「祈りが通じやすい」= 装備でうんを盛る意味が MP にも出る。 */
+  mpTraitLukScale: 0.004,
+  mpTraitChanceMax: 0.8,
   critAtkMultiplier: 1.5,
   /** ぼうぎょ: 被ダメージ半減 */
   guardReduction: 0.5,
@@ -528,7 +532,8 @@ export interface MpTrait {
   attackGain: number;
   guardGain: number;
   /**
-   * **発動確率** (0〜1)。未指定 = 毎ターン確実に回復。
+   * **発動確率の基準値** (0〜1)。未指定 = 毎ターン確実に回復。
+   * 実際の確率は `mpTraitChanceOf` で うん を足した値 (mpTraitChanceMax で頭打ち)。
    *
    * **未指定のジョブでは乱数を 1 つも引かない。** 引くと乱数ストリームがずれて
    * 他ジョブの戦闘結果まで変わる (mp-trait-chance.test.ts が固定している)。
@@ -558,6 +563,16 @@ export function mpGainsFor(archetype: Archetype): { attackGain: number; guardGai
   if (trait.name) r.traitName = trait.name;
   if (trait.chance !== undefined) r.chance = trait.chance;
   return r;
+}
+
+/**
+ * 発動確率に うん を乗せた実効値。`chance` を持たない特性は undefined のまま
+ * (= 毎ターン確実) を返す。
+ */
+export function mpTraitChanceOf(chance: number | undefined, luk: number): number | undefined {
+  if (chance === undefined) return undefined;
+  const t = BATTLE_TUNING;
+  return Math.min(t.mpTraitChanceMax, chance + luk * t.mpTraitLukScale);
 }
 
 /**
@@ -1424,7 +1439,7 @@ export function startBattle(
     mpAttackGain: gains.attackGain,
     mpGuardGain: gains.guardGain,
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
-    ...(gains.chance !== undefined ? { mpTraitChance: gains.chance } : {}),
+    ...(gains.chance !== undefined ? { mpTraitChance: mpTraitChanceOf(gains.chance, player.luk)! } : {}),
     lastEvents: [],
   };
 }
