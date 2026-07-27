@@ -10,7 +10,8 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { REGION_COUNT, regionOf, regionsAround, worldOverlay, wrap, isWalkable, terrainAt, townAt } from '@aozoraquest/core';
+import { REGION_COUNT, regionOf, regionsAround, worldOverlay, wrap, isWalkable,
+  isWalkableAt, terrainAt, townAt } from '@aozoraquest/core';
 import { getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 
@@ -102,7 +103,7 @@ export async function loadWorldState(agent: Agent, did: string): Promise<WorldSt
     // 旧橋の上に立っていたプレイヤーが水上に取り残されて詰むため
     const px = wrap(rec.x);
     const py = wrap(rec.y);
-    if (!isWalkable(terrainAt(px, py))) {
+    if (!isWalkableAt(px, py)) {
       const back = lastTown ?? worldOverlay().spawn;
       return {
         x: back.x,

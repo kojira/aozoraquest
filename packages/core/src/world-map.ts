@@ -100,6 +100,35 @@ const isKnownTerrain = (v: string): v is Terrain => (BASE_PALETTE as readonly st
 /** 1 バイトで表せる地形の上限。 */
 export const PALETTE_MAX = 256;
 
+/**
+ * **パーツ 1 種** (#421)。パレットの index 1 つに対応する。
+ *
+ * 「縦の橋」のように、**通行判定は既存の地形と同じで絵だけ違う**ものを足せるようにする。
+ * `terrain` が通行判定・遭遇率・危険度の元になり、`name` はエディタの表示、
+ * 絵は index ごとに持つ (`tileArtFor(partKey(index))`)。
+ */
+export interface WorldPart {
+  /** 遭遇率・危険度などの元になる地形。既知のものだけ (知らなければ fallback に倒す)。 */
+  terrain: string;
+  /** エディタでの表示名。 */
+  name: string;
+  /**
+   * **通れるか。** 省略時は `terrain` から決まる (`isWalkable`)。
+   *
+   * パーツごとに持てないと「見た目は橋だが通れない飾り」「見た目は山だが抜けられる隘路」
+   * が作れない。**移動判定はサーバーが正**なので、この値は web と edge の両方が読む。
+   */
+  walkable?: boolean;
+}
+
+/** 既定のパーツ (index 0〜7)。**並びを変えない** — 既存の地図の index が全部ずれる。 */
+export const BASE_PARTS: readonly WorldPart[] = BASE_PALETTE.map((t) => ({ terrain: t, name: t }));
+
+/** パーツごとの絵を引くためのキー (地形 id ではなく index で引く)。 */
+export function partKey(index: number): string {
+  return `part:${index}`;
+}
+
 export interface WorldMap {
   /** 1 タイル 1 バイト。長さは size*size。 */
   tiles: Uint8Array;
@@ -110,6 +139,8 @@ export interface WorldMap {
    * **このコードが知らない id が入っていてよい** (エディタが先に増やす場合)。
    */
   palette?: readonly string[];
+  /** index → パーツ (通行判定の元 + 表示名)。`palette` より優先する。 */
+  parts?: readonly WorldPart[];
   /** 知らない index / 知らない地形 id をどう扱うか。既定 'plains'。 */
   fallback?: Terrain;
 }
@@ -117,6 +148,7 @@ export interface WorldMap {
 export class WorldMapError extends Error {}
 
 let loaded: { tiles: Uint8Array; size: number; lut: Terrain[] } | null = null;
+let loadedParts: WorldPart[] = [...BASE_PARTS];
 let invalidate: (() => void) | null = null;
 
 /** world.ts から呼ぶ配線 (地図を入れ替えたら派生キャッシュを捨てる)。 */
@@ -141,7 +173,9 @@ export function setWorldMap(map: WorldMap | null): void {
   if (tiles.length !== size * size) {
     throw new WorldMapError(`タイル数が合わない (${tiles.length} ≠ ${size}×${size})`);
   }
-  const palette = map.palette ?? BASE_PALETTE;
+  // parts があればそれが正 (palette は後方互換)。
+  const palette = map.parts ? map.parts.map((p) => p.terrain) : (map.palette ?? BASE_PALETTE);
+  loadedParts = map.parts ? [...map.parts] : (map.palette ? map.palette.map((t) => ({ terrain: t, name: t })) : [...BASE_PARTS]);
   if (palette.length > PALETTE_MAX) {
     throw new WorldMapError(`パレットが多すぎる (${palette.length} > ${PALETTE_MAX})`);
   }
@@ -161,6 +195,40 @@ export function setWorldMap(map: WorldMap | null): void {
 /** 地図が読み込まれているか (無ければ従来のノイズ生成を通す)。 */
 export function hasWorldMap(): boolean {
   return loaded !== null;
+}
+
+/** 読み込み済みのパーツ一覧 (エディタが並べるため)。 */
+export function worldParts(): readonly WorldPart[] {
+  return loadedParts;
+}
+
+/** パーツを差し替える (エディタで増やしたとき)。地図の再読み込みは不要。 */
+export function setWorldParts(parts: readonly WorldPart[]): void {
+  if (parts.length > PALETTE_MAX) throw new WorldMapError(`パーツが多すぎる (${parts.length} > ${PALETTE_MAX})`);
+  for (const p of parts) {
+    if (!p || typeof p.name !== 'string' || p.name.trim() === '') throw new WorldMapError('パーツ名が空');
+    if (p.name.length > 24) throw new WorldMapError(`パーツ名が長すぎる (${p.name})`);
+  }
+  loadedParts = parts.map((p) => ({ ...p }));
+  if (loaded) {
+    const fallback: Terrain = 'plains';
+    for (let i = 0; i < PALETTE_MAX; i++) {
+      const id = parts[i]?.terrain;
+      loaded.lut[i] = id !== undefined && isKnownTerrain(id) ? id : fallback;
+    }
+  }
+  invalidate?.();
+}
+
+/** そのパーツの通行可否 (指定が無ければ undefined = 地形任せ)。 */
+export function partWalkable(index: number): boolean | undefined {
+  return loadedParts[index]?.walkable;
+}
+
+/** その座標のパーツ index (地図が無ければ undefined)。絵を index ごとに引くため。 */
+export function mappedPartAt(x: number, y: number): number | undefined {
+  if (!loaded) return undefined;
+  return loaded.tiles[y * loaded.size + x];
 }
 
 /** 読み込み済みの生バイト (エディタが編集して書き戻すため)。 */

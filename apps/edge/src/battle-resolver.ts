@@ -12,7 +12,8 @@
  */
 import {
   startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
-  terrainAt, isWalkable, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
+  terrainAt, isWalkable,
+  isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
@@ -152,8 +153,9 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
     const spawn = worldOverlay().spawn;
     const px = typeof w?.x === 'number' && Number.isFinite(w.x) ? wrap(w.x) : spawn.x;
     const py = typeof w?.y === 'number' && Number.isFinite(w.y) ? wrap(w.y) : spawn.y;
-    base.x = isWalkable(terrainAt(px, py)) ? px : spawn.x;
-    base.y = isWalkable(terrainAt(px, py)) ? py : spawn.y;
+    const ok = isWalkableAt(px, py);
+    base.x = ok ? px : spawn.x;
+    base.y = ok ? py : spawn.y;
     const p = powerRec?.value;
     if (p) {
       const bal = Math.max(0, finiteNum(p.viaPosts) - finiteNum(p.userMessages) - finiteNum(p.cardDraws)

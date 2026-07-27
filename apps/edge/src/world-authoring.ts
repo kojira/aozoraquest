@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setTownOverrides, setWorldMap, WORLD_SIZE, type TownOverride } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setTownOverrides, setWorldMap, WORLD_SIZE, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -26,6 +26,8 @@ interface WorldMapRecord {
   size?: number;
   gz?: string;
   palette?: string[];
+  /** index → パーツ (通行判定の元 + 表示名)。 */
+  parts?: WorldPart[];
   /** 街の差分。**地形の画像では表せない**ので別枠 (名前・店の導出元になる)。 */
   towns?: TownOverride[];
 }
@@ -79,6 +81,7 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
         tiles,
         size: map.value.size || WORLD_SIZE,
         ...(map.value.palette ? { palette: map.value.palette } : {}),
+        ...(map.value.parts ? { parts: map.value.parts } : {}),
       });
       setTownOverrides(map.value.towns ?? null);
     }

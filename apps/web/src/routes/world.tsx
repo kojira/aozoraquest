@@ -10,6 +10,7 @@ import {
   type EquipmentDef,
   favoredMonsterFor,
   isWalkable,
+  isWalkableAt,
   jobLevelFromXp,
   playerCombatant,
   playerLevelFromXp,
@@ -51,6 +52,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
+import { mappedPartAt, partKey } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
@@ -514,7 +516,7 @@ export function World() {
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
-      if (!isWalkable(terrainAt(nx, ny))) {
+      if (!isWalkableAt(nx, ny)) {
         setNotice('そっちには進めない!');
         return;
       }
@@ -1173,7 +1175,11 @@ export function World() {
       const t = terrainAt(x, y);
       // ドット絵 (エディタで描いたもの) → 従来の SVG → 代表色のべた塗り、の順に倒す。
       // 3 段あるので「絵がまだ無い地形」でも描画が止まらない (#421)。
-      const body = pixelTile(t)
+      // **パーツ (index) ごとの絵を最優先。** 「縦の橋」のように、通行判定は同じで
+      // 絵だけ違うパーツを足せるようにするため、地形 id ではなく index で引く。
+      const pi = mappedPartAt(x, y);
+      const body = (pi !== undefined ? pixelTile(partKey(pi)) : null)
+        ?? pixelTile(t)
         ?? (t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t])
         ?? fallbackTile(t);
       tiles.push(

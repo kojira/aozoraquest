@@ -6,7 +6,10 @@ import {
   MAX_TOWN_NAME,
   editorColorAt,
   encodeWorldMap,
+  partKey,
   setTownOverrides,
+  setWorldParts,
+  worldParts,
   worldTownOverrides,
   setWorldMap,
   worldMapTiles,
@@ -44,9 +47,12 @@ function viewTiles(tilePx: number): number {
   return Math.max(8, Math.round(BOX / tilePx));
 }
 
-/** その地形のパーツ (ワールド画面と同じ絵)。ドット絵 → SVG → 代表色の順に倒す。 */
-function partOf(t: Terrain) {
-  return pixelTile(t) ?? TERRAIN_TILES[t] ?? fallbackTile(t);
+/** パーツの絵 (ワールド画面と同じ)。index ごとの絵 → 地形の絵 → SVG → 代表色 の順に倒す。 */
+function partOf(index: number, terrain: string) {
+  return pixelTile(partKey(index))
+    ?? pixelTile(terrain)
+    ?? TERRAIN_TILES[terrain as Terrain]
+    ?? fallbackTile(terrain);
 }
 
 export function AdminMap() {
@@ -68,6 +74,7 @@ export function AdminMap() {
   // 置くときに名前を聞いて差分に積む。
   const [townMode, setTownMode] = useState(false);
   const [townTick, setTownTick] = useState(0);
+  const [parts, setParts] = useState(() => [...worldParts()]);
   const painting = useRef(false);
   /** 表示タイル数 (正方形)。倍率で変わる。 */
   const view = viewTiles(tilePx);
@@ -141,18 +148,10 @@ export function AdminMap() {
   }, [origin]);
 
   /**
-   * **保存せずに、自分のブラウザでだけ試す。**
-   *
-   * 編集はコピーの上で行うので、置いただけでは `/world` に出ない。これを押すと
-   * 読み込み済みの地図と差し替わり、**このタブでワールドを歩いて確かめられる**。
-   * 他の人には見えないし、リロードすると元に戻る (保存していないため)。
-   */
-  /**
    * **画面座標からマスを引いて置く。**
    *
-   * `onMouseEnter` に頼ると**タッチでは連続配置できない** — 指を滑らせても
-   * enter/leave が飛ばないため、1 マスずつタップするしかなくなる (実機で発生)。
-   * ポインタ座標を SVG の座標系に落として自分で解決する。
+   * `onMouseEnter` に頼るとタッチで連続配置できない (指を滑らせても enter/leave が
+   * 飛ばないため、1 マスずつタップするしかなくなる)。座標から自分で解決する。
    */
   const paintAtPointer = useCallback((clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -162,14 +161,7 @@ export function AdminMap() {
     const cy = Math.floor(((clientY - r.top) / r.height) * view);
     if (cx < 0 || cy < 0 || cx >= view || cy >= view) return;
     place(cx, cy);
-  }, [place]);
-
-  const preview = useCallback(() => {
-    const tiles = draftRef.current;
-    if (!tiles) return;
-    setWorldMap({ tiles: new Uint8Array(tiles), size: WORLD_SIZE });
-    setNote('ワールドに反映した。この画面のまま /world を開けば歩いて確かめられる (保存はしていないのでリロードで戻る)');
-  }, []);
+  }, [place, view]);
 
   const save = useCallback(async () => {
     const tiles = draftRef.current;
@@ -203,7 +195,7 @@ export function AdminMap() {
     if (!tiles) return [];
     void tick;
     void townTick;
-    const out: Array<{ cx: number; cy: number; t: Terrain; town: string | null }> = [];
+    const out: Array<{ cx: number; cy: number; idx: number; t: Terrain; town: string | null }> = [];
     for (let cy = 0; cy < view; cy++) {
       for (let cx = 0; cx < view; cx++) {
         const wx = wrap(origin.x + cx);
@@ -211,7 +203,7 @@ export function AdminMap() {
         const idx = tiles[wy * WORLD_SIZE + wx]!;
         const t = (BASE_PALETTE[idx] ?? 'plains') as Terrain;
         const town = worldOverlay().townMap.get(wy * WORLD_SIZE + wx)?.name ?? null;
-        out.push({ cx, cy, t, town });
+        out.push({ cx, cy, idx, t, town });
       }
     }
     return out;
@@ -262,21 +254,53 @@ export function AdminMap() {
         <>
           {/* パーツ選び。色ではなく**実際の絵**を並べる。 */}
           <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.3em' }}>
-            {BASE_PALETTE.map((t, i) => (
+            {parts.map((pt, i) => (
               <button
-                key={t}
+                key={`${i}-${pt.name}`}
                 type="button"
                 onClick={() => setBrush(i)}
-                title={t}
+                title={`${pt.name} (${pt.terrain})`}
                 style={{
                   padding: 2, lineHeight: 0, background: 'transparent',
                   border: brush === i ? '3px solid var(--color-accent)' : '1px solid var(--color-border)',
                 }}
               >
-                <svg width={36} height={36} viewBox="0 0 32 32">{partOf(t)}</svg>
-                <div style={{ fontSize: '0.6em', color: 'var(--color-muted)', lineHeight: 1.4 }}>{t}</div>
+                <svg width={36} height={36} viewBox="0 0 32 32">{partOf(i, pt.terrain)}</svg>
+                <div style={{ fontSize: '0.6em', color: 'var(--color-muted)', lineHeight: 1.4 }}>{pt.name}</div>
               </button>
             ))}
+            {/* **パーツを増やす。** 「縦の橋」のように通行判定は既存と同じで絵だけ違うものを足す。 */}
+            <button
+              type="button"
+              onClick={() => {
+                const name = window.prompt('パーツの名前 (例: たての橋)')?.trim();
+                if (!name) return;
+                const terrain = window.prompt(
+                  `通行判定をどの地形と同じにする？\n${BASE_PALETTE.join(' / ')}`,
+                  'bridge',
+                )?.trim();
+                if (!terrain || !(BASE_PALETTE as readonly string[]).includes(terrain)) {
+                  setNote('元にする地形が不正');
+                  return;
+                }
+                // **通行可否はパーツ自身が持つ。** 地形任せだと「見た目は橋だが通れない飾り」
+                // 「見た目は山だが抜けられる隘路」が作れない。
+                const walkable = window.confirm(`「${name}」は歩いて通れる？\n(OK = 通れる / キャンセル = 通れない)`);
+                try {
+                  const next = [...parts, { terrain, name, walkable }];
+                  setWorldParts(next);
+                  setParts(next);
+                  setBrush(next.length - 1);
+                  setDirty(true);
+                  setNote(`「${name}」を足した (${walkable ? '通れる' : '通れない'})。絵は「パーツの絵」タブで描く`);
+                } catch (e) {
+                  setNote(String(e));
+                }
+              }}
+              style={{ padding: '0.3em 0.5em', fontSize: '0.8em', alignSelf: 'center' }}
+            >
+              ＋パーツ
+            </button>
           </div>
 
           <div style={{ display: 'flex', gap: '0.6em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.3em', fontSize: '0.8em' }}>
@@ -322,9 +346,9 @@ export function AdminMap() {
               onPointerCancel={() => { painting.current = false; }}
               style={{ display: 'block', cursor: 'crosshair', touchAction: 'none' }}
             >
-              {cells.map(({ cx, cy, t }) => (
+              {cells.map(({ cx, cy, t, idx }) => (
                 <g key={`${cx}-${cy}`} transform={`translate(${cx * 32},${cy * 32})`}>
-                  {partOf(t)}
+                  {partOf(idx, t)}
                 </g>
               ))}
               {/* 街の目印 (置き換えると消えるので、どこが街か分かるように重ねる) */}
@@ -389,11 +413,8 @@ export function AdminMap() {
                 未保存
               </span>
             )}
-            <button type="button" onClick={preview} style={{ fontSize: '0.75em', padding: '0.25em 0.6em', opacity: 0.92 }}>
-              ためす
-            </button>
-            <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.75em', padding: '0.25em 0.6em', opacity: 0.92 }}>
-              みんなに反映
+            <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.8em', padding: '0.3em 0.7em', opacity: 0.92 }}>
+              保存
             </button>
           </div>
           </div>
@@ -431,9 +452,6 @@ export function AdminMap() {
           </div>
 
           <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.6em', flexWrap: 'wrap', alignItems: 'center' }}>
-            <button type="button" onClick={preview} style={{ fontSize: '0.85em' }}>
-              ためす (保存しない)
-            </button>
             <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.85em' }}>
               みんなに反映 (保存)
             </button>

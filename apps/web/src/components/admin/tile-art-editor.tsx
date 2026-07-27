@@ -3,6 +3,8 @@ import { TERRAIN_TILES } from '@/components/world-tiles';
 import {
   BASE_PALETTE,
   TERRAIN_COLORS,
+  partKey,
+  worldParts,
   TILE_ART_MAX_COLORS,
   TILE_ART_SIZES,
   UNKNOWN_TERRAIN_COLOR,
@@ -34,24 +36,28 @@ const CELL = 22;
 
 export function TileArtEditor() {
   const session = useSession();
-  const [terrain, setTerrain] = useState<string>(BASE_PALETTE[0]!);
+  // **パーツ index ごとに絵を持つ。** 「縦の橋」のように通行判定は同じで絵だけ違う
+  // パーツを足せるようにするため、地形 id ではなく index をキーにする。
+  const parts = worldParts();
+  const [partIndex, setPartIndex] = useState(0);
+  const terrain = partKey(partIndex);
   const [size, setSize] = useState<number>(16);
   // **初期表示も代表色の下敷きから始める。** emptyTileArt だと全画素が透明で、
   // 開いた瞬間は市松模様しか出ず「壊れている」ように見える (実機で確認)。
   // 描いた絵があればそれ、無ければ**透明から**。下敷き (既存 SVG) をなぞる前提なので、
   // 代表色で塗りつぶすと下敷きが見えなくなる。パレットには代表色を入れておく。
-  const [art, setArt] = useState<TileArt>(() => tileArtFor(BASE_PALETTE[0]!) ?? blankWithPalette(BASE_PALETTE[0]!, 16));
+  const [art, setArt] = useState<TileArt>(() => tileArtFor(partKey(0)) ?? blankWithPalette(BASE_PALETTE[0]!, 16));
   const [color, setColor] = useState(1);
   const [note, setNote] = useState<string | null>(null);
   /** **既存の SVG を下敷きに敷く。** ゼロから描くより、今の絵をなぞるほうが早い。 */
   const [trace, setTrace] = useState(true);
   const painting = useRef(false);
 
-  const pick = useCallback((t: string) => {
-    setTerrain(t);
-    const existing = tileArtFor(t);
-    const next = existing ?? blankWithPalette(t, size);
-    setArt(next);
+  const pick = useCallback((i: number) => {
+    setPartIndex(i);
+    const key = partKey(i);
+    const base = worldParts()[i]?.terrain ?? BASE_PALETTE[0]!;
+    setArt(tileArtFor(key) ?? blankWithPalette(base, size));
     setColor(1);
   }, [size]);
 
@@ -98,7 +104,7 @@ export function TileArtEditor() {
     void file.text().then((txt) => {
       try {
         loadTileArts(JSON.parse(txt));
-        setArt(tileArtFor(terrain) ?? blankWithPalette(terrain, size));
+        setArt(tileArtFor(terrain) ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', size));
         setNote('読み込んだ');
       } catch (e) {
         setNote(`読み込めなかった: ${String(e)}`);
@@ -123,9 +129,9 @@ export function TileArtEditor() {
       <div style={{ display: 'flex', gap: '0.4em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5em' }}>
         <label style={{ fontSize: '0.8em' }}>
           地形{' '}
-          <select value={terrain} onChange={(e) => pick(e.target.value)}>
-            {BASE_PALETTE.map((t) => (
-              <option key={t} value={t}>{t}{tileArtFor(t) ? ' ●' : ''}</option>
+          <select value={partIndex} onChange={(e) => pick(Number(e.target.value))}>
+            {parts.map((pt, i) => (
+              <option key={i} value={i}>{pt.name}{tileArtFor(partKey(i)) ? ' ●' : ''}</option>
             ))}
           </select>
         </label>
@@ -136,7 +142,7 @@ export function TileArtEditor() {
             onChange={(e) => {
               const n = Number(e.target.value);
               setSize(n);
-              setArt(tileArtFor(terrain) ?? blankWithPalette(terrain, n));
+              setArt(tileArtFor(terrain) ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', n));
             }}
           >
             {TILE_ART_SIZES.map((n) => <option key={n} value={n}>{n}×{n}</option>)}
@@ -211,7 +217,7 @@ export function TileArtEditor() {
             height={art.size * CELL}
             style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.85 }}
           >
-            {TERRAIN_TILES[terrain as keyof typeof TERRAIN_TILES] ?? null}
+            {TERRAIN_TILES[(parts[partIndex]?.terrain ?? 'plains') as keyof typeof TERRAIN_TILES] ?? null}
           </svg>
         )}
         {Array.from({ length: art.size * art.size }, (_, i) => {

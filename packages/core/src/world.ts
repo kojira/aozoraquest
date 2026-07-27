@@ -17,7 +17,7 @@ import { MAX_POPULATED_TIER, type Tier } from './battle.js';
  */
 
 import { WORLD_DATA } from './world-data.js';
-import { mappedTerrainAt, registerWorldMapInvalidator, worldTownOverrides } from './world-map.js';
+import { mappedPartAt, mappedTerrainAt, partWalkable, registerWorldMapInvalidator, worldTownOverrides } from './world-map.js';
 
 // ─── 定数 ───────────────────────────────────────────────────
 
@@ -74,6 +74,25 @@ export type Terrain =
 /** 徒歩で通行できる地形 (乗り物なし)。 */
 export function isWalkable(t: Terrain): boolean {
   return t === 'plains' || t === 'grove' || t === 'forest' || t === 'town' || t === 'bridge';
+}
+
+/**
+ * **その座標を歩けるか。** パーツが通行可否を持っていればそれが優先、
+ * 無ければ地形から決める。
+ *
+ * 移動判定はここを通す (`isWalkable(terrainAt(x, y))` を直に書かない) —
+ * パーツ側の指定を読み落とすと「見た目は橋なのに渡れない」が起きる。
+ * **web と edge の両方が同じ関数を使うこと** (移動判定はサーバーが正)。
+ */
+export function isWalkableAt(xIn: number, yIn: number): boolean {
+  const x = wrap(xIn);
+  const y = wrap(yIn);
+  const pi = mappedPartAt(x, y);
+  if (pi !== undefined) {
+    const w = partWalkable(pi);
+    if (w !== undefined) return w;
+  }
+  return isWalkable(terrainAt(x, y));
 }
 
 /** 座標をトーラスに丸める。 */

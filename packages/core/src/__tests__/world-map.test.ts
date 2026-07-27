@@ -7,6 +7,11 @@ import {
   encodeWorldMap,
   decodeWorldMap,
   BASE_PALETTE,
+  BASE_PARTS,
+  isWalkableAt,
+  partKey,
+  setWorldParts,
+  worldParts,
   EDITOR_TERRAIN_COLORS,
   TERRAIN_COLORS,
   editorColorAt,
@@ -155,5 +160,45 @@ describe('地形の地図 (#421)', () => {
     expect(TERRAIN_COLORS.plains).toBe(TERRAIN_COLORS.town);
     expect(editorColorAt(BASE_PALETTE.indexOf('plains')))
       .not.toBe(editorColorAt(BASE_PALETTE.indexOf('town')));
+  });
+
+  it('パーツを増やせる (通行判定は同じで絵だけ違うものを足せる)', () => {
+    const tiles = new Uint8Array(SIZE * SIZE).fill(8); // 増設した index
+    setWorldMap({
+      tiles,
+      size: SIZE,
+      parts: [...BASE_PARTS, { terrain: 'bridge', name: 'たての橋' }],
+    });
+    // 通行判定は元にした地形から決まる
+    expect(terrainAt(0, 0)).toBe('bridge');
+    expect(isWalkableAt(0, 0)).toBe(true);
+    // 絵は index ごとに引ける (地形 id ではない)
+    expect(partKey(8)).not.toBe(partKey(7));
+    expect(worldParts()[8]?.name).toBe('たての橋');
+  });
+
+  it('**通行可否はパーツ自身が持てる** (見た目と通行を独立に決められる)', () => {
+    const tiles = new Uint8Array(SIZE * SIZE).fill(8);
+    // 見た目は橋だが通れない飾り
+    setWorldMap({ tiles, size: SIZE, parts: [...BASE_PARTS, { terrain: 'bridge', name: 'こわれた橋', walkable: false }] });
+    expect(terrainAt(0, 0)).toBe('bridge');
+    expect(isWalkableAt(0, 0), '通れない指定が効いていない').toBe(false);
+
+    // 見た目は山だが抜けられる隘路
+    setWorldMap({ tiles, size: SIZE, parts: [...BASE_PARTS, { terrain: 'mountain', name: 'やまみち', walkable: true }] });
+    expect(terrainAt(0, 0)).toBe('mountain');
+    expect(isWalkableAt(0, 0), '通れる指定が効いていない').toBe(true);
+
+    // 指定が無ければ従来どおり地形任せ
+    setWorldMap({ tiles, size: SIZE, parts: [...BASE_PARTS, { terrain: 'mountain', name: 'ふつうの山' }] });
+    expect(isWalkableAt(0, 0)).toBe(false);
+  });
+
+  it('パーツだけ差し替えても通行判定が追従する', () => {
+    const tiles = new Uint8Array(SIZE * SIZE).fill(8);
+    setWorldMap({ tiles, size: SIZE, parts: [...BASE_PARTS, { terrain: 'bridge', name: 'はし', walkable: true }] });
+    expect(isWalkableAt(0, 0)).toBe(true);
+    setWorldParts([...BASE_PARTS, { terrain: 'bridge', name: 'はし', walkable: false }]);
+    expect(isWalkableAt(0, 0)).toBe(false);
   });
 });
