@@ -6,7 +6,7 @@ import { resetOnboarding, armOnboardingReplay } from '@/lib/onboarding-reset';
  * 管理者専用 (dev のみ): あおぞらワールドを「はじめから」やり直す完全ワイプ。
  * 管理ダッシュボード (#417) に集約 (以前は設定ページ)。
  *
- * **リセットするだけ**で遷移はしない (この画面に留まる — オーナー指摘 2026-07-20)。
+ * **リセットするだけ**で遷移はしない (この画面に留まる)。
  * armOnboardingReplay でイントロ再表示フラグと祝福マークを storage に立てておくので、管理者が
  * 自分で通常どおり精霊ブルスコン→「冒険する」→ワールドと進めば、新規ユーザーと同じ
  * 「ブルスコン画面→冒険する→イントロ→手渡し→祝福」を頭から辿れる。
@@ -38,7 +38,7 @@ export function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
         new Promise<never>((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error('reset timeout')), 30_000); }),
       ]);
       // 次に管理者が自分でワールドへ入ったとき新規と同じ導入を再生するための準備 (イントロ再表示 +
-      // 祝福マーク)。ここでは遷移しない (オーナー指摘 2026-07-20)。
+      // 祝福マーク)。ここでは遷移しない。
       armOnboardingReplay();
       setDone(true);
     } catch (e) {

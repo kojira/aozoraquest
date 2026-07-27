@@ -4,7 +4,7 @@
  * とくぎを **SkillDef = 効果プリミティブ (SkillEffect) の配列** として *データ* で表現し、
  * 各プリミティブを `EFFECT_HANDLERS` レジストリで実行する。`switch (skill.kind)` の
  * ベタ書き分岐を廃し、新しいとくぎは **SKILLS に 1 エントリ足すだけ** で追加できる
- * (オーナー要望: 「ベタ書き if 文で分岐せずプラグインのように記述できる綺麗なソース」)。
+ * (「ベタ書き if 文で分岐せずプラグインのように記述できる綺麗なソース」)。
  *
  * エンジンの一次関数 (doAttack 等) は循環 import を避けるため **ctx.engine 経由で注入**する
  * (battle.ts が SKILLS/runSkill を import する値依存 ⇔ skills.ts は battle.ts の *型* だけ import)。
@@ -366,7 +366,7 @@ export const SKILLS: Record<string, SkillDef> = {
 
   // ─── 魔法使い 確定キット (#456 / docs/25 §12。単体・int型・必中・def無視) ───
   // 数値 (範囲/intBonus/デバフ turns) は **sim 調整前提の暫定値**。覚える Lv に見合う endgame 敵
-  // (#455) が要る高 Lv 技は数値を圧縮しない (オーナー方針)。属性の輪は §1。
+  // (#455) が要る高 Lv 技は数値を圧縮しない。属性の輪は §1。
   'mage-flame': { id: 'mage-flame', effects: [{ kind: 'fixedDamage', min: 4, max: 8, intBonus: 0.2, element: 'fire' }] }, // 火炎術式 Lv3
   'mage-decode': { id: 'mage-decode', effects: [{ kind: 'fixedDamage', min: 6, max: 11, intBonus: 0.2 }] }, // 解式マギア Lv5 (無属性)
   'mage-stone': { id: 'mage-stone', effects: [{ kind: 'fixedDamage', min: 7, max: 12, intBonus: 0.2, element: 'earth' }] }, // 石射 Lv6
@@ -772,7 +772,7 @@ export function runSkillMulti(
   makeCtx: (defender: Combatant) => SkillContext,
   opts: { targetIndex?: number; label?: string; events?: TurnEvent[]; actor?: TurnEvent['actor'] } = {},
 ): void {
-  // **技名を名乗る** (オーナー報告 2026-07-27)。純バフ・純回復の技は doAttack/doMagic を
+  // **技名を名乗る**。純バフ・純回復の技は doAttack/doMagic を
   // 通らないので、以前は「xの素早さがあがった!」だけが出て、選んだ技が本当に出たのか
   // 分からなかった。複数のとくぎを持つ職ほど困る。
   //

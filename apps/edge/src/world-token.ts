@@ -10,7 +10,7 @@
  * **チート対策**: トークンは HMAC 署名済み = client は改竄できない (座標偽造・tier 偽造不可)。DID を署名対象に
  * 含めるので他人のトークンは使えない。TTL で古いトークンの無限リプレイを抑える (失効したら gameState から再発行)。
  * **エンカウントは `encounterSeed` (サーバー秘密 + 30分枠) から決定的** = client は「どこに敵が出るか」を予測・
- * 参照できない (見えないランダムエンカウント)。30 分枠で配置が入れ替わる (オーナー要望: 定期リポップ)。
+ * 参照できない (見えないランダムエンカウント)。30 分枠で配置が入れ替わる (定期リポップ)。
  */
 import { base64urlnopad } from '@scure/base';
 import { hmac } from '@noble/hashes/hmac';
@@ -19,10 +19,10 @@ import { sha256 } from '@noble/hashes/sha256';
 /** 位置トークンの寿命 (秒)。失効したら move 側が gameState から再発行する (稀な PDS 読み)。 */
 export const POSITION_TOKEN_TTL_SEC = 600;
 
-/** エンカウント配置が入れ替わる周期 (秒)。オーナー決定 = 30 分。 */
+/** エンカウント配置が入れ替わる周期 (秒) = 30 分。 */
 export const ENEMY_WINDOW_SEC = 1800;
 
-/** HMAC 署名鍵の派生元 env (既存の Worker Secret を流用 = オーナーの追加設定なし)。 */
+/** HMAC 署名鍵の派生元 env (既存の Worker Secret を流用 = 追加の設定が要らない)。 */
 export interface WorldTokenEnv {
   OAUTH_CLIENT_PRIVATE_JWK?: string;
   OAUTH_DPOP_PRIVATE_JWK?: string;

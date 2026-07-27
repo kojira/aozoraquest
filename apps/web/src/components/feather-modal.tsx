@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { townAt } from '@aozoraquest/core';
 
 /**
- * そらのはねの行き先えらび (オーナー要望 2026-07-18「過去に行ったことのある街を
- * 選択できるように」)。訪問済みの街から飛び先を選ぶ。今いる街は候補から外す。
+ * そらのはねの行き先えらび。訪問済みの街から飛び先を選ぶ。今いる街は候補から外す。
  */
 export function FeatherModal({
   visitedTowns,

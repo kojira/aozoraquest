@@ -150,7 +150,7 @@ describe('playerCombatant', () => {
 describe('モンスターの行動バリエーション (charger/healer + MP)', () => {
   it('ため攻撃は一部 (~20%) のモンスターに限定 (charger)', () => {
     const chargers = MONSTERS.filter((m) => m.ability === 'charger');
-    // 全 12 種中 2 種 = ~17%。全モンスターが力をためる状態は解消 (オーナー要望 2026-07-18)
+    // 全 12 種中 2 種 = ~17%。全モンスターが力をためる状態は解消
     expect(chargers.length).toBe(2);
     expect(chargers.length / MONSTERS.length).toBeLessThanOrEqual(0.25);
   });
@@ -197,7 +197,7 @@ describe('summonMonster', () => {
     expect(a.def.tier).toBe(1);
   });
   it('序盤の tier に最低 3 体いる + はぐれスライムはレア逃走敵', () => {
-    // tier は 6 段階になった (#536)。**まず tier1〜3 を固める**方針 (オーナー 2026-07-26) なので、
+    // tier は 6 段階になった (#536)。**まず tier1〜3 を固める**方針 なので、
     // 顔ぶれの厚みを保証するのは序盤 3 帯。上位 tier は敵を足しながら埋める。
     for (const tier of [1, 2, 3] as const) {
       expect(MONSTERS.filter((m) => m.tier === tier).length, `tier${tier} の顔ぶれ`).toBeGreaterThanOrEqual(3);
@@ -215,7 +215,7 @@ describe('summonMonster', () => {
   });
 
   it('色違い強い版: tint + 専用素材 + レア出現 (spawnWeight<1) で差別化されている', () => {
-    // 強い版と専用素材の対応 (変種ごとに専用素材 — オーナー決定 2026-07-19)
+    // 強い版と専用素材の対応 (変種ごとに専用素材)
     const variants: Array<[string, string]> = [
       ['red-slime', 'red-jelly'],
       ['dusk-bat', 'dusk-wing'],
@@ -253,8 +253,7 @@ describe('summonMonster', () => {
     expect(fled).toBe(true);
   });
   it('はぐれメタル: 超高守備で通常攻撃は 0 ダメージ・会心 (def無視) のみ貫通', () => {
-    // メタルは flatDef で減算式が負に沈み、**通常攻撃は 1 も通らない** (minDamage=0。
-    // オーナー指摘 2026-07-25「攻撃力が低くても必ず 1 通るのは仕様の読み違い」)。
+    // メタルは flatDef で減算式が負に沈み、**通常攻撃は 1 も通らない** (minDamage=0)。
     // プレイヤーの会心だけが def を無視して貫通する (#432)。専用ロジックなし = 守備の数値だけで
     // 「硬い」を表現。最高 atk の shogun でも通常攻撃は 0。
     let normalMax = 0;
@@ -574,7 +573,7 @@ describe('resolveTurn', () => {
     expect(s1.player.mp).toBe(s0.player.mp - BATTLE_TUNING.skillMpCost);
     expect(s1.outcome).toBe('ongoing');
     // sage は特性なし → ぼうぎょで回復しない (全員一律回復はジョブ差をぼやけさせる
-    // ためオーナー決定 2026-07-17 で廃止)。ログにも MP 表記が出ない
+    // ため)。ログにも MP 表記が出ない
     const s2 = resolveTurn(s1, 'guard');
     expect(s2.player.mp).toBe(s1.player.mp);
     expect(s2.lastEvents.some((e) => e.text.includes('ぼうぎょのかまえ'))).toBe(true);
@@ -780,8 +779,8 @@ describe('resolveTurn', () => {
     expect(reactiveWins).toBeGreaterThan(spamWins);
   });
 
-  it('固定強度: モンスターはプレイヤー/ジョブレベルに追従しない (オーナー要望 2026-07-20)', () => {
-    // 「自分の強さに合わせて敵も強くなるのはダメ」。同 seed = 同モンスターで、playerLevel/
+  it('固定強度: モンスターはプレイヤー/ジョブレベルに追従しない', () => {
+    // 同 seed = 同モンスターで、playerLevel/
     // jobLevel を 1→30 に振っても combatant の強さ (HP/atk/def/agi/int/MP) が完全に一致する
     // = 敵は tier (エリア) 固定強度で、プレイヤーが伸びれば相対的に楽になる。
     for (const tier of [1, 2, 3] as const) {
@@ -819,7 +818,7 @@ describe('resolveTurn', () => {
   });
 });
 
-describe('序盤バランス (オーナー指摘 2026-07-17「序盤の敵が強すぎる」への調整を固定)', () => {
+describe('序盤バランス (「序盤の敵が強すぎる」への調整を固定)', () => {
   /** 現実的な操作: ため予告に防御 (見切り職は構え)、HP45% 未満でやくそう、MP があれば特技 */
   const play = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3, seed: number) => {
     let s = startBattle(job, jobLv, playerLv, 'x', tier, seed);

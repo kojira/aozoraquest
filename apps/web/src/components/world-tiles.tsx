@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { Terrain } from '@aozoraquest/core';
 
 /**
- * あおぞらワールドのタイル SVG (docs/19-overworld.md / オーナー承認済み
+ * あおぞらワールドのタイル SVG (docs/19-overworld.md /
  * docs/overworld-drafts/tiles.html v2 の React 化)。
  * 各タイルは 32x32 viewBox の SVG 断片。マップは <g transform> で並べる。
  */

@@ -5,12 +5,12 @@ import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 
 /**
- * あおぞらワールドの戦闘 UI (DQ 風の配置。オーナー要望 2026-07-18)。
+ * あおぞらワールドの戦闘 UI (DQ 風の配置)。
  *  - フィールドに敵スプライト (名前・数は右ペイン、体力は見抜ける職業のみ)。
  *  - input: 下段左右 2 ペイン (左=コマンド 2 列 / 右=敵リスト or どうぐの中身)。
  *  - message/result: コマンドを消して全幅メッセージ窓 (タップ送り)。
  * **下段は常に同じ固定高さ (4 行)** にして、フェーズが変わってもフィールドの敵の
- * 位置がずれない / メッセージ枠が伸縮しない (認知負荷を下げる — オーナー指摘)。
+ * 位置がずれない / メッセージ枠が伸縮しない (認知負荷を下げる)。
  * DQ の作法どおりメッセージ枠は 4 行分。
  */
 export type BattlePhase = 'message' | 'input' | 'result';
@@ -79,8 +79,7 @@ export function WorldBattleControls({
           // (職 Lv10 でとくぎ 5 個から発生。レビュー ★★★ 2026-07-27)。
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '0.4em', height: '100%' }}>
             {/* 左: 基本コマンド。**「とくぎ」は置かない** — とくぎは右にいつも出ているので、
-                1 タップ挟むだけ無駄だった (オーナー要望 2026-07-27「最初からとくぎ→個別特技を
-                選択する UI に」)。空いたぶん 1 行を大きく使える。 */}
+                1 タップ挟むだけ無駄だった。空いたぶん 1 行を大きく使える。 */}
             <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', rowGap: '0.1em' }}>
               <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu} />
               <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
@@ -152,9 +151,9 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
         <>
           <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} labelColor="#fff" />
           {/* ため/回復を使う敵は生の MP を「バー」で見せる (「あと何回」の答えは出さず、
-              残量から尽きるタイミングを予想させる — オーナー要望 2026-07-18)。通常攻撃
-              だけの敵は MP を使わないので出さない (混乱防止)。数値は残す (オーナーは「MP が
-              見える」を要望。maxMp は遭遇ごとに分散 + 発動は確率なので厳密予想は不可)。
+              残量から尽きるタイミングを予想させる)。通常攻撃だけの敵は MP を使わないので
+              出さない (混乱防止)。数値は出してよい (maxMp は遭遇ごとに分散 + 発動は確率
+              なので、見えても厳密な予想はできない)。
               fill 色だけ脅威種別で出し分ける (回復=緑/ため=橙。色は"答え"でなく"何を警戒
               するか"の手がかり — レビュー ★★)。 */}
           {monsterDef?.ability && state.monster.maxMp > 0 && (

@@ -24,7 +24,7 @@ export const JOBS: readonly JobDefinition[] = [
   // guardian の atk は認知機能マッピングだと 10 だが、減算式ダメージ (#435) では
   // atk10 が敵の防御項に食われ通常攻撃も見切り反撃も常に 1 ダメージ = 敵を倒せず進行不能
   // になる。atk が低い戦闘上の根拠は無い (Si-Fe 防御プロファイルの副産物) ため、戦士級 atk に
-  // 底上げしつつ agi を最遅にして「重いが鈍い前衛」のトレードオフにする (オーナー決定 2026-07-20)。
+  // 底上げしつつ agi を最遅にして「重いが鈍い前衛」のトレードオフにする。
   // def43 は据え置きで壁の個性を維持。合計は 100 のまま (int/luk で相殺)。生成器の理論値から
   // 意図的に逸脱した手動値なので、gen-job-stats.ts の再生成時はこの override を保持すること。
   { id: 'guardian',  names: { default: '守護者',   maker: '司書',     alt: '家守' },     stats: [24, 43,  6, 15, 12], vit: 45, dominantFunction: 'Si', auxiliaryFunction: 'Fe', primaryColor: 'W' },
@@ -82,7 +82,7 @@ export function jobTagline(id: string): string | null {
 }
 
 /**
- * 戦闘中に敵の残り HP/MP を見抜ける職業 (オーナー選定 2026-07-18)。
+ * 戦闘中に敵の残り HP/MP を見抜ける職業。
  * 見通し (Ni: 賢者・予言者)、霊視 (巫女)、解析 (魔法使い=仕組みを解く研究者)、
  * 看破 (忍者=一瞬の見切り) のテーマ。非対応職は DQ1 のように敵の体力が見えず、
  * 「見抜けること」自体が職業の個性・パーティ編成の価値になる。

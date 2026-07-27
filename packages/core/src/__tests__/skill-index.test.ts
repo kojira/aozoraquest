@@ -4,7 +4,7 @@ import { startBattle, resolveTurn, JOBS, skillsForJob, SKILLS, skillMpCostOf } f
 /**
  * **とくぎの表示と実行がずれない**ことを固定する。
  *
- * 実際にずれていた (オーナー報告 2026-07-27): 賢者 Lv3 で、戦闘のボタンは署名スキル
+ * 実際にずれていた: 賢者 Lv3 で、戦闘のボタンは署名スキル
  * `playerSkill` (天啓の一手) を表示していたのに、押すと `playerSkills[0]` (火炎) が出ていた。
  * とくぎが 1 個のときだけ通る分岐だったので気づきにくかった。
  *

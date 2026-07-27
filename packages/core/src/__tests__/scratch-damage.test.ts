@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { startBattle, runAutoBattle, resolveTurn, BATTLE_TUNING, MONSTERS, monsterCombatant } from '../index.js';
 
 /**
- * **かすりダメージ** (オーナー報告 2026-07-27
- * 「レベル5でこの装備だと tier1 だと敵なしで賢者なのに余裕で殴り殺しできます」)。
+ * **かすりダメージ**。
  *
  * `minDamage = 0` はメタル系の identity のために入れたものだが、**プレイヤーの守備でも
  * 同じ崖に届いてしまっていた**。grade2 の防具 1 点で Lv5 の守備が 2 → 18 になり、

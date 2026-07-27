@@ -40,7 +40,7 @@ export const WORLD_TUNING = {
   /** 池ができる最低湿度 */
   pondMoisture: 0.45,
   /** 平地の「まだら林」: 高周波ノイズがこれ以上の平地は林に。広い平原でも数歩ごとに
-   *  景色が変わる (スタート周辺が単調というオーナー指摘 2026-07-17 への対応)。
+   *  景色が変わる (スタート周辺が単調という)。
    *  0.74 では視界ほぼ平地一色の地点が 66% 残った (実測) ため 0.62 に強化 +
    *  forestSpeckle (小さな森の群れ) を追加。「平原だけが続くマップは無し」の指示。 */
   groveSpeckle: 0.62,
@@ -289,8 +289,8 @@ function computeBridges(): { tiles: { x: number; y: number }[]; spans: number } 
     return false;
   };
   /** 両端が「橋なしでも局所的に歩いて行き来できる」なら、その橋は海岸の
-   *  切れ込みを跨ぐだけの飾りになる (初版は 20 スパン中 19 がこれで、
-   *  オーナー報告 2026-07-17「発見した全ての橋が機能していない」の原因)。
+   *  切れ込みを跨ぐだけの飾りになる (初版は 20 スパン中 19 がこれで、橋が 1 つも
+   *  機能していなかった)。
    *  半径 bridgeDetourRadius の陸上 BFS で回り込めるかを判定する。 */
   const locallyConnected = (ax: number, ay: number, bx: number, by: number): boolean => {
     const R = t.bridgeDetourRadius;
@@ -405,7 +405,7 @@ export function computeWorldOverlay(): WorldOverlayData {
     if (componentSizes[i]! > componentSizes[bestComponent]!) bestComponent = i;
   }
   // spawn: メイン大陸の街のうち「最初の視界が最も豊か」なもの (単調な大平原スタートを
-  // 避ける。オーナー指摘 2026-07-17)。**実際のビューポートと同じ ±8 タイル**の窓で:
+  // 避ける)。**実際のビューポートと同じ ±8 タイル**の窓で:
   //  - 通行不能 (水/山/池) が 30% 以上の街は除外 (海際・山際すぎて歩き出しが詰まる)
   //  - 歩ける地形 (平地/林/森) のうち 8% 以上を占める種類が 2 つ未満の街も除外 (単調)
   //  - スコア = 地形種類数 ×100 + 見どころ率 (森/水/山/池、上限 40)
@@ -552,7 +552,7 @@ export function tierForDanger(danger: number): Tier {
  * 将来は魔王の城のリージョンだけ距離を無視して tier7 を返す。今は保留 (下記)。
  */
 export function tierForRegion(region: number): Tier {
-  // **魔王の城 (tier7) はまだ適用しない** (#536)。オーナー指定のリージョンを地形で確かめたところ、
+  // **魔王の城 (tier7) はまだ適用しない** (#536)。候補リージョンを地形で確かめたところ、
   // 「山に囲まれた閉領域」ではなかった:
   //   - region#27 は歩行可能 52%、tier1/tier2 のリージョンと 109 タイル接している
   //   - region#28 には**街「おおたきの宿」がある** (歩行可能 26% / 49 タイル接触)
@@ -568,7 +568,7 @@ export function tierForRegion(region: number): Tier {
  *  stat 型ではなく実在モンスターの index にするのは、各 tier のプール (3 種) が 5 stat 型を
  *  網羅せず「該当型ゼロ = 相性が無効」になる死角を避けるため (レビュー ★★★)。これで
  *  全地域が必ず特定のモンスターを favor し、顔ぶれ・ドロップ素材が地域ごとに偏る
- *  (「ジョブと相性のある地域」の土台。オーナー要望 2026-07-18)。 */
+ *  (「ジョブと相性のある地域」の土台)。 */
 export function regionAffinity(region: number): number {
   const rx = region % REGIONS_PER_SIDE;
   const ry = Math.floor(region / REGIONS_PER_SIDE);
