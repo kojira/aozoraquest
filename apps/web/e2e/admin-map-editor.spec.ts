@@ -14,10 +14,14 @@ import { test, expect } from '@playwright/test';
  * `admin-map.tsx` の COLS / ROWS / viewBox を変えたらここも直す (= 構造が変わったと気づける)。
  */
 
-const COLS = 24;
-const ROWS = 16;
+/** 表示は**正方形**。倍率を変えるとタイル数が変わり、枠の px は一定に保たれる
+ *  (24×16 固定だと 16px 表示で横長に潰れていた)。admin-map.tsx の BOX と揃える。 */
+const BOX = 384;
+const view = (tilePx: number) => Math.max(8, Math.round(BOX / tilePx));
 
 function page(tilePx: number, grid: boolean): string {
+  const COLS = view(tilePx);
+  const ROWS = COLS;
   const cells: string[] = [];
   const hits: string[] = [];
   for (let cy = 0; cy < ROWS; cy++) {
@@ -69,7 +73,8 @@ for (const tilePx of [16, 24, 32, 48]) {
 test('グリッド線が出る / 消せる', async ({ page: p }) => {
   await p.setViewportSize({ width: 1280, height: 900 });
   await p.setContent(page(24, true));
-  await expect(p.locator('.grid')).toHaveCount(COLS + 1 + ROWS + 1);
+  const n = view(24);
+  await expect(p.locator('.grid')).toHaveCount(n + 1 + n + 1);
   await p.setContent(page(24, false));
   await expect(p.locator('.grid')).toHaveCount(0);
 });
@@ -77,7 +82,7 @@ test('グリッド線が出る / 消せる', async ({ page: p }) => {
 test('当たり判定が全タイルに敷かれ、グリッド線に邪魔されない', async ({ page: p }) => {
   await p.setViewportSize({ width: 1280, height: 900 });
   await p.setContent(page(24, true));
-  await expect(p.locator('.hit')).toHaveCount(COLS * ROWS);
+  await expect(p.locator('.hit')).toHaveCount(view(24) * view(24));
   const box = await p.locator('.hit[data-cx="5"][data-cy="5"]').boundingBox();
   const at = (x: number, y: number) => p.evaluate(([px, py]) => {
     const el = document.elementFromPoint(px, py) as SVGElement | null;
@@ -94,4 +99,14 @@ test('当たり判定が全タイルに敷かれ、グリッド線に邪魔さ�
     await at(line!.x + line!.width / 2, line!.y + line!.height / 2),
     'グリッド線の真上をクリックしたときに当たる要素',
   ).toBe('hit');
+});
+
+test('どの倍率でも表示が正方形になる', async ({ page: p }) => {
+  // 24×16 タイル固定にしていたため、16px 表示で 384×256 の横長に潰れていた。
+  await p.setViewportSize({ width: 1280, height: 900 });
+  for (const tilePx of [16, 24, 32, 48]) {
+    await p.setContent(page(tilePx, true));
+    const box = await p.locator('#map').boundingBox();
+    expect(Math.round(box!.width), `${tilePx}px の幅`).toBe(Math.round(box!.height));
+  }
 });

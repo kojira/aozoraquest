@@ -117,11 +117,6 @@ export function TileArtEditor() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em', marginTop: 0 }}>パーツの絵 (ドット絵)</h3>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
-        地形の見た目を画素で描く。描いた絵は<strong>従来の SVG より優先</strong>して使われ、
-        絵が無い地形は代表色のべた塗りになるので、<strong>描く前でも編集は止まらない</strong>。
-      </p>
 
       {note && <p style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>{note}</p>}
 
@@ -257,11 +252,6 @@ export function TileArtEditor() {
         </label>
       </div>
 
-      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.5em', lineHeight: 1.7 }}>
-        色は<strong>索引で持つ</strong> (色そのものを画素に持たない)。パレットを差し替えるだけで
-        夜・雪・毒沼のような色調を、絵を描き直さずに出せる。
-        16×16 なら 1 地形 ~370 バイトで、256 地形ぜんぶ描いても ~93 KB。
-      </p>
     </section>
   );
 }
