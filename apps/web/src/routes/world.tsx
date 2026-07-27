@@ -54,7 +54,7 @@ import { loadStaticWorldMap } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
-import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
+import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelTile } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
@@ -1171,7 +1171,11 @@ export function World() {
       const x = wrap(ws.x - HALF + vx);
       const y = wrap(ws.y - HALF + vy);
       const t = terrainAt(x, y);
-      const body = t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t];
+      // ドット絵 (エディタで描いたもの) → 従来の SVG → 代表色のべた塗り、の順に倒す。
+      // 3 段あるので「絵がまだ無い地形」でも描画が止まらない (#421)。
+      const body = pixelTile(t)
+        ?? (t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t])
+        ?? fallbackTile(t);
       tiles.push(
         <g key={`${vx}-${vy}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
           {body}

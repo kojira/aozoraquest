@@ -19,4 +19,5 @@ export * from './elements.js';
 export * from './combat-target.js';
 export * from './world.js';
 export * from './world-map.js';
+export * from './tile-art.js';
 export * from './equipment.js';

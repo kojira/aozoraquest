@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import type { Terrain } from '@aozoraquest/core';
+import { TERRAIN_COLORS, UNKNOWN_TERRAIN_COLOR, tileArtColorAt, tileArtFor, type Terrain } from '@aozoraquest/core';
 
 /**
  * あおぞらワールドのタイル SVG (docs/19-overworld.md /
@@ -124,3 +124,50 @@ export const TERRAIN_TILES: Record<Terrain, ReactElement> = {
     </>
   ),
 };
+
+/**
+ * **ドット絵のタイルを SVG 断片として描く** (#421)。
+ *
+ * 地形は 256 種まで増える前提で、増やすたびに SVG を手で書くのは続かない。
+ * エディタで描いたドット絵 (画素データ) があればそれを使い、**無ければ従来の SVG**、
+ * SVG も無ければ**代表色のべた塗り**に倒す。この 3 段があるので、
+ * 「絵がまだ無い地形」でも編集と描画が止まらない。
+ *
+ * 画素は `<rect>` の並びで出す。1 タイル 16×16 = 最大 256 個だが、
+ * **同じ色が続く区間は 1 本の rect にまとめる**ので実際はずっと少ない。
+ */
+export function pixelTile(terrain: string): ReactElement | null {
+  const art = tileArtFor(terrain);
+  if (!art) return null;
+  const px = 32 / art.size; // 32×32 viewBox に合わせる
+  const rects: ReactElement[] = [];
+  for (let y = 0; y < art.size; y++) {
+    let runStart = 0;
+    let runColor = tileArtColorAt(art, 0, y);
+    for (let x = 1; x <= art.size; x++) {
+      const c = x < art.size ? tileArtColorAt(art, x, y) : '\u0000'; // 端で必ず切る
+      if (c === runColor) continue;
+      if (runColor !== '') {
+        rects.push(
+          <rect
+            key={`${runStart}-${y}`}
+            x={runStart * px}
+            y={y * px}
+            width={(x - runStart) * px}
+            height={px}
+            fill={runColor}
+          />,
+        );
+      }
+      runStart = x;
+      runColor = c;
+    }
+  }
+  return <>{rects}</>;
+}
+
+/** 絵も SVG も無い地形の代替 (代表色のべた塗り)。 */
+export function fallbackTile(terrain: string): ReactElement {
+  const color = (TERRAIN_COLORS as Record<string, string>)[terrain] ?? UNKNOWN_TERRAIN_COLOR;
+  return <rect width="32" height="32" fill={color} />;
+}
