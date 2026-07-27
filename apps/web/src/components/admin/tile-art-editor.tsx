@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { TERRAIN_TILES } from '@/components/world-tiles';
 import {
   BASE_PALETTE,
   TERRAIN_COLORS,
@@ -37,15 +38,19 @@ export function TileArtEditor() {
   const [size, setSize] = useState<number>(16);
   // **初期表示も代表色の下敷きから始める。** emptyTileArt だと全画素が透明で、
   // 開いた瞬間は市松模様しか出ず「壊れている」ように見える (実機で確認)。
-  const [art, setArt] = useState<TileArt>(() => tileArtFor(BASE_PALETTE[0]!) ?? seedFromColor(BASE_PALETTE[0]!, 16));
+  // 描いた絵があればそれ、無ければ**透明から**。下敷き (既存 SVG) をなぞる前提なので、
+  // 代表色で塗りつぶすと下敷きが見えなくなる。パレットには代表色を入れておく。
+  const [art, setArt] = useState<TileArt>(() => tileArtFor(BASE_PALETTE[0]!) ?? blankWithPalette(BASE_PALETTE[0]!, 16));
   const [color, setColor] = useState(1);
   const [note, setNote] = useState<string | null>(null);
+  /** **既存の SVG を下敷きに敷く。** ゼロから描くより、今の絵をなぞるほうが早い。 */
+  const [trace, setTrace] = useState(true);
   const painting = useRef(false);
 
   const pick = useCallback((t: string) => {
     setTerrain(t);
     const existing = tileArtFor(t);
-    const next = existing ?? seedFromColor(t, size);
+    const next = existing ?? blankWithPalette(t, size);
     setArt(next);
     setColor(1);
   }, [size]);
@@ -93,7 +98,7 @@ export function TileArtEditor() {
     void file.text().then((txt) => {
       try {
         loadTileArts(JSON.parse(txt));
-        setArt(tileArtFor(terrain) ?? seedFromColor(terrain, size));
+        setArt(tileArtFor(terrain) ?? blankWithPalette(terrain, size));
         setNote('読み込んだ');
       } catch (e) {
         setNote(`読み込めなかった: ${String(e)}`);
@@ -136,7 +141,7 @@ export function TileArtEditor() {
             onChange={(e) => {
               const n = Number(e.target.value);
               setSize(n);
-              setArt(tileArtFor(terrain) ?? seedFromColor(terrain, n));
+              setArt(tileArtFor(terrain) ?? blankWithPalette(terrain, n));
             }}
           >
             {TILE_ART_SIZES.map((n) => <option key={n} value={n}>{n}×{n}</option>)}
@@ -144,31 +149,48 @@ export function TileArtEditor() {
         </label>
       </div>
 
-      {/* パレット (タイル内の色)。索引 0 は透明で固定。 */}
-      <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5em' }}>
+      {/* パレット (タイル内の色)。索引 0 は透明で固定。
+          **色見本と色の変更を分ける。** 見本の下に 24×16px の色ピッカーを並べていたが、
+          実機では小さすぎて押せず「色が選べない」状態だった。見本は選ぶだけにして、
+          変更は選択中の色ひとつに対して大きく出す。 */}
+      <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4em' }}>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>いろ</span>
         {Array.from({ length: TILE_ART_MAX_COLORS }, (_, i) => i).map((i) => (
-          <span key={i} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => setColor(i)}
-              title={i === 0 ? '透明' : art.palette[i] || '未設定'}
-              style={{
-                width: 24, height: 24, padding: 0,
-                background: i === 0 ? 'repeating-conic-gradient(#666 0% 25%, #333 0% 50%) 50% / 8px 8px' : (art.palette[i] || '#000'),
-                border: color === i ? '3px solid var(--color-accent)' : '1px solid var(--color-border)',
-              }}
-            />
-            {i > 0 && (
-              <input
-                type="color"
-                value={art.palette[i] || '#000000'}
-                onChange={(e) => setPaletteColor(i, e.target.value)}
-                style={{ width: 24, height: 16, padding: 0, border: 'none', background: 'none' }}
-              />
-            )}
-          </span>
+          <button
+            key={i}
+            type="button"
+            onClick={() => setColor(i)}
+            title={i === 0 ? '透明 (消しゴム)' : art.palette[i] || '未設定'}
+            style={{
+              width: 32, height: 32, padding: 0,
+              background: i === 0
+                ? 'repeating-conic-gradient(#666 0% 25%, #333 0% 50%) 50% / 10px 10px'
+                : (art.palette[i] || 'repeating-conic-gradient(#444 0% 25%, #222 0% 50%) 50% / 10px 10px'),
+              border: color === i ? '3px solid var(--color-accent)' : '1px solid var(--color-border)',
+            }}
+          />
         ))}
+      </div>
+
+      {/* 選択中の色を大きく変える */}
+      <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center', marginBottom: '0.5em', fontSize: '0.8em' }}>
+        {color === 0 ? (
+          <span style={{ color: 'var(--color-muted)' }}>透明 (消しゴム) を選択中</span>
+        ) : (
+          <>
+            <span>いろ {color} を変える</span>
+            <input
+              type="color"
+              value={art.palette[color] || '#000000'}
+              onChange={(e) => setPaletteColor(color, e.target.value)}
+              style={{ width: 56, height: 34, padding: 0, border: '1px solid var(--color-border)', background: 'none' }}
+            />
+            <code style={{ color: 'var(--color-muted)' }}>{art.palette[color] || '未設定'}</code>
+          </>
+        )}
+        <label style={{ marginLeft: 'auto' }}>
+          <input type="checkbox" checked={trace} onChange={(e) => setTrace(e.target.checked)} /> 下敷き
+        </label>
       </div>
 
       {/* 画素グリッド */}
@@ -176,13 +198,27 @@ export function TileArtEditor() {
         onMouseLeave={() => { painting.current = false; }}
         onMouseUp={() => { painting.current = false; }}
         style={{
+          position: 'relative',
           display: 'grid',
           gridTemplateColumns: `repeat(${art.size}, ${CELL}px)`,
           width: art.size * CELL,
           border: '2px solid var(--color-border)',
           background: 'repeating-conic-gradient(#3a3a3a 0% 25%, #2a2a2a 0% 50%) 50% / 12px 12px',
+          touchAction: 'none',
         }}
       >
+        {/* **既存の SVG を下敷きに敷く。** 上からドットでなぞれば、ゼロから描くより早い。
+            透明の画素からは下敷きが透けて見える (置いた画素で隠れる)。 */}
+        {trace && (
+          <svg
+            viewBox="0 0 32 32"
+            width={art.size * CELL}
+            height={art.size * CELL}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.85 }}
+          >
+            {TERRAIN_TILES[terrain as keyof typeof TERRAIN_TILES] ?? null}
+          </svg>
+        )}
         {Array.from({ length: art.size * art.size }, (_, i) => {
           const x = i % art.size;
           const y = Math.floor(i / art.size);
@@ -190,9 +226,17 @@ export function TileArtEditor() {
           return (
             <div
               key={i}
-              onMouseDown={() => { painting.current = true; paint(x, y); }}
-              onMouseEnter={() => { if (painting.current) paint(x, y); }}
-              style={{ width: CELL, height: CELL, background: c || 'transparent', cursor: 'crosshair' }}
+              onPointerDown={(e) => {
+                painting.current = true;
+                (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+                paint(x, y);
+              }}
+              onPointerEnter={() => { if (painting.current) paint(x, y); }}
+              onPointerUp={() => { painting.current = false; }}
+              style={{
+                width: CELL, height: CELL, background: c || 'transparent',
+                cursor: 'crosshair', position: 'relative', touchAction: 'none',
+              }}
             />
           );
         })}
@@ -222,11 +266,14 @@ export function TileArtEditor() {
   );
 }
 
-/** 新規作成の下敷き: その地形の代表色でべた塗りしておく (真っ白から描き始めない)。 */
-function seedFromColor(terrain: string, size: number): TileArt {
+/**
+ * 新規作成: **画素は透明のまま**、パレットにだけその地形の代表色を入れておく。
+ * 下敷き (既存 SVG) をなぞる前提なので、べた塗りすると下敷きが見えなくなる。
+ * 色が 1 つも無いと「色が選べない」ので、代表色は最初から入れる。
+ */
+function blankWithPalette(terrain: string, size: number): TileArt {
   const base = (TERRAIN_COLORS as Record<string, string>)[terrain] ?? UNKNOWN_TERRAIN_COLOR;
   const art = emptyTileArt(size);
-  art.palette = ['', base];
-  art.pixels.fill(1);
+  art.palette = ['', base, '#ffffff', '#000000'];
   return art;
 }

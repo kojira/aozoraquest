@@ -8,7 +8,6 @@ import {
   encodeWorldMap,
   setTownOverrides,
   worldTownOverrides,
-  loadStaticWorldMap,
   setWorldMap,
   worldMapTiles,
   worldOverlay,
@@ -17,7 +16,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { saveWorldMap } from '@/lib/world-authoring';
+import { loadAuthoredWorld, saveWorldMap } from '@/lib/world-authoring';
 import { TERRAIN_TILES, fallbackTile, pixelTile } from '@/components/world-tiles';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
@@ -64,9 +63,13 @@ export function AdminMap() {
   const [townMode, setTownMode] = useState(false);
   const [townTick, setTownTick] = useState(0);
   const painting = useRef(false);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    void loadStaticWorldMap()
+    // **保存済みの地図を読む。** 同梱の地図を読んでいたため、編集して保存したあと
+    // この画面を開き直すと**編集が消えて見え、そのまま保存すると上書きされていた**。
+    // 地図の出所は保存経路と必ず同じにする。
+    void loadAuthoredWorld(session.agent ?? null)
       .then(() => {
         const src = worldMapTiles();
         if (!src) throw new Error('地図が読み込めていない');
@@ -79,7 +82,8 @@ export function AdminMap() {
         setReady(true);
       })
       .catch((e) => setNote(`地図を読めなかった: ${String(e)}`));
-  }, []);
+    // agent が入るのは復元後なので、それを待って読む (未ログインだと保存済みを読めない)。
+  }, [session.agent]);
 
   const place = useCallback((cx: number, cy: number) => {
     const tiles = draftRef.current;
@@ -134,6 +138,23 @@ export function AdminMap() {
    * 読み込み済みの地図と差し替わり、**このタブでワールドを歩いて確かめられる**。
    * 他の人には見えないし、リロードすると元に戻る (保存していないため)。
    */
+  /**
+   * **画面座標からマスを引いて置く。**
+   *
+   * `onMouseEnter` に頼ると**タッチでは連続配置できない** — 指を滑らせても
+   * enter/leave が飛ばないため、1 マスずつタップするしかなくなる (実機で発生)。
+   * ポインタ座標を SVG の座標系に落として自分で解決する。
+   */
+  const paintAtPointer = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const cx = Math.floor(((clientX - r.left) / r.width) * COLS);
+    const cy = Math.floor(((clientY - r.top) / r.height) * ROWS);
+    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return;
+    place(cx, cy);
+  }, [place]);
+
   const preview = useCallback(() => {
     const tiles = draftRef.current;
     if (!tiles) return;
@@ -281,11 +302,22 @@ export function AdminMap() {
           {/* 地図本体 */}
           <div style={{ overflow: 'auto', maxWidth: '100%', border: '2px solid var(--color-border)', width: 'fit-content' }}>
             <svg
+              ref={svgRef}
               width={W}
               height={H}
               viewBox={`0 0 ${COLS * 32} ${ROWS * 32}`}
-              onMouseLeave={() => { painting.current = false; }}
-              onMouseUp={() => { painting.current = false; }}
+              onPointerDown={(e) => {
+                if (townMode) return; // 街は 1 マスずつ (名前を聞くので連続配置しない)
+                painting.current = true;
+                (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+                paintAtPointer(e.clientX, e.clientY);
+              }}
+              onPointerMove={(e) => { if (painting.current) paintAtPointer(e.clientX, e.clientY); }}
+              onPointerUp={(e) => {
+                painting.current = false;
+                try { (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId); } catch { /* 既に外れている */ }
+              }}
+              onPointerCancel={() => { painting.current = false; }}
               style={{ display: 'block', cursor: 'crosshair', touchAction: 'none' }}
             >
               {cells.map(({ cx, cy, t }) => (
@@ -323,21 +355,27 @@ export function AdminMap() {
                   key={`h-${cx}-${cy}`}
                   x={cx * 32} y={cy * 32} width={32} height={32}
                   fill="transparent"
-                  onMouseDown={() => {
-                    if (townMode) { editTown(cx, cy); return; }
-                    painting.current = true;
-                    place(cx, cy);
-                  }}
-                  onMouseEnter={() => { if (painting.current && !townMode) place(cx, cy); }}
+                  onClick={() => { if (townMode) editTown(cx, cy); }}
                 />
               ))}
             </svg>
           </div>
 
+          {/* **全体マップ。** 1024 タイルを 1 画素ずつ縮めて出し、押した場所へ飛ぶ。
+              ボタン移動だけだと世界の端から端まで数十回押すことになる。 */}
+          <WorldMinimap
+            tiles={draftRef.current}
+            origin={origin}
+            onJump={(x, y) => setOrigin({ x: wrap(x - Math.floor(COLS / 2)), y: wrap(y - Math.floor(ROWS / 2)) })}
+          />
+
           {/* 移動 */}
           <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', marginTop: '0.5em', fontSize: '0.85em' }}>
+            {/* **半画面ずつ動かす。** 1 画面まるごと切り替えると接合部が一度も見えず、
+                端をまたぐ地形をつなげられない。 */}
             {([
-              ['←', -COLS, 0], ['→', COLS, 0], ['↑', 0, -ROWS], ['↓', 0, ROWS],
+              ['←', -Math.floor(COLS / 2), 0], ['→', Math.floor(COLS / 2), 0],
+              ['↑', 0, -Math.floor(ROWS / 2)], ['↓', 0, Math.floor(ROWS / 2)],
               ['←1', -1, 0], ['→1', 1, 0], ['↑1', 0, -1], ['↓1', 0, 1],
             ] as const).map(([label, dx, dy]) => (
               <button key={label} type="button" onClick={() => pan(dx, dy)} style={{ padding: '0.2em 0.6em' }}>
@@ -368,6 +406,70 @@ export function AdminMap() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** 全体マップ (1024×1024 を縮小)。押した場所へビューを飛ばす。 */
+function WorldMinimap({
+  tiles,
+  origin,
+  onJump,
+}: {
+  tiles: Uint8Array | null;
+  origin: { x: number; y: number };
+  onJump: (x: number, y: number) => void;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  /** 表示サイズ (px)。1024 を SAMPLE 間隔で間引いて描く。 */
+  const PX = 256;
+  const SAMPLE = WORLD_SIZE / PX; // 4
+
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv || !tiles) return;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(PX, PX);
+    const buf = new Uint32Array(img.data.buffer);
+    for (let y = 0; y < PX; y++) {
+      const row = y * SAMPLE * WORLD_SIZE;
+      for (let x = 0; x < PX; x++) {
+        const hex = editorColorAt(tiles[row + x * SAMPLE]!);
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        buf[y * PX + x] = (255 << 24) | (b << 16) | (g << 8) | r;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    // 今どこを見ているか
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(origin.x / SAMPLE, origin.y / SAMPLE, COLS / SAMPLE, ROWS / SAMPLE);
+  }, [tiles, origin, SAMPLE]);
+
+  return (
+    <div style={{ marginTop: '0.6em' }}>
+      <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginBottom: '0.2em' }}>
+        全体マップ (押すとその場所へ飛ぶ)
+      </div>
+      <canvas
+        ref={ref}
+        width={PX}
+        height={PX}
+        onPointerDown={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          onJump(
+            Math.round(((e.clientX - r.left) / r.width) * WORLD_SIZE),
+            Math.round(((e.clientY - r.top) / r.height) * WORLD_SIZE),
+          );
+        }}
+        style={{
+          width: PX, height: PX, imageRendering: 'pixelated',
+          border: '2px solid var(--color-border)', cursor: 'crosshair', touchAction: 'none',
+        }}
+      />
     </div>
   );
 }
