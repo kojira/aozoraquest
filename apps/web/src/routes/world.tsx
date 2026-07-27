@@ -36,8 +36,9 @@ import { serverMove, serverTurn, serverState, serverTeleport, serverItem, server
   serverShopCraft,
   serverShopSell,
   serverShopForge,
+  serverShopDiscard,
 } from '@/lib/world-server';
-import { craftItem, forgeItems, loadCraftInventory, newCraftRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
+import { craftItem, discardItems, forgeItems, loadCraftInventory, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
 import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
@@ -271,6 +272,7 @@ export function World() {
   /** 再試行の冪等化: 失敗した制作/合成/ひきとりの rkey を保持し、同条件の再試行で
    *  使い回す (createRecord は同 rkey で衝突するため 2 重記帳が構造的に起きない) */
   const pendingCraftRef = useRef<{ defId: string; rkey: string } | null>(null);
+  const pendingDiscardRef = useRef<Record<string, string>>({});
   const pendingForgeRef = useRef<{ key: string; rkey: string } | null>(null);
   const pendingSaleRef = useRef<{ key: string; rkey: string } | null>(null);
   /** ShopModal 用の素材スナップショット (materialsRef は ref なので再レンダ用に複製) */
@@ -1418,6 +1420,35 @@ export function World() {
           archetype={archetype}
           pieces={craftedPieces}
           refs={gearRefs}
+          busy={craftBusy}
+          errorText={shopError}
+          onDiscard={(rkey) => {
+            // **すてるは街の外でもできる** (#575)。所持上限に達すると制作も購入も
+            // 断られるので、街に着くまで整理できないと詰む。パワーは返らない。
+            if (!agent) return;
+            setShopError(null);
+            setCraftBusy(true);
+            // **冪等キーは個体ごとに固定する。** 呼び出しの中で採番すると、応答だけ
+            // 落ちた後の押し直しが毎回別 op になり、サーバーの二重実行防止が一度も
+            // 効かない (2 回目は必ず not_owned になる)。craft と同じ作法。
+            const dkey = pendingDiscardRef.current[rkey] ?? newDiscardRkey();
+            pendingDiscardRef.current[rkey] = dkey;
+            void (async () => {
+              try {
+                const res = await serverShopDiscard(agent, [rkey], dkey);
+                delete pendingDiscardRef.current[rkey];
+                if (res.pieces) setCraftedPieces(res.pieces.map((x) => ({ rkey: x.rkey, itemId: x.itemId, level: x.level, at: '' })));
+                // PDS 側にも墓標を残す (/me の集計が捨てた装備を数えたままにならないように)。
+                // 権威は既にサーバーで減っているので、失敗しても進める。
+                void discardItems(agent, [rkey], dkey).catch((e) => console.warn('[world] discard log failed', e));
+              } catch (e) {
+                console.warn('[world] discard failed', e);
+                setShopError(shopErrorText(e, 'すてられなかった'));
+              } finally {
+                setCraftBusy(false);
+              }
+            })();
+          }}
           onEquip={(slot, rkey) => void onEquipChange({ ...gearRefs, [slot]: rkey })}
           onUnequip={(slot) => {
             const next = { ...gearRefs };
