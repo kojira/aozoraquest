@@ -366,6 +366,7 @@ export function AdminMap() {
           <WorldMinimap
             tiles={draftRef.current}
             origin={origin}
+            townTick={townTick}
             onJump={(x, y) => setOrigin({ x: wrap(x - Math.floor(COLS / 2)), y: wrap(y - Math.floor(ROWS / 2)) })}
           />
 
@@ -414,10 +415,13 @@ export function AdminMap() {
 function WorldMinimap({
   tiles,
   origin,
+  townTick,
   onJump,
 }: {
   tiles: Uint8Array | null;
   origin: { x: number; y: number };
+  /** 街を編集したら描き直すためのカウンタ (街は別データなので tiles の変化では拾えない)。 */
+  townTick: number;
   onJump: (x: number, y: number) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -443,16 +447,40 @@ function WorldMinimap({
       }
     }
     ctx.putImageData(img, 0, 0);
+
+    // **街を出す。** 全体マップで場所が分からないと、どこへ飛べばいいか決められない。
+    // 1024 を 256 に縮めているので、街 1 マスは 0.25px = そのままでは見えない。
+    // 縮尺に関係なく見える大きさの点で描く (縁取りして地形の上でも沈まないようにする)。
+    for (const t of worldOverlay().towns) {
+      const x = t.x / SAMPLE;
+      const y = t.y / SAMPLE;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#f5d442';
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#3a2c00';
+      ctx.stroke();
+    }
+    // spawn (はじまりの街) だけ形を変える
+    const sp = worldOverlay().spawn;
+    ctx.beginPath();
+    ctx.arc(sp.x / SAMPLE, sp.y / SAMPLE, 4.5, 0, Math.PI * 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+
     // 今どこを見ているか
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
     ctx.strokeRect(origin.x / SAMPLE, origin.y / SAMPLE, COLS / SAMPLE, ROWS / SAMPLE);
-  }, [tiles, origin, SAMPLE]);
+  }, [tiles, origin, SAMPLE, townTick]);
 
   return (
     <div style={{ marginTop: '0.6em' }}>
       <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginBottom: '0.2em' }}>
-        全体マップ (押すとその場所へ飛ぶ)
+        全体マップ (押すとその場所へ飛ぶ)。<span style={{ color: '#f5d442' }}>●</span> が街、
+        白い丸が はじまりの街、白い枠が今見ている範囲。
       </div>
       <canvas
         ref={ref}
