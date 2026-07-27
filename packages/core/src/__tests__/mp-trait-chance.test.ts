@@ -124,12 +124,20 @@ describe('MP 特性の確率発動 (#564)', () => {
     const at = (lv: number) => startBattle('paladin', lv, 1, 'x', 1, 1).mpTraitChance!;
     expect(at(1)).toBeLessThan(at(20));
     expect(at(20)).toBeLessThan(at(30));
-    expect(at(50)).toBe(t.mpTraitChanceMax);
+    // **上限に早く届かせない**: 裸の最高レベルでもまだ頭打ちになっていないこと
+    // (届いてしまうとそこから先は うん を盛っても確率が動かず、装備を選ぶ動機が消える)
+    expect(at(50), '裸 Lv50 で頭打ちになっている').toBeLessThan(t.mpTraitChanceMax);
 
     // **装備のうんも乗る** (パラディンの専用武器は luk 型なので、盛ると祈りが通りやすくなる)
     const bare = startBattle('paladin', 20, 1, 'x', 1, 1).mpTraitChance!;
     const geared = startBattle('paladin', 20, 1, 'x', 1, 1, 0, undefined,
       { gear: { weapon: { id: 'wp-paladin-high', level: 3 } } }).mpTraitChance!;
     expect(geared).toBeGreaterThan(bare);
+
+    // 到達しうる最大 (Lv50 × 最良装備 +10) でちょうど上限に触れる = 全域で うん が効く
+    const maxed = startBattle('paladin', 50, 1, 'x', 1, 1, 0, undefined, {
+      gear: { weapon: { id: 'wp-paladin-high', level: 10 }, armor: { id: 'ar-cloth', level: 10 }, charm: { id: 'ch-life', level: 10 } },
+    }).mpTraitChance!;
+    expect(maxed).toBe(t.mpTraitChanceMax);
   });
 });

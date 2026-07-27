@@ -172,9 +172,14 @@ export const BATTLE_TUNING = {
   critBase: 0.04,
   critLukScale: 0.004,
   /** MP 特性の発動確率に効く うん の係数と上限 (`MpTrait.chance` が基準値)。
-   *  うんの高い職ほど「祈りが通じやすい」= 装備でうんを盛る意味が MP にも出る。 */
-  mpTraitLukScale: 0.004,
-  mpTraitChanceMax: 0.8,
+   *  うんの高い職ほど「祈りが通じやすい」= 装備でうんを盛る意味が MP にも出る。
+   *
+   *  **上限に早く届かせない。** 0.004 / 上限 0.8 だと パラディンは裸 Lv38・専用武器込みなら
+   *  Lv28 で頭打ちになり、そこから先は うん を +17 盛っても確率が 1 も動かなくなる
+   *  (= 装備を選ぶ動機が消える帯ができる)。0.003 / 上限 0.85 なら、到達しうる最大
+   *  (Lv50 × 最良装備 +10 = うん 119) でちょうど 0.85 に触れる = 全域で うん が効く。 */
+  mpTraitLukScale: 0.003,
+  mpTraitChanceMax: 0.85,
   critAtkMultiplier: 1.5,
   /** ぼうぎょ: 被ダメージ半減 */
   guardReduction: 0.5,
