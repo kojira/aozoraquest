@@ -163,7 +163,11 @@ export function pixelTile(terrain: string): ReactElement | null {
       runColor = c;
     }
   }
-  return <>{rects}</>;
+  // **アンチエイリアスを切る (ドット絵の作法)。**
+  // 既定の描画では矩形の境界が補間され、隣り合う画素の間に中間色の**スジ**が入る。
+  // さらに縮小時 (16px 表示など) は 1 画素が 1 デバイス画素を割り、補間で**潰れて**
+  // 別の色になる。`crispEdges` で最近傍に倒すと、拡大しても縮小しても画素のまま出る。
+  return <g shapeRendering="crispEdges">{rects}</g>;
 }
 
 /** 絵も SVG も無い地形の代替 (代表色のべた塗り)。 */
