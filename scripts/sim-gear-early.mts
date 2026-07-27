@@ -32,11 +32,11 @@ const xpAtLevel = (lv: number, job: string) => jobXpCurveFor(job).find((e) => e[
 
 const LOADOUTS: Array<{ name: string; gear?: Record<string, { id: string; level: number }> }> = [
   { name: '素手' },
-  { name: '防具のみ (まなびのローブ+1)', gear: { armor: { id: 'ar-scholar', level: 1 } } },
-  {
-    name: '報告の装備 (賢者の杖+1 / まなびのローブ+1)',
-    gear: { weapon: { id: 'wp-sage-mid', level: 1 }, armor: { id: 'ar-scholar', level: 1 } },
-  },
+  // tier1 の街で実際に買えるもの (#565 で grade1 までに制限)
+  { name: 'grade1 防具 (かわのよろい)', gear: { armor: { id: 'ar-leather', level: 0 } } },
+  { name: 'grade1 一式 (かわのよろい + 見習いの杖)', gear: { armor: { id: 'ar-leather', level: 0 }, weapon: { id: 'wp-novice-staff', level: 0 } } },
+  // tier2 以降でしか買えないもの (帯を越えて持ち込んだ場合)
+  { name: 'grade2 防具 (まなびのローブ+1)', gear: { armor: { id: 'ar-scholar', level: 1 } } },
 ];
 
 console.log(`job=${JOB} Lv${LV}  atkCoef=${BATTLE_TUNING.atkCoef} defCoef=${BATTLE_TUNING.defCoef} floor=${BATTLE_TUNING.monsterStatFloor}`);
