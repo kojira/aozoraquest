@@ -126,6 +126,25 @@ export function tileArtFor(terrain: string): TileArt | undefined {
   return registry.get(terrain);
 }
 
+/**
+ * パーツの絵を引く。**古い保存 (地形名キー) にも当たる。**
+ *
+ * 絵のキーは元々「地形名」(`water` 等) だったが、同じ地形で絵だけ違うパーツ
+ * (「たての橋」) を足せるようにしたとき **index キー (`part:4`)** に変えた。
+ * その結果、変更前に描いた絵は編集画面から見つからず、**地図には出るのに
+ * 編集画面では SVG に戻る**という食い違いが起きた (地図側は fallback していたため)。
+ *
+ * 引く側を 1 か所にまとめて、両方が同じ順で探すようにする。
+ */
+export function partArtFor(index: number, terrain: string): TileArt | undefined {
+  return registry.get(partKey(index)) ?? registry.get(terrain);
+}
+
+/** パーツごとの絵のキー。 */
+export function partKey(index: number): string {
+  return `part:${index}`;
+}
+
 /** 登録済みの地形 id 一覧 (エディタが「描いた地形」を並べるため)。 */
 export function tileArtTerrains(): string[] {
   return [...registry.keys()];

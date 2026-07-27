@@ -12,6 +12,8 @@ import {
   dumpTileArts,
   TileArtError,
   TILE_ART_MAX_COLORS,
+  partArtFor,
+  partKey,
 } from '../index.js';
 
 /**
@@ -85,5 +87,40 @@ describe('地形のドット絵 (#421)', () => {
     const size = JSON.stringify(encodeTileArt(a)).length;
     expect(size).toBeLessThan(500); // 16×16 + パレット
     expect(size * 256).toBeLessThan(140_000); // 全 256 地形でも ~130 KB 未満
+  });
+});
+
+describe('パーツの絵の探し方 (#421)', () => {
+  afterEach(() => { for (const t of tileArtTerrains()) setTileArt(t, null); });
+
+  it('**古い保存 (地形名キー) にも当たる**', () => {
+    // 絵のキーは元々「地形名」だったが、同じ地形で絵だけ違うパーツを足せるように
+    // index キーに変えた。その結果、変更前に描いた絵が編集画面から見つからず、
+    // 「地図には出るのに編集画面では SVG に戻る」という食い違いが起きた。
+    const a = emptyTileArt(8);
+    a.palette = ['', '#57b7ee'];
+    a.pixels.fill(1);
+    setTileArt('water', a); // 古い形式で保存されている絵
+    expect(partArtFor(4, 'water'), '古い保存が見つからない').toBeDefined();
+    expect(tileArtColorAt(partArtFor(4, 'water')!, 0, 0)).toBe('#57b7ee');
+  });
+
+  it('index キーの絵があればそちらが勝つ (同じ地形で絵を分けられる)', () => {
+    const old = emptyTileArt(8);
+    old.palette = ['', '#111111'];
+    old.pixels.fill(1);
+    setTileArt('bridge', old);
+
+    const vertical = emptyTileArt(8);
+    vertical.palette = ['', '#222222'];
+    vertical.pixels.fill(1);
+    setTileArt(partKey(8), vertical); // 「たての橋」= index 8
+
+    expect(tileArtColorAt(partArtFor(7, 'bridge')!, 0, 0)).toBe('#111111'); // よこの橋
+    expect(tileArtColorAt(partArtFor(8, 'bridge')!, 0, 0)).toBe('#222222'); // たての橋
+  });
+
+  it('どちらも無ければ undefined (呼び出し側が SVG / 代表色に倒す)', () => {
+    expect(partArtFor(3, 'pond')).toBeUndefined();
   });
 });

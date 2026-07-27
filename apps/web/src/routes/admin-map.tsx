@@ -6,7 +6,6 @@ import {
   MAX_TOWN_NAME,
   editorColorAt,
   encodeWorldMap,
-  partKey,
   setTownOverrides,
   setWorldParts,
   worldParts,
@@ -20,7 +19,7 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, saveWorldMap } from '@/lib/world-authoring';
-import { TERRAIN_TILES, fallbackTile, pixelTile } from '@/components/world-tiles';
+import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
 /**
@@ -49,8 +48,7 @@ function viewTiles(tilePx: number): number {
 
 /** パーツの絵 (ワールド画面と同じ)。index ごとの絵 → 地形の絵 → SVG → 代表色 の順に倒す。 */
 function partOf(index: number, terrain: string) {
-  return pixelTile(partKey(index))
-    ?? pixelTile(terrain)
+  return pixelPart(index, terrain)
     ?? TERRAIN_TILES[terrain as Terrain]
     ?? fallbackTile(terrain);
 }
