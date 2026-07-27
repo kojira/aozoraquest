@@ -48,12 +48,19 @@ function fromBase64(b64: string): Uint8Array {
 }
 
 /**
- * 世界を読み込む (キャッシュ付き)。**await しないで呼んでよい** — 読み込むまでは
- * 同梱の地図かノイズ生成に倒れるだけで、結果は「編集前の世界」として一貫している。
+ * 世界を読み込む (キャッシュ付き)。**返り値を必ず `ctx.waitUntil` に載せること。**
+ *
+ * 投げっぱなしにすると、リクエストが同期的に return した瞬間 (CORS preflight の
+ * OPTIONS が該当) に I/O コンテキストごと捨てられ、promise が **reject もせず
+ * settle しない**。`.catch()` も走らないので警告すら出ず、`inflight` がラッチされた
+ * ままで**その isolate は二度と読み込まない** (workerd で実測)。
+ *
+ * リクエスト自体は待たせない — 読み込むまでは同梱の地図かノイズ生成に倒れるだけで、
+ * 結果は「編集前の世界」として一貫している。
  */
-export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: number): void {
-  if (inflight) return;
-  if (loadedAt && now - loadedAt < CACHE_TTL_SEC) return;
+export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: number): Promise<void> {
+  if (inflight) return inflight;
+  if (loadedAt && now - loadedAt < CACHE_TTL_SEC) return Promise.resolve();
   inflight = (async () => {
     // **まず同梱の地図を入れる。** 手編集が無い / 読めない場合でも、terrainAt が
     // 配列参照になって速いままでいられる。
@@ -83,6 +90,7 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
       loadedAt = now;
       inflight = null;
     });
+  return inflight;
 }
 
 /** テスト用: キャッシュを捨てる。 */

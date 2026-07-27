@@ -64,6 +64,30 @@ export const TERRAIN_COLORS: Record<Terrain, string> = {
 /** 絵も色も無い地形の代替色 (エディタが先に増やした地形はこれで出る)。 */
 export const UNKNOWN_TERRAIN_COLOR = '#7a5cff';
 
+/**
+ * **エディタ表示用の識別色**。`TERRAIN_COLORS` は「地図で見たときの自然な見た目」なので
+ * plains と town、pond と water が**同じ色**になっている (街は下地が平地色、という設計)。
+ * それをそのまま編集画面に使うと、**街を塗ったのか平地を塗ったのか画面で判別できない**。
+ * 編集中だけは全地形を別の色で出す。
+ */
+export const EDITOR_TERRAIN_COLORS: Record<Terrain, string> = {
+  plains: '#9dd07f',
+  grove: '#78bd63',
+  forest: '#3f7d3f',
+  pond: '#7fd4ff',
+  water: '#2f7fd0',
+  mountain: '#a8a294',
+  town: '#f5d442',
+  bridge: '#c98d5a',
+};
+
+/** index → 編集用の識別色。 */
+export function editorColorAt(index: number, palette: readonly string[] = BASE_PALETTE): string {
+  const id = palette[index];
+  if (id !== undefined && isKnownTerrain(id)) return EDITOR_TERRAIN_COLORS[id];
+  return UNKNOWN_TERRAIN_COLOR;
+}
+
 /** index → 色。パレットに知らない地形が入っていても落ちない。 */
 export function paletteColorAt(index: number, palette: readonly string[] = BASE_PALETTE): string {
   const id = palette[index];

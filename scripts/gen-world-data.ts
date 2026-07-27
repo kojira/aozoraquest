@@ -42,6 +42,11 @@ const tiles = new Uint8Array(WORLD_SIZE * WORLD_SIZE);
 for (let y = 0; y < WORLD_SIZE; y++) {
   for (let x = 0; x < WORLD_SIZE; x++) tiles[y * WORLD_SIZE + x] = idx.get(baseTerrainAt(x, y)) ?? 0;
 }
+// **街と橋も焼き込む。** baseTerrainAt の戻り値型は Exclude<Terrain, 'town' | 'bridge'> で、
+// 街と橋は原理的に入らない。地図は overlay より優先されるので、焼き込まないと
+// **橋が water になって渡れず、街が平地になって入れなくなる** (実測 103 タイル)。
+for (const b of data.bridgeTiles) tiles[b.y * WORLD_SIZE + b.x] = idx.get('bridge')!;
+for (const t of data.towns) tiles[t.y * WORLD_SIZE + t.x] = idx.get('town')!;
 const gz = gzipSync(Buffer.from(tiles), { level: 9 });
 const rawKb = (tiles.length / 1024).toFixed(0);
 const gzKb = (gz.length / 1024).toFixed(1);

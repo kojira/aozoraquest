@@ -5,11 +5,11 @@ import {
   TERRAIN_COLORS,
   UNKNOWN_TERRAIN_COLOR,
   WORLD_SIZE,
+  editorColorAt,
   encodeWorldMap,
-  hasWorldMap,
   loadStaticWorldMap,
   paletteColorAt,
-  setMappedTerrain,
+  setWorldMap,
   worldMapTiles,
   worldOverlay,
 } from '@aozoraquest/core';
@@ -39,10 +39,28 @@ const DEFAULT_ZOOM = 1;
 /** ビューポート (画面に見せる範囲) のタイル数。 */
 const VIEW = 512;
 
+/** index → RGBA (リトルエンディアンの 0xAABBGGRR)。**毎画素で色文字列を解析しない** —
+ *  512×512 = 26 万画素の走査が 21 ms から 0.3 ms になる (実測 74 倍)。 */
+const RGBA_LUT = (() => {
+  const lut = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const hex = editorColorAt(i);
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    lut[i] = (255 << 24) | (b << 16) | (g << 8) | r;
+  }
+  return lut;
+})();
+
 export function MapEditor() {
   const session = useSession();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [ready, setReady] = useState(hasWorldMap());
+  // **編集は必ずコピーの上で行う。** worldMapTiles() が返すのはモジュールグローバルの
+  // 実体で、そこを直接書くと「管理画面を開いて塗っただけでワールドの地形が変わる」
+  // (SPA なので core は単一インスタンス)。自分の現在地を水にすると身動きが取れなくなる。
+  const draftRef = useRef<Uint8Array | null>(null);
+  const [ready, setReady] = useState(false);
   const [brush, setBrush] = useState(0);
   const [size, setSize] = useState(1);
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM);
@@ -53,27 +71,32 @@ export function MapEditor() {
 
   useEffect(() => {
     if (ready) return;
-    void loadStaticWorldMap().then(() => setReady(true)).catch((e) => setNote(`地図を読めなかった: ${String(e)}`));
+    void loadStaticWorldMap()
+      .then(() => {
+        const src = worldMapTiles();
+        if (!src) throw new Error('地図が読み込めていない');
+        draftRef.current = new Uint8Array(src); // 実体を触らない
+        setReady(true);
+      })
+      .catch((e) => setNote(`地図を読めなかった: ${String(e)}`));
   }, [ready]);
 
   /** 画素を canvas に写す。1 タイル = 1 画素で描いてから CSS で拡大する (拡大は GPU に任せる)。 */
   const redraw = useCallback(() => {
     const cv = canvasRef.current;
-    const tiles = worldMapTiles();
+    const tiles = draftRef.current;
     if (!cv || !tiles) return;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
     const img = ctx.createImageData(VIEW, VIEW);
+    // 32bit で一気に書く (色文字列の解析を毎画素でやらない)
+    const buf = new Uint32Array(img.data.buffer);
     for (let y = 0; y < VIEW; y++) {
+      const wy = (origin.y + y) % WORLD_SIZE;
+      const row = wy * WORLD_SIZE;
+      const out = y * VIEW;
       for (let x = 0; x < VIEW; x++) {
-        const wx = (origin.x + x) % WORLD_SIZE;
-        const wy = (origin.y + y) % WORLD_SIZE;
-        const color = paletteColorAt(tiles[wy * WORLD_SIZE + wx]!);
-        const o = (y * VIEW + x) * 4;
-        img.data[o] = parseInt(color.slice(1, 3), 16);
-        img.data[o + 1] = parseInt(color.slice(3, 5), 16);
-        img.data[o + 2] = parseInt(color.slice(5, 7), 16);
-        img.data[o + 3] = 255;
+        buf[out + x] = RGBA_LUT[tiles[row + ((origin.x + x) % WORLD_SIZE)]!]!;
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -99,15 +122,23 @@ export function MapEditor() {
       for (let dx = -half; dx <= half; dx++) {
         const wx = (origin.x + px + dx + WORLD_SIZE) % WORLD_SIZE;
         const wy = (origin.y + py + dy + WORLD_SIZE) % WORLD_SIZE;
-        setMappedTerrain(wx, wy, brush);
+        draftRef.current![wy * WORLD_SIZE + wx] = brush;
       }
     }
     setDirty(true);
     redraw();
   }, [brush, size, origin, redraw]);
 
+  /** 編集内容をゲームに反映する (この画面の外にも効く)。保存とは別。 */
+  const apply = useCallback(() => {
+    const tiles = draftRef.current;
+    if (!tiles) return;
+    setWorldMap({ tiles: new Uint8Array(tiles), size: WORLD_SIZE });
+    setNote('この端末のワールドに反映した (保存はまだ)');
+  }, []);
+
   const exportGz = useCallback(async () => {
-    const tiles = worldMapTiles();
+    const tiles = draftRef.current;
     if (!tiles) return;
     const gz = await encodeWorldMap(tiles);
     const url = URL.createObjectURL(new Blob([gz as BlobPart], { type: 'application/gzip' }));
@@ -121,7 +152,7 @@ export function MapEditor() {
 
   /** PNG に書き出す。**外部の絵描きツールで世界を描ける**ようにするため。 */
   const exportPng = useCallback(() => {
-    const tiles = worldMapTiles();
+    const tiles = draftRef.current;
     if (!tiles) return;
     const cv = document.createElement('canvas');
     cv.width = WORLD_SIZE;
@@ -129,10 +160,11 @@ export function MapEditor() {
     const ctx = cv.getContext('2d')!;
     const img = ctx.createImageData(WORLD_SIZE, WORLD_SIZE);
     for (let i = 0; i < tiles.length; i++) {
-      const color = paletteColorAt(tiles[i]!);
-      img.data[i * 4] = parseInt(color.slice(1, 3), 16);
-      img.data[i * 4 + 1] = parseInt(color.slice(3, 5), 16);
-      img.data[i * 4 + 2] = parseInt(color.slice(5, 7), 16);
+      // PNG は**地形 index を R チャンネルにそのまま載せる** (色にすると
+      // plains/town・pond/water が同じ RGB に潰れて往復できない)。
+      img.data[i * 4] = tiles[i]!;
+      img.data[i * 4 + 1] = 0;
+      img.data[i * 4 + 2] = 0;
       img.data[i * 4 + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
@@ -145,12 +177,13 @@ export function MapEditor() {
       a.click();
       URL.revokeObjectURL(url);
     });
-    setNote('PNG に書き出した (色 → 地形の対応はパレットの色と一致させること)');
+    setNote('PNG に書き出した (R チャンネル = 地形 index。色ではなく index で往復する)');
   }, []);
 
   const save = useCallback(async () => {
-    if (!session.agent) return;
+    if (!session.agent || !draftRef.current) return;
     try {
+      setWorldMap({ tiles: new Uint8Array(draftRef.current), size: WORLD_SIZE });
       const bytes = await saveWorldMap(session.agent);
       setDirty(false);
       setNote(`保存した (${(bytes / 1024).toFixed(1)} KB)。edge は最大 5 分で拾う`);
@@ -185,7 +218,7 @@ export function MapEditor() {
                 title={BASE_PALETTE[i] ?? `未定義 (index ${i})`}
                 style={{
                   width: 28, height: 28, padding: 0,
-                  background: i < BASE_PALETTE.length ? paletteColorAt(i) : UNKNOWN_TERRAIN_COLOR,
+                  background: i < BASE_PALETTE.length ? editorColorAt(i) : UNKNOWN_TERRAIN_COLOR,
                   border: brush === i ? '3px solid var(--color-accent)' : '1px solid var(--color-border)',
                 }}
               />
@@ -240,6 +273,9 @@ export function MapEditor() {
           </div>
 
           <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.5em' }}>
+            <button type="button" onClick={apply} style={{ fontSize: '0.85em' }}>
+              この端末に反映
+            </button>
             <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.85em' }}>
               保存する
             </button>
