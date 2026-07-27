@@ -4,11 +4,21 @@ import { handleRequest, type Env } from './router';
 import wasmModule from './vendor/secp256k1-verify/secp256k1_verify_bg.wasm';
 import { initSecp256k1 } from './secp256k1-wasm';
 import { runCronRefresh } from './oauth-cron';
+import { ensureAuthoredWorld } from './world-authoring';
 
 initSecp256k1(wasmModule);
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // 手編集した世界を読む (#421)。**移動判定はここ (edge) が権威**なので、web と同じ
+    // 地図を見ていないと「画面では歩けるのにサーバーが弾く」= その場から動けなくなる。
+    //
+    // **必ず ctx.waitUntil に載せる。** fire-and-forget にすると、リクエストが同期的に
+    // return した瞬間 (CORS preflight の OPTIONS が該当) に I/O コンテキストごと捨てられ、
+    // promise が **reject もせず settle しない**。.catch() も走らないので警告すら出ず、
+    // 読み込み中フラグがラッチされたままで **その isolate は二度と地図を読まない**
+    // (workerd で実測)。結果、web は地図あり・edge は地図なしで地形の認識がずれる。
+    ctx.waitUntil(ensureAuthoredWorld(env, nsidRoot(req), Math.floor(Date.now() / 1000)));
     return handleRequest(req, env);
   },
 
@@ -20,3 +30,10 @@ export default {
     }
   },
 };
+
+/** NSID の根 (world.map / world.tileArt の collection を組む)。web の ADMIN_COL と揃える。 */
+function nsidRoot(req: Request): string {
+  // 管理系レコードは env で分けない (全環境が同じ 1 か所を見る)。web の collections.ts と同じ規則。
+  void req;
+  return 'app.aozoraquest';
+}

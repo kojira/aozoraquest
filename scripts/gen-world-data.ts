@@ -11,7 +11,9 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { computeWorldOverlay, WORLD_SEED } from '../packages/core/src/world.js';
+import { gzipSync } from 'node:zlib';
+import { computeWorldOverlay, WORLD_SEED, WORLD_SIZE, baseTerrainAt } from '../packages/core/src/world.js';
+import { BASE_PALETTE } from '../packages/core/src/world-map.js';
 
 const data = computeWorldOverlay();
 
@@ -29,4 +31,38 @@ export const WORLD_DATA: WorldOverlayData = ${JSON.stringify(data, null, 2)};
 
 const dest = path.join(path.dirname(fileURLToPath(import.meta.url)), '../packages/core/src/world-data.ts');
 writeFileSync(dest, out);
+
+// ─── 地形の地図 (1 タイル 1 バイト) ───────────────────────────
+//
+// ノイズ生成の結果をそのまま画素として書き出す。**見た目は 1 ピクセルも変わらない**が、
+// ランタイムは全域スキャン (3.3 秒) が不要になり、terrainAt が配列参照になって
+// 約 327 倍速くなる。エディタ (#421) はこの画素を編集する。
+const idx = new Map(BASE_PALETTE.map((t, i) => [t, i] as const));
+const tiles = new Uint8Array(WORLD_SIZE * WORLD_SIZE);
+for (let y = 0; y < WORLD_SIZE; y++) {
+  for (let x = 0; x < WORLD_SIZE; x++) tiles[y * WORLD_SIZE + x] = idx.get(baseTerrainAt(x, y)) ?? 0;
+}
+// **街と橋も焼き込む。** baseTerrainAt の戻り値型は Exclude<Terrain, 'town' | 'bridge'> で、
+// 街と橋は原理的に入らない。地図は overlay より優先されるので、焼き込まないと
+// **橋が water になって渡れず、街が平地になって入れなくなる** (実測 103 タイル)。
+for (const b of data.bridgeTiles) tiles[b.y * WORLD_SIZE + b.x] = idx.get('bridge')!;
+for (const t of data.towns) tiles[t.y * WORLD_SIZE + t.x] = idx.get('town')!;
+const gz = gzipSync(Buffer.from(tiles), { level: 9 });
+const rawKb = (tiles.length / 1024).toFixed(0);
+const gzKb = (gz.length / 1024).toFixed(1);
+const mapLines = [
+  '/**',
+  ' * あおぞらワールドの地形の地図 (自動生成 — 手で編集しない)。',
+  ' *',
+  ' * 生成: `pnpm gen:world`。1 タイル 1 バイトのパレット索引を gzip して base64 にしたもの。',
+  ` * 生 ${rawKb} KB → gzip ${gzKb} KB。`,
+  ' * **中身はノイズ生成そのまま**なので、読み込んでも見た目は変わらない。',
+  ' * 読み込むと terrainAt が配列参照になり、全域スキャン (3.3 秒) が不要になる。',
+  ' */',
+  `export const WORLD_MAP_GZ_BASE64 = '${gz.toString('base64')}';`,
+  '',
+].join('\n');
+const mapDest = path.join(path.dirname(fileURLToPath(import.meta.url)), '../packages/core/src/world-map-data.ts');
+writeFileSync(mapDest, mapLines);
+console.log(`wrote ${mapDest}: raw=${rawKb}KB gzip=${gzKb}KB`);
 console.log(`wrote ${dest}: towns=${data.towns.length} bridgeSpans=${data.bridgeSpans} spawn=(${data.spawn.x},${data.spawn.y}) ${data.spawn.name}`);

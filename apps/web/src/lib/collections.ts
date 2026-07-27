@@ -81,6 +81,10 @@ export const ADMIN_COL = {
   configBans: `${ROOT}.config.bans`,
   configPrompts: `${ROOT}.config.prompts`,
   directory: `${ROOT}.directory`,
+  /** 手編集したワールドの地形 (1 タイル 1 バイトを gzip → base64)。#421 */
+  worldMap: `${ROOT}.world.map`,
+  /** 地形のドット絵 (地形 id → 画素データ)。#421 */
+  tileArt: `${ROOT}.world.tileArt`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

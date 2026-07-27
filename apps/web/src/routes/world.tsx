@@ -50,10 +50,11 @@ function shopErrorText(e: unknown, fallback: string): string {
   return msg ? `${msg}。` : `${fallback} (通信エラー)。もういちどどうぞ。`;
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { loadAuthoredWorld } from '@/lib/world-authoring';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
-import { PLAINS_VARIANTS, TERRAIN_TILES } from '@/components/world-tiles';
+import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelTile } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
@@ -289,6 +290,12 @@ export function World() {
   // 装備をサーバーにミラー (戦闘に反映 #377)。解決結果が変わるたび送る = 初回ロード + 装備変更を一括カバー。
   // 参照でなく内容キーで発火 (resolveGear は毎回新オブジェクトを返すため)。
   const gearKey = JSON.stringify(resolvedGear?.selection ?? null);
+  // 手編集した世界 (地図 + ドット絵) を読む (#421)。**読み込むまでは同梱の地図 /
+  // ノイズ生成に倒れる**ので待たない。edge も同じレコードを読むので権威と一致する。
+  useEffect(() => {
+    void loadAuthoredWorld(agent).catch((e) => console.warn('[world] authored world load failed', e));
+  }, [agent]);
+
   useEffect(() => {
     if (!agent || !worldServerEnabled || gearKey === 'null') return;
     void serverGear(agent, JSON.parse(gearKey)).catch((e) => console.warn('[world] gear sync failed', e));
@@ -1164,7 +1171,11 @@ export function World() {
       const x = wrap(ws.x - HALF + vx);
       const y = wrap(ws.y - HALF + vy);
       const t = terrainAt(x, y);
-      const body = t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t];
+      // ドット絵 (エディタで描いたもの) → 従来の SVG → 代表色のべた塗り、の順に倒す。
+      // 3 段あるので「絵がまだ無い地形」でも描画が止まらない (#421)。
+      const body = pixelTile(t)
+        ?? (t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t])
+        ?? fallbackTile(t);
       tiles.push(
         <g key={`${vx}-${vy}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
           {body}
