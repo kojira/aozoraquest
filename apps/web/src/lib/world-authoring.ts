@@ -5,10 +5,13 @@ import {
   encodeWorldMap,
   loadStaticWorldMap,
   loadTileArts,
+  setTownOverrides,
   setWorldMap,
   worldMapTiles,
+  worldTownOverrides,
   WORLD_SIZE,
   type TileArtRecord,
+  type TownOverride,
 } from '@aozoraquest/core';
 import { ADMIN_COL } from './collections';
 import { getPrimaryAdminDid } from './runtime-config';
@@ -35,6 +38,8 @@ export interface WorldMapRecord {
   gz: string;
   /** index → 地形 id。省略時は既定パレット。 */
   palette?: string[];
+  /** 街の差分 (名前が無ければその座標の街を消す)。**地形の画像では表せない**ので別枠。 */
+  towns?: TownOverride[];
   updatedAt: string;
 }
 
@@ -66,10 +71,12 @@ export async function saveWorldMap(agent: Agent, palette?: string[]): Promise<nu
   const tiles = worldMapTiles();
   if (!tiles) throw new Error('地図が読み込まれていない');
   const gz = await encodeWorldMap(tiles);
+  const towns = [...worldTownOverrides()];
   const rec: WorldMapRecord = {
     size: WORLD_SIZE,
     gz: toBase64(gz),
     ...(palette ? { palette } : {}),
+    ...(towns.length ? { towns } : {}),
     updatedAt: new Date().toISOString(),
   };
   await putRecord(agent, ADMIN_COL.worldMap, RKEY, rec);
@@ -98,6 +105,7 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
       if (rec?.gz) {
         const tiles = await decodeWorldMap(fromBase64(rec.gz));
         setWorldMap({ tiles, size: rec.size || WORLD_SIZE, ...(rec.palette ? { palette: rec.palette } : {}) });
+        setTownOverrides(rec.towns ?? null);
       } else {
         await loadStaticWorldMap();
       }
