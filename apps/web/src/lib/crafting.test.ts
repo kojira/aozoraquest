@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { craftItem, loadCraftInventory } from './crafting';
+import { craftItem, discardItems, loadCraftInventory } from './crafting';
 import { craftLevelRoll, craftSeedFromRkey } from '@aozoraquest/core';
 
 describe('craftItem', () => {
@@ -144,5 +144,55 @@ describe('loadCraftInventory (制作 + 合成の集計と検証)', () => {
     const inv = await loadCraftInventory(agent, 'did:test');
     expect(inv.pieces).toEqual([]);
     expect(inv.materialsSpent).toEqual({});
+  });
+
+  test('すてたレコードで個体が減る (/me が捨てた装備を そうび中のまま出さない)', async () => {
+    // 権威は GameState.pieces だが、/me と world のフォールバックは PDS 集計を使う。
+    // 墓標が無いと **捨てた装備が /me では そうび中のまま出て、補正込みの HP/MP が出る**。
+    const inv = await loadCraftInventory(
+      makeAgent([
+        craft('c-0', 'wp-knife', 10),
+        craft('c-1', 'wp-club', 10),
+        { rkey: 'd-0', value: { discarded: ['c-0'], at: 'd-0' } },
+      ]),
+      'did:test',
+    );
+    expect(inv.pieces.map((p) => p.rkey)).toEqual(['c-1']);
+  });
+
+  test('合成してから捨てた場合、合成の結果が消える (材料は既に消えている)', async () => {
+    const [a, b] = samePair();
+    const lv = levelOf(a) + 1;
+    const inv = await loadCraftInventory(
+      makeAgent([
+        craft(a, 'wp-knife'),
+        craft(b, 'wp-knife'),
+        { rkey: 'f-0', value: { itemId: 'wp-knife', level: lv, consumed: [a, b], at: 'f-0' } },
+        { rkey: 'd-0', value: { discarded: ['f-0'], at: 'd-1' } },
+      ]),
+      'did:test',
+    );
+    expect(inv.pieces).toEqual([]);
+  });
+
+  test('知らない rkey を捨てても他の個体に影響しない', async () => {
+    const inv = await loadCraftInventory(
+      makeAgent([craft('c-0', 'wp-knife'), { rkey: 'd-0', value: { discarded: ['zzz'], at: 'd-0' } }]),
+      'did:test',
+    );
+    expect(inv.pieces.map((p) => p.rkey)).toEqual(['c-0']);
+  });
+});
+
+describe('discardItems', () => {
+  test('discarded 付きのレコードを書く (rkey を渡せば冪等)', async () => {
+    const createRecord = vi.fn(async (_a: any) => ({ data: { uri: 'at://x', cid: 'c' } }));
+    const agent = { assertDid: 'did:test', com: { atproto: { repo: { createRecord } } } } as any;
+    await discardItems(agent, ['c-1', 'c-2'], 'd-fixed');
+    const arg = createRecord.mock.calls[0]![0] as any;
+    expect(arg.rkey).toBe('d-fixed');
+    expect(arg.record.discarded).toEqual(['c-1', 'c-2']);
+    // itemId を持たない = 制作/合成レコードと取り違えられない
+    expect(arg.record.itemId).toBeUndefined();
   });
 });

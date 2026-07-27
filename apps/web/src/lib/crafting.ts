@@ -41,6 +41,22 @@ export interface CraftedPiece {
 /** 合成 (きたえる) レコード。同じアイテム・同じ強化値 2 個体 → +1 の 1 個体。
  *  消費した個体の rkey を記録する — 他人も検証でき、同じ個体の二重消費は
  *  集計時に弾かれる (docs/20 のシンク設計)。 */
+/**
+ * すてた記録 (#575)。**個体を消したことを PDS 側にも残す**。
+ *
+ * 権威は `GameState.pieces` だが、`/me` と world のフォールバックは PDS の craft
+ * レコード集計 (`loadCraftInventory`) を使う。ここに墓標を残さないと、
+ * **捨てた装備が /me では そうび中のまま出て、補正込みの HP/MP が表示される**。
+ * 合成が `consumed` で消費を表しているのと同じ形にする (discarded で区別)。
+ */
+export interface DiscardRecord {
+  $type: string;
+  /** 消した個体の rkey */
+  discarded: string[];
+  at: string;
+  via: string;
+}
+
 export interface ForgeRecord {
   $type: string;
   itemId: string;
@@ -175,10 +191,35 @@ export interface CraftInventory {
  * 合成は消費個体の存在と強化値 (result−1、同 itemId) を検証してから適用する:
  * 二重消費・レベル飛ばし・別アイテム混ぜの偽造レコードは黙って無効になる。
  */
+/** すてた記録を書く。権威は既にサーバー側で減っているので、これは表示の整合のため。 */
+export async function discardItems(agent: Agent, rkeys: string[], rkeyIn?: string): Promise<void> {
+  const did = agent.assertDid;
+  const rkey = rkeyIn ?? newDiscardRkey();
+  await agent.com.atproto.repo.createRecord({
+    repo: did,
+    collection: COL.craft,
+    rkey,
+    record: {
+      $type: COL.craft,
+      discarded: rkeys,
+      at: new Date().toISOString(),
+      via: VIA,
+    } satisfies DiscardRecord,
+  });
+}
+
+/** 新しい すてる rkey を採番する。 */
+export function newDiscardRkey(): string {
+  return `d-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
 export async function loadCraftInventory(agent: Agent, did: string): Promise<CraftInventory> {
   const materialsSpent: Record<string, number> = {};
   const crafted: CraftedPiece[] = [];
   const forges: Array<{ rkey: string; itemId: string; level: number; consumed: [string, string]; at: string }> = [];
+  /** すてた個体の rkey (合成の適用より**後**に引く — 合成の材料が捨てられていても
+   *  「合成してから捨てた」と解釈できるように)。 */
+  const discarded = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < 5; page++) {
     let res;
@@ -196,6 +237,11 @@ export async function loadCraftInventory(agent: Agent, did: string): Promise<Cra
       const v = r.value as Partial<CraftRecord & ForgeRecord & SaleRecord>;
       const rkey = r.uri.split('/').pop() ?? '';
       if (rkey === '') continue;
+      if (Array.isArray((v as Partial<DiscardRecord>).discarded)) {
+        // すてたレコード: 個体を消す (itemId を持たないのでこの分岐を先に置く)
+        for (const d of (v as DiscardRecord).discarded) if (typeof d === 'string') discarded.add(d);
+        continue;
+      }
       if (typeof v.itemId !== 'string') {
         // ひきとりレコード: 素材を燃やした分を消費として計上 (個体は生まれない)
         if (
@@ -255,5 +301,6 @@ export async function loadCraftInventory(agent: Agent, did: string): Promise<Cra
       break;
     }
   }
+  for (const d of discarded) pool.delete(d);
   return { pieces: [...pool.values()], materialsSpent };
 }

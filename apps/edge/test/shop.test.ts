@@ -361,4 +361,28 @@ describe('所持上限と すてる (#575)', () => {
     await shopForge(env, DID, { rkeys: ['x1', 'x2'], rkey: 'f1', pos: { x: TOWN.x, y: TOWN.y } }, NOW);
     expect(stored(store).pieces).toHaveLength(MAX_OWNED_PIECES - 1);
   });
+
+  it('そうび中の個体は すてられない (持っていない装備の補正が戦闘に残らない)', async () => {
+    // sanitizeGear は handleGear からしか呼ばれず、戦闘は生の gearSel を使う。
+    // ここで通すと **持っていない +5 武器の補正が戦闘・しらべるに乗り続ける**。
+    const pieces = [{ rkey: 'w1', itemId: ITEM.id, level: 5 }];
+    const { fn, store } = statefulPds(stateAt({ pieces, gearSel: { [ITEM.slot]: { id: ITEM.id, level: 5 } } }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await expect(shopDiscard(env, DID, { rkeys: ['w1'], rkey: 'd9' }, NOW))
+      .rejects.toMatchObject({ code: 'equipped' });
+    expect(stored(store).pieces).toHaveLength(1);
+    expect(stored(store).gearSel).toBeTruthy();
+  });
+
+  it('宙に浮いた gearSel は すてる のときに掃除される', async () => {
+    // 古いデータで gearSel が既に持っていない個体を指している場合、
+    // 別の個体を捨てたついでに掃除して、補正が残らないようにする。
+    const pieces = [{ rkey: 'keep', itemId: ITEM.id, level: 0 }, { rkey: 'junk', itemId: ITEM.id, level: 0 }];
+    const { fn, store } = statefulPds(stateAt({ pieces, gearSel: { [ITEM.slot]: { id: 'wp-does-not-exist', level: 9 } } }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await shopDiscard(env, DID, { rkeys: ['junk'], rkey: 'd10' }, NOW);
+    expect(stored(store).gearSel).toEqual({});
+  });
 });

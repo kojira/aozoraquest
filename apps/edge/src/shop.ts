@@ -27,7 +27,7 @@ import {
   townShopStock,
   worldOverlay,
 } from '@aozoraquest/core';
-import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece } from './game-state';
+import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece, sanitizeGear } from './game-state';
 
 /** 冪等キーを覚えておく件数 (`xpClaims` と同じ考え方)。再送・二重送信で二重に課金しない。 */
 export const MAX_SHOP_OPS = 100;
@@ -290,7 +290,20 @@ export async function shopDiscard(
       for (const r of targets) {
         if (!owned.some((p) => p.rkey === r)) throw new ShopError('その品を もっていない', 400, 'not_owned');
       }
-      return { ...cur, pieces: owned.filter((p) => !targets.has(p.rkey)), shopOps: withOp(cur, opKey) };
+      const rest = owned.filter((p) => !targets.has(p.rkey));
+      // **そうび中の個体は捨てられない。** UI では止めているが API を直に叩けば通ってしまい、
+      // gearSel が持ち主のいない個体を指したまま残る = **持っていない装備の補正が戦闘に乗り続ける**
+      // (sanitizeGear は handleGear からしか呼ばれず、戦闘は生の gearSel を使う)。
+      // 「はずしてから捨てて」と言うほうが、黙って外すより何が起きたか分かる。
+      const stillEquipped = sanitizeGear(cur.gearSel ?? {}, owned);
+      const afterEquipped = sanitizeGear(cur.gearSel ?? {}, rest);
+      for (const slot of ['weapon', 'armor', 'charm'] as const) {
+        if (stillEquipped[slot] && !afterEquipped[slot]) {
+          throw new ShopError('そうび中の品は すてられない。さきに はずしてほしい', 400, 'equipped');
+        }
+      }
+      // 掃除も掛ける (古いデータで gearSel が既に宙に浮いている場合の後始末)。
+      return { ...cur, pieces: rest, gearSel: afterEquipped, shopOps: withOp(cur, opKey) };
     },
     init ? { now, init } : { now },
   );

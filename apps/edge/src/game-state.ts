@@ -207,3 +207,34 @@ export async function readModifyWrite(
   }
   throw new PdsError('unreachable'); // ループは必ず return/throw する
 }
+
+/**
+ * **所持している個体だけを装備として通す** (#551 段階 2)。
+ *
+ * それまでは client が送ってきた `GearSelection` を無検証で保存していたので、
+ * `{ weapon: { id: 'wp-shogun-high', level: 99 } }` を POST するだけで戦闘に効いた
+ * (PDS のレコードを偽造する必要すらなかった)。所持個体は `/api/shop/craft` と
+ * `/api/shop/forge` だけが作るので、ここで突き合わせれば持っていない装備は着られない。
+ *
+ * スロットと品の種別が合うかは core の `gearBonusFromGear` が既に見ているので、
+ * ここでは**所持と強化値**だけを正す。
+ */
+export function sanitizeGear(gear: GearSelection, owned: readonly OwnedPiece[]): GearSelection {
+  const out: GearSelection = {};
+  for (const slot of ['weapon', 'armor', 'charm'] as const) {
+    const sel = gear?.[slot];
+    if (!sel) continue;
+    // 文字列指定 (旧形式) は個体を特定できない。その品を持っていれば**最低の強化値**で通す。
+    const wantId = typeof sel === 'string' ? sel : sel.id;
+    const wantLevel = typeof sel === 'string' ? undefined : sel.level;
+    const mine = owned.filter((p) => p.itemId === wantId);
+    if (mine.length === 0) continue; // 持っていない = 装備できない
+    // 強化値の指定があるなら、その値の個体を実際に持っているときだけ通す。
+    const hit = wantLevel === undefined
+      ? mine.reduce((a, b) => (a.level <= b.level ? a : b))
+      : mine.find((p) => p.level === wantLevel);
+    if (!hit) continue;
+    out[slot] = { id: hit.itemId, level: hit.level };
+  }
+  return out;
+}

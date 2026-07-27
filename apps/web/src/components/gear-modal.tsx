@@ -40,6 +40,7 @@ export function GearModal({
   onUnequip,
   onDiscard,
   busy = false,
+  errorText = null,
   onClose,
 }: {
   archetype: Archetype | null;
@@ -52,6 +53,9 @@ export function GearModal({
   /** すてる (#575)。所持上限があるので整理できないと詰む。街の外でもできる。 */
   onDiscard: (rkey: string) => void;
   busy?: boolean;
+  /** 失敗の理由。**ここに出さないと街の外では表示先が無い** — ShopModal は街に居るときしか
+   *  描画されず、すてるの主用途は街の外なので、無反応になってユーザーが連打する。 */
+  errorText?: string | null;
   onClose: () => void;
 }) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -111,6 +115,11 @@ export function GearModal({
         <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)', minHeight: '1.4em' }} aria-live="polite">
           {totalText ? `そうびの効果: ${totalText}` : 'なにも装備していない。なんでも屋で作ってもらおう。'}
         </p>
+        {errorText && (
+          <p role="alert" style={{ fontSize: '0.85em', color: 'var(--color-danger)', margin: '0 0 0.4em' }}>
+            {errorText}
+          </p>
+        )}
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(['weapon', 'armor', 'charm'] as const).map((slot) => {
             const equippedRkey = refs[slot];
