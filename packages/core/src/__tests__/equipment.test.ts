@@ -8,9 +8,11 @@ import { isSellableMaterial,
   gearBonusFromGear,
   townShopStock,
   shopMaterialBand,
+  maxShopGradeForTier,
+  JOB_HIGH_PER_TOWN,
 } from '../equipment.js';
 import { playerCombatant, playerStatsAt } from '../battle.js';
-import { worldOverlay } from '../world.js';
+import { worldOverlay, tierForRegion } from '../world.js';
 import { JOBS } from '../jobs.js';
 
 describe('EQUIPMENT 定義', () => {
@@ -346,5 +348,59 @@ describe('townShopStock (品揃えの決定的生成)', () => {
       expect(new Set(equipment).size).toBe(equipment.length);
       for (const id of equipment) expect(EQUIPMENT_BY_ID[id], id).toBeDefined();
     });
+  });
+});
+
+describe('装備の段階を地域の危険度で区切る (#565)', () => {
+  const towns = worldOverlay().towns;
+  const stocks = towns.map((t, i) => ({ t, tier: tierForRegion(t.region), stock: townShopStock(t, i) }));
+  const gradeOf = (id: string) => EQUIPMENT_BY_ID[id]?.grade ?? 0;
+
+  it('その帯より上の grade は並ばない', () => {
+    // これが無いと、はじまりの帯 (tier1) の街に grade2 の防具 (def+15) が並び、
+    // Lv5 の守備が 2 → 18 に跳ねて tier1 の敵 (実効 atk 5〜6) の攻撃が 1 も通らなくなる。
+    for (const { t, tier, stock } of stocks) {
+      const max = maxShopGradeForTier(tier);
+      for (const id of stock.equipment) {
+        expect(gradeOf(id), `${t.name} (tier${tier}) に grade${gradeOf(id)} の ${id}`).toBeLessThanOrEqual(max);
+      }
+    }
+  });
+
+  it('tier1 の街は grade1 だけ / tier2 は 2 まで / tier3 は 3 まで', () => {
+    const maxIn = (tier: number) =>
+      Math.max(...stocks.filter((x) => x.tier === tier).flatMap((x) => x.stock.equipment.map(gradeOf)));
+    expect(maxIn(1)).toBe(1);
+    expect(maxIn(2)).toBe(2);
+    expect(maxIn(3)).toBe(3);
+  });
+
+  it('**全 16 職のジョブ専用品 (中位・上位) が世界のどこかに必ず並ぶ**', () => {
+    // 帯で絞ると割当が歯抜けになりやすい。全街の index で巡回すると、grade を置けない街が
+    // index だけ消費して**世界のどこにも並ばない職**が出る (実測で中位 1 職・上位 3 職が欠けた)。
+    const listed = new Set(stocks.flatMap((x) => x.stock.equipment));
+    const missing = EQUIPMENT.filter((e) => e.jobOnly && e.grade >= 2 && !listed.has(e.id));
+    expect(missing.map((e) => e.name)).toEqual([]);
+  });
+
+  it('上位を置ける街が少なくても全職ぶんを賄える', () => {
+    // tier3 の街は 7 軒しかない。1 軒 1 品だと 16 職に足りない (7 < 16)。
+    const highTowns = stocks.filter((x) => maxShopGradeForTier(x.tier) >= 3).length;
+    const highItems = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 3).length;
+    expect(highTowns * JOB_HIGH_PER_TOWN, `${highTowns} 軒 × ${JOB_HIGH_PER_TOWN} 品 < ${highItems} 職`)
+      .toBeGreaterThanOrEqual(highItems);
+  });
+
+  it('どの帯でも全 16 職が何かしら買える (詰まない)', () => {
+    for (const tier of [1, 2, 3]) {
+      const inTier = stocks.filter((x) => x.tier === tier);
+      for (const j of JOBS) {
+        const ok = inTier.some((x) => x.stock.equipment.some((id) => {
+          const d = EQUIPMENT_BY_ID[id];
+          return d && canEquip(j.id, d);
+        }));
+        expect(ok, `tier${tier} で ${j.id} が何も買えない`).toBe(true);
+      }
+    }
   });
 });

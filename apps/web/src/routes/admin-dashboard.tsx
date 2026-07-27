@@ -3,7 +3,6 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { serverOAuthConfigured } from '@/lib/server-oauth';
 import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
-import { MapEditor } from '@/components/admin/map-editor';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
 import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
@@ -37,7 +36,7 @@ interface Section {
 const CONTENT_SECTIONS: Section[] = [
   // 並びは着手の優先順。#418 (データ化) が全部の前提。
   { key: 'monsters', title: 'モンスター', desc: '絵・パラメータ・能力・出現エリア', issue: 419 },
-  { key: 'map', title: 'マップ', desc: '地形・エリア・出現配置・パーツ編集', issue: 421 },
+  { key: 'map', title: 'マップ', desc: '地形をパーツで編集 (エリア・出現配置は #421 で続き)', to: '/admin/map', issue: 421 },
   { key: 'jobs', title: 'ジョブ', desc: '各種パラメータ設定 + 模擬戦', issue: 544 },
   { key: 'npc', title: 'NPC', desc: '位置・絵・名前・セリフ・フラグ制御', issue: 425 },
   { key: 'places', title: '街 / ダンジョン / 城', desc: '内部マップの編集', issue: 424 },
@@ -129,7 +128,6 @@ export function AdminDashboard() {
           <PdsUsageAdmin agent={agent} />
           {/* 主管理者 PDS の設定 (旧 apps/admin。デプロイ設定が無く pnpm dev でしか
               開けなかったので、ここに取り込んだ)。 */}
-          <MapEditor />
           <TileArtEditor />
           <DirectoryAdmin agent={agent} />
           <MaintenanceAdmin />

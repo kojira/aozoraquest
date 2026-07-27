@@ -19,6 +19,7 @@ const Search = lazy(() => import('@/routes/search').then(m => ({ default: m.Sear
 const Settings = lazy(() => import('@/routes/settings').then(m => ({ default: m.Settings })));
 const Spirit = lazy(() => import('@/routes/spirit').then(m => ({ default: m.Spirit })));
 const AdminDashboard = lazy(() => import('@/routes/admin-dashboard').then(m => ({ default: m.AdminDashboard })));
+const AdminMap = lazy(() => import('@/routes/admin-map').then(m => ({ default: m.AdminMap })));
 const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
 const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
 const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
@@ -78,6 +79,8 @@ const router = createBrowserRouter([
       // すべて edge 側で ADMIN_DIDS を検証しているので、表示ゲートに認可を負わせていない
       // (isAdminDid は公開 env との文字列一致なので詐称できる = 守りにはならない)。
       { path: 'admin', element: <AdminDashboard /> },
+      // マップエディタは別画面 (地図が広く、他の管理ツールと同居すると双方が使いにくい)
+      { path: 'admin/map', element: <AdminMap /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
       { path: 'oauth/callback', element: <OAuthCallback /> },

@@ -15,7 +15,7 @@
  */
 
 import type { Archetype } from './types.js';
-import { tierForRegion } from './world.js';
+import { tierForRegion, worldOverlay } from './world.js';
 import type { Town } from './world.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
@@ -402,6 +402,19 @@ const SHOP_MATERIALS_BY_TIER: readonly [readonly string[], readonly string[], re
 export function shopMaterialBand(tier: number): 0 | 1 | 2 {
   return Math.min(2, Math.max(0, tier - 1)) as 0 | 1 | 2;
 }
+
+/**
+ * **その街で買える装備の grade 上限** (#565)。素材の帯 (`shopMaterialBand`) と同じ形にして、
+ * 段階の定義を 2 つ持たない。
+ *
+ * これが無いと、はじまりの帯 (tier1) の街に grade2 の防具が並ぶ。grade2 の防具は def+15 で、
+ * Lv5 の守備を 2 → 18 に跳ね上げる。tier1 の敵は実効 atk 5〜6 なので
+ * `6×0.9 = 5.4 < 18×0.45 = 8.1` = **1 ダメージも通らなくなる**。
+ * 実測で全 53 街のうち tier1 の 24 街に grade2 が 69 品・grade3 が 10 品並んでいた。
+ */
+export function maxShopGradeForTier(tier: number): number {
+  return Math.min(3, Math.max(1, tier));
+}
 export function shopMaterialFor(town: Town): string {
   const tier = tierForRegion(town.region);
   const pool = SHOP_MATERIALS_BY_TIER[shopMaterialBand(tier)]!;
@@ -421,13 +434,32 @@ export function shopMaterialFor(town: Town): string {
  * **全 16 職の専用品が世界のどこかの店に必ず並ぶ**ことを保証する
  * (純ランダムだと 53 店でも欠けるジョブが出うる)。
  */
+/**
+ * **その帯以上の街の中での通し番号**。巡回割当をこれで回す。
+ *
+ * 全街の index で回すと、grade を置けない街 (tier1 の中位枠など) が index だけ消費して
+ * **割当が歯抜けになり、世界のどこにも並ばない職が出る** (実測: 中位 1 職・上位 3 職が欠けた)。
+ * 「その品を置ける街」だけで数え直すと連番になり、全職ぶんが必ず並ぶ。
+ */
+function rankAmongTier(town: Town, minTier: number): number {
+  const eligible = worldOverlay().towns.filter((t) => tierForRegion(t.region) >= minTier);
+  const i = eligible.findIndex((t) => t.x === town.x && t.y === town.y);
+  return i < 0 ? 0 : i;
+}
+
+/** 上位 (grade3) を置く街 1 軒あたりの品数。tier3 の街は 7 軒しかないので、
+ *  1 軒 1 品だと 16 職ぶんが世界に並ばない (7 < 16)。 */
+export const JOB_HIGH_PER_TOWN = 3;
+
 export function townShopStock(town: Town, townIndex: number): ShopStock {
+  const tier = tierForRegion(town.region);
   const rng = shopRng(((town.x * 73856093) ^ (town.y * 19349663)) >>> 0);
   const consumables = ['herb', 'sky-dew', 'sky-feather'];
 
   const equipment: string[] = [];
   // 地域枠: 共用 + カテゴリ品から 3〜4 品 (grade1 中心、たまに grade2)
-  const generic = EQUIPMENT.filter((e) => !e.jobOnly && e.slot !== 'charm' && e.grade <= 2);
+  const maxGrade = maxShopGradeForTier(tier);
+  const generic = EQUIPMENT.filter((e) => !e.jobOnly && e.slot !== 'charm' && e.grade <= maxGrade);
   const genericCount = 3 + Math.floor(rng() * 2);
   const pool = [...generic];
   for (let i = 0; i < genericCount && pool.length > 0; i++) {
@@ -436,7 +468,7 @@ export function townShopStock(town: Town, townIndex: number): ShopStock {
     pool.splice(idx, 1);
   }
   // お守り (低確率で 1 品)
-  const charms = EQUIPMENT.filter((e) => e.slot === 'charm');
+  const charms = EQUIPMENT.filter((e) => e.slot === 'charm' && e.grade <= maxGrade);
   if (rng() < 0.4 && charms.length > 0) {
     equipment.push(charms[Math.floor(rng() * charms.length)]!.id);
   }
@@ -446,9 +478,19 @@ export function townShopStock(town: Town, townIndex: number): ShopStock {
   // 上位が全店欠品する恒久欠けを起こした — レビュー実測)
   const jobMid = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 2);
   const jobHigh = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 3);
-  equipment.push(jobMid[(townIndex * 7) % jobMid.length]!.id);
-  if (townIndex % 3 === 0 && jobHigh.length > 0) {
-    equipment.push(jobHigh[(Math.floor(townIndex / 3) * 11) % jobHigh.length]!.id);
+  // **中位 (grade2) は tier2 以上の街だけ。** 巡回割当は tier2+ の街の中での通し番号で行う
+  // (全街の index で回すと、tier1 を飛ばしたぶん割当が歯抜けになって並ばない職が出る)。
+  if (maxGrade >= 2 && jobMid.length > 0) {
+    equipment.push(jobMid[(rankAmongTier(town, 2) * 7) % jobMid.length]!.id);
+  }
+  // **上位 (grade3) は tier3 以上の街だけ。** tier3 の街は 7 軒しかないので、
+  // 1 軒 1 品では 16 職を賄えず**上位武器が永久に手に入らない職が 9 つ出る**。
+  // 1 軒あたり JOB_HIGH_PER_TOWN 品ずつ置いて全職ぶんを世界に必ず並べる。
+  if (maxGrade >= 3 && jobHigh.length > 0) {
+    const rank = rankAmongTier(town, 3);
+    for (let k = 0; k < JOB_HIGH_PER_TOWN; k++) {
+      equipment.push(jobHigh[(rank * JOB_HIGH_PER_TOWN + k) % jobHigh.length]!.id);
+    }
   }
 
   return { consumables, equipment, materialId: shopMaterialFor(town) };
