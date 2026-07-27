@@ -50,6 +50,7 @@ function shopErrorText(e: unknown, fallback: string): string {
   return msg ? `${msg}。` : `${fallback} (通信エラー)。もういちどどうぞ。`;
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { loadStaticWorldMap } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
@@ -289,6 +290,12 @@ export function World() {
   // 装備をサーバーにミラー (戦闘に反映 #377)。解決結果が変わるたび送る = 初回ロード + 装備変更を一括カバー。
   // 参照でなく内容キーで発火 (resolveGear は毎回新オブジェクトを返すため)。
   const gearKey = JSON.stringify(resolvedGear?.selection ?? null);
+  // 地形の地図を読む (#421)。**読み込むまでは従来のノイズ生成に倒れる**ので待たない
+  // (結果は一致する)。読み込むと terrainAt が配列参照になり、描画も移動も軽くなる。
+  useEffect(() => {
+    void loadStaticWorldMap().catch((e) => console.warn('[world] map load failed', e));
+  }, []);
+
   useEffect(() => {
     if (!agent || !worldServerEnabled || gearKey === 'null') return;
     void serverGear(agent, JSON.parse(gearKey)).catch((e) => console.warn('[world] gear sync failed', e));

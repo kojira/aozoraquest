@@ -3,6 +3,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { serverOAuthConfigured } from '@/lib/server-oauth';
 import { ServerOAuthAdmin } from '@/components/admin/server-oauth-admin';
+import { MapEditor } from '@/components/admin/map-editor';
 import { WorldResetAdmin } from '@/components/admin/world-reset-admin';
 import { PowerGrantAdmin } from '@/components/admin/power-grant-admin';
 import { JobChangeAdmin } from '@/components/admin/job-change-admin';
@@ -127,6 +128,7 @@ export function AdminDashboard() {
           <PdsUsageAdmin agent={agent} />
           {/* 主管理者 PDS の設定 (旧 apps/admin。デプロイ設定が無く pnpm dev でしか
               開けなかったので、ここに取り込んだ)。 */}
+          <MapEditor />
           <DirectoryAdmin agent={agent} />
           <MaintenanceAdmin />
           <BansAdmin />

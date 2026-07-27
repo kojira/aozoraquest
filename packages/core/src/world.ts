@@ -17,6 +17,7 @@ import { MAX_POPULATED_TIER, type Tier } from './battle.js';
  */
 
 import { WORLD_DATA } from './world-data.js';
+import { mappedTerrainAt, registerWorldMapInvalidator } from './world-map.js';
 
 // ─── 定数 ───────────────────────────────────────────────────
 
@@ -467,9 +468,17 @@ export function worldOverlay(): WorldOverlay {
 export function terrainAt(xIn: number, yIn: number): Terrain {
   const x = wrap(xIn);
   const y = wrap(yIn);
+  // **地図 (画像) が読み込まれていればそれが正** (#421)。街/橋のオーバーレイより先に見るのは、
+  // エディタで「街を海に沈める」ような編集を自動オーバーレイに打ち消されないため。
+  // 読み込まれていなければ従来どおりノイズ生成 (地図が無い環境でも動く)。
+  const mapped = mappedTerrainAt(x, y);
+  if (mapped !== undefined) return mapped;
   const o = worldOverlay().overlayMap.get(y * WORLD_SIZE + x);
   return o ?? baseTerrainAt(x, y);
 }
+
+// 地図を差し替えたら overlay のメモを捨てる。
+registerWorldMapInvalidator(() => { cachedOverlay = null; });
 
 /** その座標が街なら Town を返す (街画面・店のヘッダ用)。 */
 export function townAt(x: number, y: number): Town | null {
