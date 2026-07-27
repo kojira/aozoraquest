@@ -13,6 +13,8 @@ import {
   tileArtFor,
   type TileArt,
 } from '@aozoraquest/core';
+import { useSession } from '@/lib/session';
+import { saveTileArts } from '@/lib/world-authoring';
 
 /**
  * **地形のドット絵エディタ** (#421)。
@@ -30,6 +32,7 @@ import {
 const CELL = 22;
 
 export function TileArtEditor() {
+  const session = useSession();
   const [terrain, setTerrain] = useState<string>(BASE_PALETTE[0]!);
   const [size, setSize] = useState<number>(16);
   const [art, setArt] = useState<TileArt>(() => tileArtFor(BASE_PALETTE[0]!) ?? emptyTileArt(16));
@@ -61,6 +64,17 @@ export function TileArtEditor() {
       setNote(`保存できなかった: ${String(e)}`);
     }
   }, [terrain, art]);
+
+  const publish = useCallback(async () => {
+    if (!session.agent) return;
+    try {
+      setTileArt(terrain, art);
+      const n = await saveTileArts(session.agent);
+      setNote(`${n} 地形ぶんを保存した`);
+    } catch (e) {
+      setNote(`保存できなかった: ${String(e)}`);
+    }
+  }, [session.agent, terrain, art]);
 
   const exportJson = useCallback(() => {
     setTileArt(terrain, art);
@@ -184,6 +198,7 @@ export function TileArtEditor() {
 
       <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.5em', flexWrap: 'wrap', alignItems: 'center' }}>
         <button type="button" onClick={save} style={{ fontSize: '0.85em' }}>この地形に反映</button>
+        <button type="button" onClick={() => void publish()} disabled={!session.agent} style={{ fontSize: '0.85em' }}>保存する</button>
         <button type="button" onClick={exportJson} style={{ fontSize: '0.85em' }}>すべて書き出す</button>
         <label style={{ fontSize: '0.85em' }}>
           読み込む{' '}

@@ -13,6 +13,8 @@ import {
   worldMapTiles,
   worldOverlay,
 } from '@aozoraquest/core';
+import { useSession } from '@/lib/session';
+import { saveWorldMap } from '@/lib/world-authoring';
 
 /**
  * **マップエディタ** (#421)。地形を 1 タイル 1 バイトの画像として編集する。
@@ -25,8 +27,9 @@ import {
  *  - **絵 (パーツ) がまだ無い地形も色で塗れる** — 絵の完成を待つと編集が始められない
  *  - 書き出し (gzip) と PNG 入出力 (外部の絵描きツールで世界を描くため)
  *
- * **保存は別途** — 管理者 PDS への書き込みと edge の読み込みは、権威の一致
- * (移動判定は edge が正) を詰めてから配線する。現状は「編集して書き出す」まで。
+ * **保存すると管理者 PDS に書かれ、web と edge の両方が同じレコードを読む。**
+ * 移動判定は edge が権威なので、web だけが編集後の地図を見ていると
+ * 「画面では歩けるのにサーバーが弾く」= その場から動けなくなる。
  */
 
 /** 画面に出す倍率の候補。1024 は等倍だと大きすぎるので既定は縮小。 */
@@ -37,6 +40,7 @@ const DEFAULT_ZOOM = 1;
 const VIEW = 512;
 
 export function MapEditor() {
+  const session = useSession();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(hasWorldMap());
   const [brush, setBrush] = useState(0);
@@ -144,6 +148,17 @@ export function MapEditor() {
     setNote('PNG に書き出した (色 → 地形の対応はパレットの色と一致させること)');
   }, []);
 
+  const save = useCallback(async () => {
+    if (!session.agent) return;
+    try {
+      const bytes = await saveWorldMap(session.agent);
+      setDirty(false);
+      setNote(`保存した (${(bytes / 1024).toFixed(1)} KB)。edge は最大 5 分で拾う`);
+    } catch (e) {
+      setNote(`保存できなかった: ${String(e)}`);
+    }
+  }, [session.agent]);
+
   const swatches = Array.from({ length: PALETTE_MAX }, (_, i) => i)
     .filter((i) => i < BASE_PALETTE.length || i === BASE_PALETTE.length);
 
@@ -152,7 +167,7 @@ export function MapEditor() {
       <h3 style={{ fontSize: '0.95em' }}>マップエディタ</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
         地形を 1 タイル 1 画素として編集する。<strong>移動判定はサーバー (edge) が正</strong>なので、
-        保存して edge が読むまでゲームには反映されない。
+        保存すると管理者の PDS に書かれ、web と edge の両方が同じ地図を読む。
       </p>
 
       {note && <p style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>{note}</p>}
@@ -225,6 +240,9 @@ export function MapEditor() {
           </div>
 
           <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.5em' }}>
+            <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.85em' }}>
+              保存する
+            </button>
             <button type="button" onClick={() => void exportGz()} style={{ fontSize: '0.85em' }}>
               書き出す (gzip)
             </button>
