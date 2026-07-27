@@ -81,11 +81,18 @@ export function AdminMap() {
     setTick((n) => n + 1);
   }, [brush, origin]);
 
-  const apply = useCallback(() => {
+  /**
+   * **保存せずに、自分のブラウザでだけ試す。**
+   *
+   * 編集はコピーの上で行うので、置いただけでは `/world` に出ない。これを押すと
+   * 読み込み済みの地図と差し替わり、**このタブでワールドを歩いて確かめられる**。
+   * 他の人には見えないし、リロードすると元に戻る (保存していないため)。
+   */
+  const preview = useCallback(() => {
     const tiles = draftRef.current;
     if (!tiles) return;
     setWorldMap({ tiles: new Uint8Array(tiles), size: WORLD_SIZE });
-    setNote('この端末のワールドに反映した (まだ保存はしていない)');
+    setNote('ワールドに反映した。この画面のまま /world を開けば歩いて確かめられる (保存はしていないのでリロードで戻る)');
   }, []);
 
   const save = useCallback(async () => {
@@ -153,10 +160,12 @@ export function AdminMap() {
         <Link to="/admin">← 管理ダッシュボード</Link>
       </p>
       <h2 style={{ fontSize: '1.05em', margin: '0 0 0.3em' }}>マップエディタ</h2>
-      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em' }}>
-        パーツを選んで置く。内部は 1 タイル 1 バイトの画像として持つので、
-        置いた瞬間に 1 バイト書くだけ。<strong>保存すると全員に反映される</strong>
-        (移動判定はサーバーが正なので、サーバーが読むまで最大 5 分)。
+      <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', margin: '0 0 0.6em', lineHeight: 1.8 }}>
+        パーツを選んで置く。置いただけでは何も起きない。<br />
+        <strong>ためす</strong> = 自分のブラウザでだけ反映する。この状態で <code>/world</code> を開くと
+        歩いて確かめられる。他の人には見えず、リロードすると戻る。<br />
+        <strong>みんなに反映</strong> = 保存して全員に配る。移動判定はサーバーが正なので、
+        サーバーが拾うまで最大 5 分かかる。
       </p>
 
       {note && <p style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>{note}</p>}
@@ -274,9 +283,11 @@ export function AdminMap() {
           </div>
 
           <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.6em', flexWrap: 'wrap', alignItems: 'center' }}>
-            <button type="button" onClick={apply} style={{ fontSize: '0.85em' }}>この端末に反映</button>
+            <button type="button" onClick={preview} style={{ fontSize: '0.85em' }}>
+              ためす (保存しない)
+            </button>
             <button type="button" onClick={() => void save()} disabled={!session.agent} style={{ fontSize: '0.85em' }}>
-              保存する
+              みんなに反映 (保存)
             </button>
             <button type="button" onClick={() => void exportGz()} style={{ fontSize: '0.85em' }}>書き出す</button>
             {dirty && <span style={{ fontSize: '0.8em', color: 'var(--color-danger)' }}>未保存の編集あり</span>}
