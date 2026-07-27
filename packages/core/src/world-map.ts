@@ -124,11 +124,6 @@ export interface WorldPart {
 /** 既定のパーツ (index 0〜7)。**並びを変えない** — 既存の地図の index が全部ずれる。 */
 export const BASE_PARTS: readonly WorldPart[] = BASE_PALETTE.map((t) => ({ terrain: t, name: t }));
 
-/** パーツごとの絵を引くためのキー (地形 id ではなく index で引く)。 */
-export function partKey(index: number): string {
-  return `part:${index}`;
-}
-
 export interface WorldMap {
   /** 1 タイル 1 バイト。長さは size*size。 */
   tiles: Uint8Array;

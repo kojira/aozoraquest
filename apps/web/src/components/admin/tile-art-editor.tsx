@@ -3,6 +3,7 @@ import { TERRAIN_TILES } from '@/components/world-tiles';
 import {
   BASE_PALETTE,
   TERRAIN_COLORS,
+  partArtFor,
   partKey,
   worldParts,
   TILE_ART_MAX_COLORS,
@@ -48,7 +49,7 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
   // 開いた瞬間は市松模様しか出ず「壊れている」ように見える (実機で確認)。
   // 描いた絵があればそれ、無ければ**透明から**。下敷き (既存 SVG) をなぞる前提なので、
   // 代表色で塗りつぶすと下敷きが見えなくなる。パレットには代表色を入れておく。
-  const [art, setArt] = useState<TileArt>(() => tileArtFor(partKey(0)) ?? blankWithPalette(BASE_PALETTE[0]!, 16));
+  const [art, setArt] = useState<TileArt>(() => partArtFor(0, BASE_PALETTE[0]!) ?? blankWithPalette(BASE_PALETTE[0]!, 16));
   const [color, setColor] = useState(1);
   const [note, setNote] = useState<string | null>(null);
   /** **既存の SVG を下敷きに敷く。** ゼロから描くより、今の絵をなぞるほうが早い。 */
@@ -59,7 +60,9 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
     setPartIndex(i);
     const key = partKey(i);
     const base = worldParts()[i]?.terrain ?? BASE_PALETTE[0]!;
-    setArt(tileArtFor(key) ?? blankWithPalette(base, size));
+    // **古い保存 (地形名キー) にも当たる**。地図側と同じ探し方にしないと、
+    // 「地図には出るのに編集画面では SVG に戻る」になる。
+    setArt(partArtFor(i, base) ?? blankWithPalette(base, size));
     setColor(1);
   }, [size]);
 
@@ -106,7 +109,7 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
     void file.text().then((txt) => {
       try {
         loadTileArts(JSON.parse(txt));
-        setArt(tileArtFor(terrain) ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', size));
+        setArt(partArtFor(partIndex, parts[partIndex]?.terrain ?? 'plains') ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', size));
         setNote('読み込んだ');
       } catch (e) {
         setNote(`読み込めなかった: ${String(e)}`);
@@ -133,7 +136,7 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
           地形{' '}
           <select value={partIndex} onChange={(e) => pick(Number(e.target.value))}>
             {parts.map((pt, i) => (
-              <option key={i} value={i}>{pt.name}{tileArtFor(partKey(i)) ? ' ●' : ''}</option>
+              <option key={i} value={i}>{pt.name}{partArtFor(i, pt.terrain) ? ' ●' : ''}</option>
             ))}
           </select>
         </label>
@@ -144,7 +147,7 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
             onChange={(e) => {
               const n = Number(e.target.value);
               setSize(n);
-              setArt(tileArtFor(terrain) ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', n));
+              setArt(partArtFor(partIndex, parts[partIndex]?.terrain ?? 'plains') ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', n));
             }}
           >
             {TILE_ART_SIZES.map((n) => <option key={n} value={n}>{n}×{n}</option>)}

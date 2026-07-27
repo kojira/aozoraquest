@@ -52,11 +52,11 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { mappedPartAt, partKey } from '@aozoraquest/core';
+import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
-import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelTile } from '@/components/world-tiles';
+import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
@@ -1178,8 +1178,7 @@ export function World() {
       // **パーツ (index) ごとの絵を最優先。** 「縦の橋」のように、通行判定は同じで
       // 絵だけ違うパーツを足せるようにするため、地形 id ではなく index で引く。
       const pi = mappedPartAt(x, y);
-      const body = (pi !== undefined ? pixelTile(partKey(pi)) : null)
-        ?? pixelTile(t)
+      const body = pixelPart(pi, t)
         ?? (t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t])
         ?? fallbackTile(t);
       tiles.push(
