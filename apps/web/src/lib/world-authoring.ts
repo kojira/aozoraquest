@@ -7,11 +7,14 @@ import {
   loadTileArts,
   setTownOverrides,
   setWorldMap,
+  setWorldParts,
+  worldParts,
   worldMapTiles,
   worldTownOverrides,
   WORLD_SIZE,
   type TileArtRecord,
   type TownOverride,
+  type WorldPart,
 } from '@aozoraquest/core';
 import { ADMIN_COL } from './collections';
 import { getPrimaryAdminDid } from './runtime-config';
@@ -36,8 +39,10 @@ export interface WorldMapRecord {
   size: number;
   /** 1 タイル 1 バイトのパレット索引を gzip → base64。 */
   gz: string;
-  /** index → 地形 id。省略時は既定パレット。 */
+  /** index → 地形 id。省略時は既定パレット (後方互換)。 */
   palette?: string[];
+  /** index → パーツ (通行判定の元 + 表示名)。「縦の橋」のような増設ぶんもここに入る。 */
+  parts?: WorldPart[];
   /** 街の差分 (名前が無ければその座標の街を消す)。**地形の画像では表せない**ので別枠。 */
   towns?: TownOverride[];
   updatedAt: string;
@@ -76,6 +81,7 @@ export async function saveWorldMap(agent: Agent, palette?: string[]): Promise<nu
     size: WORLD_SIZE,
     gz: toBase64(gz),
     ...(palette ? { palette } : {}),
+    parts: [...worldParts()],
     ...(towns.length ? { towns } : {}),
     updatedAt: new Date().toISOString(),
   };
@@ -104,7 +110,12 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
       const rec = await getRecord<WorldMapRecord>(agent, adminDid, ADMIN_COL.worldMap, RKEY);
       if (rec?.gz) {
         const tiles = await decodeWorldMap(fromBase64(rec.gz));
-        setWorldMap({ tiles, size: rec.size || WORLD_SIZE, ...(rec.palette ? { palette: rec.palette } : {}) });
+        setWorldMap({
+          tiles,
+          size: rec.size || WORLD_SIZE,
+          ...(rec.palette ? { palette: rec.palette } : {}),
+          ...(rec.parts ? { parts: rec.parts } : {}),
+        });
         setTownOverrides(rec.towns ?? null);
       } else {
         await loadStaticWorldMap();
