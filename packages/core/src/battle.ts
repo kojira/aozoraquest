@@ -992,8 +992,11 @@ export interface MonsterDef {
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
   /** healer の回復幅 (maxHp に対する割合 0〜1)。省略時は BATTLE_TUNING.healerHealRatio。
-   *  敵ごとに「しぶとさ」を変えられる (エディタから編集可能。#419)。 */
+   *  **healAmount があればそちらが勝つ。** 割合は HP の大きい敵ほど強くなる
+   *  (HP100 の敵が毎回 30 戻る) ので、原則は固定値を使う。 */
   healRatio?: number;
+  /** healer の回復量 (固定値)。**エディタの既定はこちら** — 割合回復は強すぎる (#419)。 */
+  healAmount?: number;
   /** caster の魔法 (#456)。def 無視・属性つきの int スケール魔撃。ダメージ = min〜max + int*intScale。
    *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。
    *  データ規約: min <= max (span 負を避ける)。caster の攻撃ラベルは skillName でなくこの name を使う。 */
@@ -1898,8 +1901,10 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       } else if (mCommand === 'heal') {
         // healer の自己回復 (MP 消費)。MP が尽きるまでの読み合いを作る
         state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterHealMpCost);
-        const ratio = MONSTERS_BY_ID[state.monsterId]?.healRatio ?? BATTLE_TUNING.healerHealRatio;
-        const healed = Math.round(state.monster.maxHp * ratio);
+        // 固定値 (healAmount) が最優先。割合は HP の大きい敵ほど強くなるので原則使わない。
+        const mdef = MONSTERS_BY_ID[state.monsterId];
+        const healed = mdef?.healAmount
+          ?? Math.round(state.monster.maxHp * (mdef?.healRatio ?? BATTLE_TUNING.healerHealRatio));
         const before = state.monster.hp;
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
         const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';

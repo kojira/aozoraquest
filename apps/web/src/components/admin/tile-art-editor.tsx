@@ -35,36 +35,64 @@ import { saveTileArts } from '@/lib/world-authoring';
 /** 編集中の拡大率 (1 画素を何 px で見せるか)。 */
 const CELL = 22;
 
-export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: string; name: string }[] } = {}) {
+/** 描く対象 1 件。地形パーツにもモンスターにも使う (#591)。 */
+export interface ArtSubject {
+  /** 登録簿のキー (`part:3` / `monster:sky-slime`)。 */
+  key: string;
+  /** 一覧での表示名。 */
+  name: string;
+  /** 新規作成時にパレットへ入れる代表色。 */
+  seedColor: string;
+  /** 古い保存のキー (地形名時代の互換)。無ければ key だけ探す。 */
+  legacyKey?: string;
+  /** 下敷き (既存の SVG)。ゼロから描くよりなぞるほうが早い。 */
+  underlay?: React.ReactNode;
+}
+
+export function TileArtEditor({ parts: partsIn, subjects: subjectsIn }: { parts?: readonly { terrain: string; name: string }[]; subjects?: ArtSubject[] } = {}) {
   const session = useSession();
-  // **パーツ index ごとに絵を持つ。** 「縦の橋」のように通行判定は同じで絵だけ違う
-  // パーツを足せるようにするため、地形 id ではなく index をキーにする。
-  // 呼び出し元 (マップ編集画面) が持つ一覧を優先する。別々に読むと、増やした直後に
-  // 片方だけ古い一覧を見て「足したパーツが絵タブに出てこない」になる。
+  // 対象一覧。呼び出し元 (マップ/モンスター編集画面) が持つ一覧を優先する。
+  // 別々に読むと、増やした直後に片方だけ古い一覧を見て「一覧に出てこない」になる。
   const parts = partsIn ?? worldParts();
+  const subjects: ArtSubject[] = subjectsIn ?? parts.map((pt, i) => ({
+    key: partKey(i),
+    name: pt.name,
+    seedColor: (TERRAIN_COLORS as Record<string, string>)[pt.terrain] ?? UNKNOWN_TERRAIN_COLOR,
+    legacyKey: pt.terrain,
+    underlay: <svg viewBox="0 0 32 32" width="100%" height="100%">{TERRAIN_TILES[pt.terrain as keyof typeof TERRAIN_TILES] ?? null}</svg>,
+  }));
   const [partIndex, setPartIndex] = useState(0);
-  const terrain = partKey(partIndex);
+  const subject = subjects[partIndex] ?? subjects[0]!;
+  const terrain = subject.key;
   const [size, setSize] = useState<number>(16);
   // **初期表示も代表色の下敷きから始める。** emptyTileArt だと全画素が透明で、
   // 開いた瞬間は市松模様しか出ず「壊れている」ように見える (実機で確認)。
   // 描いた絵があればそれ、無ければ**透明から**。下敷き (既存 SVG) をなぞる前提なので、
   // 代表色で塗りつぶすと下敷きが見えなくなる。パレットには代表色を入れておく。
-  const [art, setArt] = useState<TileArt>(() => partArtFor(0, BASE_PALETTE[0]!) ?? blankWithPalette(BASE_PALETTE[0]!, 16));
+  const [art, setArt] = useState<TileArt>(() => {
+    const sub = (subjectsIn ?? [])[0];
+    if (sub) return (tileArtFor(sub.key) ?? (sub.legacyKey ? tileArtFor(sub.legacyKey) : undefined)) ?? blankWithSeed(sub.seedColor, 16);
+    return partArtFor(0, BASE_PALETTE[0]!) ?? blankWithSeed((TERRAIN_COLORS as Record<string, string>)[BASE_PALETTE[0]!] ?? UNKNOWN_TERRAIN_COLOR, 16);
+  });
   const [color, setColor] = useState(1);
   const [note, setNote] = useState<string | null>(null);
   /** **既存の SVG を下敷きに敷く。** ゼロから描くより、今の絵をなぞるほうが早い。 */
   const [trace, setTrace] = useState(true);
   const painting = useRef(false);
 
+  const lookup = useCallback((sub: ArtSubject): TileArt | undefined => {
+    // **古い保存 (地形名キー) にも当たる**。描画側と同じ探し方にしないと、
+    // 「地図には出るのに編集画面では SVG に戻る」になる。
+    return tileArtFor(sub.key) ?? (sub.legacyKey ? tileArtFor(sub.legacyKey) : undefined);
+  }, []);
+
   const pick = useCallback((i: number) => {
     setPartIndex(i);
-    const key = partKey(i);
-    const base = worldParts()[i]?.terrain ?? BASE_PALETTE[0]!;
-    // **古い保存 (地形名キー) にも当たる**。地図側と同じ探し方にしないと、
-    // 「地図には出るのに編集画面では SVG に戻る」になる。
-    setArt(partArtFor(i, base) ?? blankWithPalette(base, size));
+    const sub = subjects[i];
+    if (!sub) return;
+    setArt(lookup(sub) ?? blankWithSeed(sub.seedColor, size));
     setColor(1);
-  }, [size]);
+  }, [size, subjects, lookup]);
 
   const paint = useCallback((x: number, y: number) => {
     setArt((a) => {
@@ -109,7 +137,7 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
     void file.text().then((txt) => {
       try {
         loadTileArts(JSON.parse(txt));
-        setArt(partArtFor(partIndex, parts[partIndex]?.terrain ?? 'plains') ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', size));
+        setArt(lookup(subject) ?? blankWithSeed(subject.seedColor, size));
         setNote('読み込んだ');
       } catch (e) {
         setNote(`読み込めなかった: ${String(e)}`);
@@ -135,8 +163,8 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
         <label style={{ fontSize: '0.8em' }}>
           地形{' '}
           <select value={partIndex} onChange={(e) => pick(Number(e.target.value))}>
-            {parts.map((pt, i) => (
-              <option key={i} value={i}>{pt.name}{partArtFor(i, pt.terrain) ? ' ●' : ''}</option>
+            {subjects.map((sub, i) => (
+              <option key={sub.key} value={i}>{sub.name}{lookup(sub) ? ' ●' : ''}</option>
             ))}
           </select>
         </label>
@@ -147,7 +175,7 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
             onChange={(e) => {
               const n = Number(e.target.value);
               setSize(n);
-              setArt(partArtFor(partIndex, parts[partIndex]?.terrain ?? 'plains') ?? blankWithPalette(parts[partIndex]?.terrain ?? 'plains', n));
+              setArt(lookup(subject) ?? blankWithSeed(subject.seedColor, n));
             }}
           >
             {TILE_ART_SIZES.map((n) => <option key={n} value={n}>{n}×{n}</option>)}
@@ -215,15 +243,10 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
       >
         {/* **既存の SVG を下敷きに敷く。** 上からドットでなぞれば、ゼロから描くより早い。
             透明の画素からは下敷きが透けて見える (置いた画素で隠れる)。 */}
-        {trace && (
-          <svg
-            viewBox="0 0 32 32"
-            width={art.size * CELL}
-            height={art.size * CELL}
-            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.85 }}
-          >
-            {TERRAIN_TILES[(parts[partIndex]?.terrain ?? 'plains') as keyof typeof TERRAIN_TILES] ?? null}
-          </svg>
+        {trace && subject.underlay && (
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.85 }}>
+            {subject.underlay}
+          </div>
         )}
         {Array.from({ length: art.size * art.size }, (_, i) => {
           const x = i % art.size;
@@ -268,13 +291,12 @@ export function TileArtEditor({ parts: partsIn }: { parts?: readonly { terrain: 
 }
 
 /**
- * 新規作成: **画素は透明のまま**、パレットにだけその地形の代表色を入れておく。
+ * 新規作成: **画素は透明のまま**、パレットにだけ代表色を入れておく。
  * 下敷き (既存 SVG) をなぞる前提なので、べた塗りすると下敷きが見えなくなる。
  * 色が 1 つも無いと「色が選べない」ので、代表色は最初から入れる。
  */
-function blankWithPalette(terrain: string, size: number): TileArt {
-  const base = (TERRAIN_COLORS as Record<string, string>)[terrain] ?? UNKNOWN_TERRAIN_COLOR;
+function blankWithSeed(seedColor: string, size: number): TileArt {
   const art = emptyTileArt(size);
-  art.palette = ['', base, '#ffffff', '#000000'];
+  art.palette = ['', seedColor, '#ffffff', '#000000'];
   return art;
 }

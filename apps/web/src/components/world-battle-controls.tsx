@@ -135,7 +135,7 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
         style={{ display: 'inline-block', opacity: defeated ? 0.35 : 1, transform: defeated ? 'rotate(180deg)' : 'none', transition: 'opacity 300ms ease' }}
         className={!defeated && state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
       >
-        <MonsterSvg species={monsterDef?.species ?? 'slime'} tint={monsterDef?.tint} size={84} />
+        <MonsterSvg species={monsterDef?.species ?? 'slime'} tint={monsterDef?.tint} size={84} monsterId={state.monsterId} />
       </div>
       {/* **名前はどの職でも出す。** 以前は右ペインに出していたが、そこをとくぎ一覧にしたので
           消えてしまい、体力を見抜ける 5 職 (sage/seer/miko/mage/ninja) 以外の 11 職では

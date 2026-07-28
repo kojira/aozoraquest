@@ -1,12 +1,44 @@
 import type { ReactElement } from 'react';
-import type { MonsterSpecies, TintableSpecies } from '@aozoraquest/core';
+import { monsterArtFor, tileArtColorAt, type MonsterSpecies, type TintableSpecies } from '@aozoraquest/core';
 
 /**
  * モンスターの SVG (あおぞらワールドの野外遭遇で使う)。
  * 画像アセットなしのインライン SVG = 軽量・省メモリ (モバイル方針)。
  * species ごとに 1 枚、viewBox 100x100。ドット RPG 風の太い輪郭とシンプルな形。
  */
-export function MonsterSvg({ species, size = 160, tint }: { species: MonsterSpecies; size?: number; tint?: string | undefined }) {
+/**
+ * モンスターの絵。**ドット絵 (エディタで描いたもの) → 従来の SVG** の順に倒す (#591)。
+ * ドット絵は `monster:<id>` キーで、タイルと同じ登録簿から引く。
+ */
+export function MonsterSvg({ species, size = 160, tint, monsterId }: { species: MonsterSpecies; size?: number; tint?: string | undefined; monsterId?: string }) {
+  const art = monsterId ? monsterArtFor(monsterId) : undefined;
+  if (art) {
+    // ドット絵はアンチエイリアスを切って画素のまま出す (タイルと同じ作法)
+    const px = 100 / art.size;
+    const rects: React.ReactElement[] = [];
+    for (let y = 0; y < art.size; y++) {
+      let runStart = 0;
+      let runColor = tileArtColorAt(art, 0, y);
+      for (let x = 1; x <= art.size; x++) {
+        const c = x < art.size ? tileArtColorAt(art, x, y) : '\u0000';
+        if (c === runColor) continue;
+        if (runColor !== '') {
+          rects.push(<rect key={`${runStart}-${y}`} x={runStart * px} y={y * px} width={(x - runStart) * px} height={px} fill={runColor} />);
+        }
+        runStart = x;
+        runColor = c;
+      }
+    }
+    return (
+      <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden style={{ display: 'block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))' }}>
+        <g shapeRendering="crispEdges">{rects}</g>
+      </svg>
+    );
+  }
+  return legacySvg(species, size, tint);
+}
+
+function legacySvg(species: MonsterSpecies, size: number, tint?: string | undefined) {
   return (
     <svg
       width={size}
@@ -24,7 +56,7 @@ const OUT = '#1b2530'; // 輪郭色
 
 // 色違い変種は tint (明示色) で主要な塗りを差し替える。CSS hue-rotate は輝度保存で
 // 「紅のつもりが青緑」になる等の事故があるため、狙った色を直接指定する (レビュー ★)。
-function bodyFor(species: MonsterSpecies, tint?: string): ReactElement {
+export function bodyFor(species: MonsterSpecies, tint?: string): ReactElement {
   switch (species) {
     case 'slime':
       return slimeBody(tint);
