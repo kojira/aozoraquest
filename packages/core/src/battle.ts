@@ -1104,14 +1104,22 @@ export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
  *  tier を 8 段階に広げても敵が追いつかないと「毎回同じ敵しか出ない帯」や
  *  「プールが空で `summonMonster` が落ちる帯」ができる。敵を足せば自動的に上が解放される。
  *  3 体を下限にするのは、地域相性 (`favoredMonsterFor`) が意味を持つ最小数だから。 */
-export const MAX_POPULATED_TIER: Tier = (() => {
+export let MAX_POPULATED_TIER: Tier = computeMaxPopulatedTier();
+
+function computeMaxPopulatedTier(): Tier {
   let max: Tier = 1;
   for (const t of [1, 2, 3, 4, 5, 6, 7, 8] as const) {
     if (MONSTERS.filter((m) => m.tier === t).length >= 3) max = t;
     else break;
   }
   return max;
-})();
+}
+
+/** モンスターをレコードで差し替えたとき (#419) に呼ぶ。ESM の live binding で
+ *  import 側にも新しい値が見える。 */
+export function recomputeMaxPopulatedTier(): void {
+  MAX_POPULATED_TIER = computeMaxPopulatedTier();
+}
 
 /** XP 算出式の係数 (式＋個別調整の「式」側)。倒す手間 (基準 HP) と脅威 (atk+agi) から出す。
  *  tier1 帯 (DQ 級スケールで基準 HP 5〜14) でおおむね 2〜9 になるよう校正。 */

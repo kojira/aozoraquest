@@ -85,6 +85,8 @@ export const ADMIN_COL = {
   worldMap: `${ROOT}.world.map`,
   /** 地形のドット絵 (地形 id → 画素データ)。#421 */
   tileArt: `${ROOT}.world.tileArt`,
+  /** モンスター (パラメータ・ドロップ・能力 id)。#419 */
+  monsters: `${ROOT}.world.monsters`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

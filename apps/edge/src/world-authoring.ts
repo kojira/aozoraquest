@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setTownOverrides, setWorldMap, WORLD_SIZE, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setMonsterOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type MonsterDef, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -87,6 +87,10 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     }
     const art = await getRecord<TileArtCollectionRecord>(pds, did, `${nsid}.world.tileArt`, RKEY);
     if (art?.value?.arts) loadTileArts(art.value.arts);
+    // **モンスターも edge が読む** (#419)。戦闘計算はここが権威なので、web だけが
+    // 編集後の敵を見ていると強さも XP も食い違う。読めなければコード直書きのまま。
+    const mon = await getRecord<{ monsters?: MonsterDef[] }>(pds, did, `${nsid}.world.monsters`, RKEY);
+    if (mon?.value?.monsters?.length) setMonsterOverrides(mon.value.monsters);
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。
