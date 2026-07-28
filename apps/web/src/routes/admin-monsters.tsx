@@ -18,7 +18,9 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
-import { MonsterSvg } from '@/components/monster-svg';
+import { MonsterSvg, bodyFor } from '@/components/monster-svg';
+import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
+import { monsterArtKey } from '@aozoraquest/core';
 
 /**
  * **モンスターエディタ** (#419)。一覧・編集・複製・削除と、保存前の検証・模擬戦。
@@ -45,6 +47,8 @@ export function AdminMonsters() {
   const [sel, setSel] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // 絵を描くモード (ドット絵エディタを開く)。下敷きは従来の SVG。
+  const [drawing, setDrawing] = useState(false);
 
   const current = useMemo(() => list.find((m) => m.id === sel) ?? null, [list, sel]);
   const counts = monsterCountByTier(list);
@@ -176,7 +180,7 @@ export function AdminMonsters() {
                       background: 'transparent',
                     }}
                   >
-                    <MonsterSvg species={m.species} tint={m.tint} size={22} />
+                    <MonsterSvg species={m.species} tint={m.tint} size={22} monsterId={m.id} />
                     <span style={{ flex: 1 }}>{m.name}</span>
                     <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>xp{battleXpFor(m.id) || baselineXp(m)}</span>
                   </button>
@@ -190,10 +194,13 @@ export function AdminMonsters() {
         {current ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
             <div style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
-              <MonsterSvg species={current.species} tint={current.tint} size={48} />
+              <MonsterSvg species={current.species} tint={current.tint} size={48} monsterId={current.id} />
               <strong>{current.name}</strong>
               <code style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{current.id}</code>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.3em' }}>
+                <button type="button" onClick={() => setDrawing((v) => !v)} style={{ fontSize: '0.8em' }}>
+                  {drawing ? '絵を閉じる' : '絵をかく'}
+                </button>
                 <button type="button" onClick={() => duplicate(current)} style={{ fontSize: '0.8em' }}>複製</button>
                 <button type="button" onClick={() => simulate(current)} style={{ fontSize: '0.8em' }}>模擬戦</button>
                 <button type="button" className="secondary" onClick={() => remove(current.id)} style={{ fontSize: '0.8em' }}>削除</button>
@@ -220,7 +227,7 @@ export function AdminMonsters() {
                 style={{ width: '5em' }}
               />
             )))}
-            {field('たおした XP', (
+            {field('XP', (
               <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
                 <input
                   type="number"
@@ -247,16 +254,18 @@ export function AdminMonsters() {
             {current.ability === 'healer' && (
               <>
                 {field('回復技名', <input value={current.healName ?? ''} onChange={(e) => update(current.id, { healName: e.target.value || undefined })} />)}
-                {field('回復幅', (
+                {field('回復量', (
                   <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
                     <input
-                      type="number" step="0.05" min="0.05" max="1"
-                      value={current.healRatio ?? ''}
-                      placeholder="0.3"
-                      onChange={(e) => update(current.id, { healRatio: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      type="number" min="1"
+                      value={current.healAmount ?? ''}
+                      placeholder={String(Math.round((current.hp ?? 10) * (current.healRatio ?? 0.3)))}
+                      onChange={(e) => update(current.id, { healAmount: e.target.value === '' ? undefined : Number(e.target.value) })}
                       style={{ width: '5em' }}
                     />
-                    <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>最大 HP に対する割合 (空欄 = 0.3)</span>
+                    <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+                      固定値 (空欄 = 最大 HP の割合で自動。割合回復は HP の大きい敵ほど強くなるので固定値を推奨)
+                    </span>
                   </span>
                 ))}
               </>
@@ -312,6 +321,21 @@ export function AdminMonsters() {
               </>
             )}
             {field('ひとこと', <input value={current.intro} onChange={(e) => update(current.id, { intro: e.target.value })} style={{ width: '100%' }} />)}
+            {drawing && (
+              <TileArtEditor
+                subjects={[{
+                  key: monsterArtKey(current.id),
+                  name: current.name,
+                  seedColor: current.tint ?? '#8fd0ff',
+                  // 下敷きは従来の SVG (なぞって描く)。ドット絵を保存すると戦闘画面も差し替わる
+                  underlay: (
+                    <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden>
+                      {bodyFor(current.species, current.tint)}
+                    </svg>
+                  ),
+                } satisfies ArtSubject]}
+              />
+            )}
             {/* ドロップ */}
             <div style={{ fontSize: '0.8em' }}>
               <span style={{ color: 'var(--color-muted)' }}>ドロップ</span>

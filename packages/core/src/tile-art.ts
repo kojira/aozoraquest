@@ -145,6 +145,16 @@ export function partKey(index: number): string {
   return `part:${index}`;
 }
 
+/** モンスターの絵のキー (#591)。地形と同じ登録簿に相乗りする (キー空間が別なので衝突しない)。 */
+export function monsterArtKey(id: string): string {
+  return `monster:${id}`;
+}
+
+/** モンスターの絵 (無ければ undefined = 従来の SVG に倒す)。 */
+export function monsterArtFor(id: string): TileArt | undefined {
+  return registry.get(monsterArtKey(id));
+}
+
 /** 登録済みの地形 id 一覧 (エディタが「描いた地形」を並べるため)。 */
 export function tileArtTerrains(): string[] {
   return [...registry.keys()];

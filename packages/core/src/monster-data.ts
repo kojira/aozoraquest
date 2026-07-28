@@ -89,6 +89,9 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
     if (m.healRatio !== undefined && !(m.healRatio > 0 && m.healRatio <= 1)) {
       throw new MonsterDataError(`${where}: healRatio は 0〜1 (${m.healRatio})`);
     }
+    if (m.healAmount !== undefined && !(Number.isInteger(m.healAmount) && m.healAmount > 0)) {
+      throw new MonsterDataError(`${where}: healAmount は正の整数 (${m.healAmount})`);
+    }
     if (m.spell) {
       const sp = m.spell as { name?: unknown; min?: unknown; max?: unknown };
       if (typeof sp.name !== 'string' || typeof sp.min !== 'number' || typeof sp.max !== 'number' || (sp.min as number) > (sp.max as number)) {
