@@ -5,6 +5,7 @@ import {
   encodeWorldMap,
   loadStaticWorldMap,
   loadTileArts,
+  setMonsterOverrides,
   setTownOverrides,
   setWorldMap,
   setWorldParts,
@@ -12,6 +13,7 @@ import {
   worldMapTiles,
   worldTownOverrides,
   WORLD_SIZE,
+  type MonsterDef,
   type TileArtRecord,
   type TownOverride,
   type WorldPart,
@@ -137,7 +139,30 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     } catch (e) {
       console.warn('[world] tile art load failed', e);
     }
+    try {
+      const rec = await getRecord<MonstersRecord>(agent, adminDid, ADMIN_COL.monsters, RKEY);
+      // **読めない/壊れていたらコード直書きのまま** (戦闘を止めない)。
+      if (rec?.monsters?.length) setMonsterOverrides(rec.monsters);
+    } catch (e) {
+      console.warn('[world] monsters load failed', e);
+    }
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
+}
+
+// ─── モンスター (#419) ─────────────────────────────────────
+
+export interface MonstersRecord {
+  monsters: MonsterDef[];
+  updatedAt: string;
+}
+
+/** 編集したモンスターを保存する。 */
+export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promise<number> {
+  // 保存前に core の検証を通す (壊れた 1 体で全体を落とす)。通れば適用もされる。
+  setMonsterOverrides(monsters);
+  const rec: MonstersRecord = { monsters, updatedAt: new Date().toISOString() };
+  await putRecord(agent, ADMIN_COL.monsters, RKEY, rec);
+  return monsters.length;
 }
