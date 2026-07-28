@@ -1208,7 +1208,20 @@ export function summonMonster(
    *  の乱数ストリームは不変)。world は BATTLE_TUNING.monsterVitalsVariance を渡す。 */
   variance = 0,
 ): { def: MonsterDef; combatant: Combatant } {
-  const pool = MONSTERS.filter((m) => m.tier === tier);
+  let pool = MONSTERS.filter((m) => m.tier === tier);
+  // **プールが空でも落とさない。** 落とすと edge の handleMove が 500 になり、
+  // プレイヤーは**その場から一歩も動けなくなる** (遭遇はサーバー権威で、移動の応答が
+  // 戦闘開始を含むため)。データ側の検証 (tier1 の 3 体下限) で普通は起きないが、
+  // 「データが壊れていたら移動不能」という壊れ方は許されないので、**近い下の帯に
+  // 繰り下げて**遭遇を成立させる。tier1 まで空なら全プールから選ぶ。
+  for (let t = tier - 1; pool.length === 0 && t >= 1; t--) {
+    pool = MONSTERS.filter((m) => m.tier === t);
+  }
+  if (pool.length === 0) pool = [...MONSTERS];
+  if (pool.length === 0) {
+    // MONSTERS 自体が空 (検証をすり抜けた最悪ケース)。それでも移動は殺さない。
+    throw new Error('モンスターが 1 体もいない (world.monsters レコードを確認)');
+  }
   const rng = createRng((seed ^ 0x51ed270b) >>> 0);
   // 出現重み = spawnWeight (default 1) × affinity 補正 (favor 対象を重く)。ただし
   // レア敵 (spawnWeight<1) は favor 対象にしない = どの地域でもごく稀のまま

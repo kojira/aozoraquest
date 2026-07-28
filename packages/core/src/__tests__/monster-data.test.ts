@@ -98,3 +98,22 @@ describe('モンスターのレコード差し替え (#419)', () => {
     expect(monsterCountByTier()).toEqual({ 1: 3, 2: 3 });
   });
 });
+
+describe('空プールで移動を殺さない (#419)', () => {
+  afterEach(() => setMonsterOverrides(null));
+
+  it('プールが空の tier は**下の帯に繰り下げて**遭遇を成立させる (落とさない)', () => {
+    // 落とすと edge の handleMove が 500 になり、プレイヤーはその場から一歩も動けなくなる。
+    // 「データが壊れていたら移動不能」という壊れ方は許されない。
+    const r = core.summonMonster(7 as never, 1, 123); // tier7 は 0 体
+    expect(r.def).toBeDefined();
+    expect(r.def.tier).toBeLessThanOrEqual(6); // 近い下の帯から出る
+    expect(r.combatant.hp).toBeGreaterThan(0);
+  });
+
+  it('差し替えで中間の帯が空いても同様 (tier2 を 0 体にする)', () => {
+    setMonsterOverrides([...trio(1, 'a'), ...trio(3, 'c')]);
+    const r = core.summonMonster(2 as never, 1, 456);
+    expect(r.def.tier).toBe(1); // tier2 が空 → tier1 に繰り下げ
+  });
+});
