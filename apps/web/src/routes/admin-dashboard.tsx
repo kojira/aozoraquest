@@ -34,7 +34,7 @@ interface Section {
 
 const CONTENT_SECTIONS: Section[] = [
   // 並びは着手の優先順。#418 (データ化) が全部の前提。
-  { key: 'monsters', title: 'モンスター', desc: '絵・パラメータ・能力・出現エリア', issue: 419 },
+  { key: 'monsters', title: 'モンスター', desc: 'パラメータ・能力・ドロップ・模擬戦', to: '/admin/monsters', issue: 419 },
   { key: 'map', title: 'マップ', desc: '地形をパーツで編集 (エリア・出現配置は #421 で続き)', to: '/admin/map', issue: 421 },
   { key: 'jobs', title: 'ジョブ', desc: '各種パラメータ設定 + 模擬戦', issue: 544 },
   { key: 'npc', title: 'NPC', desc: '位置・絵・名前・セリフ・フラグ制御', issue: 425 },

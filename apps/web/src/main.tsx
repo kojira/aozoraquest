@@ -20,6 +20,7 @@ const Settings = lazy(() => import('@/routes/settings').then(m => ({ default: m.
 const Spirit = lazy(() => import('@/routes/spirit').then(m => ({ default: m.Spirit })));
 const AdminDashboard = lazy(() => import('@/routes/admin-dashboard').then(m => ({ default: m.AdminDashboard })));
 const AdminMap = lazy(() => import('@/routes/admin-map').then(m => ({ default: m.AdminMap })));
+const AdminMonsters = lazy(() => import('@/routes/admin-monsters').then(m => ({ default: m.AdminMonsters })));
 const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
 const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
 const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
@@ -81,6 +82,7 @@ const router = createBrowserRouter([
       { path: 'admin', element: <AdminDashboard /> },
       // マップエディタは別画面 (地図が広く、他の管理ツールと同居すると双方が使いにくい)
       { path: 'admin/map', element: <AdminMap /> },
+      { path: 'admin/monsters', element: <AdminMonsters /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
       { path: 'oauth/callback', element: <OAuthCallback /> },
