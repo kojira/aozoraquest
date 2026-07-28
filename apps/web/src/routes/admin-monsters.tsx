@@ -10,6 +10,8 @@ import {
   setMonsterOverrides,
   MonsterDataError,
   JOBS,
+  ITEMS,
+  type Element,
   type MonsterDef,
   type Tier,
 } from '@aozoraquest/core';
@@ -218,14 +220,19 @@ export function AdminMonsters() {
                 style={{ width: '5em' }}
               />
             )))}
-            {field('XP 上書き', (
-              <input
-                type="number"
-                value={current.xp ?? ''}
-                placeholder={`式: ${baselineXp(current)}`}
-                onChange={(e) => update(current.id, { xp: e.target.value === '' ? undefined : Number(e.target.value) })}
-                style={{ width: '6em' }}
-              />
+            {field('たおした XP', (
+              <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  value={current.xp ?? ''}
+                  placeholder={String(baselineXp(current))}
+                  onChange={(e) => update(current.id, { xp: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  style={{ width: '6em' }}
+                />
+                <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+                  空欄 = 強さから自動 ({baselineXp(current)})。特別に多く/少なくしたいときだけ入れる
+                </span>
+              </span>
             ))}
             {field('出現の重み', <input type="number" step="0.01" value={current.spawnWeight ?? 1} onChange={(e) => update(current.id, { spawnWeight: Number(e.target.value) })} style={{ width: '5em' }} />)}
             {field('能力', (
@@ -237,30 +244,92 @@ export function AdminMonsters() {
               </select>
             ))}
             {current.ability === 'charger' && field('技名', <input value={current.skillName ?? ''} onChange={(e) => update(current.id, { skillName: e.target.value || undefined })} />)}
-            {current.ability === 'healer' && field('回復技名', <input value={current.healName ?? ''} onChange={(e) => update(current.id, { healName: e.target.value || undefined })} />)}
-            {current.ability === 'caster' && field('spell (JSON)', (
-              <input
-                value={JSON.stringify(current.spell ?? null)}
-                onChange={(e) => {
-                  try { update(current.id, { spell: JSON.parse(e.target.value) || undefined }); } catch { /* 入力途中 */ }
-                }}
-                style={{ width: '100%', fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}
-              />
-            ))}
+            {current.ability === 'healer' && (
+              <>
+                {field('回復技名', <input value={current.healName ?? ''} onChange={(e) => update(current.id, { healName: e.target.value || undefined })} />)}
+                {field('回復幅', (
+                  <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                    <input
+                      type="number" step="0.05" min="0.05" max="1"
+                      value={current.healRatio ?? ''}
+                      placeholder="0.3"
+                      onChange={(e) => update(current.id, { healRatio: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      style={{ width: '5em' }}
+                    />
+                    <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>最大 HP に対する割合 (空欄 = 0.3)</span>
+                  </span>
+                ))}
+              </>
+            )}
+            {current.ability === 'caster' && (
+              <>
+                {field('魔法の名前', (
+                  <input
+                    value={current.spell?.name ?? ''}
+                    onChange={(e) => update(current.id, { spell: { min: 3, max: 6, ...current.spell, name: e.target.value } })}
+                  />
+                ))}
+                {field('属性', (
+                  <select
+                    value={current.spell?.element ?? ''}
+                    onChange={(e) => {
+                      const next = { name: '', min: 3, max: 6, ...current.spell } as NonNullable<MonsterDef['spell']> & { element?: Element };
+                      if (e.target.value === '') delete next.element;
+                      else next.element = e.target.value as Element;
+                      update(current.id, { spell: next });
+                    }}
+                  >
+                    <option value="">なし (無属性)</option>
+                    {(['fire', 'water', 'wind', 'earth', 'void'] as const).map((el) => (
+                      <option key={el} value={el}>{el}</option>
+                    ))}
+                  </select>
+                ))}
+                {field('ダメージ', (
+                  <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      value={current.spell?.min ?? 3}
+                      onChange={(e) => update(current.id, { spell: { name: '', max: 6, ...current.spell, min: Number(e.target.value) } })}
+                      style={{ width: '4.5em' }}
+                    />
+                    〜
+                    <input
+                      type="number"
+                      value={current.spell?.max ?? 6}
+                      onChange={(e) => update(current.id, { spell: { name: '', min: 3, ...current.spell, max: Number(e.target.value) } })}
+                      style={{ width: '4.5em' }}
+                    />
+                    <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>+ かしこさ ×</span>
+                    <input
+                      type="number" step="0.05"
+                      value={current.spell?.intScale ?? 0}
+                      onChange={(e) => update(current.id, { spell: { name: '', min: 3, max: 6, ...current.spell, intScale: Number(e.target.value) } })}
+                      style={{ width: '4.5em' }}
+                    />
+                  </span>
+                ))}
+              </>
+            )}
             {field('ひとこと', <input value={current.intro} onChange={(e) => update(current.id, { intro: e.target.value })} style={{ width: '100%' }} />)}
             {/* ドロップ */}
             <div style={{ fontSize: '0.8em' }}>
               <span style={{ color: 'var(--color-muted)' }}>ドロップ</span>
               {current.drops.map((d, i) => (
                 <div key={i} style={{ display: 'flex', gap: '0.3em', alignItems: 'center', margin: '0.15em 0' }}>
-                  <input
+                  {/* **ゲーム内の名前で選ぶ。** 内部 id の自由入力は typo で「落ちない
+                      ドロップ」を静かに作る (エラーにもならない)。 */}
+                  <select
                     value={d.item}
                     onChange={(e) => {
                       const drops = current.drops.map((x, j) => (j === i ? { ...x, item: e.target.value } : x));
                       update(current.id, { drops });
                     }}
-                    style={{ width: '10em' }}
-                  />
+                  >
+                    {Object.entries(ITEMS).map(([id, it]) => (
+                      <option key={id} value={id}>{it.name}</option>
+                    ))}
+                  </select>
                   <input
                     type="number" step="0.05" min="0" max="1"
                     value={d.chance}
