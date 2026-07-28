@@ -117,3 +117,25 @@ describe('空プールで移動を殺さない (#419)', () => {
     expect(r.def.tier).toBe(1); // tier2 が空 → tier1 に繰り下げ
   });
 });
+
+describe('healer の回復幅とspell の検証 (#419)', () => {
+  afterEach(() => setMonsterOverrides(null));
+
+  it('healRatio が敵ごとに効く', () => {
+    setMonsterOverrides([
+      ...trio(1, 'a'),
+      base({ id: 'tough', name: 'しぶとい', hp: 40, mp: 30, ability: 'healer', healRatio: 0.5, stats: [1, 5, 1, 20, 4] }),
+    ]);
+    // 直接 heal 行動を検証するのは resolveTurn 経由になるので、値の伝播だけ固定する
+    expect(MONSTERS_BY_ID['tough']?.healRatio).toBe(0.5);
+  });
+
+  it('壊れた healRatio / spell は保存できない', () => {
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', ability: 'healer', healRatio: 1.5 })]))
+      .toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', ability: 'caster', spell: { name: 'x', min: 9, max: 3 } })]))
+      .toThrow(MonsterDataError); // min > max
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', ability: 'caster', spell: { name: '', min: 'a' } as never })]))
+      .toThrow(MonsterDataError);
+  });
+});

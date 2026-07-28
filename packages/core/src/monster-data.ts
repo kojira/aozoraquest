@@ -86,6 +86,15 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
       throw new MonsterDataError(`${where}: ability が不正 (${m.ability})`);
     }
     if (m.ability === 'caster' && !m.spell) throw new MonsterDataError(`${where}: caster には spell が要る`);
+    if (m.healRatio !== undefined && !(m.healRatio > 0 && m.healRatio <= 1)) {
+      throw new MonsterDataError(`${where}: healRatio は 0〜1 (${m.healRatio})`);
+    }
+    if (m.spell) {
+      const sp = m.spell as { name?: unknown; min?: unknown; max?: unknown };
+      if (typeof sp.name !== 'string' || typeof sp.min !== 'number' || typeof sp.max !== 'number' || (sp.min as number) > (sp.max as number)) {
+        throw new MonsterDataError(`${where}: spell が不正 (name/min/max)`);
+      }
+    }
   }
   // **tier1 は 3 体を下回れない。** spawn 近辺のプールが痩せると summonMonster が
   // 選べる敵を失い、move が 500 になってその街から出られなくなる (既知の事故経路)。
