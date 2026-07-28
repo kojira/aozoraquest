@@ -85,7 +85,19 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
     if (m.ability !== undefined && !(ABILITIES as readonly string[]).includes(m.ability)) {
       throw new MonsterDataError(`${where}: ability が不正 (${m.ability})`);
     }
-    if (m.ability === 'caster' && !m.spell) throw new MonsterDataError(`${where}: caster には spell が要る`);
+    if (m.abilities !== undefined) {
+      if (!Array.isArray(m.abilities) || m.abilities.length === 0) {
+        throw new MonsterDataError(`${where}: abilities が不正 (空にするなら省略する)`);
+      }
+      for (const a of m.abilities) {
+        if (!(ABILITIES as readonly string[]).includes(a)) throw new MonsterDataError(`${where}: abilities に不正な id (${a})`);
+      }
+      if (new Set(m.abilities).size !== m.abilities.length) {
+        throw new MonsterDataError(`${where}: abilities が重複している`);
+      }
+    }
+    const hasCaster = m.ability === 'caster' || (m.abilities ?? []).includes('caster');
+    if (hasCaster && !m.spell) throw new MonsterDataError(`${where}: caster には spell が要る`);
     if (m.healRatio !== undefined && !(m.healRatio > 0 && m.healRatio <= 1)) {
       throw new MonsterDataError(`${where}: healRatio は 0〜1 (${m.healRatio})`);
     }
