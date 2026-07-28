@@ -172,3 +172,59 @@ describe('能力パラメータの上書き (#592 段階 1)', () => {
       .toThrow(MonsterDataError);
   });
 });
+
+describe('複数の能力 (#592 段階 2)', () => {
+  afterEach(() => setMonsterOverrides(null));
+
+  it('優先順は配列の順 (healer が動かないときだけ charger が動く)', () => {
+    // HP 満タン (healer の閾値に届かない) → charger のため が出る。
+    // HP を削る → healer の回復が優先される。
+    setMonsterOverrides([
+      ...trio(1, 'a'),
+      base({
+        id: 'combo', name: 'こんぼ', hp: 60, mp: 60, stats: [10, 5, 1, 20, 4],
+        abilities: ['healer', 'charger'], skillName: 'ためどん',
+        abilityParams: { healChance: 1, lowHpRatio: 0.6, chargeChance: 1 },
+      }),
+    ]);
+    // HP 満タンから: healer は発動条件 (低 HP) を満たさず attack を返し、charger に回る。
+    // **攻め手は弱い職の低レベル** — 強い職だと healer の閾値に届く前に敵が死ぬ
+    // (guardian Lv20 で実測 2 ターン即死し、回復が一度も観測できなかった)。
+    let charged = 0, healed = 0;
+    for (let seed = 0; seed < 15; seed++) {
+      let s = core.startBattle('warrior', 1, 1, 'x', 1, seed, 0, undefined, { monsterId: 'combo' });
+      for (let i = 0; i < 10 && s.outcome === 'ongoing'; i++) {
+        s = core.resolveTurn(s, 'attack', seed * 131 + i);
+        if (s.lastEvents.some((e) => e.text.includes('ためている'))) charged++;
+        if (s.lastEvents.some((e) => e.text.includes('回復'))) healed++;
+      }
+    }
+    expect(charged, '満タン時に charger が動いていない').toBeGreaterThan(0);
+    expect(healed, '削られたら healer が優先されるはず').toBeGreaterThan(0);
+  });
+
+  it('単数 ability は後方互換で動く', () => {
+    setMonsterOverrides([
+      ...trio(1, 'a'),
+      base({ id: 'old', name: 'ふるい', hp: 40, mp: 40, ability: 'charger', skillName: 'x',
+             stats: [10, 5, 1, 20, 4], abilityParams: { chargeChance: 1 } }),
+    ]);
+    let charged = 0;
+    for (let seed = 0; seed < 10; seed++) {
+      let s = core.startBattle('guardian', 20, 1, 'x', 1, seed, 0, undefined, { monsterId: 'old' });
+      for (let i = 0; i < 4 && s.outcome === 'ongoing'; i++) {
+        s = core.resolveTurn(s, 'guard', seed * 131 + i);
+        if (s.lastEvents.some((e) => e.text.includes('ためている'))) charged++;
+      }
+    }
+    expect(charged).toBeGreaterThan(0);
+  });
+
+  it('壊れた abilities は保存できない', () => {
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilities: [] })])).toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilities: ['charger', 'charger'] })])).toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilities: ['zzz' as never] })])).toThrow(MonsterDataError);
+    // abilities 側に caster があるのに spell が無い
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilities: ['caster'] })])).toThrow(MonsterDataError);
+  });
+});

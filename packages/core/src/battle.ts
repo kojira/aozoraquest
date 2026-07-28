@@ -989,6 +989,13 @@ export interface MonsterDef {
    *  'caster' = たまに魔法を撃つ (def 無視の属性魔撃。#456: 対物理型の看板 覇王/不動 の弱点=魔法を
    *    成立させ、後続 (#483) の清き心 (魔法反射) の前提にもなる。要 spell 定義)。 */
   ability?: 'charger' | 'healer' | 'fleer' | 'caster';
+  /**
+   * 複数の能力 (#592 段階 2)。**優先順は配列の順** — 毎ターン先頭から聞き、最初に
+   * 特別な行動 (attack 以外) を返した能力を採る。全員 attack なら通常攻撃。
+   * 「HP が減ったら回復、それ以外はためる」= ['healer', 'charger']。
+   * 指定があれば `ability` (単数) より優先。単数は後方互換で残す。
+   */
+  abilities?: readonly ('charger' | 'healer' | 'fleer' | 'caster')[];
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
   /** healer の回復幅 (maxHp に対する割合 0〜1)。省略時は BATTLE_TUNING.healerHealRatio。
@@ -1734,11 +1741,17 @@ function monsterCommand(monster: Combatant, state: BattleState, rng: () => numbe
   // 低 HP でたまに身を固める (charger のため中は別処理なのでここでは除外)
   const canGuard = (def?.tier ?? 1) >= 2 && hpRatio < 0.35 && !monster.charging;
 
-  const ability = def?.ability ? MONSTER_ABILITIES[def.ability] : undefined;
-  const action = ability?.decideAction({ state, monster, r, t, hpRatio, canGuard, monsterDef: def });
-  if (action) return action;
+  // 複数対応 (#592 段階 2): 配列の先頭から聞き、**最初に特別な行動を返した能力を採る**。
+  // 'attack' は「この能力は今回何もしない」の意味なので、次の能力に回す
+  // (先頭が attack を返した瞬間に確定すると、2 番目以降が永久に発動しない)。
+  const ids = def?.abilities ?? (def?.ability ? [def.ability] : []);
+  for (const id of ids) {
+    const action = MONSTER_ABILITIES[id]?.decideAction({ state, monster, r, t, hpRatio, canGuard, monsterDef: def });
+    if (action && action !== 'attack') return action;
+  }
+  if (ids.length > 0) return 'attack';
 
-  // plain (ability 無し / null): 通常攻撃 + 低 HP でたまに防御
+  // plain (ability 無し): 通常攻撃 + 低 HP でたまに防御
   if (canGuard && r < 0.25) return 'guard';
   return 'attack';
 }

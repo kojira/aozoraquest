@@ -31,7 +31,6 @@ import { monsterArtKey } from '@aozoraquest/core';
  */
 
 const ABILITY_LABELS: Record<string, string> = {
-  '': 'plain (通常攻撃)',
   charger: 'charger (ため→強攻撃)',
   healer: 'healer (自己回復)',
   fleer: 'fleer (逃走)',
@@ -51,6 +50,11 @@ export function AdminMonsters() {
   const [drawing, setDrawing] = useState(false);
 
   const current = useMemo(() => list.find((m) => m.id === sel) ?? null, [list, sel]);
+  /** 単数 (旧) と複数 (新) を吸収した現在の能力列。 */
+  const currentAbilities = useMemo(
+    () => current?.abilities ?? (current?.ability ? [current.ability] : []),
+    [current],
+  );
   const counts = monsterCountByTier(list);
 
   // exactOptionalPropertyTypes のため、undefined を「キーごと消す」に読み替える
@@ -265,22 +269,48 @@ export function AdminMonsters() {
               </span>
             ))}
             {field('出現の重み', <input type="number" step="0.01" value={current.spawnWeight ?? 1} onChange={(e) => update(current.id, { spawnWeight: Number(e.target.value) })} style={{ width: '5em' }} />)}
-            {current.ability === 'fleer' && paramField('逃走の基礎確率', 'fleeBase', 0.35)}
+            {currentAbilities.includes('fleer') && paramField('逃走の基礎確率', 'fleeBase', 0.35)}
             {field('能力', (
-              <select
-                value={current.ability ?? ''}
-                onChange={(e) => update(current.id, { ability: (e.target.value || undefined) as MonsterDef['ability'] })}
-              >
-                {Object.entries(ABILITY_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-              </select>
+              <span style={{ display: 'flex', flexDirection: 'column', gap: '0.15em' }}>
+                {/* **複数選べる。優先順は上から** (毎ターン上から聞き、最初に動いた能力を採る)。
+                    選択順を保持するので、後から選んだものが末尾に付く。 */}
+                {(['charger', 'healer', 'fleer', 'caster'] as const).map((id) => {
+                  const selected = currentAbilities.includes(id);
+                  const order = currentAbilities.indexOf(id);
+                  return (
+                    <label key={id} style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...currentAbilities, id]
+                            : currentAbilities.filter((a) => a !== id);
+                          update(current.id, {
+                            abilities: next.length ? next : undefined,
+                            ability: undefined, // 単数フィールドは複数側へ寄せる
+                          });
+                        }}
+                      />
+                      {selected && <span style={{ fontSize: '0.75em', color: 'var(--color-accent)' }}>{order + 1}.</span>}
+                      <span>{ABILITY_LABELS[id]}</span>
+                    </label>
+                  );
+                })}
+                {currentAbilities.length > 1 && (
+                  <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>
+                    番号の順に判定する (1 が動かなかったら 2 …)。選び直すと順番が変わる
+                  </span>
+                )}
+              </span>
             ))}
-            {current.ability === 'charger' && (
+            {currentAbilities.includes('charger') && (
               <>
                 {field('技名', <input value={current.skillName ?? ''} onChange={(e) => update(current.id, { skillName: e.target.value || undefined })} />)}
                 {paramField('ため確率', 'chargeChance', 0.4)}
               </>
             )}
-            {current.ability === 'healer' && (
+            {currentAbilities.includes('healer') && (
               <>
                 {field('回復技名', <input value={current.healName ?? ''} onChange={(e) => update(current.id, { healName: e.target.value || undefined })} />)}
                 {paramField('回復確率', 'healChance', 0.5)}
@@ -301,7 +331,7 @@ export function AdminMonsters() {
                 ))}
               </>
             )}
-            {current.ability === 'caster' && (
+            {currentAbilities.includes('caster') && (
               <>
                 {field('魔法の名前', (
                   <input
