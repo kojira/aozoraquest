@@ -12,7 +12,7 @@
  */
 import {
   startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, dropBonusOf,
-  terrainAt, isWalkable,
+  terrainAt,
   isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
 } from '@aozoraquest/core';
@@ -267,7 +267,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   const nx = wrap(cx + dx), ny = wrap(cy + dy);
   const terrain = terrainAt(nx, ny);
-  if (!isWalkable(terrain)) throw new ResolverError('進めない地形', 400);
+  if (!isWalkableAt(nx, ny)) throw new ResolverError('進めない地形', 400);
 
   let healed = false;
   if (terrain === 'town') {
@@ -289,8 +289,16 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
       // その 30 分枠で撃破済みのタイルには敵が居ない (同一敵の無限狩り防止)。
       const defeated = state.defeatedWindow === window ? (state.defeated ?? []) : [];
       if (!defeated.includes(`${nx},${ny}`)) {
-        const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, ns, fetchImpl);
-        return { x: nx, y: ny, terrain, token: nextToken, encounter };
+        // **遭遇の失敗で移動そのものを殺さない。** ここが throw すると 500 になり、
+        // プレイヤーはその場から一歩も動けなくなる (実際に危うく起きた)。遭遇データが
+        // 壊れているなら「敵が出ないまま歩ける」に倒すのが正しい — 探索は続けられ、
+        // 原因はログで追える。
+        try {
+          const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, ns, fetchImpl);
+          return { x: nx, y: ny, terrain, token: nextToken, encounter };
+        } catch (e) {
+          console.error('encounter failed (移動は通す)', e);
+        }
       }
     }
   }
