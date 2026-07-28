@@ -139,3 +139,36 @@ describe('healer の回復幅とspell の検証 (#419)', () => {
       .toThrow(MonsterDataError);
   });
 });
+
+describe('能力パラメータの上書き (#592 段階 1)', () => {
+  afterEach(() => setMonsterOverrides(null));
+
+  it('ため確率が敵ごとに効く (実測: 0 なら一度もためない / 1 なら MP がある限りためる)', () => {
+    const mk = (chargeChance: number) => [
+      ...trio(1, 'a'),
+      base({ id: 'ch', name: 'ためんぼ', hp: 60, mp: 50, ability: 'charger', skillName: 'ためどん',
+             stats: [10, 5, 1, 20, 4], abilityParams: { chargeChance } }),
+    ];
+    const chargeCount = (chance: number) => {
+      setMonsterOverrides(mk(chance));
+      let n = 0;
+      for (let seed = 0; seed < 20; seed++) {
+        let s = core.startBattle('guardian', 20, 1, 'x', 1, seed, 0, undefined, { monsterId: 'ch' });
+        for (let i = 0; i < 8 && s.outcome === 'ongoing'; i++) {
+          s = core.resolveTurn(s, 'guard', seed * 131 + i);
+          if (s.lastEvents.some((e) => e.text.includes('ためている'))) n++;
+        }
+      }
+      return n;
+    };
+    expect(chargeCount(0), 'ため確率 0 なのにためた').toBe(0);
+    expect(chargeCount(1), 'ため確率 1 なのにためない').toBeGreaterThan(20);
+  });
+
+  it('壊れたパラメータは保存できない (0〜1 の範囲外)', () => {
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilityParams: { chargeChance: 1.5 } })]))
+      .toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilityParams: { fleeBase: -0.1 } })]))
+      .toThrow(MonsterDataError);
+  });
+});

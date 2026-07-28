@@ -137,6 +137,29 @@ export function AdminMonsters() {
     );
   }
 
+  /** 能力パラメータ (0〜1) の 1 欄。空欄 = 全体既定。 */
+  const paramField = (label: string, key: keyof NonNullable<MonsterDef['abilityParams']>, fallback: number) => {
+    if (!current) return null;
+    const val = current.abilityParams?.[key];
+    return field(label, (
+      <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+        <input
+          type="number" step="0.05" min="0" max="1"
+          value={val ?? ''}
+          placeholder={String(fallback)}
+          onChange={(e) => {
+            const params = { ...current.abilityParams };
+            if (e.target.value === '') delete params[key];
+            else params[key] = Number(e.target.value);
+            update(current.id, { abilityParams: Object.keys(params).length ? params : undefined });
+          }}
+          style={{ width: '5em' }}
+        />
+        <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>0〜1 (空欄 = {fallback})</span>
+      </span>
+    ));
+  };
+
   const field = (label: string, input: React.ReactNode) => (
     <label style={{ display: 'flex', alignItems: 'center', gap: '0.4em', fontSize: '0.8em' }}>
       <span style={{ width: '7em', color: 'var(--color-muted)' }}>{label}</span>
@@ -242,6 +265,7 @@ export function AdminMonsters() {
               </span>
             ))}
             {field('出現の重み', <input type="number" step="0.01" value={current.spawnWeight ?? 1} onChange={(e) => update(current.id, { spawnWeight: Number(e.target.value) })} style={{ width: '5em' }} />)}
+            {current.ability === 'fleer' && paramField('逃走の基礎確率', 'fleeBase', 0.35)}
             {field('能力', (
               <select
                 value={current.ability ?? ''}
@@ -250,10 +274,17 @@ export function AdminMonsters() {
                 {Object.entries(ABILITY_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
             ))}
-            {current.ability === 'charger' && field('技名', <input value={current.skillName ?? ''} onChange={(e) => update(current.id, { skillName: e.target.value || undefined })} />)}
+            {current.ability === 'charger' && (
+              <>
+                {field('技名', <input value={current.skillName ?? ''} onChange={(e) => update(current.id, { skillName: e.target.value || undefined })} />)}
+                {paramField('ため確率', 'chargeChance', 0.4)}
+              </>
+            )}
             {current.ability === 'healer' && (
               <>
                 {field('回復技名', <input value={current.healName ?? ''} onChange={(e) => update(current.id, { healName: e.target.value || undefined })} />)}
+                {paramField('回復確率', 'healChance', 0.5)}
+                {paramField('発動する HP', 'lowHpRatio', 0.55)}
                 {field('回復量', (
                   <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
                     <input
@@ -294,6 +325,7 @@ export function AdminMonsters() {
                     ))}
                   </select>
                 ))}
+                {paramField('詠唱確率', 'castChance', 0.3)}
                 {field('ダメージ', (
                   <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
                     <input
