@@ -997,6 +997,22 @@ export interface MonsterDef {
   healRatio?: number;
   /** healer の回復量 (固定値)。**エディタの既定はこちら** — 割合回復は強すぎる (#419)。 */
   healAmount?: number;
+  /**
+   * 能力の発動パラメータの上書き (#592 段階 1)。省略時は BATTLE_TUNING の全体既定。
+   * 「よくためる敵」「なかなか逃げない敵」を、コードを触らずデータで作れる。
+   */
+  abilityParams?: {
+    /** charger: ため確率 (0〜1)。 */
+    chargeChance?: number;
+    /** healer: 回復確率 (0〜1)。 */
+    healChance?: number;
+    /** healer: 発動する HP 閾値 (0〜1。これを下回ったら回復を考える)。 */
+    lowHpRatio?: number;
+    /** caster: 詠唱確率 (0〜1)。 */
+    castChance?: number;
+    /** fleer: 逃走の基礎確率 (0〜1。agi 補正の前)。 */
+    fleeBase?: number;
+  };
   /** caster の魔法 (#456)。def 無視・属性つきの int スケール魔撃。ダメージ = min〜max + int*intScale。
    *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。
    *  データ規約: min <= max (span 負を避ける)。caster の攻撃ラベルは skillName でなくこの name を使う。 */
@@ -1660,18 +1676,21 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   // charger: 1 ターン ため → 強攻撃 (予告を防御する読み合い。全体の ~20%)
   charger: {
     id: 'charger',
-    decideAction: ({ monster, r, t, canGuard }) => {
-      if (monster.mp >= t.monsterChargeMpCost && r < t.chargerChargeChance) return 'charge';
-      if (canGuard && r < t.chargerChargeChance + 0.15) return 'guard';
+    decideAction: ({ monster, r, t, canGuard, monsterDef }) => {
+      const chance = monsterDef?.abilityParams?.chargeChance ?? t.chargerChargeChance;
+      if (monster.mp >= t.monsterChargeMpCost && r < chance) return 'charge';
+      if (canGuard && r < chance + 0.15) return 'guard';
       return 'attack';
     },
   },
   // healer: 低 HP でたまに自己回復 (削り切る前に倒す読み合い)
   healer: {
     id: 'healer',
-    decideAction: ({ monster, r, t, hpRatio, canGuard }) => {
-      if (monster.mp >= t.monsterHealMpCost && hpRatio < t.healerLowHpRatio && r < t.healerHealChance) return 'heal';
-      if (canGuard && r < t.healerHealChance + 0.15) return 'guard';
+    decideAction: ({ monster, r, t, hpRatio, canGuard, monsterDef }) => {
+      const low = monsterDef?.abilityParams?.lowHpRatio ?? t.healerLowHpRatio;
+      const chance = monsterDef?.abilityParams?.healChance ?? t.healerHealChance;
+      if (monster.mp >= t.monsterHealMpCost && hpRatio < low && r < chance) return 'heal';
+      if (canGuard && r < chance + 0.15) return 'guard';
       return 'attack';
     },
   },
@@ -1680,10 +1699,11 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
   caster: {
     id: 'caster',
     decideAction: ({ monster, r, t, canGuard, monsterDef }) => {
-      if (monsterDef?.spell && monster.mp >= t.monsterCastMpCost && r < t.casterCastChance) return 'cast';
+      const castChance = monsterDef?.abilityParams?.castChance ?? t.casterCastChance;
+      if (monsterDef?.spell && monster.mp >= t.monsterCastMpCost && r < castChance) return 'cast';
       // guard バンドは charger/healer (+0.15) よりやや狭い +0.1 — caster は攻撃寄りに保ち、魔法を撃てない
       // (MP 枯渇) ターンも殴りに来る威圧感を残すため (守りに籠らせない)。
-      if (canGuard && r < t.casterCastChance + 0.1) return 'guard';
+      if (canGuard && r < castChance + 0.1) return 'guard';
       return 'attack';
     },
   },
@@ -1694,7 +1714,8 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
     id: 'fleer',
     decideAction: ({ r, t, monsterDef }) => {
       const baseAgi = monsterDef?.stats[2] ?? 0;
-      const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, t.monsterFleeBase + baseAgi * t.monsterFleeAgiScale));
+      const fleeBase = monsterDef?.abilityParams?.fleeBase ?? t.monsterFleeBase;
+      const fleeChance = Math.min(t.monsterFleeMax, Math.max(0, fleeBase + baseAgi * t.monsterFleeAgiScale));
       if (r < fleeChance) return 'flee';
       return 'attack';
     },

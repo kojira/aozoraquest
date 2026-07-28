@@ -92,6 +92,13 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
     if (m.healAmount !== undefined && !(Number.isInteger(m.healAmount) && m.healAmount > 0)) {
       throw new MonsterDataError(`${where}: healAmount は正の整数 (${m.healAmount})`);
     }
+    if (m.abilityParams) {
+      for (const [k, v] of Object.entries(m.abilityParams)) {
+        if (v !== undefined && !(typeof v === 'number' && v >= 0 && v <= 1)) {
+          throw new MonsterDataError(`${where}: abilityParams.${k} は 0〜1 (${v})`);
+        }
+      }
+    }
     if (m.spell) {
       const sp = m.spell as { name?: unknown; min?: unknown; max?: unknown };
       if (typeof sp.name !== 'string' || typeof sp.min !== 'number' || typeof sp.max !== 'number' || (sp.min as number) > (sp.max as number)) {
