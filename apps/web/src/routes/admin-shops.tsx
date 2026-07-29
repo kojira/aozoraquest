@@ -4,7 +4,9 @@ import {
   activeEquipment,
   activeItems,
   maxShopGradeForTier,
+  shopKeeperFor,
   shopOverrides,
+  MAX_KEEPER_LINE,
   ShopDataError,
   tierForRegion,
   townShopStock,
@@ -193,6 +195,37 @@ export function AdminShops() {
                 {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
             </label>
+
+            {/* 店主 (#385)。空欄 = 街ごとの既定 (placeholder に表示)。 */}
+            <div style={{ fontSize: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.25em' }}>
+              <div style={{ color: 'var(--color-muted)' }}>店主</div>
+              {([
+                ['name', '名前 (空欄 = 出さない)'],
+                ['greeting', '入店のあいさつ'],
+                ['craft', '作ったとき'],
+                ['sell', 'ひきとったとき'],
+                ['forge', 'きたえたとき'],
+              ] as const).map(([k, label]) => {
+                const defaults = shopKeeperFor(sel.x, sel.y);
+                return (
+                  <label key={k} style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                    <span style={{ width: '10em', color: 'var(--color-muted)' }}>{label}</span>
+                    <input
+                      maxLength={MAX_KEEPER_LINE}
+                      value={cur?.keeper?.[k] ?? ''}
+                      placeholder={k === 'name' ? '' : defaults[k]}
+                      onChange={(e) => {
+                        const keeper = { ...cur?.keeper };
+                        if (e.target.value === '') delete keeper[k];
+                        else keeper[k] = e.target.value;
+                        setField(sel, { keeper: Object.keys(keeper).length ? keeper : undefined });
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
 
             {/* プレビュー: プレイヤーが見る最終形 */}
             <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.7 }}>

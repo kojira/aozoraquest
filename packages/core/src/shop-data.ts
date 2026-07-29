@@ -17,6 +17,20 @@ import { ITEMS } from './battle.js';
 
 export class ShopDataError extends Error {}
 
+/** 店主のセリフ (#385)。DQ 風に短く。過剰にしない (DESIGN.md の情報量の美意識)。 */
+export interface ShopKeeper {
+  /** 店主の名前。省略時は出さない (名前より口上が主役)。 */
+  name?: string;
+  /** 入店時のひとこと。 */
+  greeting?: string;
+  /** 作ってもらったとき。 */
+  craft?: string;
+  /** ひきとってもらったとき。 */
+  sell?: string;
+  /** きたえてもらったとき。 */
+  forge?: string;
+}
+
 /** 店 1 軒の上書き。指定したフィールドだけ生成を置き換える。 */
 export interface ShopOverride {
   /** 街の座標 (townShopStock と同じキー)。 */
@@ -28,6 +42,40 @@ export interface ShopOverride {
   consumables?: string[];
   /** 値札の素材 (ITEMS の id)。 */
   materialId?: string;
+  /** 店主 (#385)。 */
+  keeper?: ShopKeeper;
+}
+
+/** セリフの最大長。長文は DQ の窓に収まらず、情報量の美意識にも反する。 */
+export const MAX_KEEPER_LINE = 60;
+
+/** 既定のセリフ (街のハッシュで決定的に選ぶ = 店ごとに口調が違う)。 */
+const GREETINGS = ['いらっしゃい！', 'よく来たね。ゆっくりしていきな。', 'おや、旅の人かい。', 'いらっしゃい。掘り出しものがあるよ。'] as const;
+const CRAFTS = ['ほらよ、できたてだ！', 'いい仕上がりだよ。', 'だいじに使いなよ。'] as const;
+const SELLS = ['まいど！', 'たしかに受け取ったよ。', 'いいものを持ってるね。'] as const;
+const FORGES = ['うんと硬くなったよ！', 'これぞ職人技さ。', 'なかなかの一品になったね。'] as const;
+
+/**
+ * その店の店主 (上書き + 既定の合成)。既定は街の座標から決定的に選ぶので、
+ * 店ごとに口調が違い、いつ来ても同じ人がいる。
+ */
+export function shopKeeperFor(x: number, y: number): Required<Omit<ShopKeeper, 'name'>> & { name?: string } {
+  const h = ((x * 92821) ^ (y * 68917)) >>> 0;
+  const over = overrides.get(key(x, y))?.keeper;
+  const base = {
+    greeting: GREETINGS[h % GREETINGS.length]!,
+    craft: CRAFTS[(h >> 3) % CRAFTS.length]!,
+    sell: SELLS[(h >> 6) % SELLS.length]!,
+    forge: FORGES[(h >> 9) % FORGES.length]!,
+  };
+  return {
+    ...base,
+    ...(over?.greeting ? { greeting: over.greeting } : {}),
+    ...(over?.craft ? { craft: over.craft } : {}),
+    ...(over?.sell ? { sell: over.sell } : {}),
+    ...(over?.forge ? { forge: over.forge } : {}),
+    ...(over?.name ? { name: over.name } : {}),
+  };
 }
 
 export interface ShopsRecord {
@@ -59,6 +107,13 @@ export function setShopOverrides(list: readonly ShopOverride[] | null): void {
     }
     if (s.materialId !== undefined && !ITEMS[s.materialId]) {
       throw new ShopDataError(`${where}: 素材 id が存在しない (${s.materialId})`);
+    }
+    if (s.keeper) {
+      for (const [k, v] of Object.entries(s.keeper)) {
+        if (v !== undefined && (typeof v !== 'string' || v.length > MAX_KEEPER_LINE)) {
+          throw new ShopDataError(`${where}: 店主の ${k} が不正 (${MAX_KEEPER_LINE} 文字まで)`);
+        }
+      }
     }
     next.set(key(s.x, s.y), { ...s, equipment: s.equipment ? [...s.equipment] : undefined, consumables: s.consumables ? [...s.consumables] : undefined } as ShopOverride);
   }
