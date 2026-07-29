@@ -52,12 +52,12 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { shopKeeperFor } from '@aozoraquest/core';
+import { allNpcs, npcArtKey, npcAt, shopKeeperFor, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
-import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
+import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
@@ -146,6 +146,7 @@ export function World() {
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
+  const [npcTalk, setNpcTalk] = useState<NpcDef | null>(null);
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -517,6 +518,12 @@ export function World() {
       const { dx, dy } = DIRS[dir];
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
+      // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
+      const npc = npcAt(nx, ny);
+      if (npc) {
+        setNpcTalk(npc);
+        return;
+      }
       if (!isWalkableAt(nx, ny)) {
         setNotice('そっちには進めない!');
         return;
@@ -1195,6 +1202,26 @@ export function World() {
     }
   }
 
+  // ビューポート内の NPC (#425)。ドット絵 (npc:<id>) → 代替の見た目 (人form) に倒す。
+  const npcSprites = [];
+  for (const n of allNpcs()) {
+    const vx = wrap(n.x - (ws.x - HALF));
+    const vy = wrap(n.y - (ws.y - HALF));
+    if (vx >= VIEW || vy >= VIEW) continue;
+    const art = pixelTile(npcArtKey(n.id));
+    npcSprites.push(
+      <g key={`npc-${n.id}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
+        {art ?? (
+          <>
+            {/* 絵が無い NPC の代替 (頭 + 体の簡素な人形)。描けば置き換わる */}
+            <circle cx={16} cy={11} r={6} fill="#f2c9a0" stroke="#7a5a3a" strokeWidth={1.5} />
+            <path d="M8 28 q8 -12 16 0 Z" fill="#4a6fb3" stroke="#2e4a80" strokeWidth={1.5} />
+          </>
+        )}
+      </g>,
+    );
+  }
+
   const avatarSize = Math.max(16, Math.round(tilePx * 1.15));
 
   return (
@@ -1210,6 +1237,7 @@ export function World() {
             aria-label="ワールドマップ"
           >
             {tiles}
+          {npcSprites}
             <ellipse
               cx={HALF * TILE + TILE / 2}
               cy={HALF * TILE + TILE * 0.8}
@@ -1329,6 +1357,13 @@ export function World() {
               position:relative の地図枠の下部に貼る。一度に出るのは 1 つ (相互にガード)。
               会話は z が戦闘オーバーレイ (OVERLAY_Z) より上なので、状態機械のガードに加えて
               !battle でも囲い、万一の同時表示で戦闘操作が塞がれる事故を防ぐ (レビュー ★★)。 */}
+          {!battle && npcTalk && !onboarding && (
+            <DialogueWindow
+              anchor="map"
+              lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.name, text }))}
+              onDone={() => setNpcTalk(null)}
+            />
+          )}
           {!battle && onboarding && (
             <DialogueWindow
               anchor="map"

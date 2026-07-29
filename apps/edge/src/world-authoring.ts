@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setItemOverrides, setMonsterOverrides, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type ItemDefData, type MonsterDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setItemOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type ItemDefData, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -98,6 +98,9 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // 店のラインナップ (#422)。**アイテムの後に読む** (検証が EQUIPMENT_BY_ID を引くため)。
     const shops = await getRecord<{ shops?: ShopOverride[] }>(pds, did, `${nsid}.world.shops`, RKEY);
     if (shops?.value?.shops?.length) setShopOverrides(shops.value.shops);
+    // NPC (#425)。**移動判定に効く** (立っているマスは塞ぐ) ので edge も必須。
+    const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
+    if (npcs?.value?.npcs?.length) setNpcs(npcs.value.npcs);
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。

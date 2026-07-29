@@ -7,6 +7,7 @@ import {
   loadTileArts,
   setItemOverrides,
   setMonsterOverrides,
+  setNpcs,
   setShopOverrides,
   setTownOverrides,
   setWorldMap,
@@ -18,6 +19,7 @@ import {
   type EquipmentDef,
   type ItemDefData,
   type MonsterDef,
+  type NpcDef,
   type ShopOverride,
   type TileArtRecord,
   type TownOverride,
@@ -165,6 +167,12 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     } catch (e) {
       console.warn('[world] shops load failed', e);
     }
+    try {
+      const rec = await getRecord<{ npcs?: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
+      if (rec?.npcs?.length) setNpcs(rec.npcs);
+    } catch (e) {
+      console.warn('[world] npcs load failed', e);
+    }
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
@@ -207,4 +215,12 @@ export async function saveItems(agent: Agent, items: ItemDefData[], equipment: E
 export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<void> {
   setShopOverrides(shops);
   await putRecord(agent, ADMIN_COL.shops, RKEY, { shops, updatedAt: new Date().toISOString() });
+}
+
+// ─── NPC (#425) ─────────────────────────────────────────────
+
+/** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
+export async function saveNpcs(agent: Agent, npcs: NpcDef[]): Promise<void> {
+  setNpcs(npcs);
+  await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
 }

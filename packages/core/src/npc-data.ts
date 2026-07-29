@@ -1,0 +1,86 @@
+/**
+ * **NPC** (#425)。マップに置ける「話しかけられる人」。
+ *
+ * DQ の作法: NPC はタイルを 1 つ占め、**歩いてぶつかると会話が始まる** (移動はしない)。
+ * 通り抜けられると「人」に見えないので、移動判定でも塞ぐ — **web と edge の両方**が
+ * この一覧を見る (移動はサーバーが権威。片方だけだと、画面では人がいるのに
+ * サーバーは素通りさせる、という食い違いになる)。
+ *
+ * 保存先は管理者 PDS の `world.npcs` (マップ #421 / モンスター #419 と同じ流儀)。
+ * 絵はドット絵 (`npc:<id>` キー) で、無ければ代替の見た目に倒す。
+ */
+
+export class NpcDataError extends Error {}
+
+export interface NpcDef {
+  id: string;
+  /** 名前 (会話の話者として出る)。 */
+  name: string;
+  /** 立ち位置 (ワールド座標)。 */
+  x: number;
+  y: number;
+  /** セリフ (1 要素 = 1 窓)。ぶつかるたびに先頭から流す。 */
+  lines: string[];
+}
+
+export interface NpcsRecord {
+  npcs: NpcDef[];
+  updatedAt: string;
+}
+
+/** 1 セリフの最大長 (DQ の窓に収まる範囲)。 */
+export const MAX_NPC_LINE = 120;
+/** NPC の総数の上限 (レコードサイズの現実的な範囲)。 */
+export const MAX_NPCS = 500;
+
+let npcList: NpcDef[] = [];
+let byKey = new Map<number, NpcDef>();
+
+const WORLD = 1024;
+const key = (x: number, y: number) => (((y % WORLD) + WORLD) % WORLD) * WORLD + (((x % WORLD) + WORLD) % WORLD);
+
+/**
+ * NPC 一覧を差し替える。`null` / 空で全解除。
+ * **壊れた 1 人で全体を落とす** (部分適用しない。他エディタと同じ流儀)。
+ */
+export function setNpcs(list: readonly NpcDef[] | null): void {
+  const next = list ?? [];
+  if (next.length > MAX_NPCS) throw new NpcDataError(`NPC が多すぎる (${next.length} > ${MAX_NPCS})`);
+  const ids = new Set<string>();
+  const spots = new Set<number>();
+  for (const n of next) {
+    const where = n?.id ?? '(id なし)';
+    if (!n || typeof n.id !== 'string' || n.id.trim() === '') throw new NpcDataError('NPC の id が空');
+    if (ids.has(n.id)) throw new NpcDataError(`NPC の id が重複 (${n.id})`);
+    ids.add(n.id);
+    if (typeof n.name !== 'string' || n.name.trim() === '') throw new NpcDataError(`${where}: 名前が空`);
+    if (!Number.isInteger(n.x) || !Number.isInteger(n.y)) throw new NpcDataError(`${where}: 座標が整数でない`);
+    const k = key(n.x, n.y);
+    // **同じマスに 2 人は立てない。** ぶつかったときどちらと話すのか決められない。
+    if (spots.has(k)) throw new NpcDataError(`${where}: 同じマスに別の NPC がいる (${n.x}, ${n.y})`);
+    spots.add(k);
+    if (!Array.isArray(n.lines) || n.lines.length === 0) throw new NpcDataError(`${where}: セリフが無い`);
+    for (const l of n.lines) {
+      if (typeof l !== 'string' || l.trim() === '' || l.length > MAX_NPC_LINE) {
+        throw new NpcDataError(`${where}: セリフが不正 (空 or ${MAX_NPC_LINE} 文字超)`);
+      }
+    }
+  }
+  npcList = next.map((n) => ({ ...n, lines: [...n.lines] }));
+  byKey = new Map(npcList.map((n) => [key(n.x, n.y), n]));
+}
+
+/** そのマスの NPC (居なければ undefined)。移動判定と会話の両方が使う。 */
+export function npcAt(x: number, y: number): NpcDef | undefined {
+  return byKey.get(key(x, y));
+}
+
+/** 全 NPC (描画・エディタ用)。 */
+export function allNpcs(): readonly NpcDef[] {
+  return npcList;
+}
+
+/** NPC の絵のキー (ドット絵の登録簿に相乗り)。 */
+export function npcArtKey(id: string): string {
+  return `npc:${id}`;
+}
