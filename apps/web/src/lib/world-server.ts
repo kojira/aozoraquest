@@ -26,6 +26,8 @@ const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
 const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
 const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
 const LXM_SHOP_DISCARD = 'app.aozoraquest.shop.discard';
+const LXM_QUEST_ACCEPT = 'app.aozoraquest.quest.accept';
+const LXM_QUEST_COMPLETE = 'app.aozoraquest.quest.complete';
 const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
 const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
 
@@ -91,7 +93,7 @@ export interface ServerMoveResult { x: number; y: number; terrain: string; heale
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; version: number; updatedAt: string }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; quest?: { id: string; progress: number }; questsDone?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -207,6 +209,25 @@ export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: str
  */
 export function serverShopDiscard(agent: Agent, rkeys: string[], rkey: string): Promise<ServerShopResult> {
   return callEdge<ServerShopResult>(agent, LXM_SHOP_DISCARD, '/api/shop/discard', { rkeys, rkey });
+}
+
+export interface ServerQuestResult {
+  quest?: { id: string; progress: number };
+  questsDone?: string[];
+  power: number;
+  materials: Record<string, number>;
+  /** 達成時のみ: 付与された報酬。 */
+  rewarded?: { power?: number; itemId?: string; count?: number };
+}
+
+/** ゲーム内クエスト (#423): 受注。進行は GameState に積まれ、討伐は勝利時にサーバーが数える。 */
+export function serverQuestAccept(agent: Agent, questId: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_ACCEPT, '/api/quest/accept', { questId });
+}
+
+/** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。 */
+export function serverQuestComplete(agent: Agent, questId: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId });
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */

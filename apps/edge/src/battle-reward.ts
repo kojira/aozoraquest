@@ -13,7 +13,7 @@
  * **seed 秘匿 (#348)**: ドロップ/敗北ロスの seed は**サーバーが独立に引いた rewardSeed/lossSeed** を使う
  * (戦闘 seed は client に返さない・再利用しない)。呼び出し側が entropyU32 で引いて渡す。
  */
-import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, skillsForJob, BATTLE_TUNING, type Archetype, type StatArray } from '@aozoraquest/core';
+import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, skillsForJob, BATTLE_TUNING, type Archetype, type StatArray , gameQuestById } from '@aozoraquest/core';
 import type { GameState } from './game-state';
 
 /** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
@@ -132,6 +132,14 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       const seed = i === 0 ? o.rewardSeed : (o.rewardSeed ^ (0x9e3779b1 * (i + 1))) >>> 0;
       drops.push(...rollDrops(id, o.luk, seed, o.dropBonus ?? 0));
     });
+    // ゲーム内クエスト (#423) の討伐カウント。**討伐数はここ (勝利の権威経路) だけが増やす** —
+    // client の自己申告を数えると「戦わずに達成」できてしまう。パワー無し戦闘は上の
+    // unrewarded で早期 return しているので、練習戦では進まない (報酬系と同じ線引き)。
+    const questDef = state.quest ? gameQuestById(state.quest.id) : undefined;
+    const questKills =
+      questDef?.objective.kind === 'defeat'
+        ? ids.filter((id) => id === (questDef.objective as { monsterId: string }).monsterId).length
+        : 0;
     const next: GameState = {
       ...state,
       // #507/#508: プレイヤー XP は**加算しない**。プレイヤーレベルは戦闘力に一切影響しない
@@ -140,6 +148,9 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp },
       materials: addItems(state.materials, drops, 1),
       power: Math.max(0, state.power - POWER_COST),
+      ...(questKills > 0 && state.quest
+        ? { quest: { id: state.quest.id, progress: state.quest.progress + questKills } }
+        : {}),
     };
     const lv = levelUpOf(state, next, o.archetype, o.baseStats);
     return { next, awarded: { xp, drops, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };

@@ -24,6 +24,7 @@ const AdminMonsters = lazy(() => import('@/routes/admin-monsters').then(m => ({ 
 const AdminItems = lazy(() => import('@/routes/admin-items').then(m => ({ default: m.AdminItems })));
 const AdminShops = lazy(() => import('@/routes/admin-shops').then(m => ({ default: m.AdminShops })));
 const AdminNpcs = lazy(() => import('@/routes/admin-npcs').then(m => ({ default: m.AdminNpcs })));
+const AdminQuests = lazy(() => import('@/routes/admin-quests').then(m => ({ default: m.AdminQuests })));
 const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
 const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
 const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
@@ -89,6 +90,7 @@ const router = createBrowserRouter([
       { path: 'admin/items', element: <AdminItems /> },
       { path: 'admin/shops', element: <AdminShops /> },
       { path: 'admin/npcs', element: <AdminNpcs /> },
+      { path: 'admin/quests', element: <AdminQuests /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
       { path: 'oauth/callback', element: <OAuthCallback /> },

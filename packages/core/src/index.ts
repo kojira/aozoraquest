@@ -24,4 +24,5 @@ export * from './monster-data.js';
 export * from './item-data.js';
 export * from './shop-data.js';
 export * from './npc-data.js';
+export * from './quest-data.js';
 export * from './equipment.js';

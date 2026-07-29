@@ -38,6 +38,8 @@ import { serverMove, serverTurn, serverState, serverTeleport, serverItem, server
   serverShopSell,
   serverShopForge,
   serverShopDiscard,
+  serverQuestAccept,
+  serverQuestComplete,
 } from '@/lib/world-server';
 import { craftItem, discardItems, forgeItems, loadCraftInventory, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
@@ -52,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, npcArtKey, npcAt, shopKeeperFor, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, gameQuestById, gameQuestByNpc, npcArtKey, npcAt, shopKeeperFor, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -146,7 +148,11 @@ export function World() {
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
-  const [npcTalk, setNpcTalk] = useState<NpcDef | null>(null);
+  /** NPC 会話 (#425/#423)。lines は通常セリフかクエスト文脈のセリフ。acceptQuestId が
+   *  あるときは**読み終えたら受注する** (DQ の作法: 依頼を聞いた = 引き受けた)。 */
+  const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string } | null>(null);
+  /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成の応答と serverState だけが書く。 */
+  const questRef = useRef<{ active?: { id: string; progress: number }; done: string[] }>({ done: [] });
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -357,6 +363,7 @@ export function World() {
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
             setServerPower(ss.state.power ?? 0);
+            questRef.current = { ...(ss.state.quest ? { active: ss.state.quest } : {}), done: ss.state.questsDone ?? [] };
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
             // 記帳 (履歴) であって所持の根拠ではない。
             if (ss.state.pieces) setCraftedPieces(ss.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
@@ -519,9 +526,44 @@ export function World() {
       const nx = wrap(s.x + dx);
       const ny = wrap(s.y + dy);
       // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
+      // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (読了で受注)、
+      // 進行中→達成を試みる (条件検証はサーバー)、達成済み→通常セリフ。
       const npc = npcAt(nx, ny);
       if (npc) {
-        setNpcTalk(npc);
+        const q = gameQuestByNpc(npc.id);
+        const qs = questRef.current;
+        if (!q || qs.done.includes(q.id)) {
+          setNpcTalk({ npc, lines: npc.lines });
+        } else if (qs.active?.id === q.id) {
+          void (async () => {
+            try {
+              const res = await serverQuestComplete(agent, q.id);
+              questRef.current = { ...(res.quest ? { active: res.quest } : {}), done: res.questsDone ?? [] };
+              setServerPower(res.power);
+              applyServerMaterials(res.materials);
+              const r = res.rewarded;
+              const got = [
+                r?.power ? `あおぞらパワー ${r.power}` : null,
+                r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
+              ].filter(Boolean).join(' と ');
+              setNpcTalk({ npc, lines: [...q.done, ...(got ? [`${got} を もらった!`] : [])] });
+            } catch (e) {
+              // not_ready はサーバーの「まだ n/m」をそのまま出す (進行数はサーバーが正)。
+              const notReady = e instanceof WorldServerError && e.code === 'not_ready';
+              setNpcTalk({
+                npc,
+                lines: notReady
+                  ? [...(q.progress ?? ['たのんだよ。']), (e as WorldServerError).message]
+                  : q.progress ?? ['たのんだよ。'],
+              });
+            }
+          })();
+        } else if (qs.active) {
+          // 別のクエスト進行中: 依頼は聞けるが受けられない (1 つずつ)。
+          setNpcTalk({ npc, lines: [...q.intro, '(いまは べつの たのまれごとを うけている…)'] });
+        } else {
+          setNpcTalk({ npc, lines: q.intro, acceptQuestId: q.id });
+        }
         return;
       }
       if (!isWalkableAt(nx, ny)) {
@@ -1360,8 +1402,20 @@ export function World() {
           {!battle && npcTalk && !onboarding && (
             <DialogueWindow
               anchor="map"
-              lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.name, text }))}
-              onDone={() => setNpcTalk(null)}
+              lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
+              onDone={() => {
+                const accept = npcTalk.acceptQuestId;
+                setNpcTalk(null);
+                if (!accept || !agent) return;
+                // 依頼を聞き終えた = 引き受けた (#423)。受注もサーバーが正。
+                void serverQuestAccept(agent, accept)
+                  .then((res) => {
+                    questRef.current = { ...(res.quest ? { active: res.quest } : {}), done: res.questsDone ?? [] };
+                    const title = gameQuestById(accept)?.title ?? accept;
+                    setNotice(`「${title}」を うけおった!`);
+                  })
+                  .catch((e) => setNotice(e instanceof WorldServerError ? e.message : 'うけおいに しっぱいした…'));
+              }}
             />
           )}
           {!battle && onboarding && (

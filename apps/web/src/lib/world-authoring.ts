@@ -5,6 +5,7 @@ import {
   encodeWorldMap,
   loadStaticWorldMap,
   loadTileArts,
+  setGameQuests,
   setItemOverrides,
   setMonsterOverrides,
   setNpcs,
@@ -17,6 +18,7 @@ import {
   worldTownOverrides,
   WORLD_SIZE,
   type EquipmentDef,
+  type GameQuestDef,
   type ItemDefData,
   type MonsterDef,
   type NpcDef,
@@ -173,6 +175,13 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     } catch (e) {
       console.warn('[world] npcs load failed', e);
     }
+    try {
+      // 検証が NPC・モンスター・アイテムの実在を引くため、**この 3 つより後に読む** (#423)。
+      const rec = await getRecord<{ quests?: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
+      if (rec?.quests?.length) setGameQuests(rec.quests);
+    } catch (e) {
+      console.warn('[world] quests load failed', e);
+    }
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
@@ -223,4 +232,10 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 export async function saveNpcs(agent: Agent, npcs: NpcDef[]): Promise<void> {
   setNpcs(npcs);
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
+}
+
+/** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */
+export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Promise<void> {
+  setGameQuests(quests);
+  await putRecord(agent, ADMIN_COL.quests, RKEY, { quests, updatedAt: new Date().toISOString() });
 }
