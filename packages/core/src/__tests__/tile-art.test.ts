@@ -120,7 +120,8 @@ describe('パーツの絵の探し方 (#421)', () => {
     expect(tileArtColorAt(partArtFor(8, 'bridge')!, 0, 0)).toBe('#222222'); // たての橋
   });
 
-  it('どちらも無ければ undefined (呼び出し側が SVG / 代表色に倒す)', () => {
-    expect(partArtFor(3, 'pond')).toBeUndefined();
+  it('レコードも同梱も無ければ undefined (呼び出し側が SVG / 代表色に倒す)', () => {
+    // 基本 8 地形は同梱絵 (#605) が返るようになったので、同梱にも無い地形で確かめる。
+    expect(partArtFor(3, 'lava-unknown')).toBeUndefined();
   });
 });

@@ -150,7 +150,10 @@ export function tileArtFor(terrain: string): TileArt | undefined {
  * 引く側を 1 か所にまとめて、両方が同じ順で探すようにする。
  */
 export function partArtFor(index: number, terrain: string): TileArt | undefined {
-  return registry.get(partKey(index)) ?? registry.get(terrain);
+  // 最後は tileArtFor に倒す = **同梱の既定絵 (#605) にも当たる**。地図は常に
+  // index 付きでここを通るので、ここで倒さないと同梱絵は地図に一切出ない
+  // (絵タブだけドット絵で地図は SVG、という食い違いになる。レビュー ★★★)。
+  return registry.get(partKey(index)) ?? tileArtFor(terrain);
 }
 
 /** パーツごとの絵のキー。 */
