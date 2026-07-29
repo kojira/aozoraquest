@@ -142,24 +142,31 @@ export function ShopModal({
   // セリフはインライン文でなく **DialogueWindow をモーダルの上に重ねて**出す
   // (z 901 > モーダル 300)。品目リストと文字が重ならず、DQ の作法にも合う。
   const say = (text: string): DialogueLine => (keeper.name ? { speaker: keeper.name, text } : { text: `「${text}」` });
-  const [talk, setTalk] = useState<DialogueLine[] | null>(null);
+  // nonce で窓を必ず remount する — talk を差し替えるだけだと DialogueWindow の
+  // 行 index が持ち越され、短い配列に替わった瞬間に index 超過で不可視のまま固着する
+  // (レビュー ★★: Tab で背面ボタンに抜けて操作した場合に成立)。
+  const [talk, setTalk] = useState<{ n: number; lines: DialogueLine[]; tutorial?: boolean } | null>(null);
+  const talkSeq = useRef(0);
+  const openTalk = (lines: DialogueLine[], tutorial = false) => setTalk({ n: ++talkSeq.current, lines, ...(tutorial ? { tutorial } : {}) });
   useEffect(() => {
     // 入店時のあいさつ。**最初の街 (spawn の村) の初回だけ**は店の使い方を話す
     // チュートリアルにする — 毎回の説明文は出さない (オーナー指摘 2026-07-30)。
+    // 既読フラグは開いた瞬間でなく**読み終えたとき** (onDone) に立てる — 開いた瞬間に
+    // 立てると、途中で閉じたら二度と読めず、StrictMode の二重実行でも即座に既読化して
+    // 一度も表示されない (レビュー ★★)。
     const sp = worldOverlay().spawn;
     let done = true;
     try { done = localStorage.getItem(SHOP_TUTORIAL_KEY) === '1'; } catch { /* private mode */ }
     if (town.x === sp.x && town.y === sp.y && !done) {
-      try { localStorage.setItem(SHOP_TUTORIAL_KEY, '1'); } catch { /* private mode */ }
-      setTalk([
+      openTalk([
         say(keeper.greeting),
         say('ここは なんでも屋。あおぞらパワーと 素材を もってくれば、そうびを つくるよ。'),
         say('できばえは −1〜+5。うんが 高いほど いい品に なりやすい。'),
         say('おなじ品を 2つ もってくれば、1つ上に きたえてやろう。'),
         say('素材は このへんの モンスターが おとす。いらない素材は ひきとって パワーに かえるよ。'),
-      ]);
+      ], true);
     } else {
-      setTalk([say(keeper.greeting)]);
+      openTalk([say(keeper.greeting)]);
     }
     // 入店時に 1 回だけ。keeper/town はモーダルの寿命中変わらない。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,7 +174,7 @@ export function ShopModal({
   useEffect(() => {
     if (!lastAction) return;
     if (lastAction.kind === 'sell') {
-      setTalk([
+      openTalk([
         { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count} を ひきとってもらい、パワーが ${lastAction.powerGained} ふえた!` },
         say(keeper.sell),
       ]);
@@ -175,7 +182,7 @@ export function ShopModal({
     }
     const def = EQUIPMENT_BY_ID[lastAction.piece.itemId];
     if (!def) return;
-    setTalk([
+    openTalk([
       {
         text: `${isMasterwork(lastAction.piece.level) ? '✨ ' : ''}${leveledName(def, lastAction.piece.level)} ${
           lastAction.kind === 'forge' ? 'に きたえあげた!' : 'が できた!'}`,
@@ -386,7 +393,18 @@ export function ShopModal({
           })()}
         </div>
       </div>
-      {talk && <DialogueWindow lines={talk} onDone={() => setTalk(null)} />}
+      {talk && (
+        <DialogueWindow
+          key={talk.n}
+          lines={talk.lines}
+          onDone={() => {
+            if (talk.tutorial) {
+              try { localStorage.setItem(SHOP_TUTORIAL_KEY, '1'); } catch { /* private mode */ }
+            }
+            setTalk(null);
+          }}
+        />
+      )}
     </div>
   );
 }
