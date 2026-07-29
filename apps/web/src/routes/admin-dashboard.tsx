@@ -41,7 +41,7 @@ const CONTENT_SECTIONS: Section[] = [
   { key: 'places', title: '街 / ダンジョン / 城', desc: '内部マップの編集', issue: 424 },
   { key: 'quests', title: 'クエスト', desc: 'ゲーム内クエストの作成・編集', issue: 423 },
   { key: 'scenario', title: 'シナリオ', desc: '進行の筋書き', issue: 545 },
-  { key: 'items', title: 'アイテム', desc: '装備 / 消費 / 素材を CRUD', issue: 420 },
+  { key: 'items', title: 'アイテム', desc: 'そうび・どうぐ・素材の編集', to: '/admin/items', issue: 420 },
   { key: 'shops', title: 'お店', desc: 'ラインナップ・合成素材・店主セリフ', issue: 422 },
   { key: 'flags', title: 'フラグ', desc: '進行フラグでゲート', issue: 426 },
 ];

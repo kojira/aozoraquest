@@ -228,3 +228,38 @@ describe('複数の能力 (#592 段階 2)', () => {
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', abilities: ['caster'] })])).toThrow(MonsterDataError);
   });
 });
+
+describe('どうぐ・装備のレコード差し替え (#420)', () => {
+  afterEach(() => core.setItemOverrides(null));
+
+  it('差し替えると ITEMS / EQUIPMENT / 店の品揃え / 装備可否に効き、解除で戻る', () => {
+    const eqCount = core.EQUIPMENT.length;
+    const items = [{ id: 'herb', name: 'すごいやくそう' }];
+    const equipment = [
+      { id: 'wp-test', name: 'てすとの剣', slot: 'weapon', kind: 'common', bonus: { atk: 3 }, grade: 1, price: { power: 4, materials: 1 } },
+      { id: 'ar-test', name: 'てすとの服', slot: 'armor', kind: 'cloth', bonus: { def: 2 }, grade: 1, price: { power: 4, materials: 1 } },
+    ] as const;
+    core.setItemOverrides({ items, equipment: equipment as never });
+    expect(core.ITEMS['herb']?.name).toBe('すごいやくそう');
+    expect(core.EQUIPMENT).toHaveLength(2);
+    expect(core.EQUIPMENT_BY_ID['wp-test']?.name).toBe('てすとの剣');
+    // 装備可否・ボーナスにも効く (canEquip / gearBonus は EQUIPMENT_BY_ID を引く)
+    expect(core.canEquip('warrior', core.EQUIPMENT_BY_ID['wp-test']!)).toBe(true);
+    expect(core.gearBonus('warrior', ['wp-test']).atk).toBe(3);
+
+    core.setItemOverrides(null);
+    expect(core.EQUIPMENT).toHaveLength(eqCount);
+    expect(core.ITEMS['herb']?.name).toBe('やくそう');
+  });
+
+  it('壊れた 1 件で全体を落とす', () => {
+    const ok = { id: 'wp-a', name: 'a', slot: 'weapon', kind: 'common', bonus: {}, grade: 1, price: { power: 1, materials: 0 } } as const;
+    expect(() => core.setItemOverrides({ items: [], equipment: [] })).toThrow(core.ItemDataError); // 0 品
+    expect(() => core.setItemOverrides({ items: [], equipment: [ok, { ...ok }] as never })).toThrow(core.ItemDataError); // id 重複
+    expect(() => core.setItemOverrides({ items: [], equipment: [{ ...ok, grade: 5 }] as never })).toThrow(core.ItemDataError);
+    expect(() => core.setItemOverrides({ items: [], equipment: [{ ...ok, bonus: { zzz: 1 } }] as never })).toThrow(core.ItemDataError);
+    // **exclusive なのに jobOnly なし = 誰も装備できない品** は保存で弾く
+    expect(() => core.setItemOverrides({ items: [], equipment: [{ ...ok, kind: 'exclusive' }] as never })).toThrow(core.ItemDataError);
+    expect(() => core.setItemOverrides({ items: [{ id: '', name: 'x' }], equipment: [ok] as never })).toThrow(core.ItemDataError);
+  });
+});
