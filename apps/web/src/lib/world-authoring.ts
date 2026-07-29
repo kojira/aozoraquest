@@ -7,6 +7,7 @@ import {
   loadTileArts,
   setItemOverrides,
   setMonsterOverrides,
+  setShopOverrides,
   setTownOverrides,
   setWorldMap,
   setWorldParts,
@@ -17,6 +18,7 @@ import {
   type EquipmentDef,
   type ItemDefData,
   type MonsterDef,
+  type ShopOverride,
   type TileArtRecord,
   type TownOverride,
   type WorldPart,
@@ -155,6 +157,14 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     } catch (e) {
       console.warn('[world] items load failed', e);
     }
+    try {
+      // **アイテムの後に読む** — 上書きの検証が EQUIPMENT_BY_ID / ITEMS を引くので、
+      // 先に読むと「編集した装備を並べた店」が未知 id 扱いで落ちる。
+      const rec = await getRecord<{ shops?: ShopOverride[] }>(agent, adminDid, ADMIN_COL.shops, RKEY);
+      if (rec?.shops?.length) setShopOverrides(rec.shops);
+    } catch (e) {
+      console.warn('[world] shops load failed', e);
+    }
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
@@ -189,4 +199,12 @@ export async function saveItems(agent: Agent, items: ItemDefData[], equipment: E
   setItemOverrides({ items, equipment });
   const rec: ItemsRecordData = { items, equipment, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.items, RKEY, rec);
+}
+
+// ─── 店のラインナップ (#422) ────────────────────────────────
+
+/** 店ごとの上書きを保存する (core の検証を通る = 未知 id は保存で弾かれる)。 */
+export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<void> {
+  setShopOverrides(shops);
+  await putRecord(agent, ADMIN_COL.shops, RKEY, { shops, updatedAt: new Date().toISOString() });
 }

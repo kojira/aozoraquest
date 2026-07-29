@@ -1,0 +1,210 @@
+import { useCallback, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  activeEquipment,
+  activeItems,
+  maxShopGradeForTier,
+  shopOverrides,
+  ShopDataError,
+  tierForRegion,
+  townShopStock,
+  worldOverlay,
+  type ShopOverride,
+  type Town,
+} from '@aozoraquest/core';
+import { useSession } from '@/lib/session';
+import { isAdminDid } from '@/lib/runtime-config';
+import { saveShops } from '@/lib/world-authoring';
+
+/**
+ * **お店のラインナップエディタ** (#422)。
+ *
+ * 品揃えは街の座標から決定的に生成されていて、狙って変えられなかった
+ * (街を動かすと品揃えが全部変わる、という副作用しかなかった)。
+ * **上書きした店だけ**明示のラインナップになり、他の店は従来どおり生成。
+ */
+export function AdminShops() {
+  const session = useSession();
+  const admin = isAdminDid(session.did ?? null);
+  const towns = useMemo(() => worldOverlay().towns, []);
+  const [overrides, setOverrides] = useState<ShopOverride[]>(() => shopOverrides());
+  const [sel, setSel] = useState<Town | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  const equipment = activeEquipment();
+  const items = activeItems();
+
+  const overrideOf = useCallback(
+    (t: Town) => overrides.find((o) => o.x === t.x && o.y === t.y),
+    [overrides],
+  );
+
+  /** いまの実効ラインナップ (上書き + 生成の合成)。プレイヤーが見るものと同じ。 */
+  const effective = useCallback((t: Town) => {
+    const i = towns.indexOf(t);
+    return townShopStock(t, i < 0 ? 0 : i);
+  }, [towns]);
+
+  // exactOptionalPropertyTypes のため、undefined は「キーごと消す」に読み替える
+  const setField = useCallback((t: Town, patch: { [K in keyof ShopOverride]?: ShopOverride[K] | undefined }) => {
+    setOverrides((xs) => {
+      const rest = xs.filter((o) => o.x !== t.x || o.y !== t.y);
+      const cur = xs.find((o) => o.x === t.x && o.y === t.y) ?? { x: t.x, y: t.y };
+      const merged = { ...cur } as Record<string, unknown>;
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined) delete merged[k];
+        else merged[k] = v;
+      }
+      const m = merged as unknown as ShopOverride;
+      const empty = !m.equipment && !m.consumables && !m.materialId;
+      return empty ? rest : [...rest, m];
+    });
+    setDirty(true);
+  }, []);
+
+  const save = useCallback(async () => {
+    if (!session.agent) return;
+    try {
+      await saveShops(session.agent, overrides);
+      setDirty(false);
+      setNote(`保存した (${overrides.length} 店を上書き)。サーバーは最大 5 分で拾う`);
+    } catch (e) {
+      setNote(e instanceof ShopDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
+    }
+  }, [session.agent, overrides]);
+
+  if (!admin) {
+    return (
+      <div style={{ padding: '1em' }}>
+        <p>この画面は管理者だけが使えます。</p>
+        <Link to="/admin">管理ダッシュボードへ</Link>
+      </div>
+    );
+  }
+
+  const cur = sel ? overrideOf(sel) : undefined;
+  const eff = sel ? effective(sel) : null;
+  const tier = sel ? tierForRegion(sel.region) : 1;
+  const maxGrade = maxShopGradeForTier(tier);
+
+  return (
+    <div style={{ padding: '0.8em', maxWidth: 980 }}>
+      <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginBottom: '0.4em' }}>
+        <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
+        <strong>お店のラインナップ</strong>
+        <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{overrides.length} 店を上書き中</span>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+          保存
+        </button>
+      </div>
+
+      {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 2fr', gap: '0.8em' }}>
+        {/* 街の一覧 (tier ごと) */}
+        <div style={{ maxHeight: '75vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {[1, 2, 3, 4, 5, 6].map((t) => {
+            const inTier = towns.filter((x) => tierForRegion(x.region) === t);
+            if (inTier.length === 0) return null;
+            return (
+              <div key={t}>
+                <div style={{ fontSize: '0.7em', color: 'var(--color-muted)', margin: '0.4em 0 0.2em' }}>tier{t}</div>
+                {inTier.map((town) => (
+                  <button
+                    key={`${town.x},${town.y}`}
+                    type="button"
+                    onClick={() => setSel(town)}
+                    style={{
+                      display: 'flex', gap: '0.4em', width: '100%', padding: '0.2em 0.4em',
+                      fontSize: '0.85em', textAlign: 'left',
+                      border: sel === town ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                      background: 'transparent',
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>{town.name}</span>
+                    {overrideOf(town) && <span style={{ fontSize: '0.75em', color: 'var(--color-accent)' }}>上書き</span>}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 編集 */}
+        {sel && eff ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5em' }}>
+            <div style={{ display: 'flex', gap: '0.5em', alignItems: 'center' }}>
+              <strong>{sel.name}</strong>
+              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>tier{tier} ({sel.x}, {sel.y})</span>
+              {cur && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => { setOverrides((xs) => xs.filter((o) => o.x !== sel.x || o.y !== sel.y)); setDirty(true); }}
+                  style={{ marginLeft: 'auto', fontSize: '0.8em' }}
+                >
+                  生成に戻す
+                </button>
+              )}
+            </div>
+
+            {/* 装備: チェックで選ぶ。未チェック状態 = 生成のまま */}
+            <div style={{ fontSize: '0.8em' }}>
+              <div style={{ color: 'var(--color-muted)', marginBottom: '0.2em' }}>
+                そうび {cur?.equipment ? '(この店だけの品揃え)' : '(生成のまま — 変えると上書きになる)'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.1em', maxHeight: '38vh', overflowY: 'auto', border: '1px solid var(--color-border)', padding: '0.3em' }}>
+                {equipment.map((e) => {
+                  const listed = (cur?.equipment ?? eff.equipment).includes(e.id);
+                  const overGrade = e.grade > maxGrade;
+                  return (
+                    <label key={e.id} style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={listed}
+                        onChange={(ev) => {
+                          const base = cur?.equipment ?? [...eff.equipment];
+                          const next = ev.target.checked ? [...base, e.id] : base.filter((id) => id !== e.id);
+                          setField(sel, { equipment: next });
+                        }}
+                      />
+                      <span style={{ opacity: overGrade ? 0.75 : 1 }}>
+                        {e.name}
+                        <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}> g{e.grade}{e.jobOnly ? ` ${e.jobOnly}` : ''}</span>
+                        {/* **帯より上の品を並べるのは意図的な例外としてはできる**が、#565 の
+                            地域段階化を破ることを明示する (静かに破らせない)。 */}
+                        {overGrade && listed && <span style={{ color: 'var(--color-danger)', fontSize: '0.85em' }}> ⚠ tier{tier} の帯超え</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 値札の素材 */}
+            <label style={{ display: 'flex', gap: '0.4em', alignItems: 'center', fontSize: '0.8em' }}>
+              <span style={{ color: 'var(--color-muted)' }}>値札の素材</span>
+              <select
+                value={cur?.materialId ?? ''}
+                onChange={(e) => setField(sel, { materialId: e.target.value || undefined })}
+              >
+                <option value="">生成のまま ({items.find((i) => i.id === eff.materialId)?.name ?? eff.materialId})</option>
+                {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+            </label>
+
+            {/* プレビュー: プレイヤーが見る最終形 */}
+            <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.7 }}>
+              いまの品揃え: {(cur?.equipment ?? eff.equipment).map((id) => equipment.find((e) => e.id === id)?.name ?? `? ${id}`).join(' / ')}
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+            左の一覧から店を選ぶ。上書きした店だけ明示のラインナップになり、他は従来どおり生成される。
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

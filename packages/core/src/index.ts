@@ -22,4 +22,5 @@ export * from './world-map.js';
 export * from './tile-art.js';
 export * from './monster-data.js';
 export * from './item-data.js';
+export * from './shop-data.js';
 export * from './equipment.js';

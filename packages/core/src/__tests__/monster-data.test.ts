@@ -263,3 +263,42 @@ describe('どうぐ・装備のレコード差し替え (#420)', () => {
     expect(() => core.setItemOverrides({ items: [{ id: '', name: 'x' }], equipment: [ok] as never })).toThrow(core.ItemDataError);
   });
 });
+
+describe('店のラインナップ上書き (#422)', () => {
+  afterEach(() => core.setShopOverrides(null));
+
+  it('上書きした店だけ変わり、他は生成のまま。解除で戻る', () => {
+    const towns = core.worldOverlay().towns;
+    const a = towns[0]!;
+    const b = towns[1]!;
+    const beforeA = core.townShopStock(a, 0);
+    const beforeB = core.townShopStock(b, 1);
+
+    core.setShopOverrides([{ x: a.x, y: a.y, equipment: ['wp-knife'], materialId: 'slime-drop' }]);
+    const afterA = core.townShopStock(a, 0);
+    expect(afterA.equipment).toEqual(['wp-knife']);
+    expect(afterA.materialId).toBe('slime-drop');
+    expect(afterA.consumables).toEqual(beforeA.consumables); // 指定しないフィールドは生成のまま
+    expect(core.townShopStock(b, 1)).toEqual(beforeB); // 他の店は不変
+
+    core.setShopOverrides(null);
+    expect(core.townShopStock(a, 0)).toEqual(beforeA);
+  });
+
+  it('**未知の id は保存で弾く** (「並んでいるのに買えない店」を静かに作らない)', () => {
+    const t = core.worldOverlay().towns[0]!;
+    expect(() => core.setShopOverrides([{ x: t.x, y: t.y, equipment: ['zzz-nope'] }])).toThrow(core.ShopDataError);
+    expect(() => core.setShopOverrides([{ x: t.x, y: t.y, materialId: 'zzz' }])).toThrow(core.ShopDataError);
+    expect(() => core.setShopOverrides([{ x: t.x, y: t.y }, { x: t.x, y: t.y }])).toThrow(core.ShopDataError); // 重複
+    // 全体が落ちている (部分適用していない)
+    expect(core.shopOverrides()).toEqual([]);
+  });
+
+  it('サーバー権威と同じ経路で効く (shopCraft が見る stock が変わる)', () => {
+    // shopAt → townShopStock なので、上書きすれば「買える品」自体が変わる。
+    // ここでは core レベルで stock の一致だけ固定する (edge の結合は shop.test が担う)。
+    const t = core.worldOverlay().towns[0]!;
+    core.setShopOverrides([{ x: t.x, y: t.y, equipment: ['ar-cloth'] }]);
+    expect(core.townShopStock(t, 0).equipment).toEqual(['ar-cloth']);
+  });
+});
