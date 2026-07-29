@@ -16,6 +16,7 @@ import {
   type Archetype,
   type EquipmentDef,
   type Town,
+  shopKeeperFor,
 } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
 
@@ -107,6 +108,8 @@ export function ShopModal({
   onClose: () => void;
 }) {
   const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
+  // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
+  const keeper = useMemo(() => shopKeeperFor(town.x, town.y), [town]);
   const materialName = ITEMS[stock.materialId]?.name ?? stock.materialId;
   // 値札素材を落とすモンスター (店プールは全て単一モンスターの固有ドロップ)
   const dropperName = MONSTERS.find((m) => m.drops.some((d) => d.item === stock.materialId))?.name;
@@ -167,6 +170,9 @@ export function ShopModal({
             とじる
           </button>
         </div>
+        <p style={{ margin: '0 0 0.3em', fontSize: '0.85em' }}>
+          {keeper.name ? `${keeper.name}「` : '「'}{keeper.greeting}」
+        </p>
         <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)' }}>
           パワーと素材をわたすと作ってもらえる (できばえは −1〜+5、うんが高いと良い品に)。
           同じ品を 2 つわたすと 1 つ上にきたえてもらえる (+6 から上はきたえるだけ)。
@@ -195,6 +201,9 @@ export function ShopModal({
               {isMasterwork(lastAction.piece.level) ? '✨ ' : ''}
               {leveledName(lastDef, lastAction.piece.level)}
               {lastAction.kind === 'forge' ? ' に きたえあげた!' : ' ができた!'}
+              <span style={{ fontWeight: 400, marginLeft: '0.4em' }}>
+                「{lastAction.kind === 'forge' ? keeper.forge : keeper.craft}」
+              </span>
             </>
           )}
         </p>

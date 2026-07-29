@@ -302,3 +302,29 @@ describe('店のラインナップ上書き (#422)', () => {
     expect(core.townShopStock(t, 0).equipment).toEqual(['ar-cloth']);
   });
 });
+
+describe('店主のセリフ (#385 / #422)', () => {
+  afterEach(() => core.setShopOverrides(null));
+
+  it('既定は街ごとに決定的 (いつ来ても同じ人がいる)', () => {
+    const a = core.shopKeeperFor(64, 64);
+    expect(a.greeting).toBeTruthy();
+    expect(core.shopKeeperFor(64, 64)).toEqual(a); // 決定的
+    // 別の街とは (概ね) 口調が違いうる — 少なくとも API として独立している
+    expect(core.shopKeeperFor(192, 64).greeting).toBeTruthy();
+  });
+
+  it('上書きが部分的に効く (指定したセリフだけ変わる)', () => {
+    const before = core.shopKeeperFor(64, 64);
+    core.setShopOverrides([{ x: 64, y: 64, keeper: { greeting: 'ようこそ、そらみの街へ！', name: 'ドグ' } }]);
+    const after = core.shopKeeperFor(64, 64);
+    expect(after.greeting).toBe('ようこそ、そらみの街へ！');
+    expect(after.name).toBe('ドグ');
+    expect(after.craft).toBe(before.craft); // 指定しないものは既定のまま
+  });
+
+  it('長すぎるセリフは保存で弾く (DQ の窓に収まらない)', () => {
+    expect(() => core.setShopOverrides([{ x: 1, y: 1, keeper: { greeting: 'あ'.repeat(61) } }]))
+      .toThrow(core.ShopDataError);
+  });
+});
