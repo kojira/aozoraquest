@@ -15,10 +15,13 @@ import {
   worldOverlay,
   wrap,
   type Terrain,
+  PART_PRESETS,
+  presetArt,
+  setTileArt,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { loadAuthoredWorld, saveWorldMap } from '@/lib/world-authoring';
+import { loadAuthoredWorld, saveTileArts, saveWorldMap } from '@/lib/world-authoring';
 import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
@@ -272,6 +275,30 @@ export function AdminMap() {
             <button
               type="button"
               onClick={() => {
+                // 定番 (城/ダンジョン入口 #424) は絵つきのプリセットで足せる。
+                const pick = window.prompt(
+                  `追加するパーツ:\n${PART_PRESETS.map((p, i) => `${i + 1} = ${p.name} (絵つき)`).join('\n')}\n空欄 = 白紙 (名前を決めて自分で描く)`,
+                  '',
+                )?.trim();
+                if (pick === undefined) return;
+                const preset = /^\d+$/.test(pick) ? PART_PRESETS[Number(pick) - 1] : undefined;
+                if (pick !== '' && !preset) { setNote('その番号のプリセットは無い'); return; }
+                if (preset) {
+                  try {
+                    const next = [...parts, { terrain: preset.terrain, name: preset.name, walkable: preset.walkable }];
+                    setWorldParts(next);
+                    setParts(next);
+                    setBrush(next.length - 1);
+                    // 同梱の絵も登録して**即保存** — パーツと絵が別レコードなので、
+                    // ここで揃えて書かないと「一覧にはあるのに絵が無い」で再現しにくい。
+                    setTileArt(`part:${next.length - 1}`, presetArt(preset));
+                    if (session.agent) void saveTileArts(session.agent).then(() => setDirty(false));
+                    setNote(`「${preset.name}」を絵つきで足した (通れない)。絵は「パーツの絵」タブで描き直せる`);
+                  } catch (e) {
+                    setNote(String(e));
+                  }
+                  return;
+                }
                 const name = window.prompt('パーツの名前 (例: たての橋)')?.trim();
                 if (!name) return;
                 const terrain = window.prompt(
