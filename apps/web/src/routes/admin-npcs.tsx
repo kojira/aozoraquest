@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   allNpcs,
+  gameQuests,
   isWalkableAt,
   npcArtKey,
   NpcDataError,
@@ -53,6 +54,14 @@ export function AdminNpcs() {
 
   const save = useCallback(async () => {
     if (!session.agent) return;
+    // クエストが発注させている NPC を消させない (#423。実装レビュー ★★) —
+    // 参照切れの NPC が 1 人でもいると setGameQuests が全体を落とす設計なので、
+    // 消した NPC と無関係な全クエストまで web/edge から消えてしまう。
+    const orphan = gameQuests().find((q) => !list.some((n) => n.id === q.npcId));
+    if (orphan) {
+      setNote(`保存できない: クエスト「${orphan.title}」が NPC (${orphan.npcId}) に発注させている。先にクエストを消すか発注者を変える`);
+      return;
+    }
     try {
       await saveNpcs(session.agent, list);
       setDirty(false);

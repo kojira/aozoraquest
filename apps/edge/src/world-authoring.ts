@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setItemOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type ItemDefData, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setItemOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type GameQuestDef, type ItemDefData, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -101,6 +101,12 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // NPC (#425)。**移動判定に効く** (立っているマスは塞ぐ) ので edge も必須。
     const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
     if (npcs?.value?.npcs?.length) setNpcs(npcs.value.npcs);
+    // ゲーム内クエスト (#423)。**報酬付与は edge が権威**なので必須。検証が NPC・モンスター・
+    // アイテムの実在を引くため、**この 3 つより後に読む** (店 ← アイテムと同じ順序依存)。
+    const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);
+    // **空配列も適用する** (length で弾かない) — 全クエスト削除の保存が {quests: []} になるので、
+    // スキップすると warm isolate に削除済みクエストが残り続け、受注も報酬も通ってしまう。
+    if (quests?.value?.quests) setGameQuests(quests.value.quests);
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。

@@ -93,6 +93,8 @@ export const ADMIN_COL = {
   shops: `${ROOT}.world.shops`,
   /** NPC (位置・名前・セリフ)。#425 */
   npcs: `${ROOT}.world.npcs`,
+  /** ゲーム内クエスト (NPC 発注・達成条件・報酬)。#423 */
+  quests: `${ROOT}.world.quests`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

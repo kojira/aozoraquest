@@ -17,6 +17,8 @@ import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } fro
 import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { signPosition, verifyPosition } from './world-token';
+import { handleQuestAccept, handleQuestComplete, GameQuestError } from './game-quest';
+import { ensureAuthoredWorld } from './world-authoring';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
 import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
@@ -62,6 +64,8 @@ const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
 const LXM_SHOP_DISCARD = 'app.aozoraquest.shop.discard';
 const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
 const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
+const LXM_QUEST_ACCEPT = 'app.aozoraquest.quest.accept';
+const LXM_QUEST_COMPLETE = 'app.aozoraquest.quest.complete';
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -162,6 +166,10 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
         const skillIndex = typeof body.skillIndex === 'number' ? body.skillIndex : 0; // とくぎ選択 (#436)。既定 0=署名
+        // クエスト定義 (#423) の討伐カウントは勝利決着のこの経路で数える。コールド isolate だと
+        // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
+        // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
+        await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
         return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
@@ -450,6 +458,34 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json(await shopDiscard(env, did, { rkeys, rkey: body.rkey }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // ゲーム内クエスト (#423): 受注 / 達成。**条件検証も報酬付与も権威側** — 討伐数は勝利時に
+  // battle-reward が数え、素材は権威在庫を見て引き取り、パワーは定義の値だけ足す。
+  if (req.method === 'POST' && (url.pathname === '/api/quest/accept' || url.pathname === '/api/quest/complete')) {
+    const accept = url.pathname === '/api/quest/accept';
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: accept ? LXM_QUEST_ACCEPT : LXM_QUEST_COMPLETE }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { questId?: unknown };
+    if (typeof body.questId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      // コールドスタート直後だと定義が未ロードで「そのクエストは無い」に落ちるので、ここは待つ
+      // (TTL 内はキャッシュ即返しでコスト無し)。
+      await ensureAuthoredWorld(env, ns, nowSec());
+      const handler = accept ? handleQuestAccept : handleQuestComplete;
+      return cors(json(await handler(env, did, body.questId, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
     }
   }
