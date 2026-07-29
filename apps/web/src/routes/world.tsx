@@ -1236,27 +1236,37 @@ export function World() {
   ];
 
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
+  // **同じパーツは <defs> に 1 回だけ定義して <use> で参照する** (#605)。全地形が
+  // ドット絵 (タイルあたり最大 ~150 rect) になったので、マスごとにインライン展開すると
+  // ビューポートだけで数千〜万 rect の DOM になり、歩くたびの再描画がモバイルで重くなる。
+  const tileDefs = new Map<string, React.ReactElement>();
   const tiles = [];
   for (let vy = 0; vy < VIEW; vy++) {
     for (let vx = 0; vx < VIEW; vx++) {
       const x = wrap(ws.x - HALF + vx);
       const y = wrap(ws.y - HALF + vy);
       const t = terrainAt(x, y);
-      // ドット絵 (エディタで描いたもの) → 従来の SVG → 代表色のべた塗り、の順に倒す。
-      // 3 段あるので「絵がまだ無い地形」でも描画が止まらない (#421)。
+      // ドット絵 (エディタ or 同梱 #605) → 従来の SVG → 代表色のべた塗り、の順に倒す。
       // **パーツ (index) ごとの絵を最優先。** 「縦の橋」のように、通行判定は同じで
       // 絵だけ違うパーツを足せるようにするため、地形 id ではなく index で引く。
       const pi = mappedPartAt(x, y);
-      const body = pixelPart(pi, t)
-        ?? (t === 'plains' ? PLAINS_VARIANTS[tileDetailAt(x, y)] : TERRAIN_TILES[t])
-        ?? fallbackTile(t);
-      tiles.push(
-        <g key={`${vx}-${vy}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
-          {body}
-        </g>,
-      );
+      // 平地でドット絵が無いときだけ SVG バリアント (見た目散らし) が効くので、id に含める。
+      const detail = t === 'plains' && !pixelPart(pi, t) ? tileDetailAt(x, y) : 0;
+      const defId = `wt-${pi ?? 'x'}-${t}-${detail}`;
+      if (!tileDefs.has(defId)) {
+        tileDefs.set(
+          defId,
+          <g id={defId} key={defId}>
+            {pixelPart(pi, t)
+              ?? (t === 'plains' ? PLAINS_VARIANTS[detail] : TERRAIN_TILES[t])
+              ?? fallbackTile(t)}
+          </g>,
+        );
+      }
+      tiles.push(<use key={`${vx}-${vy}`} href={`#${defId}`} x={vx * TILE} y={vy * TILE} />);
     }
   }
+  tiles.unshift(<defs key="tile-defs">{[...tileDefs.values()]}</defs>);
 
   // ビューポート内の NPC (#425)。ドット絵 (npc:<id>) → 代替の見た目 (人form) に倒す。
   const npcSprites = [];

@@ -388,10 +388,15 @@ export function AdminMap() {
               onPointerCancel={() => { painting.current = false; }}
               style={{ display: 'block', cursor: 'crosshair', touchAction: 'none' }}
             >
+              {/* 同じパーツは defs に 1 回だけ定義して use で参照 (#605)。全地形がドット絵に
+                  なったので、マスごとの展開だと 16px 表示 (24×24 マス) で数万 rect になる。 */}
+              <defs>
+                {[...new Map(cells.map((c) => [`ed-${c.idx}-${c.t}`, c])).values()].map((c) => (
+                  <g id={`ed-${c.idx}-${c.t}`} key={`ed-${c.idx}-${c.t}`}>{partOf(c.idx, c.t)}</g>
+                ))}
+              </defs>
               {cells.map(({ cx, cy, t, idx }) => (
-                <g key={`${cx}-${cy}`} transform={`translate(${cx * 32},${cy * 32})`}>
-                  {partOf(idx, t)}
-                </g>
+                <use key={`${cx}-${cy}`} href={`#ed-${idx}-${t}`} x={cx * 32} y={cy * 32} />
               ))}
               {/* 街の目印 (置き換えると消えるので、どこが街か分かるように重ねる) */}
               {cells.filter((c) => c.town).map(({ cx, cy, town }) => (

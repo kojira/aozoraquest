@@ -22,6 +22,7 @@
  * 編集が始められないので、**絵が無い地形はパレットの代表色で塗りつぶす**
  * (`TERRAIN_COLORS` / `UNKNOWN_TERRAIN_COLOR`)。色だけ決めれば遊べる。
  */
+import { DEFAULT_TERRAIN_ARTS } from './terrain-art-data.js';
 
 /** ドット絵 1 枚。 */
 export interface TileArt {
@@ -111,6 +112,18 @@ export function tileArtColorAt(art: TileArt, x: number, y: number): string {
 
 const registry = new Map<string, TileArt>();
 
+// 同梱の既定絵 (#605)。レコードが無い地形のフォールバック。遅延デコードして使い回す。
+const bundled = new Map<string, TileArt>();
+function bundledArtFor(terrain: string): TileArt | undefined {
+  const hit = bundled.get(terrain);
+  if (hit) return hit;
+  const rec = DEFAULT_TERRAIN_ARTS[terrain];
+  if (!rec) return undefined;
+  const art = decodeTileArt(rec);
+  bundled.set(terrain, art);
+  return art;
+}
+
 /** ドット絵を登録する (エディタの保存 / 起動時の読み込み)。 */
 export function setTileArt(terrain: string, art: TileArt | null): void {
   if (!art) {
@@ -121,9 +134,9 @@ export function setTileArt(terrain: string, art: TileArt | null): void {
   registry.set(terrain, art);
 }
 
-/** 登録済みのドット絵 (無ければ undefined = 代表色で塗る)。 */
+/** 地形のドット絵。エディタで描いたもの → **同梱の既定絵 (#605)** → undefined (代表色)。 */
 export function tileArtFor(terrain: string): TileArt | undefined {
-  return registry.get(terrain);
+  return registry.get(terrain) ?? bundledArtFor(terrain);
 }
 
 /**
@@ -137,7 +150,10 @@ export function tileArtFor(terrain: string): TileArt | undefined {
  * 引く側を 1 か所にまとめて、両方が同じ順で探すようにする。
  */
 export function partArtFor(index: number, terrain: string): TileArt | undefined {
-  return registry.get(partKey(index)) ?? registry.get(terrain);
+  // 最後は tileArtFor に倒す = **同梱の既定絵 (#605) にも当たる**。地図は常に
+  // index 付きでここを通るので、ここで倒さないと同梱絵は地図に一切出ない
+  // (絵タブだけドット絵で地図は SVG、という食い違いになる。レビュー ★★★)。
+  return registry.get(partKey(index)) ?? tileArtFor(terrain);
 }
 
 /** パーツごとの絵のキー。 */
