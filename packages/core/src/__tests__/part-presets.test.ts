@@ -9,7 +9,7 @@ import { BASE_PALETTE, setWorldParts, worldParts } from '../world-map.js';
 
 describe('PART_PRESETS', () => {
   it('城とダンジョン入口が入っている', () => {
-    expect(PART_PRESETS.map((p) => p.name)).toEqual(['城', 'ダンジョン入口']);
+    expect(PART_PRESETS.map((p) => p.name)).toEqual(['城', 'ダンジョン入口', 'たての橋']);
   });
 
   it('絵がデコードでき、TileArt として妥当 (16×16・16 色以内)', () => {
@@ -29,8 +29,8 @@ describe('PART_PRESETS', () => {
     try {
       for (const p of PART_PRESETS) {
         expect(BASE_PALETTE).toContain(p.terrain);
-        // 入口はゲート遷移 (#424 段階 3) が入るまで「まだ入れない」壁
-        expect(p.walkable).toBe(false);
+        // 入口 (城/ダンジョン) はゲート遷移 (#424 段階 3) が入るまで「まだ入れない」壁。橋は通れる
+        expect(p.walkable).toBe(p.terrain === 'bridge');
       }
       expect(() => setWorldParts([...before, ...PART_PRESETS.map((p) => ({ terrain: p.terrain, name: p.name, walkable: p.walkable }))])).not.toThrow();
     } finally {
