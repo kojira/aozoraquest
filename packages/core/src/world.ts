@@ -18,6 +18,7 @@ import { MAX_POPULATED_TIER, type Tier } from './battle.js';
 
 import { WORLD_DATA } from './world-data.js';
 import { mappedPartAt, mappedTerrainAt, partWalkable, registerWorldMapInvalidator, worldTownOverrides } from './world-map.js';
+import { npcAt } from './npc-data.js';
 
 // ─── 定数 ───────────────────────────────────────────────────
 
@@ -87,6 +88,10 @@ export function isWalkable(t: Terrain): boolean {
 export function isWalkableAt(xIn: number, yIn: number): boolean {
   const x = wrap(xIn);
   const y = wrap(yIn);
+  // **NPC の立っているマスは塞ぐ** (#425)。DQ の作法で、ぶつかる = 話しかける。
+  // ここ (web/edge 共通の判定) に入れないと、画面では人がいるのにサーバーは素通り
+  // させる、という食い違いになる。
+  if (npcAt(x, y)) return false;
   const pi = mappedPartAt(x, y);
   if (pi !== undefined) {
     const w = partWalkable(pi);

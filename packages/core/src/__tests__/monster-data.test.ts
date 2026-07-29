@@ -328,3 +328,36 @@ describe('店主のセリフ (#385 / #422)', () => {
       .toThrow(core.ShopDataError);
   });
 });
+
+describe('NPC (#425)', () => {
+  afterEach(() => core.setNpcs(null));
+
+  it('置くとそのマスが塞がり (ぶつかる = 話す)、解除で歩けるようになる', () => {
+    // 歩けるマスを探す
+    let X = 0, Y = 0;
+    outer: for (let y = 300; y < 340; y++) for (let x = 200; x < 240; x++) {
+      if (core.isWalkableAt(x, y)) { X = x; Y = y; break outer; }
+    }
+    expect(core.isWalkableAt(X, Y)).toBe(true);
+    core.setNpcs([{ id: 'v1', name: 'むらびと', x: X, y: Y, lines: ['こんにちは。'] }]);
+    expect(core.npcAt(X, Y)?.name).toBe('むらびと');
+    expect(core.isWalkableAt(X, Y), 'NPC のマスは塞がるはず').toBe(false);
+    core.setNpcs(null);
+    expect(core.isWalkableAt(X, Y)).toBe(true);
+  });
+
+  it('壊れた 1 人で全体を落とす', () => {
+    const ok = { id: 'a', name: 'あ', x: 1, y: 1, lines: ['や'] };
+    expect(() => core.setNpcs([ok, { ...ok, id: 'a' }])).toThrow(core.NpcDataError); // id 重複
+    expect(() => core.setNpcs([ok, { ...ok, id: 'b' }])).toThrow(core.NpcDataError); // 同じマス
+    expect(() => core.setNpcs([{ ...ok, lines: [] }])).toThrow(core.NpcDataError); // セリフなし
+    expect(() => core.setNpcs([{ ...ok, lines: ['あ'.repeat(121)] }])).toThrow(core.NpcDataError);
+    expect(() => core.setNpcs([{ ...ok, x: 1.5 }])).toThrow(core.NpcDataError);
+    expect(core.allNpcs()).toEqual([]); // 部分適用していない
+  });
+
+  it('座標はトーラスで引ける', () => {
+    core.setNpcs([{ id: 'w', name: 'はし', x: 1024 + 3, y: -2, lines: ['まるまる。'] }]);
+    expect(core.npcAt(3, 1022)?.id).toBe('w');
+  });
+});

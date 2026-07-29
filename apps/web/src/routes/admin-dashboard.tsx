@@ -37,7 +37,7 @@ const CONTENT_SECTIONS: Section[] = [
   { key: 'monsters', title: 'モンスター', desc: 'パラメータ・能力・ドロップ・模擬戦', to: '/admin/monsters', issue: 419 },
   { key: 'map', title: 'マップ', desc: '地形をパーツで編集 (エリア・出現配置は #421 で続き)', to: '/admin/map', issue: 421 },
   { key: 'jobs', title: 'ジョブ', desc: '各種パラメータ設定 + 模擬戦', issue: 544 },
-  { key: 'npc', title: 'NPC', desc: '位置・絵・名前・セリフ・フラグ制御', issue: 425 },
+  { key: 'npc', title: 'NPC', desc: '位置・名前・セリフ・絵 (フラグ制御は #425 で続き)', to: '/admin/npcs', issue: 425 },
   { key: 'places', title: '街 / ダンジョン / 城', desc: '内部マップの編集', issue: 424 },
   { key: 'quests', title: 'クエスト', desc: 'ゲーム内クエストの作成・編集', issue: 423 },
   { key: 'scenario', title: 'シナリオ', desc: '進行の筋書き', issue: 545 },
