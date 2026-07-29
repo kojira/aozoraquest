@@ -48,7 +48,9 @@ export async function handleQuestAccept(
       if ((cur.questsDone ?? []).includes(questId)) throw new GameQuestError('もう達成している', 400, 'already_done');
       if (cur.quest?.id === questId) return cur; // 再受注は no-op (連打・再送で壊れない)
       // **1 つずつ。** 同時進行を許すと「どの敵を数えるか」が曖昧になる (将来 quests[] 化も可能)。
-      if (cur.quest) throw new GameQuestError('別のたのまれごとを うけている', 400, 'quest_busy');
+      // ただし定義が消された孤児クエスト (管理者がエディタで削除) は無かったことにする —
+      // 破棄手段が無いので、残すとそのプレイヤーは永久に何も受けられなくなる (UX レビュー ★★★)。
+      if (cur.quest && gameQuestById(cur.quest.id)) throw new GameQuestError('別のたのまれごとを うけている', 400, 'quest_busy');
       return { ...cur, quest: { id: questId, progress: 0 } };
     },
     init ? { now, init } : { now },

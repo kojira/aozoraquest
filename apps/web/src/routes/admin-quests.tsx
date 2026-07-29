@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   allNpcs,
@@ -12,7 +12,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { saveGameQuests } from '@/lib/world-authoring';
+import { loadAuthoredWorld, saveGameQuests } from '@/lib/world-authoring';
 
 /**
  * **ゲーム内クエスト エディタ** (#423)。NPC 発注・達成条件・報酬。
@@ -29,10 +29,24 @@ export function AdminQuests() {
   const [sel, setSel] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  const npcs = useMemo(() => allNpcs(), []);
-  const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), []);
-  const items = useMemo(() => Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name })), []);
+  // **保存済みレコードを必ず読み込んでから編集させる** (実装レビュー ★★)。
+  // メモリの gameQuests() は /world か /admin/map を先に開いた時しか埋まっておらず、
+  // この画面を直接開いて保存すると空リストで world.quests を上書き = 既存クエスト全損する。
+  useEffect(() => {
+    let cancelled = false;
+    void loadAuthoredWorld(session.agent ?? null).finally(() => {
+      if (cancelled) return;
+      setList(gameQuests().map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}) })));
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [session.agent]);
+
+  const npcs = useMemo(() => allNpcs(), [loaded]);
+  const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), [loaded]);
+  const items = useMemo(() => Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name })), [loaded]);
   const current = useMemo(() => list.find((q) => q.id === sel) ?? null, [list, sel]);
 
   const update = useCallback((id: string, patch: Partial<GameQuestDef>) => {
@@ -64,8 +78,9 @@ export function AdminQuests() {
       setDirty(false);
       setNote(`${list.length} 件を保存した。サーバーは最大 5 分で拾う`);
     } catch (e) {
-      // 検証で落ちたら現在のメモリ状態が壊れている可能性があるので元に戻す
-      try { setGameQuests(null); } catch { /* noop */ }
+      // setGameQuests は全検証を終えてから差し替えるので、throw してもメモリは前の状態のまま。
+      // ここで setGameQuests(null) してはいけない — 全解除になり、再訪 + 保存で
+      // world.quests レコードごと消える事故につながる (UX レビュー ★★★)。
       setNote(e instanceof QuestDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
     }
   }, [session.agent, list]);
@@ -133,7 +148,7 @@ export function AdminQuests() {
         <strong>クエスト</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件</span>
         <button type="button" onClick={add} disabled={npcs.length === 0} style={{ fontSize: '0.85em' }}>＋クエスト</button>
-        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
       </div>

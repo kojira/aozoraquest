@@ -104,7 +104,9 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // ゲーム内クエスト (#423)。**報酬付与は edge が権威**なので必須。検証が NPC・モンスター・
     // アイテムの実在を引くため、**この 3 つより後に読む** (店 ← アイテムと同じ順序依存)。
     const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);
-    if (quests?.value?.quests?.length) setGameQuests(quests.value.quests);
+    // **空配列も適用する** (length で弾かない) — 全クエスト削除の保存が {quests: []} になるので、
+    // スキップすると warm isolate に削除済みクエストが残り続け、受注も報酬も通ってしまう。
+    if (quests?.value?.quests) setGameQuests(quests.value.quests);
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。

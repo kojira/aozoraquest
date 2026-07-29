@@ -117,6 +117,16 @@ describe('handleQuestAccept', () => {
     expect(res.quest).toEqual({ id: 'q-defeat', progress: 1 }); // progress を巻き戻さない
   });
 
+  it('定義が消された孤児クエストを抱えていても、新しいクエストを受けられる', async () => {
+    // 管理者がエディタで削除した後もプレイヤーの GameState には残る。破棄手段が無いので、
+    // 受注時に孤児を落とさないと永久に何も受けられない。
+    const m = statefulPds(stateAt({ quest: { id: 'q-deleted', progress: 3 } }));
+    globalThis.fetch = m.fn;
+    const res = await handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW);
+    expect(res.quest).toEqual({ id: 'q-defeat', progress: 0 });
+    expect(stored(m.store).quest).toEqual({ id: 'q-defeat', progress: 0 });
+  });
+
   it('達成済みは再受注できない', async () => {
     globalThis.fetch = statefulPds(stateAt({ questsDone: ['q-defeat'] })).fn;
     await expect(handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'already_done' });

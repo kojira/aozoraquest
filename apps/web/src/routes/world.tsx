@@ -532,9 +532,17 @@ export function World() {
       if (npc) {
         const q = gameQuestByNpc(npc.id);
         const qs = questRef.current;
+        // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする。
+        // 放置すると「べつの たのまれごと」で全クエストが永久に受けられない (UX レビュー ★★★)。
+        // サーバー側 (handleQuestAccept) も同じ判断で孤児クエストを落とす。
+        const active = qs.active && gameQuestById(qs.active.id) ? qs.active : undefined;
         if (!q || qs.done.includes(q.id)) {
           setNpcTalk({ npc, lines: npc.lines });
-        } else if (qs.active?.id === q.id) {
+        } else if (active?.id === q.id) {
+          // 達成試行はサーバー往復。**往復中は移動もバンプも塞ぐ** (moveBusyRef) —
+          // 塞がないとキー押しっぱなしで並行リクエストが飛び、成功の報酬ダイアログを
+          // 後続の already_done が上書きしたり、歩き出した先の戦闘中に会話が湧く (UX レビュー ★★★/★★)。
+          moveBusyRef.current = true;
           void (async () => {
             try {
               const res = await serverQuestComplete(agent, q.id);
@@ -548,17 +556,23 @@ export function World() {
               ].filter(Boolean).join(' と ');
               setNpcTalk({ npc, lines: [...q.done, ...(got ? [`${got} を もらった!`] : [])] });
             } catch (e) {
-              // not_ready はサーバーの「まだ n/m」をそのまま出す (進行数はサーバーが正)。
-              const notReady = e instanceof WorldServerError && e.code === 'not_ready';
-              setNpcTalk({
-                npc,
-                lines: notReady
-                  ? [...(q.progress ?? ['たのんだよ。']), (e as WorldServerError).message]
-                  : q.progress ?? ['たのんだよ。'],
-              });
+              if (e instanceof WorldServerError && e.code === 'not_ready') {
+                // 「まだ n/m」はサーバーの言い分をそのまま出す (進行数はサーバーが正)。
+                setNpcTalk({ npc, lines: [...(q.progress ?? ['たのんだよ。']), e.message] });
+              } else if (e instanceof WorldServerError && e.code === 'already_done') {
+                // 並行達成の敗者 (レース)。done に積んで通常セリフへ。
+                questRef.current = { done: [...qs.done, q.id] };
+                setNpcTalk({ npc, lines: npc.lines });
+              } else {
+                // 通信失敗を進行セリフの顔で出さない — 条件を満たしているのに
+                // 「まだ頼み中」に見えると、達成済みなのに狩り続けてしまう (UX レビュー ★★)。
+                setNotice('つうしんに しっぱいした… もういちど はなしかけてみよう。');
+              }
+            } finally {
+              moveBusyRef.current = false;
             }
           })();
-        } else if (qs.active) {
+        } else if (active) {
           // 別のクエスト進行中: 依頼は聞けるが受けられない (1 つずつ)。
           setNpcTalk({ npc, lines: [...q.intro, '(いまは べつの たのまれごとを うけている…)'] });
         } else {

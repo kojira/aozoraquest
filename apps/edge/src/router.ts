@@ -166,6 +166,10 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
         const skillIndex = typeof body.skillIndex === 'number' ? body.skillIndex : 0; // とくぎ選択 (#436)。既定 0=署名
+        // クエスト定義 (#423) の討伐カウントは勝利決着のこの経路で数える。コールド isolate だと
+        // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
+        // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
+        await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
         return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);

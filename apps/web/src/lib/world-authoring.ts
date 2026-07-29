@@ -178,7 +178,8 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     try {
       // 検証が NPC・モンスター・アイテムの実在を引くため、**この 3 つより後に読む** (#423)。
       const rec = await getRecord<{ quests?: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
-      if (rec?.quests?.length) setGameQuests(rec.quests);
+      // 空配列も適用する (全削除の反映。edge 側と同じ理由)。
+      if (rec?.quests) setGameQuests(rec.quests);
     } catch (e) {
       console.warn('[world] quests load failed', e);
     }
