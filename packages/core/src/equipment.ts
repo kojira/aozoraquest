@@ -16,6 +16,7 @@
 
 import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
+import { shopOverrideAt } from './shop-data.js';
 import type { Town } from './world.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
@@ -452,6 +453,23 @@ function rankAmongTier(town: Town, minTier: number): number {
 export const JOB_HIGH_PER_TOWN = 3;
 
 export function townShopStock(town: Town, townIndex: number): ShopStock {
+  // **店ごとの上書きが最優先** (#422)。指定されたフィールドだけ置き換え、残りは生成。
+  // 上書きが無い店は従来どおり = 全 53 店を手で埋めさせない。
+  const over = shopOverrideAt(town.x, town.y);
+  const generated = over && over.equipment && over.consumables && over.materialId
+    ? null // 全フィールド上書きなら生成をスキップ (無駄な計算をしない)
+    : generatedShopStock(town, townIndex);
+  if (over) {
+    return {
+      consumables: over.consumables ?? generated!.consumables,
+      equipment: over.equipment ?? generated!.equipment,
+      materialId: over.materialId ?? generated!.materialId,
+    };
+  }
+  return generated!;
+}
+
+function generatedShopStock(town: Town, townIndex: number): ShopStock {
   const tier = tierForRegion(town.region);
   const rng = shopRng(((town.x * 73856093) ^ (town.y * 19349663)) >>> 0);
   const consumables = ['herb', 'sky-dew', 'sky-feather'];
