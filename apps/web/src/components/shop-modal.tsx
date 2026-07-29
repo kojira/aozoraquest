@@ -3,7 +3,6 @@ import {
   CRAFT_TUNING,
   EQUIPMENT_BY_ID,
   ITEMS,
-  MONSTERS,
   SALE_TUNING,
   canEquip,
   forgedLevel,
@@ -17,8 +16,11 @@ import {
   type EquipmentDef,
   type Town,
   shopKeeperFor,
+  worldOverlay,
 } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
+import { DialogueWindow } from '@/components/dialogue-window';
+import type { DialogueLine } from '@/lib/dialogue';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -45,10 +47,14 @@ function bonusText(def: EquipmentDef): string {
     .join(' ');
 }
 
-export interface LastShopAction {
-  piece: CraftedPiece;
-  kind: 'craft' | 'forge';
-}
+export type LastShopAction =
+  | { kind: 'craft' | 'forge'; piece: CraftedPiece }
+  // ひきとりの結果もモーダル内のセリフ窓で出す (#607) — 以前は世界の通知行に出していて、
+  // この全画面モーダルの背面に描かれてプレイヤーには見えなかった。
+  | { kind: 'sell'; materialId: string; count: number; powerGained: number };
+
+/** 初回チュートリアル (最初の街のなんでも屋) を出したか。 */
+const SHOP_TUTORIAL_KEY = 'aozora:shop-tutorial-done';
 
 /** アイテムごとの「合成できる最良の組」(同強化値 2 個体の最大レベル)。
  *  装備中の個体は候補から除外 (そうび中の武器が黙って燃えるのを防ぐ)。 */
@@ -111,8 +117,6 @@ export function ShopModal({
   // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
   const keeper = useMemo(() => shopKeeperFor(town.x, town.y), [town]);
   const materialName = ITEMS[stock.materialId]?.name ?? stock.materialId;
-  // 値札素材を落とすモンスター (店プールは全て単一モンスターの固有ドロップ)
-  const dropperName = MONSTERS.find((m) => m.drops.some((d) => d.item === stock.materialId))?.name;
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const piecesByItem = useMemo(() => {
@@ -134,7 +138,59 @@ export function ShopModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const lastDef = lastAction ? EQUIPMENT_BY_ID[lastAction.piece.itemId] : null;
+  // ── 店主のセリフ窓 (#607) ──────────────────────────────
+  // セリフはインライン文でなく **DialogueWindow をモーダルの上に重ねて**出す
+  // (z 901 > モーダル 300)。品目リストと文字が重ならず、DQ の作法にも合う。
+  const say = (text: string): DialogueLine => (keeper.name ? { speaker: keeper.name, text } : { text: `「${text}」` });
+  // nonce で窓を必ず remount する — talk を差し替えるだけだと DialogueWindow の
+  // 行 index が持ち越され、短い配列に替わった瞬間に index 超過で不可視のまま固着する
+  // (レビュー ★★: Tab で背面ボタンに抜けて操作した場合に成立)。
+  const [talk, setTalk] = useState<{ n: number; lines: DialogueLine[]; tutorial?: boolean } | null>(null);
+  const talkSeq = useRef(0);
+  const openTalk = (lines: DialogueLine[], tutorial = false) => setTalk({ n: ++talkSeq.current, lines, ...(tutorial ? { tutorial } : {}) });
+  useEffect(() => {
+    // 入店時のあいさつ。**最初の街 (spawn の村) の初回だけ**は店の使い方を話す
+    // チュートリアルにする — 毎回の説明文は出さない (オーナー指摘 2026-07-30)。
+    // 既読フラグは開いた瞬間でなく**読み終えたとき** (onDone) に立てる — 開いた瞬間に
+    // 立てると、途中で閉じたら二度と読めず、StrictMode の二重実行でも即座に既読化して
+    // 一度も表示されない (レビュー ★★)。
+    const sp = worldOverlay().spawn;
+    let done = true;
+    try { done = localStorage.getItem(SHOP_TUTORIAL_KEY) === '1'; } catch { /* private mode */ }
+    if (town.x === sp.x && town.y === sp.y && !done) {
+      openTalk([
+        say(keeper.greeting),
+        say('ここは なんでも屋。あおぞらパワーと 素材を もってくれば、そうびを つくるよ。'),
+        say('できばえは −1〜+5。うんが 高いほど いい品に なりやすい。'),
+        say('おなじ品を 2つ もってくれば、1つ上に きたえてやろう。'),
+        say('素材は このへんの モンスターが おとす。いらない素材は ひきとって パワーに かえるよ。'),
+      ], true);
+    } else {
+      openTalk([say(keeper.greeting)]);
+    }
+    // 入店時に 1 回だけ。keeper/town はモーダルの寿命中変わらない。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!lastAction) return;
+    if (lastAction.kind === 'sell') {
+      openTalk([
+        { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count} を ひきとってもらい、パワーが ${lastAction.powerGained} ふえた!` },
+        say(keeper.sell),
+      ]);
+      return;
+    }
+    const def = EQUIPMENT_BY_ID[lastAction.piece.itemId];
+    if (!def) return;
+    openTalk([
+      {
+        text: `${isMasterwork(lastAction.piece.level) ? '✨ ' : ''}${leveledName(def, lastAction.piece.level)} ${
+          lastAction.kind === 'forge' ? 'に きたえあげた!' : 'が できた!'}`,
+      },
+      say(lastAction.kind === 'forge' ? keeper.forge : keeper.craft),
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastAction]);
 
   return (
     <div
@@ -170,19 +226,14 @@ export function ShopModal({
             とじる
           </button>
         </div>
-        <p style={{ margin: '0 0 0.3em', fontSize: '0.85em' }}>
-          {keeper.name ? `${keeper.name}「` : '「'}{keeper.greeting}」
-        </p>
-        <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)' }}>
-          パワーと素材をわたすと作ってもらえる (できばえは −1〜+5、うんが高いと良い品に)。
-          同じ品を 2 つわたすと 1 つ上にきたえてもらえる (+6 から上はきたえるだけ)。
-          <br />
+        {/* 説明文は毎回出さない (#607) — 使い方は最初の街の初回チュートリアルで店主が話す。
+            もちもの (残高) だけコンパクトに常設する。 */}
+        <p style={{ margin: '0 0 0.5em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
           もちもの: パワー <strong style={{ color: 'var(--color-fg)' }}>{balance}</strong> / {materialName}{' '}
           <strong style={{ color: 'var(--color-fg)' }}>×{materials[stock.materialId] ?? 0}</strong>
-          <br />
-          ({materialName}は このあたりの {dropperName ?? 'モンスター'}が おとす)
         </p>
-        {/* live region は常設して中身を差し替える (条件付きマウントは初回読み上げが
+        {/* 失敗の理由はボタンのそばに残す (セリフ窓に出すと閉じた瞬間に消えて読み逃す)。
+            live region は常設して中身を差し替える (条件付きマウントは初回読み上げが
             落ちることがある — レビュー指摘) */}
         <p
           aria-live="polite"
@@ -190,22 +241,11 @@ export function ShopModal({
             margin: '0 0 0.5em',
             fontSize: '0.85em',
             fontWeight: 700,
-            minHeight: '1.4em',
-            color: errorText
-              ? 'var(--color-danger, #e8566a)'
-              : lastAction && isMasterwork(lastAction.piece.level) ? 'var(--color-accent)' : 'var(--color-fg)',
+            minHeight: errorText ? '1.4em' : 0,
+            color: 'var(--color-danger, #e8566a)',
           }}
         >
-          {errorText ? errorText : lastAction && lastDef && (
-            <>
-              {isMasterwork(lastAction.piece.level) ? '✨ ' : ''}
-              {leveledName(lastDef, lastAction.piece.level)}
-              {lastAction.kind === 'forge' ? ' に きたえあげた!' : ' ができた!'}
-              <span style={{ fontWeight: 400, marginLeft: '0.4em' }}>
-                「{lastAction.kind === 'forge' ? keeper.forge : keeper.craft}」
-              </span>
-            </>
-          )}
+          {errorText}
         </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {stock.equipment.map((id) => {
@@ -353,6 +393,18 @@ export function ShopModal({
           })()}
         </div>
       </div>
+      {talk && (
+        <DialogueWindow
+          key={talk.n}
+          lines={talk.lines}
+          onDone={() => {
+            if (talk.tutorial) {
+              try { localStorage.setItem(SHOP_TUTORIAL_KEY, '1'); } catch { /* private mode */ }
+            }
+            setTalk(null);
+          }}
+        />
+      )}
     </div>
   );
 }

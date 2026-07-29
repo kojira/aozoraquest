@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, gameQuestById, gameQuestByNpc, npcArtKey, npcAt, shopKeeperFor, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, gameQuestById, gameQuestByNpc, npcArtKey, npcAt, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -1092,13 +1092,8 @@ export function World() {
         applyServerMaterials(res.materials);
         // 記帳 (履歴)。数量とパワーはサーバーが確定した値で書く。
         await sellMaterials(agent, { materialId, materialCount: count }, srkey).catch((e) => console.warn('[world] sale log failed', e));
-        setLastShopAction(null);
-        {
-          // 店主のひとことを添える (#385)。街ごとに口調が違う。
-          const t = townAt(wsRef.current?.x ?? -1, wsRef.current?.y ?? -1);
-          const keeperSell = t ? shopKeeperFor(t.x, t.y).sell : 'まいど！';
-          setNotice(`${ITEMS[materialId]?.name ?? materialId} ×${count} をひきとってもらい、パワーが ${res.powerGained ?? 0} ふえた!「${keeperSell}」`);
-        }
+        // 結果はモーダル内のセリフ窓で出す (#607)。世界の通知行はモーダルの背面で見えない。
+        setLastShopAction({ kind: 'sell', materialId, count, powerGained: res.powerGained ?? 0 });
       } catch (e) {
         console.warn('[world] sell failed', e);
         setShopError(shopErrorText(e, 'ひきとってもらえなかった'));
