@@ -87,6 +87,8 @@ export const ADMIN_COL = {
   tileArt: `${ROOT}.world.tileArt`,
   /** モンスター (パラメータ・ドロップ・能力 id)。#419 */
   monsters: `${ROOT}.world.monsters`,
+  /** どうぐ・素材 + 装備。#420 */
+  items: `${ROOT}.world.items`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setMonsterOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type MonsterDef, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setItemOverrides, setMonsterOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type ItemDefData, type MonsterDef, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -91,6 +91,10 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // 編集後の敵を見ていると強さも XP も食い違う。読めなければコード直書きのまま。
     const mon = await getRecord<{ monsters?: MonsterDef[] }>(pds, did, `${nsid}.world.monsters`, RKEY);
     if (mon?.value?.monsters?.length) setMonsterOverrides(mon.value.monsters);
+    // どうぐ・装備 (#420)。**店の品揃えと値段は edge が権威** (shopCraft が not_in_stock を弾く)
+    // なので、web だけが編集後の装備を見ていると「見えるのに買えない」が起きる。
+    const items = await getRecord<{ items?: ItemDefData[]; equipment?: EquipmentDef[] }>(pds, did, `${nsid}.world.items`, RKEY);
+    if (items?.value?.equipment?.length) setItemOverrides({ items: items.value.items ?? [], equipment: items.value.equipment });
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。

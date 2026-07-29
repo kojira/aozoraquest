@@ -5,6 +5,7 @@ import {
   encodeWorldMap,
   loadStaticWorldMap,
   loadTileArts,
+  setItemOverrides,
   setMonsterOverrides,
   setTownOverrides,
   setWorldMap,
@@ -13,6 +14,8 @@ import {
   worldMapTiles,
   worldTownOverrides,
   WORLD_SIZE,
+  type EquipmentDef,
+  type ItemDefData,
   type MonsterDef,
   type TileArtRecord,
   type TownOverride,
@@ -146,6 +149,12 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     } catch (e) {
       console.warn('[world] monsters load failed', e);
     }
+    try {
+      const rec = await getRecord<ItemsRecordData>(agent, adminDid, ADMIN_COL.items, RKEY);
+      if (rec?.equipment?.length) setItemOverrides({ items: rec.items ?? [], equipment: rec.equipment });
+    } catch (e) {
+      console.warn('[world] items load failed', e);
+    }
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
@@ -165,4 +174,19 @@ export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promis
   const rec: MonstersRecord = { monsters, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.monsters, RKEY, rec);
   return monsters.length;
+}
+
+// ─── どうぐ・装備 (#420) ────────────────────────────────────
+
+export interface ItemsRecordData {
+  items: ItemDefData[];
+  equipment: EquipmentDef[];
+  updatedAt: string;
+}
+
+/** 編集したどうぐ・装備を保存する (core の検証を通る = 壊れた 1 件で全体を落とす)。 */
+export async function saveItems(agent: Agent, items: ItemDefData[], equipment: EquipmentDef[]): Promise<void> {
+  setItemOverrides({ items, equipment });
+  const rec: ItemsRecordData = { items, equipment, updatedAt: new Date().toISOString() };
+  await putRecord(agent, ADMIN_COL.items, RKEY, rec);
 }
