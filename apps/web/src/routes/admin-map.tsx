@@ -77,6 +77,8 @@ export function AdminMap() {
   const [townTick, setTownTick] = useState(0);
   const [parts, setParts] = useState(() => [...worldParts()]);
   const painting = useRef(false);
+  /** プリセット追加の保存が往復中 (連続追加の競合防止)。 */
+  const presetBusyRef = useRef(false);
   /** 表示タイル数 (正方形)。倍率で変わる。 */
   const view = viewTiles(tilePx);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -284,19 +286,33 @@ export function AdminMap() {
                 const preset = /^\d+$/.test(pick) ? PART_PRESETS[Number(pick) - 1] : undefined;
                 if (pick !== '' && !preset) { setNote('その番号のプリセットは無い'); return; }
                 if (preset) {
-                  try {
-                    const next = [...parts, { terrain: preset.terrain, name: preset.name, walkable: preset.walkable }];
-                    setWorldParts(next);
-                    setParts(next);
-                    setBrush(next.length - 1);
-                    // 同梱の絵も登録して**即保存** — パーツと絵が別レコードなので、
-                    // ここで揃えて書かないと「一覧にはあるのに絵が無い」で再現しにくい。
-                    setTileArt(`part:${next.length - 1}`, presetArt(preset));
-                    if (session.agent) void saveTileArts(session.agent).then(() => setDirty(false));
-                    setNote(`「${preset.name}」を絵つきで足した (通れない)。絵は「パーツの絵」タブで描き直せる`);
-                  } catch (e) {
-                    setNote(String(e));
-                  }
+                  // 直列化 — 保存応答前の連続追加は 2 本の putRecord の後勝ちで
+                  // 新しい方の絵が保存から抜けうる (レビュー ★★)。
+                  if (presetBusyRef.current) return;
+                  presetBusyRef.current = true;
+                  void (async () => {
+                    try {
+                      const next = [...parts, { terrain: preset.terrain, name: preset.name, walkable: preset.walkable }];
+                      setWorldParts(next);
+                      setParts(next);
+                      setBrush(next.length - 1);
+                      // 同梱の絵も登録して**即保存** — パーツと絵が別レコードなので、
+                      // ここで揃えて書かないと「一覧にはあるのに絵が無い」で再現しにくい。
+                      // dirty (タイル draft の未保存バッジ) には触らない — ここで消すと
+                      // 塗りかけの編集が保存済みに見えて消える (レビュー ★★★)。
+                      setTileArt(`part:${next.length - 1}`, presetArt(preset));
+                      if (session.agent) {
+                        await saveTileArts(session.agent);
+                        setNote(`「${preset.name}」を絵つきで足して保存した。絵は「パーツの絵」タブで描き直せる`);
+                      } else {
+                        setNote(`「${preset.name}」を足したが、未ログインなので**保存されていない**`);
+                      }
+                    } catch (e) {
+                      setNote(`プリセットを保存できなかった: ${String(e)} (リロードすると消える)`);
+                    } finally {
+                      presetBusyRef.current = false;
+                    }
+                  })();
                   return;
                 }
                 const name = window.prompt('パーツの名前 (例: たての橋)')?.trim();
