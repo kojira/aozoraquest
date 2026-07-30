@@ -127,12 +127,10 @@ export function GearModal({
             const candidates = pieces
               .filter((p) => EQUIPMENT_BY_ID[p.itemId]?.slot === slot)
               .sort((a, b) => b.level - a.level);
-            // 手数 (#609): 両手武器を構えている間は盾を持てない (逆も同じ)。
+            // 手数 (#609): core は超過時**必ず盾を落とす**ので、案内も盾側にだけ出す
+            // (武器側に出すと「効いているのに塞がっている」の誤情報になる — レビュー ★★★)。
             const weaponDef = refs.weapon ? EQUIPMENT_BY_ID[byRkey.get(refs.weapon)?.itemId ?? ''] : undefined;
-            const shieldDef = refs.shield ? EQUIPMENT_BY_ID[byRkey.get(refs.shield)?.itemId ?? ''] : undefined;
-            const handsBlocked =
-              (slot === 'shield' && weaponDef && equipHands(weaponDef) >= 2) ||
-              (slot === 'weapon' && shieldDef && equipHands(shieldDef) >= 2);
+            const handsBlocked = slot === 'shield' && weaponDef && equipHands(weaponDef) >= 2;
             return (
               <div key={slot} style={{ border: '2px solid var(--color-border)', borderRadius: 4, padding: '0.4em 0.6em', fontSize: '0.85em' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -143,7 +141,9 @@ export function GearModal({
                         「そうび中なのに効果なし」の矛盾を可視化 (レビュー指摘) */}
                     {equipped && !resolved.pieces[slot] && (
                       <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-danger)' }}>
-                        (いまのジョブでは効果なし)
+                        {/* 失効理由を正しく言う — 手数で外れた盾に「ジョブでは効果なし」と
+                            出すとジョブが原因だと誤診させる (レビュー ★★★) */}
+                        {handsBlocked ? '(りょうてが ふさがっていて 効果なし)' : '(いまのジョブでは効果なし)'}
                       </span>
                     )}
                   </span>
@@ -153,9 +153,9 @@ export function GearModal({
                     </button>
                   )}
                 </div>
-                {handsBlocked && (
-                  <div style={{ color: 'var(--color-danger)', fontSize: '0.85em', marginBottom: 4 }}>
-                    りょうてが ふさがっている ({slot === 'shield' ? 'ぶき' : 'たて'}を はずすと もてる)
+                {handsBlocked && !equipped && (
+                  <div style={{ color: 'var(--color-muted)', fontSize: '0.85em', marginBottom: 4 }}>
+                    りょうてが ふさがっている (たてを そうびすると ぶきが はずれる)
                   </div>
                 )}
                 {candidates.length === 0 ? (
@@ -170,6 +170,7 @@ export function GearModal({
                         <div key={p.rkey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
                           <span style={{ opacity: equipable ? 1 : 0.6 }}>
                             {leveledName(def, p.level)}
+                            {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(両手)</span>}
                             {def.jobOnly && !equipable && (
                               <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-danger)' }}>
                                 (要: {jobDisplayName(def.jobOnly, 'default')})
