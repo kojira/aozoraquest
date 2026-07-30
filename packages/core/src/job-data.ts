@@ -116,6 +116,32 @@ export function setJobOverrides(list: readonly JobOverride[] | null): void {
   }
 }
 
+/**
+ * **コード値と違うところだけ**を上書き形式で返す (#544 レビュー ★★)。
+ *
+ * 全職のフル値を保存すると、後日コード側で `JOB_LEVEL_PACE` を引き直しても
+ * レコードが常に勝って**恒久的に無視される** (tuning.ts の pace は計測条件が
+ * 変われば引き直す前提のデータなので、実際に踏む)。差分だけ保存すれば、
+ * 触っていない職はコードの再調整がそのまま効く。
+ */
+export function jobOverridesDiff(params: readonly JobOverride[]): JobOverride[] {
+  snapshot();
+  const out: JobOverride[] = [];
+  for (const p of params) {
+    const base = baseline!.get(p.id);
+    if (!base) continue;
+    const o: JobOverride = { id: p.id };
+    if (p.stats && p.stats.some((v, i) => v !== base.stats[i])) o.stats = [...p.stats] as StatArray;
+    if (p.vit !== undefined && p.vit !== base.vit) o.vit = p.vit;
+    if (p.pace !== undefined && p.pace !== base.pace) o.pace = p.pace;
+    if (p.equipKinds && (p.equipKinds.length !== base.equipKinds.length || p.equipKinds.some((k, i) => k !== base.equipKinds[i]))) {
+      o.equipKinds = [...p.equipKinds];
+    }
+    if (Object.keys(o).length > 1) out.push(o);
+  }
+  return out;
+}
+
 /** エディタ用: 現在値をそのまま上書き形式で読み出す (コード値 + 適用済みの上書き)。 */
 export function currentJobParams(): JobOverride[] {
   return JOBS.map((j) => ({

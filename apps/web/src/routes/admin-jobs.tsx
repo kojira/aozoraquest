@@ -10,6 +10,7 @@ import {
   MIN_PACE,
   MIN_VIT,
   currentJobParams,
+  jobOverridesDiff,
   jobDisplayName,
   runAutoBattle,
   setJobOverrides,
@@ -20,8 +21,8 @@ import {
   type StatArray,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { isAdminDid } from '@/lib/runtime-config';
-import { loadAuthoredWorld, saveJobs } from '@/lib/world-authoring';
+import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
+import { loadJobsRecord, saveJobs } from '@/lib/world-authoring';
 
 /**
  * **ジョブエディタ** (#544)。ステータス比・たいりょく・レベル曲線・装備適性 +
@@ -37,12 +38,15 @@ import { loadAuthoredWorld, saveJobs } from '@/lib/world-authoring';
 const WORLD_HERB_MAX = 3;
 
 const STAT_LABELS = ['こうげき', 'まもり', 'すばやさ', 'かしこさ', 'うん'] as const;
-const ALL_KINDS: readonly EquipKind[] = ['common', 'sword', 'axe', 'shield', 'dagger', 'staff', 'lucky', 'heavy', 'light', 'robe', 'cloth', 'charm'];
+/** チェックで意味があるカテゴリだけ。**common / cloth / charm は canEquip が
+ *  JOB_EQUIP_KINDS を見る前に true を返す**ので、並べても「表示も操作も嘘」になる。 */
+const ALL_KINDS: readonly EquipKind[] = ['sword', 'axe', 'shield', 'dagger', 'staff', 'lucky', 'heavy', 'light', 'robe'];
 
 /** 連戦シミュレーション: 街に戻らず何戦もつか (#535 の指標。勝率より職差が見える)。 */
-function simulateEndurance(job: Archetype, tier: number, lv: number, trials: number): number {
-  const CAP = 40;
+function simulateEndurance(job: Archetype, tier: number, lv: number, trials: number): { avg: number; capped: number } {
+  const CAP = 200; // 上限で頭打ちになると強化の効果が読めなくなる (16職×30試行で 0.2 秒程度)
   let total = 0;
+  let capped = 0; // 上限で打ち切った試行 (平均が過小評価になっていることの印)
   for (let t = 0; t < trials; t++) {
     let hp: number | undefined;
     let mp: number | undefined;
@@ -64,8 +68,9 @@ function simulateEndurance(job: Archetype, tier: number, lv: number, trials: num
       herbs = Math.min(WORLD_HERB_MAX, r.herbs ?? 0);
     }
     total += battles;
+    if (battles >= CAP) capped++;
   }
-  return total / trials;
+  return { avg: total / trials, capped };
 }
 
 export function AdminJobs() {
@@ -75,21 +80,34 @@ export function AdminJobs() {
   const [sel, setSel] = useState<Archetype>(JOBS[0]!.id);
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  /** 保存済みレコードを読めたか。**読めていないと保存させない** — コード値のまま
+   *  保存すると全職ぶんの調整が消える (レビュー ★★★)。 */
+  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'failed'>('loading');
   const [tier, setTier] = useState(1);
   const [lv, setLv] = useState(5);
   const [trials, setTrials] = useState(30);
-  const [simRows, setSimRows] = useState<Array<[Archetype, number]> | null>(null);
+  const [simRows, setSimRows] = useState<Array<{ id: Archetype; avg: number; capped: number }> | null>(null);
   const [simBusy, setSimBusy] = useState(false);
 
-  // 保存済みを読み込んでから編集させる (メモリ初期値のまま保存すると上書きで消える)。
+  // 保存済みを読み込んでから編集させる。**読めなければ保存を塞ぐ** (握り潰して
+  // コード値を出すと、1 職直して保存した瞬間に他 15 職の調整が消える)。
   useEffect(() => {
     let cancelled = false;
-    void loadAuthoredWorld(session.agent ?? null).finally(() => {
-      if (cancelled) return;
-      setList(currentJobParams());
-      setLoaded(true);
-    });
+    const agent = session.agent;
+    const adminDid = getPrimaryAdminDid();
+    if (!agent || !adminDid) { setLoadState('failed'); return; }
+    void loadJobsRecord(agent, adminDid)
+      .then(() => {
+        if (cancelled) return;
+        setList(currentJobParams());
+        setLoadState('ok');
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.warn('[admin] jobs load failed', e);
+        setLoadState('failed');
+        setNote('保存済みのジョブ設定を読み込めなかった。上書きで消える恐れがあるので保存できない (再読み込みしてほしい)');
+      });
     return () => { cancelled = true; };
   }, [session.agent]);
 
@@ -108,8 +126,8 @@ export function AdminJobs() {
       const saved = currentJobParams();
       try {
         setJobOverrides(list);
-        const rows = JOBS.map((j) => [j.id, simulateEndurance(j.id, tier, lv, trials)] as [Archetype, number]);
-        rows.sort((a, b) => a[1] - b[1]);
+        const rows = JOBS.map((j) => ({ id: j.id, ...simulateEndurance(j.id, tier, lv, trials) }));
+        rows.sort((a, b) => a.avg - b.avg);
         setSimRows(rows);
       } catch (e) {
         setNote(e instanceof JobDataError ? `試せない: ${e.message}` : String(e));
@@ -124,7 +142,7 @@ export function AdminJobs() {
   const save = useCallback(async () => {
     if (!session.agent) return;
     try {
-      await saveJobs(session.agent, list);
+      await saveJobs(session.agent, jobOverridesDiff(list));
       setDirty(false);
       setNote('保存した。サーバーは最大 5 分で拾う');
     } catch (e) {
@@ -154,7 +172,7 @@ export function AdminJobs() {
       <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginBottom: '0.4em' }}>
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>ジョブ</strong>
-        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || loadState !== 'ok'} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
       </div>
@@ -225,7 +243,7 @@ export function AdminJobs() {
               </span>
             ))}
             <div style={{ fontSize: '0.8em' }}>
-              <span style={{ color: 'var(--color-muted)' }}>装備できるカテゴリ</span>
+              <span style={{ color: 'var(--color-muted)' }}>装備できるカテゴリ (common / cloth / charm は全職共通)</span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4em', marginTop: '0.2em' }}>
                 {ALL_KINDS.map((k) => {
                   const on = (current.equipKinds ?? JOB_EQUIP_KINDS[current.id]).includes(k);
@@ -263,15 +281,23 @@ export function AdminJobs() {
         {simRows && (
           <div style={{ marginTop: '0.4em', fontSize: '0.8em' }}>
             <div style={{ color: 'var(--color-muted)' }}>
-              街に戻らず何戦もつか (平均 {(simRows.reduce((s, r) => s + r[1], 0) / simRows.length).toFixed(1)} 戦)
+              街に戻らず何戦もつか (平均 {(simRows.reduce((s, r) => s + r.avg, 0) / simRows.length).toFixed(1)} 戦)
             </div>
-            {simRows.map(([id, v]) => (
-              <div key={id} style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
-                <span style={{ width: '6em' }}>{jobDisplayName(id, 'default')}</span>
-                <span style={{ width: '3.5em', textAlign: 'right' }}>{v.toFixed(1)}</span>
-                <span style={{ background: 'var(--color-accent)', height: 8, width: `${Math.min(100, v * 6)}%` }} />
-              </div>
-            ))}
+            {(() => {
+              // 棒の目盛りは**その回の最大値**に合わせる (固定係数だと強い職が振り切れて差が見えない)。
+              const max = Math.max(1, ...simRows.map((r) => r.avg));
+              return simRows.map((r) => (
+                <div key={r.id} style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                  <span style={{ width: '6em' }}>{jobDisplayName(r.id, 'default')}</span>
+                  <span style={{ width: '3.5em', textAlign: 'right' }}>{r.avg.toFixed(1)}</span>
+                  <span style={{ background: 'var(--color-accent)', height: 8, width: `${(r.avg / max) * 70}%` }} />
+                  {/* 上限で打ち切った試行があると平均は過小評価。黙って頭打ちにしない */}
+                  {r.capped > 0 && (
+                    <span style={{ color: 'var(--color-danger)' }}>打ち切り {r.capped}/{trials}</span>
+                  )}
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>

@@ -9,7 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { JOBS, JOBS_BY_ID } from '../jobs.js';
 import { JOB_LEVEL_PACE } from '../tuning.js';
 import { JOB_EQUIP_KINDS, canEquip, EQUIPMENT_BY_ID } from '../equipment.js';
-import { currentJobParams, setJobOverrides, JobDataError, JOB_STATS_SUM } from '../job-data.js';
+import { currentJobParams, jobOverridesDiff, setJobOverrides, JobDataError, JOB_STATS_SUM } from '../job-data.js';
 import { jobLevelFromXp } from '../quest.js';
 
 afterEach(() => setJobOverrides(null));
@@ -107,5 +107,34 @@ describe('検証', () => {
   it('合計 100 ちょうどは通る', () => {
     setJobOverrides([{ id: 'warrior', stats: [20, 20, 20, 20, 20] }]);
     expect(JOBS_BY_ID.warrior.stats.reduce((a, b) => a + b, 0)).toBe(JOB_STATS_SUM);
+  });
+});
+
+describe('jobOverridesDiff (#544 レビュー ★★)', () => {
+  it('コード値と同じ職は保存対象に入らない (コード側の再調整が効き続ける)', () => {
+    expect(jobOverridesDiff(currentJobParams())).toEqual([]);
+  });
+
+  it('触った職の触ったフィールドだけ返す', () => {
+    const params = currentJobParams().map((j) => (j.id === 'mage' ? { ...j, vit: 33 } : j));
+    const diff = jobOverridesDiff(params);
+    expect(diff).toHaveLength(1);
+    expect(diff[0]!.id).toBe('mage');
+    expect(diff[0]!.vit).toBe(33);
+    expect(diff[0]!.pace).toBeUndefined(); // 触っていないフィールドは書かない
+    expect(diff[0]!.stats).toBeUndefined();
+  });
+
+  it('差分を適用しても現在値は同じ (往復で壊れない)', () => {
+    const params = currentJobParams().map((j) => (j.id === 'warrior' ? { ...j, pace: 0.85 } : j));
+    setJobOverrides(jobOverridesDiff(params));
+    expect(JOB_LEVEL_PACE.warrior).toBe(0.85);
+    expect(JOBS_BY_ID.mage.vit).toBe(currentJobParams().find((j) => j.id === 'mage')!.vit);
+  });
+
+  it('上書き適用後に取り直しても差分は増えない (保存済みの値を基準にしない)', () => {
+    setJobOverrides([{ id: 'mage', vit: 33 }]);
+    const diff = jobOverridesDiff(currentJobParams());
+    expect(diff).toEqual([{ id: 'mage', vit: 33 }]);
   });
 });

@@ -244,6 +244,19 @@ export async function saveNpcs(agent: Agent, npcs: NpcDef[]): Promise<void> {
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
 }
 
+/**
+ * ジョブのレコードだけを読む (#544)。**読めたかどうかを返す**のが要点 —
+ * loadAuthoredWorld は失敗を握り潰すので、エディタがそれを使うと
+ * 「読み込み失敗 → コード値が並ぶ → 保存 → 保存済みの調整が全職ぶん消える」が起きる。
+ * `null` = レコードが無い (初回)。throw = 読めなかった (保存させてはいけない)。
+ */
+export async function loadJobsRecord(agent: Agent, adminDid: string): Promise<JobOverride[] | null> {
+  const rec = await getRecord<{ jobs?: JobOverride[] }>(agent, adminDid, ADMIN_COL.jobs, RKEY);
+  if (!rec?.jobs) return null;
+  setJobOverrides(rec.jobs);
+  return rec.jobs;
+}
+
 /** ジョブのパラメータ (#544)。setJobOverrides が先に検証で落とす。 */
 export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void> {
   setJobOverrides(jobs);
