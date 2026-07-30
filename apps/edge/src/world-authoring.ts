@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setInteriors, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type Gate, type GameQuestDef, type InteriorMap, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setInteriors, setScenario, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type Gate, type GameQuestDef, type ScenarioEvent, type InteriorMap, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -122,6 +122,10 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // **空配列も適用する** (length で弾かない) — 全クエスト削除の保存が {quests: []} になるので、
     // スキップすると warm isolate に削除済みクエストが残り続け、受注も報酬も通ってしまう。
     if (quests?.value?.quests) setGameQuests(quests.value.quests);
+    // シナリオ (#545)。**フラグを立てるのは edge** なので必須。条件が questId を引くため
+    // クエストより後に読む。
+    const scenario = await getRecord<{ events?: ScenarioEvent[] }>(pds, did, `${nsid}.world.scenario`, RKEY);
+    if (scenario?.value?.events) setScenario(scenario.value.events);
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。

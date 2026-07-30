@@ -104,6 +104,9 @@ export interface GameState {
   pieces?: OwnedPiece[];
   /** 今いるマップ (#424)。省略 = フィールド ('world')。内部マップ (街の中・城) に居るとき id が入る。 */
   mapId?: string;
+  /** 進行フラグ (#545/#426)。**サーバーだけが立てる** — client の自己申告で章が進むと
+   *  クエスト解禁も報酬も破られる。シナリオのイベント条件が揃うと edge が追加する。 */
+  flags?: string[];
   /** 進行中のゲーム内クエスト (#423)。討伐数は勝利時に edge が数える。 */
   quest?: { id: string; progress: number };
   /** 達成済みクエスト id (再受注させない)。直近 200 件のリング。 */

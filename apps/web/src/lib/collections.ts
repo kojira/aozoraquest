@@ -99,6 +99,8 @@ export const ADMIN_COL = {
   jobs: `${ROOT}.world.jobs`,
   /** 内部マップ (街の中・城・ダンジョン) とゲート。#424 */
   interiors: `${ROOT}.world.interiors`,
+  /** シナリオ (イベント列 + フラグ)。#545 */
+  scenario: `${ROOT}.world.scenario`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

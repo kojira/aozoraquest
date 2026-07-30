@@ -6,6 +6,7 @@ import {
   ITEMS,
   MONSTERS,
   QuestDataError,
+  scenarioEvents,
   setGameQuests,
   type GameQuestDef,
   type QuestObjective,
@@ -73,6 +74,15 @@ export function AdminQuests() {
 
   const save = useCallback(async () => {
     if (!session.agent) return;
+    // シナリオ (#545) が条件にしているクエストを消させない — 参照切れが 1 件でもあると
+    // setScenario が全体を落とし、**フラグが二度と立たなくなる** (解禁クエストも永久ロック)。
+    const orphan = scenarioEvents().find((e) =>
+      e.when.some((c) => c.kind === 'questDone' && !list.some((q) => q.id === c.questId)),
+    );
+    if (orphan) {
+      setNote(`保存できない: シナリオ「${orphan.title}」が消したクエストを条件にしている。先にシナリオを直す`);
+      return;
+    }
     try {
       await saveGameQuests(session.agent, list);
       setDirty(false);
@@ -301,6 +311,25 @@ export function AdminQuests() {
                     />
                   </>
                 )}
+              </span>
+            ))}
+            {field('解禁フラグ', (
+              <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flex: 1 }}>
+                <input
+                  value={(current.requireFlags ?? []).join(' ')}
+                  placeholder="(なし) 空白区切り。立つまで NPC は依頼を話さない"
+                  onChange={(e) => {
+                    const flags = e.target.value.split(/\s+/).filter(Boolean);
+                    setList((xs) => xs.map((x) => {
+                      if (x.id !== current.id) return x;
+                      if (flags.length === 0) { const { requireFlags: _f, ...rest } = x; return rest as GameQuestDef; }
+                      return { ...x, requireFlags: flags };
+                    }));
+                    setDirty(true);
+                  }}
+                  style={{ flex: 1, fontFamily: 'ui-monospace, monospace' }}
+                />
+                <Link to="/admin/scenario" style={{ fontSize: '0.85em' }}>シナリオ</Link>
               </span>
             ))}
             {lineEditor(current, 'intro', '依頼のセリフ', '読み終えると受注する')}

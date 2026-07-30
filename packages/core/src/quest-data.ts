@@ -18,6 +18,7 @@
  */
 import { MONSTERS_BY_ID, ITEMS } from './battle.js';
 import { allNpcs } from './npc-data.js';
+import { isFlagName } from './scenario.js';
 
 export class QuestDataError extends Error {}
 
@@ -40,6 +41,8 @@ export interface GameQuestDef {
   objective: QuestObjective;
   /** 報酬。省略可 (お礼のセリフだけのクエストも作れる)。 */
   reward?: { power?: number; itemId?: string; count?: number };
+  /** **解禁フラグ** (#545)。すべて立つまでこのクエストは受注できない (NPC も依頼を話さない)。 */
+  requireFlags?: string[];
 }
 
 export interface GameQuestsRecord {
@@ -97,6 +100,14 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
       throw new QuestDataError(`${where}: 達成条件の種類が不正`);
     }
     if (!Number.isInteger(o.count) || o.count < 1 || o.count > 99) throw new QuestDataError(`${where}: 個数は 1〜99`);
+    if (q.requireFlags !== undefined) {
+      if (!Array.isArray(q.requireFlags)) throw new QuestDataError(`${where}: requireFlags が配列でない`);
+      for (const f of q.requireFlags) {
+        // シナリオ側と同じ書式で弾く (#545)。大文字などの typo を通すと、
+        // そのフラグは永久に立たず**誰も受注できないクエスト**が無言で生まれる。
+        if (!isFlagName(f)) throw new QuestDataError(`${where}: 解禁フラグ名が不正 (${f})`);
+      }
+    }
     if (q.reward) {
       if (q.reward.power !== undefined && !(Number.isInteger(q.reward.power) && q.reward.power > 0 && q.reward.power <= MAX_QUEST_REWARD_POWER)) {
         throw new QuestDataError(`${where}: 報酬パワーは 1〜${MAX_QUEST_REWARD_POWER}`);
@@ -107,7 +118,7 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
       }
     }
   }
-  quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}) }));
+  quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}) }));
   byId = new Map(quests.map((q) => [q.id, q]));
   byNpc = new Map(quests.map((q) => [q.npcId, q]));
 }

@@ -7,6 +7,7 @@ import {
   loadTileArts,
   setGameQuests,
   setInteriors,
+  setScenario,
   setJobOverrides,
   setItemOverrides,
   setMonsterOverrides,
@@ -23,6 +24,7 @@ import {
   type Gate,
   type GameQuestDef,
   type InteriorMap,
+  type ScenarioEvent,
   type JobOverride,
   type ItemDefData,
   type MonsterDef,
@@ -209,6 +211,13 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     } catch (e) {
       console.warn('[world] quests load failed', e);
     }
+    try {
+      // シナリオ (#545)。条件が questId を引くので**クエストより後**に読む。
+      const rec = await getRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+      if (rec?.events) setScenario(rec.events);
+    } catch (e) {
+      console.warn('[world] scenario load failed', e);
+    }
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
@@ -299,6 +308,20 @@ export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promi
   const gates = rec?.gates ?? [];
   setInteriors(maps, gates);
   return { maps, gates };
+}
+
+/** シナリオ (#545)。setScenario が先に検証で落とす (存在しないクエストを条件にさせない)。 */
+export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promise<void> {
+  setScenario(events);
+  await putRecord(agent, ADMIN_COL.scenario, RKEY, { events, updatedAt: new Date().toISOString() });
+}
+
+/** シナリオだけを読む (エディタ用。読めたかどうかを返す = 上書き事故を防ぐ)。 */
+export async function loadScenarioRecord(agent: Agent, adminDid: string): Promise<ScenarioEvent[]> {
+  const rec = await getRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+  const events = rec?.events ?? [];
+  setScenario(events);
+  return events;
 }
 
 /** ジョブのパラメータ (#544)。setJobOverrides が先に検証で落とす。 */

@@ -25,6 +25,7 @@ import {
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
 import { readState, readModifyWrite, emptyState, rkeyForDid, GAME_STATE_COLLECTION, type GameStateEnv, type GameState } from './game-state';
+import { advanceScenario } from './scenario-progress';
 import { SEARCH_POWER_COST, MAX_SHOP_OPS } from './shop';
 import { sanitizeGear } from './game-state';
 // sanitizeGear は game-state へ移した (shop からも使うため。shop → battle-resolver は循環)。
@@ -516,6 +517,11 @@ export interface TurnResult {
   materials?: Record<string, number>;
   carryHp?: number;
   carryMp?: number;
+  /** 進行フラグ (#545)。決着でシナリオが進むと増える。 */
+  flags?: string[];
+  /** シナリオのお知らせ (一度だけ)。**発火済みは二度と返らない**ので、
+   *  client がここで拾わないと永久に失われる。 */
+  scenarioNotices?: string[];
 }
 
 /**
@@ -564,6 +570,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     let awarded: AwardBreakdown = {};
     let finalPos = { x: 0, y: 0 };
     let finalMapId: string = WORLD_MAP_ID;
+    const noticeBox: { v: string[] } = { v: [] };
     const window = enemyWindow(now);
     const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
@@ -596,8 +603,13 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       // ここで mapId を扱わないと、内部マップの座標のままフィールドに放り出される /
       // 内部の範囲外に立って全方向「進めない」になる (レビュー ★★★)。
       finalMapId = decision === 'lose' ? WORLD_MAP_ID : (guard.sealed.mapId ?? parsed?.mapId ?? WORLD_MAP_ID);
+      // ジョブ Lv 条件のシナリオ (#545) は決着でしか動かないのでここで見る。
+      // mutate は純関数なので、CAS リトライで複数回走っても同じ結果になる。
+      const advanced = advanceScenario({ ...cur, ...r.next } as GameState);
+      noticeBox.v = advanced?.notices ?? [];
       return {
         ...r.next,
+        ...(advanced ? { flags: advanced.flags } : {}),
         mapId: finalMapId === WORLD_MAP_ID ? undefined : finalMapId,
         x: finalPos.x,
         y: finalPos.y,
@@ -616,7 +628,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     // 決着後の位置に対応する新トークンを発行 (敗北帰還で位置が変わるので client はこれで同期)。
     const token = signPosition(env, { did: userDid, ...(finalMapId !== WORLD_MAP_ID ? { mapId: finalMapId } : {}), x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
-      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp };
+      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp,
+      ...(written.flags ? { flags: written.flags } : {}),
+      ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v } : {}) };
   }
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──

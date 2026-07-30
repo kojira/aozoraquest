@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -155,6 +155,21 @@ export function World() {
   const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string } | null>(null);
   /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成の応答と serverState だけが書く。 */
   const questRef = useRef<{ active?: { id: string; progress: number }; done: string[] }>({ done: [] });
+  /** 進行フラグ (#545)。**サーバーが正** — 立てるのは edge だけで、ここは表示用の写し。 */
+  const flagsRef = useRef<string[]>([]);
+  /** 戦闘中に届いたシナリオのお知らせ (#545)。戦闘の窓は使えないので、
+   *  リザルトを閉じてマップに戻ってから出す。 */
+  const pendingNoticesRef = useRef<string[]>([]);
+  /** 溜まったシナリオのお知らせをマップの窓で出す。**戦闘を閉じた直後に呼ぶ** —
+   *  戦闘中に出しても窓が描画されず、発火済みのお知らせは二度と返らないので消える。 */
+  const flushScenarioNotices = useCallback(() => {
+    const list = pendingNoticesRef.current;
+    if (list.length === 0) return;
+    pendingNoticesRef.current = [];
+    setScenarioTalk(list);
+  }, []);
+  /** シナリオのお知らせ窓 (話者なしの地の文)。 */
+  const [scenarioTalk, setScenarioTalk] = useState<string[] | null>(null);
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -368,6 +383,7 @@ export function World() {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
             setServerPower(ss.state.power ?? 0);
             questRef.current = { ...(ss.state.quest ? { active: ss.state.quest } : {}), done: ss.state.questsDone ?? [] };
+            flagsRef.current = ss.state.flags ?? [];
             serverMapId = ss.state.mapId;
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
             // 記帳 (履歴) であって所持の根拠ではない。
@@ -542,14 +558,17 @@ export function World() {
       // 同じ座標の NPC が「幽霊」として現れ、戻りゲートを塞ぐこともある (レビュー ★★)。
       const npc = cur ? undefined : npcAt(nx, ny);
       if (npc) {
-        const q = gameQuestByNpc(npc.id);
+        const q0 = gameQuestByNpc(npc.id);
+        // 解禁フラグ (#545) が立つまで、その NPC は依頼を話さない (通常のセリフに戻る)。
+        const q = q0 && (q0.requireFlags ?? []).every((f) => flagsRef.current.includes(f)) ? q0 : undefined;
         const qs = questRef.current;
+        const npcLines = npcLinesFor(npc, flagsRef.current);
         // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする。
         // 放置すると「べつの たのまれごと」で全クエストが永久に受けられない (UX レビュー ★★★)。
         // サーバー側 (handleQuestAccept) も同じ判断で孤児クエストを落とす。
         const active = qs.active && gameQuestById(qs.active.id) ? qs.active : undefined;
         if (!q || qs.done.includes(q.id)) {
-          setNpcTalk({ npc, lines: npc.lines });
+          setNpcTalk({ npc, lines: npcLines });
         } else if (active?.id === q.id) {
           // 達成試行はサーバー往復。**往復中は移動もバンプも塞ぐ** (moveBusyRef) —
           // 塞がないとキー押しっぱなしで並行リクエストが飛び、成功の報酬ダイアログを
@@ -559,6 +578,7 @@ export function World() {
             try {
               const res = await serverQuestComplete(agent, q.id);
               questRef.current = { ...(res.quest ? { active: res.quest } : {}), done: res.questsDone ?? [] };
+              if (res.flags) flagsRef.current = res.flags;
               setServerPower(res.power);
               applyServerMaterials(res.materials);
               const r = res.rewarded;
@@ -566,7 +586,8 @@ export function World() {
                 r?.power ? `あおぞらパワー ${r.power}` : null,
                 r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
               ].filter(Boolean).join(' と ');
-              setNpcTalk({ npc, lines: [...q.done, ...(got ? [`${got} を もらった!`] : [])] });
+              // シナリオのお知らせ (#545) はお礼の後に続けて出す (別の窓にすると流れが切れる)。
+              setNpcTalk({ npc, lines: [...q.done, ...(got ? [`${got} を もらった!`] : []), ...(res.notices ?? [])] });
             } catch (e) {
               if (e instanceof WorldServerError && e.code === 'not_ready') {
                 // 「まだ n/m」はサーバーの言い分をそのまま出す (進行数はサーバーが正)。
@@ -574,7 +595,7 @@ export function World() {
               } else if (e instanceof WorldServerError && e.code === 'already_done') {
                 // 並行達成の敗者 (レース)。done に積んで通常セリフへ。
                 questRef.current = { done: [...qs.done, q.id] };
-                setNpcTalk({ npc, lines: npc.lines });
+                setNpcTalk({ npc, lines: npcLines });
               } else {
                 // 通信失敗を進行セリフの顔で出さない — 条件を満たしているのに
                 // 「まだ頼み中」に見えると、達成済みなのに狩り続けてしまう (UX レビュー ★★)。
@@ -680,6 +701,10 @@ export function World() {
             ...(res.position ? { resultPos: res.position } : {}),
             ...(res.token ? { resultToken: res.token } : {}),
             ...(res.materials ? { resultMaterials: res.materials, resultCarryHp: res.carryHp, resultCarryMp: res.carryMp } : {}) };
+          // シナリオ (#545) は決着でも進む (ジョブ Lv 条件はここでしか動かない)。
+          // **拾わないと永久に失われる** — 発火済みのお知らせは二度と返らない。
+          if (res.flags) flagsRef.current = res.flags;
+          if (res.scenarioNotices?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioNotices];
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
@@ -710,6 +735,7 @@ export function World() {
       if (b.phase === 'result') {
         battleRef.current = null;
         setBattle(null);
+        flushScenarioNotices();
         return;
       }
       // agent/did は決着の確定処理 (レコード/XP) だけに要るので、ここでは要求しない。
@@ -812,6 +838,7 @@ export function World() {
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);
+        flushScenarioNotices();
       } else {
         const done = { ...b, state: next, busy: false, phase: 'result' as BattlePhase, resultLines };
         battleRef.current = done;
@@ -1466,6 +1493,13 @@ export function World() {
                   })
                   .catch((e) => setNotice(e instanceof WorldServerError ? e.message : 'うけおいに しっぱいした…'));
               }}
+            />
+          )}
+          {!battle && scenarioTalk && !npcTalk && !onboarding && (
+            <DialogueWindow
+              anchor="map"
+              lines={scenarioTalk.map((text) => ({ text }))}
+              onDone={() => setScenarioTalk(null)}
             />
           )}
           {!battle && onboarding && (
