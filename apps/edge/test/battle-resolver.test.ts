@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
-import { terrainAt, isWalkable, type Command } from '@aozoraquest/core';
+import { BASE_PALETTE, setInteriors, terrainAt, isWalkable, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
@@ -238,5 +238,85 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     expect(mock.store.has('guard')).toBe(false);
     // 冪等: state/guard 無しでも例外を投げない
     await expect(handleReset(env, USER, NOW)).resolves.toEqual({ ok: true });
+  });
+});
+
+describe('内部マップとゲート (#424)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setInteriors(null, null); });
+
+  const FLOOR = BASE_PALETTE.indexOf('plains');
+  const WALL = BASE_PALETTE.indexOf('mountain');
+  /** 外周が壁・中が床の 8×8。 */
+  const room = (id = 'in-1'): InteriorMap => {
+    const size = 8;
+    const tiles = new Uint8Array(size * size).fill(FLOOR);
+    for (let k = 0; k < size; k++) {
+      tiles[k] = WALL; tiles[(size - 1) * size + k] = WALL; tiles[k * size] = WALL; tiles[k * size + size - 1] = WALL;
+    }
+    return { id, name: 'へや', size, tiles };
+  };
+
+  /** フィールドの (x,y) から歩ける隣接マスを探す。 */
+  const walkableStep = (x: number, y: number) => {
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
+      if (isWalkable(terrainAt(x + dx, y + dy))) return { dx, dy, nx: x + dx, ny: y + dy };
+    }
+    throw new Error('歩ける隣接マスがない');
+  };
+
+  it('フィールドのゲートを踏むと内部マップへ移り、mapId 付きのトークンが返る', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10 }) }).fn;
+    const step = walkableStep(10, 10);
+    setInteriors([room()], [{ from: { mapId: 'world', x: step.nx, y: step.ny }, to: { mapId: 'in-1', x: 4, y: 4 } }]);
+    const r = await handleMove(env, USER, step.dx, step.dy, undefined, NOW);
+    expect(r.mapId).toBe('in-1');
+    expect(r.x).toBe(4);
+    expect(r.y).toBe(4);
+    // 返ったトークンで内部を歩ける (内部の床は通れる)
+    const r2 = await handleMove(env, USER, 1, 0, r.token, NOW);
+    expect(r2.mapId).toBe('in-1');
+    expect(r2.x).toBe(5);
+  });
+
+  it('内部マップの壁には進めない (400)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10 }) }).fn;
+    const step = walkableStep(10, 10);
+    setInteriors([room()], [{ from: { mapId: 'world', x: step.nx, y: step.ny }, to: { mapId: 'in-1', x: 1, y: 1 } }]);
+    const enter = await handleMove(env, USER, step.dx, step.dy, undefined, NOW);
+    // (1,1) の左と上は外周の壁
+    await expect(handleMove(env, USER, -1, 0, enter.token, NOW)).rejects.toMatchObject({ status: 400 });
+    await expect(handleMove(env, USER, 0, -1, enter.token, NOW)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('内部マップは端で折り返さない (外周の外へは出られない)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 1, y: 1 }) }).fn;
+    setInteriors([room()], []);
+    // state 由来の mapId で内部に居る。壁の向こう (負の座標) へは進めない。
+    await expect(handleMove(env, USER, -1, 0, undefined, NOW)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('内部のゲートを踏むとフィールドへ戻る', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4 }) }).fn;
+    const back = walkableStep(20, 20); // 戻り先が歩ける地形になるよう実地形から選ぶ
+    setInteriors([room()], [{ from: { mapId: 'in-1', x: 5, y: 4 }, to: { mapId: 'world', x: back.nx, y: back.ny } }]);
+    const r = await handleMove(env, USER, 1, 0, undefined, NOW);
+    expect(r.mapId).toBeUndefined(); // フィールドは mapId を返さない (旧 client 互換)
+    expect(r.x).toBe(back.nx);
+    expect(r.y).toBe(back.ny);
+  });
+
+  it('定義が消えた内部マップに居てもフィールド扱いで動ける (取り残されない)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'deleted', x: 10, y: 10 }) }).fn;
+    setInteriors([], []); // そのマップはもう無い
+    const step = walkableStep(10, 10);
+    const r = await handleMove(env, USER, step.dx, step.dy, undefined, NOW);
+    expect(r.mapId).toBeUndefined();
+    expect(r.x).toBe(step.nx);
   });
 });

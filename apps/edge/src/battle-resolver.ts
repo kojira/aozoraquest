@@ -15,6 +15,12 @@ import {
   terrainAt,
   isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
+  WORLD_MAP_ID,
+  gateAt,
+  interiorById,
+  interiorTerrainAt,
+  isInterior,
+  walkableIn,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
@@ -235,6 +241,8 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
 }
 
 export interface MoveResult {
+  /** 移動後のマップ (#424)。省略 = フィールド。ゲートを踏むと切り替わる。 */
+  mapId?: string;
   x: number;
   y: number;
   terrain: string;
@@ -256,31 +264,61 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   // 現在位置: 署名トークンが権威。無効/失効なら gameState から再同期 (位置偽造は署名で不可)。
   let cx: number, cy: number, counter = 0;
+  // mapId (#424) はトークン → state の順に引く。**どちらにも無ければフィールド** —
+  // 旧トークン・旧 state をそのまま通すため (移行なし)。
+  let mapId: string = WORLD_MAP_ID;
   try {
     const claim = verifyPosition(env, token ?? '', userDid, now);
-    cx = claim.x; cy = claim.y; counter = claim.counter;
+    cx = claim.x; cy = claim.y; counter = claim.counter; mapId = claim.mapId ?? WORLD_MAP_ID;
   } catch {
     const rec = await readState(env, userDid);
     const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-    cx = s.x; cy = s.y;
+    cx = s.x; cy = s.y; mapId = s.mapId ?? WORLD_MAP_ID;
+  }
+  // 定義が消えた内部マップに取り残されない (エディタで削除された場合)。フィールドへ戻す。
+  if (mapId !== WORLD_MAP_ID && !isInterior(mapId)) mapId = WORLD_MAP_ID;
+
+  // 内部マップ (#424) は端で折り返さない (外に出るのはゲートからだけ)。
+  const inside = isInterior(mapId) ? interiorById(mapId)! : null;
+  let nx = inside ? cx + dx : wrap(cx + dx);
+  let ny = inside ? cy + dy : wrap(cy + dy);
+  if (!walkableIn(mapId, nx, ny, isWalkableAt)) throw new ResolverError('進めない地形', 400);
+
+  // **ゲートを踏んだら移る** (#424)。通行判定の後に見るのは、壁の中の入口を
+  // 「歩けないが入れる」にしないため (入口タイル自体は歩けるパーツで置く)。
+  const gate = gateAt(mapId, nx, ny);
+  if (gate) {
+    mapId = gate.to.mapId;
+    nx = gate.to.x;
+    ny = gate.to.y;
+    const dest = isInterior(mapId) ? interiorById(mapId)! : null;
+    // 行き先の地形は権威側で確定する。壁の中に出す設定は保存時に弾いているが、
+    // 万一そうなっていても**移動そのものは通す** (出られない状態を作らない)。
+    const destTerrain = dest ? interiorTerrainAt(dest, nx, ny) : terrainAt(nx, ny);
+    // 位置は PDS に確定させる (マップをまたぐのは稀 = 書き込みコストが乗ってよい)。
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: mapId === WORLD_MAP_ID ? undefined : mapId, x: nx, y: ny }),
+      { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+    const gateToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
+    // フィールドへ戻るときは mapId を載せない (旧 client が知らないキーを解釈しない)。
+    return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain: destTerrain, token: gateToken };
   }
 
-  const nx = wrap(cx + dx), ny = wrap(cy + dy);
-  const terrain = terrainAt(nx, ny);
-  if (!isWalkableAt(nx, ny)) throw new ResolverError('進めない地形', 400);
+  const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(nx, ny);
 
   let healed = false;
-  if (terrain === 'town') {
+  // 街の全回復はフィールドの街タイルのみ (内部マップの床を town で塗っても回復しない)。
+  if (!inside && terrain === 'town') {
     // 街: HP/MP 全回復 + 位置 + 最後の街 (敗北帰還先) を gameState に確定 (稀なので PDS 書き OK)。
     await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
   }
 
-  const nextToken = signPosition(env, { did: userDid, x: nx, y: ny, counter: counter + 1, iat: now });
+  const nextToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
 
   // エンカウント: tile+30分枠+秘密から決定的 (見えない・予測不可・30分でリポップ)。街では出さない。
-  if (terrain !== 'town') {
+  // **内部マップは encounterTier を設定したときだけ敵が出る** (街の中・城の広間は無し)。
+  if (terrain !== 'town' && (!inside || inside.encounterTier !== undefined)) {
     const window = enemyWindow(now);
     const { roll, monsterSeed } = tileEncounter(env, nx, ny, window);
     if (roll < encounterRateFor(terrain)) {
@@ -302,7 +340,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
       }
     }
   }
-  return { x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
+  return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
 }
 
 export interface TeleportResult { x: number; y: number; token: string; materials: Record<string, number> }

@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type GameQuestDef, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setInteriors, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type Gate, type GameQuestDef, type InteriorMap, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -105,6 +105,17 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // 画面の強さとサーバーの強さが食い違う。
     const jobs = await getRecord<{ jobs?: JobOverride[] }>(pds, did, `${nsid}.world.jobs`, RKEY);
     if (jobs?.value?.jobs) setJobOverrides(jobs.value.jobs);
+    // 内部マップとゲート (#424)。**移動判定と遷移は edge が権威**なので必須。
+    // 読めなければフィールドだけの世界として動く (内部に居る人はフィールドへ戻る)。
+    const inter = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(pds, did, `${nsid}.world.interiors`, RKEY);
+    if (inter?.value) {
+      const maps: InteriorMap[] = [];
+      for (const m of inter.value.interiors ?? []) {
+        const { gz, ...rest } = m;
+        maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
+      }
+      setInteriors(maps, inter.value.gates ?? []);
+    }
     // ゲーム内クエスト (#423)。**報酬付与は edge が権威**なので必須。検証が NPC・モンスター・
     // アイテムの実在を引くため、**この 3 つより後に読む** (店 ← アイテムと同じ順序依存)。
     const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);

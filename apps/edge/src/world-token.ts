@@ -33,6 +33,8 @@ export interface WorldTokenEnv {
 export interface PositionClaim {
   /** 本人確認用 (JWT の iss と一致必須)。 */
   did: string;
+  /** 今いるマップ (#424)。**省略 = 'world'** — 旧トークン (mapId 無し) をそのまま通す。 */
+  mapId?: string;
   x: number;
   y: number;
   /** 手数 (監査/デバッグ用。ステートレスなので厳密な単調性は担保しない)。 */

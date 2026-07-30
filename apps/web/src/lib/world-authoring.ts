@@ -6,6 +6,7 @@ import {
   loadStaticWorldMap,
   loadTileArts,
   setGameQuests,
+  setInteriors,
   setJobOverrides,
   setItemOverrides,
   setMonsterOverrides,
@@ -19,7 +20,9 @@ import {
   worldTownOverrides,
   WORLD_SIZE,
   type EquipmentDef,
+  type Gate,
   type GameQuestDef,
+  type InteriorMap,
   type JobOverride,
   type ItemDefData,
   type MonsterDef,
@@ -178,6 +181,20 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
       console.warn('[world] npcs load failed', e);
     }
     try {
+      // 内部マップとゲート (#424)。移動判定に効くので web も必ず読む。
+      const rec = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(agent, adminDid, ADMIN_COL.interiors, RKEY);
+      if (rec) {
+        const maps: InteriorMap[] = [];
+        for (const m of rec.interiors ?? []) {
+          const { gz, ...rest } = m;
+          maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
+        }
+        setInteriors(maps, rec.gates ?? []);
+      }
+    } catch (e) {
+      console.warn('[world] interiors load failed', e);
+    }
+    try {
       // ジョブ (#544)。装備カテゴリを検証するのでアイテムより後だが、他への依存はない。
       const rec = await getRecord<{ jobs?: JobOverride[] }>(agent, adminDid, ADMIN_COL.jobs, RKEY);
       if (rec?.jobs) setJobOverrides(rec.jobs);
@@ -255,6 +272,33 @@ export async function loadJobsRecord(agent: Agent, adminDid: string): Promise<Jo
   if (!rec?.jobs) return null;
   setJobOverrides(rec.jobs);
   return rec.jobs;
+}
+
+/**
+ * 内部マップとゲート (#424)。タイルは gzip+base64 (フィールドの地図と同じ形式)。
+ * setInteriors が先に検証で落とす (行き先が無いゲートを保存させない)。
+ */
+export async function saveInteriors(agent: Agent, maps: InteriorMap[], gates: Gate[]): Promise<void> {
+  setInteriors(maps, gates);
+  const interiors = [];
+  for (const m of maps) {
+    const { tiles, ...rest } = m;
+    interiors.push({ ...rest, gz: toBase64(await encodeWorldMap(tiles)) });
+  }
+  await putRecord(agent, ADMIN_COL.interiors, RKEY, { interiors, gates, updatedAt: new Date().toISOString() });
+}
+
+/** 内部マップだけを読む (エディタ用。読めたかどうかを返す = 上書き事故を防ぐ)。 */
+export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promise<{ maps: InteriorMap[]; gates: Gate[] }> {
+  const rec = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(agent, adminDid, ADMIN_COL.interiors, RKEY);
+  const maps: InteriorMap[] = [];
+  for (const m of rec?.interiors ?? []) {
+    const { gz, ...rest } = m;
+    maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
+  }
+  const gates = rec?.gates ?? [];
+  setInteriors(maps, gates);
+  return { maps, gates };
 }
 
 /** ジョブのパラメータ (#544)。setJobOverrides が先に検証で落とす。 */

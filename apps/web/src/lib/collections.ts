@@ -97,6 +97,8 @@ export const ADMIN_COL = {
   quests: `${ROOT}.world.quests`,
   /** ジョブのパラメータ上書き (ステータス比・たいりょく・曲線・装備適性)。#544 */
   jobs: `${ROOT}.world.jobs`,
+  /** 内部マップ (街の中・城・ダンジョン) とゲート。#424 */
+  interiors: `${ROOT}.world.interiors`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

@@ -140,7 +140,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const rec = await readState(env, did);
       const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString(), nsFromOrigin(req)));
       // 位置トークンも一緒に返す → client は初回から有効トークンを持て、初手 move の再同期/ワープを防ぐ。
-      const token = signPosition(env, { did, x: state.x, y: state.y, counter: 0, iat: nowSec() });
+      // mapId (#424) も載せる — 内部マップに居るまま再読み込みしたとき、
+      // 初手 move がフィールド判定になって壁にめり込むのを防ぐ。
+      const token = signPosition(env, { did, ...(state.mapId ? { mapId: state.mapId } : {}), x: state.x, y: state.y, counter: 0, iat: nowSec() });
       return cors(json({ state, initialized: rec !== null, token }), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
