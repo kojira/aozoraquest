@@ -36,7 +36,7 @@ const CONTENT_SECTIONS: Section[] = [
   // 並びは着手の優先順。#418 (データ化) が全部の前提。
   { key: 'monsters', title: 'モンスター', desc: 'パラメータ・能力・ドロップ・模擬戦', to: '/admin/monsters', issue: 419 },
   { key: 'map', title: 'マップ', desc: '地形をパーツで編集 (エリア・出現配置は #421 で続き)', to: '/admin/map', issue: 421 },
-  { key: 'jobs', title: 'ジョブ', desc: '各種パラメータ設定 + 模擬戦', issue: 544 },
+  { key: 'jobs', title: 'ジョブ', desc: 'ステータス比・たいりょく・曲線・装備適性 + 連戦シミュ', to: '/admin/jobs', issue: 544 },
   { key: 'npc', title: 'NPC', desc: '位置・名前・セリフ・絵 (フラグ制御は #425 で続き)', to: '/admin/npcs', issue: 425 },
   { key: 'quest', title: 'クエスト', desc: 'NPC 発注・達成条件 (討伐/収集)・報酬', to: '/admin/quests', issue: 423 },
   { key: 'places', title: '街 / ダンジョン / 城', desc: '内部マップの編集', issue: 424 },

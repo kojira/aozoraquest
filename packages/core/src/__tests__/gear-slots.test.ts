@@ -15,7 +15,7 @@ import {
   type GearSelection,
 } from '../equipment.js';
 
-const defOf = (v: { id: string } | string) => EQUIPMENT_BY_ID[typeof v === 'string' ? v : v.id];
+const defOf = (v: unknown) => EQUIPMENT_BY_ID[typeof v === 'string' ? v : (v as { id: string }).id];
 
 describe('ロスターの健全性', () => {
   it('盾・頭・足のスロットに品がある', () => {

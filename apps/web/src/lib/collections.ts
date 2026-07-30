@@ -95,6 +95,8 @@ export const ADMIN_COL = {
   npcs: `${ROOT}.world.npcs`,
   /** ゲーム内クエスト (NPC 発注・達成条件・報酬)。#423 */
   quests: `${ROOT}.world.quests`,
+  /** ジョブのパラメータ上書き (ステータス比・たいりょく・曲線・装備適性)。#544 */
+  jobs: `${ROOT}.world.jobs`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,
