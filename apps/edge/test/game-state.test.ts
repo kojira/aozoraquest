@@ -171,7 +171,7 @@ describe('game-state (OAuth 権威書き込み)', () => {
 });
 
 describe('sanitizeGear の手数検証 (#609)', () => {
-  const own = (itemId: string, rkey: string): OwnedPiece => ({ rkey, itemId, level: 0, at: '' });
+  const own = (itemId: string, rkey: string): OwnedPiece => ({ rkey, itemId, level: 0 });
 
   it('片手武器 + 盾は両方通る', () => {
     const out = sanitizeGear(

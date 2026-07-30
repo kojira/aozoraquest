@@ -206,7 +206,16 @@ export function AdminItems() {
               </div>
               {field('なまえ', <input value={current.name} onChange={(e) => update(current.id, { name: e.target.value })} />)}
               {field('部位', (
-                <select value={current.slot} onChange={(e) => update(current.id, { slot: e.target.value as EquipmentDef['slot'] })}>
+                <select
+                  value={current.slot}
+                  onChange={(e) => {
+                    const slot = e.target.value as EquipmentDef['slot'];
+                    // 武器/盾以外へ変えるとき hands を残すと検証で保存が全体ブロックされ、
+                    // 手数セレクトも非表示で復旧手段が無くなる (レビュー ★★)。同時に消す。
+                    const clearHands = slot !== 'weapon' && slot !== 'shield';
+                    update(current.id, { slot, ...(clearHands ? { hands: undefined } : {}) });
+                  }}
+                >
                   {GEAR_SLOTS.map((s0) => <option key={s0} value={s0}>{SLOT_LABELS[s0]}</option>)}
                 </select>
               ))}
