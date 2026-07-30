@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import { worldOverlay, type GearSelection } from '@aozoraquest/core';
+import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, worldOverlay, type GearSelection } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -225,7 +225,7 @@ export async function readModifyWrite(
  */
 export function sanitizeGear(gear: GearSelection, owned: readonly OwnedPiece[]): GearSelection {
   const out: GearSelection = {};
-  for (const slot of ['weapon', 'armor', 'charm'] as const) {
+  for (const slot of GEAR_SLOTS) {
     const sel = gear?.[slot];
     if (!sel) continue;
     // 文字列指定 (旧形式) は個体を特定できない。その品を持っていれば**最低の強化値**で通す。
@@ -240,5 +240,7 @@ export function sanitizeGear(gear: GearSelection, owned: readonly OwnedPiece[]):
     if (!hit) continue;
     out[slot] = { id: hit.itemId, level: hit.level };
   }
-  return out;
+  // 手数の権威検証 (#609): 両手武器 + 盾 (または両手盾 + 武器) は直 POST でも通さない。
+  // 武器を残して盾を落とす (core と同じ判断 — 表示と権威がずれない)。
+  return dropShieldIfHandsExceeded(out, (v) => EQUIPMENT_BY_ID[typeof v === 'string' ? v : v.id]);
 }

@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, gameQuestById, gameQuestByNpc, npcArtKey, npcAt, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, npcArtKey, npcAt, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -1579,7 +1579,19 @@ export function World() {
               }
             })();
           }}
-          onEquip={(slot, rkey) => void onEquipChange({ ...gearRefs, [slot]: rkey })}
+          onEquip={(slot, rkey) => {
+            const next = { ...gearRefs, [slot]: rkey };
+            // 手数の競合 (#609) は**装備した側を通し、逆側を外す** (DQ 流の入れ替え)。
+            // 外さず保存すると core が盾を落とすので「そうび中なのに効果なし」の矛盾表示になる。
+            if (slot === 'weapon' || slot === 'shield') {
+              const other = slot === 'weapon' ? 'shield' : 'weapon';
+              const defOfRkey = (rk?: string) => (rk ? EQUIPMENT_BY_ID[craftedPieces.find((p) => p.rkey === rk)?.itemId ?? ''] : undefined);
+              const mine = defOfRkey(rkey);
+              const theirs = defOfRkey(next[other]);
+              if (mine && theirs && equipHands(mine) + equipHands(theirs) > 2) delete next[other];
+            }
+            void onEquipChange(next);
+          }}
           onUnequip={(slot) => {
             const next = { ...gearRefs };
             delete next[slot];
@@ -1596,7 +1608,9 @@ export function World() {
           balance={serverPower ?? 0} // 残高は権威側が正 (#551)
           materials={materialsView}
           pieces={craftedPieces}
-          equippedRkeys={Object.values(resolvedGear?.pieces ?? {}).map((p) => p.rkey)}
+          // **参照している rkey 全部を保護する** (#609 レビュー)。resolved (実効) だけだと、
+          // 手数で無効化中の盾が「そうび中」表示のまま きたえる で黙って燃える。
+          equippedRkeys={Object.values(gearRefs ?? {}).filter((v): v is string => typeof v === 'string')}
           busy={craftBusy}
           lastAction={lastShopAction}
           errorText={shopError}

@@ -9,19 +9,15 @@
  */
 
 import type { Agent } from '@atproto/api';
-import { EQUIPMENT_BY_ID, canEquip, type Archetype, type EquipSlot, type GearSelection } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, GEAR_SLOTS, canEquip, dropShieldIfHandsExceeded, type Archetype, type EquipSlot, type GearSelection } from '@aozoraquest/core';
 import { getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 import type { CraftedPiece } from './crafting';
 
-/** gear/self のレコード形 (rkey 参照)。 */
-export interface GearRefs {
-  weapon?: string;
-  armor?: string;
-  charm?: string;
-}
+/** gear/self のレコード形 (rkey 参照)。スロットは core の GEAR_SLOTS が単一の出所 (#609)。 */
+export type GearRefs = Partial<Record<EquipSlot, string>>;
 
-const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'charm'];
+const SLOTS: readonly EquipSlot[] = GEAR_SLOTS;
 
 export async function loadGearRefs(agent: Agent, did: string): Promise<GearRefs> {
   const rec = await getRecord<Record<string, unknown>>(agent, did, COL.gear, 'self').catch(() => null);
@@ -36,9 +32,7 @@ export async function loadGearRefs(agent: Agent, did: string): Promise<GearRefs>
 
 export async function saveGearRefs(agent: Agent, refs: GearRefs): Promise<void> {
   await putRecord(agent, COL.gear, 'self', {
-    ...(refs.weapon ? { weapon: refs.weapon } : {}),
-    ...(refs.armor ? { armor: refs.armor } : {}),
-    ...(refs.charm ? { charm: refs.charm } : {}),
+    ...Object.fromEntries(SLOTS.filter((sl) => refs[sl]).map((sl) => [sl, refs[sl]])),
     updatedAt: new Date().toISOString(),
   });
 }
@@ -69,7 +63,11 @@ export function resolveGear(refs: GearRefs, pieces: readonly CraftedPiece[], arc
     selection[slot] = { id: piece.itemId, level: piece.level };
     resolved[slot] = piece;
   }
-  return { selection, pieces: resolved };
+  // 手数ルール (#609): 両手武器 + 盾は盾側を外す。権威 (sanitizeGear) と同じ判断を
+  // 表示にも適用する — ここで外さないと「画面では盾を構えているのに効いていない」になる。
+  const capped = dropShieldIfHandsExceeded(selection, (v) => EQUIPMENT_BY_ID[typeof v === 'string' ? v : v.id]);
+  if (!capped.shield) delete resolved.shield;
+  return { selection: capped, pieces: resolved };
 }
 
 /** gear の読取 + 個体解決を一括で (me.tsx / trial 用の便宜関数)。 */

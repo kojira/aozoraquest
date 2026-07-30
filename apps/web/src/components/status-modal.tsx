@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import {
+  GEAR_SLOTS,
+  GEAR_SLOT_LABELS,
   EQUIPMENT_BY_ID,
   skillKindLabel,
   skillsForJob,
@@ -23,11 +25,7 @@ import type { CraftedPiece } from '@/lib/crafting';
  * そのまま表示する — 「つよさ画面の数字 = 戦闘の数字」を崩さない。
  */
 
-const SLOT_LABELS: Record<EquipSlot, string> = {
-  weapon: 'ぶき',
-  armor: 'よろい',
-  charm: 'おまもり',
-};
+const SLOT_LABELS = GEAR_SLOT_LABELS;
 
 const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
   { key: 'atk', label: 'こうげき' },
@@ -183,7 +181,7 @@ export function StatusModal({
           {/* そうび */}
           <Section title="そうび">
             <div style={{ lineHeight: 1.8 }}>
-              {(['weapon', 'armor', 'charm'] as const).map((slot) => {
+              {GEAR_SLOTS.map((slot) => {
                 const piece = gearPieces[slot];
                 const def = piece ? EQUIPMENT_BY_ID[piece.itemId] : undefined;
                 return (

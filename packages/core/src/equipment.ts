@@ -32,7 +32,21 @@ function shopRng(seed: number): () => number {
   };
 }
 
-export type EquipSlot = 'weapon' | 'armor' | 'charm';
+/** 装備スロット (#609)。armor は歴史的経緯で「胴」を指す (既存データ無移行のため名を変えない)。 */
+export type EquipSlot = 'weapon' | 'shield' | 'head' | 'armor' | 'feet' | 'charm';
+
+/** 全スロットの列挙 (UI とサーバー検証が同じ並びを共有する)。 */
+export const GEAR_SLOTS: readonly EquipSlot[] = ['weapon', 'shield', 'head', 'armor', 'feet', 'charm'];
+
+/** スロットの表示名 (単一の出所 — 画面ごとに別表記が生えるのを防ぐ)。 */
+export const GEAR_SLOT_LABELS: Record<EquipSlot, string> = {
+  weapon: 'ぶき',
+  shield: 'たて',
+  head: 'あたま',
+  armor: 'どう',
+  feet: 'あし',
+  charm: 'おまもり',
+};
 
 /** 装備カテゴリ。common/cloth/charm は全ジョブ暗黙 ○。 */
 export type EquipKind =
@@ -57,6 +71,9 @@ export interface EquipmentDef {
   kind: EquipKind;
   /** ステータス加算 (ブレンド・レベル補正の後に平坦加算)。 */
   bonus: Partial<Record<'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp', number>>;
+  /** 使う手の数 (#609)。武器・盾のみ意味を持つ。省略 = 1 (片手)。
+   *  武器 + 盾の合計が 2 を超える組合せは装備できない (両手武器 + 盾、両手盾 + 武器)。 */
+  hands?: 1 | 2;
   /** 1 職専用 (指定があればカテゴリ不問でそのジョブのみ装備可)。 */
   jobOnly?: Archetype;
   /** 品揃え生成の階級。1=初級 2=中位 3=上位 (特色枠)。 */
@@ -128,9 +145,11 @@ export const EQUIPMENT: EquipmentDef[] = [
   { id: 'wp-knife', name: 'ナイフ', slot: 'weapon', kind: 'common', bonus: { atk: 2 }, grade: 1, price: { power: 4, materials: 1 } },
   { id: 'wp-club', name: 'こんぼう', slot: 'weapon', kind: 'common', bonus: { atk: 4 }, grade: 1, price: { power: 8, materials: 2 } },
   { id: 'wp-travel-sword', name: 'たびのつるぎ', slot: 'weapon', kind: 'common', bonus: { atk: 7 }, grade: 2, price: { power: 14, materials: 3 } },
+  // 両手武器 (#609): 盾を捨てるぶん同 grade の片手より atk 高め (数値は暫定)
+  { id: 'wp-great-club', name: 'おおきづち', slot: 'weapon', kind: 'common', hands: 2, bonus: { atk: 7 }, grade: 1, price: { power: 12, materials: 2 } },
+  { id: 'wp-great-sword', name: 'グレートソード', slot: 'weapon', kind: 'sword', hands: 2, bonus: { atk: 13 }, grade: 2, price: { power: 24, materials: 4 } },
   // ─── 系統カテゴリ武器 (初級 +4、意匠なしの汎用) ───
   { id: 'wp-axe', name: '戦斧', slot: 'weapon', kind: 'axe', bonus: { atk: 4 }, grade: 1, price: { power: 10, materials: 2 } },
-  { id: 'wp-iron-shield', name: '鉄の盾', slot: 'weapon', kind: 'shield', bonus: { def: 4 }, grade: 1, price: { power: 10, materials: 2 } },
   { id: 'wp-swift-dagger', name: '疾風の短刀', slot: 'weapon', kind: 'dagger', bonus: { agi: 4 }, grade: 1, price: { power: 10, materials: 2 } },
   { id: 'wp-novice-staff', name: '見習いの杖', slot: 'weapon', kind: 'staff', bonus: { int: 4 }, grade: 1, price: { power: 10, materials: 2 } },
   { id: 'wp-lucky-dice', name: '幸運のダイス', slot: 'weapon', kind: 'lucky', bonus: { luk: 4 }, grade: 1, price: { power: 10, materials: 2 } },
@@ -157,6 +176,18 @@ export const EQUIPMENT: EquipmentDef[] = [
       price: { power: 40, materials: 6 },
     },
   ]),
+  // ─── 盾 (#609)。片手が空いているときだけ持てる。両手盾は武器と併用不可 ───
+  { id: 'sh-wood', name: '木の盾', slot: 'shield', kind: 'shield', bonus: { def: 3 }, grade: 1, price: { power: 6, materials: 1 } },
+  { id: 'wp-iron-shield', name: '鉄の盾', slot: 'shield', kind: 'shield', bonus: { def: 4 }, grade: 1, price: { power: 10, materials: 2 } },
+  { id: 'sh-tower', name: '騎士の大盾', slot: 'shield', kind: 'shield', hands: 2, bonus: { def: 12 }, grade: 2, price: { power: 22, materials: 4 } },
+  // ─── 頭 (#609) ───
+  { id: 'hd-leather-hat', name: 'かわのぼうし', slot: 'head', kind: 'cloth', bonus: { def: 2 }, grade: 1, price: { power: 5, materials: 1 } },
+  { id: 'hd-iron-helm', name: '鉄かぶと', slot: 'head', kind: 'heavy', bonus: { def: 7 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'hd-sage-hood', name: 'かしこさのずきん', slot: 'head', kind: 'robe', bonus: { def: 4, int: 2 }, grade: 2, price: { power: 16, materials: 3 } },
+  // ─── 足 (#609) ───
+  { id: 'ft-cloth-shoes', name: 'ぬののくつ', slot: 'feet', kind: 'cloth', bonus: { def: 1, agi: 1 }, grade: 1, price: { power: 4, materials: 1 } },
+  { id: 'ft-leather-boots', name: 'かわのブーツ', slot: 'feet', kind: 'light', bonus: { def: 3, agi: 2 }, grade: 2, price: { power: 14, materials: 3 } },
+  { id: 'ft-iron-greaves', name: '鉄のすねあて', slot: 'feet', kind: 'heavy', bonus: { def: 6 }, grade: 2, price: { power: 16, materials: 3 } },
   // ─── 防具 ───
   { id: 'ar-cloth', name: 'ぬののふく', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 4, materials: 1 } },
   { id: 'ar-leather', name: 'かわのよろい', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 8, materials: 2 } },
@@ -339,8 +370,34 @@ export interface GearPiece {
 
 export interface GearSelection {
   weapon?: GearPiece | string;
+  shield?: GearPiece | string;
+  head?: GearPiece | string;
   armor?: GearPiece | string;
+  feet?: GearPiece | string;
   charm?: GearPiece | string;
+}
+
+/** その装備が使う手の数。武器・盾以外は 0。 */
+export function equipHands(def: EquipmentDef): number {
+  return def.slot === 'weapon' || def.slot === 'shield' ? (def.hands ?? 1) : 0;
+}
+
+/**
+ * 手数超過なら**盾を落とした** selection を返す (#609)。武器を優先するのは
+ * 「片手が空いていれば盾が装備可能」の裏返し — 両手武器を構えた時点で盾は持てない。
+ * 表示 (resolveGear) と権威 (sanitizeGear / gearBonusFromGear) が同じ判断を共有する。
+ */
+export function dropShieldIfHandsExceeded<T extends { weapon?: unknown; shield?: unknown }>(
+  sel: T,
+  defOf: (v: NonNullable<T['weapon']> | NonNullable<T['shield']>) => EquipmentDef | undefined,
+): T {
+  if (!sel.weapon || !sel.shield) return sel;
+  const w = defOf(sel.weapon as NonNullable<T['weapon']>);
+  const sh = defOf(sel.shield as NonNullable<T['shield']>);
+  if (!w || !sh) return sel;
+  if (equipHands(w) + equipHands(sh) <= 2) return sel;
+  const { shield: _drop, ...rest } = sel;
+  return rest as T;
 }
 
 /**
@@ -350,7 +407,10 @@ export interface GearSelection {
  */
 export function gearBonusFromGear(archetype: Archetype, gear: GearSelection): GearBonus {
   const total: GearBonus = { atk: 0, def: 0, agi: 0, int: 0, luk: 0, maxHp: 0 };
-  for (const slot of ['weapon', 'armor', 'charm'] as const) {
+  // 手数超過 (両手武器 + 盾) はここでも落とす — 戦闘値の入口なので、レコードを
+  // 直接偽造されても超過分は 1 ポイントも効かない (#609)。
+  gear = dropShieldIfHandsExceeded(gear, (v) => EQUIPMENT_BY_ID[typeof v === 'string' ? v : (v as GearPiece).id]);
+  for (const slot of GEAR_SLOTS) {
     const piece = gear[slot];
     if (!piece) continue;
     const id = typeof piece === 'string' ? piece : piece.id;

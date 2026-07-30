@@ -14,7 +14,7 @@
  * `craft` レコード) はまだユーザー PDS にあり、それを権威化するのは #551 段階 2。
  * ただし**強化値の抽選はサーバーが行い**、client はその結果を記帳するだけにしてある。
  */
-import {
+import { GEAR_SLOTS,
   CRAFT_TUNING,
   EQUIPMENT_BY_ID,
   SALE_TUNING,
@@ -42,7 +42,7 @@ export const MAX_SHOP_OPS = 100;
  * `xpClaims` (200) や `shopOps` (100) と違って**リングにはできない** — 古いものを黙って
  * 消したら装備が消えるため。上限に達したら断り、`shopDiscard` で自分で減らしてもらう。
  *
- * 100 の根拠: 装備スロットは 3 (weapon/armor/charm)。16 職ぶん持ち替えても 48 で、
+ * 100 の根拠: 装備スロットは 6 (weapon/armor/charm)。16 職ぶん持ち替えても 48 で、
  * 合成用の予備を足しても 100 で窮屈にならない。1 個体 ~60 バイトなので 100 個で ~6 KB。
  */
 export const MAX_OWNED_PIECES = 100;
@@ -297,7 +297,9 @@ export async function shopDiscard(
       // 「はずしてから捨てて」と言うほうが、黙って外すより何が起きたか分かる。
       const stillEquipped = sanitizeGear(cur.gearSel ?? {}, owned);
       const afterEquipped = sanitizeGear(cur.gearSel ?? {}, rest);
-      for (const slot of ['weapon', 'armor', 'charm'] as const) {
+      // 全スロットを見る (#609)。3 スロット直書きのままだと盾/頭/足だけ
+      // 「そうび中でも捨てられる」という非対称ができる (レビュー ★★)。
+      for (const slot of GEAR_SLOTS) {
         if (stillEquipped[slot] && !afterEquipped[slot]) {
           throw new ShopError('そうび中の品は すてられない。さきに はずしてほしい', 400, 'equipped');
         }

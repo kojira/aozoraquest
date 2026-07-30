@@ -5,6 +5,7 @@ import {
   ITEMS,
   SALE_TUNING,
   canEquip,
+  equipHands,
   forgedLevel,
   isMasterwork,
   isSellableMaterial,
@@ -275,6 +276,7 @@ export function ShopModal({
                 <div style={{ minWidth: 0 }}>
                   <div>
                     <strong>{def.name}</strong>
+                    {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.8em', color: 'var(--color-muted)' }}>(両手)</span>}
                     {owned.length > 0 && (
                       <span style={{ marginLeft: '0.4em', color: 'var(--color-muted)' }}>
                         所持 {owned.length}{bestOwned !== null && bestOwned !== 0 ? ` (最高${bestOwned > 0 ? `+${bestOwned}` : bestOwned})` : ''}

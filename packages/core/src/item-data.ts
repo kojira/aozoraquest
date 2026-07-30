@@ -35,7 +35,7 @@ export function hasItemOverrides(): boolean {
   return overridden;
 }
 
-const SLOTS = ['weapon', 'armor', 'charm'] as const;
+const SLOTS = ['weapon', 'shield', 'head', 'armor', 'feet', 'charm'] as const;
 const KINDS = new Set<string>([
   'common', 'cloth', 'charm', 'exclusive',
   ...new Set(Object.values(JOB_EQUIP_KINDS).flat()),
@@ -81,6 +81,10 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
     ids.add(e.id);
     if (typeof e.name !== 'string' || e.name.trim() === '') throw new ItemDataError(`${where}: 名前が空`);
     if (!(SLOTS as readonly string[]).includes(e.slot)) throw new ItemDataError(`${where}: slot が不正 (${e.slot})`);
+    if (e.hands !== undefined) {
+      if (e.hands !== 1 && e.hands !== 2) throw new ItemDataError(`${where}: hands は 1 か 2`);
+      if (e.slot !== 'weapon' && e.slot !== 'shield') throw new ItemDataError(`${where}: hands は武器と盾だけ`);
+    }
     if (!KINDS.has(e.kind)) throw new ItemDataError(`${where}: kind が不正 (${e.kind})`);
     if (![1, 2, 3].includes(e.grade)) throw new ItemDataError(`${where}: grade は 1〜3 (${e.grade})`);
     if (!e.price || !(e.price.power >= 0) || !(e.price.materials >= 0)) {

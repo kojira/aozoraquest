@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  GEAR_SLOTS,
+  GEAR_SLOT_LABELS,
   activeEquipment,
   activeItems,
   canEquip,
@@ -21,7 +23,7 @@ import { saveItems } from '@/lib/world-authoring';
  * 保存前に core の検証 (壊れた 1 件で全体を落とす)、複製して増やす。
  */
 
-const SLOT_LABELS: Record<string, string> = { weapon: 'ぶき', armor: 'よろい', charm: 'おまもり' };
+const SLOT_LABELS: Record<string, string> = GEAR_SLOT_LABELS;
 const BONUS_LABELS: Array<[keyof EquipmentDef['bonus'], string]> = [
   ['atk', 'こうげき'], ['def', 'まもり'], ['agi', 'すばやさ'], ['int', 'かしこさ'], ['luk', 'うん'], ['maxHp', 'さいだいHP'],
 ];
@@ -164,7 +166,7 @@ export function AdminItems() {
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 2fr', gap: '0.8em' }}>
           {/* 一覧 (slot → grade) */}
           <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {(['weapon', 'armor', 'charm'] as const).map((slot) => {
+            {GEAR_SLOTS.map((slot) => {
               const inSlot = equipment.filter((e) => e.slot === slot).sort((a, b) => a.grade - b.grade);
               if (inSlot.length === 0) return null;
               return (
@@ -204,8 +206,30 @@ export function AdminItems() {
               </div>
               {field('なまえ', <input value={current.name} onChange={(e) => update(current.id, { name: e.target.value })} />)}
               {field('部位', (
-                <select value={current.slot} onChange={(e) => update(current.id, { slot: e.target.value as EquipmentDef['slot'] })}>
-                  {(['weapon', 'armor', 'charm'] as const).map((s0) => <option key={s0} value={s0}>{SLOT_LABELS[s0]}</option>)}
+                <select
+                  value={current.slot}
+                  onChange={(e) => {
+                    const slot = e.target.value as EquipmentDef['slot'];
+                    // 武器/盾以外へ変えるとき hands を残すと検証で保存が全体ブロックされ、
+                    // 手数セレクトも非表示で復旧手段が無くなる (レビュー ★★)。同時に消す。
+                    const clearHands = slot !== 'weapon' && slot !== 'shield';
+                    update(current.id, { slot, ...(clearHands ? { hands: undefined } : {}) });
+                  }}
+                >
+                  {GEAR_SLOTS.map((s0) => <option key={s0} value={s0}>{SLOT_LABELS[s0]}</option>)}
+                </select>
+              ))}
+              {(current.slot === 'weapon' || current.slot === 'shield') && field('手数', (
+                <select
+                  value={current.hands ?? 1}
+                  onChange={(e) => {
+                    const hands = Number(e.target.value) as 1 | 2;
+                    // 片手 (既定) はキーごと消す (update は undefined で delete する契約)
+                    update(current.id, { hands: hands === 1 ? undefined : hands });
+                  }}
+                >
+                  <option value={1}>片手</option>
+                  <option value={2}>両手 (盾と併用できない)</option>
                 </select>
               ))}
               {field('系統', (
