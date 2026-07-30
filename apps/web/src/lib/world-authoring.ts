@@ -6,6 +6,7 @@ import {
   loadStaticWorldMap,
   loadTileArts,
   setGameQuests,
+  setJobOverrides,
   setItemOverrides,
   setMonsterOverrides,
   setNpcs,
@@ -19,6 +20,7 @@ import {
   WORLD_SIZE,
   type EquipmentDef,
   type GameQuestDef,
+  type JobOverride,
   type ItemDefData,
   type MonsterDef,
   type NpcDef,
@@ -176,6 +178,13 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
       console.warn('[world] npcs load failed', e);
     }
     try {
+      // ジョブ (#544)。装備カテゴリを検証するのでアイテムより後だが、他への依存はない。
+      const rec = await getRecord<{ jobs?: JobOverride[] }>(agent, adminDid, ADMIN_COL.jobs, RKEY);
+      if (rec?.jobs) setJobOverrides(rec.jobs);
+    } catch (e) {
+      console.warn('[world] jobs load failed', e);
+    }
+    try {
       // 検証が NPC・モンスター・アイテムの実在を引くため、**この 3 つより後に読む** (#423)。
       const rec = await getRecord<{ quests?: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
       // 空配列も適用する (全削除の反映。edge 側と同じ理由)。
@@ -233,6 +242,25 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 export async function saveNpcs(agent: Agent, npcs: NpcDef[]): Promise<void> {
   setNpcs(npcs);
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
+}
+
+/**
+ * ジョブのレコードだけを読む (#544)。**読めたかどうかを返す**のが要点 —
+ * loadAuthoredWorld は失敗を握り潰すので、エディタがそれを使うと
+ * 「読み込み失敗 → コード値が並ぶ → 保存 → 保存済みの調整が全職ぶん消える」が起きる。
+ * `null` = レコードが無い (初回)。throw = 読めなかった (保存させてはいけない)。
+ */
+export async function loadJobsRecord(agent: Agent, adminDid: string): Promise<JobOverride[] | null> {
+  const rec = await getRecord<{ jobs?: JobOverride[] }>(agent, adminDid, ADMIN_COL.jobs, RKEY);
+  if (!rec?.jobs) return null;
+  setJobOverrides(rec.jobs);
+  return rec.jobs;
+}
+
+/** ジョブのパラメータ (#544)。setJobOverrides が先に検証で落とす。 */
+export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void> {
+  setJobOverrides(jobs);
+  await putRecord(agent, ADMIN_COL.jobs, RKEY, { jobs, updatedAt: new Date().toISOString() });
 }
 
 /** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */

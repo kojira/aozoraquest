@@ -26,4 +26,5 @@ export * from './shop-data.js';
 export * from './npc-data.js';
 export * from './quest-data.js';
 export * from './part-presets.js';
+export * from './job-data.js';
 export * from './equipment.js';

@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setItemOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type GameQuestDef, type ItemDefData, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type GameQuestDef, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -101,6 +101,10 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // NPC (#425)。**移動判定に効く** (立っているマスは塞ぐ) ので edge も必須。
     const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
     if (npcs?.value?.npcs?.length) setNpcs(npcs.value.npcs);
+    // ジョブ (#544)。**戦闘計算は edge が権威**なので、web だけが編集後の値を見ていると
+    // 画面の強さとサーバーの強さが食い違う。
+    const jobs = await getRecord<{ jobs?: JobOverride[] }>(pds, did, `${nsid}.world.jobs`, RKEY);
+    if (jobs?.value?.jobs) setJobOverrides(jobs.value.jobs);
     // ゲーム内クエスト (#423)。**報酬付与は edge が権威**なので必須。検証が NPC・モンスター・
     // アイテムの実在を引くため、**この 3 つより後に読む** (店 ← アイテムと同じ順序依存)。
     const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);
