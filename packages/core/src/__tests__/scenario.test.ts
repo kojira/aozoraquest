@@ -186,3 +186,40 @@ describe('レビュー指摘の回帰 (#545)', () => {
     expect(() => setNpcs([ok])).not.toThrow();
   });
 });
+
+describe('notFlag の順序独立性 (#545 レビュー ★★)', () => {
+  /** 同じ回に両方の条件が揃うケース。定義の並び順で結果が変わってはいけない。 */
+  const pair = (order: 'aFirst' | 'bFirst'): ScenarioEvent[] => {
+    const a: ScenarioEvent = { id: 'A', title: '第2章へ', when: [{ kind: 'itemCount', itemId: 'herb', count: 1 }], setFlags: ['ch2'] };
+    const b: ScenarioEvent = {
+      id: 'B', title: '第2章前だけの噂',
+      when: [{ kind: 'itemCount', itemId: 'herb', count: 1 }, { kind: 'notFlag', flag: 'ch2' }],
+      setFlags: ['rumor'], notice: 'いまだけの うわさ',
+    };
+    return order === 'aFirst' ? [a, b] : [b, a];
+  };
+
+  it('定義の並び順に関わらず、同じ回に条件が揃えば両方発火する', () => {
+    for (const order of ['aFirst', 'bFirst'] as const) {
+      setScenario(pair(order));
+      const r = pendingScenario(progress({ materials: { herb: 1 } }));
+      expect(r.fired.map((e) => e.id).sort(), order).toEqual(['A', 'B']);
+    }
+  });
+
+  it('既にフラグが立っている状態なら notFlag のイベントは発火しない', () => {
+    setScenario(pair('aFirst'));
+    const r = pendingScenario(progress({ materials: { herb: 1 }, flags: ['ch2'] }));
+    expect(r.fired.map((e) => e.id)).toEqual([]); // A は発火済み、B は notFlag が成立しない
+  });
+
+  it('連鎖 (次の周で発火) は引き続き 1 回の呼び出しで解決する', () => {
+    setScenario([
+      { id: 'e3', title: '3', when: [{ kind: 'flag', flag: 'f2' }], setFlags: ['f3'] },
+      { id: 'e1', title: '1', when: [], setFlags: ['f1'] },
+      { id: 'e2', title: '2', when: [{ kind: 'flag', flag: 'f1' }], setFlags: ['f2'] },
+    ]);
+    const r = pendingScenario(progress());
+    expect(r.fired.map((e) => e.id).sort()).toEqual(['e1', 'e2', 'e3']);
+  });
+});

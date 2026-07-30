@@ -170,18 +170,24 @@ export function pendingScenario(p: ScenarioProgress): { fired: ScenarioEvent[]; 
   // 連鎖の解決。イベント数を上限にすれば、どんな依存関係でも必ず止まる
   // (フラグは増える一方なので、1 周で 1 つも発火しなければそこで終わり)。
   for (let round = 0; round < events.length; round++) {
-    let progressed = false;
+    // **1 周ぶんはこの周の開始時点のフラグで判定する。** 直前に立ったフラグを
+    // 即座に反映すると、`notFlag` のイベントが「同じ回に条件を満たした別のイベント」に
+    // 潰される (「章が進む前だけ見られる話」が定義の並び順で発火したりしなかったり
+    // する)。まとめて発火 → 次の周で連鎖、なら順序に依存しない。
+    const snapshot: ScenarioProgress = { ...p, flags: [...flags] };
+    const firedThisRound: ScenarioEvent[] = [];
     for (const e of events) {
       if (fired.includes(e)) continue;
       // 全部のフラグが既に立っている = 発火済み。
       if (e.setFlags.every((f) => flags.has(f))) continue;
-      const cur: ScenarioProgress = { ...p, flags: [...flags] };
-      if (!e.when.every((c) => meets(c, cur))) continue;
+      if (!e.when.every((c) => meets(c, snapshot))) continue;
+      firedThisRound.push(e);
+    }
+    if (firedThisRound.length === 0) break;
+    for (const e of firedThisRound) {
       fired.push(e);
       for (const f of e.setFlags) flags.add(f);
-      progressed = true;
     }
-    if (!progressed) break;
   }
   return { fired, flags: [...flags].slice(-MAX_FLAGS) };
 }
