@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EQUIPMENT_BY_ID,
   canEquip,
+  GEAR_SLOTS,
+  GEAR_SLOT_LABELS,
+  equipHands,
   gearBonusFromGear,
   jobDisplayName,
   leveledName,
@@ -17,11 +20,7 @@ import { resolveGear, type GearRefs } from '@/lib/gear';
  * 装備は craft/forge 個体の rkey 参照で保存する (強化値は直書きしない)。
  */
 
-const SLOT_LABELS: Record<EquipSlot, string> = {
-  weapon: 'ぶき',
-  armor: 'よろい',
-  charm: 'おまもり',
-};
+const SLOT_LABELS = GEAR_SLOT_LABELS;
 
 const STAT_LABELS: Record<string, string> = {
   atk: 'こうげき',
@@ -121,13 +120,19 @@ export function GearModal({
           </p>
         )}
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {(['weapon', 'armor', 'charm'] as const).map((slot) => {
+          {GEAR_SLOTS.map((slot) => {
             const equippedRkey = refs[slot];
             const equipped = equippedRkey ? byRkey.get(equippedRkey) : undefined;
             const equippedDef = equipped ? EQUIPMENT_BY_ID[equipped.itemId] : undefined;
             const candidates = pieces
               .filter((p) => EQUIPMENT_BY_ID[p.itemId]?.slot === slot)
               .sort((a, b) => b.level - a.level);
+            // 手数 (#609): 両手武器を構えている間は盾を持てない (逆も同じ)。
+            const weaponDef = refs.weapon ? EQUIPMENT_BY_ID[byRkey.get(refs.weapon)?.itemId ?? ''] : undefined;
+            const shieldDef = refs.shield ? EQUIPMENT_BY_ID[byRkey.get(refs.shield)?.itemId ?? ''] : undefined;
+            const handsBlocked =
+              (slot === 'shield' && weaponDef && equipHands(weaponDef) >= 2) ||
+              (slot === 'weapon' && shieldDef && equipHands(shieldDef) >= 2);
             return (
               <div key={slot} style={{ border: '2px solid var(--color-border)', borderRadius: 4, padding: '0.4em 0.6em', fontSize: '0.85em' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -148,6 +153,11 @@ export function GearModal({
                     </button>
                   )}
                 </div>
+                {handsBlocked && (
+                  <div style={{ color: 'var(--color-danger)', fontSize: '0.85em', marginBottom: 4 }}>
+                    りょうてが ふさがっている ({slot === 'shield' ? 'ぶき' : 'たて'}を はずすと もてる)
+                  </div>
+                )}
                 {candidates.length === 0 ? (
                   <div style={{ color: 'var(--color-muted)', fontSize: '0.85em' }}>もっていない</div>
                 ) : (

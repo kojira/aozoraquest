@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { rkeyForDid, readModifyWrite, type GameState, type GameStateEnv } from '../src/game-state';
+import { rkeyForDid, readModifyWrite, type GameState, type GameStateEnv, sanitizeGear, type OwnedPiece } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice'; // 対象ユーザー
@@ -167,5 +167,45 @@ describe('game-state (OAuth 権威書き込み)', () => {
     (env as { OAUTH_TOKENS?: KVNamespace }).OAUTH_TOKENS = mockKv(); // 空 = 未 bootstrap
     globalThis.fetch = (async (url: string) => jsonRes(url.includes('getRecord') ? 400 : 200, url.includes('getRecord') ? { error: 'RecordNotFound' } : {})) as unknown as typeof fetch;
     await expect(readModifyWrite(env, DID, (c) => c, { now: NOW })).rejects.toMatchObject({ reason: 'not-bootstrapped' });
+  });
+});
+
+describe('sanitizeGear の手数検証 (#609)', () => {
+  const own = (itemId: string, rkey: string): OwnedPiece => ({ rkey, itemId, level: 0, at: '' });
+
+  it('片手武器 + 盾は両方通る', () => {
+    const out = sanitizeGear(
+      { weapon: { id: 'wp-knife', level: 0 }, shield: { id: 'sh-wood', level: 0 } },
+      [own('wp-knife', 'a'), own('sh-wood', 'b')],
+    );
+    expect(out.weapon).toEqual({ id: 'wp-knife', level: 0 });
+    expect(out.shield).toEqual({ id: 'sh-wood', level: 0 });
+  });
+
+  it('両手武器 + 盾は直 POST でも盾が落ちる (サーバー権威)', () => {
+    const out = sanitizeGear(
+      { weapon: { id: 'wp-great-sword', level: 0 }, shield: { id: 'sh-wood', level: 0 } },
+      [own('wp-great-sword', 'a'), own('sh-wood', 'b')],
+    );
+    expect(out.weapon).toEqual({ id: 'wp-great-sword', level: 0 });
+    expect(out.shield).toBeUndefined();
+  });
+
+  it('両手盾 + 武器も盾が落ちる', () => {
+    const out = sanitizeGear(
+      { weapon: { id: 'wp-knife', level: 0 }, shield: { id: 'sh-tower', level: 0 } },
+      [own('wp-knife', 'a'), own('sh-tower', 'b')],
+    );
+    expect(out.shield).toBeUndefined();
+  });
+
+  it('頭・足スロットも所持検証つきで通る', () => {
+    const out = sanitizeGear(
+      { head: { id: 'hd-leather-hat', level: 1 }, feet: { id: 'ft-cloth-shoes', level: 0 } },
+      [own('hd-leather-hat', 'a'), own('ft-cloth-shoes', 'b')],
+    );
+    // 持っていない強化値 (+1) の頭は落ち、足は通る
+    expect(out.head).toBeUndefined();
+    expect(out.feet).toEqual({ id: 'ft-cloth-shoes', level: 0 });
   });
 });
