@@ -112,6 +112,17 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
         }
       }
     }
+    // **入口タイルが歩けないとそのゲートは永久に踏めない。** ゲートは通行判定の後に
+    // 見る設計なので、壁の上のゲートは「入ったら出られない一方通行の罠」になる
+    // (エディタの既定値が実際に壁を指していた。レビュー ★★★)。
+    // フィールド側は地図の読み込み状況に依存するのでここでは見ない (内部だけ検証)。
+    if (g.from.mapId !== WORLD_MAP_ID) {
+      const fm = nextMaps.get(g.from.mapId);
+      if (!fm) throw new InteriorError(`${where}: 入口の内部マップが存在しない (${g.from.mapId})`);
+      if (!interiorWalkableAt(fm, g.from.x, g.from.y)) {
+        throw new InteriorError(`${where}: 入口が歩けないマス (壁の上のゲートは踏めない)`);
+      }
+    }
     const k = gateKey(g.from.mapId, g.from.x, g.from.y);
     // 同じマスに 2 つのゲートがあると、踏んだときどちらへ行くのか決められない。
     if (nextGates.has(k)) throw new InteriorError(`同じマスにゲートが重複 ${where}`);

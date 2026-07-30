@@ -359,6 +359,8 @@ export function World() {
         // 使うことで、初回移動でクライアント位置とサーバー位置がズレて「ワープ」するのを防ぐ。
         // 街/地図/HP 等の探索メモは従来どおり client の world-record を使う。取得失敗時は world-record 位置。
         let px = state.x, py = state.y;
+        /** サーバー権威の mapId (#424)。内部マップに居るならその id。 */
+        let serverMapId: string | undefined;
         // サーバー gameState を在庫/HP/位置の**唯一の正**とする (#372)。取得失敗時のみ world-record にフォールバック。
         try {
           const ss = await serverState(agent);
@@ -366,6 +368,7 @@ export function World() {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
             setServerPower(ss.state.power ?? 0);
             questRef.current = { ...(ss.state.quest ? { active: ss.state.quest } : {}), done: ss.state.questsDone ?? [] };
+            serverMapId = ss.state.mapId;
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
             // 記帳 (履歴) であって所持の根拠ではない。
             if (ss.state.pieces) setCraftedPieces(ss.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
@@ -385,6 +388,10 @@ export function World() {
           ? [...state.visitedTowns, { x: px, y: py }]
           : state.visitedTowns;
         const initialWs = {
+          // **内部マップ (#424) を維持する。** ここで捨てると、内部でリロードした瞬間
+          // 内部座標をフィールドとして描き、移動判定もフィールドで行って食い違う
+          // (サーバーは mapId 入りのトークンを返している。レビュー ★★)。
+          ...(serverMapId ? { mapId: serverMapId } : {}),
           x: px,
           y: py,
           // HP/MP はサーバー権威 (carryHp/Mp)。undefined=満タンなので null に。取得失敗時のみ world-record。
@@ -531,7 +538,9 @@ export function World() {
       // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
       // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (読了で受注)、
       // 進行中→達成を試みる (条件検証はサーバー)、達成済み→通常セリフ。
-      const npc = npcAt(nx, ny);
+      // NPC はフィールドにしか置けない (#425 の座標に mapId が無い)。内部で引くと
+      // 同じ座標の NPC が「幽霊」として現れ、戻りゲートを塞ぐこともある (レビュー ★★)。
+      const npc = cur ? undefined : npcAt(nx, ny);
       if (npc) {
         const q = gameQuestByNpc(npc.id);
         const qs = questRef.current;
@@ -1196,12 +1205,16 @@ export function World() {
   // シーン (敵+ログ) はマップ上オーバーレイ、コマンド/リザルトはマップ下に出す。
   const inBattle = battle !== null && (wipe === null || wipe === 'reveal');
 
-  const town = townAt(ws.x, ws.y);
   const insideHere = ws.mapId ? interiorById(ws.mapId) ?? null : null;
+  // 内部では**フィールドの街表を引かない** — 内部座標がたまたま街と重なると、
+  // 街の HUD が出て「なんでも屋」が生えるのにサーバーは回復しない、という食い違いになる。
+  const town = insideHere ? null : townAt(ws.x, ws.y);
   const here = insideHere ? interiorTerrainAt(insideHere, ws.x, ws.y) : terrainAt(ws.x, ws.y);
   // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
   // 「このあたり」の見出しと「何が多いか」は同じ tier を見る (ラベルと中身が食い違わないように)。
-  const hereTier = tierForRegion(regionOf(ws.x, ws.y));
+  // 内部マップ (#424) の座標はローカル系なので、地域から引く危険度・敵は意味を持たない
+  // (常に region 0 になる)。内部では自分の危険度設定を使い、未設定なら「敵なし」。
+  const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
   const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y))).name;
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
@@ -1276,7 +1289,8 @@ export function World() {
 
   // ビューポート内の NPC (#425)。ドット絵 (npc:<id>) → 代替の見た目 (人form) に倒す。
   const npcSprites = [];
-  for (const n of allNpcs()) {
+  // NPC はフィールド専用 (#425 の座標に mapId が無い)。内部では描かない。
+  for (const n of insideHere ? [] : allNpcs()) {
     const vx = wrap(n.x - (ws.x - HALF));
     const vy = wrap(n.y - (ws.y - HALF));
     if (vx >= VIEW || vy >= VIEW) continue;
@@ -1356,7 +1370,13 @@ export function World() {
               mp={battle ? battle.state.player.mp : curMp}
               power={serverPower}
               maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
-              locationLabel={town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`}
+              locationLabel={
+                // 内部では**そのマップの名前**を出す (どこに居るか分かる唯一の手掛かり)。
+                // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。
+                insideHere
+                  ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined ? ` / ${dangerLabel(hereTier)}` : ''}`
+                  : town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`
+              }
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。
               // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る

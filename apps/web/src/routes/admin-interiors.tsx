@@ -6,6 +6,7 @@ import {
   MAX_INTERIOR_SIZE,
   WORLD_MAP_ID,
   interiorPartAt,
+  interiorWalkableAt,
   worldParts,
   type Gate,
   type InteriorMap,
@@ -265,6 +266,7 @@ export function AdminInteriors() {
                 const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
                 const cx = Math.floor(((e.clientX - r.left) / r.width) * current.size);
                 const cy = Math.floor(((e.clientY - r.top) / r.height) * current.size);
+                if (linking && !e.shiftKey) { setLinking(null); setNote('ゲートの行き先選びをやめた'); return; }
                 if (e.shiftKey) {
                   // Shift = ゲート。1 回目で入口、2 回目で出口 (一方通行 1 本ぶん)。
                   if (!linking) { setLinking({ mapId: current.id, x: cx, y: cy }); return; }
@@ -325,7 +327,9 @@ export function AdminInteriors() {
             {/* フィールド ⇄ このマップ のゲートは座標入力で張る (フィールドは広すぎて
                 この画面に出せないため。マップエディタ側の座標表示を見て入れる) */}
             <WorldGateForm
+              key={current.id}
               mapId={current.id}
+              map={current}
               size={current.size}
               onAdd={(g) => { setGates((gs) => [...gs.filter((x) => !(x.from.mapId === g.from.mapId && x.from.x === g.from.x && x.from.y === g.from.y)), g]); setDirty(true); }}
             />
@@ -339,11 +343,16 @@ export function AdminInteriors() {
 }
 
 /** フィールド側の入口 (x, y) → この内部マップ の 1 本と、その戻り 1 本を張る。 */
-function WorldGateForm({ mapId, size, onAdd }: { mapId: string; size: number; onAdd: (g: Gate) => void }) {
+function WorldGateForm({ mapId, map, size, onAdd }: { mapId: string; map: InteriorMap; size: number; onAdd: (g: Gate) => void }) {
   const [wx, setWx] = useState(0);
   const [wy, setWy] = useState(0);
   const [ix, setIx] = useState(Math.floor(size / 2));
-  const [iy, setIy] = useState(size - 2);
+  // 出口は下から 3 マス目。**戻りゲートを出口の 1 マス下に張る**ので、既定 size-2 だと
+  // 戻りが外周の壁に乗って踏めなくなる (= 入ったら出られない罠。レビュー ★★★)。
+  const [iy, setIy] = useState(Math.max(1, size - 3));
+  // 戻りゲートが壁の上だと**踏めない = 入ったら出られない**ので、張る前に気づかせる。
+  const backBlocked = !interiorWalkableAt(map, ix, iy + 1);
+  const exitBlocked = !interiorWalkableAt(map, ix, iy);
   return (
     <div style={{ fontSize: '0.8em', borderTop: '1px solid var(--color-border)', paddingTop: '0.4em' }}>
       <span style={{ color: 'var(--color-muted)' }}>フィールドと繋ぐ (マップエディタの座標表示と同じ)</span>
@@ -354,6 +363,7 @@ function WorldGateForm({ mapId, size, onAdd }: { mapId: string; size: number; on
         y<input type="number" value={iy} onChange={(e) => setIy(Number(e.target.value))} style={{ width: '4em' }} />
         <button
           type="button"
+          disabled={backBlocked || exitBlocked}
           onClick={() => {
             // **往復 2 本まとめて張る。** 入る道だけ作ると出られなくなる。
             onAdd({ from: { mapId: WORLD_MAP_ID, x: wx, y: wy }, to: { mapId, x: ix, y: iy } });
@@ -363,8 +373,12 @@ function WorldGateForm({ mapId, size, onAdd }: { mapId: string; size: number; on
           往復を張る
         </button>
       </div>
-      <span style={{ color: 'var(--color-muted)' }}>
-        戻りは出口の 1 マス下 → フィールドの入口の 1 マス下 に張る (入口を踏み直して即戻るのを防ぐ)
+      <span style={{ color: backBlocked || exitBlocked ? 'var(--color-danger)' : 'var(--color-muted)' }}>
+        {exitBlocked
+          ? `出口 (${ix}, ${iy}) が歩けないマス。床の上に置いて`
+          : backBlocked
+            ? `戻り口 (${ix}, ${iy + 1}) が歩けないマス。壁の上のゲートは踏めないので、出口を 1 つ上へ`
+            : '戻りは出口の 1 マス下 → フィールドの入口の 1 マス下 に張る (入口を踏み直して即戻るのを防ぐ)'}
       </span>
     </div>
   );
