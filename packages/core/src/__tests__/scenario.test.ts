@@ -163,3 +163,26 @@ describe('フラグによる出し分け', () => {
     expect(npcLinesFor(npc, ['ch1'])).toEqual(['ふつう']);
   });
 });
+
+describe('レビュー指摘の回帰 (#545)', () => {
+  it('フラグ総数が上限を超える定義は保存で弾く (切り捨てで章が巻き戻らない)', () => {
+    // 上限を超えると pendingScenario の slice が古いフラグを捨て、そのイベントが
+    // 「未発火」に戻って毎回再発火する。定義側で超えさせないのが唯一の確実な防ぎ方。
+    const many: ScenarioEvent[] = Array.from({ length: 200 }, (_, i) => ({
+      id: `e${i}`, title: `e${i}`, when: [], setFlags: [`a${i}`, `b${i}`, `c${i}`],
+    }));
+    expect(() => setScenario(many)).toThrow(ScenarioError); // 600 > 500
+  });
+
+  it('クエストの解禁フラグもシナリオと同じ書式で弾く (typo が永久ロックにならない)', () => {
+    expect(() => setGameQuests([{ ...QUEST, requireFlags: ['Chapter2'] }])).toThrow();
+    expect(() => setGameQuests([{ ...QUEST, requireFlags: ['chapter2'] }])).not.toThrow();
+  });
+
+  it('NPC のフラグ別セリフも同じ書式で弾く', () => {
+    const bad: NpcDef = { id: 'n9', name: 'x', x: 9, y: 9, lines: ['a'], altLines: [{ flags: ['UPPER'], lines: ['b'] }] };
+    expect(() => setNpcs([bad])).toThrow();
+    const ok: NpcDef = { ...bad, altLines: [{ flags: ['upper'], lines: ['b'] }] };
+    expect(() => setNpcs([ok])).not.toThrow();
+  });
+});

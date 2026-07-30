@@ -18,6 +18,7 @@
  */
 import { MONSTERS_BY_ID, ITEMS } from './battle.js';
 import { allNpcs } from './npc-data.js';
+import { isFlagName } from './scenario.js';
 
 export class QuestDataError extends Error {}
 
@@ -102,7 +103,9 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
     if (q.requireFlags !== undefined) {
       if (!Array.isArray(q.requireFlags)) throw new QuestDataError(`${where}: requireFlags が配列でない`);
       for (const f of q.requireFlags) {
-        if (typeof f !== 'string' || f.trim() === '') throw new QuestDataError(`${where}: 解禁フラグ名が空`);
+        // シナリオ側と同じ書式で弾く (#545)。大文字などの typo を通すと、
+        // そのフラグは永久に立たず**誰も受注できないクエスト**が無言で生まれる。
+        if (!isFlagName(f)) throw new QuestDataError(`${where}: 解禁フラグ名が不正 (${f})`);
       }
     }
     if (q.reward) {

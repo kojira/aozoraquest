@@ -66,6 +66,12 @@ export const MAX_NOTICE_LEN = 120;
 /** フラグ名に使える文字 (レコードのキーや UI で扱いやすい範囲に絞る)。 */
 const FLAG_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
+/** フラグ名として使えるか。クエストの解禁・NPC の分岐も同じ書式で検証する
+ *  (書式が揃っていないと、typo したフラグが永久に立たない設定を無言で作れる)。 */
+export function isFlagName(v: unknown): v is string {
+  return typeof v === 'string' && FLAG_RE.test(v);
+}
+
 let events: ScenarioEvent[] = [];
 
 /**
@@ -120,6 +126,11 @@ export function setScenario(list: readonly ScenarioEvent[] | null): void {
       if (c.kind === 'flag' && e.setFlags.includes(c.flag)) throw new ScenarioError(`${where}: 自分が立てるフラグを条件にしている (${c.flag})`);
     }
   }
+  // **総フラグ数を保存時に弾く。** pendingScenario は上限で古いフラグを切り捨てるが、
+  // 捨てられたフラグのイベントは「未発火」に戻り、条件を満たす限り毎回再発火して
+  // お知らせが出続ける。定義側で超えさせないのが唯一の確実な防ぎ方。
+  const allFlags = new Set(next.flatMap((e) => e.setFlags));
+  if (allFlags.size > MAX_FLAGS) throw new ScenarioError(`フラグが多すぎる (${allFlags.size} > ${MAX_FLAGS})`);
   events = next.map((e) => ({ ...e, when: e.when.map((c) => ({ ...c })), setFlags: [...e.setFlags] }));
 }
 

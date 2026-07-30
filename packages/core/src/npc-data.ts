@@ -10,6 +10,8 @@
  * 絵はドット絵 (`npc:<id>` キー) で、無ければ代替の見た目に倒す。
  */
 
+import { isFlagName } from './scenario.js';
+
 export class NpcDataError extends Error {}
 
 export interface NpcDef {
@@ -88,6 +90,10 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
       // 条件の無い分岐は既定のセリフと同じなので、書き間違い (フラグ名の打ち漏らし) を疑う。
       if ((alt.flags?.length ?? 0) === 0 && (alt.notFlags?.length ?? 0) === 0) {
         throw new NpcDataError(`${where}: フラグ別セリフに条件が無い`);
+      }
+      // シナリオ側と同じ書式で弾く (#545)。typo したフラグの分岐は永久に選ばれない。
+      for (const f of [...(alt.flags ?? []), ...(alt.notFlags ?? [])]) {
+        if (!isFlagName(f)) throw new NpcDataError(`${where}: フラグ名が不正 (${f})`);
       }
     }
   }

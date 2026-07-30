@@ -6,6 +6,7 @@ import {
   ITEMS,
   MONSTERS,
   QuestDataError,
+  scenarioEvents,
   setGameQuests,
   type GameQuestDef,
   type QuestObjective,
@@ -73,6 +74,15 @@ export function AdminQuests() {
 
   const save = useCallback(async () => {
     if (!session.agent) return;
+    // シナリオ (#545) が条件にしているクエストを消させない — 参照切れが 1 件でもあると
+    // setScenario が全体を落とし、**フラグが二度と立たなくなる** (解禁クエストも永久ロック)。
+    const orphan = scenarioEvents().find((e) =>
+      e.when.some((c) => c.kind === 'questDone' && !list.some((q) => q.id === c.questId)),
+    );
+    if (orphan) {
+      setNote(`保存できない: シナリオ「${orphan.title}」が消したクエストを条件にしている。先にシナリオを直す`);
+      return;
+    }
     try {
       await saveGameQuests(session.agent, list);
       setDirty(false);

@@ -14,7 +14,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
-import { loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
+import { loadAuthoredWorld, loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
 
 /**
  * **シナリオエディタ** (#545)。進行を「条件が揃ったらフラグが立つ」の列で書く。
@@ -52,7 +52,10 @@ export function AdminScenario() {
     const agent = session.agent;
     const adminDid = getPrimaryAdminDid();
     if (!agent || !adminDid) { setLoadState('failed'); return; }
-    void loadScenarioRecord(agent, adminDid)
+    // **クエストを先に読む** — 条件が questId の実在を引くので、直接開くと
+    // 「クエストが存在しない」で読み込みが落ち、正常なレコードなのに保存不能になる。
+    void loadAuthoredWorld(agent)
+      .then(() => loadScenarioRecord(agent, adminDid))
       .then((events) => {
         if (cancelled) return;
         setList(events.map((e) => ({ ...e, when: e.when.map((c) => ({ ...c })), setFlags: [...e.setFlags] })));

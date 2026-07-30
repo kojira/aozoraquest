@@ -157,6 +157,19 @@ export function World() {
   const questRef = useRef<{ active?: { id: string; progress: number }; done: string[] }>({ done: [] });
   /** 進行フラグ (#545)。**サーバーが正** — 立てるのは edge だけで、ここは表示用の写し。 */
   const flagsRef = useRef<string[]>([]);
+  /** 戦闘中に届いたシナリオのお知らせ (#545)。戦闘の窓は使えないので、
+   *  リザルトを閉じてマップに戻ってから出す。 */
+  const pendingNoticesRef = useRef<string[]>([]);
+  /** 溜まったシナリオのお知らせをマップの窓で出す。**戦闘を閉じた直後に呼ぶ** —
+   *  戦闘中に出しても窓が描画されず、発火済みのお知らせは二度と返らないので消える。 */
+  const flushScenarioNotices = useCallback(() => {
+    const list = pendingNoticesRef.current;
+    if (list.length === 0) return;
+    pendingNoticesRef.current = [];
+    setScenarioTalk(list);
+  }, []);
+  /** シナリオのお知らせ窓 (話者なしの地の文)。 */
+  const [scenarioTalk, setScenarioTalk] = useState<string[] | null>(null);
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -688,6 +701,10 @@ export function World() {
             ...(res.position ? { resultPos: res.position } : {}),
             ...(res.token ? { resultToken: res.token } : {}),
             ...(res.materials ? { resultMaterials: res.materials, resultCarryHp: res.carryHp, resultCarryMp: res.carryMp } : {}) };
+          // シナリオ (#545) は決着でも進む (ジョブ Lv 条件はここでしか動かない)。
+          // **拾わないと永久に失われる** — 発火済みのお知らせは二度と返らない。
+          if (res.flags) flagsRef.current = res.flags;
+          if (res.scenarioNotices?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioNotices];
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
@@ -718,6 +735,7 @@ export function World() {
       if (b.phase === 'result') {
         battleRef.current = null;
         setBattle(null);
+        flushScenarioNotices();
         return;
       }
       // agent/did は決着の確定処理 (レコード/XP) だけに要るので、ここでは要求しない。
@@ -820,6 +838,7 @@ export function World() {
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);
+        flushScenarioNotices();
       } else {
         const done = { ...b, state: next, busy: false, phase: 'result' as BattlePhase, resultLines };
         battleRef.current = done;
@@ -1474,6 +1493,13 @@ export function World() {
                   })
                   .catch((e) => setNotice(e instanceof WorldServerError ? e.message : 'うけおいに しっぱいした…'));
               }}
+            />
+          )}
+          {!battle && scenarioTalk && !npcTalk && !onboarding && (
+            <DialogueWindow
+              anchor="map"
+              lines={scenarioTalk.map((text) => ({ text }))}
+              onDone={() => setScenarioTalk(null)}
             />
           )}
           {!battle && onboarding && (

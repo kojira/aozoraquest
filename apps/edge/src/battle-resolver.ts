@@ -517,6 +517,11 @@ export interface TurnResult {
   materials?: Record<string, number>;
   carryHp?: number;
   carryMp?: number;
+  /** 進行フラグ (#545)。決着でシナリオが進むと増える。 */
+  flags?: string[];
+  /** シナリオのお知らせ (一度だけ)。**発火済みは二度と返らない**ので、
+   *  client がここで拾わないと永久に失われる。 */
+  scenarioNotices?: string[];
 }
 
 /**
