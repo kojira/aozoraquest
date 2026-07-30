@@ -15,6 +15,12 @@ import {
   terrainAt,
   isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
+  WORLD_MAP_ID,
+  gateAt,
+  interiorById,
+  interiorTerrainAt,
+  isInterior,
+  walkableIn,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
@@ -41,11 +47,30 @@ export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', '
 export type ResolverEnv = GameStateEnv;
 
 /** ガードに封印する startBattle 由来のメタ (turn では state を使うが、報酬/撃破記録用に残す)。 */
+/** 遭遇タイルのキー。**mapId を含める** — フィールドと内部の同じ座標を別のマスとして扱う。
+ *  フィールドは従来どおり "x,y" (旧ガード・旧 defeated と互換)。 */
+function tileKey(mapId: string, x: number, y: number): string {
+  return mapId === WORLD_MAP_ID ? `${x},${y}` : `${mapId}:${x},${y}`;
+}
+
+/** tileKey の逆。旧形式 ("x,y") も読める。 */
+function parseTileKey(key: string): { mapId: string; x: number; y: number } | null {
+  const colon = key.lastIndexOf(':');
+  const mapId = colon >= 0 ? key.slice(0, colon) : WORLD_MAP_ID;
+  const [x, y] = key.slice(colon + 1).split(',').map(Number);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { mapId, x: x!, y: y! };
+}
+
 interface SealedMeta {
   archetype: string;
   tier: Tier;
   /** 遭遇したタイル "x,y" (撃破時に defeated へ入れ、その枠で再エンカウントさせない)。 */
   tile: string;
+  /** 遭遇したマップ (#424)。**決着で位置を書き戻すときに要る** — 内部マップで
+   *  戦って mapId を落とすと、内部ローカル座標のままフィールドに放り出される。
+   *  省略 = フィールド (旧ガードとの互換)。 */
+  mapId?: string;
   /** 遭遇時の素ステ。**決着でレベルアップの内訳を出すために封じておく** —
    *  ここに無いと handleTurn が診断を読み直すことになり、決着のたびに PDS 往復が増える。 */
   baseStats?: number[];
@@ -205,9 +230,12 @@ export interface EncounterInfo {
 
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
-export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<EncounterInfo> {
+export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, mapId: string = WORLD_MAP_ID): Promise<EncounterInfo> {
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const tier = tierForRegion(regionOf(x, y));
+  // 内部マップ (#424) は座標が 0〜127 のローカル系で region が常に 0 になるため、
+  // 地域から tier を引くと**どの危険度を選んでも tier1 の敵しか出ない**。設定値を使う。
+  const interior = mapId !== WORLD_MAP_ID ? interiorById(mapId) : undefined;
+  const tier = (interior?.encounterTier ?? tierForRegion(regionOf(x, y))) as ReturnType<typeof tierForRegion>;
   // Lv は権威 state 由来 (#534)。戦闘で使うレベルと、報酬を積む先が同じレコードになる。
   const jobLevel = jobLevelFromXp(jobXpOf(state, archetype), archetype);
   const playerLevel = playerLevelFromXp(playerXp);
@@ -227,7 +255,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const existing = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (existing) await deleteGuard(env, now, userDid, existing.cid);
   const guard: Guard = {
-    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: `${x},${y}`, baseStats: [...baseStats] }, state: battle, pendingTurnSeed, rewarded,
+    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: tileKey(mapId, x, y), ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), baseStats: [...baseStats] }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
   await createGuard(env, now, guard); // 生きたガードがあれば InvalidSwap → 上位で 409
@@ -235,6 +263,8 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
 }
 
 export interface MoveResult {
+  /** 移動後のマップ (#424)。省略 = フィールド。ゲートを踏むと切り替わる。 */
+  mapId?: string;
   x: number;
   y: number;
   terrain: string;
@@ -256,31 +286,69 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   // 現在位置: 署名トークンが権威。無効/失効なら gameState から再同期 (位置偽造は署名で不可)。
   let cx: number, cy: number, counter = 0;
+  // mapId (#424) はトークン → state の順に引く。**どちらにも無ければフィールド** —
+  // 旧トークン・旧 state をそのまま通すため (移行なし)。
+  let mapId: string = WORLD_MAP_ID;
   try {
     const claim = verifyPosition(env, token ?? '', userDid, now);
-    cx = claim.x; cy = claim.y; counter = claim.counter;
+    cx = claim.x; cy = claim.y; counter = claim.counter; mapId = claim.mapId ?? WORLD_MAP_ID;
   } catch {
     const rec = await readState(env, userDid);
     const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-    cx = s.x; cy = s.y;
+    cx = s.x; cy = s.y; mapId = s.mapId ?? WORLD_MAP_ID;
+  }
+  // 定義が消えた内部マップに取り残されない (エディタで削除された場合)。フィールドへ戻す。
+  if (mapId !== WORLD_MAP_ID && !isInterior(mapId)) mapId = WORLD_MAP_ID;
+  // **範囲外に立っている state の保険** (#424 レビュー ★★★)。過去のバグや手編集で
+  // 「内部マップ × 範囲外の座標」になると全方向 400 で一歩も動けなくなるので、
+  // フィールド扱いに倒して脱出させる (位置は既に街の座標なので実害なく戻れる)。
+  if (mapId !== WORLD_MAP_ID) {
+    const here = interiorById(mapId)!;
+    if (cx < 0 || cy < 0 || cx >= here.size || cy >= here.size) mapId = WORLD_MAP_ID;
   }
 
-  const nx = wrap(cx + dx), ny = wrap(cy + dy);
-  const terrain = terrainAt(nx, ny);
-  if (!isWalkableAt(nx, ny)) throw new ResolverError('進めない地形', 400);
+  // 内部マップ (#424) は端で折り返さない (外に出るのはゲートからだけ)。
+  const inside = isInterior(mapId) ? interiorById(mapId)! : null;
+  let nx = inside ? cx + dx : wrap(cx + dx);
+  let ny = inside ? cy + dy : wrap(cy + dy);
+  if (!walkableIn(mapId, nx, ny, isWalkableAt)) throw new ResolverError('進めない地形', 400);
+
+  // **ゲートを踏んだら移る** (#424)。通行判定の後に見るのは、壁の中の入口を
+  // 「歩けないが入れる」にしないため (入口タイル自体は歩けるパーツで置く)。
+  const gate = gateAt(mapId, nx, ny);
+  if (gate) {
+    mapId = gate.to.mapId;
+    nx = gate.to.x;
+    ny = gate.to.y;
+    const dest = isInterior(mapId) ? interiorById(mapId)! : null;
+    // 行き先の地形は権威側で確定する。壁の中に出す設定は保存時に弾いているが、
+    // 万一そうなっていても**移動そのものは通す** (出られない状態を作らない)。
+    const destTerrain = dest ? interiorTerrainAt(dest, nx, ny) : terrainAt(nx, ny);
+    // 位置は PDS に確定させる (マップをまたぐのは稀 = 書き込みコストが乗ってよい)。
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: mapId === WORLD_MAP_ID ? undefined : mapId, x: nx, y: ny }),
+      { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+    const gateToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
+    // フィールドへ戻るときは mapId を載せない (旧 client が知らないキーを解釈しない)。
+    return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain: destTerrain, token: gateToken };
+  }
+
+  const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(nx, ny);
 
   let healed = false;
-  if (terrain === 'town') {
+  // 街の全回復はフィールドの街タイルのみ (内部マップの床を town で塗っても回復しない)。
+  if (!inside && terrain === 'town') {
     // 街: HP/MP 全回復 + 位置 + 最後の街 (敗北帰還先) を gameState に確定 (稀なので PDS 書き OK)。
-    await readModifyWrite(env, userDid, (cur) => ({ ...cur, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
+    // フィールドの街なので mapId は消す (位置は必ず (mapId,x,y) の 3 つ組で書く)。
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
   }
 
-  const nextToken = signPosition(env, { did: userDid, x: nx, y: ny, counter: counter + 1, iat: now });
+  const nextToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
 
   // エンカウント: tile+30分枠+秘密から決定的 (見えない・予測不可・30分でリポップ)。街では出さない。
-  if (terrain !== 'town') {
+  // **内部マップは encounterTier を設定したときだけ敵が出る** (街の中・城の広間は無し)。
+  if (terrain !== 'town' && (!inside || inside.encounterTier !== undefined)) {
     const window = enemyWindow(now);
     const { roll, monsterSeed } = tileEncounter(env, nx, ny, window);
     if (roll < encounterRateFor(terrain)) {
@@ -288,21 +356,25 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
       const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
       // その 30 分枠で撃破済みのタイルには敵が居ない (同一敵の無限狩り防止)。
       const defeated = state.defeatedWindow === window ? (state.defeated ?? []) : [];
-      if (!defeated.includes(`${nx},${ny}`)) {
+      // **キーに mapId を含める** — 含めないと内部の (4,4) とフィールドの (4,4) が
+      // 同じ 30 分枠の敵・同じ撃破済み枠を共有する (ダンジョンで倒すとフィールドも空く)。
+      if (!defeated.includes(tileKey(mapId, nx, ny))) {
         // **遭遇の失敗で移動そのものを殺さない。** ここが throw すると 500 になり、
         // プレイヤーはその場から一歩も動けなくなる (実際に危うく起きた)。遭遇データが
         // 壊れているなら「敵が出ないまま歩ける」に倒すのが正しい — 探索は続けられ、
         // 原因はログで追える。
         try {
-          const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, ns, fetchImpl);
-          return { x: nx, y: ny, terrain, token: nextToken, encounter };
+          const encounter = await sealEncounter(env, userDid, state, nx, ny, monsterSeed, now, ns, fetchImpl, mapId);
+          // **mapId を落とさない** — ここだけ落ちていると web が「内部マップを抜けた」と
+          // 解釈し、遭遇の裏でフィールドの地形が描かれる (レビュー ★★★)。
+          return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, token: nextToken, encounter };
         } catch (e) {
           console.error('encounter failed (移動は通す)', e);
         }
       }
     }
   }
-  return { x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
+  return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
 }
 
 export interface TeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
@@ -325,7 +397,9 @@ export async function handleTeleport(env: ResolverEnv, userDid: string, x: numbe
     const m: Record<string, number> = { ...cur.materials };
     m['sky-feather'] = have - 1;
     if (m['sky-feather'] <= 0) delete m['sky-feather'];
-    return { ...cur, x: tx, y: ty, carryHp: undefined, carryMp: undefined, lastTown: { x: tx, y: ty }, materials: m };
+    // そらのはねはフィールドの街へ飛ぶ。**mapId を消さないと**「内部マップ × 街の座標」
+    // という壊れた state が残り、次のリロードで動けなくなる (レビュー ★★★)。
+    return { ...cur, mapId: undefined, x: tx, y: ty, carryHp: undefined, carryMp: undefined, lastTown: { x: tx, y: ty }, materials: m };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   materials = written.materials;
   const token = signPosition(env, { did: userDid, x: tx, y: ty, counter: 0, iat: now });
@@ -381,19 +455,23 @@ export interface SearchResult { found: string | null; materials: Record<string, 
  *  **パワーの消費も権威側** (#551) — client の台帳だけで引いていた頃は、いくらでも しらべられた。 */
 export async function handleSearch(env: ResolverEnv, userDid: string, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, opKey?: string): Promise<SearchResult> {
   let x: number, y: number;
+  let mapId: string = WORLD_MAP_ID;
   try {
     const c = verifyPosition(env, token ?? '', userDid, now);
-    x = c.x; y = c.y;
+    x = c.x; y = c.y; mapId = c.mapId ?? WORLD_MAP_ID;
   } catch {
     const rec = await readState(env, userDid);
     const s = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-    x = s.x; y = s.y;
+    x = s.x; y = s.y; mapId = s.mapId ?? WORLD_MAP_ID;
   }
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const luk = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
-  const tier = tierForRegion(regionOf(x, y));
+  // 内部マップ (#424) の座標はローカル系で region が常に 0 になるため、
+  // 危険度は内部マップの設定を使う (フィールドは従来どおり地域から)。
+  const interiorHere = mapId !== WORLD_MAP_ID ? interiorById(mapId) : undefined;
+  const tier = (interiorHere?.encounterTier ?? tierForRegion(regionOf(x, y))) as ReturnType<typeof tierForRegion>;
   // **パワーは権威側から引く** (#551)。それまで消費は client の台帳だけで、権威 state の
   // power は動いていなかった = いくらでも しらべられた。
   if (state.power < SEARCH_POWER_COST) throw new ResolverError('あおぞらパワーが たりない', 400, 'no_power');
@@ -485,6 +563,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const lossSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
     let awarded: AwardBreakdown = {};
     let finalPos = { x: 0, y: 0 };
+    let finalMapId: string = WORLD_MAP_ID;
     const window = enemyWindow(now);
     const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
@@ -508,12 +587,18 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         ? [...prevDefeated.filter((t) => t !== guard.sealed.tile), guard.sealed.tile].slice(-256)
         : prevDefeated;
       // 位置を権威 state に確定。**敗北は最後の街へ帰還** (無ければ spawn)。勝ち/引き分けは戦闘タイルに留まる。
-      const [tx, ty] = guard.sealed.tile.split(',').map(Number);
-      const battleTile = Number.isFinite(tx) && Number.isFinite(ty) ? { x: tx, y: ty } : { x: cur.x, y: cur.y };
+      const parsed = parseTileKey(guard.sealed.tile);
+      const battleTile = parsed ? { x: parsed.x, y: parsed.y } : { x: cur.x, y: cur.y };
       const spawn = worldOverlay().spawn;
       finalPos = decision === 'lose' ? (cur.lastTown ?? { x: spawn.x, y: spawn.y }) : battleTile;
+      // **敗北の帰還先はフィールドの街** なので mapId を落とす。勝ち/引き分けは戦闘した
+      // マップに留まる (封印済みの mapId を使う — state 側は書き換わっている可能性がある)。
+      // ここで mapId を扱わないと、内部マップの座標のままフィールドに放り出される /
+      // 内部の範囲外に立って全方向「進めない」になる (レビュー ★★★)。
+      finalMapId = decision === 'lose' ? WORLD_MAP_ID : (guard.sealed.mapId ?? parsed?.mapId ?? WORLD_MAP_ID);
       return {
         ...r.next,
+        mapId: finalMapId === WORLD_MAP_ID ? undefined : finalMapId,
         x: finalPos.x,
         y: finalPos.y,
         // **レベルアップしたら HP/MP 全回復** (#547)。
@@ -529,7 +614,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       };
     }, { now, init: (did, nowIso) => migrateInitState(did, nowIso, ns) });
     // 決着後の位置に対応する新トークンを発行 (敗北帰還で位置が変わるので client はこれで同期)。
-    const token = signPosition(env, { did: userDid, x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
+    const token = signPosition(env, { did: userDid, ...(finalMapId !== WORLD_MAP_ID ? { mapId: finalMapId } : {}), x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
       materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp };
   }

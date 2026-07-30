@@ -102,6 +102,8 @@ export interface GameState {
    *  client の申告を**所持の検証なしで**保存していたため、`{weapon:{id:'wp-shogun-high',plus:99}}`
    *  を送るだけで戦闘に効いた。ここに無い個体は装備できない。 */
   pieces?: OwnedPiece[];
+  /** 今いるマップ (#424)。省略 = フィールド ('world')。内部マップ (街の中・城) に居るとき id が入る。 */
+  mapId?: string;
   /** 進行中のゲーム内クエスト (#423)。討伐数は勝利時に edge が数える。 */
   quest?: { id: string; progress: number };
   /** 達成済みクエスト id (再受注させない)。直近 200 件のリング。 */

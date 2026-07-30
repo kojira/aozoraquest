@@ -89,11 +89,13 @@ async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknow
 export interface ServerMonster { name: string; maxHp: number; hp: number; maxMp: number; mp: number; [k: string]: unknown }
 export interface ServerBattleState { player: ServerMonster; monster: ServerMonster; monsterId: string; outcome: string; turn: number; lastEvents: { actor: string; text: string }[]; [k: string]: unknown }
 export interface ServerEncounter { battleId: string; monsterId: string; state: ServerBattleState; rewarded: boolean }
-export interface ServerMoveResult { x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter }
+export interface ServerMoveResult {
+  /** 移動後のマップ (#424)。省略 = フィールド。 */
+  mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; quest?: { id: string; progress: number }; questsDone?: string[]; version: number; updatedAt: string }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; quest?: { id: string; progress: number }; questsDone?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */

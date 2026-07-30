@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, npcArtKey, npcAt, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -110,6 +110,8 @@ const dangerLabel = (tier: number) =>
 const asBattleState = (s: ServerBattleState): BattleState => s as unknown as BattleState;
 
 interface Vitals {
+  /** 今いるマップ (#424)。省略 = フィールド。内部マップ (街の中・城) では id が入る。 */
+  mapId?: string;
   x: number;
   y: number;
   /** null = 全快 (最大値はジョブ/レベルから導出) */
@@ -357,6 +359,8 @@ export function World() {
         // 使うことで、初回移動でクライアント位置とサーバー位置がズレて「ワープ」するのを防ぐ。
         // 街/地図/HP 等の探索メモは従来どおり client の world-record を使う。取得失敗時は world-record 位置。
         let px = state.x, py = state.y;
+        /** サーバー権威の mapId (#424)。内部マップに居るならその id。 */
+        let serverMapId: string | undefined;
         // サーバー gameState を在庫/HP/位置の**唯一の正**とする (#372)。取得失敗時のみ world-record にフォールバック。
         try {
           const ss = await serverState(agent);
@@ -364,6 +368,7 @@ export function World() {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
             setServerPower(ss.state.power ?? 0);
             questRef.current = { ...(ss.state.quest ? { active: ss.state.quest } : {}), done: ss.state.questsDone ?? [] };
+            serverMapId = ss.state.mapId;
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
             // 記帳 (履歴) であって所持の根拠ではない。
             if (ss.state.pieces) setCraftedPieces(ss.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
@@ -383,6 +388,10 @@ export function World() {
           ? [...state.visitedTowns, { x: px, y: py }]
           : state.visitedTowns;
         const initialWs = {
+          // **内部マップ (#424) を維持する。** ここで捨てると、内部でリロードした瞬間
+          // 内部座標をフィールドとして描き、移動判定もフィールドで行って食い違う
+          // (サーバーは mapId 入りのトークンを返している。レビュー ★★)。
+          ...(serverMapId ? { mapId: serverMapId } : {}),
           x: px,
           y: py,
           // HP/MP はサーバー権威 (carryHp/Mp)。undefined=満タンなので null に。取得失敗時のみ world-record。
@@ -523,12 +532,15 @@ export function World() {
       if (moveBusyRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
       if (!worldServerEnabled || !agent) { setNotice('サーバーに接続できないため移動できない。'); return; }
       const { dx, dy } = DIRS[dir];
-      const nx = wrap(s.x + dx);
-      const ny = wrap(s.y + dy);
+      const cur = s.mapId ? interiorById(s.mapId) ?? null : null;
+      const nx = cur ? s.x + dx : wrap(s.x + dx);
+      const ny = cur ? s.y + dy : wrap(s.y + dy);
       // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
       // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (読了で受注)、
       // 進行中→達成を試みる (条件検証はサーバー)、達成済み→通常セリフ。
-      const npc = npcAt(nx, ny);
+      // NPC はフィールドにしか置けない (#425 の座標に mapId が無い)。内部で引くと
+      // 同じ座標の NPC が「幽霊」として現れ、戻りゲートを塞ぐこともある (レビュー ★★)。
+      const npc = cur ? undefined : npcAt(nx, ny);
       if (npc) {
         const q = gameQuestByNpc(npc.id);
         const qs = questRef.current;
@@ -580,7 +592,7 @@ export function World() {
         }
         return;
       }
-      if (!isWalkableAt(nx, ny)) {
+      if (!walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
         setNotice('そっちには進めない!');
         return;
       }
@@ -595,10 +607,14 @@ export function World() {
           const res = await serverMove(agent, dx, dy, tokenRef.current);
           tokenRef.current = res.token;
           const cur = wsRef.current ?? optimistic;
-          const t = townAt(res.x, res.y);
-          let next: Vitals = { ...cur, x: res.x, y: res.y };
+          // マップの切り替え (#424)。ゲートを踏むとサーバーが mapId を返す。
+          // **フィールドの街判定は mapId が無いときだけ**通す (内部の床が town でも街にしない)。
+          const onWorld = !res.mapId;
+          const t = onWorld ? townAt(res.x, res.y) : null;
+          let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
+          if (!res.mapId) delete next.mapId;
           if (res.healed) { next.hp = null; next.mp = null; }
-          if (res.terrain === 'town') {
+          if (onWorld && res.terrain === 'town') {
             // ちずのかけら: 街に入るとその街の地方一帯 (3×3 リージョン) が地図に加わる。
             // 訪問済みの街 (そらのはねの行き先候補) も積む。どちらも表示用の探索メモ。
             const around = regionsAround(regionOf(res.x, res.y));
@@ -1189,11 +1205,16 @@ export function World() {
   // シーン (敵+ログ) はマップ上オーバーレイ、コマンド/リザルトはマップ下に出す。
   const inBattle = battle !== null && (wipe === null || wipe === 'reveal');
 
-  const town = townAt(ws.x, ws.y);
-  const here = terrainAt(ws.x, ws.y);
+  const insideHere = ws.mapId ? interiorById(ws.mapId) ?? null : null;
+  // 内部では**フィールドの街表を引かない** — 内部座標がたまたま街と重なると、
+  // 街の HUD が出て「なんでも屋」が生えるのにサーバーは回復しない、という食い違いになる。
+  const town = insideHere ? null : townAt(ws.x, ws.y);
+  const here = insideHere ? interiorTerrainAt(insideHere, ws.x, ws.y) : terrainAt(ws.x, ws.y);
   // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
   // 「このあたり」の見出しと「何が多いか」は同じ tier を見る (ラベルと中身が食い違わないように)。
-  const hereTier = tierForRegion(regionOf(ws.x, ws.y));
+  // 内部マップ (#424) の座標はローカル系なので、地域から引く危険度・敵は意味を持たない
+  // (常に region 0 になる)。内部では自分の危険度設定を使い、未設定なら「敵なし」。
+  const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
   const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y))).name;
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
@@ -1234,17 +1255,20 @@ export function World() {
   // **同じパーツは <defs> に 1 回だけ定義して <use> で参照する** (#605)。全地形が
   // ドット絵 (タイルあたり最大 ~150 rect) になったので、マスごとにインライン展開すると
   // ビューポートだけで数千〜万 rect の DOM になり、歩くたびの再描画がモバイルで重くなる。
+  // 今いるマップ (#424)。内部なら地形もパーツもそのマップから引く。
+  const inside = ws.mapId ? interiorById(ws.mapId) ?? null : null;
   const tileDefs = new Map<string, React.ReactElement>();
   const tiles = [];
   for (let vy = 0; vy < VIEW; vy++) {
     for (let vx = 0; vx < VIEW; vx++) {
-      const x = wrap(ws.x - HALF + vx);
-      const y = wrap(ws.y - HALF + vy);
-      const t = terrainAt(x, y);
+      // 内部マップ (#424) は端で折り返さない (範囲外は壁として描く)。
+      const x = inside ? ws.x - HALF + vx : wrap(ws.x - HALF + vx);
+      const y = inside ? ws.y - HALF + vy : wrap(ws.y - HALF + vy);
+      const t = inside ? interiorTerrainAt(inside, x, y) : terrainAt(x, y);
       // ドット絵 (エディタ or 同梱 #605) → 従来の SVG → 代表色のべた塗り、の順に倒す。
       // **パーツ (index) ごとの絵を最優先。** 「縦の橋」のように、通行判定は同じで
       // 絵だけ違うパーツを足せるようにするため、地形 id ではなく index で引く。
-      const pi = mappedPartAt(x, y);
+      const pi = inside ? interiorPartAt(inside, x, y) : mappedPartAt(x, y);
       // 平地でドット絵が無いときだけ SVG バリアント (見た目散らし) が効くので、id に含める。
       const detail = t === 'plains' && !pixelPart(pi, t) ? tileDetailAt(x, y) : 0;
       const defId = `wt-${pi ?? 'x'}-${t}-${detail}`;
@@ -1265,7 +1289,8 @@ export function World() {
 
   // ビューポート内の NPC (#425)。ドット絵 (npc:<id>) → 代替の見た目 (人form) に倒す。
   const npcSprites = [];
-  for (const n of allNpcs()) {
+  // NPC はフィールド専用 (#425 の座標に mapId が無い)。内部では描かない。
+  for (const n of insideHere ? [] : allNpcs()) {
     const vx = wrap(n.x - (ws.x - HALF));
     const vy = wrap(n.y - (ws.y - HALF));
     if (vx >= VIEW || vy >= VIEW) continue;
@@ -1345,7 +1370,13 @@ export function World() {
               mp={battle ? battle.state.player.mp : curMp}
               power={serverPower}
               maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
-              locationLabel={town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`}
+              locationLabel={
+                // 内部では**そのマップの名前**を出す (どこに居るか分かる唯一の手掛かり)。
+                // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。
+                insideHere
+                  ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined ? ` / ${dangerLabel(hereTier)}` : ''}`
+                  : town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`
+              }
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。
               // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る
