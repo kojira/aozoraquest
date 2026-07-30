@@ -10,7 +10,7 @@
 import { describe, it, expect, afterEach, beforeAll } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { MONSTERS, setGameQuests, setNpcs, type GameQuestDef } from '@aozoraquest/core';
+import { MONSTERS, setGameQuests, setNpcs, setScenario, type GameQuestDef } from '@aozoraquest/core';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from '../src/game-quest';
 import { applyBattleOutcome } from '../src/battle-reward';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
@@ -226,5 +226,40 @@ describe('applyBattleOutcome の討伐カウント', () => {
     const s = stateAt({ quest: { id: 'q-collect', progress: 0 } });
     const { next } = win(s, [MON.id]);
     expect(next.quest).toEqual({ id: 'q-collect', progress: 0 });
+  });
+});
+
+describe('シナリオ連動 (#545)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setScenario(null); });
+
+  it('クエスト達成でフラグが立ち、お知らせが返る', async () => {
+    setScenario([{ id: 'e1', title: '第1章', when: [{ kind: 'questDone', questId: 'q-defeat' }], setFlags: ['ch1'], notice: '東の橋が なおったらしい' }]);
+    const m = statefulPds(stateAt({ quest: { id: 'q-defeat', progress: 2 } }));
+    globalThis.fetch = m.fn;
+    const res = await handleQuestComplete(await makeEnv(), DID, 'q-defeat', NOW);
+    expect(res.flags).toContain('ch1');
+    expect(res.notices).toEqual(['東の橋が なおったらしい']);
+    expect((stored(m.store) as GameState).flags).toContain('ch1');
+  });
+
+  it('解禁フラグが立っていないクエストはサーバーが受け付けない (直 POST でも)', async () => {
+    // NPC の分岐を無視して直接叩いても通らないことを確かめる。
+    setGameQuests([{ ...DEFEAT_Q, requireFlags: ['ch1'] }, COLLECT_Q]);
+    globalThis.fetch = statefulPds(stateAt()).fn;
+    await expect(handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'locked' });
+    // フラグが立っていれば通る
+    globalThis.fetch = statefulPds(stateAt({ flags: ['ch1'] })).fn;
+    const ok = await handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW);
+    expect(ok.quest).toEqual({ id: 'q-defeat', progress: 0 });
+    setGameQuests([DEFEAT_Q, COLLECT_Q]);
+  });
+
+  it('既にフラグが立っていれば同じお知らせを二度出さない', async () => {
+    setScenario([{ id: 'e1', title: '第1章', when: [{ kind: 'questDone', questId: 'q-collect' }], setFlags: ['ch1'], notice: 'もう出ない' }]);
+    const m = statefulPds(stateAt({ materials: { herb: 5 }, quest: { id: 'q-collect', progress: 0 }, flags: ['ch1'] }));
+    globalThis.fetch = m.fn;
+    const res = await handleQuestComplete(await makeEnv(), DID, 'q-collect', NOW);
+    expect(res.notices).toBeUndefined();
   });
 });

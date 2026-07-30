@@ -303,6 +303,25 @@ export function AdminQuests() {
                 )}
               </span>
             ))}
+            {field('解禁フラグ', (
+              <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flex: 1 }}>
+                <input
+                  value={(current.requireFlags ?? []).join(' ')}
+                  placeholder="(なし) 空白区切り。立つまで NPC は依頼を話さない"
+                  onChange={(e) => {
+                    const flags = e.target.value.split(/\s+/).filter(Boolean);
+                    setList((xs) => xs.map((x) => {
+                      if (x.id !== current.id) return x;
+                      if (flags.length === 0) { const { requireFlags: _f, ...rest } = x; return rest as GameQuestDef; }
+                      return { ...x, requireFlags: flags };
+                    }));
+                    setDirty(true);
+                  }}
+                  style={{ flex: 1, fontFamily: 'ui-monospace, monospace' }}
+                />
+                <Link to="/admin/scenario" style={{ fontSize: '0.85em' }}>シナリオ</Link>
+              </span>
+            ))}
             {lineEditor(current, 'intro', '依頼のセリフ', '読み終えると受注する')}
             {lineEditor(current, 'progress', '進行中のセリフ', '空なら既定「たのんだよ。」+ サーバーの「まだ n/m」')}
             {lineEditor(current, 'done', '達成のセリフ', 'お礼。この後に報酬が出る')}

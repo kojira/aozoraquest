@@ -28,4 +28,5 @@ export * from './quest-data.js';
 export * from './part-presets.js';
 export * from './job-data.js';
 export * from './interior.js';
+export * from './scenario.js';
 export * from './equipment.js';

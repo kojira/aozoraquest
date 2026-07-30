@@ -197,6 +197,82 @@ export function AdminNpcs() {
                 ＋セリフ
               </button>
             </div>
+            {/* フラグ別セリフ (#545)。上から見て最初に条件を満たしたものを話す。 */}
+            <div style={{ fontSize: '0.8em' }}>
+              <span style={{ color: 'var(--color-muted)' }}>
+                フラグ別セリフ (上から見て最初に条件を満たしたもの。どれも満たさなければ上のセリフ)
+              </span>
+              {(current.altLines ?? []).map((alt, ai) => (
+                <div key={ai} style={{ border: '1px solid var(--color-border)', padding: '0.3em', margin: '0.2em 0' }}>
+                  <div style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--color-muted)' }}>立っている</span>
+                    <input
+                      value={(alt.flags ?? []).join(' ')}
+                      placeholder="flag_a flag_b"
+                      onChange={(e) => {
+                        const flags = e.target.value.split(/\s+/).filter(Boolean);
+                        update(current.id, { altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, flags } : x)) });
+                      }}
+                      style={{ width: '11em', fontFamily: 'ui-monospace, monospace' }}
+                    />
+                    <span style={{ color: 'var(--color-muted)' }}>立っていない</span>
+                    <input
+                      value={(alt.notFlags ?? []).join(' ')}
+                      placeholder="flag_c"
+                      onChange={(e) => {
+                        const notFlags = e.target.value.split(/\s+/).filter(Boolean);
+                        update(current.id, { altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, notFlags } : x)) });
+                      }}
+                      style={{ width: '9em', fontFamily: 'ui-monospace, monospace' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => update(current.id, { altLines: (current.altLines ?? []).filter((_, j) => j !== ai) })}
+                      style={{ marginLeft: 'auto', fontSize: '0.8em' }}
+                    >
+                      この分岐を消す
+                    </button>
+                  </div>
+                  {alt.lines.map((l, li) => (
+                    <div key={li} style={{ display: 'flex', gap: '0.3em', margin: '0.15em 0' }}>
+                      <input
+                        value={l}
+                        onChange={(e) => update(current.id, {
+                          altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, lines: x.lines.map((y, k) => (k === li ? e.target.value : y)) } : x)),
+                        })}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        disabled={alt.lines.length <= 1}
+                        onClick={() => update(current.id, {
+                          altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, lines: x.lines.filter((_, k) => k !== li) } : x)),
+                        })}
+                        style={{ fontSize: '0.8em' }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => update(current.id, {
+                      altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, lines: [...x.lines, ''] } : x)),
+                    })}
+                    style={{ fontSize: '0.8em' }}
+                  >
+                    ＋セリフ
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => update(current.id, { altLines: [...(current.altLines ?? []), { flags: [], lines: ['…'] }] })}
+                style={{ fontSize: '0.8em', marginTop: '0.2em' }}
+              >
+                ＋フラグ別セリフ
+              </button>
+            </div>
             {drawing && (
               <TileArtEditor
                 subjects={[{

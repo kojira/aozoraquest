@@ -21,6 +21,19 @@ export interface NpcDef {
   y: number;
   /** セリフ (1 要素 = 1 窓)。ぶつかるたびに先頭から流す。 */
   lines: string[];
+  /**
+   * **進行フラグで変わるセリフ** (#545)。上から順に見て、条件を満たす最初のものを話す。
+   * どれも満たさなければ `lines` (既定のセリフ)。
+   *
+   * 「橋を直したら村人の話が変わる」を、NPC を作り直さずに書けるようにする。
+   */
+  altLines?: Array<{
+    /** すべて立っていること。 */
+    flags?: string[];
+    /** どれも立っていないこと。 */
+    notFlags?: string[];
+    lines: string[];
+  }>;
 }
 
 export interface NpcsRecord {
@@ -65,8 +78,20 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
         throw new NpcDataError(`${where}: セリフが不正 (空 or ${MAX_NPC_LINE} 文字超)`);
       }
     }
+    for (const alt of n.altLines ?? []) {
+      if (!alt || !Array.isArray(alt.lines) || alt.lines.length === 0) throw new NpcDataError(`${where}: フラグ別セリフが空`);
+      for (const l of alt.lines) {
+        if (typeof l !== 'string' || l.trim() === '' || l.length > MAX_NPC_LINE) {
+          throw new NpcDataError(`${where}: フラグ別セリフが不正`);
+        }
+      }
+      // 条件の無い分岐は既定のセリフと同じなので、書き間違い (フラグ名の打ち漏らし) を疑う。
+      if ((alt.flags?.length ?? 0) === 0 && (alt.notFlags?.length ?? 0) === 0) {
+        throw new NpcDataError(`${where}: フラグ別セリフに条件が無い`);
+      }
+    }
   }
-  npcList = next.map((n) => ({ ...n, lines: [...n.lines] }));
+  npcList = next.map((n) => ({ ...n, lines: [...n.lines], ...(n.altLines ? { altLines: n.altLines.map((a) => ({ ...a, lines: [...a.lines] })) } : {}) }));
   byKey = new Map(npcList.map((n) => [key(n.x, n.y), n]));
 }
 
@@ -78,6 +103,19 @@ export function npcAt(x: number, y: number): NpcDef | undefined {
 /** 全 NPC (描画・エディタ用)。 */
 export function allNpcs(): readonly NpcDef[] {
   return npcList;
+}
+
+/**
+ * その NPC が今話すセリフ (#545)。フラグ別の分岐を上から見て、
+ * 最初に条件を満たしたものを返す。満たすものが無ければ既定のセリフ。
+ */
+export function npcLinesFor(npc: NpcDef, flags: readonly string[]): string[] {
+  for (const alt of npc.altLines ?? []) {
+    if (alt.flags?.some((f) => !flags.includes(f))) continue;
+    if (alt.notFlags?.some((f) => flags.includes(f))) continue;
+    return alt.lines;
+  }
+  return npc.lines;
 }
 
 /** NPC の絵のキー (ドット絵の登録簿に相乗り)。 */

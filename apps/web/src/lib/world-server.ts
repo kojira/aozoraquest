@@ -95,7 +95,7 @@ export interface ServerMoveResult {
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; quest?: { id: string; progress: number }; questsDone?: string[]; version: number; updatedAt: string }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; quest?: { id: string; progress: number }; questsDone?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -220,6 +220,10 @@ export interface ServerQuestResult {
   materials: Record<string, number>;
   /** 達成時のみ: 付与された報酬。 */
   rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 進行フラグ (#545)。サーバーが立てた結果。 */
+  flags?: string[];
+  /** シナリオのお知らせ (一度だけ)。 */
+  notices?: string[];
 }
 
 /** ゲーム内クエスト (#423): 受注。進行は GameState に積まれ、討伐は勝利時にサーバーが数える。 */
