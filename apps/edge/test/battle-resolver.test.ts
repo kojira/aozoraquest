@@ -375,3 +375,42 @@ describe('内部マップの詰み対策 (#424 レビュー)', () => {
     expect(moved).toBe(true);
   });
 });
+
+describe('ゲートの解禁フラグ (#426)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setInteriors(null, null); });
+
+  const FLOOR3 = BASE_PALETTE.indexOf('plains');
+  const WALL3 = BASE_PALETTE.indexOf('mountain');
+  const room3 = (): InteriorMap => {
+    const size = 8;
+    const tiles = new Uint8Array(size * size).fill(FLOOR3);
+    for (let k = 0; k < size; k++) {
+      tiles[k] = WALL3; tiles[(size - 1) * size + k] = WALL3; tiles[k * size] = WALL3; tiles[k * size + size - 1] = WALL3;
+    }
+    return { id: 'in-1', name: 'しろ', size, tiles };
+  };
+  const step = (x: number, y: number) => {
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
+      if (isWalkable(terrainAt(x + dx, y + dy))) return { dx, dy, nx: x + dx, ny: y + dy };
+    }
+    throw new Error('歩ける隣接マスがない');
+  };
+
+  it('フラグが立っていないと通れない (client の自己申告では開かない)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10 }) }).fn;
+    const s = step(10, 10);
+    setInteriors([room3()], [{ from: { mapId: 'world', x: s.nx, y: s.ny }, to: { mapId: 'in-1', x: 4, y: 4 }, requireFlags: ['castle_open'] }]);
+    await expect(handleMove(env, USER, s.dx, s.dy, undefined, NOW)).rejects.toMatchObject({ status: 400, code: 'gate_locked' });
+  });
+
+  it('フラグが立っていれば通れる', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ x: 10, y: 10, flags: ['castle_open'] }) }).fn;
+    const s = step(10, 10);
+    setInteriors([room3()], [{ from: { mapId: 'world', x: s.nx, y: s.ny }, to: { mapId: 'in-1', x: 4, y: 4 }, requireFlags: ['castle_open'] }]);
+    const r = await handleMove(env, USER, s.dx, s.dy, undefined, NOW);
+    expect(r.mapId).toBe('in-1');
+  });
+});

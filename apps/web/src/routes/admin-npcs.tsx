@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   allNpcs,
@@ -13,8 +13,9 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { saveNpcs } from '@/lib/world-authoring';
+import { loadAuthoredWorld, saveNpcs } from '@/lib/world-authoring';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
+import { ItemReqInput } from '@/components/admin/item-req-input';
 
 /**
  * **NPC エディタ** (#425)。位置・名前・セリフ・絵。
@@ -32,6 +33,16 @@ export function AdminNpcs() {
   const [drawing, setDrawing] = useState(false);
 
   const current = useMemo(() => list.find((n) => n.id === sel) ?? null, [list, sel]);
+
+  // **アイテムを先に読む** — フラグ別セリフの持ち物条件が ITEMS を引くので、
+  // この画面を直接開くと保存が「アイテムが存在しない」で落ちる (レビュー ★★★)。
+  useEffect(() => {
+    let cancelled = false;
+    void loadAuthoredWorld(session.agent ?? null).finally(() => {
+      if (!cancelled) setList(allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
+    });
+    return () => { cancelled = true; };
+  }, [session.agent]);
 
   const update = useCallback((id: string, patch: Partial<NpcDef>) => {
     setList((xs) => xs.map((n) => (n.id === id ? { ...n, ...patch } : n)));
@@ -224,6 +235,18 @@ export function AdminNpcs() {
                         update(current.id, { altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, notFlags } : x)) });
                       }}
                       style={{ width: '9em', fontFamily: 'ui-monospace, monospace' }}
+                    />
+                    <span style={{ color: 'var(--color-muted)' }}>持っている</span>
+                    <ItemReqInput
+                      value={alt.items}
+                      placeholder="(なし) 例: gate-key"
+                      onChange={(items) => update(current.id, {
+                        altLines: (current.altLines ?? []).map((x, j) => {
+                          if (j !== ai) return x;
+                          if (!items) { const { items: _i, ...rest } = x; return rest; }
+                          return { ...x, items };
+                        }),
+                      })}
                     />
                     <button
                       type="button"

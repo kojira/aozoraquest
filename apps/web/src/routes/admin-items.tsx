@@ -5,6 +5,10 @@ import {
   GEAR_SLOT_LABELS,
   activeEquipment,
   activeItems,
+  allGates,
+  allNpcs,
+  gameQuests,
+  scenarioEvents,
   canEquip,
   ItemDataError,
   JOBS,
@@ -77,6 +81,22 @@ export function AdminItems() {
   const save = useCallback(async () => {
     if (!session.agent) return;
     try {
+      // 参照しているアイテムを消させない (#426)。参照切れが 1 件あると
+      // setInteriors/setGameQuests/setScenario が全体を落とし、edge のコールドスタート後に
+      // ゲート・クエスト・シナリオがまとめて読み込まれなくなる (レビュー ★★)。
+      const ids = new Set(items.map((it) => it.id));
+      const missing = (req?: readonly { itemId: string }[]) => (req ?? []).find((r) => !ids.has(r.itemId))?.itemId;
+      const refs: Array<[string, string | undefined]> = [
+        ...allGates().map((g) => [`ゲート (${g.from.mapId} ${g.from.x},${g.from.y})`, missing(g.requireItems)] as [string, string | undefined]),
+        ...gameQuests().map((q) => [`クエスト「${q.title}」`, missing(q.requireItems)] as [string, string | undefined]),
+        ...allNpcs().flatMap((n) => (n.altLines ?? []).map((a) => [`NPC「${n.name}」のセリフ`, missing(a.items)] as [string, string | undefined])),
+        ...scenarioEvents().flatMap((e) => e.when.map((c) => [`シナリオ「${e.title}」`, c.kind === 'itemCount' && !ids.has(c.itemId) ? c.itemId : undefined] as [string, string | undefined])),
+      ];
+      const hit = refs.find(([, id]) => id);
+      if (hit) {
+        setNote(`保存できない: ${hit[0]} が「${hit[1]}」を参照している。先にそちらを直す`);
+        return;
+      }
       await saveItems(session.agent, items, equipment);
       setDirty(false);
       setNote('保存した。サーバーは最大 5 分で拾う');
@@ -141,6 +161,23 @@ export function AdminItems() {
                 onChange={(e) => { setItems((xs) => xs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x))); setDirty(true); }}
                 style={{ flex: 1 }}
               />
+              {/* だいじなもの (シナリオアイテム)。ひきとってもらえず、負けても失わない (#426) */}
+              <label style={{ display: 'flex', gap: '0.2em', alignItems: 'center', fontSize: '0.8em', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  checked={!!it.key}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setItems((xs) => xs.map((x, j) => {
+                      if (j !== i) return x;
+                      if (!on) { const { key: _k, ...rest } = x; return rest as ItemDefData; }
+                      return { ...x, key: true };
+                    }));
+                    setDirty(true);
+                  }}
+                />
+                だいじ
+              </label>
               <button
                 type="button"
                 onClick={() => {
@@ -161,6 +198,17 @@ export function AdminItems() {
           >
             ＋どうぐ
           </button>
+          <button
+            type="button"
+            onClick={() => { setItems((xs) => [...xs, { id: `key-${xs.length + 1}`, name: 'あたらしい だいじなもの', key: true }]); setDirty(true); }}
+            style={{ fontSize: '0.85em', alignSelf: 'flex-start' }}
+          >
+            ＋だいじなもの
+          </button>
+          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
+            だいじなもの: ひきとってもらえず、負けても失わない。
+            <Link to="/admin/scenario">シナリオ</Link>の条件や、クエスト・ゲートの解禁に使える
+          </p>
         </div>
       ) : (
         <div className="admin-cols">

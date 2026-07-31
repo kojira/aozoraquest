@@ -157,18 +157,20 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
   }
 
   if (o.outcome === 'lose') {
-    // 負けでも僅かな XP (§5「負: xpLose+素材ロス」/ 旧クライアントと同値) + 素材ロス + パワー消費。
+    // 敗北は**素材ロス + パワー消費のみ** (#621)。XP は配らない — 固定額だと
+    // tier1 の弱い敵で「負けたほうが多い」逆転が起きる (実測で 3 種該当)。
     const xp = BATTLE_TUNING.xpLose;
     const materialsLost = rollDefeatLoss(state.materials, o.luk, o.lossSeed);
     const next: GameState = {
       ...state,
-      jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp }, // playerXp は増やさない (#507/#508)
+      // xp が 0 なら jobXp を触らない (差分も「0 XP」表示も出さない)。
+      ...(xp > 0 ? { jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp } } : {}), // playerXp は増やさない (#507/#508)
       materials: addItems(state.materials, materialsLost, -1),
       power: Math.max(0, state.power - POWER_COST),
     };
     // 負けでも僅かに XP が入るので、そこで上がることもある (演出は勝ち負けの後に出る)。
     const lv = levelUpOf(state, next, o.archetype, o.baseStats);
-    return { next, awarded: { xp, materialsLost, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
+    return { next, awarded: { ...(xp > 0 ? { xp } : {}), materialsLost, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
   }
 
   // draw / fled / monster-fled は決着扱いにしない (XP もドロップもパワー消費も無し)。

@@ -14,6 +14,7 @@
  *   danger 階級・周辺地形の系統枠 (docs/20) は W6b で追加する。
  */
 
+import { ITEMS } from './battle.js';
 import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
@@ -267,6 +268,9 @@ export const SELLABLE_MATERIALS: readonly string[] = [
 ];
 
 export function isSellableMaterial(id: string): boolean {
+  // **だいじなもの (シナリオアイテム) は換金しない** (#426)。売れると進行に要るものを
+  // 失って詰む。allowlist だけだと「既存の素材にだいじを付けても売れる」ままだった。
+  if (ITEMS[id]?.key) return false;
   return SELLABLE_MATERIALS.includes(id);
 }
 

@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -560,9 +560,12 @@ export function World() {
       if (npc) {
         const q0 = gameQuestByNpc(npc.id);
         // 解禁フラグ (#545) が立つまで、その NPC は依頼を話さない (通常のセリフに戻る)。
-        const q = q0 && (q0.requireFlags ?? []).every((f) => flagsRef.current.includes(f)) ? q0 : undefined;
+        const q = q0
+          && (q0.requireFlags ?? []).every((f) => flagsRef.current.includes(f))
+          && itemsSatisfied(q0.requireItems, materialsRef.current)
+          ? q0 : undefined;
         const qs = questRef.current;
-        const npcLines = npcLinesFor(npc, flagsRef.current);
+        const npcLines = npcLinesFor(npc, flagsRef.current, materialsRef.current);
         // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする。
         // 放置すると「べつの たのまれごと」で全クエストが永久に受けられない (UX レビュー ★★★)。
         // サーバー側 (handleQuestAccept) も同じ判断で孤児クエストを落とす。
@@ -611,6 +614,13 @@ export function World() {
         } else {
           setNpcTalk({ npc, lines: q.intro, acceptQuestId: q.id });
         }
+        return;
+      }
+      // 施錠中のゲート (#426) は踏む前に止める。サーバーも同じ判定をするので、
+      // ここで止めないと「歩けたのに弾かれる」1 手が毎回発生する。
+      const gate = gateAt(s.mapId ?? WORLD_MAP_ID, nx, ny);
+      if (gate && !gateOpen(gate, flagsRef.current, materialsRef.current)) {
+        setNotice(gateLockedNotice(gate));
         return;
       }
       if (!walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
@@ -670,6 +680,9 @@ export function World() {
           // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
           if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
           else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
+          // 施錠ゲート (#426) はサーバーの理由をそのまま出す ('そっちには進めない' だと
+          // 地形のせいだと誤解する)。
+          else if (e instanceof WorldServerError && e.code === 'gate_locked') setNotice(e.message);
           else if (e instanceof WorldServerError && e.status === 400) setNotice('そっちには進めない!');
           else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。すこし まってから もう一度。');
           else { console.warn('[world] serverMove failed', e); setNotice('移動できなかった (通信エラー)。'); }

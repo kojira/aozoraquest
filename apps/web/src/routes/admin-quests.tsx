@@ -14,6 +14,7 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, saveGameQuests } from '@/lib/world-authoring';
+import { ItemReqInput } from '@/components/admin/item-req-input';
 
 /**
  * **ゲーム内クエスト エディタ** (#423)。NPC 発注・達成条件・報酬。
@@ -331,6 +332,19 @@ export function AdminQuests() {
                 />
                 <Link to="/admin/scenario" style={{ fontSize: '0.85em' }}>シナリオ</Link>
               </span>
+            ))}
+            {field('解禁アイテム', (
+              <ItemReqInput
+                value={current.requireItems}
+                onChange={(requireItems) => {
+                  setList((xs) => xs.map((x) => {
+                    if (x.id !== current.id) return x;
+                    if (!requireItems) { const { requireItems: _r, ...rest } = x; return rest as GameQuestDef; }
+                    return { ...x, requireItems };
+                  }));
+                  setDirty(true);
+                }}
+              />
             ))}
             {lineEditor(current, 'intro', '依頼のセリフ', '読み終えると受注する')}
             {lineEditor(current, 'progress', '進行中のセリフ', '空なら既定「たのんだよ。」+ サーバーの「まだ n/m」')}

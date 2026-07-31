@@ -192,6 +192,30 @@ export function pendingScenario(p: ScenarioProgress): { fired: ScenarioEvent[]; 
   return { fired, flags: [...flags].slice(-MAX_FLAGS) };
 }
 
+/**
+ * **持ち物の条件** (#426)。フラグの代わりに「これを持っているか」でゲートする。
+ * 進行フラグを増やさずに「かぎを手に入れたら門が開く」を書けるようにする手段で、
+ * NPC のセリフ・クエストの解禁・ゲートの解錠が共通で使う。
+ */
+export interface ItemRequirement {
+  itemId: string;
+  /** 必要な個数。省略 = 1 個。 */
+  count?: number;
+}
+
+/** 持ち物の条件を満たしているか。空/未指定なら常に true。 */
+export function itemsSatisfied(reqs: readonly ItemRequirement[] | undefined, materials: Readonly<Record<string, number>>): boolean {
+  return (reqs ?? []).every((r) => (materials[r.itemId] ?? 0) >= (r.count ?? 1));
+}
+
+/** 持ち物の条件の書式を検証する (未知 id は「絶対に満たせない条件」になるので弾く)。 */
+export function assertItemRequirements(reqs: readonly ItemRequirement[] | undefined, where: string, itemExists: (id: string) => boolean): void {
+  for (const r of reqs ?? []) {
+    if (!r || typeof r.itemId !== 'string' || !itemExists(r.itemId)) throw new ScenarioError(`${where}: アイテムが存在しない (${r?.itemId})`);
+    if (r.count !== undefined && (!Number.isInteger(r.count) || r.count < 1)) throw new ScenarioError(`${where}: 個数は 1 以上`);
+  }
+}
+
 /** そのフラグ条件を満たしているか (NPC のセリフ出し分け等、表示側の判定に使う)。 */
 export function flagsSatisfied(required: readonly string[] | undefined, forbidden: readonly string[] | undefined, flags: readonly string[]): boolean {
   if (required?.some((f) => !flags.includes(f))) return false;

@@ -85,13 +85,14 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     expect(omitted.awarded).toEqual(single.awarded);
   });
 
-  it('負け: 素材ロス + パワー1消費 + 僅かな xpLose (§5)', () => {
+  it('負け: 素材ロス + パワー1消費のみ (XP は入らない #621)', () => {
     const s = base({ power: 2, playerXp: 80, jobXp: { warrior: 20 }, materials: { herb: 3, ore: 2 } });
     const { next, awarded } = applyBattleOutcome(s, input({ outcome: 'lose' }));
-    expect(next.jobXp.warrior).toBe(20 + BATTLE_TUNING.xpLose); // 負けでも少しジョブ XP
+    // **負けでは XP が動かない。** 固定額を配ると tier1 の弱い敵で
+    // 「負けたほうが多い」逆転が起きる (実測で 3 種該当)。
+    expect(next.jobXp.warrior).toBe(20);
     expect(next.playerXp).toBe(80); // プレイヤー XP は増えない (#507/#508)
-    expect(next.jobXp.warrior).toBe(20 + BATTLE_TUNING.xpLose);
-    expect(awarded.xp).toBe(BATTLE_TUNING.xpLose);
+    expect(awarded.xp).toBeUndefined();
     expect(next.power).toBe(1); // 2-1
     expect(awarded.powerSpent).toBe(1);
     // materialsLost があれば materials が減っている
@@ -144,13 +145,16 @@ describe('レベルアップで HP/MP 全回復 (#534)', () => {
     expect(r.awarded.leveledUp).toBeUndefined();
   });
 
-  it('負けでも Lv が上がれば leveledUp が返る (僅かな XP が入るため)', () => {
+  it('負けでは Lv が上がらない (XP が入らないため #621)', () => {
+    // 以前は僅かな xpLose で負けてもレベルが上がることがあった。敗北 XP を
+    // やめたので、あと 1 XP の状態で負けても上がらない。
     const th = jobXpToNextLevelFor('warrior', 0).next;
     const r = applyBattleOutcome(at(th - 1), {
       outcome: 'lose', monsterId: 'sky-slime', archetype: 'warrior', luk: 0,
       rewardSeed: 1, lossSeed: 2, rewarded: true,
     });
-    expect(r.awarded.leveledUp).toMatchObject({ from: 1, to: 2 });
+    expect(r.awarded.leveledUp).toBeUndefined();
+    expect(r.next.jobXp.warrior).toBe(th - 1); // XP も動かない
   });
 
   it('パワー無し (練習) では Lv も上がらない', () => {

@@ -17,6 +17,9 @@ import {
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
   WORLD_MAP_ID,
   gateAt,
+  gateHasLock,
+  gateLockedNotice,
+  gateOpen,
   interiorById,
   interiorTerrainAt,
   isInterior,
@@ -317,6 +320,15 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   // **ゲートを踏んだら移る** (#424)。通行判定の後に見るのは、壁の中の入口を
   // 「歩けないが入れる」にしないため (入口タイル自体は歩けるパーツで置く)。
   const gate = gateAt(mapId, nx, ny);
+  if (gate && gateHasLock(gate)) {
+    // **解禁フラグの検証は権威側** (#426)。client がフラグを自己申告しても通らない。
+    // state を読むのはゲートを踏んだときだけ (毎移動で PDS を読むのは高すぎる)。
+    const rec = await readState(env, userDid);
+    const st = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
+    // 文言はエディタで書ける (#426)。既定は core が持つ — edge と web で別々に
+    // 直書きすると、片方だけ直したときに食い違う。
+    if (!gateOpen(gate, st.flags ?? [], st.materials)) throw new ResolverError(gateLockedNotice(gate), 400, 'gate_locked');
+  }
   if (gate) {
     mapId = gate.to.mapId;
     nx = gate.to.x;

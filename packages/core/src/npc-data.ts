@@ -10,7 +10,8 @@
  * 絵はドット絵 (`npc:<id>` キー) で、無ければ代替の見た目に倒す。
  */
 
-import { isFlagName } from './scenario.js';
+import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequirement } from './scenario.js';
+import { ITEMS } from './battle.js';
 
 export class NpcDataError extends Error {}
 
@@ -34,6 +35,8 @@ export interface NpcDef {
     flags?: string[];
     /** どれも立っていないこと。 */
     notFlags?: string[];
+    /** 持っていること (#426)。フラグの代わりに「これを持っていたら別の話をする」。 */
+    items?: ItemRequirement[];
     lines: string[];
   }>;
 }
@@ -87,8 +90,9 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
           throw new NpcDataError(`${where}: フラグ別セリフが不正`);
         }
       }
+      assertItemRequirements(alt.items, where, (id) => !!ITEMS[id]);
       // 条件の無い分岐は既定のセリフと同じなので、書き間違い (フラグ名の打ち漏らし) を疑う。
-      if ((alt.flags?.length ?? 0) === 0 && (alt.notFlags?.length ?? 0) === 0) {
+      if ((alt.flags?.length ?? 0) === 0 && (alt.notFlags?.length ?? 0) === 0 && (alt.items?.length ?? 0) === 0) {
         throw new NpcDataError(`${where}: フラグ別セリフに条件が無い`);
       }
       // シナリオ側と同じ書式で弾く (#545)。typo したフラグの分岐は永久に選ばれない。
@@ -97,7 +101,7 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
       }
     }
   }
-  npcList = next.map((n) => ({ ...n, lines: [...n.lines], ...(n.altLines ? { altLines: n.altLines.map((a) => ({ ...a, lines: [...a.lines] })) } : {}) }));
+  npcList = next.map((n) => ({ ...n, lines: [...n.lines], ...(n.altLines ? { altLines: n.altLines.map((a) => ({ ...a, lines: [...a.lines], ...(a.items ? { items: a.items.map((r) => ({ ...r })) } : {}) })) } : {}) }));
   byKey = new Map(npcList.map((n) => [key(n.x, n.y), n]));
 }
 
@@ -115,10 +119,11 @@ export function allNpcs(): readonly NpcDef[] {
  * その NPC が今話すセリフ (#545)。フラグ別の分岐を上から見て、
  * 最初に条件を満たしたものを返す。満たすものが無ければ既定のセリフ。
  */
-export function npcLinesFor(npc: NpcDef, flags: readonly string[]): string[] {
+export function npcLinesFor(npc: NpcDef, flags: readonly string[], materials: Readonly<Record<string, number>> = {}): string[] {
   for (const alt of npc.altLines ?? []) {
     if (alt.flags?.some((f) => !flags.includes(f))) continue;
     if (alt.notFlags?.some((f) => flags.includes(f))) continue;
+    if (!itemsSatisfied(alt.items, materials)) continue;
     return alt.lines;
   }
   return npc.lines;

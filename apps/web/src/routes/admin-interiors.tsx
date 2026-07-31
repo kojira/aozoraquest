@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   BASE_PALETTE,
   InteriorError,
+  DEFAULT_GATE_LOCKED_NOTICE,
+  MAX_GATE_NOTICE,
   MAX_INTERIOR_SIZE,
   WORLD_MAP_ID,
   interiorPartAt,
@@ -14,7 +16,8 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
-import { loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
+import { loadAuthoredWorld, loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
+import { ItemReqInput } from '@/components/admin/item-req-input';
 import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
 
 /**
@@ -55,11 +58,17 @@ export function AdminInteriors() {
     const agent = session.agent;
     const adminDid = getPrimaryAdminDid();
     if (!agent || !adminDid) { setLoadState('failed'); return; }
-    void loadInteriorsRecord(agent, adminDid)
+    // **アイテムを先に読む** — 解錠アイテムの検証が ITEMS を引くので、この画面を
+    // 直接開くと「アイテムが存在しない」で保存も読み込みも落ちる (レビュー ★★★)。
+    void loadAuthoredWorld(agent)
+      .then(() => loadInteriorsRecord(agent, adminDid))
       .then((r) => {
         if (cancelled) return;
         setMaps(r.maps.map((m) => ({ ...m, tiles: new Uint8Array(m.tiles) })));
-        setGates(r.gates.map((g) => ({ from: { ...g.from }, to: { ...g.to } })));
+        // **ゲートは丸ごと写す。** from/to だけ拾っていたため、開き直して保存すると
+        // 施錠 (requireFlags/requireItems) とことばが全ゲートぶん消えていた
+        // (レビュー ★★★)。増えたフィールドを書き漏らさないよう spread で複製する。
+        setGates(r.gates.map((g) => ({ ...g, from: { ...g.from }, to: { ...g.to } })));
         setLoadState('ok');
       })
       .catch((e) => {
@@ -314,8 +323,54 @@ export function AdminInteriors() {
               <span style={{ color: 'var(--color-muted)' }}>このマップのゲート</span>
               {gatesHere.length === 0 && <div style={{ color: 'var(--color-muted)' }}>まだ無い</div>}
               {gatesHere.map((g) => (
-                <div key={`${g.from.x},${g.from.y}`} style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                <div key={`${g.from.x},${g.from.y}`} style={{ display: 'flex', gap: '0.4em', alignItems: 'center', flexWrap: 'wrap', margin: '0.15em 0' }}>
                   <span>({g.from.x}, {g.from.y}) → {g.to.mapId === WORLD_MAP_ID ? 'フィールド' : maps.find((m) => m.id === g.to.mapId)?.name ?? g.to.mapId} ({g.to.x}, {g.to.y})</span>
+                  {/* 解禁フラグ (#426)。立つまで踏んでも通れない = エリア解放の手段 */}
+                  <input
+                    value={(g.requireFlags ?? []).join(' ')}
+                    placeholder="解禁フラグ (空 = いつでも通れる)"
+                    onChange={(e) => {
+                      const flags = e.target.value.split(/\s+/).filter(Boolean);
+                      setGates((gs) => gs.map((x) => {
+                        if (x !== g) return x;
+                        if (flags.length === 0) { const { requireFlags: _f, ...rest } = x; return rest as Gate; }
+                        return { ...x, requireFlags: flags };
+                      }));
+                      setDirty(true);
+                    }}
+                    style={{ width: '14em', fontFamily: 'ui-monospace, monospace' }}
+                  />
+                  {/* 解禁アイテム (#426)。フラグの代わりに「かぎを持っていれば開く」 */}
+                  <ItemReqInput
+                    value={g.requireItems}
+                    placeholder="解禁アイテム (空 = 不要)"
+                    onChange={(requireItems) => {
+                      setGates((gs) => gs.map((x) => {
+                        if (x !== g) return x;
+                        if (!requireItems) { const { requireItems: _r, ...rest } = x; return rest as Gate; }
+                        return { ...x, requireItems };
+                      }));
+                      setDirty(true);
+                    }}
+                  />
+                  {/* 通れないときのことば。場所ごとの理由を書ける (#426) */}
+                  {((g.requireFlags?.length ?? 0) > 0 || (g.requireItems?.length ?? 0) > 0) && (
+                    <input
+                      value={g.lockedNotice ?? ''}
+                      maxLength={MAX_GATE_NOTICE}
+                      placeholder={DEFAULT_GATE_LOCKED_NOTICE}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setGates((gs) => gs.map((x) => {
+                          if (x !== g) return x;
+                          if (v.trim() === '') { const { lockedNotice: _n, ...rest } = x; return rest as Gate; }
+                          return { ...x, lockedNotice: v };
+                        }));
+                        setDirty(true);
+                      }}
+                      style={{ width: '16em' }}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => { setGates((gs) => gs.filter((x) => x !== g)); setDirty(true); }}

@@ -9,15 +9,19 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import {
   ScenarioError,
   flagsSatisfied,
+  itemsSatisfied,
   pendingScenario,
   scenarioEvents,
   setScenario,
   type ScenarioEvent,
   type ScenarioProgress,
 } from '../scenario.js';
-import { setGameQuests, type GameQuestDef } from '../quest-data.js';
+import { setGameQuests, gameQuestById, type GameQuestDef } from '../quest-data.js';
 import { setNpcs, npcLinesFor, type NpcDef } from '../npc-data.js';
-import { MONSTERS } from '../battle.js';
+import { ITEMS, MONSTERS, rollDefeatLoss } from '../battle.js';
+import { setItemOverrides } from '../item-data.js';
+import { isSellableMaterial } from '../equipment.js';
+import { activeEquipment } from '../item-data.js';
 
 const MON = MONSTERS[0]!.id;
 const QUEST: GameQuestDef = {
@@ -221,5 +225,66 @@ describe('notFlag の順序独立性 (#545 レビュー ★★)', () => {
     ]);
     const r = pendingScenario(progress());
     expect(r.fired.map((e) => e.id).sort()).toEqual(['e1', 'e2', 'e3']);
+  });
+});
+
+describe('持ち物での判定 (#426)', () => {
+  it('itemsSatisfied: 個数省略は 1 個、足りなければ false', () => {
+    expect(itemsSatisfied(undefined, {})).toBe(true);
+    expect(itemsSatisfied([{ itemId: 'herb' }], {})).toBe(false);
+    expect(itemsSatisfied([{ itemId: 'herb' }], { herb: 1 })).toBe(true);
+    expect(itemsSatisfied([{ itemId: 'herb', count: 3 }], { herb: 2 })).toBe(false);
+    expect(itemsSatisfied([{ itemId: 'herb', count: 3 }], { herb: 3 })).toBe(true);
+  });
+
+  it('クエストの解禁を持ち物で書ける', () => {
+    setGameQuests([{ ...QUEST, requireItems: [{ itemId: 'herb', count: 2 }] }]);
+    const q = gameQuestById('q1')!;
+    expect(itemsSatisfied(q.requireItems, { herb: 1 })).toBe(false);
+    expect(itemsSatisfied(q.requireItems, { herb: 2 })).toBe(true);
+  });
+
+  it('存在しないアイテムを条件にできない (絶対に満たせない条件を作らせない)', () => {
+    expect(() => setGameQuests([{ ...QUEST, requireItems: [{ itemId: 'ghost' }] }])).toThrow();
+  });
+
+  it('NPC のセリフも持ち物で分岐できる', () => {
+    const npc: NpcDef = {
+      id: 'n5', name: 'もんばん', x: 5, y: 5, lines: ['とおさぬ'],
+      altLines: [{ items: [{ itemId: 'herb' }], lines: ['その くすりが あるなら とおれ'] }],
+    };
+    setNpcs([npc]);
+    expect(npcLinesFor(npc, [], {})).toEqual(['とおさぬ']);
+    expect(npcLinesFor(npc, [], { herb: 1 })).toEqual(['その くすりが あるなら とおれ']);
+  });
+});
+
+describe('だいじなもの (シナリオアイテム) (#426)', () => {
+  it('負けても失わない (進行不能を作らない)', () => {
+    const before = { ...ITEMS };
+    try {
+      setItemOverrides({ items: [{ id: 'herb', name: 'やくそう' }, { id: 'gate-key', name: 'もんのかぎ', key: true }], equipment: activeEquipment() });
+      // 大量に持たせて何度引いても、だいじなものは候補に入らない
+      for (let seed = 0; seed < 30; seed++) {
+        const lost = rollDefeatLoss({ herb: 5, 'gate-key': 5 }, 0, seed);
+        expect(lost).not.toContain('gate-key');
+      }
+    } finally {
+      setItemOverrides(null);
+      void before;
+    }
+  });
+});
+
+describe('レビュー指摘の回帰 (#426)', () => {
+  it('だいじなものは換金できない (既存素材にだいじを付けた場合も)', () => {
+    // 敗北ロス除外だけ実装され、換金は静的 allowlist のままだった (レビュー ★★)。
+    expect(isSellableMaterial('slime-drop')).toBe(true);
+    try {
+      setItemOverrides({ items: [{ id: 'slime-drop', name: 'スライムのしずく', key: true }], equipment: activeEquipment() });
+      expect(isSellableMaterial('slime-drop')).toBe(false);
+    } finally {
+      setItemOverrides(null);
+    }
   });
 });
