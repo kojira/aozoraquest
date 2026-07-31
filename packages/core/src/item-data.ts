@@ -17,6 +17,8 @@ export class ItemDataError extends Error {}
 export interface ItemDefData {
   id: string;
   name: string;
+  /** **だいじなもの** (シナリオアイテム)。ひきとってもらえず、負けても失わない。 */
+  key?: boolean;
 }
 
 /** 保存レコードの形。 */
@@ -26,7 +28,7 @@ export interface ItemsRecord {
   updatedAt: string;
 }
 
-const baselineItems: ReadonlyArray<ItemDefData> = Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name }));
+const baselineItems: ReadonlyArray<ItemDefData> = Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name, ...(v.key ? { key: true } : {}) }));
 const baselineEquipment: readonly EquipmentDef[] = EQUIPMENT.map((e) => ({ ...e }));
 
 let overridden = false;
@@ -51,7 +53,7 @@ export function setItemOverrides(rec: { items: readonly ItemDefData[]; equipment
   const equipment = rec === null ? baselineEquipment : validateEquipment(rec.equipment);
 
   for (const k of Object.keys(ITEMS)) delete ITEMS[k];
-  for (const it of items) ITEMS[it.id] = { name: it.name };
+  for (const it of items) ITEMS[it.id] = { name: it.name, ...(it.key ? { key: true } : {}) };
 
   (EQUIPMENT as EquipmentDef[]).splice(0, EQUIPMENT.length, ...equipment.map((e) => ({ ...e })));
   for (const k of Object.keys(EQUIPMENT_BY_ID)) delete EQUIPMENT_BY_ID[k];

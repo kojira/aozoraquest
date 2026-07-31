@@ -24,7 +24,8 @@
 import type { Terrain } from './world.js';
 import { isWalkable } from './world.js';
 import { BASE_PALETTE, partWalkable as worldPartWalkable, type WorldPart } from './world-map.js';
-import { isFlagName } from './scenario.js';
+import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequirement } from './scenario.js';
+import { ITEMS } from './battle.js';
 
 export class InteriorError extends Error {}
 
@@ -56,6 +57,8 @@ export interface Gate {
    * 判定は edge が権威 (client がフラグを自己申告しても通らない)。
    */
   requireFlags?: string[];
+  /** **通るのに要る持ち物** (#426)。「かぎを持っていれば開く」をフラグ無しで書ける。 */
+  requireItems?: ItemRequirement[];
   /**
    * **通れないときに出すことば** (#426)。省略時は既定の一文。
    * 「門番が とおせんぼしている」「まだ 王の ゆるしが ない」のように、
@@ -144,6 +147,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (g.lockedNotice !== undefined && (typeof g.lockedNotice !== 'string' || g.lockedNotice.trim() === '' || g.lockedNotice.length > MAX_GATE_NOTICE)) {
       throw new InteriorError(`${where}: 通れないときのことばが不正 (${MAX_GATE_NOTICE} 文字まで)`);
     }
+    assertItemRequirements(g.requireItems, where, (id) => !!ITEMS[id]);
     for (const f of g.requireFlags ?? []) {
       // シナリオ側と同じ書式で弾く (#426/#545)。typo したフラグは永久に立たないので、
       // そのゲートは二度と開かない = そのエリアへ入れないまま気づけない。
@@ -152,7 +156,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     const k = gateKey(g.from.mapId, g.from.x, g.from.y);
     // 同じマスに 2 つのゲートがあると、踏んだときどちらへ行くのか決められない。
     if (nextGates.has(k)) throw new InteriorError(`同じマスにゲートが重複 ${where}`);
-    nextGates.set(k, { from: { ...g.from }, to: { ...g.to }, ...(g.requireFlags ? { requireFlags: [...g.requireFlags] } : {}), ...(g.lockedNotice ? { lockedNotice: g.lockedNotice } : {}) });
+    nextGates.set(k, { from: { ...g.from }, to: { ...g.to }, ...(g.requireFlags ? { requireFlags: [...g.requireFlags] } : {}), ...(g.requireItems ? { requireItems: g.requireItems.map((r) => ({ ...r })) } : {}), ...(g.lockedNotice ? { lockedNotice: g.lockedNotice } : {}) });
   }
   if (nextGates.size > MAX_GATES) throw new InteriorError(`ゲートが多すぎる (${nextGates.size} > ${MAX_GATES})`);
 
@@ -179,8 +183,13 @@ export function allGates(): readonly Gate[] {
  * そのゲートが今のフラグで通れるか (#426)。フラグ指定が無ければ常に通れる。
  * **edge と web が同じ判定を共有する** — 片方だけだと「画面では入れるのに弾かれる」。
  */
-export function gateOpen(gate: Gate, flags: readonly string[]): boolean {
-  return (gate.requireFlags ?? []).every((f) => flags.includes(f));
+export function gateOpen(gate: Gate, flags: readonly string[], materials: Readonly<Record<string, number>> = {}): boolean {
+  return (gate.requireFlags ?? []).every((f) => flags.includes(f)) && itemsSatisfied(gate.requireItems, materials);
+}
+
+/** 何らかの条件で施錠されているゲートか (条件が無ければ state を読む必要がない)。 */
+export function gateHasLock(gate: Gate): boolean {
+  return (gate.requireFlags?.length ?? 0) > 0 || (gate.requireItems?.length ?? 0) > 0;
 }
 
 /** 施錠中に出すことば (エディタで書いたもの → 既定)。edge と web が同じ文言を使う。 */

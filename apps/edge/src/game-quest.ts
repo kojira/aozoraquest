@@ -8,7 +8,7 @@
  *     引かないと同じ素材で何度も達成できてしまう)
  * - 報酬のパワーは定義の値だけ。client は金額を送らない (サーバー権威)
  */
-import { gameQuestById, MAX_QUEST_REWARD_POWER } from '@aozoraquest/core';
+import { gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
 import { advanceScenario, type ScenarioResult } from './scenario-progress';
 
@@ -54,7 +54,9 @@ export async function handleQuestAccept(
       // **解禁フラグ** (#545)。立っていないクエストはサーバーが受け付けない
       // (client が NPC の分岐を無視して直接 POST しても通らない)。
       const need = def.requireFlags ?? [];
-      if (need.some((f) => !(cur.flags ?? []).includes(f))) {
+      // フラグと持ち物の**両方**を権威側で見る (#426)。client が NPC の分岐を無視して
+      // 直接 POST しても通らない。
+      if (need.some((f) => !(cur.flags ?? []).includes(f)) || !itemsSatisfied(def.requireItems, cur.materials)) {
         throw new GameQuestError('まだ その たのまれごとは 出ていない', 400, 'locked');
       }
       if (cur.quest?.id === questId) return cur; // 再受注は no-op (連打・再送で壊れない)

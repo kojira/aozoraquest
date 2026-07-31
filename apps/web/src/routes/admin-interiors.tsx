@@ -17,6 +17,7 @@ import {
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
+import { ItemReqInput } from '@/components/admin/item-req-input';
 import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
 
 /**
@@ -333,8 +334,21 @@ export function AdminInteriors() {
                     }}
                     style={{ width: '14em', fontFamily: 'ui-monospace, monospace' }}
                   />
+                  {/* 解禁アイテム (#426)。フラグの代わりに「かぎを持っていれば開く」 */}
+                  <ItemReqInput
+                    value={g.requireItems}
+                    placeholder="解禁アイテム (空 = 不要)"
+                    onChange={(requireItems) => {
+                      setGates((gs) => gs.map((x) => {
+                        if (x !== g) return x;
+                        if (!requireItems) { const { requireItems: _r, ...rest } = x; return rest as Gate; }
+                        return { ...x, requireItems };
+                      }));
+                      setDirty(true);
+                    }}
+                  />
                   {/* 通れないときのことば。場所ごとの理由を書ける (#426) */}
-                  {(g.requireFlags?.length ?? 0) > 0 && (
+                  {((g.requireFlags?.length ?? 0) > 0 || (g.requireItems?.length ?? 0) > 0) && (
                     <input
                       value={g.lockedNotice ?? ''}
                       maxLength={MAX_GATE_NOTICE}

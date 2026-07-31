@@ -18,7 +18,7 @@
  */
 import { MONSTERS_BY_ID, ITEMS } from './battle.js';
 import { allNpcs } from './npc-data.js';
-import { isFlagName } from './scenario.js';
+import { assertItemRequirements, isFlagName, type ItemRequirement } from './scenario.js';
 
 export class QuestDataError extends Error {}
 
@@ -43,6 +43,8 @@ export interface GameQuestDef {
   reward?: { power?: number; itemId?: string; count?: number };
   /** **解禁フラグ** (#545)。すべて立つまでこのクエストは受注できない (NPC も依頼を話さない)。 */
   requireFlags?: string[];
+  /** **解禁に要る持ち物** (#426)。フラグの代わりに「これを持っていたら受けられる」を書ける。 */
+  requireItems?: ItemRequirement[];
 }
 
 export interface GameQuestsRecord {
@@ -108,6 +110,7 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
         if (!isFlagName(f)) throw new QuestDataError(`${where}: 解禁フラグ名が不正 (${f})`);
       }
     }
+    assertItemRequirements(q.requireItems, where, (id) => !!ITEMS[id]);
     if (q.reward) {
       if (q.reward.power !== undefined && !(Number.isInteger(q.reward.power) && q.reward.power > 0 && q.reward.power <= MAX_QUEST_REWARD_POWER)) {
         throw new QuestDataError(`${where}: 報酬パワーは 1〜${MAX_QUEST_REWARD_POWER}`);
@@ -118,7 +121,7 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
       }
     }
   }
-  quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}) }));
+  quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}), ...(q.requireItems ? { requireItems: q.requireItems.map((r) => ({ ...r })) } : {}) }));
   byId = new Map(quests.map((q) => [q.id, q]));
   byNpc = new Map(quests.map((q) => [q.npcId, q]));
 }

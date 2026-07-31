@@ -141,6 +141,23 @@ export function AdminItems() {
                 onChange={(e) => { setItems((xs) => xs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x))); setDirty(true); }}
                 style={{ flex: 1 }}
               />
+              {/* だいじなもの (シナリオアイテム)。ひきとってもらえず、負けても失わない (#426) */}
+              <label style={{ display: 'flex', gap: '0.2em', alignItems: 'center', fontSize: '0.8em', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  checked={!!it.key}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setItems((xs) => xs.map((x, j) => {
+                      if (j !== i) return x;
+                      if (!on) { const { key: _k, ...rest } = x; return rest as ItemDefData; }
+                      return { ...x, key: true };
+                    }));
+                    setDirty(true);
+                  }}
+                />
+                だいじ
+              </label>
               <button
                 type="button"
                 onClick={() => {
@@ -161,6 +178,17 @@ export function AdminItems() {
           >
             ＋どうぐ
           </button>
+          <button
+            type="button"
+            onClick={() => { setItems((xs) => [...xs, { id: `key-${xs.length + 1}`, name: 'あたらしい だいじなもの', key: true }]); setDirty(true); }}
+            style={{ fontSize: '0.85em', alignSelf: 'flex-start' }}
+          >
+            ＋だいじなもの
+          </button>
+          <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
+            だいじなもの: ひきとってもらえず、負けても失わない。
+            <Link to="/admin/scenario">シナリオ</Link>の条件や、クエスト・ゲートの解禁に使える
+          </p>
         </div>
       ) : (
         <div className="admin-cols">

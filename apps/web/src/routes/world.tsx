@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -560,9 +560,12 @@ export function World() {
       if (npc) {
         const q0 = gameQuestByNpc(npc.id);
         // 解禁フラグ (#545) が立つまで、その NPC は依頼を話さない (通常のセリフに戻る)。
-        const q = q0 && (q0.requireFlags ?? []).every((f) => flagsRef.current.includes(f)) ? q0 : undefined;
+        const q = q0
+          && (q0.requireFlags ?? []).every((f) => flagsRef.current.includes(f))
+          && itemsSatisfied(q0.requireItems, materialsRef.current)
+          ? q0 : undefined;
         const qs = questRef.current;
-        const npcLines = npcLinesFor(npc, flagsRef.current);
+        const npcLines = npcLinesFor(npc, flagsRef.current, materialsRef.current);
         // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする。
         // 放置すると「べつの たのまれごと」で全クエストが永久に受けられない (UX レビュー ★★★)。
         // サーバー側 (handleQuestAccept) も同じ判断で孤児クエストを落とす。
@@ -616,7 +619,7 @@ export function World() {
       // 施錠中のゲート (#426) は踏む前に止める。サーバーも同じ判定をするので、
       // ここで止めないと「歩けたのに弾かれる」1 手が毎回発生する。
       const gate = gateAt(s.mapId ?? WORLD_MAP_ID, nx, ny);
-      if (gate && !gateOpen(gate, flagsRef.current)) {
+      if (gate && !gateOpen(gate, flagsRef.current, materialsRef.current)) {
         setNotice(gateLockedNotice(gate));
         return;
       }

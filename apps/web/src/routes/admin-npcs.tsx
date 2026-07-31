@@ -15,6 +15,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveNpcs } from '@/lib/world-authoring';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
+import { ItemReqInput } from '@/components/admin/item-req-input';
 
 /**
  * **NPC エディタ** (#425)。位置・名前・セリフ・絵。
@@ -224,6 +225,18 @@ export function AdminNpcs() {
                         update(current.id, { altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, notFlags } : x)) });
                       }}
                       style={{ width: '9em', fontFamily: 'ui-monospace, monospace' }}
+                    />
+                    <span style={{ color: 'var(--color-muted)' }}>持っている</span>
+                    <ItemReqInput
+                      value={alt.items}
+                      placeholder="(なし) 例: gate-key"
+                      onChange={(items) => update(current.id, {
+                        altLines: (current.altLines ?? []).map((x, j) => {
+                          if (j !== ai) return x;
+                          if (!items) { const { items: _i, ...rest } = x; return rest; }
+                          return { ...x, items };
+                        }),
+                      })}
                     />
                     <button
                       type="button"

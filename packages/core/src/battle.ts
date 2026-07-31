@@ -1053,8 +1053,13 @@ export interface MonsterDef {
   flatDef?: number;
 }
 
-/** 素材カタログ (Step2 の装備素材)。 */
-export const ITEMS: Record<string, { name: string }> = {
+/**
+ * 素材カタログ (Step2 の装備素材)。
+ *
+ * `key: true` は**だいじなもの** (シナリオアイテム、#426/#545)。素材と違い
+ * ひきとってもらえず、**負けても失わない** — 失うと進行不能になりうるため。
+ */
+export const ITEMS: Record<string, { name: string; key?: boolean }> = {
   herb: { name: 'やくそう' },
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
@@ -2384,6 +2389,9 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
   const rng = createRng((seed ^ 0x7b0c9d21) >>> 0);
   const pool: string[] = [];
   for (const [id, n] of Object.entries(materials)) {
+    // **だいじなもの (シナリオアイテム) は失わない。** 進行に要るものが敗北で
+    // 消えると、そのプレイヤーは筋書きを進められなくなる。
+    if (ITEMS[id]?.key) continue;
     for (let i = 0; i < n; i++) pool.push(id);
   }
   const lost: string[] = [];
