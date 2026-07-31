@@ -53,6 +53,15 @@ export const PART_PRESETS: readonly PartPreset[] = [
   { name: 'たての橋', terrain: 'bridge', walkable: true, art: VBRIDGE_ART },
 ];
 
+/**
+ * 名前でプリセットを引く (#615)。**「同梱の絵に戻す」の戻し先**に使う —
+ * たての橋のように「地形 (bridge) の既定の絵」とパーツの絵が別のものは、
+ * 地形の既定に戻すと**横の橋になってしまう** (実際に起きた)。
+ */
+export function partPresetByName(name: string): PartPreset | undefined {
+  return PART_PRESETS.find((p) => p.name === name);
+}
+
 /** プリセットの絵をメモリ形式に (エディタが setTileArt に渡す)。 */
 export function presetArt(p: PartPreset): TileArt {
   return decodeTileArt(p.art);

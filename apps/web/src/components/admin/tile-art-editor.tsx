@@ -13,6 +13,8 @@ import {
   emptyTileArt,
   loadTileArts,
   bundledTileArtFor,
+  partPresetByName,
+  presetArt,
   setTileArt,
   tileArtColorAt,
   tileArtFor,
@@ -129,7 +131,11 @@ export function TileArtEditor({ parts: partsIn, subjects: subjectsIn }: { parts?
    * 登録簿から消して保存すると、以後は同梱の絵が使われる。
    */
   const resetToBundled = useCallback(async () => {
-    const bundled = bundledTileArtFor(subject.legacyKey ?? subject.key);
+    // **プリセットのパーツを先に見る。** 「たての橋」は地形が bridge なので、
+    // 地形の既定に戻すと**横の橋**になってしまう (実際に起きた)。パーツ自身の
+    // 同梱の絵があるならそれが戻し先。
+    const preset = partPresetByName(subject.name);
+    const bundled = preset ? presetArt(preset) : bundledTileArtFor(subject.legacyKey ?? subject.key);
     if (!bundled) { setNote('この部位には同梱の絵が無い'); return; }
     if (!window.confirm(`${subject.name} を同梱の絵に戻す？\n自分で描いた絵は消える`)) return;
     try {
