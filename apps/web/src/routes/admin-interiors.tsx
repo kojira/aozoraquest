@@ -16,7 +16,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
-import { loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
+import { loadAuthoredWorld, loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
 
@@ -58,11 +58,17 @@ export function AdminInteriors() {
     const agent = session.agent;
     const adminDid = getPrimaryAdminDid();
     if (!agent || !adminDid) { setLoadState('failed'); return; }
-    void loadInteriorsRecord(agent, adminDid)
+    // **アイテムを先に読む** — 解錠アイテムの検証が ITEMS を引くので、この画面を
+    // 直接開くと「アイテムが存在しない」で保存も読み込みも落ちる (レビュー ★★★)。
+    void loadAuthoredWorld(agent)
+      .then(() => loadInteriorsRecord(agent, adminDid))
       .then((r) => {
         if (cancelled) return;
         setMaps(r.maps.map((m) => ({ ...m, tiles: new Uint8Array(m.tiles) })));
-        setGates(r.gates.map((g) => ({ from: { ...g.from }, to: { ...g.to } })));
+        // **ゲートは丸ごと写す。** from/to だけ拾っていたため、開き直して保存すると
+        // 施錠 (requireFlags/requireItems) とことばが全ゲートぶん消えていた
+        // (レビュー ★★★)。増えたフィールドを書き漏らさないよう spread で複製する。
+        setGates(r.gates.map((g) => ({ ...g, from: { ...g.from }, to: { ...g.to } })));
         setLoadState('ok');
       })
       .catch((e) => {

@@ -5,6 +5,10 @@ import {
   GEAR_SLOT_LABELS,
   activeEquipment,
   activeItems,
+  allGates,
+  allNpcs,
+  gameQuests,
+  scenarioEvents,
   canEquip,
   ItemDataError,
   JOBS,
@@ -77,6 +81,22 @@ export function AdminItems() {
   const save = useCallback(async () => {
     if (!session.agent) return;
     try {
+      // 参照しているアイテムを消させない (#426)。参照切れが 1 件あると
+      // setInteriors/setGameQuests/setScenario が全体を落とし、edge のコールドスタート後に
+      // ゲート・クエスト・シナリオがまとめて読み込まれなくなる (レビュー ★★)。
+      const ids = new Set(items.map((it) => it.id));
+      const missing = (req?: readonly { itemId: string }[]) => (req ?? []).find((r) => !ids.has(r.itemId))?.itemId;
+      const refs: Array<[string, string | undefined]> = [
+        ...allGates().map((g) => [`ゲート (${g.from.mapId} ${g.from.x},${g.from.y})`, missing(g.requireItems)] as [string, string | undefined]),
+        ...gameQuests().map((q) => [`クエスト「${q.title}」`, missing(q.requireItems)] as [string, string | undefined]),
+        ...allNpcs().flatMap((n) => (n.altLines ?? []).map((a) => [`NPC「${n.name}」のセリフ`, missing(a.items)] as [string, string | undefined])),
+        ...scenarioEvents().flatMap((e) => e.when.map((c) => [`シナリオ「${e.title}」`, c.kind === 'itemCount' && !ids.has(c.itemId) ? c.itemId : undefined] as [string, string | undefined])),
+      ];
+      const hit = refs.find(([, id]) => id);
+      if (hit) {
+        setNote(`保存できない: ${hit[0]} が「${hit[1]}」を参照している。先にそちらを直す`);
+        return;
+      }
       await saveItems(session.agent, items, equipment);
       setDirty(false);
       setNote('保存した。サーバーは最大 5 分で拾う');

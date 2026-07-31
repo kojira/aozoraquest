@@ -20,6 +20,7 @@ import { setGameQuests, gameQuestById, type GameQuestDef } from '../quest-data.j
 import { setNpcs, npcLinesFor, type NpcDef } from '../npc-data.js';
 import { ITEMS, MONSTERS, rollDefeatLoss } from '../battle.js';
 import { setItemOverrides } from '../item-data.js';
+import { isSellableMaterial } from '../equipment.js';
 import { activeEquipment } from '../item-data.js';
 
 const MON = MONSTERS[0]!.id;
@@ -271,6 +272,19 @@ describe('だいじなもの (シナリオアイテム) (#426)', () => {
     } finally {
       setItemOverrides(null);
       void before;
+    }
+  });
+});
+
+describe('レビュー指摘の回帰 (#426)', () => {
+  it('だいじなものは換金できない (既存素材にだいじを付けた場合も)', () => {
+    // 敗北ロス除外だけ実装され、換金は静的 allowlist のままだった (レビュー ★★)。
+    expect(isSellableMaterial('slime-drop')).toBe(true);
+    try {
+      setItemOverrides({ items: [{ id: 'slime-drop', name: 'スライムのしずく', key: true }], equipment: activeEquipment() });
+      expect(isSellableMaterial('slime-drop')).toBe(false);
+    } finally {
+      setItemOverrides(null);
     }
   });
 });

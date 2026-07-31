@@ -65,6 +65,16 @@ function fromBase64(b64: string): Uint8Array {
 export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: number): Promise<void> {
   if (inflight) return inflight;
   if (loadedAt && now - loadedAt < CACHE_TTL_SEC) return Promise.resolve();
+  /** レコード 1 つぶんの適用。**1 つが壊れても後続を止めない** — 1 本の try に
+   *  まとめていたため、内部マップの検証が落ちるとクエストとシナリオが丸ごと
+   *  読み込まれず「画面には出るのに受注できない」になった (レビュー ★★)。 */
+  const step = async (name: string, fn: () => Promise<void>): Promise<void> => {
+    try {
+      await fn();
+    } catch (e) {
+      console.warn(`authored world: ${name} failed`, e);
+    }
+  };
   inflight = (async () => {
     // **まず同梱の地図を入れる。** 手編集が無い / 読めない場合でも、terrainAt が
     // 配列参照になって速いままでいられる。
@@ -89,43 +99,60 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     if (art?.value?.arts) loadTileArts(art.value.arts);
     // **モンスターも edge が読む** (#419)。戦闘計算はここが権威なので、web だけが
     // 編集後の敵を見ていると強さも XP も食い違う。読めなければコード直書きのまま。
-    const mon = await getRecord<{ monsters?: MonsterDef[] }>(pds, did, `${nsid}.world.monsters`, RKEY);
-    if (mon?.value?.monsters?.length) setMonsterOverrides(mon.value.monsters);
+    // **モンスターも edge が読む** (#419)。戦闘計算はここが権威なので、web だけが
+    // 編集後の敵を見ていると強さも XP も食い違う。読めなければコード直書きのまま。
+    await step('monsters', async () => {
+      const mon = await getRecord<{ monsters?: MonsterDef[] }>(pds, did, `${nsid}.world.monsters`, RKEY);
+      if (mon?.value?.monsters?.length) setMonsterOverrides(mon.value.monsters);
+    });
     // どうぐ・装備 (#420)。**店の品揃えと値段は edge が権威** (shopCraft が not_in_stock を弾く)
     // なので、web だけが編集後の装備を見ていると「見えるのに買えない」が起きる。
-    const items = await getRecord<{ items?: ItemDefData[]; equipment?: EquipmentDef[] }>(pds, did, `${nsid}.world.items`, RKEY);
-    if (items?.value?.equipment?.length) setItemOverrides({ items: items.value.items ?? [], equipment: items.value.equipment });
+    await step('items', async () => {
+      const items = await getRecord<{ items?: ItemDefData[]; equipment?: EquipmentDef[] }>(pds, did, `${nsid}.world.items`, RKEY);
+      if (items?.value?.equipment?.length) setItemOverrides({ items: items.value.items ?? [], equipment: items.value.equipment });
+    });
     // 店のラインナップ (#422)。**アイテムの後に読む** (検証が EQUIPMENT_BY_ID を引くため)。
-    const shops = await getRecord<{ shops?: ShopOverride[] }>(pds, did, `${nsid}.world.shops`, RKEY);
-    if (shops?.value?.shops?.length) setShopOverrides(shops.value.shops);
+    await step('shops', async () => {
+      const shops = await getRecord<{ shops?: ShopOverride[] }>(pds, did, `${nsid}.world.shops`, RKEY);
+      if (shops?.value?.shops?.length) setShopOverrides(shops.value.shops);
+    });
     // NPC (#425)。**移動判定に効く** (立っているマスは塞ぐ) ので edge も必須。
-    const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
-    if (npcs?.value?.npcs?.length) setNpcs(npcs.value.npcs);
+    await step('npcs', async () => {
+      const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
+      if (npcs?.value?.npcs?.length) setNpcs(npcs.value.npcs);
+    });
     // ジョブ (#544)。**戦闘計算は edge が権威**なので、web だけが編集後の値を見ていると
     // 画面の強さとサーバーの強さが食い違う。
-    const jobs = await getRecord<{ jobs?: JobOverride[] }>(pds, did, `${nsid}.world.jobs`, RKEY);
-    if (jobs?.value?.jobs) setJobOverrides(jobs.value.jobs);
+    await step('jobs', async () => {
+      const jobs = await getRecord<{ jobs?: JobOverride[] }>(pds, did, `${nsid}.world.jobs`, RKEY);
+      if (jobs?.value?.jobs) setJobOverrides(jobs.value.jobs);
+    });
     // 内部マップとゲート (#424)。**移動判定と遷移は edge が権威**なので必須。
     // 読めなければフィールドだけの世界として動く (内部に居る人はフィールドへ戻る)。
-    const inter = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(pds, did, `${nsid}.world.interiors`, RKEY);
-    if (inter?.value) {
+    await step('interiors', async () => {
+      const inter = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(pds, did, `${nsid}.world.interiors`, RKEY);
+      if (!inter?.value) return;
       const maps: InteriorMap[] = [];
       for (const m of inter.value.interiors ?? []) {
         const { gz, ...rest } = m;
         maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
       }
       setInteriors(maps, inter.value.gates ?? []);
-    }
+    });
     // ゲーム内クエスト (#423)。**報酬付与は edge が権威**なので必須。検証が NPC・モンスター・
     // アイテムの実在を引くため、**この 3 つより後に読む** (店 ← アイテムと同じ順序依存)。
-    const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);
-    // **空配列も適用する** (length で弾かない) — 全クエスト削除の保存が {quests: []} になるので、
-    // スキップすると warm isolate に削除済みクエストが残り続け、受注も報酬も通ってしまう。
-    if (quests?.value?.quests) setGameQuests(quests.value.quests);
+    await step('quests', async () => {
+      const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);
+      // **空配列も適用する** (length で弾かない) — 全クエスト削除の保存が {quests: []} になるので、
+      // スキップすると warm isolate に削除済みクエストが残り続け、受注も報酬も通ってしまう。
+      if (quests?.value?.quests) setGameQuests(quests.value.quests);
+    });
     // シナリオ (#545)。**フラグを立てるのは edge** なので必須。条件が questId を引くため
     // クエストより後に読む。
-    const scenario = await getRecord<{ events?: ScenarioEvent[] }>(pds, did, `${nsid}.world.scenario`, RKEY);
-    if (scenario?.value?.events) setScenario(scenario.value.events);
+    await step('scenario', async () => {
+      const scenario = await getRecord<{ events?: ScenarioEvent[] }>(pds, did, `${nsid}.world.scenario`, RKEY);
+      if (scenario?.value?.events) setScenario(scenario.value.events);
+    });
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。
