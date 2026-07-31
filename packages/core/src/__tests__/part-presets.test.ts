@@ -3,8 +3,9 @@
  * エディタで追加した瞬間に落ちるので、データの健全性をここで固定する。
  */
 import { describe, it, expect } from 'vitest';
-import { PART_PRESETS, presetArt } from '../part-presets.js';
-import { assertTileArt, TILE_ART_MAX_COLORS } from '../tile-art.js';
+import { PART_PRESETS, partPresetByName, presetArt } from '../part-presets.js';
+import { assertTileArt, decodeTileArt, TILE_ART_MAX_COLORS } from '../tile-art.js';
+import { DEFAULT_TERRAIN_ARTS } from '../terrain-art-data.js';
 import { BASE_PALETTE, setWorldParts, worldParts } from '../world-map.js';
 
 describe('PART_PRESETS', () => {
@@ -36,5 +37,20 @@ describe('PART_PRESETS', () => {
     } finally {
       setWorldParts(before);
     }
+  });
+});
+
+describe('partPresetByName (#615 戻し先)', () => {
+  it('名前でプリセットを引ける', () => {
+    expect(partPresetByName('たての橋')?.terrain).toBe('bridge');
+    expect(partPresetByName('城')?.walkable).toBe(false);
+    expect(partPresetByName('ない名前')).toBeUndefined();
+  });
+
+  it('たての橋の戻し先が地形 (bridge) の既定と違う絵である', () => {
+    // 地形の既定に戻すと**横の橋**になってしまう (実際に起きた退行)。
+    const vertical = presetArt(partPresetByName('たての橋')!);
+    const bridgeDefault = decodeTileArt(DEFAULT_TERRAIN_ARTS['bridge']!);
+    expect(vertical.pixels).not.toEqual(bridgeDefault.pixels);
   });
 });
