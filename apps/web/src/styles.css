@@ -2072,3 +2072,76 @@ p { margin: 0.4em 0; }
 :root[data-theme='light'] .workspace-column-resizer::after {
   background: rgba(0, 0, 0, 0.18);
 }
+
+/* ─── 管理エディタのモバイル対応 (#617) ────────────────────────────
+   全エディタが「左に一覧 / 右にフォーム」の 2 カラムをインラインで組んでいたため、
+   狭い画面で右カラムが画面外へ溢れ、入力欄もラベルも切れて操作できなかった。
+   レイアウトはここに集約し、狭いときは 1 カラムに畳む。 */
+.admin-page {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.admin-page *,
+.admin-page *::before,
+.admin-page *::after {
+  box-sizing: border-box;
+}
+/* 入力・選択は枠を超えない。**固定 em 幅のまま溢れる**のが崩れの主因だった */
+.admin-page input,
+.admin-page select,
+.admin-page textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+/* 見出し行 (戻る・タイトル・操作ボタン)。狭いと折り返す */
+.admin-head {
+  display: flex;
+  gap: 0.6em;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.4em;
+}
+/* 一覧 + フォームの 2 カラム */
+.admin-cols {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 2fr;
+  gap: 0.8em;
+  align-items: start;
+}
+/* ラベル + 入力の 1 行 */
+.admin-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 0.8em;
+  flex-wrap: wrap;
+}
+.admin-field > span:first-child {
+  width: 7em;
+  color: var(--color-muted);
+  flex: none;
+}
+
+@media (max-width: 700px) {
+  /* **1 カラムに畳む。** 横に並べると右カラムが必ず画面外へ出る */
+  .admin-cols {
+    grid-template-columns: 1fr;
+  }
+  /* 一覧は畳んだ後に縦を食いすぎないよう低く抑える (フォームまでスクロールが遠い) */
+  .admin-cols > :first-child {
+    max-height: 30vh;
+  }
+  /* ラベルを上に置いて入力へ横幅を明け渡す */
+  .admin-field {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.15em;
+  }
+  .admin-field > span:first-child {
+    width: auto;
+  }
+  .admin-field > :not(:first-child) {
+    width: 100%;
+  }
+}

@@ -91,8 +91,8 @@ export function AdminShops() {
   const maxGrade = maxShopGradeForTier(tier);
 
   return (
-    <div style={{ padding: '0.8em', maxWidth: 980 }}>
-      <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginBottom: '0.4em' }}>
+    <div className="admin-page" style={{ padding: '0.8em' }}>
+      <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>お店のラインナップ</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{overrides.length} 店を上書き中</span>
@@ -103,7 +103,7 @@ export function AdminShops() {
 
       {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 2fr', gap: '0.8em' }}>
+      <div className="admin-cols">
         {/* 街の一覧 (tier ごと) */}
         <div style={{ maxHeight: '75vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {[1, 2, 3, 4, 5, 6].map((t) => {
