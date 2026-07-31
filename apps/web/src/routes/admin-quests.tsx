@@ -105,8 +105,8 @@ export function AdminQuests() {
   }
 
   const field = (label: string, input: React.ReactNode) => (
-    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4em', fontSize: '0.8em' }}>
-      <span style={{ width: '6em', color: 'var(--color-muted)' }}>{label}</span>
+    <label className="admin-field">
+      <span>{label}</span>
       {input}
     </label>
   );
@@ -152,8 +152,8 @@ export function AdminQuests() {
   const npcNameOf = (id: string) => npcs.find((n) => n.id === id)?.name ?? id;
 
   return (
-    <div style={{ padding: '0.8em', maxWidth: 900 }}>
-      <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginBottom: '0.4em' }}>
+    <div className="admin-page" style={{ padding: '0.8em' }}>
+      <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>クエスト</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件</span>
@@ -170,7 +170,7 @@ export function AdminQuests() {
         </p>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) 2fr', gap: '0.8em' }}>
+      <div className="admin-cols">
         <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {list.map((q) => (
             <button

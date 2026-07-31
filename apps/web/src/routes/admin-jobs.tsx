@@ -161,15 +161,15 @@ export function AdminJobs() {
 
   const statSum = current ? (current.stats ?? [0, 0, 0, 0, 0]).reduce((a, b) => a + b, 0) : 0;
   const field = (label: string, input: React.ReactNode) => (
-    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4em', fontSize: '0.8em' }}>
-      <span style={{ width: '7em', color: 'var(--color-muted)' }}>{label}</span>
+    <label className="admin-field">
+      <span>{label}</span>
       {input}
     </label>
   );
 
   return (
-    <div style={{ padding: '0.8em', maxWidth: 960 }}>
-      <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginBottom: '0.4em' }}>
+    <div className="admin-page" style={{ padding: '0.8em' }}>
+      <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>ジョブ</strong>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || loadState !== 'ok'} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
@@ -179,7 +179,7 @@ export function AdminJobs() {
 
       {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) 2fr', gap: '0.8em' }}>
+      <div className="admin-cols">
         <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {list.map((j) => (
             <button

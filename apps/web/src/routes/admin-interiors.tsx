@@ -139,8 +139,8 @@ export function AdminInteriors() {
   const gatesHere = current ? gates.filter((g) => g.from.mapId === current.id) : [];
 
   return (
-    <div style={{ padding: '0.8em', maxWidth: 980 }}>
-      <div style={{ display: 'flex', gap: '0.6em', alignItems: 'center', marginBottom: '0.4em' }}>
+    <div className="admin-page" style={{ padding: '0.8em' }}>
+      <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>内部マップ</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{maps.length} マップ / {gates.length} ゲート</span>
@@ -152,7 +152,7 @@ export function AdminInteriors() {
 
       {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) 3fr', gap: '0.8em' }}>
+      <div className="admin-cols">
         <div style={{ maxHeight: '75vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {maps.map((m) => (
             <button
@@ -258,8 +258,6 @@ export function AdminInteriors() {
 
             <svg
               ref={svgRef}
-              width={BOX}
-              height={BOX}
               viewBox={`0 0 ${current.size * 32} ${current.size * 32}`}
               onPointerDown={(e) => {
                 e.preventDefault();
@@ -286,7 +284,12 @@ export function AdminInteriors() {
                 try { (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId); } catch { /* 既に外れている */ }
               }}
               onPointerCancel={() => { painting.current = false; }}
-              style={{ display: 'block', cursor: linking ? 'crosshair' : 'pointer', touchAction: 'none', userSelect: 'none' }}
+              // 固定 px だと狭い画面で画面外へ出る。**幅に追随させ、正方形は
+              // aspect-ratio で保つ** (座標はビューポート比から引くので拡縮しても合う)。
+              style={{
+                display: 'block', width: '100%', maxWidth: BOX, aspectRatio: '1 / 1', height: 'auto',
+                cursor: linking ? 'crosshair' : 'pointer', touchAction: 'none', userSelect: 'none',
+              }}
             >
               <defs>
                 {[...new Set(Array.from(current.tiles))].map((idx) => (

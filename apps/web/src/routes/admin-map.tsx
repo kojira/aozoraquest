@@ -370,8 +370,6 @@ export function AdminMap() {
           <div style={{ overflow: 'auto', maxWidth: '100%', border: '2px solid var(--color-border)', width: 'fit-content' }}>
             <svg
               ref={svgRef}
-              width={W}
-              height={H}
               viewBox={`0 0 ${view * 32} ${view * 32}`}
               onPointerDown={(e) => {
                 e.preventDefault(); // 文字選択とスクロールを始めさせない
@@ -386,7 +384,9 @@ export function AdminMap() {
                 try { (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId); } catch { /* 既に外れている */ }
               }}
               onPointerCancel={() => { painting.current = false; }}
-              style={{ display: 'block', cursor: 'crosshair', touchAction: 'none' }}
+              // 固定 px だと狭い画面で画面外へ出る。幅に追随させ正方形を保つ
+              // (置く座標はビューポート比から引くので、拡縮してもマスがずれない)。
+              style={{ display: 'block', width: '100%', maxWidth: W, aspectRatio: '1 / 1', height: 'auto', cursor: 'crosshair', touchAction: 'none' }}
             >
               {/* 同じパーツは defs に 1 回だけ定義して use で参照 (#605)。全地形がドット絵に
                   なったので、マスごとの展開だと 16px 表示 (24×24 マス) で数万 rect になる。 */}
