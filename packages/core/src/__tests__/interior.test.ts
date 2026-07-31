@@ -14,12 +14,15 @@ import {
   allInteriors,
   gateAt,
   gateOpen,
+  gateLockedNotice,
+  DEFAULT_GATE_LOCKED_NOTICE,
   interiorById,
   interiorTerrainAt,
   interiorWalkableAt,
   isInterior,
   setInteriors,
   walkableIn,
+  type Gate,
   type InteriorMap,
 } from '../interior.js';
 import { BASE_PALETTE } from '../world-map.js';
@@ -182,5 +185,29 @@ describe('ゲートの解禁フラグ (#426 エリア解放)', () => {
   it('保存して読み直しても解禁フラグが残る', () => {
     setInteriors([room()], [gate(['castle_open'])]);
     expect(allGates()[0]!.requireFlags).toEqual(['castle_open']);
+  });
+});
+
+describe('通れないときのことば (#426)', () => {
+  const g = (over: Partial<Gate> = {}): Gate => ({
+    from: { mapId: WORLD_MAP_ID, x: 6, y: 6 }, to: { mapId: 'in-1', x: 4, y: 4 },
+    requireFlags: ['castle_open'], ...over,
+  });
+
+  it('省略時は既定のことば', () => {
+    setInteriors([room()], [g()]);
+    expect(gateLockedNotice(gateAt(WORLD_MAP_ID, 6, 6)!)).toBe(DEFAULT_GATE_LOCKED_NOTICE);
+  });
+
+  it('書いたことばが使われ、保存して読み直しても残る', () => {
+    setInteriors([room()], [g({ lockedNotice: '門番が とおせんぼしている。' })]);
+    const saved = gateAt(WORLD_MAP_ID, 6, 6)!;
+    expect(saved.lockedNotice).toBe('門番が とおせんぼしている。');
+    expect(gateLockedNotice(saved)).toBe('門番が とおせんぼしている。');
+  });
+
+  it('空文字・長すぎることばを弾く', () => {
+    expect(() => setInteriors([room()], [g({ lockedNotice: '  ' })])).toThrow(InteriorError);
+    expect(() => setInteriors([room()], [g({ lockedNotice: 'あ'.repeat(200) })])).toThrow(InteriorError);
   });
 });

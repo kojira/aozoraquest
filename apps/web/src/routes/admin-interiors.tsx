@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   BASE_PALETTE,
   InteriorError,
+  DEFAULT_GATE_LOCKED_NOTICE,
+  MAX_GATE_NOTICE,
   MAX_INTERIOR_SIZE,
   WORLD_MAP_ID,
   interiorPartAt,
@@ -331,6 +333,24 @@ export function AdminInteriors() {
                     }}
                     style={{ width: '14em', fontFamily: 'ui-monospace, monospace' }}
                   />
+                  {/* 通れないときのことば。場所ごとの理由を書ける (#426) */}
+                  {(g.requireFlags?.length ?? 0) > 0 && (
+                    <input
+                      value={g.lockedNotice ?? ''}
+                      maxLength={MAX_GATE_NOTICE}
+                      placeholder={DEFAULT_GATE_LOCKED_NOTICE}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setGates((gs) => gs.map((x) => {
+                          if (x !== g) return x;
+                          if (v.trim() === '') { const { lockedNotice: _n, ...rest } = x; return rest as Gate; }
+                          return { ...x, lockedNotice: v };
+                        }));
+                        setDirty(true);
+                      }}
+                      style={{ width: '16em' }}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => { setGates((gs) => gs.filter((x) => x !== g)); setDirty(true); }}

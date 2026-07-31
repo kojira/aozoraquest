@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateOpen, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -617,7 +617,7 @@ export function World() {
       // ここで止めないと「歩けたのに弾かれる」1 手が毎回発生する。
       const gate = gateAt(s.mapId ?? WORLD_MAP_ID, nx, ny);
       if (gate && !gateOpen(gate, flagsRef.current)) {
-        setNotice('まだ ここは とおれない…');
+        setNotice(gateLockedNotice(gate));
         return;
       }
       if (!walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
@@ -679,7 +679,7 @@ export function World() {
           else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
           // 施錠ゲート (#426) はサーバーの理由をそのまま出す ('そっちには進めない' だと
           // 地形のせいだと誤解する)。
-          else if (e instanceof WorldServerError && e.code === 'gate_locked') setNotice('まだ ここは とおれない…');
+          else if (e instanceof WorldServerError && e.code === 'gate_locked') setNotice(e.message);
           else if (e instanceof WorldServerError && e.status === 400) setNotice('そっちには進めない!');
           else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。すこし まってから もう一度。');
           else { console.warn('[world] serverMove failed', e); setNotice('移動できなかった (通信エラー)。'); }

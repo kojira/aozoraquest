@@ -17,6 +17,7 @@ import {
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
   WORLD_MAP_ID,
   gateAt,
+  gateLockedNotice,
   gateOpen,
   interiorById,
   interiorTerrainAt,
@@ -323,7 +324,9 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     // state を読むのはゲートを踏んだときだけ (毎移動で PDS を読むのは高すぎる)。
     const rec = await readState(env, userDid);
     const st = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-    if (!gateOpen(gate, st.flags ?? [])) throw new ResolverError('まだ ここは とおれない', 400, 'gate_locked');
+    // 文言はエディタで書ける (#426)。既定は core が持つ — edge と web で別々に
+    // 直書きすると、片方だけ直したときに食い違う。
+    if (!gateOpen(gate, st.flags ?? [])) throw new ResolverError(gateLockedNotice(gate), 400, 'gate_locked');
   }
   if (gate) {
     mapId = gate.to.mapId;
