@@ -12,6 +12,7 @@ import {
   dumpTileArts,
   emptyTileArt,
   loadTileArts,
+  bundledTileArtFor,
   setTileArt,
   tileArtColorAt,
   tileArtFor,
@@ -121,6 +122,31 @@ export function TileArtEditor({ parts: partsIn, subjects: subjectsIn }: { parts?
       setNote(`保存できなかった: ${String(e)}`);
     }
   }, [session.agent, terrain, art]);
+
+  /**
+   * **同梱の絵に戻す** (#605)。一度でも自分で描くとその絵が登録簿に残って恒久的に
+   * 勝つので、既定に戻す手段が無いと「新しい同梱の絵が反映されない」ように見える。
+   * 登録簿から消して保存すると、以後は同梱の絵が使われる。
+   */
+  const resetToBundled = useCallback(async () => {
+    const bundled = bundledTileArtFor(subject.legacyKey ?? subject.key);
+    if (!bundled) { setNote('この部位には同梱の絵が無い'); return; }
+    if (!window.confirm(`${subject.name} を同梱の絵に戻す？\n自分で描いた絵は消える`)) return;
+    try {
+      // **key と legacyKey の両方を消す** — 片方が残ると探索順で古い絵が勝ち続ける。
+      setTileArt(subject.key, null);
+      if (subject.legacyKey) setTileArt(subject.legacyKey, null);
+      setArt(bundled);
+      if (session.agent) {
+        const n = await saveTileArts(session.agent);
+        setNote(`同梱の絵に戻した (${n} 件を保存。サーバーは最大 5 分で拾う)`);
+      } else {
+        setNote('同梱の絵に戻した (未ログインなので保存されていない)');
+      }
+    } catch (e) {
+      setNote(`戻せなかった: ${String(e)}`);
+    }
+  }, [subject, session.agent]);
 
   const exportJson = useCallback(() => {
     setTileArt(terrain, art);
@@ -274,6 +300,7 @@ export function TileArtEditor({ parts: partsIn, subjects: subjectsIn }: { parts?
       <div style={{ display: 'flex', gap: '0.4em', marginTop: '0.5em', flexWrap: 'wrap', alignItems: 'center' }}>
         <button type="button" onClick={save} style={{ fontSize: '0.85em' }}>この地形に反映</button>
         <button type="button" onClick={() => void publish()} disabled={!session.agent} style={{ fontSize: '0.85em' }}>保存する</button>
+        <button type="button" onClick={() => void resetToBundled()} style={{ fontSize: '0.85em' }}>同梱の絵に戻す</button>
         <button type="button" onClick={exportJson} style={{ fontSize: '0.85em' }}>すべて書き出す</button>
         <label style={{ fontSize: '0.85em' }}>
           読み込む{' '}
