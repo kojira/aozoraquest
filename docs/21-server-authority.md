@@ -100,7 +100,7 @@ snapshot のみ使い、commands 以外を戦闘計算に通さない。
         → バトルガードを turn+1・解決後 state・次 pendingTurnSeed(entropyU32) に CAS 更新
           (CAS 成否で応答をゲート。やり直し不可を確定) → 新 state/events を返す (seed なし)
     ← {state(seed なし), events, outcome}
-    決着なら Worker が報酬を権威 state に確定 (勝: XP+ドロップ / 負: xpLose+素材ロス、
+    決着なら Worker が報酬を権威 state に確定 (勝: XP+ドロップ / 負: 素材ロスのみ (#621)、
     rewarded のみ・パワー1消費)。練習は付与も消費もペナルティも無し・記録なし。ガード削除。
 ```
 - **先読み不可**: 乱数は毎ターン Worker が kuda から引くのでクライアントは事前に知り得ない。
@@ -109,7 +109,7 @@ snapshot のみ使い、commands 以外を戦闘計算に通さない。
 - **リロード離脱**: 未決着ガードは encounter 時に先に敗北 flush してから新規発行。ガードに
   `expiresAt` を持たせ、経過分は次アクセス時に lazy 敗北確定 (DO Alarm は使わない = DO 無し)。
   **残リスク (レビュー ★★)**: lazy 方式は離脱ユーザーの再アクセスに依存するので、二度と戻らない
-  ユーザーの**負けロス (xpLose/素材ロス) は永久に確定しない (踏み倒し)**。パワーは encounter で
+  ユーザーの**負けロス (素材ロス) は永久に確定しない (踏み倒し)**。パワーは encounter で
   reserve 予約するので二重消費は防げる。負けロスの扱い (練習相当に丸める / 次回ログイン時に flush /
   放置容認) は §9 の判断ポイント。
 - **並行/二重**: turn/決着は battleId+turn 一致 + swapRecord CAS で二重報酬を防ぐ。

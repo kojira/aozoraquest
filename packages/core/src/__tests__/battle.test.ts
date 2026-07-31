@@ -1235,3 +1235,13 @@ describe('ダメージ 0 は正当な結果 (#518)', () => {
     expect(BATTLE_TUNING.defCoef).toBeCloseTo(BATTLE_TUNING.atkCoef / 2, 5);
   });
 });
+
+describe('敗北 XP (#621)', () => {
+  it('どのモンスターでも「勝ちより負けの XP が多い」逆転が起きない', () => {
+    // 以前は xpLose 固定 5 に対し tier1 のスライム 3 種が 勝ち 3〜5 で逆転していた。
+    // 敵を弱く足すたびに再発する形なので、敗北 XP は配らないことで構造的に断つ。
+    for (const m of MONSTERS) {
+      expect(BATTLE_TUNING.xpLose, `${m.name}`).toBeLessThan(battleXpFor(m.id));
+    }
+  });
+});
