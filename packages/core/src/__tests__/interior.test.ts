@@ -13,6 +13,7 @@ import {
   allGates,
   allInteriors,
   gateAt,
+  gateOpen,
   interiorById,
   interiorTerrainAt,
   interiorWalkableAt,
@@ -151,5 +152,35 @@ describe('通行判定', () => {
     };
     setInteriors([m], []);
     expect(interiorWalkableAt(interiorById('in-x')!, 1, 1)).toBe(true);
+  });
+});
+
+describe('ゲートの解禁フラグ (#426 エリア解放)', () => {
+  const gate = (requireFlags?: string[]) => ({
+    from: { mapId: WORLD_MAP_ID, x: 5, y: 5 }, to: { mapId: 'in-1', x: 4, y: 4 },
+    ...(requireFlags ? { requireFlags } : {}),
+  });
+
+  it('フラグ指定が無ければ常に通れる', () => {
+    setInteriors([room()], [gate()]);
+    expect(gateOpen(gateAt(WORLD_MAP_ID, 5, 5)!, [])).toBe(true);
+  });
+
+  it('指定フラグが全部立つまで通れない', () => {
+    setInteriors([room()], [gate(['castle_open', 'king_met'])]);
+    const g = gateAt(WORLD_MAP_ID, 5, 5)!;
+    expect(gateOpen(g, [])).toBe(false);
+    expect(gateOpen(g, ['castle_open'])).toBe(false); // 片方だけでは開かない
+    expect(gateOpen(g, ['castle_open', 'king_met'])).toBe(true);
+  });
+
+  it('フラグ名の書式を弾く (typo は永久に開かないゲートになる)', () => {
+    expect(() => setInteriors([room()], [gate(['Castle_Open'])])).toThrow(InteriorError);
+    expect(() => setInteriors([room()], [gate(['castle open'])])).toThrow(InteriorError);
+  });
+
+  it('保存して読み直しても解禁フラグが残る', () => {
+    setInteriors([room()], [gate(['castle_open'])]);
+    expect(allGates()[0]!.requireFlags).toEqual(['castle_open']);
   });
 });

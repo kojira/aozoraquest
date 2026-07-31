@@ -314,8 +314,23 @@ export function AdminInteriors() {
               <span style={{ color: 'var(--color-muted)' }}>このマップのゲート</span>
               {gatesHere.length === 0 && <div style={{ color: 'var(--color-muted)' }}>まだ無い</div>}
               {gatesHere.map((g) => (
-                <div key={`${g.from.x},${g.from.y}`} style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                <div key={`${g.from.x},${g.from.y}`} style={{ display: 'flex', gap: '0.4em', alignItems: 'center', flexWrap: 'wrap', margin: '0.15em 0' }}>
                   <span>({g.from.x}, {g.from.y}) → {g.to.mapId === WORLD_MAP_ID ? 'フィールド' : maps.find((m) => m.id === g.to.mapId)?.name ?? g.to.mapId} ({g.to.x}, {g.to.y})</span>
+                  {/* 解禁フラグ (#426)。立つまで踏んでも通れない = エリア解放の手段 */}
+                  <input
+                    value={(g.requireFlags ?? []).join(' ')}
+                    placeholder="解禁フラグ (空 = いつでも通れる)"
+                    onChange={(e) => {
+                      const flags = e.target.value.split(/\s+/).filter(Boolean);
+                      setGates((gs) => gs.map((x) => {
+                        if (x !== g) return x;
+                        if (flags.length === 0) { const { requireFlags: _f, ...rest } = x; return rest as Gate; }
+                        return { ...x, requireFlags: flags };
+                      }));
+                      setDirty(true);
+                    }}
+                    style={{ width: '14em', fontFamily: 'ui-monospace, monospace' }}
+                  />
                   <button
                     type="button"
                     onClick={() => { setGates((gs) => gs.filter((x) => x !== g)); setDirty(true); }}

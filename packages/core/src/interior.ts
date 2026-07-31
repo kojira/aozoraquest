@@ -24,6 +24,7 @@
 import type { Terrain } from './world.js';
 import { isWalkable } from './world.js';
 import { BASE_PALETTE, partWalkable as worldPartWalkable, type WorldPart } from './world-map.js';
+import { isFlagName } from './scenario.js';
 
 export class InteriorError extends Error {}
 
@@ -49,6 +50,12 @@ export interface InteriorMap {
 export interface Gate {
   from: { mapId: string; x: number; y: number };
   to: { mapId: string; x: number; y: number };
+  /**
+   * **通れるようになる進行フラグ** (#426)。すべて立つまで踏んでも移動しない。
+   * 「城の門は王の許しが出るまで開かない」「魔王の城は終盤まで入れない」を書く手段。
+   * 判定は edge が権威 (client がフラグを自己申告しても通らない)。
+   */
+  requireFlags?: string[];
 }
 
 export interface InteriorsRecord {
@@ -123,10 +130,15 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
         throw new InteriorError(`${where}: 入口が歩けないマス (壁の上のゲートは踏めない)`);
       }
     }
+    for (const f of g.requireFlags ?? []) {
+      // シナリオ側と同じ書式で弾く (#426/#545)。typo したフラグは永久に立たないので、
+      // そのゲートは二度と開かない = そのエリアへ入れないまま気づけない。
+      if (!isFlagName(f)) throw new InteriorError(`${where}: 解禁フラグ名が不正 (${f})`);
+    }
     const k = gateKey(g.from.mapId, g.from.x, g.from.y);
     // 同じマスに 2 つのゲートがあると、踏んだときどちらへ行くのか決められない。
     if (nextGates.has(k)) throw new InteriorError(`同じマスにゲートが重複 ${where}`);
-    nextGates.set(k, { from: { ...g.from }, to: { ...g.to } });
+    nextGates.set(k, { from: { ...g.from }, to: { ...g.to }, ...(g.requireFlags ? { requireFlags: [...g.requireFlags] } : {}) });
   }
   if (nextGates.size > MAX_GATES) throw new InteriorError(`ゲートが多すぎる (${nextGates.size} > ${MAX_GATES})`);
 
@@ -147,6 +159,14 @@ export function allInteriors(): readonly InteriorMap[] {
 /** 全ゲート (エディタ用)。 */
 export function allGates(): readonly Gate[] {
   return [...gates.values()];
+}
+
+/**
+ * そのゲートが今のフラグで通れるか (#426)。フラグ指定が無ければ常に通れる。
+ * **edge と web が同じ判定を共有する** — 片方だけだと「画面では入れるのに弾かれる」。
+ */
+export function gateOpen(gate: Gate, flags: readonly string[]): boolean {
+  return (gate.requireFlags ?? []).every((f) => flags.includes(f));
 }
 
 /** そのマスのゲート (無ければ undefined)。移動の権威判定と web の描画が共有する。 */
