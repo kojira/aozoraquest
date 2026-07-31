@@ -134,6 +134,14 @@ export function setTileArt(terrain: string, art: TileArt | null): void {
   registry.set(terrain, art);
 }
 
+/**
+ * **同梱の既定絵だけ**を引く (登録簿を無視する)。エディタの「同梱の絵に戻す」が使う —
+ * 一度でも自分で描くとその絵が恒久的に勝つので、既定に戻す手段が要る。
+ */
+export function bundledTileArtFor(terrain: string): TileArt | undefined {
+  return bundledArtFor(terrain);
+}
+
 /** 地形のドット絵。エディタで描いたもの → **同梱の既定絵 (#605)** → undefined (代表色)。 */
 export function tileArtFor(terrain: string): TileArt | undefined {
   return registry.get(terrain) ?? bundledArtFor(terrain);

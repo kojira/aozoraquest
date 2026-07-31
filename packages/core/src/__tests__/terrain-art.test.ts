@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { DEFAULT_TERRAIN_ARTS } from '../terrain-art-data.js';
-import { assertTileArt, decodeTileArt, partArtFor, setTileArt, tileArtFor, TILE_ART_MAX_COLORS, emptyTileArt } from '../tile-art.js';
+import { assertTileArt, bundledTileArtFor, decodeTileArt, partArtFor, setTileArt, tileArtFor, TILE_ART_MAX_COLORS, emptyTileArt } from '../tile-art.js';
 import { BASE_PALETTE } from '../world-map.js';
 
 describe('DEFAULT_TERRAIN_ARTS', () => {
@@ -67,5 +67,19 @@ describe('tileArtFor / partArtFor のフォールバック', () => {
     // (絵タブだけドット絵で地図は SVG、という食い違い。レビュー ★★★ の再発防止)。
     expect(partArtFor(0, 'plains')).toBeDefined();
     expect(partArtFor(0, 'plains')!.size).toBe(16);
+  });
+});
+
+describe('bundledTileArtFor (#605 同梱に戻す)', () => {
+  afterEach(() => setTileArt('forest', null));
+
+  it('登録簿を無視して同梱の絵を返す (戻す先が取れる)', () => {
+    setTileArt('forest', emptyTileArt(8));
+    expect(tileArtFor('forest')!.size).toBe(8); // 描いた絵が勝っている
+    expect(bundledTileArtFor('forest')!.size).toBe(16); // 同梱はそのまま取れる
+  });
+
+  it('同梱に無い地形は undefined', () => {
+    expect(bundledTileArtFor('unknown-xyz')).toBeUndefined();
   });
 });
