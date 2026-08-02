@@ -161,20 +161,26 @@ export function AdminInteriors() {
         <button
           type="button"
           onClick={() => {
-            if (maps.some((m) => m.id === STARTER_TOWN_ID)) { setNote('「ふたばの村」は既にある'); return; }
+            // **入れ直せるようにする。** 同梱の村を直したとき (パーツ・看板・端から出る等)
+            // 「既にある」で断ると、消してから入れ直す手間が要る。上書きでよいか聞く。
+            const existing = maps.some((m) => m.id === STARTER_TOWN_ID);
+            if (existing && !window.confirm('「ふたばの村」を最新の同梱版で置き換える？\nこの村に加えた編集は消える')) return;
             const spawn = worldOverlay().spawn;
             const village = starterTownInterior(spawn);
             // 往復 2 本まとめて張る (入る道だけだと出られない)。フィールド側の入口は
             // 最初の街のマスそのもの。
             const gates = starterTownGates(spawn);
-            setMaps((xs) => [...xs, village]);
+            setMaps((xs) => [...xs.filter((m) => m.id !== village.id), village]);
             setGates((gs) => [
-              ...gs.filter((g) => !gates.some((n) => n.from.mapId === g.from.mapId && n.from.x === g.from.x && n.from.y === g.from.y)),
+              // 同じ入口の重複と、**この村から出る古いゲート**を落とす
+              // (端から出る設計 #626 になったので戻りゲートは要らない)。
+              ...gs.filter((g) => g.from.mapId !== village.id
+                && !gates.some((n) => n.from.mapId === g.from.mapId && n.from.x === g.from.x && n.from.y === g.from.y)),
               ...gates,
             ]);
             setSel(village.id);
             setDirty(true);
-            setNote(`「${village.name}」を入れた。保存するとフィールドの (${spawn.x}, ${spawn.y}) から入れる`);
+            setNote(`「${village.name}」を${existing ? '入れ直した' : '入れた'}。保存するとフィールドの (${spawn.x}, ${spawn.y}) から入れる`);
           }}
           style={{ fontSize: '0.85em' }}
         >
