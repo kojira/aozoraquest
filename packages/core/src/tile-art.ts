@@ -37,8 +37,15 @@ export interface TileArt {
 
 /** ドット絵の一辺として許す値。大きすぎると 256 地形ぶんが重くなる。 */
 export const TILE_ART_SIZES = [8, 16, 32] as const;
-/** 1 タイル内で使える色数。多すぎると「ドット絵」の作法から外れて描きにくい。 */
-export const TILE_ART_MAX_COLORS = 16;
+/**
+ * 1 タイル内で使える色数。
+ *
+ * **形式上の制約ではない** — 画素は 1 バイト (0〜255) なので 256 色まで表せる。
+ * 16 に絞っていたのは「ドット絵の作法」の目安だったが、内部マップの絵で早々に
+ * 足りなくなった (#629)。レコードサイズは色 1 つ約 9 バイトなので、64 色でも
+ * 1 タイル 0.6KB 程度に収まる。描きやすさは**未使用色を残さない**運用で保つ。
+ */
+export const TILE_ART_MAX_COLORS = 64;
 
 export class TileArtError extends Error {}
 
