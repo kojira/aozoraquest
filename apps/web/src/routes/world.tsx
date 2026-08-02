@@ -54,11 +54,12 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
+import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
 import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
@@ -279,6 +280,8 @@ export function World() {
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
+  /** 街の出入りの演出 (#626)。戦闘の渦巻きとは別の、白い光のフェード。 */
+  const [doorFade, setDoorFade] = useState<DoorFadePhase | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
@@ -623,7 +626,9 @@ export function World() {
         setNotice(gateLockedNotice(gate));
         return;
       }
-      if (!walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
+      // 端から外へ出られるマップ (#626) は、範囲外でも止めない (サーバーが外へ出す)。
+      const leaving = cur ? interiorExitFor(cur, nx, ny) : undefined;
+      if (!leaving && !walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
         setNotice('そっちには進めない!');
         return;
       }
@@ -645,6 +650,15 @@ export function World() {
           let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
           if (!res.mapId) delete next.mapId;
           if (res.healed) { next.hp = null; next.mp = null; }
+          // **マップが変わったら扉の演出** (#626)。パッと切り替わると「どこへ来たのか」が
+          // 分からない。戦闘の渦巻きとは別の、白い光がふわっと引くフェードにする。
+          if ((res.mapId ?? null) !== (cur.mapId ?? null)) setDoorFade('out');
+          // **なんでも屋の扉に入ったら店を開く** (#424)。メニューを開かせないと
+          // 店だと気づけない (実機で「なんでも屋がどこか分からない」と指摘)。
+          if (res.mapId) {
+            const sp = interiorShopAt(res.mapId, res.x, res.y);
+            if (sp) { setShopOpen(true); setNotice(null); }
+          }
           // 宿屋 (#424)。残高もサーバーが正 (payment は権威側で引かれている)。
           if (res.inn) {
             setServerPower(res.inn.power);
@@ -1259,7 +1273,11 @@ export function World() {
   const insideHere = ws.mapId ? interiorById(ws.mapId) ?? null : null;
   // 内部では**フィールドの街表を引かない** — 内部座標がたまたま街と重なると、
   // 街の HUD が出て「なんでも屋」が生えるのにサーバーは回復しない、という食い違いになる。
-  const town = insideHere ? null : townAt(ws.x, ws.y);
+  // ただし**村の中のなんでも屋の扉**に立っているときは、その店の街として扱う (#424)。
+  const innerShop = insideHere ? interiorShopAt(insideHere.id, ws.x, ws.y) : undefined;
+  const town = insideHere
+    ? (innerShop ? townAt(innerShop.town.x, innerShop.town.y) : null)
+    : townAt(ws.x, ws.y);
   const here = insideHere ? interiorTerrainAt(insideHere, ws.x, ws.y) : terrainAt(ws.x, ws.y);
   // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
   // 「このあたり」の見出しと「何が多いか」は同じ tier を見る (ラベルと中身が食い違わないように)。
@@ -1519,6 +1537,7 @@ export function World() {
               }}
             />
           )}
+          {doorFade && <DoorFade phase={doorFade} onDone={() => setDoorFade(null)} />}
           {!battle && scenarioTalk && !npcTalk && !onboarding && (
             <DialogueWindow
               anchor="map"

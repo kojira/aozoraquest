@@ -565,11 +565,12 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 /** 戦闘エラーを HTTP に振り分ける。**トークン切れ/未設定 (ServerWriteError) は 503 で fail-closed**
  *  (報酬は付かない・クライアント権威へのフォールバックは無い §3-6)。ResolverError はその status。 */
 /** 署名済み位置トークンから座標を取り出す。無い/無効なら undefined (state に倒す)。 */
-function positionFrom(env: Env, token: unknown, did: string): { x: number; y: number } | undefined {
+function positionFrom(env: Env, token: unknown, did: string): { x: number; y: number; mapId?: string } | undefined {
   if (typeof token !== 'string' || !token) return undefined;
   try {
     const c = verifyPosition(env, token, did, nowSec());
-    return { x: c.x, y: c.y };
+    // mapId (#424) も返す — 村の中のなんでも屋を引くのに要る。
+    return { x: c.x, y: c.y, ...(c.mapId ? { mapId: c.mapId } : {}) };
   } catch {
     return undefined;
   }

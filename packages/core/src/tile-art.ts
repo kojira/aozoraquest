@@ -23,6 +23,7 @@
  * (`TERRAIN_COLORS` / `UNKNOWN_TERRAIN_COLOR`)。色だけ決めれば遊べる。
  */
 import { DEFAULT_TERRAIN_ARTS } from './terrain-art-data.js';
+import { INTERIOR_ARTS } from './interior-art-data.js';
 
 /** ドット絵 1 枚。 */
 export interface TileArt {
@@ -117,7 +118,7 @@ const bundled = new Map<string, TileArt>();
 function bundledArtFor(terrain: string): TileArt | undefined {
   const hit = bundled.get(terrain);
   if (hit) return hit;
-  const rec = DEFAULT_TERRAIN_ARTS[terrain];
+  const rec = DEFAULT_TERRAIN_ARTS[terrain] ?? INTERIOR_ARTS[terrain];
   if (!rec) return undefined;
   const art = decodeTileArt(rec);
   bundled.set(terrain, art);

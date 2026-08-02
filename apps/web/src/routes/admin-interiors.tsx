@@ -163,7 +163,7 @@ export function AdminInteriors() {
           onClick={() => {
             if (maps.some((m) => m.id === STARTER_TOWN_ID)) { setNote('「ふたばの村」は既にある'); return; }
             const spawn = worldOverlay().spawn;
-            const village = starterTownInterior();
+            const village = starterTownInterior(spawn);
             // 往復 2 本まとめて張る (入る道だけだと出られない)。フィールド側の入口は
             // 最初の街のマスそのもの。
             const gates = starterTownGates(spawn);

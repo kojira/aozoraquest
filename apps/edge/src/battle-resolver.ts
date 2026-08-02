@@ -22,6 +22,7 @@ import {
   gateOpen,
   innAt,
   interiorById,
+  interiorExitFor,
   interiorTerrainAt,
   isInterior,
   walkableIn,
@@ -320,6 +321,21 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   const inside = isInterior(mapId) ? interiorById(mapId)! : null;
   let nx = inside ? cx + dx : wrap(cx + dx);
   let ny = inside ? cy + dy : wrap(cy + dy);
+  // **端まで歩いたら外へ出る** (#626)。壁で囲って出口 1 マスを探させるより
+  // ストレスが無い。通行判定より先に見る (範囲外は「歩けない」と判定されるため)。
+  const edgeExit = inside ? interiorExitFor(inside, nx, ny) : undefined;
+  if (edgeExit) {
+    const dest = isInterior(edgeExit.mapId) ? interiorById(edgeExit.mapId)! : null;
+    const destTerrain = dest ? interiorTerrainAt(dest, edgeExit.x, edgeExit.y) : terrainAt(edgeExit.x, edgeExit.y);
+    await readModifyWrite(env, userDid, (cur) => ({
+      ...cur, mapId: edgeExit.mapId === WORLD_MAP_ID ? undefined : edgeExit.mapId, x: edgeExit.x, y: edgeExit.y,
+    }), { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+    const outToken = signPosition(env, { did: userDid, mapId: edgeExit.mapId, x: edgeExit.x, y: edgeExit.y, counter: counter + 1, iat: now });
+    return {
+      ...(edgeExit.mapId !== WORLD_MAP_ID ? { mapId: edgeExit.mapId } : {}),
+      x: edgeExit.x, y: edgeExit.y, terrain: destTerrain, token: outToken,
+    };
+  }
   if (!walkableIn(mapId, nx, ny, isWalkableAt)) throw new ResolverError('進めない地形', 400);
 
   // **ゲートを踏んだら移る** (#424)。通行判定の後に見るのは、壁の中の入口を

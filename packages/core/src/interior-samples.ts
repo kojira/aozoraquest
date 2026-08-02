@@ -4,14 +4,20 @@
  * 内部マップを 1 つも作っていない状態からだと、エディタで 64×64 を手で塗るところから
  * 始まって重い。**入って歩ける村**を 1 つ同梱し、そこから直せるようにする。
  *
- * ## タイルは**フィールドのパーツ番号に合わせる**
+ * ## 専用パーツで組む
  *
- * 絵は `part:<index>` → 地形名 の順で引かれる (`partArtFor`)。番号を
- * `BASE_PALETTE` と同じ並びにしておけば、フィールドで使っている絵がそのまま出る
- * (草地・木・池・岩・家・橋)。独自の番号を振ると絵の無いタイルになる。
+ * 最初はフィールドのパーツを流用したが、**道が橋・家が街・壁が山**に見えて破綻した
+ * (実機で指摘)。内部専用の絵 (`interior-art-data`) を専用の地形名で引く。
+ * `part:<index>` はフィールドと番号空間を共有するので、内部で番号を振ると
+ * フィールドの絵が出てしまう — 名前で引くのが要点。
  *
- * 通行だけは村用に上書きする — フィールドの「街」タイルは歩けるが、村の中では
- * **家は入れない壁**にしたい (中に入る導線はゲートで別途作る)。
+ * 建物は 1 マス 16×16 なので 1 枚絵にできない。**屋根・壁・扉を積んで組み**、
+ * 宿屋となんでも屋は扉の上に看板を置いて見分けられるようにする。
+ *
+ * ## 「動いているか分からない」対策
+ *
+ * 一面の草地だと歩いても画面が変わらず、動いているか不安になる (実機で指摘)。
+ * 井戸・柵・花壇・木を散らして、どこにいるか分かる目印を作る。
  */
 import type { Gate, InteriorMap } from './interior.js';
 import type { WorldPart } from './world-map.js';
@@ -19,36 +25,46 @@ import type { WorldPart } from './world-map.js';
 export const STARTER_TOWN_ID = 'futaba-village';
 export const STARTER_TOWN_SIZE = 64;
 
-/** タイル番号 (BASE_PALETTE と同じ並び)。 */
-const GROUND = 0; // 草地 = 歩ける地面
-const GROVE = 1; // 低い草。地面の変化づけ
-const TREE = 2; // 木 (通れない)
-const POND = 3; // 池 (通れない)
-const ROCK = 5; // 岩・石垣 (通れない)
-const HOUSE = 6; // 家 (通れない。絵はフィールドの街タイル)
-const PATH = 7; // 道 (橋の絵を石畳として使う)
+/** パーツ番号 (この村のパーツ表の並び)。絵は terrain 名で引く。 */
+const GRASS = 0;
+const PATH = 1;
+const WALL = 2;
+const ROOF = 3;
+const HWALL = 4;
+const DOOR = 5;
+const INN_SIGN = 6;
+const SHOP_SIGN = 7;
+const WELL = 8;
+const FENCE = 9;
+const FLOWER = 10;
+const TREE = 11;
 
-/**
- * 村のパーツ表。**通行だけ**をフィールドと変えている (家と木は入れない)。
- * terrain はフィールドと同じにしておく — 絵の探索が地形名に落ちるため。
- */
+/** 村のパーツ表。**専用の地形名**で絵を引く (フィールドの番号空間と混ざらない)。 */
 const PARTS: WorldPart[] = [
-  { terrain: 'plains', name: 'じめん', walkable: true },
-  { terrain: 'grove', name: 'くさむら', walkable: true },
+  { terrain: 'plains', name: 'くさち', walkable: true },
+  { terrain: 'floor-stone', name: 'いしだたみ', walkable: true },
+  { terrain: 'wall-brick', name: 'いしのかべ', walkable: false },
+  { terrain: 'roof', name: 'やね', walkable: false },
+  { terrain: 'house-wall', name: 'いえのかべ', walkable: false },
+  { terrain: 'door', name: 'とびら', walkable: true },
+  { terrain: 'sign-inn', name: 'やどやのかんばん', walkable: false },
+  { terrain: 'sign-shop', name: 'なんでも屋のかんばん', walkable: false },
+  { terrain: 'well', name: 'いど', walkable: false },
+  { terrain: 'fence', name: 'さく', walkable: false },
+  { terrain: 'flowers', name: 'かだん', walkable: true },
   { terrain: 'forest', name: 'き', walkable: false },
-  { terrain: 'pond', name: 'いけ', walkable: false },
-  { terrain: 'water', name: 'みず', walkable: false },
-  { terrain: 'mountain', name: 'いしがき', walkable: false },
-  { terrain: 'town', name: 'いえ', walkable: false },
-  { terrain: 'bridge', name: 'みち', walkable: true },
 ];
 
-/** 宿屋のマス (東の家の玄関前)。ここに入ると あおぞらパワーを払って全回復する。 */
-export const STARTER_TOWN_INN = { x: 42, y: 14, price: 3, name: 'ふたばの宿' };
-
+/** 宿屋の扉。ここに入ると あおぞらパワーを払って全回復する。 */
+export const STARTER_TOWN_INN = { x: 21, y: 22, price: 3, name: 'ふたばの宿' };
+/** なんでも屋の扉。ここに入ると店が開く。 */
+export const STARTER_TOWN_SHOP = { x: 43, y: 22 };
 /** フィールドから入ったときの降り立つ場所 (村の南の通り)。 */
-export const STARTER_TOWN_ENTRANCE = { x: 32, y: 59 };
-/** フィールドへ戻るマス (南の石垣の内側)。**壁は開けない** — 出るのはここだけ。 */
+export const STARTER_TOWN_ENTRANCE = { x: 32, y: 56 };
+/**
+ * @deprecated 端から出られるようにしたので使わない (#626)。
+ * 保存済みのゲートとの互換のために残す。
+ */
 export const STARTER_TOWN_EXIT = { x: 32, y: 61 };
 
 /**
@@ -57,7 +73,7 @@ export const STARTER_TOWN_EXIT = { x: 32, y: 61 };
  */
 export function buildStarterTownTiles(): Uint8Array {
   const S = STARTER_TOWN_SIZE;
-  const t = new Uint8Array(S * S).fill(GROUND);
+  const t = new Uint8Array(S * S).fill(GRASS);
   const set = (x: number, y: number, v: number) => {
     if (x < 0 || y < 0 || x >= S || y >= S) return;
     t[y * S + x] = v;
@@ -66,67 +82,80 @@ export function buildStarterTownTiles(): Uint8Array {
     for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, v);
   };
 
-  // 外周は石垣で囲う。**外へ歩いて出られないようにする** (出るのはゲートだけ)。
-  rect(0, 0, S, 2, ROCK);
-  rect(0, S - 2, S, 2, ROCK);
-  rect(0, 0, 2, S, ROCK);
-  rect(S - 2, 0, 2, S, ROCK);
-
-  // 村を囲む林 (石垣の内側)。奥行きを出しつつ、端に寄りすぎないようにする。
-  for (let x = 3; x < S - 3; x++) {
-    if (x % 3 !== 0) continue;
-    set(x, 3, TREE);
-    set(x, S - 4, TREE);
-  }
-  for (let y = 4; y < S - 4; y++) {
-    if (y % 3 !== 0) continue;
-    set(3, y, TREE);
-    set(S - 4, y, TREE);
+  // **囲わない** (#626)。端まで歩けばフィールドへ出る (exitTo)。壁で囲って出口を
+  // 1 マス探させるのはストレスが大きい。村の外縁は木立で「ここから先は外」と示す。
+  for (let i = 2; i < S - 2; i += 4) {
+    set(i, 1, TREE); set(i + 2, S - 2, TREE);
+    set(1, i, TREE); set(S - 2, i + 2, TREE);
   }
 
-  // 目抜き通り (縦) と 広場へ抜ける横道。石畳で導線を示す。
-  rect(30, 6, 4, S - 8, PATH); // 南の石垣ぎわ (y=61) まで通す = 戻り口へ繋ぐ
-  rect(8, 30, S - 16, 3, PATH);
+  // 目抜き通り (縦) と広場へ抜ける横道。
+  rect(30, 4, 4, S - 6, PATH);
+  rect(6, 30, S - 12, 3, PATH);
+  // 建物の前を通る東西の道 (宿屋・なんでも屋へ繋ぐ)。
+  rect(6, 24, S - 12, 2, PATH);
 
-  // 中央の広場と井戸がわりの池。
-  rect(26, 26, 12, 11, PATH);
-  rect(30, 29, 4, 4, POND);
+  // 中央の広場と井戸。**目印になるもの**を置いて、歩いた実感が出るようにする。
+  rect(26, 34, 12, 8, PATH);
+  set(31, 37, WELL); set(32, 37, WELL);
 
-  /** 家を 1 軒置く (左上から w×h)。前に石畳の踏み段を敷いて入口を示す。 */
-  const house = (x: number, y: number, w = 5, h = 4) => {
-    rect(x, y, w, h, HOUSE);
-    rect(x + Math.floor(w / 2) - 1, y + h, 2, 1, PATH); // 玄関前
+  /**
+   * 建物を 1 軒。**屋根 → 壁 → 扉**の順に積む。看板を渡すと扉の上に出る
+   * (宿屋・なんでも屋の見分け)。扉は歩けるマスで、そこが入口になる。
+   */
+  const building = (x: number, y: number, w: number, h: number, doorDx: number, sign?: number) => {
+    rect(x, y, w, 2, ROOF); // 屋根 2 段
+    rect(x, y + 2, w, h - 2, HWALL); // 壁
+    const dx = x + doorDx;
+    set(dx, y + h - 1, DOOR); // 扉は最下段
+    if (sign !== undefined) set(dx, y + h - 2, sign); // 看板は扉の真上
+    rect(dx, y + h, 1, 1, PATH); // 玄関前の石畳
   };
 
-  // 通りの西側 4 軒 / 東側 4 軒。広場を挟んで上下に分ける。
-  house(18, 10); house(18, 18);
-  house(18, 40); house(18, 48);
-  house(40, 10); house(40, 18);
-  house(40, 40); house(40, 48);
-  // 村長の家 (少し大きい)。広場の北。
-  house(28, 12, 8, 6);
+  // 宿屋 (西) と なんでも屋 (東)。通りに面して看板を出す。
+  building(18, 18, 8, 5, 3, INN_SIGN); // 扉 (21, 22)
+  building(40, 18, 8, 5, 3, SHOP_SIGN); // 扉 (43, 22)
 
-  // 畑まわりのくさむら (歩ける。見た目の変化づけ)。
-  rect(8, 8, 6, 8, GROVE);
-  rect(50, 44, 6, 8, GROVE);
+  // ふつうの家。看板なし。
+  building(8, 8, 7, 5, 3);
+  building(24, 8, 7, 5, 3);
+  building(44, 8, 7, 5, 3);
+  building(8, 44, 7, 5, 3);
+  building(22, 44, 7, 5, 3);
+  building(40, 44, 7, 5, 3);
+  building(50, 34, 7, 5, 3);
 
-  // **石垣は開けない。** 開けると村の外 (マップの外) に立てるマスができる。
-  // 出入りはゲートだけなので、戻り口のまわりを石畳にして「ここから出る」と分かるようにする。
-  rect(STARTER_TOWN_EXIT.x - 1, STARTER_TOWN_EXIT.y - 1, 2, 2, PATH);
+  // 目印: 花壇・柵・木を散らす (一面の草地だと動いた実感が無い)。
+  rect(6, 36, 5, 4, FLOWER);
+  rect(52, 50, 6, 4, FLOWER);
+  rect(14, 52, 8, 1, FENCE);
+  rect(44, 30, 6, 1, FENCE);
+  for (const [x, y] of [[5, 20], [5, 50], [58, 12], [58, 44], [12, 28], [50, 28], [26, 52], [38, 52]]) {
+    set(x!, y!, TREE);
+  }
+
+  // 南の通りを端まで通す (どこからでも出られるが、道なりに行けば外に出ると分かる)。
+  rect(30, S - 6, 4, 6, PATH);
 
   return t;
 }
 
 /** 同梱の村 (エディタから差し込む)。 */
-export function starterTownInterior(): InteriorMap {
+export function starterTownInterior(town: { x: number; y: number }): InteriorMap {
   return {
     id: STARTER_TOWN_ID,
     name: 'ふたばの村',
     size: STARTER_TOWN_SIZE,
     tiles: buildStarterTownTiles(),
     parts: PARTS.map((p) => ({ ...p })),
-    // 宿屋 (#424)。街に入るだけでは回復しなくなったので、回復はここで有料。
+    // 宿屋 (#624)。街に入るだけでは回復しなくなったので、回復はここで有料。
     inn: { ...STARTER_TOWN_INN },
+    // なんでも屋 (#424)。品揃えはフィールドのふたばの村の店と同じ (座標で決まる)。
+    // 座標だけを持つ (spawn は region/name も持つが、レコードに余計な値を残さない)。
+    shop: { ...STARTER_TOWN_SHOP, town: { x: town.x, y: town.y }, name: 'ふたばの なんでも屋' },
+    // **端まで歩いたらフィールドへ戻る** (#626)。街の 1 マス下に出す —
+    // 街タイルに戻すと踏んだ瞬間にまた入ってしまう。
+    exitTo: { mapId: 'world', x: town.x, y: town.y + 1 },
     // 街の中なので敵は出さない (encounterTier を設定しない)。
   };
 }
@@ -134,12 +163,11 @@ export function starterTownInterior(): InteriorMap {
 /**
  * フィールドの街タイル ⇄ 村の入口 を繋ぐ**往復 2 本**。
  *
- * 入る側はフィールドの街タイルそのもの、戻る側は村の入口の 1 マス下 (石垣の切れ目)。
  * 戻り先をフィールドの街タイルにすると**踏んだ瞬間にまた入る**ので、街の 1 マス下に出す。
  */
 export function starterTownGates(town: { x: number; y: number }): Gate[] {
+  // 戻りは exitTo (端まで歩けば出る) が担うので、ゲートは**入る 1 本だけ**。
   return [
     { from: { mapId: 'world', x: town.x, y: town.y }, to: { mapId: STARTER_TOWN_ID, ...STARTER_TOWN_ENTRANCE } },
-    { from: { mapId: STARTER_TOWN_ID, ...STARTER_TOWN_EXIT }, to: { mapId: 'world', x: town.x, y: town.y + 1 } },
   ];
 }
