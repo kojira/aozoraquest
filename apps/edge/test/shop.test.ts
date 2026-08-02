@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { EQUIPMENT_BY_ID, SALE_TUNING, townShopStock, worldOverlay } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, SALE_TUNING, townShopStock, worldOverlay, BASE_PALETTE, setInteriors, type InteriorMap } from '@aozoraquest/core';
 import { shopCraft, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES } from '../src/shop';
 import { sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
@@ -384,5 +384,36 @@ describe('所持上限と すてる (#575)', () => {
     const env = await makeEnv();
     await shopDiscard(env, DID, { rkeys: ['junk'], rkey: 'd10' }, NOW);
     expect(stored(store).gearSel).toEqual({});
+  });
+});
+
+describe('村の中のなんでも屋 (#424/#636)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setInteriors(null, null); });
+
+  const SIZE = 8;
+  const SHOP_TILE = { x: 5, y: 4 };
+  const village = (): InteriorMap => ({
+    id: 'in-town', name: 'むら', size: SIZE,
+    tiles: new Uint8Array(SIZE * SIZE).fill(BASE_PALETTE.indexOf('plains')),
+    shop: { ...SHOP_TILE, town: { x: TOWN.x, y: TOWN.y } },
+  });
+
+  it('店のマスに立っていれば、村の中でも作ってもらえる', async () => {
+    setInteriors([village()], []);
+    const m = statefulPds(stateAt({ mapId: 'in-town', x: 1, y: 1 })); // state の座標は入口のまま
+    globalThis.fetch = m.fn;
+    // **位置は token が正**。店のマスを指すトークンを渡す。
+    const res = await shopCraft(await makeEnv(), DID,
+      { itemId: ITEM.id, rkey: 'r1', luk: 0, pos: { ...SHOP_TILE, mapId: 'in-town' } }, NOW);
+    expect(res.pieces).toEqual([{ rkey: 'r1', itemId: ITEM.id, level: res.level }]);
+  });
+
+  it('村の中でも店のマス以外では買えない', async () => {
+    setInteriors([village()], []);
+    globalThis.fetch = statefulPds(stateAt({ mapId: 'in-town', x: 1, y: 1 })).fn;
+    await expect(shopCraft(await makeEnv(), DID,
+      { itemId: ITEM.id, rkey: 'r2', luk: 0, pos: { x: 1, y: 1, mapId: 'in-town' } }, NOW),
+    ).rejects.toMatchObject({ code: 'not_in_town' });
   });
 });
