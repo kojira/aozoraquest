@@ -175,6 +175,11 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
         return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+      // **移動もワールドの読み込みを待つ。** ゲート (#424)・NPC (#425)・地図はここで効くので、
+      // コールド isolate で index.ts の waitUntil が間に合っていないと「街に入れない」
+      // 「人がいない」が無言で起きる (実際に踏んだ)。ロード済みならキャッシュ即返しで
+      // コストは乗らない。
+      await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
       return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
