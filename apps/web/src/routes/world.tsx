@@ -1101,7 +1101,7 @@ export function World() {
       try {
         // **費用の支払いと強化値の抽選はサーバー** (#551)。素材もパワーも権威側から引かれ、
         // 結果の在庫がそのまま返る (client の減算だけでは、リロードで素材が戻る = 複製できた)。
-        const res = await serverShopCraft(agent, def.id, rkey);
+        const res = await serverShopCraft(agent, def.id, rkey, tokenRef.current);
         setServerPower(res.power);
         applyServerMaterials(res.materials);
         // 個体そのもの (強化値つきレコード) はまだユーザー PDS。サーバーが決めた level を記帳する。
@@ -1152,7 +1152,7 @@ export function World() {
       try {
         // **合成もサーバー** (#551 段階 2)。消費する個体は権威側の所持から探すので、
         // 持っていない rkey や強化値の食い違いは通らない。
-        const res = await serverShopForge(agent, rkeys, frkey);
+        const res = await serverShopForge(agent, rkeys, frkey, tokenRef.current);
         pendingForgeRef.current = null;
         if (res.pieces) setCraftedPieces(res.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
         const piece: CraftedPiece = { rkey: frkey, itemId: def.id, level: res.level ?? resultLevel, at: new Date().toISOString() };
@@ -1184,7 +1184,7 @@ export function World() {
       try {
         // **在庫と残高の増減はサーバー** (#551)。client 台帳だけだと「パワーが 5 ふえた!」と
         // 出ても権威側は動かず、戦闘の報酬にも効かなかった。
-        const res = await serverShopSell(agent, materialId, count, srkey);
+        const res = await serverShopSell(agent, materialId, count, srkey, tokenRef.current);
         pendingSaleRef.current = null;
         setServerPower(res.power);
         applyServerMaterials(res.materials);

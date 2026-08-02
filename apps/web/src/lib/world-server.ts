@@ -196,14 +196,16 @@ export interface ServerShopResult {
 
 /** なんでも屋: 装備を作ってもらう (#551)。**費用も強化値もサーバーが決める**。
  *  client は返ってきた level を craft レコードに記帳するだけ。 */
-export function serverShopCraft(agent: Agent, itemId: string, rkey: string): Promise<ServerShopResult> {
-  return callEdge<ServerShopResult>(agent, LXM_SHOP_CRAFT, '/api/shop/craft', { itemId, rkey });
+export function serverShopCraft(agent: Agent, itemId: string, rkey: string, token?: string): Promise<ServerShopResult> {
+  // **位置トークンを送る** (#636)。サーバーは token の座標で店を判定する。送らないと
+  // state の座標に倒れ、村の中では入口の座標のままなので「店の外」と判定される。
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_CRAFT, '/api/shop/craft', { itemId, rkey, ...(token ? { token } : {}) });
 }
 
 /** なんでも屋: きたえる (#551 段階 2)。同じ品・同じ強化値の 2 個体 → +1。
  *  消費する個体は**権威側の所持から**探すので、持っていない rkey は通らない。 */
-export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: string): Promise<ServerShopResult> {
-  return callEdge<ServerShopResult>(agent, LXM_SHOP_FORGE, '/api/shop/forge', { rkeys, rkey });
+export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_FORGE, '/api/shop/forge', { rkeys, rkey, ...(token ? { token } : {}) });
 }
 
 /**
@@ -241,8 +243,8 @@ export function serverQuestComplete(agent: Agent, questId: string): Promise<Serv
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */
-export function serverShopSell(agent: Agent, materialId: string, count: number, rkey: string): Promise<ServerShopResult> {
-  return callEdge<ServerShopResult>(agent, LXM_SHOP_SELL, '/api/shop/sell', { materialId, count, rkey });
+export function serverShopSell(agent: Agent, materialId: string, count: number, rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_SELL, '/api/shop/sell', { materialId, count, rkey, ...(token ? { token } : {}) });
 }
 
 /** あおぞらパワーを消費する (#551)。**値段はサーバーが決める** — client が金額を送らない。
