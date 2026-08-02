@@ -221,7 +221,9 @@ export function TileArtEditor({ parts: partsIn, subjects: subjectsIn }: { parts?
           変更は選択中の色ひとつに対して大きく出す。 */}
       <div style={{ display: 'flex', gap: '0.3em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4em' }}>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>いろ</span>
-        {Array.from({ length: TILE_ART_MAX_COLORS }, (_, i) => i).map((i) => (
+        {/* **空の枠を並べすぎない。** 上限は 64 色 (#629) だが、64 個の見本を出すと
+            狭い画面が見本で埋まる。使っている色 + 追加用の 1 枠だけ出す。 */}
+        {Array.from({ length: Math.min(TILE_ART_MAX_COLORS, Math.max(8, art.palette.length + 1)) }, (_, i) => i).map((i) => (
           <button
             key={i}
             type="button"
