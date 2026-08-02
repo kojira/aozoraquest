@@ -43,6 +43,9 @@ const PARTS: WorldPart[] = [
   { terrain: 'bridge', name: 'みち', walkable: true },
 ];
 
+/** 宿屋のマス (東の家の玄関前)。ここに入ると あおぞらパワーを払って全回復する。 */
+export const STARTER_TOWN_INN = { x: 42, y: 14, price: 3, name: 'ふたばの宿' };
+
 /** フィールドから入ったときの降り立つ場所 (村の南の通り)。 */
 export const STARTER_TOWN_ENTRANCE = { x: 32, y: 59 };
 /** フィールドへ戻るマス (南の石垣の内側)。**壁は開けない** — 出るのはここだけ。 */
@@ -122,6 +125,8 @@ export function starterTownInterior(): InteriorMap {
     size: STARTER_TOWN_SIZE,
     tiles: buildStarterTownTiles(),
     parts: PARTS.map((p) => ({ ...p })),
+    // 宿屋 (#424)。街に入るだけでは回復しなくなったので、回復はここで有料。
+    inn: { ...STARTER_TOWN_INN },
     // 街の中なので敵は出さない (encounterTier を設定しない)。
   };
 }

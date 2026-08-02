@@ -14,6 +14,7 @@ import {
   allInteriors,
   gateAt,
   gateOpen,
+  innAt,
   gateLockedNotice,
   DEFAULT_GATE_LOCKED_NOTICE,
   interiorById,
@@ -264,5 +265,32 @@ describe('同梱の村「ふたばの村」(#424)', () => {
     const [inGate, outGate] = starterTownGates(spawn);
     expect(inGate!.from).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y });
     expect(outGate!.to).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y + 1 });
+  });
+});
+
+describe('宿屋 (#424)', () => {
+  const withInn = (inn: NonNullable<InteriorMap['inn']>) => ({ ...room(), inn });
+
+  it('宿屋のマスを引ける', () => {
+    setInteriors([withInn({ x: 4, y: 4, price: 3, name: 'やど' })], []);
+    expect(innAt('in-1', 4, 4)?.price).toBe(3);
+    expect(innAt('in-1', 5, 4)).toBeUndefined();
+    expect(innAt('world', 4, 4)).toBeUndefined();
+  });
+
+  it('歩けないマスの宿屋を弾く (踏めない宿屋は永久に使えない)', () => {
+    expect(() => setInteriors([withInn({ x: 0, y: 0, price: 3 })], [])).toThrow(InteriorError);
+  });
+
+  it('マップの外・宿代の範囲外を弾く', () => {
+    expect(() => setInteriors([withInn({ x: 99, y: 4, price: 3 })], [])).toThrow(InteriorError);
+    expect(() => setInteriors([withInn({ x: 4, y: 4, price: -1 })], [])).toThrow(InteriorError);
+    expect(() => setInteriors([withInn({ x: 4, y: 4, price: 999 })], [])).toThrow(InteriorError);
+  });
+
+  it('ふたばの村の宿屋は歩けるマスにある', () => {
+    const v = starterTownInterior();
+    expect(v.inn).toBeDefined();
+    expect(interiorWalkableAt(v, v.inn!.x, v.inn!.y)).toBe(true);
   });
 });

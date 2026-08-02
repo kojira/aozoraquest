@@ -414,3 +414,72 @@ describe('ゲートの解禁フラグ (#426)', () => {
     expect(r.mapId).toBe('in-1');
   });
 });
+
+describe('宿屋 (#424)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setInteriors(null, null); });
+
+  const F = BASE_PALETTE.indexOf('plains');
+  const W = BASE_PALETTE.indexOf('mountain');
+  const innRoom = (): InteriorMap => {
+    const size = 8;
+    const tiles = new Uint8Array(size * size).fill(F);
+    for (let k = 0; k < size; k++) { tiles[k] = W; tiles[(size-1)*size+k] = W; tiles[k*size] = W; tiles[k*size+size-1] = W; }
+    return { id: 'in-1', name: 'むら', size, tiles, inn: { x: 5, y: 4, price: 3, name: 'やど' } };
+  };
+
+  it('傷ついていれば パワーを払って全回復する', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 10, carryHp: 5 }) });
+    globalThis.fetch = m.fn;
+    setInteriors([innRoom()], []);
+    const r = await handleMove(env, USER, 1, 0, undefined, NOW); // (5,4) = 宿屋
+    expect(r.inn).toMatchObject({ paid: 3, power: 7 });
+    expect(r.healed).toBe(true);
+    const st = m.store.get('gs')!.value as GameState;
+    expect(st.power).toBe(7);
+    expect(st.carryHp).toBeUndefined(); // 全回復 = carry を消す
+  });
+
+  it('満タンなら課金しない (通り抜けても取られない)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 10 }) });
+    globalThis.fetch = m.fn;
+    setInteriors([innRoom()], []);
+    const r = await handleMove(env, USER, 1, 0, undefined, NOW);
+    expect(r.inn).toMatchObject({ paid: 0, power: 10 });
+    expect((m.store.get('gs')!.value as GameState).power).toBe(10);
+  });
+
+  it('パワーが足りなければ泊まれない (回復も課金もしない)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 1, carryHp: 5 }) });
+    globalThis.fetch = m.fn;
+    setInteriors([innRoom()], []);
+    const r = await handleMove(env, USER, 1, 0, undefined, NOW);
+    expect(r.innDenied).toMatchObject({ price: 3, power: 1 });
+    expect(r.healed).toBeUndefined();
+    expect((m.store.get('gs')!.value as GameState).carryHp).toBe(5); // 傷は残る
+  });
+});
+
+describe('街の内部へ入ると帰還先も更新する (#424)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setInteriors(null, null); });
+
+  it('街のマスからゲートで入ると lastTown がその街になる', async () => {
+    // ゲートは街の回復処理より先に return するので、ここで書かないと lastTown が
+    // 古い街のまま残り、負けたときに遠くへ飛ばされる。
+    const env = await makeEnv();
+    const town = worldOverlay().towns[0]!;
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ x: town.x, y: town.y - 1, lastTown: { x: 1, y: 1 } }) });
+    globalThis.fetch = m.fn;
+    const size = 8;
+    const tiles = new Uint8Array(size * size).fill(BASE_PALETTE.indexOf('plains'));
+    setInteriors([{ id: 'in-1', name: 'むら', size, tiles }],
+      [{ from: { mapId: 'world', x: town.x, y: town.y }, to: { mapId: 'in-1', x: 4, y: 4 } }]);
+    const r = await handleMove(env, USER, 0, 1, undefined, NOW);
+    expect(r.mapId).toBe('in-1');
+    expect((m.store.get('gs')!.value as GameState).lastTown).toEqual({ x: town.x, y: town.y });
+  });
+});
