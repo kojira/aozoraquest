@@ -54,11 +54,12 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
+import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
 import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
@@ -279,6 +280,8 @@ export function World() {
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
+  /** 街の出入りの演出 (#626)。戦闘の渦巻きとは別の、白い光のフェード。 */
+  const [doorFade, setDoorFade] = useState<DoorFadePhase | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
@@ -623,7 +626,9 @@ export function World() {
         setNotice(gateLockedNotice(gate));
         return;
       }
-      if (!walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
+      // 端から外へ出られるマップ (#626) は、範囲外でも止めない (サーバーが外へ出す)。
+      const leaving = cur ? interiorExitFor(cur, nx, ny) : undefined;
+      if (!leaving && !walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
         setNotice('そっちには進めない!');
         return;
       }
@@ -645,6 +650,9 @@ export function World() {
           let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
           if (!res.mapId) delete next.mapId;
           if (res.healed) { next.hp = null; next.mp = null; }
+          // **マップが変わったら扉の演出** (#626)。パッと切り替わると「どこへ来たのか」が
+          // 分からない。戦闘の渦巻きとは別の、白い光がふわっと引くフェードにする。
+          if ((res.mapId ?? null) !== (cur.mapId ?? null)) setDoorFade('out');
           // **なんでも屋の扉に入ったら店を開く** (#424)。メニューを開かせないと
           // 店だと気づけない (実機で「なんでも屋がどこか分からない」と指摘)。
           if (res.mapId) {
@@ -1529,6 +1537,7 @@ export function World() {
               }}
             />
           )}
+          {doorFade && <DoorFade phase={doorFade} onDone={() => setDoorFade(null)} />}
           {!battle && scenarioTalk && !npcTalk && !onboarding && (
             <DialogueWindow
               anchor="map"

@@ -60,8 +60,11 @@ export const STARTER_TOWN_INN = { x: 21, y: 22, price: 3, name: 'ふたばの宿
 /** なんでも屋の扉。ここに入ると店が開く。 */
 export const STARTER_TOWN_SHOP = { x: 43, y: 22 };
 /** フィールドから入ったときの降り立つ場所 (村の南の通り)。 */
-export const STARTER_TOWN_ENTRANCE = { x: 32, y: 55 };
-/** フィールドへ戻るマス (南の石垣の内側)。**壁は開けない** — 出るのはここだけ。 */
+export const STARTER_TOWN_ENTRANCE = { x: 32, y: 56 };
+/**
+ * @deprecated 端から出られるようにしたので使わない (#626)。
+ * 保存済みのゲートとの互換のために残す。
+ */
 export const STARTER_TOWN_EXIT = { x: 32, y: 61 };
 
 /**
@@ -79,11 +82,12 @@ export function buildStarterTownTiles(): Uint8Array {
     for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, v);
   };
 
-  // 外周は石の壁で囲う。**外へ歩いて出られないようにする** (出るのはゲートだけ)。
-  rect(0, 0, S, 2, WALL);
-  rect(0, S - 2, S, 2, WALL);
-  rect(0, 0, 2, S, WALL);
-  rect(S - 2, 0, 2, S, WALL);
+  // **囲わない** (#626)。端まで歩けばフィールドへ出る (exitTo)。壁で囲って出口を
+  // 1 マス探させるのはストレスが大きい。村の外縁は木立で「ここから先は外」と示す。
+  for (let i = 2; i < S - 2; i += 4) {
+    set(i, 1, TREE); set(i + 2, S - 2, TREE);
+    set(1, i, TREE); set(S - 2, i + 2, TREE);
+  }
 
   // 目抜き通り (縦) と広場へ抜ける横道。
   rect(30, 4, 4, S - 6, PATH);
@@ -130,8 +134,8 @@ export function buildStarterTownTiles(): Uint8Array {
     set(x!, y!, TREE);
   }
 
-  // 戻り口のまわりを石畳にして「ここから出る」と分かるようにする。
-  rect(STARTER_TOWN_EXIT.x - 1, STARTER_TOWN_EXIT.y - 1, 2, 2, PATH);
+  // 南の通りを端まで通す (どこからでも出られるが、道なりに行けば外に出ると分かる)。
+  rect(30, S - 6, 4, 6, PATH);
 
   return t;
 }
@@ -149,6 +153,9 @@ export function starterTownInterior(town: { x: number; y: number }): InteriorMap
     // なんでも屋 (#424)。品揃えはフィールドのふたばの村の店と同じ (座標で決まる)。
     // 座標だけを持つ (spawn は region/name も持つが、レコードに余計な値を残さない)。
     shop: { ...STARTER_TOWN_SHOP, town: { x: town.x, y: town.y }, name: 'ふたばの なんでも屋' },
+    // **端まで歩いたらフィールドへ戻る** (#626)。街の 1 マス下に出す —
+    // 街タイルに戻すと踏んだ瞬間にまた入ってしまう。
+    exitTo: { mapId: 'world', x: town.x, y: town.y + 1 },
     // 街の中なので敵は出さない (encounterTier を設定しない)。
   };
 }
@@ -159,8 +166,8 @@ export function starterTownInterior(town: { x: number; y: number }): InteriorMap
  * 戻り先をフィールドの街タイルにすると**踏んだ瞬間にまた入る**ので、街の 1 マス下に出す。
  */
 export function starterTownGates(town: { x: number; y: number }): Gate[] {
+  // 戻りは exitTo (端まで歩けば出る) が担うので、ゲートは**入る 1 本だけ**。
   return [
     { from: { mapId: 'world', x: town.x, y: town.y }, to: { mapId: STARTER_TOWN_ID, ...STARTER_TOWN_ENTRANCE } },
-    { from: { mapId: STARTER_TOWN_ID, ...STARTER_TOWN_EXIT }, to: { mapId: 'world', x: town.x, y: town.y + 1 } },
   ];
 }

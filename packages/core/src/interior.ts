@@ -61,6 +61,14 @@ export interface InteriorMap {
    * どの街の店かを `town` で指す。村の中に居ても、その街の店として買える。
    */
   shop?: { x: number; y: number; town: { x: number; y: number }; name?: string };
+  /**
+   * **端まで歩いたら出る先** (#626)。壁で囲って出口 1 マスを探させるより、
+   * どの端からでも外に出られるほうがストレスが無い (オーナー判断)。
+   *
+   * 指定すると、マップの外へ 1 歩踏み出した時点でここへ移る。省略時は端が壁
+   * (外へ出られない = 出入りはゲートだけ)。
+   */
+  exitTo?: { mapId: string; x: number; y: number };
 }
 
 /** 出入口 1 つ。踏んだ瞬間に `to` へ移る (一方通行。往復は 2 本書く)。 */
@@ -135,6 +143,16 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
       // **歩けないマスの入口は永久に使えない。** 壁の上に置いても誰も踏めない。
       if (!interiorWalkableAt(m, spot.x, spot.y)) throw new InteriorError(`${where}: ${label}が歩けないマスにある`);
     }
+    if (m.exitTo) {
+      const e = m.exitTo;
+      if (typeof e.mapId !== 'string' || !Number.isInteger(e.x) || !Number.isInteger(e.y)) {
+        throw new InteriorError(`${where}: 出る先の座標が不正`);
+      }
+      // 行き先が消えていると、端に着いた瞬間にどこにも居ない状態になる。
+      if (e.mapId !== WORLD_MAP_ID && !nextMaps.has(e.mapId)) {
+        throw new InteriorError(`${where}: 出る先の内部マップが存在しない (${e.mapId})`);
+      }
+    }
     if (m.shop && !townAt(m.shop.town.x, m.shop.town.y)) {
       throw new InteriorError(`${where}: なんでも屋の街が存在しない (${m.shop.town.x}, ${m.shop.town.y})`);
     }
@@ -143,7 +161,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
         throw new InteriorError(`${where}: 宿代は 0〜${MAX_INN_PRICE}`);
       }
     }
-    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}) });
+    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}), ...(m.exitTo ? { exitTo: { ...m.exitTo } } : {}) });
   }
   if (nextMaps.size > MAX_INTERIORS) throw new InteriorError(`内部マップが多すぎる (${nextMaps.size} > ${MAX_INTERIORS})`);
 
@@ -241,6 +259,16 @@ export function innAt(mapId: string, x: number, y: number): NonNullable<Interior
   const m = interiors.get(mapId);
   if (!m?.inn) return undefined;
   return m.inn.x === x && m.inn.y === y ? m.inn : undefined;
+}
+
+/**
+ * **端から出る先** (#626)。マップの外へ踏み出したときだけ返す (中を歩く分には undefined)。
+ * edge と web が同じ判断をする — 片方だけだと「歩けたのに弾かれる」。
+ */
+export function interiorExitFor(map: InteriorMap, x: number, y: number): InteriorMap['exitTo'] {
+  if (!map.exitTo) return undefined;
+  const outside = x < 0 || y < 0 || x >= map.size || y >= map.size;
+  return outside ? map.exitTo : undefined;
 }
 
 /** そのマスがなんでも屋か (無ければ undefined)。品揃えは指す街のもの。 */

@@ -2145,3 +2145,32 @@ p { margin: 0.4em 0; }
     width: 100%;
   }
 }
+
+/* ─── 街の出入りの演出 (#626) ──────────────────────────────
+   戦闘の渦巻きワイプ (.enc-*) とは別物にする — 同じだと「敵が出た」と誤解する。
+   扉をくぐるイメージで、白い光がふわっと満ちて引く。 */
+.door-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 5; /* 地図の上・会話窓 (900) より下 */
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 55%, rgba(255, 252, 240, 0.98) 0%, rgba(246, 240, 214, 0.94) 45%, rgba(232, 224, 196, 0.9) 100%);
+}
+.door-fade-in {
+  animation: door-fade-in 280ms ease-in forwards;
+}
+.door-fade-out {
+  animation: door-fade-out 320ms ease-out forwards;
+}
+@keyframes door-fade-in {
+  from { opacity: 0; transform: scale(1.06); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes door-fade-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.04); }
+}
+/* 酔い・点滅対策。フローは同じままで実質ゼロ時間にする (戦闘ワイプと同じ方針)。 */
+@media (prefers-reduced-motion: reduce) {
+  .door-fade-in, .door-fade-out { animation-duration: 1ms; }
+}

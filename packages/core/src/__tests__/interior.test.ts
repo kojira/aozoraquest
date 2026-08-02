@@ -16,6 +16,7 @@ import {
   gateOpen,
   innAt,
   interiorShopAt,
+  interiorExitFor,
   gateLockedNotice,
   DEFAULT_GATE_LOCKED_NOTICE,
   interiorById,
@@ -227,24 +228,19 @@ describe('同梱の村「ふたばの村」(#424)', () => {
     expect(() => setInteriors([village], starterTownGates(spawn))).not.toThrow();
   });
 
-  it('**外へ歩いて出られない** (外周が全部ふさがっている)', () => {
-    // 出るのはゲートだけ。1 マスでも開いていると村の外の座標へ出てしまう。
-    for (let i = 0; i < village.size; i++) {
-      for (const [x, y] of [[i, 0], [i, village.size - 1], [0, i], [village.size - 1, i]] as const) {
-        expect(interiorWalkableAt(village, x, y), `(${x},${y})`).toBe(false);
-      }
-    }
+  it('端まで歩けば外へ出られる (#626 で囲うのをやめた)', () => {
+    // 以前は外周を壁で囲って出口 1 マスだけにしていたが、探させるのがストレスだった。
+    expect(village.exitTo).toEqual({ mapId: 'world', x: spawnTown.x, y: spawnTown.y + 1 });
   });
 
-  it('入口と戻り口が歩ける (ゲートは踏めないと機能しない)', () => {
-    const [inGate, outGate] = starterTownGates(spawn);
+  it('入口が歩ける (ゲートは踏めないと機能しない)', () => {
+    const [inGate] = starterTownGates(spawn);
     expect(interiorWalkableAt(village, inGate!.to.x, inGate!.to.y)).toBe(true);
-    expect(interiorWalkableAt(village, outGate!.from.x, outGate!.from.y)).toBe(true);
   });
 
-  it('入口から戻り口まで歩いて行ける (閉じ込められない)', () => {
-    // 幅優先で到達性を確かめる。家や池で導線が塞がっていると詰む。
-    const [inGate, outGate] = starterTownGates(spawn);
+  it('入口から宿屋・店・端まで歩いて行ける (閉じ込められない)', () => {
+    // 幅優先で到達性を確かめる。建物で導線が塞がっていると詰む。
+    const [inGate] = starterTownGates(spawn);
     const seen = new Set<number>();
     const q = [[inGate!.to.x, inGate!.to.y] as const];
     seen.add(inGate!.to.y * village.size + inGate!.to.x);
@@ -258,15 +254,16 @@ describe('同梱の村「ふたばの村」(#424)', () => {
         q.push([nx, ny]);
       }
     }
-    expect(seen.has(outGate!.from.y * village.size + outGate!.from.x)).toBe(true);
+    expect(seen.has(village.inn!.y * village.size + village.inn!.x), '宿屋').toBe(true);
+    expect(seen.has(village.shop!.y * village.size + village.shop!.x), '店').toBe(true);
     // 広場や家の前まで含め、そこそこの広さが繋がっていること
     expect(seen.size).toBeGreaterThan(2000);
   });
 
   it('戻り先はフィールドの街の 1 マス下 (踏んだ瞬間にまた入らない)', () => {
-    const [inGate, outGate] = starterTownGates(spawn);
+    const [inGate] = starterTownGates(spawn);
     expect(inGate!.from).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y });
-    expect(outGate!.to).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y + 1 });
+    expect(village.exitTo).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y + 1 });
   });
 });
 
@@ -313,10 +310,39 @@ describe('村のなんでも屋 (#424)', () => {
   });
 
   it('歩けないマスの店を弾く', () => {
-    expect(() => setInteriors([{ ...v, shop: { x: 0, y: 0, town: { x: spawn2.x, y: spawn2.y } } }], [])).toThrow(InteriorError);
+    // 建物の屋根の上 (囲いをやめたので外周は草地 = 歩ける)。
+    expect(interiorWalkableAt(v, 18, 18)).toBe(false);
+    expect(() => setInteriors([{ ...v, shop: { x: 18, y: 18, town: { x: spawn2.x, y: spawn2.y } } }], [])).toThrow(InteriorError);
   });
 
   it('宿屋と店は別のマス (同じだとどちらが開くのか決まらない)', () => {
     expect([v.inn!.x, v.inn!.y]).not.toEqual([v.shop!.x, v.shop!.y]);
+  });
+});
+
+describe('端から出る (#626)', () => {
+  const spawn3 = worldOverlay().spawn;
+  const v3 = starterTownInterior(spawn3);
+
+  it('マップの外へ踏み出したときだけ出る先を返す', () => {
+    expect(interiorExitFor(v3, 32, 64)).toEqual({ mapId: 'world', x: spawn3.x, y: spawn3.y + 1 }); // 下の端の外
+    expect(interiorExitFor(v3, -1, 30)).toBeDefined(); // 左の端の外
+    expect(interiorExitFor(v3, 32, 30)).toBeUndefined(); // 中を歩く分には出ない
+  });
+
+  it('exitTo が無いマップは端で止まる (囲われた内部)', () => {
+    const { exitTo: _e, ...walled } = v3;
+    expect(interiorExitFor(walled as typeof v3, 32, 64)).toBeUndefined();
+  });
+
+  it('村は囲われていない — どの端からでも出られる', () => {
+    // 端の外はどこでも exitTo が返る (出口 1 マスを探させない)。
+    for (const [x, y] of [[0, -1], [63, -1], [-1, 0], [64, 63], [10, 64]] as const) {
+      expect(interiorExitFor(v3, x, y), `(${x},${y})`).toBeDefined();
+    }
+  });
+
+  it('出る先が存在しない内部マップだと保存できない', () => {
+    expect(() => setInteriors([{ ...v3, exitTo: { mapId: 'ghost', x: 0, y: 0 } }], [])).toThrow(InteriorError);
   });
 });
