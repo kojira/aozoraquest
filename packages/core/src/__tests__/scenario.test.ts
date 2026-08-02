@@ -18,6 +18,7 @@ import {
 } from '../scenario.js';
 import { setGameQuests, gameQuestById, type GameQuestDef } from '../quest-data.js';
 import { setNpcs, npcLinesFor, type NpcDef } from '../npc-data.js';
+import { SAMPLE_SCENARIO, SAMPLE_FLAGS } from '../scenario-samples.js';
 import { ITEMS, MONSTERS, rollDefeatLoss } from '../battle.js';
 import { setItemOverrides } from '../item-data.js';
 import { isSellableMaterial } from '../equipment.js';
@@ -286,5 +287,47 @@ describe('レビュー指摘の回帰 (#426)', () => {
     } finally {
       setItemOverrides(null);
     }
+  });
+});
+
+describe('サンプルシナリオ (#545)', () => {
+  it('そのまま保存できる (何も用意していない環境でも通る)', () => {
+    // クエストや NPC を条件にすると、それらが無い環境では保存できない。
+    setGameQuests(null);
+    setNpcs(null);
+    expect(() => setScenario(SAMPLE_SCENARIO)).not.toThrow();
+  });
+
+  it('3 つが順に繋がる (前が発火しないと次は発火しない)', () => {
+    setScenario(SAMPLE_SCENARIO);
+    // 1 段目: 条件なしなので最初から発火する
+    const r1 = pendingScenario(progress());
+    expect(r1.fired.map((e) => e.id)).toEqual(['sample-1']);
+    expect(r1.flags).toEqual(['ch1_start']);
+
+    // 2 段目: 1 段目のフラグ + やくそう 3 つ。**前のフラグが無ければ発火しない** —
+    // ここは 2 段目だけを定義に置いて確かめる (同じ呼び出しで 1 段目が発火すると
+    // その場で連鎖してしまい、依存の有無が見えない)。
+    setScenario([SAMPLE_SCENARIO[1]!]);
+    expect(pendingScenario(progress({ materials: { herb: 3 } })).fired).toHaveLength(0);
+    expect(pendingScenario(progress({ flags: ['ch1_start'] })).fired).toHaveLength(0); // 素材も要る
+    expect(pendingScenario(progress({ flags: ['ch1_start'], materials: { herb: 3 } })).fired.map((e) => e.id)).toEqual(['sample-2']);
+    setScenario(SAMPLE_SCENARIO);
+
+    // 3 段目: 2 段目のフラグ + しずく
+    setScenario([SAMPLE_SCENARIO[2]!]);
+    expect(pendingScenario(progress({ materials: { 'slime-drop': 1 } })).fired).toHaveLength(0);
+    expect(pendingScenario(progress({ flags: ['ch2_herbs'], materials: { 'slime-drop': 1 } })).fired.map((e) => e.id)).toEqual(['sample-3']);
+  });
+
+  it('条件が一度に揃えば 3 つまとめて発火する (連鎖が 1 回で解ける)', () => {
+    setScenario(SAMPLE_SCENARIO);
+    const r = pendingScenario(progress({ materials: { herb: 3, 'slime-drop': 1 } }));
+    expect(r.fired.map((e) => e.id)).toEqual(['sample-1', 'sample-2', 'sample-3']);
+    expect(r.flags).toEqual([...SAMPLE_FLAGS]);
+  });
+
+  it('全部のお知らせが書かれている (何が起きたか分かる)', () => {
+    for (const e of SAMPLE_SCENARIO) expect(e.notice, e.id).toBeTruthy();
   });
 });
