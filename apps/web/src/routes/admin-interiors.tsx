@@ -10,6 +10,10 @@ import {
   interiorPartAt,
   interiorWalkableAt,
   worldParts,
+  worldOverlay,
+  starterTownInterior,
+  starterTownGates,
+  STARTER_TOWN_ID,
   type Gate,
   type InteriorMap,
   type Terrain,
@@ -154,6 +158,28 @@ export function AdminInteriors() {
         <strong>内部マップ</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{maps.length} マップ / {gates.length} ゲート</span>
         <button type="button" onClick={addMap} style={{ fontSize: '0.85em' }}>＋マップ</button>
+        <button
+          type="button"
+          onClick={() => {
+            if (maps.some((m) => m.id === STARTER_TOWN_ID)) { setNote('「ふたばの村」は既にある'); return; }
+            const spawn = worldOverlay().spawn;
+            const village = starterTownInterior();
+            // 往復 2 本まとめて張る (入る道だけだと出られない)。フィールド側の入口は
+            // 最初の街のマスそのもの。
+            const gates = starterTownGates(spawn);
+            setMaps((xs) => [...xs, village]);
+            setGates((gs) => [
+              ...gs.filter((g) => !gates.some((n) => n.from.mapId === g.from.mapId && n.from.x === g.from.x && n.from.y === g.from.y)),
+              ...gates,
+            ]);
+            setSel(village.id);
+            setDirty(true);
+            setNote(`「${village.name}」を入れた。保存するとフィールドの (${spawn.x}, ${spawn.y}) から入れる`);
+          }}
+          style={{ fontSize: '0.85em' }}
+        >
+          はじまりの村を入れる
+        </button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || loadState !== 'ok'} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>

@@ -26,6 +26,8 @@ import {
   type InteriorMap,
 } from '../interior.js';
 import { BASE_PALETTE } from '../world-map.js';
+import { worldOverlay } from '../world.js';
+import { starterTownInterior, starterTownGates } from '../interior-samples.js';
 
 const FLOOR = BASE_PALETTE.indexOf('plains');
 const WALL = BASE_PALETTE.indexOf('mountain');
@@ -209,5 +211,58 @@ describe('通れないときのことば (#426)', () => {
   it('空文字・長すぎることばを弾く', () => {
     expect(() => setInteriors([room()], [g({ lockedNotice: '  ' })])).toThrow(InteriorError);
     expect(() => setInteriors([room()], [g({ lockedNotice: 'あ'.repeat(200) })])).toThrow(InteriorError);
+  });
+});
+
+describe('同梱の村「ふたばの村」(#424)', () => {
+  const village = starterTownInterior();
+  const spawn = worldOverlay().spawn;
+
+  it('64×64 で、そのまま保存できる', () => {
+    expect(village.size).toBe(64);
+    expect(village.tiles.length).toBe(64 * 64);
+    expect(() => setInteriors([village], starterTownGates(spawn))).not.toThrow();
+  });
+
+  it('**外へ歩いて出られない** (外周が全部ふさがっている)', () => {
+    // 出るのはゲートだけ。1 マスでも開いていると村の外の座標へ出てしまう。
+    for (let i = 0; i < village.size; i++) {
+      for (const [x, y] of [[i, 0], [i, village.size - 1], [0, i], [village.size - 1, i]] as const) {
+        expect(interiorWalkableAt(village, x, y), `(${x},${y})`).toBe(false);
+      }
+    }
+  });
+
+  it('入口と戻り口が歩ける (ゲートは踏めないと機能しない)', () => {
+    const [inGate, outGate] = starterTownGates(spawn);
+    expect(interiorWalkableAt(village, inGate!.to.x, inGate!.to.y)).toBe(true);
+    expect(interiorWalkableAt(village, outGate!.from.x, outGate!.from.y)).toBe(true);
+  });
+
+  it('入口から戻り口まで歩いて行ける (閉じ込められない)', () => {
+    // 幅優先で到達性を確かめる。家や池で導線が塞がっていると詰む。
+    const [inGate, outGate] = starterTownGates(spawn);
+    const seen = new Set<number>();
+    const q = [[inGate!.to.x, inGate!.to.y] as const];
+    seen.add(inGate!.to.y * village.size + inGate!.to.x);
+    while (q.length) {
+      const [x, y] = q.shift()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        const k = ny * village.size + nx;
+        if (seen.has(k) || !interiorWalkableAt(village, nx, ny)) continue;
+        seen.add(k);
+        q.push([nx, ny]);
+      }
+    }
+    expect(seen.has(outGate!.from.y * village.size + outGate!.from.x)).toBe(true);
+    // 広場や家の前まで含め、そこそこの広さが繋がっていること
+    expect(seen.size).toBeGreaterThan(2000);
+  });
+
+  it('戻り先はフィールドの街の 1 マス下 (踏んだ瞬間にまた入らない)', () => {
+    const [inGate, outGate] = starterTownGates(spawn);
+    expect(inGate!.from).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y });
+    expect(outGate!.to).toEqual({ mapId: 'world', x: spawn.x, y: spawn.y + 1 });
   });
 });
