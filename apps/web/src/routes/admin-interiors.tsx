@@ -22,7 +22,7 @@ import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
 import { ItemReqInput } from '@/components/admin/item-req-input';
-import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
+import { TERRAIN_TILES, fallbackTile, pixelPart, pixelTile } from '@/components/world-tiles';
 
 /**
  * **内部マップエディタ** (#424)。街の中・城・ダンジョンを描き、フィールドと繋ぐ。
@@ -36,8 +36,14 @@ import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles
 const DEFAULT_SIZE = 16;
 const BOX = 448;
 
-function partOf(index: number, terrain: string) {
-  return pixelPart(index, terrain) ?? TERRAIN_TILES[terrain as Terrain] ?? fallbackTile(terrain);
+/**
+ * パーツの絵。**独自のパーツ表を持つ内部マップでは index で引かない** (#626) —
+ * `part:<index>` はフィールドと番号空間を共有するので、内部の 3 番が
+ * フィールドの 3 番 (池) の絵になってしまう。地形名だけで引く。
+ */
+function partOf(index: number, terrain: string, ownParts = false) {
+  const art = ownParts ? pixelTile(terrain) : pixelPart(index, terrain);
+  return art ?? TERRAIN_TILES[terrain as Terrain] ?? fallbackTile(terrain);
 }
 
 export function AdminInteriors() {
@@ -54,7 +60,13 @@ export function AdminInteriors() {
   const [linking, setLinking] = useState<{ mapId: string; x: number; y: number } | null>(null);
   const painting = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
-  const parts = useMemo(() => [...worldParts()], []);
+  const current = useMemo(() => maps.find((m) => m.id === sel) ?? null, [maps, sel]);
+  /**
+   * **そのマップのパーツ表**を使う (#626)。フィールドのパーツ表で描いていたため、
+   * 村の「屋根」がフィールドの 3 番 (池) の絵で出て、家が青くなっていた。
+   * 独自のパーツ表を持たないマップだけフィールドのものに倒す。
+   */
+  const parts = useMemo(() => current?.parts ?? [...worldParts()], [current]);
 
   // 保存済みを読めなければ保存させない (コード値/空で上書きすると全部消える)。
   useEffect(() => {
@@ -83,8 +95,6 @@ export function AdminInteriors() {
       });
     return () => { cancelled = true; };
   }, [session.agent]);
-
-  const current = useMemo(() => maps.find((m) => m.id === sel) ?? null, [maps, sel]);
 
   const addMap = useCallback(() => {
     let i = maps.length + 1;
@@ -149,7 +159,11 @@ export function AdminInteriors() {
   }
 
   const tile = current ? BOX / current.size : 0;
+  // このマップ**から出る**ゲートと、**このマップへ入る**ゲートの両方を出す。
+  // 入口を出していなかったので「ゲート: まだ無い」と表示され、繋がっているのに
+  // 繋がっていないように見えた。
   const gatesHere = current ? gates.filter((g) => g.from.mapId === current.id) : [];
+  const gatesIn = current ? gates.filter((g) => g.to.mapId === current.id) : [];
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
@@ -286,7 +300,7 @@ export function AdminInteriors() {
                   title={pt.name}
                   style={{ padding: 0, lineHeight: 0, border: brush === i ? '3px solid var(--color-accent)' : '1px solid var(--color-border)' }}
                 >
-                  <svg width={32} height={32} viewBox="0 0 32 32">{partOf(i, pt.terrain)}</svg>
+                  <svg width={32} height={32} viewBox="0 0 32 32">{partOf(i, pt.terrain, !!current?.parts)}</svg>
                 </button>
               ))}
             </div>
@@ -334,7 +348,7 @@ export function AdminInteriors() {
             >
               <defs>
                 {[...new Set(Array.from(current.tiles))].map((idx) => (
-                  <g id={`it-${idx}`} key={idx}>{partOf(idx, parts[idx]?.terrain ?? BASE_PALETTE[idx] ?? 'plains')}</g>
+                  <g id={`it-${idx}`} key={idx}>{partOf(idx, parts[idx]?.terrain ?? BASE_PALETTE[idx] ?? 'plains', !!current?.parts)}</g>
                 ))}
               </defs>
               {Array.from({ length: current.size }).map((_, cy) =>
@@ -353,7 +367,18 @@ export function AdminInteriors() {
 
             <div style={{ fontSize: '0.8em' }}>
               <span style={{ color: 'var(--color-muted)' }}>このマップのゲート</span>
-              {gatesHere.length === 0 && <div style={{ color: 'var(--color-muted)' }}>まだ無い</div>}
+              {gatesHere.length === 0 && <div style={{ color: 'var(--color-muted)' }}>このマップから出るゲートは無い (端まで歩けば出る)</div>}
+              <div style={{ color: 'var(--color-muted)', marginTop: '0.3em' }}>ここへ入るゲート</div>
+              {gatesIn.length === 0 && <div style={{ color: 'var(--color-danger)' }}>まだ無い — 下の「入口を作る」で繋ぐ</div>}
+              {gatesIn.map((g) => (
+                <div key={`in-${g.from.mapId}-${g.from.x},${g.from.y}`} style={{ display: 'flex', gap: '0.4em', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span>
+                    {g.from.mapId === WORLD_MAP_ID ? 'フィールド' : maps.find((m) => m.id === g.from.mapId)?.name ?? g.from.mapId}
+                    {' '}({g.from.x}, {g.from.y}) → ({g.to.x}, {g.to.y})
+                  </span>
+                  <button type="button" onClick={() => { setGates((gs) => gs.filter((x) => x !== g)); setDirty(true); }} style={{ fontSize: '0.8em' }}>×</button>
+                </div>
+              ))}
               {gatesHere.map((g) => (
                 <div key={`${g.from.x},${g.from.y}`} style={{ display: 'flex', gap: '0.4em', alignItems: 'center', flexWrap: 'wrap', margin: '0.15em 0' }}>
                   <span>({g.from.x}, {g.from.y}) → {g.to.mapId === WORLD_MAP_ID ? 'フィールド' : maps.find((m) => m.id === g.to.mapId)?.name ?? g.to.mapId} ({g.to.x}, {g.to.y})</span>
@@ -432,43 +457,48 @@ export function AdminInteriors() {
   );
 }
 
-/** フィールド側の入口 (x, y) → この内部マップ の 1 本と、その戻り 1 本を張る。 */
+/**
+ * **フィールドのこのマスから、この内部マップへ入れるようにする**フォーム。
+ *
+ * 以前は「往復を張る」という名前で、入る道と戻る道の 2 本を同時に作っていた。
+ * 端まで歩けば外に出る (#626) ようにしたので**戻り道はもう要らない**うえ、
+ * 「往復」が何を指すのか分からない、とオーナーから指摘された。名前と中身を
+ * 「入口を作る」に揃える。
+ */
 function WorldGateForm({ mapId, map, size, onAdd }: { mapId: string; map: InteriorMap; size: number; onAdd: (g: Gate) => void }) {
   const [wx, setWx] = useState(0);
   const [wy, setWy] = useState(0);
   const [ix, setIx] = useState(Math.floor(size / 2));
-  // 出口は下から 3 マス目。**戻りゲートを出口の 1 マス下に張る**ので、既定 size-2 だと
-  // 戻りが外周の壁に乗って踏めなくなる (= 入ったら出られない罠。レビュー ★★★)。
   const [iy, setIy] = useState(Math.max(1, size - 3));
-  // 戻りゲートが壁の上だと**踏めない = 入ったら出られない**ので、張る前に気づかせる。
-  const backBlocked = !interiorWalkableAt(map, ix, iy + 1);
-  const exitBlocked = !interiorWalkableAt(map, ix, iy);
+  // **降り立つ場所が歩けないと詰む** (壁の中に立つ)。張る前に気づかせる。
+  const landBlocked = !interiorWalkableAt(map, ix, iy);
+  // 端から出られないマップは、別途 出口のゲートを張らないと出られなくなる。
+  const noWayOut = !map.exitTo;
   return (
     <div style={{ fontSize: '0.8em', borderTop: '1px solid var(--color-border)', paddingTop: '0.4em' }}>
-      <span style={{ color: 'var(--color-muted)' }}>フィールドと繋ぐ (マップエディタの座標表示と同じ)</span>
+      <span style={{ color: 'var(--color-muted)' }}>
+        フィールドから入れるようにする (座標はマップエディタの表示と同じ)
+      </span>
       <div style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.2em' }}>
-        フィールド x<input type="number" value={wx} onChange={(e) => setWx(Number(e.target.value))} style={{ width: '5.5em' }} />
+        フィールドの x<input type="number" value={wx} onChange={(e) => setWx(Number(e.target.value))} style={{ width: '5.5em' }} />
         y<input type="number" value={wy} onChange={(e) => setWy(Number(e.target.value))} style={{ width: '5.5em' }} />
-        → 出口 x<input type="number" value={ix} onChange={(e) => setIx(Number(e.target.value))} style={{ width: '4em' }} />
+        に入ると、ここの x<input type="number" value={ix} onChange={(e) => setIx(Number(e.target.value))} style={{ width: '4em' }} />
         y<input type="number" value={iy} onChange={(e) => setIy(Number(e.target.value))} style={{ width: '4em' }} />
+        に出る
         <button
           type="button"
-          disabled={backBlocked || exitBlocked}
-          onClick={() => {
-            // **往復 2 本まとめて張る。** 入る道だけ作ると出られなくなる。
-            onAdd({ from: { mapId: WORLD_MAP_ID, x: wx, y: wy }, to: { mapId, x: ix, y: iy } });
-            onAdd({ from: { mapId, x: ix, y: iy + 1 }, to: { mapId: WORLD_MAP_ID, x: wx, y: wy + 1 } });
-          }}
+          disabled={landBlocked}
+          onClick={() => onAdd({ from: { mapId: WORLD_MAP_ID, x: wx, y: wy }, to: { mapId, x: ix, y: iy } })}
         >
-          往復を張る
+          入口を作る
         </button>
       </div>
-      <span style={{ color: backBlocked || exitBlocked ? 'var(--color-danger)' : 'var(--color-muted)' }}>
-        {exitBlocked
-          ? `出口 (${ix}, ${iy}) が歩けないマス。床の上に置いて`
-          : backBlocked
-            ? `戻り口 (${ix}, ${iy + 1}) が歩けないマス。壁の上のゲートは踏めないので、出口を 1 つ上へ`
-            : '戻りは出口の 1 マス下 → フィールドの入口の 1 マス下 に張る (入口を踏み直して即戻るのを防ぐ)'}
+      <span style={{ color: landBlocked || noWayOut ? 'var(--color-danger)' : 'var(--color-muted)' }}>
+        {landBlocked
+          ? `降り立つ場所 (${ix}, ${iy}) が歩けないマス。床の上に置いて`
+          : noWayOut
+            ? 'このマップは端から出られない設定。別に出口のゲートを張らないと、入ったら出られなくなる'
+            : '出るときは端まで歩けばフィールドに戻る (戻り用のゲートは要らない)'}
       </span>
     </div>
   );

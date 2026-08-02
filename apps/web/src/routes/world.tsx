@@ -1338,14 +1338,19 @@ export function World() {
       // **パーツ (index) ごとの絵を最優先。** 「縦の橋」のように、通行判定は同じで
       // 絵だけ違うパーツを足せるようにするため、地形 id ではなく index で引く。
       const pi = inside ? interiorPartAt(inside, x, y) : mappedPartAt(x, y);
+      // **独自のパーツ表を持つ内部マップは index で引かない** (#626)。`part:<index>` は
+      // フィールドと番号空間を共有するので、村の 4 番が「以前フィールドの 4 番に
+      // 描いた水の絵」になってしまう。地形名だけで引く。
+      const ownParts = !!inside?.parts;
+      const artOf = (terrain: string) => (ownParts ? pixelTile(terrain) : pixelPart(pi, terrain));
       // 平地でドット絵が無いときだけ SVG バリアント (見た目散らし) が効くので、id に含める。
-      const detail = t === 'plains' && !pixelPart(pi, t) ? tileDetailAt(x, y) : 0;
-      const defId = `wt-${pi ?? 'x'}-${t}-${detail}`;
+      const detail = t === 'plains' && !artOf(t) ? tileDetailAt(x, y) : 0;
+      const defId = `wt-${ownParts ? `i:${inside!.id}` : (pi ?? 'x')}-${t}-${detail}`;
       if (!tileDefs.has(defId)) {
         tileDefs.set(
           defId,
           <g id={defId} key={defId}>
-            {pixelPart(pi, t)
+            {artOf(t)
               ?? (t === 'plains' ? PLAINS_VARIANTS[detail] : TERRAIN_TILES[t])
               ?? fallbackTile(t)}
           </g>,
