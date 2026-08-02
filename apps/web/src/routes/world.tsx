@@ -1064,10 +1064,27 @@ export function World() {
 
   // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
   // 素材 (craft レコードの集計で差し引き)。品質は rkey + luk から決定的
+  /**
+   * いま利用できる店の街 (#424)。フィールドの街タイルか、内部マップの
+   * なんでも屋のマスに立っているときだけ返す。**品揃えと値段は街の座標で決まる**
+   * ので、村の中でもその街の店として扱う。
+   */
+  const shopTownAt = useCallback((at: { x: number; y: number; mapId?: string } | null | undefined) => {
+    if (!at) return null;
+    if (at.mapId) {
+      const sp = interiorShopAt(at.mapId, at.x, at.y);
+      return sp ? townAt(sp.town.x, sp.town.y) ?? null : null;
+    }
+    return townAt(at.x, at.y) ?? null;
+  }, []);
+
   const onCraft = useCallback(
     async (def: EquipmentDef) => {
       if (!agent || !did || craftBusy) return;
-      const town = townAt(wsRef.current?.x ?? -1, wsRef.current?.y ?? -1);
+      // **村の中のなんでも屋にも対応する** (#424)。フィールドの街しか見ていなかったため、
+      // 村の店で「つくってもらう」を押すと、ここで黙って return して**何も起きなかった**
+      // (窓だけ閉じたように見える)。店のマスに立っているならその店の街を使う。
+      const town = shopTownAt(wsRef.current);
       if (!town) return;
       const towns = worldOverlay().towns;
       const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
@@ -1119,7 +1136,7 @@ export function World() {
         setCraftBusy(false);
       }
     },
-    [agent, did, craftBusy, combat, subtractMaterial],
+    [agent, did, craftBusy, combat, subtractMaterial, shopTownAt],
   );
 
   // 合成 (きたえる): 同アイテム・同強化値 2 個体 → +1。素材もパワーも不要

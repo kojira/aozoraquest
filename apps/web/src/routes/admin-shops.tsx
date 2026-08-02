@@ -59,7 +59,11 @@ export function AdminShops() {
         else merged[k] = v;
       }
       const m = merged as unknown as ShopOverride;
-      const empty = !m.equipment && !m.consumables && !m.materialId;
+      // **店主も「中身」に数える。** 数えていなかったため、店主だけ入力すると
+      // 「空の上書き」と判定されて一覧から捨てられ、**打った文字が即座に消えていた**
+      // (実機で「テキスト入力欄が入力できない」と指摘)。
+      const hasKeeper = !!m.keeper && Object.values(m.keeper).some((v) => v !== undefined && v !== '');
+      const empty = !m.equipment && !m.consumables && !m.materialId && !hasKeeper;
       return empty ? rest : [...rest, m];
     });
     setDirty(true);
