@@ -645,6 +645,17 @@ export function World() {
           let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
           if (!res.mapId) delete next.mapId;
           if (res.healed) { next.hp = null; next.mp = null; }
+          // 宿屋 (#424)。残高もサーバーが正 (payment は権威側で引かれている)。
+          if (res.inn) {
+            setServerPower(res.inn.power);
+            const who = res.inn.name ?? 'やどや';
+            setNotice(res.inn.paid > 0
+              ? `${who}に とまった (パワー -${res.inn.paid})。すっかり 元気に なった!`
+              : `「${who}」…いまは よく ねむれているようだ。`);
+          } else if (res.innDenied) {
+            const who = res.innDenied.name ?? 'やどや';
+            setNotice(`${who}「ひとばん ${res.innDenied.price} パワーだよ」… パワーが たりない (いま ${res.innDenied.power})。`);
+          }
           if (onWorld && res.terrain === 'town') {
             // ちずのかけら: 街に入るとその街の地方一帯 (3×3 リージョン) が地図に加わる。
             // 訪問済みの街 (そらのはねの行き先候補) も積む。どちらも表示用の探索メモ。

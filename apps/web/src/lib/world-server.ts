@@ -91,7 +91,11 @@ export interface ServerBattleState { player: ServerMonster; monster: ServerMonst
 export interface ServerEncounter { battleId: string; monsterId: string; state: ServerBattleState; rewarded: boolean }
 export interface ServerMoveResult {
   /** 移動後のマップ (#424)。省略 = フィールド。 */
-  mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter }
+  mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter;
+  /** 宿屋 (#424)。払ったパワーと残高。 */
+  inn?: { name?: string; paid: number; power: number };
+  /** 宿屋に泊まれなかった (パワー不足)。 */
+  innDenied?: { name?: string; price: number; power: number } }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }

@@ -20,6 +20,7 @@ import {
   gateHasLock,
   gateLockedNotice,
   gateOpen,
+  innAt,
   interiorById,
   interiorTerrainAt,
   isInterior,
@@ -274,6 +275,10 @@ export interface MoveResult {
   terrain: string;
   /** 街に入って全回復した (HP/MP が権威なのでサーバーが回復)。 */
   healed?: boolean;
+  /** 宿屋に泊まった (#424)。払ったパワーと残高。healed も立つ。 */
+  inn?: { name?: string; paid: number; power: number };
+  /** 宿屋に泊まれなかった理由 (パワー不足)。 */
+  innDenied?: { name?: string; price: number; power: number };
   /** 次の move に渡す新しい位置トークン (署名済み = 改竄不可)。 */
   token: string;
   /** サーバーが遭遇を判定した場合のみ。 */
@@ -337,9 +342,15 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     // 行き先の地形は権威側で確定する。壁の中に出す設定は保存時に弾いているが、
     // 万一そうなっていても**移動そのものは通す** (出られない状態を作らない)。
     const destTerrain = dest ? interiorTerrainAt(dest, nx, ny) : terrainAt(nx, ny);
+    // **街のマスから内部へ入ったら帰還先も更新する。** ゲートは街の回復処理より先に
+    // return するので、ここで書かないと lastTown が古い街のまま残り、負けたときに
+    // 遠くへ飛ばされる (街に入る = 立ち寄った、という扱いはフィールドと揃える)。
+    const enteredFromTown = gate.from.mapId === WORLD_MAP_ID && terrainAt(gate.from.x, gate.from.y) === 'town';
     // 位置は PDS に確定させる (マップをまたぐのは稀 = 書き込みコストが乗ってよい)。
-    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: mapId === WORLD_MAP_ID ? undefined : mapId, x: nx, y: ny }),
-      { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+    await readModifyWrite(env, userDid, (cur) => ({
+      ...cur, mapId: mapId === WORLD_MAP_ID ? undefined : mapId, x: nx, y: ny,
+      ...(enteredFromTown ? { lastTown: { x: gate.from.x, y: gate.from.y } } : {}),
+    }), { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     const gateToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
     // フィールドへ戻るときは mapId を載せない (旧 client が知らないキーを解釈しない)。
     return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain: destTerrain, token: gateToken };
@@ -355,6 +366,31 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
+  }
+
+  // 宿屋 (#424)。街の内部に入ると「入るだけで回復」が働かないので、回復はここで**有料**。
+  // **満タンなら課金しない** — 通り抜けるたびに取られると通行の邪魔になる。
+  let inn: MoveResult['inn'];
+  let innDenied: MoveResult['innDenied'];
+  const innHere = inside ? innAt(mapId, nx, ny) : undefined;
+  if (innHere) {
+    const rec = await readState(env, userDid);
+    const st = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
+    const hurt = st.carryHp !== undefined || st.carryMp !== undefined;
+    if (!hurt) {
+      // 全快で泊まる理由がない。無言だと「宿屋が壊れている」に見えるので結果は返す。
+      inn = { ...(innHere.name ? { name: innHere.name } : {}), paid: 0, power: st.power };
+    } else if (st.power < innHere.price) {
+      innDenied = { ...(innHere.name ? { name: innHere.name } : {}), price: innHere.price, power: st.power };
+    } else {
+      const after = await readModifyWrite(env, userDid, (cur) => {
+        // 残高は毎回読み直す (CAS リトライで二重に引かない)。
+        if (cur.power < innHere.price) throw new ResolverError('パワーが たりない', 400, 'inn_poor');
+        return { ...cur, power: cur.power - innHere.price, carryHp: undefined, carryMp: undefined, x: nx, y: ny, mapId };
+      }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
+      inn = { ...(innHere.name ? { name: innHere.name } : {}), paid: innHere.price, power: after.power };
+      healed = true;
+    }
   }
 
   const nextToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
@@ -387,7 +423,11 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
       }
     }
   }
-  return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, healed: healed || undefined, token: nextToken };
+  return {
+    ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain,
+    healed: healed || undefined, token: nextToken,
+    ...(inn ? { inn } : {}), ...(innDenied ? { innDenied } : {}),
+  };
 }
 
 export interface TeleportResult { x: number; y: number; token: string; materials: Record<string, number> }

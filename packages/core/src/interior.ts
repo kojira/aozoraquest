@@ -45,6 +45,14 @@ export interface InteriorMap {
   parts?: WorldPart[];
   /** 遭遇の危険度 tier。**省略 = 敵が出ない** (街の中・城の広間)。 */
   encounterTier?: number;
+  /**
+   * **宿屋** (#424)。そのマスに入ると、あおぞらパワーを払って全回復する。
+   *
+   * 街の中に入れるようにすると、フィールドの街タイルはゲートに使われて
+   * 「入るだけで回復」が働かなくなる。回復の場所を村の中に置き直すのが宿屋で、
+   * **有料**にしてタダの回復をやめる (オーナー判断)。
+   */
+  inn?: { x: number; y: number; price: number; name?: string };
 }
 
 /** 出入口 1 つ。踏んだ瞬間に `to` へ移る (一方通行。往復は 2 本書く)。 */
@@ -82,6 +90,8 @@ export interface InteriorsRecord {
 export const MAX_INTERIOR_SIZE = 128;
 export const MAX_INTERIORS = 100;
 export const MAX_GATES = 500;
+/** 宿代の上限 (打ち間違いで経済を壊さない)。 */
+export const MAX_INN_PRICE = 100;
 
 let interiors = new Map<string, InteriorMap>();
 let gates = new Map<string, Gate>();
@@ -109,7 +119,19 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.encounterTier !== undefined && (!Number.isInteger(m.encounterTier) || m.encounterTier < 1 || m.encounterTier > 8)) {
       throw new InteriorError(`${where}: 危険度は 1〜8 (省略で敵が出ない)`);
     }
-    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}) });
+    if (m.inn) {
+      if (!Number.isInteger(m.inn.x) || !Number.isInteger(m.inn.y) || m.inn.x < 0 || m.inn.y < 0 || m.inn.x >= m.size || m.inn.y >= m.size) {
+        throw new InteriorError(`${where}: 宿屋がマップの外にある`);
+      }
+      if (!Number.isInteger(m.inn.price) || m.inn.price < 0 || m.inn.price > MAX_INN_PRICE) {
+        throw new InteriorError(`${where}: 宿代は 0〜${MAX_INN_PRICE}`);
+      }
+      // **歩けないマスの宿屋は永久に使えない。** 壁の上に置いた宿屋は誰も踏めない。
+      if (!interiorWalkableAt(m, m.inn.x, m.inn.y)) {
+        throw new InteriorError(`${where}: 宿屋が歩けないマスにある`);
+      }
+    }
+    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}) });
   }
   if (nextMaps.size > MAX_INTERIORS) throw new InteriorError(`内部マップが多すぎる (${nextMaps.size} > ${MAX_INTERIORS})`);
 
@@ -200,6 +222,13 @@ export function gateLockedNotice(gate: Gate): string {
 /** そのマスのゲート (無ければ undefined)。移動の権威判定と web の描画が共有する。 */
 export function gateAt(mapId: string, x: number, y: number): Gate | undefined {
   return gates.get(gateKey(mapId, x, y));
+}
+
+/** そのマスが宿屋か (無ければ undefined)。移動の権威判定が使う。 */
+export function innAt(mapId: string, x: number, y: number): NonNullable<InteriorMap['inn']> | undefined {
+  const m = interiors.get(mapId);
+  if (!m?.inn) return undefined;
+  return m.inn.x === x && m.inn.y === y ? m.inn : undefined;
 }
 
 /** そのマップが内部か (mapId が未知なら false = フィールド扱いに倒す)。 */
