@@ -54,7 +54,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -645,6 +645,12 @@ export function World() {
           let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
           if (!res.mapId) delete next.mapId;
           if (res.healed) { next.hp = null; next.mp = null; }
+          // **なんでも屋の扉に入ったら店を開く** (#424)。メニューを開かせないと
+          // 店だと気づけない (実機で「なんでも屋がどこか分からない」と指摘)。
+          if (res.mapId) {
+            const sp = interiorShopAt(res.mapId, res.x, res.y);
+            if (sp) { setShopOpen(true); setNotice(null); }
+          }
           // 宿屋 (#424)。残高もサーバーが正 (payment は権威側で引かれている)。
           if (res.inn) {
             setServerPower(res.inn.power);
@@ -1259,7 +1265,11 @@ export function World() {
   const insideHere = ws.mapId ? interiorById(ws.mapId) ?? null : null;
   // 内部では**フィールドの街表を引かない** — 内部座標がたまたま街と重なると、
   // 街の HUD が出て「なんでも屋」が生えるのにサーバーは回復しない、という食い違いになる。
-  const town = insideHere ? null : townAt(ws.x, ws.y);
+  // ただし**村の中のなんでも屋の扉**に立っているときは、その店の街として扱う (#424)。
+  const innerShop = insideHere ? interiorShopAt(insideHere.id, ws.x, ws.y) : undefined;
+  const town = insideHere
+    ? (innerShop ? townAt(innerShop.town.x, innerShop.town.y) : null)
+    : townAt(ws.x, ws.y);
   const here = insideHere ? interiorTerrainAt(insideHere, ws.x, ws.y) : terrainAt(ws.x, ws.y);
   // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
   // 「このあたり」の見出しと「何が多いか」は同じ tier を見る (ラベルと中身が食い違わないように)。

@@ -26,6 +26,7 @@ import { isWalkable } from './world.js';
 import { BASE_PALETTE, partWalkable as worldPartWalkable, type WorldPart } from './world-map.js';
 import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequirement } from './scenario.js';
 import { ITEMS } from './battle.js';
+import { townAt } from './world.js';
 
 export class InteriorError extends Error {}
 
@@ -53,6 +54,13 @@ export interface InteriorMap {
    * **有料**にしてタダの回復をやめる (オーナー判断)。
    */
   inn?: { x: number; y: number; price: number; name?: string };
+  /**
+   * **なんでも屋** (#424)。そのマスに入ると店が開く。
+   *
+   * 品揃えと値段は**フィールドの街の座標**から決まる (townShopStock) ので、
+   * どの街の店かを `town` で指す。村の中に居ても、その街の店として買える。
+   */
+  shop?: { x: number; y: number; town: { x: number; y: number }; name?: string };
 }
 
 /** 出入口 1 つ。踏んだ瞬間に `to` へ移る (一方通行。往復は 2 本書く)。 */
@@ -119,19 +127,23 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.encounterTier !== undefined && (!Number.isInteger(m.encounterTier) || m.encounterTier < 1 || m.encounterTier > 8)) {
       throw new InteriorError(`${where}: 危険度は 1〜8 (省略で敵が出ない)`);
     }
-    if (m.inn) {
-      if (!Number.isInteger(m.inn.x) || !Number.isInteger(m.inn.y) || m.inn.x < 0 || m.inn.y < 0 || m.inn.x >= m.size || m.inn.y >= m.size) {
-        throw new InteriorError(`${where}: 宿屋がマップの外にある`);
+    for (const [label, spot] of [['宿屋', m.inn], ['なんでも屋', m.shop]] as const) {
+      if (!spot) continue;
+      if (!Number.isInteger(spot.x) || !Number.isInteger(spot.y) || spot.x < 0 || spot.y < 0 || spot.x >= m.size || spot.y >= m.size) {
+        throw new InteriorError(`${where}: ${label}がマップの外にある`);
       }
+      // **歩けないマスの入口は永久に使えない。** 壁の上に置いても誰も踏めない。
+      if (!interiorWalkableAt(m, spot.x, spot.y)) throw new InteriorError(`${where}: ${label}が歩けないマスにある`);
+    }
+    if (m.shop && !townAt(m.shop.town.x, m.shop.town.y)) {
+      throw new InteriorError(`${where}: なんでも屋の街が存在しない (${m.shop.town.x}, ${m.shop.town.y})`);
+    }
+    if (m.inn) {
       if (!Number.isInteger(m.inn.price) || m.inn.price < 0 || m.inn.price > MAX_INN_PRICE) {
         throw new InteriorError(`${where}: 宿代は 0〜${MAX_INN_PRICE}`);
       }
-      // **歩けないマスの宿屋は永久に使えない。** 壁の上に置いた宿屋は誰も踏めない。
-      if (!interiorWalkableAt(m, m.inn.x, m.inn.y)) {
-        throw new InteriorError(`${where}: 宿屋が歩けないマスにある`);
-      }
     }
-    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}) });
+    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}) });
   }
   if (nextMaps.size > MAX_INTERIORS) throw new InteriorError(`内部マップが多すぎる (${nextMaps.size} > ${MAX_INTERIORS})`);
 
@@ -229,6 +241,13 @@ export function innAt(mapId: string, x: number, y: number): NonNullable<Interior
   const m = interiors.get(mapId);
   if (!m?.inn) return undefined;
   return m.inn.x === x && m.inn.y === y ? m.inn : undefined;
+}
+
+/** そのマスがなんでも屋か (無ければ undefined)。品揃えは指す街のもの。 */
+export function interiorShopAt(mapId: string, x: number, y: number): NonNullable<InteriorMap['shop']> | undefined {
+  const m = interiors.get(mapId);
+  if (!m?.shop) return undefined;
+  return m.shop.x === x && m.shop.y === y ? m.shop : undefined;
 }
 
 /** そのマップが内部か (mapId が未知なら false = フィールド扱いに倒す)。 */

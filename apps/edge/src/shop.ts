@@ -14,7 +14,7 @@
  * `craft` レコード) はまだユーザー PDS にあり、それを権威化するのは #551 段階 2。
  * ただし**強化値の抽選はサーバーが行い**、client はその結果を記帳するだけにしてある。
  */
-import { GEAR_SLOTS,
+import { interiorShopAt, GEAR_SLOTS,
   CRAFT_TUNING,
   EQUIPMENT_BY_ID,
   SALE_TUNING,
@@ -78,8 +78,14 @@ export interface ShopResult {
  * 街から野外へ数歩あるいても state の座標は街のまま残る = 世界のどこからでも
  * 買えてしまう。トークンが無い/無効なときだけ state に倒す (`handleSearch` と同じ作法)。
  */
-function shopAt(state: GameState, pos?: { x: number; y: number }) {
-  const town = townAt(pos?.x ?? state.x, pos?.y ?? state.y);
+function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: string }) {
+  const x = pos?.x ?? state.x;
+  const y = pos?.y ?? state.y;
+  const mapId = pos?.mapId ?? state.mapId;
+  // **村の中のなんでも屋** (#424)。内部マップの座標はフィールドの街と無関係なので、
+  // 店のマスに立っているときだけ、その店が指す街の品揃えで開く。
+  const inner = mapId ? interiorShopAt(mapId, x, y) : undefined;
+  const town = inner ? townAt(inner.town.x, inner.town.y) : townAt(x, y);
   if (!town) throw new ShopError('街の外では買えない', 400, 'not_in_town');
   const towns = worldOverlay().towns;
   const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
@@ -108,7 +114,7 @@ function withOp(state: GameState, key: string): string[] {
 export async function shopCraft(
   env: GameStateEnv,
   did: string,
-  input: { itemId: string; rkey: string; luk: number; pos?: { x: number; y: number } },
+  input: { itemId: string; rkey: string; luk: number; pos?: { x: number; y: number; mapId?: string } },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {
@@ -156,7 +162,7 @@ export async function shopCraft(
 export async function shopSell(
   env: GameStateEnv,
   did: string,
-  input: { materialId: string; count: number; rkey: string; pos?: { x: number; y: number } },
+  input: { materialId: string; count: number; rkey: string; pos?: { x: number; y: number; mapId?: string } },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {
@@ -201,7 +207,7 @@ export async function shopSell(
 export async function shopForge(
   env: GameStateEnv,
   did: string,
-  input: { rkeys: [string, string]; rkey: string; pos?: { x: number; y: number } },
+  input: { rkeys: [string, string]; rkey: string; pos?: { x: number; y: number; mapId?: string } },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {

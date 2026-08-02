@@ -15,6 +15,7 @@ import {
   gateAt,
   gateOpen,
   innAt,
+  interiorShopAt,
   gateLockedNotice,
   DEFAULT_GATE_LOCKED_NOTICE,
   interiorById,
@@ -216,7 +217,8 @@ describe('通れないときのことば (#426)', () => {
 });
 
 describe('同梱の村「ふたばの村」(#424)', () => {
-  const village = starterTownInterior();
+  const spawnTown = worldOverlay().spawn;
+  const village = starterTownInterior(spawnTown);
   const spawn = worldOverlay().spawn;
 
   it('64×64 で、そのまま保存できる', () => {
@@ -289,8 +291,32 @@ describe('宿屋 (#424)', () => {
   });
 
   it('ふたばの村の宿屋は歩けるマスにある', () => {
-    const v = starterTownInterior();
+    const v = starterTownInterior(worldOverlay().spawn);
     expect(v.inn).toBeDefined();
     expect(interiorWalkableAt(v, v.inn!.x, v.inn!.y)).toBe(true);
+  });
+});
+
+describe('村のなんでも屋 (#424)', () => {
+  const spawn2 = worldOverlay().spawn;
+  const v = starterTownInterior(spawn2);
+
+  it('店の扉が歩けて、指す街が実在する', () => {
+    expect(v.shop).toBeDefined();
+    expect(interiorWalkableAt(v, v.shop!.x, v.shop!.y)).toBe(true);
+    expect(() => setInteriors([v], starterTownGates(spawn2))).not.toThrow();
+    expect(interiorShopAt(v.id, v.shop!.x, v.shop!.y)?.town).toEqual({ x: spawn2.x, y: spawn2.y });
+  });
+
+  it('存在しない街を指す店を弾く (品揃えを引けない = 開けない店になる)', () => {
+    expect(() => setInteriors([{ ...v, shop: { x: 21, y: 22, town: { x: 1, y: 1 } } }], [])).toThrow(InteriorError);
+  });
+
+  it('歩けないマスの店を弾く', () => {
+    expect(() => setInteriors([{ ...v, shop: { x: 0, y: 0, town: { x: spawn2.x, y: spawn2.y } } }], [])).toThrow(InteriorError);
+  });
+
+  it('宿屋と店は別のマス (同じだとどちらが開くのか決まらない)', () => {
+    expect([v.inn!.x, v.inn!.y]).not.toEqual([v.shop!.x, v.shop!.y]);
   });
 });
