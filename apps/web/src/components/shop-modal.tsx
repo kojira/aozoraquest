@@ -251,14 +251,19 @@ export function ShopModal({
         >
           {errorText}
         </p>
-        {noticeText && (
-          <p
-            aria-live="polite"
-            style={{ margin: '0 0 0.5em', fontSize: '0.8em', color: 'var(--color-muted)' }}
-          >
-            {noticeText}
-          </p>
-        )}
+        {/* live region は**常設**して中身だけ差し替える (条件付きマウントは初回読み上げが
+            落ちることがある — 上のエラー行と同じ理由。レビュー ★★) */}
+        <p
+          aria-live="polite"
+          style={{
+            margin: noticeText ? '0 0 0.5em' : 0,
+            fontSize: '0.8em',
+            minHeight: noticeText ? '1.3em' : 0,
+            color: 'var(--color-muted)',
+          }}
+        >
+          {noticeText}
+        </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {stock.equipment.map((id) => {
             const def = EQUIPMENT_BY_ID[id];

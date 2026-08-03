@@ -88,15 +88,26 @@ export async function writeCraftLog(agent: Agent, rkey: string, record: Record<s
   try {
     await agent.com.atproto.repo.createRecord({ repo: agent.assertDid, collection: COL.craft, rkey, record });
   } catch (e) {
-    // 既に書けている (応答だけ落ちた再送) は成功と同じ。ここで捨てないと永久に再送し続ける。
-    if (isAlreadyExists(e)) return;
+    // **既に書けている (応答だけ落ちた再送) は成功と同じ**。ここで成功と判定できないと、
+    // その 1 件が保留の先頭に居座って後続の記帳が永久に書かれない。
+    // エラー文言では判定しない — 同 rkey の createRecord で PDS が返すのは
+    // 「There is already a value at key: …」であって "already exists" ではなく、
+    // 経路によっては generic な 5xx で届く。**実際に在るかどうか**を見るのが確実
+    // (レビュー ★★★: 文言 grep は本番のどのメッセージにも一致していなかった)。
+    if (await craftLogExists(agent, rkey)) return;
     throw new CraftLogError(rkey, record, e);
   }
 }
 
-function isAlreadyExists(e: unknown): boolean {
-  const msg = e instanceof Error ? `${e.message}` : String(e);
-  return /already exists|RecordAlreadyExists/i.test(msg);
+/** 同じ rkey の記帳が既に repo にあるか。取りにいけなかった場合は「無い」と答える
+ *  (= 保留に残して次の機会に試す。取りこぼすより二重に試すほうが安全)。 */
+async function craftLogExists(agent: Agent, rkey: string): Promise<boolean> {
+  try {
+    await agent.com.atproto.repo.getRecord({ repo: agent.assertDid, collection: COL.craft, rkey });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 新しい craft rkey を採番する (再試行の冪等化のため、確定は呼び出し側で行う)。 */
