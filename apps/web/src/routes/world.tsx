@@ -41,7 +41,8 @@ import { serverMove, serverTurn, serverState, serverTeleport, serverItem, server
   serverQuestAccept,
   serverQuestComplete,
 } from '@/lib/world-server';
-import { craftItem, discardItems, forgeItems, loadCraftInventory, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
+import { CraftLogError, craftItem, discardItems, forgeItems, loadCraftInventory, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
+import { enqueueCraftLog, flushCraftLogs } from '@/lib/craft-log-queue';
 import { ShopModal, type LastShopAction } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
 import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
@@ -299,6 +300,22 @@ export function World() {
   const [craftBusy, setCraftBusy] = useState(false);
   /** お店の失敗理由 (#551)。ページ本体の通知行はモーダルの背面に隠れるので、モーダル内に出す。 */
   const [shopError, setShopError] = useState<string | null>(null);
+  /** 記帳だけ落ちたときの控えめな知らせ (#642)。品もパワーも動いていないので赤字にしない。 */
+  const [shopNotice, setShopNotice] = useState<string | null>(null);
+
+  /** 記帳 (ユーザー PDS の履歴) の失敗を保留に積む (#642)。所持の権威はサーバーなので
+   *  品もパワーも動かないが、黙って捨てると履歴が永久に欠け、パワー会計もずれる。 */
+  const keepCraftLog = useCallback((where: string, e: unknown) => {
+    console.warn(`[world] ${where} log failed`, e);
+    if (did && e instanceof CraftLogError) enqueueCraftLog(did, e, new Date().toISOString());
+  }, [did]);
+
+  /** 保留した記帳を書き直す。店を開いたときと世界に入ったときに 1 回ずつ試す。 */
+  const flushCraftLog = useCallback(() => {
+    if (!agent || !did) return;
+    void flushCraftLogs(agent, did).catch((e) => console.warn('[world] craft log flush failed', e));
+  }, [agent, did]);
+
   const [lastShopAction, setLastShopAction] = useState<LastShopAction | null>(null);
   /** 再試行の冪等化: 失敗した制作/合成/ひきとりの rkey を保持し、同条件の再試行で
    *  使い回す (createRecord は同 rkey で衝突するため 2 重記帳が構造的に起きない) */
@@ -493,9 +510,12 @@ export function World() {
       // 取れなかったときの表示フォールバックだけ (装備しても edge が弾く)。
       if (!serverInv) setCraftedPieces(craftInv.pieces);
       setGearRefs(refs);
+      // 前のセッションで書けなかった記帳をここで書き直す (#642)。保留は localStorage に
+      // 残るので、リロードや翌日の起動でも拾える。
+      flushCraftLog();
     })();
     return () => { cancelled = true; };
-  }, [session.status, agent, did, retryNonce]);
+  }, [session.status, agent, did, retryNonce, flushCraftLog]);
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -664,7 +684,9 @@ export function World() {
             if (sp) {
               setLastShopAction(null);
               setShopError(null);
+              setShopNotice(null);
               setMaterialsView({ ...materialsRef.current });
+              flushCraftLog(); // 前に書けなかった記帳をここで書き直す (#642)
               setShopOpen(true);
               setNotice(null);
             }
@@ -726,7 +748,7 @@ export function World() {
         }
       })();
     },
-    [scheduleSave, agent],
+    [scheduleSave, agent, flushCraftLog],
   );
 
   // 戦闘コマンドも**毎回サーバーが解決する** (docs/21 §5)。クライアントは battleId + turn + command を送るだけ。
@@ -1111,6 +1133,7 @@ export function World() {
       const rkey = pendingCraftRef.current?.defId === def.id ? pendingCraftRef.current.rkey : newCraftRkey();
       pendingCraftRef.current = { defId: def.id, rkey };
       setShopError(null);
+      setShopNotice(null);
       setCraftBusy(true);
       try {
         // **費用の支払いと強化値の抽選はサーバー** (#551)。素材もパワーも権威側から引かれ、
@@ -1134,8 +1157,10 @@ export function World() {
           },
           rkey,
         ).catch((e) => {
-          console.warn('[world] craft log failed', e);
-          setShopError('つくれたが、記録に失敗した (もちものには入っている)。');
+          keepCraftLog('craft', e);
+          // 品もパワーも既にサーバー側で確定しているので、失敗として赤字で出さない (#642)。
+          // 欠けたのは履歴だけで、それは保留してあとで書き直す。
+          setShopNotice('記録はあとで残す (品は もちものに入っている)。');
           return { rkey, itemId: def.id, level: res.level ?? 0, at: new Date().toISOString() };
         });
         pendingCraftRef.current = null;
@@ -1150,7 +1175,7 @@ export function World() {
         setCraftBusy(false);
       }
     },
-    [agent, did, craftBusy, combat, subtractMaterial, shopTownAt],
+    [agent, did, craftBusy, combat, subtractMaterial, shopTownAt, keepCraftLog],
   );
 
   // 合成 (きたえる): 同アイテム・同強化値 2 個体 → +1。素材もパワーも不要
@@ -1162,6 +1187,7 @@ export function World() {
       const frkey = pendingForgeRef.current?.key === forgeKey ? pendingForgeRef.current.rkey : newForgeRkey();
       pendingForgeRef.current = { key: forgeKey, rkey: frkey };
       setShopError(null);
+      setShopNotice(null);
       setCraftBusy(true);
       try {
         // **合成もサーバー** (#551 段階 2)。消費する個体は権威側の所持から探すので、
@@ -1172,7 +1198,7 @@ export function World() {
         const piece: CraftedPiece = { rkey: frkey, itemId: def.id, level: res.level ?? resultLevel, at: new Date().toISOString() };
         // 記帳 (履歴)。所持の根拠ではないので、失敗しても進める。
         void forgeItems(agent, { itemId: def.id, resultLevel: piece.level, consumed: rkeys }, frkey)
-          .catch((e) => console.warn('[world] forge log failed', e));
+          .catch((e) => keepCraftLog('forge', e));
         setLastShopAction({ piece, kind: 'forge' });
       } catch (e) {
         console.warn('[world] forge failed', e);
@@ -1182,7 +1208,7 @@ export function World() {
         setCraftBusy(false);
       }
     },
-    [agent, did, craftBusy],
+    [agent, did, craftBusy, keepCraftLog],
   );
 
   // 素材のひきとり (素材 → パワー。docs/20 の低レート変換)
@@ -1194,6 +1220,7 @@ export function World() {
       const srkey = pendingSaleRef.current?.key === saleKey ? pendingSaleRef.current.rkey : newSaleRkey();
       pendingSaleRef.current = { key: saleKey, rkey: srkey };
       setShopError(null);
+      setShopNotice(null);
       setCraftBusy(true);
       try {
         // **在庫と残高の増減はサーバー** (#551)。client 台帳だけだと「パワーが 5 ふえた!」と
@@ -1203,7 +1230,7 @@ export function World() {
         setServerPower(res.power);
         applyServerMaterials(res.materials);
         // 記帳 (履歴)。数量とパワーはサーバーが確定した値で書く。
-        await sellMaterials(agent, { materialId, materialCount: count }, srkey).catch((e) => console.warn('[world] sale log failed', e));
+        await sellMaterials(agent, { materialId, materialCount: count }, srkey).catch((e) => keepCraftLog('sale', e));
         // 結果はモーダル内のセリフ窓で出す (#607)。世界の通知行はモーダルの背面で見えない。
         setLastShopAction({ kind: 'sell', materialId, count, powerGained: res.powerGained ?? 0 });
       } catch (e) {
@@ -1213,7 +1240,7 @@ export function World() {
         setCraftBusy(false);
       }
     },
-    [agent, did, craftBusy, subtractMaterial],
+    [agent, did, craftBusy, subtractMaterial, keepCraftLog],
   );
 
   // 装備の着脱 (gear/self は rkey 参照 — 強化値は直書きしない。docs/20 W6c 契約)
@@ -1336,7 +1363,9 @@ export function World() {
       ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => {
           setLastShopAction(null);
           setShopError(null);
+          setShopNotice(null);
           setMaterialsView({ ...materialsRef.current });
+          flushCraftLog(); // 前に書けなかった記帳をここで書き直す (#642)
           // 入場時に serverState が落ちていると残高が null のまま復旧経路が無く、
           // 店が「パワー 0」で全品グレーアウトして死んで見える (#551 レビュー指摘)。
           // 開くたびに取り直す。
@@ -1714,7 +1743,7 @@ export function World() {
                 if (res.pieces) setCraftedPieces(res.pieces.map((x) => ({ rkey: x.rkey, itemId: x.itemId, level: x.level, at: '' })));
                 // PDS 側にも墓標を残す (/me の集計が捨てた装備を数えたままにならないように)。
                 // 権威は既にサーバーで減っているので、失敗しても進める。
-                void discardItems(agent, [rkey], dkey).catch((e) => console.warn('[world] discard log failed', e));
+                void discardItems(agent, [rkey], dkey).catch((e) => keepCraftLog('discard', e));
               } catch (e) {
                 console.warn('[world] discard failed', e);
                 setShopError(shopErrorText(e, 'すてられなかった'));
@@ -1758,6 +1787,7 @@ export function World() {
           busy={craftBusy}
           lastAction={lastShopAction}
           errorText={shopError}
+          noticeText={shopNotice}
           onCraft={(def) => void onCraft(def)}
           onForge={(def, level, rkeys) => void onForge(def, level, rkeys)}
           onSell={(materialId, count) => void onSell(materialId, count)}

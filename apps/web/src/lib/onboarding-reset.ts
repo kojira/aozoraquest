@@ -19,6 +19,7 @@
 import type { Agent } from '@atproto/api';
 import { getRecord, putRecord } from './atproto';
 import { COL } from './collections';
+import { clearCraftLogQueue } from './craft-log-queue';
 import { resetWorldPower } from './points';
 import { serverReset } from './world-server';
 
@@ -126,6 +127,9 @@ export async function resetOnboarding(agent: Agent, did: string): Promise<void> 
       throw new Error(`${label}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
+  // 書けなかった記帳の保留も捨てる。残すと、消した制作レコードが次の入場で
+  // 書き戻されて幽霊個体が並び、0 に戻したパワー消費も再集計で復活する。
+  clearCraftLogQueue(did);
   await step('craft', () => deleteAllRecords(agent, did, COL.craft));
   await step('battle', () => deleteAllRecords(agent, did, COL.battle));
   await step('gear', () => deleteSelf(agent, did, COL.gear));

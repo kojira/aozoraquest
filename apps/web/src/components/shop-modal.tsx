@@ -89,6 +89,7 @@ export function ShopModal({
   busy,
   lastAction,
   errorText,
+  noticeText,
   onCraft,
   onForge,
   onSell,
@@ -108,6 +109,8 @@ export function ShopModal({
   /** 失敗の理由 (#551)。**モーダル内に出す** — ページ本体の通知行に出しても、
    *  この全画面オーバーレイの背面に描かれてプレイヤーには見えない。 */
   errorText: string | null;
+  /** 記帳だけ落ちたときの控えめな知らせ (#642)。品もパワーも動いていないので赤字にしない。 */
+  noticeText?: string | null;
   onCraft: (def: EquipmentDef) => void;
   onForge: (def: EquipmentDef, level: number, rkeys: [string, string]) => void;
   /** 素材のひきとり (count は materialsPerPower の倍数) */
@@ -247,6 +250,19 @@ export function ShopModal({
           }}
         >
           {errorText}
+        </p>
+        {/* live region は**常設**して中身だけ差し替える (条件付きマウントは初回読み上げが
+            落ちることがある — 上のエラー行と同じ理由。レビュー ★★) */}
+        <p
+          aria-live="polite"
+          style={{
+            margin: noticeText ? '0 0 0.5em' : 0,
+            fontSize: '0.8em',
+            minHeight: noticeText ? '1.3em' : 0,
+            color: 'var(--color-muted)',
+          }}
+        >
+          {noticeText}
         </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {stock.equipment.map((id) => {

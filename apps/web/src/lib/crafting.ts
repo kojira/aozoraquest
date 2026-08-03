@@ -68,6 +68,48 @@ export interface ForgeRecord {
   via: string;
 }
 
+/**
+ * 記帳が書けなかったことを、**再送に必要な材料ごと**呼び出し側へ渡す (#642)。
+ *
+ * 所持の権威はサーバーなので記帳の失敗で品は消えないが、黙って捨てると履歴が欠け、
+ * パワー会計 (points.ts は craft コレクションを再スキャンして消費/獲得を出す) もずれる。
+ * rkey と record をそのまま持たせておけば、あとで**同じ rkey**で書き直せる
+ * (createRecord は同 rkey で衝突するので二重記帳にならない)。
+ */
+export class CraftLogError extends Error {
+  constructor(readonly rkey: string, readonly record: Record<string, unknown>, override readonly cause: unknown) {
+    super('craft log write failed');
+    this.name = 'CraftLogError';
+  }
+}
+
+/** craft コレクションへの記帳はすべてここを通す (失敗を CraftLogError に揃えるため)。 */
+export async function writeCraftLog(agent: Agent, rkey: string, record: Record<string, unknown>): Promise<void> {
+  try {
+    await agent.com.atproto.repo.createRecord({ repo: agent.assertDid, collection: COL.craft, rkey, record });
+  } catch (e) {
+    // **既に書けている (応答だけ落ちた再送) は成功と同じ**。ここで成功と判定できないと、
+    // その 1 件が保留の先頭に居座って後続の記帳が永久に書かれない。
+    // エラー文言では判定しない — 同 rkey の createRecord で PDS が返すのは
+    // 「There is already a value at key: …」であって "already exists" ではなく、
+    // 経路によっては generic な 5xx で届く。**実際に在るかどうか**を見るのが確実
+    // (レビュー ★★★: 文言 grep は本番のどのメッセージにも一致していなかった)。
+    if (await craftLogExists(agent, rkey)) return;
+    throw new CraftLogError(rkey, record, e);
+  }
+}
+
+/** 同じ rkey の記帳が既に repo にあるか。取りにいけなかった場合は「無い」と答える
+ *  (= 保留に残して次の機会に試す。取りこぼすより二重に試すほうが安全)。 */
+async function craftLogExists(agent: Agent, rkey: string): Promise<boolean> {
+  try {
+    await agent.com.atproto.repo.getRecord({ repo: agent.assertDid, collection: COL.craft, rkey });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 新しい craft rkey を採番する (再試行の冪等化のため、確定は呼び出し側で行う)。 */
 export function newCraftRkey(): string {
   return `c-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -85,20 +127,14 @@ export async function craftItem(
   },
   rkeyIn?: string,
 ): Promise<CraftedPiece> {
-  const did = agent.assertDid;
   const rkey = rkeyIn ?? newCraftRkey();
   const { level: serverLevel, ...record } = input;
-  await agent.com.atproto.repo.createRecord({
-    repo: did,
-    collection: COL.craft,
-    rkey,
-    record: {
-      $type: COL.craft,
-      ...record,
-      at: new Date().toISOString(),
-      via: VIA,
-    } satisfies CraftRecord,
-  });
+  await writeCraftLog(agent, rkey, {
+    $type: COL.craft,
+    ...record,
+    at: new Date().toISOString(),
+    via: VIA,
+  } satisfies CraftRecord);
   return {
     rkey,
     itemId: input.itemId,
@@ -119,21 +155,15 @@ export async function forgeItems(
   input: { itemId: string; resultLevel: number; consumed: [string, string] },
   rkeyIn?: string,
 ): Promise<CraftedPiece> {
-  const did = agent.assertDid;
   const rkey = rkeyIn ?? newForgeRkey();
-  await agent.com.atproto.repo.createRecord({
-    repo: did,
-    collection: COL.craft,
-    rkey,
-    record: {
-      $type: COL.craft,
-      itemId: input.itemId,
-      level: Math.min(CRAFT_TUNING.levelMax, input.resultLevel),
-      consumed: input.consumed,
-      at: new Date().toISOString(),
-      via: VIA,
-    } satisfies ForgeRecord,
-  });
+  await writeCraftLog(agent, rkey, {
+    $type: COL.craft,
+    itemId: input.itemId,
+    level: Math.min(CRAFT_TUNING.levelMax, input.resultLevel),
+    consumed: input.consumed,
+    at: new Date().toISOString(),
+    via: VIA,
+  } satisfies ForgeRecord);
   return { rkey, itemId: input.itemId, level: Math.min(CRAFT_TUNING.levelMax, input.resultLevel), at: new Date().toISOString() };
 }
 
@@ -159,23 +189,17 @@ export async function sellMaterials(
   input: { materialId: string; materialCount: number },
   rkeyIn?: string,
 ): Promise<{ powerGained: number; materialCount: number }> {
-  const did = agent.assertDid;
   const powerGained = salePowerFor(input.materialCount);
   const materialCount = powerGained * SALE_TUNING.materialsPerPower;
   const rkey = rkeyIn ?? newSaleRkey();
-  await agent.com.atproto.repo.createRecord({
-    repo: did,
-    collection: COL.craft,
-    rkey,
-    record: {
-      $type: COL.craft,
-      materialId: input.materialId,
-      materialCount,
-      powerGained,
-      at: new Date().toISOString(),
-      via: VIA,
-    } satisfies SaleRecord,
-  });
+  await writeCraftLog(agent, rkey, {
+    $type: COL.craft,
+    materialId: input.materialId,
+    materialCount,
+    powerGained,
+    at: new Date().toISOString(),
+    via: VIA,
+  } satisfies SaleRecord);
   return { powerGained, materialCount };
 }
 
@@ -193,19 +217,13 @@ export interface CraftInventory {
  */
 /** すてた記録を書く。権威は既にサーバー側で減っているので、これは表示の整合のため。 */
 export async function discardItems(agent: Agent, rkeys: string[], rkeyIn?: string): Promise<void> {
-  const did = agent.assertDid;
   const rkey = rkeyIn ?? newDiscardRkey();
-  await agent.com.atproto.repo.createRecord({
-    repo: did,
-    collection: COL.craft,
-    rkey,
-    record: {
-      $type: COL.craft,
-      discarded: rkeys,
-      at: new Date().toISOString(),
-      via: VIA,
-    } satisfies DiscardRecord,
-  });
+  await writeCraftLog(agent, rkey, {
+    $type: COL.craft,
+    discarded: rkeys,
+    at: new Date().toISOString(),
+    via: VIA,
+  } satisfies DiscardRecord);
 }
 
 /** 新しい すてる rkey を採番する。 */
