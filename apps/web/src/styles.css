@@ -2174,3 +2174,32 @@ p { margin: 0.4em 0; }
 @media (prefers-reduced-motion: reduce) {
   .door-fade-in, .door-fade-out { animation-duration: 1ms; }
 }
+
+/* ── セリフ窓のモーダル感 (#640) ────────────────────────────────
+   会話は「送るまで先へ進めない」= 実質モーダルなのに、窓が半透明 (--color-window-bg は
+   rgba .78) で下の UI が透け、送り面も素通しだったため存在感が無かった。
+   なんでも屋では品物カードやボタンが窓ごしに見えて、どれが手前か分からない。 */
+
+/* 送り面: 背後をわずかに暗くして後退させる。会話を送るタップ層そのものなので、
+   見た目 (暗い) と当たり判定 (全画面) が一致する。 */
+.aq-dialogue-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  animation: aq-dialogue-dim 140ms ease-out;
+}
+@keyframes aq-dialogue-dim {
+  from { background: rgba(0, 0, 0, 0); }
+}
+
+/* 窓本体と話者プレート: **不透明**にして浮かせる。--color-window-solid は
+   カラムのドリルダウンで同じ目的 (下が透けると読めない) に使っている既存トークン。 */
+.aq-dialogue-pane {
+  background: var(--color-window-solid);
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0, 0, 0, 0.35),
+    0 10px 26px rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aq-dialogue-backdrop { animation-duration: 1ms; }
+}
