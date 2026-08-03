@@ -33,11 +33,13 @@
     "@babel/preset-react": "^7",
     "@babel/preset-typescript": "^7",
     "@playwright/test": "1.59.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4",
     "eslint": "^9",
     "eslint-plugin-react-hooks": "^5",
+    "jsdom": "^29.1.1",
     "typescript": "^7.0.2",
     "vite": "^5",
     "vitest": "^2"

@@ -106,7 +106,15 @@ export function DialogueWindow({
     }
   }, [st.done, onDone]);
 
-  const advance = useCallback(() => setSt((s) => advanceDialogue(lines, s)), [lines]);
+  /** セリフを進める。**イベントは必ずここで止める** — 送り面は画面全体を覆う当たり判定なので、
+   *  祖先に「背景タップで閉じる」オーバーレイ (なんでも屋の店窓) があると、セリフを送るタップが
+   *  そのまま「閉じる」に伝わってしまう。#638: あいさつをタップすると店ごと閉じ、
+   *  「つくってもらう」も送り面に吸われて押せなかった。呼び出し側で包むのではなく、
+   *  全画面の当たり判定を持つ側で止めるのが正しい (今後どこに置いても同じ事故が起きない)。 */
+  const advance = useCallback((e?: { stopPropagation: () => void }) => {
+    e?.stopPropagation();
+    setSt((s) => advanceDialogue(lines, s));
+  }, [lines]);
 
   const line = currentLine(lines, st);
   if (!line || st.done) return null;
@@ -127,7 +135,7 @@ export function DialogueWindow({
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            advance();
+            advance(e);
           }
         }}
         tabIndex={0}
