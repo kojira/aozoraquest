@@ -122,7 +122,7 @@ export function DialogueWindow({
 
   return (
     <>
-      {/* 送り面: **常に画面全体を覆う** 透明レイヤー。どこをタップしても会話が進み、footer や
+      {/* 送り面: **常に画面全体を覆う** レイヤー。どこをタップしても会話が進み、footer や
           スティック等の背後 UI への誤タップ・誤遷移を防ぐ。anchor='map' で窓を地図に貼っても
           この送り面は viewport 全面のままなので、画面下端 (footer 際) を送ろうとしても効く
           (地図枠だけを覆うと footer 遷移で会話が中断する回帰があった — レビュー ★★)。 */}
@@ -139,7 +139,10 @@ export function DialogueWindow({
           }
         }}
         tabIndex={0}
-        style={{ position: 'fixed', inset: 0, zIndex: DIALOGUE_BACKDROP_Z, cursor: 'pointer', background: 'transparent' }}
+        // 背後をわずかに暗くする (#640)。全画面が当たり判定なのに見た目が素通しだと
+        // 「いま会話中で、ほかは触れない」ことが伝わらない (実機で存在感が薄いと指摘)。
+        className="aq-dialogue-backdrop"
+        style={{ position: 'fixed', inset: 0, zIndex: DIALOGUE_BACKDROP_Z, cursor: 'pointer' }}
       />
       {/* 窓本体: 'viewport' は footer 際に固定、'map' は直近の position:relative 祖先
           (ワールドの地図枠) の下端に貼る (DQ 風)。送り面より上 (z)。 */}
@@ -158,7 +161,7 @@ export function DialogueWindow({
       >
         {line.speaker && (
           <div
-            className="dq-window"
+            className="dq-window aq-dialogue-pane"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -177,7 +180,7 @@ export function DialogueWindow({
           </div>
         )}
         <div
-          className="dq-window"
+          className="dq-window aq-dialogue-pane"
           // maxHeight/overflowY: 将来の長い NPC セリフでも窓がアバターに被らないよう上限を設ける
           //   (DQ も 1 窓は数行で固定 — レビュー ★★)。marginBottom:0: dq-window 既定の 0.9em を
           //   打ち消し、地図枠の下端 (bottom:0.5em) にぴったり寄せる (レビュー ★)。
