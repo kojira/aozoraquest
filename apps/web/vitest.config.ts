@@ -7,6 +7,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
     // .tsx も拾う (コンポーネントの回帰テスト。DOM が要る file は先頭の
     // `// @vitest-environment jsdom` で個別に切り替える — 既定は node のまま)
     include: ['src/**/*.test.{ts,tsx}'],

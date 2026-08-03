@@ -657,7 +657,17 @@ export function World() {
           // 店だと気づけない (実機で「なんでも屋がどこか分からない」と指摘)。
           if (res.mapId) {
             const sp = interiorShopAt(res.mapId, res.x, res.y);
-            if (sp) { setShopOpen(true); setNotice(null); }
+            // メニュー経由と**同じ状態合わせをする** (#638 レビュー ★★★)。ここを抜くと
+            // 表示在庫が読み込み時のまま = 戦闘で拾った素材が反映されず、全品が
+            // 「素材が足りない」で disabled になり**またアイテムが作れない**。
+            // 前回の「○○ が できた!」やエラーが残っているとあいさつも出ない。
+            if (sp) {
+              setLastShopAction(null);
+              setShopError(null);
+              setMaterialsView({ ...materialsRef.current });
+              setShopOpen(true);
+              setNotice(null);
+            }
           }
           // 宿屋 (#424)。残高もサーバーが正 (payment は権威側で引かれている)。
           if (res.inn) {
@@ -821,6 +831,10 @@ export function World() {
         for (const id of lost) { const left = Math.max(0, (m[id] ?? 0) - 1); if (left > 0) m[id] = left; else delete m[id]; }
         materialsRef.current = m;
       }
+      // 表示用も一緒に更新する (#638 レビュー ★★★)。ref だけ進めると、店を
+      // 「開くとき」に取り直す経路を通らない導線 (扉を踏んで自動で開く) で
+      // 戦闘のドロップが在庫に出ず、作れるはずの物が作れなく見える。
+      setMaterialsView({ ...materialsRef.current });
       // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
       // でかくなり認知負荷)。resultLines が空になるのは実質「逃走
       // (fled = 経験値もドロップも無し)」のみ。その時は即マップへ戻す。

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { DialogueWindow } from './dialogue-window';
 
 /**
@@ -39,7 +39,6 @@ describe('DialogueWindow: 祖先へ click を伝えない', () => {
     expect(surfaces.length).toBeGreaterThan(0);
     for (const el of surfaces) fireEvent.click(el);
     expect(onClose).not.toHaveBeenCalled();
-    cleanup();
   });
 
   it('タップでセリフは進む (止めているのは伝播だけ)', () => {
@@ -52,6 +51,5 @@ describe('DialogueWindow: 祖先へ click を伝えない', () => {
     // 2 タップ目で次の行へ
     fireEvent.click(surface);
     expect(screen.getAllByText(/なにか つくるかい/).length).toBeGreaterThan(0);
-    cleanup();
   });
 });
