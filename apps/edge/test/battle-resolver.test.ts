@@ -366,13 +366,55 @@ describe('内部マップの詰み対策 (#424 レビュー)', () => {
     setInteriors([room2()], []);
     let moved = false;
     for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
-      if (!isWalkable(terrainAt(300 + dx, 300 + dy))) continue;
-      const r = await handleMove(env, USER, dx, dy, undefined, NOW);
+      const r = await handleMove(env, USER, dx, dy, undefined, NOW).catch(() => null);
+      if (!r) continue;
       expect(r.mapId).toBeUndefined(); // フィールドとして動く
       moved = true;
       break;
     }
     expect(moved).toBe(true);
+  });
+
+  /**
+   * **座標もフィールドの安全な場所へ戻す** (#644 レビュー ★★★)。
+   *
+   * mapId だけフィールドに倒すと、内部マップのローカル座標がそのままフィールド座標として
+   * 解釈される。内部マップを小さく作り直した (村を 64→32) 直後は「旧マップでは歩けたが
+   * 新マップでは範囲外」の座標に立つ人が出て、その座標が海の上だと 8 方向すべて
+   * 「進めない地形」になり、そらのはね無しでは復帰不能になる。
+   */
+  it('範囲外から戻る先が海でも詰まない (出口 → 直前の街 → スポーンの順に逃がす)', async () => {
+    const env = await makeEnv();
+    // 8 近傍すべてが歩けない座標を実地形から探す (= 昔の「mapId だけ倒す」では詰む場所)
+    let trap: { x: number; y: number } | null = null;
+    for (let y = 40; y < 400 && !trap; y += 1) {
+      for (let x = 40; x < 400; x += 1) {
+        const around = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
+        if (isWalkable(terrainAt(x, y))) continue;
+        if (around.every(([dx, dy]) => !isWalkable(terrainAt(x + dx, y + dy)))) { trap = { x, y }; break; }
+      }
+    }
+    expect(trap, '海の真ん中が見つからない').not.toBeNull();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: trap!.x, y: trap!.y }) }).fn;
+    // 出口を持つ内部マップ (同梱の村と同じ形)。範囲外ならまずここへ逃がす。
+    const back = (() => {
+      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
+        if (isWalkable(terrainAt(20 + dx, 20 + dy))) return { nx: 20 + dx, ny: 20 + dy };
+      }
+      throw new Error('歩ける隣接マスがない');
+    })();
+    setInteriors([{ ...room2(), exitTo: { mapId: 'world', x: back.nx, y: back.ny } }], []);
+    // どこかの方向へは必ず動ける (= 海に置き去りにされていない)
+    const results = await Promise.all(
+      ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const).map(([dx, dy]) =>
+        handleMove(env, USER, dx, dy, undefined, NOW).catch(() => null)),
+    );
+    expect(results.some((r) => r !== null)).toBe(true);
+    // 逃げ先は出口の周り — 罠の座標をそのまま引き継いでいない
+    for (const r of results) {
+      if (!r) continue;
+      expect(Math.abs(r.x - back.nx) + Math.abs(r.y - back.ny)).toBeLessThanOrEqual(1);
+    }
   });
 });
 

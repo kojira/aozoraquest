@@ -1,8 +1,12 @@
 /**
  * **同梱の内部マップ** (#424)。最初の街「ふたばの村」の中。
  *
- * 内部マップを 1 つも作っていない状態からだと、エディタで 64×64 を手で塗るところから
- * 始まって重い。**入って歩ける村**を 1 つ同梱し、そこから直せるようにする。
+ * 内部マップを 1 つも作っていない状態からだと、エディタで手で塗るところから始まって重い。
+ * **入って歩ける村**を 1 つ同梱し、そこから直せるようにする。
+ *
+ * 広さは **32×32**。最初は 64×64 で作ったが、最初の街としては歩かされる距離が長く、
+ * 宿屋となんでも屋を往復するだけで間延びした (実機で指摘)。半分にして、入口から
+ * 数歩で看板が見える密度にしている。
  *
  * ## 専用パーツで組む
  *
@@ -23,7 +27,7 @@ import type { Gate, InteriorMap } from './interior.js';
 import type { WorldPart } from './world-map.js';
 
 export const STARTER_TOWN_ID = 'futaba-village';
-export const STARTER_TOWN_SIZE = 64;
+export const STARTER_TOWN_SIZE = 32;
 
 /** パーツ番号 (この村のパーツ表の並び)。絵は terrain 名で引く。 */
 const GRASS = 0;
@@ -56,19 +60,15 @@ const PARTS: WorldPart[] = [
 ];
 
 /** 宿屋の扉。ここに入ると あおぞらパワーを払って全回復する。 */
-export const STARTER_TOWN_INN = { x: 21, y: 22, price: 3, name: 'ふたばの宿' };
+export const STARTER_TOWN_INN = { x: 8, y: 10, price: 3, name: 'ふたばの宿' };
 /** なんでも屋の扉。ここに入ると店が開く。 */
-export const STARTER_TOWN_SHOP = { x: 43, y: 22 };
-/** フィールドから入ったときの降り立つ場所 (村の南の通り)。 */
-export const STARTER_TOWN_ENTRANCE = { x: 32, y: 56 };
-/**
- * @deprecated 端から出られるようにしたので使わない (#626)。
- * 保存済みのゲートとの互換のために残す。
- */
-export const STARTER_TOWN_EXIT = { x: 32, y: 61 };
+export const STARTER_TOWN_SHOP = { x: 23, y: 10 };
+/** フィールドから入ったときの降り立つ場所 (村の南の通り)。端から数歩内側に置く —
+ *  端に降ろすと入った瞬間に外へ出てしまう。 */
+export const STARTER_TOWN_ENTRANCE = { x: 15, y: 28 };
 
 /**
- * 64×64 の村を組み立てる。**手で塗った 4096 タイルを埋め込むより、組み立てる**
+ * 32×32 の村を組み立てる。**手で塗ったタイルを埋め込むより、組み立てる**
  * ほうが読めて直せる (家を 1 軒足すのが 1 行)。
  */
 export function buildStarterTownTiles(): Uint8Array {
@@ -89,15 +89,16 @@ export function buildStarterTownTiles(): Uint8Array {
     set(1, i, TREE); set(S - 2, i + 2, TREE);
   }
 
-  // 目抜き通り (縦) と広場へ抜ける横道。
-  rect(30, 4, 4, S - 6, PATH);
-  rect(6, 30, S - 12, 3, PATH);
-  // 建物の前を通る東西の道 (宿屋・なんでも屋へ繋ぐ)。
-  rect(6, 24, S - 12, 2, PATH);
+  // 目抜き通り (縦)。入口から北へまっすぐ伸ばし、道なりに行けば店の前に出る。
+  rect(15, 2, 2, S - 3, PATH);
+  // 建物の前を通る東西の道 (宿屋 ⇄ なんでも屋)。扉の 1 段下を通す。
+  rect(4, 11, S - 8, 1, PATH);
+  // 広場へ抜ける横道。
+  rect(4, 17, S - 8, 1, PATH);
 
   // 中央の広場と井戸。**目印になるもの**を置いて、歩いた実感が出るようにする。
-  rect(26, 34, 12, 8, PATH);
-  set(31, 37, WELL); set(32, 37, WELL);
+  rect(12, 18, 8, 5, PATH);
+  set(15, 20, WELL); set(16, 20, WELL);
 
   /**
    * 建物を 1 軒。**屋根 → 壁 → 扉**の順に積む。看板を渡すと扉の上に出る
@@ -112,30 +113,27 @@ export function buildStarterTownTiles(): Uint8Array {
     rect(dx, y + h, 1, 1, PATH); // 玄関前の石畳
   };
 
-  // 宿屋 (西) と なんでも屋 (東)。通りに面して看板を出す。
-  building(18, 18, 8, 5, 3, INN_SIGN); // 扉 (21, 22)
-  building(40, 18, 8, 5, 3, SHOP_SIGN); // 扉 (43, 22)
+  // 宿屋 (西) と なんでも屋 (東)。目抜き通りを挟んで向かい合わせに置き、
+  // 入口から北へ歩くと**両方の看板が同時に視界に入る**ようにする。
+  building(6, 6, 6, 5, 2, INN_SIGN); // 扉 (8, 10)
+  building(20, 6, 6, 5, 3, SHOP_SIGN); // 扉 (23, 10)
 
   // ふつうの家。看板なし。
-  building(8, 8, 7, 5, 3);
-  building(24, 8, 7, 5, 3);
-  building(44, 8, 7, 5, 3);
-  building(8, 44, 7, 5, 3);
-  building(22, 44, 7, 5, 3);
-  building(40, 44, 7, 5, 3);
-  building(50, 34, 7, 5, 3);
+  building(2, 13, 5, 4, 2);
+  building(25, 13, 5, 4, 2);
+  building(3, 24, 5, 4, 2);
+  building(10, 24, 5, 4, 2);
+  building(18, 24, 5, 4, 2);
+  building(25, 24, 5, 4, 2);
 
   // 目印: 花壇・柵・木を散らす (一面の草地だと動いた実感が無い)。
-  rect(6, 36, 5, 4, FLOWER);
-  rect(52, 50, 6, 4, FLOWER);
-  rect(14, 52, 8, 1, FENCE);
-  rect(44, 30, 6, 1, FENCE);
-  for (const [x, y] of [[5, 20], [5, 50], [58, 12], [58, 44], [12, 28], [50, 28], [26, 52], [38, 52]]) {
+  rect(3, 19, 4, 3, FLOWER);
+  rect(25, 19, 4, 3, FLOWER);
+  rect(9, 21, 3, 1, FENCE);
+  rect(20, 21, 3, 1, FENCE);
+  for (const [x, y] of [[4, 4], [27, 4], [12, 14], [19, 14], [7, 30], [24, 30]]) {
     set(x!, y!, TREE);
   }
-
-  // 南の通りを端まで通す (どこからでも出られるが、道なりに行けば外に出ると分かる)。
-  rect(30, S - 6, 4, 6, PATH);
 
   return t;
 }

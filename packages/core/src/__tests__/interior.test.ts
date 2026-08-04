@@ -222,9 +222,10 @@ describe('同梱の村「ふたばの村」(#424)', () => {
   const village = starterTownInterior(spawnTown);
   const spawn = worldOverlay().spawn;
 
-  it('64×64 で、そのまま保存できる', () => {
-    expect(village.size).toBe(64);
-    expect(village.tiles.length).toBe(64 * 64);
+  it('32×32 で、そのまま保存できる', () => {
+    // 最初は 64×64 だったが、最初の街としては歩かされる距離が長すぎた (実機で指摘)。
+    expect(village.size).toBe(32);
+    expect(village.tiles.length).toBe(32 * 32);
     expect(() => setInteriors([village], starterTownGates(spawn))).not.toThrow();
   });
 
@@ -256,8 +257,8 @@ describe('同梱の村「ふたばの村」(#424)', () => {
     }
     expect(seen.has(village.inn!.y * village.size + village.inn!.x), '宿屋').toBe(true);
     expect(seen.has(village.shop!.y * village.size + village.shop!.x), '店').toBe(true);
-    // 広場や家の前まで含め、そこそこの広さが繋がっていること
-    expect(seen.size).toBeGreaterThan(2000);
+    // 広場や家の前まで含め、そこそこの広さが繋がっていること (32×32 = 1024 マス)
+    expect(seen.size).toBeGreaterThan(700);
   });
 
   it('戻り先はフィールドの街の 1 マス下 (踏んだ瞬間にまた入らない)', () => {
@@ -310,9 +311,9 @@ describe('村のなんでも屋 (#424)', () => {
   });
 
   it('歩けないマスの店を弾く', () => {
-    // 建物の屋根の上 (囲いをやめたので外周は草地 = 歩ける)。
-    expect(interiorWalkableAt(v, 18, 18)).toBe(false);
-    expect(() => setInteriors([{ ...v, shop: { x: 18, y: 18, town: { x: spawn2.x, y: spawn2.y } } }], [])).toThrow(InteriorError);
+    // 宿屋の屋根の上 (囲いをやめたので外周は草地 = 歩ける)。
+    expect(interiorWalkableAt(v, 8, 6)).toBe(false);
+    expect(() => setInteriors([{ ...v, shop: { x: 8, y: 6, town: { x: spawn2.x, y: spawn2.y } } }], [])).toThrow(InteriorError);
   });
 
   it('宿屋と店は別のマス (同じだとどちらが開くのか決まらない)', () => {
@@ -325,19 +326,20 @@ describe('端から出る (#626)', () => {
   const v3 = starterTownInterior(spawn3);
 
   it('マップの外へ踏み出したときだけ出る先を返す', () => {
-    expect(interiorExitFor(v3, 32, 64)).toEqual({ mapId: 'world', x: spawn3.x, y: spawn3.y + 1 }); // 下の端の外
-    expect(interiorExitFor(v3, -1, 30)).toBeDefined(); // 左の端の外
-    expect(interiorExitFor(v3, 32, 30)).toBeUndefined(); // 中を歩く分には出ない
+    expect(interiorExitFor(v3, 15, 32)).toEqual({ mapId: 'world', x: spawn3.x, y: spawn3.y + 1 }); // 下の端の外
+    expect(interiorExitFor(v3, -1, 15)).toBeDefined(); // 左の端の外
+    expect(interiorExitFor(v3, 15, 30)).toBeUndefined(); // 中を歩く分には出ない
   });
 
   it('exitTo が無いマップは端で止まる (囲われた内部)', () => {
     const { exitTo: _e, ...walled } = v3;
-    expect(interiorExitFor(walled as typeof v3, 32, 64)).toBeUndefined();
+    expect(interiorExitFor(walled as typeof v3, 15, 32)).toBeUndefined();
   });
 
   it('村は囲われていない — どの端からでも出られる', () => {
     // 端の外はどこでも exitTo が返る (出口 1 マスを探させない)。
-    for (const [x, y] of [[0, -1], [63, -1], [-1, 0], [64, 63], [10, 64]] as const) {
+    const S = v3.size;
+    for (const [x, y] of [[0, -1], [S - 1, -1], [-1, 0], [S, S - 1], [10, S]] as const) {
       expect(interiorExitFor(v3, x, y), `(${x},${y})`).toBeDefined();
     }
   });

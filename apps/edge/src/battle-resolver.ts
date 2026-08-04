@@ -291,6 +291,31 @@ export interface MoveResult {
  * 歩行では PDS を触らない (街/エンカウントの時だけ書く) = 高速。座標・遭遇・tier は署名/秘密で偽造不可。
  * token 未指定/失効時は gameState から位置を再同期する (稀な PDS 読み)。
  */
+/**
+ * 内部マップの範囲外に立ってしまったときの逃げ先を決める (#644 レビュー ★★★)。
+ *
+ * 座標をそのままフィールドに持ち越すと、村のローカル座標が海の上を指して
+ * 一歩も動けなくなる。**必ず歩ける場所**へ戻す。優先順は
+ * 出口 (exitTo) → 直前の街 (lastTown) → 初期スポーン。
+ */
+async function escapeFromOutOfRange(
+  env: ResolverEnv,
+  userDid: string,
+  here: { exitTo?: { mapId: string; x: number; y: number } },
+): Promise<{ mapId: string; x: number; y: number }> {
+  const ok = (mapId: string, x: number, y: number): boolean => {
+    if (mapId !== WORLD_MAP_ID && !isInterior(mapId)) return false;
+    return walkableIn(mapId, x, y, isWalkableAt);
+  };
+  const exit = here.exitTo;
+  if (exit && ok(exit.mapId, exit.x, exit.y)) return { mapId: exit.mapId, x: exit.x, y: exit.y };
+  const rec = await readState(env, userDid);
+  const lt = rec?.state?.lastTown;
+  if (lt && ok(WORLD_MAP_ID, lt.x, lt.y)) return { mapId: WORLD_MAP_ID, x: lt.x, y: lt.y };
+  const spawn = worldOverlay().spawn;
+  return { mapId: WORLD_MAP_ID, x: spawn.x, y: spawn.y };
+}
+
 export async function handleMove(env: ResolverEnv, userDid: string, dx: number, dy: number, token: string | undefined, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<MoveResult> {
   if (![-1, 0, 1].includes(dx) || ![-1, 0, 1].includes(dy) || (dx === 0 && dy === 0)) throw new ResolverError('不正な移動 (隣接1マスのみ)', 400);
 
@@ -309,12 +334,19 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   }
   // 定義が消えた内部マップに取り残されない (エディタで削除された場合)。フィールドへ戻す。
   if (mapId !== WORLD_MAP_ID && !isInterior(mapId)) mapId = WORLD_MAP_ID;
-  // **範囲外に立っている state の保険** (#424 レビュー ★★★)。過去のバグや手編集で
-  // 「内部マップ × 範囲外の座標」になると全方向 400 で一歩も動けなくなるので、
-  // フィールド扱いに倒して脱出させる (位置は既に街の座標なので実害なく戻れる)。
+  // **範囲外に立っている state の保険** (#424 レビュー ★★★)。過去のバグや手編集、
+  // **内部マップを小さく作り直したとき** (#644 で村を 64→32 にした) に
+  // 「内部マップ × 範囲外の座標」になると全方向 400 で一歩も動けなくなる。
+  //
+  // **mapId だけ倒してはいけない** (#644 レビュー ★★★)。村のローカル座標がそのまま
+  // フィールド座標として解釈され、海の真ん中に置かれて 8 方向すべて「進めない地形」=
+  // そらのはね無しでは復帰不能になる。座標も一緒に安全な場所へ戻す。
   if (mapId !== WORLD_MAP_ID) {
     const here = interiorById(mapId)!;
-    if (cx < 0 || cy < 0 || cx >= here.size || cy >= here.size) mapId = WORLD_MAP_ID;
+    if (cx < 0 || cy < 0 || cx >= here.size || cy >= here.size) {
+      const back = await escapeFromOutOfRange(env, userDid, here);
+      mapId = back.mapId; cx = back.x; cy = back.y;
+    }
   }
 
   // 内部マップ (#424) は端で折り返さない (外に出るのはゲートからだけ)。

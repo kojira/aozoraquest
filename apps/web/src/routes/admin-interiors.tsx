@@ -188,7 +188,12 @@ export function AdminInteriors() {
             setGates((gs) => [
               // 同じ入口の重複と、**この村から出る古いゲート**を落とす
               // (端から出る設計 #626 になったので戻りゲートは要らない)。
+              // **村の外を指すようになった行き先も落とす** — 村を小さく作り直すと
+              // (64→32) 旧座標を指すゲートが範囲外になり、検証で弾かれて
+              // 「保存」そのものが通らなくなる (#644 レビュー ★★)。
               ...gs.filter((g) => g.from.mapId !== village.id
+                && !(g.to.mapId === village.id
+                  && (g.to.x < 0 || g.to.y < 0 || g.to.x >= village.size || g.to.y >= village.size))
                 && !gates.some((n) => n.from.mapId === g.from.mapId && n.from.x === g.from.x && n.from.y === g.from.y)),
               ...gates,
             ]);
