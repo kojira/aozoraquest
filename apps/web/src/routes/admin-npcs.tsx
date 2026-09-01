@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   allInteriors,
   allNpcs,
+  danglingRefs,
+  describeDanglingRef,
   facilityAt,
-  gameQuests,
   interiorById,
   interiorWalkableAt,
   isWalkableAt,
@@ -19,7 +20,9 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { loadAuthoredWorld, saveNpcs } from '@/lib/world-authoring';
+import { saveNpcs } from '@/lib/world-authoring';
+import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 
@@ -29,6 +32,10 @@ import { ItemReqInput } from '@/components/admin/item-req-input';
  * NPC はタイルを 1 つ占め、**歩いてぶつかると会話が始まる** (移動判定でも塞ぐ =
  * web と edge の両方が同じ一覧を読む)。絵はドット絵 (`npc:<id>`)、無ければ代替の人形。
  * フィールドのほか内部マップ (#424) にも置ける (#613)。
+ *
+ * 保存先は管理者 PDS の `world.npcs`。マウント時に `loadAuthoredWorld` を回し、読み込めるまで
+ * 編集も保存もさせない (直接開いて保存すると保存済みの編集を上書きする。#603)。
+ * アイテム・内部マップも同時に揃う (フラグ別セリフの持ち物条件と「マップ」の選択肢が引く)。
  */
 
 /** そのマップの範囲内か。フィールドはトーラスなのでどの整数でも範囲内。 */
@@ -65,20 +72,12 @@ export function AdminNpcs() {
   const [drawing, setDrawing] = useState(false);
   // 置けるマップの一覧 (内部マップは loadAuthoredWorld の後に揃う)。
   const [interiors, setInteriorList] = useState<readonly InteriorMap[]>(() => allInteriors());
+  const loaded = useAuthoredWorld(session.agent ?? null, () => {
+    setList(allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
+    setInteriorList(allInteriors());
+  });
 
   const current = useMemo(() => list.find((n) => n.id === sel) ?? null, [list, sel]);
-
-  // **アイテムを先に読む** — フラグ別セリフの持ち物条件が ITEMS を引くので、
-  // この画面を直接開くと保存が「アイテムが存在しない」で落ちる (レビュー ★★★)。
-  useEffect(() => {
-    let cancelled = false;
-    void loadAuthoredWorld(session.agent ?? null).finally(() => {
-      if (cancelled) return;
-      setList(allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
-      setInteriorList(allInteriors());
-    });
-    return () => { cancelled = true; };
-  }, [session.agent]);
 
   const update = useCallback((id: string, patch: Partial<NpcDef>) => {
     setList((xs) => xs.map((n) => (n.id === id ? { ...n, ...patch } : n)));
@@ -125,12 +124,11 @@ export function AdminNpcs() {
 
   const save = useCallback(async () => {
     if (!session.agent) return;
-    // クエストが発注させている NPC を消させない (#423。実装レビュー ★★) —
-    // 参照切れの NPC が 1 人でもいると setGameQuests が全体を落とす設計なので、
-    // 消した NPC と無関係な全クエストまで web/edge から消えてしまう。
-    const orphan = gameQuests().find((q) => !list.some((n) => n.id === q.npcId));
-    if (orphan) {
-      setNote(`保存できない: クエスト「${orphan.title}」が NPC (${orphan.npcId}) に発注させている。先にクエストを消すか発注者を変える`);
+    // クエストが発注させている NPC を消させない (#423 / #603) — 参照切れの NPC が 1 人でも
+    // いると setGameQuests が全体を落とし、消した NPC と無関係な全クエストまで web/edge から消える。
+    const dangling = danglingRefs('npc', list.map((n) => n.id))[0];
+    if (dangling) {
+      setNote(describeDanglingRef(dangling));
       return;
     }
     for (const n of list) {
@@ -183,12 +181,13 @@ export function AdminNpcs() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>NPC</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 人</span>
         <button type="button" onClick={add} style={{ fontSize: '0.85em' }}>＋NPC</button>
-        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
       </div>
@@ -400,6 +399,7 @@ export function AdminNpcs() {
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶか「＋NPC」。</div>
         )}
       </div>
+      </AuthoredWorldGate>
     </div>
   );
 }

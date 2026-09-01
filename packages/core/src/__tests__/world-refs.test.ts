@@ -105,6 +105,14 @@ describe('danglingRefs: 残す id への参照は挙がらない', () => {
     expect(describeDanglingRef(refs[0]!)).toBe(`保存できない: クエスト「たいじ」がモンスター「${MON}」を参照している。先にそちらを直す`);
   });
 
+  it('参照されている NPC を消すと、そのクエストが挙がる (NPC エディタが保存前に引く形)', () => {
+    // n2 を消す = 残すのは n1 だけ。NPC を参照するのはクエストの発注者のみ
+    // (シナリオ条件・店・ゲートに NPC 参照は無い) なので、挙がるのは q2 の 1 本。
+    const refs = danglingRefs('npc', ['n1']);
+    expect(refs).toEqual([{ kind: 'npc', id: 'n2', from: 'クエスト「あつめ」' }]);
+    expect(describeDanglingRef(refs[0]!)).toBe('保存できない: クエスト「あつめ」がNPC「n2」を参照している。先にそちらを直す');
+  });
+
   it('参照されていないモンスターを消しても空', () => {
     expect(danglingRefs('monster', MONSTERS.filter((m) => m.id !== MON2).map((m) => m.id))).toEqual([]);
   });
