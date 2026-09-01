@@ -50,9 +50,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # version は指定せず package.json の packageManager を単一の出所にする
+        # (明示 version と衝突すると ERR_PNPM_BAD_PM_VERSION になる。ci.yml と同じ)
         uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
