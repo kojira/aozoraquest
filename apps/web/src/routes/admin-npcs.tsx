@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  allInteriors,
   allNpcs,
+  facilityAt,
   gameQuests,
+  interiorById,
+  interiorWalkableAt,
   isWalkableAt,
   npcArtKey,
   NpcDataError,
   setNpcs,
   townAt,
+  WORLD_MAP_ID,
   worldOverlay,
+  type InteriorMap,
   type NpcDef,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -18,11 +24,37 @@ import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-edit
 import { ItemReqInput } from '@/components/admin/item-req-input';
 
 /**
- * **NPC エディタ** (#425)。位置・名前・セリフ・絵。
+ * **NPC エディタ** (#425)。マップ・位置・名前・セリフ・絵。
  *
  * NPC はタイルを 1 つ占め、**歩いてぶつかると会話が始まる** (移動判定でも塞ぐ =
  * web と edge の両方が同じ一覧を読む)。絵はドット絵 (`npc:<id>`)、無ければ代替の人形。
+ * フィールドのほか内部マップ (#424) にも置ける (#613)。
  */
+
+/** そのマップの範囲内か。フィールドはトーラスなのでどの整数でも範囲内。 */
+function inMapRange(n: NpcDef, map: InteriorMap | undefined): boolean {
+  if (!map) return true;
+  return n.x >= 0 && n.y >= 0 && n.x < map.size && n.y < map.size;
+}
+
+/**
+ * **保存を拒む置き場所** — 存在しないマップ / マップの外 / 施設 (宿屋・なんでも屋・ゲート) のマス。
+ * 前 2 つは誰にも会えない NPC。施設のマスは、移動判定が NPC を先に見る (ぶつかる = 話す) ので
+ * その施設が二度と使えなくなる。core は読み込み順の都合でここを検証しない
+ * (NPC は内部マップより先に読む) のでエディタが見る。
+ */
+function placementError(n: NpcDef): string | null {
+  const mapId = n.mapId ?? WORLD_MAP_ID;
+  if (mapId !== WORLD_MAP_ID) {
+    const map = interiorById(mapId);
+    if (!map) return `「${n.name}」の内部マップ (${mapId}) が存在しない`;
+    if (!inMapRange(n, map)) return `「${n.name}」が ${map.name} の外にいる (${n.x}, ${n.y}) — 0〜${map.size - 1}`;
+  }
+  const facility = facilityAt(mapId, n.x, n.y);
+  if (facility) return `「${n.name}」が${facility}のマスに重なっている (${n.x}, ${n.y}) — 入口を塞ぐ`;
+  return null;
+}
+
 export function AdminNpcs() {
   const session = useSession();
   const admin = isAdminDid(session.did ?? null);
@@ -31,6 +63,8 @@ export function AdminNpcs() {
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  // 置けるマップの一覧 (内部マップは loadAuthoredWorld の後に揃う)。
+  const [interiors, setInteriorList] = useState<readonly InteriorMap[]>(() => allInteriors());
 
   const current = useMemo(() => list.find((n) => n.id === sel) ?? null, [list, sel]);
 
@@ -39,13 +73,39 @@ export function AdminNpcs() {
   useEffect(() => {
     let cancelled = false;
     void loadAuthoredWorld(session.agent ?? null).finally(() => {
-      if (!cancelled) setList(allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
+      if (cancelled) return;
+      setList(allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
+      setInteriorList(allInteriors());
     });
     return () => { cancelled = true; };
   }, [session.agent]);
 
   const update = useCallback((id: string, patch: Partial<NpcDef>) => {
     setList((xs) => xs.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+    setDirty(true);
+  }, []);
+
+  /**
+   * 置くマップを切り替える。内部マップへ移すときは、そのマップで歩ける空きマスへ
+   * 置き直す (フィールドの座標をそのまま持ち込むと大抵はマップの外になる)。
+   */
+  const setMap = useCallback((id: string, mapId: string) => {
+    setList((xs) => xs.map((n) => {
+      if (n.id !== id) return n;
+      const { mapId: _old, ...rest } = n;
+      if (mapId === WORLD_MAP_ID) return rest;
+      const map = interiorById(mapId);
+      let { x, y } = n;
+      if (map && !inMapRange(n, map)) {
+        // 別の NPC と施設のマスは避ける (施設は placementError と同じ判定 = 保存で弾かれる場所)。
+        const taken = (px: number, py: number) => !!facilityAt(mapId, px, py)
+          || xs.some((o) => o.id !== id && (o.mapId ?? WORLD_MAP_ID) === mapId && o.x === px && o.y === py);
+        outer: for (let py = 0; py < map.size; py++) for (let px = 0; px < map.size; px++) {
+          if (interiorWalkableAt(map, px, py) && !taken(px, py)) { x = px; y = py; break outer; }
+        }
+      }
+      return { ...rest, mapId, x, y };
+    }));
     setDirty(true);
   }, []);
 
@@ -72,6 +132,10 @@ export function AdminNpcs() {
     if (orphan) {
       setNote(`保存できない: クエスト「${orphan.title}」が NPC (${orphan.npcId}) に発注させている。先にクエストを消すか発注者を変える`);
       return;
+    }
+    for (const n of list) {
+      const err = placementError(n);
+      if (err) { setNote(`保存できない: ${err}`); return; }
     }
     try {
       await saveNpcs(session.agent, list);
@@ -101,11 +165,21 @@ export function AdminNpcs() {
   const placeNote = (n: NpcDef): string | null => {
     // 置き場所の落とし穴を可視化する。保存は拒否しない (意図的な配置がありうる) が、
     // 「海の上の人」「街の入口を塞ぐ人」は大抵ミスなので気づけるようにする。
+    // マップの外・存在しないマップ・施設のマスは保存で拒む (placementError)。
+    const err = placementError(n);
+    if (err) return `⚠ ${err} (保存できない)`;
+    const map = n.mapId && n.mapId !== WORLD_MAP_ID ? interiorById(n.mapId) : undefined;
+    if (map) {
+      if (!interiorWalkableAt(map, n.x, n.y)) return '⚠ 歩けないマスの上にいる (だれもぶつかれない = 話せない)';
+      return null;
+    }
     if (!isWalkableAt(n.x, n.y)) return '⚠ 歩けないマスの上にいる (だれもぶつかれない = 話せない)';
     const t = townAt(n.x, n.y);
     if (t) return `⚠ 街 (${t.name}) のマスに重なっている (入口を塞ぐ)`;
     return null;
   };
+  const mapLabel = (mapId: string | undefined): string =>
+    !mapId || mapId === WORLD_MAP_ID ? 'フィールド' : interiorById(mapId)?.name ?? mapId;
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
@@ -136,7 +210,9 @@ export function AdminNpcs() {
               }}
             >
               <span style={{ flex: 1 }}>{n.name}</span>
-              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>({n.x},{n.y})</span>
+              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>
+                {n.mapId && n.mapId !== WORLD_MAP_ID ? `${mapLabel(n.mapId)} ` : ''}({n.x},{n.y})
+              </span>
             </button>
           ))}
           {list.length === 0 && (
@@ -169,13 +245,27 @@ export function AdminNpcs() {
               </span>
             </div>
             {field('なまえ', <input value={current.name} onChange={(e) => update(current.id, { name: e.target.value })} />)}
+            {field('マップ', (
+              <select value={current.mapId ?? WORLD_MAP_ID} onChange={(e) => setMap(current.id, e.target.value)}>
+                <option value={WORLD_MAP_ID}>フィールド</option>
+                {interiors.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.id})</option>)}
+                {/* 消えたマップに居る NPC も選択肢に残す (選べないと直しようがない) */}
+                {current.mapId && current.mapId !== WORLD_MAP_ID && !interiorById(current.mapId) && (
+                  <option value={current.mapId}>{current.mapId} (存在しない)</option>
+                )}
+              </select>
+            ))}
             {field('位置', (
               <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
                 x
                 <input type="number" value={current.x} onChange={(e) => update(current.id, { x: Number(e.target.value) })} style={{ width: '5.5em' }} />
                 y
                 <input type="number" value={current.y} onChange={(e) => update(current.id, { y: Number(e.target.value) })} style={{ width: '5.5em' }} />
-                <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>マップエディタの座標表示と同じ</span>
+                <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
+                  {current.mapId && current.mapId !== WORLD_MAP_ID
+                    ? `内部マップエディタの座標 (0〜${(interiorById(current.mapId)?.size ?? 1) - 1})`
+                    : 'マップエディタの座標表示と同じ'}
+                </span>
               </span>
             ))}
             {placeNote(current) && (

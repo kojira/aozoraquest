@@ -12,6 +12,7 @@ import {
   WORLD_MAP_ID,
   allGates,
   allInteriors,
+  facilityAt,
   gateAt,
   gateOpen,
   innAt,
@@ -29,7 +30,8 @@ import {
   type InteriorMap,
 } from '../interior.js';
 import { BASE_PALETTE } from '../world-map.js';
-import { worldOverlay } from '../world.js';
+import { isWalkableAt, worldOverlay } from '../world.js';
+import { allNpcs, npcAt, npcsOn, setNpcs, NpcDataError } from '../npc-data.js';
 import { starterTownInterior, starterTownGates } from '../interior-samples.js';
 
 const FLOOR = BASE_PALETTE.indexOf('plains');
@@ -346,5 +348,77 @@ describe('端から出る (#626)', () => {
 
   it('出る先が存在しない内部マップだと保存できない', () => {
     expect(() => setInteriors([{ ...v3, exitTo: { mapId: 'ghost', x: 0, y: 0 } }], [])).toThrow(InteriorError);
+  });
+});
+
+describe('内部マップの NPC (#613)', () => {
+  afterEach(() => { setInteriors(null, null); setNpcs(null); });
+
+  it('内部マップに置いた NPC のマスは walkableIn で塞がり、隣接から npcAt で引ける', () => {
+    setInteriors([room()], []);
+    expect(walkableIn('in-1', 3, 3, isWalkableAt)).toBe(true);
+    setNpcs([{ id: 'n', name: 'ばんへい', mapId: 'in-1', x: 3, y: 3, lines: ['とまれ。'] }]);
+    expect(walkableIn('in-1', 3, 3, isWalkableAt), 'NPC のマスは塞がる').toBe(false);
+    expect(walkableIn('in-1', 4, 3, isWalkableAt), '隣のマスは歩ける').toBe(true);
+    // 隣から「ぶつかる」= その先のマスを引く
+    expect(npcAt('in-1', 3, 3)?.name).toBe('ばんへい');
+    expect(npcAt('in-1', 4, 3)).toBeUndefined();
+    // 内部マップの NPC はフィールドの同じ座標には現れない (幽霊にならない)
+    expect(npcAt(WORLD_MAP_ID, 3, 3)).toBeUndefined();
+    expect(npcsOn('in-1').map((n) => n.id)).toEqual(['n']);
+    expect(npcsOn(WORLD_MAP_ID)).toEqual([]);
+    // 宿屋・店・ゲート入口の検証に使う interiorWalkableAt は NPC を見ない
+    expect(interiorWalkableAt(interiorById('in-1')!, 3, 3)).toBe(true);
+  });
+
+  it('施設 (宿屋 / なんでも屋 / ゲート) のマスを facilityAt で引ける — NPC を置くと施設が使えなくなるのでエディタが避ける', () => {
+    const town = worldOverlay().towns[0]!;
+    setInteriors(
+      [{ ...room(), inn: { x: 2, y: 2, price: 5 }, shop: { x: 3, y: 2, town: { x: town.x, y: town.y } } }],
+      [{ from: { mapId: 'in-1', x: 4, y: 4 }, to: { mapId: WORLD_MAP_ID, x: town.x, y: town.y } },
+       { from: { mapId: WORLD_MAP_ID, x: town.x, y: town.y }, to: { mapId: 'in-1', x: 5, y: 5 } }],
+    );
+    expect(facilityAt('in-1', 2, 2)).toBe('宿屋');
+    expect(facilityAt('in-1', 3, 2)).toBe('なんでも屋');
+    expect(facilityAt('in-1', 4, 4)).toBe('ゲート');
+    expect(facilityAt(WORLD_MAP_ID, town.x, town.y)).toBe('ゲート');
+    expect(facilityAt('in-1', 5, 5)).toBeUndefined(); // ゲートの出口は施設ではない
+    expect(facilityAt('in-1', 3, 3)).toBeUndefined();
+    // 施設のマスに NPC が立つと、移動判定は NPC が先に当たる (= 施設が使えない)。
+    // core はこれを弾かない (読み込み順の都合) ので、エディタが facilityAt で避ける。
+    setNpcs([{ id: 'n', name: 'じゃま', mapId: 'in-1', x: 2, y: 2, lines: ['…'] }]);
+    expect(walkableIn('in-1', 2, 2, isWalkableAt)).toBe(false);
+    expect(innAt('in-1', 2, 2)).toBeDefined();
+  });
+
+  it('mapId の無い旧レコードはフィールドの NPC として読める', () => {
+    setInteriors([room()], []);
+    // フィールドで歩けるマスを探す
+    let X = 0, Y = 0;
+    outer: for (let y = 300; y < 340; y++) for (let x = 200; x < 240; x++) {
+      if (isWalkableAt(x, y)) { X = x; Y = y; break outer; }
+    }
+    setNpcs([{ id: 'old', name: 'むらびと', x: X, y: Y, lines: ['やあ。'] }]);
+    expect(allNpcs()[0]?.mapId).toBeUndefined();
+    expect(npcAt(WORLD_MAP_ID, X, Y)?.id).toBe('old');
+    expect(walkableIn(WORLD_MAP_ID, X, Y, isWalkableAt)).toBe(false);
+    expect(npcsOn(WORLD_MAP_ID).map((n) => n.id)).toEqual(['old']);
+    // 同じ座標でも内部マップには居ない
+    expect(npcAt('in-1', X, Y)).toBeUndefined();
+    expect(walkableIn('in-1', Math.min(X, 6), Math.min(Y, 6), isWalkableAt)).toBe(true);
+  });
+
+  it('内部マップの座標は折り返さない (フィールドと別の規則)', () => {
+    setInteriors([room()], []);
+    setNpcs([{ id: 'n', name: 'ばんへい', mapId: 'in-1', x: 3, y: 3, lines: ['とまれ。'] }]);
+    expect(npcAt('in-1', 3 + 1024, 3)).toBeUndefined();
+    expect(npcAt('in-1', 3, 3 - 1024)).toBeUndefined();
+  });
+
+  it('同じマスでもマップが違えば別の NPC を置ける / 同じマップの同じマスは弾く', () => {
+    const a = { id: 'a', name: 'あ', mapId: 'in-1', x: 3, y: 3, lines: ['や'] };
+    expect(() => setNpcs([a, { ...a, id: 'b', mapId: 'in-2' }])).not.toThrow();
+    expect(() => setNpcs([a, { ...a, id: 'b' }])).toThrow(NpcDataError);
+    expect(() => setNpcs([{ ...a, mapId: ' ' }])).toThrow(NpcDataError);
   });
 });

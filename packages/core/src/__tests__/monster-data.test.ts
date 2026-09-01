@@ -340,7 +340,7 @@ describe('NPC (#425)', () => {
     }
     expect(core.isWalkableAt(X, Y)).toBe(true);
     core.setNpcs([{ id: 'v1', name: 'むらびと', x: X, y: Y, lines: ['こんにちは。'] }]);
-    expect(core.npcAt(X, Y)?.name).toBe('むらびと');
+    expect(core.npcAt(core.WORLD_MAP_ID, X, Y)?.name).toBe('むらびと');
     expect(core.isWalkableAt(X, Y), 'NPC のマスは塞がるはず').toBe(false);
     core.setNpcs(null);
     expect(core.isWalkableAt(X, Y)).toBe(true);
@@ -358,6 +358,6 @@ describe('NPC (#425)', () => {
 
   it('座標はトーラスで引ける', () => {
     core.setNpcs([{ id: 'w', name: 'はし', x: 1024 + 3, y: -2, lines: ['まるまる。'] }]);
-    expect(core.npcAt(3, 1022)?.id).toBe('w');
+    expect(core.npcAt(core.WORLD_MAP_ID, 3, 1022)?.id).toBe('w');
   });
 });
