@@ -1,19 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   allNpcs,
+  danglingRefs,
+  describeDanglingRef,
   gameQuests,
   ITEMS,
   MONSTERS,
   QuestDataError,
-  scenarioEvents,
   setGameQuests,
   type GameQuestDef,
   type QuestObjective,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
-import { loadAuthoredWorld, saveGameQuests } from '@/lib/world-authoring';
+import { saveGameQuests } from '@/lib/world-authoring';
+import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 
 /**
@@ -31,20 +34,12 @@ export function AdminQuests() {
   const [sel, setSel] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [loaded, setLoaded] = useState(false);
 
-  // **保存済みレコードを必ず読み込んでから編集させる** (実装レビュー ★★)。
-  // メモリの gameQuests() は /world か /admin/map を先に開いた時しか埋まっておらず、
-  // この画面を直接開いて保存すると空リストで world.quests を上書き = 既存クエスト全損する。
-  useEffect(() => {
-    let cancelled = false;
-    void loadAuthoredWorld(session.agent ?? null).finally(() => {
-      if (cancelled) return;
-      setList(gameQuests().map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}) })));
-      setLoaded(true);
-    });
-    return () => { cancelled = true; };
-  }, [session.agent]);
+  // 保存済みレコードを読み込むまで保存させない (この画面を直接開いて保存すると
+  // 空リストで world.quests を上書き = 既存クエスト全損する)。
+  const loaded = useAuthoredWorld(session.agent ?? null, () => {
+    setList(gameQuests().map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}) })));
+  });
 
   const npcs = useMemo(() => allNpcs(), [loaded]);
   const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), [loaded]);
@@ -77,11 +72,9 @@ export function AdminQuests() {
     if (!session.agent) return;
     // シナリオ (#545) が条件にしているクエストを消させない — 参照切れが 1 件でもあると
     // setScenario が全体を落とし、**フラグが二度と立たなくなる** (解禁クエストも永久ロック)。
-    const orphan = scenarioEvents().find((e) =>
-      e.when.some((c) => c.kind === 'questDone' && !list.some((q) => q.id === c.questId)),
-    );
-    if (orphan) {
-      setNote(`保存できない: シナリオ「${orphan.title}」が消したクエストを条件にしている。先にシナリオを直す`);
+    const dangling = danglingRefs('quest', list.map((q) => q.id))[0];
+    if (dangling) {
+      setNote(describeDanglingRef(dangling));
       return;
     }
     try {
@@ -154,6 +147,7 @@ export function AdminQuests() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>クエスト</strong>
@@ -354,6 +348,7 @@ export function AdminQuests() {
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶか「＋クエスト」。</div>
         )}
       </div>
+      </AuthoredWorldGate>
     </div>
   );
 }
