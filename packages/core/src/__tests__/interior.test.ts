@@ -12,6 +12,7 @@ import {
   WORLD_MAP_ID,
   allGates,
   allInteriors,
+  facilityAt,
   gateAt,
   gateOpen,
   innAt,
@@ -368,6 +369,26 @@ describe('内部マップの NPC (#613)', () => {
     expect(npcsOn(WORLD_MAP_ID)).toEqual([]);
     // 宿屋・店・ゲート入口の検証に使う interiorWalkableAt は NPC を見ない
     expect(interiorWalkableAt(interiorById('in-1')!, 3, 3)).toBe(true);
+  });
+
+  it('施設 (宿屋 / なんでも屋 / ゲート) のマスを facilityAt で引ける — NPC を置くと施設が使えなくなるのでエディタが避ける', () => {
+    const town = worldOverlay().towns[0]!;
+    setInteriors(
+      [{ ...room(), inn: { x: 2, y: 2, price: 5 }, shop: { x: 3, y: 2, town: { x: town.x, y: town.y } } }],
+      [{ from: { mapId: 'in-1', x: 4, y: 4 }, to: { mapId: WORLD_MAP_ID, x: town.x, y: town.y } },
+       { from: { mapId: WORLD_MAP_ID, x: town.x, y: town.y }, to: { mapId: 'in-1', x: 5, y: 5 } }],
+    );
+    expect(facilityAt('in-1', 2, 2)).toBe('宿屋');
+    expect(facilityAt('in-1', 3, 2)).toBe('なんでも屋');
+    expect(facilityAt('in-1', 4, 4)).toBe('ゲート');
+    expect(facilityAt(WORLD_MAP_ID, town.x, town.y)).toBe('ゲート');
+    expect(facilityAt('in-1', 5, 5)).toBeUndefined(); // ゲートの出口は施設ではない
+    expect(facilityAt('in-1', 3, 3)).toBeUndefined();
+    // 施設のマスに NPC が立つと、移動判定は NPC が先に当たる (= 施設が使えない)。
+    // core はこれを弾かない (読み込み順の都合) ので、エディタが facilityAt で避ける。
+    setNpcs([{ id: 'n', name: 'じゃま', mapId: 'in-1', x: 2, y: 2, lines: ['…'] }]);
+    expect(walkableIn('in-1', 2, 2, isWalkableAt)).toBe(false);
+    expect(innAt('in-1', 2, 2)).toBeDefined();
   });
 
   it('mapId の無い旧レコードはフィールドの NPC として読める', () => {

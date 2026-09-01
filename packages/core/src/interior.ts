@@ -279,6 +279,23 @@ export function interiorShopAt(mapId: string, x: number, y: number): NonNullable
   return m.shop.x === x && m.shop.y === y ? m.shop : undefined;
 }
 
+/** そのマスにある施設の名前 (エディタの警告文にそのまま使う)。 */
+export type FacilityName = '宿屋' | 'なんでも屋' | 'ゲート';
+
+/**
+ * **そのマスの施設** (宿屋 / なんでも屋 / ゲート)。無ければ undefined。
+ *
+ * 移動判定は NPC を施設より先に見る (ぶつかる = 話す) ので、施設のマスに NPC を
+ * 置くとその施設は二度と使えない。NPC エディタが置き場所を避ける判定をここ 1 か所に持つ
+ * (フィールドのゲートも同じ理由で塞がる)。
+ */
+export function facilityAt(mapId: string, x: number, y: number): FacilityName | undefined {
+  if (innAt(mapId, x, y)) return '宿屋';
+  if (interiorShopAt(mapId, x, y)) return 'なんでも屋';
+  if (gateAt(mapId, x, y)) return 'ゲート';
+  return undefined;
+}
+
 /** そのマップが内部か (mapId が未知なら false = フィールド扱いに倒す)。 */
 export function isInterior(mapId: string | undefined): boolean {
   return !!mapId && mapId !== WORLD_MAP_ID && interiors.has(mapId);

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   allInteriors,
   allNpcs,
+  facilityAt,
   gameQuests,
   interiorById,
   interiorWalkableAt,
@@ -37,15 +38,20 @@ function inMapRange(n: NpcDef, map: InteriorMap | undefined): boolean {
 }
 
 /**
- * **保存を拒む置き場所** — 存在しないマップ / マップの外。どちらも誰にも会えない NPC で、
- * core は読み込み順の都合でここを検証しない (NPC は内部マップより先に読む) のでエディタが見る。
+ * **保存を拒む置き場所** — 存在しないマップ / マップの外 / 施設 (宿屋・なんでも屋・ゲート) のマス。
+ * 前 2 つは誰にも会えない NPC。施設のマスは、移動判定が NPC を先に見る (ぶつかる = 話す) ので
+ * その施設が二度と使えなくなる。core は読み込み順の都合でここを検証しない
+ * (NPC は内部マップより先に読む) のでエディタが見る。
  */
 function placementError(n: NpcDef): string | null {
   const mapId = n.mapId ?? WORLD_MAP_ID;
-  if (mapId === WORLD_MAP_ID) return null;
-  const map = interiorById(mapId);
-  if (!map) return `「${n.name}」の内部マップ (${mapId}) が存在しない`;
-  if (!inMapRange(n, map)) return `「${n.name}」が ${map.name} の外にいる (${n.x}, ${n.y}) — 0〜${map.size - 1}`;
+  if (mapId !== WORLD_MAP_ID) {
+    const map = interiorById(mapId);
+    if (!map) return `「${n.name}」の内部マップ (${mapId}) が存在しない`;
+    if (!inMapRange(n, map)) return `「${n.name}」が ${map.name} の外にいる (${n.x}, ${n.y}) — 0〜${map.size - 1}`;
+  }
+  const facility = facilityAt(mapId, n.x, n.y);
+  if (facility) return `「${n.name}」が${facility}のマスに重なっている (${n.x}, ${n.y}) — 入口を塞ぐ`;
   return null;
 }
 
@@ -91,7 +97,9 @@ export function AdminNpcs() {
       const map = interiorById(mapId);
       let { x, y } = n;
       if (map && !inMapRange(n, map)) {
-        const taken = (px: number, py: number) => xs.some((o) => o.id !== id && (o.mapId ?? WORLD_MAP_ID) === mapId && o.x === px && o.y === py);
+        // 別の NPC と施設のマスは避ける (施設は placementError と同じ判定 = 保存で弾かれる場所)。
+        const taken = (px: number, py: number) => !!facilityAt(mapId, px, py)
+          || xs.some((o) => o.id !== id && (o.mapId ?? WORLD_MAP_ID) === mapId && o.x === px && o.y === py);
         outer: for (let py = 0; py < map.size; py++) for (let px = 0; px < map.size; px++) {
           if (interiorWalkableAt(map, px, py) && !taken(px, py)) { x = px; y = py; break outer; }
         }
@@ -157,7 +165,7 @@ export function AdminNpcs() {
   const placeNote = (n: NpcDef): string | null => {
     // 置き場所の落とし穴を可視化する。保存は拒否しない (意図的な配置がありうる) が、
     // 「海の上の人」「街の入口を塞ぐ人」は大抵ミスなので気づけるようにする。
-    // マップの外・存在しないマップは保存で拒む (placementError)。
+    // マップの外・存在しないマップ・施設のマスは保存で拒む (placementError)。
     const err = placementError(n);
     if (err) return `⚠ ${err} (保存できない)`;
     const map = n.mapId && n.mapId !== WORLD_MAP_ID ? interiorById(n.mapId) : undefined;
