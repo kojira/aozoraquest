@@ -12,6 +12,9 @@ import {
   npcArtKey,
   NpcDataError,
   setNpcs,
+  starterTownNpcs,
+  starterTownNpcsPlacementError,
+  STARTER_TOWN_ID,
   townAt,
   WORLD_MAP_ID,
   worldOverlay,
@@ -122,6 +125,29 @@ export function AdminNpcs() {
     setDirty(true);
   }, [list]);
 
+  /**
+   * **同梱の村人を入れる** (#656)。admin-interiors の「はじまりの村を入れる」と同じ流儀:
+   * id が同じ村人は置き換え、他の NPC は残す。反映は「保存」(自動保存しない)。
+   * 村が無い / 旧版 (大きさが違う) なら入れさせない — 判定は core (`starterTownNpcsPlacementError`)
+   * が 1 か所で持つ。旧版に入れると保存は通るのに村人が壁の中に立つ。
+   */
+  const insertVillagers = useCallback(() => {
+    const village = interiorById(STARTER_TOWN_ID);
+    const blocked = starterTownNpcsPlacementError(village);
+    if (blocked || !village) {
+      setNote(blocked);
+      return;
+    }
+    const villagers = starterTownNpcs();
+    const ids = new Set(villagers.map((n) => n.id));
+    const existing = list.some((n) => ids.has(n.id));
+    if (existing && !window.confirm(`「${village.name}」の村人を最新の同梱版で置き換える？\nこの村人たちに加えた編集は消える`)) return;
+    setList((xs) => [...xs.filter((n) => !ids.has(n.id)), ...villagers]);
+    setSel(villagers[0]?.id ?? null);
+    setDirty(true);
+    setNote(`「${village.name}」の村人 ${villagers.length} 人を${existing ? '入れ直した' : '入れた'}。保存すると村に立つ`);
+  }, [list]);
+
   const save = useCallback(async () => {
     if (!session.agent) return;
     // クエストが発注させている NPC を消させない (#423 / #603) — 参照切れの NPC が 1 人でも
@@ -187,6 +213,7 @@ export function AdminNpcs() {
         <strong>NPC</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 人</span>
         <button type="button" onClick={add} style={{ fontSize: '0.85em' }}>＋NPC</button>
+        <button type="button" onClick={insertVillagers} style={{ fontSize: '0.85em' }}>ふたばの村の村人を入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>

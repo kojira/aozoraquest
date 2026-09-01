@@ -24,6 +24,7 @@
  * 井戸・柵・花壇・木を散らして、どこにいるか分かる目印を作る。
  */
 import type { Gate, InteriorMap } from './interior.js';
+import type { NpcDef } from './npc-data.js';
 import type { WorldPart } from './world-map.js';
 
 export const STARTER_TOWN_ID = 'futaba-village';
@@ -168,4 +169,80 @@ export function starterTownGates(town: { x: number; y: number }): Gate[] {
   return [
     { from: { mapId: 'world', x: town.x, y: town.y }, to: { mapId: STARTER_TOWN_ID, ...STARTER_TOWN_ENTRANCE } },
   ];
+}
+
+/**
+ * **同梱の村人** (#656)。宿屋となんでも屋だけでは人がいない村になるので、
+ * 話しかけられる村人を数人置く。`/admin/npcs` の「ふたばの村の村人を入れる」で差し込み、
+ * id が同じものは置き換える (村を直したときに入れ直せる)。
+ *
+ * id は固定クエストの発注元 (`GameQuestDef.npcId`) として参照されるので**変えない**。
+ *
+ * 位置は `buildStarterTownTiles` の地形に合わせる: 歩けるマス / 施設 (宿屋・店・入口) の
+ * 無いマス / 村の端 (歩けば外へ出る外周) でないマス / 幅 1 の道 (y=11, y=17) の上でない
+ * マス (道の上に立つと通せんぼになる)。テストで固定する。
+ *
+ * セリフは既存 UI (チュートリアル・宿屋・なんでも屋) と用語を合わせる。宿代は
+ * `STARTER_TOWN_INN.price` から作る (数値を二重に持たない)。
+ */
+export function starterTownNpcs(): NpcDef[] {
+  const mapId = STARTER_TOWN_ID;
+  return [
+    {
+      // 広場の井戸のそば。村の顔。
+      id: 'futaba-elder', name: 'むらおさ', mapId, x: 14, y: 21,
+      lines: [
+        'ようこそ ふたばの村へ。わしが この村の むらおさじゃ。',
+        '村の そとには スライムが 出る。むりは するなよ。',
+      ],
+    },
+    {
+      // 宿屋の扉の右下 (東西の道は塞がない)。
+      id: 'futaba-innkeeper-wife', name: 'やどやの おかみ', mapId, x: 9, y: 12,
+      lines: [
+        `やどやは ひとばん パワー ${STARTER_TOWN_INN.price} で とまれるよ。HP も MP も ぜんかいさ。`,
+        'つかれたら いつでも おいで。',
+      ],
+    },
+    {
+      // なんでも屋の扉の左下。
+      id: 'futaba-shopfront', name: 'なんでも屋の むすめ', mapId, x: 22, y: 12,
+      lines: [
+        'なんでも屋は 素材と あおぞらパワーで そうびを つくってくれるよ。',
+        'いらない素材は ひきとって パワーに かえてくれるんだ。',
+      ],
+    },
+    {
+      // 入口 (南の通り) のそば。降り立ってすぐ会う。
+      id: 'futaba-kid', name: 'こども', mapId, x: 17, y: 29,
+      lines: [
+        '村の はしまで あるくと そとに 出られるよ。',
+        // 敗北時は素材を少し失う (`rollDefeatLoss`)。「戻されるだけ」と言うと嘘になる。
+        'まけると さいごに たちよった 街まで もどされるんだって。もちものも すこし おとすらしい。',
+      ],
+    },
+    {
+      // 西の家の前。
+      id: 'futaba-oldman', name: 'おじいさん', mapId, x: 5, y: 18,
+      lines: [
+        '街に つくと「ちずのかけら」が 手に はいって、ちずが ひろがるそうじゃ。',
+        '🗺 ちずボタンで いつでも たしかめられるぞい。',
+      ],
+    },
+  ];
+}
+
+/**
+ * **村人を入れられる村か** (#656)。入れられなければ理由 (エディタがそのまま出す)。
+ *
+ * 村人の位置は同梱の 32×32 の地形に合わせてあるので、旧版 (64×64) の村レコードが
+ * 残っている環境に入れると、おかみが壁の中に立つ (保存は通ってしまう — 施設と
+ * 範囲しか見ない)。大きさが違う村には入れさせず、先に村を入れ直させる。
+ */
+export function starterTownNpcsPlacementError(village: Pick<InteriorMap, 'size'> | undefined): string | null {
+  if (!village) return '「ふたばの村」がまだ無い。先に内部マップで「はじまりの村を入れる」→ 保存';
+  if (village.size !== STARTER_TOWN_SIZE) {
+    return `「ふたばの村」が旧版 (${village.size}×${village.size})。先に内部マップで「はじまりの村を入れる」で入れ直して 保存してから`;
+  }
+  return null;
 }

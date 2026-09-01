@@ -31,8 +31,16 @@ import {
 } from '../interior.js';
 import { BASE_PALETTE } from '../world-map.js';
 import { isWalkableAt, worldOverlay } from '../world.js';
-import { allNpcs, npcAt, npcsOn, setNpcs, NpcDataError } from '../npc-data.js';
-import { starterTownInterior, starterTownGates } from '../interior-samples.js';
+import { allNpcs, npcAt, npcsOn, setNpcs, MAX_NPC_LINE, NpcDataError } from '../npc-data.js';
+import {
+  starterTownInterior,
+  starterTownGates,
+  starterTownNpcs,
+  starterTownNpcsPlacementError,
+  STARTER_TOWN_ENTRANCE,
+  STARTER_TOWN_ID,
+  STARTER_TOWN_SIZE,
+} from '../interior-samples.js';
 
 const FLOOR = BASE_PALETTE.indexOf('plains');
 const WALL = BASE_PALETTE.indexOf('mountain');
@@ -420,5 +428,90 @@ describe('内部マップの NPC (#613)', () => {
     expect(() => setNpcs([a, { ...a, id: 'b', mapId: 'in-2' }])).not.toThrow();
     expect(() => setNpcs([a, { ...a, id: 'b' }])).toThrow(NpcDataError);
     expect(() => setNpcs([{ ...a, mapId: ' ' }])).toThrow(NpcDataError);
+  });
+});
+
+describe('同梱の村人 (#656)', () => {
+  const spawn = worldOverlay().spawn;
+  const village = starterTownInterior(spawn);
+  const villagers = starterTownNpcs();
+  afterEach(() => { setInteriors(null, null); setNpcs(null); });
+
+  it('4〜5 人いて、全員ふたばの村に立ち、id が一意', () => {
+    expect(villagers.length).toBeGreaterThanOrEqual(4);
+    expect(villagers.length).toBeLessThanOrEqual(5);
+    expect(new Set(villagers.map((n) => n.id)).size).toBe(villagers.length);
+    for (const n of villagers) expect(n.mapId, n.id).toBe(STARTER_TOWN_ID);
+  });
+
+  it('セリフは 1〜2 窓で、上限の長さに収まる (DQ の窓に入る)', () => {
+    for (const n of villagers) {
+      expect(n.lines.length, n.id).toBeGreaterThanOrEqual(1);
+      expect(n.lines.length, n.id).toBeLessThanOrEqual(2);
+      for (const l of n.lines) expect(l.length, `${n.id}: ${l}`).toBeLessThanOrEqual(MAX_NPC_LINE);
+    }
+  });
+
+  it('そのまま setNpcs に通る (壊れた 1 人で全体が落ちない)', () => {
+    expect(() => setNpcs(villagers)).not.toThrow();
+    expect(allNpcs().length).toBe(villagers.length);
+  });
+
+  it('歩けるマス / 施設の無いマス / 村の端でないマス / 互いに重ならない', () => {
+    setInteriors([village], starterTownGates(spawn));
+    const spots = new Set<string>();
+    for (const n of villagers) {
+      expect(interiorWalkableAt(village, n.x, n.y), `${n.id} が歩けないマスに立っている`).toBe(true);
+      expect(facilityAt(STARTER_TOWN_ID, n.x, n.y), `${n.id} が施設のマスに重なっている`).toBeUndefined();
+      // 外周 1 マスは歩けば外へ出る (#626)。そこに立つと出口を塞ぐ。
+      expect(n.x > 0 && n.y > 0 && n.x < village.size - 1 && n.y < village.size - 1, `${n.id} が村の端にいる`).toBe(true);
+      // 降り立つマスに立つと、入った瞬間に人と重なる。
+      expect(n.x === STARTER_TOWN_ENTRANCE.x && n.y === STARTER_TOWN_ENTRANCE.y, `${n.id} が入口に立っている`).toBe(false);
+      const k = `${n.x},${n.y}`;
+      expect(spots.has(k), `${n.id} が別の村人と同じマスにいる`).toBe(false);
+      spots.add(k);
+    }
+  });
+
+  it('村に入れると ぶつかれて (walkableIn が false)、隣から話しかけに行ける', () => {
+    setInteriors([village], starterTownGates(spawn));
+    setNpcs(villagers);
+    for (const n of villagers) {
+      expect(walkableIn(STARTER_TOWN_ID, n.x, n.y, isWalkableAt), `${n.id} のマスが塞がっていない`).toBe(false);
+      expect(npcAt(STARTER_TOWN_ID, n.x, n.y)?.id).toBe(n.id);
+      const reachable = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const)
+        .some(([dx, dy]) => walkableIn(STARTER_TOWN_ID, n.x + dx, n.y + dy, isWalkableAt));
+      expect(reachable, `${n.id} の隣に歩けるマスが無い (話しかけられない)`).toBe(true);
+    }
+  });
+
+  it('幅 1 の道 (宿屋⇄店 / 広場へ抜ける横道) の上に立たない (通せんぼにならない)', () => {
+    // 村人が道を塞ぐと、入口から宿屋・店へ行けなくなりうる。入れた状態で到達性を確かめる。
+    setInteriors([village], starterTownGates(spawn));
+    setNpcs(villagers);
+    const [inGate] = starterTownGates(spawn);
+    const seen = new Set<number>();
+    const q = [[inGate!.to.x, inGate!.to.y] as const];
+    seen.add(inGate!.to.y * village.size + inGate!.to.x);
+    while (q.length) {
+      const [x, y] = q.shift()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        const k = ny * village.size + nx;
+        if (seen.has(k) || !walkableIn(STARTER_TOWN_ID, nx, ny, isWalkableAt)) continue;
+        seen.add(k);
+        q.push([nx, ny]);
+      }
+    }
+    expect(seen.has(village.inn!.y * village.size + village.inn!.x), '宿屋').toBe(true);
+    expect(seen.has(village.shop!.y * village.size + village.shop!.x), '店').toBe(true);
+    expect(seen.size).toBeGreaterThan(700);
+  });
+
+  it('村が無い / 旧版 (大きさが違う) の村には入れさせない (壁の中に立つ)', () => {
+    expect(starterTownNpcsPlacementError(undefined)).toMatch(/まだ無い/);
+    expect(starterTownNpcsPlacementError({ size: 64 })).toMatch(/旧版/);
+    expect(starterTownNpcsPlacementError({ size: STARTER_TOWN_SIZE })).toBeNull();
+    expect(starterTownNpcsPlacementError(village)).toBeNull();
   });
 });
