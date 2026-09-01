@@ -65,13 +65,41 @@ export type EquipKind =
   | 'cloth' // 共用衣 (誰でも)
   | 'charm';
 
+/** 装備補正が乗るステータス。 */
+export type BonusStat = 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp';
+
+/** 補正ステータスの表示名 (単一の出所)。並びは補正一覧の表示順。 */
+export const BONUS_STAT_LABELS: Record<BonusStat, string> = {
+  atk: 'こうげき',
+  def: 'まもり',
+  agi: 'すばやさ',
+  int: 'かしこさ',
+  luk: 'うん',
+  maxHp: 'さいだいHP',
+};
+
+/** 符号付き整数の表示: 正は「+3」、負は「-2」、0 は「0」。
+ *  補正・強化値・「そうび +N」内訳など差分を見せる場所は全部ここを通す
+ *  (`+${v}` の直書きは負数で「+-2」になる)。0 を出すかは呼び出し側が決める。 */
+export function signed(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+/** 補正の一覧表示: 「こうげき +12 すばやさ -2」。0 の項目は出さない。 */
+export function bonusText(bonus: Partial<Record<BonusStat, number>>): string {
+  return (Object.keys(BONUS_STAT_LABELS) as BonusStat[])
+    .filter((k) => (bonus[k] ?? 0) !== 0)
+    .map((k) => `${BONUS_STAT_LABELS[k]} ${signed(bonus[k]!)}`)
+    .join(' ');
+}
+
 export interface EquipmentDef {
   id: string;
   name: string;
   slot: EquipSlot;
   kind: EquipKind;
   /** ステータス加算 (ブレンド・レベル補正の後に平坦加算)。 */
-  bonus: Partial<Record<'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp', number>>;
+  bonus: Partial<Record<BonusStat, number>>;
   /** 使う手の数 (#609)。武器・盾のみ意味を持つ。省略 = 1 (片手)。
    *  武器 + 盾の合計が 2 を超える組合せは装備できない (両手武器 + 盾、両手盾 + 武器)。 */
   hands?: 1 | 2;
@@ -359,7 +387,7 @@ export function isMasterwork(level: number): boolean {
 /** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。 */
 export function leveledName(def: EquipmentDef, level: number): string {
   if (level === 0) return def.name;
-  return `${def.name}${level > 0 ? `+${level}` : `${level}`}`;
+  return `${def.name}${signed(level)}`;
 }
 
 /** 装備中の個体。level 省略時は定義値そのまま (±0 相当)。

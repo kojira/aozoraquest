@@ -4,6 +4,7 @@ import {
   EQUIPMENT_BY_ID,
   ITEMS,
   SALE_TUNING,
+  bonusText,
   canEquip,
   equipHands,
   forgedLevel,
@@ -12,6 +13,7 @@ import {
   jobDisplayName,
   leveledName,
   salePowerFor,
+  signed,
   townShopStock,
   type Archetype,
   type EquipmentDef,
@@ -32,21 +34,6 @@ import type { DialogueLine } from '@/lib/dialogue';
  *   唯一の道 = 過剰なアイテムを燃やすシンク。
  * - 装備できない品も制作・所持は可能 (転職準備 / クエスト交換の材料 — docs/20)。
  */
-
-const STAT_LABELS: Record<string, string> = {
-  atk: 'こうげき',
-  def: 'まもり',
-  agi: 'すばやさ',
-  int: 'かしこさ',
-  luk: 'うん',
-  maxHp: 'さいだいHP',
-};
-
-function bonusText(def: EquipmentDef): string {
-  return Object.entries(def.bonus)
-    .map(([k, v]) => `${STAT_LABELS[k] ?? k} +${v}`)
-    .join(' ');
-}
 
 export type LastShopAction =
   | { kind: 'craft' | 'forge'; piece: CraftedPiece }
@@ -295,12 +282,12 @@ export function ShopModal({
                     {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.8em', color: 'var(--color-muted)' }}>(両手)</span>}
                     {owned.length > 0 && (
                       <span style={{ marginLeft: '0.4em', color: 'var(--color-muted)' }}>
-                        所持 {owned.length}{bestOwned !== null && bestOwned !== 0 ? ` (最高${bestOwned > 0 ? `+${bestOwned}` : bestOwned})` : ''}
+                        所持 {owned.length}{bestOwned !== null && bestOwned !== 0 ? ` (最高${signed(bestOwned)})` : ''}
                       </span>
                     )}
                   </div>
                   <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
-                    {bonusText(def)}
+                    {bonusText(def.bonus)}
                     {def.jobOnly && (
                       <span style={{ marginLeft: '0.5em', color: equipable ? 'var(--color-accent)' : 'var(--color-danger)' }}>
                         (要: {jobDisplayName(def.jobOnly, 'default')})
@@ -359,7 +346,7 @@ export function ShopModal({
                       onClick={() => onForge(def, forgedLevel(forge.level), forge.rkeys)}
                       style={{ fontSize: '0.8em', padding: '0.35em 0.7em', whiteSpace: 'nowrap' }}
                     >
-                      きたえる ({forge.level > 0 ? `+${forge.level}` : forge.level}×2 → +{forgedLevel(forge.level)})
+                      きたえる ({signed(forge.level)}×2 → {signed(forgedLevel(forge.level))})
                     </button>
                   )}
                   {forgeBlockedByEquip && (

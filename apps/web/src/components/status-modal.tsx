@@ -9,6 +9,7 @@ import {
   jobXpToNextLevel,
   leveledName,
   mpGainsFor,
+  signed,
   type Archetype,
   type Combatant,
   type EquipSlot,
@@ -146,7 +147,7 @@ export function StatusModal({
                   key={key}
                   label={label}
                   value={combat[key]}
-                  note={bonus !== 0 ? `そうび ${bonus > 0 ? '+' : ''}${bonus}` : undefined}
+                  note={bonus !== 0 ? `そうび ${signed(bonus)}` : undefined}
                 />
               );
             })}
@@ -246,7 +247,7 @@ function HeroRow({ label, value, max, bonus, color }: { label: string; value: nu
           {value} <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>/ {max}</span>
           {bonus !== 0 && (
             <span style={{ fontFamily: 'inherit', fontSize: '0.68em', fontWeight: 400, color: 'var(--color-accent)', marginLeft: '0.5em' }}>
-              (そうび {bonus > 0 ? '+' : ''}{bonus})
+              (そうび {signed(bonus)})
             </span>
           )}
         </span>
