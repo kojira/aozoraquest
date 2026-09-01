@@ -12,6 +12,7 @@
 
 import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequirement } from './scenario.js';
 import { ITEMS } from './battle.js';
+import { WORLD_MAP_ID } from './map-id.js';
 
 export class NpcDataError extends Error {}
 
@@ -19,7 +20,12 @@ export interface NpcDef {
   id: string;
   /** 名前 (会話の話者として出る)。 */
   name: string;
-  /** 立ち位置 (ワールド座標)。 */
+  /**
+   * **立っているマップ** (#613)。内部マップ (#424) の id、**省略 = フィールド**
+   * (`WORLD_MAP_ID`)。mapId の無い旧レコードは無移行でフィールドの NPC として読める。
+   */
+  mapId?: string;
+  /** 立ち位置 (そのマップの座標。フィールドはトーラスで丸める)。 */
   x: number;
   y: number;
   /** セリフ (1 要素 = 1 窓)。ぶつかるたびに先頭から流す。 */
@@ -52,10 +58,18 @@ export const MAX_NPC_LINE = 120;
 export const MAX_NPCS = 500;
 
 let npcList: NpcDef[] = [];
-let byKey = new Map<number, NpcDef>();
+let byKey = new Map<string, NpcDef>();
 
 const WORLD = 1024;
-const key = (x: number, y: number) => (((y % WORLD) + WORLD) % WORLD) * WORLD + (((x % WORLD) + WORLD) % WORLD);
+const wrapW = (v: number) => ((v % WORLD) + WORLD) % WORLD;
+/** その NPC のマップ (省略 = フィールド)。 */
+const mapOf = (n: Pick<NpcDef, 'mapId'>): string => n.mapId ?? WORLD_MAP_ID;
+/**
+ * マスのキー。フィールドはトーラスで丸め、内部マップは折り返さない (#424 と同じ規則。
+ * 内部で丸めると、範囲外の座標が別のマスに化けて見つからない NPC になる)。
+ */
+const key = (mapId: string, x: number, y: number) =>
+  mapId === WORLD_MAP_ID ? `${WORLD_MAP_ID}:${wrapW(x)},${wrapW(y)}` : `${mapId}:${x},${y}`;
 
 /**
  * NPC 一覧を差し替える。`null` / 空で全解除。
@@ -65,7 +79,7 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
   const next = list ?? [];
   if (next.length > MAX_NPCS) throw new NpcDataError(`NPC が多すぎる (${next.length} > ${MAX_NPCS})`);
   const ids = new Set<string>();
-  const spots = new Set<number>();
+  const spots = new Set<string>();
   for (const n of next) {
     const where = n?.id ?? '(id なし)';
     if (!n || typeof n.id !== 'string' || n.id.trim() === '') throw new NpcDataError('NPC の id が空');
@@ -73,7 +87,12 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
     ids.add(n.id);
     if (typeof n.name !== 'string' || n.name.trim() === '') throw new NpcDataError(`${where}: 名前が空`);
     if (!Number.isInteger(n.x) || !Number.isInteger(n.y)) throw new NpcDataError(`${where}: 座標が整数でない`);
-    const k = key(n.x, n.y);
+    // マップの実在・範囲はここでは見ない — NPC は内部マップより先に読み込まれる
+    // (読み込み順に依存する検証は、順序が変わった日に全 NPC を落とす)。エディタが見る。
+    if (n.mapId !== undefined && (typeof n.mapId !== 'string' || n.mapId.trim() === '')) {
+      throw new NpcDataError(`${where}: マップ id が不正`);
+    }
+    const k = key(mapOf(n), n.x, n.y);
     // **同じマスに 2 人は立てない。** ぶつかったときどちらと話すのか決められない。
     if (spots.has(k)) throw new NpcDataError(`${where}: 同じマスに別の NPC がいる (${n.x}, ${n.y})`);
     spots.add(k);
@@ -102,17 +121,22 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
     }
   }
   npcList = next.map((n) => ({ ...n, lines: [...n.lines], ...(n.altLines ? { altLines: n.altLines.map((a) => ({ ...a, lines: [...a.lines], ...(a.items ? { items: a.items.map((r) => ({ ...r })) } : {}) })) } : {}) }));
-  byKey = new Map(npcList.map((n) => [key(n.x, n.y), n]));
+  byKey = new Map(npcList.map((n) => [key(mapOf(n), n.x, n.y), n]));
 }
 
-/** そのマスの NPC (居なければ undefined)。移動判定と会話の両方が使う。 */
-export function npcAt(x: number, y: number): NpcDef | undefined {
-  return byKey.get(key(x, y));
+/** そのマップ・そのマスの NPC (居なければ undefined)。移動判定と会話の両方が使う。 */
+export function npcAt(mapId: string, x: number, y: number): NpcDef | undefined {
+  return byKey.get(key(mapId, x, y));
 }
 
-/** 全 NPC (描画・エディタ用)。 */
+/** 全 NPC (エディタ用)。 */
 export function allNpcs(): readonly NpcDef[] {
   return npcList;
+}
+
+/** そのマップに立っている NPC (描画用)。フィールドは `WORLD_MAP_ID`。 */
+export function npcsOn(mapId: string): readonly NpcDef[] {
+  return npcList.filter((n) => mapOf(n) === mapId);
 }
 
 /**

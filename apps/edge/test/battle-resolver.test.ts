@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
-import { BASE_PALETTE, setInteriors, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
+import { BASE_PALETTE, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
@@ -289,6 +289,21 @@ describe('内部マップとゲート (#424)', () => {
     // (1,1) の左と上は外周の壁
     await expect(handleMove(env, USER, -1, 0, enter.token, NOW)).rejects.toMatchObject({ status: 400 });
     await expect(handleMove(env, USER, 0, -1, enter.token, NOW)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('内部マップの NPC が立つマスには進めない (400) — 隣は歩ける (#613)', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 3, y: 3 }) }).fn;
+    setInteriors([room()], []);
+    setNpcs([{ id: 'guard', name: 'ばんへい', mapId: 'in-1', x: 4, y: 3, lines: ['とまれ。'] }]);
+    try {
+      await expect(handleMove(env, USER, 1, 0, undefined, NOW)).rejects.toMatchObject({ status: 400 });
+      const r = await handleMove(env, USER, 0, 1, undefined, NOW);
+      expect(r.mapId).toBe('in-1');
+      expect(r.y).toBe(4);
+    } finally {
+      setNpcs(null);
+    }
   });
 
   it('内部マップは端で折り返さない (外周の外へは出られない)', async () => {

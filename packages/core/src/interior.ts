@@ -27,11 +27,12 @@ import { BASE_PALETTE, partWalkable as worldPartWalkable, type WorldPart } from 
 import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequirement } from './scenario.js';
 import { ITEMS } from './battle.js';
 import { townAt } from './world.js';
+import { npcAt } from './npc-data.js';
+import { WORLD_MAP_ID } from './map-id.js';
+
+export { WORLD_MAP_ID };
 
 export class InteriorError extends Error {}
-
-/** フィールドを表す mapId。内部マップはこれ以外の id を持つ。 */
-export const WORLD_MAP_ID = 'world';
 
 export interface InteriorMap {
   /** 一意な id (ゲートの参照先)。 */
@@ -303,7 +304,8 @@ export function interiorTerrainAt(map: InteriorMap, x: number, y: number): Terra
  */
 export function interiorWalkableAt(map: InteriorMap, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.size || y >= map.size) return false;
-  // NPC は内部にも置ける (#425 の座標は将来 mapId 付きにする。今はフィールド座標のみ)。
+  // NPC はここでは見ない (walkableIn が見る)。この関数は宿屋・店・ゲート入口の
+  // 「歩けるマスか」の検証にも使うので、NPC が立っているだけで保存を弾かない。
   const idx = interiorPartAt(map, x, y);
   if (idx !== undefined) {
     // パーツ自身の通行値が最優先 (フィールドと同じ規則)。内部固有のパーツ表があれば
@@ -320,11 +322,15 @@ export function interiorWalkableAt(map: InteriorMap, x: number, y: number): bool
 
 /**
  * マップをまたいで通行判定する。`mapId` が内部でなければフィールドの判定に委ねる。
- * **NPC は今のところフィールドにしか置けない** (NpcDef が mapId を持たない)。
- * 内部に NPC を置けるようにするのは #425 の続きで、そのときここも見るようにする。
+ *
+ * **NPC の立っているマスは内部でも塞ぐ** (#613)。フィールドは `isWalkableAt` が
+ * 同じ `npcAt` を見るので、移動判定はどのマップでもここ 1 本を通せばよい
+ * (web と edge の両方がこれを使う。片方だけだと画面では人がいるのにサーバーは
+ * 素通りさせる、という食い違いになる)。
  */
 export function walkableIn(mapId: string, x: number, y: number, worldWalkable: (x: number, y: number) => boolean): boolean {
   const m = interiorById(mapId);
   if (!m) return worldWalkable(x, y);
+  if (npcAt(m.id, x, y)) return false;
   return interiorWalkableAt(m, x, y);
 }

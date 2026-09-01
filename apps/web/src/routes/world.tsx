@@ -55,7 +55,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { allNpcs, EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -577,9 +577,8 @@ export function World() {
       // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
       // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (読了で受注)、
       // 進行中→達成を試みる (条件検証はサーバー)、達成済み→通常セリフ。
-      // NPC はフィールドにしか置けない (#425 の座標に mapId が無い)。内部で引くと
-      // 同じ座標の NPC が「幽霊」として現れ、戻りゲートを塞ぐこともある (レビュー ★★)。
-      const npc = cur ? undefined : npcAt(nx, ny);
+      // NPC は今いるマップで引く (#613)。内部マップの NPC はフィールドの同じ座標には居ない。
+      const npc = npcAt(cur?.id ?? WORLD_MAP_ID, nx, ny);
       if (npc) {
         const q0 = gameQuestByNpc(npc.id);
         // 解禁フラグ (#545) が立つまで、その NPC は依頼を話さない (通常のセリフに戻る)。
@@ -1355,7 +1354,9 @@ export function World() {
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
     ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => void searchHere() } as WorldMenuCommand]),
     { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
-    { key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) },
+    // ちずは世界地図なので内部では出さない (#613)。内部の座標を世界地図に重ねると
+    // 現在地マーカーが region 0 (左上) に出る誤表示になる。
+    ...(insideHere ? [] : [{ key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) } as WorldMenuCommand]),
     { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
     // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
     ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
@@ -1423,11 +1424,11 @@ export function World() {
 
   // ビューポート内の NPC (#425)。ドット絵 (npc:<id>) → 代替の見た目 (人form) に倒す。
   const npcSprites = [];
-  // NPC はフィールド専用 (#425 の座標に mapId が無い)。内部では描かない。
-  for (const n of insideHere ? [] : allNpcs()) {
-    const vx = wrap(n.x - (ws.x - HALF));
-    const vy = wrap(n.y - (ws.y - HALF));
-    if (vx >= VIEW || vy >= VIEW) continue;
+  // 今いるマップの NPC だけ描く (#613)。内部マップは端で折り返さないので wrap しない。
+  for (const n of npcsOn(insideHere?.id ?? WORLD_MAP_ID)) {
+    const vx = insideHere ? n.x - (ws.x - HALF) : wrap(n.x - (ws.x - HALF));
+    const vy = insideHere ? n.y - (ws.y - HALF) : wrap(n.y - (ws.y - HALF));
+    if (vx < 0 || vy < 0 || vx >= VIEW || vy >= VIEW) continue;
     const art = pixelTile(npcArtKey(n.id));
     npcSprites.push(
       <g key={`npc-${n.id}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
