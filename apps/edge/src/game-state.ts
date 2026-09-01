@@ -185,7 +185,16 @@ export interface RmwOptions {
  * InvalidSwap (別リクエストが割り込んで CID が変わった) の時は最新を読み直して mutate をやり直す。
  * → 「古い意思決定のまま上書き」して二重報酬/二重消費が通るのを防ぐ (§4.1 の契約)。
  * mutate は**副作用を持たず**、毎回新しい state を返す純関数であること (リトライで複数回呼ばれる)。
- * 書き込みトークンが無い/失効は server-pds が ServerWriteError で fail-closed に倒す。
+ * 書き込みトークンが無い/失効は server-pds が fail-closed に倒す (ServerWriteError)。
+ *
+ * **変更なしの契約 (#548)**: mutate が**受け取った state をそのまま返した**ら「何もしない」の合図で、
+ * PDS には書かない (既存の state をそのまま返す)。重複申告・再受注・処理済みの店操作など、
+ * 冪等に弾く経路はすべて `return cur` で表す。判定はここ 1 か所 — 各 mutate に個別の
+ * 「書かない」分岐を持たせない。
+ * 書かない理由は書き込み量: 1 put = サーバーアカウント repo への 1 コミットで、repo 単位で
+ * 直列化される。localStorage が消えた端末が `/me` を開くたびに重複申告が最大 10 件飛ぶと、
+ * 中身の変わらないコミットが 10 個積まれていた。
+ * state がまだ無いとき (init から作った直後) は「変更なし」でも書く — レコードの作成自体が変更。
  */
 export async function readModifyWrite(
   env: GameStateEnv,
@@ -200,7 +209,9 @@ export async function readModifyWrite(
   for (let attempt = 0; attempt <= retries; attempt++) {
     const existing = await readState(env, targetDid);
     const current = existing?.state ?? (await init(targetDid, nowIso));
-    const next: GameState = { ...mutate(current), did: targetDid, version: GAME_STATE_VERSION, updatedAt: nowIso };
+    const mutated = mutate(current);
+    if (existing && mutated === current) return current; // 変更なし: 書かない (契約は doc 参照)
+    const next: GameState = { ...mutated, did: targetDid, version: GAME_STATE_VERSION, updatedAt: nowIso };
     // 既存があればその CID を期待 (CAS)、無ければ null (新規作成のみ) で二重作成も防ぐ。
     const swap = existing ? existing.cid : null;
     try {

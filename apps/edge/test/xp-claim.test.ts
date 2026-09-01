@@ -142,10 +142,26 @@ describe('claimXp (投稿の申告)', () => {
     const store = new Map<string, { value: unknown; cid: string }>();
     globalThis.fetch = pdsWithPost(store);
     const first = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    const cidAfterFirst = store.get(rkeyForDid(DID))!.cid;
     const again = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
     expect(again.granted).toBe(0);
     expect(again.duplicate).toBe(true);
     expect(again.jobXp).toBe(first.jobXp);
+    // **重複は書かない** (#548)。localStorage を失った端末が /me を開くたびに同じ申告を
+    // 最大 10 件送るので、中身の変わらないコミットをサーバー repo に積まない。
+    expect(store.get(rkeyForDid(DID))!.cid).toBe(cidAfterFirst);
+  });
+
+  it('新しい投稿の申告は書く (変更なし判定が本物の申告を落とさない)', async () => {
+    const env = await makeEnv();
+    const store = new Map<string, { value: unknown; cid: string }>();
+    globalThis.fetch = pdsWithPost(store);
+    await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('a') }, NOW);
+    const cidAfterA = store.get(rkeyForDid(DID))!.cid;
+    const b = await claimXp(env, DID, { archetype: 'warrior', postUri: postUri('b') }, NOW);
+    expect(b.granted).toBe(XP_REWARDS.postMatch);
+    expect(store.get(rkeyForDid(DID))!.cid).not.toBe(cidAfterA);
+    expect(stored(store).xpClaims).toContain(`post:${postUri('b')}`);
   });
 
   it('連続日数はサーバーが数える (client の申告を使わない)', async () => {
