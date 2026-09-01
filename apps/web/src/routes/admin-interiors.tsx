@@ -467,8 +467,7 @@ export function AdminInteriors() {
  *
  * 以前は「往復を張る」という名前で、入る道と戻る道の 2 本を同時に作っていた。
  * 端まで歩けば外に出る (#626) ようにしたので**戻り道はもう要らない**うえ、
- * 「往復」が何を指すのか分からない、とオーナーから指摘された。名前と中身を
- * 「入口を作る」に揃える。
+ * 「往復」が何を指すのか分からない。名前と中身を「入口を作る」に揃える。
  */
 function WorldGateForm({ mapId, map, size, onAdd }: { mapId: string; map: InteriorMap; size: number; onAdd: (g: Gate) => void }) {
   const [wx, setWx] = useState(0);

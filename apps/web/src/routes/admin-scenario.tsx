@@ -20,7 +20,7 @@ import { loadAuthoredWorld, loadScenarioRecord, saveScenario } from '@/lib/world
 /**
  * **シナリオエディタ** (#545)。進行を「条件が揃ったらフラグが立つ」の列で書く。
  *
- * 粒度はオーナー判断で **(a) イベント列**。立ったフラグで NPC のセリフ (altLines) と
+ * 粒度は **(a) イベント列**。立ったフラグで NPC のセリフ (altLines) と
  * クエストの解禁 (requireFlags) が変わる。選択肢つき会話や章ごとの地域解禁は
  * この土台の上に後から乗せる。
  *

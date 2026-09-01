@@ -154,7 +154,7 @@ export function ShopModal({
   const openTalk = (lines: DialogueLine[], tutorial = false) => setTalk({ n: ++talkSeq.current, lines, ...(tutorial ? { tutorial } : {}) });
   useEffect(() => {
     // 入店時のあいさつ。**最初の街 (spawn の村) の初回だけ**は店の使い方を話す
-    // チュートリアルにする — 毎回の説明文は出さない (オーナー指摘 2026-07-30)。
+    // チュートリアルにする — 毎回の説明文は出さない。
     // 既読フラグは開いた瞬間でなく**読み終えたとき** (onDone) に立てる — 開いた瞬間に
     // 立てると、途中で閉じたら二度と読めず、StrictMode の二重実行でも即座に既読化して
     // 一度も表示されない (レビュー ★★)。

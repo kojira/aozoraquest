@@ -49,7 +49,7 @@ const VBRIDGE_ART: TileArtRecord = {
 export const PART_PRESETS: readonly PartPreset[] = [
   { name: '城', terrain: 'mountain', walkable: false, art: CASTLE_ART },
   { name: 'ダンジョン入口', terrain: 'mountain', walkable: false, art: DUNGEON_ART },
-  // 縦の橋はオーナーが手描きで増設した実績のある定番 (橋は縦横で絵が要る)。通れる。
+  // 橋は縦横で絵が要るので縦専用を用意する。通れる。
   { name: 'たての橋', terrain: 'bridge', walkable: true, art: VBRIDGE_ART },
 ];
 
