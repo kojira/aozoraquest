@@ -7,7 +7,7 @@ const mem = new Map<string, string>();
   setItem: (k: string, v: string) => { mem.set(k, v); },
   removeItem: (k: string) => { mem.delete(k); },
 } as Storage;
-import { rememberPendingClaim, forgetPendingClaim, pendingClaims, flushPendingClaims, clearPendingClaims } from '../pending-claims';
+import { rememberPendingClaim, forgetPendingClaim, pendingClaims, flushPendingClaims, clearPendingClaims, claimPostXp } from '../pending-claims';
 
 describe('申告できなかった投稿の出し直し (#551)', () => {
   beforeEach(() => clearPendingClaims());
@@ -44,6 +44,43 @@ describe('申告できなかった投稿の出し直し (#551)', () => {
 
   it('古すぎるものは捨てる (サーバーの年齢制限に当たるので送っても無駄)', () => {
     rememberPendingClaim({ postUri: 'at://me/app.bsky.feed.post/old', archetype: 'warrior', at: Date.now() - 5 * 24 * 3600 * 1000 });
+    expect(pendingClaims()).toHaveLength(0);
+  });
+
+  it('申告が落ちたら保留に残り、次の申告機会で出し直され、成功で保留から消える (#548)', async () => {
+    const sent: string[] = [];
+    let online = false;
+    const send = async (c: { postUri: string; archetype: string }) => {
+      sent.push(c.postUri);
+      if (!online) throw new Error('edge down');
+      return { granted: 10, jobXp: 10, duplicate: false, power: 1, streakDays: 1 };
+    };
+    // 1 回目: edge が落ちている → null を返して (投稿処理は続く) 保留に残る
+    const r1 = await claimPostXp(send, { postUri: 'at://me/app.bsky.feed.post/a', archetype: 'warrior' });
+    expect(r1).toBeNull();
+    expect(pendingClaims().map((c) => c.postUri)).toEqual(['at://me/app.bsky.feed.post/a']);
+    // 2 回目 (次の投稿): 復旧している → 先に a を出し直し、b も申告し、保留は空になる
+    online = true;
+    sent.length = 0;
+    const r2 = await claimPostXp(send, { postUri: 'at://me/app.bsky.feed.post/b', archetype: 'warrior' });
+    expect(r2?.granted).toBe(10);
+    expect(sent).toEqual(['at://me/app.bsky.feed.post/a', 'at://me/app.bsky.feed.post/b']);
+    expect(pendingClaims()).toHaveLength(0);
+  });
+
+  it('出し直しが失敗しても今回の申告は試み、落ちたら両方を保留に残す', async () => {
+    rememberPendingClaim({ postUri: 'at://me/app.bsky.feed.post/a', archetype: 'warrior', at: Date.now() });
+    const r = await claimPostXp(async () => { throw new Error('edge down'); }, { postUri: 'at://me/app.bsky.feed.post/b', archetype: 'warrior' });
+    expect(r).toBeNull();
+    expect(pendingClaims().map((c) => c.postUri).sort()).toEqual(['at://me/app.bsky.feed.post/a', 'at://me/app.bsky.feed.post/b']);
+  });
+
+  it('投稿 URI が無くても溜まっている申告は出し直す', async () => {
+    rememberPendingClaim({ postUri: 'at://me/app.bsky.feed.post/a', archetype: 'warrior', at: Date.now() });
+    const sent: string[] = [];
+    const r = await claimPostXp(async (c) => { sent.push(c.postUri); return 1; }, null);
+    expect(r).toBeNull();
+    expect(sent).toEqual(['at://me/app.bsky.feed.post/a']);
     expect(pendingClaims()).toHaveLength(0);
   });
 

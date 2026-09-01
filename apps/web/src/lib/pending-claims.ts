@@ -78,6 +78,31 @@ export async function flushPendingClaims(
   return done;
 }
 
+/**
+ * **投稿の XP を申告する唯一の入口。** 前に落ちた申告を先に出し直し、今回の申告が落ちたら
+ * 覚えておく。post-processor はこれを呼ぶだけで、保留の出し入れを自分では触らない
+ * (申告の経路が増えても保留の扱いが 1 か所に留まる)。
+ *
+ * `send` が投げたら null (投稿処理は続ける — edge が落ちている間でも投稿は成立させたい)。
+ * `c` が null なら出し直しだけ行う。
+ */
+export async function claimPostXp<T>(
+  send: (c: Pick<PendingClaim, 'postUri' | 'archetype'>) => Promise<T>,
+  c: Pick<PendingClaim, 'postUri' | 'archetype'> | null,
+): Promise<T | null> {
+  await flushPendingClaims((p) => send(p).then(() => undefined));
+  if (!c) return null;
+  try {
+    const r = await send(c);
+    forgetPendingClaim(c.postUri);
+    return r;
+  } catch (e) {
+    console.warn('xp claim failed', c.postUri, e);
+    rememberPendingClaim({ ...c, at: Date.now() });
+    return null;
+  }
+}
+
 /** テスト用: 記録を消す。 */
 export function clearPendingClaims(): void {
   try { localStorage.removeItem(KEY); } catch { /* no-op */ }

@@ -162,6 +162,30 @@ describe('game-state (OAuth 権威書き込み)', () => {
     expect(puts).toBe(2); // 1回目 InvalidSwap で再試行 → 2回目 401 で打ち止め (spin しない)
   });
 
+  it('mutate が受け取った state をそのまま返したら書かない (変更なしの契約 #548)', async () => {
+    const env = await makeEnv();
+    let puts = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('getRecord')) return jsonRes(200, { uri: 'x', cid: 'cidA', value: existingRec });
+      puts++;
+      return jsonRes(200, { uri: 'x', cid: 'cidB' });
+    }) as unknown as typeof fetch;
+    const out = await readModifyWrite(env, DID, (c) => c, { now: NOW });
+    expect(puts).toBe(0);
+    expect(out.power).toBe(5); // 既存の state をそのまま返す
+    // 同じ内容でも**別オブジェクト**を返したら書く (同一参照だけが合図。深い比較はしない)
+    await readModifyWrite(env, DID, (c) => ({ ...c }), { now: NOW });
+    expect(puts).toBe(1);
+  });
+
+  it('state が無いときは変更なしでも作成する (レコードの作成自体が変更)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await readModifyWrite(env, DID, (c) => c, { now: NOW });
+    expect(m.store.get(rkeyForDid(DID))).toBeTruthy();
+  });
+
   it('書き込みトークン未 bootstrap は fail-closed (ServerWriteError)', async () => {
     const env = await makeEnv();
     (env as { OAUTH_TOKENS?: KVNamespace }).OAUTH_TOKENS = mockKv(); // 空 = 未 bootstrap
