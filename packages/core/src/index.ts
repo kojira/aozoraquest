@@ -25,6 +25,7 @@ export * from './item-data.js';
 export * from './shop-data.js';
 export * from './npc-data.js';
 export * from './quest-data.js';
+export * from './world-refs.js';
 export * from './part-presets.js';
 export * from './job-data.js';
 export * from './interior.js';
