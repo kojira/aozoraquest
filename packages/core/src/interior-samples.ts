@@ -217,7 +217,8 @@ export function starterTownNpcs(): NpcDef[] {
       id: 'futaba-kid', name: 'こども', mapId, x: 17, y: 29,
       lines: [
         '村の はしまで あるくと そとに 出られるよ。',
-        'たたかいに まけても さいごに たちよった 街に もどってくるだけだって。',
+        // 敗北時は素材を少し失う (`rollDefeatLoss`)。「戻されるだけ」と言うと嘘になる。
+        'まけると さいごに たちよった 街まで もどされるんだって。もちものも すこし おとすらしい。',
       ],
     },
     {
@@ -229,4 +230,19 @@ export function starterTownNpcs(): NpcDef[] {
       ],
     },
   ];
+}
+
+/**
+ * **村人を入れられる村か** (#656)。入れられなければ理由 (エディタがそのまま出す)。
+ *
+ * 村人の位置は同梱の 32×32 の地形に合わせてあるので、旧版 (64×64) の村レコードが
+ * 残っている環境に入れると、おかみが壁の中に立つ (保存は通ってしまう — 施設と
+ * 範囲しか見ない)。大きさが違う村には入れさせず、先に村を入れ直させる。
+ */
+export function starterTownNpcsPlacementError(village: Pick<InteriorMap, 'size'> | undefined): string | null {
+  if (!village) return '「ふたばの村」がまだ無い。先に内部マップで「はじまりの村を入れる」→ 保存';
+  if (village.size !== STARTER_TOWN_SIZE) {
+    return `「ふたばの村」が旧版 (${village.size}×${village.size})。先に内部マップで「はじまりの村を入れる」で入れ直して 保存してから`;
+  }
+  return null;
 }

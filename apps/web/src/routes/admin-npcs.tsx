@@ -13,6 +13,7 @@ import {
   NpcDataError,
   setNpcs,
   starterTownNpcs,
+  starterTownNpcsPlacementError,
   STARTER_TOWN_ID,
   townAt,
   WORLD_MAP_ID,
@@ -127,12 +128,14 @@ export function AdminNpcs() {
   /**
    * **同梱の村人を入れる** (#656)。admin-interiors の「はじまりの村を入れる」と同じ流儀:
    * id が同じ村人は置き換え、他の NPC は残す。反映は「保存」(自動保存しない)。
-   * 村そのものが無いと保存が「マップが存在しない」で弾かれるので、先に村を入れさせる。
+   * 村が無い / 旧版 (大きさが違う) なら入れさせない — 判定は core (`starterTownNpcsPlacementError`)
+   * が 1 か所で持つ。旧版に入れると保存は通るのに村人が壁の中に立つ。
    */
   const insertVillagers = useCallback(() => {
     const village = interiorById(STARTER_TOWN_ID);
-    if (!village) {
-      setNote('「ふたばの村」がまだ無い。先に内部マップで「はじまりの村を入れる」→ 保存');
+    const blocked = starterTownNpcsPlacementError(village);
+    if (blocked || !village) {
+      setNote(blocked);
       return;
     }
     const villagers = starterTownNpcs();
