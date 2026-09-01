@@ -10,6 +10,7 @@
  * どの定義がどの id を参照するかの知識は**このファイルだけ**が持つ — 各エディタに
  * 同じ列挙を書くと、参照の種類が増えたときに片方だけ抜ける。
  */
+import { MONSTERS } from './battle.js';
 import { allGates } from './interior.js';
 import { allNpcs } from './npc-data.js';
 import { gameQuests } from './quest-data.js';
@@ -59,6 +60,10 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
     }
   }
   if (kind === 'item') {
+    // ドロップ先が消えると、勝利のたびに存在しない id が素材に入る (検証は id の実在を見ない)。
+    for (const m of MONSTERS) {
+      for (const d of m.drops) push(d.item, `モンスター「${m.name}」のドロップ`);
+    }
     for (const g of allGates()) {
       for (const r of g.requireItems ?? []) push(r.itemId, `ゲート (${g.from.mapId} ${g.from.x},${g.from.y})`);
     }

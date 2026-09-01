@@ -13,14 +13,20 @@ import { setInteriors, WORLD_MAP_ID } from '../interior.js';
 import { setScenario } from '../scenario.js';
 import { MONSTERS, ITEMS } from '../battle.js';
 import { EQUIPMENT } from '../equipment.js';
+import { activeEquipment, activeItems, setItemOverrides } from '../item-data.js';
 
 const MON = MONSTERS[0]!.id;
 const MON2 = MONSTERS[1]!.id;
-const [ITEM, ITEM2, ITEM3, ITEM4, ITEM5, ITEM6] = Object.keys(ITEMS) as [string, string, string, string, string, string];
+/** テスト専用の品 (誰もドロップしない = 参照元がこのテストの定義だけになる)。 */
+const TEST_ITEMS = ['t-item-1', 't-item-2', 't-item-3', 't-item-4', 't-item-5', 't-item-6'] as const;
+const [ITEM, ITEM2, ITEM3, ITEM4, ITEM5, ITEM6] = TEST_ITEMS;
+const DROPPER = MONSTERS.find((m) => m.drops.length > 0)!;
+const DROP_ITEM = DROPPER.drops[0]!.item;
 const EQ = EQUIPMENT[0]!.id;
 const EQ2 = EQUIPMENT[1]!.id;
 
 beforeEach(() => {
+  setItemOverrides({ items: [...activeItems(), ...TEST_ITEMS.map((id) => ({ id, name: id }))], equipment: [...activeEquipment()] });
   setNpcs([
     { id: 'n1', name: 'そんちょう', x: 1, y: 1, lines: ['やあ'] },
     { id: 'n2', name: 'むらびと', x: 2, y: 1, lines: ['やあ'], altLines: [{ items: [{ itemId: ITEM4 }], lines: ['それを持っているのか'] }] },
@@ -44,6 +50,7 @@ afterEach(() => {
   setShopOverrides(null);
   setGameQuests(null);
   setNpcs(null);
+  setItemOverrides(null);
 });
 
 const froms = (kind: Parameters<typeof worldRefs>[0], id: string) => worldRefs(kind).filter((r) => r.id === id).map((r) => r.from);
@@ -66,6 +73,10 @@ describe('worldRefs: 参照の種類ごとに全部挙がる', () => {
     expect(froms('item', ITEM4)).toEqual(['NPC「むらびと」のセリフ', 'シナリオ「はじまり」']);
     expect(froms('item', ITEM5)).toEqual(['店 (10, 10)']);
     expect(froms('item', ITEM6)).toEqual(['店 (10, 10)']);
+  });
+
+  it('アイテム ← モンスターのドロップ', () => {
+    expect(froms('item', DROP_ITEM)).toContain(`モンスター「${DROPPER.name}」のドロップ`);
   });
 
   it('装備 ← 店のラインナップ', () => {
@@ -105,6 +116,12 @@ describe('danglingRefs: 残す id への参照は挙がらない', () => {
       [ITEM5, '店 (10, 10)'],
       [ITEM3, `ゲート (${WORLD_MAP_ID} 1,1)`],
     ]);
+  });
+
+  it('ドロップ先のアイテムを消すと、そのモンスターが挙がる', () => {
+    const refs = danglingRefs('item', Object.keys(ITEMS).filter((id) => id !== DROP_ITEM));
+    expect(refs.map((r) => r.from)).toContain(`モンスター「${DROPPER.name}」のドロップ`);
+    expect(refs.every((r) => r.id === DROP_ITEM)).toBe(true);
   });
 
   it('参照されている装備を消すと、その店が挙がる', () => {

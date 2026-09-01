@@ -23,11 +23,14 @@ export function useAuthoredWorld(agent: Agent | null, reset: () => void): boolea
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
-    void loadAuthoredWorld(agent).finally(() => {
+    // 失敗しても編集は始めさせる (loadAuthoredWorld は失敗を握り潰す前提だが、
+    // `.finally` は reject を伝播するので、ここで吸収しないと未処理の reject になる)。
+    const done = () => {
       if (cancelled) return;
       resetRef.current();
       setLoaded(true);
-    });
+    };
+    void loadAuthoredWorld(agent).then(done, done);
     return () => { cancelled = true; };
   }, [agent]);
 

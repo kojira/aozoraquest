@@ -21,6 +21,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { MonsterSvg, bodyFor } from '@/components/monster-svg';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { monsterArtKey } from '@aozoraquest/core';
@@ -184,6 +185,7 @@ export function AdminMonsters() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>モンスター</strong>
@@ -452,6 +454,7 @@ export function AdminMonsters() {
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶ。増やすときは近い敵を選んで「複製」。</div>
         )}
       </div>
+      </AuthoredWorldGate>
     </div>
   );
 }

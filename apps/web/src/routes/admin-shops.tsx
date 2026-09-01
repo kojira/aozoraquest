@@ -18,6 +18,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveShops } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 
 /**
  * **お店のラインナップエディタ** (#422)。
@@ -100,6 +101,7 @@ export function AdminShops() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>お店のラインナップ</strong>
@@ -246,6 +248,7 @@ export function AdminShops() {
           </div>
         )}
       </div>
+      </AuthoredWorldGate>
     </div>
   );
 }

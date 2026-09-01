@@ -16,6 +16,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveGameQuests } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 
 /**
@@ -146,6 +147,7 @@ export function AdminQuests() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>クエスト</strong>
@@ -346,6 +348,7 @@ export function AdminQuests() {
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶか「＋クエスト」。</div>
         )}
       </div>
+      </AuthoredWorldGate>
     </div>
   );
 }

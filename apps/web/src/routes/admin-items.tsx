@@ -18,6 +18,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveItems } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 
 /**
  * **アイテムエディタ** (#420)。そうび / どうぐ・素材 の 2 タブ。
@@ -125,6 +126,7 @@ export function AdminItems() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         {([['equipment', 'そうび'], ['items', 'どうぐ・素材']] as const).map(([k, label]) => (
@@ -343,6 +345,7 @@ export function AdminItems() {
           )}
         </div>
       )}
+      </AuthoredWorldGate>
     </div>
   );
 }

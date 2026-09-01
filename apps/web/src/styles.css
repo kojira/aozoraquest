@@ -2102,6 +2102,17 @@ p { margin: 0.4em 0; }
   flex-wrap: wrap;
   margin-bottom: 0.4em;
 }
+/* 保存済みレコードを読み込むまで全操作を止める枠 (fieldset の見た目を消す) */
+.admin-gate {
+  display: block;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.admin-gate:disabled {
+  opacity: 0.6;
+}
 /* 一覧 + フォームの 2 カラム */
 .admin-cols {
   display: grid;
