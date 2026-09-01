@@ -254,6 +254,20 @@ describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => 
     expect(leveledName(harp, 0)).toBe('竪琴');
   });
 
+  it('signed / bonusText: 負の補正が「+-2」にならず、0 の項目は出ない', async () => {
+    const { signed, bonusText, BONUS_STAT_LABELS } = await import('../equipment.js');
+    expect(signed(12)).toBe('+12');
+    expect(signed(-2)).toBe('-2');
+    expect(signed(0)).toBe('0');
+    // 表示順は BONUS_STAT_LABELS の並び (定義側のキー順に依存しない)
+    expect(bonusText({ agi: -2, atk: 12 })).toBe('こうげき +12 すばやさ -2');
+    expect(bonusText({ atk: 0, def: 3, maxHp: -1 })).toBe('まもり +3 さいだいHP -1');
+    expect(bonusText({})).toBe('');
+    // 装備込み合計 (gearBonusFromGear の全キー入り) もそのまま通る
+    expect(bonusText({ atk: 0, def: 0, agi: 0, int: 0, luk: 0, maxHp: 0 })).toBe('');
+    expect(Object.keys(BONUS_STAT_LABELS)).toEqual(['atk', 'def', 'agi', 'int', 'luk', 'maxHp']);
+  });
+
   it('合成: +1 ずつ、上限 +10。gearBonusFromGear は強化値つき個体を受ける', async () => {
     const { canForge, forgedLevel, CRAFT_TUNING } = await import('../equipment.js');
     expect(forgedLevel(5)).toBe(6);

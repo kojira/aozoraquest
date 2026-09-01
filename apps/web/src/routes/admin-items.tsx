@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   GEAR_SLOTS,
+  BONUS_STAT_LABELS,
   GEAR_SLOT_LABELS,
   activeEquipment,
   activeItems,
@@ -11,6 +12,7 @@ import {
   ItemDataError,
   JOBS,
   JOB_EQUIP_KINDS,
+  type BonusStat,
   type EquipmentDef,
   type ItemDefData,
 } from '@aozoraquest/core';
@@ -28,9 +30,7 @@ import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
  */
 
 const SLOT_LABELS: Record<string, string> = GEAR_SLOT_LABELS;
-const BONUS_LABELS: Array<[keyof EquipmentDef['bonus'], string]> = [
-  ['atk', 'こうげき'], ['def', 'まもり'], ['agi', 'すばやさ'], ['int', 'かしこさ'], ['luk', 'うん'], ['maxHp', 'さいだいHP'],
-];
+const BONUS_LABELS = Object.entries(BONUS_STAT_LABELS) as Array<[BonusStat, string]>;
 const ALL_KINDS = ['common', 'cloth', 'charm', 'exclusive', ...new Set(Object.values(JOB_EQUIP_KINDS).flat())];
 
 export function AdminItems() {

@@ -4,6 +4,7 @@ import {
   canEquip,
   GEAR_SLOTS,
   GEAR_SLOT_LABELS,
+  bonusText,
   equipHands,
   gearBonusFromGear,
   jobDisplayName,
@@ -21,15 +22,6 @@ import { resolveGear, type GearRefs } from '@/lib/gear';
  */
 
 const SLOT_LABELS = GEAR_SLOT_LABELS;
-
-const STAT_LABELS: Record<string, string> = {
-  atk: 'こうげき',
-  def: 'まもり',
-  agi: 'すばやさ',
-  int: 'かしこさ',
-  luk: 'うん',
-  maxHp: 'さいだいHP',
-};
 
 export function GearModal({
   archetype,
@@ -76,12 +68,7 @@ export function GearModal({
   const selection: GearSelection = resolved.selection;
 
   const total = useMemo(() => (archetype ? gearBonusFromGear(archetype, selection) : null), [archetype, selection]);
-  const totalText = total
-    ? Object.entries(total)
-        .filter(([, v]) => v !== 0)
-        .map(([k, v]) => `${STAT_LABELS[k] ?? k} +${v}`)
-        .join(' ')
-    : '';
+  const totalText = total ? bonusText(total) : '';
 
   return (
     <div
