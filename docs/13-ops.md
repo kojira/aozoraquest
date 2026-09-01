@@ -4,7 +4,9 @@
 
 Aozora Quest は**バックエンドレス**のため、運用は以下だけに絞られる:
 
-1. **CI/CD**: GitHub → Cloudflare Workers Builds の自動デプロイ (本体 PWA + 管理画面、2 プロジェクト)
+1. **CI/CD**: GitHub → Cloudflare Workers Builds の自動デプロイ (本体 PWA + 管理画面、2 プロジェクト)。
+   エッジ Worker (`apps/edge`) は GitHub Actions `.github/workflows/edge-deploy.yml` が dev / main への
+   push で自動デプロイ (22-edge-env-separation.md §自動デプロイ)
 2. **モニタリング**: 解析サービス無し (Cloudflare ダッシュボードの基本ログのみ)
 3. **シークレット管理**: 管理者の OAuth クレデンシャルのみ (ユーザー側で保管する API キーは無い)
 4. **法務**: 商標性のある性格類型論表記を使わない、AT Protocol ToS、Cloudflare ToS
@@ -113,8 +115,11 @@ GitHub Actions repository secrets に登録:
 
 | 名前 | 用途 |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Workers Builds デプロイ (Edit スコープのみ) |
-| `CLOUDFLARE_ACCOUNT_ID` | 同上 |
+| `CLOUDFLARE_API_TOKEN` | エッジ Worker の自動デプロイ (`edge-deploy.yml`)。権限は **Workers Scripts:Edit** のみ |
+| `CLOUDFLARE_ACCOUNT_ID` | 同上 (Cloudflare アカウント ID) |
+
+web (Workers Builds) は Cloudflare 側が GitHub を直接 pull するので GitHub Secrets は不要。
+エッジの Worker Secrets (`SERVER_DID` 等) は `wrangler deploy` で消えないので、上記 2 つだけで足りる。
 
 **ローテーション**: 年 1 回程度の見直しで十分 (ボトルネックではない)。漏洩が判明したら即座に revoke、新規発行。
 

@@ -1,0 +1,83 @@
+name: edge-deploy
+
+# エッジ Worker (apps/edge) を dev / main への push で自動デプロイする。
+#
+# なぜ: web は Cloudflare Workers Builds が push で自動デプロイされるのに、エッジは手動
+# `wrangler deploy` だけだった。デプロイ漏れで戦闘の権威計算が数週間前のコードのまま動き、
+# 画面 (最新の成長モデル) と戦闘 (旧モデル) の数値がずれた (#549)。片方だけ自動の非対称を無くす。
+#
+# デプロイ先は **ブランチが決める** (docs/22-edge-env-separation.md):
+#   dev  → `wrangler deploy --env dev` → aozoraquest-edge-dev
+#   main → `wrangler deploy`           → aozoraquest-edge (本番)
+# workflow_dispatch は Actions タブの branch 選択がそのまま環境選択になる (dev / main 以外は拒否)。
+#
+# 必要な設定 (GitHub → Settings → Secrets and variables → Actions → Repository secrets、
+# または Environments の main / dev それぞれの secrets):
+#   CLOUDFLARE_API_TOKEN   Cloudflare API トークン (権限: Workers Scripts:Edit)
+#   CLOUDFLARE_ACCOUNT_ID  Cloudflare アカウント ID
+# 未設定のうちはこの workflow は失敗する (= エッジは従来どおり手動 deploy のまま)。
+# Worker Secrets (SERVER_DID / OAUTH_*_JWK / WORLD_TOKEN_SECRET / KUDA_API_KEY 等) と KV は
+# `wrangler deploy` で消えないので、自動化後も再設定は不要。
+#
+# 本番 (main) に承認を挟みたいときは GitHub Environment `main` に Required reviewers を付ける
+# (このジョブは main では environment: main を使う)。
+
+on:
+  push:
+    branches: [dev, main]
+    # core はエッジの依存 (@aozoraquest/core = workspace:*) なので含める。
+    paths:
+      - 'apps/edge/**'
+      - 'packages/core/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/edge-deploy.yml'
+  workflow_dispatch: {}
+
+# 同じブランチへの連続 push は最後の 1 つだけ出す。古い run が後から完走して新しいコードを
+# 上書きする逆転を防ぐ (wrangler deploy 自体は CF 側で原子的なので途中キャンセルは安全)。
+concurrency:
+  group: edge-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # dev / main 以外 (dispatch で feature ブランチを選んだ等) は出さない。
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # ci.yml / directory-refresh.yml と同じ Environment 名を使う (承認ルール・secrets の置き場を 1 つに)。
+    environment: ${{ github.ref == 'refs/heads/main' && 'main' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ci.yml はエッジの typecheck / test を回していない (web typecheck と core/web test のみ)。
+      # 壊れたエッジを出すと全ユーザーの戦闘が止まるので、deploy 直前にここで最低限を通す。
+      - name: Typecheck (edge)
+        run: pnpm --filter @aozoraquest/edge typecheck
+
+      - name: Unit tests (edge)
+        run: pnpm --filter @aozoraquest/edge test
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/edge
+          # pnpm-lock.yaml は repo root にあり workingDirectory から自動検出されないので明示。
+          # wrangler 本体は上の pnpm install で入った apps/edge の devDependency (lockfile 固定) を使う。
+          packageManager: pnpm
+          command: ${{ github.ref == 'refs/heads/main' && 'deploy' || 'deploy --env dev' }}
