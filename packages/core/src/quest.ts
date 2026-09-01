@@ -201,19 +201,6 @@ export const MAX_DAILY_QUEST_XP: number = (() => {
   return per.slice(0, MAX_DAILY_QUEST_SLOTS).reduce((a, b) => a + b, 0);
 })();
 
-/** 累計 XP から LV を計算 (03-game-design.md §XP とレベル)。グローバル用 (現状未使用)。 */
-const XP_CURVE: Array<[number, number]> = [
-  [1, 0], [2, 100], [5, 800], [10, 3500], [20, 15000], [30, 40000], [50, 150000],
-];
-export function levelFromXp(xp: number): number {
-  let lv = 1;
-  for (const [l, threshold] of XP_CURVE) {
-    if (xp >= threshold) lv = l;
-    else break;
-  }
-  return lv;
-}
-
 /**
  * 現職 (archetype) の滞在 LV 用 XP 曲線。パラメータは tuning.JOB_LEVEL_TUNING。
  * threshold(n) = round(coef * (n - 1)^exp)、LV1 = 0。
@@ -291,8 +278,9 @@ export const JOB_XP_REWARDS = XP_REWARDS;
 
 /**
  * 個人 (プレイヤー) LV 用 XP 曲線。パラメータは tuning.PLAYER_LEVEL_TUNING。
+ * `playerLevelFromXp` の内部表だけに使う (個人 LV は戦闘力・UI から外れている。#507/#508)。
  */
-export const PLAYER_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = buildXpCurve(
+const PLAYER_XP_CURVE: ReadonlyArray<readonly [level: number, threshold: number]> = buildXpCurve(
   PLAYER_LEVEL_TUNING.maxLevel,
   PLAYER_LEVEL_TUNING.coefficient,
   PLAYER_LEVEL_TUNING.exponent,
@@ -315,14 +303,4 @@ export function playerLevelFromXp(xp: number): number {
     else break;
   }
   return lv;
-}
-
-/** 個人 LV の UI 進捗バー用。 */
-export function playerXpToNextLevel(xp: number): { level: number; current: number; next: number } {
-  const level = playerLevelFromXp(xp);
-  const idx = PLAYER_XP_CURVE.findIndex((e) => e[0] === level);
-  const curThreshold = idx >= 0 ? PLAYER_XP_CURVE[idx]![1] : 0;
-  const nextEntry = idx >= 0 && idx + 1 < PLAYER_XP_CURVE.length ? PLAYER_XP_CURVE[idx + 1] : undefined;
-  if (!nextEntry) return { level, current: xp - curThreshold, next: 0 };
-  return { level, current: xp - curThreshold, next: nextEntry[1] - curThreshold };
 }

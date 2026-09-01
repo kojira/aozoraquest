@@ -28,7 +28,6 @@ import {
   cognitiveToRpg,
   determineArchetype,
   jobLevelFromXp,
-  playerLevelFromXp,
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
@@ -85,7 +84,6 @@ export interface ProcessResult {
   jobLevel?: JobLevelState | undefined;
   playerLevel?: PlayerLevelState | undefined;
   jobLeveledUp?: { from: number; to: number } | undefined;
-  playerLeveledUp?: { from: number; to: number } | undefined;
   /** 現 archetype と異なる判定が出ている場合の候補と連続回数。 */
   pendingArchetype?: Archetype | undefined;
   pendingArchetypeStreak?: number | undefined;
@@ -228,7 +226,6 @@ export async function processSelfPost(
   let finalJobLevel: JobLevelState | undefined;
   let finalPlayerLevel: PlayerLevelState | undefined;
   let jobLeveledUp: { from: number; to: number } | undefined;
-  let playerLeveledUp: { from: number; to: number } | undefined;
   let finalPendingArchetype: Archetype | undefined;
   let finalPendingStreak: number | undefined;
   try {
@@ -341,7 +338,6 @@ export async function processSelfPost(
     jobLevel: finalJobLevel,
     playerLevel: finalPlayerLevel,
     jobLeveledUp,
-    playerLeveledUp,
     pendingArchetype: finalPendingArchetype,
     pendingArchetypeStreak: finalPendingStreak,
   };
