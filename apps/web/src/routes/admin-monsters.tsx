@@ -8,6 +8,8 @@ import {
   runAutoBattle,
   startBattle,
   setMonsterOverrides,
+  danglingRefs,
+  describeDanglingRef,
   MonsterDataError,
   JOBS,
   ITEMS,
@@ -18,6 +20,7 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
+import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { MonsterSvg, bodyFor } from '@/components/monster-svg';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { monsterArtKey } from '@aozoraquest/core';
@@ -25,9 +28,9 @@ import { monsterArtKey } from '@aozoraquest/core';
 /**
  * **モンスターエディタ** (#419)。一覧・編集・複製・削除と、保存前の検証・模擬戦。
  *
- * 保存先は管理者 PDS の `world.monsters` (#537)。読み込みは `loadAuthoredWorld` が
- * 起動時に済ませているので、この画面は `activeMonsters()` (= 差し替え済みの現物) から
- * 始めればよい。保存はレコード全置換 (壊れた 1 体で全体を落とす検証つき)。
+ * 保存先は管理者 PDS の `world.monsters` (#537)。マウント時に `loadAuthoredWorld` を回し、
+ * 読み込めるまで保存させない (直接開いて保存すると保存済みの編集を上書きする。#603)。
+ * 保存はレコード全置換 (壊れた 1 体で全体を落とす検証つき)。
  */
 
 const ABILITY_LABELS: Record<string, string> = {
@@ -48,6 +51,7 @@ export function AdminMonsters() {
   const [dirty, setDirty] = useState(false);
   // 絵を描くモード (ドット絵エディタを開く)。下敷きは従来の SVG。
   const [drawing, setDrawing] = useState(false);
+  const loaded = useAuthoredWorld(session.agent ?? null, () => setList(activeMonsters().map((m) => ({ ...m }))));
 
   const current = useMemo(() => list.find((m) => m.id === sel) ?? null, [list, sel]);
   /** 単数 (旧) と複数 (新) を吸収した現在の能力列。 */
@@ -99,6 +103,13 @@ export function AdminMonsters() {
 
   const save = useCallback(async () => {
     if (!session.agent) return;
+    // クエストが討伐対象にしているモンスターを消させない (#603) — 参照切れが 1 体でもあると
+    // setGameQuests が全体を落とし、消した敵と無関係な全クエストまで web/edge から消える。
+    const dangling = danglingRefs('monster', list.map((m) => m.id))[0];
+    if (dangling) {
+      setNote(describeDanglingRef(dangling));
+      return;
+    }
     try {
       const n = await saveMonsters(session.agent, list);
       setDirty(false);
@@ -179,7 +190,7 @@ export function AdminMonsters() {
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>
           {([1, 2, 3, 4, 5, 6] as Tier[]).map((t) => `t${t}:${counts[t] ?? 0}`).join(' ')}
         </span>
-        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
       </div>

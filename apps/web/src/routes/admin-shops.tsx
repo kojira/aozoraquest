@@ -17,6 +17,7 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveShops } from '@/lib/world-authoring';
+import { useAuthoredWorld } from '@/lib/use-authored-world';
 
 /**
  * **お店のラインナップエディタ** (#422)。
@@ -28,11 +29,14 @@ import { saveShops } from '@/lib/world-authoring';
 export function AdminShops() {
   const session = useSession();
   const admin = isAdminDid(session.did ?? null);
-  const towns = useMemo(() => worldOverlay().towns, []);
   const [overrides, setOverrides] = useState<ShopOverride[]>(() => shopOverrides());
   const [sel, setSel] = useState<Town | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // 保存済みレコードを読み込むまで保存させない (直接開いて保存すると上書き中の店が全部消える。#603)。
+  const loaded = useAuthoredWorld(session.agent ?? null, () => setOverrides(shopOverrides()));
+  // 街の一覧も地図の読み込みで変わる (直接開くと読み込み前は空)。
+  const towns = useMemo(() => worldOverlay().towns, [loaded]);
 
   const equipment = activeEquipment();
   const items = activeItems();
@@ -100,7 +104,7 @@ export function AdminShops() {
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>お店のラインナップ</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{overrides.length} 店を上書き中</span>
-        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
       </div>

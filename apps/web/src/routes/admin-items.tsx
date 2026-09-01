@@ -5,11 +5,9 @@ import {
   GEAR_SLOT_LABELS,
   activeEquipment,
   activeItems,
-  allGates,
-  allNpcs,
-  gameQuests,
-  scenarioEvents,
   canEquip,
+  danglingRefs,
+  describeDanglingRef,
   ItemDataError,
   JOBS,
   JOB_EQUIP_KINDS,
@@ -19,6 +17,7 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveItems } from '@/lib/world-authoring';
+import { useAuthoredWorld } from '@/lib/use-authored-world';
 
 /**
  * **アイテムエディタ** (#420)。そうび / どうぐ・素材 の 2 タブ。
@@ -42,6 +41,11 @@ export function AdminItems() {
   const [sel, setSel] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // 保存済みレコードを読み込むまで保存させない (直接開いて保存すると保存済みの編集を上書きする。#603)。
+  const loaded = useAuthoredWorld(session.agent ?? null, () => {
+    setEquipment(activeEquipment().map((e) => ({ ...e, bonus: { ...e.bonus }, price: { ...e.price } })));
+    setItems(activeItems());
+  });
 
   const current = useMemo(() => equipment.find((e) => e.id === sel) ?? null, [equipment, sel]);
 
@@ -81,20 +85,13 @@ export function AdminItems() {
   const save = useCallback(async () => {
     if (!session.agent) return;
     try {
-      // 参照しているアイテムを消させない (#426)。参照切れが 1 件あると
-      // setInteriors/setGameQuests/setScenario が全体を落とし、edge のコールドスタート後に
-      // ゲート・クエスト・シナリオがまとめて読み込まれなくなる (レビュー ★★)。
-      const ids = new Set(items.map((it) => it.id));
-      const missing = (req?: readonly { itemId: string }[]) => (req ?? []).find((r) => !ids.has(r.itemId))?.itemId;
-      const refs: Array<[string, string | undefined]> = [
-        ...allGates().map((g) => [`ゲート (${g.from.mapId} ${g.from.x},${g.from.y})`, missing(g.requireItems)] as [string, string | undefined]),
-        ...gameQuests().map((q) => [`クエスト「${q.title}」`, missing(q.requireItems)] as [string, string | undefined]),
-        ...allNpcs().flatMap((n) => (n.altLines ?? []).map((a) => [`NPC「${n.name}」のセリフ`, missing(a.items)] as [string, string | undefined])),
-        ...scenarioEvents().flatMap((e) => e.when.map((c) => [`シナリオ「${e.title}」`, c.kind === 'itemCount' && !ids.has(c.itemId) ? c.itemId : undefined] as [string, string | undefined])),
-      ];
-      const hit = refs.find(([, id]) => id);
-      if (hit) {
-        setNote(`保存できない: ${hit[0]} が「${hit[1]}」を参照している。先にそちらを直す`);
+      // 参照しているアイテム・装備を消させない (#426 / #603)。参照切れが 1 件あると
+      // setInteriors/setGameQuests/setScenario/setShopOverrides が全体を落とし、edge の
+      // コールドスタート後にゲート・クエスト・シナリオ・店がまとめて読み込まれなくなる。
+      const dangling = danglingRefs('item', items.map((it) => it.id))[0]
+        ?? danglingRefs('equipment', equipment.map((e) => e.id))[0];
+      if (dangling) {
+        setNote(describeDanglingRef(dangling));
         return;
       }
       await saveItems(session.agent, items, equipment);
@@ -140,7 +137,7 @@ export function AdminItems() {
             {label}
           </button>
         ))}
-        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
       </div>
