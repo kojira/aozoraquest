@@ -20,7 +20,7 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
 
   it('rewarded=false でも決着したなら unrewarded を返す (無言で終わらせない)', () => {
     // 「勝ったのに何も起きない」を黙って通すと、経験値が入ったように見えて実は
-    // 入っていない、という最悪の見え方になる (オーナー指摘 2026-07-26)。
+    // 入っていない、という最悪の見え方になる。
     const s = base({ power: 0 });
     for (const outcome of ['win', 'lose'] as const) {
       expect(applyBattleOutcome(s, input({ outcome, rewarded: false })).awarded, outcome).toEqual({ unrewarded: true });
@@ -168,7 +168,7 @@ describe('レベルアップで HP/MP 全回復 (#534)', () => {
   });
 });
 
-describe('レベルアップの内訳 (オーナー要望 2026-07-27)', () => {
+describe('レベルアップの内訳', () => {
   const th = jobXpToNextLevelFor('warrior', 0).next;
   const at = (jobXp: number): GameState => ({
     did: 'did:plc:x', power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
