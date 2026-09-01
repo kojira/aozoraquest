@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Agent } from '@atproto/api';
+import type { BansRecord } from '@aozoraquest/core';
 import { ADMIN_COL } from '@/lib/collections';
 import { useAdminConfig } from '@/lib/use-admin-config';
 
@@ -41,16 +42,6 @@ function SaveBar({ loaded, loadFailed, saving, savedMark, err, canWrite, onSave,
   );
 }
 
-/** **保存しても効かない**画面の印。判定関数はあるが production の呼び出し元が無い (#561)。
- *  「メンテを開始した」と信じて破壊的作業に入られるのが一番まずいので、見出しに出す。 */
-function NotWired() {
-  return (
-    <span style={{ fontSize: '0.75em', color: 'var(--color-danger, #e8566a)', marginLeft: '0.4em', fontWeight: 400 }}>
-      未配線 (保存しても効かない)
-    </span>
-  );
-}
-
 /** 主管理者以外でログインしているときの注意。保存しても web が読む先に反映されない。 */
 function WriteGuard({ canWrite }: { canWrite: boolean }) {
   if (canWrite) return null;
@@ -59,6 +50,16 @@ function WriteGuard({ canWrite }: { canWrite: boolean }) {
       主管理者のアカウントでないため保存できない (書き込み先が主管理者の repo のため)。閲覧のみ。
     </p>
   );
+}
+
+/** 改行区切りの DID 入力を配列にする (空行・`did:` で始まらない行・重複は捨てる)。 */
+export function parseDidLines(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    const d = line.trim();
+    if (d.startsWith('did:') && !out.includes(d)) out.push(d);
+  }
+  return out;
 }
 
 // ─────────────────────────────────────────── 参加者ディレクトリ
@@ -250,6 +251,8 @@ export function MaintenanceAdmin() {
   const [enabled, setEnabled] = useState(false);
   const [message, setMessage] = useState('メンテナンス中です。しばらくお待ちください。');
   const [until, setUntil] = useState('');
+  /** メンテ中でも通す DID (改行区切りで編集)。管理者 (VITE_ADMIN_DIDS) は書かなくても通る。 */
+  const [allowedText, setAllowedText] = useState('');
   const [confirm, setConfirm] = useState('');
 
   useEffect(() => {
@@ -257,20 +260,20 @@ export function MaintenanceAdmin() {
     setEnabled(value.enabled ?? false);
     if (value.message !== undefined) setMessage(value.message);
     if (value.until !== undefined) setUntil(value.until);
+    setAllowedText((value.allowedDids ?? []).join('\n'));
   }, [value]);
+
+  const allowedDids = parseDidLines(allowedText);
 
   // **有効化は全ユーザーを止める**ので、合言葉を打たせる (誤操作の抑止)。解除は自由。
   const armed = !enabled || confirm === 'MAINTENANCE';
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>メンテナンスモード <NotWired /></h3>
+      <h3 style={{ fontSize: '0.95em' }}>メンテナンスモード</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        「メンテ中」の印を残すだけで、<strong>いまは誰も止まらない</strong>。
-        `isUnderMaintenance` を実際に見ている画面がまだ無い (#561)。
-        <br />
-        配線するときは注意: 現在の判定は <code>allowedDids</code> しか通さないので、
-        そのまま繋ぐと<strong>主管理者自身も締め出されて解除できなくなる</strong>。
+        <strong>アプリ全体</strong>をメンテナンス画面に差し替える。管理者と下の DID は通る。
+        締め出されても <code>/admin</code> とログインだけは入れる (解除の導線)。
       </p>
       <WriteGuard canWrite={canWrite} />
       {!loaded && <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</p>}
@@ -282,6 +285,10 @@ export function MaintenanceAdmin() {
       <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="表示するメッセージ"
         style={{ width: '100%', marginTop: '0.4em', fontSize: '0.85em' }} />
       <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="終了予定 (任意。例 2026-07-28T10:00)"
+        style={{ width: '100%', marginTop: '0.4em', fontSize: '0.85em' }} />
+      <textarea value={allowedText} onChange={(e) => setAllowedText(e.target.value)} rows={3}
+        aria-label="メンテ中でも通す DID (1 行 1 つ)"
+        placeholder={'メンテ中でも通す DID (1 行 1 つ。管理者は書かなくても通る)\ndid:plc:...'}
         style={{ width: '100%', marginTop: '0.4em', fontSize: '0.85em' }} />
       {enabled && (
         <div style={{ marginTop: '0.4em' }}>
@@ -296,9 +303,7 @@ export function MaintenanceAdmin() {
           enabled,
           ...(message ? { message } : {}),
           ...(until ? { until } : {}),
-          // **この画面で編集しない項目を落とさない。** allowedDids (メンテ中でも通す DID) を
-          // 省くと、保存のたびに既存の設定が消える。
-          ...(value?.allowedDids ? { allowedDids: value.allowedDids } : {}),
+          ...(allowedDids.length ? { allowedDids } : {}),
           updatedAt: new Date().toISOString(),
         } satisfies MaintRecord)} />
     </section>
@@ -306,8 +311,6 @@ export function MaintenanceAdmin() {
 }
 
 // ─────────────────────────────────────────── BAN リスト
-
-interface BansRecord { dids: string[]; updatedAt: string }
 
 export function BansAdmin() {
   const { loaded, loadFailed, value, save, saving, err, savedMark, canWrite } = useAdminConfig<BansRecord>(ADMIN_COL.configBans, 'self');
@@ -325,10 +328,10 @@ export function BansAdmin() {
 
   return (
     <section style={{ marginTop: '2em' }}>
-      <h3 style={{ fontSize: '0.95em' }}>BAN リスト ({dids.length}) <NotWired /></h3>
+      <h3 style={{ fontSize: '0.95em' }}>BAN リスト ({dids.length})</h3>
       <p style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-        名簿を残すだけで、<strong>いまは何も除外されない</strong>。
-        `isBanned` を実際に見ている画面がまだ無い (#561)。
+        効くのは<strong>あおぞらワールドだけ</strong> (画面を出さない + サーバーが権威 API を拒む)。
+        投稿・タイムライン・依頼クエスト板には効かない。反映はサーバー側で最長 5 分。
         <br />
         <strong>このレコードは公開される</strong> (主管理者 PDS の公開レコード) ことに注意。
       </p>

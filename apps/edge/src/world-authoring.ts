@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setInteriors, setScenario, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type Gate, type GameQuestDef, type ScenarioEvent, type InteriorMap, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { BANS_RKEY, bansCollection, decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setInteriors, setScenario, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type BansRecord, type EquipmentDef, type Gate, type GameQuestDef, type ScenarioEvent, type InteriorMap, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -10,12 +10,33 @@ import { pdsEndpointFromDoc } from './oauth-metadata';
  * 地図を見ていると「画面では歩けるのにサーバーが弾く」= **プレイヤーがその場から
  * 動けなくなる**。同じ管理者 repo の同じ rkey を読んで揃える。
  *
+ * **BAN リスト (#561) も同じ便に乗せる。** ワールドの権威 API は BAN 済み DID を 403 で
+ * 拒むが、判定に使うリストは web が読むのと同じ管理者レコード (`config.bans`) で、
+ * collection・rkey・判定は `@aozoraquest/core` の `ban.ts` が 1 か所で持つ。
+ *
  * **リクエストごとに読まない。** isolate ごとにキャッシュし、TTL で寝かせる。
  * PDS の読み取りは書き込み点数を消費しないが、毎リクエストの往復はレイテンシに乗る。
  */
 
+/** 管理系レコードの NSID の根。**env で分けない** (dev も本番も同じ 1 か所を見る) —
+ *  web の `collections.ts` の `ADMIN_COL` と同じ規則。ユーザー記録の `nsFromOrigin` とは別物。 */
+export const ADMIN_NSID_ROOT = 'app.aozoraquest';
+
 const RKEY = 'self';
 const CACHE_TTL_SEC = 300;
+
+/** 読み込んだ BAN リスト。読めなかった回は前の値を保つ (空に戻して全員を通さない)。 */
+let bannedDids: readonly string[] = [];
+
+/** ルーターの BAN 判定に渡すリスト。`ensureAuthoredWorld` を待ってから読むこと (コールド isolate では空)。 */
+export function bannedDidList(): readonly string[] {
+  return bannedDids;
+}
+
+/** テスト用: リストを直接置く。本番では loader だけが呼ぶ。 */
+export function setBannedDids(dids: readonly string[]): void {
+  bannedDids = dids;
+}
 
 export interface WorldAuthoringEnv {
   /** カンマ区切り。先頭を主管理者として扱う (web の getPrimaryAdminDid と同じ規則)。 */
@@ -62,7 +83,8 @@ function fromBase64(b64: string): Uint8Array {
  * リクエスト自体は待たせない — 読み込むまでは同梱の地図かノイズ生成に倒れるだけで、
  * 結果は「編集前の世界」として一貫している。
  */
-export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: number): Promise<void> {
+export function ensureAuthoredWorld(env: WorldAuthoringEnv, now: number): Promise<void> {
+  const nsid = ADMIN_NSID_ROOT;
   if (inflight) return inflight;
   if (loadedAt && now - loadedAt < CACHE_TTL_SEC) return Promise.resolve();
   /** レコード 1 つぶんの適用。**1 つが壊れても後続を止めない** — 1 本の try に
@@ -84,6 +106,12 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     const doc = await resolveDidDocument(did);
     const pds = pdsEndpointFromDoc(doc as Parameters<typeof pdsEndpointFromDoc>[0], did);
     if (!pds) return;
+    // BAN リスト (#561)。**レコードが無い = 誰も BAN していない** (空にする)。読めなかった回は
+    // step が握って前の値のまま (一時的な PDS 障害で BAN が外れないように)。
+    await step('bans', async () => {
+      const bans = await getRecord<BansRecord>(pds, did, bansCollection(nsid), BANS_RKEY);
+      setBannedDids(bans?.value?.dids ?? []);
+    });
     const map = await getRecord<WorldMapRecord>(pds, did, `${nsid}.world.map`, RKEY);
     if (map?.value?.gz) {
       const tiles = await decodeWorldMap(fromBase64(map.value.gz));
@@ -169,4 +197,5 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
 export function resetAuthoredWorldCache(): void {
   loadedAt = 0;
   inflight = null;
+  bannedDids = [];
 }

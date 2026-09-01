@@ -22,6 +22,8 @@
  * - 実 Bluesky 投稿 (`app.bsky.feed.post`) は性質上分離不可、
  *   dev からの投稿も実投稿になる。
  */
+import { bansCollection } from '@aozoraquest/core';
+
 const ROOT = (import.meta.env.VITE_NSID_ROOT as string | undefined)?.trim();
 if (!ROOT) {
   throw new Error(
@@ -78,7 +80,8 @@ export const ROOT_COL = {
 export const ADMIN_COL = {
   configFlags: `${ROOT}.config.flags`,
   configMaintenance: `${ROOT}.config.maintenance`,
-  configBans: `${ROOT}.config.bans`,
+  /** BAN リスト。collection・rkey・判定は core の `ban.ts` が持つ (edge も同じものを読む)。#561 */
+  configBans: bansCollection(ROOT),
   configPrompts: `${ROOT}.config.prompts`,
   directory: `${ROOT}.directory`,
   /** 手編集したワールドの地形 (1 タイル 1 バイトを gzip → base64)。#421 */

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { DEFAULT_RUNTIME_CONFIG, type RuntimeConfig } from '@aozoraquest/types';
-import { isAdminDid, isBanned, isFlagEnabled, isUnderMaintenance } from './runtime-config';
+import { isAdminDid, isFlagEnabled, isUnderMaintenance } from './runtime-config';
 
 function cfg(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return { ...DEFAULT_RUNTIME_CONFIG, ...overrides };
@@ -86,6 +86,8 @@ describe('isFlagEnabled', () => {
 });
 
 describe('isUnderMaintenance', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   test('enabled=false なら false', () => {
     expect(isUnderMaintenance(cfg(), 'did:plc:a')).toBe(false);
   });
@@ -95,21 +97,22 @@ describe('isUnderMaintenance', () => {
     expect(isUnderMaintenance(c, 'did:plc:a')).toBe(true);
   });
 
+  test('未ログイン (did 無し) も止める', () => {
+    const c = cfg({ maintenance: { enabled: true, updatedAt: 'x' } });
+    expect(isUnderMaintenance(c, undefined)).toBe(true);
+  });
+
   test('allowedDids に入っていれば false', () => {
-    const c = cfg({ maintenance: { enabled: true, allowedDids: ['did:plc:admin'], updatedAt: 'x' } });
-    expect(isUnderMaintenance(c, 'did:plc:admin')).toBe(false);
+    const c = cfg({ maintenance: { enabled: true, allowedDids: ['did:plc:vip'], updatedAt: 'x' } });
+    expect(isUnderMaintenance(c, 'did:plc:vip')).toBe(false);
     expect(isUnderMaintenance(c, 'did:plc:other')).toBe(true);
   });
-});
 
-describe('isBanned', () => {
-  test('空配列では false', () => {
-    expect(isBanned(cfg(), 'did:plc:a')).toBe(false);
-  });
-
-  test('入っていれば true', () => {
-    const c = cfg({ bans: ['did:plc:bad'] });
-    expect(isBanned(c, 'did:plc:bad')).toBe(true);
-    expect(isBanned(c, 'did:plc:good')).toBe(false);
+  test('管理者 (VITE_ADMIN_DIDS) は allowedDids に無くても常に通す — 締め出されると解除できない', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', 'did:plc:primary, did:plc:second');
+    const c = cfg({ maintenance: { enabled: true, updatedAt: 'x' } });
+    expect(isUnderMaintenance(c, 'did:plc:primary')).toBe(false);
+    expect(isUnderMaintenance(c, 'did:plc:second')).toBe(false);
+    expect(isUnderMaintenance(c, 'did:plc:other')).toBe(true);
   });
 });
