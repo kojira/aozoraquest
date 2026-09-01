@@ -28,7 +28,8 @@ const AdminQuests = lazy(() => import('@/routes/admin-quests').then(m => ({ defa
 const AdminJobs = lazy(() => import('@/routes/admin-jobs').then(m => ({ default: m.AdminJobs })));
 const AdminInteriors = lazy(() => import('@/routes/admin-interiors').then(m => ({ default: m.AdminInteriors })));
 const AdminScenario = lazy(() => import('@/routes/admin-scenario').then(m => ({ default: m.AdminScenario })));
-const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
+// /world は BAN 表示ゲート (world-gate) を経由して World に入る (#561)。
+const World = lazy(() => import('@/routes/world-gate').then(m => ({ default: m.WorldGate })));
 const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
 const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
 const Tos = lazy(() => import('@/routes/tos').then(m => ({ default: m.Tos })));

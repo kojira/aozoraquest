@@ -13,6 +13,7 @@
 
 import { AtpAgent } from '@atproto/api';
 import { DEFAULT_RUNTIME_CONFIG, type RuntimeConfig } from '@aozoraquest/types';
+import type { BansRecord } from '@aozoraquest/core';
 import { ADMIN_COL } from './collections';
 
 const PLC_DIRECTORY = 'https://plc.directory';
@@ -112,7 +113,6 @@ interface MaintenanceRecord {
   allowedDids?: string[];
   updatedAt: string;
 }
-interface BansRecord { dids: string[]; updatedAt: string }
 interface PromptRecord { id: string; body: string; updatedAt: string; maxNewTokens?: number }
 interface DirectoryRecord { users: Array<{ did: string; addedAt: string; note?: string }>; updatedAt: string }
 
@@ -188,12 +188,20 @@ function hashStr(s: string): number {
   return h >>> 0;
 }
 
+/**
+ * メンテナンス中で、この DID を止めるべきか (#561)。**判定はここ 1 か所** — 呼び出し側
+ * (app-shell の `MaintenanceGate`) で管理者判定を別に書かない。
+ *
+ * - 管理者 (`isAdminDid`) は常に通す。ここを通さないと**主管理者自身が締め出されて
+ *   `/admin` で解除できなくなる**。
+ * - `allowedDids` (メンテ中でも通す DID) も通す。
+ * - 未ログイン (did 無し) は止める。
+ *
+ * BAN 判定 (`isBanned`) は core にある — web と edge が同じものを呼ぶため。
+ */
 export function isUnderMaintenance(config: RuntimeConfig, userDid: string | undefined): boolean {
   if (!config.maintenance.enabled) return false;
+  if (isAdminDid(userDid)) return false;
   if (userDid && config.maintenance.allowedDids?.includes(userDid)) return false;
   return true;
-}
-
-export function isBanned(config: RuntimeConfig, did: string): boolean {
-  return config.bans.includes(did);
 }

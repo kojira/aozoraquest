@@ -175,7 +175,15 @@ function isEnabled(flag: string, userDid: string, flags: FlagConfig): boolean {
 
 #### クライアントでの挙動
 
-boot 時に `enabled=true` かつ自分の DID が `allowedDids` に含まれないなら、全画面メンテナンス UI を表示してアプリ機能を停止。管理者 DID は常に許可 (ADMIN_DIDS をクライアント側で参照)。
+`enabled=true` なら app-shell が**全ルート**をメンテナンス画面 (`message` と `until` を表示) に差し替える (`MaintenanceGate`)。誰を通すかは `isUnderMaintenance` (web の `runtime-config.ts`) が 1 か所で決める:
+
+- 管理者 DID (`VITE_ADMIN_DIDS`) は常に通す — ここを通さないと主管理者自身が締め出されて解除できない
+- `allowedDids` の DID も通す (管理画面で改行区切りで編集)
+- 未ログイン (セッション復元中を含む) は止める
+
+パスの例外: `/admin` 配下 (解除の導線) と `/onboarding` `/oauth/callback` (ログアウト中の管理者がログインするため) はメンテ中でも到達できる。
+
+メンテナンスは web の表示だけで、edge の権威 API は止めない (管理者の動作確認ができるように)。
 
 ### (c) システムプロンプト編集
 
@@ -219,9 +227,15 @@ const result = await generateWithLocalLLM({ systemPrompt: prompt, history: messa
 }
 ```
 
-#### クライアントでの挙動
+#### 挙動 (効くのはあおぞらワールドだけ)
 
-クライアントは boot 時に BAN リストを取得し、該当 DID の投稿をタイムラインから除外 / バッジ非表示。
+投稿・タイムライン・バッジ・依頼クエスト板には**効かせない** — それらは Bluesky の公開データで、
+こちらで除外しても他のクライアントからは見えるので意味が薄い。ワールドは権威 state
+(パワー・XP・在庫・位置) をこちらが持っているので、そこへの書き込みを止めることに意味がある。
+
+- **web**: `/world` は `WorldGate` を経由し、BAN 済み DID には「ワールドは利用できません」を出してゲーム UI を描かない (設定を読み終えるまで mount しない)
+- **edge**: ワールドの権威 API (移動・戦闘・店・クエスト・XP 申告・パワー消費・リセット) は BAN 済み DID を `403 {error:'forbidden', reason:'banned'}` で拒む。`GET /api/me/state` (表示用の読み取り。ホーム/自分/カードも見る) と管理者専用の経路は止めない
+- **読み方は 1 か所**: collection (`config.bans`)・rkey (`self`)・レコードの形・判定 (`isBanned`) は `packages/core/src/ban.ts`。web は `ADMIN_COL.configBans`、edge は手編集の世界と同じ loader (`world-authoring.ts` の `ensureAuthoredWorld`) から読み、同じ TTL (5 分) で更新される。edge は読めなかった回は前の値を保つ (一時的な PDS 障害で BAN が外れない)
 
 **プライバシー注記**: このレコードは主管理者 PDS 上で公開されるため、BAN 対象 DID は誰でも見える。Bluesky のラベリングサービスと同じく「公開されるモデレーション情報」として扱う。
 

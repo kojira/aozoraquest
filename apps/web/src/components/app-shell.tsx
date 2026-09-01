@@ -11,6 +11,7 @@ import { removeSplash } from '@/lib/splash';
 import { useQuestActionableCount, computeQuestActionableCount, setQuestActionableCount } from '@/lib/quest-actionable';
 import { subscribeNotificationsSeen } from '@/lib/notification-seen';
 import { useRuntimeConfig } from '@/components/config-provider';
+import { MaintenanceGate } from '@/components/maintenance-gate';
 import type { AppColumnKind } from '@/lib/app-columns';
 
 /** footer-nav の各タブと workspace カラム kind の対応。
@@ -207,7 +208,10 @@ export function AppShell() {
       <main className="content">
         {/* ルートは lazy 分割 (main.tsx)。チャンク取得中の簡素なフォールバック。 */}
         <Suspense fallback={<div style={{ padding: '1em', fontSize: '0.85em', color: 'var(--color-muted)' }}>読み込み中…</div>}>
-          <Outlet />
+          {/* メンテナンス中は全ルートを差し替える (#561)。誰を通すかは isUnderMaintenance が決める。 */}
+          <MaintenanceGate>
+            <Outlet />
+          </MaintenanceGate>
         </Suspense>
       </main>
       {showComposeFab && (

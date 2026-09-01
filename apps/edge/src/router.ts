@@ -18,11 +18,11 @@ import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from './game-quest';
-import { ensureAuthoredWorld } from './world-authoring';
+import { ensureAuthoredWorld, bannedDidList } from './world-authoring';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
 import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
-import type { Command } from '@aozoraquest/core';
+import { isBanned, type Command } from '@aozoraquest/core';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
 export interface Env extends OAuthRoutesEnv {
@@ -108,31 +108,17 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // service auth JWT を検証して呼び出し元 DID を返す (M1 認証基盤の疎通確認)。
   if (req.method === 'POST' && url.pathname === '/api/whoami') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    try {
-      const { iss } = await verifyServiceAuth(token, { audience, lxm: LXM_WHOAMI });
-      return cors(json({ did: iss }), allowedOrigin);
-    } catch (e) {
-      // fail-closed: 検証失敗は 401 (詳細は漏らしすぎない)
-      const msg = e instanceof ServiceAuthError ? e.message : 'verify_failed';
-      return cors(json({ error: 'unauthorized', reason: msg }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_WHOAMI, 'none');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    return cors(json({ did: auth.did }), allowedOrigin);
   }
 
   // 権威 state (ゲーム経済) の読み取り。自分の DID の分だけ返す (JWT で本人確認)。
   // 読みは public getRecord なので session 不要。書き込みは M3 の battle 系で行う。
   if (req.method === 'GET' && url.pathname === '/api/me/state') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_ME_STATE }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_ME_STATE, 'none');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     // 読み書きとも repo はトークン由来 (readState)。未 bootstrap は 503 fail-closed。
     // 未初期化 (レコード無し) は §6-4 移行値を read-only で返す (power=0/Lv1 で表示が割れないように。
     // PDS へは書かない = 初回 move で確定)。initialized はレコード実在を表す。
@@ -152,15 +138,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // ── サーバー権威 ワールド/戦闘 (docs/21 §5) ── 移動も攻撃も毎回 Worker が処理 = チート不可 ──
   if (req.method === 'POST' && (url.pathname === '/api/world/move' || url.pathname === '/api/battle/turn')) {
     const isTurn = url.pathname === '/api/battle/turn';
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: isTurn ? LXM_BATTLE_TURN : LXM_WORLD_MOVE }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, isTurn ? LXM_BATTLE_TURN : LXM_WORLD_MOVE, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number };
     try {
       if (isTurn) {
@@ -168,18 +148,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
         const skillIndex = typeof body.skillIndex === 'number' ? body.skillIndex : 0; // とくぎ選択 (#436)。既定 0=署名
-        // クエスト定義 (#423) の討伐カウントは勝利決着のこの経路で数える。コールド isolate だと
-        // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
-        // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
-        await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
         return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
-      // **移動もワールドの読み込みを待つ。** ゲート (#424)・NPC (#425)・地図はここで効くので、
-      // コールド isolate で index.ts の waitUntil が間に合っていないと「街に入れない」
-      // 「人がいない」が無言で起きる (実際に踏んだ)。ロード済みならキャッシュ即返しで
-      // コストは乗らない。
-      await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
       return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
@@ -188,15 +159,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // そらのはねワープ: 街タイルへテレポート (位置トークンを更新して 1 歩で戻されないようにする)。
   if (req.method === 'POST' && url.pathname === '/api/world/teleport') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_TELEPORT }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_WORLD_TELEPORT, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { x?: number; y?: number };
     if (typeof body.x !== 'number' || typeof body.y !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
@@ -208,15 +173,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // フィールドの道具使用 (やくそう/そらのしずく)。サーバー在庫を消費して HP/MP を回復。
   if (req.method === 'POST' && url.pathname === '/api/world/item') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_ITEM }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_WORLD_ITEM, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { item?: string };
     if (body.item !== 'herb' && body.item !== 'tonic') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
@@ -228,15 +187,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。
   if (req.method === 'POST' && url.pathname === '/api/world/gear') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_GEAR }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_WORLD_GEAR, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { gear?: unknown };
     if (typeof body.gear !== 'object' || body.gear === null) return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
@@ -248,15 +201,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // しらべる: サーバーがアイテムを判定して gameState 在庫に付与 (client のみの幻を解消)。
   if (req.method === 'POST' && url.pathname === '/api/world/search') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_SEARCH }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_WORLD_SEARCH, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { token?: string; key?: unknown };
     try {
       return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req), undefined,
@@ -269,15 +216,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // XP 申告: 投稿・クエストの XP を権威 state の jobXp に積む (#534)。
   // 種類ごとの上限クランプ + 冪等キーで、client 由来でも青天井にならないようにする。
   if (req.method === 'POST' && url.pathname === '/api/xp/claim') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_XP_CLAIM }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_XP_CLAIM, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     // **額は client が送らない** — サーバーが決める (2026-07-27)。送るのは投稿の URI だけ。
     const body = (await req.json().catch(() => ({}))) as { archetype?: unknown; postUri?: unknown };
     if (typeof body.archetype !== 'string' || typeof body.postUri !== 'string') {
@@ -302,15 +243,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // analysis を書き換える従来の管理ツールではレベルが動かせない。Lv30 パッシブ等の
   // 実プレイ確認に必要なので、**ADMIN_DIDS ゲート付き**で権威側に用意する。
   if (req.method === 'POST' && url.pathname === '/api/xp/admin-set') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_XP_ADMIN_SET }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_XP_ADMIN_SET, 'none');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
     const body = (await req.json().catch(() => ({}))) as { archetype?: unknown; level?: unknown };
     if (typeof body.archetype !== 'string' || typeof body.level !== 'number') {
@@ -332,15 +267,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // Bluesky の上限は DID ごと 5,000 points/時・35,000 points/日、putRecord は 2 points。
   // = 全ユーザー合計で 1 時間 2,500 操作 / 1 日 17,500 操作が天井。
   if (req.method === 'GET' && url.pathname === '/api/admin/pds-usage') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_ADMIN_PDS_USAGE }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_ADMIN_PDS_USAGE, 'none');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
     const usage = await readPdsUsage(env.OAUTH_TOKENS);
     return cors(json({ usage, opsRemaining: opsRemaining(usage), pointsPerOp: PUT_RECORD_POINTS }), allowedOrigin);
@@ -348,15 +277,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // パワーの消費 (カードの引き直しなど)。**値段はサーバーが決める** — client が金額を送らない。
   if (req.method === 'POST' && url.pathname === '/api/power/spend') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_POWER_SPEND }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_POWER_SPEND, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { reason?: unknown; key?: unknown };
     if (body.reason !== 'card-draw' || typeof body.key !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
@@ -372,15 +295,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // PDS レコードしか書いておらず、報酬の可否を決める GameState.power は 0 のままだった
   // (= 画面にはパワーがあるのに勝っても報酬が出ない)。
   if (req.method === 'POST' && url.pathname === '/api/power/admin-grant') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_POWER_ADMIN_GRANT }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_POWER_ADMIN_GRANT, 'none');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     if (!isEdgeAdmin(env, did)) return cors(json({ error: 'forbidden' }, 403), allowedOrigin);
     const body = (await req.json().catch(() => ({}))) as { amount?: unknown };
     if (typeof body.amount !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
@@ -396,15 +313,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // なんでも屋: 装備を作ってもらう。**費用 (パワー + 素材) を権威側から引く** (#551)。
   // 品揃えも値段も強化値もサーバーが決める — client が送ってきた値段を信じない。
   if (req.method === 'POST' && url.pathname === '/api/shop/craft') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_CRAFT }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_SHOP_CRAFT, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { itemId?: unknown; rkey?: unknown; token?: unknown };
     if (typeof body.itemId !== 'string' || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
@@ -421,15 +332,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // なんでも屋: きたえる (同じ品・同じ強化値の 2 個体 → +1)。消費する個体は権威側から探す。
   if (req.method === 'POST' && url.pathname === '/api/shop/forge') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_FORGE }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_SHOP_FORGE, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { rkeys?: unknown; rkey?: unknown; token?: unknown };
     const pair = Array.isArray(body.rkeys) && body.rkeys.length === 2 && body.rkeys.every((v) => typeof v === 'string')
       ? (body.rkeys as [string, string]) : null;
@@ -447,15 +352,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // もちもの: 装備を すてる (#575)。**街の外でもできる** — 上限に達すると制作も購入も
   // 断られるので、街に着くまで整理できないと詰む。パワーは返さない。
   if (req.method === 'POST' && url.pathname === '/api/shop/discard') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_DISCARD }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_SHOP_DISCARD, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { rkeys?: unknown; rkey?: unknown };
     const rkeys = Array.isArray(body.rkeys) && body.rkeys.length > 0 && body.rkeys.every((v) => typeof v === 'string')
       ? (body.rkeys as string[]) : null;
@@ -473,22 +372,13 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // battle-reward が数え、素材は権威在庫を見て引き取り、パワーは定義の値だけ足す。
   if (req.method === 'POST' && (url.pathname === '/api/quest/accept' || url.pathname === '/api/quest/complete')) {
     const accept = url.pathname === '/api/quest/accept';
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: accept ? LXM_QUEST_ACCEPT : LXM_QUEST_COMPLETE }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, accept ? LXM_QUEST_ACCEPT : LXM_QUEST_COMPLETE, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { questId?: unknown };
     if (typeof body.questId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       const ns = nsFromOrigin(req);
-      // コールドスタート直後だと定義が未ロードで「そのクエストは無い」に落ちるので、ここは待つ
-      // (TTL 内はキャッシュ即返しでコスト無し)。
-      await ensureAuthoredWorld(env, ns, nowSec());
       const handler = accept ? handleQuestAccept : handleQuestComplete;
       return cors(json(await handler(env, did, body.questId, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
@@ -499,15 +389,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   // なんでも屋: 素材のひきとり (素材 → パワー)。権威側の在庫と残高を動かす。
   if (req.method === 'POST' && url.pathname === '/api/shop/sell') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_SELL }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_SHOP_SELL, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     const body = (await req.json().catch(() => ({}))) as { materialId?: unknown; count?: unknown; rkey?: unknown; token?: unknown };
     if (typeof body.materialId !== 'string' || typeof body.count !== 'number' || typeof body.rkey !== 'string') {
       return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
@@ -525,15 +409,9 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // オンボード用リセット: 認証済み本人の権威 gameState + 戦闘ガードを削除する (他人は消せない)。
   // client 側 PDS レコードの初期化は client が本人トークンで行う。UI は dev + 管理者に限定。
   if (req.method === 'POST' && url.pathname === '/api/world/reset') {
-    const token = bearer(req);
-    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
-    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
-    let did: string;
-    try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_WORLD_RESET }));
-    } catch (e) {
-      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
-    }
+    const auth = await authenticate(req, env, LXM_WORLD_RESET, 'world');
+    if (auth instanceof Response) return cors(auth, allowedOrigin);
+    const { did } = auth;
     try {
       return cors(json(await handleReset(env, did, nowSec())), allowedOrigin);
     } catch (e) {
@@ -582,6 +460,38 @@ function battleError(e: unknown): Response {
   // 失効/無効トークンで PDS が 401/403 を返した場合も **fail-closed 503** (報酬なし。500 で誤魔化さない)。
   if (e instanceof PdsError && (e.status === 401 || e.status === 403)) return json({ error: 'server_write_unavailable', reason: 'auth' }, 503);
   return json({ error: 'internal' }, 500);
+}
+
+/**
+ * 権威 API の呼び出し元を確かめる。service auth JWT を検証し、`gate === 'world'` なら
+ * BAN 済み DID を 403 で拒む (#561)。失敗時は返した Response をそのまま `cors()` に載せる。
+ *
+ * **BAN が効くのはあおぞらワールドの権威 API だけ** — 権威 state (パワー・XP・在庫・位置) を
+ * 書き換える経路 (移動・戦闘・店・クエスト・XP 申告・パワー消費・リセット)。
+ * `GET /api/me/state` は表示用の読み取りで、ホーム/自分/カードも見るので止めない。
+ * 管理者専用の経路は `isEdgeAdmin` が門で、BAN 判定は掛けない。
+ *
+ * BAN リストは手編集の世界と同じ便 (`ensureAuthoredWorld`) で管理者 PDS から読む。
+ * コールド isolate では未読 (空) なので**判定の前に読み込みを待つ** — 地図・NPC・ゲート・
+ * クエスト定義も同じ待ちで揃うので、「街に入れない」「倒したのに数えられない」も同時に防ぐ
+ * (TTL 内はキャッシュ即返しでコストは乗らない)。
+ */
+async function authenticate(req: Request, env: Env, lxm: string, gate: 'world' | 'none'): Promise<{ did: string } | Response> {
+  const token = bearer(req);
+  if (!token) return json({ error: 'missing_token' }, 401);
+  const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+  let did: string;
+  try {
+    ({ iss: did } = await verifyServiceAuth(token, { audience, lxm }));
+  } catch (e) {
+    // fail-closed: 検証失敗は 401 (詳細は漏らしすぎない)
+    return json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401);
+  }
+  if (gate === 'world') {
+    await ensureAuthoredWorld(env, nowSec());
+    if (isBanned(bannedDidList(), did)) return json({ error: 'forbidden', reason: 'banned' }, 403);
+  }
+  return { did };
 }
 
 /** Authorization: Bearer <jwt> を取り出す。 */
