@@ -14,6 +14,8 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
 
 - **本番エッジ**: `aozoraquest-edge` (top-level wrangler config)。`wrangler deploy` (main リリース時)。
 - **dev エッジ**: `aozoraquest-edge-dev` (`[env.dev]`)。`wrangler deploy --env dev`。
+- **どちらも push で自動デプロイ** (`.github/workflows/edge-deploy.yml`、§自動デプロイ参照)。
+  手動 `wrangler deploy` は自動デプロイが使えないときの迂回路。
   URL は worker 名から自動: `https://aozoraquest-edge-dev.kojiran.workers.dev`。
 - **サーバーアカウントは同じでよい**。dev エッジは別 client_id (= dev の `/client-metadata.json` URL) で
   同じアカウントを認可するので、**独立した OAuth grant / 独立した refresh チェーン**になり本番と干渉しない。
@@ -68,6 +70,8 @@ API キー必須 (429lab/kuda 新仕様、`Authorization: Bearer`)。キー未�
 (fail-safe) が、物理乱数エントロピーを混ぜたいなら prod/dev 両方に set すること。
 
 ### 3. dev エッジをデプロイ
+通常は dev への push で自動デプロイされる (§自動デプロイ)。初回セットアップや GitHub Actions が
+使えないときだけ手動で:
 ```
 wrangler deploy --env dev
 ```
@@ -113,8 +117,27 @@ VITE_EDGE_DID=did:web:aozoraquest-edge-dev.kojiran.workers.dev
   `DEV_EDGE_URL`/`DEV_EDGE_DID` 定数と `.env.development` の VITE_EDGE_URL/DID も直す
   (dev は VITE_NSID_ENV=dev のときコード側の定数でエッジを強制しているため)。
 
-## 再発防止
+## 自動デプロイ (`.github/workflows/edge-deploy.yml`)
 
-- dev エッジは dev push で自動デプロイする仕組み (GitHub Actions or CF Workers Build) を検討 (#TODO)。
-  それまでは dev エッジのコード変更は `wrangler deploy --env dev` を手動で回す (docs に明記)。
-- 本番エッジは main リリース時のみ `wrangler deploy` (top-level)。誤って本番へ出さない運用を徹底。
+web は Cloudflare Workers Builds が push で自動デプロイされるのに、エッジは手動 `wrangler deploy`
+だけだった。デプロイ漏れで戦闘の権威計算が数週間前のコードのまま動き、画面 (最新) と戦闘 (旧) の
+数値がずれた (#549)。片方だけ自動の非対称を無くすため、エッジも GitHub Actions で push デプロイする。
+
+- **トリガー**: `dev` / `main` への push で `apps/edge/**`・`packages/core/**` (エッジの依存)・
+  `pnpm-lock.yaml`・workflow 自身のどれかが変わったとき。Actions タブの手動実行 (workflow_dispatch)
+  も可で、そのとき選んだブランチがそのままデプロイ先になる (dev / main 以外は拒否)。
+- **デプロイ先はブランチが決める**: `dev` → `wrangler deploy --env dev` (`aozoraquest-edge-dev`)、
+  `main` → `wrangler deploy` (`aozoraquest-edge`)。本番へ出るのは main リリース (dev → main の PR
+  マージ) のときだけ。
+- **デプロイ前ゲート**: エッジの typecheck と unit test (ci.yml はエッジを回していない)。
+  壊れたエッジを出すと全ユーザーの戦闘が止まるので落ちたら出さない。
+- **必要な GitHub Secrets** (Settings → Secrets and variables → Actions → Repository secrets):
+  - `CLOUDFLARE_API_TOKEN` — Cloudflare API トークン (権限: **Workers Scripts:Edit**)
+  - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare アカウント ID
+
+  未設定のうちは workflow が失敗する (= 従来どおり手動 deploy)。
+- **Worker Secrets (`SERVER_DID` / `OAUTH_*_JWK` / `WORLD_TOKEN_SECRET` / `KUDA_API_KEY` 等) と KV は
+  `wrangler deploy` で消えない**。自動化後も再設定は不要。
+- 本番 (main) に承認を挟みたければ GitHub Environment `main` に Required reviewers を設定する
+  (workflow は main で `environment: main` を使う。ci.yml / directory-refresh.yml と同じ名前)。
+- **dev エッジをリネームした時**は上記「補足」の world-server.ts 定数の更新も忘れないこと。
