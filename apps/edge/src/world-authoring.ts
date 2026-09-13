@@ -114,12 +114,16 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: n
     // 店のラインナップ (#422)。**アイテムの後に読む** (検証が EQUIPMENT_BY_ID を引くため)。
     await step('shops', async () => {
       const shops = await getRecord<{ shops?: ShopOverride[] }>(pds, did, `${nsid}.world.shops`, RKEY);
-      if (shops?.value?.shops?.length) setShopOverrides(shops.value.shops);
+      // **空配列も適用する** (クエストと同じ流儀。#660)。全店の上書きを外した保存は {shops: []}
+      // なので、length で弾くと warm isolate に外したはずの品揃えが残る。
+      if (shops?.value?.shops) setShopOverrides(shops.value.shops);
     });
     // NPC (#425)。**移動判定に効く** (立っているマスは塞ぐ) ので edge も必須。
     await step('npcs', async () => {
       const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
-      if (npcs?.value?.npcs?.length) setNpcs(npcs.value.npcs);
+      // **空配列も適用する** (クエストと同じ流儀。#660)。全 NPC 削除の保存は {npcs: []} なので、
+      // length で弾くと warm isolate に削除済みの NPC が立ち続け、マスを塞ぎ会話もできてしまう。
+      if (npcs?.value?.npcs) setNpcs(npcs.value.npcs);
     });
     // ジョブ (#544)。**戦闘計算は edge が権威**なので、web だけが編集後の値を見ていると
     // 画面の強さとサーバーの強さが食い違う。

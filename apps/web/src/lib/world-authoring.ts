@@ -172,13 +172,15 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
       // **アイテムの後に読む** — 上書きの検証が EQUIPMENT_BY_ID / ITEMS を引くので、
       // 先に読むと「編集した装備を並べた店」が未知 id 扱いで落ちる。
       const rec = await getRecord<{ shops?: ShopOverride[] }>(agent, adminDid, ADMIN_COL.shops, RKEY);
-      if (rec?.shops?.length) setShopOverrides(rec.shops);
+      // 空配列も適用する (全上書き解除の反映。クエストと同じ流儀。#660)。
+      if (rec?.shops) setShopOverrides(rec.shops);
     } catch (e) {
       console.warn('[world] shops load failed', e);
     }
     try {
       const rec = await getRecord<{ npcs?: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
-      if (rec?.npcs?.length) setNpcs(rec.npcs);
+      // 空配列も適用する (全 NPC 削除の反映。クエストと同じ流儀。#660)。
+      if (rec?.npcs) setNpcs(rec.npcs);
     } catch (e) {
       console.warn('[world] npcs load failed', e);
     }
