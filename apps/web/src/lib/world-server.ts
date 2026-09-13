@@ -92,6 +92,8 @@ export interface ServerEncounter { battleId: string; monsterId: string; state: S
 export interface ServerMoveResult {
   /** 移動後のマップ (#424)。省略 = フィールド。 */
   mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter;
+  /** 到着した街のフィールド座標 (内部マップ座標ではない)。探索メモ用。 */
+  townArrival?: { x: number; y: number };
   /** 宿屋 (#424)。払ったパワーと残高。 */
   inn?: { name?: string; paid: number; power: number };
   /** 宿屋に泊まれなかった (パワー不足)。 */

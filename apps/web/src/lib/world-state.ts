@@ -38,6 +38,26 @@ export interface WorldState {
   updatedAt: string;
 }
 
+/** 街の到着応答を探索メモへ反映する。内部の位置・HP/MPは変更しない。 */
+export function recordTownArrival<T extends Pick<WorldState, 'regions' | 'visitedTowns' | 'lastTown'>>(
+  state: T,
+  town: { x: number; y: number },
+): { state: T; gained: boolean; newlyVisited: boolean } {
+  const around = regionsAround(regionOf(town.x, town.y));
+  const gained = around.some((r) => !state.regions.includes(r));
+  const newlyVisited = !state.visitedTowns.some((v) => v.x === town.x && v.y === town.y);
+  return {
+    state: {
+      ...state,
+      lastTown: { ...town },
+      regions: gained ? [...new Set([...state.regions, ...around])].sort((a, b) => a - b) : state.regions,
+      visitedTowns: newlyVisited ? [...state.visitedTowns, { ...town }] : state.visitedTowns,
+    },
+    gained,
+    newlyVisited,
+  };
+}
+
 interface WorldRecordShape {
   x?: unknown;
   y?: unknown;

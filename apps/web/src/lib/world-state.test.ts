@@ -1,10 +1,46 @@
 import { describe, expect, test, vi } from 'vitest';
 import { REGION_COUNT, regionOf, regionsAround, worldOverlay } from '@aozoraquest/core';
-import { loadWorldState, saveWorldState } from './world-state';
+import { loadWorldState, recordTownArrival, saveWorldState } from './world-state';
+import { revealedTowns } from '../components/world-map-modal';
 
 function agentWithGetRecord(impl: () => Promise<unknown>): any {
   return { com: { atproto: { repo: { getRecord: vi.fn(impl) } } } };
 }
+
+describe('recordTownArrival — ゲート経由のちずのかけら (#662)', () => {
+  test('街のフィールド座標で地図と訪問先を追加・保存し、内部位置と傷は保つ', async () => {
+    const overlay = worldOverlay();
+    const initialRegions = regionsAround(overlay.spawn.region);
+    const town = overlay.towns.find((t) => !initialRegions.includes(t.region))!;
+    expect(town).toBeDefined();
+    const before = {
+      x: 4, y: 4, mapId: 'village', hp: 5, mp: 2, lastTown: null,
+      regions: initialRegions, visitedTowns: [], gotStarterFeather: false,
+    };
+    expect(revealedTowns(overlay.towns, before.regions)).not.toContain(town);
+    const arrival = recordTownArrival(before, { x: town.x, y: town.y });
+    expect(arrival).toMatchObject({ gained: true, newlyVisited: true });
+    expect(arrival.state).toMatchObject({ x: 4, y: 4, mapId: 'village', hp: 5, mp: 2 });
+    expect(arrival.state.lastTown).toEqual({ x: town.x, y: town.y });
+    expect(arrival.state.regions).toEqual([...new Set([...initialRegions, ...regionsAround(town.region)])].sort((a, b) => a - b));
+    expect(revealedTowns(overlay.towns, arrival.state.regions)).toContain(town);
+    expect(before.regions).toBe(initialRegions);
+    expect(before.visitedTowns).toEqual([]);
+
+    const putRecord = vi.fn(async () => ({ data: {} }));
+    const agent = { assertDid: 'did:test', com: { atproto: { repo: { putRecord } } } } as any;
+    await saveWorldState(agent, arrival.state);
+    const saved = (putRecord.mock.calls as any[])[0][0].record;
+    expect(saved.regions).toEqual(arrival.state.regions);
+    expect(saved.visitedTowns).toEqual([{ x: town.x, y: town.y }]);
+    expect(saved).toMatchObject({ lastTownX: town.x, lastTownY: town.y, hp: 5, mp: 2 });
+
+    const revisit = recordTownArrival(arrival.state, { x: town.x, y: town.y });
+    expect(revisit).toMatchObject({ gained: false, newlyVisited: false });
+    expect(revisit.state.regions).toBe(arrival.state.regions);
+    expect(revisit.state.visitedTowns).toBe(arrival.state.visitedTowns);
+  });
+});
 
 describe('loadWorldState', () => {
   test('レコードがあれば wrap した座標を返す', async () => {
