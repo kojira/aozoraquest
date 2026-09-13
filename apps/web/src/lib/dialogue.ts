@@ -17,6 +17,12 @@ export interface DialogueLine {
   text: string;
 }
 
+/** 最後の行を読み終えたあとに出す選択肢 (「はい / いいえ」)。選ぶと onSelect → done。 */
+export interface DialogueChoice {
+  label: string;
+  onSelect: () => void | Promise<void>;
+}
+
 export interface DialogueState {
   /** 表示中の行 index */
   index: number;

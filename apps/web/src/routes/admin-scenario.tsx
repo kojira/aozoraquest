@@ -9,13 +9,15 @@ import {
   jobDisplayName,
   scenarioEvents,
   SAMPLE_SCENARIO,
+  starterTownScenario,
+  validateScenario,
   type Archetype,
   type ScenarioCondition,
   type ScenarioEvent,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
-import { loadAuthoredWorld, loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
+import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
 
 /**
  * **シナリオエディタ** (#545)。進行を「条件が揃ったらフラグが立つ」の列で書く。
@@ -56,6 +58,7 @@ export function AdminScenario() {
     // **クエストを先に読む** — 条件が questId の実在を引くので、直接開くと
     // 「クエストが存在しない」で読み込みが落ち、正常なレコードなのに保存不能になる。
     void loadAuthoredWorld(agent)
+      .then(() => loadQuestAuthoringRecords(agent, adminDid))
       .then(() => loadScenarioRecord(agent, adminDid))
       .then((events) => {
         if (cancelled) return;
@@ -90,7 +93,7 @@ export function AdminScenario() {
   }, [list]);
 
   const save = useCallback(async () => {
-    if (!session.agent) return;
+    if (!session.agent || loadState !== 'ok') return;
     try {
       await saveScenario(session.agent, list);
       setDirty(false);
@@ -98,7 +101,7 @@ export function AdminScenario() {
     } catch (e) {
       setNote(e instanceof ScenarioError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
     }
-  }, [session.agent, list]);
+  }, [session.agent, list, loadState]);
 
   if (!admin) {
     return (
@@ -205,6 +208,16 @@ export function AdminScenario() {
         >
           サンプルを入れる
         </button>
+        <button type="button" disabled={loadState !== 'ok'} onClick={() => {
+          const additions = starterTownScenario();
+          const next = [...list.filter((e) => !additions.some((a) => a.id === e.id)), ...additions];
+          try { validateScenario(next); } catch {
+            setNote('先に「ふたばの村のクエスト」を保存してから、この画面を開き直してね。'); return;
+          }
+          if (!window.confirm('同じ ID のイベントを置き換え、ふたばの村のシナリオを入れる？ 保存するまでは反映されません。')) return;
+          setList(next); setSel(additions[0]!.id); setDirty(true);
+          setNote('村のシナリオを入れた。保存すると、依頼の報告で次の依頼が解禁される。');
+        }}>ふたばの村のシナリオを入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || loadState !== 'ok'} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>

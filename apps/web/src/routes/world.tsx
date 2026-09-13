@@ -74,6 +74,7 @@ import { FeatherModal } from '@/components/feather-modal';
 import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
 import { WELCOME_POWER, ONBOARDING_DONE_KEY, WELCOME_BLESSING_PENDING_KEY } from '@/lib/onboarding-reset';
 import type { DialogueLine } from '@/lib/dialogue';
+import { activeQuest, EMPTY_QUEST_STATE, questAcceptChoices, questAfterBattle, questBusyLines, questMenuLine, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -134,14 +135,11 @@ interface Vitals {
 const MENU_HINT_DONE_KEY = 'aq-world-menu-hint-done';
 
 /** 初回オンボーディング (話者はブルスコン — 既存の案内役)。
- *  操作 → 危険と回復 → ちずのかけら → ちずボタン、の順で旅の前提だけ伝える */
+ *  操作と最初の話し相手だけ伝え、旅の知識は村人から少しずつ聞く。 */
 const ONBOARDING_LINES: readonly DialogueLine[] = [
-  { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ! わたしは せいれいブルスコン。すこしだけ あんないするね。' },
-  { speaker: 'ブルスコン', text: 'マップを おしたまま ゆびを うごかすと あるけるよ。' },
-  { speaker: 'ブルスコン', text: 'じぶんを ちょんと おすと、どうぐ・そうび・つよさ などの コマンドが ひらくよ。' },
-  { speaker: 'ブルスコン', text: 'そとには モンスターが いる。たたかいに まけると さいごに たちよった 街まで もどされちゃう。あぶなくなったら 街で やすもう。' },
-  { speaker: 'ブルスコン', text: '街に つくと「ちずのかけら」が 手に はいって、その街の まわりの ちずが ひろがっていくんだ。' },
-  { speaker: 'ブルスコン', text: '🗺 ちずボタンで いつでも たしかめられる。それじゃ、よい たびを!' },
+  { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ！ マップを おしたまま ゆびを うごかすと あるけるよ。' },
+  { speaker: 'ブルスコン', text: 'じぶんを ちょんと おすと コマンドが ひらくよ。村人に ぶつかると はなせるんだ。' },
+  { speaker: 'ブルスコン', text: 'まずは 村の いどのそばの むらおさに はなしかけてみよう。' },
 ];
 
 export function World() {
@@ -153,10 +151,20 @@ export function World() {
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
   /** NPC 会話 (#425/#423)。lines は通常セリフかクエスト文脈のセリフ。acceptQuestId が
-   *  あるときは**読み終えたら受注する** (DQ の作法: 依頼を聞いた = 引き受けた)。 */
+   *  あるときは**読み終えたら はい/いいえ で受注を聞く** (#659)。 */
   const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string } | null>(null);
-  /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成の応答と serverState だけが書く。 */
-  const questRef = useRef<{ active?: { id: string; progress: number }; done: string[] }>({ done: [] });
+  /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成/決着の応答と serverState だけが書く。
+   *  state (メニューの 1 行に出す) + ref (バンプ判定は state 更新を待たずに最新を読む)。 */
+  const [quest, setQuestState] = useState<QuestState>(EMPTY_QUEST_STATE);
+  const questRef = useRef(quest);
+  const setQuest = useCallback((next: QuestState | ((s: QuestState) => QuestState)) => {
+    const value = typeof next === 'function' ? next(questRef.current) : next;
+    questRef.current = value;
+    setQuestState(value);
+  }, []);
+  const npcTalkRef = useRef(npcTalk);
+  npcTalkRef.current = npcTalk;
+  const [questPending, setQuestPending] = useState(false);
   /** 進行フラグ (#545)。**サーバーが正** — 立てるのは edge だけで、ここは表示用の写し。 */
   const flagsRef = useRef<string[]>([]);
   /** 戦闘中に届いたシナリオのお知らせ (#545)。戦闘の窓は使えないので、
@@ -337,11 +345,6 @@ export function World() {
   // 装備をサーバーにミラー (戦闘に反映 #377)。解決結果が変わるたび送る = 初回ロード + 装備変更を一括カバー。
   // 参照でなく内容キーで発火 (resolveGear は毎回新オブジェクトを返すため)。
   const gearKey = JSON.stringify(resolvedGear?.selection ?? null);
-  // 手編集した世界 (地図 + ドット絵) を読む (#421)。**読み込むまでは同梱の地図 /
-  // ノイズ生成に倒れる**ので待たない。edge も同じレコードを読むので権威と一致する。
-  useEffect(() => {
-    void loadAuthoredWorld(agent).catch((e) => console.warn('[world] authored world load failed', e));
-  }, [agent]);
 
   useEffect(() => {
     if (!agent || !worldServerEnabled || gearKey === 'null') return;
@@ -385,6 +388,10 @@ export function World() {
     let serverInv: { materials: Record<string, number>; carryHp?: number | undefined; carryMp?: number | undefined } | null = null;
     (async () => {
       try {
+        // Internal map/NPC definitions must exist before restoring a saved mapId.
+        // Otherwise a fast state response renders village coordinates as a field.
+        await loadAuthoredWorld(agent);
+        if (cancelled) return;
         const state = await loadWorldState(agent, did);
         if (cancelled) return;
         // 冒険の初回に そらのはねを 1 個わたす (docs/19。gotStarterFeather で二重配布
@@ -402,7 +409,7 @@ export function World() {
           if (!cancelled) {
             serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
             setServerPower(ss.state.power ?? 0);
-            questRef.current = { ...(ss.state.quest ? { active: ss.state.quest } : {}), done: ss.state.questsDone ?? [] };
+            setQuest(questStateOf(ss.state));
             flagsRef.current = ss.state.flags ?? [];
             serverMapId = ss.state.mapId;
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
@@ -515,7 +522,7 @@ export function World() {
       flushCraftLog();
     })();
     return () => { cancelled = true; };
-  }, [session.status, agent, did, retryNonce, flushCraftLog]);
+  }, [session.status, agent, did, retryNonce, flushCraftLog, setQuest]);
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -560,6 +567,39 @@ export function World() {
   // (サーバーが gameState から再同期する)。位置はトークンが権威なので歩行では PDS を触らない = 高速。
   const tokenRef = useRef<string | undefined>(undefined);
 
+  const refreshQuestState = useCallback(async () => {
+    if (!agent) return;
+    const { state } = await serverState(agent);
+    setQuest(questStateOf(state));
+    flagsRef.current = state.flags ?? [];
+    setServerPower(state.power ?? 0);
+    applyServerMaterials(state.materials ?? {});
+  }, [agent, setQuest, applyServerMaterials]);
+
+  const acceptQuest = useCallback(async (questId: string) => {
+    if (!agent || moveBusyRef.current) return;
+    moveBusyRef.current = true;
+    setQuestPending(true);
+    try {
+      const res = await serverQuestAccept(agent, questId);
+      setQuest(questStateOf(res));
+      if (res.flags) flagsRef.current = res.flags;
+      setNotice(`「${gameQuestById(questId)?.title ?? questId}」を うけおった!`);
+      setNpcTalk(null);
+    } catch (e) {
+      try {
+        await refreshQuestState();
+        // A lost response may already have accepted this quest, or another tab chose one.
+        if (questRef.current.active || questRef.current.done.includes(questId)) setNpcTalk(null);
+      } catch { /* Keep the offer retryable; do not infer acceptance from a failed request. */ }
+      setNotice(e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど たしかめてね。');
+      throw e;
+    } finally {
+      moveBusyRef.current = false;
+      setQuestPending(false);
+    }
+  }, [agent, refreshQuestState, setQuest]);
+
   // 移動は**サーバー (edge Worker) が権威判定する** (docs/21 §5 再設計)。クライアントは方向 (隣接1マス) と
   // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
   // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
@@ -568,14 +608,14 @@ export function World() {
       const s = wsRef.current;
       // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可 (全入力経路を一括ガード)。
       if (!s || battleRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
-      if (moveBusyRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
+      if (moveBusyRef.current || npcTalkRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
       if (!worldServerEnabled || !agent) { setNotice('サーバーに接続できないため移動できない。'); return; }
       const { dx, dy } = DIRS[dir];
       const cur = s.mapId ? interiorById(s.mapId) ?? null : null;
       const nx = cur ? s.x + dx : wrap(s.x + dx);
       const ny = cur ? s.y + dy : wrap(s.y + dy);
       // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
-      // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (読了で受注)、
+      // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (はいで受注)、
       // 進行中→達成を試みる (条件検証はサーバー)、達成済み→通常セリフ。
       // NPC は今いるマップで引く (#613)。内部マップの NPC はフィールドの同じ座標には居ない。
       const npc = npcAt(cur?.id ?? WORLD_MAP_ID, nx, ny);
@@ -588,13 +628,12 @@ export function World() {
           ? q0 : undefined;
         const qs = questRef.current;
         const npcLines = npcLinesFor(npc, flagsRef.current, materialsRef.current);
-        // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする。
+        // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする (activeQuest)。
         // 放置すると「べつの たのまれごと」で全クエストが永久に受けられない (UX レビュー ★★★)。
-        // サーバー側 (handleQuestAccept) も同じ判断で孤児クエストを落とす。
-        const active = qs.active && gameQuestById(qs.active.id) ? qs.active : undefined;
+        const active = activeQuest(qs);
         if (!q || qs.done.includes(q.id)) {
           setNpcTalk({ npc, lines: npcLines });
-        } else if (active?.id === q.id) {
+        } else if (active?.def.id === q.id) {
           // 達成試行はサーバー往復。**往復中は移動もバンプも塞ぐ** (moveBusyRef) —
           // 塞がないとキー押しっぱなしで並行リクエストが飛び、成功の報酬ダイアログを
           // 後続の already_done が上書きしたり、歩き出した先の戦闘中に会話が湧く (UX レビュー ★★★/★★)。
@@ -602,7 +641,7 @@ export function World() {
           void (async () => {
             try {
               const res = await serverQuestComplete(agent, q.id);
-              questRef.current = { ...(res.quest ? { active: res.quest } : {}), done: res.questsDone ?? [] };
+              setQuest(questStateOf(res));
               if (res.flags) flagsRef.current = res.flags;
               setServerPower(res.power);
               applyServerMaterials(res.materials);
@@ -617,13 +656,13 @@ export function World() {
               if (e instanceof WorldServerError && e.code === 'not_ready') {
                 // 「まだ n/m」はサーバーの言い分をそのまま出す (進行数はサーバーが正)。
                 setNpcTalk({ npc, lines: [...(q.progress ?? ['たのんだよ。']), e.message] });
-              } else if (e instanceof WorldServerError && e.code === 'already_done') {
-                // 並行達成の敗者 (レース)。done に積んで通常セリフへ。
-                questRef.current = { done: [...qs.done, q.id] };
-                setNpcTalk({ npc, lines: npcLines });
               } else {
-                // 通信失敗を進行セリフの顔で出さない — 条件を満たしているのに
-                // 「まだ頼み中」に見えると、達成済みなのに狩り続けてしまう (UX レビュー ★★)。
+                try {
+                  await refreshQuestState();
+                  if (e instanceof WorldServerError && ['already_done', 'not_accepted', 'quest_busy'].includes(e.code ?? '')) {
+                    setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current) });
+                  }
+                } catch { /* Unknown result: leave the last confirmed state intact. */ }
                 setNotice('つうしんに しっぱいした… もういちど はなしかけてみよう。');
               }
             } finally {
@@ -631,10 +670,10 @@ export function World() {
             }
           })();
         } else if (active) {
-          // 別のクエスト進行中: 依頼は聞けるが受けられない (1 つずつ)。
-          setNpcTalk({ npc, lines: [...q.intro, '(いまは べつの たのまれごとを うけている…)'] });
+          // 別のクエスト進行中: 依頼は聞けるが受けられない (1 つずつ)。確認は出さない。
+          setNpcTalk({ npc, lines: questBusyLines(q, active.def) });
         } else {
-          setNpcTalk({ npc, lines: q.intro, acceptQuestId: q.id });
+          setNpcTalk({ npc, lines: questOfferLines(q), acceptQuestId: q.id });
         }
         return;
       }
@@ -744,7 +783,7 @@ export function World() {
         }
       })();
     },
-    [scheduleSave, agent, flushCraftLog],
+    [scheduleSave, agent, flushCraftLog, setQuest, refreshQuestState, applyServerMaterials],
   );
 
   // 戦闘コマンドも**毎回サーバーが解決する** (docs/21 §5)。クライアントは battleId + turn + command を送るだけ。
@@ -771,6 +810,8 @@ export function World() {
           // **拾わないと永久に失われる** — 発火済みのお知らせは二度と返らない。
           if (res.flags) flagsRef.current = res.flags;
           if (res.scenarioNotices?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioNotices];
+          // 討伐数 (#659) も決着の応答で同期する (メニューの進捗が戦闘前のまま残らない)。
+          setQuest((s) => questAfterBattle(s, res.quest));
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
@@ -789,7 +830,7 @@ export function World() {
         }
       })();
     },
-    [agent],
+    [agent, setQuest],
   );
 
   // メッセージ窓のタップ送り。開幕/継戦は入力へ、決着は確定処理してリザルトへ。
@@ -1540,7 +1581,7 @@ export function World() {
 `}</style>
             </div>
           )}
-          {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
+          {menuOpen && <WorldMenu commands={menuCommands} questLine={questMenuLine(quest, materialsView)} onClose={() => setMenuOpen(false)} />}
           {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。
               敵+ログ+コマンド、リザルトの報酬まで全部この枠内に畳む。上枠 (paddingTop)
               は WorldHud の HP/MP 帯を空けておく。 */}
@@ -1585,19 +1626,11 @@ export function World() {
             <DialogueWindow
               anchor="map"
               lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
-              onDone={() => {
-                const accept = npcTalk.acceptQuestId;
-                setNpcTalk(null);
-                if (!accept || !agent) return;
-                // 依頼を聞き終えた = 引き受けた (#423)。受注もサーバーが正。
-                void serverQuestAccept(agent, accept)
-                  .then((res) => {
-                    questRef.current = { ...(res.quest ? { active: res.quest } : {}), done: res.questsDone ?? [] };
-                    const title = gameQuestById(accept)?.title ?? accept;
-                    setNotice(`「${title}」を うけおった!`);
-                  })
-                  .catch((e) => setNotice(e instanceof WorldServerError ? e.message : 'うけおいに しっぱいした…'));
-              }}
+              // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
+              // また話せば聞ける。受注もサーバーが正。
+              busy={questPending}
+              choices={questAcceptChoices(npcTalk.acceptQuestId, acceptQuest)}
+              onDone={() => setNpcTalk(null)}
             />
           )}
           {doorFade && <DoorFade phase={doorFade} onDone={() => setDoorFade(null)} />}
@@ -1662,7 +1695,7 @@ export function World() {
             {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
           </p>
           <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-            マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。街に入ると全回復。
+            マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。やどやで パワーを はらうと 全回復。
             {/* **残高は HUD の P だけに出す。** ここに client 台帳 (points) の数字を併記すると、
                 権威側と食い違ったときに同じ画面に別々の残高が並ぶ (実際に「P 0」の 3cm 下に
                 「いまのパワー: 152」が出ていた)。遭遇判定はサーバーが権威 power で行うので、
@@ -1671,7 +1704,7 @@ export function World() {
               ? serverPower === null
                 ? ' パワー残高を読み込めなかった (通信を確認して開き直して)。'
                 : serverPower < BATTLE_TUNING.powerCost
-                  ? ' あおぞらパワーが ないので、勝っても経験値や素材は もらえません (投稿すると増える)。'
+                  ? ' あおぞらパワーが ないので、勝っても経験値・素材・依頼の進みは 得られません。とうこうしたくなったら ひとやすみしよう。'
                   : ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。`
               : ''}
           </p>

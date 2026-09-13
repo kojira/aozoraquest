@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
-import { BASE_PALETTE, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
+import { BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
@@ -177,6 +177,36 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     }
     // 決着後に同じターンを再送 → guard 無し = 409 (二重報酬不可)
     await expect(handleTurn(env, USER, enc.battleId, 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('決着の応答に進行中クエストを載せる (#659: 勝利で進んだ討伐数を client が表示に同期できる)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ power: 5 }) });
+    globalThis.fetch = m.fn;
+    const enc = await sealEncounter(env, USER, GS({ power: 5 }), 5, 5, 12345, NOW);
+    // 遭遇した敵を対象にするクエストを受注済みの状態にする (定義と権威 state の両方)
+    setNpcs([{ id: 'n1', name: 'そんちょう', x: 1, y: 1, lines: ['やあ'] }]);
+    setGameQuests([{ id: 'q1', title: 'たいじ', npcId: 'n1', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat', monsterId: enc.monsterId, count: 5 } }]);
+    m.store.set('gs', { value: GS({ power: 5, quest: { id: 'q1', progress: 1 } }), cid: 'gs1' });
+    try {
+      let outcome = 'ongoing';
+      let last;
+      for (let turn = 0; turn < 40 && outcome === 'ongoing'; turn++) {
+        last = await handleTurn(env, USER, enc.battleId, turn, 'attack', NOW);
+        outcome = last.outcome;
+      }
+      const gs = m.store.get('gs')!.value as GameState;
+      if (outcome === 'win') {
+        expect(gs.quest!.progress).toBeGreaterThanOrEqual(2);
+      } else {
+        expect(gs.quest).toEqual({ id: 'q1', progress: 1 }); // 勝ち以外は進まない
+      }
+      // 応答の quest は権威 state と一致する
+      expect(last!.quest).toEqual(gs.quest);
+    } finally {
+      setGameQuests(null);
+      setNpcs(null);
+    }
   });
 
   it('migrateInitState: power 残高は取り込むが、ジョブ XP は取り込まない (§6-4 / #534)', async () => {

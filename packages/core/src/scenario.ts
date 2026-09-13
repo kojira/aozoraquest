@@ -80,7 +80,7 @@ let events: ScenarioEvent[] = [];
  *
  * questId の実在を見るので、**クエスト (#423) を読んだ後に呼ぶ**こと。
  */
-export function setScenario(list: readonly ScenarioEvent[] | null): void {
+export function validateScenario(list: readonly ScenarioEvent[] | null): void {
   const next = list ?? [];
   if (next.length > MAX_SCENARIO_EVENTS) throw new ScenarioError(`イベントが多すぎる (${next.length} > ${MAX_SCENARIO_EVENTS})`);
   const ids = new Set<string>();
@@ -131,6 +131,11 @@ export function setScenario(list: readonly ScenarioEvent[] | null): void {
   // お知らせが出続ける。定義側で超えさせないのが唯一の確実な防ぎ方。
   const allFlags = new Set(next.flatMap((e) => e.setFlags));
   if (allFlags.size > MAX_FLAGS) throw new ScenarioError(`フラグが多すぎる (${allFlags.size} > ${MAX_FLAGS})`);
+}
+
+export function setScenario(list: readonly ScenarioEvent[] | null): void {
+  validateScenario(list);
+  const next = list ?? [];
   events = next.map((e) => ({ ...e, when: e.when.map((c) => ({ ...c })), setFlags: [...e.setFlags] }));
 }
 

@@ -32,7 +32,7 @@ export interface GameQuestDef {
   title: string;
   /** 発注する NPC。ぶつかると依頼を話す。 */
   npcId: string;
-  /** 依頼のセリフ (受ける前)。読み終えると受注する。 */
+  /** 依頼のセリフ (受ける前)。読み終えて選択肢に同意すると受注する。 */
   intro: string[];
   /** 達成時のセリフ (お礼)。 */
   done: string[];
@@ -67,7 +67,7 @@ let byNpc = new Map<string, GameQuestDef>();
  * npcId / monsterId / itemId の実在は**読み込み順に依存する** — NPC・モンスター・
  * アイテムのレコードを先に適用してから呼ぶこと (world-authoring がその順で読む)。
  */
-export function setGameQuests(list: readonly GameQuestDef[] | null): void {
+export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
   const next = list ?? [];
   if (next.length > MAX_GAME_QUESTS) throw new QuestDataError(`クエストが多すぎる (${next.length} > ${MAX_GAME_QUESTS})`);
   const ids = new Set<string>();
@@ -121,6 +121,11 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
       }
     }
   }
+}
+
+export function setGameQuests(list: readonly GameQuestDef[] | null): void {
+  validateGameQuests(list);
+  const next = list ?? [];
   quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}), ...(q.requireItems ? { requireItems: q.requireItems.map((r) => ({ ...r })) } : {}) }));
   byId = new Map(quests.map((q) => [q.id, q]));
   byNpc = new Map(quests.map((q) => [q.npcId, q]));
@@ -137,4 +142,23 @@ export function gameQuestById(id: string): GameQuestDef | undefined {
 /** その NPC が発注しているクエスト (無ければ undefined = ただの会話)。 */
 export function gameQuestByNpc(npcId: string): GameQuestDef | undefined {
   return byNpc.get(npcId);
+}
+
+/** 達成条件の文 (「そらいろスライムを 3 たい」「やくそうを 2 こ」)。 */
+export function questObjectiveText(def: GameQuestDef): string {
+  const o = def.objective;
+  return o.kind === 'defeat'
+    ? `${MONSTERS_BY_ID[o.monsterId]?.name ?? o.monsterId}を ${o.count} たい`
+    : `${ITEMS[o.itemId]?.name ?? o.itemId}を ${o.count} こ`;
+}
+
+/**
+ * 進捗 1 行 (「そらいろスライムを 3 たい (2/3)」)。画面に出す文はここ 1 か所で組む。
+ * defeat の進み具合は `GameState.quest.progress` (勝利時に edge が数える)、
+ * collect は**所持数**が進捗 (達成時に引き取られるので、別に数えない)。
+ */
+export function questProgressLine(def: GameQuestDef, progress: number, materials: Record<string, number>): string {
+  const o = def.objective;
+  const have = o.kind === 'defeat' ? progress : (materials[o.itemId] ?? 0);
+  return `${questObjectiveText(def)} (${Math.min(have, o.count)}/${o.count})`;
 }

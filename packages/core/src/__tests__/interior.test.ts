@@ -447,7 +447,7 @@ describe('同梱の村人 (#656)', () => {
   it('セリフは 1〜2 窓で、上限の長さに収まる (DQ の窓に入る)', () => {
     for (const n of villagers) {
       expect(n.lines.length, n.id).toBeGreaterThanOrEqual(1);
-      expect(n.lines.length, n.id).toBeLessThanOrEqual(2);
+      expect(n.lines.length, n.id).toBeLessThanOrEqual(3);
       for (const l of n.lines) expect(l.length, `${n.id}: ${l}`).toBeLessThanOrEqual(MAX_NPC_LINE);
     }
   });
