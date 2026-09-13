@@ -6,8 +6,8 @@
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { Agent } from '@atproto/api';
-import { allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
-import { loadAuthoredWorld } from './world-authoring';
+import { allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
 
 const DID = 'did:plc:admin';
 const NPC: NpcDef = { id: 'elder', name: '長老', x: 3, y: 4, lines: ['やあ'] };
@@ -55,5 +55,34 @@ describe('loadAuthoredWorld: 空配列のレコードを適用する (#660)', ()
   it('店: レコードが無ければメモリの上書きを保持する', async () => {
     await loadAuthoredWorld(fakeAgent({}));
     expect(shopOverrides().map((s) => [s.x, s.y])).toEqual([[10, 20]]);
+  });
+});
+
+describe('導入データ: draftと保存済み定義の境界', () => {
+  afterEach(() => { setScenario(null); setGameQuests(null); setNpcs(null); setInteriors(null, []); });
+  it('保存失敗はクエスト/シナリオのglobal定義を変えない。成功後だけ反映', async () => {
+    setNpcs(starterTownNpcs());
+    const quests = starterTownQuests();
+    const putRecord = vi.fn().mockRejectedValue(new Error('offline'));
+    const agent = { assertDid: DID, com: { atproto: { repo: { putRecord } } } } as unknown as Agent;
+    await expect(saveGameQuests(agent, quests)).rejects.toThrow('offline');
+    expect(gameQuests()).toEqual([]);
+    putRecord.mockResolvedValue({});
+    await saveGameQuests(agent, quests);
+    expect(gameQuests()).toEqual(quests);
+    putRecord.mockRejectedValue(new Error('offline'));
+    await expect(saveScenario(agent, starterTownScenario())).rejects.toThrow('offline');
+    expect(scenarioEvents()).toEqual([]);
+    putRecord.mockResolvedValue({});
+    await saveScenario(agent, starterTownScenario());
+    expect(scenarioEvents()).toEqual(starterTownScenario());
+  });
+  it('未作成は空。通信/認証失敗はnot foundを含むメッセージでも伝播する', async () => {
+    expect(await loadQuestAuthoringRecords(fakeAgent({}), DID)).toEqual([]);
+    for (const error of [new Error('network unavailable'), Object.assign(new Error('session not found'), { error: 'AuthenticationRequired' })]) {
+      const agent = { com: { atproto: { repo: { getRecord: vi.fn().mockRejectedValue(error) } } } } as unknown as Agent;
+      await expect(loadQuestAuthoringRecords(agent, DID)).rejects.toBe(error);
+      await expect(loadScenarioRecord(agent, DID)).rejects.toBe(error);
+    }
   });
 });

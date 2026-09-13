@@ -10,10 +10,12 @@
 import { describe, it, expect, afterEach, beforeAll } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { MONSTERS, setGameQuests, setNpcs, setScenario, type GameQuestDef } from '@aozoraquest/core';
+import { starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop, setShopOverrides, worldOverlay, townShopStock, MONSTERS, setGameQuests, setNpcs, setScenario, type GameQuestDef } from '@aozoraquest/core';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from '../src/game-quest';
 import { applyBattleOutcome } from '../src/battle-reward';
-import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
+import { handleGear } from '../src/battle-resolver';
+import { shopCraft } from '../src/shop';
+import { sanitizeGear, rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice';
@@ -261,5 +263,64 @@ describe('シナリオ連動 (#545)', () => {
     globalThis.fetch = m.fn;
     const res = await handleQuestComplete(await makeEnv(), DID, 'q-collect', NOW);
     expect(res.notices).toBeUndefined();
+  });
+});
+
+// The tutorial uses the existing CAS/reward/shop paths, not a test-only quest engine.
+describe('ふたばの村: 受注から報告・制作・次の依頼へ', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    setScenario(null); setGameQuests(null); setNpcs(null); setShopOverrides(null);
+  });
+
+  it('0powerで受注可能だが進まない。3勝して報告し、一度だけ受領→制作・装備→3依頼を報告', async () => {
+    setNpcs(starterTownNpcs());
+    setGameQuests(starterTownQuests());
+    setScenario(starterTownScenario());
+    const town = worldOverlay().towns[0]!;
+    setShopOverrides([starterTownShop(town, townShopStock(town, 0))]);
+    const m = statefulPds(stateAt({ x: town.x, y: town.y, power: 0, materials: {} }));
+    globalThis.fetch = m.fn;
+    const env = await makeEnv();
+    await expect(handleQuestAccept(env, DID, 'futaba-herbs', NOW)).rejects.toMatchObject({ code: 'locked' });
+    await handleQuestAccept(env, DID, 'futaba-slimes', NOW);
+    const outcome = { outcome: 'win' as const, monsterId: 'sky-slime', archetype: 'warrior' as const, luk: 10, rewardSeed: 12345, lossSeed: 67890, rewarded: false };
+    expect(applyBattleOutcome(stored(m.store), outcome).next.quest?.progress).toBe(0);
+    await expect(handleQuestComplete(env, DID, 'futaba-slimes', NOW)).rejects.toMatchObject({ code: 'not_ready' });
+    // Isolated fixture models returning after an optional post; no new grant API is implemented.
+    let s = { ...stored(m.store), power: 3 };
+    for (let i = 0; i < 3; i++) s = applyBattleOutcome(s, { ...outcome, rewarded: true }).next;
+    m.store.set(rkeyForDid(DID), { value: s, cid: 'battle-final' });
+    expect(s.quest?.progress).toBe(3);
+    expect(s.power).toBe(0);
+    const results = await Promise.allSettled([
+      handleQuestComplete(env, DID, 'futaba-slimes', NOW),
+      handleQuestComplete(env, DID, 'futaba-slimes', NOW),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(stored(m.store).power).toBe(4);
+    expect(stored(m.store).flags).toContain('futaba_slimes_done');
+    const craft = await shopCraft(env, DID, { itemId: 'ar-cloth', rkey: 'tutorial-cloth', luk: 10 }, NOW);
+    expect(craft.power).toBe(0);
+    expect(craft.pieces?.[0]?.itemId).toBe('ar-cloth');
+    const selection = { armor: { id: 'ar-cloth', level: craft.level! } };
+    expect(sanitizeGear(selection, craft.pieces!)).toEqual(selection);
+    await handleGear(env, DID, selection, NOW);
+    expect(stored(m.store).gearSel).toEqual(selection);
+    await expect(handleQuestComplete(env, DID, 'futaba-slimes', NOW)).rejects.toMatchObject({ code: 'already_done' });
+    await handleQuestAccept(env, DID, 'futaba-herbs', NOW);
+    m.store.set(rkeyForDid(DID), { value: { ...stored(m.store), materials: { herb: 2 } }, cid: 'collected-2' });
+    await expect(handleQuestComplete(env, DID, 'futaba-herbs', NOW)).rejects.toMatchObject({ code: 'not_ready' });
+    m.store.set(rkeyForDid(DID), { value: { ...stored(m.store), materials: { herb: 3, 'bat-wing': 2 } }, cid: 'collected-3' });
+    await handleQuestComplete(env, DID, 'futaba-herbs', NOW);
+    expect(stored(m.store).materials.herb).toBe(1);
+    expect(stored(m.store).flags).toContain('futaba_herbs_done');
+    await handleQuestAccept(env, DID, 'futaba-wings', NOW);
+    await handleQuestComplete(env, DID, 'futaba-wings', NOW);
+    expect(stored(m.store).materials['bat-wing'] ?? 0).toBe(0);
+    expect(stored(m.store).flags).toContain('futaba_wings_done');
+    expect(stored(m.store).questsDone).toEqual(starterTownQuests().map((q) => q.id));
+    expect(stored(m.store).quest).toBeUndefined();
   });
 });

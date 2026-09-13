@@ -120,7 +120,9 @@ export interface ServerAward {
     learned?: string[];
   };
 }
-export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[] }
+export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[];
+  /** 進行中のゲーム内クエスト (#659)。勝利で討伐数が進んだときの同期用 (無ければ持っている値を保つ)。 */
+  quest?: { id: string; progress: number } }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
 export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 

@@ -17,7 +17,12 @@ export interface WorldMenuCommand {
   onSelect: () => void;
 }
 
-export function WorldMenu({ commands, onClose }: { commands: readonly WorldMenuCommand[]; onClose: () => void }) {
+export function WorldMenu({ commands, questLine, onClose }: {
+  commands: readonly WorldMenuCommand[];
+  /** 受注中のクエスト 1 行 (「そらいろスライムを 3 たい (2/3)」)。無ければ行ごと出さない (#659) */
+  questLine?: string | undefined;
+  onClose: () => void;
+}) {
   const firstRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     firstRef.current?.focus();
@@ -44,6 +49,9 @@ export function WorldMenu({ commands, onClose }: { commands: readonly WorldMenuC
         style={{ padding: 8, marginBottom: 4, minWidth: 180, maxWidth: '90%' }}
       >
         <div style={{ fontSize: 11, color: 'var(--color-muted)', marginBottom: 4, textAlign: 'center' }}>コマンド</div>
+        {questLine && (
+          <div style={{ fontSize: '0.8em', padding: '0 0.4em', marginBottom: 6 }}>クエスト: {questLine}</div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {commands.map((c, i) => (
             <button

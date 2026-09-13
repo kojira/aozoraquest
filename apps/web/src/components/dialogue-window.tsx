@@ -7,7 +7,9 @@ import {
   startDialogue,
   tickDialogue,
   visibleText,
+  type DialogueChoice,
   type DialogueLine,
+  type DialogueState,
 } from '@/lib/dialogue';
 
 /**
@@ -31,6 +33,11 @@ const CHAR_MS = 45;
 const DIALOGUE_BACKDROP_Z = 900;
 const DIALOGUE_WINDOW_Z = 901;
 
+/** 選択肢を出す状態か: 選択肢があり、最後の行を全文表示し終えている。 */
+function choicesShown(lines: readonly DialogueLine[], st: DialogueState, choices: readonly DialogueChoice[] | undefined): boolean {
+  return !!choices && choices.length > 0 && !st.done && st.index === lines.length - 1 && lineComplete(lines, st);
+}
+
 /** visually-hidden (スクリーンリーダーにだけ全文を渡す) */
 const SR_ONLY: React.CSSProperties = {
   position: 'absolute',
@@ -48,13 +55,20 @@ export function DialogueWindow({
   lines,
   plateIcon,
   onDone,
+  choices,
+  busy = false,
   anchor = 'viewport',
 }: {
   lines: readonly DialogueLine[];
   /** 話者名プレートに添えるアイコン (例: ブルスコンは SpiritIcon — 他画面の
    *  吹き出しと同じ顔で認識できるように)。NPC ごとの出し分けは呼び出し側の責務 */
   plateIcon?: React.ReactNode;
+  /** 全行を送り終えた (選択肢があればどれかを選んだ) ときに一度だけ呼ぶ */
   onDone: () => void;
+  /** 最後の行を読み終えたら出す選択肢 (「はい / いいえ」)。あるあいだは送り面のタップで
+   *  閉じない (選ぶまで待つ)。onSelect の成功後に onDone。失敗時は再選択できる */
+  choices?: readonly DialogueChoice[] | undefined;
+  busy?: boolean;
   /** 出す位置。'viewport' = 画面下端 (footer 際) に固定 (既定)。'map' = 直近の
    *  position:relative 祖先 (ワールドの地図枠) の下部にオーバーレイし、DQ 風に
    *  「マップ上」へ会話窓を出す。 */
@@ -68,6 +82,7 @@ export function DialogueWindow({
   );
   const doneRef = useRef(false);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const choosingRef = useRef(false);
 
   // 空の lines でも必ず done になる (呼び出し側は表示中 move ガード等を掛けるため、
   // ここで止まると不可視のまま永久ブロックになる — 動的生成セリフ時代への契約。レビュー指摘)
@@ -113,10 +128,13 @@ export function DialogueWindow({
    *  全画面の当たり判定を持つ側で止めるのが正しい (今後どこに置いても同じ事故が起きない)。 */
   const advance = useCallback((e?: { stopPropagation: () => void }) => {
     e?.stopPropagation();
-    setSt((s) => advanceDialogue(lines, s));
-  }, [lines]);
+    if (busy || choosingRef.current) return;
+    setSt((s) => (choicesShown(lines, s, choices) ? s : advanceDialogue(lines, s)));
+  }, [lines, choices, busy]);
 
   const line = currentLine(lines, st);
+  const asking = choicesShown(lines, st, choices);
+  // Keep focus on the dialogue surface: held Enter must not select "はい".
   if (!line || st.done) return null;
   const complete = lineComplete(lines, st);
 
@@ -191,10 +209,46 @@ export function DialogueWindow({
               多くの SR が無視する — レビュー指摘) */}
           <span style={SR_ONLY}>{line.text}</span>
           <span aria-hidden>{visibleText(line.text, st.chars)}</span>
-          {complete && (
+          {complete && !asking && (
             <span aria-hidden className="aq-dialogue-next" style={{ float: 'right', marginTop: '0.6em' }}>
               ▼
             </span>
+          )}
+          {asking && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5em', marginTop: '0.4em' }}>
+              {choices!.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  disabled={busy}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (busy || choosingRef.current) return;
+                    choosingRef.current = true;
+                    const finish = () => {
+                      if (!doneRef.current) {
+                        doneRef.current = true;
+                        setSt((s) => ({ ...s, done: true }));
+                        onDone();
+                      }
+                    };
+                    try {
+                      const result = c.onSelect();
+                      if (result && typeof result.then === 'function') {
+                        void result.then(finish, () => { choosingRef.current = false; });
+                      } else finish();
+                    } catch { choosingRef.current = false; }
+                  }}
+                  style={{ padding: '0.3em 1.2em', fontSize: '0.95em', touchAction: 'manipulation' }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <style>{`

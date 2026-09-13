@@ -6,6 +6,8 @@ import {
   loadStaticWorldMap,
   loadTileArts,
   setGameQuests,
+  validateGameQuests,
+  validateScenario,
   setInteriors,
   setScenario,
   setJobOverrides,
@@ -215,7 +217,7 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     }
     try {
       // シナリオ (#545)。条件が questId を引くので**クエストより後**に読む。
-      const rec = await getRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+      const rec = await getQuestAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
       if (rec?.events) setScenario(rec.events);
     } catch (e) {
       console.warn('[world] scenario load failed', e);
@@ -314,13 +316,15 @@ export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promi
 
 /** シナリオ (#545)。setScenario が先に検証で落とす (存在しないクエストを条件にさせない)。 */
 export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promise<void> {
-  setScenario(events);
+  validateScenario(events);
   await putRecord(agent, ADMIN_COL.scenario, RKEY, { events, updatedAt: new Date().toISOString() });
+  setScenario(events);
 }
 
 /** シナリオだけを読む (エディタ用。読めたかどうかを返す = 上書き事故を防ぐ)。 */
 export async function loadScenarioRecord(agent: Agent, adminDid: string): Promise<ScenarioEvent[]> {
-  const rec = await getRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+  const rec = await getQuestAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+  if (rec && !Array.isArray(rec.events)) throw new Error('シナリオ レコードが不正');
   const events = rec?.events ?? [];
   setScenario(events);
   return events;
@@ -334,6 +338,40 @@ export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void>
 
 /** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */
 export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Promise<void> {
-  setGameQuests(quests);
+  validateGameQuests(quests);
   await putRecord(agent, ADMIN_COL.quests, RKEY, { quests, updatedAt: new Date().toISOString() });
+  setGameQuests(quests);
+}
+
+/** 導入データの編集用。読込み失敗を空リストとして保存させない。 */
+export async function loadQuestAuthoringRecords(agent: Agent, adminDid: string): Promise<GameQuestDef[]> {
+  // Referenced records must be persisted, not another editor's unsaved in-memory draft.
+  const npcs = await getQuestAuthoringRecord<{ npcs: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
+  if (npcs && !Array.isArray(npcs.npcs)) throw new Error('NPC レコードが不正');
+  setNpcs(npcs?.npcs ?? []);
+  const interiors = await getQuestAuthoringRecord<{ interiors: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates: Gate[] }>(agent, adminDid, ADMIN_COL.interiors, RKEY);
+  if (interiors && (!Array.isArray(interiors.interiors) || !Array.isArray(interiors.gates))) throw new Error('内部マップ レコードが不正');
+  const maps: InteriorMap[] = [];
+  for (const m of interiors?.interiors ?? []) {
+    const { gz, ...rest } = m;
+    maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
+  }
+  setInteriors(maps, interiors?.gates ?? []);
+  const rec = await getQuestAuthoringRecord<{ quests: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
+  if (rec && !Array.isArray(rec.quests)) throw new Error('クエスト レコードが不正');
+  const quests = rec?.quests ?? [];
+  setGameQuests(quests);
+  return quests;
+}
+
+/** 通信/認証失敗を「まだレコードが無い」と取り違えない編集用読込み。 */
+async function getQuestAuthoringRecord<T>(agent: Agent, repo: string, collection: string, rkey: string): Promise<T | null> {
+  try {
+    const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });
+    return res.data.value as T;
+  } catch (e) {
+    const error = e as { error?: string; name?: string };
+    if (error.error === 'RecordNotFound' || error.name === 'RecordNotFoundError') return null;
+    throw e;
+  }
 }

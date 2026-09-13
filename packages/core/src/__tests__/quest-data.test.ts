@@ -4,7 +4,7 @@
  * 「受けられるのに絶対に達成できないクエスト」が静かに生まれる。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { setGameQuests, gameQuests, gameQuestById, gameQuestByNpc, QuestDataError, MAX_QUEST_REWARD_POWER, type GameQuestDef } from '../quest-data.js';
+import { setGameQuests, gameQuests, gameQuestById, gameQuestByNpc, questObjectiveText, questProgressLine, QuestDataError, MAX_QUEST_REWARD_POWER, type GameQuestDef } from '../quest-data.js';
 import { setNpcs } from '../npc-data.js';
 import { MONSTERS, ITEMS } from '../battle.js';
 
@@ -92,5 +92,24 @@ describe('setGameQuests の検証', () => {
     // 落ちた後も前の状態のまま (ok だけが入る、はしない)
     expect(gameQuestById('ok')).toBeUndefined();
     expect(gameQuestById('q1')).toBeDefined();
+  });
+});
+
+describe('進捗の文 (#659)', () => {
+  it('defeat: モンスター名と討伐数 (progress) で組む', () => {
+    const q = base();
+    const name = MONSTERS[0]!.name;
+    expect(questObjectiveText(q)).toBe(`${name}を 3 たい`);
+    expect(questProgressLine(q, 0, {})).toBe(`${name}を 3 たい (0/3)`);
+    expect(questProgressLine(q, 2, {})).toBe(`${name}を 3 たい (2/3)`);
+    // 達成後に余分に倒しても上限で止める (「4/3」を出さない)
+    expect(questProgressLine(q, 4, {})).toBe(`${name}を 3 たい (3/3)`);
+  });
+
+  it('collect: 所持数が進捗 (progress は見ない)', () => {
+    const q = base({ objective: { kind: 'collect', itemId: ITEM, count: 2 } });
+    const name = ITEMS[ITEM]!.name;
+    expect(questProgressLine(q, 5, {})).toBe(`${name}を 2 こ (0/2)`);
+    expect(questProgressLine(q, 0, { [ITEM]: 1 })).toBe(`${name}を 2 こ (1/2)`);
   });
 });

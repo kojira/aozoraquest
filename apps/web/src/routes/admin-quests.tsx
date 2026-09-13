@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   allNpcs,
@@ -8,14 +8,17 @@ import {
   ITEMS,
   MONSTERS,
   QuestDataError,
-  setGameQuests,
+  validateGameQuests,
+  starterTownQuests,
+  starterTownNpcsPlacementError,
+  interiorById,
+  STARTER_TOWN_ID,
   type GameQuestDef,
   type QuestObjective,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { isAdminDid } from '@/lib/runtime-config';
-import { saveGameQuests } from '@/lib/world-authoring';
-import { useAuthoredWorld } from '@/lib/use-authored-world';
+import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
+import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests } from '@/lib/world-authoring';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 
@@ -37,9 +40,36 @@ export function AdminQuests() {
 
   // 保存済みレコードを読み込むまで保存させない (この画面を直接開いて保存すると
   // 空リストで world.quests を上書き = 既存クエスト全損する)。
-  const loaded = useAuthoredWorld(session.agent ?? null, () => {
-    setList(gameQuests().map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}) })));
-  });
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLoaded(false);
+    const adminDid = getPrimaryAdminDid();
+    if (!session.agent || !adminDid) return;
+    const agent = session.agent;
+    void (async () => {
+      await loadAuthoredWorld(agent);
+      const quests = await loadQuestAuthoringRecords(agent, adminDid);
+      await loadScenarioRecord(agent, adminDid);
+      if (!cancelled) { setList(quests); setLoaded(true); }
+    })().catch(() => { if (!cancelled) setNote('保存済みデータを読み込めなかった。画面を開き直してね。'); });
+    return () => { cancelled = true; };
+  }, [session.agent]);
+
+  const insertStarter = () => {
+    if (!loaded) return;
+    const placement = starterTownNpcsPlacementError(interiorById(STARTER_TOWN_ID));
+    if (placement) { setNote(placement); return; }
+    const additions = starterTownQuests();
+    if (additions.some((q) => !allNpcs().some((n) => n.id === q.npcId && n.mapId === STARTER_TOWN_ID))) {
+      setNote('先に「ふたばの村の村人」を NPC 画面で保存してね。'); return;
+    }
+    const next = [...list.filter((q) => !additions.some((a) => a.id === q.id)), ...additions];
+    try { validateGameQuests(next); } catch (e) { setNote(String(e)); return; }
+    if (!window.confirm('同じ ID の依頼を置き換え、ふたばの村の3依頼を入れる？ 保存するまでは反映されません。')) return;
+    setList(next); setSel(additions[0]!.id); setDirty(true);
+    setNote('3依頼を入れた。保存してから、シナリオ画面で「ふたばの村のシナリオを入れる」。');
+  };
 
   const npcs = useMemo(() => allNpcs(), [loaded]);
   const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), [loaded]);
@@ -69,7 +99,7 @@ export function AdminQuests() {
   }, [list, npcs, monsters]);
 
   const save = useCallback(async () => {
-    if (!session.agent) return;
+    if (!session.agent || !loaded) return;
     // シナリオ (#545) が条件にしているクエストを消させない — 参照切れが 1 件でもあると
     // setScenario が全体を落とし、**フラグが二度と立たなくなる** (解禁クエストも永久ロック)。
     const dangling = danglingRefs('quest', list.map((q) => q.id))[0];
@@ -87,7 +117,7 @@ export function AdminQuests() {
       // world.quests レコードごと消える事故につながる (UX レビュー ★★★)。
       setNote(e instanceof QuestDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
     }
-  }, [session.agent, list]);
+  }, [session.agent, list, loaded]);
 
   if (!admin) {
     return (
@@ -147,12 +177,14 @@ export function AdminQuests() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      {!loaded && note && <p role="alert">{note}</p>}
       <AuthoredWorldGate loaded={loaded}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>クエスト</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件</span>
         <button type="button" onClick={add} disabled={npcs.length === 0} style={{ fontSize: '0.85em' }}>＋クエスト</button>
+        <button type="button" onClick={insertStarter} disabled={!loaded}>ふたばの村のクエストを入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
@@ -340,7 +372,7 @@ export function AdminQuests() {
                 }}
               />
             ))}
-            {lineEditor(current, 'intro', '依頼のセリフ', '読み終えると受注する')}
+            {lineEditor(current, 'intro', '依頼のセリフ', '読み終えて はい を選ぶと受注する')}
             {lineEditor(current, 'progress', '進行中のセリフ', '空なら既定「たのんだよ。」+ サーバーの「まだ n/m」')}
             {lineEditor(current, 'done', '達成のセリフ', 'お礼。この後に報酬が出る')}
           </div>

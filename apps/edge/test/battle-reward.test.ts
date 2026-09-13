@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyBattleOutcome, type BattleOutcomeInput } from '../src/battle-reward';
-import { MONSTERS, battleXpFor, jobXpToNextLevelFor, BATTLE_TUNING } from '@aozoraquest/core';
+import { MONSTERS, battleXpFor, jobXpToNextLevelFor, BATTLE_TUNING, setGameQuests, setNpcs } from '@aozoraquest/core';
 import * as coreForTest from '@aozoraquest/core';
 import { emptyState, type GameState } from '../src/game-state';
 
@@ -201,4 +201,27 @@ describe('レベルアップの内訳', () => {
     const r = applyBattleOutcome(at(th - 1), input({}));
     expect(r.awarded.leveledUp?.from).toBe(1);
   });
+});
+
+describe('ゲーム内クエストの討伐カウント (#423/#659)', () => {
+  const Q = { id: 'q1', title: 'たいじ', npcId: 'n1', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat' as const, monsterId: mon.id, count: 3 } };
+  const withQuest = (fn: () => void) => {
+    setNpcs([{ id: 'n1', name: 'そんちょう', x: 1, y: 1, lines: ['やあ'] }]);
+    setGameQuests([Q]);
+    try { fn(); } finally { setGameQuests(null); setNpcs(null); }
+  };
+
+  it('対象モンスターに勝つと progress が倒した頭数ぶん進む', () => withQuest(() => {
+    const s = base({ quest: { id: 'q1', progress: 1 } });
+    const { next } = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [mon.id, mon.id] }));
+    expect(next.quest).toEqual({ id: 'q1', progress: 3 });
+  }));
+
+  it('対象でないモンスター・負け・練習戦では進まない', () => withQuest(() => {
+    const other = MONSTERS.find((m) => m.id !== mon.id)!;
+    const s = base({ quest: { id: 'q1', progress: 1 } });
+    expect(applyBattleOutcome(s, input({ outcome: 'win', monsterId: other.id })).next.quest).toEqual({ id: 'q1', progress: 1 });
+    expect(applyBattleOutcome(s, input({ outcome: 'lose' })).next.quest).toEqual({ id: 'q1', progress: 1 });
+    expect(applyBattleOutcome(base({ power: 0, quest: { id: 'q1', progress: 1 } }), input({ outcome: 'win', rewarded: false })).next.quest).toEqual({ id: 'q1', progress: 1 });
+  }));
 });

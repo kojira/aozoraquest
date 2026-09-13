@@ -33,3 +33,7 @@ export * from './interior-samples.js';
 export * from './scenario.js';
 export * from './scenario-samples.js';
 export * from './equipment.js';
+
+export * from './starter-town-quests.js';
+export * from './starter-town-scenario.js';
+export * from './starter-town-shop.js';
