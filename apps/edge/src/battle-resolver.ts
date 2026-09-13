@@ -274,6 +274,8 @@ export interface MoveResult {
   x: number;
   y: number;
   terrain: string;
+  /** lastTown を確定した街のフィールド座標。内部への入場でも地図の解禁に使う。 */
+  townArrival?: { x: number; y: number };
   /** 街に入って全回復した (HP/MP が権威なのでサーバーが回復)。 */
   healed?: boolean;
   /** 宿屋に泊まった (#424)。払ったパワーと残高。healed も立つ。 */
@@ -401,12 +403,16 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     }), { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     const gateToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
     // フィールドへ戻るときは mapId を載せない (旧 client が知らないキーを解釈しない)。
-    return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain: destTerrain, token: gateToken };
+    return {
+      ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain: destTerrain, token: gateToken,
+      ...(enteredFromTown ? { townArrival: { x: gate.from.x, y: gate.from.y } } : {}),
+    };
   }
 
   const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(nx, ny);
 
   let healed = false;
+  let townArrival: MoveResult['townArrival'];
   // 街の全回復はフィールドの街タイルのみ (内部マップの床を town で塗っても回復しない)。
   if (!inside && terrain === 'town') {
     // 街: HP/MP 全回復 + 位置 + 最後の街 (敗北帰還先) を gameState に確定 (稀なので PDS 書き OK)。
@@ -414,6 +420,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
+    townArrival = { x: nx, y: ny };
   }
 
   // 宿屋 (#424)。街の内部に入ると「入るだけで回復」が働かないので、回復はここで**有料**。
@@ -474,6 +481,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   return {
     ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain,
     healed: healed || undefined, token: nextToken,
+    ...(townArrival ? { townArrival } : {}),
     ...(inn ? { inn } : {}), ...(innDenied ? { innDenied } : {}),
   };
 }

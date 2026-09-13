@@ -274,10 +274,13 @@ describe('内部マップとゲート (#424)', () => {
     expect(r.mapId).toBe('in-1');
     expect(r.x).toBe(4);
     expect(r.y).toBe(4);
+    expect(terrainAt(step.nx, step.ny)).not.toBe('town');
+    expect(r.townArrival).toBeUndefined();
     // 返ったトークンで内部を歩ける (内部の床は通れる)
     const r2 = await handleMove(env, USER, 1, 0, r.token, NOW);
     expect(r2.mapId).toBe('in-1');
     expect(r2.x).toBe(5);
+    expect(r2.townArrival).toBeUndefined();
   });
 
   it('内部マップの壁には進めない (400)', async () => {
@@ -323,6 +326,7 @@ describe('内部マップとゲート (#424)', () => {
     expect(r.mapId).toBeUndefined(); // フィールドは mapId を返さない (旧 client 互換)
     expect(r.x).toBe(back.nx);
     expect(r.y).toBe(back.ny);
+    expect(r.townArrival).toBeUndefined();
   });
 
   it('内部で遭遇した move の応答も mapId を落とさない', async () => {
@@ -493,6 +497,7 @@ describe('宿屋 (#424)', () => {
     const r = await handleMove(env, USER, 1, 0, undefined, NOW); // (5,4) = 宿屋
     expect(r.inn).toMatchObject({ paid: 3, power: 7 });
     expect(r.healed).toBe(true);
+    expect(r.townArrival).toBeUndefined();
     const st = m.store.get('gs')!.value as GameState;
     expect(st.power).toBe(7);
     expect(st.carryHp).toBeUndefined(); // 全回復 = carry を消す
@@ -524,12 +529,12 @@ describe('街の内部へ入ると帰還先も更新する (#424)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; setInteriors(null, null); });
 
-  it('街のマスからゲートで入ると lastTown がその街になる', async () => {
+  it('街のゲート到着をフィールド座標で返し、回復せずに lastTown を更新する (#662)', async () => {
     // ゲートは街の回復処理より先に return するので、ここで書かないと lastTown が
     // 古い街のまま残り、負けたときに遠くへ飛ばされる。
     const env = await makeEnv();
     const town = worldOverlay().towns[0]!;
-    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ x: town.x, y: town.y - 1, lastTown: { x: 1, y: 1 } }) });
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ x: town.x, y: town.y - 1, lastTown: { x: 1, y: 1 }, carryHp: 5, carryMp: 2 }) });
     globalThis.fetch = m.fn;
     const size = 8;
     const tiles = new Uint8Array(size * size).fill(BASE_PALETTE.indexOf('plains'));
@@ -537,6 +542,28 @@ describe('街の内部へ入ると帰還先も更新する (#424)', () => {
       [{ from: { mapId: 'world', x: town.x, y: town.y }, to: { mapId: 'in-1', x: 4, y: 4 } }]);
     const r = await handleMove(env, USER, 0, 1, undefined, NOW);
     expect(r.mapId).toBe('in-1');
-    expect((m.store.get('gs')!.value as GameState).lastTown).toEqual({ x: town.x, y: town.y });
+    expect(r.townArrival).toEqual({ x: town.x, y: town.y });
+    expect(r).toMatchObject({ x: 4, y: 4 });
+    expect(r.healed).toBeUndefined();
+    expect(m.store.get('gs')!.value).toMatchObject({ lastTown: r.townArrival, carryHp: 5, carryMp: 2 });
+
+    // 内部の town 床は別の街への到着ではない。
+    tiles[4 * size + 5] = BASE_PALETTE.indexOf('town');
+    setInteriors([{ id: 'in-1', name: 'むら', size, tiles }], []);
+    const walking = await handleMove(env, USER, 1, 0, r.token, NOW);
+    expect(walking.terrain).toBe('town');
+    expect(walking.townArrival).toBeUndefined();
+    expect(walking.healed).toBeUndefined();
+  });
+
+  it('ゲートのないフィールドの街も到着座標を返し、従来どおり回復する (#662)', async () => {
+    const env = await makeEnv();
+    const town = worldOverlay().towns[0]!;
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ x: town.x, y: town.y - 1, carryHp: 5 }) });
+    globalThis.fetch = m.fn;
+    const r = await handleMove(env, USER, 0, 1, undefined, NOW);
+    expect(r.townArrival).toEqual({ x: town.x, y: town.y });
+    expect(r.healed).toBe(true);
+    expect((m.store.get('gs')!.value as GameState).carryHp).toBeUndefined();
   });
 });

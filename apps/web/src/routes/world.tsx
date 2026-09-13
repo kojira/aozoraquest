@@ -31,7 +31,7 @@ import { useSession } from '@/lib/session';
 import { bumpJobXp, useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { loadWorldState, saveWorldState } from '@/lib/world-state';
+import { loadWorldState, recordTownArrival, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
 import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, serverSearch, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward,
   serverShopCraft,
@@ -663,9 +663,8 @@ export function World() {
           tokenRef.current = res.token;
           const cur = wsRef.current ?? optimistic;
           // マップの切り替え (#424)。ゲートを踏むとサーバーが mapId を返す。
-          // **フィールドの街判定は mapId が無いときだけ**通す (内部の床が town でも街にしない)。
-          const onWorld = !res.mapId;
-          const t = onWorld ? townAt(res.x, res.y) : null;
+          // 街到着は移動後の地形ではなく、権威側が確定したフィールド座標で扱う。
+          const t = res.townArrival ? townAt(res.townArrival.x, res.townArrival.y) : null;
           let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
           if (!res.mapId) delete next.mapId;
           if (res.healed) { next.hp = null; next.mp = null; }
@@ -701,16 +700,14 @@ export function World() {
             const who = res.innDenied.name ?? 'やどや';
             setNotice(`${who}「ひとばん ${res.innDenied.price} パワーだよ」… パワーが たりない (いま ${res.innDenied.power})。`);
           }
-          if (onWorld && res.terrain === 'town') {
-            // ちずのかけら: 街に入るとその街の地方一帯 (3×3 リージョン) が地図に加わる。
-            // 訪問済みの街 (そらのはねの行き先候補) も積む。どちらも表示用の探索メモ。
-            const around = regionsAround(regionOf(res.x, res.y));
-            const gained = around.some((r) => !cur.regions.includes(r));
-            const regions = gained ? [...new Set([...cur.regions, ...around])].sort((a, b) => a - b) : cur.regions;
-            const newlyVisited = !cur.visitedTowns.some((v) => v.x === res.x && v.y === res.y);
-            const visitedTowns = newlyVisited ? [...cur.visitedTowns, { x: res.x, y: res.y }] : cur.visitedTowns;
-            next = { ...next, hp: null, mp: null, lastTown: { x: res.x, y: res.y }, regions, visitedTowns };
-            setNotice(t ? `「${t.name}」で休んで、すっかり元気になった!${gained ? ' ちずのかけらを 手に入れた!' : ''}` : null);
+          if (res.townArrival) {
+            const arrival = recordTownArrival(next, res.townArrival);
+            const { gained, newlyVisited } = arrival;
+            next = arrival.state;
+            const arrived = t ? (res.healed
+              ? `「${t.name}」で休んで、すっかり元気になった!`
+              : `「${t.name}」に ついた!`) : '';
+            setNotice(`${arrived}${gained ? ' ちずのかけらを 手に入れた!' : ''}`.trim() || null);
             wsRef.current = next;
             setWs(next);
             scheduleSave();
