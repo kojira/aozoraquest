@@ -1,7 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 
 /** Commit only on a stationary pointer-up; native scrolling and pinch-zoom remain available. */
-export function useMapTap(key: string, cells: number, commit: (x: number, y: number) => void) {
+export function useMapTap(key: string, cells: number, commit: (x: number, y: number) => void, disabled = false) {
   const start = useRef<{ id: number; x: number; y: number; cellX: number; cellY: number; key: string } | null>(null);
   useEffect(() => {
     const cancel = () => { start.current = null; };
@@ -27,7 +27,7 @@ export function useMapTap(key: string, cells: number, commit: (x: number, y: num
   return {
     onPointerDown(e: ReactPointerEvent<Element>) {
       const c = cell(e);
-      if (!e.isPrimary || e.button !== 0 || !c) { start.current = null; return; }
+      if (disabled || !e.isPrimary || e.button !== 0 || !c) { start.current = null; return; }
       start.current = { id: e.pointerId, x: e.clientX, y: e.clientY, cellX: c.x, cellY: c.y, key };
     },
     onPointerMove(e: ReactPointerEvent<Element>) {
@@ -40,7 +40,7 @@ export function useMapTap(key: string, cells: number, commit: (x: number, y: num
       const s = start.current;
       start.current = null;
       const c = cell(e);
-      if (s && c && e.isPrimary && e.pointerId === s.id && s.key === key && s.cellX === c.x && s.cellY === c.y && Math.hypot(e.clientX - s.x, e.clientY - s.y) <= 8) commit(c.x, c.y);
+      if (!disabled && s && c && e.isPrimary && e.pointerId === s.id && s.key === key && s.cellX === c.x && s.cellY === c.y && Math.hypot(e.clientX - s.x, e.clientY - s.y) <= 8) commit(c.x, c.y);
     },
   };
 }

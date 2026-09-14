@@ -77,10 +77,21 @@ export function AdminNpcs() {
       return next;
     }));
   }, [saving]);
-  const choose = (n: NpcDef) => { setSel(n.id); setMapChoice(npcMapId(n)); setDrawing(false); };
+  const syncDrawing = useCallback(() => {
+    if (!drawing || !current) return;
+    const key = npcArtKey(current.id);
+    const art = tileArtFor(key);
+    setWorld((previous) => {
+      if (!previous) return previous;
+      const arts = new Map(previous.arts);
+      if (art) arts.set(key, structuredClone(art)); else arts.delete(key);
+      return { ...previous, arts };
+    });
+  }, [drawing, current]);
+  const choose = (n: NpcDef) => { syncDrawing(); setSel(n.id); setMapChoice(npcMapId(n)); setDrawing(false); };
   const cancelAll = () => {
     if (!window.confirm('未保存の変更をすべて取り消しますか？')) return;
-    setList(structuredClone(snapshot)); additions.current.clear();
+    syncDrawing(); setList(structuredClone(snapshot)); additions.current.clear();
     const n = snapshot.find((n) => n.id === sel);
     setSel(n?.id ?? null); setMapChoice(n ? npcMapId(n) : WORLD_MAP_ID); setDrawing(false); setNote('未保存の変更を取り消しました');
   };
@@ -88,6 +99,7 @@ export function AdminNpcs() {
   const add = useCallback(() => {
     // spawn の隣に置いて始める (座標を手で探させない)。空いているマスを探す。
     if (!world) return;
+    syncDrawing();
     const sp = world.spawn;
     let x = sp.x + 1;
     let y = sp.y;
@@ -98,7 +110,7 @@ export function AdminNpcs() {
     setList((xs) => [...xs, npc]);
     additions.current.set(npc.id, structuredClone(npc));
     setSel(npc.id); setMapChoice(WORLD_MAP_ID); setDrawing(false);
-  }, [list, world]);
+  }, [list, world, syncDrawing]);
 
   /**
    * **同梱の村人を入れる** (#656)。admin-interiors の「はじまりの村を入れる」と同じ流儀:
@@ -117,11 +129,12 @@ export function AdminNpcs() {
     const ids = new Set(villagers.map((n) => n.id));
     const existing = list.some((n) => ids.has(n.id));
     if (existing && !window.confirm(`「${village.name}」の村人を最新の同梱版で置き換える？\nこの村人たちに加えた編集は消える`)) return;
+    syncDrawing();
     for (const n of villagers) if (!snapshot.some((old) => old.id === n.id)) additions.current.set(n.id, structuredClone(n));
     setList((xs) => [...xs.filter((n) => !ids.has(n.id)), ...villagers]);
     setSel(villagers[0]?.id ?? null); setMapChoice(STARTER_TOWN_ID); setDrawing(false);
     setNote(`「${village.name}」の村人 ${villagers.length} 人を${existing ? '入れ直した' : '入れた'}。保存すると村に立つ`);
-  }, [list, world, snapshot]);
+  }, [list, world, snapshot, syncDrawing]);
 
   const save = useCallback(async () => {
     if (!session.agent || !world || !loaded || saving) return;
@@ -217,11 +230,7 @@ export function AdminNpcs() {
               <code style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{current.id}</code>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.3em' }}>
                 <button type="button" onClick={() => {
-                    if (drawing) {
-                      const arts = new Map(world.arts); const art = tileArtFor(npcArtKey(current.id));
-                      if (art) arts.set(npcArtKey(current.id), structuredClone(art));
-                      setWorld({ ...world, arts });
-                    }
+                    syncDrawing();
                     setDrawing((v) => !v);
                   }} style={{ fontSize: '0.8em' }}>
                   {drawing ? '絵を閉じる' : '絵をかく'}
@@ -263,7 +272,7 @@ export function AdminNpcs() {
               </select>
             ))}
             {mapChoice !== npcMapId(current) && <p role="status">移動先のマスを選んでください。まだ移動していません。<button type="button" onClick={() => setMapChoice(npcMapId(current))}>移動先選びをやめる</button></p>}
-            <NpcPlacementMap key={`${current.id}/${mapChoice}`} world={world} npc={current} draft={list} mapId={mapChoice} onPlace={(position) => update(current.id, position)} />
+            <NpcPlacementMap key={`${current.id}/${mapChoice}`} world={world} npc={current} draft={list} mapId={mapChoice} disabled={saving} onPlace={(position) => update(current.id, position)} />
             <p className="npc-map-help">現在の配置: {mapLabel(current.mapId)} ({current.x}, {current.y}){!snapshot.some((n) => n.id === current.id && sameNpcPosition(n, current)) ? ' · 未保存' : ''}</p>
             <button type="button" onClick={() => {
               const original = snapshot.find((n) => n.id === current.id) ?? additions.current.get(current.id);

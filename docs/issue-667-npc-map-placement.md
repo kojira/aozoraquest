@@ -150,3 +150,13 @@ UI変更だけでNPCデータは変わらない。復旧はdevコードのrevert
 - core 825 / edge 270 tests pass。web全件は430 pass＋既存のclassName完全一致検査1失敗（admin-pageと専用classの併記を誤検知）。class token検査へ修正し当該17 tests pass。その他web失敗なし。strict-loader gzip未処理rejectionの初回失敗も前節の修正後focused 10 tests pass。
 - core/edge/web typecheck、web build、validate:data、git diff --check pass。web lintは既存warningのみ。新しいNPC browser test最終1 pass（7.6秒）。全件の不要な再実行はしていない。
 - 未実施: 全Playwright suite、実機Safari、実認証PDS、CI、独立実装レビュー、dev配備。既存mapエディタはrasterizer抽出のみ、操作handlerは未変更。
+
+## 実装レビュー指摘への対応
+
+対象 `0eb74cd` の独立レビューはP0/P1なし、P2が3件。配置/保存UIの既存契約の修正として対応した。
+- 地図枠の2px borderを外側box-shadowへ移し、SVG描画座標とtapの矩形を一致。実SVG座標からセル境界の左右1pxをタップするブラウザ回帰を追加。
+- 保存中はSVG/全体図にもdisabledを伝播し、pointer・keyboard配置/閲覧と成功通知を停止。fieldsetだけに依存しない。位置だけでなく描画/通知の不変を確認。
+- 絵編集からNPC切替/追加/同梱追加/取消で閉じる時にもcoreに反映された個別絵snapshotを同期。既存絵保存契約は変えない。絵保存→別NPC→元NPCで保存済色を確認。
+- 同じ隔離transportの実AdminNpcsテストに実AppShellを追加し、390pxで下端の操作とfooterの非重複を確認。実iPhone/実PDSではない。
+- 初回境界テストはSVG groupのboundingBoxが描画のはみ出しも含むため誤った境界を使って失敗し、getScreenCTMで実セル座標から計算へ修正。AppShell追加後の低level touchscreen tapはfooter等のactionabilityを待たず失敗したため通常操作と同様のlocator.tapに変更。最終E2E成功。
+- 修正後web typecheck、全49 suites/431 tests、lint(既存24warnings/0errors)、build、diff check成功。初回buildは必須VITE_APP_URL省略で失敗し、ローカル検証用URLを明示して成功。core/edgeは変更なし、先の825/270 pass結果を継承。

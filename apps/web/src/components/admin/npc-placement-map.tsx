@@ -8,8 +8,8 @@ import { useMapTap } from './use-map-tap';
 import './npc-placement-map.css';
 
 type Point = { x: number; y: number };
-export function NpcPlacementMap({ world, npc, draft, mapId, onPlace }: {
-  world: NpcPlacementWorld; npc: NpcDef; draft: readonly NpcDef[]; mapId: string; onPlace: (position: Pick<NpcDef, 'mapId' | 'x' | 'y'>) => void;
+export function NpcPlacementMap({ world, npc, draft, mapId, onPlace, disabled = false }: {
+  disabled?: boolean; world: NpcPlacementWorld; npc: NpcDef; draft: readonly NpcDef[]; mapId: string; onPlace: (position: Pick<NpcDef, 'mapId' | 'x' | 'y'>) => void;
 }) {
   const interior = world.interiors.find((m) => m.id === mapId);
   const field = mapId === WORLD_MAP_ID;
@@ -34,13 +34,14 @@ export function NpcPlacementMap({ world, npc, draft, mapId, onPlace }: {
     y: field ? wrap(center.y - Math.floor(view / 2)) : Math.max(0, Math.min(size - view, center.y - Math.floor(view / 2))),
   };
   const place = (p: Point) => {
+    if (disabled) return;
     const result = validateNpcPlacement(world, { ...npc, mapId, ...p }, draft);
     setCursor(p);
     if (result.reason) setNote(result.reason);
     else if (result.position) { onPlace(result.position); setNote(`(${result.position.x}, ${result.position.y}) に配置しました。未保存です`); }
   };
-  const gestureKey = `${npc.id}/${mapId}/${origin.x}/${origin.y}/${view}`;
-  const tap = useMapTap(gestureKey, view, (x, y) => place(normalize({ x: origin.x + x, y: origin.y + y })));
+  const gestureKey = `${npc.id}/${mapId}/${origin.x}/${origin.y}/${view}/${disabled}`;
+  const tap = useMapTap(gestureKey, view, (x, y) => place(normalize({ x: origin.x + x, y: origin.y + y })), disabled);
   const occupants = useMemo(() => new Map(draft.filter((n) => npcMapId(n) === mapId).map((n) => [`${field ? wrap(n.x) : n.x},${field ? wrap(n.y) : n.y}`, n])), [draft, mapId, field]);
   const cells = [];
   for (let y = 0; y < view; y++) for (let x = 0; x < view; x++) {
@@ -71,9 +72,10 @@ export function NpcPlacementMap({ world, npc, draft, mapId, onPlace }: {
       </select></label>
       <button type="button" aria-expanded={overview} onClick={() => setOverview((v) => !v)}>全体図</button>
     </div>
-    {overview && <NpcOverview world={world} mapId={mapId} size={size} origin={origin} view={view} onJump={(p) => { const next = normalize(p); setCenter(next); setCursor(next); }} />}
-    <svg className="npc-detail-map" role="application" aria-label="大きい地図でNPCを配置" tabIndex={0} viewBox={`0 0 ${view * 32} ${view * 32}`} {...tap}
+    {overview && <NpcOverview world={world} mapId={mapId} size={size} origin={origin} view={view} disabled={disabled} onJump={(p) => { if (disabled) return; const next = normalize(p); setCenter(next); setCursor(next); }} />}
+    <svg className="npc-detail-map" role="application" aria-label="大きい地図でNPCを配置" aria-disabled={disabled} tabIndex={disabled ? -1 : 0} viewBox={`0 0 ${view * 32} ${view * 32}`} {...tap}
       onKeyDown={(e) => {
+        if (disabled) return;
         const d: Record<string, Point> = { ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 }, ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 } };
         if (d[e.key]) {
           e.preventDefault(); const next = normalize({ x: cursor.x + d[e.key]!.x, y: cursor.y + d[e.key]!.y });
@@ -91,9 +93,9 @@ export function NpcPlacementMap({ world, npc, draft, mapId, onPlace }: {
   </section>;
 }
 
-function NpcOverview({ world, mapId, size, origin, view, onJump }: { world: NpcPlacementWorld; mapId: string; size: number; origin: Point; view: number; onJump: (p: Point) => void }) {
+function NpcOverview({ world, mapId, size, origin, view, onJump, disabled }: { disabled: boolean; world: NpcPlacementWorld; mapId: string; size: number; origin: Point; view: number; onJump: (p: Point) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const tap = useMapTap(`overview/${mapId}/${size}`, size, (x, y) => onJump({ x, y }));
+  const tap = useMapTap(`overview/${mapId}/${size}`, size, (x, y) => onJump({ x, y }), disabled);
   useEffect(() => {
     const ctx = ref.current?.getContext('2d'); if (!ctx) return;
     // Avoid scanning towns/gates for every overview pixel.

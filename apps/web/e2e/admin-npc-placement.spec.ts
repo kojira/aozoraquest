@@ -18,8 +18,7 @@ test.afterAll(async () => { await vite?.close(); });
 
 async function tapCell(page: Page, x: number, y: number) {
   const cell = page.locator(`[data-cell="${x},${y}"]`);
-  await cell.scrollIntoViewIfNeeded(); const b = (await cell.boundingBox())!;
-  await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+  await cell.tap();
 }
 async function position(page: Page) { return page.getByText('現在の配置:', { exact: false }).innerText(); }
 
@@ -79,6 +78,15 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     await page.getByLabel('地図の広さ').selectOption('13');
     expect((await page.locator('[data-cell]').first().boundingBox())!.width).toBeGreaterThanOrEqual(24);
     await page.getByLabel('地図の広さ').selectOption('9');
+    // Hit both sides of the rendered boundary, not just cell centers.
+    const boundaryCell = page.locator('[data-cell="7,7"]');
+    await boundaryCell.scrollIntoViewIfNeeded();
+    const boundary = await boundaryCell.evaluate((el) => { const m = (el as SVGGraphicsElement).getScreenCTM()!; const a = new DOMPoint(32, 16).matrixTransform(m); return { x: a.x, y: a.y }; });
+    for (const [dx, expected] of [[-1, '(7, 7)'], [1, '(8, 7)']] as const) {
+      await page.touchscreen.tap(boundary.x + dx, boundary.y);
+      expect(await position(page)).toContain(expected);
+    }
+    await page.getByRole('button', { name: '位置を戻す', exact: true }).click();
     const before = await position(page);
     const map = page.getByRole('application'); await map.scrollIntoViewIfNeeded();
     const b = (await map.boundingBox())!;
@@ -116,7 +124,12 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     failSave = false;
     await page.getByRole('button', { name: '保存', exact: true }).click();
     await expect(page.getByRole('button', { name: '保存中…' })).toBeDisabled();
+    const frozenMap = await map.innerHTML();
+    const frozenNote = await page.locator('.npc-map-status').innerText();
     await map.dispatchEvent('keydown', { key: 'ArrowRight' }); await map.dispatchEvent('keydown', { key: 'Enter' });
+    await tapCell(page, 10, 9);
+    expect(await map.innerHTML()).toBe(frozenMap);
+    expect(await page.locator('.npc-map-status').innerText()).toBe(frozenNote);
     expect(await position(page)).toContain('(11, 10)');
     await expect.poll(() => !!releaseSave).toBe(true); releaseSave!(); releaseSave = null;
     await expect(page.getByText(/人を保存した/)).toBeVisible();
@@ -133,6 +146,11 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     await tapCell(page, 16, 16); expect(await position(page)).toContain('ふたば');
     await page.getByRole('application').screenshot({ path: 'test-results/npc-interior-placement.png' });
     await page.locator('.npc-placement').screenshot({ path: 'test-results/npc-mobile-editor.png' });
+    await page.getByRole('button', { name: '下へ', exact: true }).scrollIntoViewIfNeeded();
+    const controlsBox = (await page.getByRole('button', { name: '下へ', exact: true }).boundingBox())!;
+    const footerBox = (await page.locator('.footer-nav').boundingBox())!;
+    expect(controlsBox.y + controlsBox.height).toBeLessThanOrEqual(footerBox.y);
+    await page.screenshot({ path: 'test-results/npc-mobile-app-shell.png' });
     await page.getByRole('button', { name: '位置を戻す', exact: true }).click(); expect(await position(page)).toContain('フィールド');
     await page.getByRole('button', { name: '全体図', exact: true }).click();
     const beforeOverview = await position(page);
@@ -162,6 +180,18 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     expect(await position(page)).toContain('ふたば'); expect(await position(page)).toContain('(16, 16)');
     failRead = true; await page.reload(); await expect(page.getByRole('button', { name: '再試行' })).toBeVisible(); await expect(page.getByRole('application')).toHaveCount(0);
     failRead = false; await page.getByRole('button', { name: '再試行' }).click(); await expect(page.getByRole('button', { name: '＋NPC', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /ひとは.*16,16/ }).click();
+    await page.getByRole('button', { name: '手描きの絵を使う', exact: true }).click();
+    await page.getByRole('button', { name: '絵をかく', exact: true }).click();
+    await page.locator('input[type="color"]').fill('#00aaff');
+    await page.getByRole('button', { name: '保存する', exact: true }).click();
+    await expect.poll(() => !!releaseSave).toBe(true); releaseSave!(); releaseSave = null;
+    // saveTileArts also writes the existing world map; release its second transport call.
+    await expect.poll(() => !!releaseSave).toBe(true); releaseSave!(); releaseSave = null;
+    await expect(page.getByText(/地形ぶんを保存した/)).toBeVisible();
+    await page.getByRole('button', { name: /ふたりめ.*11,11/ }).click();
+    await page.getByRole('button', { name: /ひとは.*16,16/ }).click();
+    await expect(page.locator('[data-cell="16,16"] rect[fill="#00aaff"]')).toHaveCount(16);
     // Same sprite component is used by the real World route with a schema-valid saved NPC record.
     const saved = records['app.aozoraquest.world.npcs'] as { npcs: NpcDef[] };
     const elder = saved.npcs.find((n) => n.mapId === village.id)!; elder.spritePreset = 'old-man';
