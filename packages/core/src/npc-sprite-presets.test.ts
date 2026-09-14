@@ -5,17 +5,30 @@ import { assertTileArt, decodeTileArt } from './tile-art.js';
 
 afterEach(() => setNpcs(null));
 describe('npc-sprite-presets', () => {
-  it('contains eight distinct original silhouettes and two real drawings, with fixed feet', () => {
+  it('contains eight distinct walking silhouettes with fixed faces and opposite limb poses', () => {
     expect(NPC_SPRITE_PRESETS.map((p) => p.id)).toEqual(NPC_SPRITE_PRESET_IDS);
     const silhouettes = new Set<string>();
     for (const preset of NPC_SPRITE_PRESETS) {
+      expect(preset.frames).toHaveLength(2);
       const [a, b] = preset.frames.map(decodeTileArt);
-      assertTileArt(a!); assertTileArt(b!);
-      expect(a!.size).toBe(16);
-      expect(a!.palette[0]).toBe('');
-      expect(a!.pixels).not.toEqual(b!.pixels);
-      expect(a!.pixels.slice(14 * 16)).toEqual(b!.pixels.slice(14 * 16));
-      expect([...a!.pixels].every((p) => p < a!.palette.length)).toBe(true);
+      for (const frame of [a!, b!]) {
+        assertTileArt(frame);
+        expect(frame.size).toBe(16);
+        expect(frame.palette[0]).toBe('');
+        expect([...frame.pixels].every((p) => p < frame.palette.length)).toBe(true);
+      }
+      expect(a!.palette).toEqual(b!.palette);
+      expect(a!.pixels.slice(0, 9 * 16), preset.id).toEqual(b!.pixels.slice(0, 9 * 16));
+      const region = (pixels: Uint8Array, x0: number, x1: number, y0: number, y1: number) =>
+        [...pixels].filter((_, i) => i % 16 >= x0 && i % 16 < x1 && Math.floor(i / 16) >= y0 && Math.floor(i / 16) < y1);
+      for (const [x0, x1, y0, y1] of [[3, 6, 9, 12], [10, 13, 9, 12], [4, 8, 14, 16], [8, 12, 14, 16]]) {
+        expect(region(a!.pixels, x0!, x1!, y0!, y1!), preset.id).not.toEqual(region(b!.pixels, x0!, x1!, y0!, y1!));
+      }
+      // The lower/forward foot swaps sides, rather than shifting the whole sprite.
+      expect(region(a!.pixels, 4, 8, 15, 16).some(Boolean), preset.id).toBe(true);
+      expect(region(b!.pixels, 4, 8, 15, 16).some(Boolean), preset.id).toBe(false);
+      expect(region(a!.pixels, 8, 12, 15, 16).some(Boolean), preset.id).toBe(false);
+      expect(region(b!.pixels, 8, 12, 15, 16).some(Boolean), preset.id).toBe(true);
       silhouettes.add([...a!.pixels].map((p) => p ? '1' : '0').join(''));
     }
     expect(silhouettes.size).toBe(8);
