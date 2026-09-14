@@ -167,9 +167,29 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     await page.emulateMedia({ reducedMotion: 'reduce' });
     expect(await page.locator('.npc-presets .npc-frame-0').first().evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    // Verify actual CSS cycles to both drawings without per-NPC timers.
-    await expect.poll(async () => page.locator('.npc-presets .npc-frame-1').first().evaluate((el) => getComputedStyle(el).visibility), { intervals: [50] }).toBe('visible');
-    await expect.poll(async () => page.locator('.npc-presets .npc-frame-1').first().evaluate((el) => getComputedStyle(el).visibility), { intervals: [50] }).toBe('hidden');
+    // Observe real elapsed time (not a mocked clock): every card alternates equal
+    // walking poses without translating its head/cell or leaving a blank frame.
+    const gait = await page.locator('.npc-presets .npc-sprite').evaluateAll(async (sprites) => {
+      const samples: { time: number; poses: number[]; stationary: boolean }[] = [];
+      const start = performance.now();
+      while (performance.now() - start < 1350) {
+        await new Promise(requestAnimationFrame);
+        samples.push({ time: performance.now() - start, poses: sprites.map((sprite) => {
+          const visible = [...sprite.children].map((frame) => getComputedStyle(frame).visibility === 'visible');
+          return visible[0] === visible[1] ? -1 : visible[0] ? 0 : 1;
+        }), stationary: sprites.every((sprite) => [sprite, ...sprite.children].every((el) => getComputedStyle(el).transform === 'none')) });
+      }
+      return samples;
+    });
+    expect(gait.every((s) => s.stationary && s.poses.length === 8 && s.poses.every((p) => p >= 0))).toBe(true);
+    for (let i = 0; i < 8; i++) {
+      const changes = gait.filter((s, n) => n > 0 && s.poses[i] !== gait[n - 1]!.poses[i]);
+      expect(changes.length).toBeGreaterThanOrEqual(3);
+      for (let n = 1; n < changes.length; n++) {
+        expect(changes[n]!.time - changes[n - 1]!.time).toBeGreaterThan(240);
+        expect(changes[n]!.time - changes[n - 1]!.time).toBeLessThan(360);
+      }
+    }
     await page.getByLabel('マップ', { exact: true }).selectOption(village.id);
     await tapCell(page, 16, 16);
     await page.getByRole('button', { name: '保存', exact: true }).click();
