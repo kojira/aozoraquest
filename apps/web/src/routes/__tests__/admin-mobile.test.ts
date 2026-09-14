@@ -23,7 +23,7 @@ describe('管理エディタのレイアウト', () => {
     const src = readFileSync(join(DIR, f), 'utf8');
 
     it(`${f}: ルートに admin-page が付いている (入力が枠を超えない)`, () => {
-      expect(src).toContain('className="admin-page"');
+      expect(src).toMatch(/className="(?:[^"]*\s)?admin-page(?:\s[^"]*)?"/);
     });
 
     it(`${f}: 2 カラムをインラインの gridTemplateColumns で組んでいない`, () => {

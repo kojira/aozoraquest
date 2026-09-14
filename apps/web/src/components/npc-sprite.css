@@ -1,0 +1,8 @@
+@keyframes npc-frame-normal { 0%, 74.99% { visibility: visible; } 75%, 100% { visibility: hidden; } }
+@keyframes npc-frame-blink { 0%, 74.99% { visibility: hidden; } 75%, 100% { visibility: visible; } }
+.npc-frame-0 { animation: npc-frame-normal 1.2s steps(1, end) infinite; }
+.npc-frame-1 { visibility: hidden; animation: npc-frame-blink 1.2s steps(1, end) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .npc-frame-0 { animation: none; visibility: visible; }
+  .npc-frame-1 { animation: none; visibility: hidden; }
+}

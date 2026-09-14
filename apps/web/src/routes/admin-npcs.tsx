@@ -1,31 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  allInteriors,
-  allNpcs,
-  danglingRefs,
-  describeDanglingRef,
-  facilityAt,
-  interiorById,
-  interiorWalkableAt,
-  isWalkableAt,
-  npcArtKey,
-  NpcDataError,
-  setNpcs,
-  starterTownNpcs,
-  starterTownNpcsPlacementError,
-  STARTER_TOWN_ID,
-  townAt,
-  WORLD_MAP_ID,
-  worldOverlay,
-  type InteriorMap,
-  type NpcDef,
+  danglingRefs, describeDanglingRef, npcArtKey, NpcDataError,
+  starterTownNpcs, starterTownNpcsPlacementError, STARTER_TOWN_ID,
+  NPC_SPRITE_PRESETS, tileArtFor, WORLD_MAP_ID, type NpcDef,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { isAdminDid } from '@/lib/runtime-config';
-import { saveNpcs } from '@/lib/world-authoring';
-import { useAuthoredWorld } from '@/lib/use-authored-world';
-import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
+import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
+import { loadNpcAuthoringRecords, saveNpcs } from '@/lib/world-authoring';
+import { npcMapId, npcStructuralPlacementError, sameNpcPosition, validateNpcPlacement, type NpcPlacementWorld } from '@/lib/npc-placement';
+import { NpcPlacementMap } from '@/components/admin/npc-placement-map';
+import { NpcSprite } from '@/components/npc-sprite';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 
@@ -41,79 +26,81 @@ import { ItemReqInput } from '@/components/admin/item-req-input';
  * アイテム・内部マップも同時に揃う (フラグ別セリフの持ち物条件と「マップ」の選択肢が引く)。
  */
 
-/** そのマップの範囲内か。フィールドはトーラスなのでどの整数でも範囲内。 */
-function inMapRange(n: NpcDef, map: InteriorMap | undefined): boolean {
-  if (!map) return true;
-  return n.x >= 0 && n.y >= 0 && n.x < map.size && n.y < map.size;
-}
-
-/**
- * **保存を拒む置き場所** — 存在しないマップ / マップの外 / 施設 (宿屋・なんでも屋・ゲート) のマス。
- * 前 2 つは誰にも会えない NPC。施設のマスは、移動判定が NPC を先に見る (ぶつかる = 話す) ので
- * その施設が二度と使えなくなる。core は読み込み順の都合でここを検証しない
- * (NPC は内部マップより先に読む) のでエディタが見る。
- */
-function placementError(n: NpcDef): string | null {
-  const mapId = n.mapId ?? WORLD_MAP_ID;
-  if (mapId !== WORLD_MAP_ID) {
-    const map = interiorById(mapId);
-    if (!map) return `「${n.name}」の内部マップ (${mapId}) が存在しない`;
-    if (!inMapRange(n, map)) return `「${n.name}」が ${map.name} の外にいる (${n.x}, ${n.y}) — 0〜${map.size - 1}`;
-  }
-  const facility = facilityAt(mapId, n.x, n.y);
-  if (facility) return `「${n.name}」が${facility}のマスに重なっている (${n.x}, ${n.y}) — 入口を塞ぐ`;
-  return null;
-}
-
 export function AdminNpcs() {
   const session = useSession();
   const admin = isAdminDid(session.did ?? null);
-  const [list, setList] = useState<NpcDef[]>(() => allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
+  const [list, setList] = useState<NpcDef[]>([]);
+  const [snapshot, setSnapshot] = useState<NpcDef[]>([]);
+  const [world, setWorld] = useState<NpcPlacementWorld | null>(null);
   const [sel, setSel] = useState<string | null>(null);
+  const [mapChoice, setMapChoice] = useState(WORLD_MAP_ID);
   const [note, setNote] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
   const [drawing, setDrawing] = useState(false);
-  // 置けるマップの一覧 (内部マップは loadAuthoredWorld の後に揃う)。
-  const [interiors, setInteriorList] = useState<readonly InteriorMap[]>(() => allInteriors());
-  const loaded = useAuthoredWorld(session.agent ?? null, () => {
-    setList(allNpcs().map((n) => ({ ...n, lines: [...n.lines] })));
-    setInteriorList(allInteriors());
-  });
-
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [retry, setRetry] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const loadedIdentity = useRef<{ agent: typeof session.agent; did: typeof session.did } | null>(null);
+  const additions = useRef(new Map<string, NpcDef>());
+  const dirty = JSON.stringify(list) !== JSON.stringify(snapshot);
+  const loaded = loadState === 'ready' && loadedIdentity.current?.agent === session.agent && loadedIdentity.current?.did === session.did;
+  const interiors = world?.interiors ?? [];
   const current = useMemo(() => list.find((n) => n.id === sel) ?? null, [list, sel]);
-
+  const [coords, setCoords] = useState({ x: '', y: '' });
+  useEffect(() => { setCoords({ x: String(current?.x ?? ''), y: String(current?.y ?? '') }); }, [current?.id, current?.x, current?.y, mapChoice]);
+  useEffect(() => {
+    let cancelled = false;
+    setLoadState('loading'); setWorld(null); setList([]); setSnapshot([]); setSel(null); setDrawing(false); setNote(null);
+    additions.current.clear();
+    const did = getPrimaryAdminDid();
+    if (!admin || !session.agent || !did) return () => { cancelled = true; };
+    void loadNpcAuthoringRecords(session.agent, did, () => !cancelled).then((data) => {
+      if (cancelled) return;
+      setList(data.list); setSnapshot(structuredClone(data.list)); setWorld(data.world);
+      loadedIdentity.current = { agent: session.agent, did: session.did }; setLoadState('ready');
+    }).catch((error: unknown) => {
+      if (!cancelled) { setNote(`読み込めませんでした: ${String(error)}`); setLoadState('error'); }
+    });
+    return () => { cancelled = true; };
+  }, [session.agent, session.did, admin, retry]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
   const update = useCallback((id: string, patch: Partial<NpcDef>) => {
-    setList((xs) => xs.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-    setDirty(true);
-  }, []);
-
-  /**
-   * 置くマップを切り替える。内部マップへ移すときは、そのマップで歩ける空きマスへ
-   * 置き直す (フィールドの座標をそのまま持ち込むと大抵はマップの外になる)。
-   */
-  const setMap = useCallback((id: string, mapId: string) => {
+    if (saving) return;
     setList((xs) => xs.map((n) => {
       if (n.id !== id) return n;
-      const { mapId: _old, ...rest } = n;
-      if (mapId === WORLD_MAP_ID) return rest;
-      const map = interiorById(mapId);
-      let { x, y } = n;
-      if (map && !inMapRange(n, map)) {
-        // 別の NPC と施設のマスは避ける (施設は placementError と同じ判定 = 保存で弾かれる場所)。
-        const taken = (px: number, py: number) => !!facilityAt(mapId, px, py)
-          || xs.some((o) => o.id !== id && (o.mapId ?? WORLD_MAP_ID) === mapId && o.x === px && o.y === py);
-        outer: for (let py = 0; py < map.size; py++) for (let px = 0; px < map.size; px++) {
-          if (interiorWalkableAt(map, px, py) && !taken(px, py)) { x = px; y = py; break outer; }
-        }
-      }
-      return { ...rest, mapId, x, y };
+      const next = { ...n, ...patch };
+      if (next.mapId === WORLD_MAP_ID) delete next.mapId;
+      return next;
     }));
-    setDirty(true);
-  }, []);
+  }, [saving]);
+  const syncDrawing = useCallback(() => {
+    if (!drawing || !current) return;
+    const key = npcArtKey(current.id);
+    const art = tileArtFor(key);
+    setWorld((previous) => {
+      if (!previous) return previous;
+      const arts = new Map(previous.arts);
+      if (art) arts.set(key, structuredClone(art)); else arts.delete(key);
+      return { ...previous, arts };
+    });
+  }, [drawing, current]);
+  const choose = (n: NpcDef) => { syncDrawing(); setSel(n.id); setMapChoice(npcMapId(n)); setDrawing(false); };
+  const cancelAll = () => {
+    if (!window.confirm('未保存の変更をすべて取り消しますか？')) return;
+    syncDrawing(); setList(structuredClone(snapshot)); additions.current.clear();
+    const n = snapshot.find((n) => n.id === sel);
+    setSel(n?.id ?? null); setMapChoice(n ? npcMapId(n) : WORLD_MAP_ID); setDrawing(false); setNote('未保存の変更を取り消しました');
+  };
 
   const add = useCallback(() => {
     // spawn の隣に置いて始める (座標を手で探させない)。空いているマスを探す。
-    const sp = worldOverlay().spawn;
+    if (!world) return;
+    syncDrawing();
+    const sp = world.spawn;
     let x = sp.x + 1;
     let y = sp.y;
     while (list.some((n) => n.x === x && n.y === y)) x++;
@@ -121,9 +108,9 @@ export function AdminNpcs() {
     while (list.some((n) => n.id === `npc-${i}`)) i++;
     const npc: NpcDef = { id: `npc-${i}`, name: 'むらびと', x, y, lines: ['こんにちは、たびのひと。'] };
     setList((xs) => [...xs, npc]);
-    setSel(npc.id);
-    setDirty(true);
-  }, [list]);
+    additions.current.set(npc.id, structuredClone(npc));
+    setSel(npc.id); setMapChoice(WORLD_MAP_ID); setDrawing(false);
+  }, [list, world, syncDrawing]);
 
   /**
    * **同梱の村人を入れる** (#656)。admin-interiors の「はじまりの村を入れる」と同じ流儀:
@@ -132,7 +119,7 @@ export function AdminNpcs() {
    * が 1 か所で持つ。旧版に入れると保存は通るのに村人が壁の中に立つ。
    */
   const insertVillagers = useCallback(() => {
-    const village = interiorById(STARTER_TOWN_ID);
+    const village = world?.interiors.find((m) => m.id === STARTER_TOWN_ID);
     const blocked = starterTownNpcsPlacementError(village);
     if (blocked || !village) {
       setNote(blocked);
@@ -142,14 +129,16 @@ export function AdminNpcs() {
     const ids = new Set(villagers.map((n) => n.id));
     const existing = list.some((n) => ids.has(n.id));
     if (existing && !window.confirm(`「${village.name}」の村人を最新の同梱版で置き換える？\nこの村人たちに加えた編集は消える`)) return;
+    syncDrawing();
+    for (const n of villagers) if (!snapshot.some((old) => old.id === n.id)) additions.current.set(n.id, structuredClone(n));
     setList((xs) => [...xs.filter((n) => !ids.has(n.id)), ...villagers]);
-    setSel(villagers[0]?.id ?? null);
-    setDirty(true);
+    setSel(villagers[0]?.id ?? null); setMapChoice(STARTER_TOWN_ID); setDrawing(false);
     setNote(`「${village.name}」の村人 ${villagers.length} 人を${existing ? '入れ直した' : '入れた'}。保存すると村に立つ`);
-  }, [list]);
+  }, [list, world, snapshot, syncDrawing]);
 
   const save = useCallback(async () => {
-    if (!session.agent) return;
+    if (!session.agent || !world || !loaded || saving) return;
+    if (current && mapChoice !== npcMapId(current)) { setNote('移動先を選ぶか、移動先選びをやめてから保存してください'); return; }
     // クエストが発注させている NPC を消させない (#423 / #603) — 参照切れの NPC が 1 人でも
     // いると setGameQuests が全体を落とし、消した NPC と無関係な全クエストまで web/edge から消える。
     const dangling = danglingRefs('npc', list.map((n) => n.id))[0];
@@ -158,17 +147,19 @@ export function AdminNpcs() {
       return;
     }
     for (const n of list) {
-      const err = placementError(n);
+      const previous = snapshot.find((old) => old.id === n.id);
+      const err = npcStructuralPlacementError(world, n) ?? ((!previous || !sameNpcPosition(n, previous)) ? validateNpcPlacement(world, n, list).reason : null);
       if (err) { setNote(`保存できない: ${err}`); return; }
     }
+    setSaving(true);
     try {
       await saveNpcs(session.agent, list);
-      setDirty(false);
+      setSnapshot(structuredClone(list)); additions.current.clear();
       setNote(`${list.length} 人を保存した。サーバーは最大 5 分で拾う`);
     } catch (e) {
       setNote(e instanceof NpcDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
-    }
-  }, [session.agent, list]);
+    } finally { setSaving(false); }
+  }, [session.agent, list, world, loaded, saving, current, mapChoice, snapshot]);
 
   if (!admin) {
     return (
@@ -186,40 +177,26 @@ export function AdminNpcs() {
     </label>
   );
 
-  const placeNote = (n: NpcDef): string | null => {
-    // 置き場所の落とし穴を可視化する。保存は拒否しない (意図的な配置がありうる) が、
-    // 「海の上の人」「街の入口を塞ぐ人」は大抵ミスなので気づけるようにする。
-    // マップの外・存在しないマップ・施設のマスは保存で拒む (placementError)。
-    const err = placementError(n);
-    if (err) return `⚠ ${err} (保存できない)`;
-    const map = n.mapId && n.mapId !== WORLD_MAP_ID ? interiorById(n.mapId) : undefined;
-    if (map) {
-      if (!interiorWalkableAt(map, n.x, n.y)) return '⚠ 歩けないマスの上にいる (だれもぶつかれない = 話せない)';
-      return null;
-    }
-    if (!isWalkableAt(n.x, n.y)) return '⚠ 歩けないマスの上にいる (だれもぶつかれない = 話せない)';
-    const t = townAt(n.x, n.y);
-    if (t) return `⚠ 街 (${t.name}) のマスに重なっている (入口を塞ぐ)`;
-    return null;
-  };
-  const mapLabel = (mapId: string | undefined): string =>
-    !mapId || mapId === WORLD_MAP_ID ? 'フィールド' : interiorById(mapId)?.name ?? mapId;
+  const placeNote = (n: NpcDef): string | null => world ? validateNpcPlacement(world, n, list).reason ?? null : null;
+  const mapLabel = (mapId: string | undefined): string => !mapId || mapId === WORLD_MAP_ID ? 'フィールド' : interiors.find((m) => m.id === mapId)?.name ?? mapId;
+  if (!loaded || !world) return <div className="npc-editor"><p role="status">{note ?? '地図とNPCを読み込んでいます…'}</p>{loadState === 'error' && <button type="button" onClick={() => setRetry((v) => v + 1)}>再試行</button>}<p><Link to="/admin">← 管理</Link></p></div>;
 
   return (
-    <div className="admin-page" style={{ padding: '0.8em' }}>
-      <AuthoredWorldGate loaded={loaded}>
+    <div className="admin-page npc-editor">
+      <fieldset disabled={saving}>
       <div className="admin-head">
-        <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
+        <Link to="/admin" onClick={(e) => { if (saving || (dirty && !window.confirm('未保存の変更を破棄して戻りますか？'))) e.preventDefault(); }} style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>NPC</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 人</span>
         <button type="button" onClick={add} style={{ fontSize: '0.85em' }}>＋NPC</button>
         <button type="button" onClick={insertVillagers} style={{ fontSize: '0.85em' }}>ふたばの村の村人を入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
-          保存
+          {saving ? '保存中…' : '保存'}
         </button>
+        <button type="button" disabled={!dirty} onClick={cancelAll}>未保存の変更を取り消す</button>
       </div>
 
-      {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
+      {note && <p role="status" style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
 
       <div className="admin-cols">
         <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -227,7 +204,7 @@ export function AdminNpcs() {
             <button
               key={n.id}
               type="button"
-              onClick={() => setSel(n.id)}
+              onClick={() => choose(n)}
               style={{
                 display: 'flex', gap: '0.4em', width: '100%', padding: '0.2em 0.4em',
                 fontSize: '0.85em', textAlign: 'left',
@@ -252,7 +229,10 @@ export function AdminNpcs() {
               <strong>{current.name}</strong>
               <code style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{current.id}</code>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.3em' }}>
-                <button type="button" onClick={() => setDrawing((v) => !v)} style={{ fontSize: '0.8em' }}>
+                <button type="button" onClick={() => {
+                    syncDrawing();
+                    setDrawing((v) => !v);
+                  }} style={{ fontSize: '0.8em' }}>
                   {drawing ? '絵を閉じる' : '絵をかく'}
                 </button>
                 <button
@@ -262,7 +242,6 @@ export function AdminNpcs() {
                     if (!window.confirm(`「${current.name}」を消す？`)) return;
                     setList((xs) => xs.filter((n) => n.id !== current.id));
                     setSel(null);
-                    setDirty(true);
                   }}
                   style={{ fontSize: '0.8em' }}
                 >
@@ -271,29 +250,44 @@ export function AdminNpcs() {
               </span>
             </div>
             {field('なまえ', <input value={current.name} onChange={(e) => update(current.id, { name: e.target.value })} />)}
+            <div>
+              <p style={{ fontSize: '0.8em' }}>見た目（選んでから「保存」で反映）</p>
+              <div className="npc-presets" role="group" aria-label="標準の絵">
+                {NPC_SPRITE_PRESETS.map((preset) => <button type="button" key={preset.id} aria-pressed={current.spritePreset === preset.id} onClick={() => update(current.id, { spritePreset: preset.id })}>
+                  <svg viewBox="0 0 32 32" aria-hidden="true"><NpcSprite npc={{ id: current.id, spritePreset: preset.id }} /></svg>
+                  <span>{preset.name}</span>
+                  {current.spritePreset === preset.id && <span>{snapshot.find((n) => n.id === current.id)?.spritePreset === preset.id ? '使用中' : '未保存'}</span>}
+                </button>)}
+              </div>
+              <button type="button" disabled={!current.spritePreset} onClick={() => setList((xs) => xs.map((n) => { if (n.id !== current.id) return n; const next = { ...n }; delete next.spritePreset; return next; }))}>
+                {world.arts.has(npcArtKey(current.id)) ? '手描きの絵を使う' : '従来の表示に戻す'}
+              </button>
+              {!current.spritePreset && <p className="npc-map-help">{world.arts.has(npcArtKey(current.id)) ? '手描きの絵' : '従来の表示'}{snapshot.find((n) => n.id === current.id)?.spritePreset ? '（未保存）' : 'を使用中'}</p>}
+            </div>
             {field('マップ', (
-              <select value={current.mapId ?? WORLD_MAP_ID} onChange={(e) => setMap(current.id, e.target.value)}>
+              <select aria-label="マップ" value={mapChoice} onChange={(e) => setMapChoice(e.target.value)}>
                 <option value={WORLD_MAP_ID}>フィールド</option>
-                {interiors.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.id})</option>)}
-                {/* 消えたマップに居る NPC も選択肢に残す (選べないと直しようがない) */}
-                {current.mapId && current.mapId !== WORLD_MAP_ID && !interiorById(current.mapId) && (
-                  <option value={current.mapId}>{current.mapId} (存在しない)</option>
-                )}
+                {interiors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {mapChoice !== WORLD_MAP_ID && !interiors.some((m) => m.id === mapChoice) && <option value={mapChoice}>{mapChoice}（存在しない）</option>}
               </select>
             ))}
-            {field('位置', (
-              <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
-                x
-                <input type="number" value={current.x} onChange={(e) => update(current.id, { x: Number(e.target.value) })} style={{ width: '5.5em' }} />
-                y
-                <input type="number" value={current.y} onChange={(e) => update(current.id, { y: Number(e.target.value) })} style={{ width: '5.5em' }} />
-                <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                  {current.mapId && current.mapId !== WORLD_MAP_ID
-                    ? `内部マップエディタの座標 (0〜${(interiorById(current.mapId)?.size ?? 1) - 1})`
-                    : 'マップエディタの座標表示と同じ'}
-                </span>
-              </span>
-            ))}
+            {mapChoice !== npcMapId(current) && <p role="status">移動先のマスを選んでください。まだ移動していません。<button type="button" onClick={() => setMapChoice(npcMapId(current))}>移動先選びをやめる</button></p>}
+            <NpcPlacementMap key={`${current.id}/${mapChoice}`} world={world} npc={current} draft={list} mapId={mapChoice} disabled={saving} onPlace={(position) => update(current.id, position)} />
+            <p className="npc-map-help">現在の配置: {mapLabel(current.mapId)} ({current.x}, {current.y}){!snapshot.some((n) => n.id === current.id && sameNpcPosition(n, current)) ? ' · 未保存' : ''}</p>
+            <button type="button" onClick={() => {
+              const original = snapshot.find((n) => n.id === current.id) ?? additions.current.get(current.id);
+              if (original) { update(current.id, { mapId: original.mapId ?? WORLD_MAP_ID, x: original.x, y: original.y }); setMapChoice(npcMapId(original)); }
+            }}>位置を戻す</button>
+            <details className="npc-coordinates"><summary>座標で微調整</summary>
+              <label>x <input aria-label="配置x" type="number" value={coords.x} onChange={(e) => setCoords((v) => ({ ...v, x: e.target.value }))} /></label>
+              <label>y <input aria-label="配置y" type="number" value={coords.y} onChange={(e) => setCoords((v) => ({ ...v, y: e.target.value }))} /></label>
+              <button type="button" onClick={() => {
+                if (!coords.x.trim() || !coords.y.trim()) { setNote('xとyを両方入力してください'); return; }
+                const result = validateNpcPlacement(world, { ...current, mapId: mapChoice, x: Number(coords.x), y: Number(coords.y) }, list);
+                if (result.reason) setNote(result.reason);
+                else if (result.position) { update(current.id, result.position); setNote('位置を変更しました。未保存です'); }
+              }}>この座標へ移す</button>
+            </details>
             {placeNote(current) && (
               <p style={{ fontSize: '0.8em', color: 'var(--color-danger)', margin: 0 }}>{placeNote(current)}</p>
             )}
@@ -413,20 +407,21 @@ export function AdminNpcs() {
               </button>
             </div>
             {drawing && (
-              <TileArtEditor
+              <div>{current.spritePreset && <p className="npc-map-help">標準の絵を使用中。手描きを保存した後、絵を閉じて「手描きの絵を使う」で切り替え、NPCを保存してください。</p>}
+              <p className="npc-map-help">「絵を保存」はNPC保存とは別です。NPCの変更取消では保存済みの絵は戻りません。</p><TileArtEditor
                 subjects={[{
                   key: npcArtKey(current.id),
                   name: current.name,
                   seedColor: '#4a6fb3',
                 } satisfies ArtSubject]}
-              />
+              /></div>
             )}
           </div>
         ) : (
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶか「＋NPC」。</div>
         )}
       </div>
-      </AuthoredWorldGate>
+      </fieldset>
     </div>
   );
 }

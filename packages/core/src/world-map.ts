@@ -267,14 +267,18 @@ export function setMappedTerrain(x: number, y: number, index: number): void {
 
 async function through(data: Uint8Array, stream: TransformStream<Uint8Array, Uint8Array>): Promise<Uint8Array> {
   const w = stream.writable.getWriter();
-  void w.write(data).then(() => w.close());
   const chunks: Uint8Array[] = [];
   const r = stream.readable.getReader();
-  for (;;) {
-    const { done, value } = await r.read();
-    if (done) break;
-    chunks.push(value);
-  }
+  await Promise.all([
+    w.write(data).then(() => w.close()),
+    (async () => {
+      for (;;) {
+        const { done, value } = await r.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    })(),
+  ]);
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const out = new Uint8Array(total);
   let at = 0;
@@ -305,11 +309,7 @@ let staticLoad: Promise<void> | null = null;
 export function loadStaticWorldMap(size = 1024): Promise<void> {
   if (staticLoad) return staticLoad;
   staticLoad = (async () => {
-    const { WORLD_MAP_GZ_BASE64 } = await import('./world-map-data.js');
-    const bin = atob(WORLD_MAP_GZ_BASE64);
-    const gz = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) gz[i] = bin.charCodeAt(i);
-    const tiles = await decodeWorldMap(gz);
+    const tiles = await bundledWorldMapTiles();
     setWorldMap({ tiles, size });
   })().catch((e) => {
     // **落ちてもゲームは続く** (ノイズ生成に倒れるだけ)。次の呼び出しで再試行できるよう戻す。
@@ -317,6 +317,12 @@ export function loadStaticWorldMap(size = 1024): Promise<void> {
     throw e;
   });
   return staticLoad;
+}
+
+/** Decode a fresh copy without reusing another editor's active map. */
+export async function bundledWorldMapTiles(): Promise<Uint8Array> {
+  const { WORLD_MAP_GZ_BASE64 } = await import('./world-map-data.js');
+  return decodeWorldMap(Uint8Array.from(atob(WORLD_MAP_GZ_BASE64), (c) => c.charCodeAt(0)));
 }
 
 // ─── 街の差分 ─────────────────────────────────────────────

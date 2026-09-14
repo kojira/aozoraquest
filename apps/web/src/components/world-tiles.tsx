@@ -146,7 +146,7 @@ export function pixelPart(index: number | undefined, terrain: string): ReactElem
   return renderArt(partArtFor(index, terrain));
 }
 
-function renderArt(art: ReturnType<typeof tileArtFor>): ReactElement | null {
+export function renderArt(art: ReturnType<typeof tileArtFor>): ReactElement | null {
   if (!art) return null;
   const px = 32 / art.size; // 32×32 viewBox に合わせる
   const rects: ReactElement[] = [];

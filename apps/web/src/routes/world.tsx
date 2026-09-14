@@ -1,3 +1,4 @@
+import { NpcSprite } from '@/components/npc-sprite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
@@ -55,7 +56,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 }
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcArtKey, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -1467,16 +1468,9 @@ export function World() {
     const vx = insideHere ? n.x - (ws.x - HALF) : wrap(n.x - (ws.x - HALF));
     const vy = insideHere ? n.y - (ws.y - HALF) : wrap(n.y - (ws.y - HALF));
     if (vx < 0 || vy < 0 || vx >= VIEW || vy >= VIEW) continue;
-    const art = pixelTile(npcArtKey(n.id));
     npcSprites.push(
       <g key={`npc-${n.id}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
-        {art ?? (
-          <>
-            {/* 絵が無い NPC の代替 (頭 + 体の簡素な人形)。描けば置き換わる */}
-            <circle cx={16} cy={11} r={6} fill="#f2c9a0" stroke="#7a5a3a" strokeWidth={1.5} />
-            <path d="M8 28 q8 -12 16 0 Z" fill="#4a6fb3" stroke="#2e4a80" strokeWidth={1.5} />
-          </>
-        )}
+        <NpcSprite npc={n} />
       </g>,
     );
   }

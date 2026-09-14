@@ -1,3 +1,4 @@
+import { paintTerrainOverview } from '@/components/admin/world-minimap';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -555,19 +556,7 @@ function WorldMinimap({
     if (!cv || !tiles) return;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
-    const img = ctx.createImageData(PX, PX);
-    const buf = new Uint32Array(img.data.buffer);
-    for (let y = 0; y < PX; y++) {
-      const row = y * SAMPLE * WORLD_SIZE;
-      for (let x = 0; x < PX; x++) {
-        const hex = editorColorAt(tiles[row + x * SAMPLE]!);
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        buf[y * PX + x] = (255 << 24) | (b << 16) | (g << 8) | r;
-      }
-    }
-    ctx.putImageData(img, 0, 0);
+    paintTerrainOverview(ctx, PX, WORLD_SIZE, (x, y) => editorColorAt(tiles[y * WORLD_SIZE + x]!));
 
     // **街を出す。** 全体マップで場所が分からないと、どこへ飛べばいいか決められない。
     // 1024 を 256 に縮めているので、街 1 マスは 0.25px = そのままでは見えない。
