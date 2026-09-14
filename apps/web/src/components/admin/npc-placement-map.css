@@ -1,0 +1,21 @@
+.npc-editor { padding: .8em; padding-bottom: 7rem; }
+.npc-editor fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.npc-editor button, .npc-editor select { min-height: 44px; }
+.npc-editor .admin-cols > * { min-width: 0; }
+.npc-editor input { max-width: 100%; min-width: 0; }
+.npc-placement { max-width: 448px; width: 100%; }
+.npc-placement p { margin: .4em 0; overflow-wrap: anywhere; }
+.npc-map-help { font-size: .75em; color: var(--color-muted); }
+.npc-map-status { min-height: 2.8em; font-size: .8em; color: var(--color-accent); }
+.npc-detail-map { display: block; width: 100%; aspect-ratio: 1; touch-action: pan-y pinch-zoom; border: 2px solid var(--color-border); user-select: none; }
+.npc-detail-map:focus { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+.npc-overview { display: block; width: min(100%, 256px); aspect-ratio: 1; image-rendering: pixelated; touch-action: pan-y pinch-zoom; }
+.npc-map-controls { display: flex; flex-wrap: wrap; gap: .35em; align-items: center; margin: .4em 0; font-size: .8em; }
+.npc-region-controls button { flex: 1; }
+.npc-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .3em; max-width: 448px; }
+.npc-presets button { padding: .25em; font-size: .7em; display: flex; flex-direction: column; align-items: center; gap: .2em; }
+.npc-presets svg { width: 48px; height: 48px; background: #294434; }
+.npc-presets button[aria-pressed=true] { outline: 2px solid var(--color-accent); }
+.npc-coordinates { font-size: .8em; }
+.npc-coordinates input { width: 5em; }
+@media (max-width: 600px) { .npc-editor .admin-cols { display: flex; flex-direction: column; } .npc-editor .admin-head { flex-wrap: wrap; } .npc-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

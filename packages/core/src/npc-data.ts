@@ -12,6 +12,7 @@
 
 import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequirement } from './scenario.js';
 import { ITEMS } from './battle.js';
+import { NPC_SPRITE_PRESET_IDS, type NpcSpritePresetId } from './npc-sprite-presets.js';
 import { WORLD_MAP_ID } from './map-id.js';
 
 export class NpcDataError extends Error {}
@@ -20,6 +21,8 @@ export interface NpcDef {
   id: string;
   /** 名前 (会話の話者として出る)。 */
   name: string;
+  /** Explicit bundled appearance; absent preserves the individually drawn sprite. */
+  spritePreset?: NpcSpritePresetId;
   /**
    * **立っているマップ** (#613)。内部マップ (#424) の id、**省略 = フィールド**
    * (`WORLD_MAP_ID`)。mapId の無い旧レコードは無移行でフィールドの NPC として読める。
@@ -75,7 +78,7 @@ const key = (mapId: string, x: number, y: number) =>
  * NPC 一覧を差し替える。`null` / 空で全解除。
  * **壊れた 1 人で全体を落とす** (部分適用しない。他エディタと同じ流儀)。
  */
-export function setNpcs(list: readonly NpcDef[] | null): void {
+export function validateNpcs(list: readonly NpcDef[] | null): void {
   const next = list ?? [];
   if (next.length > MAX_NPCS) throw new NpcDataError(`NPC が多すぎる (${next.length} > ${MAX_NPCS})`);
   const ids = new Set<string>();
@@ -91,6 +94,9 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
     // (読み込み順に依存する検証は、順序が変わった日に全 NPC を落とす)。エディタが見る。
     if (n.mapId !== undefined && (typeof n.mapId !== 'string' || n.mapId.trim() === '')) {
       throw new NpcDataError(`${where}: マップ id が不正`);
+    }
+    if (n.spritePreset !== undefined && !(NPC_SPRITE_PRESET_IDS as readonly unknown[]).includes(n.spritePreset)) {
+      throw new NpcDataError(`${where}: 標準の絵が不正 (${n.spritePreset})`);
     }
     const k = key(mapOf(n), n.x, n.y);
     // **同じマスに 2 人は立てない。** ぶつかったときどちらと話すのか決められない。
@@ -120,6 +126,11 @@ export function setNpcs(list: readonly NpcDef[] | null): void {
       }
     }
   }
+}
+
+export function setNpcs(list: readonly NpcDef[] | null): void {
+  validateNpcs(list);
+  const next = list ?? [];
   npcList = next.map((n) => ({ ...n, lines: [...n.lines], ...(n.altLines ? { altLines: n.altLines.map((a) => ({ ...a, lines: [...a.lines], ...(a.items ? { items: a.items.map((r) => ({ ...r })) } : {}) })) } : {}) }));
   byKey = new Map(npcList.map((n) => [key(mapOf(n), n.x, n.y), n]));
 }

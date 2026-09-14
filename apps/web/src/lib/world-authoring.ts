@@ -1,6 +1,12 @@
+import { captureNpcPlacementWorld } from './npc-placement';
 import type { Agent } from '@atproto/api';
 import {
   decodeWorldMap,
+  BASE_PARTS,
+  decodeTileArt,
+  bundledWorldMapTiles,
+  tileArtTerrains,
+  setTileArt,
   dumpTileArts,
   encodeWorldMap,
   loadStaticWorldMap,
@@ -14,6 +20,7 @@ import {
   setItemOverrides,
   setMonsterOverrides,
   setNpcs,
+  validateNpcs,
   setShopOverrides,
   setTownOverrides,
   setWorldMap,
@@ -217,7 +224,7 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     }
     try {
       // シナリオ (#545)。条件が questId を引くので**クエストより後**に読む。
-      const rec = await getQuestAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+      const rec = await getAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
       if (rec?.events) setScenario(rec.events);
     } catch (e) {
       console.warn('[world] scenario load failed', e);
@@ -270,8 +277,9 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 
 /** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
 export async function saveNpcs(agent: Agent, npcs: NpcDef[]): Promise<void> {
-  setNpcs(npcs);
+  validateNpcs(npcs);
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
+  setNpcs(npcs);
 }
 
 /**
@@ -323,7 +331,7 @@ export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promi
 
 /** シナリオだけを読む (エディタ用。読めたかどうかを返す = 上書き事故を防ぐ)。 */
 export async function loadScenarioRecord(agent: Agent, adminDid: string): Promise<ScenarioEvent[]> {
-  const rec = await getQuestAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+  const rec = await getAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
   if (rec && !Array.isArray(rec.events)) throw new Error('シナリオ レコードが不正');
   const events = rec?.events ?? [];
   setScenario(events);
@@ -346,10 +354,10 @@ export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Prom
 /** 導入データの編集用。読込み失敗を空リストとして保存させない。 */
 export async function loadQuestAuthoringRecords(agent: Agent, adminDid: string): Promise<GameQuestDef[]> {
   // Referenced records must be persisted, not another editor's unsaved in-memory draft.
-  const npcs = await getQuestAuthoringRecord<{ npcs: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
+  const npcs = await getAuthoringRecord<{ npcs: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
   if (npcs && !Array.isArray(npcs.npcs)) throw new Error('NPC レコードが不正');
   setNpcs(npcs?.npcs ?? []);
-  const interiors = await getQuestAuthoringRecord<{ interiors: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates: Gate[] }>(agent, adminDid, ADMIN_COL.interiors, RKEY);
+  const interiors = await getAuthoringRecord<{ interiors: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates: Gate[] }>(agent, adminDid, ADMIN_COL.interiors, RKEY);
   if (interiors && (!Array.isArray(interiors.interiors) || !Array.isArray(interiors.gates))) throw new Error('内部マップ レコードが不正');
   const maps: InteriorMap[] = [];
   for (const m of interiors?.interiors ?? []) {
@@ -357,7 +365,7 @@ export async function loadQuestAuthoringRecords(agent: Agent, adminDid: string):
     maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
   }
   setInteriors(maps, interiors?.gates ?? []);
-  const rec = await getQuestAuthoringRecord<{ quests: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
+  const rec = await getAuthoringRecord<{ quests: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
   if (rec && !Array.isArray(rec.quests)) throw new Error('クエスト レコードが不正');
   const quests = rec?.quests ?? [];
   setGameQuests(quests);
@@ -365,7 +373,7 @@ export async function loadQuestAuthoringRecords(agent: Agent, adminDid: string):
 }
 
 /** 通信/認証失敗を「まだレコードが無い」と取り違えない編集用読込み。 */
-async function getQuestAuthoringRecord<T>(agent: Agent, repo: string, collection: string, rkey: string): Promise<T | null> {
+async function getAuthoringRecord<T>(agent: Agent, repo: string, collection: string, rkey: string): Promise<T | null> {
   try {
     const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });
     return res.data.value as T;
@@ -374,4 +382,46 @@ async function getQuestAuthoringRecord<T>(agent: Agent, repo: string, collection
     if (error.error === 'RecordNotFound' || error.name === 'RecordNotFoundError') return null;
     throw e;
   }
+}
+
+/** Strict NPC editor load. No communication/decode failure may masquerade as an empty map. */
+export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, isCurrent = () => true) {
+  const read = <T,>(collection: string) => getAuthoringRecord<T>(agent, adminDid, collection, RKEY);
+  const [map, art, items, monsters, npcs, interior, quests] = await Promise.all([
+    read<WorldMapRecord>(ADMIN_COL.worldMap), read<TileArtCollectionRecord>(ADMIN_COL.tileArt),
+    read<ItemsRecordData>(ADMIN_COL.items), read<MonstersRecord>(ADMIN_COL.monsters),
+    read<{ npcs: NpcDef[] }>(ADMIN_COL.npcs),
+    read<{ interiors: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates: Gate[] }>(ADMIN_COL.interiors),
+    read<{ quests: GameQuestDef[] }>(ADMIN_COL.quests),
+  ]);
+  if (map && (typeof map.gz !== 'string' || map.size !== WORLD_SIZE)) throw new Error('地図レコードが不正');
+  if (art && (!art.arts || typeof art.arts !== 'object' || Array.isArray(art.arts))) throw new Error('絵レコードが不正');
+  if (items && (!Array.isArray(items.items) || !Array.isArray(items.equipment))) throw new Error('アイテムレコードが不正');
+  if (monsters && !Array.isArray(monsters.monsters)) throw new Error('モンスターレコードが不正');
+  if (npcs && !Array.isArray(npcs.npcs)) throw new Error('NPCレコードが不正');
+  if (quests && !Array.isArray(quests.quests)) throw new Error('クエストレコードが不正');
+  if (interior && (!Array.isArray(interior.interiors) || !Array.isArray(interior.gates))) throw new Error('内部マップレコードが不正');
+  const tiles = map ? await decodeWorldMap(fromBase64(map.gz)) : await bundledWorldMapTiles();
+  const maps: InteriorMap[] = [];
+  for (const m of interior?.interiors ?? []) {
+    const { gz, ...rest } = m;
+    maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
+  }
+  const arts = Object.entries(art?.arts ?? {}).map(([key, value]) => [key, decodeTileArt(value)] as const);
+  // There are no awaits after this guard. Superseded sessions cannot publish stale responses.
+  if (!isCurrent()) throw new Error('読み込みを取り消しました');
+  const parts = map?.parts ?? map?.palette?.map((terrain) => ({ terrain, name: terrain })) ?? BASE_PARTS;
+  if (!Array.isArray(parts)) throw new Error('地図パーツが不正');
+  setWorldParts(parts);
+  setWorldMap({ tiles, size: WORLD_SIZE, parts });
+  setTownOverrides(map?.towns ?? null);
+  setItemOverrides(items ?? null);
+  setMonsterOverrides(monsters?.monsters ?? null);
+  setNpcs(npcs?.npcs ?? []);
+  setInteriors(maps, interior?.gates ?? []);
+  setGameQuests(quests?.quests ?? []);
+  for (const key of tileArtTerrains()) setTileArt(key, null);
+  for (const [key, value] of arts) setTileArt(key, value);
+  const list = structuredClone(npcs?.npcs ?? []);
+  return { list, world: captureNpcPlacementWorld(list, !map) };
 }

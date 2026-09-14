@@ -37,3 +37,5 @@ export * from './equipment.js';
 export * from './starter-town-quests.js';
 export * from './starter-town-scenario.js';
 export * from './starter-town-shop.js';
+
+export * from './npc-sprite-presets.js';

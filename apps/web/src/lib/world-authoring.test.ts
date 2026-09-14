@@ -86,3 +86,35 @@ describe('導入データ: draftと保存済み定義の境界', () => {
     }
   });
 });
+
+describe('NPC editor strict load and save', () => {
+  afterEach(() => { setNpcs(null); setInteriors(null, []); setGameQuests(null); });
+  it('never publishes failed NPC saves; presets write only NPC records', async () => {
+    const { saveNpcs } = await import('./world-authoring');
+    setNpcs([NPC]);
+    const next = [{ ...NPC, spritePreset: 'boy' as const }];
+    const putRecord = vi.fn().mockRejectedValue(new Error('offline'));
+    const agent = { assertDid: DID, com: { atproto: { repo: { putRecord } } } } as unknown as Agent;
+    await expect(saveNpcs(agent, next)).rejects.toThrow('offline');
+    expect(allNpcs()).toEqual([NPC]);
+    putRecord.mockResolvedValue({});
+    await saveNpcs(agent, next);
+    expect(allNpcs()).toEqual(next);
+    expect(putRecord.mock.calls.every(([p]) => p.collection.endsWith('.world.npcs'))).toBe(true);
+  });
+  it('only true absence allows bundled/empty data, and stale loads cannot publish', async () => {
+    const { loadNpcAuthoringRecords } = await import('./world-authoring');
+    const empty = await loadNpcAuthoringRecords(fakeAgent({}), DID);
+    expect(empty.list).toEqual([]); expect(empty.world.bundled).toBe(true);
+    expect(empty.world.tiles.length).toBe(1024 ** 2);
+    for (const record of [{ map: { size: 1024, gz: 'not gzip' } }, { npcs: {} }, { tileArt: { arts: { 'npc:x': { size: 16, palette: [''], pixels: 'aA==' } } } }]) {
+      await expect(loadNpcAuthoringRecords(fakeAgent(record), DID)).rejects.toThrow();
+    }
+    const error = Object.assign(new Error('not found session'), { error: 'AuthenticationRequired' });
+    const agent = { com: { atproto: { repo: { getRecord: vi.fn().mockRejectedValue(error) } } } } as unknown as Agent;
+    await expect(loadNpcAuthoringRecords(agent, DID)).rejects.toBe(error);
+    setNpcs([NPC]);
+    await expect(loadNpcAuthoringRecords(fakeAgent({}), DID, () => false)).rejects.toThrow('取り消し');
+    expect(allNpcs()).toEqual([NPC]);
+  });
+});
