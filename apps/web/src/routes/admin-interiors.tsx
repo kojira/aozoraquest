@@ -56,6 +56,8 @@ export function AdminInteriors() {
   const [note, setNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'failed'>('loading');
+  const [saving, setSaving] = useState(false);
+  const editingDisabled = loadState !== 'ok' || saving;
   /** ゲートを張る途中 (from を選んだ状態)。 */
   const [linking, setLinking] = useState<{ mapId: string; x: number; y: number } | null>(null);
   const painting = useRef(false);
@@ -74,6 +76,7 @@ export function AdminInteriors() {
     const agent = session.agent;
     const adminDid = getPrimaryAdminDid();
     if (!agent || !adminDid) { setLoadState('failed'); return; }
+    setLoadState('loading');
     // **アイテムを先に読む** — 解錠アイテムの検証が ITEMS を引くので、この画面を
     // 直接開くと「アイテムが存在しない」で保存も読み込みも落ちる (レビュー ★★★)。
     void loadAuthoredWorld(agent)
@@ -117,7 +120,7 @@ export function AdminInteriors() {
   }, [maps]);
 
   const paintAt = useCallback((cx: number, cy: number) => {
-    if (!current) return;
+    if (!current || editingDisabled) return;
     if (cx < 0 || cy < 0 || cx >= current.size || cy >= current.size) return;
     setMaps((xs) => xs.map((m) => {
       if (m.id !== current.id) return m;
@@ -126,7 +129,7 @@ export function AdminInteriors() {
       return { ...m, tiles };
     }));
     setDirty(true);
-  }, [current, brush]);
+  }, [current, brush, editingDisabled]);
 
   const pointerPaint = useCallback((clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -139,15 +142,19 @@ export function AdminInteriors() {
   }, [current, paintAt, linking]);
 
   const save = useCallback(async () => {
-    if (!session.agent) return;
+    if (!session.agent || editingDisabled || !dirty) return;
+    setSaving(true);
+    painting.current = false;
     try {
       await saveInteriors(session.agent, maps, gates);
       setDirty(false);
       setNote(`${maps.length} マップ / ${gates.length} ゲートを保存した。サーバーは最大 5 分で拾う`);
     } catch (e) {
       setNote(e instanceof InteriorError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
+    } finally {
+      setSaving(false);
     }
-  }, [session.agent, maps, gates]);
+  }, [session.agent, maps, gates, editingDisabled, dirty]);
 
   if (!admin) {
     return (
@@ -167,6 +174,8 @@ export function AdminInteriors() {
 
   return (
     <div className="admin-page" style={{ padding: '0.8em' }}>
+      {loadState === 'loading' && <p role="status">保存済みの内部マップを読み込み中…</p>}
+      <fieldset disabled={editingDisabled} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="admin-head">
         <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>内部マップ</strong>
@@ -206,7 +215,7 @@ export function AdminInteriors() {
           はじまりの村を入れる
         </button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || loadState !== 'ok'} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
-          保存
+          {saving ? '保存中…' : '保存'}
         </button>
       </div>
 
@@ -320,6 +329,7 @@ export function AdminInteriors() {
               ref={svgRef}
               viewBox={`0 0 ${current.size * 32} ${current.size * 32}`}
               onPointerDown={(e) => {
+                if (editingDisabled) return;
                 e.preventDefault();
                 const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
                 const cx = Math.floor(((e.clientX - r.left) / r.width) * current.size);
@@ -458,6 +468,7 @@ export function AdminInteriors() {
           <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶか「＋マップ」。</div>
         )}
       </div>
+      </fieldset>
     </div>
   );
 }
