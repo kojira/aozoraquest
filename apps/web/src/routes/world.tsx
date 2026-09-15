@@ -151,6 +151,10 @@ export function World() {
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
+  // 地図入手は次の歩行で消える notice に置かず、読了まで表示する。
+  const [mapAcquisition, setMapAcquisition] = useState<string | null>(null);
+  const mapAcquisitionRef = useRef(false);
+  const waitForFreshDirectionRef = useRef(false);
   /** NPC 会話 (#425/#423)。lines は通常セリフかクエスト文脈のセリフ。acceptQuestId が
    *  あるときは**読み終えたら はい/いいえ で受注を聞く** (#659)。 */
   const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string } | null>(null);
@@ -609,7 +613,7 @@ export function World() {
       const s = wsRef.current;
       // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可 (全入力経路を一括ガード)。
       if (!s || battleRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
-      if (moveBusyRef.current || npcTalkRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
+      if (moveBusyRef.current || npcTalkRef.current || mapAcquisitionRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
       if (!worldServerEnabled || !agent) { setNotice('サーバーに接続できないため移動できない。'); return; }
       const { dx, dy } = DIRS[dir];
       const cur = s.mapId ? interiorById(s.mapId) ?? null : null;
@@ -747,7 +751,14 @@ export function World() {
             const arrived = t ? (res.healed
               ? `「${t.name}」で休んで、すっかり元気になった!`
               : `「${t.name}」に ついた!`) : '';
-            setNotice(`${arrived}${gained ? ' ちずのかけらを 手に入れた!' : ''}`.trim() || null);
+            if (gained) {
+              mapAcquisitionRef.current = true;
+              waitForFreshDirectionRef.current = true;
+              setMapAcquisition(`${arrived} ちずのかけらを 手に入れた!`.trim());
+              setNotice(null);
+            } else {
+              setNotice(arrived || null);
+            }
             wsRef.current = next;
             setWs(next);
             scheduleSave();
@@ -1314,6 +1325,9 @@ export function World() {
       const dir = map[e.key];
       if (dir) {
         e.preventDefault();
+        // 入手前から押しっぱなしのキーは、読了後も新しい押下まで再開しない。
+        if (mapAcquisitionRef.current || (waitForFreshDirectionRef.current && e.repeat)) return;
+        waitForFreshDirectionRef.current = false;
         move(dir);
       }
     };
@@ -1515,18 +1529,19 @@ export function World() {
           </div>
           {/* 仮想スティック: マップ全面がタッチ領域。十字キーの置き換え
               (十字キーはスマホで非常に操作しづらい) */}
-          <VirtualStick
+          {/* 入手中はunmountして押しっぱなしの反復/捕捉ポインタを破棄する。 */}
+          {mapAcquisition === null && <VirtualStick
             onMove={move}
             onTapSelf={() => {
               // 演出中・戦闘中はメニューを開かない。他オーバーレイ (menu/items/inv/
               // map/shop/gear/status) 中はそもそもスティックがそれらの背面シートで
               // 遮断されタップが届かないので、ここでは wipe/battle だけ見れば足りる
               // (move() ガードとは条件集合が非対称 — 意図的)
-              if (wipeRef.current || battleRef.current) return;
+              if (wipeRef.current || battleRef.current || mapAcquisitionRef.current) return;
               dismissMenuHint();
               setMenuOpen(true);
             }}
-          />
+          />}
           {combat && curHp !== null && curMp !== null && (
             <WorldHud
               // 戦闘中は上枠 HP/MP を「戦闘中の実 HP/MP」(battle.state.player) に追従させる。
@@ -1616,7 +1631,14 @@ export function World() {
               position:relative の地図枠の下部に貼る。一度に出るのは 1 つ (相互にガード)。
               会話は z が戦闘オーバーレイ (OVERLAY_Z) より上なので、状態機械のガードに加えて
               !battle でも囲い、万一の同時表示で戦闘操作が塞がれる事故を防ぐ (レビュー ★★)。 */}
-          {!battle && npcTalk && !onboarding && (
+          {!battle && mapAcquisition !== null && !onboarding && (
+            <DialogueWindow
+              anchor="map"
+              lines={[{ text: mapAcquisition }]}
+              onDone={() => { mapAcquisitionRef.current = false; setMapAcquisition(null); }}
+            />
+          )}
+          {!battle && npcTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               anchor="map"
               lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
@@ -1628,7 +1650,7 @@ export function World() {
             />
           )}
           {doorFade && <DoorFade phase={doorFade} onDone={() => setDoorFade(null)} />}
-          {!battle && scenarioTalk && !npcTalk && !onboarding && (
+          {!battle && scenarioTalk && !npcTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               anchor="map"
               lines={scenarioTalk.map((text) => ({ text }))}
@@ -1798,7 +1820,7 @@ export function World() {
           onClose={() => setGearOpen(false)}
         />
       )}
-      {shopOpen && town && (
+      {shopOpen && town && mapAcquisition === null && (
         <ShopModal
           town={town}
           townIndex={Math.max(0, worldOverlay().towns.findIndex((t) => t.x === town.x && t.y === town.y))}
