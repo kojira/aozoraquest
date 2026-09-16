@@ -202,6 +202,40 @@ test('real World successful steps are visible, stable on return, and never signa
     await expect(layer).not.toHaveAttribute('transform', 'translate(0 0)');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await expect(layer).toHaveAttribute('transform', 'translate(0 0)');
+    // Upward movement brings a padded NPC into view with the same transform as the ground.
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const npc = { id: 'scroll-edge', name: '旅人', spritePreset: 'old-man' as const, mapId: room.id, x: 18, y: 6, lines: ['こんにちは'] };
+    setInteriors([room], []); setNpcs([npc]);
+    records['app.aozoraquest.world.interiors'] = { interiors: [{ ...room, tiles: undefined, gz: Buffer.from(await encodeWorldMap(room.tiles)).toString('base64') }], gates: [] };
+    records['app.aozoraquest.world.npcs'] = { npcs: [npc] };
+    state = { ...state, mapId: room.id, x: 15, y: 15 };
+    await page.reload(); await expect(map).toBeVisible();
+    await expect(layer.locator('.npc-sprite')).toHaveCount(1);
+    const upward = page.evaluate(async () => {
+      const frames: { terrain: number; npc: number }[] = [];
+      const started = performance.now();
+      await new Promise<void>(resolve => {
+        const sample = () => {
+          const layer = document.querySelector<SVGGElement>('[data-world-scroll]')!;
+          const npc = layer.querySelector<SVGGElement>('.npc-sprite')!;
+          const svg = layer.ownerSVGElement!;
+          // Screen matrices include inherited movement; convert back to SVG pixels.
+          const matrix = svg.getScreenCTM()!.inverse();
+          frames.push({ terrain: matrix.multiply(layer.getScreenCTM()!).f, npc: matrix.multiply(npc.getScreenCTM()!).f });
+          if (performance.now() - started < 350) requestAnimationFrame(sample); else resolve();
+        };
+        requestAnimationFrame(sample);
+      });
+      return frames;
+    });
+    await page.keyboard.press('ArrowUp'); await expect.poll(() => state.y).toBe(14);
+    await expect(layer).toHaveAttribute('transform', 'translate(0 0)');
+    const upFrames = await upward;
+    expect(upFrames.some(f => f.npc > -32 && f.npc < -1)).toBe(true);
+    for (const f of upFrames.filter(f => f.terrain < -1)) expect(f.npc).toBeCloseTo(f.terrain, 4);
+    expect(upFrames.at(-1)!.npc).toBeCloseTo(0, 4);
+    writeFileSync('test-results/upward-npc-scroll-frames.json', JSON.stringify(upFrames));
+    await page.screenshot({ path: 'test-results/upward-npc-scroll.png' });
     expect(errors).toEqual([]);
   } finally { globalThis.fetch = originalFetch; setWorldMap(null); }
 });
