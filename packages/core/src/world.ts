@@ -58,9 +58,9 @@ export const WORLD_TUNING = {
   /** 街探索の半径 (リージョン中心からのスパイラル) */
   townSearchRadius: 40,
   /** 地形別の遭遇率 (1 歩あたり) */
-  encounterRate: { plains: 0.05, grove: 0.1, forest: 0.2, bridge: 0.05, town: 0 },
+  encounterRate: { snowfield: 0.05, desert: 0.05, plains: 0.05, grove: 0.1, forest: 0.2, bridge: 0.05, town: 0 },
   /** 地形別のアイテム発見率 (1 歩あたり) */
-  itemRate: { plains: 0.03, grove: 0.05, forest: 0.08, bridge: 0, town: 0 },
+  itemRate: { snowfield: 0.03, desert: 0.03, plains: 0.03, grove: 0.05, forest: 0.08, bridge: 0, town: 0 },
 } as const;
 
 export type Terrain =
@@ -71,11 +71,14 @@ export type Terrain =
   | 'water'
   | 'mountain'
   | 'town'
-  | 'bridge';
+  | 'bridge'
+  | 'snowfield'
+  | 'snowMountain'
+  | 'desert';
 
 /** 徒歩で通行できる地形 (乗り物なし)。 */
 export function isWalkable(t: Terrain): boolean {
-  return t === 'plains' || t === 'grove' || t === 'forest' || t === 'town' || t === 'bridge';
+  return t === 'plains' || t === 'grove' || t === 'forest' || t === 'town' || t === 'bridge' || t === 'snowfield' || t === 'desert';
 }
 
 /**

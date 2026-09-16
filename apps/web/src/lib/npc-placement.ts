@@ -1,5 +1,5 @@
 import {
-  allGates, allInteriors, BASE_PALETTE, isWalkable, partArtFor, npcArtKey, tileArtFor,
+  allGates, allInteriors, BASE_PALETTE, isKnownTerrain, isWalkable, partArtFor, npcArtKey, tileArtFor,
   worldMapTiles, worldOverlay, worldParts, WORLD_MAP_ID, WORLD_SIZE, wrap,
   type Gate, type InteriorMap, type NpcDef, type TileArt, type Town, type WorldPart, type Terrain,
 } from '@aozoraquest/core';
@@ -42,7 +42,7 @@ export function placementCell(world: NpcPlacementWorld, mapId: string, x: number
   if (field) { x = wrap(x); y = wrap(y); }
   const index = field ? world.tiles[y * WORLD_SIZE + x]! : map!.tiles[y * map!.size + x]!;
   const terrain = field
-    ? ((BASE_PALETTE as readonly string[]).includes(world.parts[index]?.terrain ?? '') ? world.parts[index]!.terrain : 'plains')
+    ? (isKnownTerrain(world.parts[index]?.terrain ?? '') ? world.parts[index]!.terrain : 'plains')
     : map!.parts?.[index]?.terrain ?? BASE_PALETTE[index] ?? 'plains';
   const ownWalkable = (map?.parts ?? world.parts)[index]?.walkable;
   const walkable = ownWalkable ?? isWalkable(terrain as Terrain);

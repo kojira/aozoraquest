@@ -7,7 +7,7 @@
  *   - レコードが**無ければ触らない** (読めない日にメモリの定義を消さない)
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { BASE_PARTS, BIOME_PARTS, encodeWorldMap, setWorldMap, setInteriors, interiorById, interiorTerrainAt, interiorWalkableAt, terrainAt, isWalkableAt, worldParts, allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { ensureAuthoredWorld, resetAuthoredWorldCache } from '../src/world-authoring';
 
 const DID = 'did:plc:admin';
@@ -52,6 +52,23 @@ describe('ensureAuthoredWorld: 空配列のレコードを適用する (#660)', 
     resetAuthoredWorldCache();
     setNpcs(null);
     setShopOverrides(null);
+  });
+
+  it('new biome records decode as authoritative terrain without reindexing existing parts', async () => {
+    const parts = [...BASE_PARTS, { terrain: 'bridge', name: '既存の橋' }, ...BIOME_PARTS];
+    const tiles = new Uint8Array(16); tiles.set([8, 9, 10, 11]);
+    const gz = Buffer.from(await encodeWorldMap(tiles)).toString('base64');
+    globalThis.fetch = fakePds({ map: { size: 4, parts, gz },
+      interiors: { interiors: [{ id: 'biomes', name: '雪と砂', size: 4, parts, gz }], gates: [] } });
+    try {
+      await ensureAuthoredWorld(env, NSID, NOW);
+      expect(worldParts()).toEqual(parts);
+      expect([0, 1, 2, 3].map(x => terrainAt(x, 0))).toEqual(['bridge', 'snowfield', 'snowMountain', 'desert']);
+      expect([1, 2, 3].map(x => isWalkableAt(x, 0))).toEqual([true, false, true]);
+      const map = interiorById('biomes')!;
+      expect([1, 2, 3].map(x => interiorTerrainAt(map, x, 0))).toEqual(['snowfield', 'snowMountain', 'desert']);
+      expect([1, 2, 3].map(x => interiorWalkableAt(map, x, 0))).toEqual([true, false, true]);
+    } finally { setWorldMap(null); setInteriors([], []); }
   });
 
   it('NPC: {npcs: []} で全 NPC が消える', async () => {
