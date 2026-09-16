@@ -3,7 +3,12 @@ import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { BASE_PARTS, encodeWorldMap, WORLD_SIZE } from '@aozoraquest/core';
+import { BASE_PARTS, encodeTileArt, encodeWorldMap, WORLD_SIZE } from '@aozoraquest/core';
+
+import { sandArt, snowArt } from './fixtures/shore-ground-art';
+
+// Definition prefixes differ between screens; compare actual ground art, clipping and overlay.
+const shoreMarkup = (els: Element[]) => els.map((el) => el.outerHTML.replace(/id="[^"]*-ground-(\d+)"/g, 'id="ground-$1"').replace(/url\(#[^)]*-ground-(\d+)\)/g, 'url(#ground-$1)')).sort();
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4275/e2e/fixtures/shore-autotile.html';
@@ -33,6 +38,7 @@ test('real interior paint → shore preview → explicit save → reload → Wor
   const untouched = { id: 'untouched', name: '別の部屋', size: 4, gz: Buffer.from(await encodeWorldMap(new Uint8Array(16))).toString('base64') };
   const records: Record<string, any> = {
     [INTERIORS]: { interiors: [map, untouched], gates: [] },
+    'app.aozoraquest.world.tileArt': { arts: { plains: encodeTileArt(sandArt) } },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 30, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: 7, y: 7, regions: [], visitedTowns: [], gotStarterFeather: true, hp: null, mp: null },
   };
@@ -70,8 +76,10 @@ test('real interior paint → shore preview → explicit save → reload → Wor
   for (const [x, y] of [[5, 5], [6, 5], [5, 6], [6, 6], [7, 6], [8, 6]]) { await paint(x!, y!); tiles[y! * 16 + x!] = 1; }
   await page.getByTitle('池', { exact: true }).click();
   await paint(8, 8); tiles[8 * 16 + 8] = 2;
-  const shapes = await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((el) => el.outerHTML).sort());
+  const shapes = await editor.locator('[data-shore-mask]').evaluateAll(shoreMarkup);
   expect(shapes.length).toBeGreaterThan(2);
+  expect(shapes.join('')).toContain(sandArt.palette[0]);
+  expect(shapes.join('')).not.toContain('#3f9d3f');
   await expect(editor.locator('[data-shore-mask="0"]')).toHaveCount(1);
   expect(puts).toEqual([]); // painting is still only a draft
   await page.screenshot({ path: 'test-results/shore-editor-mobile.png', fullPage: true });
@@ -84,25 +92,32 @@ test('real interior paint → shore preview → explicit save → reload → Wor
   expect(saved[1]).toEqual(untouched);
   await page.reload();
   await page.getByRole('button', { name: /岸辺の庭.*16²/ }).click();
-  expect(await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((el) => el.outerHTML).sort())).toEqual(shapes);
+  expect(await editor.locator('[data-shore-mask]').evaluateAll(shoreMarkup)).toEqual(shapes);
   await page.goto(`${URL}?screen=world`);
   const world = page.getByLabel('ワールドマップ', { exact: true });
   await expect(world).toBeVisible();
   await expect(world.locator('[data-shore-mask="0"]')).toHaveCount(1);
-  expect(await world.locator('[data-shore-mask]').evaluateAll((els) => els.map((el) => el.outerHTML).sort())).toEqual(shapes);
+  expect(await world.locator('[data-shore-mask]').evaluateAll(shoreMarkup)).toEqual(shapes);
   await page.screenshot({ path: 'test-results/shore-world-mobile.png' });
   expect(errors).toEqual([]);
 });
 
-test('field edge wraps and added water/bridge parts match World without rewriting them', async ({ page }) => {
+test('field wraps with mixed sand/snow custom art, equal masks and a bridge; save/reload matches World', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1000, height: 1100 });
   await page.addInitScript(() => localStorage.setItem('aq-world-onboarding-done', '1'));
   const tiles = new Uint8Array(WORLD_SIZE * WORLD_SIZE);
   tiles[1023] = 8; tiles[0] = 8; tiles[1] = 9;
-  const parts = [...BASE_PARTS, { terrain: 'water', name: '増設水', walkable: false }, { terrain: 'bridge', name: '増設橋', walkable: true }];
+  const parts = [...BASE_PARTS, { terrain: 'water', name: '増設水', walkable: false }, { terrain: 'bridge', name: '増設橋', walkable: true }, { terrain: 'plains', name: '自作砂地', walkable: true }, { terrain: 'plains', name: '自作雪', walkable: true }];
+  for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) {
+    const i = ((y + WORLD_SIZE) % WORLD_SIZE) * WORLD_SIZE + (x + WORLD_SIZE) % WORLD_SIZE;
+    if (tiles[i] === 0) tiles[i] = y < 0 ? 10 : 11;
+  }
+  tiles[(WORLD_SIZE - 2) * WORLD_SIZE + WORLD_SIZE - 2] = 3; // sand pool
+  tiles[2 * WORLD_SIZE + 2] = 3; // same shape/part, snow pool
   const collection = 'app.aozoraquest.world.map';
   const records: Record<string, any> = {
+    'app.aozoraquest.world.tileArt': { arts: { 'part:10': encodeTileArt(sandArt), 'part:11': encodeTileArt(snowArt) } },
     [collection]: { size: WORLD_SIZE, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64'), parts },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 30, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: 0, y: 2, regions: [], visitedTowns: [], gotStarterFeather: true, hp: null, mp: null },
@@ -147,7 +162,15 @@ test('field edge wraps and added water/bridge parts match World without rewritin
   const b = (await editor.boundingBox())!;
   await page.mouse.click(b.x + 8.5 * b.width / 16, b.y + 9.5 * b.height / 16);
   tiles[WORLD_SIZE] = 3;
-  const shapes = await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((e) => e.outerHTML).sort());
+  const shapes = await editor.locator('[data-shore-mask]').evaluateAll(shoreMarkup);
+  expect(shapes.join('')).toContain(sandArt.palette[0]);
+  expect(shapes.join('')).toContain(snowArt.palette[0]);
+  const pools = await editor.locator('[data-shore-mask="0"]').evaluateAll(shoreMarkup);
+  expect(pools).toHaveLength(2);
+  expect(pools.filter((s) => s.includes(sandArt.palette[0]!))).toHaveLength(1);
+  expect(pools.filter((s) => s.includes(snowArt.palette[0]!))).toHaveLength(1);
+  await expect(editor.locator('[data-shore-mask] [clip-path] rect[width="1"]')).not.toHaveCount(0);
+  expect(shapes.join('')).not.toContain('#3f9d3f');
   expect(saves).toBe(0);
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect.poll(() => saves).toBe(1);
@@ -155,7 +178,7 @@ test('field edge wraps and added water/bridge parts match World without rewritin
   expect(records[collection].parts).toEqual(parts);
   await page.screenshot({ path: 'test-results/shore-field-editor.png' });
   await page.reload(); await jumpToEdge();
-  expect(await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((e) => e.outerHTML).sort())).toEqual(shapes);
+  expect(await editor.locator('[data-shore-mask]').evaluateAll(shoreMarkup)).toEqual(shapes);
   // Returning from art editing must refresh the shore/custom-art choice without a reload or paint.
   await page.getByRole('button', { name: 'パーツの絵', exact: true }).click();
   await page.getByRole('combobox').first().selectOption('8');
@@ -171,20 +194,20 @@ test('field edge wraps and added water/bridge parts match World without rewritin
   await page.getByRole('button', { name: '同梱の絵に戻す', exact: true }).click();
   await expect(page.getByText(/同梱の絵に戻した/)).toBeVisible();
   await page.getByRole('button', { name: '地図を編集', exact: true }).click();
-  expect(await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((e) => e.outerHTML).sort())).toEqual(shapes);
+  expect(await editor.locator('[data-shore-mask]').evaluateAll(shoreMarkup)).toEqual(shapes);
   expect(saves).toBe(3); // existing art persistence also saves the loaded map
   expect(gunzipSync(Buffer.from(records[collection].gz, 'base64'))).toEqual(Buffer.from(tiles));
   expect(records[collection].parts).toEqual(parts);
   await page.goto(`${URL}?screen=world`);
   const world = page.getByLabel('ワールドマップ', { exact: true });
   await expect(world.locator('[data-shore-mask]')).toHaveCount(shapes.length);
-  expect(await world.locator('[data-shore-mask]').evaluateAll((els) => els.map((e) => e.outerHTML).sort())).toEqual(shapes);
+  expect(await world.locator('[data-shore-mask]').evaluateAll(shoreMarkup)).toEqual(shapes);
 });
 
-test('original shore parts and coastline comparison', async ({ page }) => {
+test('ground art comparison: grass, custom sand, 32px snow and mixed shores', async ({ page }) => {
   await page.route('**/*', (route) => ['127.0.0.1', 'localhost'].includes(new globalThis.URL(route.request().url()).hostname) ? route.continue() : route.abort());
-  await page.setViewportSize({ width: 1020, height: 1160 });
+  await page.setViewportSize({ width: 1160, height: 1040 });
   await page.goto(`${URL}?screen=art`);
-  await expect(page.getByRole('heading', { name: /基本13分類/ })).toBeVisible();
-  await page.screenshot({ path: 'test-results/shore-parts-comparison.png', fullPage: true });
+  await expect(page.getByRole('heading', { name: /下地をそのまま/ })).toBeVisible();
+  await page.locator('main').screenshot({ path: 'test-results/shore-ground-comparison.png', animations: 'disabled' });
 });

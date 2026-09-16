@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { shoreArt } from '@/lib/shore-autotile';
+import { shoreArt, shoreGrounds } from '@/lib/shore-autotile';
 import { TERRAIN_COLORS, UNKNOWN_TERRAIN_COLOR, partArtFor, tileArtColorAt, tileArtFor, type Terrain } from '@aozoraquest/core';
 
 /**
@@ -181,8 +181,17 @@ export function renderArt(art: ReturnType<typeof tileArtFor>): ReactElement | nu
 }
 
 /** Connection mask is a display-only variant, never a new map part. */
-export function shoreTile(mask: number): ReactElement {
-  return <g data-shore-mask={mask}>{renderArt(shoreArt(mask))}</g>;
+export function shoreTile(mask: number, id: string, ground: (neighbor: number) => ReactElement | null): ReactElement {
+  return <g data-shore-mask={mask}>
+    {shoreGrounds(mask).map(({ neighbor, path }) => {
+      const clipId = `${id}-ground-${neighbor}`;
+      return <g key={neighbor}>
+        <defs><clipPath id={clipId}><path d={path} /></clipPath></defs>
+        <g clipPath={`url(#${clipId})`}>{ground(neighbor)}</g>
+      </g>;
+    })}
+    {renderArt(shoreArt(mask))}
+  </g>;
 }
 
 /** 絵も SVG も無い地形の代替 (代表色のべた塗り)。 */

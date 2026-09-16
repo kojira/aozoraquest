@@ -3,14 +3,15 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
-import { BASE_PALETTE } from '@aozoraquest/core';
+import { BASE_PALETTE, setTileArt } from '@aozoraquest/core';
 import { SessionContext } from '../../src/lib/session';
 import { AdminInteriors } from '../../src/routes/admin-interiors';
 import { AdminMap } from '../../src/routes/admin-map';
 import { World } from '../../src/routes/world';
-import { pixelTile, shoreTile } from '../../src/components/world-tiles';
-import { shoreMaskAt } from '../../src/lib/shore-autotile';
+import { pixelTile, pixelPart, shoreTile } from '../../src/components/world-tiles';
+import { SHORE_NEIGHBORS, shoreMaskAt } from '../../src/lib/shore-autotile';
 import '../../src/styles.css';
+import { sandArt, snowArt } from './shore-ground-art';
 async function call(op: string, params: unknown) {
   const response = await fetch('/shore-fixture-pds', { method: 'POST', body: JSON.stringify({ op, params }) });
   const data = await response.json();
@@ -31,24 +32,23 @@ const sample = [
   '00300004444444', '00030000444444',
 ];
 function ArtGallery() {
+  setTileArt('part:10', sandArt); setTileArt('part:11', snowArt);
   const terrainAt = (x: number, y: number) => BASE_PALETTE[Number(sample[y]?.[x] ?? 4)];
-  const tileMap = (auto: boolean) => <svg width="448" height="448" viewBox="0 0 448 448">
+  const groundIndex = (theme: string, x: number, y: number) => theme === '砂地' ? 10 : theme === '雪' ? 11 : theme === '混在' ? (y < 5 ? 0 : x < 5 ? 10 : 11) : 0;
+  const tileMap = (theme: string, auto: boolean) => <svg width="336" height="336" viewBox="0 0 448 448">
     {sample.flatMap((row, y) => [...row].map((t, x) => <g key={`${x}-${y}`} transform={`translate(${x * 32},${y * 32})`}>
-      {auto && ['3', '4'].includes(t) ? shoreTile(shoreMaskAt(x, y, terrainAt)) : pixelTile(BASE_PALETTE[Number(t)]!)}
+      {['3', '4'].includes(t) ? auto ? shoreTile(shoreMaskAt(x, y, terrainAt), `gallery-${theme}-${x}-${y}`, (neighbor) => {
+        const [dx, dy] = SHORE_NEIGHBORS[neighbor]!;
+        return pixelPart(groundIndex(theme, x + dx, y + dy), 'plains');
+      }) : pixelTile(BASE_PALETTE[Number(t)]!) : pixelPart(groundIndex(theme, x, y), 'plains')}
     </g>))}
   </svg>;
-  const examples: [string, number][] = [['水面', 255], ['上岸', 110], ['右岸', 205], ['下岸', 155], ['左岸', 55],
-    ['丸角↖', 38], ['丸角↗', 76], ['丸角↘', 137], ['丸角↙', 19],
-    ['入隅↖', 127], ['入隅↗', 239], ['入隅↘', 223], ['入隅↙', 191]];
-  return <main style={{ position: 'relative', padding: 24, background: '#181f2e', color: 'white', width: 970 }}>
-    <h1>岸辺パーツ · オリジナル16×16ドット絵</h1>
-    <p>標準の海・池を塗るだけ。岬・入り江・細水路・1マス池・対角の池。</p>
-    <div style={{ display: 'flex', gap: 24 }}><section><h2>従来</h2>{tileMap(false)}</section><section><h2>自動接続</h2>{tileMap(true)}</section></div>
-    <h2>基本13分類（四隅の合成で47接続形）</h2>
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>{examples.map(([label, mask]) => <div key={label} style={{ textAlign: 'center' }}>
-      <svg width="96" height="96" viewBox="0 0 32 32">{shoreTile(mask)}</svg><div>{label}</div>
-    </div>)}</div>
-    <p>草・土・泡・浅瀬を段階的につなぐ。通行判定や保存データは変更しません。</p>
+  return <main style={{ padding: 24, background: '#181f2e', color: 'white', width: 1080 }}>
+    <h1>岸辺 · 周囲の下地をそのまま</h1>
+    <p>水を塗るだけ。砂地・雪は自作の絵の例です（新しい地形の追加ではありません）。</p>
+    <div style={{ display: 'flex', gap: 24 }}>{['草地', '砂地', '雪'].map((theme) => <section key={theme}><h2>{theme}</h2>{tileMap(theme, true)}</section>)}</div>
+    <div style={{ display: 'flex', gap: 24 }}><section><h2>混在 · 水際なし</h2>{tileMap('混在', false)}</section><section><h2>混在 · 自動の岸辺</h2>{tileMap('混在', true)}</section></div>
+    <p>丸角・入り江・単独池・細水路。陸の色と模様、32画素の雪もそのまま。</p>
   </main>;
 }
 const screen = new URLSearchParams(location.search).get('screen');

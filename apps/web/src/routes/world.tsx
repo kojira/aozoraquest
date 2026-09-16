@@ -1,4 +1,4 @@
-import { shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
+import { SHORE_NEIGHBORS, shoreGroundKey, shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { NpcSprite } from '@/components/npc-sprite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -1464,12 +1464,24 @@ export function World() {
         if (!inside) return terrainAt(wrap(nx), wrap(ny));
         return nx < 0 || ny < 0 || nx >= inside.size || ny >= inside.size ? undefined : interiorTerrainAt(inside, nx, ny);
       }) : null;
-      const defId = `wt-${ownParts ? `i:${inside!.id}` : (pi ?? 'x')}-${t}-${detail}-${mask ?? 'plain'}`;
+      const groundAt = (neighbor: number) => {
+        const [dx, dy] = SHORE_NEIGHBORS[neighbor]!;
+        const nx = inside ? x + dx : wrap(x + dx), ny = inside ? y + dy : wrap(y + dy);
+        const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(nx, ny);
+        const index = inside ? interiorPartAt(inside, nx, ny) : mappedPartAt(nx, ny);
+        return (ownParts ? pixelTile(terrain) : pixelPart(index, terrain)) ?? TERRAIN_TILES[terrain] ?? fallbackTile(terrain);
+      };
+      const groundKey = mask === null ? '' : shoreGroundKey(mask, x, y, (nx, ny) => {
+        const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(wrap(nx), wrap(ny));
+        const index = inside ? interiorPartAt(inside, nx, ny) : mappedPartAt(wrap(nx), wrap(ny));
+        return `${ownParts ? 'own' : (index ?? 'x')}-${terrain}`;
+      });
+      const defId = `wt-${ownParts ? `i:${inside!.id}` : (pi ?? 'x')}-${t}-${detail}-${mask ?? 'plain'}-${groundKey}`;
       if (!tileDefs.has(defId)) {
         tileDefs.set(
           defId,
           <g id={defId} key={defId}>
-            {(mask === null ? artOf(t) : shoreTile(mask))
+            {(mask === null ? artOf(t) : shoreTile(mask, defId, groundAt))
               ?? (t === 'plains' ? PLAINS_VARIANTS[detail] : TERRAIN_TILES[t])
               ?? fallbackTile(t)}
           </g>,
