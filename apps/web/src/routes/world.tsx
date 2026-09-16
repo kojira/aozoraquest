@@ -55,6 +55,7 @@ function shopErrorText(e: unknown, fallback: string): string {
   const msg = e instanceof WorldServerError ? e.message : '';
   return msg ? `${msg}。` : `${fallback} (通信エラー)。もういちどどうぞ。`;
 }
+import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
 import { EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
@@ -149,6 +150,8 @@ export function World() {
   const agent = session.agent ?? null;
   const did = session.did ?? null;
   const [ws, setWs] = useState<Vitals | null>(null);
+  const [scrollStep, setScrollStep] = useState<WorldScrollStep | null>(null);
+  const { layerRef: scrollLayerRef, padding: scrollPadding } = useWorldScroll(ws, scrollStep);
   const [loadErr, setLoadErr] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null); // 進めない/回復などの一行メッセージ
@@ -700,12 +703,15 @@ export function World() {
       // client/server とも同じ wrap+地形なので通常は一致する。失敗時だけ元位置へロールバック。
       const optimistic: Vitals = { ...s, x: nx, y: ny };
       wsRef.current = optimistic;
+      setScrollStep({ x: nx, y: ny, mapId: s.mapId, dx, dy });
       setWs(optimistic);
       moveBusyRef.current = true;
       void (async () => {
         try {
           const res = await serverMove(agent, dx, dy, tokenRef.current);
           tokenRef.current = res.token;
+          // A correction/door is not another walking step. Discard the old map offset.
+          if (res.x !== nx || res.y !== ny || res.mapId !== s.mapId) setScrollStep(null);
           const cur = wsRef.current ?? optimistic;
           // マップの切り替え (#424)。ゲートを踏むとサーバーが mapId を返す。
           // 街到着は移動後の地形ではなく、権威側が確定したフィールド座標で扱う。
@@ -781,6 +787,7 @@ export function World() {
         } catch (e) {
           // 失敗: 楽観移動をロールバック (元の位置へ戻す)。トークンは前回成功時のまま = 次歩で再同期される。
           wsRef.current = s;
+          setScrollStep(null);
           setWs(s);
           // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
           if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
@@ -1443,8 +1450,8 @@ export function World() {
   const inside = ws.mapId ? interiorById(ws.mapId) ?? null : null;
   const tileDefs = new Map<string, React.ReactElement>();
   const tiles = [];
-  for (let vy = 0; vy < VIEW; vy++) {
-    for (let vx = 0; vx < VIEW; vx++) {
+  for (let vy = -scrollPadding; vy < VIEW + scrollPadding; vy++) {
+    for (let vx = -scrollPadding; vx < VIEW + scrollPadding; vx++) {
       // 内部マップ (#424) は端で折り返さない (範囲外は壁として描く)。
       const x = inside ? ws.x - HALF + vx : wrap(ws.x - HALF + vx);
       const y = inside ? ws.y - HALF + vy : wrap(ws.y - HALF + vy);
@@ -1496,9 +1503,10 @@ export function World() {
   const npcSprites = [];
   // 今いるマップの NPC だけ描く (#613)。内部マップは端で折り返さないので wrap しない。
   for (const n of npcsOn(insideHere?.id ?? WORLD_MAP_ID)) {
-    const vx = insideHere ? n.x - (ws.x - HALF) : wrap(n.x - (ws.x - HALF));
-    const vy = insideHere ? n.y - (ws.y - HALF) : wrap(n.y - (ws.y - HALF));
-    if (vx < 0 || vy < 0 || vx >= VIEW || vy >= VIEW) continue;
+    const relative = (value: number) => wrap(value + scrollPadding) - scrollPadding;
+    const vx = insideHere ? n.x - (ws.x - HALF) : relative(n.x - (ws.x - HALF));
+    const vy = insideHere ? n.y - (ws.y - HALF) : relative(n.y - (ws.y - HALF));
+    if (vx < -scrollPadding || vy < -scrollPadding || vx >= VIEW + scrollPadding || vy >= VIEW + scrollPadding) continue;
     npcSprites.push(
       <g key={`npc-${n.id}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
         <NpcSprite npc={n} />
@@ -1517,11 +1525,13 @@ export function World() {
         <div ref={mapRef} style={{ position: 'relative' }}>
           <svg
             viewBox={`0 0 ${VIEW * TILE} ${VIEW * TILE}`}
-            style={{ display: 'block', width: '100%' }}
+            style={{ display: 'block', width: '100%', overflow: 'hidden' }}
             aria-label="ワールドマップ"
           >
-            {tiles}
-          {npcSprites}
+            <g ref={scrollLayerRef} data-world-scroll data-world-x={ws.x} data-world-y={ws.y}>
+              {tiles}
+              {npcSprites}
+            </g>
             <ellipse
               cx={HALF * TILE + TILE / 2}
               cy={HALF * TILE + TILE * 0.8}
