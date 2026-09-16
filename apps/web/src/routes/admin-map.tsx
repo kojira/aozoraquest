@@ -20,7 +20,7 @@ import {
   presetArt,
   setTileArt,
 } from '@aozoraquest/core';
-import { shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
+import { SHORE_NEIGHBORS, shoreGroundKey, shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, saveTileArts, saveWorldMap } from '@/lib/world-authoring';
@@ -214,7 +214,9 @@ export function AdminMap() {
         const t = terrainAt(wx, wy);
         const town = worldOverlay().townMap.get(wy * WORLD_SIZE + wx)?.name ?? null;
         const mask = usesStandardShore(t, idx) ? shoreMaskAt(wx, wy, terrainAt) : null;
-        out.push({ cx, cy, idx, t, town, mask, id: `ed-${idx}-${t}-${mask ?? 'plain'}` });
+        const groundKey = mask === null ? '' : shoreGroundKey(mask, wx, wy, (nx, ny) =>
+          `${tiles[wrap(ny) * WORLD_SIZE + wrap(nx)]}-${terrainAt(nx, ny)}`);
+        out.push({ cx, cy, idx, t, town, mask, id: `ed-${idx}-${t}-${mask === null ? 'plain' : `${mask}-${groundKey}`}` });
       }
     }
     return out;
@@ -401,7 +403,12 @@ export function AdminMap() {
                   なったので、マスごとの展開だと 16px 表示 (24×24 マス) で数万 rect になる。 */}
               <defs>
                 {[...new Map(cells.map((c) => [c.id, c])).values()].map((c) => (
-                  <g id={c.id} key={c.id}>{c.mask === null ? partOf(c.idx, c.t) : shoreTile(c.mask)}</g>
+                  <g id={c.id} key={c.id}>{c.mask === null ? partOf(c.idx, c.t) : shoreTile(c.mask, c.id, (neighbor) => {
+                    const [dx, dy] = SHORE_NEIGHBORS[neighbor]!;
+                    const idx = draftRef.current![wrap(origin.y + c.cy + dy) * WORLD_SIZE + wrap(origin.x + c.cx + dx)]!;
+                    const terrain = parts[idx]?.terrain;
+                    return partOf(idx, terrain !== undefined && (BASE_PALETTE as readonly string[]).includes(terrain) ? terrain : 'plains');
+                  })}</g>
                 ))}
               </defs>
               {cells.map(({ cx, cy, id }) => (
