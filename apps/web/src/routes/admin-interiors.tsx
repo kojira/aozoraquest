@@ -7,7 +7,7 @@ import {
   MAX_GATE_NOTICE,
   MAX_INTERIOR_SIZE,
   WORLD_MAP_ID,
-  interiorPartAt,
+  interiorTerrainAt,
   interiorWalkableAt,
   worldParts,
   worldOverlay,
@@ -18,11 +18,12 @@ import {
   type InteriorMap,
   type Terrain,
 } from '@aozoraquest/core';
+import { shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
 import { ItemReqInput } from '@/components/admin/item-req-input';
-import { TERRAIN_TILES, fallbackTile, pixelPart, pixelTile } from '@/components/world-tiles';
+import { TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, shoreTile } from '@/components/world-tiles';
 
 /**
  * **内部マップエディタ** (#424)。街の中・城・ダンジョンを描き、フィールドと繋ぐ。
@@ -155,6 +156,20 @@ export function AdminInteriors() {
       setSaving(false);
     }
   }, [session.agent, maps, gates, editingDisabled, dirty]);
+
+  const cells = useMemo(() => {
+    if (!current) return [];
+    const terrainAt = (x: number, y: number) => x < 0 || y < 0 || x >= current.size || y >= current.size
+      ? undefined : interiorTerrainAt(current, x, y);
+    return Array.from(current.tiles, (idx, i) => {
+      const x = i % current.size, y = Math.floor(i / current.size);
+      const terrain = terrainAt(x, y)!;
+      const mask = usesStandardShore(terrain, current.parts ? undefined : idx) ? shoreMaskAt(x, y, terrainAt) : null;
+      // Keep the editor's existing part-art fallback, including shared extra parts.
+      const displayTerrain = parts[idx]?.terrain ?? BASE_PALETTE[idx] ?? 'plains';
+      return { x, y, idx, terrain: displayTerrain, mask, id: `it-${idx}-${mask ?? 'plain'}` };
+    });
+  }, [current, parts]);
 
   if (!admin) {
     return (
@@ -325,7 +340,9 @@ export function AdminInteriors() {
                 : 'クリックで配置 / ドラッグで連続。Shift + クリックでゲートの入口にする'}
             </div>
 
+            <p style={{ fontSize: '0.8em' }}>標準の海・池は、塗ると岸辺が自動でつながります。個別の絵はそのまま。変更後は「保存」してください。</p>
             <svg
+              aria-label="内部マップを編集"
               ref={svgRef}
               viewBox={`0 0 ${current.size * 32} ${current.size * 32}`}
               onPointerDown={(e) => {
@@ -362,15 +379,11 @@ export function AdminInteriors() {
               }}
             >
               <defs>
-                {[...new Set(Array.from(current.tiles))].map((idx) => (
-                  <g id={`it-${idx}`} key={idx}>{partOf(idx, parts[idx]?.terrain ?? BASE_PALETTE[idx] ?? 'plains', !!current?.parts)}</g>
+                {[...new Map(cells.map((c) => [c.id, c])).values()].map((c) => (
+                  <g id={c.id} key={c.id}>{c.mask === null ? partOf(c.idx, c.terrain, !!current?.parts) : shoreTile(c.mask)}</g>
                 ))}
               </defs>
-              {Array.from({ length: current.size }).map((_, cy) =>
-                Array.from({ length: current.size }).map((_, cx) => (
-                  <use key={`${cx}-${cy}`} href={`#it-${interiorPartAt(current, cx, cy)}`} x={cx * 32} y={cy * 32} />
-                )),
-              )}
+              {cells.map((c) => <use key={`${c.x}-${c.y}`} href={`#${c.id}`} x={c.x * 32} y={c.y * 32} />)}
               {/* ゲートの印 (どのマスが出入口か分からないと張り直せない) */}
               {gatesHere.map((g) => (
                 <g key={`${g.from.x}-${g.from.y}`} transform={`translate(${g.from.x * 32},${g.from.y * 32})`}>

@@ -1,3 +1,4 @@
+import { shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { NpcSprite } from '@/components/npc-sprite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -62,7 +63,7 @@ import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
-import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile } from '@/components/world-tiles';
+import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, shoreTile } from '@/components/world-tiles';
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
@@ -1459,12 +1460,16 @@ export function World() {
       const artOf = (terrain: string) => (ownParts ? pixelTile(terrain) : pixelPart(pi, terrain));
       // 平地でドット絵が無いときだけ SVG バリアント (見た目散らし) が効くので、id に含める。
       const detail = t === 'plains' && !artOf(t) ? tileDetailAt(x, y) : 0;
-      const defId = `wt-${ownParts ? `i:${inside!.id}` : (pi ?? 'x')}-${t}-${detail}`;
+      const mask = usesStandardShore(t, ownParts ? undefined : pi) ? shoreMaskAt(x, y, (nx, ny) => {
+        if (!inside) return terrainAt(wrap(nx), wrap(ny));
+        return nx < 0 || ny < 0 || nx >= inside.size || ny >= inside.size ? undefined : interiorTerrainAt(inside, nx, ny);
+      }) : null;
+      const defId = `wt-${ownParts ? `i:${inside!.id}` : (pi ?? 'x')}-${t}-${detail}-${mask ?? 'plain'}`;
       if (!tileDefs.has(defId)) {
         tileDefs.set(
           defId,
           <g id={defId} key={defId}>
-            {artOf(t)
+            {(mask === null ? artOf(t) : shoreTile(mask))
               ?? (t === 'plains' ? PLAINS_VARIANTS[detail] : TERRAIN_TILES[t])
               ?? fallbackTile(t)}
           </g>,

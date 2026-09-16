@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { shoreArt } from '@/lib/shore-autotile';
 import { TERRAIN_COLORS, UNKNOWN_TERRAIN_COLOR, partArtFor, tileArtColorAt, tileArtFor, type Terrain } from '@aozoraquest/core';
 
 /**
@@ -177,6 +178,11 @@ export function renderArt(art: ReturnType<typeof tileArtFor>): ReactElement | nu
   // さらに縮小時 (16px 表示など) は 1 画素が 1 デバイス画素を割り、補間で**潰れて**
   // 別の色になる。`crispEdges` で最近傍に倒すと、拡大しても縮小しても画素のまま出る。
   return <g shapeRendering="crispEdges">{rects}</g>;
+}
+
+/** Connection mask is a display-only variant, never a new map part. */
+export function shoreTile(mask: number): ReactElement {
+  return <g data-shore-mask={mask}>{renderArt(shoreArt(mask))}</g>;
 }
 
 /** 絵も SVG も無い地形の代替 (代表色のべた塗り)。 */
