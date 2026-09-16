@@ -18,6 +18,17 @@ describe('WorldScroll', () => {
     expect(scroll.advance(5500)).toEqual({ x: 0, y: 0 });
     expect(scroll.moving).toBe(false);
   });
+  it.each([120, 125, 169])('bounds lag during five seconds of %ims repeats and aligns promptly on release', (interval) => {
+    const scroll = new WorldScroll();
+    let lastStep = 0;
+    for (let now = 0; now <= 5000; now++) {
+      if (now % interval === 0) { scroll.add(1, 0, now); lastStep = now; }
+      scroll.advance(now);
+      expect(scroll.distance).toBeLessThan(64);
+    }
+    expect(scroll.advance(lastStep + 186)).toEqual({ x: 0, y: 0 });
+    expect(scroll.moving).toBe(false);
+  });
   it('finishes the previous axis before turning, then aligns exactly; clear drops stale maps', () => {
     const scroll = new WorldScroll(); scroll.add(1, 0, 0); scroll.advance(85);
     scroll.add(0, 1, 85);

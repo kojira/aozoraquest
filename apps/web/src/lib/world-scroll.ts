@@ -20,7 +20,7 @@ export class WorldScroll {
     const interval = this.lastStep === null ? 170 : now - this.lastStep;
     // OS key repeat/turns may be faster than the stick's 170ms. Never slow down
     // after a pause, or use a near-zero event interval as an infinite velocity.
-    this.speed = 32 / (continuous && interval < 120 ? Math.max(16, interval) : 170);
+    this.speed = 32 / (continuous && interval < 170 ? Math.max(16, interval) : 170);
     if (!this.moving) {
       this.lastFrame = now;
       // One initial frame of slack, not a delay added on every tile boundary.
