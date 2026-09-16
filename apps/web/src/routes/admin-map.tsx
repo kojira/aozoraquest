@@ -195,7 +195,7 @@ export function AdminMap() {
     setNote(`書き出した (${(gz.length / 1024).toFixed(1)} KB)`);
   }, []);
 
-  /** 表示中のタイル (tick で再計算)。 */
+  /** 表示中のタイル。絵タブから戻る際も登録簿を読み直す。 */
   const cells = useMemo(() => {
     const tiles = draftRef.current;
     if (!tiles) return [];
@@ -218,7 +218,7 @@ export function AdminMap() {
       }
     }
     return out;
-  }, [origin, tick, townTick, ready, parts]);
+  }, [origin, tick, townTick, ready, parts, tab]);
 
   if (!admin) {
     return (

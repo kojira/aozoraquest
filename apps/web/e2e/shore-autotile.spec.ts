@@ -156,6 +156,25 @@ test('field edge wraps and added water/bridge parts match World without rewritin
   await page.screenshot({ path: 'test-results/shore-field-editor.png' });
   await page.reload(); await jumpToEdge();
   expect(await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((e) => e.outerHTML).sort())).toEqual(shapes);
+  // Returning from art editing must refresh the shore/custom-art choice without a reload or paint.
+  await page.getByRole('button', { name: 'パーツの絵', exact: true }).click();
+  await page.getByRole('combobox').first().selectOption('8');
+  await page.locator('section div[style*="cursor: crosshair"]').first().click();
+  await page.getByRole('button', { name: '保存する', exact: true }).click();
+  await expect(page.getByText(/地形ぶんを保存した/)).toBeVisible();
+  await page.getByRole('button', { name: '地図を編集', exact: true }).click();
+  await expect(editor.locator('[id="ed-8-water-plain"]')).toHaveCount(1);
+  await expect(editor.locator('[id^="ed-8-water-"] [data-shore-mask]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'パーツの絵', exact: true }).click();
+  await page.getByRole('combobox').first().selectOption('8');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: '同梱の絵に戻す', exact: true }).click();
+  await expect(page.getByText(/同梱の絵に戻した/)).toBeVisible();
+  await page.getByRole('button', { name: '地図を編集', exact: true }).click();
+  expect(await editor.locator('[data-shore-mask]').evaluateAll((els) => els.map((e) => e.outerHTML).sort())).toEqual(shapes);
+  expect(saves).toBe(3); // existing art persistence also saves the loaded map
+  expect(gunzipSync(Buffer.from(records[collection].gz, 'base64'))).toEqual(Buffer.from(tiles));
+  expect(records[collection].parts).toEqual(parts);
   await page.goto(`${URL}?screen=world`);
   const world = page.getByLabel('ワールドマップ', { exact: true });
   await expect(world.locator('[data-shore-mask]')).toHaveCount(shapes.length);
