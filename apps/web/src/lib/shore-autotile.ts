@@ -1,4 +1,4 @@
-import { bundledTileArtFor, partArtFor, tileArtFor, type TileArt } from '@aozoraquest/core';
+import { bundledTileArtFor, partKey, tileArtTerrains, type TileArt } from '@aozoraquest/core';
 
 /** Clockwise cardinal bits, then diagonals NE/SE/SW/NW. Set means connected water. */
 export const SHORE_NEIGHBORS = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const;
@@ -16,10 +16,11 @@ export function shoreMaskAt(x: number, y: number, terrainAt: (x: number, y: numb
   return mask;
 }
 
-/** Only the actual bundled fallback opts in; even a pixel-identical saved artwork stays untouched. */
+/** Only unregistered defaults opt in; explicitly saving even unchanged art keeps that art. */
 export function usesStandardShore(terrain: string, index?: number): boolean {
   if (terrain !== 'water' && terrain !== 'pond') return false;
-  return (index === undefined ? tileArtFor(terrain) : partArtFor(index, terrain)) === bundledTileArtFor(terrain);
+  const custom = tileArtTerrains();
+  return !custom.includes(terrain) && (index === undefined || !custom.includes(partKey(index)));
 }
 
 // Original 8x8 NW quarter artwork: grass, earth, foam, shallows, unchanged water.

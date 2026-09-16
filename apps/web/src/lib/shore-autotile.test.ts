@@ -30,7 +30,7 @@ describe('shore-autotile', () => {
     expect(usesStandardShore('water', 4)).toBe(true);
     expect(usesStandardShore('pond')).toBe(true);
     expect(usesStandardShore('bridge', 7)).toBe(false);
-    setTileArt('part:4', structuredClone(bundledTileArtFor('water')!));
+    setTileArt('part:4', bundledTileArtFor('water')!); // explicit save without editing also opts out
     expect(usesStandardShore('water', 4)).toBe(false);
     expect(usesStandardShore('water')).toBe(true); // interior own parts do not share field indices
     setTileArt('water', structuredClone(bundledTileArtFor('water')!));
