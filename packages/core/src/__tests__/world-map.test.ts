@@ -72,8 +72,8 @@ describe('地形の地図 (#421)', () => {
   });
 
   it('**パレットに知らない地形 id が入っていても倒す** (エディタが先行する場合)', () => {
-    const palette = [...BASE_PALETTE, 'desert', 'snow'];
-    const tiles = makeTiles(8); // 'desert' = このコードが知らない
+    const palette = [...BASE_PALETTE, 'future-terrain', 'snow'];
+    const tiles = makeTiles(8); // 'future-terrain' = このコードが知らない
     setWorldMap({ tiles, size: SIZE, palette, fallback: 'plains' });
     expect(terrainAt(0, 0)).toBe('plains');
     // 知っている index は正しく引ける (パレットが伸びても既存がずれない)

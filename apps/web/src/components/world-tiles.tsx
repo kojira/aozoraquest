@@ -52,6 +52,9 @@ export const PLAINS_VARIANTS: readonly ReactElement[] = [
 ];
 
 export const TERRAIN_TILES: Record<Terrain, ReactElement> = {
+  snowfield: <rect width={32} height={32} fill="#e7f3fa" />,
+  snowMountain: <rect width={32} height={32} fill="#809db9" />,
+  desert: <rect width={32} height={32} fill="#dfb85e" />,
   plains: PLAINS,
   grove: (
     <>

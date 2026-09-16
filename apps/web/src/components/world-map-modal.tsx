@@ -31,6 +31,9 @@ const TERRAIN_COLORS: Record<Terrain, string> = {
   pond: '#57b7ee',
   water: '#57b7ee',
   mountain: '#a8a294',
+  snowfield: '#e7f3fa',
+  snowMountain: '#809db9',
+  desert: '#dfb85e',
   town: '#9dd07f', // 街はドットで別描画 (下地は平地色)
   bridge: '#c98d5a',
 };

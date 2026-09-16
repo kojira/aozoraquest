@@ -59,14 +59,14 @@ describe('地形のドット絵 (#421)', () => {
   });
 
   it('登録簿: 絵が無い地形は undefined (呼び出し側が代表色に倒す)', () => {
-    expect(tileArtFor('desert')).toBeUndefined();
+    expect(tileArtFor('future-terrain')).toBeUndefined();
     const a = emptyTileArt(8);
     a.palette = ['', '#e0c88a'];
     a.pixels.fill(1);
-    setTileArt('desert', a);
-    expect(tileArtColorAt(tileArtFor('desert')!, 3, 3)).toBe('#e0c88a');
-    setTileArt('desert', null);
-    expect(tileArtFor('desert')).toBeUndefined();
+    setTileArt('future-terrain', a);
+    expect(tileArtColorAt(tileArtFor('future-terrain')!, 3, 3)).toBe('#e0c88a');
+    setTileArt('future-terrain', null);
+    expect(tileArtFor('future-terrain')).toBeUndefined();
   });
 
   it('まとめて読み書きできる (エディタの保存/復元)', () => {

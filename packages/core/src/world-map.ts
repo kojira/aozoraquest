@@ -57,6 +57,9 @@ export const TERRAIN_COLORS: Record<Terrain, string> = {
   pond: '#57b7ee',
   water: '#57b7ee',
   mountain: '#a8a294',
+  snowfield: '#e7f3fa',
+  snowMountain: '#809db9',
+  desert: '#dfb85e',
   town: '#9dd07f', // 街はドットで別描画 (下地は平地色)
   bridge: '#c98d5a',
 };
@@ -77,6 +80,9 @@ export const EDITOR_TERRAIN_COLORS: Record<Terrain, string> = {
   pond: '#7fd4ff',
   water: '#2f7fd0',
   mountain: '#a8a294',
+  snowfield: '#e7f3fa',
+  snowMountain: '#809db9',
+  desert: '#dfb85e',
   town: '#f5d442',
   bridge: '#c98d5a',
 };
@@ -95,7 +101,16 @@ export function paletteColorAt(index: number, palette: readonly string[] = BASE_
   return UNKNOWN_TERRAIN_COLOR;
 }
 
-const isKnownTerrain = (v: string): v is Terrain => (BASE_PALETTE as readonly string[]).includes(v);
+/** Terrain IDs are independent of stored palette indices. Never extend BASE_PALETTE. */
+export const TERRAINS: readonly Terrain[] = [...BASE_PALETTE, 'snowfield', 'snowMountain', 'desert'];
+export const isKnownTerrain = (v: string): v is Terrain => (TERRAINS as readonly string[]).includes(v);
+
+/** Explicit editor additions, allocated at each map's own next free index. */
+export const BIOME_PARTS: readonly WorldPart[] = [
+  { terrain: 'snowfield', name: '雪原' },
+  { terrain: 'snowMountain', name: '雪山' },
+  { terrain: 'desert', name: '砂漠' },
+];
 
 /** 1 バイトで表せる地形の上限。 */
 export const PALETTE_MAX = 256;

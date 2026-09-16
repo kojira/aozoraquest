@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BASE_PALETTE,
+  BASE_PALETTE, BIOME_PARTS,
   InteriorError,
   DEFAULT_GATE_LOCKED_NOTICE,
   MAX_GATE_NOTICE,
@@ -19,6 +19,7 @@ import {
   type Terrain,
 } from '@aozoraquest/core';
 import { SHORE_NEIGHBORS, shoreGroundKey, shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
+import { appendBiomePart, interiorBiomeParts } from '@/lib/biome-parts';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, loadInteriorsRecord, saveInteriors } from '@/lib/world-authoring';
@@ -321,6 +322,20 @@ export function AdminInteriors() {
               </button>
             </div>
 
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {BIOME_PARTS.map((biome) => <button key={biome.terrain} type="button" onClick={() => {
+                if (editingDisabled) return;
+                try {
+                  const next = appendBiomePart(interiorBiomeParts(current, worldParts()), current.tiles, biome, false);
+                  setMaps((xs) => xs.map((m) => m.id === current.id ? { ...m, parts: next } : m));
+                  setBrush(next.length - 1); setDirty(true);
+                  setNote(`「${biome.name}」を追加しました。配置したら「保存」してください`);
+                } catch (e) { setNote((e as Error).message); }
+              }}>
+                <svg width={32} height={32} viewBox="0 0 32 32">{pixelTile(biome.terrain)}</svg>
+                {biome.name}を追加
+              </button>)}
+            </div>
             {/* パーツのパレット (フィールドと共用) */}
             <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
               {parts.map((pt, i) => (

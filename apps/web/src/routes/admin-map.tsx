@@ -2,7 +2,7 @@ import { paintTerrainOverview } from '@/components/admin/world-minimap';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BASE_PALETTE,
+  BASE_PALETTE, isKnownTerrain, TERRAINS, BIOME_PARTS,
   WORLD_SIZE,
   MAX_TOWN_NAME,
   editorColorAt,
@@ -25,6 +25,7 @@ import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, saveTileArts, saveWorldMap } from '@/lib/world-authoring';
 import { TERRAIN_TILES, fallbackTile, pixelPart, shoreTile } from '@/components/world-tiles';
+import { appendBiomePart } from '@/lib/biome-parts';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
 /**
@@ -204,7 +205,7 @@ export function AdminMap() {
     const out: Array<{ cx: number; cy: number; idx: number; t: Terrain; town: string | null; mask: number | null; id: string }> = [];
     const terrainAt = (x: number, y: number): Terrain => {
       const terrain = parts[tiles[wrap(y) * WORLD_SIZE + wrap(x)]!]?.terrain;
-      return terrain !== undefined && (BASE_PALETTE as readonly string[]).includes(terrain) ? terrain as Terrain : 'plains';
+      return terrain !== undefined && isKnownTerrain(terrain) ? terrain as Terrain : 'plains';
     };
     for (let cy = 0; cy < view; cy++) {
       for (let cx = 0; cx < view; cx++) {
@@ -282,6 +283,18 @@ export function AdminMap() {
                 <div style={{ fontSize: '0.6em', color: 'var(--color-muted)', lineHeight: 1.4 }}>{pt.name}</div>
               </button>
             ))}
+            {BIOME_PARTS.map((biome) => <button key={biome.terrain} type="button" disabled={!ready}
+              onClick={() => {
+                if (!draftRef.current) return;
+                try {
+                  const next = appendBiomePart(parts, draftRef.current, biome, true);
+                  setWorldParts(next); setParts(next); setBrush(next.length - 1); setTownMode(false); setDirty(true);
+                  setNote(`「${biome.name}」を追加しました。配置したら「保存」してください`);
+                } catch (e) { setNote((e as Error).message); }
+              }}>
+              <svg width={32} height={32} viewBox="0 0 32 32">{pixelPart(undefined, biome.terrain)}</svg>
+              {biome.name}を追加
+            </button>)}
             {/* **パーツを増やす。** 「縦の橋」のように通行判定は既存と同じで絵だけ違うものを足す。 */}
             <button
               type="button"
@@ -327,10 +340,10 @@ export function AdminMap() {
                 const name = window.prompt('パーツの名前 (例: たての橋)')?.trim();
                 if (!name) return;
                 const terrain = window.prompt(
-                  `通行判定をどの地形と同じにする？\n${BASE_PALETTE.join(' / ')}`,
+                  `通行判定をどの地形と同じにする？\n${TERRAINS.join(' / ')}`,
                   'bridge',
                 )?.trim();
-                if (!terrain || !(BASE_PALETTE as readonly string[]).includes(terrain)) {
+                if (!terrain || !isKnownTerrain(terrain)) {
                   setNote('元にする地形が不正');
                   return;
                 }
@@ -407,7 +420,7 @@ export function AdminMap() {
                     const [dx, dy] = SHORE_NEIGHBORS[neighbor]!;
                     const idx = draftRef.current![wrap(origin.y + c.cy + dy) * WORLD_SIZE + wrap(origin.x + c.cx + dx)]!;
                     const terrain = parts[idx]?.terrain;
-                    return partOf(idx, terrain !== undefined && (BASE_PALETTE as readonly string[]).includes(terrain) ? terrain : 'plains');
+                    return partOf(idx, terrain !== undefined && isKnownTerrain(terrain) ? terrain : 'plains');
                   })}</g>
                 ))}
               </defs>
