@@ -20,10 +20,11 @@ import {
   presetArt,
   setTileArt,
 } from '@aozoraquest/core';
+import { shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, saveTileArts, saveWorldMap } from '@/lib/world-authoring';
-import { TERRAIN_TILES, fallbackTile, pixelPart } from '@/components/world-tiles';
+import { TERRAIN_TILES, fallbackTile, pixelPart, shoreTile } from '@/components/world-tiles';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
 /**
@@ -194,25 +195,30 @@ export function AdminMap() {
     setNote(`書き出した (${(gz.length / 1024).toFixed(1)} KB)`);
   }, []);
 
-  /** 表示中のタイル (tick で再計算)。 */
+  /** 表示中のタイル。絵タブから戻る際も登録簿を読み直す。 */
   const cells = useMemo(() => {
     const tiles = draftRef.current;
     if (!tiles) return [];
     void tick;
     void townTick;
-    const out: Array<{ cx: number; cy: number; idx: number; t: Terrain; town: string | null }> = [];
+    const out: Array<{ cx: number; cy: number; idx: number; t: Terrain; town: string | null; mask: number | null; id: string }> = [];
+    const terrainAt = (x: number, y: number): Terrain => {
+      const terrain = parts[tiles[wrap(y) * WORLD_SIZE + wrap(x)]!]?.terrain;
+      return terrain !== undefined && (BASE_PALETTE as readonly string[]).includes(terrain) ? terrain as Terrain : 'plains';
+    };
     for (let cy = 0; cy < view; cy++) {
       for (let cx = 0; cx < view; cx++) {
         const wx = wrap(origin.x + cx);
         const wy = wrap(origin.y + cy);
         const idx = tiles[wy * WORLD_SIZE + wx]!;
-        const t = (BASE_PALETTE[idx] ?? 'plains') as Terrain;
+        const t = terrainAt(wx, wy);
         const town = worldOverlay().townMap.get(wy * WORLD_SIZE + wx)?.name ?? null;
-        out.push({ cx, cy, idx, t, town });
+        const mask = usesStandardShore(t, idx) ? shoreMaskAt(wx, wy, terrainAt) : null;
+        out.push({ cx, cy, idx, t, town, mask, id: `ed-${idx}-${t}-${mask ?? 'plain'}` });
       }
     }
     return out;
-  }, [origin, tick, townTick, ready]);
+  }, [origin, tick, townTick, ready, parts, tab]);
 
   if (!admin) {
     return (
@@ -364,12 +370,14 @@ export function AdminMap() {
             </span>
           </div>
 
+            <p style={{ fontSize: '0.8em' }}>標準の海・池は、塗ると岸辺が自動でつながります。個別の絵はそのまま。変更後は「保存」してください。</p>
           {/* 地図本体 */}
           {/* **操作は地図の上に置く。** 下に並べると、置くたびに画面をスクロールして
               戻る羽目になる (実機で「鬼めんどい」との指摘)。 */}
           <div style={{ position: 'relative', width: 'fit-content', maxWidth: '100%' }}>
           <div style={{ overflow: 'auto', maxWidth: '100%', border: '2px solid var(--color-border)', width: 'fit-content' }}>
             <svg
+              aria-label="フィールドマップを編集"
               ref={svgRef}
               viewBox={`0 0 ${view * 32} ${view * 32}`}
               onPointerDown={(e) => {
@@ -392,12 +400,12 @@ export function AdminMap() {
               {/* 同じパーツは defs に 1 回だけ定義して use で参照 (#605)。全地形がドット絵に
                   なったので、マスごとの展開だと 16px 表示 (24×24 マス) で数万 rect になる。 */}
               <defs>
-                {[...new Map(cells.map((c) => [`ed-${c.idx}-${c.t}`, c])).values()].map((c) => (
-                  <g id={`ed-${c.idx}-${c.t}`} key={`ed-${c.idx}-${c.t}`}>{partOf(c.idx, c.t)}</g>
+                {[...new Map(cells.map((c) => [c.id, c])).values()].map((c) => (
+                  <g id={c.id} key={c.id}>{c.mask === null ? partOf(c.idx, c.t) : shoreTile(c.mask)}</g>
                 ))}
               </defs>
-              {cells.map(({ cx, cy, t, idx }) => (
-                <use key={`${cx}-${cy}`} href={`#ed-${idx}-${t}`} x={cx * 32} y={cy * 32} />
+              {cells.map(({ cx, cy, id }) => (
+                <use key={`${cx}-${cy}`} href={`#${id}`} x={cx * 32} y={cy * 32} />
               ))}
               {/* 街の目印 (置き換えると消えるので、どこが街か分かるように重ねる) */}
               {cells.filter((c) => c.town).map(({ cx, cy, town }) => (
