@@ -276,10 +276,11 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 // ─── NPC (#425) ─────────────────────────────────────────────
 
 /** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
-export async function saveNpcs(agent: Agent, npcs: NpcDef[]): Promise<void> {
+export async function saveNpcs(agent: Agent, npcs: NpcDef[], isCurrent = () => true): Promise<void> {
   validateNpcs(npcs);
+  if (!isCurrent()) throw new Error('保存を取り消しました');
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
-  setNpcs(npcs);
+  if (isCurrent()) setNpcs(npcs);
 }
 
 /**

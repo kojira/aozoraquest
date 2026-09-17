@@ -16,7 +16,11 @@
     "sim:gear-matrix": "tsx ../../scripts/sim-gear-matrix.mts"
   },
   "devDependencies": {
-    "vitest": "^2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^2"
+  },
+  "dependencies": {
+    "image-size": "2.0.2",
+    "is-animated": "3.0.0"
   }
 }

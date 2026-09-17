@@ -1,10 +1,16 @@
 import { decodeTileArt, npcArtKey, npcSpritePreset, tileArtFor, type NpcDef, type TileArt } from '@aozoraquest/core';
 import { renderArt } from './world-tiles';
 import './npc-sprite.css';
+import { UploadedNpcSprite, useNpcImageSource } from './npc-image';
 
 const frames = new Map<string, readonly TileArt[]>();
 /** Shared appearance in the game, placement map and selection cards (32×32 SVG coordinates). */
-export function NpcSprite({ npc, customArt = tileArtFor(npcArtKey(npc.id)) }: { npc: Pick<NpcDef, 'id' | 'spritePreset'>; customArt?: TileArt | null }) {
+export function NpcSprite({ npc, customArt = tileArtFor(npcArtKey(npc.id)) }: { npc: Pick<NpcDef, 'id' | 'spritePreset' | 'spriteImage'>; customArt?: TileArt | null }) {
+  const source = useNpcImageSource(npc.id, 'sprite', npc.spriteImage);
+  const fallback = <LegacyNpcSprite npc={npc} customArt={customArt ?? null} />;
+  return source && npc.spriteImage ? <UploadedNpcSprite image={npc.spriteImage} src={source} fallback={fallback} /> : fallback;
+}
+function LegacyNpcSprite({ npc, customArt }: { npc: Pick<NpcDef, 'id' | 'spritePreset'>; customArt?: TileArt | null }) {
   if (npc.spritePreset) {
     let pair = frames.get(npc.spritePreset);
     if (!pair) {

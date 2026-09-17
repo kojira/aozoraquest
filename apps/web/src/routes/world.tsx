@@ -68,6 +68,7 @@ import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, sho
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
+import { npcImageUrl } from '@/lib/npc-image';
 import { SpiritIcon } from '@/components/spirit-icon';
 import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
@@ -1669,6 +1670,7 @@ export function World() {
             <DialogueWindow
               anchor="map"
               lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
+              portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : undefined}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
               busy={questPending}

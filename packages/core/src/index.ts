@@ -39,3 +39,5 @@ export * from './starter-town-scenario.js';
 export * from './starter-town-shop.js';
 
 export * from './npc-sprite-presets.js';
+
+export * from "./npc-image.js";

@@ -24,6 +24,8 @@ import {
  * - 全文表示済みの行には ▼ を点滅させる (DQ の「送れます」記号)
  */
 
+import { NpcPortrait } from './npc-image';
+
 const CHAR_MS = 45;
 
 /** 会話レイヤーの z。送り面 (透明背景) は footer 等の背後 UI より上に全画面で敷き、窓本体は
@@ -54,6 +56,7 @@ const SR_ONLY: React.CSSProperties = {
 export function DialogueWindow({
   lines,
   plateIcon,
+  portrait,
   onDone,
   choices,
   busy = false,
@@ -63,6 +66,8 @@ export function DialogueWindow({
   /** 話者名プレートに添えるアイコン (例: ブルスコンは SpiritIcon — 他画面の
    *  吹き出しと同じ顔で認識できるように)。NPC ごとの出し分けは呼び出し側の責務 */
   plateIcon?: React.ReactNode;
+  /** Supplied only by an NPC conversation, never inferred from a speaker name. */
+  portrait?: { src: string; name: string } | undefined;
   /** 全行を送り終えた (選択肢があればどれかを選んだ) ときに一度だけ呼ぶ */
   onDone: () => void;
   /** 最後の行を読み終えたら出す選択肢 (「はい / いいえ」)。あるあいだは送り面のタップで
@@ -74,7 +79,7 @@ export function DialogueWindow({
    *  「マップ上」へ会話窓を出す。 */
   anchor?: 'viewport' | 'map';
 }) {
-  const onMap = anchor === 'map';
+  const onMap = anchor === 'map' && !portrait;
   const [st, setSt] = useState(startDialogue);
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -174,9 +179,11 @@ export function DialogueWindow({
           transform: 'translateX(-50%)',
           width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
           maxWidth: 520,
+          ...(portrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
           zIndex: DIALOGUE_WINDOW_Z,
         }}
       >
+        {portrait && <NpcPortrait src={portrait.src} name={portrait.name} />}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"
