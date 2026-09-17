@@ -1,61 +1,40 @@
-# #688: edge-dev 自動配備の認証設定を完了する
+# #688: dev の edge 配備を手動運用に揃え、CI の型検査・テストを残す
 
-## 原因と対象
+## 原因・最新承認
 
-ユーザー報告の Actions run `35282500629` (`dev`, `c08b4f149fbd0e114afb659339bd26d6a37747a2`) は edge の型検査・unit test に成功し、Deploy だけが `CLOUDFLARE_API_TOKEN` 未設定で失敗した。
+報告run [35282500629](https://github.com/kojira/aozoraquest/actions/runs/35282500629) は dev の型検査・unit test に成功し、Deploy だけが `CLOUDFLARE_API_TOKEN` 未設定で失敗した。手動配備で補っても CI の失敗は残り、繰り返し届く失敗メールでユーザーが困っている。
 
-調査時点では repository secrets と Environment `dev` / `main` の secrets はすべて空。所有者は個人アカウントなので organization secrets の継承はない。workflow の Environment 選択と secret 名は正しく、名前変更や Environment 追加では直らない。手動配備の成功は Actions 修復の代用にしない。
+当初の「専用tokenを登録して自動配備を修復する」案は撤回。ユーザーが **dev の edge 自動配備を外してよい** と明示承認した。今回のための API token 登録は不要であり、ローカル認証を GitHub へコピーしない。
 
-本件は dev の認証設定・配備確認のみ。本番/main、Wrangler の更新、他の CI、アプリ/API/保存データ/権限モデルは変更しない。失敗を skip・continue-on-error で隠さない。
+## 実装前設計
 
-## 実装前方針と承認
+- `.github/workflows/edge-deploy.yml` の **Deploy step だけ**に `github.ref == 'refs/heads/main'` 条件を付ける。dev push / dev workflow_dispatch では型検査と unit test を実行し、配備はしない。
+- main では従来どおり同じ Environment / secrets / Wrangler action の `deploy` を実行する。main/prod の設定・認証・配備には手を触れない。
+- workflow 全体の無効化、テスト skip、continue-on-error、通知設定変更は行わない。実際の型検査・テスト失敗は引き続き失敗として通知される。
+- 既存の trigger / paths / concurrency / job / Environment は保持。web の Cloudflare Workers Builds も変更しない。
+- アプリ、API、保存データ、権限、依存ライブラリの変更はない。UI/スキーマ移行/実データ復旧は対象外。
 
-1. 既存の `environment: dev` と `secrets.CLOUDFLARE_API_TOKEN` / `secrets.CLOUDFLARE_ACCOUNT_ID` を使う。コードに token や account ID を追加しない。
-2. ユーザーが専用 token を GitHub の **Environment `dev`** に直接登録する。取得・作成・権限拡張の自動実行、個人ブラウザや Wrangler OAuth token の流用は禁止。
-3. 初回自動配備で、これまでの手動配備が `--keep-vars` で保持していた dashboard の稼働 vars を失わないよう、**dev のコマンドだけ** `deploy --env dev --keep-vars` にする。`main` の `deploy` は変更しない。親が実装前にこの限定変更を承認済み。
-4. 未設定の間に再実行しても同じ認証エラーになるため、設定を待つ。レビュー前に merge しない。
+## dev の手動配備
 
-## ユーザーによる一度だけの設定
+1. 対象commitと配備先を確認し、対象の CI（web と edge の型検査・テスト）が成功してから配備する。失敗中の gate を手動配備で成功扱いにしない。
+2. 最新の配備対象コードを使い、既存のローカル Wrangler ログイン認証と対象accountの明示指定を用いる。既存手順は [環境分離runbook](22-edge-env-separation.md) を参照する。`apps/edge` でのコマンドは次のとおり。
 
-### Cloudflare
+   ```sh
+   pnpm exec wrangler deploy --env dev --keep-vars
+   ```
 
-Cloudflare dashboard の API Tokens で、この配備専用の custom token を用意する。
-
-- Permissions: **Account / Workers Scripts / Edit**（API 名では Workers Scripts Write）。
-- Account Resources: **Include / Specific account** で、現在 `aozoraquest-edge-dev` がある account だけを指定する。
-- 全 account、全 zone、Global API Key は使わない。この Worker は既存の `workers.dev` と既存 KV binding を使い、zone route や KV namespace を新規作成しない。従って今回の設定に zone 編集・KV データ編集・API token 作成権限を足さない。
-- account ID は Cloudflare dashboard で同じ account の ID を確認する。
-
-この token は **Worker 単位の制限ではなく account 内の Workers を編集できる**。GitHub の Environment を `dev` に限定することは main ジョブへの配布を防ぐが、Cloudflare の token 自体を dev Worker 専用権限にはしない。その権限範囲を確認して作成する。後で権限エラーが出た場合も広い template を丸ごと付与せず、失敗した API と必要権限を確認して判断する。
-
-権限の根拠: Cloudflare の script upload API は Workers Scripts Write を要求する。現在固定された Wrangler 3.114.17 の deploy は、設定済み KV namespace ID を binding として渡す。既存 ID は provision 不要として扱われ、今回 KV 作成・値の読み書きは行わない。account ID を明示するため account 探索用の権限も追加しない。実 token による Actions 成功は登録後に確認する。
-
-### GitHub
-
-[Repository settings → Environments](https://github.com/kojira/aozoraquest/settings/environments) → **dev** → **Environment secrets** に以下を追加する。
-
-| 名前 | 登録するもの |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | 上記の専用 API token |
-| `CLOUDFLARE_ACCOUNT_ID` | 対象 Cloudflare account の ID |
-
-値をチャット、Issue、PR、ソース、ログへ貼らない。登録後は「dev の2項目を登録した」とだけ伝える。repository 全体や `main` に複製せず、既存 Worker secrets / OAuth / KV は変更しない。
+   出力先 `aozoraquest-edge-dev` と dev 用 KV binding を確認する。`--keep-vars` は既存dashboard varsを保持するためで、秘密の値をログへ出さない。prodへのコマンド置換や認証の転用はしない。
+3. edge/core と web を同時変更し、新しいwebが新しいedgeに依存するときは、レビューと対象headのCI成功後に **edge-devを先行手動配備してからdevへmerge** し、web自動配備につなぐ。順序が逆でも互換性を保つ変更なら通常のmerge後に必要なedge手動配備を行う。webの配備完了だけでedge反映済みと報告しない。
+4. 配備commit、Worker名、稼働version、実施した確認を記録する。CI成功と手動配備成功は分けて報告する。このCI設定変更自体にedge実配備は不要。
 
 ## 検証・受入
 
-- 変更差分が dev の `--keep-vars` と本件の手順だけであること、main コマンド・既存 test gate・secret 参照が不変であることを確認する。
-- 独立レビュー後、設定完了を **名前と更新日時だけ** で確認する。token 値を検査ログへ出さない。
-- PR merge 時点の最新 `dev` SHA を確認する。workflow 変更による dev push の自動 run を使い、既存失敗 run を無条件に再実行しない。
-- 設定だけの再検証が必要なら最新 `dev` に対して `gh workflow run edge-deploy.yml --ref dev`。実行前に `gh api repos/kojira/aozoraquest/commits/dev --jq .sha` を確認し、run の head SHA が一致することを確認する。他の配備が進んでいたら古い run で巻き戻さない。
-- Actions の Typecheck・Unit tests・Deploy がすべて成功し、出力対象が `aozoraquest-edge-dev`、dev 専用 KV binding であることを確認する。稼働 version/deployment を読取確認する。
-- `--keep-vars` は dashboard の既存 vars を保持する。明示した wrangler vars は引き続き設定値が適用される。Worker secrets は deploy で削除されない。秘密の値を表示せず、必要な binding 名と対象だけを確認する。
-- main SHA と本番 deployment が不変であることを確認する。新 token の権限を試すための本番操作は行わない。
-- 成功するまで「CI修復完了」としない。認証エラーなら token/Environment、権限エラーなら失敗した API を切り分ける。手動配備による緑扱いや失敗ジョブの削除は禁止。
+- YAMLをparseし、元のdev workflowと比較する。Deploy以外のtrigger/job/steps/Environment/concurrencyが同じであること。
+- devでは型検査とunit testが無条件で残り、Deploy条件がfalseになること。mainではDeploy条件がtrueで、実行コマンド・action・secrets等が元と同じこと。featureからのdispatchは元のjob条件どおり対象外。
+- 独立レビューと最新PR headのCI成功後にdevへmergeする（本担当はPR更新まで）。変更されたworkflowによる **新しいdev run** で型検査・unit test成功、Deploy skipped、job successを確認するまで運用反映完了とは報告しない。
+- 旧失敗runの再実行は古いworkflowを使い同じ認証失敗を招くため行わない。過去の失敗履歴・既に送られたメールは消さない。
+- main/prod、GitHub Secrets、メール設定、実PDSを変更しない。mainの認証状態は今回の修復対象ではなく、本番CI成功を保証しない。
 
-## 参考
+## 変更方針の履歴
 
-- [報告された失敗run](https://github.com/kojira/aozoraquest/actions/runs/35282500629)
-- [Cloudflare GitHub Actions authentication](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
-- [Script upload API permissions](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/)
-- [Wrangler configuration / keep_vars](https://developers.cloudflare.com/workers/wrangler/configuration/)
-- [既存環境分離runbook](22-edge-env-separation.md)
+最初のcommitはdev自動配備への`--keep-vars`追加とSecret登録手順だった。上記のユーザー承認に従い、本書を実装前に更新し、PR #689 / Issue #688を同じ問題の新しい解決方針へ揃える。元の認証不足という事実は保持するが、Secret登録を作業のブロッカーにはしない。
