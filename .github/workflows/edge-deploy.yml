@@ -1,21 +1,15 @@
 name: edge-deploy
 
-# エッジ Worker (apps/edge) を dev / main への push で自動デプロイする。
+# dev / main のエッジ型検査・unit testを実行し、mainだけ自動配備する。
+# dev はユーザー承認により手動配備へ変更 (#688)。認証未設定の自動配備による
+# 失敗メールを止めるが、型検査・テストの失敗は隠さない。
+# dev のCI成功後の手動配備・webとの順序: docs/issue-688-edge-ci-auth.md。
+# main → `wrangler deploy` → aozoraquest-edge (本番、従来どおり)。
+# workflow_dispatch も同じ分岐 (dev / main 以外は拒否)。
 #
-# なぜ: web は Cloudflare Workers Builds が push で自動デプロイされるのに、エッジは手動
-# `wrangler deploy` だけだった。デプロイ漏れで戦闘の権威計算が数週間前のコードのまま動き、
-# 画面 (最新の成長モデル) と戦闘 (旧モデル) の数値がずれた (#549)。片方だけ自動の非対称を無くす。
-#
-# デプロイ先は **ブランチが決める** (docs/22-edge-env-separation.md):
-#   dev  → `wrangler deploy --env dev` → aozoraquest-edge-dev
-#   main → `wrangler deploy`           → aozoraquest-edge (本番)
-# workflow_dispatch は Actions タブの branch 選択がそのまま環境選択になる (dev / main 以外は拒否)。
-#
-# 必要な設定 (GitHub → Settings → Secrets and variables → Actions → Repository secrets、
-# または Environments の main / dev それぞれの secrets):
+# main自動配備に必要な設定 (Repository secrets または Environment main):
 #   CLOUDFLARE_API_TOKEN   Cloudflare API トークン (権限: Workers Scripts:Edit)
 #   CLOUDFLARE_ACCOUNT_ID  Cloudflare アカウント ID
-# 未設定のうちはこの workflow は失敗する (= エッジは従来どおり手動 deploy のまま)。
 # Worker Secrets (SERVER_DID / OAUTH_*_JWK / WORLD_TOKEN_SECRET / KUDA_API_KEY 等) と KV は
 # `wrangler deploy` で消えないので、自動化後も再設定は不要。
 #
@@ -72,6 +66,7 @@ jobs:
         run: pnpm --filter @aozoraquest/edge test
 
       - name: Deploy
+        if: github.ref == 'refs/heads/main'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -80,4 +75,4 @@ jobs:
           # pnpm-lock.yaml は repo root にあり workingDirectory から自動検出されないので明示。
           # wrangler 本体は上の pnpm install で入った apps/edge の devDependency (lockfile 固定) を使う。
           packageManager: pnpm
-          command: ${{ github.ref == 'refs/heads/main' && 'deploy' || 'deploy --env dev' }}
+          command: deploy

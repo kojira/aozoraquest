@@ -1,5 +1,7 @@
 # エッジ Worker の dev/本番 分離 (docs/22)
 
+> **dev 配備の運用変更 (#688)**: 本文中の「dev も push で自動デプロイ」「手動は迂回路」という説明は、[dev 手動配備の手順](issue-688-edge-ci-auth.md#dev-の手動配備)に置き換わりました。dev の CI は型検査・unit test のみを行い、成功後に `--env dev --keep-vars` で手動配備します。dev への merge だけでは edge は反映されません。main の配備と web の自動配備は変更していません。
+
 ## 背景・原則
 
 エッジ Worker (`aozoraquest-edge`) は #363 で **1 デプロイで dev/本番を捌く**構成にした。
