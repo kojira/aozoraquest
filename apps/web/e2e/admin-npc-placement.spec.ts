@@ -31,7 +31,7 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
   const village = starterTownInterior(town);
   const tiles = new Uint8Array(1024 ** 2); tiles[10 * 1024 + 12] = 4;
   const art = emptyTileArt(); art.palette.push('#e020c0'); art.pixels.fill(1);
-  const initial: NpcDef[] = [{ id: 'one', name: 'ひとは', x: 10, y: 10, lines: ['やあ'] }, { id: 'two', name: 'ふたりめ', x: 11, y: 11, lines: ['やあ'] }, ...starterTownNpcs()];
+  const initial: NpcDef[] = [{ id: 'one', name: 'ひとは', x: 10, y: 10, lines: ['やあ'] }, { id: 'two', name: 'ふたりめ', x: 11, y: 11, lines: ['やあ'] }, ...starterTownNpcs().map((npc, i) => i === 0 ? { ...npc, spritePreset: 'old-man' as const } : npc)];
   const records: Record<string, unknown> = {
     'app.aozoraquest.world.map': { size: 1024, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64'), parts: BASE_PARTS },
     'app.aozoraquest.world.npcs': { npcs: initial },
@@ -73,8 +73,9 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     await page.getByRole('button', { name: 'ひとは (10,10)', exact: false }).click();
     await expect(page.getByRole('application')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    await expect(page.getByRole('group', { name: '標準の絵' }).getByRole('button')).toHaveCount(8);
-    await page.locator('.npc-presets').screenshot({ path: 'test-results/npc-presets-eight.png' });
+    await expect(page.getByRole('group', { name: '標準の絵' }).getByRole('button')).toHaveCount(9);
+    await page.locator('.npc-presets').evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 48));
+    await page.locator('.npc-presets').screenshot({ path: 'test-results/npc-presets-nine.png' });
     await page.getByLabel('地図の広さ').selectOption('13');
     expect((await page.locator('[data-cell]').first().boundingBox())!.width).toBeGreaterThanOrEqual(24);
     await page.getByLabel('地図の広さ').selectOption('9');
@@ -114,7 +115,7 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     expect(await position(page)).toBe(before);
     await tapCell(page, 11, 10); expect(await position(page)).toContain('(11, 10)'); expect(puts).toEqual([]);
     await expect.poll(async () => page.evaluate(() => (window as unknown as { npcFixture: { savedNpcs: () => NpcDef[] } }).npcFixture.savedNpcs()[0]!.x)).toBe(10);
-    await page.getByRole('button', { name: '男の子', exact: false }).click();
+    await page.getByRole('button', { name: 'Blueskyちゃん', exact: false }).click();
     await expect(page.locator('.npc-presets button[aria-pressed=true]')).toContainText('未保存');
     await map.scrollIntoViewIfNeeded(); await map.screenshot({ path: 'test-results/npc-field-placement.png' });
     failSave = true;
@@ -181,8 +182,8 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
       }
       return samples;
     });
-    expect(gait.every((s) => s.stationary && s.poses.length === 8 && s.poses.every((p) => p >= 0))).toBe(true);
-    for (let i = 0; i < 8; i++) {
+    expect(gait.every((s) => s.stationary && s.poses.length === 9 && s.poses.every((p) => p >= 0))).toBe(true);
+    for (let i = 0; i < 9; i++) {
       const changes = gait.filter((s, n) => n > 0 && s.poses[i] !== gait[n - 1]!.poses[i]);
       expect(changes.length).toBeGreaterThanOrEqual(3);
       for (let n = 1; n < changes.length; n++) {
@@ -214,9 +215,11 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     await expect(page.locator('[data-cell="16,16"] rect[fill="#00aaff"]')).toHaveCount(16);
     // Same sprite component is used by the real World route with a schema-valid saved NPC record.
     const saved = records['app.aozoraquest.world.npcs'] as { npcs: NpcDef[] };
-    const elder = saved.npcs.find((n) => n.mapId === village.id)!; elder.spritePreset = 'old-man';
+    expect(saved.npcs.find((n) => n.id === 'one')?.spritePreset).toBe('bluesky');
+    expect(saved.npcs.filter((n) => n.id !== 'one')).toEqual(initial.filter((n) => n.id !== 'one'));
     await page.goto(`${URL}?game`); await expect(page.getByLabel('ワールドマップ')).toBeVisible();
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="old-man"]')).toBeVisible();
+    await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]')).toBeVisible();
     for (let i = 0; i < 8 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-backdrop').click();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     await expect.poll(async () => page.getByLabel('ワールドマップ').locator('.npc-frame-1').first().evaluate((el) => getComputedStyle(el).visibility), { intervals: [50] }).toBe('visible');

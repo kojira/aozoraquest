@@ -1,6 +1,7 @@
 import { encodeTileArt, type TileArtRecord } from './tile-art.js';
+import { BLUESKY_NPC_FRAMES } from './bluesky-npc-art.js';
 
-export const NPC_SPRITE_PRESET_IDS = ['boy', 'girl', 'young-man', 'young-woman', 'middle-aged-man', 'middle-aged-woman', 'old-man', 'old-woman'] as const;
+export const NPC_SPRITE_PRESET_IDS = ['boy', 'girl', 'young-man', 'young-woman', 'middle-aged-man', 'middle-aged-woman', 'old-man', 'old-woman', 'bluesky'] as const;
 export type NpcSpritePresetId = typeof NPC_SPRITE_PRESET_IDS[number];
 export interface NpcSpritePreset { id: NpcSpritePresetId; name: string; frames: readonly [TileArtRecord, TileArtRecord] }
 
@@ -103,6 +104,7 @@ export const NPC_SPRITE_PRESETS: readonly NpcSpritePreset[] = [
     '...ocaaaaacco...','....occaaccss...','....sscccco.....','.....occcco.....',
     '....occcccco....','.....ot..so.....','........oto.....',
   ]], ['#eee7da','#dfb994','#302b37','#a3667b','#e6cfa5','#ecdcbc','#665163','#50423e']) },
+  { id: 'bluesky', name: 'Blueskyちゃん', frames: BLUESKY_NPC_FRAMES },
 ];
 export function npcSpritePreset(id: NpcSpritePresetId): NpcSpritePreset {
   return NPC_SPRITE_PRESETS.find((preset) => preset.id === id)!;

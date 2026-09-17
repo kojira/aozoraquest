@@ -71,6 +71,13 @@ describe('ensureAuthoredWorld: 空配列のレコードを適用する (#660)', 
     } finally { setWorldMap(null); setInteriors([], []); }
   });
 
+  it('loads the Bluesky preset alongside unchanged legacy NPCs', async () => {
+    const npcs: NpcDef[] = [NPC, { ...NPC, id: 'sky', x: 5, spritePreset: 'bluesky' }];
+    globalThis.fetch = fakePds({ npcs: { npcs } });
+    await ensureAuthoredWorld(env, NSID, NOW);
+    expect(allNpcs()).toEqual(npcs);
+  });
+
   it('NPC: {npcs: []} で全 NPC が消える', async () => {
     globalThis.fetch = fakePds({ npcs: { npcs: [] } });
     await ensureAuthoredWorld(env, NSID, NOW);
