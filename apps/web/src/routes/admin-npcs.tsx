@@ -106,7 +106,7 @@ export function AdminNpcs() {
       if (epoch !== imageEpoch.current) { URL.revokeObjectURL(prepared.url); return; }
       forgetImage(id, kind); pendingImages.current.set(`${id}/${kind}`, prepared); refreshPreviews();
       update(id, kind === 'sprite' ? { spriteImage: prepared.image } : { portraitImage: prepared.image });
-      setNote('画像を選びました。まだ送信・保存していません');
+      setNote(`保存用WebPを用意しました（${(file.size / 1024).toFixed(1)} → ${(prepared.blob.size / 1024).toFixed(1)}KiB）。まだ送信・保存していません`);
     } catch (error) { if (epoch === imageEpoch.current) setNote(`画像を選べません: ${String(error)}`); }
     finally { if (epoch === imageEpoch.current) setImageBusy(false); }
   };

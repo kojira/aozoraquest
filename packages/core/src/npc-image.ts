@@ -1,7 +1,7 @@
 import { imageSize } from 'image-size';
 import isAnimated from 'is-animated';
 
-/** NPC upload contract. PNG and WebP are kept as their original bytes. */
+/** NPC image references. Legacy PNG stays readable; new editor uploads use WebP. */
 export type NpcImageKind = 'sprite' | 'portrait';
 export interface NpcImage {
   blob: { $type: 'blob'; ref: { $link: string }; mimeType: 'image/png' | 'image/webp'; size: number };

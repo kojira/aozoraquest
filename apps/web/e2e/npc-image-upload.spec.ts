@@ -44,6 +44,7 @@ for (const spriteFormat of ['png', 'webp'] as const) test(`NPC ${spriteFormat} s
       if (failUpload) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
       const bytes = route.request().postDataBuffer()!;
       const info = inspectNpcImage(bytes, 'portrait');
+      expect(info.mimeType).toBe('image/webp');
       const cid = cidFor(bytes); blobs.set(cid, bytes);
       return route.fulfill({ json: { blob: { $type: 'blob', ref: { $link: cid }, mimeType: info.mimeType, size: bytes.length } } });
     }
@@ -108,6 +109,15 @@ for (const spriteFormat of ['png', 'webp'] as const) test(`NPC ${spriteFormat} s
       return [ctx.getImageData(0, 0, 1, 1).data[3], ctx.getImageData(150, 225, 1, 1).data[3]];
     });
     expect(alpha).toEqual([0, 255]);
+    const spritePixelsMatch = await page.getByLabel('マップ画像プレビュー').locator('image').first().evaluate(async (element, original) => {
+      const pixels = async (src: string) => {
+        const img = new Image(); img.src = src; await img.decode();
+        const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const ctx = c.getContext('2d')!; ctx.drawImage(img, 0, 0); return [...ctx.getImageData(0, 0, c.width, c.height).data];
+      };
+      return JSON.stringify(await pixels((element as SVGImageElement).getAttribute('href')!)) === JSON.stringify(await pixels(original));
+    }, `data:${sprite.mimeType};base64,${sprite.buffer.toString('base64')}`);
+    expect(spritePixelsMatch).toBe(true);
     expect(uploads).toBe(0); expect(npcPuts).toBe(0);
     await expect(page.getByLabel('マップ画像プレビュー').locator('[data-uploaded-sprite]')).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -135,9 +145,16 @@ for (const spriteFormat of ['png', 'webp'] as const) test(`NPC ${spriteFormat} s
     failSave = false; await page.getByRole('button', { name: '保存', exact: true }).click(); await expect(page.locator('.npc-editor > fieldset > [role=status]')).toContainText('2 人を保存');
     expect(uploads).toBe(3); expect(npcPuts).toBe(2);
     const saved = structuredClone((records[npcCollection] as { npcs: NpcDef[] }).npcs);
-    expect(blobs.get(saved[0].spriteImage!.blob.ref.$link)).toEqual(sprite.buffer);
-    expect(blobs.get(saved[0].portraitImage!.blob.ref.$link)).toEqual(portrait.buffer);
-    expect(saved[0].portraitImage!.blob.mimeType).toBe(`image/${portraitFormat}`);
+    if (spriteFormat === 'png') expect(blobs.get(saved[0].spriteImage!.blob.ref.$link)!.includes(Buffer.from('public-test-metadata'))).toBe(false);
+    if (portraitFormat === 'png') expect(blobs.get(saved[0].portraitImage!.blob.ref.$link)!.includes(Buffer.from('public-test-metadata'))).toBe(false);
+    expect(saved[0].spriteImage!.blob.mimeType).toBe('image/webp');
+    expect(saved[0].portraitImage!.blob.mimeType).toBe('image/webp');
+    expect(saved[0].spriteImage!.width).toBe(64);
+    expect(saved[0].portraitImage!.height).toBe(450);
+    expect(saved[0].spriteImage!.blob.size).toBeLessThanOrEqual(102400);
+    expect(saved[0].portraitImage!.blob.size).toBeLessThanOrEqual(1048576);
+    if (spriteFormat === 'webp') expect(blobs.get(saved[0].spriteImage!.blob.ref.$link)).toEqual(sprite.buffer); // already tiny, no bloat
+    if (portraitFormat === 'webp') expect(blobs.get(saved[0].portraitImage!.blob.ref.$link)).toEqual(portrait.buffer);
     expect(saved[1]).toEqual(initial[1]); expect(saved[0].spritePreset).toBe('bluesky');
     await page.reload(); await chooseNpc();
     await expect(page.getByAltText('会話イラストプレビュー')).toBeVisible();
