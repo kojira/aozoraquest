@@ -10,6 +10,7 @@
  *   /api/battle/* /api/xp/* /api/me/state (M2〜)。依頼クエスト集約 (docs/15) も。
  */
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
+import { handleNpcImage } from './npc-image';
 import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
@@ -92,6 +93,10 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // CORS preflight
   if (req.method === 'OPTIONS') {
     return cors(new Response(null, { status: 204 }), allowedOrigin);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/npc-image') {
+    return cors(await handleNpcImage(req, env), allowedOrigin);
   }
 
   if (req.method === 'GET' && url.pathname === '/healthz') {

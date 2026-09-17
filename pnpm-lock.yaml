@@ -205,6 +205,13 @@ importers:
         version: 2.1.9(@types/node@25.6.0)(jsdom@29.1.1(@noble/hashes@1.8.0))
 
   packages/core:
+    dependencies:
+      image-size:
+        specifier: 2.0.2
+        version: 2.0.2
+      is-animated:
+        specifier: 3.0.0
+        version: 3.0.0
     devDependencies:
       typescript:
         specifier: ^7.0.2
@@ -2390,6 +2397,11 @@ packages:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
     engines: {node: '>= 4'}
 
+  image-size@2.0.2:
+    resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
+    engines: {node: '>=16.x'}
+    hasBin: true
+
   import-fresh@3.3.1:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
     engines: {node: '>=6'}
@@ -2397,6 +2409,10 @@ packages:
   imurmurhash@0.1.4:
     resolution: {integrity: sha512-JmXMZ6wuvDmLiHEml9ykzqO6lwFbof0GG4IkcGaENdCRDDmMVnny7s5HsIgHCbaq0w2MyPhDqkhTUgS2LU2PHA==}
     engines: {node: '>=0.8.19'}
+
+  is-animated@3.0.0:
+    resolution: {integrity: sha512-Xwo1oeNXROy0REVDbrUYAngNfyh6kwWUSCgL1bgKwUFEqO64w+XSCtDtwrpfxdtNWVVZQk/mBfhlwhKwizheZQ==}
+    engines: {node: '>=20.0.0'}
 
   is-arrayish@0.3.4:
     resolution: {integrity: sha512-m6UrgzFVUYawGBh1dUsWR5M2Clqic9RVXC/9f8ceNlv2IcO9j9J/z8UoCLPqtsPBFNzEpfR3xftohbfqDx8EQA==}
@@ -5030,12 +5046,16 @@ snapshots:
 
   ignore@5.3.2: {}
 
+  image-size@2.0.2: {}
+
   import-fresh@3.3.1:
     dependencies:
       parent-module: 1.0.1
       resolve-from: 4.0.0
 
   imurmurhash@0.1.4: {}
+
+  is-animated@3.0.0: {}
 
   is-arrayish@0.3.4:
     optional: true

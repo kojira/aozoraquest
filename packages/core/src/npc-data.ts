@@ -14,6 +14,7 @@ import { assertItemRequirements, isFlagName, itemsSatisfied, type ItemRequiremen
 import { ITEMS } from './battle.js';
 import { NPC_SPRITE_PRESET_IDS, type NpcSpritePresetId } from './npc-sprite-presets.js';
 import { WORLD_MAP_ID } from './map-id.js';
+import { assertNpcImage, type NpcImage } from './npc-image.js';
 
 export class NpcDataError extends Error {}
 
@@ -23,6 +24,9 @@ export interface NpcDef {
   name: string;
   /** Explicit bundled appearance; absent preserves the individually drawn sprite. */
   spritePreset?: NpcSpritePresetId;
+  /** Explicit uploaded map sprite, independent from the optional dialogue portrait. */
+  spriteImage?: NpcImage;
+  portraitImage?: NpcImage;
   /**
    * **立っているマップ** (#613)。内部マップ (#424) の id、**省略 = フィールド**
    * (`WORLD_MAP_ID`)。mapId の無い旧レコードは無移行でフィールドの NPC として読める。
@@ -98,6 +102,8 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
     if (n.spritePreset !== undefined && !(NPC_SPRITE_PRESET_IDS as readonly unknown[]).includes(n.spritePreset)) {
       throw new NpcDataError(`${where}: 標準の絵が不正 (${n.spritePreset})`);
     }
+    if (n.spriteImage !== undefined) assertNpcImage(n.spriteImage, 'sprite');
+    if (n.portraitImage !== undefined) assertNpcImage(n.portraitImage, 'portrait');
     const k = key(mapOf(n), n.x, n.y);
     // **同じマスに 2 人は立てない。** ぶつかったときどちらと話すのか決められない。
     if (spots.has(k)) throw new NpcDataError(`${where}: 同じマスに別の NPC がいる (${n.x}, ${n.y})`);

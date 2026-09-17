@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   danglingRefs, describeDanglingRef, npcArtKey, NpcDataError,
   starterTownNpcs, starterTownNpcsPlacementError, STARTER_TOWN_ID,
-  NPC_SPRITE_PRESETS, tileArtFor, WORLD_MAP_ID, type NpcDef,
+  NPC_SPRITE_PRESETS, tileArtFor, WORLD_MAP_ID, type NpcDef, type NpcImageKind,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
@@ -13,6 +13,9 @@ import { NpcPlacementMap } from '@/components/admin/npc-placement-map';
 import { NpcSprite } from '@/components/npc-sprite';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { ItemReqInput } from '@/components/admin/item-req-input';
+import { NpcImageUpload } from '@/components/admin/npc-image-upload';
+import { NpcImagePreviews } from '@/components/npc-image';
+import { prepareNpcImage, uploadNpcImage, type PreparedNpcImage } from '@/lib/npc-image';
 
 /**
  * **NPC エディタ** (#425)。マップ・位置・名前・セリフ・絵。
@@ -39,6 +42,21 @@ export function AdminNpcs() {
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imagePreviews, setImagePreviews] = useState<ReadonlyMap<string, string>>(new Map());
+  const pendingImages = useRef(new Map<string, PreparedNpcImage>());
+  const imageEpoch = useRef(0);
+  const clearImages = useCallback(() => {
+    for (const image of pendingImages.current.values()) URL.revokeObjectURL(image.url);
+    pendingImages.current.clear();
+  }, []);
+  const refreshPreviews = () => setImagePreviews(new Map([...pendingImages.current].map(([key, value]) => [key, value.url])));
+  const forgetImage = (id: string, kind: NpcImageKind) => {
+    const key = `${id}/${kind}`;
+    const image = pendingImages.current.get(key);
+    if (image) URL.revokeObjectURL(image.url);
+    pendingImages.current.delete(key); refreshPreviews();
+  };
   const loadedIdentity = useRef<{ agent: typeof session.agent; did: typeof session.did } | null>(null);
   const additions = useRef(new Map<string, NpcDef>());
   const dirty = JSON.stringify(list) !== JSON.stringify(snapshot);
@@ -49,6 +67,7 @@ export function AdminNpcs() {
   useEffect(() => { setCoords({ x: String(current?.x ?? ''), y: String(current?.y ?? '') }); }, [current?.id, current?.x, current?.y, mapChoice]);
   useEffect(() => {
     let cancelled = false;
+    const epoch = ++imageEpoch.current; clearImages(); setImagePreviews(new Map()); setImageBusy(false); setSaving(false);
     setLoadState('loading'); setWorld(null); setList([]); setSnapshot([]); setSel(null); setDrawing(false); setNote(null);
     additions.current.clear();
     const did = getPrimaryAdminDid();
@@ -60,23 +79,42 @@ export function AdminNpcs() {
     }).catch((error: unknown) => {
       if (!cancelled) { setNote(`読み込めませんでした: ${String(error)}`); setLoadState('error'); }
     });
-    return () => { cancelled = true; };
-  }, [session.agent, session.did, admin, retry]);
+    return () => { cancelled = true; imageEpoch.current = epoch + 1; clearImages(); };
+  }, [session.agent, session.did, admin, retry, clearImages]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
-  const update = useCallback((id: string, patch: Partial<NpcDef>) => {
+  const update = useCallback((id: string, patch: Omit<Partial<NpcDef>, 'spritePreset' | 'spriteImage' | 'portraitImage'> & { spritePreset?: NpcDef['spritePreset']; spriteImage?: NpcDef['spriteImage']; portraitImage?: NpcDef['portraitImage'] }) => {
     if (saving) return;
     setList((xs) => xs.map((n) => {
       if (n.id !== id) return n;
-      const next = { ...n, ...patch };
+      const next = { ...n, ...patch } as NpcDef;
+      for (const key of ['spritePreset', 'spriteImage', 'portraitImage'] as const) if (next[key] === undefined) delete next[key];
       if (next.mapId === WORLD_MAP_ID) delete next.mapId;
       return next;
     }));
   }, [saving]);
+  const selectImage = async (kind: NpcImageKind, file: File) => {
+    if (!current || saving || imageBusy || !loaded || session.did !== getPrimaryAdminDid()) return;
+    const id = current.id, epoch = imageEpoch.current;
+    setImageBusy(true); setNote('画像を確認しています…');
+    try {
+      const prepared = await prepareNpcImage(file, kind);
+      if (epoch !== imageEpoch.current) { URL.revokeObjectURL(prepared.url); return; }
+      forgetImage(id, kind); pendingImages.current.set(`${id}/${kind}`, prepared); refreshPreviews();
+      update(id, kind === 'sprite' ? { spriteImage: prepared.image } : { portraitImage: prepared.image });
+      setNote('画像を選びました。まだ送信・保存していません');
+    } catch (error) { if (epoch === imageEpoch.current) setNote(`画像を選べません: ${String(error)}`); }
+    finally { if (epoch === imageEpoch.current) setImageBusy(false); }
+  };
+  const removeImage = (kind: NpcImageKind) => {
+    if (!current) return;
+    forgetImage(current.id, kind);
+    update(current.id, kind === 'sprite' ? { spriteImage: undefined } : { portraitImage: undefined });
+  };
   const syncDrawing = useCallback(() => {
     if (!drawing || !current) return;
     const key = npcArtKey(current.id);
@@ -91,6 +129,7 @@ export function AdminNpcs() {
   const choose = (n: NpcDef) => { syncDrawing(); setSel(n.id); setMapChoice(npcMapId(n)); setDrawing(false); };
   const cancelAll = () => {
     if (!window.confirm('未保存の変更をすべて取り消しますか？')) return;
+    clearImages(); setImagePreviews(new Map());
     syncDrawing(); setList(structuredClone(snapshot)); additions.current.clear();
     const n = snapshot.find((n) => n.id === sel);
     setSel(n?.id ?? null); setMapChoice(n ? npcMapId(n) : WORLD_MAP_ID); setDrawing(false); setNote('未保存の変更を取り消しました');
@@ -137,7 +176,7 @@ export function AdminNpcs() {
   }, [list, world, snapshot, syncDrawing]);
 
   const save = useCallback(async () => {
-    if (!session.agent || !world || !loaded || saving) return;
+    if (!session.agent || !world || !loaded || saving || imageBusy) return;
     if (current && mapChoice !== npcMapId(current)) { setNote('移動先を選ぶか、移動先選びをやめてから保存してください'); return; }
     // クエストが発注させている NPC を消させない (#423 / #603) — 参照切れの NPC が 1 人でも
     // いると setGameQuests が全体を落とし、消した NPC と無関係な全クエストまで web/edge から消える。
@@ -151,15 +190,24 @@ export function AdminNpcs() {
       const err = npcStructuralPlacementError(world, n) ?? ((!previous || !sameNpcPosition(n, previous)) ? validateNpcPlacement(world, n, list).reason : null);
       if (err) { setNote(`保存できない: ${err}`); return; }
     }
-    setSaving(true);
+    const epoch = imageEpoch.current;
+    setSaving(true); setNote('画像とNPCを保存しています…');
     try {
-      await saveNpcs(session.agent, list);
+      for (const npc of list) {
+        for (const kind of ['sprite', 'portrait'] as const) {
+          const pending = pendingImages.current.get(`${npc.id}/${kind}`);
+          if (pending && npc[kind === 'sprite' ? 'spriteImage' : 'portraitImage']?.blob.ref.$link === pending.image.blob.ref.$link) await uploadNpcImage(session.agent, pending, kind);
+          if (epoch !== imageEpoch.current) return;
+        }
+      }
+      await saveNpcs(session.agent, list, () => epoch === imageEpoch.current);
+      if (epoch !== imageEpoch.current) return;
       setSnapshot(structuredClone(list)); additions.current.clear();
       setNote(`${list.length} 人を保存した。サーバーは最大 5 分で拾う`);
     } catch (e) {
-      setNote(e instanceof NpcDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
-    } finally { setSaving(false); }
-  }, [session.agent, list, world, loaded, saving, current, mapChoice, snapshot]);
+      if (epoch === imageEpoch.current) setNote(e instanceof NpcDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
+    } finally { if (epoch === imageEpoch.current) setSaving(false); }
+  }, [session.agent, list, world, loaded, saving, imageBusy, current, mapChoice, snapshot]);
 
   if (!admin) {
     return (
@@ -182,8 +230,9 @@ export function AdminNpcs() {
   if (!loaded || !world) return <div className="npc-editor"><p role="status">{note ?? '地図とNPCを読み込んでいます…'}</p>{loadState === 'error' && <button type="button" onClick={() => setRetry((v) => v + 1)}>再試行</button>}<p><Link to="/admin">← 管理</Link></p></div>;
 
   return (
+    <NpcImagePreviews.Provider value={imagePreviews}>
     <div className="admin-page npc-editor">
-      <fieldset disabled={saving}>
+      <fieldset disabled={saving || imageBusy}>
       <div className="admin-head">
         <Link to="/admin" onClick={(e) => { if (saving || (dirty && !window.confirm('未保存の変更を破棄して戻りますか？'))) e.preventDefault(); }} style={{ fontSize: '0.8em' }}>← 管理</Link>
         <strong>NPC</strong>
@@ -224,7 +273,7 @@ export function AdminNpcs() {
         </div>
 
         {current ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35em', minWidth: 0 }}>
             <div style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
               <strong>{current.name}</strong>
               <code style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{current.id}</code>
@@ -253,17 +302,18 @@ export function AdminNpcs() {
             <div>
               <p style={{ fontSize: '0.8em' }}>見た目（選んでから「保存」で反映）</p>
               <div className="npc-presets" role="group" aria-label="標準の絵">
-                {NPC_SPRITE_PRESETS.map((preset) => <button type="button" key={preset.id} aria-pressed={current.spritePreset === preset.id} onClick={() => update(current.id, { spritePreset: preset.id })}>
+                {NPC_SPRITE_PRESETS.map((preset) => <button type="button" key={preset.id} aria-pressed={!current.spriteImage && current.spritePreset === preset.id} onClick={() => { forgetImage(current.id, 'sprite'); update(current.id, { spritePreset: preset.id, spriteImage: undefined }); }}>
                   <svg viewBox="0 0 32 32" aria-hidden="true"><NpcSprite npc={{ id: current.id, spritePreset: preset.id }} /></svg>
                   <span>{preset.name}</span>
-                  {current.spritePreset === preset.id && <span>{snapshot.find((n) => n.id === current.id)?.spritePreset === preset.id ? '使用中' : '未保存'}</span>}
+                  {!current.spriteImage && current.spritePreset === preset.id && <span>{snapshot.find((n) => n.id === current.id)?.spritePreset === preset.id ? '使用中' : '未保存'}</span>}
                 </button>)}
               </div>
-              <button type="button" disabled={!current.spritePreset} onClick={() => setList((xs) => xs.map((n) => { if (n.id !== current.id) return n; const next = { ...n }; delete next.spritePreset; return next; }))}>
+              <button type="button" disabled={!current.spritePreset && !current.spriteImage} onClick={() => { forgetImage(current.id, 'sprite'); update(current.id, { spritePreset: undefined, spriteImage: undefined }); }}>
                 {world.arts.has(npcArtKey(current.id)) ? '手描きの絵を使う' : '従来の表示に戻す'}
               </button>
-              {!current.spritePreset && <p className="npc-map-help">{world.arts.has(npcArtKey(current.id)) ? '手描きの絵' : '従来の表示'}{snapshot.find((n) => n.id === current.id)?.spritePreset ? '（未保存）' : 'を使用中'}</p>}
+              {!current.spritePreset && !current.spriteImage && <p className="npc-map-help">{world.arts.has(npcArtKey(current.id)) ? '手描きの絵' : '従来の表示'}{snapshot.find((n) => n.id === current.id)?.spritePreset ? '（未保存）' : 'を使用中'}</p>}
             </div>
+            <NpcImageUpload key={current.id} npc={current} canUpload={session.did === getPrimaryAdminDid()} onFile={(kind, file) => { void selectImage(kind, file); }} onRemove={removeImage} />
             {field('マップ', (
               <select aria-label="マップ" value={mapChoice} onChange={(e) => setMapChoice(e.target.value)}>
                 <option value={WORLD_MAP_ID}>フィールド</option>
@@ -423,5 +473,6 @@ export function AdminNpcs() {
       </div>
       </fieldset>
     </div>
+    </NpcImagePreviews.Provider>
   );
 }
