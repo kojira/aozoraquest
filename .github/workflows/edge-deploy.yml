@@ -7,7 +7,7 @@ name: edge-deploy
 # 画面 (最新の成長モデル) と戦闘 (旧モデル) の数値がずれた (#549)。片方だけ自動の非対称を無くす。
 #
 # デプロイ先は **ブランチが決める** (docs/22-edge-env-separation.md):
-#   dev  → `wrangler deploy --env dev` → aozoraquest-edge-dev
+#   dev  → `wrangler deploy --env dev --keep-vars` → aozoraquest-edge-dev
 #   main → `wrangler deploy`           → aozoraquest-edge (本番)
 # workflow_dispatch は Actions タブの branch 選択がそのまま環境選択になる (dev / main 以外は拒否)。
 #
@@ -15,7 +15,8 @@ name: edge-deploy
 # または Environments の main / dev それぞれの secrets):
 #   CLOUDFLARE_API_TOKEN   Cloudflare API トークン (権限: Workers Scripts:Edit)
 #   CLOUDFLARE_ACCOUNT_ID  Cloudflare アカウント ID
-# 未設定のうちはこの workflow は失敗する (= エッジは従来どおり手動 deploy のまま)。
+# dev の登録・確認手順: docs/issue-688-edge-ci-auth.md。
+# 未設定なら失敗する。手動配備の成功を Actions 修復の代用にしない。
 # Worker Secrets (SERVER_DID / OAUTH_*_JWK / WORLD_TOKEN_SECRET / KUDA_API_KEY 等) と KV は
 # `wrangler deploy` で消えないので、自動化後も再設定は不要。
 #
@@ -80,4 +81,5 @@ jobs:
           # pnpm-lock.yaml は repo root にあり workingDirectory から自動検出されないので明示。
           # wrangler 本体は上の pnpm install で入った apps/edge の devDependency (lockfile 固定) を使う。
           packageManager: pnpm
-          command: ${{ github.ref == 'refs/heads/main' && 'deploy' || 'deploy --env dev' }}
+          # dev は手動配備と同様に dashboard の既存 vars を保持する。main の動作は変えない。
+          command: ${{ github.ref == 'refs/heads/main' && 'deploy' || 'deploy --env dev --keep-vars' }}
