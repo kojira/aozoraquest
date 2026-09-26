@@ -26,6 +26,7 @@ import { isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, saveTileArts, saveWorldMap } from '@/lib/world-authoring';
 import { TERRAIN_TILES, fallbackTile, pixelPart, shoreTile } from '@/components/world-tiles';
 import { appendBiomePart } from '@/lib/biome-parts';
+import { HOMURA_TOWN, insertHomuraDesert } from '@/lib/homura-desert';
 import { TileArtEditor } from '@/components/admin/tile-art-editor';
 
 /**
@@ -295,6 +296,21 @@ export function AdminMap() {
               <svg width={32} height={32} viewBox="0 0 32 32">{pixelPart(undefined, biome.terrain)}</svg>
               {biome.name}を追加
             </button>)}
+            <button type="button" disabled={!ready}
+              onClick={() => {
+                if (!draftRef.current) return;
+                try {
+                  const { parts: next, changed } = insertHomuraDesert(parts, draftRef.current, worldOverlay().towns);
+                  if (changed === 0) { setNote('ほむらの街の砂漠は既に入っています'); return; }
+                  if (next.length !== parts.length) { setWorldParts(next); setParts(next); }
+                  const v = viewTiles(tilePx);
+                  setOrigin({ x: wrap(HOMURA_TOWN.x - Math.floor(v / 2)), y: wrap(HOMURA_TOWN.y - Math.floor(v / 2)) });
+                  setTownMode(false); setDirty(true); setTick((n) => n + 1);
+                  setNote(`ほむらの街のまわり ${changed} マスを砂漠にしました。確認して「保存」してください`);
+                } catch (e) { setNote((e as Error).message); }
+              }}>
+              ほむらの街の砂漠を入れる
+            </button>
             {/* **パーツを増やす。** 「縦の橋」のように通行判定は既存と同じで絵だけ違うものを足す。 */}
             <button
               type="button"
