@@ -151,7 +151,7 @@ export const WORLD_DATA: WorldOverlayData = {
       "x": 320,
       "y": 448,
       "region": 26,
-      "name": "かわせみの里"
+      "name": "ほむらの街"
     },
     {
       "x": 562,
