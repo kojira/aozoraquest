@@ -2,7 +2,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
-import type { Agent } from '@atproto/api';
+import { jsonToLex, type Agent } from '@atproto/api';
 import { SessionContext } from '../../src/lib/session';
 import { World } from '../../src/routes/world';
 import '../../src/styles.css';
@@ -11,7 +11,8 @@ async function repoCall(op: string, params: unknown) {
   const response = await fetch('/fixture-pds', { method: 'POST', body: JSON.stringify({ op, params }) });
   const data = await response.json();
   if (!response.ok) throw Object.assign(new Error(data.error), { name: data.error === 'RecordNotFound' ? 'RecordNotFoundError' : 'Error' });
-  return { data };
+  // 実 Agent と同じく応答を lex 値に復元する (blob は BlobRef になる。#703 はこれで壊れていた)。
+  return { data: jsonToLex(data) };
 }
 const agent = {
   assertDid: 'did:plc:tutorial',

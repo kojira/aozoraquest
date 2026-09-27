@@ -187,7 +187,7 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
       console.warn('[world] shops load failed', e);
     }
     try {
-      const rec = await getRecord<{ npcs?: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
+      const rec = adminRecordJson(await getRecord<{ npcs?: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY));
       // 空配列も適用する (全 NPC 削除の反映。クエストと同じ流儀。#660)。
       if (rec?.npcs) setNpcs(rec.npcs);
     } catch (e) {
@@ -373,11 +373,22 @@ export async function loadQuestAuthoringRecords(agent: Agent, adminDid: string):
   return quests;
 }
 
+/**
+ * Agent の getRecord は blob を `BlobRef` (ref は CID オブジェクト) に復元して返す。NPC 画像の
+ * 検証 (`assertNpcImage`) と edge は保存形の JSON (`{$type:'blob', ref:{$link}}`) を前提にするので、
+ * 読んだ管理レコードは JSON 表現へ戻してから使う (戻さないと NPC レコード全体が不正扱いで落ちる。#703)。
+ * `lexToJson` は依存に @atproto/lexicon が 2 版入っていて instanceof が外れ、実応答を戻せなかった。
+ * `BlobRef.toJSON()` は版によらず保存形を返すので JSON 往復で戻す。
+ */
+function adminRecordJson<T>(value: T): T {
+  return value == null ? value : JSON.parse(JSON.stringify(value)) as T;
+}
+
 /** 通信/認証失敗を「まだレコードが無い」と取り違えない編集用読込み。 */
 async function getAuthoringRecord<T>(agent: Agent, repo: string, collection: string, rkey: string): Promise<T | null> {
   try {
     const res = await agent.com.atproto.repo.getRecord({ repo, collection, rkey });
-    return res.data.value as T;
+    return adminRecordJson(res.data.value as T);
   } catch (e) {
     const error = e as { error?: string; name?: string };
     if (error.error === 'RecordNotFound' || error.name === 'RecordNotFoundError') return null;

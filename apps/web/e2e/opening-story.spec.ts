@@ -80,8 +80,15 @@ test('ふたばの村の導入: 倒れていた放浪者 → 駆け寄る Bluesk
     'app.aozoraquest.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.world.quests': { quests }, 'app.aozoraquest.world.scenario': { events: scenario },
     'app.aozoraquest.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
-    'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: true, regions: [town.region], visitedTowns: [], hp: null, mp: null },
+    // 初回 (はじめから直後): そらのはね未受領 → 導入に続けて Blueskyちゃんが手渡す (#703)。
+    'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: false, regions: [town.region], visitedTowns: [], hp: null, mp: null },
   };
+  // リセット (+20 付与) 直後の入場を再現する祝福マーク。初回だけ立てる (リロードで立て直さない)。
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('e2e-armed')) return;
+    sessionStorage.setItem('e2e-armed', '1');
+    sessionStorage.setItem('aq-welcome-blessing-pending', '1');
+  });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('**/*', async (route) => {
@@ -90,6 +97,8 @@ test('ふたばの村の導入: 倒れていた放浪者 → 駆け寄る Bluesk
     if (url.pathname === '/fixture-pds') {
       const { op, params } = route.request().postDataJSON();
       if (op === 'get') {
+        // 実機と同じく管理データの NPC は遅れて届く (#703)。導入はその到着を待って絵を出す。
+        if (params.collection === 'app.aozoraquest.world.npcs') await new Promise((r) => setTimeout(r, 1200));
         const record = records[params.collection];
         await route.fulfill({ status: record ? 200 : 404, json: record ? { value: record, cid: 'fixture-cid' } : { error: 'RecordNotFound' } });
       } else if (op === 'put') { records[params.collection] = params.record; await route.fulfill({ json: { uri: 'at://fixture/record' } }); }
@@ -156,7 +165,25 @@ test('ふたばの村の導入: 倒れていた放浪者 → 駆け寄る Bluesk
     await expect(window).toContainText('村に はいって、いどのそばの むらおさに あって。わたしも あとで いくね。');
     await expect(page.getByRole('dialog', { name: 'ブルスコンのセリフ' })).toHaveCount(0);
     await next();
+    // 続けて同じ Blueskyちゃん (同じ絵) が やくそう と そらのはね を手渡し、+20 も告げる (#703)。
+    await expect(window).toContainText('これ、もっていって。やくそう と そらのはね だよ。');
+    await expect(page.getByRole('dialog', { name: 'Blueskyちゃんのセリフ' })).toBeVisible();
+    await expect(portrait).toBeVisible();
+    await expect(page.locator('.aq-dialogue-next')).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/01d-starter-handoff.png` });
+    await next();
+    await expect(window).toContainText('そらのはねは いったことの ある街へ もどれるの。');
+    await next();
+    await expect(window).toContainText('それと、あおぞらパワーも 20 あげる。いっしょに がんばろうね。');
+    await expect(page.locator('.aq-dialogue-next')).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/01e-starter-blessing.png` });
+    await next();
+    await expect(window).toContainText('いこう！');
+    await expect(page.getByRole('dialog', { name: 'ブルスコンのセリフ' })).toHaveCount(0);
+    await next();
+    await expect(page.getByText('はじまりの祝福')).toBeVisible();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
+    await expect(page.getByText('はじまりの祝福')).toHaveCount(0, { timeout: 5_000 });
     // 会話イラストが読めなくても、画像なしで導入は最後まで進む。
     failPortrait = true;
     await page.evaluate(() => localStorage.removeItem('aq-world-onboarding-done'));

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
+import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, initialPosition, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
@@ -251,6 +251,20 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     // 冒険はじめの持ち物: やくそう 1 + そらのはね 1 (どのケースでも初期付与される)。
     expect(s3.materials).toEqual({ herb: 1, 'sky-feather': 1 });
     expect(s1.materials).toEqual({ herb: 1, 'sky-feather': 1 });
+    // 開始位置は はじまりの街の一つ下 (村から出たときの着地点と同じ。#703)。歩けるマス。
+    const spawn = worldOverlay().spawn;
+    expect([s3.x, s3.y]).toEqual([spawn.x, spawn.y + 1]);
+    expect(isWalkable(terrainAt(s3.x, s3.y))).toBe(true);
+  });
+
+  it('initialPosition: 街の一つ下。そこが歩けなければ街そのもの (#703)', () => {
+    const spawn = worldOverlay().spawn;
+    expect(initialPosition()).toEqual({ x: spawn.x, y: spawn.y + 1 });
+    // NPC が立つマスは歩けない (isWalkableAt) → 街に倒す。
+    setNpcs([{ id: 'blocker', name: 'とおせんぼ', x: spawn.x, y: spawn.y + 1, lines: ['…'] }]);
+    try {
+      expect(initialPosition()).toEqual({ x: spawn.x, y: spawn.y });
+    } finally { setNpcs(null); }
   });
 
   it('handleReset: 認証済み本人の権威 gameState + 戦闘ガードを削除する (次入場で初期化)', async () => {
