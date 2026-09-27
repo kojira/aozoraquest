@@ -135,3 +135,35 @@ describe('DialogueWindow: 送信中と失敗', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('DialogueWindow: 救護導入の表情と操作遮断', () => {
+  it('行の表情を優先し、通常行は指定された管理画像、地の文は画像なし', () => {
+    render(<DialogueWindow
+      lines={[{ speaker: 'Bluesky', text: '心配', portrait: { src: '/worried.webp', name: 'Bluesky' } }, { speaker: 'Bluesky', text: '通常' }, { text: '手当て' }]}
+      portrait={{ src: '/managed.webp', name: 'Bluesky' }} onDone={vi.fn()}
+    />);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/worried.webp');
+    const surface = screen.getByRole('dialog');
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/managed.webp');
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
+  it('Tab/Shift+Tabは会話と選択肢の中だけで循環し、背後操作へ抜けない', () => {
+    render(<><button>もちもの</button><DialogueWindow lines={[{ text: '受ける？' }]} onDone={vi.fn()}
+      choices={[{ label: 'はい', onSelect: vi.fn() }, { label: 'いいえ', onSelect: vi.fn() }]} /></>);
+    const surface = screen.getByRole('dialog');
+    fireEvent.keyDown(surface, { key: 'Tab' });
+    expect(document.activeElement).toBe(surface);
+    fireEvent.click(surface);
+    fireEvent.keyDown(surface, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'はい' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(surface);
+    fireEvent.keyDown(surface, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'いいえ' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab' });
+    expect(document.activeElement).toBe(surface);
+  });
+});

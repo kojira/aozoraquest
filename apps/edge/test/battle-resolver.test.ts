@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, initialPosition, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
-import { BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
+import { startBattle, tierForRegion, regionOf, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
@@ -72,6 +72,24 @@ function resolverMock(opts: { diagnosis?: unknown; gameState?: GameState } = {})
 describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; });
+
+  it('ふたば通常遭遇は中心/距離8までそらいろ限定、距離9/内部は従来プール', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG }).fn;
+    const c = worldOverlay().spawn;
+    const seeds = [1, 5, 18, 99, 345, 12345];
+    for (const seed of seeds) {
+      for (const [dx, dy] of [[0, 0], [0, 1], [8, 8], [-8, -8]]) {
+        const r = await sealEncounter(env, USER, GS(), wrap(c.x + dx!), wrap(c.y + dy!), seed, NOW);
+        expect(r.monsterId).toBe('sky-slime');
+      }
+      const x = wrap(c.x + 9), y = c.y;
+      const expected = startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(x, y)), seed).monsterId;
+      expect((await sealEncounter(env, USER, GS(), x, y, seed, NOW)).monsterId).toBe(expected);
+      const inside = await sealEncounter(env, USER, GS(), c.x, c.y, seed, NOW, undefined, undefined, 'test-interior');
+      expect(inside.monsterId).toBe(startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(c.x, c.y)), seed).monsterId);
+    }
+  });
 
   it('sealEncounter: monster を返すが **seed は返さない** + rewarded は power で決まる', async () => {
     const env = await makeEnv();
