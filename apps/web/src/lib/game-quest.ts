@@ -5,7 +5,7 @@
  * 写した値だけで、client は自分で進めない (討伐数は勝利時に edge が数える)。
  * world.tsx はこの写しを state に持ち、NPC 会話とメニューの 1 行に使う。
  */
-import { gameQuestById, questProgressLine, type GameQuestDef } from '@aozoraquest/core';
+import { ITEMS, gameQuestById, questObjectiveText, questProgressLine, type GameQuestDef } from '@aozoraquest/core';
 import type { DialogueChoice } from './dialogue';
 
 export interface QuestProgress {
@@ -54,6 +54,20 @@ export function questMenuLine(st: QuestState, materials: Record<string, number>)
 }
 
 export const QUEST_ASK = 'うけますか？';
+
+/** 受付でも管理データの条件・報酬を表示し、納品による消費を受注前に伝える。 */
+export function guildQuestDetailLines(q: GameQuestDef): string[] {
+  const reward = [
+    q.reward?.itemId ? `${ITEMS[q.reward.itemId]?.name ?? q.reward.itemId} ×${q.reward.count}` : null,
+    q.reward?.power ? `あおぞらパワー ${q.reward.power}` : null,
+  ].filter(Boolean).join(' と ') || 'なし';
+  return [
+    `『${q.title}』`, ...q.intro,
+    `条件: ${questObjectiveText(q)}。報酬: ${reward}。`,
+    ...(q.objective.kind === 'collect' ? [`報告が 成功すると ${questObjectiveText(q)} わたします。いまの 所持品も つかえます。`] : []),
+    '一人一度の 依頼です。',
+  ];
+}
 
 /** 依頼のセリフ。読み終えたら「うけますか？」で はい/いいえ を聞く。 */
 export function questOfferLines(q: GameQuestDef): string[] {

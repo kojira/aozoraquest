@@ -245,7 +245,7 @@ export function DialogueWindow({
             </span>
           )}
           {asking && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5em', marginTop: '0.4em' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '0.5em', marginTop: '0.4em' }}>
               {choices!.map((c) => (
                 <button
                   key={c.label}

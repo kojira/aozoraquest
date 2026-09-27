@@ -8,7 +8,7 @@ import {
   starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
   worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap,
 } from '@aozoraquest/core';
-import { handleQuestAccept } from '../../edge/src/game-quest';
+import { handleQuestAccept, handleQuestComplete } from '../../edge/src/game-quest';
 import { cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
@@ -35,8 +35,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await vite?.close(); });
 
 async function readAll(page: Page) {
-  for (let i = 0; i < 8 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
-    if (await page.getByRole('button', { name: 'はい', exact: true }).count()) return;
+  for (let i = 0; i < 16 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
+    if (await page.locator('.aq-dialogue-pane button').count()) return;
     // 会話イラストつきの窓 (#696) は画面中央を覆うので、送りは画面上端をタップする。
     await page.locator('.aq-dialogue-backdrop').click({ position: { x: 195, y: 8 } });
   }
@@ -49,7 +49,7 @@ async function captureMapDialogue(page: Page, stage: string) {
   for (const viewport of [{ width: 320, height: 640 }, { width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     const map = (await page.getByLabel('ワールドマップ').boundingBox())!;
-    const parts = page.locator('.aq-dialogue-pane, img[alt$="の会話イラスト"]');
+    const parts = page.locator('.aq-dialogue-pane, .aq-dialogue-pane button, img[alt$="の会話イラスト"]');
     const boxes = [];
     for (const part of await parts.all()) {
       const box = (await part.boundingBox())!;
@@ -144,6 +144,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
       let result: unknown;
       if (url.pathname.endsWith('/me/state')) result = { state, initialized: false };
       else if (url.pathname.endsWith('/quest/accept')) result = await handleQuestAccept(env, DID, body.questId, NOW);
+      else if (url.pathname.endsWith('/quest/complete')) result = await handleQuestComplete(env, DID, body.questId, NOW);
       else if (url.pathname.endsWith('/move')) result = await handleMove(env, DID, body.dx, body.dy, body.token, NOW);
       else throw new Error(`Unexpected fixture API ${url.pathname}`);
       await route.fulfill({ json: result });
@@ -217,7 +218,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     await expect(page.getByText('はじまりの祝福', { exact: true })).toBeVisible();
     await expect(page.getByText('はじまりの祝福', { exact: true })).toHaveCount(0, { timeout: 5_000 });
-    // 建物の入口→初回再会→既存物語→退出。位置は権威ドア前のまま。
+    // 建物の入口→初回再会→4メニュー→詳細/取消/受注/納品。位置は権威ドア前のまま。
     await page.screenshot({ path: `${SHOTS}/guild-door-390.png` });
     await bump('ArrowUp');
     await expect(window).toContainText('来てくれたんだね。');
@@ -226,8 +227,69 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await next();
     await expect(window).toContainText('ここが 村の 冒険者ギルド');
     await next();
+    const choose = (name: string) => page.getByRole('button', { name, exact: true }).click();
+    await expect(page.getByRole('button', { name: '依頼を見る', exact: true })).toBeVisible();
+    await captureMapDialogue(page, 'guild-menu');
+    await choose('依頼を見る');
+    await expect(window).toContainText('道具の手入れに');
+    await next();
+    await expect(window).toContainText('村の道具屋');
+    await next(); await next();
+    await expect(window).toContainText('2こ わたします');
+    await captureMapDialogue(page, 'guild-consumption');
+    await readAll(page);
+    await captureMapDialogue(page, 'guild-accept');
+    await choose('やめておく');
+    expect(state.quest).toBeUndefined();
+    await choose('報告する');
+    await expect(window).toContainText('まだ この依頼を うけていない');
+    await readAll(page);
+    await choose('依頼を見る'); await readAll(page);
+    await choose('受注する');
+    await expect(window).toContainText('うけおった');
+    expect(state.quest?.id).toBe('futaba-tool-care');
+    await readAll(page);
+    await choose('依頼を見る'); await readAll(page);
+    await choose('報告する');
+    await expect(window).toContainText('スライムのしずくを 2こ');
+    await next();
+    await expect(window).toContainText('まだ 0/2 こ');
+    await readAll(page);
+    expect(state.materials['slime-drop'] ?? 0).toBe(0);
+    expect(state.power).toBe(0);
+    await choose('話す');
     await expect(window).toContainText('おにいちゃんが、いなくなっちゃったの。');
     await readAll(page);
+    await choose('やめる');
+    // 隔離PDSで素材入手後を再現する。実環境の戦闘/ドロップの受入ではない。
+    await reenter({ materials: { ...state.materials, 'slime-drop': 2 } });
+    await bump('ArrowUp');
+    await choose('依頼を見る');
+    for (let i = 0; i < 12 && !(await window.innerText()).includes('(2/2)'); i++) await next();
+    await expect(window).toContainText('(2/2)');
+    await captureMapDialogue(page, 'guild-progress');
+    await readAll(page);
+    const powerBefore = state.power;
+    const herbsBefore = state.materials.herb ?? 0;
+    await choose('報告する');
+    await expect(window).toContainText('2こ うけとった');
+    await next();
+    await expect(window).toContainText('やくそう ×2 と あおぞらパワー 5');
+    await captureMapDialogue(page, 'guild-completed');
+    expect(state.materials['slime-drop'] ?? 0).toBe(0);
+    expect(state.materials.herb).toBe(herbsBefore + 2);
+    expect(state.power).toBe(powerBefore + 5);
+    await readAll(page);
+    const completed = structuredClone(state);
+    await choose('報告する');
+    await expect(window).toContainText('達成済み');
+    await readAll(page);
+    await choose('依頼を見る');
+    for (let i = 0; i < 12 && !(await window.innerText()).includes('達成済み'); i++) await next();
+    await expect(window).toContainText('達成済み');
+    expect(state).toEqual(completed);
+    await readAll(page);
+    await choose('やめる');
     await page.keyboard.down('ArrowUp');
     await page.keyboard.down('ArrowUp');
     await page.keyboard.up('ArrowUp');
@@ -243,7 +305,14 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(page.locator('[data-world-y]')).toHaveAttribute('data-world-y', String(bluesky.y + 1));
     await bump('ArrowUp');
     await expect(window).toContainText('おかえり。');
-    await readAll(page);
+    await choose('やめる');
+    // shared-data override: 新依頼を削除した管理レコードを同梱で復活させない。
+    records['app.aozoraquest.world.quests'] = { quests: quests.filter(q => q.id !== 'futaba-tool-care') };
+    await reenter({ x: bluesky.x, y: bluesky.y + 1 });
+    await bump('ArrowUp'); await choose('依頼を見る');
+    await expect(window).toContainText('いま 紹介できる 依頼は ない');
+    await readAll(page); await choose('やめる');
+    records['app.aozoraquest.world.quests'] = { quests };
     // ③ むらおさの最初の依頼は七羽の鳥の伝承から始まる。
     await reenter({ x: elder.x, y: elder.y + 1 });
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0); // 既読なので①は出ない
@@ -262,7 +331,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
       questsDone: ['futaba-slimes', 'futaba-herbs', 'futaba-wings'], flags: ['futaba_slimes_done', 'futaba_herbs_done', 'futaba_wings_done'] });
     await bump('ArrowUp');
     await expect(window).toContainText('おかえり。');
-    await next();
+    await choose('話す');
     await expect(window).toContainText('砂漠の方で、夜になると赤い光が見えるんだって。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/04-departure-hint.png` });

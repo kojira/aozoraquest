@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MONSTERS, setGameQuests, setNpcs, type GameQuestDef } from '@aozoraquest/core';
 import {
   activeQuest,
+  guildQuestDetailLines,
   questAcceptChoices,
   questAfterBattle,
   questBusyLines,
@@ -77,4 +78,14 @@ describe('依頼のセリフ', () => {
     expect(onYes).toHaveBeenCalledWith('q1');
     expect(questAcceptChoices(undefined, onYes)).toBeUndefined();
   });
+});
+
+
+it('ギルド詳細は共有データの条件/報酬を使い、受注前に納品消費を明示する', () => {
+  const q = { ...Q2, reward: { itemId: 'herb', count: 7, power: 11 } };
+  const lines = guildQuestDetailLines(q).join('\n');
+  expect(lines).toContain('くすり あつめ');
+  expect(lines).toContain('やくそう ×7 と あおぞらパワー 11');
+  expect(lines).toContain('報告が 成功すると やくそうを 2 こ わたします');
+  expect(lines).toContain('いまの 所持品も つかえます');
 });

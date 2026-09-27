@@ -320,7 +320,52 @@ describe('ふたばの村: 受注から報告・制作・次の依頼へ', () =>
     await handleQuestComplete(env, DID, 'futaba-wings', NOW);
     expect(stored(m.store).materials['bat-wing'] ?? 0).toBe(0);
     expect(stored(m.store).flags).toContain('futaba_wings_done');
-    expect(stored(m.store).questsDone).toEqual(starterTownQuests().map((q) => q.id));
+    expect(stored(m.store).questsDone).toEqual(['futaba-slimes', 'futaba-herbs', 'futaba-wings']);
     expect(stored(m.store).quest).toBeUndefined();
+  });
+});
+
+
+describe('ギルド素材納品 (#707): 既存在庫と一度だけの権威報酬', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = originalFetch; setScenario(null); setGameQuests(null); setNpcs(null); });
+
+  it('不足・未受注では消費せず、成功時のみ消費2/やくそう2/power5、並行/再送は一度だけ', async () => {
+    setNpcs(starterTownNpcs()); setGameQuests(starterTownQuests());
+    const m = statefulPds(stateAt({ materials: { 'slime-drop': 1, herb: 4 } }));
+    globalThis.fetch = m.fn;
+    const env = await makeEnv();
+    const id = 'futaba-tool-care';
+    await expect(handleQuestComplete(env, DID, id, NOW)).rejects.toMatchObject({ code: 'not_accepted' });
+    await handleQuestAccept(env, DID, id, NOW);
+    const before = stored(m.store);
+    await expect(handleQuestComplete(env, DID, id, NOW)).rejects.toMatchObject({ code: 'not_ready' });
+    expect(stored(m.store)).toEqual(before);
+    m.store.set(rkeyForDid(DID), { value: { ...before, materials: { 'slime-drop': 3, herb: 4 } }, cid: 'gathered' });
+    const results = await Promise.allSettled([handleQuestComplete(env, DID, id, NOW), handleQuestComplete(env, DID, id, NOW)]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(stored(m.store).materials).toEqual({ 'slime-drop': 1, herb: 6 });
+    expect(stored(m.store).power).toBe(15);
+    const done = stored(m.store);
+    await expect(handleQuestComplete(env, DID, id, NOW)).rejects.toMatchObject({ code: 'already_done' });
+    await expect(handleQuestAccept(env, DID, id, NOW)).rejects.toMatchObject({ code: 'already_done' });
+    expect(stored(m.store)).toEqual(done);
+  });
+
+  it('既存討伐の保存進捗を保持し、直接報告後は受注前の在庫をそのまま納品できる', async () => {
+    setNpcs(starterTownNpcs()); setGameQuests(starterTownQuests()); setScenario(starterTownScenario());
+    const m = statefulPds(stateAt({ quest: { id: 'futaba-slimes', progress: 3 }, materials: { 'slime-drop': 2 } }));
+    globalThis.fetch = m.fn;
+    const env = await makeEnv();
+    const before = stored(m.store);
+    await expect(handleQuestAccept(env, DID, 'futaba-tool-care', NOW)).rejects.toMatchObject({ code: 'quest_busy' });
+    expect(stored(m.store)).toEqual(before);
+    await handleQuestComplete(env, DID, 'futaba-slimes', NOW);
+    expect(stored(m.store).flags).toContain('futaba_slimes_done');
+    await handleQuestAccept(env, DID, 'futaba-tool-care', NOW);
+    await handleQuestComplete(env, DID, 'futaba-tool-care', NOW);
+    expect(stored(m.store).questsDone).toEqual(['futaba-slimes', 'futaba-tool-care']);
+    expect(stored(m.store).materials).toEqual({ 'slime-drop': 1, herb: 2 });
+    expect(stored(m.store).power).toBe(19);
   });
 });

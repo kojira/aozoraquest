@@ -66,9 +66,9 @@ export function AdminQuests() {
     }
     const next = [...list.filter((q) => !additions.some((a) => a.id === q.id)), ...additions];
     try { validateGameQuests(next); } catch (e) { setNote(String(e)); return; }
-    if (!window.confirm('同じ ID の依頼を置き換え、ふたばの村の3依頼を入れる？ 保存するまでは反映されません。')) return;
+    if (!window.confirm('同じ ID の依頼を置き換え、ふたばの村の4依頼を入れる？ 保存するまでは反映されません。')) return;
     setList(next); setSel(additions[0]!.id); setDirty(true);
-    setNote('3依頼を入れた。保存してから、シナリオ画面で「ふたばの村のシナリオを入れる」。');
+    setNote('4依頼を入れた。保存してから、シナリオ画面で「ふたばの村のシナリオを入れる」。');
   };
 
   const npcs = useMemo(() => allNpcs(), [loaded]);

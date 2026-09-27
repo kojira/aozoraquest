@@ -91,6 +91,20 @@ export function starterTownQuests(): GameQuestDef[] {
       "パワーと しずくは あなたの そうびづくりに つかってね。",
       "これで 旅の力は じゅうぶん。いどのそばのギルドの Blueskyちゃんが なにか みたって いってたよ。"
     ]
+  },
+  {
+    id: 'futaba-tool-care',
+    title: '道具の手入れに',
+    npcId: 'futaba-bluesky',
+    objective: { kind: 'collect', itemId: 'slime-drop', count: 2 },
+    reward: { itemId: 'herb', count: 2, power: 5 },
+    intro: [
+      '依頼主は 村の道具屋。道具の 手入れに、スライムのしずくを 2こ とどけてほしいんだって。',
+      'そろったら ギルドで 報告してね。いま もっているものも わたせるよ。',
+      '報告すると スライムのしずくを 2こ わたします。報酬は やくそう 2こ と あおぞらパワー 5。一人一度の 依頼です。',
+    ],
+    progress: ['スライムのしずくを 2こ そろえて、ギルドで 報告してね。'],
+    done: ['スライムのしずくを 2こ うけとったよ。村の道具屋へ とどけておくね。ありがとう！'],
   }
 ];
 }
