@@ -115,7 +115,7 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     expect(await position(page)).toBe(before);
     await tapCell(page, 11, 10); expect(await position(page)).toContain('(11, 10)'); expect(puts).toEqual([]);
     await expect.poll(async () => page.evaluate(() => (window as unknown as { npcFixture: { savedNpcs: () => NpcDef[] } }).npcFixture.savedNpcs()[0]!.x)).toBe(10);
-    await page.getByRole('button', { name: 'Blueskyちゃん', exact: false }).click();
+    await page.getByRole('group', { name: '標準の絵' }).getByRole('button', { name: 'Blueskyちゃん', exact: false }).click();
     await expect(page.locator('.npc-presets button[aria-pressed=true]')).toContainText('未保存');
     await map.scrollIntoViewIfNeeded(); await map.screenshot({ path: 'test-results/npc-field-placement.png' });
     failSave = true;
@@ -219,8 +219,10 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     expect(saved.npcs.filter((n) => n.id !== 'one')).toEqual(initial.filter((n) => n.id !== 'one'));
     await page.goto(`${URL}?game`); await expect(page.getByLabel('ワールドマップ')).toBeVisible();
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="old-man"]')).toBeVisible();
-    await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]')).toBeVisible();
-    for (let i = 0; i < 8 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-backdrop').click();
+    // 保存した 'one' と、同梱の村人 Blueskyちゃん (#692) の 2 人。
+    await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]')).toHaveCount(2);
+    await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]').first()).toBeVisible();
+    for (let i = 0; i < 12 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-backdrop').click();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     await expect.poll(async () => page.getByLabel('ワールドマップ').locator('.npc-frame-1').first().evaluate((el) => getComputedStyle(el).visibility), { intervals: [50] }).toBe('visible');
     await page.getByLabel('ワールドマップ').screenshot({ path: 'test-results/npc-game-preset.png' });

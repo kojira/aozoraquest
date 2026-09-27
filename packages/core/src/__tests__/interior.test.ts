@@ -437,9 +437,9 @@ describe('同梱の村人 (#656)', () => {
   const villagers = starterTownNpcs();
   afterEach(() => { setInteriors(null, null); setNpcs(null); });
 
-  it('4〜5 人いて、全員ふたばの村に立ち、id が一意', () => {
+  it('4〜6 人いて、全員ふたばの村に立ち、id が一意', () => {
     expect(villagers.length).toBeGreaterThanOrEqual(4);
-    expect(villagers.length).toBeLessThanOrEqual(5);
+    expect(villagers.length).toBeLessThanOrEqual(6);
     expect(new Set(villagers.map((n) => n.id)).size).toBe(villagers.length);
     for (const n of villagers) expect(n.mapId, n.id).toBe(STARTER_TOWN_ID);
   });
