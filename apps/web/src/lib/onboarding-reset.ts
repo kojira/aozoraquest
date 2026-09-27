@@ -22,6 +22,8 @@ import { COL } from './collections';
 import { clearCraftLogQueue } from './craft-log-queue';
 import { resetWorldPower } from './points';
 import { serverReset } from './world-server';
+import { refreshJobXp } from './use-job-xp';
+import { refreshSelfDiagnosis } from './use-self-diagnosis';
 
 /** 歓迎付与するあおぞらパワー (演出とともに加算)。 */
 export const WELCOME_POWER = 20;
@@ -116,6 +118,9 @@ async function zeroAnalysisXp(agent: Agent, did: string): Promise<void> {
  * 3. 分析 XP を 0 に (Lv1)。
  * 4. power を絶対値で書き直す: world 消費/獲得を 0、歓迎 +20 を salePowerEarned に (冪等)。
  * 5. サーバー権威 gameState + 戦闘ガードを削除 → 次のワールド入場で初期状態を生成 (最後に実行)。
+ * 6. 消したサーバー状態を写したクライアントキャッシュ (jobXp / analysis) を捨てて読み直す (#696)。
+ *    残すと HUD が旧 Lv の最大 HP/MP を出し、サーバーの Lv で始まる戦闘と食い違う。
+ *    refresh は購読中の画面にも伝わり、失敗は内部で握る (リセット自体は成功している)。
  */
 export async function resetOnboarding(agent: Agent, did: string): Promise<void> {
   // 各ステップを label 付きで実行 — どのステップで失敗したかをエラーに載せて UI で分かるようにする
@@ -137,4 +142,5 @@ export async function resetOnboarding(agent: Agent, did: string): Promise<void> 
   await step('analysisXp', () => zeroAnalysisXp(agent, did));
   await step('power', () => resetWorldPower(agent, did, WELCOME_POWER));
   await step('serverReset', () => serverReset(agent));
+  await Promise.all([refreshJobXp(agent, did), refreshSelfDiagnosis(agent, did)]);
 }

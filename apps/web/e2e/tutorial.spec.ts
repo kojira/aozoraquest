@@ -116,7 +116,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('http://127.0.0.1:4175/e2e/fixtures/tutorial.html');
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
-    await readAll(page); // 5-window onboarding (#692)
+    await readAll(page); // 6-window onboarding (#692, #696)
     await page.keyboard.press('ArrowUp');
     await readAll(page);
     await page.getByRole('button', { name: 'いいえ', exact: true }).click();

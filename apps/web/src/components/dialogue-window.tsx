@@ -66,7 +66,8 @@ export function DialogueWindow({
   /** 話者名プレートに添えるアイコン (例: ブルスコンは SpiritIcon — 他画面の
    *  吹き出しと同じ顔で認識できるように)。NPC ごとの出し分けは呼び出し側の責務 */
   plateIcon?: React.ReactNode;
-  /** Supplied only by an NPC conversation, never inferred from a speaker name. */
+  /** Supplied only by an NPC conversation, never inferred from a speaker name.
+   *  話者のある行だけに出す (地の文の行では出さない。#696 導入の「倒れていた」語り)。 */
   portrait?: { src: string; name: string } | undefined;
   /** 全行を送り終えた (選択肢があればどれかを選んだ) ときに一度だけ呼ぶ */
   onDone: () => void;
@@ -79,7 +80,6 @@ export function DialogueWindow({
    *  「マップ上」へ会話窓を出す。 */
   anchor?: 'viewport' | 'map';
 }) {
-  const onMap = anchor === 'map' && !portrait;
   const [st, setSt] = useState(startDialogue);
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -142,6 +142,8 @@ export function DialogueWindow({
   // Keep focus on the dialogue surface: held Enter must not select "はい".
   if (!line || st.done) return null;
   const complete = lineComplete(lines, st);
+  const shownPortrait = line.speaker ? portrait : undefined;
+  const onMap = anchor === 'map' && !shownPortrait;
 
   return (
     <>
@@ -179,11 +181,11 @@ export function DialogueWindow({
           transform: 'translateX(-50%)',
           width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
           maxWidth: 520,
-          ...(portrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
+          ...(shownPortrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
           zIndex: DIALOGUE_WINDOW_Z,
         }}
       >
-        {portrait && <NpcPortrait src={portrait.src} name={portrait.name} />}
+        {shownPortrait && <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} />}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"

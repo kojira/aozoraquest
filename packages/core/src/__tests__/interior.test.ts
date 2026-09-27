@@ -452,6 +452,13 @@ describe('同梱の村人 (#656)', () => {
     }
   });
 
+  it('村人ごとに標準の絵が決まっている (#696)', () => {
+    expect(Object.fromEntries(villagers.map((n) => [n.id, n.spritePreset]))).toEqual({
+      'futaba-elder': 'old-man', 'futaba-innkeeper-wife': 'middle-aged-woman', 'futaba-shopfront': 'young-woman',
+      'futaba-kid': 'boy', 'futaba-oldman': 'old-man', 'futaba-bluesky': 'bluesky',
+    });
+  });
+
   it('そのまま setNpcs に通る (壊れた 1 人で全体が落ちない)', () => {
     expect(() => setNpcs(villagers)).not.toThrow();
     expect(allNpcs().length).toBe(villagers.length);
