@@ -168,6 +168,17 @@ export const WORLD_COLLECTION = 'app.aozoraquest.world';
  * ので、読めない/未診断でも fail-open で emptyState に倒す (書込 fail-closed とは別物)。**state が null の
  * ときだけ**呼ばれる (readModifyWrite) = 通常経路にコストを乗せない。
  */
+/**
+ * 新規・リセット後の開始位置 (#703)。はじまりの街の**一つ下** = 村から出たときの着地点
+ * (`starterTownInterior` の exitTo) と同じマス。街タイルの真上に立たせると「村の前に
+ * たおれていた」導入と食い違う。地図の編集で歩けなくなっていたら街そのものに倒す。
+ */
+export function initialPosition(): { x: number; y: number } {
+  const spawn = worldOverlay().spawn;
+  const below = { x: spawn.x, y: wrap(spawn.y + 1) };
+  return isWalkableAt(below.x, below.y) ? below : { x: spawn.x, y: spawn.y };
+}
+
 export async function migrateInitState(userDid: string, nowIso: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<GameState> {
   const base = emptyState(userDid, nowIso);
   // 冒険はじめの持ち物: やくそう 1 (最初の回復) + そらのはね 1 (困ったら街へ戻れる)。
@@ -179,14 +190,14 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
       getRecord<MigratableAnalysisRecord>(pds, userDid, `${ns}.analysis`, 'self').catch(() => null),
       getRecord<MigratableWorldRecord>(pds, userDid, `${ns}.world`, 'self').catch(() => null),
     ]);
-    // 位置: 旧クライアント world-record から引き継ぐ (ワープ防止)。無ければ spawn。歩ける所に限る。
+    // 位置: 旧クライアント world-record から引き継ぐ (ワープ防止)。無ければ開始位置。歩ける所に限る。
     const w = worldRec?.value;
-    const spawn = worldOverlay().spawn;
-    const px = typeof w?.x === 'number' && Number.isFinite(w.x) ? wrap(w.x) : spawn.x;
-    const py = typeof w?.y === 'number' && Number.isFinite(w.y) ? wrap(w.y) : spawn.y;
+    const start = initialPosition();
+    const px = typeof w?.x === 'number' && Number.isFinite(w.x) ? wrap(w.x) : start.x;
+    const py = typeof w?.y === 'number' && Number.isFinite(w.y) ? wrap(w.y) : start.y;
     const ok = isWalkableAt(px, py);
-    base.x = ok ? px : spawn.x;
-    base.y = ok ? py : spawn.y;
+    base.x = ok ? px : start.x;
+    base.y = ok ? py : start.y;
     const p = powerRec?.value;
     if (p) {
       const bal = Math.max(0, finiteNum(p.viaPosts) - finiteNum(p.userMessages) - finiteNum(p.cardDraws)

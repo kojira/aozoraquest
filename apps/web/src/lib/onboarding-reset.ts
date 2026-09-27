@@ -31,7 +31,7 @@ export const WELCOME_POWER = 20;
 /** 通常オンボードのイントロ (ONBOARDING_LINES overlay) を「見終えた」フラグの localStorage キー。
  *  これが '1' だとイントロは再生されない。リセット時に消すと新規と同じ導入から始まる。 */
 export const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
-/** リセットで +20 を付与した直後だけ、再入場後のブルスコン手渡しの最後に祝福演出を出すためのマーク
+/** リセットで +20 を付与した直後だけ、再入場後の Blueskyちゃんの手渡しの最後に祝福演出を出すためのマーク
  *  (sessionStorage はリロードをまたいで残り、タブを閉じれば消える。使い捨て)。 */
 export const WELCOME_BLESSING_PENDING_KEY = 'aq-welcome-blessing-pending';
 

@@ -5,7 +5,7 @@
  *   - レコードが無ければ触らない
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import type { Agent } from '@atproto/api';
+import { jsonToLex, type Agent } from '@atproto/api';
 import { allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
 
@@ -45,6 +45,16 @@ describe('loadAuthoredWorld: 空配列のレコードを適用する (#660)', ()
   it('NPC: レコードが無ければメモリの NPC を保持する', async () => {
     await loadAuthoredWorld(fakeAgent({}));
     expect(allNpcs().map((n) => n.id)).toEqual(['elder']);
+  });
+
+  it('NPC: 実 Agent が BlobRef に復元した会話イラストも適用する (#703)', async () => {
+    // Agent の getRecord は jsonToLex を通すので blob は BlobRef になる (素の JSON ではない)。
+    const portraitImage = { blob: { $type: 'blob' as const, ref: { $link: 'bafkreiggoeve4m273n6umssqskhmof5k3ttaob3qlo46b7h2qk7h4x5dka' }, mimeType: 'image/webp' as const, size: 82630 }, width: 512, height: 768 };
+    const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage } : n);
+    const record = jsonToLex({ npcs }) as { npcs: Array<{ portraitImage?: { blob: object } }> };
+    expect(record.npcs.find((n) => n.portraitImage)?.portraitImage?.blob.constructor.name).toBe('BlobRef');
+    await loadAuthoredWorld(fakeAgent({ npcs: record }));
+    expect(allNpcs().find((n) => n.id === 'futaba-bluesky')?.portraitImage).toEqual(portraitImage);
   });
 
   it('店: {shops: []} で全上書きが外れる', async () => {

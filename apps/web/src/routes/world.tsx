@@ -69,7 +69,6 @@ import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcImageUrl } from '@/lib/npc-image';
-import { SpiritIcon } from '@/components/spirit-icon';
 import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
@@ -392,7 +391,11 @@ export function World() {
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
   // 導入の Blueskyちゃん (#696)。NPC は入場時に loadAuthoredWorld で読んでからオンボーディングを出す。
-  const onboardingBluesky = onboarding ? allNpcs().find((n) => n.id === ONBOARDING_BLUESKY_NPC_ID) : undefined;
+  // 続く手渡し (showStarter) も Blueskyちゃんが話すので、同じ会話イラストを使う (#703)。
+  const onboardingBluesky = onboarding || showStarter ? allNpcs().find((n) => n.id === ONBOARDING_BLUESKY_NPC_ID) : undefined;
+  const onboardingPortrait = onboardingBluesky?.portraitImage
+    ? { src: npcImageUrl(onboardingBluesky.id, 'portrait', onboardingBluesky.portraitImage), name: onboardingBluesky.name }
+    : undefined;
 
   // 初期ロード。位置の読み込み失敗はエラー表示 + リトライ (spawn に倒すと
   // 「テレポート → 上書き保存」のデータ損失になるため倒さない)。
@@ -464,7 +467,7 @@ export function World() {
         };
         setWs(initialWs);
         if (grantStarter) {
-          // 専用の DQ ウィンドウでブルスコンの手渡しを見せる (notice だとオンボーディングに
+          // 専用の DQ ウィンドウで Blueskyちゃんの手渡しを見せる (notice だとオンボーディングに
           // 覆われ、relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)。
           // リセット (実 +20 付与) 経由かをマークで判定 → 祝福セリフ/演出の有無を実付与に一致させる。
           // マークは**ここで読み捨てる**。set 側 (doReset) との間にリロードを挟んでも、入場時に
@@ -1699,7 +1702,7 @@ export function World() {
               lines={ONBOARDING_LINES}
               // 未保存なら出さない。読込失敗は NpcPortrait が画像なしにする (会話は続く)。
               // 地の文 (話者なし) の窓には出ない — 駆け寄ってから顔が出る。
-              portrait={onboardingBluesky?.portraitImage ? { src: npcImageUrl(onboardingBluesky.id, 'portrait', onboardingBluesky.portraitImage), name: onboardingBluesky.name } : undefined}
+              portrait={onboardingPortrait}
               onDone={() => {
                 setOnboarding(false);
                 onboardingRef.current = false;
@@ -1708,20 +1711,18 @@ export function World() {
             />
           )}
           {!battle && showStarter && !onboarding && (
-            // ブルスコンが やくそう と そらのはね を手渡す。リセット (実 +20 付与) 経由のときだけ
-            // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す (以前は地図でいきなり出てフローが
-            // 分からなかった)。starterBlessed は入場時にマークから確定済み。
-            // 声はブルスコンのトーンに合わせ ひらがな主体で統一 (UX レビュー ★)。
+            // 導入に続けて Blueskyちゃんが やくそう と そらのはね を手渡す (#703。以前はブルスコンが
+            // 話していて、導入の話者と混ざって混乱した)。リセット (実 +20 付与) 経由のときだけ
+            // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す。starterBlessed は入場時にマークから確定済み。
             <DialogueWindow
               anchor="map"
               lines={[
-                { speaker: 'ブルスコン', text: 'たびの はじめに、やくそう と そらのはね を もたせよう。' },
-                { speaker: 'ブルスコン', text: 'やくそうは きずを いやす。そらのはねは いったことの ある街へ もどれる。こまったら どうぐ から つかうといい。' },
-                starterBlessed
-                  ? { speaker: 'ブルスコン', text: 'それと、はじまりの しゅくふくを。あおぞらパワーを 20 さずけるよ。よい たびを。' }
-                  : { speaker: 'ブルスコン', text: 'よい たびを。' },
+                { speaker: 'Blueskyちゃん', text: 'これ、もっていって。やくそう と そらのはね だよ。' },
+                { speaker: 'Blueskyちゃん', text: 'やくそうは きずを なおせるよ。そらのはねは いったことの ある街へ もどれるの。こまったら どうぐ から つかってね。' },
+                ...(starterBlessed ? [{ speaker: 'Blueskyちゃん', text: 'それと、あおぞらパワーも 20 あげる。いっしょに がんばろうね。' }] : []),
+                { speaker: 'Blueskyちゃん', text: 'いこう！' },
               ]}
-              plateIcon={<SpiritIcon size={20} />}
+              portrait={onboardingPortrait}
               onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
             />
           )}
