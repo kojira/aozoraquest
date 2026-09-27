@@ -122,3 +122,4 @@ Issue #707。正本。2026-09-28、ユーザー「うん。issue化して実装�
 - 新提案 `~/.pi/guild-d001-evidence/quests-quest-proposed.json` は前回quests提案（既存3依頼、場所句修正のみ）を保持して `futaba-tool-care` だけ追加、core validator成功。前回interiors/npcs提案は無変更。旧beforeとswapCidは保持、**未送信かつstale**。承認後はGETを取り直し、他変更を保持して差分再生成/比較/CASする。共有dev/prodであり、データ/配備承認は別ゲート。
 - 独立reviewと受注方針回答、データ/配備gate、live受入が残る。既存worktreeとuntracked test-resultsは保持。merge/deploy/PDS書込なし。
 - 初回継続CI（19c3dbc）は既存core tutorialテストが全同梱依頼にシナリオイベントを期待して失敗。新しい独立素材依頼を既存3依頼連鎖から分離してassertし、新依頼でイベントが発火しないことを追加確認。当該3 tests成功。productionシナリオは変更なし。失敗ログ `quest-ci-failed.log`、修正成功 `quest-tutorial-green.log` を保持。
+- 次のCI（4c63cbe）はunit/typecheck/buildを通過、E2E71成功/1失敗。admin-starter-villageに残っていた旧「3依頼」表示assertionを「4依頼」へ修正した（`quest-ci-second-failed.log`）。最後の変更はこのassertionと検証記録のみ、最新CIはpush後に確認する。
