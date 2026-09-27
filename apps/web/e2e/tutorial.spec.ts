@@ -35,7 +35,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await vite?.close(); });
 
 async function readAll(page: Page) {
-  for (let i = 0; i < 8 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
+  // 導入 + ガイド8行。reduced-motionのeffect前に押した場合も全文表示/送りを許容。
+  for (let i = 0; i < 16 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
     if (await page.getByRole('button', { name: 'はい', exact: true }).count()) return;
     await page.locator('.aq-dialogue-backdrop').click();
   }
@@ -116,7 +117,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('http://127.0.0.1:4175/e2e/fixtures/tutorial.html');
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
-    await readAll(page); // 6-window onboarding (#692, #696)
+    await readAll(page); // 導入6行 + 会話後の操作ガイド2行 (#705)
     await page.keyboard.press('ArrowUp');
     await readAll(page);
     await page.getByRole('button', { name: 'いいえ', exact: true }).click();
