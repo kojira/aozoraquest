@@ -137,15 +137,18 @@ interface Vitals {
  *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
 const MENU_HINT_DONE_KEY = 'aq-world-menu-hint-done';
 
-/** 初回オンボーディング (#692, #696)。地の文 (話者なし) で「村の前に倒れていた放浪者」から始め、
- *  駆け寄った Blueskyちゃんが操作と最初の話し相手だけ伝える。旅の知識は村人から少しずつ聞く。 */
+/** 初回オンボーディング。心配→安心→自己紹介→村の案内。操作説明は会話の後に分ける。 */
 const ONBOARDING_LINES: readonly DialogueLine[] = [
   { text: '……きがつくと、しらない 村の まえに たおれていた。' },
   { text: 'そらは はいいろ。ここは どこだろう……' },
   { speaker: 'Blueskyちゃん', text: 'だいじょうぶ？ 村の まえで たおれてたんだよ。' },
-  { speaker: 'Blueskyちゃん', text: 'マップを おしたまま ゆびを うごかすと あるけるよ。' },
-  { speaker: 'Blueskyちゃん', text: 'じぶんを ちょんと おすと コマンドが ひらくの。村の ひとに ぶつかると おはなし できるよ。' },
-  { speaker: 'Blueskyちゃん', text: '村に はいって、いどのそばの むらおさに あって。わたしも あとで いくね。' },
+  { speaker: 'Blueskyちゃん', text: 'あ、目が さめたんだね。よかった……！' },
+  { speaker: 'Blueskyちゃん', text: 'わたしは Blueskyちゃん。この村に すんでるの。' },
+  { speaker: 'Blueskyちゃん', text: 'まだ ふらふら するよね。村で すこし やすもう。いどのそばの むらおさなら、力に なってくれるよ。' },
+];
+const OPENING_GUIDE_LINES: readonly DialogueLine[] = [
+  { text: '【操作ガイド】マップを おしたまま 指を うごかすと 移動。上に ある村へ すすもう。' },
+  { text: '【操作ガイド】じぶんを タップすると コマンド。村の人に 向かって 歩くと 話せます。' },
 ];
 /** 導入で話す Blueskyちゃんの NPC id。会話イラストは管理データのこの NPC の portraitImage を使う (#696)。 */
 const ONBOARDING_BLUESKY_NPC_ID = 'futaba-bluesky';
@@ -1604,7 +1607,7 @@ export function World() {
               zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
             />
           )}
-          {menuHint && !onboarding && !menuOpen && (
+          {menuHint && !onboarding && !showStarter && !menuOpen && (
             <div
               aria-hidden
               style={{
@@ -1699,7 +1702,7 @@ export function World() {
           {!battle && onboarding && (
             <DialogueWindow
               anchor="map"
-              lines={ONBOARDING_LINES}
+              lines={showStarter ? ONBOARDING_LINES : [...ONBOARDING_LINES, ...OPENING_GUIDE_LINES]}
               // 未保存なら出さない。読込失敗は NpcPortrait が画像なしにする (会話は続く)。
               // 地の文 (話者なし) の窓には出ない — 駆け寄ってから顔が出る。
               portrait={onboardingPortrait}
@@ -1713,14 +1716,17 @@ export function World() {
           {!battle && showStarter && !onboarding && (
             // 導入に続けて Blueskyちゃんが やくそう と そらのはね を手渡す (#703。以前はブルスコンが
             // 話していて、導入の話者と混ざって混乱した)。リセット (実 +20 付与) 経由のときだけ
-            // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す。starterBlessed は入場時にマークから確定済み。
+            // 話者なしの祝福通知を足す。starterBlessed は入場時にマークから確定済み。
             <DialogueWindow
               anchor="map"
               lines={[
-                { speaker: 'Blueskyちゃん', text: 'これ、もっていって。やくそう と そらのはね だよ。' },
-                { speaker: 'Blueskyちゃん', text: 'やくそうは きずを なおせるよ。そらのはねは いったことの ある街へ もどれるの。こまったら どうぐ から つかってね。' },
-                ...(starterBlessed ? [{ speaker: 'Blueskyちゃん', text: 'それと、あおぞらパワーも 20 あげる。いっしょに がんばろうね。' }] : []),
-                { speaker: 'Blueskyちゃん', text: 'いこう！' },
+                { speaker: 'Blueskyちゃん', text: 'むりは しないでね。これ、もっていて。やくそう と そらのはね だよ。' },
+                { speaker: 'Blueskyちゃん', text: 'やくそうは きずを なおせるよ。つらいときは がまん しないで つかってね。' },
+                { speaker: 'Blueskyちゃん', text: 'そらのはねが あれば、いったことの ある街へ もどれるの。帰り道が しんぱいな ときに つかってね。' },
+                { speaker: 'Blueskyちゃん', text: 'わたしも 村に もどるね。いどのそばで まってるよ。ゆっくり おいで。' },
+                { text: 'やくそう と そらのはねを うけとった！ コマンドの「どうぐ」から つかえます。' },
+                ...(starterBlessed ? [{ text: '【はじまりの祝福】あおぞらパワーが 20 ふえた！' }] : []),
+                ...OPENING_GUIDE_LINES,
               ]}
               portrait={onboardingPortrait}
               onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}

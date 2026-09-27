@@ -143,7 +143,7 @@ export function DialogueWindow({
   if (!line || st.done) return null;
   const complete = lineComplete(lines, st);
   const shownPortrait = line.speaker ? portrait : undefined;
-  const onMap = anchor === 'map' && !shownPortrait;
+  const onMap = anchor === 'map';
 
   return (
     <>
@@ -181,16 +181,21 @@ export function DialogueWindow({
           transform: 'translateX(-50%)',
           width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
           maxWidth: 520,
-          ...(shownPortrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
+          ...(onMap ? {
+            // 立ち絵は台詞/名前を除いたマップ内の残り高さへ縮める。viewport高には依存しない。
+            height: 'calc(100% - 1em)', display: 'flex', flexDirection: 'column' as const,
+            justifyContent: 'flex-end', pointerEvents: 'none' as const,
+          } : shownPortrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
           zIndex: DIALOGUE_WINDOW_Z,
         }}
       >
-        {shownPortrait && <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} />}
+        {shownPortrait && <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap={onMap} />}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"
             style={{
               display: 'inline-flex',
+              ...(onMap ? { flexShrink: 0, alignSelf: 'flex-start', pointerEvents: 'auto' as const } : {}),
               alignItems: 'center',
               gap: '0.35em',
               padding: '0.15em 0.8em',
@@ -211,7 +216,7 @@ export function DialogueWindow({
           // maxHeight/overflowY: 将来の長い NPC セリフでも窓がアバターに被らないよう上限を設ける
           //   (DQ も 1 窓は数行で固定 — レビュー ★★)。marginBottom:0: dq-window 既定の 0.9em を
           //   打ち消し、地図枠の下端 (bottom:0.5em) にぴったり寄せる (レビュー ★)。
-          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', maxHeight: '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7 }}
+          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', maxHeight: onMap ? '55%' : '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7, ...(onMap ? { flexShrink: 0, pointerEvents: 'auto' as const } : {}) }}
         >
           {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
               先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は

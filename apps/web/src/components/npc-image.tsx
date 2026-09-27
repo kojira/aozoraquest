@@ -22,8 +22,12 @@ export function UploadedNpcSprite({ image, src, fallback }: { image: NpcImage; s
     </g>
   </g>;
 }
-export function NpcPortrait({ src, name }: { src: string; name: string }) {
+export function NpcPortrait({ src, name, fitMap = false }: { src: string; name: string; fitMap?: boolean }) {
   const [failed, setFailed] = useState<string | null>(null);
   if (failed === src) return null;
-  return <img src={src} alt={`${name}の会話イラスト`} onError={() => setFailed(src)} style={{ display: 'block', width: 'min(55vw, 240px)', height: 'min(28dvh, 240px)', maxHeight: '100%', objectFit: 'contain', margin: '0 auto', pointerEvents: 'none' }} />;
+  return <img src={src} alt={`${name}の会話イラスト`} onError={() => setFailed(src)} style={{
+    display: 'block', width: 'min(55vw, 240px)', height: 'min(28dvh, 240px)', maxHeight: '100%',
+    objectFit: 'contain', margin: '0 auto', pointerEvents: 'none',
+    ...(fitMap ? { width: '100%', maxWidth: 240, height: 240, minHeight: 0, flex: '0 1 240px' } : {}),
+  }} />;
 }
