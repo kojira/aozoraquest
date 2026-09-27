@@ -20,13 +20,14 @@ import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleS
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from './game-quest';
 import { ensureAuthoredWorld } from './world-authoring';
+import { handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
 import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
 import type { Command } from '@aozoraquest/core';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
-export interface Env extends OAuthRoutesEnv {
+export interface Env extends OAuthRoutesEnv, AdminDataEnv {
   ENVIRONMENT?: string;
   /** カンマ区切り。空 or 未設定なら CORS 全許可 (dev 用)。production では必ず設定する */
   ALLOWED_ORIGINS?: string;
@@ -562,6 +563,11 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // 認可サーバーからのリダイレクト先。ブラウザ遷移なので HTML を直接返す (CORS 不要)。
   if (req.method === 'GET' && url.pathname === '/oauth/callback') {
     return handleOAuthCallback(req, env, { now: nowSec() });
+  }
+  // dev 専用の管理データ API (#695)。無効・鍵違い・対象外は null → 下の not_found と同じ 404。
+  if (url.pathname.startsWith('/api/admin/data/')) {
+    const res = await handleAdminData(req, env, nowSec());
+    if (res) return res;
   }
 
   return cors(json({ error: 'not_found', path: url.pathname }, 404), allowedOrigin);

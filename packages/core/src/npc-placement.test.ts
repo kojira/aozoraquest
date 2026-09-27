@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_PARTS, WORLD_MAP_ID, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { BASE_PARTS, WORLD_MAP_ID, WORLD_SIZE, type NpcDef } from './index.js';
 import { npcStructuralPlacementError, placementCell, validateNpcPlacement, type NpcPlacementWorld } from './npc-placement';
 function data(): NpcPlacementWorld {
   return { tiles: new Uint8Array(WORLD_SIZE ** 2), parts: [...BASE_PARTS, { terrain: 'plains', name: '立入禁止', walkable: false }],
