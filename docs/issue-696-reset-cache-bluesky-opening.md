@@ -8,7 +8,7 @@
   `use-job-xp` / `use-self-diagnosis` のモジュールキャッシュは同じ DID のまま残る。HUD は古い jobXp (例 Lv14) で最大 HP/MP を出し、
   戦闘はサーバー (Lv2) で始まるので食い違う。
 - 修正: `resetOnboarding` の最後 (サーバーリセット成功後) で `refreshJobXp()` と `refreshSelfDiagnosis()` を呼び、
-  キャッシュを捨ててサーバー/PDS から読み直す (購読中の画面にも伝わる。読み直しの失敗は各 hook 内で握り、次の読み込みで取り直す)。
+  キャッシュを捨ててサーバー/PDS から読み直す (購読中の画面にも伝わる。読み直しの失敗は各 hook 内で握る。jobXp は次の読み込みで取り直す。診断はページを読み直すと取り直す)。
   途中のステップで失敗した場合はキャッシュを残す (サーバー状態も旧のまま)。
 - 固定するテスト (`onboarding-reset-caches.test.ts`): Lv の高い jobXp をキャッシュした状態でリセット → キャッシュが
   リセット後のサーバー state を読み直し、そこから出す HUD の Lv/最大HP/MP が同じ state から作る戦闘 (`startBattle`) の Lv/HP/MP と一致する。
