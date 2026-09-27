@@ -20,7 +20,7 @@ import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleS
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from './game-quest';
 import { ensureAuthoredWorld } from './world-authoring';
-import { handleAdminData, type AdminDataEnv } from './admin-data';
+import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
 import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
@@ -567,6 +567,11 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // dev 専用の管理データ API (#695)。無効・鍵違い・対象外は null → 下の not_found と同じ 404。
   if (url.pathname.startsWith('/api/admin/data/')) {
     const res = await handleAdminData(req, env, nowSec());
+    if (res) return res;
+  }
+  // dev 専用の NPC 画像 blob 登録 (#699)。無効・鍵違い・対象外メソッドは同じく 404。
+  if (url.pathname === '/api/admin/blob') {
+    const res = await handleAdminBlob(req, env, nowSec());
     if (res) return res;
   }
 

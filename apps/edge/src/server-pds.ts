@@ -26,8 +26,9 @@ export class ServerWriteError extends Error {
   }
 }
 
-/** サーバー PDS への認証付き XRPC (POST/JSON)。DPoP + access token を付け、nonce を KV に反映。 */
-async function authedXrpc<T>(env: ServerPdsEnv, now: number, nsid: string, body: object): Promise<T> {
+/** サーバー PDS への認証付き XRPC (POST)。DPoP + access token を付け、nonce を KV に反映。
+ *  既定は JSON body (repo をサーバー DID に固定)。`raw` を渡すとそのバイト列をそのまま送る (uploadBlob)。 */
+async function authedXrpc<T>(env: ServerPdsEnv, now: number, nsid: string, body: object, raw?: { bytes: Uint8Array; contentType: string }): Promise<T> {
   if (!env.OAUTH_TOKENS) throw new ServerWriteError('KV 未 binding', 'no-kv');
   const kv = env.OAUTH_TOKENS;
   const tokens = await readServerTokens(kv);
@@ -47,7 +48,9 @@ async function authedXrpc<T>(env: ServerPdsEnv, now: number, nsid: string, body:
   // repo を含めても上書きできないようにする (認証境界の固定。レビュー ★)。
   const res = await dpopFetch(
     `${tokens.pdsUrl}/xrpc/${nsid}`,
-    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, repo: tokens.did }) },
+    raw
+      ? { method: 'POST', headers: { 'content-type': raw.contentType }, body: raw.bytes.slice().buffer }
+      : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, repo: tokens.did }) },
     { jwk: cfg.dpopJwk, accessToken: tokens.accessToken, now, nonce, onNonce: (n) => { latest = n; } },
   );
   if (latest && latest !== nonce) await writePdsNonce(kv, latest); // 次回のため保存 (別キー)
@@ -85,6 +88,11 @@ export async function serverPutRecord(
   const body: Record<string, unknown> = { collection, rkey, record };
   if (swapRecord !== undefined) body.swapRecord = swapRecord;
   return authedXrpc<{ uri: string; cid: string }>(env, now, 'com.atproto.repo.putRecord', body);
+}
+
+/** サーバー repo に uploadBlob (認証付き)。返り値は PDS の blob ref ($type/ref/mimeType/size)。 */
+export async function serverUploadBlob(env: ServerPdsEnv, now: number, bytes: Uint8Array, contentType: string): Promise<{ blob: unknown }> {
+  return authedXrpc<{ blob: unknown }>(env, now, 'com.atproto.repo.uploadBlob', {}, { bytes, contentType });
 }
 
 /** サーバー repo の deleteRecord (認証付き、swapRecord CAS 対応)。 */
