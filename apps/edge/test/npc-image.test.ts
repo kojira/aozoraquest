@@ -14,7 +14,8 @@ function fixture(options: { endpoint?: string; image?: unknown; body?: Uint8Arra
   const f = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('plc.directory')) return Response.json({ id: did, service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: options.endpoint ?? 'https://npc-author.example' }] });
-    if (options.redirect) { expect(init?.redirect).toBe('error'); throw new Error('redirect blocked'); }
+    expect(init?.redirect).toBe('manual');
+    if (options.redirect) return new Response(null, { status: 302, headers: { location: 'https://evil.example/blob' } });
     if (url.includes('getRecord')) {
       expect(new URL(url).searchParams.get('repo')).toBe(did);
       return Response.json({ value: { npcs: options.missing ? [] : [{ id: 'npc-one', spriteImage: options.image ?? image, portraitImage: options.image ?? image }] } });
@@ -61,7 +62,8 @@ describe('GET /api/npc-image', () => {
       expect((await handleRequest(request(), env)).status).toBe(502);
       expect(calls).toHaveBeenCalledTimes(1);
     }
-    fixture({ redirect: true }); expect((await handleRequest(request(), env)).status).toBe(502);
+    const redirected = fixture({ redirect: true }); expect((await handleRequest(request(), env)).status).toBe(502);
+    expect(redirected.mock.calls.map(([u]) => String(u)).some((u) => u.includes('evil.example'))).toBe(false);
     fixture({ contentType: 'image/svg+xml' }); expect((await handleRequest(request(), env)).status).toBe(422);
     fixture({ body: png(16, 16) }); expect((await handleRequest(request(), env)).status).toBe(422);
     const animated = imageFixture('animated.webp');

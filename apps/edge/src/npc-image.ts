@@ -20,8 +20,10 @@ export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string })
     if (pds.protocol !== 'https:' || pds.username || pds.password || pds.port || pds.search || pds.hash || pds.pathname !== '/' ||
       !host.includes('.') || /(^|\.)(localhost|local|internal|test|invalid)$/.test(host) || /^[\d.]+$/.test(host) || host.includes(':') || host.startsWith('[')) return fail(502);
     const fetchBounded = async (path: string, max: number) => {
-      const response = await fetch(`${pds.origin}${path}`, { redirect: 'error', signal: AbortSignal.timeout(10000) });
-      if (!response.ok || !response.body) throw new Error('PDS image read failed');
+      // Workers fetch rejects redirect: 'error'; 'manual' returns the 3xx itself, which is refused without following Location.
+      const response = await fetch(`${pds.origin}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
+      if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error(`PDS redirect refused (${response.status})`); }
+      if (!response.ok || !response.body) throw new Error(`PDS image read failed (${response.status})`);
       const length = response.headers.get('content-length');
       if (length && Number(length) > max) { await response.body.cancel(); throw new Error('PDS response too large'); }
       return { bytes: await readNpcImageBytes(response.body, max), type: response.headers.get('content-type')?.split(';')[0].trim() };
@@ -40,5 +42,8 @@ export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string })
     const decoded = inspectNpcImage(bytes, kind);
     if (decoded.mimeType !== image.blob.mimeType || decoded.width !== image.width || decoded.height !== image.height) return fail(422);
     return new Response(bytes.slice().buffer, { headers: { 'content-type': decoded.mimeType, 'content-length': String(bytes.length), 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; sandbox" } });
-  } catch { return fail(502); }
+  } catch (err) {
+    console.warn('npc-image: upstream failed', err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'unknown error');
+    return fail(502);
+  }
 }
