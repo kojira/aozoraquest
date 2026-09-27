@@ -121,3 +121,4 @@ Issue #707。正本。2026-09-28、ユーザー「うん。issue化して実装�
 - 実worried/smile画像を含む320/390/1280幅のスクショ/マップ内boundsは `~/.pi/guild-d001-evidence/quest-screenshots/`。これは隔離ローカルbrowser証拠であり実スマホ/共有PDS反映後のlive受入ではない。メニュー4ボタンをmap内で折返し。
 - 新提案 `~/.pi/guild-d001-evidence/quests-quest-proposed.json` は前回quests提案（既存3依頼、場所句修正のみ）を保持して `futaba-tool-care` だけ追加、core validator成功。前回interiors/npcs提案は無変更。旧beforeとswapCidは保持、**未送信かつstale**。承認後はGETを取り直し、他変更を保持して差分再生成/比較/CASする。共有dev/prodであり、データ/配備承認は別ゲート。
 - 独立reviewと受注方針回答、データ/配備gate、live受入が残る。既存worktreeとuntracked test-resultsは保持。merge/deploy/PDS書込なし。
+- 初回継続CI（19c3dbc）は既存core tutorialテストが全同梱依頼にシナリオイベントを期待して失敗。新しい独立素材依頼を既存3依頼連鎖から分離してassertし、新依頼でイベントが発火しないことを追加確認。当該3 tests成功。productionシナリオは変更なし。失敗ログ `quest-ci-failed.log`、修正成功 `quest-tutorial-green.log` を保持。

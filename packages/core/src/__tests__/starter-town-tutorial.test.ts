@@ -22,7 +22,11 @@ describe('ふたばの村の導入データ', () => {
     const p = { flags: [] as string[], questsDone: [] as string[], jobXpLevels: {}, materials: {} };
     expect(pendingScenario(p).fired).toEqual([]);
     expect(quests[0]!.requireFlags).toBeUndefined();
-    for (const [i, q] of quests.entries()) {
+    // ギルドの素材依頼は既存3依頼のシナリオ連鎖には参加しない。
+    const guildQuest = quests.find(q => q.id === 'futaba-tool-care')!;
+    expect(guildQuest.requireFlags).toBeUndefined();
+    expect(pendingScenario({ ...p, questsDone: [guildQuest.id] }).fired).toEqual([]);
+    for (const [i, q] of quests.slice(0, 3).entries()) {
       expect((q.requireFlags ?? []).every((f) => p.flags.includes(f))).toBe(true);
       p.questsDone.push(q.id);
       const { fired } = pendingScenario(p);
