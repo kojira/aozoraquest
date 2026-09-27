@@ -48,6 +48,14 @@
 - 対象は `npcs` `shops` `quests` `scenario` `interiors` の 5 つだけ
   (collection は `app.aozoraquest.world.<name>`、rkey は `self`)。それ以外は 404。
   地図・絵・アイテム・モンスター・ジョブは対象外 (必要になった時点で別 Issue)。
+- `POST /api/admin/blob?kind=sprite|portrait` (#699) 本文は画像のバイト列、`Content-Type: image/webp` のみ。
+  1. 既存の NPC 画像規格 (core `inspectNpcImage`: portrait は各辺 1024px 以下・1MiB 以下、sprite は
+     16/32px 正方形か横 2 コマ・100KiB 以下、アニメ不可) を通す。外れれば 400 (`invalid_type` / `invalid_kind` / `invalid_image`)。
+  2. サーバートークンで `com.atproto.repo.uploadBlob` し、NPC レコードの `spriteImage` / `portraitImage` と
+     同じ形 `{ blob, width, height }` を `{ ok: true, kind, image }` で返す (`assertNpcImage` を通したもの)。
+  3. レコードには書かない。NPC への反映は `PUT /api/admin/data/npcs` で行う (上の検証・CAS がそのまま効く)。
+     参照されない blob は PDS 側の扱いに任せる (dry-run でも blob は上がる)。
+  有効化・鍵・404 の条件は下の「有効化と認証」と同じ。
 - 書き込む値には `updatedAt` と `$type` を edge が付け直す。
 - 読み書きする repo はサーバー OAuth トークンの DID。これが `ADMIN_DIDS` の先頭 (世界を読む主管理者) と
   違う・トークンが無い時は 503 で止める (読む repo と書く repo をずらさない)。
@@ -71,7 +79,12 @@
 node scripts/admin-data.mjs get <name>                   # JSON を標準出力へ
 node scripts/admin-data.mjs put <name> <file> [--dry-run] # 差分要約を出してから書く
 node scripts/admin-data.mjs npc-move <id> <mapId> <x> <y> [--dry-run]
+node scripts/admin-data.mjs npc-image <id> <sprite|portrait> <file.webp> [--dry-run]
 ```
+
+- `npc-image` は `get npcs` → blob を上げる → 該当 NPC の画像欄だけ差し替えて `put` と同じ手順で書く。
+  書く前に画像欄の旧→新 (寸法・容量・CID) を出す。WebP 化は事前に済ませておく (CLI は変換しない)。
+  配信は edge の `/api/npc-image?npcId=<id>&kind=<kind>&cid=<cid>` (web の `npcImageUrl` と同じ)。
 
 - `put` / `npc-move` は直前に `get` した `cid` を `swapCid` に使う (その間に誰かが保存
   していれば 409 で止まる)。書く前に差分の要約 (追加・削除・変更の件数と id、NPC は
@@ -107,7 +120,17 @@ node scripts/admin-data.mjs npc-move npc-2 starter-town 12 14 --dry-run
 node scripts/admin-data.mjs npc-move npc-2 starter-town 12 14
 ```
 
+## 使い方の例: 会話イラストを差し替える
+
+```
+node scripts/admin-data.mjs npc-image futaba-bluesky portrait worried.webp --dry-run
+node scripts/admin-data.mjs npc-image futaba-bluesky portrait worried.webp
+```
+
 ## 検証
+
+- edge (blob): 無効・鍵なし・鍵違い・GET → 404、型違い・kind 違い・規格外・アニメ → 400 で
+  uploadBlob しない、正常なら uploadBlob して画像欄と同じ形を返す (`test/admin-blob.test.ts`)。
 
 - edge: 無効・鍵なし・鍵違い → 404 (本文は通常の not_found と同じ)、対象外 name → 404、
   検証エラー → 400、配置エラー → 400、swap 競合 → 409、dryRun は書かない、成功時は
@@ -117,6 +140,6 @@ node scripts/admin-data.mjs npc-move npc-2 starter-town 12 14
 
 ## 対象外
 
-- 地図・絵・アイテム・モンスター・ジョブの書き込み。
+- 地図・絵・アイテム・モンスター・ジョブの書き込み。NPC 画像以外の blob の登録。
 - dev 専用コレクションへの分離 (管理データは env 共有のまま)。
 - 本番 edge での有効化。

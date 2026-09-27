@@ -3,6 +3,7 @@
  *
  *   GET /api/admin/data/<name>  → { name, collection, cid, value[, placementIssues] }
  *   PUT /api/admin/data/<name>  body { value, swapCid, dryRun? }
+ *   POST /api/admin/blob?kind=sprite|portrait  本文 image/webp → { ok, kind, image } (#699)
  *
  * **本番と共通の管理データを書き換える** (管理レコードは env で分かれていない)。
  * ADMIN_DATA_API_ENABLED="1" かつ ADMIN_DATA_API_KEY がある時だけ動き、無効・鍵違い・
@@ -12,11 +13,12 @@ import {
   captureNpcPlacementWorld, danglingRefs, decodeWorldMap, describeDanglingRef, allGates, allInteriors,
   npcStructuralPlacementError, sameNpcPosition, setInteriors, setShopOverrides, shopOverrides,
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
+  assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
   type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
 import { readServerTokens } from './oauth-store';
-import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
+import { serverPutRecord, serverUploadBlob, ServerWriteError, type ServerPdsEnv } from './server-pds';
 import { ensureAuthoredWorld, resetAuthoredWorldCache, type WorldAuthoringEnv } from './world-authoring';
 
 export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
@@ -182,6 +184,40 @@ async function putAdminData(req: Request, env: AdminDataEnv, now: number, name: 
     return json({ ok: true, cid });
   } catch (e) {
     if (e instanceof PdsError && e.xrpcError === 'InvalidSwap') return json({ error: 'swap_conflict', message: '保存済みの CID が変わった。get し直す' }, 409);
+    throw e;
+  }
+}
+
+/**
+ * POST /api/admin/blob?kind=sprite|portrait (dev 専用、#699)。本文は image/webp のバイト列。
+ * 既存の NPC 画像規格 (inspectNpcImage) を通してからサーバー repo に uploadBlob し、
+ * NPC レコードの spriteImage/portraitImage と同じ形 (blob ref + width/height) を返す。
+ * レコードへの書き込みはしない (PUT /api/admin/data/npcs で行う)。
+ * 無効・鍵なし・鍵違い・対象外メソッドは null (呼び出し側で通常の not_found 404)。
+ */
+export async function handleAdminBlob(req: Request, env: AdminDataEnv, now: number): Promise<Response | null> {
+  if (req.method !== 'POST' || new URL(req.url).pathname !== '/api/admin/blob') return null;
+  if (!(await authorized(req, env))) return null;
+  const kind = new URL(req.url).searchParams.get('kind');
+  if (kind !== 'sprite' && kind !== 'portrait') return json({ error: 'invalid_kind', message: 'kind は sprite か portrait' }, 400);
+  if (req.headers.get('content-type')?.split(';')[0]?.trim() !== 'image/webp') return json({ error: 'invalid_type', message: 'Content-Type は image/webp のみ' }, 400);
+  if (!req.body) return json({ error: 'invalid_image', message: '本文が空' }, 400);
+  let info: ReturnType<typeof inspectNpcImage>, bytes: Uint8Array;
+  try {
+    bytes = await readNpcImageBytes(req.body, NPC_IMAGE_BYTES[kind]);
+    info = inspectNpcImage(bytes, kind);
+    if (info.mimeType !== 'image/webp') throw new Error('WebP の画像を送ってください');
+  } catch (e) { return json({ error: 'invalid_image', message: e instanceof Error ? e.message : String(e) }, 400); }
+  try {
+    await adminRepo(env);
+    const { blob } = await serverUploadBlob(env, now, bytes, 'image/webp');
+    const image = { blob: JSON.parse(JSON.stringify(blob)) as NpcImage['blob'], width: info.width, height: info.height };
+    assertNpcImage(image, kind);
+    if (image.blob.size !== bytes.length || image.blob.mimeType !== 'image/webp') throw new AdminDataError('uploadBlob の結果が送った画像と一致しない', 502);
+    return json({ ok: true, kind, image });
+  } catch (e) {
+    if (e instanceof AdminDataError) return json({ error: 'admin_data_failed', message: e.message }, e.status);
+    if (e instanceof ServerWriteError) return json({ error: 'server_write_unavailable', message: e.message }, 503);
     throw e;
   }
 }

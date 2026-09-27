@@ -18,6 +18,9 @@ const HELP = `${WARNING}
   node scripts/admin-data.mjs get <name>                          JSON を標準出力へ
   node scripts/admin-data.mjs put <name> <file> [--dry-run]        差分要約を出してから書く
   node scripts/admin-data.mjs npc-move <id> <mapId> <x> <y> [--dry-run]
+  node scripts/admin-data.mjs npc-image <id> <sprite|portrait> <file.webp> [--dry-run]
+      WebP を blob として上げ、NPC の spriteImage / portraitImage を差し替える。
+      --dry-run でも blob は上がる (レコードからは参照しない = PDS 側でいずれ消える)。
 
   name: ${NAMES.join(' | ')}
   <file> は GET の value と同じ形 (例: { "npcs": [...] })。
@@ -40,12 +43,12 @@ function readKey() {
   return key;
 }
 
-async function request(method, name, body) {
+async function request(method, name, body, blob) {
   const edge = (process.env.AQ_ADMIN_DATA_EDGE || DEFAULT_EDGE).replace(/\/$/, '');
-  const res = await fetch(`${edge}/api/admin/data/${name}`, {
+  const res = await fetch(blob ? `${edge}/api/admin/blob?kind=${blob.kind}` : `${edge}/api/admin/data/${name}`, {
     method,
-    headers: { authorization: `Bearer ${readKey()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    headers: { authorization: `Bearer ${readKey()}`, ...(blob ? { 'content-type': 'image/webp' } : body ? { 'content-type': 'application/json' } : {}) },
+    ...(blob ? { body: blob.bytes } : body ? { body: JSON.stringify(body) } : {}),
   });
   const text = await res.text();
   let data;
@@ -121,6 +124,23 @@ async function main(argv) {
       return { ...restNpc, ...(mapId === 'world' ? {} : { mapId }), x, y };
     });
     await write('npcs', current, { ...current.value, npcs: moved }, dryRun);
+    return;
+  }
+  if (cmd === 'npc-image' && rest.length === 3) {
+    const [id, kind, file] = rest;
+    if (kind !== 'sprite' && kind !== 'portrait') fail('種類は sprite か portrait');
+    if (!file.endsWith('.webp')) fail('WebP (.webp) のファイルだけ登録できる');
+    let bytes;
+    try { bytes = readFileSync(file); } catch (e) { fail(`${file} を読めない: ${e.message}`); }
+    const current = await request('GET', 'npcs');
+    const npcs = current.value?.npcs ?? [];
+    if (!npcs.some((n) => n.id === id)) fail(`NPC が見つからない: ${id}`);
+    const field = kind === 'sprite' ? 'spriteImage' : 'portraitImage';
+    const { image } = await request('POST', null, null, { kind, bytes });
+    const old = npcs.find((n) => n.id === id)[field];
+    const desc = (v) => (v ? `${v.width}x${v.height} ${v.blob.size}B ${v.blob.ref.$link}` : 'なし');
+    console.error(`${id}.${field}: ${desc(old)} → ${desc(image)}`);
+    await write('npcs', current, { ...current.value, npcs: npcs.map((n) => (n.id === id ? { ...n, [field]: image } : n)) }, dryRun);
     return;
   }
   fail(HELP);
