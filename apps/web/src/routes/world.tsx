@@ -58,7 +58,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, equipHands, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, allNpcs, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -138,15 +138,18 @@ interface Vitals {
  *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
 const MENU_HINT_DONE_KEY = 'aq-world-menu-hint-done';
 
-/** 初回オンボーディング (#692)。地の文 (話者なし) で「村の前に倒れていた放浪者」から始め、
- *  続けて案内役ブルスコンが操作と最初の話し相手だけ伝える。旅の知識は村人から少しずつ聞く。 */
+/** 初回オンボーディング (#692, #696)。地の文 (話者なし) で「村の前に倒れていた放浪者」から始め、
+ *  駆け寄った Blueskyちゃんが操作と最初の話し相手だけ伝える。旅の知識は村人から少しずつ聞く。 */
 const ONBOARDING_LINES: readonly DialogueLine[] = [
   { text: '……きがつくと、しらない 村の まえに たおれていた。' },
   { text: 'そらは はいいろ。ここは どこだろう……' },
-  { speaker: 'ブルスコン', text: 'ようこそ あおぞらワールドへ！ マップを おしたまま ゆびを うごかすと あるけるよ。' },
-  { speaker: 'ブルスコン', text: 'じぶんを ちょんと おすと コマンドが ひらくよ。村人に ぶつかると はなせるんだ。' },
-  { speaker: 'ブルスコン', text: 'まずは 村に はいって、いどのそばの むらおさに はなしかけてみよう。' },
+  { speaker: 'Blueskyちゃん', text: 'だいじょうぶ？ 村の まえで たおれてたんだよ。' },
+  { speaker: 'Blueskyちゃん', text: 'マップを おしたまま ゆびを うごかすと あるけるよ。' },
+  { speaker: 'Blueskyちゃん', text: 'じぶんを ちょんと おすと コマンドが ひらくの。村の ひとに ぶつかると おはなし できるよ。' },
+  { speaker: 'Blueskyちゃん', text: '村に はいって、いどのそばの むらおさに あって。わたしも あとで いくね。' },
 ];
+/** 導入で話す Blueskyちゃんの NPC id。会話イラストは管理データのこの NPC の portraitImage を使う (#696)。 */
+const ONBOARDING_BLUESKY_NPC_ID = 'futaba-bluesky';
 
 export function World() {
   const session = useSession();
@@ -388,6 +391,8 @@ export function World() {
   );
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
+  // 導入の Blueskyちゃん (#696)。NPC は入場時に loadAuthoredWorld で読んでからオンボーディングを出す。
+  const onboardingBluesky = onboarding ? allNpcs().find((n) => n.id === ONBOARDING_BLUESKY_NPC_ID) : undefined;
 
   // 初期ロード。位置の読み込み失敗はエラー表示 + リトライ (spawn に倒すと
   // 「テレポート → 上書き保存」のデータ損失になるため倒さない)。
@@ -1692,7 +1697,9 @@ export function World() {
             <DialogueWindow
               anchor="map"
               lines={ONBOARDING_LINES}
-              plateIcon={<SpiritIcon size={20} />}
+              // 未保存なら出さない。読込失敗は NpcPortrait が画像なしにする (会話は続く)。
+              // 地の文 (話者なし) の窓には出ない — 駆け寄ってから顔が出る。
+              portrait={onboardingBluesky?.portraitImage ? { src: npcImageUrl(onboardingBluesky.id, 'portrait', onboardingBluesky.portraitImage), name: onboardingBluesky.name } : undefined}
               onDone={() => {
                 setOnboarding(false);
                 onboardingRef.current = false;

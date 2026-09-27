@@ -190,7 +190,7 @@ export function starterTownNpcs(): NpcDef[] {
   return [
     {
       // 広場の井戸のそば。村の顔。
-      id: 'futaba-elder', name: 'むらおさ', mapId, x: 14, y: 21,
+      id: 'futaba-elder', name: 'むらおさ', mapId, x: 14, y: 21, spritePreset: 'old-man',
       lines: [
         'ようこそ ふたばの村へ。わしが この村の むらおさじゃ。',
         'たびびとよ、どこから きたんじゃ？ ……まあよい。村の そとには スライムが 出る。むりは するなよ。',
@@ -202,16 +202,16 @@ export function starterTownNpcs(): NpcDef[] {
     },
     {
       // 宿屋の扉の右下 (東西の道は塞がない)。
-      id: 'futaba-innkeeper-wife', name: 'やどやの おかみ', mapId, x: 9, y: 12,
+      id: 'futaba-innkeeper-wife', name: 'やどやの おかみ', mapId, x: 9, y: 12, spritePreset: 'middle-aged-woman',
       lines: [
-        '村の まえで たおれていたのは あんたかい？ よそから きた たびびとだね。',
+        'Blueskyちゃんが みつけた たびびとだね。よそから きたんだろう？',
         `やどやは ひとばん パワー ${STARTER_TOWN_INN.price} で とまれるよ。HP も MP も ぜんかいさ。`,
         '村に はいるだけでは かいふくしないよ。まけると さいごの 街へ もどり、素材を すこし おとすよ。',
       ],
     },
     {
       // なんでも屋の扉の左下。
-      id: 'futaba-shopfront', name: 'なんでも屋の むすめ', mapId, x: 22, y: 12,
+      id: 'futaba-shopfront', name: 'なんでも屋の むすめ', mapId, x: 22, y: 12, spritePreset: 'young-woman',
       lines: [
         'なんでも屋は 素材と あおぞらパワーで そうびを つくってくれるよ。',
         'つくったら『そうび』で みにつけてね。もう つくったものも つかえるよ。',
@@ -219,7 +219,7 @@ export function starterTownNpcs(): NpcDef[] {
     },
     {
       // 入口 (南の通り) のそば。降り立ってすぐ会う。
-      id: 'futaba-kid', name: 'こども', mapId, x: 17, y: 29,
+      id: 'futaba-kid', name: 'こども', mapId, x: 17, y: 29, spritePreset: 'boy',
       lines: [
         'Blueskyへの とうこうが あおぞらパワーに なるんだ。あるいたり はなしたりするだけなら へらないよ。',
         'パワーが ないと、たたかっても おれいや たのまれごとは すすまないよ。とうこうしたくなったら、いつもの がめんへ もどってね。',
@@ -228,7 +228,7 @@ export function starterTownNpcs(): NpcDef[] {
     },
     {
       // 西の家の前。
-      id: 'futaba-oldman', name: 'おじいさん', mapId, x: 5, y: 18,
+      id: 'futaba-oldman', name: 'おじいさん', mapId, x: 5, y: 18, spritePreset: 'old-man',
       lines: [
         '街に つくと「ちずのかけら」が 手に はいって、ちずが ひろがるそうじゃ。',
         '村の そとで ちずを ひらいてみると よい。',

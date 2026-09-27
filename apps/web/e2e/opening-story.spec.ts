@@ -8,6 +8,7 @@ import {
   worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap,
 } from '@aozoraquest/core';
 import { handleQuestAccept } from '../../edge/src/game-quest';
+import { imageFixture, cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
 
@@ -35,19 +36,24 @@ test.afterAll(async () => { await vite?.close(); });
 async function readAll(page: Page) {
   for (let i = 0; i < 8 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
     if (await page.getByRole('button', { name: 'はい', exact: true }).count()) return;
-    await page.locator('.aq-dialogue-backdrop').click();
+    // 会話イラストつきの窓 (#696) は画面中央を覆うので、送りは画面上端をタップする。
+    await page.locator('.aq-dialogue-backdrop').click({ position: { x: 195, y: 8 } });
   }
 }
 
 const SHOTS = process.env.OPENING_SHOTS ?? 'test-results/opening-story';
 
-test('ふたばの村の導入: 倒れていた放浪者 → Blueskyちゃん → 伝承つきの依頼 → 旅立ちの案内 (#692)', async ({ page }) => {
+test('ふたばの村の導入: 倒れていた放浪者 → 駆け寄る Blueskyちゃん → 伝承つきの依頼 → 旅立ちの案内 (#692, #696)', async ({ page }) => {
   test.setTimeout(60_000);
   page.setDefaultTimeout(8_000);
   const town = worldOverlay().towns[0]!;
   const village = starterTownInterior(town);
   const gates = starterTownGates(town);
-  const npcs = starterTownNpcs(), quests = starterTownQuests(), scenario = starterTownScenario();
+  // 管理データで Blueskyちゃんに会話イラストを保存した状態 (#696)。画像は fixture から配る (同梱しない)。
+  const portraitBytes = imageFixture('300x450.png');
+  const portraitImage = { blob: { $type: 'blob' as const, ref: { $link: cidFor(portraitBytes) }, mimeType: 'image/png' as const, size: portraitBytes.length }, width: 300, height: 450 };
+  let failPortrait = false;
+  const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage } : n), quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
   setInteriors([village], gates); setNpcs(npcs); setGameQuests(quests); setScenario(scenario); setShopOverrides([shop]);
   const elder = npcs.find((n) => n.id === 'futaba-elder')!;
@@ -91,6 +97,11 @@ test('ふたばの村の導入: 倒れていた放浪者 → Blueskyちゃん �
       return;
     }
     if (!url.pathname.startsWith('/fixture-api/')) { await route.continue(); return; }
+    if (url.pathname === '/fixture-api/api/npc-image') {
+      const ok = !failPortrait && url.searchParams.get('npcId') === 'futaba-bluesky' && url.searchParams.get('kind') === 'portrait' && url.searchParams.get('cid') === portraitImage.blob.ref.$link;
+      await route.fulfill(ok ? { contentType: 'image/png', body: portraitBytes } : { status: 404, body: 'not found' });
+      return;
+    }
     const body = route.request().postDataJSON();
     try {
       let result: unknown;
@@ -105,6 +116,8 @@ test('ふたばの村の導入: 倒れていた放浪者 → Blueskyちゃん �
     }
   });
   const window = page.locator('.dq-window').last();
+  // 会話イラストつきの窓 (#696) は画面中央を覆うので、送りは画面上端をタップする。
+  const next = () => page.locator('.aq-dialogue-backdrop').click({ position: { x: 195, y: 8 } });
   const bump = async (key: 'ArrowLeft' | 'ArrowUp') => {
     await page.keyboard.press(key);
     await expect(page.locator('.aq-dialogue-backdrop')).toBeVisible();
@@ -119,20 +132,44 @@ test('ふたばの村の導入: 倒れていた放浪者 → Blueskyちゃん �
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('http://127.0.0.1:4177/e2e/fixtures/tutorial.html');
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
-    // ① 初回: 話者なしの地の文から始まり、ブルスコンの操作説明、村へ入る案内で終わる。
+    // ① 初回: 話者なしの地の文から始まり、駆け寄った Blueskyちゃんが操作と村へ入る案内をする (#696)。
+    const portrait = page.getByRole('img', { name: 'Blueskyちゃんの会話イラスト' });
     await expect(page.getByRole('dialog', { name: 'セリフ', exact: true })).toBeVisible();
     await expect(window).toContainText('……きがつくと、しらない 村の まえに たおれていた。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
+    await expect(portrait).toHaveCount(0); // 地の文ではまだ駆け寄っていない
     await page.screenshot({ path: `${SHOTS}/01-onboarding-narration.png` });
-    await page.locator('.aq-dialogue-backdrop').click();
+    await next();
     await expect(window).toContainText('そらは はいいろ。ここは どこだろう……');
-    await page.locator('.aq-dialogue-backdrop').click();
-    await expect(page.getByRole('dialog', { name: 'ブルスコンのセリフ' })).toBeVisible();
-    await page.locator('.aq-dialogue-backdrop').click();
-    await page.locator('.aq-dialogue-backdrop').click();
-    await expect(window).toContainText('村に はいって、いどのそばの むらおさに');
-    await page.locator('.aq-dialogue-backdrop').click();
+    await next();
+    await expect(page.getByRole('dialog', { name: 'Blueskyちゃんのセリフ' })).toBeVisible();
+    await expect(window).toContainText('だいじょうぶ？ 村の まえで たおれてたんだよ。');
+    await expect(portrait).toBeVisible();
+    await expect.poll(() => portrait.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(300);
+    await expect(page.locator('.aq-dialogue-next')).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/01b-onboarding-bluesky.png` });
+    await next();
+    await expect(window).toContainText('マップを おしたまま ゆびを うごかすと あるけるよ。');
+    await next();
+    await expect(window).toContainText('じぶんを ちょんと おすと コマンドが ひらくの。');
+    await next();
+    await expect(window).toContainText('村に はいって、いどのそばの むらおさに あって。わたしも あとで いくね。');
+    await expect(page.getByRole('dialog', { name: 'ブルスコンのセリフ' })).toHaveCount(0);
+    await next();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
+    // 会話イラストが読めなくても、画像なしで導入は最後まで進む。
+    failPortrait = true;
+    await page.evaluate(() => localStorage.removeItem('aq-world-onboarding-done'));
+    await page.reload();
+    await expect(page.getByLabel('ワールドマップ')).toBeVisible();
+    await next();
+    await next();
+    await expect(window).toContainText('だいじょうぶ？ 村の まえで たおれてたんだよ。');
+    await expect(portrait).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/01c-onboarding-bluesky-no-portrait.png` });
+    for (let i = 0; i < 4; i++) await next();
+    await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
+    failPortrait = false;
     // ② 井戸のそばの Blueskyちゃん (右隣から話しかける)。
     await bump('ArrowLeft');
     await expect(page.getByRole('dialog', { name: 'Blueskyちゃんのセリフ' })).toBeVisible();
@@ -148,7 +185,7 @@ test('ふたばの村の導入: 倒れていた放浪者 → Blueskyちゃん �
     await expect(window).toContainText('むかし、空は七羽の鳥に守られておった。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/03-elder-legend.png` });
-    await page.locator('.aq-dialogue-backdrop').click();
+    await next();
     await expect(window).toContainText('まずは 村を たすけて 旅の力を つけておくれ。');
     await readAll(page);
     await page.getByRole('button', { name: 'はい', exact: true }).click();
@@ -160,7 +197,7 @@ test('ふたばの村の導入: 倒れていた放浪者 → Blueskyちゃん �
     await expect(window).toContainText('砂漠の方で、夜になると赤い光が見えるんだって。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/04-departure-hint.png` });
-    await page.locator('.aq-dialogue-backdrop').click();
+    await next();
     await expect(window).toContainText('ほむらの街');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/05-departure-homura.png` });

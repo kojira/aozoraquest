@@ -218,7 +218,8 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     expect(saved.npcs.find((n) => n.id === 'one')?.spritePreset).toBe('bluesky');
     expect(saved.npcs.filter((n) => n.id !== 'one')).toEqual(initial.filter((n) => n.id !== 'one'));
     await page.goto(`${URL}?game`); await expect(page.getByLabel('ワールドマップ')).toBeVisible();
-    await expect(page.getByLabel('ワールドマップ').locator('[data-preset="old-man"]')).toBeVisible();
+    // 同梱の村人 (#696) は むらおさ と おじいさん の 2 人が old-man。
+    await expect(page.getByLabel('ワールドマップ').locator('[data-preset="old-man"]').first()).toBeVisible();
     // 保存した 'one' と、同梱の村人 Blueskyちゃん (#692) の 2 人。
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]')).toHaveCount(2);
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]').first()).toBeVisible();

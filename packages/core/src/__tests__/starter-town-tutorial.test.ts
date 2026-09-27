@@ -49,7 +49,7 @@ describe('ふたばの村の導入データ', () => {
     const departure = npcLinesFor(bluesky, ['futaba_slimes_done', 'futaba_herbs_done', 'futaba_wings_done'], {}).join('');
     expect(departure).toContain('砂漠の方で、夜になると赤い光が見えるんだって');
     expect(departure).toContain('ほむらの街');
-    expect(npcs.find((n) => n.id === 'futaba-innkeeper-wife')!.lines[0]).toContain('村の まえで たおれていたのは あんたかい？ よそから きた たびびとだね');
+    expect(npcs.find((n) => n.id === 'futaba-innkeeper-wife')!.lines[0]).toContain('Blueskyちゃんが みつけた たびびとだね');
   });
 
   it('第1報酬で全職のぬののふくを作れる設定。既存品・店主は保持', () => {
