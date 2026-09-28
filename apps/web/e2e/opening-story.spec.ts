@@ -45,31 +45,49 @@ async function readAll(page: Page) {
 
 const SHOTS = process.env.OPENING_SHOTS ?? 'test-results/opening-story';
 
+const dialogueGeometry = new Map<number, { frame: { x: number; y: number; width: number; height: number }; portrait?: { x: number; y: number; width: number; height: number }; plate?: { x: number; y: number; height: number } }>();
 async function captureMapDialogue(page: Page, stage: string) {
   mkdirSync(SHOTS, { recursive: true });
   for (const viewport of [{ width: 320, height: 640 }, { width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     const map = (await page.getByLabel('ワールドマップ').boundingBox())!;
-    const parts = page.locator('.aq-dialogue-pane, .aq-dialogue-pane button, img[alt$="の会話イラスト"]');
-    const boxes = [];
-    for (const part of await parts.all()) {
-      const box = (await part.boundingBox())!;
+    const pane = page.locator('.aq-dialogue-pane').last();
+    await pane.evaluate(el => { el.scrollTop = 0; });
+    const frame = (await pane.boundingBox())!;
+    const image = page.locator('img[alt$="の会話イラスト"]');
+    const portrait = await image.count() ? (await image.boundingBox())! : undefined;
+    const plate = await page.locator('.aq-dialogue-pane').count() > 1 ? (await page.locator('.aq-dialogue-pane').first().boundingBox())! : undefined;
+    const prefix = `${SHOTS}/${stage}-${viewport.width}`;
+    writeFileSync(`${prefix}.json`, JSON.stringify({ viewport, map, frame, portrait, plate }, null, 2));
+    await page.screenshot({ path: `${prefix}.png` });
+    expect.soft(Math.abs(frame.width - map.width * .96), `${stage}: width=96%`).toBeLessThan(1);
+    expect.soft(Math.abs(frame.height - map.height * .35), `${stage}: height=35%`).toBeLessThan(1);
+    expect.soft(Math.abs(frame.x - (map.x + map.width * .02)), `${stage}: centered`).toBeLessThan(1);
+    const previous = dialogueGeometry.get(viewport.width);
+    if (previous) {
+      expect.soft(frame, `${stage}: fixed frame`).toEqual(previous.frame);
+      if (portrait && previous.portrait) expect.soft(portrait, `${stage}: fixed portrait`).toEqual(previous.portrait);
+      if (plate && previous.plate) expect.soft({ x: plate.x, y: plate.y, height: plate.height }, `${stage}: fixed nameplate`).toEqual({ x: previous.plate.x, y: previous.plate.y, height: previous.plate.height });
+    } else dialogueGeometry.set(viewport.width, { frame, portrait, plate });
+    for (const box of [frame, portrait, plate].filter(Boolean) as typeof frame[]) {
       expect(box.x).toBeGreaterThanOrEqual(map.x);
       expect(box.y).toBeGreaterThanOrEqual(map.y);
       expect(box.x + box.width).toBeLessThanOrEqual(map.x + map.width + 1);
       expect(box.y + box.height).toBeLessThanOrEqual(map.y + map.height + 1);
-      boxes.push({ element: await part.evaluate((el) => el.tagName === 'IMG' ? 'portrait' : el.textContent), ...box });
     }
-    const pane = page.locator('.aq-dialogue-pane').last();
-    expect(await pane.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
-    const portrait = page.locator('img[alt$="の会話イラスト"]');
-    if (await portrait.count()) {
-      expect(await portrait.evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
-      expect((await portrait.boundingBox())!.height).toBeGreaterThan(80);
+    expect(await pane.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    if (portrait) {
+      expect(await image.evaluate(el => getComputedStyle(el).objectFit)).toBe('contain');
+      expect(await image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(512);
+      expect(portrait.height).toBeGreaterThan(80);
     }
-    const prefix = `${SHOTS}/${stage}-${viewport.width}`;
-    writeFileSync(`${prefix}.json`, JSON.stringify({ viewport, map, boxes }, null, 2));
-    await page.screenshot({ path: `${prefix}.png` });
+    for (const button of await pane.getByRole('button').all()) {
+      await button.scrollIntoViewIfNeeded();
+      const box = (await button.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(frame.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(frame.y + frame.height + 1);
+    }
+    await pane.evaluate(el => { el.scrollTop = 0; });
   }
 }
 
@@ -233,13 +251,14 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     const position = await page.locator('[data-world-x]').getAttribute('data-world-x');
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('Tab');
-    await expect(page.locator('.aq-dialogue-backdrop')).toBeFocused();
+    await expect(page.locator('.aq-dialogue-pane').last()).toBeFocused();
     expect(await page.locator('[data-world-x]').getAttribute('data-world-x')).toBe(position);
     await next();
     await expect(window).toContainText('けがしてる……。まって、やくそうが あるから。');
     await next();
     await expect(window).toContainText('少女は やくそうを とりだし');
     await expect(portrait).toHaveCount(0);
+    await captureMapDialogue(page, 'opening-narration');
     await next();
     await expect(window).toContainText('よかった……！ 気が ついたんだね。');
     await expect(portrait).toHaveAttribute('src', /bluesky-smile/);

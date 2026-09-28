@@ -89,12 +89,20 @@ export function DialogueWindow({
   const overlayRef = useRef<HTMLDivElement>(null);
   const choosingRef = useRef(false);
   const windowRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
+  const scrolledGesture = useRef(false);
+  const onMap = anchor === 'map';
+
+  useEffect(() => {
+    if (onMap && bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [onMap, st.index]);
 
   // 会話中にTabで背後のもちもの/移動UIへ抜けない。
   useEffect(() => {
     const trap = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
-      const targets: HTMLElement[] = [overlayRef.current, ...Array.from(windowRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])].filter((n): n is HTMLDivElement | HTMLButtonElement => !!n);
+      const targets: HTMLElement[] = [overlayRef.current, ...(onMap ? [bodyRef.current] : []), ...Array.from(windowRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])].filter((n): n is HTMLDivElement | HTMLButtonElement => !!n);
       if (!targets.length) return;
       e.preventDefault();
       const index = targets.indexOf(document.activeElement as HTMLElement);
@@ -102,7 +110,7 @@ export function DialogueWindow({
     };
     document.addEventListener('keydown', trap, true);
     return () => document.removeEventListener('keydown', trap, true);
-  }, []);
+  }, [onMap]);
 
   // 空の lines でも必ず done になる (呼び出し側は表示中 move ガード等を掛けるため、
   // ここで止まると不可視のまま永久ブロックになる — 動的生成セリフ時代への契約。レビュー指摘)
@@ -158,7 +166,6 @@ export function DialogueWindow({
   if (!line || st.done) return null;
   const complete = lineComplete(lines, st);
   const shownPortrait = line.speaker ? line.portrait ?? portrait : undefined;
-  const onMap = anchor === 'map';
 
   return (
     <>
@@ -189,29 +196,46 @@ export function DialogueWindow({
       <div
         ref={windowRef}
         onClick={advance}
+        onPointerDownCapture={onMap ? (e) => {
+          pointerOrigin.current = { x: e.clientX, y: e.clientY };
+          scrolledGesture.current = false;
+        } : undefined}
+        onPointerMoveCapture={onMap ? (e) => {
+          const start = pointerOrigin.current;
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) scrolledGesture.current = true;
+        } : undefined}
+        onPointerUpCapture={onMap ? () => { pointerOrigin.current = null; } : undefined}
+        onPointerCancelCapture={onMap ? () => { pointerOrigin.current = null; scrolledGesture.current = true; } : undefined}
+        onScrollCapture={onMap ? () => { if (pointerOrigin.current) scrolledGesture.current = true; } : undefined}
+        onClickCapture={onMap ? (e) => {
+          // A drag/scroll must neither advance speech nor select the button it ends on.
+          if (e.detail !== 0 && scrolledGesture.current) { e.preventDefault(); e.stopPropagation(); }
+        } : undefined}
         style={{
           position: onMap ? 'absolute' : 'fixed',
           left: '50%',
           // 'map': 地図枠の下端に貼る (DQ 風)。'viewport': footer 実測高 (app-shell) に追従
-          bottom: onMap ? '0.5em' : 'calc(var(--footer-height, 4.5em) + 0.5em)',
+          bottom: onMap ? 0 : 'calc(var(--footer-height, 4.5em) + 0.5em)',
           transform: 'translateX(-50%)',
-          width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
-          maxWidth: 520,
+          width: onMap ? '96%' : 'min(94vw, 520px)',
+          maxWidth: onMap ? undefined : 520,
           ...(onMap ? {
-            // 立ち絵は台詞/名前を除いたマップ内の残り高さへ縮める。viewport高には依存しない。
-            height: 'calc(100% - 1em)', display: 'flex', flexDirection: 'column' as const,
-            justifyContent: 'flex-end', pointerEvents: 'none' as const,
+            // Map-inner percentages, independent of text/choices/portrait presence.
+            height: '100%', pointerEvents: 'none' as const,
           } : shownPortrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
           zIndex: DIALOGUE_WINDOW_Z,
         }}
       >
-        {shownPortrait && <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap={onMap} />}
+        {shownPortrait && (onMap ? (
+          <div style={{ position: 'absolute', top: '0.5em', bottom: 'calc(35% + 2.5em)', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+            <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap />
+          </div>
+        ) : <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} />)}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"
             style={{
               display: 'inline-flex',
-              ...(onMap ? { flexShrink: 0, alignSelf: 'flex-start', pointerEvents: 'auto' as const } : {}),
               alignItems: 'center',
               gap: '0.35em',
               padding: '0.15em 0.8em',
@@ -221,6 +245,8 @@ export function DialogueWindow({
               fontWeight: 700,
               position: 'relative',
               zIndex: 1,
+              // .8em font: .625em gap / 2.5em plate = .5em / 2em in map-parent units.
+              ...(onMap ? { position: 'absolute' as const, bottom: 'calc(35% + 0.625em)', height: '2.5em', maxWidth: 'calc(100% - 8px)', whiteSpace: 'nowrap' as const, overflow: 'hidden', pointerEvents: 'auto' as const } : {}),
             }}
           >
             {plateIcon}
@@ -229,10 +255,14 @@ export function DialogueWindow({
         )}
         <div
           className="dq-window aq-dialogue-pane"
-          // maxHeight/overflowY: 将来の長い NPC セリフでも窓がアバターに被らないよう上限を設ける
-          //   (DQ も 1 窓は数行で固定 — レビュー ★★)。marginBottom:0: dq-window 既定の 0.9em を
-          //   打ち消し、地図枠の下端 (bottom:0.5em) にぴったり寄せる (レビュー ★)。
-          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', maxHeight: onMap ? '55%' : '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7, ...(onMap ? { flexShrink: 0, pointerEvents: 'auto' as const } : {}) }}
+          ref={bodyRef}
+          tabIndex={onMap ? 0 : undefined}
+          onKeyDown={onMap ? (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); advance(e); }
+          } : undefined}
+          // Keep the .5em map-parent gap despite the body's .92em font; border box is exactly 35%.
+          style={{ padding: '0.7em 0.9em 0.8em', minHeight: onMap ? 0 : '5.8em', maxHeight: onMap ? undefined : '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7,
+            ...(onMap ? { position: 'absolute', bottom: `${0.5 / 0.92}em`, width: '100%', height: '35%', boxSizing: 'border-box', overscrollBehavior: 'contain', pointerEvents: 'auto' } : {}) }}
         >
           {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
               先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は
