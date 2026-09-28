@@ -88,6 +88,21 @@ export function DialogueWindow({
   const doneRef = useRef(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const choosingRef = useRef(false);
+  const windowRef = useRef<HTMLDivElement>(null);
+
+  // 会話中にTabで背後のもちもの/移動UIへ抜けない。
+  useEffect(() => {
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const targets: HTMLElement[] = [overlayRef.current, ...Array.from(windowRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])].filter((n): n is HTMLDivElement | HTMLButtonElement => !!n);
+      if (!targets.length) return;
+      e.preventDefault();
+      const index = targets.indexOf(document.activeElement as HTMLElement);
+      targets[(index + (e.shiftKey ? -1 : 1) + targets.length) % targets.length]?.focus();
+    };
+    document.addEventListener('keydown', trap, true);
+    return () => document.removeEventListener('keydown', trap, true);
+  }, []);
 
   // 空の lines でも必ず done になる (呼び出し側は表示中 move ガード等を掛けるため、
   // ここで止まると不可視のまま永久ブロックになる — 動的生成セリフ時代への契約。レビュー指摘)
@@ -142,8 +157,8 @@ export function DialogueWindow({
   // Keep focus on the dialogue surface: held Enter must not select "はい".
   if (!line || st.done) return null;
   const complete = lineComplete(lines, st);
-  const shownPortrait = line.speaker ? portrait : undefined;
-  const onMap = anchor === 'map' && !shownPortrait;
+  const shownPortrait = line.speaker ? line.portrait ?? portrait : undefined;
+  const onMap = anchor === 'map';
 
   return (
     <>
@@ -172,6 +187,7 @@ export function DialogueWindow({
       {/* 窓本体: 'viewport' は footer 際に固定、'map' は直近の position:relative 祖先
           (ワールドの地図枠) の下端に貼る (DQ 風)。送り面より上 (z)。 */}
       <div
+        ref={windowRef}
         onClick={advance}
         style={{
           position: onMap ? 'absolute' : 'fixed',
@@ -181,16 +197,21 @@ export function DialogueWindow({
           transform: 'translateX(-50%)',
           width: onMap ? 'calc(100% - 0.8em)' : 'min(94vw, 520px)',
           maxWidth: 520,
-          ...(shownPortrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
+          ...(onMap ? {
+            // 立ち絵は台詞/名前を除いたマップ内の残り高さへ縮める。viewport高には依存しない。
+            height: 'calc(100% - 1em)', display: 'flex', flexDirection: 'column' as const,
+            justifyContent: 'flex-end', pointerEvents: 'none' as const,
+          } : shownPortrait ? { maxHeight: 'calc(100dvh - var(--footer-height, 4.5em) - 1em)', overflowY: 'auto' as const } : {}),
           zIndex: DIALOGUE_WINDOW_Z,
         }}
       >
-        {shownPortrait && <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} />}
+        {shownPortrait && <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap={onMap} />}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"
             style={{
               display: 'inline-flex',
+              ...(onMap ? { flexShrink: 0, alignSelf: 'flex-start', pointerEvents: 'auto' as const } : {}),
               alignItems: 'center',
               gap: '0.35em',
               padding: '0.15em 0.8em',
@@ -211,7 +232,7 @@ export function DialogueWindow({
           // maxHeight/overflowY: 将来の長い NPC セリフでも窓がアバターに被らないよう上限を設ける
           //   (DQ も 1 窓は数行で固定 — レビュー ★★)。marginBottom:0: dq-window 既定の 0.9em を
           //   打ち消し、地図枠の下端 (bottom:0.5em) にぴったり寄せる (レビュー ★)。
-          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', maxHeight: '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7 }}
+          style={{ padding: '0.7em 0.9em 0.8em', minHeight: '5.8em', maxHeight: onMap ? '55%' : '34vh', overflowY: 'auto', marginBottom: 0, fontSize: '0.92em', lineHeight: 1.7, ...(onMap ? { flexShrink: 0, pointerEvents: 'auto' as const } : {}) }}
         >
           {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
               先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は
@@ -224,7 +245,7 @@ export function DialogueWindow({
             </span>
           )}
           {asking && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5em', marginTop: '0.4em' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '0.5em', marginTop: '0.4em' }}>
               {choices!.map((c) => (
                 <button
                   key={c.label}
@@ -252,7 +273,7 @@ export function DialogueWindow({
                       } else finish();
                     } catch { choosingRef.current = false; }
                   }}
-                  style={{ padding: '0.3em 1.2em', fontSize: '0.95em', touchAction: 'manipulation' }}
+                  style={{ padding: '0.3em 1.2em', fontSize: '0.95em', maxWidth: '100%', overflowWrap: 'anywhere', whiteSpace: 'normal', touchAction: 'manipulation' }}
                 >
                   {c.label}
                 </button>

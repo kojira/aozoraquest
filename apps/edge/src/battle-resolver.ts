@@ -15,7 +15,7 @@ import {
   terrainAt,
   isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
-  WORLD_MAP_ID,
+  WORLD_MAP_ID, WORLD_SIZE,
   gateAt,
   gateHasLock,
   gateLockedNotice,
@@ -258,8 +258,13 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const playerLevel = playerLevelFromXp(playerXp);
   // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
   // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
+  // ふたばの近辺だけ初回依頼の敵に揃える。通常移動の遭遇のみで、確率/内部/ボスは変えない。
+  const spawn = worldOverlay().spawn;
+  const distance = (a: number, b: number) => Math.min(wrap(a - b), WORLD_SIZE - wrap(a - b));
+  const nearFutaba = mapId === WORLD_MAP_ID && Math.max(distance(x, spawn.x), distance(y, spawn.y)) <= 8;
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
+    ...(nearFutaba ? { monsterId: 'sky-slime' } : {}),
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
@@ -641,9 +646,9 @@ export interface TurnResult {
   /** シナリオのお知らせ (一度だけ)。**発火済みは二度と返らない**ので、
    *  client がここで拾わないと永久に失われる。 */
   scenarioNotices?: string[];
-  /** 進行中のゲーム内クエスト (#659)。勝利で討伐数が進んだら client はこれで表示を同期する。
-   *  無ければ省く — 戦闘でクエストが消えることは無いので、client は持っている値を保てばよい。 */
-  quest?: { id: string; progress: number };
+  /** 決着の全受注snapshot（空も明示）。未決着は省略しclientの写しを保つ。 */
+  activeQuests?: Array<{ id: string; progress: number }>;
+  questsDone?: string[];
 }
 
 /**
@@ -752,7 +757,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
       materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp,
       ...(written.flags ? { flags: written.flags } : {}),
-      ...(written.quest ? { quest: written.quest } : {}),
+      activeQuests: written.activeQuests, questsDone: written.questsDone ?? [],
       ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v } : {}) };
   }
 

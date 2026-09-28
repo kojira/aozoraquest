@@ -4,7 +4,7 @@
  * 「受けられるのに絶対に達成できないクエスト」が静かに生まれる。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { setGameQuests, gameQuests, gameQuestById, gameQuestByNpc, questObjectiveText, questProgressLine, QuestDataError, MAX_QUEST_REWARD_POWER, type GameQuestDef } from '../quest-data.js';
+import { setGameQuests, gameQuests, gameQuestById, gameQuestsByNpc, questObjectiveText, questProgressLine, QuestDataError, MAX_QUEST_REWARD_POWER, type GameQuestDef } from '../quest-data.js';
 import { setNpcs } from '../npc-data.js';
 import { MONSTERS, ITEMS } from '../battle.js';
 
@@ -34,15 +34,15 @@ describe('setGameQuests の検証', () => {
     setGameQuests([base()]);
     expect(gameQuests()).toHaveLength(1);
     expect(gameQuestById('q1')?.title).toBe('たいじ');
-    expect(gameQuestByNpc('n1')?.id).toBe('q1');
-    expect(gameQuestByNpc('n2')).toBeUndefined();
+    expect(gameQuestsByNpc('n1')[0]?.id).toBe('q1');
+    expect(gameQuestsByNpc('n2')).toEqual([]);
   });
 
   it('null で全解除', () => {
     setGameQuests([base()]);
     setGameQuests(null);
     expect(gameQuests()).toHaveLength(0);
-    expect(gameQuestByNpc('n1')).toBeUndefined();
+    expect(gameQuestsByNpc('n1')).toEqual([]);
   });
 
   it('存在しない NPC を弾く', () => {
@@ -58,8 +58,9 @@ describe('setGameQuests の検証', () => {
     expect(() => setGameQuests([base({ reward: { itemId: 'ghost', count: 1 } })])).toThrow(QuestDataError);
   });
 
-  it('1 NPC 1 クエスト (重複した発注を弾く)', () => {
-    expect(() => setGameQuests([base(), base({ id: 'q2' })])).toThrow(QuestDataError);
+  it('同NPCの同名依頼を定義順に保持する', () => {
+    setGameQuests([base(), base({ id: 'q2' })]);
+    expect(gameQuestsByNpc('n1').map(q => q.id)).toEqual(['q1', 'q2']);
   });
 
   it('id 重複を弾く', () => {

@@ -58,7 +58,7 @@ const STOCK = townShopStock(TOWN, 0);
 const ITEM = EQUIPMENT_BY_ID[STOCK.equipment[0]!]!;
 
 const stateAt = (over: Partial<GameState> = {}): GameState => ({
-  did: DID, power: 999, playerXp: 0, jobXp: {},
+  did: DID, activeQuests: [], power: 999, playerXp: 0, jobXp: {},
   materials: { [STOCK.materialId]: 99 },
   gear: [], x: TOWN.x, y: TOWN.y, xpEpoch: XP_EPOCH, version: 1, updatedAt: '', ...over,
 });

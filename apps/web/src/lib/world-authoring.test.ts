@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { jsonToLex, type Agent } from '@atproto/api';
-import { allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
 
 const DID = 'did:plc:admin';
@@ -86,6 +86,17 @@ describe('導入データ: draftと保存済み定義の境界', () => {
     putRecord.mockResolvedValue({});
     await saveScenario(agent, starterTownScenario());
     expect(scenarioEvents()).toEqual(starterTownScenario());
+  });
+  it('saves and reloads multiple identical-title quests for the same NPC through the real validator', async () => {
+    setNpcs(starterTownNpcs());
+    const q = starterTownQuests().find(q => q.id === 'futaba-tool-care')!;
+    const quests = [q, { ...q, id: 'fixture-b' }];
+    const putRecord = vi.fn().mockResolvedValue({});
+    const agent = { assertDid: DID, com: { atproto: { repo: { putRecord } } } } as unknown as Agent;
+    await saveGameQuests(agent, quests);
+    expect(putRecord.mock.calls[0]![0].record.quests).toEqual(quests);
+    expect(await loadQuestAuthoringRecords(fakeAgent({ npcs: { npcs: starterTownNpcs() }, quests: { quests } }), DID)).toEqual(quests);
+    expect(gameQuestsByNpc(q.npcId).map(q => q.id)).toEqual([q.id, 'fixture-b']);
   });
   it('未作成は空。通信/認証失敗はnot foundを含むメッセージでも伝播する', async () => {
     expect(await loadQuestAuthoringRecords(fakeAgent({}), DID)).toEqual([]);

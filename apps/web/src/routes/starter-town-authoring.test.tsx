@@ -44,7 +44,7 @@ describe('ふたばの村の同梱データを明示的に入れる', () => {
     expect(gameQuests().map((q) => q.id)).toEqual(['another']);
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(putRecord).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(gameQuests()).toHaveLength(4));
+    await waitFor(() => expect(gameQuests()).toHaveLength(5));
     expect(gameQuests().some((q) => q.id === 'another')).toBe(true);
   });
   it('読込み失敗中にクリックしても導入データや空リストを保存しない', async () => {

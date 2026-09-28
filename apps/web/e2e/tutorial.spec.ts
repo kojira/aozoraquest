@@ -35,9 +35,9 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await vite?.close(); });
 
 async function readAll(page: Page) {
-  for (let i = 0; i < 8 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
+  for (let i = 0; i < 24 && await page.locator('.aq-dialogue-backdrop').count(); i++) {
     if (await page.getByRole('button', { name: 'はい', exact: true }).count()) return;
-    await page.locator('.aq-dialogue-backdrop').click();
+    await page.locator('.aq-dialogue-pane').last().click();
   }
 }
 
@@ -50,7 +50,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
   const npcs = starterTownNpcs(), quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
   setInteriors([village], gates); setNpcs(npcs); setGameQuests(quests); setScenario(scenario); setShopOverrides([shop]);
-  let state: GameState = { did: DID, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 14, y: 22,
+  let state: GameState = { did: DID, activeQuests: [], power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 14, y: 22,
     mapId: village.id, xpEpoch: XP_EPOCH, version: 1, updatedAt: '' };
   let cid = 'initial'; let rev = 0;
   const env = await tutorialEnv(NOW);
@@ -116,7 +116,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('http://127.0.0.1:4175/e2e/fixtures/tutorial.html');
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
-    await readAll(page); // 6-window onboarding (#692, #696)
+    await readAll(page); // 救護導入 + 操作ガイド
     await page.keyboard.press('ArrowUp');
     await readAll(page);
     await page.getByRole('button', { name: 'いいえ', exact: true }).click();
@@ -130,18 +130,18 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     expect(moves).toBe(before);
     releaseAccept!(); delayAccept = false;
     await expect(page.getByRole('button', { name: 'はい', exact: true })).toHaveCount(0);
-    expect(state.quest?.id).toBe('futaba-slimes');
+    expect(state.activeQuests[0]?.id).toBe('futaba-slimes');
     // Isolated continuation checkpoint: exercise real reward processing (including 0power),
     // then reload the real page as a player returning from the field would do.
     const outcome = { outcome: 'win' as const, monsterId: 'sky-slime', archetype: 'warrior' as const, luk: 15, rewardSeed: 12345, lossSeed: 67890, rewarded: false };
-    expect(applyBattleOutcome(state, outcome).next.quest?.progress).toBe(0);
+    expect(applyBattleOutcome(state, outcome).next.activeQuests[0]?.progress).toBe(0);
     state = { ...state, power: 3 };
     for (let i = 0; i < 3; i++) state = applyBattleOutcome(state, { ...outcome, rewarded: true }).next;
     await page.reload();
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
     const progressMap = await page.getByLabel('ワールドマップ').boundingBox();
     await page.mouse.click(progressMap!.x + progressMap!.width / 2, progressMap!.y + progressMap!.height / 2);
-    await expect(page.getByRole('dialog', { name: 'コマンド' })).toContainText('村人に はなそう');
+    await expect(page.getByRole('dialog', { name: 'コマンド' })).toContainText('報告できます');
     await page.screenshot({ path: 'test-results/tutorial-progress.png' });
     await page.keyboard.press('Escape');
     await page.keyboard.press('ArrowUp');
@@ -179,7 +179,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
       await expect(page.getByLabel('ワールドマップ')).toBeVisible();
       await page.keyboard.press('ArrowUp'); await readAll(page);
       await page.getByRole('button', { name: 'はい', exact: true }).click();
-      await expect.poll(() => state.quest?.id).toBe(id);
+      await expect.poll(() => state.activeQuests[0]?.id).toBe(id);
       await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
       await page.keyboard.press('ArrowUp');
       await expect.poll(() => state.questsDone?.includes(id)).toBe(true);

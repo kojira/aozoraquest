@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  starterTownQuests, starterTownScenario, starterTownNpcs, starterTownShop,
+  STARTER_TOWN_GUILD, starterTownQuests, starterTownScenario, starterTownNpcs, starterTownShop,
   setNpcs, setGameQuests, setScenario, setShopOverrides, gameQuests, scenarioEvents,
   validateGameQuests, validateScenario, pendingScenario, SAMPLE_SCENARIO,
   townShopStock, worldOverlay, EQUIPMENT_BY_ID, JOBS, canEquip, npcLinesFor,
@@ -22,7 +22,11 @@ describe('ふたばの村の導入データ', () => {
     const p = { flags: [] as string[], questsDone: [] as string[], jobXpLevels: {}, materials: {} };
     expect(pendingScenario(p).fired).toEqual([]);
     expect(quests[0]!.requireFlags).toBeUndefined();
-    for (const [i, q] of quests.entries()) {
+    // ギルドの素材依頼は既存3依頼のシナリオ連鎖には参加しない。
+    const guildQuest = quests.find(q => q.id === 'futaba-tool-care')!;
+    expect(guildQuest.requireFlags).toBeUndefined();
+    expect(pendingScenario({ ...p, questsDone: [guildQuest.id] }).fired).toEqual([]);
+    for (const [i, q] of quests.slice(0, 3).entries()) {
       expect((q.requireFlags ?? []).every((f) => p.flags.includes(f))).toBe(true);
       p.questsDone.push(q.id);
       const { fired } = pendingScenario(p);
@@ -35,15 +39,15 @@ describe('ふたばの村の導入データ', () => {
     expect(npcLinesFor(elder, p.flags, {}).join('')).toContain('じぶんの ペース');
   });
 
-  it('導入の物語 (#692): 伝承は最初の依頼の冒頭、Blueskyちゃんは井戸のそばで 3 依頼後に旅立ちを示す', () => {
+  it('導入の物語 (#692): 伝承は最初の依頼の冒頭、Blueskyちゃんは井戸近くのギルドで 3 依頼後に旅立ちを示す', () => {
     const quests = starterTownQuests();
     expect(quests[0]!.id).toBe('futaba-slimes');
     expect(quests[0]!.intro[0]).toBe('むかし、空は七羽の鳥に守られておった。鳥たちが眠ると、空は色を失う。七羽すべてを目覚めさせたとき、空に虹の橋がかかる……');
     const npcs = starterTownNpcs();
     const bluesky = npcs.find((n) => n.id === 'futaba-bluesky')!;
     expect(bluesky).toMatchObject({ name: 'Blueskyちゃん', spritePreset: 'bluesky' });
-    // 井戸は (15, 20)-(16, 20)。隣接 (斜め含む) の広場に立つ。
-    expect(Math.min(...[15, 16].map((wx) => Math.max(Math.abs(bluesky.x - wx), Math.abs(bluesky.y - 20))))).toBe(1);
+    expect(bluesky).toMatchObject({ x: STARTER_TOWN_GUILD.x, y: STARTER_TOWN_GUILD.y });
+    expect(quests[2]!.done.join('')).toContain('いどのそばのギルドの Blueskyちゃん');
     expect(npcLinesFor(bluesky, [], {})).toEqual(['おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……']);
     expect(npcLinesFor(bluesky, ['futaba_herbs_done'], {})).toEqual(bluesky.lines);
     const departure = npcLinesFor(bluesky, ['futaba_slimes_done', 'futaba_herbs_done', 'futaba_wings_done'], {}).join('');

@@ -1,7 +1,7 @@
 /**
  * **ゲーム内クエストの受注・達成** (#423)。進行と報酬はここ (edge) が権威。
  *
- * - 受注: 進行中が無ければ `GameState.quest` に積む。達成済みは再受注できない
+ * - 受注: `GameState.activeQuests` に追加する。達成済みは再受注できない
  * - 達成: 条件を**権威データで検証**してから報酬を付与する
  *   - defeat: 勝利時に数えた討伐数 (battle-reward が増やす)
  *   - collect: 権威在庫の所持数。達成時に**引き取る** (渡すのが DQ の作法で、
@@ -25,7 +25,7 @@ export class GameQuestError extends Error {
 const MAX_DONE = 200;
 
 export interface QuestStateResult {
-  quest?: { id: string; progress: number };
+  activeQuests: Array<{ id: string; progress: number }>;
   questsDone?: string[];
   power: number;
   materials: Record<string, number>;
@@ -51,6 +51,7 @@ export async function handleQuestAccept(
     did,
     (cur) => {
       if ((cur.questsDone ?? []).includes(questId)) throw new GameQuestError('もう達成している', 400, 'already_done');
+      if (cur.activeQuests.some(q => q.id === questId)) return cur; // duplicate: preserve progress even after losing required items
       // **解禁フラグ** (#545)。立っていないクエストはサーバーが受け付けない
       // (client が NPC の分岐を無視して直接 POST しても通らない)。
       const need = def.requireFlags ?? [];
@@ -59,16 +60,11 @@ export async function handleQuestAccept(
       if (need.some((f) => !(cur.flags ?? []).includes(f)) || !itemsSatisfied(def.requireItems, cur.materials)) {
         throw new GameQuestError('まだ その たのまれごとは 出ていない', 400, 'locked');
       }
-      if (cur.quest?.id === questId) return cur; // 再受注は no-op (連打・再送で壊れない)
-      // **1 つずつ。** 同時進行を許すと「どの敵を数えるか」が曖昧になる (将来 quests[] 化も可能)。
-      // ただし定義が消された孤児クエスト (管理者がエディタで削除) は無かったことにする —
-      // 破棄手段が無いので、残すとそのプレイヤーは永久に何も受けられなくなる (UX レビュー ★★★)。
-      if (cur.quest && gameQuestById(cur.quest.id)) throw new GameQuestError('別のたのまれごとを うけている', 400, 'quest_busy');
-      return { ...cur, quest: { id: questId, progress: 0 } };
+      return { ...cur, activeQuests: [...cur.activeQuests, { id: questId, progress: 0 }] };
     },
     init ? { now, init } : { now },
   );
-  return { quest: next.quest, questsDone: next.questsDone, power: next.power, materials: next.materials, ...(next.flags ? { flags: next.flags } : {}) };
+  return { activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials, ...(next.flags ? { flags: next.flags } : {}) };
 }
 
 export async function handleQuestComplete(
@@ -89,13 +85,14 @@ export async function handleQuestComplete(
     did,
     (cur) => {
       if ((cur.questsDone ?? []).includes(questId)) throw new GameQuestError('もう達成している', 400, 'already_done');
-      if (cur.quest?.id !== questId) throw new GameQuestError('うけていない', 400, 'not_accepted');
+      const active = cur.activeQuests.find(q => q.id === questId);
+      if (!active) throw new GameQuestError('うけていない', 400, 'not_accepted');
 
       let materials = cur.materials;
       const o = def.objective;
       if (o.kind === 'defeat') {
-        if ((cur.quest.progress ?? 0) < o.count) {
-          throw new GameQuestError(`まだ ${cur.quest.progress ?? 0}/${o.count} たい`, 400, 'not_ready');
+        if ((active.progress ?? 0) < o.count) {
+          throw new GameQuestError(`まだ ${active.progress ?? 0}/${o.count} たい`, 400, 'not_ready');
         }
       } else {
         const have = cur.materials[o.itemId] ?? 0;
@@ -117,7 +114,7 @@ export async function handleQuestComplete(
       };
       const done: GameState = {
         ...cur,
-        quest: undefined,
+        activeQuests: cur.activeQuests.filter(q => q.id !== questId),
         questsDone: [...(cur.questsDone ?? []), questId].slice(-MAX_DONE),
         power: cur.power + rewardPower,
         materials,
@@ -130,7 +127,7 @@ export async function handleQuestComplete(
     init ? { now, init } : { now },
   );
   return {
-    quest: next.quest, questsDone: next.questsDone, power: next.power, materials: next.materials,
+    activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials,
     ...(rewarded ? { rewarded } : {}),
     ...(next.flags ? { flags: next.flags } : {}),
     ...(scenarioBox.v?.notices.length ? { notices: scenarioBox.v.notices } : {}),

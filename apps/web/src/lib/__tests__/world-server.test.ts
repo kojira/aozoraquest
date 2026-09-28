@@ -46,6 +46,29 @@ describe('world-server (サーバー権威 API クライアント)', () => {
     expect(body).toEqual({ battleId: 'btl-1', turn: 2, command: 'attack' });
   });
 
+  it('quest DTOs carry full arrays and route only the chosen ID with distinct auth scopes', async () => {
+    const { serverQuestAccept, serverQuestComplete, serverState, serverTurn } = await import('../world-server');
+    const scopes: string[] = [];
+    const agent = { com: { atproto: { server: { getServiceAuth: async ({ lxm }: { lxm: string }) => {
+      scopes.push(lxm); return { data: { token: fakeJwt(Date.now() / 1000 + 300) } };
+    } } } } } as unknown as Agent;
+    const activeQuests = [{ id: 'a', progress: 3 }, { id: 'b', progress: 0 }];
+    const requests: Array<{ url: string; body: unknown }> = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      requests.push({ url, body: init.body ? JSON.parse(init.body as string) : undefined });
+      const snapshot = { activeQuests, questsDone: ['done'], power: 10, materials: {} };
+      return Response.json(url.endsWith('/me/state') ? { state: snapshot, initialized: false } : snapshot);
+    }) as typeof fetch;
+    expect((await serverState(agent)).state.activeQuests).toEqual(activeQuests);
+    expect((await serverQuestAccept(agent, 'b')).activeQuests).toEqual(activeQuests);
+    expect((await serverQuestComplete(agent, 'b')).activeQuests).toEqual(activeQuests);
+    expect(requests.slice(1).map(r => r.body)).toEqual([{ questId: 'b' }, { questId: 'b' }]);
+    expect(scopes).toContain('app.aozoraquest.quest.accept');
+    expect(scopes).toContain('app.aozoraquest.quest.complete');
+    globalThis.fetch = (async () => Response.json({ state: {}, events: [], outcome: 'win', activeQuests: [], questsDone: ['a', 'b'] })) as typeof fetch;
+    expect((await serverTurn(agent, 'battle', 0, 'attack')).activeQuests).toEqual([]);
+  });
+
   it('エラー応答は WorldServerError (status 付き)', async () => {
     const { serverMove, WorldServerError } = await import('../world-server');
     const { agent } = mockAgent(Date.now() / 1000 + 300);

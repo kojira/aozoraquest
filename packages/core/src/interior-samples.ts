@@ -29,6 +29,8 @@ import type { WorldPart } from './world-map.js';
 
 export const STARTER_TOWN_ID = 'futaba-village';
 export const STARTER_TOWN_SIZE = 32;
+/** 井戸北東の冒険者ギルド。室内歩行はなく、ドア前から受付会話を開く。 */
+export const STARTER_TOWN_GUILD = { x: 20, y: 15, frontX: 20, frontY: 16 };
 
 /** パーツ番号 (この村のパーツ表の並び)。絵は terrain 名で引く。 */
 const GRASS = 0;
@@ -119,6 +121,8 @@ export function buildStarterTownTiles(): Uint8Array {
   building(6, 6, 6, 5, 2, INN_SIGN); // 扉 (8, 10)
   building(20, 6, 6, 5, 3, SHOP_SIGN); // 扉 (23, 10)
 
+  building(19, 12, 3, 4, 1); // 冒険者ギルド。扉 (20, 15)、前 (20, 16)。
+
   // ふつうの家。看板なし。
   building(2, 13, 5, 4, 2);
   building(25, 13, 5, 4, 2);
@@ -132,7 +136,7 @@ export function buildStarterTownTiles(): Uint8Array {
   rect(25, 19, 4, 3, FLOWER);
   rect(9, 21, 3, 1, FENCE);
   rect(20, 21, 3, 1, FENCE);
-  for (const [x, y] of [[4, 4], [27, 4], [12, 14], [19, 14], [7, 30], [24, 30]]) {
+  for (const [x, y] of [[4, 4], [27, 4], [12, 14], [7, 30], [24, 30]]) {
     set(x!, y!, TREE);
   }
 
@@ -236,8 +240,8 @@ export function starterTownNpcs(): NpcDef[] {
       altLines: [{ flags: ['futaba_wings_done'], lines: ['じゅんびが できたら つぎの街を さがしてみるのじゃ。とうこうしたくなったら ひとやすみも よいぞ。'] }],
     },
     {
-      // 広場の井戸 (15-16, 20) の右下。広場の石畳で、道 (y=11, y=17) と施設は塞がない (#692)。
-      id: 'futaba-bluesky', name: 'Blueskyちゃん', mapId, x: 17, y: 21, spritePreset: 'bluesky',
+      // ギルドの扉に会話対象を置く。Worldではスプライトではなく建物入口として描く。
+      id: 'futaba-bluesky', name: 'Blueskyちゃん', mapId, x: STARTER_TOWN_GUILD.x, y: STARTER_TOWN_GUILD.y, spritePreset: 'bluesky',
       lines: ['おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……'],
       // 旅立ち (#692): 3 依頼を終えたら最初の目的地 ほむらの街 (南東、とんぼの原の むこう) を示す。
       altLines: [{

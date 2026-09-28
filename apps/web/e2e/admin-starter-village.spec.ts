@@ -102,7 +102,7 @@ test('slow saved-village load cannot overwrite starter insertion; save then ques
     await expect(insertQuests).toBeEnabled();
     await insertQuests.click();
     await expect(page.getByText(/旧版 \(64×64\)/)).toHaveCount(0);
-    await expect(page.getByText(/3依頼を入れた/)).toBeVisible();
+    await expect(page.getByText(/4依頼を入れた/)).toBeVisible();
     await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled();
     await page.screenshot({ path: 'test-results/starter-village-quests-mobile.png' });
     failRead = true;

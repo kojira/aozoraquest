@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, initialPosition, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
-import { BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
+import { startBattle, tierForRegion, regionOf, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 
 const USER = 'did:plc:alice';
@@ -30,7 +30,7 @@ async function makeEnv(): Promise<ResolverEnv> {
 const DIAG = { archetype: 'warrior', rpgStats: { atk: 30, def: 25, agi: 15, int: 15, luk: 15 } };
 // xpEpoch 済みの state (= ベータの区切りを通過済み)。省くと normalizeState が
 // 「区切り前」と見なして jobXp と位置をリセットしてしまう (#534)。
-const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, power: 5, playerXp: 100, jobXp: { warrior: 50 }, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: 1, updatedAt: '', ...over });
+const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, activeQuests: [], power: 5, playerXp: 100, jobXp: { warrior: 50 }, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: 1, updatedAt: '', ...over });
 
 /** 診断 + サーバー PDS (gameState + guard) の CAS を実装する統合モック。 */
 function resolverMock(opts: { diagnosis?: unknown; gameState?: GameState } = {}) {
@@ -72,6 +72,24 @@ function resolverMock(opts: { diagnosis?: unknown; gameState?: GameState } = {})
 describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; });
+
+  it('ふたば通常遭遇は中心/距離8までそらいろ限定、距離9/内部は従来プール', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = resolverMock({ diagnosis: DIAG }).fn;
+    const c = worldOverlay().spawn;
+    const seeds = [1, 5, 18, 99, 345, 12345];
+    for (const seed of seeds) {
+      for (const [dx, dy] of [[0, 0], [0, 1], [8, 8], [-8, -8]]) {
+        const r = await sealEncounter(env, USER, GS(), wrap(c.x + dx!), wrap(c.y + dy!), seed, NOW);
+        expect(r.monsterId).toBe('sky-slime');
+      }
+      const x = wrap(c.x + 9), y = c.y;
+      const expected = startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(x, y)), seed).monsterId;
+      expect((await sealEncounter(env, USER, GS(), x, y, seed, NOW)).monsterId).toBe(expected);
+      const inside = await sealEncounter(env, USER, GS(), c.x, c.y, seed, NOW, undefined, undefined, 'test-interior');
+      expect(inside.monsterId).toBe(startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(c.x, c.y)), seed).monsterId);
+    }
+  });
 
   it('sealEncounter: monster を返すが **seed は返さない** + rewarded は power で決まる', async () => {
     const env = await makeEnv();
@@ -186,8 +204,8 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const enc = await sealEncounter(env, USER, GS({ power: 5 }), 5, 5, 12345, NOW);
     // 遭遇した敵を対象にするクエストを受注済みの状態にする (定義と権威 state の両方)
     setNpcs([{ id: 'n1', name: 'そんちょう', x: 1, y: 1, lines: ['やあ'] }]);
-    setGameQuests([{ id: 'q1', title: 'たいじ', npcId: 'n1', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat', monsterId: enc.monsterId, count: 5 } }]);
-    m.store.set('gs', { value: GS({ power: 5, quest: { id: 'q1', progress: 1 } }), cid: 'gs1' });
+    setGameQuests(['q1', 'q2'].map(id => ({ id, title: 'たいじ', npcId: 'n1', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat', monsterId: enc.monsterId, count: 5 } })));
+    m.store.set('gs', { value: GS({ power: 5, activeQuests: [{ id: 'q1', progress: 1 }, { id: 'q2', progress: 1 }] }), cid: 'gs1' });
     try {
       let outcome = 'ongoing';
       let last;
@@ -197,12 +215,16 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
       }
       const gs = m.store.get('gs')!.value as GameState;
       if (outcome === 'win') {
-        expect(gs.quest!.progress).toBeGreaterThanOrEqual(2);
+        expect(gs.activeQuests[0]!.progress).toBeGreaterThanOrEqual(2);
       } else {
-        expect(gs.quest).toEqual({ id: 'q1', progress: 1 }); // 勝ち以外は進まない
+        expect(gs.activeQuests).toEqual([{ id: 'q1', progress: 1 }, { id: 'q2', progress: 1 }]); // 勝ち以外は進まない
       }
       // 応答の quest は権威 state と一致する
-      expect(last!.quest).toEqual(gs.quest);
+      expect(last!.activeQuests).toEqual(gs.activeQuests);
+      expect(gs.activeQuests[1]!.progress).toBe(gs.activeQuests[0]!.progress);
+      expect(last!.questsDone).toEqual(gs.questsDone ?? []);
+      await expect(handleTurn(env, USER, enc.battleId, 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
+      expect((m.store.get('gs')!.value as GameState).activeQuests).toEqual(gs.activeQuests);
     } finally {
       setGameQuests(null);
       setNpcs(null);
@@ -227,6 +249,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     );
     const s1 = await migrateInitState(USER, '');
     expect(s1.power).toBe(85);
+    expect(s1.activeQuests).toEqual([]);
     expect(s1.playerXp).toBe(1234);
     // **ジョブ XP は取り込まない** (#534)。XP を権威 state に一本化したので、投稿由来の XP を
     // 種として焼き込むと申告ぶんと二重に効く。ベータの区切りとして全員 Lv1 から再スタート。
