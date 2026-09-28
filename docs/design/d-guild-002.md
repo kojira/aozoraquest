@@ -242,7 +242,7 @@ edge `shop.ts`, `xp-claim.ts`, `scenario-progress.ts`, `world-authoring.ts`, `ad
 |R7|core validator/indexで同NPC同名を順序保持・重複ID拒否。`world-authoring.test.ts`実save/load validatorに同NPC2件。World shared fixture4件/空override|GREEN|
 |R8|client full/empty/missing snapshot、全行・報告先・unknown・全collect再計算。WorldMenu全件/共有品説明/閉じる。実World320/390/1280 map bounds|GREEN。受注一覧だけscroll、コマンド2列で小画面の出口を保持|
 |R9|opening-story実World/DialogueWindow/権威CASに同名同目的4件fixture、B選択→Bだけ報告/報酬、前/次/戻る/退出。実許可portrait|GREEN。320/390で各buttonをscrollして到達/bounds確認。fixtureはlive依頼ではない|
-|R10|直接NPC1件は既存導線、複数は自動報告なし。B受注通信失敗時Aだけでも成功扱いせず、再取得/会話内エラー/再試行でBを受注|GREEN。E2Eの失敗assertionからエラーが背後noticeに隠れることを検出→既存offer内に表示してGREEN|
+|R10|直接NPC1件は既存導線、複数は自動報告なし。B受注通信失敗時Aだけでも成功扱いせず、再取得/会話内エラー/再試行でBを受注。§3.4のB報告応答待ち中もbackdrop保持・自分タップでコマンドなし、応答後Bだけ完了/A保持|GREEN。受注失敗表示の修正に加え、fresh review P1の報告中入力遮断をassertion RED→既存Promise返却だけでGREEN（下記）|
 |R11|readState/RMW配列保持、migrateInitState空、DTO呼出/実World reload復元。既存reset/delete/shop/XPのfull edge regression|GREEN。既存resetの責務は変更なし|
 |R12|実slimes+tool-care並行受注→権威battle処理→guild報告→reload後slimes進捗3保持→本人報告。救護/表情/扉/ラッチ/共有portrait/物語の既存E2E継続|隔離GREEN。live/実スマホ/配備後受入は未実施|
 
@@ -253,3 +253,12 @@ edge `shop.ts`, `xp-claim.ts`, `scenario-progress.ts`, `world-authoring.ts`, `ad
 - 既存untracked `apps/web/test-results/` は削除せず、開始時コピーもrepo外に保持。Playwright出力先をrepo外へ分離。画像原本・shared PDS未変更。
 - PR #708へpushして必須web CIを確認する。edge-deploy workflowはfeature PRでは走らないためlocal edge typecheck/full testを証拠とする（無断dispatch/配備なし）。
 - **残るゲート**: fresh独立レビュー、最新CI、対象dev web/edge同版更新の別承認、D001共有データの直前GET/最小差分/CAS承認、実利用/実スマホ受入。main/prod/merge/deploy/共有PDS書込なし。旧タブを閉じ指定入口だけで新版を試し、旧単一進捗は再受注になる。#709履歴再設計は対象外のまま。
+
+### Fresh review P1 — 直接NPCの報告応答待ち（§3.4 / R10）
+
+- `c751577`への独立実装レビューで、`selectDirectQuest` が `void reportQuest(...)` として既存Promiseを捨て、DialogueWindowが応答前に終了するP1を確認。今回のproduction修正はそのPromiseを`return`する1行のみ。新state/frameworkやguild分岐の変更なし。
+- 先に既存`opening-story.spec.ts`の直接NPC selected-B経路を拡張。実handlerの応答を明示gateで保留し、backdropが残ること、自分タップ後もコマンドが開かずbackdropが残ること、解放後はBだけPOST/完了しAが受注中で残ることをassert。
+- **修正前RED**: backdropが見つからず、背後のコマンドdialogが期待0に対し1。**修正後GREEN**: 同じE2Eが1 passed（test 38.0s / total 40.5s）。既存guild/直接NPC/退出のassertionも同じテストで保持。隔離fixtureの証拠でありlive/実スマホ受入ではない。
+- repo外証拠: `~/.pi/guild-d002-pending-fix-evidence/{assertion-red.log,assertion-green.log,red-results/,green-results/,green-screenshots/}`。既存untracked `apps/web/test-results/` は変更/削除しない。
+- web typecheck成功、関連DialogueWindow/game-quest unit 16成功。build初回は必須`VITE_APP_URL`未指定で失敗し、明示したloopback URL/NSID/local設定で再実行成功（`build.log` / `build-green.log`）。無関係な全suite再実行なし。旧headのCI成功を新headの成功として流用しない。新headのCI結果は同証拠directoryへ別途保存し、fresh reviewerへ渡す。
+- fresh reviewer/新head CIおよび既存の配備・共有データ・実受入ゲートは未完了のまま。merge/deploy/共有PDS書込/resetなし。

@@ -703,7 +703,7 @@ export function World() {
     else showQuestChoices(npc, candidates, confirm, true);
   };
   const selectDirectQuest = (npc: NpcDef, q: GameQuestDef, directList: boolean) => {
-    if (questRef.current.activeQuests.some(a => a.id === q.id)) void reportQuest(npc, q, false, directList);
+    if (questRef.current.activeQuests.some(a => a.id === q.id)) return reportQuest(npc, q, false, directList);
     else setNpcTalk({ npc, lines: questOfferLines(q), acceptQuestId: q.id, directList });
   };
   const directQuestList = (npc: NpcDef) => showQuestChoices(npc, npcQuests(npc), q => selectDirectQuest(npc, q, true), false);

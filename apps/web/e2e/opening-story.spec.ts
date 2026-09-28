@@ -165,6 +165,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
   const errors: string[] = [];
   const reported: string[] = [];
   let failAcceptId: string | undefined;
+  let reportResponseGate: Promise<void> | undefined;
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
@@ -194,7 +195,11 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
         if (body.questId === failAcceptId) { failAcceptId = undefined; await route.abort(); return; }
         result = await handleQuestAccept(env, DID, body.questId, NOW);
       }
-      else if (url.pathname.endsWith('/quest/complete')) { reported.push(body.questId); result = await handleQuestComplete(env, DID, body.questId, NOW); }
+      else if (url.pathname.endsWith('/quest/complete')) {
+        reported.push(body.questId);
+        result = await handleQuestComplete(env, DID, body.questId, NOW);
+        await reportResponseGate;
+      }
       else if (url.pathname.endsWith('/move')) result = await handleMove(env, DID, body.dx, body.dy, body.token, NOW);
       else throw new Error(`Unexpected fixture API ${url.pathname}`);
       await route.fulfill({ json: result });
@@ -446,7 +451,24 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     expect(state.activeQuests).toEqual([{ id: 'fixture-a', progress: 0 }]);
     await choose('はい');
     await expect.poll(() => state.activeQuests.map(q => q.id)).toEqual(['fixture-a', 'fixture-b']);
-    await page.getByRole('button', { name: /fixture-b/ }).click();
+    // Hold the selected report response until the real dialogue's input shield is checked.
+    let releaseReportResponse!: () => void;
+    reportResponseGate = new Promise<void>(resolve => { releaseReportResponse = resolve; });
+    const reportResponse = page.waitForResponse(r => r.url().endsWith('/quest/complete'));
+    try {
+      await page.getByRole('button', { name: /fixture-b/ }).click();
+      await expect.poll(() => reported.slice(directBefore)).toEqual(['fixture-b']);
+      await expect.soft(page.locator('.aq-dialogue-backdrop')).toBeVisible({ timeout: 2_000 });
+      const pendingMap = (await page.getByLabel('ワールドマップ').boundingBox())!;
+      await page.mouse.click(pendingMap.x + pendingMap.width / 2, pendingMap.y + pendingMap.height / 2);
+      await expect.soft(page.getByRole('dialog', { name: 'コマンド' })).toHaveCount(0, { timeout: 2_000 });
+      await expect(page.locator('.aq-dialogue-backdrop')).toBeVisible({ timeout: 2_000 });
+    } finally {
+      releaseReportResponse();
+      reportResponseGate = undefined;
+    }
+    await reportResponse;
+    await expect(window).toContainText('2こ うけとった');
     await expect.poll(() => state.questsDone).toEqual(['fixture-b']);
     expect(reported.slice(directBefore)).toEqual(['fixture-b']);
     expect(state.activeQuests).toEqual([{ id: 'fixture-a', progress: 0 }]);
