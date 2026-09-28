@@ -1,23 +1,24 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { WorldMenu } from './world-menu';
 
-/**
- * 受注中クエストの 1 行 (#659)。受注中でなければ**行ごと出さない** —
- * 「クエスト: なし」のような空の行は情報量を増やすだけで、DQ 風の窓に要らない。
- */
-describe('WorldMenu: 受注中クエストの 1 行', () => {
-  const COMMANDS = [{ key: 'items', label: 'どうぐ', onSelect: vi.fn() }];
-
-  it('questLine があれば「クエスト: …」を 1 行出す', () => {
-    render(<WorldMenu commands={COMMANDS} questLine="そらいろスライムを 3 たい (2/3)" onClose={vi.fn()} />);
-    expect(screen.getByText('クエスト: そらいろスライムを 3 たい (2/3)')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'どうぐ' })).toBeTruthy();
+describe('WorldMenu: all active quests', () => {
+  const commands = [{ key: 'items', label: 'どうぐ', onSelect: vi.fn() }];
+  it('shows every quest and shared inventory explanation with reachable exit', () => {
+    const close = vi.fn();
+    render(<WorldMenu commands={commands} questLines={['討伐 (2/3)', '納品 所持 2 / 必要 2']} onClose={close} />);
+    expect(screen.getByText('受注中の依頼 2件')).toBeTruthy();
+    expect(screen.getByText('討伐 (2/3)')).toBeTruthy();
+    expect(screen.getByText('納品 所持 2 / 必要 2')).toBeTruthy();
+    expect(screen.getByText(/所持品は ほかの依頼/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    expect(close).toHaveBeenCalledOnce();
+    cleanup();
   });
-
-  it('questLine が無ければ行を出さない', () => {
-    render(<WorldMenu commands={COMMANDS} onClose={vi.fn()} />);
-    expect(screen.queryByText(/クエスト/)).toBeNull();
+  it('explicitly shows no active quests', () => {
+    render(<WorldMenu commands={commands} questLines={[]} onClose={vi.fn()} />);
+    expect(screen.getByText('受注中の依頼は ありません')).toBeTruthy();
+    cleanup();
   });
 });

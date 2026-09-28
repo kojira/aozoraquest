@@ -108,7 +108,7 @@ export interface GameState {
    *  クエスト解禁も報酬も破られる。シナリオのイベント条件が揃うと edge が追加する。 */
   flags?: string[];
   /** 進行中のゲーム内クエスト (#423)。討伐数は勝利時に edge が数える。 */
-  quest?: { id: string; progress: number };
+  activeQuests: Array<{ id: string; progress: number }>;
   /** 達成済みクエスト id (再受注させない)。直近 200 件のリング。 */
   questsDone?: string[];
   version: number;
@@ -124,7 +124,7 @@ export function rkeyForDid(did: string): string {
 export function emptyState(did: string, now: string): GameState {
   // **新規 state は現行 epoch を刻む** (#534)。刻まないと `normalizeState` が
   // 「区切り前の state」と見なして、書くたびに次の読みで jobXp が消える。
-  return { did, power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: GAME_STATE_VERSION, updatedAt: now };
+  return { did, activeQuests: [], power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 0, y: 0, xpEpoch: XP_EPOCH, version: GAME_STATE_VERSION, updatedAt: now };
 }
 
 /**
@@ -151,6 +151,11 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
  * /me の「ベータ期間の記録」として表示する。
  */
 export function normalizeState(state: GameState): GameState {
+  // Unreleased single-slot progress is intentionally discarded; all unrelated state survives.
+  if ('quest' in state || !state.activeQuests) {
+    const { quest: _legacyQuest, ...rest } = state as GameState & { quest?: unknown };
+    state = { ...rest, activeQuests: state.activeQuests ?? [] };
+  }
   if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
   // **位置も spawn に戻す。** Lv1 に戻したのに立ち位置が奥地のままだと、想定 Lv8 以上の
   // 敵に Lv1 で遭遇し、負けるたびに素材を失う死にループに入る (帰還先の lastTown も
@@ -208,7 +213,7 @@ export async function readModifyWrite(
   const nowIso = new Date(opts.now * 1000).toISOString();
   for (let attempt = 0; attempt <= retries; attempt++) {
     const existing = await readState(env, targetDid);
-    const current = existing?.state ?? (await init(targetDid, nowIso));
+    const current = existing?.state ?? normalizeState(await init(targetDid, nowIso));
     const mutated = mutate(current);
     if (existing && mutated === current) return current; // 変更なし: 書かない (契約は doc 参照)
     const next: GameState = { ...mutated, did: targetDid, version: GAME_STATE_VERSION, updatedAt: nowIso };

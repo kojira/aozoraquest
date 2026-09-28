@@ -125,3 +125,8 @@ Issue #707。正本。2026-09-28、ユーザー「うん。issue化して実装�
 - 独立reviewと受注方針回答、データ/配備gate、live受入が残る。既存worktreeとuntracked test-resultsは保持。merge/deploy/PDS書込なし。
 - 初回継続CI（19c3dbc）は既存core tutorialテストが全同梱依頼にシナリオイベントを期待して失敗。新しい独立素材依頼を既存3依頼連鎖から分離してassertし、新依頼でイベントが発火しないことを追加確認。当該3 tests成功。productionシナリオは変更なし。失敗ログ `quest-ci-failed.log`、修正成功 `quest-tutorial-green.log` を保持。
 - 次のCI（4c63cbe）はunit/typecheck/buildを通過、E2E71成功/1失敗。admin-starter-villageに残っていた旧「3依頼」表示assertionを「4依頼」へ修正した（`quest-ci-second-failed.log`）。最後の変更はこのassertionと検証記録のみ、最新CIはpush後に確認する。
+
+
+## D-GUILD-002実装への更新
+
+受注方針待ち/単一slot制約は最新ユーザー指示で撤回され、独立レビュー/親採用済みD002を実装した。一般の複数受注、共有討伐、選択IDだけの報告、ギルド/直接NPCの明示選択と全受注一覧の隔離QCまで実施。詳細の条項別証拠と残るgateは [D-GUILD-002 §11](d-guild-002.md#11-実装と隔離qc記録d-guild-002) が正本。旧単一進捗の互換移行は行わない。承認済みslime-drop2→herb2+power5、救護/実画像/建物/radius8/既存物語を保持。live有効化と共有データ反映は依然別承認、無断書込/配備なし。

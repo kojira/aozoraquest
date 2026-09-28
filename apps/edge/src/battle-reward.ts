@@ -135,11 +135,11 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
     // ゲーム内クエスト (#423) の討伐カウント。**討伐数はここ (勝利の権威経路) だけが増やす** —
     // client の自己申告を数えると「戦わずに達成」できてしまう。パワー無し戦闘は上の
     // unrewarded で早期 return しているので、練習戦では進まない (報酬系と同じ線引き)。
-    const questDef = state.quest ? gameQuestById(state.quest.id) : undefined;
-    const questKills =
-      questDef?.objective.kind === 'defeat'
-        ? ids.filter((id) => id === (questDef.objective as { monsterId: string }).monsterId).length
-        : 0;
+    const activeQuests = state.activeQuests.map(q => {
+      const objective = gameQuestById(q.id)?.objective;
+      const kills = objective?.kind === 'defeat' ? ids.filter(id => id === objective.monsterId).length : 0;
+      return kills ? { ...q, progress: q.progress + kills } : q;
+    });
     const next: GameState = {
       ...state,
       // #507/#508: プレイヤー XP は**加算しない**。プレイヤーレベルは戦闘力に一切影響しない
@@ -148,9 +148,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       jobXp: { ...state.jobXp, [o.archetype]: (state.jobXp[o.archetype] ?? 0) + xp },
       materials: addItems(state.materials, drops, 1),
       power: Math.max(0, state.power - POWER_COST),
-      ...(questKills > 0 && state.quest
-        ? { quest: { id: state.quest.id, progress: state.quest.progress + questKills } }
-        : {}),
+      activeQuests,
     };
     const lv = levelUpOf(state, next, o.archetype, o.baseStats);
     return { next, awarded: { xp, drops, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };

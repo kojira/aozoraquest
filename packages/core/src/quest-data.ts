@@ -7,7 +7,7 @@
  *
  * ## 進行と報酬はサーバーが権威
  *
- * 進行 (討伐数) は `GameState.quest` に、達成済みは `GameState.questsDone` に持ち、
+ * 進行 (討伐数) は `GameState.activeQuests` に、達成済みは `GameState.questsDone` に持ち、
  * **報酬 (パワー・アイテム) は edge が検証して付与する**。client の自己申告では
  * 1 パワーも増えない (docs/21 のサーバー権威)。
  *
@@ -59,7 +59,7 @@ export const MAX_QUEST_REWARD_POWER = 500;
 
 let quests: GameQuestDef[] = [];
 let byId = new Map<string, GameQuestDef>();
-let byNpc = new Map<string, GameQuestDef>();
+let byNpc = new Map<string, GameQuestDef[]>();
 
 /**
  * 検証して差し替える。`null` で全解除。**壊れた 1 件で全体を落とす**。
@@ -72,7 +72,6 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
   if (next.length > MAX_GAME_QUESTS) throw new QuestDataError(`クエストが多すぎる (${next.length} > ${MAX_GAME_QUESTS})`);
   const ids = new Set<string>();
   const npcIds = new Set(allNpcs().map((n) => n.id));
-  const perNpc = new Map<string, string>();
   for (const q of next) {
     const where = q?.id ?? '(id なし)';
     if (!q || typeof q.id !== 'string' || q.id.trim() === '') throw new QuestDataError('クエストの id が空');
@@ -80,10 +79,6 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
     ids.add(q.id);
     if (typeof q.title !== 'string' || q.title.trim() === '') throw new QuestDataError(`${where}: タイトルが空`);
     if (!npcIds.has(q.npcId)) throw new QuestDataError(`${where}: NPC が存在しない (${q.npcId})`);
-    // **1 NPC 1 クエスト。** 複数あるとぶつかったときどれを話すのか決められない
-    // (連続クエストは「達成で次が解放」の形で将来やる)。
-    if (perNpc.has(q.npcId)) throw new QuestDataError(`${where}: NPC ${q.npcId} には既に「${perNpc.get(q.npcId)}」がある`);
-    perNpc.set(q.npcId, q.title);
     for (const [name, lines] of [['intro', q.intro], ['done', q.done], ['progress', q.progress ?? ['たのんだよ。']]] as const) {
       if (!Array.isArray(lines) || lines.length === 0) throw new QuestDataError(`${where}: ${name} が空`);
       for (const l of lines) {
@@ -128,7 +123,8 @@ export function setGameQuests(list: readonly GameQuestDef[] | null): void {
   const next = list ?? [];
   quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}), ...(q.requireItems ? { requireItems: q.requireItems.map((r) => ({ ...r })) } : {}) }));
   byId = new Map(quests.map((q) => [q.id, q]));
-  byNpc = new Map(quests.map((q) => [q.npcId, q]));
+  byNpc = new Map();
+  for (const q of quests) byNpc.set(q.npcId, [...(byNpc.get(q.npcId) ?? []), q]);
 }
 
 export function gameQuests(): readonly GameQuestDef[] {
@@ -139,9 +135,9 @@ export function gameQuestById(id: string): GameQuestDef | undefined {
   return byId.get(id);
 }
 
-/** その NPC が発注しているクエスト (無ければ undefined = ただの会話)。 */
-export function gameQuestByNpc(npcId: string): GameQuestDef | undefined {
-  return byNpc.get(npcId);
+/** その NPC の依頼を定義順に返す。 */
+export function gameQuestsByNpc(npcId: string): readonly GameQuestDef[] {
+  return byNpc.get(npcId) ?? [];
 }
 
 /** 達成条件の文 (「そらいろスライムを 3 たい」「やくそうを 2 こ」)。 */
@@ -154,7 +150,7 @@ export function questObjectiveText(def: GameQuestDef): string {
 
 /**
  * 進捗 1 行 (「そらいろスライムを 3 たい (2/3)」)。画面に出す文はここ 1 か所で組む。
- * defeat の進み具合は `GameState.quest.progress` (勝利時に edge が数える)、
+ * defeat の進み具合は `GameState.activeQuests[].progress` (勝利時に edge が数える)、
  * collect は**所持数**が進捗 (達成時に引き取られるので、別に数えない)。
  */
 export function questProgressLine(def: GameQuestDef, progress: number, materials: Record<string, number>): string {

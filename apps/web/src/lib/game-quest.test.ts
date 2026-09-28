@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MONSTERS, setGameQuests, setNpcs, type GameQuestDef } from '@aozoraquest/core';
 import {
-  activeQuest,
   guildQuestDetailLines,
   questAcceptChoices,
   questAfterBattle,
-  questBusyLines,
-  questMenuLine,
+  questMenuLines,
+  questChoiceTitle,
   questOfferLines,
   questStateOf,
   QUEST_ASK,
@@ -28,44 +27,37 @@ afterEach(() => {
   setNpcs(null);
 });
 
-describe('サーバー応答からの写し', () => {
-  it('questStateOf: quest / questsDone を写す (無ければ空)', () => {
-    expect(questStateOf({})).toEqual({ done: [] });
-    expect(questStateOf({ quest: { id: 'q1', progress: 2 }, questsDone: ['q0'] })).toEqual({ active: { id: 'q1', progress: 2 }, done: ['q0'] });
-  });
-
-  it('questAfterBattle: 応答に quest があれば進捗を差し替え、無ければそのまま', () => {
-    const st = { active: { id: 'q1', progress: 1 }, done: ['q0'] };
-    expect(questAfterBattle(st, { id: 'q1', progress: 2 })).toEqual({ active: { id: 'q1', progress: 2 }, done: ['q0'] });
+describe('multi-active server mirror and shared materials', () => {
+  const activeQuests = [{ id: 'q1', progress: 2 }, { id: 'q2', progress: 0 }];
+  it('replaces full snapshots, distinguishes empty from missing turn snapshots', () => {
+    const st = questStateOf({ activeQuests, questsDone: ['q0'] });
+    expect(st).toEqual({ activeQuests, done: ['q0'] });
     expect(questAfterBattle(st, undefined)).toBe(st);
+    expect(questAfterBattle(st, [], ['q0', 'q1'])).toEqual({ activeQuests: [], done: ['q0', 'q1'] });
+    expect(questStateOf({})).toEqual({ activeQuests: [], done: [] });
   });
-
-  it('activeQuest: 定義が消えた受注中クエストは無かったことにする', () => {
-    expect(activeQuest({ active: { id: 'q1', progress: 1 }, done: [] })?.def.id).toBe('q1');
-    expect(activeQuest({ active: { id: 'gone', progress: 1 }, done: [] })).toBeUndefined();
-    expect(activeQuest({ done: [] })).toBeUndefined();
+  it('shows every quest, destination, shared inventory and unknown IDs without dropping them', () => {
+    setGameQuests([Q1, Q2, { ...Q2, id: 'q3' }]);
+    const st = { activeQuests: [...activeQuests, { id: 'q3', progress: 0 }, { id: 'gone', progress: 9 }], done: [] };
+    const before = questMenuLines(st, { herb: 2 });
+    expect(before).toHaveLength(4);
+    expect(before[0]).toContain('報告先: そんちょう');
+    expect(before[0]).toContain('(2/3)');
+    expect(before.slice(1, 3).every(l => l.includes('所持 2 / 必要 2') && l.includes('報告すると2こ渡します'))).toBe(true);
+    expect(questMenuLines(st, {}).slice(1, 3).every(l => l.includes('所持 0 / 必要 2') && !l.includes('報告できます'))).toBe(true);
+    expect(before[3]).toContain('依頼情報を確認できません（gone）');
   });
-});
-
-describe('メニューの 1 行', () => {
-  it('受注中なら core の進捗文、受注中でなければ undefined (行を出さない)', () => {
-    expect(questMenuLine({ active: { id: 'q1', progress: 2 }, done: [] }, {})).toBe(`スライム たいじ: ${MON.name}を 3 たい (2/3)`);
-    expect(questMenuLine({ done: [] }, {})).toBeUndefined();
-  });
-
-  it('collect は所持数が進捗', () => {
-    expect(questMenuLine({ active: { id: 'q2', progress: 0 }, done: [] }, { herb: 1 })).toBe('くすり あつめ: やくそうを 2 こ (1/2)');
+  it('disambiguates identical titles and objectives by ID for both choice entry points', () => {
+    const other = { ...Q2, id: 'q3' };
+    expect(questChoiceTitle(Q2, [Q2, other])).toContain('（q2）');
+    expect(questChoiceTitle(other, [Q2, other])).toContain('（q3）');
+    expect(questChoiceTitle(Q1, [Q1, Q2])).toBe(Q1.title);
   });
 });
 
 describe('依頼のセリフ', () => {
   it('未受注: intro のあとに「うけますか？」', () => {
     expect(questOfferLines(Q1)).toEqual(['たのむ', QUEST_ASK]);
-  });
-
-  it('別のクエストを受注中: 受注中の題名を出し、確認は出さない', () => {
-    expect(questBusyLines(Q1, Q2)).toEqual(['たのむ', 'いまは 『くすり あつめ』を うけおっている。']);
-    expect(questBusyLines(Q1, Q2)).not.toContain(QUEST_ASK);
   });
 
   it('questAcceptChoices: はい は questId 付きで onYes、いいえ は何もしない。questId 無しなら選択肢なし', () => {

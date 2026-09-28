@@ -60,7 +60,7 @@ function shopErrorText(e: unknown, fallback: string): string {
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { STARTER_TOWN_GUILD, STARTER_TOWN_ID, EQUIPMENT_BY_ID, equipHands, questProgressLine, gameQuestById, gameQuestByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type NpcDef } from '@aozoraquest/core';
+import { STARTER_TOWN_GUILD, STARTER_TOWN_ID, EQUIPMENT_BY_ID, equipHands, questProgressLine, gameQuestById, gameQuestsByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
@@ -79,7 +79,7 @@ import { FeatherModal } from '@/components/feather-modal';
 import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
 import { WELCOME_POWER, ONBOARDING_DONE_KEY, WELCOME_BLESSING_PENDING_KEY } from '@/lib/onboarding-reset';
 import type { DialogueChoice, DialogueLine } from '@/lib/dialogue';
-import { activeQuest, EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questAfterBattle, questBusyLines, questMenuLine, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
+import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questAfterBattle, questChoiceTitle, questMenuLines, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -178,9 +178,9 @@ export function World() {
   const waitForFreshDirectionRef = useRef(false);
   /** NPC 会話 (#425/#423)。lines は通常セリフかクエスト文脈のセリフ。acceptQuestId が
    *  あるときは**読み終えたら はい/いいえ で受注を聞く** (#659)。 */
-  const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string; guild?: 'reunion' | 'menu' | 'detail' | 'message' } | null>(null);
+  const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string; guild?: 'reunion' | 'menu' | 'detail' | 'message'; choices?: DialogueChoice[]; directList?: boolean } | null>(null);
   /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成/決着の応答と serverState だけが書く。
-   *  state (メニューの 1 行に出す) + ref (バンプ判定は state 更新を待たずに最新を読む)。 */
+   *  state (メニューの全受注一覧に出す) + ref (バンプ判定は state 更新を待たずに最新を読む)。 */
   const [quest, setQuestState] = useState<QuestState>(EMPTY_QUEST_STATE);
   const questRef = useRef(quest);
   const setQuest = useCallback((next: QuestState | ((s: QuestState) => QuestState)) => {
@@ -618,9 +618,14 @@ export function World() {
       try {
         await refreshQuestState();
         // A lost response may already have accepted this quest, or another tab chose one.
-        if (questRef.current.active || questRef.current.done.includes(questId)) setNpcTalk(null);
+        if (questRef.current.activeQuests.some(q => q.id === questId) || questRef.current.done.includes(questId)) setNpcTalk(null);
       } catch { /* Keep the offer retryable; do not infer acceptance from a failed request. */ }
-      setNotice(e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど たしかめてね。');
+      const message = e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした…';
+      setNotice(message);
+      // The map notice is hidden during NPC dialogue: keep failure and retry visible in the offer.
+      setNpcTalk(current => current?.acceptQuestId === questId && !current.guild
+        ? { ...current, lines: [message, 'もういちど たしかめてね。うけますか？'] }
+        : current);
       throw e;
     } finally {
       moveBusyRef.current = false;
@@ -630,32 +635,27 @@ export function World() {
 
   const guildReception = (npc: NpcDef) => ({ npc, guild: 'menu' as const, lines: ['冒険者ギルドへ ようこそ。どうする？'] });
   const guildMessage = (npc: NpcDef, lines: string[]) => setNpcTalk({ npc, guild: 'message', lines });
-  const guildQuest = (npc: NpcDef) => {
-    // shared quests が無い/削除済みなら、同梱の依頼を勝手に復活させない。
-    const q = gameQuestByNpc(npc.id);
-    return q && (q.requireFlags ?? []).every(f => flagsRef.current.includes(f))
-      && itemsSatisfied(q.requireItems, materialsRef.current) ? q : undefined;
+  const npcQuests = (npc: NpcDef, includeDone = false) => gameQuestsByNpc(npc.id).filter(q =>
+    questRef.current.activeQuests.some(a => a.id === q.id)
+    || (questRef.current.done.includes(q.id) ? includeDone
+      : (q.requireFlags ?? []).every(f => flagsRef.current.includes(f)) && itemsSatisfied(q.requireItems, materialsRef.current)));
+
+  const showQuestChoices = (npc: NpcDef, candidates: readonly GameQuestDef[], select: (q: GameQuestDef) => void | Promise<void>, guild: boolean, page = 0) => {
+    const choices: DialogueChoice[] = candidates.slice(page * 3, page * 3 + 3).map(q => {
+      const active = questRef.current.activeQuests.find(a => a.id === q.id);
+      const state = active ? questProgressLine(q, active.progress, materialsRef.current) : questRef.current.done.includes(q.id) ? '達成済み' : '未受注';
+      return { label: `${questChoiceTitle(q, candidates)} / ${state}`, onSelect: () => select(q) };
+    });
+    if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1) });
+    if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1) });
+    if (!guild) choices.push({ label: '話す', onSelect: () => setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current), directList: true }) });
+    choices.push({ label: '戻る', onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
+    setNpcTalk({ npc, lines: [`どの依頼のこと？（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
-  const viewGuildQuest = (npc: NpcDef) => {
-    const q = guildQuest(npc);
-    if (!q) { guildMessage(npc, ['いま 紹介できる 依頼は ないよ。']); return; }
-    const lines = guildQuestDetailLines(q);
-    const qs = questRef.current;
-    if (qs.done.includes(q.id)) {
-      guildMessage(npc, [...lines, 'この依頼は 達成済みだよ。ありがとう！']);
-    } else if (qs.active?.id === q.id) {
-      guildMessage(npc, [...lines, questProgressLine(q, qs.active.progress, materialsRef.current), 'そろったら「報告する」を えらんでね。']);
-    } else {
-      // 受注の可否は既存authorityで判定。別依頼の進捗は変更しない。
-      setNpcTalk({ npc, guild: 'detail', lines: [...lines, 'うけますか？'], acceptQuestId: q.id });
-    }
-  };
-  const reportGuildQuest = async (npc: NpcDef) => {
+
+  const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false) => {
     if (!agent || moveBusyRef.current) return;
-    const q = guildQuest(npc);
-    if (!q) { guildMessage(npc, ['いま 報告できる 依頼は ないよ。']); return; }
-    if (questRef.current.done.includes(q.id)) { guildMessage(npc, ['この依頼は 達成済みだよ。ありがとう！']); return; }
-    if (questRef.current.active?.id !== q.id) { guildMessage(npc, ['まだ この依頼を うけていないよ。「依頼を見る」で たしかめてね。']); return; }
+    const message = (lines: string[]) => setNpcTalk({ npc, lines, ...(guild ? { guild: 'message' as const } : { directList }) });
     moveBusyRef.current = true;
     setQuestPending(true);
     try {
@@ -667,22 +667,54 @@ export function World() {
       const r = res.rewarded;
       const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
         r?.power ? `あおぞらパワー ${r.power}` : null].filter(Boolean).join(' と ');
-      guildMessage(npc, [...q.done, ...(got ? [`${got} を もらった！`] : []), ...(res.notices ?? [])]);
+      message([...q.done, ...(got ? [`${got} を もらった！`] : []), ...(res.notices ?? [])]);
     } catch (e) {
-      try { await refreshQuestState(); } catch { /* 不明な結果から完了を推測しない。 */ }
-      if (questRef.current.done.includes(q.id)) {
-        guildMessage(npc, ['この依頼は 達成済みだよ。']);
-      } else if (e instanceof WorldServerError && e.code === 'not_ready') {
-        guildMessage(npc, [...(q.progress ?? []), e.message, 'そろったら また 報告してね。']);
-      } else {
-        guildMessage(npc, [e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど 報告してね。']);
-      }
+      try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
+      if (questRef.current.done.includes(q.id)) message(['この依頼は 達成済みだよ。']);
+      else if (e instanceof WorldServerError && e.code === 'not_ready') message([...(q.progress ?? []), e.message, 'そろったら また 報告してね。']);
+      else message([e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど 報告してね。']);
     } finally {
       moveBusyRef.current = false;
       setQuestPending(false);
     }
   };
-  let npcChoices: DialogueChoice[] | undefined;
+
+  const viewGuildQuest = (npc: NpcDef, q?: GameQuestDef) => {
+    if (!q) {
+      const candidates = npcQuests(npc, true);
+      if (!candidates.length) { guildMessage(npc, ['いま 紹介できる 依頼は ないよ。']); return; }
+      if (candidates.length > 1) { showQuestChoices(npc, candidates, selected => viewGuildQuest(npc, selected), true); return; }
+      q = candidates[0]!;
+    }
+    const lines = guildQuestDetailLines(q);
+    const active = questRef.current.activeQuests.find(a => a.id === q.id);
+    if (questRef.current.done.includes(q.id)) guildMessage(npc, [...lines, 'この依頼は 達成済みだよ。ありがとう！']);
+    else if (active) guildMessage(npc, [...lines, questProgressLine(q, active.progress, materialsRef.current), 'そろったら「報告する」を えらんでね。']);
+    else setNpcTalk({ npc, guild: 'detail', lines: [...lines, 'うけますか？'], acceptQuestId: q.id });
+  };
+  const reportGuildQuest = (npc: NpcDef) => {
+    const candidates = gameQuestsByNpc(npc.id).filter(q => questRef.current.activeQuests.some(a => a.id === q.id));
+    if (!candidates.length) { guildMessage(npc, ['いま 報告できる 受注中の依頼は ないよ。']); return; }
+    const confirm = (q: GameQuestDef) => setNpcTalk({ npc, guild: 'message', lines: [...guildQuestDetailLines(q), 'この依頼を 報告しますか？'], choices: [
+      { label: '報告する', onSelect: () => reportQuest(npc, q, true) },
+      { label: '戻る', onSelect: () => setNpcTalk(guildReception(npc)) },
+    ] });
+    if (candidates.length === 1) confirm(candidates[0]!);
+    else showQuestChoices(npc, candidates, confirm, true);
+  };
+  const selectDirectQuest = (npc: NpcDef, q: GameQuestDef, directList: boolean) => {
+    if (questRef.current.activeQuests.some(a => a.id === q.id)) void reportQuest(npc, q, false, directList);
+    else setNpcTalk({ npc, lines: questOfferLines(q), acceptQuestId: q.id, directList });
+  };
+  const directQuestList = (npc: NpcDef) => showQuestChoices(npc, npcQuests(npc), q => selectDirectQuest(npc, q, true), false);
+  const openDirectNpc = (npc: NpcDef) => {
+    const candidates = npcQuests(npc);
+    if (candidates.length > 1) directQuestList(npc);
+    else if (candidates.length === 1) selectDirectQuest(npc, candidates[0]!, false);
+    else setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current) });
+  };
+
+  let npcChoices: DialogueChoice[] | undefined = npcTalk?.choices;
   if (npcTalk?.guild === 'menu') {
     const npc = npcTalk.npc;
     npcChoices = [
@@ -704,8 +736,12 @@ export function World() {
       } },
       { label: 'やめておく', onSelect: () => setNpcTalk(guildReception(npc)) },
     ];
-  } else {
-    npcChoices = questAcceptChoices(npcTalk?.acceptQuestId, acceptQuest);
+  } else if (npcTalk?.acceptQuestId) {
+    const { npc, directList } = npcTalk;
+    npcChoices = questAcceptChoices(npcTalk.acceptQuestId, async id => {
+      await acceptQuest(id);
+      if (directList) directQuestList(npc);
+    });
   }
 
   // 移動は**サーバー (edge Worker) が権威判定する** (docs/21 §5 再設計)。クライアントは方向 (隣接1マス) と
@@ -745,61 +781,7 @@ export function World() {
           ] });
           return;
         }
-        const q0 = gameQuestByNpc(npc.id);
-        // 解禁フラグ (#545) が立つまで、その NPC は依頼を話さない (通常のセリフに戻る)。
-        const q = q0
-          && (q0.requireFlags ?? []).every((f) => flagsRef.current.includes(f))
-          && itemsSatisfied(q0.requireItems, materialsRef.current)
-          ? q0 : undefined;
-        const qs = questRef.current;
-        const npcLines = npcLinesFor(npc, flagsRef.current, materialsRef.current);
-        // 進行中クエストの定義が消されていたら (管理者が削除)、無かったことにする (activeQuest)。
-        // 放置すると「べつの たのまれごと」で全クエストが永久に受けられない (UX レビュー ★★★)。
-        const active = activeQuest(qs);
-        if (!q || qs.done.includes(q.id)) {
-          setNpcTalk({ npc, lines: npcLines });
-        } else if (active?.def.id === q.id) {
-          // 達成試行はサーバー往復。**往復中は移動もバンプも塞ぐ** (moveBusyRef) —
-          // 塞がないとキー押しっぱなしで並行リクエストが飛び、成功の報酬ダイアログを
-          // 後続の already_done が上書きしたり、歩き出した先の戦闘中に会話が湧く (UX レビュー ★★★/★★)。
-          moveBusyRef.current = true;
-          void (async () => {
-            try {
-              const res = await serverQuestComplete(agent, q.id);
-              setQuest(questStateOf(res));
-              if (res.flags) flagsRef.current = res.flags;
-              setServerPower(res.power);
-              applyServerMaterials(res.materials);
-              const r = res.rewarded;
-              const got = [
-                r?.power ? `あおぞらパワー ${r.power}` : null,
-                r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
-              ].filter(Boolean).join(' と ');
-              // シナリオのお知らせ (#545) はお礼の後に続けて出す (別の窓にすると流れが切れる)。
-              setNpcTalk({ npc, lines: [...q.done, ...(got ? [`${got} を もらった!`] : []), ...(res.notices ?? [])] });
-            } catch (e) {
-              if (e instanceof WorldServerError && e.code === 'not_ready') {
-                // 「まだ n/m」はサーバーの言い分をそのまま出す (進行数はサーバーが正)。
-                setNpcTalk({ npc, lines: [...(q.progress ?? ['たのんだよ。']), e.message] });
-              } else {
-                try {
-                  await refreshQuestState();
-                  if (e instanceof WorldServerError && ['already_done', 'not_accepted', 'quest_busy'].includes(e.code ?? '')) {
-                    setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current) });
-                  }
-                } catch { /* Unknown result: leave the last confirmed state intact. */ }
-                setNotice('つうしんに しっぱいした… もういちど はなしかけてみよう。');
-              }
-            } finally {
-              moveBusyRef.current = false;
-            }
-          })();
-        } else if (active) {
-          // 別のクエスト進行中: 依頼は聞けるが受けられない (1 つずつ)。確認は出さない。
-          setNpcTalk({ npc, lines: questBusyLines(q, active.def) });
-        } else {
-          setNpcTalk({ npc, lines: questOfferLines(q), acceptQuestId: q.id });
-        }
+        openDirectNpc(npc);
         return;
       }
       // 施錠中のゲート (#426) は踏む前に止める。サーバーも同じ判定をするので、
@@ -920,7 +902,7 @@ export function World() {
         }
       })();
     },
-    [scheduleSave, agent, did, flushCraftLog, setQuest, refreshQuestState, applyServerMaterials],
+    [scheduleSave, agent, did, flushCraftLog, openDirectNpc],
   );
 
   // 戦闘コマンドも**毎回サーバーが解決する** (docs/21 §5)。クライアントは battleId + turn + command を送るだけ。
@@ -948,7 +930,7 @@ export function World() {
           if (res.flags) flagsRef.current = res.flags;
           if (res.scenarioNotices?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioNotices];
           // 討伐数 (#659) も決着の応答で同期する (メニューの進捗が戦闘前のまま残らない)。
-          setQuest((s) => questAfterBattle(s, res.quest));
+          setQuest((s) => questAfterBattle(s, res.activeQuests, res.questsDone));
           battleRef.current = acting;
           setBattle(acting);
         } catch (e) {
@@ -1736,7 +1718,7 @@ export function World() {
 `}</style>
             </div>
           )}
-          {menuOpen && <WorldMenu commands={menuCommands} questLine={questMenuLine(quest, materialsView)} onClose={() => setMenuOpen(false)} />}
+          {menuOpen && <WorldMenu commands={menuCommands} questLines={questMenuLines(quest, materialsView)} onClose={() => setMenuOpen(false)} />}
           {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。
               敵+ログ+コマンド、リザルトの報酬まで全部この枠内に畳む。上枠 (paddingTop)
               は WorldHud の HP/MP 帯を空けておく。 */}
@@ -1786,7 +1768,7 @@ export function World() {
           )}
           {!battle && npcTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
-              key={npcTalk.guild ? `${npcTalk.guild}:${npcTalk.lines.join('\n')}` : 'npc'}
+              key={`${npcTalk.guild ?? 'npc'}:${npcTalk.lines.join('\n')}`}
               anchor="map"
               lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
               portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? onboardingPortrait : undefined}
@@ -1799,7 +1781,8 @@ export function World() {
                   try { localStorage.setItem(`aq-futaba-guild-met:${did}`, '1'); } catch { /* private mode */ }
                   // 選択肢が次の窓へ進めた場合、古い窓のonDoneで上書きしない。
                   setNpcTalk(current => current === npcTalk ? guildReception(npcTalk.npc) : current);
-                } else setNpcTalk(null);
+                } else if (npcTalk.directList && npcTalkRef.current === npcTalk) directQuestList(npcTalk.npc);
+                else setNpcTalk(current => current === npcTalk ? null : current);
               }}
             />
           )}

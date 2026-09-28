@@ -125,7 +125,7 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
 
 describe('レベルアップで HP/MP 全回復 (#534)', () => {
   const at = (jobXp: number): GameState => ({
-    did: 'did:plc:x', power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
+    did: 'did:plc:x', activeQuests: [], power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
     gear: [], x: 0, y: 0, carryHp: 3, carryMp: 1, version: 2, updatedAt: '',
   });
   const win = (state: GameState) => applyBattleOutcome(state, {
@@ -171,7 +171,7 @@ describe('レベルアップで HP/MP 全回復 (#534)', () => {
 describe('レベルアップの内訳', () => {
   const th = jobXpToNextLevelFor('warrior', 0).next;
   const at = (jobXp: number): GameState => ({
-    did: 'did:plc:x', power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
+    did: 'did:plc:x', activeQuests: [], power: 10, playerXp: 0, jobXp: { warrior: jobXp }, materials: {},
     gear: [], x: 0, y: 0, carryHp: 3, carryMp: 1, version: 1, updatedAt: '',
   });
 
@@ -211,17 +211,26 @@ describe('ゲーム内クエストの討伐カウント (#423/#659)', () => {
     try { fn(); } finally { setGameQuests(null); setNpcs(null); }
   };
 
-  it('対象モンスターに勝つと progress が倒した頭数ぶん進む', () => withQuest(() => {
-    const s = base({ quest: { id: 'q1', progress: 1 } });
-    const { next } = applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [mon.id, mon.id] }));
-    expect(next.quest).toEqual({ id: 'q1', progress: 3 });
+  it('one win advances all matching defeat quests, not other monsters, collect or unknown IDs', () => withQuest(() => {
+    const other = MONSTERS.find(m => m.id !== mon.id)!;
+    setGameQuests([Q, { ...Q, id: 'q2', objective: { ...Q.objective, count: 5 } },
+      { ...Q, id: 'q3', objective: { ...Q.objective, monsterId: other.id } },
+      { ...Q, id: 'q4', objective: { kind: 'collect', itemId: 'herb', count: 2 } }]);
+    const activeQuests = ['q1', 'q2', 'q3', 'q4', 'unknown'].map(id => ({ id, progress: 1 }));
+    const s = base({ activeQuests });
+    expect(applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [mon.id, mon.id] })).next.activeQuests)
+      .toEqual(activeQuests.map((q, i) => ({ ...q, progress: i < 2 ? 3 : 1 })));
+    for (const outcome of ['lose', 'draw', 'fled', 'monster-fled'] as const) {
+      expect(applyBattleOutcome(s, input({ outcome })).next.activeQuests).toEqual(activeQuests);
+    }
+    expect(applyBattleOutcome(s, input({ outcome: 'win', rewarded: false })).next.activeQuests).toEqual(activeQuests);
   }));
 
   it('対象でないモンスター・負け・練習戦では進まない', () => withQuest(() => {
     const other = MONSTERS.find((m) => m.id !== mon.id)!;
-    const s = base({ quest: { id: 'q1', progress: 1 } });
-    expect(applyBattleOutcome(s, input({ outcome: 'win', monsterId: other.id })).next.quest).toEqual({ id: 'q1', progress: 1 });
-    expect(applyBattleOutcome(s, input({ outcome: 'lose' })).next.quest).toEqual({ id: 'q1', progress: 1 });
-    expect(applyBattleOutcome(base({ power: 0, quest: { id: 'q1', progress: 1 } }), input({ outcome: 'win', rewarded: false })).next.quest).toEqual({ id: 'q1', progress: 1 });
+    const s = base({ activeQuests: [{ id: 'q1', progress: 1 }] });
+    expect(applyBattleOutcome(s, input({ outcome: 'win', monsterId: other.id })).next.activeQuests).toEqual([{ id: 'q1', progress: 1 }]);
+    expect(applyBattleOutcome(s, input({ outcome: 'lose' })).next.activeQuests).toEqual([{ id: 'q1', progress: 1 }]);
+    expect(applyBattleOutcome(base({ power: 0, activeQuests: [{ id: 'q1', progress: 1 }] }), input({ outcome: 'win', rewarded: false })).next.activeQuests).toEqual([{ id: 'q1', progress: 1 }]);
   }));
 });

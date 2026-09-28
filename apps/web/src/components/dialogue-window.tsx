@@ -273,7 +273,7 @@ export function DialogueWindow({
                       } else finish();
                     } catch { choosingRef.current = false; }
                   }}
-                  style={{ padding: '0.3em 1.2em', fontSize: '0.95em', touchAction: 'manipulation' }}
+                  style={{ padding: '0.3em 1.2em', fontSize: '0.95em', maxWidth: '100%', overflowWrap: 'anywhere', whiteSpace: 'normal', touchAction: 'manipulation' }}
                 >
                   {c.label}
                 </button>

@@ -101,7 +101,7 @@ export interface ServerMoveResult {
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; quest?: { id: string; progress: number }; questsDone?: string[]; version: number; updatedAt: string }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -121,8 +121,8 @@ export interface ServerAward {
   };
 }
 export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[];
-  /** 進行中のゲーム内クエスト (#659)。勝利で討伐数が進んだときの同期用 (無ければ持っている値を保つ)。 */
-  quest?: { id: string; progress: number } }
+  /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
+  activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
 export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 
@@ -224,7 +224,7 @@ export function serverShopDiscard(agent: Agent, rkeys: string[], rkey: string): 
 }
 
 export interface ServerQuestResult {
-  quest?: { id: string; progress: number };
+  activeQuests: Array<{ id: string; progress: number }>;
   questsDone?: string[];
   power: number;
   materials: Record<string, number>;

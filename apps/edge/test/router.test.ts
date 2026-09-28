@@ -1,3 +1,6 @@
+import { p256 } from '@noble/curves/p256';
+import { sha256 } from '@noble/hashes/sha256';
+import { base58, base64urlnopad } from '@scure/base';
 import { describe, it, expect } from 'vitest';
 import { handleRequest, type Env } from '../src/router';
 
@@ -108,4 +111,36 @@ describe('edge router', () => {
     expect(res.status).toBe(400);
     expect(res.headers.get('content-type')).toContain('text/html');
   });
+});
+
+
+it('quest routes require their own auth scope and explicit string questId, never selecting a default', async () => {
+  const original = globalThis.fetch;
+  const did = 'did:plc:quest-router', aud = 'did:web:edge.aozoraquest.app';
+  const priv = new Uint8Array(32).fill(7);
+  const pub = p256.getPublicKey(priv, true);
+  const encode = (value: unknown) => base64urlnopad.encode(new TextEncoder().encode(JSON.stringify(value)));
+  const tokenFor = (lxm: string) => {
+    const content = `${encode({ alg: 'ES256', typ: 'JWT' })}.${encode({ iss: did, aud, lxm, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 60 })}`;
+    return `${content}.${base64urlnopad.encode(p256.sign(sha256(new TextEncoder().encode(content)), priv, { lowS: true }).toCompactRawBytes())}`;
+  };
+  let writes = 0;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') writes++;
+    if (!url.includes('plc.directory')) throw new Error('unexpected external request');
+    return Response.json({ id: did, verificationMethod: [{ id: `${did}#atproto`, type: 'Multikey', publicKeyMultibase: 'z' + base58.encode(new Uint8Array([0x80, 0x24, ...pub])) }] });
+  }) as typeof fetch;
+  try {
+    for (const action of ['accept', 'complete']) {
+      const request = (token: string | undefined, body: unknown) => new Request(`https://x/api/quest/${action}`, { method: 'POST', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      expect((await handleRequest(request(undefined, { questId: 'b' }), env)).status).toBe(401);
+      expect((await handleRequest(request(tokenFor('wrong.scope'), { questId: 'b' }), env)).status).toBe(401);
+      for (const body of [{}, { questId: 1 }]) {
+        const res = await handleRequest(request(tokenFor(`app.aozoraquest.quest.${action}`), body), env);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'bad_request' });
+      }
+    }
+    expect(writes).toBe(0);
+  } finally { globalThis.fetch = original; }
 });

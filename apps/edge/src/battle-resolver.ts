@@ -646,9 +646,9 @@ export interface TurnResult {
   /** シナリオのお知らせ (一度だけ)。**発火済みは二度と返らない**ので、
    *  client がここで拾わないと永久に失われる。 */
   scenarioNotices?: string[];
-  /** 進行中のゲーム内クエスト (#659)。勝利で討伐数が進んだら client はこれで表示を同期する。
-   *  無ければ省く — 戦闘でクエストが消えることは無いので、client は持っている値を保てばよい。 */
-  quest?: { id: string; progress: number };
+  /** 決着の全受注snapshot（空も明示）。未決着は省略しclientの写しを保つ。 */
+  activeQuests?: Array<{ id: string; progress: number }>;
+  questsDone?: string[];
 }
 
 /**
@@ -757,7 +757,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
       materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp,
       ...(written.flags ? { flags: written.flags } : {}),
-      ...(written.quest ? { quest: written.quest } : {}),
+      activeQuests: written.activeQuests, questsDone: written.questsDone ?? [],
       ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v } : {}) };
   }
 

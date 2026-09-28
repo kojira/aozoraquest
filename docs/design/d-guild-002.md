@@ -8,7 +8,7 @@ Issue [#707](https://github.com/kojira/aozoraquest/issues/707) / Draft PR [#708]
 2. 本設計調査中の追加指示: **「まだリリースしてないから今の状態を壊しても問題ないよ」**。従前handoffの「既存active ID/進捗を移行で必ず保持」は撤回。未リリース前提で破壊的に切り替えてよい。稼働本番保護を想定した互換配備を作らない。
 3. 続く追加指示: **「余計な仕組み入れないでね」**。単一questを複数保持へ置換し、既存受注/討伐/報告/表示を対応する最小差分とする。互換レイヤー、二重保存、専用slot、汎用移行/workflow基盤、未要求の上限/放棄/履歴再設計は入れない。
 
-**状態: 独立設計レビュー後、親が最新ユーザー指示の範囲で採用。実装着手。** D-GUILD-001の「受注方針回答待ち」「複数受注未承認」を上記決定で置換する。旧状態保持を目的としたlazy移行・schema marker・feature flag・protocol negotiation・旧client投影・全writer停止/ドレイン案は採用しない。main/merge/deploy/共有PDS書込の承認は依然ない。「壊してよい」は無関係な管理マップ/NPC/画像/ポイント等の一括削除の承認ではない。
+**状態: 独立設計レビュー/親採用後に実装・隔離QC済み。fresh実装レビューとCI確認、実入口の配備/データ反映は別ゲート。** D-GUILD-001の「受注方針回答待ち」「複数受注未承認」を上記決定で置換する。旧状態保持を目的としたlazy移行・schema marker・feature flag・protocol negotiation・旧client投影・全writer停止/ドレイン案は採用しない。main/merge/deploy/共有PDS書込の承認は依然ない。「壊してよい」は無関係な管理マップ/NPC/画像/ポイント等の一括削除の承認ではない。
 
 ## 1. 成果と非対象
 
@@ -166,7 +166,7 @@ activeQuests: Array<{ id: string; progress: number }>;
 
 ## 7. 一対一の実装完了チェックリスト
 
-全行**未実装/未検証**。REDは現行production seamを呼んで下記assertionが落ちること、GREENは同じassertionが通ること。helperの名前確認や件数を成功証拠にしない。独立レビューは親がfresh reviewerを手配。D001証拠を上書きしない。
+下表は実装前に固定した受入契約。実装後の行別証拠/未達は§11を参照。REDは現行production seamを呼んで下記assertionが落ちること、GREENは同じassertionが通ること。helperの名前確認や件数を成功証拠にしない。独立レビューは親がfresh reviewerを手配。D001証拠を上書きしない。
 
 |ID/要件|production seam|assertion-level RED|minimal GREEN|保持する成功証拠|禁止事項|後続影響 / 独立review|
 |---|---|---|---|---|---|---|
@@ -185,7 +185,7 @@ activeQuests: Array<{ id: string; progress: number }>;
 
 ## 8. 変更予定ファイル・最小実装順
 
-### 必須変更予定（今回未変更）
+### 必須変更予定（実装前の固定範囲）
 
 - `packages/core/src/quest-data.ts`: NPC配列lookup、validatorの1NPC制限、進捗コメント。`index.ts` はstar exportなら編集不要。
 - `apps/edge/src/game-state.ts`: 型/empty/default/旧quest除去。`game-quest.ts`: 配列受注/ID報告/結果型。`battle-reward.ts`: matching全件。`battle-resolver.ts`: 決着DTO/新規state接続。`router.ts` は新DTO返却への追従が必要な場合だけ（新endpoint/protocolなし）。
@@ -204,7 +204,7 @@ edge `shop.ts`, `xp-claim.ts`, `scenario-progress.ts`, `world-authoring.ts`, `ad
 
 ## 9. 検証計画 / 今回の証拠
 
-本パスは設計のみ。以下は**実装後の予定**で、RED/GREEN/実UIが成功済みという意味ではない。
+以下は設計時に固定した検証計画。実施結果は§11。
 
 - core: `pnpm --filter @aozoraquest/core test src/__tests__/quest-data.test.ts src/__tests__/starter-town-quests.test.ts src/__tests__/starter-town-tutorial.test.ts`
 - edge: `pnpm --filter @aozoraquest/edge test test/game-state.test.ts test/game-quest.test.ts test/battle-reward.test.ts test/battle-resolver.test.ts test/router.test.ts`（作業中は該当テスト名に絞る）。既存 `test/support/tutorial-env.ts` / stateful CAS PDSを再利用。
@@ -215,7 +215,7 @@ edge `shop.ts`, `xp-claim.ts`, `scenario-progress.ts`, `world-authoring.ts`, `ad
 
 ## 10. 残る判断・制約
 
-- 最新指示に沿ったこの最小設計の独立レビュー/親承認。旧保存進捗や旧clientの保護を新要件として戻さない。旧activeは失われる旨をユーザー/試験者へ明示する。
+- 最小設計は独立レビュー/親承認済み。実装のfreshレビューは未完了。旧保存進捗や旧clientの保護を新要件として戻さない。旧activeは失われる旨をユーザー/試験者へ明示する。
 - 実装後に使う入口と、そのweb/edge更新の対象/権限。別入口を併用する場合だけ対応版へ揃える。main/prod/PDSの包括承認はない。
 - リセットは切替の必須条件ではない。初めからのシナリオQCを行うテストプレイヤーだけ、既存resetを使うか親が判断。
 - `questsDone` 200リング: 同梱4件、現行カタログ上限200。200件超の履歴は管理者が長期にIDを入れ替える条件で、複数同時受注が新たに生む問題ではない。live件数は今回未取得。#709へ分離し全期間履歴再設計を混ぜない。今回の同時report/CAS/既存done拒否は必須。
@@ -226,3 +226,30 @@ edge `shop.ts`, `xp-claim.ts`, `scenario-progress.ts`, `world-authoring.ts`, `ad
 ## 設計レビュー採用記録
 
 親の実装handoffにより設計を採用。独立レビューのP1（ギルドにも直接NPCと同じ同名識別規則）は§3.2/R9へ反映済み。新state/タイトル一意制約は追加しない。Issue #707/#709のリンクをGitHub読取で確認。設計commitをproduction編集より先に保存する。merge/deploy/PDS書込は禁止のまま。
+
+## 11. 実装と隔離QC記録（D-GUILD-002）
+
+設計を先に `a087f26` でcommitし、その後productionへ実装。唯一の `activeQuests` 配列、全matching討伐、選択IDだけのCAS納品、同NPC配列lookup、全受注メニュー、3件ページの明示選択を追加した。新しい依頼定義/上限/移行機構/flag/protocol/放棄/履歴機構なし。旧quest進捗は意図的に捨て、管理マップ/画像/経済値は変更しない。
+
+|条項|実装後に保持した証拠|状態/限界|
+|---|---|---|
+|R1|`game-state.test.ts` legacy progress7→空/旧propertyなし、GET put0、CAS後もdone/flags/materials/power保持、混在は新配列のみ、XP/init境界|GREEN|
+|R2|`game-quest.test.ts` A/B並行受注、同ID並行1件、再送は前提素材消失後もno-op/progress保持。`router.test.ts`署名JWTで別lxm拒否/ID欠落拒否|GREEN。旧実装で並行受注全成功assertionがfalseになるREDを保存|
+|R3|実同梱slimes/tool-care並行→guild報告後もslimes進捗/locked herbs維持、slimes本人報告でflags。既存tutorial E2E連鎖|GREEN|
+|R4|`battle-reward.test.ts` matching2件+別敵+collect+unknown、win2頭/非win/練習。`battle-resolver.test.ts`実turn全snapshot/同turn再送409・不変|GREEN|
+|R5|BのみcompleteでA進捗保持、Bだけdone/reward。routerはID省略400。実Worldで選択BだけPOSTをguild/direct両方検証|GREEN|
+|R6|在庫2/4の同素材2件並行CAS、同ID二重報酬防止、不足不変、同素材rewardは消費後加算。実Worldで報告後Aが0/2表示|GREEN|
+|R7|core validator/indexで同NPC同名を順序保持・重複ID拒否。`world-authoring.test.ts`実save/load validatorに同NPC2件。World shared fixture4件/空override|GREEN|
+|R8|client full/empty/missing snapshot、全行・報告先・unknown・全collect再計算。WorldMenu全件/共有品説明/閉じる。実World320/390/1280 map bounds|GREEN。受注一覧だけscroll、コマンド2列で小画面の出口を保持|
+|R9|opening-story実World/DialogueWindow/権威CASに同名同目的4件fixture、B選択→Bだけ報告/報酬、前/次/戻る/退出。実許可portrait|GREEN。320/390で各buttonをscrollして到達/bounds確認。fixtureはlive依頼ではない|
+|R10|直接NPC1件は既存導線、複数は自動報告なし。B受注通信失敗時Aだけでも成功扱いせず、再取得/会話内エラー/再試行でBを受注|GREEN。E2Eの失敗assertionからエラーが背後noticeに隠れることを検出→既存offer内に表示してGREEN|
+|R11|readState/RMW配列保持、migrateInitState空、DTO呼出/実World reload復元。既存reset/delete/shop/XPのfull edge regression|GREEN。既存resetの責務は変更なし|
+|R12|実slimes+tool-care並行受注→権威battle処理→guild報告→reload後slimes進捗3保持→本人報告。救護/表情/扉/ラッチ/共有portrait/物語の既存E2E継続|隔離GREEN。live/実スマホ/配備後受入は未実施|
+
+証拠はrepo外 `~/.pi/guild-d002-evidence/`。`assertion-red.log`はR2の旧実装assertion RED、`authority-red.log`は旧validator/quest_busyの失敗、成功証拠ではない。他行は上表のGREEN/既存回帰で確認しており、各行個別のpre-change REDを全て取得したとは主張しない。fresh reviewerの行別判定は親が実施する。
+
+- edge全体296 tests成功、その後router boundary追加1件+resolver初期配列assertionのfocused45成功。web全体448成功、その後DTO8/authoring10 focused成功。core focused18成功（全体はPR CIで確認）。typecheck web/edge、build、validate:data（エラー/警告0）、lint（エラー0、警告25）成功。新warning1件はWorldの会話関数がmove callback dependencyとして毎render更新される点で、動作失敗ではない。
+- E2E tutorial成功、opening-storyの新parallel/selected-ID/lost-responseケースを含め成功（37.1s）。`screenshots/`に320/390/1280実画像とmap内証拠。初回E2Eの通信失敗表示assertionは背後notice非表示を検出し修正。DTOテスト初回はGETにbodyがあるとしたfixture誤り、authoring初回はNPCレコードを渡さないfixture誤りを修正し各GREEN。失敗を成功の代用にしない。
+- 既存untracked `apps/web/test-results/` は削除せず、開始時コピーもrepo外に保持。Playwright出力先をrepo外へ分離。画像原本・shared PDS未変更。
+- PR #708へpushして必須web CIを確認する。edge-deploy workflowはfeature PRでは走らないためlocal edge typecheck/full testを証拠とする（無断dispatch/配備なし）。
+- **残るゲート**: fresh独立レビュー、最新CI、対象dev web/edge同版更新の別承認、D001共有データの直前GET/最小差分/CAS承認、実利用/実スマホ受入。main/prod/merge/deploy/共有PDS書込なし。旧タブを閉じ指定入口だけで新版を試し、旧単一進捗は再受注になる。#709履歴再設計は対象外のまま。

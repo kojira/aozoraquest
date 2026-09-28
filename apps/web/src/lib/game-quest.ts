@@ -3,9 +3,9 @@
  *
  * 進行はサーバーが正。ここが持つのは `/me/state`・受注/達成の応答・決着の応答から
  * 写した値だけで、client は自分で進めない (討伐数は勝利時に edge が数える)。
- * world.tsx はこの写しを state に持ち、NPC 会話とメニューの 1 行に使う。
+ * world.tsx はこの写しを state に持ち、NPC 会話とメニューの全受注一覧に使う。
  */
-import { ITEMS, gameQuestById, questObjectiveText, questProgressLine, type GameQuestDef } from '@aozoraquest/core';
+import { ITEMS, allNpcs, gameQuestById, questObjectiveText, questProgressLine, type GameQuestDef } from '@aozoraquest/core';
 import type { DialogueChoice } from './dialogue';
 
 export interface QuestProgress {
@@ -13,44 +13,43 @@ export interface QuestProgress {
   progress: number;
 }
 
-/** 受注中 (active) と達成済み (done) の写し。 */
+/** 受注中 (activeQuests) と達成済み (done) の写し。 */
 export interface QuestState {
-  active?: QuestProgress;
+  activeQuests: QuestProgress[];
   done: string[];
 }
 
-export const EMPTY_QUEST_STATE: QuestState = { done: [] };
+export const EMPTY_QUEST_STATE: QuestState = { activeQuests: [], done: [] };
 
-/** `/me/state`・受注・達成の応答 (quest / questsDone を持つ) から写す。 */
-export function questStateOf(res: { quest?: QuestProgress | undefined; questsDone?: string[] | undefined }): QuestState {
-  return { ...(res.quest ? { active: res.quest } : {}), done: res.questsDone ?? [] };
+export function questStateOf(res: { activeQuests?: QuestProgress[]; questsDone?: string[] }): QuestState {
+  return { activeQuests: res.activeQuests ?? [], done: res.questsDone ?? [] };
 }
 
-/**
- * 決着の応答で討伐数を同期する。応答に quest が無ければそのまま (戦闘でクエストは
- * 消えないので、古い edge の応答でも受注中を消さない)。
- */
-export function questAfterBattle(st: QuestState, quest: QuestProgress | undefined): QuestState {
-  return quest ? { ...st, active: quest } : st;
+/** Missing snapshot means an unsettled turn; an explicit empty snapshot clears the list. */
+export function questAfterBattle(st: QuestState, activeQuests: QuestProgress[] | undefined, done?: string[]): QuestState {
+  return activeQuests === undefined ? st : { activeQuests, done: done ?? st.done };
 }
 
-/**
- * 受注中で定義が生きているクエスト。定義が消されたもの (管理者がエディタで削除) は
- * 無かったことにする — サーバー側 (handleQuestAccept) も同じ判断で孤児クエストを落とす。
- */
-export function activeQuest(st: QuestState): { def: GameQuestDef; progress: number } | undefined {
-  if (!st.active) return undefined;
-  const def = gameQuestById(st.active.id);
-  return def ? { def, progress: st.active.progress } : undefined;
+export function questMenuLines(st: QuestState, materials: Record<string, number>): string[] {
+  return st.activeQuests.map(q => {
+    const def = gameQuestById(q.id);
+    if (!def) return `依頼情報を確認できません（${q.id}）`;
+    const o = def.objective;
+    const have = o.kind === 'defeat' ? q.progress : (materials[o.itemId] ?? 0);
+    const progress = o.kind === 'collect'
+      ? `${questObjectiveText(def)}：所持 ${have} / 必要 ${o.count}。報告すると${o.count}こ渡します`
+      : questProgressLine(def, q.progress, materials);
+    const npc = allNpcs().find(n => n.id === def.npcId);
+    return `${def.title}（報告先: ${npc?.name ?? def.npcId}）: ${progress}${have >= o.count ? ' 報告できます' : ''}`;
+  });
 }
 
-/** メニューに出す 1 行 (「そらいろスライムを 3 たい (2/3)」)。受注中でなければ undefined。 */
-export function questMenuLine(st: QuestState, materials: Record<string, number>): string | undefined {
-  const a = activeQuest(st);
-  if (!a) return undefined;
-  const o = a.def.objective;
-  const have = o.kind === 'defeat' ? a.progress : (materials[o.itemId] ?? 0);
-  return `${a.def.title}: ${questProgressLine(a.def, a.progress, materials)}${have >= o.count ? ' 村人に はなそう' : ''}`;
+/** Shared by guild and direct NPC choices, including identical titles/objectives. */
+export function questChoiceTitle(q: GameQuestDef, candidates: readonly GameQuestDef[]): string {
+  const same = candidates.filter(c => c.title === q.title);
+  if (same.length < 2) return q.title;
+  const objective = questObjectiveText(q);
+  return `${q.title}・${objective}${same.filter(c => questObjectiveText(c) === objective).length > 1 ? `（${q.id}）` : ''}`;
 }
 
 export const QUEST_ASK = 'うけますか？';
@@ -72,11 +71,6 @@ export function guildQuestDetailLines(q: GameQuestDef): string[] {
 /** 依頼のセリフ。読み終えたら「うけますか？」で はい/いいえ を聞く。 */
 export function questOfferLines(q: GameQuestDef): string[] {
   return [...q.intro, QUEST_ASK];
-}
-
-/** 別のクエストを受注中: 依頼は聞けるが受けられない (1 つずつ)。確認は出さない。 */
-export function questBusyLines(q: GameQuestDef, active: GameQuestDef): string[] {
-  return [...q.intro, `いまは 『${active.title}』を うけおっている。`];
 }
 
 /**

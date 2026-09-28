@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { rkeyForDid, readModifyWrite, type GameState, type GameStateEnv, sanitizeGear, type OwnedPiece } from '../src/game-state';
+import { rkeyForDid, readModifyWrite, readState, emptyState, normalizeState, type GameState, type GameStateEnv, sanitizeGear, type OwnedPiece } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
 const DID = 'did:plc:alice'; // 対象ユーザー
@@ -231,5 +231,38 @@ describe('sanitizeGear の手数検証 (#609)', () => {
     // 持っていない強化値 (+1) の頭は落ち、足は通る
     expect(out.head).toBeUndefined();
     expect(out.feet).toEqual({ id: 'ft-cloth-shoes', level: 0 });
+  });
+});
+
+
+describe('D-GUILD-002 destructive single authority boundary', () => {
+  const original = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = original; });
+  it('GET ignores legacy quest without writing; next CAS strips only old quest and preserves unrelated state', async () => {
+    const env = await makeEnv(), m = statefulPds();
+    const { activeQuests: _, ...rest } = emptyState(DID, '');
+    const legacy = { ...rest, quest: { id: 'old', progress: 7 }, questsDone: ['done'], flags: ['story'], materials: { herb: 8 }, power: 40 };
+    m.store.set(rkeyForDid(DID), { value: legacy, cid: 'legacy' });
+    let puts = 0;
+    globalThis.fetch = ((url, init) => { if (String(url).includes('putRecord')) puts++; return m.fn(url, init); }) as typeof fetch;
+    const loaded = (await readState(env, DID))!.state;
+    expect(loaded).toEqual({ ...rest, activeQuests: [], questsDone: ['done'], flags: ['story'], materials: { herb: 8 }, power: 40 });
+    expect(puts).toBe(0);
+    await readModifyWrite(env, DID, cur => ({ ...cur, power: cur.power + 1 }), { now: NOW });
+    expect(m.store.get(rkeyForDid(DID))!.value).toMatchObject({ activeQuests: [], questsDone: ['done'], flags: ['story'], materials: { herb: 8 }, power: 41 });
+    expect(m.store.get(rkeyForDid(DID))!.value).not.toHaveProperty('quest');
+    expect(puts).toBe(1);
+  });
+  it('array wins when mixed; XP normalization and init also establish the sole array', async () => {
+    const activeQuests = [{ id: 'new', progress: 2 }, { id: 'unknown', progress: 8 }];
+    const mixed = { ...emptyState(DID, ''), activeQuests, quest: { id: 'old', progress: 7 }, xpEpoch: 0 };
+    expect(normalizeState(mixed).activeQuests).toEqual(activeQuests);
+    expect(normalizeState(mixed)).not.toHaveProperty('quest');
+    const m = statefulPds(); globalThis.fetch = m.fn;
+    const result = await readModifyWrite(await makeEnv(), DID, cur => cur, { now: NOW, init: () => mixed });
+    expect(result.activeQuests).toEqual(activeQuests);
+    expect(result).not.toHaveProperty('quest');
+    const next = await readModifyWrite(await makeEnv(), DID, cur => ({ ...cur, materials: { herb: 1 } }), { now: NOW });
+    expect(next.activeQuests).toEqual(activeQuests);
   });
 });
