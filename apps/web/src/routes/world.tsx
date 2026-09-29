@@ -1768,7 +1768,8 @@ export function World() {
           )}
           {!battle && npcTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
-              key={`${npcTalk.guild ?? 'npc'}:${npcTalk.lines.join('\n')}`}
+              // 段ごとに作り直さない (D-DIALOGUE-004)。setNpcTalk の新しい段で行・選択を数え直す。
+              conversationStep={npcTalk}
               anchor="map"
               lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
               portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? onboardingPortrait : undefined}
