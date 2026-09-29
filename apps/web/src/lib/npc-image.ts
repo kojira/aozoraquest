@@ -1,5 +1,6 @@
 import type { Agent } from '@atproto/api';
-import { assertNpcImage, assertNpcImageDimensions, inspectNpcImage, NPC_IMAGE_BYTES, type NpcImage, type NpcImageKind } from '@aozoraquest/core';
+import { assertNpcImage, assertNpcImageDimensions, inspectNpcImage, npcExpressionImage, NPC_IMAGE_BYTES, parseNpcLine, type NpcDef, type NpcImage, type NpcImageKind } from '@aozoraquest/core';
+import type { DialogueLine } from './dialogue';
 import { getPrimaryAdminDid } from './runtime-config';
 import { EDGE_URL } from './edge-config';
 
@@ -16,8 +17,20 @@ function loadWebpEncoder() {
     return encoder.default;
   }).catch((error) => { webpEncoder = undefined; throw error; });
 }
-export function npcImageUrl(id: string, kind: NpcImageKind, image: NpcImage): string {
-  return `${EDGE_URL ?? ''}/api/npc-image?${new URLSearchParams({ npcId: id, kind, cid: image.blob.ref.$link })}`;
+export function npcImageUrl(id: string, kind: NpcImageKind, image: NpcImage, expression?: string): string {
+  return `${EDGE_URL ?? ''}/api/npc-image?${new URLSearchParams({ npcId: id, kind, cid: image.blob.ref.$link, ...(expression ? { expression } : {}) })}`;
+}
+/**
+ * NPC の台詞を会話窓の行にする (D-DIALOGUE-005)。先頭の表情タグは表示から外し、
+ * 登録済みの表情画像があればその行だけの portrait にする。無ければ窓の通常 portrait のまま。
+ */
+export function npcDialogueLines(npc: Pick<NpcDef, 'id' | 'name' | 'expressionImages'>, lines: readonly string[],
+  imageUrl: (expression: string, image: NpcImage) => string = (expression, image) => npcImageUrl(npc.id, 'portrait', image, expression)): DialogueLine[] {
+  return lines.map((raw) => {
+    const { expression, text } = parseNpcLine(raw);
+    const image = npcExpressionImage(npc, expression);
+    return { speaker: npc.name, text, ...(image && expression ? { portrait: { src: imageUrl(expression, image), name: npc.name } } : {}) };
+  });
 }
 async function rawCid(blob: Blob): Promise<string> {
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));

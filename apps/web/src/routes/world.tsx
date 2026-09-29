@@ -70,7 +70,7 @@ import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, sho
 import { VirtualStick, type StickDir } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
-import { npcImageUrl } from '@/lib/npc-image';
+import { npcDialogueLines, npcImageUrl } from '@/lib/npc-image';
 import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
@@ -1771,7 +1771,8 @@ export function World() {
               // 段ごとに作り直さない (D-DIALOGUE-004)。setNpcTalk の新しい段で行・選択を数え直す。
               conversationStep={npcTalk}
               anchor="map"
-              lines={npcTalk.lines.map((text) => ({ speaker: npcTalk.npc.name, text }))}
+              // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
+              lines={npcDialogueLines(npcTalk.npc, npcTalk.lines)}
               portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? onboardingPortrait : undefined}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。

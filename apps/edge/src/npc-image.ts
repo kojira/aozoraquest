@@ -1,4 +1,4 @@
-import { assertNpcImage, NPC_IMAGE_BYTES, NPC_IMAGE_CID, readNpcImageBytes, inspectNpcImage, type NpcDef, type NpcImageKind } from '@aozoraquest/core';
+import { assertNpcImage, npcExpressionImage, NPC_EXPRESSION_NAME, NPC_IMAGE_BYTES, NPC_IMAGE_CID, readNpcImageBytes, inspectNpcImage, type NpcDef, type NpcImageKind } from '@aozoraquest/core';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 
@@ -9,7 +9,10 @@ export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string })
   const id = url.searchParams.get('npcId');
   const kind = url.searchParams.get('kind');
   const cid = url.searchParams.get('cid');
+  // Optional expression portrait (D-DIALOGUE-005): same record/cid checks, only for kind=portrait.
+  const expression = url.searchParams.get('expression');
   if (!id || id.length > 256 || (kind !== 'sprite' && kind !== 'portrait') || !cid || !NPC_IMAGE_CID.test(cid)) return fail(400);
+  if (expression !== null && (kind !== 'portrait' || expression.length > 64 || !NPC_EXPRESSION_NAME.test(expression))) return fail(400);
   const did = (env.ADMIN_DIDS ?? '').split(',').map((s) => s.trim()).filter(Boolean)[0];
   if (!did) return fail(404);
   try {
@@ -32,7 +35,7 @@ export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string })
     const record = JSON.parse(new TextDecoder().decode((await fetchBounded(`/xrpc/com.atproto.repo.getRecord?${query}`, 2 * 1024 * 1024)).bytes)) as { value?: { npcs?: NpcDef[] } };
     if (!Array.isArray(record.value?.npcs)) return fail(404);
     const npc = record.value.npcs.find((n) => n.id === id);
-    const image = npc?.[kind === 'sprite' ? 'spriteImage' : 'portraitImage'];
+    const image = expression !== null ? (npc ? npcExpressionImage(npc, expression) : undefined) : npc?.[kind === 'sprite' ? 'spriteImage' : 'portraitImage'];
     if (!image) return fail(404);
     assertNpcImage(image, kind as NpcImageKind);
     if (image.blob.ref.$link !== cid) return fail(404);

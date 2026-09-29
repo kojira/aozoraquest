@@ -18,8 +18,10 @@ const HELP = `${WARNING}
   node scripts/admin-data.mjs get <name>                          JSON を標準出力へ
   node scripts/admin-data.mjs put <name> <file> [--dry-run]        差分要約を出してから書く
   node scripts/admin-data.mjs npc-move <id> <mapId> <x> <y> [--dry-run]
-  node scripts/admin-data.mjs npc-image <id> <sprite|portrait> <file.webp> [--dry-run]
+  node scripts/admin-data.mjs npc-image <id> <sprite|portrait> <file.webp> [--expression <name>] [--dry-run]
       WebP を blob として上げ、NPC の spriteImage / portraitImage を差し替える。
+      --expression <name> (portrait のみ、英小文字) は expressionImages.<name> を差し替える
+      (セリフ先頭の [name] で出る表情別の会話イラスト。D-DIALOGUE-005)。
       --dry-run でも blob は上がる (レコードからは参照しない = PDS 側でいずれ消える)。
 
   name: ${NAMES.join(' | ')}
@@ -97,7 +99,10 @@ const checkName = (name) => { if (!NAMES.includes(name)) fail(`name は ${NAMES.
 
 async function main(argv) {
   const dryRun = argv.includes('--dry-run');
-  const args = argv.filter((a) => a !== '--dry-run');
+  const exprAt = argv.indexOf('--expression');
+  const expression = exprAt >= 0 ? argv[exprAt + 1] : undefined;
+  if (exprAt >= 0 && !/^[a-z]+$/.test(expression ?? '')) fail('--expression の表情名は英小文字だけ (例: sad)');
+  const args = argv.filter((a, i) => a !== '--dry-run' && (exprAt < 0 || (i !== exprAt && i !== exprAt + 1)));
   const [cmd, ...rest] = args;
   if (!cmd || cmd === '--help' || cmd === '-h' || cmd === 'help') { console.log(HELP); return; }
   if (cmd === 'get' && rest.length === 1) {
@@ -129,6 +134,7 @@ async function main(argv) {
   if (cmd === 'npc-image' && rest.length === 3) {
     const [id, kind, file] = rest;
     if (kind !== 'sprite' && kind !== 'portrait') fail('種類は sprite か portrait');
+    if (expression && kind !== 'portrait') fail('--expression は portrait だけ');
     if (!file.endsWith('.webp')) fail('WebP (.webp) のファイルだけ登録できる');
     let bytes;
     try { bytes = readFileSync(file); } catch (e) { fail(`${file} を読めない: ${e.message}`); }
@@ -137,10 +143,12 @@ async function main(argv) {
     if (!npcs.some((n) => n.id === id)) fail(`NPC が見つからない: ${id}`);
     const field = kind === 'sprite' ? 'spriteImage' : 'portraitImage';
     const { image } = await request('POST', null, null, { kind, bytes });
-    const old = npcs.find((n) => n.id === id)[field];
+    const target = npcs.find((n) => n.id === id);
+    const old = expression ? target.expressionImages?.[expression] : target[field];
     const desc = (v) => (v ? `${v.width}x${v.height} ${v.blob.size}B ${v.blob.ref.$link}` : 'なし');
-    console.error(`${id}.${field}: ${desc(old)} → ${desc(image)}`);
-    await write('npcs', current, { ...current.value, npcs: npcs.map((n) => (n.id === id ? { ...n, [field]: image } : n)) }, dryRun);
+    console.error(`${id}.${expression ? `expressionImages.${expression}` : field}: ${desc(old)} → ${desc(image)}`);
+    const put = (n) => (expression ? { ...n, expressionImages: { ...n.expressionImages, [expression]: image } } : { ...n, [field]: image });
+    await write('npcs', current, { ...current.value, npcs: npcs.map((n) => (n.id === id ? put(n) : n)) }, dryRun);
     return;
   }
   fail(HELP);

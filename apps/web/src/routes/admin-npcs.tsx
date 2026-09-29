@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   danglingRefs, describeDanglingRef, npcArtKey, NpcDataError,
   starterTownNpcs, starterTownNpcsPlacementError, STARTER_TOWN_ID,
-  NPC_SPRITE_PRESETS, tileArtFor, WORLD_MAP_ID, type NpcDef, type NpcImageKind,
+  NPC_SPRITE_PRESETS, tileArtFor, WORLD_MAP_ID, type NpcDef, type NpcImage, type NpcImageKind,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
@@ -14,7 +14,7 @@ import { NpcSprite } from '@/components/npc-sprite';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 import { NpcImageUpload } from '@/components/admin/npc-image-upload';
-import { NpcImagePreviews } from '@/components/npc-image';
+import { npcImagePreviewKey, NpcImagePreviews } from '@/components/npc-image';
 import { prepareNpcImage, uploadNpcImage, type PreparedNpcImage } from '@/lib/npc-image';
 
 /**
@@ -51,8 +51,8 @@ export function AdminNpcs() {
     pendingImages.current.clear();
   }, []);
   const refreshPreviews = () => setImagePreviews(new Map([...pendingImages.current].map(([key, value]) => [key, value.url])));
-  const forgetImage = (id: string, kind: NpcImageKind) => {
-    const key = `${id}/${kind}`;
+  const forgetImage = (id: string, kind: NpcImageKind, expression?: string) => {
+    const key = npcImagePreviewKey(id, kind, expression);
     const image = pendingImages.current.get(key);
     if (image) URL.revokeObjectURL(image.url);
     pendingImages.current.delete(key); refreshPreviews();
@@ -92,27 +92,40 @@ export function AdminNpcs() {
     setList((xs) => xs.map((n) => {
       if (n.id !== id) return n;
       const next = { ...n, ...patch } as NpcDef;
-      for (const key of ['spritePreset', 'spriteImage', 'portraitImage'] as const) if (next[key] === undefined) delete next[key];
+      for (const key of ['spritePreset', 'spriteImage', 'portraitImage', 'expressionImages'] as const) if (next[key] === undefined) delete next[key];
       if (next.mapId === WORLD_MAP_ID) delete next.mapId;
       return next;
     }));
   }, [saving]);
-  const selectImage = async (kind: NpcImageKind, file: File) => {
+  /** 表情別の会話イラスト (D-DIALOGUE-005)。選択待ちの間に他の表情が変わっても上書きしないよう最新の NPC に当てる。 */
+  const setExpressionImage = useCallback((id: string, expression: string, image: NpcImage | undefined) => {
+    if (saving) return;
+    setList((xs) => xs.map((n) => {
+      if (n.id !== id) return n;
+      const { [expression]: _old, ...rest } = n.expressionImages ?? {};
+      const images = image ? { ...rest, [expression]: image } : rest;
+      const { expressionImages: _prev, ...npc } = n;
+      return Object.keys(images).length ? { ...npc, expressionImages: images } : npc;
+    }));
+  }, [saving]);
+  const selectImage = async (kind: NpcImageKind, file: File, expression?: string) => {
     if (!current || saving || imageBusy || !loaded || session.did !== getPrimaryAdminDid()) return;
     const id = current.id, epoch = imageEpoch.current;
     setImageBusy(true); setNote('画像を確認しています…');
     try {
       const prepared = await prepareNpcImage(file, kind);
       if (epoch !== imageEpoch.current) { URL.revokeObjectURL(prepared.url); return; }
-      forgetImage(id, kind); pendingImages.current.set(`${id}/${kind}`, prepared); refreshPreviews();
-      update(id, kind === 'sprite' ? { spriteImage: prepared.image } : { portraitImage: prepared.image });
+      forgetImage(id, kind, expression); pendingImages.current.set(npcImagePreviewKey(id, kind, expression), prepared); refreshPreviews();
+      if (expression) setExpressionImage(id, expression, prepared.image);
+      else update(id, kind === 'sprite' ? { spriteImage: prepared.image } : { portraitImage: prepared.image });
       setNote(`保存用WebPを用意しました（${(file.size / 1024).toFixed(1)} → ${(prepared.blob.size / 1024).toFixed(1)}KiB）。まだ送信・保存していません`);
     } catch (error) { if (epoch === imageEpoch.current) setNote(`画像を選べません: ${String(error)}`); }
     finally { if (epoch === imageEpoch.current) setImageBusy(false); }
   };
-  const removeImage = (kind: NpcImageKind) => {
+  const removeImage = (kind: NpcImageKind, expression?: string) => {
     if (!current) return;
-    forgetImage(current.id, kind);
+    forgetImage(current.id, kind, expression);
+    if (expression) { setExpressionImage(current.id, expression, undefined); return; }
     update(current.id, kind === 'sprite' ? { spriteImage: undefined } : { portraitImage: undefined });
   };
   const syncDrawing = useCallback(() => {
@@ -195,8 +208,13 @@ export function AdminNpcs() {
     try {
       for (const npc of list) {
         for (const kind of ['sprite', 'portrait'] as const) {
-          const pending = pendingImages.current.get(`${npc.id}/${kind}`);
+          const pending = pendingImages.current.get(npcImagePreviewKey(npc.id, kind));
           if (pending && npc[kind === 'sprite' ? 'spriteImage' : 'portraitImage']?.blob.ref.$link === pending.image.blob.ref.$link) await uploadNpcImage(session.agent, pending, kind);
+          if (epoch !== imageEpoch.current) return;
+        }
+        for (const [expression, image] of Object.entries(npc.expressionImages ?? {})) {
+          const pending = pendingImages.current.get(npcImagePreviewKey(npc.id, 'portrait', expression));
+          if (pending && image.blob.ref.$link === pending.image.blob.ref.$link) await uploadNpcImage(session.agent, pending, 'portrait');
           if (epoch !== imageEpoch.current) return;
         }
       }
@@ -313,7 +331,7 @@ export function AdminNpcs() {
               </button>
               {!current.spritePreset && !current.spriteImage && <p className="npc-map-help">{world.arts.has(npcArtKey(current.id)) ? '手描きの絵' : '従来の表示'}{snapshot.find((n) => n.id === current.id)?.spritePreset ? '（未保存）' : 'を使用中'}</p>}
             </div>
-            <NpcImageUpload key={current.id} npc={current} canUpload={session.did === getPrimaryAdminDid()} onFile={(kind, file) => { void selectImage(kind, file); }} onRemove={removeImage} />
+            <NpcImageUpload key={current.id} npc={current} canUpload={session.did === getPrimaryAdminDid()} onFile={(kind, file, expression) => { void selectImage(kind, file, expression); }} onRemove={removeImage} />
             {field('マップ', (
               <select aria-label="マップ" value={mapChoice} onChange={(e) => setMapChoice(e.target.value)}>
                 <option value={WORLD_MAP_ID}>フィールド</option>
