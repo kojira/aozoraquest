@@ -9,7 +9,7 @@ const did = 'did:plc:npcimageauthor';
 const env = { ADMIN_DIDS: did };
 const bytes = png();
 const cid = cidFor(bytes);
-function fixture(options: { endpoint?: string; image?: unknown; body?: Uint8Array; contentType?: string; redirect?: boolean; missing?: boolean } = {}) {
+function fixture(options: { endpoint?: string; image?: unknown; body?: Uint8Array; contentType?: string; redirect?: boolean; missing?: boolean; expression?: NpcImage } = {}) {
   const image: NpcImage = { width: 32, height: 32, blob: { $type: 'blob', ref: { $link: cid }, mimeType: 'image/png', size: bytes.length } };
   const f = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -18,7 +18,7 @@ function fixture(options: { endpoint?: string; image?: unknown; body?: Uint8Arra
     if (options.redirect) return new Response(null, { status: 302, headers: { location: 'https://evil.example/blob' } });
     if (url.includes('getRecord')) {
       expect(new URL(url).searchParams.get('repo')).toBe(did);
-      return Response.json({ value: { npcs: options.missing ? [] : [{ id: 'npc-one', spriteImage: options.image ?? image, portraitImage: options.image ?? image }] } });
+      return Response.json({ value: { npcs: options.missing ? [] : [{ id: 'npc-one', spriteImage: options.image ?? image, portraitImage: options.image ?? image, ...(options.expression ? { expressionImages: { sad: options.expression } } : {}) }] } });
     }
     if (url.includes('getBlob')) return new Response(new Uint8Array(options.body ?? bytes).buffer, { headers: { 'content-type': options.contentType ?? 'image/png' } });
     throw new Error('unexpected URL');
@@ -26,8 +26,8 @@ function fixture(options: { endpoint?: string; image?: unknown; body?: Uint8Arra
   vi.stubGlobal('fetch', f);
   return f;
 }
-function request(kind = 'sprite', requestedCid = cid) {
-  return new Request(`https://edge.example/api/npc-image?${new URLSearchParams({ npcId: 'npc-one', kind, cid: requestedCid })}`);
+function request(kind = 'sprite', requestedCid = cid, expression?: string) {
+  return new Request(`https://edge.example/api/npc-image?${new URLSearchParams({ npcId: 'npc-one', kind, cid: requestedCid, ...(expression ? { expression } : {}) })}`);
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('GET /api/npc-image', () => {
@@ -47,6 +47,23 @@ describe('GET /api/npc-image', () => {
     fixture();
     expect((await handleRequest(request('sprite', cidFor(png(16, 16))), env)).status).toBe(404);
     expect((await handleRequest(request('portrait'), env)).status).toBe(200);
+  });
+  it('serves a registered expression portrait by cid with the same checks and immutable cache (D-DIALOGUE-005)', async () => {
+    const sadBytes = png(16, 16);
+    const sad: NpcImage = { width: 16, height: 16, blob: { $type: 'blob', ref: { $link: cidFor(sadBytes) }, mimeType: 'image/png', size: sadBytes.length } };
+    fixture({ expression: sad, body: sadBytes });
+    const response = await handleRequest(request('portrait', cidFor(sadBytes), 'sad'), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(sadBytes);
+    // The normal portrait cid is not served under the expression, nor unregistered/invalid names or sprite kind.
+    fixture({ expression: sad }); expect((await handleRequest(request('portrait', cid, 'sad'), env)).status).toBe(404);
+    fixture({ expression: sad }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'smile'), env)).status).toBe(404);
+    fixture({ expression: sad }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'constructor'), env)).status).toBe(404);
+    const bad = fixture({ expression: sad }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'Sad'), env)).status).toBe(400);
+    expect(bad).not.toHaveBeenCalled();
+    fixture({ expression: sad }); expect((await handleRequest(request('sprite', cidFor(sadBytes), 'sad'), env)).status).toBe(400);
+    fixture({ expression: sad, body: png(32, 32) }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'sad'), env)).status).toBe(422);
   });
   it('serves transparent WebP unchanged with its actual MIME type', async () => {
     const webp = imageFixture('32x32.webp');

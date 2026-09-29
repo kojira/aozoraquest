@@ -28,6 +28,11 @@ export interface NpcDef {
   spriteImage?: NpcImage;
   portraitImage?: NpcImage;
   /**
+   * 表情別の会話イラスト (D-DIALOGUE-005)。キーは台詞先頭の表情タグ名 (`[sad]` なら `sad`)。
+   * portraitImage と同じ規格。タグの画像が無い行は portraitImage を使う。
+   */
+  expressionImages?: Record<string, NpcImage>;
+  /**
    * **立っているマップ** (#613)。内部マップ (#424) の id、**省略 = フィールド**
    * (`WORLD_MAP_ID`)。mapId の無い旧レコードは無移行でフィールドの NPC として読める。
    */
@@ -63,6 +68,25 @@ export interface NpcsRecord {
 export const MAX_NPC_LINE = 120;
 /** NPC の総数の上限 (レコードサイズの現実的な範囲)。 */
 export const MAX_NPCS = 500;
+
+/** 表情名 (タグの中身)。一覧は持たない — 登録された画像が無ければ通常の絵になるだけ。 */
+export const NPC_EXPRESSION_NAME = /^[a-z]+$/;
+const EXPRESSION_TAG = /^\[([a-z]+)\]/;
+
+/**
+ * 台詞先頭の表情タグ `[name]` を 1 つだけ外す (D-DIALOGUE-005)。タグは表示しないが、
+ * 保存データには残す (将来の読み上げ用)。先頭以外・大文字・数字入りはタグとみなさない。
+ */
+export function parseNpcLine(raw: string): { expression?: string; text: string } {
+  const m = EXPRESSION_TAG.exec(raw);
+  return m ? { expression: m[1]!, text: raw.slice(m[0].length) } : { text: raw };
+}
+
+/** その表情の登録画像 (無ければ undefined = 呼出側で通常の portraitImage)。 */
+export function npcExpressionImage(npc: Pick<NpcDef, 'expressionImages'>, expression: string | undefined): NpcImage | undefined {
+  const images = npc.expressionImages;
+  return expression && images && Object.hasOwn(images, expression) ? images[expression] : undefined;
+}
 
 let npcList: NpcDef[] = [];
 let byKey = new Map<string, NpcDef>();
@@ -104,20 +128,27 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
     }
     if (n.spriteImage !== undefined) assertNpcImage(n.spriteImage, 'sprite');
     if (n.portraitImage !== undefined) assertNpcImage(n.portraitImage, 'portrait');
+    if (n.expressionImages !== undefined) {
+      if (!n.expressionImages || typeof n.expressionImages !== 'object' || Array.isArray(n.expressionImages)) throw new NpcDataError(`${where}: 表情画像が不正`);
+      for (const [tag, image] of Object.entries(n.expressionImages)) {
+        if (!NPC_EXPRESSION_NAME.test(tag)) throw new NpcDataError(`${where}: 表情名が不正 (${tag})`);
+        assertNpcImage(image, 'portrait');
+      }
+    }
     const k = key(mapOf(n), n.x, n.y);
     // **同じマスに 2 人は立てない。** ぶつかったときどちらと話すのか決められない。
     if (spots.has(k)) throw new NpcDataError(`${where}: 同じマスに別の NPC がいる (${n.x}, ${n.y})`);
     spots.add(k);
     if (!Array.isArray(n.lines) || n.lines.length === 0) throw new NpcDataError(`${where}: セリフが無い`);
     for (const l of n.lines) {
-      if (typeof l !== 'string' || l.trim() === '' || l.length > MAX_NPC_LINE) {
+      if (typeof l !== 'string' || parseNpcLine(l).text.trim() === '' || l.length > MAX_NPC_LINE) {
         throw new NpcDataError(`${where}: セリフが不正 (空 or ${MAX_NPC_LINE} 文字超)`);
       }
     }
     for (const alt of n.altLines ?? []) {
       if (!alt || !Array.isArray(alt.lines) || alt.lines.length === 0) throw new NpcDataError(`${where}: フラグ別セリフが空`);
       for (const l of alt.lines) {
-        if (typeof l !== 'string' || l.trim() === '' || l.length > MAX_NPC_LINE) {
+        if (typeof l !== 'string' || parseNpcLine(l).text.trim() === '' || l.length > MAX_NPC_LINE) {
           throw new NpcDataError(`${where}: フラグ別セリフが不正`);
         }
       }
