@@ -180,6 +180,16 @@ for (const spriteFormat of ['png', 'webp'] as const) test(`NPC ${spriteFormat} s
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]')).toHaveCount(1);
     await page.keyboard.press('ArrowRight'); await expect(page.getByRole('dialog', { name: '案内人のセリフ' })).toBeVisible();
     await expect(displayedPortrait).toHaveCount(0); await dismiss();
+    // D-DIALOGUE-005: register an expression portrait; the saved record gains only expressionImages.sad.
+    await page.goto(URL); await chooseNpc();
+    await expect(page.getByLabel('表情のイラストを選ぶ')).toBeDisabled();
+    await page.getByLabel('表情名').fill('sad');
+    await page.getByLabel('表情のイラストを選ぶ').setInputFiles(portrait);
+    await expect(page.getByAltText('表情 sad のプレビュー')).toBeVisible();
+    await page.getByRole('button', { name: '保存', exact: true }).click(); await expect(page.locator('.npc-editor > fieldset > [role=status]')).toContainText('2 人を保存');
+    const withSad = (records[npcCollection] as { npcs: NpcDef[] }).npcs;
+    expect(uploads).toBe(4); expect(withSad[0].expressionImages?.sad?.height).toBe(450);
+    expect({ ...withSad[0], expressionImages: undefined }).toEqual({ ...saved[0], expressionImages: undefined });
     await page.goto(`${URL}?secondary`); await chooseNpc();
     await expect(page.getByLabel('マップ画像を選ぶ')).toBeDisabled();
     await expect(page.getByText(/アップロードできるのは主管理者本人だけ/)).toBeVisible();
