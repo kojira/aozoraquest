@@ -4,9 +4,11 @@ import { npcImageUrl } from '@/lib/npc-image';
 
 /** Editor-only local URLs; never serialized into NPC records. */
 export const NpcImagePreviews = createContext<ReadonlyMap<string, string>>(new Map());
+/** Preview key; expression portraits (D-DIALOGUE-005) are `id/portrait:tag`. */
+export const npcImagePreviewKey = (id: string, kind: NpcImageKind, expression?: string) => `${id}/${kind}${expression ? `:${expression}` : ''}`;
 export function useNpcImageSource(id: string, kind: NpcImageKind, image?: NpcImage): string | undefined {
   const previews = useContext(NpcImagePreviews);
-  return image ? previews.get(`${id}/${kind}`) ?? npcImageUrl(id, kind, image) : undefined;
+  return image ? previews.get(npcImagePreviewKey(id, kind)) ?? npcImageUrl(id, kind, image) : undefined;
 }
 export function UploadedNpcSprite({ image, src, fallback }: { image: NpcImage; src: string; fallback: React.ReactNode }) {
   const clip = useId().replace(/:/g, '');
