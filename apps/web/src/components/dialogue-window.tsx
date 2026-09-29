@@ -61,6 +61,7 @@ export function DialogueWindow({
   choices,
   busy = false,
   anchor = 'viewport',
+  conversationStep,
 }: {
   lines: readonly DialogueLine[];
   /** 話者名プレートに添えるアイコン (例: ブルスコンは SpiritIcon — 他画面の
@@ -79,15 +80,26 @@ export function DialogueWindow({
    *  position:relative 祖先 (ワールドの地図枠) の下部にオーバーレイし、DQ 風に
    *  「マップ上」へ会話窓を出す。 */
   anchor?: 'viewport' | 'map';
+  /** 同じ会話の次の段 (ギルドの 受付→メニュー→話す 等)。変わったら行・選択・done を数え直すが、
+   *  窓は作り直さない (D-DIALOGUE-004: 段ごとの作り直しで送り面の暗転が再生されて明滅し、
+   *  会話イラストの再取得中は絵が消えていた)。Object.is で比べる。 */
+  conversationStep?: unknown;
 }) {
-  const [st, setSt] = useState(startDialogue);
+  // 進行状態は段と一緒に持つ: 前の段への done 等が、次の段へ漏れない。
+  const [view, setView] = useState(() => ({ step: conversationStep, st: startDialogue() }));
+  if (!Object.is(view.step, conversationStep)) setView({ step: conversationStep, st: startDialogue() });
+  const { step, st } = view;
+  // 更新はその段にだけ効かせる (前の段の interval/送り/選択の結果を、次の段へ持ち込まない)。
+  const setSt = useCallback((next: (s: DialogueState) => DialogueState) =>
+    setView((v) => (Object.is(v.step, step) ? { ...v, st: next(v.st) } : v)), [step]);
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
   );
-  const doneRef = useRef(false);
+  // done 通知済み / 選択処理中の段 ({ step } の箱。null = なし)。
+  const doneRef = useRef<{ step: unknown } | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const choosingRef = useRef(false);
+  const choosingRef = useRef<{ step: unknown } | null>(null);
   const windowRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -96,7 +108,7 @@ export function DialogueWindow({
 
   useEffect(() => {
     if (onMap && bodyRef.current) bodyRef.current.scrollTop = 0;
-  }, [onMap, st.index]);
+  }, [onMap, st.index, step]);
 
   // 会話中にTabで背後のもちもの/移動UIへ抜けない。
   useEffect(() => {
@@ -116,12 +128,13 @@ export function DialogueWindow({
   // ここで止まると不可視のまま永久ブロックになる — 動的生成セリフ時代への契約。レビュー指摘)
   useEffect(() => {
     if (lines.length === 0) setSt((s) => (s.done ? s : { ...s, done: true }));
-  }, [lines.length]);
+  }, [lines.length, setSt]);
 
-  // ★ キーボード操作: mount 時にオーバーレイへフォーカス (Enter/Space で送れるように)
+  // ★ キーボード操作: mount 時と次の段でオーバーレイへフォーカス (Enter/Space で送れるように。
+  // 選んだ選択肢ボタンは次の段で消える)
   useEffect(() => {
     overlayRef.current?.focus();
-  }, []);
+  }, [step]);
 
   // タイプ進行。interval は行単位で張る (依存に st 全体を入れると 1 文字ごとに
   // clear→再生成される setTimeout チェーンになる — レビュー指摘)。tickDialogue は
@@ -139,15 +152,15 @@ export function DialogueWindow({
     const id = setInterval(() => setSt((s) => tickDialogue(lines, s)), CHAR_MS);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- interval は行 (index) 単位
-  }, [lines, st.index, st.done, reduced]);
+  }, [lines, st.index, st.done, reduced, setSt]);
 
   // done は effect 経由で一度だけ通知 (render 中の親 setState を避ける)
   useEffect(() => {
-    if (st.done && !doneRef.current) {
-      doneRef.current = true;
+    if (st.done && !(doneRef.current && Object.is(doneRef.current.step, step))) {
+      doneRef.current = { step };
       onDone();
     }
-  }, [st.done, onDone]);
+  }, [st.done, onDone, step]);
 
   /** セリフを進める。**イベントは必ずここで止める** — 送り面は画面全体を覆う当たり判定なので、
    *  祖先に「背景タップで閉じる」オーバーレイ (なんでも屋の店窓) があると、セリフを送るタップが
@@ -156,14 +169,24 @@ export function DialogueWindow({
    *  全画面の当たり判定を持つ側で止めるのが正しい (今後どこに置いても同じ事故が起きない)。 */
   const advance = useCallback((e?: { stopPropagation: () => void }) => {
     e?.stopPropagation();
-    if (busy || choosingRef.current) return;
-    setSt((s) => (choicesShown(lines, s, choices) ? s : advanceDialogue(lines, s)));
-  }, [lines, choices, busy]);
+    if (busy || (choosingRef.current && Object.is(choosingRef.current.step, step))) return;
+    if (choicesShown(lines, st, choices)) return;
+    const next = advanceDialogue(lines, st);
+    setSt(() => next);
+    // 最後の送りは同じイベントで通知する: 呼出側の「閉じる/次の段」と同じ描画にまとまり、
+    // done のまま残った窓が一瞬だけ出続けない。
+    if (next.done && !(doneRef.current && Object.is(doneRef.current.step, step))) {
+      doneRef.current = { step };
+      onDone();
+    }
+  }, [lines, choices, busy, step, setSt, st, onDone]);
 
   const line = currentLine(lines, st);
   const asking = choicesShown(lines, st, choices);
   // Keep focus on the dialogue surface: held Enter must not select "はい".
-  if (!line || st.done) return null;
+  // 段つきの会話は done 後も最後の行を残す: 呼出側が次の段を渡すか閉じるまで、送り面と会話
+  // イラストを外さない (外すと暗転アニメが最初から再生され、画面が明滅する)。
+  if (!line || (st.done && conversationStep === undefined)) return null;
   const complete = lineComplete(lines, st);
   const shownPortrait = line.speaker ? line.portrait ?? portrait : undefined;
 
@@ -287,21 +310,24 @@ export function DialogueWindow({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (busy || choosingRef.current) return;
-                    choosingRef.current = true;
+                    if (busy || (choosingRef.current && Object.is(choosingRef.current.step, step))) return;
+                    const chosen = { step };
+                    choosingRef.current = chosen;
+                    // 選んだ段だけを閉じる (onSelect が次の段を渡していても、その段は閉じない)。
                     const finish = () => {
-                      if (!doneRef.current) {
-                        doneRef.current = true;
+                      if (!(doneRef.current && Object.is(doneRef.current.step, step))) {
+                        doneRef.current = { step };
                         setSt((s) => ({ ...s, done: true }));
                         onDone();
                       }
                     };
+                    const retry = () => { if (choosingRef.current === chosen) choosingRef.current = null; };
                     try {
                       const result = c.onSelect();
                       if (result && typeof result.then === 'function') {
-                        void result.then(finish, () => { choosingRef.current = false; });
+                        void result.then(finish, retry);
                       } else finish();
-                    } catch { choosingRef.current = false; }
+                    } catch { retry(); }
                   }}
                   style={{ padding: '0.3em 1.2em', fontSize: '0.95em', maxWidth: '100%', overflowWrap: 'anywhere', whiteSpace: 'normal', touchAction: 'manipulation' }}
                 >

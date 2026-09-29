@@ -37,10 +37,13 @@ describe('GET /api/npc-image', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    // cid-addressed and validated against the record: a remounted portrait must not refetch (D-DIALOGUE-004).
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
     fixture({ missing: true });
-    expect((await handleRequest(request(), env)).status).toBe(404);
+    const missing = await handleRequest(request(), env);
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('cache-control')).toBe('no-store');
     fixture();
     expect((await handleRequest(request('sprite', cidFor(png(16, 16))), env)).status).toBe(404);
     expect((await handleRequest(request('portrait'), env)).status).toBe(200);
@@ -62,7 +65,10 @@ describe('GET /api/npc-image', () => {
       expect((await handleRequest(request(), env)).status).toBe(502);
       expect(calls).toHaveBeenCalledTimes(1);
     }
-    const redirected = fixture({ redirect: true }); expect((await handleRequest(request(), env)).status).toBe(502);
+    const redirected = fixture({ redirect: true });
+    const refused = await handleRequest(request(), env);
+    expect(refused.status).toBe(502);
+    expect(refused.headers.get('cache-control')).toBe('no-store');
     expect(redirected.mock.calls.map(([u]) => String(u)).some((u) => u.includes('evil.example'))).toBe(false);
     fixture({ contentType: 'image/svg+xml' }); expect((await handleRequest(request(), env)).status).toBe(422);
     fixture({ body: png(16, 16) }); expect((await handleRequest(request(), env)).status).toBe(422);

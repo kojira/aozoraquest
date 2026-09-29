@@ -41,7 +41,7 @@ export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string })
     if (type !== image.blob.mimeType || bytes.length !== image.blob.size) return fail(422);
     const decoded = inspectNpcImage(bytes, kind);
     if (decoded.mimeType !== image.blob.mimeType || decoded.width !== image.width || decoded.height !== image.height) return fail(422);
-    return new Response(bytes.slice().buffer, { headers: { 'content-type': decoded.mimeType, 'content-length': String(bytes.length), 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; sandbox" } });
+    return new Response(bytes.slice().buffer, { headers: { 'content-type': decoded.mimeType, 'content-length': String(bytes.length), 'x-content-type-options': 'nosniff', 'cache-control': 'public, max-age=31536000, immutable', 'content-security-policy': "default-src 'none'; sandbox" } });
   } catch (err) {
     console.warn('npc-image: upstream failed', err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'unknown error');
     return fail(502);
