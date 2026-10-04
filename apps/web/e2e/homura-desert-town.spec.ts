@@ -9,7 +9,7 @@ import { BASE_PARTS, bundledWorldMapTiles, encodeWorldMap, tileArtFor, WORLD_SIZ
 // 通信は隔離した fixture のみ (実 PDS には書かない)。
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4283/e2e/fixtures/new-biomes.html';
-const FIELD = 'app.aozoraquest.world.map';
+const FIELD = 'app.aozoraquest.dev.world.map';
 test.beforeAll(async () => {
   vite = await createServer({ configFile: false, root: process.cwd(), plugins: [react()],
     resolve: { alias: { '@': path.join(process.cwd(), 'src') } },

@@ -10,7 +10,7 @@ import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4282/e2e/fixtures/new-biomes.html';
-const INTERIORS = 'app.aozoraquest.world.interiors', FIELD = 'app.aozoraquest.world.map';
+const INTERIORS = 'app.aozoraquest.dev.world.interiors', FIELD = 'app.aozoraquest.dev.world.map';
 test.beforeAll(async () => {
   vite = await createServer({ configFile: false, root: process.cwd(), plugins: [react()],
     resolve: { alias: { '@': path.join(process.cwd(), 'src') } },
@@ -40,7 +40,7 @@ for (const field of [false, true]) test(`${field ? 'field' : 'interior'}: add/pa
   const records: Record<string, any> = {
     [FIELD]: field ? { size, parts: oldParts, gz: map.gz } : undefined,
     [INTERIORS]: { interiors: field ? [untouched] : [map, untouched], gates: [] },
-    'app.aozoraquest.world.tileArt': { arts: { 'part:8': art } },
+    'app.aozoraquest.dev.world.tileArt': { arts: { 'part:8': art } },
     'app.aozoraquest.test.analysis': diag,
     'app.aozoraquest.test.world': { x, y, regions: [], visitedTowns: [], gotStarterFeather: true, hp: null, mp: null },
   };
@@ -113,7 +113,7 @@ for (const field of [false, true]) test(`${field ? 'field' : 'interior'}: add/pa
     expect(gunzipSync(Buffer.from(saved.gz, 'base64'))).toEqual(Buffer.from(tiles));
     expect(saved.parts.slice(0, 9)).toEqual(oldParts);
     expect(saved.parts.slice(9).map((p: any) => p.terrain)).toEqual(['snowfield', 'snowMountain', 'desert']);
-    expect(records['app.aozoraquest.world.tileArt'].arts['part:8']).toEqual(art);
+    expect(records['app.aozoraquest.dev.world.tileArt'].arts['part:8']).toEqual(art);
     expect(records[INTERIORS].interiors.at(-1)).toEqual(untouched);
     await page.reload();
     if (!field) await page.getByRole('button', { name: /雪と砂の庭.*16²/ }).click();
@@ -167,7 +167,7 @@ test('base-only interior can explicitly add biomes; legacy shared art blocks onl
   expect(records[INTERIORS].interiors[0].parts).toEqual([...BASE_PARTS, { terrain: 'snowfield', name: '雪原' }]);
   expect(records[INTERIORS].interiors[0].gz).toBe(original.gz);
   records[INTERIORS] = { interiors: [original], gates: [] };
-  records['app.aozoraquest.world.tileArt'] = { arts: { 'part:0': encodeTileArt(tileArtFor('desert')!) } };
+  records['app.aozoraquest.dev.world.tileArt'] = { arts: { 'part:0': encodeTileArt(tileArtFor('desert')!) } };
   await page.reload(); await page.getByRole('button', { name: /基本の部屋.*4²/ }).click();
   await page.getByRole('button', { name: '雪原を追加', exact: true }).click();
   await expect(page.getByText(/共有パーツを使用しているため/)).toBeVisible();

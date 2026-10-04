@@ -61,7 +61,7 @@ describe('ensureAuthoredWorld: 空配列のレコードを適用する (#660)', 
     globalThis.fetch = fakePds({ map: { size: 4, parts, gz },
       interiors: { interiors: [{ id: 'biomes', name: '雪と砂', size: 4, parts, gz }], gates: [] } });
     try {
-      await ensureAuthoredWorld(env, NSID, NOW);
+      await ensureAuthoredWorld(env, NOW);
       expect(worldParts()).toEqual(parts);
       expect([0, 1, 2, 3].map(x => terrainAt(x, 0))).toEqual(['bridge', 'snowfield', 'snowMountain', 'desert']);
       expect([1, 2, 3].map(x => isWalkableAt(x, 0))).toEqual([true, false, true]);
@@ -74,31 +74,31 @@ describe('ensureAuthoredWorld: 空配列のレコードを適用する (#660)', 
   it('loads the Bluesky preset alongside unchanged legacy NPCs', async () => {
     const npcs: NpcDef[] = [NPC, { ...NPC, id: 'sky', x: 5, spritePreset: 'bluesky' }];
     globalThis.fetch = fakePds({ npcs: { npcs } });
-    await ensureAuthoredWorld(env, NSID, NOW);
+    await ensureAuthoredWorld(env, NOW);
     expect(allNpcs()).toEqual(npcs);
   });
 
   it('NPC: {npcs: []} で全 NPC が消える', async () => {
     globalThis.fetch = fakePds({ npcs: { npcs: [] } });
-    await ensureAuthoredWorld(env, NSID, NOW);
+    await ensureAuthoredWorld(env, NOW);
     expect(allNpcs()).toEqual([]);
   });
 
   it('NPC: レコードが無ければメモリの NPC を保持する', async () => {
     globalThis.fetch = fakePds({});
-    await ensureAuthoredWorld(env, NSID, NOW);
+    await ensureAuthoredWorld(env, NOW);
     expect(allNpcs().map((n) => n.id)).toEqual(['elder']);
   });
 
   it('店: {shops: []} で全上書きが外れる', async () => {
     globalThis.fetch = fakePds({ shops: { shops: [] } });
-    await ensureAuthoredWorld(env, NSID, NOW);
+    await ensureAuthoredWorld(env, NOW);
     expect(shopOverrides()).toEqual([]);
   });
 
   it('店: レコードが無ければメモリの上書きを保持する', async () => {
     globalThis.fetch = fakePds({});
-    await ensureAuthoredWorld(env, NSID, NOW);
+    await ensureAuthoredWorld(env, NOW);
     expect(shopOverrides().map((s) => [s.x, s.y])).toEqual([[10, 20]]);
   });
 });

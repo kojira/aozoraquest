@@ -1,9 +1,10 @@
 import { assertNpcImage, npcExpressionImage, NPC_EXPRESSION_NAME, NPC_IMAGE_BYTES, NPC_IMAGE_CID, readNpcImageBytes, inspectNpcImage, type NpcDef, type NpcImageKind } from '@aozoraquest/core';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
+import { adminNsidRoot, type WorldAuthoringEnv } from './world-authoring';
 
 /** This route never accepts an upstream URL/DID. Only the configured primary author's saved NPCs are public. */
-export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string }): Promise<Response> {
+export async function handleNpcImage(req: Request, env: WorldAuthoringEnv): Promise<Response> {
   const fail = (status: number) => new Response('NPC image unavailable', { status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
   const url = new URL(req.url);
   const id = url.searchParams.get('npcId');
@@ -31,7 +32,7 @@ export async function handleNpcImage(req: Request, env: { ADMIN_DIDS?: string })
       if (length && Number(length) > max) { await response.body.cancel(); throw new Error('PDS response too large'); }
       return { bytes: await readNpcImageBytes(response.body, max), type: response.headers.get('content-type')?.split(';')[0].trim() };
     };
-    const query = new URLSearchParams({ repo: did, collection: 'app.aozoraquest.world.npcs', rkey: 'self' });
+    const query = new URLSearchParams({ repo: did, collection: `${adminNsidRoot(env)}.world.npcs`, rkey: 'self' });
     const record = JSON.parse(new TextDecoder().decode((await fetchBounded(`/xrpc/com.atproto.repo.getRecord?${query}`, 2 * 1024 * 1024)).bytes)) as { value?: { npcs?: NpcDef[] } };
     if (!Array.isArray(record.value?.npcs)) return fail(404);
     const npc = record.value.npcs.find((n) => n.id === id);

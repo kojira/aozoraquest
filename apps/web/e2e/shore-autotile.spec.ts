@@ -12,7 +12,7 @@ const shoreMarkup = (els: Element[]) => els.map((el) => el.outerHTML.replace(/id
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4275/e2e/fixtures/shore-autotile.html';
-const INTERIORS = 'app.aozoraquest.world.interiors';
+const INTERIORS = 'app.aozoraquest.dev.world.interiors';
 test.beforeAll(async () => {
   vite = await createServer({ configFile: false, root: process.cwd(), plugins: [react()],
     resolve: { alias: { '@': path.join(process.cwd(), 'src') } },
@@ -38,7 +38,7 @@ test('real interior paint → shore preview → explicit save → reload → Wor
   const untouched = { id: 'untouched', name: '別の部屋', size: 4, gz: Buffer.from(await encodeWorldMap(new Uint8Array(16))).toString('base64') };
   const records: Record<string, any> = {
     [INTERIORS]: { interiors: [map, untouched], gates: [] },
-    'app.aozoraquest.world.tileArt': { arts: { plains: encodeTileArt(sandArt) } },
+    'app.aozoraquest.dev.world.tileArt': { arts: { plains: encodeTileArt(sandArt) } },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 30, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: 7, y: 7, regions: [], visitedTowns: [], gotStarterFeather: true, hp: null, mp: null },
   };
@@ -115,9 +115,9 @@ test('field wraps with mixed sand/snow custom art, equal masks and a bridge; sav
   }
   tiles[(WORLD_SIZE - 2) * WORLD_SIZE + WORLD_SIZE - 2] = 3; // sand pool
   tiles[2 * WORLD_SIZE + 2] = 3; // same shape/part, snow pool
-  const collection = 'app.aozoraquest.world.map';
+  const collection = 'app.aozoraquest.dev.world.map';
   const records: Record<string, any> = {
-    'app.aozoraquest.world.tileArt': { arts: { 'part:10': encodeTileArt(sandArt), 'part:11': encodeTileArt(snowArt) } },
+    'app.aozoraquest.dev.world.tileArt': { arts: { 'part:10': encodeTileArt(sandArt), 'part:11': encodeTileArt(snowArt) } },
     [collection]: { size: WORLD_SIZE, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64'), parts },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 30, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: 0, y: 2, regions: [], visitedTowns: [], gotStarterFeather: true, hp: null, mp: null },

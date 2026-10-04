@@ -20,6 +20,15 @@ const CACHE_TTL_SEC = 300;
 export interface WorldAuthoringEnv {
   /** カンマ区切り。先頭を主管理者として扱う (web の getPrimaryAdminDid と同じ規則)。 */
   ADMIN_DIDS?: string;
+  /** 管理データの env suffix (#716)。dev エッジは "dev" ([env.dev.vars])、本番は未設定。 */
+  ADMIN_NSID_ENV?: string;
+}
+
+/** 管理レコードの NSID の根 (#716)。dev エッジ = `app.aozoraquest.dev`、本番 = `app.aozoraquest`。
+ *  web の ADMIN_COL と同じ規則。dev にレコードが無ければ同梱の既定に倒れる (本番は読まない)。 */
+export function adminNsidRoot(env: WorldAuthoringEnv): string {
+  const suffix = env.ADMIN_NSID_ENV?.trim();
+  return suffix ? `app.aozoraquest.${suffix}` : 'app.aozoraquest';
 }
 
 interface WorldMapRecord {
@@ -62,7 +71,8 @@ function fromBase64(b64: string): Uint8Array {
  * リクエスト自体は待たせない — 読み込むまでは同梱の地図かノイズ生成に倒れるだけで、
  * 結果は「編集前の世界」として一貫している。
  */
-export function ensureAuthoredWorld(env: WorldAuthoringEnv, nsid: string, now: number): Promise<void> {
+export function ensureAuthoredWorld(env: WorldAuthoringEnv, now: number): Promise<void> {
+  const nsid = adminNsidRoot(env);
   if (inflight) return inflight;
   if (loadedAt && now - loadedAt < CACHE_TTL_SEC) return Promise.resolve();
   /** レコード 1 つぶんの適用。**1 つが壊れても後続を止めない** — 1 本の try に

@@ -68,10 +68,10 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     throw new Error(`External request forbidden in tutorial test: ${new URL(url).hostname}`);
   }) as typeof fetch;
   const records: Record<string, unknown> = {
-    'app.aozoraquest.world.npcs': { npcs },
-    'app.aozoraquest.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
-    'app.aozoraquest.world.quests': { quests }, 'app.aozoraquest.world.scenario': { events: scenario },
-    'app.aozoraquest.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
+    'app.aozoraquest.dev.world.npcs': { npcs },
+    'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
+    'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
+    'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
     'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: true, regions: [town.region], visitedTowns: [], hp: null, mp: null },
   };
   let accepts = 0, moves = 0;
