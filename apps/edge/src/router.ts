@@ -24,7 +24,7 @@ import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-dat
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
 import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
-import type { Command } from '@aozoraquest/core';
+import { LXM, type Command } from '@aozoraquest/core';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
 export interface Env extends OAuthRoutesEnv, AdminDataEnv {
@@ -48,26 +48,26 @@ function nsFromOrigin(req: Request): string {
 }
 
 /** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
-const LXM_WHOAMI = 'app.aozoraquest.whoami';
-const LXM_ME_STATE = 'app.aozoraquest.me.state';
-const LXM_WORLD_MOVE = 'app.aozoraquest.world.move';
-const LXM_WORLD_TELEPORT = 'app.aozoraquest.world.teleport';
-const LXM_WORLD_ITEM = 'app.aozoraquest.world.item';
-const LXM_WORLD_GEAR = 'app.aozoraquest.world.gear';
-const LXM_WORLD_SEARCH = 'app.aozoraquest.world.search';
-const LXM_WORLD_RESET = 'app.aozoraquest.world.reset';
-const LXM_BATTLE_TURN = 'app.aozoraquest.battle.turn';
-const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
-const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
-const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
-const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
-const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
-const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
-const LXM_SHOP_DISCARD = 'app.aozoraquest.shop.discard';
-const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
-const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
-const LXM_QUEST_ACCEPT = 'app.aozoraquest.quest.accept';
-const LXM_QUEST_COMPLETE = 'app.aozoraquest.quest.complete';
+const LXM_WHOAMI = LXM.whoami;
+const LXM_ME_STATE = LXM.meState;
+const LXM_WORLD_MOVE = LXM.worldMove;
+const LXM_WORLD_TELEPORT = LXM.worldTeleport;
+const LXM_WORLD_ITEM = LXM.worldItem;
+const LXM_WORLD_GEAR = LXM.worldGear;
+const LXM_WORLD_SEARCH = LXM.worldSearch;
+const LXM_WORLD_RESET = LXM.worldReset;
+const LXM_BATTLE_TURN = LXM.battleTurn;
+const LXM_XP_CLAIM = LXM.xpClaim;
+const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
+const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
+const LXM_SHOP_CRAFT = LXM.shopCraft;
+const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_FORGE = LXM.shopForge;
+const LXM_SHOP_DISCARD = LXM.shopDiscard;
+const LXM_POWER_SPEND = LXM.powerSpend;
+const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
+const LXM_QUEST_ACCEPT = LXM.questAccept;
+const LXM_QUEST_COMPLETE = LXM.questComplete;
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',

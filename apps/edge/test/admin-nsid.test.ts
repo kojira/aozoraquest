@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { allNpcs, setNpcs } from '@aozoraquest/core';
+import { ADMIN_CONFIG_RECORDS, ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, allNpcs, AQ_NSID_ROOT, setNpcs } from '@aozoraquest/core';
 import { adminNsidRoot, ensureAuthoredWorld, resetAuthoredWorldCache } from '../src/world-authoring';
 import { handleNpcImage } from '../src/npc-image';
 import { png, cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
@@ -90,5 +90,22 @@ describe('ensureAuthoredWorld は env の管理コレクションだけを読む
     await ensureAuthoredWorld({ ADMIN_DIDS: did }, 1_700_000_000);
     expect(read.every((c) => c.startsWith('app.aozoraquest.world.'))).toBe(true);
     expect(allNpcs().map((n) => n.id)).toEqual(['prod']);
+  });
+});
+
+describe('scripts/*.mjs の NSID は core の唯一の定義と一致する (Refs #718)', () => {
+  it('admin-data.mjs の DEV_COLLECTION_PREFIX = core の dev world prefix', async () => {
+    // @ts-expect-error -- 型定義の無い Node スクリプト
+    const { DEV_COLLECTION_PREFIX } = await import('../../../scripts/admin-data.mjs');
+    expect(DEV_COLLECTION_PREFIX).toBe(`${adminWorldCollection(adminNsidPrefix(AQ_NSID_ROOT, 'dev'), 'npcs').slice(0, -'npcs'.length)}`);
+  });
+
+  it('copy-admin-data-to-dev.mjs の SOURCE_COLLECTIONS = core の本番 world.* + config.*', async () => {
+    // @ts-expect-error -- 型定義の無い Node スクリプト
+    const { SOURCE_COLLECTIONS, devCollectionOf } = await import('../../../scripts/copy-admin-data-to-dev.mjs');
+    const prod = adminNsidPrefix(AQ_NSID_ROOT, undefined);
+    const expected = [...ADMIN_WORLD_RECORDS.map((n) => adminWorldCollection(prod, n)), ...ADMIN_CONFIG_RECORDS.map((n) => `${prod}.config.${n}`)];
+    expect([...SOURCE_COLLECTIONS].sort()).toEqual(expected.sort());
+    for (const n of ADMIN_WORLD_RECORDS) expect(devCollectionOf(adminWorldCollection(prod, n))).toBe(adminWorldCollection(adminNsidPrefix(AQ_NSID_ROOT, 'dev'), n));
   });
 });
