@@ -50,7 +50,7 @@ jobs:
           node-version: '22'
           cache: pnpm
 
-      - name: Line limit (1 ファイル 800 行ルール, #718)
+      - name: 'Line limit (1 ファイル 800 行ルール, #718)'
         run: node scripts/check-line-limit.mjs
 
       - name: Install
