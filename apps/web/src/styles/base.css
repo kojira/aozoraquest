@@ -1,0 +1,290 @@
+
+:root {
+  /* 強調は白。黄色は RPG で状態異常の色になるので使わない。 */
+  --color-primary: #ffffff;
+  /* リンクや視線を引きたい箇所に使う淡い水色 */
+  --color-accent: #9fd7ff;
+  --color-accent-deep: #5ea8d8;
+  --color-atk: #ff6b3d;
+  --color-def: #3fa0ff;
+  --color-agi: #ffb83c;         /* ステータスバーの色 (軽微な黄色。要調整ならまた消す) */
+  --color-int: #b08cff;
+  --color-luk: #ff78aa;
+  --color-fg: #ffffff;
+  --color-muted: #c9d4e0;
+  --color-border: #ffffff;
+  --color-window-bg: rgba(0, 0, 0, 0.78);
+  --color-window-bg-alt: rgba(0, 0, 0, 0.88);
+  /* カラム内ドリルダウンのオーバーレイ用の**不透明**背景 (半透明 window-bg だと
+     下のフィードが透ける)。背景グラデ上でも列と近い見えになる濃色。 */
+  --color-window-solid: #0f1519;
+  --color-window-inner-border: rgba(255, 255, 255, 0.35);
+  --color-danger: #ff7272;
+  /* footer-nav の通知ドット / クエスト対応待ちカウントの赤バッジ色。
+     --color-danger (#ff7272) は淡く、10px の白文字カウントを乗せるとコントラスト不足に
+     なるため、視認性優先で濃い赤を専用トークンとして持つ (DESIGN.md の danger とは別用途)。 */
+  --color-notify-badge: #e53935;
+
+  /* カレンダーの週末色。ステータス色 (atk/def/agi/int/luk) や accent の
+     意味と干渉しないよう専用に持つ (DESIGN.md: ステータス色は流用しない)。 */
+  --color-cal-sun: #ff9a9a;
+  --color-cal-sat: #8fc2ef;
+  /* accent 背景の上に乗せる文字色 (選択日セルなど)。濃紺で十分なコントラスト。 */
+  --color-on-accent: #06223a;
+
+  /* モバイルで青空/草地を隠す全画面背景 (PR #144 の全幅ダーク)。
+     ライトでは明色に切り替える。 */
+  --color-mobile-bg: #0e1318;
+  /* 投稿と投稿の間の区切り線 (VirtualFeed の border-top)。 */
+  --color-feed-divider: rgba(255, 255, 255, 0.5);
+
+  /* ── インラインスタイルがダーク前提で焼き込んでいた半透明色のトークン化 ──
+     tsx の style={{}} は CSS セレクタで上書きできないため、ライト追従には
+     値そのものをトークン経由にするしかない。ダーク既定値は元のリテラルに
+     合わせてある (共通トークン化で残る差は控えめオーバーレイの ±0.05 程度のみ)。
+     ライトは :root[data-theme='light'] で反転。 */
+  /* .content (メインのウィンドウ地)。他の窓 (0.78) より僅かに薄い 0.72。 */
+  --color-content-bg: rgba(0, 0, 0, 0.72);
+  /* CTA ピル (action-link)。窓と区別するため独自の薄黒地 + 白枠。 */
+  --color-pill-bg: rgba(0, 0, 0, 0.45);
+  --color-pill-border: rgba(255, 255, 255, 0.85);
+  --color-pill-inner: rgba(255, 255, 255, 0.2);
+  /* 選択可能なアイテム/タイル (ジョブ選択ボタン等) */
+  --color-item-bg: rgba(0, 0, 0, 0.4);
+  --color-item-border: rgba(255, 255, 255, 0.5);
+  --color-item-selected-bg: rgba(255, 255, 255, 0.18);
+  --color-item-selected-border: #ffffff;
+  /* 窓内のインセット小パネル (アクティビティ行等) */
+  --color-subpanel-bg: rgba(0, 0, 0, 0.35);
+  --color-subpanel-border: rgba(255, 255, 255, 0.1);
+  /* 進捗バーのトラック (空き部分) */
+  --color-track-bg: rgba(255, 255, 255, 0.2);
+  --color-track-border: rgba(255, 255, 255, 0.6);
+  /* 控えめなオーバーレイ/区切り (バッジ地・hover 地・点線境界) */
+  --color-overlay-soft: rgba(255, 255, 255, 0.1);
+  /* レーダーチャートのグリッド/軸線 (SVG stroke)。ライトで白だと消えるため */
+  --color-chart-grid: rgba(255, 255, 255, 0.25);
+  /* レーダーの比較多角形 (目標ジョブ)。ダークは橙、ライトは白地で沈むので濃い橙 */
+  --color-radar-compare: #ffaa6e;
+
+  --font-main: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif;
+}
+
+/*
+ * ライトテーマ。「世界観を残して明るく」方針: 青空グラデーションとヘッダー紺は
+ * 両モード共通で残し、ウィンドウ地・文字色・境界・accent だけを明色へ反転する。
+ * data-theme は theme.ts が常に解決後の 'light'|'dark' を入れる。ダークは :root 既定。
+ */
+:root[data-theme='light'] {
+  --color-primary: #15212c;
+  /* #2b7cc0 だと白地で 4.42:1 と AA (4.5) をわずかに下回るので一段濃く */
+  --color-accent: #2773b5;
+  --color-accent-deep: #1f5e96;
+  --color-fg: #15212c;
+  --color-muted: #51616f;
+  --color-border: #38506a;
+  --color-window-bg: rgba(255, 255, 255, 0.9);
+  --color-window-bg-alt: rgba(255, 255, 255, 0.97);
+  --color-window-solid: #eef4f7;
+  --color-window-inner-border: rgba(0, 0, 0, 0.16);
+  --color-on-accent: #ffffff;
+  --color-mobile-bg: #cfe6f3;
+  --color-feed-divider: rgba(0, 0, 0, 0.16);
+  /* インラインスタイル由来トークンのライト反転 */
+  --color-item-bg: rgba(0, 0, 0, 0.05);
+  --color-item-border: rgba(0, 0, 0, 0.2);
+  --color-item-selected-bg: rgba(39, 115, 181, 0.16);
+  --color-item-selected-border: var(--color-accent-deep);
+  --color-subpanel-bg: rgba(0, 0, 0, 0.05);
+  /* feed-divider (0.16) に揃える。0.1 だと白地でパネル境界が溶けて見えない */
+  --color-subpanel-border: rgba(0, 0, 0, 0.16);
+  --color-track-bg: rgba(0, 0, 0, 0.1);
+  --color-track-border: rgba(0, 0, 0, 0.2);
+  --color-overlay-soft: rgba(0, 0, 0, 0.08);
+  --color-content-bg: rgba(255, 255, 255, 0.9);
+  --color-pill-bg: rgba(255, 255, 255, 0.85);
+  --color-pill-border: var(--color-border);
+  --color-pill-inner: rgba(0, 0, 0, 0.12);
+  --color-chart-grid: rgba(0, 0, 0, 0.18);
+  --color-radar-compare: #c2571a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  /* dvh (動的ビューポート) に合わせる。ワークスペースのカラム高は 100dvh 基準
+     なのに、こことシェルが 100vh (= モバイル Safari ではアドレスバー表示時の
+     大きい方) だと、URL バーが出ている間だけシェルが可視領域より高くなり、
+     ページ自体がスクロール → sticky ヘッダーの下にカラム見出しがめり込み、
+     最下部に隙間ができる。vh は古いブラウザ向けの fallback。 */
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body {
+  font-family: var(--font-main);
+  color: var(--color-fg);
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  -webkit-font-smoothing: antialiased;
+  /* 青空 (上) + 水平線 + 草地 (下) の 3 層グラデーション。スクロールしても動かない。 */
+  background:
+    linear-gradient(
+      to bottom,
+      #4aa6e2 0%,
+      #7cc7ea 35%,
+      #bee3f1 62%,
+      #9dd07f 63%,
+      #6fb052 80%,
+      #3f7a32 100%
+    ) fixed;
+  background-size: 100% 100vh;
+}
+
+/* 遠くに雲を薄く散らす */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(180px 40px at 15% 12%, rgba(255,255,255,0.55), rgba(255,255,255,0) 70%),
+    radial-gradient(260px 60px at 75% 22%, rgba(255,255,255,0.5), rgba(255,255,255,0) 70%),
+    radial-gradient(160px 36px at 45% 34%, rgba(255,255,255,0.4), rgba(255,255,255,0) 70%);
+  z-index: 0;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-accent);
+}
+a:hover { color: #ffffff; border-bottom-color: #ffffff; }
+a {
+  -webkit-tap-highlight-color: transparent;
+  transition: color 80ms ease, opacity 80ms ease, border-bottom-color 80ms ease;
+}
+a:active {
+  opacity: 0.7;
+}
+
+/* <button> を内包するリンクは、テキストリンク用の下線 (border-bottom) を出さない。
+   これが無いとボタン直下に dotted の横線が走って見える (精霊画面の「冒険する」等)。 */
+a:has(button) {
+  border-bottom: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: 1em;
+  cursor: pointer;
+  color: var(--color-fg);
+  background: var(--color-window-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 2px;
+  padding: 0.35em 0.9em;
+  box-shadow: inset 0 0 0 1px var(--color-window-inner-border);
+  /* タップ・クリック直後に色が変わるように 80ms で transition。
+     long 過ぎると逆に「効いてない」と感じるので短め。 */
+  transition: background-color 80ms ease, transform 60ms ease, box-shadow 80ms ease;
+  /* mobile の灰色 tap highlight は自前 active で出すので殺す */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+button:hover:not(:disabled) {
+  background: var(--color-window-bg-alt);
+}
+button:active:not(:disabled) {
+  /* 押した瞬間に色が変わる + 沈む + 影が縮む。視覚と触覚的に「押した」感 */
+  background: var(--color-window-bg-alt);
+  transform: translateY(1px) scale(0.985);
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 戦闘の DQ 風コマンド窓の行 (battle-view DqCommand)。透明ボタンなので、
+   インライン background を持たせると button:active の押下フィードバックを詳細度で
+   潰してしまう。ここで背景と active/hover を定義し「押した感」を確保する
+   (暗転オーバーレイ上なので active は半透明白。opacity は button:disabled が担う)。 */
+.dq-command {
+  background: transparent;
+  border: none;
+  color: #fff;
+  text-align: left;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  padding: 0.3em;
+  font-size: 0.95em;
+  line-height: 1.2;
+  min-height: 2.4em;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+  touch-action: manipulation;
+}
+.dq-command:hover:not(:disabled),
+.dq-command:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+/* 戦闘の全幅メッセージ窓。タップ送りの押下感を極短で返す (▼ 等の記号は足さず、
+   沈み込み + 明るさだけで「送れた」を伝える — 情報量を増やさない方針)。 */
+.dq-message:active {
+  transform: translateY(1px);
+  filter: brightness(1.15);
+}
+button.secondary {
+  background: transparent;
+  color: var(--color-fg);
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: 0.95em;
+  color: var(--color-fg);
+  background: var(--color-window-bg-alt);
+  border: 2px solid var(--color-border);
+  border-radius: 2px;
+  padding: 0.35em 0.6em;
+  outline: none;
+}
+input::placeholder, textarea::placeholder { color: rgba(201,212,224,0.55); }
+input:focus, textarea:focus, select:focus {
+  border-color: var(--color-primary);
+}
+
+/* iOS Safari は input/textarea/select の実効 font-size が 16px 未満だと、
+   フォーカス時に画面を自動ズームする (その後 position:fixed / 100dvh の
+   レイアウトが崩れる)。モバイルでは下限 16px を強制してズームを止める。
+   各所のインライン em 指定 (例 compose textarea 0.85em) を上書きするため
+   !important を付ける。font-scale で拡大している場合はそれ以上を尊重。 */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: max(16px, 1rem) !important;
+  }
+}
+
+code {
+  font-family: ui-monospace, 'Courier New', monospace;
+  background: rgba(0,0,0,0.35);
+  padding: 0 0.25em;
+  border-radius: 2px;
+  font-size: 0.9em;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-main);
+  margin: 0.6em 0 0.4em;
+}
+
+p { margin: 0.4em 0; }
+

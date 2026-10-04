@@ -1,0 +1,385 @@
+/* ─── レイアウト ───────────────────────────────── */
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 420px;
+  /* カラム高 (100dvh - chrome) と単位を揃える。100vh のままだとモバイルで
+     アドレスバー表示時にシェルが可視領域を超え、ページがスクロールして
+     カラム見出しがヘッダー下にめり込む (vh は fallback)。 */
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .app-shell { max-width: 680px; }
+}
+
+/* ─── 依頼クエスト掲示板 マルチカラム (Phase 3) ───────── */
+/* app-shell が [data-board-wide] ラッパーを含むとき、max-width を緩めて
+   デスクトップで横並びカラムを表示できるようにする。スマホでは縦並び。 */
+@media (min-width: 1100px) {
+  .app-shell:has([data-board-wide="1"]) { max-width: 1280px; }
+}
+
+.board-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+
+@media (min-width: 768px) {
+  .board-columns {
+    flex-direction: row;
+    gap: 0.8em;
+    overflow-x: auto;
+    padding-bottom: 0.5em;
+    /* 各カラムは伸縮させず固定幅で並べる */
+    align-items: flex-start;
+  }
+}
+
+.board-column {
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0.6em 0.7em;
+  box-shadow: inset 0 0 0 1px var(--color-window-inner-border);
+}
+
+@media (min-width: 768px) {
+  .board-column {
+    flex: 0 0 320px;
+    /* ワークスペースのカラム高 (100dvh 基準) と単位を揃える。100vh だと
+       タブレット等のアドレスバー表示時にビューポートを超えうる (vh は fallback)。 */
+    max-height: calc(100vh - 12em);
+    max-height: calc(100dvh - 12em);
+    overflow-y: auto;
+  }
+}
+
+/* ─── アプリ全体マルチカラム workspace (docs/16-multicolumn.md) ── */
+/* `/` の index route が [data-workspace] を含むとき、app-shell の幅制限を
+   緩める。各カラムが DQ ウィンドウになるので、.content の大枠 (二重枠) は
+   workspace モードでは透明化する (= 「手帳の見開き」メタファー)。
+   幅緩和は 768px から (1100px 始まりだとタブレット縦持ちで 680px 枠内に
+   340px カラムが 2 列弱しか見えず破綻するため)。 */
+@media (min-width: 768px) {
+  /* workspace はブラウザ横幅をフルに使う (旧 1480px キャップを撤去)。
+     カラムは固定幅で並び、入りきらなければ横スクロール。 */
+  .app-shell:has([data-workspace="1"]) { max-width: 100%; }
+}
+
+/* スワイプヒント (▶ / ◀) を絶対配置する基準 */
+[data-workspace="1"] { position: relative; }
+
+.app-shell:has([data-workspace="1"]) .content {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  padding: 0.4em 0.2em;
+}
+.app-shell:has([data-workspace="1"]) .content::before,
+.app-shell:has([data-workspace="1"]) .content::after {
+  display: none;
+}
+
+/* モバイルも横並び + scroll-snap で 1 スワイプ = 1 カラム送り。
+   (縦積みだと先頭カラムの無限フィードがページスクロールを塞いで
+   2 枚目以降に到達できない、というレビュー指摘への対応。
+   snap の磨き込み・footer-nav 連動は PR 5 で行う) */
+.workspace-columns {
+  display: flex;
+  flex-direction: row;
+  gap: 0.7em;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;     /* ブラウザの戻る gesture との衝突回避 */
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.4em;
+}
+
+/* リサイズハンドルは PC のみ表示 (モバイルは全幅でリサイズ不要) */
+.workspace-column-resizer { display: none; }
+
+.workspace-column {
+  display: flex;
+  flex-direction: column;
+  /* flex item の min-width は既定 auto = 中身の min-content。長い URL や
+     CJK 連続文字があると min-content がカラムを flex-basis より広げてしまう
+     (= 長文投稿でホームカラムが膨らむバグ)。min-width:0 で basis を守る。 */
+  min-width: 0;
+  /* flex-basis はメディアクエリで上書きされる (モバイル <=767px = 全幅 100%、
+     PC >=768px = 340px)。下の calc は両クエリ外の保険値。モバイルで「右にまだ
+     カラムがある」ことは peek ではなく .workspace-swipe-hint (▶) で知らせる。 */
+  flex: 0 0 calc(100% - 1.6em);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;            /* 1 スワイプ = 1 カラム送り */
+  /* header + footer-nav の実高は AppShell が ResizeObserver で
+     --shell-chrome-height に書き出す (文字サイズ設定にも追従)。
+     変数が無い初回 paint 用に fallback を持つ。 */
+  height: calc(100dvh - var(--shell-chrome-height, 9.5em));
+  background: var(--color-window-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0, 0, 0, 0.35);
+  position: relative;
+}
+/* DQ ウィンドウの四隅装飾 (dq-window と同じ) */
+.workspace-column::before,
+.workspace-column::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--color-border);
+  pointer-events: none;
+}
+.workspace-column::before { top: 3px; left: 3px; }
+.workspace-column::after  { bottom: 3px; right: 3px; }
+
+/* カラム内ドリルダウンの詳細オーバーレイ (column-detail.tsx)。カラム内側を覆い、
+   フィードは下でマウントされたまま (= 戻るとスクロール位置ごと復帰)。 */
+.workspace-column-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* 不透明にして下のフィードを完全に隠す (半透明 window-bg だと透ける)。 */
+  background: var(--color-window-solid);
+  overflow: hidden;
+}
+.workspace-column-detail-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-window-solid);
+}
+/* どのカラムに潜っているかを示す親ラベル (デスクトップ多カラムで迷子にならないよう)。 */
+.workspace-column-detail-parent {
+  font-size: 0.8em;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-column-detail-back {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  padding: 0.2em 0.1em;
+  font: inherit;
+  color: var(--color-accent);
+  cursor: pointer;
+  border-bottom: 1px dotted currentColor;
+  line-height: 1.2;
+}
+.workspace-column-detail-back:active { transform: translateY(1px); }
+.workspace-column-detail-body {
+  flex: 1 1 auto;
+  min-width: 0;                   /* 中身で横に膨らませない (column-body と同様) */
+  overflow-wrap: anywhere;        /* 長い URL/連続文字を折り返す */
+  overflow-y: auto;
+  overflow-x: hidden;             /* 詳細は横スクロールさせない (カラム送りとも切り離す) */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;            /* 縦スクロールのみ (横スワイプでカラム送りに漏れない) */
+  padding: 0.5em;
+}
+
+.workspace-column-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* タイトル左、ボタン群 (↑ / ↻ / ⋯) は refresh-btn の margin-left:auto で右へ。
+     space-between だと 3 子が等間隔に散るので flex-start にする。 */
+  justify-content: flex-start;
+  gap: 0.5em;
+  padding: 0.45em 0.5em 0.45em 0.8em;
+  font-size: 0.92em;
+  font-weight: 700;
+  border-bottom: 2px solid var(--color-window-inner-border);
+}
+
+.workspace-column-menu-btn {
+  padding: 0 0.5em;
+  font-size: 1em;
+  line-height: 1.4;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.workspace-column-menu-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* カラムヘッダーの更新ボタン (↻)。タイトルの右、⋯ の左に置く。 */
+.workspace-column-refresh-btn {
+  margin-left: auto; /* タイトルを左、ボタン群を右へ寄せる */
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.4em;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-fg);
+}
+.workspace-column-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* カラムを最上部へスクロールするボタン (↻ の隣)。refresh と同じ控えめな見た目。 */
+.workspace-column-totop-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.4em;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-fg);
+}
+.workspace-column-totop-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.workspace-column-refresh-btn.is-spinning svg {
+  animation: dtp-spin 0.6s linear;
+}
+@keyframes dtp-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-column-refresh-btn.is-spinning svg { animation: none; }
+}
+
+/* 「すべてのカラムを更新」は各カラムの ⋯ メニュー内に移設した
+   (旧フローティング FAB はタイムラインに被って邪魔だったため撤去)。
+   個別更新は各カラムヘッダーの ↻ と pull-to-refresh で行う。 */
+
+/* pull-to-refresh のインジケータ (カラム body 先頭に出る) */
+.workspace-pull-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 0.78em;
+  color: var(--color-muted);
+  transition: height 0.12s ease;
+}
+.workspace-pull-indicator .armed {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.workspace-column-menu {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 0.5em 0.7em;
+  border-bottom: 2px solid var(--color-window-inner-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+.workspace-column-menu button {
+  font-size: 0.8em;
+  text-align: left;
+}
+
+.workspace-column-add {
+  /* 追加タイルはカラムより控えめな見た目 (破線枠) */
+  border-style: dashed;
+  background: rgba(0, 0, 0, 0.35);
+}
+.workspace-column-add::before,
+.workspace-column-add::after {
+  display: none;
+}
+
+/* board カラム内の inner タブ: 等分 (dq-tabs) だと多タブで潰れるため、
+   折り返さない chip の横スクロール行にする */
+.board-column-tabs {
+  display: flex;
+  gap: 0.3em;
+  overflow-x: auto;
+  margin: 0 0 0.5em;
+  padding-bottom: 0.2em;
+  -webkit-overflow-scrolling: touch;
+}
+.board-column-tabs .dq-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.8em;
+  padding: 0.35em 0.6em;
+}
+
+/* モーション抑制設定では scroll-snap の慣性 + smooth scroll を切る
+   (iOS Safari の snap カクつき対策も兼ねる) */
+@media (prefers-reduced-motion: reduce) {
+  .workspace-columns { scroll-snap-type: none; scroll-behavior: auto; }
+}
+
+.workspace-column-body {
+  flex: 1 1 auto;
+  min-width: 0;                   /* 親同様、中身でカラムが膨らまないように */
+  /* 長い URL 等の切れない token を折り返す (横にはみ出してカラムを広げない) */
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  overflow-x: hidden;             /* 本体は横スクロールしない (横は親が担う) */
+  /* 縦だけ contain (縦終端でページ全体が動くのを防ぐ)。
+     PC の横スワイプ引っかかりは workspace.tsx の wheel ハンドラで親へ流す。 */
+  overscroll-behavior-y: contain;
+  padding: 0.6em 0.7em;
+  /* 縦は body 内、横はカラム送り、の両ジェスチャを許可 */
+  touch-action: pan-y pan-x;
+}
+
+@media (min-width: 768px) {
+  .workspace-column {
+    /* 幅は --col-width (ユーザーがドラッグで保存した値) があればそれ、無ければ 340px。
+       モバイルは別ルール (flex:0 0 100%) が勝つので --col-width は無視される。 */
+    flex: 0 0 var(--col-width, 340px);
+    /* PC は footer が左の縦レールになり縦方向の chrome に含まれないので、
+       カラム高は header 分だけ引く (--header-height)。 */
+    height: calc(100dvh - var(--header-height, 3em));
+  }
+  .workspace-columns {
+    scroll-snap-type: none;   /* PC は自由スクロール */
+    gap: 0.8em;
+  }
+  /* カラム右端のリサイズハンドル (PC のみ)。掴んで左右にドラッグで幅を変える。 */
+  .workspace-column-resizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -8px;            /* カラム間 gap (0.8em) の中央に重ねる */
+    width: 16px;            /* 掴みやすい当たり判定 (見た目の線は細い) */
+    cursor: col-resize;
+    z-index: 15;
+    touch-action: none;    /* pointer ドラッグを横取りされない */
+  }
+  /* 中央に縦線。**常時うっすら見せて発見性を確保**し、ホバー/ドラッグで accent に強調。 */
+  .workspace-column-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 7px;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    transition: background-color 0.1s;
+  }
+  .workspace-column-resizer:hover::after,
+  .workspace-column-resizer.is-dragging::after {
+    background: var(--color-accent);
+  }
+}
+
