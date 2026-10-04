@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { STARTER_TOWN_GUILD, STARTER_TOWN_ID, WORLD_MAP_ID, gateAt, gateLockedNotice, gateOpen, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type NpcDef } from '@aozoraquest/core';
+import { WORLD_MAP_ID, gateAt, gateLockedNotice, gateOpen, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type NpcDef } from '@aozoraquest/core';
 import { serverMove, worldServerEnabled, WorldServerError } from '@/lib/world-server';
 import { recordTownArrival, saveWorldState } from '@/lib/world-state';
 import type { WorldScrollStep } from '@/lib/use-world-scroll';
@@ -73,7 +73,8 @@ export function useWorldMove(d: WorldMoveDeps) {
       const npc = npcAt(cur?.id ?? WORLD_MAP_ID, nx, ny);
       if (npc) {
         if (isFutabaGuild(npc)) {
-          if (s.x !== STARTER_TOWN_GUILD.frontX || s.y !== STARTER_TOWN_GUILD.frontY) {
+          // 受付の真下 (扉の前) からだけ入れる。位置は NPC データから決める (Refs #718)。
+          if (s.x !== npc.x || s.y !== npc.y + 1) {
             setNotice('ギルドの とびらの まえから はいろう。');
             return;
           }
@@ -111,7 +112,8 @@ export function useWorldMove(d: WorldMoveDeps) {
         try {
           const res = await serverMove(agent, dx, dy, tokenRef.current);
           tokenRef.current = res.token;
-          if (res.mapId !== STARTER_TOWN_ID || res.x !== STARTER_TOWN_GUILD.frontX || res.y !== STARTER_TOWN_GUILD.frontY) guildExitBlockedRef.current = false;
+          const guildAbove = res.mapId ? npcAt(res.mapId, res.x, res.y - 1) : undefined;
+          if (!guildAbove || !isFutabaGuild(guildAbove)) guildExitBlockedRef.current = false;
           // A correction/door is not another walking step. Discard the old map offset.
           if (res.x !== nx || res.y !== ny || res.mapId !== s.mapId) setScrollStep(null);
           const cur = wsRef.current ?? optimistic;
