@@ -241,7 +241,7 @@ export function starterTownNpcs(): NpcDef[] {
     },
     {
       // ギルドの扉に会話対象を置く。Worldではスプライトではなく建物入口として描く。
-      id: 'futaba-bluesky', name: 'Blueskyちゃん', mapId, x: STARTER_TOWN_GUILD.x, y: STARTER_TOWN_GUILD.y, spritePreset: 'bluesky',
+      id: 'futaba-bluesky', name: 'Blueskyちゃん', mapId, x: STARTER_TOWN_GUILD.x, y: STARTER_TOWN_GUILD.y, spritePreset: 'bluesky', guildReception: true,
       lines: ['おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……'],
       // 旅立ち (#692): 3 依頼を終えたら最初の目的地 ほむらの街 (南東、とんぼの原の むこう) を示す。
       altLines: [{
