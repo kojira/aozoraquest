@@ -1,73 +1,39 @@
-import futabaWorried from '@/assets/futaba/bluesky-worried.webp';
-import futabaSmile from '@/assets/futaba/bluesky-smile.webp';
-import { SHORE_NEIGHBORS, shoreGroundKey, shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
-import { NpcSprite } from '@/components/npc-sprite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { BattleState, Command, DiagnosisResult } from '@aozoraquest/core';
+import type { DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForRegion,
   BATTLE_TUNING,
   canSeeEnemyVitals,
-  ITEMS,
-  townShopStock,
-  type EquipmentDef,
   favoredMonsterFor,
-  isWalkable,
-  isWalkableAt,
   jobLevelFromXp,
   playerCombatant,
   playerLevelFromXp,
   regionAffinity,
-  regionDanger,
   regionOf,
-  regionsAround,
-  rollSearch,
   SEARCH_TUNING,
   statVectorToArray,
   terrainAt,
-  tileDetailAt,
   townAt,
   worldOverlay,
-  wrap,
+  interiorById,
+  interiorShopAt,
+  interiorTerrainAt,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
-import { bumpJobXp, useJobXp, xpOfJob } from '@/lib/use-job-xp';
-import { getRecord } from '@/lib/atproto';
-import { COL } from '@/lib/collections';
-import { loadWorldState, recordTownArrival, saveWorldState } from '@/lib/world-state';
-import { loadBattleStats } from '@/lib/battle-log';
-import { serverMove, serverTurn, serverState, serverTeleport, serverItem, serverGear, serverSearch, worldServerEnabled, WorldServerError, type ServerBattleState, type ServerAward,
-  serverShopCraft,
-  serverShopSell,
-  serverShopForge,
-  serverShopDiscard,
-  serverQuestAccept,
-  serverQuestComplete,
-} from '@/lib/world-server';
-import { CraftLogError, craftItem, discardItems, forgeItems, loadCraftInventory, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
-import { enqueueCraftLog, flushCraftLogs } from '@/lib/craft-log-queue';
-import { ShopModal, type LastShopAction } from '@/components/shop-modal';
+import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
+import { saveWorldState } from '@/lib/world-state';
+import { serverGear, worldServerEnabled } from '@/lib/world-server';
+import { ShopModal } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
-import { loadGearRefs, resolveGear, saveGearRefs, type GearRefs } from '@/lib/gear';
-
-/** お店のエラーを、サーバーが返した理由でそのまま伝える。「通信エラー」で片付けると
- *  「パワーが足りない」「街の外」といった直せる理由が消える (#551)。 */
-function shopErrorText(e: unknown, fallback: string): string {
-  const msg = e instanceof WorldServerError ? e.message : '';
-  return msg ? `${msg}。` : `${fallback} (通信エラー)。もういちどどうぞ。`;
-}
+import { resolveGear } from '@/lib/gear';
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
-import { loadAuthoredWorld } from '@/lib/world-authoring';
-import { STARTER_TOWN_GUILD, STARTER_TOWN_ID, EQUIPMENT_BY_ID, equipHands, questProgressLine, gameQuestById, gameQuestsByNpc, gateAt, gateLockedNotice, gateOpen, interiorExitFor, interiorShopAt, itemsSatisfied, interiorById, interiorPartAt, interiorTerrainAt, npcAt, npcLinesFor, npcsOn, walkableIn, WORLD_MAP_ID, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
-import { mappedPartAt } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
-import { WorldBattleControls, type BattlePhase } from '@/components/world-battle-controls';
+import { WorldBattleControls } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
-import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, shoreTile } from '@/components/world-tiles';
-import { VirtualStick, type StickDir } from '@/components/virtual-stick';
+import { VirtualStick } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcDialogueLines, npcImageUrl } from '@/lib/npc-image';
@@ -77,9 +43,21 @@ import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
 import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
-import { WELCOME_POWER, ONBOARDING_DONE_KEY, WELCOME_BLESSING_PENDING_KEY } from '@/lib/onboarding-reset';
-import type { DialogueChoice, DialogueLine } from '@/lib/dialogue';
-import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questAfterBattle, questChoiceTitle, questMenuLines, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
+import { WELCOME_POWER, ONBOARDING_DONE_KEY } from '@/lib/onboarding-reset';
+import { questMenuLines } from '@/lib/game-quest';
+import { guildReception } from '@/lib/npc-talk';
+import { useLatestRef } from '@/lib/use-latest-ref';
+import { useWorldInventory } from '@/lib/use-world-inventory';
+import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
+import { useWorldShop } from '@/lib/use-world-shop';
+import { useWorldBattle } from '@/lib/use-world-battle';
+import { useWorldMove } from '@/lib/use-world-move';
+import { useWorldFieldItems } from '@/lib/use-world-field-items';
+import { useWorldLoad } from '@/lib/use-world-load';
+import { WorldMapLayer } from '@/components/world-map-layer';
+import { WorldMenuHint } from '@/components/world-menu-hint';
+import { GUILD_INVITATION, ONBOARDING_LINES, ONBOARDING_PORTRAIT, OPENING_GUIDE_LINES, starterHandoffLines } from '@/lib/world-opening';
+import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, type Dir, type Vitals } from '@/lib/world-view';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -90,77 +68,11 @@ import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questAfte
  * - 野外戦闘は試練と同じ機構で **1 戦 = パワー 1 消費 + 戦闘レコード + XP/素材の報酬**
  *   (パワー不足だと遭遇しない = 散歩だけならタダ)。遭遇判定自体はまだプレビュー
  *   (Math.random)。PR-W3 で移動ごと Worker (署名付き seed) に置換。dev 環境限定。
+ *
+ * 責務ごとの分割: 移動 (use-world-move) / NPC 会話とクエスト (use-npc-quest-talk) /
+ * 戦闘 (use-world-battle) / なんでも屋とそうび (use-world-shop) / どうぐ・しらべる
+ * (use-world-field-items) / 初期ロード (use-world-load) / マップ描画 (world-map-layer)。
  */
-
-const VIEW = 16;
-const HALF = VIEW / 2;
-const TILE = 32;
-
-type Dir = StickDir; // 仮想スティックと同一の 4 方向
-const DIRS: Record<Dir, { dx: number; dy: number }> = {
-  up: { dx: 0, dy: -1 },
-  down: { dx: 0, dy: 1 },
-  left: { dx: -1, dy: 0 },
-  right: { dx: 1, dy: 0 },
-};
-
-// **ラベルは danger でなく tier から引く** (#536)。danger は 0..7 だが遭遇に使う tier は
-// `MAX_POPULATED_TIER` までにクランプされるので、danger をそのまま言葉にすると
-// 「とても危険」と「危険」で出る敵が 1 体残らず同じ、という嘘の見出しになる。逆に
-// danger を 2 段階ずつ畳むと、唯一実在する難易度の壁 (tier2→tier3) がラベルの内側に
-// 隠れてしまう (spawn から 3 歩の距離に、同じ語をまたぐ 16 倍の崖ができていた)。
-// tier から引けば表示と実態が定義上ずれず、敵を足して帯が解放されれば語も自動で増える。
-const DANGER_LABELS = ['おだやか', 'すこし危険', '危険', 'とても危険'] as const;
-const dangerLabel = (tier: number) =>
-  DANGER_LABELS[Math.min(DANGER_LABELS.length - 1, Math.max(0, tier - 1))];
-
-/** サーバーの ServerBattleState を描画用 BattleState として扱う (seed は実行時に存在しない = UI 未使用)。 */
-const asBattleState = (s: ServerBattleState): BattleState => s as unknown as BattleState;
-
-interface Vitals {
-  /** 今いるマップ (#424)。省略 = フィールド。内部マップ (街の中・城) では id が入る。 */
-  mapId?: string;
-  x: number;
-  y: number;
-  /** null = 全快 (最大値はジョブ/レベルから導出) */
-  hp: number | null;
-  mp: number | null;
-  lastTown: { x: number; y: number } | null;
-  /** ちずのかけらで解禁済みのリージョン (世界地図の開示範囲) */
-  regions: number[];
-  /** 訪れたことのある街 (そらのはねの行き先候補) */
-  visitedTowns: { x: number; y: number }[];
-  /** 初回に そらのはねを 1 個もらったか */
-  gotStarterFeather: boolean;
-}
-
-/** 「自分タップでコマンド」コーチマークを出したか。操作 UI が不可視 (スティックも
- *  コマンドもタップ起動) なので、オンボーディングを読み飛ばしても実際にマップへ
- *  立ったとき 1 回だけ操作を思い出させる。一度メニューを開くと消える。 */
-const MENU_HINT_DONE_KEY = 'aq-world-menu-hint-done';
-
-/** ふたばの救護導入。管理画像は通常会話、ここだけ合意済み表情を指定する。 */
-const ONBOARDING_LINES: readonly DialogueLine[] = [
-  { speaker: 'Blueskyちゃん', text: '……きこえる？ だいじょうぶ？', portrait: { src: futabaWorried, name: 'Blueskyちゃん' } },
-  { speaker: 'Blueskyちゃん', text: 'けがしてる……。まって、やくそうが あるから。', portrait: { src: futabaWorried, name: 'Blueskyちゃん' } },
-  { text: '少女は やくそうを とりだし、そっと きずの 手当てを してくれた。' },
-  { speaker: 'Blueskyちゃん', text: 'よかった……！ 気が ついたんだね。' },
-  { speaker: 'Blueskyちゃん', text: '村の まえで たおれてたから、しんぱいしたよ。' },
-  { speaker: 'Blueskyちゃん', text: 'わたしは Bluesky。この村の 冒険者ギルドで 受付を してるの。' },
-];
-const GUILD_INVITATION: DialogueLine = { speaker: 'Blueskyちゃん', text: '村の ギルドで すこし やすんでいかない？ いどの きたひがしの 建物だよ。ゆっくり おいで。' };
-const OPENING_GUIDE_LINES: readonly DialogueLine[] = [
-  { text: '【操作ガイド】マップを おしたまま 指を うごかすと 移動。上に ある村へ すすもう。' },
-  { text: '【操作ガイド】じぶんを タップすると コマンド。村の人に 向かって 歩くと 話せます。' },
-];
-
-/** 古いPDSでは従来のNPCを保つ。保存済み扉位置/地形が揃ってからギルドを有効化。 */
-function isFutabaGuild(npc: NpcDef): boolean {
-  const village = interiorById(STARTER_TOWN_ID);
-  return npc.id === 'futaba-bluesky' && npc.mapId === STARTER_TOWN_ID
-    && npc.x === STARTER_TOWN_GUILD.x && npc.y === STARTER_TOWN_GUILD.y
-    && !!village && village.parts?.[interiorPartAt(village, npc.x, npc.y) ?? -1]?.terrain === 'door';
-}
 
 export function World() {
   const session = useSession();
@@ -176,22 +88,7 @@ export function World() {
   const [mapAcquisition, setMapAcquisition] = useState<string | null>(null);
   const mapAcquisitionRef = useRef(false);
   const waitForFreshDirectionRef = useRef(false);
-  /** NPC 会話 (#425/#423)。lines は通常セリフかクエスト文脈のセリフ。acceptQuestId が
-   *  あるときは**読み終えたら はい/いいえ で受注を聞く** (#659)。 */
-  const [npcTalk, setNpcTalk] = useState<{ npc: NpcDef; lines: string[]; acceptQuestId?: string; guild?: 'reunion' | 'menu' | 'detail' | 'message'; choices?: DialogueChoice[]; directList?: boolean } | null>(null);
-  /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成/決着の応答と serverState だけが書く。
-   *  state (メニューの全受注一覧に出す) + ref (バンプ判定は state 更新を待たずに最新を読む)。 */
-  const [quest, setQuestState] = useState<QuestState>(EMPTY_QUEST_STATE);
-  const questRef = useRef(quest);
-  const setQuest = useCallback((next: QuestState | ((s: QuestState) => QuestState)) => {
-    const value = typeof next === 'function' ? next(questRef.current) : next;
-    questRef.current = value;
-    setQuestState(value);
-  }, []);
   const guildExitBlockedRef = useRef(false);
-  const npcTalkRef = useRef(npcTalk);
-  npcTalkRef.current = npcTalk;
-  const [questPending, setQuestPending] = useState(false);
   /** 進行フラグ (#545)。**サーバーが正** — 立てるのは edge だけで、ここは表示用の写し。 */
   const flagsRef = useRef<string[]>([]);
   /** 戦闘中に届いたシナリオのお知らせ (#545)。戦闘の窓は使えないので、
@@ -222,16 +119,9 @@ export function World() {
   // **deps の狭い callback から読むための ref。** searchHere / onCraft は deps に
   // serverPower を入れていないので、直接参照すると初回生成時の null を掴んだままになる
   // (この形の退行を実際に出した — 「パワーが たりない」が一度も出ず常に通信エラーになった)。
-  /** しらべるの冪等キー (成功するまで同じ鍵で再送する)。 */
-  const pendingSearchRef = useRef<string | null>(null);
-  const serverPowerRef = useRef<number | null>(null);
-  serverPowerRef.current = serverPower;
+  const serverPowerRef = useLatestRef(serverPower);
   const [statusOpen, setStatusOpen] = useState(false);
-  const statusOpenRef = useRef(false);
-  statusOpenRef.current = statusOpen;
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuOpenRef = useRef(false);
-  menuOpenRef.current = menuOpen;
   const [menuHint, setMenuHint] = useState(() => {
     try {
       return typeof localStorage !== 'undefined' && localStorage.getItem(MENU_HINT_DONE_KEY) !== '1';
@@ -246,73 +136,14 @@ export function World() {
   const [itemsOpen, setItemsOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
-  const searchMsgRef = useRef(false);
-  searchMsgRef.current = searchMsg !== null;
   const [featherOpen, setFeatherOpen] = useState(false);
   const [showStarter, setShowStarter] = useState(false);
   // リセット (= 実際に +20 を付与した経路) からの入場か。祝福セリフ/演出の有無を実付与と
   // 一致させるための旗。入場時に sessionStorage マークから確定する。
   const [starterBlessed, setStarterBlessed] = useState(false);
-  const starterMsgRef = useRef(false);
-  starterMsgRef.current = showStarter;
-  const itemsOpenRef = useRef(false);
-  itemsOpenRef.current = itemsOpen;
-  const invOpenRef = useRef(false);
-  invOpenRef.current = invOpen;
-  const featherOpenRef = useRef(false);
-  featherOpenRef.current = featherOpen;
   const [diag, setDiag] = useState<DiagnosisResult | null>(null);
-  /** やくそう/そらのしずくの手持ち。戦闘内の使用と獲得は battle レコードに残る。
-   *  フィールドでの使用はセッション内のみ (TODO(W3): 在庫の正を Worker/DO に移す)。 */
-  const [herbStock, setHerbStock] = useState(0);
-  const [tonicStock, setTonicStock] = useState(0);
-  const [featherStock, setFeatherStock] = useState(0);
-  /** 素材の全在庫 (敗北ロス抽選の母集団)。ロード時に battle stats から初期化し、
-   *  ドロップ/使用 (戦闘内・フィールドとも)/敗北ロスをセッション内で追随する */
-  const materialsRef = useRef<Record<string, number>>({});
-  /** サーバーが返した在庫をそのまま正として反映する (#551)。client 側で引き算しない —
-   *  引き算だけだとリロードで権威側の在庫が戻り、素材が複製できてしまう。 */
-  const applyServerMaterials = useCallback((m: Record<string, number>) => {
-    materialsRef.current = { ...m };
-    setMaterialsView({ ...m });
-    setHerbStock(m['herb'] ?? 0);
-    setTonicStock(m['sky-dew'] ?? 0);
-    setFeatherStock(m['sky-feather'] ?? 0);
-  }, []);
-  const subtractMaterial = useCallback((id: string, n: number) => {
-    if (!n) return;
-    const m = materialsRef.current;
-    const left = Math.max(0, (m[id] ?? 0) - n);
-    if (left > 0) m[id] = left;
-    else delete m[id];
-  }, []);
-  /** そらのはね帰還のワイプ待ち (cover 完了時に onCoverDone がテレポートを実行する) */
-  const featherDestRef = useRef<{ x: number; y: number } | null>(null);
-  const [battle, setBattle] = useState<{
-    /** サーバー権威の戦闘 state (seed は含まれない = 先読み不可)。描画のみに使う。 */
-    state: BattleState;
-    busy: boolean;
-    /** DQ 風の交互表示。message=メッセージ窓 / input=コマンド入力 / result=決着後の報酬メッセージ
-     *  (別パネルを出さず同じ固定サイズのメッセージ窓に畳む = 枠が伸縮せず敵の位置も動かない) */
-    phase: BattlePhase;
-    /** サーバーが採番した戦闘 ID (ターン送信に必須)。 */
-    battleId: string;
-    /** 決着ターンでサーバーが確定した報酬 (result フェーズの表示に使う)。 */
-    awarded?: ServerAward;
-    /** result フェーズで出す報酬行 (経験値・素材など) */
-    resultLines?: readonly string[];
-    /** コマンド送信失敗 (503/409/通信断) をバトル画面内に表示する一行。notice は戦闘中は
-     *  描画されない (戦闘オーバーレイの外) ので、fail-closed のエラーはここに出す。 */
-    errorText?: string;
-    /** 決着後の権威位置 (敗北は最後の街へ帰還)。決着タップでここへ移動する。 */
-    resultPos?: { x: number; y: number };
-    /** 決着後の位置に対応する新トークン。 */
-    resultToken?: string;
-    /** 決着後の権威在庫/HP (materials 一本化)。決着タップで表示を同期する。 */
-    resultMaterials?: Record<string, number>;
-    resultCarryHp?: number;
-    resultCarryMp?: number;
-  } | null>(null);
+  const inventory = useWorldInventory();
+  const { herbStock, tonicStock, featherStock, materialsRef, materialsView } = inventory;
   /** エンカウント演出 (DQ1 風ワイプ)。cover 中はマップの上でタイルが閉じ、覆い切ったら
    *  バトル画面に差し替えて reveal で開く。支払い通信が長い場合は hold でつなぐ。 */
   const [wipe, setWipe] = useState<WipePhase | null>(null);
@@ -322,51 +153,38 @@ export function World() {
   const mapRef = useRef<HTMLDivElement>(null);
   const [tilePx, setTilePx] = useState(24);
   const [mapOpen, setMapOpen] = useState(false);
-  const mapOpenRef = useRef(mapOpen);
-  mapOpenRef.current = mapOpen;
-  const [shopOpen, setShopOpen] = useState(false);
-  const shopOpenRef = useRef(shopOpen);
-  shopOpenRef.current = shopOpen;
-  const [craftedPieces, setCraftedPieces] = useState<CraftedPiece[]>([]);
-  const [gearRefs, setGearRefs] = useState<GearRefs>({});
-  const [gearOpen, setGearOpen] = useState(false);
-  const gearOpenRef = useRef(gearOpen);
-  gearOpenRef.current = gearOpen;
-  const [craftBusy, setCraftBusy] = useState(false);
-  /** お店の失敗理由 (#551)。ページ本体の通知行はモーダルの背面に隠れるので、モーダル内に出す。 */
-  const [shopError, setShopError] = useState<string | null>(null);
-  /** 記帳だけ落ちたときの控えめな知らせ (#642)。品もパワーも動いていないので赤字にしない。 */
-  const [shopNotice, setShopNotice] = useState<string | null>(null);
-
-  /** 記帳 (ユーザー PDS の履歴) の失敗を保留に積む (#642)。所持の権威はサーバーなので
-   *  品もパワーも動かないが、黙って捨てると履歴が永久に欠け、パワー会計もずれる。 */
-  const keepCraftLog = useCallback((where: string, e: unknown) => {
-    console.warn(`[world] ${where} log failed`, e);
-    if (did && e instanceof CraftLogError) enqueueCraftLog(did, e, new Date().toISOString());
-  }, [did]);
-
-  /** 保留した記帳を書き直す。店を開いたときと世界に入ったときに 1 回ずつ試す。 */
-  const flushCraftLog = useCallback(() => {
-    if (!agent || !did) return;
-    void flushCraftLogs(agent, did).catch((e) => console.warn('[world] craft log flush failed', e));
-  }, [agent, did]);
-
-  const [lastShopAction, setLastShopAction] = useState<LastShopAction | null>(null);
-  /** 再試行の冪等化: 失敗した制作/合成/ひきとりの rkey を保持し、同条件の再試行で
-   *  使い回す (createRecord は同 rkey で衝突するため 2 重記帳が構造的に起きない) */
-  const pendingCraftRef = useRef<{ defId: string; rkey: string } | null>(null);
-  const pendingDiscardRef = useRef<Record<string, string>>({});
-  const pendingForgeRef = useRef<{ key: string; rkey: string } | null>(null);
-  const pendingSaleRef = useRef<{ key: string; rkey: string } | null>(null);
-  /** ShopModal 用の素材スナップショット (materialsRef は ref なので再レンダ用に複製) */
-  const [materialsView, setMaterialsView] = useState<Record<string, number>>({});
-
+  /** 移動中フラグ。移動は毎回サーバー往復するので、連打で並行 serverMove が飛ばないよう塞ぐ。 */
+  const moveBusyRef = useRef(false);
+  // サーバー権威の位置トークン (署名済み)。毎歩これを渡し、新トークンを受け取る。初回は undefined
+  // (サーバーが gameState から再同期する)。位置はトークンが権威なので歩行では PDS を触らない = 高速。
+  const tokenRef = useRef<string | undefined>(undefined);
+  const wsRef = useLatestRef(ws);
+  // 決着コールバックは deps が狭いので、archetype / did は ref 経由で最新を読む (上記の理由)。
   const archetype = diag?.archetype ?? null;
-  // 決着コールバックは deps が狭いので、archetype は ref 経由で最新を読む (上記の理由)。
-  const archetypeRef = useRef<string | null>(null);
-  archetypeRef.current = archetype;
-  const didRef = useRef<string | null>(null);
-  didRef.current = did;
+  const archetypeRef = useLatestRef<string | null>(archetype);
+  const didRef = useLatestRef<string | null>(did);
+  /** 制作の記帳に残す luk。combat (装備込み) から下で毎レンダー更新する。 */
+  const lukRef = useRef(0);
+
+  // 状態保存 (2 秒デバウンス + unmount 時に確定)
+  const scheduleSave = useCallback(() => {
+    if (!agent) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      const s = wsRef.current;
+      if (s) void saveWorldState(agent, s);
+    }, 2000);
+  }, [agent, wsRef]);
+
+  const talk = useNpcQuestTalk({
+    agent, moveBusyRef, flagsRef, materialsRef, applyServerMaterials: inventory.applyServerMaterials,
+    setServerPower, setNotice, waitForFreshDirectionRef,
+  });
+  const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList } = talk;
+  const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
+  const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
+
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
   // 装備をサーバーにミラー (戦闘に反映 #377)。解決結果が変わるたび送る = 初回ロード + 装備変更を一括カバー。
@@ -394,6 +212,7 @@ export function World() {
       ] as const)
     : null;
   const combat = baseArgs ? playerCombatant(...baseArgs, undefined, resolvedGear?.selection) : null;
+  lukRef.current = combat?.luk ?? 0;
   // 装備なしの素の値 (つよさ画面の「そうび +N」内訳用)。つよさ画面を開いた時だけ
   // 計算する (World は移動/HP バー更新で頻繁に再レンダーする — レビュー ★)
   const combatBase = useMemo(
@@ -403,154 +222,17 @@ export function World() {
   );
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
-  const onboardingPortrait = { src: futabaSmile, name: 'Blueskyちゃん' };
 
-  // 初期ロード。位置の読み込み失敗はエラー表示 + リトライ (spawn に倒すと
-  // 「テレポート → 上書き保存」のデータ損失になるため倒さない)。
-  useEffect(() => {
-    if (session.status !== 'signed-in' || !agent || !did) return;
-    let cancelled = false;
-    setLoadErr(false);
-    let grantStarter = false;
-    // サーバー gameState の在庫/HP (取得できれば表示の正)。try の内外で使うのでここで宣言。
-    let serverInv: { materials: Record<string, number>; carryHp?: number | undefined; carryMp?: number | undefined } | null = null;
-    (async () => {
-      try {
-        // Internal map/NPC definitions must exist before restoring a saved mapId.
-        // Otherwise a fast state response renders village coordinates as a field.
-        await loadAuthoredWorld(agent);
-        if (cancelled) return;
-        const state = await loadWorldState(agent, did);
-        if (cancelled) return;
-        // 冒険の初回に そらのはねを 1 個わたす (docs/19。gotStarterFeather で二重配布
-        // 防止)。実際の +1 は下の featherStock 初期化 (stats ロード後) で足す
-        grantStarter = !state.gotStarterFeather;
-        // 位置は**サーバー権威**を正とする (docs/21 再設計)。サーバーの gameState 位置を初期位置に
-        // 使うことで、初回移動でクライアント位置とサーバー位置がズレて「ワープ」するのを防ぐ。
-        // 街/地図/HP 等の探索メモは従来どおり client の world-record を使う。取得失敗時は world-record 位置。
-        let px = state.x, py = state.y;
-        /** サーバー権威の mapId (#424)。内部マップに居るならその id。 */
-        let serverMapId: string | undefined;
-        // サーバー gameState を在庫/HP/位置の**唯一の正**とする (#372)。取得失敗時のみ world-record にフォールバック。
-        try {
-          const ss = await serverState(agent);
-          if (!cancelled) {
-            serverInv = { materials: ss.state.materials ?? {}, carryHp: ss.state.carryHp, carryMp: ss.state.carryMp };
-            setServerPower(ss.state.power ?? 0);
-            setQuest(questStateOf(ss.state));
-            flagsRef.current = ss.state.flags ?? [];
-            serverMapId = ss.state.mapId;
-            // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
-            // 記帳 (履歴) であって所持の根拠ではない。
-            if (ss.state.pieces) setCraftedPieces(ss.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
-            if (Number.isFinite(ss.state.x) && Number.isFinite(ss.state.y)) {
-              px = ss.state.x; py = ss.state.y;
-              // 初期トークンも受け取る → 初手 move から有効トークンを送れて、表示位置=トークン位置が保証され
-              // 再同期・ワープが起きない (impl レビュー指摘)。
-              if (ss.token) tokenRef.current = ss.token;
-            }
-          }
-        } catch (e) { console.warn('[world] serverState failed; using local position', e); }
-        if (cancelled) return;
-        // 今いる場所が街 (spawn 含む) なら訪問済みに含める。歩いて入る move 経路だけ
-        // だと、開始の街や そらのはね着地先が行き先候補に入らない (レビュー ★★)
-        const curTown = townAt(px, py);
-        const seededVisited = curTown && !state.visitedTowns.some((v) => v.x === px && v.y === py)
-          ? [...state.visitedTowns, { x: px, y: py }]
-          : state.visitedTowns;
-        const initialWs = {
-          // **内部マップ (#424) を維持する。** ここで捨てると、内部でリロードした瞬間
-          // 内部座標をフィールドとして描き、移動判定もフィールドで行って食い違う
-          // (サーバーは mapId 入りのトークンを返している。レビュー ★★)。
-          ...(serverMapId ? { mapId: serverMapId } : {}),
-          x: px,
-          y: py,
-          // HP/MP はサーバー権威 (carryHp/Mp)。undefined=満タンなので null に。取得失敗時のみ world-record。
-          hp: serverInv ? (serverInv.carryHp ?? null) : state.hp,
-          mp: serverInv ? (serverInv.carryMp ?? null) : state.mp,
-          lastTown: state.lastTown,
-          regions: state.regions,
-          visitedTowns: seededVisited,
-          gotStarterFeather: true,
-        };
-        setWs(initialWs);
-        if (grantStarter) {
-          // 専用の DQ ウィンドウで Blueskyちゃんの手渡しを見せる (notice だとオンボーディングに
-          // 覆われ、relocated 通知に上書きされて「もらった瞬間」が消える — レビュー ★★★)。
-          // リセット (実 +20 付与) 経由かをマークで判定 → 祝福セリフ/演出の有無を実付与に一致させる。
-          // マークは**ここで読み捨てる**。set 側 (doReset) との間にリロードを挟んでも、入場時に
-          // 必ず消費/掃除されるので残留・誤発火しない (レビュー ★★)。
-          let blessed = false;
-          try {
-            blessed = sessionStorage.getItem(WELCOME_BLESSING_PENDING_KEY) === '1';
-            if (blessed) sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY);
-          } catch { /* private mode 等は演出だけ諦める (+20 付与自体は済んでいる) */ }
-          setStarterBlessed(blessed);
-          setShowStarter(true);
-          // gotStarterFeather=true は即時保存 (デバウンス中リロードで二重配布しない —
-          // かけら/初訪問と同じ流儀。レビュー ★★)
-          void saveWorldState(agent, initialWs);
-        } else {
-          // 手渡しダイアログを出さない入場では祝福マークを掃除する (set したのに演出へ
-          // 到達しなかった残留マークによる誤発火を防ぐ — レビュー ★★)。
-          try { sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY); } catch { /* ignore */ }
-        }
-        try {
-          if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
-            setOnboarding(true);
-            onboardingRef.current = true;
-          }
-        } catch { /* private mode */ }
-        if (state.relocated) {
-          // 歩行不能地形からの退避 (橋の再配置など)。無言で数百タイル動くと混乱する
-          const t = townAt(state.x, state.y);
-          setNotice(`気がつくと${t ? `「${t.name}」` : 'はじまりの街'}に運ばれていた… (地形が変わったようだ)`);
-        }
-      } catch (e) {
-        console.warn('[world] load failed', e);
-        if (!cancelled) setLoadErr(true);
-        return;
-      }
-      // パワー残高はここで読まない (#551)。**権威 state (serverPower) が唯一の正**で、
-      // client 台帳 (points) を並べて持つと、片方だけ更新される経路が生えて食い違う。
-      const [profile, d, stats, craftInv, refs] = await Promise.all([
-        agent.getProfile({ actor: did }).catch(() => null),
-        getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self').catch(() => null),
-        loadBattleStats(agent, did).catch(() => null),
-        loadCraftInventory(agent, did).catch(() => ({ pieces: [], materialsSpent: {} })),
-        loadGearRefs(agent, did).catch(() => ({})),
-      ]);
-      if (cancelled) return;
-      setAvatarUrl(profile?.data.avatar ?? null);
-      setPlayerName(profile?.data.displayName || profile?.data.handle || '');
-      setDiag(d);
-      // 在庫はサーバー gameState を正とする (#372)。やくそう=herb / しずく=sky-dew / はね=sky-feather。
-      // サーバー取得失敗時のみ従来のクライアント集計 (stats+craft) にフォールバック。
-      let inv: Record<string, number>;
-      if (serverInv) {
-        inv = { ...serverInv.materials };
-      } else {
-        inv = { ...(stats?.materials ?? {}) };
-        for (const [id, n] of Object.entries(craftInv.materialsSpent)) {
-          const left = Math.max(0, (inv[id] ?? 0) - n);
-          if (left > 0) inv[id] = left; else delete inv[id];
-        }
-      }
-      setHerbStock(inv['herb'] ?? 0);
-      setTonicStock(inv['sky-dew'] ?? 0);
-      setFeatherStock(inv['sky-feather'] ?? 0);
-      materialsRef.current = inv;
-      setMaterialsView({ ...inv });
-      // **所持個体はサーバーが正** (#551 段階 2)。ここで入れるのは、サーバーから
-      // 取れなかったときの表示フォールバックだけ (装備しても edge が弾く)。
-      if (!serverInv) setCraftedPieces(craftInv.pieces);
-      setGearRefs(refs);
-      // 前のセッションで書けなかった記帳をここで書き直す (#642)。保留は localStorage に
-      // 残るので、リロードや翌日の起動でも拾える。
-      flushCraftLog();
-    })();
-    return () => { cancelled = true; };
-  }, [session.status, agent, did, retryNonce, flushCraftLog, setQuest]);
+  useWorldLoad({
+    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, tokenRef,
+    setCraftedPieces, setGearRefs, setWs, setStarterBlessed, setShowStarter, setOnboarding, onboardingRef, setNotice,
+    setAvatarUrl, setPlayerName, setDiag, inventory, flushCraftLog,
+  });
+
+  const { battle, battleRef, setBattle, onBattleCommand, onMessageAdvance } = useWorldBattle({
+    agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave,
+    inventory, setServerPower, archetypeRef, didRef,
+  });
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -563,863 +245,42 @@ export function World() {
     return () => ro.disconnect();
   }, [ws === null, battle === null]);
 
-  // 状態保存 (2 秒デバウンス + unmount 時に確定)
-  const wsRef = useRef(ws);
-  wsRef.current = ws;
-  const scheduleSave = useCallback(() => {
-    if (!agent) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = null;
-      const s = wsRef.current;
-      if (s) void saveWorldState(agent, s);
-    }, 2000);
-  }, [agent]);
   useEffect(() => () => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       const s = wsRef.current;
       if (agent && s) void saveWorldState(agent, s);
     }
-  }, [agent]);
+  }, [agent, wsRef]);
 
-  const battleRef = useRef(battle);
-  battleRef.current = battle;
-  const combatRef = useRef(combat);
-  combatRef.current = combat;
-  const wipeRef = useRef(wipe);
-  wipeRef.current = wipe;
-  /** 移動中フラグ。移動は毎回サーバー往復するので、連打で並行 serverMove が飛ばないよう塞ぐ。 */
-  const moveBusyRef = useRef(false);
-  // サーバー権威の位置トークン (署名済み)。毎歩これを渡し、新トークンを受け取る。初回は undefined
-  // (サーバーが gameState から再同期する)。位置はトークンが権威なので歩行では PDS を触らない = 高速。
-  const tokenRef = useRef<string | undefined>(undefined);
+  const wipeRef = useLatestRef(wipe);
+  /** 入力ガード用に、開いている窓・演出の最新値を 1 つの ref で読む (deps の狭い callback から)。 */
+  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, searchMsg, featherOpen, showStarter });
+  // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中・各窓・会話・サーバー往復中は移動不可。
+  const moveBlocked = useCallback(() => {
+    const o = overlaysRef.current;
+    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.searchMsg !== null || o.featherOpen || o.showStarter
+      || moveBusyRef.current || !!npcTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
+  }, [battleRef, npcTalkRef, overlaysRef, wipeRef]);
+  // そらのはねの行き先えらび: 導入中・戦闘・演出・地図/店/そうび/つよさの窓では開かない。
+  const featherBlocked = useCallback(() => {
+    const o = overlaysRef.current;
+    return onboardingRef.current || !!battleRef.current || !!wipeRef.current || o.mapOpen || o.shopOpen || o.gearOpen || o.statusOpen;
+  }, [battleRef, overlaysRef, wipeRef]);
 
-  const refreshQuestState = useCallback(async () => {
-    if (!agent) return;
-    const { state } = await serverState(agent);
-    setQuest(questStateOf(state));
-    flagsRef.current = state.flags ?? [];
-    setServerPower(state.power ?? 0);
-    applyServerMaterials(state.materials ?? {});
-  }, [agent, setQuest, applyServerMaterials]);
-
-  const acceptQuest = useCallback(async (questId: string) => {
-    if (!agent || moveBusyRef.current) return;
-    moveBusyRef.current = true;
-    setQuestPending(true);
-    try {
-      const res = await serverQuestAccept(agent, questId);
-      setQuest(questStateOf(res));
-      if (res.flags) flagsRef.current = res.flags;
-      setNotice(`「${gameQuestById(questId)?.title ?? questId}」を うけおった!`);
-      setNpcTalk(null);
-    } catch (e) {
-      try {
-        await refreshQuestState();
-        // A lost response may already have accepted this quest, or another tab chose one.
-        if (questRef.current.activeQuests.some(q => q.id === questId) || questRef.current.done.includes(questId)) setNpcTalk(null);
-      } catch { /* Keep the offer retryable; do not infer acceptance from a failed request. */ }
-      const message = e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした…';
-      setNotice(message);
-      // The map notice is hidden during NPC dialogue: keep failure and retry visible in the offer.
-      setNpcTalk(current => current?.acceptQuestId === questId && !current.guild
-        ? { ...current, lines: [message, 'もういちど たしかめてね。うけますか？'] }
-        : current);
-      throw e;
-    } finally {
-      moveBusyRef.current = false;
-      setQuestPending(false);
-    }
-  }, [agent, refreshQuestState, setQuest]);
-
-  const guildReception = (npc: NpcDef) => ({ npc, guild: 'menu' as const, lines: ['冒険者ギルドへ ようこそ。どうする？'] });
-  const guildMessage = (npc: NpcDef, lines: string[]) => setNpcTalk({ npc, guild: 'message', lines });
-  const npcQuests = (npc: NpcDef, includeDone = false) => gameQuestsByNpc(npc.id).filter(q =>
-    questRef.current.activeQuests.some(a => a.id === q.id)
-    || (questRef.current.done.includes(q.id) ? includeDone
-      : (q.requireFlags ?? []).every(f => flagsRef.current.includes(f)) && itemsSatisfied(q.requireItems, materialsRef.current)));
-
-  const showQuestChoices = (npc: NpcDef, candidates: readonly GameQuestDef[], select: (q: GameQuestDef) => void | Promise<void>, guild: boolean, page = 0) => {
-    const choices: DialogueChoice[] = candidates.slice(page * 3, page * 3 + 3).map(q => {
-      const active = questRef.current.activeQuests.find(a => a.id === q.id);
-      const state = active ? questProgressLine(q, active.progress, materialsRef.current) : questRef.current.done.includes(q.id) ? '達成済み' : '未受注';
-      return { label: `${questChoiceTitle(q, candidates)} / ${state}`, onSelect: () => select(q) };
-    });
-    if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1) });
-    if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1) });
-    if (!guild) choices.push({ label: '話す', onSelect: () => setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current), directList: true }) });
-    choices.push({ label: '戻る', onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
-    setNpcTalk({ npc, lines: [`どの依頼のこと？（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
-  };
-
-  const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false) => {
-    if (!agent || moveBusyRef.current) return;
-    const message = (lines: string[]) => setNpcTalk({ npc, lines, ...(guild ? { guild: 'message' as const } : { directList }) });
-    moveBusyRef.current = true;
-    setQuestPending(true);
-    try {
-      const res = await serverQuestComplete(agent, q.id);
-      setQuest(questStateOf(res));
-      if (res.flags) flagsRef.current = res.flags;
-      setServerPower(res.power);
-      applyServerMaterials(res.materials);
-      const r = res.rewarded;
-      const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
-        r?.power ? `あおぞらパワー ${r.power}` : null].filter(Boolean).join(' と ');
-      message([...q.done, ...(got ? [`${got} を もらった！`] : []), ...(res.notices ?? [])]);
-    } catch (e) {
-      try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
-      if (questRef.current.done.includes(q.id)) message(['この依頼は 達成済みだよ。']);
-      else if (e instanceof WorldServerError && e.code === 'not_ready') message([...(q.progress ?? []), e.message, 'そろったら また 報告してね。']);
-      else message([e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど 報告してね。']);
-    } finally {
-      moveBusyRef.current = false;
-      setQuestPending(false);
-    }
-  };
-
-  const viewGuildQuest = (npc: NpcDef, q?: GameQuestDef) => {
-    if (!q) {
-      const candidates = npcQuests(npc, true);
-      if (!candidates.length) { guildMessage(npc, ['いま 紹介できる 依頼は ないよ。']); return; }
-      if (candidates.length > 1) { showQuestChoices(npc, candidates, selected => viewGuildQuest(npc, selected), true); return; }
-      q = candidates[0]!;
-    }
-    const lines = guildQuestDetailLines(q);
-    const active = questRef.current.activeQuests.find(a => a.id === q.id);
-    if (questRef.current.done.includes(q.id)) guildMessage(npc, [...lines, 'この依頼は 達成済みだよ。ありがとう！']);
-    else if (active) guildMessage(npc, [...lines, questProgressLine(q, active.progress, materialsRef.current), 'そろったら「報告する」を えらんでね。']);
-    else setNpcTalk({ npc, guild: 'detail', lines: [...lines, 'うけますか？'], acceptQuestId: q.id });
-  };
-  const reportGuildQuest = (npc: NpcDef) => {
-    const candidates = gameQuestsByNpc(npc.id).filter(q => questRef.current.activeQuests.some(a => a.id === q.id));
-    if (!candidates.length) { guildMessage(npc, ['いま 報告できる 受注中の依頼は ないよ。']); return; }
-    const confirm = (q: GameQuestDef) => setNpcTalk({ npc, guild: 'message', lines: [...guildQuestDetailLines(q), 'この依頼を 報告しますか？'], choices: [
-      { label: '報告する', onSelect: () => reportQuest(npc, q, true) },
-      { label: '戻る', onSelect: () => setNpcTalk(guildReception(npc)) },
-    ] });
-    if (candidates.length === 1) confirm(candidates[0]!);
-    else showQuestChoices(npc, candidates, confirm, true);
-  };
-  const selectDirectQuest = (npc: NpcDef, q: GameQuestDef, directList: boolean) => {
-    if (questRef.current.activeQuests.some(a => a.id === q.id)) return reportQuest(npc, q, false, directList);
-    else setNpcTalk({ npc, lines: questOfferLines(q), acceptQuestId: q.id, directList });
-  };
-  const directQuestList = (npc: NpcDef) => showQuestChoices(npc, npcQuests(npc), q => selectDirectQuest(npc, q, true), false);
-  const openDirectNpc = (npc: NpcDef) => {
-    const candidates = npcQuests(npc);
-    if (candidates.length > 1) directQuestList(npc);
-    else if (candidates.length === 1) selectDirectQuest(npc, candidates[0]!, false);
-    else setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current) });
-  };
-
-  let npcChoices: DialogueChoice[] | undefined = npcTalk?.choices;
-  if (npcTalk?.guild === 'menu') {
-    const npc = npcTalk.npc;
-    npcChoices = [
-      { label: '依頼を見る', onSelect: () => viewGuildQuest(npc) },
-      { label: '報告する', onSelect: () => reportGuildQuest(npc) },
-      { label: '話す', onSelect: () => guildMessage(npc, npcLinesFor(npc, flagsRef.current, materialsRef.current)) },
-      { label: 'やめる', onSelect: () => { waitForFreshDirectionRef.current = true; setNpcTalk(null); } },
-    ];
-  } else if (npcTalk?.guild === 'detail' && npcTalk.acceptQuestId) {
-    const { npc, acceptQuestId } = npcTalk;
-    npcChoices = [
-      { label: '受注する', onSelect: async () => {
-        try {
-          await acceptQuest(acceptQuestId);
-          guildMessage(npc, [`『${gameQuestById(acceptQuestId)?.title ?? acceptQuestId}』を うけおった！`, 'そろったら ギルドで 報告してね。']);
-        } catch (e) {
-          guildMessage(npc, [e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど たしかめてね。']);
-        }
-      } },
-      { label: 'やめておく', onSelect: () => setNpcTalk(guildReception(npc)) },
-    ];
-  } else if (npcTalk?.acceptQuestId) {
-    const { npc, directList } = npcTalk;
-    npcChoices = questAcceptChoices(npcTalk.acceptQuestId, async id => {
-      await acceptQuest(id);
-      if (directList) directQuestList(npc);
-    });
-  }
-
-  // 移動は**サーバー (edge Worker) が権威判定する** (docs/21 §5 再設計)。クライアントは方向 (隣接1マス) と
-  // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
-  // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
-  const move = useCallback(
-    (dir: Dir) => {
-      const s = wsRef.current;
-      // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中は移動不可 (全入力経路を一括ガード)。
-      if (!s || battleRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || wipeRef.current || onboardingRef.current || statusOpenRef.current || menuOpenRef.current || itemsOpenRef.current || invOpenRef.current || searchMsgRef.current || featherOpenRef.current || starterMsgRef.current) return;
-      if (moveBusyRef.current || npcTalkRef.current || mapAcquisitionRef.current) return; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
-      if (!worldServerEnabled || !agent) { setNotice('サーバーに接続できないため移動できない。'); return; }
-      const { dx, dy } = DIRS[dir];
-      const cur = s.mapId ? interiorById(s.mapId) ?? null : null;
-      const nx = cur ? s.x + dx : wrap(s.x + dx);
-      const ny = cur ? s.y + dy : wrap(s.y + dy);
-      // **NPC にぶつかったら会話** (#425)。DQ の作法: 移動はせず、話しかける。
-      // クエスト発注 NPC (#423) は状況で話が変わる: 未受注→依頼 (はいで受注)、
-      // 進行中→達成を試みる (条件検証はサーバー)、達成済み→通常セリフ。
-      // NPC は今いるマップで引く (#613)。内部マップの NPC はフィールドの同じ座標には居ない。
-      const npc = npcAt(cur?.id ?? WORLD_MAP_ID, nx, ny);
-      if (npc) {
-        if (isFutabaGuild(npc)) {
-          if (s.x !== STARTER_TOWN_GUILD.frontX || s.y !== STARTER_TOWN_GUILD.frontY) {
-            setNotice('ギルドの とびらの まえから はいろう。');
-            return;
-          }
-          if (guildExitBlockedRef.current) return;
-          guildExitBlockedRef.current = true;
-          let met = false;
-          try { met = localStorage.getItem(`aq-futaba-guild-met:${did}`) === '1'; } catch { /* private mode */ }
-          setNpcTalk({ npc, guild: met ? 'menu' : 'reunion', lines: [
-            ...(met ? ['おかえり。冒険者ギルドへ ようこそ。'] : [
-              '来てくれたんだね。からだの ぐあいは どう？',
-              'ここが 村の 冒険者ギルドだよ。すこし やすんでいってね。',
-            ]),
-          ] });
-          return;
-        }
-        openDirectNpc(npc);
-        return;
-      }
-      // 施錠中のゲート (#426) は踏む前に止める。サーバーも同じ判定をするので、
-      // ここで止めないと「歩けたのに弾かれる」1 手が毎回発生する。
-      const gate = gateAt(s.mapId ?? WORLD_MAP_ID, nx, ny);
-      if (gate && !gateOpen(gate, flagsRef.current, materialsRef.current)) {
-        setNotice(gateLockedNotice(gate));
-        return;
-      }
-      // 端から外へ出られるマップ (#626) は、範囲外でも止めない (サーバーが外へ出す)。
-      const leaving = cur ? interiorExitFor(cur, nx, ny) : undefined;
-      if (!leaving && !walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
-        setNotice('そっちには進めない!');
-        return;
-      }
-      // 楽観描画: サーバー応答を待たずに即座に1マス進める (歩行を軽快に)。位置はサーバーが権威だが
-      // client/server とも同じ wrap+地形なので通常は一致する。失敗時だけ元位置へロールバック。
-      const optimistic: Vitals = { ...s, x: nx, y: ny };
-      wsRef.current = optimistic;
-      setScrollStep({ x: nx, y: ny, mapId: s.mapId, dx, dy });
-      setWs(optimistic);
-      moveBusyRef.current = true;
-      void (async () => {
-        try {
-          const res = await serverMove(agent, dx, dy, tokenRef.current);
-          tokenRef.current = res.token;
-          if (res.mapId !== STARTER_TOWN_ID || res.x !== STARTER_TOWN_GUILD.frontX || res.y !== STARTER_TOWN_GUILD.frontY) guildExitBlockedRef.current = false;
-          // A correction/door is not another walking step. Discard the old map offset.
-          if (res.x !== nx || res.y !== ny || res.mapId !== s.mapId) setScrollStep(null);
-          const cur = wsRef.current ?? optimistic;
-          // マップの切り替え (#424)。ゲートを踏むとサーバーが mapId を返す。
-          // 街到着は移動後の地形ではなく、権威側が確定したフィールド座標で扱う。
-          const t = res.townArrival ? townAt(res.townArrival.x, res.townArrival.y) : null;
-          let next: Vitals = { ...cur, x: res.x, y: res.y, ...(res.mapId ? { mapId: res.mapId } : {}) };
-          if (!res.mapId) delete next.mapId;
-          if (res.healed) { next.hp = null; next.mp = null; }
-          // **マップが変わったら扉の演出** (#626)。パッと切り替わると「どこへ来たのか」が
-          // 分からない。戦闘の渦巻きとは別の、白い光がふわっと引くフェードにする。
-          if ((res.mapId ?? null) !== (cur.mapId ?? null)) setDoorFade('out');
-          // **なんでも屋の扉に入ったら店を開く** (#424)。メニューを開かせないと
-          // 店だと気づけない (実機で「なんでも屋がどこか分からない」と指摘)。
-          if (res.mapId) {
-            const sp = interiorShopAt(res.mapId, res.x, res.y);
-            // メニュー経由と**同じ状態合わせをする** (#638 レビュー ★★★)。ここを抜くと
-            // 表示在庫が読み込み時のまま = 戦闘で拾った素材が反映されず、全品が
-            // 「素材が足りない」で disabled になり**またアイテムが作れない**。
-            // 前回の「○○ が できた!」やエラーが残っているとあいさつも出ない。
-            if (sp) {
-              setLastShopAction(null);
-              setShopError(null);
-              setShopNotice(null);
-              setMaterialsView({ ...materialsRef.current });
-              flushCraftLog(); // 前に書けなかった記帳をここで書き直す (#642)
-              setShopOpen(true);
-              setNotice(null);
-            }
-          }
-          // 宿屋 (#424)。残高もサーバーが正 (payment は権威側で引かれている)。
-          if (res.inn) {
-            setServerPower(res.inn.power);
-            const who = res.inn.name ?? 'やどや';
-            setNotice(res.inn.paid > 0
-              ? `${who}に とまった (パワー -${res.inn.paid})。すっかり 元気に なった!`
-              : `「${who}」…いまは よく ねむれているようだ。`);
-          } else if (res.innDenied) {
-            const who = res.innDenied.name ?? 'やどや';
-            setNotice(`${who}「ひとばん ${res.innDenied.price} パワーだよ」… パワーが たりない (いま ${res.innDenied.power})。`);
-          }
-          if (res.townArrival) {
-            const arrival = recordTownArrival(next, res.townArrival);
-            const { gained, newlyVisited } = arrival;
-            next = arrival.state;
-            const arrived = t ? (res.healed
-              ? `「${t.name}」で休んで、すっかり元気になった!`
-              : `「${t.name}」に ついた!`) : '';
-            if (gained) {
-              mapAcquisitionRef.current = true;
-              waitForFreshDirectionRef.current = true;
-              setMapAcquisition(`${arrived} ちずのかけらを 手に入れた!`.trim());
-              setNotice(null);
-            } else {
-              setNotice(arrived || null);
-            }
-            wsRef.current = next;
-            setWs(next);
-            scheduleSave();
-            // 離散イベント (かけら/初訪問) はデバウンスを待たず即時にも保存する
-            if ((gained || newlyVisited) && agent) void saveWorldState(agent, next);
-          } else {
-            setNotice(null);
-            wsRef.current = next;
-            setWs(next);
-            scheduleSave();
-          }
-          // 遭遇: サーバーが封印済み (guard 作成・seed 非公開)。ワイプで覆ってからバトルへ。
-          if (res.encounter) {
-            const pending = { state: asBattleState(res.encounter.state), busy: false, phase: 'message' as BattlePhase, battleId: res.encounter.battleId };
-            battleRef.current = pending;
-            setBattle(pending);
-            setWipe('cover');
-          }
-        } catch (e) {
-          // 失敗: 楽観移動をロールバック (元の位置へ戻す)。トークンは前回成功時のまま = 次歩で再同期される。
-          wsRef.current = s;
-          setScrollStep(null);
-          setWs(s);
-          // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
-          if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
-          else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
-          // 施錠ゲート (#426) はサーバーの理由をそのまま出す ('そっちには進めない' だと
-          // 地形のせいだと誤解する)。
-          else if (e instanceof WorldServerError && e.code === 'gate_locked') setNotice(e.message);
-          else if (e instanceof WorldServerError && e.status === 400) setNotice('そっちには進めない!');
-          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。すこし まってから もう一度。');
-          else { console.warn('[world] serverMove failed', e); setNotice('移動できなかった (通信エラー)。'); }
-        } finally {
-          moveBusyRef.current = false;
-        }
-      })();
-    },
-    [scheduleSave, agent, did, flushCraftLog, openDirectNpc],
-  );
-
-  // 戦闘コマンドも**毎回サーバーが解決する** (docs/21 §5)。クライアントは battleId + turn + command を送るだけ。
-  // 決着ターンの報酬 (XP/ドロップ/素材ロス) はサーバーが権威 state に確定し、awarded として返す。
-  // タップ送り (onMessageAdvance) で「〜のダメージ！」を読んでから結果へ進む (DQ 風)。
-  const onBattleCommand = useCallback(
-    (command: Command, skillIndex?: number) => {
-      const b = battleRef.current;
-      if (!b || b.busy || b.phase !== 'input') return;
-      if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず 戦えない。' }); return; }
-      const { errorText: _clear, ...bClean } = b; // 再送時は前回エラーを消す (exactOptional のため省略で落とす)
-      const busy = { ...bClean, busy: true };
-      battleRef.current = busy;
-      setBattle(busy);
-      void (async () => {
-        try {
-          const res = await serverTurn(agent, b.battleId, b.state.turn, command, skillIndex);
-          const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
-            ...(res.awarded ? { awarded: res.awarded } : {}),
-            ...(res.position ? { resultPos: res.position } : {}),
-            ...(res.token ? { resultToken: res.token } : {}),
-            ...(res.materials ? { resultMaterials: res.materials, resultCarryHp: res.carryHp, resultCarryMp: res.carryMp } : {}) };
-          // シナリオ (#545) は決着でも進む (ジョブ Lv 条件はここでしか動かない)。
-          // **拾わないと永久に失われる** — 発火済みのお知らせは二度と返らない。
-          if (res.flags) flagsRef.current = res.flags;
-          if (res.scenarioNotices?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioNotices];
-          // 討伐数 (#659) も決着の応答で同期する (メニューの進捗が戦闘前のまま残らない)。
-          setQuest((s) => questAfterBattle(s, res.activeQuests, res.questsDone));
-          battleRef.current = acting;
-          setBattle(acting);
-        } catch (e) {
-          // 失敗しても**クライアント側で報酬を付けない** (fail-closed。busy を戻して再送させる)。
-          // エラーは戦闘オーバーレイ内に出す (notice は戦闘中は描画されない = 無言失敗になる)。
-          const cur = battleRef.current;
-          if (!cur) return;
-          let errorText = 'こうげきを 送れなかった (通信エラー)。もう一度どうぞ。';
-          if (e instanceof WorldServerError && e.status === 503) errorText = 'サーバーに記録できなかった (報酬なし)。でんぱのよい ばしょで もう一度どうぞ。';
-          else if (e instanceof WorldServerError && e.status === 409) errorText = 'ターンが ずれた。もう一度どうぞ。';
-          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) errorText = 'サーバーが応答しない。でんぱのよい ばしょで もう一度どうぞ。';
-          else console.warn('[world] serverTurn failed', e);
-          const revert = { ...cur, busy: false, errorText };
-          battleRef.current = revert;
-          setBattle(revert);
-        }
-      })();
-    },
-    [agent, setQuest],
-  );
-
-  // メッセージ窓のタップ送り。開幕/継戦は入力へ、決着は確定処理してリザルトへ。
-  const onMessageAdvance = useCallback(
-    async () => {
-      const b = battleRef.current;
-      if (!b || b.busy) return;
-      // result フェーズ (決着後の報酬メッセージ) はタップでマップへ戻る
-      if (b.phase === 'result') {
-        battleRef.current = null;
-        setBattle(null);
-        flushScenarioNotices();
-        return;
-      }
-      // agent/did は決着の確定処理 (レコード/XP) だけに要るので、ここでは要求しない。
-      // 継戦のタップ送りまで塞ぐと、稀にセッションが切れた時にメッセージが送れず詰む。
-      if (b.phase !== 'message') return;
-      const next = b.state;
-      // 開幕メッセージ (turn 0 = 開幕専用。resolveTurn は turn を必ず +1 するので決着は
-      // 常に turn>=1) と継戦は入力フェーズへ戻すだけ
-      if (next.turn === 0 || next.outcome === 'ongoing') {
-        const back = { ...b, phase: 'input' as BattlePhase };
-        battleRef.current = back;
-        setBattle(back);
-        return;
-      }
-      // 決着: 報酬は**サーバーが権威 state に確定済み** (onBattleCommand の serverTurn が返した
-      // awarded)。ここではクライアント表示を更新するだけ = 一切 XP/パワー/素材を書かない (改造不可)。
-      const awarded = b.awarded ?? {};
-      const drops = awarded.drops ?? [];
-      const lost = awarded.materialsLost ?? [];
-      // 決着後の権威位置 (敗北は最後の街へ帰還) に移動し、対応トークンで同期する。
-      const resultPos = b.resultPos;
-      if (b.resultToken) tokenRef.current = b.resultToken;
-      // HP/MP + 在庫はサーバー権威 (turn 結果)。carry は undefined=満タン → null。敗北は最後の街へ帰還。
-      if (next.outcome === 'lose') {
-        setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y, lastTown: resultPos } : {}) } : s));
-        if (resultPos) { const t = townAt(resultPos.x, resultPos.y); setNotice(t ? `気がつくと「${t.name}」に はこばれていた…` : '気がつくと 街に はこばれていた…'); }
-      } else {
-        setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y } : {}) } : s));
-      }
-      scheduleSave();
-      // 在庫表示をサーバー権威 (turn 結果の materials) で同期。取得できなければ従来のミラーで best-effort。
-      if (b.resultMaterials) {
-        const m = b.resultMaterials;
-        setHerbStock(m['herb'] ?? 0);
-        setTonicStock(m['sky-dew'] ?? 0);
-        setFeatherStock(m['sky-feather'] ?? 0);
-        materialsRef.current = { ...m };
-      } else {
-        const countOf = (arr: readonly string[], id: string) => arr.filter((x) => x === id).length;
-        setHerbStock((n) => Math.max(0, n - countOf(lost, 'herb')) + countOf(drops, 'herb'));
-        setTonicStock((n) => Math.max(0, n - countOf(lost, 'sky-dew')) + countOf(drops, 'sky-dew'));
-        setFeatherStock((n) => Math.max(0, n - countOf(lost, 'sky-feather')) + countOf(drops, 'sky-feather'));
-        const m = { ...materialsRef.current };
-        for (const d of drops) m[d] = (m[d] ?? 0) + 1;
-        for (const id of lost) { const left = Math.max(0, (m[id] ?? 0) - 1); if (left > 0) m[id] = left; else delete m[id]; }
-        materialsRef.current = m;
-      }
-      // 表示用も一緒に更新する (#638 レビュー ★★★)。ref だけ進めると、店を
-      // 「開くとき」に取り直す経路を通らない導線 (扉を踏んで自動で開く) で
-      // 戦闘のドロップが在庫に出ず、作れるはずの物が作れなく見える。
-      setMaterialsView({ ...materialsRef.current });
-      // 報酬を「同じ固定サイズのメッセージ窓」に畳んで出す (別パネルを出すと枠が
-      // でかくなり認知負荷)。resultLines が空になるのは実質「逃走
-      // (fled = 経験値もドロップも無し)」のみ。その時は即マップへ戻す。
-      const dropCounts = new Map<string, number>();
-      for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
-      const lostCounts = new Map<string, number>();
-      for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
-      const nameOf = (id: string) => ITEMS[id]?.name ?? id;
-      const resultLines: string[] = [];
-      if (awarded.powerSpent) setServerPower((p) => (p === null ? p : Math.max(0, p - awarded.powerSpent!)));
-      // **パワー不足で報酬が出なかったことを必ず言う**。
-      // 黙って何も起きないと「経験値が入ったように見えて実は入っていない」になる。
-      if (awarded.unrewarded) {
-        setServerPower(0);
-        resultLines.push('あおぞらパワーが たりなかった…');
-        resultLines.push('けいけんちも そざいも えられなかった。');
-        resultLines.push('とうこう すると パワーが たまる。');
-      }
-      if (awarded.xp && awarded.xp > 0) {
-        resultLines.push(`けいけんち を ${awarded.xp} かくとく！`);
-        // 権威 state の jobXp に加算されたぶんを共有キャッシュにも反映 (再取得の往復を省く)。
-        // **archetype / did は ref から読む。** この callback は deps が狭く、直接参照すると
-        // 診断ロード前に固まったクロージャが null を掴んで加算が黙って消える
-        // (同じ形のバグを #529 で踏んでいる)。
-        const arch = archetypeRef.current;
-        if (arch && didRef.current) bumpJobXp(didRef.current, arch, awarded.xp);
-      }
-
-      for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を てにいれた！`);
-      for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''} を おとしてしまった…`);
-      if (next.outcome === 'lose') {
-        const t = b.resultPos ? townAt(b.resultPos.x, b.resultPos.y) : null;
-        resultLines.push(t ? `たおれてしまった… 気がつくと「${t.name}」で 手当てされていた。` : 'たおれてしまった… 気がつくと 街で 手当てされていた。');
-      }
-      // 敵に逃げられた: 悔しさを一言で残す (無言でマップへ戻さない)。
-      if (next.outcome === 'monster-fled') resultLines.push('あいてに にげられてしまった…');
-      // レベルアップは**最後**に出す。DQ は「経験値 → アイテム → レベルアップ」の順で、
-      // レベルアップが締めになる。負けでも僅かな XP で上がりうるので、その場合は
-      // 「たおれてしまった…」の後 = 「力がみなぎった直後に倒れる」順序を避ける。
-      if (awarded.leveledUp) {
-        const lv = awarded.leveledUp;
-        resultLines.push(`レベルが ${lv.to} に あがった！`);
-        // **上がった数値は 1 行にまとめる**。1 ステータス 1 行にすると 7 行になり、メッセージ窓は
-        // 実測 5 行しか見えないので、**肝心の「おぼえた!」「きずが いえた!」が窓の外へ
-        // 押し出されて誰も読めない** (タップ 1 回でマップに戻るので二度と読めない)。
-        // 数値は全部出しつつ、窓に収める。
-        const gains = lv.gains ?? [];
-        if (gains.length) resultLines.push(gains.map((g) => `${g.label}+${g.delta}`).join('　'));
-        // 覚えたとくぎ。気づかないと使われないので必ず出す。
-        for (const name of lv.learned ?? []) resultLines.push(`${name} を おぼえた！`);
-        resultLines.push('きずが すっかり いえた！');
-      }
-      if (resultLines.length === 0) {
-        battleRef.current = null;
-        setBattle(null);
-        flushScenarioNotices();
-      } else {
-        const done = { ...b, state: next, busy: false, phase: 'result' as BattlePhase, resultLines };
-        battleRef.current = done;
-        setBattle(done);
-      }
-    },
-    [scheduleSave],
-  );
-
-  // ワイプ演出の進行。覆い切った時点で支払いがまだ終わっていなければ hold でつなぐ
-  // (通信の遅さが「固まった」に見えず、演出の一部になる)。
-  const onCoverDone = useCallback(() => {
-    // そらのはね帰還: 覆い切ったところでテレポートして開く (旅の演出をワイプで共用)
-    const dest = featherDestRef.current;
-    if (dest) {
-      featherDestRef.current = null;
-      const name = townAt(dest.x, dest.y)?.name ?? worldOverlay().spawn.name;
-      wsRef.current = {
-        x: dest.x,
-        y: dest.y,
-        hp: null,
-        mp: null,
-        lastTown: { x: dest.x, y: dest.y },
-        regions: [...new Set([...(wsRef.current?.regions ?? []), ...regionsAround(regionOf(dest.x, dest.y))])].sort((a, b) => a - b),
-        // 着地先も行き先候補に (通常は既訪だが、念のため union)
-        visitedTowns: (wsRef.current?.visitedTowns ?? []).some((v) => v.x === dest.x && v.y === dest.y)
-          ? (wsRef.current?.visitedTowns ?? [])
-          : [...(wsRef.current?.visitedTowns ?? []), { x: dest.x, y: dest.y }],
-        gotStarterFeather: wsRef.current?.gotStarterFeather ?? true,
-      };
-      setWs(wsRef.current);
-      scheduleSave();
-      setNotice(`そらのはねで「${name}」へ舞いもどった!`);
-      setWipe('reveal');
-      // サーバー権威の位置 + トークンも更新 (しないと 1 歩でサーバーの旧位置に戻される)。
-      // 同期完了まで移動をブロックし、古いトークンで move されないようにする。
-      if (agent) {
-        moveBusyRef.current = true;
-        void serverTeleport(agent, dest.x, dest.y)
-          .then((res) => {
-            tokenRef.current = res.token;
-            wsRef.current = wsRef.current ? { ...wsRef.current, x: res.x, y: res.y } : wsRef.current;
-            setWs(wsRef.current);
-            // そらのはね消費はサーバー確定 → 在庫を応答で同期。
-            setFeatherStock(res.materials['sky-feather'] ?? 0);
-            materialsRef.current = res.materials;
-            setMaterialsView({ ...res.materials });
-          })
-          .catch((e) => { console.warn('[world] teleport sync failed', e); setNotice('ワープをサーバーに反映できなかった (通信エラー)。'); })
-          .finally(() => { moveBusyRef.current = false; });
-      }
-      return;
-    }
-    // エンカウントは serverMove が既に封印済み (battle は準備完了) なので覆い切ったら開くだけ。
-    setWipe('reveal');
-  }, [scheduleSave, agent]);
-  const onRevealDone = useCallback(() => setWipe(null), []);
-  // hold タイムアウト (通常は到達しない。serverMove は遭遇 state を同期で返すので hold に入らない)。
-  // 保険としてマップに開き直す。
-  const onHoldTimeout = useCallback(() => {
-    setNotice('通信が不安定でモンスターを見失った…');
-    setWipe('reveal');
-  }, []);
-
-  // フィールドでやくそうを使う (移動せずに回復。消費の保存は TODO(W3) で DO に)
-  const useHerbOnField = useCallback((): string | void => {
-    if (!combat || herbStock <= 0) return;
-    const cur = wsRef.current;
-    if (!cur) return;
-    const hpNow = Math.min(cur.hp ?? combat.maxHp, combat.maxHp);
-    if (hpNow >= combat.maxHp) {
-      setNotice('HP は満タンだ。');
-      return 'HP は満タンだ。';
-    }
-    const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
-    const healed = Math.min(combat.maxHp, hpNow + heal);
-    // 楽観更新 (即応) → サーバー権威で確定 (在庫消費 + HP 回復を gameState に)。失敗ならロールバック。
-    setHerbStock((n) => n - 1);
-    subtractMaterial('herb', 1);
-    setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
-    if (agent) void serverItem(agent, 'herb').then((res) => {
-      setHerbStock(res.materials['herb'] ?? 0);
-      materialsRef.current = res.materials;
-      setMaterialsView({ ...res.materials });
-      setWs((s) => (s ? { ...s, hp: res.carryHp ?? null } : s));
-    }).catch((e) => { console.warn('[world] herb use failed', e); setHerbStock((n) => n + 1); setNotice('やくそうを つかえなかった (通信エラー)。'); });
-    const m = `やくそうを使った! HP が ${healed - hpNow} 回復。`;
-    setNotice(m);
-    scheduleSave();
-    return m;
-  }, [combat, herbStock, agent, scheduleSave, subtractMaterial]);
-
-  // フィールドでそらのしずくを使う (MP 回復)
-  const useTonicOnField = useCallback((): string | void => {
-    if (!combat || tonicStock <= 0) return;
-    const cur = wsRef.current;
-    if (!cur) return;
-    const mpNow = Math.min(cur.mp ?? combat.maxMp, combat.maxMp);
-    if (mpNow >= combat.maxMp) {
-      setNotice('MP は満タンだ。');
-      return 'MP は満タンだ。';
-    }
-    const gain = Math.max(1, Math.round(combat.maxMp * BATTLE_TUNING.tonicMpRatio));
-    const restored = Math.min(combat.maxMp, mpNow + gain);
-    setTonicStock((n) => n - 1);
-    subtractMaterial('sky-dew', 1);
-    setWs({ ...cur, mp: restored >= combat.maxMp ? null : restored });
-    if (agent) void serverItem(agent, 'tonic').then((res) => {
-      setTonicStock(res.materials['sky-dew'] ?? 0);
-      materialsRef.current = res.materials;
-      setMaterialsView({ ...res.materials });
-      setWs((s) => (s ? { ...s, mp: res.carryMp ?? null } : s));
-    }).catch((e) => { console.warn('[world] tonic use failed', e); setTonicStock((n) => n + 1); setNotice('そらのしずくを つかえなかった (通信エラー)。'); });
-    const m = `そらのしずくを使った! MP が ${restored - mpNow} 回復。`;
-    setNotice(m);
-    scheduleSave();
-    return m;
-  }, [combat, tonicStock, agent, scheduleSave, subtractMaterial]);
-
-  // そらのはねを使う: 訪問済みの街から行き先を選ぶ。
-  // フィールド専用 (戦闘中はにげるを使う)。消費の保存は TODO(W3) で DO に
-  const useFeatherOnField = useCallback(() => {
-    if (onboardingRef.current) return;
-    if (featherStock <= 0) return;
-    const s = wsRef.current;
-    // mapOpen / shopOpen も塞ぐ (モーダルの裏へ Tab で抜けて発動でき、店を開いた
-    // まま別の街へテレポートすると品揃えが無言で差し替わる — レビュー指摘)
-    if (!s || battleRef.current || wipeRef.current || mapOpenRef.current || shopOpenRef.current || gearOpenRef.current || statusOpenRef.current) return;
-    setFeatherOpen(true); // 行き先えらびを開く (選ぶと flyToTown が飛ばす)
-  }, [featherStock]);
-
-  // 選んだ街へ飛ぶ (そらのはね消費 + ワイプ演出でテレポート)。FeatherModal は選択時に
-  // 先に onClose するので二度押しは構造的に不可 (featherStock の stale closure 無害)
-  const flyToTown = useCallback((dest: { x: number; y: number }) => {
-    const s = wsRef.current;
-    if (!s || featherStock <= 0) return;
-    // 今いる街は FeatherModal 側で候補除外済み。ここは防御の二重ガード (レビュー ★)
-    if (s.x === dest.x && s.y === dest.y) {
-      setNotice('もうその街にいる。');
-      return;
-    }
-    // そらのはねの消費はサーバー (handleTeleport) が行う → onCoverDone の serverTeleport 応答で在庫更新。
-    // ここでは楽観的に featherStock だけ即減らす (材料 map はサーバー応答で確定)。
-    setFeatherStock((n) => Math.max(0, n - 1));
-    featherDestRef.current = dest;
-    // cover が画面を覆うまでの間に「自分の操作の結果」と分かる一言を出す
-    // (エンカウント演出と同一のワイプなので、無言だと戦闘が始まると誤解する)
-    setNotice('そらのはねをつかった!');
-    setWipe('cover'); // 覆い切ったら onCoverDone がテレポートする
-  }, [featherStock, subtractMaterial]);
-
-  // しらべる: パワー 1 を使って足元を調べる。luk 連動でアイテムが手に入ることがある
-  // (見つからないこともある)。発見物はセッション内在庫に加える (消費の正は TODO(W3))。
-  // しらべる: **サーバーがアイテムを判定して gameState 在庫に付与** (client のみの幻を解消)。パワー消費は
-  // 当面 client (points 経済)。結果 (found/materials) はサーバー応答で確定し表示を同期する。
-  const searchHere = useCallback(async (): Promise<void> => {
-    const s = wsRef.current;
-    if (!s || !agent || !did) { setSearchMsg('いま しらべられない (つうしんを かくにんして)。'); return; }
-    // **残高の判定も消費もサーバー** (#551)。client 台帳で引いていた頃は権威 power が
-    // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
-    if (serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
-      setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`);
-      return;
-    }
-    setSearchMsg('あたりを しらべている…');
-    try {
-      // 冪等キー: 応答だけ落ちて押し直したときに二重に引かれないよう、成功するまで同じ鍵を使う。
-      const sKey = pendingSearchRef.current ?? (pendingSearchRef.current = `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`);
-      const res = await serverSearch(agent, tokenRef.current, sKey);
-      pendingSearchRef.current = null;
-      applyServerMaterials(res.materials);
-      setServerPower(res.power); // 残高もサーバーが正
-      if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${res.power})`); return; }
-      const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
-      setSearchMsg(`しらべると、${ITEMS[res.found]?.name ?? res.found} を 1 つ 見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で かくにん / のこりパワー ${res.power})`);
-    } catch (e) {
-      console.warn('[world] search failed', e);
-      setSearchMsg('しらべられなかった (通信エラー)。もういちどどうぞ。');
-    }
-  }, [agent, did]);
+  const move = useWorldMove({
+    agent, did, wsRef, setWs, setScrollStep, inputBlocked: moveBlocked, moveBusyRef, tokenRef, flagsRef, materialsRef,
+    guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice,
+    setMapAcquisition, setServerPower, setNpcTalk, openDirectNpc, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
+  });
+  const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
+    agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, serverPowerRef, setServerPower,
+    setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked: featherBlocked,
+  });
 
   // オンボード用リセットは**設定画面**へ移設した (地図メニューから消し、新規と同じ
   // 「イントロ→手渡し→祝福」導入を辿れるようにするため)。
   // world 側は再入場時にマーク/フラグを読むだけ (WELCOME_BLESSING_PENDING_KEY / ONBOARDING_DONE_KEY)。
-
-  // なんでも屋で作ってもらう (docs/20 W6b)。支払い: パワー (craftPowerSpent 累積) +
-  // 素材 (craft レコードの集計で差し引き)。品質は rkey + luk から決定的
-  /**
-   * いま利用できる店の街 (#424)。フィールドの街タイルか、内部マップの
-   * なんでも屋のマスに立っているときだけ返す。**品揃えと値段は街の座標で決まる**
-   * ので、村の中でもその街の店として扱う。
-   */
-  const shopTownAt = useCallback((at: { x: number; y: number; mapId?: string } | null | undefined) => {
-    if (!at) return null;
-    if (at.mapId) {
-      const sp = interiorShopAt(at.mapId, at.x, at.y);
-      return sp ? townAt(sp.town.x, sp.town.y) ?? null : null;
-    }
-    return townAt(at.x, at.y) ?? null;
-  }, []);
-
-  const onCraft = useCallback(
-    async (def: EquipmentDef) => {
-      if (!agent || !did || craftBusy) return;
-      // **村の中のなんでも屋にも対応する** (#424)。フィールドの街しか見ていなかったため、
-      // 村の店で「つくってもらう」を押すと、ここで黙って return して**何も起きなかった**
-      // (窓だけ閉じたように見える)。店のマスに立っているならその店の街を使う。
-      const town = shopTownAt(wsRef.current);
-      if (!town) return;
-      const towns = worldOverlay().towns;
-      const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
-      const stock = townShopStock(town, townIndex);
-      const have = materialsRef.current[stock.materialId] ?? 0;
-      // 残高と素材の判定は**サーバーが正**。ここは押せるかの目安 (先読み) だけ。
-      if ((serverPowerRef.current ?? 0) < def.price.power || have < def.price.materials) return;
-      // 冪等化: 直前に同じ品で失敗していたら同じ rkey で再試行する
-      // (createRecord は同 rkey で衝突するため 2 重制作が構造的に起きない。レビュー指摘)
-      const rkey = pendingCraftRef.current?.defId === def.id ? pendingCraftRef.current.rkey : newCraftRkey();
-      pendingCraftRef.current = { defId: def.id, rkey };
-      setShopError(null);
-      setShopNotice(null);
-      setCraftBusy(true);
-      try {
-        // **費用の支払いと強化値の抽選はサーバー** (#551)。素材もパワーも権威側から引かれ、
-        // 結果の在庫がそのまま返る (client の減算だけでは、リロードで素材が戻る = 複製できた)。
-        const res = await serverShopCraft(agent, def.id, rkey, tokenRef.current);
-        setServerPower(res.power);
-        applyServerMaterials(res.materials);
-        // 個体そのもの (強化値つきレコード) はまだユーザー PDS。サーバーが決めた level を記帳する。
-        // 個体の権威化は #551 段階 2。
-        // 記帳 (ユーザー PDS の履歴)。所持の根拠はサーバーなので、ここが落ちても品は手元にある。
-        // ただし黙って終わると「パワーだけ減って何も起きなかった」に見えるので必ず伝える。
-        const piece = await craftItem(
-          agent,
-          {
-            itemId: def.id,
-            materialId: stock.materialId,
-            materialCount: def.price.materials,
-            power: def.price.power,
-            luk: combat?.luk ?? 0,
-            level: res.level ?? 0,
-          },
-          rkey,
-        ).catch((e) => {
-          keepCraftLog('craft', e);
-          // 品もパワーも既にサーバー側で確定しているので、失敗として赤字で出さない (#642)。
-          // 欠けたのは履歴だけで、それは保留してあとで書き直す。
-          setShopNotice('記録はあとで残す (品は もちものに入っている)。');
-          return { rkey, itemId: def.id, level: res.level ?? 0, at: new Date().toISOString() };
-        });
-        pendingCraftRef.current = null;
-        if (res.pieces) setCraftedPieces(res.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
-        setLastShopAction({ piece, kind: 'craft' });
-      } catch (e) {
-        // 失敗しても店は開いたまま (再試行させる。同 rkey なので 2 重にならない)
-        console.warn('[world] craft failed', e);
-        setLastShopAction(null);
-        setShopError(shopErrorText(e, 'つくってもらえなかった'));
-      } finally {
-        setCraftBusy(false);
-      }
-    },
-    [agent, did, craftBusy, combat, subtractMaterial, shopTownAt, keepCraftLog],
-  );
-
-  // 合成 (きたえる): 同アイテム・同強化値 2 個体 → +1。素材もパワーも不要
-  // (燃やす 2 個体そのものが対価 — docs/20 のシンク設計)
-  const onForge = useCallback(
-    async (def: EquipmentDef, resultLevel: number, rkeys: [string, string]) => {
-      if (!agent || !did || craftBusy) return;
-      const forgeKey = `${def.id}:${rkeys[0]}:${rkeys[1]}`;
-      const frkey = pendingForgeRef.current?.key === forgeKey ? pendingForgeRef.current.rkey : newForgeRkey();
-      pendingForgeRef.current = { key: forgeKey, rkey: frkey };
-      setShopError(null);
-      setShopNotice(null);
-      setCraftBusy(true);
-      try {
-        // **合成もサーバー** (#551 段階 2)。消費する個体は権威側の所持から探すので、
-        // 持っていない rkey や強化値の食い違いは通らない。
-        const res = await serverShopForge(agent, rkeys, frkey, tokenRef.current);
-        pendingForgeRef.current = null;
-        if (res.pieces) setCraftedPieces(res.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' })));
-        const piece: CraftedPiece = { rkey: frkey, itemId: def.id, level: res.level ?? resultLevel, at: new Date().toISOString() };
-        // 記帳 (履歴)。所持の根拠ではないので、失敗しても進める。
-        void forgeItems(agent, { itemId: def.id, resultLevel: piece.level, consumed: rkeys }, frkey)
-          .catch((e) => keepCraftLog('forge', e));
-        setLastShopAction({ piece, kind: 'forge' });
-      } catch (e) {
-        console.warn('[world] forge failed', e);
-        setLastShopAction(null);
-        setShopError(shopErrorText(e, 'きたえてもらえなかった'));
-      } finally {
-        setCraftBusy(false);
-      }
-    },
-    [agent, did, craftBusy, keepCraftLog],
-  );
-
-  // 素材のひきとり (素材 → パワー。docs/20 の低レート変換)
-  const onSell = useCallback(
-    async (materialId: string, count: number) => {
-      if (!agent || !did || craftBusy || count <= 0) return;
-      if ((materialsRef.current[materialId] ?? 0) < count) return;
-      const saleKey = `${materialId}:${count}`;
-      const srkey = pendingSaleRef.current?.key === saleKey ? pendingSaleRef.current.rkey : newSaleRkey();
-      pendingSaleRef.current = { key: saleKey, rkey: srkey };
-      setShopError(null);
-      setShopNotice(null);
-      setCraftBusy(true);
-      try {
-        // **在庫と残高の増減はサーバー** (#551)。client 台帳だけだと「パワーが 5 ふえた!」と
-        // 出ても権威側は動かず、戦闘の報酬にも効かなかった。
-        const res = await serverShopSell(agent, materialId, count, srkey, tokenRef.current);
-        pendingSaleRef.current = null;
-        setServerPower(res.power);
-        applyServerMaterials(res.materials);
-        // 記帳 (履歴)。数量とパワーはサーバーが確定した値で書く。
-        await sellMaterials(agent, { materialId, materialCount: count }, srkey).catch((e) => keepCraftLog('sale', e));
-        // 結果はモーダル内のセリフ窓で出す (#607)。世界の通知行はモーダルの背面で見えない。
-        setLastShopAction({ kind: 'sell', materialId, count, powerGained: res.powerGained ?? 0 });
-      } catch (e) {
-        console.warn('[world] sell failed', e);
-        setShopError(shopErrorText(e, 'ひきとってもらえなかった'));
-      } finally {
-        setCraftBusy(false);
-      }
-    },
-    [agent, did, craftBusy, subtractMaterial, keepCraftLog],
-  );
-
-  // 装備の着脱 (gear/self は rkey 参照 — 強化値は直書きしない。docs/20 W6c 契約)
-  const gearSavingRef = useRef(false);
-  const onEquipChange = useCallback(
-    async (next: GearRefs) => {
-      if (!agent || gearSavingRef.current) return; // 並行保存で後勝ち巻き戻しを防ぐ
-      gearSavingRef.current = true;
-      const prev = gearRefs;
-      setGearRefs(next); // 楽観更新 (HP/MP バーが即応する)
-      try {
-        await saveGearRefs(agent, next);
-      } catch (e) {
-        console.warn('[world] gear save failed', e);
-        // 失敗時のみ、まだ next のままなら巻き戻す (関数型で他更新を潰さない)
-        setGearRefs((cur) => (cur === next ? prev : cur));
-        setNotice('そうびを保存できなかった (通信エラー)。');
-      } finally {
-        gearSavingRef.current = false;
-      }
-    },
-    [agent, gearRefs],
-  );
 
   // キーボード (PC)。修飾キー付き (Cmd+← のブラウザ戻る等) は奪わない。
   useEffect(() => {
@@ -1440,7 +301,8 @@ export function World() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [move]);
+  }, [move, battleRef, wipeRef, wsRef]);
+
 
   if (!WORLD_PREVIEW_ENABLED) {
     return (
@@ -1521,99 +383,10 @@ export function World() {
     // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
     ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
     ...(inTown
-      ? [{ key: 'shop', label: 'なんでも屋', onSelect: () => {
-          setLastShopAction(null);
-          setShopError(null);
-          setShopNotice(null);
-          setMaterialsView({ ...materialsRef.current });
-          flushCraftLog(); // 前に書けなかった記帳をここで書き直す (#642)
-          // 入場時に serverState が落ちていると残高が null のまま復旧経路が無く、
-          // 店が「パワー 0」で全品グレーアウトして死んで見える (#551 レビュー指摘)。
-          // 開くたびに取り直す。
-          if (serverPowerRef.current === null && agent) {
-            void serverState(agent)
-              .then((s) => { setServerPower(s.state.power ?? 0); if (s.state.pieces) setCraftedPieces(s.state.pieces.map((p) => ({ rkey: p.rkey, itemId: p.itemId, level: p.level, at: '' }))); })
-              .catch((e) => { console.warn('[world] shop reload failed', e); setShopError('パワー残高を読み込めなかった (通信を確認して開き直して)。'); });
-          }
-          setShopOpen(true);
-        } } as WorldMenuCommand]
+      ? [{ key: 'shop', label: 'なんでも屋', onSelect: shop.openShopFromMenu } as WorldMenuCommand]
       : []),
     // 「はじめから (管理)」は設定画面へ移設 (新規と同じ導入を辿らせるため)。ここには出さない。
   ];
-
-  // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
-  // **同じパーツは <defs> に 1 回だけ定義して <use> で参照する** (#605)。全地形が
-  // ドット絵 (タイルあたり最大 ~150 rect) になったので、マスごとにインライン展開すると
-  // ビューポートだけで数千〜万 rect の DOM になり、歩くたびの再描画がモバイルで重くなる。
-  // 今いるマップ (#424)。内部なら地形もパーツもそのマップから引く。
-  const inside = ws.mapId ? interiorById(ws.mapId) ?? null : null;
-  const tileDefs = new Map<string, React.ReactElement>();
-  const tiles = [];
-  for (let vy = -scrollPadding; vy < VIEW + scrollPadding; vy++) {
-    for (let vx = -scrollPadding; vx < VIEW + scrollPadding; vx++) {
-      // 内部マップ (#424) は端で折り返さない (範囲外は壁として描く)。
-      const x = inside ? ws.x - HALF + vx : wrap(ws.x - HALF + vx);
-      const y = inside ? ws.y - HALF + vy : wrap(ws.y - HALF + vy);
-      const t = inside ? interiorTerrainAt(inside, x, y) : terrainAt(x, y);
-      // ドット絵 (エディタ or 同梱 #605) → 従来の SVG → 代表色のべた塗り、の順に倒す。
-      // **パーツ (index) ごとの絵を最優先。** 「縦の橋」のように、通行判定は同じで
-      // 絵だけ違うパーツを足せるようにするため、地形 id ではなく index で引く。
-      const pi = inside ? interiorPartAt(inside, x, y) : mappedPartAt(x, y);
-      // **独自のパーツ表を持つ内部マップは index で引かない** (#626)。`part:<index>` は
-      // フィールドと番号空間を共有するので、村の 4 番が「以前フィールドの 4 番に
-      // 描いた水の絵」になってしまう。地形名だけで引く。
-      const ownParts = !!inside?.parts;
-      const artOf = (terrain: string) => (ownParts ? pixelTile(terrain) : pixelPart(pi, terrain));
-      // 平地でドット絵が無いときだけ SVG バリアント (見た目散らし) が効くので、id に含める。
-      const detail = t === 'plains' && !artOf(t) ? tileDetailAt(x, y) : 0;
-      const mask = usesStandardShore(t, ownParts ? undefined : pi) ? shoreMaskAt(x, y, (nx, ny) => {
-        if (!inside) return terrainAt(wrap(nx), wrap(ny));
-        return nx < 0 || ny < 0 || nx >= inside.size || ny >= inside.size ? undefined : interiorTerrainAt(inside, nx, ny);
-      }) : null;
-      const groundAt = (neighbor: number) => {
-        const [dx, dy] = SHORE_NEIGHBORS[neighbor]!;
-        const nx = inside ? x + dx : wrap(x + dx), ny = inside ? y + dy : wrap(y + dy);
-        const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(nx, ny);
-        const index = inside ? interiorPartAt(inside, nx, ny) : mappedPartAt(nx, ny);
-        return (ownParts ? pixelTile(terrain) : pixelPart(index, terrain)) ?? TERRAIN_TILES[terrain] ?? fallbackTile(terrain);
-      };
-      const groundKey = mask === null ? '' : shoreGroundKey(mask, x, y, (nx, ny) => {
-        const terrain = inside ? interiorTerrainAt(inside, nx, ny) : terrainAt(wrap(nx), wrap(ny));
-        const index = inside ? interiorPartAt(inside, nx, ny) : mappedPartAt(wrap(nx), wrap(ny));
-        return `${ownParts ? 'own' : (index ?? 'x')}-${terrain}`;
-      });
-      const defId = `wt-${ownParts ? `i:${inside!.id}` : (pi ?? 'x')}-${t}-${detail}-${mask ?? 'plain'}-${groundKey}`;
-      if (!tileDefs.has(defId)) {
-        tileDefs.set(
-          defId,
-          <g id={defId} key={defId}>
-            {(mask === null ? artOf(t) : shoreTile(mask, defId, groundAt))
-              ?? (t === 'plains' ? PLAINS_VARIANTS[detail] : TERRAIN_TILES[t])
-              ?? fallbackTile(t)}
-          </g>,
-        );
-      }
-      tiles.push(<use key={`${vx}-${vy}`} href={`#${defId}`} x={vx * TILE} y={vy * TILE} />);
-    }
-  }
-  tiles.unshift(<defs key="tile-defs">{[...tileDefs.values()]}</defs>);
-
-  // ビューポート内の NPC (#425)。ドット絵 (npc:<id>) → 代替の見た目 (人form) に倒す。
-  const npcSprites = [];
-  // 今いるマップの NPC だけ描く (#613)。内部マップは端で折り返さないので wrap しない。
-  for (const n of npcsOn(insideHere?.id ?? WORLD_MAP_ID)) {
-    const relative = (value: number) => wrap(value + scrollPadding) - scrollPadding;
-    const vx = insideHere ? n.x - (ws.x - HALF) : relative(n.x - (ws.x - HALF));
-    const vy = insideHere ? n.y - (ws.y - HALF) : relative(n.y - (ws.y - HALF));
-    if (vx < -scrollPadding || vy < -scrollPadding || vx >= VIEW + scrollPadding || vy >= VIEW + scrollPadding) continue;
-    npcSprites.push(
-      <g key={`npc-${n.id}`} transform={`translate(${vx * TILE},${vy * TILE})`}>
-        {isFutabaGuild(n)
-          ? <text x={TILE / 2} y={-TILE / 3} textAnchor="middle" fontSize={TILE * 0.42} fill="white" stroke="#202030" strokeWidth={2} paintOrder="stroke">ギルド</text>
-          : <NpcSprite npc={n} />}
-      </g>,
-    );
-  }
 
   const avatarSize = Math.max(16, Math.round(tilePx * 1.15));
 
@@ -1630,8 +403,7 @@ export function World() {
             aria-label="ワールドマップ"
           >
             <g ref={scrollLayerRef} data-world-scroll data-world-x={ws.x} data-world-y={ws.y}>
-              {tiles}
-              {npcSprites}
+              <WorldMapLayer at={ws} scrollPadding={scrollPadding} />
             </g>
             <ellipse
               cx={HALF * TILE + TILE / 2}
@@ -1665,7 +437,7 @@ export function World() {
               // map/shop/gear/status) 中はそもそもスティックがそれらの背面シートで
               // 遮断されタップが届かないので、ここでは wipe/battle だけ見れば足りる
               // 導入/手渡し/受付中はキーボード経由の自己タップも遮断する。
-              if (wipeRef.current || battleRef.current || mapAcquisitionRef.current || onboardingRef.current || starterMsgRef.current || npcTalkRef.current) return;
+              if (wipeRef.current || battleRef.current || mapAcquisitionRef.current || onboardingRef.current || overlaysRef.current.showStarter || npcTalkRef.current) return;
               dismissMenuHint();
               setMenuOpen(true);
             }}
@@ -1694,30 +466,7 @@ export function World() {
               zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
             />
           )}
-          {menuHint && !onboarding && !showStarter && !menuOpen && (
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                zIndex: HUD_Z,
-                textAlign: 'center',
-              }}
-            >
-              <div className="aq-menu-hint-ring" style={{ width: 64, height: 64, borderRadius: '50%', border: '3px solid #fff', margin: '0 auto', boxShadow: '0 0 8px rgba(0,0,0,0.6)' }} />
-              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
-                じぶんを タップ → コマンド
-              </div>
-              <style>{`
-@keyframes aq-menu-hint { 0% { transform: scale(0.8); opacity: 0.9; } 70% { transform: scale(1.25); opacity: 0; } 100% { opacity: 0; } }
-.aq-menu-hint-ring { animation: aq-menu-hint 1.5s ease-out infinite; }
-@media (prefers-reduced-motion: reduce) { .aq-menu-hint-ring { animation: none; } }
-`}</style>
-            </div>
-          )}
+          {menuHint && !onboarding && !showStarter && !menuOpen && <WorldMenuHint />}
           {menuOpen && <WorldMenu commands={menuCommands} questLines={questMenuLines(quest, materialsView)} onClose={() => setMenuOpen(false)} />}
           {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。
               敵+ログ+コマンド、リザルトの報酬まで全部この枠内に畳む。上枠 (paddingTop)
@@ -1773,7 +522,7 @@ export function World() {
               anchor="map"
               // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
               lines={npcDialogueLines(npcTalk.npc, npcTalk.lines)}
-              portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? onboardingPortrait : undefined}
+              portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? ONBOARDING_PORTRAIT : undefined}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
               busy={questPending}
@@ -1800,7 +549,7 @@ export function World() {
             <DialogueWindow
               anchor="map"
               lines={showStarter ? ONBOARDING_LINES : [...ONBOARDING_LINES, GUILD_INVITATION, ...OPENING_GUIDE_LINES]}
-              portrait={onboardingPortrait}
+              portrait={ONBOARDING_PORTRAIT}
               onDone={() => {
                 setOnboarding(false);
                 onboardingRef.current = false;
@@ -1814,16 +563,8 @@ export function World() {
             // 祝福のセリフを足し、読み終えた瞬間に祝福演出を出す。starterBlessed は入場時にマークから確定済み。
             <DialogueWindow
               anchor="map"
-              lines={[
-                { speaker: 'Blueskyちゃん', text: 'これも もっていて。また いたくなったら つかってね。' },
-                { text: 'やくそうを うけとった！' },
-                { speaker: 'Blueskyちゃん', text: 'そらのはねも あげるね。いったことの ある街へ もどれるの。' },
-                { text: 'そらのはねを うけとった！ コマンドの「どうぐ」から つかえます。' },
-                GUILD_INVITATION,
-                ...(starterBlessed ? [{ text: '【はじまりの祝福】あおぞらパワーが 20 ふえた！' }] : []),
-                ...OPENING_GUIDE_LINES,
-              ]}
-              portrait={onboardingPortrait}
+              lines={starterHandoffLines(starterBlessed)}
+              portrait={ONBOARDING_PORTRAIT}
               onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
             />
           )}
@@ -1912,51 +653,9 @@ export function World() {
           refs={gearRefs}
           busy={craftBusy}
           errorText={shopError}
-          onDiscard={(rkey) => {
-            // **すてるは街の外でもできる** (#575)。所持上限に達すると制作も購入も
-            // 断られるので、街に着くまで整理できないと詰む。パワーは返らない。
-            if (!agent) return;
-            setShopError(null);
-            setCraftBusy(true);
-            // **冪等キーは個体ごとに固定する。** 呼び出しの中で採番すると、応答だけ
-            // 落ちた後の押し直しが毎回別 op になり、サーバーの二重実行防止が一度も
-            // 効かない (2 回目は必ず not_owned になる)。craft と同じ作法。
-            const dkey = pendingDiscardRef.current[rkey] ?? newDiscardRkey();
-            pendingDiscardRef.current[rkey] = dkey;
-            void (async () => {
-              try {
-                const res = await serverShopDiscard(agent, [rkey], dkey);
-                delete pendingDiscardRef.current[rkey];
-                if (res.pieces) setCraftedPieces(res.pieces.map((x) => ({ rkey: x.rkey, itemId: x.itemId, level: x.level, at: '' })));
-                // PDS 側にも墓標を残す (/me の集計が捨てた装備を数えたままにならないように)。
-                // 権威は既にサーバーで減っているので、失敗しても進める。
-                void discardItems(agent, [rkey], dkey).catch((e) => keepCraftLog('discard', e));
-              } catch (e) {
-                console.warn('[world] discard failed', e);
-                setShopError(shopErrorText(e, 'すてられなかった'));
-              } finally {
-                setCraftBusy(false);
-              }
-            })();
-          }}
-          onEquip={(slot, rkey) => {
-            const next = { ...gearRefs, [slot]: rkey };
-            // 手数の競合 (#609) は**装備した側を通し、逆側を外す** (DQ 流の入れ替え)。
-            // 外さず保存すると core が盾を落とすので「そうび中なのに効果なし」の矛盾表示になる。
-            if (slot === 'weapon' || slot === 'shield') {
-              const other = slot === 'weapon' ? 'shield' : 'weapon';
-              const defOfRkey = (rk?: string) => (rk ? EQUIPMENT_BY_ID[craftedPieces.find((p) => p.rkey === rk)?.itemId ?? ''] : undefined);
-              const mine = defOfRkey(rkey);
-              const theirs = defOfRkey(next[other]);
-              if (mine && theirs && equipHands(mine) + equipHands(theirs) > 2) delete next[other];
-            }
-            void onEquipChange(next);
-          }}
-          onUnequip={(slot) => {
-            const next = { ...gearRefs };
-            delete next[slot];
-            void onEquipChange(next);
-          }}
+          onDiscard={shop.onDiscard}
+          onEquip={shop.onEquip}
+          onUnequip={shop.onUnequip}
           onClose={() => setGearOpen(false)}
         />
       )}
@@ -1972,12 +671,12 @@ export function World() {
           // 手数で無効化中の盾が「そうび中」表示のまま きたえる で黙って燃える。
           equippedRkeys={Object.values(gearRefs ?? {}).filter((v): v is string => typeof v === 'string')}
           busy={craftBusy}
-          lastAction={lastShopAction}
+          lastAction={shop.lastShopAction}
           errorText={shopError}
-          noticeText={shopNotice}
-          onCraft={(def) => void onCraft(def)}
-          onForge={(def, level, rkeys) => void onForge(def, level, rkeys)}
-          onSell={(materialId, count) => void onSell(materialId, count)}
+          noticeText={shop.shopNotice}
+          onCraft={(def) => void shop.onCraft(def)}
+          onForge={(def, level, rkeys) => void shop.onForge(def, level, rkeys)}
+          onSell={(materialId, count) => void shop.onSell(materialId, count)}
           onClose={() => setShopOpen(false)}
         />
       )}
