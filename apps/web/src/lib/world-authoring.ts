@@ -2,6 +2,7 @@ import { captureNpcPlacementWorld } from './npc-placement';
 import type { Agent } from '@atproto/api';
 import {
   decodeWorldMap,
+  loadAdminWorld,
   BASE_PARTS,
   decodeTileArt,
   bundledWorldMapTiles,
@@ -43,7 +44,7 @@ import {
   type TownOverride,
   type WorldPart,
 } from '@aozoraquest/core';
-import { ADMIN_COL } from './collections';
+import { ADMIN_COL, ADMIN_WORLD_COL } from './collections';
 import { getPrimaryAdminDid } from './runtime-config';
 import { getRecord, putRecord } from './atproto';
 
@@ -140,95 +141,12 @@ export async function saveTileArts(agent: Agent): Promise<number> {
 export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
   const adminDid = getPrimaryAdminDid();
   if (agent && adminDid) {
-    try {
-      const rec = await getRecord<WorldMapRecord>(agent, adminDid, ADMIN_COL.worldMap, RKEY);
-      if (rec?.gz) {
-        const tiles = await decodeWorldMap(fromBase64(rec.gz));
-        setWorldMap({
-          tiles,
-          size: rec.size || WORLD_SIZE,
-          ...(rec.palette ? { palette: rec.palette } : {}),
-          ...(rec.parts ? { parts: rec.parts } : {}),
-        });
-        setTownOverrides(rec.towns ?? null);
-      } else {
-        await loadStaticWorldMap();
-      }
-    } catch (e) {
-      console.warn('[world] authored map load failed', e);
-      await loadStaticWorldMap().catch(() => {});
-    }
-    try {
-      const rec = await getRecord<TileArtCollectionRecord>(agent, adminDid, ADMIN_COL.tileArt, RKEY);
-      if (rec?.arts) loadTileArts(rec.arts);
-    } catch (e) {
-      console.warn('[world] tile art load failed', e);
-    }
-    try {
-      const rec = await getRecord<MonstersRecord>(agent, adminDid, ADMIN_COL.monsters, RKEY);
-      // **読めない/壊れていたらコード直書きのまま** (戦闘を止めない)。
-      if (rec?.monsters?.length) setMonsterOverrides(rec.monsters);
-    } catch (e) {
-      console.warn('[world] monsters load failed', e);
-    }
-    try {
-      const rec = await getRecord<ItemsRecordData>(agent, adminDid, ADMIN_COL.items, RKEY);
-      if (rec?.equipment?.length) setItemOverrides({ items: rec.items ?? [], equipment: rec.equipment });
-    } catch (e) {
-      console.warn('[world] items load failed', e);
-    }
-    try {
-      // **アイテムの後に読む** — 上書きの検証が EQUIPMENT_BY_ID / ITEMS を引くので、
-      // 先に読むと「編集した装備を並べた店」が未知 id 扱いで落ちる。
-      const rec = await getRecord<{ shops?: ShopOverride[] }>(agent, adminDid, ADMIN_COL.shops, RKEY);
-      // 空配列も適用する (全上書き解除の反映。クエストと同じ流儀。#660)。
-      if (rec?.shops) setShopOverrides(rec.shops);
-    } catch (e) {
-      console.warn('[world] shops load failed', e);
-    }
-    try {
-      const rec = adminRecordJson(await getRecord<{ npcs?: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY));
-      // 空配列も適用する (全 NPC 削除の反映。クエストと同じ流儀。#660)。
-      if (rec?.npcs) setNpcs(rec.npcs);
-    } catch (e) {
-      console.warn('[world] npcs load failed', e);
-    }
-    try {
-      // 内部マップとゲート (#424)。移動判定に効くので web も必ず読む。
-      const rec = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(agent, adminDid, ADMIN_COL.interiors, RKEY);
-      if (rec) {
-        const maps: InteriorMap[] = [];
-        for (const m of rec.interiors ?? []) {
-          const { gz, ...rest } = m;
-          maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
-        }
-        setInteriors(maps, rec.gates ?? []);
-      }
-    } catch (e) {
-      console.warn('[world] interiors load failed', e);
-    }
-    try {
-      // ジョブ (#544)。装備カテゴリを検証するのでアイテムより後だが、他への依存はない。
-      const rec = await getRecord<{ jobs?: JobOverride[] }>(agent, adminDid, ADMIN_COL.jobs, RKEY);
-      if (rec?.jobs) setJobOverrides(rec.jobs);
-    } catch (e) {
-      console.warn('[world] jobs load failed', e);
-    }
-    try {
-      // 検証が NPC・モンスター・アイテムの実在を引くため、**この 3 つより後に読む** (#423)。
-      const rec = await getRecord<{ quests?: GameQuestDef[] }>(agent, adminDid, ADMIN_COL.quests, RKEY);
-      // 空配列も適用する (全削除の反映。edge 側と同じ理由)。
-      if (rec?.quests) setGameQuests(rec.quests);
-    } catch (e) {
-      console.warn('[world] quests load failed', e);
-    }
-    try {
-      // シナリオ (#545)。条件が questId を引くので**クエストより後**に読む。
-      const rec = await getAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
-      if (rec?.events) setScenario(rec.events);
-    } catch (e) {
-      console.warn('[world] scenario load failed', e);
-    }
+    // 順序と適用規則は core の loadAdminWorld が唯一の定義 (edge と同じ。Refs #718)。
+    // 地図が読めなければ同梱の地図に倒れる。BlobRef は保存形の JSON へ戻す (#703)。
+    await loadAdminWorld(
+      async (name) => adminRecordJson(await getRecord(agent, adminDid, ADMIN_WORLD_COL[name], RKEY)),
+      (name, e) => console.warn(`[world] ${name} load failed`, e),
+    );
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));

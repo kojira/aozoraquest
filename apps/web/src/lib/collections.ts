@@ -23,6 +23,8 @@
  * - 実 Bluesky 投稿 (`app.bsky.feed.post`) は性質上分離不可、
  *   dev からの投稿も実投稿になる。
  */
+import { ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, type AdminWorldRecordName } from '@aozoraquest/core';
+
 const ROOT = (import.meta.env.VITE_NSID_ROOT as string | undefined)?.trim();
 if (!ROOT) {
   throw new Error(
@@ -32,8 +34,8 @@ if (!ROOT) {
 }
 const ENV = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
 const USER_PREFIX = ENV ? `${ROOT}.${ENV}` : ROOT;
-/** 管理データ (world.* / config.*) の prefix。dev エッジの ADMIN_NSID_ENV="dev" と揃える (#716)。 */
-const ADMIN_PREFIX = ENV ? `${ROOT}.dev` : ROOT;
+/** 管理データ (world.* / config.*) の prefix。規則は core の adminNsidPrefix (edge と共通。#716)。 */
+const ADMIN_PREFIX = adminNsidPrefix(ROOT, ENV);
 
 export const COL = {
   analysis: `${USER_PREFIX}.analysis`,
@@ -84,30 +86,27 @@ export const ADMIN_COL = {
   configBans: `${ADMIN_PREFIX}.config.bans`,
   configPrompts: `${ADMIN_PREFIX}.config.prompts`,
   directory: `${ROOT}.directory`,
-  /** 手編集したワールドの地形 (1 タイル 1 バイトを gzip → base64)。#421 */
-  worldMap: `${ADMIN_PREFIX}.world.map`,
-  /** 地形のドット絵 (地形 id → 画素データ)。#421 */
-  tileArt: `${ADMIN_PREFIX}.world.tileArt`,
-  /** モンスター (パラメータ・ドロップ・能力 id)。#419 */
-  monsters: `${ADMIN_PREFIX}.world.monsters`,
-  /** どうぐ・素材 + 装備。#420 */
-  items: `${ADMIN_PREFIX}.world.items`,
-  /** 店ごとのラインナップ上書き。#422 */
-  shops: `${ADMIN_PREFIX}.world.shops`,
-  /** NPC (位置・名前・セリフ)。#425 */
-  npcs: `${ADMIN_PREFIX}.world.npcs`,
-  /** ゲーム内クエスト (NPC 発注・達成条件・報酬)。#423 */
-  quests: `${ADMIN_PREFIX}.world.quests`,
-  /** ジョブのパラメータ上書き (ステータス比・たいりょく・曲線・装備適性)。#544 */
-  jobs: `${ADMIN_PREFIX}.world.jobs`,
-  /** 内部マップ (街の中・城・ダンジョン) とゲート。#424 */
-  interiors: `${ADMIN_PREFIX}.world.interiors`,
-  /** シナリオ (イベント列 + フラグ)。#545 */
-  scenario: `${ADMIN_PREFIX}.world.scenario`,
+  /** world.* (地形 #421・絵 #421・モンスター #419・アイテム #420・店 #422・NPC #425・
+   *  クエスト #423・ジョブ #544・内部マップ #424・シナリオ #545)。名前は core の ADMIN_WORLD_RECORDS。 */
+  worldMap: adminWorldCollection(ADMIN_PREFIX, 'map'),
+  tileArt: adminWorldCollection(ADMIN_PREFIX, 'tileArt'),
+  monsters: adminWorldCollection(ADMIN_PREFIX, 'monsters'),
+  items: adminWorldCollection(ADMIN_PREFIX, 'items'),
+  shops: adminWorldCollection(ADMIN_PREFIX, 'shops'),
+  npcs: adminWorldCollection(ADMIN_PREFIX, 'npcs'),
+  quests: adminWorldCollection(ADMIN_PREFIX, 'quests'),
+  jobs: adminWorldCollection(ADMIN_PREFIX, 'jobs'),
+  interiors: adminWorldCollection(ADMIN_PREFIX, 'interiors'),
+  scenario: adminWorldCollection(ADMIN_PREFIX, 'scenario'),
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,
 } as const;
+
+/** world.* のレコード名 → collection (共通ローダー loadAdminWorld 用)。 */
+export const ADMIN_WORLD_COL = Object.fromEntries(
+  ADMIN_WORLD_RECORDS.map((name) => [name, adminWorldCollection(ADMIN_PREFIX, name)]),
+) as Record<AdminWorldRecordName, string>;
 
 /** ADMIN_COL.questIndex の rkey: env 別に分離する */
 export const QUEST_INDEX_RKEY = ENV ? ENV : 'self';
