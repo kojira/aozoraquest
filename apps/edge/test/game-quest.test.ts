@@ -165,6 +165,16 @@ describe('handleQuestComplete (defeat)', () => {
     globalThis.fetch = statefulPds(stateAt({ activeQuests: [{ id: 'q-defeat', progress: 9 }], questsDone: ['q-defeat'] })).fn;
     await expect(handleQuestComplete(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'already_done' });
   });
+
+  it('達成履歴が 200 件を超えても古い達成を落とさない (#709 再受注・二重報酬防止)', async () => {
+    const old = ['q-collect', ...Array.from({ length: 199 }, (_, i) => `q-old-${i}`)];
+    const m = statefulPds(stateAt({ activeQuests: [{ id: 'q-defeat', progress: 2 }], questsDone: old }));
+    globalThis.fetch = m.fn;
+    const env = await makeEnv();
+    await handleQuestComplete(env, DID, 'q-defeat', NOW);
+    expect(stored(m.store).questsDone).toEqual([...old, 'q-defeat']);
+    await expect(handleQuestAccept(env, DID, 'q-collect', NOW)).rejects.toMatchObject({ code: 'already_done' });
+  });
 });
 
 describe('handleQuestComplete (collect)', () => {
