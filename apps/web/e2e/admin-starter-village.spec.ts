@@ -7,7 +7,7 @@ import { encodeWorldMap, starterTownInterior, starterTownGates, starterTownNpcs,
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4273/e2e/fixtures/admin-starter-village.html';
-const INTERIORS = 'app.aozoraquest.world.interiors';
+const INTERIORS = 'app.aozoraquest.dev.world.interiors';
 test.beforeAll(async () => {
   vite = await createServer({ configFile: false, root: process.cwd(), plugins: [react()],
     resolve: { alias: { '@': path.join(process.cwd(), 'src') } },
@@ -33,7 +33,7 @@ test('slow saved-village load cannot overwrite starter insertion; save then ques
   const oldVillage = { ...metadata, size: 64, gz: Buffer.from(await encodeWorldMap(new Uint8Array(64 * 64))).toString('base64') };
   const untouched = { id: 'custom-room', name: '手作りの部屋', size: 4, gz: Buffer.from(await encodeWorldMap(new Uint8Array(16))).toString('base64') };
   const npcs = { npcs: starterTownNpcs() };
-  const records: Record<string, unknown> = { [INTERIORS]: { interiors: [oldVillage, untouched], gates: starterTownGates(town) }, 'app.aozoraquest.world.npcs': npcs };
+  const records: Record<string, unknown> = { [INTERIORS]: { interiors: [oldVillage, untouched], gates: starterTownGates(town) }, 'app.aozoraquest.dev.world.npcs': npcs };
   const puts: Array<{ collection: string; record: { interiors: typeof oldVillage[]; gates: unknown[] } }> = [];
   let reads = 0;
   let releaseLoad: (() => void) | undefined;
@@ -94,7 +94,7 @@ test('slow saved-village load cannot overwrite starter insertion; save then ques
     expect(savedVillage.size).toBe(32);
     expect(gunzipSync(Buffer.from(savedVillage.gz, 'base64'))).toEqual(Buffer.from(village.tiles));
     expect(saved.interiors.find((m) => m.id === untouched.id)).toEqual(untouched);
-    expect(records['app.aozoraquest.world.npcs']).toEqual(npcs);
+    expect(records['app.aozoraquest.dev.world.npcs']).toEqual(npcs);
     await page.screenshot({ path: 'test-results/starter-village-saved-mobile.png' });
     await page.getByRole('link', { name: '← 管理', exact: true }).click();
     await page.getByRole('link', { name: 'クエスト管理へ' }).click();

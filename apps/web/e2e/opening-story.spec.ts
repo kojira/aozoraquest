@@ -167,10 +167,10 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     throw new Error(`External request forbidden in opening story test: ${new URL(url).hostname}`);
   }) as typeof fetch;
   const records: Record<string, unknown> = {
-    'app.aozoraquest.world.npcs': { npcs },
-    'app.aozoraquest.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
-    'app.aozoraquest.world.quests': { quests }, 'app.aozoraquest.world.scenario': { events: scenario },
-    'app.aozoraquest.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
+    'app.aozoraquest.dev.world.npcs': { npcs },
+    'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
+    'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
+    'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
     // 初回 (はじめから直後): そらのはね未受領 → 導入に続けて Blueskyちゃんが手渡す (#703)。
     'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: false, regions: [town.region], visitedTowns: [], hp: null, mp: null },
   };
@@ -192,7 +192,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
       const { op, params } = route.request().postDataJSON();
       if (op === 'get') {
         // 実機と同じく管理データの NPC は遅れて届く (#703)。導入はその到着を待って絵を出す。
-        if (params.collection === 'app.aozoraquest.world.npcs') await new Promise((r) => setTimeout(r, 1200));
+        if (params.collection === 'app.aozoraquest.dev.world.npcs') await new Promise((r) => setTimeout(r, 1200));
         const record = records[params.collection];
         await route.fulfill({ status: record ? 200 : 404, json: record ? { value: record, cid: 'fixture-cid' } : { error: 'RecordNotFound' } });
       } else if (op === 'put') { records[params.collection] = params.record; await route.fulfill({ json: { uri: 'at://fixture/record' } }); }
@@ -402,12 +402,12 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(window).toContainText('おかえり。');
     await choose('やめる');
     // shared-data override: 新依頼を削除した管理レコードを同梱で復活させない。
-    records['app.aozoraquest.world.quests'] = { quests: quests.filter(q => q.id !== 'futaba-tool-care') };
+    records['app.aozoraquest.dev.world.quests'] = { quests: quests.filter(q => q.id !== 'futaba-tool-care') };
     await reenter({ x: bluesky.x, y: bluesky.y + 1 });
     await bump('ArrowUp'); await choose('依頼を見る');
     await expect(window).toContainText('いま 紹介できる 依頼は ない');
     await readAll(page); await choose('やめる');
-    records['app.aozoraquest.world.quests'] = { quests };
+    records['app.aozoraquest.dev.world.quests'] = { quests };
     // Reload restores the other active quest; reporting it still advances the existing story.
     await reenter({ x: elder.x, y: elder.y + 1 });
     await bump('ArrowUp');
@@ -435,7 +435,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     // Shared record loading uses the production validator on both client and edge.
     const guildBase = quests.find(q => q.id === 'futaba-tool-care')!;
     const multi = ['fixture-a', 'fixture-b', 'fixture-c', 'fixture-d'].map((id, i) => ({ ...guildBase, id, reward: { power: i + 1 } }));
-    setGameQuests(multi); records['app.aozoraquest.world.quests'] = { quests: multi };
+    setGameQuests(multi); records['app.aozoraquest.dev.world.quests'] = { quests: multi };
     await reenter({ x: bluesky.x, y: bluesky.y + 1, questsDone: [], activeQuests: multi.map(q => ({ id: q.id, progress: 0 })), materials: { 'slime-drop': 2 }, power: 10 });
     await bump('ArrowUp'); await choose('報告する');
     const beforeReports = reported.length;
@@ -455,7 +455,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await choose('戻る'); await choose('やめる');
 
     const direct = multi.map(q => ({ ...q, npcId: elder.id }));
-    setGameQuests(direct); records['app.aozoraquest.world.quests'] = { quests: direct };
+    setGameQuests(direct); records['app.aozoraquest.dev.world.quests'] = { quests: direct };
     await reenter({ x: elder.x, y: elder.y + 1, questsDone: [], activeQuests: [{ id: 'fixture-a', progress: 0 }], materials: { 'slime-drop': 2 } });
     await bump('ArrowUp');
     const directBefore = reported.length;

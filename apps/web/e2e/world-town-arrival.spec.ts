@@ -49,10 +49,10 @@ for (const gated of [false, true]) test(`World + handleMove: ${gated ? 'gate' : 
     throw new Error('External request forbidden in town arrival test');
   }) as typeof fetch;
   const records: Record<string, any> = {
-    'app.aozoraquest.world.interiors': { interiors: gated ? [{ ...village, tiles: undefined,
+    'app.aozoraquest.dev.world.interiors': { interiors: gated ? [{ ...village, tiles: undefined,
       gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }] : [], gates },
-    'app.aozoraquest.world.npcs': { npcs: [] }, 'app.aozoraquest.world.quests': { quests: [] },
-    'app.aozoraquest.world.scenario': { events: [] }, 'app.aozoraquest.test.analysis': diag,
+    'app.aozoraquest.dev.world.npcs': { npcs: [] }, 'app.aozoraquest.dev.world.quests': { quests: [] },
+    'app.aozoraquest.dev.world.scenario': { events: [] }, 'app.aozoraquest.test.analysis': diag,
     'app.aozoraquest.test.world': { x: town.x, y: town.y + 1, gotStarterFeather: true,
       regions: [town.region], visitedTowns: [], hp: null, mp: null },
   };

@@ -5,7 +5,7 @@
  *   PUT /api/admin/data/<name>  body { value, swapCid, dryRun? }
  *   POST /api/admin/blob?kind=sprite|portrait  本文 image/webp → { ok, kind, image } (#699)
  *
- * **本番と共通の管理データを書き換える** (管理レコードは env で分かれていない)。
+ * 読み書き先は env の管理コレクション (#716): dev エッジ = `app.aozoraquest.dev.world.*`。
  * ADMIN_DATA_API_ENABLED="1" かつ ADMIN_DATA_API_KEY がある時だけ動き、無効・鍵違い・
  * 対象外 name はすべて null を返す (呼び出し側は通常の not_found 404 に倒す)。
  */
@@ -19,7 +19,7 @@ import {
 import { getRecord, PdsError } from './pds';
 import { readServerTokens } from './oauth-store';
 import { serverPutRecord, serverUploadBlob, ServerWriteError, type ServerPdsEnv } from './server-pds';
-import { ensureAuthoredWorld, resetAuthoredWorldCache, type WorldAuthoringEnv } from './world-authoring';
+import { adminNsidRoot, ensureAuthoredWorld, resetAuthoredWorldCache, type WorldAuthoringEnv } from './world-authoring';
 
 export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
   /** "1" の時だけ有効 ([env.dev.vars])。 */
@@ -29,13 +29,11 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 }
 
 const PATH_PREFIX = '/api/admin/data/';
-/** 管理レコードの NSID の根。edge の nsidRoot / web の ADMIN_COL と同じ (env で分けない)。 */
-const NSID_ROOT = 'app.aozoraquest';
 const RKEY = 'self';
 const ADMIN_DATA_NAMES = ['npcs', 'shops', 'quests', 'scenario', 'interiors'] as const;
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
-const collectionOf = (name: AdminDataName) => `${NSID_ROOT}.world.${name}`;
+const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -87,7 +85,7 @@ function listOf<T>(value: unknown, key: string): T[] {
 /** 保存済みの管理レコードを全部読み直して core に入れる (検証が他のレコードの実在を引くため)。 */
 async function loadSavedWorld(env: AdminDataEnv, now: number): Promise<void> {
   resetAuthoredWorldCache();
-  await ensureAuthoredWorld(env, NSID_ROOT, now);
+  await ensureAuthoredWorld(env, now);
 }
 
 /** NPC の配置問題 (全員の構造検査 + 指定した NPC の配置検査)。 */
@@ -149,7 +147,7 @@ export async function handleAdminData(req: Request, env: AdminDataEnv, now: numb
   if (!(await authorized(req, env))) return null;
   try {
     const repo = await adminRepo(env);
-    const collection = collectionOf(name);
+    const collection = collectionOf(env, name);
     const saved = await getRecord<Record<string, unknown>>(repo.pdsUrl, repo.did, collection, RKEY);
     await loadSavedWorld(env, now);
     if (req.method === 'GET') {
@@ -176,7 +174,7 @@ async function putAdminData(req: Request, env: AdminDataEnv, now: number, name: 
   try { reason = await validateCandidate(name, value, saved?.value ?? null); } catch (e) { reason = e instanceof Error ? e.message : String(e); }
   if (reason) return json({ error: 'validation_failed', message: reason }, 400);
   if (body.dryRun === true) return json({ ok: true, dryRun: true });
-  const collection = collectionOf(name);
+  const collection = collectionOf(env, name);
   const record = { ...(value as Record<string, unknown>), $type: collection, updatedAt: new Date(now * 1000).toISOString() };
   try {
     const { cid } = await serverPutRecord(env, now, collection, RKEY, record, body.swapCid);

@@ -177,7 +177,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
         // クエスト定義 (#423) の討伐カウントは勝利決着のこの経路で数える。コールド isolate だと
         // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
         // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
-        await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
+        await ensureAuthoredWorld(env, nowSec());
         return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
@@ -185,7 +185,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       // コールド isolate で index.ts の waitUntil が間に合っていないと「街に入れない」
       // 「人がいない」が無言で起きる (実際に踏んだ)。ロード済みならキャッシュ即返しで
       // コストは乗らない。
-      await ensureAuthoredWorld(env, nsFromOrigin(req), nowSec());
+      await ensureAuthoredWorld(env, nowSec());
       return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
@@ -494,7 +494,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const ns = nsFromOrigin(req);
       // コールドスタート直後だと定義が未ロードで「そのクエストは無い」に落ちるので、ここは待つ
       // (TTL 内はキャッシュ即返しでコスト無し)。
-      await ensureAuthoredWorld(env, ns, nowSec());
+      await ensureAuthoredWorld(env, nowSec());
       const handler = accept ? handleQuestAccept : handleQuestComplete;
       return cors(json(await handler(env, did, body.questId, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {

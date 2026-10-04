@@ -26,11 +26,11 @@ for (const spriteFormat of ['png', 'webp'] as const) test(`NPC ${spriteFormat} s
     { id: 'one', name: '案内人', spritePreset: 'bluesky', x: 11, y: 10, lines: ['これは会話イラストの表示確認です。地図を巡り、各地の人に話しかけてみましょう。'] },
     { id: 'two', name: 'となりの人', spritePreset: 'old-man', x: 13, y: 10, lines: ['やあ'] },
   ];
-  const npcCollection = 'app.aozoraquest.world.npcs';
+  const npcCollection = 'app.aozoraquest.dev.world.npcs';
   const records: Record<string, unknown> = {
-    'app.aozoraquest.world.map': { size: 1024, gz: Buffer.from(await encodeWorldMap(new Uint8Array(1024 ** 2))).toString('base64'), parts: BASE_PARTS },
+    'app.aozoraquest.dev.world.map': { size: 1024, gz: Buffer.from(await encodeWorldMap(new Uint8Array(1024 ** 2))).toString('base64'), parts: BASE_PARTS },
     [npcCollection]: { npcs: structuredClone(initial) },
-    'app.aozoraquest.world.tileArt': { arts: { 'npc:one': encodeTileArt(art) } },
+    'app.aozoraquest.dev.world.tileArt': { arts: { 'npc:one': encodeTileArt(art) } },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 40, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: 10, y: 10, gotStarterFeather: true, regions: [spawn.region], visitedTowns: [], hp: null, mp: null },
   };

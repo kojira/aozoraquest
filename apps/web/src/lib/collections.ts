@@ -14,9 +14,10 @@
  * 区分:
  *   - user 系 (per-user PDS, env で分離する) → COL
  *       analysis / profile / spiritChat / questLog / cardDraw
- *   - admin 系 (主管理者の PDS, 全 env 共有) → ADMIN_COL
- *       config.flags / config.maintenance / config.bans / config.prompts /
- *       directory
+ *   - admin 系 (主管理者の PDS) → ADMIN_COL
+ *       world.* / config.* は env で分離する (#716): VITE_NSID_ENV が空でなければ
+ *       "{ROOT}.dev.*" (ローカルも dev エッジを叩くので dev と同じ)、未指定 = 本番 "{ROOT}.*"。
+ *       directory (毎時の自動更新が本番 Environment で書く) と questIndex (rkey で分離) は共有。
  *
  * 注意:
  * - 実 Bluesky 投稿 (`app.bsky.feed.post`) は性質上分離不可、
@@ -31,6 +32,8 @@ if (!ROOT) {
 }
 const ENV = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
 const USER_PREFIX = ENV ? `${ROOT}.${ENV}` : ROOT;
+/** 管理データ (world.* / config.*) の prefix。dev エッジの ADMIN_NSID_ENV="dev" と揃える (#716)。 */
+const ADMIN_PREFIX = ENV ? `${ROOT}.dev` : ROOT;
 
 export const COL = {
   analysis: `${USER_PREFIX}.analysis`,
@@ -76,31 +79,31 @@ export const ROOT_COL = {
 } as const;
 
 export const ADMIN_COL = {
-  configFlags: `${ROOT}.config.flags`,
-  configMaintenance: `${ROOT}.config.maintenance`,
-  configBans: `${ROOT}.config.bans`,
-  configPrompts: `${ROOT}.config.prompts`,
+  configFlags: `${ADMIN_PREFIX}.config.flags`,
+  configMaintenance: `${ADMIN_PREFIX}.config.maintenance`,
+  configBans: `${ADMIN_PREFIX}.config.bans`,
+  configPrompts: `${ADMIN_PREFIX}.config.prompts`,
   directory: `${ROOT}.directory`,
   /** 手編集したワールドの地形 (1 タイル 1 バイトを gzip → base64)。#421 */
-  worldMap: `${ROOT}.world.map`,
+  worldMap: `${ADMIN_PREFIX}.world.map`,
   /** 地形のドット絵 (地形 id → 画素データ)。#421 */
-  tileArt: `${ROOT}.world.tileArt`,
+  tileArt: `${ADMIN_PREFIX}.world.tileArt`,
   /** モンスター (パラメータ・ドロップ・能力 id)。#419 */
-  monsters: `${ROOT}.world.monsters`,
+  monsters: `${ADMIN_PREFIX}.world.monsters`,
   /** どうぐ・素材 + 装備。#420 */
-  items: `${ROOT}.world.items`,
+  items: `${ADMIN_PREFIX}.world.items`,
   /** 店ごとのラインナップ上書き。#422 */
-  shops: `${ROOT}.world.shops`,
+  shops: `${ADMIN_PREFIX}.world.shops`,
   /** NPC (位置・名前・セリフ)。#425 */
-  npcs: `${ROOT}.world.npcs`,
+  npcs: `${ADMIN_PREFIX}.world.npcs`,
   /** ゲーム内クエスト (NPC 発注・達成条件・報酬)。#423 */
-  quests: `${ROOT}.world.quests`,
+  quests: `${ADMIN_PREFIX}.world.quests`,
   /** ジョブのパラメータ上書き (ステータス比・たいりょく・曲線・装備適性)。#544 */
-  jobs: `${ROOT}.world.jobs`,
+  jobs: `${ADMIN_PREFIX}.world.jobs`,
   /** 内部マップ (街の中・城・ダンジョン) とゲート。#424 */
-  interiors: `${ROOT}.world.interiors`,
+  interiors: `${ADMIN_PREFIX}.world.interiors`,
   /** シナリオ (イベント列 + フラグ)。#545 */
-  scenario: `${ROOT}.world.scenario`,
+  scenario: `${ADMIN_PREFIX}.world.scenario`,
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,

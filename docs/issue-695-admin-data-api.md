@@ -1,9 +1,8 @@
 # #695 管理データをコード修正なしで直す dev 専用 API と CLI
 
-> **警告: このルートは本番と共通の管理データを書き換える。**
-> `app.aozoraquest.world.*` の管理レコードは env で分かれていない (web の `ADMIN_COL` と
-> edge の `nsidRoot` が同じ 1 か所を読む)。dev edge から書いた内容は、本番の web / edge も
-> 次の読み込み (最大 5 分) で拾う。管理画面からの保存と同じ重さで扱うこと。
+> **#716 以降、このルートはステージング (dev) の管理データ `app.aozoraquest.dev.world.*` を
+> 書き換える。** 本番 (`app.aozoraquest.world.*`) には触れない。設計は
+> `docs/design/admin-env-d006.md`。
 
 ## 目的
 
@@ -92,7 +91,8 @@ node scripts/admin-data.mjs npc-image <id> <sprite|portrait> <file.webp> [--dry-
 - `npc-move` の `<mapId>` は内部マップ id、フィールドは `world`。
 - 404 は「無効・鍵違い・対象外 name」のどれか (区別は返らない)。
 - 鍵ファイルのパーミッションが 600 でなければ実行しない。
-- `--help` と実行時の表示に「本番と共通の管理データを書き換える」を出す。
+- `--help` と実行時の表示に「ステージング (dev) の管理データを書き換える」を出す。
+  エッジが dev 以外の保存先を返したら止まる (#716 前のエッジに当たった場合)。
 - 接続先は既定で dev edge (`https://aozoraquest-edge-dev.kojiran.workers.dev`)。
   `AQ_ADMIN_DATA_EDGE` で上書きできる。
 

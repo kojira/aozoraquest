@@ -45,8 +45,8 @@ test('real World successful steps are visible, stable on return, and never signa
     throw new Error('External request forbidden in movement test');
   }) as typeof fetch;
   const records: Record<string, any> = {
-    'app.aozoraquest.world.npcs': { npcs: [] }, 'app.aozoraquest.world.quests': { quests: [] },
-    'app.aozoraquest.world.scenario': { events: [] }, 'app.aozoraquest.test.analysis': diag,
+    'app.aozoraquest.dev.world.npcs': { npcs: [] }, 'app.aozoraquest.dev.world.quests': { quests: [] },
+    'app.aozoraquest.dev.world.scenario': { events: [] }, 'app.aozoraquest.test.analysis': diag,
     'app.aozoraquest.test.world': { x: 15, y: 15, gotStarterFeather: true, regions: [], visitedTowns: [], hp: null, mp: null },
   };
   let responseMode = 'normal';
@@ -83,8 +83,8 @@ test('real World successful steps are visible, stable on return, and never signa
       const interior = { id: 'walking-garden', name: '散歩の庭', size: 32, tiles,
         parts: [{ name: '地面', terrain: terrain === 'custom' ? 'plains' : terrain, walkable: true }, { name: '壁', terrain: 'mountain', walkable: false }] };
       setInteriors([interior], []); setNpcs([]); setGameQuests([]); setScenario([]);
-      records['app.aozoraquest.world.interiors'] = { interiors: [{ ...interior, tiles: undefined, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64') }], gates: [] };
-      records['app.aozoraquest.world.tileArt'] = { arts: terrain === 'custom' ? { plains: encodeTileArt({ size: 16, palette: ['', '#ae8657'], pixels: new Uint8Array(256).fill(1) }) } : {} };
+      records['app.aozoraquest.dev.world.interiors'] = { interiors: [{ ...interior, tiles: undefined, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64') }], gates: [] };
+      records['app.aozoraquest.dev.world.tileArt'] = { arts: terrain === 'custom' ? { plains: encodeTileArt({ size: 16, palette: ['', '#ae8657'], pixels: new Uint8Array(256).fill(1) }) } : {} };
       state = { ...state, x: 15, y: 15 }; responseMode = 'normal';
       await page.goto('http://127.0.0.1:4178/e2e/fixtures/tutorial.html'); await expect(map).toBeVisible();
       const before = await map.screenshot({ path: `test-results/movement-${terrain}-before.png` });
@@ -116,7 +116,7 @@ test('real World successful steps are visible, stable on return, and never signa
     await page.keyboard.press('ArrowRight'); await expect(page.getByText('そっちには進めない!')).toBeVisible();
     expect(moves).toBe(count); await expect(layer).toHaveAttribute('transform', 'translate(0 0)');
     // Restore ordinary textured plains and the start checkpoint for the actual held stick.
-    records['app.aozoraquest.world.tileArt'] = { arts: {} };
+    records['app.aozoraquest.dev.world.tileArt'] = { arts: {} };
     state = { ...state, x: 15, y: 15 }; await page.reload(); await expect(map).toBeVisible();
     await page.evaluate(() => {
       const frames: { t: number; x: number; y: number; tx: number; ty: number }[] = [];
@@ -176,7 +176,7 @@ test('real World successful steps are visible, stable on return, and never signa
     const destination = { ...room, id: 'other-room', name: '次の部屋' };
     const gate = { from: { mapId: room.id, x: 16, y: 15 }, to: { mapId: destination.id, x: 3, y: 3 } };
     setInteriors([room, destination], [gate]);
-    records['app.aozoraquest.world.interiors'] = { interiors: await Promise.all([room, destination].map(async interior => ({ ...interior, tiles: undefined, gz: Buffer.from(await encodeWorldMap(interior.tiles)).toString('base64') }))), gates: [gate] };
+    records['app.aozoraquest.dev.world.interiors'] = { interiors: await Promise.all([room, destination].map(async interior => ({ ...interior, tiles: undefined, gz: Buffer.from(await encodeWorldMap(interior.tiles)).toString('base64') }))), gates: [gate] };
     state = { ...state, mapId: room.id, x: 15, y: 15 }; await page.reload(); await expect(map).toBeVisible();
     await page.keyboard.press('ArrowRight'); await expect.poll(() => state.mapId).toBe(destination.id);
     await expect(layer).toHaveAttribute('transform', 'translate(0 0)');
@@ -187,8 +187,8 @@ test('real World successful steps are visible, stable on return, and never signa
     const water = new Uint8Array(WORLD_SIZE * WORLD_SIZE).fill(4);
     const parts = BASE_PARTS.map(part => ({ ...part, walkable: true })); // fixture only, no new movement permission
     setWorldMap({ size: WORLD_SIZE, tiles: water, parts }); setInteriors([], []);
-    records['app.aozoraquest.world.interiors'] = { interiors: [], gates: [] };
-    records['app.aozoraquest.world.map'] = { size: WORLD_SIZE, gz: Buffer.from(await encodeWorldMap(water)).toString('base64'), parts };
+    records['app.aozoraquest.dev.world.interiors'] = { interiors: [], gates: [] };
+    records['app.aozoraquest.dev.world.map'] = { size: WORLD_SIZE, gz: Buffer.from(await encodeWorldMap(water)).toString('base64'), parts };
     delete state.mapId; state = { ...state, x: 1023, y: 500 };
     records['app.aozoraquest.test.world'] = { ...records['app.aozoraquest.test.world'], x: 1023, y: 500, mapId: undefined };
     await page.reload(); await expect(map).toBeVisible();
@@ -206,8 +206,8 @@ test('real World successful steps are visible, stable on return, and never signa
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     const npc = { id: 'scroll-edge', name: '旅人', spritePreset: 'old-man' as const, mapId: room.id, x: 18, y: 6, lines: ['こんにちは'] };
     setInteriors([room], []); setNpcs([npc]);
-    records['app.aozoraquest.world.interiors'] = { interiors: [{ ...room, tiles: undefined, gz: Buffer.from(await encodeWorldMap(room.tiles)).toString('base64') }], gates: [] };
-    records['app.aozoraquest.world.npcs'] = { npcs: [npc] };
+    records['app.aozoraquest.dev.world.interiors'] = { interiors: [{ ...room, tiles: undefined, gz: Buffer.from(await encodeWorldMap(room.tiles)).toString('base64') }], gates: [] };
+    records['app.aozoraquest.dev.world.npcs'] = { npcs: [npc] };
     state = { ...state, mapId: room.id, x: 15, y: 15 };
     await page.reload(); await expect(map).toBeVisible();
     await expect(layer.locator('.npc-sprite')).toHaveCount(1);

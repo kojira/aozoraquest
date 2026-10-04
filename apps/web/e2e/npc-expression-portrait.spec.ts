@@ -57,10 +57,10 @@ test('[sad] の行は表情イラストを出し、タグを表示しない。�
     mapId: village.id, xpEpoch: XP_EPOCH, version: 1, updatedAt: '' };
   const env = await tutorialEnv(NOW);
   const records: Record<string, unknown> = {
-    'app.aozoraquest.world.npcs': { npcs },
-    'app.aozoraquest.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
-    'app.aozoraquest.world.quests': { quests }, 'app.aozoraquest.world.scenario': { events: scenario },
-    'app.aozoraquest.world.shops': { shops: [shop] },
+    'app.aozoraquest.dev.world.npcs': { npcs },
+    'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
+    'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
+    'app.aozoraquest.dev.world.shops': { shops: [shop] },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 40, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: true, regions: [town.region], visitedTowns: [], hp: null, mp: null },
   };

@@ -150,4 +150,16 @@ describe('/api/admin/data (#695)', () => {
     expect(pds.puts[0]).toMatchObject({ collection: COL('npcs'), swapRecord: 'npc1', record: { $type: COL('npcs'), npcs: [{ id: 'elder', x: 301 }] } });
     expect(typeof pds.puts[0]!.record.updatedAt).toBe('string');
   });
+
+  it('dev エッジ (ADMIN_NSID_ENV=dev) は app.aozoraquest.dev.world.* を読み書きし、本番側には触れない (#716)', async () => {
+    const DEV = (name: string) => `app.aozoraquest.dev.world.${name}`;
+    const env = await makeEnv({ ADMIN_NSID_ENV: 'dev' });
+    store.set(DEV('map'), store.get(COL('map'))!);
+    const got = await (await handleRequest(call('GET', 'quests'), env)).json();
+    expect(got).toEqual({ name: 'quests', collection: DEV('quests'), cid: null, value: null });
+    const res = await handleRequest(call('PUT', 'npcs', { body: { value: { npcs: [{ ...NPC, x: 301 }] }, swapCid: null } }), env);
+    expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+    expect(pds.puts.map((p) => [p.collection, p.record.$type])).toEqual([[DEV('npcs'), DEV('npcs')]]);
+    expect(store.get(COL('npcs'))).toEqual({ value: { npcs: [NPC] }, cid: 'npc1' });
+  });
 });

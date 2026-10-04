@@ -4,7 +4,9 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const WARNING = '警告: 本番と共通の管理データを書き換える (app.aozoraquest.world.* は env で分かれていない)。';
+/** dev エッジの管理データは app.aozoraquest.dev.world.* (#716)。本番 (app.aozoraquest.world.*) は書かない。 */
+export const DEV_COLLECTION_PREFIX = 'app.aozoraquest.dev.world.';
+const WARNING = `注意: ステージング (dev) の管理データ ${DEV_COLLECTION_PREFIX}* を書き換える (本番は変わらない)。`;
 const DEFAULT_EDGE = 'https://aozoraquest-edge-dev.kojiran.workers.dev';
 const KEY_PATH = join(homedir(), '.config', 'aozoraquest', 'dev-admin-data-key');
 const NAMES = ['npcs', 'shops', 'quests', 'scenario', 'interiors'];
@@ -57,7 +59,15 @@ async function request(method, name, body, blob) {
   try { data = JSON.parse(text); } catch { data = { raw: text }; }
   if (res.status === 404) fail('404: API が無効・鍵違い・対象外の name のいずれか (区別は返らない)');
   if (!res.ok) fail(`${res.status}: ${data.message ?? data.error ?? text}`);
+  assertDevCollection(data.collection);
   return data;
+}
+
+/** エッジが返した保存先が dev でなければ止める (#716: 未更新のエッジ = 本番共通の保存先)。 */
+export function assertDevCollection(collection) {
+  if (collection !== undefined && !String(collection).startsWith(DEV_COLLECTION_PREFIX)) {
+    throw new Error(`接続先エッジの保存先が dev でない (${collection})。dev エッジを #716 版に更新するまで使えない`);
+  }
 }
 
 /** 追加・削除・変更の件数と id。NPC は位置の変化も出す。 */
@@ -154,4 +164,4 @@ async function main(argv) {
   fail(HELP);
 }
 
-main(process.argv.slice(2)).catch((e) => fail(String(e?.message ?? e)));
+if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2)).catch((e) => fail(String(e?.message ?? e)));

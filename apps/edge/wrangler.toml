@@ -55,3 +55,5 @@ PUBLIC_ORIGIN = "https://aozoraquest-edge-dev.kojiran.workers.dev"
 ALLOWED_ORIGINS = "https://dev.aozoraquest.app,http://127.0.0.1:9999"
 # 管理データ API (#695)。secret ADMIN_DATA_API_KEY もある時だけ動く。本番には置かない。
 ADMIN_DATA_API_ENABLED = "1"
+# 管理データ (world.* / config.*) の保存先を本番と分ける (#716): app.aozoraquest.dev.*。本番には置かない。
+ADMIN_NSID_ENV = "dev"

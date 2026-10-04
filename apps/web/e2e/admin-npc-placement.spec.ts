@@ -33,10 +33,10 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
   const art = emptyTileArt(); art.palette.push('#e020c0'); art.pixels.fill(1);
   const initial: NpcDef[] = [{ id: 'one', name: 'ひとは', x: 10, y: 10, lines: ['やあ'] }, { id: 'two', name: 'ふたりめ', x: 11, y: 11, lines: ['やあ'] }, ...starterTownNpcs().map((npc, i) => i === 0 ? { ...npc, spritePreset: 'old-man' as const } : npc)];
   const records: Record<string, unknown> = {
-    'app.aozoraquest.world.map': { size: 1024, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64'), parts: BASE_PARTS },
-    'app.aozoraquest.world.npcs': { npcs: initial },
-    'app.aozoraquest.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates: starterTownGates(town) },
-    'app.aozoraquest.world.tileArt': { arts: { 'npc:one': encodeTileArt(art) } },
+    'app.aozoraquest.dev.world.map': { size: 1024, gz: Buffer.from(await encodeWorldMap(tiles)).toString('base64'), parts: BASE_PARTS },
+    'app.aozoraquest.dev.world.npcs': { npcs: initial },
+    'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates: starterTownGates(town) },
+    'app.aozoraquest.dev.world.tileArt': { arts: { 'npc:one': encodeTileArt(art) } },
     'app.aozoraquest.test.analysis': { archetype: 'warrior', rpgStats: { atk: 40, def: 15, agi: 15, int: 15, luk: 15 } },
     'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: true, regions: [town.region], visitedTowns: [], hp: null, mp: null },
   };
@@ -134,7 +134,7 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     expect(await position(page)).toContain('(11, 10)');
     await expect.poll(() => !!releaseSave).toBe(true); releaseSave!(); releaseSave = null;
     await expect(page.getByText(/人を保存した/)).toBeVisible();
-    expect(puts.every((p) => p === 'app.aozoraquest.world.npcs')).toBe(true);
+    expect(puts.every((p) => p === 'app.aozoraquest.dev.world.npcs')).toBe(true);
     await page.reload(); await page.getByRole('button', { name: 'ひとは (11,10)', exact: false }).click();
     await expect(page.locator('.npc-presets button[aria-pressed=true]')).toContainText('使用中');
     // Selecting another map is browsing only, then a valid cell changes all position fields together.
@@ -214,7 +214,7 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     await page.getByRole('button', { name: /ひとは.*16,16/ }).click();
     await expect(page.locator('[data-cell="16,16"] rect[fill="#00aaff"]')).toHaveCount(16);
     // Same sprite component is used by the real World route with a schema-valid saved NPC record.
-    const saved = records['app.aozoraquest.world.npcs'] as { npcs: NpcDef[] };
+    const saved = records['app.aozoraquest.dev.world.npcs'] as { npcs: NpcDef[] };
     expect(saved.npcs.find((n) => n.id === 'one')?.spritePreset).toBe('bluesky');
     expect(saved.npcs.filter((n) => n.id !== 'one')).toEqual(initial.filter((n) => n.id !== 'one'));
     await page.goto(`${URL}?game`); await expect(page.getByLabel('ワールドマップ')).toBeVisible();
