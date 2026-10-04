@@ -109,7 +109,7 @@ export interface GameState {
   flags?: string[];
   /** 進行中のゲーム内クエスト (#423)。討伐数は勝利時に edge が数える。 */
   activeQuests: Array<{ id: string; progress: number }>;
-  /** 達成済みクエスト id (再受注させない)。直近 200 件のリング。 */
+  /** 達成済みクエスト id (再受注させない)。全履歴を追記のみで保持 (#709)。 */
   questsDone?: string[];
   version: number;
   updatedAt: string;
