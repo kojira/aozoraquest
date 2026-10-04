@@ -22,8 +22,6 @@ export class GameQuestError extends Error {
   }
 }
 
-const MAX_DONE = 200;
-
 export interface QuestStateResult {
   activeQuests: Array<{ id: string; progress: number }>;
   questsDone?: string[];
@@ -115,7 +113,7 @@ export async function handleQuestComplete(
       const done: GameState = {
         ...cur,
         activeQuests: cur.activeQuests.filter(q => q.id !== questId),
-        questsDone: [...(cur.questsDone ?? []), questId].slice(-MAX_DONE),
+        questsDone: [...(cur.questsDone ?? []), questId],
         power: cur.power + rewardPower,
         materials,
       };
