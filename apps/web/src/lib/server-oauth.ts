@@ -5,12 +5,13 @@
  * lxm=oauth.start) を発行 → edge の `/api/oauth/start` に渡すと、edge が PAR して authorize URL を
  * 返す。そこへリダイレクトし、サーバーアカウントで 1 回ログインすると edge がトークンを保管する。
  */
+import { LXM } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 // world-server と**同じエッジ**を叩く (連携先とワールド呼び出し先がズレる不具合を防ぐ。#396)。
 import { EDGE_URL, EDGE_DID } from './edge-config';
 
-const LXM_OAUTH_START = 'app.aozoraquest.oauth.start';
-const LXM_OAUTH_STATUS = 'app.aozoraquest.oauth.status';
+const LXM_OAUTH_START = LXM.oauthStart;
+const LXM_OAUTH_STATUS = LXM.oauthStatus;
 
 /** edge URL / DID が設定されていれば連携導線を出せる。 */
 export const serverOAuthConfigured = Boolean(EDGE_URL && EDGE_DID);

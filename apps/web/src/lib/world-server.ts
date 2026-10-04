@@ -6,30 +6,31 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
+import { LXM } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
 import { EDGE_URL, EDGE_DID } from './edge-config';
 
-const LXM_MOVE = 'app.aozoraquest.world.move';
-const LXM_TELEPORT = 'app.aozoraquest.world.teleport';
-const LXM_ITEM = 'app.aozoraquest.world.item';
-const LXM_GEAR = 'app.aozoraquest.world.gear';
-const LXM_SEARCH = 'app.aozoraquest.world.search';
-const LXM_RESET = 'app.aozoraquest.world.reset';
-const LXM_TURN = 'app.aozoraquest.battle.turn';
-const LXM_STATE = 'app.aozoraquest.me.state';
-const LXM_XP_CLAIM = 'app.aozoraquest.xp.claim';
-const LXM_XP_ADMIN_SET = 'app.aozoraquest.xp.adminSet';
-const LXM_POWER_ADMIN_GRANT = 'app.aozoraquest.power.adminGrant';
-const LXM_SHOP_CRAFT = 'app.aozoraquest.shop.craft';
-const LXM_SHOP_SELL = 'app.aozoraquest.shop.sell';
-const LXM_SHOP_FORGE = 'app.aozoraquest.shop.forge';
-const LXM_SHOP_DISCARD = 'app.aozoraquest.shop.discard';
-const LXM_QUEST_ACCEPT = 'app.aozoraquest.quest.accept';
-const LXM_QUEST_COMPLETE = 'app.aozoraquest.quest.complete';
-const LXM_POWER_SPEND = 'app.aozoraquest.power.spend';
-const LXM_ADMIN_PDS_USAGE = 'app.aozoraquest.admin.pdsUsage';
+const LXM_MOVE = LXM.worldMove;
+const LXM_TELEPORT = LXM.worldTeleport;
+const LXM_ITEM = LXM.worldItem;
+const LXM_GEAR = LXM.worldGear;
+const LXM_SEARCH = LXM.worldSearch;
+const LXM_RESET = LXM.worldReset;
+const LXM_TURN = LXM.battleTurn;
+const LXM_STATE = LXM.meState;
+const LXM_XP_CLAIM = LXM.xpClaim;
+const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
+const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
+const LXM_SHOP_CRAFT = LXM.shopCraft;
+const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_FORGE = LXM.shopForge;
+const LXM_SHOP_DISCARD = LXM.shopDiscard;
+const LXM_QUEST_ACCEPT = LXM.questAccept;
+const LXM_QUEST_COMPLETE = LXM.questComplete;
+const LXM_POWER_SPEND = LXM.powerSpend;
+const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
 export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);

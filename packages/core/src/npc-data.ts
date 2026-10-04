@@ -37,6 +37,11 @@ export interface NpcDef {
    * (`WORLD_MAP_ID`)。mapId の無い旧レコードは無移行でフィールドの NPC として読める。
    */
   mapId?: string;
+  /**
+   * **ギルドの受付** (Refs #718)。true なら World ではスプライトでなく建物入口として描き、
+   * 扉の前から受付会話を開く。立っているマスが扉 (door) の時だけ有効 (保存済みの地形が揃うまで従来の NPC)。
+   */
+  guildReception?: true;
   /** 立ち位置 (そのマップの座標。フィールドはトーラスで丸める)。 */
   x: number;
   y: number;
@@ -123,6 +128,7 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
     if (n.mapId !== undefined && (typeof n.mapId !== 'string' || n.mapId.trim() === '')) {
       throw new NpcDataError(`${where}: マップ id が不正`);
     }
+    if (n.guildReception !== undefined && n.guildReception !== true) throw new NpcDataError(`${where}: ギルドの受付の指定が不正`);
     if (n.spritePreset !== undefined && !(NPC_SPRITE_PRESET_IDS as readonly unknown[]).includes(n.spritePreset)) {
       throw new NpcDataError(`${where}: 標準の絵が不正 (${n.spritePreset})`);
     }

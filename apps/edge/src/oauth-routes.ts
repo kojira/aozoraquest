@@ -7,14 +7,15 @@
  *
  * 初回 bootstrap 用。以後の refresh は cron。依存 (verify/fetch/now/kv) は注入可能にしテストする。
  */
+import { LXM } from '@aozoraquest/core';
 import { verifyServiceAuth, resolveDidDocument, type DidDocument } from './service-auth';
 import { loadOAuthConfig, buildClientMetadata, isEdgeAdmin, OAuthConfigError, type OAuthEnv } from './oauth-config';
 import { discoverForDid } from './oauth-metadata';
 import { buildAuthorizeUrl, exchangeCode } from './oauth-client';
 import { putPendingAuth, takePendingAuth, writeServerTokens, readServerTokens } from './oauth-store';
 
-export const LXM_OAUTH_START = 'app.aozoraquest.oauth.start';
-export const LXM_OAUTH_STATUS = 'app.aozoraquest.oauth.status';
+export const LXM_OAUTH_START = LXM.oauthStart;
+export const LXM_OAUTH_STATUS = LXM.oauthStatus;
 
 /** router.ts の Env のうち OAuth ルートが使う部分 + KV。 */
 export interface OAuthRoutesEnv extends OAuthEnv {

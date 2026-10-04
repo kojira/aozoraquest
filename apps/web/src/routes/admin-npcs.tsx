@@ -87,12 +87,12 @@ export function AdminNpcs() {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
-  const update = useCallback((id: string, patch: Omit<Partial<NpcDef>, 'spritePreset' | 'spriteImage' | 'portraitImage'> & { spritePreset?: NpcDef['spritePreset']; spriteImage?: NpcDef['spriteImage']; portraitImage?: NpcDef['portraitImage'] }) => {
+  const update = useCallback((id: string, patch: Omit<Partial<NpcDef>, 'spritePreset' | 'spriteImage' | 'portraitImage' | 'guildReception'> & { spritePreset?: NpcDef['spritePreset']; spriteImage?: NpcDef['spriteImage']; portraitImage?: NpcDef['portraitImage']; guildReception?: NpcDef['guildReception'] }) => {
     if (saving) return;
     setList((xs) => xs.map((n) => {
       if (n.id !== id) return n;
       const next = { ...n, ...patch } as NpcDef;
-      for (const key of ['spritePreset', 'spriteImage', 'portraitImage', 'expressionImages'] as const) if (next[key] === undefined) delete next[key];
+      for (const key of ['spritePreset', 'spriteImage', 'portraitImage', 'expressionImages', 'guildReception'] as const) if (next[key] === undefined) delete next[key];
       if (next.mapId === WORLD_MAP_ID) delete next.mapId;
       return next;
     }));
@@ -317,6 +317,7 @@ export function AdminNpcs() {
               </span>
             </div>
             {field('なまえ', <input value={current.name} onChange={(e) => update(current.id, { name: e.target.value })} />)}
+            <label style={{ fontSize: '0.8em' }}><input type="checkbox" checked={current.guildReception === true} onChange={(e) => update(current.id, { guildReception: e.target.checked ? true : undefined })} /> ギルドの受付（扉のマスに置くと建物入口として描き、扉の前から会話）</label>
             <div>
               <p style={{ fontSize: '0.8em' }}>見た目（選んでから「保存」で反映）</p>
               <div className="npc-presets" role="group" aria-label="標準の絵">

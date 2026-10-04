@@ -1,4 +1,4 @@
-import { decodeWorldMap, loadStaticWorldMap, loadTileArts, setGameQuests, setInteriors, setScenario, setItemOverrides, setJobOverrides, setMonsterOverrides, setNpcs, setShopOverrides, setTownOverrides, setWorldMap, WORLD_SIZE, type EquipmentDef, type Gate, type GameQuestDef, type ScenarioEvent, type InteriorMap, type ItemDefData, type JobOverride, type MonsterDef, type NpcDef, type ShopOverride, type TownOverride, type WorldPart } from '@aozoraquest/core';
+import { adminNsidPrefix, adminWorldCollection, AQ_NSID_ROOT, loadAdminWorld, loadStaticWorldMap } from '@aozoraquest/core';
 import { getRecord } from './pds';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
@@ -27,21 +27,7 @@ export interface WorldAuthoringEnv {
 /** 管理レコードの NSID の根 (#716)。dev エッジ = `app.aozoraquest.dev`、本番 = `app.aozoraquest`。
  *  web の ADMIN_COL と同じ規則。dev にレコードが無ければ同梱の既定に倒れる (本番は読まない)。 */
 export function adminNsidRoot(env: WorldAuthoringEnv): string {
-  const suffix = env.ADMIN_NSID_ENV?.trim();
-  return suffix ? `app.aozoraquest.${suffix}` : 'app.aozoraquest';
-}
-
-interface WorldMapRecord {
-  size?: number;
-  gz?: string;
-  palette?: string[];
-  /** index → パーツ (通行判定の元 + 表示名)。 */
-  parts?: WorldPart[];
-  /** 街の差分。**地形の画像では表せない**ので別枠 (名前・店の導出元になる)。 */
-  towns?: TownOverride[];
-}
-interface TileArtCollectionRecord {
-  arts?: Record<string, { size: number; palette: string[]; pixels: string }>;
+  return adminNsidPrefix(AQ_NSID_ROOT, env.ADMIN_NSID_ENV);
 }
 
 let loadedAt = 0;
@@ -51,13 +37,6 @@ let inflight: Promise<void> | null = null;
 function primaryAdminDid(env: WorldAuthoringEnv): string | null {
   const first = (env.ADMIN_DIDS ?? '').split(',').map((s) => s.trim()).filter(Boolean)[0];
   return first ?? null;
-}
-
-function fromBase64(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 /**
@@ -75,16 +54,6 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, now: number): Promis
   const nsid = adminNsidRoot(env);
   if (inflight) return inflight;
   if (loadedAt && now - loadedAt < CACHE_TTL_SEC) return Promise.resolve();
-  /** レコード 1 つぶんの適用。**1 つが壊れても後続を止めない** — 1 本の try に
-   *  まとめていたため、内部マップの検証が落ちるとクエストとシナリオが丸ごと
-   *  読み込まれず「画面には出るのに受注できない」になった (レビュー ★★)。 */
-  const step = async (name: string, fn: () => Promise<void>): Promise<void> => {
-    try {
-      await fn();
-    } catch (e) {
-      console.warn(`authored world: ${name} failed`, e);
-    }
-  };
   inflight = (async () => {
     // **まず同梱の地図を入れる。** 手編集が無い / 読めない場合でも、terrainAt が
     // 配列参照になって速いままでいられる。
@@ -94,79 +63,11 @@ export function ensureAuthoredWorld(env: WorldAuthoringEnv, now: number): Promis
     const doc = await resolveDidDocument(did);
     const pds = pdsEndpointFromDoc(doc as Parameters<typeof pdsEndpointFromDoc>[0], did);
     if (!pds) return;
-    const map = await getRecord<WorldMapRecord>(pds, did, `${nsid}.world.map`, RKEY);
-    if (map?.value?.gz) {
-      const tiles = await decodeWorldMap(fromBase64(map.value.gz));
-      setWorldMap({
-        tiles,
-        size: map.value.size || WORLD_SIZE,
-        ...(map.value.palette ? { palette: map.value.palette } : {}),
-        ...(map.value.parts ? { parts: map.value.parts } : {}),
-      });
-      setTownOverrides(map.value.towns ?? null);
-    }
-    const art = await getRecord<TileArtCollectionRecord>(pds, did, `${nsid}.world.tileArt`, RKEY);
-    if (art?.value?.arts) loadTileArts(art.value.arts);
-    // **モンスターも edge が読む** (#419)。戦闘計算はここが権威なので、web だけが
-    // 編集後の敵を見ていると強さも XP も食い違う。読めなければコード直書きのまま。
-    // **モンスターも edge が読む** (#419)。戦闘計算はここが権威なので、web だけが
-    // 編集後の敵を見ていると強さも XP も食い違う。読めなければコード直書きのまま。
-    await step('monsters', async () => {
-      const mon = await getRecord<{ monsters?: MonsterDef[] }>(pds, did, `${nsid}.world.monsters`, RKEY);
-      if (mon?.value?.monsters?.length) setMonsterOverrides(mon.value.monsters);
-    });
-    // どうぐ・装備 (#420)。**店の品揃えと値段は edge が権威** (shopCraft が not_in_stock を弾く)
-    // なので、web だけが編集後の装備を見ていると「見えるのに買えない」が起きる。
-    await step('items', async () => {
-      const items = await getRecord<{ items?: ItemDefData[]; equipment?: EquipmentDef[] }>(pds, did, `${nsid}.world.items`, RKEY);
-      if (items?.value?.equipment?.length) setItemOverrides({ items: items.value.items ?? [], equipment: items.value.equipment });
-    });
-    // 店のラインナップ (#422)。**アイテムの後に読む** (検証が EQUIPMENT_BY_ID を引くため)。
-    await step('shops', async () => {
-      const shops = await getRecord<{ shops?: ShopOverride[] }>(pds, did, `${nsid}.world.shops`, RKEY);
-      // **空配列も適用する** (クエストと同じ流儀。#660)。全店の上書きを外した保存は {shops: []}
-      // なので、length で弾くと warm isolate に外したはずの品揃えが残る。
-      if (shops?.value?.shops) setShopOverrides(shops.value.shops);
-    });
-    // NPC (#425)。**移動判定に効く** (立っているマスは塞ぐ) ので edge も必須。
-    await step('npcs', async () => {
-      const npcs = await getRecord<{ npcs?: NpcDef[] }>(pds, did, `${nsid}.world.npcs`, RKEY);
-      // **空配列も適用する** (クエストと同じ流儀。#660)。全 NPC 削除の保存は {npcs: []} なので、
-      // length で弾くと warm isolate に削除済みの NPC が立ち続け、マスを塞ぎ会話もできてしまう。
-      if (npcs?.value?.npcs) setNpcs(npcs.value.npcs);
-    });
-    // ジョブ (#544)。**戦闘計算は edge が権威**なので、web だけが編集後の値を見ていると
-    // 画面の強さとサーバーの強さが食い違う。
-    await step('jobs', async () => {
-      const jobs = await getRecord<{ jobs?: JobOverride[] }>(pds, did, `${nsid}.world.jobs`, RKEY);
-      if (jobs?.value?.jobs) setJobOverrides(jobs.value.jobs);
-    });
-    // 内部マップとゲート (#424)。**移動判定と遷移は edge が権威**なので必須。
-    // 読めなければフィールドだけの世界として動く (内部に居る人はフィールドへ戻る)。
-    await step('interiors', async () => {
-      const inter = await getRecord<{ interiors?: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates?: Gate[] }>(pds, did, `${nsid}.world.interiors`, RKEY);
-      if (!inter?.value) return;
-      const maps: InteriorMap[] = [];
-      for (const m of inter.value.interiors ?? []) {
-        const { gz, ...rest } = m;
-        maps.push({ ...rest, tiles: await decodeWorldMap(fromBase64(gz)) });
-      }
-      setInteriors(maps, inter.value.gates ?? []);
-    });
-    // ゲーム内クエスト (#423)。**報酬付与は edge が権威**なので必須。検証が NPC・モンスター・
-    // アイテムの実在を引くため、**この 3 つより後に読む** (店 ← アイテムと同じ順序依存)。
-    await step('quests', async () => {
-      const quests = await getRecord<{ quests?: GameQuestDef[] }>(pds, did, `${nsid}.world.quests`, RKEY);
-      // **空配列も適用する** (length で弾かない) — 全クエスト削除の保存が {quests: []} になるので、
-      // スキップすると warm isolate に削除済みクエストが残り続け、受注も報酬も通ってしまう。
-      if (quests?.value?.quests) setGameQuests(quests.value.quests);
-    });
-    // シナリオ (#545)。**フラグを立てるのは edge** なので必須。条件が questId を引くため
-    // クエストより後に読む。
-    await step('scenario', async () => {
-      const scenario = await getRecord<{ events?: ScenarioEvent[] }>(pds, did, `${nsid}.world.scenario`, RKEY);
-      if (scenario?.value?.events) setScenario(scenario.value.events);
-    });
+    // 順序と適用規則は core の loadAdminWorld が唯一の定義 (Refs #718)。1 つが壊れても後続を止めない。
+    await loadAdminWorld(
+      async (name) => (await getRecord(pds, did, adminWorldCollection(nsid, name), RKEY))?.value ?? null,
+      (name, e) => console.warn(`authored world: ${name} failed`, e),
+    );
   })()
     .catch((e) => {
       // **落ちてもゲームは続く** (同梱の地図 or ノイズ生成に倒れる)。次の TTL で再試行。
