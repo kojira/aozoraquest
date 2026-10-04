@@ -1,0 +1,327 @@
+/* メインコンテンツ自体を DQ 風の大きなウィンドウにする。
+   そのため、各ルートの文字はすべて黒半透明 + 白枠の中に収まる。 */
+.content {
+  flex: 1;
+  padding: 1em;
+  margin: 0.6em 0.5em;
+  background: var(--color-content-bg);
+  color: var(--color-fg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0, 0, 0, 0.35);
+  position: relative;
+}
+/* 外枠の四隅装飾 (DQ 感) */
+.content::before,
+.content::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--color-border);
+  pointer-events: none;
+}
+.content::before { top: 3px; left: 3px; }
+.content::after  { bottom: 3px; right: 3px; }
+
+/* .content 直下にはすでに外枠があるので、内側に置く個々のウィンドウは外枠なしの
+   「仕切り」スタイルに切り替える。ただし .dq-window クラスを使っている要素は
+   あえて二重枠 (DQ で名前付きウィンドウが中に入っているイメージ) にする。 */
+
+/* 投稿作成のフローティングボタン (右下、アイコンのみ)。footer-nav の上端に浮かべる。
+   位置は footer 実測 (--footer-height, app-shell が ResizeObserver で書き出す) に追従。 */
+.compose-fab {
+  position: fixed;
+  right: 1em;
+  bottom: calc(var(--footer-height, 4.5em) + 1em);
+  z-index: 20;
+  width: 3.2em;
+  height: 3.2em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-fg);
+  background: var(--color-window-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: transform 60ms ease, box-shadow 60ms ease;
+}
+.compose-fab:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.footer-nav {
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  padding: 0.35em 0.3em;
+  width: min(340px, 80%);
+  margin: 0 auto 0.6em;
+  background: var(--color-window-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0, 0, 0, 0.35);
+  position: sticky;
+  bottom: 0.6em;
+  z-index: 10;
+}
+.footer-nav-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45em 0.2em;
+  color: var(--color-fg);
+  opacity: 0.55;
+  border: none;
+  border-radius: 8px;
+  transition: background-color 80ms ease, opacity 80ms ease, transform 60ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.footer-nav-item:hover {
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.06);
+}
+.footer-nav-item:active {
+  /* タップ瞬間の即時フィードバック */
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(0.94);
+}
+.footer-nav-item.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 投稿ボタンはモバイルでは非表示 (右下 compose-fab を使う)。PC でレールに出す。 */
+.footer-nav-compose { display: none; }
+
+/* ─── PC: 下部ナビを「左の縦レール」に ──────────────────────
+   下部横並びだと投稿ボタン (右下 FAB) が押しづらいため、
+   PC (>=768px) ではナビを画面左端の固定縦レールにし、先頭に投稿ボタンを置く。
+   レールぶんの幅は .app-shell の padding-left で確保 (固定レールと本文が被らない)。
+   モバイルは従来の下部バー (full-width flush) を維持。 */
+@media (min-width: 768px) {
+  /* 固定レールぶんを全ルートで左に空ける + app-shell を左寄せ (margin-left:0)。
+     base の margin:0 auto のままだと中央寄せ本文と left:0 固定レールが分離して
+     レールが画面左隅に孤立するため、左寄せにしてレールが本文に寄り添うようにする
+     (= 左ナビ + 本文、という標準レイアウト)。max-width (非 workspace=680) は維持。 */
+  .app-shell { padding-left: 56px; margin-left: 0; }
+
+  /* footer-nav を左端の縦レールに (詳細度 .app-shell .footer-nav で base に勝つ)。 */
+  .app-shell .footer-nav {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 56px;
+    margin: 0;
+    padding: 0.5em 0;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0.15em;
+    border: none;
+    border-right: 2px solid var(--color-window-inner-border);
+    border-radius: 0;
+    background: var(--color-window-bg);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);
+    overflow-y: auto;
+    z-index: 30;
+  }
+  .footer-nav-item {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  /* 投稿ボタン: レール先頭で目立たせる (accent 背景) */
+  .footer-nav-compose {
+    display: flex;
+    opacity: 1;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    margin-bottom: 0.4em;
+  }
+  .footer-nav-compose:hover { background: var(--color-accent); opacity: 0.88; }
+
+  /* レールの現在地は左端 accent バーで明示 (横バーの薄い背景だけだと縦レールで埋もれる) */
+  .footer-nav-item.active {
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+
+  /* PC は投稿をレールから行うので右下 FAB は出さない */
+  .compose-fab { display: none; }
+}
+
+.dq-window {
+  position: relative;
+  background: var(--color-window-bg);
+  color: var(--color-fg);
+  border: 3px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0.8em 1em;
+  box-shadow:
+    inset 0 0 0 1px var(--color-window-inner-border),
+    0 4px 0 rgba(0,0,0,0.35);
+  margin-bottom: 0.9em;
+}
+
+/* 角の内側の小さな装飾 (ドラクエ風ウィンドウの四隅). 省略可。 */
+.dq-window::before,
+.dq-window::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--color-border);
+}
+.dq-window::before { top: 3px; left: 3px; }
+.dq-window::after  { bottom: 3px; right: 3px; }
+
+.dq-window.compact {
+  padding: 0.6em 0.8em;
+  margin-bottom: 0.6em;
+}
+
+.dq-window a { color: var(--color-primary); }
+
+/* タブ見出し */
+.dq-tabs {
+  display: flex;
+  gap: 0.5em;
+  margin: 0.5em 0;
+}
+.dq-tab {
+  flex: 1;
+  padding: 0.5em;
+  background: rgba(0, 0, 0, 0.45);   /* 非アクティブ: 薄い黒 */
+  color: rgba(255, 255, 255, 0.7);   /* 白だが少し抑えて */
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 2px;
+  text-align: center;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
+  font-weight: 700;
+  transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease, transform 60ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 被弾時にモンスターを揺らす (battle-view / world-battle-controls。
+   class 名は旧試練由来の trial-hit のまま = world 戦闘で流用)。 */
+@keyframes trial-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+.trial-hit { animation: trial-shake 0.35s ease; }
+
+/* エンカウント演出 (encounter-wipe.tsx): DQ1 風に黒い四角が回転しながら画面を
+   埋め、覆い切ったところでバトル画面に切り替えて逆再生で開く。
+   タイルは中心からの距離で delay を散らす (--d)。GPU 合成のみ (transform)
+   で低速端末でも 60fps を保つ。 */
+@keyframes enc-tile-in {
+  0% { transform: scale(0) rotate(-180deg); }
+  100% { transform: scale(1.06) rotate(0deg); }
+}
+@keyframes enc-tile-out {
+  0% { transform: scale(1.06) rotate(0deg); }
+  100% { transform: scale(0) rotate(180deg); }
+}
+.enc-tile {
+  position: absolute;
+  background: #000;
+  will-change: transform;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.3, 0, 0.7, 1);
+}
+/* 時間は encounter-wipe.tsx の COVER_TILE_MS / REVEAL_TILE_MS と一致させる。
+   reveal は cover より短い (本家 DQ1 に reveal は無いのでテンポ優先で控えめに)。 */
+.enc-cover .enc-tile { animation-name: enc-tile-in; animation-duration: 0.4s; animation-delay: var(--dc); }
+.enc-reveal .enc-tile { animation-name: enc-tile-out; animation-duration: 0.28s; animation-delay: var(--dr); }
+/* 覆い切った待機中 (支払い通信が長いときのつなぎ) は全面を黒でホールド */
+.enc-hold .enc-tile { transform: scale(1.06); }
+/* hold が長引いたときの一行 (1.2s 後にフェードイン + ▼ 点滅。真っ黒無反応に見せない) */
+.enc-hold-msg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 0.9em;
+  white-space: nowrap;
+  opacity: 0;
+  animation: enc-msg-in 0.3s ease 1.2s forwards;
+}
+.enc-hold-msg::after {
+  content: '▼';
+  margin-left: 0.4em;
+  display: inline-block;
+  animation: enc-cursor-blink 1s step-end infinite;
+}
+@keyframes enc-msg-in { to { opacity: 1; } }
+@keyframes enc-cursor-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .enc-cover .enc-tile, .enc-reveal .enc-tile { animation-duration: 0.01s; animation-delay: 0s; }
+  .enc-hold-msg::after { animation: none; }
+}
+
+/* 引用投稿カード (post-quote.tsx)。カード全体がタップ可能なので、初動の視覚
+   フィードバック (ホバー着色 + 押下の沈み) とキーボードフォーカスリングを付ける。 */
+.dq-quote-card {
+  transition:
+    background-color 0.12s ease,
+    transform 0.08s ease;
+}
+.dq-quote-card:hover {
+  background: var(--color-window-bg-alt);
+}
+.dq-quote-card:active {
+  transform: translateY(1px) scale(0.99);
+}
+.dq-quote-card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.dq-tab:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+}
+.dq-tab:active:not(.active) {
+  /* タップ瞬間に背景を濃くして「押した」を即座に見せる */
+  background: rgba(0, 0, 0, 0.7);
+  transform: scale(0.985);
+}
+.dq-tab.active {
+  background: rgba(0, 0, 0, 0.85);   /* アクティブ: 濃い黒 */
+  color: #ffffff;                    /* 白 (黄色は使わない) */
+  border-color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+/* 旧 .section クラスを残すアプリ用 */
+.section {
+  margin: 0.8em 0;
+}
+
+/* 共通スピナー (components/spinner.tsx で参照) */
+@keyframes aq-spinner-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+

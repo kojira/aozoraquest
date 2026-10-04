@@ -1,0 +1,72 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ライトテーマの個別補正
+   ───────────────────────────────────────────────────────────────────
+   大半のサーフェス (ウィンドウ地・文字・境界・accent) は :root の
+   トークンを :root[data-theme='light'] で差し替えるだけで反転する。
+   ここに置くのは「ダーク前提で焼き込まれた」リテラル色 —
+   半透明黒パネル・白文字・白ホバー — だけ。ライトでそのまま使うと
+   白地に白で消える/コントラスト不足になるものをライト専用で上書きする。
+
+   全ルールを :root[data-theme='light'] 配下に閉じてあるので、ダーク
+   (:root 既定) の既存ルールには一切触れない (= ダークは byte 不変)。
+   セレクタに [data-theme='light'] が付くぶん特異度が base より高いので、
+   ソース順に依らず確実に勝つ。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* リンク hover の白は明地で消えるので accent-deep に */
+:root[data-theme='light'] a:hover {
+  color: var(--color-accent-deep);
+  border-bottom-color: var(--color-accent-deep);
+}
+
+/* 焼き込み黒パネル → ウィンドウ地に合わせて明色に */
+:root[data-theme='light'] .board-column,
+:root[data-theme='light'] .workspace-column-menu,
+:root[data-theme='light'] .workspace-column-add {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* タブ見出し: 焼き込み黒 + 白文字 → 明色ピル。アクティブは accent で塗る。 */
+:root[data-theme='light'] .dq-tab {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-muted);
+  border-color: rgba(0, 0, 0, 0.2);
+  /* ダークの黒影 (白文字を浮かせる用) は明地で濃文字が滲むので消す */
+  text-shadow: none;
+}
+:root[data-theme='light'] .dq-tab:hover {
+  color: var(--color-fg);
+  border-color: var(--color-accent-deep);
+}
+:root[data-theme='light'] .dq-tab:active:not(.active) {
+  background: rgba(0, 0, 0, 0.08);
+}
+:root[data-theme='light'] .dq-tab.active {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent-deep);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+/* 白ホバー/アクティブのオーバーレイ → 明地では暗く反転 */
+:root[data-theme='light'] .workspace-column-menu-btn:hover:not(:disabled),
+:root[data-theme='light'] .workspace-column-refresh-btn:hover:not(:disabled),
+:root[data-theme='light'] .workspace-column-totop-btn:hover:not(:disabled),
+:root[data-theme='light'] .footer-nav-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+:root[data-theme='light'] .footer-nav-item:active {
+  background: rgba(0, 0, 0, 0.12);
+}
+/* 選択中タブ: 白ハイライトは明地で消えて現在地が分からないので暗く */
+:root[data-theme='light'] .footer-nav-item.active {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* カラム間リサイザーの縦線 (白) → 明地では暗い線で発見性を確保 */
+:root[data-theme='light'] .workspace-column-resizer::after {
+  background: rgba(0, 0, 0, 0.18);
+}
+
