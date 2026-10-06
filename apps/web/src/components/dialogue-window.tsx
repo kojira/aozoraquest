@@ -25,6 +25,8 @@ import {
  */
 
 import { NpcPortrait } from './npc-image';
+import { StoryEffectLayer } from './story-effect-layer';
+import { storyEffectState, transientStoryEffects } from '@/lib/story-effects';
 
 const CHAR_MS = 45;
 
@@ -38,6 +40,17 @@ const DIALOGUE_WINDOW_Z = 901;
 /** 選択肢を出す状態か: 選択肢があり、最後の行を全文表示し終えている。 */
 function choicesShown(lines: readonly DialogueLine[], st: DialogueState, choices: readonly DialogueChoice[] | undefined): boolean {
   return !!choices && choices.length > 0 && !st.done && st.index === lines.length - 1 && lineComplete(lines, st);
+}
+
+/** 段ごとに一過性演出の鍵を変える (同じ index でも段が変われば再生し直す)。 */
+const stepIds = new WeakMap<object, number>();
+let nextStepId = 0;
+function stepKey(step: unknown): string {
+  if (step && typeof step === 'object') {
+    if (!stepIds.has(step)) stepIds.set(step, ++nextStepId);
+    return `o${stepIds.get(step)}`;
+  }
+  return String(step);
 }
 
 /** visually-hidden (スクリーンリーダーにだけ全文を渡す) */
@@ -188,6 +201,8 @@ export function DialogueWindow({
   // イラストを外さない (外すと暗転アニメが最初から再生され、画面が明滅する)。
   if (!line || (st.done && conversationStep === undefined)) return null;
   const complete = lineComplete(lines, st);
+  // 演出 (D-STORY-007) は地図枠に出すときだけ。段と行を鍵に一過性の演出を一度だけ再生する。
+  const effectsShown = onMap && lines.some((l) => l.effects?.length);
   const shownPortrait = line.speaker ? line.portrait ?? portrait : undefined;
 
   return (
@@ -214,6 +229,10 @@ export function DialogueWindow({
         className="aq-dialogue-backdrop"
         style={{ position: 'fixed', inset: 0, zIndex: DIALOGUE_BACKDROP_Z, cursor: 'pointer' }}
       />
+      {effectsShown && (
+        <StoryEffectLayer state={storyEffectState(lines, st.index)} transient={transientStoryEffects(line, reduced)}
+          playKey={`${stepKey(step)}:${st.index}`} reduced={reduced} />
+      )}
       {/* 窓本体: 'viewport' は footer 際に固定、'map' は直近の position:relative 祖先
           (ワールドの地図枠) の下端に貼る (DQ 風)。送り面より上 (z)。 */}
       <div
