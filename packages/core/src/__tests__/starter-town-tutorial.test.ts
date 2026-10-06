@@ -47,11 +47,13 @@ describe('ふたばの村の導入データ', () => {
     const bluesky = npcs.find((n) => n.id === 'futaba-bluesky')!;
     expect(bluesky).toMatchObject({ name: 'Blueskyちゃん', spritePreset: 'bluesky' });
     expect(bluesky).toMatchObject({ x: STARTER_TOWN_GUILD.x, y: STARTER_TOWN_GUILD.y });
-    expect(quests[2]!.done.join('')).toContain('いどのそばのギルドの Blueskyちゃん');
+    expect(quests[2]!.done[2]).toBe('これで 旅の力は じゅうぶん。いどのそばのギルドの Blueskyちゃんが あなたを さがしてたよ。');
+    expect(starterTownScenario().find((e) => e.id === 'futaba-after-wings')).toMatchObject({ notice: 'そらが いっしゅん、あかく ひかった。', effects: [{ kind: 'tint', color: 'red' }] });
     expect(npcLinesFor(bluesky, [], {})).toEqual(['おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……']);
     expect(npcLinesFor(bluesky, ['futaba_herbs_done'], {})).toEqual(bluesky.lines);
     const departure = npcLinesFor(bluesky, ['futaba_slimes_done', 'futaba_herbs_done', 'futaba_wings_done'], {}).join('');
-    expect(departure).toContain('砂漠の方で、夜になると赤い光が見えるんだって');
+    expect(departure).toContain('みた？ いま 空が あかく ひかったの。');
+    expect(departure).toContain('『あかい 鳥が めを さましかけている。ほむらの街へ むかってくれ。――空を、たのんだよ。』');
     expect(departure).toContain('ほむらの街');
     expect(npcs.find((n) => n.id === 'futaba-innkeeper-wife')!.lines[0]).toContain('Blueskyちゃんが みつけた たびびとだね');
   });

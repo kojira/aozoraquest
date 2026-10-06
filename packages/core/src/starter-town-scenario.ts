@@ -40,6 +40,13 @@ export function starterTownScenario(): ScenarioEvent[] {
     ],
     "setFlags": [
       "futaba_wings_done"
+    ],
+    "notice": "そらが いっしゅん、あかく ひかった。",
+    "effects": [
+      {
+        "kind": "tint",
+        "color": "red"
+      }
     ]
   }
 ];
