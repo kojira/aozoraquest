@@ -17,7 +17,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
-import { ScenarioEffectsField } from './admin-scenario-effects';
+import { ScenarioEffectsField } from '@/components/scenario-effects-field';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
 
 /**

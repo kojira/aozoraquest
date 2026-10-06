@@ -32,6 +32,8 @@ test('お知らせに「空が赤く染まる」を足して保存すると effe
     else await route.fulfill({ json: { records: [] } });
   });
   await page.goto(URL);
+  // 保存済みの読込が終わってから編集する (読込完了で一覧が差し替わる)。
+  await expect(page.getByRole('button', { name: 'ふたばの村のシナリオを入れる', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '＋イベント', exact: true }).click();
   const addEffect = page.getByRole('button', { name: '＋演出', exact: true });
   await expect(addEffect).toBeDisabled();
