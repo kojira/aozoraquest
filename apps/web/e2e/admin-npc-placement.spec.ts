@@ -223,7 +223,7 @@ test('390px actual AdminNpcs: draft placement, gestures, saves, recovery, preset
     // 保存した 'one' は描画。受付Blueskyは建物ドア内で会話するためスプライトを描かない。
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]')).toHaveCount(1);
     await expect(page.getByLabel('ワールドマップ').locator('[data-preset="bluesky"]').first()).toBeVisible();
-    for (let i = 0; i < 24 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-pane').last().click();
+    for (let i = 0; i < 48 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-pane').last().click();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     await expect.poll(async () => page.getByLabel('ワールドマップ').locator('.npc-frame-1').first().evaluate((el) => getComputedStyle(el).visibility), { intervals: [50] }).toBe('visible');
     await page.getByLabel('ワールドマップ').screenshot({ path: 'test-results/npc-game-preset.png' });

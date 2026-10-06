@@ -81,7 +81,7 @@ for (const spriteFormat of ['png', 'webp'] as const) test(`NPC ${spriteFormat} s
   const sprite = { name: `walking.${spriteFormat}`, mimeType: `image/${spriteFormat}`, buffer: imageFixture(`64x32.${spriteFormat}`) };
   const portrait = { name: `portrait.${portraitFormat}`, mimeType: `image/${portraitFormat}`, buffer: imageFixture(`300x450.${portraitFormat}`) };
   const chooseNpc = async () => { await page.getByRole('button', { name: /案内人.*11,10/ }).click(); };
-  const dismiss = async () => { for (let i = 0; i < 10 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-backdrop').click(); };
+  const dismiss = async () => { for (let i = 0; i < 48 && await page.locator('.aq-dialogue-backdrop').count(); i++) await page.locator('.aq-dialogue-backdrop').click(); };
   try {
     await page.goto(URL); await chooseNpc();
     await expect(page.getByRole('group', { name: '標準の絵' }).getByRole('button')).toHaveCount(9);
