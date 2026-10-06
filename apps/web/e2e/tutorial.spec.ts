@@ -190,11 +190,13 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
         const window = page.locator('.aq-dialogue-pane').last();
         await expect(window).toContainText('ありがとう！');
         for (let i = 0; i < 16 && !(await window.textContent())?.includes('あかく'); i++) await window.click();
-        await expect(window).toContainText('そらが いっしゅん、あかく ひかった。');
+        await expect(window).toContainText('そらが いっしゅん、あかく ひかった。とおくの 空を、くろい ひかりの すじが つきぬけた。');
         await expect(page.locator('.aq-dialogue-pane')).toHaveCount(1);
         await expect(page.getByTestId('story-tint-red')).toHaveCount(1);
         await page.waitForTimeout(300);
         await page.screenshot({ path: `${process.env.TUTORIAL_SHOTS ?? 'test-results'}/wings-red-tint-390.png` });
+        await page.waitForTimeout(2200); // 46 字の打鍵完了後に 2 文目まで読める状態を残す
+        await page.screenshot({ path: `${process.env.TUTORIAL_SHOTS ?? 'test-results'}/wings-black-streak-390.png` });
         await page.emulateMedia({ reducedMotion: 'reduce' });
       }
       await readAll(page);

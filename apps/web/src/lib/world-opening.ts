@@ -18,6 +18,7 @@ export const PROLOGUE_LINES: readonly DialogueLine[] = [
   { text: '【ギフト】ことばの ちから を さずかった！' },
   { speaker: STRANGER, text: 'むこうで、きっと……いや、なんでもない。' },
   { speaker: STRANGER, text: '――空を、たのんだよ。' },
+  { speaker: STRANGER, text: '……あいつに、みつかる まえに。' },
 ];
 
 /** ふたばの救護導入。管理画像は通常会話、ここだけ合意済み表情を指定する。

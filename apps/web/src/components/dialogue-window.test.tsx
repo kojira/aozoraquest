@@ -198,6 +198,17 @@ describe('DialogueWindow: 演出層', () => {
     vi.unstubAllGlobals();
   });
 
+  it('シルエットは初出で 800ms かけて浮かび、reduced-motion では即時に出す', () => {
+    setReduced(false);
+    const { unmount } = render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-silhouette').style.animation).toBe('aq-story-silhouette-in 800ms ease backwards');
+    unmount();
+    setReduced(true);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-silhouette').style.animation).toBe('');
+    vi.unstubAllGlobals();
+  });
+
   it('viewport 窓では演出層を出さない', () => {
     render(<DialogueWindow lines={STORY} onDone={() => {}} />);
     expect(screen.queryByTestId('story-effect-layer')).toBeNull();

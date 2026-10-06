@@ -265,6 +265,11 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await next(); await next();
     await expect(window).toContainText('――空を、たのんだよ。');
     await next();
+    await expect(window).toContainText('……あいつに、みつかる まえに。');
+    await expect(page.locator('.aq-dialogue-pane').first()).toContainText('？？？');
+    await expect(black).toHaveCSS('opacity', '1');
+    await page.screenshot({ path: `${SHOTS}/prologue-mitsukaru-390.png` });
+    await next();
     await expect(window).toContainText('……きこえる？ だいじょうぶ？');
     await expect(black).toHaveCSS('opacity', '0');
     await expect(page.getByTestId('story-silhouette').locator('img')).toHaveCount(0);

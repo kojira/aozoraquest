@@ -25,7 +25,9 @@ export function StoryEffectLayer({ state, transient, playKey, reduced }: {
       <div data-testid="story-black" style={{ ...FILL, background: '#05070d', opacity: state.black ? 1 : 0, transition: fade(600) }} />
       {/* 会話イラストと同じ範囲 (窓より上) に逆光シルエット。顔・色は持たない単色 webp。 */}
       <div data-testid="story-silhouette" style={{ position: 'absolute', top: '0.5em', bottom: 'calc(35% + 2.5em)', left: 0, right: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: state.silhouette ? 1 : 0, transition: fade(800) }}>
+        display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: state.silhouette ? 1 : 0, transition: fade(800),
+        // 初出 (層のマウント) でも 800ms かけて浮かべる。transition はマウント時に走らないため animation で補う。
+        animation: reduced ? undefined : 'aq-story-silhouette-in 800ms ease backwards' }}>
         <div style={{ ...FILL, background: 'radial-gradient(ellipse 45% 50% at 50% 55%, rgba(170,195,255,.55), rgba(90,115,180,.22) 45%, transparent 75%)' }} />
         {state.silhouette && (
           <img src={brotherSilhouette} alt="" style={{ position: 'relative', maxWidth: '92%', maxHeight: '100%', objectFit: 'contain',
@@ -38,6 +40,7 @@ export function StoryEffectLayer({ state, transient, playKey, reduced }: {
       ))}
       <style>{`
 @keyframes aq-story-flash { 0% { opacity: 0; } 15% { opacity: 1; } 45% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes aq-story-silhouette-in { from { opacity: 0; } }
 @keyframes aq-story-tint { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
 .aq-story-flash { animation: aq-story-flash 700ms ease-out both; }
 .aq-story-tint { animation: aq-story-tint 1600ms ease-out both; }
