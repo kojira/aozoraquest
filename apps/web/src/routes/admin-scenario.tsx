@@ -17,6 +17,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
+import { ScenarioEffectsField } from './admin-scenario-effects';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
 
 /**
@@ -327,6 +328,18 @@ export function AdminScenario() {
                 style={{ flex: 1 }}
               />
             ))}
+            <ScenarioEffectsField
+              effects={current.effects ?? []}
+              disabled={!current.notice}
+              onChange={(next) => {
+                setList((xs) => xs.map((x) => {
+                  if (x.id !== current.id) return x;
+                  if (next.length === 0) { const { effects: _e, ...rest } = x; return rest as ScenarioEvent; }
+                  return { ...x, effects: next };
+                }));
+                setDirty(true);
+              }}
+            />
 
             <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.3em 0 0' }}>
               使い道: <Link to="/admin/npcs">NPC</Link> のフラグ別セリフ / <Link to="/admin/quests">クエスト</Link>の解禁フラグ
