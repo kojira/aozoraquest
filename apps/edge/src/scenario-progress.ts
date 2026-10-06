@@ -8,13 +8,20 @@
  * 呼ぶのは**進行が動く経路** (クエスト達成・戦闘決着) の後。毎移動では見ない —
  * 条件が満たされるのはこの 2 つの後だけで、歩くたびに PDS を読むのは高すぎる。
  */
-import { jobLevelFromXp, pendingScenario, type ScenarioEvent } from '@aozoraquest/core';
+import { jobLevelFromXp, pendingScenario, type ScenarioEvent, type StoryEffect } from '@aozoraquest/core';
 import type { GameState } from './game-state';
 
-/** 立てたフラグと、一度だけ出すお知らせ。 */
+/** お知らせ 1 行と、その行に付く演出 (D-STORY-007)。 */
+export interface ScenarioMessage {
+  text: string;
+  effects?: StoryEffect[];
+}
+
+/** 立てたフラグと、一度だけ出すお知らせ。`notices` は旧 web 向けに残す文字列だけの版。 */
 export interface ScenarioResult {
   flags: string[];
   notices: string[];
+  messages: ScenarioMessage[];
   fired: string[];
 }
 
@@ -35,6 +42,8 @@ export function advanceScenario(state: GameState): ScenarioResult | null {
   return {
     flags,
     notices: fired.map((e: ScenarioEvent) => e.notice).filter((n): n is string => !!n),
+    messages: fired.filter((e: ScenarioEvent) => !!e.notice)
+      .map((e: ScenarioEvent) => ({ text: e.notice!, ...(e.effects?.length ? { effects: e.effects } : {}) })),
     fired: fired.map((e: ScenarioEvent) => e.id),
   };
 }

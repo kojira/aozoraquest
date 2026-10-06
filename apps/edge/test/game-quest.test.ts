@@ -13,6 +13,7 @@ import { base64urlnopad } from '@scure/base';
 import { starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop, setShopOverrides, worldOverlay, townShopStock, MONSTERS, setGameQuests, setNpcs, setScenario, type GameQuestDef } from '@aozoraquest/core';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from '../src/game-quest';
 import { applyBattleOutcome } from '../src/battle-reward';
+import { advanceScenario } from '../src/scenario-progress';
 import { handleGear } from '../src/battle-resolver';
 import { shopCraft } from '../src/shop';
 import { sanitizeGear, rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
@@ -265,6 +266,24 @@ describe('シナリオ連動 (#545)', () => {
     const ok = await handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW);
     expect(ok.activeQuests).toEqual([{ id: 'q-defeat', progress: 0 }]);
     setGameQuests([DEFEAT_Q, COLLECT_Q]);
+  });
+
+  it('達成の応答に演出付きの scenarioMessages を返す (D-STORY-007)', async () => {
+    setScenario([{ id: 'e1', title: '引き', when: [{ kind: 'questDone', questId: 'q-defeat' }], setFlags: ['ch1'], notice: 'そらが ひかった', effects: [{ kind: 'tint', color: 'red' }] }]);
+    globalThis.fetch = statefulPds(stateAt({ activeQuests: [{ id: 'q-defeat', progress: 2 }] })).fn;
+    const res = await handleQuestComplete(await makeEnv(), DID, 'q-defeat', NOW);
+    expect(res.notices).toEqual(['そらが ひかった']);
+    expect(res.scenarioMessages).toEqual([{ text: 'そらが ひかった', effects: [{ kind: 'tint', color: 'red' }] }]);
+  });
+
+  it('advanceScenario は戦闘決着にも渡す messages を notice 付きイベントだけから作る', () => {
+    setScenario([
+      { id: 'e1', title: 'a', when: [{ kind: 'questDone', questId: 'q-defeat' }], setFlags: ['ch1'], notice: 'あかい', effects: [{ kind: 'flash', color: 'red' }] },
+      { id: 'e2', title: 'b', when: [{ kind: 'questDone', questId: 'q-defeat' }], setFlags: ['ch2'] },
+      { id: 'e3', title: 'c', when: [{ kind: 'questDone', questId: 'q-defeat' }], setFlags: ['ch3'], notice: 'ふつう' },
+    ]);
+    const r = advanceScenario(stateAt({ questsDone: ['q-defeat'] }));
+    expect(r?.messages).toEqual([{ text: 'あかい', effects: [{ kind: 'flash', color: 'red' }] }, { text: 'ふつう' }]);
   });
 
   it('既にフラグが立っていれば同じお知らせを二度出さない', async () => {

@@ -33,6 +33,7 @@ import { gameQuestById } from './quest-data.js';
 import { ITEMS } from './battle.js';
 import { JOBS_BY_ID } from './jobs.js';
 import type { Archetype } from './types.js';
+import { isStoryEffectList, MAX_STORY_EFFECTS, type StoryEffect } from './story-effect.js';
 
 export class ScenarioError extends Error {}
 
@@ -53,6 +54,8 @@ export interface ScenarioEvent {
   setFlags: string[];
   /** 発火時に一度だけ出すお知らせ (省略可)。 */
   notice?: string;
+  /** お知らせ行に付ける演出 (D-STORY-007)。notice が必要。 */
+  effects?: StoryEffect[];
 }
 
 export interface ScenarioRecord {
@@ -120,6 +123,10 @@ export function validateScenario(list: readonly ScenarioEvent[] | null): void {
     if (e.notice !== undefined && (typeof e.notice !== 'string' || e.notice.trim() === '' || e.notice.length > MAX_NOTICE_LEN)) {
       throw new ScenarioError(`${where}: お知らせが不正 (${MAX_NOTICE_LEN} 文字まで)`);
     }
+    if (e.effects !== undefined) {
+      if (!isStoryEffectList(e.effects)) throw new ScenarioError(`${where}: 演出が不正 (${MAX_STORY_EFFECTS} 件まで)`);
+      if (e.notice === undefined) throw new ScenarioError(`${where}: 演出にはお知らせが必要`);
+    }
     // **自分が立てるフラグを自分の条件にしない** (一度発火したら二度と成立しない
     // イベントになり、書いた人の意図とほぼ確実に食い違う)。
     for (const c of e.when) {
@@ -136,7 +143,7 @@ export function validateScenario(list: readonly ScenarioEvent[] | null): void {
 export function setScenario(list: readonly ScenarioEvent[] | null): void {
   validateScenario(list);
   const next = list ?? [];
-  events = next.map((e) => ({ ...e, when: e.when.map((c) => ({ ...c })), setFlags: [...e.setFlags] }));
+  events = next.map((e) => ({ ...e, when: e.when.map((c) => ({ ...c })), setFlags: [...e.setFlags], ...(e.effects ? { effects: e.effects.map((x) => ({ ...x })) } : {}) }));
 }
 
 /** 全イベント (エディタ・判定用)。 */
