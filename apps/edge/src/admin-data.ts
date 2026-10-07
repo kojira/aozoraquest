@@ -14,7 +14,8 @@ import {
   npcStructuralPlacementError, sameNpcPosition, setInteriors, setShopOverrides, shopOverrides,
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
-  type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
+  activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
+  type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
 import { readServerTokens } from './oauth-store';
@@ -30,7 +31,8 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 
 const PATH_PREFIX = '/api/admin/data/';
 const RKEY = 'self';
-const ADMIN_DATA_NAMES = ['npcs', 'shops', 'quests', 'scenario', 'interiors'] as const;
+/** API で読み書きできる world.* レコード (core の ADMIN_WORLD_RECORDS の部分集合。CLI の NAMES と一致を検査)。 */
+export const ADMIN_DATA_NAMES = ['items', 'npcs', 'shops', 'quests', 'scenario', 'interiors'] as const satisfies readonly AdminWorldRecordName[];
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
 const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
@@ -99,6 +101,20 @@ function npcPlacementIssues(npcs: NpcDef[], checkPlacement: (n: NpcDef) => boole
   return out;
 }
 
+/** items は装備が 1 品以上ある時だけ読み込みで適用される (admin-world-loader)。無視されるレコードは
+ *  書かせない。管理画面と同じく参照中のアイテム・装備を消させず、core の検証を通したら元へ戻す。 */
+function validateItemsCandidate(value: unknown): string | null {
+  const items = listOf<ItemDefData>(value, 'items'), equipment = listOf<EquipmentDef>(value, 'equipment');
+  if (equipment.length === 0) return 'equipment が空 (読み込みで無視される)';
+  const dangling = danglingRefs('item', items.map((it) => it?.id))[0] ?? danglingRefs('equipment', equipment.map((e) => e?.id))[0];
+  if (dangling) return describeDanglingRef(dangling);
+  const prev = hasItemOverrides()
+    ? { items: Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), equipment: activeEquipment().map((e) => ({ ...e })) }
+    : null;
+  try { setItemOverrides({ items, equipment }); } finally { setItemOverrides(prev); }
+  return null;
+}
+
 /** 候補値を管理画面と同じ検証にかける。壊れていれば理由の文字列を返す。
  *  差し替えて検証する shops / interiors は、終わったら保存済みの値へ戻す。 */
 async function validateCandidate(name: AdminDataName, value: unknown, saved: unknown): Promise<string | null> {
@@ -118,6 +134,7 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const dangling = danglingRefs('quest', quests.map((q) => q.id))[0];
     return dangling ? describeDanglingRef(dangling) : null;
   }
+  if (name === 'items') return validateItemsCandidate(value);
   if (name === 'scenario') { validateScenario(listOf<ScenarioEvent>(value, 'events')); return null; }
   if (name === 'shops') {
     const prev = shopOverrides();

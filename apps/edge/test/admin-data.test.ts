@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { encodeWorldMap, setInteriors, setNpcs, setWorldMap, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { activeEquipment, encodeWorldMap, ITEMS, setInteriors, setItemOverrides, setNpcs, setWorldMap, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
 import { handleRequest, type Env } from '../src/router';
 import { writeServerTokens } from '../src/oauth-store';
 import { resetAuthoredWorldCache } from '../src/world-authoring';
@@ -87,7 +87,7 @@ describe('/api/admin/data (#695)', () => {
   afterEach(() => {
     globalThis.fetch = orig;
     resetAuthoredWorldCache();
-    setWorldMap(null); setNpcs(null); setInteriors([], []);
+    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null);
   });
   it('無効・鍵なし・鍵違い・許可外 name は通常の not_found と同じ 404', async () => {
     for (const [env, req] of [
@@ -96,7 +96,7 @@ describe('/api/admin/data (#695)', () => {
       [await makeEnv(), call('GET', 'npcs', { key: null })],
       [await makeEnv(), call('GET', 'npcs', { key: 'wrong' })],
       [await makeEnv(), call('GET', 'map')],
-      [await makeEnv(), call('PUT', 'items', { body: { value: {}, swapCid: null } })],
+      [await makeEnv(), call('PUT', 'monsters', { body: { value: {}, swapCid: null } })],
     ] as const) {
       const res = await handleRequest(req, env);
       expect(res.status).toBe(404);
@@ -161,5 +161,43 @@ describe('/api/admin/data (#695)', () => {
     expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
     expect(pds.puts.map((p) => [p.collection, p.record.$type])).toEqual([[DEV('npcs'), DEV('npcs')]]);
     expect(store.get(COL('npcs'))).toEqual({ value: { npcs: [NPC] }, cid: 'npc1' });
+  });
+
+  describe('items (D-STORY-008)', () => {
+    const items = () => Object.entries(ITEMS).map(([id, v]) => ({ id, ...v }));
+    const equipment = () => activeEquipment().map((e) => ({ ...e }));
+    const DEV = 'app.aozoraquest.dev.world.items';
+
+    it('GET / PUT items は dev の items コレクションを CAS で読み書きする', async () => {
+      const env = await makeEnv({ ADMIN_NSID_ENV: 'dev' });
+      store.set('app.aozoraquest.dev.world.map', store.get(COL('map'))!);
+      expect(await (await handleRequest(call('GET', 'items'), env)).json()).toEqual({ name: 'items', collection: DEV, cid: null, value: null });
+      const value = { items: [...items(), { id: 'ember-stone', name: 'ほむらのいし' }], equipment: equipment() };
+      const res = await handleRequest(call('PUT', 'items', { body: { value, swapCid: null } }), env);
+      expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+      expect(pds.puts.map((p) => [p.collection, p.swapRecord])).toEqual([[DEV, null]]);
+      expect(await (await handleRequest(call('GET', 'items'), env)).json()).toMatchObject({ cid: 'new1', value: { items: expect.arrayContaining([{ id: 'ember-stone', name: 'ほむらのいし' }]) } });
+      const stale = await handleRequest(call('PUT', 'items', { body: { value, swapCid: null } }), env);
+      expect(stale.status).toBe(409);
+    });
+
+    it('検証: 装備が空 (読み込みで無視される)・壊れた装備・参照中のアイテム削除は 400 で書かない (dryRun も同じ)', async () => {
+      const env = await makeEnv();
+      const bad = [
+        { items: items() },
+        { items: items(), equipment: [] },
+        { items: items(), equipment: [{ ...equipment()[0]!, slot: 'tail' }] },
+        { items: items().filter((it) => it.id !== 'herb'), equipment: equipment() },
+      ];
+      for (const value of bad) for (const dryRun of [false, true]) {
+        const res = await handleRequest(call('PUT', 'items', { body: { value, swapCid: null, dryRun } }), env);
+        expect(res.status).toBe(400);
+        expect((await res.json() as { error: string }).error).toBe('validation_failed');
+      }
+      expect(pds.puts).toHaveLength(0);
+      const ok = await handleRequest(call('PUT', 'items', { body: { value: { items: items(), equipment: equipment() }, swapCid: null, dryRun: true } }), env);
+      expect(await ok.json()).toEqual({ ok: true, dryRun: true });
+      expect(Object.keys(ITEMS)).toContain('herb');
+    });
   });
 });

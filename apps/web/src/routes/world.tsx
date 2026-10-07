@@ -36,7 +36,7 @@ import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
 import { VirtualStick } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
-import { npcDialogueLines, npcImageUrl } from '@/lib/npc-image';
+import { npcDialogueLines } from '@/lib/npc-image';
 import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
@@ -46,6 +46,7 @@ import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-bles
 import { WELCOME_POWER, ONBOARDING_DONE_KEY } from '@/lib/onboarding-reset';
 import { questMenuLines } from '@/lib/game-quest';
 import { guildReception } from '@/lib/npc-talk';
+import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
 import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
@@ -522,14 +523,14 @@ export function World() {
               anchor="map"
               // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
               lines={[...npcDialogueLines(npcTalk.npc, npcTalk.lines), ...(npcTalk.notices ?? [])]}
-              portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? ONBOARDING_PORTRAIT : undefined}
+              portrait={npcTalkPortrait(npcTalk.npc, !!npcTalk.guild)}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
               busy={questPending}
               choices={npcChoices}
               onDone={() => {
                 if (npcTalk.guild) {
-                  try { localStorage.setItem(`aq-futaba-guild-met:${did}`, '1'); } catch { /* private mode */ }
+                  try { localStorage.setItem(guildMetKey(did, npcTalk.npc.id), '1'); } catch { /* private mode */ }
                   // 選択肢が次の窓へ進めた場合、古い窓のonDoneで上書きしない。
                   setNpcTalk(current => current === npcTalk ? guildReception(npcTalk.npc) : current);
                 } else if (npcTalk.directList && npcTalkRef.current === npcTalk) directQuestList(npcTalk.npc);
