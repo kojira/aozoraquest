@@ -181,12 +181,29 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
       await page.getByRole('button', { name: 'はい', exact: true }).click();
       await expect.poll(() => state.activeQuests[0]?.id).toBe(id);
       await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
+      if (id === 'futaba-wings') await page.emulateMedia({ reducedMotion: 'no-preference' });
       await page.keyboard.press('ArrowUp');
       await expect.poll(() => state.questsDone?.includes(id)).toBe(true);
       await expect(page.locator('.aq-dialogue-backdrop')).toBeVisible();
+      if (id === 'futaba-wings') {
+        // D-STORY-007 第1章の引き: 報酬の後に地の文 (話者なし) で赤い光、地図が赤く染まる。
+        const window = page.locator('.aq-dialogue-pane').last();
+        await expect(window).toContainText('ありがとう！');
+        for (let i = 0; i < 16 && !(await window.textContent())?.includes('あかく'); i++) await window.click();
+        await expect(window).toContainText('そらが いっしゅん、あかく ひかった。とおくの 空を、くろい ひかりの すじが つきぬけた。');
+        await expect(page.locator('.aq-dialogue-pane')).toHaveCount(1);
+        await expect(page.getByTestId('story-tint-red')).toHaveCount(1);
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: `${process.env.TUTORIAL_SHOTS ?? 'test-results'}/wings-red-tint-390.png` });
+        await page.waitForTimeout(2200); // 46 字の打鍵完了後に 2 文目まで読める状態を残す
+        await page.screenshot({ path: `${process.env.TUTORIAL_SHOTS ?? 'test-results'}/wings-black-streak-390.png` });
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+      }
       await readAll(page);
     }
     expect(state.flags).toContain('futaba_wings_done');
+    // 報告済みの依頼は二度と引き (赤い光) を出さない: done[2] の新文も ここで確認する。
+    expect(quests.find(q => q.id === 'futaba-wings')!.done[2]).toContain('Blueskyちゃんが あなたを さがしてたよ。');
     expect(errors).toEqual([]);
   } finally {
     releaseAccept?.();

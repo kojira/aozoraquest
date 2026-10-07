@@ -23,7 +23,7 @@ import {
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
-import { serverGear, worldServerEnabled } from '@/lib/world-server';
+import { serverGear, worldServerEnabled, type ScenarioMessage } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
 import { resolveGear } from '@/lib/gear';
@@ -56,7 +56,7 @@ import { useWorldFieldItems } from '@/lib/use-world-field-items';
 import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
-import { GUILD_INVITATION, ONBOARDING_LINES, ONBOARDING_PORTRAIT, OPENING_GUIDE_LINES, starterHandoffLines } from '@/lib/world-opening';
+import { GUILD_INVITATION, ONBOARDING_LINES, ONBOARDING_PORTRAIT, OPENING_GUIDE_LINES, PROLOGUE_LINES, starterHandoffLines } from '@/lib/world-opening';
 import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, type Dir, type Vitals } from '@/lib/world-view';
 
 /**
@@ -93,7 +93,7 @@ export function World() {
   const flagsRef = useRef<string[]>([]);
   /** 戦闘中に届いたシナリオのお知らせ (#545)。戦闘の窓は使えないので、
    *  リザルトを閉じてマップに戻ってから出す。 */
-  const pendingNoticesRef = useRef<string[]>([]);
+  const pendingNoticesRef = useRef<ScenarioMessage[]>([]);
   /** 溜まったシナリオのお知らせをマップの窓で出す。**戦闘を閉じた直後に呼ぶ** —
    *  戦闘中に出しても窓が描画されず、発火済みのお知らせは二度と返らないので消える。 */
   const flushScenarioNotices = useCallback(() => {
@@ -103,7 +103,7 @@ export function World() {
     setScenarioTalk(list);
   }, []);
   /** シナリオのお知らせ窓 (話者なしの地の文)。 */
-  const [scenarioTalk, setScenarioTalk] = useState<string[] | null>(null);
+  const [scenarioTalk, setScenarioTalk] = useState<ScenarioMessage[] | null>(null);
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -521,7 +521,7 @@ export function World() {
               conversationStep={npcTalk}
               anchor="map"
               // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
-              lines={npcDialogueLines(npcTalk.npc, npcTalk.lines)}
+              lines={[...npcDialogueLines(npcTalk.npc, npcTalk.lines), ...(npcTalk.notices ?? [])]}
               portrait={npcTalk.npc.portraitImage ? { src: npcImageUrl(npcTalk.npc.id, 'portrait', npcTalk.npc.portraitImage), name: npcTalk.npc.name } : npcTalk.guild ? ONBOARDING_PORTRAIT : undefined}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
@@ -541,15 +541,14 @@ export function World() {
           {!battle && scenarioTalk && !npcTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               anchor="map"
-              lines={scenarioTalk.map((text) => ({ text }))}
+              lines={scenarioTalk}
               onDone={() => setScenarioTalk(null)}
             />
           )}
           {!battle && onboarding && (
             <DialogueWindow
               anchor="map"
-              lines={showStarter ? ONBOARDING_LINES : [...ONBOARDING_LINES, GUILD_INVITATION, ...OPENING_GUIDE_LINES]}
-              portrait={ONBOARDING_PORTRAIT}
+              lines={showStarter ? [...PROLOGUE_LINES, ...ONBOARDING_LINES] : [...PROLOGUE_LINES, ...ONBOARDING_LINES, GUILD_INVITATION, ...OPENING_GUIDE_LINES]}
               onDone={() => {
                 setOnboarding(false);
                 onboardingRef.current = false;

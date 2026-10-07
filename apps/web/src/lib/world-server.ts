@@ -6,7 +6,7 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
-import { LXM } from '@aozoraquest/core';
+import { LXM, type StoryEffect } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
@@ -121,7 +121,7 @@ export interface ServerAward {
     learned?: string[];
   };
 }
-export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[];
+export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
   activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
@@ -235,6 +235,16 @@ export interface ServerQuestResult {
   flags?: string[];
   /** シナリオのお知らせ (一度だけ)。 */
   notices?: string[];
+  /** notices と同じ行 + 演出 (D-STORY-007)。旧 edge は返さない。 */
+  scenarioMessages?: ScenarioMessage[];
+}
+
+/** シナリオのお知らせ 1 行と、その行に付く演出。 */
+export interface ScenarioMessage { text: string; effects?: StoryEffect[] }
+
+/** 新 edge の scenarioMessages を優先し、旧 edge の文字列だけのお知らせは演出なしで包む。 */
+export function scenarioMessagesOf(messages: ScenarioMessage[] | undefined, notices: string[] | undefined): ScenarioMessage[] {
+  return messages?.length ? messages : (notices ?? []).map((text) => ({ text }));
 }
 
 /** ゲーム内クエスト (#423): 受注。進行は GameState に積まれ、討伐は勝利時にサーバーが数える。 */

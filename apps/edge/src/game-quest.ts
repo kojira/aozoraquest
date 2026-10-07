@@ -10,7 +10,7 @@
  */
 import { gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
-import { advanceScenario, type ScenarioResult } from './scenario-progress';
+import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
 
 export class GameQuestError extends Error {
   constructor(
@@ -33,6 +33,8 @@ export interface QuestStateResult {
   flags?: string[];
   /** シナリオのお知らせ (「東の橋が直ったらしい」)。一度だけ出す。 */
   notices?: string[];
+  /** notices と同じ行 + 演出 (D-STORY-007)。新 web はこちらを使う。 */
+  scenarioMessages?: ScenarioMessage[];
 }
 
 export async function handleQuestAccept(
@@ -128,6 +130,6 @@ export async function handleQuestComplete(
     activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials,
     ...(rewarded ? { rewarded } : {}),
     ...(next.flags ? { flags: next.flags } : {}),
-    ...(scenarioBox.v?.notices.length ? { notices: scenarioBox.v.notices } : {}),
+    ...(scenarioBox.v?.notices.length ? { notices: scenarioBox.v.notices, scenarioMessages: scenarioBox.v.messages } : {}),
   };
 }

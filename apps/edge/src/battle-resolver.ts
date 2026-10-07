@@ -30,7 +30,7 @@ import {
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
 import { readState, readModifyWrite, emptyState, rkeyForDid, GAME_STATE_COLLECTION, type GameStateEnv, type GameState } from './game-state';
-import { advanceScenario } from './scenario-progress';
+import { advanceScenario, type ScenarioMessage } from './scenario-progress';
 import { SEARCH_POWER_COST, MAX_SHOP_OPS } from './shop';
 import { sanitizeGear } from './game-state';
 // sanitizeGear は game-state へ移した (shop からも使うため。shop → battle-resolver は循環)。
@@ -646,6 +646,8 @@ export interface TurnResult {
   /** シナリオのお知らせ (一度だけ)。**発火済みは二度と返らない**ので、
    *  client がここで拾わないと永久に失われる。 */
   scenarioNotices?: string[];
+  /** scenarioNotices と同じ行 + 演出 (D-STORY-007)。 */
+  scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着は省略しclientの写しを保つ。 */
   activeQuests?: Array<{ id: string; progress: number }>;
   questsDone?: string[];
@@ -697,7 +699,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     let awarded: AwardBreakdown = {};
     let finalPos = { x: 0, y: 0 };
     let finalMapId: string = WORLD_MAP_ID;
-    const noticeBox: { v: string[] } = { v: [] };
+    const noticeBox: { v: string[]; m: ScenarioMessage[] } = { v: [], m: [] };
     const window = enemyWindow(now);
     const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
@@ -734,6 +736,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       // mutate は純関数なので、CAS リトライで複数回走っても同じ結果になる。
       const advanced = advanceScenario({ ...cur, ...r.next } as GameState);
       noticeBox.v = advanced?.notices ?? [];
+      noticeBox.m = advanced?.messages ?? [];
       return {
         ...r.next,
         ...(advanced ? { flags: advanced.flags } : {}),
@@ -758,7 +761,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp,
       ...(written.flags ? { flags: written.flags } : {}),
       activeQuests: written.activeQuests, questsDone: written.questsDone ?? [],
-      ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v } : {}) };
+      ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v, scenarioMessages: noticeBox.m } : {}) };
   }
 
   // ── 未決着: turn+1・新 pendingTurnSeed を CAS で確定してから応答 (並行二重解決/引き直しを弾く) ──

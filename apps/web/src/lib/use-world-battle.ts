@@ -1,7 +1,7 @@
 import { useCallback, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
 import { townAt, type BattleState, type Command } from '@aozoraquest/core';
-import { serverTurn, WorldServerError, type ServerAward } from '@/lib/world-server';
+import { scenarioMessagesOf, serverTurn, WorldServerError, type ServerAward, type ScenarioMessage } from '@/lib/world-server';
 import { bumpJobXp } from '@/lib/use-job-xp';
 import { questAfterBattle, type QuestState } from '@/lib/game-quest';
 import type { BattlePhase } from '@/components/world-battle-controls';
@@ -40,7 +40,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
   agent: Agent | null;
   setQuest: (next: (s: QuestState) => QuestState) => void;
   flagsRef: MutableRefObject<string[]>;
-  pendingNoticesRef: MutableRefObject<string[]>;
+  pendingNoticesRef: MutableRefObject<ScenarioMessage[]>;
   flushScenarioNotices: () => void;
   tokenRef: MutableRefObject<string | undefined>;
   setWs: Dispatch<SetStateAction<Vitals | null>>;
@@ -78,7 +78,8 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
           // シナリオ (#545) は決着でも進む (ジョブ Lv 条件はここでしか動かない)。
           // **拾わないと永久に失われる** — 発火済みのお知らせは二度と返らない。
           if (res.flags) flagsRef.current = res.flags;
-          if (res.scenarioNotices?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioNotices];
+          const messages = scenarioMessagesOf(res.scenarioMessages, res.scenarioNotices);
+          if (messages.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...messages];
           // 討伐数 (#659) も決着の応答で同期する (メニューの進捗が戦闘前のまま残らない)。
           setQuest((s) => questAfterBattle(s, res.activeQuests, res.questsDone));
           battleRef.current = acting;

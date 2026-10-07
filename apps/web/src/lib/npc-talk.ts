@@ -1,6 +1,7 @@
 import { gameQuestsByNpc, itemsSatisfied, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import type { DialogueChoice } from '@/lib/dialogue';
 import type { QuestState } from '@/lib/game-quest';
+import type { ScenarioMessage } from '@/lib/world-server';
 
 /** NPC 会話 (#425/#423)。lines は通常セリフかクエスト文脈のセリフ。acceptQuestId が
  *  あるときは**読み終えたら はい/いいえ で受注を聞く** (#659)。 */
@@ -11,6 +12,8 @@ export interface NpcTalk {
   guild?: 'reunion' | 'menu' | 'detail' | 'message';
   choices?: DialogueChoice[];
   directList?: boolean;
+  /** 会話の後に地の文で続けるシナリオのお知らせ (報告で発火。D-STORY-007)。 */
+  notices?: ScenarioMessage[];
 }
 
 /** ギルド受付のメニュー段。 */

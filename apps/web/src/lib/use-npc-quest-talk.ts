@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
 import { ITEMS, gameQuestById, gameQuestsByNpc, npcLinesFor, questProgressLine, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
-import { serverQuestAccept, serverQuestComplete, serverState, WorldServerError } from '@/lib/world-server';
+import { scenarioMessagesOf, serverQuestAccept, serverQuestComplete, serverState, WorldServerError, type ScenarioMessage } from '@/lib/world-server';
 import type { DialogueChoice } from '@/lib/dialogue';
 import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoiceTitle, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 import { guildReception, npcQuestCandidates, type NpcTalk } from '@/lib/npc-talk';
@@ -91,7 +91,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, flagsRef, materialsRef, ap
 
   const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false) => {
     if (!agent || moveBusyRef.current) return;
-    const message = (lines: string[]) => setNpcTalk({ npc, lines, ...(guild ? { guild: 'message' as const } : { directList }) });
+    const message = (lines: string[], notices: ScenarioMessage[] = []) => setNpcTalk({ npc, lines, ...(notices.length ? { notices } : {}), ...(guild ? { guild: 'message' as const } : { directList }) });
     moveBusyRef.current = true;
     setQuestPending(true);
     try {
@@ -103,7 +103,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, flagsRef, materialsRef, ap
       const r = res.rewarded;
       const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
         r?.power ? `あおぞらパワー ${r.power}` : null].filter(Boolean).join(' と ');
-      message([...q.done, ...(got ? [`${got} を もらった！`] : []), ...(res.notices ?? [])]);
+      message([...q.done, ...(got ? [`${got} を もらった！`] : [])], scenarioMessagesOf(res.scenarioMessages, res.notices));
     } catch (e) {
       try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
       if (questRef.current.done.includes(q.id)) message(['この依頼は 達成済みだよ。']);

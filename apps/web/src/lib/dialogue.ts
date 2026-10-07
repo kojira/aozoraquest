@@ -11,12 +11,16 @@
  *   全文表示中にタップ → 次の行へ (最後の行なら done)
  */
 
+import type { StoryEffect } from '@aozoraquest/core';
+
 export interface DialogueLine {
   /** 話者名 (名前プレートに出す)。省略時はプレートなし (地の文) */
   speaker?: string;
   /** この行だけの表情。通常会話の管理画像は呼出側のportraitを使う。 */
   portrait?: { src: string; name: string };
   text: string;
+  /** この行が表示された瞬間に地図枠へ出す演出 (D-STORY-007)。 */
+  effects?: readonly StoryEffect[];
 }
 
 /** 最後の行を読み終えたあとに出す選択肢 (「はい / いいえ」)。選ぶと onSelect → done。 */

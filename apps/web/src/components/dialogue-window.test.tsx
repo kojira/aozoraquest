@@ -167,3 +167,50 @@ describe('DialogueWindow: 救護導入の表情と操作遮断', () => {
     expect(document.activeElement).toBe(surface);
   });
 });
+
+/** 会話の演出 (D-STORY-007): 地図枠に暗転・シルエット・閃光を出し、reduced-motion では閃光を出さない。 */
+describe('DialogueWindow: 演出層', () => {
+  const STORY = [
+    { text: '……ここは、どこ？', effects: [{ kind: 'fade' as const, to: 'black' as const }, { kind: 'silhouette' as const, show: true }] },
+    { speaker: 'Blueskyちゃん', text: 'きこえる？', effects: [{ kind: 'fade' as const, to: 'clear' as const }, { kind: 'silhouette' as const, show: false }, { kind: 'flash' as const, color: 'white' as const }] },
+  ];
+  const setReduced = (reduced: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: reduced && q.includes('reduce'), media: q, addEventListener() {}, removeEventListener() {} }));
+
+  it('初期行から黒層とシルエット img を出し、救護行で解いて白い閃光を出す', () => {
+    setReduced(false);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('1');
+    expect(screen.getByTestId('story-silhouette').querySelector('img')).not.toBeNull();
+    const surface = screen.getAllByRole('dialog')[0]!;
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('0');
+    expect(screen.getByTestId('story-silhouette').querySelector('img')).toBeNull();
+    expect(screen.getByTestId('story-flash-white')).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it('reduced-motion では閃光要素を描かない', () => {
+    setReduced(true);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    fireEvent.click(screen.getAllByRole('dialog')[0]!);
+    expect(screen.getAllByText(/きこえる/).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('story-flash-white')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('シルエットは初出で 800ms かけて浮かび、reduced-motion では即時に出す', () => {
+    setReduced(false);
+    const { unmount } = render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-silhouette').style.animation).toBe('aq-story-silhouette-in 800ms ease backwards');
+    unmount();
+    setReduced(true);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-silhouette').style.animation).toBe('');
+    vi.unstubAllGlobals();
+  });
+
+  it('viewport 窓では演出層を出さない', () => {
+    render(<DialogueWindow lines={STORY} onDone={() => {}} />);
+    expect(screen.queryByTestId('story-effect-layer')).toBeNull();
+  });
+});
