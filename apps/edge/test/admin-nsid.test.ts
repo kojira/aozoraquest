@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ADMIN_CONFIG_RECORDS, ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, allNpcs, AQ_NSID_ROOT, setNpcs } from '@aozoraquest/core';
 import { adminNsidRoot, ensureAuthoredWorld, resetAuthoredWorldCache } from '../src/world-authoring';
 import { handleNpcImage } from '../src/npc-image';
+import { ADMIN_DATA_NAMES } from '../src/admin-data';
 import { png, cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 
 vi.mock('../src/service-auth', async (original) => ({ ...await original<typeof import('../src/service-auth')>(), resolveDidDocument: async (did: string) => (await fetch(`https://plc.directory/${did}`)).json() }));
@@ -98,6 +99,14 @@ describe('scripts/*.mjs の NSID は core の唯一の定義と一致する (Ref
     // @ts-expect-error -- 型定義の無い Node スクリプト
     const { DEV_COLLECTION_PREFIX } = await import('../../../scripts/admin-data.mjs');
     expect(DEV_COLLECTION_PREFIX).toBe(`${adminWorldCollection(adminNsidPrefix(AQ_NSID_ROOT, 'dev'), 'npcs').slice(0, -'npcs'.length)}`);
+  });
+
+  it('admin-data.mjs の NAMES = edge の ADMIN_DATA_NAMES (core の world.* に含まれる。items を含む)', async () => {
+    // @ts-expect-error -- 型定義の無い Node スクリプト
+    const { NAMES } = await import('../../../scripts/admin-data.mjs');
+    expect(NAMES).toEqual([...ADMIN_DATA_NAMES]);
+    expect(NAMES).toContain('items');
+    for (const n of NAMES) expect(ADMIN_WORLD_RECORDS).toContain(n);
   });
 
   it('copy-admin-data-to-dev.mjs の SOURCE_COLLECTIONS = core の本番 world.* + config.*', async () => {

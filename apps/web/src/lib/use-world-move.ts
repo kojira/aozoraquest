@@ -8,6 +8,7 @@ import type { BattlePhase } from '@/components/world-battle-controls';
 import type { WipePhase } from '@/components/encounter-wipe';
 import type { DoorFadePhase } from '@/components/door-fade';
 import { isFutabaGuild } from '@/lib/futaba-guild';
+import { guildEntryTalk, guildMetKey } from '@/lib/guild-greeting';
 import type { NpcTalk } from '@/lib/npc-talk';
 import type { WorldBattle } from '@/lib/use-world-battle';
 import { DIRS, asBattleState, type Dir, type Vitals } from '@/lib/world-view';
@@ -41,16 +42,6 @@ export interface WorldMoveDeps {
   scheduleSave: () => void;
 }
 
-/** ギルドの扉の前でぶつかったときの最初の段 (初回は再会、2 回目以降は受付メニュー)。 */
-export function guildEntryTalk(npc: NpcDef, met: boolean): NpcTalk {
-  return { npc, guild: met ? 'menu' : 'reunion', lines: [
-    ...(met ? ['おかえり。冒険者ギルドへ ようこそ。'] : [
-      '来てくれたんだね。からだの ぐあいは どう？',
-      'ここが 村の 冒険者ギルドだよ。すこし やすんでいってね。',
-    ]),
-  ] };
-}
-
 // 移動は**サーバー (edge Worker) が権威判定する** (docs/21 §5 再設計)。クライアントは方向 (隣接1マス) と
 // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
 // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
@@ -81,7 +72,7 @@ export function useWorldMove(d: WorldMoveDeps) {
           if (guildExitBlockedRef.current) return;
           guildExitBlockedRef.current = true;
           let met = false;
-          try { met = localStorage.getItem(`aq-futaba-guild-met:${did}`) === '1'; } catch { /* private mode */ }
+          try { met = localStorage.getItem(guildMetKey(did, npc.id)) === '1'; } catch { /* private mode */ }
           setNpcTalk(guildEntryTalk(npc, met));
           return;
         }

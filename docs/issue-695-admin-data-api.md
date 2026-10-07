@@ -39,14 +39,16 @@
      - interiors: `setInteriors` (タイルは gzip+base64 の保存形式のまま受け取る)。
      - quests: `validateGameQuests`、参照切れ (`danglingRefs('quest')`)。
      - scenario: `validateScenario`。
+     - items (D-STORY-008): `equipment` が空なら拒否 (読み込みは装備 1 品以上の時だけ適用 = 無視されるため)、
+       参照切れ (`danglingRefs('item' / 'equipment')`)、`setItemOverrides` の検証。items は npcs / quests より先に書く。
   3. `dryRun: true` ならここで `{ ok: true, dryRun: true }` を返す。**既定は書き込む**
      (dryRun は明示したときだけ)。
   4. `serverPutRecord(..., swapRecord = swapCid)` で書く。`swapCid` は必須
      (レコードが無いときは `null` = 未作成のときだけ作る)。CID が変わっていれば 409 (`swap_conflict`)。成功は `{ ok: true, cid }`。
   5. 書いたら edge のキャッシュを捨てる (`resetAuthoredWorldCache`)。
-- 対象は `npcs` `shops` `quests` `scenario` `interiors` の 5 つだけ
+- 対象は `items` `npcs` `shops` `quests` `scenario` `interiors` の 6 つだけ
   (collection は `app.aozoraquest.world.<name>`、rkey は `self`)。それ以外は 404。
-  地図・絵・アイテム・モンスター・ジョブは対象外 (必要になった時点で別 Issue)。
+  地図・絵・モンスター・ジョブは対象外 (必要になった時点で別 Issue)。
 - `POST /api/admin/blob?kind=sprite|portrait` (#699) 本文は画像のバイト列、`Content-Type: image/webp` のみ。
   1. 既存の NPC 画像規格 (core `inspectNpcImage`: portrait は各辺 1024px 以下・1MiB 以下、sprite は
      16/32px 正方形か横 2 コマ・100KiB 以下、アニメ不可) を通す。外れれば 400 (`invalid_type` / `invalid_kind` / `invalid_image`)。
