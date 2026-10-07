@@ -119,15 +119,17 @@ test('real World successful steps are visible, stable on return, and never signa
     records['app.aozoraquest.dev.world.tileArt'] = { arts: {} };
     state = { ...state, x: 15, y: 15 }; await page.reload(); await expect(map).toBeVisible();
     await page.evaluate(() => {
-      const frames: { t: number; x: number; y: number; tx: number; ty: number }[] = [];
+      const frames: { t: number; ts: number; x: number; y: number; tx: number; ty: number }[] = [];
       (window as any).scrollFrames = frames;
       (window as any).recordScroll = true;
-      const sample = (t: number) => { setTimeout(() => {
+      // Test-owned loop, independent of the product's rAF: a frozen picture shows up as repeated samples.
+      // Read synchronously in the callback and time the read itself (a deferred read under load spans frames).
+      const sample = (ts: number) => {
         const el = document.querySelector('[data-world-scroll]')!;
         const [tx, ty] = (el.getAttribute('transform') ?? '').match(/-?[\d.]+/g)?.map(Number) ?? [0, 0];
-        frames.push({ t, x: Number(el.getAttribute('data-world-x')) - tx! / 32, y: Number(el.getAttribute('data-world-y')) - ty! / 32, tx: tx!, ty: ty! });
+        frames.push({ t: performance.now(), ts, x: Number(el.getAttribute('data-world-x')) - tx! / 32, y: Number(el.getAttribute('data-world-y')) - ty! / 32, tx: tx!, ty: ty! });
         if ((window as any).recordScroll) requestAnimationFrame(sample);
-      }, 0); };
+      };
       requestAnimationFrame(sample);
     });
     const box = (await map.boundingBox())!;
@@ -140,17 +142,27 @@ test('real World successful steps are visible, stable on return, and never signa
     await expect(layer).toHaveAttribute('transform', 'translate(0 0)');
     const stopped = moves;
     await page.waitForTimeout(220); expect(moves).toBe(stopped);
-    const frames = await page.evaluate(() => { (window as any).recordScroll = false; return (window as any).scrollFrames as { t: number; x: number; y: number; tx: number; ty: number }[]; });
+    const frames = await page.evaluate(() => { (window as any).recordScroll = false; return (window as any).scrollFrames as { t: number; ts: number; x: number; y: number; tx: number; ty: number }[]; });
     writeFileSync('test-results/held-scroll-frames.json', JSON.stringify(frames));
     await test.info().attach('held-scroll-frames', { body: JSON.stringify(frames), contentType: 'application/json' });
     // First/last boundary frames and the turn are excluded; the straight middle must keep moving.
     const straight = frames.filter(f => f.x > 16 && f.x < 19.5 && f.y === 15);
     expect(straight.length).toBeGreaterThan(12);
+    // Animation is time-based (1 tile/170ms, catching up after late frames), so limits scale with time.
+    // A jump spans from the last frame (rAF ts) before the previous value appeared to this read, since the
+    // product may draw between our reads; 1 frame = 0.35 tile (~3.5x normal speed).
+    // Measured worst: 0.32 of the limit idle, 0.41 with `yes` x8.
+    // The test loop keeps sampling while the product loop is frozen; frozen time counts only up to 25ms
+    // per sample (longer gaps mean the browser drew no frame at all). Measured worst without a pause: 85ms
+    // (busy host); an injected 170ms tile pause accumulates 146-162ms, so 110ms separates them.
+    let since = frames[frames.indexOf(straight[0]!) - 1]!.ts, stalled = 0;
     for (let i = 1; i < straight.length; i++) {
-      expect(straight[i]!.x).toBeGreaterThanOrEqual(straight[i - 1]!.x);
-      // Integer dot rounding / callback phase may repeat ONE refresh, not a tile pause.
-      if (i > 1) expect(straight[i]!.x).toBeGreaterThan(straight[i - 2]!.x);
-      expect(straight[i]!.x - straight[i - 1]!.x).toBeLessThan(0.35);
+      const a = straight[i - 1]!, b = straight[i]!;
+      expect(b.x).toBeGreaterThanOrEqual(a.x);
+      if (b.x > a.x) {
+        expect(b.x - a.x).toBeLessThan(0.35 * Math.max(1, (b.t - since) / 16.67));
+        since = a.ts; stalled = 0;
+      } else expect(stalled += Math.min(25, b.t - a.t)).toBeLessThan(110);
     }
     expect(Math.max(...frames.map(f => Math.abs(f.tx) + Math.abs(f.ty)))).toBeLessThan(65);
     // Native key-repeat burst also retains its current rendering offset and finishes exactly.
