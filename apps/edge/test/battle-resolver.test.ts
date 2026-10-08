@@ -197,6 +197,20 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     await expect(handleTurn(env, USER, enc.battleId, 0, 'attack', NOW)).rejects.toMatchObject({ status: 409 });
   });
 
+  it('決着後の やくそう在庫 = 戦闘前の在庫 − 戦闘で使った数 (#731: 持ち込み上限 2 で上書きしない)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ power: 5, materials: { herb: 5 } }) });
+    globalThis.fetch = m.fn;
+    const enc = await sealEncounter(env, USER, GS({ power: 5, materials: { herb: 5 } }), 5, 5, 12345, NOW);
+    let last = await handleTurn(env, USER, enc.battleId, 0, 'herb', NOW); // 戦闘で 1 こ 使う
+    for (let turn = 1; turn < 40 && last.outcome === 'ongoing'; turn++) last = await handleTurn(env, USER, enc.battleId, turn, 'attack', NOW);
+    expect(last.outcome).not.toBe('ongoing');
+    const count = (arr: readonly string[] | undefined) => (arr ?? []).filter((x) => x === 'herb').length;
+    // 報酬のドロップ / 敗北ロスぶんだけを差し引きし、残りは 5 − 1 = 4 のまま。
+    const expected = 4 + count(last.awarded?.drops) - count(last.awarded?.materialsLost);
+    expect((m.store.get('gs')!.value as GameState).materials['herb']).toBe(expected);
+  });
+
   it('決着の応答に進行中クエストを載せる (#659: 勝利で進んだ討伐数を client が表示に同期できる)', async () => {
     const env = await makeEnv();
     const m = resolverMock({ diagnosis: DIAG, gameState: GS({ power: 5 }) });
