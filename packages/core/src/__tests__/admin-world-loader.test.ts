@@ -24,10 +24,10 @@ async function load(records: Partial<Record<AdminWorldRecordName, unknown>>, fai
 describe('loadAdminWorld', () => {
   afterEach(() => { setNpcs(null); setShopOverrides(null); setGameQuests(null); setScenario(null); });
 
-  it('読み込み順は唯一の定義 (shops は items の後、quests は npcs/monsters/items の後、scenario は quests の後)', async () => {
+  it('読み込み順は唯一の定義 (shops は items の後、quests は npcs/monsters/items の後、scenario は quests の後、story は scenario の後)', async () => {
     const { read } = await load({});
     expect(read).toEqual([...ADMIN_WORLD_RECORDS]);
-    expect(read).toEqual(['map', 'tileArt', 'monsters', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario']);
+    expect(read).toEqual(['map', 'tileArt', 'monsters', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story']);
   });
 
   it('空配列のレコードは適用する (#660)', async () => {

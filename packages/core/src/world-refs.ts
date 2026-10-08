@@ -16,6 +16,7 @@ import { allNpcs } from './npc-data.js';
 import { gameQuests } from './quest-data.js';
 import { scenarioEvents } from './scenario.js';
 import { shopOverrides } from './shop-data.js';
+import { placedItems } from './story-data.js';
 
 /** 参照される側の種類。 */
 export type WorldRefKind = 'npc' | 'monster' | 'item' | 'equipment' | 'quest';
@@ -43,7 +44,10 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
   };
   for (const q of gameQuests()) {
     const from = `クエスト「${q.title}」`;
-    if (kind === 'npc') push(q.npcId, from);
+    if (kind === 'npc') {
+      push(q.npcId, from);
+      if (q.objective.kind === 'talk') push(q.objective.npcId, from);
+    }
     if (kind === 'monster' && q.objective.kind === 'defeat') push(q.objective.monsterId, from);
     if (kind === 'item') {
       if (q.objective.kind === 'collect') push(q.objective.itemId, from);
@@ -51,6 +55,7 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
       for (const r of q.requireItems ?? []) push(r.itemId, from);
     }
   }
+  if (kind === 'item') for (const p of placedItems()) push(p.itemId, `置きアイテム「${p.id}」`);
   for (const s of shopOverrides()) {
     const from = `店 (${s.x}, ${s.y})`;
     if (kind === 'equipment') for (const id of s.equipment ?? []) push(id, from);

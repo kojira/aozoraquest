@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { activeEquipment, encodeWorldMap, ITEMS, setInteriors, setItemOverrides, setNpcs, setWorldMap, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { activeEquipment, encodeWorldMap, ITEMS, setInteriors, setItemOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
 import { handleRequest, type Env } from '../src/router';
 import { writeServerTokens } from '../src/oauth-store';
 import { resetAuthoredWorldCache } from '../src/world-authoring';
@@ -87,7 +87,7 @@ describe('/api/admin/data (#695)', () => {
   afterEach(() => {
     globalThis.fetch = orig;
     resetAuthoredWorldCache();
-    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null);
+    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null);
   });
   it('無効・鍵なし・鍵違い・許可外 name は通常の not_found と同じ 404', async () => {
     for (const [env, req] of [
@@ -198,6 +198,28 @@ describe('/api/admin/data (#695)', () => {
       const ok = await handleRequest(call('PUT', 'items', { body: { value: { items: items(), equipment: equipment() }, swapCid: null, dryRun: true } }), env);
       expect(await ok.json()).toEqual({ ok: true, dryRun: true });
       expect(Object.keys(ITEMS)).toContain('herb');
+    });
+  });
+
+  describe('story (D-STORY-009)', () => {
+    const flags = (n: number) => Array.from({ length: n }, (_, i) => `f${i}`);
+    const item = (over: Record<string, unknown> = {}) => ({ id: 'pi-key', mapId: 'cave-1', x: 4, y: 7, itemId: 'herb', count: 1, flag: 'got-key', ...over });
+    const put = async (name: string, value: unknown) => (await handleRequest(call('PUT', name, { body: { value, swapCid: null, dryRun: true } }), await makeEnv())).status;
+
+    it('シナリオと置きアイテムのフラグ数の合計が 500 を超えると、どちらを保存しても 400', async () => {
+      store.set(COL('scenario'), { value: { events: [{ id: 'e1', title: 't', when: [], setFlags: flags(500) }] }, cid: 's1' });
+      expect(await put('story', { placedItems: [item()] })).toBe(400);
+      expect(await put('story', { placedItems: [item({ flag: 'f0' })] })).toBe(200); // 同じ名前は 1 つと数える
+      store.delete(COL('scenario')); setScenario(null); // レコードが無ければ読み込みは触らないので、前の適用を消す
+      store.set(COL('story'), { value: { placedItems: [item()] }, cid: 'st1' });
+      expect(await put('scenario', { events: [{ id: 'e1', title: 't', when: [], setFlags: flags(500) }] })).toBe(400);
+      expect(pds.puts).toHaveLength(0);
+    });
+
+    it('フィールドの町のマス・flag なしは 400', async () => {
+      const town = worldOverlay().towns[0]!;
+      expect(await put('story', { placedItems: [item({ mapId: 'world', x: town.x, y: town.y })] })).toBe(400);
+      expect(await put('story', { placedItems: [item({ flag: undefined })] })).toBe(400);
     });
   });
 });

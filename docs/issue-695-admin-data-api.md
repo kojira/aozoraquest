@@ -38,7 +38,8 @@
      - shops: `setShopOverrides`。
      - interiors: `setInteriors` (タイルは gzip+base64 の保存形式のまま受け取る)。
      - quests: `validateGameQuests`、参照切れ (`danglingRefs('quest')`)。
-     - scenario: `validateScenario`。
+     - scenario: `validateScenario`、story の置きアイテムと合わせたフラグ数 (`assertStoryFlagTotal`)。
+     - story (D-STORY-009): `validateStory` (置きアイテム。フラグ数は現行の scenario と合わせて数える)。
      - items (D-STORY-008): `equipment` が空なら拒否 (読み込みは装備 1 品以上の時だけ適用 = 無視されるため)、
        参照切れ (`danglingRefs('item' / 'equipment')`)、`setItemOverrides` の検証。items は npcs / quests より先に書く。
   3. `dryRun: true` ならここで `{ ok: true, dryRun: true }` を返す。**既定は書き込む**
@@ -46,7 +47,7 @@
   4. `serverPutRecord(..., swapRecord = swapCid)` で書く。`swapCid` は必須
      (レコードが無いときは `null` = 未作成のときだけ作る)。CID が変わっていれば 409 (`swap_conflict`)。成功は `{ ok: true, cid }`。
   5. 書いたら edge のキャッシュを捨てる (`resetAuthoredWorldCache`)。
-- 対象は `items` `npcs` `shops` `quests` `scenario` `interiors` の 6 つだけ
+- 対象は `items` `npcs` `shops` `quests` `scenario` `story` `interiors` の 7 つだけ
   (collection は `app.aozoraquest.world.<name>`、rkey は `self`)。それ以外は 404。
   地図・絵・モンスター・ジョブは対象外 (必要になった時点で別 Issue)。
 - `POST /api/admin/blob?kind=sprite|portrait` (#699) 本文は画像のバイト列、`Content-Type: image/webp` のみ。

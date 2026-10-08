@@ -16,7 +16,8 @@ import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } from './xp-claim';
 import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
-import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleSearch, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from './game-quest';
 import { ensureAuthoredWorld } from './world-authoring';
@@ -265,6 +266,8 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
     const body = (await req.json().catch(() => ({}))) as { token?: string; key?: unknown };
     try {
+      // 置きアイテムは管理データ由来。コールドスタート直後に未ロードだと普段のしらべるに落ちてパワーを使う。
+      await ensureAuthoredWorld(env, nowSec());
       return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req), undefined,
         typeof body.key === 'string' && body.key.length <= 128 ? body.key : undefined)), allowedOrigin);
     } catch (e) {
@@ -488,15 +491,17 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { questId?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { questId?: unknown; token?: unknown };
     if (typeof body.questId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       const ns = nsFromOrigin(req);
       // コールドスタート直後だと定義が未ロードで「そのクエストは無い」に落ちるので、ここは待つ
       // (TTL 内はキャッシュ即返しでコスト無し)。
       await ensureAuthoredWorld(env, nowSec());
-      const handler = accept ? handleQuestAccept : handleQuestComplete;
-      return cors(json(await handler(env, did, body.questId, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+      const init = (d: string, iso: string) => migrateInitState(d, iso, ns);
+      return cors(json(accept
+        ? await handleQuestAccept(env, did, body.questId, nowSec(), init)
+        : await handleQuestComplete(env, did, body.questId, nowSec(), init, typeof body.token === 'string' ? body.token : undefined)), allowedOrigin);
     } catch (e) {
       if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

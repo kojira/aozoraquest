@@ -156,8 +156,17 @@ export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
 
 /** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
 /** しらべる。`key` は冪等キー — 応答だけ落ちて押し直したときに二重に引かれないため。 */
-export function serverSearch(agent: Agent, token?: string, key?: string): Promise<{ found: string | null; materials: Record<string, number>; power: number }> {
-  return callEdge<{ found: string | null; materials: Record<string, number>; power: number }>(agent, LXM_SEARCH, '/api/world/search', { ...(token ? { token } : {}), ...(key ? { key } : {}) });
+export interface ServerSearchResult {
+  found: string | null;
+  materials: Record<string, number>;
+  power: number;
+  /** 置きアイテムを取ったときだけ (D-STORY-009)。パワーは減らない。 */
+  placed?: { itemId: string; count: number };
+  flags?: string[];
+  scenarioMessages?: ScenarioMessage[];
+}
+export function serverSearch(agent: Agent, token?: string, key?: string): Promise<ServerSearchResult> {
+  return callEdge<ServerSearchResult>(agent, LXM_SEARCH, '/api/world/search', { ...(token ? { token } : {}), ...(key ? { key } : {}) });
 }
 
 /** オンボード用リセット: 権威 gameState + 戦闘ガードをサーバーで削除する (本人のみ)。次の入場で初期状態に戻る。
@@ -252,9 +261,10 @@ export function serverQuestAccept(agent: Agent, questId: string): Promise<Server
   return callEdge<ServerQuestResult>(agent, LXM_QUEST_ACCEPT, '/api/quest/accept', { questId });
 }
 
-/** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。 */
-export function serverQuestComplete(agent: Agent, questId: string): Promise<ServerQuestResult> {
-  return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId });
+/** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。
+ *  talk は位置トークンで「相手の隣にいる」をサーバーが確かめる (D-STORY-009)。 */
+export function serverQuestComplete(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId, ...(token ? { token } : {}) });
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */

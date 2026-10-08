@@ -253,18 +253,39 @@ export function AdminQuests() {
                   value={current.objective.kind}
                   onChange={(e) => {
                     const kind = e.target.value as QuestObjective['kind'];
-                    const count = current.objective.count;
+                    const count = 'count' in current.objective ? current.objective.count : 1;
                     update(current.id, {
                       objective: kind === 'defeat'
                         ? { kind, monsterId: monsters[0]?.id ?? '', count }
-                        : { kind, itemId: items[0]?.id ?? '', count },
+                        : kind === 'collect'
+                          ? { kind, itemId: items[0]?.id ?? '', count }
+                          : { kind, npcId: npcs[0]?.id ?? '', line: 'おお、よく きたね。' },
                     });
                   }}
                 >
                   <option value="defeat">たおす</option>
                   <option value="collect">あつめる (素材を渡す)</option>
+                  <option value="talk">はなしを きく (相手の隣で話しかける)</option>
                 </select>
-                {current.objective.kind === 'defeat' ? (
+                {current.objective.kind === 'talk' ? (
+                  <>
+                    <select
+                      value={current.objective.npcId}
+                      onChange={(e) => update(current.id, { objective: { ...current.objective, npcId: e.target.value } as QuestObjective })}
+                    >
+                      {npcs.map((n) => (
+                        <option key={n.id} value={n.id}>{n.name} ({n.x},{n.y})</option>
+                      ))}
+                    </select>
+                    <input
+                      value={current.objective.line}
+                      maxLength={120}
+                      placeholder="相手のセリフ"
+                      onChange={(e) => update(current.id, { objective: { ...current.objective, line: e.target.value } as QuestObjective })}
+                      style={{ flex: 1, minWidth: '12em' }}
+                    />
+                  </>
+                ) : current.objective.kind === 'defeat' ? (
                   <select
                     value={current.objective.monsterId}
                     onChange={(e) => update(current.id, { objective: { ...current.objective, monsterId: e.target.value } as QuestObjective })}
@@ -283,15 +304,19 @@ export function AdminQuests() {
                     ))}
                   </select>
                 )}
-                ×
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  value={current.objective.count}
-                  onChange={(e) => update(current.id, { objective: { ...current.objective, count: Number(e.target.value) } as QuestObjective })}
-                  style={{ width: '4.5em' }}
-                />
+                {current.objective.kind !== 'talk' && (
+                  <>
+                    ×
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={current.objective.count}
+                      onChange={(e) => update(current.id, { objective: { ...current.objective, count: Number(e.target.value) } as QuestObjective })}
+                      style={{ width: '4.5em' }}
+                    />
+                  </>
+                )}
               </span>
             ))}
             {field('報酬', (

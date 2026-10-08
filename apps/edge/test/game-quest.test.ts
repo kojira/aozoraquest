@@ -18,6 +18,7 @@ import { handleGear } from '../src/battle-resolver';
 import { shopCraft } from '../src/shop';
 import { sanitizeGear, rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
+import { signPosition } from '../src/world-token';
 
 const DID = 'did:plc:alice';
 const SERVER_DID = 'did:plc:testserver';
@@ -83,12 +84,20 @@ const COLLECT_Q: GameQuestDef = {
   reward: { power: 5, itemId: 'sky-feather', count: 1 },
 };
 
+const TALK_Q: GameQuestDef = {
+  id: 'q-letter', title: 'てがみ', npcId: 'npc-t1',
+  intro: ['かじやに これを'], done: ['ありがとう'],
+  objective: { kind: 'talk', npcId: 'npc-smith', line: 'おお、長老からの手紙か。' },
+  reward: { power: 3 },
+};
+
 beforeAll(() => {
   setNpcs([
     { id: 'npc-t1', name: 'そんちょう', x: 5, y: 5, lines: ['こんにちは'] },
     { id: 'npc-t2', name: 'くすしや', x: 6, y: 5, lines: ['こんにちは'] },
+    { id: 'npc-smith', name: 'かじや', mapId: 'old-town', x: 6, y: 6, lines: ['いらっしゃい'] },
   ]);
-  setGameQuests([DEFEAT_Q, COLLECT_Q]);
+  setGameQuests([DEFEAT_Q, COLLECT_Q, TALK_Q]);
 });
 
 describe('handleQuestAccept', () => {
@@ -203,6 +212,29 @@ describe('handleQuestComplete (collect)', () => {
     globalThis.fetch = m.fn;
     await handleQuestComplete(await makeEnv(), DID, 'q-collect', NOW);
     expect(stored(m.store).materials['herb']).toBeUndefined();
+  });
+});
+
+describe('handleQuestComplete (talk, D-STORY-009)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+  const at = async (mapId: string, x: number, y: number) => signPosition(await makeEnv(), { did: DID, mapId, x, y, counter: 1, iat: NOW });
+
+  it('相手の上下左右の隣のトークンで達成し、報酬が出る', async () => {
+    const m = statefulPds(stateAt({ activeQuests: [{ id: 'q-letter', progress: 0 }] }));
+    globalThis.fetch = m.fn;
+    const res = await handleQuestComplete(await makeEnv(), DID, 'q-letter', NOW, undefined, await at('old-town', 6, 7));
+    expect(res.rewarded).toEqual({ power: 3 });
+    expect(stored(m.store).questsDone).toContain('q-letter');
+  });
+
+  it('mapId 違い・斜め・同じマス・離れた位置・未受注は 400', async () => {
+    for (const [mapId, x, y] of [['world', 6, 7], ['old-town', 7, 7], ['old-town', 6, 6], ['old-town', 6, 9]] as const) {
+      globalThis.fetch = statefulPds(stateAt({ activeQuests: [{ id: 'q-letter', progress: 0 }] })).fn;
+      await expect(handleQuestComplete(await makeEnv(), DID, 'q-letter', NOW, undefined, await at(mapId, x, y))).rejects.toMatchObject({ status: 400 });
+    }
+    globalThis.fetch = statefulPds(stateAt()).fn;
+    await expect(handleQuestComplete(await makeEnv(), DID, 'q-letter', NOW, undefined, await at('old-town', 6, 7))).rejects.toMatchObject({ status: 400 });
   });
 });
 

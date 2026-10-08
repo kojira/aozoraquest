@@ -179,7 +179,7 @@ export function World() {
   }, [agent, wsRef]);
 
   const talk = useNpcQuestTalk({
-    agent, moveBusyRef, flagsRef, materialsRef, applyServerMaterials: inventory.applyServerMaterials,
+    agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials: inventory.applyServerMaterials,
     setServerPower, setNotice, waitForFreshDirectionRef,
   });
   const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList } = talk;
@@ -275,7 +275,7 @@ export function World() {
     setMapAcquisition, setServerPower, setNpcTalk, openDirectNpc, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
   });
   const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
-    agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, serverPowerRef, setServerPower,
+    agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower,
     setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked: featherBlocked,
   });
 
@@ -569,7 +569,7 @@ export function World() {
             />
           )}
           {!battle && searchMsg !== null && (
-            <DialogueWindow anchor="map" lines={[{ text: searchMsg }]} onDone={() => setSearchMsg(null)} />
+            <DialogueWindow anchor="map" lines={[{ text: searchMsg }]} onDone={() => { setSearchMsg(null); flushScenarioNotices(); }} />
           )}
         </div>
       </div>

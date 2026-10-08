@@ -10,9 +10,9 @@ const WARNING = `注意: ステージング (dev) の管理データ ${DEV_COLLE
 const DEFAULT_EDGE = 'https://aozoraquest-edge-dev.kojiran.workers.dev';
 const KEY_PATH = join(homedir(), '.config', 'aozoraquest', 'dev-admin-data-key');
 /** apps/edge/src/admin-data.ts の ADMIN_DATA_NAMES と同じ (apps/edge/test/admin-nsid.test.ts が検査)。 */
-export const NAMES = ['items', 'npcs', 'shops', 'quests', 'scenario', 'interiors'];
+export const NAMES = ['items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors'];
 /** name ごとの配列のキーと、要素の id の取り方。 */
-const LIST_KEY = { items: 'items', npcs: 'npcs', shops: 'shops', quests: 'quests', scenario: 'events', interiors: 'interiors' };
+const LIST_KEY = { items: 'items', npcs: 'npcs', shops: 'shops', quests: 'quests', scenario: 'events', story: 'placedItems', interiors: 'interiors' };
 const idOf = (name, v) => (name === 'shops' ? `(${v?.x}, ${v?.y})` : String(v?.id));
 
 const HELP = `${WARNING}
