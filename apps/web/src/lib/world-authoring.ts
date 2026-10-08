@@ -15,6 +15,8 @@ import {
   setGameQuests,
   validateGameQuests,
   validateScenario,
+  assertStoryFlagTotal,
+  placedItems,
   setInteriors,
   setScenario,
   setJobOverrides,
@@ -244,6 +246,7 @@ export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promi
 /** シナリオ (#545)。setScenario が先に検証で落とす (存在しないクエストを条件にさせない)。 */
 export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promise<void> {
   validateScenario(events);
+  assertStoryFlagTotal(events, placedItems());
   await putRecord(agent, ADMIN_COL.scenario, RKEY, { events, updatedAt: new Date().toISOString() });
   setScenario(events);
 }

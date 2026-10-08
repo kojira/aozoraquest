@@ -266,6 +266,8 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
     const body = (await req.json().catch(() => ({}))) as { token?: string; key?: unknown };
     try {
+      // 置きアイテムは管理データ由来。コールドスタート直後に未ロードだと普段のしらべるに落ちてパワーを使う。
+      await ensureAuthoredWorld(env, nowSec());
       return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req), undefined,
         typeof body.key === 'string' && body.key.length <= 128 ? body.key : undefined)), allowedOrigin);
     } catch (e) {
