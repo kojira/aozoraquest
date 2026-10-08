@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { activeEquipment, encodeWorldMap, ITEMS, setInteriors, setItemOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { activeEquipment, activeMonsters, encodeWorldMap, ITEMS, MONSTERS_BY_ID, setInteriors, setItemOverrides, setMonsterOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
 import { handleRequest, type Env } from '../src/router';
 import { writeServerTokens } from '../src/oauth-store';
 import { resetAuthoredWorldCache } from '../src/world-authoring';
@@ -87,7 +87,7 @@ describe('/api/admin/data (#695)', () => {
   afterEach(() => {
     globalThis.fetch = orig;
     resetAuthoredWorldCache();
-    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null);
+    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null); setMonsterOverrides(null);
   });
   it('無効・鍵なし・鍵違い・許可外 name は通常の not_found と同じ 404', async () => {
     for (const [env, req] of [
@@ -96,7 +96,7 @@ describe('/api/admin/data (#695)', () => {
       [await makeEnv(), call('GET', 'npcs', { key: null })],
       [await makeEnv(), call('GET', 'npcs', { key: 'wrong' })],
       [await makeEnv(), call('GET', 'map')],
-      [await makeEnv(), call('PUT', 'monsters', { body: { value: {}, swapCid: null } })],
+      [await makeEnv(), call('PUT', 'jobs', { body: { value: {}, swapCid: null } })],
     ] as const) {
       const res = await handleRequest(req, env);
       expect(res.status).toBe(404);
@@ -198,6 +198,28 @@ describe('/api/admin/data (#695)', () => {
       const ok = await handleRequest(call('PUT', 'items', { body: { value: { items: items(), equipment: equipment() }, swapCid: null, dryRun: true } }), env);
       expect(await ok.json()).toEqual({ ok: true, dryRun: true });
       expect(Object.keys(ITEMS)).toContain('herb');
+    });
+  });
+
+  describe('monsters (D-STORY-009)', () => {
+    const monsters = () => activeMonsters().map((m) => ({ ...m }));
+    const BOSS = { ...activeMonsters()[0]!, id: 'story-boss', name: 'ぬしの影', storyOnly: true };
+
+    it('PUT monsters はストーリー専用の敵を足して書ける', async () => {
+      const res = await handleRequest(call('PUT', 'monsters', { body: { value: { monsters: [...monsters(), BOSS] }, swapCid: null } }), await makeEnv());
+      expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+      expect(pds.puts.map((p) => p.collection)).toEqual([COL('monsters')]);
+    });
+
+    it('ストーリー戦闘が使っている敵を消すと 400 で書かない', async () => {
+      const used = activeMonsters()[0]!.id;
+      store.set(COL('story'), { value: { battles: [{ id: 'b1', monsterId: used, count: 1, winFlag: 'won-b1' }] }, cid: 'st1' });
+      const value = { monsters: monsters().filter((m) => m.id !== used) };
+      const res = await handleRequest(call('PUT', 'monsters', { body: { value, swapCid: null } }), await makeEnv());
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining(used) });
+      expect(pds.puts).toHaveLength(0);
+      expect(MONSTERS_BY_ID[used]).toBeDefined();
     });
   });
 

@@ -10,9 +10,9 @@ const WARNING = `注意: ステージング (dev) の管理データ ${DEV_COLLE
 const DEFAULT_EDGE = 'https://aozoraquest-edge-dev.kojiran.workers.dev';
 const KEY_PATH = join(homedir(), '.config', 'aozoraquest', 'dev-admin-data-key');
 /** apps/edge/src/admin-data.ts の ADMIN_DATA_NAMES と同じ (apps/edge/test/admin-nsid.test.ts が検査)。 */
-export const NAMES = ['items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors'];
+export const NAMES = ['monsters', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors'];
 /** name ごとの配列のキーと、要素の id の取り方。 */
-const LIST_KEY = { items: 'items', npcs: 'npcs', shops: 'shops', quests: 'quests', scenario: 'events', story: 'placedItems', interiors: 'interiors' };
+const LIST_KEY = { monsters: 'monsters', items: 'items', npcs: 'npcs', shops: 'shops', quests: 'quests', scenario: 'events', story: 'placedItems', interiors: 'interiors' };
 const idOf = (name, v) => (name === 'shops' ? `(${v?.x}, ${v?.y})` : String(v?.id));
 
 const HELP = `${WARNING}
@@ -31,6 +31,7 @@ const HELP = `${WARNING}
   <file> は GET の value と同じ形 (例: { "npcs": [...] })。
   items は { "items": [...], "equipment": [...] } (装備が空だと読み込みで無視されるので弾かれる)。
   items は npcs / quests より先に書く (それらの検証がアイテムの実在を引く)。
+  monsters は { "monsters": [...] } (ストーリー専用は storyOnly: true)。story / quests より先に書く。
   接続先: 既定 ${DEFAULT_EDGE} (AQ_ADMIN_DATA_EDGE で上書き)
   鍵: ${KEY_PATH} (パーミッション 600 以外は実行しない)
 `;
