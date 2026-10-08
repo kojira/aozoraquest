@@ -282,6 +282,12 @@ export function AdminMonsters() {
               </span>
             ))}
             {field('出現の重み', <input type="number" step="0.01" value={current.spawnWeight ?? 1} onChange={(e) => update(current.id, { spawnWeight: Number(e.target.value) })} style={{ width: '5em' }} />)}
+            {field('ストーリー専用', (
+              <label style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                <input type="checkbox" checked={!!current.storyOnly} onChange={(e) => update(current.id, { storyOnly: e.target.checked || undefined })} />
+                <span style={{ color: 'var(--color-muted)', fontSize: '0.85em' }}>ランダムには出ない (ボスなど。world.story の戦闘からだけ戦う)</span>
+              </label>
+            ))}
             {currentAbilities.includes('fleer') && paramField('逃走の基礎確率', 'fleeBase', 0.35)}
             {field('能力', (
               <span style={{ display: 'flex', flexDirection: 'column', gap: '0.15em' }}>

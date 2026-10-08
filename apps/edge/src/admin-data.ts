@@ -15,7 +15,7 @@ import {
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
   activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
-  assertStoryFlagTotal, placedItems, validateStory, type PlacedItemDef,
+  assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
@@ -124,6 +124,8 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     validateNpcs(npcs);
     const dangling = danglingRefs('npc', npcs.map((n) => n.id))[0];
     if (dangling) return describeDanglingRef(dangling);
+    const missing = missingStoryBattle(npcs, []);
+    if (missing) return missing;
     const before = listOf<NpcDef>(saved, 'npcs');
     const moved = (n: NpcDef) => { const old = before.find((o) => o.id === n.id); return !old || !sameNpcPosition(n, old); };
     const issue = npcPlacementIssues(npcs, moved)[0];
@@ -133,17 +135,22 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const quests = listOf<GameQuestDef>(value, 'quests');
     validateGameQuests(quests);
     const dangling = danglingRefs('quest', quests.map((q) => q.id))[0];
-    return dangling ? describeDanglingRef(dangling) : null;
+    return dangling ? describeDanglingRef(dangling) : missingStoryBattle([], quests);
   }
   if (name === 'items') return validateItemsCandidate(value);
   // フラグ数は scenario と story の出所を合わせて数える (片方だけ見ると合計が上限を超えうる。D-STORY-009)。
   if (name === 'scenario') {
     const events = listOf<ScenarioEvent>(value, 'events');
     validateScenario(events);
-    assertStoryFlagTotal(events, placedItems());
+    assertStoryFlagTotal(events, currentStory());
     return null;
   }
-  if (name === 'story') { validateStory(listOf<PlacedItemDef>(value, 'placedItems')); return null; }
+  if (name === 'story') {
+    const story = (value ?? {}) as StoryData;
+    const battles = listOf<StoryBattleDef>(story, 'battles');
+    validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters') });
+    return missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
+  }
   if (name === 'shops') {
     const prev = shopOverrides();
     try { setShopOverrides(listOf<ShopOverride>(value, 'shops')); } finally { setShopOverrides(prev); }

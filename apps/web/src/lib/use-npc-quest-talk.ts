@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
-import { ITEMS, gameQuestById, gameQuestsByNpc, npcLinesFor, questProgressLine, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
-import { scenarioMessagesOf, serverQuestAccept, serverQuestComplete, serverState, WorldServerError, type ScenarioMessage } from '@/lib/world-server';
+import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, questProgressLine, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { scenarioMessagesOf, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
 import type { DialogueChoice } from '@/lib/dialogue';
 import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoiceTitle, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 import { guildReception, npcQuestCandidates, type NpcTalk } from '@/lib/npc-talk';
@@ -11,7 +11,7 @@ import { useLatestRef } from '@/lib/use-latest-ref';
  * NPC 会話とゲーム内クエスト (#423/#425/#659) の状態と遷移。受注・報告・進捗は
  * **サーバーが正** で、ここは応答を会話の段 (npcTalk) と表示用の quest に写す。
  */
-export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials, setServerPower, setNotice, waitForFreshDirectionRef }: {
+export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials, setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef }: {
   agent: Agent | null;
   moveBusyRef: MutableRefObject<boolean>;
   /** 位置トークン。話しかけクエスト (talk) の達成で「相手の隣にいる」をサーバーが確かめる。 */
@@ -22,6 +22,8 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   setServerPower: (power: number) => void;
   setNotice: (notice: string | null) => void;
   waitForFreshDirectionRef: MutableRefObject<boolean>;
+  /** サーバーが封印した戦闘を始める (会話・受注の後の戦闘。D-STORY-009)。戦闘フックが後で作られるので ref。 */
+  startEncounterRef: MutableRefObject<(encounter: ServerEncounter) => void>;
 }) {
   const [npcTalk, setNpcTalk] = useState<NpcTalk | null>(null);
   /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成/決着の応答と serverState だけが書く。
@@ -45,16 +47,20 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     applyServerMaterials(state.materials ?? {});
   }, [agent, setQuest, applyServerMaterials, flagsRef, setServerPower]);
 
-  const acceptQuest = useCallback(async (questId: string) => {
-    if (!agent || moveBusyRef.current) return;
+  /** 受注する。受注で戦闘が始まったら true (呼び出し側は次の会話を出さない)。 */
+  const acceptQuest = useCallback(async (questId: string): Promise<boolean> => {
+    if (!agent || moveBusyRef.current) return false;
     moveBusyRef.current = true;
     setQuestPending(true);
     try {
-      const res = await serverQuestAccept(agent, questId);
+      const res = await serverQuestAccept(agent, questId, tokenRef.current);
       setQuest(questStateOf(res));
       if (res.flags) flagsRef.current = res.flags;
       setNotice(`「${gameQuestById(questId)?.title ?? questId}」を うけおった!`);
       setNpcTalk(null);
+      // 受注で始まる戦闘 (startBattle)。受注のセリフの直後に始まる。
+      if (res.encounter) startEncounterRef.current(res.encounter);
+      return !!res.encounter;
     } catch (e) {
       try {
         await refreshQuestState();
@@ -72,7 +78,20 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       moveBusyRef.current = false;
       setQuestPending(false);
     }
-  }, [agent, refreshQuestState, setQuest, flagsRef, moveBusyRef, setNotice]);
+  }, [agent, refreshQuestState, setQuest, flagsRef, moveBusyRef, setNotice, tokenRef, startEncounterRef]);
+
+  /** セリフを読み終えた後の戦闘。始められるか (隣にいる・条件のセリフ・未勝利) はサーバーが決める。 */
+  const startStoryBattle = useCallback(async (npc: NpcDef) => {
+    if (!agent || moveBusyRef.current) return;
+    moveBusyRef.current = true;
+    try {
+      startEncounterRef.current(await serverStoryBattle(agent, npc.id, tokenRef.current));
+    } catch (e) {
+      setNotice(e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした…');
+    } finally {
+      moveBusyRef.current = false;
+    }
+  }, [agent, moveBusyRef, tokenRef, startEncounterRef, setNotice]);
 
   const guildMessage = (npc: NpcDef, lines: string[]) => setNpcTalk({ npc, guild: 'message', lines });
   const npcQuests = (npc: NpcDef, includeDone = false) =>
@@ -86,7 +105,11 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     });
     if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1) });
     if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1) });
-    if (!guild) choices.push({ label: '話す', onSelect: () => setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current), directList: true }) });
+    if (!guild) choices.push({ label: '話す', onSelect: () => {
+      const alt = npcAltLineFor(npc, flagsRef.current, materialsRef.current);
+      // 戦闘つきのセリフは読み終えたら一覧へ戻らず戦闘へ (D-STORY-009)。
+      setNpcTalk({ npc, lines: alt?.lines ?? npc.lines, ...(alt?.battle ? { storyBattle: true } : { directList: true }) });
+    } });
     choices.push({ label: '戻る', onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
     setNpcTalk({ npc, lines: [`どの依頼のこと？（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
@@ -159,7 +182,10 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     const candidates = npcQuests(npc);
     if (candidates.length > 1) directQuestList(npc);
     else if (candidates.length === 1) selectDirectQuest(npc, candidates[0]!, false);
-    else setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current) });
+    else {
+      const alt = npcAltLineFor(npc, flagsRef.current, materialsRef.current);
+      setNpcTalk({ npc, lines: alt?.lines ?? npc.lines, ...(alt?.battle ? { storyBattle: true } : {}) });
+    }
   };
 
   let npcChoices: DialogueChoice[] | undefined = npcTalk?.choices;
@@ -176,7 +202,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     npcChoices = [
       { label: '受注する', onSelect: async () => {
         try {
-          await acceptQuest(acceptQuestId);
+          if (await acceptQuest(acceptQuestId)) return;
           guildMessage(npc, [`『${gameQuestById(acceptQuestId)?.title ?? acceptQuestId}』を うけおった！`, 'そろったら ギルドで 報告してね。']);
         } catch (e) {
           guildMessage(npc, [e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど たしかめてね。']);
@@ -187,10 +213,10 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   } else if (npcTalk?.acceptQuestId) {
     const { npc, directList } = npcTalk;
     npcChoices = questAcceptChoices(npcTalk.acceptQuestId, async id => {
-      await acceptQuest(id);
+      if (await acceptQuest(id)) return;
       if (directList) directQuestList(npc);
     });
   }
 
-  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList };
+  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle };
 }

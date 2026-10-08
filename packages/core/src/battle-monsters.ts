@@ -160,6 +160,9 @@ export interface MonsterDef {
    *  `atk*0.9 − def*0.45` も同じ 2:1 なので、255 なら atk 127 以下の全員が 0 になる
    *  (最高の Lv50 将軍でも atk 103) = 会心のみが道。 */
   flatDef?: number;
+  /** **ストーリー専用** (D-STORY-009)。ランダム遭遇・「このあたり多い」・tier の判定・
+   *  しらべるの地方素材には出さない。ボスなど、戦闘定義 (world.story の battles) からだけ戦う敵。 */
+  storyOnly?: boolean;
 }
 
 /**
@@ -203,7 +206,7 @@ export let MAX_POPULATED_TIER: Tier = computeMaxPopulatedTier();
 function computeMaxPopulatedTier(): Tier {
   let max: Tier = 1;
   for (const t of [1, 2, 3, 4, 5, 6, 7, 8] as const) {
-    if (MONSTERS.filter((m) => m.tier === t).length >= 3) max = t;
+    if (MONSTERS.filter((m) => m.tier === t && !m.storyOnly).length >= 3) max = t;
     else break;
   }
   return max;
@@ -329,9 +332,14 @@ const MONSTER_DEFAULT_VIT = 8;
  *  約 6 割 (残り 2 種が各 2 割) で出る = 地域の顔が立つ水準。 */
 const AFFINITY_WEIGHT = 3;
 
+/** ランダム遭遇の候補 (ストーリー専用の敵は除く)。 */
+function randomPool(tier: Tier): MonsterDef[] {
+  return MONSTERS.filter((m) => m.tier === tier && !m.storyOnly);
+}
+
 /** その tier で affinity が最も出やすくするモンスター (地域相性の「○○が多い」導線用)。 */
 export function favoredMonsterFor(tier: Tier, affinity: number): MonsterDef {
-  const pool = MONSTERS.filter((m) => m.tier === tier);
+  const pool = randomPool(tier);
   return pool[((affinity % pool.length) + pool.length) % pool.length]!;
 }
 
@@ -351,16 +359,16 @@ export function summonMonster(
    *  の乱数ストリームは不変)。world は BATTLE_TUNING.monsterVitalsVariance を渡す。 */
   variance = 0,
 ): { def: MonsterDef; combatant: Combatant } {
-  let pool = MONSTERS.filter((m) => m.tier === tier);
+  let pool = randomPool(tier);
   // **プールが空でも落とさない。** 落とすと edge の handleMove が 500 になり、
   // プレイヤーは**その場から一歩も動けなくなる** (遭遇はサーバー権威で、移動の応答が
   // 戦闘開始を含むため)。データ側の検証 (tier1 の 3 体下限) で普通は起きないが、
   // 「データが壊れていたら移動不能」という壊れ方は許されないので、**近い下の帯に
   // 繰り下げて**遭遇を成立させる。tier1 まで空なら全プールから選ぶ。
   for (let t = tier - 1; pool.length === 0 && t >= 1; t--) {
-    pool = MONSTERS.filter((m) => m.tier === t);
+    pool = randomPool(t as Tier);
   }
-  if (pool.length === 0) pool = [...MONSTERS];
+  if (pool.length === 0) pool = MONSTERS.filter((m) => !m.storyOnly);
   if (pool.length === 0) {
     // MONSTERS 自体が空 (検証をすり抜けた最悪ケース)。それでも移動は殺さない。
     throw new Error('モンスターが 1 体もいない (world.monsters レコードを確認)');

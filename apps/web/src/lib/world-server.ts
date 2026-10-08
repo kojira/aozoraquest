@@ -29,6 +29,7 @@ const LXM_SHOP_FORGE = LXM.shopForge;
 const LXM_SHOP_DISCARD = LXM.shopDiscard;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
+const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
@@ -240,6 +241,8 @@ export interface ServerQuestResult {
   materials: Record<string, number>;
   /** 達成時のみ: 付与された報酬。 */
   rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 受注で始まる戦闘 (D-STORY-009)。サーバーが封印済み。 */
+  encounter?: ServerEncounter;
   /** 進行フラグ (#545)。サーバーが立てた結果。 */
   flags?: string[];
   /** シナリオのお知らせ (一度だけ)。 */
@@ -257,8 +260,13 @@ export function scenarioMessagesOf(messages: ScenarioMessage[] | undefined, noti
 }
 
 /** ゲーム内クエスト (#423): 受注。進行は GameState に積まれ、討伐は勝利時にサーバーが数える。 */
-export function serverQuestAccept(agent: Agent, questId: string): Promise<ServerQuestResult> {
-  return callEdge<ServerQuestResult>(agent, LXM_QUEST_ACCEPT, '/api/quest/accept', { questId });
+export function serverQuestAccept(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_ACCEPT, '/api/quest/accept', { questId, ...(token ? { token } : {}) });
+}
+
+/** 会話の後の戦闘 (D-STORY-009)。隣にいるか・いまのセリフに戦闘があるかはサーバーが確かめる。 */
+export function serverStoryBattle(agent: Agent, npcId: string, token?: string): Promise<ServerEncounter> {
+  return callEdge<ServerEncounter>(agent, LXM_STORY_BATTLE, '/api/story/battle', { npcId, ...(token ? { token } : {}) });
 }
 
 /** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。

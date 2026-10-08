@@ -384,6 +384,22 @@ export function AdminQuests() {
                 <Link to="/admin/scenario" style={{ fontSize: '0.85em' }}>シナリオ</Link>
               </span>
             ))}
+            {field('受注後の戦闘', (
+              <input
+                value={current.startBattle ?? ''}
+                placeholder="(なし) world.story の戦闘 id。受注のセリフの直後に始まる"
+                onChange={(e) => {
+                  const id = e.target.value.trim();
+                  setList((xs) => xs.map((x) => {
+                    if (x.id !== current.id) return x;
+                    if (!id) { const { startBattle: _s, ...rest } = x; return rest as GameQuestDef; }
+                    return { ...x, startBattle: id };
+                  }));
+                  setDirty(true);
+                }}
+                style={{ flex: 1, fontFamily: 'ui-monospace, monospace' }}
+              />
+            ))}
             {field('解禁アイテム', (
               <ItemReqInput
                 value={current.requireItems}

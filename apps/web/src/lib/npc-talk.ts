@@ -14,6 +14,8 @@ export interface NpcTalk {
   directList?: boolean;
   /** 会話の後に地の文で続けるシナリオのお知らせ (報告で発火。D-STORY-007)。 */
   notices?: ScenarioMessage[];
+  /** 読み終えたら戦闘になるセリフ (altLine.battle。始めるかはサーバーが決める。D-STORY-009)。 */
+  storyBattle?: boolean;
 }
 
 /** ギルド受付のメニュー段。 */

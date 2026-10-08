@@ -57,7 +57,7 @@ const GS = (over: Partial<GameState> = {}): GameState => ({ did: DID, activeQues
 describe('handleSearch の置きアイテム (D-STORY-009)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; });
-  beforeAll(() => setStory([{ id: 'pi-key', ...SPOT, itemId: 'herb', count: 2, flag: 'got-old-key', requireFlags: ['heard-key'] }]));
+  beforeAll(() => setStory({ placedItems: [{ id: 'pi-key', ...SPOT, itemId: 'herb', count: 2, flag: 'got-old-key', requireFlags: ['heard-key'] }] }));
   afterAll(() => setStory(null));
 
   it('パワー 0 でも 1 回だけ取れる。2 回目は普段のしらべる (パワー不足で 400)', async () => {
