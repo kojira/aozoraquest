@@ -85,7 +85,8 @@ export function WorldBattleControls({
               <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
               {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
               <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
-              <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />
+              {/* 逃げられないストーリー戦 (canFlee: false) では出さない (D-STORY-009。サーバーも受け付けない)。 */}
+              {state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
             </div>
             {/* 右: **既定でとくぎ一覧**。どうぐを開いている間だけ道具に入れ替わる。 */}
             {/* とくぎが増えるほど縦に伸びるので**この枠自体をスクロールさせる**。

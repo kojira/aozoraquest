@@ -111,6 +111,7 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
         }
       }
     }
+    if (m.storyOnly !== undefined && typeof m.storyOnly !== 'boolean') throw new MonsterDataError(`${where}: storyOnly が真偽値でない`);
     if (m.spell) {
       const sp = m.spell as { name?: unknown; min?: unknown; max?: unknown };
       if (typeof sp.name !== 'string' || typeof sp.min !== 'number' || typeof sp.max !== 'number' || (sp.min as number) > (sp.max as number)) {
@@ -120,7 +121,8 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
   }
   // **tier1 は 3 体を下回れない。** spawn 近辺のプールが痩せると summonMonster が
   // 選べる敵を失い、move が 500 になってその街から出られなくなる (既知の事故経路)。
-  const tier1 = defs.filter((m) => m.tier === 1).length;
+  // ストーリー専用の敵はランダム遭遇に出ないので数えない (D-STORY-009)。
+  const tier1 = defs.filter((m) => m.tier === 1 && !m.storyOnly).length;
   if (tier1 < 3) throw new MonsterDataError(`tier1 が ${tier1} 体 (3 体未満は遭遇が壊れる)`);
   return defs;
 }

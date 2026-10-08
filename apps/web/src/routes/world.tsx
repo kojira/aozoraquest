@@ -23,7 +23,7 @@ import {
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
-import { serverGear, worldServerEnabled, type ScenarioMessage } from '@/lib/world-server';
+import { serverGear, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
 import { resolveGear } from '@/lib/gear';
@@ -52,7 +52,7 @@ import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
 import { useWorldShop } from '@/lib/use-world-shop';
 import { useWorldBattle } from '@/lib/use-world-battle';
-import { useWorldMove } from '@/lib/use-world-move';
+import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
 import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
@@ -178,11 +178,13 @@ export function World() {
     }, 2000);
   }, [agent, wsRef]);
 
+  // 会話・受注の後の戦闘 (D-STORY-009)。戦闘フックは会話フックの後に作られるので ref でつなぐ。
+  const startEncounterRef = useRef<(encounter: ServerEncounter) => void>(() => {});
   const talk = useNpcQuestTalk({
     agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials: inventory.applyServerMaterials,
-    setServerPower, setNotice, waitForFreshDirectionRef,
+    setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef,
   });
-  const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList } = talk;
+  const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle } = talk;
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
 
@@ -234,6 +236,7 @@ export function World() {
     agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave,
     inventory, setServerPower, archetypeRef, didRef,
   });
+  startEncounterRef.current = (encounter) => beginEncounter(encounter, battleRef, setBattle, setWipe);
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -404,7 +407,7 @@ export function World() {
             aria-label="ワールドマップ"
           >
             <g ref={scrollLayerRef} data-world-scroll data-world-x={ws.x} data-world-y={ws.y}>
-              <WorldMapLayer at={ws} scrollPadding={scrollPadding} />
+              <WorldMapLayer at={ws} scrollPadding={scrollPadding} flags={flagsRef.current} />
             </g>
             <ellipse
               cx={HALF * TILE + TILE / 2}
@@ -534,7 +537,10 @@ export function World() {
                   // 選択肢が次の窓へ進めた場合、古い窓のonDoneで上書きしない。
                   setNpcTalk(current => current === npcTalk ? guildReception(npcTalk.npc) : current);
                 } else if (npcTalk.directList && npcTalkRef.current === npcTalk) directQuestList(npcTalk.npc);
-                else setNpcTalk(current => current === npcTalk ? null : current);
+                else {
+                  setNpcTalk(current => current === npcTalk ? null : current);
+                  if (npcTalk.storyBattle) void startStoryBattle(npcTalk.npc);
+                }
               }}
             />
           )}

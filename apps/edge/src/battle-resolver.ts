@@ -26,6 +26,7 @@ import {
   interiorTerrainAt,
   isInterior,
   walkableIn,
+  fieldMonsterAt, flagsAfterStoryBattle, storyBattleById, storyBattleOpen, type StoryBattleDef,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
@@ -79,6 +80,8 @@ interface SealedMeta {
   /** 遭遇時の素ステ。**決着でレベルアップの内訳を出すために封じておく** —
    *  ここに無いと handleTurn が診断を読み直すことになり、決着のたびに PDS 往復が増える。 */
   baseStats?: number[];
+  /** ストーリー戦 (D-STORY-009)。決着で立てるフラグを封印時に固定する (定義の読み込みを待たない)。 */
+  story?: { battleId: string; winFlag: string; loseFlag?: string };
 }
 
 type Guard = BattleGuard<SealedMeta, BattleState>;
@@ -246,7 +249,7 @@ export interface EncounterInfo {
 
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
-export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, mapId: string = WORLD_MAP_ID): Promise<EncounterInfo> {
+export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, mapId: string = WORLD_MAP_ID, story?: StoryBattleDef): Promise<EncounterInfo> {
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   // 内部マップ (#424) は座標が 0〜127 のローカル系で region が常に 0 になるため、
   // 地域から tier を引くと**どの危険度を選んでも tier1 の敵しか出ない**。設定値を使う。
@@ -263,7 +266,8 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const nearFutaba = mapId === WORLD_MAP_ID && Math.max(distance(x, spawn.x), distance(y, spawn.y)) <= 8;
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
-    ...(nearFutaba ? { monsterId: 'sky-slime' } : {}),
+    // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
+    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const pendingTurnSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
@@ -276,7 +280,8 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const existing = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (existing) await deleteGuard(env, now, userDid, existing.cid);
   const guard: Guard = {
-    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: tileKey(mapId, x, y), ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), baseStats: [...baseStats] }, state: battle, pendingTurnSeed, rewarded,
+    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: tileKey(mapId, x, y), ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), baseStats: [...baseStats],
+      ...(story ? { story: { battleId: story.id, winFlag: story.winFlag, ...(story.loseFlag ? { loseFlag: story.loseFlag } : {}) } } : {}) }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
   await createGuard(env, now, guard); // 生きたガードがあれば InvalidSwap → 上位で 409
@@ -465,9 +470,27 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   const nextToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
 
+  // 固定モンスター (D-STORY-009 M3)。ランダム遭遇より先に見る。定義のあるマスだけ state を読む。
+  const fixed = fieldMonsterAt(mapId, nx, ny);
+  const fixedBattle = fixed ? storyBattleById(fixed.battleId) : undefined;
+  if (fixed && fixedBattle) {
+    const rec = await readState(env, userDid);
+    const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
+    if (storyBattleOpen(fixedBattle, fixed.requireFlags, state.flags ?? [])) {
+      // ランダム遭遇と同じく、封印の失敗で移動そのものは殺さない (下の判定へ進む)。
+      try {
+        const encounter = await sealEncounter(env, userDid, state, nx, ny, tileEncounter(env, nx, ny, enemyWindow(now)).monsterSeed, now, ns, fetchImpl, mapId, fixedBattle);
+        return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, token: nextToken, encounter };
+      } catch (e) {
+        console.error('story encounter failed (移動は通す)', e);
+      }
+    }
+  }
+  // 固定モンスターのマスは、居ないあいだもランダム遭遇のない普通のマス (設計 M3)。
+
   // エンカウント: tile+30分枠+秘密から決定的 (見えない・予測不可・30分でリポップ)。街では出さない。
   // **内部マップは encounterTier を設定したときだけ敵が出る** (街の中・城の広間は無し)。
-  if (terrain !== 'town' && (!inside || inside.encounterTier !== undefined)) {
+  if (!fixed && terrain !== 'town' && (!inside || inside.encounterTier !== undefined)) {
     const window = enemyWindow(now);
     const { roll, monsterSeed } = tileEncounter(env, nx, ny, window);
     if (roll < encounterRateFor(terrain)) {
@@ -617,6 +640,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   const { guard, cid } = g;
   // battleId / turn 不一致 = リプレイ/やり直し → 409 (応答しない)。
   if (guard.battleId !== battleId || guard.turn !== turn) throw new ResolverError('ターン不一致 (やり直し/リプレイ)', 409);
+  // 逃げられないストーリー戦 (canFlee: false)。web は「にげる」を出さない (D-STORY-009)。
+  if (command === 'flee' && guard.state.story?.canFlee === false) throw new ResolverError('この たたかいからは にげられない', 400, 'cannot_flee');
 
   // とくぎ選択 (#436) はサーバー権威の sealed state で検証: 実際に習得済みのとくぎだけ選べる
   // (client が持っていない index を偽っても署名スキル [0] に落とす。詐称防止)。
@@ -672,7 +697,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
       const prevDefeated = cur.defeatedWindow === window ? (cur.defeated ?? []) : [];
-      const defeated = decision === 'win' && guard.sealed.tile
+      // ストーリー戦は撃破済みタイルを記録しない (居る・居ないはフラグで決まる)。
+      const defeated = decision === 'win' && guard.sealed.tile && !guard.sealed.story
         ? [...prevDefeated.filter((t) => t !== guard.sealed.tile), guard.sealed.tile].slice(-256)
         : prevDefeated;
       // 位置を権威 state に確定。**敗北は最後の街へ帰還** (無ければ spawn)。勝ち/引き分けは戦闘タイルに留まる。
@@ -687,11 +713,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       finalMapId = decision === 'lose' ? WORLD_MAP_ID : (guard.sealed.mapId ?? parsed?.mapId ?? WORLD_MAP_ID);
       // ジョブ Lv 条件のシナリオ (#545) は決着でしか動かないのでここで見る。
       // mutate は純関数なので、CAS リトライで複数回走っても同じ結果になる。
-      const advanced = advanceScenario({ ...cur, ...r.next } as GameState);
+      // ストーリー戦: 勝てば winFlag、負ければ loseFlag。立ててからシナリオを進める (D-STORY-009)。
+      const story = guard.sealed.story;
+      const settled: GameState = story ? { ...r.next, flags: flagsAfterStoryBattle(story, decision, r.next.flags ?? []) } : r.next;
+      const advanced = advanceScenario(settled);
       noticeBox.v = advanced?.notices ?? [];
       noticeBox.m = advanced?.messages ?? [];
       return {
-        ...r.next,
+        ...settled,
         ...(advanced ? { flags: advanced.flags } : {}),
         mapId: finalMapId === WORLD_MAP_ID ? undefined : finalMapId,
         x: finalPos.x,

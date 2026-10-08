@@ -415,6 +415,19 @@ export function AdminNpcs() {
                       }}
                       style={{ width: '9em', fontFamily: 'ui-monospace, monospace' }}
                     />
+                    <span style={{ color: 'var(--color-muted)' }}>読んだら戦闘</span>
+                    <input
+                      value={alt.battle ?? ''}
+                      placeholder="(なし) 戦闘 id"
+                      onChange={(e) => update(current.id, {
+                        altLines: (current.altLines ?? []).map((x, j) => {
+                          if (j !== ai) return x;
+                          if (!e.target.value.trim()) { const { battle: _b, ...rest } = x; return rest; }
+                          return { ...x, battle: e.target.value.trim() };
+                        }),
+                      })}
+                      style={{ width: '8em', fontFamily: 'ui-monospace, monospace' }}
+                    />
                     <span style={{ color: 'var(--color-muted)' }}>持っている</span>
                     <ItemReqInput
                       value={alt.items}

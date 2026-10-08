@@ -16,7 +16,8 @@ import {
   validateGameQuests,
   validateScenario,
   assertStoryFlagTotal,
-  placedItems,
+  currentStory,
+  missingStoryBattle,
   setInteriors,
   setScenario,
   setJobOverrides,
@@ -198,6 +199,8 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 /** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
 export async function saveNpcs(agent: Agent, npcs: NpcDef[], isCurrent = () => true): Promise<void> {
   validateNpcs(npcs);
+  const missing = missingStoryBattle(npcs, []);
+  if (missing) throw new Error(missing);
   if (!isCurrent()) throw new Error('保存を取り消しました');
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
   if (isCurrent()) setNpcs(npcs);
@@ -246,7 +249,7 @@ export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promi
 /** シナリオ (#545)。setScenario が先に検証で落とす (存在しないクエストを条件にさせない)。 */
 export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promise<void> {
   validateScenario(events);
-  assertStoryFlagTotal(events, placedItems());
+  assertStoryFlagTotal(events, currentStory());
   await putRecord(agent, ADMIN_COL.scenario, RKEY, { events, updatedAt: new Date().toISOString() });
   setScenario(events);
 }
@@ -269,6 +272,8 @@ export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void>
 /** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */
 export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Promise<void> {
   validateGameQuests(quests);
+  const missing = missingStoryBattle([], quests);
+  if (missing) throw new Error(missing);
   await putRecord(agent, ADMIN_COL.quests, RKEY, { quests, updatedAt: new Date().toISOString() });
   setGameQuests(quests);
 }

@@ -101,7 +101,8 @@ export function monsterCommand(monster: Combatant, state: BattleState, rng: () =
   const ids = def?.abilities ?? (def?.ability ? [def.ability] : []);
   for (const id of ids) {
     const action = MONSTER_ABILITIES[id]?.decideAction({ state, monster, r, t, hpRatio, canGuard, monsterDef: def });
-    if (action && action !== 'attack') return action;
+    // ストーリー戦の敵は逃げない (D-STORY-009。逃げられると話が進まない)。
+    if (action && action !== 'attack' && !(action === 'flee' && state.story)) return action;
   }
   if (ids.length > 0) return 'attack';
 

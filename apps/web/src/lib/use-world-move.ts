@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
 import { WORLD_MAP_ID, gateAt, gateLockedNotice, gateOpen, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type NpcDef } from '@aozoraquest/core';
-import { serverMove, worldServerEnabled, WorldServerError } from '@/lib/world-server';
+import { serverMove, worldServerEnabled, WorldServerError, type ServerEncounter } from '@/lib/world-server';
 import { recordTownArrival, saveWorldState } from '@/lib/world-state';
 import type { WorldScrollStep } from '@/lib/use-world-scroll';
 import type { BattlePhase } from '@/components/world-battle-controls';
@@ -12,6 +12,14 @@ import { guildEntryTalk, guildMetKey } from '@/lib/guild-greeting';
 import type { NpcTalk } from '@/lib/npc-talk';
 import type { WorldBattle } from '@/lib/use-world-battle';
 import { DIRS, asBattleState, type Dir, type Vitals } from '@/lib/world-view';
+
+/** サーバーが封印した遭遇を始める (移動・会話の後・受注の後で共通)。ワイプで覆ってからバトルへ。 */
+export function beginEncounter(encounter: ServerEncounter, battleRef: MutableRefObject<WorldBattle | null>, setBattle: Dispatch<SetStateAction<WorldBattle | null>>, setWipe: Dispatch<SetStateAction<WipePhase | null>>): void {
+  const pending = { state: asBattleState(encounter.state), busy: false, phase: 'message' as BattlePhase, battleId: encounter.battleId };
+  battleRef.current = pending;
+  setBattle(pending);
+  setWipe('cover');
+}
 
 export interface WorldMoveDeps {
   agent: Agent | null;
@@ -166,12 +174,7 @@ export function useWorldMove(d: WorldMoveDeps) {
             scheduleSave();
           }
           // 遭遇: サーバーが封印済み (guard 作成・seed 非公開)。ワイプで覆ってからバトルへ。
-          if (res.encounter) {
-            const pending = { state: asBattleState(res.encounter.state), busy: false, phase: 'message' as BattlePhase, battleId: res.encounter.battleId };
-            battleRef.current = pending;
-            setBattle(pending);
-            setWipe('cover');
-          }
+          if (res.encounter) beginEncounter(res.encounter, battleRef, setBattle, setWipe);
         } catch (e) {
           // 失敗: 楽観移動をロールバック (元の位置へ戻す)。トークンは前回成功時のまま = 次歩で再同期される。
           wsRef.current = s;

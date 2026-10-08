@@ -30,7 +30,7 @@ import { setJobOverrides, type JobOverride } from './job-data.js';
 import { setInteriors, type Gate, type InteriorMap } from './interior.js';
 import { setGameQuests, type GameQuestDef } from './quest-data.js';
 import { setScenario, type ScenarioEvent } from './scenario.js';
-import { setStory, type PlacedItemDef } from './story-data.js';
+import { setStory, type StoryData } from './story-data.js';
 
 /** レコードの value を返す。**無ければ null**。通信失敗などは throw (そのレコードだけ飛ばす)。 */
 export type AdminWorldRecordFetch = (name: AdminWorldRecordName) => Promise<unknown>;
@@ -71,7 +71,7 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
   },
   quests: (v) => { const rec = v as Rec<{ quests: GameQuestDef[] }>; if (rec?.quests) setGameQuests(rec.quests); },
   scenario: (v) => { const rec = v as Rec<{ events: ScenarioEvent[] }>; if (rec?.events) setScenario(rec.events); },
-  story: (v) => { const rec = v as Rec<{ placedItems: PlacedItemDef[] }>; if (rec?.placedItems) setStory(rec.placedItems); },
+  story: (v) => { const rec = v as Rec<StoryData>; if (rec) setStory(rec); },
 };
 
 /** 全 world.* レコードを決まった順に読んで適用する。地図が読めなければ同梱の地図に倒す。 */

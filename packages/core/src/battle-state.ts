@@ -62,6 +62,8 @@ export interface BattleState {
   mpTraitChance?: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
+  /** ストーリー戦 (D-STORY-009)。敵は逃げない。canFlee=false なら「にげる」を受け付けない。 */
+  story?: { canFlee: boolean };
 }
 
 /**
@@ -106,6 +108,8 @@ export function startBattle(
     /** 追加の敵数 (#453 マルチ戦闘: 群れ)。0=ソロ (従来・enemies 未設定)、1〜2 で計 2〜3 体。
      *  各追加敵は同 tier から別 seed で抽選し monsterId を保持。allies=[player]・enemies=[主敵, …追加] を設定。 */
     extraEnemies?: number;
+    /** ストーリー戦 (D-STORY-009)。BattleState.story にそのまま載る。 */
+    story?: { canFlee: boolean };
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -151,5 +155,6 @@ export function startBattle(
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
     ...(gains.chance !== undefined ? { mpTraitChance: mpTraitChanceOf(gains.chance, player.luk)! } : {}),
     lastEvents: [],
+    ...(extras?.story ? { story: { canFlee: extras.story.canFlee } } : {}),
   };
 }

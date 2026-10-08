@@ -1,6 +1,7 @@
 import { SHORE_NEIGHBORS, shoreGroundKey, shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { NpcSprite } from '@/components/npc-sprite';
-import { WORLD_MAP_ID, interiorById, interiorPartAt, interiorTerrainAt, mappedPartAt, npcsOn, terrainAt, tileDetailAt, wrap } from '@aozoraquest/core';
+import { MonsterSvg } from '@/components/monster-svg';
+import { MONSTERS_BY_ID, WORLD_MAP_ID, fieldMonsters, interiorById, interiorPartAt, interiorTerrainAt, mappedPartAt, npcsOn, storyBattleById, storyBattleOpen, terrainAt, tileDetailAt, wrap } from '@aozoraquest/core';
 import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, shoreTile } from '@/components/world-tiles';
 import { isFutabaGuild } from '@/lib/futaba-guild';
 import { HALF, TILE, VIEW } from '@/lib/world-view';
@@ -9,7 +10,7 @@ import { HALF, TILE, VIEW } from '@/lib/world-view';
  * ワールドマップのタイルと NPC (スクロール層の中身)。プレイヤー中央固定のビューポートに、
  * 歩行スクロール用の余白 scrollPadding マスを足して描く。
  */
-export function WorldMapLayer({ at, scrollPadding }: { at: { x: number; y: number; mapId?: string }; scrollPadding: number }) {
+export function WorldMapLayer({ at, scrollPadding, flags }: { at: { x: number; y: number; mapId?: string }; scrollPadding: number; flags: readonly string[] }) {
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
   // **同じパーツは <defs> に 1 回だけ定義して <use> で参照する** (#605)。全地形が
   // ドット絵 (タイルあたり最大 ~150 rect) になったので、マスごとにインライン展開すると
@@ -81,6 +82,23 @@ export function WorldMapLayer({ at, scrollPadding }: { at: { x: number; y: numbe
           ? <text x={TILE / 2} y={-TILE / 3} textAnchor="middle" fontSize={TILE * 0.42} fill="white" stroke="#202030" strokeWidth={2} paintOrder="stroke">ギルド</text>
           : <NpcSprite npc={n} />}
       </g>,
+    );
+  }
+
+  // 固定モンスター (D-STORY-009 M3)。sprite のものを、まだ居るあいだだけ描く (見た目だけ。戦闘はサーバーが決める)。
+  const mapId = inside?.id ?? WORLD_MAP_ID;
+  for (const m of fieldMonsters()) {
+    const battle = m.sprite && m.mapId === mapId ? storyBattleById(m.battleId) : undefined;
+    const def = battle ? MONSTERS_BY_ID[battle.monsterId] : undefined;
+    if (!battle || !def || !storyBattleOpen(battle, m.requireFlags, flags)) continue;
+    const relative = (value: number) => wrap(value + scrollPadding) - scrollPadding;
+    const vx = inside ? m.x - (at.x - HALF) : relative(m.x - (at.x - HALF));
+    const vy = inside ? m.y - (at.y - HALF) : relative(m.y - (at.y - HALF));
+    if (vx < -scrollPadding || vy < -scrollPadding || vx >= VIEW + scrollPadding || vy >= VIEW + scrollPadding) continue;
+    npcSprites.push(
+      <svg key={`fm-${m.id}`} x={vx * TILE} y={vy * TILE} width={TILE} height={TILE} viewBox="0 0 100 100">
+        <MonsterSvg species={def.species} size={100} tint={def.tint} monsterId={def.id} />
+      </svg>,
     );
   }
 

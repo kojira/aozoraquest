@@ -61,6 +61,8 @@ export interface NpcDef {
     /** 持っていること (#426)。フラグの代わりに「これを持っていたら別の話をする」。 */
     items?: ItemRequirement[];
     lines: string[];
+    /** 読み終えたら始まる戦闘 (world.story の battles の id。D-STORY-009)。 */
+    battle?: string;
   }>;
 }
 
@@ -159,6 +161,8 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
         }
       }
       assertItemRequirements(alt.items, where, (id) => !!ITEMS[id]);
+      // 戦闘の実在は story の検証が見る (story は NPC より後に読み込まれる)。
+      if (alt.battle !== undefined && (typeof alt.battle !== 'string' || alt.battle.trim() === '')) throw new NpcDataError(`${where}: 会話の後の戦闘 id が不正`);
       // 条件の無い分岐は既定のセリフと同じなので、書き間違い (フラグ名の打ち漏らし) を疑う。
       if ((alt.flags?.length ?? 0) === 0 && (alt.notFlags?.length ?? 0) === 0 && (alt.items?.length ?? 0) === 0) {
         throw new NpcDataError(`${where}: フラグ別セリフに条件が無い`);
@@ -198,13 +202,18 @@ export function npcsOn(mapId: string): readonly NpcDef[] {
  * 最初に条件を満たしたものを返す。満たすものが無ければ既定のセリフ。
  */
 export function npcLinesFor(npc: NpcDef, flags: readonly string[], materials: Readonly<Record<string, number>> = {}): string[] {
+  return npcAltLineFor(npc, flags, materials)?.lines ?? npc.lines;
+}
+
+/** いま選ばれるフラグ別セリフ (無ければ undefined = 既定のセリフ)。会話の後の戦闘 (battle) を引くのに使う。 */
+export function npcAltLineFor(npc: NpcDef, flags: readonly string[], materials: Readonly<Record<string, number>> = {}): NonNullable<NpcDef['altLines']>[number] | undefined {
   for (const alt of npc.altLines ?? []) {
     if (alt.flags?.some((f) => !flags.includes(f))) continue;
     if (alt.notFlags?.some((f) => flags.includes(f))) continue;
     if (!itemsSatisfied(alt.items, materials)) continue;
-    return alt.lines;
+    return alt;
   }
-  return npc.lines;
+  return undefined;
 }
 
 /** NPC の絵のキー (ドット絵の登録簿に相乗り)。 */

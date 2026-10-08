@@ -19,7 +19,8 @@ import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
-import { handleQuestAccept, handleQuestComplete, GameQuestError } from './game-quest';
+import { handleQuestComplete, GameQuestError } from './game-quest';
+import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { ensureAuthoredWorld } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -69,6 +70,7 @@ const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
+const LXM_STORY_BATTLE = LXM.storyBattle;
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -499,9 +501,32 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       // (TTL 内はキャッシュ即返しでコスト無し)。
       await ensureAuthoredWorld(env, nowSec());
       const init = (d: string, iso: string) => migrateInitState(d, iso, ns);
+      const posToken = typeof body.token === 'string' ? body.token : undefined;
       return cors(json(accept
-        ? await handleQuestAccept(env, did, body.questId, nowSec(), init)
-        : await handleQuestComplete(env, did, body.questId, nowSec(), init, typeof body.token === 'string' ? body.token : undefined)), allowedOrigin);
+        ? await handleQuestAcceptWithBattle(env, did, body.questId, posToken, nowSec(), ns)
+        : await handleQuestComplete(env, did, body.questId, nowSec(), init, posToken)), allowedOrigin);
+    } catch (e) {
+      if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // 会話の後の戦闘 (D-STORY-009 M4)。隣の NPC のセリフに付いた戦闘を edge が確かめて封印する。
+  if (req.method === 'POST' && url.pathname === '/api/story/battle') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_STORY_BATTLE }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { npcId?: unknown; token?: unknown };
+    if (typeof body.npcId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      await ensureAuthoredWorld(env, nowSec());
+      return cors(json(await handleStoryBattle(env, did, body.npcId, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

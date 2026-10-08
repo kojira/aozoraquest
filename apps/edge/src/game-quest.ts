@@ -45,14 +45,17 @@ export async function handleQuestAccept(
   questId: string,
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
-): Promise<QuestStateResult> {
+): Promise<QuestStateResult & { newlyAccepted: boolean }> {
   const def = gameQuestById(questId);
   if (!def) throw new GameQuestError('そのクエストは無い', 404, 'unknown_quest');
+  // 今回の呼び出しで新しく受けたか (受注で始まる戦闘を、受注済みの再送で何度も起こさない。D-STORY-009)。
+  let newlyAccepted = false;
   const next = await readModifyWrite(
     env,
     did,
     (cur) => {
       if ((cur.questsDone ?? []).includes(questId)) throw new GameQuestError('もう達成している', 400, 'already_done');
+      newlyAccepted = false;
       if (cur.activeQuests.some(q => q.id === questId)) return cur; // duplicate: preserve progress even after losing required items
       // **解禁フラグ** (#545)。立っていないクエストはサーバーが受け付けない
       // (client が NPC の分岐を無視して直接 POST しても通らない)。
@@ -62,11 +65,12 @@ export async function handleQuestAccept(
       if (need.some((f) => !(cur.flags ?? []).includes(f)) || !itemsSatisfied(def.requireItems, cur.materials)) {
         throw new GameQuestError('まだ その たのまれごとは 出ていない', 400, 'locked');
       }
+      newlyAccepted = true;
       return { ...cur, activeQuests: [...cur.activeQuests, { id: questId, progress: 0 }] };
     },
     init ? { now, init } : { now },
   );
-  return { activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials, ...(next.flags ? { flags: next.flags } : {}) };
+  return { activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials, ...(next.flags ? { flags: next.flags } : {}), newlyAccepted };
 }
 
 /** NPC の上下左右の隣か (斜め・同じマスは不可)。フィールドはトーラスで丸めて比べる。 */

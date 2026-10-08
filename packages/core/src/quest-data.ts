@@ -48,6 +48,8 @@ export interface GameQuestDef {
   requireFlags?: string[];
   /** **解禁に要る持ち物** (#426)。フラグの代わりに「これを持っていたら受けられる」を書ける。 */
   requireItems?: ItemRequirement[];
+  /** 受注した直後に始まる戦闘 (world.story の battles の id。D-STORY-009)。 */
+  startBattle?: string;
 }
 
 export interface GameQuestsRecord {
@@ -112,6 +114,8 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
       }
     }
     assertItemRequirements(q.requireItems, where, (id) => !!ITEMS[id]);
+    // 戦闘の実在は story の検証が見る (story はクエストより後に読み込まれる)。
+    if (q.startBattle !== undefined && (typeof q.startBattle !== 'string' || q.startBattle.trim() === '')) throw new QuestDataError(`${where}: 受注後の戦闘 id が不正`);
     if (q.reward) {
       if (q.reward.power !== undefined && !(Number.isInteger(q.reward.power) && q.reward.power > 0 && q.reward.power <= MAX_QUEST_REWARD_POWER)) {
         throw new QuestDataError(`${where}: 報酬パワーは 1〜${MAX_QUEST_REWARD_POWER}`);
