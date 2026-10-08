@@ -226,10 +226,6 @@ export function resolveTurnMulti(
     state.outcome = 'win';
   } else if (alliesDown()) {
     state.outcome = 'lose';
-  } else if (state.turn >= t.maxTurns) {
-    const pr = allies.reduce((s, c) => s + c.hp, 0) / allies.reduce((s, c) => s + c.maxHp, 0);
-    const mr = enemies.reduce((s, c) => s + c.hp, 0) / enemies.reduce((s, c) => s + c.maxHp, 0);
-    state.outcome = pr > mr ? 'win' : pr < mr ? 'lose' : 'draw';
   }
 
   state.player = allies[0]!;

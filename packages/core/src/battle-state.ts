@@ -16,7 +16,7 @@ import { type Tier, MONSTERS_BY_ID, summonMonster, monsterCombatant } from './ba
 
 export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee';
 
-export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'draw' | 'fled' | 'monster-fled';
+export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'fled' | 'monster-fled';
 
 export interface TurnEvent {
   /** 誰の行動か */

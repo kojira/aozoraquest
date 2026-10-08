@@ -10,7 +10,7 @@ function multiState(seed: number): BattleState {
 }
 
 describe('マルチ戦闘ターンループ (#453)', () => {
-  it('2v2 が maxTurns 以内に決着し、player/monster が allies[0]/enemies[0] に同期', () => {
+  it('2v2 が決着し、player/monster が allies[0]/enemies[0] に同期', () => {
     let s = multiState(7);
     let guard = 0;
     while (s.outcome === 'ongoing' && guard < 60) {
@@ -18,7 +18,7 @@ describe('マルチ戦闘ターンループ (#453)', () => {
       guard += 1;
     }
     expect(s.outcome).not.toBe('ongoing');
-    expect(['win', 'lose', 'draw']).toContain(s.outcome);
+    expect(['win', 'lose']).toContain(s.outcome);
     expect(s.player).toBe(s.allies![0]);
     expect(s.monster).toBe(s.enemies![0]);
   });

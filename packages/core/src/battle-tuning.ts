@@ -207,8 +207,6 @@ export const BATTLE_TUNING = {
   monsterFleeBase: 0.35,
   monsterFleeAgiScale: 0.006,
   monsterFleeMax: 0.75,
-  /** 最大ターン数 (超えたら判定 = 残 HP 割合勝負) */
-  maxTurns: 30,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
   dropLukScale: 0.003,
   /** 敗北ペナルティ: 手持ち素材をランダムに落とす。

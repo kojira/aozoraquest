@@ -12,7 +12,7 @@ const input = (over: Partial<BattleOutcomeInput> = {}): BattleOutcomeInput => ({
 describe('battle-reward (fail-closed 報酬確定)', () => {
   it('rewarded=false は state を一切変えない (パワー無し=練習)', () => {
     const s = base({ power: 0, playerXp: 100 });
-    for (const outcome of ['win', 'lose', 'draw', 'fled', 'monster-fled'] as const) {
+    for (const outcome of ['win', 'lose', 'fled', 'monster-fled'] as const) {
       const { next } = applyBattleOutcome(s, input({ outcome, rewarded: false }));
       expect(next).toBe(s); // 参照ごと不変
     }
@@ -25,9 +25,9 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     for (const outcome of ['win', 'lose'] as const) {
       expect(applyBattleOutcome(s, input({ outcome, rewarded: false })).awarded, outcome).toEqual({ unrewarded: true });
     }
-    // 逃走・引き分け・敵の逃走は、パワーがあっても元から無報酬。ここで理由を出すと
+    // 逃走・敵の逃走は、パワーがあっても元から無報酬。ここで理由を出すと
     // 「パワーがあれば得られたはず」という嘘になる。
-    for (const outcome of ['draw', 'fled', 'monster-fled'] as const) {
+    for (const outcome of ['fled', 'monster-fled'] as const) {
       expect(applyBattleOutcome(s, input({ outcome, rewarded: false })).awarded, outcome).toEqual({});
     }
   });
@@ -109,10 +109,10 @@ describe('battle-reward (fail-closed 報酬確定)', () => {
     for (const v of Object.values(next.materials)) expect(v).toBeGreaterThan(0);
   });
 
-  it('引き分け / 逃走 / 敵の逃走は決着扱いにしない (XP・ドロップ・パワー消費なし)', () => {
+  it('逃走 / 敵の逃走は決着扱いにしない (XP・ドロップ・パワー消費なし)', () => {
     // rewarded=true でも monster-fled は無報酬 = はぐれメタルに逃げられたら XP も素材もゼロ。
     const s = base({ power: 3, playerXp: 100, jobXp: { warrior: 20 }, materials: { herb: 2 } });
-    for (const outcome of ['draw', 'fled', 'monster-fled'] as const) {
+    for (const outcome of ['fled', 'monster-fled'] as const) {
       const { next, awarded } = applyBattleOutcome(s, input({ outcome }));
       expect(next.power).toBe(3); // パワー温存
       expect(next.playerXp).toBe(100); // XP 変わらず
@@ -220,7 +220,7 @@ describe('ゲーム内クエストの討伐カウント (#423/#659)', () => {
     const s = base({ activeQuests });
     expect(applyBattleOutcome(s, input({ outcome: 'win', enemyIds: [mon.id, mon.id] })).next.activeQuests)
       .toEqual(activeQuests.map((q, i) => ({ ...q, progress: i < 2 ? 3 : 1 })));
-    for (const outcome of ['lose', 'draw', 'fled', 'monster-fled'] as const) {
+    for (const outcome of ['lose', 'fled', 'monster-fled'] as const) {
       expect(applyBattleOutcome(s, input({ outcome })).next.activeQuests).toEqual(activeQuests);
     }
     expect(applyBattleOutcome(s, input({ outcome: 'win', rewarded: false })).next.activeQuests).toEqual(activeQuests);

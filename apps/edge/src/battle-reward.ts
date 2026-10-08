@@ -8,7 +8,7 @@
  *   - `rewarded=false` (encounter 時にパワー残高 0) → 勝敗どちらも**何も付与しない・消費しない**。
  *   - 勝ち (rewarded): +XP (player/job 両方) + ドロップ + パワー 1 消費。
  *   - 負け (rewarded): 素材ロス + パワー 1 消費。
- *   - 引き分け / 逃走: 決着ではない → 何も変えない。
+ *   - 逃走: 決着ではない → 何も変えない。
  *
  * **seed 秘匿 (#348)**: ドロップ/敗北ロスの seed は**サーバーが独立に引いた rewardSeed/lossSeed** を使う
  * (戦闘 seed は client に返さない・再利用しない)。呼び出し側が entropyU32 で引いて渡す。
@@ -17,7 +17,7 @@ import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, s
 import type { GameState } from './game-state';
 
 /** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
-export type BattleDecision = 'win' | 'lose' | 'draw' | 'fled' | 'monster-fled';
+export type BattleDecision = 'win' | 'lose' | 'fled' | 'monster-fled';
 
 export interface BattleOutcomeInput {
   outcome: BattleDecision;
@@ -114,7 +114,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
   // パワー無し = 練習相当。勝敗どちらも付与も消費もペナルティも無し (§7)。
   // **決着したのに報酬が無かったこと自体を返す** — client がその理由を出せるように。
   if (!o.rewarded) {
-    // **勝ち負けのときだけ理由を出す。** 逃走・引き分けはパワーがあっても XP もドロップも
+    // **勝ち負けのときだけ理由を出す。** 逃走はパワーがあっても XP もドロップも
     // 出ない (下記参照) ので、ここで理由を出すと「パワーがあれば得られたはず」という
     // 嘘になる。しかも逃げるたびにタップ送りを要求することになる。
     const lost = o.outcome === 'win' || o.outcome === 'lose';
@@ -171,8 +171,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
     return { next, awarded: { ...(xp > 0 ? { xp } : {}), materialsLost, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
   }
 
-  // draw / fled / monster-fled は決着扱いにしない (XP もドロップもパワー消費も無し)。
-  // - draw: パワー消費のない draw を報酬対象にすると「ガードで引き分けを狙う無限 XP 稼ぎ」が成立するため付与しない。
+  // fled / monster-fled は決着扱いにしない (XP もドロップもパワー消費も無し)。
   // - fled (プレイヤーが逃走) / monster-fled (敵が逃走): どちらも決着していないので無報酬・無消費。
   //   特にはぐれメタル型に逃げられたときはここに落ちる (高 XP をみすみす逃した = 悔しさが残る設計)。
   return { next: state, awarded: {} };

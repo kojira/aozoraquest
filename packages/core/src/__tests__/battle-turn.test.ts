@@ -89,17 +89,21 @@ describe('resolveTurn', () => {
     expect(after).toBe(done);
   });
 
-  it('必ず maxTurns 以内に決着する (attack 連打)', () => {
+  it('attack 連打で決着する', () => {
     for (const seed of [1, 22, 333, 4444, 55555]) {
       const s = playOut(startBattle('poet', 3, 5, '詩人', 2, seed), 'attack');
       expect(s.outcome).not.toBe('ongoing');
-      expect(s.turn).toBeLessThanOrEqual(BATTLE_TUNING.maxTurns);
     }
   });
 
-  it('ガード連打でも maxTurns で決着判定される', () => {
-    const s = playOut(startBattle('guardian', 5, 10, '守護者', 1, 12), 'guard');
-    expect(s.outcome).not.toBe('ongoing');
+  it('31 ターン目以降も両者が立っていれば残り HP で判定せず続く (D-BATTLE-001)', () => {
+    const s0 = startBattle('guardian', 5, 10, '守護者', 1, 12, 0, undefined, { monsterId: 'sky-slime' });
+    s0.turn = 30;
+    s0.player.hp = s0.player.maxHp = 9999;
+    s0.monster.hp = s0.monster.maxHp = 9999;
+    const s = resolveTurn(s0, 'guard');
+    expect(s.turn).toBe(31);
+    expect(s.outcome).toBe('ongoing');
   });
 
   it('lastEvents にテキストが積まれる (UI 演出用)', () => {
