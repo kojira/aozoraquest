@@ -681,10 +681,11 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const window = enemyWindow(now);
     const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
       // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
+      // 在庫 = 戦闘前の在庫 − 使った数。持ち込み数 (上限あり) で上書きすると残りが消える (#731)。
       const consumedMaterials = { ...cur.materials };
-      const setCount = (id: string, n: number) => { if (n > 0) consumedMaterials[id] = n; else delete consumedMaterials[id]; };
-      setCount('herb', next.herbs ?? 0);
-      setCount('sky-dew', next.tonics ?? 0);
+      const consume = (id: string, used: number) => { const n = (cur.materials[id] ?? 0) - used; if (n > 0) consumedMaterials[id] = n; else delete consumedMaterials[id]; };
+      consume('herb', next.herbsUsed ?? 0);
+      consume('sky-dew', next.tonicsUsed ?? 0);
       const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
