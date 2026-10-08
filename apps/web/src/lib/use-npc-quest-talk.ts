@@ -11,9 +11,11 @@ import { useLatestRef } from '@/lib/use-latest-ref';
  * NPC 会話とゲーム内クエスト (#423/#425/#659) の状態と遷移。受注・報告・進捗は
  * **サーバーが正** で、ここは応答を会話の段 (npcTalk) と表示用の quest に写す。
  */
-export function useNpcQuestTalk({ agent, moveBusyRef, flagsRef, materialsRef, applyServerMaterials, setServerPower, setNotice, waitForFreshDirectionRef }: {
+export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials, setServerPower, setNotice, waitForFreshDirectionRef }: {
   agent: Agent | null;
   moveBusyRef: MutableRefObject<boolean>;
+  /** 位置トークン。話しかけクエスト (talk) の達成で「相手の隣にいる」をサーバーが確かめる。 */
+  tokenRef: MutableRefObject<string | undefined>;
   flagsRef: MutableRefObject<string[]>;
   materialsRef: MutableRefObject<Record<string, number>>;
   applyServerMaterials: (m: Record<string, number>) => void;
@@ -95,7 +97,8 @@ export function useNpcQuestTalk({ agent, moveBusyRef, flagsRef, materialsRef, ap
     moveBusyRef.current = true;
     setQuestPending(true);
     try {
-      const res = await serverQuestComplete(agent, q.id);
+      const o = q.objective;
+      const res = await serverQuestComplete(agent, q.id, o.kind === 'talk' ? tokenRef.current : undefined);
       setQuest(questStateOf(res));
       if (res.flags) flagsRef.current = res.flags;
       setServerPower(res.power);
@@ -103,11 +106,13 @@ export function useNpcQuestTalk({ agent, moveBusyRef, flagsRef, materialsRef, ap
       const r = res.rewarded;
       const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
         r?.power ? `あおぞらパワー ${r.power}` : null].filter(Boolean).join(' と ');
-      message([...q.done, ...(got ? [`${got} を もらった！`] : [])], scenarioMessagesOf(res.scenarioMessages, res.notices));
+      // talk は相手のセリフ (いつものセリフの代わり) に続けて達成を出す (D-STORY-009)。
+      const said = o.kind === 'talk' ? [o.line, `『${q.title}』を たっせいした！`] : q.done;
+      message([...said, ...(got ? [`${got} を もらった！`] : [])], scenarioMessagesOf(res.scenarioMessages, res.notices));
     } catch (e) {
       try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
       if (questRef.current.done.includes(q.id)) message(['この依頼は 達成済みだよ。']);
-      else if (e instanceof WorldServerError && e.code === 'not_ready') message([...(q.progress ?? []), e.message, 'そろったら また 報告してね。']);
+      else if (e instanceof WorldServerError && e.code === 'not_ready' && q.objective.kind !== 'talk') message([...(q.progress ?? []), e.message, 'そろったら また 報告してね。']);
       else message([e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど 報告してね。']);
     } finally {
       moveBusyRef.current = false;
@@ -139,11 +144,18 @@ export function useNpcQuestTalk({ agent, moveBusyRef, flagsRef, materialsRef, ap
     else showQuestChoices(npc, candidates, confirm, true);
   };
   const selectDirectQuest = (npc: NpcDef, q: GameQuestDef, directList: boolean) => {
-    if (questRef.current.activeQuests.some(a => a.id === q.id)) return reportQuest(npc, q, false, directList);
+    const active = questRef.current.activeQuests.find(a => a.id === q.id);
+    // talk の報告先は相手の NPC (openDirectNpc)。依頼主には進み具合だけ話す。
+    if (active && q.objective.kind === 'talk') setNpcTalk({ npc, lines: [...(q.progress ?? ['たのんだよ。']), questProgressLine(q, active.progress, materialsRef.current)], directList });
+    else if (active) return reportQuest(npc, q, false, directList);
     else setNpcTalk({ npc, lines: questOfferLines(q), acceptQuestId: q.id, directList });
   };
   const directQuestList = (npc: NpcDef) => showQuestChoices(npc, npcQuests(npc), q => selectDirectQuest(npc, q, true), false);
   const openDirectNpc = (npc: NpcDef) => {
+    // 受けている話しかけクエストの相手なら、いつものセリフの代わりに達成へ進む (D-STORY-009)。
+    const talkQuest = questRef.current.activeQuests.map(a => gameQuestById(a.id))
+      .find(q => q?.objective.kind === 'talk' && q.objective.npcId === npc.id);
+    if (talkQuest) { void reportQuest(npc, talkQuest, false); return; }
     const candidates = npcQuests(npc);
     if (candidates.length > 1) directQuestList(npc);
     else if (candidates.length === 1) selectDirectQuest(npc, candidates[0]!, false);

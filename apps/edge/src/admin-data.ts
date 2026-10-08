@@ -15,6 +15,7 @@ import {
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
   activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
+  assertStoryFlagTotal, placedItems, validateStory, type PlacedItemDef,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
@@ -32,7 +33,7 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 const PATH_PREFIX = '/api/admin/data/';
 const RKEY = 'self';
 /** API で読み書きできる world.* レコード (core の ADMIN_WORLD_RECORDS の部分集合。CLI の NAMES と一致を検査)。 */
-export const ADMIN_DATA_NAMES = ['items', 'npcs', 'shops', 'quests', 'scenario', 'interiors'] as const satisfies readonly AdminWorldRecordName[];
+export const ADMIN_DATA_NAMES = ['items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors'] as const satisfies readonly AdminWorldRecordName[];
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
 const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
@@ -135,7 +136,14 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     return dangling ? describeDanglingRef(dangling) : null;
   }
   if (name === 'items') return validateItemsCandidate(value);
-  if (name === 'scenario') { validateScenario(listOf<ScenarioEvent>(value, 'events')); return null; }
+  // フラグ数は scenario と story の出所を合わせて数える (片方だけ見ると合計が上限を超えうる。D-STORY-009)。
+  if (name === 'scenario') {
+    const events = listOf<ScenarioEvent>(value, 'events');
+    validateScenario(events);
+    assertStoryFlagTotal(events, placedItems());
+    return null;
+  }
+  if (name === 'story') { validateStory(listOf<PlacedItemDef>(value, 'placedItems')); return null; }
   if (name === 'shops') {
     const prev = shopOverrides();
     try { setShopOverrides(listOf<ShopOverride>(value, 'shops')); } finally { setShopOverrides(prev); }

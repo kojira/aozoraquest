@@ -35,11 +35,12 @@ export function questMenuLines(st: QuestState, materials: Record<string, number>
     const def = gameQuestById(q.id);
     if (!def) return `依頼情報を確認できません（${q.id}）`;
     const o = def.objective;
+    const npc = allNpcs().find(n => n.id === def.npcId);
+    if (o.kind === 'talk') return `${def.title}: ${questObjectiveText(def)}`;
     const have = o.kind === 'defeat' ? q.progress : (materials[o.itemId] ?? 0);
     const progress = o.kind === 'collect'
       ? `${questObjectiveText(def)}：所持 ${have} / 必要 ${o.count}。報告すると${o.count}こ渡します`
       : questProgressLine(def, q.progress, materials);
-    const npc = allNpcs().find(n => n.id === def.npcId);
     return `${def.title}（報告先: ${npc?.name ?? def.npcId}）: ${progress}${have >= o.count ? ' 報告できます' : ''}`;
   });
 }

@@ -489,15 +489,17 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { questId?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { questId?: unknown; token?: unknown };
     if (typeof body.questId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       const ns = nsFromOrigin(req);
       // コールドスタート直後だと定義が未ロードで「そのクエストは無い」に落ちるので、ここは待つ
       // (TTL 内はキャッシュ即返しでコスト無し)。
       await ensureAuthoredWorld(env, nowSec());
-      const handler = accept ? handleQuestAccept : handleQuestComplete;
-      return cors(json(await handler(env, did, body.questId, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+      const init = (d: string, iso: string) => migrateInitState(d, iso, ns);
+      return cors(json(accept
+        ? await handleQuestAccept(env, did, body.questId, nowSec(), init)
+        : await handleQuestComplete(env, did, body.questId, nowSec(), init, typeof body.token === 'string' ? body.token : undefined)), allowedOrigin);
     } catch (e) {
       if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

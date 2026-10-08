@@ -32,6 +32,7 @@ export * from './job-data.js';
 export * from './interior.js';
 export * from './interior-samples.js';
 export * from './scenario.js';
+export * from './story-data.js';
 export * from './story-effect.js';
 export * from './scenario-samples.js';
 export * from './equipment.js';

@@ -7,7 +7,7 @@
 const ADMIN_DID = process.env.ADMIN_DID ?? 'did:plc:47skrewud2vjha6o57wzzxjw';
 const ROOT = 'app.aozoraquest';
 export const SOURCE_COLLECTIONS = [
-  ...['map', 'tileArt', 'monsters', 'items', 'shops', 'npcs', 'quests', 'jobs', 'interiors', 'scenario'].map((n) => `${ROOT}.world.${n}`),
+  ...['map', 'tileArt', 'monsters', 'items', 'shops', 'npcs', 'quests', 'jobs', 'interiors', 'scenario', 'story'].map((n) => `${ROOT}.world.${n}`),
   ...['flags', 'maintenance', 'bans', 'prompts'].map((n) => `${ROOT}.config.${n}`),
 ];
 /** 本番 → dev の collection。dev 以外を返すことはない。 */

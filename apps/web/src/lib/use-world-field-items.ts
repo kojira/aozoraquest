@@ -1,7 +1,7 @@
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
-import { serverItem, serverSearch, serverTeleport } from '@/lib/world-server';
+import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, WORLD_MAP_ID, placedItemAt, placedItemAvailable, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
+import { serverItem, serverSearch, serverTeleport, type ScenarioMessage } from '@/lib/world-server';
 import type { WipePhase } from '@/components/encounter-wipe';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import type { Vitals } from '@/lib/world-view';
@@ -10,7 +10,7 @@ import type { Vitals } from '@/lib/world-view';
  * フィールドで使う どうぐ (やくそう/そらのしずく/そらのはね) と しらべる、
  * そらのはね帰還のワイプ進行。消費と在庫はサーバーが確定し、応答で表示を同期する。
  */
-export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, serverPowerRef, setServerPower, setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked }: {
+export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower, setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked }: {
   agent: Agent | null;
   did: string | null;
   combat: { maxHp: number; maxMp: number } | null;
@@ -21,6 +21,10 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
   scheduleSave: () => void;
   moveBusyRef: MutableRefObject<boolean>;
   tokenRef: MutableRefObject<string | undefined>;
+  /** 進行フラグの写し。置きアイテムを取ったら応答で更新する (D-STORY-009)。 */
+  flagsRef: MutableRefObject<string[]>;
+  /** しらべるの窓を閉じた後に出すシナリオのお知らせ。 */
+  pendingNoticesRef: MutableRefObject<ScenarioMessage[]>;
   serverPowerRef: MutableRefObject<number | null>;
   setServerPower: Dispatch<SetStateAction<number | null>>;
   setSearchMsg: Dispatch<SetStateAction<string | null>>;
@@ -183,7 +187,10 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
     if (!s || !agent || !did) { setSearchMsg('いま しらべられない (つうしんを かくにんして)。'); return; }
     // **残高の判定も消費もサーバー** (#551)。client 台帳で引いていた頃は権威 power が
     // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
-    if (serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
+    // 未取得の置きアイテム (D-STORY-009) があるマスはパワーを使わないので止めない (付与は edge が決める)。
+    const placed = placedItemAt(s.mapId ?? WORLD_MAP_ID, s.x, s.y);
+    const placedHere = !!placed && placedItemAvailable(placed, flagsRef.current);
+    if (!placedHere && serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
       setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`);
       return;
     }
@@ -195,6 +202,14 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       pendingSearchRef.current = null;
       applyServerMaterials(res.materials);
       setServerPower(res.power); // 残高もサーバーが正
+      if (res.placed) {
+        // 反映しないと、取った後のゲート・セリフの分岐が再読み込みまで変わらない。
+        if (res.flags) flagsRef.current = res.flags;
+        if (res.scenarioMessages?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioMessages];
+        const count = res.placed.count > 1 ? ` を ${res.placed.count} こ` : ' を';
+        setSearchMsg(`${ITEMS[res.placed.itemId]?.name ?? res.placed.itemId}${count} てにいれた!`);
+        return;
+      }
       if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${res.power})`); return; }
       const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
       setSearchMsg(`しらべると、${ITEMS[res.found]?.name ?? res.found} を 1 つ 見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で かくにん / のこりパワー ${res.power})`);
@@ -202,7 +217,7 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       console.warn('[world] search failed', e);
       setSearchMsg('しらべられなかった (通信エラー)。もういちどどうぞ。');
     }
-  }, [agent, did, applyServerMaterials, serverPowerRef, setSearchMsg, setServerPower, tokenRef, wsRef]);
+  }, [agent, did, applyServerMaterials, flagsRef, pendingNoticesRef, serverPowerRef, setSearchMsg, setServerPower, tokenRef, wsRef]);
 
   return { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere };
 }

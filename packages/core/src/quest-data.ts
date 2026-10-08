@@ -14,7 +14,8 @@
  * 達成条件は**サーバーが検証できるものだけ**にする:
  * - defeat: 対象モンスターの討伐数 (勝利時に edge が数える)
  * - collect: 素材の所持数 (権威在庫を見る。達成時に**引き取る**)
- * 「場所に行く」「人と話す」は検証手段が固まってから足す。
+ * - talk: 相手の NPC の隣で話しかける (署名済みの位置トークンで edge が確かめる。D-STORY-009)
+ * 「場所に行く」は検証手段が固まってから足す。
  */
 import { MONSTERS_BY_ID, ITEMS } from './battle.js';
 import { allNpcs } from './npc-data.js';
@@ -24,7 +25,9 @@ export class QuestDataError extends Error {}
 
 export type QuestObjective =
   | { kind: 'defeat'; monsterId: string; count: number }
-  | { kind: 'collect'; itemId: string; count: number };
+  | { kind: 'collect'; itemId: string; count: number }
+  /** 相手の NPC に話しかけると、いつものセリフの代わりに `line` が出て達成する。 */
+  | { kind: 'talk'; npcId: string; line: string };
 
 export interface GameQuestDef {
   id: string;
@@ -93,10 +96,13 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
       if (!MONSTERS_BY_ID[o.monsterId]) throw new QuestDataError(`${where}: モンスターが存在しない (${o.monsterId})`);
     } else if (o.kind === 'collect') {
       if (!ITEMS[o.itemId]) throw new QuestDataError(`${where}: アイテムが存在しない (${o.itemId})`);
+    } else if (o.kind === 'talk') {
+      if (!npcIds.has(o.npcId)) throw new QuestDataError(`${where}: 話す相手の NPC が存在しない (${o.npcId})`);
+      if (typeof o.line !== 'string' || o.line.trim() === '' || o.line.length > MAX_QUEST_LINE) throw new QuestDataError(`${where}: 話す相手のセリフが不正`);
     } else {
       throw new QuestDataError(`${where}: 達成条件の種類が不正`);
     }
-    if (!Number.isInteger(o.count) || o.count < 1 || o.count > 99) throw new QuestDataError(`${where}: 個数は 1〜99`);
+    if (o.kind !== 'talk' && (!Number.isInteger(o.count) || o.count < 1 || o.count > 99)) throw new QuestDataError(`${where}: 個数は 1〜99`);
     if (q.requireFlags !== undefined) {
       if (!Array.isArray(q.requireFlags)) throw new QuestDataError(`${where}: requireFlags が配列でない`);
       for (const f of q.requireFlags) {
@@ -140,9 +146,10 @@ export function gameQuestsByNpc(npcId: string): readonly GameQuestDef[] {
   return byNpc.get(npcId) ?? [];
 }
 
-/** 達成条件の文 (「そらいろスライムを 3 たい」「やくそうを 2 こ」)。 */
+/** 達成条件の文 (「そらいろスライムを 3 たい」「やくそうを 2 こ」「かじやと はなす」)。 */
 export function questObjectiveText(def: GameQuestDef): string {
   const o = def.objective;
+  if (o.kind === 'talk') return `${allNpcs().find((n) => n.id === o.npcId)?.name ?? o.npcId}と はなす`;
   return o.kind === 'defeat'
     ? `${MONSTERS_BY_ID[o.monsterId]?.name ?? o.monsterId}を ${o.count} たい`
     : `${ITEMS[o.itemId]?.name ?? o.itemId}を ${o.count} こ`;
@@ -155,6 +162,7 @@ export function questObjectiveText(def: GameQuestDef): string {
  */
 export function questProgressLine(def: GameQuestDef, progress: number, materials: Record<string, number>): string {
   const o = def.objective;
+  if (o.kind === 'talk') return questObjectiveText(def);
   const have = o.kind === 'defeat' ? progress : (materials[o.itemId] ?? 0);
   return `${questObjectiveText(def)} (${Math.min(have, o.count)}/${o.count})`;
 }

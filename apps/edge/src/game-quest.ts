@@ -6,10 +6,12 @@
  *   - defeat: 勝利時に数えた討伐数 (battle-reward が増やす)
  *   - collect: 権威在庫の所持数。達成時に**引き取る** (渡すのが DQ の作法で、
  *     引かないと同じ素材で何度も達成できてしまう)
+ *   - talk: 相手の NPC の上下左右の隣にいること (署名済みの位置トークン、無ければ state の位置。D-STORY-009)
  * - 報酬のパワーは定義の値だけ。client は金額を送らない (サーバー権威)
  */
-import { gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER } from '@aozoraquest/core';
+import { allNpcs, gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER, WORLD_MAP_ID, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
+import { verifyPosition, type PositionClaim } from './world-token';
 import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
 
 export class GameQuestError extends Error {
@@ -67,15 +69,30 @@ export async function handleQuestAccept(
   return { activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials, ...(next.flags ? { flags: next.flags } : {}) };
 }
 
+/** NPC の上下左右の隣か (斜め・同じマスは不可)。フィールドはトーラスで丸めて比べる。 */
+export function besideNpc(npc: NpcDef, pos: { mapId?: string; x: number; y: number }): boolean {
+  const mapId = npc.mapId ?? WORLD_MAP_ID;
+  if ((pos.mapId ?? WORLD_MAP_ID) !== mapId) return false;
+  const d = (a: number, b: number) => {
+    const raw = Math.abs(a - b);
+    return mapId === WORLD_MAP_ID ? Math.min(raw % WORLD_SIZE, WORLD_SIZE - (raw % WORLD_SIZE)) : raw;
+  };
+  return d(npc.x, pos.x) + d(npc.y, pos.y) === 1;
+}
+
 export async function handleQuestComplete(
   env: GameStateEnv,
   did: string,
   questId: string,
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
+  token?: string,
 ): Promise<QuestStateResult> {
   const def = gameQuestById(questId);
   if (!def) throw new GameQuestError('そのクエストは無い', 404, 'unknown_quest');
+  // talk の位置は署名済みトークンが正。無い/無効なら state の位置に倒す (handleSearch と同じ作法)。
+  let claim: PositionClaim | null = null;
+  try { claim = verifyPosition(env, token ?? '', did, now); } catch { claim = null; }
   // 報酬の再検証 (定義レコードが壊れても暴走しない最後の砦)
   const rewardPower = Math.min(def.reward?.power ?? 0, MAX_QUEST_REWARD_POWER);
   let rewarded: QuestStateResult['rewarded'];
@@ -94,6 +111,9 @@ export async function handleQuestComplete(
         if ((active.progress ?? 0) < o.count) {
           throw new GameQuestError(`まだ ${active.progress ?? 0}/${o.count} たい`, 400, 'not_ready');
         }
+      } else if (o.kind === 'talk') {
+        const npc = allNpcs().find((n) => n.id === o.npcId);
+        if (!npc || !besideNpc(npc, claim ?? cur)) throw new GameQuestError('はなす あいてが ちかくに いない', 400, 'not_ready');
       } else {
         const have = cur.materials[o.itemId] ?? 0;
         if (have < o.count) throw new GameQuestError(`まだ ${have}/${o.count} こ`, 400, 'not_ready');

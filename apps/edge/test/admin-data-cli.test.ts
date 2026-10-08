@@ -19,7 +19,7 @@ describe('scripts/admin-data.mjs (#716)', () => {
 
 describe('scripts/copy-admin-data-to-dev.mjs (#716)', () => {
   it('本番の全管理コレクションを同名の dev コレクションへ写す', () => {
-    expect(SOURCE_COLLECTIONS).toHaveLength(14);
+    expect(SOURCE_COLLECTIONS).toHaveLength(15);
     expect(devCollectionOf('app.aozoraquest.world.npcs')).toBe('app.aozoraquest.dev.world.npcs');
     expect(devCollectionOf('app.aozoraquest.config.flags')).toBe('app.aozoraquest.dev.config.flags');
     for (const c of SOURCE_COLLECTIONS) expect(devCollectionOf(c).startsWith('app.aozoraquest.dev.')).toBe(true);

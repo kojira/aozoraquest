@@ -2,15 +2,16 @@
  * 管理者 PDS の world.* レコードを読んで core に適用する唯一の手順 (Refs #718)。
  * web (`loadAuthoredWorld`) と edge (`ensureAuthoredWorld`) はレコードの取り方だけを渡す。
  *
- * 順序 (ADMIN_WORLD_RECORDS): map → tileArt → monsters → items → shops → npcs → jobs → interiors → quests → scenario。
+ * 順序 (ADMIN_WORLD_RECORDS): map → tileArt → monsters → items → shops → npcs → jobs → interiors → quests → scenario → story。
  *   - shops は items の後 (検証が EQUIPMENT_BY_ID / ITEMS を引く)。
  *   - quests は npcs・monsters・items の後 (検証が実在を引く)。scenario は quests の後 (questId を引く)。
+ *   - story は scenario の後 (フラグ数を scenario.setFlags と合わせて数える。D-STORY-009)。
  *   - jobs と interiors は互いに独立: setJobOverrides は JOBS_BY_ID と装備カテゴリだけ、
  *     setInteriors は ITEMS と townAt だけを引く。旧 web は interiors→jobs、edge は jobs→interiors
  *     だったが結果は同じなので edge の順に揃えた。
  *
  * 適用規則 (#660): レコードが**無ければ触らない**。あれば適用する。
- *   - shops / npcs / jobs / quests / scenario / interiors は**空配列でも適用** (全削除の反映)。
+ *   - shops / npcs / jobs / quests / scenario / story / interiors は**空配列でも適用** (全削除の反映)。
  *   - monsters と items (equipment) は**空なら適用しない** (コード直書きのまま。戦闘を止めない)。
  *   web と edge でこの規則に差は無かった。
  * 1 レコードの失敗は後続を止めない (onError に渡して次へ)。
@@ -29,6 +30,7 @@ import { setJobOverrides, type JobOverride } from './job-data.js';
 import { setInteriors, type Gate, type InteriorMap } from './interior.js';
 import { setGameQuests, type GameQuestDef } from './quest-data.js';
 import { setScenario, type ScenarioEvent } from './scenario.js';
+import { setStory, type PlacedItemDef } from './story-data.js';
 
 /** レコードの value を返す。**無ければ null**。通信失敗などは throw (そのレコードだけ飛ばす)。 */
 export type AdminWorldRecordFetch = (name: AdminWorldRecordName) => Promise<unknown>;
@@ -69,6 +71,7 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
   },
   quests: (v) => { const rec = v as Rec<{ quests: GameQuestDef[] }>; if (rec?.quests) setGameQuests(rec.quests); },
   scenario: (v) => { const rec = v as Rec<{ events: ScenarioEvent[] }>; if (rec?.events) setScenario(rec.events); },
+  story: (v) => { const rec = v as Rec<{ placedItems: PlacedItemDef[] }>; if (rec?.placedItems) setStory(rec.placedItems); },
 };
 
 /** 全 world.* レコードを決まった順に読んで適用する。地図が読めなければ同梱の地図に倒す。 */

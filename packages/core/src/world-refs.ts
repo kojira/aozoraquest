@@ -43,7 +43,10 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
   };
   for (const q of gameQuests()) {
     const from = `クエスト「${q.title}」`;
-    if (kind === 'npc') push(q.npcId, from);
+    if (kind === 'npc') {
+      push(q.npcId, from);
+      if (q.objective.kind === 'talk') push(q.objective.npcId, from);
+    }
     if (kind === 'monster' && q.objective.kind === 'defeat') push(q.objective.monsterId, from);
     if (kind === 'item') {
       if (q.objective.kind === 'collect') push(q.objective.itemId, from);
