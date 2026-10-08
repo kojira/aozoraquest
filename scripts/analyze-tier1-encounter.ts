@@ -43,7 +43,7 @@ for (const job of jobs) {
       b = resolveTurn(b, 'attack', ts);
       if (b.outcome === 'win') { killed++; break; }
       if (b.outcome === 'monster-fled') { fled++; break; }
-      if (b.outcome === 'lose' || b.outcome === 'draw' || b.outcome === 'fled') break;
+      if (b.outcome === 'lose' || b.outcome === 'fled') break;
     }
   }
 }

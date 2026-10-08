@@ -712,8 +712,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
         // レベルアップの内訳 (「ちから +2」) を素ステ込みで出すため。
         ...(guard.sealed.baseStats ? { baseStats: guard.sealed.baseStats as unknown as StatArray } : {}),
-        // 群れ (#453): **倒した敵 (hp<=0) ぶんだけ**報酬。maxTurns 勝ち (HP 比で win・敵が生存) のとき
-        // 生存敵に報酬を出さない (レビュー ★★)。全滅勝ちなら全敵が hp<=0 で全頭ぶん。1 体戦は monsterId 単体。
+        // 群れ (#453): **倒した敵 (hp<=0) ぶんだけ**報酬。生存敵に報酬を出さない (レビュー ★★)。
+        // 全滅勝ちなら全敵が hp<=0 で全頭ぶん。1 体戦は monsterId 単体。
         ...(isMulti ? { enemyIds: next.enemies!.filter((e) => e.hp <= 0).map((e) => e.monsterId ?? next.monsterId) } : {}),
       });
       awarded = r.awarded;

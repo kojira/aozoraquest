@@ -54,7 +54,7 @@ describe('モンスターのレコード差し替え (#419)', () => {
     expect(battleXpFor('boss')).toBe(42);
     // 戦闘も新しい敵で回る
     const r = runAutoBattle(startBattle('warrior', 5, 1, 'x', 1, 7, 0, undefined, { monsterId: 'boss' }));
-    expect(['win', 'lose', 'draw', 'fled', 'monster-fled']).toContain(r.outcome);
+    expect(['win', 'lose', 'fled', 'monster-fled']).toContain(r.outcome);
 
     setMonsterOverrides(null);
     expect(hasMonsterOverrides()).toBe(false);

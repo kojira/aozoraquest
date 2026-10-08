@@ -253,19 +253,6 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   if (state.outcome !== 'ongoing') { /* monster-fled 等: 確定済み */ }
   else if (state.monster.hp === 0) state.outcome = 'win';
   else if (state.player.hp === 0) state.outcome = 'lose';
-  else if (state.turn >= BATTLE_TUNING.maxTurns) {
-    // 引き分け規定: 残 HP 割合が高い方の勝ち。同率は draw。
-    const pr = state.player.hp / state.player.maxHp;
-    const mr = state.monster.hp / state.monster.maxHp;
-    state.outcome = pr > mr ? 'win' : pr < mr ? 'lose' : 'draw';
-    const closing =
-      state.outcome === 'win'
-        ? 'ブルスコン「そこまで! 判定勝ちだ、見事だったよ」'
-        : state.outcome === 'lose'
-          ? 'ブルスコン「そこまで! 今回は相手が上手だったね」'
-          : 'ブルスコン「そこまで! 引き分けだ、いい勝負だったよ」';
-    events.push({ actor: 'monster', text: closing });
-  }
 
   state.lastEvents = events;
   return state;
