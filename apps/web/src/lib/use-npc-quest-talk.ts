@@ -105,7 +105,11 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     });
     if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1) });
     if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1) });
-    if (!guild) choices.push({ label: '話す', onSelect: () => setNpcTalk({ npc, lines: npcLinesFor(npc, flagsRef.current, materialsRef.current), directList: true }) });
+    if (!guild) choices.push({ label: '話す', onSelect: () => {
+      const alt = npcAltLineFor(npc, flagsRef.current, materialsRef.current);
+      // 戦闘つきのセリフは読み終えたら一覧へ戻らず戦闘へ (D-STORY-009)。
+      setNpcTalk({ npc, lines: alt?.lines ?? npc.lines, ...(alt?.battle ? { storyBattle: true } : { directList: true }) });
+    } });
     choices.push({ label: '戻る', onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
     setNpcTalk({ npc, lines: [`どの依頼のこと？（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
