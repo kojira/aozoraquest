@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { encodeWorldMap, starterTownInterior, starterTownGates, starterTownNpcs, worldOverlay } from '@aozoraquest/core';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4273/e2e/fixtures/admin-starter-village.html';
@@ -33,7 +34,9 @@ test('slow saved-village load cannot overwrite starter insertion; save then ques
   const oldVillage = { ...metadata, size: 64, gz: Buffer.from(await encodeWorldMap(new Uint8Array(64 * 64))).toString('base64') };
   const untouched = { id: 'custom-room', name: '手作りの部屋', size: 4, gz: Buffer.from(await encodeWorldMap(new Uint8Array(16))).toString('base64') };
   const npcs = { npcs: starterTownNpcs() };
-  const records: Record<string, unknown> = { [INTERIORS]: { interiors: [oldVillage, untouched], gates: starterTownGates(town) }, 'app.aozoraquest.dev.world.npcs': npcs };
+  const records: Record<string, unknown> = { [INTERIORS]: { interiors: [oldVillage, untouched], gates: starterTownGates(town) }, 'app.aozoraquest.dev.world.npcs': npcs,
+    // モンスターはレコードだけが正 (D-MONSTER-001)。依頼の monsterId 実在検査に要る。
+    'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS } };
   const puts: Array<{ collection: string; record: { interiors: typeof oldVillage[]; gates: unknown[] } }> = [];
   let reads = 0;
   let releaseLoad: (() => void) | undefined;
