@@ -372,7 +372,12 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await bump('ArrowUp');
 
     await choose('依頼を見る'); await readAll(page);
-    await choose('報告する'); await readAll(page); await choose('報告する');
+    // 1件でも一覧から選ぶ。未達も一覧に出て、選ぶと説明なしで報告 (不足表示) へ進む。
+    await choose('報告する');
+    await expect(window).toContainText('どの依頼を 報告する？（1/1）');
+    await captureMapDialogue(page, 'guild-report-list');
+    await expect(page.getByRole('button', { name: /道具の手入れに/ })).toContainText('(0/2)');
+    await page.getByRole('button', { name: /道具の手入れに/ }).click();
     await expect(window).toContainText('スライムのしずくを 2こ');
     await next();
     await expect(window).toContainText('まだ 0/2 こ');
@@ -393,7 +398,9 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await readAll(page);
     const powerBefore = state.power;
     const herbsBefore = state.materials.herb ?? 0;
-    await choose('報告する'); await readAll(page); await choose('報告する');
+    await choose('報告する');
+    await expect(window).toContainText('どの依頼を 報告する？（1/1）');
+    await page.getByRole('button', { name: /道具の手入れに/ }).click();
     await expect(window).toContainText('2こ うけとった');
     await next();
     await expect(window).toContainText('やくそう ×2 と あおぞらパワー 5');
@@ -469,13 +476,13 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     setGameQuests(multi); records['app.aozoraquest.dev.world.quests'] = { quests: multi };
     await reenter({ x: bluesky.x, y: bluesky.y + 1, questsDone: [], activeQuests: multi.map(q => ({ id: q.id, progress: 0 })), materials: { 'slime-drop': 2 }, power: 10 });
     await bump('ArrowUp'); await choose('報告する');
+    await expect(window).toContainText('どの依頼を 報告する？（1/2）');
     const beforeReports = reported.length;
     await captureQuestChoices(page, 'guild-identical-choices');
     await choose('次へ');
     await expect(page.getByRole('button', { name: /fixture-d/ })).toBeVisible();
     await choose('前へ');
     await page.getByRole('button', { name: /fixture-b/ }).click();
-    await readAll(page); await choose('報告する');
     await expect.poll(() => state.questsDone).toEqual(['fixture-b']);
     expect(reported.slice(beforeReports)).toEqual(['fixture-b']);
     expect(state.power).toBe(12);

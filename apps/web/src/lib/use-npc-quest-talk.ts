@@ -97,21 +97,21 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   const npcQuests = (npc: NpcDef, includeDone = false) =>
     npcQuestCandidates(npc.id, questRef.current, flagsRef.current, materialsRef.current, includeDone);
 
-  const showQuestChoices = (npc: NpcDef, candidates: readonly GameQuestDef[], select: (q: GameQuestDef) => void | Promise<void>, guild: boolean, page = 0) => {
+  const showQuestChoices = (npc: NpcDef, candidates: readonly GameQuestDef[], select: (q: GameQuestDef) => void | Promise<void>, guild: boolean, page = 0, heading = 'どの依頼のこと？') => {
     const choices: DialogueChoice[] = candidates.slice(page * 3, page * 3 + 3).map(q => {
       const active = questRef.current.activeQuests.find(a => a.id === q.id);
       const state = active ? questProgressLine(q, active.progress, materialsRef.current) : questRef.current.done.includes(q.id) ? '達成済み' : '未受注';
       return { label: `${questChoiceTitle(q, candidates)} / ${state}`, onSelect: () => select(q) };
     });
-    if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1) });
-    if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1) });
+    if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1, heading) });
+    if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1, heading) });
     if (!guild) choices.push({ label: '話す', onSelect: () => {
       const alt = npcAltLineFor(npc, flagsRef.current, materialsRef.current);
       // 戦闘つきのセリフは読み終えたら一覧へ戻らず戦闘へ (D-STORY-009)。
       setNpcTalk({ npc, lines: alt?.lines ?? npc.lines, ...(alt?.battle ? { storyBattle: true } : { directList: true }) });
     } });
     choices.push({ label: '戻る', onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
-    setNpcTalk({ npc, lines: [`どの依頼のこと？（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
+    setNpcTalk({ npc, lines: [`${heading}（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
 
   const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false) => {
@@ -159,12 +159,8 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   const reportGuildQuest = (npc: NpcDef) => {
     const candidates = gameQuestsByNpc(npc.id).filter(q => questRef.current.activeQuests.some(a => a.id === q.id));
     if (!candidates.length) { guildMessage(npc, ['いま 報告できる 受注中の依頼は ないよ。']); return; }
-    const confirm = (q: GameQuestDef) => setNpcTalk({ npc, guild: 'message', lines: [...guildQuestDetailLines(q), 'この依頼を 報告しますか？'], choices: [
-      { label: '報告する', onSelect: () => reportQuest(npc, q, true) },
-      { label: '戻る', onSelect: () => setNpcTalk(guildReception(npc)) },
-    ] });
-    if (candidates.length === 1) confirm(candidates[0]!);
-    else showQuestChoices(npc, candidates, confirm, true);
+    // 1件でも一覧から選ぶ。選んだら説明・確認なしで報告する (未達はサーバーの不足表示)。
+    showQuestChoices(npc, candidates, q => reportQuest(npc, q, true), true, 0, 'どの依頼を 報告する？');
   };
   const selectDirectQuest = (npc: NpcDef, q: GameQuestDef, directList: boolean) => {
     const active = questRef.current.activeQuests.find(a => a.id === q.id);

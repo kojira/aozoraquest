@@ -269,7 +269,8 @@ export function DialogueWindow({
         }}
       >
         {shownPortrait && (onMap ? (
-          <div style={{ position: 'absolute', top: '0.5em', bottom: 'calc(35% + 2.5em)', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+          // The lower part of the portrait sits behind the opaque text window (35% tall) so its cut edge is hidden.
+          <div style={{ position: 'absolute', top: '0.5em', bottom: 'calc(0.5em + 27%)', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
             <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap />
           </div>
         ) : <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} />)}

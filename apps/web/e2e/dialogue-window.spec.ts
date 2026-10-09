@@ -29,6 +29,8 @@ for (const width of [320, 390, 1280]) {
     const plate = (await page.locator('.aq-dialogue-pane').first().boundingBox())!;
     expect(Math.abs(frame.width - map.width * .96)).toBeLessThan(1);
     expect(Math.abs(frame.height - map.height * .35)).toBeLessThan(1);
+    // The portrait's cut lower edge is hidden behind the text window.
+    expect(portrait.y + portrait.height).toBeGreaterThan(frame.y);
     await expect(page.locator('.aq-dialogue-next')).toHaveCount(0); // Still typing.
     const next = () => backdrop.click({ position: { x: 2, y: 2 } });
     await next(); // Complete short speech, without moving the frame/portrait.
