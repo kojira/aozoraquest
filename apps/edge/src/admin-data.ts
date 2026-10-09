@@ -3,6 +3,9 @@
  *
  *   GET /api/admin/data/<name>  → { name, collection, cid, value[, placementIssues] }
  *   PUT /api/admin/data/<name>  body { value, swapCid, dryRun? }
+ *
+ * monsters の小数の欄はレコードでは文字列 (#740)。API の value は数値の MonsterDef で受け渡しする
+ * (PUT は数値でも文字列でも受けて文字列で書く / GET は数値に戻して返す = CLI の往復比較が素直に合う)。
  *   POST /api/admin/blob?kind=sprite|portrait  本文 image/webp → { ok, kind, image } (#699)
  *
  * 読み書き先は env の管理コレクション (#716): dev エッジ = `app.aozoraquest.dev.world.*`。
@@ -15,7 +18,7 @@ import {
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
   activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
-  activeMonsters, hasMonsterOverrides, setMonsterOverrides, type MonsterDef,
+  activeMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, hasMonsterOverrides, setMonsterOverrides,
   assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
@@ -120,7 +123,7 @@ function validateItemsCandidate(value: unknown): string | null {
 /** monsters は管理画面 (/admin/monsters) と同じく参照中の敵 (クエストの討伐対象・ストーリー戦闘) を消させず、
  *  core の検証 (setMonsterOverrides) を通したら元へ戻す。0 体は core が拒否する (読み込みで無視されるため)。 */
 function validateMonstersCandidate(value: unknown): string | null {
-  const monsters = listOf<MonsterDef>(value, 'monsters');
+  const monsters = decodeMonstersFromRecord((value as Record<string, unknown>).monsters);
   const dangling = danglingRefs('monster', monsters.map((m) => m?.id))[0];
   if (dangling) return describeDanglingRef(dangling);
   const prev = hasMonsterOverrides() ? activeMonsters().map((m) => ({ ...m })) : null;
@@ -196,7 +199,8 @@ export async function handleAdminData(req: Request, env: AdminDataEnv, now: numb
     const saved = await getRecord<Record<string, unknown>>(repo.pdsUrl, repo.did, collection, RKEY);
     await loadSavedWorld(env, now);
     if (req.method === 'GET') {
-      const body: Record<string, unknown> = { name, collection, cid: saved?.cid ?? null, value: saved?.value ?? null };
+      const value = name === 'monsters' && saved?.value ? { ...saved.value, monsters: decodeMonstersFromRecord(saved.value.monsters) } : saved?.value ?? null;
+      const body: Record<string, unknown> = { name, collection, cid: saved?.cid ?? null, value };
       if (name === 'npcs') body.placementIssues = npcPlacementIssues(listOf<NpcDef>(saved?.value, 'npcs'), () => true);
       return json(body);
     }
@@ -220,7 +224,9 @@ async function putAdminData(req: Request, env: AdminDataEnv, now: number, name: 
   if (reason) return json({ error: 'validation_failed', message: reason }, 400);
   if (body.dryRun === true) return json({ ok: true, dryRun: true });
   const collection = collectionOf(env, name);
-  const record = { ...(value as Record<string, unknown>), $type: collection, updatedAt: new Date(now * 1000).toISOString() };
+  const fields = value as Record<string, unknown>;
+  const recordValue = name === 'monsters' ? { ...fields, monsters: encodeMonstersForRecord(decodeMonstersFromRecord(fields.monsters)) } : fields;
+  const record = { ...recordValue, $type: collection, updatedAt: new Date(now * 1000).toISOString() };
   try {
     const { cid } = await serverPutRecord(env, now, collection, RKEY, record, body.swapCid);
     resetAuthoredWorldCache();

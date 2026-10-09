@@ -211,6 +211,20 @@ describe('/api/admin/data (#695)', () => {
       expect(pds.puts.map((p) => p.collection)).toEqual([COL('monsters')]);
     });
 
+    it('PUT monsters は小数を文字列でレコードに書き、GET は数値に戻して返す (#740)', async () => {
+      const value = { monsters: monsters().map((m, i) => (i === 0 ? { ...m, spawnWeight: 0.4, drops: [{ item: 'herb', chance: 0.3 }] } : m)) };
+      const env = await makeEnv();
+      const res = await handleRequest(call('PUT', 'monsters', { body: { value, swapCid: null } }), env);
+      expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+      const written = pds.puts[0]!.record.monsters as Array<{ spawnWeight?: unknown; drops: Array<{ chance: unknown }> }>;
+      expect(written[0]).toMatchObject({ spawnWeight: '0.4', drops: [{ item: 'herb', chance: '0.3' }] });
+      const floats: number[] = [];
+      JSON.stringify(pds.puts[0]!.record, (_k, v: unknown) => { if (typeof v === 'number' && !Number.isInteger(v)) floats.push(v); return v; });
+      expect(floats).toEqual([]); // PDS は整数以外の数値を拒否する
+      const got = await (await handleRequest(call('GET', 'monsters'), env)).json() as { value: { monsters: unknown[] } };
+      expect(got.value.monsters).toEqual(value.monsters);
+    });
+
     it('ストーリー戦闘が使っている敵を消すと 400 で書かない', async () => {
       const used = activeMonsters()[0]!.id;
       store.set(COL('story'), { value: { battles: [{ id: 'b1', monsterId: used, count: 1, winFlag: 'won-b1' }] }, cid: 'st1' });

@@ -21,7 +21,7 @@ import { decodeWorldMap, loadStaticWorldMap, setTownOverrides, setWorldMap, type
 import { WORLD_SIZE } from './world.js';
 import { loadTileArts, type TileArtRecord } from './tile-art.js';
 import { setMonsterOverrides } from './monster-data.js';
-import type { MonsterDef } from './battle.js';
+import { decodeMonstersFromRecord } from './monster-record.js';
 import { setItemOverrides, type ItemDefData } from './item-data.js';
 import type { EquipmentDef } from './equipment.js';
 import { setShopOverrides, type ShopOverride } from './shop-data.js';
@@ -54,7 +54,10 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
     setTownOverrides(rec.towns ?? null);
   },
   tileArt: (v) => { const rec = v as Rec<{ arts: Record<string, TileArtRecord> }>; if (rec?.arts) loadTileArts(rec.arts); },
-  monsters: (v) => { const rec = v as Rec<{ monsters: MonsterDef[] }>; if (rec?.monsters?.length) setMonsterOverrides(rec.monsters); },
+  monsters: (v) => {
+    const monsters = decodeMonstersFromRecord((v as Rec<{ monsters: unknown }>)?.monsters); // 小数は文字列で保存 (#740)
+    if (monsters.length) setMonsterOverrides(monsters);
+  },
   items: (v) => {
     const rec = v as Rec<{ items: ItemDefData[]; equipment: EquipmentDef[] }>;
     if (rec?.equipment?.length) setItemOverrides({ items: rec.items ?? [], equipment: rec.equipment });

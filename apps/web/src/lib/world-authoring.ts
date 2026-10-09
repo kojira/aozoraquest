@@ -23,6 +23,8 @@ import {
   setJobOverrides,
   setItemOverrides,
   setMonsterOverrides,
+  decodeMonstersFromRecord,
+  encodeMonstersForRecord,
   setNpcs,
   validateNpcs,
   setShopOverrides,
@@ -157,8 +159,9 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
 
 // ─── モンスター (#419) ─────────────────────────────────────
 
+/** 保存レコードの形。monsters の小数の欄は文字列 (#740。encodeMonstersForRecord / decodeMonstersFromRecord)。 */
 export interface MonstersRecord {
-  monsters: MonsterDef[];
+  monsters: unknown[];
   updatedAt: string;
 }
 
@@ -166,7 +169,7 @@ export interface MonstersRecord {
 export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promise<number> {
   // 保存前に core の検証を通す (壊れた 1 体で全体を落とす)。通れば適用もされる。
   setMonsterOverrides(monsters);
-  const rec: MonstersRecord = { monsters, updatedAt: new Date().toISOString() };
+  const rec: MonstersRecord = { monsters: encodeMonstersForRecord(monsters), updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.monsters, RKEY, rec);
   return monsters.length;
 }
@@ -354,7 +357,7 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   setWorldMap({ tiles, size: WORLD_SIZE, parts });
   setTownOverrides(map?.towns ?? null);
   setItemOverrides(items ?? null);
-  setMonsterOverrides(monsters?.monsters ?? null);
+  setMonsterOverrides(monsters ? decodeMonstersFromRecord(monsters.monsters) : null);
   setNpcs(npcs?.npcs ?? []);
   setInteriors(maps, interior?.gates ?? []);
   setGameQuests(quests?.quests ?? []);
