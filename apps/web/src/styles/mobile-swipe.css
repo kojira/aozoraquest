@@ -28,6 +28,15 @@
   .app-shell .content::before,
   .app-shell .content::after { display: none; }
 
+  /* /world: ルートを footer まで伸ばし、マップ下の黒い領域も移動スティックにする。
+     1.2em は上の .content の上下 padding。dvh 非対応向けに vh を fallback。 */
+  .world-screen {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - var(--shell-chrome-height, 9.5em) - 1.2em);
+    min-height: calc(100dvh - var(--shell-chrome-height, 9.5em) - 1.2em);
+  }
+
   /* workspace の content は透明 + padding 0 (各カラムが背景・余白を持つ) */
   .app-shell:has([data-workspace="1"]) .content { padding: 0; background: transparent; }
 

@@ -73,7 +73,19 @@ export function stickDirFor(dx: number, dy: number, current: StickDir | null): S
   return horizontal ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
 }
 
-export function VirtualStick({ onMove, onTapSelf }: { onMove: (dir: StickDir) => void; onTapSelf?: () => void }) {
+export function VirtualStick({
+  onMove,
+  onTapSelf,
+  inset = EDGE_PASS_PX,
+  showHint: hintEnabled = true,
+}: {
+  onMove: (dir: StickDir) => void;
+  onTapSelf?: () => void;
+  /** 反応領域の inset (既定は外周 EDGE_PASS_PX の素通し)。マップ下の黒い領域は '0 36px'。 */
+  inset?: number | string;
+  /** 初回ガイドを出すか (2 本目のスティックで重複表示しないため false にする)。 */
+  showHint?: boolean;
+}) {
   const [stick, setStick] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
   const [showHint, setShowHint] = useState(() => {
     try {
@@ -214,7 +226,7 @@ export function VirtualStick({ onMove, onTapSelf }: { onMove: (dir: StickDir) =>
         position: 'absolute',
         // 外周 EDGE_PASS_PX はスクロール用の素通しゾーン (touch-action none を
         // 全面に張るとマップから始まるスクロールが全部移動になる)
-        inset: EDGE_PASS_PX,
+        inset,
         // スクロール/ピンチに食われず pointermove を受け続ける (この領域内のみ)
         touchAction: 'none',
         userSelect: 'none',
@@ -236,7 +248,7 @@ export function VirtualStick({ onMove, onTapSelf }: { onMove: (dir: StickDir) =>
         ))}
       </div>
       {/* 初回ガイド: 操作 UI が不可視なので、使い方をゴーストリングで 1 回だけ示す */}
-      {showHint && !stick && (
+      {hintEnabled && showHint && !stick && (
         <div
           aria-hidden
           style={{
