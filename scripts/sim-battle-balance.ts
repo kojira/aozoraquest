@@ -13,6 +13,7 @@
  * 実行: pnpm exec tsx scripts/sim-battle-balance.ts [--trials 2000] [--jobLv 1] [--playerLv 1]
  *       [--base personal:atk,def,agi,int,luk] (個人 rpgStats 基底の感度分析用)
  */
+import '../packages/core/src/__tests__/helpers/monster-setup.js'; // モンスターはコードに無い (D-MONSTER-001)。テスト用 fixture を入れる
 import {
   ARCHETYPES,
   BATTLE_TUNING,

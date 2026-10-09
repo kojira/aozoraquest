@@ -3,9 +3,10 @@ import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import {
   starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
-  worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap,
+  worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, setMonsterOverrides, clearMonsters,
 } from '@aozoraquest/core';
 import { handleQuestAccept, handleQuestComplete } from '../../edge/src/game-quest';
 import { handleMove, handleGear } from '../../edge/src/battle-resolver';
@@ -49,6 +50,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
   const gates = starterTownGates(town);
   const npcs = starterTownNpcs(), quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
+  setMonsterOverrides(TEST_MONSTERS); // quests の monsterId 実在検査より先に入れる (D-MONSTER-001)
   setInteriors([village], gates); setNpcs(npcs); setGameQuests(quests); setScenario(scenario); setShopOverrides([shop]);
   let state: GameState = { did: DID, activeQuests: [], power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: 14, y: 22,
     mapId: village.id, xpEpoch: XP_EPOCH, version: 1, updatedAt: '' };
@@ -68,6 +70,8 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     throw new Error(`External request forbidden in tutorial test: ${new URL(url).hostname}`);
   }) as typeof fetch;
   const records: Record<string, unknown> = {
+    // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
+    'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
@@ -208,6 +212,6 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
   } finally {
     releaseAccept?.();
     globalThis.fetch = originalFetch;
-    setScenario(null); setGameQuests(null); setNpcs(null); setInteriors(null, []); setShopOverrides(null);
+    setScenario(null); setGameQuests(null); setNpcs(null); setInteriors(null, []); setShopOverrides(null); clearMonsters();
   }
 });

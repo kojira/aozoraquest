@@ -58,7 +58,7 @@ import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
 import { GUILD_INVITATION, ONBOARDING_LINES, ONBOARDING_PORTRAIT, OPENING_GUIDE_LINES, PROLOGUE_LINES, starterHandoffLines } from '@/lib/world-opening';
-import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, type Dir, type Vitals } from '@/lib/world-view';
+import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, type Dir, type Vitals } from '@/lib/world-view';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -367,7 +367,7 @@ export function World() {
   // 内部マップ (#424) の座標はローカル系なので、地域から引く危険度・敵は意味を持たない
   // (常に region 0 になる)。内部では自分の危険度設定を使い、未設定なら「敵なし」。
   const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
-  const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y))).name;
+  const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y)))?.name;
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
   // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
@@ -461,7 +461,7 @@ export function World() {
                 // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。
                 insideHere
                   ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined ? ` / ${dangerLabel(hereTier)}` : ''}`
-                  : town ? `🏘 ${town.name}` : `${dangerLabel(hereTier)}${here === 'forest' ? '・深い森' : ''} / ${favoredMonsterName}`
+                  : town ? `🏘 ${town.name}` : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName)
               }
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。

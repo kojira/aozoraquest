@@ -6,8 +6,9 @@
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { jsonToLex, type Agent } from '@atproto/api';
-import { allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { activeMonsters, clearMonsters, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
+import { TEST_MONSTERS } from '@aozoraquest/core/src/__tests__/helpers/monster-fixture';
 
 const DID = 'did:plc:admin';
 const NPC: NpcDef = { id: 'elder', name: '長老', x: 3, y: 4, lines: ['やあ'] };
@@ -137,5 +138,57 @@ describe('NPC editor strict load and save', () => {
     setNpcs([NPC]);
     await expect(loadNpcAuthoringRecords(fakeAgent({}), DID, () => false)).rejects.toThrow('取り消し');
     expect(allNpcs()).toEqual([NPC]);
+  });
+});
+
+describe('loadAuthoredWorld: monsters は PDS が読めないとき edge の last-good へ倒れる (D-MONSTER-001)', () => {
+  const CACHED: MonsterDef[] = [...TEST_MONSTERS, { ...TEST_MONSTERS[0]!, id: 'golden-lantern', name: 'こがねランタン', storyOnly: true }];
+  const quest: GameQuestDef = { id: 'q-lantern', title: 'ランタン退治', npcId: 'elder', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat', monsterId: 'golden-lantern', count: 1 } };
+  /** monsters だけ getRecord が reject する管理者 repo (他は fakeAgent と同じ)。 */
+  function agentWithMonstersDown(records: Record<string, unknown>): Agent {
+    const ok = fakeAgent(records).com.atproto.repo.getRecord;
+    const getRecord = async (p: { collection: string }) => {
+      if (p.collection.endsWith('.world.monsters')) throw new Error('XRPC upstream failure');
+      return ok(p as never);
+    };
+    return { com: { atproto: { repo: { getRecord } } } } as unknown as Agent;
+  }
+  const fetchSpy = vi.fn();
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_ADMIN_DIDS', DID);
+    clearMonsters();
+    setNpcs([NPC]);
+    fetchSpy.mockReset().mockImplementation(async (url: string) => (url.includes('/api/world/admin-cache?name=monsters')
+      ? new Response(JSON.stringify({ cid: 'cid-kv', value: { monsters: encodeMonstersForRecord(CACHED), updatedAt: 'x' } }), { status: 200 })
+      : new Response('{}', { status: 404 })));
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs(); vi.unstubAllGlobals();
+    setMonsterOverrides(TEST_MONSTERS); setNpcs(null); setGameQuests(null);
+  });
+
+  it('PDS の monsters が reject でも edge から 21 体が入り、続く quests の実在検査が通る', async () => {
+    await loadAuthoredWorld(agentWithMonstersDown({ npcs: { npcs: [NPC] }, quests: { quests: [quest] } }));
+    expect(activeMonsters().map((m) => m.id)).toEqual(CACHED.map((m) => m.id));
+    expect(gameQuests().map((q) => q.id)).toEqual(['q-lantern']);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('PDS の monsters が読めれば edge を呼ばない', async () => {
+    await loadAuthoredWorld(fakeAgent({ monsters: { monsters: encodeMonstersForRecord([...TEST_MONSTERS]), updatedAt: 'x' } }));
+    expect(activeMonsters()).toHaveLength(TEST_MONSTERS.length);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('NPC エディタの厳密な読み込みは monsters レコードが無ければ今の値を残す (0 体にしない)', async () => {
+    const { loadNpcAuthoringRecords } = await import('./world-authoring');
+    setMonsterOverrides(CACHED);
+    setGameQuests([quest]);
+    await loadNpcAuthoringRecords(fakeAgent({ npcs: { npcs: [NPC] }, quests: { quests: [quest] } }), DID);
+    expect(activeMonsters()).toHaveLength(CACHED.length);
+    expect(gameQuests().map((q) => q.id)).toEqual(['q-lantern']);
+    expect(fetchSpy).not.toHaveBeenCalled(); // 厳密な読み込みは edge を読まない
   });
 });

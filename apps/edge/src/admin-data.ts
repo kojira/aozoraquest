@@ -18,7 +18,7 @@ import {
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
   activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
-  activeMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, hasMonsterOverrides, setMonsterOverrides,
+  activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, setMonsterOverrides,
   assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
@@ -126,8 +126,8 @@ function validateMonstersCandidate(value: unknown): string | null {
   const monsters = decodeMonstersFromRecord((value as Record<string, unknown>).monsters);
   const dangling = danglingRefs('monster', monsters.map((m) => m?.id))[0];
   if (dangling) return describeDanglingRef(dangling);
-  const prev = hasMonsterOverrides() ? activeMonsters().map((m) => ({ ...m })) : null;
-  try { setMonsterOverrides(monsters); } finally { setMonsterOverrides(prev); }
+  const prev = activeMonsters().map((m) => ({ ...m }));
+  try { setMonsterOverrides(monsters); } finally { if (prev.length) setMonsterOverrides(prev); else clearMonsters(); }
   return null;
 }
 

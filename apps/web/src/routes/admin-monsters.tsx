@@ -5,13 +5,9 @@ import {
   monsterCountByTier,
   baselineXp,
   battleXpFor,
-  runAutoBattle,
-  startBattle,
-  setMonsterOverrides,
   danglingRefs,
   describeDanglingRef,
   MonsterDataError,
-  JOBS,
   ITEMS,
   type Element,
   type MonsterDef,
@@ -20,6 +16,7 @@ import {
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
+import { simulateMonsterWinRate } from '@/lib/monster-simulation';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { MonsterSvg, bodyFor } from '@/components/monster-svg';
@@ -121,26 +118,12 @@ export function AdminMonsters() {
     }
   }, [session.agent, list]);
 
-  /** 模擬戦: 保存前に手応えを見る。全 16 職 × 60 seed の勝率。
-   *  **編集中の値を一時適用して回し、終わったら必ず戻す** — 戻さないと保存していない
-   *  編集がワールド画面の戦闘にまで効いてしまう (マップの draft と同じ理屈)。 */
+  /** 模擬戦: 保存前に手応えを見る (編集中の値で回し、模擬戦の前の値へ戻す)。 */
   const simulate = useCallback((def: MonsterDef) => {
     try {
-      setMonsterOverrides(list); // 編集中の値で (finally で戻す)
-      let wins = 0;
-      let total = 0;
-      for (const j of JOBS) {
-        for (let seed = 0; seed < 60; seed++) {
-          const r = runAutoBattle(startBattle(j.id, Math.max(1, (def.level ?? 1)), 1, 'x', def.tier, seed, 2, undefined, { monsterId: def.id }));
-          total++;
-          if (r.outcome === 'win') wins++;
-        }
-      }
-      setNote(`${def.name}: 想定 Lv での勝率 ${((wins / total) * 100).toFixed(0)}% (全職 × 60 seed) / XP ${battleXpFor(def.id)} (式なら ${baselineXp(def)})`);
+      setNote(simulateMonsterWinRate(list, def));
     } catch (e) {
       setNote(`模擬戦できない: ${String(e)}`);
-    } finally {
-      setMonsterOverrides(null); // 保存前の編集を残さない (次の loadAuthoredWorld で保存済みへ戻る)
     }
   }, [list]);
 

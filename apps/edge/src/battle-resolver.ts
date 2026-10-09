@@ -26,7 +26,7 @@ import {
   interiorTerrainAt,
   isInterior,
   walkableIn,
-  fieldMonsterAt, flagsAfterStoryBattle, storyBattleById, storyBattleOpen, type StoryBattleDef,
+  fieldMonsterAt, flagsAfterStoryBattle, storyBattleById, storyBattleOpen, type StoryBattleDef, activeMonsters,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
@@ -490,7 +490,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   // エンカウント: tile+30分枠+秘密から決定的 (見えない・予測不可・30分でリポップ)。街では出さない。
   // **内部マップは encounterTier を設定したときだけ敵が出る** (街の中・城の広間は無し)。
-  if (!fixed && terrain !== 'town' && (!inside || inside.encounterTier !== undefined)) {
+  if (!fixed && terrain !== 'town' && (!inside || inside.encounterTier !== undefined) && activeMonsters().length > 0) {
     const window = enemyWindow(now);
     const { roll, monsterSeed } = tileEncounter(env, nx, ny, window);
     if (roll < encounterRateFor(terrain)) {

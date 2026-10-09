@@ -9,6 +9,7 @@ import {
   MAX_VIT,
   MIN_PACE,
   MIN_VIT,
+  activeMonsters,
   currentJobParams,
   jobOverridesDiff,
   jobDisplayName,
@@ -159,6 +160,8 @@ export function AdminJobs() {
     );
   }
 
+  // モンスターはレコードだけが正 (D-MONSTER-001)。0 体だと startBattle が相手を選べない。
+  const noMonsters = activeMonsters().length === 0;
   const statSum = current ? (current.stats ?? [0, 0, 0, 0, 0]).reduce((a, b) => a + b, 0) : 0;
   const field = (label: string, input: React.ReactNode) => (
     <label className="admin-field">
@@ -273,10 +276,12 @@ export function AdminJobs() {
           <label>tier <input type="number" min={1} max={8} value={tier} onChange={(e) => setTier(Number(e.target.value))} style={{ width: '4em' }} /></label>
           <label>Lv <input type="number" min={1} max={50} value={lv} onChange={(e) => setLv(Number(e.target.value))} style={{ width: '4em' }} /></label>
           <label>試行 <input type="number" min={1} max={200} value={trials} onChange={(e) => setTrials(Number(e.target.value))} style={{ width: '5em' }} /></label>
-          <button type="button" onClick={runSim} disabled={simBusy}>
+          <button type="button" onClick={runSim} disabled={simBusy || noMonsters}>
             {simBusy ? '計算中…' : '編集値で試す'}
           </button>
-          <span style={{ color: 'var(--color-muted)' }}>保存せずに試せる (端末にも残らない)</span>
+          <span role="status" style={{ color: 'var(--color-muted)' }}>
+            {noMonsters ? 'モンスター未読込: world.monsters が読み込まれていないため試せない (ワールド画面を開くと読み込まれる)' : '保存せずに試せる (端末にも残らない)'}
+          </span>
         </div>
         {simRows && (
           <div style={{ marginTop: '0.4em', fontSize: '0.8em' }}>

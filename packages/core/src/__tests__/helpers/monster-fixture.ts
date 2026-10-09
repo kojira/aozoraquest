@@ -1,18 +1,12 @@
 /**
- * **同梱のモンスター一覧 (フォールバック)。本番の正は管理者 PDS のレコード** (#419 / #537)。
- *
- * ここに書いた敵はリポジトリが公開なので誰でも読める。**新しい敵・調整済みの値を
- * ここへ書かない** — エディタ (/admin/monsters) で編集して保存すれば、レコードが
- * この一覧を丸ごと差し替える (`setMonsterOverrides`)。
- *
- * この一覧が残っている理由は 2 つ:
- *  1. レコードが読めないときのフォールバック (戦闘を止めない)
- *  2. テスト・sim の決定的な土台
- * レコード運用が安定したら、中身を汎用のプレースホルダへ縮める (#537 の最終段)。
+ * **テスト・sim 用のモンスター一覧** (D-MONSTER-001)。ゲームコードはモンスターを持たず、
+ * 本番の正は管理者 PDS の world.monsters レコードだけ。ここは旧同梱の 20 体をそのまま移した
+ * 決定的な土台で、vitest の setupFiles と sim の先頭で `setMonsterOverrides` する。
+ * **index から export しない** (配布コードに入れない)。
  */
-import type { MonsterDef } from './battle.js';
+import type { MonsterDef } from '../../battle.js';
 
-export const MONSTERS: readonly MonsterDef[] = [
+export const TEST_MONSTERS: readonly MonsterDef[] = [
 
   // tier1: 手習い (初心者でも勝てる)。**HP を明示して弱い敵は本当に弱く**した (以前は hpBase=66 が
   // 支配的で全 tier1 が HP~70 横並び → 序盤が重い真因)。XP は xp を省いて

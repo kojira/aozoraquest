@@ -112,7 +112,7 @@ describe('summonMonster', () => {
     expect(ravenFavored).toBeGreaterThan(uniform);
     // どの affinity でも必ず実在モンスターを favor (死に相性が無い)
     for (let a = 0; a < 3; a++) {
-      expect(favoredMonsterFor(5, a).tier).toBe(5);
+      expect(favoredMonsterFor(5, a)!.tier).toBe(5);
     }
   });
 

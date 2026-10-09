@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     globals: false,
+    setupFiles: ['./src/__tests__/helpers/monster-setup.ts'],
   },
 });

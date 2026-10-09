@@ -21,7 +21,7 @@ import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
-import { ensureAuthoredWorld } from './world-authoring';
+import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
@@ -102,6 +102,8 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   if (req.method === 'GET' && url.pathname === '/api/npc-image') {
     return cors(await handleNpcImage(req, env), allowedOrigin);
   }
+
+  if (req.method === 'GET' && url.pathname === '/api/world/admin-cache') return cors(await handleAdminCache(url, env), allowedOrigin);
 
   if (req.method === 'GET' && url.pathname === '/healthz') {
     return cors(json({ ok: true }), allowedOrigin);

@@ -1,10 +1,12 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, initialPosition, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
-import { startBattle, tierForRegion, regionOf, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
+import { clearMonsters, setMonsterOverrides, startBattle, tierForRegion, regionOf, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
+import { signPosition } from '../src/world-token';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 
 const USER = 'did:plc:alice';
 const SERVER_DID = 'did:plc:testserver';
@@ -646,5 +648,37 @@ describe('街の内部へ入ると帰還先も更新する (#424)', () => {
     expect(r.townArrival).toEqual({ x: town.x, y: town.y });
     expect(r.healed).toBe(true);
     expect((m.store.get('gs')!.value as GameState).carryHp).toBeUndefined();
+  });
+});
+
+describe('モンスターが 0 体のときの移動 (D-MONSTER-001)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setMonsterOverrides(TEST_MONSTERS); vi.restoreAllMocks(); });
+
+  it('遭遇マスへ移動しても encounter を返さず、状態の読み取りも封印もしない (エラーログも出さない)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS() });
+    let pdsCalls = 0;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => { pdsCalls++; return m.fn(url, init); }) as unknown as typeof fetch;
+    // モンスターがいれば遭遇する移動を探す (位置はトークン権威なので state は読まない)
+    let hit: { x: number; y: number } | undefined;
+    for (let x = 30; x < 400 && !hit; x++) {
+      const y = 40;
+      if (!isWalkable(terrainAt(x, y)) || !isWalkable(terrainAt(x + 1, y)) || terrainAt(x + 1, y) === 'town') continue;
+      const token = signPosition(env, { did: USER, x, y, counter: 1, iat: NOW });
+      const r = await handleMove(env, USER, 1, 0, token, NOW);
+      if (r.encounter) hit = { x, y };
+    }
+    expect(hit).toBeDefined();
+
+    clearMonsters();
+    pdsCalls = 0;
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const token = signPosition(env, { did: USER, x: hit!.x, y: hit!.y, counter: 1, iat: NOW });
+    const r = await handleMove(env, USER, 1, 0, token, NOW);
+    expect(r.x).toBe(wrap(hit!.x + 1));
+    expect(r.encounter).toBeUndefined();
+    expect(error).not.toHaveBeenCalled(); // 今までは 'encounter failed (移動は通す)' を遭遇マスのたびに出していた
+    expect(pdsCalls).toBe(0); // readState も guard の封印もしない
   });
 });
