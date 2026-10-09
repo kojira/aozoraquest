@@ -21,6 +21,7 @@ export * from './world.js';
 export * from './world-map.js';
 export * from './tile-art.js';
 export * from './monster-data.js';
+export * from './monster-record.js';
 export * from './item-data.js';
 export * from './shop-data.js';
 export * from './npc-data.js';
