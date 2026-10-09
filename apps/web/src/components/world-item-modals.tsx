@@ -11,7 +11,7 @@ import type { CraftedPiece } from '@/lib/crafting';
  * だが、内容の多い窓は既存モーダル (gear/status 等) と同じ全面ダイアログに寄せる。
  */
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();

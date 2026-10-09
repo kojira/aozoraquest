@@ -17,9 +17,8 @@ export interface WorldMenuCommand {
   onSelect: () => void;
 }
 
-export function WorldMenu({ commands, questLines, onClose }: {
+export function WorldMenu({ commands, onClose }: {
   commands: readonly WorldMenuCommand[];
-  questLines: readonly string[];
   onClose: () => void;
 }) {
   const firstRef = useRef<HTMLButtonElement>(null);
@@ -48,14 +47,6 @@ export function WorldMenu({ commands, questLines, onClose }: {
         style={{ padding: 8, marginBottom: 4, minWidth: 180, maxWidth: '100%', maxHeight: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}
       >
         <div style={{ fontSize: 11, color: 'var(--color-muted)', marginBottom: 4, textAlign: 'center' }}>コマンド</div>
-        <section aria-label="受注中の依頼" style={{ minHeight: 0, overflowY: 'auto', maxHeight: '40%', fontSize: '0.8em', marginBottom: 6, overflowWrap: 'anywhere' }}>
-          <div>{questLines.length ? `受注中の依頼 ${questLines.length}件` : '受注中の依頼は ありません'}</div>
-          {questLines.map((line, i) => <p key={i} style={{ margin: '0.4em 0' }}>{line}</p>)}
-          {questLines.length > 0 && <>
-            <p>同じ敵の依頼は、受注しているものすべてに数えます。</p>
-            <p>所持品は ほかの依頼・どうぐ・制作と共通です。報告すると減ります。</p>
-          </>}
-        </section>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, flexShrink: 0 }}>
           {commands.map((c, i) => (
             <button

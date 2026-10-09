@@ -117,23 +117,29 @@ async function captureQuestChoices(page: Page, stage: string) {
   }
 }
 
-async function captureQuestMenu(page: Page, stage: string) {
+async function captureQuestLog(page: Page, stage: string) {
+  mkdirSync(SHOTS, { recursive: true });
+  const menu = page.getByRole('dialog', { name: 'コマンド' });
+  await page.screenshot({ path: `${SHOTS}/${stage}-menu-390.png` });
+  await menu.getByRole('button', { name: 'クエスト', exact: true }).click();
+  await expect(menu).toHaveCount(0);
+  const log = page.getByRole('dialog', { name: 'クエスト' });
+  await expect(log.getByRole('region', { name: 'ギルドの依頼' })).toContainText('依頼: Blueskyちゃん（ふたばの村 ギルド）');
+  await expect(log.getByRole('region', { name: '個人の依頼' })).toContainText('(3/3)');
+  await expect(log).toContainText('報告できます');
+  await log.getByRole('region', { name: '個人の依頼' }).getByRole('button').first().click();
+  await expect(log).toContainText('条件:');
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 844 });
-    const map = (await page.getByLabel('ワールドマップ').boundingBox())!;
-    const menu = page.getByRole('dialog', { name: 'コマンド' });
-    for (const part of [menu.locator('section'), ...await menu.getByRole('button').all()]) {
+    for (const part of await log.getByRole('button').all()) {
       const b = (await part.boundingBox())!;
-      expect(b.x).toBeGreaterThanOrEqual(map.x);
-      expect(b.y).toBeGreaterThanOrEqual(map.y);
-      expect(b.x + b.width).toBeLessThanOrEqual(map.x + map.width + 1);
-      expect(b.y + b.height).toBeLessThanOrEqual(map.y + map.height + 1);
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(width + 1);
     }
-    await expect(menu).toContainText('所持品は ほかの依頼');
-    await menu.locator('section').evaluate(el => { el.scrollTop = el.scrollHeight; });
-    await page.screenshot({ path: `${SHOTS}/${stage}-${width}.png` });
+    await page.screenshot({ path: `${SHOTS}/${stage}-list-${width}.png` });
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  await log.getByRole('button', { name: 'とじる', exact: true }).click();
 }
 
 test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 → 既存直接依頼/旅立ち (#707)', async ({ page }) => {
@@ -365,10 +371,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     expect(state.activeQuests.find(q => q.id === 'futaba-slimes')?.progress).toBe(3);
     const map = (await page.getByLabel('ワールドマップ').boundingBox())!;
     await page.mouse.click(map.x + map.width / 2, map.y + map.height / 2);
-    await expect(page.getByRole('dialog', { name: 'コマンド' })).toContainText('受注中の依頼 2件');
-    await expect(page.getByRole('dialog', { name: 'コマンド' })).toContainText('報告できます');
-    await captureQuestMenu(page, 'parallel-quests');
-    await page.getByRole('button', { name: '閉じる', exact: true }).click();
+    await captureQuestLog(page, 'parallel-quests');
     await bump('ArrowUp');
 
     await choose('依頼を見る'); await readAll(page);
