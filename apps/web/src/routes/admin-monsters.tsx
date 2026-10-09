@@ -19,7 +19,7 @@ import { saveMonsters } from '@/lib/world-authoring';
 import { simulateMonsterWinRate } from '@/lib/monster-simulation';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
-import { MonsterSvg, bodyFor } from '@/components/monster-svg';
+import { MonsterSvg } from '@/components/monster-svg';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { monsterArtKey } from '@aozoraquest/core';
 
@@ -391,10 +391,10 @@ export function AdminMonsters() {
                   key: monsterArtKey(current.id),
                   name: current.name,
                   seedColor: current.tint ?? '#8fd0ff',
-                  // 下敷きは従来の SVG (なぞって描く)。ドット絵を保存すると戦闘画面も差し替わる
+                  // 下敷きはレコードの絵 (ドット絵を飛ばす。なぞって描く)。ドット絵を保存すると戦闘画面も差し替わる
                   underlay: (
                     <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden>
-                      {bodyFor(current.species, current.tint)}
+                      <MonsterSvg species={current.species} tint={current.tint} size={100} dot={false} />
                     </svg>
                   ),
                 } satisfies ArtSubject]}

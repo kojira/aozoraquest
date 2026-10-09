@@ -7,7 +7,7 @@
  *   - レコードが**無ければ触らない** (読めない日にメモリの定義を消さない)
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { activeMonsters, clearMonsters, encodeMonstersForRecord, setMonsterOverrides, type MonsterDef, BASE_PARTS, BIOME_PARTS, encodeWorldMap, setWorldMap, setInteriors, interiorById, interiorTerrainAt, interiorWalkableAt, terrainAt, isWalkableAt, worldParts, allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { activeMonsters, clearMonsters, clearMonsterArts, monsterArtSvg, encodeMonstersForRecord, setMonsterOverrides, type MonsterDef, BASE_PARTS, BIOME_PARTS, encodeWorldMap, setWorldMap, setInteriors, interiorById, interiorTerrainAt, interiorWalkableAt, terrainAt, isWalkableAt, worldParts, allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { ensureAuthoredWorld, resetAuthoredWorldCache } from '../src/world-authoring';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 
@@ -172,6 +172,27 @@ describe('ensureAuthoredWorld: monsters の KV last-good (D-MONSTER-001)', () =>
     globalThis.fetch = pdsWithMonsters(record(TEST_MONSTERS), () => 'cid-a');
     await ensureAuthoredWorld({ ADMIN_DIDS: DID, OAUTH_TOKENS: kv }, NOW);
     expect(puts).toEqual([]);
+  });
+
+  it('monsterArt も KV に last-good を置き、PDS が読めないときは KV の絵が入る (PR2)', async () => {
+    const ART_KEY = `admin-world:${NSID}:monsterArt`;
+    const art = { arts: [{ id: 'slime', svg: '<g fill="{{tint|#57b7ee}}"/>' }], updatedAt: 'x' };
+    const { kv, data, puts } = stubKv();
+    const base = pdsWithMonsters(record(TEST_MONSTERS), () => 'cid-m');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('collection=app.aozoraquest.world.monsterArt')) return json(200, { uri: 'at://x', cid: 'cid-art', value: art });
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await ensureAuthoredWorld({ ADMIN_DIDS: DID, OAUTH_TOKENS: kv }, NOW);
+    expect(puts).toContain(ART_KEY);
+    expect(JSON.parse(data.get(ART_KEY)!)).toEqual({ cid: 'cid-art', value: art });
+    clearMonsterArts();
+    resetAuthoredWorldCache();
+    globalThis.fetch = (async () => { throw new Error('plc down'); }) as unknown as typeof fetch;
+    await ensureAuthoredWorld({ ADMIN_DIDS: 'did:plc:unresolvable', OAUTH_TOKENS: kv }, NOW);
+    expect(monsterArtSvg('slime', undefined)).toContain('#57b7ee');
+    clearMonsterArts();
   });
 
   it('PDS の monsters が空なら KV で上書きせず、KV の値を使う', async () => {

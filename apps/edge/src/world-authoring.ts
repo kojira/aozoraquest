@@ -25,7 +25,7 @@ export interface WorldAuthoringEnv {
   ADMIN_DIDS?: string;
   /** 管理データの env suffix (#716)。dev エッジは "dev" ([env.dev.vars])、本番は未設定。 */
   ADMIN_NSID_ENV?: string;
-  /** monsters の last-good を置く KV (D-MONSTER-001。`pds:usage` と同じ namespace)。 */
+  /** monsters / monsterArt の last-good を置く KV (D-MONSTER-001。`pds:usage` と同じ namespace)。 */
   OAUTH_TOKENS?: KVNamespace;
 }
 
@@ -38,8 +38,8 @@ export function adminNsidRoot(env: WorldAuthoringEnv): string {
 let loadedAt = 0;
 let inflight: Promise<void> | null = null;
 
-/** KV に last-good を置くレコード (D-MONSTER-001。monsters だけ)。 */
-const CACHED_RECORDS: readonly AdminWorldRecordName[] = ['monsters'];
+/** KV に last-good を置くレコード (D-MONSTER-001。monsters と monsterArt だけ)。 */
+const CACHED_RECORDS: readonly AdminWorldRecordName[] = ['monsters', 'monsterArt'];
 /** KV に最後に書いた (または読んだ) cid。**同じ cid の put を省く** (KV の put は 1 日 1000 回まで)。 */
 const kvCids = new Map<AdminWorldRecordName, string | null>();
 
@@ -84,7 +84,7 @@ async function adminRecordFetch(env: WorldAuthoringEnv, nsid: string, pdsCids: M
   };
 }
 
-/** `GET /api/world/admin-cache?name=monsters` — KV の last-good をそのまま返す (web が PDS を読めないとき用)。
+/** `GET /api/world/admin-cache?name=<monsters|monsterArt>` — KV の last-good をそのまま返す (web が PDS を読めないとき用)。
  *  元は公開レコードと同じ値なので認証は無し。無ければ 404。 */
 export async function handleAdminCache(url: URL, env: WorldAuthoringEnv): Promise<Response> {
   const name = url.searchParams.get('name') as AdminWorldRecordName | null;

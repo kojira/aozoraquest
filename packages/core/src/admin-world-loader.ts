@@ -2,7 +2,7 @@
  * 管理者 PDS の world.* レコードを読んで core に適用する唯一の手順 (Refs #718)。
  * web (`loadAuthoredWorld`) と edge (`ensureAuthoredWorld`) はレコードの取り方だけを渡す。
  *
- * 順序 (ADMIN_WORLD_RECORDS): map → tileArt → monsters → items → shops → npcs → jobs → interiors → quests → scenario → story。
+ * 順序 (ADMIN_WORLD_RECORDS): map → tileArt → monsters → monsterArt → items → shops → npcs → jobs → interiors → quests → scenario → story。
  *   - shops は items の後 (検証が EQUIPMENT_BY_ID / ITEMS を引く)。
  *   - quests は npcs・monsters・items の後 (検証が実在を引く)。scenario は quests の後 (questId を引く)。
  *   - story は scenario の後 (フラグ数を scenario.setFlags と合わせて数える。D-STORY-009)。
@@ -14,10 +14,11 @@
  *   - shops / npcs / jobs / quests / scenario / story / interiors は**空配列でも適用** (全削除の反映)。
  *   - items (equipment) は**空なら適用しない** (コード直書きのまま)。
  *   - monsters は**空なら「無い」と同じ** (MonsterDataError。コードには敵が無いので cache へ倒す)。
+ *   - monsterArt は**空・壊れていれば** MonsterArtError (cache へ倒す。コードには「?」の絵しか無い)。
  *   web と edge でこの規則に差は無かった。
  * 1 レコードの失敗は後続を止めない (onError に渡して次へ)。
  *
- * cache (D-MONSTER-001。`names` は monsters だけ): PDS の値を適用できたら `write`。
+ * cache (D-MONSTER-001。`names` は monsters と monsterArt だけ): PDS の値を適用できたら `write`。
  * PDS が throw / 無い / 空 / 検証 NG のときは `read` の値を適用する。壊れた値・空の値は write しない。
  */
 import { ADMIN_WORLD_RECORDS, type AdminWorldRecordName } from './admin-nsid.js';
@@ -26,6 +27,7 @@ import { WORLD_SIZE } from './world.js';
 import { loadTileArts, type TileArtRecord } from './tile-art.js';
 import { MonsterDataError, setMonsterOverrides } from './monster-data.js';
 import { decodeMonstersFromRecord } from './monster-record.js';
+import { setMonsterArts, type MonsterArtDef } from './monster-art.js';
 import { setItemOverrides, type ItemDefData } from './item-data.js';
 import type { EquipmentDef } from './equipment.js';
 import { setShopOverrides, type ShopOverride } from './shop-data.js';
@@ -70,6 +72,10 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
     const monsters = decodeMonstersFromRecord((v as Rec<{ monsters: unknown }>)?.monsters); // 小数は文字列で保存 (#740)
     if (!monsters.length) throw new MonsterDataError('monsters レコードが空');
     setMonsterOverrides(monsters);
+  },
+  monsterArt: (v) => {
+    if (v == null) return;
+    setMonsterArts((v as Rec<{ arts: MonsterArtDef[] }>)?.arts ?? []);
   },
   items: (v) => {
     const rec = v as Rec<{ items: ItemDefData[]; equipment: EquipmentDef[] }>;

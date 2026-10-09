@@ -48,8 +48,6 @@ export {
   levelUpGains,
 } from './battle-combatant.js';
 export {
-  TINTABLE_SPECIES,
-  type TintableSpecies,
   type MonsterSpecies,
   type DropDef,
   type Tier,

@@ -246,6 +246,24 @@ describe('/api/admin/data (#695)', () => {
     });
   });
 
+  describe('monsterArt (D-MONSTER-001 PR2)', () => {
+    it('PUT monsterArt は検証を通った絵を書く', async () => {
+      const value = { arts: [{ id: 'slime', svg: '<g fill="{{tint|#57b7ee}}"/>' }] };
+      const res = await handleRequest(call('PUT', 'monsterArt', { body: { value, swapCid: null } }), await makeEnv());
+      expect(res.status).toBe(200);
+      expect(pds.puts.map((p) => p.collection)).toEqual([COL('monsterArt')]);
+    });
+
+    it('知らない差し込み口・<script・href= の絵は 400 で書かない', async () => {
+      for (const svg of ['<g fill="{{color|#57b7ee}}"/>', '<g><script>alert(1)</script></g>', '<image href="https://x.example/a.png"/>']) {
+        const res = await handleRequest(call('PUT', 'monsterArt', { body: { value: { arts: [{ id: 'slime', svg }] }, swapCid: null } }), await makeEnv());
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: 'validation_failed' });
+      }
+      expect(pds.puts).toHaveLength(0);
+    });
+  });
+
   describe('story (D-STORY-009)', () => {
     const flags = (n: number) => Array.from({ length: n }, (_, i) => `f${i}`);
     const item = (over: Record<string, unknown> = {}) => ({ id: 'pi-key', mapId: 'cave-1', x: 4, y: 7, itemId: 'herb', count: 1, flag: 'got-key', ...over });

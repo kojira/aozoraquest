@@ -11,25 +11,9 @@ import { type Combatant, makeCombatant, monsterStats } from './battle-combatant.
 
 // ─── モンスター ─────────────────────────────────────────────
 
-/** SVG 描画のキー (UI 側が species ごとに絵を持つ)。 */
-/** **色違い変種 (`MonsterDef.tint`) を絵に反映できる種**。web の `monster-svg` は
- *  この一覧を輸入して分岐するので、ここに無い種に `tint` を付けても黙って捨てられ、
- *  同じ tier に見分けのつかない敵が並ぶ (#536 で いわのゴーレム / こけむしゴーレム が
- *  同一の絵になっていた)。tint を使いたい種は先にここへ足す。 */
-export const TINTABLE_SPECIES = ['slime', 'bat', 'mushroom', 'golem', 'serpent', 'raven'] as const;
-export type TintableSpecies = (typeof TINTABLE_SPECIES)[number];
-
-export type MonsterSpecies =
-  | 'slime'
-  | 'metal-slime'
-  | 'bat'
-  | 'mushroom'
-  | 'golem'
-  | 'wisp'
-  | 'serpent'
-  | 'raven'
-  | 'oni'
-  | 'dragon';
+/** 絵のキー。monsterArt レコード (`world.monsterArt`) の id と同じ。対応する絵が無ければ「?」で描く
+ *  (D-MONSTER-001 PR2: 種を足すのにコードを直さない)。tint が効くかどうかは絵に差し込み口があるかで決まる。 */
+export type MonsterSpecies = string;
 
 export interface DropDef {
   /** 素材 ID (ITEMS のキー) */

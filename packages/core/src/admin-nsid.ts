@@ -12,7 +12,7 @@
 export const AQ_NSID_ROOT = 'app.aozoraquest';
 
 /** 管理者 PDS の world.* レコード名。並びは loadAdminWorld の読み込み順。 */
-export const ADMIN_WORLD_RECORDS = ['map', 'tileArt', 'monsters', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story'] as const;
+export const ADMIN_WORLD_RECORDS = ['map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story'] as const;
 export type AdminWorldRecordName = (typeof ADMIN_WORLD_RECORDS)[number];
 
 /** 管理者 PDS の config.* レコード名。 */

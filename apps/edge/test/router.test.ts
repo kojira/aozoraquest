@@ -163,7 +163,14 @@ describe('GET /api/world/admin-cache (D-MONSTER-001)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('monsters 以外の name は KV に値があっても 404 (monsterArt は PR2)', async () => {
+  it('monsterArt も KV の値をそのまま返す (D-MONSTER-001 PR2)', async () => {
+    const art = JSON.stringify({ cid: 'bafy-art', value: { arts: [{ id: 'slime', svg: '<g/>' }] } });
+    const res = await handleRequest(new Request('https://x/api/world/admin-cache?name=monsterArt'), { OAUTH_TOKENS: kv({ 'admin-world:app.aozoraquest:monsterArt': art }) });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(art);
+  });
+
+  it('monsters / monsterArt 以外の name は KV に値があっても 404', async () => {
     const leaky: Env = { OAUTH_TOKENS: kv({ 'admin-world:app.aozoraquest:npcs': '{}', 'pds:usage': '{}' }) };
     for (const name of ['npcs', 'pds:usage', '', '../monsters']) {
       const res = await handleRequest(new Request(`https://x/api/world/admin-cache?name=${encodeURIComponent(name)}`), leaky);

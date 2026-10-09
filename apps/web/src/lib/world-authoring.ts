@@ -160,11 +160,11 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
 }
 
-/** **PDS の monsters が読めない / 無いときだけ** edge の last-good (KV) を読む (D-MONSTER-001)。
+/** **PDS の monsters / monsterArt が読めない / 無いときだけ** edge の last-good (KV) を読む (D-MONSTER-001)。
  *  これが無いと monsters の読み込みが一度失敗しただけで quests / story の実在検査が落ちる。
  *  write は edge だけが行う。厳密な読み込み (loadNpcAuthoringRecords) と保存は PDS だけを読む。 */
 const edgeRecordCache: AdminWorldRecordCache = {
-  names: ['monsters'],
+  names: ['monsters', 'monsterArt'],
   read: async (name) => {
     const res = await fetch(`${EDGE_URL ?? ''}/api/world/admin-cache?name=${encodeURIComponent(name)}`);
     if (res.status === 404) return null;
