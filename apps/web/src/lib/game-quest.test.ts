@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MONSTERS, setGameQuests, setNpcs, type GameQuestDef } from '@aozoraquest/core';
+import { MONSTERS, setGameQuests, setInteriors, setNpcs, type GameQuestDef } from '@aozoraquest/core';
 import {
   guildQuestDetailLines,
   questAcceptChoices,
   questAfterBattle,
-  questMenuLines,
+  questLogEntries,
+  questTermsLine,
   questChoiceTitle,
   questOfferLines,
   questStateOf,
@@ -21,8 +22,10 @@ beforeEach(() => {
     { id: 'n2', name: 'むらびと', x: 2, y: 1, lines: ['やあ'] },
   ]);
   setGameQuests([Q1, Q2]);
+  setInteriors([{ id: 'village', name: 'ふたばの村', size: 4, tiles: new Uint8Array(16) }], []);
 });
 afterEach(() => {
+  setInteriors(null, null);
   setGameQuests(null);
   setNpcs(null);
 });
@@ -36,16 +39,19 @@ describe('multi-active server mirror and shared materials', () => {
     expect(questAfterBattle(st, [], ['q0', 'q1'])).toEqual({ activeQuests: [], done: ['q0', 'q1'] });
     expect(questStateOf({})).toEqual({ activeQuests: [], done: [] });
   });
-  it('shows every quest, destination, shared inventory and unknown IDs without dropping them', () => {
+  it('quest log entries: guild/personal sections, giver with place, shared inventory, unknown IDs', () => {
+    setNpcs([
+      { id: 'n1', name: 'そんちょう', x: 1, y: 1, lines: ['やあ'], mapId: 'village' },
+      { id: 'n2', name: 'うけつけ', x: 2, y: 1, lines: ['やあ'], mapId: 'village', guildReception: true },
+    ]);
     setGameQuests([Q1, Q2, { ...Q2, id: 'q3' }]);
-    const st = { activeQuests: [...activeQuests, { id: 'q3', progress: 0 }, { id: 'gone', progress: 9 }], done: [] };
-    const before = questMenuLines(st, { herb: 2 });
-    expect(before).toHaveLength(4);
-    expect(before[0]).toContain('報告先: そんちょう');
-    expect(before[0]).toContain('(2/3)');
-    expect(before.slice(1, 3).every(l => l.includes('所持 2 / 必要 2') && l.includes('報告すると2こ渡します'))).toBe(true);
-    expect(questMenuLines(st, {}).slice(1, 3).every(l => l.includes('所持 0 / 必要 2') && !l.includes('報告できます'))).toBe(true);
-    expect(before[3]).toContain('依頼情報を確認できません（gone）');
+    const st = { activeQuests: [...activeQuests, { id: 'q3', progress: 0 }, { id: 'gone', progress: 9 }], done: ['q0'] };
+    const e = questLogEntries(st, { herb: 2 });
+    expect(e.map(x => [x.id, x.section, x.ready])).toEqual([['q1', 'personal', false], ['q2', 'guild', true], ['q3', 'guild', true], ['gone', 'personal', false]]);
+    expect(e[0]).toMatchObject({ title: 'スライム たいじ', giver: '依頼: そんちょう（ふたばの村）', progress: expect.stringContaining('(2/3)'), detail: questTermsLine(Q1) });
+    expect(e[1]).toMatchObject({ giver: '依頼: うけつけ（ふたばの村 ギルド）', progress: 'やくそうを 2 こ (2/2)' });
+    expect(questLogEntries(st, {})[1]!.ready).toBe(false);
+    expect(e[3]).toEqual({ id: 'gone', section: 'personal', title: '依頼情報を確認できません（gone）', ready: false });
   });
   it('disambiguates identical titles and objectives by ID for both choice entry points', () => {
     const other = { ...Q2, id: 'q3' };
@@ -80,4 +86,10 @@ it('ギルド詳細は共有データの条件/報酬を使い、受注前に納
   expect(lines).toContain('やくそう ×7 と あおぞらパワー 11');
   expect(lines).toContain('報告が 成功すると やくそうを 2 こ わたします');
   expect(lines).toContain('いまの 所持品も つかえます');
+});
+
+it('条件/報酬の行はギルド詳細と「クエスト」窓で同じ', () => {
+  const q = { ...Q1, reward: { power: 3 } };
+  expect(questTermsLine(q)).toBe(`条件: ${MON.name}を 3 たい。報酬: あおぞらパワー 3。`);
+  expect(guildQuestDetailLines(q)).toContain(questTermsLine(q));
 });

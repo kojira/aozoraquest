@@ -44,7 +44,8 @@ import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
 import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-blessing';
 import { WELCOME_POWER, ONBOARDING_DONE_KEY } from '@/lib/onboarding-reset';
-import { questMenuLines } from '@/lib/game-quest';
+import { questLogEntries } from '@/lib/game-quest';
+import { QuestLogModal } from '@/components/quest-log-modal';
 import { guildReception } from '@/lib/npc-talk';
 import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
@@ -136,6 +137,7 @@ export function World() {
   }, []);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
+  const [questLogOpen, setQuestLogOpen] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [featherOpen, setFeatherOpen] = useState(false);
   const [showStarter, setShowStarter] = useState(false);
@@ -259,11 +261,11 @@ export function World() {
 
   const wipeRef = useLatestRef(wipe);
   /** 入力ガード用に、開いている窓・演出の最新値を 1 つの ref で読む (deps の狭い callback から)。 */
-  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, searchMsg, featherOpen, showStarter });
+  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter });
   // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中・各窓・会話・サーバー往復中は移動不可。
   const moveBlocked = useCallback(() => {
     const o = overlaysRef.current;
-    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.searchMsg !== null || o.featherOpen || o.showStarter
+    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter
       || moveBusyRef.current || !!npcTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
   }, [battleRef, npcTalkRef, overlaysRef, wipeRef]);
   // そらのはねの行き先えらび: 導入中・戦闘・演出・地図/店/そうび/つよさの窓では開かない。
@@ -377,6 +379,7 @@ export function World() {
   const statusReady = !!combat && !!archetype;
   const menuCommands: WorldMenuCommand[] = [
     { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
+    { key: 'quests', label: 'クエスト', onSelect: () => setQuestLogOpen(true) },
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
     ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => void searchHere() } as WorldMenuCommand]),
     { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
@@ -471,7 +474,7 @@ export function World() {
             />
           )}
           {menuHint && !onboarding && !showStarter && !menuOpen && <WorldMenuHint />}
-          {menuOpen && <WorldMenu commands={menuCommands} questLines={questMenuLines(quest, materialsView)} onClose={() => setMenuOpen(false)} />}
+          {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
           {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。
               敵+ログ+コマンド、リザルトの報酬まで全部この枠内に畳む。上枠 (paddingTop)
               は WorldHud の HP/MP 帯を空けておく。 */}
@@ -626,6 +629,7 @@ export function World() {
           onClose={() => setItemsOpen(false)}
         />
       )}
+      {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />
       )}

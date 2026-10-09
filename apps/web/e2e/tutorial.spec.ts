@@ -145,7 +145,8 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
     const progressMap = await page.getByLabel('ワールドマップ').boundingBox();
     await page.mouse.click(progressMap!.x + progressMap!.width / 2, progressMap!.y + progressMap!.height / 2);
-    await expect(page.getByRole('dialog', { name: 'コマンド' })).toContainText('報告できます');
+    await page.getByRole('button', { name: 'クエスト', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'クエスト' })).toContainText('報告できます');
     await page.screenshot({ path: 'test-results/tutorial-progress.png' });
     await page.keyboard.press('Escape');
     await page.keyboard.press('ArrowUp');
@@ -158,6 +159,11 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     await page.reload();
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
     const map = await page.getByLabel('ワールドマップ').boundingBox();
+    await page.mouse.click(map!.x + map!.width / 2, map!.y + map!.height / 2);
+    await page.getByRole('button', { name: 'クエスト', exact: true }).click();
+    await expect(page.getByText('受注中の依頼は ありません')).toHaveCount(2);
+    await page.screenshot({ path: 'test-results/quest-log-empty.png' });
+    await page.keyboard.press('Escape');
     await page.mouse.click(map!.x + map!.width / 2, map!.y + map!.height / 2);
     await page.getByRole('button', { name: 'なんでも屋', exact: true }).click();
     await readAll(page);
