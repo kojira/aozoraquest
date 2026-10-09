@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { isWalkable, setGameQuests, setMonsterOverrides, setNpcs, setStory, terrainAt, type MonsterDef } from '@aozoraquest/core';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { handleMove, handleTurn, sealEncounter, type ResolverEnv } from '../src/battle-resolver';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from '../src/story-battle';
 import { writeServerTokens } from '../src/oauth-store';
@@ -90,7 +91,7 @@ describe('ストーリー戦 (D-STORY-009)', () => {
       fieldMonsters: [{ id: 'fm', mapId: 'world', x: S.x, y: S.y, battleId: 'b-weak', requireFlags: ['got-key'] }],
     });
   });
-  afterAll(() => { setStory(null); setGameQuests(null); setNpcs(null); setMonsterOverrides(null); });
+  afterAll(() => { setStory(null); setGameQuests(null); setNpcs(null); setMonsterOverrides(TEST_MONSTERS); });
   afterEach(() => { globalThis.fetch = orig; });
 
   const sealed = async (env: ResolverEnv, id: string) => {

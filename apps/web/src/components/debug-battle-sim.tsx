@@ -20,6 +20,7 @@ import {
   type Command,
   type GearSelection,
 } from '@aozoraquest/core';
+import { MonstersNotLoaded } from './monsters-not-loaded';
 
 /**
  * 管理者デバッグ模擬戦シミュレータ (issue #414)。/spirit の管理者セクションから使う。
@@ -66,7 +67,7 @@ interface BatchResult {
 }
 
 export function DebugBattleSim() {
-  const [enemyId, setEnemyId] = useState(MONSTERS[0]!.id);
+  const [enemyId, setEnemyId] = useState(MONSTERS[0]?.id ?? '');
   const [job, setJob] = useState<Archetype>('warrior');
   const [playerLv, setPlayerLv] = useState(1);
   const [jobLv, setJobLv] = useState(1);
@@ -82,11 +83,13 @@ export function DebugBattleSim() {
   const [extraEnemies, setExtraEnemies] = useState(0);
   const [targetIndex, setTargetIndex] = useState(0);
 
-  const enemy = MONSTERS_BY_ID[enemyId]!;
+  const enemy = MONSTERS_BY_ID[enemyId] ?? MONSTERS[0];
   const gear = useMemo<GearSelection>(
     () => ({ ...(weapon ? { weapon } : {}), ...(armor ? { armor } : {}), ...(charm ? { charm } : {}) }),
     [weapon, armor, charm],
   );
+  // モンスターはレコードだけが正 (D-MONSTER-001)。読み込まれていなければ戦う相手がいない。
+  if (!enemy) return <MonstersNotLoaded title="模擬戦" />;
 
   /** 1 戦を開始 (variance を指定)。tier は敵に付随 (monsterId 固定なので抽選はされない)。
    *  入力は clampInt で NaN/範囲外を潰してから渡す。 */
@@ -101,7 +104,7 @@ export function DebugBattleSim() {
       seed,
       clampInt(herbs, 0, 0, WORLD_HERB_MAX),
       undefined,
-      { monsterId: enemyId, gear, tonics: clampInt(tonics, 0, 0, WORLD_TONIC_MAX), vitalsVariance: variance, extraEnemies: extra },
+      { monsterId: enemy.id, gear, tonics: clampInt(tonics, 0, 0, WORLD_TONIC_MAX), vitalsVariance: variance, extraEnemies: extra },
     );
 
   const runBatch = () => {
@@ -187,7 +190,7 @@ export function DebugBattleSim() {
       {/* 入力フォーム */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4em 0.6em', fontSize: '0.82em' }}>
         <label>敵
-          <select value={enemyId} onChange={(e) => setEnemyId(e.target.value)} style={{ width: '100%' }}>
+          <select value={enemy.id} onChange={(e) => setEnemyId(e.target.value)} style={{ width: '100%' }}>
             {MONSTERS.map((m) => (
               <option key={m.id} value={m.id}>{`T${m.tier} ${m.name}`}</option>
             ))}

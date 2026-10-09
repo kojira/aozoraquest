@@ -9,7 +9,8 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { activeEquipment, activeMonsters, encodeWorldMap, ITEMS, MONSTERS_BY_ID, setInteriors, setItemOverrides, setMonsterOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { activeEquipment, activeMonsters, clearMonsters, encodeWorldMap, ITEMS, MONSTERS_BY_ID, setInteriors, setItemOverrides, setMonsterOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { handleRequest, type Env } from '../src/router';
 import { writeServerTokens } from '../src/oauth-store';
 import { resetAuthoredWorldCache } from '../src/world-authoring';
@@ -87,7 +88,7 @@ describe('/api/admin/data (#695)', () => {
   afterEach(() => {
     globalThis.fetch = orig;
     resetAuthoredWorldCache();
-    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null); setMonsterOverrides(null);
+    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null); setMonsterOverrides(TEST_MONSTERS);
   });
   it('無効・鍵なし・鍵違い・許可外 name は通常の not_found と同じ 404', async () => {
     for (const [env, req] of [
@@ -223,6 +224,14 @@ describe('/api/admin/data (#695)', () => {
       expect(floats).toEqual([]); // PDS は整数以外の数値を拒否する
       const got = await (await handleRequest(call('GET', 'monsters'), env)).json() as { value: { monsters: unknown[] } };
       expect(got.value.monsters).toEqual(value.monsters);
+    });
+
+    it('何も読み込まれていない状態で monsters 候補を検証したあとも 0 体のまま (D-MONSTER-001)', async () => {
+      const candidate = { monsters: monsters() };
+      clearMonsters();
+      const res = await handleRequest(call('PUT', 'monsters', { body: { value: candidate, swapCid: null, dryRun: true } }), await makeEnv());
+      expect(await res.json()).toEqual({ ok: true, dryRun: true });
+      expect(activeMonsters()).toHaveLength(0);
     });
 
     it('ストーリー戦闘が使っている敵を消すと 400 で書かない', async () => {

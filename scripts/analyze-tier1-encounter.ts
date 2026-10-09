@@ -7,6 +7,7 @@
  *
  * 実行: pnpm exec tsx scripts/analyze-tier1-encounter.ts
  */
+import '../packages/core/src/__tests__/helpers/monster-setup.js'; // モンスターはコードに無い (D-MONSTER-001)。テスト用 fixture を入れる
 import { MONSTERS, summonMonster, startBattle, resolveTurn, battleXpFor } from '../packages/core/src/index.js';
 
 const VARIANCE = 0.15; // world の monsterVitalsVariance

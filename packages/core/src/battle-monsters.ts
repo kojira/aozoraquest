@@ -190,12 +190,11 @@ export const ITEMS: Record<string, { name: string; key?: boolean }> = {
   'dragon-fang': { name: '竜の牙' },
 };
 
-export { MONSTERS } from './monster-roster.js';
-import { MONSTERS } from './monster-roster.js';
+/** **全モンスター。コードには持たない** (D-MONSTER-001)。正は管理者 PDS の world.monsters レコードで、
+ *  読み込み (`setMonsterOverrides`) が参照を保ったまま中身を入れ替える器。読み込むまでは 0 体 (戦闘なし)。 */
+export const MONSTERS: readonly MonsterDef[] = [];
 
-export const MONSTERS_BY_ID: Record<string, MonsterDef> = Object.fromEntries(
-  MONSTERS.map((m) => [m.id, m]),
-);
+export const MONSTERS_BY_ID: Record<string, MonsterDef> = {};
 
 /** **顔ぶれが揃っている最大の tier** (#536)。`tierForDanger` はここまでにクランプする。
  *  tier を 8 段階に広げても敵が追いつかないと「毎回同じ敵しか出ない帯」や
@@ -338,9 +337,10 @@ function randomPool(tier: Tier): MonsterDef[] {
 }
 
 /** その tier で affinity が最も出やすくするモンスター (地域相性の「○○が多い」導線用)。 */
-export function favoredMonsterFor(tier: Tier, affinity: number): MonsterDef {
+export function favoredMonsterFor(tier: Tier, affinity: number): MonsterDef | undefined {
   const pool = randomPool(tier);
-  return pool[((affinity % pool.length) + pool.length) % pool.length]!;
+  if (pool.length === 0) return undefined; // モンスター未読込 (0 体)。名前のヒントを出さない
+  return pool[((affinity % pool.length) + pool.length) % pool.length];
 }
 
 /**

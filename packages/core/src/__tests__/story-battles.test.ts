@@ -9,6 +9,7 @@ import {
   MAX_FLAGS, MAX_POPULATED_TIER, favoredMonsterFor, flagsAfterStoryBattle, setMonsterOverrides, setStory, summonMonster,
   validateStory, StoryDataError, MonsterDataError, type MonsterDef, type ScenarioEvent, type StoryBattleDef,
 } from '../index.js';
+import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 
 const mon = (id: string, tier: 1 | 2 | 3, over: Partial<MonsterDef> = {}): MonsterDef => ({
   id, name: id, species: 'slime', level: 1, tier, stats: [7, 5, 6, 2, 4], hp: 5, drops: [], intro: 'て。', ...over,
@@ -16,7 +17,7 @@ const mon = (id: string, tier: 1 | 2 | 3, over: Partial<MonsterDef> = {}): Monst
 const battle = (over: Partial<StoryBattleDef> = {}): StoryBattleDef => ({ id: 'b-boss', monsterId: 'boss', count: 1, winFlag: 'beat-boss', ...over });
 
 describe('storyOnly のボス', () => {
-  afterEach(() => { setStory(null); setMonsterOverrides(null); });
+  afterEach(() => { setStory(null); setMonsterOverrides(TEST_MONSTERS); });
 
   it('summonMonster / favoredMonsterFor / tier の判定に出ない。tier1 の 3 体にも数えない', () => {
     const tier1 = [mon('a', 1), mon('b', 1), mon('c', 1)];
@@ -24,13 +25,13 @@ describe('storyOnly のボス', () => {
     setMonsterOverrides([...tier1, mon('d', 2), mon('e', 2), mon('boss', 2, { storyOnly: true, spawnWeight: 1000 })]);
     expect(MAX_POPULATED_TIER).toBe(1);
     for (let seed = 0; seed < 200; seed++) expect(summonMonster(2, 5, seed).def.id).not.toBe('boss');
-    for (let aff = 0; aff < 5; aff++) expect(favoredMonsterFor(2, aff).id).not.toBe('boss');
+    for (let aff = 0; aff < 5; aff++) expect(favoredMonsterFor(2, aff)!.id).not.toBe('boss');
     expect(() => setMonsterOverrides([mon('a', 1), mon('b', 1), mon('boss', 1, { storyOnly: true })])).toThrow(MonsterDataError);
   });
 });
 
 describe('戦闘定義と固定モンスターの検証', () => {
-  afterEach(() => { setStory(null); setMonsterOverrides(null); });
+  afterEach(() => { setStory(null); setMonsterOverrides(TEST_MONSTERS); });
 
   it('count は 1〜3・winFlag 必須・敵と戦闘の実在', () => {
     setMonsterOverrides([mon('a', 1), mon('b', 1), mon('c', 1), mon('boss', 2, { storyOnly: true })]);

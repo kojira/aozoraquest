@@ -4,9 +4,10 @@ import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import {
   starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
-  worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, type NpcImage,
+  worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, setMonsterOverrides, clearMonsters, type NpcImage,
 } from '@aozoraquest/core';
 import { cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 import { handleMove } from '../../edge/src/battle-resolver';
@@ -51,12 +52,15 @@ test('[sad] の行は表情イラストを出し、タグを表示しない。�
     ? { ...n, portraitImage: imageOf(smile), expressionImages: { sad: imageOf(worried) }, lines: [`[sad]${SAD_LINE}`, NEXT_LINE] } : n);
   const quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
+  setMonsterOverrides(TEST_MONSTERS); // quests の monsterId 実在検査より先に入れる (D-MONSTER-001)
   setInteriors([village], gates); setNpcs(npcs); setGameQuests(quests); setScenario(scenario); setShopOverrides([shop]);
   const bluesky = npcs.find((n) => n.id === 'futaba-bluesky')!;
   const state: GameState = { did: DID, activeQuests: [], power: 0, playerXp: 0, jobXp: {}, materials: {}, gear: [], x: bluesky.x, y: bluesky.y + 1,
     mapId: village.id, xpEpoch: XP_EPOCH, version: 1, updatedAt: '' };
   const env = await tutorialEnv(NOW);
   const records: Record<string, unknown> = {
+    // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
+    'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
@@ -148,6 +152,6 @@ test('[sad] の行は表情イラストを出し、タグを表示しない。�
     expect(imageRequests.filter((q) => q.includes('expression=sad'))).toHaveLength(1);
     expect(imageRequests.filter((q) => !q.includes('expression='))).toHaveLength(1);
   } finally {
-    setScenario(null); setGameQuests(null); setNpcs(null); setInteriors(null, []); setShopOverrides(null);
+    setScenario(null); setGameQuests(null); setNpcs(null); setInteriors(null, []); setShopOverrides(null); clearMonsters();
   }
 });

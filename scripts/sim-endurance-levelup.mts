@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const c = (await import(`${resolve(here, '..')}/packages/core/src/index.js`)) as typeof import('../packages/core/src/index.js');
+const { TEST_MONSTERS } = await import(`${resolve(here, '..')}/packages/core/src/__tests__/helpers/monster-fixture.js`) as typeof import('../packages/core/src/__tests__/helpers/monster-fixture.js');
+c.setMonsterOverrides(TEST_MONSTERS); // モンスターはコードに無い (D-MONSTER-001)。テスト用 fixture を入れる
 const { startBattle, runAutoBattle, JOBS, BATTLE_TUNING, jobLevelFromXp, battleXpFor } = c;
 const TIER = Number(process.env.TIER ?? 1), TRIALS = 30, CAP = Number(process.env.CAP ?? 100);
 const HEAL = process.env.HEAL !== '0';

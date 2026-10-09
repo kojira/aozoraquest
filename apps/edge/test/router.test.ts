@@ -144,3 +144,32 @@ it('quest routes require their own auth scope and explicit string questId, never
     expect(writes).toBe(0);
   } finally { globalThis.fetch = original; }
 });
+
+describe('GET /api/world/admin-cache (D-MONSTER-001)', () => {
+  const stored = JSON.stringify({ cid: 'bafy-monsters', value: { monsters: [{ id: 'slime' }], updatedAt: 'x' } });
+  const kv = (data: Record<string, string>) =>
+    ({ get: async (k: string) => data[k] ?? null, put: async () => {}, delete: async () => {} }) as unknown as KVNamespace;
+  const withKv: Env = { ADMIN_NSID_ENV: 'dev', OAUTH_TOKENS: kv({ 'admin-world:app.aozoraquest.dev:monsters': stored }) };
+
+  it('KV に値があれば 200 で同じ JSON をそのまま返す (認証なし)', async () => {
+    const res = await handleRequest(reqWithOrigin('https://x/api/world/admin-cache?name=monsters', 'https://dev.aozoraquest.app'), withKv);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(stored);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://dev.aozoraquest.app');
+  });
+
+  it('KV に値が無ければ 404', async () => {
+    const res = await handleRequest(new Request('https://x/api/world/admin-cache?name=monsters'), { OAUTH_TOKENS: kv({}) });
+    expect(res.status).toBe(404);
+  });
+
+  it('monsters 以外の name は KV に値があっても 404 (monsterArt は PR2)', async () => {
+    const leaky: Env = { OAUTH_TOKENS: kv({ 'admin-world:app.aozoraquest:npcs': '{}', 'pds:usage': '{}' }) };
+    for (const name of ['npcs', 'pds:usage', '', '../monsters']) {
+      const res = await handleRequest(new Request(`https://x/api/world/admin-cache?name=${encodeURIComponent(name)}`), leaky);
+      expect(res.status).toBe(404);
+    }
+    const none = await handleRequest(new Request('https://x/api/world/admin-cache'), leaky);
+    expect(none.status).toBe(404);
+  });
+});

@@ -1,7 +1,8 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   setMonsterOverrides,
-  hasMonsterOverrides,
+  clearMonsters,
+  activeMonsters,
   monsterCountByTier,
   MonsterDataError,
   MONSTERS,
@@ -12,6 +13,7 @@ import {
   runAutoBattle,
   type MonsterDef,
 } from '../index.js';
+import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 import * as core from '../index.js';
 
 /**
@@ -20,7 +22,8 @@ import * as core from '../index.js';
  * ここで固定するのは 3 つ:
  *  - 差し替えると MONSTERS / MONSTERS_BY_ID / MAX_POPULATED_TIER / 戦闘 の**全部**に効く
  *    (参照を保ったまま中身を入れ替えるので、既存の import 先も新しい敵を見る)
- *  - 解除でコード直書きへ**完全に戻る** (戻らないと他のテストを汚染する)
+ *  - fixture へ**完全に戻せる** (戻らないと他のテストを汚染する)
+ *  - **コードはモンスターを持たない** (D-MONSTER-001: 読み込み前は 0 体。clearMonsters で 0 体へ)
  *  - **壊れた 1 体で全体を落とす** (部分適用しない)
  */
 const base = (over: Partial<MonsterDef> = {}): MonsterDef => ({
@@ -40,14 +43,13 @@ const trio = (tier: 1 | 2 | 3 | 4, prefix: string): MonsterDef[] =>
   [0, 1, 2].map((i) => base({ id: `${prefix}-${i}`, name: `${prefix}${i}`, tier }));
 
 describe('モンスターのレコード差し替え (#419)', () => {
-  afterEach(() => setMonsterOverrides(null));
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
 
-  it('差し替えると一覧・辞書・戦闘の全部に効き、解除で完全に戻る', () => {
+  it('差し替えると一覧・辞書・戦闘の全部に効き、fixture へ完全に戻せる', () => {
     const originalCount = MONSTERS.length;
     const originalIds = MONSTERS.map((m) => m.id);
 
     setMonsterOverrides([...trio(1, 'a'), base({ id: 'boss', name: 'ぼす', tier: 1, hp: 9, xp: 42 })]);
-    expect(hasMonsterOverrides()).toBe(true);
     expect(MONSTERS).toHaveLength(4);
     expect(MONSTERS_BY_ID['boss']?.name).toBe('ぼす');
     expect(MONSTERS_BY_ID[originalIds[0]!]).toBeUndefined();
@@ -56,8 +58,7 @@ describe('モンスターのレコード差し替え (#419)', () => {
     const r = runAutoBattle(startBattle('warrior', 5, 1, 'x', 1, 7, 0, undefined, { monsterId: 'boss' }));
     expect(['win', 'lose', 'fled', 'monster-fled']).toContain(r.outcome);
 
-    setMonsterOverrides(null);
-    expect(hasMonsterOverrides()).toBe(false);
+    setMonsterOverrides(TEST_MONSTERS);
     expect(MONSTERS).toHaveLength(originalCount);
     expect(MONSTERS.map((m) => m.id)).toEqual(originalIds);
   });
@@ -68,7 +69,7 @@ describe('モンスターのレコード差し替え (#419)', () => {
     expect(before).toBe(3); // 現状 tier4 以上は 3 体未満
     setMonsterOverrides([...trio(1, 'a'), ...trio(2, 'b'), ...trio(3, 'c'), ...trio(4, 'd')]);
     expect(core.MAX_POPULATED_TIER).toBe(4);
-    setMonsterOverrides(null);
+    setMonsterOverrides(TEST_MONSTERS);
     expect(core.MAX_POPULATED_TIER).toBe(before);
     void MAX_POPULATED_TIER; // 直接 import した束縛はモジュールの再読で更新される (ESM)
   });
@@ -78,7 +79,6 @@ describe('モンスターのレコード差し替え (#419)', () => {
     const bad = [...trio(1, 'a'), base({ id: 'a-0' })]; // id 重複
     expect(() => setMonsterOverrides(bad)).toThrow(MonsterDataError);
     expect(MONSTERS).toHaveLength(beforeCount); // 何も変わっていない
-    expect(hasMonsterOverrides()).toBe(false);
 
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', hp: 0 })])).toThrow(MonsterDataError);
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', stats: [1, 2, 3] as never })])).toThrow(MonsterDataError);
@@ -93,6 +93,21 @@ describe('モンスターのレコード差し替え (#419)', () => {
     expect(() => setMonsterOverrides(trio(1, 'ok'))).not.toThrow();
   });
 
+  it('起動直後は 0 体 (コードに同梱のモンスターが無い。D-MONSTER-001)', async () => {
+    vi.resetModules(); // setupFiles の fixture が入る前の、新しいモジュールの状態を見る
+    const fresh = await import('../index.js');
+    expect(fresh.activeMonsters()).toHaveLength(0);
+    expect(Object.keys(fresh.MONSTERS_BY_ID)).toHaveLength(0);
+    expect(fresh.favoredMonsterFor(1, 0)).toBeUndefined();
+  });
+
+  it('clearMonsters で 0 体になり、遭遇の候補も地域のヒントも無くなる', () => {
+    clearMonsters();
+    expect(activeMonsters()).toHaveLength(0);
+    expect(Object.keys(MONSTERS_BY_ID)).toHaveLength(0);
+    expect(core.favoredMonsterFor(1, 3)).toBeUndefined();
+  });
+
   it('tier ごとの頭数を数えられる (エディタの検証表示用)', () => {
     setMonsterOverrides([...trio(1, 'a'), ...trio(2, 'b')]);
     expect(monsterCountByTier()).toEqual({ 1: 3, 2: 3 });
@@ -100,7 +115,7 @@ describe('モンスターのレコード差し替え (#419)', () => {
 });
 
 describe('空プールで移動を殺さない (#419)', () => {
-  afterEach(() => setMonsterOverrides(null));
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
 
   it('プールが空の tier は**下の帯に繰り下げて**遭遇を成立させる (落とさない)', () => {
     // 落とすと edge の handleMove が 500 になり、プレイヤーはその場から一歩も動けなくなる。
@@ -119,7 +134,7 @@ describe('空プールで移動を殺さない (#419)', () => {
 });
 
 describe('healer の回復幅とspell の検証 (#419)', () => {
-  afterEach(() => setMonsterOverrides(null));
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
 
   it('healRatio が敵ごとに効く', () => {
     setMonsterOverrides([
@@ -141,7 +156,7 @@ describe('healer の回復幅とspell の検証 (#419)', () => {
 });
 
 describe('能力パラメータの上書き (#592 段階 1)', () => {
-  afterEach(() => setMonsterOverrides(null));
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
 
   it('ため確率が敵ごとに効く (実測: 0 なら一度もためない / 1 なら MP がある限りためる)', () => {
     const mk = (chargeChance: number) => [
@@ -174,7 +189,7 @@ describe('能力パラメータの上書き (#592 段階 1)', () => {
 });
 
 describe('複数の能力 (#592 段階 2)', () => {
-  afterEach(() => setMonsterOverrides(null));
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
 
   it('優先順は配列の順 (healer が動かないときだけ charger が動く)', () => {
     // HP 満タン (healer の閾値に届かない) → charger のため が出る。

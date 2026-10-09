@@ -12,15 +12,19 @@
  *
  * 適用規則 (#660): レコードが**無ければ触らない**。あれば適用する。
  *   - shops / npcs / jobs / quests / scenario / story / interiors は**空配列でも適用** (全削除の反映)。
- *   - monsters と items (equipment) は**空なら適用しない** (コード直書きのまま。戦闘を止めない)。
+ *   - items (equipment) は**空なら適用しない** (コード直書きのまま)。
+ *   - monsters は**空なら「無い」と同じ** (MonsterDataError。コードには敵が無いので cache へ倒す)。
  *   web と edge でこの規則に差は無かった。
  * 1 レコードの失敗は後続を止めない (onError に渡して次へ)。
+ *
+ * cache (D-MONSTER-001。`names` は monsters だけ): PDS の値を適用できたら `write`。
+ * PDS が throw / 無い / 空 / 検証 NG のときは `read` の値を適用する。壊れた値・空の値は write しない。
  */
 import { ADMIN_WORLD_RECORDS, type AdminWorldRecordName } from './admin-nsid.js';
 import { decodeWorldMap, loadStaticWorldMap, setTownOverrides, setWorldMap, type TownOverride, type WorldPart } from './world-map.js';
 import { WORLD_SIZE } from './world.js';
 import { loadTileArts, type TileArtRecord } from './tile-art.js';
-import { setMonsterOverrides } from './monster-data.js';
+import { MonsterDataError, setMonsterOverrides } from './monster-data.js';
 import { decodeMonstersFromRecord } from './monster-record.js';
 import { setItemOverrides, type ItemDefData } from './item-data.js';
 import type { EquipmentDef } from './equipment.js';
@@ -34,6 +38,13 @@ import { setStory, type StoryData } from './story-data.js';
 
 /** レコードの value を返す。**無ければ null**。通信失敗などは throw (そのレコードだけ飛ばす)。 */
 export type AdminWorldRecordFetch = (name: AdminWorldRecordName) => Promise<unknown>;
+
+/** last-good の保存先 (edge = KV、web = edge の GET)。`read` は無ければ null。 */
+export interface AdminWorldRecordCache {
+  names: readonly AdminWorldRecordName[];
+  read(name: AdminWorldRecordName): Promise<unknown>;
+  write(name: AdminWorldRecordName, value: unknown): Promise<void>;
+}
 
 function fromBase64(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -55,8 +66,10 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
   },
   tileArt: (v) => { const rec = v as Rec<{ arts: Record<string, TileArtRecord> }>; if (rec?.arts) loadTileArts(rec.arts); },
   monsters: (v) => {
+    if (v == null) return; // 無ければ触らない (cache 経路では無いときに KV へ倒す)
     const monsters = decodeMonstersFromRecord((v as Rec<{ monsters: unknown }>)?.monsters); // 小数は文字列で保存 (#740)
-    if (monsters.length) setMonsterOverrides(monsters);
+    if (!monsters.length) throw new MonsterDataError('monsters レコードが空');
+    setMonsterOverrides(monsters);
   },
   items: (v) => {
     const rec = v as Rec<{ items: ItemDefData[]; equipment: EquipmentDef[] }>;
@@ -78,13 +91,45 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
 };
 
 /** 全 world.* レコードを決まった順に読んで適用する。地図が読めなければ同梱の地図に倒す。 */
-export async function loadAdminWorld(fetchRecord: AdminWorldRecordFetch, onError: (name: AdminWorldRecordName, e: unknown) => void): Promise<void> {
+export async function loadAdminWorld(
+  fetchRecord: AdminWorldRecordFetch,
+  onError: (name: AdminWorldRecordName, e: unknown) => void,
+  cache?: AdminWorldRecordCache,
+): Promise<void> {
   for (const name of ADMIN_WORLD_RECORDS) {
+    if (cache?.names.includes(name)) {
+      await loadCachedRecord(name, fetchRecord, onError, cache);
+      continue;
+    }
     try {
       await APPLY[name](await fetchRecord(name));
     } catch (e) {
       onError(name, e);
       if (name === 'map') await loadStaticWorldMap().catch(() => {});
     }
+  }
+}
+
+async function loadCachedRecord(
+  name: AdminWorldRecordName,
+  fetchRecord: AdminWorldRecordFetch,
+  onError: (name: AdminWorldRecordName, e: unknown) => void,
+  cache: AdminWorldRecordCache,
+): Promise<void> {
+  try {
+    const value = await fetchRecord(name);
+    if (value != null) {
+      await APPLY[name](value);
+      await cache.write(name, value).catch((e) => onError(name, e));
+      return;
+    }
+  } catch (e) {
+    onError(name, e);
+  }
+  try {
+    const cached = await cache.read(name);
+    if (cached != null) await APPLY[name](cached);
+  } catch (e) {
+    onError(name, e);
   }
 }

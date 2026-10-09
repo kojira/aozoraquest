@@ -7,8 +7,9 @@
  *   - レコードが**無ければ触らない** (読めない日にメモリの定義を消さない)
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { BASE_PARTS, BIOME_PARTS, encodeWorldMap, setWorldMap, setInteriors, interiorById, interiorTerrainAt, interiorWalkableAt, terrainAt, isWalkableAt, worldParts, allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { activeMonsters, clearMonsters, encodeMonstersForRecord, setMonsterOverrides, type MonsterDef, BASE_PARTS, BIOME_PARTS, encodeWorldMap, setWorldMap, setInteriors, interiorById, interiorTerrainAt, interiorWalkableAt, terrainAt, isWalkableAt, worldParts, allNpcs, setNpcs, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { ensureAuthoredWorld, resetAuthoredWorldCache } from '../src/world-authoring';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 
 const DID = 'did:plc:admin';
 const PDS = 'https://pds.test';
@@ -100,5 +101,85 @@ describe('ensureAuthoredWorld: 空配列のレコードを適用する (#660)', 
     globalThis.fetch = fakePds({});
     await ensureAuthoredWorld(env, NOW);
     expect(shopOverrides().map((s) => [s.x, s.y])).toEqual([[10, 20]]);
+  });
+});
+
+describe('ensureAuthoredWorld: monsters の KV last-good (D-MONSTER-001)', () => {
+  const orig = globalThis.fetch;
+  const KEY = `admin-world:${NSID}:monsters`;
+  const CACHED: MonsterDef[] = [...TEST_MONSTERS, { ...TEST_MONSTERS[0]!, id: 'golden-lantern', name: 'こがねランタン', storyOnly: true }];
+  const record = (list: readonly MonsterDef[]) => ({ monsters: encodeMonstersForRecord([...list]), updatedAt: 'x' });
+
+  function stubKv(initial: Record<string, string> = {}) {
+    const data = new Map(Object.entries(initial));
+    const puts: string[] = [];
+    const kv = {
+      get: async (k: string, type?: string) => { const v = data.get(k) ?? null; return v !== null && type === 'json' ? JSON.parse(v) : v; },
+      put: async (k: string, v: string) => { puts.push(k); data.set(k, v); },
+      delete: async (k: string) => { data.delete(k); },
+    } as unknown as KVNamespace;
+    return { kv, data, puts };
+  }
+
+  /** monsters の cid を差し替えられる管理者 PDS。 */
+  function pdsWithMonsters(value: unknown, cid: () => string): typeof fetch {
+    const base = fakePds({});
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('collection=app.aozoraquest.world.monsters')) return json(200, { uri: 'at://x', cid: cid(), value });
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  beforeEach(() => { resetAuthoredWorldCache(); clearMonsters(); });
+  afterEach(() => { globalThis.fetch = orig; resetAuthoredWorldCache(); setMonsterOverrides(TEST_MONSTERS); });
+
+  const unresolved: Array<[string, Record<string, string | undefined>, () => typeof fetch]> = [
+    ['resolveDidDocument が reject', { ADMIN_DIDS: 'did:plc:unresolvable' }, () => (async () => { throw new Error('plc down'); }) as unknown as typeof fetch],
+    ['ADMIN_DIDS が未設定', {}, () => fakePds({})],
+    ['PDS の endpoint が無い', { ADMIN_DIDS: 'did:plc:nopds' }, () => (async () => json(200, { id: 'did:plc:nopds', service: [] })) as unknown as typeof fetch],
+  ];
+  for (const [label, envVars, fetchImpl] of unresolved) {
+    it(`${label} でも KV の 21 体が入る`, async () => {
+      const { kv, puts } = stubKv({ [KEY]: JSON.stringify({ cid: 'cid-kv', value: record(CACHED) }) });
+      globalThis.fetch = fetchImpl();
+      await ensureAuthoredWorld({ ...envVars, OAUTH_TOKENS: kv }, NOW);
+      expect(activeMonsters().map((m) => m.id)).toEqual(CACHED.map((m) => m.id));
+      expect(puts).toEqual([]);
+    });
+  }
+
+  it('PDS の cid が同じなら、TTL ごとの読み直しで put しない。cid が変わったら 1 回だけ put する', async () => {
+    const { kv, data, puts } = stubKv();
+    let cid = 'cid-a';
+    globalThis.fetch = pdsWithMonsters(record(TEST_MONSTERS), () => cid);
+    const env = { ADMIN_DIDS: DID, OAUTH_TOKENS: kv };
+    await ensureAuthoredWorld(env, NOW);
+    expect(puts).toEqual([KEY]);
+    expect(JSON.parse(data.get(KEY)!).cid).toBe('cid-a');
+    await ensureAuthoredWorld(env, NOW + 301);
+    await ensureAuthoredWorld(env, NOW + 602);
+    expect(puts).toHaveLength(1);
+    cid = 'cid-b';
+    await ensureAuthoredWorld(env, NOW + 903);
+    expect(puts).toHaveLength(2);
+    expect(JSON.parse(data.get(KEY)!).cid).toBe('cid-b');
+    expect(activeMonsters()).toHaveLength(TEST_MONSTERS.length);
+  });
+
+  it('cold isolate: KV に同じ cid があれば put しない (最初に 1 回だけ KV の cid を読む)', async () => {
+    const { kv, puts } = stubKv({ [KEY]: JSON.stringify({ cid: 'cid-a', value: record(TEST_MONSTERS) }) });
+    globalThis.fetch = pdsWithMonsters(record(TEST_MONSTERS), () => 'cid-a');
+    await ensureAuthoredWorld({ ADMIN_DIDS: DID, OAUTH_TOKENS: kv }, NOW);
+    expect(puts).toEqual([]);
+  });
+
+  it('PDS の monsters が空なら KV で上書きせず、KV の値を使う', async () => {
+    const { kv, data, puts } = stubKv({ [KEY]: JSON.stringify({ cid: 'cid-kv', value: record(CACHED) }) });
+    globalThis.fetch = pdsWithMonsters({ monsters: [], updatedAt: 'x' }, () => 'cid-empty');
+    await ensureAuthoredWorld({ ADMIN_DIDS: DID, OAUTH_TOKENS: kv }, NOW);
+    expect(puts).toEqual([]);
+    expect(JSON.parse(data.get(KEY)!).cid).toBe('cid-kv');
+    expect(activeMonsters()).toHaveLength(CACHED.length);
   });
 });

@@ -6,6 +6,7 @@ import {
   activeMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, loadAdminWorld, MONSTERS, MONSTERS_BY_ID,
   setMonsterOverrides, type MonsterDef,
 } from '../index.js';
+import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 
 /** レコードに残る整数以外の数値の場所。 */
 function nonIntegerPaths(v: unknown, path = ''): string[] {
@@ -16,7 +17,7 @@ function nonIntegerPaths(v: unknown, path = ''): string[] {
 }
 
 describe('monsters レコードの小数 (#740)', () => {
-  afterEach(() => setMonsterOverrides(null));
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
 
   it('同梱の全モンスターを書く形にすると整数以外の数値が残らず、読み戻すと元と同じ', () => {
     const roster = MONSTERS.map((m) => ({ ...m }));

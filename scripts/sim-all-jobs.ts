@@ -3,6 +3,7 @@
  * 目標帯: 装備なし tier3 = 挑戦的 (概ね 45-65%) / フル装備 = 快適だが自明でない (80-92%)。
  * 実行: pnpm exec tsx scripts/sim-all-jobs.ts
  */
+import '../packages/core/src/__tests__/helpers/monster-setup.js'; // モンスターはコードに無い (D-MONSTER-001)。テスト用 fixture を入れる
 import { ARCHETYPES, BATTLE_TUNING, EQUIPMENT_BY_ID, canEquip, resolveTurn, skillMpCostOf, startBattle, type Archetype, type Command } from '../packages/core/src/index.js';
 
 const play = (job: Archetype, jobLv: number, plLv: number, tier: 1 | 2 | 3, seed: number, equip: string[]): string => {

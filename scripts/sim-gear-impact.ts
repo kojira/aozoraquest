@@ -2,6 +2,7 @@
  * 装備込みバランスの実測 (docs/20「アイテム調整」の基礎数値)。
  * 実行: pnpm exec tsx scripts/sim-gear-impact.ts
  */
+import '../packages/core/src/__tests__/helpers/monster-setup.js'; // モンスターはコードに無い (D-MONSTER-001)。テスト用 fixture を入れる
 import { BATTLE_TUNING, resolveTurn, startBattle, type Archetype, type BattleState, type Command } from '../packages/core/src/index.js';
 const play = (job: Archetype, jobLv: number, plLv: number, tier: 1|2|3, seed: number, equip: string[]) => {
   let s = startBattle(job, jobLv, plLv, 'x', tier, seed, BATTLE_TUNING.herbCarryMax, undefined, { equipIds: equip });

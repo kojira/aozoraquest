@@ -48,7 +48,9 @@ import {
   type TileArtRecord,
   type TownOverride,
   type WorldPart,
+  type AdminWorldRecordCache,
 } from '@aozoraquest/core';
+import { EDGE_URL } from './edge-config';
 import { ADMIN_COL, ADMIN_WORLD_COL } from './collections';
 import { getPrimaryAdminDid } from './runtime-config';
 import { getRecord, putRecord } from './atproto';
@@ -151,11 +153,26 @@ export async function loadAuthoredWorld(agent: Agent | null): Promise<void> {
     await loadAdminWorld(
       async (name) => adminRecordJson(await getRecord(agent, adminDid, ADMIN_WORLD_COL[name], RKEY)),
       (name, e) => console.warn(`[world] ${name} load failed`, e),
+      edgeRecordCache,
     );
     return;
   }
   await loadStaticWorldMap().catch((e) => console.warn('[world] static map load failed', e));
 }
+
+/** **PDS の monsters が読めない / 無いときだけ** edge の last-good (KV) を読む (D-MONSTER-001)。
+ *  これが無いと monsters の読み込みが一度失敗しただけで quests / story の実在検査が落ちる。
+ *  write は edge だけが行う。厳密な読み込み (loadNpcAuthoringRecords) と保存は PDS だけを読む。 */
+const edgeRecordCache: AdminWorldRecordCache = {
+  names: ['monsters'],
+  read: async (name) => {
+    const res = await fetch(`${EDGE_URL ?? ''}/api/world/admin-cache?name=${encodeURIComponent(name)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`admin-cache ${name}: HTTP ${res.status}`);
+    return ((await res.json()) as { value?: unknown }).value ?? null;
+  },
+  write: async () => {},
+};
 
 // ─── モンスター (#419) ─────────────────────────────────────
 
@@ -357,7 +374,10 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   setWorldMap({ tiles, size: WORLD_SIZE, parts });
   setTownOverrides(map?.towns ?? null);
   setItemOverrides(items ?? null);
-  setMonsterOverrides(monsters ? decodeMonstersFromRecord(monsters.monsters) : null);
+  // monsters のレコードが無い (空) ときは触らない: loadAuthoredWorld で入った今の値 (edge cache 由来を含む) を残す。
+  // 0 体にすると、quests があるのに setGameQuests の実在検査が落ちて NPC エディタが読み込めなくなる。
+  const authoredMonsters = monsters ? decodeMonstersFromRecord(monsters.monsters) : [];
+  if (authoredMonsters.length) setMonsterOverrides(authoredMonsters);
   setNpcs(npcs?.npcs ?? []);
   setInteriors(maps, interior?.gates ?? []);
   setGameQuests(quests?.quests ?? []);

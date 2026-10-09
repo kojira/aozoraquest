@@ -1,8 +1,9 @@
 /**
- * **モンスターを管理者 PDS のレコードで差し替える** (#419 / #537)。
+ * **モンスターは管理者 PDS のレコードだけが正** (#419 / #537 / D-MONSTER-001)。
  *
- * `MONSTERS` はコード直書きで、リポジトリが公開なので**未実装の敵まで手の内が全部見える**
- * (ネタバレ)。データをレコードへ移し、エディタで編集できるようにする。
+ * コードにはゲームのモンスターを持たない (二重管理をやめる)。`MONSTERS` は空の器で始まり、
+ * 読み込み (`loadAdminWorld` → `setMonsterOverrides`) が中身を入れる。レコードも
+ * キャッシュも無ければ 0 体のままで、戦闘は起きない (遭遇は飛ばし、移動は止めない)。
  *
  * ## 適用のしかた
  *
@@ -10,17 +11,7 @@
  * 全部書き換える代わりに、**配列/オブジェクトの参照を保ったまま中身を差し替える**
  * (`splice` / キーの入れ替え)。`MAX_POPULATED_TIER` は ESM の live binding で更新される。
  *
- * ## フォールバック (戦闘を止めない)
- *
- * コード直書きの `MONSTERS` は**そのまま残し、レコードが読めたら差し替える**:
- *
- * ```
- * レコード (管理者 PDS) ?? コード直書き
- * ```
- *
- * 読めない/壊れていても今の敵で戦闘は続く。ネタバレ解消は移行完了後にコードから
- * 消した時点で達成される (それまでの二重管理は許容。レコード優先なので調整は
- * レコード側だけで効く)。
+ * 空にするのは `clearMonsters()` だけ (検証は 0 体を拒否するので `setMonsterOverrides` では空にできない)。
  */
 import {
   MONSTERS,
@@ -35,29 +26,26 @@ export class MonsterDataError extends Error {}
 /** ability として受け付ける id (#537 論点 1: 列挙にとどめる。実装は core に残す)。 */
 const ABILITIES = ['charger', 'healer', 'fleer', 'caster'] as const;
 
-/** 起動時 (コード直書き) の敵。解除 (`null`) でここへ戻す。 */
-const baseline: readonly MonsterDef[] = MONSTERS.map((m) => ({ ...m }));
-
-let overridden = false;
-
-/** レコード由来の差し替えが効いているか。 */
-export function hasMonsterOverrides(): boolean {
-  return overridden;
-}
-
 /**
- * 全モンスターを検証して差し替える。`null` でコード直書きへ戻す。
+ * 全モンスターを検証して差し替える。
  *
  * **壊れた 1 体で全体を落とす** — 部分適用すると、どの敵が落ちたのか誰にも分からず、
  * 「いるはずの敵が出ない」を追えなくなる (マップの流儀と同じ)。
  */
-export function setMonsterOverrides(defs: readonly MonsterDef[] | null): void {
-  const next = defs === null ? baseline : validate(defs);
+export function setMonsterOverrides(defs: readonly MonsterDef[]): void {
+  replaceMonsters(validate(defs));
+}
+
+/** 0 体に戻す (テストの後片付けと、検証のための一時適用を「何も無かった」状態へ戻すとき)。 */
+export function clearMonsters(): void {
+  replaceMonsters([]);
+}
+
+function replaceMonsters(next: readonly MonsterDef[]): void {
   (MONSTERS as MonsterDef[]).splice(0, MONSTERS.length, ...next.map((m) => ({ ...m })));
   for (const k of Object.keys(MONSTERS_BY_ID)) delete MONSTERS_BY_ID[k];
   for (const m of MONSTERS) MONSTERS_BY_ID[m.id] = m;
   recomputeMaxPopulatedTier();
-  overridden = defs !== null;
 }
 
 function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
@@ -127,7 +115,7 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
   return defs;
 }
 
-/** エディタが一覧を読むため (常に現在有効な敵。差し替え前ならコード直書き)。 */
+/** エディタが一覧を読むため (常に現在有効な敵。読み込み前は 0 体)。 */
 export function activeMonsters(): readonly MonsterDef[] {
   return MONSTERS;
 }
