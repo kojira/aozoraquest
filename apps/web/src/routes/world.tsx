@@ -398,7 +398,7 @@ export function World() {
   const avatarSize = Math.max(16, Math.round(tilePx * 1.15));
 
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto' }}>
+    <div className="world-screen" style={{ maxWidth: 560, margin: '0 auto' }}>
       {/* HUD (HP/MP + 現在地) はマップ上にオーバーレイ表示する — 縦スクロールを
           なくして没入感を上げるため。マップ外に置いて
           いた HP/MP バー・場所ヘッダーは廃止し、下記 WorldHud に集約した。 */}
@@ -585,6 +585,8 @@ export function World() {
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
           をなくす)。通常時のみ操作ヒント。 */}
+      {/* モバイルでは footer まで伸び、黒い領域からも移動できる (2 本目のスティック、タップは無反応) */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
       {!inBattle && !onboarding && !showStarter && !npcTalk && (
         <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
           じぶんを タップすると コマンドが ひらくよ。
@@ -601,7 +603,7 @@ export function World() {
             {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
           </p>
           <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-            マップをタッチしたまま指を動かすと移動 (PC は矢印キーも可)。やどやで パワーを はらうと 全回復。
+            マップや その下を タッチしたまま 指を動かすと 移動 (PC は矢印キーも可)。やどやで パワーを はらうと 全回復。
             {/* **残高は HUD の P だけに出す。** ここに client 台帳 (points) の数字を併記すると、
                 権威側と食い違ったときに同じ画面に別々の残高が並ぶ (実際に「P 0」の 3cm 下に
                 「いまのパワー: 152」が出ていた)。遭遇判定はサーバーが権威 power で行うので、
@@ -616,6 +618,8 @@ export function World() {
           </p>
         </>
       )}
+      {mapAcquisition === null && !inBattle && <VirtualStick onMove={move} inset="0 36px" showHint={false} />}
+      </div>
       {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
       {itemsOpen && (
         <ItemsModal
