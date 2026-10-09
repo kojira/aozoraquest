@@ -106,6 +106,7 @@ describe('scripts/*.mjs の NSID は core の唯一の定義と一致する (Ref
     const { NAMES } = await import('../../../scripts/admin-data.mjs');
     expect(NAMES).toEqual([...ADMIN_DATA_NAMES]);
     expect(NAMES).toContain('items');
+    expect(NAMES).toContain('monsterArt'); // D-MONSTER-001 PR2
     for (const n of NAMES) expect(ADMIN_WORLD_RECORDS).toContain(n);
   });
 
@@ -113,6 +114,7 @@ describe('scripts/*.mjs の NSID は core の唯一の定義と一致する (Ref
     // @ts-expect-error -- 型定義の無い Node スクリプト
     const { SOURCE_COLLECTIONS, devCollectionOf } = await import('../../../scripts/copy-admin-data-to-dev.mjs');
     const prod = adminNsidPrefix(AQ_NSID_ROOT, undefined);
+    expect(SOURCE_COLLECTIONS).toContain('app.aozoraquest.world.monsterArt'); // D-MONSTER-001 PR2
     const expected = [...ADMIN_WORLD_RECORDS.map((n) => adminWorldCollection(prod, n)), ...ADMIN_CONFIG_RECORDS.map((n) => `${prod}.config.${n}`)];
     expect([...SOURCE_COLLECTIONS].sort()).toEqual(expected.sort());
     for (const n of ADMIN_WORLD_RECORDS) expect(devCollectionOf(adminWorldCollection(prod, n))).toBe(adminWorldCollection(adminNsidPrefix(AQ_NSID_ROOT, 'dev'), n));

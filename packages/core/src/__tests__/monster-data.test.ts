@@ -145,6 +145,12 @@ describe('healer の回復幅とspell の検証 (#419)', () => {
     expect(MONSTERS_BY_ID['tough']?.healRatio).toBe(0.5);
   });
 
+  it('species は空でない文字列 (絵の無い species は「?」で描くのでエラーにしない。D-MONSTER-001 PR2)', () => {
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', species: '' })])).toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', species: 3 as never })])).toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', species: 'new-species' })])).not.toThrow();
+  });
+
   it('壊れた healRatio / spell は保存できない', () => {
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', ability: 'healer', healRatio: 1.5 })]))
       .toThrow(MonsterDataError);

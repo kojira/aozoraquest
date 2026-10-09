@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { jsonToLex, type Agent } from '@atproto/api';
-import { activeMonsters, clearMonsters, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { activeMonsters, clearMonsters, clearMonsterArts, monsterArtSvg, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
 import { TEST_MONSTERS } from '@aozoraquest/core/src/__tests__/helpers/monster-fixture';
 
@@ -154,6 +154,7 @@ describe('loadAuthoredWorld: monsters は PDS が読めないとき edge の las
     return { com: { atproto: { repo: { getRecord } } } } as unknown as Agent;
   }
   const fetchSpy = vi.fn();
+  const edgeCalls = (name: string) => fetchSpy.mock.calls.filter(([url]) => String(url).endsWith(`/api/world/admin-cache?name=${name}`)).length;
 
   beforeEach(() => {
     vi.stubEnv('VITE_ADMIN_DIDS', DID);
@@ -173,13 +174,24 @@ describe('loadAuthoredWorld: monsters は PDS が読めないとき edge の las
     await loadAuthoredWorld(agentWithMonstersDown({ npcs: { npcs: [NPC] }, quests: { quests: [quest] } }));
     expect(activeMonsters().map((m) => m.id)).toEqual(CACHED.map((m) => m.id));
     expect(gameQuests().map((q) => q.id)).toEqual(['q-lantern']);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(edgeCalls('monsters')).toBe(1);
   });
 
   it('PDS の monsters が読めれば edge を呼ばない', async () => {
     await loadAuthoredWorld(fakeAgent({ monsters: { monsters: encodeMonstersForRecord([...TEST_MONSTERS]), updatedAt: 'x' } }));
     expect(activeMonsters()).toHaveLength(TEST_MONSTERS.length);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(edgeCalls('monsters')).toBe(0);
+  });
+
+  it('PDS に monsterArt が無ければ edge の last-good の絵が入る (PR2)', async () => {
+    const art = { arts: [{ id: 'slime', svg: '<g fill="{{tint|#57b7ee}}"/>' }], updatedAt: 'x' };
+    fetchSpy.mockImplementation(async (url: string) => (url.includes('/api/world/admin-cache?name=monsterArt')
+      ? new Response(JSON.stringify({ cid: 'cid-art', value: art }), { status: 200 })
+      : new Response('{}', { status: 404 })));
+    await loadAuthoredWorld(fakeAgent({ monsters: { monsters: encodeMonstersForRecord([...TEST_MONSTERS]), updatedAt: 'x' } }));
+    expect(monsterArtSvg('slime', undefined)).toContain('#57b7ee');
+    expect(edgeCalls('monsterArt')).toBe(1);
+    clearMonsterArts();
   });
 
   it('NPC エディタの厳密な読み込みは monsters レコードが無ければ今の値を残す (0 体にしない)', async () => {

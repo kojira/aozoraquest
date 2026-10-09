@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   MONSTERS,
   MAX_POPULATED_TIER,
-  TINTABLE_SPECIES,
   DEMON_CASTLE_REGIONS,
   summonMonster,
   regionDanger,
@@ -90,15 +89,6 @@ describe('モンスタープールの充足', () => {
 });
 
 describe('モンスターの見た目と数値の整合', () => {
-  it('tint は絵に反映できる species にだけ付いている', () => {
-    // 反映できない species に付けても黙って捨てられ、同じ tier に見分けの
-    // つかない敵が並ぶ (いわのゴーレム / こけむしゴーレムが同一の絵だった)。
-    for (const m of MONSTERS) {
-      if (!m.tint) continue;
-      expect(TINTABLE_SPECIES as readonly string[], `${m.name} (${m.species}) の tint`).toContain(m.species);
-    }
-  });
-
   it('同じ tier に「同じ species かつ同じ色」の敵が居ない', () => {
     const seen = new Map<string, string>();
     for (const m of MONSTERS) {

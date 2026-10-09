@@ -35,7 +35,7 @@ export const TEST_MONSTERS: readonly MonsterDef[] = [
   //     (専用ロジック禁止 2026-07-20)。特殊武器での貫通は #519。
   { id: 'stray-slime', resistAllMagic: true, flatDef: 255, name: 'はぐれスライム', species: 'metal-slime', level: 4, tier: 2, stats: [8, 24, 38, 6, 34], hp: 6, mp: 0, xp: 100, spawnWeight: 0.06, drops: [{ item: 'metal-shard', chance: 0.5 }], ability: 'fleer', intro: 'きらりと 金属の光を放っている。' },
   // ── tier1 追加 (#536)。DQ3 序盤 (スライム4 / おおがらす6 / いっかくうさぎ8) の XP 帯に合わせる。
-  //    species は既存 10 種のみ使う (MonsterSvg が species ごとに絵を持つ)。色違いは tint で作る。
+  //    species は monsterArt の初期データにある 10 種のみ使う。色違いは tint で作る。
   { id: 'grass-slime', element: 'earth', name: 'くさいろスライム', species: 'slime', tint: '#6fbf5a', level: 1, tier: 1, xp: 4, stats: [8, 8, 7, 6, 10], hp: 9, drops: [{ item: 'slime-drop', chance: 0.35 }, { item: 'herb', chance: 0.4 }], intro: '草にまぎれて ぷるぷるしている。' },
   { id: 'dawn-bat', element: 'wind', name: 'あさやけコウモリ', species: 'bat', tint: '#e8a06a', level: 2, tier: 1, xp: 6, stats: [11, 8, 22, 6, 12], hp: 11, drops: [{ item: 'bat-wing', chance: 0.5 }, { item: 'herb', chance: 0.3 }], intro: '朝日を嫌って飛びまわる。' },
   { id: 'pale-shroom', element: 'earth', name: 'しろヒカリダケ', species: 'mushroom', tint: '#d8d2c0', level: 3, tier: 1, xp: 9, stats: [9, 16, 4, 14, 12], hp: 14, drops: [{ item: 'mush-spore', chance: 0.55 }, { item: 'herb', chance: 0.35 }], intro: '白くぼんやり光っている。' },

@@ -57,6 +57,7 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
     if (ids.has(m.id)) throw new MonsterDataError(`id が重複 (${m.id})`);
     ids.add(m.id);
     if (typeof m.name !== 'string' || m.name.trim() === '') throw new MonsterDataError(`${where}: 名前が空`);
+    if (typeof m.species !== 'string' || m.species.trim() === '') throw new MonsterDataError(`${where}: species が空`);
     if (!Number.isInteger(m.tier) || m.tier < 1 || m.tier > 8) throw new MonsterDataError(`${where}: tier が不正 (${m.tier})`);
     if (!Array.isArray(m.stats) || m.stats.length !== 5 || m.stats.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0)) {
       throw new MonsterDataError(`${where}: stats が不正`);

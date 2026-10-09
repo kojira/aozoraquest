@@ -1,17 +1,16 @@
 import type { ReactElement } from 'react';
-import { monsterArtFor, tileArtColorAt, type MonsterSpecies, type TintableSpecies } from '@aozoraquest/core';
+import { monsterArtDataUri, monsterArtFor, tileArtColorAt, type MonsterSpecies } from '@aozoraquest/core';
+
+const SHADOW = { display: 'block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))' } as const;
 
 /**
- * モンスターの SVG (あおぞらワールドの野外遭遇で使う)。
- * 画像アセットなしのインライン SVG = 軽量・省メモリ (モバイル方針)。
- * species ごとに 1 枚、viewBox 100x100。ドット RPG 風の太い輪郭とシンプルな形。
+ * モンスターの絵。**ドット絵 (tileArt `monster:<id>`) → monsterArt レコードの絵 → 「?」** の順に選ぶ
+ * (#591 / D-MONSTER-001)。レコードの絵は `<svg><image href="data:…">` で出す: 画像として読む SVG は
+ * script も外部の読み込みも動かない。外側を `<svg>` にするのは、`world-map-layer` が `<svg>` の中に置くため。
+ * `dot={false}` はドット絵を飛ばす (ドット絵エディタの下敷き)。
  */
-/**
- * モンスターの絵。**ドット絵 (エディタで描いたもの) → 従来の SVG** の順に倒す (#591)。
- * ドット絵は `monster:<id>` キーで、タイルと同じ登録簿から引く。
- */
-export function MonsterSvg({ species, size = 160, tint, monsterId }: { species: MonsterSpecies; size?: number; tint?: string | undefined; monsterId?: string }) {
-  const art = monsterId ? monsterArtFor(monsterId) : undefined;
+export function MonsterSvg({ species, size = 160, tint, monsterId, dot = true }: { species: MonsterSpecies; size?: number; tint?: string | undefined; monsterId?: string; dot?: boolean }) {
+  const art = dot && monsterId ? monsterArtFor(monsterId) : undefined;
   if (art) {
     // ドット絵はアンチエイリアスを切って画素のまま出す (タイルと同じ作法)
     const px = 100 / art.size;
@@ -30,23 +29,32 @@ export function MonsterSvg({ species, size = 160, tint, monsterId }: { species: 
       }
     }
     return (
-      <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden style={{ display: 'block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))' }}>
+      <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden style={SHADOW}>
         <g shapeRendering="crispEdges">{rects}</g>
       </svg>
     );
   }
-  return legacySvg(species, size, tint);
+  const uri = monsterArtDataUri(species, tint);
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden style={SHADOW}>
+      {uri ? <image href={uri} width="100" height="100" /> : UNKNOWN}
+    </svg>
+  );
 }
 
-function legacySvg(species: MonsterSpecies, size: number, tint?: string | undefined) {
+/** 絵のレコードが無い (読み込み前・未登録の species) ときの中立の「?」シルエット。 */
+const UNKNOWN = (
+  <g data-monster-unknown="">
+    <path d="M50 18 C74 18 84 42 84 58 C84 76 68 84 50 84 C32 84 16 76 16 58 C16 42 26 18 50 18Z" fill="#8a94a0" stroke="#1b2530" strokeWidth="4" />
+    <path d="M40 44 C40 34 60 34 60 44 C60 52 50 52 50 60" fill="none" stroke="#f0f4ff" strokeWidth="6" strokeLinecap="round" />
+    <circle cx="50" cy="71" r="4" fill="#f0f4ff" />
+  </g>
+);
+
+/** 旧 SVG (見た目の一致を確かめる間だけ残す。D-MONSTER-001 PR2 の parity gate)。 */
+export function LegacyMonsterSvg({ species, size, tint }: { species: MonsterSpecies; size: number; tint?: string | undefined }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 100 100"
-      aria-hidden
-      style={{ display: 'block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.35))' }}
-    >
+    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden style={SHADOW}>
       {bodyFor(species, tint)}
     </svg>
   );
@@ -71,7 +79,7 @@ export function bodyFor(species: MonsterSpecies, tint?: string): ReactElement {
     case 'raven':
       return ravenBody(tint);
     default:
-      return BODIES[species];
+      return BODIES[species]!;
   }
 }
 
@@ -176,7 +184,7 @@ function mushroomBody(tint?: string): ReactElement {
 
 /** tint を持てない (= 色違い変種が居ない) 種の静的な絵。tint 対応種は `bodyFor` の
  *  switch で関数側に分岐するので、ここには載せない。 */
-const BODIES: Record<Exclude<MonsterSpecies, TintableSpecies>, ReactElement> = {
+const BODIES: Record<string, ReactElement> = {
   // はぐれスライム: 同じ形の金属色 (銀) + きらめきのハイライトでレア感を出す。
   'metal-slime': (
     <g>

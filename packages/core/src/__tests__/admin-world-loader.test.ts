@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_WORLD_RECORDS, activeMonsters, allNpcs, clearMonsters, encodeMonstersForRecord, gameQuests, loadAdminWorld,
   scenarioEvents, setGameQuests, setMonsterOverrides, setNpcs, setScenario, setShopOverrides, shopOverrides,
-  type AdminWorldRecordCache, type AdminWorldRecordName, type MonsterDef, type NpcDef,
+  clearMonsterArts, monsterArtSvg, type AdminWorldRecordCache, type AdminWorldRecordName, type MonsterDef, type NpcDef,
 } from '../index.js';
 import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 
@@ -29,7 +29,7 @@ describe('loadAdminWorld', () => {
   it('読み込み順は唯一の定義 (shops は items の後、quests は npcs/monsters/items の後、scenario は quests の後、story は scenario の後)', async () => {
     const { read } = await load({});
     expect(read).toEqual([...ADMIN_WORLD_RECORDS]);
-    expect(read).toEqual(['map', 'tileArt', 'monsters', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story']);
+    expect(read).toEqual(['map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story']);
   });
 
   it('空配列のレコードは適用する (#660)', async () => {
@@ -112,5 +112,28 @@ describe('loadAdminWorld: monsters の cache 経路 (D-MONSTER-001)', () => {
     await loadAdminWorld(async (name) => (name === 'monsters' ? { monsters: [] } : null), (name) => errors.push(name));
     expect(activeMonsters()).toHaveLength(TEST_MONSTERS.length);
     expect(errors).toEqual(['monsters']);
+  });
+});
+
+describe('loadAdminWorld: monsterArt (D-MONSTER-001 PR2)', () => {
+  afterEach(() => clearMonsterArts());
+  const ART = { arts: [{ id: 'slime', svg: '<g fill="{{tint|#57b7ee}}"/>' }], updatedAt: 'x' };
+  const artCache = (value: unknown) => ({ names: ['monsters', 'monsterArt'] as AdminWorldRecordName[], read: vi.fn(async () => value), write: vi.fn(async () => {}) });
+
+  it('PDS の絵を適用し、cache に write する', async () => {
+    const cache = artCache(null);
+    await loadAdminWorld(async (name) => (name === 'monsterArt' ? ART : name === 'monsters' ? record(TEST_MONSTERS) : null), () => {}, cache);
+    expect(monsterArtSvg('slime', undefined)).toContain('fill="#57b7ee"');
+    expect(cache.write).toHaveBeenCalledWith('monsterArt', ART);
+  });
+
+  it('PDS が throw / 検証 NG のときは KV の絵が入り、壊れた値は write しない', async () => {
+    for (const pds of [() => { throw new Error('down'); }, () => ({ arts: [{ id: 'slime', svg: '<script>' }] })]) {
+      clearMonsterArts();
+      const cache = artCache(ART);
+      await loadAdminWorld(async (name) => (name === 'monsterArt' ? pds() : name === 'monsters' ? record(TEST_MONSTERS) : null), () => {}, cache);
+      expect(monsterArtSvg('slime', '#e0574a')).toContain('fill="#e0574a"');
+      expect(cache.write).not.toHaveBeenCalledWith('monsterArt', expect.anything());
+    }
   });
 });
