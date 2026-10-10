@@ -14,6 +14,11 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await vite?.close(); });
 test.use({ hasTouch: true });
 const shots = process.env.DIALOGUE_SHOTS;
+// The speaker plate is sized by its text; when the Noto Sans JP web font subsets finish loading
+// (Linux CI, no Hiragino) its width shifts by ~0.1px (#735). Compare each value within 1px.
+const expectPlateAt = (box: { x: number; y: number; width: number; height: number } | null, plate: NonNullable<typeof box>) => {
+  for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(box![k] - plate[k]), k).toBeLessThan(1);
+};
 
 for (const width of [320, 390, 1280]) {
   test(`DialogueWindow map fixed geometry, typing and scrolling at ${width}`, async ({ page }) => {
@@ -39,7 +44,7 @@ for (const width of [320, 390, 1280]) {
     await next(); await next(); // Long speech, fully visible in its scroll area.
     expect(await body.boundingBox()).toEqual(frame);
     expect(await image.boundingBox()).toEqual(portrait);
-    expect(await page.locator('.aq-dialogue-pane').first().boundingBox()).toEqual(plate);
+    expectPlateAt(await page.locator('.aq-dialogue-pane').first().boundingBox(), plate);
     expect(await body.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     await body.focus();
     await page.keyboard.press('End');
@@ -72,7 +77,7 @@ for (const width of [320, 390, 1280]) {
     await next(); await next(); // Guild choices.
     expect(await body.boundingBox()).toEqual(frame);
     expect(await image.boundingBox()).toEqual(portrait);
-    expect(await page.locator('.aq-dialogue-pane').first().boundingBox()).toEqual(plate);
+    expectPlateAt(await page.locator('.aq-dialogue-pane').first().boundingBox(), plate);
     const last = page.getByRole('button', { name: 'やめる', exact: true });
     await backdrop.focus();
     for (let i = 0; i < 5; i++) await page.keyboard.press('Tab');
