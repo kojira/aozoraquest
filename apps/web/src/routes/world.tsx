@@ -602,7 +602,7 @@ export function World() {
             <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
               {serverPower === null
                 ? 'パワー残高を 読み込めませんでした (通信を確認して 開き直して)'
-                : 'パワーが ないので、勝っても 経験値・素材は もらえません'}
+                : 'パワーが ないので、勝っても 経験値・素材・依頼の進みは もらえません'}
             </p>
           )}
         </>
