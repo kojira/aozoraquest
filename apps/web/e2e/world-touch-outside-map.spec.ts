@@ -134,10 +134,13 @@ test('マップの下の黒い領域: ドラッグで歩き、タップは何も
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'コマンド' })).toHaveCount(0);
   // 3. 会話中に黒い領域をタップすると会話が進む
-  for (let i = 0; i < start.y - stopped; i++) { await page.keyboard.press('ArrowDown'); await expect.poll(worldY).toBe(stopped + i + 1); }
-  await page.keyboard.press('ArrowLeft');
+  // 直前の移動がサーバー往復中のキーは製品仕様で捨てられる (moveBlocked)。まだ動いていない時だけ押し直す (1 押下 = 最大 1 マス)。
+  for (let y = stopped + 1; y <= start.y; y++) {
+    await expect(async () => { if (await worldY() === y - 1) await page.keyboard.press('ArrowDown'); await expect.poll(worldY, { timeout: 1_000 }).toBe(y); }).toPass({ timeout: 10_000 });
+  }
   const pane = page.locator('.aq-dialogue-pane').last();
-  await expect(pane).toContainText('いちまいめ');
+  const talk = page.getByRole('dialog', { name: 'セリフ', exact: true });
+  await expect(async () => { if (await talk.count() === 0) await page.keyboard.press('ArrowLeft'); await expect(pane).toContainText('いちまいめ', { timeout: 1_000 }); }).toPass({ timeout: 10_000 });
   await (await touch(page, black.x, black.y))();
   await expect(pane).toContainText('にまいめ');
   await (await touch(page, black.x, black.y))();
