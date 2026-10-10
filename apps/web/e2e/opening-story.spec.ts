@@ -418,9 +418,11 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await choose('報告する');
     await expect(window).toContainText('いま 報告できる 受注中の依頼は ない');
     await readAll(page);
+    // 達成済みの依頼は「依頼を見る」に出さない。説明 (intro) も流さない。
     await choose('依頼を見る');
-    for (let i = 0; i < 12 && !(await window.innerText()).includes('達成済み'); i++) await next();
-    await expect(window).toContainText('達成済み');
+    await expect(window).toContainText('いま 紹介できる 依頼は ないよ。');
+    await expect(window).not.toContainText('道具の手入れに');
+    await expect(window).not.toContainText('村の道具屋');
     expect(state).toEqual(completed);
     await readAll(page);
     await choose('やめる');

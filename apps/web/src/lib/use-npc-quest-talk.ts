@@ -94,13 +94,13 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   }, [agent, moveBusyRef, tokenRef, startEncounterRef, setNotice]);
 
   const guildMessage = (npc: NpcDef, lines: string[]) => setNpcTalk({ npc, guild: 'message', lines });
-  const npcQuests = (npc: NpcDef, includeDone = false) =>
-    npcQuestCandidates(npc.id, questRef.current, flagsRef.current, materialsRef.current, includeDone);
+  const npcQuests = (npc: NpcDef) =>
+    npcQuestCandidates(npc.id, questRef.current, flagsRef.current, materialsRef.current);
 
   const showQuestChoices = (npc: NpcDef, candidates: readonly GameQuestDef[], select: (q: GameQuestDef) => void | Promise<void>, guild: boolean, page = 0, heading = 'どの依頼のこと？') => {
     const choices: DialogueChoice[] = candidates.slice(page * 3, page * 3 + 3).map(q => {
       const active = questRef.current.activeQuests.find(a => a.id === q.id);
-      const state = active ? questProgressLine(q, active.progress, materialsRef.current) : questRef.current.done.includes(q.id) ? '達成済み' : '未受注';
+      const state = active ? questProgressLine(q, active.progress, materialsRef.current) : '未受注';
       return { label: `${questChoiceTitle(q, candidates)} / ${state}`, onSelect: () => select(q) };
     });
     if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1, heading) });
@@ -145,15 +145,15 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
 
   const viewGuildQuest = (npc: NpcDef, q?: GameQuestDef) => {
     if (!q) {
-      const candidates = npcQuests(npc, true);
+      // 達成済みは出さない (一人一度の依頼。fb-1010)。0件なら紹介できる依頼なし。
+      const candidates = npcQuests(npc);
       if (!candidates.length) { guildMessage(npc, ['いま 紹介できる 依頼は ないよ。']); return; }
       if (candidates.length > 1) { showQuestChoices(npc, candidates, selected => viewGuildQuest(npc, selected), true); return; }
       q = candidates[0]!;
     }
     const lines = guildQuestDetailLines(q);
     const active = questRef.current.activeQuests.find(a => a.id === q.id);
-    if (questRef.current.done.includes(q.id)) guildMessage(npc, [...lines, 'この依頼は 達成済みだよ。ありがとう！']);
-    else if (active) guildMessage(npc, [...lines, questProgressLine(q, active.progress, materialsRef.current), 'そろったら「報告する」を えらんでね。']);
+    if (active) guildMessage(npc, [...lines, questProgressLine(q, active.progress, materialsRef.current), 'そろったら「報告する」を えらんでね。']);
     else setNpcTalk({ npc, guild: 'detail', lines: [...lines, 'うけますか？'], acceptQuestId: q.id });
   };
   const reportGuildQuest = (npc: NpcDef) => {
