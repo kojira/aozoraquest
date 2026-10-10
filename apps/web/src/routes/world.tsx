@@ -398,7 +398,7 @@ export function World() {
   const avatarSize = Math.max(16, Math.round(tilePx * 1.15));
 
   return (
-    <div className="world-screen" style={{ maxWidth: 560, margin: '0 auto' }}>
+    <div className="world-screen" style={{ maxWidth: 560, margin: '0 auto', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
       {/* HUD (HP/MP + 現在地) はマップ上にオーバーレイ表示する — 縦スクロールを
           なくして没入感を上げるため。マップ外に置いて
           いた HP/MP バー・場所ヘッダーは廃止し、下記 WorldHud に集約した。 */}
@@ -584,16 +584,10 @@ export function World() {
       </div>
 
       {/* マップ下: 戦闘/リザルトはマップ枠内で完結するので何も出さない (縦スクロール
-          をなくす)。通常時のみ操作ヒント。 */}
+          をなくす)。 */}
       {/* モバイルでは footer まで伸び、黒い領域からも移動できる (2 本目のスティック、タップは無反応) */}
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-      {!inBattle && !onboarding && !showStarter && !npcTalk && (
-        <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 0' }}>
-          じぶんを タップすると コマンドが ひらくよ。
-        </p>
-      )}
-      {/* 一時メッセージ + 操作説明は戦闘/リザルト中は隠す (マップ枠内で完結・
-          縦スクロールをなくす) */}
+      {/* 一時メッセージと パワーの警告だけ (操作説明は出さない)。戦闘/リザルト中は隠す */}
       {!inBattle && !onboarding && !showStarter && !npcTalk && (
         <>
           <p
@@ -602,20 +596,15 @@ export function World() {
           >
             {notice && <strong style={{ color: 'var(--color-fg)' }}>{notice}</strong>}
           </p>
-          <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-            マップや その下を タッチしたまま 指を動かすと 移動 (PC は矢印キーも可)。やどやで パワーを はらうと 全回復。
-            {/* **残高は HUD の P だけに出す。** ここに client 台帳 (points) の数字を併記すると、
-                権威側と食い違ったときに同じ画面に別々の残高が並ぶ (実際に「P 0」の 3cm 下に
-                「いまのパワー: 152」が出ていた)。遭遇判定はサーバーが権威 power で行うので、
-                client 台帳を根拠に「モンスターは出ません」と書くのも嘘になる。 */}
-            {diag
-              ? serverPower === null
-                ? ' パワー残高を読み込めなかった (通信を確認して開き直して)。'
-                : serverPower < BATTLE_TUNING.powerCost
-                  ? ' あおぞらパワーが ないので、勝っても経験値・素材・依頼の進みは 得られません。とうこうしたくなったら ひとやすみしよう。'
-                  : ` 歩くとモンスターが出ることがあります (1 戦 = あおぞらパワー ${BATTLE_TUNING.powerCost}、勝つと経験値と素材)。`
-              : ''}
-          </p>
+          {/* **残高は HUD の P だけに出す。** ここに client 台帳 (points) の数字を併記すると、
+              権威側と食い違ったときに同じ画面に別々の残高が並ぶ。遭遇判定はサーバーが権威 power で行う。 */}
+          {diag && (serverPower === null || serverPower < BATTLE_TUNING.powerCost) && (
+            <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
+              {serverPower === null
+                ? 'パワー残高を 読み込めませんでした (通信を確認して 開き直して)'
+                : 'パワーが ないので、勝っても 経験値・素材は もらえません'}
+            </p>
+          )}
         </>
       )}
       {mapAcquisition === null && !inBattle && <VirtualStick onMove={move} inset="0 36px" showHint={false} />}
