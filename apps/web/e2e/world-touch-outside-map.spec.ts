@@ -98,6 +98,15 @@ test('マップの下の黒い領域: ドラッグで歩き、タップは何も
   expect(Math.abs(root.y + root.height - foot.y)).toBeLessThanOrEqual(12);
   expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= innerHeight + 1)).toBe(true);
   const black = { x: m.x + m.width / 2, y: (m.y + m.height + foot.y) / 2 };
+  // 6. 操作説明文は出さない。スティック外の左 36px の帯からドラッグしても文字は選ばれない
+  await expect(page.getByText(/じぶんを タップすると|マップや その下を|やどやで パワーを|歩くとモンスターが/)).toHaveCount(0);
+  const warn = (await page.getByText(/パワーが ない/).boundingBox())!;
+  await page.screenshot({ path: 'test-results/world-no-help-390.png' });
+  await page.mouse.move(root.x + 18, m.y + m.height + 12);
+  await page.mouse.down();
+  await page.mouse.move(root.x + 18, warn.y + warn.height + 4, { steps: 8 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => getSelection()!.toString())).toBe('');
   expect(foot.y - (m.y + m.height)).toBeGreaterThan(150);
   // 2. 黒い領域のタップではメニューが出ない (歩きもしない)
   await (await touch(page, black.x, black.y))();
