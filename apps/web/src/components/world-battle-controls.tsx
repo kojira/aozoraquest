@@ -274,8 +274,20 @@ function DqMessageWindow({ lines, typingKey, onTyped, skipRef, onAdvance }: {
   const typingAll = !typingKey.startsWith('message-');
   const before = typingAll ? [] : lines.slice(0, -1);
   const typing = typingAll ? lines : lines.slice(-1);
+  // 折り返しで 4 行を こえても、打っている 最新の 行が 窓の 下に 見えるよう 追従する。
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const follow = () => { el.scrollTop = el.scrollHeight; };
+    follow();
+    const mo = new MutationObserver(follow);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+  }, []);
   return (
     <div
+      ref={boxRef}
       className="dq-message"
       onClick={onAdvance}
       style={{

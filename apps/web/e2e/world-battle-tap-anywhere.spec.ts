@@ -56,7 +56,11 @@ test('戦闘 message: 黒い領域タップで 1 行ずつ進み、最後の行�
     }
     if (url.pathname.endsWith('/battle/turn')) {
       turns++;
-      await route.fulfill({ json: { outcome: 'ongoing', events: [], state: battle(1, 22, [
+      const long = 'テストスライムに とても とても ながい ながい ながい ながい 99 のダメージ';
+      if (turns === 2) await route.fulfill({ json: { outcome: 'ongoing', events: [], state: battle(2, 22, [
+        { actor: 'player', text: `たびびとのこうげき! ${long}` },
+        { actor: 'monster', text: `テストスライムのこうげき! ${long}` }]) } });
+      else await route.fulfill({ json: { outcome: 'ongoing', events: [], state: battle(1, 22, [
         { actor: 'player', text: 'たびびとのこうげき! テストスライムに 3 のダメージ' },
         { actor: 'monster', text: 'テストスライムのこうげき! たびびとに 8 のダメージ' }]) } });
       return;
@@ -98,4 +102,19 @@ test('戦闘 message: 黒い領域タップで 1 行ずつ進み、最後の行�
   await page.touchscreen.tap(black.x, black.y);
   await expect(attack).toBeVisible();
   expect(turns).toBe(1);
+  // 折り返す 長い 行が 積まれても、打っている 最新の 行が 窓の 中に 見える。
+  await attack.tap();
+  await expect(msg).toContainText('たびびとのこうげき!');
+  for (const t of ['99 のダメージ', 'テストスライムのこうげき!']) {
+    await page.waitForTimeout(800); // 打ち終えてから 送る
+    await page.touchscreen.tap(black.x, black.y);
+    await expect(msg).toContainText(t);
+  }
+  await page.waitForTimeout(800);
+  await page.touchscreen.tap(black.x, black.y); // 4 行目 (折り返す 長い 行)
+  await page.waitForTimeout(1500);
+  await expect(msg).toBeVisible();
+  const box = (await msg.boundingBox())!;
+  const last = await msg.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el); const rs = r.getClientRects(); return rs[rs.length - 1]!.bottom; });
+  expect(last).toBeLessThanOrEqual(box.y + box.height + 1);
 });
