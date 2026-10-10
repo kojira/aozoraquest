@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * 戦闘 UI の共有パーツ。かつてのブルスコンの試練が使っていた
@@ -27,8 +27,9 @@ export function HpBar({ name, hp, maxHp, mine = false, labelColor }: { name: str
 /** 戦闘ログの DQ1 風タイプライター表示。行を順に 1 文字ずつ出す。
  *  reduced-motion では即時全文。セリフウィンドウ (dialogue-window) より速い
  *  1 文字 22ms — 戦闘のテンポを削らない速度に留める。battle-view 専用。
- *  onDone: 全文表示し終えた時に一度呼ぶ (DQ 風メッセージ送りの「送り可」判定用)。 */
-export function TypedLines({ lines, onDone }: { lines: readonly string[]; onDone?: () => void }) {
+ *  onDone: 全文表示し終えた時に一度呼ぶ (DQ 風メッセージ送りの「送り可」判定用)。
+ *  skipRef: 外 (戦闘の全画面送り面) から「残りを即時全文」を呼ぶための口。 */
+export function TypedLines({ lines, onDone, skipRef }: { lines: readonly string[]; onDone?: () => void; skipRef?: MutableRefObject<(() => void) | null> }) {
   const reduced = useMemo(
     () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
@@ -43,6 +44,7 @@ export function TypedLines({ lines, onDone }: { lines: readonly string[]; onDone
   const [chars, setChars] = useState(reduced ? total : 0);
   const doneCharsRef = useRef(reduced ? total : 0);
   doneCharsRef.current = chars;
+  if (skipRef) skipRef.current = () => setChars(total);
   useEffect(() => {
     setChars(reduced ? total : 0);
     if (reduced) return;
