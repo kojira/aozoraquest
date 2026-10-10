@@ -1,19 +1,31 @@
-import { useEffect, useState } from 'react';
+import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
 import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
+import { OVERLAY_Z } from './world-hud';
+import { battleMessageLines } from '@/lib/battle-message-lines';
 
 /**
  * あおぞらワールドの戦闘 UI (DQ 風の配置)。
  *  - フィールドに敵スプライト (名前・数は右ペイン、体力は見抜ける職業のみ)。
  *  - input: 下段左右 2 ペイン (左=コマンド 2 列 / 右=敵リスト or どうぐの中身)。
- *  - message/result: コマンドを消して全幅メッセージ窓 (タップ送り)。
+ *  - message/result: コマンドを消して全幅メッセージ窓 (タップ送り)。message は 1 タップ 1 行
+ *    (DQ1〜3 風に 4 行窓へ積み、古い行は上へ流す)。画面のどこをタップしても送れる (#757)。
  * **下段は常に同じ固定高さ (4 行)** にして、フェーズが変わってもフィールドの敵の
  * 位置がずれない / メッセージ枠が伸縮しない (認知負荷を下げる)。
  * DQ の作法どおりメッセージ枠は 4 行分。
  */
 export type BattlePhase = 'message' | 'input' | 'result';
+
+/** message/result の戦闘オーバーレイの z。会話の送り面 (900) と同じ層で footer (10) や PC の
+ *  左レール (30) より上。中の全画面送り面 (zIndex:-1) はこの層の背景より上・窓より下になる。
+ *  input は従来の OVERLAY_Z のまま (コマンド操作の層を変えない)。上枠 HUD はこの +1 に置く。 */
+export function battleOverlayZ(phase: BattlePhase): number {
+  return phase === 'input' ? OVERLAY_Z : 900;
+}
+/** message の窓に積む最大行数 (DQ 風 4 行窓)。 */
+const WINDOW_LINES = 4;
 
 /** 下段 (コマンド窓 / メッセージ窓) の固定高さ = メッセージ 4 行 + 余白。全フェーズ共通。
  *  コマンド 2 列 3 行のタップ target を確保するため少し高めに (実機の誤タップ対策)。 */
@@ -33,6 +45,8 @@ export function WorldBattleControls({
   resultLines,
   onCommand,
   onAdvance,
+  prevState,
+  onReveal,
 }: {
   state: BattleState;
   phase: BattlePhase;
@@ -43,6 +57,10 @@ export function WorldBattleControls({
   resultLines: readonly string[];
   onCommand: (c: Command, skillIndex?: number) => void;
   onAdvance: () => void;
+  /** 直前ターンの state。message の最後の行までは敵の体力をこちらで見せる (#757)。 */
+  prevState?: BattleState | undefined;
+  /** message の最後の行に着いた (= 最終 HP と揺れを出す) ことを turn 付きで知らせる。 */
+  onReveal?: (turn: number) => void;
 }) {
   const [itemMenu, setItemMenu] = useState(false);
   // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
@@ -60,13 +78,44 @@ export function WorldBattleControls({
       ? resultLines
       : state.turn === 0
         ? [`${state.monster.name}が あらわれた！ ${monsterDef?.intro ?? ''}`]
-        : state.lastEvents.map((e) => e.text);
+        : battleMessageLines(state.lastEvents.map((e) => e.text));
+  // message は 1 タップ 1 行。段 (phase+turn) が変わったら先頭から (古い段の index は捨てる)。
+  const stepKey = `${phase}-${state.turn}`;
+  const [step, setStep] = useState({ key: stepKey, index: 0 });
+  const lineIndex = phase === 'message' && step.key === stepKey ? step.index : 0;
+  const lastLine = phase !== 'message' || lineIndex >= messageLines.length - 1;
+  // 表示中の行を打ち終えたか。空行だけなら最初から送れる (TypedLines の onDone が来ず詰むため)。
+  const typingKey = `${stepKey}:${lineIndex}`;
+  const [typedKey, setTypedKey] = useState<string | null>(null);
+  const typed = typedKey === typingKey || !messageLines.join('').trim();
+  const skipRef = useRef<(() => void) | null>(null);
+  const onRevealRef = useRef(onReveal);
+  onRevealRef.current = onReveal;
+  useEffect(() => {
+    if (lastLine) onRevealRef.current?.(state.turn);
+  }, [lastLine, state.turn]);
+  /** 送り (窓・全画面送り面の共通): タイプ中→全文 / 次の行あり→1 行出す / 最後→onAdvance。 */
+  const advance = () => {
+    if (busy) return; // 処理中は送らない
+    if (!typed) skipRef.current?.();
+    else if (!lastLine) setStep({ key: stepKey, index: lineIndex + 1 });
+    else onAdvance();
+  };
+  // 最後の行までは前ターンの敵 HP を見せ、揺れも最後の行で出す (開幕 turn 0 は前が無い)。
+  const fieldState = !lastLine && prevState ? prevState : state;
   return (
     <>
+      {/* 全画面の送り面 (会話の送り面と同じ作法)。fixed なので地図・黒い領域・footer まで覆う。
+          zIndex:-1 で、この戦闘オーバーレイ (battleOverlayZ) の背景より上・窓より下に入る。
+          input では出さない = コマンドは従来どおり押せる。 */}
+      {phase !== 'input' && (
+        <div data-battle-advance aria-hidden onClick={advance} style={{ position: 'fixed', inset: 0, zIndex: -1, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }} />
+      )}
       {/* フィールド: 敵スプライト (+ 見抜ける職業のみ体力)。下段が固定高さなので
           ここ (flex:1) の高さも一定 = 敵の位置がフェーズで動かない。 */}
-      <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <BattleFieldEnemy state={state} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
+      {/* 表示専用。message/result ではタップを背面の送り面へ通す。 */}
+      <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', pointerEvents: phase === 'input' ? 'auto' : 'none' }}>
+        <BattleFieldEnemy state={state} hpState={fieldState} revealed={lastLine} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
       </div>
 
       {/* 下段: 常に BOTTOM_H の固定高さ */}
@@ -119,7 +168,13 @@ export function WorldBattleControls({
           </div>
         ) : (
           // message / result: 全幅メッセージ窓 (固定 4 行高さ = 下段と同じ)
-          <DqMessageWindow key={`${phase}-${state.turn}`} lines={messageLines} busy={busy} onAdvance={onAdvance} />
+          <DqMessageWindow
+            lines={phase === 'message' ? messageLines.slice(Math.max(0, lineIndex + 1 - WINDOW_LINES), lineIndex + 1) : messageLines}
+            typingKey={typingKey}
+            onTyped={() => setTypedKey(typingKey)}
+            skipRef={skipRef}
+            onAdvance={advance}
+          />
         )}
       </div>
     </>
@@ -127,14 +182,22 @@ export function WorldBattleControls({
 }
 
 /** 敵スプライト + 見抜ける職業のみ体力 (名前・数は右ペインなのでここには出さない)。 */
-function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleState; showEnemyVitals: boolean; defeated: boolean }) {
+function BattleFieldEnemy({ state, hpState, revealed, showEnemyVitals, defeated }: {
+  state: BattleState;
+  /** 体力表示に使う state (message の最後の行までは前ターン)。 */
+  hpState: BattleState;
+  /** 最後の行に着いたか。揺れはここで出す。 */
+  revealed: boolean;
+  showEnemyVitals: boolean;
+  defeated: boolean;
+}) {
   const monsterDef = MONSTERS_BY_ID[state.monsterId];
   return (
     <div style={{ textAlign: 'center' }}>
       <div
         key={state.turn}
         style={{ display: 'inline-block', opacity: defeated ? 0.35 : 1, transform: defeated ? 'rotate(180deg)' : 'none', transition: 'opacity 300ms ease' }}
-        className={!defeated && state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
+        className={!defeated && revealed && state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
       >
         <MonsterSvg species={monsterDef?.species ?? ''} tint={monsterDef?.tint} size={84} monsterId={state.monsterId} />
       </div>
@@ -150,7 +213,7 @@ function BattleFieldEnemy({ state, showEnemyVitals, defeated }: { state: BattleS
       )}
       {showEnemyVitals && !defeated && (
         <>
-          <HpBar name={state.monster.name} hp={state.monster.hp} maxHp={state.monster.maxHp} labelColor="#fff" />
+          <HpBar name={state.monster.name} hp={hpState.monster.hp} maxHp={state.monster.maxHp} labelColor="#fff" />
           {/* ため/回復を使う敵は生の MP を「バー」で見せる (「あと何回」の答えは出さず、
               残量から尽きるタイミングを予想させる)。通常攻撃だけの敵は MP を使わないので
               出さない (混乱防止)。数値は出してよい (maxMp は遭遇ごとに分散 + 発動は確率
@@ -197,18 +260,24 @@ function DqRow({ label, onClick, disabled, cursor = false, fill = true }: { labe
   );
 }
 
-/** 全幅メッセージ窓 (固定 4 行高さ)。タップで「1 回目=全文 / 2 回目=送り」。 */
-function DqMessageWindow({ lines, busy, onAdvance }: { lines: readonly string[]; busy: boolean; onAdvance: () => void }) {
-  // 表示文字が 1 つも無いと TypedLines の onDone が発火せず送り不能で詰む (レビュー ★)。
-  // 空行のみのときは最初から「送れる」状態にしておく (防御)。key remount で毎回再評価。
-  const [typed, setTyped] = useState(() => !lines.join('').trim());
+/** 全幅メッセージ窓 (固定 4 行高さ)。打ち終えた行はそのまま、最後の行だけをタイプする。
+ *  送りの判断は親の advance (窓のタップも全画面送り面と同じ処理)。 */
+function DqMessageWindow({ lines, typingKey, onTyped, skipRef, onAdvance }: {
+  lines: readonly string[];
+  /** 最後の行の識別子。変わったら打ち直す (同じ文が続いても 1 行ずつ止める)。 */
+  typingKey: string;
+  onTyped: () => void;
+  skipRef: MutableRefObject<(() => void) | null>;
+  onAdvance: () => void;
+}) {
+  // message は最後の 1 行だけを打つ。result (報酬行) は従来どおり全行をまとめて打つ。
+  const typingAll = !typingKey.startsWith('message-');
+  const before = typingAll ? [] : lines.slice(0, -1);
+  const typing = typingAll ? lines : lines.slice(-1);
   return (
     <div
       className="dq-message"
-      onClick={() => {
-        if (busy) return; // 処理中は送らない
-        if (typed) onAdvance(); // 全文表示済み → 送り (まだタイプ中なら TypedLines が全文化)
-      }}
+      onClick={onAdvance}
       style={{
         ...WINDOW,
         height: '100%',
@@ -221,7 +290,10 @@ function DqMessageWindow({ lines, busy, onAdvance }: { lines: readonly string[];
         cursor: 'pointer',
       }}
     >
-      <TypedLines lines={lines} onDone={() => setTyped(true)} />
+      {before.map((l, i) => (
+        <div key={i}><span aria-hidden>{l}</span></div>
+      ))}
+      <TypedLines key={typingKey} lines={typing} onDone={onTyped} skipRef={skipRef} />
     </div>
   );
 }

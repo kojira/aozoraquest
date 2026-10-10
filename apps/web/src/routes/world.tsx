@@ -30,7 +30,7 @@ import { resolveGear } from '@/lib/gear';
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
 import { Avatar } from '@/components/avatar';
-import { WorldBattleControls } from '@/components/world-battle-controls';
+import { WorldBattleControls, battleOverlayZ } from '@/components/world-battle-controls';
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
 import { VirtualStick } from '@/components/virtual-stick';
@@ -38,7 +38,7 @@ import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcDialogueLines } from '@/lib/npc-image';
 import { StatusModal } from '@/components/status-modal';
-import { WorldHud, HUD_Z, OVERLAY_Z } from '@/components/world-hud';
+import { WorldHud, HUD_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
 import { FeatherModal } from '@/components/feather-modal';
@@ -239,6 +239,10 @@ export function World() {
     inventory, setServerPower, archetypeRef, didRef,
   });
   startEncounterRef.current = (encounter) => beginEncounter(encounter, battleRef, setBattle, setWipe);
+  // message の最後の行に着いたターン (`battleId:turn`)。それまで上枠 HP/MP は前ターンの値 (#757)。
+  const [revealedBattleTurn, setRevealedBattleTurn] = useState<string | null>(null);
+  const hudBattleState = battle && battle.phase === 'message' && battle.prevState && revealedBattleTurn !== `${battle.battleId}:${battle.state.turn}`
+    ? battle.prevState : battle?.state;
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -454,11 +458,12 @@ export function World() {
               // 戦闘中は上枠 HP/MP を「戦闘中の実 HP/MP」(battle.state.player) に追従させる。
               // ws.hp/ws.mp は戦闘終了時にしか更新されないので、それを見ると結果画面まで
               // 減らないバグになる。フィールドでは ws 由来。
-              hp={battle ? battle.state.player.hp : curHp}
-              maxHp={battle ? battle.state.player.maxHp : combat.maxHp}
-              mp={battle ? battle.state.player.mp : curMp}
+              // message の最後の行までは前ターンの値 (hudBattleState)。
+              hp={hudBattleState ? hudBattleState.player.hp : curHp}
+              maxHp={hudBattleState ? hudBattleState.player.maxHp : combat.maxHp}
+              mp={hudBattleState ? hudBattleState.player.mp : curMp}
               power={serverPower}
-              maxMp={battle ? battle.state.player.maxMp : combat.maxMp}
+              maxMp={hudBattleState ? hudBattleState.player.maxMp : combat.maxMp}
               locationLabel={
                 // 内部では**そのマップの名前**を出す (どこに居るか分かる唯一の手掛かり)。
                 // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。
@@ -470,7 +475,7 @@ export function World() {
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。
               // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る
               // inBattle を使う — wipe='cover' の一瞬は値=battle 由来 / z=HUD_Z で意図的に非対称。
-              zIndex={inBattle ? OVERLAY_Z + 1 : HUD_Z}
+              zIndex={inBattle && battle ? battleOverlayZ(battle.phase) + 1 : HUD_Z}
             />
           )}
           {menuHint && !onboarding && !showStarter && !menuOpen && <WorldMenuHint />}
@@ -483,7 +488,7 @@ export function World() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                zIndex: OVERLAY_Z,
+                zIndex: battleOverlayZ(battle.phase), // message/result は footer より上 (全画面送り面のため)
                 pointerEvents: 'auto', // 操作オーバーレイ層: 背面スティックへの貫通を吸う
                 background: 'rgba(8, 10, 16, 0.92)',
                 display: 'flex',
@@ -501,6 +506,8 @@ export function World() {
                 resultLines={battle.resultLines ?? []}
                 onCommand={onBattleCommand}
                 onAdvance={() => void onMessageAdvance()}
+                prevState={battle.prevState}
+                onReveal={(turn) => setRevealedBattleTurn(`${battle.battleId}:${turn}`)}
               />
               {/* コマンド送信失敗 (fail-closed = 報酬なし) を戦闘画面内に表示。notice はここには出ない。 */}
               {battle.errorText && (

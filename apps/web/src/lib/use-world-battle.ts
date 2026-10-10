@@ -13,6 +13,8 @@ import { battleResultLines } from '@/lib/world-battle-result';
 export interface WorldBattle {
   /** サーバー権威の戦闘 state (seed は含まれない = 先読み不可)。描画のみに使う。 */
   state: BattleState;
+  /** 直前ターンの state。message の最後の行までは HP をこちらで見せる (#757)。 */
+  prevState?: BattleState;
   busy: boolean;
   /** DQ 風の交互表示。message=メッセージ窓 / input=コマンド入力 / result=決着後の報酬メッセージ
    *  (別パネルを出さず同じ固定サイズのメッセージ窓に畳む = 枠が伸縮せず敵の位置も動かない) */
@@ -70,7 +72,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
       void (async () => {
         try {
           const res = await serverTurn(agent, b.battleId, b.state.turn, command, skillIndex);
-          const acting = { ...bClean, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
+          const acting = { ...bClean, prevState: b.state, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
             ...(res.awarded ? { awarded: res.awarded } : {}),
             ...(res.position ? { resultPos: res.position } : {}),
             ...(res.token ? { resultToken: res.token } : {}),
