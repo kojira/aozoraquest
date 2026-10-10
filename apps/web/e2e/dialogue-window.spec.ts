@@ -23,6 +23,10 @@ const expectPlateAt = (box: { x: number; y: number; width: number; height: numbe
 for (const width of [320, 390, 1280]) {
   test(`DialogueWindow map fixed geometry, typing and scrolling at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
+    // Typing runs on setInterval from mount; a slow image/font load before the "still typing"
+    // check could let it finish. Freeze page timers; the rest of the test advances by clicks.
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1000);
     await page.goto('http://127.0.0.1:4179/e2e/fixtures/dialogue-window.html');
     const body = page.locator('.aq-dialogue-pane').last();
     const backdrop = page.locator('.aq-dialogue-backdrop');
