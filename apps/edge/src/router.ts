@@ -21,6 +21,7 @@ import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
+import { handleInnRest } from './inn-rest';
 import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -71,6 +72,7 @@ const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
+const LXM_INN_REST = LXM.innRest;
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -531,6 +533,26 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json(await handleStoryBattle(env, did, body.npcId, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // 宿屋に泊まる (#766)。会話で「はい」と答えたときだけ呼ぶ。扉の上にいるかは edge が確かめる。
+  if (req.method === 'POST' && url.pathname === '/api/inn/rest') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_INN_REST }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+    try {
+      await ensureAuthoredWorld(env, nowSec());
+      return cors(json(await handleInnRest(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+    } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
   }

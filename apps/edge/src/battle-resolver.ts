@@ -20,7 +20,6 @@ import {
   gateHasLock,
   gateLockedNotice,
   gateOpen,
-  innAt,
   interiorById,
   interiorExitFor,
   interiorTerrainAt,
@@ -298,10 +297,6 @@ export interface MoveResult {
   townArrival?: { x: number; y: number };
   /** 街に入って全回復した (HP/MP が権威なのでサーバーが回復)。 */
   healed?: boolean;
-  /** 宿屋に泊まった (#424)。払ったパワーと残高。healed も立つ。 */
-  inn?: { name?: string; paid: number; power: number };
-  /** 宿屋に泊まれなかった理由 (パワー不足)。 */
-  innDenied?: { name?: string; price: number; power: number };
   /** 次の move に渡す新しい位置トークン (署名済み = 改竄不可)。 */
   token: string;
   /** サーバーが遭遇を判定した場合のみ。 */
@@ -443,30 +438,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     townArrival = { x: nx, y: ny };
   }
 
-  // 宿屋 (#424)。街の内部に入ると「入るだけで回復」が働かないので、回復はここで**有料**。
-  // **満タンなら課金しない** — 通り抜けるたびに取られると通行の邪魔になる。
-  let inn: MoveResult['inn'];
-  let innDenied: MoveResult['innDenied'];
-  const innHere = inside ? innAt(mapId, nx, ny) : undefined;
-  if (innHere) {
-    const rec = await readState(env, userDid);
-    const st = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-    const hurt = st.carryHp !== undefined || st.carryMp !== undefined;
-    if (!hurt) {
-      // 全快で泊まる理由がない。無言だと「宿屋が壊れている」に見えるので結果は返す。
-      inn = { ...(innHere.name ? { name: innHere.name } : {}), paid: 0, power: st.power };
-    } else if (st.power < innHere.price) {
-      innDenied = { ...(innHere.name ? { name: innHere.name } : {}), price: innHere.price, power: st.power };
-    } else {
-      const after = await readModifyWrite(env, userDid, (cur) => {
-        // 残高は毎回読み直す (CAS リトライで二重に引かない)。
-        if (cur.power < innHere.price) throw new ResolverError('パワーが たりない', 400, 'inn_poor');
-        return { ...cur, power: cur.power - innHere.price, carryHp: undefined, carryMp: undefined, x: nx, y: ny, mapId };
-      }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
-      inn = { ...(innHere.name ? { name: innHere.name } : {}), paid: innHere.price, power: after.power };
-      healed = true;
-    }
-  }
+  // 宿屋 (#424) は扉に入っても何もしない。泊まるかは会話で聞き、`POST /api/inn/rest` (inn-rest.ts) で払う (#766)。
 
   const nextToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
 
@@ -520,7 +492,6 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain,
     healed: healed || undefined, token: nextToken,
     ...(townArrival ? { townArrival } : {}),
-    ...(inn ? { inn } : {}), ...(innDenied ? { innDenied } : {}),
   };
 }
 

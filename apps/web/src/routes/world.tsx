@@ -51,6 +51,7 @@ import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
 import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
+import { useInnTalk } from '@/lib/use-inn-talk';
 import { useWorldShop } from '@/lib/use-world-shop';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
@@ -187,6 +188,7 @@ export function World() {
     setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef,
   });
   const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle } = talk;
+  const { innTalk, innTalkRef, innBusy, innChoices, openInn, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
 
@@ -270,8 +272,8 @@ export function World() {
   const moveBlocked = useCallback(() => {
     const o = overlaysRef.current;
     return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter
-      || moveBusyRef.current || !!npcTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
-  }, [battleRef, npcTalkRef, overlaysRef, wipeRef]);
+      || moveBusyRef.current || !!npcTalkRef.current || !!innTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
+  }, [battleRef, npcTalkRef, innTalkRef, overlaysRef, wipeRef]);
   // そらのはねの行き先えらび: 導入中・戦闘・演出・地図/店/そうび/つよさの窓では開かない。
   const featherBlocked = useCallback(() => {
     const o = overlaysRef.current;
@@ -281,7 +283,7 @@ export function World() {
   const move = useWorldMove({
     agent, did, wsRef, setWs, setScrollStep, inputBlocked: moveBlocked, moveBusyRef, tokenRef, flagsRef, materialsRef,
     guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice,
-    setMapAcquisition, setServerPower, setNpcTalk, openDirectNpc, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
+    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
   });
   const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
     agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower,
@@ -448,7 +450,7 @@ export function World() {
               // map/shop/gear/status) 中はそもそもスティックがそれらの背面シートで
               // 遮断されタップが届かないので、ここでは wipe/battle だけ見れば足りる
               // 導入/手渡し/受付中はキーボード経由の自己タップも遮断する。
-              if (wipeRef.current || battleRef.current || mapAcquisitionRef.current || onboardingRef.current || overlaysRef.current.showStarter || npcTalkRef.current) return;
+              if (wipeRef.current || battleRef.current || mapAcquisitionRef.current || onboardingRef.current || overlaysRef.current.showStarter || npcTalkRef.current || innTalkRef.current) return;
               dismissMenuHint();
               setMenuOpen(true);
             }}
@@ -554,8 +556,12 @@ export function World() {
               }}
             />
           )}
+          {!battle && innTalk && !npcTalk && !onboarding && mapAcquisition === null && (
+            // 宿屋 (#766): 扉に入ったら「とまって いきますか？」。はい のときだけ edge で泊まる。
+            <DialogueWindow conversationStep={innTalk} anchor="map" lines={innTalk.lines} busy={innBusy} choices={innChoices} onDone={() => innDone(innTalk)} />
+          )}
           {doorFade && <DoorFade phase={doorFade} onDone={() => setDoorFade(null)} />}
-          {!battle && scenarioTalk && !npcTalk && !onboarding && mapAcquisition === null && (
+          {!battle && scenarioTalk && !npcTalk && !innTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               anchor="map"
               lines={scenarioTalk}
@@ -595,7 +601,7 @@ export function World() {
       {/* モバイルでは footer まで伸び、黒い領域からも移動できる (2 本目のスティック、タップは無反応) */}
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
       {/* 一時メッセージと パワーの警告だけ (操作説明は出さない)。戦闘/リザルト中は隠す */}
-      {!inBattle && !onboarding && !showStarter && !npcTalk && (
+      {!inBattle && !onboarding && !showStarter && !npcTalk && !innTalk && (
         <>
           <p
             aria-live="polite"
