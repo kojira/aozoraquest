@@ -3,7 +3,7 @@ import type { TurnEvent } from '@aozoraquest/core';
 import { doAttack, doMagic } from '@aozoraquest/core/src/battle-attack';
 import { makeCombatant } from '@aozoraquest/core/src/battle-combatant';
 import { STATUS_REGISTRY } from '@aozoraquest/core/src/statuses';
-import { battleMessageLines, splitBattleLine } from './battle-message-lines';
+import { battleLineHps, battleMessageLines, splitBattleLine } from './battle-message-lines';
 
 // 文は packages/core が実際に作るものを使う (文言の写しをテストに持たない)。
 const seq = (...xs: number[]) => () => xs.shift() ?? 0.5;
@@ -47,5 +47,21 @@ describe('splitBattleLine', () => {
   });
   it('battleMessageLines はイベント順に 平らに並べる', () => {
     expect(battleMessageLines(['Aのこうげき! Bに 1 のダメージ', 'Bは ねむっている…'])).toEqual(['Aのこうげき!', 'Bに 1 のダメージ', 'Bは ねむっている…']);
+  });
+});
+
+describe('battleLineHps (#764)', () => {
+  const before = { player: 30, monsters: [30] };
+  const final = { player: 22, monsters: [27] };
+  const events: TurnEvent[] = [
+    { actor: 'player', text: 'Aのこうげき! Bに 3 のダメージ', damage: 3, hp: { player: 30, monsters: [27] } },
+    { actor: 'monster', text: 'Bのこうげき! Aに 8 のダメージ', damage: 8, hp: { player: 22, monsters: [27] } },
+  ];
+  it('ダメージの 行 (分割の 後半) で その イベントの hp に 変わる', () => {
+    expect(battleLineHps(events, before, final)).toEqual([before, { player: 30, monsters: [27] }, { player: 30, monsters: [27] }, final]);
+  });
+  it('hp の 無い 旧応答は 最後の 行まで before', () => {
+    const old = events.map(({ hp: _hp, ...e }) => e);
+    expect(battleLineHps(old, before, final)).toEqual([before, before, before, final]);
   });
 });

@@ -20,13 +20,14 @@ test.afterAll(async () => { await vite?.close(); });
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
 const fighter = (name: string, hp: number) => ({ name, hp, maxHp: 30, mp: 5, maxMp: 5, atk: 1, def: 1, agi: 1, int: 1, luk: 1, vit: 0, guarding: false, parrying: false, charging: false, focus: 0, statuses: [], passives: [] });
-const battle = (turn: number, playerHp: number, lastEvents: { actor: string; text: string }[]) => ({
+type Ev = { actor: string; text: string; damage?: number; hp?: { player: number; monsters: number[] } };
+const battle = (turn: number, playerHp: number, lastEvents: Ev[]) => ({
   seed: 0, turn, player: fighter('たびびと', playerHp), monster: fighter('テストスライム', 30), monsterId: 'none', outcome: 'ongoing',
   playerSkill: { name: 'わざ', kind: 'smash' }, playerSkills: [{ name: 'わざ', kind: 'smash' }],
   herbs: 0, herbsUsed: 0, tonics: 0, tonicsUsed: 0, mpAttackGain: 0, mpGuardGain: 0, lastEvents,
 });
 
-test('戦闘 message: 黒い領域タップで 1 行ずつ進み、最後の行で HP が減り、input では黒い領域が効かない', async ({ page }) => {
+test('戦闘 message: 黒い領域タップで 1 行ずつ進み、ダメージの 行で HP が減り、input では黒い領域が効かない', async ({ page }) => {
   test.setTimeout(60_000);
   page.setDefaultTimeout(5_000);
   const town = worldOverlay().towns[0]!;
@@ -60,9 +61,11 @@ test('戦闘 message: 黒い領域タップで 1 行ずつ進み、最後の行�
       if (turns === 2) await route.fulfill({ json: { outcome: 'ongoing', events: [], state: battle(2, 22, [
         { actor: 'player', text: `たびびとのこうげき! ${long}` },
         { actor: 'monster', text: `テストスライムのこうげき! ${long}` }]) } });
+      // #764: core が 各イベント直後の hp を 付ける。ダメージの 行で その値に なる (最後の 行を 待たない)。
       else await route.fulfill({ json: { outcome: 'ongoing', events: [], state: battle(1, 22, [
-        { actor: 'player', text: 'たびびとのこうげき! テストスライムに 3 のダメージ' },
-        { actor: 'monster', text: 'テストスライムのこうげき! たびびとに 8 のダメージ' }]) } });
+        { actor: 'player', text: 'たびびとのこうげき! テストスライムに 3 のダメージ', damage: 3, hp: { player: 30, monsters: [27] } },
+        { actor: 'monster', text: 'テストスライムのこうげき! たびびとに 8 のダメージ', damage: 8, hp: { player: 22, monsters: [27] } },
+        { actor: 'monster', text: 'テストスライムは ようすを みている。', hp: { player: 22, monsters: [27] } }]) } });
       return;
     }
     await route.fulfill({ status: 500, json: { error: 'unexpected' } });
@@ -98,6 +101,11 @@ test('戦闘 message: 黒い領域タップで 1 行ずつ進み、最後の行�
   await page.screenshot({ path: 'test-results/battle-line-2-390.png' });
   await page.touchscreen.tap(black.x, black.y);
   await expect(msg).toContainText('たびびとに 8 のダメージ');
+  await expect(msg).not.toContainText('ようすを みている');
+  await expect(page.getByText(/22\s*\/\s*30/)).toBeVisible(); // ダメージの 行で すぐ 減る (#764)
+  await page.screenshot({ path: 'test-results/battle-line-hit-390.png' });
+  await page.touchscreen.tap(black.x, black.y);
+  await expect(msg).toContainText('ようすを みている');
   await expect(page.getByText(/22\s*\/\s*30/)).toBeVisible();
   await page.touchscreen.tap(black.x, black.y);
   await expect(attack).toBeVisible();

@@ -11,7 +11,7 @@ import { createRng, turnRng } from './battle-rng.js';
 import { skillMpCostOf, mpTraitFires } from './battle-job-skills.js';
 import { type Combatant } from './battle-combatant.js';
 import { MONSTERS_BY_ID } from './battle-monsters.js';
-import { type Command, type TurnEvent, type BattleState, combatSides } from './battle-state.js';
+import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 
@@ -98,7 +98,7 @@ export function resolveTurnMulti(
   const player = allies[0]!;
   // ぼうぎょは 1 ターン限り: copyCombatant が guarding:false でコピーするので、このターンの宣言/AI で立て直す。
   const isAlly = (c: Combatant) => allies.includes(c);
-  const events: TurnEvent[] = [];
+  const events = hpRecordingEvents(() => sides); // 各イベント直後の HP を記録 (#764)
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
 
   const skills = state.playerSkills ?? [state.playerSkill];
@@ -142,7 +142,7 @@ export function resolveTurnMulti(
     if (rng() < chance) {
       state.outcome = 'fled';
       events.push({ actor: 'player', text: `${player.name}たちはうまく逃げ切った!` });
-      state.lastEvents = events;
+      state.lastEvents = [...events];
       return state;
     }
     events.push({ actor: 'player', text: 'にげられない! 回り込まれてしまった!' });
@@ -230,6 +230,6 @@ export function resolveTurnMulti(
 
   state.player = allies[0]!;
   state.monster = enemies[0]!;
-  state.lastEvents = events;
+  state.lastEvents = [...events];
   return state;
 }

@@ -243,6 +243,10 @@ export function World() {
   const [revealedBattleTurn, setRevealedBattleTurn] = useState<string | null>(null);
   const hudBattleState = battle && battle.phase === 'message' && battle.prevState && revealedBattleTurn !== `${battle.battleId}:${battle.state.turn}`
     ? battle.prevState : battle?.state;
+  // 表示中の行の 自分の HP と 被弾 (#764)。ダメージの行で 上枠 HP を その時点の値にし、揺らす。
+  const [lineHp, setLineHp] = useState<{ key: string; hp: number; hit: boolean } | null>(null);
+  const lineHpKey = battle ? `${battle.battleId}:${battle.state.turn}` : '';
+  const hudLineHp = battle?.phase === 'message' && lineHp?.key === lineHpKey ? lineHp : null;
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -459,7 +463,8 @@ export function World() {
               // ws.hp/ws.mp は戦闘終了時にしか更新されないので、それを見ると結果画面まで
               // 減らないバグになる。フィールドでは ws 由来。
               // message の最後の行までは前ターンの値 (hudBattleState)。
-              hp={hudBattleState ? hudBattleState.player.hp : curHp}
+              hp={hudLineHp ? hudLineHp.hp : hudBattleState ? hudBattleState.player.hp : curHp}
+              hitKey={hudLineHp?.hit ? `${lineHpKey}:${hudLineHp.hp}` : undefined}
               maxHp={hudBattleState ? hudBattleState.player.maxHp : combat.maxHp}
               mp={hudBattleState ? hudBattleState.player.mp : curMp}
               power={serverPower}
@@ -508,6 +513,7 @@ export function World() {
                 onAdvance={() => void onMessageAdvance()}
                 prevState={battle.prevState}
                 onReveal={(turn) => setRevealedBattleTurn(`${battle.battleId}:${turn}`)}
+                onLineHp={(turn, hp, hit) => setLineHp({ key: `${battle.battleId}:${turn}`, hp, hit })}
               />
               {/* コマンド送信失敗 (fail-closed = 報酬なし) を戦闘画面内に表示。notice はここには出ない。 */}
               {battle.errorText && (

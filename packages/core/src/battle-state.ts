@@ -27,6 +27,8 @@ export interface TurnEvent {
   damage?: number;
   /** 対象が倒れたか */
   fatal?: boolean;
+  /** このイベント直後の HP (#764)。UI はダメージの行でこの値に変える。旧 state には無い。 */
+  hp?: { player: number; monsters: number[] };
 }
 
 export interface BattleState {
@@ -75,6 +77,24 @@ export function combatSides(state: BattleState): CombatSides {
     allies: state.allies && state.allies.length > 0 ? state.allies : [state.player],
     enemies: state.enemies && state.enemies.length > 0 ? state.enemies : [state.monster],
   };
+}
+
+/**
+ * push するたびに、その直後の HP を `hp` に記録するイベント列 (#764)。戦闘処理は combatant を
+ * その場で書き換えてから push するので、push 時点の HP = そのイベントの結果。ターンの終わりに
+ * `[...events]` で普通の配列へ戻す (push の差し替えを state に残さない)。
+ */
+export function hpRecordingEvents(sides: () => CombatSides): TurnEvent[] {
+  const events: TurnEvent[] = [];
+  const push = (...items: TurnEvent[]): number => {
+    const { allies, enemies } = sides();
+    for (const e of items) {
+      Array.prototype.push.call(events, { ...e, hp: { player: allies[0]!.hp, monsters: enemies.map((m) => m.hp) } });
+    }
+    return events.length;
+  };
+  Object.defineProperty(events, 'push', { value: push });
+  return events;
 }
 
 /** バトル開始状態を作る。herbs = 持ち込むやくそう数 (0〜herbCarryMax)。 */

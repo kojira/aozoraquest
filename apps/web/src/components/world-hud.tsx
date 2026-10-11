@@ -48,6 +48,7 @@ export function WorldHud({
   power,
   locationLabel,
   zIndex = HUD_Z,
+  hitKey,
 }: {
   hp: number;
   maxHp: number;
@@ -62,6 +63,8 @@ export function WorldHud({
   /** 通常は HUD_Z。戦闘オーバーレイ中は HP/MP を上枠で鮮明に見せるため
    *  OVERLAY_Z より上に持ち上げる (表示専用なので操作は妨げない)。 */
   zIndex?: number;
+  /** 戦闘で 自分が 被弾した行の key。変わるたびに HP/MP パネルを揺らす (#764)。 */
+  hitKey?: string | undefined;
 }) {
   const hpRatio = maxHp > 0 ? hp / maxHp : 0;
   const panel: React.CSSProperties = {
@@ -75,7 +78,7 @@ export function WorldHud({
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex }}>
       {/* 左上: HP/MP パネル */}
-      <div style={{ ...panel, left: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div key={hitKey} data-hud-hit={hitKey ? '' : undefined} className={hitKey ? 'trial-hit' : undefined} style={{ ...panel, left: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Bar label="HP" value={hp} max={maxHp} fill={hpColor(hpRatio)} labelColor="#7ee08f" />
         <Bar label="MP" value={mp} max={maxMp} fill="#8ab6f0" labelColor="#8ab6f0" />
         {power !== null && power !== undefined && (

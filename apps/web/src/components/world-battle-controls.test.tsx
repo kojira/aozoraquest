@@ -69,3 +69,53 @@ describe('WorldBattleControls message 送り', () => {
     expect(onAdvance).toHaveBeenCalledOnce();
   });
 });
+
+describe('WorldBattleControls 行ごとの HP (#764)', () => {
+  const hpState = (): BattleState => ({
+    ...state(),
+    player: fighter('ゆうしゃ', 12), monster: fighter('スライム', 25),
+    lastEvents: [
+      { actor: 'player', text: 'ゆうしゃのこうげき! スライムに 5 のダメージ', damage: 5, hp: { player: 20, monsters: [25] } },
+      { actor: 'monster', text: 'スライムのこうげき! ゆうしゃに 8 のダメージ', damage: 8, hp: { player: 12, monsters: [25] } },
+      { actor: 'monster', text: 'スライムは ねむっている…', hp: { player: 12, monsters: [25] } },
+    ],
+  }) as unknown as BattleState;
+  const prev = (): BattleState => ({ ...state(0), player: fighter('ゆうしゃ', 20), monster: fighter('スライム', 30) }) as unknown as BattleState;
+  const enemyHp = () => screen.getByText(/\/ 30$/).textContent;
+
+  it('ダメージの 行で 自分の HP と 敵の HP が その時点の 値に なり、そこで 揺れる', () => {
+    const onLineHp = vi.fn();
+    render(<WorldBattleControls state={hpState()} prevState={prev()} phase="message" busy={false} showEnemyVitals resultLines={[]} onCommand={vi.fn()} onAdvance={vi.fn()} onLineHp={onLineHp} />);
+    const step = () => { finishTyping(); fireEvent.click(layer()!); finishTyping(); };
+    const sprite = () => document.querySelector('svg')!.parentElement!;
+    finishTyping();
+    // 1 行目「ゆうしゃのこうげき!」: まだ 前の HP
+    expect(enemyHp()).toBe('30 / 30');
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 20, false);
+    expect(sprite().className).toBe('');
+    step(); // 2 行目「スライムに 5 のダメージ」: 敵だけ 減って 揺れる
+    expect(enemyHp()).toBe('25 / 30');
+    expect(sprite().className).toBe('trial-hit');
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 20, false);
+    step(); // 3 行目「スライムのこうげき!」: まだ 自分は 減らない
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 20, false);
+    expect(sprite().className).toBe('');
+    step(); // 4 行目「ゆうしゃに 8 のダメージ」: 自分が 減って 揺れる
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 12, true);
+    step(); // 最後の 行: 最終 state
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 12, false);
+    expect(enemyHp()).toBe('25 / 30');
+  });
+  it('hp の 無い 旧応答は 最後の 行で はじめて 最終値 (#757 の 挙動)', () => {
+    const onLineHp = vi.fn();
+    const old = { ...hpState(), lastEvents: hpState().lastEvents.map(({ hp: _hp, ...e }) => e) } as BattleState;
+    render(<WorldBattleControls state={old} prevState={prev()} phase="message" busy={false} showEnemyVitals resultLines={[]} onCommand={vi.fn()} onAdvance={vi.fn()} onLineHp={onLineHp} />);
+    finishTyping();
+    for (let i = 0; i < 3; i++) { fireEvent.click(layer()!); finishTyping(); }
+    expect(enemyHp()).toBe('30 / 30');
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 20, false);
+    fireEvent.click(layer()!); finishTyping();
+    expect(enemyHp()).toBe('25 / 30');
+    expect(onLineHp).toHaveBeenLastCalledWith(1, 12, true);
+  });
+});

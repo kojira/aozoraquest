@@ -4,7 +4,7 @@ import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf } from '@aozoraquest/cor
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
-import { battleMessageLines } from '@/lib/battle-message-lines';
+import { battleHpOf, battleLineHps, battleMessageLines } from '@/lib/battle-message-lines';
 
 /**
  * あおぞらワールドの戦闘 UI (DQ 風の配置)。
@@ -47,6 +47,7 @@ export function WorldBattleControls({
   onAdvance,
   prevState,
   onReveal,
+  onLineHp,
 }: {
   state: BattleState;
   phase: BattlePhase;
@@ -61,6 +62,8 @@ export function WorldBattleControls({
   prevState?: BattleState | undefined;
   /** message の最後の行に着いた (= 最終 HP と揺れを出す) ことを turn 付きで知らせる。 */
   onReveal?: (turn: number) => void;
+  /** 表示中の行の 自分の HP と、その行で 被弾したか (上枠 HP と揺れ用。#764)。 */
+  onLineHp?: (turn: number, hp: number, hit: boolean) => void;
 }) {
   const [itemMenu, setItemMenu] = useState(false);
   // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
@@ -94,6 +97,18 @@ export function WorldBattleControls({
   useEffect(() => {
     if (lastLine) onRevealRef.current?.(state.turn);
   }, [lastLine, state.turn]);
+  // 行ごとの HP (#764): ダメージの行で その時点の HP に変える。直前の行より減っていれば揺らす。
+  const finalHp = battleHpOf(state);
+  const lineHps = phase === 'message' && state.turn > 0 ? battleLineHps(state.lastEvents, prevState ? battleHpOf(prevState) : finalHp, finalHp) : [];
+  const lineHp = lineHps[lineIndex] ?? finalHp;
+  const prevLineHp = lineIndex > 0 ? lineHps[lineIndex - 1] : prevState && lineHps.length > 0 ? battleHpOf(prevState) : undefined;
+  const playerHit = !!prevLineHp && lineHp.player < prevLineHp.player;
+  const monsterHit = !!prevLineHp && lineHp.monsters.some((hp, i) => hp < (prevLineHp.monsters[i] ?? hp));
+  const onLineHpRef = useRef(onLineHp);
+  onLineHpRef.current = onLineHp;
+  useEffect(() => {
+    onLineHpRef.current?.(state.turn, lineHp.player, playerHit);
+  }, [state.turn, lineIndex, lineHp.player, playerHit]);
   /** 送り (窓・全画面送り面の共通): タイプ中→全文 / 次の行あり→1 行出す / 最後→onAdvance。 */
   const advance = () => {
     if (busy) return; // 処理中は送らない
@@ -101,8 +116,6 @@ export function WorldBattleControls({
     else if (!lastLine) setStep({ key: stepKey, index: lineIndex + 1 });
     else onAdvance();
   };
-  // 最後の行までは前ターンの敵 HP を見せ、揺れも最後の行で出す (開幕 turn 0 は前が無い)。
-  const fieldState = !lastLine && prevState ? prevState : state;
   return (
     <>
       {/* 全画面の送り面 (会話の送り面と同じ作法)。fixed なので地図・黒い領域・footer まで覆う。
@@ -115,7 +128,7 @@ export function WorldBattleControls({
           ここ (flex:1) の高さも一定 = 敵の位置がフェーズで動かない。 */}
       {/* 表示専用。message/result ではタップを背面の送り面へ通す。 */}
       <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', pointerEvents: phase === 'input' ? 'auto' : 'none' }}>
-        <BattleFieldEnemy state={state} hpState={fieldState} revealed={lastLine} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
+        <BattleFieldEnemy state={state} monsterHp={lineHp.monsters[0] ?? state.monster.hp} hitKey={monsterHit ? `${state.turn}:${lineIndex}` : undefined} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
       </div>
 
       {/* 下段: 常に BOTTOM_H の固定高さ */}
@@ -182,12 +195,12 @@ export function WorldBattleControls({
 }
 
 /** 敵スプライト + 見抜ける職業のみ体力 (名前・数は右ペインなのでここには出さない)。 */
-function BattleFieldEnemy({ state, hpState, revealed, showEnemyVitals, defeated }: {
+function BattleFieldEnemy({ state, monsterHp, hitKey, showEnemyVitals, defeated }: {
   state: BattleState;
-  /** 体力表示に使う state (message の最後の行までは前ターン)。 */
-  hpState: BattleState;
-  /** 最後の行に着いたか。揺れはここで出す。 */
-  revealed: boolean;
+  /** 表示中の行の 敵の体力 (ダメージの行で その時点の値。#764)。 */
+  monsterHp: number;
+  /** 表示中の行で 敵が 被弾したら その行の key (行ごとに 揺れを 出し直す)。 */
+  hitKey: string | undefined;
   showEnemyVitals: boolean;
   defeated: boolean;
 }) {
@@ -195,9 +208,9 @@ function BattleFieldEnemy({ state, hpState, revealed, showEnemyVitals, defeated 
   return (
     <div style={{ textAlign: 'center' }}>
       <div
-        key={state.turn}
+        key={hitKey ?? state.turn}
         style={{ display: 'inline-block', opacity: defeated ? 0.35 : 1, transform: defeated ? 'rotate(180deg)' : 'none', transition: 'opacity 300ms ease' }}
-        className={!defeated && revealed && state.lastEvents.some((e) => e.actor === 'player' && e.damage) ? 'trial-hit' : ''}
+        className={!defeated && hitKey ? 'trial-hit' : ''}
       >
         <MonsterSvg species={monsterDef?.species ?? ''} tint={monsterDef?.tint} size={84} monsterId={state.monsterId} />
       </div>
@@ -213,7 +226,7 @@ function BattleFieldEnemy({ state, hpState, revealed, showEnemyVitals, defeated 
       )}
       {showEnemyVitals && !defeated && (
         <>
-          <HpBar name={state.monster.name} hp={hpState.monster.hp} maxHp={state.monster.maxHp} labelColor="#fff" />
+          <HpBar name={state.monster.name} hp={monsterHp} maxHp={state.monster.maxHp} labelColor="#fff" />
           {/* ため/回復を使う敵は生の MP を「バー」で見せる (「あと何回」の答えは出さず、
               残量から尽きるタイミングを予想させる)。通常攻撃だけの敵は MP を使わないので
               出さない (混乱防止)。数値は出してよい (maxMp は遭遇ごとに分散 + 発動は確率
