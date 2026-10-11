@@ -10,7 +10,7 @@ import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
 import { type JobSkill, skillMpCostOf, mpTraitFires } from './battle-job-skills.js';
 import { MONSTERS_BY_ID } from './battle-monsters.js';
-import { type Command, type TurnEvent, type BattleState } from './battle-state.js';
+import { type Command, type TurnEvent, type BattleState, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 
@@ -72,7 +72,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   // state で playerSkills が無い) は署名スキル playerSkill に安全側フォールバック。
   const skills = state.playerSkills ?? [state.playerSkill];
   const selectedSkill = skills[skillIndex] ?? skills[0] ?? state.playerSkill;
-  const events: TurnEvent[] = [];
+  const events = hpRecordingEvents(() => ({ allies: [state.player], enemies: [state.monster] })); // 各イベント直後の HP を記録 (#764)
   // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
   const mCommand = monsterCommand(state.monster, state, rng);
@@ -106,7 +106,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     if (rng() < chance) {
       state.outcome = 'fled';
       events.push({ actor: 'player', text: `${state.player.name}はうまく逃げ切った!` });
-      state.lastEvents = events;
+      state.lastEvents = [...events];
       return state;
     }
     events.push({ actor: 'player', text: 'にげられない! 回り込まれてしまった!' });
@@ -254,6 +254,6 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   else if (state.monster.hp === 0) state.outcome = 'win';
   else if (state.player.hp === 0) state.outcome = 'lose';
 
-  state.lastEvents = events;
+  state.lastEvents = [...events];
   return state;
 }
