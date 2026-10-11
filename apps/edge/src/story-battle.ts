@@ -9,8 +9,8 @@ import { enemyWindow, tileEncounter, verifyPosition } from './world-token';
 import { besideNpc, GameQuestError, handleQuestAccept, type QuestStateResult } from './game-quest';
 import { DEFAULT_NS, migrateInitState, sealEncounter, type EncounterInfo, type ResolverEnv } from './battle-resolver';
 
-/** トークンの位置 (無効なら state の位置) と権威 state。 */
-async function positionAndState(env: ResolverEnv, did: string, token: string | undefined, now: number, ns: string): Promise<{ pos: { mapId?: string; x: number; y: number }; state: GameState }> {
+/** トークンの位置 (無効なら state の位置) と権威 state。宿屋 (inn-rest) も同じ作法で使う。 */
+export async function positionAndState(env: ResolverEnv, did: string, token: string | undefined, now: number, ns: string): Promise<{ pos: { mapId?: string; x: number; y: number }; state: GameState }> {
   const rec = await readState(env, did);
   const state = rec?.state ?? (await migrateInitState(did, new Date(now * 1000).toISOString(), ns));
   try {

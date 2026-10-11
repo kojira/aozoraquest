@@ -30,6 +30,7 @@ const LXM_SHOP_DISCARD = LXM.shopDiscard;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
+const LXM_INN_REST = LXM.innRest;
 const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
@@ -95,11 +96,7 @@ export interface ServerMoveResult {
   /** 移動後のマップ (#424)。省略 = フィールド。 */
   mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter;
   /** 到着した街のフィールド座標 (内部マップ座標ではない)。探索メモ用。 */
-  townArrival?: { x: number; y: number };
-  /** 宿屋 (#424)。払ったパワーと残高。 */
-  inn?: { name?: string; paid: number; power: number };
-  /** 宿屋に泊まれなかった (パワー不足)。 */
-  innDenied?: { name?: string; price: number; power: number } }
+  townArrival?: { x: number; y: number } }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
@@ -267,6 +264,17 @@ export function serverQuestAccept(agent: Agent, questId: string, token?: string)
 /** 会話の後の戦闘 (D-STORY-009)。隣にいるか・いまのセリフに戦闘があるかはサーバーが確かめる。 */
 export function serverStoryBattle(agent: Agent, npcId: string, token?: string): Promise<ServerEncounter> {
   return callEdge<ServerEncounter>(agent, LXM_STORY_BATTLE, '/api/story/battle', { npcId, ...(token ? { token } : {}) });
+}
+
+/** 宿屋に泊まる (#766)。会話で「はい」と答えたときだけ呼ぶ。扉の上にいるか・満タンか・残高は edge が決める。 */
+export interface ServerInnRestResult {
+  /** 泊まった (paid>0) か、満タンで泊まる必要がなかった (paid=0)。 */
+  inn?: { name?: string; paid: number; power: number };
+  /** パワーが足りず泊まれなかった。 */
+  innDenied?: { name?: string; price: number; power: number };
+}
+export function serverInnRest(agent: Agent, token?: string): Promise<ServerInnRestResult> {
+  return callEdge<ServerInnRestResult>(agent, LXM_INN_REST, '/api/inn/rest', token ? { token } : {});
 }
 
 /** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。

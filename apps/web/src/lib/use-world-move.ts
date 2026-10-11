@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { WORLD_MAP_ID, gateAt, gateLockedNotice, gateOpen, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type NpcDef } from '@aozoraquest/core';
+import { WORLD_MAP_ID, gateAt, gateLockedNotice, gateOpen, innAt, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type InteriorMap, type NpcDef } from '@aozoraquest/core';
 import { serverMove, worldServerEnabled, WorldServerError, type ServerEncounter } from '@/lib/world-server';
 import { recordTownArrival, saveWorldState } from '@/lib/world-state';
 import type { WorldScrollStep } from '@/lib/use-world-scroll';
@@ -42,9 +42,10 @@ export interface WorldMoveDeps {
   setDoorFade: Dispatch<SetStateAction<DoorFadePhase | null>>;
   setNotice: Dispatch<SetStateAction<string | null>>;
   setMapAcquisition: Dispatch<SetStateAction<string | null>>;
-  setServerPower: Dispatch<SetStateAction<number | null>>;
   setNpcTalk: Dispatch<SetStateAction<NpcTalk | null>>;
   openDirectNpc: (npc: NpcDef) => void;
+  /** 宿屋の扉に入ったら開く会話 (#766)。泊まるかは「はい」で edge に聞く。 */
+  openInn: (inn: NonNullable<InteriorMap['inn']>) => void;
   resetShopView: () => void;
   setShopOpen: Dispatch<SetStateAction<boolean>>;
   scheduleSave: () => void;
@@ -54,7 +55,7 @@ export interface WorldMoveDeps {
 // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
 // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
 export function useWorldMove(d: WorldMoveDeps) {
-  const { agent, did, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setServerPower, setNpcTalk, openDirectNpc, resetShopView, setShopOpen, scheduleSave, inputBlocked } = d;
+  const { agent, did, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setNpcTalk, openDirectNpc, openInn, resetShopView, setShopOpen, scheduleSave, inputBlocked } = d;
   return useCallback(
     (dir: Dir) => {
       const s = wsRef.current;
@@ -136,17 +137,9 @@ export function useWorldMove(d: WorldMoveDeps) {
               setNotice(null);
             }
           }
-          // 宿屋 (#424)。残高もサーバーが正 (payment は権威側で引かれている)。
-          if (res.inn) {
-            setServerPower(res.inn.power);
-            const who = res.inn.name ?? 'やどや';
-            setNotice(res.inn.paid > 0
-              ? `${who}に とまった (パワー -${res.inn.paid})。すっかり 元気に なった!`
-              : `「${who}」…いまは よく ねむれているようだ。`);
-          } else if (res.innDenied) {
-            const who = res.innDenied.name ?? 'やどや';
-            setNotice(`${who}「ひとばん ${res.innDenied.price} パワーだよ」… パワーが たりない (いま ${res.innDenied.power})。`);
-          }
+          // **宿屋の扉に入ったら宿の人と話す** (#766)。入るだけでは泊まらない (なんでも屋と同じ扉の作法)。
+          const inn = res.mapId ? innAt(res.mapId, res.x, res.y) : undefined;
+          if (inn) openInn(inn);
           if (res.townArrival) {
             const arrival = recordTownArrival(next, res.townArrival);
             const { gained, newlyVisited } = arrival;
@@ -194,6 +187,6 @@ export function useWorldMove(d: WorldMoveDeps) {
         }
       })();
     },
-    [scheduleSave, agent, did, resetShopView, openDirectNpc, inputBlocked, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setServerPower, setNpcTalk, setShopOpen],
+    [scheduleSave, agent, did, resetShopView, openDirectNpc, openInn, inputBlocked, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setNpcTalk, setShopOpen],
   );
 }

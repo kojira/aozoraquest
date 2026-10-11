@@ -3,6 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, initialPosition, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
+import { handleInnRest } from '../src/inn-rest';
 import { clearMonsters, setMonsterOverrides, startBattle, tierForRegion, regionOf, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 import { signPosition } from '../src/world-token';
@@ -572,39 +573,65 @@ describe('宿屋 (#424)', () => {
     return { id: 'in-1', name: 'むら', size, tiles, inn: { x: 5, y: 4, price: 3, name: 'やど' } };
   };
 
-  it('傷ついていれば パワーを払って全回復する', async () => {
+  it('扉に入る move では課金も回復もしない (泊まるかは会話で聞く)', async () => {
     const env = await makeEnv();
     const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 10, carryHp: 5 }) });
     globalThis.fetch = m.fn;
     setInteriors([innRoom()], []);
     const r = await handleMove(env, USER, 1, 0, undefined, NOW); // (5,4) = 宿屋
-    expect(r.inn).toMatchObject({ paid: 3, power: 7 });
-    expect(r.healed).toBe(true);
-    expect(r.townArrival).toBeUndefined();
+    expect(r).toMatchObject({ mapId: 'in-1', x: 5, y: 4 });
+    expect(r.healed).toBeUndefined();
+    expect(r).not.toHaveProperty('inn');
+    expect(r).not.toHaveProperty('innDenied');
+    const st = m.store.get('gs')!.value as GameState;
+    expect(st.power).toBe(10);
+    expect(st.carryHp).toBe(5);
+  });
+
+  it('/api/inn/rest: 傷ついていれば パワーを払って全回復する (位置は署名済みトークン)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 10, carryHp: 5, carryMp: 1 }) });
+    globalThis.fetch = m.fn;
+    setInteriors([innRoom()], []);
+    const token = signPosition(env, { did: USER, mapId: 'in-1', x: 5, y: 4, counter: 1, iat: NOW });
+    const r = await handleInnRest(env, USER, token, NOW);
+    expect(r).toEqual({ inn: { name: 'やど', paid: 3, power: 7 } });
     const st = m.store.get('gs')!.value as GameState;
     expect(st.power).toBe(7);
     expect(st.carryHp).toBeUndefined(); // 全回復 = carry を消す
+    expect(st.carryMp).toBeUndefined();
   });
 
-  it('満タンなら課金しない (通り抜けても取られない)', async () => {
+  it('/api/inn/rest: 満タンなら課金しない', async () => {
     const env = await makeEnv();
-    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 10 }) });
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 5, y: 4, power: 10 }) });
     globalThis.fetch = m.fn;
     setInteriors([innRoom()], []);
-    const r = await handleMove(env, USER, 1, 0, undefined, NOW);
-    expect(r.inn).toMatchObject({ paid: 0, power: 10 });
+    const r = await handleInnRest(env, USER, undefined, NOW); // トークン無し = state の位置
+    expect(r).toEqual({ inn: { name: 'やど', paid: 0, power: 10 } });
     expect((m.store.get('gs')!.value as GameState).power).toBe(10);
   });
 
-  it('パワーが足りなければ泊まれない (回復も課金もしない)', async () => {
+  it('/api/inn/rest: パワーが足りなければ泊まれない (回復も課金もしない)', async () => {
     const env = await makeEnv();
-    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 4, y: 4, power: 1, carryHp: 5 }) });
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 5, y: 4, power: 1, carryHp: 5 }) });
     globalThis.fetch = m.fn;
     setInteriors([innRoom()], []);
-    const r = await handleMove(env, USER, 1, 0, undefined, NOW);
-    expect(r.innDenied).toMatchObject({ price: 3, power: 1 });
-    expect(r.healed).toBeUndefined();
-    expect((m.store.get('gs')!.value as GameState).carryHp).toBe(5); // 傷は残る
+    const r = await handleInnRest(env, USER, undefined, NOW);
+    expect(r).toEqual({ innDenied: { name: 'やど', price: 3, power: 1 } });
+    const st = m.store.get('gs')!.value as GameState;
+    expect(st.power).toBe(1);
+    expect(st.carryHp).toBe(5); // 傷は残る
+  });
+
+  it('/api/inn/rest: 宿屋の扉の上にいなければ 400 (state が扉でも、トークンの位置が正)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ mapId: 'in-1', x: 5, y: 4, power: 10, carryHp: 5 }) });
+    globalThis.fetch = m.fn;
+    setInteriors([innRoom()], []);
+    const token = signPosition(env, { did: USER, mapId: 'in-1', x: 4, y: 4, counter: 1, iat: NOW });
+    await expect(handleInnRest(env, USER, token, NOW)).rejects.toMatchObject({ status: 400, code: 'not_at_inn' });
+    expect((m.store.get('gs')!.value as GameState).power).toBe(10);
   });
 });
 
