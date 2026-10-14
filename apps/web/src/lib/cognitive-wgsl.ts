@@ -5,159 +5,134 @@
  *   1. preprocessText (URL/hashtag/mention 除去)
  *   2. hasJapanese (ja 比率 < 0.5 は分類不能扱い)
  *   3. splitLongPost (120 字以上は 括弧外「。！？!?」で分割)
- *   4. 各 piece を 9-class softmax で推論 (バッチ化: pipeline に複数 text を
- *      一気に渡して 1 回の sess.run でまとめて処理)
+ *   4. 各 piece を 9-class softmax で推論 (Worker 側で系列を連結して 1 回の GPU 実行にまとめる)
  *   5. 全 piece の確率を mean aggregate
  *   6. none を除いた 8 class を normalizeCognitive で 0-100 にリスケール
  *
- * Worker は singleton で保持。Backend は WASM + int8 固定。
+ * 推論は cognitive-wgsl.worker.ts の手書き WGSL (WebGPU)。onnxruntime は使わない
+ * (ORT の wasm memory が縮まず iOS Safari が落ちるため)。WebGPU が無い環境では
+ * CognitiveUnsupportedError を投げ、別経路へのフォールバックはしない。
  *
- * モデル選択: 130m と 30m (small) を 252 件 test set でベンチした結果、
- * 30m + WASM q8 が 130m を ~11 ppt 上回り (top-1 69.0% vs 57.9%) かつ
- * 推論も速いため、PC/mobile 問わず 30m に統一。
- * bench: docs/bench/cognitive-classifier-nano.html (backend selector 付き)。
- *
- * Backend 選択: WebGPU q4 は 30m モデルだと WASM q8 より精度が ~2 ppt 低く、
- * かつ iOS Safari WebGPU JIT バグ (microsoft/onnxruntime#26827) もあるため
- * WASM 単一経路に。30m モデルは十分小さく、WASM でも実用速度が出る。
+ * 重み: HF kojira/aozoraquest-cognitive-small の fp32 から scripts/convert-cognitive-wgsl.py で
+ * 変換した model.aqw (埋め込み int8 行ごと量子化 + 層 fp16)。252 件 test set で fp32 と
+ * top-1 99.6% 一致 (旧 ORT q8 は fp32 と 94.8%)。
  */
 
 import type { CogFunction, CognitiveScores } from '@aozoraquest/core';
 import { normalizeCognitive } from '@aozoraquest/core';
 import { preprocessText, hasJapanese, splitLongPost } from './japanese-text';
 
-/** 現状は wasm/q8 のみ。将来別 backend を再導入する時は worker 側も含めて
- *  union を広げる (今は literal narrow で誤参照を compile-time に検出可能)。 */
-export type CognitiveBackend = 'wasm';
-export type CognitiveDtype = 'q8';
-
 const LABELS_9 = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe', 'none'] as const;
 const COGNITIVE_8: CogFunction[] = ['Ni', 'Ne', 'Si', 'Se', 'Ti', 'Te', 'Fi', 'Fe'];
 
-/** batch 推論の 1 call あたり最大件数。GPU メモリと padding 損失のバランス。 */
-const DEFAULT_BATCH_SIZE = 16;
+/** worker への 1 メッセージあたりの最大 piece 数 (進捗通知の粒度)。 */
+const DEFAULT_BATCH_SIZE = 32;
 
-type Pending =
-  | { kind: 'single'; resolve: (v: number[]) => void; reject: (e: Error) => void }
-  | { kind: 'batch'; resolve: (v: number[][]) => void; reject: (e: Error) => void };
+/** WebGPU が使えない端末/ブラウザ。UI はこの message をそのまま表示する。 */
+export class CognitiveUnsupportedError extends Error {
+  constructor() {
+    super('この端末/ブラウザは WebGPU に対応していないため、気質の分析ができません (iOS 26 以降の Safari、または最新の Chrome / Edge が必要です)');
+    this.name = 'CognitiveUnsupportedError';
+  }
+}
 
-export class CognitiveOnnxClassifier {
+interface Pending { resolve: (v: number[][]) => void; reject: (e: Error) => void }
+
+function workerError(m: { code?: string; error?: unknown }): Error {
+  if (m.code === 'webgpu-unsupported') return new CognitiveUnsupportedError();
+  return new Error(String(m.error));
+}
+
+export class CognitiveWgslClassifier {
   private worker: Worker | null = null;
-  private ready: Promise<{ backend: CognitiveBackend; dtype: CognitiveDtype }> | null = null;
+  private ready: Promise<void> | null = null;
   private pending = new Map<string, Pending>();
   private nextId = 0;
-  private info: { backend: CognitiveBackend; dtype: CognitiveDtype } | null = null;
 
-  async init(): Promise<{ backend: CognitiveBackend; dtype: CognitiveDtype }> {
+  /** modelUrl は parity 計測などでローカルの model.aqw を指すときだけ渡す。 */
+  async init(modelUrl?: string): Promise<void> {
     if (this.ready) return this.ready;
-    this.worker = new Worker(new URL('./cognitive-onnx.worker.ts', import.meta.url), { type: 'module' });
-    this.worker.addEventListener('message', (ev) => this.onMessage(ev));
-    this.ready = new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./cognitive-wgsl.worker.ts', import.meta.url), { type: 'module' });
+    this.worker = worker;
+    worker.addEventListener('message', (ev) => this.onMessage(ev));
+    this.ready = new Promise<void>((resolve, reject) => {
       const onMsg = (ev: MessageEvent) => {
         const m = ev.data;
         if (m.type === 'ready') {
-          this.worker!.removeEventListener('message', onMsg);
-          this.info = { backend: m.backend, dtype: m.dtype };
-          resolve(this.info);
+          worker.removeEventListener('message', onMsg);
+          resolve();
         } else if (m.type === 'error' && !m.id) {
-          this.worker!.removeEventListener('message', onMsg);
-          reject(new Error(String(m.error)));
+          worker.removeEventListener('message', onMsg);
+          reject(workerError(m));
         }
       };
-      this.worker!.addEventListener('message', onMsg);
-      this.worker!.postMessage({ type: 'init' });
+      worker.addEventListener('message', onMsg);
+      worker.postMessage(modelUrl ? { type: 'init', modelUrl } : { type: 'init' });
     });
+    // 初期化失敗 (WebGPU 非対応・DL 失敗) は次回の呼び出しで作り直せるようにする
+    this.ready.catch(() => { if (this.worker === worker) this.dispose(); });
     return this.ready;
   }
 
-  getInfo(): { backend: CognitiveBackend; dtype: CognitiveDtype } | null { return this.info; }
-
   private onMessage(ev: MessageEvent) {
     const m = ev.data;
-    if (m.type === 'result' && m.id) {
-      const p = this.pending.get(m.id);
-      if (p && p.kind === 'single') { this.pending.delete(m.id); p.resolve(m.scores as number[]); }
-      return;
-    }
-    if (m.type === 'result-batch' && m.id) {
-      const p = this.pending.get(m.id);
-      if (p && p.kind === 'batch') { this.pending.delete(m.id); p.resolve(m.scoresList as number[][]); }
-      return;
-    }
-    if (m.type === 'error' && m.id) {
-      const p = this.pending.get(m.id);
-      if (p) { this.pending.delete(m.id); p.reject(new Error(String(m.error))); }
-    }
+    if (!m.id) return;
+    const p = this.pending.get(m.id);
+    if (!p) return;
+    this.pending.delete(m.id);
+    if (m.type === 'result-batch') p.resolve(m.scoresList as number[][]);
+    else if (m.type === 'error') p.reject(workerError(m));
   }
 
   /**
-   * 単一 text の 9-class softmax 確率 (LABELS_9 順) を返す。
-   * timeoutMs を過ぎたら reject して pending を削除 (ハング対策)。
-   */
-  async classifyRaw(text: string, timeoutMs = 15000): Promise<number[]> {
-    if (!this.worker) await this.init();
-    await this.ready;
-    const id = String(this.nextId++);
-    return new Promise<number[]>((resolve, reject) => {
-      const to = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`cognitive-onnx timeout ${timeoutMs}ms "${text.slice(0, 30)}"`));
-      }, timeoutMs);
-      this.pending.set(id, {
-        kind: 'single',
-        resolve: (v) => { clearTimeout(to); resolve(v); },
-        reject: (e) => { clearTimeout(to); reject(e); },
-      });
-      this.worker!.postMessage({ type: 'classify', id, text });
-    });
-  }
-
-  /**
-   * 複数 text をバッチ推論 (pipeline の 1 回 sess.run)。
-   * 呼び出し側でまとめられる分だけまとめると GPU / WASM の per-call オーバヘッドが
-   * amortize されて 5-10x 高速。texts の順序と返り値の順序は保たれる。
-   *
-   * texts.length が batchSize を超えた場合は内部で chunk に分けて worker に投げ直し、
-   * 結果を結合して返す。
+   * 複数 text の 9-class softmax 確率 (LABELS_9 順) を返す。texts の順序と返り値の順序は保たれる。
+   * texts.length が batchSize を超えた場合は chunk に分けて worker に投げ、結果を結合して返す。
    */
   async classifyRawBatch(
     texts: string[],
     batchSize: number = DEFAULT_BATCH_SIZE,
     timeoutMs = 60000,
   ): Promise<number[][]> {
-    if (!this.worker) await this.init();
-    await this.ready;
+    await this.init();
     if (texts.length === 0) return [];
     const out: number[][] = [];
     for (let start = 0; start < texts.length; start += batchSize) {
-      const chunk = texts.slice(start, start + batchSize);
-      const part = await this.sendBatch(chunk, timeoutMs);
+      const part = await this.sendBatch(texts.slice(start, start + batchSize), timeoutMs);
       out.push(...part);
     }
     return out;
   }
 
   private sendBatch(texts: string[], timeoutMs: number): Promise<number[][]> {
+    const worker = this.worker;
+    if (!worker) return Promise.reject(new Error('cognitive classifier disposed'));
     const id = String(this.nextId++);
     return new Promise<number[][]>((resolve, reject) => {
       const to = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`cognitive-onnx batch timeout ${timeoutMs}ms (${texts.length} texts)`));
+        reject(new Error(`cognitive batch timeout ${timeoutMs}ms (${texts.length} texts)`));
       }, timeoutMs);
       this.pending.set(id, {
-        kind: 'batch',
         resolve: (v) => { clearTimeout(to); resolve(v); },
         reject: (e) => { clearTimeout(to); reject(e); },
       });
-      this.worker!.postMessage({ type: 'classify-batch', id, texts });
+      worker.postMessage({ type: 'classify-batch', id, texts });
     });
   }
 
+  /** GPU buffer を destroy してから Worker を terminate する。 */
   dispose() {
-    this.worker?.terminate();
+    const worker = this.worker;
     this.worker = null;
     this.ready = null;
-    this.info = null;
+    for (const p of this.pending.values()) p.reject(new Error('cognitive classifier disposed'));
+    this.pending.clear();
+    if (!worker) return;
+    const kill = setTimeout(() => worker.terminate(), 2000);
+    worker.addEventListener('message', (ev) => {
+      if (ev.data?.type === 'disposed') { clearTimeout(kill); worker.terminate(); }
+    });
+    worker.postMessage({ type: 'dispose' });
   }
 
   /** 本番パイプライン: text → preprocess → split → piece 群を batch 推論 → mean → 8-class normalize。 */
@@ -171,6 +146,7 @@ export class CognitiveOnnxClassifier {
     try {
       perPiece = await this.classifyRawBatch(pieces);
     } catch (e) {
+      if (e instanceof CognitiveUnsupportedError) throw e; // UI に非対応を表示させる
       console.warn('[cognitive] batch classify failed, skipping post', e);
       return null;
     }
@@ -236,15 +212,9 @@ export class CognitiveOnnxClassifier {
     for (let start = 0; start < pieceTexts.length; start += batchSize) {
       const chunk = pieceTexts.slice(start, start + batchSize);
       const owners = pieceOwners.slice(start, start + batchSize);
-      let scoresList: number[][];
-      try {
-        scoresList = await this.classifyRawBatch(chunk, batchSize);
-      } catch (e) {
-        console.warn('[cognitive] batch inference failed, skipping chunk', e);
-        processed += chunk.length;
-        onProgress?.(processed, pieceTexts.length);
-        continue;
-      }
+      // 失敗 (WebGPU 非対応・GPU device 喪失など) は握りつぶさず呼び出し側へ返す。
+      // 別モデルへのフォールバックはしない (diagnosis-flow がエラーとして表示する)。
+      const scoresList = await this.classifyRawBatch(chunk, batchSize);
       for (let k = 0; k < owners.length; k++) {
         const oi = owners[k]!.postIdx;
         const s = scoresList[k];
@@ -269,16 +239,14 @@ export class CognitiveOnnxClassifier {
   }
 }
 
-let singleton: CognitiveOnnxClassifier | null = null;
-export function getCognitiveOnnxClassifier(): CognitiveOnnxClassifier {
-  if (!singleton) singleton = new CognitiveOnnxClassifier();
+let singleton: CognitiveWgslClassifier | null = null;
+export function getCognitiveClassifier(): CognitiveWgslClassifier {
+  if (!singleton) singleton = new CognitiveWgslClassifier();
   return singleton;
 }
 
-/** 診断完了時などに呼ぶ: Worker を terminate して tensor / KV cache を解放。
- *  次回 getCognitiveOnnxClassifier() で新 Worker が立つ。モバイル Safari で
- *  繰り返し診断すると tensor が貯まってクラッシュするので必須。 */
-export function disposeCognitiveOnnxClassifier(): void {
+/** GPU buffer を destroy し Worker を terminate する。次回 getCognitiveClassifier() で作り直す。 */
+export function disposeCognitiveClassifier(): void {
   if (!singleton) return;
   try {
     singleton.dispose();

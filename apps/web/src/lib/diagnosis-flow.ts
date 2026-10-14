@@ -11,46 +11,35 @@ import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from '
 import { COL } from './collections';
 import { getEmbedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
-import { getCognitiveOnnxClassifier } from './cognitive-onnx';
+import { getCognitiveClassifier } from './cognitive-wgsl';
 
 type ProgressCallback = (phase: string, done?: number, total?: number) => void;
 
 /**
- * 診断の本命パス: fine-tune 済 ONNX 分類器で各投稿を 8 認知機能に直接分類し、
+ * 診断の本命パス: fine-tune 済分類器 (WebGPU / WGSL) で各投稿を 8 認知機能に直接分類し、
  * 時間軸重み付きで合成する。非日本語 / 短すぎ投稿は null 返しで skip される。
  *
- * ONNX 分類器が利用不能 (webgpu/wasm 両方失敗、モデル配信失敗など) の場合は
- * 旧 prototype embedding 方式に自動フォールバックする。
+ * 分類器の初期化・推論の失敗 (WebGPU 非対応、モデル配信失敗など) は throw して画面に出す。
+ * onnxruntime を使う prototype 方式へは切り替えない (iOS で ORT の wasm memory が縮まず落ちるため)。
  */
-async function classifyWithOnnx(
+async function classifyWithWgsl(
   posts: { text: string; at: string }[],
   onProgress: ProgressCallback,
-): Promise<{ perPost: CognitiveScores[]; timestamps: string[] } | null> {
-  const cog = getCognitiveOnnxClassifier();
-  try {
-    await cog.init();
-  } catch (e) {
-    console.warn('[diagnosis] ONNX classifier init failed, falling back to prototype', e);
-    return null;
-  }
+): Promise<{ perPost: CognitiveScores[]; timestamps: string[] }> {
+  const cog = getCognitiveClassifier();
+  await cog.init();
   // 全 post の piece を flatten してバッチ推論する (classifier.classifyPosts の中で
-  // chunked sess.run を回す)。単純ループより per-call オーバヘッドが削れて数倍速い。
+  // worker へ chunk ごとに送る)。単純ループより per-call オーバヘッドが削れて数倍速い。
   onProgress('embedding-posts', 0, posts.length);
-  let scoresPerPost: Array<CognitiveScores | null>;
-  try {
-    scoresPerPost = await cog.classifyPosts(
-      posts.map((p) => p.text),
-      120,
-      (done, total) => {
-        // piece 単位の進捗を post 単位に粗く変換して UI へ通知する
-        const frac = total > 0 ? done / total : 1;
-        onProgress('embedding-posts', Math.min(posts.length, Math.round(frac * posts.length)), posts.length);
-      },
-    );
-  } catch (e) {
-    console.warn('[diagnosis] batch classify failed, aborting ONNX path', e);
-    return null;
-  }
+  const scoresPerPost = await cog.classifyPosts(
+    posts.map((p) => p.text),
+    120,
+    (done, total) => {
+      // piece 単位の進捗を post 単位に粗く変換して UI へ通知する
+      const frac = total > 0 ? done / total : 1;
+      onProgress('embedding-posts', Math.min(posts.length, Math.round(frac * posts.length)), posts.length);
+    },
+  );
   onProgress('embedding-posts', posts.length, posts.length);
 
   const perPost: CognitiveScores[] = [];
@@ -65,7 +54,7 @@ async function classifyWithOnnx(
   return { perPost, timestamps };
 }
 
-/** prototype embedding 方式 (旧): fallback 時のみ使う。 */
+/** prototype embedding 方式 (旧、onnxruntime): 日本語の投稿が DIAGNOSIS_MIN_POST_COUNT 件に満たない時だけ使う。 */
 async function classifyWithPrototype(
   posts: { text: string; at: string }[],
   onProgress: ProgressCallback,
@@ -84,7 +73,7 @@ async function classifyWithPrototype(
 /**
  * 全体の診断パイプライン:
  *   1. 投稿 DIAGNOSIS_POST_LIMIT 件取得 (tuning.ts)
- *   2. ONNX 分類器で各投稿 → 8 機能スコア (失敗時は prototype fallback)
+ *   2. WebGPU 分類器で各投稿 → 8 機能スコア (日本語投稿が足りない時は prototype 方式)
  *   3. 時間軸重み付きで合成 → archetype 判定
  *   4. PDS の app.aozoraquest.analysis/self に保存
  */
@@ -100,19 +89,19 @@ export async function runDiagnosis(
   }
 
   onProgress('loading-prototypes');
-  const onnx = await classifyWithOnnx(posts, onProgress);
+  const classified = await classifyWithWgsl(posts, onProgress);
 
   onProgress('analyzing');
   let result: DiagnosisResult | { insufficient: true; postCount: number };
-  if (onnx && onnx.perPost.length >= DIAGNOSIS_MIN_POST_COUNT) {
+  if (classified.perPost.length >= DIAGNOSIS_MIN_POST_COUNT) {
     result = diagnoseFromPerPostScores(
-      onnx.perPost,
-      onnx.perPost.length,
+      classified.perPost,
+      classified.perPost.length,
       new Date(),
-      { timestamps: onnx.timestamps },
+      { timestamps: classified.timestamps },
     );
   } else {
-    // ONNX が使えなかった / 日本語 post が足りなかった → prototype fallback
+    // 日本語 post が足りなかった → prototype 方式
     const { postVecs, timestamps, protos } = await classifyWithPrototype(posts, onProgress);
     result = diagnose(postVecs, protos, posts.length, new Date(), { timestamps });
   }
@@ -171,7 +160,7 @@ export async function runDiagnosis(
 
 /**
  * 他ユーザーの気質を推し量る。PDS には一切書き込まず、戻り値のみ。
- * runDiagnosis と同じ ONNX → prototype fallback の順で判定する。
+ * runDiagnosis と同じ判定 (WebGPU 分類器、日本語投稿が足りなければ prototype 方式)。
  *
  * options.postLimit: 取得する投稿の最大件数 (デフォルト DIAGNOSIS_POST_LIMIT)。
  * 相性ランキング用の軽量診断では 150 程度に抑え per-user レイテンシを短縮する。
@@ -191,7 +180,7 @@ export async function runDiagnosisForOther(
 /**
  * 既に取得済の投稿配列を受けて診断する (ネットワーク I/O と推論の分離版)。
  * 相性ランキングの裏診断で、次ユーザー分の posts を並列 prefetch しつつ
- * ONNX は 1 人ずつ直列消費する pipeline を作るために公開している。
+ * 推論は 1 人ずつ直列消費する pipeline を作るために公開している。
  */
 export async function diagnoseGivenPosts(
   posts: { text: string; at: string }[],
@@ -201,16 +190,16 @@ export async function diagnoseGivenPosts(
     return { insufficient: true, postCount: posts.length };
   }
   onProgress('loading-prototypes');
-  const onnx = await classifyWithOnnx(posts, onProgress);
+  const classified = await classifyWithWgsl(posts, onProgress);
 
   onProgress('analyzing');
   let result: DiagnosisResult | { insufficient: true; postCount: number };
-  if (onnx && onnx.perPost.length >= DIAGNOSIS_MIN_POST_COUNT) {
+  if (classified.perPost.length >= DIAGNOSIS_MIN_POST_COUNT) {
     result = diagnoseFromPerPostScores(
-      onnx.perPost,
-      onnx.perPost.length,
+      classified.perPost,
+      classified.perPost.length,
       new Date(),
-      { timestamps: onnx.timestamps },
+      { timestamps: classified.timestamps },
     );
   } else {
     const { postVecs, timestamps, protos } = await classifyWithPrototype(posts, onProgress);
