@@ -35,10 +35,12 @@ async function open(context: BrowserContext) {
   const requests: string[] = [];
   context.on('request', (r) => requests.push(r.url()));
   await context.route('**/ml-fixture-api/**', (route) => route.fulfill({ json: { granted: 0, jobXp: 0 } }));
+  const claims: unknown[] = [];
+  context.on('request', (r) => { if (r.url().includes('/ml-fixture-api/api/xp/claim')) claims.push(r.postDataJSON()); });
   const page = await context.newPage();
   await page.goto(URL);
   await page.waitForFunction(() => (window as unknown as { mlPathsReady?: boolean }).mlPathsReady === true);
-  return { page, requests };
+  return { page, requests, claims };
 }
 type Paths = { mlPaths: Record<string, (...a: unknown[]) => Promise<Record<string, unknown>>> & { seedAnalysis: (c: string, v: unknown) => void } };
 
@@ -84,5 +86,21 @@ test('WebGPU あり (ローカル重み): 投稿・診断 (c)・TL が推論ま�
   expect(requests.some((u) => u.includes('ruri-v3-30m.aqw'))).toBe(true); // 2 回目以降は Cache API から読む
   expect(requests.filter((u) => ORT.test(u))).toEqual([]);
   console.log('[ml-paths] requests', JSON.stringify([...new Set(requests.map((u) => u.split('?')[0]))].filter((u) => !u.includes('127.0.0.1'))));
+  await gpuBrowser.close();
+});
+
+test('WebGPU あり・Ruri の重みが取れない (404): 投稿は questLog と XP 申告まで進み、解析だけ飛ぶ', async () => {
+  test.setTimeout(120_000);
+  const gpuBrowser: Browser = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist'] });
+  const context = await gpuBrowser.newContext();
+  await context.route(RURI_WGSL_MODEL_URL, (route) => route.fulfill({ status: 404, body: 'Entry not found' }));
+  const { page, requests, claims } = await open(context);
+  test.skip(!(await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter()))), 'WebGPU adapter が無い');
+  await page.evaluate(([c, v]) => (window as unknown as Paths).mlPaths.seedAnalysis(c as string, v), [ANALYSIS, SEED] as const);
+  const post = await page.evaluate(() => (window as unknown as Paths).mlPaths.post('この仕様は根本から見直すべきだと思う。理由は三つある。'));
+  expect(post).toMatchObject({ action: null, updatedCognitive: null });
+  expect(post.keys).toContain(`app.aozoraquest.test.questLog/${new Date().toLocaleDateString('sv-SE')}`);
+  expect(claims).toEqual([{ archetype: 'sage', postUri: 'at://did:plc:mlpaths/app.bsky.feed.post/1' }]);
+  expect(requests.some((u) => u.includes('ruri-v3-30m.aqw'))).toBe(true);
   await gpuBrowser.close();
 });

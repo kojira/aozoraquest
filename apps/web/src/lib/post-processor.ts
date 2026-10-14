@@ -132,8 +132,8 @@ export async function processSelfPost(
   // (runDiagnosis) 側の分類器で担保し、投稿ごとの更新は α=COGNITIVE_BLEND_ALPHA の
   // 微小 nudge なので prototype で十分。embedder は専用ローカルインスタンスにして共有
   // singleton (診断 / 相性ランキング / TL 認知分析) を巻き込まず、推論後に dispose する
-  // (GPU buffer を destroy)。埋め込みは WebGPU (WGSL) で動くので、WebGPU が無い端末では
-  // 解析 (行動分類・認知の nudge) だけを黙って飛ばし、クエスト記録と XP 申告は続ける。
+  // (GPU buffer を destroy)。埋め込みが使えない時 (WebGPU 非対応 / 重みの取得失敗 / GPU の
+  // メモリ不足など) は解析 (行動分類・認知の nudge) だけを飛ばし、クエスト記録と XP 申告は続ける。
   const embedder = new Embedder();
   let action: ActionCategory | null = null;
   let postCognitive: CognitiveScores | null = null;
@@ -142,7 +142,8 @@ export async function processSelfPost(
     action = (await classifyFromVec(vec)).action;                    // 行動: prototype cosine
     postCognitive = await classifyCognitiveFromVec(vec, embedder);   // 認知: prototype cosine
   } catch (e) {
-    if (!(e instanceof EmbedderUnsupportedError)) throw e;
+    // 非対応端末は毎投稿で起きる想定内なので黙る。それ以外は原因を追えるよう warn だけ残す。
+    if (!(e instanceof EmbedderUnsupportedError)) console.warn('post embedding failed; analysis skipped', e);
   } finally {
     embedder.dispose();
   }
