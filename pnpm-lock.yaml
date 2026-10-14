@@ -136,9 +136,9 @@ importers:
       '@atproto/oauth-client-browser':
         specifier: ^0.3.41
         version: 0.3.41
-      '@huggingface/transformers':
-        specifier: ^4.1.0
-        version: 4.1.0
+      '@huggingface/tokenizers':
+        specifier: ^0.1.3
+        version: 0.1.3
       '@jsquash/webp':
         specifier: ^1.5.0
         version: 1.5.0

@@ -9,9 +9,9 @@ import {
 } from '@aozoraquest/core';
 import { fetchMyPosts, fetchUserPostsForDiagnosis, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
-import { getEmbedder } from './embedder';
+import { Embedder } from './embedder';
 import { loadPrototypeEmbeddings } from './prototype-loader';
-import { getCognitiveClassifier } from './cognitive-wgsl';
+import { disposeCognitiveClassifier, getCognitiveClassifier } from './cognitive-wgsl';
 
 type ProgressCallback = (phase: string, done?: number, total?: number) => void;
 
@@ -20,7 +20,7 @@ type ProgressCallback = (phase: string, done?: number, total?: number) => void;
  * 時間軸重み付きで合成する。非日本語 / 短すぎ投稿は null 返しで skip される。
  *
  * 分類器の初期化・推論の失敗 (WebGPU 非対応、モデル配信失敗など) は throw して画面に出す。
- * onnxruntime を使う prototype 方式へは切り替えない (iOS で ORT の wasm memory が縮まず落ちるため)。
+ * prototype 方式へは切り替えない (失敗を隠さない)。
  */
 async function classifyWithWgsl(
   posts: { text: string; at: string }[],
@@ -54,20 +54,28 @@ async function classifyWithWgsl(
   return { perPost, timestamps };
 }
 
-/** prototype embedding 方式 (旧、onnxruntime): 日本語の投稿が DIAGNOSIS_MIN_POST_COUNT 件に満たない時だけ使う。 */
+/**
+ * prototype embedding 方式 (Ruri-v3-30m、WGSL): 日本語の投稿が DIAGNOSIS_MIN_POST_COUNT 件に満たない時だけ使う。
+ * GPU に載せるモデルは 1 つずつ: 分類器を破棄してから Ruri を読み、終わったら Ruri も破棄する。
+ */
 async function classifyWithPrototype(
   posts: { text: string; at: string }[],
   onProgress: ProgressCallback,
 ): Promise<{ postVecs: Float32Array[]; timestamps: string[]; protos: Awaited<ReturnType<typeof loadPrototypeEmbeddings>> }> {
   onProgress('loading-prototypes');
-  const embedder = getEmbedder();
-  const protos = await loadPrototypeEmbeddings(embedder);
-  onProgress('embedding-posts', 0, posts.length);
-  const postVecs = await embedder.embedBatch(
-    posts.map((p) => p.text),
-    (done, total) => onProgress('embedding-posts', done, total),
-  );
-  return { postVecs, timestamps: posts.map((p) => p.at), protos };
+  disposeCognitiveClassifier();
+  const embedder = new Embedder();
+  try {
+    const protos = await loadPrototypeEmbeddings(embedder);
+    onProgress('embedding-posts', 0, posts.length);
+    const postVecs = await embedder.embedBatch(
+      posts.map((p) => p.text),
+      (done, total) => onProgress('embedding-posts', done, total),
+    );
+    return { postVecs, timestamps: posts.map((p) => p.at), protos };
+  } finally {
+    embedder.dispose();
+  }
 }
 
 /**

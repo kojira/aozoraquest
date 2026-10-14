@@ -3,6 +3,9 @@ import {
   COGNITIVE_WGSL_MODEL_BYTES,
   COGNITIVE_WGSL_MODEL_SHA256,
   COGNITIVE_WGSL_MODEL_URL,
+  RURI_WGSL_MODEL_BYTES,
+  RURI_WGSL_MODEL_SHA256,
+  RURI_WGSL_MODEL_URL,
 } from '../src/lib/cognitive-wgsl/weights';
 
 /**
@@ -55,22 +58,27 @@ test.describe('HuggingFace model URLs are reachable', () => {
     });
   }
 
-  // 投稿診断の WGSL 推論が読む重み。HF の LFS/Xet は X-Linked-ETag に sha256、
+  // WGSL 推論が読む重み (気質分類器 / Ruri 埋め込み)。HF の LFS/Xet は X-Linked-ETag に sha256、
   // X-Linked-Size に byte 数を返すので、コードに固定した値と同じファイルかまで確かめる。
-  test('cognitive WGSL weights (model.aqw) exist and match the pinned sha256', async () => {
-    const api = await request.newContext();
-    const res = await api.head(COGNITIVE_WGSL_MODEL_URL, { maxRedirects: 0 });
-    const status = res.status();
-    if (status === 429 || status >= 500) {
-      // eslint-disable-next-line no-console
-      console.warn(`[model-urls] model.aqw: HF が ${status} を返したため検証を skip (rate-limit/transient)`);
-    } else {
-      expect(status, 'model.aqw').toBeLessThan(400);
-      expect(res.headers()['x-linked-etag'], 'model.aqw sha256').toBe(`"${COGNITIVE_WGSL_MODEL_SHA256}"`);
-      expect(res.headers()['x-linked-size'], 'model.aqw size').toBe(String(COGNITIVE_WGSL_MODEL_BYTES));
-    }
-    await api.dispose();
-  });
+  for (const [label, url, sha256, bytes] of [
+    ['model.aqw', COGNITIVE_WGSL_MODEL_URL, COGNITIVE_WGSL_MODEL_SHA256, COGNITIVE_WGSL_MODEL_BYTES],
+    ['ruri-v3-30m.aqw', RURI_WGSL_MODEL_URL, RURI_WGSL_MODEL_SHA256, RURI_WGSL_MODEL_BYTES],
+  ] as const) {
+    test(`WGSL weights (${label}) exist and match the pinned sha256`, async () => {
+      const api = await request.newContext();
+      const res = await api.head(url, { maxRedirects: 0 });
+      const status = res.status();
+      if (status === 429 || status >= 500) {
+        // eslint-disable-next-line no-console
+        console.warn(`[model-urls] ${label}: HF が ${status} を返したため検証を skip (rate-limit/transient)`);
+      } else {
+        expect(status, label).toBeLessThan(400);
+        expect(res.headers()['x-linked-etag'], `${label} sha256`).toBe(`"${sha256}"`);
+        expect(res.headers()['x-linked-size'], `${label} size`).toBe(String(bytes));
+      }
+      await api.dispose();
+    });
+  }
 
   test(`${GENERATOR_REPO}: tokenizer + model (q4) exist`, async () => {
     const api = await request.newContext();

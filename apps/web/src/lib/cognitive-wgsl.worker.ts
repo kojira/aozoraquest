@@ -5,34 +5,24 @@
  * WebGPU 上の自前カーネル (cognitive-wgsl/) で推論する。WebGPU が無い環境では
  * { type: 'error', code: 'webgpu-unsupported' } を返し、ORT へのフォールバックはしない。
  *
- * tokenizer は transformers.js の AutoTokenizer (CPU、tokenizer.json のみ取得)。
- * AutoTokenizer は推論 session を作らないので ORT の wasm は読み込まれない。
+ * tokenizer は @huggingface/tokenizers (純 JS、CPU)。transformers.js は import しない (cognitive-wgsl/tokenizer.ts)。
  *
  * メッセージ:
  *   { type: 'init' }                          → { type: 'ready' }
  *   { type: 'classify-batch', id, texts[] }   → { type: 'result-batch', id, scoresList: number[][] }
  *   { type: 'dispose' }                       → GPU buffer を destroy (worker は呼び出し側が terminate)
  */
-import { AutoTokenizer, env } from '@huggingface/transformers';
 import { CognitiveWgslModel, MAX_BATCH_SEQS, MAX_BATCH_TOKENS, WebGpuUnsupportedError } from './cognitive-wgsl/model';
-import { MAX_SEQ_TOKENS } from './cognitive-wgsl/kernels';
 import { planBatches, softmax } from './cognitive-wgsl/packing';
-import { COGNITIVE_WGSL_MODEL_URL, deleteCachedModel } from './cognitive-wgsl/weights';
-
-env.allowLocalModels = false;
-env.allowRemoteModels = true;
-env.useBrowserCache = true;
-
-const TOKENIZER_REPO = 'kojira/aozoraquest-cognitive-small';
+import { loadModernBertTokenizer, type ModernBertTokenizer } from './cognitive-wgsl/tokenizer';
+import { COGNITIVE_WGSL_MODEL_URL, deleteCachedModel, pruneOrtCache } from './cognitive-wgsl/weights';
 
 interface InitMessage { type: 'init'; modelUrl?: string }
 interface ClassifyBatchMessage { type: 'classify-batch'; id: string; texts: string[] }
 interface DisposeMessage { type: 'dispose' }
 type IncomingMessage = InitMessage | ClassifyBatchMessage | DisposeMessage;
 
-type Tokenizer = Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>;
-
-let ready: Promise<{ tokenizer: Tokenizer; model: CognitiveWgslModel }> | null = null;
+let ready: Promise<{ tokenizer: ModernBertTokenizer; model: CognitiveWgslModel }> | null = null;
 
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
@@ -49,31 +39,13 @@ async function createModel(modelUrl: string): Promise<CognitiveWgslModel> {
   }
 }
 
-/**
- * 旧 ORT 版が transformers-cache に保存した cognitive の .onnx (約 37MB) はもう読まないので消す。
- * tokenizer.json などと、他モデル (Ruri) のエントリは残す。
- */
-async function pruneOrtModelCache(): Promise<void> {
-  try {
-    for (const name of await caches.keys()) {
-      if (!name.includes('transformers')) continue;
-      const cache = await caches.open(name);
-      for (const req of await cache.keys()) {
-        if (req.url.includes('kojira/aozoraquest-cognitive') && req.url.endsWith('.onnx')) await cache.delete(req);
-      }
-    }
-  } catch (e) {
-    console.warn('[cognitive] cache prune failed', e);
-  }
-}
-
 function ensureReady(modelUrl = COGNITIVE_WGSL_MODEL_URL) {
   if (!ready) {
-    void pruneOrtModelCache();
+    void pruneOrtCache();
     ready = (async () => {
       const model = await createModel(modelUrl);
       try {
-        const tokenizer = await AutoTokenizer.from_pretrained(TOKENIZER_REPO);
+        const tokenizer = await loadModernBertTokenizer();
         const current = ready;
         void model.lost.then(() => { if (ready === current) ready = null; });
         return { tokenizer, model };
@@ -87,16 +59,10 @@ function ensureReady(modelUrl = COGNITIVE_WGSL_MODEL_URL) {
   return ready;
 }
 
-/** 1 系列のトークン数を attention の上限に収める (末尾の </s> は残す)。 */
-function clampIds(ids: number[]): number[] {
-  if (ids.length <= MAX_SEQ_TOKENS) return ids;
-  return [...ids.slice(0, MAX_SEQ_TOKENS - 1), ids[ids.length - 1]!];
-}
-
 async function classifyBatch(texts: string[]): Promise<number[][]> {
   const current = ensureReady();
   const { tokenizer, model } = await current;
-  const seqs = texts.map((t) => clampIds(tokenizer.encode(t)));
+  const seqs = texts.map((t) => tokenizer.encode(t));
   const out: number[][] = new Array(texts.length);
   try {
     for (const group of planBatches(seqs.map((s) => s.length), MAX_BATCH_TOKENS, MAX_BATCH_SEQS)) {
