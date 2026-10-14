@@ -9,7 +9,7 @@
 
 import { ACTION_CLASSIFICATION_MIN_MARGIN } from '@aozoraquest/core';
 import { unpackBin } from './prototype-loader';
-import { Embedder } from './embedder';
+import type { Embedder } from './embedder';
 
 export type ActionCategory =
   | 'opinion_post'

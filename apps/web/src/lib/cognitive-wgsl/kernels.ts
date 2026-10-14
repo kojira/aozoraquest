@@ -1,5 +1,5 @@
 /**
- * cognitive-small (ModernBERT 9-class) 推論用の WGSL カーネル群。
+ * ModernBERT-ja-30m (cognitive-small 9-class 分類器 / Ruri-v3-30m 埋め込み) 推論用の WGSL カーネル群。
  *
  * 入力はパディングしない「packed」形式: バッチ内の全系列のトークンを 1 列に連結し、
  * トークンごとのメタ {tokenId, 系列先頭 index, 系列長, 系列内位置} で attention の範囲を決める。
@@ -288,6 +288,34 @@ export const CLS_GATHER_WGSL = /* wgsl */ `
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
   outp[wg.x * ${HIDDEN}u + lid.x] = x[seqStart[wg.x] * ${HIDDEN}u + lid.x];
+}
+`;
+
+/**
+ * 埋め込み head (Ruri): 系列内の全トークン (CLS/SEP 込み = attention mask 上) の平均 → L2 正規化。
+ * 1 workgroup = 1 系列、thread = 次元。packed 形式なのでパディング行は無い。
+ */
+export const MEAN_POOL_WGSL = /* wgsl */ `
+@group(0) @binding(0) var<storage, read> tok: array<vec4<u32>>;
+@group(0) @binding(1) var<storage, read> seqStart: array<u32>;
+@group(0) @binding(2) var<storage, read> x: array<f32>;
+@group(0) @binding(3) var<storage, read_write> outp: array<f32>;
+var<workgroup> red: array<f32, ${HIDDEN}>;
+
+@compute @workgroup_size(${HIDDEN})
+fn main(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+  let start = seqStart[wg.x];
+  let len = tok[start].z;
+  var acc = 0.0;
+  for (var t = 0u; t < len; t++) { acc = acc + x[(start + t) * ${HIDDEN}u + lid.x]; }
+  let mean = acc / f32(len);
+  red[lid.x] = mean * mean;
+  workgroupBarrier();
+  for (var s = ${HIDDEN / 2}u; s > 0u; s = s >> 1u) {
+    if (lid.x < s) { red[lid.x] = red[lid.x] + red[lid.x + s]; }
+    workgroupBarrier();
+  }
+  outp[wg.x * ${HIDDEN}u + lid.x] = mean / max(sqrt(red[0]), 1e-12);
 }
 `;
 

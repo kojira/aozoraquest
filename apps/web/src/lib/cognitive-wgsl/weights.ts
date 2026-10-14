@@ -13,6 +13,14 @@ export const COGNITIVE_WGSL_MODEL_URL =
 /** HF に置く model.aqw の sha256 (e2e の model-urls で HF の X-Linked-Etag と照合する)。 */
 export const COGNITIVE_WGSL_MODEL_SHA256 = 'b9a3a70d20ed80401eaac6d5446437b8831c430efdfd5e647cd0dae536a698ad';
 export const COGNITIVE_WGSL_MODEL_BYTES = 47_764_164;
+/**
+ * Ruri-v3-30m 埋め込み (cl-nagoya/ruri-v3-30m, Apache-2.0) を sirasagi62/ruri-v3-30m-ONNX の fp32 から
+ * scripts/convert-cognitive-wgsl.py で変換したもの (head = mean-pool)。
+ */
+export const RURI_WGSL_MODEL_URL =
+  'https://huggingface.co/kojira/aozoraquest-cognitive-small/resolve/main/wgsl/ruri-v3-30m.aqw';
+export const RURI_WGSL_MODEL_SHA256 = 'd0e9bcb2774b5b9ea6f55b1ea8036933516d0595fcb79064d76526ab6e72e865';
+export const RURI_WGSL_MODEL_BYTES = 47_622_472;
 const CACHE_NAME = 'cognitive-wgsl-v1';
 
 export interface AqwTensorEntry {
@@ -23,9 +31,12 @@ export interface AqwTensorEntry {
   bytes: number;
 }
 
+/** 出力 head。省略時 (cognitive-small の model.aqw) は classifier。 */
+export type AqwHead = 'classifier' | 'mean-pool';
+
 export interface AqwHeader {
   format: 'aqw1';
-  config: { labels: string[]; vocab: number };
+  config: { labels: string[]; vocab: number; head?: AqwHead };
   tensors: AqwTensorEntry[];
 }
 
@@ -86,6 +97,24 @@ export async function deleteCachedModel(url: string): Promise<void> {
     await cache.delete(url);
   } catch {
     /* no-op */
+  }
+}
+
+/**
+ * onnxruntime 時代に transformers.js が transformers-cache へ保存した .onnx (cognitive / Ruri 各約 37MB) と
+ * ORT の .wasm はもう読まないので消す。tokenizer.json などは残す (cognitive-wgsl/tokenizer.ts が同じ cache を使う)。
+ */
+export async function pruneOrtCache(): Promise<void> {
+  try {
+    for (const name of await caches.keys()) {
+      if (!name.includes('transformers')) continue;
+      const cache = await caches.open(name);
+      for (const req of await cache.keys()) {
+        if (req.url.endsWith('.onnx') || req.url.endsWith('.wasm')) await cache.delete(req);
+      }
+    }
+  } catch (e) {
+    console.warn('[wgsl] ORT cache prune failed', e);
   }
 }
 

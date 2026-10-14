@@ -31,7 +31,7 @@ import {
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
-import { Embedder } from './embedder';
+import { Embedder, EmbedderUnsupportedError } from './embedder';
 import { getRecord, putRecord } from './atproto';
 import { serverClaimXp } from './world-server';
 import { claimPostXp } from './pending-claims';
@@ -120,7 +120,7 @@ export async function processSelfPost(
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
   if (trimmed.length === 0) return empty;
 
-  // 投稿のたびに走る解析。**端末内 ONNX モデルは「埋め込み 1 個」だけ**ロードする。
+  // 投稿のたびに走る解析。**端末内モデルは「埋め込み 1 個」だけ**ロードする。
   //
   // 以前は embedder + cognitive の 2 モデルを同時にロードしていたが、iOS Safari は
   // 2 モデル同時ロードの瞬間メモリスパイクに耐えられず (8GB の iPhone でも)、投稿直後に
@@ -128,23 +128,26 @@ export async function processSelfPost(
   // モデル推論を切ると落ちない / 2 モデルは落ちる / 1 モデルは通る)。
   //
   // そこで行動分類・認知スコアとも **埋め込みベクトルの prototype cosine** で求め、
-  // cognitive の ONNX 分類器は投稿パスでは使わない。認知スコアの精度は /me のフル診断
-  // (runDiagnosis) 側で ONNX を使って担保し、投稿ごとの更新は α=COGNITIVE_BLEND_ALPHA の
+  // cognitive の分類器は投稿パスでは使わない。認知スコアの精度は /me のフル診断
+  // (runDiagnosis) 側の分類器で担保し、投稿ごとの更新は α=COGNITIVE_BLEND_ALPHA の
   // 微小 nudge なので prototype で十分。embedder は専用ローカルインスタンスにして共有
-  // singleton (診断 / 相性ランキング / TL 認知分析) を巻き込まず、推論後に dispose する。
+  // singleton (診断 / 相性ランキング / TL 認知分析) を巻き込まず、推論後に dispose する
+  // (GPU buffer を destroy)。埋め込みが使えない時 (WebGPU 非対応 / 重みの取得失敗 / GPU の
+  // メモリ不足など) は解析 (行動分類・認知の nudge) だけを飛ばし、クエスト記録と XP 申告は続ける。
   const embedder = new Embedder();
-  let actResult: Awaited<ReturnType<typeof classifyFromVec>>;
-  let postCognitive: CognitiveScores;
+  let action: ActionCategory | null = null;
+  let postCognitive: CognitiveScores | null = null;
   try {
-    await embedder.init().catch(() => { /* init 失敗時は embed 側が reject → 下で throw */ });
     const vec = await embedder.embed(trimmed);
-    actResult = await classifyFromVec(vec);                          // 行動: prototype cosine
+    action = (await classifyFromVec(vec)).action;                    // 行動: prototype cosine
     postCognitive = await classifyCognitiveFromVec(vec, embedder);   // 認知: prototype cosine
+  } catch (e) {
+    // 非対応端末は毎投稿で起きる想定内なので黙る。それ以外は原因を追えるよう warn だけ残す。
+    if (!(e instanceof EmbedderUnsupportedError)) console.warn('post embedding failed; analysis skipped', e);
   } finally {
     embedder.dispose();
   }
 
-  const action = actResult.action;
   const actionType = action ? (action as ActionType) : null;
   // テキスト分類 + 構造から該当 ActionType 集合を合成。
   // structure が無いケース (旧 API) でも textLength は trimmed から導出する。
@@ -231,11 +234,14 @@ export async function processSelfPost(
   try {
     const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
     if (analysis?.cognitiveScores) {
-      const blended = blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA);
-      updatedCognitive = blended;
-
+      const blended = postCognitive
+        ? blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA)
+        : analysis.cognitiveScores;
       const nextStats = cognitiveToRpg(blended);
-      updatedRpgStats = nextStats;
+      if (postCognitive) {
+        updatedCognitive = blended;
+        updatedRpgStats = nextStats;
+      }
 
       // ── XP 計算 ─────────────────────────────
       const now = new Date();
@@ -283,34 +289,37 @@ export async function processSelfPost(
         }
       };
 
-      // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
-      // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。
-      const { archetype: candidate } = determineArchetype(blended);
-      let nextPendingArchetype: Archetype | undefined;
-      let nextPendingStreak: number | undefined;
-      if (candidate && candidate !== analysis.archetype) {
-        if (analysis.pendingArchetype === candidate) {
-          nextPendingStreak = (analysis.pendingArchetypeStreak ?? 0) + 1;
-        } else {
-          nextPendingStreak = 1;
+      // 解析を飛ばした (WebGPU 非対応) 投稿では、認知スコアも転職候補も書き換えない。
+      if (postCognitive) {
+        // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
+        // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。
+        const { archetype: candidate } = determineArchetype(blended);
+        let nextPendingArchetype: Archetype | undefined;
+        let nextPendingStreak: number | undefined;
+        if (candidate && candidate !== analysis.archetype) {
+          if (analysis.pendingArchetype === candidate) {
+            nextPendingStreak = (analysis.pendingArchetypeStreak ?? 0) + 1;
+          } else {
+            nextPendingStreak = 1;
+          }
+          nextPendingArchetype = candidate;
         }
-        nextPendingArchetype = candidate;
-      }
-      finalPendingArchetype = nextPendingArchetype;
-      finalPendingStreak = nextPendingStreak;
+        finalPendingArchetype = nextPendingArchetype;
+        finalPendingStreak = nextPendingStreak;
 
-      await putRecord(agent, COL.analysis, 'self', {
-        ...analysis,
-        cognitiveScores: blended,
-        rpgStats: nextStats,
-        // archetype は固定 (post ごとには変えない)
-        analyzedAt: analysis.analyzedAt,
-        jobLevel: nextJobLevel,
-        playerLevel: oldPlayer, // #551: XP は権威側。ここは据え置き
-        ...(nextPendingArchetype
-          ? { pendingArchetype: nextPendingArchetype, pendingArchetypeStreak: nextPendingStreak }
-          : { pendingArchetype: undefined, pendingArchetypeStreak: undefined }),
-      });
+        await putRecord(agent, COL.analysis, 'self', {
+          ...analysis,
+          cognitiveScores: blended,
+          rpgStats: nextStats,
+          // archetype は固定 (post ごとには変えない)
+          analyzedAt: analysis.analyzedAt,
+          jobLevel: nextJobLevel,
+          playerLevel: oldPlayer, // #551: XP は権威側。ここは据え置き
+          ...(nextPendingArchetype
+            ? { pendingArchetype: nextPendingArchetype, pendingArchetypeStreak: nextPendingStreak }
+            : { pendingArchetype: undefined, pendingArchetypeStreak: undefined }),
+        });
+      }
       void nowIso;
     }
   } catch (e) {

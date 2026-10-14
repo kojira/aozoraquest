@@ -65,12 +65,13 @@ function fakeGpu(opts: { scopeError?: GPUError } = {}) {
   return device;
 }
 
-/** model.ts が名前で引く全 tensor を 4 byte ずつ持つ model.aqw。 */
-function tinyAqw(): Uint8Array<ArrayBuffer> {
-  const names = ['emb_q', 'emb_scale', 'emb_norm', 'final_norm', 'head_dense', 'head_norm', 'cls_w', 'cls_b'];
+/** model.ts が名前で引く全 tensor を 4 byte ずつ持つ .aqw。mean-pool (Ruri) は分類 head の tensor を持たない。 */
+function tinyAqw(head?: 'mean-pool'): Uint8Array<ArrayBuffer> {
+  const names = ['emb_q', 'emb_scale', 'emb_norm', 'final_norm'];
+  if (!head) names.push('head_dense', 'head_norm', 'cls_w', 'cls_b');
   for (let l = 0; l < 10; l++) for (const n of ['attn_norm', 'wqkv', 'wo', 'mlp_norm', 'wi', 'wo2']) names.push(`l${l}.${n}`);
   const tensors = names.map((name, i) => ({ name, dtype: 'f32', shape: [1], offset: i * 4, bytes: 4 }));
-  let json = JSON.stringify({ format: 'aqw1', config: {}, tensors });
+  let json = JSON.stringify({ format: 'aqw1', config: head ? { head } : {}, tensors });
   json += ' '.repeat((4 - (json.length % 4)) % 4);
   const header = new TextEncoder().encode(json);
   const out = new Uint8Array(8 + header.length + names.length * 4);
@@ -80,10 +81,10 @@ function tinyAqw(): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-function stubGpu(device: ReturnType<typeof fakeGpu>) {
+function stubGpu(device: ReturnType<typeof fakeGpu>, head?: 'mean-pool') {
   vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ requestDevice: async () => device }) } });
   vi.stubGlobal('caches', undefined);
-  vi.stubGlobal('fetch', async () => new Response(tinyAqw()));
+  vi.stubGlobal('fetch', async () => new Response(tinyAqw(head)));
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -96,6 +97,14 @@ describe('CognitiveWgslModel.run', () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => model.run([[1, 5, 2], [1, 2]])));
     expect(results).toHaveLength(8);
     for (const r of results) expect(r.map((x) => x.length)).toEqual([9, 9]);
+  });
+
+  test('head が mean-pool (Ruri) なら分類 head の tensor なしで作れ、系列ごとに 256 次元を返す', async () => {
+    const device = fakeGpu();
+    stubGpu(device, 'mean-pool');
+    const model = await CognitiveWgslModel.create('https://example.test/ruri.aqw');
+    expect(model.head).toBe('mean-pool');
+    expect((await model.run([[1, 5, 2], [1, 2]])).map((x) => x.length)).toEqual([256, 256]);
   });
 
   test('device で捕捉されない GPU error が起きたら、以後の run は throw する', async () => {
