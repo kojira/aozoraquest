@@ -94,12 +94,22 @@ function clampIds(ids: number[]): number[] {
 }
 
 async function classifyBatch(texts: string[]): Promise<number[][]> {
-  const { tokenizer, model } = await ensureReady();
+  const current = ensureReady();
+  const { tokenizer, model } = await current;
   const seqs = texts.map((t) => clampIds(tokenizer.encode(t)));
   const out: number[][] = new Array(texts.length);
-  for (const group of planBatches(seqs.map((s) => s.length), MAX_BATCH_TOKENS, MAX_BATCH_SEQS)) {
-    const logits = await model.run(group.map((i) => seqs[i]!));
-    group.forEach((i, k) => { out[i] = softmax(logits[k]!); });
+  try {
+    for (const group of planBatches(seqs.map((s) => s.length), MAX_BATCH_TOKENS, MAX_BATCH_SEQS)) {
+      const logits = await model.run(group.map((i) => seqs[i]!));
+      group.forEach((i, k) => { out[i] = softmax(logits[k]!); });
+    }
+  } catch (e) {
+    // GPU error で壊れた model は捨て、次の呼び出しで作り直す
+    if (model.broken && ready === current) {
+      ready = null;
+      model.dispose();
+    }
+    throw e;
   }
   return out;
 }

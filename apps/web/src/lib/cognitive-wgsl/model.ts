@@ -43,6 +43,12 @@ export class CognitiveWgslModel {
   private steps: Step[] = [];
   /** GPU device を失った (iOS のバックグラウンド化など) 時に resolve する。呼び出し側は作り直す。 */
   readonly lost: Promise<unknown>;
+  /** run() を 1 本ずつ流すための列。readback buffer は 1 つなので、同時に map させない。 */
+  private queue: Promise<unknown> = Promise.resolve();
+  /** 捕捉されない GPU error (validation / out-of-memory) が起きた後は結果を信用できない。 */
+  private gpuError: string | null = null;
+  /** true なら run() は throw する。呼び出し側は作り直す。 */
+  get broken(): boolean { return this.gpuError !== null; }
   private constructor(
     private device: GPUDevice,
     private weights: GpuWeights,
@@ -50,6 +56,11 @@ export class CognitiveWgslModel {
     private io: { tok: GPUBuffer; seqStart: GPUBuffer; dims: GPUBuffer; logits: GPUBuffer; readback: GPUBuffer },
   ) {
     this.lost = device.lost;
+    // logits が書かれないまま 0 を読むと一様な 1/9 の結果になるため、error を握りつぶさず壊れた扱いにする
+    device.onuncapturederror = (ev) => {
+      this.gpuError ??= ev.error.message || 'GPU error';
+      console.error('[cognitive] uncaptured GPU error', ev.error);
+    };
   }
 
   static async create(modelUrl: string, onProgress?: WeightProgress): Promise<CognitiveWgslModel> {
@@ -60,10 +71,25 @@ export class CognitiveWgslModel {
     const device = await adapter.requestDevice();
     let weights: GpuWeights | null = null;
     try {
-      weights = (await loadWeights(device, modelUrl, onProgress)).weights;
-      const model = CognitiveWgslModel.allocate(device, weights);
-      model.buildSteps();
-      return model;
+      // 重みの確保・書き込み、作業 buffer の確保、初回実行を error scope で囲み、GPU 側の失敗を throw にする
+      device.pushErrorScope('out-of-memory');
+      device.pushErrorScope('validation');
+      let model: CognitiveWgslModel | null = null;
+      let setupError: unknown = null;
+      try {
+        weights = (await loadWeights(device, modelUrl, onProgress)).weights;
+        model = CognitiveWgslModel.allocate(device, weights);
+        await model.buildSteps();
+        await model.runNow([[1, 2]]);
+      } catch (e) {
+        setupError = e;
+      }
+      const validation = await device.popErrorScope();
+      const oom = await device.popErrorScope();
+      if (setupError) throw setupError;
+      const gpuError = oom ?? validation ?? (model?.gpuError ? { message: model.gpuError } : null);
+      if (gpuError) throw new Error(`cognitive model GPU setup failed: ${gpuError.message}`);
+      return model!;
     } catch (e) {
       if (weights) for (const b of weights.values()) b.destroy();
       device.destroy();
@@ -109,8 +135,9 @@ export class CognitiveWgslModel {
     return b;
   }
 
-  private pipeline(code: string, constants: Record<string, number> = {}): GPUComputePipeline {
-    return this.device.createComputePipeline({
+  /** createComputePipelineAsync は shader / pipeline の不正を reject で返す (同期版は無効な pipeline を黙って返す)。 */
+  private pipeline(code: string, constants: Record<string, number> = {}): Promise<GPUComputePipeline> {
+    return this.device.createComputePipelineAsync({
       layout: 'auto',
       compute: { module: this.device.createShaderModule({ code }), entryPoint: 'main', constants },
     });
@@ -124,7 +151,7 @@ export class CognitiveWgslModel {
     this.steps.push({ pipeline, bind, grid });
   }
 
-  private buildSteps(): void {
+  private async buildSteps(): Promise<void> {
     const b = (n: string) => this.named(n);
     const { tok, dims, seqStart, logits } = this.io;
     const ceil = (a: number, d: number) => Math.ceil(a / d);
@@ -136,19 +163,22 @@ export class CognitiveWgslModel {
       });
     const linGrid = (n: number): Step['grid'] => (t) => [n / 64, ceil(t, 64)];
 
-    const pEmbed = this.pipeline(EMBED_WGSL);
-    const pNorm = this.pipeline(LAYER_NORM_WGSL);
-    const pQkv = linear(HIDDEN, 3 * HIDDEN);
-    const pWo = linear(HIDDEN, HIDDEN, { accum: true });
-    const pWi = linear(HIDDEN, 2 * INTERMEDIATE);
-    const pWo2 = linear(INTERMEDIATE, HIDDEN, { accum: true });
-    const pHead = linear(HIDDEN, HIDDEN, { gelu: true, seqRows: true });
-    const pRope = this.pipeline(ROPE_WGSL);
-    const pAttnLocal = this.pipeline(ATTENTION_WGSL, { GLOBAL: 0 });
-    const pAttnGlobal = this.pipeline(ATTENTION_WGSL, { GLOBAL: 1 });
-    const pGeglu = this.pipeline(GEGLU_WGSL);
-    const pGather = this.pipeline(CLS_GATHER_WGSL);
-    const pCls = this.pipeline(CLASSIFIER_WGSL);
+    const [pEmbed, pNorm, pQkv, pWo, pWi, pWo2, pHead, pRope, pAttnLocal, pAttnGlobal, pGeglu, pGather, pCls] =
+      await Promise.all([
+        this.pipeline(EMBED_WGSL),
+        this.pipeline(LAYER_NORM_WGSL),
+        linear(HIDDEN, 3 * HIDDEN),
+        linear(HIDDEN, HIDDEN, { accum: true }),
+        linear(HIDDEN, 2 * INTERMEDIATE),
+        linear(INTERMEDIATE, HIDDEN, { accum: true }),
+        linear(HIDDEN, HIDDEN, { gelu: true, seqRows: true }),
+        this.pipeline(ROPE_WGSL),
+        this.pipeline(ATTENTION_WGSL, { GLOBAL: 0 }),
+        this.pipeline(ATTENTION_WGSL, { GLOBAL: 1 }),
+        this.pipeline(GEGLU_WGSL),
+        this.pipeline(CLS_GATHER_WGSL),
+        this.pipeline(CLASSIFIER_WGSL),
+      ]);
 
     this.step(pEmbed, [tok, b('emb_q'), b('emb_scale'), b('h')], perToken);
     this.step(pNorm, [b('h'), b('emb_norm'), b('x')], perToken);
@@ -179,7 +209,14 @@ export class CognitiveWgslModel {
    * token id 列 (系列ごと、CLS/SEP 込み) の 9 クラス logits を返す。
    * 合計トークン数は MAX_BATCH_TOKENS、系列数は MAX_BATCH_SEQS 以下であること (runner 側で分割する)。
    */
-  async run(sequences: readonly (readonly number[])[]): Promise<Float32Array[]> {
+  run(sequences: readonly (readonly number[])[]): Promise<Float32Array[]> {
+    const result = this.queue.then(() => this.runNow(sequences));
+    this.queue = result.catch(() => {});
+    return result;
+  }
+
+  private async runNow(sequences: readonly (readonly number[])[]): Promise<Float32Array[]> {
+    if (this.gpuError) throw new Error(`cognitive model is broken (GPU error: ${this.gpuError})`);
     const packed = packSequences(sequences, MAX_BATCH_TOKENS, MAX_BATCH_SEQS);
     const T = packed.tokens;
     const S = sequences.length;
@@ -201,6 +238,8 @@ export class CognitiveWgslModel {
     await this.io.readback.mapAsync(MAP_MODE_READ, 0, S * CLASSES * 4);
     const flat = new Float32Array(this.io.readback.getMappedRange(0, S * CLASSES * 4).slice(0));
     this.io.readback.unmap();
+    // submit 中の validation error は非同期に通知されるため、map 後にもう一度確かめる
+    if (this.gpuError) throw new Error(`cognitive model is broken (GPU error: ${this.gpuError})`);
     return Array.from({ length: S }, (_, i) => flat.subarray(i * CLASSES, (i + 1) * CLASSES));
   }
 
