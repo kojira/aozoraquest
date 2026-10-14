@@ -1,4 +1,9 @@
 import { test, expect, request } from '@playwright/test';
+import {
+  COGNITIVE_WGSL_MODEL_BYTES,
+  COGNITIVE_WGSL_MODEL_SHA256,
+  COGNITIVE_WGSL_MODEL_URL,
+} from '../src/lib/cognitive-wgsl/weights';
 
 /**
  * 公開先で使うモデル関連ファイルが実在することを確認。
@@ -49,6 +54,23 @@ test.describe('HuggingFace model URLs are reachable', () => {
       await api.dispose();
     });
   }
+
+  // 投稿診断の WGSL 推論が読む重み。HF の LFS/Xet は X-Linked-ETag に sha256、
+  // X-Linked-Size に byte 数を返すので、コードに固定した値と同じファイルかまで確かめる。
+  test('cognitive WGSL weights (model.aqw) exist and match the pinned sha256', async () => {
+    const api = await request.newContext();
+    const res = await api.head(COGNITIVE_WGSL_MODEL_URL, { maxRedirects: 0 });
+    const status = res.status();
+    if (status === 429 || status >= 500) {
+      // eslint-disable-next-line no-console
+      console.warn(`[model-urls] model.aqw: HF が ${status} を返したため検証を skip (rate-limit/transient)`);
+    } else {
+      expect(status, 'model.aqw').toBeLessThan(400);
+      expect(res.headers()['x-linked-etag'], 'model.aqw sha256').toBe(`"${COGNITIVE_WGSL_MODEL_SHA256}"`);
+      expect(res.headers()['x-linked-size'], 'model.aqw size').toBe(String(COGNITIVE_WGSL_MODEL_BYTES));
+    }
+    await api.dispose();
+  });
 
   test(`${GENERATOR_REPO}: tokenizer + model (q4) exist`, async () => {
     const api = await request.newContext();
