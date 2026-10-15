@@ -77,7 +77,23 @@ import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, 
  * (use-world-field-items) / 初期ロード (use-world-load) / マップ描画 (world-map-layer)。
  */
 
+/** 本番 (WORLD_PREVIEW_ENABLED=false) ではプレースホルダだけを出す。ワールドの hooks
+ *  (初期ロードの書き込み・そうびの写しの POST など) は WorldScreen 側にあり、ゲートが
+ *  有効なときだけマウントされるので、/world 直打ちでも副作用は走らない。 */
 export function World() {
+  if (!WORLD_PREVIEW_ENABLED) {
+    return (
+      <div>
+        <h2>あおぞらワールド</h2>
+        <p style={{ color: 'var(--color-muted)' }}>じゅんびちゅう… もうすこし待っててね。</p>
+        <Link to="/spirit">← ブルスコンのところへ戻る</Link>
+      </div>
+    );
+  }
+  return <WorldScreen />;
+}
+
+function WorldScreen() {
   const session = useSession();
   const agent = session.agent ?? null;
   const did = session.did ?? null;
@@ -320,15 +336,6 @@ export function World() {
   }, [move, battleRef, wipeRef, wsRef]);
 
 
-  if (!WORLD_PREVIEW_ENABLED) {
-    return (
-      <div>
-        <h2>あおぞらワールド</h2>
-        <p style={{ color: 'var(--color-muted)' }}>じゅんびちゅう… もうすこし待っててね。</p>
-        <Link to="/spirit">← ブルスコンのところへ戻る</Link>
-      </div>
-    );
-  }
   if (session.status === 'loading') return <p>読み込み中…</p>;
   if (session.status === 'signed-out') {
     return (
