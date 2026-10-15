@@ -3,8 +3,9 @@
  *
  * - 対象端末: Gemini Nano が無く (`detectGeminiNano() === 'unavailable'`) WebGPU がある端末 (iOS 26+ Safari、Android Chrome)。
  *   Nano のある PC は local-llm.ts の BACKENDS 順で Nano が先に選ばれ、ここには来ない。
- * - 導入 (約 430MB の初回ダウンロード) は `installSarashina()` だけが行う。availability() は「導入済み」の時だけ true で、
- *   未導入のまま generate() が呼ばれてダウンロードが始まることはない。
+ * - 導入 (約 430MB の初回ダウンロード) は `installSarashina()` (召喚の儀式) だけが行う。availability() は「導入済み」の時だけ true。
+ *   翻訳時の読み込み (`loadSarashina()` / generate()) はキャッシュだけを読み、ネットワークからは取らない。
+ *   キャッシュが消されていたら SarashinaNotInstalledError で失敗し、未導入に戻す (翻訳 UI は消え、次の儀式で入れ直す)。
  * - Worker は初めて生成が要る時に作り、最後の生成から 3 分で解放する。pagehide でも解放し、GPU device を失ったら作り直す。
  * - 1 回の生成は最初の改行か EOS で止まる (訳文の後に説明を書き足す癖への対策。複数段落は translate.ts が段落ごとに呼ぶ)。
  */
@@ -24,6 +25,14 @@ export function sarashinaChatPrompt(input: LLMInput): string {
   let s = input.systemPrompt.trim() ? `<|system|>${input.systemPrompt.trim()}</s>` : '';
   for (const m of input.history) s += `<|${m.role}|>${m.content.trim()}</s>`;
   return `${s}<|assistant|>`;
+}
+
+/** 翻訳時の読み込みで、導入済みのはずのキャッシュが欠けていた (ブラウザに消された)。未導入に戻した。 */
+export class SarashinaNotInstalledError extends Error {
+  constructor(detail: string) {
+    super(`sarashina not installed: ${detail}`);
+    this.name = 'SarashinaNotInstalledError';
+  }
 }
 
 interface Pending { resolve: (text: string) => void; reject: (e: Error) => void }
@@ -51,7 +60,8 @@ function disposeWorker() {
   w.postMessage({ type: 'dispose' });
 }
 
-function ensureWorker(): Promise<void> {
+/** Worker を作って読み込む。allowNetwork: true は導入 (召喚の儀式) だけ。読み込み済み / 読み込み中ならそれを返す。 */
+function ensureWorker(allowNetwork: boolean): Promise<void> {
   if (workerReady) return workerReady;
   const w = new Worker(new URL('./slm.worker.ts', import.meta.url), { type: 'module' });
   worker = w;
@@ -77,11 +87,16 @@ function ensureWorker(): Promise<void> {
     const onMsg = (ev: MessageEvent) => {
       if (ev.data.type === 'progress') { clearTimeout(stall); stall = setTimeout(onStall, LOAD_STALL_MS); }
       else if (ev.data.type === 'ready') { clearTimeout(stall); w.removeEventListener('message', onMsg); resolve(); }
-      else if (ev.data.type === 'error' && !ev.data.id) { clearTimeout(stall); w.removeEventListener('message', onMsg); reject(new Error(String(ev.data.error))); }
+      else if (ev.data.type === 'error' && !ev.data.id) {
+        clearTimeout(stall);
+        w.removeEventListener('message', onMsg);
+        if (ev.data.code === 'not-cached') { installed = false; reject(new SarashinaNotInstalledError(String(ev.data.error))); }
+        else reject(new Error(String(ev.data.error)));
+      }
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', (ev) => { clearTimeout(stall); reject(new Error(`sarashina worker failed: ${ev.message}`)); }, { once: true });
-    w.postMessage({ type: 'init' });
+    w.postMessage({ type: 'init', allowNetwork });
   });
   workerReady = ready;
   ready.catch((e: unknown) => { console.warn('[sarashina] init failed', e); if (worker === w) disposeWorker(); });
@@ -106,16 +121,21 @@ export async function isSarashinaEligible(): Promise<boolean> {
  * 失敗したら throw し、導入済みにはしない (次の儀式・次の呼び出しでやり直す)。
  */
 export async function installSarashina(): Promise<void> {
-  await ensureWorker();
+  // 翻訳時のキャッシュだけの読み込みが走っていたら終わるのを待つ (失敗していれば Worker は捨てられ、下で取り直す)
+  if (workerReady) await workerReady.catch(() => undefined);
+  await ensureWorker(true);
   installed = await isSarashinaCached();
   if (!installed) { disposeWorker(); throw new Error('sarashina cache incomplete after load'); }
   touchIdle();
   void navigator.storage?.persist?.().catch(() => false);
 }
 
-/** モデルを GPU に載せ終えるまで待つ (翻訳の制限時間に読み込み時間を含めないため、translate.ts が生成の前に呼ぶ)。 */
+/**
+ * キャッシュからモデルを GPU に載せ終えるまで待つ (翻訳の制限時間に読み込み時間を含めないため、translate.ts が生成の前に呼ぶ)。
+ * ダウンロードはしない。キャッシュが欠けていれば SarashinaNotInstalledError (未導入に戻る)。
+ */
 export function loadSarashina(): Promise<void> {
-  return ensureWorker();
+  return ensureWorker(false);
 }
 
 export async function isSarashinaInstalled(): Promise<boolean> {
@@ -126,7 +146,7 @@ export async function isSarashinaInstalled(): Promise<boolean> {
 async function generate(input: LLMInput, opts: LLMOptions = {}): Promise<string> {
   const last = input.history[input.history.length - 1];
   if (!last || last.role !== 'user') throw new Error('last history entry must be a user turn');
-  await ensureWorker();
+  await ensureWorker(false);
   const w = worker;
   if (!w) throw new Error('sarashina worker disposed');
   const id = String(nextId++);

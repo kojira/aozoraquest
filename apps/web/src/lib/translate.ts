@@ -11,8 +11,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { generateWithLocalLLM, pickLocalLLM, type LocalLLM } from './local-llm';
-import { loadSarashina, SARASHINA } from './sarashina-llm';
+import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice, type LocalLLM } from './local-llm';
+import { loadSarashina, SARASHINA, SarashinaNotInstalledError } from './sarashina-llm';
 import {
   cleanSarashinaParagraph,
   sarashinaMaxNewTokens,
@@ -151,7 +151,7 @@ async function runLLM(
   const { body, trailing } = splitTranslatableText(text);
   if (!body) return trailing; // 本文なし → リンク等だけ返す
   if (llm.id === SARASHINA.id) {
-    await loadSarashina(); // (再) 読み込みは止まれば sarashina-llm 側で打ち切る。60s の制限は生成だけに掛ける
+    await loadSarashina(); // キャッシュだけから (再) 読み込み。止まれば sarashina-llm 側で打ち切る。60s の制限は生成だけに掛ける
     const cleaned = cleanTranslation(await withTimeout(runSarashina(llm, body, temperature)));
     const composed = trailing ? `${cleaned}\n${trailing}` : cleaned;
     if (!looksLikeJapaneseTranslation(cleaned)) throw new NonJapaneseTranslationError(composed);
@@ -214,6 +214,11 @@ async function runLLMWithRetry(
     try {
       return await runLLM(llm, text, langs, temp);
     } catch (e) {
+      if (e instanceof SarashinaNotInstalledError) {
+        // キャッシュが消えていた: ダウンロードせず未導入に戻す (翻訳 UI は消え、次の召喚の儀式で入れ直す)
+        resetLocalLLMChoice();
+        throw e;
+      }
       if (e instanceof NonJapaneseTranslationError) {
         console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (temp=${temp})`);
         lastFail = e;
@@ -316,6 +321,12 @@ export function useTranslation(
         setState('done');
       } catch (e) {
         console.warn('[translate] failed', e);
+        // sarashina のキャッシュが消えて未導入に戻った等: LLM の無い端末と同じく翻訳 UI を消す
+        if (!(await pickLocalLLM(false, 'translation'))) {
+          setLlmAvailable(false);
+          setState('idle');
+          return;
+        }
         setError(String((e as Error)?.message ?? e));
         setState('error');
       }

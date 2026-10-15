@@ -67,8 +67,19 @@ async function openCache(): Promise<Cache | null> {
   }
 }
 
+/** 端末のキャッシュに無く、ネットワークからの取得も許されていない (翻訳時の読み込みで導入済みのキャッシュが欠けていた)。 */
+export class SarashinaNotCachedError extends Error {
+  constructor(file: string) {
+    super(`sarashina not cached (${file})`);
+    this.name = 'SarashinaNotCachedError';
+  }
+}
+
+/** allowNetwork: false なら Cache API だけを読み、無ければ取得せず SarashinaNotCachedError。ネットワークから取るのは導入 (召喚の儀式) だけ。 */
+export interface SarashinaFetchOptions { allowNetwork: boolean }
+
 /** url のファイルをキャッシュ優先で読み、sha256 が合わなければ throw する (壊れたキャッシュは消す)。 */
-export async function fetchVerified(url: string, entry: { bytes: number; sha256: string }): Promise<ArrayBuffer> {
+export async function fetchVerified(url: string, entry: { bytes: number; sha256: string }, opts: SarashinaFetchOptions): Promise<ArrayBuffer> {
   const cache = await openCache();
   const hit = await cache?.match(url).catch(() => undefined);
   if (hit) {
@@ -76,6 +87,7 @@ export async function fetchVerified(url: string, entry: { bytes: number; sha256:
     if (buf.byteLength === entry.bytes && await sha256Hex(buf) === entry.sha256) return buf;
     await cache?.delete(url).catch(() => undefined);
   }
+  if (!opts.allowNetwork) throw new SarashinaNotCachedError(url.split('/').pop() ?? url);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`sarashina fetch failed: HTTP ${res.status} (${url.split('/').pop()})`);
   const buf = await res.arrayBuffer();
@@ -86,12 +98,13 @@ export async function fetchVerified(url: string, entry: { bytes: number; sha256:
   return buf;
 }
 
-export async function fetchHeader(): Promise<SlmHeader> {
+export async function fetchHeader(opts: SarashinaFetchOptions): Promise<SlmHeader> {
   const url = `${SARASHINA_BASE_URL}/header.json`;
   const cache = await openCache();
   let res = await cache?.match(url).catch(() => undefined);
   let text = res ? await res.text() : null;
   if (text === null || await sha256Hex(new TextEncoder().encode(text).buffer as ArrayBuffer) !== SARASHINA_HEADER_SHA256) {
+    if (!opts.allowNetwork) throw new SarashinaNotCachedError('header.json');
     res = await fetch(url);
     if (!res.ok) throw new Error(`sarashina header fetch failed: HTTP ${res.status}`);
     text = await res.text();
@@ -111,7 +124,7 @@ export async function isSarashinaCached(): Promise<boolean> {
     if (!(await caches.has(SARASHINA_CACHE_NAME))) return false;
     const cache = await caches.open(SARASHINA_CACHE_NAME);
     const keys = new Set((await cache.keys()).map((r) => r.url));
-    const header = keys.has(`${SARASHINA_BASE_URL}/header.json`) ? await fetchHeader() : null;
+    const header = keys.has(`${SARASHINA_BASE_URL}/header.json`) ? await fetchHeader({ allowNetwork: false }) : null;
     if (!header) return false;
     return [...header.parts, header.tokenizer].every((p) => keys.has(`${SARASHINA_BASE_URL}/${p.file}`));
   } catch {
@@ -129,12 +142,13 @@ export async function streamWeights(
   header: SlmHeader,
   segments: WeightSegment[],
   onPartDone: (done: number, total: number) => void,
+  opts: SarashinaFetchOptions,
 ): Promise<void> {
   let partStart = 0;
   let si = 0;
   for (let p = 0; p < header.parts.length; p++) {
     const part = header.parts[p]!;
-    const buf = await fetchVerified(`${baseUrl}/${part.file}`, part);
+    const buf = await fetchVerified(`${baseUrl}/${part.file}`, part, opts);
     const partEnd = partStart + part.bytes;
     while (si < segments.length && segments[si]!.start < partEnd) {
       const s = segments[si]!;

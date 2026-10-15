@@ -8,7 +8,7 @@
  */
 import { attentionWgsl, embedWgsl, matmulWgsl, qkprepWgsl, rmsnormWgsl, swigluWgsl, topkWgsl, type AttnDims } from './kernels';
 import { BUFFER_USAGE, MAP_MODE_READ } from '../cognitive-wgsl/gpu-flags';
-import { streamWeights, type SlmHeader, type WeightSegment } from './weights';
+import { streamWeights, type SarashinaFetchOptions, type SlmHeader, type WeightSegment } from './weights';
 
 const ST = BUFFER_USAGE.STORAGE | BUFFER_USAGE.COPY_DST | BUFFER_USAGE.COPY_SRC;
 const UNIFORM = BUFFER_USAGE.UNIFORM | BUFFER_USAGE.COPY_DST;
@@ -64,7 +64,12 @@ export class SlmModel {
   /** 一度でも捕捉されない GPU error が出たら結果を信用しない (呼び出し側が作り直す)。 */
   get broken(): boolean { return this.gpuError !== null; }
 
-  static async create(baseUrl: string, header: SlmHeader, onPartDone: (done: number, total: number) => void): Promise<SlmModel> {
+  static async create(
+    baseUrl: string,
+    header: SlmHeader,
+    onPartDone: (done: number, total: number) => void,
+    fetchOpts: SarashinaFetchOptions,
+  ): Promise<SlmModel> {
     const gpu = (globalThis.navigator as Navigator | undefined)?.gpu;
     if (!gpu) throw new WebGpuUnsupportedError('navigator.gpu is not available');
     const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
@@ -84,7 +89,7 @@ export class SlmModel {
       let err: unknown = null;
       try {
         const maxB = Math.min(l.maxStorageBufferBindingSize, l.maxBufferSize, MAX_TENSOR_BUFFER);
-        await streamWeights(device, baseUrl, header, model.allocateWeights(maxB), onPartDone);
+        await streamWeights(device, baseUrl, header, model.allocateWeights(maxB), onPartDone, fetchOpts);
         model.allocateActivations();
         model.buildSteps();
         await model.forwardTopk([1, 2, 3]); // warmup (pipeline compile)

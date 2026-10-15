@@ -2,8 +2,9 @@
  * sarashina2.2-0.5b (自前 WGSL) の推論専用 Worker。Gemini Nano の無い端末の投稿翻訳だけに使う。
  *
  * メッセージ:
- *   { type: 'init' }                                   → { type: 'ready' } / { type: 'error', code? }
- *                                                        (読み込み中は重みの part ごとに { type: 'progress' } を送る)
+ *   { type: 'init', allowNetwork }                     → { type: 'ready' } / { type: 'error', code? }
+ *                                                        (読み込み中は重みの part ごとに { type: 'progress' } を送る。
+ *                                                         allowNetwork: false はキャッシュだけで読み、欠けていれば code: 'not-cached')
  *   { type: 'generate', id, prompt, maxNewTokens, temperature, stopAtNewline }
  *                                                      → { type: 'done', id, text } / { type: 'error', id }
  *                                                        (生成は 1 本ずつ順に実行する。model の pos / KV / readback は共有)
@@ -12,7 +13,7 @@
  */
 import { SlmModel, WebGpuUnsupportedError } from './slm-wgsl/model';
 import { SpTokenizer, type UnigramJson } from './slm-wgsl/sptok';
-import { fetchHeader, fetchVerified, SARASHINA_BASE_URL } from './slm-wgsl/weights';
+import { fetchHeader, fetchVerified, SARASHINA_BASE_URL, SarashinaNotCachedError, type SarashinaFetchOptions } from './slm-wgsl/weights';
 
 interface GenerateMessage {
   type: 'generate';
@@ -22,7 +23,7 @@ interface GenerateMessage {
   temperature: number;
   stopAtNewline: boolean;
 }
-type IncomingMessage = { type: 'init' } | GenerateMessage | { type: 'dispose' };
+type IncomingMessage = { type: 'init'; allowNetwork: boolean } | GenerateMessage | { type: 'dispose' };
 
 const TOP_P = 0.9;
 
@@ -32,13 +33,14 @@ let generating: Promise<unknown> = Promise.resolve();
 
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
-function ensureReady() {
+/** 読み込み済みならそれを返す。未読み込みなら opts に従って読む (generate からはキャッシュだけ)。 */
+function ensureReady(opts: SarashinaFetchOptions) {
   if (!ready) {
     ready = (async () => {
-      const header = await fetchHeader();
-      const tj = JSON.parse(new TextDecoder().decode(await fetchVerified(`${SARASHINA_BASE_URL}/${header.tokenizer.file}`, header.tokenizer))) as UnigramJson;
+      const header = await fetchHeader(opts);
+      const tj = JSON.parse(new TextDecoder().decode(await fetchVerified(`${SARASHINA_BASE_URL}/${header.tokenizer.file}`, header.tokenizer, opts))) as UnigramJson;
       const tok = new SpTokenizer(tj);
-      const model = await SlmModel.create(SARASHINA_BASE_URL, header, () => post({ type: 'progress' }));
+      const model = await SlmModel.create(SARASHINA_BASE_URL, header, () => post({ type: 'progress' }), opts);
       void model.lost.then(() => { ready = null; post({ type: 'lost' }); });
       return { model, tok };
     })();
@@ -48,7 +50,7 @@ function ensureReady() {
 }
 
 async function generate(m: GenerateMessage): Promise<string> {
-  const { model, tok } = await ensureReady();
+  const { model, tok } = await ensureReady({ allowNetwork: false });
   const nl = new Set<number>();
   const out = await model.generate(tok.encode(m.prompt), m.maxNewTokens, { temperature: m.temperature, topP: TOP_P }, (id) => {
     if (!m.stopAtNewline) return true;
@@ -59,12 +61,18 @@ async function generate(m: GenerateMessage): Promise<string> {
   return tok.decode(out, { skip_special_tokens: true });
 }
 
+function errorCode(e: unknown): string | undefined {
+  if (e instanceof WebGpuUnsupportedError) return 'webgpu-unsupported';
+  if (e instanceof SarashinaNotCachedError) return 'not-cached';
+  return undefined;
+}
+
 self.addEventListener('message', (ev: MessageEvent<IncomingMessage>) => {
   const m = ev.data;
   if (m.type === 'init') {
-    ensureReady().then(
+    ensureReady({ allowNetwork: m.allowNetwork }).then(
       () => post({ type: 'ready' }),
-      (e: unknown) => post({ type: 'error', code: e instanceof WebGpuUnsupportedError ? 'webgpu-unsupported' : undefined, error: String((e as Error)?.message ?? e) }),
+      (e: unknown) => post({ type: 'error', code: errorCode(e), error: String((e as Error)?.message ?? e) }),
     );
   } else if (m.type === 'generate') {
     generating = generating.then(() => generate(m)).then(
