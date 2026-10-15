@@ -1,0 +1,340 @@
+/**
+ * あおぞらワールドのサーバー権威 API クライアント — docs/21 §5。
+ *
+ * **移動も攻撃も毎回 edge Worker が権威処理する**ためのクライアント側呼び出し。ユーザー自身の
+ * service auth JWT (aud=edge Worker) を発行して edge に渡す。edge が本人確認 → 権威 state を読み書き
+ * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
+ * に書かない** = 改造してもチートできない。
+ */
+import { LXM, type StoryEffect } from '@aozoraquest/core';
+import type { Agent } from '@atproto/api';
+
+// エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
+import { EDGE_URL, EDGE_DID } from './edge-config';
+
+const LXM_MOVE = LXM.worldMove;
+const LXM_TELEPORT = LXM.worldTeleport;
+const LXM_ITEM = LXM.worldItem;
+const LXM_GEAR = LXM.worldGear;
+const LXM_SEARCH = LXM.worldSearch;
+const LXM_RESET = LXM.worldReset;
+const LXM_TURN = LXM.battleTurn;
+const LXM_STATE = LXM.meState;
+const LXM_XP_CLAIM = LXM.xpClaim;
+const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
+const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
+const LXM_SHOP_CRAFT = LXM.shopCraft;
+const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_FORGE = LXM.shopForge;
+const LXM_SHOP_DISCARD = LXM.shopDiscard;
+const LXM_QUEST_ACCEPT = LXM.questAccept;
+const LXM_QUEST_COMPLETE = LXM.questComplete;
+const LXM_STORY_BATTLE = LXM.storyBattle;
+const LXM_INN_REST = LXM.innRest;
+const LXM_POWER_SPEND = LXM.powerSpend;
+const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
+
+/** edge URL / DID が設定されていればサーバー権威モードを使える。 */
+export const worldServerEnabled = Boolean(EDGE_URL && EDGE_DID);
+
+/** サーバー権威エンドポイントのエラー (status 付き。503=書込不能で報酬なし fail-closed 等)。 */
+export class WorldServerError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+  }
+}
+
+/** edge への 1 リクエストのタイムアウト (ms)。応答が返らずハングしても busy が永久固着しないよう、
+ *  必ず fail-closed で throw させる (通信断/無応答でも報酬は付かない・クライアント権威にフォールバックしない)。 */
+const EDGE_TIMEOUT_MS = 8000;
+
+/** service auth JWT を lxm ごとにキャッシュ (毎アクション PDS 往復を避ける。exp 30s 前まで再利用)。 */
+const tokenCache = new Map<string, { token: string; exp: number }>();
+
+async function serviceToken(agent: Agent, lxm: string): Promise<string> {
+  const nowSec = Date.now() / 1000;
+  const cached = tokenCache.get(lxm);
+  if (cached && cached.exp - 30 > nowSec) return cached.token;
+  const { data } = await agent.com.atproto.server.getServiceAuth({ aud: EDGE_DID!, lxm });
+  let exp = nowSec + 60;
+  try {
+    exp = (JSON.parse(atob(data.token.split('.')[1]!)) as { exp?: number }).exp ?? exp;
+  } catch { /* exp 取れなければ 60s 後 */ }
+  tokenCache.set(lxm, { token: data.token, exp });
+  return data.token;
+}
+
+async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknown): Promise<T> {
+  if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
+  const token = await serviceToken(agent, lxm);
+  let res: Response;
+  try {
+    res = await fetch(`${EDGE_URL}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EDGE_TIMEOUT_MS),
+    });
+  } catch (e) {
+    // タイムアウト/通信断 = fail-closed (報酬なし)。status 0 で catch 側が busy を必ず解除できるようにする。
+    const timedOut = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw new WorldServerError(timedOut ? 'サーバーが応答しません' : '通信に失敗しました', 0, timedOut ? 'timeout' : 'network');
+  }
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string; message?: string; reason?: string };
+  if (!res.ok) {
+    if (res.status === 401) tokenCache.delete(lxm); // 失効トークンを捨てて次アクションで再取得 (401 ループ回避)
+    throw new WorldServerError(data.message ?? data.reason ?? data.error ?? `edge ${res.status}`, res.status, data.error);
+  }
+  return data as T;
+}
+
+// ── DTO (edge の返り値。seed は含まれない = 先読み不可) ──
+export interface ServerMonster { name: string; maxHp: number; hp: number; maxMp: number; mp: number; [k: string]: unknown }
+export interface ServerBattleState { player: ServerMonster; monster: ServerMonster; monsterId: string; outcome: string; turn: number; lastEvents: { actor: string; text: string }[]; [k: string]: unknown }
+export interface ServerEncounter { battleId: string; monsterId: string; state: ServerBattleState; rewarded: boolean }
+export interface ServerMoveResult {
+  /** 移動後のマップ (#424)。省略 = フィールド。 */
+  mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter;
+  /** 到着した街のフィールド座標 (内部マップ座標ではない)。探索メモ用。 */
+  townArrival?: { x: number; y: number } }
+/** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
+/** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
+export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; version: number; updatedAt: string }
+export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
+export interface ServerAward {
+  /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
+  unrewarded?: true;
+  xp?: number;
+  drops?: string[];
+  materialsLost?: string[];
+  powerSpent?: number;
+  /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復している。 */
+  leveledUp?: {
+    from: number;
+    to: number;
+    /** 上がったステータスの内訳 (1 行ずつ出す)。 */
+    gains?: Array<{ key: string; label: string; delta: number }>;
+    /** 新しく覚えたとくぎの名前。 */
+    learned?: string[];
+  };
+}
+export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
+  /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
+  activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
+export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
+export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
+
+/** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
+ *  token 未指定 (初回) はサーバーが gameState から位置を再同期する。歩行では PDS を触らないので高速。 */
+export function serverMove(agent: Agent, dx: number, dy: number, token?: string): Promise<ServerMoveResult> {
+  return callEdge<ServerMoveResult>(agent, LXM_MOVE, '/api/world/move', token ? { dx, dy, token } : { dx, dy });
+}
+
+/** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
+export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number): Promise<ServerTurnResult> {
+  // skillIndex: とくぎ選択 (#436)。command==='skill' のときどのとくぎか。省略/0 は署名スキル。
+  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}) });
+}
+
+/** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
+export function serverTeleport(agent: Agent, x: number, y: number): Promise<ServerTeleportResult> {
+  return callEdge<ServerTeleportResult>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
+}
+
+/** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。 */
+export function serverItem(agent: Agent, item: 'herb' | 'tonic'): Promise<ServerItemResult> {
+  return callEdge<ServerItemResult>(agent, LXM_ITEM, '/api/world/item', { item });
+}
+
+/** 装備ミラー: client が解決した装備 (GearSelection: 強化値つき) をサーバーへ送り、戦闘に反映させる (#377)。 */
+export function serverGear(agent: Agent, gear: unknown): Promise<{ ok: true }> {
+  return callEdge<{ ok: true }>(agent, LXM_GEAR, '/api/world/gear', { gear });
+}
+
+/** しらべる: サーバーがアイテムを判定して gameState 在庫に付与。found (無ければ null) + 新 materials を返す。 */
+/** しらべる。`key` は冪等キー — 応答だけ落ちて押し直したときに二重に引かれないため。 */
+export interface ServerSearchResult {
+  found: string | null;
+  materials: Record<string, number>;
+  power: number;
+  /** 置きアイテムを取ったときだけ (D-STORY-009)。パワーは減らない。 */
+  placed?: { itemId: string; count: number };
+  flags?: string[];
+  scenarioMessages?: ScenarioMessage[];
+}
+export function serverSearch(agent: Agent, token?: string, key?: string): Promise<ServerSearchResult> {
+  return callEdge<ServerSearchResult>(agent, LXM_SEARCH, '/api/world/search', { ...(token ? { token } : {}), ...(key ? { key } : {}) });
+}
+
+/** オンボード用リセット: 権威 gameState + 戦闘ガードをサーバーで削除する (本人のみ)。次の入場で初期状態に戻る。
+ *  client 側 PDS レコード (制作/装備/世界/パワー/分析XP) の初期化は呼び出し側 (resetOnboarding) が行う。 */
+export function serverReset(agent: Agent): Promise<{ ok: true }> {
+  return callEdge<{ ok: true }>(agent, LXM_RESET, '/api/world/reset', {});
+}
+
+export interface XpClaimResult { granted: number; jobXp: number; duplicate: boolean; power: number; streakDays: number }
+
+/**
+ * 投稿を申告して XP を積む (#534 / #551)。
+ *
+ * **額は送らない — サーバーが決める。** 送るのは投稿の URI だけで、サーバーが
+ * 「実在する / 本人のもの / 新しい」を PDS に問い合わせて確かめてから払う。
+ * 同じ投稿の再送は積まれない (冪等)。
+ */
+export function serverClaimXp(agent: Agent, input: { archetype: string; postUri: string }): Promise<XpClaimResult> {
+  return callEdge<XpClaimResult>(agent, LXM_XP_CLAIM, '/api/xp/claim', input);
+}
+
+/** **管理者専用**: 自分のジョブ Lv を権威 state に直接セットする (#534)。
+ *  XP を一本化した結果、analysis を書き換えるだけではレベルが動かないため。
+ *  edge 側が ADMIN_DIDS でゲートする (client の isAdminDid は表示ゲートに過ぎない)。 */
+export function serverAdminSetJobLevel(agent: Agent, archetype: string, level: number): Promise<{ jobXp: number; level: number }> {
+  return callEdge<{ jobXp: number; level: number }>(agent, LXM_XP_ADMIN_SET, '/api/xp/admin-set', { archetype, level });
+}
+
+export interface ServerShopResult {
+  power: number;
+  materials: Record<string, number>;
+  /** 制作したときだけ: サーバーが抽選した強化値。 */
+  level?: number;
+  /** ひきとりのときだけ: 得たパワー。 */
+  powerGained?: number;
+  /** 同じ rkey の再送だったか。 */
+  duplicate?: boolean;
+  /** 操作後の所持個体 (#551 段階 2)。client はこれを正として表示する。 */
+  pieces?: ServerOwnedPiece[];
+}
+
+/** なんでも屋: 装備を作ってもらう (#551)。**費用も強化値もサーバーが決める**。
+ *  client は返ってきた level を craft レコードに記帳するだけ。 */
+export function serverShopCraft(agent: Agent, itemId: string, rkey: string, token?: string): Promise<ServerShopResult> {
+  // **位置トークンを送る** (#636)。サーバーは token の座標で店を判定する。送らないと
+  // state の座標に倒れ、村の中では入口の座標のままなので「店の外」と判定される。
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_CRAFT, '/api/shop/craft', { itemId, rkey, ...(token ? { token } : {}) });
+}
+
+/** なんでも屋: きたえる (#551 段階 2)。同じ品・同じ強化値の 2 個体 → +1。
+ *  消費する個体は**権威側の所持から**探すので、持っていない rkey は通らない。 */
+export function serverShopForge(agent: Agent, rkeys: [string, string], rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_FORGE, '/api/shop/forge', { rkeys, rkey, ...(token ? { token } : {}) });
+}
+
+/**
+ * もちもの: 装備を すてる (#575)。
+ *
+ * **街の外でも呼べる** — 所持上限に達すると制作も購入も断られるので、街に着くまで
+ * 整理できないと詰む。**パワーは返らない** (返すと「作る → すてる」でパワーが増える)。
+ * まとめて渡せる (1 個ずつだと 100 個の整理で 100 往復になる)。
+ */
+export function serverShopDiscard(agent: Agent, rkeys: string[], rkey: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_DISCARD, '/api/shop/discard', { rkeys, rkey });
+}
+
+export interface ServerQuestResult {
+  activeQuests: Array<{ id: string; progress: number }>;
+  questsDone?: string[];
+  power: number;
+  materials: Record<string, number>;
+  /** 達成時のみ: 付与された報酬。 */
+  rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 受注で始まる戦闘 (D-STORY-009)。サーバーが封印済み。 */
+  encounter?: ServerEncounter;
+  /** 進行フラグ (#545)。サーバーが立てた結果。 */
+  flags?: string[];
+  /** シナリオのお知らせ (一度だけ)。 */
+  notices?: string[];
+  /** notices と同じ行 + 演出 (D-STORY-007)。旧 edge は返さない。 */
+  scenarioMessages?: ScenarioMessage[];
+}
+
+/** シナリオのお知らせ 1 行と、その行に付く演出。 */
+export interface ScenarioMessage { text: string; effects?: StoryEffect[] }
+
+/** 新 edge の scenarioMessages を優先し、旧 edge の文字列だけのお知らせは演出なしで包む。 */
+export function scenarioMessagesOf(messages: ScenarioMessage[] | undefined, notices: string[] | undefined): ScenarioMessage[] {
+  return messages?.length ? messages : (notices ?? []).map((text) => ({ text }));
+}
+
+/** ゲーム内クエスト (#423): 受注。進行は GameState に積まれ、討伐は勝利時にサーバーが数える。 */
+export function serverQuestAccept(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_ACCEPT, '/api/quest/accept', { questId, ...(token ? { token } : {}) });
+}
+
+/** 会話の後の戦闘 (D-STORY-009)。隣にいるか・いまのセリフに戦闘があるかはサーバーが確かめる。 */
+export function serverStoryBattle(agent: Agent, npcId: string, token?: string): Promise<ServerEncounter> {
+  return callEdge<ServerEncounter>(agent, LXM_STORY_BATTLE, '/api/story/battle', { npcId, ...(token ? { token } : {}) });
+}
+
+/** 宿屋に泊まる (#766)。会話で「はい」と答えたときだけ呼ぶ。扉の上にいるか・満タンか・残高は edge が決める。 */
+export interface ServerInnRestResult {
+  /** 泊まった (paid>0) か、満タンで泊まる必要がなかった (paid=0)。 */
+  inn?: { name?: string; paid: number; power: number };
+  /** パワーが足りず泊まれなかった。 */
+  innDenied?: { name?: string; price: number; power: number };
+}
+export function serverInnRest(agent: Agent, token?: string): Promise<ServerInnRestResult> {
+  return callEdge<ServerInnRestResult>(agent, LXM_INN_REST, '/api/inn/rest', token ? { token } : {});
+}
+
+/** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。
+ *  talk は位置トークンで「相手の隣にいる」をサーバーが確かめる (D-STORY-009)。 */
+export function serverQuestComplete(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId, ...(token ? { token } : {}) });
+}
+
+/** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */
+export function serverShopSell(agent: Agent, materialId: string, count: number, rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_SELL, '/api/shop/sell', { materialId, count, rkey, ...(token ? { token } : {}) });
+}
+
+/** あおぞらパワーを消費する (#551)。**値段はサーバーが決める** — client が金額を送らない。
+ *  `key` は冪等キー (同じ引き直しで二重に引かれない)。 */
+export function serverSpendPower(agent: Agent, reason: 'card-draw', key: string): Promise<{ power: number; spent: number; duplicate: boolean }> {
+  return callEdge<{ power: number; spent: number; duplicate: boolean }>(agent, LXM_POWER_SPEND, '/api/power/spend', { reason, key });
+}
+
+export interface ServerPdsUsage {
+  usage: { limit: number | null; remaining: number | null; reset: number | null; policy: string | null; at: number; writes: number } | null;
+  /** 残量から計算した「あと何操作できるか」。 */
+  opsRemaining: number | null;
+  /** 1 操作あたりの point。 */
+  pointsPerOp: number;
+}
+
+/** **管理者専用**: PDS の書き込みレート残量を見る (#548)。**PDS 分割の潮時の判断材料**。
+ *  読み取りなので PDS の point は消費しない。 */
+export async function serverPdsUsage(agent: Agent): Promise<ServerPdsUsage> {
+  if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
+  const token = await serviceToken(agent, LXM_ADMIN_PDS_USAGE);
+  const res = await fetch(`${EDGE_URL}/api/admin/pds-usage`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
+  const data = (await res.json().catch(() => ({}))) as ServerPdsUsage & { error?: string };
+  if (!res.ok) throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
+  return data;
+}
+
+/** **管理者専用**: あおぞらパワーを権威 state に付与する。
+ *  管理画面のパワー付与は client 側の PDS レコードしか書いておらず、報酬の可否を決める
+ *  `GameState.power` は動いていなかった (= 画面にはあるのに勝っても報酬が出ない)。 */
+export function serverAdminGrantPower(agent: Agent, amount: number): Promise<{ power: number }> {
+  return callEdge<{ power: number }>(agent, LXM_POWER_ADMIN_GRANT, '/api/power/admin-grant', { amount });
+}
+
+/** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */
+export async function serverState(agent: Agent): Promise<ServerStateResult> {
+  if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
+  const token = await serviceToken(agent, LXM_STATE);
+  let res: Response;
+  try {
+    res = await fetch(`${EDGE_URL}/api/me/state`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
+  } catch (e) {
+    const timedOut = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw new WorldServerError(timedOut ? 'サーバーが応答しません' : '通信に失敗しました', 0, timedOut ? 'timeout' : 'network');
+  }
+  const data = (await res.json().catch(() => ({}))) as ServerStateResult & { error?: string };
+  if (!res.ok) {
+    if (res.status === 401) tokenCache.delete(LXM_STATE);
+    throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
+  }
+  return data;
+}

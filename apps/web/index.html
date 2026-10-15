@@ -7,6 +7,27 @@
        を有効化して iOS ホームインジケータと被らないようにするため (footer の padding-bottom 参照)。 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#378ADD">
+
+  <!-- 初回データ/画像取得先へ preconnect (DNS+TCP+TLS を JS パースと並行で前倒し)。
+       公開 AppView・画像 CDN・多数派 PDS ホスト。ユーザーの PDS が別ホストでも無害。 -->
+  <link rel="preconnect" href="https://public.api.bsky.app" crossorigin>
+  <link rel="preconnect" href="https://cdn.bsky.app" crossorigin>
+  <link rel="preconnect" href="https://bsky.social" crossorigin>
+
+  <!-- 即時スプラッシュ: JS バンドル (~2MB) のパース完了まで #root は空でブランクになる。
+       ここに軽量 splash を置くと「開いた瞬間に何か出る」体感になる。
+       splash は #root の兄弟 (下記) なので createRoot では消えない。lib/splash.ts の
+       removeSplash() が session 復元完了時 (AppShell) にフェード除去する。 -->
+  <style>
+    #app-splash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1.1em;
+      background: linear-gradient(to bottom, #4aa6e2 0%, #7cc7ea 40%, #bee3f1 62%, #9dd07f 63%, #6fb052 82%, #3f7a32 100%);
+      color: #fff; font-family: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Noto Sans JP', sans-serif; }
+    #app-splash .t { font-size: 1.55em; font-weight: 700; letter-spacing: .01em; text-shadow: 2px 2px 0 rgba(10,20,60,.35); }
+    #app-splash .s { width: 26px; height: 26px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff;
+      border-radius: 50%; animation: aq-spin .8s linear infinite; }
+    @keyframes aq-spin { to { transform: rotate(360deg); } }
+  </style>
   <title>あおぞらくえすと</title>
   <meta name="description" content="Bluesky の投稿から、今のあなたをジョブとステータスで可視化。毎日のクエストで、目指す姿へ。" />
 
@@ -50,6 +71,11 @@
 </head>
 <body>
   <div id="root"></div>
+  <!-- #root の兄弟に置き、React マウント後 main.tsx が除去する (createRoot は空の #root に描画)。 -->
+  <div id="app-splash">
+    <div class="t">あおぞらくえすと</div>
+    <div class="s"></div>
+  </div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

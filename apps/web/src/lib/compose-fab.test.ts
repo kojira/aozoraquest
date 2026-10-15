@@ -13,6 +13,11 @@ describe('composeFabAllowedOnPath', () => {
 
   it('hides the FAB on form / auth / legal routes', () => {
     expect(composeFabAllowedOnPath('/onboarding')).toBe(false);
+    expect(composeFabAllowedOnPath('/world')).toBe(false); // ゲーム画面 (どうぐボタンと被る)
+    expect(composeFabAllowedOnPath('/worldfoo')).toBe(true); // prefix 誤ヒットしない
+    expect(composeFabAllowedOnPath('/admin')).toBe(false); // 管理画面 (編集操作しかしない)
+    expect(composeFabAllowedOnPath('/admin/map')).toBe(false); // 地図の十字キーと被る
+    expect(composeFabAllowedOnPath('/administrator')).toBe(true); // prefix 誤ヒットしない
     expect(composeFabAllowedOnPath('/settings')).toBe(false);
     expect(composeFabAllowedOnPath('/board/new')).toBe(false);
     expect(composeFabAllowedOnPath('/oauth/callback')).toBe(false);

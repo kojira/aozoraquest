@@ -1,0 +1,15 @@
+{
+  "name": "secp256k1-verify-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "secp256k1_verify_bg.wasm",
+    "secp256k1_verify.js",
+    "secp256k1_verify.d.ts"
+  ],
+  "main": "secp256k1_verify.js",
+  "types": "secp256k1_verify.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

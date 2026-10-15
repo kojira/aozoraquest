@@ -1,0 +1,308 @@
+/* ─── 召喚の儀式 ───────────────────────────────
+   夜明け前の空 → 光の粒が中心へ集まる → 魔法陣が灯る → 精霊の影が色づく → 出現。
+   アニメーションは transform / opacity だけ (スマホで 60fps)。段階は .summon-step-N で切り替える。 */
+
+@keyframes ritual-breathe {
+  0%, 100% { transform: scale(1); }
+  50%     { transform: scale(1.04); }
+}
+
+.breathe {
+  animation: ritual-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes ritual-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes ritual-text-swap {
+  0%   { opacity: 0; transform: translateY(6px); }
+  18%  { opacity: 1; transform: translateY(0); }
+  82%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes ritual-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(calc(var(--s, 1) * 0.7)); }
+  50%      { opacity: 1;    transform: scale(var(--s, 1)); }
+}
+
+@keyframes ritual-mote-in {
+  0%   { transform: rotate(var(--a)) translateX(var(--d)) scale(0.4); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: rotate(calc(var(--a) + 70deg)) translateX(6px) scale(1.2); opacity: 0; }
+}
+
+@keyframes ritual-spin { to { transform: rotate(360deg); } }
+@keyframes ritual-spin-rev { to { transform: rotate(-360deg); } }
+
+@keyframes ritual-core-pulse {
+  0%, 100% { transform: scale(0.9); opacity: 0.75; }
+  50%      { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes ritual-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+@keyframes ritual-sparkle {
+  0%   { transform: scale(0) rotate(0deg); opacity: 0; }
+  30%  { transform: scale(1.3) rotate(45deg); opacity: 1; }
+  100% { transform: scale(0.6) rotate(90deg); opacity: 0; }
+}
+
+.summon-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  color: #ffffff;
+  background: #050b1c;
+  animation: ritual-fade-in 600ms ease;
+}
+
+/* 空: 深い夜 → 段階が進むと地平から夜明けの色が差す (2 枚の層の opacity だけを切り替える) */
+.summon-sky {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 80% at 50% 38%, #12306a 0%, #0a1838 45%, #040814 100%);
+}
+
+.summon-dawn {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(90% 55% at 50% 100%, rgba(255, 196, 150, 0.55) 0%, rgba(255, 150, 190, 0.22) 35%, transparent 70%),
+    radial-gradient(70% 50% at 50% 40%, rgba(120, 190, 255, 0.45) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 2400ms ease;
+}
+.summon-step-2 .summon-dawn { opacity: 0.55; }
+.summon-step-3 .summon-dawn { opacity: 0.8; }
+.summon-step-4 .summon-dawn { opacity: 1; }
+
+.summon-stars { position: absolute; inset: 0; }
+.summon-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(200, 230, 255, 0.9);
+  animation: ritual-twinkle 3s ease-in-out infinite;
+}
+
+.summon-stage {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: min(300px, 78vw);
+  height: min(300px, 78vw);
+  transform: translate(-50%, -50%);
+}
+
+/* 後光: 円錐グラデーションをゆっくり回す */
+.summon-rays {
+  position: absolute;
+  inset: -40%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(190, 225, 255, 0.16) 0deg 6deg, transparent 6deg 22deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.6) 30%, transparent 65%);
+  mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.6) 30%, transparent 65%);
+  opacity: 0;
+  transition: opacity 1800ms ease;
+  animation: ritual-spin 40s linear infinite;
+}
+.summon-step-2 .summon-rays { opacity: 0.6; }
+.summon-step-3 .summon-rays,
+.summon-step-4 .summon-rays { opacity: 1; }
+
+/* 魔法陣: 外輪と六芒星が逆向きに回り、段階とともに灯る */
+.summon-circle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #bfe3ff;
+  opacity: 0.15;
+  transition: opacity 1600ms ease;
+  animation: ritual-spin 24s linear infinite;
+}
+.summon-circle-outer { stroke-width: 1.2; stroke-dasharray: 3 5; }
+.summon-circle-inner { stroke-width: 0.8; }
+.summon-circle-star { stroke-width: 0.9; opacity: 0.8; }
+.summon-step-1 .summon-circle { opacity: 0.4; }
+.summon-step-2 .summon-circle,
+.summon-step-3 .summon-circle { opacity: 0.75; }
+.summon-step-4 .summon-circle { opacity: 0; transition-duration: 600ms; }
+
+/* 中心の光 */
+.summon-core {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(170, 215, 255, 0.45) 35%, transparent 70%);
+  animation: ritual-core-pulse 2.6s ease-in-out infinite;
+  opacity: 0.6;
+  transition: opacity 1200ms ease;
+}
+.summon-step-0 .summon-core { opacity: 0.35; }
+
+/* 光の粒: 外から中心へ渦を巻いて集まる */
+.summon-motes {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.summon-mote {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--sz, 3px);
+  height: var(--sz, 3px);
+  margin: calc(var(--sz, 3px) / -2) 0 0 calc(var(--sz, 3px) / -2);
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 8px rgba(190, 230, 255, 0.95);
+  animation: ritual-mote-in 3s cubic-bezier(0.45, 0, 0.7, 1) infinite;
+  will-change: transform, opacity;
+}
+
+/* シルエット: 影の層と色の層を重ね、段階で色の層の opacity を上げる (= 影が色づいて形になる) */
+.summon-silhouette {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: ritual-float 3.6s ease-in-out infinite;
+}
+.summon-figure {
+  position: absolute;
+  transition: opacity 1400ms ease, transform 1400ms ease;
+}
+.summon-figure-shadow {
+  filter: brightness(0) invert(1);
+  opacity: 0.22;
+  transform: scale(0.9);
+}
+.summon-figure-color { opacity: 0; transform: scale(0.9); }
+.summon-step-1 .summon-figure-shadow { opacity: 0.5; transform: scale(0.96); }
+.summon-step-1 .summon-figure-color { opacity: 0.2; transform: scale(0.96); }
+.summon-step-2 .summon-figure-shadow,
+.summon-step-3 .summon-figure-shadow { opacity: 0.3; transform: scale(1); }
+.summon-step-2 .summon-figure-color,
+.summon-step-3 .summon-figure-color { opacity: 0.9; transform: scale(1); }
+.summon-step-4 .summon-figure-shadow { opacity: 0; }
+.summon-step-4 .summon-figure-color { opacity: 1; transform: scale(1); }
+
+.summon-sparkle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, transparent 65%);
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  animation: ritual-sparkle 1.4s ease-out infinite;
+  pointer-events: none;
+}
+
+.summon-narration,
+.summon-announce,
+.summon-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 0 1.2em;
+  text-align: center;
+}
+.summon-narration {
+  bottom: 16%;
+  font-size: 1.05em;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  text-shadow: 0 0 12px rgba(120, 180, 255, 0.7);
+  animation: ritual-text-swap 3200ms ease both;
+}
+.summon-hint {
+  bottom: 9%;
+  font-size: 0.8em;
+  color: #b9cbe0;
+  animation: ritual-fade-in 1200ms ease;
+}
+
+/* ─── 出現 (emerging) ─── */
+
+@keyframes ritual-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes ritual-zoom-in {
+  0%   { transform: scale(0.8); }
+  40%  { transform: scale(1.3); }
+  100% { transform: scale(1.12); }
+}
+
+@keyframes ritual-burst-fly {
+  0%   { transform: rotate(var(--angle, 0deg)) translateX(0) scale(0.5); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: rotate(var(--angle, 0deg)) translateX(180px) scale(1.6); opacity: 0; }
+}
+
+@keyframes ritual-announce {
+  0%   { opacity: 0; transform: translateY(16px) scale(0.9); }
+  30%  { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.summon-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 42%,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(200, 230, 255, 0.7) 30%,
+    rgba(120, 180, 255, 0.2) 60%,
+    transparent 80%);
+  pointer-events: none;
+  z-index: 1;
+  animation: ritual-flash 900ms ease-out forwards;
+}
+
+.summon-silhouette.emerging {
+  animation: ritual-zoom-in 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.summon-silhouette.emerging .summon-figure-color {
+  filter: drop-shadow(0 0 18px rgba(159, 215, 255, 0.9));
+}
+
+.summon-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: radial-gradient(circle, #ffffff 0%, #9fd7ff 40%, transparent 70%);
+  border-radius: 50%;
+  animation: ritual-burst-fly 1800ms ease-out forwards;
+  pointer-events: none;
+}
+
+.summon-announce {
+  bottom: 18%;
+  font-size: 1.6em;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-shadow: 0 0 16px rgba(159, 215, 255, 0.85), 0 0 40px rgba(255, 255, 255, 0.6);
+  animation: ritual-announce 1800ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summon-mote, .summon-rays, .summon-circle, .summon-silhouette, .summon-star, .summon-core { animation: none; }
+}

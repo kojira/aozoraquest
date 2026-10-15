@@ -1,0 +1,28 @@
+# verify 専用の secp256k1 (ES256K) 検証 wasm。tiny-secp256k1 の 1.2MB は libsecp256k1 の
+# 全機能入りで verify には過剰なため、k256 (RustCrypto) を verify だけに絞ってビルドし
+# 数百 KB に収める (docs/21-server-authority §4.2)。ビルド成果物 (.wasm+glue) を
+# apps/edge/src/vendor/ に commit するので CI にツールチェーンは不要。
+# 再ビルド: apps/edge/wasm/secp256k1-verify/build.sh
+[package]
+name = "secp256k1-verify-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# wasm-pack 同梱の wasm-opt に bulk-memory を許可 (最近の rustc は既定で使う)。
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Oz', '--enable-bulk-memory']

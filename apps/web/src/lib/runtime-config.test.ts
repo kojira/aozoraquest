@@ -1,10 +1,45 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { DEFAULT_RUNTIME_CONFIG, type RuntimeConfig } from '@aozoraquest/types';
-import { isBanned, isFlagEnabled, isUnderMaintenance } from './runtime-config';
+import { isAdminDid, isBanned, isFlagEnabled, isUnderMaintenance } from './runtime-config';
 
 function cfg(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return { ...DEFAULT_RUNTIME_CONFIG, ...overrides };
 }
+
+describe('isAdminDid', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  test('許可リストに含まれる DID は true', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', 'did:plc:aaa, did:plc:bbb');
+    expect(isAdminDid('did:plc:bbb')).toBe(true);
+    expect(isAdminDid('did:plc:aaa')).toBe(true);
+  });
+
+  test('含まれない DID は false', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', 'did:plc:aaa');
+    expect(isAdminDid('did:plc:zzz')).toBe(false);
+  });
+
+  test('null / undefined / 空は false', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', 'did:plc:aaa');
+    expect(isAdminDid(null)).toBe(false);
+    expect(isAdminDid(undefined)).toBe(false);
+    expect(isAdminDid('')).toBe(false);
+  });
+
+  test('VITE_ADMIN_DIDS 未設定なら常に false', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', '');
+    expect(isAdminDid('did:plc:aaa')).toBe(false);
+  });
+
+  test('前後空白・空要素は正規化して判定する', () => {
+    vi.stubEnv('VITE_ADMIN_DIDS', ' did:plc:aaa ,, did:plc:bbb ,');
+    expect(isAdminDid('did:plc:aaa')).toBe(true);
+    expect(isAdminDid('did:plc:bbb')).toBe(true);
+    // 完全一致なので前後空白付きの引数は一致しない (session の did は正規化済み前提)
+    expect(isAdminDid(' did:plc:aaa ')).toBe(false);
+  });
+});
 
 describe('isFlagEnabled', () => {
   test('未定義フラグは false', () => {

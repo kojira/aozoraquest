@@ -7,7 +7,7 @@ import { TextField } from './text-field';
 import { processSelfPost } from '@/lib/post-processor';
 import { bumpPower } from '@/lib/points';
 import { LevelUpOverlay, notifyLevelUp } from './level-up-overlay';
-import { POST_MAX_LENGTH, jobDisplayName } from '@aozoraquest/core';
+import { POST_MAX_LENGTH, jobDisplayName, jobLevelFromXp, levelUpGains, statVectorToArray } from '@aozoraquest/core';
 
 export interface ComposeReplyTo {
   parent: { uri: string; cid: string };
@@ -360,15 +360,17 @@ function ComposeDialog({
     setLoading(true);
     setErr(null);
     try {
+      // 投稿の URI は XP 申告の冪等キーに使う (#534)。同じ投稿で二重に XP が入らない。
+      let postUri: string | undefined;
       if (images.length > 0) {
         // カード共有画像が含まれていれば #AozoraQuest facet を付ける。
         const tag = images.some((im) => im.source === 'card') ? 'AozoraQuest' : undefined;
-        await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag);
+        postUri = (await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag))?.uri;
       } else {
         const reply: ReplyRef | undefined = replyTo
           ? { root: replyTo.root, parent: replyTo.parent }
           : undefined;
-        await createPost(agent, body, reply);
+        postUri = (await createPost(agent, body, reply))?.uri;
       }
       // via=AozoraQuest で投稿が作成されたので power 累積カウンタを +1。
       // 失敗しても投稿自体は成功してるので UI は閉じる方向で進む。
@@ -394,22 +396,26 @@ function ComposeDialog({
         };
         void (async () => {
           try {
-            const result = await processSelfPost(agent, did, body, structure);
+            const result = await processSelfPost(agent, did, body, structure, postUri);
+            // ステータス上昇量 (バトルのレベルアップ演出と同じ表示
+            // 2026-07-17)。プレイヤー Lv は戦闘値に影響しない (#507) ので区間はジョブ Lv だけ。
+            const arch = result.jobLevel?.archetype;
+            const base = result.updatedRpgStats ? statVectorToArray(result.updatedRpgStats) : undefined;
+            const jTo = result.jobLevel ? jobLevelFromXp(result.jobLevel.xp, result.jobLevel.archetype) : 1;
+            const jFrom = result.jobLeveledUp?.from ?? jTo;
             if (result.jobLeveledUp && result.jobLevel) {
               notifyLevelUp({
                 kind: 'job',
                 from: result.jobLeveledUp.from,
                 to: result.jobLeveledUp.to,
                 jobName: jobDisplayName(result.jobLevel.archetype, 'default'),
+                ...(arch ? { gains: levelUpGains(arch, { jobLevel: jFrom, playerLevel: 1 }, { jobLevel: result.jobLeveledUp.to, playerLevel: 1 }, base) } : {}),
               });
             }
-            if (result.playerLeveledUp) {
-              notifyLevelUp({
-                kind: 'player',
-                from: result.playerLeveledUp.from,
-                to: result.playerLeveledUp.to,
-              });
-            }
+            // プレイヤー Lv のアップ演出は出さない (#507/#508)。プレイヤー Lv は戦闘力に
+            // 一切影響しなくなったので levelUpGains が必ず空配列になり、「レベルアップ!」と
+            // 出しておいて上昇ステータスが 1 件も無い壊れた演出になる。成長の演出は
+            // ジョブ Lv に一本化する。
           } catch (e) {
             console.warn('post-processor failed', e);
           }

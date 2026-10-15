@@ -1,0 +1,427 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  allNpcs,
+  danglingRefs,
+  describeDanglingRef,
+  gameQuests,
+  ITEMS,
+  MONSTERS,
+  QuestDataError,
+  validateGameQuests,
+  starterTownQuests,
+  starterTownNpcsPlacementError,
+  interiorById,
+  STARTER_TOWN_ID,
+  type GameQuestDef,
+  type QuestObjective,
+} from '@aozoraquest/core';
+import { useSession } from '@/lib/session';
+import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
+import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests } from '@/lib/world-authoring';
+import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
+import { ItemReqInput } from '@/components/admin/item-req-input';
+
+/**
+ * **ゲーム内クエスト エディタ** (#423)。NPC 発注・達成条件・報酬。
+ *
+ * 達成条件は**サーバーが検証できるもの**だけ (討伐数 / 素材の所持)。進行と報酬は
+ * edge が権威なので、ここで作った定義は保存 → サーバーが最大 5 分で拾ってから効く。
+ */
+export function AdminQuests() {
+  const session = useSession();
+  const admin = isAdminDid(session.did ?? null);
+  const [list, setList] = useState<GameQuestDef[]>(() =>
+    gameQuests().map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}) })),
+  );
+  const [sel, setSel] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  // 保存済みレコードを読み込むまで保存させない (この画面を直接開いて保存すると
+  // 空リストで world.quests を上書き = 既存クエスト全損する)。
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLoaded(false);
+    const adminDid = getPrimaryAdminDid();
+    if (!session.agent || !adminDid) return;
+    const agent = session.agent;
+    void (async () => {
+      await loadAuthoredWorld(agent);
+      const quests = await loadQuestAuthoringRecords(agent, adminDid);
+      await loadScenarioRecord(agent, adminDid);
+      if (!cancelled) { setList(quests); setLoaded(true); }
+    })().catch(() => { if (!cancelled) setNote('保存済みデータを読み込めなかった。画面を開き直してね。'); });
+    return () => { cancelled = true; };
+  }, [session.agent]);
+
+  const insertStarter = () => {
+    if (!loaded) return;
+    const placement = starterTownNpcsPlacementError(interiorById(STARTER_TOWN_ID));
+    if (placement) { setNote(placement); return; }
+    const additions = starterTownQuests();
+    if (additions.some((q) => !allNpcs().some((n) => n.id === q.npcId && n.mapId === STARTER_TOWN_ID))) {
+      setNote('先に「ふたばの村の村人」を NPC 画面で保存してね。'); return;
+    }
+    const next = [...list.filter((q) => !additions.some((a) => a.id === q.id)), ...additions];
+    try { validateGameQuests(next); } catch (e) { setNote(String(e)); return; }
+    if (!window.confirm('同じ ID の依頼を置き換え、ふたばの村の4依頼を入れる？ 保存するまでは反映されません。')) return;
+    setList(next); setSel(additions[0]!.id); setDirty(true);
+    setNote('4依頼を入れた。保存してから、シナリオ画面で「ふたばの村のシナリオを入れる」。');
+  };
+
+  const npcs = useMemo(() => allNpcs(), [loaded]);
+  const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), [loaded]);
+  const items = useMemo(() => Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name })), [loaded]);
+  const current = useMemo(() => list.find((q) => q.id === sel) ?? null, [list, sel]);
+
+  const update = useCallback((id: string, patch: Partial<GameQuestDef>) => {
+    setList((xs) => xs.map((q) => (q.id === id ? { ...q, ...patch } : q)));
+    setDirty(true);
+  }, []);
+
+  const add = useCallback(() => {
+    let i = list.length + 1;
+    while (list.some((q) => q.id === `quest-${i}`)) i++;
+    const q: GameQuestDef = {
+      id: `quest-${i}`,
+      title: 'あたらしい たのまれごと',
+      npcId: npcs[0]?.id ?? '',
+      intro: ['たのみが あるんだ。'],
+      done: ['ありがとう!'],
+      objective: { kind: 'defeat', monsterId: monsters[0]?.id ?? '', count: 3 },
+      reward: { power: 5 },
+    };
+    setList((xs) => [...xs, q]);
+    setSel(q.id);
+    setDirty(true);
+  }, [list, npcs, monsters]);
+
+  const save = useCallback(async () => {
+    if (!session.agent || !loaded) return;
+    // シナリオ (#545) が条件にしているクエストを消させない — 参照切れが 1 件でもあると
+    // setScenario が全体を落とし、**フラグが二度と立たなくなる** (解禁クエストも永久ロック)。
+    const dangling = danglingRefs('quest', list.map((q) => q.id))[0];
+    if (dangling) {
+      setNote(describeDanglingRef(dangling));
+      return;
+    }
+    try {
+      await saveGameQuests(session.agent, list);
+      setDirty(false);
+      setNote(`${list.length} 件を保存した。サーバーは最大 5 分で拾う`);
+    } catch (e) {
+      // setGameQuests は全検証を終えてから差し替えるので、throw してもメモリは前の状態のまま。
+      // ここで setGameQuests(null) してはいけない — 全解除になり、再訪 + 保存で
+      // world.quests レコードごと消える事故につながる (UX レビュー ★★★)。
+      setNote(e instanceof QuestDataError ? `保存できない: ${e.message}` : `保存できなかった: ${String(e)}`);
+    }
+  }, [session.agent, list, loaded]);
+
+  if (!admin) {
+    return (
+      <div style={{ padding: '1em' }}>
+        <p>この画面は管理者だけが使えます。</p>
+        <Link to="/admin">管理ダッシュボードへ</Link>
+      </div>
+    );
+  }
+
+  const field = (label: string, input: React.ReactNode) => (
+    <label className="admin-field">
+      <span>{label}</span>
+      {input}
+    </label>
+  );
+
+  const lineEditor = (q: GameQuestDef, key: 'intro' | 'done' | 'progress', label: string, hint: string) => {
+    const lines = q[key] ?? [];
+    const set = (next: string[]) => {
+      if (key === 'progress' && next.length === 0) {
+        // exactOptionalPropertyTypes: 空にしたら省略 (既定セリフに戻す)
+        setList((xs) => xs.map((x) => {
+          if (x.id !== q.id) return x;
+          const { progress: _p, ...rest } = x;
+          return rest as GameQuestDef;
+        }));
+        setDirty(true);
+      } else {
+        update(q.id, { [key]: next } as Partial<GameQuestDef>);
+      }
+    };
+    return (
+      <div style={{ fontSize: '0.8em' }}>
+        <span style={{ color: 'var(--color-muted)' }}>{label} ({hint})</span>
+        {lines.map((l, i) => (
+          <div key={i} style={{ display: 'flex', gap: '0.3em', margin: '0.15em 0' }}>
+            <input value={l} onChange={(e) => set(lines.map((x, j) => (j === i ? e.target.value : x)))} style={{ flex: 1 }} />
+            <button
+              type="button"
+              disabled={key !== 'progress' && lines.length <= 1}
+              onClick={() => set(lines.filter((_, j) => j !== i))}
+              style={{ fontSize: '0.8em' }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button type="button" onClick={() => set([...lines, ''])} style={{ fontSize: '0.8em', marginTop: '0.2em' }}>
+          ＋セリフ
+        </button>
+      </div>
+    );
+  };
+
+  const npcNameOf = (id: string) => npcs.find((n) => n.id === id)?.name ?? id;
+
+  return (
+    <div className="admin-page" style={{ padding: '0.8em' }}>
+      {!loaded && note && <p role="alert">{note}</p>}
+      <AuthoredWorldGate loaded={loaded}>
+      <div className="admin-head">
+        <Link to="/admin" style={{ fontSize: '0.8em' }}>← 管理</Link>
+        <strong>クエスト</strong>
+        <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件</span>
+        <button type="button" onClick={add} disabled={npcs.length === 0} style={{ fontSize: '0.85em' }}>＋クエスト</button>
+        <button type="button" onClick={insertStarter} disabled={!loaded}>ふたばの村のクエストを入れる</button>
+        <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
+          保存
+        </button>
+      </div>
+
+      {note && <p style={{ fontSize: '0.8em', color: 'var(--color-accent)', margin: '0 0 0.4em' }}>{note}</p>}
+      {npcs.length === 0 && (
+        <p style={{ fontSize: '0.8em', color: 'var(--color-danger)' }}>
+          発注する NPC がまだ居ない。先に <Link to="/admin/npcs">NPC</Link> を置く
+        </p>
+      )}
+
+      <div className="admin-cols">
+        <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {list.map((q) => (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => setSel(q.id)}
+              style={{
+                display: 'flex', gap: '0.4em', width: '100%', padding: '0.2em 0.4em',
+                fontSize: '0.85em', textAlign: 'left',
+                border: sel === q.id ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                background: 'transparent',
+              }}
+            >
+              <span style={{ flex: 1 }}>{q.title}</span>
+              <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{npcNameOf(q.npcId)}</span>
+            </button>
+          ))}
+          {list.length === 0 && (
+            <span style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>まだ無い。「＋クエスト」で作る</span>
+          )}
+        </div>
+
+        {current ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35em' }}>
+            <div style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+              <strong>{current.title}</strong>
+              <code style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{current.id}</code>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  if (!window.confirm(`「${current.title}」を消す？`)) return;
+                  setList((xs) => xs.filter((q) => q.id !== current.id));
+                  setSel(null);
+                  setDirty(true);
+                }}
+                style={{ marginLeft: 'auto', fontSize: '0.8em' }}
+              >
+                削除
+              </button>
+            </div>
+            {field('タイトル', <input value={current.title} onChange={(e) => update(current.id, { title: e.target.value })} style={{ flex: 1 }} />)}
+            {field('発注 NPC', (
+              <select value={current.npcId} onChange={(e) => update(current.id, { npcId: e.target.value })}>
+                {npcs.map((n) => (
+                  <option key={n.id} value={n.id}>{n.name} ({n.x},{n.y})</option>
+                ))}
+              </select>
+            ))}
+            {field('条件', (
+              <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  value={current.objective.kind}
+                  onChange={(e) => {
+                    const kind = e.target.value as QuestObjective['kind'];
+                    const count = 'count' in current.objective ? current.objective.count : 1;
+                    update(current.id, {
+                      objective: kind === 'defeat'
+                        ? { kind, monsterId: monsters[0]?.id ?? '', count }
+                        : kind === 'collect'
+                          ? { kind, itemId: items[0]?.id ?? '', count }
+                          : { kind, npcId: npcs[0]?.id ?? '', line: 'おお、よく きたね。' },
+                    });
+                  }}
+                >
+                  <option value="defeat">たおす</option>
+                  <option value="collect">あつめる (素材を渡す)</option>
+                  <option value="talk">はなしを きく (相手の隣で話しかける)</option>
+                </select>
+                {current.objective.kind === 'talk' ? (
+                  <>
+                    <select
+                      value={current.objective.npcId}
+                      onChange={(e) => update(current.id, { objective: { ...current.objective, npcId: e.target.value } as QuestObjective })}
+                    >
+                      {npcs.map((n) => (
+                        <option key={n.id} value={n.id}>{n.name} ({n.x},{n.y})</option>
+                      ))}
+                    </select>
+                    <input
+                      value={current.objective.line}
+                      maxLength={120}
+                      placeholder="相手のセリフ"
+                      onChange={(e) => update(current.id, { objective: { ...current.objective, line: e.target.value } as QuestObjective })}
+                      style={{ flex: 1, minWidth: '12em' }}
+                    />
+                  </>
+                ) : current.objective.kind === 'defeat' ? (
+                  <select
+                    value={current.objective.monsterId}
+                    onChange={(e) => update(current.id, { objective: { ...current.objective, monsterId: e.target.value } as QuestObjective })}
+                  >
+                    {monsters.map((m) => (
+                      <option key={m.id} value={m.id}>T{m.tier} {m.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={current.objective.itemId}
+                    onChange={(e) => update(current.id, { objective: { ...current.objective, itemId: e.target.value } as QuestObjective })}
+                  >
+                    {items.map((it) => (
+                      <option key={it.id} value={it.id}>{it.name}</option>
+                    ))}
+                  </select>
+                )}
+                {current.objective.kind !== 'talk' && (
+                  <>
+                    ×
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={current.objective.count}
+                      onChange={(e) => update(current.id, { objective: { ...current.objective, count: Number(e.target.value) } as QuestObjective })}
+                      style={{ width: '4.5em' }}
+                    />
+                  </>
+                )}
+              </span>
+            ))}
+            {field('報酬', (
+              <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flexWrap: 'wrap' }}>
+                パワー
+                <input
+                  type="number"
+                  min={0}
+                  value={current.reward?.power ?? 0}
+                  onChange={(e) => {
+                    const power = Number(e.target.value);
+                    const base = { ...(current.reward ?? {}) };
+                    if (power > 0) base.power = power;
+                    else delete base.power;
+                    update(current.id, Object.keys(base).length ? { reward: base } : ({ reward: undefined } as unknown as Partial<GameQuestDef>));
+                  }}
+                  style={{ width: '5em' }}
+                />
+                アイテム
+                <select
+                  value={current.reward?.itemId ?? ''}
+                  onChange={(e) => {
+                    const itemId = e.target.value;
+                    const base = { ...(current.reward ?? {}) };
+                    if (itemId) { base.itemId = itemId; base.count = base.count && base.count > 0 ? base.count : 1; }
+                    else { delete base.itemId; delete base.count; }
+                    update(current.id, Object.keys(base).length ? { reward: base } : ({ reward: undefined } as unknown as Partial<GameQuestDef>));
+                  }}
+                >
+                  <option value="">なし</option>
+                  {items.map((it) => (
+                    <option key={it.id} value={it.id}>{it.name}</option>
+                  ))}
+                </select>
+                {current.reward?.itemId && (
+                  <>
+                    ×
+                    <input
+                      type="number"
+                      min={1}
+                      value={current.reward?.count ?? 1}
+                      onChange={(e) => update(current.id, { reward: { ...(current.reward ?? {}), count: Number(e.target.value) } })}
+                      style={{ width: '4.5em' }}
+                    />
+                  </>
+                )}
+              </span>
+            ))}
+            {field('解禁フラグ', (
+              <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flex: 1 }}>
+                <input
+                  value={(current.requireFlags ?? []).join(' ')}
+                  placeholder="(なし) 空白区切り。立つまで NPC は依頼を話さない"
+                  onChange={(e) => {
+                    const flags = e.target.value.split(/\s+/).filter(Boolean);
+                    setList((xs) => xs.map((x) => {
+                      if (x.id !== current.id) return x;
+                      if (flags.length === 0) { const { requireFlags: _f, ...rest } = x; return rest as GameQuestDef; }
+                      return { ...x, requireFlags: flags };
+                    }));
+                    setDirty(true);
+                  }}
+                  style={{ flex: 1, fontFamily: 'ui-monospace, monospace' }}
+                />
+                <Link to="/admin/scenario" style={{ fontSize: '0.85em' }}>シナリオ</Link>
+              </span>
+            ))}
+            {field('受注後の戦闘', (
+              <input
+                value={current.startBattle ?? ''}
+                placeholder="(なし) world.story の戦闘 id。受注のセリフの直後に始まる"
+                onChange={(e) => {
+                  const id = e.target.value.trim();
+                  setList((xs) => xs.map((x) => {
+                    if (x.id !== current.id) return x;
+                    if (!id) { const { startBattle: _s, ...rest } = x; return rest as GameQuestDef; }
+                    return { ...x, startBattle: id };
+                  }));
+                  setDirty(true);
+                }}
+                style={{ flex: 1, fontFamily: 'ui-monospace, monospace' }}
+              />
+            ))}
+            {field('解禁アイテム', (
+              <ItemReqInput
+                value={current.requireItems}
+                onChange={(requireItems) => {
+                  setList((xs) => xs.map((x) => {
+                    if (x.id !== current.id) return x;
+                    if (!requireItems) { const { requireItems: _r, ...rest } = x; return rest as GameQuestDef; }
+                    return { ...x, requireItems };
+                  }));
+                  setDirty(true);
+                }}
+              />
+            ))}
+            {lineEditor(current, 'intro', '依頼のセリフ', '読み終えて はい を選ぶと受注する')}
+            {lineEditor(current, 'progress', '進行中のセリフ', '空なら既定「たのんだよ。」+ サーバーの「まだ n/m」')}
+            {lineEditor(current, 'done', '達成のセリフ', 'お礼。この後に報酬が出る')}
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>左の一覧から選ぶか「＋クエスト」。</div>
+        )}
+      </div>
+      </AuthoredWorldGate>
+    </div>
+  );
+}

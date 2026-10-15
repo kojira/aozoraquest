@@ -7,6 +7,13 @@ export function rkeyFromUri(uri: string): string {
   return uri.split('/').pop() ?? '';
 }
 
+/** at://<did>/<collection>/<rkey> から <did> (authority) を取り出す。取れなければ空文字。
+ *  collection/rkey が無い (末尾スラッシュ無し) at-uri でも authority だけは拾う。 */
+export function didFromUri(uri: string): string {
+  const m = /^at:\/\/([^/]+)/.exec(uri);
+  return m ? m[1]! : '';
+}
+
 export function postUri(did: string, rkey: string): string {
   return `at://${did}/app.bsky.feed.post/${rkey}`;
 }

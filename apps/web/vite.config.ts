@@ -60,5 +60,26 @@ export default defineConfig({
     outDir: 'dist',
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // 変化の少ない大物ライブラリを安定した vendor チャンクに分離する。
+        // これで app コードだけ変えてデプロイしたとき、返ってきたユーザーは巨大な
+        // @atproto/api (Bluesky lexicon 一式) を再ダウンロードせずキャッシュを使える
+        // (=頻繁なデプロイでも表示が速い)。/assets/* は immutable キャッシュ済み。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('@atproto')) return 'vendor-atproto';
+          if (
+            id.includes('/react-dom/') ||
+            id.includes('/react/') ||
+            id.includes('/react-router') ||
+            id.includes('/scheduler/')
+          ) {
+            return 'vendor-react';
+          }
+          return undefined;
+        },
+      },
+    },
   },
 });

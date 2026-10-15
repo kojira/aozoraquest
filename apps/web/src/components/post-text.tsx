@@ -1,17 +1,12 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import type { Facet, FacetFeature } from '@/lib/facet';
+import { bskyAppLinkToInternalPath } from '@/lib/bsky-url';
+import { getOpenBskyLinksExternally } from '@/lib/prefs';
+import { useColumnNav, pushInternalPath, type ColumnNav } from './column-detail';
 
-export interface FacetFeature {
-  $type?: string;
-  uri?: string;
-  did?: string;
-  tag?: string;
-}
-
-export interface Facet {
-  index: { byteStart: number; byteEnd: number };
-  features?: FacetFeature[];
-}
+// 従来 post-text から Facet 型を import していた箇所 (post-body 等) の後方互換のため再エクスポート。
+export type { Facet, FacetFeature } from '@/lib/facet';
 
 interface PostTextProps {
   text: string;
@@ -141,6 +136,11 @@ export function segmentPost(text: string, facets?: Facet[]): PostSegment[] {
 export function PostText({ text, facets, style, override }: PostTextProps) {
   const segments =
     override === undefined ? segmentPost(text, facets) : autoLinkSegments(override);
+  // bsky.app の投稿/プロフィールリンクをあおぞら内で開くか、外部にするかは端末設定次第。
+  // 設定変更は次のレンダーから反映される (localStorage 読み取り)。
+  const openBskyExternally = getOpenBskyLinksExternally();
+  // カラム内なら mention / 内部リンクは route 遷移せずカラムに詳細を積む (TL 保持)。
+  const columnNav = useColumnNav();
 
   return (
     <div
@@ -152,18 +152,59 @@ export function PostText({ text, facets, style, override }: PostTextProps) {
         ...style,
       }}
     >
-      {segments.map((seg, i) => renderSegment(seg, i))}
+      {segments.map((seg, i) => renderSegment(seg, i, openBskyExternally, columnNav))}
     </div>
   );
 }
 
-function renderSegment(seg: PostSegment, key: number): ReactNode {
+/** カラム内リンククリックの共通ハンドラ。修飾キー/中クリックは既定挙動 (新規タブ) に任せる。 */
+function shouldInterceptClick(e: ReactMouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
+function renderSegment(
+  seg: PostSegment,
+  key: number,
+  openBskyExternally: boolean,
+  columnNav: ColumnNav | null,
+): ReactNode {
   switch (seg.kind) {
-    case 'link':
+    case 'link': {
+      // bsky.app の投稿/プロフィールリンクは、設定が OFF (既定) ならあおぞら内で開く。
+      // 対応外 (feed/lists 等) や設定 ON のときは従来どおり外部リンク。
+      const internal = openBskyExternally ? null : bskyAppLinkToInternalPath(seg.uri);
+      if (internal) {
+        return (
+          <Link
+            key={key}
+            to={internal}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (columnNav && shouldInterceptClick(e) && pushInternalPath(columnNav, internal)) {
+                e.preventDefault();
+              }
+            }}
+            style={{ wordBreak: 'break-all' }}
+          >
+            {seg.text}
+          </Link>
+        );
+      }
       return <ExternalLink key={key} href={seg.uri} label={seg.text} />;
+    }
     case 'mention':
       return (
-        <Link key={key} to={`/profile/${seg.handle}`} onClick={(e) => e.stopPropagation()}>
+        <Link
+          key={key}
+          to={`/profile/${seg.handle}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (columnNav && shouldInterceptClick(e)) {
+              e.preventDefault();
+              columnNav.openProfile(seg.handle);
+            }
+          }}
+        >
           {seg.text}
         </Link>
       );

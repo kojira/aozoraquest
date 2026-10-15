@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
 import { fetchPosts, listNotifications, updateNotificationsSeen } from '@/lib/atproto';
+import { publishNotificationsSeen } from '@/lib/notification-seen';
 import { useInfiniteFeed } from '@/lib/use-infinite-feed';
 import { VirtualFeed } from '@/components/virtual-feed';
 import { NotificationItem } from '@/components/notification-item';
@@ -97,7 +98,13 @@ export function NotificationsFeed({ markSeen = false }: { markSeen?: boolean }) 
     if (seenSent.current) return;
     if (feed.items.length === 0 && !feed.done) return;
     seenSent.current = true;
-    void updateNotificationsSeen(agent);
+    // seenAt は最新通知の indexedAt (サーバ時刻) を使い、client 時計ズレで直近通知が
+    // 未読のまま残る (getUnreadCount が拾い続ける) のを防ぐ。items は新しい順なので [0] が最新。
+    // 無ければ updateNotificationsSeen 既定の now に落ちる。既読化できたら app 全体へ通知して
+    // 未読バッジを即クリアする (モバイルのカラム閲覧でも消えるように)。
+    const latest = feed.items[0]?.indexedAt;
+    // 成功時のみ publish (= サーバ反映後だけ楽観クリア。失敗時にクリアすると poll で復活する)。
+    void updateNotificationsSeen(agent, latest).then((ok) => { if (ok) publishNotificationsSeen(); });
   }, [shouldMarkSeen, agent, feed.items.length, feed.done]);
 
   const groups = useMemo(() => groupNotifications(feed.items), [feed.items]);

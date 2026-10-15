@@ -40,9 +40,9 @@ jobs:
               - '.github/workflows/**'
 
       - name: Setup pnpm
+        # version は指定せず package.json の packageManager を単一の出所にする
+        # (明示 version と衝突すると ERR_PNPM_BAD_PM_VERSION になる)
         uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,11 +50,17 @@ jobs:
           node-version: '22'
           cache: pnpm
 
+      - name: 'Line limit (1 ファイル 800 行ルール, #718)'
+        run: node scripts/check-line-limit.mjs
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         run: pnpm --filter @aozoraquest/web typecheck
+
+      - name: Lint (React フックのルール違反を検出 — #310 クラッシュ再発防止)
+        run: pnpm --filter @aozoraquest/web lint
 
       - name: Unit tests (core + web)
         run: |

@@ -44,3 +44,8 @@ diagnose-ranking-*.html
 # cognitive-onnx は HuggingFace Hub (kojira/aozoraquest-cognitive) から取得する。
 # ローカルには置かない (Cloudflare Pages の 25MB/file 制限対策 + dev/prod 統一)。
 apps/web/public/cognitive-onnx/
+
+# 学習用データ (Bluesky の handle/DID/投稿本文/推定ラベルを含む = PII)。
+# 公開リポジトリに入れない (2026-07-25 に履歴から除去した経緯あり)。ローカル保持のみ。
+docs/data/**/*.jsonl
+docs/bench/*.jsonl

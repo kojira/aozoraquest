@@ -1,8 +1,9 @@
 import { useState, type CSSProperties } from 'react';
-import type { PostExternal, PostImage, PostVideo } from '@/lib/post-embed';
+import type { PostExternal, PostImage, PostQuote, PostVideo } from '@/lib/post-embed';
 import { PostText, type Facet } from './post-text';
 import { PostImages } from './post-images';
 import { PostExternalCard } from './post-external';
+import { PostQuoteCard } from './post-quote';
 import { PostVideoCard } from './post-video';
 import { YoutubeEmbed } from './youtube-embed';
 import { youtubeId } from '@/lib/youtube';
@@ -11,9 +12,9 @@ import { useTranslation } from '@/lib/translate';
 /**
  * 投稿本文 (テキスト + 画像 + 外部リンクカード) の共通レイアウト。
  *
- * 画像が 0 枚: テキストのみ。1 枚以上: 画像を float:left して**テキストを回り込ませる**
- * (画像の横に最初の数行、画像の下からは全幅)。末尾 clear:both で float を閉じる。
- * 外部リンクカード / 動画は回り込みを clear した後にフル幅で追加。
+ * 画像が 0 枚: テキストのみ。1 枚以上: X (Twitter) 風に **テキストを上・画像をその下に
+ * フル幅**で並べる (枚数別グリッドは PostImages 側)。外部リンクカード / 動画はさらに下に
+ * フル幅で続く。
  *
  * `postUri` が渡されると、非日本語投稿に対してローカル LLM による翻訳を
  * オンデマンドで表示 (自動翻訳設定 ON ならロード時に自動開始)。
@@ -24,6 +25,8 @@ export interface PostBodyProps {
   images?: PostImage[] | undefined;
   external?: PostExternal | null | undefined;
   video?: PostVideo | null | undefined;
+  /** 引用投稿 (app.bsky.embed.record#view 相当)。あれば本文下にカード表示。 */
+  quote?: PostQuote | null | undefined;
   /** 翻訳キャッシュのキー兼有無判定に使う。profile の RecentPosts など
    *  URI が無い場面では翻訳機能を無効化する。 */
   postUri?: string | undefined;
@@ -33,7 +36,7 @@ export interface PostBodyProps {
   topMargin?: CSSProperties['marginTop'];
 }
 
-export function PostBody({ text, facets, images, external, video, postUri, langs, topMargin = '0.45em' }: PostBodyProps) {
+export function PostBody({ text, facets, images, external, video, quote, postUri, langs, topMargin = '0.45em' }: PostBodyProps) {
   const hasImages = images && images.length > 0;
   const { state, translated, error, triggerTranslate, retranslate, isNonJapanese } = useTranslation(postUri, text, langs);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -60,21 +63,17 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
     </div>
   );
 
-  // 画像ありのときは画像を float: left してテキストを回り込ませる
-  // (画像の横に最初の数行、画像の下からは全幅)。旧 flex 横並びだとテキストが
-  // 画像の高さ全体にわたって狭い列に押し込まれ縦長になっていた。
-  // 末尾の clear:both で、テキストが短くても親が画像高さまで伸び、後続
-  // (翻訳コントロール・metrics) が float に巻き込まれないようにする。
-  const textBlock = hasImages ? (
+  // X 風: テキストを上に、画像をその下にフル幅で並べる (枚数でレイアウトが変わる
+  // グリッドは PostImages 側)。aspect-ratio で形が確定するのでロード時の高さジャンプは無い。
+  const textBlock = (
     <div style={{ marginTop: topMargin }}>
-      <div style={{ float: 'left', marginRight: '0.6em', marginBottom: '0.3em' }}>
-        <PostImages images={images} />
-      </div>
       {textNode}
-      <div style={{ clear: 'both' }} />
+      {hasImages && (
+        <div style={{ marginTop: '0.5em' }}>
+          <PostImages images={images} />
+        </div>
+      )}
     </div>
-  ) : (
-    <div style={{ marginTop: topMargin }}>{textNode}</div>
   );
 
   // 外部リンクが YouTube なら iframe 埋め込み、それ以外なら OG カード
@@ -88,6 +87,7 @@ export function PostBody({ text, facets, images, external, video, postUri, langs
         <YoutubeEmbed id={ytId} {...(external.title ? { title: external.title } : {})} {...(external.thumb ? { thumb: external.thumb } : {})} />
       )}
       {external && !ytId && <PostExternalCard external={external} />}
+      {quote && <PostQuoteCard quote={quote} />}
     </>
   );
 }

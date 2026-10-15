@@ -73,7 +73,7 @@ export function Board() {
       </header>
 
       <p style={{ margin: '0 0 0.6em', fontSize: '0.85em', color: 'var(--color-muted)', lineHeight: 1.5 }}>
-        お互いの「<strong>名前のポイント</strong>」(例: kojira.io ポイント) を発行しあって、やってほしいことを頼み合う掲示板です。
+        お互いの「<strong>名前のポイント</strong>」(例: あなたの名前ポイント) を発行しあって、やってほしいことを頼み合う掲示板です。
         応募は誰でも、完了の判定は発注者が行います。報酬は自分が発行するので元手は要りません。
       </p>
 

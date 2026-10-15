@@ -14,14 +14,17 @@
  * 区分:
  *   - user 系 (per-user PDS, env で分離する) → COL
  *       analysis / profile / spiritChat / questLog / cardDraw
- *   - admin 系 (主管理者の PDS, 全 env 共有) → ADMIN_COL
- *       config.flags / config.maintenance / config.bans / config.prompts /
- *       directory
+ *   - admin 系 (主管理者の PDS) → ADMIN_COL
+ *       world.* / config.* は env で分離する (#716): VITE_NSID_ENV が空でなければ
+ *       "{ROOT}.dev.*" (ローカルも dev エッジを叩くので dev と同じ)、未指定 = 本番 "{ROOT}.*"。
+ *       directory (毎時の自動更新が本番 Environment で書く) と questIndex (rkey で分離) は共有。
  *
  * 注意:
  * - 実 Bluesky 投稿 (`app.bsky.feed.post`) は性質上分離不可、
  *   dev からの投稿も実投稿になる。
  */
+import { ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, type AdminWorldRecordName } from '@aozoraquest/core';
+
 const ROOT = (import.meta.env.VITE_NSID_ROOT as string | undefined)?.trim();
 if (!ROOT) {
   throw new Error(
@@ -31,6 +34,8 @@ if (!ROOT) {
 }
 const ENV = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
 const USER_PREFIX = ENV ? `${ROOT}.${ENV}` : ROOT;
+/** 管理データ (world.* / config.*) の prefix。規則は core の adminNsidPrefix (edge と共通。#716)。 */
+const ADMIN_PREFIX = adminNsidPrefix(ROOT, ENV);
 
 export const COL = {
   analysis: `${USER_PREFIX}.analysis`,
@@ -41,6 +46,18 @@ export const COL = {
   /** あおぞらパワーの累積カウンタ (rkey='self')。アクションごとに増分する。
    *  初回読み取り時に旧データから一度だけスキャン → 書き込みでマイグレーション。 */
   power: `${USER_PREFIX}.power`,
+  /** 戦闘記録 (1 戦 1 レコード)。旧ブルスコンの試練が書いていた履歴。試練撤去後は
+   *  新規書き込み経路は無いが、読み取りは生きている: world の在庫フォールバック
+   *  (loadBattleStats の materials) と パワー再スキャン (countBattles)。
+   *  wins/連勝/称号系フィールドは現状どの UI からも未使用 (整理は #383)。 */
+  battle: `${USER_PREFIX}.battle`,
+  /** なんでも屋の制作 (docs/20)。1 制作 = 1 レコード。品質は rkey + luk から導出 */
+  craft: `${USER_PREFIX}.craft`,
+  /** 装備中 (docs/20 W6c)。rkey='self'。craft/forge の rkey 参照 (強化値は直書きしない) */
+  gear: `${USER_PREFIX}.gear`,
+  /** あおぞらワールドの状態 (docs/19-overworld.md)。rkey='self'。位置・乗り物・
+   *  解禁リージョン。PR-W3 以降は Worker (DO) が正で、これは表示キャッシュ + 監査線。 */
+  world: `${USER_PREFIX}.world`,
   /** 依頼クエスト (docs/15-user-quest.md)。tid key。発注者の PDS に書く。 */
   userQuest: `${USER_PREFIX}.userQuest`,
   /** 応募 (docs/15-user-quest.md)。tid key。応募者の PDS に書く。 */
@@ -64,15 +81,32 @@ export const ROOT_COL = {
 } as const;
 
 export const ADMIN_COL = {
-  configFlags: `${ROOT}.config.flags`,
-  configMaintenance: `${ROOT}.config.maintenance`,
-  configBans: `${ROOT}.config.bans`,
-  configPrompts: `${ROOT}.config.prompts`,
+  configFlags: `${ADMIN_PREFIX}.config.flags`,
+  configMaintenance: `${ADMIN_PREFIX}.config.maintenance`,
+  configBans: `${ADMIN_PREFIX}.config.bans`,
+  configPrompts: `${ADMIN_PREFIX}.config.prompts`,
   directory: `${ROOT}.directory`,
+  /** world.* (地形 #421・絵 #421・モンスター #419・アイテム #420・店 #422・NPC #425・
+   *  クエスト #423・ジョブ #544・内部マップ #424・シナリオ #545)。名前は core の ADMIN_WORLD_RECORDS。 */
+  worldMap: adminWorldCollection(ADMIN_PREFIX, 'map'),
+  tileArt: adminWorldCollection(ADMIN_PREFIX, 'tileArt'),
+  monsters: adminWorldCollection(ADMIN_PREFIX, 'monsters'),
+  items: adminWorldCollection(ADMIN_PREFIX, 'items'),
+  shops: adminWorldCollection(ADMIN_PREFIX, 'shops'),
+  npcs: adminWorldCollection(ADMIN_PREFIX, 'npcs'),
+  quests: adminWorldCollection(ADMIN_PREFIX, 'quests'),
+  jobs: adminWorldCollection(ADMIN_PREFIX, 'jobs'),
+  interiors: adminWorldCollection(ADMIN_PREFIX, 'interiors'),
+  scenario: adminWorldCollection(ADMIN_PREFIX, 'scenario'),
   /** 依頼クエスト集約 (docs/15-user-quest.md §集約インフラ)。
    *  Worker が主管理者 PDS に書く。env 別に rkey を分ける (dev→'dev', prod→'self')。 */
   questIndex: `${ROOT}.questIndex`,
 } as const;
+
+/** world.* のレコード名 → collection (共通ローダー loadAdminWorld 用)。 */
+export const ADMIN_WORLD_COL = Object.fromEntries(
+  ADMIN_WORLD_RECORDS.map((name) => [name, adminWorldCollection(ADMIN_PREFIX, name)]),
+) as Record<AdminWorldRecordName, string>;
 
 /** ADMIN_COL.questIndex の rkey: env 別に分離する */
 export const QUEST_INDEX_RKEY = ENV ? ENV : 'self';

@@ -1,7 +1,7 @@
 {
   "name": "aozoraquest",
   "private": true,
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
@@ -15,7 +15,8 @@
     "validate:llm:cls": "tsx scripts/validate-llm-cls-playwright.ts",
     "validate:data": "tsx scripts/validate-data.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "refresh:directory": "tsx scripts/refresh-directory.ts"
+    "refresh:directory": "tsx scripts/refresh-directory.ts",
+    "gen:world": "tsx scripts/gen-world-data.ts"
   },
   "devDependencies": {
     "@atproto/api": "^0.17",
@@ -27,7 +28,7 @@
     "playwright": "^1.59.1",
     "tsx": "^4",
     "turbo": "^2",
-    "typescript": "^5",
+    "typescript": "^7.0.2",
     "vitest": "^2",
     "zod": "^3"
   }

@@ -197,15 +197,19 @@ export async function getUnreadNotificationCount(agent: Agent): Promise<number> 
   }
 }
 
-/** 通知を見たことをサーバーに通知 (これで getUnreadCount が 0 に戻る)。 */
+/** 通知を見たことをサーバーに通知 (これで getUnreadCount が 0 に戻る)。
+ *  成功したら true。呼び出し側はこれを見て未読バッジの楽観クリアを成功時に限定できる
+ *  (失敗時にクリアすると次の poll でサーバの未読を拾い直しバッジが復活してしまうため)。 */
 export async function updateNotificationsSeen(
   agent: Agent,
   seenAt: string = new Date().toISOString(),
-): Promise<void> {
+): Promise<boolean> {
   try {
     await agent.app.bsky.notification.updateSeen({ seenAt });
+    return true;
   } catch (e) {
     console.warn('[notifications] updateSeen failed', e);
+    return false;
   }
 }
 
@@ -330,7 +334,8 @@ export async function createPostWithImages(
   text: string,
   images: Array<{ blob: Blob; alt: string }>,
   tag?: string,
-): Promise<void> {
+  // 戻り値は投稿の URI/CID。URI は XP 申告の冪等キーに使う (#534)。
+): Promise<{ uri: string; cid: string }> {
   void tag; // facet 検出は自動化済み。引数は呼び出し側互換のため受けるだけ。
   // 呼び出し側 (UI) を信頼せず lib 側でも 4 枚に切り詰める最終ガード。
   const picked = images.slice(0, MAX_POST_IMAGES);
@@ -352,7 +357,7 @@ export async function createPostWithImages(
   // picked が空なら embed を付けない (空 images embed は不正なので作らない)。
   const facets = await detectPostFacets(agent, text);
   if (facets) record['facets'] = facets;
-  await agent.post(record as unknown as Parameters<Agent['post']>[0]);
+  return agent.post(record as unknown as Parameters<Agent['post']>[0]);
 }
 
 /** ハッシュタグ facet 付き投稿 (検索 API で拾えるようにする)。

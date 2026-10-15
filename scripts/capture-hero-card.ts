@@ -18,8 +18,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/hero-card.png');
 const DEV_BASE = process.env.DEV_BASE ?? 'http://127.0.0.1:9999';
 
-const HANDLE = 'kojira.io';
-// kojira の hero カード設定。実際の引き直しと違って固定なので、README が陳腐化
+const HANDLE = process.env.HERO_HANDLE ?? '';
+if (!HANDLE) { console.error('HERO_HANDLE env が必要 (個人 handle をソースに書かない)'); process.exit(1); }
+// hero カード設定。実際の引き直しと違って固定なので、README が陳腐化
 // しにくい中庸な内容にする (ぶっ飛び過ぎず、地味すぎず)。
 const PARAMS = {
   handle: HANDLE,
@@ -29,7 +30,7 @@ const PARAMS = {
   cardName: '夜更けの編集者',
   effectName: '潜影',
   effectDescription: '登場時、対象アカウントの直近 3 件をあなたのフィードに引き寄せる。',
-  flavor: 'kojira は、まだ言葉になっていない投稿を編集している。誰も気づかぬまま、世界はそっと書き換わっている。',
+  flavor: '旅人は、まだ言葉になっていない投稿を編集している。誰も気づかぬまま、世界はそっと書き換わっている。',
   flavorAttr: 'ひでお',
   manaCost: JSON.stringify({ U: 1, B: 1, generic: 1 }),
   abilityCost: 'null',

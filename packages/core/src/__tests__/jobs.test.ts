@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { JOBS, archetypeFromFunctionPair, currentJob, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
+import { JOBS, archetypeFromFunctionPair, canSeeEnemyVitals, currentJob, ENEMY_VITALS_ARCHETYPES, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
 import { COGNITIVE_TO_RPG } from '../diagnosis.js';
 import { STATS, type CogFunction, type StatArray } from '../types.js';
 
@@ -32,9 +32,17 @@ describe('JOBS', () => {
     }
   });
 
+  // guardian は減算式ダメージ (#435) の戦闘都合で atk を戦士級に手動 override している
+  // (根拠は jobs.ts のコメント)。生成器の理論値からの意図的逸脱なので、ドリフト検出の
+  // 期待値もこの override で上書きする (guardian 自身の意図せぬドリフトはここで検出される)。
+  const COMBAT_STAT_OVERRIDES: Partial<Record<string, number[]>> = {
+    guardian: [24, 43, 6, 15, 12],
+  };
+
   test('stats は認知機能スタックの floor 付き理論値と一致 (gen-job-stats.ts と同式・ドリフト検出)', () => {
     for (const j of JOBS) {
-      expect([...j.stats], `${j.id} stats`).toEqual(expectedStats(j.dominantFunction, j.auxiliaryFunction));
+      const expected = COMBAT_STAT_OVERRIDES[j.id] ?? expectedStats(j.dominantFunction, j.auxiliaryFunction);
+      expect([...j.stats], `${j.id} stats`).toEqual(expected);
     }
   });
 
@@ -109,5 +117,31 @@ describe('jobDisplayName', () => {
     expect(jobDisplayName('sage', 'default')).toBe('賢者');
     expect(jobDisplayName('sage', 'maker')).toBe('建築家');
     expect(jobDisplayName('sage', 'alt')).toBe('戦略家');
+  });
+});
+
+describe('canSeeEnemyVitals', () => {
+  test('見抜ける 5 職は true (賢者/予言者/巫女/魔法使い/忍者)', () => {
+    for (const id of ['sage', 'seer', 'miko', 'mage', 'ninja']) {
+      expect(canSeeEnemyVitals(id)).toBe(true);
+    }
+    expect(ENEMY_VITALS_ARCHETYPES.size).toBe(5);
+  });
+
+  test('それ以外の職は false', () => {
+    for (const id of ['warrior', 'guardian', 'shogun', 'bard', 'poet', 'paladin', 'explorer', 'fighter', 'artist', 'captain', 'performer']) {
+      expect(canSeeEnemyVitals(id)).toBe(false);
+    }
+  });
+
+  test('null / undefined / 未知 ID は false', () => {
+    expect(canSeeEnemyVitals(null)).toBe(false);
+    expect(canSeeEnemyVitals(undefined)).toBe(false);
+    expect(canSeeEnemyVitals('traveler')).toBe(false);
+  });
+
+  test('対象は実在するジョブ ID のみ', () => {
+    const ids = new Set(JOBS.map((j) => j.id));
+    for (const id of ENEMY_VITALS_ARCHETYPES) expect(ids.has(id)).toBe(true);
   });
 });

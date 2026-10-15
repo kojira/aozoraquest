@@ -1,0 +1,46 @@
+/**
+ * Bluesky 公式 (bsky.app) の投稿 / プロフィール URL を、あおぞらくえすと内部の
+ * ルートパスに変換する。あおぞらで開けるのは投稿詳細とプロフィールのみ:
+ *
+ *   https://bsky.app/profile/<actor>               → /profile/<actor>
+ *   https://bsky.app/profile/<actor>/post/<rkey>   → /profile/<actor>/post/<rkey>
+ *
+ * feed / lists / starter-pack など、あおぞらに対応ルートが無いものは null を返し、
+ * 呼び出し側は従来どおり外部リンク (別タブ) として扱う。<actor> は handle でも DID でも可。
+ *
+ * パスセグメントは **decode せず生のまま** 透過する。`new URL().pathname` が返す各
+ * セグメントは既に単一セグメント (リテラルの `/` を含まない) に正規化されており、
+ * ここで decodeURIComponent すると `%2F`→`/` 等でセグメント境界が崩れて内部パスが
+ * 壊れる (例 `/profile/a%2Fb` → `/profile/a/b`)。生のまま `to` に入れれば常に 2/4
+ * セグメントに収まり、react-router がパラメータ側で 1 回だけ decode する。
+ * handle は DNS 名・DID はコロンを含むがパスセグメントとして合法。
+ */
+export function bskyAppLinkToInternalPath(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null; // 相対 URL や不正文字列
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  const host = u.hostname.toLowerCase();
+  if (host !== 'bsky.app' && host !== 'www.bsky.app') return null;
+
+  const parts = u.pathname.split('/').filter((s) => s.length > 0);
+  // 対応するのは /profile/... 配下のみ
+  if (parts[0] !== 'profile' || parts.length < 2) return null;
+  const actor = parts[1];
+  if (!actor) return null;
+
+  if (parts.length === 2) {
+    // プロフィール
+    return `/profile/${actor}`;
+  }
+  if (parts.length === 4 && parts[2] === 'post') {
+    const rkey = parts[3];
+    if (!rkey) return null;
+    return `/profile/${actor}/post/${rkey}`;
+  }
+  // /profile/<actor>/feed/... や /lists/... 等はあおぞら未対応 → 外部
+  return null;
+}

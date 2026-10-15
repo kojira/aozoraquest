@@ -17,6 +17,8 @@ interface SpiritBubbleProps {
 
 /**
  * 精霊の発言は必ずこの吹き出しで。アイコン (精霊キャラ) を左、右に本文。
+ * 例外: あおぞらワールドの会話は DQ 風セリフウィンドウ (dialogue-window) を使う
+ * (NPC 汎用の演出。話者プレートに SpiritIcon を添えて同一人物と分かるようにする)。
  * アイコンからの吹き出し矢尻は小さな三角で表現。
  */
 export function SpiritBubble({

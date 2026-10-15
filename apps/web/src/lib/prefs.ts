@@ -23,7 +23,7 @@ export function setAutoTranslate(v: boolean): void {
 }
 
 /** TL の各投稿に cognitive function (Fe/Ni 等) の判定バッジを表示するか。
- *  ONNX classifier (Ruri 30m、初回 DL ~30MB) を起動する。デフォルト OFF。 */
+ *  WebGPU (WGSL) の気質分類器 (cognitive-small、初回 DL 約 48MB) を起動する。デフォルト OFF。 */
 export function getAnalyzePosts(): boolean {
   try {
     return localStorage.getItem(KEY_ANALYZE_POSTS) === 'true';
@@ -54,6 +54,68 @@ export function getHideReposts(): boolean {
 export function setHideReposts(v: boolean): void {
   try {
     localStorage.setItem(KEY_HIDE_REPOSTS, String(v));
+  } catch {
+    /* no-op */
+  }
+}
+
+const KEY_DAILY_QUESTS_OPEN = 'aozoraquest:dailyQuestsOpen';
+
+/** ホームの「今日のクエスト」を展開表示するか。デフォルト ON (= 従来どおり表示)。
+ *  ユーザーがアコーディオンで畳んだら false を覚え、次回もその状態で開く。 */
+export function getDailyQuestsOpen(): boolean {
+  try {
+    // 未設定 (null) は既定の true。明示的に 'false' のときだけ畳む。
+    return localStorage.getItem(KEY_DAILY_QUESTS_OPEN) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setDailyQuestsOpen(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_DAILY_QUESTS_OPEN, String(v));
+  } catch {
+    /* no-op */
+  }
+}
+
+const KEY_HOME_SUMMARY_OPEN = 'aozoraquest:homeSummaryOpen';
+
+/** ホーム上部サマリ (ジョブ + 今日のクエスト + 行動ログ) 全体を展開するか。既定 ON。
+ *  畳むと細い 1 行のバーだけになり TL がすぐ上に来る。状態は永続化。 */
+export function getHomeSummaryOpen(): boolean {
+  try {
+    return localStorage.getItem(KEY_HOME_SUMMARY_OPEN) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setHomeSummaryOpen(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_HOME_SUMMARY_OPEN, String(v));
+  } catch {
+    /* no-op */
+  }
+}
+
+const KEY_OPEN_BSKY_EXTERNAL = 'aozoraquest:openBskyLinksExternally';
+
+/** 本文中の Bluesky 公式 (bsky.app) 投稿/プロフィールリンクを、あおぞら内で開かず
+ *  外部 (別タブ/公式アプリ) で開くか。デフォルト false (= あおぞら内で表示)。
+ *  公式が新しいリンク形式を追加してあおぞらが追従できない時の逃げ道として ON にする。 */
+export function getOpenBskyLinksExternally(): boolean {
+  try {
+    return localStorage.getItem(KEY_OPEN_BSKY_EXTERNAL) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setOpenBskyLinksExternally(v: boolean): void {
+  try {
+    localStorage.setItem(KEY_OPEN_BSKY_EXTERNAL, String(v));
   } catch {
     /* no-op */
   }

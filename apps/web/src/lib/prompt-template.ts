@@ -3,8 +3,8 @@
  * 既知の変数を実行時に展開する小さな template engine。
  *
  * 使い方:
- *   applyPromptTemplate('{user} さん、こんにちは', { user: 'kojira' })
- *     → 'kojira さん、こんにちは'
+ *   applyPromptTemplate('{user} さん、こんにちは', { user: 'alice' })
+ *     → 'alice さん、こんにちは'
  *
  * 仕様:
  * - キーは英数字 + アンダースコアのみ (日本語キーは未対応)
@@ -14,7 +14,7 @@
  * - 未登録キー → 同じくそのまま残す
  *
  * spiritChat の variables (現状サポート):
- *   {user}      — ユーザのハンドル先頭部分 (例: "kojira.io" → "kojira")
+ *   {user}      — ユーザのハンドル先頭部分 (例: "alice.bsky.social" → "alice")
  *   {archetype} — 現在の職業名 (例: "賢者")。診断未実施なら未展開
  *   {level}     — 現職の LV (例: "5")。診断未実施なら未展開
  */

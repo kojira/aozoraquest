@@ -2,7 +2,7 @@
  * DID → handle 解決のキャッシュ層。
  *
  * AT Proto の DID (例: did:plc:abc123...) はユーザーに見せる文字列として
- * 不適。aozoraquest の UI では「kojira.io」のような handle で表示する。
+ * 不適。aozoraquest の UI では「alice.bsky.social」のような handle で表示する。
  *
  * - 公開 AppView (api.bsky.app) の getProfile を使う (認証不要)
  * - メモリ Map + localStorage で 24 時間キャッシュ

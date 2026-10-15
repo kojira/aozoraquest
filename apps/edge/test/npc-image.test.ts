@@ -1,0 +1,97 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { handleRequest } from '../src/router';
+import { png, imageFixture, cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
+import type { NpcImage } from '@aozoraquest/core';
+
+vi.mock('../src/service-auth', async (original) => ({ ...await original<typeof import('../src/service-auth')>(), resolveDidDocument: async (did: string) => (await fetch(`https://plc.directory/${did}`)).json() }));
+
+const did = 'did:plc:npcimageauthor';
+const env = { ADMIN_DIDS: did };
+const bytes = png();
+const cid = cidFor(bytes);
+function fixture(options: { endpoint?: string; image?: unknown; body?: Uint8Array; contentType?: string; redirect?: boolean; missing?: boolean; expression?: NpcImage } = {}) {
+  const image: NpcImage = { width: 32, height: 32, blob: { $type: 'blob', ref: { $link: cid }, mimeType: 'image/png', size: bytes.length } };
+  const f = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('plc.directory')) return Response.json({ id: did, service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: options.endpoint ?? 'https://npc-author.example' }] });
+    expect(init?.redirect).toBe('manual');
+    if (options.redirect) return new Response(null, { status: 302, headers: { location: 'https://evil.example/blob' } });
+    if (url.includes('getRecord')) {
+      expect(new URL(url).searchParams.get('repo')).toBe(did);
+      return Response.json({ value: { npcs: options.missing ? [] : [{ id: 'npc-one', spriteImage: options.image ?? image, portraitImage: options.image ?? image, ...(options.expression ? { expressionImages: { sad: options.expression } } : {}) }] } });
+    }
+    if (url.includes('getBlob')) return new Response(new Uint8Array(options.body ?? bytes).buffer, { headers: { 'content-type': options.contentType ?? 'image/png' } });
+    throw new Error('unexpected URL');
+  });
+  vi.stubGlobal('fetch', f);
+  return f;
+}
+function request(kind = 'sprite', requestedCid = cid, expression?: string) {
+  return new Request(`https://edge.example/api/npc-image?${new URLSearchParams({ npcId: 'npc-one', kind, cid: requestedCid, ...(expression ? { expression } : {}) })}`);
+}
+afterEach(() => vi.unstubAllGlobals());
+describe('GET /api/npc-image', () => {
+  it('publicly serves only the primary author saved image, rechecking replacement/deletion', async () => {
+    fixture();
+    const response = await handleRequest(request(), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    // cid-addressed and validated against the record: a remounted portrait must not refetch (D-DIALOGUE-004).
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+    fixture({ missing: true });
+    const missing = await handleRequest(request(), env);
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('cache-control')).toBe('no-store');
+    fixture();
+    expect((await handleRequest(request('sprite', cidFor(png(16, 16))), env)).status).toBe(404);
+    expect((await handleRequest(request('portrait'), env)).status).toBe(200);
+  });
+  it('serves a registered expression portrait by cid with the same checks and immutable cache (D-DIALOGUE-005)', async () => {
+    const sadBytes = png(16, 16);
+    const sad: NpcImage = { width: 16, height: 16, blob: { $type: 'blob', ref: { $link: cidFor(sadBytes) }, mimeType: 'image/png', size: sadBytes.length } };
+    fixture({ expression: sad, body: sadBytes });
+    const response = await handleRequest(request('portrait', cidFor(sadBytes), 'sad'), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(sadBytes);
+    // The normal portrait cid is not served under the expression, nor unregistered/invalid names or sprite kind.
+    fixture({ expression: sad }); expect((await handleRequest(request('portrait', cid, 'sad'), env)).status).toBe(404);
+    fixture({ expression: sad }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'smile'), env)).status).toBe(404);
+    fixture({ expression: sad }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'constructor'), env)).status).toBe(404);
+    const bad = fixture({ expression: sad }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'Sad'), env)).status).toBe(400);
+    expect(bad).not.toHaveBeenCalled();
+    fixture({ expression: sad }); expect((await handleRequest(request('sprite', cidFor(sadBytes), 'sad'), env)).status).toBe(400);
+    fixture({ expression: sad, body: png(32, 32) }); expect((await handleRequest(request('portrait', cidFor(sadBytes), 'sad'), env)).status).toBe(422);
+  });
+  it('serves transparent WebP unchanged with its actual MIME type', async () => {
+    const webp = imageFixture('32x32.webp');
+    fixture({ body: webp, contentType: 'image/webp', image: { width: 32, height: 32, blob: { $type: 'blob', ref: { $link: cid }, mimeType: 'image/webp', size: webp.length } } });
+    const response = await handleRequest(request(), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/webp');
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(webp);
+  });
+  it('rejects arbitrary sources, redirects, bad types, forged dimensions and oversized payloads', async () => {
+    const f = fixture();
+    expect((await handleRequest(request('sprite', 'https://evil.example'), env)).status).toBe(400);
+    expect(f).not.toHaveBeenCalled();
+    for (const endpoint of ['https://127.0.0.1', 'http://npc-author.example', 'https://localhost', 'https://user:pass@npc-author.example', 'https://[::1]', 'https://npc-author.example:9443']) {
+      const calls = fixture({ endpoint });
+      expect((await handleRequest(request(), env)).status).toBe(502);
+      expect(calls).toHaveBeenCalledTimes(1);
+    }
+    const redirected = fixture({ redirect: true });
+    const refused = await handleRequest(request(), env);
+    expect(refused.status).toBe(502);
+    expect(refused.headers.get('cache-control')).toBe('no-store');
+    expect(redirected.mock.calls.map(([u]) => String(u)).some((u) => u.includes('evil.example'))).toBe(false);
+    fixture({ contentType: 'image/svg+xml' }); expect((await handleRequest(request(), env)).status).toBe(422);
+    fixture({ body: png(16, 16) }); expect((await handleRequest(request(), env)).status).toBe(422);
+    const animated = imageFixture('animated.webp');
+    fixture({ body: animated, contentType: 'image/webp', image: { width: 32, height: 32, blob: { $type: 'blob', ref: { $link: cid }, mimeType: 'image/webp', size: animated.length } } });
+    expect((await handleRequest(request(), env)).status).toBe(502);
+    fixture({ body: Buffer.alloc(102401) }); expect((await handleRequest(request(), env)).status).toBe(502);
+  });
+});

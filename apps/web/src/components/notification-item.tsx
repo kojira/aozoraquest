@@ -14,6 +14,7 @@ import {
 } from './icons';
 import { formatDateTime } from '@/lib/format-datetime';
 import { postDetailPath } from '@/lib/uri';
+import { useColumnNav } from './column-detail';
 import { labelForReason, previewUriForGroup, type NotifGroup } from '@/lib/notifications';
 
 /**
@@ -56,6 +57,7 @@ export function NotificationItem({
   postCache: Map<string, AppBskyFeedDefs.PostView>;
 }) {
   const navigate = useNavigate();
+  const columnNav = useColumnNav();
   const [expanded, setExpanded] = useState(false);
   const Icon = iconFor(group.reason);
   const label = labelForReason(group.reason);
@@ -74,11 +76,13 @@ export function NotificationItem({
     // 子の Link / button が onClick stopPropagation しているのでここに来たら navigate
     if ((e.target as HTMLElement).closest('a,button')) return;
     if (group.reason === 'follow') {
-      navigate(`/profile/${primary.handle}`);
+      if (columnNav) columnNav.openProfile(primary.handle);
+      else navigate(`/profile/${primary.handle}`);
       return;
     }
     if (post) {
-      navigate(postDetailPath(post.author.handle, post.uri));
+      if (columnNav) columnNav.openPost(post.uri, post.author.handle);
+      else navigate(postDetailPath(post.author.handle, post.uri));
     }
   };
 

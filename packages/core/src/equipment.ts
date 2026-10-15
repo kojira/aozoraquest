@@ -1,0 +1,607 @@
+/**
+ * 装備品となんでも屋の品揃え (docs/20-shop-equipment.md, W6a)。
+ *
+ * 設計:
+ * - **4 層**: 共用 (誰でも) → 系統カテゴリ品 (装備適性マトリクス) →
+ *   ジョブ専用・中位 → ジョブ専用・上位 (特色枠)。
+ * - **装備適性はカテゴリ × ジョブのマトリクス** (JOB_EQUIP_KINDS)。戦士は
+ *   「MP が低い代わりにほとんどの武器・防具を装備できる」— 適性の広さが
+ *   MP 特性 (JOB_MP_TRAITS) の裏返しの職特性になる。
+ * - **ジョブ専用品 (jobOnly) はマトリクス不問** — 自ジョブなら装備できる
+ *   (神楽鈴に鈴カテゴリは要らない)。
+ * - 効果はブレンド・レベル補正の**後に平坦加算** (playerCombatant/playerStatsAt)。
+ * - 品揃えは決定的に生成 (townShopStock)。W6a 時点は「街ハッシュ + 巡回割当」のみ —
+ *   danger 階級・周辺地形の系統枠 (docs/20) は W6b で追加する。
+ */
+
+import { ITEMS } from './battle.js';
+import type { Archetype } from './types.js';
+import { tierForRegion, worldOverlay } from './world.js';
+import { shopOverrideAt } from './shop-data.js';
+import type { Town } from './world.js';
+
+/** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
+ *  可能にするため循環を避けてローカルに持つ。 */
+function shopRng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 装備スロット (#609)。armor は歴史的経緯で「胴」を指す (既存データ無移行のため名を変えない)。 */
+export type EquipSlot = 'weapon' | 'shield' | 'head' | 'armor' | 'feet' | 'charm';
+
+/** 全スロットの列挙 (UI とサーバー検証が同じ並びを共有する)。 */
+export const GEAR_SLOTS: readonly EquipSlot[] = ['weapon', 'shield', 'head', 'armor', 'feet', 'charm'];
+
+/** スロットの表示名 (単一の出所 — 画面ごとに別表記が生えるのを防ぐ)。 */
+export const GEAR_SLOT_LABELS: Record<EquipSlot, string> = {
+  weapon: 'ぶき',
+  shield: 'たて',
+  head: 'あたま',
+  armor: 'どう',
+  feet: 'あし',
+  charm: 'おまもり',
+};
+
+/** 装備カテゴリ。common/cloth/charm は全ジョブ暗黙 ○。 */
+export type EquipKind =
+  | 'common' // 共用武器 (ナイフ等)
+  | 'exclusive' // ジョブ専用品 (jobOnly が判定の全て。カテゴリ表示にも使わない)
+  | 'sword'
+  | 'axe'
+  | 'shield'
+  | 'dagger'
+  | 'staff'
+  | 'lucky' // 運具 (ダイス・タリスマン)
+  | 'heavy' // 重装
+  | 'light' // 軽装
+  | 'robe'
+  | 'cloth' // 共用衣 (誰でも)
+  | 'charm';
+
+/** 装備補正が乗るステータス。 */
+export type BonusStat = 'atk' | 'def' | 'agi' | 'int' | 'luk' | 'maxHp';
+
+/** 補正ステータスの表示名 (単一の出所)。並びは補正一覧の表示順。 */
+export const BONUS_STAT_LABELS: Record<BonusStat, string> = {
+  atk: 'こうげき',
+  def: 'まもり',
+  agi: 'すばやさ',
+  int: 'かしこさ',
+  luk: 'うん',
+  maxHp: 'さいだいHP',
+};
+
+/** 符号付き整数の表示: 正は「+3」、負は「-2」、0 は「0」。
+ *  補正・強化値・「そうび +N」内訳など差分を見せる場所は全部ここを通す
+ *  (`+${v}` の直書きは負数で「+-2」になる)。0 を出すかは呼び出し側が決める。 */
+export function signed(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+/** 補正の一覧表示: 「こうげき +12 すばやさ -2」。0 の項目は出さない。 */
+export function bonusText(bonus: Partial<Record<BonusStat, number>>): string {
+  return (Object.keys(BONUS_STAT_LABELS) as BonusStat[])
+    .filter((k) => (bonus[k] ?? 0) !== 0)
+    .map((k) => `${BONUS_STAT_LABELS[k]} ${signed(bonus[k]!)}`)
+    .join(' ');
+}
+
+export interface EquipmentDef {
+  id: string;
+  name: string;
+  slot: EquipSlot;
+  kind: EquipKind;
+  /** ステータス加算 (ブレンド・レベル補正の後に平坦加算)。 */
+  bonus: Partial<Record<BonusStat, number>>;
+  /** 使う手の数 (#609)。武器・盾のみ意味を持つ。省略 = 1 (片手)。
+   *  武器 + 盾の合計が 2 を超える組合せは装備できない (両手武器 + 盾、両手盾 + 武器)。 */
+  hands?: 1 | 2;
+  /** 1 職専用 (指定があればカテゴリ不問でそのジョブのみ装備可)。 */
+  jobOnly?: Archetype;
+  /** 品揃え生成の階級。1=初級 2=中位 3=上位 (特色枠)。 */
+  grade: 1 | 2 | 3;
+  /** 値札: あおぞらパワー + 素材個数 (素材の種類は店側が地域ドロップから決める)。 */
+  price: { power: number; materials: number };
+}
+
+/** 装備適性マトリクス。common/cloth/charm は暗黙 ○。 */
+export const JOB_EQUIP_KINDS: Record<Archetype, readonly EquipKind[]> = {
+  warrior: ['sword', 'axe', 'shield', 'dagger', 'heavy', 'light'], // 杖と運具以外ぜんぶ
+  guardian: ['sword', 'axe', 'shield', 'heavy'],
+  shogun: ['sword', 'axe', 'dagger', 'heavy', 'light'],
+  captain: ['sword', 'axe', 'shield', 'dagger', 'heavy', 'light'],
+  ninja: ['sword', 'dagger', 'light'],
+  performer: ['sword', 'dagger', 'lucky', 'light'],
+  sage: ['dagger', 'staff', 'robe'],
+  mage: ['dagger', 'staff', 'robe'],
+  seer: ['staff', 'lucky', 'robe'],
+  fighter: ['sword', 'axe', 'dagger', 'staff', 'light'],
+  bard: ['dagger', 'lucky', 'light'],
+  poet: ['dagger', 'lucky', 'robe'],
+  paladin: ['sword', 'shield', 'staff', 'lucky', 'heavy'],
+  explorer: ['sword', 'axe', 'dagger', 'lucky', 'light'],
+  artist: ['dagger', 'lucky', 'light', 'robe'],
+  miko: ['staff', 'lucky', 'robe'],
+};
+
+/** ジョブ専用武器 (中位 +8 / 上位 +14)。効果は原則支配ステータスだが、職の
+ *  構造的弱点は bonusMid/bonusHigh の複合効果で補完できる (将軍: 支配ステの
+ *  こうげきを盛っても弱点の耐久が埋まらず、フル装備でも tier3 45% と唯一
+ *  破綻していた — 采配/大太刀に「兵が守る」耐久を付けて 65% に。sim 実測)。 */
+const JOB_WEAPONS: Array<{
+  job: Archetype;
+  stat: 'atk' | 'def' | 'agi' | 'int' | 'luk';
+  mid: string;
+  high: string;
+  bonusMid?: EquipmentDef['bonus'];
+  bonusHigh?: EquipmentDef['bonus'];
+}> = [
+  { job: 'sage', stat: 'int', mid: '賢者の杖', high: '天啓の錫杖' },
+  { job: 'mage', stat: 'int', mid: '魔法の杖', high: '星読みの大杖' },
+  {
+    job: 'shogun',
+    stat: 'atk',
+    mid: '将軍の采配',
+    high: '軍神の大太刀',
+    // 指揮官は兵に守られる: 支配ステータスだけ盛っても埋まらない弱点の耐久を装備で補完する。
+    bonusMid: { atk: 6, def: 4, maxHp: 2 },
+    bonusHigh: { atk: 10, def: 7, maxHp: 4 },
+  },
+  { job: 'bard', stat: 'luk', mid: '竪琴', high: '月夜の琴' },
+  { job: 'seer', stat: 'int', mid: '占いの水晶', high: '水晶の宝珠' },
+  { job: 'poet', stat: 'luk', mid: '詩人のペン', high: '心晴の筆' },
+  { job: 'paladin', stat: 'luk', mid: '騎士の盾', high: '聖印のロザリオ' },
+  { job: 'explorer', stat: 'luk', mid: '旅のコンパス', high: '風来のコンパス' },
+  { job: 'warrior', stat: 'def', mid: '戦士の剣', high: 'まもりの剛剣' },
+  { job: 'guardian', stat: 'def', mid: '守護者の大盾', high: '城壁の大盾' },
+  { job: 'fighter', stat: 'int', mid: 'からくり工具', high: 'からくり万能腕' },
+  { job: 'artist', stat: 'luk', mid: '絵筆', high: '虹彩のパレット' },
+  { job: 'captain', stat: 'atk', mid: '隊長の軍刀', high: '突撃の軍旗' },
+  { job: 'miko', stat: 'luk', mid: '神楽鈴', high: '大神楽の鈴' },
+  { job: 'ninja', stat: 'agi', mid: '忍者刀', high: '影縫いの手裏剣' },
+  { job: 'performer', stat: 'agi', mid: '曲芸のナイフ', high: '曲芸の舞扇' },
+];
+
+export const EQUIPMENT: EquipmentDef[] = [
+  // ─── 共用武器 (誰でも) ───
+  { id: 'wp-knife', name: 'ナイフ', slot: 'weapon', kind: 'common', bonus: { atk: 2 }, grade: 1, price: { power: 4, materials: 1 } },
+  { id: 'wp-club', name: 'こんぼう', slot: 'weapon', kind: 'common', bonus: { atk: 4 }, grade: 1, price: { power: 8, materials: 2 } },
+  { id: 'wp-travel-sword', name: 'たびのつるぎ', slot: 'weapon', kind: 'common', bonus: { atk: 7 }, grade: 2, price: { power: 14, materials: 3 } },
+  // 両手武器 (#609): 盾を捨てるぶん同 grade の片手より atk 高め (数値は暫定)
+  { id: 'wp-great-club', name: 'おおきづち', slot: 'weapon', kind: 'common', hands: 2, bonus: { atk: 7 }, grade: 1, price: { power: 12, materials: 2 } },
+  { id: 'wp-great-sword', name: 'グレートソード', slot: 'weapon', kind: 'sword', hands: 2, bonus: { atk: 13 }, grade: 2, price: { power: 24, materials: 4 } },
+  // ─── 系統カテゴリ武器 (初級 +4、意匠なしの汎用) ───
+  { id: 'wp-axe', name: '戦斧', slot: 'weapon', kind: 'axe', bonus: { atk: 4 }, grade: 1, price: { power: 10, materials: 2 } },
+  { id: 'wp-swift-dagger', name: '疾風の短刀', slot: 'weapon', kind: 'dagger', bonus: { agi: 4 }, grade: 1, price: { power: 10, materials: 2 } },
+  { id: 'wp-novice-staff', name: '見習いの杖', slot: 'weapon', kind: 'staff', bonus: { int: 4 }, grade: 1, price: { power: 10, materials: 2 } },
+  { id: 'wp-lucky-dice', name: '幸運のダイス', slot: 'weapon', kind: 'lucky', bonus: { luk: 4 }, grade: 1, price: { power: 10, materials: 2 } },
+  // ─── ジョブ専用武器 (中位 +8 / 上位 +14) — 生成 ───
+  ...JOB_WEAPONS.flatMap<EquipmentDef>((w) => [
+    {
+      id: `wp-${w.job}-mid`,
+      name: w.mid,
+      slot: 'weapon',
+      kind: 'exclusive', // jobOnly が判定の全て (カテゴリ不問)
+      bonus: w.bonusMid ?? { [w.stat]: 8 },
+      jobOnly: w.job,
+      grade: 2,
+      price: { power: 20, materials: 4 },
+    },
+    {
+      id: `wp-${w.job}-high`,
+      name: w.high,
+      slot: 'weapon',
+      kind: 'exclusive',
+      bonus: w.bonusHigh ?? { [w.stat]: 14 },
+      jobOnly: w.job,
+      grade: 3,
+      price: { power: 40, materials: 6 },
+    },
+  ]),
+  // ─── 盾 (#609)。片手が空いているときだけ持てる。両手盾は武器と併用不可 ───
+  { id: 'sh-wood', name: '木の盾', slot: 'shield', kind: 'shield', bonus: { def: 3 }, grade: 1, price: { power: 6, materials: 1 } },
+  { id: 'wp-iron-shield', name: '鉄の盾', slot: 'shield', kind: 'shield', bonus: { def: 4 }, grade: 1, price: { power: 10, materials: 2 } },
+  { id: 'sh-tower', name: '騎士の大盾', slot: 'shield', kind: 'shield', hands: 2, bonus: { def: 12 }, grade: 2, price: { power: 22, materials: 4 } },
+  // ─── 頭 (#609) ───
+  { id: 'hd-leather-hat', name: 'かわのぼうし', slot: 'head', kind: 'cloth', bonus: { def: 2 }, grade: 1, price: { power: 5, materials: 1 } },
+  { id: 'hd-iron-helm', name: '鉄かぶと', slot: 'head', kind: 'heavy', bonus: { def: 7 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'hd-sage-hood', name: 'かしこさのずきん', slot: 'head', kind: 'robe', bonus: { def: 4, int: 2 }, grade: 2, price: { power: 16, materials: 3 } },
+  // ─── 足 (#609) ───
+  { id: 'ft-cloth-shoes', name: 'ぬののくつ', slot: 'feet', kind: 'cloth', bonus: { def: 1, agi: 1 }, grade: 1, price: { power: 4, materials: 1 } },
+  { id: 'ft-leather-boots', name: 'かわのブーツ', slot: 'feet', kind: 'light', bonus: { def: 3, agi: 2 }, grade: 2, price: { power: 14, materials: 3 } },
+  { id: 'ft-iron-greaves', name: '鉄のすねあて', slot: 'feet', kind: 'heavy', bonus: { def: 6 }, grade: 2, price: { power: 16, materials: 3 } },
+  // ─── 防具 ───
+  { id: 'ar-cloth', name: 'ぬののふく', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 4, materials: 1 } },
+  { id: 'ar-leather', name: 'かわのよろい', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 8, materials: 2 } },
+  { id: 'ar-travel-cloak', name: 'たびのマント', slot: 'armor', kind: 'cloth', bonus: { def: 15 }, grade: 2, price: { power: 14, materials: 3 } },
+  { id: 'ar-iron', name: '鉄のよろい', slot: 'armor', kind: 'heavy', bonus: { def: 15 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-nimble', name: 'かるわざの衣', slot: 'armor', kind: 'light', bonus: { def: 15, agi: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-scholar', name: 'まなびのローブ', slot: 'armor', kind: 'robe', bonus: { def: 15, int: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-fortune', name: 'しあわせの衣', slot: 'armor', kind: 'light', bonus: { def: 15, luk: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  // ─── お守り (W6a はステータス系のみ。挙動系 (回避/にげる/ドロップ/MP減) は
+  //     戦闘エンジンへのフック実装とセットで後続 PR — 効かない品は店に出さない) ───
+  { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 3 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'ch-traveler', name: 'たびびとのおまもり', slot: 'charm', kind: 'charm', bonus: { def: 2 }, grade: 1, price: { power: 6, materials: 1 } },
+];
+
+export const EQUIPMENT_BY_ID: Record<string, EquipmentDef> = Object.fromEntries(EQUIPMENT.map((e) => [e.id, e]));
+
+/** 装備できるか。jobOnly があればそれだけで判定 (カテゴリ不問)。 */
+export function canEquip(archetype: Archetype, def: EquipmentDef): boolean {
+  if (def.jobOnly) return def.jobOnly === archetype;
+  if (def.kind === 'exclusive') return false; // jobOnly の付け忘れは安全側 (誰も装備不可)
+  if (def.kind === 'common' || def.kind === 'cloth' || def.kind === 'charm') return true;
+  return JOB_EQUIP_KINDS[archetype].includes(def.kind);
+}
+
+export interface GearBonus {
+  atk: number;
+  def: number;
+  agi: number;
+  int: number;
+  luk: number;
+  maxHp: number;
+}
+
+/** 装備 (id 列) の合計ボーナス。未知 id と装備不可の品は無視 (壊れたレコード耐性)。 */
+export function gearBonus(archetype: Archetype, equipIds: readonly string[]): GearBonus {
+  const total: GearBonus = { atk: 0, def: 0, agi: 0, int: 0, luk: 0, maxHp: 0 };
+  for (const id of equipIds) {
+    const def = EQUIPMENT_BY_ID[id];
+    if (!def || !canEquip(archetype, def)) continue;
+    for (const [k, v] of Object.entries(def.bonus)) {
+      total[k as keyof GearBonus] += v ?? 0;
+    }
+  }
+  return total;
+}
+
+// ─── 素材のひきとり (素材 → パワー変換) ─────────────────────
+
+/** ひきとりチューニング (素材 → あおぞらパワー。無限ループ防止のためレートは低め)。
+ *  レート根拠: 1 戦 = パワー 1 に対し**売却可能素材** (消耗品除く) の期待値は
+ *  最大 ~0.7 個 (luk 上振れ cap 0.95) → 5:1 なら回収 ≤0.19 パワーの強い赤字 =
+ *  戦闘→換金ループは成立しない (テストで cap 基準の最悪値を固定)。 */
+export const SALE_TUNING = {
+  /** この個数の素材 = パワー 1 */
+  materialsPerPower: 5,
+} as const;
+
+/** 消耗品 (ひきとり対象外 — それぞれ固有の使い道がある)。 */
+export const CONSUMABLE_ITEMS: readonly string[] = ['herb', 'sky-dew', 'sky-feather'];
+
+/** ひきとり対象 (モンスター素材のみ)。battle.ts の MONSTERS drops と同期
+ *  (equipment→battle は循環になるため静的リスト。整合はテストで固定)。 */
+export const SELLABLE_MATERIALS: readonly string[] = [
+  'slime-drop',
+  'red-jelly',
+  'metal-shard',
+  'bat-wing',
+  'dusk-wing',
+  'mush-spore',
+  'crimson-spore',
+  'golem-core',
+  'wisp-ember',
+  'serpent-scale',
+  'raven-feather',
+  'oni-horn',
+  'dragon-fang',
+];
+
+export function isSellableMaterial(id: string): boolean {
+  // **だいじなもの (シナリオアイテム) は換金しない** (#426)。売れると進行に要るものを
+  // 失って詰む。allowlist だけだと「既存の素材にだいじを付けても売れる」ままだった。
+  if (ITEMS[id]?.key) return false;
+  return SELLABLE_MATERIALS.includes(id);
+}
+
+/** count 個ひきとってもらったときのパワー (端数は切り捨て — 5 個未満は 0)。 */
+export function salePowerFor(count: number): number {
+  return Math.floor(Math.max(0, count) / SALE_TUNING.materialsPerPower);
+}
+
+// ─── 制作 (クラフト) と品質 ─────────────────────────────────
+
+/** 強化値チューニング (docs/20)。品質は −1〜+10 で、+6 以上は同アイテム同値 2 つの
+ *  合成のみ = 過剰なアイテムを燃やすシンク。 */
+export const CRAFT_TUNING = {
+  /** 制作ロールの範囲。+6 以上は合成 (forge) でしか作れない */
+  craftMin: -1,
+  craftMax: 5,
+  /** 強化値の絶対上限 */
+  levelMax: 10,
+  /** 制作ロールの下限 = floor(luk × lukFloorScale) (上限 lukFloorMax)。
+   *  「うんが高いほど下振れしにくい」— gamble・敗北ドロップと同じ設計言語。
+   *  luk 20 で −1 (失敗作) を引かなくなり、luk 40 で +2 が底になる */
+  lukFloorScale: 0.05,
+  lukFloorMax: 3,
+  /** 「名匠の」を名乗れる強化値 (制作で出る最高値) */
+  masterworkLevel: 5,
+} as const;
+
+/** craft レコードの rkey (文字列) を決定的に u32 seed へ (FNV-1a)。 */
+export function craftSeedFromRkey(rkey: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < rkey.length; i++) {
+    h ^= rkey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * 制作ロールの強化値 (−1〜+5)。seed から決定的 — craft レコードの rkey と制作時
+ * luk があれば誰でも再計算できる (自己申告フィールドを持たない = 正規クライアント
+ * 間の整合性保証。rkey はクライアント選択のため総当たりへの耐性は無い — 改竄の
+ * 最終防衛は W3 のサーバー権威)。
+ * 分布は低い値ほど出やすい重み付き。luk が下限を引き上げる (失敗作 −1 を回避)。
+ */
+export function craftLevelRoll(seed: number, luk: number): number {
+  const t = CRAFT_TUNING;
+  // 重み: -1:14, 0:22, +1:22, +2:16, +3:12, +4:9, +5:5 (計 100)
+  const weights: Array<[number, number]> = [[-1, 14], [0, 22], [1, 22], [2, 16], [3, 12], [4, 9], [5, 5]];
+  const floor = Math.min(t.lukFloorMax, Math.floor(Math.max(0, luk) * t.lukFloorScale));
+  const usable = weights.filter(([lv]) => lv >= Math.min(floor, t.craftMax) || lv === t.craftMax);
+  const pool = usable.length > 0 ? usable : weights;
+  const total = pool.reduce((a, [, w]) => a + w, 0);
+  let r = shopRng((seed ^ 0x3c6ef372) >>> 0)() * total;
+  for (const [lv, w] of pool) {
+    r -= w;
+    if (r < 0) return lv;
+  }
+  return pool[pool.length - 1]![0];
+}
+
+/** 強化値を適用した装備ボーナス: 主効果 (最大のボーナス) に +level (最低 1 は保証)。 */
+export function bonusWithLevel(def: EquipmentDef, level: number): EquipmentDef['bonus'] {
+  const lv = Math.max(CRAFT_TUNING.craftMin, Math.min(CRAFT_TUNING.levelMax, Math.round(level)));
+  const entries = Object.entries(def.bonus).filter(([, v]) => v !== undefined) as Array<[string, number]>;
+  if (entries.length === 0 || lv === 0) return { ...def.bonus };
+  let primary = entries[0]!;
+  for (const e of entries) if (e[1] > primary[1]) primary = e;
+  const out: EquipmentDef['bonus'] = { ...def.bonus };
+  out[primary[0] as keyof EquipmentDef['bonus']] = Math.max(1, primary[1] + lv);
+  return out;
+}
+
+/** 合成 (きたえる): 同じアイテム・同じ強化値 2 つ → +1。+6 以上への唯一の道。 */
+export function canForge(level: number): boolean {
+  return level < CRAFT_TUNING.levelMax;
+}
+export function forgedLevel(level: number): number {
+  return Math.min(CRAFT_TUNING.levelMax, level + 1);
+}
+
+/** 名匠品か (+5 = 制作で出る最高値。合成でそれ以上もある)。 */
+export function isMasterwork(level: number): boolean {
+  return level >= CRAFT_TUNING.masterworkLevel;
+}
+
+/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。 */
+export function leveledName(def: EquipmentDef, level: number): string {
+  if (level === 0) return def.name;
+  return `${def.name}${signed(level)}`;
+}
+
+/** 装備中の個体。level 省略時は定義値そのまま (±0 相当)。
+ *  **契約 (W6c)**: gear/self レコードには level を直書きせず craft/forge レコードの
+ *  rkey を参照し、集計 (loadCraftInventory) が再導出した level をここへ渡すこと。
+ *  level はあくまで導出済みの表示・計算用で、レコード上の自己申告値ではない
+ *  (レビュー指摘: 直書きを信用すると偽造耐性の建前が崩れる)。 */
+export interface GearPiece {
+  id: string;
+  level?: number;
+}
+
+export interface GearSelection {
+  weapon?: GearPiece | string;
+  shield?: GearPiece | string;
+  head?: GearPiece | string;
+  armor?: GearPiece | string;
+  feet?: GearPiece | string;
+  charm?: GearPiece | string;
+}
+
+/** その装備が使う手の数。武器・盾以外は 0。 */
+export function equipHands(def: EquipmentDef): number {
+  return def.slot === 'weapon' || def.slot === 'shield' ? (def.hands ?? 1) : 0;
+}
+
+/**
+ * 手数超過なら**盾を落とした** selection を返す (#609)。武器を優先するのは
+ * 「片手が空いていれば盾が装備可能」の裏返し — 両手武器を構えた時点で盾は持てない。
+ * 表示 (resolveGear) と権威 (sanitizeGear / gearBonusFromGear) が同じ判断を共有する。
+ */
+export function dropShieldIfHandsExceeded<T extends { weapon?: unknown; shield?: unknown }>(
+  sel: T,
+  defOf: (v: NonNullable<T['weapon']> | NonNullable<T['shield']>) => EquipmentDef | undefined,
+): T {
+  if (!sel.weapon || !sel.shield) return sel;
+  const w = defOf(sel.weapon as NonNullable<T['weapon']>);
+  const sh = defOf(sel.shield as NonNullable<T['shield']>);
+  if (!w || !sh) return sel;
+  if (equipHands(w) + equipHands(sh) <= 2) return sel;
+  const { shield: _drop, ...rest } = sel;
+  return rest as T;
+}
+
+/**
+ * gear/self レコード形式 ({weapon?, armor?, charm?}) からのボーナス合算。
+ * **スロットと装備の slot が一致する品だけ**数える (weapon 枠に武器以外を書く・
+ * 同じ強武器を 3 枠に書く、といったレコード直編集チートを弾く。W6c の正式入口)。
+ */
+export function gearBonusFromGear(archetype: Archetype, gear: GearSelection): GearBonus {
+  const total: GearBonus = { atk: 0, def: 0, agi: 0, int: 0, luk: 0, maxHp: 0 };
+  // 手数超過 (両手武器 + 盾) はここでも落とす — 戦闘値の入口なので、レコードを
+  // 直接偽造されても超過分は 1 ポイントも効かない (#609)。
+  gear = dropShieldIfHandsExceeded(gear, (v) => EQUIPMENT_BY_ID[typeof v === 'string' ? v : (v as GearPiece).id]);
+  for (const slot of GEAR_SLOTS) {
+    const piece = gear[slot];
+    if (!piece) continue;
+    const id = typeof piece === 'string' ? piece : piece.id;
+    const rawLevel = typeof piece === 'string' ? undefined : piece.level;
+    // 非数値 (レコード直編集で JSON 文字列等) は NaN が全ステータスへ伝播するため
+    // 定義値フォールバック (レビュー実測指摘)
+    const level = typeof rawLevel === 'number' && Number.isFinite(rawLevel) ? rawLevel : undefined;
+    const def = EQUIPMENT_BY_ID[id];
+    if (!def || def.slot !== slot || !canEquip(archetype, def)) continue;
+    const bonus = level !== undefined ? bonusWithLevel(def, level) : def.bonus;
+    for (const [k, v] of Object.entries(bonus)) {
+      total[k as keyof GearBonus] += v ?? 0;
+    }
+  }
+  return total;
+}
+
+// ─── なんでも屋の品揃え (決定的生成) ────────────────────────
+
+export interface ShopStock {
+  /** 消耗品 (ITEMS の id) */
+  consumables: string[];
+  /** 装備 (EQUIPMENT の id)。特色枠のジョブ専用品を含む */
+  equipment: string[];
+  /** この店の値札で要求される素材の種類 (price.materials の個数分)。
+   *  地域のモンスター素材から決定的に選ぶ — 「その地域で狩って買う」ループ */
+  materialId: string;
+}
+
+/** 店が値札に使う素材の種類 (街ハッシュから決定的)。**その街の危険度で狩れる
+ *  モンスターの素材から選ぶ** — 初版は全素材からのハッシュ乱択で、低危険度の
+ *  街 23 件中 11 件が周辺で狩れない tier2 素材を要求し「素材が必要だから装備まで
+ *  たどり着けない」詰みを作っていた。
+ *  街の tier は `tierForRegion` (遭遇と同じ単一の正)。`tierForDanger` を直接呼ぶと
+ *  リージョン固有の上書きが反映されず、遭遇 tier7 の街が tier3 の素材を要求する。
+ *  素材 id は battle.ts の MONSTERS ドロップ表の直書き複製 — battle → equipment の
+ *  既存依存があり MONSTERS から derive すると循環するため。テスト (equipment.test)
+ *  が全街ぶんドロップ表と突き合わせて同期を保証する。 */
+/** 店の素材は tier ごと。**その帯の敵が実際に落とすものだけ**を並べる。
+ *  帯を 2 tier ぶん幅で丸めていた頃は、tier1 の街が tier2 でしか落ちない
+ *  wisp-ember を要求していた (= 一段上の地方まで行かないと値札が読めない)。 */
+const SHOP_MATERIALS_BY_TIER: readonly [readonly string[], readonly string[], readonly string[]] = [
+  ['slime-drop', 'bat-wing', 'mush-spore'], // tier1 (spawn 近辺)
+  ['dusk-wing', 'crimson-spore', 'wisp-ember'], // tier2
+  ['golem-core', 'serpent-scale', 'metal-shard'], // tier3 以上 (中盤〜)
+];
+/** tier → 素材帯。**equipment.test がこの関数で期待値を組む**ので、帯の定義を
+ *  ここ 1 か所に閉じる (テスト側に同じ式を複製すると、敵の tier を動かしたときに
+ *  片方だけ直して「テストは緑なのに店が地元で狩れない素材を要求する」に戻る)。 */
+export function shopMaterialBand(tier: number): 0 | 1 | 2 {
+  return Math.min(2, Math.max(0, tier - 1)) as 0 | 1 | 2;
+}
+
+/**
+ * **その街で買える装備の grade 上限** (#565)。素材の帯 (`shopMaterialBand`) と同じ形にして、
+ * 段階の定義を 2 つ持たない。
+ *
+ * これが無いと、はじまりの帯 (tier1) の街に grade2 の防具が並ぶ。grade2 の防具は def+15 で、
+ * Lv5 の守備を 2 → 18 に跳ね上げる。tier1 の敵は実効 atk 5〜6 なので
+ * `6×0.9 = 5.4 < 18×0.45 = 8.1` = **1 ダメージも通らなくなる**。
+ * 実測で全 53 街のうち tier1 の 24 街に grade2 が 69 品・grade3 が 10 品並んでいた。
+ */
+export function maxShopGradeForTier(tier: number): number {
+  return Math.min(3, Math.max(1, tier));
+}
+export function shopMaterialFor(town: Town): string {
+  const tier = tierForRegion(town.region);
+  const pool = SHOP_MATERIALS_BY_TIER[shopMaterialBand(tier)]!;
+  const rng = shopRng(((town.x * 40503) ^ (town.y * 89917)) >>> 0);
+  return pool[Math.floor(rng() * pool.length)]!;
+}
+
+/**
+ * 街の品揃えを決定的に生成する (docs/20)。
+ * 1. 基本枠: やくそう / そらのしずく / そらのはね (+danger2 以上で いやしのしずく ※未実装のため W6b で)
+ * 2. 地域枠: danger に応じた階級の汎用装備
+ * 3. 特色枠: 街ハッシュで決まるジョブ専用品 1〜2 品 (どの街が何のジョブの品を
+ *    持つかが地図を見る動機になる)
+ */
+/**
+ * townIndex: worldOverlay().towns 配列内の位置。特色枠のジョブ割当を巡回にして
+ * **全 16 職の専用品が世界のどこかの店に必ず並ぶ**ことを保証する
+ * (純ランダムだと 53 店でも欠けるジョブが出うる)。
+ */
+/**
+ * **その帯以上の街の中での通し番号**。巡回割当をこれで回す。
+ *
+ * 全街の index で回すと、grade を置けない街 (tier1 の中位枠など) が index だけ消費して
+ * **割当が歯抜けになり、世界のどこにも並ばない職が出る** (実測: 中位 1 職・上位 3 職が欠けた)。
+ * 「その品を置ける街」だけで数え直すと連番になり、全職ぶんが必ず並ぶ。
+ */
+function rankAmongTier(town: Town, minTier: number): number {
+  const eligible = worldOverlay().towns.filter((t) => tierForRegion(t.region) >= minTier);
+  const i = eligible.findIndex((t) => t.x === town.x && t.y === town.y);
+  return i < 0 ? 0 : i;
+}
+
+/** 上位 (grade3) を置く街 1 軒あたりの品数。tier3 の街は 7 軒しかないので、
+ *  1 軒 1 品だと 16 職ぶんが世界に並ばない (7 < 16)。 */
+export const JOB_HIGH_PER_TOWN = 3;
+
+export function townShopStock(town: Town, townIndex: number): ShopStock {
+  // **店ごとの上書きが最優先** (#422)。指定されたフィールドだけ置き換え、残りは生成。
+  // 上書きが無い店は従来どおり = 全 53 店を手で埋めさせない。
+  const over = shopOverrideAt(town.x, town.y);
+  const generated = over && over.equipment && over.consumables && over.materialId
+    ? null // 全フィールド上書きなら生成をスキップ (無駄な計算をしない)
+    : generatedShopStock(town, townIndex);
+  if (over) {
+    return {
+      consumables: over.consumables ?? generated!.consumables,
+      equipment: over.equipment ?? generated!.equipment,
+      materialId: over.materialId ?? generated!.materialId,
+    };
+  }
+  return generated!;
+}
+
+function generatedShopStock(town: Town, townIndex: number): ShopStock {
+  const tier = tierForRegion(town.region);
+  const rng = shopRng(((town.x * 73856093) ^ (town.y * 19349663)) >>> 0);
+  const consumables = ['herb', 'sky-dew', 'sky-feather'];
+
+  const equipment: string[] = [];
+  // 地域枠: 共用 + カテゴリ品から 3〜4 品 (grade1 中心、たまに grade2)
+  const maxGrade = maxShopGradeForTier(tier);
+  const generic = EQUIPMENT.filter((e) => !e.jobOnly && e.slot !== 'charm' && e.grade <= maxGrade);
+  const genericCount = 3 + Math.floor(rng() * 2);
+  const pool = [...generic];
+  for (let i = 0; i < genericCount && pool.length > 0; i++) {
+    const idx = Math.floor(rng() * pool.length);
+    equipment.push(pool[idx]!.id);
+    pool.splice(idx, 1);
+  }
+  // お守り (低確率で 1 品)
+  const charms = EQUIPMENT.filter((e) => e.slot === 'charm' && e.grade <= maxGrade);
+  if (rng() < 0.4 && charms.length > 0) {
+    equipment.push(charms[Math.floor(rng() * charms.length)]!.id);
+  }
+  // 特色枠: ジョブ専用・中位は town index の巡回割当 (互いに素な歩幅 7 で分散)。
+  // 上位は 1/3 の街だけが持つレア枠だが、こちらも巡回 (歩幅 11) で **全 16 職の
+  // 上位品が世界のどこかに必ず並ぶ** (初版のハッシュ乱択は sage/mage/guardian の
+  // 上位が全店欠品する恒久欠けを起こした — レビュー実測)
+  const jobMid = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 2);
+  const jobHigh = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 3);
+  // **中位 (grade2) は tier2 以上の街だけ。** 巡回割当は tier2+ の街の中での通し番号で行う
+  // (全街の index で回すと、tier1 を飛ばしたぶん割当が歯抜けになって並ばない職が出る)。
+  if (maxGrade >= 2 && jobMid.length > 0) {
+    equipment.push(jobMid[(rankAmongTier(town, 2) * 7) % jobMid.length]!.id);
+  }
+  // **上位 (grade3) は tier3 以上の街だけ。** tier3 の街は 7 軒しかないので、
+  // 1 軒 1 品では 16 職を賄えず**上位武器が永久に手に入らない職が 9 つ出る**。
+  // 1 軒あたり JOB_HIGH_PER_TOWN 品ずつ置いて全職ぶんを世界に必ず並べる。
+  if (maxGrade >= 3 && jobHigh.length > 0) {
+    const rank = rankAmongTier(town, 3);
+    for (let k = 0; k < JOB_HIGH_PER_TOWN; k++) {
+      equipment.push(jobHigh[(rank * JOB_HIGH_PER_TOWN + k) % jobHigh.length]!.id);
+    }
+  }
+
+  return { consumables, equipment, materialId: shopMaterialFor(town) };
+}

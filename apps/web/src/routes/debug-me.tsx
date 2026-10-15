@@ -13,8 +13,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useSession } from '@/lib/session';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline, playerLevelFromXp } from '@aozoraquest/core';
+import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { ResultView } from './me';
 
@@ -31,7 +32,9 @@ interface AozoraProfile {
 
 export function DebugMe() {
   const [params] = useSearchParams();
-  const handle = params.get('handle') ?? 'kojira.io';
+  const session = useSession();
+  // 個人 handle はソースに直書きしない (§4)。既定はログイン中ユーザー、無ければ ?handle= を要求。
+  const handle = params.get('handle') ?? session.handle ?? '';
   const [profile, setProfile] = useState<BskyProfile | null>(null);
   const [analysis, setAnalysis] = useState<DiagnosisResult | null>(null);
   const [aozoraProfile, setAozoraProfile] = useState<AozoraProfile | null>(null);
@@ -40,6 +43,7 @@ export function DebugMe() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!handle) { setErr('?handle=xxx.bsky.social を指定 (またはログイン)'); return; }
     (async () => {
       try {
         // 1) handle → DID + Bluesky プロフィール
@@ -97,10 +101,9 @@ export function DebugMe() {
     aozoraProfile?.targetArchetype && aozoraProfile.targetArchetype in JOBS_BY_ID
       ? (aozoraProfile.targetArchetype as Archetype)
       : null;
+  // README 画像用。権威 state は読めないので analysis の凍結値 (#534) を使う。
   const myJobXp = analysis.jobLevel?.xp ?? 0;
-  const myJobLv = jobLevelFromXp(myJobXp);
-  const myPlayerXp = analysis.playerLevel?.xp ?? 0;
-  const myPlayerLv = playerLevelFromXp(myPlayerXp);
+  const myJobLv = jobLevelFromXp(myJobXp, analysis.archetype);
 
   return (
     // README 用のヒーロー画像なので、本物の AppShell + 背景なしで content だけ
@@ -136,11 +139,6 @@ export function DebugMe() {
                 <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(myArchetype)}</span>
               </p>
             )}
-            <p style={{ margin: '0.15em 0 0', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-              <span>全体:</span>{' '}
-              <span style={{ fontFamily: 'ui-monospace, monospace' }}>LV{myPlayerLv}</span>
-              <span style={{ marginLeft: '0.5em', opacity: 0.8 }}>(累計 {myPlayerXp} XP)</span>
-            </p>
             <p style={{ margin: '0.15em 0 0', fontSize: '0.85em', color: 'var(--color-muted)' }}>
               <span style={{ color: 'var(--color-muted)' }}>目指す:</span>{' '}
               {targetArchetype ? (
@@ -156,7 +154,9 @@ export function DebugMe() {
         </div>
 
         {/* 本体 (レーダー + 認知機能 + 相性) */}
-        <ResultView result={analysis} onRerun={() => undefined} />
+        {/* 権威 state (GameState.jobXp) はセッションが要るので、この public な画面からは
+            読めない。analysis に凍結されたベータ期間の記録値を渡す (#534)。 */}
+        <ResultView result={analysis} jobXp={myJobXp} onRerun={() => undefined} />
       </div>
     </div>
   );

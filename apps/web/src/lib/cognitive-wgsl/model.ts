@@ -1,0 +1,269 @@
+/**
+ * ModernBERT-ja-30m の WebGPU 推論本体。GPU buffer と pipeline は create() で 1 回だけ作り、
+ * run() のたびに使い回す。dispose() で全 buffer を destroy して device を破棄する。
+ *
+ * 1 回の run() は「packed」バッチ (系列を連結した最大 MAX_BATCH_TOKENS トークン) を処理し、
+ * 系列ごとの出力を返す。出力は .aqw の config.head で決まる:
+ *   - classifier (cognitive-small、既定): 9 クラス logits
+ *   - mean-pool (Ruri-v3-30m): L2 正規化した 256 次元の埋め込み
+ */
+import {
+  ATTENTION_WGSL, CLASSIFIER_WGSL, CLS_GATHER_WGSL, EMBED_WGSL, GEGLU_WGSL, HEAD_DIM, HEADS, HIDDEN,
+  INTERMEDIATE, LAYER_NORM_WGSL, LINEAR_WGSL, MAX_SEQ_TOKENS, MEAN_POOL_WGSL, ROPE_WGSL,
+} from './kernels';
+import { BUFFER_USAGE, MAP_MODE_READ } from './gpu-flags';
+import { loadWeights, type AqwHead, type GpuWeights, type WeightProgress } from './weights';
+import { buildRopeTables, packSequences } from './packing';
+
+/** 1 回の GPU 実行で扱う最大トークン数 (活性化 buffer の容量、約 18MB)。1 系列の上限 MAX_SEQ_TOKENS と同じ。 */
+export const MAX_BATCH_TOKENS = MAX_SEQ_TOKENS;
+/** 1 回の GPU 実行で扱う最大系列数。 */
+export const MAX_BATCH_SEQS = 64;
+const LAYERS = 10;
+const CLASSES = 9;
+const GLOBAL_EVERY = 3;
+const LOCAL_ROPE_THETA = 10000;
+const GLOBAL_ROPE_THETA = 160000;
+
+const STORAGE = BUFFER_USAGE.STORAGE | BUFFER_USAGE.COPY_DST | BUFFER_USAGE.COPY_SRC;
+
+export class WebGpuUnsupportedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'WebGpuUnsupportedError';
+  }
+}
+
+interface Step {
+  pipeline: GPUComputePipeline;
+  bind: GPUBindGroup;
+  /** トークン数 T と系列数 S から dispatch サイズを決める。 */
+  grid: (tokens: number, seqs: number) => [number, number];
+}
+
+export class CognitiveWgslModel {
+  private steps: Step[] = [];
+  /** GPU device を失った (iOS のバックグラウンド化など) 時に resolve する。呼び出し側は作り直す。 */
+  readonly lost: Promise<unknown>;
+  /** run() を 1 本ずつ流すための列。readback buffer は 1 つなので、同時に map させない。 */
+  private queue: Promise<unknown> = Promise.resolve();
+  /** 捕捉されない GPU error (validation / out-of-memory) が起きた後は結果を信用できない。 */
+  private gpuError: string | null = null;
+  /** true なら run() は throw する。呼び出し側は作り直す。 */
+  get broken(): boolean { return this.gpuError !== null; }
+  /** run() が返す系列ごとの要素数 (classifier は 9、mean-pool は HIDDEN)。 */
+  readonly outputSize: number;
+  private constructor(
+    private device: GPUDevice,
+    readonly head: AqwHead,
+    private weights: GpuWeights,
+    private owned: GPUBuffer[],
+    private io: { tok: GPUBuffer; seqStart: GPUBuffer; dims: GPUBuffer; logits: GPUBuffer; readback: GPUBuffer },
+  ) {
+    this.lost = device.lost;
+    this.outputSize = head === 'mean-pool' ? HIDDEN : CLASSES;
+    // logits が書かれないまま 0 を読むと一様な 1/9 の結果になるため、error を握りつぶさず壊れた扱いにする
+    device.onuncapturederror = (ev) => {
+      this.gpuError ??= ev.error.message || 'GPU error';
+      console.error('[cognitive] uncaptured GPU error', ev.error);
+    };
+  }
+
+  static async create(modelUrl: string, onProgress?: WeightProgress): Promise<CognitiveWgslModel> {
+    const gpu = (globalThis.navigator as Navigator | undefined)?.gpu;
+    if (!gpu) throw new WebGpuUnsupportedError('navigator.gpu is not available');
+    const adapter = await gpu.requestAdapter();
+    if (!adapter) throw new WebGpuUnsupportedError('no WebGPU adapter');
+    const device = await adapter.requestDevice();
+    let weights: GpuWeights | null = null;
+    try {
+      // 重みの確保・書き込み、作業 buffer の確保、初回実行を error scope で囲み、GPU 側の失敗を throw にする
+      device.pushErrorScope('out-of-memory');
+      device.pushErrorScope('validation');
+      let model: CognitiveWgslModel | null = null;
+      let setupError: unknown = null;
+      try {
+        const loaded = await loadWeights(device, modelUrl, onProgress);
+        weights = loaded.weights;
+        model = CognitiveWgslModel.allocate(device, loaded.header.config.head ?? 'classifier', weights);
+        await model.buildSteps();
+        await model.runNow([[1, 2]]);
+      } catch (e) {
+        setupError = e;
+      }
+      const validation = await device.popErrorScope();
+      const oom = await device.popErrorScope();
+      if (setupError) throw setupError;
+      const gpuError = oom ?? validation ?? (model?.gpuError ? { message: model.gpuError } : null);
+      if (gpuError) throw new Error(`cognitive model GPU setup failed: ${gpuError.message}`);
+      return model!;
+    } catch (e) {
+      if (weights) for (const b of weights.values()) b.destroy();
+      device.destroy();
+      throw e;
+    }
+  }
+
+  private static allocate(device: GPUDevice, head: AqwHead, weights: GpuWeights): CognitiveWgslModel {
+    const owned: GPUBuffer[] = [];
+    const buf = (label: string, size: number, usage = STORAGE) => {
+      const b = device.createBuffer({ label: `cognitive:${label}`, size, usage });
+      owned.push(b);
+      return b;
+    };
+    const T = MAX_BATCH_TOKENS;
+    const S = MAX_BATCH_SEQS;
+    const out = head === 'mean-pool' ? HIDDEN : CLASSES;
+    buf('x', T * HIDDEN * 4);
+    buf('h', T * HIDDEN * 4);
+    buf('qkv', T * 3 * HIDDEN * 4);
+    buf('attn', T * HIDDEN * 4);
+    buf('u', T * 2 * INTERMEDIATE * 4);
+    buf('g', T * INTERMEDIATE * 4);
+    buf('cls1', S * HIDDEN * 4);
+    buf('cls2', S * HIDDEN * 4);
+    const local = buildRopeTables(MAX_SEQ_TOKENS, HEAD_DIM, LOCAL_ROPE_THETA);
+    const global = buildRopeTables(MAX_SEQ_TOKENS, HEAD_DIM, GLOBAL_ROPE_THETA);
+    for (const [name, data] of [['cosL', local.cos], ['sinL', local.sin], ['cosG', global.cos], ['sinG', global.sin]] as const) {
+      device.queue.writeBuffer(buf(name, data.byteLength), 0, data);
+    }
+    const io = {
+      tok: buf('tok', T * 16),
+      seqStart: buf('seqStart', S * 4),
+      dims: buf('dims', 16, BUFFER_USAGE.UNIFORM | BUFFER_USAGE.COPY_DST),
+      logits: buf('logits', S * out * 4),
+      readback: buf('readback', S * out * 4, BUFFER_USAGE.MAP_READ | BUFFER_USAGE.COPY_DST),
+    };
+    return new CognitiveWgslModel(device, head, weights, owned, io);
+  }
+
+  private named(label: string): GPUBuffer {
+    const b = this.owned.find((x) => x.label === `cognitive:${label}`) ?? this.weights.get(label);
+    if (!b) throw new Error(`cognitive buffer missing: ${label}`);
+    return b;
+  }
+
+  /** createComputePipelineAsync は shader / pipeline の不正を reject で返す (同期版は無効な pipeline を黙って返す)。 */
+  private pipeline(code: string, constants: Record<string, number> = {}): Promise<GPUComputePipeline> {
+    return this.device.createComputePipelineAsync({
+      layout: 'auto',
+      compute: { module: this.device.createShaderModule({ code }), entryPoint: 'main', constants },
+    });
+  }
+
+  private step(pipeline: GPUComputePipeline, buffers: GPUBuffer[], grid: Step['grid']): void {
+    const bind = this.device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: buffers.map((buffer, binding) => ({ binding, resource: { buffer } })),
+    });
+    this.steps.push({ pipeline, bind, grid });
+  }
+
+  private async buildSteps(): Promise<void> {
+    const b = (n: string) => this.named(n);
+    const { tok, dims, seqStart, logits } = this.io;
+    const ceil = (a: number, d: number) => Math.ceil(a / d);
+    const perToken: Step['grid'] = (t) => [t, 1];
+    const perSeq: Step['grid'] = (_t, s) => [s, 1];
+    const linear = (k: number, n: number, opts: { accum?: boolean; gelu?: boolean; seqRows?: boolean } = {}) =>
+      this.pipeline(LINEAR_WGSL, {
+        K: k, N: n, ACCUM: opts.accum ? 1 : 0, APPLY_GELU: opts.gelu ? 1 : 0, ROWS_FROM_SEQS: opts.seqRows ? 1 : 0,
+      });
+    const linGrid = (n: number): Step['grid'] => (t) => [n / 64, ceil(t, 64)];
+
+    const [pEmbed, pNorm, pQkv, pWo, pWi, pWo2, pRope, pAttnLocal, pAttnGlobal, pGeglu] =
+      await Promise.all([
+        this.pipeline(EMBED_WGSL),
+        this.pipeline(LAYER_NORM_WGSL),
+        linear(HIDDEN, 3 * HIDDEN),
+        linear(HIDDEN, HIDDEN, { accum: true }),
+        linear(HIDDEN, 2 * INTERMEDIATE),
+        linear(INTERMEDIATE, HIDDEN, { accum: true }),
+        this.pipeline(ROPE_WGSL),
+        this.pipeline(ATTENTION_WGSL, { GLOBAL: 0 }),
+        this.pipeline(ATTENTION_WGSL, { GLOBAL: 1 }),
+        this.pipeline(GEGLU_WGSL),
+      ]);
+
+    this.step(pEmbed, [tok, b('emb_q'), b('emb_scale'), b('h')], perToken);
+    this.step(pNorm, [b('h'), b('emb_norm'), b('x')], perToken);
+    for (let l = 0; l < LAYERS; l++) {
+      const isGlobal = l % GLOBAL_EVERY === 0;
+      let attnIn = b('x');
+      if (l > 0) { // layer 0 の attn_norm は Identity
+        this.step(pNorm, [b('x'), b(`l${l}.attn_norm`), b('h')], perToken);
+        attnIn = b('h');
+      }
+      this.step(pQkv, [dims, attnIn, b(`l${l}.wqkv`), b('qkv')], linGrid(3 * HIDDEN));
+      this.step(pRope, [tok, b(isGlobal ? 'cosG' : 'cosL'), b(isGlobal ? 'sinG' : 'sinL'), b('qkv')], perToken);
+      this.step(isGlobal ? pAttnGlobal : pAttnLocal, [tok, b('qkv'), b('attn')], (t) => [t, HEADS]);
+      this.step(pWo, [dims, b('attn'), b(`l${l}.wo`), b('x')], linGrid(HIDDEN));
+      this.step(pNorm, [b('x'), b(`l${l}.mlp_norm`), b('h')], perToken);
+      this.step(pWi, [dims, b('h'), b(`l${l}.wi`), b('u')], linGrid(2 * INTERMEDIATE));
+      this.step(pGeglu, [dims, b('u'), b('g')], (t) => [ceil(t * INTERMEDIATE, 256), 1]);
+      this.step(pWo2, [dims, b('g'), b(`l${l}.wo2`), b('x')], linGrid(HIDDEN));
+    }
+    this.step(pNorm, [b('x'), b('final_norm'), b('h')], perToken);
+    if (this.head === 'mean-pool') {
+      this.step(await this.pipeline(MEAN_POOL_WGSL), [tok, seqStart, b('h'), logits], perSeq);
+      return;
+    }
+    const [pHead, pGather, pCls] = await Promise.all([
+      linear(HIDDEN, HIDDEN, { gelu: true, seqRows: true }),
+      this.pipeline(CLS_GATHER_WGSL),
+      this.pipeline(CLASSIFIER_WGSL),
+    ]);
+    this.step(pGather, [seqStart, b('h'), b('cls1')], perSeq);
+    this.step(pHead, [dims, b('cls1'), b('head_dense'), b('cls2')], (_t, s) => [HIDDEN / 64, ceil(s, 64)]);
+    this.step(pNorm, [b('cls2'), b('head_norm'), b('cls1')], perSeq);
+    this.step(pCls, [dims, b('cls1'), b('cls_w'), b('cls_b'), logits], (_t, s) => [ceil(s * CLASSES, 64), 1]);
+  }
+
+  /**
+   * token id 列 (系列ごと、CLS/SEP 込み) の出力 (outputSize 要素: 9 クラス logits か埋め込み) を返す。
+   * 合計トークン数は MAX_BATCH_TOKENS、系列数は MAX_BATCH_SEQS 以下であること (runner 側で分割する)。
+   */
+  run(sequences: readonly (readonly number[])[]): Promise<Float32Array[]> {
+    const result = this.queue.then(() => this.runNow(sequences));
+    this.queue = result.catch(() => {});
+    return result;
+  }
+
+  private async runNow(sequences: readonly (readonly number[])[]): Promise<Float32Array[]> {
+    if (this.gpuError) throw new Error(`cognitive model is broken (GPU error: ${this.gpuError})`);
+    const packed = packSequences(sequences, MAX_BATCH_TOKENS, MAX_BATCH_SEQS);
+    const T = packed.tokens;
+    const S = sequences.length;
+    const q = this.device.queue;
+    q.writeBuffer(this.io.tok, 0, packed.meta);
+    q.writeBuffer(this.io.seqStart, 0, packed.seqStart);
+    q.writeBuffer(this.io.dims, 0, new Uint32Array([T, S, 0, 0]));
+    const enc = this.device.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    for (const s of this.steps) {
+      const [x, y] = s.grid(T, S);
+      pass.setPipeline(s.pipeline);
+      pass.setBindGroup(0, s.bind);
+      pass.dispatchWorkgroups(x, y);
+    }
+    pass.end();
+    const n = this.outputSize;
+    enc.copyBufferToBuffer(this.io.logits, 0, this.io.readback, 0, S * n * 4);
+    q.submit([enc.finish()]);
+    await this.io.readback.mapAsync(MAP_MODE_READ, 0, S * n * 4);
+    const flat = new Float32Array(this.io.readback.getMappedRange(0, S * n * 4).slice(0));
+    this.io.readback.unmap();
+    // submit 中の validation error は非同期に通知されるため、map 後にもう一度確かめる
+    if (this.gpuError) throw new Error(`cognitive model is broken (GPU error: ${this.gpuError})`);
+    return Array.from({ length: S }, (_, i) => flat.subarray(i * n, (i + 1) * n));
+  }
+
+  dispose(): void {
+    for (const b of this.owned) b.destroy();
+    for (const b of this.weights.values()) b.destroy();
+    this.owned = [];
+    this.weights.clear();
+    this.steps = [];
+    this.device.destroy();
+  }
+}

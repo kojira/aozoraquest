@@ -1,1 +1,2 @@
-apps/web/public/card-art/*.jpg filter=lfs diff=lfs merge=lfs -text
+# card-art の jpg は LFS をやめ通常 git 管理に戻した
+# (~1MB/枚で LFS は過剰。LFS 帯域クォータ超過で CF ビルドが checkout 失敗していたため)

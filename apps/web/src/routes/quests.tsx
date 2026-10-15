@@ -271,7 +271,6 @@ function DayCard({ rec, today, isToday }: { rec: QuestLogRecord; today: Quest[];
   const quests = rec.quests.map((e) => entryToQuest(e, today));
   const doneCount = quests.filter(isQuestDone).length;
   const total = quests.length;
-  const xp = rec.totalXpGained ?? 0;
   const activityCount = rec.activity?.length ?? 0;
 
   return (
@@ -319,11 +318,6 @@ function DayCard({ rec, today, isToday }: { rec: QuestLogRecord; today: Quest[];
         <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
           達成 {doneCount}/{total}
         </span>
-        {xp > 0 && (
-          <span style={{ fontSize: '0.85em', color: 'var(--color-accent)', fontFamily: 'ui-monospace, monospace' }}>
-            +{xp} XP
-          </span>
-        )}
         {activityCount > 0 && (
           <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>
             行動 {activityCount}

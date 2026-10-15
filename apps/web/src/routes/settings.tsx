@@ -4,10 +4,11 @@ import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult, StatVector } from '@aozoraquest/core';
 import { ARCHETYPES, JOBS_BY_ID, jobDisplayName, jobTagline, statArrayToVector } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
+import { isAdminDid } from '@/lib/runtime-config';
 import { signOut } from '@/lib/oauth';
 import { createTaggedPost, getRecord, putRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
-import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault, getTheme, type ThemeChoice } from '@/lib/prefs';
+import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, getHideReposts, setHideReposts, getOpenBskyLinksExternally, setOpenBskyLinksExternally, getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_DEFAULT, clampFontScale, getPostQuestNotifications, setPostQuestNotifications, getPostQuestNotificationsDefault, getTheme, type ThemeChoice } from '@/lib/prefs';
 import { applyFontScale } from '@/lib/font-scale';
 import { applyTheme } from '@/lib/theme';
 import { APP_VERSION } from '@/lib/app-version';
@@ -331,8 +332,22 @@ export function Settings() {
         <AutoTranslateToggle />
         <AnalyzePostsToggle />
         <HideRepostsToggle />
+        <OpenBskyLinksToggle />
         <PostQuestNotificationsToggle />
       </section>
+
+      {/* 管理者なら本番でも出す。ダッシュボードの中身も本番で開ける (2026-07-27) —
+          書き込みを伴う操作は edge 側で ADMIN_DIDS を検証しているので、表示で隠す必要がない。 */}
+      {isAdminDid(session.did) && (
+        <section style={{ marginTop: '2em' }}>
+          <h3 style={{ fontSize: '0.95em' }}>あおぞらワールド 管理</h3>
+          <p style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginBottom: '0.5em' }}>
+            モンスター・マップ・ジョブ・NPC・クエストの編集ハブ (管理者専用)。
+            サーバー連携・PDS の書き込み残量・パワー付与・ジョブ変更・模擬戦もここに集約しています。
+          </p>
+          <button onClick={() => navigate('/admin')}>管理ダッシュボードを開く</button>
+        </section>
+      )}
 
       <section style={{ marginTop: '2em' }}>
         <h3 style={{ fontSize: '0.95em' }}>アカウント</h3>
@@ -533,6 +548,29 @@ function HideRepostsToggle() {
   );
 }
 
+function OpenBskyLinksToggle() {
+  const [enabled, setEnabled] = useState<boolean>(() => getOpenBskyLinksExternally());
+  function handleChange(v: boolean) {
+    setOpenBskyLinksExternally(v);
+    setEnabled(v);
+  }
+  return (
+    <div style={{ marginTop: '1em' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5em', fontSize: '0.9em', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => handleChange(e.target.checked)}
+        />
+        <span>Bluesky 公式リンクを外部で開く</span>
+      </label>
+      <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
+        本文中の bsky.app の投稿 / プロフィールリンクを、既定ではあおぞらくえすと内で開きます。ON にすると常に外部 (別タブ / 公式アプリ) で開きます。あおぞら内の表示で不都合があるときや、公式が未対応の新リンク形式を追加したときの逃げ道です。
+      </p>
+    </div>
+  );
+}
+
 function PostQuestNotificationsToggle() {
   const [enabled, setEnabled] = useState<boolean>(() => getPostQuestNotifications());
   const def = getPostQuestNotificationsDefault();
@@ -577,8 +615,9 @@ function AnalyzePostsToggle() {
         <span>タイムラインの投稿を解析して気質バッジを表示する</span>
       </label>
       <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', marginTop: '0.3em', marginLeft: '1.5em' }}>
-        URL とハッシュタグを取り除いた本文を ONNX 分類器で解析し、Fe / Ni などの心理機能スコア上位 3 を投稿下に表示します。ブラウザ内推論なので外部送信はありませんが、初回ロードでモデル (~30MB) がダウンロードされます。OFF にした場合も各投稿下の「🧠 気質を分析」ボタンから個別に解析できます。
+        URL とハッシュタグを取り除いた本文をブラウザ内の WebGPU 推論で解析し、Fe / Ni などの心理機能スコア上位 3 を投稿下に表示します。外部送信はありませんが、初回ロードでモデル (約 48MB) がダウンロードされます。OFF にした場合も各投稿下の「🧠 気質を分析」ボタンから個別に解析できます。
       </p>
     </div>
   );
 }
+

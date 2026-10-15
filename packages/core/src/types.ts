@@ -30,6 +30,11 @@ export interface JobDefinition {
   id: Archetype;
   names: { default: string; maker: string; alt: string };
   stats: StatArray;
+  /** たいりょく (#518)。**診断由来の 5 パラメータ (合計 100) とは別枠のジョブ専用ゲームパラメータ**。
+   *  体力は性格特性ではないので stats に混ぜず、ジョブの役割から手で設計する。他ステータスと同じ式で
+   *  レベル成長し、**HP = 6 + たいりょく × 2** の元になる (DQ 準拠:「体力の約 2 倍まで HP が上昇」)。
+   *  スケールは stats と揃えてある (18〜45)。 */
+  vit: number;
   dominantFunction: CogFunction;
   auxiliaryFunction: CogFunction;
   /** MTG カラーパイの primary color (WUBRG 1 文字)。LLM が能力生成時に最低 1 色含める制約として使う。 */
@@ -60,6 +65,9 @@ export interface Quest {
   description: string;
   requiredCount: number;
   currentCount: number;
+  /** @deprecated クエスト完了では XP が増えない (2026-07-27)。達成の判定が端末内 ONNX の
+   *  分類に依存していて、サーバーが同じ判定を再現できない = 申告額を検証できなかったため。
+   *  値は生成時の名残で、**どこにも表示されず成長にも効かない**。 */
   xpReward: number;
   forbiddenActionTypes?: ActionType[];
   issuedDate: string; // YYYY-MM-DD

@@ -23,16 +23,18 @@ import {
   DAILY_BONUS_DAY_MARGIN_FACTOR,
   DEFAULT_QUEST_TEMPLATES,
   JOB_CHANGE_STREAK_THRESHOLD as CORE_JOB_CHANGE_STREAK_THRESHOLD,
+  JOB_XP_CURVE,
   XP_REWARDS,
   cognitiveToRpg,
   determineArchetype,
   jobLevelFromXp,
-  playerLevelFromXp,
 } from '@aozoraquest/core';
 import { classifyFromVec, type ActionCategory } from './action-classifier';
 import { classifyCognitiveFromVec } from './cognitive-classifier';
-import { Embedder } from './embedder';
+import { Embedder, EmbedderUnsupportedError } from './embedder';
 import { getRecord, putRecord } from './atproto';
+import { serverClaimXp } from './world-server';
+import { claimPostXp } from './pending-claims';
 import { deriveActionTypes, type PostStructure } from './structural-action';
 
 export interface QuestLogEntry {
@@ -66,6 +68,7 @@ export interface QuestLogRecord {
   quests: QuestLogEntry[];
   /** 今日分類された投稿の履歴 (古い順)。最新 50 件までを保持。 */
   activity?: ActivityEntry[];
+  /** @deprecated クエスト完了では XP が増えない (2026-07-27)。過去ログの互換のために残す。 */
   totalXpGained?: number;
   updatedAt: string;
 }
@@ -74,13 +77,13 @@ export interface ProcessResult {
   action: ActionCategory | null;
   incremented: string[];
   completed: string[];
+  /** @deprecated 完了したクエストの報酬値の合計。**成長には効かない** (2026-07-27)。 */
   xpGained: number;
   updatedRpgStats?: StatVector | undefined;
   updatedCognitive?: CognitiveScores | undefined;
   jobLevel?: JobLevelState | undefined;
   playerLevel?: PlayerLevelState | undefined;
   jobLeveledUp?: { from: number; to: number } | undefined;
-  playerLeveledUp?: { from: number; to: number } | undefined;
   /** 現 archetype と異なる判定が出ている場合の候補と連続回数。 */
   pendingArchetype?: Archetype | undefined;
   pendingArchetypeStreak?: number | undefined;
@@ -108,12 +111,16 @@ export async function processSelfPost(
   did: string,
   text: string,
   structure?: PostStructure,
+  /** この投稿の URI。XP 申告の冪等キーに使う (#534)。省略すると XP は申告されない。 */
+  postUri?: string,
 ): Promise<ProcessResult> {
   const trimmed = text.trim();
+  /** XP 申告。analysis の書き込みが終わってから走らせる (edge の待ちで PDS 更新を落とさない)。 */
+  let claim: () => Promise<void> = async () => {};
   const empty: ProcessResult = { action: null, incremented: [], completed: [], xpGained: 0 };
   if (trimmed.length === 0) return empty;
 
-  // 投稿のたびに走る解析。**端末内 ONNX モデルは「埋め込み 1 個」だけ**ロードする。
+  // 投稿のたびに走る解析。**端末内モデルは「埋め込み 1 個」だけ**ロードする。
   //
   // 以前は embedder + cognitive の 2 モデルを同時にロードしていたが、iOS Safari は
   // 2 モデル同時ロードの瞬間メモリスパイクに耐えられず (8GB の iPhone でも)、投稿直後に
@@ -121,23 +128,26 @@ export async function processSelfPost(
   // モデル推論を切ると落ちない / 2 モデルは落ちる / 1 モデルは通る)。
   //
   // そこで行動分類・認知スコアとも **埋め込みベクトルの prototype cosine** で求め、
-  // cognitive の ONNX 分類器は投稿パスでは使わない。認知スコアの精度は /me のフル診断
-  // (runDiagnosis) 側で ONNX を使って担保し、投稿ごとの更新は α=COGNITIVE_BLEND_ALPHA の
+  // cognitive の分類器は投稿パスでは使わない。認知スコアの精度は /me のフル診断
+  // (runDiagnosis) 側の分類器で担保し、投稿ごとの更新は α=COGNITIVE_BLEND_ALPHA の
   // 微小 nudge なので prototype で十分。embedder は専用ローカルインスタンスにして共有
-  // singleton (診断 / 相性ランキング / TL 認知分析) を巻き込まず、推論後に dispose する。
+  // singleton (診断 / 相性ランキング / TL 認知分析) を巻き込まず、推論後に dispose する
+  // (GPU buffer を destroy)。埋め込みが使えない時 (WebGPU 非対応 / 重みの取得失敗 / GPU の
+  // メモリ不足など) は解析 (行動分類・認知の nudge) だけを飛ばし、クエスト記録と XP 申告は続ける。
   const embedder = new Embedder();
-  let actResult: Awaited<ReturnType<typeof classifyFromVec>>;
-  let postCognitive: CognitiveScores;
+  let action: ActionCategory | null = null;
+  let postCognitive: CognitiveScores | null = null;
   try {
-    await embedder.init().catch(() => { /* init 失敗時は embed 側が reject → 下で throw */ });
     const vec = await embedder.embed(trimmed);
-    actResult = await classifyFromVec(vec);                          // 行動: prototype cosine
+    action = (await classifyFromVec(vec)).action;                    // 行動: prototype cosine
     postCognitive = await classifyCognitiveFromVec(vec, embedder);   // 認知: prototype cosine
+  } catch (e) {
+    // 非対応端末は毎投稿で起きる想定内なので黙る。それ以外は原因を追えるよう warn だけ残す。
+    if (!(e instanceof EmbedderUnsupportedError)) console.warn('post embedding failed; analysis skipped', e);
   } finally {
     embedder.dispose();
   }
 
-  const action = actResult.action;
   const actionType = action ? (action as ActionType) : null;
   // テキスト分類 + 構造から該当 ActionType 集合を合成。
   // structure が無いケース (旧 API) でも textLength は trimmed から導出する。
@@ -219,17 +229,19 @@ export async function processSelfPost(
   let finalJobLevel: JobLevelState | undefined;
   let finalPlayerLevel: PlayerLevelState | undefined;
   let jobLeveledUp: { from: number; to: number } | undefined;
-  let playerLeveledUp: { from: number; to: number } | undefined;
   let finalPendingArchetype: Archetype | undefined;
   let finalPendingStreak: number | undefined;
   try {
     const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
     if (analysis?.cognitiveScores) {
-      const blended = blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA);
-      updatedCognitive = blended;
-
+      const blended = postCognitive
+        ? blendCognitive(analysis.cognitiveScores, postCognitive, COGNITIVE_BLEND_ALPHA)
+        : analysis.cognitiveScores;
       const nextStats = cognitiveToRpg(blended);
-      updatedRpgStats = nextStats;
+      if (postCognitive) {
+        updatedCognitive = blended;
+        updatedRpgStats = nextStats;
+      }
 
       // ── XP 計算 ─────────────────────────────
       const now = new Date();
@@ -242,78 +254,79 @@ export async function processSelfPost(
         joinedAt: analysis.analyzedAt,
       };
 
-      let gainedXp = 0;
-      if (actionType) gainedXp += XP_REWARDS.postMatch;
-      gainedXp += xpGained; // クエスト完了分
+      // **XP の額はここで計算しない** (#551)。分類できたか / 日次ボーナスか / 連続何日目かは、
+      // どれも client にしか分からない値だった = サーバーが検証できなかった。
+      // いまはサーバーが**投稿の実在を確かめてから額を決める**ので、client は申告するだけ。
+      // 連続日数もサーバーが数える (`GameState.streakDays`)。
+      //
+      // `playerLevel` は #507/#508 で戦闘力から外れており、ここは互換のため値を据え置く。
+      finalPlayerLevel = oldPlayer;
 
-      // 日次ボーナス (playerLevel で判定、1 日 1 回)
-      const prevBonusDate = oldPlayer.lastDailyBonusDate;
-      let newStreak = oldPlayer.streakDays;
-      let newBonusDate = prevBonusDate;
-      if (prevBonusDate !== today) {
-        newStreak = prevBonusDate && isYesterday(prevBonusDate, today) ? newStreak + 1 : 1;
-        const streakBonus = Math.min(XP_REWARDS.streakBonusCap, newStreak * XP_REWARDS.streakBonusPerDay);
-        gainedXp += XP_REWARDS.dailyBonus + streakBonus;
-        newBonusDate = today;
-      }
-
-      // playerLevel 更新 (常に積む)
-      const prevPlayerLv = playerLevelFromXp(oldPlayer.xp);
-      const nextPlayerXp = oldPlayer.xp + gainedXp;
-      const nextPlayerLv = playerLevelFromXp(nextPlayerXp);
-      if (nextPlayerLv > prevPlayerLv) playerLeveledUp = { from: prevPlayerLv, to: nextPlayerLv };
-      const nextPlayerLevel: PlayerLevelState = {
-        xp: nextPlayerXp,
-        ...(newBonusDate ? { lastDailyBonusDate: newBonusDate } : {}),
-        streakDays: newStreak,
-      };
-      finalPlayerLevel = nextPlayerLevel;
-
-      // jobLevel 更新 (現 archetype の分のみ。archetype は post では変えない)
-      const prevJobLv = jobLevelFromXp(oldJob.xp);
-      const nextJobXp = oldJob.xp + gainedXp;
-      const nextJobLv = jobLevelFromXp(nextJobXp);
-      if (nextJobLv > prevJobLv) jobLeveledUp = { from: prevJobLv, to: nextJobLv };
-      const nextJobLevel: JobLevelState = {
-        archetype: oldJob.archetype,
-        xp: nextJobXp,
-        joinedAt: oldJob.joinedAt,
-      };
+      // **ジョブ XP は analysis に積まない** (#534)。記録先を権威 state (GameState.jobXp) に
+      // 一本化したので、ここは**申告するだけ**。`analysis.jobLevel.xp` はベータ期間の記録として
+      // 凍結し、/me の「これまでの記録」に出す。
+      //
+      // 申告は best-effort — 失敗しても投稿処理自体は続ける。edge が落ちている間に投稿しても
+      // 投稿は成立させたい。**同じ投稿 URI で再申告しても二重に入らない**ので、将来
+      // リトライを足すのも安全 (冪等キーはサーバー側が直近 200 件覚えている)。
+      const nextJobLevel: JobLevelState = oldJob; // 凍結 (値を変えない)
       finalJobLevel = nextJobLevel;
-
-      // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
-      // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。
-      const { archetype: candidate } = determineArchetype(blended);
-      let nextPendingArchetype: Archetype | undefined;
-      let nextPendingStreak: number | undefined;
-      if (candidate && candidate !== analysis.archetype) {
-        if (analysis.pendingArchetype === candidate) {
-          nextPendingStreak = (analysis.pendingArchetypeStreak ?? 0) + 1;
-        } else {
-          nextPendingStreak = 1;
+      // 申告そのものは analysis を書いた**後**に行う (下の claim(): putRecord の後で await)。
+      // 先に待つと、edge のタイムアウト (最大 8 秒) の間にタブを閉じられたとき、
+      // 認知スコアのブレンド・streak・playerLevel の更新ごと失われる。
+      claim = async () => {
+        const arch = analysis.archetype;
+        // **額は送らない。** サーバーが投稿の実在を確かめてから決める (#551)。
+        // 落ちた申告の保留と出し直しは claimPostXp が持つ (#548)。ここで諦めると、
+        // PDS の一時障害だけでその投稿の XP が永久に消える (申告は投稿時にしか走らないため)。
+        const r = await claimPostXp((c) => serverClaimXp(agent, c), postUri ? { archetype: arch, postUri } : null);
+        if (r && r.granted > 0) {
+          // レベルアップ判定は**権威 state の値**で行う。
+          const before = jobLevelFromXp(r.jobXp - r.granted, arch);
+          const after = jobLevelFromXp(r.jobXp, arch);
+          if (after > before) jobLeveledUp = { from: before, to: after };
+          finalJobLevel = { archetype: arch, xp: r.jobXp, joinedAt: oldJob.joinedAt };
         }
-        nextPendingArchetype = candidate;
-      }
-      finalPendingArchetype = nextPendingArchetype;
-      finalPendingStreak = nextPendingStreak;
+      };
 
-      await putRecord(agent, COL.analysis, 'self', {
-        ...analysis,
-        cognitiveScores: blended,
-        rpgStats: nextStats,
-        // archetype は固定 (post ごとには変えない)
-        analyzedAt: analysis.analyzedAt,
-        jobLevel: nextJobLevel,
-        playerLevel: nextPlayerLevel,
-        ...(nextPendingArchetype
-          ? { pendingArchetype: nextPendingArchetype, pendingArchetypeStreak: nextPendingStreak }
-          : { pendingArchetype: undefined, pendingArchetypeStreak: undefined }),
-      });
+      // 解析を飛ばした (WebGPU 非対応) 投稿では、認知スコアも転職候補も書き換えない。
+      if (postCognitive) {
+        // 転職候補の検出: ブレンド後 cognitive から archetype を再判定し、現 archetype
+        // と違えば pendingArchetype として保存 + 連続回数を積む。同じに戻ればクリア。
+        const { archetype: candidate } = determineArchetype(blended);
+        let nextPendingArchetype: Archetype | undefined;
+        let nextPendingStreak: number | undefined;
+        if (candidate && candidate !== analysis.archetype) {
+          if (analysis.pendingArchetype === candidate) {
+            nextPendingStreak = (analysis.pendingArchetypeStreak ?? 0) + 1;
+          } else {
+            nextPendingStreak = 1;
+          }
+          nextPendingArchetype = candidate;
+        }
+        finalPendingArchetype = nextPendingArchetype;
+        finalPendingStreak = nextPendingStreak;
+
+        await putRecord(agent, COL.analysis, 'self', {
+          ...analysis,
+          cognitiveScores: blended,
+          rpgStats: nextStats,
+          // archetype は固定 (post ごとには変えない)
+          analyzedAt: analysis.analyzedAt,
+          jobLevel: nextJobLevel,
+          playerLevel: oldPlayer, // #551: XP は権威側。ここは据え置き
+          ...(nextPendingArchetype
+            ? { pendingArchetype: nextPendingArchetype, pendingArchetypeStreak: nextPendingStreak }
+            : { pendingArchetype: undefined, pendingArchetypeStreak: undefined }),
+        });
+      }
       void nowIso;
     }
   } catch (e) {
     console.warn('analysis update failed', e);
   }
+  // XP 申告は analysis を書き終えてから (上記の理由)。
+  await claim();
 
   return {
     action,
@@ -325,7 +338,6 @@ export async function processSelfPost(
     jobLevel: finalJobLevel,
     playerLevel: finalPlayerLevel,
     jobLeveledUp,
-    playerLeveledUp,
     pendingArchetype: finalPendingArchetype,
     pendingArchetypeStreak: finalPendingStreak,
   };
@@ -340,11 +352,38 @@ export async function processSelfPost(
 export async function confirmJobChange(agent: Agent, did: string, newArchetype: Archetype): Promise<DiagnosisResult | null> {
   const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
   if (!analysis) return null;
-  const now = new Date().toISOString();
+  // **`jobLevel` は触らない** (#534)。ここはベータ期間の記録として凍結された値で、
+  // 上書きすると `/me` の「ベータ期間の記録」が消える (PDS ごと書き換わるので復元不能)。
+  // 現職の XP は権威 state (`GameState.jobXp[archetype]`) が持っており、archetype キーなので
+  // 転職しても前職のぶんは残り、戻れば復活する (#531 が構造的に解決)。
   const next: DiagnosisResult = {
     ...analysis,
     archetype: newArchetype,
-    jobLevel: { archetype: newArchetype, xp: 0, joinedAt: now },
+  };
+  delete (next as Partial<DiagnosisResult>).pendingArchetype;
+  delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;
+  await putRecord(agent, COL.analysis, 'self', next);
+  return next;
+}
+
+/**
+ * 管理者用: 自分のジョブを即座に任意の archetype に切り替える (dev の /admin から)。
+ * 本人の PDS (analysis/self) を本人トークンで書く。
+ *
+ * **レベルはここでは動かない** (#534)。XP の記録先を権威 state に一本化したので、
+ * `analysis.jobLevel.xp` はベータ期間の記録として凍結され、成長には効かない。
+ * レベルの設定は `serverAdminSetJobLevel` (edge の ADMIN_DIDS ゲート付きエンドポイント) が担当し、
+ * 呼び出し側 (job-change-admin) が職とレベルの両方を順に設定する。
+ *
+ * `jobLevel` を書き換えないのは、そこが `/me` の「ベータ期間の記録」の表示元だから
+ * (上書きすると PDS ごと消えて復元できない)。
+ */
+export async function adminSetJob(agent: Agent, did: string, newArchetype: Archetype): Promise<DiagnosisResult | null> {
+  const analysis = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
+  if (!analysis) return null;
+  const next: DiagnosisResult = {
+    ...analysis,
+    archetype: newArchetype,
   };
   delete (next as Partial<DiagnosisResult>).pendingArchetype;
   delete (next as Partial<DiagnosisResult>).pendingArchetypeStreak;

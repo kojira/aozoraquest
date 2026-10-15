@@ -1,0 +1,216 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest';
+import { act, render, screen, fireEvent } from '@testing-library/react';
+import { DialogueWindow } from './dialogue-window';
+
+/**
+ * **セリフ窓のタップは祖先に伝わってはいけない** (#638)。
+ *
+ * セリフ窓は「どこをタップしても進む」ために画面全体を覆う透明な送り面を持つ。
+ * なんでも屋の店窓 (`ShopModal`) は「背景タップで閉じる」オーバーレイの**中**に
+ * セリフ窓を描くので、送り面の click がそのまま親に届くと
+ *
+ *   - あいさつをタップした瞬間に店ごと閉じる
+ *   - 送り面に吸われて「つくってもらう」も押せない (= アイテムが作れない)
+ *
+ * になる (実際に村のなんでも屋が使えなくなっていた)。
+ * 送り面を持つ側 (このコンポーネント) で止めるのが正しいので、ここで固定する。
+ */
+describe('DialogueWindow: 祖先へ click を伝えない', () => {
+  const LINES = [{ speaker: '店主', text: 'いらっしゃい' }, { text: 'なにか つくるかい' }];
+
+  function renderInClosingOverlay() {
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    render(
+      // ShopModal と同じ構造: 背景タップで閉じるオーバーレイの中にセリフ窓を置く
+      <div data-testid="overlay" onClick={onClose}>
+        <button type="button">つくってもらう</button>
+        <DialogueWindow lines={LINES} onDone={onDone} />
+      </div>,
+    );
+    return { onClose, onDone };
+  }
+
+  it('送り面をタップしても親の onClose が呼ばれない', () => {
+    const { onClose } = renderInClosingOverlay();
+    // 送り面 = 全画面の当たり判定 (role=dialog)。窓本体も同じ扱い。
+    const surfaces = screen.getAllByRole('dialog');
+    expect(surfaces.length).toBeGreaterThan(0);
+    for (const el of surfaces) fireEvent.click(el);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('タップでセリフは進む (止めているのは伝播だけ)', () => {
+    renderInClosingOverlay();
+    const surface = screen.getAllByRole('dialog')[0]!;
+    // 表示テキストはスクリーンリーダー用の複製もあるので getAllByText で見る
+    // 1 タップ目でタイプ中の行が全文表示になる
+    fireEvent.click(surface);
+    expect(screen.getAllByText(/いらっしゃい/).length).toBeGreaterThan(0);
+    // 2 タップ目で次の行へ
+    fireEvent.click(surface);
+    expect(screen.getAllByText(/なにか つくるかい/).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * **選択肢 (はい / いいえ)** (#659)。最後の行を読み終えたら選択肢を出し、選ぶまで閉じない。
+ * 依頼を聞き終えただけで受注してしまわないための入口なので、「送り面のタップで
+ * 勝手に閉じて onDone が走る」ことも「いいえ で はい が呼ばれる」こともあってはならない。
+ */
+describe('DialogueWindow: 選択肢', () => {
+  const LINES = [{ speaker: 'そんちょう', text: 'たのむ' }, { speaker: 'そんちょう', text: 'うけますか？' }];
+
+  function renderWithChoices() {
+    const onYes = vi.fn();
+    const onNo = vi.fn();
+    const onDone = vi.fn();
+    render(<DialogueWindow lines={LINES} onDone={onDone} choices={[{ label: 'はい', onSelect: onYes }, { label: 'いいえ', onSelect: onNo }]} />);
+    const surface = screen.getAllByRole('dialog')[0]!;
+    // 1 行目: 全文 → 次へ。2 行目: 全文 (ここで選択肢が出る)
+    fireEvent.click(surface);
+    fireEvent.click(surface);
+    fireEvent.click(surface);
+    return { onYes, onNo, onDone, surface };
+  }
+
+  it('最後の行を読み終えると選択肢が出て、送り面のタップでは閉じない', () => {
+    const { onDone, surface } = renderWithChoices();
+    expect(screen.getByRole('button', { name: 'はい' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'いいえ' })).toBeTruthy();
+    fireEvent.click(surface);
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'はい' })).toBeTruthy();
+  });
+
+  it('途中の行では選択肢を出さない', () => {
+    render(<DialogueWindow lines={LINES} onDone={vi.fn()} choices={[{ label: 'はい', onSelect: vi.fn() }, { label: 'いいえ', onSelect: vi.fn() }]} />);
+    fireEvent.click(screen.getAllByRole('dialog')[0]!); // 1 行目を全文表示
+    expect(screen.queryByRole('button', { name: 'はい' })).toBeNull();
+  });
+
+  it('はい → その onSelect だけが呼ばれ、続けて onDone', () => {
+    const { onYes, onNo, onDone } = renderWithChoices();
+    fireEvent.click(screen.getByRole('button', { name: 'はい' }));
+    expect(onYes).toHaveBeenCalledTimes(1);
+    expect(onNo).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('いいえ → その onSelect だけが呼ばれ、続けて onDone', () => {
+    const { onYes, onNo, onDone } = renderWithChoices();
+    fireEvent.click(screen.getByRole('button', { name: 'いいえ' }));
+    expect(onNo).toHaveBeenCalledTimes(1);
+    expect(onYes).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('選択肢が無ければ従来どおり最後の行のタップで閉じる', () => {
+    const onDone = vi.fn();
+    render(<DialogueWindow lines={LINES} onDone={onDone} />);
+    const surface = screen.getAllByRole('dialog')[0]!;
+    for (let i = 0; i < 4; i++) fireEvent.click(surface);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('DialogueWindow: 送信中と失敗', () => {
+  it('選択の二重送信を防ぎ、失敗時は閉じずに再試行できる', async () => {
+    let reject!: (error: Error) => void;
+    const onYes = vi.fn().mockImplementationOnce(() => new Promise<void>((_, no) => { reject = no; })).mockResolvedValue(undefined);
+    const onDone = vi.fn();
+    render(<DialogueWindow lines={[{ text: 'うけますか？' }]} onDone={onDone} choices={[{ label: 'はい', onSelect: onYes }]} />);
+    fireEvent.click(screen.getAllByRole('dialog')[0]!);
+    const yes = screen.getByRole('button', { name: 'はい' });
+    fireEvent.click(yes); fireEvent.click(yes);
+    expect(onYes).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+    await act(async () => reject(new Error('offline')));
+    expect(onDone).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(yes));
+    expect(onYes).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DialogueWindow: 救護導入の表情と操作遮断', () => {
+  it('行の表情を優先し、通常行は指定された管理画像、地の文は画像なし', () => {
+    render(<DialogueWindow
+      lines={[{ speaker: 'Bluesky', text: '心配', portrait: { src: '/worried.webp', name: 'Bluesky' } }, { speaker: 'Bluesky', text: '通常' }, { text: '手当て' }]}
+      portrait={{ src: '/managed.webp', name: 'Bluesky' }} onDone={vi.fn()}
+    />);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/worried.webp');
+    const surface = screen.getByRole('dialog');
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/managed.webp');
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
+  it('Tab/Shift+Tabは会話と選択肢の中だけで循環し、背後操作へ抜けない', () => {
+    render(<><button>もちもの</button><DialogueWindow lines={[{ text: '受ける？' }]} onDone={vi.fn()}
+      choices={[{ label: 'はい', onSelect: vi.fn() }, { label: 'いいえ', onSelect: vi.fn() }]} /></>);
+    const surface = screen.getByRole('dialog');
+    fireEvent.keyDown(surface, { key: 'Tab' });
+    expect(document.activeElement).toBe(surface);
+    fireEvent.click(surface);
+    fireEvent.keyDown(surface, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'はい' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(surface);
+    fireEvent.keyDown(surface, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'いいえ' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab' });
+    expect(document.activeElement).toBe(surface);
+  });
+});
+
+/** 会話の演出 (D-STORY-007): 地図枠に暗転・シルエット・閃光を出し、reduced-motion では閃光を出さない。 */
+describe('DialogueWindow: 演出層', () => {
+  const STORY = [
+    { text: '……ここは、どこ？', effects: [{ kind: 'fade' as const, to: 'black' as const }, { kind: 'silhouette' as const, show: true }] },
+    { speaker: 'Blueskyちゃん', text: 'きこえる？', effects: [{ kind: 'fade' as const, to: 'clear' as const }, { kind: 'silhouette' as const, show: false }, { kind: 'flash' as const, color: 'white' as const }] },
+  ];
+  const setReduced = (reduced: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: reduced && q.includes('reduce'), media: q, addEventListener() {}, removeEventListener() {} }));
+
+  it('初期行から黒層とシルエット img を出し、救護行で解いて白い閃光を出す', () => {
+    setReduced(false);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('1');
+    expect(screen.getByTestId('story-silhouette').querySelector('img')).not.toBeNull();
+    const surface = screen.getAllByRole('dialog')[0]!;
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('0');
+    expect(screen.getByTestId('story-silhouette').querySelector('img')).toBeNull();
+    expect(screen.getByTestId('story-flash-white')).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it('reduced-motion では閃光要素を描かない', () => {
+    setReduced(true);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    fireEvent.click(screen.getAllByRole('dialog')[0]!);
+    expect(screen.getAllByText(/きこえる/).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('story-flash-white')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('シルエットは初出で 800ms かけて浮かび、reduced-motion では即時に出す', () => {
+    setReduced(false);
+    const { unmount } = render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-silhouette').style.animation).toBe('aq-story-silhouette-in 800ms ease backwards');
+    unmount();
+    setReduced(true);
+    render(<DialogueWindow anchor="map" lines={STORY} onDone={() => {}} />);
+    expect(screen.getByTestId('story-silhouette').style.animation).toBe('');
+    vi.unstubAllGlobals();
+  });
+
+  it('viewport 窓では演出層を出さない', () => {
+    render(<DialogueWindow lines={STORY} onDone={() => {}} />);
+    expect(screen.queryByTestId('story-effect-layer')).toBeNull();
+  });
+});

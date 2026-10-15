@@ -1,0 +1,159 @@
+/**
+ * **ゲーム内クエストの受注・達成** (#423)。進行と報酬はここ (edge) が権威。
+ *
+ * - 受注: `GameState.activeQuests` に追加する。達成済みは再受注できない
+ * - 達成: 条件を**権威データで検証**してから報酬を付与する
+ *   - defeat: 勝利時に数えた討伐数 (battle-reward が増やす)
+ *   - collect: 権威在庫の所持数。達成時に**引き取る** (渡すのが DQ の作法で、
+ *     引かないと同じ素材で何度も達成できてしまう)
+ *   - talk: 相手の NPC の上下左右の隣にいること (署名済みの位置トークン、無ければ state の位置。D-STORY-009)
+ * - 報酬のパワーは定義の値だけ。client は金額を送らない (サーバー権威)
+ */
+import { allNpcs, gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER, WORLD_MAP_ID, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
+import { verifyPosition, type PositionClaim } from './world-token';
+import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
+
+export class GameQuestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
+export interface QuestStateResult {
+  activeQuests: Array<{ id: string; progress: number }>;
+  questsDone?: string[];
+  power: number;
+  materials: Record<string, number>;
+  /** 達成時のみ: 付与した報酬。 */
+  rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 進行フラグ (#545)。達成でシナリオが進むと増える。 */
+  flags?: string[];
+  /** シナリオのお知らせ (「東の橋が直ったらしい」)。一度だけ出す。 */
+  notices?: string[];
+  /** notices と同じ行 + 演出 (D-STORY-007)。新 web はこちらを使う。 */
+  scenarioMessages?: ScenarioMessage[];
+}
+
+export async function handleQuestAccept(
+  env: GameStateEnv,
+  did: string,
+  questId: string,
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<QuestStateResult & { newlyAccepted: boolean }> {
+  const def = gameQuestById(questId);
+  if (!def) throw new GameQuestError('そのクエストは無い', 404, 'unknown_quest');
+  // 今回の呼び出しで新しく受けたか (受注で始まる戦闘を、受注済みの再送で何度も起こさない。D-STORY-009)。
+  let newlyAccepted = false;
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => {
+      if ((cur.questsDone ?? []).includes(questId)) throw new GameQuestError('もう達成している', 400, 'already_done');
+      newlyAccepted = false;
+      if (cur.activeQuests.some(q => q.id === questId)) return cur; // duplicate: preserve progress even after losing required items
+      // **解禁フラグ** (#545)。立っていないクエストはサーバーが受け付けない
+      // (client が NPC の分岐を無視して直接 POST しても通らない)。
+      const need = def.requireFlags ?? [];
+      // フラグと持ち物の**両方**を権威側で見る (#426)。client が NPC の分岐を無視して
+      // 直接 POST しても通らない。
+      if (need.some((f) => !(cur.flags ?? []).includes(f)) || !itemsSatisfied(def.requireItems, cur.materials)) {
+        throw new GameQuestError('まだ その たのまれごとは 出ていない', 400, 'locked');
+      }
+      newlyAccepted = true;
+      return { ...cur, activeQuests: [...cur.activeQuests, { id: questId, progress: 0 }] };
+    },
+    init ? { now, init } : { now },
+  );
+  return { activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials, ...(next.flags ? { flags: next.flags } : {}), newlyAccepted };
+}
+
+/** NPC の上下左右の隣か (斜め・同じマスは不可)。フィールドはトーラスで丸めて比べる。 */
+export function besideNpc(npc: NpcDef, pos: { mapId?: string; x: number; y: number }): boolean {
+  const mapId = npc.mapId ?? WORLD_MAP_ID;
+  if ((pos.mapId ?? WORLD_MAP_ID) !== mapId) return false;
+  const d = (a: number, b: number) => {
+    const raw = Math.abs(a - b);
+    return mapId === WORLD_MAP_ID ? Math.min(raw % WORLD_SIZE, WORLD_SIZE - (raw % WORLD_SIZE)) : raw;
+  };
+  return d(npc.x, pos.x) + d(npc.y, pos.y) === 1;
+}
+
+export async function handleQuestComplete(
+  env: GameStateEnv,
+  did: string,
+  questId: string,
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+  token?: string,
+): Promise<QuestStateResult> {
+  const def = gameQuestById(questId);
+  if (!def) throw new GameQuestError('そのクエストは無い', 404, 'unknown_quest');
+  // talk の位置は署名済みトークンが正。無い/無効なら state の位置に倒す (handleSearch と同じ作法)。
+  let claim: PositionClaim | null = null;
+  try { claim = verifyPosition(env, token ?? '', did, now); } catch { claim = null; }
+  // 報酬の再検証 (定義レコードが壊れても暴走しない最後の砦)
+  const rewardPower = Math.min(def.reward?.power ?? 0, MAX_QUEST_REWARD_POWER);
+  let rewarded: QuestStateResult['rewarded'];
+  const scenarioBox: { v: ScenarioResult | null } = { v: null };
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => {
+      if ((cur.questsDone ?? []).includes(questId)) throw new GameQuestError('もう達成している', 400, 'already_done');
+      const active = cur.activeQuests.find(q => q.id === questId);
+      if (!active) throw new GameQuestError('うけていない', 400, 'not_accepted');
+
+      let materials = cur.materials;
+      const o = def.objective;
+      if (o.kind === 'defeat') {
+        if ((active.progress ?? 0) < o.count) {
+          throw new GameQuestError(`まだ ${active.progress ?? 0}/${o.count} たい`, 400, 'not_ready');
+        }
+      } else if (o.kind === 'talk') {
+        const npc = allNpcs().find((n) => n.id === o.npcId);
+        if (!npc || !besideNpc(npc, claim ?? cur)) throw new GameQuestError('はなす あいてが ちかくに いない', 400, 'not_ready');
+      } else {
+        const have = cur.materials[o.itemId] ?? 0;
+        if (have < o.count) throw new GameQuestError(`まだ ${have}/${o.count} こ`, 400, 'not_ready');
+        // **引き取る** — 引かないと同じ素材で何度も達成できる (別クエストや将来の複数進行で)。
+        materials = { ...cur.materials };
+        const left = have - o.count;
+        if (left > 0) materials[o.itemId] = left;
+        else delete materials[o.itemId];
+      }
+
+      if (def.reward?.itemId) {
+        materials = { ...materials };
+        materials[def.reward.itemId] = (materials[def.reward.itemId] ?? 0) + (def.reward.count ?? 0);
+      }
+      rewarded = {
+        ...(rewardPower > 0 ? { power: rewardPower } : {}),
+        ...(def.reward?.itemId ? { itemId: def.reward.itemId, count: def.reward.count ?? 0 } : {}),
+      };
+      const done: GameState = {
+        ...cur,
+        activeQuests: cur.activeQuests.filter(q => q.id !== questId),
+        questsDone: [...(cur.questsDone ?? []), questId],
+        power: cur.power + rewardPower,
+        materials,
+      };
+      // 達成はシナリオが動く主な経路 (#545)。フラグと お知らせ をここで確定する。
+      // mutate は純関数なので、リトライで複数回走っても同じ結果になる。
+      scenarioBox.v = advanceScenario(done);
+      return scenarioBox.v ? { ...done, flags: scenarioBox.v.flags } : done;
+    },
+    init ? { now, init } : { now },
+  );
+  return {
+    activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials,
+    ...(rewarded ? { rewarded } : {}),
+    ...(next.flags ? { flags: next.flags } : {}),
+    ...(scenarioBox.v?.notices.length ? { notices: scenarioBox.v.notices, scenarioMessages: scenarioBox.v.messages } : {}),
+  };
+}

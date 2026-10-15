@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AppBskyFeedDefs } from '@atproto/api';
 import { useSession } from '@/lib/session';
-import { HeartIcon, RepeatIcon, ReplyIcon } from './icons';
+import { HeartIcon, RepeatIcon, ReplyIcon, ShareIcon } from './icons';
 import { useCompose } from './compose-modal';
 import { formatDateTime } from '@/lib/format-datetime';
-import { postDetailPath } from '@/lib/uri';
+import { didFromUri, postDetailPath, rkeyFromUri } from '@/lib/uri';
+import { useColumnNav } from './column-detail';
 import type { PostRecordShape } from './post-article';
 
 interface PostMetricsProps {
@@ -25,6 +26,7 @@ interface PostMetricsProps {
  */
 export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetricsProps) {
   const session = useSession();
+  const columnNav = useColumnNav();
   const { openCompose } = useCompose();
   const agent = session.agent;
 
@@ -114,6 +116,38 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
   const ts = (post.record as PostRecordShape).createdAt ?? post.indexedAt;
   const detailPath = postDetailPath(post.author.handle, post.uri);
 
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 行が仮想フィードでアンマウントされても、遅延した setCopied(false) が走らないよう掃除。
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+
+  // 投稿を共有する。公開リンク (bsky.app) を使い、誰でも開ける URL にする。
+  // モバイルは OS の共有シート (navigator.share)、無ければクリップボードにコピー。
+  async function onShare(e: React.MouseEvent) {
+    e.stopPropagation();
+    // handle.invalid (未解決アカウント) は bsky.app で開けないので DID を使う。
+    // bsky.app は /profile/<did>/post/<rkey> も解決する。
+    const handle = post.author.handle;
+    const actor = handle && handle !== 'handle.invalid' ? handle : didFromUri(post.uri);
+    const url = `https://bsky.app/profile/${actor}/post/${rkeyFromUri(post.uri)}`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ url });
+      } catch {
+        /* キャンセル/失敗時は何もしない (誤コピーを避ける) */
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(url);
+      setCopied(true);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* no-op */
+    }
+  }
+
   return (
     <div style={{ marginTop: '0.5em' }}>
       {/* アクション行: リプ/リポスト/いいね + 右端に日時 (小さく右揃え)。
@@ -128,9 +162,20 @@ export function PostMetrics({ post, onToggleThread, threadExpanded }: PostMetric
         <MetricButton onClick={toggleLike} ariaLabel={liked ? 'いいね解除' : 'いいね'} count={likeCount} active={liked} activeColor="#ff6b9a">
           <HeartIcon size={15} />
         </MetricButton>
+        <MetricButton onClick={onShare} ariaLabel="共有" {...(copied ? { count: '✓' } : {})} active={copied} activeColor="#4caf7d">
+          <ShareIcon size={15} />
+        </MetricButton>
         <Link
           to={detailPath}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            // カラム内なら route 遷移せず、そのカラムに詳細を積む (TL は下でマウントの
+            // まま = スクロール保持)。修飾キー/中クリックは新規タブ等の既定挙動に任せる。
+            if (columnNav && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+              e.preventDefault();
+              columnNav.openPost(post.uri, post.author.handle);
+            }
+          }}
           style={{
             marginLeft: 'auto',
             padding: '0.2em 0.1em',
@@ -190,7 +235,8 @@ function MetricButton({
 }: {
   onClick: (e: React.MouseEvent) => void;
   ariaLabel: string;
-  count: number;
+  /** 数値カウント / 短い文字 (共有ボタンのコピー完了 ✓ 等)。未指定なら数字を出さない。 */
+  count?: number | string;
   children: React.ReactNode;
   active?: boolean;
   activeColor?: string;
@@ -221,7 +267,7 @@ function MetricButton({
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
     >
       {children}
-      <span>{count}</span>
+      {count !== undefined && count !== '' && <span>{count}</span>}
     </button>
   );
 }

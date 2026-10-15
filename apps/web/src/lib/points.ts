@@ -23,10 +23,12 @@ import {
   BLUESKY_API_PAGE_LIMIT,
   POINTS_SCAN_PAGES,
   SUMMON_THRESHOLD as CORE_SUMMON_THRESHOLD,
+  salePowerFor,
 } from '@aozoraquest/core';
 import { VIA, getRecord, putRecord } from './atproto';
 import { COL } from './collections';
 import { countCardDraws } from './card-power';
+import { countBattles } from './battle-log';
 
 export const SUMMON_THRESHOLD = CORE_SUMMON_THRESHOLD;
 const POST_SCAN_PAGES = POINTS_SCAN_PAGES;
@@ -40,30 +42,53 @@ export interface PointsState {
   userMessages: number;
   /** カード引き直しで消費したパワー数 */
   cardDraws: number;
+  /** ブルスコンの試練で消費したパワー数 (docs/18-brusukon-trial.md) */
+  battles: number;
+  /** なんでも屋の制作で消費したパワー総量 (docs/20。制作費は品ごとに違うため
+   *  件数でなく消費パワーの累積) */
+  craftPowerSpent: number;
+  /** 素材のひきとりで得たパワー総量 (docs/20。レートは SALE_TUNING) */
+  salePowerEarned: number;
+  /** 「しらべる」で消費したパワー総量 (docs/19。1 回 = SEARCH_TUNING.powerCost)。
+   *  専用レコードは持たず累積カウンタのみ (プレビュー限定。正は W3)。 */
+  searchPowerSpent: number;
   /** 召喚済みか (spiritChat レコードが 1 件でもあるか) */
   summoned: boolean;
-  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws) */
+  /** 残あおぞらパワー = max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent - searchPowerSpent + salePowerEarned) */
   balance: number;
   /** 召喚に必要な残り投稿数 = max(0, SUMMON_THRESHOLD - viaPosts) */
   toSummon: number;
 }
 
-/** PDS に保存する累積カウンタ。`app.aozoraquest.power/self`。 */
+/** PDS に保存する累積カウンタ。`app.aozoraquest.power/self`。
+ *  battles は後付けフィールド (docs/18) — 旧レコードには無いので欠落 = 0 として読む。 */
 interface PowerRecord {
   viaPosts: number;
   userMessages: number;
   cardDraws: number;
+  battles?: number;
+  craftPowerSpent?: number;
+  salePowerEarned?: number;
+  searchPowerSpent?: number;
   summoned: boolean;
   updatedAt: string;
 }
 
 function deriveState(rec: PowerRecord): PointsState {
-  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws);
+  const battles = rec.battles ?? 0;
+  const craftPowerSpent = rec.craftPowerSpent ?? 0;
+  const salePowerEarned = rec.salePowerEarned ?? 0;
+  const searchPowerSpent = rec.searchPowerSpent ?? 0;
+  const balance = Math.max(0, rec.viaPosts - rec.userMessages - rec.cardDraws - battles - craftPowerSpent - searchPowerSpent + salePowerEarned);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - rec.viaPosts);
   return {
     viaPosts: rec.viaPosts,
     userMessages: rec.userMessages,
     cardDraws: rec.cardDraws,
+    battles,
+    craftPowerSpent,
+    salePowerEarned,
+    searchPowerSpent,
     summoned: rec.summoned,
     balance,
     toSummon,
@@ -83,21 +108,79 @@ async function writePowerRecord(agent: Agent, base: Omit<PowerRecord, 'updatedAt
 /** 旧方式: PDS の post / spiritChat / cardDraw を実際に走査して計算する。
  *  loadPointsState のマイグレーション用 + power レコード破損時の復旧用に残す。 */
 async function scanFullPoints(agent: Agent, did: string): Promise<PointsState> {
-  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws] = await Promise.all([
+  const [viaPosts, { userMessages, hasAnySpiritChat }, cardDraws, battles, { craftPowerSpent, salePowerEarned }, existing] = await Promise.all([
     countViaPosts(agent, did),
     countSpiritChat(agent, did),
     countCardDraws(agent, did),
+    countBattles(agent, did),
+    sumCraftPower(agent, did),
+    readPowerRecord(agent, did),
   ]);
-  const balance = Math.max(0, viaPosts - userMessages - cardDraws);
+  // しらべる消費は専用レコードから再構築できないので、既存 record の値を carry
+  // (破損復旧時に消えないように。record 無し = 初回マイグレーションなら 0)。
+  const searchPowerSpent = existing?.searchPowerSpent ?? 0;
+  const balance = Math.max(0, viaPosts - userMessages - cardDraws - battles - craftPowerSpent - searchPowerSpent + salePowerEarned);
   const toSummon = Math.max(0, SUMMON_THRESHOLD - viaPosts);
   return {
     viaPosts,
     userMessages,
     cardDraws,
+    battles,
+    craftPowerSpent,
+    salePowerEarned,
+    searchPowerSpent,
     summoned: hasAnySpiritChat,
     balance,
     toSummon,
   };
+}
+
+/** craft コレクションのパワー収支合計 (再スキャン用。最大 500 件)。
+ *  制作 = 消費 (power)、ひきとり = 獲得 (powerGained)。 */
+async function sumCraftPower(agent: Agent, did: string): Promise<{ craftPowerSpent: number; salePowerEarned: number }> {
+  let cursor: string | undefined;
+  let craftPowerSpent = 0;
+  let salePowerEarned = 0;
+  for (let page = 0; page < 5; page++) {
+    try {
+      const res = await agent.com.atproto.repo.listRecords({
+        repo: did,
+        collection: COL.craft,
+        limit: 100,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      for (const r of res.data.records) {
+        const v = r.value as {
+          power?: unknown;
+          itemId?: unknown;
+          powerGained?: unknown;
+          materialId?: unknown;
+          materialCount?: unknown;
+        };
+        if (typeof v.itemId === 'string') {
+          // 制作レコード (壊れたレコードの扱いを loadCraftInventory と揃える)
+          if (typeof v.power === 'number' && Number.isFinite(v.power) && v.power > 0) craftPowerSpent += v.power;
+        } else if (
+          // ひきとりレコード: powerGained の自己申告は信用せず materialCount から
+          // 再計算する (レート改竄・素材なし powerGained だけの偽造レコードを
+          // 正規集計から締め出す。loadCraftInventory と同じ 3 点セット要求)
+          typeof v.powerGained === 'number' &&
+          typeof v.materialId === 'string' &&
+          typeof v.materialCount === 'number' &&
+          Number.isFinite(v.materialCount) &&
+          v.materialCount > 0
+        ) {
+          salePowerEarned += salePowerFor(Math.floor(v.materialCount));
+        }
+      }
+      const next = res.data.cursor;
+      if (!next || next === cursor) break;
+      cursor = next;
+    } catch {
+      return { craftPowerSpent, salePowerEarned }; // 未作成コレクション
+    }
+  }
+  return { craftPowerSpent, salePowerEarned };
 }
 
 /**
@@ -114,6 +197,10 @@ export async function loadPointsState(agent: Agent, did: string): Promise<Points
     viaPosts: scanned.viaPosts,
     userMessages: scanned.userMessages,
     cardDraws: scanned.cardDraws,
+    battles: scanned.battles,
+    craftPowerSpent: scanned.craftPowerSpent,
+    salePowerEarned: scanned.salePowerEarned,
+    searchPowerSpent: scanned.searchPowerSpent,
     summoned: scanned.summoned,
   };
   try {
@@ -130,6 +217,13 @@ export interface PowerDelta {
   viaPosts?: number;
   userMessages?: number;
   cardDraws?: number;
+  battles?: number;
+  /** 制作で消費したパワー (品ごとに額が違うので件数でなく額) */
+  craftPowerSpent?: number;
+  /** 素材のひきとりで得たパワー */
+  salePowerEarned?: number;
+  /** 「しらべる」で消費したパワー */
+  searchPowerSpent?: number;
   /** 召喚状態を強制 true に立てるとき指定。下げる用途は今のところ無し。 */
   summoned?: true;
 }
@@ -143,6 +237,10 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
         viaPosts: scanned.viaPosts,
         userMessages: scanned.userMessages,
         cardDraws: scanned.cardDraws,
+        battles: scanned.battles,
+        craftPowerSpent: scanned.craftPowerSpent,
+        salePowerEarned: scanned.salePowerEarned,
+        searchPowerSpent: scanned.searchPowerSpent,
         summoned: scanned.summoned,
         updatedAt: new Date().toISOString(),
       };
@@ -151,12 +249,42 @@ export async function bumpPower(agent: Agent, did: string, delta: PowerDelta): P
       viaPosts: cur.viaPosts + (delta.viaPosts ?? 0),
       userMessages: cur.userMessages + (delta.userMessages ?? 0),
       cardDraws: cur.cardDraws + (delta.cardDraws ?? 0),
+      battles: (cur.battles ?? 0) + (delta.battles ?? 0),
+      craftPowerSpent: (cur.craftPowerSpent ?? 0) + (delta.craftPowerSpent ?? 0),
+      salePowerEarned: (cur.salePowerEarned ?? 0) + (delta.salePowerEarned ?? 0),
+      searchPowerSpent: (cur.searchPowerSpent ?? 0) + (delta.searchPowerSpent ?? 0),
       summoned: delta.summoned ?? cur.summoned,
     };
     await writePowerRecord(agent, next);
   } catch (e) {
     console.warn('[power] bump failed (delta lost)', delta, e);
   }
+}
+
+/**
+ * オンボードリセット用: world 由来の消費/獲得 (battles / craftPowerSpent / salePowerEarned /
+ * searchPowerSpent) を 0 に戻し、歓迎ボーナスだけを salePowerEarned に載せた power レコードを
+ * **絶対値で書き込む**。投稿由来 (viaPosts / userMessages / cardDraws) と summoned は保持。
+ *
+ * 絶対値書き込みなので**冪等** — 途中失敗で再実行しても +welcome が二重に乗らない。
+ * bumpPower(+welcome) を使うと (a) 残存する battles 消費が引かれ続けて「投稿残高保持」が崩れ、
+ * (b) リトライで二重加算される、という問題があるため専用関数にした。失敗は throw する
+ * (呼び出し側の reset フローがエラーを検知してリトライ導線に載せられるように)。
+ */
+export async function resetWorldPower(agent: Agent, did: string, welcomeBonus: number): Promise<void> {
+  const cur = await readPowerRecord(agent, did);
+  const base: { viaPosts: number; userMessages: number; cardDraws: number; summoned: boolean } =
+    cur ?? (await scanFullPoints(agent, did));
+  await writePowerRecord(agent, {
+    viaPosts: base.viaPosts,
+    userMessages: base.userMessages,
+    cardDraws: base.cardDraws,
+    battles: 0,
+    craftPowerSpent: 0,
+    salePowerEarned: welcomeBonus,
+    searchPowerSpent: 0,
+    summoned: base.summoned,
+  });
 }
 
 export async function countViaPosts(agent: Agent, did: string): Promise<number> {
