@@ -4,7 +4,7 @@
  * 設計目的: 将来 LLM backend が増えたり差し替わったりしても、各 caller
  * (spirit / translate / flavor-text / summoning-ritual) を触らずに済むこと。
  *
- * 現状は Gemini Nano (Chrome 148+ の LanguageModel API) のみ。将来想定:
+ * backend: Gemini Nano (Chrome 148+ の LanguageModel API) と、Nano の無い端末の翻訳専用 sarashina (自前 WGSL)。将来想定:
  *  - Edge 内蔵 AI / Safari 内蔵 AI (まだ無いが API は web 標準化提案中)
  *  - aozoraquest 自前 API (server fallback、Nano 不可環境向け)
  *  - 別ローカルモデル (transformers.js 製 など)
@@ -34,12 +34,17 @@ export interface LLMOptions {
   signal?: AbortSignal;
 }
 
+/** 用途。'general' は口上・カード文など翻訳以外すべて。 */
+export type LLMPurpose = 'general' | 'translation';
+
 export interface LocalLLM {
   /** ログ / 比較 / UI 表示用の安定 ID。
    *  例: 'gemini-nano', 'gemini-nano-v2', 'edge-ai', 'aozoraquest-api' */
   readonly id: string;
   /** UI 表示用の人間可読ラベル */
   readonly label: string;
+  /** この backend を使ってよい用途。省略時はすべての用途。 */
+  readonly purposes?: readonly LLMPurpose[];
   /** 今このセッションで使えるか。memoize 推奨 (caller が連呼するため)。 */
   availability(): Promise<boolean>;
   /** 1 turn の生成。`history` 最後の user message への応答を返す。
@@ -54,26 +59,33 @@ export interface LLMGenResult {
 }
 
 import { GEMINI_NANO } from './gemini-nano-llm';
+import { SARASHINA } from './sarashina-llm';
 
 /** 優先順位順 backend リスト。先頭から availability() を問い合わせ、
  *  最初に true を返したものを採用する。新規 backend はここに追加するだけ。 */
-const BACKENDS: readonly LocalLLM[] = [GEMINI_NANO];
+const BACKENDS: readonly LocalLLM[] = [GEMINI_NANO, SARASHINA];
 
-let cachedLLM: LocalLLM | null | undefined;
+const cachedLLM = new Map<LLMPurpose, LocalLLM | null>();
 
 /** 利用可能な backend を 1 つ返す。なければ null。
- *  結果は session 中 memoize される。Chrome が DL を完了するなど環境が
+ *  結果は用途ごとに session 中 memoize される。Chrome が DL を完了するなど環境が
  *  変わって再評価したい場合は force=true で。 */
-export async function pickLocalLLM(force = false): Promise<LocalLLM | null> {
-  if (!force && cachedLLM !== undefined) return cachedLLM;
+export async function pickLocalLLM(force = false, purpose: LLMPurpose = 'general'): Promise<LocalLLM | null> {
+  if (!force && cachedLLM.has(purpose)) return cachedLLM.get(purpose)!;
   for (const b of BACKENDS) {
+    if (b.purposes && !b.purposes.includes(purpose)) continue;
     if (await b.availability()) {
-      cachedLLM = b;
+      cachedLLM.set(purpose, b);
       return b;
     }
   }
-  cachedLLM = null;
+  cachedLLM.set(purpose, null);
   return null;
+}
+
+/** backend の導入 (sarashina の初回ダウンロード) が済んだ後に、memoize した選択を捨てる。 */
+export function resetLocalLLMChoice(): void {
+  cachedLLM.clear();
 }
 
 /**
@@ -83,8 +95,9 @@ export async function pickLocalLLM(force = false): Promise<LocalLLM | null> {
 export async function generateWithLocalLLM(
   input: LLMInput,
   opts?: LLMOptions,
+  purpose: LLMPurpose = 'general',
 ): Promise<LLMGenResult | null> {
-  const llm = await pickLocalLLM();
+  const llm = await pickLocalLLM(false, purpose);
   if (!llm) return null;
   const text = await llm.generate(input, opts);
   return { text, backend: llm.id };

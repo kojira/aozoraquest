@@ -22,6 +22,18 @@ import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
+import { isSarashinaEligible, isSarashinaInstalled } from '@/lib/sarashina-llm';
+
+/** 「召喚の儀式を始める」ボタン (召喚前と、召喚済みで翻訳の端末内 AI が未導入の時で同じ見た目)。 */
+const RITUAL_BUTTON_STYLE = {
+  marginTop: '1em',
+  padding: '0.7em 1.6em',
+  fontSize: '1em',
+  background: 'var(--color-pill-bg)',
+  color: 'var(--color-fg)',
+  border: '3px solid var(--color-pill-border)',
+  boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
+} as const;
 
 /**
  * 精霊ブルスコンのページ。
@@ -52,6 +64,9 @@ export function Spirit() {
   const { jobXp } = useJobXp();
   const [loaded, setLoaded] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
+  // 召喚済みで、Nano が無く WebGPU がある端末なのに sarashina が未導入 (儀式は導入前に済ませた / キャッシュが消えた)。
+  // その時だけ儀式をもう一度できるようにする (導入は儀式だけが行う)。
+  const [translatorMissing, setTranslatorMissing] = useState(false);
 
   const agent = session.agent ?? null;
   const did = session.did ?? null;
@@ -102,6 +117,15 @@ export function Spirit() {
     return () => { cancelled = true; };
   }, [session.status, agent, did]);
 
+  const summoned = points?.summoned === true;
+  const checkTranslatorMissing = useCallback(async () => {
+    const missing = (await isSarashinaEligible().catch(() => false)) && !(await isSarashinaInstalled());
+    setTranslatorMissing(missing);
+  }, []);
+  useEffect(() => {
+    if (summoned) void checkTranslatorMissing();
+  }, [summoned, checkTranslatorMissing]);
+
   // 投稿直後にポイント再計算
   useOnPosted(() => {
     if (!agent || !did) return;
@@ -148,6 +172,12 @@ export function Spirit() {
     },
     [agent, did],
   );
+
+  // 召喚済みの儀式 (翻訳の端末内 AI の導入だけ): spiritChat も summoned フラグも書かない。閉じるだけ。
+  const onCompleteReinstall = useCallback(async () => {
+    setRitualOpen(false);
+    await checkTranslatorMissing();
+  }, [checkTranslatorMissing]);
 
   if (session.status === 'loading' || !loaded) {
     return (
@@ -214,18 +244,7 @@ export function Spirit() {
       {!points.summoned && points.viaPosts >= SUMMON_THRESHOLD && (
         <section style={{ marginTop: '1em', textAlign: 'center' }}>
           <SpiritBubble>十分な歩みが積まれた。今なら、召喚の儀式を始められる。</SpiritBubble>
-          <button
-            onClick={() => setRitualOpen(true)}
-            style={{
-              marginTop: '1em',
-              padding: '0.7em 1.6em',
-              fontSize: '1em',
-              background: 'var(--color-pill-bg)',
-              color: 'var(--color-fg)',
-              border: '3px solid var(--color-pill-border)',
-              boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
-            }}
-          >
+          <button onClick={() => setRitualOpen(true)} style={RITUAL_BUTTON_STYLE}>
             召喚の儀式を始める
           </button>
         </section>
@@ -239,6 +258,14 @@ export function Spirit() {
               <SpiritBubble key={`greet-${i}`} showIcon={i === 0}>{line}</SpiritBubble>
             ))}
           </section>
+
+          {translatorMissing && (
+            <section style={{ marginTop: '1em', textAlign: 'center' }}>
+              <button onClick={() => setRitualOpen(true)} style={RITUAL_BUTTON_STYLE}>
+                召喚の儀式を始める
+              </button>
+            </section>
+          )}
 
           {/* あおぞらワールド (docs/19) の入口。試練より上に置く (旅がメイン導線)。
               プレビュー段階 = dev 環境限定。 */}
@@ -289,7 +316,7 @@ export function Spirit() {
           agent={agent}
           userName={userName}
           systemPrompt={systemPrompt}
-          onComplete={onCompleteRitual}
+          onComplete={points.summoned ? onCompleteReinstall : onCompleteRitual}
           onCancel={onCancelRitual}
         />
       )}
