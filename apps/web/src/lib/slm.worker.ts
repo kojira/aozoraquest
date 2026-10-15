@@ -3,8 +3,10 @@
  *
  * メッセージ:
  *   { type: 'init' }                                   → { type: 'ready' } / { type: 'error', code? }
+ *                                                        (読み込み中は重みの part ごとに { type: 'progress' } を送る)
  *   { type: 'generate', id, prompt, maxNewTokens, temperature, stopAtNewline }
  *                                                      → { type: 'done', id, text } / { type: 'error', id }
+ *                                                        (生成は 1 本ずつ順に実行する。model の pos / KV / readback は共有)
  *   { type: 'dispose' }                                → GPU buffer を destroy して { type: 'disposed' }
  * GPU device を失ったら { type: 'lost' } を送る (main 側が Worker ごと作り直す)。
  */
@@ -25,6 +27,8 @@ type IncomingMessage = { type: 'init' } | GenerateMessage | { type: 'dispose' };
 const TOP_P = 0.9;
 
 let ready: Promise<{ model: SlmModel; tok: SpTokenizer }> | null = null;
+/** 生成を 1 本ずつ順に流す鎖 (同じ model で 2 本同時に走らせない)。 */
+let generating: Promise<unknown> = Promise.resolve();
 
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
@@ -34,7 +38,7 @@ function ensureReady() {
       const header = await fetchHeader();
       const tj = JSON.parse(new TextDecoder().decode(await fetchVerified(`${SARASHINA_BASE_URL}/${header.tokenizer.file}`, header.tokenizer))) as UnigramJson;
       const tok = new SpTokenizer(tj);
-      const model = await SlmModel.create(SARASHINA_BASE_URL, header, () => {});
+      const model = await SlmModel.create(SARASHINA_BASE_URL, header, () => post({ type: 'progress' }));
       void model.lost.then(() => { ready = null; post({ type: 'lost' }); });
       return { model, tok };
     })();
@@ -63,7 +67,7 @@ self.addEventListener('message', (ev: MessageEvent<IncomingMessage>) => {
       (e: unknown) => post({ type: 'error', code: e instanceof WebGpuUnsupportedError ? 'webgpu-unsupported' : undefined, error: String((e as Error)?.message ?? e) }),
     );
   } else if (m.type === 'generate') {
-    generate(m).then(
+    generating = generating.then(() => generate(m)).then(
       (text) => post({ type: 'done', id: m.id, text }),
       (e: unknown) => post({ type: 'error', id: m.id, error: String((e as Error)?.message ?? e) }),
     );

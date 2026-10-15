@@ -14,6 +14,8 @@ import { detectGeminiNano } from './gemini-nano-availability';
 import { isSarashinaCached } from './slm-wgsl/weights';
 
 const IDLE_DISPOSE_MS = 3 * 60_000;
+/** 読み込み中にこの間 part が 1 つも届かなければ止まったとみなして Worker を捨てる (総時間の上限は設けない)。 */
+const LOAD_STALL_MS = 60_000;
 /** 1 回の出力上限。訳文 1 段落には十分で、暴走時の待ちを抑える。 */
 const MAX_NEW_TOKENS = 200;
 
@@ -70,12 +72,15 @@ function ensureWorker(): Promise<void> {
     else p.reject(new Error(String(m.error)));
   });
   const ready = new Promise<void>((resolve, reject) => {
+    let stall = setTimeout(onStall, LOAD_STALL_MS);
+    function onStall() { w.removeEventListener('message', onMsg); reject(new Error(`sarashina load stalled (${LOAD_STALL_MS}ms without progress)`)); }
     const onMsg = (ev: MessageEvent) => {
-      if (ev.data.type === 'ready') { w.removeEventListener('message', onMsg); resolve(); }
-      else if (ev.data.type === 'error' && !ev.data.id) { w.removeEventListener('message', onMsg); reject(new Error(String(ev.data.error))); }
+      if (ev.data.type === 'progress') { clearTimeout(stall); stall = setTimeout(onStall, LOAD_STALL_MS); }
+      else if (ev.data.type === 'ready') { clearTimeout(stall); w.removeEventListener('message', onMsg); resolve(); }
+      else if (ev.data.type === 'error' && !ev.data.id) { clearTimeout(stall); w.removeEventListener('message', onMsg); reject(new Error(String(ev.data.error))); }
     };
     w.addEventListener('message', onMsg);
-    w.addEventListener('error', (ev) => reject(new Error(`sarashina worker failed: ${ev.message}`)), { once: true });
+    w.addEventListener('error', (ev) => { clearTimeout(stall); reject(new Error(`sarashina worker failed: ${ev.message}`)); }, { once: true });
     w.postMessage({ type: 'init' });
   });
   workerReady = ready;
@@ -103,9 +108,14 @@ export async function isSarashinaEligible(): Promise<boolean> {
 export async function installSarashina(): Promise<void> {
   await ensureWorker();
   installed = await isSarashinaCached();
-  if (!installed) throw new Error('sarashina cache incomplete after load');
+  if (!installed) { disposeWorker(); throw new Error('sarashina cache incomplete after load'); }
   touchIdle();
   void navigator.storage?.persist?.().catch(() => false);
+}
+
+/** モデルを GPU に載せ終えるまで待つ (翻訳の制限時間に読み込み時間を含めないため、translate.ts が生成の前に呼ぶ)。 */
+export function loadSarashina(): Promise<void> {
+  return ensureWorker();
 }
 
 export async function isSarashinaInstalled(): Promise<boolean> {

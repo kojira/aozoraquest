@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { generateWithLocalLLM, pickLocalLLM, type LocalLLM } from './local-llm';
-import { SARASHINA } from './sarashina-llm';
+import { loadSarashina, SARASHINA } from './sarashina-llm';
 import {
   cleanSarashinaParagraph,
   sarashinaMaxNewTokens,
@@ -151,6 +151,7 @@ async function runLLM(
   const { body, trailing } = splitTranslatableText(text);
   if (!body) return trailing; // 本文なし → リンク等だけ返す
   if (llm.id === SARASHINA.id) {
+    await loadSarashina(); // (再) 読み込みは止まれば sarashina-llm 側で打ち切る。60s の制限は生成だけに掛ける
     const cleaned = cleanTranslation(await withTimeout(runSarashina(llm, body, temperature)));
     const composed = trailing ? `${cleaned}\n${trailing}` : cleaned;
     if (!looksLikeJapaneseTranslation(cleaned)) throw new NonJapaneseTranslationError(composed);
