@@ -6,12 +6,19 @@
  * - `useTranslation(uri, text)`: React フック。設定が ON なら自動で翻訳開始、
  *   OFF なら `triggerTranslate()` 手動呼び出しで開始。
  *
- * Backend は local-llm.ts の抽象に委譲 (現状は Gemini Nano、将来増えても
- * このファイルは触らない)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
+ * Backend は local-llm.ts の抽象に委譲 (Gemini Nano、Nano の無い端末は導入済みなら sarashina)。
+ * sarashina だけはプロンプトと後処理が専用 (sarashina-translate.ts)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { generateWithLocalLLM, pickLocalLLM } from './local-llm';
+import { generateWithLocalLLM, pickLocalLLM, type LocalLLM } from './local-llm';
+import { SARASHINA } from './sarashina-llm';
+import {
+  cleanSarashinaParagraph,
+  sarashinaMaxNewTokens,
+  sarashinaTranslateInput,
+  splitParagraphs,
+} from './sarashina-translate';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
@@ -116,13 +123,39 @@ class NonJapaneseTranslationError extends Error {
 
 const TRANSLATE_SYSTEM_PROMPT = 'あなたは SNS 投稿を日本語に翻訳する翻訳者です。';
 
+/** sarashina: 段落ごとに専用プロンプトで訳して空行でつなぐ。 */
+async function runSarashina(llm: LocalLLM, body: string, temperature: number): Promise<string> {
+  const out: string[] = [];
+  for (const para of splitParagraphs(body)) {
+    const raw = await llm.generate(sarashinaTranslateInput(para), { temperature, maxNewTokens: sarashinaMaxNewTokens(para) });
+    out.push(cleanSarashinaParagraph(raw));
+  }
+  return out.join('\n\n');
+}
+
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
+    ),
+  ]);
+}
+
 async function runLLM(
+  llm: LocalLLM,
   text: string,
   langs: string[] | undefined,
   temperature: number,
 ): Promise<string> {
   const { body, trailing } = splitTranslatableText(text);
   if (!body) return trailing; // 本文なし → リンク等だけ返す
+  if (llm.id === SARASHINA.id) {
+    const cleaned = cleanTranslation(await withTimeout(runSarashina(llm, body, temperature)));
+    const composed = trailing ? `${cleaned}\n${trailing}` : cleaned;
+    if (!looksLikeJapaneseTranslation(cleaned)) throw new NonJapaneseTranslationError(composed);
+    return composed;
+  }
   const sourceHint = langs && langs.length > 0 ? `原文の言語: ${langs.join(', ')}。\n` : '';
   // LLM は入力末尾に最も注目するため、「指示を前に、原文を末尾に」の順で
   // 1 つの user メッセージに詰める。短文でも原文が埋もれにくい。
@@ -140,15 +173,13 @@ async function runLLM(
     body,
     '---',
   ].filter((l) => l !== '').join('\n');
-  const result = await Promise.race([
+  const result = await withTimeout(
     generateWithLocalLLM(
       { systemPrompt: TRANSLATE_SYSTEM_PROMPT, history: [{ role: 'user', content: userPrompt }] },
       { temperature, maxNewTokens: 300 },
+      'translation',
     ),
-    new Promise<null>((_, rej) =>
-      setTimeout(() => rej(new Error(`translate LLM timeout (${TIMEOUT_MS}ms)`)), TIMEOUT_MS),
-    ),
-  ]);
+  );
   if (!result) {
     // 利用可能な LLM が無い (Firefox/Safari/mobile 等)
     throw new Error('no local LLM available for translation');
@@ -173,14 +204,14 @@ async function runLLMWithRetry(
   temperatures: readonly number[],
 ): Promise<string> {
   // LLM 利用不可なら即時 throw (retry chain 全部 fail 待ちは無駄)
-  const llm = await pickLocalLLM();
+  const llm = await pickLocalLLM(false, 'translation');
   if (!llm) throw new Error('no local LLM available for translation');
   let lastFail: NonJapaneseTranslationError | null = null;
   let lastError: unknown = null;
   for (let i = 0; i < temperatures.length; i++) {
     const temp = temperatures[i]!;
     try {
-      return await runLLM(text, langs, temp);
+      return await runLLM(llm, text, langs, temp);
     } catch (e) {
       if (e instanceof NonJapaneseTranslationError) {
         console.warn(`[translate] attempt ${i + 1}/${temperatures.length} not Japanese (temp=${temp})`);
@@ -263,7 +294,7 @@ export function useTranslation(
   const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
-    pickLocalLLM().then((llm) => {
+    pickLocalLLM(false, 'translation').then((llm) => {
       if (!cancelled) setLlmAvailable(!!llm);
     });
     return () => { cancelled = true; };

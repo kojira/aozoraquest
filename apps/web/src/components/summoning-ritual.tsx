@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
-import { generateWithLocalLLM, pickLocalLLM } from '@/lib/local-llm';
+import { RitualStage } from './ritual-stage';
+import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice } from '@/lib/local-llm';
+import { installSarashina, isSarashinaEligible, isSarashinaInstalled } from '@/lib/sarashina-llm';
 
 interface SummoningRitualProps {
   agent: Agent;
@@ -43,7 +45,9 @@ const GREETING_NARRATION_INTERVAL = 3200;
 /**
  * ブルスコン召喚の儀式。
  *
- * LLM 利用可能性 (Nano など) のチェックと演出を並列で進める。演出は最低 ~7 秒、
+ * LLM 利用可能性 (Nano など) のチェックと演出を並列で進める。Nano が無く WebGPU がある端末では、
+ * 投稿翻訳用の sarashina をここでダウンロードし、終わるまで greeting で待つ (口上は手書き固定文のまま。
+ * 失敗しても儀式は完走し、翻訳は使えないまま次の儀式・次の機会にやり直す)。演出は最低 ~7 秒、
  * LLM 応答が長引いた場合は greeting フェーズでナレーションを巡回させて間を持たせる。
  * LLM 応答完了 (or LLM 利用不可で hand-crafted 採用) の瞬間に 'emerging' フェーズへ
  * 遷移し、フラッシュ + 星弾けの演出をしてから閉じる。
@@ -58,6 +62,7 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
     let cancelled = false;
     // LLM 利用可能性は儀式の早い段階で並行 probe しておく (greeting 到達時に確定済)。
     const llmProbe = pickLocalLLM().catch(() => null);
+    const translatorInstall = installTranslatorIfNeeded();
 
     async function run() {
       await sleep(MIN_PHASE_MS);
@@ -71,6 +76,7 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
 
       setPhase('greeting');
       const llm = await llmProbe;
+      await translatorInstall;
       if (cancelled) return;
 
       let welcome = '';
@@ -151,132 +157,26 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
     phase === 'greeting' ? GREETING_POOL[greetingIdx]! : (STATIC_NARRATIONS[phase] ?? '');
   const narrationKey = phase === 'greeting' ? `greet-${greetingIdx}` : `phase-${phase}`;
 
-  const emerging = phase === 'emerging';
-
   return (
-    <div className="summon-overlay" role="dialog" aria-modal="true" aria-label="精霊召喚の儀式">
-      {/* emergence 用フラッシュ (一瞬、画面全体を白光で覆う) */}
-      {emerging && <div className="summon-flash" aria-hidden />}
-
-      <div className="summon-stage">
-        {/* 粒子 */}
-        {!emerging && buildParticles(24)}
-
-        {/* シルエット */}
-        <div
-          className={`summon-silhouette${emerging ? ' emerging' : ''}`}
-          style={{
-            opacity: phase === 'gathering' ? 0.2 : phase === 'forming' ? 0.55 : 1,
-            transition: 'opacity 800ms ease',
-          }}
-        >
-          <SpiritIcon
-            size={emerging ? 220 : 180}
-            sleeping={phase === 'gathering' || phase === 'forming'}
-          />
-        </div>
-
-        {/* awakening 以降の星 */}
-        {(phase === 'awakening' || phase === 'greeting') && (
-          <>
-            <span className="summon-sparkle" style={{ top: '10%', left: '20%' }} />
-            <span className="summon-sparkle" style={{ top: '15%', right: '18%', animationDelay: '0.3s' }} />
-            <span className="summon-sparkle" style={{ bottom: '20%', left: '12%', animationDelay: '0.6s' }} />
-            <span className="summon-sparkle" style={{ bottom: '15%', right: '22%', animationDelay: '0.9s' }} />
-          </>
-        )}
-
-        {/* emerging: 放射状に弾ける大きな星たち */}
-        {emerging && (
-          <>
-            {Array.from({ length: 14 }).map((_, i) => {
-              const angle = (360 / 14) * i;
-              return (
-                <span
-                  key={i}
-                  className="summon-burst"
-                  style={{
-                    ['--angle' as string]: `${angle}deg`,
-                    animationDelay: `${Math.random() * 0.15}s`,
-                  } as React.CSSProperties}
-                />
-              );
-            })}
-          </>
-        )}
-      </div>
-
-      {/* ナレーション (greeting 中は key 切り替えでフェード) */}
-      {!emerging && narrationText && (
-        <div
-          key={narrationKey}
-          style={{
-            position: 'absolute',
-            bottom: '14%',
-            left: 0,
-            right: 0,
-            textAlign: 'center',
-            color: '#ffffff',
-            fontSize: '1.05em',
-            letterSpacing: '0.04em',
-            animation: 'ritual-text-swap 3200ms ease',
-          }}
-        >
-          {narrationText}
-        </div>
-      )}
-
-      {/* 出現宣言 */}
-      {emerging && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '18%',
-            left: 0,
-            right: 0,
-            textAlign: 'center',
-            color: '#ffffff',
-            fontSize: '1.6em',
-            letterSpacing: '0.08em',
-            fontWeight: 700,
-            textShadow: '0 0 16px rgba(159, 215, 255, 0.85), 0 0 40px rgba(255, 255, 255, 0.6)',
-            animation: 'ritual-announce 1800ms ease',
-          }}
-        >
-          ブルスコン、あらわれた!
-        </div>
-      )}
-
-      {phase === 'greeting' && elapsed > 20000 && (
-        <div style={{ position: 'absolute', bottom: '8%', left: 0, right: 0, textAlign: 'center', fontSize: '0.8em', color: '#9fb3c8' }}>
-          もう少しで姿が現れる
-        </div>
-      )}
-    </div>
+    <RitualStage
+      phase={phase}
+      narration={narrationText}
+      narrationKey={narrationKey}
+      hint={phase === 'greeting' && elapsed > 20000 ? 'もう少しで姿が現れる' : undefined}
+      label="精霊召喚の儀式"
+    />
   );
 }
 
-function buildParticles(n: number) {
-  const nodes: React.ReactElement[] = [];
-  for (let i = 0; i < n; i++) {
-    const xStart = `${Math.random() * 100 - 50}vw`;
-    const xEnd = `${(Math.random() * 30 - 15)}vw`;
-    const delay = `${Math.random() * 2}s`;
-    const duration = `${2 + Math.random() * 1.2}s`;
-    nodes.push(
-      <span
-        key={i}
-        className="summon-particle"
-        style={{
-          ['--x-start' as string]: xStart,
-          ['--x-end' as string]: xEnd,
-          animationDelay: delay,
-          animationDuration: duration,
-        } as React.CSSProperties}
-      />,
-    );
+/** sarashina の対象端末で未導入なら導入する。失敗は握りつぶす (儀式は手書きの口上で完走する)。 */
+async function installTranslatorIfNeeded(): Promise<void> {
+  try {
+    if (!(await isSarashinaEligible()) || (await isSarashinaInstalled())) return;
+    await installSarashina();
+    resetLocalLLMChoice();
+  } catch (e) {
+    console.warn('[ritual] translator install failed', e);
   }
-  return nodes;
 }
 
 function sleep(ms: number) {
