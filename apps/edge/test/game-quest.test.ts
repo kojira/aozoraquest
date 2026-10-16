@@ -152,7 +152,7 @@ describe('handleQuestComplete (defeat)', () => {
 
   it('討伐数が足りないと not_ready (サーバーが進行を検証)', async () => {
     globalThis.fetch = statefulPds(stateAt({ activeQuests: [{ id: 'q-defeat', progress: 1 }] })).fn;
-    await expect(handleQuestComplete(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'not_ready' });
+    await expect(handleQuestComplete(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'not_ready', message: 'まだ1/2たい' });
   });
 
   it('足りたら報酬パワーが入り、done に積まれ、quest が消える', async () => {
@@ -194,7 +194,7 @@ describe('handleQuestComplete (collect)', () => {
 
   it('素材が足りないと not_ready (権威在庫で検証)', async () => {
     globalThis.fetch = statefulPds(stateAt({ materials: { herb: 2 }, activeQuests: [{ id: 'q-collect', progress: 0 }] })).fn;
-    await expect(handleQuestComplete(await makeEnv(), DID, 'q-collect', NOW)).rejects.toMatchObject({ code: 'not_ready' });
+    await expect(handleQuestComplete(await makeEnv(), DID, 'q-collect', NOW)).rejects.toMatchObject({ code: 'not_ready', message: 'まだ2/3こ' });
   });
 
   it('達成で素材を引き取り、報酬 (パワー + アイテム) を付与する', async () => {
@@ -232,7 +232,7 @@ describe('handleQuestComplete (talk, D-STORY-009)', () => {
   it('mapId 違い・斜め・同じマス・離れた位置・未受注は 400', async () => {
     for (const [mapId, x, y] of [['world', 6, 7], ['old-town', 7, 7], ['old-town', 6, 6], ['old-town', 6, 9]] as const) {
       globalThis.fetch = statefulPds(stateAt({ activeQuests: [{ id: 'q-letter', progress: 0 }] })).fn;
-      await expect(handleQuestComplete(await makeEnv(), DID, 'q-letter', NOW, undefined, await at(mapId, x, y))).rejects.toMatchObject({ status: 400 });
+      await expect(handleQuestComplete(await makeEnv(), DID, 'q-letter', NOW, undefined, await at(mapId, x, y))).rejects.toMatchObject({ status: 400, message: '話す相手が近くにいない' });
     }
     globalThis.fetch = statefulPds(stateAt()).fn;
     await expect(handleQuestComplete(await makeEnv(), DID, 'q-letter', NOW, undefined, await at('old-town', 6, 7))).rejects.toMatchObject({ status: 400 });
@@ -293,7 +293,7 @@ describe('シナリオ連動 (#545)', () => {
     // NPC の分岐を無視して直接叩いても通らないことを確かめる。
     setGameQuests([{ ...DEFEAT_Q, requireFlags: ['ch1'] }, COLLECT_Q]);
     globalThis.fetch = statefulPds(stateAt()).fn;
-    await expect(handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'locked' });
+    await expect(handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW)).rejects.toMatchObject({ code: 'locked', message: 'まだその頼まれごとは出ていない' });
     // フラグが立っていれば通る
     globalThis.fetch = statefulPds(stateAt({ flags: ['ch1'] })).fn;
     const ok = await handleQuestAccept(await makeEnv(), DID, 'q-defeat', NOW);

@@ -63,7 +63,7 @@ export async function handleQuestAccept(
       // フラグと持ち物の**両方**を権威側で見る (#426)。client が NPC の分岐を無視して
       // 直接 POST しても通らない。
       if (need.some((f) => !(cur.flags ?? []).includes(f)) || !itemsSatisfied(def.requireItems, cur.materials)) {
-        throw new GameQuestError('まだ その たのまれごとは 出ていない', 400, 'locked');
+        throw new GameQuestError('まだその頼まれごとは出ていない', 400, 'locked');
       }
       newlyAccepted = true;
       return { ...cur, activeQuests: [...cur.activeQuests, { id: questId, progress: 0 }] };
@@ -113,14 +113,14 @@ export async function handleQuestComplete(
       const o = def.objective;
       if (o.kind === 'defeat') {
         if ((active.progress ?? 0) < o.count) {
-          throw new GameQuestError(`まだ ${active.progress ?? 0}/${o.count} たい`, 400, 'not_ready');
+          throw new GameQuestError(`まだ${active.progress ?? 0}/${o.count}たい`, 400, 'not_ready');
         }
       } else if (o.kind === 'talk') {
         const npc = allNpcs().find((n) => n.id === o.npcId);
-        if (!npc || !besideNpc(npc, claim ?? cur)) throw new GameQuestError('はなす あいてが ちかくに いない', 400, 'not_ready');
+        if (!npc || !besideNpc(npc, claim ?? cur)) throw new GameQuestError('話す相手が近くにいない', 400, 'not_ready');
       } else {
         const have = cur.materials[o.itemId] ?? 0;
-        if (have < o.count) throw new GameQuestError(`まだ ${have}/${o.count} こ`, 400, 'not_ready');
+        if (have < o.count) throw new GameQuestError(`まだ${have}/${o.count}こ`, 400, 'not_ready');
         // **引き取る** — 引かないと同じ素材で何度も達成できる (別クエストや将来の複数進行で)。
         materials = { ...cur.materials };
         const left = have - o.count;
