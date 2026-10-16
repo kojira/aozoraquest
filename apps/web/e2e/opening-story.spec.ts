@@ -280,7 +280,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(black).toHaveCSS('opacity', '1');
     await page.screenshot({ path: `${SHOTS}/prologue-mitsukaru-390.png` });
     await next();
-    await expect(window).toContainText('……聞こえる？大丈夫？');
+    await expect(window).toContainText('……聞こえる？　大丈夫？');
     await expect(black).toHaveCSS('opacity', '0');
     await expect(page.getByTestId('story-silhouette').locator('img')).toHaveCount(0);
     // reduced-motion では白い閃光を再生しない (文言が意味を担う)。
@@ -295,7 +295,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(portrait).toHaveCount(0);
     await captureMapDialogue(page, 'opening-narration');
     await next();
-    await expect(window).toContainText('よかった……！気がついたんだね。');
+    await expect(window).toContainText('よかった……！　気がついたんだね。');
     await expect(portrait).toHaveAttribute('src', /bluesky-smile/);
     await captureMapDialogue(page, 'opening-smile');
     await next();
@@ -351,7 +351,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await choose('やめておく');
     expect(state.activeQuests).toEqual([]);
     await choose('報告する');
-    await expect(window).toContainText('今報告できる受注中の依頼はない');
+    await expect(window).toContainText('いま報告できる受注中の依頼はない');
     await readAll(page);
     await choose('依頼を見る'); await readAll(page);
     await choose('受注する');
@@ -416,11 +416,11 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await readAll(page);
     const completed = structuredClone(state);
     await choose('報告する');
-    await expect(window).toContainText('今報告できる受注中の依頼はない');
+    await expect(window).toContainText('いま報告できる受注中の依頼はない');
     await readAll(page);
     // 達成済みの依頼は「依頼を見る」に出さない。説明 (intro) も流さない。
     await choose('依頼を見る');
-    await expect(window).toContainText('今紹介できる依頼はないよ。');
+    await expect(window).toContainText('いま紹介できる依頼はないよ。');
     await expect(window).not.toContainText('道具の手入れに');
     await expect(window).not.toContainText('村の道具屋');
     expect(state).toEqual(completed);
@@ -446,7 +446,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     records['app.aozoraquest.dev.world.quests'] = { quests: quests.filter(q => q.id !== 'futaba-tool-care') };
     await reenter({ x: bluesky.x, y: bluesky.y + 1 });
     await bump('ArrowUp'); await choose('依頼を見る');
-    await expect(window).toContainText('今紹介できる依頼はない');
+    await expect(window).toContainText('いま紹介できる依頼はない');
     await readAll(page); await choose('やめる');
     records['app.aozoraquest.dev.world.quests'] = { quests };
     // Reload restores the other active quest; reporting it still advances the existing story.
@@ -463,7 +463,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await bump('ArrowUp');
     await expect(window).toContainText('おかえり。');
     await choose('話す');
-    await expect(window).toContainText('見た？今、空が赤く光ったの。');
+    await expect(window).toContainText('見た？　今、空が赤く光ったの。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/04-departure-hint.png` });
     await next();

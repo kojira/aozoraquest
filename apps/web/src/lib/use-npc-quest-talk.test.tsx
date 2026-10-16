@@ -30,10 +30,10 @@ describe('useNpcQuestTalk ギルドの「依頼を見る」', () => {
     expect(result.current.npcChoices?.map(c => c.label)).toEqual(['つぎの依頼 / 未受注', 'もうひとつ / 未受注', '戻る']);
   });
 
-  it('すべて達成済みなら「今紹介できる依頼はないよ。」だけで、説明は流さない', () => {
+  it('すべて達成済みなら「いま紹介できる依頼はないよ。」だけで、説明は流さない', () => {
     const { result } = render();
     act(() => result.current.setQuest({ activeQuests: [], done: ['a', 'b', 'c'] }));
     viewGuildQuests(result);
-    expect(result.current.npcTalk?.lines).toEqual(['今紹介できる依頼はないよ。']);
+    expect(result.current.npcTalk?.lines).toEqual(['いま紹介できる依頼はないよ。']);
   });
 });

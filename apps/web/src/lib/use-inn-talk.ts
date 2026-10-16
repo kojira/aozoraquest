@@ -54,7 +54,7 @@ export function useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServ
           }
           setInnTalk({ lines: [
             { text: `${who}に泊まった (パワー -${res.inn.paid})。すっかり元気になった!` },
-            { speaker: who, text: 'ゆっくり休めたかい？またどうぞ。' },
+            { speaker: who, text: 'ゆっくり休めたかい？　またどうぞ。' },
           ] });
         } else setInnTalk({ lines: [{ text: `「${who}」…今はよく眠れているようだ。` }] });
       } else if (res.innDenied) {

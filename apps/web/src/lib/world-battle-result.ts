@@ -24,10 +24,10 @@ export function battleResultLines(
   // 黙って何も起きないと「経験値が入ったように見えて実は入っていない」になる。
   if (awarded.unrewarded) {
     resultLines.push('あおぞらパワーが足りなかった…');
-    resultLines.push('経験値も素材も得られなかった。');
+    resultLines.push('けいけんちも素材も得られなかった。');
     resultLines.push('投稿するとパワーがたまる。');
   }
-  if (awarded.xp && awarded.xp > 0) resultLines.push(`経験値を${awarded.xp}獲得！`);
+  if (awarded.xp && awarded.xp > 0) resultLines.push(`けいけんちを${awarded.xp}獲得！`);
 
   for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''}を手に入れた！`);
   for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''}を落としてしまった…`);

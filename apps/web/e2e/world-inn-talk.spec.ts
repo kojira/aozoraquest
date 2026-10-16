@@ -139,7 +139,7 @@ test('宿屋の扉: いいえ なら課金しない、はい で パワー -3 �
     expect(state.carryHp).toBeUndefined();
     expect(state.carryMp).toBeUndefined();
     await pane.click();
-    await expect(pane).toContainText('ゆっくり休めたかい？またどうぞ。');
+    await expect(pane).toContainText('ゆっくり休めたかい？　またどうぞ。');
     await pane.click();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     expect(errors).toEqual([]);

@@ -628,7 +628,7 @@ function WorldScreen() {
             <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
               {serverPower === null
                 ? 'パワー残高を読み込めませんでした (通信を確認して開き直して)'
-                : 'パワーがないので、勝っても経験値・素材・依頼の進みはもらえません'}
+                : 'パワーがないので、勝ってもけいけんち・素材・依頼の進みはもらえません'}
             </p>
           )}
         </>

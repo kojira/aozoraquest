@@ -265,7 +265,7 @@ export function AdminQuests() {
                 >
                   <option value="defeat">たおす</option>
                   <option value="collect">あつめる (素材を渡す)</option>
-                  <option value="talk">話を聞く (相手の隣で話しかける)</option>
+                  <option value="talk">はなしをきく (相手の隣で話しかける)</option>
                 </select>
                 {current.objective.kind === 'talk' ? (
                   <>

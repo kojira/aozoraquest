@@ -71,7 +71,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       setNotice(message);
       // The map notice is hidden during NPC dialogue: keep failure and retry visible in the offer.
       setNpcTalk(current => current?.acceptQuestId === questId && !current.guild
-        ? { ...current, lines: [message, 'もう一度確かめてね。受けますか？'] }
+        ? { ...current, lines: [message, 'もう一度確かめてね。うけますか？'] }
         : current);
       throw e;
     } finally {
@@ -147,7 +147,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     if (!q) {
       // 達成済みは出さない (一人一度の依頼。fb-1010)。0件なら紹介できる依頼なし。
       const candidates = npcQuests(npc);
-      if (!candidates.length) { guildMessage(npc, ['今紹介できる依頼はないよ。']); return; }
+      if (!candidates.length) { guildMessage(npc, ['いま紹介できる依頼はないよ。']); return; }
       if (candidates.length > 1) { showQuestChoices(npc, candidates, selected => viewGuildQuest(npc, selected), true); return; }
       q = candidates[0]!;
     }
@@ -158,7 +158,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   };
   const reportGuildQuest = (npc: NpcDef) => {
     const candidates = gameQuestsByNpc(npc.id).filter(q => questRef.current.activeQuests.some(a => a.id === q.id));
-    if (!candidates.length) { guildMessage(npc, ['今報告できる受注中の依頼はないよ。']); return; }
+    if (!candidates.length) { guildMessage(npc, ['いま報告できる受注中の依頼はないよ。']); return; }
     // 1件でも一覧から選ぶ。選んだら説明・確認なしで報告する (未達はサーバーの不足表示)。
     showQuestChoices(npc, candidates, q => reportQuest(npc, q, true), true, 0, 'どの依頼を報告する？');
   };

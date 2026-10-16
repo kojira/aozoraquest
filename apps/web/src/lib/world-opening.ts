@@ -12,7 +12,7 @@ const STRANGER = '？？？';
 export const PROLOGUE_LINES: readonly DialogueLine[] = [
   { text: '……ここは、どこ？', effects: [{ kind: 'fade', to: 'black' }, { kind: 'silhouette', show: true }] },
   { speaker: STRANGER, text: 'やっと届いた。きみの言葉が。' },
-  { speaker: STRANGER, text: '向こうの空は今、色を失っている。七羽の鳥が、眠ってしまったから。' },
+  { speaker: STRANGER, text: 'むこうの空は今、色を失っている。七羽の鳥が、眠ってしまったから。' },
   { speaker: STRANGER, text: 'ぼくにはもう、飛ぶ力が残っていない。' },
   { speaker: STRANGER, text: 'だから、きみにギフトを渡す。きみの言葉の形が、そのままきみの力になる。' },
   { text: '【ギフト】ことばの ちからを授かった！' },
@@ -24,15 +24,15 @@ export const PROLOGUE_LINES: readonly DialogueLine[] = [
 /** ふたばの救護導入。管理画像は通常会話、ここだけ合意済み表情を指定する。
  *  窓全体の portrait は渡さない (？？？行に Blueskyちゃんの絵が出ないよう、話者行ごとに指定)。 */
 export const ONBOARDING_LINES: readonly DialogueLine[] = [
-  { speaker: 'Blueskyちゃん', text: '……聞こえる？大丈夫？', portrait: { src: futabaWorried, name: 'Blueskyちゃん' },
+  { speaker: 'Blueskyちゃん', text: '……聞こえる？　大丈夫？', portrait: { src: futabaWorried, name: 'Blueskyちゃん' },
     effects: [{ kind: 'fade', to: 'clear' }, { kind: 'silhouette', show: false }, { kind: 'flash', color: 'white' }] },
   { speaker: 'Blueskyちゃん', text: 'けがしてる……。待って、やくそうがあるから。', portrait: { src: futabaWorried, name: 'Blueskyちゃん' } },
   { text: '少女はやくそうを取り出し、そっと傷の手当てをしてくれた。' },
-  { speaker: 'Blueskyちゃん', text: 'よかった……！気がついたんだね。', portrait: ONBOARDING_PORTRAIT },
+  { speaker: 'Blueskyちゃん', text: 'よかった……！　気がついたんだね。', portrait: ONBOARDING_PORTRAIT },
   { speaker: 'Blueskyちゃん', text: '村の前で倒れてたから、心配したよ。', portrait: ONBOARDING_PORTRAIT },
   { speaker: 'Blueskyちゃん', text: 'わたしはBluesky。この村の冒険者ギルドで受付をしてるの。', portrait: ONBOARDING_PORTRAIT },
 ];
-export const GUILD_INVITATION: DialogueLine = { speaker: 'Blueskyちゃん', text: '村のギルドで少し休んでいかない？井戸の北東の建物だよ。ゆっくりおいで。', portrait: ONBOARDING_PORTRAIT };
+export const GUILD_INVITATION: DialogueLine = { speaker: 'Blueskyちゃん', text: '村のギルドで少し休んでいかない？　井戸の北東の建物だよ。ゆっくりおいで。', portrait: ONBOARDING_PORTRAIT };
 export const OPENING_GUIDE_LINES: readonly DialogueLine[] = [
   { text: '【操作ガイド】マップを押したまま指を動かすと移動。上にある村へ進もう。' },
   { text: '【操作ガイド】自分をタップするとコマンド。村の人に向かって歩くと話せます。' },
@@ -45,7 +45,7 @@ export function starterHandoffLines(blessed: boolean): DialogueLine[] {
     { speaker: 'Blueskyちゃん', text: 'これも持っていて。また痛くなったら使ってね。' },
     { text: 'やくそうを受け取った！' },
     { speaker: 'Blueskyちゃん', text: 'そらのはねもあげるね。行ったことのある街へ戻れるの。' },
-    { text: 'そらのはねを受け取った！コマンドの「どうぐ」から使えます。' },
+    { text: 'そらのはねを受け取った！　コマンドの「どうぐ」から使えます。' },
     GUILD_INVITATION,
     ...(blessed ? [{ text: '【ギフト】ことばの ちからであおぞらパワーが20増えた！' }] : []),
     ...OPENING_GUIDE_LINES,

@@ -43,7 +43,7 @@ describe('splitBattleLine', () => {
   });
   it('割れ目の無い文は 1 行のまま', () => {
     expect(splitBattleLine('スライムには効果がいまひとつのようだ…')).toEqual(['スライムには効果がいまひとつのようだ…']);
-    expect(splitBattleLine('スライムがあらわれた！ぷるぷる')).toEqual(['スライムがあらわれた！ぷるぷる']);
+    expect(splitBattleLine('スライムがあらわれた！　ぷるぷる')).toEqual(['スライムがあらわれた！　ぷるぷる']);
   });
   it('battleMessageLines はイベント順に 平らに並べる', () => {
     expect(battleMessageLines(['Aのこうげき! Bに 1 のダメージ', 'Bは ねむっている…'])).toEqual(['Aのこうげき!', 'Bに 1 のダメージ', 'Bは ねむっている…']);

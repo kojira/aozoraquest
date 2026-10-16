@@ -99,7 +99,7 @@ test('マップの下の黒い領域: ドラッグで歩き、タップは何も
   expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= innerHeight + 1)).toBe(true);
   const black = { x: m.x + m.width / 2, y: (m.y + m.height + foot.y) / 2 };
   // 6. 操作説明文は出さない。スティック外の左 36px の帯からドラッグしても文字は選ばれない
-  await expect(page.getByText(/じぶんを タップすると|マップや その下を|やどやで パワーを|歩くとモンスターが/)).toHaveCount(0);
+  await expect(page.getByText(/じぶんを タップすると|自分をタップすると|マップや その下を|やどやで パワーを|歩くとモンスターが/)).toHaveCount(0);
   const warn = (await page.getByText(/パワーがない/).boundingBox())!;
   await page.screenshot({ path: 'test-results/world-no-help-390.png' });
   await page.mouse.move(root.x + 18, m.y + m.height + 12);

@@ -26,7 +26,7 @@ export function BetaResetNotice({ hadLegacyLevel }: { hadLegacyLevel: boolean })
   return (
     <div className="dq-window" style={{ padding: '0.7em 0.9em', fontSize: '0.85em', lineHeight: 1.6 }}>
       <p style={{ margin: 0 }}>
-        経験値の記録を改めた。
+        けいけんちの記録を改めた。
         <br />
         冒険者たちのレベルは<strong>1に戻っている</strong>。
       </p>

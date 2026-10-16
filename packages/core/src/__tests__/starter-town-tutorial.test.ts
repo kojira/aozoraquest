@@ -52,8 +52,8 @@ describe('ふたばの村の導入データ', () => {
     expect(npcLinesFor(bluesky, [], {})).toEqual(['おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……']);
     expect(npcLinesFor(bluesky, ['futaba_herbs_done'], {})).toEqual(bluesky.lines);
     const departure = npcLinesFor(bluesky, ['futaba_slimes_done', 'futaba_herbs_done', 'futaba_wings_done'], {}).join('');
-    expect(departure).toContain('見た？今、空が赤く光ったの。');
-    expect(departure).toContain('『赤い鳥が目を覚ましかけている。ほむらの街へ向かってくれ。――空を、頼んだよ。』');
+    expect(departure).toContain('見た？　今、空が赤く光ったの。');
+    expect(departure).toContain('『赤い鳥が目を覚ましかけている。ほむらの街へ向かってくれ。――空を、たのんだよ。』');
     expect(departure).toContain('ほむらの街');
     expect(npcs.find((n) => n.id === 'futaba-innkeeper-wife')!.lines[0]).toContain('Blueskyちゃんが見つけた旅人だね');
   });
