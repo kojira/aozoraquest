@@ -59,3 +59,52 @@ describe('sarashina weights cache-only load', () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 });
+
+/**
+ * 低速回線 (Refs #779): 32MB の part が 60 秒 (sarashina-llm.ts の LOAD_STALL_MS) 以上かかっても、byte が届いている間は
+ * heartbeat で停止監視が進み、導入が失敗しない。byte が 60 秒届かなければ従来どおり停止と判定される。
+ */
+describe('sarashina weights download heartbeat', () => {
+  const LOAD_STALL_MS = 60_000;
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  /** gapsMs[i] 待ってから i 番目の 1 byte chunk を流す body。 */
+  function slowBody(gapsMs: number[]) {
+    let i = 0;
+    return new ReadableStream<Uint8Array>({
+      async pull(c) {
+        if (i >= gapsMs.length) { c.close(); return; }
+        await new Promise((r) => setTimeout(r, gapsMs[i]));
+        c.enqueue(new Uint8Array([i++]));
+      },
+    });
+  }
+
+  /** sarashina-llm.ts の停止監視と同じく、heartbeat ごとに LOAD_STALL_MS の timer を張り直す。 */
+  async function downloadWithWatchdog(gapsMs: number[]) {
+    const bytes = new Uint8Array(gapsMs.map((_, i) => i)).buffer;
+    stubCache({});
+    vi.stubGlobal('fetch', async () => new Response(slowBody(gapsMs)));
+    let stalled = false;
+    let stall = setTimeout(() => { stalled = true; }, LOAD_STALL_MS);
+    const onHeartbeat = () => { clearTimeout(stall); stall = setTimeout(() => { stalled = true; }, LOAD_STALL_MS); };
+    const p = fetchVerified('https://x/part-000.bin', { bytes: bytes.byteLength, sha256: await sha256Hex(bytes) }, { allowNetwork: true, onHeartbeat });
+    p.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(gapsMs.reduce((a, b) => a + b, 0) + 1);
+    clearTimeout(stall);
+    return { stalled, got: await p, bytes };
+  }
+
+  it('keeps the stall watchdog alive while bytes trickle in for longer than LOAD_STALL_MS', async () => {
+    vi.useFakeTimers();
+    const { stalled, got, bytes } = await downloadWithWatchdog(Array(12).fill(10_000)); // 120 秒、間隔は 10 秒
+    expect(stalled).toBe(false);
+    expect(new Uint8Array(got)).toEqual(new Uint8Array(bytes)); // sha256 は part 全体で照合済み
+  });
+
+  it('still reports a stall when no bytes arrive for LOAD_STALL_MS', async () => {
+    vi.useFakeTimers();
+    const { stalled } = await downloadWithWatchdog([1_000, LOAD_STALL_MS + 1_000, 1_000]);
+    expect(stalled).toBe(true);
+  });
+});
