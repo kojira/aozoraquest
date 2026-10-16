@@ -10,6 +10,7 @@ import {
   forgedLevel,
   isMasterwork,
   isSellableMaterial,
+  parseNpcLine,
   jobDisplayName,
   leveledName,
   salePowerFor,
@@ -24,6 +25,7 @@ import {
 import type { CraftedPiece } from '@/lib/crafting';
 import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
+import { sceneDialogue } from '@/lib/scene-dialogue';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -148,14 +150,10 @@ export function ShopModal({
     const sp = worldOverlay().spawn;
     let done = true;
     try { done = localStorage.getItem(SHOP_TUTORIAL_KEY) === '1'; } catch { /* private mode */ }
-    if (town.x === sp.x && town.y === sp.y && !done) {
-      openTalk([
-        say(keeper.greeting),
-        say('ここはなんでも屋。あおぞらパワーと素材を持ってくれば、装備を作るよ。'),
-        say('できばえは−1〜+5。うんが高いほどいい品になりやすい。'),
-        say('同じ品を2つ持ってくれば、1つ上に鍛えてやろう。'),
-        say('素材はこのへんのモンスターが落とす。いらない素材は引き取ってパワーに変えるよ。'),
-      ], true);
+    // 説明の文は会話データ (D-DIALOGUE-006)。場面が無ければあいさつだけで、読んだ印も立てない。
+    const tutorial = town.x === sp.x && town.y === sp.y && !done ? sceneDialogue('shop.tutorial', { here: (raw) => say(parseNpcLine(raw).text) }) : [];
+    if (tutorial.length) {
+      openTalk([say(keeper.greeting), ...tutorial], true);
     } else {
       openTalk([say(keeper.greeting)]);
     }

@@ -13,6 +13,8 @@ import { handleMove, handleGear } from '../../edge/src/battle-resolver';
 import { applyBattleOutcome } from '../../edge/src/battle-reward';
 import { shopCraft } from '../../edge/src/shop';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+import { readFileSync } from 'node:fs';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 const DID = 'did:plc:tutorial';
 const ADMIN = 'did:plc:tutorialadmin';
@@ -73,6 +75,8 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
     'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,

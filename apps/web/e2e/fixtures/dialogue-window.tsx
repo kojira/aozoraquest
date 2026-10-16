@@ -2,8 +2,8 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DialogueWindow } from '../../src/components/dialogue-window';
-import worried from '../../src/assets/futaba/bluesky-worried.webp';
-import smile from '../../src/assets/futaba/bluesky-smile.webp';
+import worried from './futaba/bluesky-worried.webp';
+import smile from './futaba/bluesky-smile.webp';
 import '../../src/styles.css';
 
 const name = 'Blueskyちゃん';

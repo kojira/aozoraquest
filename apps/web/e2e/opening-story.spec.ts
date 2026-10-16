@@ -14,6 +14,7 @@ import { cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images'
 import { applyBattleOutcome } from '../../edge/src/battle-reward';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 const DID = 'did:plc:tutorial';
 const ADMIN = 'did:plc:tutorialadmin';
@@ -149,9 +150,12 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
   const village = starterTownInterior(town);
   const gates = starterTownGates(town);
   // 通常会話の管理画像も実際の許可済み笑顔原本で配る（導入の行別表情とは別経路）。
-  const portraitBytes = readFileSync(path.join(process.cwd(), 'src/assets/futaba/bluesky-smile.webp'));
-  const portraitImage = { blob: { $type: 'blob' as const, ref: { $link: cidFor(portraitBytes) }, mimeType: 'image/webp' as const, size: portraitBytes.length }, width: 512, height: 768 };
-  const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage } : n), quests = starterTownQuests(), scenario = starterTownScenario();
+  const portraitBytes = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-smile.webp'));
+  // 心配顔は NPC の表情画像 [sad] (worried の原本。dev・本番と同じ CID。D-DIALOGUE-006 J3)。
+  const worriedBytes = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-worried.webp'));
+  const imageOf = (bytes: Buffer) => ({ blob: { $type: 'blob' as const, ref: { $link: cidFor(bytes) }, mimeType: 'image/webp' as const, size: bytes.length }, width: 512, height: 768 });
+  const portraitImage = imageOf(portraitBytes), sadImage = imageOf(worriedBytes);
+  const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage, expressionImages: { sad: sadImage } } : n), quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
   setMonsterOverrides(TEST_MONSTERS); // quests の monsterId 実在検査より先に入れる (D-MONSTER-001)
   setInteriors([village], gates); setNpcs(npcs); setGameQuests(quests); setScenario(scenario); setShopOverrides([shop]);
@@ -178,6 +182,8 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
     'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
@@ -211,8 +217,9 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     }
     if (!url.pathname.startsWith('/fixture-api/')) { await route.continue(); return; }
     if (url.pathname === '/fixture-api/api/npc-image') {
-      const ok = url.searchParams.get('npcId') === 'futaba-bluesky' && url.searchParams.get('kind') === 'portrait' && url.searchParams.get('cid') === portraitImage.blob.ref.$link;
-      await route.fulfill(ok ? { contentType: 'image/webp', body: portraitBytes } : { status: 404, body: 'not found' });
+      const sad = url.searchParams.get('expression') === 'sad';
+      const ok = url.searchParams.get('npcId') === 'futaba-bluesky' && url.searchParams.get('kind') === 'portrait' && url.searchParams.get('cid') === (sad ? sadImage : portraitImage).blob.ref.$link;
+      await route.fulfill(ok ? { contentType: 'image/webp', body: sad ? worriedBytes : portraitBytes } : { status: 404, body: 'not found' });
       return;
     }
     const body = route.request().postDataJSON();
@@ -286,7 +293,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     // reduced-motion では白い閃光を再生しない (文言が意味を担う)。
     await expect(page.getByTestId('story-flash-white')).toHaveCount(0);
     await expect.poll(() => portrait.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
-    await expect(portrait).toHaveAttribute('src', /bluesky-worried/);
+    await expect(portrait).toHaveAttribute('src', /expression=sad/);
     await captureMapDialogue(page, 'opening-worried');
     await next();
     await expect(window).toContainText('けがしてる……。待って、やくそうがあるから。');
@@ -296,7 +303,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await captureMapDialogue(page, 'opening-narration');
     await next();
     await expect(window).toContainText('よかった……！　気がついたんだね。');
-    await expect(portrait).toHaveAttribute('src', /bluesky-smile/);
+    await expect(portrait).toHaveAttribute('src', new RegExp(`cid=${portraitImage.blob.ref.$link}$`));
     await captureMapDialogue(page, 'opening-smile');
     await next();
     await expect(window).toContainText('村の前で倒れてたから、心配したよ。');

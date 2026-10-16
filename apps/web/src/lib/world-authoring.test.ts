@@ -6,7 +6,8 @@
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { jsonToLex, type Agent } from '@atproto/api';
-import { activeMonsters, clearMonsters, clearMonsterArts, monsterArtSvg, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride } from '@aozoraquest/core';
+import { activeMonsters, clearMonsters, clearMonsterArts, monsterArtSvg, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride, setDialogue, type DialogueData } from '@aozoraquest/core';
+import dialogueFixture from '@aozoraquest/core/src/__tests__/fixtures/dialogue.json';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
 import { TEST_MONSTERS } from '@aozoraquest/core/src/__tests__/helpers/monster-fixture';
 
@@ -138,6 +139,32 @@ describe('NPC editor strict load and save', () => {
     setNpcs([NPC]);
     await expect(loadNpcAuthoringRecords(fakeAgent({}), DID, () => false)).rejects.toThrow('取り消し');
     expect(allNpcs()).toEqual([NPC]);
+  });
+});
+
+describe('会話 (D-DIALOGUE-006): 参照チェックと厳密な読み込み', () => {
+  afterEach(() => { setDialogue(null); setNpcs(null); });
+  const bluesky = () => starterTownNpcs().find((n) => n.id === 'futaba-bluesky')!;
+  it('会話が話者にしている NPC は NPC の保存で消させない', async () => {
+    const { saveNpcs } = await import('./world-authoring');
+    setNpcs([bluesky()]); setDialogue(dialogueFixture as DialogueData);
+    const putRecord = vi.fn().mockResolvedValue({});
+    const agent = { assertDid: DID, com: { atproto: { repo: { putRecord } } } } as unknown as Agent;
+    await expect(saveNpcs(agent, [NPC])).rejects.toThrow('futaba-bluesky');
+    expect(putRecord).not.toHaveBeenCalled();
+  });
+  it('存在しない NPC を話者にした会話は保存しない。読めなければ throw (空として扱わない)', async () => {
+    const { saveDialogue, loadDialogueAuthoringRecords } = await import('./world-authoring');
+    const putRecord = vi.fn().mockResolvedValue({});
+    const agent = { assertDid: DID, com: { atproto: { repo: { putRecord } } } } as unknown as Agent;
+    await expect(saveDialogue(agent, dialogueFixture as DialogueData, new Set(['elder']))).rejects.toThrow('futaba-bluesky');
+    expect(putRecord).not.toHaveBeenCalled();
+    await saveDialogue(agent, dialogueFixture as DialogueData, new Set(['futaba-bluesky']));
+    expect(putRecord.mock.calls[0]![0]).toMatchObject({ collection: expect.stringMatching(/\.world\.dialogue$/), record: { scenes: dialogueFixture.scenes } });
+    expect(await loadDialogueAuthoringRecords(fakeAgent({}), DID)).toEqual({ npcs: [], dialogue: null });
+    const error = new Error('network unavailable');
+    const broken = { com: { atproto: { repo: { getRecord: vi.fn().mockRejectedValue(error) } } } } as unknown as Agent;
+    await expect(loadDialogueAuthoringRecords(broken, DID)).rejects.toBe(error);
   });
 });
 

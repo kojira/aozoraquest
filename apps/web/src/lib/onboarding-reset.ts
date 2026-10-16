@@ -28,7 +28,7 @@ import { refreshSelfDiagnosis } from './use-self-diagnosis';
 /** 歓迎付与するあおぞらパワー (演出とともに加算)。 */
 export const WELCOME_POWER = 20;
 
-/** 通常オンボードのイントロ (ONBOARDING_LINES overlay) を「見終えた」フラグの localStorage キー。
+/** 通常オンボードのイントロ (会話データの冒頭の場面。D-DIALOGUE-006) を「見終えた」フラグの localStorage キー。
  *  これが '1' だとイントロは再生されない。リセット時に消すと新規と同じ導入から始まる。 */
 export const ONBOARDING_DONE_KEY = 'aq-world-onboarding-done';
 /** リセットで +20 を付与した直後だけ、再入場後の Blueskyちゃんの手渡しの最後に祝福演出を出すためのマーク

@@ -1,9 +1,9 @@
 import type { NpcDef } from '@aozoraquest/core';
-import type { NpcTalk } from '@/lib/npc-talk';
+import { guildReception, type NpcTalk } from '@/lib/npc-talk';
 import { npcImageUrl } from '@/lib/npc-image';
-import { ONBOARDING_PORTRAIT } from '@/lib/world-opening';
+import { hereNpc, sceneDialogue } from '@/lib/scene-dialogue';
 
-/** 村のギルド受付 (従来のあいさつ・印・同梱の会話イラストを持つ唯一の受付)。 */
+/** 村のギルド受付 (従来のキーの印を持つ受付)。 */
 const FUTABA_GUILD_NPC = 'futaba-bluesky';
 
 /** ギルドで初めて会ったかの印 (localStorage)。受付 NPC ごとに別 (D-STORY-008)。
@@ -12,20 +12,19 @@ export function guildMetKey(did: string | null, npcId: string): string {
   return npcId === FUTABA_GUILD_NPC ? `aq-futaba-guild-met:${did}` : `aq-guild-met:${npcId}:${did}`;
 }
 
-/** NPC 会話の会話イラスト。登録が無ければ出さない (文字だけ)。同梱の Blueskyちゃんの絵に
- *  倒すのは Blueskyちゃん本人のギルド会話だけ (他の受付に別人の絵を出さない。D-STORY-008)。 */
-export function npcTalkPortrait(npc: NpcDef, guild: boolean): { src: string; name: string } | undefined {
-  if (npc.portraitImage) return { src: npcImageUrl(npc.id, 'portrait', npc.portraitImage), name: npc.name };
-  return guild && npc.id === FUTABA_GUILD_NPC ? ONBOARDING_PORTRAIT : undefined;
+/** NPC 会話の会話イラスト。登録が無ければ出さない (文字だけ。別人の絵に倒さない。D-STORY-008)。 */
+export function npcTalkPortrait(npc: NpcDef): { src: string; name: string } | undefined {
+  return npc.portraitImage ? { src: npcImageUrl(npc.id, 'portrait', npc.portraitImage), name: npc.name } : undefined;
 }
 
-/** ギルドの扉の前でぶつかったときの最初の段 (初回は再会、2 回目以降は受付メニュー)。 */
+/**
+ * ギルドの扉の前でぶつかったときの最初の段 (初回は再会、2 回目以降は「おかえり」)。文は会話データの
+ * `guild.first` / `guild.return` (受付ごとの上書き `guild.first:<npcId>` が先。D-DIALOGUE-006)。
+ * 場面が無ければあいさつを飛ばしてギルドのメニューを出す。話者はその受付 NPC (here)。
+ */
 export function guildEntryTalk(npc: NpcDef, met: boolean): NpcTalk {
-  return { npc, guild: met ? 'menu' : 'reunion', lines: [
-    ...(met ? ['おかえり。冒険者ギルドへようこそ。'] : [
-      '来てくれたんだね。体の具合はどう？',
-      // 「村」はふたばの村だけ。ほかの町の受付は町を名指ししない共通の言い回し。
-      npc.id === FUTABA_GUILD_NPC ? 'ここが村の冒険者ギルドだよ。少し休んでいってね。' : 'ここがこの町の冒険者ギルドだよ。少し休んでいってね。',
-    ]),
-  ] };
+  const dialogue = sceneDialogue(met ? 'guild.return' : 'guild.first', { npcId: npc.id, here: hereNpc(npc) });
+  if (dialogue.length === 0) return guildReception(npc);
+  // 2 回目以降はあいさつに続けてメニューを出す (従来どおり)。初回は読み終えてメニューへ。
+  return { npc, guild: met ? 'menu' : 'reunion', lines: dialogue.map((l) => l.text), dialogue };
 }

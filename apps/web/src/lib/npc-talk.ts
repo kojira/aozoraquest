@@ -1,5 +1,5 @@
 import { gameQuestsByNpc, itemsSatisfied, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
-import type { DialogueChoice } from '@/lib/dialogue';
+import type { DialogueChoice, DialogueLine } from '@/lib/dialogue';
 import type { QuestState } from '@/lib/game-quest';
 import type { ScenarioMessage } from '@/lib/world-server';
 
@@ -8,6 +8,8 @@ import type { ScenarioMessage } from '@/lib/world-server';
 export interface NpcTalk {
   npc: NpcDef;
   lines: string[];
+  /** 会話データの場面から組み立てた行 (話者を行ごとに持つ。D-DIALOGUE-006)。あれば lines より優先して表示する。 */
+  dialogue?: DialogueLine[];
   acceptQuestId?: string;
   guild?: 'reunion' | 'menu' | 'detail' | 'message';
   choices?: DialogueChoice[];

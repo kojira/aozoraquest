@@ -59,7 +59,7 @@ import { useWorldFieldItems } from '@/lib/use-world-field-items';
 import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
-import { GUILD_INVITATION, ONBOARDING_LINES, ONBOARDING_PORTRAIT, OPENING_GUIDE_LINES, PROLOGUE_LINES, starterHandoffLines } from '@/lib/world-opening';
+import { openingLines, starterHandoffLines } from '@/lib/world-opening';
 import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, type Dir, type Vitals } from '@/lib/world-view';
 
 /**
@@ -550,8 +550,8 @@ function WorldScreen() {
               conversationStep={npcTalk}
               anchor="map"
               // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
-              lines={[...npcDialogueLines(npcTalk.npc, npcTalk.lines), ...(npcTalk.notices ?? [])]}
-              portrait={npcTalkPortrait(npcTalk.npc, !!npcTalk.guild)}
+              lines={[...(npcTalk.dialogue ?? npcDialogueLines(npcTalk.npc, npcTalk.lines)), ...(npcTalk.notices ?? [])]}
+              portrait={npcTalkPortrait(npcTalk.npc)}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
               busy={questPending}
@@ -584,7 +584,7 @@ function WorldScreen() {
           {!battle && onboarding && (
             <DialogueWindow
               anchor="map"
-              lines={showStarter ? [...PROLOGUE_LINES, ...ONBOARDING_LINES] : [...PROLOGUE_LINES, ...ONBOARDING_LINES, GUILD_INVITATION, ...OPENING_GUIDE_LINES]}
+              lines={openingLines(showStarter)}
               onDone={() => {
                 setOnboarding(false);
                 onboardingRef.current = false;
@@ -599,7 +599,6 @@ function WorldScreen() {
             <DialogueWindow
               anchor="map"
               lines={starterHandoffLines(starterBlessed)}
-              portrait={ONBOARDING_PORTRAIT}
               onDone={() => { setShowStarter(false); if (starterBlessed) notifyWelcome({ power: WELCOME_POWER }); }}
             />
           )}

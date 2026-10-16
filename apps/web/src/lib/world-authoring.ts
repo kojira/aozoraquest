@@ -18,6 +18,11 @@ import {
   assertStoryFlagTotal,
   currentStory,
   missingStoryBattle,
+  currentDialogue,
+  missingDialogueNpc,
+  setDialogue,
+  validateDialogue,
+  type DialogueData,
   setInteriors,
   setScenario,
   setJobOverrides,
@@ -219,7 +224,8 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 /** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
 export async function saveNpcs(agent: Agent, npcs: NpcDef[], isCurrent = () => true): Promise<void> {
   validateNpcs(npcs);
-  const missing = missingStoryBattle(npcs, []);
+  // 会話データが話者・上書きに使っている NPC は消させない (edge と同じ検査。D-DIALOGUE-006)。
+  const missing = missingStoryBattle(npcs, []) ?? missingDialogueNpc(currentDialogue(), new Set(npcs.map((n) => n.id)));
   if (missing) throw new Error(missing);
   if (!isCurrent()) throw new Error('保存を取り消しました');
   await putRecord(agent, ADMIN_COL.npcs, RKEY, { npcs, updatedAt: new Date().toISOString() });
@@ -352,6 +358,8 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
     read<{ interiors: Array<Omit<InteriorMap, 'tiles'> & { gz: string }>; gates: Gate[] }>(ADMIN_COL.interiors),
     read<{ quests: GameQuestDef[] }>(ADMIN_COL.quests),
   ]);
+  // NPC の保存で参照チェックに使う (読めなければ保存させない)。
+  const dialogue = await read<DialogueData>(ADMIN_WORLD_COL.dialogue);
   if (map && (typeof map.gz !== 'string' || map.size !== WORLD_SIZE)) throw new Error('地図レコードが不正');
   if (art && (!art.arts || typeof art.arts !== 'object' || Array.isArray(art.arts))) throw new Error('絵レコードが不正');
   if (items && (!Array.isArray(items.items) || !Array.isArray(items.equipment))) throw new Error('アイテムレコードが不正');
@@ -381,8 +389,31 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   setNpcs(npcs?.npcs ?? []);
   setInteriors(maps, interior?.gates ?? []);
   setGameQuests(quests?.quests ?? []);
+  setDialogue(dialogue);
   for (const key of tileArtTerrains()) setTileArt(key, null);
   for (const [key, value] of arts) setTileArt(key, value);
   const list = structuredClone(npcs?.npcs ?? []);
   return { list, world: captureNpcPlacementWorld(list, !map) };
+}
+
+// ─── 会話 (D-DIALOGUE-006) ─────────────────────────────────
+
+/** 会話エディタの読み込み。保存済みの NPC (話者の一覧と参照チェック) と会話。読めなければ throw (保存させない)。
+ *  会話が無ければ null (空の状態から始める)。 */
+export async function loadDialogueAuthoringRecords(agent: Agent, adminDid: string): Promise<{ npcs: NpcDef[]; dialogue: DialogueData | null }> {
+  const npcs = await getAuthoringRecord<{ npcs: NpcDef[] }>(agent, adminDid, ADMIN_COL.npcs, RKEY);
+  if (npcs && !Array.isArray(npcs.npcs)) throw new Error('NPC レコードが不正');
+  const rec = await getAuthoringRecord<DialogueData>(agent, adminDid, ADMIN_WORLD_COL.dialogue, RKEY);
+  if (rec && !Array.isArray(rec.scenes)) throw new Error('会話レコードが不正');
+  setNpcs(npcs?.npcs ?? []);
+  return { npcs: npcs?.npcs ?? [], dialogue: rec ? { scenes: rec.scenes } : null };
+}
+
+/** 会話を保存する。決まった場面がすべて揃い、話者の NPC が保存済みの NPC にいること (edge と同じ検査)。 */
+export async function saveDialogue(agent: Agent, data: DialogueData, npcIds: ReadonlySet<string>): Promise<void> {
+  validateDialogue(data);
+  const missing = missingDialogueNpc(data, npcIds);
+  if (missing) throw new Error(missing);
+  await putRecord(agent, ADMIN_WORLD_COL.dialogue, RKEY, { scenes: data.scenes, updatedAt: new Date().toISOString() });
+  setDialogue(data);
 }
