@@ -13,10 +13,10 @@ function expectedAfter(e: TurnEvent, before: Hp, names: { player: string; monste
     else { const i = names.monsters.indexOf(name); next.monsters[i] = Math.max(0, next.monsters[i]! + d); }
   };
   let m: RegExpMatchArray | null;
-  if ((m = e.text.match(/^(\S+)は毒のダメージ! (\d+) のダメージ$/))) hit(m[1]!, -Number(m[2]));
-  else if ((m = e.text.match(/^(\S+)はやくそうを使った! HP が (\d+) 回復/))) next.player = before.player + Number(m[2]); // 上限 maxHp は 呼び出し側で 緩く 見る
+  if ((m = e.text.match(/^(\S+)は毒のダメージ! (\d+)のダメージ$/))) hit(m[1]!, -Number(m[2]));
+  else if ((m = e.text.match(/^(\S+)はやくそうを使った! HPが(\d+)回復/))) next.player = before.player + Number(m[2]); // 上限 maxHp は 呼び出し側で 緩く 見る
   else if (e.text.includes('しかし') && e.text.includes('身をかわした')) { /* 回避: 変化なし */ }
-  else if ((m = e.text.match(/! (?:会心の一撃!! )?(\S+)に (\d+) のダメージ/)) && !e.text.includes('反射')) hit(m[1]!, -Number(m[2]));
+  else if ((m = e.text.match(/! (?:会心の一撃!! )?(\S+?)に(\d+)のダメージ/)) && !e.text.includes('反射')) hit(m[1]!, -Number(m[2]));
   else return undefined;
   return next;
 }

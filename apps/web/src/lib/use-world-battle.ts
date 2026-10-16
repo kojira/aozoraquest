@@ -64,7 +64,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
     (command: Command, skillIndex?: number) => {
       const b = battleRef.current;
       if (!b || b.busy || b.phase !== 'input') return;
-      if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず 戦えない。' }); return; }
+      if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず戦えない。' }); return; }
       const { errorText: _clear, ...bClean } = b; // 再送時は前回エラーを消す (exactOptional のため省略で落とす)
       const busy = { ...bClean, busy: true };
       battleRef.current = busy;
@@ -91,10 +91,10 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
           // エラーは戦闘オーバーレイ内に出す (notice は戦闘中は描画されない = 無言失敗になる)。
           const cur = battleRef.current;
           if (!cur) return;
-          let errorText = 'こうげきを 送れなかった (通信エラー)。もう一度どうぞ。';
-          if (e instanceof WorldServerError && e.status === 503) errorText = 'サーバーに記録できなかった (報酬なし)。でんぱのよい ばしょで もう一度どうぞ。';
-          else if (e instanceof WorldServerError && e.status === 409) errorText = 'ターンが ずれた。もう一度どうぞ。';
-          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) errorText = 'サーバーが応答しない。でんぱのよい ばしょで もう一度どうぞ。';
+          let errorText = '攻撃を送れなかった (通信エラー)。もう一度どうぞ。';
+          if (e instanceof WorldServerError && e.status === 503) errorText = 'サーバーに記録できなかった (報酬なし)。電波のよい場所でもう一度どうぞ。';
+          else if (e instanceof WorldServerError && e.status === 409) errorText = 'ターンがずれた。もう一度どうぞ。';
+          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) errorText = 'サーバーが応答しない。電波のよい場所でもう一度どうぞ。';
           else console.warn('[world] serverTurn failed', e);
           const revert = { ...cur, busy: false, errorText };
           battleRef.current = revert;
@@ -140,7 +140,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
       // HP/MP + 在庫はサーバー権威 (turn 結果)。carry は undefined=満タン → null。敗北は最後の街へ帰還。
       if (next.outcome === 'lose') {
         setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y, lastTown: resultPos } : {}) } : s));
-        if (resultPos) { const t = townAt(resultPos.x, resultPos.y); setNotice(t ? `気がつくと「${t.name}」に はこばれていた…` : '気がつくと 街に はこばれていた…'); }
+        if (resultPos) { const t = townAt(resultPos.x, resultPos.y); setNotice(t ? `気がつくと「${t.name}」に運ばれていた…` : '気がつくと街に運ばれていた…'); }
       } else {
         setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y } : {}) } : s));
       }

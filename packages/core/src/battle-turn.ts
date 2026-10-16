@@ -84,7 +84,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   let cmd: Command = command;
   const skillCost = skillMpCostOf(state.player); // 発明家/巫女の MP 割引を反映
   if (command === 'skill' && state.player.mp < skillCost) {
-    events.push({ actor: 'player', text: `MP が足りない! (${state.player.mp}/${skillCost})` });
+    events.push({ actor: 'player', text: `MPが足りない! (${state.player.mp}/${skillCost})` });
     cmd = 'attack';
   } else if (command === 'herb' && state.herbs <= 0) {
     events.push({ actor: 'player', text: 'やくそうを持っていない!' });
@@ -165,13 +165,13 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;
-        events.push({ actor: 'player', text: `${state.player.name}はやくそうを使った! HP が ${heal} 回復。(残り ${state.herbs})` });
+        events.push({ actor: 'player', text: `${state.player.name}はやくそうを使った! HPが${heal}回復。(残り${state.herbs})` });
       } else if (cmd === 'tonic') {
         const gain = Math.round(state.player.maxMp * t.tonicMpRatio);
         state.player.mp = Math.min(state.player.maxMp, state.player.mp + gain);
         state.tonics -= 1;
         state.tonicsUsed += 1;
-        events.push({ actor: 'player', text: `${state.player.name}はそらのしずくを飲んだ! MP が ${gain} 回復。(残り ${state.tonics})` });
+        events.push({ actor: 'player', text: `${state.player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
       }
       // guard は宣言済み / flee 失敗はこのターン行動なし
     } else {
@@ -200,11 +200,11 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         const before = state.monster.hp;
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
         const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';
-        events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HP が ${state.monster.hp - before} 回復。` });
+        events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HPが${state.monster.hp - before}回復。` });
       } else if (mCommand === 'flee') {
         // はぐれメタル型: 逃走成功 → 即決着 (報酬なし)。倒せなかった悔しさを残す。
         state.outcome = 'monster-fled';
-        events.push({ actor: 'monster', text: `${state.monster.name}は にげだした!` });
+        events.push({ actor: 'monster', text: `${state.monster.name}は逃げだした!` });
       } else if (mCommand === 'cast') {
         // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
         // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。

@@ -100,17 +100,17 @@ describe('進捗の文 (#659)', () => {
   it('defeat: モンスター名と討伐数 (progress) で組む', () => {
     const q = base();
     const name = MONSTERS[0]!.name;
-    expect(questObjectiveText(q)).toBe(`${name}を 3 たい`);
-    expect(questProgressLine(q, 0, {})).toBe(`${name}を 3 たい (0/3)`);
-    expect(questProgressLine(q, 2, {})).toBe(`${name}を 3 たい (2/3)`);
+    expect(questObjectiveText(q)).toBe(`${name}を3体`);
+    expect(questProgressLine(q, 0, {})).toBe(`${name}を3体 (0/3)`);
+    expect(questProgressLine(q, 2, {})).toBe(`${name}を3体 (2/3)`);
     // 達成後に余分に倒しても上限で止める (「4/3」を出さない)
-    expect(questProgressLine(q, 4, {})).toBe(`${name}を 3 たい (3/3)`);
+    expect(questProgressLine(q, 4, {})).toBe(`${name}を3体 (3/3)`);
   });
 
   it('collect: 所持数が進捗 (progress は見ない)', () => {
     const q = base({ objective: { kind: 'collect', itemId: ITEM, count: 2 } });
     const name = ITEMS[ITEM]!.name;
-    expect(questProgressLine(q, 5, {})).toBe(`${name}を 2 こ (0/2)`);
-    expect(questProgressLine(q, 0, { [ITEM]: 1 })).toBe(`${name}を 2 こ (1/2)`);
+    expect(questProgressLine(q, 5, {})).toBe(`${name}を2こ (0/2)`);
+    expect(questProgressLine(q, 0, { [ITEM]: 1 })).toBe(`${name}を2こ (1/2)`);
   });
 });

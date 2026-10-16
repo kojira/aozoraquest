@@ -37,7 +37,7 @@ test('お知らせに「空が赤く染まる」を足して保存すると effe
   await page.getByRole('button', { name: '＋イベント', exact: true }).click();
   const addEffect = page.getByRole('button', { name: '＋演出', exact: true });
   await expect(addEffect).toBeDisabled();
-  await page.getByPlaceholder(/東の橋が なおったらしい/).fill('そらが いっしゅん、あかく ひかった。');
+  await page.getByPlaceholder(/東の橋が直ったらしい/).fill('そらが いっしゅん、あかく ひかった。');
   await addEffect.click();
   await expect(page.getByRole('combobox', { name: '演出 1' })).toHaveValue('6');
   await page.screenshot({ path: `${process.env.ADMIN_SHOTS ?? 'test-results'}/admin-scenario-effects-390.png` });

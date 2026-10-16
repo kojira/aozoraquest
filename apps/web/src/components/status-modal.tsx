@@ -133,7 +133,7 @@ export function StatusModal({
                 加算される**ので、装備時は HP ≠ 6 + たいりょく × 2 になる (HP 行の
                 「そうび +N」がその差分)。関係を画面に出すかは #526。 */}
             <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.2em', marginBottom: '0.7em' }}>
-              たいりょく <span style={num}>{combat.vit}</span>
+              たいりょく<span style={num}>{combat.vit}</span>
             </div>
             <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
           </Section>
@@ -147,7 +147,7 @@ export function StatusModal({
                   key={key}
                   label={label}
                   value={combat[key]}
-                  note={bonus !== 0 ? `そうび ${signed(bonus)}` : undefined}
+                  note={bonus !== 0 ? `そうび${signed(bonus)}` : undefined}
                 />
               );
             })}
@@ -169,8 +169,8 @@ export function StatusModal({
                     {/* 確率発動の特性は「ときどき」を付ける (毎回もらえると誤読させない)。
                         確率の数値は出さないが、**うんで上がることは出す** — 装備で
                         うんを盛る動機になる情報で、知らないと選べない。 */}
-                    ({mpTrait.chance !== undefined ? 'ときどき (うん で上がる) ' : ''}
-                    たたかう MP +{mpTrait.attackGain} / ぼうぎょ MP +{mpTrait.guardGain})
+                    ({mpTrait.chance !== undefined ? 'ときどき (「うん」で上がる) ' : ''}
+                    たたかう MP+{mpTrait.attackGain} / ぼうぎょ MP+{mpTrait.guardGain})
                   </span>
                 </div>
               ) : (
@@ -200,13 +200,13 @@ export function StatusModal({
               (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。 */}
           <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
             <div>
-              けいけんち <span style={num}>{jobXp.toLocaleString()}</span>
+              けいけんち<span style={num}>{jobXp.toLocaleString()}</span>
             </div>
             <div>
               {jobNext.next > 0 ? (
-                <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1} まで あと <span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
+                <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1}まであと<span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
               ) : (
-                <>{jobDisplayName(archetype, 'default')} Lv はさいだいに たっした!</>
+                <>{jobDisplayName(archetype, 'default')} Lvは最大に達した!</>
               )}
             </div>
           </div>
@@ -247,7 +247,7 @@ function HeroRow({ label, value, max, bonus, color }: { label: string; value: nu
           {value} <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>/ {max}</span>
           {bonus !== 0 && (
             <span style={{ fontFamily: 'inherit', fontSize: '0.68em', fontWeight: 400, color: 'var(--color-accent)', marginLeft: '0.5em' }}>
-              (そうび {signed(bonus)})
+              (そうび{signed(bonus)})
             </span>
           )}
         </span>

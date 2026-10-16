@@ -199,7 +199,7 @@ export function AdminItems() {
           </button>
           <button
             type="button"
-            onClick={() => { setItems((xs) => [...xs, { id: `key-${xs.length + 1}`, name: 'あたらしい だいじなもの', key: true }]); setDirty(true); }}
+            onClick={() => { setItems((xs) => [...xs, { id: `key-${xs.length + 1}`, name: '新しいだいじなもの', key: true }]); setDirty(true); }}
             style={{ fontSize: '0.85em', alignSelf: 'flex-start' }}
           >
             ＋だいじなもの

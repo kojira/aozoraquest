@@ -20,18 +20,18 @@ describe('guildMetKey', () => {
 
 describe('guildEntryTalk', () => {
   it('ふたばの初対面は従来どおり「村の」', () => {
-    expect(guildEntryTalk(bluesky(), false).lines).toContain('ここが 村の 冒険者ギルドだよ。すこし やすんでいってね。');
+    expect(guildEntryTalk(bluesky(), false).lines).toContain('ここが村の冒険者ギルドだよ。少し休んでいってね。');
   });
 
   it('ほかの受付は「村」と言わない', () => {
     const talk = guildEntryTalk(homura, false);
     expect(talk.guild).toBe('reunion');
     expect(talk.lines.join('')).not.toContain('村');
-    expect(talk.lines).toContain('ここが この まちの 冒険者ギルドだよ。すこし やすんでいってね。');
+    expect(talk.lines).toContain('ここがこの町の冒険者ギルドだよ。少し休んでいってね。');
   });
 
   it('2 回目以降は受付メニュー', () => {
-    expect(guildEntryTalk(homura, true)).toMatchObject({ guild: 'menu', lines: ['おかえり。冒険者ギルドへ ようこそ。'] });
+    expect(guildEntryTalk(homura, true)).toMatchObject({ guild: 'menu', lines: ['おかえり。冒険者ギルドへようこそ。'] });
   });
 });
 

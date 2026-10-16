@@ -36,7 +36,7 @@ describe('ふたばの村の導入データ', () => {
       if (i < 2) expect(quests[i + 1]!.requireFlags).toEqual(fired[0]!.setFlags);
     }
     const elder = starterTownNpcs()[0]!;
-    expect(npcLinesFor(elder, p.flags, {}).join('')).toContain('じぶんの ペース');
+    expect(npcLinesFor(elder, p.flags, {}).join('')).toContain('自分のペース');
   });
 
   it('導入の物語 (#692): 伝承は最初の依頼の冒頭、Blueskyちゃんは井戸近くのギルドで 3 依頼後に旅立ちを示す', () => {
@@ -47,15 +47,15 @@ describe('ふたばの村の導入データ', () => {
     const bluesky = npcs.find((n) => n.id === 'futaba-bluesky')!;
     expect(bluesky).toMatchObject({ name: 'Blueskyちゃん', spritePreset: 'bluesky' });
     expect(bluesky).toMatchObject({ x: STARTER_TOWN_GUILD.x, y: STARTER_TOWN_GUILD.y });
-    expect(quests[2]!.done[2]).toBe('これで 旅の力は じゅうぶん。いどのそばのギルドの Blueskyちゃんが あなたを さがしてたよ。');
-    expect(starterTownScenario().find((e) => e.id === 'futaba-after-wings')).toMatchObject({ notice: 'そらが いっしゅん、あかく ひかった。とおくの 空を、くろい ひかりの すじが つきぬけた。', effects: [{ kind: 'tint', color: 'red' }] });
+    expect(quests[2]!.done[2]).toBe('これで旅の力は十分。井戸のそばのギルドのBlueskyちゃんがあなたを探してたよ。');
+    expect(starterTownScenario().find((e) => e.id === 'futaba-after-wings')).toMatchObject({ notice: '空が一瞬、赤く光った。遠くの空を、黒い光の筋が突き抜けた。', effects: [{ kind: 'tint', color: 'red' }] });
     expect(npcLinesFor(bluesky, [], {})).toEqual(['おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……']);
     expect(npcLinesFor(bluesky, ['futaba_herbs_done'], {})).toEqual(bluesky.lines);
     const departure = npcLinesFor(bluesky, ['futaba_slimes_done', 'futaba_herbs_done', 'futaba_wings_done'], {}).join('');
-    expect(departure).toContain('みた？ いま 空が あかく ひかったの。');
-    expect(departure).toContain('『あかい 鳥が めを さましかけている。ほむらの街へ むかってくれ。――空を、たのんだよ。』');
+    expect(departure).toContain('見た？　今、空が赤く光ったの。');
+    expect(departure).toContain('『赤い鳥が目を覚ましかけている。ほむらの街へ向かってくれ。――空を、たのんだよ。』');
     expect(departure).toContain('ほむらの街');
-    expect(npcs.find((n) => n.id === 'futaba-innkeeper-wife')!.lines[0]).toContain('Blueskyちゃんが みつけた たびびとだね');
+    expect(npcs.find((n) => n.id === 'futaba-innkeeper-wife')!.lines[0]).toContain('Blueskyちゃんが見つけた旅人だね');
   });
 
   it('第1報酬で全職のぬののふくを作れる設定。既存品・店主は保持', () => {

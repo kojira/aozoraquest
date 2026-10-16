@@ -100,7 +100,7 @@ for (const gated of [false, true]) test(`World + handleMove: ${gated ? 'gate' : 
     await expect.poll(() => records['app.aozoraquest.test.world'].regions.length).toBe(9);
     // Existing code loses the notice on the next 170ms stick tick; the map was saved anyway.
     await expect(page.getByRole('dialog', { name: 'セリフ', exact: true })).toBeVisible();
-    await expect(page.locator('.aq-dialogue-pane')).toContainText('ちずのかけらを 手に入れた!');
+    await expect(page.locator('.aq-dialogue-pane')).toContainText('ちずのかけらを手に入れた!');
     await page.waitForTimeout(550); // More than three real stick intervals, not a network wait.
     expect(moves).toBe(1);
     await page.keyboard.down('ArrowUp');
@@ -136,7 +136,7 @@ for (const gated of [false, true]) test(`World + handleMove: ${gated ? 'gate' : 
     await page.reload(); await expect(map).toBeVisible();
     await page.keyboard.press('ArrowUp'); await expect.poll(() => moves).toBe(3);
     await expect(page.getByRole('dialog', { name: 'セリフ', exact: true })).toHaveCount(0);
-    await expect(page.locator('p[aria-live="polite"]')).toContainText(gated ? 'ついた!' : '休んで');
+    await expect(page.locator('p[aria-live="polite"]')).toContainText(gated ? '着いた!' : '休んで');
     // A failed exploration-memo save must not lock input or loop the acquisition window.
     state = { ...state, mapId: undefined, x: town.x, y: town.y + 1 };
     records['app.aozoraquest.test.world'].regions = [town.region]; failSave = true;

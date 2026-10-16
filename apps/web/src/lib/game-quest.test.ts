@@ -49,7 +49,7 @@ describe('multi-active server mirror and shared materials', () => {
     const e = questLogEntries(st, { herb: 2 });
     expect(e.map(x => [x.id, x.section, x.ready])).toEqual([['q1', 'personal', false], ['q2', 'guild', true], ['q3', 'guild', true], ['gone', 'personal', false]]);
     expect(e[0]).toMatchObject({ title: 'スライム たいじ', giver: '依頼: そんちょう（ふたばの村）', progress: expect.stringContaining('(2/3)'), detail: questTermsLine(Q1) });
-    expect(e[1]).toMatchObject({ giver: '依頼: うけつけ（ふたばの村 ギルド）', progress: 'やくそうを 2 こ (2/2)' });
+    expect(e[1]).toMatchObject({ giver: '依頼: うけつけ（ふたばの村 ギルド）', progress: 'やくそうを2こ (2/2)' });
     expect(questLogEntries(st, {})[1]!.ready).toBe(false);
     expect(e[3]).toEqual({ id: 'gone', section: 'personal', title: '依頼情報を確認できません（gone）', ready: false });
   });
@@ -83,13 +83,13 @@ it('ギルド詳細は共有データの条件/報酬を使い、受注前に納
   const q = { ...Q2, reward: { itemId: 'herb', count: 7, power: 11 } };
   const lines = guildQuestDetailLines(q).join('\n');
   expect(lines).toContain('くすり あつめ');
-  expect(lines).toContain('やくそう ×7 と あおぞらパワー 11');
-  expect(lines).toContain('報告が 成功すると やくそうを 2 こ わたします');
-  expect(lines).toContain('いまの 所持品も つかえます');
+  expect(lines).toContain('やくそう ×7とあおぞらパワー11');
+  expect(lines).toContain('報告が成功するとやくそうを2こ渡します');
+  expect(lines).toContain('今の所持品も使えます');
 });
 
 it('条件/報酬の行はギルド詳細と「クエスト」窓で同じ', () => {
   const q = { ...Q1, reward: { power: 3 } };
-  expect(questTermsLine(q)).toBe(`条件: ${MON.name}を 3 たい。報酬: あおぞらパワー 3。`);
+  expect(questTermsLine(q)).toBe(`条件: ${MON.name}を3体。報酬: あおぞらパワー3。`);
   expect(guildQuestDetailLines(q)).toContain(questTermsLine(q));
 });

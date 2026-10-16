@@ -22,10 +22,10 @@ export function npcTalkPortrait(npc: NpcDef, guild: boolean): { src: string; nam
 /** ギルドの扉の前でぶつかったときの最初の段 (初回は再会、2 回目以降は受付メニュー)。 */
 export function guildEntryTalk(npc: NpcDef, met: boolean): NpcTalk {
   return { npc, guild: met ? 'menu' : 'reunion', lines: [
-    ...(met ? ['おかえり。冒険者ギルドへ ようこそ。'] : [
-      '来てくれたんだね。からだの ぐあいは どう？',
+    ...(met ? ['おかえり。冒険者ギルドへようこそ。'] : [
+      '来てくれたんだね。体の具合はどう？',
       // 「村」はふたばの村だけ。ほかの町の受付は町を名指ししない共通の言い回し。
-      npc.id === FUTABA_GUILD_NPC ? 'ここが 村の 冒険者ギルドだよ。すこし やすんでいってね。' : 'ここが この まちの 冒険者ギルドだよ。すこし やすんでいってね。',
+      npc.id === FUTABA_GUILD_NPC ? 'ここが村の冒険者ギルドだよ。少し休んでいってね。' : 'ここがこの町の冒険者ギルドだよ。少し休んでいってね。',
     ]),
   ] };
 }

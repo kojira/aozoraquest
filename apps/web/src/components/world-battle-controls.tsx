@@ -80,7 +80,7 @@ export function WorldBattleControls({
     phase === 'result'
       ? resultLines
       : state.turn === 0
-        ? [`${state.monster.name}が あらわれた！ ${monsterDef?.intro ?? ''}`]
+        ? [`${state.monster.name}があらわれた！　${monsterDef?.intro ?? ''}`]
         : battleMessageLines(state.lastEvents.map((e) => e.text));
   // message は 1 タップ 1 行。段 (phase+turn) が変わったら先頭から (古い段の index は捨てる)。
   const stepKey = `${phase}-${state.turn}`;

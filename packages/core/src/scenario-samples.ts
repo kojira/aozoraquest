@@ -25,7 +25,7 @@ export const SAMPLE_SCENARIO: readonly ScenarioEvent[] = [
     title: '1. たびだち',
     when: [], // 条件なし = 最初から発火する (導入)
     setFlags: ['ch1_start'],
-    notice: 'ふしぎな よかんが した。なにかが はじまろうとしている…',
+    notice: '不思議な予感がした。何かが始まろうとしている…',
   },
   {
     id: 'sample-2',
@@ -35,7 +35,7 @@ export const SAMPLE_SCENARIO: readonly ScenarioEvent[] = [
       { kind: 'itemCount', itemId: 'herb', count: 3 },
     ],
     setFlags: ['ch2_herbs'],
-    notice: 'やくそうが 3つ そろった。むらの ひとが よろこびそうだ。',
+    notice: 'やくそうが3つそろった。村の人が喜びそうだ。',
   },
   {
     id: 'sample-3',
@@ -45,7 +45,7 @@ export const SAMPLE_SCENARIO: readonly ScenarioEvent[] = [
       { kind: 'itemCount', itemId: 'slime-drop', count: 1 },
     ],
     setFlags: ['ch3_proof'],
-    notice: 'スライムのしずくを 手に入れた。これで みとめてもらえるはずだ。',
+    notice: 'スライムのしずくを手に入れた。これで認めてもらえるはずだ。',
   },
 ];
 

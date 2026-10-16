@@ -101,8 +101,8 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
     if (!cur) return;
     const hpNow = Math.min(cur.hp ?? combat.maxHp, combat.maxHp);
     if (hpNow >= combat.maxHp) {
-      setNotice('HP は満タンだ。');
-      return 'HP は満タンだ。';
+      setNotice('HPは満タンだ。');
+      return 'HPは満タンだ。';
     }
     const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
     const healed = Math.min(combat.maxHp, hpNow + heal);
@@ -115,8 +115,8 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       materialsRef.current = res.materials;
       setMaterialsView({ ...res.materials });
       setWs((s) => (s ? { ...s, hp: res.carryHp ?? null } : s));
-    }).catch((e) => { console.warn('[world] herb use failed', e); setHerbStock((n) => n + 1); setNotice('やくそうを つかえなかった (通信エラー)。'); });
-    const m = `やくそうを使った! HP が ${healed - hpNow} 回復。`;
+    }).catch((e) => { console.warn('[world] herb use failed', e); setHerbStock((n) => n + 1); setNotice('やくそうを使えなかった (通信エラー)。'); });
+    const m = `やくそうを使った! HPが${healed - hpNow}回復。`;
     setNotice(m);
     scheduleSave();
     return m;
@@ -129,8 +129,8 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
     if (!cur) return;
     const mpNow = Math.min(cur.mp ?? combat.maxMp, combat.maxMp);
     if (mpNow >= combat.maxMp) {
-      setNotice('MP は満タンだ。');
-      return 'MP は満タンだ。';
+      setNotice('MPは満タンだ。');
+      return 'MPは満タンだ。';
     }
     const gain = Math.max(1, Math.round(combat.maxMp * BATTLE_TUNING.tonicMpRatio));
     const restored = Math.min(combat.maxMp, mpNow + gain);
@@ -142,8 +142,8 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       materialsRef.current = res.materials;
       setMaterialsView({ ...res.materials });
       setWs((s) => (s ? { ...s, mp: res.carryMp ?? null } : s));
-    }).catch((e) => { console.warn('[world] tonic use failed', e); setTonicStock((n) => n + 1); setNotice('そらのしずくを つかえなかった (通信エラー)。'); });
-    const m = `そらのしずくを使った! MP が ${restored - mpNow} 回復。`;
+    }).catch((e) => { console.warn('[world] tonic use failed', e); setTonicStock((n) => n + 1); setNotice('そらのしずくを使えなかった (通信エラー)。'); });
+    const m = `そらのしずくを使った! MPが${restored - mpNow}回復。`;
     setNotice(m);
     scheduleSave();
     return m;
@@ -184,17 +184,17 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
   // 結果 (found/materials) はサーバー応答で確定し表示を同期する。
   const searchHere = useCallback(async (): Promise<void> => {
     const s = wsRef.current;
-    if (!s || !agent || !did) { setSearchMsg('いま しらべられない (つうしんを かくにんして)。'); return; }
+    if (!s || !agent || !did) { setSearchMsg('今は調べられない (通信を確認して)。'); return; }
     // **残高の判定も消費もサーバー** (#551)。client 台帳で引いていた頃は権威 power が
     // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
     // 未取得の置きアイテム (D-STORY-009) があるマスはパワーを使わないので止めない (付与は edge が決める)。
     const placed = placedItemAt(s.mapId ?? WORLD_MAP_ID, s.x, s.y);
     const placedHere = !!placed && placedItemAvailable(placed, flagsRef.current);
     if (!placedHere && serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
-      setSearchMsg(`パワーが たりない (しらべるには ${SEARCH_TUNING.powerCost} いる)。とうこうすると ふえるよ。`);
+      setSearchMsg(`パワーが足りない (調べるには${SEARCH_TUNING.powerCost}いる)。投稿すると増えるよ。`);
       return;
     }
-    setSearchMsg('あたりを しらべている…');
+    setSearchMsg('あたりを調べている…');
     try {
       // 冪等キー: 応答だけ落ちて押し直したときに二重に引かれないよう、成功するまで同じ鍵を使う。
       const sKey = pendingSearchRef.current ?? (pendingSearchRef.current = `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`);
@@ -206,13 +206,13 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
         // 反映しないと、取った後のゲート・セリフの分岐が再読み込みまで変わらない。
         if (res.flags) flagsRef.current = res.flags;
         if (res.scenarioMessages?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioMessages];
-        const count = res.placed.count > 1 ? ` を ${res.placed.count} こ` : ' を';
-        setSearchMsg(`${ITEMS[res.placed.itemId]?.name ?? res.placed.itemId}${count} てにいれた!`);
+        const count = res.placed.count > 1 ? `を${res.placed.count}こ` : 'を';
+        setSearchMsg(`${ITEMS[res.placed.itemId]?.name ?? res.placed.itemId}${count}手に入れた!`);
         return;
       }
-      if (!res.found) { setSearchMsg(`あたりを しらべたが、なにも なかった… (のこりパワー ${res.power})`); return; }
+      if (!res.found) { setSearchMsg(`あたりを調べたが、何もなかった… (残りパワー${res.power})`); return; }
       const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
-      setSearchMsg(`しらべると、${ITEMS[res.found]?.name ?? res.found} を 1 つ 見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で かくにん / のこりパワー ${res.power})`);
+      setSearchMsg(`調べると、${ITEMS[res.found]?.name ?? res.found}を1つ見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で確認 / 残りパワー${res.power})`);
     } catch (e) {
       console.warn('[world] search failed', e);
       setSearchMsg('しらべられなかった (通信エラー)。もういちどどうぞ。');

@@ -314,7 +314,7 @@ export function AdminScenario() {
               <input
                 value={current.notice ?? ''}
                 maxLength={MAX_NOTICE_LEN}
-                placeholder="(なし) 例: 東の橋が なおったらしい"
+                placeholder="(なし) 例: 東の橋が直ったらしい"
                 onChange={(e) => {
                   const v = e.target.value;
                   // exactOptionalPropertyTypes: 空ならキーごと消す

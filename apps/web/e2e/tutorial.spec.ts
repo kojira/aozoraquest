@@ -161,7 +161,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     const map = await page.getByLabel('ワールドマップ').boundingBox();
     await page.mouse.click(map!.x + map!.width / 2, map!.y + map!.height / 2);
     await page.getByRole('button', { name: 'クエスト', exact: true }).click();
-    await expect(page.getByText('受注中の依頼は ありません')).toHaveCount(2);
+    await expect(page.getByText('受注中の依頼はありません')).toHaveCount(2);
     await page.screenshot({ path: 'test-results/quest-log-empty.png' });
     await page.keyboard.press('Escape');
     await page.mouse.click(map!.x + map!.width / 2, map!.y + map!.height / 2);
@@ -199,8 +199,8 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
         // D-STORY-007 第1章の引き: 報酬の後に地の文 (話者なし) で赤い光、地図が赤く染まる。
         const window = page.locator('.aq-dialogue-pane').last();
         await expect(window).toContainText('ありがとう！');
-        for (let i = 0; i < 16 && !(await window.textContent())?.includes('あかく'); i++) await window.click();
-        await expect(window).toContainText('そらが いっしゅん、あかく ひかった。とおくの 空を、くろい ひかりの すじが つきぬけた。');
+        for (let i = 0; i < 16 && !(await window.textContent())?.includes('赤く光った'); i++) await window.click();
+        await expect(window).toContainText('空が一瞬、赤く光った。遠くの空を、黒い光の筋が突き抜けた。');
         await expect(page.locator('.aq-dialogue-pane')).toHaveCount(1);
         await expect(page.getByTestId('story-tint-red')).toHaveCount(1);
         await page.waitForTimeout(300);
@@ -213,7 +213,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     }
     expect(state.flags).toContain('futaba_wings_done');
     // 報告済みの依頼は二度と引き (赤い光) を出さない: done[2] の新文も ここで確認する。
-    expect(quests.find(q => q.id === 'futaba-wings')!.done[2]).toContain('Blueskyちゃんが あなたを さがしてたよ。');
+    expect(quests.find(q => q.id === 'futaba-wings')!.done[2]).toContain('Blueskyちゃんがあなたを探してたよ。');
     expect(errors).toEqual([]);
   } finally {
     releaseAccept?.();
