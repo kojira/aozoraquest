@@ -28,6 +28,7 @@ const AdminQuests = lazy(() => import('@/routes/admin-quests').then(m => ({ defa
 const AdminJobs = lazy(() => import('@/routes/admin-jobs').then(m => ({ default: m.AdminJobs })));
 const AdminInteriors = lazy(() => import('@/routes/admin-interiors').then(m => ({ default: m.AdminInteriors })));
 const AdminScenario = lazy(() => import('@/routes/admin-scenario').then(m => ({ default: m.AdminScenario })));
+const AdminDialogue = lazy(() => import('@/routes/admin-dialogue').then(m => ({ default: m.AdminDialogue })));
 const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
 const Onboarding = lazy(() => import('@/routes/onboarding').then(m => ({ default: m.Onboarding })));
 const OAuthCallback = lazy(() => import('@/routes/oauth-callback').then(m => ({ default: m.OAuthCallback })));
@@ -97,6 +98,7 @@ const router = createBrowserRouter([
       { path: 'admin/jobs', element: <AdminJobs /> },
       { path: 'admin/interiors', element: <AdminInteriors /> },
       { path: 'admin/scenario', element: <AdminScenario /> },
+      { path: 'admin/dialogue', element: <AdminDialogue /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
       { path: 'oauth/callback', element: <OAuthCallback /> },

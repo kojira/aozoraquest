@@ -9,6 +9,7 @@ import { serverState } from '@/lib/world-server';
 import { loadCraftInventory, type CraftedPiece } from '@/lib/crafting';
 import { loadGearRefs, type GearRefs } from '@/lib/gear';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
+import { handoffAvailable, openingAvailable } from '@/lib/world-opening';
 import { ONBOARDING_DONE_KEY, WELCOME_BLESSING_PENDING_KEY } from '@/lib/onboarding-reset';
 import { questStateOf, type QuestState } from '@/lib/game-quest';
 import { piecesFromServer } from '@/lib/use-world-shop';
@@ -125,7 +126,8 @@ export function useWorldLoad(d: WorldLoadDeps) {
             if (blessed) sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY);
           } catch { /* private mode 等は演出だけ諦める (+20 付与自体は済んでいる) */ }
           setStarterBlessed(blessed);
-          setShowStarter(true);
+          // 会話データに手渡しの場面が無ければ窓を出さない (道具は渡っている。祝福演出はこの回だけ出ない。D-DIALOGUE-006)。
+          setShowStarter(handoffAvailable());
           // gotStarterFeather=true は即時保存 (デバウンス中リロードで二重配布しない —
           // かけら/初訪問と同じ流儀。レビュー ★★)
           void saveWorldState(agent, initialWs);
@@ -135,7 +137,8 @@ export function useWorldLoad(d: WorldLoadDeps) {
           try { sessionStorage.removeItem(WELCOME_BLESSING_PENDING_KEY); } catch { /* ignore */ }
         }
         try {
-          if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1') {
+          // 冒頭の場面が無ければ始めず、印も立てない (データが入った後に開くと 1 回流れる。D-DIALOGUE-006)。
+          if (typeof localStorage !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) !== '1' && openingAvailable()) {
             setOnboarding(true);
             onboardingRef.current = true;
           }

@@ -1,0 +1,42 @@
+{ "scenes": [
+ { "id": "opening.prologue", "lines": [
+  { "text": "……ここは、どこ？", "effects": [{ "kind": "fade", "to": "black" }, { "kind": "silhouette", "show": true }] },
+  { "speaker": "？？？", "text": "やっと届いた。きみの言葉が。" },
+  { "speaker": "？？？", "text": "むこうの空は今、色を失っている。七羽の鳥が、眠ってしまったから。" },
+  { "speaker": "？？？", "text": "ぼくにはもう、飛ぶ力が残っていない。" },
+  { "speaker": "？？？", "text": "だから、きみにギフトを渡す。きみの言葉の形が、そのままきみの力になる。" },
+  { "text": "【ギフト】ことばの ちからを授かった！" },
+  { "speaker": "？？？", "text": "むこうで、きっと……いや、なんでもない。" },
+  { "speaker": "？？？", "text": "――空を、たのんだよ。" },
+  { "speaker": "？？？", "text": "……あいつに、見つかる前に。" } ] },
+ { "id": "opening.rescue", "lines": [
+  { "npcId": "futaba-bluesky", "text": "[sad]……聞こえる？　大丈夫？", "effects": [{ "kind": "fade", "to": "clear" }, { "kind": "silhouette", "show": false }, { "kind": "flash", "color": "white" }] },
+  { "npcId": "futaba-bluesky", "text": "[sad]けがしてる……。待って、やくそうがあるから。" },
+  { "text": "少女はやくそうを取り出し、そっと傷の手当てをしてくれた。" },
+  { "npcId": "futaba-bluesky", "text": "よかった……！　気がついたんだね。" },
+  { "npcId": "futaba-bluesky", "text": "村の前で倒れてたから、心配したよ。" },
+  { "npcId": "futaba-bluesky", "text": "わたしはBluesky。この村の冒険者ギルドで受付をしてるの。" } ] },
+ { "id": "opening.invitation", "lines": [
+  { "npcId": "futaba-bluesky", "text": "村のギルドで少し休んでいかない？　井戸の北東の建物だよ。ゆっくりおいで。" } ] },
+ { "id": "opening.handoff", "lines": [
+  { "npcId": "futaba-bluesky", "text": "これも持っていて。また痛くなったら使ってね。" },
+  { "text": "やくそうを受け取った！" },
+  { "npcId": "futaba-bluesky", "text": "そらのはねもあげるね。行ったことのある街へ戻れるの。" },
+  { "text": "そらのはねを受け取った！　コマンドの「どうぐ」から使えます。" } ] },
+ { "id": "opening.blessing", "lines": [ { "text": "【ギフト】ことばの ちからであおぞらパワーが{power}増えた！" } ] },
+ { "id": "guild.first", "lines": [
+  { "here": true, "text": "来てくれたんだね。体の具合はどう？" },
+  { "here": true, "text": "ここがこの町の冒険者ギルドだよ。少し休んでいってね。" } ] },
+ { "id": "guild.first:futaba-bluesky", "lines": [
+  { "here": true, "text": "来てくれたんだね。体の具合はどう？" },
+  { "here": true, "text": "ここが村の冒険者ギルドだよ。少し休んでいってね。" } ] },
+ { "id": "guild.return", "lines": [ { "here": true, "text": "おかえり。冒険者ギルドへようこそ。" } ] },
+ { "id": "inn.ask", "lines": [ { "here": true, "text": "一晩{price}パワーです。泊まっていきますか？" } ] },
+ { "id": "inn.thanks", "lines": [ { "here": true, "text": "ゆっくり休めたかい？　またどうぞ。" } ] },
+ { "id": "inn.decline", "lines": [ { "here": true, "text": "またどうぞ。" } ] },
+ { "id": "shop.tutorial", "lines": [
+  { "here": true, "text": "ここはなんでも屋。あおぞらパワーと素材を持ってくれば、装備を作るよ。" },
+  { "here": true, "text": "できばえは−1〜+5。うんが高いほどいい品になりやすい。" },
+  { "here": true, "text": "同じ品を2つ持ってくれば、1つ上に鍛えてやろう。" },
+  { "here": true, "text": "素材はこのへんのモンスターが落とす。いらない素材は引き取ってパワーに変えるよ。" } ] }
+] }

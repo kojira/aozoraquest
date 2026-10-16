@@ -8,6 +8,8 @@ import { starterTownInterior, starterTownGates, starterTownNpcs, worldOverlay, s
 import { handleMove } from '../../edge/src/battle-resolver';
 import { handleInnRest } from '../../edge/src/inn-rest';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+import { readFileSync } from 'node:fs';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 // 宿屋 (#766): 扉に入るだけでは泊まらず、会話で「はい」と答えたときだけ edge が泊める。
 const DID = 'did:plc:tutorial';
@@ -69,6 +71,8 @@ test('宿屋の扉: いいえ なら課金しない、はい で パワー -3 �
   const records: Record<string, unknown> = {
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.test.analysis': diag,
     'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: true, regions: [town.region], visitedTowns: [], hp: 3, mp: 1 },

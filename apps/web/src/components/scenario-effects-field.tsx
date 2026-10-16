@@ -14,24 +14,28 @@ export const STORY_EFFECT_PRESETS: readonly { label: string; effect: StoryEffect
 const presetIndex = (e: StoryEffect) => STORY_EFFECT_PRESETS.findIndex((p) => JSON.stringify(p.effect) === JSON.stringify(e));
 
 /** お知らせ行の演出の並び。お知らせが空なら編集できない (描画先が無い)。 */
-export function ScenarioEffectsField({ effects, disabled, onChange }: {
+export function ScenarioEffectsField({ effects, disabled, onChange, label = '演出 (お知らせを出す瞬間に地図へ)', idPrefix = '' }: {
   effects: readonly StoryEffect[];
   disabled: boolean;
   onChange: (next: StoryEffect[]) => void;
+  /** 会話の行で使うとき (D-DIALOGUE-006) は「その行を出す瞬間」と書く。 */
+  label?: string;
+  /** 1 画面に複数並べるとき、選択欄の名前を区別する (例「3 行目の」)。 */
+  idPrefix?: string;
 }) {
   return (
     <div style={{ fontSize: '0.8em' }}>
-      <span style={{ color: 'var(--color-muted)' }}>演出 (お知らせを出す瞬間に地図へ)</span>
+      <span style={{ color: 'var(--color-muted)' }}>{label}</span>
       {effects.map((e, i) => (
         <div key={i} style={{ display: 'flex', gap: '0.3em', margin: '0.15em 0' }}>
-          <select aria-label={`演出 ${i + 1}`} value={presetIndex(e)} disabled={disabled}
+          <select aria-label={`${idPrefix}演出 ${i + 1}`} value={presetIndex(e)} disabled={disabled}
             onChange={(ev) => onChange(effects.map((x, j) => (j === i ? STORY_EFFECT_PRESETS[Number(ev.target.value)]!.effect : x)))}>
             {STORY_EFFECT_PRESETS.map((p, k) => <option key={k} value={k}>{p.label}</option>)}
           </select>
-          <button type="button" aria-label={`演出 ${i + 1} を消す`} onClick={() => onChange(effects.filter((_, j) => j !== i))} style={{ fontSize: '0.8em' }}>×</button>
+          <button type="button" aria-label={`${idPrefix}演出 ${i + 1} を消す`} onClick={() => onChange(effects.filter((_, j) => j !== i))} style={{ fontSize: '0.8em' }}>×</button>
         </div>
       ))}
-      <button type="button" disabled={disabled || effects.length >= MAX_STORY_EFFECTS}
+      <button type="button" disabled={disabled || effects.length >= MAX_STORY_EFFECTS} aria-label={idPrefix ? `${idPrefix}演出を足す` : undefined}
         onClick={() => onChange([...effects, STORY_EFFECT_PRESETS[6]!.effect])} style={{ fontSize: '0.8em' }}>
         ＋演出
       </button>

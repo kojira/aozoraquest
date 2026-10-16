@@ -12,6 +12,7 @@ import {
 import { cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 // D-DIALOGUE-005: a `[sad]` line shows the registered sad portrait with the tag hidden; the next
 // untagged line returns to the normal portrait without a blank or re-downloaded frame.
@@ -46,8 +47,8 @@ test('[sad] の行は表情イラストを出し、タグを表示しない。�
   const town = worldOverlay().towns[0]!;
   const village = starterTownInterior(town);
   const gates = starterTownGates(town);
-  const smile = readFileSync(path.join(process.cwd(), 'src/assets/futaba/bluesky-smile.webp'));
-  const worried = readFileSync(path.join(process.cwd(), 'src/assets/futaba/bluesky-worried.webp'));
+  const smile = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-smile.webp'));
+  const worried = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-worried.webp'));
   const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky'
     ? { ...n, portraitImage: imageOf(smile), expressionImages: { sad: imageOf(worried) }, lines: [`[sad]${SAD_LINE}`, NEXT_LINE] } : n);
   const quests = starterTownQuests(), scenario = starterTownScenario();
@@ -62,6 +63,8 @@ test('[sad] の行は表情イラストを出し、タグを表示しない。�
     // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
     'app.aozoraquest.dev.world.shops': { shops: [shop] },
