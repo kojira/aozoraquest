@@ -391,7 +391,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await page.getByRole('button', { name: /道具の手入れに/ }).click();
     await expect(window).toContainText('スライムのしずくを2こ');
     await next();
-    await expect(window).toContainText('まだ 0/2 こ');
+    await expect(window).toContainText('まだ0/2こ');
     await readAll(page);
     expect(state.materials['slime-drop'] ?? 0).toBe(0);
     expect(state.power).toBe(0);

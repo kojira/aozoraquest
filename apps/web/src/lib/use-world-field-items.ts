@@ -215,7 +215,7 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       setSearchMsg(`調べると、${ITEMS[res.found]?.name ?? res.found}を1つ見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で確認 / 残りパワー${res.power})`);
     } catch (e) {
       console.warn('[world] search failed', e);
-      setSearchMsg('しらべられなかった (通信エラー)。もういちどどうぞ。');
+      setSearchMsg('調べられなかった (通信エラー)。もう一度どうぞ。');
     }
   }, [agent, did, applyServerMaterials, flagsRef, pendingNoticesRef, serverPowerRef, setSearchMsg, setServerPower, tokenRef, wsRef]);
 
