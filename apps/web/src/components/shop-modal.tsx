@@ -296,7 +296,9 @@ export function ShopModal({
                     )}
                   </div>
                   <div style={{ fontSize: '0.85em', opacity: affordable ? 1 : 0.65 }}>
-                    パワー{def.price.power} + {materialName} ×{def.price.materials}
+                    {def.price.materials > 0
+                      ? `パワー${def.price.power} + ${materialName} ×${def.price.materials}`
+                      : `パワー${def.price.power}`}
                   </div>
                 </div>
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch' }}>

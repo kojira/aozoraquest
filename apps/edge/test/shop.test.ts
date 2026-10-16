@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { EQUIPMENT_BY_ID, SALE_TUNING, townShopStock, worldOverlay, BASE_PALETTE, setInteriors, type InteriorMap } from '@aozoraquest/core';
+import { EQUIPMENT, EQUIPMENT_BY_ID, ITEMS, setItemOverrides, SALE_TUNING, townShopStock, worldOverlay, BASE_PALETTE, setInteriors, type InteriorMap } from '@aozoraquest/core';
 import { shopCraft, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES } from '../src/shop';
 import { sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
@@ -76,6 +76,22 @@ describe('shopCraft (装備を作ってもらう)', () => {
     expect(r.materials[STOCK.materialId]).toBe(99 - ITEM.price.materials);
     // client が減算するだけだった頃は、リロードで権威側の在庫がそのまま戻った (= 素材の複製)
     expect(stored(m.store).power).toBe(999 - ITEM.price.power);
+  });
+
+  it('素材 0 の品は、素材を持っていなくても作れる (#795)', async () => {
+    const items = Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name, ...(v.key ? { key: true } : {}) }));
+    setItemOverrides({ items, equipment: EQUIPMENT.map((e) => (e.id === ITEM.id ? { ...e, price: { ...e.price, materials: 0 } } : e)) });
+    try {
+      const env = await makeEnv();
+      const m = statefulPds(stateAt({ materials: {} }));
+      globalThis.fetch = m.fn;
+      const r = await shopCraft(env, DID, { itemId: ITEM.id, rkey: 'c1', luk: 10 }, NOW);
+      expect(r.power).toBe(999 - ITEM.price.power);
+      expect(r.materials).toEqual({});
+      expect(stored(m.store).pieces?.map((p) => p.itemId)).toEqual([ITEM.id]);
+    } finally {
+      setItemOverrides(null);
+    }
   });
 
   it('同じ rkey の再送では二重に課金しない', async () => {
