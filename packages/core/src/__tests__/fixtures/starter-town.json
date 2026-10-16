@@ -1,0 +1,333 @@
+{
+  "npcs": [
+    {
+      "id": "futaba-elder",
+      "name": "むらおさ",
+      "mapId": "futaba-village",
+      "x": 14,
+      "y": 21,
+      "spritePreset": "old-man",
+      "lines": [
+        "ようこそふたばの村へ。わしがこの村のむらおさじゃ。",
+        "旅人よ、どこから来たんじゃ？　……まあよい。村の外にはスライムが出る。無理はするなよ。"
+      ],
+      "altLines": [
+        {
+          "flags": [
+            "futaba_wings_done"
+          ],
+          "lines": [
+            "村を助けてくれてありがとう。これからは自分のペースで旅を続けるのじゃ。"
+          ]
+        },
+        {
+          "flags": [
+            "futaba_slimes_done"
+          ],
+          "lines": [
+            "なんでも屋で装備を作り、『そうび』で身につけるのじゃ。やどやの おかみの話も聞いておくれ。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "futaba-innkeeper-wife",
+      "name": "やどやの おかみ",
+      "mapId": "futaba-village",
+      "x": 9,
+      "y": 12,
+      "spritePreset": "middle-aged-woman",
+      "lines": [
+        "Blueskyちゃんが見つけた旅人だね。よそから来たんだろう？",
+        "宿屋は一晩パワー3で泊まれるよ。HPもMPも全快さ。",
+        "村に入るだけでは回復しないよ。負けると最後の街へ戻り、素材を少し落とすよ。"
+      ]
+    },
+    {
+      "id": "futaba-shopfront",
+      "name": "なんでも屋の むすめ",
+      "mapId": "futaba-village",
+      "x": 22,
+      "y": 12,
+      "spritePreset": "young-woman",
+      "lines": [
+        "なんでも屋は素材とあおぞらパワーで装備を作ってくれるよ。",
+        "作ったら『そうび』で身につけてね。もう作ったものも使えるよ。"
+      ]
+    },
+    {
+      "id": "futaba-kid",
+      "name": "こども",
+      "mapId": "futaba-village",
+      "x": 17,
+      "y": 29,
+      "spritePreset": "boy",
+      "lines": [
+        "Blueskyへの投稿があおぞらパワーになるんだ。歩いたり話したりするだけなら減らないよ。",
+        "パワーがないと、戦ってもお礼や頼まれごとは進まないよ。投稿したくなったら、いつもの画面へ戻ってね。",
+        "村の井戸のそばにむらおさがいるよ。村の端まで歩くと外に出られるよ。"
+      ]
+    },
+    {
+      "id": "futaba-oldman",
+      "name": "おじいさん",
+      "mapId": "futaba-village",
+      "x": 5,
+      "y": 18,
+      "spritePreset": "old-man",
+      "lines": [
+        "街に着くと「ちずのかけら」が手に入って、地図が広がるそうじゃ。",
+        "村の外で地図を開いてみるとよい。"
+      ],
+      "altLines": [
+        {
+          "flags": [
+            "futaba_wings_done"
+          ],
+          "lines": [
+            "準備ができたら次の街を探してみるのじゃ。投稿したくなったらひと休みもよいぞ。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "futaba-bluesky",
+      "name": "Blueskyちゃん",
+      "mapId": "futaba-village",
+      "x": 20,
+      "y": 15,
+      "spritePreset": "bluesky",
+      "guildReception": true,
+      "lines": [
+        "おにいちゃんが、いなくなっちゃったの。そしたら、空の色も……"
+      ],
+      "altLines": [
+        {
+          "flags": [
+            "futaba_wings_done"
+          ],
+          "lines": [
+            "見た？　今、空が赤く光ったの。",
+            "それとね、小鳥が手紙を運んできたの。……おにいちゃんの字だ。",
+            "『赤い鳥が目を覚ましかけている。ほむらの街へ向かってくれ。――空を、たのんだよ。』",
+            "……ねえ、一緒に探してくれない？　南東のとんぼの原の向こう、ほむらの街へ。"
+          ]
+        }
+      ]
+    }
+  ],
+  "quests": [
+    {
+      "id": "futaba-slimes",
+      "title": "スライムから 村をまもろう",
+      "npcId": "futaba-elder",
+      "objective": {
+        "kind": "defeat",
+        "monsterId": "sky-slime",
+        "count": 3
+      },
+      "reward": {
+        "power": 4,
+        "itemId": "slime-drop",
+        "count": 1
+      },
+      "intro": [
+        "むかし、空は七羽の鳥に守られておった。鳥たちが眠ると、空は色を失う。七羽すべてを目覚めさせたとき、空に虹の橋がかかる……",
+        "まずは村を助けて旅の力をつけておくれ。村の外のそらいろスライムを3体倒してくれんか。",
+        "済んだらわしに話しかけておくれ。旅支度のお礼を渡そう。"
+      ],
+      "progress": [
+        "そらいろスライムを3体じゃ。無理せず村の近くでな。",
+        "自分を押してメニューを開くと、あとどれだけかわかるぞ。"
+      ],
+      "done": [
+        "ありがとう。これで村のみんなも安心じゃ。",
+        "お礼のパワーとしずくで、なんでも屋の『ぬののふく』を作れるぞ。",
+        "作ったら『そうび』で身につけておくれ。やどやの おかみも困っておったな。"
+      ]
+    },
+    {
+      "id": "futaba-herbs",
+      "title": "やどやの やくそう",
+      "npcId": "futaba-innkeeper-wife",
+      "objective": {
+        "kind": "collect",
+        "itemId": "herb",
+        "count": 3
+      },
+      "reward": {
+        "power": 3,
+        "itemId": "herb",
+        "count": 1
+      },
+      "requireFlags": [
+        "futaba_slimes_done"
+      ],
+      "intro": [
+        "むらおさの頼みを聞いてくれたんだってね。次はやくそうを3つ分けてくれないかい。",
+        "3つそろったらわたしに話しかけてね。受け取ったらお礼をするよ。"
+      ],
+      "progress": [
+        "やくそうは『どうぐ』で確かめられるよ。使ったぶんはまた集めてね。"
+      ],
+      "done": [
+        "助かったよ。やくそうを3つ受け取ったよ。",
+        "ひとつはあなたの旅に持っていきな。疲れたら宿屋へおいで。",
+        "次はなんでも屋の むすめに話しかけてみてね。"
+      ]
+    },
+    {
+      "id": "futaba-wings",
+      "title": "たびじたくの おてつだい",
+      "npcId": "futaba-shopfront",
+      "objective": {
+        "kind": "collect",
+        "itemId": "bat-wing",
+        "count": 2
+      },
+      "reward": {
+        "power": 4,
+        "itemId": "slime-drop",
+        "count": 1
+      },
+      "requireFlags": [
+        "futaba_herbs_done"
+      ],
+      "intro": [
+        "旅に出るなら、旅支度を手伝わせて。かわりにコウモリの翼膜を2つ集めて渡してくれない？",
+        "村の外のコウモリが落とすよ。そろったらわたしのところへ戻ってね。"
+      ],
+      "progress": [
+        "翼膜は『もちもの』で確認できるよ。2つそろったら持ってきてね。"
+      ],
+      "done": [
+        "ありがとう！　これで旅支度が進むよ。",
+        "パワーとしずくはあなたの装備づくりに使ってね。",
+        "これで旅の力は十分。井戸のそばのギルドのBlueskyちゃんがあなたを探してたよ。"
+      ]
+    },
+    {
+      "id": "futaba-tool-care",
+      "title": "道具の手入れに",
+      "npcId": "futaba-bluesky",
+      "objective": {
+        "kind": "collect",
+        "itemId": "slime-drop",
+        "count": 2
+      },
+      "reward": {
+        "itemId": "herb",
+        "count": 2,
+        "power": 5
+      },
+      "intro": [
+        "依頼主は村の道具屋。道具の手入れに、スライムのしずくを2こ届けてほしいんだって。",
+        "そろったらギルドで報告してね。今持っているものも渡せるよ。",
+        "報告するとスライムのしずくを2こ渡します。報酬はやくそう2こと、あおぞらパワー5。一人一度の依頼です。"
+      ],
+      "progress": [
+        "スライムのしずくを2こそろえて、ギルドで報告してね。"
+      ],
+      "done": [
+        "スライムのしずくを2こ受け取ったよ。村の道具屋へ届けておくね。ありがとう！"
+      ]
+    }
+  ],
+  "scenario": [
+    {
+      "id": "futaba-after-slimes",
+      "title": "スライムから 村をまもろう",
+      "when": [
+        {
+          "kind": "questDone",
+          "questId": "futaba-slimes"
+        }
+      ],
+      "setFlags": [
+        "futaba_slimes_done"
+      ]
+    },
+    {
+      "id": "futaba-after-herbs",
+      "title": "やどやの やくそう",
+      "when": [
+        {
+          "kind": "questDone",
+          "questId": "futaba-herbs"
+        }
+      ],
+      "setFlags": [
+        "futaba_herbs_done"
+      ]
+    },
+    {
+      "id": "futaba-after-wings",
+      "title": "たびじたくの おてつだい",
+      "when": [
+        {
+          "kind": "questDone",
+          "questId": "futaba-wings"
+        }
+      ],
+      "setFlags": [
+        "futaba_wings_done"
+      ],
+      "notice": "空が一瞬、赤く光った。遠くの空を、黒い光の筋が突き抜けた。",
+      "effects": [
+        {
+          "kind": "tint",
+          "color": "red"
+        }
+      ]
+    }
+  ],
+  "sampleScenario": [
+    {
+      "id": "sample-1",
+      "title": "1. たびだち",
+      "when": [],
+      "setFlags": [
+        "ch1_start"
+      ],
+      "notice": "不思議な予感がした。何かが始まろうとしている…"
+    },
+    {
+      "id": "sample-2",
+      "title": "2. やくそうを あつめる",
+      "when": [
+        {
+          "kind": "flag",
+          "flag": "ch1_start"
+        },
+        {
+          "kind": "itemCount",
+          "itemId": "herb",
+          "count": 3
+        }
+      ],
+      "setFlags": [
+        "ch2_herbs"
+      ],
+      "notice": "やくそうが3つそろった。村の人が喜びそうだ。"
+    },
+    {
+      "id": "sample-3",
+      "title": "3. まもののあかし",
+      "when": [
+        {
+          "kind": "flag",
+          "flag": "ch2_herbs"
+        },
+        {
+          "kind": "itemCount",
+          "itemId": "slime-drop",
+          "count": 1
+        }
+      ],
+      "setFlags": [
+        "ch3_proof"
+      ],
+      "notice": "スライムのしずくを手に入れた。これで認めてもらえるはずだ。"
+    }
+  ]
+}

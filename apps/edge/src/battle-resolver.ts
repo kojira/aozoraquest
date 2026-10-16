@@ -147,6 +147,8 @@ export const POWER_COLLECTION = 'app.aozoraquest.power';
  *  移行は M5 で再検討 (§9-4 未解決)**。真の偽造対策は M4 の投稿 XP 権威化で、これは絶対値の暴走を切る
  *  緩いサニティ上限。長期ユーザーの正当残高 (viaPosts 累積) を切り詰めない大きさにする。値の根拠はコミット参照。 */
 export const MAX_MIGRATE_POWER = 100_000; // 正当ユーザー (投稿数=残高上限) を十分上回る緩い上限
+/** 新規の初期パワーの下限 (#795)。投稿が少ない人でも、ふたばの店で最初の装備を買える。 */
+export const STARTER_POWER = 20;
 export const MAX_MIGRATE_PLAYER_XP = 500_000; // lvl 99 ≈ 457k を上回る安全上限
 
 const finiteNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
@@ -184,6 +186,8 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
   const base = emptyState(userDid, nowIso);
   // 冒険はじめの持ち物: やくそう 1 (最初の回復) + そらのはね 1 (困ったら街へ戻れる)。
   base.materials = { herb: 1, 'sky-feather': 1 };
+  // 初期パワーは最低 STARTER_POWER。PDS が読めない (catch) ときもこの値で始まる。
+  base.power = STARTER_POWER;
   try {
     const { pds } = await resolveUserPds(userDid, fetchImpl);
     const [powerRec, analysisRec, worldRec] = await Promise.all([
@@ -203,7 +207,7 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
     if (p) {
       const bal = Math.max(0, finiteNum(p.viaPosts) - finiteNum(p.userMessages) - finiteNum(p.cardDraws)
         - finiteNum(p.battles) - finiteNum(p.craftPowerSpent) - finiteNum(p.searchPowerSpent) + finiteNum(p.salePowerEarned));
-      base.power = Math.min(bal, MAX_MIGRATE_POWER);
+      base.power = Math.max(STARTER_POWER, Math.min(bal, MAX_MIGRATE_POWER));
     }
     const a = analysisRec?.value;
     if (a) {
@@ -213,7 +217,7 @@ export async function migrateInitState(userDid: string, nowIso: string, ns: stri
       // ここで取り込むと、投稿由来の XP が新方式の申告と足し合わさって二重に効く。
       // 過去の到達レベルは analysis.jobLevel.xp に残り、/me の記録として表示する。
     }
-  } catch { /* 読めない/未診断は power 0・Lv1 で開始 (読取のみ = 無害) */ }
+  } catch { /* 読めない/未診断は power STARTER_POWER・Lv1 で開始 (読取のみ = 無害) */ }
   return base;
 }
 

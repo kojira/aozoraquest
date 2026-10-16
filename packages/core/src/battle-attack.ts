@@ -79,7 +79,7 @@ export function doAttack(
     );
     dodge = applyDodgeCalc(dodge, defender, defCtx); // かくれみ/agi バフ
     if (rng() < dodge) {
-      events.push({ actor, text: `${label} しかし ${defender.name}は身をかわした!` });
+      events.push({ actor, text: `${label} しかし${defender.name}は身をかわした!` });
       return { hit: false, damage: 0, fatal: false, crit: false };
     }
   }
@@ -150,7 +150,7 @@ export function doAttack(
     : '';
   events.push({
     actor,
-    text: `${label}${crit ? ' 会心の一撃!!' : ''} ${defender.name}に ${final} のダメージ${fatalText}`,
+    text: `${label}${crit ? ' 会心の一撃!!' : ''} ${defender.name}に${final}のダメージ${fatalText}`,
     damage: final,
     ...(fatal ? { fatal: true } : {}),
   });
@@ -214,7 +214,7 @@ export function doMagic(
     : '';
   events.push({
     actor,
-    text: `${label} ${defender.name}に ${final} のダメージ${fatalText}`,
+    text: `${label} ${defender.name}に${final}のダメージ${fatalText}`,
     damage: final,
     ...(fatal ? { fatal: true } : {}),
   });
@@ -222,7 +222,7 @@ export function doMagic(
   // 撃破時も出す (弱点を突いて倒した実感)。メタルの魔法無効時は出さず「効かない」を数値 1 で伝える。
   if (!defender.resistAllMagic) {
     if (eMult >= 1.5) events.push({ actor, text: `${defender.name}の弱点を突いた!` });
-    else if (eMult <= 0.5) events.push({ actor, text: `${defender.name}には 効果がいまひとつのようだ…` });
+    else if (eMult <= 0.5) events.push({ actor, text: `${defender.name}には効果がいまひとつのようだ…` });
   }
   return { hit: true, damage: final, fatal, crit: false };
 }

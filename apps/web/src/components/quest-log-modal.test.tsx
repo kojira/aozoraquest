@@ -25,14 +25,14 @@ describe('QuestLogModal', () => {
     fireEvent.click(item);
     expect(screen.getByText(PERSONAL.detail!)).toBeTruthy();
     expect(item.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByText(/所持品は ほかの依頼/)).toBeTruthy();
+    expect(screen.getByText(/所持品はほかの依頼/)).toBeTruthy();
   });
   it('shows empty sections and closes', () => {
     const close = vi.fn();
     render(<QuestLogModal entries={[]} onClose={close} />);
     expect(screen.getByRole('dialog', { name: 'クエスト' })).toBeTruthy();
-    expect(screen.getAllByText('受注中の依頼は ありません')).toHaveLength(2);
-    expect(screen.queryByText(/所持品は ほかの依頼/)).toBeNull();
+    expect(screen.getAllByText('受注中の依頼はありません')).toHaveLength(2);
+    expect(screen.queryByText(/所持品はほかの依頼/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'とじる' }));
     expect(close).toHaveBeenCalledOnce();
   });
@@ -40,6 +40,6 @@ describe('QuestLogModal', () => {
     render(<QuestLogModal entries={[GONE]} onClose={vi.fn()} />);
     const personal = screen.getByRole('region', { name: '個人の依頼' });
     expect(within(personal).getByRole('button', { name: /依頼情報を確認できません（gone）/ }).hasAttribute('disabled')).toBe(true);
-    expect(within(screen.getByRole('region', { name: 'ギルドの依頼' })).getByText('受注中の依頼は ありません')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'ギルドの依頼' })).getByText('受注中の依頼はありません')).toBeTruthy();
   });
 });

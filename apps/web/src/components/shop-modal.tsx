@@ -10,6 +10,7 @@ import {
   forgedLevel,
   isMasterwork,
   isSellableMaterial,
+  parseNpcLine,
   jobDisplayName,
   leveledName,
   salePowerFor,
@@ -24,6 +25,7 @@ import {
 import type { CraftedPiece } from '@/lib/crafting';
 import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
+import { sceneDialogue } from '@/lib/scene-dialogue';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -148,14 +150,10 @@ export function ShopModal({
     const sp = worldOverlay().spawn;
     let done = true;
     try { done = localStorage.getItem(SHOP_TUTORIAL_KEY) === '1'; } catch { /* private mode */ }
-    if (town.x === sp.x && town.y === sp.y && !done) {
-      openTalk([
-        say(keeper.greeting),
-        say('ここは なんでも屋。あおぞらパワーと 素材を もってくれば、そうびを つくるよ。'),
-        say('できばえは −1〜+5。うんが 高いほど いい品に なりやすい。'),
-        say('おなじ品を 2つ もってくれば、1つ上に きたえてやろう。'),
-        say('素材は このへんの モンスターが おとす。いらない素材は ひきとって パワーに かえるよ。'),
-      ], true);
+    // 説明の文は会話データ (D-DIALOGUE-006)。場面が無ければあいさつだけで、読んだ印も立てない。
+    const tutorial = town.x === sp.x && town.y === sp.y && !done ? sceneDialogue('shop.tutorial', { here: (raw) => say(parseNpcLine(raw).text) }) : [];
+    if (tutorial.length) {
+      openTalk([say(keeper.greeting), ...tutorial], true);
     } else {
       openTalk([say(keeper.greeting)]);
     }
@@ -166,7 +164,7 @@ export function ShopModal({
     if (!lastAction) return;
     if (lastAction.kind === 'sell') {
       openTalk([
-        { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count} を ひきとってもらい、パワーが ${lastAction.powerGained} ふえた!` },
+        { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count}を引き取ってもらい、パワーが${lastAction.powerGained}増えた!` },
         say(keeper.sell),
       ]);
       return;
@@ -175,8 +173,8 @@ export function ShopModal({
     if (!def) return;
     openTalk([
       {
-        text: `${isMasterwork(lastAction.piece.level) ? '✨ ' : ''}${leveledName(def, lastAction.piece.level)} ${
-          lastAction.kind === 'forge' ? 'に きたえあげた!' : 'が できた!'}`,
+        text: `${isMasterwork(lastAction.piece.level) ? '✨ ' : ''}${leveledName(def, lastAction.piece.level)}${
+          lastAction.kind === 'forge' ? 'に鍛えあげた!' : 'ができた!'}`,
       },
       say(lastAction.kind === 'forge' ? keeper.forge : keeper.craft),
     ]);
@@ -212,7 +210,7 @@ export function ShopModal({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-          <strong style={{ fontSize: '0.95em' }}>🔨 {town.name} のなんでも屋</strong>
+          <strong style={{ fontSize: '0.95em' }}>🔨 {town.name}のなんでも屋</strong>
           <button ref={closeBtnRef} type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
             とじる
           </button>
@@ -220,7 +218,7 @@ export function ShopModal({
         {/* 説明文は毎回出さない (#607) — 使い方は最初の街の初回チュートリアルで店主が話す。
             もちもの (残高) だけコンパクトに常設する。 */}
         <p style={{ margin: '0 0 0.5em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-          もちもの: パワー <strong style={{ color: 'var(--color-fg)' }}>{balance}</strong> / {materialName}{' '}
+          もちもの: パワー<strong style={{ color: 'var(--color-fg)' }}>{balance}</strong> / {materialName}{' '}
           <strong style={{ color: 'var(--color-fg)' }}>×{materials[stock.materialId] ?? 0}</strong>
         </p>
         {/* 失敗の理由はボタンのそばに残す (セリフ窓に出すと閉じた瞬間に消えて読み逃す)。
@@ -282,7 +280,7 @@ export function ShopModal({
                     {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.8em', color: 'var(--color-muted)' }}>(両手)</span>}
                     {owned.length > 0 && (
                       <span style={{ marginLeft: '0.4em', color: 'var(--color-muted)' }}>
-                        所持 {owned.length}{bestOwned !== null && bestOwned !== 0 ? ` (最高${signed(bestOwned)})` : ''}
+                        所持{owned.length}{bestOwned !== null && bestOwned !== 0 ? ` (最高${signed(bestOwned)})` : ''}
                       </span>
                     )}
                   </div>
@@ -298,7 +296,9 @@ export function ShopModal({
                     )}
                   </div>
                   <div style={{ fontSize: '0.85em', opacity: affordable ? 1 : 0.65 }}>
-                    パワー {def.price.power} + {materialName} ×{def.price.materials}
+                    {def.price.materials > 0
+                      ? `パワー${def.price.power} + ${materialName} ×${def.price.materials}`
+                      : `パワー${def.price.power}`}
                   </div>
                 </div>
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch' }}>
@@ -351,7 +351,7 @@ export function ShopModal({
                   )}
                   {forgeBlockedByEquip && (
                     <span style={{ fontSize: '0.7em', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>
-                      そうびを外すと きたえられる
+                      装備を外すと鍛えられる
                     </span>
                   )}
                 </span>
@@ -369,7 +369,7 @@ export function ShopModal({
                 <div style={{ marginBottom: 4 }}>
                   <strong>素材のひきとり</strong>{' '}
                   <span style={{ color: 'var(--color-muted)', fontSize: '0.85em' }}>
-                    ({SALE_TUNING.materialsPerPower} 個 = パワー 1)
+                    ({SALE_TUNING.materialsPerPower}個 = パワー1)
                   </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -387,7 +387,7 @@ export function ShopModal({
                           onClick={() => onSell(id, count)}
                           style={{ fontSize: '0.85em', padding: '0.35em 0.8em', whiteSpace: 'nowrap' }}
                         >
-                          ×{count} ひきとり → パワー {power}
+                          ×{count}引き取り → パワー{power}
                         </button>
                       </div>
                     );

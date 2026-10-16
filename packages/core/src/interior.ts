@@ -93,7 +93,7 @@ export interface Gate {
 }
 
 /** 施錠中のゲートで出す既定のことば (lockedNotice 省略時)。 */
-export const DEFAULT_GATE_LOCKED_NOTICE = 'まだ ここは とおれない…';
+export const DEFAULT_GATE_LOCKED_NOTICE = 'まだここは通れない…';
 /** ことばの最大長 (DQ の窓に収まる範囲。NPC のセリフと揃える)。 */
 export const MAX_GATE_NOTICE = 120;
 

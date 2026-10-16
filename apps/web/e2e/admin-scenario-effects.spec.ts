@@ -32,12 +32,16 @@ test('お知らせに「空が赤く染まる」を足して保存すると effe
     else await route.fulfill({ json: { records: [] } });
   });
   await page.goto(URL);
-  // 保存済みの読込が終わってから編集する (読込完了で一覧が差し替わる)。
-  await expect(page.getByRole('button', { name: 'ふたばの村のシナリオを入れる', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: '＋イベント', exact: true }).click();
+  // 保存済みの読込が終わってから編集する (読込完了で一覧が差し替わる)。保存ボタンは
+  // 読込完了かつ未保存の変更があるときだけ押せる。読込より先に足した行が差し替えで
+  // 消えていたら、読込の後にもう一度足す。
+  const addEvent = page.getByRole('button', { name: '＋イベント', exact: true });
+  await addEvent.click();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled();
+  if (await page.getByPlaceholder(/東の橋が直ったらしい/).count() === 0) await addEvent.click();
   const addEffect = page.getByRole('button', { name: '＋演出', exact: true });
   await expect(addEffect).toBeDisabled();
-  await page.getByPlaceholder(/東の橋が なおったらしい/).fill('そらが いっしゅん、あかく ひかった。');
+  await page.getByPlaceholder(/東の橋が直ったらしい/).fill('そらが いっしゅん、あかく ひかった。');
   await addEffect.click();
   await expect(page.getByRole('combobox', { name: '演出 1' })).toHaveValue('6');
   await page.screenshot({ path: `${process.env.ADMIN_SHOTS ?? 'test-results'}/admin-scenario-effects-390.png` });

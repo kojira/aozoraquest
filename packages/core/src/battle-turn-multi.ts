@@ -55,7 +55,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState
     const healed = Math.round(enemy.maxHp * t.healerHealRatio);
     const before = enemy.hp;
     enemy.hp = Math.min(enemy.maxHp, enemy.hp + healed);
-    events.push({ actor: 'monster', text: `${enemy.name}は${def?.healName ?? 'きずをいやす'}! HP が ${enemy.hp - before} 回復。` });
+    events.push({ actor: 'monster', text: `${enemy.name}は${def?.healName ?? 'きずをいやす'}! HPが${enemy.hp - before}回復。` });
     return;
   }
   if (action === 'cast' && def?.spell) {
@@ -108,7 +108,7 @@ export function resolveTurnMulti(
   let cmd: Command = command;
   const skillCost = skillMpCostOf(player); // 発明家/巫女の MP 割引を反映
   if (command === 'skill' && player.mp < skillCost) {
-    events.push({ actor: 'player', text: `MP が足りない! (${player.mp}/${skillCost})` });
+    events.push({ actor: 'player', text: `MPが足りない! (${player.mp}/${skillCost})` });
     cmd = 'attack';
   } else if (command === 'herb' && state.herbs <= 0) {
     events.push({ actor: 'player', text: 'やくそうを持っていない!' });
@@ -188,13 +188,13 @@ export function resolveTurnMulti(
         player.hp = Math.min(player.maxHp, player.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;
-        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! HP が ${heal} 回復。(残り ${state.herbs})` });
+        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! HPが${heal}回復。(残り${state.herbs})` });
       } else if (cmd === 'tonic') {
         const gain = Math.round(player.maxMp * t.tonicMpRatio);
         player.mp = Math.min(player.maxMp, player.mp + gain);
         state.tonics -= 1;
         state.tonicsUsed += 1;
-        events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MP が ${gain} 回復。(残り ${state.tonics})` });
+        events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
       }
       // guard / flee 失敗はこのターン行動なし
     } else if (isAlly(actor)) {

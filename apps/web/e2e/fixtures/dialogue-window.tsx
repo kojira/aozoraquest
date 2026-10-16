@@ -2,17 +2,17 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DialogueWindow } from '../../src/components/dialogue-window';
-import worried from '../../src/assets/futaba/bluesky-worried.webp';
-import smile from '../../src/assets/futaba/bluesky-smile.webp';
+import worried from './futaba/bluesky-worried.webp';
+import smile from './futaba/bluesky-smile.webp';
 import '../../src/styles.css';
 
 const name = 'Blueskyちゃん';
 const lines = [
-  { speaker: name, text: '……きこえる？ だいじょうぶ？', portrait: { src: worried, name } },
+  { speaker: name, text: '……聞こえる？　大丈夫？', portrait: { src: worried, name } },
   { speaker: name, text: 'マップを おしたまま 指を うごかすと 移動。'.repeat(16) + '【説明のおわり】', portrait: { src: smile, name } },
   { text: '少女は やくそうを とりだした。' },
   { speaker: '村人', text: '絵のない会話。' },
-  { speaker: name, text: '冒険者ギルドへ ようこそ。どうする？', portrait: { src: smile, name } },
+  { speaker: name, text: '冒険者ギルドへようこそ。どうする？', portrait: { src: smile, name } },
 ];
 function App() {
   const [done, setDone] = useState(false);

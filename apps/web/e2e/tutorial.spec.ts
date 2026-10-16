@@ -5,14 +5,17 @@ import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import {
-  starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
+  starterTownInterior, starterTownGates, starterTownShop,
   worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, setMonsterOverrides, clearMonsters,
 } from '@aozoraquest/core';
+import { starterTownNpcs, starterTownQuests, starterTownScenario } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { handleQuestAccept, handleQuestComplete } from '../../edge/src/game-quest';
 import { handleMove, handleGear } from '../../edge/src/battle-resolver';
 import { applyBattleOutcome } from '../../edge/src/battle-reward';
 import { shopCraft } from '../../edge/src/shop';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+import { readFileSync } from 'node:fs';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 const DID = 'did:plc:tutorial';
 const ADMIN = 'did:plc:tutorialadmin';
@@ -73,6 +76,8 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
     'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
@@ -161,7 +166,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     const map = await page.getByLabel('ワールドマップ').boundingBox();
     await page.mouse.click(map!.x + map!.width / 2, map!.y + map!.height / 2);
     await page.getByRole('button', { name: 'クエスト', exact: true }).click();
-    await expect(page.getByText('受注中の依頼は ありません')).toHaveCount(2);
+    await expect(page.getByText('受注中の依頼はありません')).toHaveCount(2);
     await page.screenshot({ path: 'test-results/quest-log-empty.png' });
     await page.keyboard.press('Escape');
     await page.mouse.click(map!.x + map!.width / 2, map!.y + map!.height / 2);
@@ -199,8 +204,8 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
         // D-STORY-007 第1章の引き: 報酬の後に地の文 (話者なし) で赤い光、地図が赤く染まる。
         const window = page.locator('.aq-dialogue-pane').last();
         await expect(window).toContainText('ありがとう！');
-        for (let i = 0; i < 16 && !(await window.textContent())?.includes('あかく'); i++) await window.click();
-        await expect(window).toContainText('そらが いっしゅん、あかく ひかった。とおくの 空を、くろい ひかりの すじが つきぬけた。');
+        for (let i = 0; i < 16 && !(await window.textContent())?.includes('赤く光った'); i++) await window.click();
+        await expect(window).toContainText('空が一瞬、赤く光った。遠くの空を、黒い光の筋が突き抜けた。');
         await expect(page.locator('.aq-dialogue-pane')).toHaveCount(1);
         await expect(page.getByTestId('story-tint-red')).toHaveCount(1);
         await page.waitForTimeout(300);
@@ -213,7 +218,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     }
     expect(state.flags).toContain('futaba_wings_done');
     // 報告済みの依頼は二度と引き (赤い光) を出さない: done[2] の新文も ここで確認する。
-    expect(quests.find(q => q.id === 'futaba-wings')!.done[2]).toContain('Blueskyちゃんが あなたを さがしてたよ。');
+    expect(quests.find(q => q.id === 'futaba-wings')!.done[2]).toContain('Blueskyちゃんがあなたを探してたよ。');
     expect(errors).toEqual([]);
   } finally {
     releaseAccept?.();

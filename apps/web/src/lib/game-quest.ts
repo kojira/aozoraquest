@@ -77,8 +77,8 @@ export function questChoiceTitle(q: GameQuestDef, candidates: readonly GameQuest
 export function questTermsLine(q: GameQuestDef): string {
   const reward = [
     q.reward?.itemId ? `${ITEMS[q.reward.itemId]?.name ?? q.reward.itemId} ×${q.reward.count}` : null,
-    q.reward?.power ? `あおぞらパワー ${q.reward.power}` : null,
-  ].filter(Boolean).join(' と ') || 'なし';
+    q.reward?.power ? `あおぞらパワー${q.reward.power}` : null,
+  ].filter(Boolean).join('と') || 'なし';
   return `条件: ${questObjectiveText(q)}。報酬: ${reward}。`;
 }
 
@@ -89,8 +89,8 @@ export function guildQuestDetailLines(q: GameQuestDef): string[] {
   return [
     `『${q.title}』`, ...q.intro,
     questTermsLine(q),
-    ...(q.objective.kind === 'collect' ? [`報告が 成功すると ${questObjectiveText(q)} わたします。いまの 所持品も つかえます。`] : []),
-    '一人一度の 依頼です。',
+    ...(q.objective.kind === 'collect' ? [`報告が成功すると${questObjectiveText(q)}渡します。今の所持品も使えます。`] : []),
+    '一人一度の依頼です。',
   ];
 }
 

@@ -36,11 +36,9 @@ export * from './interior-samples.js';
 export * from './scenario.js';
 export * from './story-data.js';
 export * from './story-effect.js';
-export * from './scenario-samples.js';
+export * from './dialogue-data.js';
 export * from './equipment.js';
 
-export * from './starter-town-quests.js';
-export * from './starter-town-scenario.js';
 export * from './starter-town-shop.js';
 
 export * from './npc-sprite-presets.js';

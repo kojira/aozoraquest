@@ -282,10 +282,10 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     expect(s2.playerXp).toBe(500_000); // MAX_MIGRATE_PLAYER_XP
     expect(s2.jobXp).toEqual({}); // 偽造された巨大な投稿 XP も、そもそも取り込まないので無害
 
-    // レコード無し (未診断・power 無し) は power 0・Lv1 で fail-open
+    // レコード無し (未診断・power 無し) は 初期パワー 20・Lv1 で fail-open (#795)
     globalThis.fetch = migrateFetch(null, null);
     const s3 = await migrateInitState(USER, '');
-    expect(s3.power).toBe(0);
+    expect(s3.power).toBe(20);
     expect(s3.playerXp).toBe(0);
     expect(s3.jobXp).toEqual({});
     // 冒険はじめの持ち物: やくそう 1 + そらのはね 1 (どのケースでも初期付与される)。
@@ -295,6 +295,23 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
     const spawn = worldOverlay().spawn;
     expect([s3.x, s3.y]).toEqual([spawn.x, spawn.y + 1]);
     expect(isWalkable(terrainAt(s3.x, s3.y))).toBe(true);
+  });
+
+  it('migrateInitState: 初期パワーは最低 20。残高がそれより多ければそのまま (#795)', async () => {
+    const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
+    const powerFetch = (power: unknown) => (async (url: string) => {
+      if (url.includes('plc.directory')) return json(200, { id: USER, service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: USER_PDS }] });
+      const col = new URL(url).searchParams.get('collection');
+      if (col === 'app.aozoraquest.power') return json(200, { uri: 'x', cid: 'p', value: power });
+      return json(400, { error: 'RecordNotFound' });
+    }) as unknown as typeof fetch;
+    globalThis.fetch = powerFetch({ viaPosts: 5 });
+    expect((await migrateInitState(USER, '')).power).toBe(20);
+    globalThis.fetch = powerFetch({ viaPosts: 50 });
+    expect((await migrateInitState(USER, '')).power).toBe(50);
+    // PDS が引けない (catch 経路) ときも 20 から始まる
+    globalThis.fetch = (async () => { throw new Error('network down'); }) as unknown as typeof fetch;
+    expect((await migrateInitState(USER, '')).power).toBe(20);
   });
 
   it('initialPosition: 街の一つ下。そこが歩けなければ街そのもの (#703)', () => {

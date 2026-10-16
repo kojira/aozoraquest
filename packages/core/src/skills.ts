@@ -297,7 +297,7 @@ const healHandler: EffectHandler = (effect, ctx) => {
   const { defender, events, skillName } = ctx;
   const heal = Math.round(defender.maxHp * effect.ratio);
   defender.hp = Math.min(defender.maxHp, defender.hp + heal);
-  events.push({ actor: ctx.actorSide ?? 'player', text: `${defender.name}は${skillName}! HP が ${heal} 回復。` });
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${defender.name}は${skillName}! HPが${heal}回復。` });
 };
 
 /** cleanse: 味方対象のデバフを除去 (浄化)。バフは残す。self は使用者、それ以外は解決済みの味方。 */
@@ -320,7 +320,7 @@ const restoreMpHandler: EffectHandler = (effect, ctx) => {
   const { attacker, events, skillName } = ctx;
   const gain = Math.round(attacker.maxMp * effect.ratio);
   attacker.mp = Math.min(attacker.maxMp, attacker.mp + gain);
-  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! MP が ${gain} 回復。` });
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は${skillName}! MPが${gain}回復。` });
 };
 
 /** recoil: 使用者に反動ダメージ (maxHp 割合)。HP 1 未満にはしない (自滅は sim 調整後に検討)。 */
@@ -329,7 +329,7 @@ const recoilHandler: EffectHandler = (effect, ctx) => {
   const { attacker, events } = ctx;
   const dmg = Math.round(attacker.maxHp * effect.ratio);
   attacker.hp = Math.max(1, attacker.hp - dmg);
-  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は反動で ${dmg} のダメージ!` });
+  events.push({ actor: ctx.actorSide ?? 'player', text: `${attacker.name}は反動で${dmg}のダメージ!` });
 };
 
 /** 効果種別 → ハンドラ。ここに 1 行足す = 新しい効果プリミティブが使えるようになる。 */

@@ -13,6 +13,7 @@ describe('scripts/promote-admin-records.mjs', () => {
   it('書き先は app.aozoraquest.world.(monsters|monsterArt) だけ', () => {
     expect(() => assertProdTarget('app.aozoraquest.world.monsters')).not.toThrow();
     expect(() => assertProdTarget('app.aozoraquest.world.monsterArt')).not.toThrow();
+    expect(() => assertProdTarget('app.aozoraquest.world.dialogue')).not.toThrow(); // D-DIALOGUE-006
     for (const c of ['app.aozoraquest.dev.world.monsters', 'app.aozoraquest.world.npcs', 'app.aozoraquest.config.flags']) expect(() => assertProdTarget(c)).toThrow(/許可/);
   });
 
@@ -35,6 +36,8 @@ describe('scripts/promote-admin-records.mjs', () => {
     const prod = { cid: 'prod1', value: { monsters: [] } };
     const over = planFor('monsters', dev, prod);
     expect(over.swapRecord).toBe('prod1');
+    const dialogue = planFor('dialogue', { cid: 'dev2', value: { scenes: [{ id: 'inn.ask' }, { id: 'inn.thanks' }] } }, null);
+    expect(dialogue).toMatchObject({ collection: 'app.aozoraquest.world.dialogue', summary: expect.stringContaining('(2 件)') });
     const dir = mkdtempSync(join(tmpdir(), 'promote-'));
     const file = writeBackup(dir, over.backup, new Date('2026-10-09T00:00:00Z'))!;
     expect(file).toMatch(/backup-monsters-2026-10-09T00-00-00-000Z\.json$/);

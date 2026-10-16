@@ -18,7 +18,7 @@ import {
 } from '../scenario.js';
 import { setGameQuests, gameQuestById, type GameQuestDef } from '../quest-data.js';
 import { setNpcs, npcLinesFor, type NpcDef } from '../npc-data.js';
-import { SAMPLE_SCENARIO, SAMPLE_FLAGS } from '../scenario-samples.js';
+import { sampleScenario } from './helpers/starter-town-fixture.js';
 import { ITEMS, MONSTERS, rollDefeatLoss } from '../battle.js';
 import { setItemOverrides } from '../item-data.js';
 import { isSellableMaterial } from '../equipment.js';
@@ -291,6 +291,7 @@ describe('レビュー指摘の回帰 (#426)', () => {
 });
 
 describe('サンプルシナリオ (#545)', () => {
+  const SAMPLE_SCENARIO = sampleScenario();
   it('そのまま保存できる (何も用意していない環境でも通る)', () => {
     // クエストや NPC を条件にすると、それらが無い環境では保存できない。
     setGameQuests(null);
@@ -324,7 +325,7 @@ describe('サンプルシナリオ (#545)', () => {
     setScenario(SAMPLE_SCENARIO);
     const r = pendingScenario(progress({ materials: { herb: 3, 'slime-drop': 1 } }));
     expect(r.fired.map((e) => e.id)).toEqual(['sample-1', 'sample-2', 'sample-3']);
-    expect(r.flags).toEqual([...SAMPLE_FLAGS]);
+    expect(r.flags).toEqual(['ch1_start', 'ch2_herbs', 'ch3_proof']);
   });
 
   it('全部のお知らせが書かれている (何が起きたか分かる)', () => {

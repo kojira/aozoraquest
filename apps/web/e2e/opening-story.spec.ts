@@ -6,14 +6,16 @@ import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import {
-  starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
+  starterTownInterior, starterTownGates, starterTownShop,
   worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, setMonsterOverrides, clearMonsters,
 } from '@aozoraquest/core';
+import { starterTownNpcs, starterTownQuests, starterTownScenario } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { handleQuestAccept, handleQuestComplete } from '../../edge/src/game-quest';
 import { cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 import { applyBattleOutcome } from '../../edge/src/battle-reward';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 const DID = 'did:plc:tutorial';
 const ADMIN = 'did:plc:tutorialadmin';
@@ -149,9 +151,12 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
   const village = starterTownInterior(town);
   const gates = starterTownGates(town);
   // 通常会話の管理画像も実際の許可済み笑顔原本で配る（導入の行別表情とは別経路）。
-  const portraitBytes = readFileSync(path.join(process.cwd(), 'src/assets/futaba/bluesky-smile.webp'));
-  const portraitImage = { blob: { $type: 'blob' as const, ref: { $link: cidFor(portraitBytes) }, mimeType: 'image/webp' as const, size: portraitBytes.length }, width: 512, height: 768 };
-  const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage } : n), quests = starterTownQuests(), scenario = starterTownScenario();
+  const portraitBytes = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-smile.webp'));
+  // 心配顔は NPC の表情画像 [sad] (worried の原本。dev・本番と同じ CID。D-DIALOGUE-006 J3)。
+  const worriedBytes = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-worried.webp'));
+  const imageOf = (bytes: Buffer) => ({ blob: { $type: 'blob' as const, ref: { $link: cidFor(bytes) }, mimeType: 'image/webp' as const, size: bytes.length }, width: 512, height: 768 });
+  const portraitImage = imageOf(portraitBytes), sadImage = imageOf(worriedBytes);
+  const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage, expressionImages: { sad: sadImage } } : n), quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
   setMonsterOverrides(TEST_MONSTERS); // quests の monsterId 実在検査より先に入れる (D-MONSTER-001)
   setInteriors([village], gates); setNpcs(npcs); setGameQuests(quests); setScenario(scenario); setShopOverrides([shop]);
@@ -178,6 +183,8 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
     'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
@@ -211,8 +218,9 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     }
     if (!url.pathname.startsWith('/fixture-api/')) { await route.continue(); return; }
     if (url.pathname === '/fixture-api/api/npc-image') {
-      const ok = url.searchParams.get('npcId') === 'futaba-bluesky' && url.searchParams.get('kind') === 'portrait' && url.searchParams.get('cid') === portraitImage.blob.ref.$link;
-      await route.fulfill(ok ? { contentType: 'image/webp', body: portraitBytes } : { status: 404, body: 'not found' });
+      const sad = url.searchParams.get('expression') === 'sad';
+      const ok = url.searchParams.get('npcId') === 'futaba-bluesky' && url.searchParams.get('kind') === 'portrait' && url.searchParams.get('cid') === (sad ? sadImage : portraitImage).blob.ref.$link;
+      await route.fulfill(ok ? { contentType: 'image/webp', body: sad ? worriedBytes : portraitBytes } : { status: 404, body: 'not found' });
       return;
     }
     const body = route.request().postDataJSON();
@@ -266,63 +274,63 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(page.locator('.aq-dialogue-pane').last()).toBeFocused();
     expect(await page.locator('[data-world-x]').getAttribute('data-world-x')).toBe(position);
     await next();
-    await expect(window).toContainText('やっと とどいた。きみの ことばが。');
+    await expect(window).toContainText('やっと届いた。きみの言葉が。');
     await expect(page.locator('.aq-dialogue-pane').first()).toContainText('？？？');
     await expect(page.locator('img[alt$="の会話イラスト"]')).toHaveCount(0);
     for (let i = 0; i < 4; i++) await next();
-    await expect(window).toContainText('【ギフト】ことばの ちから を さずかった！');
+    await expect(window).toContainText('【ギフト】ことばの ちからを授かった！');
     await page.screenshot({ path: `${SHOTS}/prologue-gift-390.png` });
     await next(); await next();
     await expect(window).toContainText('――空を、たのんだよ。');
     await next();
-    await expect(window).toContainText('……あいつに、みつかる まえに。');
+    await expect(window).toContainText('……あいつに、見つかる前に。');
     await expect(page.locator('.aq-dialogue-pane').first()).toContainText('？？？');
     await expect(black).toHaveCSS('opacity', '1');
     await page.screenshot({ path: `${SHOTS}/prologue-mitsukaru-390.png` });
     await next();
-    await expect(window).toContainText('……きこえる？ だいじょうぶ？');
+    await expect(window).toContainText('……聞こえる？　大丈夫？');
     await expect(black).toHaveCSS('opacity', '0');
     await expect(page.getByTestId('story-silhouette').locator('img')).toHaveCount(0);
     // reduced-motion では白い閃光を再生しない (文言が意味を担う)。
     await expect(page.getByTestId('story-flash-white')).toHaveCount(0);
     await expect.poll(() => portrait.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
-    await expect(portrait).toHaveAttribute('src', /bluesky-worried/);
+    await expect(portrait).toHaveAttribute('src', /expression=sad/);
     await captureMapDialogue(page, 'opening-worried');
     await next();
-    await expect(window).toContainText('けがしてる……。まって、やくそうが あるから。');
+    await expect(window).toContainText('けがしてる……。待って、やくそうがあるから。');
     await next();
-    await expect(window).toContainText('少女は やくそうを とりだし');
+    await expect(window).toContainText('少女はやくそうを取り出し');
     await expect(portrait).toHaveCount(0);
     await captureMapDialogue(page, 'opening-narration');
     await next();
-    await expect(window).toContainText('よかった……！ 気が ついたんだね。');
-    await expect(portrait).toHaveAttribute('src', /bluesky-smile/);
+    await expect(window).toContainText('よかった……！　気がついたんだね。');
+    await expect(portrait).toHaveAttribute('src', new RegExp(`cid=${portraitImage.blob.ref.$link}$`));
     await captureMapDialogue(page, 'opening-smile');
     await next();
-    await expect(window).toContainText('村の まえで たおれてたから、しんぱいしたよ。');
+    await expect(window).toContainText('村の前で倒れてたから、心配したよ。');
     await next();
-    await expect(window).toContainText('わたしは Bluesky。この村の 冒険者ギルドで 受付を してるの。');
+    await expect(window).toContainText('わたしはBluesky。この村の冒険者ギルドで受付をしてるの。');
     await captureMapDialogue(page, 'introduction');
     await next();
-    await expect(window).toContainText('これも もっていて。また いたくなったら つかってね。');
+    await expect(window).toContainText('これも持っていて。また痛くなったら使ってね。');
     await captureMapDialogue(page, 'handoff');
     await next();
-    await expect(window).toContainText('やくそうを うけとった！');
+    await expect(window).toContainText('やくそうを受け取った！');
     await next();
-    await expect(window).toContainText('そらのはねも あげるね。');
+    await expect(window).toContainText('そらのはねもあげるね。');
     await next();
-    await expect(window).toContainText('そらのはねを うけとった！');
+    await expect(window).toContainText('そらのはねを受け取った！');
     await next();
-    await expect(window).toContainText('村の ギルドで すこし やすんでいかない？');
+    await expect(window).toContainText('村のギルドで少し休んでいかない？');
     await captureMapDialogue(page, 'invitation');
     await next();
-    await expect(window).toContainText('【ギフト】ことばの ちから で あおぞらパワーが 20 ふえた！');
+    await expect(window).toContainText('【ギフト】ことばの ちからであおぞらパワーが20増えた！');
     await next();
     await expect(window).toContainText('【操作ガイド】マップを');
     await expect(portrait).toHaveCount(0);
     await captureMapDialogue(page, 'guide');
     await next();
-    await expect(window).toContainText('【操作ガイド】じぶんを');
+    await expect(window).toContainText('【操作ガイド】自分を');
     await next();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     await expect(page.getByText('はじまりの祝福', { exact: true })).toBeVisible();
@@ -334,7 +342,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect(portrait).toHaveAttribute('src', /npc-image/); // 通常会話は管理画像を優先
     await captureMapDialogue(page, 'guild-reunion');
     await next();
-    await expect(window).toContainText('ここが 村の 冒険者ギルド');
+    await expect(window).toContainText('ここが村の冒険者ギルド');
     await next();
     const choose = (name: string) => page.getByRole('button', { name, exact: true }).click();
     await expect(page.getByRole('button', { name: '依頼を見る', exact: true })).toBeVisible();
@@ -344,18 +352,18 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await next();
     await expect(window).toContainText('村の道具屋');
     await next(); await next();
-    await expect(window).toContainText('2こ わたします');
+    await expect(window).toContainText('2こ渡します');
     await captureMapDialogue(page, 'guild-consumption');
     await readAll(page);
     await captureMapDialogue(page, 'guild-accept');
     await choose('やめておく');
     expect(state.activeQuests).toEqual([]);
     await choose('報告する');
-    await expect(window).toContainText('いま 報告できる 受注中の依頼は ない');
+    await expect(window).toContainText('いま報告できる受注中の依頼はない');
     await readAll(page);
     await choose('依頼を見る'); await readAll(page);
     await choose('受注する');
-    await expect(window).toContainText('うけおった');
+    await expect(window).toContainText('請け負った');
     expect(state.activeQuests[0]?.id).toBe('futaba-tool-care');
     await readAll(page);
     await choose('やめる');
@@ -377,13 +385,13 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await choose('依頼を見る'); await readAll(page);
     // 1件でも一覧から選ぶ。未達も一覧に出て、選ぶと説明なしで報告 (不足表示) へ進む。
     await choose('報告する');
-    await expect(window).toContainText('どの依頼を 報告する？（1/1）');
+    await expect(window).toContainText('どの依頼を報告する？（1/1）');
     await captureMapDialogue(page, 'guild-report-list');
     await expect(page.getByRole('button', { name: /道具の手入れに/ })).toContainText('(0/2)');
     await page.getByRole('button', { name: /道具の手入れに/ }).click();
-    await expect(window).toContainText('スライムのしずくを 2こ');
+    await expect(window).toContainText('スライムのしずくを2こ');
     await next();
-    await expect(window).toContainText('まだ 0/2 こ');
+    await expect(window).toContainText('まだ0/2こ');
     await readAll(page);
     expect(state.materials['slime-drop'] ?? 0).toBe(0);
     expect(state.power).toBe(0);
@@ -402,11 +410,11 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     const powerBefore = state.power;
     const herbsBefore = state.materials.herb ?? 0;
     await choose('報告する');
-    await expect(window).toContainText('どの依頼を 報告する？（1/1）');
+    await expect(window).toContainText('どの依頼を報告する？（1/1）');
     await page.getByRole('button', { name: /道具の手入れに/ }).click();
-    await expect(window).toContainText('2こ うけとった');
+    await expect(window).toContainText('2こ受け取った');
     await next();
-    await expect(window).toContainText('やくそう ×2 と あおぞらパワー 5');
+    await expect(window).toContainText('やくそう ×2とあおぞらパワー5');
     await captureMapDialogue(page, 'guild-completed');
     expect(state.materials['slime-drop'] ?? 0).toBe(0);
     expect(state.materials.herb).toBe(herbsBefore + 2);
@@ -416,11 +424,11 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await readAll(page);
     const completed = structuredClone(state);
     await choose('報告する');
-    await expect(window).toContainText('いま 報告できる 受注中の依頼は ない');
+    await expect(window).toContainText('いま報告できる受注中の依頼はない');
     await readAll(page);
     // 達成済みの依頼は「依頼を見る」に出さない。説明 (intro) も流さない。
     await choose('依頼を見る');
-    await expect(window).toContainText('いま 紹介できる 依頼は ないよ。');
+    await expect(window).toContainText('いま紹介できる依頼はないよ。');
     await expect(window).not.toContainText('道具の手入れに');
     await expect(window).not.toContainText('村の道具屋');
     expect(state).toEqual(completed);
@@ -446,7 +454,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     records['app.aozoraquest.dev.world.quests'] = { quests: quests.filter(q => q.id !== 'futaba-tool-care') };
     await reenter({ x: bluesky.x, y: bluesky.y + 1 });
     await bump('ArrowUp'); await choose('依頼を見る');
-    await expect(window).toContainText('いま 紹介できる 依頼は ない');
+    await expect(window).toContainText('いま紹介できる依頼はない');
     await readAll(page); await choose('やめる');
     records['app.aozoraquest.dev.world.quests'] = { quests };
     // Reload restores the other active quest; reporting it still advances the existing story.
@@ -463,13 +471,13 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await bump('ArrowUp');
     await expect(window).toContainText('おかえり。');
     await choose('話す');
-    await expect(window).toContainText('みた？ いま 空が あかく ひかったの。');
+    await expect(window).toContainText('見た？　今、空が赤く光ったの。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/04-departure-hint.png` });
     await next();
-    await expect(window).toContainText('おにいちゃんの 字だ。');
+    await expect(window).toContainText('おにいちゃんの字だ。');
     await next();
-    await expect(window).toContainText('ほむらの街へ むかってくれ。');
+    await expect(window).toContainText('ほむらの街へ向かってくれ。');
     await expect(page.locator('.aq-dialogue-next')).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/05-departure-homura.png` });
     await readAll(page);
@@ -481,7 +489,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     setGameQuests(multi); records['app.aozoraquest.dev.world.quests'] = { quests: multi };
     await reenter({ x: bluesky.x, y: bluesky.y + 1, questsDone: [], activeQuests: multi.map(q => ({ id: q.id, progress: 0 })), materials: { 'slime-drop': 2 }, power: 10 });
     await bump('ArrowUp'); await choose('報告する');
-    await expect(window).toContainText('どの依頼を 報告する？（1/2）');
+    await expect(window).toContainText('どの依頼を報告する？（1/2）');
     const beforeReports = reported.length;
     await captureQuestChoices(page, 'guild-identical-choices');
     await choose('次へ');
@@ -530,7 +538,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
       reportResponseGate = undefined;
     }
     await reportResponse;
-    await expect(window).toContainText('2こ うけとった');
+    await expect(window).toContainText('2こ受け取った');
     await expect.poll(() => state.questsDone).toEqual(['fixture-b']);
     expect(reported.slice(directBefore)).toEqual(['fixture-b']);
     expect(state.activeQuests).toEqual([{ id: 'fixture-a', progress: 0 }]);

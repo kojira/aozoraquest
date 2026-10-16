@@ -248,7 +248,7 @@ describe('resolveTurn', () => {
     const s = startBattle('warrior', 1, 1, '戦士', 1, 7, 0, { mp: BATTLE_TUNING.skillMpCost - 1 });
     expect(s.player.mp).toBeLessThan(BATTLE_TUNING.skillMpCost);
     const next = resolveTurn(s, 'skill');
-    expect(next.lastEvents.some((e) => e.text.includes('MP が足りない'))).toBe(true);
+    expect(next.lastEvents.some((e) => e.text.includes('MPが足りない'))).toBe(true);
     // フォールバック攻撃で MP は消費されない。warrior は特性なしなので回復もしない
     expect(next.player.mp).toBe(s.player.mp);
   });

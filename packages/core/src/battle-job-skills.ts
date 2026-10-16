@@ -329,10 +329,10 @@ export function mpTraitFires(chance: number | undefined, rng: () => number): boo
 export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
   smash: '強撃 (大ダメージ / 少し外れやすい)',
   parry: '見切り (防御 + 反撃)',
-  flurry: '連撃 (2 回攻撃)',
+  flurry: '連撃 (2回攻撃)',
   spell: '魔撃 (防御無視)',
-  gamble: '大博打 (0〜2.6 倍)',
-  heal: 'いのり (HP 回復)',
+  gamble: '大博打 (0〜2.6倍)',
+  heal: 'いのり (HP回復)',
 };
 
 /** とくぎ種別のカテゴリ説明ラベル (UI の補足)。基本 6 種のみ定義があり、確定キット (#456) の

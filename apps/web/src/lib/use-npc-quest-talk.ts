@@ -56,7 +56,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       const res = await serverQuestAccept(agent, questId, tokenRef.current);
       setQuest(questStateOf(res));
       if (res.flags) flagsRef.current = res.flags;
-      setNotice(`「${gameQuestById(questId)?.title ?? questId}」を うけおった!`);
+      setNotice(`「${gameQuestById(questId)?.title ?? questId}」を請け負った!`);
       setNpcTalk(null);
       // 受注で始まる戦闘 (startBattle)。受注のセリフの直後に始まる。
       if (res.encounter) startEncounterRef.current(res.encounter);
@@ -67,11 +67,11 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
         // A lost response may already have accepted this quest, or another tab chose one.
         if (questRef.current.activeQuests.some(q => q.id === questId) || questRef.current.done.includes(questId)) setNpcTalk(null);
       } catch { /* Keep the offer retryable; do not infer acceptance from a failed request. */ }
-      const message = e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした…';
+      const message = e instanceof WorldServerError ? e.message : '通信に失敗した…';
       setNotice(message);
       // The map notice is hidden during NPC dialogue: keep failure and retry visible in the offer.
       setNpcTalk(current => current?.acceptQuestId === questId && !current.guild
-        ? { ...current, lines: [message, 'もういちど たしかめてね。うけますか？'] }
+        ? { ...current, lines: [message, 'もう一度確かめてね。うけますか？'] }
         : current);
       throw e;
     } finally {
@@ -87,7 +87,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     try {
       startEncounterRef.current(await serverStoryBattle(agent, npc.id, tokenRef.current));
     } catch (e) {
-      setNotice(e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした…');
+      setNotice(e instanceof WorldServerError ? e.message : '通信に失敗した…');
     } finally {
       moveBusyRef.current = false;
     }
@@ -128,15 +128,15 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       applyServerMaterials(res.materials);
       const r = res.rewarded;
       const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
-        r?.power ? `あおぞらパワー ${r.power}` : null].filter(Boolean).join(' と ');
+        r?.power ? `あおぞらパワー${r.power}` : null].filter(Boolean).join('と');
       // talk は相手のセリフ (いつものセリフの代わり) に続けて達成を出す (D-STORY-009)。
-      const said = o.kind === 'talk' ? [o.line, `『${q.title}』を たっせいした！`] : q.done;
-      message([...said, ...(got ? [`${got} を もらった！`] : [])], scenarioMessagesOf(res.scenarioMessages, res.notices));
+      const said = o.kind === 'talk' ? [o.line, `『${q.title}』を達成した！`] : q.done;
+      message([...said, ...(got ? [`${got}をもらった！`] : [])], scenarioMessagesOf(res.scenarioMessages, res.notices));
     } catch (e) {
       try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
-      if (questRef.current.done.includes(q.id)) message(['この依頼は 達成済みだよ。']);
-      else if (e instanceof WorldServerError && e.code === 'not_ready' && q.objective.kind !== 'talk') message([...(q.progress ?? []), e.message, 'そろったら また 報告してね。']);
-      else message([e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど 報告してね。']);
+      if (questRef.current.done.includes(q.id)) message(['この依頼は達成済みだよ。']);
+      else if (e instanceof WorldServerError && e.code === 'not_ready' && q.objective.kind !== 'talk') message([...(q.progress ?? []), e.message, 'そろったらまた報告してね。']);
+      else message([e instanceof WorldServerError ? e.message : '通信に失敗した…もう一度報告してね。']);
     } finally {
       moveBusyRef.current = false;
       setQuestPending(false);
@@ -147,20 +147,20 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     if (!q) {
       // 達成済みは出さない (一人一度の依頼。fb-1010)。0件なら紹介できる依頼なし。
       const candidates = npcQuests(npc);
-      if (!candidates.length) { guildMessage(npc, ['いま 紹介できる 依頼は ないよ。']); return; }
+      if (!candidates.length) { guildMessage(npc, ['いま紹介できる依頼はないよ。']); return; }
       if (candidates.length > 1) { showQuestChoices(npc, candidates, selected => viewGuildQuest(npc, selected), true); return; }
       q = candidates[0]!;
     }
     const lines = guildQuestDetailLines(q);
     const active = questRef.current.activeQuests.find(a => a.id === q.id);
-    if (active) guildMessage(npc, [...lines, questProgressLine(q, active.progress, materialsRef.current), 'そろったら「報告する」を えらんでね。']);
+    if (active) guildMessage(npc, [...lines, questProgressLine(q, active.progress, materialsRef.current), 'そろったら「報告する」を選んでね。']);
     else setNpcTalk({ npc, guild: 'detail', lines: [...lines, 'うけますか？'], acceptQuestId: q.id });
   };
   const reportGuildQuest = (npc: NpcDef) => {
     const candidates = gameQuestsByNpc(npc.id).filter(q => questRef.current.activeQuests.some(a => a.id === q.id));
-    if (!candidates.length) { guildMessage(npc, ['いま 報告できる 受注中の依頼は ないよ。']); return; }
+    if (!candidates.length) { guildMessage(npc, ['いま報告できる受注中の依頼はないよ。']); return; }
     // 1件でも一覧から選ぶ。選んだら説明・確認なしで報告する (未達はサーバーの不足表示)。
-    showQuestChoices(npc, candidates, q => reportQuest(npc, q, true), true, 0, 'どの依頼を 報告する？');
+    showQuestChoices(npc, candidates, q => reportQuest(npc, q, true), true, 0, 'どの依頼を報告する？');
   };
   const selectDirectQuest = (npc: NpcDef, q: GameQuestDef, directList: boolean) => {
     const active = questRef.current.activeQuests.find(a => a.id === q.id);
@@ -199,9 +199,9 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       { label: '受注する', onSelect: async () => {
         try {
           if (await acceptQuest(acceptQuestId)) return;
-          guildMessage(npc, [`『${gameQuestById(acceptQuestId)?.title ?? acceptQuestId}』を うけおった！`, 'そろったら ギルドで 報告してね。']);
+          guildMessage(npc, [`『${gameQuestById(acceptQuestId)?.title ?? acceptQuestId}』を請け負った！`, 'そろったらギルドで報告してね。']);
         } catch (e) {
-          guildMessage(npc, [e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした… もういちど たしかめてね。']);
+          guildMessage(npc, [e instanceof WorldServerError ? e.message : '通信に失敗した…もう一度確かめてね。']);
         }
       } },
       { label: 'やめておく', onSelect: () => setNpcTalk(guildReception(npc)) },

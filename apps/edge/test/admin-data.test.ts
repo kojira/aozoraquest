@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { activeEquipment, activeMonsters, clearMonsters, encodeWorldMap, ITEMS, MONSTERS_BY_ID, setInteriors, setItemOverrides, setMonsterOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { activeEquipment, activeMonsters, clearMonsters, DIALOGUE_SCENE_IDS, setDialogue, encodeWorldMap, ITEMS, MONSTERS_BY_ID, setInteriors, setItemOverrides, setMonsterOverrides, setNpcs, setScenario, setStory, setWorldMap, worldOverlay, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { handleRequest, type Env } from '../src/router';
 import { writeServerTokens } from '../src/oauth-store';
@@ -88,7 +88,7 @@ describe('/api/admin/data (#695)', () => {
   afterEach(() => {
     globalThis.fetch = orig;
     resetAuthoredWorldCache();
-    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null); setMonsterOverrides(TEST_MONSTERS);
+    setWorldMap(null); setNpcs(null); setInteriors([], []); setItemOverrides(null); setStory(null); setScenario(null); setDialogue(null); setMonsterOverrides(TEST_MONSTERS);
   });
   it('無効・鍵なし・鍵違い・許可外 name は通常の not_found と同じ 404', async () => {
     for (const [env, req] of [
@@ -283,6 +283,32 @@ describe('/api/admin/data (#695)', () => {
       const town = worldOverlay().towns[0]!;
       expect(await put('story', { placedItems: [item({ mapId: 'world', x: town.x, y: town.y })] })).toBe(400);
       expect(await put('story', { placedItems: [item({ flag: undefined })] })).toBe(400);
+    });
+  });
+
+  describe('dialogue (D-DIALOGUE-006)', () => {
+    const scenes = (npcId?: string) => ({ scenes: DIALOGUE_SCENE_IDS.map((id) => ({ id, lines: [{ ...(npcId ? { npcId } : {}), text: `${id} の文` }] })) });
+
+    it('PUT dialogue は検証を通り保存済みの NPC を指すときだけ書く', async () => {
+      for (const [value, message] of [[{ scenes: [] }, '場面が無い'], [scenes('ghost'), 'ghost']] as const) {
+        const res = await handleRequest(call('PUT', 'dialogue', { body: { value, swapCid: null } }), await makeEnv());
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining(message) });
+      }
+      expect(pds.puts).toHaveLength(0);
+      const res = await handleRequest(call('PUT', 'dialogue', { body: { value: scenes('elder'), swapCid: null } }), await makeEnv());
+      expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+      expect(pds.puts.map((p) => p.collection)).toEqual([COL('dialogue')]);
+    });
+
+    it('PUT npcs は dialogue が参照している NPC を消すと 400 で書かない', async () => {
+      store.set(COL('npcs'), { value: { npcs: [NPC, { ...NPC, id: 'futaba-bluesky', name: 'Bluesky', x: 301 }] }, cid: 'npc1' });
+      const value = { scenes: [...scenes().scenes, { id: 'guild.first:futaba-bluesky', lines: [{ text: '村の' }] }] };
+      store.set(COL('dialogue'), { value, cid: 'dl1' });
+      const res = await handleRequest(call('PUT', 'npcs', { body: { value: { npcs: [NPC] }, swapCid: 'npc1' } }), await makeEnv());
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining('futaba-bluesky') });
+      expect(pds.puts).toHaveLength(0);
     });
   });
 });

@@ -6,12 +6,14 @@ import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import {
-  starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
+  starterTownInterior, starterTownGates, starterTownShop,
   worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, setMonsterOverrides, clearMonsters,
 } from '@aozoraquest/core';
+import { starterTownNpcs, starterTownQuests, starterTownScenario } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { cidFor } from '../../../packages/core/src/__tests__/helpers/npc-images';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 // D-DIALOGUE-004: guild steps (welcome → menu → 話す) must keep one dialogue surface: the dimmed
 // backdrop never flashes bright and the managed portrait never blanks while it re-downloads.
@@ -43,7 +45,7 @@ test('ギルドの会話送りで背景が明滅せず、会話イラストが�
   const town = worldOverlay().towns[0]!;
   const village = starterTownInterior(town);
   const gates = starterTownGates(town);
-  const portraitBytes = readFileSync(path.join(process.cwd(), 'src/assets/futaba/bluesky-smile.webp'));
+  const portraitBytes = readFileSync(path.join(process.cwd(), 'e2e/fixtures/futaba/bluesky-smile.webp'));
   const portraitImage = { blob: { $type: 'blob' as const, ref: { $link: cidFor(portraitBytes) }, mimeType: 'image/webp' as const, size: portraitBytes.length }, width: 512, height: 768 };
   const npcs = starterTownNpcs().map((n) => n.id === 'futaba-bluesky' ? { ...n, portraitImage } : n), quests = starterTownQuests(), scenario = starterTownScenario();
   const shop = starterTownShop(town, townShopStock(town, 0));
@@ -58,6 +60,8 @@ test('ギルドの会話送りで背景が明滅せず、会話イラストが�
     // モンスターはレコードだけが正 (D-MONSTER-001)。ブラウザ側もテスト用 fixture をレコードとして読む。
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.dev.world.quests': { quests }, 'app.aozoraquest.dev.world.scenario': { events: scenario },
     'app.aozoraquest.dev.world.shops': { shops: [shop] }, 'app.aozoraquest.test.analysis': diag,
@@ -141,7 +145,7 @@ test('ギルドの会話送りで背景が明滅せず、会話イラストが�
     writeFileSync(`${OUT}/portrait-requests.json`, JSON.stringify(portraitRequests));
     const from = frames.findIndex((f) => f.mark === 'steps'), to = frames.findIndex((f) => f.mark === 'end');
     const steps = frames.slice(from + 1, to).filter((f) => !f.mark);
-    for (const text of ['ここが 村の', '冒険者ギルドへ ようこそ。どうする', 'おにいちゃん']) expect(steps.some((f) => f.text?.startsWith(text))).toBe(true);
+    for (const text of ['ここが村の', '冒険者ギルドへようこそ。どうする', 'おにいちゃん']) expect(steps.some((f) => f.text?.startsWith(text))).toBe(true);
     const firstImg = steps[0]!.img;
     // Backdrop stays dimmed (no 0 → .5 re-animation) on every frame of the step changes.
     expect(steps.filter((f) => f.alpha === null || f.alpha! < 0.5).map((f) => `${f.t}:${f.alpha}:${f.text}`)).toEqual([]);

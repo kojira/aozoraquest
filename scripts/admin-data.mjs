@@ -10,9 +10,9 @@ const WARNING = `注意: ステージング (dev) の管理データ ${DEV_COLLE
 const DEFAULT_EDGE = 'https://aozoraquest-edge-dev.kojiran.workers.dev';
 const KEY_PATH = join(homedir(), '.config', 'aozoraquest', 'dev-admin-data-key');
 /** apps/edge/src/admin-data.ts の ADMIN_DATA_NAMES と同じ (apps/edge/test/admin-nsid.test.ts が検査)。 */
-export const NAMES = ['monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors'];
+export const NAMES = ['monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'];
 /** name ごとの配列のキーと、要素の id の取り方。 */
-const LIST_KEY = { monsters: 'monsters', monsterArt: 'arts', items: 'items', npcs: 'npcs', shops: 'shops', quests: 'quests', scenario: 'events', story: 'placedItems', interiors: 'interiors' };
+const LIST_KEY = { monsters: 'monsters', monsterArt: 'arts', items: 'items', npcs: 'npcs', shops: 'shops', quests: 'quests', scenario: 'events', story: 'placedItems', interiors: 'interiors', dialogue: 'scenes' };
 const idOf = (name, v) => (name === 'shops' ? `(${v?.x}, ${v?.y})` : String(v?.id));
 
 const HELP = `${WARNING}
@@ -33,6 +33,7 @@ const HELP = `${WARNING}
   items は npcs / quests より先に書く (それらの検証がアイテムの実在を引く)。
   monsters は { "monsters": [...] } (ストーリー専用は storyOnly: true)。story / quests より先に書く。
   monsterArt は { "arts": [{ "id": <species>, "svg": "<g>…</g>" }] } (初期データ apps/web/e2e/fixtures/monster-art.json)。
+  dialogue は { "scenes": [{ "id": "inn.ask", "lines": [...] }] } (D-DIALOGUE-006)。npcs より後に書く (話者の NPC の実在を引く)。
   接続先: 既定 ${DEFAULT_EDGE} (AQ_ADMIN_DATA_EDGE で上書き)
   鍵: ${KEY_PATH} (パーミッション 600 以外は実行しない)
 `;

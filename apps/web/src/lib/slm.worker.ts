@@ -3,7 +3,7 @@
  *
  * メッセージ:
  *   { type: 'init', allowNetwork }                     → { type: 'ready' } / { type: 'error', code? }
- *                                                        (読み込み中は重みの part ごとに { type: 'progress' } を送る。
+ *                                                        (読み込み中は重みの part ごと・ダウンロード中は約 1 秒ごとに { type: 'progress' } を送る。
  *                                                         allowNetwork: false はキャッシュだけで読み、欠けていれば code: 'not-cached')
  *   { type: 'generate', id, prompt, maxNewTokens, temperature, stopAtNewline }
  *                                                      → { type: 'done', id, text } / { type: 'error', id }
@@ -34,8 +34,10 @@ let generating: Promise<unknown> = Promise.resolve();
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
 /** 読み込み済みならそれを返す。未読み込みなら opts に従って読む (generate からはキャッシュだけ)。 */
-function ensureReady(opts: SarashinaFetchOptions) {
+function ensureReady({ allowNetwork }: SarashinaFetchOptions) {
   if (!ready) {
+    // ダウンロード中も byte が届く間は progress を送り、main 側の停止監視 (LOAD_STALL_MS) を進める (Refs #779)
+    const opts: SarashinaFetchOptions = { allowNetwork, onHeartbeat: () => post({ type: 'progress' }) };
     ready = (async () => {
       const header = await fetchHeader(opts);
       const tj = JSON.parse(new TextDecoder().decode(await fetchVerified(`${SARASHINA_BASE_URL}/${header.tokenizer.file}`, header.tokenizer, opts))) as UnigramJson;

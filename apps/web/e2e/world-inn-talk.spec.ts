@@ -4,10 +4,13 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
-import { starterTownInterior, starterTownGates, starterTownNpcs, worldOverlay, setInteriors, setNpcs, encodeWorldMap, setMonsterOverrides, clearMonsters } from '@aozoraquest/core';
+import { starterTownInterior, starterTownGates, worldOverlay, setInteriors, setNpcs, encodeWorldMap, setMonsterOverrides, clearMonsters } from '@aozoraquest/core';
+import { starterTownNpcs } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { handleMove } from '../../edge/src/battle-resolver';
 import { handleInnRest } from '../../edge/src/inn-rest';
 import { XP_EPOCH, type GameState } from '../../edge/src/game-state';
+import { readFileSync } from 'node:fs';
+const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 
 // 宿屋 (#766): 扉に入るだけでは泊まらず、会話で「はい」と答えたときだけ edge が泊める。
 const DID = 'did:plc:tutorial';
@@ -69,6 +72,8 @@ test('宿屋の扉: いいえ なら課金しない、はい で パワー -3 �
   const records: Record<string, unknown> = {
     'app.aozoraquest.dev.world.monsters': { monsters: TEST_MONSTERS },
     'app.aozoraquest.dev.world.npcs': { npcs },
+    // 会話の文はデータだけが正 (D-DIALOGUE-006)。付録Aと同じ fixture。
+    'app.aozoraquest.dev.world.dialogue': DIALOGUE_FIXTURE,
     'app.aozoraquest.dev.world.interiors': { interiors: [{ ...village, tiles: undefined, gz: Buffer.from(await encodeWorldMap(village.tiles)).toString('base64') }], gates },
     'app.aozoraquest.test.analysis': diag,
     'app.aozoraquest.test.world': { x: town.x, y: town.y, gotStarterFeather: true, regions: [town.region], visitedTowns: [], hp: 3, mp: 1 },
@@ -114,12 +119,12 @@ test('宿屋の扉: いいえ なら課金しない、はい で パワー -3 �
     // 1 回目: 扉に入る → 確認 → いいえ。入っただけでは引かれない。
     await page.keyboard.press('ArrowUp');
     const pane = page.locator('.aq-dialogue-pane').last();
-    await expect(pane).toContainText('ひとばん 3 パワー です。とまって いきますか？');
+    await expect(pane).toContainText('一晩3パワーです。泊まっていきますか？');
     await expect(page.getByLabel('ふたばの宿のセリフ')).toBeVisible(); // 話者は inn.name
     await expect(page.getByRole('button', { name: 'いいえ', exact: true })).toBeVisible();
     await page.screenshot({ path: `${process.env.INN_SHOTS ?? 'test-results'}/inn-390.png` });
     await page.getByRole('button', { name: 'いいえ', exact: true }).click();
-    await expect(pane).toContainText('また どうぞ。');
+    await expect(pane).toContainText('またどうぞ。');
     await pane.click();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     expect(rests).toBe(0);
@@ -131,15 +136,15 @@ test('宿屋の扉: いいえ なら課金しない、はい で パワー -3 �
     await page.keyboard.press('ArrowDown');
     await stepped; // 往復中に押した次の一歩は捨てられる (#762) ので、応答を待ってから入り直す。
     await page.keyboard.press('ArrowUp');
-    await expect(pane).toContainText('とまって いきますか？');
+    await expect(pane).toContainText('泊まっていきますか？');
     await page.getByRole('button', { name: 'はい', exact: true }).click();
-    await expect(pane).toContainText('ふたばの宿に とまった (パワー -3)。すっかり 元気に なった!');
+    await expect(pane).toContainText('ふたばの宿に泊まった (パワー -3)。すっかり元気になった!');
     expect(rests).toBe(1);
     expect(state.power).toBe(7);
     expect(state.carryHp).toBeUndefined();
     expect(state.carryMp).toBeUndefined();
     await pane.click();
-    await expect(pane).toContainText('ゆっくり やすめたかい？ また どうぞ。');
+    await expect(pane).toContainText('ゆっくり休めたかい？　またどうぞ。');
     await pane.click();
     await expect(page.locator('.aq-dialogue-backdrop')).toHaveCount(0);
     expect(errors).toEqual([]);

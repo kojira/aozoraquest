@@ -8,11 +8,6 @@ import {
   ITEMS,
   MONSTERS,
   QuestDataError,
-  validateGameQuests,
-  starterTownQuests,
-  starterTownNpcsPlacementError,
-  interiorById,
-  STARTER_TOWN_ID,
   type GameQuestDef,
   type QuestObjective,
 } from '@aozoraquest/core';
@@ -56,21 +51,6 @@ export function AdminQuests() {
     return () => { cancelled = true; };
   }, [session.agent]);
 
-  const insertStarter = () => {
-    if (!loaded) return;
-    const placement = starterTownNpcsPlacementError(interiorById(STARTER_TOWN_ID));
-    if (placement) { setNote(placement); return; }
-    const additions = starterTownQuests();
-    if (additions.some((q) => !allNpcs().some((n) => n.id === q.npcId && n.mapId === STARTER_TOWN_ID))) {
-      setNote('先に「ふたばの村の村人」を NPC 画面で保存してね。'); return;
-    }
-    const next = [...list.filter((q) => !additions.some((a) => a.id === q.id)), ...additions];
-    try { validateGameQuests(next); } catch (e) { setNote(String(e)); return; }
-    if (!window.confirm('同じ ID の依頼を置き換え、ふたばの村の4依頼を入れる？ 保存するまでは反映されません。')) return;
-    setList(next); setSel(additions[0]!.id); setDirty(true);
-    setNote('4依頼を入れた。保存してから、シナリオ画面で「ふたばの村のシナリオを入れる」。');
-  };
-
   const npcs = useMemo(() => allNpcs(), [loaded]);
   const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), [loaded]);
   const items = useMemo(() => Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name })), [loaded]);
@@ -86,9 +66,9 @@ export function AdminQuests() {
     while (list.some((q) => q.id === `quest-${i}`)) i++;
     const q: GameQuestDef = {
       id: `quest-${i}`,
-      title: 'あたらしい たのまれごと',
+      title: '新しい頼まれごと',
       npcId: npcs[0]?.id ?? '',
-      intro: ['たのみが あるんだ。'],
+      intro: ['頼みがあるんだ。'],
       done: ['ありがとう!'],
       objective: { kind: 'defeat', monsterId: monsters[0]?.id ?? '', count: 3 },
       reward: { power: 5 },
@@ -184,7 +164,6 @@ export function AdminQuests() {
         <strong>クエスト</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件</span>
         <button type="button" onClick={add} disabled={npcs.length === 0} style={{ fontSize: '0.85em' }}>＋クエスト</button>
-        <button type="button" onClick={insertStarter} disabled={!loaded}>ふたばの村のクエストを入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
@@ -259,13 +238,13 @@ export function AdminQuests() {
                         ? { kind, monsterId: monsters[0]?.id ?? '', count }
                         : kind === 'collect'
                           ? { kind, itemId: items[0]?.id ?? '', count }
-                          : { kind, npcId: npcs[0]?.id ?? '', line: 'おお、よく きたね。' },
+                          : { kind, npcId: npcs[0]?.id ?? '', line: 'おお、よく来たね。' },
                     });
                   }}
                 >
                   <option value="defeat">たおす</option>
                   <option value="collect">あつめる (素材を渡す)</option>
-                  <option value="talk">はなしを きく (相手の隣で話しかける)</option>
+                  <option value="talk">はなしをきく (相手の隣で話しかける)</option>
                 </select>
                 {current.objective.kind === 'talk' ? (
                   <>

@@ -165,7 +165,7 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
           keepCraftLog('craft', e);
           // 品もパワーも既にサーバー側で確定しているので、失敗として赤字で出さない (#642)。
           // 欠けたのは履歴だけで、それは保留してあとで書き直す。
-          setShopNotice('記録はあとで残す (品は もちものに入っている)。');
+          setShopNotice('記録はあとで残す (品はもちものに入っている)。');
           return { rkey, itemId: def.id, level: res.level ?? 0, at: new Date().toISOString() };
         });
         pendingCraftRef.current = null;

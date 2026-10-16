@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dev の管理レコード monsters / monsterArt を本番へ昇格する one-shot (D-MONSTER-001)。Node 標準のみ。
+// dev の管理レコード monsters / monsterArt / dialogue を本番へ昇格する one-shot (D-MONSTER-001, D-DIALOGUE-006)。Node 標準のみ。
 // **本番への書き込み手段。実行 (--execute) にはユーザーの承認が要る。**
 // 既定は dry-run (差分の要約だけ)。--execute と BLUESKY_ADMIN_IDENTIFIER / BLUESKY_ADMIN_APP_PASSWORD が
 // 揃ったときだけ書く。既存の本番値は --backup-dir (必須) に退避し、CAS (swapRecord) で書く。
@@ -11,12 +11,12 @@ export const ADMIN_DID = process.env.ADMIN_DID ?? 'did:plc:47skrewud2vjha6o57wzz
 const ROOT = 'app.aozoraquest';
 const RKEY = 'self';
 /** 昇格してよいレコードだけ (汎用の昇格ツールにしない)。 */
-export const PROMOTE_NAMES = ['monsters', 'monsterArt'];
+export const PROMOTE_NAMES = ['monsters', 'monsterArt', 'dialogue'];
 
 export const devCollection = (name) => `${ROOT}.dev.world.${name}`;
 export const prodCollection = (name) => `${ROOT}.world.${name}`;
 
-/** 書き先は必ず app.aozoraquest.world.(monsters|monsterArt)。 */
+/** 書き先は必ず app.aozoraquest.world.(monsters|monsterArt|dialogue)。 */
 export function assertProdTarget(collection) {
   if (!PROMOTE_NAMES.some((n) => collection === prodCollection(n))) throw new Error(`書き先が許可されていない: ${collection}`);
 }
@@ -48,7 +48,7 @@ export function planFor(name, dev, prod) {
   if (!dev) throw new Error(`dev に ${name} が無い`);
   const collection = prodCollection(name);
   assertProdTarget(collection);
-  const listKey = name === 'monsters' ? 'monsters' : 'arts';
+  const listKey = { monsters: 'monsters', monsterArt: 'arts', dialogue: 'scenes' }[name];
   return {
     name, collection,
     swapRecord: prod?.cid ?? null,

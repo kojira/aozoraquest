@@ -2,7 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
-import { BASE_PARTS, encodeTileArt, encodeWorldMap, emptyTileArt, starterTownInterior, starterTownGates, starterTownNpcs, worldOverlay, type NpcDef } from '@aozoraquest/core';
+import { BASE_PARTS, encodeTileArt, encodeWorldMap, emptyTileArt, starterTownInterior, starterTownGates, worldOverlay, type NpcDef } from '@aozoraquest/core';
+import { starterTownNpcs } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4271/e2e/fixtures/admin-npc-placement.html';

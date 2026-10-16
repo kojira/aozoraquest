@@ -287,7 +287,10 @@ export function Workspace() {
           </Fragment>
         ))}
 
-        {pickerAnchor === 'end' ? (
+        {/* 末尾タイルはカラム読込後に出す。先に単独で描画すると、モバイルの scroll-snap が
+            その後先頭側へ挿入されたカラム越しに末尾タイルへ再スナップし、ログイン直後に
+            空の「＋ カラムを追加」が表示されてしまう (Android)。 */}
+        {columns === null ? null : pickerAnchor === 'end' ? (
           picker
         ) : (
           <section className="workspace-column workspace-column-add">
