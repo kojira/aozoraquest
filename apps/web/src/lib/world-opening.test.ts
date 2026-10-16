@@ -1,6 +1,7 @@
 /** 冒頭の場面の組み立て (D-DIALOGUE-006)。順番・差し込み・話者・場面が無いとき。 */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setDialogue, setNpcs, starterTownNpcs, type DialogueData, type NpcDef } from '@aozoraquest/core';
+import { setDialogue, setNpcs, type DialogueData, type NpcDef } from '@aozoraquest/core';
+import { starterTownNpcs } from '@aozoraquest/core/src/__tests__/helpers/starter-town-fixture';
 import dialogueFixture from '@aozoraquest/core/src/__tests__/fixtures/dialogue.json';
 import { handoffAvailable, openingAvailable, openingLines, OPENING_GUIDE_LINES, starterHandoffLines } from './world-opening';
 import { sceneDialogue } from './scene-dialogue';

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   danglingRefs, describeDanglingRef, npcArtKey, NpcDataError,
-  starterTownNpcs, starterTownNpcsPlacementError, STARTER_TOWN_ID,
   NPC_SPRITE_PRESETS, tileArtFor, WORLD_MAP_ID, type NpcDef, type NpcImage, type NpcImageKind,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -164,30 +163,6 @@ export function AdminNpcs() {
     setSel(npc.id); setMapChoice(WORLD_MAP_ID); setDrawing(false);
   }, [list, world, syncDrawing]);
 
-  /**
-   * **同梱の村人を入れる** (#656)。admin-interiors の「はじまりの村を入れる」と同じ流儀:
-   * id が同じ村人は置き換え、他の NPC は残す。反映は「保存」(自動保存しない)。
-   * 村が無い / 旧版 (大きさが違う) なら入れさせない — 判定は core (`starterTownNpcsPlacementError`)
-   * が 1 か所で持つ。旧版に入れると保存は通るのに村人が壁の中に立つ。
-   */
-  const insertVillagers = useCallback(() => {
-    const village = world?.interiors.find((m) => m.id === STARTER_TOWN_ID);
-    const blocked = starterTownNpcsPlacementError(village);
-    if (blocked || !village) {
-      setNote(blocked);
-      return;
-    }
-    const villagers = starterTownNpcs();
-    const ids = new Set(villagers.map((n) => n.id));
-    const existing = list.some((n) => ids.has(n.id));
-    if (existing && !window.confirm(`「${village.name}」の村人を最新の同梱版で置き換える？\nこの村人たちに加えた編集は消える`)) return;
-    syncDrawing();
-    for (const n of villagers) if (!snapshot.some((old) => old.id === n.id)) additions.current.set(n.id, structuredClone(n));
-    setList((xs) => [...xs.filter((n) => !ids.has(n.id)), ...villagers]);
-    setSel(villagers[0]?.id ?? null); setMapChoice(STARTER_TOWN_ID); setDrawing(false);
-    setNote(`「${village.name}」の村人 ${villagers.length} 人を${existing ? '入れ直した' : '入れた'}。保存すると村に立つ`);
-  }, [list, world, snapshot, syncDrawing]);
-
   const save = useCallback(async () => {
     if (!session.agent || !world || !loaded || saving || imageBusy) return;
     if (current && mapChoice !== npcMapId(current)) { setNote('移動先を選ぶか、移動先選びをやめてから保存してください'); return; }
@@ -256,7 +231,6 @@ export function AdminNpcs() {
         <strong>NPC</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 人</span>
         <button type="button" onClick={add} style={{ fontSize: '0.85em' }}>＋NPC</button>
-        <button type="button" onClick={insertVillagers} style={{ fontSize: '0.85em' }}>ふたばの村の村人を入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           {saving ? '保存中…' : '保存'}
         </button>

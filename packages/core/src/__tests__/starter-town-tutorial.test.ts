@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  STARTER_TOWN_GUILD, starterTownQuests, starterTownScenario, starterTownNpcs, starterTownShop,
+  STARTER_TOWN_GUILD, starterTownShop,
   setNpcs, setGameQuests, setScenario, setShopOverrides, gameQuests, scenarioEvents,
-  validateGameQuests, validateScenario, pendingScenario, SAMPLE_SCENARIO,
+  validateGameQuests, validateScenario, pendingScenario,
   townShopStock, worldOverlay, EQUIPMENT_BY_ID, JOBS, canEquip, npcLinesFor,
 } from '../index.js';
+import { starterTownNpcs, starterTownQuests, starterTownScenario, sampleScenario } from './helpers/starter-town-fixture.js';
 
 afterEach(() => { setScenario(null); setGameQuests(null); setNpcs(null); setShopOverrides(null); });
 
@@ -15,7 +16,7 @@ describe('ふたばの村の導入データ', () => {
     validateGameQuests(quests);
     expect(gameQuests()).toEqual([]);
     setGameQuests(quests);
-    const events = [...SAMPLE_SCENARIO, ...starterTownScenario()];
+    const events = [...sampleScenario(), ...starterTownScenario()];
     validateScenario(events);
     expect(scenarioEvents()).toEqual([]);
     setScenario(starterTownScenario());

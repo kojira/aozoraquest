@@ -5,9 +5,10 @@ import path from 'node:path';
 import { tutorialEnv } from '../../edge/test/support/tutorial-env';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import {
-  starterTownInterior, starterTownGates, starterTownNpcs, starterTownQuests, starterTownScenario, starterTownShop,
+  starterTownInterior, starterTownGates, starterTownShop,
   worldOverlay, townShopStock, setInteriors, setNpcs, setGameQuests, setScenario, setShopOverrides, encodeWorldMap, setMonsterOverrides, clearMonsters,
 } from '@aozoraquest/core';
+import { starterTownNpcs, starterTownQuests, starterTownScenario } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { handleQuestAccept, handleQuestComplete } from '../../edge/src/game-quest';
 import { handleMove, handleGear } from '../../edge/src/battle-resolver';
 import { applyBattleOutcome } from '../../edge/src/battle-reward';

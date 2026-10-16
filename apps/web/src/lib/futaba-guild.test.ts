@@ -1,6 +1,7 @@
 /** ギルドの受付は NPC データ (guildReception) で決まる (Refs #718)。 */
 import { afterEach, describe, expect, it } from 'vitest';
-import { setInteriors, worldOverlay, starterTownInterior, starterTownNpcs, STARTER_TOWN_GUILD, validateNpcs, type NpcDef } from '@aozoraquest/core';
+import { setInteriors, worldOverlay, starterTownInterior, STARTER_TOWN_GUILD, validateNpcs, type NpcDef } from '@aozoraquest/core';
+import { starterTownNpcs } from '@aozoraquest/core/src/__tests__/helpers/starter-town-fixture';
 import { isFutabaGuild } from './futaba-guild';
 
 const town = worldOverlay().spawn;

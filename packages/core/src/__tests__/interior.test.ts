@@ -35,12 +35,10 @@ import { allNpcs, npcAt, npcsOn, setNpcs, MAX_NPC_LINE, NpcDataError } from '../
 import {
   starterTownInterior,
   starterTownGates,
-  starterTownNpcs,
-  starterTownNpcsPlacementError,
   STARTER_TOWN_ENTRANCE,
   STARTER_TOWN_ID,
-  STARTER_TOWN_SIZE,
 } from '../interior-samples.js';
+import { starterTownNpcs } from './helpers/starter-town-fixture.js';
 
 const FLOOR = BASE_PALETTE.indexOf('plains');
 const WALL = BASE_PALETTE.indexOf('mountain');
@@ -513,12 +511,5 @@ describe('同梱の村人 (#656)', () => {
     expect(seen.has(village.inn!.y * village.size + village.inn!.x), '宿屋').toBe(true);
     expect(seen.has(village.shop!.y * village.size + village.shop!.x), '店').toBe(true);
     expect(seen.size).toBeGreaterThan(700);
-  });
-
-  it('村が無い / 旧版 (大きさが違う) の村には入れさせない (壁の中に立つ)', () => {
-    expect(starterTownNpcsPlacementError(undefined)).toMatch(/まだ無い/);
-    expect(starterTownNpcsPlacementError({ size: 64 })).toMatch(/旧版/);
-    expect(starterTownNpcsPlacementError({ size: STARTER_TOWN_SIZE })).toBeNull();
-    expect(starterTownNpcsPlacementError(village)).toBeNull();
   });
 });

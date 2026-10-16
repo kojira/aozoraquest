@@ -8,11 +8,6 @@ import {
   ITEMS,
   MONSTERS,
   QuestDataError,
-  validateGameQuests,
-  starterTownQuests,
-  starterTownNpcsPlacementError,
-  interiorById,
-  STARTER_TOWN_ID,
   type GameQuestDef,
   type QuestObjective,
 } from '@aozoraquest/core';
@@ -55,21 +50,6 @@ export function AdminQuests() {
     })().catch(() => { if (!cancelled) setNote('保存済みデータを読み込めなかった。画面を開き直してね。'); });
     return () => { cancelled = true; };
   }, [session.agent]);
-
-  const insertStarter = () => {
-    if (!loaded) return;
-    const placement = starterTownNpcsPlacementError(interiorById(STARTER_TOWN_ID));
-    if (placement) { setNote(placement); return; }
-    const additions = starterTownQuests();
-    if (additions.some((q) => !allNpcs().some((n) => n.id === q.npcId && n.mapId === STARTER_TOWN_ID))) {
-      setNote('先に「ふたばの村の村人」を NPC 画面で保存してね。'); return;
-    }
-    const next = [...list.filter((q) => !additions.some((a) => a.id === q.id)), ...additions];
-    try { validateGameQuests(next); } catch (e) { setNote(String(e)); return; }
-    if (!window.confirm('同じ ID の依頼を置き換え、ふたばの村の4依頼を入れる？ 保存するまでは反映されません。')) return;
-    setList(next); setSel(additions[0]!.id); setDirty(true);
-    setNote('4依頼を入れた。保存してから、シナリオ画面で「ふたばの村のシナリオを入れる」。');
-  };
 
   const npcs = useMemo(() => allNpcs(), [loaded]);
   const monsters = useMemo(() => [...MONSTERS].sort((a, b) => a.tier - b.tier), [loaded]);
@@ -184,7 +164,6 @@ export function AdminQuests() {
         <strong>クエスト</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件</span>
         <button type="button" onClick={add} disabled={npcs.length === 0} style={{ fontSize: '0.85em' }}>＋クエスト</button>
-        <button type="button" onClick={insertStarter} disabled={!loaded}>ふたばの村のクエストを入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || !loaded} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>
