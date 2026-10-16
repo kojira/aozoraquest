@@ -75,8 +75,34 @@ export class SarashinaNotCachedError extends Error {
   }
 }
 
-/** allowNetwork: false なら Cache API だけを読み、無ければ取得せず SarashinaNotCachedError。ネットワークから取るのは導入 (召喚の儀式) だけ。 */
-export interface SarashinaFetchOptions { allowNetwork: boolean }
+/**
+ * allowNetwork: false なら Cache API だけを読み、無ければ取得せず SarashinaNotCachedError。ネットワークから取るのは導入 (召喚の儀式) だけ。
+ * onHeartbeat: ダウンロード中に byte が届いている間、最大 HEARTBEAT_MS に 1 回呼ぶ (低速回線で 32MB の part を待つ間も停止監視を進める。Refs #779)。
+ */
+export interface SarashinaFetchOptions { allowNetwork: boolean; onHeartbeat?: () => void }
+
+const HEARTBEAT_MS = 1000;
+
+/** res.body を chunk ごとに読み、byte が届くたびに (間引いて) onHeartbeat を呼ぶ。bytes を超えたら打ち切る。 */
+async function readBody(res: Response, bytes: number, file: string, onHeartbeat?: () => void): Promise<ArrayBuffer> {
+  if (!res.body) return res.arrayBuffer();
+  const out = new Uint8Array(bytes);
+  const reader = res.body.getReader();
+  let n = 0;
+  let last = Date.now();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (n + value.byteLength > bytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error(`sarashina file mismatch (${file})`);
+    }
+    out.set(value, n);
+    n += value.byteLength;
+    if (onHeartbeat && Date.now() - last >= HEARTBEAT_MS) { last = Date.now(); onHeartbeat(); }
+  }
+  return n === bytes ? out.buffer : out.buffer.slice(0, n);
+}
 
 /** url のファイルをキャッシュ優先で読み、sha256 が合わなければ throw する (壊れたキャッシュは消す)。 */
 export async function fetchVerified(url: string, entry: { bytes: number; sha256: string }, opts: SarashinaFetchOptions): Promise<ArrayBuffer> {
@@ -90,7 +116,7 @@ export async function fetchVerified(url: string, entry: { bytes: number; sha256:
   if (!opts.allowNetwork) throw new SarashinaNotCachedError(url.split('/').pop() ?? url);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`sarashina fetch failed: HTTP ${res.status} (${url.split('/').pop()})`);
-  const buf = await res.arrayBuffer();
+  const buf = await readBody(res, entry.bytes, url.split('/').pop() ?? url, opts.onHeartbeat);
   if (buf.byteLength !== entry.bytes || await sha256Hex(buf) !== entry.sha256) {
     throw new Error(`sarashina file mismatch (${url.split('/').pop()})`);
   }
