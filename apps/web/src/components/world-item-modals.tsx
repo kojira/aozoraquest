@@ -93,15 +93,15 @@ export function ItemsModal({
   return (
     <ModalShell title="どうぐ" onClose={onClose}>
       {herbStock <= 0 && tonicStock <= 0 && featherStock <= 0 ? (
-        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>どうぐを もっていない。モンスターを たおすと 手に入る。</p>
+        <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>どうぐを持っていない。モンスターを倒すと手に入る。</p>
       ) : (
         <>
-          {row('やくそう', herbStock, 'HP を かいふく', herbStock <= 0 || !canUse, onUseHerb, false)}
-          {row('そらのしずく', tonicStock, 'MP を かいふく', tonicStock <= 0 || !canUse, onUseTonic, false)}
-          {row('そらのはね', featherStock, '行った街へ とぶ', featherStock <= 0, onUseFeather, true)}
+          {row('やくそう', herbStock, 'HPを回復', herbStock <= 0 || !canUse, onUseHerb, false)}
+          {row('そらのしずく', tonicStock, 'MPを回復', tonicStock <= 0 || !canUse, onUseTonic, false)}
+          {row('そらのはね', featherStock, '行った街へ飛ぶ', featherStock <= 0, onUseFeather, true)}
           {featherStock <= 0 && (
             <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
-              そらのはねは たたかいで まれに 手に入る。
+              そらのはねは戦いでまれに手に入る。
             </p>
           )}
           <p aria-live="polite" style={{ fontSize: '0.82em', minHeight: '1.4em', margin: '0.4em 0 0', color: 'var(--color-fg)' }}>
@@ -128,7 +128,7 @@ export function InventoryModal({
     <ModalShell title="もちもの" onClose={onClose}>
       <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0 0 2px' }}>そざい</div>
       {mats.length === 0 ? (
-        <p style={{ fontSize: '0.82em', color: 'var(--color-muted)' }}>そざいは まだ ない。</p>
+        <p style={{ fontSize: '0.82em', color: 'var(--color-muted)' }}>素材はまだない。</p>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3em 0.8em', fontSize: '0.85em', marginBottom: '0.6em' }}>
           {mats.map(([id, n]) => (
@@ -138,9 +138,9 @@ export function InventoryModal({
           ))}
         </div>
       )}
-      <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 2px' }}>つくった そうび</div>
+      <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 2px' }}>作った装備</div>
       {sortedPieces.length === 0 ? (
-        <p style={{ fontSize: '0.82em', color: 'var(--color-muted)' }}>まだ ない。なんでも屋で つくってもらおう。</p>
+        <p style={{ fontSize: '0.82em', color: 'var(--color-muted)' }}>まだない。なんでも屋で作ってもらおう。</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: '0.85em' }}>
           {sortedPieces.map((p) => {

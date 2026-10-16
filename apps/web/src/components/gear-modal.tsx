@@ -130,7 +130,7 @@ export function GearModal({
                       <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-danger)' }}>
                         {/* 失効理由を正しく言う — 手数で外れた盾に「ジョブでは効果なし」と
                             出すとジョブが原因だと誤診させる (レビュー ★★★) */}
-                        {handsBlocked ? '(りょうてが ふさがっていて 効果なし)' : '(いまのジョブでは効果なし)'}
+                        {handsBlocked ? '(両手がふさがっていて効果なし)' : '(いまのジョブでは効果なし)'}
                       </span>
                     )}
                   </span>
@@ -142,7 +142,7 @@ export function GearModal({
                 </div>
                 {handsBlocked && !equipped && (
                   <div style={{ color: 'var(--color-muted)', fontSize: '0.85em', marginBottom: 4 }}>
-                    りょうてが ふさがっている (たてを そうびすると ぶきが はずれる)
+                    両手がふさがっている (盾を装備すると武器が外れる)
                   </div>
                 )}
                 {candidates.length === 0 ? (

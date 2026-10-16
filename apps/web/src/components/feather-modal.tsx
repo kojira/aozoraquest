@@ -53,10 +53,10 @@ export function FeatherModal({
           </button>
         </div>
         {dests.length > 0 && (
-          <p style={{ margin: '0 0 0.5em', fontSize: '0.78em', color: 'var(--color-muted)' }}>行ったことのある街へ もどれる。</p>
+          <p style={{ margin: '0 0 0.5em', fontSize: '0.78em', color: 'var(--color-muted)' }}>行ったことのある街へ戻れる。</p>
         )}
         {dests.length === 0 ? (
-          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ 行き先がない。街を おとずれると えらべるよ。</p>
+          <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>まだ行き先がない。街を訪れると選べるよ。</p>
         ) : (
           <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {dests.map((d) => (

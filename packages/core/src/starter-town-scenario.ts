@@ -41,7 +41,7 @@ export function starterTownScenario(): ScenarioEvent[] {
     "setFlags": [
       "futaba_wings_done"
     ],
-    "notice": "そらが いっしゅん、あかく ひかった。とおくの 空を、くろい ひかりの すじが つきぬけた。",
+    "notice": "空が一瞬、赤く光った。遠くの空を、黒い光の筋が突き抜けた。",
     "effects": [
       {
         "kind": "tint",

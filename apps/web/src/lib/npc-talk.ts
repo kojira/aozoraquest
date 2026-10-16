@@ -19,7 +19,7 @@ export interface NpcTalk {
 }
 
 /** ギルド受付のメニュー段。 */
-export const guildReception = (npc: NpcDef) => ({ npc, guild: 'menu' as const, lines: ['冒険者ギルドへ ようこそ。どうする？'] });
+export const guildReception = (npc: NpcDef) => ({ npc, guild: 'menu' as const, lines: ['冒険者ギルドへようこそ。どうする？'] });
 
 /** その NPC から いま話題にできる依頼。受注中は常に、達成済みは includeDone のときだけ、
  *  未受注は進行フラグと持ち物の条件を満たすものだけ。 */

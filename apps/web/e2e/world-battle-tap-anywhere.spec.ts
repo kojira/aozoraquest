@@ -77,7 +77,7 @@ test('戦闘 message: 黒い領域タップで 1 行ずつ進み、ダメージ�
   await expect(map).toBeVisible();
   await page.keyboard.press('ArrowUp');
   const msg = page.locator('.dq-message');
-  await expect(msg).toContainText('テストスライムが あらわれた');
+  await expect(msg).toContainText('テストスライムがあらわれた');
   const m = (await map.boundingBox())!, foot = (await page.locator('.footer-nav').boundingBox())!;
   const black = { x: m.x + m.width / 2, y: (m.y + m.height + foot.y) / 2 };
   await page.touchscreen.tap(black.x, black.y);

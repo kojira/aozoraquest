@@ -472,7 +472,7 @@ describe('遊び人 確定キット (#456)', () => {
     s.player.mp = 6;
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
     expect(next.player.mp).toBeGreaterThan(6 - 4); // 消費4を上回って回復
-    expect(next.lastEvents.some((e) => e.text.includes('MP が'))).toBe(true);
+    expect(next.lastEvents.some((e) => e.text.includes('MPが'))).toBe(true);
   });
 
   it('いちかばちかは反動で自分もダメージを受ける (recoil、HP1未満にはしない)', () => {

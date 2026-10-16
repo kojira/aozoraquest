@@ -59,18 +59,18 @@ export function WorldResetAdmin({ agent, did }: { agent: Agent; did: string }) {
         残高は残る)。リセット後、精霊ブルスコンの画面から冒険すると新規と同じ導入を辿れる。
       </p>
       <button onClick={onReset} disabled={busy}>
-        {busy ? 'リセット中…' : '⟲ あおぞらワールドを はじめから'}
+        {busy ? 'リセット中…' : '⟲ あおぞらワールドをはじめから'}
       </button>
       {/* 重い I/O (最大 30s) 中は「固まった?」に見えないよう明滅で処理継続を示す。 */}
       {busy && (
         <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
           <style>{'@keyframes reset-pulse{0%,100%{opacity:0.4}50%{opacity:1}}'}</style>
-          <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ もどしています…</span>
+          <span style={{ animation: 'reset-pulse 1.4s ease-in-out infinite' }}>はじめの地へ戻しています…</span>
         </p>
       )}
       {done && !busy && (
         <p aria-live="polite" style={{ fontSize: '0.8em', color: 'var(--color-accent)', marginTop: '0.4em' }}>
-          はじめの地へ もどりました。精霊ブルスコンから 冒険できます。
+          はじめの地へ戻りました。精霊ブルスコンから冒険できます。
         </p>
       )}
       {err && <p style={{ fontSize: '0.8em', color: 'var(--color-danger, crimson)', marginTop: '0.4em' }}>{err}</p>}

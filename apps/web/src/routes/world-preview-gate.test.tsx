@@ -26,7 +26,7 @@ describe('World のプレビューゲート', () => {
         </SessionContext.Provider>
       </MemoryRouter>,
     );
-    expect(screen.getByText('じゅんびちゅう… もうすこし待っててね。')).toBeTruthy();
+    expect(screen.getByText('準備中…もう少し待っててね。')).toBeTruthy();
     expect(useWorldLoad).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });

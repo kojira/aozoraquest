@@ -85,7 +85,7 @@ export function World() {
     return (
       <div>
         <h2>あおぞらワールド</h2>
-        <p style={{ color: 'var(--color-muted)' }}>じゅんびちゅう… もうすこし待っててね。</p>
+        <p style={{ color: 'var(--color-muted)' }}>準備中…もう少し待っててね。</p>
         <Link to="/spirit">← ブルスコンのところへ戻る</Link>
       </div>
     );
@@ -361,7 +361,7 @@ function WorldScreen() {
   const wipeOverlay = wipe ? (
     <EncounterWipe
       phase={wipe}
-      holdMessage="モンスターが あらわれようとしている…"
+      holdMessage="モンスターが現れようとしている…"
       onCoverDone={onCoverDone}
       onRevealDone={onRevealDone}
       onHoldTimeout={onHoldTimeout}
@@ -627,8 +627,8 @@ function WorldScreen() {
           {diag && (serverPower === null || serverPower < BATTLE_TUNING.powerCost) && (
             <p style={{ textAlign: 'center', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
               {serverPower === null
-                ? 'パワー残高を 読み込めませんでした (通信を確認して 開き直して)'
-                : 'パワーが ないので、勝っても 経験値・素材・依頼の進みは もらえません'}
+                ? 'パワー残高を読み込めませんでした (通信を確認して開き直して)'
+                : 'パワーがないので、勝っても経験値・素材・依頼の進みはもらえません'}
             </p>
           )}
         </>

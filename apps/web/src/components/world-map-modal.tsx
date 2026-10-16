@@ -278,14 +278,14 @@ export function WorldMapModal({
         <p style={{ margin: '0.5em 0 0', fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.6 }}>
           <span style={{ color: '#e8566a' }}>●</span> いまここ ({x}, {y}) /{' '}
           <span style={{ color: TOWN_DOT, textShadow: '0 0 1px rgba(0,0,0,0.7)' }}>●</span> 街 ({towns.length}) /{' '}
-          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。くらいところは まだ ちずが ない (街に入ると ひろがる)。
-          ちずのかけら: {regions.length}/{REGION_COUNT} ちほう。
+          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。暗いところはまだ地図がない (街に入ると広がる)。
+          ちずのかけら: {regions.length}/{REGION_COUNT}ちほう。
           {picked ? (
             <strong style={{ color: 'var(--color-fg)', marginLeft: '0.4em' }}>🏘 {picked.name}</strong>
           ) : pickMiss === 'fog' ? (
-            <span style={{ marginLeft: '0.4em' }}>まだ ちずに ない ばしょだ。</span>
+            <span style={{ marginLeft: '0.4em' }}>まだ地図にない場所だ。</span>
           ) : pickMiss === 'no-town' ? (
-            <span style={{ marginLeft: '0.4em' }}>ちかくに 街は ない。</span>
+            <span style={{ marginLeft: '0.4em' }}>近くに街はない。</span>
           ) : (
             <span style={{ marginLeft: '0.4em' }}>はじまりの街: {overlay.spawn.name}</span>
           )}

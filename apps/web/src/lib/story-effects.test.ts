@@ -5,7 +5,7 @@ import type { DialogueLine } from './dialogue';
 const LINES: DialogueLine[] = [
   { text: '……ここは、どこ？', effects: [{ kind: 'fade', to: 'black' }] },
   { text: 'シルエット', effects: [{ kind: 'silhouette', show: true }] },
-  { speaker: '？？？', text: 'やっと とどいた。' },
+  { speaker: '？？？', text: 'やっと届いた。' },
   { speaker: 'Blueskyちゃん', text: '……きこえる？', effects: [{ kind: 'fade', to: 'clear' }, { kind: 'silhouette', show: false }, { kind: 'flash', color: 'white' }] },
 ];
 

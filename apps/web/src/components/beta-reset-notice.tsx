@@ -26,12 +26,12 @@ export function BetaResetNotice({ hadLegacyLevel }: { hadLegacyLevel: boolean })
   return (
     <div className="dq-window" style={{ padding: '0.7em 0.9em', fontSize: '0.85em', lineHeight: 1.6 }}>
       <p style={{ margin: 0 }}>
-        けいけんちの きろくを あらためた。
+        経験値の記録を改めた。
         <br />
-        ぼうけんしゃたちの レベルは <strong>1 に もどっている</strong>。
+        冒険者たちのレベルは<strong>1に戻っている</strong>。
       </p>
       <p style={{ margin: '0.4em 0 0', color: 'var(--color-muted)', fontSize: '0.92em' }}>
-        これまでの あゆみは じぶんのページに きざまれている。
+        これまでの歩みは自分のページに刻まれている。
       </p>
       <div style={{ textAlign: 'right', marginTop: '0.5em' }}>
         <button onClick={close} style={{ fontSize: '0.9em' }}>わかった</button>

@@ -141,7 +141,7 @@ test('ギルドの会話送りで背景が明滅せず、会話イラストが�
     writeFileSync(`${OUT}/portrait-requests.json`, JSON.stringify(portraitRequests));
     const from = frames.findIndex((f) => f.mark === 'steps'), to = frames.findIndex((f) => f.mark === 'end');
     const steps = frames.slice(from + 1, to).filter((f) => !f.mark);
-    for (const text of ['ここが 村の', '冒険者ギルドへ ようこそ。どうする', 'おにいちゃん']) expect(steps.some((f) => f.text?.startsWith(text))).toBe(true);
+    for (const text of ['ここが村の', '冒険者ギルドへようこそ。どうする', 'おにいちゃん']) expect(steps.some((f) => f.text?.startsWith(text))).toBe(true);
     const firstImg = steps[0]!.img;
     // Backdrop stays dimmed (no 0 → .5 re-animation) on every frame of the step changes.
     expect(steps.filter((f) => f.alpha === null || f.alpha! < 0.5).map((f) => `${f.t}:${f.alpha}:${f.text}`)).toEqual([]);

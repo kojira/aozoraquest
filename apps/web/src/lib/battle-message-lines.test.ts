@@ -19,31 +19,31 @@ function attackText(rng: () => number): string {
 describe('splitBattleLine', () => {
   it('こうげき と ダメージを 2 行に分ける', () => {
     const text = attackText(seq(0.99, 0.5, 0.99));
-    expect(splitBattleLine(text)).toEqual(['ゆうしゃのこうげき!', expect.stringMatching(/^スライムに \d+ のダメージ$/)]);
+    expect(splitBattleLine(text)).toEqual(['ゆうしゃのこうげき!', expect.stringMatching(/^スライムに\d+のダメージ$/)]);
   });
   it('会心「!!」は 2 行目の 頭に まとめて残す', () => {
     const text = attackText(seq(0.99, 0.5, 0));
     expect(text).toContain('会心の一撃!!');
-    expect(splitBattleLine(text)).toEqual(['ゆうしゃのこうげき!', expect.stringMatching(/^会心の一撃!! スライムに \d+ のダメージ/)]);
+    expect(splitBattleLine(text)).toEqual(['ゆうしゃのこうげき!', expect.stringMatching(/^会心の一撃!! スライムに\d+のダメージ/)]);
   });
   it('回避「しかし」', () => {
-    expect(splitBattleLine(attackText(seq(0)))).toEqual(['ゆうしゃのこうげき!', 'しかし スライムは身をかわした!']);
+    expect(splitBattleLine(attackText(seq(0)))).toEqual(['ゆうしゃのこうげき!', 'しかしスライムは身をかわした!']);
   });
   it('「の魔法!」', () => {
     const [a, d] = fighters();
     const events: TurnEvent[] = [];
     doMagic(a, d, seq(0.5), events, 'player', { amount: 7 });
-    expect(splitBattleLine(events[0]!.text)).toEqual(['ゆうしゃの魔法!', 'スライムに 7 のダメージ']);
+    expect(splitBattleLine(events[0]!.text)).toEqual(['ゆうしゃの魔法!', 'スライムに7のダメージ']);
   });
   it('毒「…! N のダメージ」', () => {
     const [a] = fighters();
     const events: TurnEvent[] = [];
     STATUS_REGISTRY.poison.turnEnd!(a, { rng: seq(), events, status: { id: 'poison', turns: 2, magnitude: 3 } });
-    expect(splitBattleLine(events[0]!.text)).toEqual(['ゆうしゃは毒のダメージ!', '3 のダメージ']);
+    expect(splitBattleLine(events[0]!.text)).toEqual(['ゆうしゃは毒のダメージ!', '3のダメージ']);
   });
   it('割れ目の無い文は 1 行のまま', () => {
-    expect(splitBattleLine('スライムには 効果がいまひとつのようだ…')).toEqual(['スライムには 効果がいまひとつのようだ…']);
-    expect(splitBattleLine('スライムが あらわれた！ ぷるぷる')).toEqual(['スライムが あらわれた！ ぷるぷる']);
+    expect(splitBattleLine('スライムには効果がいまひとつのようだ…')).toEqual(['スライムには効果がいまひとつのようだ…']);
+    expect(splitBattleLine('スライムがあらわれた！ぷるぷる')).toEqual(['スライムがあらわれた！ぷるぷる']);
   });
   it('battleMessageLines はイベント順に 平らに並べる', () => {
     expect(battleMessageLines(['Aのこうげき! Bに 1 のダメージ', 'Bは ねむっている…'])).toEqual(['Aのこうげき!', 'Bに 1 のダメージ', 'Bは ねむっている…']);

@@ -11,43 +11,43 @@ const STRANGER = '？？？';
  *  正体は伏せる (会話イラストを出さない)。救護 1 行目の白い閃光で地図へ戻る。 */
 export const PROLOGUE_LINES: readonly DialogueLine[] = [
   { text: '……ここは、どこ？', effects: [{ kind: 'fade', to: 'black' }, { kind: 'silhouette', show: true }] },
-  { speaker: STRANGER, text: 'やっと とどいた。きみの ことばが。' },
-  { speaker: STRANGER, text: 'むこうの 空は いま、いろを うしなっている。七羽の 鳥が、ねむってしまったから。' },
-  { speaker: STRANGER, text: 'ぼくには もう、とぶ ちからが のこっていない。' },
-  { speaker: STRANGER, text: 'だから、きみに ギフトを わたす。きみの ことばの かたちが、そのまま きみの ちからに なる。' },
-  { text: '【ギフト】ことばの ちから を さずかった！' },
+  { speaker: STRANGER, text: 'やっと届いた。きみの言葉が。' },
+  { speaker: STRANGER, text: '向こうの空は今、色を失っている。七羽の鳥が、眠ってしまったから。' },
+  { speaker: STRANGER, text: 'ぼくにはもう、飛ぶ力が残っていない。' },
+  { speaker: STRANGER, text: 'だから、きみにギフトを渡す。きみの言葉の形が、そのままきみの力になる。' },
+  { text: '【ギフト】ことばの ちからを授かった！' },
   { speaker: STRANGER, text: 'むこうで、きっと……いや、なんでもない。' },
   { speaker: STRANGER, text: '――空を、たのんだよ。' },
-  { speaker: STRANGER, text: '……あいつに、みつかる まえに。' },
+  { speaker: STRANGER, text: '……あいつに、見つかる前に。' },
 ];
 
 /** ふたばの救護導入。管理画像は通常会話、ここだけ合意済み表情を指定する。
  *  窓全体の portrait は渡さない (？？？行に Blueskyちゃんの絵が出ないよう、話者行ごとに指定)。 */
 export const ONBOARDING_LINES: readonly DialogueLine[] = [
-  { speaker: 'Blueskyちゃん', text: '……きこえる？ だいじょうぶ？', portrait: { src: futabaWorried, name: 'Blueskyちゃん' },
+  { speaker: 'Blueskyちゃん', text: '……聞こえる？大丈夫？', portrait: { src: futabaWorried, name: 'Blueskyちゃん' },
     effects: [{ kind: 'fade', to: 'clear' }, { kind: 'silhouette', show: false }, { kind: 'flash', color: 'white' }] },
-  { speaker: 'Blueskyちゃん', text: 'けがしてる……。まって、やくそうが あるから。', portrait: { src: futabaWorried, name: 'Blueskyちゃん' } },
-  { text: '少女は やくそうを とりだし、そっと きずの 手当てを してくれた。' },
-  { speaker: 'Blueskyちゃん', text: 'よかった……！ 気が ついたんだね。', portrait: ONBOARDING_PORTRAIT },
-  { speaker: 'Blueskyちゃん', text: '村の まえで たおれてたから、しんぱいしたよ。', portrait: ONBOARDING_PORTRAIT },
-  { speaker: 'Blueskyちゃん', text: 'わたしは Bluesky。この村の 冒険者ギルドで 受付を してるの。', portrait: ONBOARDING_PORTRAIT },
+  { speaker: 'Blueskyちゃん', text: 'けがしてる……。待って、やくそうがあるから。', portrait: { src: futabaWorried, name: 'Blueskyちゃん' } },
+  { text: '少女はやくそうを取り出し、そっと傷の手当てをしてくれた。' },
+  { speaker: 'Blueskyちゃん', text: 'よかった……！気がついたんだね。', portrait: ONBOARDING_PORTRAIT },
+  { speaker: 'Blueskyちゃん', text: '村の前で倒れてたから、心配したよ。', portrait: ONBOARDING_PORTRAIT },
+  { speaker: 'Blueskyちゃん', text: 'わたしはBluesky。この村の冒険者ギルドで受付をしてるの。', portrait: ONBOARDING_PORTRAIT },
 ];
-export const GUILD_INVITATION: DialogueLine = { speaker: 'Blueskyちゃん', text: '村の ギルドで すこし やすんでいかない？ いどの きたひがしの 建物だよ。ゆっくり おいで。', portrait: ONBOARDING_PORTRAIT };
+export const GUILD_INVITATION: DialogueLine = { speaker: 'Blueskyちゃん', text: '村のギルドで少し休んでいかない？井戸の北東の建物だよ。ゆっくりおいで。', portrait: ONBOARDING_PORTRAIT };
 export const OPENING_GUIDE_LINES: readonly DialogueLine[] = [
-  { text: '【操作ガイド】マップを おしたまま 指を うごかすと 移動。上に ある村へ すすもう。' },
-  { text: '【操作ガイド】じぶんを タップすると コマンド。村の人に 向かって 歩くと 話せます。' },
+  { text: '【操作ガイド】マップを押したまま指を動かすと移動。上にある村へ進もう。' },
+  { text: '【操作ガイド】自分をタップするとコマンド。村の人に向かって歩くと話せます。' },
 ];
 
 /** 導入に続けて Blueskyちゃんが やくそう と そらのはね を手渡す (#703)。リセット (実 +20 付与)
  *  経由のときだけ祝福のセリフを足す。 */
 export function starterHandoffLines(blessed: boolean): DialogueLine[] {
   return [
-    { speaker: 'Blueskyちゃん', text: 'これも もっていて。また いたくなったら つかってね。' },
-    { text: 'やくそうを うけとった！' },
-    { speaker: 'Blueskyちゃん', text: 'そらのはねも あげるね。いったことの ある街へ もどれるの。' },
-    { text: 'そらのはねを うけとった！ コマンドの「どうぐ」から つかえます。' },
+    { speaker: 'Blueskyちゃん', text: 'これも持っていて。また痛くなったら使ってね。' },
+    { text: 'やくそうを受け取った！' },
+    { speaker: 'Blueskyちゃん', text: 'そらのはねもあげるね。行ったことのある街へ戻れるの。' },
+    { text: 'そらのはねを受け取った！コマンドの「どうぐ」から使えます。' },
     GUILD_INVITATION,
-    ...(blessed ? [{ text: '【ギフト】ことばの ちから で あおぞらパワーが 20 ふえた！' }] : []),
+    ...(blessed ? [{ text: '【ギフト】ことばの ちからであおぞらパワーが20増えた！' }] : []),
     ...OPENING_GUIDE_LINES,
   ];
 }

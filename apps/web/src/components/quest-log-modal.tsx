@@ -24,7 +24,7 @@ export function QuestLogModal({ entries, onClose }: { entries: readonly QuestLog
           <section key={key} aria-label={label} style={{ marginBottom: '0.6em' }}>
             <div style={{ fontSize: '0.72em', ...muted, margin: '0 0 2px' }}>{label}</div>
             {list.length === 0 ? (
-              <p style={{ fontSize: '0.82em', ...muted, margin: '0.2em 0' }}>受注中の依頼は ありません</p>
+              <p style={{ fontSize: '0.82em', ...muted, margin: '0.2em 0' }}>受注中の依頼はありません</p>
             ) : list.map(e => {
               const open = openId === e.id;
               return (
@@ -52,7 +52,7 @@ export function QuestLogModal({ entries, onClose }: { entries: readonly QuestLog
       {entries.length > 0 && (
         <div style={{ fontSize: '0.72em', ...muted }}>
           <p style={{ margin: '0.2em 0' }}>同じ敵の依頼は、受注しているものすべてに数えます。</p>
-          <p style={{ margin: '0.2em 0' }}>所持品は ほかの依頼・どうぐ・制作と共通です。報告すると減ります。</p>
+          <p style={{ margin: '0.2em 0' }}>所持品はほかの依頼・どうぐ・制作と共通です。報告すると減ります。</p>
         </div>
       )}
     </ModalShell>

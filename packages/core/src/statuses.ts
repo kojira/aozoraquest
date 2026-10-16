@@ -150,7 +150,7 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
     turnEnd: (c, ctx) => {
       const dmg = ctx.status?.magnitude ?? 2;
       c.hp = Math.max(0, c.hp - dmg);
-      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}は毒のダメージ! ${dmg} のダメージ`, damage: dmg });
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}は毒のダメージ! ${dmg}のダメージ`, damage: dmg });
     },
   },
   sleep: {
@@ -211,7 +211,7 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
       if (atk.hp <= 0) return;
       const reflect = Math.max(1, Math.round(damage * (ctx.status?.magnitude ?? 0.3)));
       atk.hp = Math.max(0, atk.hp - reflect);
-      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${atk.name}は とげに ${reflect} のダメージを受けた!`, damage: reflect });
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${atk.name}はとげに${reflect}のダメージを受けた!`, damage: reflect });
     },
   },
   // 仁王立ち (守護者): 被ダメをほぼ 0 に (incomingCalc ×0.05)。turns 1 の完全防御。
@@ -229,9 +229,9 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
       if (remaining <= 1) {
         const dmg = ctx.status?.magnitude ?? 20;
         c.hp = Math.max(0, c.hp - dmg);
-        ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}に 破滅が訪れた! ${dmg} のダメージ`, damage: dmg });
+        ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}に破滅が訪れた! ${dmg}のダメージ`, damage: dmg });
       } else {
-        ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}に 破滅の刻が近づいている… (あと${remaining - 1})` });
+        ctx.events.push({ actor: ctx.actor ?? 'player', text: `${c.name}に破滅の刻が近づいている… (あと${remaining - 1})` });
       }
     },
   },
@@ -351,7 +351,7 @@ export const PASSIVES: Record<string, PassiveDef> = {
       if (self.lethalGuardUsed) return; // 発動済み: 2 回目の物理致死は耐えられない
       self.lethalGuardUsed = true;
       atk.hp = Math.max(0, atk.hp - damage); // 同ダメージ反射
-      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 覇王の意地で耐えた! ${atk.name}に ${damage} 反射!`, damage });
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は覇王の意地で耐えた! ${atk.name}に${damage}反射!`, damage });
       return { survive: true };
     },
   },
@@ -363,7 +363,7 @@ export const PASSIVES: Record<string, PassiveDef> = {
     onLethal(self, _atk, _damage, ctx) {
       if (self.lethalGuardUsed) return; // 発動済み: 2 回目の物理致死は耐えられない
       self.lethalGuardUsed = true;
-      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 不動の構えで持ちこたえた!` });
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は不動の構えで持ちこたえた!` });
       return { survive: true };
     },
   },
@@ -375,7 +375,7 @@ export const PASSIVES: Record<string, PassiveDef> = {
     onIncomingMagic(self, atk, damage, ctx) {
       if (ctx.rng() >= 0.25) return; // 75% は通常どおり被弾
       atk.hp = Math.max(0, atk.hp - damage);
-      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は 清き心で魔法をはね返した! ${atk.name}に ${damage} のダメージ!`, damage });
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `${self.name}は清き心で魔法をはね返した! ${atk.name}に${damage}のダメージ!`, damage });
       return { reflect: true };
     },
   },
@@ -430,7 +430,7 @@ const STATUS_APPLY_TEXT: Record<StatusId, string> = {
   stun: 'は麻痺した!',
   tumble: 'は転倒した!',
   restraint: 'は束縛された!',
-  hidden: 'は かくれみ に身を隠した!',
+  hidden: 'はかくれみに身を隠した!',
   critCharge: 'は精神を研ぎ澄ませた!',
   atkUp: 'の攻撃力があがった!',
   atkDown: 'の攻撃力がさがった!',
@@ -438,9 +438,9 @@ const STATUS_APPLY_TEXT: Record<StatusId, string> = {
   defDown: 'の守備力がさがった!',
   agiUp: 'の素早さがあがった!',
   agiDown: 'の素早さがさがった!',
-  doomMark: 'に 破滅の刻印が刻まれた…!',
-  thorns: 'は とげの盾をかまえた!',
-  ironWall: 'は 仁王立ちした! (被ダメージ激減)',
+  doomMark: 'に破滅の刻印が刻まれた…!',
+  thorns: 'はとげの盾を構えた!',
+  ironWall: 'は仁王立ちした! (被ダメージ激減)',
   accDown: 'の命中が下がった!',
 };
 

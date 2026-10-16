@@ -75,7 +75,7 @@ export function useWorldMove(d: WorldMoveDeps) {
         if (isFutabaGuild(npc)) {
           // 受付の真下 (扉の前) からだけ入れる。位置は NPC データから決める (Refs #718)。
           if (s.x !== npc.x || s.y !== npc.y + 1) {
-            setNotice('ギルドの とびらの まえから はいろう。');
+            setNotice('ギルドの扉の前から入ろう。');
             return;
           }
           if (guildExitBlockedRef.current) return;
@@ -146,11 +146,11 @@ export function useWorldMove(d: WorldMoveDeps) {
             next = arrival.state;
             const arrived = t ? (res.healed
               ? `「${t.name}」で休んで、すっかり元気になった!`
-              : `「${t.name}」に ついた!`) : '';
+              : `「${t.name}」に着いた!`) : '';
             if (gained) {
               mapAcquisitionRef.current = true;
               waitForFreshDirectionRef.current = true;
-              setMapAcquisition(`${arrived} ちずのかけらを 手に入れた!`.trim());
+              setMapAcquisition(`${arrived} ちずのかけらを手に入れた!`.trim());
               setNotice(null);
             } else {
               setNotice(arrived || null);
@@ -174,13 +174,13 @@ export function useWorldMove(d: WorldMoveDeps) {
           setScrollStep(null);
           setWs(s);
           // 409 は「戦闘中」だけでなく未診断 (診断が先に必要) もあるので code で出し分ける。
-          if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に 気質診断が ひつようだ。');
+          if (e instanceof WorldServerError && e.code === 'diagnosis_required') setNotice('先に気質診断が必要だ。');
           else if (e instanceof WorldServerError && e.status === 409) setNotice('戦闘中は移動できない。');
           // 施錠ゲート (#426) はサーバーの理由をそのまま出す ('そっちには進めない' だと
           // 地形のせいだと誤解する)。
           else if (e instanceof WorldServerError && e.code === 'gate_locked') setNotice(e.message);
           else if (e instanceof WorldServerError && e.status === 400) setNotice('そっちには進めない!');
-          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。すこし まってから もう一度。');
+          else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) setNotice('サーバーが応答しない。少し待ってからもう一度。');
           else { console.warn('[world] serverMove failed', e); setNotice('移動できなかった (通信エラー)。'); }
         } finally {
           moveBusyRef.current = false;

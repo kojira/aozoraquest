@@ -32,7 +32,7 @@ export function useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServ
   const openInn = useCallback((inn: NonNullable<InteriorMap['inn']>) => {
     const who = inn.name ?? 'やどや';
     whoRef.current = who;
-    setInnTalk({ lines: [{ speaker: who, text: `ひとばん ${inn.price} パワー です。とまって いきますか？` }], ask: { price: inn.price } });
+    setInnTalk({ lines: [{ speaker: who, text: `一晩${inn.price}パワーです。泊まっていきますか？` }], ask: { price: inn.price } });
   }, [setInnTalk]);
 
   const rest = async () => {
@@ -53,16 +53,16 @@ export function useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServ
             scheduleSave();
           }
           setInnTalk({ lines: [
-            { text: `${who}に とまった (パワー -${res.inn.paid})。すっかり 元気に なった!` },
-            { speaker: who, text: 'ゆっくり やすめたかい？ また どうぞ。' },
+            { text: `${who}に泊まった (パワー -${res.inn.paid})。すっかり元気になった!` },
+            { speaker: who, text: 'ゆっくり休めたかい？またどうぞ。' },
           ] });
-        } else setInnTalk({ lines: [{ text: `「${who}」…いまは よく ねむれているようだ。` }] });
+        } else setInnTalk({ lines: [{ text: `「${who}」…今はよく眠れているようだ。` }] });
       } else if (res.innDenied) {
         setServerPower(res.innDenied.power);
-        setInnTalk({ lines: [{ text: `${who}「ひとばん ${res.innDenied.price} パワーだよ」… パワーが たりない (いま ${res.innDenied.power})。` }] });
+        setInnTalk({ lines: [{ text: `${who}「一晩${res.innDenied.price}パワーだよ」…パワーが足りない (今${res.innDenied.power})。` }] });
       }
     } catch (e) {
-      setInnTalk({ lines: [{ text: e instanceof WorldServerError ? e.message : 'つうしんに しっぱいした…' }] });
+      setInnTalk({ lines: [{ text: e instanceof WorldServerError ? e.message : '通信に失敗した…' }] });
     } finally {
       moveBusyRef.current = false;
       setInnBusy(false);
@@ -71,7 +71,7 @@ export function useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServ
 
   const innChoices: DialogueChoice[] | undefined = innTalk?.ask ? [
     { label: 'はい', onSelect: rest },
-    { label: 'いいえ', onSelect: () => setInnTalk({ lines: [{ speaker: whoRef.current, text: 'また どうぞ。' }] }) },
+    { label: 'いいえ', onSelect: () => setInnTalk({ lines: [{ speaker: whoRef.current, text: 'またどうぞ。' }] }) },
   ] : undefined;
 
   /** 段を読み終えた。選択肢が次の段へ進めていれば閉じない。閉じたら押しっぱなしの方向キーで扉を往復しない。 */

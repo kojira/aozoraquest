@@ -86,9 +86,9 @@ export function AdminQuests() {
     while (list.some((q) => q.id === `quest-${i}`)) i++;
     const q: GameQuestDef = {
       id: `quest-${i}`,
-      title: 'あたらしい たのまれごと',
+      title: '新しい頼まれごと',
       npcId: npcs[0]?.id ?? '',
-      intro: ['たのみが あるんだ。'],
+      intro: ['頼みがあるんだ。'],
       done: ['ありがとう!'],
       objective: { kind: 'defeat', monsterId: monsters[0]?.id ?? '', count: 3 },
       reward: { power: 5 },
@@ -259,13 +259,13 @@ export function AdminQuests() {
                         ? { kind, monsterId: monsters[0]?.id ?? '', count }
                         : kind === 'collect'
                           ? { kind, itemId: items[0]?.id ?? '', count }
-                          : { kind, npcId: npcs[0]?.id ?? '', line: 'おお、よく きたね。' },
+                          : { kind, npcId: npcs[0]?.id ?? '', line: 'おお、よく来たね。' },
                     });
                   }}
                 >
                   <option value="defeat">たおす</option>
                   <option value="collect">あつめる (素材を渡す)</option>
-                  <option value="talk">はなしを きく (相手の隣で話しかける)</option>
+                  <option value="talk">話を聞く (相手の隣で話しかける)</option>
                 </select>
                 {current.objective.kind === 'talk' ? (
                   <>

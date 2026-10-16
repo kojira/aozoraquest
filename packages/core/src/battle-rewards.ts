@@ -119,12 +119,12 @@ export interface TitleDef {
 /** 称号。上から順に評価し、獲得済みのものを全部返す (UI は最後尾 = 最高位を出す等)。 */
 export const TITLES: readonly TitleDef[] = [
   { id: 'first-win', name: '試練の一歩', description: 'はじめての勝利', earned: (r) => r.wins >= 1 },
-  { id: 'ten-wins', name: '駆け出しの挑戦者', description: '通算 10 勝', earned: (r) => r.wins >= 10 },
-  { id: 'streak-5', name: '波に乗る者', description: '5 連勝', earned: (r) => r.bestStreak >= 5 },
-  { id: 'fifty-wins', name: '歴戦の空渡り', description: '通算 50 勝', earned: (r) => r.wins >= 50 },
-  { id: 'streak-10', name: '不倒の旗印', description: '10 連勝', earned: (r) => r.bestStreak >= 10 },
-  { id: 'tier3-10', name: '真剣勝負の常連', description: '真剣勝負で 10 勝', earned: (r) => r.tier3Wins >= 10 },
-  { id: 'hundred-wins', name: '蒼穹の覇者', description: '通算 100 勝', earned: (r) => r.wins >= 100 },
+  { id: 'ten-wins', name: '駆け出しの挑戦者', description: '通算10勝', earned: (r) => r.wins >= 10 },
+  { id: 'streak-5', name: '波に乗る者', description: '5連勝', earned: (r) => r.bestStreak >= 5 },
+  { id: 'fifty-wins', name: '歴戦の空渡り', description: '通算50勝', earned: (r) => r.wins >= 50 },
+  { id: 'streak-10', name: '不倒の旗印', description: '10連勝', earned: (r) => r.bestStreak >= 10 },
+  { id: 'tier3-10', name: '真剣勝負の常連', description: '真剣勝負で10勝', earned: (r) => r.tier3Wins >= 10 },
+  { id: 'hundred-wins', name: '蒼穹の覇者', description: '通算100勝', earned: (r) => r.wins >= 100 },
 ];
 
 export function earnedTitles(r: BattleRecordSummary): TitleDef[] {

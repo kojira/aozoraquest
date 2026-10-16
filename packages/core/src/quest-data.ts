@@ -153,10 +153,10 @@ export function gameQuestsByNpc(npcId: string): readonly GameQuestDef[] {
 /** 達成条件の文 (「そらいろスライムを 3 たい」「やくそうを 2 こ」「かじやと はなす」)。 */
 export function questObjectiveText(def: GameQuestDef): string {
   const o = def.objective;
-  if (o.kind === 'talk') return `${allNpcs().find((n) => n.id === o.npcId)?.name ?? o.npcId}と はなす`;
+  if (o.kind === 'talk') return `${allNpcs().find((n) => n.id === o.npcId)?.name ?? o.npcId}と話す`;
   return o.kind === 'defeat'
-    ? `${MONSTERS_BY_ID[o.monsterId]?.name ?? o.monsterId}を ${o.count} たい`
-    : `${ITEMS[o.itemId]?.name ?? o.itemId}を ${o.count} こ`;
+    ? `${MONSTERS_BY_ID[o.monsterId]?.name ?? o.monsterId}を${o.count}体`
+    : `${ITEMS[o.itemId]?.name ?? o.itemId}を${o.count}こ`;
 }
 
 /**
