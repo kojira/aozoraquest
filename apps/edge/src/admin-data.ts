@@ -19,6 +19,7 @@ import {
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
   activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
   activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
+  currentDialogue, missingDialogueNpc, validateDialogue, type DialogueData,
   assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
@@ -37,7 +38,7 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 const PATH_PREFIX = '/api/admin/data/';
 const RKEY = 'self';
 /** API で読み書きできる world.* レコード (core の ADMIN_WORLD_RECORDS の部分集合。CLI の NAMES と一致を検査)。 */
-export const ADMIN_DATA_NAMES = ['monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors'] as const satisfies readonly AdminWorldRecordName[];
+export const ADMIN_DATA_NAMES = ['monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
 const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
@@ -139,7 +140,7 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     validateNpcs(npcs);
     const dangling = danglingRefs('npc', npcs.map((n) => n.id))[0];
     if (dangling) return describeDanglingRef(dangling);
-    const missing = missingStoryBattle(npcs, []);
+    const missing = missingStoryBattle(npcs, []) ?? missingDialogueNpc(currentDialogue(), new Set(npcs.map((n) => n.id)));
     if (missing) return missing;
     const before = listOf<NpcDef>(saved, 'npcs');
     const moved = (n: NpcDef) => { const old = before.find((o) => o.id === n.id); return !old || !sameNpcPosition(n, old); };
@@ -167,6 +168,11 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const battles = listOf<StoryBattleDef>(story, 'battles');
     validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters') });
     return missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
+  }
+  if (name === 'dialogue') {
+    const dialogue = value as DialogueData;
+    validateDialogue(dialogue);
+    return missingDialogueNpc(dialogue, new Set(allNpcs().map((n) => n.id)));
   }
   if (name === 'shops') {
     const prev = shopOverrides();
