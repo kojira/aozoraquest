@@ -24,6 +24,7 @@ export function AdminDialogue() {
   const [note, setNote] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [overrideNpc, setOverrideNpc] = useState('');
+  const [overrideBase, setOverrideBase] = useState<'guild.first' | 'guild.return'>('guild.first');
 
   useEffect(() => {
     let cancelled = false;
@@ -46,9 +47,9 @@ export function AdminDialogue() {
   const receptions = useMemo(() => npcs.filter((n) => n.guildReception), [npcs]);
   const setLines = (lines: SceneLine[]) => { setScenes((xs) => xs.map((s) => (s.id === sel ? { ...s, lines } : s))); setDirty(true); };
   const addOverride = () => {
-    const id = `guild.first:${overrideNpc}`;
+    const id = `${overrideBase}:${overrideNpc}`;
     if (!overrideNpc || scenes.some((s) => s.id === id)) return;
-    setScenes((xs) => [...xs, { id, lines: structuredClone(xs.find((s) => s.id === 'guild.first')?.lines ?? []) }]);
+    setScenes((xs) => [...xs, { id, lines: structuredClone(xs.find((s) => s.id === overrideBase)?.lines ?? []) }]);
     setSel(id); setDirty(true);
   };
   const save = async () => {
@@ -81,10 +82,14 @@ export function AdminDialogue() {
                   </button>
                 ))}
                 {g.title === 'ギルド' && (
-                  <div style={{ display: 'flex', gap: '0.2em', marginTop: '0.2em' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2em', marginTop: '0.2em' }}>
                     <select aria-label="上書きする受付" value={overrideNpc} onChange={(e) => setOverrideNpc(e.target.value)}>
                       <option value="">受付を選ぶ</option>
                       {receptions.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+                    </select>
+                    <select aria-label="上書きする場面" value={overrideBase} onChange={(e) => setOverrideBase(e.target.value as 'guild.first' | 'guild.return')}>
+                      <option value="guild.first">初回</option>
+                      <option value="guild.return">2回目以降</option>
                     </select>
                     <button type="button" disabled={!overrideNpc} onClick={addOverride}>＋受付ごとの上書き</button>
                   </div>
