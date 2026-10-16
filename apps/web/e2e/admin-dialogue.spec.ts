@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
-import { starterTownNpcs } from '@aozoraquest/core';
+import { starterTownNpcs } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { readFileSync } from 'node:fs';
 const DIALOGUE_FIXTURE = JSON.parse(readFileSync(path.join(process.cwd(), '../../packages/core/src/__tests__/fixtures/dialogue.json'), 'utf8'));
 

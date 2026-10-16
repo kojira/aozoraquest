@@ -3,8 +3,9 @@ import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { encodeWorldMap, starterTownInterior, starterTownGates, starterTownNpcs, worldOverlay } from '@aozoraquest/core';
+import { encodeWorldMap, starterTownInterior, starterTownGates, worldOverlay } from '@aozoraquest/core';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
+import { starterTownNpcs } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 
 let vite: ViteDevServer;
 const URL = 'http://127.0.0.1:4273/e2e/fixtures/admin-starter-village.html';
@@ -20,7 +21,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await vite?.close(); });
 
-test('slow saved-village load cannot overwrite starter insertion; save then quests uses persisted 32x32 village', async ({ browser }) => {
+test('slow saved-village load cannot overwrite starter insertion; save persists the 32x32 village', async ({ browser }) => {
   test.setTimeout(60_000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const page = await context.newPage();
@@ -99,15 +100,6 @@ test('slow saved-village load cannot overwrite starter insertion; save then ques
     expect(saved.interiors.find((m) => m.id === untouched.id)).toEqual(untouched);
     expect(records['app.aozoraquest.dev.world.npcs']).toEqual(npcs);
     await page.screenshot({ path: 'test-results/starter-village-saved-mobile.png' });
-    await page.getByRole('link', { name: '← 管理', exact: true }).click();
-    await page.getByRole('link', { name: 'クエスト管理へ' }).click();
-    const insertQuests = page.getByRole('button', { name: 'ふたばの村のクエストを入れる', exact: true });
-    await expect(insertQuests).toBeEnabled();
-    await insertQuests.click();
-    await expect(page.getByText(/旧版 \(64×64\)/)).toHaveCount(0);
-    await expect(page.getByText(/4依頼を入れた/)).toBeVisible();
-    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled();
-    await page.screenshot({ path: 'test-results/starter-village-quests-mobile.png' });
     failRead = true;
     await page.reload();
     await expect(page.getByText(/保存済みの内部マップを読み込めなかった/)).toBeVisible();

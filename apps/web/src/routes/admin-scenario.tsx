@@ -8,9 +8,6 @@ import {
   gameQuests,
   jobDisplayName,
   scenarioEvents,
-  SAMPLE_SCENARIO,
-  starterTownScenario,
-  validateScenario,
   type Archetype,
   type ScenarioCondition,
   type ScenarioEvent,
@@ -188,37 +185,6 @@ export function AdminScenario() {
         <strong>シナリオ</strong>
         <span style={{ fontSize: '0.75em', color: 'var(--color-muted)' }}>{list.length} 件 / フラグ {knownFlags.length}</span>
         <button type="button" onClick={add} style={{ fontSize: '0.85em' }}>＋イベント</button>
-        <button
-          type="button"
-          onClick={() => {
-            // 既にあるものと id が衝突しないよう連番を振り直す。
-            let n = 1;
-            const taken = new Set(list.map((e) => e.id));
-            const add = SAMPLE_SCENARIO.map((e) => {
-              let id = e.id;
-              while (taken.has(id)) id = `${e.id}-${++n}`;
-              taken.add(id);
-              return { ...e, id, when: e.when.map((c) => ({ ...c })), setFlags: [...e.setFlags] };
-            });
-            setList((xs) => [...xs, ...add]);
-            setSel(add[0]!.id);
-            setDirty(true);
-            setNote('3 つ繋がったサンプルを入れた。保存すると遊べる (NPC のセリフやクエストの解禁に ch1_start / ch2_herbs / ch3_proof を書くと続く)');
-          }}
-          style={{ fontSize: '0.85em' }}
-        >
-          サンプルを入れる
-        </button>
-        <button type="button" disabled={loadState !== 'ok'} onClick={() => {
-          const additions = starterTownScenario();
-          const next = [...list.filter((e) => !additions.some((a) => a.id === e.id)), ...additions];
-          try { validateScenario(next); } catch {
-            setNote('先に「ふたばの村のクエスト」を保存してから、この画面を開き直してね。'); return;
-          }
-          if (!window.confirm('同じ ID のイベントを置き換え、ふたばの村のシナリオを入れる？ 保存するまでは反映されません。')) return;
-          setList(next); setSel(additions[0]!.id); setDirty(true);
-          setNote('村のシナリオを入れた。保存すると、依頼の報告で次の依頼が解禁される。');
-        }}>ふたばの村のシナリオを入れる</button>
         <button type="button" onClick={() => void save()} disabled={!session.agent || !dirty || loadState !== 'ok'} style={{ marginLeft: 'auto', fontSize: '0.85em' }}>
           保存
         </button>

@@ -1,6 +1,7 @@
 /** ギルドのあいさつは会話データから作る (D-DIALOGUE-006)。受付ごとの上書き → 既定 → 無いときはメニュー。 */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setDialogue, setNpcs, starterTownNpcs, type DialogueData, type NpcDef } from '@aozoraquest/core';
+import { setDialogue, setNpcs, type DialogueData, type NpcDef } from '@aozoraquest/core';
+import { starterTownNpcs } from '@aozoraquest/core/src/__tests__/helpers/starter-town-fixture';
 import dialogueFixture from '@aozoraquest/core/src/__tests__/fixtures/dialogue.json';
 import { guildEntryTalk, guildMetKey, npcTalkPortrait } from './guild-greeting';
 

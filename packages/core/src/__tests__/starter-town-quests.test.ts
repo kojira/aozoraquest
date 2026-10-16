@@ -1,6 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { starterTownNpcs } from '../interior-samples.js';
-import { starterTownQuests } from '../starter-town-quests.js';
+import { starterTownNpcs, starterTownQuests } from './helpers/starter-town-fixture.js';
 import { setNpcs } from '../npc-data.js';
 import { gameQuestsByNpc, setGameQuests } from '../quest-data.js';
 

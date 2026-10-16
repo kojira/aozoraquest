@@ -6,7 +6,8 @@
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { jsonToLex, type Agent } from '@atproto/api';
-import { activeMonsters, clearMonsters, clearMonsterArts, monsterArtSvg, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, starterTownNpcs, starterTownQuests, starterTownScenario, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride, setDialogue, type DialogueData } from '@aozoraquest/core';
+import { activeMonsters, clearMonsters, clearMonsterArts, monsterArtSvg, encodeMonstersForRecord, setMonsterOverrides, type GameQuestDef, type MonsterDef, allNpcs, setNpcs, setInteriors, setGameQuests, gameQuests, gameQuestsByNpc, setScenario, scenarioEvents, setShopOverrides, shopOverrides, type NpcDef, type ShopOverride, setDialogue, type DialogueData } from '@aozoraquest/core';
+import { starterTownNpcs, starterTownQuests, starterTownScenario } from '@aozoraquest/core/src/__tests__/helpers/starter-town-fixture';
 import dialogueFixture from '@aozoraquest/core/src/__tests__/fixtures/dialogue.json';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests, saveScenario } from './world-authoring';
 import { TEST_MONSTERS } from '@aozoraquest/core/src/__tests__/helpers/monster-fixture';
