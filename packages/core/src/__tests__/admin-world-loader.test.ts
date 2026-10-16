@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_WORLD_RECORDS, activeMonsters, allNpcs, clearMonsters, encodeMonstersForRecord, gameQuests, loadAdminWorld,
   scenarioEvents, setGameQuests, setMonsterOverrides, setNpcs, setScenario, setShopOverrides, shopOverrides,
-  clearMonsterArts, monsterArtSvg, type AdminWorldRecordCache, type AdminWorldRecordName, type MonsterDef, type NpcDef,
+  clearMonsterArts, monsterArtSvg, DIALOGUE_SCENE_IDS, sceneLines, setDialogue, type AdminWorldRecordCache, type AdminWorldRecordName, type MonsterDef, type NpcDef,
 } from '../index.js';
 import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 
@@ -26,10 +26,10 @@ async function load(records: Partial<Record<AdminWorldRecordName, unknown>>, fai
 describe('loadAdminWorld', () => {
   afterEach(() => { setNpcs(null); setShopOverrides(null); setGameQuests(null); setScenario(null); });
 
-  it('読み込み順は唯一の定義 (shops は items の後、quests は npcs/monsters/items の後、scenario は quests の後、story は scenario の後)', async () => {
+  it('読み込み順は唯一の定義 (shops は items の後、quests は npcs/monsters/items の後、scenario は quests の後、story は scenario の後、dialogue は最後)', async () => {
     const { read } = await load({});
     expect(read).toEqual([...ADMIN_WORLD_RECORDS]);
-    expect(read).toEqual(['map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story']);
+    expect(read).toEqual(['map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story', 'dialogue']);
   });
 
   it('空配列のレコードは適用する (#660)', async () => {
@@ -53,6 +53,19 @@ describe('loadAdminWorld', () => {
     const { errors } = await load({ npcs: { npcs: [] } }, ['map', 'shops']);
     expect(errors).toEqual(['map', 'shops']);
     expect(allNpcs()).toEqual([]);
+  });
+
+  it('dialogue はあれば適用し、無ければ触らない。壊れていればエラーにして今の値を保つ (D-DIALOGUE-006)', async () => {
+    const scenes = (text: string) => ({ scenes: DIALOGUE_SCENE_IDS.map((id) => ({ id, lines: [{ text }] })) });
+    try {
+      await load({ dialogue: scenes('読んだ文') });
+      expect(sceneLines('inn.thanks')).toEqual([{ text: '読んだ文' }]);
+      await load({});
+      expect(sceneLines('inn.thanks')).toEqual([{ text: '読んだ文' }]);
+      const { errors } = await load({ dialogue: { scenes: [] } });
+      expect(errors).toEqual(['dialogue']);
+      expect(sceneLines('inn.thanks')).toEqual([{ text: '読んだ文' }]);
+    } finally { setDialogue(null); }
   });
 });
 
