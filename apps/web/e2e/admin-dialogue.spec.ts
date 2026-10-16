@@ -57,6 +57,26 @@ test('救護の 3 行目を書き換え、白い閃光を足して保存する�
   expect(rescue.lines[0]).toMatchObject({ npcId: 'futaba-bluesky', text: '[sad]……聞こえる？　大丈夫？' });
 });
 
+test('受付ごとの上書きで「2回目以降」を選ぶと guild.return の上書きが 2回目以降の文から作られ、保存される (#789)', async ({ page }) => {
+  page.setDefaultTimeout(8_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const puts: Put[] = [];
+  await routePds(page, puts);
+  await page.goto(URL);
+  const list = page.getByRole('navigation', { name: '場面一覧' });
+  await list.getByRole('combobox', { name: '上書きする受付' }).selectOption({ label: 'Blueskyちゃん' });
+  await list.getByRole('combobox', { name: '上書きする場面' }).selectOption({ label: '2回目以降' });
+  await page.screenshot({ path: `${process.env.ADMIN_SHOTS ?? 'test-results'}/admin-dialogue-override-390.png`, fullPage: true });
+  await list.getByRole('button', { name: '＋受付ごとの上書き' }).click();
+  await expect(page.getByText('guild.return:futaba-bluesky', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('1 行目の本文')).toHaveValue('おかえり。冒険者ギルドへようこそ。');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => puts.length).toBe(1);
+  const scenes = puts[0]!.record.scenes;
+  const base = scenes.find((s) => s.id === 'guild.return')!;
+  expect(scenes.find((s) => s.id === 'guild.return:futaba-bluesky')!.lines).toEqual(base.lines);
+});
+
 test('保存済みの会話を読めなければ保存できない', async ({ page }) => {
   page.setDefaultTimeout(8_000);
   const puts: Put[] = [];
