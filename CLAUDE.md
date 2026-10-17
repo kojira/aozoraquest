@@ -89,7 +89,7 @@ dev に複数の feature PR が積まれた後、リリース単位で `dev → 
 2. `gh pr create --base main --head dev`
 3. CI 緑 + **第三者レビュー (§1.5) で指摘ゼロ or 全対応済み**
 4. オーナー承認
-5. squash merge (= 複数 feature が main に 1 コミットで反映、リリースノート的)
+5. **マージコミットで入れる** (`gh pr merge --merge`)。squash すると main と dev の履歴が分かれ、次のリリース PR が衝突する (#803)
 6. **`APP_VERSION` と同じ値で git tag を打つ** (リリースされた main のコミットに付くよう、先に main を最新化してから打つ):
    `git checkout main && git pull origin main && git tag v2026.06.14-1 && git push origin v2026.06.14-1`
    (タグを打ったら忘れず `git checkout dev` で dev に戻る)
