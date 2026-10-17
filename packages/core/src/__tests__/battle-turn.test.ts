@@ -141,12 +141,12 @@ describe('resolveTurn', () => {
     }
   });
 
-  it('大盾の護り (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
-    // 守護者は #456 で大盾の護り (parry フラグ技) を Lv15 で習得。鈍足 (agi6) でも後手で反撃が出る。
+  it('大盾返し (parry) は行動順に関係なく被弾半減 + 反撃が発動する', () => {
+    // 守護者は #456 で大盾返し (parry フラグ技) を Lv15 で習得。鈍足 (agi6) でも後手で反撃が出る。
     let counterSeen = 0;
     for (let seed = 0; seed < 30; seed++) {
       let s = startBattle('guardian', 15, 20, '守護者', 1, seed);
-      const parryIdx = s.playerSkills.findIndex((sk) => sk.name === '大盾の護り');
+      const parryIdx = s.playerSkills.findIndex((sk) => sk.name === '大盾返し');
       for (let i = 0; i < 20 && s.outcome === 'ongoing'; i++) {
         s = resolveTurn(s, 'skill', undefined, parryIdx);
         if (s.lastEvents.some((e) => e.text.includes('はんげき'))) counterSeen++;

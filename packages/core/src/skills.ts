@@ -134,7 +134,7 @@ export interface SkillDef {
   /** とくぎ ID (JobSkill.kind と一致させる) */
   id: string;
   effects: SkillEffect[];
-  /** 見切り/大盾の護り: 「防御しつつ反撃」を宣言する (resolveTurn が parrying フラグを立てる)。
+  /** 見切り/大盾返し: 「防御しつつ反撃」を宣言する (resolveTurn が parrying フラグを立てる)。
    *  宣言型なので effects は空でよい (反撃は doAttack の parrying 経路)。 */
   parry?: boolean;
 }
@@ -368,7 +368,7 @@ export const SKILLS: Record<string, SkillDef> = {
   // 数値 (範囲/intBonus/デバフ turns) は **sim 調整前提の暫定値**。覚える Lv に見合う endgame 敵
   // (#455) が要る高 Lv 技は数値を圧縮しない。属性の輪は §1。
   'mage-flame': { id: 'mage-flame', effects: [{ kind: 'fixedDamage', min: 4, max: 8, intBonus: 0.2, element: 'fire' }] }, // 火炎術式 Lv3
-  'mage-decode': { id: 'mage-decode', effects: [{ kind: 'fixedDamage', min: 6, max: 11, intBonus: 0.2 }] }, // 解式マギア Lv5 (無属性)
+  'mage-decode': { id: 'mage-decode', effects: [{ kind: 'fixedDamage', min: 6, max: 11, intBonus: 0.2 }] }, // 破式 Lv5 (無属性)
   'mage-stone': { id: 'mage-stone', effects: [{ kind: 'fixedDamage', min: 7, max: 12, intBonus: 0.2, element: 'earth' }] }, // 石射 Lv6
   // 氷結術式 Lv8: 水 + 素早さ↓
   'mage-freeze': {
@@ -422,7 +422,7 @@ export const SKILLS: Record<string, SkillDef> = {
 
   // ─── 詩人 確定キット (#456 / docs/25 §12。水属性・自己バフ火力・言葉の拘束) ───
   // 数値は sim 調整前提の暫定値。感傷(会心↑)/感情爆発(scaleBy)/全体技/詩心(P) は後続 (要 新語彙)。
-  // 心晴の韻 Lv3: 水属性魔法。詩人の強み luk (34) 連動 (int8 は最低クラスなので luckScale に。§423 luk型)。
+  // 雨音の韻 Lv3: 水属性魔法。詩人の強み luk (34) 連動 (int8 は最低クラスなので luckScale に。§423 luk型)。
   'poet-verse': { id: 'poet-verse', effects: [{ kind: 'fixedDamage', min: 4, max: 12, luckScale: 0.2, element: 'water' }] },
   'poet-calm': { id: 'poet-calm', effects: [{ kind: 'status', status: 'defUp', target: 'self', turns: 3 }] }, // 静心 Lv5
   'poet-rouse': { id: 'poet-rouse', effects: [{ kind: 'status', status: 'atkUp', target: 'self', turns: 3 }] }, // 昂ぶりの詩 Lv7
@@ -497,7 +497,7 @@ export const SKILLS: Record<string, SkillDef> = {
       { kind: 'recoil', ratio: 0.15 },
     ],
   },
-  // 曲芸乱舞 Lv15: agi 基準 3 連撃
+  // 玉乗り連撃 Lv15: agi 基準 3 連撃
   'performer-acrobat': { id: 'performer-acrobat', effects: [{ kind: 'damage', stat: 'agi', power: 0.6, hits: 3 }] },
 
   // ─── 賢者 確定キット (#456 / docs/25 §12。最高 int・全5属性・支援) ───
@@ -546,8 +546,8 @@ export const SKILLS: Record<string, SkillDef> = {
   // ─── 隊長 確定キット (#456 / docs/25 §12。タフな前衛指揮官・鼓舞) ───
   // 数値は sim 調整前提の暫定値。全体バフ/デバフ (allAllies/allEnemies) はソロでは自己バフ/敵デバフに
   // 退化し、マルチ (#453) で味方全体/敵全体に効く。名将 (P atk/def+10%) は passive 配線待ちで後続。
-  // 突撃号令 Lv3: atk×1.5 + 味方に atk 微上昇 (allAllies=ソロは自分)。
-  // 注意: atkUp は restack refresh なので、鼓舞 (1.30) の後に突撃号令 (1.15) を撃つとバフが下がる。
+  // 鬨の声 Lv3: atk×1.5 + 味方に atk 微上昇 (allAllies=ソロは自分)。
+  // 注意: atkUp は restack refresh なので、鼓舞 (1.30) の後に鬨の声 (1.15) を撃つとバフが下がる。
   // sim 調整時に「オマケ側を鼓舞と同値」or「refresh を max 採用」を検討 (#460)。
   'captain-charge': {
     id: 'captain-charge',
@@ -646,7 +646,7 @@ export const SKILLS: Record<string, SkillDef> = {
   // とげの盾 Lv8: 物理被弾のみ反射 (doMagic では非発火。§14.1 の「物理被弾時」に準拠)。
   'guardian-thorns': { id: 'guardian-thorns', effects: [{ kind: 'status', status: 'thorns', target: 'self', turns: 3, magnitude: 0.3 }] },
   'guardian-stand': { id: 'guardian-stand', effects: [{ kind: 'status', status: 'ironWall', target: 'self', turns: 1 }] }, // 仁王立ち Lv12 (被ダメ≒0 1T)
-  'guardian-shield': { id: 'guardian-shield', effects: [], parry: true }, // 大盾の護り Lv15 (parry: 防御しつつ反撃)
+  'guardian-shield': { id: 'guardian-shield', effects: [], parry: true }, // 大盾返し Lv15 (parry: 防御しつつ反撃)
 
   // ─── 冒険者 確定キット (#456 / docs/25 §12。万能スカーミッシャー・luk34/agi25・生存/逆転) ───
   // 数値は sim 調整前提の暫定値。武器投げ(装備 #454)/秘境探索(random)/全体技/旅の勘(P) は後続。
@@ -701,7 +701,7 @@ export const SKILLS: Record<string, SkillDef> = {
 
   // ─── 匠 確定キット (#456 / docs/25 §12。からくり技師・罠と装置・int43・範囲) ───
   // 数値は sim 調整前提の暫定値。自爆人形(遅延全体)/からくり兵(summon)/大発破/兵器解放(全体)/発明家(P) は後続。
-  'fighter-contraption': { id: 'fighter-contraption', effects: [{ kind: 'fixedDamage', min: 4, max: 12, intBonus: 0.2 }] }, // からくり仕掛け Lv3 (無属性・必中)
+  'fighter-contraption': { id: 'fighter-contraption', effects: [{ kind: 'fixedDamage', min: 4, max: 12, intBonus: 0.2 }] }, // からくり矢 Lv3 (無属性・必中)
   'fighter-smoke': { id: 'fighter-smoke', effects: [{ kind: 'status', status: 'accDown', target: 'allEnemies', turns: 3 }] }, // 煙玉 Lv5
   'fighter-poisongas': { id: 'fighter-poisongas', effects: [{ kind: 'status', status: 'poison', target: 'enemy', turns: 4, magnitude: 3 }] }, // 毒煙装置 Lv7
   // 落とし穴 Lv8: 地属性 + 高確率で転倒

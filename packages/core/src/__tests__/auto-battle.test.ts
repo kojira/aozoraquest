@@ -26,7 +26,7 @@ describe('autoBattleAction (#521)', () => {
         }
       }
     }
-    expect(checked).toBeGreaterThan(50); // 決着が早いと 1 戦あたりのターン数が減るので緩め
+    expect(checked).toBeGreaterThan(40); // 決着が早いと 1 戦あたりのターン数が減るので緩め (署名スキル常設で実測 50)
   });
 
   it('とくぎより通常攻撃が良いときは通常攻撃を選ぶ', () => {

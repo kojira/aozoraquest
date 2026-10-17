@@ -64,7 +64,8 @@ describe('MP 特性の確率発動 (#564)', () => {
       const out: string[] = [];
       const cmds: Command[] = ['attack', 'guard', 'skill', 'attack'];
       for (let i = 0; i < 12 && s.outcome === 'ongoing'; i++) {
-        s = resolveTurn(s, cmds[i % cmds.length]!, i * 97 + 3);
+        // とくぎは [1] = 最初のキット技 ([0] は署名スキル)。系列を採った当時の [0] と同じ技。
+        s = resolveTurn(s, cmds[i % cmds.length]!, i * 97 + 3, 1);
         out.push(`${s.player.hp}/${s.player.mp}/${s.monster.hp}`);
       }
       return out.join(' ');
