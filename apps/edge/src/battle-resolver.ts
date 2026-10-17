@@ -619,7 +619,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   if (command === 'flee' && guard.state.story?.canFlee === false) throw new ResolverError('この たたかいからは にげられない', 400, 'cannot_flee');
 
   // とくぎ選択 (#436) はサーバー権威の sealed state で検証: 実際に習得済みのとくぎだけ選べる
-  // (client が持っていない index を偽っても署名スキル [0] に落とす。詐称防止)。
+  // (client が持っていない index を偽っても [0] = 署名スキルに落とす。詐称防止)。
   const skills = guard.state.playerSkills ?? [guard.state.playerSkill];
   const idx = Number.isInteger(skillIndex) && skillIndex >= 0 && skillIndex < skills.length ? skillIndex : 0;
   // 群れ (#453): enemies が 2 体以上なら resolveTurnMulti で解決 + targetIndex を検証。1 体 (従来) は

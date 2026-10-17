@@ -30,14 +30,26 @@ describe('skillsForJob (複数とくぎ #436)', () => {
       expect(list1[0]).toEqual(sig);
     }
   });
-  it('キット職はレベルで習得、未習得帯は署名にフォールバック (#456)', () => {
+  it('署名スキルはキット技を覚えても消えない (賢者 Lv3 = 天啓の一手 + 火炎)', () => {
+    expect(skillsForJob('sage', 3)).toEqual([skillForJob('sage'), { kind: 'sage-flame', name: '火炎' }]);
+  });
+  it('全16職・全Lv で [0] は署名スキル (最初の learnAt 以降も残る)', () => {
+    for (const job of JOBS) {
+      for (let lv = 1; lv <= 30; lv++) expect(skillsForJob(job.id, lv)[0], `${job.id} Lv${lv}`).toEqual(skillForJob(job.id));
+    }
+  });
+  it('キット技の名前は署名スキルの名前と重ならない (一覧に同じ名前が 2 つ並ばない)', () => {
+    const clashes = JOBS.filter((job) => skillsForJob(job.id, 30).slice(1).some((s) => s.name === JOB_SKILL_NAMES[job.id]));
+    expect(clashes.map((job) => job.id)).toEqual([]);
+  });
+  it('キット職はレベルで習得、未習得帯は署名のみ (#456)', () => {
     // miko は確定キット職。Lv1-2 は未習得帯で署名にフォールバック、Lv3 で癒しの鈴を習得。
     expect(skillsForJob('miko', 1)).toHaveLength(1); // 署名のみ
     expect(skillsForJob('miko', 2)).toHaveLength(1);
     expect(skillsForJob('miko', 3).map((s) => s.name)).toContain('癒しの鈴');
     // 全16職キット化済み。fighter (匠) も Lv3 でキット技を習得する (Lv1-2 は署名のみ)。
     expect(skillsForJob('fighter', 1)).toHaveLength(1);
-    expect(skillsForJob('fighter', 3).map((s) => s.name)).toContain('からくり仕掛け');
+    expect(skillsForJob('fighter', 3).map((s) => s.name)).toContain('からくり矢');
   });
   it('回復とくぎは MP を払って maxHp の割合ぶん回復する (キットの heal)', () => {
     // paladin は聖光の癒し (heal) を Lv5 で覚える。HP を削ってから回復を選ぶ。

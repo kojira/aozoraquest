@@ -76,7 +76,7 @@ export function StatusModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // キット持ちジョブ (#456) では署名スキル [0] が実技と一致しないため、現在の習得済みとくぎ列を出す。
+  // 現在のとくぎ列 (署名スキル + 習得済みキット技) を出す。戦闘の playerSkills と同じ列。
   const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
   const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
   const jobNext = useMemo(() => jobXpToNextLevel(jobXp, archetype), [jobXp, archetype]);

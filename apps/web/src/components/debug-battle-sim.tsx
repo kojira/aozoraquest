@@ -305,7 +305,7 @@ export function DebugBattleSim() {
               <button onClick={() => duelCmd('attack')} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{CMD_LABEL.attack}</button>
               <button onClick={() => duelCmd('guard')} style={{ fontSize: '0.85em', padding: '0.2em 0.5em' }}>{CMD_LABEL.guard}</button>
               {/* とくぎは習得済みぶんを 1 個ずつボタン化 (#436 の複数とくぎを模擬戦で選べるように)。
-                  複数無いジョブは署名 1 個だけ出る。MP 不足 / heal 満タンは disabled。 */}
+                  未習得帯は署名 1 個だけ出る。MP 不足 / heal 満タンは disabled。 */}
               {(duel.playerSkills ?? [duel.playerSkill]).map((sk, i) => (
                 <button
                   key={i}
