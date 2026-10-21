@@ -253,7 +253,20 @@ export interface EncounterInfo {
 /** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
  *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
 export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, mapId: string = WORLD_MAP_ID, story?: StoryBattleDef): Promise<EncounterInfo> {
-  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
+  // 互いに依存しない外部往復 (診断 / kuda / 既存ガード) は同時に始める。直列だと遭遇する一歩だけ
+  // 応答が数百 ms〜秒遅れ、client の次の歩行が止まって「引っかかる」。
+  // 失敗は従来の順 (診断 → kuda → ガード) で返す = 診断未実施はガードの読みに失敗しても 409。
+  const [diag, seed, guardRead] = await Promise.allSettled([
+    readDiagnosis(userDid, ns, fetchImpl),
+    entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY }),
+    readGuard<SealedMeta, BattleState>(env, userDid),
+  ]);
+  if (diag.status === 'rejected') throw diag.reason;
+  if (seed.status === 'rejected') throw seed.reason;
+  if (guardRead.status === 'rejected') throw guardRead.reason;
+  const { archetype, baseStats, handle, playerXp } = diag.value;
+  const pendingTurnSeed = seed.value.value;
+  const existing = guardRead.value;
   // 内部マップ (#424) は座標が 0〜127 のローカル系で region が常に 0 になるため、
   // 地域から tier を引くと**どの危険度を選んでも tier1 の敵しか出ない**。設定値を使う。
   const interior = mapId !== WORLD_MAP_ID ? interiorById(mapId) : undefined;
@@ -273,21 +286,21 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
     ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
-  const pendingTurnSeed = (await entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY })).value;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
   // move では毎歩ガードを読まない (ステートレス高速化)。**client は戦闘中は move しない**ので、ここに
   // 来た時点で既存ガードは必ず孤立 (戦闘を終えず離脱した残骸)。期限内でも破棄して新しい遭遇を成立させる。
   // これをしないと、離脱後にエンカウントタイル (30分固定=特定の場所) を踏むたび createGuard が InvalidSwap
   // → 500「移動できなかった」で詰まる。孤立ガードの戦闘は未報酬なので破棄しても二重報酬にならない。
-  const existing = await readGuard<SealedMeta, BattleState>(env, userDid);
-  if (existing) await deleteGuard(env, now, userDid, existing.cid);
+  // 破棄は削除 + 作成の 2 往復ではなく、読んだ CID を期待する 1 回の置き換え (CAS) で行う。
   const guard: Guard = {
     did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: tileKey(mapId, x, y), ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), baseStats: [...baseStats],
       ...(story ? { story: { battleId: story.id, winFlag: story.winFlag, ...(story.loseFlag ? { loseFlag: story.loseFlag } : {}) } } : {}) }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
-  await createGuard(env, now, guard); // 生きたガードがあれば InvalidSwap → 上位で 409
+  // 読んだ後に別の遭遇がガードを作った/置き換えたら InvalidSwap → 上位で 409 (二重戦闘を作らせない)。
+  if (existing) await advanceGuard(env, now, guard, existing.cid);
+  else await createGuard(env, now, guard);
   return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
 }
 
