@@ -32,12 +32,12 @@ jobs:
       - name: Setup pnpm
         # version は指定せず package.json の packageManager を単一の出所にする
         uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: pnpm
+          # pnpm store のキャッシュ (旧 setup-node の cache: pnpm の代わり)
+          cache: true
+
+      - name: Setup Node (mise.toml を単一の出所にする)
+        uses: jdx/mise-action@v5.2.2
 
       - name: Install
         run: pnpm install --frozen-lockfile
