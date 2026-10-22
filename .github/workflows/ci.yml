@@ -47,7 +47,7 @@ jobs:
           # pnpm store のキャッシュ (旧 setup-node の cache: pnpm の代わり)
           cache: true
 
-      - name: Setup Node (mise.toml を単一の出所にする)
+      - name: Setup Node (.node-version を単一の出所にする)
         uses: jdx/mise-action@v5.2.2
 
       - name: 'Line limit (1 ファイル 800 行ルール, #718)'
