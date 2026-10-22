@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtpAgent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
-import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobXpToNextLevel, playerCombatant, questXpScalar, statVectorToArray } from '@aozoraquest/core';
+import { ARCHETYPES, DIAGNOSIS_MIN_POST_COUNT, JOBS_BY_ID, archetypePairRelation, jobDisplayName, jobLevelFromXp, jobTagline, jobTypeCode, jobXpToNextLevel, playerCombatant, questXpScalar, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { runDiagnosis } from '@/lib/diagnosis-flow';
 import { listReceivedQuests, loadCompletionsByUri } from '@/lib/quest-api';
@@ -173,7 +173,7 @@ export function MyProfile() {
           {myArchetype && (
             <p style={{ margin: 0, fontSize: '0.85em', color: 'var(--color-muted)' }}>
               <span style={{ color: 'var(--color-muted)' }}>今:</span>{' '}
-              {jobDisplayName(myArchetype, 'default')}
+              {jobNameWithTypeCode(myArchetype)}
               <span style={{ marginLeft: '0.4em', fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)' }}>
                 LV{myJobLv}
               </span>
@@ -209,7 +209,7 @@ export function MyProfile() {
             <span style={{ color: 'var(--color-muted)' }}>目指す:</span>{' '}
             {targetArchetype ? (
               <>
-                <span style={{ color: 'var(--color-fg)' }}>{jobDisplayName(targetArchetype, 'default')}</span>
+                <span style={{ color: 'var(--color-fg)' }}>{jobNameWithTypeCode(targetArchetype)}</span>
                 <span style={{ marginLeft: '0.5em', fontSize: '0.9em' }}>{jobTagline(targetArchetype)}</span>
                 <Link to="/settings" style={{ marginLeft: '0.6em', fontSize: '0.85em' }}>変更</Link>
               </>
@@ -377,6 +377,13 @@ const COGNITIVE_LABEL: Record<string, string> = {
   Fe: '場の調和',
 };
 
+/** 「賢者(INTJ)」形式のジョブ名。4 文字型が無い ID は名前だけ。 */
+function jobNameWithTypeCode(archetype: string): string {
+  const code = jobTypeCode(archetype);
+  const name = jobDisplayName(archetype, 'default');
+  return code ? `${name}(${code})` : name;
+}
+
 /**
  * 診断結果の表示。**`jobXp` は呼び出し側が渡す** (#534)。
  * - `/me` は権威 state (`GameState.jobXp`) から渡す = 実際に戦闘で使われる LV と一致する
@@ -398,7 +405,7 @@ export function ResultView({ result, jobXp, onRerun }: { result: DiagnosisResult
   return (
     <section style={{ marginTop: '1em' }}>
       <h3 style={{ fontSize: '1em' }}>
-        今の姿: {jobName}
+        今の姿: {jobNameWithTypeCode(result.archetype)}
         {jobLv && <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-accent)', marginLeft: '0.4em' }}>LV{jobLv.level}</span>}
         {tagline && <span style={{ fontSize: '0.8em', fontWeight: 400, color: 'var(--color-muted)', marginLeft: '0.5em' }}>{tagline}</span>}
       </h3>
