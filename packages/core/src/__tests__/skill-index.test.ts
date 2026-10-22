@@ -51,13 +51,12 @@ describe('とくぎの index が一覧と一致する', () => {
     }
   });
 
-  it('署名スキル (playerSkill) は一覧の先頭とは別物 — 表示に使ってはいけない', () => {
-    // 実際にずれていた組み合わせを名指しで固定する。ここが一致してしまうと
-    // 「playerSkill をラベルに使っても大丈夫」に見えてしまい、同じ事故が再発する。
+  it('署名スキル (playerSkill) はキット技を覚えても一覧に残る — 表示は playerSkills を使う', () => {
+    // 実際にずれていた組み合わせ (賢者 Lv3) を名指しで固定する。一覧の [1] が火炎、
+    // [0] が署名。表示ラベルは playerSkill ではなく押す index と同じ playerSkills から取ること。
     const s = startBattle('sage', 3, 1, 'x', 1, 5, 0);
-    expect(s.playerSkills?.[0]?.name).toBe('火炎');
+    expect(s.playerSkills?.map((k) => k.name)).toEqual(['天啓の一手', '火炎']);
     expect(s.playerSkill.name).toBe('天啓の一手');
-    expect(s.playerSkill.name).not.toBe(s.playerSkills?.[0]?.name);
   });
 
   it('playerSkills は skillsForJob と同じ並び (UI と core の一覧がずれない)', () => {

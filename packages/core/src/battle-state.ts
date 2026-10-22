@@ -42,9 +42,9 @@ export interface BattleState {
   allies?: Combatant[];
   /** マルチ戦闘の敵陣 (モンスター群)。省略時はソロ = [monster]。慣例として enemies[0] === monster。 */
   enemies?: Combatant[];
-  /** 署名スキル ([0])。後方互換 (parry 判定・autoBattle 等はこれ)。 */
+  /** 署名スキル (Lv1 の基本技)。playerSkills が無い旧 sealed state のフォールバック用。 */
   playerSkill: JobSkill;
-  /** その jobLevel で使える全とくぎ ([0]=署名 + 習得済み副スキル)。UI は毎ターンここから選ぶ (#436)。 */
+  /** その jobLevel で使える全とくぎ ([0]=署名の名前 + 習得済みキット技)。UI は毎ターンここから選ぶ (#436)。 */
   playerSkills: JobSkill[];
   outcome: BattleOutcome;
   /** 残りやくそう (持ち込み分)。使うと減る。 */

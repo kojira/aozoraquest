@@ -81,6 +81,18 @@ export function jobTagline(id: string): string | null {
   return id in JOB_TAGLINES ? JOB_TAGLINES[id as Archetype] : null;
 }
 
+/** ジョブの 4 文字性格タイプ (dominantFunction/auxiliaryFunction から決まる)。名前の右に (INTJ) と添える。 */
+export const JOB_TYPE_CODES: Record<Archetype, string> = {
+  sage: 'INTJ', mage: 'INTP', shogun: 'ENTJ', bard: 'ENTP',
+  seer: 'INFJ', poet: 'INFP', paladin: 'ENFJ', explorer: 'ENFP',
+  warrior: 'ISTJ', guardian: 'ISFJ', fighter: 'ISTP', artist: 'ISFP',
+  captain: 'ESTJ', miko: 'ESFJ', ninja: 'ESTP', performer: 'ESFP',
+};
+
+export function jobTypeCode(id: string): string | null {
+  return id in JOB_TYPE_CODES ? JOB_TYPE_CODES[id as Archetype] : null;
+}
+
 /**
  * 戦闘中に敵の残り HP/MP を見抜ける職業。
  * 見通し (Ni: 賢者・予言者)、霊視 (巫女)、解析 (魔法使い=仕組みを解く研究者)、

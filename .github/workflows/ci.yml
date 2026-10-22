@@ -43,12 +43,12 @@ jobs:
         # version は指定せず package.json の packageManager を単一の出所にする
         # (明示 version と衝突すると ERR_PNPM_BAD_PM_VERSION になる)
         uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: pnpm
+          # pnpm store のキャッシュ (旧 setup-node の cache: pnpm の代わり)
+          cache: true
+
+      - name: Setup Node (.node-version を単一の出所にする)
+        uses: jdx/mise-action@v5.2.2
 
       - name: 'Line limit (1 ファイル 800 行ルール, #718)'
         run: node scripts/check-line-limit.mjs

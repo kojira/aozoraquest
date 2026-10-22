@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-// dev の管理レコード monsters / monsterArt / dialogue を本番へ昇格する one-shot (D-MONSTER-001, D-DIALOGUE-006)。Node 標準のみ。
+// dev の管理レコードを本番へ昇格する one-shot (D-MONSTER-001, D-DIALOGUE-006)。Node 標準のみ。
+// 対象は admin-data.mjs の NAMES と同じ 10 種。ワールド公開で items〜story も本番へ移すため広げた
+// (map / tileArt は本番と同じ中身、jobs はどちらにも無いので含めない)。書く順は core の読み込み順に合わせる。
+// 書く前の core 検証はしない (core は tsx が要り Node 標準だけでは読めない)。--execute の前に手で検証する。
 // **本番への書き込み手段。実行 (--execute) にはユーザーの承認が要る。**
 // 既定は dry-run (差分の要約だけ)。--execute と BLUESKY_ADMIN_IDENTIFIER / BLUESKY_ADMIN_APP_PASSWORD が
 // 揃ったときだけ書く。既存の本番値は --backup-dir (必須) に退避し、CAS (swapRecord) で書く。
@@ -10,13 +13,15 @@ import { join } from 'node:path';
 export const ADMIN_DID = process.env.ADMIN_DID ?? 'did:plc:47skrewud2vjha6o57wzzxjw';
 const ROOT = 'app.aozoraquest';
 const RKEY = 'self';
-/** 昇格してよいレコードだけ (汎用の昇格ツールにしない)。 */
-export const PROMOTE_NAMES = ['monsters', 'monsterArt', 'dialogue'];
+/** 昇格してよいレコードだけ (汎用の昇格ツールにしない)。並びは core の読み込み順 (ADMIN_WORLD_RECORDS)。 */
+export const PROMOTE_NAMES = ['monsters', 'monsterArt', 'items', 'shops', 'npcs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'];
+/** 要約で件数を数える一覧キー (admin-data.mjs の LIST_KEY と同じ)。 */
+const LIST_KEY = { monsters: 'monsters', monsterArt: 'arts', items: 'items', shops: 'shops', npcs: 'npcs', interiors: 'interiors', quests: 'quests', scenario: 'events', story: 'placedItems', dialogue: 'scenes' };
 
 export const devCollection = (name) => `${ROOT}.dev.world.${name}`;
 export const prodCollection = (name) => `${ROOT}.world.${name}`;
 
-/** 書き先は必ず app.aozoraquest.world.(monsters|monsterArt|dialogue)。 */
+/** 書き先は必ず app.aozoraquest.world.(PROMOTE_NAMES のどれか)。 */
 export function assertProdTarget(collection) {
   if (!PROMOTE_NAMES.some((n) => collection === prodCollection(n))) throw new Error(`書き先が許可されていない: ${collection}`);
 }
@@ -48,7 +53,7 @@ export function planFor(name, dev, prod) {
   if (!dev) throw new Error(`dev に ${name} が無い`);
   const collection = prodCollection(name);
   assertProdTarget(collection);
-  const listKey = { monsters: 'monsters', monsterArt: 'arts', dialogue: 'scenes' }[name];
+  const listKey = LIST_KEY[name];
   return {
     name, collection,
     swapRecord: prod?.cid ?? null,

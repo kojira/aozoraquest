@@ -60,8 +60,8 @@ export function skillForJob(archetype: Archetype): JobSkill {
 // とくぎは全て JOB_KITS (確定キット) が担う。
 
 /** ジョブ確定キット (#456 / docs/25 §12)。id は SKILLS レジストリのキー、learnAt = 習得 jobLevel。
- *  **全16職が確定キットを持つ** (Record 全キー必須。職を足したらここにも必須)。skillsForJob が返す。
- *  未習得帯 (最初の learnAt 未満) のみ署名スキルにフォールバックする。 */
+ *  **全16職が確定キットを持つ** (Record 全キー必須。職を足したらここにも必須)。skillsForJob が
+ *  署名スキルの後ろに並べて返す。 */
 interface KitSkill {
   /** SKILLS のキー */
   id: string;
@@ -72,7 +72,7 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   // 魔法使い: 単体・int型・必中・def無視の大砲 (脆い)。パイロット (#456)。魔力障壁 Lv30 (P) は後続。
   mage: [
     { id: 'mage-flame', name: '火炎術式', learnAt: 3 },
-    { id: 'mage-decode', name: '解式マギア', learnAt: 5 },
+    { id: 'mage-decode', name: '破式', learnAt: 5 },
     { id: 'mage-stone', name: '石射', learnAt: 6 },
     { id: 'mage-freeze', name: '氷結術式', learnAt: 8 },
     { id: 'mage-melt', name: 'メルティ', learnAt: 12 },
@@ -91,7 +91,7 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   ],
   // 詩人: 水属性・自己バフ火力・言葉の拘束。感傷/感情爆発/全体技/詩心(P) は後続 (要 新語彙)。
   poet: [
-    { id: 'poet-verse', name: '心晴の韻', learnAt: 3 },
+    { id: 'poet-verse', name: '雨音の韻', learnAt: 3 },
     { id: 'poet-calm', name: '静心', learnAt: 5 },
     { id: 'poet-rouse', name: '昂ぶりの詩', learnAt: 7 },
     { id: 'poet-bind', name: '言の葉縛り', learnAt: 8 },
@@ -144,7 +144,7 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   ],
   // 匠: からくり技師・int43・罠と装置。自爆人形/からくり兵(summon)/大発破/兵器解放/発明家(P)は後続。
   fighter: [
-    { id: 'fighter-contraption', name: 'からくり仕掛け', learnAt: 3 },
+    { id: 'fighter-contraption', name: 'からくり矢', learnAt: 3 },
     { id: 'fighter-smoke', name: '煙玉', learnAt: 5 },
     { id: 'fighter-poisongas', name: '毒煙装置', learnAt: 7 },
     { id: 'fighter-pitfall', name: '落とし穴', learnAt: 8 },
@@ -156,7 +156,7 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   // 守護者: 壁役・def43最強。盾殴りは def 基準。フルカウンター/不動(P)/かばう・挑発(マルチ)は後続。
   guardian: [
     { id: 'guardian-bash', name: '盾殴り', learnAt: 3 },
-    { id: 'guardian-shield', name: '大盾の護り', learnAt: 5 }, // parry反撃 (§14.1: Lv5)
+    { id: 'guardian-shield', name: '大盾返し', learnAt: 5 }, // parry反撃 (§14.1: Lv5)
     { id: 'guardian-thorns', name: 'とげの盾', learnAt: 8 },
     { id: 'guardian-stand', name: '仁王立ち', learnAt: 12 },
     { id: 'guardian-prayer', name: '守護の祈り', learnAt: 15 }, // defUp (§14.1: Lv15)
@@ -183,7 +183,7 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   ],
   // 隊長: タフな前衛指揮官・鼓舞。全体バフ/デバフはソロで自己/敵単体に退化、マルチで全体化。名将(P)は後続。
   captain: [
-    { id: 'captain-charge', name: '突撃号令', learnAt: 3 },
+    { id: 'captain-charge', name: '鬨の声', learnAt: 3 },
     { id: 'captain-inspire', name: '鼓舞', learnAt: 5 },
     { id: 'captain-defense', name: '防陣', learnAt: 8 },
     { id: 'captain-rush', name: '突進', learnAt: 12 },
@@ -195,7 +195,7 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
   performer: [
     { id: 'performer-slack', name: 'サボる', learnAt: 5 },
     { id: 'performer-gamble', name: 'いちかばちか', learnAt: 12 },
-    { id: 'performer-acrobat', name: '曲芸乱舞', learnAt: 15 },
+    { id: 'performer-acrobat', name: '玉乗り連撃', learnAt: 15 },
   ],
   // 予言者: 最高 int・破滅のオラクル・遅延。全体予言 (地震/嵐/日照り/水難/アポカリプス) はマルチ待ち。
   //   死の宣告 (毎ターンHP半分)/未来予知 (magicEvade)/全知(P) は後続。
@@ -220,14 +220,11 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
 };
 
 /** その jobLevel 時点で使えるとくぎ列。UI/エンジンはこの列から毎ターン選ぶ。全16職キット化済み (#456)。
- *  learnAt<=level のキット技を返す。未習得帯 (最初の技より前の Lv) のみ署名スキルにフォールバック。
- *  **[0] は署名と一致しない** (例 mage Lv3+ の [0] は火炎術式)。「playerSkills[0]===署名」を前提にする
- *  コードを書かないこと (単数 playerSkill は別途 skillForJob で保持されフォールバック用)。 */
+ *  **[0] は常に署名スキル** (Lv1 の基本技は覚えた後も使える)。続けて learnAt<=level のキット技を並べる。
+ *  キット技の名前は署名スキルと重ねない (テストで固定)。 */
 export function skillsForJob(archetype: Archetype, jobLevel: number): JobSkill[] {
-  // 全16職が確定キットを持つ (#456)。learnAt<=level のキット技を返し、未習得帯 (最初の技より前) は
-  // 署名スキル (Lv1 の基本技) にフォールバックする。
   const learned = JOB_KITS[archetype].filter((s) => jobLevel >= s.learnAt).map((s) => ({ kind: s.id, name: s.name }));
-  return learned.length ? learned : [skillForJob(archetype)];
+  return [skillForJob(archetype), ...learned];
 }
 
 /** ジョブ innate パッシブ (docs/25 §12 の各職 Lv30)。PASSIVES のキー。習得 jobLevel は一律 30。

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { skillsForJob, startBattle, resolveTurn, SKILLS, type BattleState } from '../index.js';
 
 describe('魔法使い 確定キット (#456)', () => {
-  it('低 Lv (未習得帯) は署名スキルにフォールバック', () => {
+  it('低 Lv (未習得帯) は署名スキルのみ', () => {
     const s = skillsForJob('mage', 1);
     expect(s).toHaveLength(1);
     // 署名 = 解式マギア (spell)。Lv1-2 はこれだけ。
@@ -12,14 +12,14 @@ describe('魔法使い 確定キット (#456)', () => {
   it('Lv3 で火炎術式を習得、Lv6 までに石射まで揃う', () => {
     const l3 = skillsForJob('mage', 3).map((s) => s.name);
     expect(l3).toContain('火炎術式');
-    expect(l3).not.toContain('解式マギア'); // 解式は Lv5
+    expect(l3).not.toContain('破式'); // 破式は Lv5
     const l6 = skillsForJob('mage', 6).map((s) => s.name);
-    expect(l6).toEqual(['火炎術式', '解式マギア', '石射']);
+    expect(l6).toEqual(['解式マギア', '火炎術式', '破式', '石射']); // [0] は署名
   });
 
   it('Lv25 で全 9 技 (メテオまで)。魔力障壁 P は後続', () => {
     const names = skillsForJob('mage', 25).map((s) => s.name);
-    expect(names).toEqual(['火炎術式', '解式マギア', '石射', '氷結術式', 'メルティ', '爆炎術式', 'じわれ', '永久凍土', 'メテオ']);
+    expect(names).toEqual(['解式マギア', '火炎術式', '破式', '石射', '氷結術式', 'メルティ', '爆炎術式', 'じわれ', '永久凍土', 'メテオ']);
   });
 
   it('キット技はすべて SKILLS レジストリに定義がある', () => {
@@ -28,8 +28,8 @@ describe('魔法使い 確定キット (#456)', () => {
     }
   });
 
-  it('全16職キット化済み — 未習得帯 (Lv1) は署名スキル (基本6種) にフォールバック', () => {
-    // 全職が確定キットを持つ。最初の習得 (Lv3) 未満は署名スキルにフォールバックする。
+  it('全16職キット化済み — 未習得帯 (Lv1) は署名スキル (基本6種) のみ', () => {
+    // 全職が確定キットを持つ。最初の習得 (Lv3) 未満は署名スキルだけ (習得後も署名は先頭に残る)。
     const base = ['smash', 'parry', 'flurry', 'spell', 'gamble', 'heal'];
     for (const job of ['mage', 'guardian', 'fighter', 'artist', 'explorer'] as const) {
       expect(skillsForJob(job, 1), job).toHaveLength(1);
@@ -59,7 +59,7 @@ describe('魔法使い 確定キット (#456)', () => {
 describe('忍者 確定キット (#456)', () => {
   it('レベルで毒手→かくれみ→火遁→急所狙い→九字切りを習得', () => {
     expect(skillsForJob('ninja', 3).map((s) => s.name)).toContain('毒手');
-    expect(skillsForJob('ninja', 15).map((s) => s.name)).toEqual(['毒手', 'かくれみ', '火遁', '急所狙い', '九字切り']);
+    expect(skillsForJob('ninja', 15).map((s) => s.name)).toEqual(['影分身', '毒手', 'かくれみ', '火遁', '急所狙い', '九字切り']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -113,9 +113,9 @@ describe('忍者 確定キット (#456)', () => {
 });
 
 describe('詩人 確定キット (#456)', () => {
-  it('レベルで心晴の韻〜心の詩を習得', () => {
-    expect(skillsForJob('poet', 3).map((s) => s.name)).toContain('心晴の韻');
-    expect(skillsForJob('poet', 12).map((s) => s.name)).toEqual(['心晴の韻', '静心', '昂ぶりの詩', '言の葉縛り', '無心']);
+  it('レベルで雨音の韻〜心の詩を習得', () => {
+    expect(skillsForJob('poet', 3).map((s) => s.name)).toContain('雨音の韻');
+    expect(skillsForJob('poet', 12).map((s) => s.name)).toEqual(['心晴の韻', '雨音の韻', '静心', '昂ぶりの詩', '言の葉縛り', '無心']);
     expect(skillsForJob('poet', 20).map((s) => s.name)).toContain('感情爆発');
     expect(skillsForJob('poet', 22).map((s) => s.name)).toContain('心の詩');
   });
@@ -191,9 +191,9 @@ describe('冒険者・芸術家・匠 確定キット (#456。全16職完成)', 
     expect(next.monster.statuses?.some((st) => st.id === 'accDown')).toBe(true);
   });
 
-  it('匠のからくり仕掛けは int 連動の必中魔法 (int43 型)', () => {
+  it('匠のからくり矢は int 連動の必中魔法 (int43 型)', () => {
     const s = startBattle('fighter', 3, 8, '匠', 2, 3, 0);
-    const idx = s.playerSkills.findIndex((sk) => sk.name === 'からくり仕掛け');
+    const idx = s.playerSkills.findIndex((sk) => sk.name === 'からくり矢');
     const before = s.monster.hp;
     const next: BattleState = resolveTurn(s, 'skill', undefined, idx);
     expect(next.monster.hp).toBeLessThan(before);
@@ -201,9 +201,9 @@ describe('冒険者・芸術家・匠 確定キット (#456。全16職完成)', 
 });
 
 describe('守護者 確定キット (#456。壁役・def基準)', () => {
-  it('レベルで盾殴り〜大盾の護りを習得', () => {
+  it('レベルで盾殴り〜守護の祈りを習得', () => {
     expect(skillsForJob('guardian', 3).map((s) => s.name)).toContain('盾殴り');
-    expect(skillsForJob('guardian', 15).map((s) => s.name)).toEqual(['盾殴り', '大盾の護り', 'とげの盾', '仁王立ち', '守護の祈り']);
+    expect(skillsForJob('guardian', 15).map((s) => s.name)).toEqual(['大盾の護り', '盾殴り', '大盾返し', 'とげの盾', '仁王立ち', '守護の祈り']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -244,7 +244,7 @@ describe('守護者 確定キット (#456。壁役・def基準)', () => {
 describe('巫女 確定キット (#456。luk支援・全体技のソロ退化)', () => {
   it('レベルで癒しの鈴〜払串を習得', () => {
     expect(skillsForJob('miko', 3).map((s) => s.name)).toContain('癒しの鈴');
-    expect(skillsForJob('miko', 22).map((s) => s.name)).toEqual(['癒しの鈴', '風の舞', '眠りの鈴', '加護', '破魔の舞', '癒し神楽', '払串']);
+    expect(skillsForJob('miko', 22).map((s) => s.name)).toEqual(['神楽の祈り', '癒しの鈴', '風の舞', '眠りの鈴', '加護', '破魔の舞', '癒し神楽', '払串']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -277,7 +277,7 @@ describe('巫女 確定キット (#456。luk支援・全体技のソロ退化)',
 describe('吟遊詩人 確定キット (#456。空属性・歌支援)', () => {
   it('レベルでプレリュード〜アプローズを習得', () => {
     expect(skillsForJob('bard', 3).map((s) => s.name)).toContain('プレリュード');
-    expect(skillsForJob('bard', 25).map((s) => s.name)).toEqual(['プレリュード', 'デスペラード', 'ララバイ', 'スケルツォ', 'ディスコード', 'ラプソディ', 'アプローズ']);
+    expect(skillsForJob('bard', 25).map((s) => s.name)).toEqual(['即興のセレナーデ', 'プレリュード', 'デスペラード', 'ララバイ', 'スケルツォ', 'ディスコード', 'ラプソディ', 'アプローズ']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -303,9 +303,9 @@ describe('吟遊詩人 確定キット (#456。空属性・歌支援)', () => {
 });
 
 describe('隊長 確定キット (#456。全体バフはソロで自己/敵に退化)', () => {
-  it('レベルで突撃号令〜攻陣を習得', () => {
-    expect(skillsForJob('captain', 3).map((s) => s.name)).toContain('突撃号令');
-    expect(skillsForJob('captain', 25).map((s) => s.name)).toEqual(['突撃号令', '鼓舞', '防陣', '突進', '檄', '捨て身攻撃', '攻陣']);
+  it('レベルで鬨の声〜攻陣を習得', () => {
+    expect(skillsForJob('captain', 3).map((s) => s.name)).toContain('鬨の声');
+    expect(skillsForJob('captain', 25).map((s) => s.name)).toEqual(['突撃号令', '鬨の声', '鼓舞', '防陣', '突進', '檄', '捨て身攻撃', '攻陣']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -333,7 +333,7 @@ describe('隊長 確定キット (#456。全体バフはソロで自己/敵に�
 describe('将軍 確定キット (#456)', () => {
   it('レベルで一閃〜鬼神斬りを習得', () => {
     expect(skillsForJob('shogun', 3).map((s) => s.name)).toContain('一閃');
-    expect(skillsForJob('shogun', 20).map((s) => s.name)).toEqual(['一閃', '足払い', '見切り', '鬼神斬り']);
+    expect(skillsForJob('shogun', 20).map((s) => s.name)).toEqual(['号令一閃', '一閃', '足払い', '見切り', '鬼神斬り']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -355,7 +355,7 @@ describe('将軍 確定キット (#456)', () => {
 describe('予言者 確定キット (#456)', () => {
   it('レベルで未来スイッチ〜蠱毒の王を習得', () => {
     expect(skillsForJob('seer', 3).map((s) => s.name)).toContain('未来スイッチ');
-    expect(skillsForJob('seer', 20).map((s) => s.name)).toEqual(['未来スイッチ', '雷の予言', '毒の予言', '破滅の予言', '蠱毒の王']);
+    expect(skillsForJob('seer', 20).map((s) => s.name)).toEqual(['未来視', '未来スイッチ', '雷の予言', '毒の予言', '破滅の予言', '蠱毒の王']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -379,7 +379,7 @@ describe('賢者 確定キット (#456)', () => {
   it('レベルで火炎〜星辰の大魔法を習得 (全5属性)', () => {
     expect(skillsForJob('sage', 3).map((s) => s.name)).toContain('火炎');
     expect(skillsForJob('sage', 22).map((s) => s.name)).toEqual([
-      '火炎', '解式', '石射', '氷結', '疾風', '天啓', '賢者の癒し', '星辰の大魔法',
+      '天啓の一手', '火炎', '解式', '石射', '氷結', '疾風', '天啓', '賢者の癒し', '星辰の大魔法',
     ]);
   });
 
@@ -410,7 +410,7 @@ describe('賢者 確定キット (#456)', () => {
 describe('聖騎士 確定キット (#456)', () => {
   it('レベルで聖光の癒し〜浄化を習得', () => {
     expect(skillsForJob('paladin', 3).map((s) => s.name)).toContain('聖光の癒し');
-    expect(skillsForJob('paladin', 18).map((s) => s.name)).toEqual(['聖光の癒し', '光の加護', '光の剣', '聖なる守り', '浄化']);
+    expect(skillsForJob('paladin', 18).map((s) => s.name)).toEqual(['聖光の誓い', '聖光の癒し', '光の加護', '光の剣', '聖なる守り', '浄化']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -454,9 +454,9 @@ describe('聖騎士 確定キット (#456)', () => {
 });
 
 describe('遊び人 確定キット (#456)', () => {
-  it('レベルでサボる〜曲芸乱舞を習得', () => {
+  it('レベルでサボる〜玉乗り連撃を習得', () => {
     expect(skillsForJob('performer', 5).map((s) => s.name)).toContain('サボる');
-    expect(skillsForJob('performer', 15).map((s) => s.name)).toEqual(['サボる', 'いちかばちか', '曲芸乱舞']);
+    expect(skillsForJob('performer', 15).map((s) => s.name)).toEqual(['曲芸乱舞', 'サボる', 'いちかばちか', '玉乗り連撃']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
@@ -494,8 +494,8 @@ describe('遊び人 確定キット (#456)', () => {
 
 describe('戦士 確定キット (#456)', () => {
   it('レベルでみだれ突き〜全力斬りを習得 (全体技は後続なので Lv3-4 は署名)', () => {
-    expect(skillsForJob('warrior', 4)[0]!.kind).not.toMatch(/^warrior-/); // Lv5 未満は署名フォールバック
-    expect(skillsForJob('warrior', 18).map((s) => s.name)).toEqual(['みだれ突き', 'かぶとわり', 'ためる', '全力斬り']);
+    expect(skillsForJob('warrior', 4).map((s) => s.kind)).toEqual(['parry']); // Lv5 未満は署名のみ
+    expect(skillsForJob('warrior', 18).map((s) => s.name)).toEqual(['鉄壁の構え', 'みだれ突き', 'かぶとわり', 'ためる', '全力斬り']);
   });
 
   it('キット技はすべて SKILLS に定義がある', () => {
