@@ -11,7 +11,10 @@ export function battleResultLines(
   outcome: string,
   /** 敗北時に運ばれた街の名前 (分からなければ null)。 */
   loseTownName: string | null,
+  /** 台本負けのストーリー戦。負けても何も失わず、その場に残る。 */
+  scripted = false,
 ): string[] {
+  if (scripted && outcome === 'lose') return ['目の前が暗くなった……。'];
   const drops = awarded.drops ?? [];
   const lost = awarded.materialsLost ?? [];
   const dropCounts = new Map<string, number>();

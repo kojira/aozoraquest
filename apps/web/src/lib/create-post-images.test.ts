@@ -4,6 +4,7 @@ import type { Agent } from '@atproto/api';
 
 interface PostRecord {
   text: string;
+  reply?: { root: { uri: string; cid: string }; parent: { uri: string; cid: string } };
   embed?: { $type: string; images: { alt: string }[] };
   facets?: { features?: { $type?: string; tag?: string; uri?: string; did?: string }[] }[];
 }
@@ -47,6 +48,15 @@ describe('createPostWithImages', () => {
     const rec = m.posted();
     expect(rec?.embed?.$type).toBe('app.bsky.embed.images');
     expect(rec?.embed?.images.map((i) => i.alt)).toEqual(['A', 'B']);
+  });
+
+  it('返信先を渡すと reply と embed.images の両方を持つ (#820)', async () => {
+    const m = mockAgent();
+    const reply = { root: { uri: 'at://r/app.bsky.feed.post/1', cid: 'rc' }, parent: { uri: 'at://p/app.bsky.feed.post/2', cid: 'pc' } };
+    await createPostWithImages(m.agent, 'へんしん', [img('image/webp', 'A')], undefined, reply);
+    const rec = m.posted();
+    expect(rec?.reply).toEqual(reply);
+    expect(rec?.embed?.images.map((i) => i.alt)).toEqual(['A']);
   });
 
   it('caps at MAX_POST_IMAGES (4)', async () => {
