@@ -138,7 +138,9 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
       const resultPos = b.resultPos;
       if (b.resultToken) tokenRef.current = b.resultToken;
       // HP/MP + 在庫はサーバー権威 (turn 結果)。carry は undefined=満タン → null。敗北は最後の街へ帰還。
-      if (next.outcome === 'lose') {
+      // 台本負け (scripted) は街へ運ばれない。その場で HP/MP 1 のまま続く。
+      const scripted = next.story?.scripted === true;
+      if (next.outcome === 'lose' && !scripted) {
         setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y, lastTown: resultPos } : {}) } : s));
         if (resultPos) { const t = townAt(resultPos.x, resultPos.y); setNotice(t ? `気がつくと「${t.name}」に運ばれていた…` : '気がつくと街に運ばれていた…'); }
       } else {
@@ -176,8 +178,8 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
         const arch = archetypeRef.current;
         if (arch && didRef.current) bumpJobXp(didRef.current, arch, awarded.xp);
       }
-      const loseTown = next.outcome === 'lose' && b.resultPos ? townAt(b.resultPos.x, b.resultPos.y) : null;
-      const resultLines = battleResultLines(awarded, next.outcome, loseTown?.name ?? null);
+      const loseTown = next.outcome === 'lose' && !scripted && b.resultPos ? townAt(b.resultPos.x, b.resultPos.y) : null;
+      const resultLines = battleResultLines(awarded, next.outcome, loseTown?.name ?? null, scripted);
       if (resultLines.length === 0) {
         battleRef.current = null;
         setBattle(null);

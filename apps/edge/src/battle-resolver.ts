@@ -283,7 +283,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
     // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
-    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
+    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
   });
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -653,6 +653,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     // fail-closed)。この順序 (消費確定 → 報酬) が §4.1 の「CAS で先に確定 → その後 resolve/確定」。
     // next.outcome は上の `!== 'ongoing'` で BattleDecision に絞り込み済み (キャスト不要 = 網羅を型で保証)。
     const decision: BattleDecision = next.outcome;
+    // 台本負け (scripted): 素材・パワーは動かさず、その場に残り HP/MP 1 で続ける。
+    const scriptedLoss = decision === 'lose' && guard.state.story?.scripted === true;
     try {
       await deleteGuard(env, now, userDid, cid);
     } catch (e) {
@@ -674,7 +676,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       const consume = (id: string, used: number) => { const n = (cur.materials[id] ?? 0) - used; if (n > 0) consumedMaterials[id] = n; else delete consumedMaterials[id]; };
       consume('herb', next.herbsUsed ?? 0);
       consume('sky-dew', next.tonicsUsed ?? 0);
-      const r = applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
+      const r = scriptedLoss ? { next: { ...cur, materials: consumedMaterials }, awarded: {} } : applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
         // レベルアップの内訳 (「ちから +2」) を素ステ込みで出すため。
@@ -694,12 +696,13 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       const parsed = parseTileKey(guard.sealed.tile);
       const battleTile = parsed ? { x: parsed.x, y: parsed.y } : { x: cur.x, y: cur.y };
       const spawn = worldOverlay().spawn;
-      finalPos = decision === 'lose' ? (cur.lastTown ?? { x: spawn.x, y: spawn.y }) : battleTile;
+      const sentHome = decision === 'lose' && !scriptedLoss;
+      finalPos = sentHome ? (cur.lastTown ?? { x: spawn.x, y: spawn.y }) : battleTile;
       // **敗北の帰還先はフィールドの街** なので mapId を落とす。勝ち/引き分けは戦闘した
       // マップに留まる (封印済みの mapId を使う — state 側は書き換わっている可能性がある)。
       // ここで mapId を扱わないと、内部マップの座標のままフィールドに放り出される /
       // 内部の範囲外に立って全方向「進めない」になる (レビュー ★★★)。
-      finalMapId = decision === 'lose' ? WORLD_MAP_ID : (guard.sealed.mapId ?? parsed?.mapId ?? WORLD_MAP_ID);
+      finalMapId = sentHome ? WORLD_MAP_ID : (guard.sealed.mapId ?? parsed?.mapId ?? WORLD_MAP_ID);
       // ジョブ Lv 条件のシナリオ (#545) は決着でしか動かないのでここで見る。
       // mutate は純関数なので、CAS リトライで複数回走っても同じ結果になる。
       // ストーリー戦: 勝てば winFlag、負ければ loseFlag。立ててからシナリオを進める (D-STORY-009)。
@@ -720,8 +723,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         //
         // これは連戦数を大きく伸ばす (実測: tier1 で 9.1 → 46.7 戦)。#536 で連戦数から
         // 決めた monsterStatFloor と JOB_LEVEL_PACE は引き直しが要る (#547)。
-        carryHp: decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
-        carryMp: decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
+        carryHp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
+        carryMp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
         defeated,
         defeatedWindow: window,
       };

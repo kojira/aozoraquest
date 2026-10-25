@@ -25,4 +25,8 @@ describe('battleResultLines', () => {
   it('is empty for a plain flee so the battle closes straight to the map', () => {
     expect(battleResultLines({}, 'fled', null)).toEqual([]);
   });
+
+  it('台本負け (scripted) は「目の前が暗くなった……。」だけ。街へ運ばれた文は出さない', () => {
+    expect(battleResultLines({}, 'lose', 'ほむらの街', true)).toEqual(['目の前が暗くなった……。']);
+  });
 });
