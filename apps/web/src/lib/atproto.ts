@@ -328,12 +328,14 @@ export const MAX_POST_IMAGES = 4;
  * @param images 各 {blob, alt}。alt は a11y 用 (空でも可)
  * @param tag    互換のため残置。facet (リンク/メンション/#tag) は detectPostFacets が
  *               text から自動検出するので、ハッシュタグもこの引数なしで facet 化される。
+ * @param reply  渡すとスレッド返信になる ({@link createPost} と同じ形)。
  */
 export async function createPostWithImages(
   agent: Agent,
   text: string,
   images: Array<{ blob: Blob; alt: string }>,
   tag?: string,
+  reply?: ReplyRef,
   // 戻り値は投稿の URI/CID。URI は XP 申告の冪等キーに使う (#534)。
 ): Promise<{ uri: string; cid: string }> {
   void tag; // facet 検出は自動化済み。引数は呼び出し側互換のため受けるだけ。
@@ -344,6 +346,7 @@ export async function createPostWithImages(
     createdAt: new Date().toISOString(),
     via: VIA,
   };
+  if (reply) record['reply'] = reply;
   if (picked.length > 0) {
     // 並列アップロード (map は順序を保持するので表示順は維持される)
     const uploaded = await Promise.all(
