@@ -239,7 +239,6 @@ function ComposeDialog({
   // その欄に紐づくのではなく**常に末尾へ新規画像として追加**する (差し替えは概念的に
   // 複雑で混乱を招くため、「貼り付け=新規添付」に一貫させる)。
   function onPaste(e: React.ClipboardEvent) {
-    if (replyTo) return; // 返信は画像添付不可 (showImageUi=false と揃える)
     if (loading || compressing) return; // 投稿中/圧縮中は受け付けない (ボタンの disabled と揃える)
     const files = imageFilesFromClipboard(e.clipboardData?.items);
     if (files.length === 0) return; // 画像が無ければ通常のテキスト貼り付けに委ねる
@@ -362,14 +361,14 @@ function ComposeDialog({
     try {
       // 投稿の URI は XP 申告の冪等キーに使う (#534)。同じ投稿で二重に XP が入らない。
       let postUri: string | undefined;
+      const reply: ReplyRef | undefined = replyTo
+        ? { root: replyTo.root, parent: replyTo.parent }
+        : undefined;
       if (images.length > 0) {
         // カード共有画像が含まれていれば #AozoraQuest facet を付ける。
         const tag = images.some((im) => im.source === 'card') ? 'AozoraQuest' : undefined;
-        postUri = (await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag))?.uri;
+        postUri = (await createPostWithImages(agent, body, images.map((im) => ({ blob: im.blob, alt: im.alt })), tag, reply))?.uri;
       } else {
-        const reply: ReplyRef | undefined = replyTo
-          ? { root: replyTo.root, parent: replyTo.parent }
-          : undefined;
         postUri = (await createPost(agent, body, reply))?.uri;
       }
       // via=AozoraQuest で投稿が作成されたので power 累積カウンタを +1。
@@ -439,8 +438,6 @@ function ComposeDialog({
     }
   }
 
-  // 画像添付時のみ「reply 」UI と排他: 既存 reply フローへの画像添付は今回非対応。
-  const showImageUi = !replyTo;
   const submitDisabled =
     loading
     || compressing
@@ -519,7 +516,6 @@ function ComposeDialog({
           {addNotice}
         </span>
 
-        {showImageUi && (
           <div style={{ marginTop: '0.5em', display: 'flex', flexDirection: 'column', gap: '0.4em' }}>
             {images.length > 1 && (
               <p style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: 0 }}>
@@ -637,7 +633,6 @@ function ComposeDialog({
               style={{ display: 'none' }}
             />
           </div>
-        )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5em' }}>
           <span style={{ fontSize: '0.85em', color: text.length > POST_MAX_LENGTH ? 'var(--color-danger)' : 'var(--color-muted)' }}>
