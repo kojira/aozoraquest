@@ -64,8 +64,9 @@ export interface BattleState {
   mpTraitChance?: number;
   /** 直近ターンのイベント列 (UI 演出用。全履歴は保持しない = 状態を軽く保つ) */
   lastEvents: TurnEvent[];
-  /** ストーリー戦 (D-STORY-009)。敵は逃げない。canFlee=false なら「にげる」を受け付けない。 */
-  story?: { canFlee: boolean };
+  /** ストーリー戦 (D-STORY-009)。敵は逃げない。canFlee=false なら「にげる」を受け付けない。
+   *  scripted = 台本負け (HP は 1 で止まり、倒れる手前か 3 ターン目の終わりで lose)。 */
+  story?: { canFlee: boolean; scripted?: boolean };
 }
 
 /**
@@ -129,7 +130,7 @@ export function startBattle(
      *  各追加敵は同 tier から別 seed で抽選し monsterId を保持。allies=[player]・enemies=[主敵, …追加] を設定。 */
     extraEnemies?: number;
     /** ストーリー戦 (D-STORY-009)。BattleState.story にそのまま載る。 */
-    story?: { canFlee: boolean };
+    story?: { canFlee: boolean; scripted?: boolean };
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -175,6 +176,6 @@ export function startBattle(
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),
     ...(gains.chance !== undefined ? { mpTraitChance: mpTraitChanceOf(gains.chance, player.luk)! } : {}),
     lastEvents: [],
-    ...(extras?.story ? { story: { canFlee: extras.story.canFlee } } : {}),
+    ...(extras?.story ? { story: { canFlee: extras.story.canFlee, ...(extras.story.scripted ? { scripted: true } : {}) } } : {}),
   };
 }

@@ -47,6 +47,9 @@ export interface StoryBattleDef {
   loseFlag?: string;
   /** false なら「にげる」を出さない・受け付けない。省略 = true。 */
   canFlee?: boolean;
+  /** 台本負け。主人公の HP は 1 で止まり、倒れる手前か 3 ターン目の終わりで lose になる。
+   *  素材・パワーは減らず、その場に残る (edge)。loseFlag 必須・敵は 1 体だけ。 */
+  scripted?: boolean;
 }
 
 /** 固定モンスター: マップのマスに居て、踏むと戦闘になる。 */
@@ -123,6 +126,8 @@ function validateBattles(list: readonly StoryBattleDef[]): void {
     if (!isFlagName(b.winFlag)) throw new StoryDataError(`${b.id}: 勝利フラグ名が不正 (${b.winFlag})`);
     if (b.loseFlag !== undefined && !isFlagName(b.loseFlag)) throw new StoryDataError(`${b.id}: 敗北フラグ名が不正 (${b.loseFlag})`);
     if (b.canFlee !== undefined && typeof b.canFlee !== 'boolean') throw new StoryDataError(`${b.id}: canFlee が真偽値でない`);
+    if (b.scripted !== undefined && typeof b.scripted !== 'boolean') throw new StoryDataError(`${b.id}: scripted が真偽値でない`);
+    if (b.scripted && (b.loseFlag === undefined || b.count !== 1)) throw new StoryDataError(`${b.id}: 台本負けは loseFlag 必須・敵は 1 体`);
   }
 }
 

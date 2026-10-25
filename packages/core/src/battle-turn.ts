@@ -45,6 +45,9 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
  * (CSPRNG/kuda) を注入し「先読み・引き直し」を封じるための薄い口。省略時は従来どおり
  * `turnRng(seed, turn)` = 完全決定的 (試練/テストは seed 方式のまま不変)。
  */
+/** 台本負けのストーリー戦が終わるターン。 */
+const SCRIPTED_LOSS_TURNS = 3;
+
 export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number, skillIndex = 0): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
 
@@ -252,6 +255,11 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   // 勝敗判定 (敵の逃走 = monster-fled で既に決着している場合は上書きしない)
   if (state.outcome !== 'ongoing') { /* monster-fled 等: 確定済み */ }
   else if (state.monster.hp === 0) state.outcome = 'win';
+  else if (state.story?.scripted && (state.player.hp === 0 || state.turn >= SCRIPTED_LOSS_TURNS)) {
+    // 台本負け: 倒れきらず HP 1 で膝をつく。強くて倒れなくても 3 ターン目で終わる。
+    state.player.hp = Math.max(1, state.player.hp);
+    state.outcome = 'lose';
+  }
   else if (state.player.hp === 0) state.outcome = 'lose';
 
   state.lastEvents = [...events];
