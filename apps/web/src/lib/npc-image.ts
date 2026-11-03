@@ -23,13 +23,15 @@ export function npcImageUrl(id: string, kind: NpcImageKind, image: NpcImage, exp
 /**
  * NPC の台詞を会話窓の行にする (D-DIALOGUE-005)。先頭の表情タグは表示から外し、
  * 登録済みの表情画像があればその行だけの portrait にする。無ければ窓の通常 portrait のまま。
+ * 演出タグ `[fx:…]` (E2) はその行の effects にする (お知らせと同じ演出層が再生する)。
  */
 export function npcDialogueLines(npc: Pick<NpcDef, 'id' | 'name' | 'expressionImages'>, lines: readonly string[],
   imageUrl: (expression: string, image: NpcImage) => string = (expression, image) => npcImageUrl(npc.id, 'portrait', image, expression)): DialogueLine[] {
   return lines.map((raw) => {
-    const { expression, text } = parseNpcLine(raw);
+    const { expression, effects, text } = parseNpcLine(raw);
     const image = npcExpressionImage(npc, expression);
-    return { speaker: npc.name, text, ...(image && expression ? { portrait: { src: imageUrl(expression, image), name: npc.name } } : {}) };
+    return { speaker: npc.name, text, ...(image && expression ? { portrait: { src: imageUrl(expression, image), name: npc.name } } : {}),
+      ...(effects ? { effects } : {}) };
   });
 }
 async function rawCid(blob: Blob): Promise<string> {

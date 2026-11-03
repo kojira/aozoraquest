@@ -18,3 +18,12 @@ describe('npcDialogueLines', () => {
     expect(npcDialogueLines({ id: 'x', name: 'X' }, ['[sad]やあ'])).toEqual([{ speaker: 'X', text: 'やあ' }]);
   });
 });
+
+describe('npcDialogueLines effect tags (E2)', () => {
+  test('a tagged line carries the mapped StoryEffect and never shows the tag', () => {
+    const lines = npcDialogueLines(npc, ['[sad][fx:silhouette-on]だれ？', 'ふつう', '[fx:fade-black]さようなら']);
+    expect(lines.map((l) => l.text)).toEqual(['だれ？', 'ふつう', 'さようなら']);
+    expect(lines.map((l) => l.effects)).toEqual([[{ kind: 'silhouette', show: true }], undefined, [{ kind: 'fade', to: 'black' }]]);
+    expect(lines[0]!.portrait?.src).toContain('expression=sad');
+  });
+});

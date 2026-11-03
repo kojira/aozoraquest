@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { DialogueWindow } from './dialogue-window';
+import { npcDialogueLines } from '@/lib/npc-image';
 
 /**
  * **セリフ窓のタップは祖先に伝わってはいけない** (#638)。
@@ -212,5 +213,19 @@ describe('DialogueWindow: 演出層', () => {
   it('viewport 窓では演出層を出さない', () => {
     render(<DialogueWindow lines={STORY} onDone={() => {}} />);
     expect(screen.queryByTestId('story-effect-layer')).toBeNull();
+  });
+});
+
+describe('DialogueWindow: NPC 台詞の演出タグ (E2)', () => {
+  it('タグつきの行を出すと演出層が暗転し、タグの文字は出ない', () => {
+    const lines = npcDialogueLines({ id: 'x', name: '兄' }, ['……', '[fx:fade-black]さようなら']);
+    render(<DialogueWindow anchor="map" lines={lines} onDone={() => {}} />);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('0');
+    const surface = screen.getAllByRole('dialog')[0]!;
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('1');
+    fireEvent.click(surface);
+    expect(document.body.textContent).toContain('さようなら');
+    expect(document.body.textContent).not.toContain('[fx:');
   });
 });
