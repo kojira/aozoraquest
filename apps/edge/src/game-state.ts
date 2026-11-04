@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, worldOverlay, type GearSelection } from '@aozoraquest/core';
+import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, worldOverlay, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -55,11 +55,45 @@ export interface PartyState {
   ids: string[];
   hp?: Record<string, number>;
   mp?: Record<string, number>;
+  /** ギルドで入れた生成の仲間の定義と経験値 (D-PARTY-002)。ids にいる人だけ。 */
+  members?: PartyRecruit[];
+  /** なじみ (名前つきの冒険者) の経験値 (§11)。無ければ主人公のジョブ Lv から。 */
+  xp?: Record<string, number>;
+  /** その日 (JST) に入れた候補の id。日付が変わったら捨てる。 */
+  met?: { day: string; ids: string[] };
+  /** はずしたなじみの id (もう紹介しない)。 */
+  parted?: string[];
+  /** その日にギルドごとに引き直した回数 (§10)。日付が変わったら捨てる。 */
+  rerolls?: { day: string; byGuild: Record<string, number> };
 }
 
-/** 全快にした party (hp/mp を消す)。仲間がいなければ undefined のまま。 */
+/** 全快にした party (hp/mp を消す。ほかはそのまま)。party が無ければ undefined のまま。 */
 export function healedParty(party: PartyState | undefined): PartyState | undefined {
-  return party ? { ids: [...party.ids] } : undefined;
+  if (!party) return undefined;
+  const { hp: _hp, mp: _mp, ...rest } = party;
+  return { ...rest, ids: [...party.ids] };
+}
+
+/** 仲間の Lv が上がった内訳 (決着の応答に載せる)。 */
+export interface AllyLevelUp { id: string; name: string; from: number; to: number }
+
+/**
+ * 戦闘に出た仲間 (fought のうち、いまも ids にいる人) に、1 人ぶんの経験値 share を足す (D-PARTY-002 §11)。
+ * 生成の仲間は members[].xp、なじみは xp[id]。Lv が上がった人を返す。fallbackLevel は xp の無いなじみの Lv。
+ */
+export function partyWithBattleXp(party: PartyState | undefined, fought: readonly string[], share: number, fallbackLevel: number): { party: PartyState | undefined; leveled: AllyLevelUp[] } {
+  if (!party || share <= 0) return { party, leveled: [] };
+  const gains = (id: string) => fought.includes(id) && party.ids.includes(id);
+  const before = partyDefsOf(party, recruitById, fallbackLevel);
+  const members = party.members?.map((m) => (gains(m.id) ? { ...m, xp: m.xp + share } : m));
+  const xp = { ...party.xp };
+  for (const d of before) if (gains(d.id) && !isGeneratedRecruitId(d.id)) xp[d.id] = d.xp + share;
+  const next: PartyState = { ...party, ...(members ? { members } : {}), ...(Object.keys(xp).length ? { xp } : {}) };
+  const leveled = partyDefsOf(next, recruitById, fallbackLevel).flatMap((a) => {
+    const from = before.find((b) => b.id === a.id)?.level ?? a.level;
+    return gains(a.id) && a.level > from ? [{ id: a.id, name: a.name, from, to: a.level }] : [];
+  });
+  return { party: next, leveled };
 }
 
 export interface GameState {

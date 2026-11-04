@@ -22,7 +22,7 @@ import { signPosition, verifyPosition } from './world-token';
 import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
-import { handlePartySet } from './party-route';
+import { handlePartyCandidates, handlePartyReroll, handlePartySet } from './party-route';
 import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -76,6 +76,7 @@ const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_INN_REST = LXM.innRest;
 const LXM_PARTY_SET = LXM.partySet;
+const LXM_PARTY_BY_PATH: Record<string, string> = { '/api/party': LXM_PARTY_SET, '/api/party/candidates': LXM.partyCandidates, '/api/party/reroll': LXM.partyReroll };
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -562,21 +563,24 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
   }
 
-  // パーティの編成 (D-PARTY-001)。ギルドの受付のそばにいるかは edge が確かめる。
-  if (req.method === 'POST' && url.pathname === '/api/party') {
+  // パーティの編成・ギルドの候補・候補の引き直し (D-PARTY-001 / D-PARTY-002)。ギルドの受付のそばにいるかは edge が確かめる。
+  if (req.method === 'POST' && LXM_PARTY_BY_PATH[url.pathname]) {
     const token = bearer(req);
     if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
     let did: string;
     try {
-      ({ iss: did } = await verifyServiceAuth(token, { audience: env.WORKER_DID ?? 'did:web:edge.aozoraquest.app', lxm: LXM_PARTY_SET }));
+      ({ iss: did } = await verifyServiceAuth(token, { audience: env.WORKER_DID ?? 'did:web:edge.aozoraquest.app', lxm: LXM_PARTY_BY_PATH[url.pathname]! }));
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { guild?: unknown; ids?: unknown; token?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { guild?: unknown; ids?: unknown; token?: unknown; rkey?: unknown };
     if (typeof body.guild !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       await ensureAuthoredWorld(env, nowSec());
-      return cors(json(await handlePartySet(env, did, body.guild, body.ids, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      const pos = typeof body.token === 'string' ? body.token : undefined, ns = nsFromOrigin(req);
+      if (url.pathname === '/api/party/candidates') return cors(json(await handlePartyCandidates(env, did, body.guild, pos, nowSec(), ns)), allowedOrigin);
+      if (url.pathname === '/api/party/reroll') return cors(json(await handlePartyReroll(env, did, body.guild, body.rkey, pos, nowSec(), ns)), allowedOrigin);
+      return cors(json(await handlePartySet(env, did, body.guild, body.ids, pos, nowSec(), ns)), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }

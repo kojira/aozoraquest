@@ -29,7 +29,7 @@ import {
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, advanceGuard, deleteGuard } from './battle-guard';
-import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, GAME_STATE_COLLECTION, type GameStateEnv, type GameState, type PartyState } from './game-state';
+import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, partyWithBattleXp, GAME_STATE_COLLECTION, type GameStateEnv, type GameState, type PartyState } from './game-state';
 import { advanceScenario, type ScenarioMessage } from './scenario-progress';
 import { sanitizeGear } from './game-state';
 // sanitizeGear は game-state へ移した (shop からも使うため。shop → battle-resolver は循環)。
@@ -582,7 +582,13 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         // 群れ (#453): **倒した敵 (hp<=0) ぶんだけ**報酬。生存敵に報酬を出さない (レビュー ★★)。
         // 全滅勝ちなら全敵が hp<=0 で全頭ぶん。1 体戦は monsterId 単体。
         ...(isMulti ? { enemyIds: next.enemies!.filter((e) => e.hp <= 0).map((e) => e.monsterId ?? next.monsterId) } : {}),
+        // 戦闘の経験値は、出た人数 (主人公 + 封印した仲間。途中で倒れた仲間も数える) で等分 (D-PARTY-002 §11)。
+        heads: 1 + (guard.sealed.party?.length ?? 0),
       });
+      // 仲間にも同じ 1 人ぶんを足す。Lv が上がった仲間は、主人公と同じく全快する。
+      const allies = partyWithBattleXp(r.next.party, guard.sealed.party ?? [], r.awarded.xp ?? 0, jobLevelFromXp(jobXpOf(cur, guard.sealed.archetype), guard.sealed.archetype));
+      r.next = { ...r.next, party: allies.party };
+      r.awarded = { ...r.awarded, ...(allies.leveled.length ? { allyLeveledUp: allies.leveled } : {}) };
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
       const prevDefeated = cur.defeatedWindow === window ? (cur.defeated ?? []) : [];
@@ -623,7 +629,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         // 決めた monsterStatFloor と JOB_LEVEL_PACE は引き直しが要る (#547)。
         carryHp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
         carryMp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
-        party: decision === 'lose' && !scriptedLoss || r.awarded.leveledUp ? healedParty(settled.party) : partyAfterBattle(settled.party, guard.sealed.party ?? [], next),
+        party: decision === 'lose' && !scriptedLoss || r.awarded.leveledUp ? healedParty(settled.party) : partyAfterBattle(settled.party, guard.sealed.party ?? [], next, (r.awarded.allyLeveledUp ?? []).map((a) => a.id)),
         defeated,
         defeatedWindow: window,
       };
@@ -652,15 +658,17 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
 }
 
 /** 決着の後の party: 戦闘に出た仲間の HP/MP を持ちこす (満タンは書かない)。出なかった仲間 (倒れていた) はそのまま。
- *  決着までの間に外された仲間は書かない (ids は今の state を正とする)。 */
-function partyAfterBattle(party: PartyState | undefined, fought: readonly string[], battle: BattleState): PartyState | undefined {
+ *  Lv が上がった仲間 (leveled) は全快。決着までの間に外された仲間は書かない (ids は今の state を正とする)。 */
+function partyAfterBattle(party: PartyState | undefined, fought: readonly string[], battle: BattleState, leveled: readonly string[]): PartyState | undefined {
   if (!party) return undefined;
+  const { hp: _hp, mp: _mp, ...rest } = party;
   const hp = { ...party.hp }, mp = { ...party.mp };
   fought.forEach((id, i) => {
     const c = battle.allies?.[i + 1];
     if (!c || !party.ids.includes(id)) return;
-    if (c.hp < c.maxHp) hp[id] = c.hp; else delete hp[id];
-    if (c.mp < c.maxMp) mp[id] = c.mp; else delete mp[id];
+    const full = leveled.includes(id);
+    if (c.hp < c.maxHp && !full) hp[id] = c.hp; else delete hp[id];
+    if (c.mp < c.maxMp && !full) mp[id] = c.mp; else delete mp[id];
   });
-  return { ids: [...party.ids], ...(Object.keys(hp).length ? { hp } : {}), ...(Object.keys(mp).length ? { mp } : {}) };
+  return { ...rest, ids: [...party.ids], ...(Object.keys(hp).length ? { hp } : {}), ...(Object.keys(mp).length ? { mp } : {}) };
 }
