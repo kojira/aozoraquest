@@ -164,7 +164,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     const consumedOnAct = (self.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
     if (who === 'player') {
       if (cmd === 'attack') {
-        doAttack(state.player, state.monster, rng, events, 'player');
+        // 属性つき武器の通常攻撃はその属性 (D-ELEM-001)。とくぎは自分の属性のまま。
+        doAttack(state.player, state.monster, rng, events, 'player', state.player.weaponElement ? { element: state.player.weaponElement } : {});
         if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) {
           state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
         }

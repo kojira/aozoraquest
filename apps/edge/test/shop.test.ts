@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { EQUIPMENT, EQUIPMENT_BY_ID, ITEMS, setItemOverrides, SALE_TUNING, townShopStock, worldOverlay, BASE_PALETTE, setInteriors, type InteriorMap } from '@aozoraquest/core';
 import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES, MAX_ITEM_STACK } from '../src/shop';
-import { sanitizeGear } from '../src/battle-resolver';
+import { handleGear, sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
@@ -488,5 +488,23 @@ describe('村の中のなんでも屋 (#424/#636)', () => {
     await expect(shopCraft(await makeEnv(), DID,
       { itemId: ITEM.id, rkey: 'r2', luk: 0, pos: { x: 1, y: 1, mapId: 'in-town' } }, NOW),
     ).rejects.toMatchObject({ code: 'not_in_town' });
+  });
+});
+
+describe('handleGear: 隣り合う属性の防具 (D-ELEM-001 §13a)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setItemOverrides(null); });
+  const elem = (id: string, slot: 'armor' | 'head', element: 'water' | 'fire' | 'void') => ({ id, name: id, slot, kind: 'cloth' as const, grade: 1 as const, price: { power: 1, materials: 0 }, bonus: {}, element });
+
+  it('水の胴と火の頭は 400 element_conflict で保存しない。水と空は着られる', async () => {
+    setItemOverrides({ items: Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), equipment: [...EQUIPMENT.filter((e) => !e.element), elem('ar-w', 'armor', 'water'), elem('hd-f', 'head', 'fire'), elem('hd-v', 'head', 'void')] });
+    const pieces = [{ rkey: 'a', itemId: 'ar-w', level: 0 }, { rkey: 'b', itemId: 'hd-f', level: 0 }, { rkey: 'c', itemId: 'hd-v', level: 0 }];
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await expect(handleGear(env, DID, { armor: { id: 'ar-w', level: 0 }, head: { id: 'hd-f', level: 0 } }, NOW)).rejects.toMatchObject({ status: 400, code: 'element_conflict' });
+    expect(stored(store).gearSel).toBeUndefined();
+    await handleGear(env, DID, { armor: { id: 'ar-w', level: 0 }, head: { id: 'hd-v', level: 0 } }, NOW);
+    expect(stored(store).gearSel).toEqual({ armor: { id: 'ar-w', level: 0 }, head: { id: 'hd-v', level: 0 } });
   });
 });

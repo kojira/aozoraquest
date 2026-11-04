@@ -6,6 +6,7 @@
 import { type Archetype, type StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearBonus, type GearSelection } from './equipment.js';
+import { armorDye, weaponElement } from './gear-element.js';
 import { type Element } from './elements.js';
 import { type StatusId, type StatusInstance } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
@@ -56,6 +57,10 @@ export interface Combatant {
   element?: Element;
   /** すべての魔法を無効化 (メタル系。#455)。true だと fixedDamage/doMagic が最小 1。 */
   resistAllMagic?: boolean;
+  /** 武器の属性 (D-ELEM-001)。通常攻撃だけに使う。 */
+  weaponElement?: Element;
+  /** 防具の染まり (D-ELEM-001 §13a。属性 → 0〜1、合計 1 まで)。属性の攻撃の被ダメに掛かる。 */
+  armorDye?: Partial<Record<Element, number>>;
   /** 効かない状態異常 (MonsterDef.statusResist から)。applyStatus が付与しない。 */
   statusResist?: StatusId[];
   /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
@@ -215,6 +220,13 @@ export function playerCombatant(
     c.hp = c.maxHp;
   }
   c.passives = jobPassives(archetype, jobLevel); // ジョブ Lv30 の innate パッシブ
+  // 装備の属性 (D-ELEM-001)。gear (個体) のときだけ。sim の equipIds 形は属性を持たない品が中心なので見ない。
+  if (gear && Object.keys(gear).length > 0) {
+    const wEl = weaponElement(gear);
+    if (wEl) c.weaponElement = wEl;
+    const dye = armorDye(gear);
+    if (Object.keys(dye).length > 0) c.armorDye = dye;
+  }
   return c;
 }
 
