@@ -85,12 +85,17 @@ const spot = (mapId: string, x: number, y: number) => `${mapId}:${x},${y}`;
  * ボスが復活したりする。
  */
 export function assertStoryFlagTotal(events: readonly ScenarioEvent[], story: StoryData): void {
-  const all = new Set([
+  const n = storyFlagCount(events, story);
+  if (n > MAX_FLAGS) throw new StoryDataError(`フラグが多すぎる (シナリオとストーリーで ${n} > ${MAX_FLAGS})`);
+}
+
+/** 出所を合わせたフラグ数 (重複は 1 つ)。管理画面の「フラグ N/500」もこれを出す。 */
+export function storyFlagCount(events: readonly ScenarioEvent[], story: StoryData): number {
+  return new Set([
     ...events.flatMap((e) => e.setFlags),
     ...(story.placedItems ?? []).flatMap((p) => (p.flag !== undefined ? [p.flag] : [])),
     ...(story.battles ?? []).flatMap((b) => (b.loseFlag ? [b.winFlag, b.loseFlag] : [b.winFlag])),
-  ]);
-  if (all.size > MAX_FLAGS) throw new StoryDataError(`フラグが多すぎる (シナリオとストーリーで ${all.size} > ${MAX_FLAGS})`);
+  ]).size;
 }
 
 /** いま読み込まれている story (フラグ数の検証で scenario 側から使う)。 */

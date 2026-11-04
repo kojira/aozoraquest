@@ -13,7 +13,7 @@
  * 対象外 name はすべて null を返す (呼び出し側は通常の not_found 404 に倒す)。
  */
 import {
-  captureNpcPlacementWorld, danglingRefs, decodeWorldMap, describeDanglingRef, allGates, allInteriors,
+  captureNpcPlacementWorld, placedItemsSaveIssue, danglingRefs, decodeWorldMap, describeDanglingRef, allGates, allInteriors,
   npcStructuralPlacementError, sameNpcPosition, setInteriors, setShopOverrides, shopOverrides,
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
@@ -177,7 +177,9 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const story = (value ?? {}) as StoryData;
     const battles = listOf<StoryBattleDef>(story, 'battles');
     validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters') });
-    return missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
+    // 置いたマス (D-CHEST-001 §7): 新しく置いた・動かしたものだけ。管理画面の保存と同じ検査。
+    const placedIssue = placedItemsSaveIssue(captureNpcPlacementWorld(allNpcs(), false), listOf(story, 'placedItems'), listOf(saved, 'placedItems'), allNpcs(), listOf(story, 'fieldMonsters'));
+    return placedIssue ?? missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
   }
   if (name === 'dialogue') {
     const dialogue = value as DialogueData;
