@@ -72,3 +72,24 @@ describe('ShopModal の「どうぐ」(D-ITEM-001)', () => {
     expect(screen.queryByRole('button', { name: 'かう' })).toBeNull();
   });
 });
+
+describe('ShopModal の きたえる (D-PARTY-004 §6・#917)', () => {
+  afterEach(() => { cleanup(); setItemOverrides(null); });
+  const town = worldOverlay().towns[0]!;
+  const id = townShopStock(town, 0).equipment[0]!;
+  const pieces = ['a', 'b', 'c'].map((rkey) => ({ rkey, itemId: id, level: 0, at: '2026-01-01T00:00:00Z' }));
+  const view = (allyWorn: ReadonlyMap<string, number> = new Map()) => render(
+    <ShopModal town={town} townIndex={0} archetype={null} balance={0} materials={{}} pieces={pieces} equippedRkeys={['a']} allyWorn={allyWorn}
+      busy={false} lastAction={null} errorText={null} onCraft={vi.fn()} onForge={vi.fn()} onSell={vi.fn()} onBuy={vi.fn()} onClose={vi.fn()} />,
+  );
+
+  it('3 本のうち 主人公と仲間が 1 本ずつ着ていたら、のこり 2 本の組を出さない', () => {
+    view(new Map([[`${id}+0`, 1]]));
+    expect(screen.queryByRole('button', { name: /きたえる/ })).toBeNull();
+  });
+
+  it('仲間が着ていなければ、主人公の着ていない 2 本で きたえられる', () => {
+    view();
+    expect(screen.getByRole('button', { name: /きたえる/ })).toBeTruthy();
+  });
+});

@@ -14,7 +14,7 @@
  * `craft` レコード) はまだユーザー PDS にあり、それを権威化するのは #551 段階 2。
  * ただし**強化値の抽選はサーバーが行い**、client はその結果を記帳するだけにしてある。
  */
-import { interiorShopAt, GEAR_SLOTS, overWorn,
+import { interiorShopAt, GEAR_SLOTS, gearKey, overWorn,
   CRAFT_TUNING,
   ITEMS,
   EQUIPMENT_BY_ID,
@@ -282,9 +282,10 @@ export async function shopForge(
       if (!pa || !pb) throw new ShopError('その品を もっていない', 400, 'not_owned');
       if (pa.itemId !== pb.itemId || pa.level !== pb.level) throw new ShopError('同じ品・同じ強化値でないと きたえられない', 400, 'mismatch');
       if (pa.level >= CRAFT_TUNING.levelMax) throw new ShopError('これ以上は きたえられない', 400, 'max_level');
-      // 材料が 仲間の 着ているぶんを割りこむなら断る (D-PARTY-004 §6。主人公の gearSel はこの案件では見ない: 別 Issue)。
+      // 材料をのぞいた残りで 主人公＋仲間 の着ているぶんを賄えないなら断る (D-PARTY-004 §6・#917)。
+      // 通すと 1 個を 2 人が着た状態になり、そのあとの着がえ・すてる が全部 400 になる。
       const rest = owned.filter((p) => p.rkey !== a && p.rkey !== b);
-      if (overWorn(wearersOf({ party: cur.party }).filter((w) => w.who !== 'hero'), rest).length) throw new ShopError('仲間が そうびしている品は きたえられない', 400, 'equipped');
+      if (overWorn(wearersOf(cur), rest).includes(gearKey(pa.itemId, pa.level))) throw new ShopError('そうび中の品は きたえられない。さきに はずしてほしい', 400, 'equipped');
       level = pa.level + 1;
       const pieces: OwnedPiece[] = [
         ...rest,

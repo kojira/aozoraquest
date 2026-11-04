@@ -8,6 +8,7 @@ import {
   canEquip,
   equipHands,
   forgedLevel,
+  gearKey,
   isMasterwork,
   isSellableMaterial,
   parseNpcLine,
@@ -46,12 +47,15 @@ export type LastShopAction =
   | { kind: 'sell'; materialId: string; count: number; powerGained: number }
   | { kind: 'buy'; itemId: string };
 
+const NO_ALLY_WORN: ReadonlyMap<string, number> = new Map();
+
 /** 初回チュートリアル (最初の街のなんでも屋) を出したか。 */
 const SHOP_TUTORIAL_KEY = 'aozora:shop-tutorial-done';
 
 /** アイテムごとの「合成できる最良の組」(同強化値 2 個体の最大レベル)。
- *  装備中の個体は候補から除外 (そうび中の武器が黙って燃えるのを防ぐ)。 */
-function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[]): { level: number; rkeys: [string, string] } | null {
+ *  装備中の個体は候補から除外 (そうび中の武器が黙って燃えるのを防ぐ)。
+ *  仲間の装備は (品・強化値) で持つので、その数だけ同じ強化値の個体を残す (D-PARTY-004 §6。サーバーも断る)。 */
+function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[], allyWorn: ReadonlyMap<string, number>): { level: number; rkeys: [string, string] } | null {
   const equipped = new Set(equippedRkeys);
   const byLevel = new Map<number, CraftedPiece[]>();
   for (const p of pieces) {
@@ -63,7 +67,8 @@ function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[])
   }
   let best: { level: number; rkeys: [string, string] } | null = null;
   for (const [level, list] of byLevel) {
-    if (list.length >= 2 && (!best || level > best.level)) {
+    const free = list.length - (allyWorn.get(gearKey(list[0]!.itemId, level)) ?? 0);
+    if (free >= 2 && (!best || level > best.level)) {
       best = { level, rkeys: [list[0]!.rkey, list[1]!.rkey] };
     }
   }
@@ -78,6 +83,7 @@ export function ShopModal({
   materials,
   pieces,
   equippedRkeys,
+  allyWorn = NO_ALLY_WORN,
   busy,
   lastAction,
   errorText,
@@ -97,6 +103,8 @@ export function ShopModal({
   pieces: CraftedPiece[];
   /** 装備中の個体 rkey (合成候補から除外する) */
   equippedRkeys: readonly string[];
+  /** 仲間が着ている (品・強化値) → 人数 (core の equippedCounts)。その数だけ合成候補から残す。 */
+  allyWorn?: ReadonlyMap<string, number>;
   busy: boolean;
   lastAction: LastShopAction | null;
   /** 失敗の理由 (#551)。**モーダル内に出す** — ページ本体の通知行に出しても、
@@ -267,9 +275,9 @@ export function ShopModal({
             const equipable = archetype ? canEquip(archetype, def) : false;
             const affordable = balance >= def.price.power && (materials[stock.materialId] ?? 0) >= def.price.materials;
             const owned = piecesByItem.get(id) ?? [];
-            const forge = bestForgePair(owned, equippedRkeys);
+            const forge = bestForgePair(owned, equippedRkeys, allyWorn);
             // 装備を外せば鍛えられる組があるのに、装備中除外で不成立の場合の注記
-            const forgeBlockedByEquip = !forge && bestForgePair(owned, []) !== null;
+            const forgeBlockedByEquip = !forge && bestForgePair(owned, [], NO_ALLY_WORN) !== null;
             const bestOwned = owned.length > 0 ? Math.max(...owned.map((p) => p.level)) : null;
             return (
               <div
