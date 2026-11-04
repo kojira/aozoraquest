@@ -29,4 +29,8 @@ describe('battleResultLines', () => {
   it('台本負け (scripted) は「目の前が暗くなった……。」だけ。街へ運ばれた文は出さない', () => {
     expect(battleResultLines({}, 'lose', 'ほむらの街', true)).toEqual(['目の前が暗くなった……。']);
   });
+
+  it('仲間の Lv が上がったら、主人公の行のあとに 1 人 1 行で出す (D-PARTY-002)', () => {
+    expect(battleResultLines({ xp: 4, allyLeveledUp: [{ id: 'g:1', name: 'カイト', from: 5, to: 6 }] }, 'win', null)).toEqual(['けいけんちを4獲得！', 'カイトのレベルが6に上がった！']);
+  });
 });

@@ -23,12 +23,12 @@ describe('fieldLocationLabel', () => {
 describe('seesFieldDanger + fieldLocationLabel', () => {
   afterEach(() => setStory(null));
   const name = () => favoredMonsterFor(3, 0)?.name;
-  const label = (hero: string, party: string[] = []) => fieldLocationLabel(3, true, name(), seesFieldDanger(hero, party));
+  const label = (hero: string, ids: string[] = []) => fieldLocationLabel(3, true, name(), seesFieldDanger(hero, { ids }));
 
   it('戦士だけだと 危険度も敵の名前も出さず、地形だけ', () => {
     expect(name()).toBeTruthy();
     expect(label('warrior')).toBe('深い森');
-    expect(fieldLocationLabel(3, false, name(), seesFieldDanger('warrior', []))).toBe('フィールド');
+    expect(fieldLocationLabel(3, false, name(), seesFieldDanger('warrior', { ids: [] }))).toBe('フィールド');
   });
 
   it('賢者なら 危険度と敵の名前を出す', () => {

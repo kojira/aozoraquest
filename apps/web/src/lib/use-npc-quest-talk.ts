@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
-import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
-import { scenarioMessagesOf, serverPartySet, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, RECRUIT_GACHA, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { scenarioMessagesOf, serverPartyCandidates, serverPartyReroll, serverPartySet, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter, type ServerParty } from '@/lib/world-server';
 import { PARTY_LINES } from '@/lib/party-lines';
 import type { DialogueChoice } from '@/lib/dialogue';
 import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoiceTitle, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
@@ -28,7 +28,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
 }) {
   const [npcTalk, setNpcTalk] = useState<NpcTalk | null>(null);
   /** いまのパーティの仲間 id (D-PARTY-001)。危険度が見えるか (seesFieldDanger) に使う。権威 state の読み・編成の応答だけが書く。 */
-  const [partyIds, setPartyIds] = useState<string[]>([]);
+  const [party, setParty] = useState<ServerParty>({ ids: [] });
   /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成/決着の応答と serverState だけが書く。
    *  state (メニューの全受注一覧に出す) + ref (バンプ判定は state 更新を待たずに最新を読む)。 */
   const [quest, setQuestState] = useState<QuestState>(EMPTY_QUEST_STATE);
@@ -194,15 +194,25 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     if (!agent) throw new Error('サーバーに接続できない');
     const { state } = await serverState(agent);
     if (state.flags) flagsRef.current = state.flags;
-    setPartyIds(state.party?.ids ?? []);
+    setParty(state.party ?? { ids: [] });
     return { party: state.party ?? { ids: [] }, flags: state.flags ?? [] };
   }, [agent, flagsRef]);
   const partySave = useCallback(async (guild: string, ids: string[]) => {
     if (!agent) throw new Error('サーバーに接続できない');
     const { party } = await serverPartySet(agent, guild, ids, tokenRef.current);
-    setPartyIds(party.ids);
+    setParty(party);
     return party;
   }, [agent, tokenRef]);
+  const partyCandidates = useCallback(async (guild: string) => {
+    if (!agent) throw new Error('サーバーに接続できない');
+    return serverPartyCandidates(agent, guild, tokenRef.current);
+  }, [agent, tokenRef]);
+  const partyReroll = useCallback(async (guild: string, rkey: string) => {
+    if (!agent) throw new Error('サーバーに接続できない');
+    const r = await serverPartyReroll(agent, guild, rkey, tokenRef.current);
+    setServerPower(r.power);
+    return r;
+  }, [agent, tokenRef, setServerPower]);
   /** 受付の「話す」。倒れた仲間がいれば宿屋をすすめる (D-PARTY-001 §8)。 */
   const guildTalk = async (npc: NpcDef) => {
     const lines = npcLinesFor(npc, flagsRef.current, materialsRef.current);
@@ -213,7 +223,8 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   let npcChoices: DialogueChoice[] | undefined = npcTalk?.choices;
   if (npcTalk?.guild === 'menu') {
     const npc = npcTalk.npc;
-    const canParty = partyCapacity(flagsRef.current) > 1 && recruits().length > 0;
+    // ガチャ (D-PARTY-002) ではどのギルドにも毎日 冒険者が来る。切ったとき (§6) は名前つきの冒険者がいるときだけ。
+    const canParty = partyCapacity(flagsRef.current) > 1 && (RECRUIT_GACHA.enabled || recruits().length > 0);
     npcChoices = [
       { label: '依頼を見る', onSelect: () => viewGuildQuest(npc) },
       { label: '報告する', onSelect: () => reportGuildQuest(npc) },
@@ -242,5 +253,5 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     });
   }
 
-  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle, partyLoad, partySave, partyIds, setPartyIds };
+  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle, partyLoad, partySave, partyCandidates, partyReroll, party, setParty };
 }

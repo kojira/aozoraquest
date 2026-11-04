@@ -49,7 +49,7 @@ describe('useNpcQuestTalk ギルドの「なかまを さがす」(D-PARTY-001)'
   afterEach(() => { setStory(null); setNpcs(null); flagsRef.current = []; });
   const labels = (r: ReturnType<typeof renderWith>['result']) => r.current.npcChoices?.map(c => c.label);
 
-  it('第1章の終わり (futaba_letter_done) から、紹介する冒険者がいる受付にだけ出る', () => {
+  it('第1章の終わり (futaba_letter_done) から出る。ガチャ (D-PARTY-002) では名前つきの冒険者がいなくても毎日来るので出る', () => {
     const { result } = renderWith();
     act(() => result.current.setNpcTalk(guildReception(GUILD)));
     expect(labels(result)).not.toContain('なかまを さがす');
@@ -58,7 +58,7 @@ describe('useNpcQuestTalk ギルドの「なかまを さがす」(D-PARTY-001)'
     expect(labels(result)).toEqual(['依頼を見る', '報告する', 'なかまを さがす', '話す', 'やめる']);
     setStory({ recruits: [] });
     act(() => result.current.setNpcTalk(guildReception(GUILD)));
-    expect(labels(result)).not.toContain('なかまを さがす');
+    expect(labels(result)).toContain('なかまを さがす');
   });
 
   it('選ぶと guild: party の段になる (編成画面を開く)', () => {

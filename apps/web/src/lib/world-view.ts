@@ -1,6 +1,6 @@
-import { canSeeFieldDanger, recruitById, type BattleState } from '@aozoraquest/core';
+import { canSeeFieldDanger, partyDefsOf, recruitById, type BattleState } from '@aozoraquest/core';
 import type { StickDir } from '@/components/virtual-stick';
-import type { ServerBattleState } from '@/lib/world-server';
+import type { ServerBattleState, ServerParty } from '@/lib/world-server';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) の画面共通の定数と型。
@@ -30,8 +30,8 @@ export const dangerLabel = (tier: number) =>
   DANGER_LABELS[Math.min(DANGER_LABELS.length - 1, Math.max(0, tier - 1))];
 
 /** 主人公か いまのパーティの仲間に、フィールドの危険度が見える職がいるか (docs/25 §ジョブ特性 = パーティ価値)。 */
-export const seesFieldDanger = (archetype: string | null, partyIds: readonly string[]) =>
-  canSeeFieldDanger(archetype) || partyIds.some((id) => canSeeFieldDanger(recruitById(id)?.archetype));
+export const seesFieldDanger = (archetype: string | null, party: ServerParty) =>
+  canSeeFieldDanger(archetype) || partyDefsOf(party, recruitById, 1).some((a) => canSeeFieldDanger(a.archetype));
 
 /** フィールドの上枠ラベル。見える職なら `危険度・深い森 / よく出る敵`、見えなければ地形だけ。
  *  モンスターが 0 体 (未読込) なら敵名を出さない (D-MONSTER-001)。 */
