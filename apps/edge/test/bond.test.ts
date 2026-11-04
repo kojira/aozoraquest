@@ -7,7 +7,7 @@
  * - パーティから外すと bond・bondHeal が消える
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { partyMemberCombatant, xpForAllyLevel, setGameQuests, setInteriors, setMonsterOverrides, setNpcs, setScenario, setStory, storyBattleById, type MonsterDef } from '@aozoraquest/core';
+import { partyMemberCombatant, xpForAllyLevel, type PartyRecruit, setGameQuests, setInteriors, setMonsterOverrides, setNpcs, setScenario, setStory, storyBattleById, type MonsterDef } from '@aozoraquest/core';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { handleTurn, sealEncounter, type ResolverEnv } from '../src/battle-resolver';
 import { handleQuestComplete } from '../src/game-quest';
@@ -95,9 +95,9 @@ describe('きずな (D-PARTY-004)', () => {
   });
 
   describe('フィールドの回復 (D-PARTY-003 の handleItem / handleFieldSkill)', () => {
-    const PAL = { id: 'g:p', name: 'ハル', archetype: 'paladin' as const, star: 2 as const, minLevel: 1, line: 'よろしく。', xp: xpForAllyLevel('paladin', 5) };
-    const MIKO = { ...PAL, id: 'g:m', name: 'ミオ', archetype: 'miko' as const, xp: xpForAllyLevel('miko', 5) };
-    const maxHp = (m: typeof PAL) => partyMemberCombatant({ ...m, level: 5 }, 5).maxHp;
+    const PAL: PartyRecruit = { id: 'g:p', name: 'ハル', archetype: 'paladin', star: 2, minLevel: 1, line: 'よろしく。', xp: xpForAllyLevel('paladin', 5) };
+    const MIKO: PartyRecruit = { ...PAL, id: 'g:m', name: 'ミオ', archetype: 'miko', xp: xpForAllyLevel('miko', 5) };
+    const maxHp = (m: PartyRecruit) => partyMemberCombatant({ ...m, level: 5 }, 5).maxHp;
 
     it('やくそうで仲間を回復すると、戻った HP ÷ 最大 HP の 25% ごとに +1 (端数は bondHeal)', async () => {
       const env = await makeEnv();
