@@ -39,6 +39,8 @@ export interface FightOpts {
   battleItems?: Record<string, number>;
   /** 仲間の さくせん (全員同じ。D-PARTY-004)。省略は おまかせ。 */
   tactic?: import('../packages/core/src/index.js').AllyMode;
+  /** 仲間の装備 (全員同じ。D-PARTY-004 B1)。からだが空なら ぬののふく を足すのは core。 */
+  mateGear?: import('../packages/core/src/index.js').GearSelection;
 }
 
 /** 1 戦。edge の sealEncounter と同じく、仲間を allies に並べる (ボスの HP は仲間の数で変えない。D-PARTY-002 §12)。 */
@@ -48,7 +50,7 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
     tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: true } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, ...(o.gear ? { gear: o.gear } : { equipIds: heroGear(lv) }),
     ...(o.monsterId ? { monsterId: o.monsterId } : {}), ...(o.story ? { story: { canFlee: false } } : {}), ...(o.battleItems ? { battleItems: o.battleItems } : {}),
   });
-  const defs = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, level: Math.max(1, lv + MATE_LV) }));
+  const defs = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, level: Math.max(1, lv + MATE_LV), ...(o.mateGear ? { gear: o.mateGear } : {}) }));
   const members = partyMembers(defs, lv, o.carry ? { hp: o.carry.mates, mp: o.carry.matesMp } : {});
   if (members.length) {
     const enemies = s.enemies ?? [s.monster];

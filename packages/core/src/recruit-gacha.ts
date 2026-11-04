@@ -13,6 +13,7 @@ import { createRng } from './battle-rng.js';
 import { jobLevelFromXp, jobXpCurveFor } from './quest.js';
 import { MAX_RECRUIT_LEVEL, MAX_RECRUIT_LINE, MAX_RECRUIT_NAME, type RecruitDef } from './recruits.js';
 import { RECRUIT_LINES, RECRUIT_NAMES } from './recruit-pools.js';
+import type { GearSelection } from './equipment.js';
 
 export type RecruitStar = 1 | 2 | 3;
 
@@ -190,6 +191,8 @@ export interface PartyRoster {
   members?: readonly PartyRecruit[];
   /** なじみ (名前つき) の経験値。 */
   xp?: Readonly<Record<string, number>>;
+  /** 仲間の装備 (D-PARTY-004)。 */
+  gear?: Readonly<Record<string, GearSelection>>;
 }
 
 /** 戦闘と表示に使う仲間 1 人 (partyMembers に渡す)。 */
@@ -200,6 +203,8 @@ export interface PartyAlly {
   level: number;
   xp: number;
   star?: RecruitStar;
+  /** 着ている装備 (D-PARTY-004)。戦闘とフィールドの組み立て (partyMemberCombatant) がそのまま使う。 */
+  gear?: GearSelection;
 }
 
 /**
@@ -211,11 +216,12 @@ export function partyDefsOf(party: PartyRoster | undefined, recruitById: (id: st
   const out: PartyAlly[] = [];
   for (const id of party?.ids ?? []) {
     const m = party?.members?.find((x) => x.id === id);
-    if (m) { out.push({ id, name: m.name, archetype: m.archetype, xp: m.xp, level: allyLevel(m.archetype, m.xp), star: m.star }); continue; }
+    const gear = party?.gear?.[id];
+    if (m) { out.push({ id, name: m.name, archetype: m.archetype, xp: m.xp, level: allyLevel(m.archetype, m.xp), star: m.star, ...(gear ? { gear } : {}) }); continue; }
     const r = recruitById(id);
     if (!r) continue;
     const xp = party?.xp?.[id] ?? xpForAllyLevel(r.archetype, fallbackLevel);
-    out.push({ id, name: r.name, archetype: r.archetype, xp, level: allyLevel(r.archetype, xp), star: 2 });
+    out.push({ id, name: r.name, archetype: r.archetype, xp, level: allyLevel(r.archetype, xp), star: 2, ...(gear ? { gear } : {}) });
   }
   return out;
 }

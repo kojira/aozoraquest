@@ -13,6 +13,7 @@ import { type Combatant, playerCombatant } from './battle-combatant.js';
 import { type AllyMode, type Command, type BattleState } from './battle-state.js';
 import { autoBattleAction } from './battle-auto.js';
 import type { RecruitDef } from './recruits.js';
+import type { GearSelection } from './equipment.js';
 
 /** 入れられる人数 (主人公を含む) が増える章の終わりのフラグ。どれも無ければ 1 人。 */
 export const PARTY_SIZE_FLAGS: ReadonlyArray<readonly [flag: string, size: number]> = [
@@ -20,8 +21,8 @@ export const PARTY_SIZE_FLAGS: ReadonlyArray<readonly [flag: string, size: numbe
   ['yuuhi_feather_done', 3],
   ['soyogi_feather_done', 4],
 ];
-/** 仲間に自動で着せる防具と、着せはじめるジョブ Lv。 */
-export const PARTY_ARMOR = { id: 'ar-cloth', fromLevel: 5 } as const;
+/** からだが空の仲間に自動で着せる防具と、着せはじめる Lv (D-PARTY-004 §9: 最初の Lv1 から)。 */
+export const PARTY_ARMOR = { id: 'ar-cloth', fromLevel: 1 } as const;
 /** 全体回復を使う目安 (味方の誰かがこの割合を下回ったら)。 */
 const PARTY_HEAL_BELOW = 0.5;
 /** さくせん ごとの回復の目安 (D-PARTY-004 §1)。ガンガン・じゅもんせつやく は 25%、いのちだいじに は 65%。 */
@@ -38,8 +39,13 @@ export interface PartyCarry {
   mp?: Readonly<Record<string, number>>;
 }
 
-/** 仲間 1 人の定義。level があればその Lv、無ければ主人公のジョブ Lv で戦う。 */
-export type PartyMemberDef = Pick<RecruitDef, 'id' | 'name' | 'archetype'> & { level?: number };
+/** 仲間 1 人の定義。level があればその Lv、無ければ主人公のジョブ Lv で戦う。gear は着ている装備 (D-PARTY-004)。 */
+export type PartyMemberDef = Pick<RecruitDef, 'id' | 'name' | 'archetype'> & { level?: number; gear?: GearSelection | undefined };
+
+/** 仲間が戦闘で着る装備: 着ている装備に、からだが空なら PARTY_ARMOR を足す (B2)。 */
+export function partyMemberGear(gear: GearSelection | undefined, level: number): GearSelection {
+  return { ...gear, ...(!gear?.armor && level >= PARTY_ARMOR.fromLevel ? { armor: { id: PARTY_ARMOR.id } } : {}) };
+}
 
 /** 戦闘に出る仲間 (倒れた仲間 = HP 0 の持ちこしは出ない) を、入れている順に。 */
 export function partyMembers(list: readonly PartyMemberDef[], jobLevel: number, carry: PartyCarry = {}): Array<{ id: string; combatant: Combatant }> {
@@ -55,7 +61,7 @@ export function partyMembers(list: readonly PartyMemberDef[], jobLevel: number, 
 /** 仲間 1 人の Combatant (持ちこしの HP/MP つき。倒れていても返す)。戦闘とフィールドの回復 (D-PARTY-003) が同じ強さで数える。 */
 export function partyMemberCombatant(r: PartyMemberDef, jobLevel: number, carry: PartyCarry = {}): Combatant {
   const lv = r.level ?? jobLevel;
-  const c = playerCombatant(r.archetype, lv, 1, r.name, undefined, lv >= PARTY_ARMOR.fromLevel ? [PARTY_ARMOR.id] : []);
+  const c = playerCombatant(r.archetype, lv, 1, r.name, undefined, undefined, partyMemberGear(r.gear, lv));
   const hp = carry.hp?.[r.id];
   const mp = carry.mp?.[r.id];
   if (hp !== undefined) c.hp = Math.max(0, Math.min(c.maxHp, Math.floor(hp)));

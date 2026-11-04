@@ -44,6 +44,7 @@ export const LXM = {
   partyCandidates: `${AQ_NSID_ROOT}.party.candidates`,
   partyReroll: `${AQ_NSID_ROOT}.party.reroll`,
   partyMode: `${AQ_NSID_ROOT}.party.mode`,
+  partyGear: `${AQ_NSID_ROOT}.party.gear`,
   worldReset: `${AQ_NSID_ROOT}.world.reset`,
   battleTurn: `${AQ_NSID_ROOT}.battle.turn`,
   xpClaim: `${AQ_NSID_ROOT}.xp.claim`,

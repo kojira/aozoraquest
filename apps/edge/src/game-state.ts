@@ -71,6 +71,8 @@ export interface PartyState {
   bondHeal?: Record<string, number>;
   /** 仲間ごとの さくせん (♥2) ／めいれい (♥3)。無い＝おまかせ (D-PARTY-004)。 */
   mode?: Record<string, AllyMode>;
+  /** 仲間の装備 (主人公の gearSel と同じ形。D-PARTY-004 §6)。ids にいる人だけ。品は pieces のまま (外せば もちもの に戻る)。 */
+  gear?: Record<string, GearSelection>;
 }
 
 /** 全快にした party (hp/mp を消す。ほかはそのまま)。party が無ければ undefined のまま。 */

@@ -117,6 +117,7 @@ export {
   type PartyMemberDef,
   partyMembers,
   partyMemberCombatant,
+  partyMemberGear,
   partyCombatants,
   allyAutoAction,
 } from './battle-party.js';

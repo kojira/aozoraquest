@@ -41,6 +41,7 @@ import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './worl
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
 import { partyWithBattleBond } from './party-bond';
 import { allyOrdersOf } from './battle-ally-orders';
+import { assertNotOverWorn } from './party-gear';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 import { getRecord, PdsError } from './pds';
@@ -456,7 +457,7 @@ export async function playerLuk(env: ResolverEnv, userDid: string, ns: string = 
 export async function handleGear(env: ResolverEnv, userDid: string, gear: GearSelection, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<{ ok: true }> {
   // 隣り合う属性の防具は同時に着られない (D-ELEM-001 §13a。画面でも選べないが、直 POST もここで止める)。
   if (adjacentArmorConflict(gear)) throw new ResolverError('隣り合う属性の防具は一緒に着られない', 400, 'element_conflict');
-  await readModifyWrite(env, userDid, (cur) => ({ ...cur, gearSel: sanitizeGear(gear, cur.pieces ?? []) }),
+  await readModifyWrite(env, userDid, (cur) => { const next = { ...cur, gearSel: sanitizeGear(gear, cur.pieces ?? []) }; assertNotOverWorn(next, cur.pieces ?? []); return next; }, // 仲間が着ている品は着られない (D-PARTY-004)
     { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { ok: true };
 }

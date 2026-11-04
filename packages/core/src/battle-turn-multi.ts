@@ -112,7 +112,7 @@ function partyMemberAct(actor: Combatant, index: number, state: BattleState, sid
     return;
   }
   const target = resolveTargets(actor, 'oneEnemy', sides, { targetIndex: a.targetIndex })[0];
-  if (target) doAttack(actor, target, rng, events, 'player');
+  if (target) doAttack(actor, target, rng, events, 'player', actor.weaponElement ? { element: actor.weaponElement } : {}); // 武器の属性 (D-ELEM-001・仲間の装備 D-PARTY-004)
 }
 
 /**

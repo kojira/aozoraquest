@@ -60,7 +60,7 @@ export function runAllyOrder(actor: Combatant, pinned: PinnedOrder, state: Battl
   const mate = living(sides.allies)[mateIndex] ?? actor;
   if (cmd === 'attack') {
     const target = resolveTargets(actor, 'oneEnemy', sides, { targetIndex: foeIndex })[0];
-    if (target) doAttack(actor, target, rng, events, 'player');
+    if (target) doAttack(actor, target, rng, events, 'player', actor.weaponElement ? { element: actor.weaponElement } : {});
   } else if (cmd === 'guard') {
     actor.guarding = true;
     events.push({ actor: 'player', text: `${actor.name}はぼうぎょのかまえ!` });
