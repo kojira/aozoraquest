@@ -14,7 +14,7 @@
  * `craft` レコード) はまだユーザー PDS にあり、それを権威化するのは #551 段階 2。
  * ただし**強化値の抽選はサーバーが行い**、client はその結果を記帳するだけにしてある。
  */
-import { interiorShopAt, GEAR_SLOTS,
+import { interiorShopAt, GEAR_SLOTS, overWorn,
   CRAFT_TUNING,
   ITEMS,
   EQUIPMENT_BY_ID,
@@ -29,6 +29,7 @@ import { interiorShopAt, GEAR_SLOTS,
   worldOverlay,
 } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece, sanitizeGear } from './game-state';
+import { wearersOf } from './party-gear';
 
 /** 冪等キーを覚えておく件数 (`xpClaims` と同じ考え方)。再送・二重送信で二重に課金しない。 */
 export const MAX_SHOP_OPS = 100;
@@ -281,9 +282,12 @@ export async function shopForge(
       if (!pa || !pb) throw new ShopError('その品を もっていない', 400, 'not_owned');
       if (pa.itemId !== pb.itemId || pa.level !== pb.level) throw new ShopError('同じ品・同じ強化値でないと きたえられない', 400, 'mismatch');
       if (pa.level >= CRAFT_TUNING.levelMax) throw new ShopError('これ以上は きたえられない', 400, 'max_level');
+      // 材料が 仲間の 着ているぶんを割りこむなら断る (D-PARTY-004 §6。主人公の gearSel はこの案件では見ない: 別 Issue)。
+      const rest = owned.filter((p) => p.rkey !== a && p.rkey !== b);
+      if (overWorn(wearersOf({ party: cur.party }).filter((w) => w.who !== 'hero'), rest).length) throw new ShopError('仲間が そうびしている品は きたえられない', 400, 'equipped');
       level = pa.level + 1;
       const pieces: OwnedPiece[] = [
-        ...owned.filter((p) => p.rkey !== a && p.rkey !== b),
+        ...rest,
         { rkey: input.rkey, itemId: pa.itemId, level },
       ];
       return { ...cur, pieces, shopOps: withOp(cur, opKey) };
@@ -356,6 +360,8 @@ export async function shopDiscard(
           throw new ShopError('そうび中の品は すてられない。さきに はずしてほしい', 400, 'equipped');
         }
       }
+      // 仲間が着ている品も すてられない (D-PARTY-004 §6)。
+      if (overWorn(wearersOf({ gearSel: afterEquipped, party: cur.party }), rest).length) throw new ShopError('そうび中の品は すてられない。さきに はずしてほしい', 400, 'equipped');
       // 掃除も掛ける (古いデータで gearSel が既に宙に浮いている場合の後始末)。
       return { ...cur, pieces: rest, gearSel: afterEquipped, shopOps: withOp(cur, opKey) };
     },

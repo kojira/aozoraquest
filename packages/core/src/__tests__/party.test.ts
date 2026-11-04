@@ -98,10 +98,10 @@ describe('partyCombatants', () => {
     expect([list[1]!.hp, list[1]!.mp]).toEqual([3, 1]);
   });
 
-  it('Lv5 からは ぬののふく を着る', () => {
-    const lv4 = partyCombatants([r('a', 'mage')], 4)[0]!;
+  it('からだが空なら Lv1 から ぬののふく を着る (D-PARTY-004 §9)', () => {
+    const lv1 = partyCombatants([r('a', 'mage')], 1)[0]!;
     const lv5 = partyCombatants([r('a', 'mage')], 5)[0]!;
-    expect(lv4.def).toBe(playerCombatant('mage', 4, 1, 'a').def);
+    expect(lv1.def).toBe(playerCombatant('mage', 1, 1, 'a').def + 5);
     expect(lv5.def).toBe(playerCombatant('mage', 5, 1, 'a').def + 5);
   });
 });
