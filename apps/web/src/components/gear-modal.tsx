@@ -7,7 +7,9 @@ import {
   bonusText,
   equipHands,
   gearBonusFromGear,
+  armorDyeSummary,
   jobDisplayName,
+  wouldConflict,
   leveledName,
   type Archetype,
   type EquipSlot,
@@ -69,6 +71,8 @@ export function GearModal({
 
   const total = useMemo(() => (archetype ? gearBonusFromGear(archetype, selection) : null), [archetype, selection]);
   const totalText = total ? bonusText(total) : '';
+  // 防具の染まり (D-ELEM-001 §13a。「火 75%・空 25%」)。属性の防具が無ければ出さない。
+  const dyeText = useMemo(() => armorDyeSummary(selection), [selection]);
 
   return (
     <div
@@ -101,6 +105,9 @@ export function GearModal({
         <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)', minHeight: '1.4em' }} aria-live="polite">
           {totalText ? `そうびの効果: ${totalText}` : 'なにも装備していない。なんでも屋で作ってもらおう。'}
         </p>
+        {dyeText && (
+          <p data-testid="gear-dye" style={{ margin: '0 0 0.5em', fontSize: '0.75em' }}>守りの属性: {dyeText}</p>
+        )}
         {errorText && (
           <p role="alert" style={{ fontSize: '0.85em', color: 'var(--color-danger)', margin: '0 0 0.4em' }}>
             {errorText}
@@ -151,19 +158,24 @@ export function GearModal({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {candidates.map((p) => {
                       const def = EQUIPMENT_BY_ID[p.itemId]!;
-                      const equipable = archetype ? canEquip(archetype, def) : false;
+                      // 隣り合う属性の防具は一緒に着られない (D-ELEM-001 §13a。edge も 400 で止める)
+                      const conflict = wouldConflict(selection, slot, p.itemId);
+                      const equipable = (archetype ? canEquip(archetype, def) : false) && !conflict;
                       const isEquipped = p.rkey === equippedRkey;
                       return (
                         <div key={p.rkey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
                           <span style={{ opacity: equipable ? 1 : 0.6 }}>
                             {leveledName(def, p.level)}
                             {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(両手)</span>}
-                            {def.jobOnly && !equipable && (
+                            {def.jobOnly && !equipable && !conflict && (
                               <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-danger)' }}>
                                 (要: {jobDisplayName(def.jobOnly, 'default')})
                               </span>
                             )}
-                            {!def.jobOnly && !equipable && (
+                            {conflict && (
+                              <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(となりの属性とは いっしょに着られない)</span>
+                            )}
+                            {!def.jobOnly && !equipable && !conflict && (
                               <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(装備できない)</span>
                             )}
                           </span>
