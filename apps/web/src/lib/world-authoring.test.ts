@@ -182,6 +182,30 @@ describe('人物の名前 (D-CHAR-001): 保存のときに id を確かめる', 
     await saveNpcs(agent, [npc]);
     expect(putRecord).toHaveBeenCalledTimes(1);
   });
+  it('人物の保存: 使われている人物は消させない。改名は world.characters に書く。読めなければ throw', async () => {
+    const { saveCharacters, loadCharactersRecord } = await import('./world-authoring');
+    const putRecord = vi.fn().mockResolvedValue({});
+    const agent = { assertDid: DID, com: { atproto: { repo: { putRecord } } } } as unknown as Agent;
+    setNpcs([{ ...NPC, name: '{c:bluesky}ちゃん' }]);
+    await expect(saveCharacters(agent, [])).rejects.toThrow('bluesky');
+    expect(putRecord).not.toHaveBeenCalled();
+    await saveCharacters(agent, [{ id: 'bluesky', name: 'ブルースカイ' }]);
+    expect(putRecord.mock.calls[0]![0]).toMatchObject({ collection: expect.stringMatching(/\.world\.characters$/), record: { characters: [{ id: 'bluesky', name: 'ブルースカイ' }] } });
+    expect(await loadCharactersRecord(fakeAgent({ characters: { characters: [{ id: 'x', name: 'X' }] } }), DID)).toEqual([{ id: 'x', name: 'X' }]);
+    expect(await loadCharactersRecord(fakeAgent({}), DID)).toEqual([]);
+    const broken = { com: { atproto: { repo: { getRecord: vi.fn().mockRejectedValue(new Error('offline')) } } } } as unknown as Agent;
+    await expect(loadCharactersRecord(broken, DID)).rejects.toThrow('offline');
+  });
+  it('NPC・会話の画面を直接開いても、保存済みの人物を読む (保存のときの確認と「表示: …」に要る)', async () => {
+    const { loadNpcAuthoringRecords, loadDialogueAuthoringRecords } = await import('./world-authoring');
+    const { currentCharacters } = await import('@aozoraquest/core');
+    const records = { characters: { characters: [{ id: 'bluesky', name: 'Bluesky' }] } };
+    await loadDialogueAuthoringRecords(fakeAgent(records), DID);
+    expect(currentCharacters()).toEqual([{ id: 'bluesky', name: 'Bluesky' }]);
+    setCharacters(null);
+    await loadNpcAuthoringRecords(fakeAgent(records), DID);
+    expect(currentCharacters()).toEqual([{ id: 'bluesky', name: 'Bluesky' }]);
+  });
 });
 
 describe('loadAuthoredWorld: monsters は PDS が読めないとき edge の last-good へ倒れる (D-MONSTER-001)', () => {

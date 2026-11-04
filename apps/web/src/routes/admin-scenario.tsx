@@ -15,6 +15,7 @@ import {
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { ScenarioEffectsField } from '@/components/scenario-effects-field';
+import { CharacterIdList, CharacterPreview } from '@/components/admin/character-preview';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveScenario } from '@/lib/world-authoring';
 
 /**
@@ -294,6 +295,8 @@ export function AdminScenario() {
                 style={{ flex: 1 }}
               />
             ))}
+            <CharacterPreview text={current.notice ?? ''} />
+            <CharacterIdList />
             <ScenarioEffectsField
               effects={current.effects ?? []}
               disabled={!current.notice}
