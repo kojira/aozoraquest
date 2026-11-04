@@ -28,7 +28,7 @@ describe('useNpcQuestTalk ギルドの「依頼を見る」', () => {
     act(() => result.current.setQuest({ activeQuests: [], done: ['a'] }));
     viewGuildQuests(result);
     expect(result.current.npcTalk?.lines).toEqual(['どの依頼のこと？（1/1）']);
-    expect(result.current.npcChoices?.map(c => c.label)).toEqual(['つぎの依頼 / 未受注', 'もうひとつ / 未受注', '戻る']);
+    expect(result.current.npcChoices?.map(c => c.label)).toEqual(['つぎの依頼（未受注）', 'もうひとつ（未受注）', '戻る']);
   });
 
   it('すべて達成済みなら「いま紹介できる依頼はないよ。」だけで、説明は流さない', () => {
@@ -141,6 +141,6 @@ describe('useNpcQuestTalk 受付のメニューと「話す」', () => {
     act(() => result.current.setQuest({ activeQuests: [{ id: 'futaba-letter', progress: 0 }], done: [] }));
     act(() => result.current.setNpcTalk(guildReception(FUTABA)));
     choose(result, '報告する(1)');
-    expect(result.current.npcChoices?.map(c => c.label)).toEqual(['ことりのおれい / やくそうを1こ (0/1)', '戻る']);
+    expect(result.current.npcChoices?.map(c => c.label)).toEqual(['ことりのおれい（やくそうを1こ (0/1)）', '戻る']);
   });
 });

@@ -8,6 +8,9 @@ import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoi
 import { guildReception, npcQuestCandidates, type NpcTalk } from '@/lib/npc-talk';
 import { useLatestRef } from '@/lib/use-latest-ref';
 
+/** 依頼一覧の 1 ページの件数。390px の地図に貼った会話窓 (高さ 35%) に、見出し + 依頼 + 下端の操作の段が収まる数。 */
+export const QUEST_CHOICES_PER_PAGE = 2;
+
 /**
  * NPC 会話とゲーム内クエスト (#423/#425/#659) の状態と遷移。受注・報告・進捗は
  * **サーバーが正** で、ここは応答を会話の段 (npcTalk) と表示用の quest に写す。
@@ -105,22 +108,25 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   /** 「報告する」に出す受注中の依頼 (個人の頼みごとも含む)。 */
   const guildReportQuests = (npc: NpcDef) => gameQuestsByNpc(npc.id).filter(isActive);
 
-  /** lead = 一覧の前に話すセリフ (受付の「話す」の続き)。開いたときだけ出し、前へ・次へでは出さない。 */
+  /** lead = 一覧の前に話すセリフ (受付の「話す」の続き)。開いたときだけ出し、前へ・次へでは出さない。
+   *  1 ページは QUEST_CHOICES_PER_PAGE 件 (390px の会話窓に収まる数)。前へ・次へ・話す・戻るは窓の下端に張りつける。 */
   const showQuestChoices = (npc: NpcDef, candidates: readonly GameQuestDef[], select: (q: GameQuestDef) => void | Promise<void>, guild: boolean, page = 0, heading = 'どの依頼のこと？', lead: readonly string[] = []) => {
-    const choices: DialogueChoice[] = candidates.slice(page * 3, page * 3 + 3).map(q => {
+    const start = page * QUEST_CHOICES_PER_PAGE;
+    const choices: DialogueChoice[] = candidates.slice(start, start + QUEST_CHOICES_PER_PAGE).map(q => {
       const active = questRef.current.activeQuests.find(a => a.id === q.id);
       const state = active ? questProgressLine(q, active.progress, materialsRef.current) : '未受注';
-      return { label: `${questChoiceTitle(q, candidates)} / ${state}`, onSelect: () => select(q) };
+      return { label: `${questChoiceTitle(q, candidates)}（${state}）`, onSelect: () => select(q) };
     });
-    if (page > 0) choices.push({ label: '前へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1, heading) });
-    if ((page + 1) * 3 < candidates.length) choices.push({ label: '次へ', onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1, heading) });
-    if (!guild) choices.push({ label: '話す', onSelect: () => {
+    if (page > 0) choices.push({ label: '前へ', pinned: true, onSelect: () => showQuestChoices(npc, candidates, select, guild, page - 1, heading) });
+    if (start + QUEST_CHOICES_PER_PAGE < candidates.length) choices.push({ label: '次へ', pinned: true, onSelect: () => showQuestChoices(npc, candidates, select, guild, page + 1, heading) });
+    if (!guild) choices.push({ label: '話す', pinned: true, onSelect: () => {
       const alt = npcAltLineFor(npc, flagsRef.current, materialsRef.current);
       // 戦闘つきのセリフは読み終えたら一覧へ戻らず戦闘へ (D-STORY-009)。
       setNpcTalk({ npc, lines: alt?.lines ?? npc.lines, ...(alt?.battle ? { storyBattle: true } : { directList: true }) });
     } });
-    choices.push({ label: '戻る', onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
-    setNpcTalk({ npc, lines: [...lead, `${heading}（${page + 1}/${Math.max(1, Math.ceil(candidates.length / 3))}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
+    choices.push({ label: '戻る', pinned: true, onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
+    const pages = Math.max(1, Math.ceil(candidates.length / QUEST_CHOICES_PER_PAGE));
+    setNpcTalk({ npc, lines: [...lead, `${heading}（${page + 1}/${pages}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
 
   const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false) => {
