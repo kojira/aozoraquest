@@ -4,7 +4,7 @@
  *   隣り合う属性 (D-ELEM-001 の adjacentArmorConflict)・人数 (core の overWorn) を見る。どこでも着がえられる (主人公と同じ)
  * - 着ている人数を数えるのは core の equippedCounts 1 か所。着る (主人公・仲間)・すてる・きたえる が wearersOf を使う
  */
-import { adjacentArmorConflict, canEquip, EQUIPMENT_BY_ID, GEAR_SLOTS, overWorn, partyDefsOf, recruitById, type GearSelection, type GearWearers } from '@aozoraquest/core';
+import { adjacentArmorConflict, canEquip, EQUIPMENT_BY_ID, equippedCounts, GEAR_SLOTS, ownedCounts, partyDefsOf, recruitById, type GearSelection, type GearWearers } from '@aozoraquest/core';
 import { readModifyWrite, sanitizeGear, type GameState, type OwnedPiece, type PartyState } from './game-state';
 import { ResolverError, migrateInitState, type ResolverEnv } from './battle-resolver';
 
@@ -13,9 +13,15 @@ export function wearersOf(state: Pick<GameState, 'gearSel' | 'party'>): GearWear
   return [{ who: 'hero', gear: state.gearSel }, ...Object.entries(state.party?.gear ?? {}).filter(([id]) => state.party?.ids.includes(id)).map(([who, gear]) => ({ who, gear }))];
 }
 
-/** 持っている数より多く着ていたら 400 (その品は ほかの人が そうびしている)。 */
-export function assertNotOverWorn(state: Pick<GameState, 'gearSel' | 'party'>, pieces: readonly OwnedPiece[]): void {
-  if (overWorn(wearersOf(state), pieces).length) throw new ResolverError('その品は ほかの人が そうびしている', 400, 'worn_by_other');
+/**
+ * 着がえで 持っている数より多く着るぶんが増えたら 400 (その品は ほかの人が そうびしている)。
+ * もとから超えている (品・強化値) は、増えないかぎり通す (超えた状態のまま 着がえ全部が止まらないように)。
+ */
+export function assertNotOverWorn(before: Pick<GameState, 'gearSel' | 'party'>, after: Pick<GameState, 'gearSel' | 'party'>, pieces: readonly OwnedPiece[]): void {
+  const owned = ownedCounts(pieces);
+  const was = equippedCounts(wearersOf(before));
+  const grew = [...equippedCounts(wearersOf(after))].some(([k, n]) => n > Math.max(was.get(k) ?? 0, owned.get(k) ?? 0));
+  if (grew) throw new ResolverError('その品は ほかの人が そうびしている', 400, 'worn_by_other');
 }
 
 export interface PartyGearResult { party: PartyState }
@@ -39,7 +45,7 @@ export async function handlePartyGear(env: ResolverEnv, did: string, id: unknown
     if (Object.keys(sel).length) nextGear[id] = sel; else delete nextGear[id];
     const { gear: _g, ...rest } = party;
     const next: GameState = { ...cur, party: { ...rest, ...(Object.keys(nextGear).length ? { gear: nextGear } : {}) } };
-    assertNotOverWorn(next, pieces);
+    assertNotOverWorn(cur, next, pieces);
     return next;
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns) });
   return { party: after.party ?? { ids: [] } };

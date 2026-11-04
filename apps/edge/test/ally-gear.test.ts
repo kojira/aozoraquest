@@ -3,7 +3,8 @@
  * - POST /api/party/gear: 1 本しか持っていない たびのつるぎ を主人公と仲間の 2 人に → 400。2 本なら通る。
  *   職の合わない jobOnly → 400。隣り合う属性の防具 → 400 (D-ELEM-001 の関数)
  * - 主人公の /api/world/gear も、仲間が着ている品は着られない
- * - 仲間が着ている品は すてられない (400)・きたえられない (400)
+ * - 仲間が着ている品は すてられない (400)・きたえられない (400)。きたえる は主人公の着ているぶんも数える (#917)
+ * - すでに 1 個を 2 人が着ている状態でも、人数を増やさない着がえは通る
  * - 仲間の装備は戦闘の atk に乗る。からだが空の仲間は ぬののふく (Lv1 から)
  * - パーティから外すと gear は消え、pieces は 1 個も減らない
  */
@@ -94,6 +95,40 @@ describe('仲間の装備 (D-PARTY-004)', () => {
       const three = await world({ x: town.x, y: town.y, pieces: [piece('p1'), piece('p2'), piece('p3')], party: wearing });
       const r = await shopForge(three.env, USER, { rkeys: ['p1', 'p2'], rkey: 'f2' }, NOW);
       expect(r.level).toBe(1);
+    });
+
+    it('3 本のうち 主人公と仲間が 1 本ずつ着ていたら、主人公の着ていない 2 本でも きたえられない (400・何も変わらない)', async () => {
+      const town = worldOverlay().towns[0]!;
+      const pieces = [piece('p1'), piece('p2'), piece('p3')];
+      const { env, m } = await world({ x: town.x, y: town.y, pieces, gearSel: sword, party: wearing });
+      await expect(shopForge(env, USER, { rkeys: ['p2', 'p3'], rkey: 'f3' }, NOW)).rejects.toMatchObject({ status: 400, code: 'equipped' });
+      expect(m.gs().pieces).toEqual(pieces);
+      expect(m.gs().gearSel).toEqual(sword);
+    });
+
+    it('主人公だけが着ていても、残りで着ているぶんを賄えなければ きたえられない (#917)。もう 1 本あれば通る', async () => {
+      const town = worldOverlay().towns[0]!;
+      const two = await world({ x: town.x, y: town.y, pieces: [piece('p1'), piece('p2')], gearSel: sword, party: { ids: [KAI.id], members: [KAI] } });
+      await expect(shopForge(two.env, USER, { rkeys: ['p1', 'p2'], rkey: 'f4' }, NOW)).rejects.toMatchObject({ status: 400, code: 'equipped' });
+      expect(two.m.gs().pieces).toHaveLength(2);
+      const three = await world({ x: town.x, y: town.y, pieces: [piece('p1'), piece('p2'), piece('p3')], gearSel: sword, party: { ids: [KAI.id], members: [KAI] } });
+      const r = await shopForge(three.env, USER, { rkeys: ['p2', 'p3'], rkey: 'f5' }, NOW);
+      expect(r.level).toBe(1);
+      expect(three.m.gs().pieces).toEqual([piece('p1'), piece('f5', SWORD, 1)]);
+    });
+  });
+
+  describe('すでに 1 個を 2 人が着ている古い状態', () => {
+    const broken = { pieces: [piece('p1'), piece('p2', 'ar-cloth')], gearSel: sword, party: { ids: [KAI.id], members: [KAI], gear: { [KAI.id]: sword } } };
+    it('仲間が はずせる。主人公も ほかの品を着られる。人数を増やす着がえは断る', async () => {
+      const a = await world(broken);
+      await handlePartyGear(a.env, USER, KAI.id, {}, NOW, NS);
+      expect(a.m.gs().party!.gear).toBeUndefined();
+      const b = await world(broken);
+      await handleGear(b.env, USER, { ...sword, armor: { id: 'ar-cloth', level: 0 } }, NOW);
+      expect(b.m.gs().gearSel).toEqual({ ...sword, armor: { id: 'ar-cloth', level: 0 } });
+      const c = await world({ ...broken, pieces: [piece('p1')], gearSel: {} });
+      await expect(handleGear(c.env, USER, sword, NOW)).rejects.toMatchObject({ status: 400, code: 'worn_by_other' });
     });
   });
 

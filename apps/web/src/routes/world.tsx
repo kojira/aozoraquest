@@ -6,6 +6,7 @@ import {
   withCharacterNames,
   BATTLE_TUNING,
   canSeeEnemyVitals,
+  equippedCounts,
   favoredMonsterFor,
   jobLevelFromXp, partyCapacity,
   playerCombatant,
@@ -726,6 +727,7 @@ function WorldScreen() {
           // **参照している rkey 全部を保護する** (#609 レビュー)。resolved (実効) だけだと、
           // 手数で無効化中の盾が「そうび中」表示のまま きたえる で黙って燃える。
           equippedRkeys={Object.values(gearRefs ?? {}).filter((v): v is string => typeof v === 'string')}
+          allyWorn={equippedCounts(Object.entries(talk.party.gear ?? {}).filter(([id]) => talk.party.ids.includes(id)).map(([who, gear]) => ({ who, gear })))}
           busy={craftBusy}
           lastAction={shop.lastShopAction}
           errorText={shopError}
