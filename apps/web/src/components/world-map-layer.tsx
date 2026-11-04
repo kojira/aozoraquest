@@ -5,12 +5,13 @@ import { MONSTERS_BY_ID, WORLD_MAP_ID, fieldMonsters, interiorById, interiorPart
 import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, shoreTile } from '@/components/world-tiles';
 import { isFutabaGuild } from '@/lib/futaba-guild';
 import { HALF, TILE, VIEW } from '@/lib/world-view';
+import { placedSpotSprites } from '@/components/placed-spot-sprites';
 
 /**
  * ワールドマップのタイルと NPC (スクロール層の中身)。プレイヤー中央固定のビューポートに、
  * 歩行スクロール用の余白 scrollPadding マスを足して描く。
  */
-export function WorldMapLayer({ at, scrollPadding, flags }: { at: { x: number; y: number; mapId?: string }; scrollPadding: number; flags: readonly string[] }) {
+export function WorldMapLayer({ at, scrollPadding, flags, opened = [] }: { at: { x: number; y: number; mapId?: string }; scrollPadding: number; flags: readonly string[]; opened?: readonly string[] }) {
   // ビューポートのタイル列 (プレイヤー中央固定)。平地は見た目バリアントを散らす。
   // **同じパーツは <defs> に 1 回だけ定義して <use> で参照する** (#605)。全地形が
   // ドット絵 (タイルあたり最大 ~150 rect) になったので、マスごとにインライン展開すると
@@ -85,6 +86,9 @@ export function WorldMapLayer({ at, scrollPadding, flags }: { at: { x: number; y
     );
   }
 
+  // 宝箱・キラキラ (D-CHEST-001)。NPC と固定モンスターの下に重ねる。
+  const placedSprites = placedSpotSprites({ mapId: inside?.id ?? WORLD_MAP_ID, inside: !!inside, at, scrollPadding, flags, opened });
+
   // 固定モンスター (D-STORY-009 M3)。sprite のものを、まだ居るあいだだけ描く (見た目だけ。戦闘はサーバーが決める)。
   const mapId = inside?.id ?? WORLD_MAP_ID;
   for (const m of fieldMonsters()) {
@@ -102,5 +106,5 @@ export function WorldMapLayer({ at, scrollPadding, flags }: { at: { x: number; y
     );
   }
 
-  return <>{tiles}{npcSprites}</>;
+  return <>{tiles}{placedSprites}{npcSprites}</>;
 }

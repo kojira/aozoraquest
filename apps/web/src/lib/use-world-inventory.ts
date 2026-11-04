@@ -16,6 +16,8 @@ export function useWorldInventory() {
   const materialsRef = useRef<Record<string, number>>({});
   /** ShopModal 用の素材スナップショット (materialsRef は ref なので再レンダ用に複製) */
   const [materialsView, setMaterialsView] = useState<Record<string, number>>({});
+  /** 開けた宝箱・取ったキラキラの id (D-CHEST-001)。**サーバーが正** — 応答と初回ロードで写す。 */
+  const openedRef = useRef<string[]>([]);
   /** サーバーが返した在庫をそのまま正として反映する (#551)。client 側で引き算しない —
    *  引き算だけだとリロードで権威側の在庫が戻り、素材が複製できてしまう。 */
   const applyServerMaterials = useCallback((m: Record<string, number>) => {
@@ -34,7 +36,7 @@ export function useWorldInventory() {
   }, []);
   return {
     herbStock, setHerbStock, tonicStock, setTonicStock, featherStock, setFeatherStock,
-    materialsRef, materialsView, setMaterialsView, applyServerMaterials, subtractMaterial,
+    materialsRef, materialsView, setMaterialsView, applyServerMaterials, subtractMaterial, openedRef,
   };
 }
 

@@ -79,6 +79,7 @@ export function useWorldLoad(d: WorldLoadDeps) {
             setServerPower(ss.state.power ?? 0);
             setQuest(questStateOf(ss.state));
             flagsRef.current = ss.state.flags ?? [];
+            inventory.openedRef.current = ss.state.openedSpots ?? [];
             serverMapId = ss.state.mapId;
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
             // 記帳 (履歴) であって所持の根拠ではない。
