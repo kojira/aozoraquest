@@ -121,6 +121,15 @@ describe('戦闘のどうぐ (D-ITEM-001)', () => {
     expect(materialsAfterBattleUse({ herb: 1 }, s1)).toEqual({ herb: 1 });
   });
 
+  it('activeItems は全部の欄を複製で返す (エディタで保存しても key・battle が消えない #854)', () => {
+    setItemOverrides({ items: [...activeItems(), { id: 'old-letter', name: 'ふるい手紙', key: true }], equipment: [...activeEquipment()] });
+    const got = activeItems();
+    expect(got.find((x) => x.id === 'nemuri-kona')).toEqual(NEMURI);
+    expect(got.find((x) => x.id === 'old-letter')).toEqual({ id: 'old-letter', name: 'ふるい手紙', key: true });
+    got.find((x) => x.id === 'nemuri-kona')!.battle!.effects.length = 0;
+    expect(ITEMS['nemuri-kona']?.battle?.effects).toHaveLength(1);
+  });
+
   it('battle の欄が ITEMS に載る (読み込みで落ちない)', () => {
     expect(ITEMS['nemuri-kona']?.battle?.effects[0]).toMatchObject({ status: 'sleep' });
     expect(ITEMS['nemuri-kona']?.price).toEqual({ power: 3, materials: 1 });

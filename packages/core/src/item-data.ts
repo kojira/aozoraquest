@@ -157,9 +157,11 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
   return defs;
 }
 
-/** エディタ用: 現在有効などうぐ一覧 (差し替え前ならコード直書き)。 */
+/** エディタ用: 現在有効などうぐ一覧 (差し替え前ならコード直書き)。**全部の欄を返す** —
+ *  名前だけだと、エディタで開いて保存したときに key・battle・price などが消える (#854)。
+ *  エディタが書き換えても ITEMS が変わらないよう、複製して返す。 */
 export function activeItems(): ItemDefData[] {
-  return Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name }));
+  return Object.entries(ITEMS).map(([id, v]) => structuredClone({ id, ...v }));
 }
 
 /** エディタ用: 現在有効な装備一覧。 */
