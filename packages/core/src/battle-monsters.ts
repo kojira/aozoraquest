@@ -401,6 +401,12 @@ export function summonMonster(
   return { def, combatant: monsterCombatant(def, variance, rng) };
 }
 
+/** healer の 1 回の回復量。固定値 (healAmount) が最優先。無ければ maxHp × healRatio (省略時 BATTLE_TUNING.healerHealRatio)。
+ *  1 人戦 (resolveTurn) と群れ (resolveTurnMulti) の両方がこれを使う。 */
+export function monsterHealAmount(def: MonsterDef | undefined, maxHp: number): number {
+  return def?.healAmount ?? Math.round(maxHp * (def?.healRatio ?? BATTLE_TUNING.healerHealRatio));
+}
+
 /** モンスター def から戦闘値 (Combatant) を作る。tier 固定強度 (factor) + 明示 HP/MP 上書き +
  *  遭遇ごとの分散ジッター。variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ
  *  テスト/決定論を保つ)。summonMonster (tier 抽選) と、模擬戦の敵指定の双方から使う。 */

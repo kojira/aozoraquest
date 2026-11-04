@@ -59,6 +59,15 @@ describe('GuildPartyModal', () => {
     expect((screen.getByRole('button', { name: 'ミオを くわえる' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('今のデータに無い id は 数えず、送る ids からも落とす', async () => {
+    const save = await open(['gone', 'a'], flags3);
+    expect(screen.getByRole('region', { name: 'いまの パーティ' }).textContent).toContain('（1/2）');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'ミオを くわえる' })); });
+    expect(save).toHaveBeenLastCalledWith(['a', 'b']);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'カイトを はずす' })); });
+    expect(save).toHaveBeenLastCalledWith(['b']);
+  });
+
   it('紹介できる冒険者がいなければ そう言う', async () => {
     setStory({ recruits: [] });
     render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party: { ids: [] }, flags: flags2 })} save={vi.fn()} onClose={vi.fn()} />);

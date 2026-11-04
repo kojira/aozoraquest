@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { startBattle, resolveTurnMulti, type BattleState } from '../index.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import { BATTLE_TUNING, setMonsterOverrides, startBattle, resolveTurnMulti, type BattleState, type MonsterDef } from '../index.js';
+import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 
 /** ソロ battle を土台に 2v2 のマルチ state を組む (allies[0]=player / enemies[0]=monster を維持)。 */
 function multiState(seed: number): BattleState {
@@ -110,5 +111,25 @@ describe('マルチ戦闘ターンループ (#453)', () => {
       }
     }
     expect(healed).toBe(true); // マルチでも healer が自己回復 = per-enemy AI
+  });
+});
+
+describe('群れの敵の回復量 (D-PARTY-001 レビュー)', () => {
+  afterEach(() => setMonsterOverrides(TEST_MONSTERS));
+
+  /** healer 2 体 (HP 1/200・MP 満タン・回復確率 1) を主人公が防御して受ける 1 ターン。 */
+  function healTurn(over: Partial<MonsterDef>): number[] {
+    const base = TEST_MONSTERS.find((m) => m.id === 'sky-dragon')!;
+    setMonsterOverrides([...TEST_MONSTERS.filter((m) => m.id !== 'sky-dragon'), { ...base, ...over, abilityParams: { healChance: 1, lowHpRatio: 0.9 } }]);
+    const s = startBattle('warrior', 30, 30, '勇者', 5, 1, 0, undefined, { monsterId: 'sky-dragon', extraEnemies: 1 });
+    for (const e of s.enemies!) { e.hp = 1; e.maxHp = 200; e.mp = e.maxMp; e.monsterId = 'sky-dragon'; }
+    const next = resolveTurnMulti({ ...s, monster: s.enemies![0]! }, 'guard', 1);
+    return next.lastEvents.filter((ev) => ev.text.includes('りゅうの いこい')).map((ev) => Number(/HPが(\d+)回復/.exec(ev.text)![1]));
+  }
+
+  it('healAmount があればその値、無ければ maxHp × healRatio (1 人戦と同じ式)', () => {
+    expect(healTurn({ healAmount: 7 })).toEqual([7, 7]);
+    expect(healTurn({ healRatio: 0.5 })).toEqual([100, 100]);
+    expect(healTurn({})).toEqual([Math.round(200 * BATTLE_TUNING.healerHealRatio), Math.round(200 * BATTLE_TUNING.healerHealRatio)]);
   });
 });

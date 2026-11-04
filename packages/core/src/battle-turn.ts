@@ -9,7 +9,7 @@ import { STATUS_REGISTRY, applyBeforeAct, tickStatuses } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
 import { type JobSkill, skillMpCostOf, mpTraitFires } from './battle-job-skills.js';
-import { MONSTERS_BY_ID } from './battle-monsters.js';
+import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
@@ -203,9 +203,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         // healer の自己回復 (MP 消費)。MP が尽きるまでの読み合いを作る
         state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterHealMpCost);
         // 固定値 (healAmount) が最優先。割合は HP の大きい敵ほど強くなるので原則使わない。
-        const mdef = MONSTERS_BY_ID[state.monsterId];
-        const healed = mdef?.healAmount
-          ?? Math.round(state.monster.maxHp * (mdef?.healRatio ?? BATTLE_TUNING.healerHealRatio));
+        const healed = monsterHealAmount(MONSTERS_BY_ID[state.monsterId], state.monster.maxHp);
         const before = state.monster.hp;
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
         const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';

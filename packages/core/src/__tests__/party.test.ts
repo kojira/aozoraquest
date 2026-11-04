@@ -176,3 +176,31 @@ describe('仲間がいても、1 体だけの fleer は逃げる (1 人戦と同
     }
   });
 });
+
+describe('主人公のねらう敵は、ターンの頭で選んだ敵 (D-PARTY-001 レビュー)', () => {
+  /** 速い仲間 (agi 999) が先に 敵0 (HP 1) を倒す。主人公 (agi 500) はそのあと動く。敵は動きが遅く 攻撃しない。 */
+  function race(): BattleState {
+    const ally = { ...mate('warrior', 8, 'はやて'), agi: 999, atk: 999 };
+    const s0 = party(ally, 2);
+    const enemies = s0.enemies!.map((e, i) => ({ ...e, name: `敵${i}`, agi: 0, atk: 0, def: 0, hp: i === 0 ? 1 : 500, maxHp: 500 }));
+    const player = { ...s0.player, agi: 500, atk: 60, luk: 0 };
+    return { ...s0, player, allies: [player, ally], enemies, monster: enemies[0]! };
+  }
+
+  it('仲間が先に 敵0 を倒しても、targetIndex=1 は はじめに選んだ 敵1 に当たる (2 は 敵2 で、空振りしない)', () => {
+    for (const [targetIndex, hitName] of [[1, '敵1'], [2, '敵2']] as const) {
+      const next = resolveTurnMulti(race(), 'attack', 4, 0, targetIndex);
+      expect(next.enemies![0]!.hp).toBe(0);
+      const hero = next.lastEvents.filter((e) => e.text.startsWith('ゆうしゃのこうげき!'));
+      expect(hero).toHaveLength(1);
+      expect(hero[0]!.text).toContain(`${hitName}に`);
+    }
+  });
+
+  it('選んだ敵が先に倒れていたら、生きている先頭の敵に当たる', () => {
+    const s = race();
+    const next = resolveTurnMulti(s, 'attack', 4, 0, 0);
+    const hero = next.lastEvents.filter((e) => e.text.startsWith('ゆうしゃのこうげき!'));
+    expect(hero[0]!.text).toContain('敵1に');
+  });
+});
