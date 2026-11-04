@@ -16,6 +16,7 @@ import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests } from '@/lib/world-authoring';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { ItemReqInput } from '@/components/admin/item-req-input';
+import { CharacterIdList, CharacterPreview } from '@/components/admin/character-preview';
 
 /**
  * **ゲーム内クエスト エディタ** (#423)。NPC 発注・達成条件・報酬。
@@ -135,7 +136,10 @@ export function AdminQuests() {
         <span style={{ color: 'var(--color-muted)' }}>{label} ({hint})</span>
         {lines.map((l, i) => (
           <div key={i} style={{ display: 'flex', gap: '0.3em', margin: '0.15em 0' }}>
-            <input value={l} onChange={(e) => set(lines.map((x, j) => (j === i ? e.target.value : x)))} style={{ flex: 1 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <input value={l} onChange={(e) => set(lines.map((x, j) => (j === i ? e.target.value : x)))} style={{ width: '100%' }} />
+              <CharacterPreview text={l} />
+            </span>
             <button
               type="button"
               disabled={key !== 'progress' && lines.length <= 1}
@@ -219,6 +223,8 @@ export function AdminQuests() {
               </button>
             </div>
             {field('タイトル', <input value={current.title} onChange={(e) => update(current.id, { title: e.target.value })} style={{ flex: 1 }} />)}
+            <CharacterPreview text={current.title} />
+            <CharacterIdList />
             {field('発注 NPC', (
               <select value={current.npcId} onChange={(e) => update(current.id, { npcId: e.target.value })}>
                 {npcs.map((n) => (
@@ -263,6 +269,7 @@ export function AdminQuests() {
                       onChange={(e) => update(current.id, { objective: { ...current.objective, line: e.target.value } as QuestObjective })}
                       style={{ flex: 1, minWidth: '12em' }}
                     />
+                    <CharacterPreview text={current.objective.line} />
                   </>
                 ) : current.objective.kind === 'defeat' ? (
                   <select

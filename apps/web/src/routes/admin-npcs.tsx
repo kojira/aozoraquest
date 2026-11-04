@@ -13,6 +13,7 @@ import { NpcSprite } from '@/components/npc-sprite';
 import { TileArtEditor, type ArtSubject } from '@/components/admin/tile-art-editor';
 import { ItemReqInput } from '@/components/admin/item-req-input';
 import { NpcImageUpload } from '@/components/admin/npc-image-upload';
+import { CharacterIdList, CharacterPreview } from '@/components/admin/character-preview';
 import { npcImagePreviewKey, NpcImagePreviews } from '@/components/npc-image';
 import { prepareNpcImage, uploadNpcImage, type PreparedNpcImage } from '@/lib/npc-image';
 
@@ -291,6 +292,8 @@ export function AdminNpcs() {
               </span>
             </div>
             {field('なまえ', <input value={current.name} onChange={(e) => update(current.id, { name: e.target.value })} />)}
+            <CharacterPreview text={current.name} />
+            <CharacterIdList />
             <label style={{ fontSize: '0.8em' }}><input type="checkbox" checked={current.guildReception === true} onChange={(e) => update(current.id, { guildReception: e.target.checked ? true : undefined })} /> ギルドの受付（扉のマスに置くと建物入口として描き、扉の前から会話）</label>
             <div>
               <p style={{ fontSize: '0.8em' }}>見た目（選んでから「保存」で反映）</p>
@@ -338,11 +341,14 @@ export function AdminNpcs() {
               <span style={{ color: 'var(--color-muted)' }}>セリフ (1 行 = 1 窓。ぶつかると先頭から流れる)</span>
               {current.lines.map((l, i) => (
                 <div key={i} style={{ display: 'flex', gap: '0.3em', margin: '0.15em 0' }}>
-                  <input
-                    value={l}
-                    onChange={(e) => update(current.id, { lines: current.lines.map((x, j) => (j === i ? e.target.value : x)) })}
-                    style={{ flex: 1 }}
-                  />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <input
+                      value={l}
+                      onChange={(e) => update(current.id, { lines: current.lines.map((x, j) => (j === i ? e.target.value : x)) })}
+                      style={{ width: '100%' }}
+                    />
+                    <CharacterPreview text={l} />
+                  </span>
                   <button
                     type="button"
                     disabled={current.lines.length <= 1}
@@ -424,13 +430,16 @@ export function AdminNpcs() {
                   </div>
                   {alt.lines.map((l, li) => (
                     <div key={li} style={{ display: 'flex', gap: '0.3em', margin: '0.15em 0' }}>
-                      <input
-                        value={l}
-                        onChange={(e) => update(current.id, {
-                          altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, lines: x.lines.map((y, k) => (k === li ? e.target.value : y)) } : x)),
-                        })}
-                        style={{ flex: 1 }}
-                      />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <input
+                          value={l}
+                          onChange={(e) => update(current.id, {
+                            altLines: (current.altLines ?? []).map((x, j) => (j === ai ? { ...x, lines: x.lines.map((y, k) => (k === li ? e.target.value : y)) } : x)),
+                          })}
+                          style={{ width: '100%' }}
+                        />
+                        <CharacterPreview text={l} />
+                      </span>
                       <button
                         type="button"
                         disabled={alt.lines.length <= 1}

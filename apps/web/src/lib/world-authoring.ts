@@ -57,6 +57,11 @@ import {
   characterTextsInRecord,
   currentCharacters,
   missingCharacterRef,
+  setCharacters,
+  validateCharacters,
+  danglingRefs,
+  describeDanglingRef,
+  type CharacterDef,
   type AdminWorldRecordName,
 } from '@aozoraquest/core';
 import { EDGE_URL } from './edge-config';
@@ -377,6 +382,7 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   ]);
   // NPC の保存で参照チェックに使う (読めなければ保存させない)。
   const dialogue = await read<DialogueData>(ADMIN_WORLD_COL.dialogue);
+  const characters = await readCharacters(agent, adminDid);
   if (map && (typeof map.gz !== 'string' || map.size !== WORLD_SIZE)) throw new Error('地図レコードが不正');
   if (art && (!art.arts || typeof art.arts !== 'object' || Array.isArray(art.arts))) throw new Error('絵レコードが不正');
   if (items && (!Array.isArray(items.items) || !Array.isArray(items.equipment))) throw new Error('アイテムレコードが不正');
@@ -403,6 +409,7 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   // 0 体にすると、quests があるのに setGameQuests の実在検査が落ちて NPC エディタが読み込めなくなる。
   const authoredMonsters = monsters ? decodeMonstersFromRecord(monsters.monsters) : [];
   if (authoredMonsters.length) setMonsterOverrides(authoredMonsters);
+  setCharacters(characters);
   setNpcs(npcs?.npcs ?? []);
   setInteriors(maps, interior?.gates ?? []);
   setGameQuests(quests?.quests ?? []);
@@ -422,6 +429,7 @@ export async function loadDialogueAuthoringRecords(agent: Agent, adminDid: strin
   if (npcs && !Array.isArray(npcs.npcs)) throw new Error('NPC レコードが不正');
   const rec = await getAuthoringRecord<DialogueData>(agent, adminDid, ADMIN_WORLD_COL.dialogue, RKEY);
   if (rec && !Array.isArray(rec.scenes)) throw new Error('会話レコードが不正');
+  setCharacters(await readCharacters(agent, adminDid));
   setNpcs(npcs?.npcs ?? []);
   return { npcs: npcs?.npcs ?? [], dialogue: rec ? { scenes: rec.scenes } : null };
 }
@@ -434,4 +442,29 @@ export async function saveDialogue(agent: Agent, data: DialogueData, npcIds: Rea
   if (missing) throw new Error(missing);
   await putRecord(agent, ADMIN_WORLD_COL.dialogue, RKEY, { scenes: data.scenes, updatedAt: new Date().toISOString() });
   setDialogue(data);
+}
+
+// ─── 人物の名前 (D-CHAR-001) ─────────────────────────────────
+
+/** 保存済みの人物を厳密に読む (無ければ空、読めなければ throw)。適用はしない。 */
+async function readCharacters(agent: Agent, adminDid: string): Promise<CharacterDef[]> {
+  const rec = await getAuthoringRecord<{ characters?: CharacterDef[] }>(agent, adminDid, ADMIN_WORLD_COL.characters, RKEY);
+  if (rec && !Array.isArray(rec.characters)) throw new Error('人物レコードが不正');
+  return rec?.characters ?? [];
+}
+
+/** 人物エディタの読み込み。読めたものを適用して返す (読めなければ throw = 保存させない)。 */
+export async function loadCharactersRecord(agent: Agent, adminDid: string): Promise<CharacterDef[]> {
+  const list = await readCharacters(agent, adminDid);
+  setCharacters(list);
+  return list;
+}
+
+/** 人物を保存する。使われている人物は消させない (edge の PUT と同じ検査)。 */
+export async function saveCharacters(agent: Agent, characters: CharacterDef[]): Promise<void> {
+  validateCharacters(characters);
+  const dangling = danglingRefs('character', characters.map((c) => c.id))[0];
+  if (dangling) throw new Error(describeDanglingRef(dangling));
+  await putRecord(agent, ADMIN_WORLD_COL.characters, RKEY, { characters, updatedAt: new Date().toISOString() });
+  setCharacters(characters);
 }
