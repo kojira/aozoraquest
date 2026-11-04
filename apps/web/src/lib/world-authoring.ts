@@ -30,6 +30,8 @@ import {
   setMonsterOverrides,
   decodeMonstersFromRecord,
   encodeMonstersForRecord,
+  decodeItemsFromRecord,
+  encodeItemsForRecord,
   setNpcs,
   validateNpcs,
   setShopOverrides,
@@ -220,8 +222,9 @@ export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promis
 
 // ─── どうぐ・装備 (#420) ────────────────────────────────────
 
+/** 保存レコードの形。どうぐの効果の小数の欄は文字列 (encodeItemsForRecord / decodeItemsFromRecord)。 */
 export interface ItemsRecordData {
-  items: ItemDefData[];
+  items: unknown[];
   equipment: EquipmentDef[];
   updatedAt: string;
 }
@@ -230,7 +233,7 @@ export interface ItemsRecordData {
 export async function saveItems(agent: Agent, items: ItemDefData[], equipment: EquipmentDef[]): Promise<void> {
   assertCharactersExist('items', { items });
   setItemOverrides({ items, equipment });
-  const rec: ItemsRecordData = { items, equipment, updatedAt: new Date().toISOString() };
+  const rec: ItemsRecordData = { items: encodeItemsForRecord(items), equipment, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.items, RKEY, rec);
 }
 
@@ -410,7 +413,7 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   setWorldParts(parts);
   setWorldMap({ tiles, size: WORLD_SIZE, parts });
   setTownOverrides(map?.towns ?? null);
-  setItemOverrides(items ?? null);
+  setItemOverrides(items ? { items: decodeItemsFromRecord(items.items), equipment: items.equipment } : null);
   // monsters のレコードが無い (空) ときは触らない: loadAuthoredWorld で入った今の値 (edge cache 由来を含む) を残す。
   // 0 体にすると、quests があるのに setGameQuests の実在検査が落ちて NPC エディタが読み込めなくなる。
   const authoredMonsters = monsters ? decodeMonstersFromRecord(monsters.monsters) : [];

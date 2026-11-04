@@ -202,6 +202,22 @@ describe('/api/admin/data (#695)', () => {
     });
   });
 
+  describe('items の小数 (D-ITEM-001)', () => {
+    it('PUT items はどうぐの効果の小数を文字列でレコードに書き、GET は数値に戻して返す', async () => {
+      const NEMURI = { id: 'nemuri-kona', name: 'ねむりごな', price: { power: 3, materials: 1 }, shopTier: 1,
+        battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 0.7, turns: 3 }] } };
+      const value = { items: [...Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), NEMURI], equipment: activeEquipment().map((e) => ({ ...e })) };
+      const env = await makeEnv();
+      const res = await handleRequest(call('PUT', 'items', { body: { value, swapCid: null } }), env);
+      expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+      const floats: number[] = [];
+      JSON.stringify(pds.puts[0]!.record, (_k, v: unknown) => { if (typeof v === 'number' && !Number.isInteger(v)) floats.push(v); return v; });
+      expect(floats).toEqual([]); // PDS は整数以外の数値を拒否する
+      const got = await (await handleRequest(call('GET', 'items'), env)).json() as { value: { items: unknown[] } };
+      expect(got.value.items).toEqual(value.items);
+    });
+  });
+
   describe('monsters (D-STORY-009)', () => {
     const monsters = () => activeMonsters().map((m) => ({ ...m }));
     const BOSS = { ...activeMonsters()[0]!, id: 'story-boss', name: 'ぬしの影', storyOnly: true };
