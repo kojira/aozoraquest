@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  allyAutoAction, partyCapacity, partyCombatants, playerCombatant, recruitsAt, resolveTurnMulti, setStory, startBattle, validateStory, worldRefs,
+  allyAutoAction, partyCapacity, partyCombatants, playerCombatant, recruitLevelOk, recruitsAt, resolveTurnMulti, setStory, startBattle, validateStory, worldRefs,
   StoryDataError, type BattleState, type Combatant, type RecruitDef,
 } from '../index.js';
 
@@ -133,6 +133,16 @@ describe('recruits (world.story)', () => {
     expect(recruitsAt('homura-bluesky', []).map((x) => x.id)).toEqual([]);
     expect(recruitsAt('homura-bluesky', ['homura_slimes_done']).map((x) => x.id)).toEqual(['r-kaito']);
     expect(recruitsAt('kodama-bluesky', []).map((x) => x.id)).toEqual(['r-2']);
+  });
+
+  it('minLevel は 1〜99 の整数だけ。recruitLevelOk は主人公のジョブ Lv と比べ、recruitsAt は Lv が足りない人も出す', () => {
+    for (const minLevel of [1, 99]) expect(() => validateStory({ recruits: [{ ...ok, minLevel }] })).not.toThrow();
+    for (const minLevel of [0, 100, 2.5, '5']) expect(() => validateStory({ recruits: [{ ...ok, minLevel } as unknown as RecruitDef] }), String(minLevel)).toThrow(StoryDataError);
+    expect(recruitLevelOk({ ...ok, minLevel: 5 }, 4)).toBe(false);
+    expect(recruitLevelOk({ ...ok, minLevel: 5 }, 5)).toBe(true);
+    expect(recruitLevelOk(ok, 1)).toBe(true);
+    setStory({ recruits: [{ ...ok, minLevel: 99 }] });
+    expect(recruitsAt('homura-bluesky', ['homura_slimes_done']).map((x) => x.id)).toEqual(['r-kaito']);
   });
 
   it('ギルドの NPC への参照が worldRefs に挙がる', () => {
