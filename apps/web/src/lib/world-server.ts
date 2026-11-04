@@ -6,7 +6,7 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
-import { LXM, type StoryEffect } from '@aozoraquest/core';
+import { LXM, type PlacedKind, type PlacedReward, type StoryEffect } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
@@ -100,7 +100,7 @@ export interface ServerMoveResult {
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; version: number; updatedAt: string }
+export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -158,9 +158,16 @@ export interface ServerSearchResult {
   found: string | null;
   materials: Record<string, number>;
   power: number;
-  /** 置きアイテムを取ったときだけ (D-STORY-009)。パワーは減らない。 */
-  placed?: { itemId: string; count: number };
+  /** 置きアイテムを取ったときだけ (D-STORY-009 / D-CHEST-001)。パワーは減らない。itemId/count は spot のときだけ。 */
+  placed?: { kind: PlacedKind; rewards: PlacedReward[]; itemId?: string; count?: number };
   flags?: string[];
+  /** 置きアイテムを取ったときだけ: 開けた宝箱・取ったキラキラ。 */
+  openedSpots?: string[];
+  /** 置きアイテムを取ったときだけ: 装備の個体 (宝箱から装備が出ると増える)。 */
+  pieces?: ServerOwnedPiece[];
+  /** 無料で何も起きないマス: 開封済みの宝箱 / 鍵。 */
+  placedState?: 'empty' | 'locked';
+  hint?: string;
   scenarioMessages?: ScenarioMessage[];
 }
 export function serverSearch(agent: Agent, token?: string, key?: string): Promise<ServerSearchResult> {

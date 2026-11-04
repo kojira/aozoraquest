@@ -1,7 +1,10 @@
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, WORLD_MAP_ID, placedItemAt, placedItemOpen, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
-import { serverItem, serverSearch, serverTeleport, type ScenarioMessage } from '@/lib/world-server';
+import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
+import { serverItem, serverSearch, serverTeleport, WorldServerError, type ScenarioMessage } from '@/lib/world-server';
+import { placedSearchFreeAt, placedStateText, placedTakenText } from '@/lib/placed-search-text';
+import { piecesFromServer } from '@/lib/use-world-shop';
+import type { CraftedPiece } from '@/lib/crafting';
 import type { WipePhase } from '@/components/encounter-wipe';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import type { Vitals } from '@/lib/world-view';
@@ -10,7 +13,7 @@ import type { Vitals } from '@/lib/world-view';
  * フィールドで使う どうぐ (やくそう/そらのしずく/そらのはね) と しらべる、
  * そらのはね帰還のワイプ進行。消費と在庫はサーバーが確定し、応答で表示を同期する。
  */
-export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower, setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked }: {
+export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower, setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked, setCraftedPieces }: {
   agent: Agent | null;
   did: string | null;
   combat: { maxHp: number; maxMp: number } | null;
@@ -32,8 +35,10 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
   setWipe: Dispatch<SetStateAction<WipePhase | null>>;
   /** そらのはねの行き先えらびを開けない状態か (導入中・戦闘・演出・他モーダル)。 */
   fieldItemBlocked: () => boolean;
+  /** 宝箱から装備が出たら所持個体を応答で更新する (D-CHEST-001)。 */
+  setCraftedPieces: Dispatch<SetStateAction<CraftedPiece[]>>;
 }) {
-  const { herbStock, setHerbStock, tonicStock, setTonicStock, featherStock, setFeatherStock, materialsRef, setMaterialsView, applyServerMaterials, subtractMaterial } = inventory;
+  const { herbStock, setHerbStock, tonicStock, setTonicStock, featherStock, setFeatherStock, materialsRef, setMaterialsView, applyServerMaterials, subtractMaterial, openedRef } = inventory;
   /** そらのはね帰還のワイプ待ち (cover 完了時に onCoverDone がテレポートを実行する) */
   const featherDestRef = useRef<{ x: number; y: number } | null>(null);
   /** しらべるの冪等キー (成功するまで同じ鍵で再送する)。 */
@@ -187,9 +192,8 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
     if (!s || !agent || !did) { setSearchMsg('今は調べられない (通信を確認して)。'); return; }
     // **残高の判定も消費もサーバー** (#551)。client 台帳で引いていた頃は権威 power が
     // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
-    // 未取得の置きアイテム (D-STORY-009) があるマスはパワーを使わないので止めない (付与は edge が決める)。
-    const placed = placedItemAt(s.mapId ?? WORLD_MAP_ID, s.x, s.y);
-    const placedHere = !!placed && placedItemOpen(placed, flagsRef.current, []);
+    // 無料のマス (取れる置きアイテム・宝箱・鍵。D-STORY-009 / D-CHEST-001) はパワーを使わないので止めない (付与は edge が決める)。
+    const placedHere = placedSearchFreeAt(s, flagsRef.current, openedRef.current);
     if (!placedHere && serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
       setSearchMsg(`パワーが足りない (調べるには${SEARCH_TUNING.powerCost}いる)。投稿すると増えるよ。`);
       return;
@@ -203,21 +207,25 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       applyServerMaterials(res.materials);
       setServerPower(res.power); // 残高もサーバーが正
       if (res.placed) {
-        // 反映しないと、取った後のゲート・セリフの分岐が再読み込みまで変わらない。
+        // 反映しないと、取った後のゲート・セリフの分岐・宝箱の絵が再読み込みまで変わらない。
         if (res.flags) flagsRef.current = res.flags;
+        if (res.openedSpots) openedRef.current = res.openedSpots;
+        if (res.pieces) setCraftedPieces(piecesFromServer(res.pieces));
         if (res.scenarioMessages?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioMessages];
-        const count = res.placed.count > 1 ? `を${res.placed.count}こ` : 'を';
-        setSearchMsg(`${ITEMS[res.placed.itemId]?.name ?? res.placed.itemId}${count}手に入れた!`);
+        setSearchMsg(placedTakenText(res.placed));
         return;
       }
+      if (res.placedState) { setSearchMsg(placedStateText(res.placedState, res.hint)); return; }
       if (!res.found) { setSearchMsg(`あたりを調べたが、何もなかった… (残りパワー${res.power})`); return; }
       const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
       setSearchMsg(`調べると、${ITEMS[res.found]?.name ?? res.found}を1つ見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で確認 / 残りパワー${res.power})`);
     } catch (e) {
       console.warn('[world] search failed', e);
+      // 持ち物がいっぱい: 宝箱は開けていない (あとで取りに戻れる)。
+      if (e instanceof WorldServerError && e.code === 'pieces_full') { pendingSearchRef.current = null; setSearchMsg('もちものが いっぱいだ。'); return; }
       setSearchMsg('調べられなかった (通信エラー)。もう一度どうぞ。');
     }
-  }, [agent, did, applyServerMaterials, flagsRef, pendingNoticesRef, serverPowerRef, setSearchMsg, setServerPower, tokenRef, wsRef]);
+  }, [agent, did, applyServerMaterials, flagsRef, openedRef, pendingNoticesRef, serverPowerRef, setCraftedPieces, setSearchMsg, setServerPower, tokenRef, wsRef]);
 
   return { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere };
 }

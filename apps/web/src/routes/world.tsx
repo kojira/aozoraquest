@@ -12,7 +12,6 @@ import {
   playerLevelFromXp,
   regionAffinity,
   regionOf,
-  SEARCH_TUNING,
   statVectorToArray,
   terrainAt,
   townAt,
@@ -57,6 +56,7 @@ import { useWorldShop } from '@/lib/use-world-shop';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
+import { searchMenuLabel } from '@/lib/placed-search-text';
 import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
@@ -308,7 +308,7 @@ function WorldScreen() {
   });
   const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
     agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower,
-    setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked: featherBlocked,
+    setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked: featherBlocked, setCraftedPieces,
   });
 
   // オンボード用リセットは**設定画面**へ移設した (地図メニューから消し、新規と同じ
@@ -399,7 +399,7 @@ function WorldScreen() {
     { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
     { key: 'quests', label: 'クエスト', onSelect: () => setQuestLogOpen(true) },
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
-    ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => void searchHere() } as WorldMenuCommand]),
+    ...(inTown ? [] : [{ key: 'search', label: searchMenuLabel(ws, flagsRef.current, inventory.openedRef.current), onSelect: () => void searchHere() } as WorldMenuCommand]),
     { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
     // ちずは世界地図なので内部では出さない (#613)。内部の座標を世界地図に重ねると
     // 現在地マーカーが region 0 (左上) に出る誤表示になる。
@@ -428,7 +428,7 @@ function WorldScreen() {
             aria-label="ワールドマップ"
           >
             <g ref={scrollLayerRef} data-world-scroll data-world-x={ws.x} data-world-y={ws.y}>
-              <WorldMapLayer at={ws} scrollPadding={scrollPadding} flags={flagsRef.current} />
+              <WorldMapLayer at={ws} scrollPadding={scrollPadding} flags={flagsRef.current} opened={inventory.openedRef.current} />
             </g>
             <ellipse
               cx={HALF * TILE + TILE / 2}
