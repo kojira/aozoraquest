@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { jobDisplayName, partyCapacity, recruitLevelOk, recruitsAt, type NpcDef, type RecruitDef } from '@aozoraquest/core';
+import { jobDisplayName, partyCapacity, recruitById, recruitLevelOk, recruitsAt, type NpcDef, type RecruitDef } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import { PartyMemberList, type PartyLoad } from './party-modal';
 import type { ServerParty } from '@/lib/world-server';
@@ -50,7 +50,8 @@ export function GuildPartyModal({ guild, jobLevel, load, save, onClose }: {
       setBusy(false);
     }
   };
-  const ids = data?.party.ids ?? [];
+  // 今のデータに無い id (admin で消した冒険者) は数えず、送らない (edge も同じく落とす)。
+  const ids = (data?.party.ids ?? []).filter((id) => recruitById(id));
   const cap = data ? partyCapacity(data.flags) - 1 : 0;
   const offered = data ? recruitsAt(guild.id, data.flags).filter((r) => !ids.includes(r.id)) : [];
   const add = (r: RecruitDef) => {

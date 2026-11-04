@@ -10,7 +10,7 @@ import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
 import { skillMpCostOf, skillsForJob, mpTraitFires } from './battle-job-skills.js';
 import { type Combatant } from './battle-combatant.js';
-import { MONSTERS_BY_ID } from './battle-monsters.js';
+import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
@@ -59,7 +59,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
   }
   if (action === 'heal') {
     enemy.mp = Math.max(0, enemy.mp - t.monsterHealMpCost);
-    const healed = Math.round(enemy.maxHp * t.healerHealRatio);
+    const healed = monsterHealAmount(def, enemy.maxHp);
     const before = enemy.hp;
     enemy.hp = Math.min(enemy.maxHp, enemy.hp + healed);
     events.push({ actor: 'monster', text: `${enemy.name}は${def?.healName ?? 'きずをいやす'}! HPが${enemy.hp - before}回復。` });
@@ -201,6 +201,11 @@ export function resolveTurnMulti(
   // 主人公が倒れたら負け (D-PARTY-001)。コマンドとやくそうを持つのは主人公だけなので、仲間だけ残っても続けない。
   const heroDown = () => player.hp <= 0;
   const enemiesDown = () => enemies.every((e) => e.hp <= 0);
+  // 主人公のねらう敵は、ターンの頭 (コマンドを選んだとき) に生きていた敵の targetIndex 番目。
+  // 先に動いた仲間がほかの敵を倒すと「生きている敵の何番目か」がずれるので、動く時点の番号へ数えなおす。
+  // その敵がもう倒れていれば、生きている先頭の敵 (0)。
+  const chosenFoe = enemies.filter((e) => e.hp > 0)[targetIndex];
+  const heroTargetIndex = () => Math.max(0, enemies.filter((e) => e.hp > 0).indexOf(chosenFoe!));
 
   for (const actor of order) {
     if (state.outcome !== 'ongoing' || heroDown() || enemiesDown()) break;
@@ -211,7 +216,7 @@ export function resolveTurnMulti(
 
     if (actor === player) {
       if (cmd === 'attack') {
-        const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex })[0];
+        const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex: heroTargetIndex() })[0];
         if (target) {
           doAttack(player, target, rng, events, 'player');
           if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) player.mp = Math.min(player.maxMp, player.mp + state.mpAttackGain);
@@ -224,7 +229,7 @@ export function resolveTurnMulti(
             player,
             sides,
             (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
-            { targetIndex, label: selectedSkill.name, events, actor: 'player' },
+            { targetIndex: heroTargetIndex(), label: selectedSkill.name, events, actor: 'player' },
           );
         }
       } else if (cmd === 'herb') {
@@ -240,7 +245,7 @@ export function resolveTurnMulti(
         state.tonicsUsed += 1;
         events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
       } else if (cmd === 'item') {
-        useBattleItem(state, itemId!, sides, targetIndex, rng, events);
+        useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events);
       }
       // guard / flee 失敗はこのターン行動なし
     } else if (isAlly(actor) && actor.job) {

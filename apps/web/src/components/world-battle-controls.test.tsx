@@ -219,6 +219,16 @@ describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
     expect(row('ゆうしゃ').style.opacity).toBe('1');
   });
 
+  it('味方の段は 数字に加えて HP/MP のバーを出す (HP バーは 残りで色が変わる)', () => {
+    input(group([10], [20, 13, 0]));
+    const bar = (n: string, kind: 'hp' | 'mp') => screen.getAllByText(n).map((e) => e.closest<HTMLElement>('[data-ally]')).find(Boolean)!.querySelector<HTMLElement>(`[data-bar="${kind}"]`)!;
+    expect(bar('カイト', 'hp').style.width).toBe(`${(13 / 30) * 100}%`);
+    expect(bar('カイト', 'hp').style.background).toBe('rgb(245, 197, 66)');
+    expect(bar('カイト', 'mp').style.width).toBe('100%');
+    expect(bar('ゆうしゃ', 'hp').style.background).toBe('rgb(95, 195, 126)');
+    expect(bar('ミオ', 'hp').style.width).toBe('0%');
+  });
+
   it('1 人なら味方の段を出さない', () => {
     input(group([10, 7]));
     expect(document.querySelector('[data-ally]')).toBeNull();

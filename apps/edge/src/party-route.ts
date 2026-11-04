@@ -5,6 +5,7 @@
  * - 新しく入れられるのは、そのギルドがいま紹介している冒険者だけ。もう入れている仲間はそのまま残せる
  * - 新しく入れる人の minLevel が主人公のジョブ Lv より上なら 400 recruit_level (入れている人は外さない)
  * - 外した仲間の HP/MP の持ちこしは消す (また入れると全快で戻る)
+ * - 今のデータに無い id は state からも送られた ids からも落とす (確かめる前・数える前)
  */
 import { allNpcs, jobLevelFromXp, partyCapacity, recruitById, recruitLevelOk, recruitsAt, type Archetype } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type PartyState } from './game-state';
@@ -15,18 +16,20 @@ import { positionAndState } from './story-battle';
 export interface PartySetResult { party: PartyState }
 
 /** 新しい ids を検証して state に当てる (純関数。CAS のリトライで何度呼ばれても同じ)。 */
-export function partyWith(cur: GameState, guild: string, ids: readonly string[], archetype: Archetype): GameState {
+export function partyWith(cur: GameState, guild: string, submitted: readonly string[], archetype: Archetype): GameState {
   const flags = cur.flags ?? [];
+  // 今のデータに無い id (admin で消した・名前を変えた冒険者) は、確かめる前と数える前に落とす。残すと編成が 400 で止まり、人数も 1 つ使う。
+  const ids = submitted.filter((id) => recruitById(id));
   const cap = partyCapacity(flags) - 1;
   if (cap <= 0) throw new ResolverError('まだ パーティを 組めない', 400, 'party_locked');
   if (new Set(ids).size !== ids.length) throw new ResolverError('同じ人は ふたり入れられない', 400, 'bad_request');
   if (ids.length > cap) throw new ResolverError('パーティは もう いっぱい', 400, 'party_full');
-  const had = cur.party?.ids ?? [];
+  const had = (cur.party?.ids ?? []).filter((id) => recruitById(id));
   const offered = new Set(recruitsAt(guild, flags).map((r) => r.id));
   const jobLevel = jobLevelFromXp(jobXpOf(cur, archetype), archetype);
   for (const id of ids) {
-    const r = recruitById(id);
-    if (!r || (!had.includes(id) && !offered.has(id))) throw new ResolverError('その 冒険者は ここに いない', 400, 'unknown_recruit');
+    const r = recruitById(id)!;
+    if (!had.includes(id) && !offered.has(id)) throw new ResolverError('その 冒険者は ここに いない', 400, 'unknown_recruit');
     if (!had.includes(id) && !recruitLevelOk(r, jobLevel)) throw new ResolverError(`${r.name}は まだ 仲間に できない (Lv ${r.minLevel} から)`, 400, 'recruit_level');
   }
   const keep = <T>(rec: Record<string, T> | undefined) => {

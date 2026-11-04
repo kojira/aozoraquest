@@ -130,11 +130,10 @@ describe('パーティ (D-PARTY-001)', () => {
       await expect(handlePartySet(env, USER, 'g-bluesky', ['r-1'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'party_locked' });
     });
 
-    it('紹介されていない冒険者 (条件のフラグが無い・知らない id) は新しく入れられない。入れている人は残せる', async () => {
+    it('紹介されていない冒険者 (条件のフラグが無い) は新しく入れられない。入れている人は残せる', async () => {
       const env = await makeEnv();
       globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
       await expect(handlePartySet(env, USER, 'g-bluesky', ['r-late'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'unknown_recruit' });
-      await expect(handlePartySet(env, USER, 'g-bluesky', ['nope'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'unknown_recruit' });
       const m = pds(GS({ flags: [LETTER, 'yuuhi_feather_done'], party: { ids: ['r-late'] } }));
       globalThis.fetch = m.fn;
       await handlePartySet(env, USER, 'g-bluesky', ['r-late', 'r-1'], near(env), NOW);
@@ -150,6 +149,20 @@ describe('パーティ (D-PARTY-001)', () => {
       globalThis.fetch = kept.fn;
       await handlePartySet(env, USER, 'g-bluesky', ['r-high', 'r-1'], near(env), NOW);
       expect(kept.gs().party?.ids).toEqual(['r-high', 'r-1']);
+    });
+
+    it('知らない id (admin のデータから消えた冒険者) が state に残っていても、入れる・外すができ、その id は消える', async () => {
+      const env = await makeEnv();
+      const stale = { ids: ['gone', 'r-1'], hp: { gone: 3, 'r-1': 2 } };
+      let m = pds(GS({ flags: [LETTER], party: stale }));
+      globalThis.fetch = m.fn;
+      await handlePartySet(env, USER, 'g-bluesky', ['gone'], near(env), NOW);
+      expect(m.gs().party).toBeUndefined();
+      m = pds(GS({ flags: [LETTER], party: stale }));
+      globalThis.fetch = m.fn;
+      const r = await handlePartySet(env, USER, 'g-bluesky', ['gone', 'r-2'], near(env), NOW);
+      expect(r.party).toEqual({ ids: ['r-2'] });
+      expect(m.gs().party).toEqual({ ids: ['r-2'] });
     });
   });
 
