@@ -18,7 +18,10 @@ export function BattleTargetPicker({ state, busy, Row, onPick, onCancel }: {
       {living.map((e, i) => (
         <Row key={i} fill={false} label={e.name} onClick={() => onPick(i)} disabled={busy} />
       ))}
-      <Row fill={false} label="もどる" onClick={onCancel} disabled={busy} />
+      {/* 窓は固定の高さでスクロールする。敵が 2 体以上だと 390px で「もどる」が下で切れるので、下に張りつける。 */}
+      <div data-picker-back style={{ position: 'sticky', bottom: 0, flexShrink: 0, background: 'rgba(16,18,26,0.95)' }}>
+        <Row fill={false} label="もどる" onClick={onCancel} disabled={busy} />
+      </div>
     </>
   );
 }

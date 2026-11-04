@@ -2,7 +2,7 @@ import { ITEMS, withCharacterNames, type BattleState } from '@aozoraquest/core';
 
 /**
  * 戦闘の「どうぐ」に並べる戦闘用のどうぐ (D-ITEM-001)。数は封印した state.battleItems。
- * 0 個の品は出さない。ねらう相手の選択 (D-PARTY B3) が入るまでは、敵が何体でも 1 体目に使う。
+ * 0 個の品は出さない。単体の敵をねらう品で生きている敵が 2 体以上なら、ねらう相手を選ぶ (world-battle-controls)。
  */
 export function battleItemEntries(state: BattleState): Array<{ id: string; name: string; count: number }> {
   return Object.entries(state.battleItems ?? {})
