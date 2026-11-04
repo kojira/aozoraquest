@@ -82,7 +82,8 @@ export function DialogueWindow({
    *  吹き出しと同じ顔で認識できるように)。NPC ごとの出し分けは呼び出し側の責務 */
   plateIcon?: React.ReactNode;
   /** Supplied only by an NPC conversation, never inferred from a speaker name.
-   *  話者のある行だけに出す (地の文の行では出さない。#696 導入の「倒れていた」語り)。 */
+   *  話者のある行だけに出す (地の文の行では出さない。#696 導入の「倒れていた」語り)。
+   *  話者が `name` と違う行にも出さない (お知らせで別の NPC が話す行。#907)。 */
   portrait?: { src: string; name: string } | undefined;
   /** 全行を送り終えた (選択肢があればどれかを選んだ) ときに一度だけ呼ぶ */
   onDone: () => void;
@@ -226,7 +227,10 @@ export function DialogueWindow({
   const complete = lineComplete(lines, st);
   // 演出 (D-STORY-007) は地図枠に出すときだけ。段と行を鍵に一過性の演出を一度だけ再生する。
   const effectsShown = onMap && lines.some((l) => l.effects?.length);
-  const shownPortrait = line.speaker ? line.portrait ?? (portrait && { ...portrait, name: withCharacterNames(portrait.name) }) : undefined;
+  // 窓全体の絵は、その持ち主 (同じ名前) の行だけに使う。ほかの話者の行に流用しない (#907: 会話イラストの
+  // 無い NPC の名前の横に、話しかけた相手の絵が出ていた)。
+  const ownerPortrait: DialogueLine['portrait'] = portrait && { ...portrait, name: withCharacterNames(portrait.name) };
+  const shownPortrait = line.speaker ? line.portrait ?? (ownerPortrait?.name === line.speaker ? ownerPortrait : undefined) : undefined;
 
   const renderChoice = (c: DialogueChoice) => (
     <button

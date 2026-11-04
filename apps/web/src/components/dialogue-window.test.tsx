@@ -160,6 +160,18 @@ describe('DialogueWindow: 救護導入の表情と操作遮断', () => {
     expect(sprite.style.imageRendering).toBe('pixelated');
   });
 
+  it('窓の持ち主と違う話者の行には、窓全体の絵を出さない (#907: 絵の無い NPC の横に話しかけた相手の絵)', () => {
+    render(<DialogueWindow
+      lines={[{ speaker: '村長', text: '頼んだぞ' }, { speaker: 'ほむら', text: 'よく寝た' }]}
+      portrait={{ src: '/elder.webp', name: '村長' }} onDone={vi.fn()}
+    />);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/elder.webp');
+    const surface = screen.getByRole('dialog');
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByText('ほむら')).toBeTruthy();
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
   it('Tab/Shift+Tabは会話と選択肢の中だけで循環し、背後操作へ抜けない', () => {
     render(<><button>もちもの</button><DialogueWindow lines={[{ text: '受ける？' }]} onDone={vi.fn()}
       choices={[{ label: 'はい', onSelect: vi.fn() }, { label: 'いいえ', onSelect: vi.fn() }]} /></>);
