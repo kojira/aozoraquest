@@ -54,7 +54,9 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
   let turns = 0;
   for (let i = 0; i < 80 && s.outcome === 'ongoing'; i++) {
     turns++;
-    const item = Object.entries(s.battleItems ?? {}).find(([, n]) => n > 0)?.[0];
+    // 魔法反射の敵には、ダメージのどうぐ (呪文と同じ doMagic) を使わない (D-PARTY-002 §12a。人は見て待つ)。
+    const reflecting = (s.enemies ?? [s.monster]).some((e) => e.hp > 0 && (e.statuses ?? []).some((x) => x.id === 'magicReflect'));
+    const item = Object.entries(s.battleItems ?? {}).find(([id, n]) => n > 0 && !(reflecting && core.ITEMS[id]?.battle?.effects.some((e) => e.kind === 'fixedDamage')))?.[0];
     const hurt = s.herbs > 0 && s.player.hp < s.player.maxHp * 0.45;
     if (!multi) {
       if (item && !hurt && !s.monster.charging) { s = resolveTurn(s, 'item', undefined, 0, item); continue; }
