@@ -438,38 +438,7 @@ export async function handleTeleport(env: ResolverEnv, userDid: string, x: numbe
   return { x: tx, y: ty, token, materials };
 }
 
-export interface ItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
-
-/** フィールドの道具使用 (やくそう=herb / そらのしずく=tonic)。サーバー在庫を 1 消費して carryHp/Mp を回復。
- *  maxHp/Mp はプレイヤーの archetype+Lv+装備から算出 (playerCombatant)。満タン/在庫切れは 400。 */
-export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb' | 'tonic', now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<ItemResult> {
-  const rec = await readState(env, userDid);
-  const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-  const matId = item === 'herb' ? 'herb' : 'sky-dew';
-  if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
-  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
-  let healed = 0;
-  const written = await readModifyWrite(env, userDid, (cur) => {
-    const have = cur.materials[matId] ?? 0;
-    if (have <= 0) throw new ResolverError('在庫切れ', 400);
-    const m = { ...cur.materials, [matId]: have - 1 };
-    if ((m[matId] ?? 0) <= 0) delete m[matId];
-    if (item === 'herb') {
-      const curHp = cur.carryHp ?? c.maxHp;
-      if (curHp >= c.maxHp) throw new ResolverError('HP は満タン', 400);
-      const newHp = Math.min(c.maxHp, curHp + Math.round(c.maxHp * BATTLE_TUNING.herbHealRatio));
-      healed = newHp - curHp;
-      return { ...cur, materials: m, carryHp: newHp >= c.maxHp ? undefined : newHp };
-    }
-    const curMp = cur.carryMp ?? c.maxMp;
-    if (curMp >= c.maxMp) throw new ResolverError('MP は満タン', 400);
-    const newMp = Math.min(c.maxMp, curMp + Math.max(1, Math.round(c.maxMp * BATTLE_TUNING.tonicMpRatio)));
-    healed = newMp - curMp;
-    return { ...cur, materials: m, carryMp: newMp >= c.maxMp ? undefined : newMp };
-  }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
-  return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed };
-}
+// フィールドの道具使用 (handleItem) は field-heal.ts へ (D-PARTY-003)。
 
 /** 権威 state + 診断から luk (装備込み) を出す。**client 申告を使わない** —
  *  強化値の抽選に luk が効くので、client の値を信じると盛れる (#551)。 */
@@ -541,9 +510,12 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   // 群れ (#453) か仲間がいる (D-PARTY-001) なら resolveTurnMulti で解決 + targetIndex を検証。1 対 1 (従来) は
   // resolveTurn (挙動不変)。client が偽った targetIndex は敵配列の範囲に clamp、範囲外/非整数は
   // 主敵 [0] に落とす (詐称防止の fail-safe。死体を指定しても core の resolveTargets が空振りにする)。
+  // 味方をねらう手 (やくそう・回復のとくぎ。D-PARTY-003) では味方の番号なので、敵と味方の多いほうまで通す
+  // (core は選んだ相手がいなければ 主敵 / 主人公 に落とす)。
   const enemies = guard.state.enemies;
-  const isMulti = (enemies?.length ?? 0) > 1 || (guard.state.allies?.length ?? 0) > 1;
-  const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < (enemies?.length ?? 1) ? targetIndex : 0;
+  const allies = guard.state.allies;
+  const isMulti = (enemies?.length ?? 0) > 1 || (allies?.length ?? 0) > 1;
+  const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < Math.max(enemies?.length ?? 1, allies?.length ?? 1) ? targetIndex : 0;
   const next = isMulti
     ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx, itemId)
     : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx, itemId);

@@ -69,11 +69,13 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
     const aoe = s.playerSkills.findIndex((k) => isAoe(k.kind));
     if (living.length >= 2 && aoe >= 0 && p.mp >= cost && !(s.herbs > 0 && p.hp < p.maxHp * 0.45)) { s = resolveTurnMulti(s, 'skill', undefined, aoe, 0); continue; }
     const tgt = living.reduce((a, b) => (b.hp < a.hp ? b : a));
-    if (item && !hurt && !living.some((e) => e.charging)) { s = resolveTurnMulti(s, 'item', undefined, 0, living.indexOf(tgt), item); continue; }
+    if (item && !hurt && !living.some((e) => e.charging)) { s = resolveTurnMulti(s, 'item', undefined, 0, core.itemTargetsOneAlly(item) ? 0 : living.indexOf(tgt), item); continue; }
     const view = { ...s, monster: tgt } as BattleState; delete view.allies; delete view.enemies;
     let a = autoBattleAction(view);
     if (living.some((e) => e.charging) && a.command !== 'skill') a = { command: 'guard', skillIndex: 0 };
-    s = resolveTurnMulti(s, a.command, undefined, a.skillIndex, living.indexOf(tgt));
+    // やくそう・しずく・1 人回復のとくぎは味方の番号 (D-PARTY-003)。1 対 1 の先読みで選んだ手なので主人公 (0) に。
+    const selfAim = a.command === 'herb' || a.command === 'tonic' || (a.command === 'skill' && core.skillTargetsOneAlly(s.playerSkills[a.skillIndex]?.kind ?? ''));
+    s = resolveTurnMulti(s, a.command, undefined, a.skillIndex, selfAim ? 0 : living.indexOf(tgt));
   }
   const killed = (s.enemies ?? [s.monster]).filter((e) => e.hp <= 0).map((e) => e.monsterId ?? s.monsterId);
   const mates2: Record<string, number> = { ...o.carry?.mates }, matesMp: Record<string, number> = { ...o.carry?.matesMp };

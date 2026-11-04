@@ -4,8 +4,8 @@
  * とくぎと同じものを使う。1v1 (resolveTurn) と群れ (resolveTurnMulti) の両方がここを呼ぶ。
  */
 
-import { EFFECT_HANDLERS, effectTarget } from './skills.js';
-import { resolveTargets, type CombatSides } from './combat-target.js';
+import { EFFECT_HANDLERS, SKILLS, effectTarget, type SkillEffect } from './skills.js';
+import { resolveTargets, type CombatSides, type SkillTarget } from './combat-target.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { ITEMS } from './battle-monsters.js';
 import { type TurnEvent, type BattleState } from './battle-state.js';
@@ -33,6 +33,23 @@ export function carriedBattleItems(items: Readonly<Record<string, number>> | und
   return out;
 }
 
+/** どうぐの効果の対象。治療のどうぐ (cleanse の self) は「選んだ味方 1 人」(1 人戦は自分。D-PARTY-003)。
+ *  どうぐを使うのは主人公だけなので、self = 主人公 だったものを、仲間にも使えるようにする。 */
+export function itemEffectTarget(effect: SkillEffect): SkillTarget {
+  if (effect.kind === 'cleanse' && effect.target === 'self') return 'oneAlly';
+  return effectTarget(effect);
+}
+
+/** 味方 1 人を選んで使うとくぎか (聖光の癒し など。D-PARTY-003)。 */
+export function skillTargetsOneAlly(kind: string): boolean {
+  return !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneAlly');
+}
+
+/** 味方 1 人を選んで使うどうぐか (やくそう・しずくは別のコマンド)。 */
+export function itemTargetsOneAlly(itemId: string): boolean {
+  return !!ITEMS[itemId]?.battle?.effects.some((e) => itemEffectTarget(e) === 'oneAlly');
+}
+
 /** そのどうぐを今この戦闘で使えるか (封印した持ち込み数が 1 以上で、戦闘用のどうぐ)。 */
 export function canUseBattleItem(state: BattleState, itemId: string | undefined): itemId is string {
   return itemId !== undefined && (state.battleItems?.[itemId] ?? 0) > 0 && isBattleItem(itemId);
@@ -54,13 +71,17 @@ export function useBattleItem(
   targetIndex: number,
   rng: () => number,
   events: TurnEvent[],
+  allyIndex?: number,
 ): void {
   const def = ITEMS[itemId];
   const player = state.player;
   const name = def?.name ?? itemId;
   events.push({ actor: 'player', text: `${player.name}は ${name}を つかった!` });
-  for (const effect of def?.battle?.effects ?? []) {
-    for (const target of resolveTargets(player, effectTarget(effect), sides, { targetIndex })) {
+  for (const raw of def?.battle?.effects ?? []) {
+    const to = itemEffectTarget(raw);
+    // cleanse のハンドラは self なら使う人を見るので、選んだ味方に向けた形で渡す。
+    const effect: SkillEffect = raw.kind === 'cleanse' && to === 'oneAlly' ? { ...raw, target: 'oneAlly' } : raw;
+    for (const target of resolveTargets(player, to, sides, { targetIndex, ...(allyIndex !== undefined ? { allyIndex } : {}) })) {
       const before = events.length;
       EFFECT_HANDLERS[effect.kind](effect, {
         attacker: player, defender: target, rng, events, skillName: name, actorSide: 'player', engine: { doAttack, doMagic },

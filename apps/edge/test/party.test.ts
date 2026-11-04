@@ -157,6 +157,15 @@ describe('パーティ (D-PARTY-001)', () => {
       expect(after[1]).toBeLessThan(before[1]!);
     });
 
+    it('敵 1 体でも、やくそうの targetIndex=1 は仲間に届く (D-PARTY-003)', async () => {
+      const env = await makeEnv();
+      const m = pds(GS({ flags: [LETTER], materials: { herb: 1 }, party: { ids: ['r-1'], hp: { 'r-1': 2 } } }));
+      globalThis.fetch = m.fn;
+      const enc = await sealEncounter(env, USER, m.gs(), 10, 10, 1, NOW, undefined, undefined, undefined, storyBattleById('b-boss'));
+      const r = await handleTurn(env, USER, enc.battleId, 0, 'herb', NOW, undefined, 0, 1);
+      expect(r.events.some((e) => e.text.includes('カイトのHPが'))).toBe(true);
+    });
+
     it('決着で仲間の HP/MP を持ちこす (満タンの仲間は書かない)', async () => {
       const env = await makeEnv();
       const m = pds(GS({ flags: [LETTER], party: { ids: ['r-1'] } }));

@@ -35,6 +35,7 @@ export const LXM = {
   worldMove: `${AQ_NSID_ROOT}.world.move`,
   worldTeleport: `${AQ_NSID_ROOT}.world.teleport`,
   worldItem: `${AQ_NSID_ROOT}.world.item`,
+  worldSkill: `${AQ_NSID_ROOT}.world.skill`,
   worldGear: `${AQ_NSID_ROOT}.world.gear`,
   worldSearch: `${AQ_NSID_ROOT}.world.search`,
   storyBattle: `${AQ_NSID_ROOT}.story.battle`,

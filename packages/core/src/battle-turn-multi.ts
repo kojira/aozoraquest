@@ -15,7 +15,7 @@ import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordin
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
-import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
+import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
 
 /** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
@@ -208,6 +208,12 @@ export function resolveTurnMulti(
   // その敵がもう倒れていれば、生きている先頭の敵 (0)。
   const chosenFoe = enemies.filter((e) => e.hp > 0)[targetIndex];
   const heroTargetIndex = () => Math.max(0, enemies.filter((e) => e.hp > 0).indexOf(chosenFoe!));
+  // 味方をねらう手 (やくそう・しずく・味方 1 人のとくぎ/どうぐ。D-PARTY-003) では targetIndex は「生きている味方の何番目か」。
+  // 敵と同じく、ターンの頭に生きていた味方を覚えておき、動く時点の番号へ数えなおす。先に倒れていたら主人公 (0)。
+  const aimsAlly = cmd === 'herb' || cmd === 'tonic' || (cmd === 'skill' && skillTargetsOneAlly(selectedSkill.kind)) || (cmd === 'item' && itemTargetsOneAlly(itemId!));
+  const chosenAlly = aimsAlly ? allies.filter((a) => a.hp > 0)[targetIndex] : undefined;
+  const heroAllyIndex = () => Math.max(0, allies.filter((a) => a.hp > 0).indexOf(chosenAlly!));
+  const heroAlly = () => allies.filter((a) => a.hp > 0)[heroAllyIndex()] ?? player;
 
   for (const actor of order) {
     if (state.outcome !== 'ongoing' || heroDown() || enemiesDown()) break;
@@ -231,23 +237,27 @@ export function resolveTurnMulti(
             player,
             sides,
             (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
-            { targetIndex: heroTargetIndex(), label: selectedSkill.name, events, actor: 'player' },
+            { targetIndex: heroTargetIndex(), allyIndex: heroAllyIndex(), label: selectedSkill.name, events, actor: 'player' },
           );
         }
       } else if (cmd === 'herb') {
-        const heal = Math.round(player.maxHp * t.herbHealRatio);
-        player.hp = Math.min(player.maxHp, player.hp + heal);
+        const to = heroAlly();
+        const heal = Math.round(to.maxHp * t.herbHealRatio);
+        to.hp = Math.min(to.maxHp, to.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;
-        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! HPが${heal}回復。(残り${state.herbs})` });
+        const whose = to === player ? '' : `${to.name}の`;
+        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! ${whose}HPが${heal}回復。(残り${state.herbs})` });
       } else if (cmd === 'tonic') {
-        const gain = Math.round(player.maxMp * t.tonicMpRatio);
-        player.mp = Math.min(player.maxMp, player.mp + gain);
+        const to = heroAlly();
+        const gain = Math.round(to.maxMp * t.tonicMpRatio);
+        to.mp = Math.min(to.maxMp, to.mp + gain);
         state.tonics -= 1;
         state.tonicsUsed += 1;
-        events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
+        const text = to === player ? `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。` : `${player.name}は${to.name}に そらのしずくを飲ませた! MPが${gain}回復。`;
+        events.push({ actor: 'player', text: `${text}(残り${state.tonics})` });
       } else if (cmd === 'item') {
-        useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events);
+        useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events, heroAllyIndex());
       }
       // guard / flee 失敗はこのターン行動なし
     } else if (isAlly(actor) && actor.job) {
