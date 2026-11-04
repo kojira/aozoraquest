@@ -2,8 +2,8 @@
  * **ストーリーの仕組み** (D-STORY-009)。管理者 PDS の `world.story` に置く。
  * 置きアイテム (`placedItems`)・戦闘定義 (`battles`)・固定モンスター (`fieldMonsters`)。
  *
- * 置きアイテム: そのマスで「しらべる」と一度だけ手に入る。取ったことは `flag` で覚える
- * (`flag` は必須。フラグ数の上限検証に含めるため)。付与はすべて edge が権威。
+ * 置きアイテム: そのマスで「しらべる」と一度だけ手に入る。形と判定は placed-items (D-CHEST-001)。
+ * 付与はすべて edge が権威。
  *
  * 戦闘定義: 敵は 1 種類で `count` 体 (1〜3)。勝てば `winFlag`、負ければ `loseFlag` (任意) を
  * edge が立てる。逃げた・逃げられたはフラグなし (再挑戦できる)。`canFlee: false` は逃げられない戦闘。
@@ -12,28 +12,17 @@
  * 読み込みは scenario の後 (フラグ数を scenario.setFlags と合わせて数える)。monsters の後なので
  * monsterId の実在も見られる。
  */
-import { ITEMS, MONSTERS_BY_ID } from './battle.js';
+import { MONSTERS_BY_ID } from './battle.js';
 import { WORLD_MAP_ID } from './map-id.js';
 import type { NpcDef } from './npc-data.js';
 import type { GameQuestDef } from './quest-data.js';
 import { isFlagName, MAX_FLAGS, scenarioEvents, type ScenarioEvent } from './scenario.js';
 import { townAt } from './world.js';
+import { placedItemIssue, placedRewards, type PlacedItemDef } from './placed-items.js';
+
+export * from './placed-items.js';
 
 export class StoryDataError extends Error {}
-
-export interface PlacedItemDef {
-  id: string;
-  /** `world` = フィールド。内部マップは その id。 */
-  mapId: string;
-  x: number;
-  y: number;
-  itemId: string;
-  count: number;
-  /** 取ったら立てるフラグ。立っていれば二度と取れない。 */
-  flag: string;
-  /** すべて立っているときだけ取れる。 */
-  requireFlags?: string[];
-}
 
 /** ストーリー戦の定義。NPC の altLine.battle・クエストの startBattle・固定モンスターが id で引く。 */
 export interface StoryBattleDef {
@@ -76,7 +65,8 @@ export interface StoryRecord extends StoryData {
   updatedAt: string;
 }
 
-export const MAX_PLACED_ITEMS = 200;
+/** 宝箱 150 + キラキラ 150 + 既存の spot (D-CHEST-001)。 */
+export const MAX_PLACED_ITEMS = 400;
 export const MAX_STORY_BATTLES = 200;
 export const MAX_FIELD_MONSTERS = 200;
 
@@ -97,7 +87,7 @@ const spot = (mapId: string, x: number, y: number) => `${mapId}:${x},${y}`;
 export function assertStoryFlagTotal(events: readonly ScenarioEvent[], story: StoryData): void {
   const all = new Set([
     ...events.flatMap((e) => e.setFlags),
-    ...(story.placedItems ?? []).map((p) => p.flag),
+    ...(story.placedItems ?? []).flatMap((p) => (p.flag !== undefined ? [p.flag] : [])),
     ...(story.battles ?? []).flatMap((b) => (b.loseFlag ? [b.winFlag, b.loseFlag] : [b.winFlag])),
   ]);
   if (all.size > MAX_FLAGS) throw new StoryDataError(`フラグが多すぎる (シナリオとストーリーで ${all.size} > ${MAX_FLAGS})`);
@@ -177,9 +167,8 @@ export function validateStory(story: StoryData | null, events: readonly Scenario
     if (p.mapId === WORLD_MAP_ID && townAt(p.x, p.y)) throw new StoryDataError(`${where}: フィールドの町のマスには置けない`);
     if (spots.has(spot(p.mapId, p.x, p.y))) throw new StoryDataError(`${where}: 同じマスに 2 つ置いている`);
     spots.add(spot(p.mapId, p.x, p.y));
-    if (!ITEMS[p.itemId]) throw new StoryDataError(`${where}: アイテムが存在しない (${p.itemId})`);
-    if (!Number.isInteger(p.count) || p.count < 1 || p.count > 99) throw new StoryDataError(`${where}: 個数は 1〜99`);
-    if (!isFlagName(p.flag)) throw new StoryDataError(`${where}: フラグ名が不正 (${p.flag})`);
+    const issue = placedItemIssue(p);
+    if (issue) throw new StoryDataError(`${where}: ${issue}`);
     assertFlagList(p.requireFlags, where);
   }
   const nextBattles = story?.battles ?? [];
@@ -191,7 +180,7 @@ export function validateStory(story: StoryData | null, events: readonly Scenario
 /** 検証して差し替える。`null` で全解除。 */
 export function setStory(story: StoryData | null): void {
   validateStory(story);
-  placed = (story?.placedItems ?? []).map((p) => ({ ...p, ...(p.requireFlags ? { requireFlags: [...p.requireFlags] } : {}) }));
+  placed = (story?.placedItems ?? []).map((p) => ({ ...p, ...(p.requireFlags ? { requireFlags: [...p.requireFlags] } : {}), ...(p.rewards ? { rewards: placedRewards(p) } : {}) }));
   bySpot = new Map(placed.map((p) => [spot(p.mapId, p.x, p.y), p]));
   battles = (story?.battles ?? []).map((b) => ({ ...b }));
   battleById = new Map(battles.map((b) => [b.id, b]));
@@ -206,11 +195,6 @@ export function placedItems(): readonly PlacedItemDef[] {
 /** そのマスの置きアイテム (取得済みかどうかは見ない)。 */
 export function placedItemAt(mapId: string, x: number, y: number): PlacedItemDef | undefined {
   return bySpot.get(spot(mapId, x, y));
-}
-
-/** いま取れるか: 条件のフラグがそろっていて、まだ取っていない。 */
-export function placedItemAvailable(p: PlacedItemDef, flags: readonly string[]): boolean {
-  return !flags.includes(p.flag) && (p.requireFlags ?? []).every((f) => flags.includes(f));
 }
 
 export function storyBattles(): readonly StoryBattleDef[] {

@@ -1,6 +1,6 @@
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, WORLD_MAP_ID, placedItemAt, placedItemAvailable, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
+import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, WORLD_MAP_ID, placedItemAt, placedItemOpen, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
 import { serverItem, serverSearch, serverTeleport, type ScenarioMessage } from '@/lib/world-server';
 import type { WipePhase } from '@/components/encounter-wipe';
 import type { WorldInventory } from '@/lib/use-world-inventory';
@@ -189,7 +189,7 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
     // 動かず、いくらでも しらべられた。ここでは先読みの案内だけ出す。
     // 未取得の置きアイテム (D-STORY-009) があるマスはパワーを使わないので止めない (付与は edge が決める)。
     const placed = placedItemAt(s.mapId ?? WORLD_MAP_ID, s.x, s.y);
-    const placedHere = !!placed && placedItemAvailable(placed, flagsRef.current);
+    const placedHere = !!placed && placedItemOpen(placed, flagsRef.current, []);
     if (!placedHere && serverPowerRef.current !== null && serverPowerRef.current < SEARCH_TUNING.powerCost) {
       setSearchMsg(`パワーが足りない (調べるには${SEARCH_TUNING.powerCost}いる)。投稿すると増えるよ。`);
       return;
