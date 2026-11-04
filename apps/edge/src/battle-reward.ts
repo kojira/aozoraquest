@@ -54,6 +54,8 @@ export interface AwardBreakdown {
   xp?: number;
   /** この決着で Lv が上がった仲間 (D-PARTY-002 §11)。 */
   allyLeveledUp?: Array<{ id: string; name: string; from: number; to: number }>;
+  /** この決着で きずなの ♥ が増えた仲間 (増えたあとの ♥ の数。D-PARTY-004)。 */
+  allyBondUp?: Array<{ id: string; name: string; hearts: number }>;
   /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復する。 */
   leveledUp?: {
     from: number;

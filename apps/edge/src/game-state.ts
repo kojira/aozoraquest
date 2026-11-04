@@ -65,6 +65,10 @@ export interface PartyState {
   parted?: string[];
   /** その日にギルドごとに引き直した回数 (§10)。日付が変わったら捨てる。 */
   rerolls?: { day: string; byGuild: Record<string, number> };
+  /** 仲間との きずな (0〜150。D-PARTY-004)。ids にいる人だけ。 */
+  bond?: Record<string, number>;
+  /** 回復で上がる きずな の端数 (最大 HP の千分率で 0〜249)。 */
+  bondHeal?: Record<string, number>;
 }
 
 /** 全快にした party (hp/mp を消す。ほかはそのまま)。party が無ければ undefined のまま。 */
