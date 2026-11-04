@@ -151,6 +151,15 @@ describe('DialogueWindow: 救護導入の表情と操作遮断', () => {
     expect(screen.queryByRole('img')).toBeNull();
   });
 
+  it('マップのドット絵の行は、1コマ目を拡大した絵として出す (#907)', () => {
+    render(<DialogueWindow lines={[{ speaker: 'ほむら', text: 'よく寝た', portrait: { src: '/sprite.webp', name: 'ほむら', mapSprite: { frames: 2 } } }]} onDone={vi.fn()} />);
+    const sprite = screen.getByRole('img', { name: 'ほむらの会話イラスト' });
+    expect(sprite.getAttribute('data-map-sprite')).toBe('true');
+    expect(sprite.style.backgroundImage).toBe('url("/sprite.webp")');
+    expect(sprite.style.backgroundSize).toBe('200% 100%');
+    expect(sprite.style.imageRendering).toBe('pixelated');
+  });
+
   it('Tab/Shift+Tabは会話と選択肢の中だけで循環し、背後操作へ抜けない', () => {
     render(<><button>もちもの</button><DialogueWindow lines={[{ text: '受ける？' }]} onDone={vi.fn()}
       choices={[{ label: 'はい', onSelect: vi.fn() }, { label: 'いいえ', onSelect: vi.fn() }]} /></>);

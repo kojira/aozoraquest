@@ -280,9 +280,9 @@ export function DialogueWindow({
         {shownPortrait && (onMap ? (
           // The lower part of the portrait sits behind the opaque text window (35% tall) so its cut edge is hidden.
           <div style={{ position: 'absolute', top: '0.5em', bottom: 'calc(0.5em + 27%)', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-            <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap />
+            <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap mapSprite={shownPortrait.mapSprite} />
           </div>
-        ) : <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} />)}
+        ) : <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} mapSprite={shownPortrait.mapSprite} />)}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"

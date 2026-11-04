@@ -37,6 +37,7 @@ import { VirtualStick } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcDialogueLines } from '@/lib/npc-image';
+import { scenarioDialogueLines } from '@/lib/scene-dialogue';
 import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
@@ -125,7 +126,7 @@ function WorldScreen() {
     pendingNoticesRef.current = [];
     setScenarioTalk(list);
   }, []);
-  /** シナリオのお知らせ窓 (話者なしの地の文)。 */
+  /** シナリオのお知らせ窓 (地の文。npcId のある行はその NPC が話す。#907)。 */
   const [scenarioTalk, setScenarioTalk] = useState<ScenarioMessage[] | null>(null);
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
@@ -565,7 +566,7 @@ function WorldScreen() {
               conversationStep={npcTalk}
               anchor="map"
               // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
-              lines={[...(npcTalk.dialogue ?? npcDialogueLines(npcTalk.npc, npcTalk.lines)), ...(npcTalk.notices ?? [])]}
+              lines={[...(npcTalk.dialogue ?? npcDialogueLines(npcTalk.npc, npcTalk.lines)), ...scenarioDialogueLines(npcTalk.notices ?? [])]}
               portrait={npcTalkPortrait(npcTalk.npc)}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
@@ -592,7 +593,7 @@ function WorldScreen() {
           {!battle && scenarioTalk && !npcTalk && !innTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               anchor="map"
-              lines={scenarioTalk}
+              lines={scenarioDialogueLines(scenarioTalk)}
               onDone={() => setScenarioTalk(null)}
             />
           )}

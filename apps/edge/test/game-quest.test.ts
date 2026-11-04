@@ -10,7 +10,7 @@
 import { describe, it, expect, afterEach, beforeAll } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { starterTownShop, setShopOverrides, worldOverlay, townShopStock, MONSTERS, setGameQuests, setNpcs, setScenario, type GameQuestDef } from '@aozoraquest/core';
+import { starterTownShop, setShopOverrides, worldOverlay, townShopStock, MONSTERS, setGameQuests, setNpcs, setScenario, allNpcs, type GameQuestDef } from '@aozoraquest/core';
 import { starterTownNpcs, starterTownQuests, starterTownScenario } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from '../src/game-quest';
 import { applyBattleOutcome } from '../src/battle-reward';
@@ -317,6 +317,18 @@ describe('シナリオ連動 (#545)', () => {
     ]);
     const r = advanceScenario(stateAt({ questsDone: ['q-defeat'] }));
     expect(r?.messages).toEqual([{ text: 'あかい', effects: [{ kind: 'flash', color: 'red' }] }, { text: 'ふつう' }]);
+  });
+
+  it('advanceScenario は話す NPC の id (npcId) を messages に載せる (#907)', () => {
+    const before = [...allNpcs()];
+    setNpcs([...before, { id: 'homura-bird', name: 'ほむら', x: 7, y: 3, lines: ['ふう'] }]);
+    setScenario([
+      { id: 'e1', title: 'a', when: [{ kind: 'questDone', questId: 'q-defeat' }], setFlags: ['ch1'], notice: '目を覚ました' },
+      { id: 'e2', title: 'b', when: [{ kind: 'flag', flag: 'ch1' }], setFlags: ['ch2'], notice: 'よく寝た', npcId: 'homura-bird' },
+    ]);
+    const r = advanceScenario(stateAt({ questsDone: ['q-defeat'] }));
+    expect(r?.messages).toEqual([{ text: '目を覚ました' }, { text: 'よく寝た', npcId: 'homura-bird' }]);
+    setScenario(null); setNpcs(before);
   });
 
   it('既にフラグが立っていれば同じお知らせを二度出さない', async () => {

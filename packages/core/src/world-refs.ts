@@ -108,6 +108,7 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
   }
   for (const e of scenarioEvents()) {
     const from = `シナリオ「${e.title}」`;
+    if (kind === 'npc') push(e.npcId, from);
     for (const c of e.when) {
       if (kind === 'item' && c.kind === 'itemCount') push(c.itemId, from);
       if (kind === 'quest' && c.kind === 'questDone') push(c.questId, from);
