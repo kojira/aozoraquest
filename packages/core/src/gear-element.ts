@@ -6,7 +6,7 @@
  *   を 4 元素の攻撃に、1 + s_void × (1.2 − 1) を空の攻撃に掛ける。無属性 (物理) は等倍
  * - 隣り合う属性 (地-水・水-火・火-風・風-地) は同時に着られない (空は輪の外で、どれとも着られる)
  */
-import { ELEMENT_MULT, elementMultiplier, type Element } from './elements.js';
+import { ELEMENT_LABELS, ELEMENT_MULT, elementMultiplier, type Element } from './elements.js';
 import { EQUIPMENT_BY_ID, GEAR_SLOTS, type EquipSlot, type GearPiece, type GearSelection } from './equipment.js';
 
 /** 部位ごとの染まりの基本値 (§13a)。武器・盾は守りの染まりに入れない。 */
@@ -16,7 +16,6 @@ export const ARMOR_DYE_PER_LEVEL = 0.05;
 /** 空の防具 100% で、4 元素の攻撃に掛かる倍率 (§13a。BATTLE_TUNING と同じく 1 か所の定数)。 */
 export const VOID_ARMOR_GUARD = 0.8;
 
-export const ELEMENT_LABELS: Record<Element, string> = { earth: '地', water: '水', fire: '火', wind: '風', void: '空' };
 /** 4 元素 (輪の上)。表示と計算の並び。 */
 const RING: readonly Element[] = ['earth', 'water', 'fire', 'wind'];
 const ALL: readonly Element[] = [...RING, 'void'];
@@ -103,7 +102,3 @@ export function armorDyeSummary(gear: GearSelection | undefined): string {
   return ALL.filter((e) => (dye[e] ?? 0) > 0).map((e) => `${ELEMENT_LABELS[e]} ${Math.round(dye[e]! * 100)}%`).join('・');
 }
 
-/** 装備名の横の属性マーク (「みずの つるぎ（水）」)。属性が無ければ名前のまま。 */
-export function withElementMark(name: string, element: Element | undefined): string {
-  return element ? `${name}（${ELEMENT_LABELS[element]}）` : name;
-}

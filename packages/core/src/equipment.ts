@@ -19,7 +19,7 @@ import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
 import type { Town } from './world.js';
-import type { Element } from './elements.js';
+import { ELEMENT_LABELS, type Element } from './elements.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
  *  可能にするため循環を避けてローカルに持つ。 */
@@ -390,10 +390,10 @@ export function isMasterwork(level: number): boolean {
   return level >= CRAFT_TUNING.masterworkLevel;
 }
 
-/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。 */
+/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。属性つきは横に属性 (「みずの つるぎ+2（水）」。D-ELEM-001)。 */
 export function leveledName(def: EquipmentDef, level: number): string {
-  if (level === 0) return def.name;
-  return `${def.name}${signed(level)}`;
+  const name = level === 0 ? def.name : `${def.name}${signed(level)}`;
+  return def.element ? `${name}（${ELEMENT_LABELS[def.element]}）` : name;
 }
 
 /** 装備中の個体。level 省略時は定義値そのまま (±0 相当)。

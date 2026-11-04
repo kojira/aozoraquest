@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   activeEquipment, activeItems, adjacentArmorConflict, armorDye, armorDyeSummary, armorElementMultiplier, playerCombatant, pieceDye,
-  resolveTurn, setItemOverrides, setMonsterOverrides, startBattle, withElementMark, wouldConflict,
+  leveledName, resolveTurn, setItemOverrides, setMonsterOverrides, startBattle, wouldConflict,
   type EquipmentDef, type GearSelection, type MonsterDef,
 } from '../index.js';
 import { TEST_MONSTERS } from './helpers/monster-fixture.js';
@@ -115,8 +115,10 @@ describe('武器の属性 (§13)', () => {
 });
 
 describe('表示', () => {
-  it('装備名の横に属性 (「みずの つるぎ（水）」)', () => {
-    expect(withElementMark('みずの つるぎ', 'water')).toBe('みずの つるぎ（水）');
-    expect(withElementMark('ナイフ', undefined)).toBe('ナイフ');
+  it('装備名の横に属性 (「みずの つるぎ（水）」「みずの つるぎ+2（水）」)。属性なしは今のまま', () => {
+    const sword = { ...gear('wp-mizu', 'weapon', 'water', 'common'), name: 'みずの つるぎ' };
+    expect(leveledName(sword, 0)).toBe('みずの つるぎ（水）');
+    expect(leveledName(sword, 2)).toBe('みずの つるぎ+2（水）');
+    expect(leveledName({ ...sword, element: undefined } as never, 2)).toBe('みずの つるぎ+2');
   });
 });
