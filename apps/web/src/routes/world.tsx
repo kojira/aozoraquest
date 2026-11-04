@@ -706,6 +706,7 @@ function WorldScreen() {
           onCraft={(def) => void shop.onCraft(def)}
           onForge={(def, level, rkeys) => void shop.onForge(def, level, rkeys)}
           onSell={(materialId, count) => void shop.onSell(materialId, count)}
+          onBuy={(itemId) => void shop.onBuy(itemId)}
           onClose={() => setShopOpen(false)}
         />
       )}

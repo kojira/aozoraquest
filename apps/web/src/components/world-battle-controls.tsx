@@ -5,6 +5,7 @@ import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
 import { battleHpOf, battleLineHps, battleMessageLines } from '@/lib/battle-message-lines';
+import { BattleItemRows, hasAnyBattleItem } from './battle-item-menu';
 
 /**
  * あおぞらワールドの戦闘 UI (DQ 風の配置)。
@@ -56,7 +57,8 @@ export function WorldBattleControls({
   showEnemyVitals: boolean;
   /** result フェーズで出す報酬行 (経験値・素材など)。message/input では未使用。 */
   resultLines: readonly string[];
-  onCommand: (c: Command, skillIndex?: number) => void;
+  /** itemId は command==='item' のときの戦闘用どうぐ (D-ITEM-001)。 */
+  onCommand: (c: Command, skillIndex?: number, itemId?: string) => void;
   onAdvance: () => void;
   /** 直前ターンの state。message の最後の行までは敵の体力をこちらで見せる (#757)。 */
   prevState?: BattleState | undefined;
@@ -146,7 +148,7 @@ export function WorldBattleControls({
               <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu} />
               <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
               {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
-              <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
+              <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || !hasAnyBattleItem(state)} cursor={itemMenu} />
               {/* 逃げられないストーリー戦 (canFlee: false) では出さない (D-STORY-009。サーバーも受け付けない)。 */}
               {state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
             </div>
@@ -159,6 +161,7 @@ export function WorldBattleControls({
                 <>
                   <DqRow fill={false} label={`やくそう ×${state.herbs}`} onClick={() => { setItemMenu(false); onCommand('herb'); }} disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp} />
                   <DqRow fill={false} label={`そらのしずく ×${state.tonics}`} onClick={() => { setItemMenu(false); onCommand('tonic'); }} disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp} />
+                  <BattleItemRows state={state} busy={busy} Row={DqRow} onUse={(id) => { setItemMenu(false); onCommand('item', undefined, id); }} />
                   <DqRow fill={false} label="もどる" onClick={() => setItemMenu(false)} disabled={busy} />
                 </>
               ) : (

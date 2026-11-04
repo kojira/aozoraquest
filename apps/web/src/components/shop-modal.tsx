@@ -27,6 +27,7 @@ import type { CraftedPiece } from '@/lib/crafting';
 import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
 import { sceneDialogue } from '@/lib/scene-dialogue';
+import { ShopItemSection } from './shop-item-section';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -42,7 +43,8 @@ export type LastShopAction =
   | { kind: 'craft' | 'forge'; piece: CraftedPiece }
   // ひきとりの結果もモーダル内のセリフ窓で出す (#607) — 以前は世界の通知行に出していて、
   // この全画面モーダルの背面に描かれてプレイヤーには見えなかった。
-  | { kind: 'sell'; materialId: string; count: number; powerGained: number };
+  | { kind: 'sell'; materialId: string; count: number; powerGained: number }
+  | { kind: 'buy'; itemId: string };
 
 /** 初回チュートリアル (最初の街のなんでも屋) を出したか。 */
 const SHOP_TUTORIAL_KEY = 'aozora:shop-tutorial-done';
@@ -83,6 +85,7 @@ export function ShopModal({
   onCraft,
   onForge,
   onSell,
+  onBuy,
   onClose,
 }: {
   town: Town;
@@ -105,6 +108,8 @@ export function ShopModal({
   onForge: (def: EquipmentDef, level: number, rkeys: [string, string]) => void;
   /** 素材のひきとり (count は materialsPerPower の倍数) */
   onSell: (materialId: string, count: number) => void;
+  /** どうぐを 1 個買う (D-ITEM-001)。 */
+  onBuy: (itemId: string) => void;
   onClose: () => void;
 }) {
   const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
@@ -163,6 +168,10 @@ export function ShopModal({
   }, []);
   useEffect(() => {
     if (!lastAction) return;
+    if (lastAction.kind === 'buy') {
+      openTalk([{ text: `${withCharacterNames(ITEMS[lastAction.itemId]?.name ?? lastAction.itemId)}を 1こ かった!` }, say(keeper.sell)]);
+      return;
+    }
     if (lastAction.kind === 'sell') {
       openTalk([
         { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count}を引き取ってもらい、パワーが${lastAction.powerGained}増えた!` },
@@ -251,6 +260,7 @@ export function ShopModal({
           {noticeText}
         </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <ShopItemSection consumables={stock.consumables} materialId={stock.materialId} materialName={materialName} balance={balance} materials={materials} busy={busy} onBuy={onBuy} />
           {stock.equipment.map((id) => {
             const def = EQUIPMENT_BY_ID[id];
             if (!def) return null;

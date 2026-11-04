@@ -25,6 +25,7 @@ const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
 const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
 const LXM_SHOP_CRAFT = LXM.shopCraft;
 const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_BUY = LXM.shopBuy;
 const LXM_SHOP_FORGE = LXM.shopForge;
 const LXM_SHOP_DISCARD = LXM.shopDiscard;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
@@ -132,9 +133,10 @@ export function serverMove(agent: Agent, dx: number, dy: number, token?: string)
 }
 
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
-export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number): Promise<ServerTurnResult> {
+export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number, itemId?: string): Promise<ServerTurnResult> {
   // skillIndex: とくぎ選択 (#436)。command==='skill' のときどのとくぎか。省略/0 は署名スキル。
-  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}) });
+  // itemId: command==='item' のときの戦闘用どうぐ (D-ITEM-001)。
+  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}) });
 }
 
 /** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
@@ -288,6 +290,11 @@ export function serverInnRest(agent: Agent, token?: string): Promise<ServerInnRe
  *  talk は位置トークンで「相手の隣にいる」をサーバーが確かめる (D-STORY-009)。 */
 export function serverQuestComplete(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
   return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId, ...(token ? { token } : {}) });
+}
+
+/** なんでも屋: どうぐを 1 個買う (D-ITEM-001)。品揃え・値段・上限はサーバーが決める。rkey で冪等。 */
+export function serverShopBuy(agent: Agent, itemId: string, rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_BUY, '/api/shop/buy', { itemId, rkey, ...(token ? { token } : {}) });
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */

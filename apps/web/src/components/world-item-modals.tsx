@@ -122,7 +122,9 @@ export function InventoryModal({
   pieces: CraftedPiece[];
   onClose: () => void;
 }) {
-  const mats = Object.entries(materials).filter(([, n]) => n > 0);
+  // 戦闘で使うどうぐ (D-ITEM-001) は素材と分けて、使い道の 1 行を添える。
+  const mats = Object.entries(materials).filter(([id, n]) => n > 0 && !ITEMS[id]?.battle);
+  const battleItems = Object.entries(materials).filter(([id, n]) => n > 0 && ITEMS[id]?.battle);
   const sortedPieces = [...pieces].sort((a, b) => b.level - a.level);
   return (
     <ModalShell title="もちもの" onClose={onClose}>
@@ -137,6 +139,19 @@ export function InventoryModal({
             </span>
           ))}
         </div>
+      )}
+      {battleItems.length > 0 && (
+        <>
+          <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 2px' }}>戦闘でつかう どうぐ</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: '0.85em', marginBottom: '0.6em' }}>
+            {battleItems.map(([id, n]) => (
+              <div key={id}>
+                {withCharacterNames(ITEMS[id]!.name)} <span style={{ color: 'var(--color-muted)' }}>×{n}</span>
+                {ITEMS[id]!.desc && <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>{ITEMS[id]!.desc}</div>}
+              </div>
+            ))}
+          </div>
+        </>
       )}
       <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 2px' }}>作った装備</div>
       {sortedPieces.length === 0 ? (
