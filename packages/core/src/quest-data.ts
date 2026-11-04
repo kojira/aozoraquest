@@ -51,6 +51,8 @@ export interface GameQuestDef {
   requireItems?: ItemRequirement[];
   /** 受注した直後に始まる戦闘 (world.story の battles の id。D-STORY-009)。 */
   startBattle?: string;
+  /** **個人の頼みごと** (受付の人自身の話)。ギルドの「依頼を見る」には出さず、受付の「話す」の続きで頼む。報告は「報告する」で受ける。 */
+  personal?: true;
 }
 
 export interface GameQuestsRecord {
@@ -122,6 +124,7 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
     assertItemRequirements(q.requireItems, where, (id) => !!ITEMS[id]);
     // 戦闘の実在は story の検証が見る (story はクエストより後に読み込まれる)。
     if (q.startBattle !== undefined && (typeof q.startBattle !== 'string' || q.startBattle.trim() === '')) throw new QuestDataError(`${where}: 受注後の戦闘 id が不正`);
+    if (q.personal !== undefined && typeof q.personal !== 'boolean') throw new QuestDataError(`${where}: personal が真偽値でない`);
     if (q.reward) {
       if (q.reward.power !== undefined && !(Number.isInteger(q.reward.power) && q.reward.power > 0 && q.reward.power <= MAX_QUEST_REWARD_POWER)) {
         throw new QuestDataError(`${where}: 報酬パワーは 1〜${MAX_QUEST_REWARD_POWER}`);
