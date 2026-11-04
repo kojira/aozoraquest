@@ -13,6 +13,7 @@ import {
 import { readModifyWrite, readState, type GameState } from './game-state';
 import { DEFAULT_NS, ResolverError, jobXpOf, migrateInitState, readDiagnosis, type ResolverEnv } from './battle-resolver';
 import { MAX_SHOP_OPS } from './shop';
+import { partyWithBond, type AllyBondUp } from './party-bond';
 
 /** 回復の相手。主人公は 'hero'、仲間は party の id。 */
 export const HERO_TARGET = 'hero';
@@ -39,6 +40,13 @@ function withVitals(state: GameState, id: string, c: Combatant): GameState {
   return { ...state, party: { ...rest, ...(Object.keys(hps).length ? { hp: hps } : {}), ...(Object.keys(mps).length ? { mp: mps } : {}) } };
 }
 
+/** ほかの人から回復を受けた仲間の きずな (D-PARTY-004)。戻った HP ÷ 最大 HP。主人公・自分で自分を回復したぶんは数えない。 */
+function withHealBond(state: GameState, casterId: string, healed: ReadonlyArray<{ id: string; amount: number; maxHp: number }>): { state: GameState; deepened: AllyBondUp[] } {
+  const gains = healed.filter((h) => h.id !== HERO_TARGET && h.id !== casterId && h.amount > 0).map((h) => ({ id: h.id, healRatio: h.amount / h.maxHp }));
+  const r = partyWithBond(state.party, gains);
+  return { state: r.party ? { ...state, party: r.party } : state, deepened: r.deepened };
+}
+
 function pick(members: Member[], id: string | undefined, what: string): Member {
   const m = members.find((x) => x.id === (id ?? HERO_TARGET));
   if (!m) throw new ResolverError(`${what}が パーティに いない`, 400, 'bad_target');
@@ -58,6 +66,8 @@ export interface ItemResult {
   healed: number;
   /** 仲間に使ったときの、仲間の持ちこし (満タンは無い)。 */
   party?: GameState['party'];
+  /** きずなの ♥ が増えた仲間 (D-PARTY-004)。 */
+  allyBondUp?: AllyBondUp[];
 }
 
 /** フィールドの道具使用 (やくそう=herb / そらのしずく=tonic)。サーバー在庫を 1 消費して、相手の持ちこし HP/MP を回復。
@@ -69,6 +79,7 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
   if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
   const { hero, jobLevel } = await heroOf(userDid, state, ns, fetchImpl);
   let healed = 0;
+  let bondUp: AllyBondUp[] = [];
   const written = await readModifyWrite(env, userDid, (cur) => {
     const have = cur.materials[matId] ?? 0;
     if (have <= 0) throw new ResolverError('在庫切れ', 400);
@@ -88,9 +99,11 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
       healed = mp - c.mp;
       c.mp = mp;
     }
-    return { ...withVitals(cur, to.id, c), materials: m };
+    const bonded = withHealBond(withVitals(cur, to.id, c), HERO_TARGET, item === 'herb' ? [{ id: to.id, amount: healed, maxHp: c.maxHp }] : []);
+    bondUp = bonded.deepened;
+    return { ...bonded.state, materials: m };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
-  return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed, ...(written.party ? { party: written.party } : {}) };
+  return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed, ...(written.party ? { party: written.party } : {}), ...(bondUp.length ? { allyBondUp: bondUp } : {}) };
 }
 
 export interface SkillResult {
@@ -103,6 +116,8 @@ export interface SkillResult {
   party?: GameState['party'];
   /** 同じ rkey の再送だったか。 */
   duplicate?: boolean;
+  /** きずなの ♥ が増えた仲間 (D-PARTY-004)。 */
+  allyBondUp?: AllyBondUp[];
 }
 
 /** フィールドで回復のとくぎを唱える (`POST /api/world/skill`)。caster / target は 'hero' か仲間の id。全体回復は target 不要。 */
@@ -133,6 +148,7 @@ export async function handleFieldSkill(
     const caster2 = { ...from.c, mp: from.c.mp - cost };
     const after = new Map<string, Combatant>([[from.id, caster2]]);
     const healed: SkillResult['healed'] = [];
+    const restored: Array<{ id: string; amount: number; maxHp: number }> = [];
     const living = members.filter((m) => m.c.hp > 0);
     for (const effect of def.effects) {
       if (effect.kind !== 'heal') continue;
@@ -143,14 +159,17 @@ export async function handleFieldSkill(
         const c = { ...(after.get(t.id) ?? t.c) };
         const hp = Math.min(c.maxHp, c.hp + healAmount(c.maxHp, effect.ratio));
         healed.push({ id: t.id, name: c.name, amount: hp - c.hp });
+        restored.push({ id: t.id, amount: hp - c.hp, maxHp: c.maxHp });
         c.hp = hp;
         after.set(t.id, c);
       }
     }
     if (healed.every((h) => h.amount <= 0)) throw new ResolverError('HP は満タン', 400, 'full');
-    result = { healed, casterName: from.c.name, skillName: skill.name };
     let next = cur;
     for (const [id, c] of after) next = withVitals(next, id, c);
+    const bonded = withHealBond(next, from.id, restored);
+    result = { healed, casterName: from.c.name, skillName: skill.name, ...(bonded.deepened.length ? { allyBondUp: bonded.deepened } : {}) };
+    next = bonded.state;
     return { ...next, shopOps: [...(cur.shopOps ?? []), op].slice(-MAX_SHOP_OPS) };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { ...result, carryHp: written.carryHp, carryMp: written.carryMp, ...(written.party ? { party: written.party } : {}) };
