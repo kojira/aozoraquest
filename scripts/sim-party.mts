@@ -10,14 +10,16 @@
  *   PARTY  sim-party-lib の PARTIES のキー (既定 solo,duo,full)
  *   CASES  [[Lv, tier], ...] (既定 [[1,1],[3,1],[5,2],[8,2],[8,3],[11,3]])
  *   NS     敵の数の列 (既定 [1,2,3])。GROUP があれば無視
- *   GROUP  tier ごとの [2 体の確率, 3 体の確率]。遭遇の seed で決める (P4 の encounterGroupSize と同じ考え方)
+ *   GROUP  tier ごとの [2 体の確率, 3 体の確率]。遭遇の seed で決める (確率を試すとき)。
+ *          GROUP=core なら core の群れ (startBattle の group = encounterGroupSize・BATTLE_TUNING.groupChance) をそのまま使う
  *   N      職ごとの単発の戦闘数 (既定 100)、ENDU 連戦の試行数 (既定 10。0 で連戦を出さない)
  */
 import { core, fight, PARTIES, median, minOf } from './sim-party-lib.mts';
 
 const CASES: Array<[number, number]> = JSON.parse(process.env.CASES ?? '[[1,1],[3,1],[5,2],[8,2],[8,3],[11,3]]');
-const GROUP: Record<string, [number, number]> | null = process.env.GROUP ? JSON.parse(process.env.GROUP) : null;
-const NS: number[] = GROUP ? [0] : JSON.parse(process.env.NS ?? '[1,2,3]');
+const CORE_GROUP = process.env.GROUP === 'core';
+const GROUP: Record<string, [number, number]> | null = process.env.GROUP && !CORE_GROUP ? JSON.parse(process.env.GROUP) : null;
+const NS: number[] = GROUP || CORE_GROUP ? [0] : JSON.parse(process.env.NS ?? '[1,2,3]');
 const N = Number(process.env.N ?? 100);
 const ENDU = Number(process.env.ENDU ?? 10);
 /** 群れの数: tier の [p2, p3] を seed から引く。 */
@@ -27,6 +29,8 @@ const pick = (tier: number, seed: number) => {
   return r < p3 ? 3 : r < p3 + p2 ? 2 : 1;
 };
 
+const enemiesOpt = (n: number, tier: number, seed: number) => (CORE_GROUP ? { group: true } : { extraEnemies: (n || pick(tier, seed)) - 1 });
+
 for (const pk of (process.env.PARTY ?? 'solo,duo,full').split(',')) for (const [lv, tier] of CASES) for (const n of NS) {
   const mates = PARTIES[pk]!;
   const wins: number[] = [], xps: number[] = [], turns: number[] = [], endu: number[] = [];
@@ -35,7 +39,7 @@ for (const pk of (process.env.PARTY ?? 'solo,duo,full').split(',')) for (const [
     let w = 0, xp = 0, t = 0;
     for (let sd = 0; sd < N; sd++) {
       const seed = sd * 7919 + 13;
-      const r = fight(job, lv, tier, seed, mates, { extraEnemies: (n || pick(tier, seed)) - 1 });
+      const r = fight(job, lv, tier, seed, mates, enemiesOpt(n, tier, seed));
       if (r.outcome === 'win') w++;
       xp += r.xp; t += r.turns;
     }
@@ -48,7 +52,7 @@ for (const pk of (process.env.PARTY ?? 'solo,duo,full').split(',')) for (const [
         let carry; let b = 0;
         for (; b < 40; b++) {
           const seed = k * 977 + b * 31 + 5;
-          const r = fight(job, lv, tier, seed, mates, { extraEnemies: (n || pick(tier, seed)) - 1, ...(carry ? { carry } : {}) });
+          const r = fight(job, lv, tier, seed, mates, { ...enemiesOpt(n, tier, seed), ...(carry ? { carry } : {}) });
           if (r.outcome !== 'win' && r.outcome !== 'fled' && r.outcome !== 'monster-fled') break;
           carry = r.carry;
         }

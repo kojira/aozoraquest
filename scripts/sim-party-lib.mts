@@ -27,13 +27,13 @@ const isAoe = (k: string) => !!SKILLS[k]?.effects.some((e) => e.target === 'allE
 const heroGear = (lv: number) => (lv >= core.PARTY_ARMOR.fromLevel ? [core.PARTY_ARMOR.id] : []);
 
 export interface PartyCarry { hp: number; mp: number; herbs: number; mates: Record<string, number>; matesMp: Record<string, number> }
-export interface FightOpts { monsterId?: string; story?: boolean; extraEnemies: number; bossHpPerAlly?: number; carry?: PartyCarry; tonics?: number }
+export interface FightOpts { monsterId?: string; story?: boolean; extraEnemies?: number; group?: boolean; bossHpPerAlly?: number; carry?: PartyCarry; tonics?: number }
 
 /** 1 戦。edge の sealEncounter と同じく、仲間を allies に並べ、ストーリー戦なら敵 HP に倍率を掛ける。 */
 export function fight(job: Archetype, lv: number, tier: number, seed: number, mates: readonly Archetype[], o: FightOpts) {
   const herbs = o.carry?.herbs ?? BATTLE_TUNING.herbCarryMax;
   let s: BattleState = startBattle(job, lv, 1, 'hero', tier as never, seed >>> 0, herbs, o.carry ? { hp: o.carry.hp, mp: o.carry.mp } : undefined, {
-    tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, extraEnemies: o.extraEnemies, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, equipIds: heroGear(lv),
+    tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: true } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, equipIds: heroGear(lv),
     ...(o.monsterId ? { monsterId: o.monsterId } : {}), ...(o.story ? { story: { canFlee: false } } : {}),
   });
   const defs: RecruitDef[] = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, guild: 'g', line: '.' }));

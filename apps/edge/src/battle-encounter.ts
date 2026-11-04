@@ -4,7 +4,7 @@
  * 台本負け (scripted) は 1 対 1 のまま (仲間は加わらない)。
  */
 import {
-  startBattle, battleItemsFrom, jobLevelFromXp, playerLevelFromXp, partyMembers, recruitById,
+  startBattle, battleItemsFrom, jobLevelFromXp, playerLevelFromXp, partyCapacity, partyMembers, recruitById,
   wrap, regionOf, tierForRegion, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type RecruitDef,
   WORLD_MAP_ID, WORLD_SIZE,
@@ -103,7 +103,8 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, battleItems: battleItemsFrom(state.materials), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
     // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
-    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
+    // 群れ (D-PARTY-001) はパーティを組めるようになってから (partyCapacity > 1 = futaba_letter_done)。ふたばの近くとストーリー戦は今のまま。
+    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : partyCapacity(state.flags ?? []) > 1 ? { group: true } : {}),
   });
   const party = story?.scripted ? [] : joinParty(battle, state, jobLevel, !!story);
   const rewarded = state.power >= BATTLE_TUNING.powerCost;

@@ -221,4 +221,7 @@ export const BATTLE_TUNING = {
   /** パーティで挑むストーリー戦の敵 HP 倍率 = 1 + bossHpPerAlly × 生きている仲間の数 (D-PARTY-001)。
    *  そのままだと 4 人で 1〜2 ターンで終わる。0.5 で 2 人でも 1 人と同じくらいのターン数 (sim)。 */
   bossHpPerAlly: 0.5,
+  /** 群れの確率 (D-PARTY-001 §4)。tier ごとの [2 体, 3 体]。t3 以上は 3 の値。敵は全員本来の強さ。
+   *  1 人でも本筋 (t1〜t2) は勝率の最低 91% (scripts/sim-party.mts)。t3 は「仲間を連れてくる場所」。 */
+  groupChance: { 1: [0.08, 0], 2: [0.15, 0.03], 3: [0.25, 0.1] } as Record<1 | 2 | 3, readonly [number, number]>,
 } as const;

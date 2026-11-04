@@ -357,8 +357,12 @@ export function summonMonster(
   /** HP/MP の分散 (±割合)。0 のとき従来どおり固定 (rng も引かないので試練/既存テスト
    *  の乱数ストリームは不変)。world は BATTLE_TUNING.monsterVitalsVariance を渡す。 */
   variance = 0,
+  /** 群れの追加の敵を選ぶとき、入れられる敵だけにしぼる (D-PARTY-001。fleer・レアを除く)。 */
+  only?: (def: MonsterDef) => boolean,
 ): { def: MonsterDef; combatant: Combatant } {
   let pool = randomPool(tier);
+  // しぼって空なら、しぼらないプールのまま (下の帯に繰り下げない)。
+  if (only && pool.some(only)) pool = pool.filter(only);
   // **プールが空でも落とさない。** 落とすと edge の handleMove が 500 になり、
   // プレイヤーは**その場から一歩も動けなくなる** (遭遇はサーバー権威で、移動の応答が
   // 戦闘開始を含むため)。データ側の検証 (tier1 の 3 体下限) で普通は起きないが、
