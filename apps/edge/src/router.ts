@@ -573,14 +573,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { guild?: unknown; ids?: unknown; token?: unknown; rkey?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { guild?: unknown; ids?: unknown; token?: unknown; rkey?: unknown; payOverLevel?: unknown };
     if (typeof body.guild !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       await ensureAuthoredWorld(env, nowSec());
       const pos = typeof body.token === 'string' ? body.token : undefined, ns = nsFromOrigin(req);
       if (url.pathname === '/api/party/candidates') return cors(json(await handlePartyCandidates(env, did, body.guild, pos, nowSec(), ns)), allowedOrigin);
       if (url.pathname === '/api/party/reroll') return cors(json(await handlePartyReroll(env, did, body.guild, body.rkey, pos, nowSec(), ns)), allowedOrigin);
-      return cors(json(await handlePartySet(env, did, body.guild, body.ids, pos, nowSec(), ns)), allowedOrigin);
+      return cors(json(await handlePartySet(env, did, body.guild, body.ids, pos, nowSec(), ns, body.payOverLevel, body.rkey)), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }

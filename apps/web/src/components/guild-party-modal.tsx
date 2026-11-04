@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { jobDisplayName, partyCapacity, partyDefsOf, recruitById, type NpcDef, type PartyAlly, type RecruitCandidate } from '@aozoraquest/core';
+import { jobDisplayName, overLevelPower, partyCapacity, partyDefsOf, recruitById, type NpcDef, type PartyAlly, type RecruitCandidate } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import { PartyMemberList, starText, type PartyLoad } from './party-modal';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
@@ -16,13 +16,14 @@ const newRkey = () => [...crypto.getRandomValues(new Uint8Array(12))].map((b) =>
  * くわえる / はずす / (いっぱいなら) いれかえる を選ぶと、その場でサーバーへ送る (権威は edge)。
  * はずす・いれかえるときは 1 回だけ確かめる (はずした仲間とは もう会えない)。
  * パワーを払って、今日の候補を引き直せる (§10)。パワーが足りなければボタンを押せない。
+ * Lv の足りない人は「Lv N から」と「パワー◯で くわえる」(§14)。パワーが足りなければ押せない。払ったら残りのパワーを出しなおす。
  */
 export function GuildPartyModal({ guild, jobLevel, load, save, candidates, reroll, onClose }: {
   guild: NpcDef;
   jobLevel: number;
   load: PartyLoad;
-  /** 新しい ids を送り、確定したパーティを返す。 */
-  save: (ids: string[]) => Promise<ServerParty>;
+  /** 新しい ids を送り、確定したパーティと残りのパワーを返す。payRkey があれば Lv の足りない人のパワーを払う。 */
+  save: (ids: string[], payRkey?: string) => Promise<{ party: ServerParty; power: number }>;
   /** 今日の候補を読む。 */
   candidates: () => Promise<ServerPartyCandidates>;
   /** 候補を引き直す (rkey は押すたびに 1 つ)。 */
@@ -34,7 +35,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
   const [line, setLine] = useState<string | null>(null);
   const [swapIn, setSwapIn] = useState<RecruitCandidate | null>(null);
   /** はずす前の確かめ。ids は確かめたあとに送る ids。 */
-  const [parting, setParting] = useState<{ who: PartyAlly; ids: string[]; said: string } | null>(null);
+  const [parting, setParting] = useState<{ who: PartyAlly; ids: string[]; said: string; pay: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
@@ -47,16 +48,16 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
     return () => { live = false; };
   }, [load, candidates]);
 
-  const send = async (ids: string[], said: string) => {
+  const send = async (ids: string[], said: string, pay = false) => {
     if (!data || busy) return;
     setBusy(true);
     setSwapIn(null);
     setParting(null);
     try {
-      const party = await save(ids);
+      const { party, power } = await (pay ? save(ids, newRkey()) : save(ids));
       setData({ ...data, party });
       // 入れた人は今日の一覧から消える (edge も同じく met で除く)。
-      setOffer((o) => (o ? { ...o, candidates: o.candidates.filter((c) => !party.ids.includes(c.id)) } : o));
+      setOffer((o) => (o ? { ...o, power, candidates: o.candidates.filter((c) => !party.ids.includes(c.id)) } : o));
       setLine(said);
     } catch (e) {
       setLine(e instanceof Error && e.message ? e.message : '通信に失敗した…');
@@ -87,7 +88,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
   const canReroll = !!offer && offer.power >= offer.rerollPower;
   const add = (c: RecruitCandidate) => {
     if (ids.length >= cap) { setSwapIn(c); setLine(PARTY_LINES.full); return; }
-    void send([...ids, c.id], PARTY_LINES.joined(c.name));
+    void send([...ids, c.id], PARTY_LINES.joined(c.name), overLevelPower(c.minLevel, jobLevel) > 0);
   };
 
   return (
@@ -99,7 +100,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
           <div role="alertdialog" aria-label="はずす確認" style={{ border: '1px solid rgba(255,255,255,0.55)', borderRadius: 4, padding: '0.4em 0.5em', margin: '0 0 0.5em' }}>
             <p style={{ fontSize: '0.85em', margin: '0 0 0.4em' }}>{PARTY_LINES.partConfirm(parting.who.name)}</p>
             <div style={{ display: 'flex', gap: '0.5em' }}>
-              <button type="button" disabled={busy} style={small} onClick={() => void send(parting.ids, parting.said)}>はずす</button>
+              <button type="button" disabled={busy} style={small} onClick={() => void send(parting.ids, parting.said, parting.pay)}>はずす</button>
               <button type="button" style={small} onClick={() => setParting(null)}>やめる</button>
             </div>
           </div>
@@ -109,23 +110,24 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
             <section aria-label="いまの パーティ" style={{ marginBottom: '0.6em' }}>
               <div style={{ fontSize: '0.72em', ...muted, margin: '0 0 2px' }}>いまの パーティ（{ids.length}/{Math.max(cap, 0)}）</div>
               <PartyMemberList party={data.party} jobLevel={jobLevel} right={(r) => swapIn
-                ? <button type="button" disabled={busy || !!parting} style={small} onClick={() => setParting({ who: r, ids: ids.map((id) => (id === r.id ? swapIn.id : id)), said: PARTY_LINES.joined(swapIn.name) })}>{r.name}と いれかえる</button>
-                : <button type="button" disabled={busy || !!parting} style={small} onClick={() => setParting({ who: r, ids: ids.filter((id) => id !== r.id), said: PARTY_LINES.left(r.name) })}>{r.name}を はずす</button>} />
+                ? <button type="button" disabled={busy || !!parting} style={small} onClick={() => setParting({ who: r, ids: ids.map((id) => (id === r.id ? swapIn.id : id)), said: PARTY_LINES.joined(swapIn.name), pay: overLevelPower(swapIn.minLevel, jobLevel) > 0 })}>{r.name}と いれかえる</button>
+                : <button type="button" disabled={busy || !!parting} style={small} onClick={() => setParting({ who: r, ids: ids.filter((id) => id !== r.id), said: PARTY_LINES.left(r.name), pay: false })}>{r.name}を はずす</button>} />
               {swapIn && <button type="button" style={small} onClick={() => { setSwapIn(null); setLine(null); }}>やめる</button>}
             </section>
             <section aria-label={PARTY_LINES.heading}>
               <div style={{ fontSize: '0.8em', margin: '0 0 2px' }}>{PARTY_LINES.heading}</div>
               <div style={{ fontSize: '0.72em', ...muted, margin: '0 0 4px' }}>{PARTY_LINES.onceOnly}</div>
               {offered.length === 0 ? <p style={{ fontSize: '0.85em', margin: '0.2em 0' }}>{PARTY_LINES.goneToday}</p> : offered.map((c) => {
-                const locked = jobLevel < c.minLevel;
+                const price = overLevelPower(c.minLevel, jobLevel);
+                const locked = price > 0;
                 return (
-                  <div key={c.id} data-candidate style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em', ...(locked ? { opacity: 0.5 } : {}) }}>
+                  <div key={c.id} data-candidate style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em' }}>
                     <span style={{ flex: '1 1 auto', minWidth: 0 }}>
                       <strong>{c.name}</strong> <span style={muted}>{jobDisplayName(c.archetype)} Lv{c.level}</span> <span aria-label={`★${c.star}`} style={{ color: '#f5c542' }}>{starText(c.star)}</span>
                       {locked && <span style={muted}>（Lv {c.minLevel} から）</span>}
                       <span style={{ display: 'block', fontSize: '0.9em' }}>「{c.line}」</span>
                     </span>
-                    <button type="button" disabled={busy || !!swapIn || !!parting || locked} style={small} onClick={() => add(c)}>{c.name}を くわえる</button>
+                    <button type="button" aria-label={locked ? `${c.name}を ${PARTY_LINES.payJoin(price)}` : undefined} disabled={busy || !!swapIn || !!parting || price > offer.power} style={small} onClick={() => add(c)}>{locked ? PARTY_LINES.payJoin(price) : `${c.name}を くわえる`}</button>
                   </div>
                 );
               })}

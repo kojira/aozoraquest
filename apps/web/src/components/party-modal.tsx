@@ -66,7 +66,7 @@ export function PartyModals({ guildNpc, menuOpen, jobLevel, load, save, candidat
   menuOpen: boolean;
   jobLevel: number;
   load: PartyLoad;
-  save: (guild: string, ids: string[]) => Promise<ServerParty>;
+  save: (guild: string, ids: string[], payRkey?: string) => Promise<{ party: ServerParty; power: number }>;
   candidates: (guild: string) => Promise<ServerPartyCandidates>;
   reroll: (guild: string, rkey: string) => Promise<ServerPartyCandidates>;
   onGuildClose: () => void;
@@ -76,6 +76,6 @@ export function PartyModals({ guildNpc, menuOpen, jobLevel, load, save, candidat
   // 取り消されて読み直しを繰り返し、窓が空のままになる。ギルドが同じあいだは同じ関数を渡す。
   const guildId = guildNpc?.id;
   const guildCandidates = useCallback(() => candidates(guildId ?? ''), [candidates, guildId]);
-  if (guildNpc) return <GuildPartyModal guild={guildNpc} jobLevel={jobLevel} load={load} save={(ids) => save(guildNpc.id, ids)} candidates={guildCandidates} reroll={(rkey) => reroll(guildNpc.id, rkey)} onClose={onGuildClose} />;
+  if (guildNpc) return <GuildPartyModal guild={guildNpc} jobLevel={jobLevel} load={load} save={(ids, payRkey) => save(guildNpc.id, ids, payRkey)} candidates={guildCandidates} reroll={(rkey) => reroll(guildNpc.id, rkey)} onClose={onGuildClose} />;
   return menuOpen ? <PartyModal jobLevel={jobLevel} load={load} onClose={onMenuClose} /> : null;
 }

@@ -2,7 +2,7 @@
 /**
  * ギルドの「なかまを さがす」(D-PARTY-001 / D-PARTY-002)。
  * - 今日の候補 (edge) を ★・Lv・ひとことつきで並べ、一期一会のお知らせを出す
- * - Lv が足りない人は「Lv N から」で くわえる を押せない
+ * - Lv が足りない人は「Lv N から」と「パワー◯で くわえる」(§14)。パワーが足りなければ押せない。払ったら残りのパワーを出す
  * - はずす・いれかえるときは確かめが出て、「やめる」なら送らない
  * - 引き直し (パワー 5) で新しい候補になる。パワーが足りなければ押せない
  */
@@ -23,9 +23,9 @@ const offer = (candidates: RecruitCandidate[], power = 12): ServerPartyCandidate
 async function open(party: ServerParty, flags: string[], o: {
   save?: ReturnType<typeof vi.fn>; candidates?: ServerPartyCandidates; reroll?: ReturnType<typeof vi.fn>;
 } = {}) {
-  const save = o.save ?? vi.fn(async (ids: string[]) => ({ ids, members: [...(party.members ?? []), ...TODAY.filter((c) => ids.includes(c.id)).map(member)].filter((m) => ids.includes(m.id)) }));
-  const reroll = o.reroll ?? vi.fn(async () => offer([C(0, 'ハル', 'guardian')], 7));
   const cands = o.candidates ?? offer(TODAY);
+  const save = o.save ?? vi.fn(async (ids: string[]) => ({ party: { ids, members: [...(party.members ?? []), ...TODAY.filter((c) => ids.includes(c.id)).map(member)].filter((m) => ids.includes(m.id)) }, power: cands.power }));
+  const reroll = o.reroll ?? vi.fn(async () => offer([C(0, 'ハル', 'guardian')], 7));
   render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party, flags })} save={save} candidates={async () => cands} reroll={reroll} onClose={vi.fn()} />);
   await act(async () => {});
   return { save, reroll };
@@ -46,11 +46,29 @@ describe('GuildPartyModal (D-PARTY-002)', () => {
     expect(offered.textContent).toContain('ミオです。');
   });
 
-  it('Lv が足りない人は「Lv N から」と出して くわえる を押せない', async () => {
+  it('Lv が足りない人は「Lv N から」と「パワー◯で くわえる」。パワーが足りなければ押せない', async () => {
     await open({ ids: [] }, flags3);
     expect(region(PARTY_LINES.heading).textContent).toContain('Lv 10 から');
-    expect(button('ソラを くわえる').disabled).toBe(true);
+    expect(PARTY_LINES.payJoin(20)).toBe('パワー20で くわえる');
+    const pay = button('ソラを パワー20で くわえる');
+    expect(pay.textContent).toBe('パワー20で くわえる');
+    expect(pay.disabled).toBe(true);
     expect(button('ミオを くわえる').disabled).toBe(false);
+  });
+
+  it('パワーが足りれば 払って くわえる (rkey つきで送る)。残りのパワーを出しなおす', async () => {
+    const save = vi.fn(async (ids: string[]) => ({ party: { ids, members: [member(TODAY[2]!)] }, power: 5 }));
+    await open({ ids: [] }, flags3, { save, candidates: offer(TODAY, 25) });
+    expect(screen.getByText('パワー 25')).toBeTruthy();
+    const pay = button('ソラを パワー20で くわえる');
+    expect(pay.disabled).toBe(false);
+    await act(async () => { fireEvent.click(pay); });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]![0]).toEqual([TODAY[2]!.id]);
+    expect(typeof (save.mock.calls[0] as unknown[])[1]).toBe('string');
+    expect(screen.getByText('パワー 5')).toBeTruthy();
+    await act(async () => { fireEvent.click(button('ミオを くわえる')); });
+    expect(save.mock.calls[1]).toEqual([[TODAY[2]!.id, TODAY[1]!.id]]);
   });
 
   it('くわえると ids を送り、その人は一覧から消える。仲間の Lv は自分の経験値から', async () => {

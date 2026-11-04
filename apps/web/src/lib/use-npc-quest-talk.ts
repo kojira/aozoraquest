@@ -205,12 +205,13 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     setParty(state.party ?? { ids: [] });
     return { party: state.party ?? { ids: [] }, flags: state.flags ?? [] };
   }, [agent, flagsRef]);
-  const partySave = useCallback(async (guild: string, ids: string[]) => {
+  const partySave = useCallback(async (guild: string, ids: string[], payRkey?: string) => {
     if (!agent) throw new Error('サーバーに接続できない');
-    const { party } = await serverPartySet(agent, guild, ids, tokenRef.current);
-    setParty(party);
-    return party;
-  }, [agent, tokenRef]);
+    const r = await serverPartySet(agent, guild, ids, tokenRef.current, payRkey);
+    setParty(r.party);
+    setServerPower(r.power);
+    return r;
+  }, [agent, tokenRef, setServerPower]);
   const partyCandidates = useCallback(async (guild: string) => {
     if (!agent) throw new Error('サーバーに接続できない');
     return serverPartyCandidates(agent, guild, tokenRef.current);

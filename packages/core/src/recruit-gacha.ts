@@ -30,9 +30,16 @@ export const RECRUIT_GACHA = {
   namedChance: 0.2,
   /** 候補を引き直す 1 回のパワー (§10)。回数の上限はない。 */
   rerollPower: 5,
+  /** 主人公のジョブ Lv が minLevel に足りない候補を迎える、足りない 1 Lv あたりのパワー (§14)。差の上限はない。 */
+  overLevelPowerPerLv: 5,
   /** その日に入れた候補の id を覚えておく上限。 */
   metMax: 30,
 } as const;
+
+/** minLevel が主人公のジョブ Lv より上の候補を迎えるパワー (§14)。足りていれば 0 (無料)。 */
+export function overLevelPower(minLevel: number, jobLevel: number): number {
+  return Math.max(0, minLevel - jobLevel) * RECRUIT_GACHA.overLevelPowerPerLv;
+}
 
 /** tier ごとの街の適正 Lv。t1=2、t2=5、t3=8、そこから 1 tier ごとに +3。 */
 export function recruitTierLevel(tier: number): number {
