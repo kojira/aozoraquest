@@ -112,6 +112,22 @@ export function canSeeEnemyVitals(archetype: string | null | undefined): boolean
   return !!archetype && ENEMY_VITALS_ARCHETYPES.has(archetype as Archetype);
 }
 
+/**
+ * フィールドの危険度とよく出る敵が見える職業 (docs/25 §ジョブ特性)。
+ * 他の職には見えない = その職を連れていくことがパーティの価値になる。
+ */
+export const FIELD_DANGER_ARCHETYPES: ReadonlySet<Archetype> = new Set<Archetype>([
+  'sage',
+  'seer',
+  'ninja',
+  'performer',
+]);
+
+/** その職業がフィールドの危険度・よく出る敵を見られるか。未知 ID は false。 */
+export function canSeeFieldDanger(archetype: string | null | undefined): boolean {
+  return !!archetype && FIELD_DANGER_ARCHETYPES.has(archetype as Archetype);
+}
+
 /** ベクトル (配列) を StatVector (オブジェクト) に変換 */
 export function statArrayToVector(arr: StatArray): StatVector {
   return { atk: arr[0], def: arr[1], agi: arr[2], int: arr[3], luk: arr[4] };

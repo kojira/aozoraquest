@@ -62,7 +62,7 @@ import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
 import { openingLines, starterHandoffLines } from '@/lib/world-opening';
-import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, type Dir, type Vitals } from '@/lib/world-view';
+import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, seesFieldDanger, type Dir, type Vitals } from '@/lib/world-view';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -250,7 +250,7 @@ function WorldScreen() {
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
 
   useWorldLoad({
-    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, tokenRef,
+    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, setPartyIds: talk.setPartyIds, tokenRef,
     setCraftedPieces, setGearRefs, setWs, setStarterBlessed, setShowStarter, setOnboarding, onboardingRef, setNotice,
     setAvatarUrl, setPlayerName, setDiag, inventory, flushCraftLog,
   });
@@ -390,6 +390,8 @@ function WorldScreen() {
   // (常に region 0 になる)。内部では自分の危険度設定を使い、未設定なら「敵なし」。
   const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
   const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y)))?.name;
+  // 危険度・よく出る敵は 見える職 (主人公か仲間) がいるときだけ出す (docs/25 §ジョブ特性)。
+  const seesDanger = seesFieldDanger(archetype, talk.partyIds);
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
   // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
@@ -486,8 +488,8 @@ function WorldScreen() {
                 // 内部では**そのマップの名前**を出す (どこに居るか分かる唯一の手掛かり)。
                 // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。人物の名前 {c:id} は置き換える (D-CHAR-001)。
                 insideHere
-                  ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined ? ` / ${dangerLabel(hereTier)}` : ''}`
-                  : town ? `🏘 ${town.name}` : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName),
+                  ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined && seesDanger ? ` / ${dangerLabel(hereTier)}` : ''}`
+                  : town ? `🏘 ${town.name}` : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName, seesDanger),
               )}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。
