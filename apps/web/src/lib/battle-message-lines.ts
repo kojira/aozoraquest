@@ -21,11 +21,12 @@ export function battleMessageLines(texts: readonly string[]): string[] {
   return texts.flatMap(splitBattleLine);
 }
 
-/** 行ごとに 見せる HP (自分 + 敵ごと)。 */
-export interface BattleLineHp { player: number; monsters: number[] }
+/** 行ごとに 見せる HP (自分 + 敵ごと + 仲間がいれば味方ごと)。 */
+export interface BattleLineHp { player: number; monsters: number[]; allies?: number[] }
 
 export function battleHpOf(s: BattleState): BattleLineHp {
-  return { player: s.player.hp, monsters: (s.enemies ?? [s.monster]).map((m) => m.hp) };
+  const allies = s.allies && s.allies.length > 1 ? { allies: s.allies.map((a) => a.hp) } : {};
+  return { player: s.player.hp, monsters: (s.enemies ?? [s.monster]).map((m) => m.hp), ...allies };
 }
 
 /**

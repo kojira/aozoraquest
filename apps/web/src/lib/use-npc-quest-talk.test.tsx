@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { MONSTERS, setGameQuests, setNpcs, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { MONSTERS, setGameQuests, setNpcs, setStory, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import { guildReception } from './npc-talk';
 import { useNpcQuestTalk } from './use-npc-quest-talk';
 
@@ -35,5 +35,37 @@ describe('useNpcQuestTalk ギルドの「依頼を見る」', () => {
     act(() => result.current.setQuest({ activeQuests: [], done: ['a', 'b', 'c'] }));
     viewGuildQuests(result);
     expect(result.current.npcTalk?.lines).toEqual(['いま紹介できる依頼はないよ。']);
+  });
+});
+
+describe('useNpcQuestTalk ギルドの「なかまを さがす」(D-PARTY-001)', () => {
+  const GUILD: NpcDef = { ...DESK, guildReception: true };
+  const flagsRef = { current: [] as string[] };
+  const renderWith = () => renderHook(() => useNpcQuestTalk({
+    agent: null, moveBusyRef: { current: false }, tokenRef: { current: undefined }, flagsRef, materialsRef: { current: {} },
+    applyServerMaterials: () => {}, setServerPower: () => {}, setNotice: () => {}, waitForFreshDirectionRef: { current: false }, startEncounterRef: { current: () => {} },
+  }));
+  beforeEach(() => { setNpcs([GUILD]); setStory({ recruits: [{ id: 'r', name: 'カイト', archetype: 'warrior', guild: 'desk', line: 'よろしく。' }] }); });
+  afterEach(() => { setStory(null); setNpcs(null); flagsRef.current = []; });
+  const labels = (r: ReturnType<typeof renderWith>['result']) => r.current.npcChoices?.map(c => c.label);
+
+  it('第1章の終わり (futaba_letter_done) から、紹介する冒険者がいる受付にだけ出る', () => {
+    const { result } = renderWith();
+    act(() => result.current.setNpcTalk(guildReception(GUILD)));
+    expect(labels(result)).not.toContain('なかまを さがす');
+    flagsRef.current = ['futaba_letter_done'];
+    act(() => result.current.setNpcTalk(guildReception(GUILD)));
+    expect(labels(result)).toEqual(['依頼を見る', '報告する', 'なかまを さがす', '話す', 'やめる']);
+    setStory({ recruits: [] });
+    act(() => result.current.setNpcTalk(guildReception(GUILD)));
+    expect(labels(result)).not.toContain('なかまを さがす');
+  });
+
+  it('選ぶと guild: party の段になる (編成画面を開く)', () => {
+    flagsRef.current = ['futaba_letter_done'];
+    const { result } = renderWith();
+    act(() => result.current.setNpcTalk(guildReception(GUILD)));
+    act(() => { void result.current.npcChoices!.find(c => c.label === 'なかまを さがす')!.onSelect(); });
+    expect(result.current.npcTalk?.guild).toBe('party');
   });
 });
