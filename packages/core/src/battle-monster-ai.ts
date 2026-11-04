@@ -7,10 +7,11 @@ import { BATTLE_TUNING } from './battle-tuning.js';
 import { type Combatant } from './battle-combatant.js';
 import { type MonsterDef, MONSTERS_BY_ID } from './battle-monsters.js';
 import { type BattleState } from './battle-state.js';
+import { chargeMpCost, pickDebuff, spellMpCost } from './battle-monster-moves.js';
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
-type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee' | 'cast';
+type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee' | 'cast' | 'debuff';
 
 /** モンスター能力プラグイン (#452 / docs/25 §5)。行動 AI を ability id → データ定義に置き、
  *  monsterCommand の if 分岐を排す。null を返すと通常判定 (plain) にフォールバック。 */
@@ -39,7 +40,7 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
     id: 'charger',
     decideAction: ({ monster, r, t, canGuard, monsterDef }) => {
       const chance = monsterDef?.abilityParams?.chargeChance ?? t.chargerChargeChance;
-      if (monster.mp >= t.monsterChargeMpCost && r < chance) return 'charge';
+      if (monster.mp >= chargeMpCost(monsterDef) && r < chance) return 'charge';
       if (canGuard && r < chance + 0.15) return 'guard';
       return 'attack';
     },
@@ -61,10 +62,22 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
     id: 'caster',
     decideAction: ({ monster, r, t, canGuard, monsterDef }) => {
       const castChance = monsterDef?.abilityParams?.castChance ?? t.casterCastChance;
-      if (monsterDef?.spell && monster.mp >= t.monsterCastMpCost && r < castChance) return 'cast';
+      // 全体呪文は 2 ターン続けない (直前が全体なら撃たない。D-PARTY-002 §12a)。
+      const aoeBlocked = monsterDef?.spell?.target === 'all' && monster.lastAoe;
+      if (monsterDef?.spell && !aoeBlocked && monster.mp >= spellMpCost(monsterDef) && r < castChance) return 'cast';
       // guard バンドは charger/healer (+0.15) よりやや狭い +0.1 — caster は攻撃寄りに保ち、魔法を撃てない
       // (MP 枯渇) ターンも殴りに来る威圧感を残すため (守りに籠らせない)。
       if (canGuard && r < castChance + 0.1) return 'guard';
+      return 'attack';
+    },
+  },
+  // debuffer: 味方に弱体を、または自分に強化をかける (D-PARTY-002 §12a)。使える技 (pickDebuff) があるときだけ。
+  debuffer: {
+    id: 'debuffer',
+    decideAction: ({ state, monster, r, t, monsterDef }) => {
+      const chance = monsterDef?.abilityParams?.debuffChance ?? t.debufferChance;
+      const allies = state.allies ?? [state.player];
+      if (r < chance && pickDebuff(monsterDef, monster, allies)) return 'debuff';
       return 'attack';
     },
   },

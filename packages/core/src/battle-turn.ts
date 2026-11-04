@@ -13,6 +13,7 @@ import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
+import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
@@ -80,6 +81,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
   const mCommand = monsterCommand(state.monster, state, rng);
+  // 弱体は選んだときの状態で決める (全体を 2 ターン続けない判定は直前の手 lastAoe を見る。D-PARTY-002 §12a)。
+  const mDebuff = mCommand === 'debuff' ? pickDebuff(MONSTERS_BY_ID[state.monsterId], state.monster, [state.player]) : undefined;
 
   // ── コマンドの実効化 ──
   // MP 不足の特技 / 在庫切れのやくそうは「たたかう」にフォールバック
@@ -186,27 +189,25 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     } else {
       // ため中なら宣言どおり解放 (mCommand は無視)。予告 → 解放の 2 ターン制で、
       // プレイヤーが予告を見て防御する読み合いを作る。
-      if (state.monster.charging) {
-        state.monster.charging = false;
-        const skillName = MONSTERS_BY_ID[state.monsterId]?.skillName ?? 'つよいこうげき';
-        doAttack(state.monster, state.player, rng, events, 'monster', {
-          power: BATTLE_TUNING.chargedPower,
-          hitBonus: -0.05,
-          label: skillName,
-        });
+      const mDef = MONSTERS_BY_ID[state.monsterId];
+      const solo = { allies: [state.player], one: () => state.player };
+      const charged = state.monster.charging;
+      if (!charged) state.monster.lastAoe = false; // この手番の技が全体なら技の側で立て直す
+      if (charged) {
+        releaseMonsterCharge(state.monster, mDef, solo, rng, events);
       } else if (mCommand === 'charge') {
         // このターンは攻撃せず「ため」を予告する (charger、MP 消費)
-        state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterChargeMpCost);
+        state.monster.mp = Math.max(0, state.monster.mp - chargeMpCost(mDef));
         state.monster.charging = true;
         events.push({ actor: 'monster', text: `${state.monster.name}は力をためている…!` });
       } else if (mCommand === 'heal') {
         // healer の自己回復 (MP 消費)。MP が尽きるまでの読み合いを作る
         state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterHealMpCost);
         // 固定値 (healAmount) が最優先。割合は HP の大きい敵ほど強くなるので原則使わない。
-        const healed = monsterHealAmount(MONSTERS_BY_ID[state.monsterId], state.monster.maxHp);
+        const healed = monsterHealAmount(mDef, state.monster.maxHp);
         const before = state.monster.hp;
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
-        const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';
+        const name = mDef?.healName ?? 'きずをいやす';
         events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HPが${state.monster.hp - before}回復。` });
       } else if (mCommand === 'flee') {
         // はぐれメタル型: 逃走成功 → 即決着 (報酬なし)。倒せなかった悔しさを残す。
@@ -215,19 +216,11 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       } else if (mCommand === 'cast') {
         // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
         // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。
-        const spell = MONSTERS_BY_ID[state.monsterId]?.spell;
-        if (spell) {
-          state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterCastMpCost);
-          const span = spell.max - spell.min;
-          const amount = spell.min + Math.floor(rng() * (span + 1)) + Math.round(state.monster.int * (spell.intScale ?? 0));
-          doMagic(state.monster, state.player, rng, events, 'monster', {
-            amount,
-            ...(spell.element ? { element: spell.element } : {}),
-            label: spell.name,
-          });
-        } else {
-          doAttack(state.monster, state.player, rng, events, 'monster');
-        }
+        if (mDef?.spell) castMonsterSpell(state.monster, mDef, solo, rng, events);
+        else doAttack(state.monster, state.player, rng, events, 'monster');
+      } else if (mCommand === 'debuff') {
+        if (mDebuff) useMonsterDebuff(state.monster, mDebuff, solo.allies, rng, events);
+        else doAttack(state.monster, state.player, rng, events, 'monster');
       } else if (mCommand === 'attack') {
         doAttack(state.monster, state.player, rng, events, 'monster');
       }

@@ -27,7 +27,10 @@ import { STATUS_REGISTRY } from './statuses.js';
 export class MonsterDataError extends Error {}
 
 /** ability として受け付ける id (#537 論点 1: 列挙にとどめる。実装は core に残す)。 */
-const ABILITIES = ['charger', 'healer', 'fleer', 'caster'] as const;
+const ABILITIES = ['charger', 'healer', 'fleer', 'caster', 'debuffer'] as const;
+/** debuffs の数の上限 (D-PARTY-002 §12a: 弱体 1 つと自分への強化 1 つまで)。 */
+const MAX_DEBUFFS = 2;
+const MOVE_TARGETS = ['one', 'all'];
 
 /**
  * 全モンスターを検証して差し替える。
@@ -91,6 +94,20 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
     }
     const hasCaster = m.ability === 'caster' || (m.abilities ?? []).includes('caster');
     if (hasCaster && !m.spell) throw new MonsterDataError(`${where}: caster には spell が要る`);
+    const hasDebuffer = m.ability === 'debuffer' || (m.abilities ?? []).includes('debuffer');
+    if (hasDebuffer && !m.debuffs?.length) throw new MonsterDataError(`${where}: debuffer には debuffs が要る`);
+    if (m.debuffs !== undefined) {
+      if (!Array.isArray(m.debuffs) || m.debuffs.length === 0 || m.debuffs.length > MAX_DEBUFFS) throw new MonsterDataError(`${where}: debuffs は 1〜${MAX_DEBUFFS} 個`);
+      for (const d of m.debuffs) {
+        if (!d || typeof d.name !== 'string' || d.name.trim() === '') throw new MonsterDataError(`${where}: debuffs の name が空`);
+        if (!(d.status in STATUS_REGISTRY)) throw new MonsterDataError(`${where}: debuffs の status が不正 (${d.status})`);
+        if (!(typeof d.chance === 'number' && d.chance >= 0 && d.chance <= 1)) throw new MonsterDataError(`${where}: debuffs の chance は 0〜1`);
+        if (!(Number.isInteger(d.turns) && d.turns >= 1 && d.turns <= 5)) throw new MonsterDataError(`${where}: debuffs の turns は 1〜5`);
+        if (d.magnitude !== undefined && !(typeof d.magnitude === 'number' && Number.isFinite(d.magnitude))) throw new MonsterDataError(`${where}: debuffs の magnitude が数値でない`);
+        if (d.target !== undefined && ![...MOVE_TARGETS, 'self'].includes(d.target)) throw new MonsterDataError(`${where}: debuffs の target が不正 (${d.target})`);
+      }
+    }
+    if (m.chargedTarget !== undefined && !MOVE_TARGETS.includes(m.chargedTarget)) throw new MonsterDataError(`${where}: chargedTarget が不正 (${m.chargedTarget})`);
     if (m.healRatio !== undefined && !(m.healRatio > 0 && m.healRatio <= 1)) {
       throw new MonsterDataError(`${where}: healRatio は 0〜1 (${m.healRatio})`);
     }
@@ -110,10 +127,11 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
     }
     if (m.storyOnly !== undefined && typeof m.storyOnly !== 'boolean') throw new MonsterDataError(`${where}: storyOnly が真偽値でない`);
     if (m.spell) {
-      const sp = m.spell as { name?: unknown; min?: unknown; max?: unknown };
+      const sp = m.spell as { name?: unknown; min?: unknown; max?: unknown; target?: unknown };
       if (typeof sp.name !== 'string' || typeof sp.min !== 'number' || typeof sp.max !== 'number' || (sp.min as number) > (sp.max as number)) {
         throw new MonsterDataError(`${where}: spell が不正 (name/min/max)`);
       }
+      if (sp.target !== undefined && !MOVE_TARGETS.includes(sp.target as string)) throw new MonsterDataError(`${where}: spell の target が不正 (${String(sp.target)})`);
     }
   }
   // **tier1 は 3 体を下回れない。** spawn 近辺のプールが痩せると summonMonster が
