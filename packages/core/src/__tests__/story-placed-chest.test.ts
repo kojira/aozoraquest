@@ -29,10 +29,11 @@ describe('placedRewards / placedItemOpen / placedSearchOutcome', () => {
     expect(placedItemOpen(chest({ requireFlags: ['ok'] }), [], [])).toBe(false);
   });
 
-  it('宝箱は開封済み=empty・鍵=locked。hint つき spot の鍵も locked。それ以外は paid', () => {
+  it('宝箱は開封済み=empty。条件のそろわない宝箱は存在を漏らさない paid。hint つき spot の鍵だけ locked', () => {
     expect(placedSearchOutcome(chest(), [], [])).toBe('take');
     expect(placedSearchOutcome(chest(), [], ['c1'])).toBe('empty');
-    expect(placedSearchOutcome(chest({ requireFlags: ['ok'] }), [], [])).toBe('locked');
+    expect(placedSearchOutcome(chest({ requireFlags: ['ok'] }), [], [])).toBe('paid');
+    expect(placedSearchOutcome(chest({ requireFlags: ['ok'], hint: 'かたい' }), [], [])).toBe('paid');
     expect(placedSearchOutcome(spot({ requireFlags: ['ok'], hint: 'まだ早い' }), [], [])).toBe('locked');
     expect(placedSearchOutcome(spot({ requireFlags: ['ok'] }), [], [])).toBe('paid');
     expect(placedSearchOutcome(spot(), ['got-s1'], [])).toBe('paid');

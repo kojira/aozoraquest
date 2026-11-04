@@ -146,7 +146,7 @@ function PlacedForm({ p, isNew, scenarioFlags, coords, setCoords, onPlace, onCha
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35em', minWidth: 0, fontSize: '0.85em' }}>
       <div><code>{p.id}</code>{isNew ? '（新規。保存すると id は変えられない）' : ''} <button type="button" className="secondary" onClick={onDelete}>消す</button></div>
-      <label className="admin-field"><span>種類</span><select aria-label="種類" value={placedKind(p)} onChange={(e) => onChange({ kind: e.target.value as PlacedKind })}>
+      <label className="admin-field"><span>種類</span><select aria-label="種類" disabled={!isNew} value={placedKind(p)} onChange={(e) => onChange({ kind: e.target.value as PlacedKind })}>
         {PLACED_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
       </select></label>
       {rewards.map((r, i) => (
@@ -171,7 +171,7 @@ function PlacedForm({ p, isNew, scenarioFlags, coords, setCoords, onPlace, onCha
         const v = [...e.target.selectedOptions].map((o) => o.value); onChange({ requireFlags: v.length ? v : undefined });
       }}>{[...new Set([...scenarioFlags, ...(p.requireFlags ?? [])])].map((f) => <option key={f} value={f}>{f}</option>)}</select></label>
       <label className="admin-field"><span>立てるフラグ{placedKind(p) === 'spot' ? '（必須）' : '（任意）'}</span>
-        <input aria-label="立てるフラグ" value={p.flag ?? ''} onChange={(e) => onChange({ flag: e.target.value || undefined })} /></label>
+        <input aria-label="立てるフラグ" readOnly={!isNew} value={p.flag ?? ''} onChange={(e) => onChange({ flag: e.target.value || undefined })} /></label>
       <label className="admin-field"><span>hint（1 行 40 字）</span><input aria-label="hint" maxLength={40} value={p.hint ?? ''} onChange={(e) => onChange({ hint: e.target.value || undefined })} /></label>
       {map}
       <div className="npc-coordinates">

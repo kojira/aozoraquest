@@ -13,17 +13,16 @@ function rewardText(r: PlacedReward, alone: boolean): string {
 
 /** 取った結果の 1 行。 */
 export function placedTakenText(placed: { kind: PlacedKind; rewards: PlacedReward[]; itemId?: string; count?: number }): string {
-  if (placed.kind === 'spot') {
-    const first = placed.rewards[0];
-    const id = placed.itemId ?? (first && 'item' in first ? first.item : '');
-    const count = placed.count ?? (first && 'item' in first ? first.count : 1);
-    return `${itemName(id)}${count > 1 ? `を${count}こ` : 'を'}手に入れた!`;
+  if (placed.kind === 'spot' && placed.itemId !== undefined && placed.rewards.length === 1) {
+    const count = placed.count ?? 1;
+    return `${itemName(placed.itemId)}${count > 1 ? `を${count}こ` : 'を'}手に入れた!`;
   }
   const alone = placed.rewards.length === 1;
   const names = placed.rewards.map((r) => rewardText(r, alone)).join('と ');
   const got = alone && 'power' in placed.rewards[0]! ? `${names}手に入れた！` : `${names}を手に入れた！`;
   const gear = placed.rewards.some((r) => 'equipment' in r) ? '（そうびで確認）' : '';
-  return `${placed.kind === 'chest' ? '宝箱を開けた！' : 'キラキラ光る場所を調べた！'} ${got}${gear}`;
+  const prefix = placed.kind === 'chest' ? '宝箱を開けた！ ' : placed.kind === 'sparkle' ? 'キラキラ光る場所を調べた！ ' : '';
+  return `${prefix}${got}${gear}`;
 }
 
 /** 空の宝箱・鍵のマスの 1 行。 */

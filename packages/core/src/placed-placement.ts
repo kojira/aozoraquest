@@ -6,7 +6,7 @@
 import { WORLD_MAP_ID } from './map-id.js';
 import type { NpcDef } from './npc-data.js';
 import { npcMapId, placementCell, sameNpcPosition, type NpcPlacementWorld } from './npc-placement.js';
-import type { PlacedItemDef } from './placed-items.js';
+import { placedKind, type PlacedItemDef } from './placed-items.js';
 
 /** 置けない理由 (置けるなら null)。固定モンスターは同じマスで戦闘が先に始まるので避ける。 */
 export function placedItemPlacementIssue(world: NpcPlacementWorld, p: PlacedItemDef, npcs: readonly NpcDef[], fieldMonsters: readonly { mapId: string; x: number; y: number }[]): string | null {
@@ -49,11 +49,14 @@ export function placedItemReachable(world: NpcPlacementWorld, p: PlacedItemDef, 
 
 /**
  * 保存のときの配置の確認: **新しく置いた・動かした** 置きアイテムだけを見る (既存のものは
- * 地形や NPC を後から変えても保存を止めない)。最初の問題を `id: 理由` で返す。
+ * 地形や NPC を後から変えても保存を止めない)。保存済みの id の flag・kind は変えさせない
+ * (取ったかどうかの記録先が変わり、全員の取得状態が食い違う)。最初の問題を `id: 理由` で返す。
  */
 export function placedItemsSaveIssue(world: NpcPlacementWorld, next: readonly PlacedItemDef[], before: readonly PlacedItemDef[], npcs: readonly NpcDef[], fieldMonsters: readonly { mapId: string; x: number; y: number }[]): string | null {
   for (const p of next) {
     const old = before.find((o) => o.id === p.id);
+    if (old && old.flag !== p.flag) return `${p.id}: 保存済みの置きアイテムの flag は変えられない`;
+    if (old && placedKind(old) !== placedKind(p)) return `${p.id}: 保存済みの置きアイテムの種類は変えられない`;
     if (old && old.mapId === p.mapId && old.x === p.x && old.y === p.y) continue;
     const issue = placedItemPlacementIssue(world, p, npcs, fieldMonsters);
     if (issue) return `${p.id}: ${issue}`;

@@ -98,7 +98,8 @@ describe('handleSearch の宝箱・キラキラ (D-CHEST-001)', () => {
   const LOCKED = { id: 'c-lock', mapId: 'cave-1', x: 2, y: 1, kind: 'chest' as const, rewards: [{ power: 5 }], requireFlags: ['has-key'], hint: 'かぎが かかっている。' };
   const SPARK = { id: 'k-herb', mapId: 'cave-1', x: 3, y: 1, kind: 'sparkle' as const, rewards: [{ item: 'herb', count: 1 }] };
   const OLD = { id: 'pi-old', mapId: 'cave-1', x: 4, y: 1, itemId: 'herb', count: 2, flag: 'got-old' };
-  beforeAll(() => setStory({ placedItems: [CHEST, LOCKED, SPARK, OLD] }));
+  const HINT_SPOT = { id: 'pi-hint', mapId: 'cave-1', x: 5, y: 1, itemId: 'herb', count: 1, flag: 'got-hint', requireFlags: ['has-key'], hint: 'まだ早い。' };
+  beforeAll(() => setStory({ placedItems: [CHEST, LOCKED, SPARK, OLD, HINT_SPOT] }));
   afterAll(() => setStory(null));
   const at = (env: ResolverEnv, p: { mapId: string; x: number; y: number }) => signPosition(env, { did: DID, mapId: p.mapId, x: p.x, y: p.y, counter: 1, iat: NOW });
 
@@ -131,14 +132,28 @@ describe('handleSearch の宝箱・キラキラ (D-CHEST-001)', () => {
     expect(m.state().pieces).toHaveLength(1);
   });
 
-  it('鍵のかかった宝箱は locked と hint を返し、パワーも state も変わらない', async () => {
+  it('条件のそろわない宝箱は存在を漏らさず普段のしらべる (1 減る)。hint つき spot の鍵は locked と hint でパワーも state も変わらない', async () => {
     const env = await makeEnv();
     const m = pds(GS({ power: 4 }));
     globalThis.fetch = m.fn;
-    const before = m.state();
     const res = await handleSearch(env, DID, at(env, LOCKED), NOW, undefined, undefined, 'k1');
-    expect(res).toMatchObject({ placedState: 'locked', hint: 'かぎが かかっている。', power: 4 });
+    expect(res.power).toBe(3);
+    expect(res.placedState).toBeUndefined();
+    expect(res.hint).toBeUndefined();
+    expect(m.state().openedSpots).toBeUndefined();
+    const before = m.state();
+    const spot = await handleSearch(env, DID, at(env, HINT_SPOT), NOW, undefined, undefined, 'k2');
+    expect(spot).toMatchObject({ placedState: 'locked', hint: 'まだ早い。', power: 3 });
     expect(m.state()).toBe(before);
+  });
+
+  it('opKey が別の置きアイテムで処理済みでも、まだ取っていないこのマスは取れて記録される', async () => {
+    const env = await makeEnv();
+    const m = pds(GS({ shopOps: ['placed:k1'], openedSpots: ['c-gear'] }));
+    globalThis.fetch = m.fn;
+    const res = await handleSearch(env, DID, at(env, SPARK), NOW, undefined, undefined, 'k1');
+    expect(res.placed).toEqual({ kind: 'sparkle', rewards: [{ item: 'herb', count: 1 }] });
+    expect(m.state()).toMatchObject({ materials: { herb: 1 }, openedSpots: ['c-gear', 'k-herb'] });
   });
 
   it('置きアイテムの無いマス・取った後のキラキラの跡では今どおり 1 減る', async () => {
