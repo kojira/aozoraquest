@@ -36,6 +36,9 @@ export const GAME_STATE_VERSION = 1;
  */
 export const XP_EPOCH = 1;
 
+/** openedSpots の上限。置きアイテムの上限 (400) より大きいので、普段は溢れない。 */
+export const MAX_OPENED_SPOTS = 600;
+
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
 
@@ -107,6 +110,9 @@ export interface GameState {
   /** 進行フラグ (#545/#426)。**サーバーだけが立てる** — client の自己申告で章が進むと
    *  クエスト解禁も報酬も破られる。シナリオのイベント条件が揃うと edge が追加する。 */
   flags?: string[];
+  /** 開けた宝箱・取ったキラキラの id (D-CHEST-001)。フラグと分けて覚える (フラグは古い順に
+   *  切り捨てられ、溢れると章の進行が壊れる)。上限 `MAX_OPENED_SPOTS`。切り捨てない。 */
+  openedSpots?: string[];
   /** 進行中のゲーム内クエスト (#423)。討伐数は勝利時に edge が数える。 */
   activeQuests: Array<{ id: string; progress: number }>;
   /** 達成済みクエスト id (再受注させない)。全履歴を追記のみで保持 (#709)。 */
@@ -156,6 +162,7 @@ export function normalizeState(state: GameState): GameState {
     const { quest: _legacyQuest, ...rest } = state as GameState & { quest?: unknown };
     state = { ...rest, activeQuests: state.activeQuests ?? [] };
   }
+  if (state.openedSpots && new Set(state.openedSpots).size !== state.openedSpots.length) state = { ...state, openedSpots: [...new Set(state.openedSpots)] };
   if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
   // **位置も spawn に戻す。** Lv1 に戻したのに立ち位置が奥地のままだと、想定 Lv8 以上の
   // 敵に Lv1 で遭遇し、負けるたびに素材を失う死にループに入る (帰還先の lastTown も

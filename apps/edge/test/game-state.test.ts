@@ -266,3 +266,11 @@ describe('D-GUILD-002 destructive single authority boundary', () => {
     expect(next.activeQuests).toEqual(activeQuests);
   });
 });
+
+describe('openedSpots (D-CHEST-001)', () => {
+  it('normalizeState は重複を除き、無い state はそのまま', () => {
+    const s = { ...emptyState(DID, ''), openedSpots: ['a', 'b', 'a'] };
+    expect(normalizeState(s).openedSpots).toEqual(['a', 'b']);
+    expect(normalizeState(emptyState(DID, ''))).not.toHaveProperty('openedSpots');
+  });
+});

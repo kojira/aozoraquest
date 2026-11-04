@@ -2,11 +2,11 @@
  * しらべる (`POST /api/world/search`)。battle-resolver から分けた (D-STORY-009)。
  * 判定・消費・付与はすべて edge が権威。
  */
-import { jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, regionOf, tierForRegion, interiorById, WORLD_MAP_ID, MAX_FLAGS, placedItemAt, placedItemAvailable, type PlacedItemDef } from '@aozoraquest/core';
+import { jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, regionOf, tierForRegion, interiorById, WORLD_MAP_ID, MAX_FLAGS, placedItemAt, placedItemOpen, placedKind, placedRewards, placedSearchOutcome, type PlacedItemDef, type PlacedKind, type PlacedReward } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
-import { readState, readModifyWrite, type GameState } from './game-state';
+import { readState, readModifyWrite, MAX_OPENED_SPOTS, type GameState, type OwnedPiece } from './game-state';
 import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
-import { SEARCH_POWER_COST, MAX_SHOP_OPS } from './shop';
+import { SEARCH_POWER_COST, MAX_SHOP_OPS, MAX_OWNED_PIECES } from './shop';
 import { verifyPosition } from './world-token';
 import { DEFAULT_NS, ResolverError, jobXpOf, migrateInitState, readDiagnosis, type ResolverEnv } from './battle-resolver';
 
@@ -14,44 +14,99 @@ export interface SearchResult {
   found: string | null;
   materials: Record<string, number>;
   power: number;
-  /** 置きアイテムを取ったときだけ (D-STORY-009)。パワーは減らない。 */
-  placed?: { itemId: string; count: number };
+  /** 置きアイテムを取ったときだけ (D-STORY-009 / D-CHEST-001)。パワーは減らない。
+   *  itemId/count は spot の古い応答との互換のために残す。 */
+  placed?: { kind: PlacedKind; rewards: PlacedReward[]; itemId?: string; count?: number };
   /** 置きアイテムを取ったときだけ: 立てたフラグを含む進行フラグ。 */
   flags?: string[];
+  /** 置きアイテムを取ったときだけ: 開けた宝箱・取ったキラキラの id。 */
+  openedSpots?: string[];
+  /** 置きアイテムを取ったときだけ: 装備の個体 (宝箱から装備が出ると増える)。 */
+  pieces?: OwnedPiece[];
+  /** 無料で何も起きないマス: 開封済みの宝箱 (empty) / 鍵がかかっている (locked)。 */
+  placedState?: 'empty' | 'locked';
+  /** placedState のときに出す 1 行 (管理データの hint)。 */
+  hint?: string;
   /** 置きアイテムで発火したシナリオのお知らせ。 */
   scenarioMessages?: ScenarioMessage[];
 }
 
+/** 宝箱から出る装備の rkey。決まった値なので、同じ宝箱から二重に作られない。 */
+function chestPieceRkey(placedId: string, index: number): string {
+  return index === 0 ? `chest-${placedId}` : `chest-${placedId}-${index}`;
+}
+
+/** 報酬を state に加える (純関数)。持ち物がいっぱいなら開けない (開封済みにもしない)。 */
+function grantPlacedRewards(cur: GameState, item: PlacedItemDef): GameState {
+  const rewards = placedRewards(item);
+  const materials = { ...cur.materials };
+  const pieces = [...(cur.pieces ?? [])];
+  let power = cur.power;
+  rewards.forEach((r, i) => {
+    if ('item' in r) materials[r.item] = (materials[r.item] ?? 0) + r.count;
+    else if ('power' in r) power += r.power;
+    else {
+      const rkey = chestPieceRkey(item.id, i);
+      if (pieces.some((p) => p.rkey === rkey)) return;
+      if (pieces.length >= MAX_OWNED_PIECES) throw new ResolverError('もちものが いっぱいだ。', 400, 'pieces_full');
+      pieces.push({ rkey, itemId: r.equipment, level: 0 });
+    }
+  });
+  const opened = cur.openedSpots ?? [];
+  const recordOpened = placedKind(item) !== 'spot' || item.flag === undefined;
+  if (recordOpened && opened.length >= MAX_OPENED_SPOTS) {
+    console.error('[search] openedSpots が上限に達した', { did: cur.did, id: item.id });
+    throw new ResolverError('これ以上 開けられない', 409, 'opened_full');
+  }
+  const flags = cur.flags ?? [];
+  return {
+    ...cur,
+    power,
+    materials,
+    ...(pieces.length !== (cur.pieces ?? []).length ? { pieces } : {}),
+    ...(recordOpened ? { openedSpots: [...opened, item.id] } : {}),
+    ...(item.flag !== undefined ? { flags: [...flags, item.flag].slice(-MAX_FLAGS) } : {}),
+  };
+}
+
+/** 取った結果の応答の placed (再送のときも同じ形を返す)。 */
+function placedResponse(item: PlacedItemDef): NonNullable<SearchResult['placed']> {
+  const kind = placedKind(item);
+  const rewards = placedRewards(item);
+  const first = rewards[0];
+  return { kind, rewards, ...(kind === 'spot' && first && 'item' in first ? { itemId: first.item, count: first.count } : {}) };
+}
+
 /**
- * 置きアイテムを取る。条件 (requireFlags がそろい、flag が未設定) を readModifyWrite の中で
- * 確かめ直してから、アイテムと flag を同時に付与する。取れなければ null (普段のしらべるへ)。
+ * 置きアイテムを取る。条件 (requireFlags がそろい、まだ取っていない) を readModifyWrite の中で
+ * 確かめ直してから、報酬・openedSpots・flag を一度に付与する。取れなければ result は null。
  * 同じ opKey の再送は、取った結果をもう一度返す (二重には付与しない)。
  */
-async function takePlacedItem(env: ResolverEnv, userDid: string, item: PlacedItemDef, now: number, init: (d: string, iso: string) => Promise<GameState>, key: string | null): Promise<SearchResult | null> {
+async function takePlacedItem(env: ResolverEnv, userDid: string, item: PlacedItemDef, now: number, init: (d: string, iso: string) => Promise<GameState>, key: string | null): Promise<{ result: SearchResult | null; state: GameState }> {
   let took = false;
   const scenarioBox: { v: ScenarioResult | null } = { v: null };
   const written = await readModifyWrite(env, userDid, (cur) => {
     took = false;
     scenarioBox.v = null;
-    const flags = cur.flags ?? [];
     if (key && (cur.shopOps ?? []).includes(key)) { took = true; return cur; } // 処理済みの再送
-    if (!placedItemAvailable(item, flags)) return cur;
+    if (!placedItemOpen(item, cur.flags ?? [], cur.openedSpots ?? [])) return cur;
     took = true;
-    const next: GameState = {
-      ...cur,
-      materials: { ...cur.materials, [item.itemId]: (cur.materials[item.itemId] ?? 0) + item.count },
-      flags: [...flags, item.flag].slice(-MAX_FLAGS),
-      ...(key ? { shopOps: [...(cur.shopOps ?? []), key].slice(-MAX_SHOP_OPS) } : {}),
-    };
+    const next: GameState = { ...grantPlacedRewards(cur, item), ...(key ? { shopOps: [...(cur.shopOps ?? []), key].slice(-MAX_SHOP_OPS) } : {}) };
     scenarioBox.v = advanceScenario(next);
     return scenarioBox.v ? { ...next, flags: scenarioBox.v.flags } : next;
   }, { now, init });
-  if (!took) return null;
-  return {
-    found: item.itemId, materials: written.materials, power: written.power,
-    placed: { itemId: item.itemId, count: item.count }, flags: written.flags ?? [],
+  if (!took) return { result: null, state: written };
+  const first = placedRewards(item).find((r) => 'item' in r);
+  return { state: written, result: {
+    found: first && 'item' in first ? first.item : null, materials: written.materials, power: written.power,
+    placed: placedResponse(item), flags: written.flags ?? [], openedSpots: written.openedSpots ?? [], pieces: written.pieces ?? [],
     ...(scenarioBox.v?.messages.length ? { scenarioMessages: scenarioBox.v.messages } : {}),
-  };
+  } };
+}
+
+/** 空の宝箱・鍵のマス: 書き込みなしで返す。パワーは減らない。 */
+function freePlacedResult(state: GameState, item: PlacedItemDef, placedState: 'empty' | 'locked'): SearchResult {
+  return { found: null, materials: state.materials, power: state.power, placedState, ...(item.hint ? { hint: item.hint } : {}) };
 }
 
 /** しらべる: サーバーが luk (装備込み) + tier (位置) + 物理乱数で判定し、当たれば gameState.materials に付与。
@@ -71,13 +126,20 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const key = opKey ? `search:${opKey}` : null;
-  // **置きアイテム (D-STORY-009) はパワー判定より前。** 取れたらパワーは消費しない。
+  // **置きアイテム (D-STORY-009 / D-CHEST-001) はパワー判定より前。** 取る・空の宝箱・鍵はパワーを使わない。
   // 冪等キーは普段のしらべると分ける (再送がどちらの結果か取り違えない)。
   const placed = placedItemAt(mapId, x, y);
   const placedKey = opKey ? `placed:${opKey}` : null;
-  if (placed && (placedItemAvailable(placed, state.flags ?? []) || (placedKey && (state.shopOps ?? []).includes(placedKey)))) {
-    const got = await takePlacedItem(env, userDid, placed, now, (d, iso) => migrateInitState(d, iso, ns, fetchImpl), placedKey);
-    if (got) return got;
+  if (placed) {
+    let outcome = placedSearchOutcome(placed, state.flags ?? [], state.openedSpots ?? []);
+    let latest = state;
+    if (outcome === 'take' || (placedKey && (state.shopOps ?? []).includes(placedKey))) {
+      const got = await takePlacedItem(env, userDid, placed, now, (d, iso) => migrateInitState(d, iso, ns, fetchImpl), placedKey);
+      if (got.result) return got.result;
+      latest = got.state; // 割り込みで取れなくなった: 最新の state で決め直す
+      outcome = placedSearchOutcome(placed, latest.flags ?? [], latest.openedSpots ?? []);
+    }
+    if (outcome === 'empty' || outcome === 'locked') return freePlacedResult(latest, placed, outcome);
   }
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const luk = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
