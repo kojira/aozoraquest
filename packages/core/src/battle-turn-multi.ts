@@ -14,6 +14,7 @@ import { MONSTERS_BY_ID } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
+import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 
 /** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
 function copyCombatant(c: Combatant): Combatant {
@@ -86,6 +87,7 @@ export function resolveTurnMulti(
   turnSeed?: number,
   skillIndex = 0,
   targetIndex = 0,
+  itemId?: string,
 ): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
   const t = BATTLE_TUNING;
@@ -115,6 +117,9 @@ export function resolveTurnMulti(
     cmd = 'attack';
   } else if (command === 'tonic' && state.tonics <= 0) {
     events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
+    cmd = 'attack';
+  } else if (command === 'item' && !canUseBattleItem(state, itemId)) {
+    events.push({ actor: 'player', text: missingBattleItemText(itemId) });
     cmd = 'attack';
   }
   if (cmd === 'skill') player.mp -= skillCost;
@@ -195,6 +200,8 @@ export function resolveTurnMulti(
         state.tonics -= 1;
         state.tonicsUsed += 1;
         events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
+      } else if (cmd === 'item') {
+        useBattleItem(state, itemId!, sides, targetIndex, rng, events);
       }
       // guard / flee 失敗はこのターン行動なし
     } else if (isAlly(actor)) {

@@ -11,10 +11,12 @@ import { createRng } from './battle-rng.js';
 import { type JobSkill, skillForJob, skillsForJob, mpGainsFor, mpTraitChanceOf } from './battle-job-skills.js';
 import { type Combatant, playerCombatant } from './battle-combatant.js';
 import { type Tier, MONSTERS_BY_ID, summonMonster, monsterCombatant } from './battle-monsters.js';
+import { carriedBattleItems } from './battle-items.js';
 
 // ─── バトル状態と解決 ───────────────────────────────────────
 
-export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee';
+/** item = 戦闘用のどうぐ (D-ITEM-001)。どれを使うかは resolveTurn の itemId で渡す。 */
+export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee' | 'item';
 
 export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'fled' | 'monster-fled';
 
@@ -55,6 +57,10 @@ export interface BattleState {
   tonics: number;
   /** このバトルで使ったそらのしずく数 (記録用 → 在庫から差し引く)。 */
   tonicsUsed: number;
+  /** 持ち込んだ戦闘用のどうぐ (id → 残り数、D-ITEM-001)。旧 sealed state には無い (= 0 個)。 */
+  battleItems?: Record<string, number>;
+  /** このバトルで使ったどうぐ (id → 数。決着で手持ちから引く)。 */
+  battleItemsUsed?: Record<string, number>;
   /** たたかう / ぼうぎょ の MP 回復量 (ジョブ特性 JOB_MP_TRAITS 込み。UI 表示用にも使う) */
   mpAttackGain: number;
   mpGuardGain: number;
@@ -131,6 +137,8 @@ export function startBattle(
     extraEnemies?: number;
     /** ストーリー戦 (D-STORY-009)。BattleState.story にそのまま載る。 */
     story?: { canFlee: boolean; scripted?: boolean };
+    /** 持ち込む戦闘用のどうぐ (id → 数)。種類ごとに battleItemCarryMax まで (D-ITEM-001)。 */
+    battleItems?: Readonly<Record<string, number>>;
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -171,6 +179,7 @@ export function startBattle(
     herbsUsed: 0,
     tonics: Math.max(0, Math.min(BATTLE_TUNING.tonicCarryMax, Math.floor(extras?.tonics ?? 0))),
     tonicsUsed: 0,
+    ...(extras?.battleItems ? { battleItems: carriedBattleItems(extras.battleItems), battleItemsUsed: {} } : {}),
     mpAttackGain: gains.attackGain,
     mpGuardGain: gains.guardGain,
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),

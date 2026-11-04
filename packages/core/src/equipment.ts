@@ -274,8 +274,11 @@ export const SALE_TUNING = {
   materialsPerPower: 5,
 } as const;
 
-/** 消耗品 (ひきとり対象外 — それぞれ固有の使い道がある)。 */
-export const CONSUMABLE_ITEMS: readonly string[] = ['herb', 'sky-dew', 'sky-feather'];
+/** 消耗品 (ひきとり対象外 — それぞれ固有の使い道がある)。後ろ 8 品は戦闘用のどうぐ (D-ITEM-001)。 */
+export const CONSUMABLE_ITEMS: readonly string[] = [
+  'herb', 'sky-dew', 'sky-feather',
+  'nemuri-kona', 'shibire-bari', 'doku-bin', 'kemuri-dama', 'yowari-gusa', 'moroi-suna', 'chikara-no-mi', 'mamori-no-ha',
+];
 
 /** ひきとり対象 (モンスター素材のみ)。battle.ts の MONSTERS drops と同期
  *  (equipment→battle は循環になるため静的リスト。整合はテストで固定)。 */

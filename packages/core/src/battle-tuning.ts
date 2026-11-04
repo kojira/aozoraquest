@@ -195,6 +195,8 @@ export const BATTLE_TUNING = {
   /** そらのしずく (MP 回復薬): maxMp のこの割合を回復。持ち込み上限 tonicCarryMax。 */
   tonicMpRatio: 0.5,
   tonicCarryMax: 2,
+  /** 戦闘用のどうぐ (D-ITEM-001): 1 戦に種類ごとこの数まで持ち込める (やくそうと同じ上限)。 */
+  battleItemCarryMax: 2,
   /** にげる: 成功率 = clamp(fleeBase + (自agi − 敵agi) * fleeAgiScale, min, max)。
    *  失敗するとターンを失い敵の攻撃を受ける。成功してもパワーは返さない。 */
   fleeBase: 0.5,

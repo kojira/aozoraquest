@@ -42,7 +42,7 @@ const clampInt = (v: number, def: number, min: number, max: number) =>
 
 /** 1戦モードのコマンド表示名 (world 戦闘と同じ日本語で手触りを揃える)。 */
 const CMD_LABEL: Record<Command, string> = {
-  attack: 'たたかう', guard: 'ぼうぎょ', skill: 'とくぎ', herb: 'やくそう', tonic: 'しずく', flee: 'にげる',
+  attack: 'たたかう', guard: 'ぼうぎょ', skill: 'とくぎ', herb: 'やくそう', tonic: 'しずく', flee: 'にげる', item: 'どうぐ',
 };
 
 /** その職の JobLv L→L+1 に必要な XP 差 (JOB_XP_CURVE の閾値差)。 */
