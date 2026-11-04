@@ -3,7 +3,7 @@
  * - POST /api/party: ギルドの受付のそばだけ・入れられる人数・紹介できる人だけ。外した仲間の持ちこしは消える
  * - sealEncounter: 仲間がいると敵 1 体でも allies が組まれ、handleTurn は multi で解く
  * - 仲間の HP/MP は決着で持ちこし、宿屋・街・そらのはねで消える
- * - ボスの HP は ×(1 + 0.5 × 仲間の数)。台本負けは 1 人のまま
+ * - ボスの HP は仲間の数で変えない (D-PARTY-002 §12)。台本負けは 1 人のまま
  * - targetIndex は handleTurn まで届き、2 体目に当たる
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -121,7 +121,7 @@ describe('パーティ (D-PARTY-001)', () => {
       expect(enc.state.allies ?? [enc.state.player]).toHaveLength(1);
     });
 
-    it('ボスの HP は ×1.5 (仲間 1 人)。count 2 は全員。1 人なら今のまま', async () => {
+    it('ボスの HP は仲間がいても変わらない (章の想定人数で合わせる。D-PARTY-002 §12)。count 2 も同じ', async () => {
       const env = await makeEnv();
       const solo = pds(GS());
       globalThis.fetch = solo.fn;
@@ -129,12 +129,12 @@ describe('パーティ (D-PARTY-001)', () => {
       const duo = pds(GS({ flags: [LETTER], party: { ids: ['r-1'] } }));
       globalThis.fetch = duo.fn;
       const two = await sealEncounter(env, USER, duo.gs(), 10, 10, 1, NOW, undefined, undefined, undefined, storyBattleById('b-boss'));
-      expect(two.state.monster.maxHp).toBe(Math.round(one.state.monster.maxHp * 1.5));
-      expect(two.state.monster.hp).toBe(two.state.monster.maxHp);
-      expect(duo.guard()!.state.monster.maxHp).toBe(two.state.monster.maxHp);
+      expect(two.state.allies).toHaveLength(2);
+      expect(two.state.monster.maxHp).toBe(one.state.monster.maxHp);
+      expect(duo.guard()!.state.monster.maxHp).toBe(one.state.monster.maxHp);
       const pack = await sealEncounter(env, USER, duo.gs(), 10, 10, 1, NOW, undefined, undefined, undefined, storyBattleById('b-wall2'));
       const soloPack = await (async () => { globalThis.fetch = pds(GS()).fn; return sealEncounter(env, USER, GS(), 10, 10, 1, NOW, undefined, undefined, undefined, storyBattleById('b-wall2')); })();
-      expect(pack.state.enemies!.map((e) => e.maxHp)).toEqual(soloPack.state.enemies!.map((e) => Math.round(e.maxHp * 1.5)));
+      expect(pack.state.enemies!.map((e) => e.maxHp)).toEqual(soloPack.state.enemies!.map((e) => e.maxHp));
     });
 
     it('台本負け (scripted) では allies は主人公だけ', async () => {

@@ -222,12 +222,12 @@ const damageHandler: EffectHandler = (effect, ctx) => {
     if (effect.inflict && res.hit && !res.fatal) {
       const inf = effect.inflict;
       if (rng() < (inf.chance ?? 1)) {
-        applyStatus(defender, {
+        const took = applyStatus(defender, {
           id: inf.status,
           turns: inf.turns ?? DEFAULT_STATUS_TURNS,
           ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}),
         });
-        events.push({ actor, text: statusApplyText(inf.status, defender.name) });
+        if (took) events.push({ actor, text: statusApplyText(inf.status, defender.name) });
       }
     }
   }
@@ -251,13 +251,13 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   // 名演 (吟遊詩人): 付与する側 (attacker) の持続延長パッシブを適用 (none なら素通し)。歌の効果 +1 ターン。
   const hookCtx: HookCtx = { rng, events, actor };
   const turns = applyStatusDurationBonus(effect.turns ?? DEFAULT_STATUS_TURNS, attacker, hookCtx);
-  applyStatus(target, {
+  const took = applyStatus(target, {
     id: effect.status,
     turns,
     ...(mag !== undefined ? { magnitude: mag } : {}),
   });
-  // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。
-  events.push({ actor, text: statusApplyText(effect.status, target.name) });
+  // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。効かなければ「きかなかった」(statusResist)。
+  events.push({ actor, text: took ? statusApplyText(effect.status, target.name) : `しかし ${target.name}には きかなかった!` });
 };
 
 /** 自己バフとして数える状態 (感情爆発の buffCount)。積み重ねてダメージに変換する。 */

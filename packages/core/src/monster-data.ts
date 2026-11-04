@@ -22,6 +22,7 @@ import {
 } from './battle.js';
 
 import { characterTokenIssue } from './character-data.js';
+import { STATUS_REGISTRY } from './statuses.js';
 
 export class MonsterDataError extends Error {}
 
@@ -102,6 +103,10 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
           throw new MonsterDataError(`${where}: abilityParams.${k} は 0〜1 (${v})`);
         }
       }
+    }
+    if (m.statusResist !== undefined) {
+      if (!Array.isArray(m.statusResist) || m.statusResist.some((id) => !(id in STATUS_REGISTRY))) throw new MonsterDataError(`${where}: statusResist に不正な状態`);
+      if (new Set(m.statusResist).size !== m.statusResist.length) throw new MonsterDataError(`${where}: statusResist が重複している`);
     }
     if (m.storyOnly !== undefined && typeof m.storyOnly !== 'boolean') throw new MonsterDataError(`${where}: storyOnly が真偽値でない`);
     if (m.spell) {
