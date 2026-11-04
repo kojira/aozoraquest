@@ -24,6 +24,7 @@ import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
 import { handlePartyCandidates, handlePartyReroll, handlePartySet } from './party-route';
+import { handlePartyOrdersRoute } from './party-orders-route';
 import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -179,7 +180,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number; targetIndex?: number; itemId?: string };
+    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number; targetIndex?: number; itemId?: string; allies?: unknown };
     try {
       if (isTurn) {
         if (typeof body.battleId !== 'string' || typeof body.turn !== 'number' || typeof body.command !== 'string') {
@@ -192,7 +193,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
         // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
         // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
         await ensureAuthoredWorld(env, nowSec());
-        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex, targetIndex, itemId)), allowedOrigin);
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex, targetIndex, itemId, body.allies)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
       // **移動もワールドの読み込みを待つ。** ゲート (#424)・NPC (#425)・地図はここで効くので、
@@ -585,6 +586,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
   }
 
+  const partyOrders = await handlePartyOrdersRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (partyOrders) return partyOrders; // さくせん (D-PARTY-004)
   // パーティの編成・ギルドの候補・候補の引き直し (D-PARTY-001 / D-PARTY-002)。ギルドの受付のそばにいるかは edge が確かめる。
   if (req.method === 'POST' && LXM_PARTY_BY_PATH[url.pathname]) {
     const token = bearer(req);

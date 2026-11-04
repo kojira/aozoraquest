@@ -59,6 +59,7 @@ export function WorldBattleControls({
   prevState,
   onReveal,
   onLineHp,
+  allyOrder,
 }: {
   state: BattleState;
   phase: BattlePhase;
@@ -77,6 +78,8 @@ export function WorldBattleControls({
   onReveal?: (turn: number) => void;
   /** 表示中の行の 自分の HP と、その行で 被弾したか (上枠 HP と揺れ用。#764)。 */
   onLineHp?: (turn: number, hp: number, hit: boolean) => void;
+  /** めいれい の入力 (D-PARTY-004)。heading は「ミオ は どうする？（2/3）」。仲間の番は にげる の代わりに もどる・おまかせ。 */
+  allyOrder?: { heading: string; allyTurn: boolean; onBack: () => void; onAuto: () => void } | undefined;
 }) {
   const [itemMenu, setItemMenu] = useState(false);
   /** ねらう相手を選んでいるコマンド (群れのときだけ。D-PARTY-001)。ally は味方を選ぶ (回復。D-PARTY-003)。 */
@@ -182,6 +185,9 @@ export function WorldBattleControls({
         )}
       </div>
 
+      {phase === 'input' && allyOrder && (
+        <div data-ally-order-heading style={{ flex: '0 0 auto', fontSize: '0.85em', color: '#fff', textShadow: TEXT_SHADOW, padding: '0 0.2em 0.2em' }}>{allyOrder.heading}</div>
+      )}
       {/* 下段: 常に BOTTOM_H の固定高さ */}
       <div style={{ flex: `0 0 ${BOTTOM_H}`, height: BOTTOM_H }}>
         {phase === 'input' ? (
@@ -199,7 +205,13 @@ export function WorldBattleControls({
               {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
               <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || !hasAnyBattleItem(state)} cursor={itemMenu} />
               {/* 逃げられないストーリー戦 (canFlee: false) では出さない (D-STORY-009。サーバーも受け付けない)。 */}
-              {state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
+              {allyOrder?.allyTurn ? (
+                // めいれい の仲間の番: にげる は主人公だけ。代わりに 前の人へ／この人から後ろは おまかせ (D-PARTY-004 §2)。
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2em', minHeight: 0 }}>
+                  <DqRow label="もどる" onClick={allyOrder.onBack} disabled={busy} />
+                  <DqRow label="おまかせ" onClick={allyOrder.onAuto} disabled={busy} />
+                </div>
+              ) : state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
             </div>
             {/* 右: **既定でとくぎ一覧**。どうぐを開いている間だけ道具に入れ替わる。 */}
             {/* とくぎが増えるほど縦に伸びるので**この枠自体をスクロールさせる**。

@@ -15,7 +15,7 @@
  *     払うと言わずに入れようとすると 400 recruit_level、パワーが足りなければ 400 not_enough_power (もう入れている人は外さない)
  *   - 名前・職・★・ひとことは edge が作りなおした候補のものを保存する (client の送ったものは使わない)
  *   - 入れた仲間は候補の Lv から始まる (その Lv になったばかりの経験値。§11)
- *   - はずした仲間の経験値・HP/MP・きずな は消える。なじみは parted に残る
+ *   - はずした仲間の経験値・HP/MP・きずな・さくせん は消える。なじみは parted に残る
  *   - 今のデータに無い id は state からも送られた ids からも落とす (確かめる前・数える前)
  */
 import {
@@ -105,7 +105,7 @@ export function partyWith(cur: GameState, submitted: readonly string[], archetyp
     const out = Object.fromEntries(Object.entries(rec ?? {}).filter(([id]) => ids.includes(id)));
     return Object.keys(out).length ? out : undefined;
   };
-  const hp = keep(prev?.hp), mp = keep(prev?.mp), bond = keep(prev?.bond), bondHeal = keep(prev?.bondHeal);
+  const hp = keep(prev?.hp), mp = keep(prev?.mp), bond = keep(prev?.bond), bondHeal = keep(prev?.bondHeal), mode = keep(prev?.mode);
   const members = [
     ...(prev?.members ?? []).filter((m) => ids.includes(m.id)),
     ...added.filter((c) => !c.named).map(partyRecruitOf),
@@ -118,7 +118,7 @@ export function partyWith(cur: GameState, submitted: readonly string[], archetyp
   const party: PartyState = {
     ids: [...ids],
     ...(hp ? { hp } : {}), ...(mp ? { mp } : {}),
-    ...(bond ? { bond } : {}), ...(bondHeal ? { bondHeal } : {}),
+    ...(bond ? { bond } : {}), ...(bondHeal ? { bondHeal } : {}), ...(mode ? { mode } : {}),
     ...(members.length ? { members } : {}), ...(xp ? { xp } : {}),
     ...(nextMet.length ? { met: { day, ids: nextMet } } : {}),
     ...(nextParted.length ? { parted: nextParted } : {}),

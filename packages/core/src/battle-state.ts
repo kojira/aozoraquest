@@ -77,6 +77,22 @@ export interface BattleState {
   story?: { canFlee: boolean; scripted?: boolean };
   /** ほかの人から受けた回復 (味方の位置ごと。戻った HP ÷ 最大 HP の合計)。決着できずなに足す (D-PARTY-004)。 */
   healReceived?: number[];
+  /** 仲間ごとの さくせん／めいれい (allies と同じ並び。[0] の主人公は空。D-PARTY-004)。封印の時点の値。無い＝おまかせ。 */
+  allyModes?: Array<AllyMode | undefined>;
+  /** allies[1..] の仲間の id (allyModes があるときだけ。画面が めいれい を送る相手を知るため)。 */
+  partyIds?: string[];
+}
+
+/** 仲間の さくせん (♥2) と めいれい (♥3)。無い＝おまかせ (D-PARTY-004)。 */
+export type AllyMode = 'gangan' | 'inochi' | 'jumon' | 'manual';
+export const ALLY_MODES: readonly AllyMode[] = ['gangan', 'inochi', 'jumon', 'manual'];
+
+/** めいれい の仲間の 1 手 (主人公と同じ形。にげる は無い)。targetIndex は生きている敵 (味方をねらう手は味方) の何番目か。 */
+export interface AllyOrder {
+  command: Exclude<Command, 'flee'>;
+  skillIndex: number;
+  targetIndex: number;
+  itemId?: string;
 }
 
 /**

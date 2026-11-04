@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { jobDisplayName, jobXpToNextLevel, partyCombatants, skillsForJob, type Archetype, type RecruitStar } from '@aozoraquest/core';
+import { type AllyMode, jobDisplayName, jobXpToNextLevel, partyCombatants, skillsForJob, type Archetype, type RecruitStar } from '@aozoraquest/core';
 import { HeroRow, Section, STAT_ROWS, StatRow } from './status-modal';
 import { bondDetailText, heartsText } from '@/lib/bond-view';
+import { AllyTacticSelect } from './ally-tactic-select';
 
 /** つよさの窓に出す仲間 (パーティの仲間か、ギルドの候補)。xp は仲間が自分の経験値を持つときだけ (D-PARTY-002 §11)。 */
 export interface AllyStatusTarget {
@@ -13,13 +14,15 @@ export interface AllyStatusTarget {
   xp?: number | undefined;
   /** パーティの仲間の きずな (D-PARTY-004)。ギルドの候補には無い。 */
   bond?: number | undefined;
+  /** いまの さくせん (無い＝おまかせ)。 */
+  mode?: AllyMode | undefined;
 }
 
 /**
  * 仲間の「つよさ」。主人公の StatusModal と同じつくりで、値は戦闘と同じ partyCombatants (仲間の Lv・自動の防具込み)。
  * パーティやギルドの窓の上に重ねて開くので、Escape は先に (capture で) 受けてこの窓だけを閉じ、窓は不透明 (下の一覧を透かさない)。
  */
-export function AllyStatusModal({ ally, hp, mp, onClose }: { ally: AllyStatusTarget; hp?: number | undefined; mp?: number | undefined; onClose: () => void }) {
+export function AllyStatusModal({ ally, hp, mp, onClose, onMode }: { ally: AllyStatusTarget; hp?: number | undefined; mp?: number | undefined; onClose: () => void; onMode?: ((mode: AllyMode | null) => Promise<void>) | undefined }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -57,6 +60,11 @@ export function AllyStatusModal({ ally, hp, mp, onClose }: { ally: AllyStatusTar
             <HeroRow label="HP" value={hp ?? c.maxHp} max={c.maxHp} bonus={0} color="#5fc37e" />
             <HeroRow label="MP" value={mp ?? c.maxMp} max={c.maxMp} bonus={0} color="#5a9ae8" />
           </Section>
+          {onMode && ally.bond !== undefined && (
+            <Section title="さくせん">
+              <AllyTacticSelect bond={ally.bond} mode={ally.mode} onChange={onMode} />
+            </Section>
+          )}
           <Section title="せんとうのうりょく">
             {STAT_ROWS.map(({ key, label }) => <StatRow key={key} label={label} value={c[key]} />)}
           </Section>

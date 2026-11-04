@@ -48,6 +48,8 @@ export interface SealedMeta {
   story?: { battleId: string; winFlag: string; loseFlag?: string };
   /** 戦闘に出た仲間の id (allies[1..] の順。D-PARTY-001)。決着で HP/MP を持ちこす先。 */
   party?: string[];
+  /** 封印の時点で めいれい だった仲間の id (D-PARTY-004)。handleTurn の allies[] はこの人だけ。 */
+  manual?: string[];
 }
 
 export type Guard = BattleGuard<SealedMeta, BattleState>;
@@ -118,7 +120,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const guard: Guard = {
     did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: tileKey(mapId, x, y), ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), baseStats: [...baseStats],
       ...(story ? { story: { battleId: story.id, winFlag: story.winFlag, ...(story.loseFlag ? { loseFlag: story.loseFlag } : {}) } } : {}),
-      ...(party.length ? { party } : {}) }, state: battle, pendingTurnSeed, rewarded,
+      ...(party.length ? { party } : {}), ...(manualOf(state, party).length ? { manual: manualOf(state, party) } : {}) }, state: battle, pendingTurnSeed, rewarded,
     expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
   };
   // 読んだ後に別の遭遇がガードを作った/置き換えたら InvalidSwap → 上位で 409 (二重戦闘を作らせない)。
@@ -134,8 +136,17 @@ function joinParty(battle: BattleState, state: GameState, jobLevel: number): str
   if (members.length === 0) return [];
   battle.allies = [battle.player, ...members.map((m) => m.combatant)];
   battle.enemies = battle.enemies ?? [battle.monster];
+  // さくせん／めいれい は封印の時点の値 (D-PARTY-004)。戦闘中に変えても この戦闘には効かない。
+  const modes = members.map((m) => state.party?.mode?.[m.id]);
+  if (modes.some(Boolean)) {
+    battle.allyModes = [undefined, ...modes];
+    battle.partyIds = members.map((m) => m.id);
+  }
   return members.map((m) => m.id);
 }
+
+/** 封印の時点で めいれい だった、戦闘に出た仲間。 */
+const manualOf = (state: GameState, fought: readonly string[]) => fought.filter((id) => state.party?.mode?.[id] === 'manual');
 
 function partyCarryOf(party: PartyState | undefined): { hp?: Record<string, number>; mp?: Record<string, number> } {
   return { ...(party?.hp ? { hp: party.hp } : {}), ...(party?.mp ? { mp: party.mp } : {}) };

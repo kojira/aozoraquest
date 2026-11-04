@@ -11,13 +11,14 @@ import { createRng, turnRng } from './battle-rng.js';
 import { skillMpCostOf, skillsForJob, mpTraitFires } from './battle-job-skills.js';
 import { type Combatant } from './battle-combatant.js';
 import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
-import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
+import { type AllyOrder, type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
 import { watchHeals } from './bond.js';
+import { outOfStockText, pinAllyOrders, runAllyOrder } from './battle-ally-orders.js';
 
 /** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
 function copyCombatant(c: Combatant): Combatant {
@@ -84,7 +85,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
 
 /** 仲間 (job を持つ味方) の行動。手は allyAutoAction が決める (D-PARTY-001)。 */
 function partyMemberAct(actor: Combatant, index: number, state: BattleState, sides: CombatSides, rng: () => number, events: TurnEvent[], turnSeed?: number): void {
-  const a = allyAutoAction(state, index, turnSeed);
+  const a = allyAutoAction(state, index, turnSeed, state.allyModes?.[index]);
   const skills = skillsForJob(actor.job!.archetype, actor.job!.level);
   const skill = skills[a.skillIndex];
   const def = skill ? SKILLS[skill.kind] : undefined;
@@ -129,6 +130,8 @@ export function resolveTurnMulti(
   skillIndex = 0,
   targetIndex = 0,
   itemId?: string,
+  /** めいれい の仲間の手 (allies と同じ並び。無い仲間は おまかせ／さくせん。D-PARTY-004)。 */
+  allyOrders?: ReadonlyArray<AllyOrder | undefined>,
 ): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
   const t = BATTLE_TUNING;
@@ -216,6 +219,8 @@ export function resolveTurnMulti(
   const heroAllyIndex = () => Math.max(0, allies.filter((a) => a.hp > 0).indexOf(chosenAlly!));
   const heroAlly = () => allies.filter((a) => a.hp > 0)[heroAllyIndex()] ?? player;
 
+  const pinned = pinAllyOrders(allies, enemies, allyOrders);
+
   for (const actor of order) {
     if (state.outcome !== 'ongoing' || heroDown() || enemiesDown()) break;
     if (actor.hp <= 0) continue; // このターン中に倒された
@@ -225,6 +230,9 @@ export function resolveTurnMulti(
     const healed = isAlly(actor) ? watchHeals(state, allies, actor) : undefined; // きずなの回復 (D-PARTY-004)
 
     if (actor === player) {
+      // 在庫は主人公と めいれい の仲間が行動順に使う。先に仲間が使い切っていたら たたかう (D-PARTY-004)。
+      const gone = cmd === 'herb' || cmd === 'tonic' || cmd === 'item' ? outOfStockText(state, cmd, itemId) : null;
+      if (gone) { events.push({ actor: 'player', text: gone }); cmd = 'attack'; }
       if (cmd === 'attack') {
         const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex: heroTargetIndex() })[0];
         if (target) {
@@ -262,6 +270,8 @@ export function resolveTurnMulti(
         useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events, heroAllyIndex());
       }
       // guard / flee 失敗はこのターン行動なし
+    } else if (isAlly(actor) && actor.job && pinned[allies.indexOf(actor)]) {
+      runAllyOrder(actor, pinned[allies.indexOf(actor)]!, state, sides, rng, events);
     } else if (isAlly(actor) && actor.job) {
       partyMemberAct(actor, allies.indexOf(actor), state, sides, rng, events, turnSeed);
     } else if (isAlly(actor)) {

@@ -10,6 +10,7 @@ import { BATTLE_TUNING } from './battle-tuning.js';
 import { ITEMS } from './battle-monsters.js';
 import { type TurnEvent, type BattleState } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
+import { type Combatant } from './battle-combatant.js';
 
 /** 戦闘で使えるどうぐか (world.items で battle の欄があるか)。 */
 export function isBattleItem(id: string): boolean {
@@ -62,7 +63,7 @@ export function missingBattleItemText(itemId: string | undefined): string {
 
 /**
  * どうぐを 1 個使う。効果ごとに対象を解決してハンドラを呼び、持ち込み数を 1 減らす。
- * 呼ぶ前に canUseBattleItem で確かめること (state.player が使う人 = allies[0])。
+ * 呼ぶ前に canUseBattleItem で確かめること。使う人は user (省略は主人公 = allies[0])。
  */
 export function useBattleItem(
   state: BattleState,
@@ -72,9 +73,11 @@ export function useBattleItem(
   rng: () => number,
   events: TurnEvent[],
   allyIndex?: number,
+  /** 使う人 (省略は主人公。めいれい の仲間も使う。D-PARTY-004)。 */
+  user: Combatant = state.player,
 ): void {
   const def = ITEMS[itemId];
-  const player = state.player;
+  const player = user;
   const name = def?.name ?? itemId;
   events.push({ actor: 'player', text: `${player.name}は ${name}を つかった!` });
   for (const raw of def?.battle?.effects ?? []) {

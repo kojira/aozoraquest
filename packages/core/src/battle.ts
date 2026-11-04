@@ -75,6 +75,9 @@ export {
   type BattleOutcome,
   type TurnEvent,
   type BattleState,
+  type AllyMode,
+  type AllyOrder,
+  ALLY_MODES,
   combatSides,
   startBattle,
 } from './battle-state.js';
@@ -88,6 +91,11 @@ export {
 export {
   resolveTurnMulti,
 } from './battle-turn-multi.js';
+export {
+  pinAllyOrders,
+  runAllyOrder,
+  outOfStockText,
+} from './battle-ally-orders.js';
 export {
   isBattleItem,
   battleItemsFrom,
