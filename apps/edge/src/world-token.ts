@@ -99,3 +99,12 @@ export function tileEncounter(env: WorldTokenEnv, x: number, y: number, window: 
   const monsterSeed = ((mac[4]! << 24) | (mac[5]! << 16) | (mac[6]! << 8) | mac[7]!) >>> 0;
   return { roll: occ / 0x1_0000_0000, monsterSeed };
 }
+
+/**
+ * ギルドの候補の seed (D-PARTY-002)。サーバー秘密 + did + ギルド + JST の日付 + その日に引き直した回数。
+ * 読みなおしても同じ・client からは先読みできない。用途 'recruit' で敵の seed と分ける。
+ */
+export function recruitSeed(env: WorldTokenEnv, did: string, guild: string, day: string, roll: number): number {
+  const mac = hmac(sha256, secretBytes(env), new TextEncoder().encode(`recruit:${did}|${guild}|${day}|${roll}`));
+  return ((mac[0]! << 24) | (mac[1]! << 16) | (mac[2]! << 8) | mac[3]!) >>> 0;
+}

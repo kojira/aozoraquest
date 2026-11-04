@@ -13,7 +13,7 @@
  * **seed 秘匿 (#348)**: ドロップ/敗北ロスの seed は**サーバーが独立に引いた rewardSeed/lossSeed** を使う
  * (戦闘 seed は client に返さない・再利用しない)。呼び出し側が entropyU32 で引いて渡す。
  */
-import { battleXpFor, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, skillsForJob, BATTLE_TUNING, type Archetype, type StatArray , gameQuestById } from '@aozoraquest/core';
+import { battleXpFor, splitBattleXp, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, skillsForJob, BATTLE_TUNING, type Archetype, type StatArray , gameQuestById } from '@aozoraquest/core';
 import type { GameState } from './game-state';
 
 /** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
@@ -40,6 +40,8 @@ export interface BattleOutcomeInput {
   rewarded: boolean;
   /** レベルアップの内訳を出すための素ステ。無ければ内訳を省く。 */
   baseStats?: StatArray;
+  /** 戦闘に出た人数 (主人公を含む・倒れた仲間も数える)。戦闘の経験値はこの人数で等分する (D-PARTY-002 §11)。省略は 1。 */
+  heads?: number;
 }
 
 /** 適用結果 (client 表示・監査用の内訳)。 */
@@ -48,7 +50,10 @@ export interface AwardBreakdown {
    *  これを返さないと「勝ったのに何も起きない」が無言で起き、経験値が入ったように
    *  見えて実は入っていない、という最悪の見え方になる。 */
   unrewarded?: true;
+  /** 主人公が受け取った経験値 (仲間がいれば人数で等分したあとの 1 人ぶん。仲間も同じだけ受け取る)。 */
   xp?: number;
+  /** この決着で Lv が上がった仲間 (D-PARTY-002 §11)。 */
+  allyLeveledUp?: Array<{ id: string; name: string; from: number; to: number }>;
   /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復する。 */
   leveledUp?: {
     from: number;
@@ -125,16 +130,17 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
     // 群れ (#453) は倒した全敵ぶん。XP 合算・各敵で別 seed のドロップ試行。1体 (従来) は monsterId 単体 =
     // rewardSeed をそのまま使い完全互換。
     const ids = o.enemyIds && o.enemyIds.length > 0 ? o.enemyIds : [o.monsterId];
-    let xp = 0;
+    let total = 0;
     const drops: string[] = [];
     ids.forEach((id, i) => {
-      xp += battleXpFor(id);
+      total += battleXpFor(id);
       const seed = i === 0 ? o.rewardSeed : (o.rewardSeed ^ (0x9e3779b1 * (i + 1))) >>> 0;
       drops.push(...rollDrops(id, o.luk, seed, o.dropBonus ?? 0));
     });
     // ゲーム内クエスト (#423) の討伐カウント。**討伐数はここ (勝利の権威経路) だけが増やす** —
     // client の自己申告を数えると「戦わずに達成」できてしまう。パワー無し戦闘は上の
     // unrewarded で早期 return しているので、練習戦では進まない (報酬系と同じ線引き)。
+    const xp = splitBattleXp(total, o.heads ?? 1);
     const activeQuests = state.activeQuests.map(q => {
       const objective = gameQuestById(q.id)?.objective;
       const kills = objective?.kind === 'defeat' ? ids.filter(id => id === objective.monsterId).length : 0;
@@ -157,7 +163,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
   if (o.outcome === 'lose') {
     // 敗北は**素材ロス + パワー消費のみ** (#621)。XP は配らない — 固定額だと
     // tier1 の弱い敵で「負けたほうが多い」逆転が起きる (実測で 3 種該当)。
-    const xp = BATTLE_TUNING.xpLose;
+    const xp = splitBattleXp(BATTLE_TUNING.xpLose, o.heads ?? 1);
     const materialsLost = rollDefeatLoss(state.materials, o.luk, o.lossSeed);
     const next: GameState = {
       ...state,

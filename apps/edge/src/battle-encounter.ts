@@ -4,9 +4,9 @@
  * 台本負け (scripted) は 1 対 1 のまま (仲間は加わらない)。
  */
 import {
-  startBattle, battleItemsFrom, jobLevelFromXp, playerLevelFromXp, partyCapacity, partyMembers, recruitById,
+  startBattle, battleItemsFrom, jobLevelFromXp, playerLevelFromXp, partyCapacity, partyDefsOf, partyMembers, recruitById,
   wrap, regionOf, tierForRegion, worldOverlay, BATTLE_TUNING, type Tier,
-  type BattleState, type RecruitDef,
+  type BattleState,
   WORLD_MAP_ID, WORLD_SIZE,
   interiorById,
   type StoryBattleDef,
@@ -127,11 +127,10 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
 }
 
-/** 仲間を allies に並べる (倒れた仲間・定義の消えた仲間は出ない)。ストーリー戦は敵の HP を
+/** 仲間を allies に並べる (倒れた仲間・定義の消えた仲間は出ない)。仲間は自分の Lv で戦う (partyDefsOf。D-PARTY-002 §11)。ストーリー戦は敵の HP を
  *  ×(1 + bossHpPerAlly × 出た仲間の数) にする。戦闘に出た仲間の id を返す。 */
 function joinParty(battle: BattleState, state: GameState, jobLevel: number, story: boolean): string[] {
-  const defs = (state.party?.ids ?? []).map(recruitById).filter((r): r is RecruitDef => !!r);
-  const members = partyMembers(defs, jobLevel, partyCarryOf(state.party));
+  const members = partyMembers(partyDefsOf(state.party, recruitById, jobLevel), jobLevel, partyCarryOf(state.party));
   if (members.length === 0) return [];
   const enemies = battle.enemies ?? [battle.monster];
   battle.allies = [battle.player, ...members.map((m) => m.combatant)];

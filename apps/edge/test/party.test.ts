@@ -7,67 +7,19 @@
  * - targetIndex は handleTurn まで届き、2 体目に当たる
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { p256 } from '@noble/curves/p256';
-import { base64urlnopad } from '@scure/base';
-import { BASE_PALETTE, setInteriors, setMonsterOverrides, setNpcs, setStory, storyBattleById, townAt, worldOverlay, wrap, type InteriorMap, type MonsterDef, type NpcDef } from '@aozoraquest/core';
+import { setInteriors, setMonsterOverrides, setNpcs, setStory, storyBattleById, townAt, worldOverlay, wrap, type MonsterDef } from '@aozoraquest/core';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { handleMove, handleTeleport, handleTurn, sealEncounter, type ResolverEnv } from '../src/battle-resolver';
 import { handlePartySet } from '../src/party-route';
 import { handleInnRest } from '../src/inn-rest';
-import { writeServerTokens } from '../src/oauth-store';
 import { signPosition } from '../src/world-token';
-import { XP_EPOCH, type GameState } from '../src/game-state';
-
-const USER = 'did:plc:alice';
-const NOW = 1_700_000_000;
-function jwk(fill: number) {
-  const d = new Uint8Array(32).fill(fill), pub = p256.getPublicKey(d, false);
-  return JSON.stringify({ kty: 'EC', crv: 'P-256', x: base64urlnopad.encode(pub.slice(1, 33)), y: base64urlnopad.encode(pub.slice(33)), d: base64urlnopad.encode(d), kid: `k${fill}` });
-}
-async function makeEnv(): Promise<ResolverEnv> {
-  const m = new Map<string, string>();
-  const kv = { get: async (k: string) => m.get(k) ?? null, put: async (k: string, v: string) => { m.set(k, v); }, delete: async (k: string) => { m.delete(k); } } as unknown as KVNamespace;
-  await writeServerTokens(kv, { did: 'did:plc:server', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 3600, pdsUrl: 'https://server-pds.example', authServer: 'https://bsky.social', updatedAt: NOW });
-  return { OAUTH_CLIENT_PRIVATE_JWK: jwk(3), OAUTH_DPOP_PRIVATE_JWK: jwk(5), SERVER_DID: 'did:plc:server', WORKER_DID: 'did:web:edge.example', OAUTH_TOKENS: kv };
-}
-const LETTER = 'futaba_letter_done';
-const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, activeQuests: [], power: 9, playerXp: 100, jobXp: { warrior: 400 }, materials: {}, gear: [], x: 10, y: 10, xpEpoch: XP_EPOCH, version: 1, updatedAt: '', ...over });
-
-function pds(seed: GameState) {
-  const store = new Map<string, { value: unknown; cid: string }>([['gs', { value: seed, cid: 'gs0' }]]);
-  let n = 0;
-  const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
-  const key = (col: string) => (col.endsWith('.gameState') ? 'gs' : col.endsWith('.battleGuard') ? 'guard' : col);
-  const fn = (async (url: string, init: RequestInit = {}) => {
-    if (url.includes('plc.directory')) return json(200, { id: USER, service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://user-pds.example' }] });
-    if (url.includes('getRecord')) {
-      const col = new URL(url).searchParams.get('collection')!;
-      if (col.endsWith('.analysis')) return json(200, { uri: 'x', cid: 'd', value: { archetype: 'warrior', rpgStats: { atk: 30, def: 25, agi: 15, int: 15, luk: 15 } } });
-      const rec = store.get(key(col));
-      return rec ? json(200, { uri: 'x', cid: rec.cid, value: rec.value }) : json(400, { error: 'RecordNotFound' });
-    }
-    const b = JSON.parse(init.body as string) as { collection: string; record?: unknown; swapRecord?: string | null };
-    const k = key(b.collection), cur = store.get(k);
-    if (b.swapRecord === null && cur) return json(400, { error: 'InvalidSwap' });
-    if (typeof b.swapRecord === 'string' && (!cur || cur.cid !== b.swapRecord)) return json(400, { error: 'InvalidSwap' });
-    if (url.includes('deleteRecord')) { store.delete(k); return json(200, {}); }
-    store.set(k, { value: b.record, cid: `c${++n}` });
-    return json(200, { uri: 'x', cid: `c${n}` });
-  }) as unknown as typeof fetch;
-  return { fn, gs: () => store.get('gs')!.value as GameState, guard: () => store.get('guard')?.value as { state: { allies?: unknown[]; enemies?: Array<{ hp: number; maxHp: number }>; monster: { maxHp: number } } } | undefined };
-}
+import { GS, guildRoom, LETTER, makeEnv, near, far, NOW, pds, RECEPTION, USER } from './support/party-env';
 
 const mon = (id: string, over: Partial<MonsterDef> = {}): MonsterDef => ({ id, name: id, species: 'slime', level: 1, tier: 1, stats: [7, 5, 6, 2, 4], hp: 5, drops: [], intro: 'て。', ...over });
 const MONS = [mon('a'), mon('b'), mon('c'),
   mon('boss', { storyOnly: true, tier: 2, hp: 40, stats: [1, 1, 1, 1, 1] }),
   mon('wall', { storyOnly: true, tier: 2, hp: 400, stats: [1, 999, 1, 1, 1] }),
   mon('xr', { storyOnly: true, tier: 3, level: 99, hp: 9999, stats: [999, 999, 999, 1, 1] })];
-
-const F = BASE_PALETTE.indexOf('plains');
-const guildRoom = (): InteriorMap => ({ id: 'g-town', name: 'まち', size: 8, tiles: new Uint8Array(64).fill(F) });
-const RECEPTION: NpcDef = { id: 'g-bluesky', name: 'うけつけ', mapId: 'g-town', x: 4, y: 4, lines: ['ようこそ'], guildReception: true };
-const near = (env: ResolverEnv) => signPosition(env, { did: USER, mapId: 'g-town', x: 4, y: 5, counter: 1, iat: NOW });
-const far = (env: ResolverEnv) => signPosition(env, { did: USER, mapId: 'g-town', x: 1, y: 1, counter: 1, iat: NOW });
 
 async function fight(env: ResolverEnv, battleId: string, command: 'attack' | 'guard', targetIndex = 0) {
   for (let turn = 0; turn < 300; turn++) {
@@ -103,66 +55,49 @@ describe('パーティ (D-PARTY-001)', () => {
   afterEach(() => { globalThis.fetch = orig; });
 
   describe('POST /api/party', () => {
-    it('受付のそばなら入れられる。外した仲間の持ちこしは消える', async () => {
+    // 候補は日替わりのガチャ (D-PARTY-002)。名前つきの冒険者 (なじみ) を入れる前提の確かめは、gacha.test.ts。
+    // ここは「もう入れている人」の扱い (残せる・外すと持ちこしが消える・人数) を見る。
+    it('外した仲間の持ちこしは消える', async () => {
       const env = await makeEnv();
-      const m = pds(GS({ flags: [LETTER], party: { ids: ['r-2'], hp: { 'r-2': 3 }, mp: { 'r-2': 1 } } }));
+      const m = pds(GS({ flags: [LETTER, 'yuuhi_feather_done'], party: { ids: ['r-2', 'r-1'], hp: { 'r-2': 3, 'r-1': 2 }, mp: { 'r-2': 1 } } }));
       globalThis.fetch = m.fn;
       const r = await handlePartySet(env, USER, 'g-bluesky', ['r-1'], near(env), NOW);
-      expect(r.party).toEqual({ ids: ['r-1'] });
-      expect(m.gs().party).toEqual({ ids: ['r-1'] });
+      expect(r.party).toMatchObject({ ids: ['r-1'], hp: { 'r-1': 2 } });
+      expect(m.gs().party?.mp).toBeUndefined();
     });
 
     it('受付のそばでなければ 403', async () => {
       const env = await makeEnv();
-      const m = pds(GS({ flags: [LETTER] }));
+      const m = pds(GS({ flags: [LETTER], party: { ids: ['r-1'] } }));
       globalThis.fetch = m.fn;
-      await expect(handlePartySet(env, USER, 'g-bluesky', ['r-1'], far(env), NOW)).rejects.toMatchObject({ status: 403 });
-      expect(m.gs().party).toBeUndefined();
+      await expect(handlePartySet(env, USER, 'g-bluesky', [], far(env), NOW)).rejects.toMatchObject({ status: 403 });
+      expect(m.gs().party).toEqual({ ids: ['r-1'] });
     });
 
-    it('入れられる人数を超えると 400 (4 人を超える・章の人数を超える)', async () => {
+    it('入れられる人数を超えると 400 (章の人数を超える)。まだ組めなければ party_locked', async () => {
       const env = await makeEnv();
-      globalThis.fetch = pds(GS({ flags: [LETTER, 'yuuhi_feather_done', 'soyogi_feather_done'] })).fn;
-      await expect(handlePartySet(env, USER, 'g-bluesky', ['r-1', 'r-2', 'r-3', 'r-4'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'party_full' });
-      globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
+      globalThis.fetch = pds(GS({ flags: [LETTER], party: { ids: ['r-1', 'r-2'] } })).fn;
       await expect(handlePartySet(env, USER, 'g-bluesky', ['r-1', 'r-2'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'party_full' });
-      globalThis.fetch = pds(GS({ flags: [] })).fn;
+      globalThis.fetch = pds(GS({ flags: [], party: { ids: ['r-1'] } })).fn;
       await expect(handlePartySet(env, USER, 'g-bluesky', ['r-1'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'party_locked' });
     });
 
-    it('紹介されていない冒険者 (条件のフラグが無い) は新しく入れられない。入れている人は残せる', async () => {
+    it('もう入れている人は、紹介の条件や minLevel が合わなくても残せる', async () => {
       const env = await makeEnv();
-      globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
-      await expect(handlePartySet(env, USER, 'g-bluesky', ['r-late'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'unknown_recruit' });
-      const m = pds(GS({ flags: [LETTER, 'yuuhi_feather_done'], party: { ids: ['r-late'] } }));
+      const m = pds(GS({ flags: [LETTER, 'yuuhi_feather_done'], party: { ids: ['r-late', 'r-high'] } }));
       globalThis.fetch = m.fn;
-      await handlePartySet(env, USER, 'g-bluesky', ['r-late', 'r-1'], near(env), NOW);
-      expect(m.gs().party?.ids).toEqual(['r-late', 'r-1']);
-    });
-    it('ジョブ Lv が minLevel に足りない冒険者は新しく入れられず 400 recruit_level。もう入れている人は外れない', async () => {
-      const env = await makeEnv();
-      const m = pds(GS({ flags: [LETTER] }));
-      globalThis.fetch = m.fn;
-      await expect(handlePartySet(env, USER, 'g-bluesky', ['r-high'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'recruit_level' });
-      expect(m.gs().party).toBeUndefined();
-      const kept = pds(GS({ flags: [LETTER, 'yuuhi_feather_done'], party: { ids: ['r-high'] } }));
-      globalThis.fetch = kept.fn;
-      await handlePartySet(env, USER, 'g-bluesky', ['r-high', 'r-1'], near(env), NOW);
-      expect(kept.gs().party?.ids).toEqual(['r-high', 'r-1']);
+      await handlePartySet(env, USER, 'g-bluesky', ['r-late', 'r-high'], near(env), NOW);
+      expect(m.gs().party?.ids).toEqual(['r-late', 'r-high']);
     });
 
-    it('知らない id (admin のデータから消えた冒険者) が state に残っていても、入れる・外すができ、その id は消える', async () => {
+    it('知らない id (admin のデータから消えた冒険者) が state に残っていても、外せて、その id は消える', async () => {
       const env = await makeEnv();
       const stale = { ids: ['gone', 'r-1'], hp: { gone: 3, 'r-1': 2 } };
-      let m = pds(GS({ flags: [LETTER], party: stale }));
+      const m = pds(GS({ flags: [LETTER], party: stale }));
       globalThis.fetch = m.fn;
-      await handlePartySet(env, USER, 'g-bluesky', ['gone'], near(env), NOW);
-      expect(m.gs().party).toBeUndefined();
-      m = pds(GS({ flags: [LETTER], party: stale }));
-      globalThis.fetch = m.fn;
-      const r = await handlePartySet(env, USER, 'g-bluesky', ['gone', 'r-2'], near(env), NOW);
-      expect(r.party).toEqual({ ids: ['r-2'] });
-      expect(m.gs().party).toEqual({ ids: ['r-2'] });
+      const r = await handlePartySet(env, USER, 'g-bluesky', ['gone', 'r-1'], near(env), NOW);
+      expect(r.party.ids).toEqual(['r-1']);
+      expect(m.gs().party?.hp).toEqual({ 'r-1': 2 });
     });
   });
 
