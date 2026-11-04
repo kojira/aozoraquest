@@ -39,6 +39,7 @@ export * from './scenario.js';
 export * from './story-data.js';
 export * from './recruit-gacha.js';
 export * from './recruit-pools.js';
+export * from './bond.js';
 export * from './story-effect.js';
 export * from './dialogue-data.js';
 export * from './character-data.js';

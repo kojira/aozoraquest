@@ -75,6 +75,8 @@ export interface BattleState {
   /** ストーリー戦 (D-STORY-009)。敵は逃げない。canFlee=false なら「にげる」を受け付けない。
    *  scripted = 台本負け (HP は 1 で止まり、倒れる手前か 3 ターン目の終わりで lose)。 */
   story?: { canFlee: boolean; scripted?: boolean };
+  /** ほかの人から受けた回復 (味方の位置ごと。戻った HP ÷ 最大 HP の合計)。決着できずなに足す (D-PARTY-004)。 */
+  healReceived?: number[];
 }
 
 /**

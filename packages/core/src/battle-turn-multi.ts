@@ -17,6 +17,7 @@ import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
+import { watchHeals } from './bond.js';
 
 /** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
 function copyCombatant(c: Combatant): Combatant {
@@ -221,6 +222,7 @@ export function resolveTurnMulti(
     const side: 'player' | 'monster' = isAlly(actor) ? 'player' : 'monster';
     if (applyBeforeAct(actor, { rng, events, actor: side })) continue; // 行動不能
     const consumed = (actor.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
+    const healed = isAlly(actor) ? watchHeals(state, allies, actor) : undefined; // きずなの回復 (D-PARTY-004)
 
     if (actor === player) {
       if (cmd === 'attack') {
@@ -271,6 +273,7 @@ export function resolveTurnMulti(
       multiEnemyAct(actor, allies, enemies, state, rng, events);
     }
 
+    healed?.();
     if (consumed.length && actor.statuses) actor.statuses = actor.statuses.filter((s) => !consumed.includes(s));
   }
 

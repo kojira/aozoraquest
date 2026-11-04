@@ -39,6 +39,7 @@ import type { OwnedPiece } from './game-state';
 import { serverDeleteRecord } from './server-pds';
 import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
+import { partyWithBattleBond } from './party-bond';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 import { getRecord, PdsError } from './pds';
@@ -561,8 +562,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       });
       // 仲間にも同じ 1 人ぶんを足す。Lv が上がった仲間は、主人公と同じく全快する。
       const allies = partyWithBattleXp(r.next.party, guard.sealed.party ?? [], r.awarded.xp ?? 0, jobLevelFromXp(jobXpOf(cur, guard.sealed.archetype), guard.sealed.archetype));
-      r.next = { ...r.next, party: allies.party };
-      r.awarded = { ...r.awarded, ...(allies.leveled.length ? { allyLeveledUp: allies.leveled } : {}) };
+      const bonded = partyWithBattleBond(allies.party, guard.sealed.party ?? [], next); // きずな (D-PARTY-004)
+      r.next = { ...r.next, party: bonded.party };
+      r.awarded = { ...r.awarded, ...(allies.leveled.length ? { allyLeveledUp: allies.leveled } : {}), ...(bonded.deepened.length ? { allyBondUp: bonded.deepened } : {}) };
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
       const prevDefeated = cur.defeatedWindow === window ? (cur.defeated ?? []) : [];
