@@ -96,6 +96,15 @@ export {
   runAutoBattle,
 } from './battle-auto.js';
 export {
+  PARTY_SIZE_FLAGS,
+  PARTY_ARMOR,
+  partyCapacity,
+  type PartyCarry,
+  partyMembers,
+  partyCombatants,
+  allyAutoAction,
+} from './battle-party.js';
+export {
   rollDefeatLoss,
   rollDrops,
   SEARCH_TUNING,

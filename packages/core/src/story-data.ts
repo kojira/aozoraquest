@@ -19,8 +19,10 @@ import type { GameQuestDef } from './quest-data.js';
 import { isFlagName, MAX_FLAGS, scenarioEvents, type ScenarioEvent } from './scenario.js';
 import { townAt } from './world.js';
 import { placedItemIssue, placedRewards, type PlacedItemDef } from './placed-items.js';
+import { MAX_RECRUITS, recruitIssue, recruitsFor, type RecruitDef } from './recruits.js';
 
 export * from './placed-items.js';
+export * from './recruits.js';
 
 export class StoryDataError extends Error {}
 
@@ -58,6 +60,8 @@ export interface StoryData {
   placedItems?: PlacedItemDef[];
   battles?: StoryBattleDef[];
   fieldMonsters?: FieldMonsterDef[];
+  /** ギルドで紹介される冒険者 (D-PARTY-001)。 */
+  recruits?: RecruitDef[];
 }
 
 export interface StoryRecord extends StoryData {
@@ -76,6 +80,7 @@ let battles: StoryBattleDef[] = [];
 let battleById = new Map<string, StoryBattleDef>();
 let fieldMonsterList: FieldMonsterDef[] = [];
 let fieldMonsterBySpot = new Map<string, FieldMonsterDef>();
+let recruitList: RecruitDef[] = [];
 
 const spot = (mapId: string, x: number, y: number) => `${mapId}:${x},${y}`;
 
@@ -100,7 +105,7 @@ export function storyFlagCount(events: readonly ScenarioEvent[], story: StoryDat
 
 /** いま読み込まれている story (フラグ数の検証で scenario 側から使う)。 */
 export function currentStory(): StoryData {
-  return { placedItems: placed, battles, fieldMonsters: fieldMonsterList };
+  return { placedItems: placed, battles, fieldMonsters: fieldMonsterList, recruits: recruitList };
 }
 
 function assertFlagList(list: unknown, where: string): void {
@@ -123,6 +128,18 @@ function validateBattles(list: readonly StoryBattleDef[]): void {
     if (b.canFlee !== undefined && typeof b.canFlee !== 'boolean') throw new StoryDataError(`${b.id}: canFlee が真偽値でない`);
     if (b.scripted !== undefined && typeof b.scripted !== 'boolean') throw new StoryDataError(`${b.id}: scripted が真偽値でない`);
     if (b.scripted && (b.loseFlag === undefined || b.count !== 1)) throw new StoryDataError(`${b.id}: 台本負けは loseFlag 必須・敵は 1 体`);
+  }
+}
+
+function validateRecruits(list: readonly RecruitDef[]): void {
+  if (!Array.isArray(list)) throw new StoryDataError('冒険者が配列でない');
+  if (list.length > MAX_RECRUITS) throw new StoryDataError(`冒険者が多すぎる (${list.length} > ${MAX_RECRUITS})`);
+  const ids = new Set<string>();
+  for (const r of list) {
+    const issue = recruitIssue(r);
+    if (issue) throw new StoryDataError(issue);
+    if (ids.has(r.id)) throw new StoryDataError(`冒険者の id が重複 (${r.id})`);
+    ids.add(r.id);
   }
 }
 
@@ -179,6 +196,7 @@ export function validateStory(story: StoryData | null, events: readonly Scenario
   const nextBattles = story?.battles ?? [];
   validateBattles(nextBattles);
   validateFieldMonsters(story?.fieldMonsters ?? [], new Set(nextBattles.map((b) => b.id)));
+  validateRecruits(story?.recruits ?? []);
   assertStoryFlagTotal(events, story ?? {});
 }
 
@@ -191,6 +209,20 @@ export function setStory(story: StoryData | null): void {
   battleById = new Map(battles.map((b) => [b.id, b]));
   fieldMonsterList = (story?.fieldMonsters ?? []).map((m) => ({ ...m, ...(m.requireFlags ? { requireFlags: [...m.requireFlags] } : {}) }));
   fieldMonsterBySpot = new Map(fieldMonsterList.map((m) => [spot(m.mapId, m.x, m.y), m]));
+  recruitList = (story?.recruits ?? []).map((r) => ({ ...r, ...(r.requireFlags ? { requireFlags: [...r.requireFlags] } : {}) }));
+}
+
+export function recruits(): readonly RecruitDef[] {
+  return recruitList;
+}
+
+export function recruitById(id: string): RecruitDef | undefined {
+  return recruitList.find((r) => r.id === id);
+}
+
+/** そのギルドの受付が、いま紹介できる冒険者。 */
+export function recruitsAt(guild: string, flags: readonly string[]): RecruitDef[] {
+  return recruitsFor(recruitList, guild, flags);
 }
 
 export function placedItems(): readonly PlacedItemDef[] {

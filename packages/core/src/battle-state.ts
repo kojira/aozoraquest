@@ -29,8 +29,9 @@ export interface TurnEvent {
   damage?: number;
   /** 対象が倒れたか */
   fatal?: boolean;
-  /** このイベント直後の HP (#764)。UI はダメージの行でこの値に変える。旧 state には無い。 */
-  hp?: { player: number; monsters: number[] };
+  /** このイベント直後の HP (#764)。UI はダメージの行でこの値に変える。旧 state には無い。
+   *  allies は仲間がいるときだけ (味方ごと。[0] が主人公。D-PARTY-001)。 */
+  hp?: { player: number; monsters: number[]; allies?: number[] };
 }
 
 export interface BattleState {
@@ -96,7 +97,8 @@ export function hpRecordingEvents(sides: () => CombatSides): TurnEvent[] {
   const push = (...items: TurnEvent[]): number => {
     const { allies, enemies } = sides();
     for (const e of items) {
-      Array.prototype.push.call(events, { ...e, hp: { player: allies[0]!.hp, monsters: enemies.map((m) => m.hp) } });
+      const hp = { player: allies[0]!.hp, monsters: enemies.map((m) => m.hp), ...(allies.length > 1 ? { allies: allies.map((a) => a.hp) } : {}) };
+      Array.prototype.push.call(events, { ...e, hp });
     }
     return events.length;
   };
