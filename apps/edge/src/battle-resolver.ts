@@ -11,7 +11,7 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, dropBonusOf,
+  startBattle, resolveTurn, resolveTurnMulti, battleItemsFrom, canUseBattleItem, materialsAfterBattleUse, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, dropBonusOf,
   terrainAt,
   isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
@@ -46,7 +46,7 @@ import { getRecord, PdsError } from './pds';
 /** NSID の既定 prefix (本番)。dev は `app.aozoraquest.dev`。edge は 1 デプロイで dev/prod を捌くので、
  *  リクエストの Origin から prefix を決めて渡す (#363)。既定=本番なのでテスト/既存呼び出しは従来通り。 */
 export const DEFAULT_NS = 'app.aozoraquest';
-export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', 'herb', 'tonic', 'flee'];
+export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', 'herb', 'tonic', 'flee', 'item'];
 
 /** 戦闘解決に必要な env (権威 state 読み書き + ユーザー診断 fetch)。 */
 export type ResolverEnv = GameStateEnv;
@@ -281,7 +281,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const distance = (a: number, b: number) => Math.min(wrap(a - b), WORLD_SIZE - wrap(a - b));
   const nearFutaba = mapId === WORLD_MAP_ID && Math.max(distance(x, spawn.x), distance(y, spawn.y)) <= 8;
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
-    baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
+    baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, battleItems: battleItemsFrom(state.materials), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
     // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
     ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
   });
@@ -621,7 +621,7 @@ export interface TurnResult {
  * turn: 1 コマンドを**サーバーが**確定 pendingTurnSeed で解決する。
  * 決着なら報酬を fail-closed で確定 + ガード削除。未決着なら CAS で turn を進めてから応答。
  */
-export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0): Promise<TurnResult> {
+export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0, itemId?: string): Promise<TurnResult> {
   if (!VALID_COMMANDS.includes(command)) throw new ResolverError('不正なコマンド', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (!g) throw new ResolverError('戦闘中でない', 409);
@@ -630,6 +630,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   if (guard.battleId !== battleId || guard.turn !== turn) throw new ResolverError('ターン不一致 (やり直し/リプレイ)', 409);
   // 逃げられないストーリー戦 (canFlee: false)。web は「にげる」を出さない (D-STORY-009)。
   if (command === 'flee' && guard.state.story?.canFlee === false) throw new ResolverError('この たたかいからは にげられない', 400, 'cannot_flee');
+  // 封印した持ち込み数に無いどうぐは断る (ターンは進めない。D-ITEM-001)。
+  if (command === 'item' && !canUseBattleItem(guard.state, itemId)) throw new ResolverError('その どうぐを もっていない', 400, 'no_item');
 
   // とくぎ選択 (#436) はサーバー権威の sealed state で検証: 実際に習得済みのとくぎだけ選べる
   // (client が持っていない index を偽っても [0] = 署名スキルに落とす。詐称防止)。
@@ -642,8 +644,8 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   const isMulti = (enemies?.length ?? 0) > 1;
   const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < enemies!.length ? targetIndex : 0;
   const next = isMulti
-    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx)
-    : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx);
+    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx, itemId)
+    : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx, itemId);
 
   if (next.outcome !== 'ongoing') {
     // ── 決着: **まずガードを CAS 削除して「この決着ターンは自分が消費」を確定** ──
@@ -670,12 +672,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const noticeBox: { v: string[]; m: ScenarioMessage[] } = { v: [], m: [] };
     const window = enemyWindow(now);
     const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
-      // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
+      // 戦闘中に消費したやくそう/しずく/どうぐを materials に反映してから報酬 (ドロップ/ロス) を適用。
       // 在庫 = 戦闘前の在庫 − 使った数。持ち込み数 (上限あり) で上書きすると残りが消える (#731)。
-      const consumedMaterials = { ...cur.materials };
-      const consume = (id: string, used: number) => { const n = (cur.materials[id] ?? 0) - used; if (n > 0) consumedMaterials[id] = n; else delete consumedMaterials[id]; };
-      consume('herb', next.herbsUsed ?? 0);
-      consume('sky-dew', next.tonicsUsed ?? 0);
+      const consumedMaterials = materialsAfterBattleUse(cur.materials, next);
       const r = scriptedLoss ? { next: { ...cur, materials: consumedMaterials }, awarded: {} } : applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,

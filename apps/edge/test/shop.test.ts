@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { EQUIPMENT, EQUIPMENT_BY_ID, ITEMS, setItemOverrides, SALE_TUNING, townShopStock, worldOverlay, BASE_PALETTE, setInteriors, type InteriorMap } from '@aozoraquest/core';
-import { shopCraft, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES } from '../src/shop';
+import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES, MAX_ITEM_STACK } from '../src/shop';
 import { sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
@@ -129,6 +129,63 @@ describe('shopCraft (装備を作ってもらう)', () => {
     const notInStock = Object.values(EQUIPMENT_BY_ID).find((e) => !STOCK.equipment.includes(e.id))!;
     globalThis.fetch = statefulPds(stateAt()).fn;
     await expect(shopCraft(env, DID, { itemId: notInStock.id, rkey: 'b', luk: 0 }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
+  });
+});
+
+describe('shopBuy (どうぐを買う、D-ITEM-001)', () => {
+  const orig = globalThis.fetch;
+  // tier1 の店に並ぶねむりごな・tier2 からのけむりだま・値段の無い品
+  const sale = (id: string, name: string, shopTier: 1 | 2) => ({ id, name, price: { power: 3, materials: 1 }, shopTier,
+    battle: { effects: [{ kind: 'status' as const, status: 'sleep' as const, target: 'enemy' as const, chance: 0.7, turns: 3 }] } });
+  const base = Object.entries(ITEMS).map(([id, v]) => ({ id, ...v }));
+  const withSale = () => setItemOverrides({ items: [...base, sale('nemuri-kona', 'ねむりごな', 1), sale('kemuri-dama', 'けむりだま', 2)], equipment: [...EQUIPMENT] });
+  afterEach(() => { globalThis.fetch = orig; setItemOverrides(null); });
+
+  it('パワーと値札の素材を引いて 1 個ふやす (tier1 の店に並ぶ)', async () => {
+    withSale();
+    const stock = townShopStock(TOWN, 0);
+    expect(stock.consumables).toContain('nemuri-kona');
+    expect(stock.consumables).not.toContain('kemuri-dama'); // tier2 からの品は tier1 の街に並ばない
+    const env = await makeEnv();
+    const m = statefulPds(stateAt({ power: 10, materials: { [STOCK.materialId]: 2, 'nemuri-kona': 1 } }));
+    globalThis.fetch = m.fn;
+    const r = await shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'b1' }, NOW);
+    expect(r.power).toBe(7);
+    expect(r.materials).toEqual({ [STOCK.materialId]: 1, 'nemuri-kona': 2 });
+    expect(stored(m.store).materials['nemuri-kona']).toBe(2);
+  });
+
+  it('品揃えにない・値段の無い品は買えない', async () => {
+    withSale();
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(stateAt()).fn;
+    await expect(shopBuy(env, DID, { itemId: 'kemuri-dama', rkey: 'n1' }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
+    await expect(shopBuy(env, DID, { itemId: 'slime-drop', rkey: 'n2' }, NOW)).rejects.toMatchObject({ code: 'not_for_sale' });
+  });
+
+  it('パワー・素材が足りない、上限まで持っている、街の外は 400', async () => {
+    withSale();
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(stateAt({ power: 2 })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'p' }, NOW)).rejects.toMatchObject({ code: 'no_power' });
+    globalThis.fetch = statefulPds(stateAt({ materials: {} })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'm' }, NOW)).rejects.toMatchObject({ code: 'no_material' });
+    globalThis.fetch = statefulPds(stateAt({ materials: { [STOCK.materialId]: 9, 'nemuri-kona': MAX_ITEM_STACK } })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 's' }, NOW)).rejects.toMatchObject({ code: 'stack_full' });
+    globalThis.fetch = statefulPds(stateAt({ x: TOWN.x + 7, y: TOWN.y + 7 })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'o' }, NOW)).rejects.toMatchObject({ code: 'not_in_town' });
+  });
+
+  it('同じ rkey は 1 回だけ (再送で二重に課金しない)', async () => {
+    withSale();
+    const env = await makeEnv();
+    const m = statefulPds(stateAt({ power: 10 }));
+    globalThis.fetch = m.fn;
+    await shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'same' }, NOW);
+    const again = await shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'same' }, NOW);
+    expect(again.duplicate).toBe(true);
+    expect(stored(m.store).power).toBe(7);
+    expect(stored(m.store).materials['nemuri-kona']).toBe(1);
   });
 });
 
