@@ -287,7 +287,7 @@ export function ShopModal({
               >
                 <div style={{ minWidth: 0 }}>
                   <div>
-                    <strong>{def.name}</strong>
+                    <strong>{leveledName(def, 0)}</strong>{/* 属性つきは横に属性 (D-ELEM-001) */}
                     {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.8em', color: 'var(--color-muted)' }}>(両手)</span>}
                     {owned.length > 0 && (
                       <span style={{ marginLeft: '0.4em', color: 'var(--color-muted)' }}>

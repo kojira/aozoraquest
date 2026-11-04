@@ -15,6 +15,7 @@ import {
   JOBS,
   JOB_EQUIP_KINDS,
   type BonusStat,
+  ELEMENT_LABELS,
   type EquipmentDef,
   type ItemDefData,
 } from '@aozoraquest/core';
@@ -311,6 +312,17 @@ export function AdminItems() {
                   <option value={1}>片手</option>
                   <option value={2}>両手 (盾と併用できない)</option>
                 </select>
+              ))}
+              {current.slot !== 'shield' && field('属性', (
+                <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                  <select value={current.element ?? ''} onChange={(e) => update(current.id, { element: (e.target.value || undefined) as EquipmentDef['element'] })}>
+                    <option value="">なし (無属性)</option>
+                    {(['earth', 'water', 'fire', 'wind', 'void'] as const).map((el) => <option key={el} value={el}>{ELEMENT_LABELS[el]}</option>)}
+                  </select>
+                  <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+                    {current.slot === 'weapon' ? '通常攻撃の属性' : '守りの染まり (その属性の攻撃を軽減)'}
+                  </span>
+                </span>
               ))}
               {field('系統', (
                 <select value={current.kind} onChange={(e) => update(current.id, { kind: e.target.value as EquipmentDef['kind'] })}>

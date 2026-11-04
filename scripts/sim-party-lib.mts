@@ -33,6 +33,8 @@ const heroGear = (lv: number) => (lv >= core.PARTY_ARMOR.fromLevel ? [core.PARTY
 export interface PartyCarry { hp: number; mp: number; herbs: number; mates: Record<string, number>; matesMp: Record<string, number> }
 export interface FightOpts {
   monsterId?: string; story?: boolean; extraEnemies?: number; group?: boolean; carry?: PartyCarry; tonics?: number;
+  /** 主人公の装備 (個体。属性装備の列 D-ELEM-001)。あれば heroGear の簡易形の代わりに使う。 */
+  gear?: import('../packages/core/src/index.js').GearSelection;
   /** 持ちこむ戦闘のどうぐ (id → 数)。主人公は手が空いたターン (やくそう・ためへの防御・全体技を使わないとき) に先頭から使う (ボスの糸口 §12)。 */
   battleItems?: Record<string, number>;
 }
@@ -41,7 +43,7 @@ export interface FightOpts {
 export function fight(job: Archetype, lv: number, tier: number, seed: number, mates: readonly Archetype[], o: FightOpts) {
   const herbs = o.carry?.herbs ?? BATTLE_TUNING.herbCarryMax;
   let s: BattleState = startBattle(job, lv, 1, 'hero', tier as never, seed >>> 0, herbs, o.carry ? { hp: o.carry.hp, mp: o.carry.mp } : undefined, {
-    tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: true } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, equipIds: heroGear(lv),
+    tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: true } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, ...(o.gear ? { gear: o.gear } : { equipIds: heroGear(lv) }),
     ...(o.monsterId ? { monsterId: o.monsterId } : {}), ...(o.story ? { story: { canFlee: false } } : {}), ...(o.battleItems ? { battleItems: o.battleItems } : {}),
   });
   const defs = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, level: Math.max(1, lv + MATE_LV) }));
