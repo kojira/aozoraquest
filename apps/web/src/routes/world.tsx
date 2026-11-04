@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForRegion,
+  withCharacterNames,
   BATTLE_TUNING,
   canSeeEnemyVitals,
   favoredMonsterFor,
@@ -478,13 +479,13 @@ function WorldScreen() {
               mp={hudBattleState ? hudBattleState.player.mp : curMp}
               power={serverPower}
               maxMp={hudBattleState ? hudBattleState.player.maxMp : combat.maxMp}
-              locationLabel={
+              locationLabel={withCharacterNames(
                 // 内部では**そのマップの名前**を出す (どこに居るか分かる唯一の手掛かり)。
-                // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。
+                // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。人物の名前 {c:id} は置き換える (D-CHAR-001)。
                 insideHere
                   ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined ? ` / ${dangerLabel(hereTier)}` : ''}`
-                  : town ? `🏘 ${town.name}` : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName)
-              }
+                  : town ? `🏘 ${town.name}` : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName),
+              )}
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。
               // 値は phase を問わず battle 優先 (上記)、レイヤー (z) だけ wipe を見る

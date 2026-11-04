@@ -17,9 +17,13 @@ import { gameQuests } from './quest-data.js';
 import { scenarioEvents } from './scenario.js';
 import { shopOverrides } from './shop-data.js';
 import { placedItems, storyBattles } from './story-data.js';
+import { activeItems } from './item-data.js';
+import { allInteriors } from './interior.js';
+import { currentDialogue } from './dialogue-data.js';
+import { characterTokenIds } from './character-data.js';
 
 /** 参照される側の種類。 */
-export type WorldRefKind = 'npc' | 'monster' | 'item' | 'equipment' | 'quest';
+export type WorldRefKind = 'npc' | 'monster' | 'item' | 'equipment' | 'quest' | 'character';
 
 /** 参照 1 本。`from` はエディタにそのまま出せる参照元の説明。 */
 export interface WorldRef {
@@ -34,11 +38,30 @@ const KIND_LABELS: Record<WorldRefKind, string> = {
   item: 'アイテム',
   equipment: '装備',
   quest: 'クエスト',
+  character: '人物',
 };
+
+/** 人物の名前 {c:id} (D-CHAR-001) を書ける文。読み込み済みの全レコードから、参照元の説明と一緒に挙げる。 */
+function characterTexts(): Array<{ from: string; texts: string[] }> {
+  const out: Array<{ from: string; texts: string[] }> = [];
+  for (const n of allNpcs()) out.push({ from: `NPC「${n.id}」`, texts: [n.name, ...n.lines, ...(n.altLines ?? []).flatMap((a) => a.lines)] });
+  for (const q of gameQuests()) out.push({ from: `クエスト「${q.id}」`, texts: [q.title, ...q.intro, ...q.done, ...(q.progress ?? []), ...(q.objective.kind === 'talk' ? [q.objective.line] : [])] });
+  for (const e of scenarioEvents()) if (e.notice) out.push({ from: `シナリオ「${e.id}」`, texts: [e.notice] });
+  for (const s of currentDialogue().scenes) out.push({ from: `会話の場面「${s.id}」`, texts: s.lines.flatMap((l) => [l.text, l.speaker ?? '']) });
+  for (const it of activeItems()) out.push({ from: `アイテム「${it.id}」`, texts: [it.name] });
+  for (const m of MONSTERS) out.push({ from: `モンスター「${m.id}」`, texts: [m.name, m.intro ?? ''] });
+  for (const m of allInteriors()) out.push({ from: `内部マップ「${m.id}」`, texts: [m.name, m.inn?.name ?? '', m.shop?.name ?? ''] });
+  for (const s of shopOverrides()) out.push({ from: `店 (${s.x}, ${s.y})`, texts: Object.values(s.keeper ?? {}).filter((v): v is string => typeof v === 'string') });
+  return out;
+}
 
 /** 読み込み済みの定義から、その種類への参照をすべて列挙する。 */
 export function worldRefs(kind: WorldRefKind): WorldRef[] {
   const out: WorldRef[] = [];
+  if (kind === 'character') {
+    for (const { from, texts } of characterTexts()) for (const id of characterTokenIds(texts)) out.push({ kind, id, from });
+    return out;
+  }
   const push = (id: string | undefined, from: string) => {
     if (id !== undefined) out.push({ kind, id, from });
   };

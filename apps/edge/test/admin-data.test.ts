@@ -311,4 +311,37 @@ describe('/api/admin/data (#695)', () => {
       expect(pds.puts).toHaveLength(0);
     });
   });
+
+  describe('characters (D-CHAR-001)', () => {
+    const chars = (list: Array<{ id: string; name: string }>) => ({ characters: list });
+    const put = async (name: string, value: unknown, swapCid: string | null = null) =>
+      handleRequest(call('PUT', name, { body: { value, swapCid } }), await makeEnv());
+
+    it('PUT characters は形を検証し、dev の characters コレクションへ CAS で書く', async () => {
+      const bad = await put('characters', chars([{ id: 'Twitter', name: 'Twitter' }]));
+      expect(bad.status).toBe(400);
+      expect(pds.puts).toHaveLength(0);
+      const ok = await put('characters', chars([{ id: 'twitter', name: 'Twitter' }]));
+      expect(await ok.json()).toEqual({ ok: true, cid: 'new1' });
+      expect(pds.puts.map((p) => p.collection)).toEqual([COL('characters')]);
+    });
+
+    it('文が無い人物 {c:id} を指すと保存できない (NPC)。人物があれば書く', async () => {
+      const npc = { ...NPC, name: '{c:bluesky}ちゃん' };
+      const res = await put('npcs', { npcs: [npc] }, 'npc1');
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining('bluesky') });
+      store.set(COL('characters'), { value: chars([{ id: 'bluesky', name: 'Bluesky' }]), cid: 'ch1' });
+      expect((await put('npcs', { npcs: [npc] }, 'npc1')).status).toBe(200);
+    });
+
+    it('使われている人物を characters から消すと保存できない', async () => {
+      store.set(COL('characters'), { value: chars([{ id: 'bluesky', name: 'Bluesky' }, { id: 'x', name: 'X' }]), cid: 'ch1' });
+      store.set(COL('npcs'), { value: { npcs: [{ ...NPC, lines: ['{c:x}を見た？'] }] }, cid: 'npc1' });
+      const res = await put('characters', chars([{ id: 'bluesky', name: 'Bluesky' }]), 'ch1');
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining('「x」') });
+      expect((await put('characters', chars([{ id: 'x', name: 'エックス' }]), 'ch1')).status).toBe(200);
+    });
+  });
 });

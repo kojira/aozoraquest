@@ -1,4 +1,4 @@
-import { ITEMS } from '@aozoraquest/core';
+import { ITEMS, withCharacterNames } from '@aozoraquest/core';
 import type { ServerAward } from '@/lib/world-server';
 
 /**
@@ -21,7 +21,7 @@ export function battleResultLines(
   for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
   const lostCounts = new Map<string, number>();
   for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
-  const nameOf = (id: string) => ITEMS[id]?.name ?? id;
+  const nameOf = (id: string) => withCharacterNames(ITEMS[id]?.name ?? id);
   const resultLines: string[] = [];
   // **パワー不足で報酬が出なかったことを必ず言う**。
   // 黙って何も起きないと「経験値が入ったように見えて実は入っていない」になる。

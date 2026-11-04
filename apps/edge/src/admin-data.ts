@@ -20,6 +20,7 @@ import {
   activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
   activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
   currentDialogue, missingDialogueNpc, validateDialogue, type DialogueData,
+  characterTextsInRecord, currentCharacters, missingCharacterRef, validateCharacters, type CharacterDef,
   assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
@@ -38,7 +39,7 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 const PATH_PREFIX = '/api/admin/data/';
 const RKEY = 'self';
 /** API で読み書きできる world.* レコード (core の ADMIN_WORLD_RECORDS の部分集合。CLI の NAMES と一致を検査)。 */
-export const ADMIN_DATA_NAMES = ['monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
+export const ADMIN_DATA_NAMES = ['characters', 'monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
 const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
@@ -135,6 +136,15 @@ function validateMonstersCandidate(value: unknown): string | null {
 /** 候補値を管理画面と同じ検証にかける。壊れていれば理由の文字列を返す。
  *  差し替えて検証する shops / interiors は、終わったら保存済みの値へ戻す。 */
 async function validateCandidate(name: AdminDataName, value: unknown, saved: unknown): Promise<string | null> {
+  // 人物の名前 {c:id} (D-CHAR-001): 使われている人物は消させない。他のレコードは保存済みの人物だけを指せる。
+  if (name === 'characters') {
+    const list = listOf<CharacterDef>(value, 'characters');
+    validateCharacters(list);
+    const dangling = danglingRefs('character', list.map((c) => c.id))[0];
+    return dangling ? describeDanglingRef(dangling) : null;
+  }
+  const missingChar = missingCharacterRef(characterTextsInRecord(name, value), new Set(currentCharacters().map((c) => c.id)));
+  if (missingChar) return missingChar;
   if (name === 'npcs') {
     const npcs = listOf<NpcDef>(value, 'npcs');
     validateNpcs(npcs);

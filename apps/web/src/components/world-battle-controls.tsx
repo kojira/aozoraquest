@@ -1,6 +1,6 @@
 import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
-import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf } from '@aozoraquest/core';
+import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf, withCharacterNames } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
@@ -80,7 +80,7 @@ export function WorldBattleControls({
     phase === 'result'
       ? resultLines
       : state.turn === 0
-        ? [`${state.monster.name}があらわれた！　${monsterDef?.intro ?? ''}`]
+        ? [`${state.monster.name}があらわれた！　${withCharacterNames(monsterDef?.intro ?? '')}`]
         : battleMessageLines(state.lastEvents.map((e) => e.text));
   // message は 1 タップ 1 行。段 (phase+turn) が変わったら先頭から (古い段の index は捨てる)。
   const stepKey = `${phase}-${state.turn}`;

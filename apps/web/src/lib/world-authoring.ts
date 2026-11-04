@@ -54,6 +54,10 @@ import {
   type TownOverride,
   type WorldPart,
   type AdminWorldRecordCache,
+  characterTextsInRecord,
+  currentCharacters,
+  missingCharacterRef,
+  type AdminWorldRecordName,
 } from '@aozoraquest/core';
 import { EDGE_URL } from './edge-config';
 import { ADMIN_COL, ADMIN_WORLD_COL } from './collections';
@@ -73,6 +77,12 @@ import { getRecord, putRecord } from './atproto';
 
 /** 1 レコード 1 世界なので rkey は固定。 */
 const RKEY = 'self';
+
+/** 保存のときだけ見る: 文の人物の名前 {c:id} が、読み込み済みの characters にいること (edge の PUT と同じ検査。D-CHAR-001)。 */
+function assertCharactersExist(name: AdminWorldRecordName, value: unknown): void {
+  const missing = missingCharacterRef(characterTextsInRecord(name, value), new Set(currentCharacters().map((c) => c.id)));
+  if (missing) throw new Error(missing);
+}
 
 export interface WorldMapRecord {
   /** 一辺のタイル数 (現状 1024)。 */
@@ -190,6 +200,7 @@ export interface MonstersRecord {
 /** 編集したモンスターを保存する。 */
 export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promise<number> {
   // 保存前に core の検証を通す (壊れた 1 体で全体を落とす)。通れば適用もされる。
+  assertCharactersExist('monsters', { monsters });
   setMonsterOverrides(monsters);
   const rec: MonstersRecord = { monsters: encodeMonstersForRecord(monsters), updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.monsters, RKEY, rec);
@@ -206,6 +217,7 @@ export interface ItemsRecordData {
 
 /** 編集したどうぐ・装備を保存する (core の検証を通る = 壊れた 1 件で全体を落とす)。 */
 export async function saveItems(agent: Agent, items: ItemDefData[], equipment: EquipmentDef[]): Promise<void> {
+  assertCharactersExist('items', { items });
   setItemOverrides({ items, equipment });
   const rec: ItemsRecordData = { items, equipment, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.items, RKEY, rec);
@@ -215,6 +227,7 @@ export async function saveItems(agent: Agent, items: ItemDefData[], equipment: E
 
 /** 店ごとの上書きを保存する (core の検証を通る = 未知 id は保存で弾かれる)。 */
 export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<void> {
+  assertCharactersExist('shops', { shops });
   setShopOverrides(shops);
   await putRecord(agent, ADMIN_COL.shops, RKEY, { shops, updatedAt: new Date().toISOString() });
 }
@@ -224,6 +237,7 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 /** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
 export async function saveNpcs(agent: Agent, npcs: NpcDef[], isCurrent = () => true): Promise<void> {
   validateNpcs(npcs);
+  assertCharactersExist('npcs', { npcs });
   // 会話データが話者・上書きに使っている NPC は消させない (edge と同じ検査。D-DIALOGUE-006)。
   const missing = missingStoryBattle(npcs, []) ?? missingDialogueNpc(currentDialogue(), new Set(npcs.map((n) => n.id)));
   if (missing) throw new Error(missing);
@@ -250,6 +264,7 @@ export async function loadJobsRecord(agent: Agent, adminDid: string): Promise<Jo
  * setInteriors が先に検証で落とす (行き先が無いゲートを保存させない)。
  */
 export async function saveInteriors(agent: Agent, maps: InteriorMap[], gates: Gate[]): Promise<void> {
+  assertCharactersExist('interiors', { interiors: maps });
   setInteriors(maps, gates);
   const interiors = [];
   for (const m of maps) {
@@ -275,6 +290,7 @@ export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promi
 /** シナリオ (#545)。setScenario が先に検証で落とす (存在しないクエストを条件にさせない)。 */
 export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promise<void> {
   validateScenario(events);
+  assertCharactersExist('scenario', { events });
   assertStoryFlagTotal(events, currentStory());
   await putRecord(agent, ADMIN_COL.scenario, RKEY, { events, updatedAt: new Date().toISOString() });
   setScenario(events);
@@ -298,6 +314,7 @@ export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void>
 /** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */
 export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Promise<void> {
   validateGameQuests(quests);
+  assertCharactersExist('quests', { quests });
   const missing = missingStoryBattle([], quests);
   if (missing) throw new Error(missing);
   await putRecord(agent, ADMIN_COL.quests, RKEY, { quests, updatedAt: new Date().toISOString() });
@@ -412,6 +429,7 @@ export async function loadDialogueAuthoringRecords(agent: Agent, adminDid: strin
 /** 会話を保存する。決まった場面がすべて揃い、話者の NPC が保存済みの NPC にいること (edge と同じ検査)。 */
 export async function saveDialogue(agent: Agent, data: DialogueData, npcIds: ReadonlySet<string>): Promise<void> {
   validateDialogue(data);
+  assertCharactersExist('dialogue', data);
   const missing = missingDialogueNpc(data, npcIds);
   if (missing) throw new Error(missing);
   await putRecord(agent, ADMIN_WORLD_COL.dialogue, RKEY, { scenes: data.scenes, updatedAt: new Date().toISOString() });

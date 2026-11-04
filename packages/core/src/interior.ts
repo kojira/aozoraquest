@@ -29,6 +29,7 @@ import { ITEMS } from './battle.js';
 import { townAt } from './world.js';
 import { npcAt } from './npc-data.js';
 import { WORLD_MAP_ID } from './map-id.js';
+import { characterTokenIssue } from './character-data.js';
 
 export { WORLD_MAP_ID };
 
@@ -127,6 +128,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.id === WORLD_MAP_ID) throw new InteriorError(`id に ${WORLD_MAP_ID} は使えない (フィールドの予約語)`);
     if (nextMaps.has(m.id)) throw new InteriorError(`内部マップの id が重複 (${m.id})`);
     if (typeof m.name !== 'string' || m.name.trim() === '') throw new InteriorError(`${where}: 名前が空`);
+    for (const t of [m.name, m.inn?.name ?? '', m.shop?.name ?? '']) { const issue = characterTokenIssue(t); if (issue) throw new InteriorError(`${where}: 名前の${issue}`); }
     if (!Number.isInteger(m.size) || m.size < 4 || m.size > MAX_INTERIOR_SIZE) {
       throw new InteriorError(`${where}: おおきさは 4〜${MAX_INTERIOR_SIZE}`);
     }

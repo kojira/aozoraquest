@@ -16,6 +16,7 @@ import { NPC_SPRITE_PRESET_IDS, type NpcSpritePresetId } from './npc-sprite-pres
 import { WORLD_MAP_ID } from './map-id.js';
 import { assertNpcImage, type NpcImage } from './npc-image.js';
 import { MAX_STORY_EFFECTS, type StoryEffect } from './story-effect.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class NpcDataError extends Error {}
 
@@ -122,6 +123,8 @@ function npcLineIssue(l: unknown): string | null {
   const { effects, text } = parseNpcLine(l);
   if (text.includes('[fx:')) return `演出タグが不正 (使えるのは先頭の ${Object.keys(NPC_LINE_EFFECT_TAGS).map((t) => `[fx:${t}]`).join(' ')})`;
   if ((effects?.length ?? 0) > MAX_STORY_EFFECTS) return `演出タグが多すぎる (${MAX_STORY_EFFECTS} 個まで)`;
+  const token = characterTokenIssue(text);
+  if (token) return token;
   if (text.trim() === '' || l.length > MAX_NPC_LINE) return `空 or ${MAX_NPC_LINE} 文字超`;
   return null;
 }
@@ -161,6 +164,8 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
     if (ids.has(n.id)) throw new NpcDataError(`NPC の id が重複 (${n.id})`);
     ids.add(n.id);
     if (typeof n.name !== 'string' || n.name.trim() === '') throw new NpcDataError(`${where}: 名前が空`);
+    const nameIssue = characterTokenIssue(n.name);
+    if (nameIssue) throw new NpcDataError(`${where}: 名前の${nameIssue}`);
     if (!Number.isInteger(n.x) || !Number.isInteger(n.y)) throw new NpcDataError(`${where}: 座標が整数でない`);
     // マップの実在・範囲はここでは見ない — NPC は内部マップより先に読み込まれる
     // (読み込み順に依存する検証は、順序が変わった日に全 NPC を落とす)。エディタが見る。

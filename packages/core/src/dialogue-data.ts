@@ -8,6 +8,7 @@
  */
 import { MAX_NPC_LINE, parseNpcLine } from './npc-data.js';
 import { isStoryEffectList, MAX_STORY_EFFECTS, type StoryEffect } from './story-effect.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class DialogueDataError extends Error {}
 
@@ -59,8 +60,13 @@ function validateLine(line: SceneLine, where: string, allowed: readonly string[]
   if (line.speaker !== undefined && (typeof line.speaker !== 'string' || line.speaker.trim() === '')) throw new DialogueDataError(`${where}: 話者の名前が不正`);
   if (line.here !== undefined && line.here !== true) throw new DialogueDataError(`${where}: here は true だけ`);
   if (line.effects !== undefined && !isStoryEffectList(line.effects)) throw new DialogueDataError(`${where}: 演出が不正 (${MAX_STORY_EFFECTS} 件まで)`);
+  // 人物の名前 {c:id} (D-CHAR-001) はどの場面でも使える。形だけ見る (id の有無は保存のとき)。
+  for (const t of [line.text, line.speaker ?? '']) {
+    const issue = characterTokenIssue(t);
+    if (issue) throw new DialogueDataError(`${where}: ${issue}`);
+  }
   for (const m of line.text.matchAll(/\{([^{}]*)\}/g)) {
-    if (!allowed.includes(m[1]!)) throw new DialogueDataError(`${where}: この場面で使えない差し込み ({${m[1]}})`);
+    if (!m[1]!.startsWith('c:') && !allowed.includes(m[1]!)) throw new DialogueDataError(`${where}: この場面で使えない差し込み ({${m[1]}})`);
   }
 }
 

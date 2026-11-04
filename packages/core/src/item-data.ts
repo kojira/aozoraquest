@@ -10,6 +10,7 @@
 import { ITEMS } from './battle.js';
 import { EQUIPMENT, EQUIPMENT_BY_ID, JOB_EQUIP_KINDS, type EquipmentDef } from './equipment.js';
 import { JOBS_BY_ID } from './jobs.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class ItemDataError extends Error {}
 
@@ -69,6 +70,8 @@ function validateItems(items: readonly ItemDefData[]): readonly ItemDefData[] {
     if (ids.has(it.id)) throw new ItemDataError(`どうぐの id が重複 (${it.id})`);
     ids.add(it.id);
     if (typeof it.name !== 'string' || it.name.trim() === '') throw new ItemDataError(`${it.id}: 名前が空`);
+    const issue = characterTokenIssue(it.name);
+    if (issue) throw new ItemDataError(`${it.id}: 名前の${issue}`);
   }
   return items;
 }
