@@ -140,3 +140,29 @@ describe('recruits (world.story)', () => {
     expect(worldRefs('npc').filter((x) => x.id === 'homura-bluesky').map((x) => x.from)).toEqual(['冒険者「カイト」']);
   });
 });
+
+describe('仲間がいても、1 体だけの fleer は逃げる (1 人戦と同じ)', () => {
+  it('敵が 1 体で、その敵が逃げる手を選んだら monster-fled', () => {
+    let fled = false;
+    for (let seed = 0; seed < 60 && !fled; seed++) {
+      const base = startBattle('warrior', 8, 8, 'ゆうしゃ', 2, seed, 0, undefined, { monsterId: 'stray-slime' });
+      let s: BattleState = { ...base, allies: [base.player, mate('guardian', 8)], enemies: [base.monster] };
+      for (let i = 0; i < 10 && s.outcome === 'ongoing'; i++) s = resolveTurnMulti(s, 'guard');
+      if (s.outcome === 'monster-fled') fled = s.lastEvents.some((e) => e.text.includes('逃げだした'));
+    }
+    expect(fled).toBe(true);
+  });
+
+  it('ストーリー戦の敵と、群れ (敵 2 体以上) の fleer は逃げない', () => {
+    for (let seed = 0; seed < 30; seed++) {
+      const story = startBattle('warrior', 8, 8, 'ゆうしゃ', 2, seed, 0, undefined, { monsterId: 'stray-slime', story: { canFlee: true } });
+      let s: BattleState = { ...story, allies: [story.player, mate('guardian', 8)], enemies: [story.monster] };
+      for (let i = 0; i < 6 && s.outcome === 'ongoing'; i++) s = resolveTurnMulti(s, 'guard');
+      expect(s.outcome).not.toBe('monster-fled');
+      const pack = startBattle('warrior', 8, 8, 'ゆうしゃ', 2, seed, 0, undefined, { monsterId: 'stray-slime', extraEnemies: 1 });
+      let p: BattleState = { ...pack, allies: [pack.player, mate('guardian', 8)] };
+      for (let i = 0; i < 6 && p.outcome === 'ongoing'; i++) p = resolveTurnMulti(p, 'guard');
+      expect(p.outcome).not.toBe('monster-fled');
+    }
+  });
+});

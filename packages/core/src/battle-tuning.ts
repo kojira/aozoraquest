@@ -218,4 +218,7 @@ export const BATTLE_TUNING = {
   lossExtraLukScale: 0.004,
   lossExtraMin: 0.05,
   lossMax: 3,
+  /** パーティで挑むストーリー戦の敵 HP 倍率 = 1 + bossHpPerAlly × 生きている仲間の数 (D-PARTY-001)。
+   *  そのままだと 4 人で 1〜2 ターンで終わる。0.5 で 2 人でも 1 人と同じくらいのターン数 (sim)。 */
+  bossHpPerAlly: 0.5,
 } as const;

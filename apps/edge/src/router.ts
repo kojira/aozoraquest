@@ -22,6 +22,7 @@ import { signPosition, verifyPosition } from './world-token';
 import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
+import { handlePartySet } from './party-route';
 import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -74,6 +75,7 @@ const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_INN_REST = LXM.innRest;
+const LXM_PARTY_SET = LXM.partySet;
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -555,6 +557,26 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     try {
       await ensureAuthoredWorld(env, nowSec());
       return cors(json(await handleInnRest(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // パーティの編成 (D-PARTY-001)。ギルドの受付のそばにいるかは edge が確かめる。
+  if (req.method === 'POST' && url.pathname === '/api/party') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience: env.WORKER_DID ?? 'did:web:edge.aozoraquest.app', lxm: LXM_PARTY_SET }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { guild?: unknown; ids?: unknown; token?: unknown };
+    if (typeof body.guild !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      await ensureAuthoredWorld(env, nowSec());
+      return cors(json(await handlePartySet(env, did, body.guild, body.ids, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }

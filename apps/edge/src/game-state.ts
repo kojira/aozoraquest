@@ -51,6 +51,17 @@ export interface OwnedPiece {
   level: number;
 }
 
+export interface PartyState {
+  ids: string[];
+  hp?: Record<string, number>;
+  mp?: Record<string, number>;
+}
+
+/** 全快にした party (hp/mp を消す)。仲間がいなければ undefined のまま。 */
+export function healedParty(party: PartyState | undefined): PartyState | undefined {
+  return party ? { ids: [...party.ids] } : undefined;
+}
+
 export interface GameState {
   /** どのユーザーの state か (監査用。rkey は DID のハッシュなので値に DID を残す)。 */
   did: string;
@@ -75,6 +86,9 @@ export interface GameState {
   /** 戦闘をまたいで持続する HP/MP (docs/19)。未設定は全快で開始。 */
   carryHp?: number;
   carryMp?: number;
+  /** パーティの仲間 (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
+   *  主人公の carryHp/carryMp と同じところ (宿屋・街・そらのはね・負け) で hp/mp を消す。 */
+  party?: PartyState;
   /** 持ち込み消費アイテム (やくそう / そらのしずく)。 */
   herbs?: number;
   tonics?: number;
