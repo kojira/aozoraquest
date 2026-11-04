@@ -132,6 +132,20 @@ export function DialogueWindow({
     if (onMap && bodyRef.current) bodyRef.current.scrollTop = 0;
   }, [onMap, st.index, step]);
 
+  // 選択肢が窓に収まらず下に隠れているか (ぼかし + ▼ を出す)。スクロール・窓の大きさ・選択肢が変わるたびに測り直す。
+  const [moreBelow, setMoreBelow] = useState(false);
+  const choicesAsked = choicesShown(lines, st, choices);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body || !choicesAsked) { setMoreBelow(false); return; }
+    const measure = () => setMoreBelow(body.scrollTop + body.clientHeight < body.scrollHeight - 1);
+    measure();
+    body.addEventListener('scroll', measure, { passive: true });
+    const resize = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    resize?.observe(body);
+    return () => { body.removeEventListener('scroll', measure); resize?.disconnect(); };
+  }, [choicesAsked, choices]);
+
   // 会話中にTabで背後のもちもの/移動UIへ抜けない。
   useEffect(() => {
     const trap = (e: KeyboardEvent) => {
@@ -204,7 +218,7 @@ export function DialogueWindow({
   }, [lines, choices, busy, step, setSt, st, onDone]);
 
   const line = currentLine(lines, st);
-  const asking = choicesShown(lines, st, choices);
+  const asking = choicesAsked;
   // Keep focus on the dialogue surface: held Enter must not select "はい".
   // 段つきの会話は done 後も最後の行を残す: 呼出側が次の段を渡すか閉じるまで、送り面と会話
   // イラストを外さない (外すと暗転アニメが最初から再生され、画面が明滅する)。
@@ -213,6 +227,43 @@ export function DialogueWindow({
   // 演出 (D-STORY-007) は地図枠に出すときだけ。段と行を鍵に一過性の演出を一度だけ再生する。
   const effectsShown = onMap && lines.some((l) => l.effects?.length);
   const shownPortrait = line.speaker ? line.portrait ?? (portrait && { ...portrait, name: withCharacterNames(portrait.name) }) : undefined;
+
+  const renderChoice = (c: DialogueChoice) => (
+    <button
+      key={c.label}
+      data-pinned={c.pinned ? '' : undefined}
+      type="button"
+      disabled={busy}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (busy || (choosingRef.current && Object.is(choosingRef.current.step, step))) return;
+        const chosen = { step };
+        choosingRef.current = chosen;
+        // 選んだ段だけを閉じる (onSelect が次の段を渡していても、その段は閉じない)。
+        const finish = () => {
+          if (!(doneRef.current && Object.is(doneRef.current.step, step))) {
+            doneRef.current = { step };
+            setSt((s) => ({ ...s, done: true }));
+            onDone();
+          }
+        };
+        const retry = () => { if (choosingRef.current === chosen) choosingRef.current = null; };
+        try {
+          const result = c.onSelect();
+          if (result && typeof result.then === 'function') {
+            void result.then(finish, retry);
+          } else finish();
+        } catch { retry(); }
+      }}
+      style={{ padding: '0 0.8em', fontSize: '0.9em', lineHeight: 1.25, maxWidth: '100%', overflowWrap: 'anywhere', whiteSpace: 'normal', touchAction: 'manipulation' }}
+    >
+      {c.label}
+    </button>
+  );
 
   return (
     <>
@@ -327,43 +378,26 @@ export function DialogueWindow({
             </span>
           )}
           {asking && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '0.5em', marginTop: '0.4em' }}>
-              {choices!.map((c) => (
-                <button
-                  key={c.label}
-                  type="button"
-                  disabled={busy}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                    if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (busy || (choosingRef.current && Object.is(choosingRef.current.step, step))) return;
-                    const chosen = { step };
-                    choosingRef.current = chosen;
-                    // 選んだ段だけを閉じる (onSelect が次の段を渡していても、その段は閉じない)。
-                    const finish = () => {
-                      if (!(doneRef.current && Object.is(doneRef.current.step, step))) {
-                        doneRef.current = { step };
-                        setSt((s) => ({ ...s, done: true }));
-                        onDone();
-                      }
-                    };
-                    const retry = () => { if (choosingRef.current === chosen) choosingRef.current = null; };
-                    try {
-                      const result = c.onSelect();
-                      if (result && typeof result.then === 'function') {
-                        void result.then(finish, retry);
-                      } else finish();
-                    } catch { retry(); }
-                  }}
-                  style={{ padding: '0.3em 1.2em', fontSize: '0.95em', maxWidth: '100%', overflowWrap: 'anywhere', whiteSpace: 'normal', touchAction: 'manipulation' }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
+            <>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '0.3em', marginTop: '0.2em' }}>
+                {choices!.filter((c) => !c.pinned).map(renderChoice)}
+              </div>
+              {/* 前へ・次へ・戻る は窓の下端に張りつける (#871 の戦闘の「もどる」と同じ)。肢が多くても抜け道が隠れない。
+                  まだ下に肢があるときは、その上に ぼかし + ▼ を出して「スクロールできる」と分かるようにする。 */}
+              {(moreBelow || choices!.some((c) => c.pinned)) && (
+                <div data-choice-pinned style={{ position: 'sticky', bottom: 0, marginTop: '0.3em', background: 'var(--color-window-solid)' }}>
+                  {moreBelow && (
+                    <div aria-hidden data-choice-more style={{ position: 'absolute', left: 0, right: 0, bottom: '100%', height: '1.6em', pointerEvents: 'none',
+                      background: 'linear-gradient(to bottom, transparent, var(--color-window-solid))', textAlign: 'center', lineHeight: '2em' }}>
+                      <span className="aq-dialogue-next">▼</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '0.3em' }}>
+                    {choices!.filter((c) => c.pinned).map(renderChoice)}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
         <style>{`

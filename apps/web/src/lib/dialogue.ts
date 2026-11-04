@@ -28,6 +28,8 @@ export interface DialogueLine {
 export interface DialogueChoice {
   label: string;
   onSelect: () => void | Promise<void>;
+  /** 窓の下端に張りつけて常に見せる短い操作 (一覧の 前へ・次へ・戻る など)。選ぶ肢が多くても抜け道が隠れない。 */
+  pinned?: boolean;
 }
 
 export interface DialogueState {
