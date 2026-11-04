@@ -173,6 +173,12 @@ export const BATTLE_TUNING = {
    *  = MP を削り切る/尽きるのを待つ読み合いを作る。 */
   monsterChargeMpCost: 5,
   monsterHealMpCost: 7,
+  /** debuffer の弱体・自分の強化の MP コスト (D-PARTY-002 §12a)。 */
+  monsterDebuffMpCost: 5,
+  /** debuffer が技を使う確率 (MP があり、まだ付いていない状態があるとき)。 */
+  debufferChance: 0.3,
+  /** 全体 (target 'all') の呪文・ため・弱体の MP は単体の何倍か (§12a: 全体は単体より重い)。 */
+  monsterAoeMpFactor: 2,
   /** MP: 特技のコスト。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。
    *  戦闘中の MP 回復は **ジョブ特性 (JOB_MP_TRAITS) を持つジョブだけ** —
    *  全員一律の回復はジョブの差をぼやけさせる。

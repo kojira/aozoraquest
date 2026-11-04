@@ -38,6 +38,8 @@ export interface Combatant {
   /** ため中 (モンスター用): 次ターンに chargedPower のため攻撃を放つ。
    *  予告が出るので、プレイヤーは防御で応じるのが正解 (防御の存在意義)。 */
   charging: boolean;
+  /** 直前の行動が全体攻撃だった (モンスター用。D-PARTY-002 §12a: 全体攻撃を 2 ターン続けない)。 */
+  lastAoe?: boolean;
   /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
    *  防御した次のターンまで「相手の動きを読めている」状態。 */
   focus: number;

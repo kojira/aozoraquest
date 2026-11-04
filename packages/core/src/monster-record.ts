@@ -12,7 +12,7 @@ import { MonsterDataError } from './monster-data.js';
 /** 文字列で保存する `MonsterDef` 直下の欄。 */
 const TOP_FIELDS = ['spawnWeight', 'healRatio'] as const;
 /** 文字列で保存する `abilityParams` の欄。 */
-const ABILITY_PARAM_FIELDS = ['chargeChance', 'healChance', 'lowHpRatio', 'castChance', 'fleeBase'] as const;
+const ABILITY_PARAM_FIELDS = ['chargeChance', 'healChance', 'lowHpRatio', 'castChance', 'fleeBase', 'debuffChance'] as const;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -28,6 +28,7 @@ function mapMonster(m: unknown, f: (v: unknown, key: string) => unknown): unknow
   const out = mapFields(m, TOP_FIELDS, f);
   if (Array.isArray(m.drops)) out.drops = m.drops.map((d) => (isObj(d) ? mapFields(d, ['chance'], f) : d));
   if (isObj(m.spell)) out.spell = mapFields(m.spell, ['intScale'], f);
+  if (Array.isArray(m.debuffs)) out.debuffs = m.debuffs.map((d) => (isObj(d) ? mapFields(d, ['chance', 'magnitude'], f) : d));
   if (isObj(m.abilityParams)) out.abilityParams = mapFields(m.abilityParams, ABILITY_PARAM_FIELDS, f);
   return out;
 }

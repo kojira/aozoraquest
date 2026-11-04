@@ -29,6 +29,7 @@ export type StatusId =
   | 'doomMark' // 破滅の予言: turnEnd でカウントダウン、0 で magnitude の大ダメージ
   | 'thorns' // とげの盾: 物理被弾時に攻撃者へ magnitude 割合を反射
   | 'ironWall' // 仁王立ち: 被ダメをほぼ 0 に (incomingCalc ×magnitude、既定 0.05)
+  | 'magicReflect' // 魔法反射: 呪文を術者へはね返す (magnitude=反射割合、既定 1=全反射。D-PARTY-002 §12a)
   | 'accDown'; // 命中低下 (煙玉/かく乱/幻惑): 保持者の攻撃が当たりにくくなる (modifyHit)
 
 /** 付与時に turns 未指定なら使う既定持続 (毒手/デバフ等の共通デフォルト)。 */
@@ -216,6 +217,19 @@ export const STATUS_REGISTRY: Record<StatusId, StatusDef> = {
   },
   // 仁王立ち (守護者): 被ダメをほぼ 0 に (incomingCalc ×0.05)。turns 1 の完全防御。
   ironWall: { id: 'ironWall', name: '仁王立ち', incomingCalc: (p, _c, ctx) => p * (ctx.status?.magnitude ?? 0.05) },
+  // 魔法反射 (ボスの自分への強化。D-PARTY-002 §12a): 呪文 (doMagic) を術者へはね返す。全反射なら被弾 0。
+  // magnitude<1 は割合ぶんだけ術者へ返し、本人は無傷 (反射扱い)。
+  magicReflect: {
+    id: 'magicReflect',
+    name: '魔法反射',
+    restack: 'refresh',
+    onIncomingMagic(_self, atk, damage, ctx) {
+      const back = Math.max(1, Math.round(damage * (ctx.status?.magnitude ?? 1)));
+      atk.hp = Math.max(0, atk.hp - back);
+      ctx.events.push({ actor: ctx.actor ?? 'player', text: `呪文は はね返された! ${atk.name}に${back}のダメージ!`, damage: back });
+      return { reflect: true };
+    },
+  },
   // 命中低下 (煙玉/かく乱/幻惑): 保持者が攻撃する際 hitBonus を下げて当てにくく (magnitude=低下量、既定 0.2)。
   accDown: { id: 'accDown', name: '命中低下', restack: 'refresh', modifyHit: (hb, _c, ctx) => hb - (ctx.status?.magnitude ?? 0.2) },
   doomMark: {
@@ -442,6 +456,7 @@ const STATUS_APPLY_TEXT: Record<StatusId, string> = {
   thorns: 'はとげの盾を構えた!',
   ironWall: 'は仁王立ちした! (被ダメージ激減)',
   accDown: 'の命中が下がった!',
+  magicReflect: 'は 魔法を はね返す かべを はった!',
 };
 
 /** 状態付与の告知文 (対象名 + テキスト)。 */

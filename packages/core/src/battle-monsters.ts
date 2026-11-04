@@ -14,6 +14,21 @@ import type { StatusId } from './statuses.js';
 
 // ─── モンスター ─────────────────────────────────────────────
 
+export type MonsterAbilityId = 'charger' | 'healer' | 'fleer' | 'caster' | 'debuffer';
+/** 敵の技の対象。'one' = 味方 1 人 (ランダム)、'all' = 生きている味方全員 (1 人戦では主人公だけ)。 */
+export type MonsterMoveTarget = 'one' | 'all';
+/** 敵が使う弱体 (味方へ) か、自分への強化 (target 'self')。既存の状態エンジン (applyStatus) で付ける。 */
+export interface MonsterDebuff {
+  name: string;
+  status: StatusId;
+  /** 付く確率 (0〜1)。 */
+  chance: number;
+  turns: number;
+  magnitude?: number;
+  /** 既定 'one'。 */
+  target?: MonsterMoveTarget | 'self';
+}
+
 /** 絵のキー。monsterArt レコード (`world.monsterArt`) の id と同じ。対応する絵が無ければ「?」で描く
  *  (D-MONSTER-001 PR2: 種を足すのにコードを直さない)。tint が効くかどうかは絵に差し込み口があるかで決まる。 */
 export type MonsterSpecies = string;
@@ -84,14 +99,14 @@ export interface MonsterDef {
    *  'fleer' = 毎ターン逃走を試みる (はぐれメタル型。倒す前に逃げられると報酬ゼロ)。
    *  'caster' = たまに魔法を撃つ (def 無視の属性魔撃。#456: 対物理型の看板 覇王/不動 の弱点=魔法を
    *    成立させ、後続 (#483) の清き心 (魔法反射) の前提にもなる。要 spell 定義)。 */
-  ability?: 'charger' | 'healer' | 'fleer' | 'caster';
+  ability?: MonsterAbilityId;
   /**
    * 複数の能力 (#592 段階 2)。**優先順は配列の順** — 毎ターン先頭から聞き、最初に
    * 特別な行動 (attack 以外) を返した能力を採る。全員 attack なら通常攻撃。
    * 「HP が減ったら回復、それ以外はためる」= ['healer', 'charger']。
    * 指定があれば `ability` (単数) より優先。単数は後方互換で残す。
    */
-  abilities?: readonly ('charger' | 'healer' | 'fleer' | 'caster')[];
+  abilities?: readonly MonsterAbilityId[];
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
   /** healer の回復幅 (maxHp に対する割合 0〜1)。省略時は BATTLE_TUNING.healerHealRatio。
@@ -115,11 +130,17 @@ export interface MonsterDef {
     castChance?: number;
     /** fleer: 逃走の基礎確率 (0〜1。agi 補正の前)。 */
     fleeBase?: number;
+    /** debuffer: 弱体・自分の強化を使う確率 (0〜1)。 */
+    debuffChance?: number;
   };
   /** caster の魔法 (#456)。def 無視・属性つきの int スケール魔撃。ダメージ = min〜max + int*intScale。
    *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。
    *  データ規約: min <= max (span 負を避ける)。caster の攻撃ラベルは skillName でなくこの name を使う。 */
-  spell?: { name: string; element?: Element; min: number; max: number; intScale?: number };
+  spell?: { name: string; element?: Element; min: number; max: number; intScale?: number; target?: MonsterMoveTarget };
+  /** ため攻撃の対象 (D-PARTY-002 §12a)。'all' は生きている味方全員。既定 'one'。 */
+  chargedTarget?: MonsterMoveTarget;
+  /** debuffer の技 (D-PARTY-002 §12a。最大 2 つ)。先頭から見て、まだ付いていない状態のものを使う。 */
+  debuffs?: readonly MonsterDebuff[];
   /** 効かない状態異常 (docs/25 §12 の statusResist。D-PARTY-002 §12 のボスの糸口)。ここにある状態は付与されず
    *  「きかなかった」になる。未指定は全部効く。 */
   statusResist?: readonly StatusId[];

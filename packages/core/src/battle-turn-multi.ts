@@ -14,6 +14,7 @@ import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
+import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
 
@@ -35,13 +36,15 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
   const t = BATTLE_TUNING;
   const def = MONSTERS_BY_ID[enemy.monsterId ?? state.monsterId];
   // ため中なら宣言どおり強攻撃を解放 (mCommand は無視)。
+  const to = { allies, one: () => randomLiving(allies, rng) };
   if (enemy.charging) {
-    enemy.charging = false;
-    const target = randomLiving(allies, rng);
-    if (target) doAttack(enemy, target, rng, events, 'monster', { power: t.chargedPower, hitBonus: -0.05, label: def?.skillName ?? 'つよいこうげき' });
+    releaseMonsterCharge(enemy, def, to, rng, events);
     return;
   }
   const action = monsterCommand(enemy, state, rng);
+  // 選ぶときは直前の手 (lastAoe) を見る。選んだら下ろし、この手番の技が全体なら技の側で立て直す。
+  const debuff = action === 'debuff' ? pickDebuff(def, enemy, allies) : undefined;
+  enemy.lastAoe = false;
   if (action === 'flee' && enemies.length === 1) {
     state.outcome = 'monster-fled';
     events.push({ actor: 'monster', text: `${enemy.name}は逃げだした!` });
@@ -52,7 +55,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
     return;
   }
   if (action === 'charge') {
-    enemy.mp = Math.max(0, enemy.mp - t.monsterChargeMpCost);
+    enemy.mp = Math.max(0, enemy.mp - chargeMpCost(def));
     enemy.charging = true;
     events.push({ actor: 'monster', text: `${enemy.name}は力をためている…!` });
     return;
@@ -66,12 +69,11 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
     return;
   }
   if (action === 'cast' && def?.spell) {
-    enemy.mp = Math.max(0, enemy.mp - t.monsterCastMpCost);
-    const spell = def.spell;
-    const span = spell.max - spell.min;
-    const amount = spell.min + Math.floor(rng() * (span + 1)) + Math.round(enemy.int * (spell.intScale ?? 0));
-    const target = randomLiving(allies, rng);
-    if (target) doMagic(enemy, target, rng, events, 'monster', { amount, ...(spell.element ? { element: spell.element } : {}), label: spell.name });
+    castMonsterSpell(enemy, def, to, rng, events);
+    return;
+  }
+  if (debuff) {
+    useMonsterDebuff(enemy, debuff, allies, rng, events);
     return;
   }
   // attack / flee (集団戦は通常攻撃に退避) / spell 未定義の cast。
