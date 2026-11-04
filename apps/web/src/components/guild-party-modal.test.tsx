@@ -1,77 +1,117 @@
 // @vitest-environment jsdom
+/**
+ * ギルドの「なかまを さがす」(D-PARTY-001 / D-PARTY-002)。
+ * - 今日の候補 (edge) を ★・Lv・ひとことつきで並べ、一期一会のお知らせを出す
+ * - Lv が足りない人は「Lv N から」で くわえる を押せない
+ * - はずす・いれかえるときは確かめが出て、「やめる」なら送らない
+ * - 引き直し (パワー 5) で新しい候補になる。パワーが足りなければ押せない
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { setStory, type NpcDef } from '@aozoraquest/core';
+import { setStory, xpForAllyLevel, type NpcDef, type PartyRecruit, type RecruitCandidate } from '@aozoraquest/core';
 import { GuildPartyModal, PARTY_LINES } from './guild-party-modal';
+import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 
 const GUILD: NpcDef = { id: 'g', name: 'うけつけ', x: 1, y: 1, lines: ['やあ'], guildReception: true };
-const R = (id: string, name: string, archetype: 'warrior' | 'miko' | 'mage') => ({ id, name, archetype, guild: 'g', line: `${name}です。` });
-
-async function open(party: string[], flags: string[], save = vi.fn(async (ids: string[]) => ({ ids }))) {
-  setStory({ recruits: [R('a', 'カイト', 'warrior'), R('b', 'ミオ', 'miko'), R('c', 'ソラ', 'mage')] });
-  render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party: { ids: party }, flags })} save={save} onClose={vi.fn()} />);
-  await act(async () => {});
-  return save;
-}
+const C = (slot: number, name: string, archetype: RecruitCandidate['archetype'], over: Partial<RecruitCandidate> = {}): RecruitCandidate => ({ id: `g:2026-11-05:g:0:${slot}`, name, archetype, star: 1, level: 5, minLevel: 5, line: `${name}です。`, ...over });
+const member = (c: RecruitCandidate): PartyRecruit => ({ id: c.id, name: c.name, archetype: c.archetype, star: c.star, minLevel: c.minLevel, line: c.line, xp: xpForAllyLevel(c.archetype, c.level) });
 const flags2 = ['futaba_letter_done'];
 const flags3 = [...flags2, 'yuuhi_feather_done'];
+const TODAY = [C(0, 'カイト', 'warrior', { star: 3, level: 7 }), C(1, 'ミオ', 'miko', { star: 2 }), C(2, 'ソラ', 'mage', { minLevel: 10 })];
+const offer = (candidates: RecruitCandidate[], power = 12): ServerPartyCandidates => ({ day: '2026-11-05', candidates, power, rerollPower: 5 });
+
+async function open(party: ServerParty, flags: string[], o: {
+  save?: ReturnType<typeof vi.fn>; candidates?: ServerPartyCandidates; reroll?: ReturnType<typeof vi.fn>;
+} = {}) {
+  const save = o.save ?? vi.fn(async (ids: string[]) => ({ ids, members: [...(party.members ?? []), ...TODAY.filter((c) => ids.includes(c.id)).map(member)].filter((m) => ids.includes(m.id)) }));
+  const reroll = o.reroll ?? vi.fn(async () => offer([C(0, 'ハル', 'guardian')], 7));
+  const cands = o.candidates ?? offer(TODAY);
+  render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party, flags })} save={save} candidates={async () => cands} reroll={reroll} onClose={vi.fn()} />);
+  await act(async () => {});
+  return { save, reroll };
+}
 afterEach(() => { cleanup(); setStory(null); });
+const region = (name: string) => screen.getByRole('region', { name });
+const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
 
-describe('GuildPartyModal', () => {
-  it('今のパーティ (名前・職・Lv・HP/MP) と、このギルドで紹介できる冒険者 (名前・職・ひとこと) を並べる', async () => {
-    await open(['a'], flags3);
-    const mine = screen.getByRole('region', { name: 'いまの パーティ' });
-    expect(mine.textContent).toContain('カイト');
-    expect(mine.textContent).toContain('Lv6');
-    expect(mine.textContent).toMatch(/HP \d+\/\d+/);
-    const offered = screen.getByRole('region', { name: PARTY_LINES.heading });
-    expect(offered.textContent).toContain('ミオ');
+describe('GuildPartyModal (D-PARTY-002)', () => {
+  it('今日の候補を ★・Lv・ひとこと つきで並べ、一期一会のお知らせを出す', async () => {
+    await open({ ids: [] }, flags3);
+    const offered = region(PARTY_LINES.heading);
+    expect(offered.textContent).toContain(PARTY_LINES.onceOnly);
+    expect(offered.querySelectorAll('[data-candidate]')).toHaveLength(3);
+    expect(offered.textContent).toContain('カイト');
+    expect(offered.textContent).toContain('Lv7');
+    expect(screen.getByLabelText('★3').textContent).toBe('★★★');
     expect(offered.textContent).toContain('ミオです。');
-    expect(offered.textContent).not.toContain('カイト');
   });
 
-  it('くわえる / はずす で ids を送り、文を出す', async () => {
-    const save = await open(['a'], flags3);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'ミオを くわえる' })); });
-    expect(save).toHaveBeenLastCalledWith(['a', 'b']);
-    expect(screen.getByText(PARTY_LINES.joined('ミオ'))).toBeTruthy();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'カイトを はずす' })); });
-    expect(save).toHaveBeenLastCalledWith(['b']);
-    expect(screen.getByText(PARTY_LINES.left('カイト'))).toBeTruthy();
+  it('Lv が足りない人は「Lv N から」と出して くわえる を押せない', async () => {
+    await open({ ids: [] }, flags3);
+    expect(region(PARTY_LINES.heading).textContent).toContain('Lv 10 から');
+    expect(button('ソラを くわえる').disabled).toBe(true);
+    expect(button('ミオを くわえる').disabled).toBe(false);
   });
 
-  it('いっぱいのときは、だれと入れかえるかを選ぶ', async () => {
-    const save = await open(['a'], flags2);
-    fireEvent.click(screen.getByRole('button', { name: 'ミオを くわえる' }));
+  it('くわえると ids を送り、その人は一覧から消える。仲間の Lv は自分の経験値から', async () => {
+    const { save } = await open({ ids: [] }, flags3);
+    await act(async () => { fireEvent.click(button('カイトを くわえる')); });
+    expect(save).toHaveBeenLastCalledWith([TODAY[0]!.id]);
+    expect(screen.getByText(PARTY_LINES.joined('カイト'))).toBeTruthy();
+    expect(region(PARTY_LINES.heading).textContent).not.toContain('カイト');
+    expect(region('いまの パーティ').textContent).toContain('Lv7');
+  });
+
+  it('はずすときは確かめが出る。「やめる」なら送らず、「はずす」で送る', async () => {
+    const m = member(TODAY[1]!);
+    const { save } = await open({ ids: [m.id], members: [m] }, flags3);
+    fireEvent.click(button('ミオを はずす'));
+    expect(screen.getByRole('alertdialog').textContent).toContain(PARTY_LINES.partConfirm('ミオ'));
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
     expect(save).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    fireEvent.click(button('ミオを はずす'));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'はずす' })); });
+    expect(save).toHaveBeenLastCalledWith([]);
+  });
+
+  it('いっぱいなら いれかえる相手を選び、確かめてから送る', async () => {
+    const m = member(TODAY[1]!);
+    const { save } = await open({ ids: [m.id], members: [m] }, flags2);
+    fireEvent.click(button('カイトを くわえる'));
     expect(screen.getByText(PARTY_LINES.full)).toBeTruthy();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'カイトと いれかえる' })); });
-    expect(save).toHaveBeenLastCalledWith(['b']);
+    fireEvent.click(button('ミオと いれかえる'));
+    expect(save).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'はずす' })); });
+    expect(save).toHaveBeenLastCalledWith([TODAY[0]!.id]);
   });
 
-  it('ジョブ Lv が足りない冒険者も並べるが、「Lv N から」と出して くわえる は押せない', async () => {
-    setStory({ recruits: [{ ...R('a', 'カイト', 'warrior'), minLevel: 10 }, R('b', 'ミオ', 'miko')] });
-    render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party: { ids: [] }, flags: flags3 })} save={vi.fn()} onClose={vi.fn()} />);
-    await act(async () => {});
-    const offered = screen.getByRole('region', { name: PARTY_LINES.heading });
-    expect(offered.textContent).toContain('Lv 10 から');
-    expect((screen.getByRole('button', { name: 'カイトを くわえる' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'ミオを くわえる' }) as HTMLButtonElement).disabled).toBe(false);
+  it('引き直すと新しい候補になる。パワーが 5 に足りなければ押せない', async () => {
+    const { reroll } = await open({ ids: [] }, flags3);
+    const label = PARTY_LINES.reroll(5);
+    expect(label).toBe('ほかの冒険者をさがす（パワー5）');
+    await act(async () => { fireEvent.click(button(label)); });
+    expect(reroll).toHaveBeenCalledTimes(1);
+    expect(typeof reroll.mock.calls[0]![0]).toBe('string');
+    expect(region(PARTY_LINES.heading).textContent).toContain('ハル');
+    expect(region(PARTY_LINES.heading).textContent).not.toContain('カイト');
+    expect(button(label).disabled).toBe(false);
+    cleanup();
+    await open({ ids: [] }, flags3, { candidates: offer(TODAY, 4) });
+    expect(button(label).disabled).toBe(true);
   });
 
-  it('今のデータに無い id は 数えず、送る ids からも落とす', async () => {
-    const save = await open(['gone', 'a'], flags3);
-    expect(screen.getByRole('region', { name: 'いまの パーティ' }).textContent).toContain('（1/2）');
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'ミオを くわえる' })); });
-    expect(save).toHaveBeenLastCalledWith(['a', 'b']);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'カイトを はずす' })); });
-    expect(save).toHaveBeenLastCalledWith(['b']);
+  it('今日の候補がもういなければ そう言う', async () => {
+    await open({ ids: [] }, flags2, { candidates: offer([]) });
+    expect(screen.getByText(PARTY_LINES.goneToday)).toBeTruthy();
   });
 
-  it('紹介できる冒険者がいなければ そう言う', async () => {
-    setStory({ recruits: [] });
-    render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party: { ids: [] }, flags: flags2 })} save={vi.fn()} onClose={vi.fn()} />);
-    await act(async () => {});
-    expect(screen.getByText(PARTY_LINES.none)).toBeTruthy();
+  it('今のデータに無い id は 数えず、送る ids からも落とす。なじみ (名前つき) も並ぶ', async () => {
+    setStory({ recruits: [{ id: 'a', name: 'ゲン', archetype: 'ninja', guild: 'g', line: 'よろしく。' }] });
+    const { save } = await open({ ids: ['gone', 'a'] }, flags3);
+    expect(region('いまの パーティ').textContent).toContain('（1/2）');
+    expect(region('いまの パーティ').textContent).toContain('ゲン');
+    await act(async () => { fireEvent.click(button('ミオを くわえる')); });
+    expect(save).toHaveBeenLastCalledWith(['a', TODAY[1]!.id]);
   });
 });

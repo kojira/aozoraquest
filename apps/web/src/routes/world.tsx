@@ -250,7 +250,7 @@ function WorldScreen() {
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
 
   useWorldLoad({
-    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, setPartyIds: talk.setPartyIds, tokenRef,
+    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, setParty: talk.setParty, tokenRef,
     setCraftedPieces, setGearRefs, setWs, setStarterBlessed, setShowStarter, setOnboarding, onboardingRef, setNotice,
     setAvatarUrl, setPlayerName, setDiag, inventory, flushCraftLog,
   });
@@ -391,7 +391,7 @@ function WorldScreen() {
   const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
   const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y)))?.name;
   // 危険度・よく出る敵は 見える職 (主人公か仲間) がいるときだけ出す (docs/25 §ジョブ特性)。
-  const seesDanger = seesFieldDanger(archetype, talk.partyIds);
+  const seesDanger = seesFieldDanger(archetype, talk.party);
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
   // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
@@ -653,7 +653,7 @@ function WorldScreen() {
           onClose={() => setItemsOpen(false)}
         />
       )}
-      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
+      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />

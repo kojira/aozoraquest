@@ -55,5 +55,7 @@ export function battleResultLines(
     for (const name of lv.learned ?? []) resultLines.push(`${name}を覚えた！`);
     resultLines.push('傷がすっかり癒えた！');
   }
+  // 仲間のレベルアップ (D-PARTY-002 §11)。上がった仲間は全快している。
+  for (const a of awarded.allyLeveledUp ?? []) resultLines.push(`${a.name}のレベルが${a.to}に上がった！`);
   return resultLines;
 }

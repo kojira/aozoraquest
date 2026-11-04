@@ -6,7 +6,7 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
-import { LXM, type PlacedKind, type PlacedReward, type StoryEffect } from '@aozoraquest/core';
+import { LXM, type PartyRecruit, type PlacedKind, type PlacedReward, type RecruitCandidate, type StoryEffect } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
@@ -33,6 +33,8 @@ const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_INN_REST = LXM.innRest;
 const LXM_PARTY_SET = LXM.partySet;
+const LXM_PARTY_CANDIDATES = LXM.partyCandidates;
+const LXM_PARTY_REROLL = LXM.partyReroll;
 const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
@@ -102,8 +104,11 @@ export interface ServerMoveResult {
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-/** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。 */
-export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number> }
+/** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
+ *  members は生成の仲間の定義と経験値、xp はなじみの経験値 (D-PARTY-002)。 */
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number> }
+/** ギルドの今日の候補 (D-PARTY-002)。入れた人は含まない。 */
+export interface ServerPartyCandidates { day: string; candidates: RecruitCandidate[]; power: number; rerollPower: number }
 export interface ServerGameState { party?: ServerParty; did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
@@ -122,6 +127,8 @@ export interface ServerAward {
     /** 新しく覚えたとくぎの名前。 */
     learned?: string[];
   };
+  /** この決着で Lv が上がった仲間 (D-PARTY-002)。上がった仲間は全快している。 */
+  allyLeveledUp?: Array<{ id: string; name: string; from: number; to: number }>;
 }
 export interface ServerTurnResult { party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
@@ -146,6 +153,16 @@ export function serverTurn(agent: Agent, battleId: string, turn: number, command
 /** パーティの編成 (D-PARTY-001)。ギルドの受付の隣でだけ通る (位置は署名済みトークンで edge が確かめる)。 */
 export function serverPartySet(agent: Agent, guild: string, ids: readonly string[], token?: string): Promise<{ party: ServerParty }> {
   return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_SET, '/api/party', { guild, ids, ...(token ? { token } : {}) });
+}
+
+/** ギルドの今日の候補 (D-PARTY-002)。受付の隣でだけ通る。 */
+export function serverPartyCandidates(agent: Agent, guild: string, token?: string): Promise<ServerPartyCandidates> {
+  return callEdge<ServerPartyCandidates>(agent, LXM_PARTY_CANDIDATES, '/api/party/candidates', { guild, ...(token ? { token } : {}) });
+}
+
+/** 候補の引き直し (パワーを払う。D-PARTY-002 §10)。rkey は 1 回の押下ごとに 1 つ (再送で二重に引かれない)。 */
+export function serverPartyReroll(agent: Agent, guild: string, rkey: string, token?: string): Promise<ServerPartyCandidates> {
+  return callEdge<ServerPartyCandidates>(agent, LXM_PARTY_REROLL, '/api/party/reroll', { guild, rkey, ...(token ? { token } : {}) });
 }
 
 /** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
