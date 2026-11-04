@@ -243,3 +243,47 @@ describe('パーティ (D-PARTY-001)', () => {
     });
   });
 });
+
+describe('群れ (D-PARTY-001 P4)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setStory(null); });
+  /** フィールドで群れになる seed を探す (encounterGroupSize と同じ判定)。 */
+  const groupSeed = async (x: number, y: number) => {
+    const { encounterGroupSize, MONSTERS_BY_ID, startBattle, tierForRegion, regionOf } = await import('@aozoraquest/core');
+    for (let seed = 1; seed < 5000; seed++) {
+      const b = startBattle('warrior', 1, 1, 't', tierForRegion(regionOf(x, y)), seed);
+      if (encounterGroupSize(tierForRegion(regionOf(x, y)), seed, MONSTERS_BY_ID[b.monsterId]!, true) > 1) return seed;
+    }
+    throw new Error('群れの seed が無い');
+  };
+  const far = () => { const s = worldOverlay().spawn; return { x: wrap(s.x + 40), y: s.y }; };
+
+  it('futaba_letter_done の後だけ群れが出る (前は今のまま 1 体)', async () => {
+    const env = await makeEnv();
+    const { x, y } = far();
+    const seed = await groupSeed(x, y);
+    globalThis.fetch = pds(GS()).fn;
+    const before = await sealEncounter(env, USER, GS(), x, y, seed, NOW);
+    expect(before.state.enemies ?? [before.state.monster]).toHaveLength(1);
+    globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
+    const after = await sealEncounter(env, USER, GS({ flags: [LETTER] }), x, y, seed, NOW);
+    expect(after.state.enemies!.length).toBeGreaterThan(1);
+  });
+
+  it('ふたばの近く (sky-slime 固定) とストーリー戦は今のまま', async () => {
+    const env = await makeEnv();
+    const s = worldOverlay().spawn;
+    for (let seed = 1; seed < 300; seed++) {
+      globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
+      const near = await sealEncounter(env, USER, GS({ flags: [LETTER] }), s.x, wrap(s.y + 1), seed, NOW);
+      expect(near.state.enemies ?? [near.state.monster]).toHaveLength(1);
+    }
+    setStory({ battles: [{ id: 'b-one', monsterId: 'sky-slime', count: 1, winFlag: 'w1' }] });
+    const { storyBattleById } = await import('@aozoraquest/core');
+    const { x, y } = far();
+    const seed = await groupSeed(x, y);
+    globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
+    const story = await sealEncounter(env, USER, GS({ flags: [LETTER] }), x, y, seed, NOW, undefined, undefined, undefined, storyBattleById('b-one'));
+    expect(story.state.enemies ?? [story.state.monster]).toHaveLength(1);
+  });
+});

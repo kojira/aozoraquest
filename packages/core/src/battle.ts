@@ -114,3 +114,7 @@ export {
   TITLES,
   earnedTitles,
 } from './battle-rewards.js';
+export {
+  groupable,
+  encounterGroupSize,
+} from './battle-group.js';
