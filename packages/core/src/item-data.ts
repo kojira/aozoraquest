@@ -88,6 +88,10 @@ const ITEM_EFFECT_TARGETS: Partial<Record<SkillEffect['kind'], readonly (string 
   fixedDamage: [undefined, 'oneEnemy', 'allEnemies'],
 };
 
+/** 戦闘では専用のコマンド (やくそう・そらのしずく) で使う品 (D-ITEM-001 §0)。battle を付けると同じ手持ちを
+ *  「どうぐ」コマンドでも使えてしまうので、検証で弾き、管理画面も「戦闘でつかう」を出さない。 */
+export const ITEMS_WITH_BATTLE_COMMAND: readonly string[] = ['herb', 'sky-dew'];
+
 /** 店で買える品と戦闘で使えるどうぐの欄 (D-ITEM-001 §1)。 */
 function validateItemShopAndBattle(it: ItemDefData): void {
   const where = it.id;
@@ -102,6 +106,7 @@ function validateItemShopAndBattle(it: ItemDefData): void {
   }
   if (it.shopTier !== undefined && ![1, 2, 3].includes(it.shopTier)) throw new ItemDataError(`${where}: shopTier は 1〜3`);
   if (it.battle === undefined) return;
+  if (ITEMS_WITH_BATTLE_COMMAND.includes(it.id)) throw new ItemDataError(`${where}: 専用のコマンドで使う品に battle は付けられない`);
   if (it.key) throw new ItemDataError(`${where}: だいじなもの (key) は戦闘で使えない`);
   const effects = it.battle?.effects;
   if (!Array.isArray(effects) || effects.length === 0) throw new ItemDataError(`${where}: battle.effects が空`);

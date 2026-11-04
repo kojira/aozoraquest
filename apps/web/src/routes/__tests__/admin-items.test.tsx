@@ -51,8 +51,36 @@ describe('AdminItems の どうぐ', () => {
     fireEvent.change(screen.getByLabelText('確率'), { target: { value: '1.5' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     expect(await screen.findByText(/保存できない: .*chance/)).toBeTruthy();
-    // herb に「戦闘」を入れると、効果の行が増える
-    fireEvent.click(screen.getByLabelText('herb を戦闘でつかう'));
+    // sky-feather に「戦闘」を入れると、効果の行が増える
+    fireEvent.click(screen.getByLabelText('sky-feather を戦闘でつかう'));
     expect(screen.getAllByLabelText('確率')).toHaveLength(2);
+  });
+
+  it('やくそう・そらのしずくには「戦闘でつかう」を出さない (専用のコマンドで使う)', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'どうぐ・素材' }));
+    expect(screen.queryByLabelText('herb を戦闘でつかう')).toBeNull();
+    expect(screen.queryByLabelText('sky-dew を戦闘でつかう')).toBeNull();
+    expect(screen.getByLabelText('nemuri-kona を戦闘でつかう')).toBeTruthy();
+  });
+
+  it('戦闘で使わない消耗品にも値段・tier・説明が出て保存でき、「戦闘」を外しても値段の欄は残る', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'どうぐ・素材' }));
+    // herb は battle を持たないが、値段の欄がある
+    fireEvent.change(screen.getByLabelText('herb の値段 パワー'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('herb の店の tier'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('herb の説明'), { target: { value: 'HP を回復する' } });
+    // nemuri-kona の「戦闘」を外しても、値段・tier の欄は残る (消えるのは battle だけ)
+    fireEvent.click(screen.getByLabelText('nemuri-kona を戦闘でつかう'));
+    expect(screen.queryAllByLabelText('確率')).toHaveLength(0);
+    expect((screen.getByLabelText('nemuri-kona の値段 パワー') as HTMLInputElement).value).toBe('3');
+    expect((screen.getByLabelText('nemuri-kona の店の tier') as HTMLSelectElement).value).toBe('1');
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(saveItems).toHaveBeenCalled());
+    const items = savedItems();
+    expect(items.find((x) => x.id === 'herb')).toEqual({ id: 'herb', name: 'やくそう', desc: 'HP を回復する', price: { power: 2, materials: 0 }, shopTier: 1 });
+    const { battle: _b, ...nemuriNoBattle } = NEMURI;
+    expect(items.find((x) => x.id === 'nemuri-kona')).toEqual(nemuriNoBattle);
   });
 });

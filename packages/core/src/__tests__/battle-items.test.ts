@@ -142,6 +142,12 @@ describe('どうぐの検証 (validateItems)', () => {
   it('battle と key は同時に付けられない', () => {
     expect(bad({ key: true, battle: NEMURI.battle! })).toThrow(/key/);
   });
+  it('やくそう・そらのしずくは専用のコマンドで使うので、battle を付けられない (同じ手持ちを二重に使えないように)', () => {
+    for (const id of ['herb', 'sky-dew']) {
+      const items = activeItems().map((x) => (x.id === id ? { ...x, battle: NEMURI.battle! } : x));
+      expect(() => setItemOverrides({ items, equipment: [...activeEquipment()] })).toThrow(new RegExp(`${id}: .*battle`));
+    }
+  });
   it('chance が 1 を超えたら弾く', () => {
     expect(bad({ battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 1.5 }] } })).toThrow(/chance/);
   });
