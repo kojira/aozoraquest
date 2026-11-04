@@ -27,6 +27,8 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   startEncounterRef: MutableRefObject<(encounter: ServerEncounter) => void>;
 }) {
   const [npcTalk, setNpcTalk] = useState<NpcTalk | null>(null);
+  /** いまのパーティの仲間 id (D-PARTY-001)。危険度が見えるか (seesFieldDanger) に使う。権威 state の読み・編成の応答だけが書く。 */
+  const [partyIds, setPartyIds] = useState<string[]>([]);
   /** ゲーム内クエストの進行 (#423)。**サーバーが正** — 受注/達成/決着の応答と serverState だけが書く。
    *  state (メニューの全受注一覧に出す) + ref (バンプ判定は state 更新を待たずに最新を読む)。 */
   const [quest, setQuestState] = useState<QuestState>(EMPTY_QUEST_STATE);
@@ -192,11 +194,14 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     if (!agent) throw new Error('サーバーに接続できない');
     const { state } = await serverState(agent);
     if (state.flags) flagsRef.current = state.flags;
+    setPartyIds(state.party?.ids ?? []);
     return { party: state.party ?? { ids: [] }, flags: state.flags ?? [] };
   }, [agent, flagsRef]);
   const partySave = useCallback(async (guild: string, ids: string[]) => {
     if (!agent) throw new Error('サーバーに接続できない');
-    return (await serverPartySet(agent, guild, ids, tokenRef.current)).party;
+    const { party } = await serverPartySet(agent, guild, ids, tokenRef.current);
+    setPartyIds(party.ids);
+    return party;
   }, [agent, tokenRef]);
   /** 受付の「話す」。倒れた仲間がいれば宿屋をすすめる (D-PARTY-001 §8)。 */
   const guildTalk = async (npc: NpcDef) => {
@@ -237,5 +242,5 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     });
   }
 
-  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle, partyLoad, partySave };
+  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle, partyLoad, partySave, partyIds, setPartyIds };
 }
