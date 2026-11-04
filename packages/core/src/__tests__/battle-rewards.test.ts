@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { activeEquipment, activeItems, setItemOverrides, setMonsterOverrides } from '../index.js';
+import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 import {
   BATTLE_TUNING,
   rollDefeatLoss,
@@ -107,6 +109,17 @@ describe('rollSearch (しらべる — luk 連動でアイテム発見)', () => 
     let found = 0;
     for (let seed = 0; seed < 1000; seed++) if (rollSearch(seed, 999, 1) !== null) found++;
     expect(found / 1000).toBeLessThanOrEqual(SEARCH_TUNING.maxFindChance + 0.05);
+  });
+  describe('戦闘用のどうぐはドロップにあっても しらべるでは見つからない (D-ITEM-001)', () => {
+    afterEach(() => { setItemOverrides(null); setMonsterOverrides(TEST_MONSTERS); });
+    it('tier1 の敵が どうぐを落としても、しらべるの素材にはならない', () => {
+      setItemOverrides({ items: [...activeItems(), { id: 'nemuri-kona', name: 'ねむりごな', battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy' }] } }], equipment: [...activeEquipment()] });
+      setMonsterOverrides(TEST_MONSTERS.map((m) => (m.tier === 1 ? { ...m, drops: [{ item: 'nemuri-kona', chance: 0.5 }] } : m)));
+      const found = new Set<string>();
+      for (let seed = 0; seed < 500; seed++) { const r = rollSearch(seed, 80, 1); if (r) found.add(r); }
+      expect(found.has('nemuri-kona')).toBe(false);
+      expect([...found].sort()).toEqual(['herb', 'sky-dew']);
+    });
   });
   it('tier3 では tier3 素材が出うる (地方連動)', () => {
     const t3 = new Set(MONSTERS.filter((m) => m.tier === 3).flatMap((m) => m.drops.map((d) => d.item)));

@@ -75,8 +75,8 @@ export const SEARCH_TUNING = {
 function tierMaterials(tier: Tier): string[] {
   const set = new Set<string>();
   for (const m of MONSTERS) if (m.tier === tier && !m.storyOnly) for (const d of m.drops) set.add(d.item);
-  // 消耗品ドロップ (herb/sky-dew/sky-feather) は除き、純粋な素材だけ
-  return [...set].filter((id) => id !== 'herb' && id !== 'sky-dew' && id !== 'sky-feather');
+  // 消耗品ドロップ (herb/sky-dew/sky-feather と戦闘用のどうぐ D-ITEM-001) は除き、純粋な素材だけ
+  return [...set].filter((id) => id !== 'herb' && id !== 'sky-dew' && id !== 'sky-feather' && !ITEMS[id]?.battle);
 }
 
 /**
