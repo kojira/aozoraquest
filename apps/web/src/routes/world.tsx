@@ -47,6 +47,8 @@ import { WELCOME_POWER, ONBOARDING_DONE_KEY } from '@/lib/onboarding-reset';
 import { questLogEntries } from '@/lib/game-quest';
 import { QuestLogModal } from '@/components/quest-log-modal';
 import { PartyModals } from '@/components/party-modal';
+import { FieldSkillModal, fieldHealSkills } from '@/components/field-skill-modal';
+import { fieldMembers, useFieldHeal } from '@/lib/use-field-heal';
 import { guildReception } from '@/lib/npc-talk';
 import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
@@ -158,6 +160,7 @@ function WorldScreen() {
   const [invOpen, setInvOpen] = useState(false);
   const [questLogOpen, setQuestLogOpen] = useState(false);
   const [partyOpen, setPartyOpen] = useState(false);
+  const [skillOpen, setSkillOpen] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [featherOpen, setFeatherOpen] = useState(false);
   const [showStarter, setShowStarter] = useState(false);
@@ -246,6 +249,9 @@ function WorldScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- baseArgs は下記 diag/archetype で代表
     [statusOpen, archetype, hereJobXp, diag?.playerLevel?.xp, diag?.rpgStats],
   );
+  // フィールドの回復 (D-PARTY-003): 主人公と仲間の持ちこし HP/MP。
+  const members = fieldMembers(combat && { ...combat, name: playerName }, archetype && hereJobXp !== null ? { archetype, level: jobLevelFromXp(hereJobXp, archetype) } : null, ws, talk.party);
+  const fieldHeal = useFieldHeal({ agent, inventory, setWs, setParty: talk.setParty });
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
 
@@ -290,11 +296,11 @@ function WorldScreen() {
 
   const wipeRef = useLatestRef(wipe);
   /** 入力ガード用に、開いている窓・演出の最新値を 1 つの ref で読む (deps の狭い callback から)。 */
-  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter });
+  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter, skillOpen });
   // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中・各窓・会話・サーバー往復中は移動不可。
   const moveBlocked = useCallback(() => {
     const o = overlaysRef.current;
-    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter
+    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter || o.skillOpen
       || moveBusyRef.current || !!npcTalkRef.current || !!innTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
   }, [battleRef, npcTalkRef, innTalkRef, overlaysRef, wipeRef]);
   // そらのはねの行き先えらび: 導入中・戦闘・演出・地図/店/そうび/つよさの窓では開かない。
@@ -400,7 +406,10 @@ function WorldScreen() {
   const inTown = !!town;
   const statusReady = !!combat && !!archetype;
   const menuCommands: WorldMenuCommand[] = [
-    { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
+    // 仲間の HP/MP は戦闘・宿屋のあとで変わるので、開くときに読み直す (D-PARTY-003。読めなければ前のまま)。
+    { key: 'items', label: 'どうぐ', onSelect: () => { setItemsOpen(true); if (talk.party.ids.length) talk.partyLoad().catch(() => {}); } },
+    // 回復のとくぎを覚えている人がいるときだけ (D-PARTY-003)。
+    ...(members.some((m) => fieldHealSkills(m).length > 0) ? [{ key: 'skill', label: 'とくぎ', onSelect: () => { setSkillOpen(true); if (talk.party.ids.length) talk.partyLoad().catch(() => {}); } } as WorldMenuCommand] : []),
     { key: 'quests', label: 'クエスト', onSelect: () => setQuestLogOpen(true) },
     ...(partyCapacity(flagsRef.current) > 1 ? [{ key: 'party', label: 'なかま', onSelect: () => setPartyOpen(true) } as WorldMenuCommand] : []),
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
@@ -651,8 +660,11 @@ function WorldScreen() {
           onUseTonic={useTonicOnField}
           onUseFeather={useFeatherOnField}
           onClose={() => setItemsOpen(false)}
+          members={members}
+          onUseOnAlly={fieldHeal.itemOnAlly}
         />
       )}
+      {skillOpen && <FieldSkillModal members={members} cast={fieldHeal.castFieldSkill} onClose={() => setSkillOpen(false)} />}
       <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (

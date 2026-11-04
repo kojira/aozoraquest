@@ -229,6 +229,38 @@ describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
     expect(bar('ミオ', 'hp').style.width).toBe('0%');
   });
 
+  it('仲間がいれば 聖光の癒し は「だれを かいふくする？」で生きている味方 (主人公を含む) から選び、その番号を送る (D-PARTY-003)', () => {
+    const s = { ...group([10], [20, 13, 0, 25].slice(0, 3)), playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: '聖光の癒し', kind: 'paladin-heal' }] } as BattleState;
+    const onCommand = input(s);
+    fireEvent.click(screen.getByRole('button', { name: '聖光の癒し' }));
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('だれを かいふくする？')).toBeTruthy();
+    const picker = screen.getByText('だれを かいふくする？').parentElement!;
+    const names = [...picker.querySelectorAll('button')].map((b) => b.textContent);
+    expect(names).toEqual(['ゆうしゃ', 'カイト', 'もどる']); // 倒れたミオは出ない
+    fireEvent.click([...picker.querySelectorAll('button')].find((b) => b.textContent === 'カイト')!);
+    expect(onCommand).toHaveBeenCalledWith('skill', 1, undefined, 1);
+  });
+
+  it('仲間がいれば やくそうも相手を選ぶ。満タンの人は押せない (D-PARTY-003)', () => {
+    const s = { ...group([10], [30, 13]), herbs: 2 } as BattleState;
+    const onCommand = input(s);
+    fireEvent.click(screen.getByRole('button', { name: 'どうぐ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'やくそう ×2' }));
+    const picker = screen.getByText('だれを かいふくする？').parentElement!;
+    const btn = (n: string) => [...picker.querySelectorAll('button')].find((b) => b.textContent === n)!;
+    expect(btn('ゆうしゃ').disabled).toBe(true);
+    fireEvent.click(btn('カイト'));
+    expect(onCommand).toHaveBeenCalledWith('herb', undefined, undefined, 1);
+  });
+
+  it('1 人戦の 聖光の癒し は選ばずに送る', () => {
+    const s = { ...state(), playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: '聖光の癒し', kind: 'paladin-heal' }] } as BattleState;
+    const onCommand = input(s);
+    fireEvent.click(screen.getByRole('button', { name: '聖光の癒し' }));
+    expect(onCommand).toHaveBeenCalledWith('skill', 1);
+  });
+
   it('1 人なら味方の段を出さない', () => {
     input(group([10, 7]));
     expect(document.querySelector('[data-ally]')).toBeNull();

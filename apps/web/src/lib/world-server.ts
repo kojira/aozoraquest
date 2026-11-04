@@ -15,6 +15,7 @@ import { EDGE_URL, EDGE_DID } from './edge-config';
 const LXM_MOVE = LXM.worldMove;
 const LXM_TELEPORT = LXM.worldTeleport;
 const LXM_ITEM = LXM.worldItem;
+const LXM_SKILL = LXM.worldSkill;
 const LXM_GEAR = LXM.worldGear;
 const LXM_SEARCH = LXM.worldSearch;
 const LXM_RESET = LXM.worldReset;
@@ -133,7 +134,9 @@ export interface ServerAward {
 export interface ServerTurnResult { party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
   activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
-export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
+export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number; party?: ServerParty }
+/** フィールドの回復のとくぎの結果 (D-PARTY-003)。healed は回復した人ごと (全体回復は全員)。 */
+export interface ServerSkillResult { healed: Array<{ id: string; name: string; amount: number }>; casterName: string; skillName: string; carryHp?: number; carryMp?: number; party?: ServerParty; duplicate?: boolean }
 export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 
 /** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
@@ -171,9 +174,15 @@ export function serverTeleport(agent: Agent, x: number, y: number): Promise<Serv
   return callEdge<ServerTeleportResult>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
 }
 
-/** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。 */
-export function serverItem(agent: Agent, item: 'herb' | 'tonic'): Promise<ServerItemResult> {
-  return callEdge<ServerItemResult>(agent, LXM_ITEM, '/api/world/item', { item });
+/** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。
+ *  target は仲間の id (省略は主人公。D-PARTY-003)。 */
+export function serverItem(agent: Agent, item: 'herb' | 'tonic', target?: string): Promise<ServerItemResult> {
+  return callEdge<ServerItemResult>(agent, LXM_ITEM, '/api/world/item', { item, ...(target ? { target } : {}) });
+}
+
+/** フィールドで回復のとくぎを唱える (D-PARTY-003)。caster / target は 'hero' か仲間の id。全体回復は target なし。rkey は 1 回の押下ごとに 1 つ。 */
+export function serverFieldSkill(agent: Agent, caster: string, skillId: string, target: string | undefined, rkey: string): Promise<ServerSkillResult> {
+  return callEdge<ServerSkillResult>(agent, LXM_SKILL, '/api/world/skill', { caster, skillId, rkey, ...(target ? { target } : {}) });
 }
 
 /** 装備ミラー: client が解決した装備 (GearSelection: 強化値つき) をサーバーへ送り、戦闘に反映させる (#377)。 */
