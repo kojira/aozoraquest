@@ -35,6 +35,8 @@ export function GearModal({
   busy = false,
   errorText = null,
   onClose,
+  whose,
+  wornBy,
 }: {
   archetype: Archetype | null;
   /** 所持している全個体 */
@@ -50,6 +52,10 @@ export function GearModal({
    *  描画されず、すてるの主用途は街の外なので、無反応になってユーザーが連打する。 */
   errorText?: string | null;
   onClose: () => void;
+  /** 「だれの？」(主人公＋仲間。D-PARTY-004)。仲間がいなければ出さない。 */
+  whose?: { options: ReadonlyArray<{ who: string; name: string }>; current: string; onChange: (who: string) => void } | undefined;
+  /** ほかの人が着ている個体 (rkey → 名前)。「ミオが そうび中」と出して選べなくする。 */
+  wornBy?: ReadonlyMap<string, string> | undefined;
 }) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   // すてるは取り消せないので 2 段階。強化した品を 1 タップで失わせない。
@@ -102,6 +108,17 @@ export function GearModal({
             とじる
           </button>
         </div>
+        {whose && whose.options.length > 1 && (
+          <div role="radiogroup" aria-label="だれの？" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, margin: '0 0 0.5em', fontSize: '0.8em' }}>
+            <span style={{ color: 'var(--color-muted)' }}>だれの？</span>
+            {whose.options.map((o) => (
+              <button key={o.who} type="button" role="radio" aria-checked={o.who === whose.current} onClick={() => whose.onChange(o.who)}
+                className={o.who === whose.current ? undefined : 'secondary'} style={{ fontSize: '1em', padding: '0.3em 0.7em', touchAction: 'manipulation' }}>
+                {o.who === whose.current ? `▸ ${o.name}` : o.name}
+              </button>
+            ))}
+          </div>
+        )}
         <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)', minHeight: '1.4em' }} aria-live="polite">
           {totalText ? `そうびの効果: ${totalText}` : 'なにも装備していない。なんでも屋で作ってもらおう。'}
         </p>
@@ -162,6 +179,7 @@ export function GearModal({
                       const conflict = wouldConflict(selection, slot, p.itemId);
                       const equipable = (archetype ? canEquip(archetype, def) : false) && !conflict;
                       const isEquipped = p.rkey === equippedRkey;
+                      const other = wornBy?.get(p.rkey);
                       return (
                         <div key={p.rkey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
                           <span style={{ opacity: equipable ? 1 : 0.6 }}>
@@ -181,6 +199,9 @@ export function GearModal({
                           </span>
                           {isEquipped ? (
                             <span style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>そうび中</span>
+                          ) : other ? (
+                            // ほかの人が着ている品は選べない・すてられない (1 個は 1 人だけ。サーバーも 400)。
+                            <span style={{ fontSize: '0.85em', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>{other}が そうび中</span>
                           ) : confirmDiscard === p.rkey ? (
                             <span style={{ display: 'flex', gap: '0.3em', whiteSpace: 'nowrap' }}>
                               <button
