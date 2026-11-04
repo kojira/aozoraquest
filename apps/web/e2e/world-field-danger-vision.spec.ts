@@ -56,8 +56,12 @@ for (const archetype of ['warrior', 'sage'] as const) test(`フィールドの�
   expect(monster).toBeTruthy();
   const forest = terrainAt(start.x, start.y) === 'forest';
   const label = fieldLocationLabel(tier, forest, monster, archetype === 'sage');
-  await expect(page.getByText(label, { exact: true })).toBeVisible();
+  // 見えない職の森以外では 右上の枠ごと出さない (#901)。HUD が出てから枠の無さを見る。
+  await expect(page.getByText('HP', { exact: true })).toBeVisible();
+  if (label === null) await expect(page.locator('[data-hud-location]')).toHaveCount(0);
+  else await expect(page.locator('[data-hud-location]')).toHaveText(label);
   if (archetype === 'warrior') await expect(page.getByText(monster!)).toHaveCount(0);
   else expect(label).toContain(monster!);
+  if (archetype === 'warrior' && !forest) await expect(page.getByText('フィールド', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `test-results/field-danger-vision-${archetype}-390.png` });
 });
