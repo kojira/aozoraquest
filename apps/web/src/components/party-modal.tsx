@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { jobDisplayName, partyCombatants, partyDefsOf, recruitById, type NpcDef, type PartyAlly } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
@@ -72,6 +72,10 @@ export function PartyModals({ guildNpc, menuOpen, jobLevel, load, save, candidat
   onGuildClose: () => void;
   onMenuClose: () => void;
 }) {
-  if (guildNpc) return <GuildPartyModal guild={guildNpc} jobLevel={jobLevel} load={load} save={(ids) => save(guildNpc.id, ids)} candidates={() => candidates(guildNpc.id)} reroll={(rkey) => reroll(guildNpc.id, rkey)} onClose={onGuildClose} />;
+  // 読み込み (load) は world の party を更新して ここを描き直す。候補の関数を毎回作ると GuildPartyModal の読み込みが
+  // 取り消されて読み直しを繰り返し、窓が空のままになる。ギルドが同じあいだは同じ関数を渡す。
+  const guildId = guildNpc?.id;
+  const guildCandidates = useCallback(() => candidates(guildId ?? ''), [candidates, guildId]);
+  if (guildNpc) return <GuildPartyModal guild={guildNpc} jobLevel={jobLevel} load={load} save={(ids) => save(guildNpc.id, ids)} candidates={guildCandidates} reroll={(rkey) => reroll(guildNpc.id, rkey)} onClose={onGuildClose} />;
   return menuOpen ? <PartyModal jobLevel={jobLevel} load={load} onClose={onMenuClose} /> : null;
 }

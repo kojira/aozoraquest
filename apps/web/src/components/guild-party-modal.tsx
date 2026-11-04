@@ -93,6 +93,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
   return (
     <ModalShell title="なかまを さがす" onClose={onClose}>
       <div style={{ overflowY: 'auto', minHeight: 0 }}>
+        {!data && !line && <p aria-live="polite" style={{ fontSize: '0.85em', margin: '0 0 0.5em', ...muted }}>読み込み中…</p>}
         {line && <p aria-live="polite" style={{ fontSize: '0.85em', margin: '0 0 0.5em' }}>{line}</p>}
         {parting && (
           <div role="alertdialog" aria-label="はずす確認" style={{ border: '1px solid rgba(255,255,255,0.55)', borderRadius: 4, padding: '0.4em 0.5em', margin: '0 0 0.5em' }}>
