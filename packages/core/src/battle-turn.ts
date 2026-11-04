@@ -13,6 +13,7 @@ import { MONSTERS_BY_ID } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
+import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
   const { player, monster } = state;
@@ -48,7 +49,7 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
 /** 台本負けのストーリー戦が終わるターン。 */
 const SCRIPTED_LOSS_TURNS = 3;
 
-export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number, skillIndex = 0): BattleState {
+export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number, skillIndex = 0, itemId?: string): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
 
   // コピー (Combatant は現状 flat なので spread で足りる)。
@@ -94,6 +95,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     cmd = 'attack';
   } else if (command === 'tonic' && state.tonics <= 0) {
     events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
+    cmd = 'attack';
+  } else if (command === 'item' && !canUseBattleItem(state, itemId)) {
+    events.push({ actor: 'player', text: missingBattleItemText(itemId) });
     cmd = 'attack';
   }
   if (cmd === 'skill') {
@@ -175,6 +179,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         state.tonics -= 1;
         state.tonicsUsed += 1;
         events.push({ actor: 'player', text: `${state.player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
+      } else if (cmd === 'item') {
+        useBattleItem(state, itemId!, { allies: [state.player], enemies: [state.monster] }, 0, rng, events);
       }
       // guard は宣言済み / flee 失敗はこのターン行動なし
     } else {

@@ -53,6 +53,7 @@ export {
   type Tier,
   DEMON_CASTLE_REGIONS,
   type MonsterDef,
+  type ItemDef,
   ITEMS,
   MONSTERS,
   MONSTERS_BY_ID,
@@ -84,6 +85,12 @@ export {
 export {
   resolveTurnMulti,
 } from './battle-turn-multi.js';
+export {
+  isBattleItem,
+  battleItemsFrom,
+  canUseBattleItem,
+  materialsAfterBattleUse,
+} from './battle-items.js';
 export {
   autoBattleAction,
   runAutoBattle,

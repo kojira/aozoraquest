@@ -9,6 +9,7 @@ import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng } from './battle-rng.js';
 import { type Combatant, makeCombatant, monsterStats } from './battle-combatant.js';
 import { withCharacterNames } from './character-data.js';
+import type { SkillEffect } from './skills.js';
 
 // ─── モンスター ─────────────────────────────────────────────
 
@@ -156,7 +157,20 @@ export interface MonsterDef {
  * `key: true` は**だいじなもの** (シナリオアイテム、#426/#545)。素材と違い
  * ひきとってもらえず、**負けても失わない** — 失うと進行不能になりうるため。
  */
-export const ITEMS: Record<string, { name: string; key?: boolean }> = {
+export interface ItemDef {
+  name: string;
+  key?: boolean;
+  /** 店と どうぐの一覧に出す 1 行 (D-ITEM-001)。 */
+  desc?: string;
+  /** 店で買える品だけ。素材はその店の値札の素材 (装備と同じ)。 */
+  price?: { power: number; materials: number };
+  /** この tier 以上の街の店に並ぶ。 */
+  shopTier?: 1 | 2 | 3;
+  /** 戦闘で使えるどうぐ (1 回きりの MP のいらないとくぎ)。対象は effects の target から導く。 */
+  battle?: { effects: SkillEffect[] };
+}
+
+export const ITEMS: Record<string, ItemDef> = {
   herb: { name: 'やくそう' },
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
