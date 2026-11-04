@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { playerCombatant, setMonsterOverrides, startBattle, xpForAllyLevel, type Archetype, type BattleState, type Combatant, type PartyRecruit } from '@aozoraquest/core';
 import { TEST_MONSTERS } from '@aozoraquest/core/src/__tests__/helpers/monster-fixture';
 import { PartyModal } from '../../src/components/party-modal';
+import { PartyGearModal } from '../../src/components/party-gear-modal';
 import { WorldBattleControls } from '../../src/components/world-battle-controls';
 import { useAllyOrders } from '../../src/lib/battle-ally-orders';
 import type { ServerParty } from '../../src/lib/world-server';
@@ -35,4 +36,15 @@ function Battle() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(view === 'battle' ? <Battle /> : <Party />);
+/** そうび: ソラ が たびのつるぎ (1 本だけ) を着ている。主人公の画面では「ソラが そうび中」。 */
+function Gear() {
+  const pieces = [
+    { rkey: 'p1', itemId: 'wp-travel-sword', level: 0, at: '' }, { rkey: 'p2', itemId: 'wp-club', level: 1, at: '' },
+    { rkey: 'p3', itemId: 'ar-leather', level: 0, at: '' }, { rkey: 'p4', itemId: 'hd-leather-hat', level: 0, at: '' },
+  ];
+  const gearParty: ServerParty = { ...party, gear: { [SORA.id]: { weapon: { id: 'wp-travel-sword', level: 0 } } } };
+  return <PartyGearModal archetype="warrior" heroName="ゆうしゃ" pieces={pieces} refs={{ armor: 'p3' }} party={gearParty} jobLevel={7}
+    onEquip={() => {}} onUnequip={() => {}} onDiscard={() => {}} saveAllyGear={async () => {}} onClose={() => {}} />;
+}
+
+createRoot(document.getElementById('root')!).render(view === 'battle' ? <Battle /> : view === 'gear' ? <Gear /> : <Party />);

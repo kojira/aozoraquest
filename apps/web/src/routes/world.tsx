@@ -23,9 +23,9 @@ import {
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
-import { serverGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { serverGear, serverPartyGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
-import { GearModal } from '@/components/gear-modal';
+import { PartyGearModal } from '@/components/party-gear-modal';
 import { resolveGear } from '@/lib/gear';
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
@@ -699,15 +699,19 @@ function WorldScreen() {
         />
       )}
       {gearOpen && (
-        <GearModal
+        <PartyGearModal
           archetype={archetype}
+          heroName={playerName || 'あなた'}
           pieces={craftedPieces}
           refs={gearRefs}
+          party={talk.party}
+          jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1}
           busy={craftBusy}
           errorText={shopError}
           onDiscard={shop.onDiscard}
           onEquip={shop.onEquip}
           onUnequip={shop.onUnequip}
+          saveAllyGear={async (id, gear) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyGear(agent, id, gear)).party); }}
           onClose={() => setGearOpen(false)}
         />
       )}

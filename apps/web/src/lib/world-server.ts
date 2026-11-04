@@ -6,7 +6,7 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
-import { LXM, type AllyMode, type PartyRecruit, type PlacedKind, type PlacedReward, type RecruitCandidate, type StoryEffect } from '@aozoraquest/core';
+import { LXM, type AllyMode, type GearSelection, type PartyRecruit, type PlacedKind, type PlacedReward, type RecruitCandidate, type StoryEffect } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
@@ -38,6 +38,7 @@ const LXM_PARTY_SET = LXM.partySet;
 const LXM_PARTY_CANDIDATES = LXM.partyCandidates;
 const LXM_PARTY_REROLL = LXM.partyReroll;
 const LXM_PARTY_MODE = LXM.partyMode;
+const LXM_PARTY_GEAR = LXM.partyGear;
 const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
@@ -109,7 +110,7 @@ export interface ServerMoveResult {
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
 /** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
  *  members は生成の仲間の定義と経験値、xp はなじみの経験値 (D-PARTY-002)。 */
-export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number>; mode?: Record<string, AllyMode> }
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number>; mode?: Record<string, AllyMode>; gear?: Record<string, GearSelection> }
 /** きずなの ♥ が増えた仲間 (増えたあとの ♥ の数。D-PARTY-004)。 */
 export interface ServerBondUp { id: string; name: string; hearts: number }
 /** ギルドの今日の候補 (D-PARTY-002)。入れた人は含まない。 */
@@ -182,6 +183,11 @@ export function serverTeleport(agent: Agent, x: number, y: number): Promise<Serv
 /** 仲間の さくせん／めいれい (D-PARTY-004)。mode が null なら おまかせ。段階が足りなければ 400 bond_too_low。 */
 export function serverPartyMode(agent: Agent, id: string, mode: AllyMode | null): Promise<{ party: ServerParty }> {
   return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_MODE, '/api/party/mode', { id, mode });
+}
+
+/** 仲間の装備 (D-PARTY-004)。gear は着る全部 ({id, level})。ほかの人が着ている品は 400 worn_by_other。 */
+export function serverPartyGear(agent: Agent, id: string, gear: GearSelection): Promise<{ party: ServerParty }> {
+  return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_GEAR, '/api/party/gear', { id, gear });
 }
 
 /** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。

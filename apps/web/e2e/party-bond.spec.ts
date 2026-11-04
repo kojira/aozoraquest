@@ -54,3 +54,15 @@ test('めいれい: 主人公の次に ソラ の窓 (とくぎはソラのも�
   await page.getByRole('button', { name: 'ぼうぎょ' }).click();
   await expect(page.getByTestId('sent')).toContainText('"allies":[{"id":"g:s","command":"guard"}]');
 });
+
+test('そうびの「だれの？」: ほかの人が着ている品は「ソラが そうび中」で選べない (390px)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('http://127.0.0.1:4182/e2e/fixtures/party-bond.html?view=gear');
+  await expect(page.getByRole('radiogroup', { name: 'だれの？' })).toBeVisible();
+  await expect(page.getByText('ソラが そうび中')).toBeInViewport();
+  await shot(page, 'gear-whose-worn.png');
+  await page.getByRole('radio', { name: 'ソラ' }).click();
+  await expect(page.getByRole('radio', { name: '▸ ソラ' })).toBeVisible();
+  await expect(page.getByText('ゆうしゃが そうび中')).toBeVisible();
+  await shot(page, 'gear-whose-ally.png');
+});
