@@ -21,6 +21,7 @@ import { isAdminDid } from '@/lib/runtime-config';
 import { saveItems } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
+import { ItemBattleEditor } from '@/components/admin/item-battle-editor';
 
 /**
  * **アイテムエディタ** (#420)。そうび / どうぐ・素材 の 2 タブ。
@@ -149,7 +150,8 @@ export function AdminItems() {
       {tab === 'items' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2em', maxWidth: 460 }}>
           {items.map((it, i) => (
-            <div key={i} style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
+            <div key={i}>
+            <div style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
               <input
                 value={it.id}
                 onChange={(e) => { setItems((xs) => xs.map((x, j) => (j === i ? { ...x, id: e.target.value } : x))); setDirty(true); }}
@@ -177,6 +179,24 @@ export function AdminItems() {
                 />
                 だいじ
               </label>
+              {/* 戦闘でつかう どうぐ (D-ITEM-001)。入れると効果・説明・値段・店の欄が開く。 */}
+              <label style={{ display: 'flex', gap: '0.2em', alignItems: 'center', fontSize: '0.8em', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  aria-label={`${it.id} を戦闘でつかう`}
+                  checked={!!it.battle}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setItems((xs) => xs.map((x, j) => {
+                      if (j !== i) return x;
+                      if (!on) { const { battle: _b, ...rest } = x; return rest as ItemDefData; }
+                      return { ...x, battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 1, turns: 3 }] } };
+                    }));
+                    setDirty(true);
+                  }}
+                />
+                戦闘
+              </label>
               <button
                 type="button"
                 onClick={() => {
@@ -188,6 +208,10 @@ export function AdminItems() {
               >
                 ×
               </button>
+            </div>
+            {it.battle && (
+              <ItemBattleEditor item={it} onChange={(next) => { setItems((xs) => xs.map((x, j) => (j === i ? next : x))); setDirty(true); }} />
+            )}
             </div>
           ))}
           <button
