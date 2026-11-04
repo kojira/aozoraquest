@@ -567,7 +567,9 @@ export function townShopStock(town: Town, townIndex: number): ShopStock {
 function generatedShopStock(town: Town, townIndex: number): ShopStock {
   const tier = tierForRegion(town.region);
   const rng = shopRng(((town.x * 73856093) ^ (town.y * 19349663)) >>> 0);
-  const consumables = ['herb', 'sky-dew', 'sky-feather'];
+  // 店で買えるどうぐ (D-ITEM-001): データで shopTier を持つ品を、その tier 以上の街に足す。
+  const base = ['herb', 'sky-dew', 'sky-feather'];
+  const consumables = [...base, ...Object.keys(ITEMS).filter((id) => !base.includes(id) && (ITEMS[id]!.shopTier ?? 99) <= tier)];
 
   const equipment: string[] = [];
   // 地域枠: 共用 + カテゴリ品から 3〜4 品 (grade1 中心、たまに grade2)

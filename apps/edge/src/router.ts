@@ -15,7 +15,7 @@ import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } from './xp-claim';
-import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
+import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError } from './shop';
 import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
 import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
@@ -65,6 +65,7 @@ const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
 const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
 const LXM_SHOP_CRAFT = LXM.shopCraft;
 const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_BUY = LXM.shopBuy;
 const LXM_SHOP_FORGE = LXM.shopForge;
 const LXM_SHOP_DISCARD = LXM.shopDiscard;
 const LXM_POWER_SPEND = LXM.powerSpend;
@@ -174,18 +175,20 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number };
+    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number; targetIndex?: number; itemId?: string };
     try {
       if (isTurn) {
         if (typeof body.battleId !== 'string' || typeof body.turn !== 'number' || typeof body.command !== 'string') {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
         const skillIndex = typeof body.skillIndex === 'number' ? body.skillIndex : 0; // とくぎ選択 (#436)。既定 0=署名
+        const targetIndex = typeof body.targetIndex === 'number' ? body.targetIndex : 0; // 群れでねらう敵 (生きている敵の何番目か)
+        const itemId = typeof body.itemId === 'string' ? body.itemId : undefined; // command==='item' のどうぐ (D-ITEM-001)
         // クエスト定義 (#423) の討伐カウントは勝利決着のこの経路で数える。コールド isolate だと
         // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
         // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
         await ensureAuthoredWorld(env, nowSec());
-        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex, targetIndex, itemId)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
       // **移動もワールドの読み込みを待つ。** ゲート (#424)・NPC (#425)・地図はここで効くので、
@@ -553,6 +556,31 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       await ensureAuthoredWorld(env, nowSec());
       return cors(json(await handleInnRest(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // なんでも屋: どうぐを買う (D-ITEM-001)。品揃え・値段・在庫上限はサーバーが決める。
+  if (req.method === 'POST' && url.pathname === '/api/shop/buy') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_BUY }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { itemId?: unknown; rkey?: unknown; token?: unknown };
+    if (typeof body.itemId !== 'string' || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      const pos = positionFrom(env, body.token, did);
+      // 値段と品揃えは管理データ (world.items) にしか無い。コールド isolate でも読み込みを待つ。
+      await ensureAuthoredWorld(env, nowSec());
+      return cors(json(await shopBuy(env, did, { itemId: body.itemId, rkey: body.rkey, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
     }
   }

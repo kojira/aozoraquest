@@ -47,6 +47,7 @@ export const LXM = {
   powerSpend: `${AQ_NSID_ROOT}.power.spend`,
   shopCraft: `${AQ_NSID_ROOT}.shop.craft`,
   shopSell: `${AQ_NSID_ROOT}.shop.sell`,
+  shopBuy: `${AQ_NSID_ROOT}.shop.buy`,
   shopForge: `${AQ_NSID_ROOT}.shop.forge`,
   shopDiscard: `${AQ_NSID_ROOT}.shop.discard`,
   adminPdsUsage: `${AQ_NSID_ROOT}.admin.pdsUsage`,
