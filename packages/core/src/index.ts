@@ -27,6 +27,7 @@ export * from './item-data.js';
 export * from './shop-data.js';
 export * from './npc-data.js';
 export * from './npc-placement.js';
+export * from './placed-placement.js';
 export * from './quest-data.js';
 export * from './world-refs.js';
 export * from './part-presets.js';

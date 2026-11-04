@@ -41,6 +41,7 @@ const CONTENT_SECTIONS: Section[] = [
   { key: 'quest', title: 'クエスト', desc: 'NPC 発注・達成条件 (討伐/収集)・報酬', to: '/admin/quests', issue: 423 },
   { key: 'places', title: '街 / ダンジョン / 城', desc: '内部マップとゲート (出入口) の編集', to: '/admin/interiors', issue: 424 },
   { key: 'scenario', title: 'シナリオ', desc: 'イベント列 + 進行フラグ (NPC セリフ/クエスト解禁のゲート)', to: '/admin/scenario', issue: 545 },
+  { key: 'story', title: '宝箱・キラキラ', desc: '置きアイテム (宝箱・キラキラ・しらべる場所) の場所と中身', to: '/admin/story', issue: 846 },
   { key: 'characters', title: '人物の名前', desc: '文に {c:id} と書いた名前。改名はここだけ', to: '/admin/characters', issue: 834 },
   { key: 'dialogue', title: '会話', desc: '冒頭・ギルド・宿屋・なんでも屋のセリフ (場面ごと)', to: '/admin/dialogue', issue: 786 },
   { key: 'items', title: 'アイテム', desc: 'そうび・どうぐ・素材の編集', to: '/admin/items', issue: 420 },

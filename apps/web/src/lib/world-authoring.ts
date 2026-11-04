@@ -63,6 +63,12 @@ import {
   describeDanglingRef,
   type CharacterDef,
   type AdminWorldRecordName,
+  placedItemsSaveIssue,
+  setStory,
+  validateStory,
+  type NpcPlacementWorld,
+  type PlacedItemDef,
+  type StoryData,
 } from '@aozoraquest/core';
 import { EDGE_URL } from './edge-config';
 import { ADMIN_COL, ADMIN_WORLD_COL } from './collections';
@@ -467,4 +473,36 @@ export async function saveCharacters(agent: Agent, characters: CharacterDef[]): 
   if (dangling) throw new Error(describeDanglingRef(dangling));
   await putRecord(agent, ADMIN_WORLD_COL.characters, RKEY, { characters, updatedAt: new Date().toISOString() });
   setCharacters(characters);
+}
+
+// ─── 宝箱・キラキラ (D-CHEST-001 §7) ─────────────────────────
+
+/** story の編集用の読み込み。NPC エディタと同じ地図・NPC・内部マップに、シナリオと story を厳密に足す
+ *  (読めなければ throw = 保存させない。上書きで物語のキーアイテムが消えるのを防ぐ)。 */
+export async function loadStoryAuthoringRecords(agent: Agent, adminDid: string, isCurrent = () => true) {
+  const base = await loadNpcAuthoringRecords(agent, adminDid, isCurrent);
+  const scenario = await getAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+  if (scenario && !Array.isArray(scenario.events)) throw new Error('シナリオ レコードが不正');
+  const story = await getAuthoringRecord<StoryData>(agent, adminDid, ADMIN_WORLD_COL.story, RKEY);
+  if (story && story.placedItems !== undefined && !Array.isArray(story.placedItems)) throw new Error('story レコードが不正');
+  if (!isCurrent()) throw new Error('読み込みを取り消しました');
+  const events = scenario?.events ?? [];
+  setScenario(events);
+  setStory(story);
+  return { npcs: base.list, world: base.world, events, story: structuredClone(story ?? {}) };
+}
+
+/**
+ * 置きアイテムだけを差し替えて story を保存する。戦闘と固定モンスターは読んだ値をそのまま書き戻す。
+ * 検証は core の validateStory、置いたマスは新しく置いた・動かしたものだけ (edge の PUT と同じ)。
+ */
+export async function saveStoryPlacedItems(agent: Agent, saved: StoryData, placedItems: PlacedItemDef[], ctx: { world: NpcPlacementWorld; npcs: readonly NpcDef[]; events: readonly ScenarioEvent[] }): Promise<StoryData> {
+  const next: StoryData = { ...saved, placedItems };
+  validateStory(next, ctx.events);
+  const issue = placedItemsSaveIssue(ctx.world, placedItems, saved.placedItems ?? [], ctx.npcs, saved.fieldMonsters ?? []);
+  if (issue) throw new Error(issue);
+  const { updatedAt: _old, ...rest } = next as StoryData & { updatedAt?: string };
+  await putRecord(agent, ADMIN_WORLD_COL.story, RKEY, { ...rest, updatedAt: new Date().toISOString() });
+  setStory(next);
+  return next;
 }

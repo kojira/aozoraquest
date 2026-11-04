@@ -266,7 +266,7 @@ describe('/api/admin/data (#695)', () => {
 
   describe('story (D-STORY-009)', () => {
     const flags = (n: number) => Array.from({ length: n }, (_, i) => `f${i}`);
-    const item = (over: Record<string, unknown> = {}) => ({ id: 'pi-key', mapId: 'cave-1', x: 4, y: 7, itemId: 'herb', count: 1, flag: 'got-key', ...over });
+    const item = (over: Record<string, unknown> = {}) => ({ id: 'pi-key', mapId: 'world', x: 302, y: 300, itemId: 'herb', count: 1, flag: 'got-key', ...over }); // 歩けるマス (保存のときに置き場所を見る)
     const put = async (name: string, value: unknown) => (await handleRequest(call('PUT', name, { body: { value, swapCid: null, dryRun: true } }), await makeEnv())).status;
 
     it('シナリオと置きアイテムのフラグ数の合計が 500 を超えると、どちらを保存しても 400', async () => {
@@ -276,6 +276,16 @@ describe('/api/admin/data (#695)', () => {
       store.delete(COL('scenario')); setScenario(null); // レコードが無ければ読み込みは触らないので、前の適用を消す
       store.set(COL('story'), { value: { placedItems: [item()] }, cid: 'st1' });
       expect(await put('scenario', { events: [{ id: 'e1', title: 't', when: [], setFlags: flags(500) }] })).toBe(400);
+      expect(pds.puts).toHaveLength(0);
+    });
+
+    it('新しく置いた宝箱が歩けないマス・NPC の上なら 400 で書かない。動かしていない既存のものは通す (D-CHEST-001)', async () => {
+      const chest = (over: Record<string, unknown> = {}) => ({ id: 'c1', mapId: 'world', x: 301, y: 300, kind: 'chest', rewards: [{ power: 1 }], ...over });
+      expect(await put('story', { placedItems: [chest()] })).toBe(200);
+      expect(await put('story', { placedItems: [chest({ ...WATER })] })).toBe(400);
+      expect(await put('story', { placedItems: [chest({ x: NPC.x, y: NPC.y })] })).toBe(400);
+      store.set(COL('story'), { value: { placedItems: [chest({ ...WATER })] }, cid: 'st1' });
+      expect(await put('story', { placedItems: [chest({ ...WATER }), chest({ id: 'c2' })] })).toBe(200);
       expect(pds.puts).toHaveLength(0);
     });
 
