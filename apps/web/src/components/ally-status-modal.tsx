@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { jobDisplayName, jobXpToNextLevel, partyCombatants, skillsForJob, type Archetype, type RecruitStar } from '@aozoraquest/core';
 import { HeroRow, Section, STAT_ROWS, StatRow } from './status-modal';
+import { bondDetailText, heartsText } from '@/lib/bond-view';
 
 /** つよさの窓に出す仲間 (パーティの仲間か、ギルドの候補)。xp は仲間が自分の経験値を持つときだけ (D-PARTY-002 §11)。 */
 export interface AllyStatusTarget {
@@ -10,6 +11,8 @@ export interface AllyStatusTarget {
   star?: RecruitStar | undefined;
   level: number;
   xp?: number | undefined;
+  /** パーティの仲間の きずな (D-PARTY-004)。ギルドの候補には無い。 */
+  bond?: number | undefined;
 }
 
 /**
@@ -44,7 +47,9 @@ export function AllyStatusModal({ ally, hp, mp, onClose }: { ally: AllyStatusTar
         <div style={{ overflowY: 'auto' }}>
           <div style={{ fontWeight: 700 }}>
             {ally.name} <span aria-label={`★${stars}`} style={{ color: '#f5c542', fontWeight: 400 }}>{'★'.repeat(stars)}</span>
+            {ally.bond !== undefined && <> <span style={{ color: '#e8667a', fontWeight: 400 }}>{heartsText(ally.bond)}</span></>}
           </div>
+          {ally.bond !== undefined && <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>{bondDetailText(ally.bond)}</div>}
           <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
             {job} Lv <span style={{ fontFamily: 'ui-monospace, monospace' }}>{ally.level}</span>
           </div>

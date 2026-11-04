@@ -5,6 +5,7 @@ import { serverFieldSkill, serverItem, type ServerParty, type ServerSkillResult 
 import type { FieldMember } from '@/components/field-skill-modal';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import type { Vitals } from '@/lib/world-view';
+import { bondUpLines } from '@/lib/bond-view';
 
 const newRkey = () => [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -46,7 +47,8 @@ export function useFieldHeal({ agent, inventory, setWs, setParty }: {
       const r = await serverItem(agent, item, ally.id);
       inventory.applyServerMaterials(r.materials);
       applyVitals(r);
-      return item === 'herb' ? `${ally.c.name}に やくそうを使った! HPが${r.healed}回復。` : `${ally.c.name}に そらのしずくを使った! MPが${r.healed}回復。`;
+      const said = item === 'herb' ? `${ally.c.name}に やくそうを使った! HPが${r.healed}回復。` : `${ally.c.name}に そらのしずくを使った! MPが${r.healed}回復。`;
+      return [said, ...bondUpLines(r.allyBondUp)].join(' ');
     } catch (e) {
       return e instanceof Error && e.message ? e.message : 'つかえなかった (通信エラー)。';
     }

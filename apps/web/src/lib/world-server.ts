@@ -107,7 +107,9 @@ export interface ServerMoveResult {
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
 /** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
  *  members は生成の仲間の定義と経験値、xp はなじみの経験値 (D-PARTY-002)。 */
-export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number> }
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number> }
+/** きずなの ♥ が増えた仲間 (増えたあとの ♥ の数。D-PARTY-004)。 */
+export interface ServerBondUp { id: string; name: string; hearts: number }
 /** ギルドの今日の候補 (D-PARTY-002)。入れた人は含まない。 */
 export interface ServerPartyCandidates { day: string; candidates: RecruitCandidate[]; power: number; rerollPower: number }
 export interface ServerGameState { party?: ServerParty; did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; version: number; updatedAt: string }
@@ -130,13 +132,14 @@ export interface ServerAward {
   };
   /** この決着で Lv が上がった仲間 (D-PARTY-002)。上がった仲間は全快している。 */
   allyLeveledUp?: Array<{ id: string; name: string; from: number; to: number }>;
+  allyBondUp?: ServerBondUp[];
 }
 export interface ServerTurnResult { party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
   activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
-export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number; party?: ServerParty }
+export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number; party?: ServerParty; allyBondUp?: ServerBondUp[] }
 /** フィールドの回復のとくぎの結果 (D-PARTY-003)。healed は回復した人ごと (全体回復は全員)。 */
-export interface ServerSkillResult { healed: Array<{ id: string; name: string; amount: number }>; casterName: string; skillName: string; carryHp?: number; carryMp?: number; party?: ServerParty; duplicate?: boolean }
+export interface ServerSkillResult { healed: Array<{ id: string; name: string; amount: number }>; casterName: string; skillName: string; carryHp?: number; carryMp?: number; party?: ServerParty; duplicate?: boolean; allyBondUp?: ServerBondUp[] }
 export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 
 /** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
@@ -283,6 +286,9 @@ export interface ServerQuestResult {
   materials: Record<string, number>;
   /** 達成時のみ: 付与された報酬。 */
   rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 達成時のみ: きずなの ♥ が増えた仲間と、足したあとの party (D-PARTY-004)。 */
+  allyBondUp?: ServerBondUp[];
+  party?: ServerParty;
   /** 受注で始まる戦闘 (D-STORY-009)。サーバーが封印済み。 */
   encounter?: ServerEncounter;
   /** 進行フラグ (#545)。サーバーが立てた結果。 */

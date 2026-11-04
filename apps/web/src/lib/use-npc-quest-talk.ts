@@ -3,6 +3,7 @@ import type { Agent } from '@atproto/api';
 import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, RECRUIT_GACHA, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import { scenarioMessagesOf, serverPartyCandidates, serverPartyReroll, serverPartySet, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter, type ServerParty } from '@/lib/world-server';
 import { PARTY_LINES } from '@/lib/party-lines';
+import { bondUpLines } from '@/lib/bond-view';
 import type { DialogueChoice } from '@/lib/dialogue';
 import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoiceTitle, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 import { guildReception, npcQuestCandidates, type NpcTalk } from '@/lib/npc-talk';
@@ -137,12 +138,13 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       if (res.flags) flagsRef.current = res.flags;
       setServerPower(res.power);
       applyServerMaterials(res.materials);
+      if (res.party) setParty(res.party); // きずなを足したあとの party (D-PARTY-004)
       const r = res.rewarded;
       const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
         r?.power ? `あおぞらパワー${r.power}` : null].filter(Boolean).join('と');
       // talk は相手のセリフ (いつものセリフの代わり) に続けて達成を出す (D-STORY-009)。
       const said = o.kind === 'talk' ? [o.line, `『${q.title}』を達成した！`] : q.done;
-      message([...said, ...(got ? [`${got}をもらった！`] : [])], [...scenarioMessagesOf(res.scenarioMessages, res.notices), ...(grown ? [{ text: PARTY_LINES.grown }] : [])]);
+      message([...said, ...(got ? [`${got}をもらった！`] : []), ...bondUpLines(res.allyBondUp)], [...scenarioMessagesOf(res.scenarioMessages, res.notices), ...(grown ? [{ text: PARTY_LINES.grown }] : [])]);
     } catch (e) {
       try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
       if (questRef.current.done.includes(q.id)) message(['この依頼は達成済みだよ。']);
