@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { BattleState } from '@aozoraquest/core';
+import { activeEquipment, activeItems, setItemOverrides, type BattleState } from '@aozoraquest/core';
 import { WorldBattleControls, type BattlePhase } from './world-battle-controls';
 
 const fighter = (name: string, hp: number) => ({ name, hp, maxHp: 30, mp: 5, maxMp: 5, atk: 1, def: 1, agi: 1, int: 1, luk: 1, vit: 0, guarding: false, parrying: false, charging: false, focus: 0, statuses: [], passives: [] });
@@ -117,5 +117,42 @@ describe('WorldBattleControls 行ごとの HP (#764)', () => {
     fireEvent.click(layer()!); finishTyping();
     expect(enemyHp()).toBe('25 / 30');
     expect(onLineHp).toHaveBeenLastCalledWith(1, 12, true);
+  });
+});
+
+describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
+  const NEMURI = { id: 'nemuri-kona', name: 'ねむりごな', battle: { effects: [{ kind: 'status' as const, status: 'sleep' as const, target: 'enemy' as const, chance: 0.7, turns: 3 }] } };
+  beforeEach(() => setItemOverrides({ items: [...activeItems(), NEMURI], equipment: [...activeEquipment()] }));
+  afterEach(() => setItemOverrides(null));
+  const withItems = (battleItems: Record<string, number>, enemies = 1): BattleState => {
+    const s = state();
+    const extra = enemies > 1 ? { allies: [s.player], enemies: [s.monster, fighter('スライムB', 10)] } : {};
+    return { ...s, battleItems, ...extra } as BattleState;
+  };
+  const openItems = (s: BattleState, onCommand = vi.fn()) => {
+    render(<WorldBattleControls state={s} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={onCommand} onAdvance={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'どうぐ' }));
+    return onCommand;
+  };
+
+  it('どうぐの行が「名前 ×N」で並び、押すと item と itemId を送る', () => {
+    const onCommand = openItems(withItems({ 'nemuri-kona': 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'ねむりごな ×2' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona');
+  });
+  it('やくそう・しずくが 0 でも、戦闘用のどうぐがあれば「どうぐ」を押せる', () => {
+    render(<WorldBattleControls state={withItems({ 'nemuri-kona': 1 })} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={vi.fn()} onAdvance={vi.fn()} />);
+    expect((screen.getByRole('button', { name: 'どうぐ' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it('0 個のどうぐは出さない (何もなければ「どうぐ」は押せない)', () => {
+    render(<WorldBattleControls state={withItems({ 'nemuri-kona': 0 })} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={vi.fn()} onAdvance={vi.fn()} />);
+    expect((screen.getByRole('button', { name: 'どうぐ' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /ねむりごな/ })).toBeNull();
+  });
+  it('敵が 2 体でも、ねらう相手の選択はまだ出さずにそのまま送る (1 体目に使う)', () => {
+    const onCommand = openItems(withItems({ 'nemuri-kona': 1 }, 2));
+    fireEvent.click(screen.getByRole('button', { name: 'ねむりごな ×1' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona');
+    expect(screen.queryByText('だれを ねらう？')).toBeNull();
   });
 });
