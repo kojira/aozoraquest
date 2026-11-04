@@ -34,11 +34,12 @@ export const seesFieldDanger = (archetype: string | null, party: ServerParty) =>
   canSeeFieldDanger(archetype) || partyDefsOf(party, recruitById, 1).some((a) => canSeeFieldDanger(a.archetype));
 
 /** フィールドの上枠ラベル。見える職なら `危険度・深い森 / よく出る敵`、見えなければ地形だけ。
+ *  見えない職の森以外は伝えることが無いので null (= 右上の枠ごと出さない)。
  *  モンスターが 0 体 (未読込) なら敵名を出さない (D-MONSTER-001)。 */
-export const fieldLocationLabel = (tier: number, forest: boolean, favoredMonsterName: string | undefined, seesDanger: boolean) =>
+export const fieldLocationLabel = (tier: number, forest: boolean, favoredMonsterName: string | undefined, seesDanger: boolean): string | null =>
   seesDanger
     ? `${dangerLabel(tier)}${forest ? '・深い森' : ''}${favoredMonsterName ? ` / ${favoredMonsterName}` : ''}`
-    : forest ? '深い森' : 'フィールド';
+    : forest ? '深い森' : null;
 
 /** サーバーの ServerBattleState を描画用 BattleState として扱う (seed は実行時に存在しない = UI 未使用)。 */
 export const asBattleState = (s: ServerBattleState): BattleState => s as unknown as BattleState;

@@ -58,8 +58,8 @@ export function WorldHud({
    *。以前は本文の注意書きの末尾に埋もれていて、
    *  「1 戦 = 1 消費」なのに残りが見えなかった。未取得なら省く。 */
   power?: number | null;
-  /** 街名 or 危険度ラベル (右上に小さく) */
-  locationLabel: string;
+  /** 街名 or 危険度ラベル (右上に小さく)。null なら右上の枠を出さない */
+  locationLabel: string | null;
   /** 通常は HUD_Z。戦闘オーバーレイ中は HP/MP を上枠で鮮明に見せるため
    *  OVERLAY_Z より上に持ち上げる (表示専用なので操作は妨げない)。 */
   zIndex?: number;
@@ -92,7 +92,8 @@ export function WorldHud({
         )}
       </div>
       {/* 右上: 現在地 */}
-      <div
+      {locationLabel !== null && <div
+        data-hud-location
         style={{
           ...panel,
           right: 6,
@@ -107,7 +108,7 @@ export function WorldHud({
         }}
       >
         {locationLabel}
-      </div>
+      </div>}
     </div>
   );
 }
