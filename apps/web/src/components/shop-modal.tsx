@@ -21,6 +21,7 @@ import {
   type Town,
   shopKeeperFor,
   worldOverlay,
+  withCharacterNames,
 } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
 import { DialogueWindow } from '@/components/dialogue-window';
@@ -109,7 +110,7 @@ export function ShopModal({
   const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
   // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
   const keeper = useMemo(() => shopKeeperFor(town.x, town.y), [town]);
-  const materialName = ITEMS[stock.materialId]?.name ?? stock.materialId;
+  const materialName = withCharacterNames(ITEMS[stock.materialId]?.name ?? stock.materialId);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const piecesByItem = useMemo(() => {
@@ -379,7 +380,7 @@ export function ShopModal({
                     return (
                       <div key={id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
                         <span>
-                          {ITEMS[id]?.name ?? id} ×{n}
+                          {withCharacterNames(ITEMS[id]?.name ?? id)} ×{n}
                         </span>
                         <button
                           type="button"

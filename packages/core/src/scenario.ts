@@ -34,6 +34,7 @@ import { ITEMS } from './battle.js';
 import { JOBS_BY_ID } from './jobs.js';
 import type { Archetype } from './types.js';
 import { isStoryEffectList, MAX_STORY_EFFECTS, type StoryEffect } from './story-effect.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class ScenarioError extends Error {}
 
@@ -123,6 +124,8 @@ export function validateScenario(list: readonly ScenarioEvent[] | null): void {
     if (e.notice !== undefined && (typeof e.notice !== 'string' || e.notice.trim() === '' || e.notice.length > MAX_NOTICE_LEN)) {
       throw new ScenarioError(`${where}: お知らせが不正 (${MAX_NOTICE_LEN} 文字まで)`);
     }
+    const tokenIssue = e.notice !== undefined ? characterTokenIssue(e.notice) : null;
+    if (tokenIssue) throw new ScenarioError(`${where}: お知らせの${tokenIssue}`);
     if (e.effects !== undefined) {
       if (!isStoryEffectList(e.effects)) throw new ScenarioError(`${where}: 演出が不正 (${MAX_STORY_EFFECTS} 件まで)`);
       if (e.notice === undefined) throw new ScenarioError(`${where}: 演出にはお知らせが必要`);

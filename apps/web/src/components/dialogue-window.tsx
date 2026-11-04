@@ -24,6 +24,7 @@ import {
  * - 全文表示済みの行には ▼ を点滅させる (DQ の「送れます」記号)
  */
 
+import { withCharacterNames } from '@aozoraquest/core';
 import { NpcPortrait } from './npc-image';
 import { StoryEffectLayer } from './story-effect-layer';
 import { storyEffectState, transientStoryEffects } from '@/lib/story-effects';
@@ -67,11 +68,11 @@ const SR_ONLY: React.CSSProperties = {
 };
 
 export function DialogueWindow({
-  lines,
+  lines: rawLines,
   plateIcon,
   portrait,
   onDone,
-  choices,
+  choices: rawChoices,
   busy = false,
   anchor = 'viewport',
   conversationStep,
@@ -98,6 +99,14 @@ export function DialogueWindow({
    *  会話イラストの再取得中は絵が消えていた)。Object.is で比べる。 */
   conversationStep?: unknown;
 }) {
+  // 人物の名前 {c:id} (D-CHAR-001) は表示の直前にここで置き換える。NPC・クエスト・お知らせ・会話データ・
+  // 店主のセリフはすべてこの窓を通るので、置き換えの場所は 1 か所で済む。
+  const lines = useMemo(() => rawLines.map((l) => ({
+    ...l, text: withCharacterNames(l.text),
+    ...(l.speaker !== undefined ? { speaker: withCharacterNames(l.speaker) } : {}),
+    ...(l.portrait ? { portrait: { ...l.portrait, name: withCharacterNames(l.portrait.name) } } : {}),
+  })), [rawLines]);
+  const choices = useMemo(() => rawChoices?.map((c) => ({ ...c, label: withCharacterNames(c.label) })), [rawChoices]);
   // 進行状態は段と一緒に持つ: 前の段への done 等が、次の段へ漏れない。
   const [view, setView] = useState(() => ({ step: conversationStep, st: startDialogue() }));
   if (!Object.is(view.step, conversationStep)) setView({ step: conversationStep, st: startDialogue() });
@@ -203,7 +212,7 @@ export function DialogueWindow({
   const complete = lineComplete(lines, st);
   // 演出 (D-STORY-007) は地図枠に出すときだけ。段と行を鍵に一過性の演出を一度だけ再生する。
   const effectsShown = onMap && lines.some((l) => l.effects?.length);
-  const shownPortrait = line.speaker ? line.portrait ?? portrait : undefined;
+  const shownPortrait = line.speaker ? line.portrait ?? (portrait && { ...portrait, name: withCharacterNames(portrait.name) }) : undefined;
 
   return (
     <>

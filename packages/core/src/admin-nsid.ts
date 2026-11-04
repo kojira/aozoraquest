@@ -11,8 +11,8 @@
 /** 本家の NSID の根。web は fork 用に VITE_NSID_ROOT で差し替えられる。 */
 export const AQ_NSID_ROOT = 'app.aozoraquest';
 
-/** 管理者 PDS の world.* レコード名。並びは loadAdminWorld の読み込み順。 */
-export const ADMIN_WORLD_RECORDS = ['map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'] as const;
+/** 管理者 PDS の world.* レコード名。並びは loadAdminWorld の読み込み順 (characters は先頭。D-CHAR-001)。 */
+export const ADMIN_WORLD_RECORDS = ['characters', 'map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'] as const;
 export type AdminWorldRecordName = (typeof ADMIN_WORLD_RECORDS)[number];
 
 /** 管理者 PDS の config.* レコード名。 */

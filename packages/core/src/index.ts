@@ -37,6 +37,7 @@ export * from './scenario.js';
 export * from './story-data.js';
 export * from './story-effect.js';
 export * from './dialogue-data.js';
+export * from './character-data.js';
 export * from './equipment.js';
 
 export * from './starter-town-shop.js';

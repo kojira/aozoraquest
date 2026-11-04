@@ -11,7 +11,7 @@
 
 ### スクリプトの仕様（コードで確かめた事実）
 
-- 対象は `PROMOTE_NAMES` の10種だけ：monsters, monsterArt, items, shops, npcs, interiors, quests, scenario, story, dialogue。
+- 対象は `PROMOTE_NAMES` の11種だけ：characters, monsters, monsterArt, items, shops, npcs, interiors, quests, scenario, story, dialogue。
   - map・tileArt・jobs は対象外（渡すと「対象外の name」で止まる）。
   - 書き先は `assertProdTarget` で `app.aozoraquest.world.(10種)` に限られる。
 - 使い方：`node scripts/promote-admin-records.mjs <name…> --backup-dir <dir> [--execute]`
@@ -28,8 +28,10 @@
 
 ### 読み込み順（`packages/core/src/admin-nsid.ts` の `ADMIN_WORLD_RECORDS`）
 
-map → tileArt → monsters → monsterArt → items → shops → npcs → jobs → interiors → quests → scenario → story → dialogue
+characters → map → tileArt → monsters → monsterArt → items → shops → npcs → jobs → interiors → quests → scenario → story → dialogue
 
+- characters（人物の名前。D-CHAR-001）は先頭。文の `{c:<id>}` は表示の直前にこの名前へ置き換わる。読み込みでは id の有無を見ないので、どの順で書いてもレコードは落ちない。ただし characters を先に書かないと、途中の数分間 `{c:id}` の id がそのまま画面に出る。
+- **`{c:<id>}` を含むデータは、それを解すコード（web・edge）を本番に出してから移す。** 逆の順にすると、本番で `{c:x}` がそのまま出る。
 - shops は items の後、quests は npcs・monsters・items の後、scenario は quests の後、story は scenario の後（検証が先のレコードを引く）。
 - edge は5分（`CACHE_TTL_SEC = 300`）ごとに全レコードをこの順で読み直す。1件が検証で落ちても後続は止まらず、その名前だけ古い値のまま残る（monsters・monsterArt は KV の last-good に倒れる）。
 - 書いている途中は「新しい quests がまだ無い npc を指す」状態がありうる。だから書く順は読み込み順に合わせる。
@@ -61,12 +63,12 @@ map → tileArt → monsters → monsterArt → items → shops → npcs → job
      - 例外が出なければよい。章を足したときは、その章を通しで進めるチェックも合わせて回す。
    - TODO: 検証をリポジトリのスクリプトにする（#828）。
 3. **dry-run する。**
-   `node scripts/promote-admin-records.mjs monsters monsterArt items shops npcs interiors quests scenario story dialogue --backup-dir <dir>`
+   `node scripts/promote-admin-records.mjs characters monsters monsterArt items shops npcs interiors quests scenario story dialogue --backup-dir <dir>`
    - 名前は変えるものだけでよい。並びは読み込み順にする。
    - 出力（上書きか新規か、件数、cid）を保存する。
 4. **オーナーの承認をもらう。** dry-run の要約と検証の結果を見せる。
 5. **`--execute` で書く。** 3と同じコマンドに `--execute` を付け、環境変数で資格情報を渡す。
-   - 順番は読み込み順：monsters → monsterArt → items → shops → npcs → interiors → quests → scenario → story → dialogue。
+   - 順番は読み込み順：characters → monsters → monsterArt → items → shops → npcs → interiors → quests → scenario → story → dialogue。
    - 途中で止まったら（CAS の失敗など）、残りを同じ順で続ける。書けた分の退避ファイルは消さない。
 6. **書いた結果を確かめる。** 本番と dev の全レコードを公開の `com.atproto.repo.getRecord`（repo＝管理者 DID、rkey＝`self`）で読み、`$type` 以外が一致することを比べる。
 7. **本番 edge のログを見る。** 最大5分（TTL）待ってから本番 edge（`aozoraquest-edge`）を `wrangler tail` し、`authored world: <name> failed` が出ないことを確かめる。

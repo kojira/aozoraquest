@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EQUIPMENT_BY_ID, ITEMS, leveledName } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, ITEMS, leveledName, withCharacterNames } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
 
 /**
@@ -133,7 +133,7 @@ export function InventoryModal({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3em 0.8em', fontSize: '0.85em', marginBottom: '0.6em' }}>
           {mats.map(([id, n]) => (
             <span key={id}>
-              {ITEMS[id]?.name ?? id} <span style={{ color: 'var(--color-muted)' }}>×{n}</span>
+              {withCharacterNames(ITEMS[id]?.name ?? id)} <span style={{ color: 'var(--color-muted)' }}>×{n}</span>
             </span>
           ))}
         </div>

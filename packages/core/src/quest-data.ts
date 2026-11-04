@@ -20,6 +20,7 @@
 import { MONSTERS_BY_ID, ITEMS } from './battle.js';
 import { allNpcs } from './npc-data.js';
 import { assertItemRequirements, isFlagName, type ItemRequirement } from './scenario.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class QuestDataError extends Error {}
 
@@ -91,6 +92,11 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
           throw new QuestDataError(`${where}: ${name} のセリフが不正`);
         }
       }
+    }
+    // 人物の名前 {c:id} (D-CHAR-001) は形だけ見る。id の有無は保存のとき。
+    for (const t of [q.title, ...q.intro, ...q.done, ...(q.progress ?? []), ...(q.objective?.kind === 'talk' ? [q.objective.line] : [])]) {
+      const issue = typeof t === 'string' ? characterTokenIssue(t) : null;
+      if (issue) throw new QuestDataError(`${where}: ${issue}`);
     }
     const o = q.objective;
     if (!o) throw new QuestDataError(`${where}: 達成条件が無い`);

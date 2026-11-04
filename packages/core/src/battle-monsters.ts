@@ -8,6 +8,7 @@ import { type Element } from './elements.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng } from './battle-rng.js';
 import { type Combatant, makeCombatant, monsterStats } from './battle-combatant.js';
+import { withCharacterNames } from './character-data.js';
 
 // ─── モンスター ─────────────────────────────────────────────
 
@@ -390,7 +391,7 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   // モンスターは tier 係数の乗算 (プレイヤーとは別式)。HP/MP は明示値 (全モンスターが持つ)。
   const ms = monsterStats(def.stats, factor);
   const c = makeCombatant(
-    def.name,
+    withCharacterNames(def.name), // 名前の差し込み {c:id} (D-CHAR-001)。edge の戦闘の文もこの名前を使う
     ms,
     Math.round(BATTLE_TUNING.hpBase + ms[1] * BATTLE_TUNING.hpVitScale), // 明示 hp が無い敵のみ (直後に上書き)
     Math.round(BATTLE_TUNING.mpBase + ms[3]),
