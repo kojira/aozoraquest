@@ -2,8 +2,8 @@ import { STATUS_REGISTRY, type ItemDefData, type SkillEffect, type StatusId } fr
 
 /**
  * /admin/items の「どうぐ」1 行に付ける、戦闘で使う どうぐ と 店の欄 (D-ITEM-001 §6)。
- * 「戦闘でつかう」を入れると効果の行・desc・値段・shopTier が開く。検証は保存のとき core の
- * validateItems (setItemOverrides) が行う (ここでは値の形を整えるだけ)。
+ * 「戦闘でつかう」を入れると効果の行が開く。説明・値段・shopTier はどの消耗品にも出す (ItemShopEditor)。
+ * 検証は保存のとき core の validateItems (setItemOverrides) が行う (ここでは値の形を整えるだけ)。
  */
 type ItemEffect = Extract<SkillEffect, { kind: 'status' | 'heal' | 'cleanse' | 'restoreMp' }>;
 const EFFECT_KINDS: ReadonlyArray<[ItemEffect['kind'], string]> = [['status', '状態'], ['heal', 'HP回復'], ['cleanse', '状態回復'], ['restoreMp', 'MP回復']];
@@ -28,12 +28,6 @@ export function ItemBattleEditor({ item, onChange }: { item: ItemDefData; onChan
       for (const [k, v] of Object.entries(patch)) if (v === undefined) delete merged[k];
       return merged as ItemEffect;
     }));
-  };
-  const setField = <K extends 'desc' | 'price' | 'shopTier'>(k: K, v: ItemDefData[K] | undefined) => {
-    const next = { ...item } as Record<string, unknown>;
-    if (v === undefined) delete next[k];
-    else next[k] = v;
-    onChange(next as unknown as ItemDefData);
   };
   const small = { fontSize: '0.8em' } as const;
   return (
@@ -69,9 +63,23 @@ export function ItemBattleEditor({ item, onChange }: { item: ItemDefData; onChan
         </div>
       ))}
       <button type="button" onClick={() => setEffects([...effects, defaultEffect('status')])} style={{ ...small, alignSelf: 'flex-start' }}>＋効果</button>
+    </div>
+  );
+}
+
+/** 消耗品の 説明・値段・shopTier (戦闘で使うかどうかによらない。やくそう・しずく・はねの値段もここで付ける)。 */
+export function ItemShopEditor({ item, onChange }: { item: ItemDefData; onChange: (next: ItemDefData) => void }) {
+  const setField = <K extends 'desc' | 'price' | 'shopTier'>(k: K, v: ItemDefData[K] | undefined) => {
+    const next = { ...item } as Record<string, unknown>;
+    if (v === undefined) delete next[k];
+    else next[k] = v;
+    onChange(next as unknown as ItemDefData);
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2em', margin: '0.1em 0 0.4em 1em', fontSize: '0.8em' }}>
       <label style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
         説明
-        <input aria-label="説明" value={item.desc ?? ''} maxLength={60} onChange={(ev) => setField('desc', ev.target.value || undefined)} style={{ flex: 1 }} />
+        <input aria-label={`${item.id} の説明`} value={item.desc ?? ''} maxLength={60} onChange={(ev) => setField('desc', ev.target.value || undefined)} style={{ flex: 1 }} />
       </label>
       <ItemShopFields item={item} setField={setField} />
     </div>
@@ -87,18 +95,18 @@ function ItemShopFields({ item, setField }: {
     <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flexWrap: 'wrap' }}>
       値段 パワー
       <input
-        aria-label="値段 パワー" type="number" min="0" value={item.price?.power ?? ''}
+        aria-label={`${item.id} の値段 パワー`} type="number" min="0" value={item.price?.power ?? ''}
         onChange={(ev) => setField('price', ev.target.value === '' ? undefined : { power: Number(ev.target.value), materials: item.price?.materials ?? 0 })}
         style={{ width: '4em' }}
       />
       + 素材
       <input
-        aria-label="値段 素材" type="number" min="0" value={item.price?.materials ?? ''} disabled={!item.price}
+        aria-label={`${item.id} の値段 素材`} type="number" min="0" value={item.price?.materials ?? ''} disabled={!item.price}
         onChange={(ev) => setField('price', { power: item.price?.power ?? 0, materials: Number(ev.target.value || 0) })}
         style={{ width: '3em' }}
       />
       こ / 店
-      <select aria-label="店の tier" value={item.shopTier ?? ''} onChange={(ev) => setField('shopTier', ev.target.value === '' ? undefined : (Number(ev.target.value) as 1 | 2 | 3))}>
+      <select aria-label={`${item.id} の店の tier`} value={item.shopTier ?? ''} onChange={(ev) => setField('shopTier', ev.target.value === '' ? undefined : (Number(ev.target.value) as 1 | 2 | 3))}>
         <option value="">並べない</option>
         <option value="1">tier1〜</option>
         <option value="2">tier2〜</option>

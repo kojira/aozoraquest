@@ -7,9 +7,11 @@ import {
   activeEquipment,
   activeItems,
   canEquip,
+  CONSUMABLE_ITEMS,
   danglingRefs,
   describeDanglingRef,
   ItemDataError,
+  ITEMS_WITH_BATTLE_COMMAND,
   JOBS,
   JOB_EQUIP_KINDS,
   type BonusStat,
@@ -21,7 +23,7 @@ import { isAdminDid } from '@/lib/runtime-config';
 import { saveItems } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
-import { ItemBattleEditor } from '@/components/admin/item-battle-editor';
+import { ItemBattleEditor, ItemShopEditor } from '@/components/admin/item-battle-editor';
 
 /**
  * **アイテムエディタ** (#420)。そうび / どうぐ・素材 の 2 タブ。
@@ -179,7 +181,8 @@ export function AdminItems() {
                 />
                 だいじ
               </label>
-              {/* 戦闘でつかう どうぐ (D-ITEM-001)。入れると効果・説明・値段・店の欄が開く。 */}
+              {/* 戦闘でつかう どうぐ (D-ITEM-001)。入れると効果の欄が開く。やくそう・しずくは専用のコマンドで使うので出さない。 */}
+              {!ITEMS_WITH_BATTLE_COMMAND.includes(it.id) && (
               <label style={{ display: 'flex', gap: '0.2em', alignItems: 'center', fontSize: '0.8em', whiteSpace: 'nowrap' }}>
                 <input
                   type="checkbox"
@@ -197,6 +200,7 @@ export function AdminItems() {
                 />
                 戦闘
               </label>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -211,6 +215,11 @@ export function AdminItems() {
             </div>
             {it.battle && (
               <ItemBattleEditor item={it} onChange={(next) => { setItems((xs) => xs.map((x, j) => (j === i ? next : x))); setDirty(true); }} />
+            )}
+            {/* 説明・値段・店の tier は、戦闘で使うかどうかによらず消耗品なら出す (やくそう・しずく・はねの値段も付けられる)。
+                「戦闘」を外しても、すでに値段などを持つ品の欄は消さない。 */}
+            {(CONSUMABLE_ITEMS.includes(it.id) || it.battle || it.price || it.shopTier || it.desc !== undefined) && (
+              <ItemShopEditor item={it} onChange={(next) => { setItems((xs) => xs.map((x, j) => (j === i ? next : x))); setDirty(true); }} />
             )}
             </div>
           ))}
