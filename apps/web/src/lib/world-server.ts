@@ -285,7 +285,7 @@ export interface ServerQuestResult {
 }
 
 /** シナリオのお知らせ 1 行と、その行に付く演出。 */
-export interface ScenarioMessage { text: string; effects?: StoryEffect[] }
+export interface ScenarioMessage { text: string; effects?: StoryEffect[]; /** 話す NPC の id (#907)。 */ npcId?: string }
 
 /** 新 edge の scenarioMessages を優先し、旧 edge の文字列だけのお知らせは演出なしで包む。 */
 export function scenarioMessagesOf(messages: ScenarioMessage[] | undefined, notices: string[] | undefined): ScenarioMessage[] {
