@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { bondHearts, jobDisplayName, partyCombatants, partyDefsOf, recruitById, type NpcDef, type PartyAlly } from '@aozoraquest/core';
+import { type AllyMode, bondHearts, jobDisplayName, partyCombatants, partyDefsOf, recruitById, type NpcDef, type PartyAlly } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 import { GuildPartyModal } from './guild-party-modal';
 import { AllyNameButton, AllyStatusModal } from './ally-status-modal';
 import { heartsText } from '@/lib/bond-view';
+
+/** さくせん を変える (サーバーへ送り、world の party を更新する。D-PARTY-004)。 */
+export type PartyModeSave = (id: string, mode: AllyMode | null) => Promise<void>;
 
 /** パーティの読み込み (権威 state の party と flags)。 */
 export type PartyLoad = () => Promise<{ party: ServerParty; flags: string[] }>;
@@ -21,7 +24,7 @@ export function partyMemberView(a: PartyAlly, party: ServerParty) {
 }
 
 /** 仲間の一覧 (名前・職・★・Lv・HP/MP)。名前を押すと つよさ。right はギルドの「はずす」など行ごとの操作。jobLevel は経験値の無いなじみの Lv。 */
-export function PartyMemberList({ party, jobLevel, right }: { party: ServerParty; jobLevel: number; right?: (a: PartyAlly) => React.ReactNode }) {
+export function PartyMemberList({ party, jobLevel, right, onMode }: { party: ServerParty; jobLevel: number; right?: (a: PartyAlly) => React.ReactNode; onMode?: PartyModeSave | undefined }) {
   const [viewing, setViewing] = useState<PartyAlly | null>(null);
   const closeView = useCallback(() => setViewing(null), []);
   const members = partyDefsOf(party, recruitById, jobLevel);
@@ -40,7 +43,8 @@ export function PartyMemberList({ party, jobLevel, right }: { party: ServerParty
           </div>
         );
       })}
-      {viewing && <AllyStatusModal ally={{ ...viewing, xp: ownXp(viewing, party), bond: party.bond?.[viewing.id] ?? 0 }} hp={party.hp?.[viewing.id]} mp={party.mp?.[viewing.id]} onClose={closeView} />}
+      {viewing && <AllyStatusModal ally={{ ...viewing, xp: ownXp(viewing, party), bond: party.bond?.[viewing.id] ?? 0, mode: party.mode?.[viewing.id] }} hp={party.hp?.[viewing.id]} mp={party.mp?.[viewing.id]} onClose={closeView}
+        {...(onMode ? { onMode: (m: AllyMode | null) => onMode(viewing.id, m) } : {})} />}
     </>
   );
 }
@@ -49,7 +53,7 @@ export function PartyMemberList({ party, jobLevel, right }: { party: ServerParty
 const ownXp = (a: PartyAlly, party: ServerParty) => party.members?.find((m) => m.id === a.id)?.xp ?? party.xp?.[a.id];
 
 /** メニューの「なかま」: 一覧だけ (外すのはギルドで)。 */
-export function PartyModal({ jobLevel, load, onClose }: { jobLevel: number; load: PartyLoad; onClose: () => void }) {
+export function PartyModal({ jobLevel, load, onClose, onMode }: { jobLevel: number; load: PartyLoad; onClose: () => void; onMode?: PartyModeSave | undefined }) {
   const [party, setParty] = useState<ServerParty | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -59,7 +63,7 @@ export function PartyModal({ jobLevel, load, onClose }: { jobLevel: number; load
   }, [load]);
   return (
     <ModalShell title="なかま" onClose={onClose}>
-      {party ? <PartyMemberList party={party} jobLevel={jobLevel} /> : <p style={{ fontSize: '0.82em', ...muted }}>{error ? '読み込めなかった…' : 'よみこみちゅう…'}</p>}
+      {party ? <PartyMemberList party={party} jobLevel={jobLevel} {...(onMode ? { onMode: async (id: string, m: AllyMode | null) => { await onMode(id, m); setParty((p) => (p ? { ...p, mode: { ...Object.fromEntries(Object.entries(p.mode ?? {}).filter(([k]) => k !== id)), ...(m ? { [id]: m } : {}) } } : p)); } } : {})} /> : <p style={{ fontSize: '0.82em', ...muted }}>{error ? '読み込めなかった…' : 'よみこみちゅう…'}</p>}
       <p style={{ fontSize: '0.72em', ...muted, margin: '0.4em 0 0' }}>入れる・外すのは 冒険者ギルドで できます。</p>
     </ModalShell>
   );
@@ -69,7 +73,7 @@ export function PartyModal({ jobLevel, load, onClose }: { jobLevel: number; load
  * world.tsx から開くパーティの窓 (D-PARTY-001)。ギルドの編成 (npcTalk.guild === 'party') とメニューの「なかま」。
  * world.tsx の行数を増やさないため、開く条件と閉じたあとの戻り先をここに置く。
  */
-export function PartyModals({ guildNpc, menuOpen, jobLevel, load, save, candidates, reroll, onGuildClose, onMenuClose }: {
+export function PartyModals({ guildNpc, menuOpen, jobLevel, load, save, candidates, reroll, onGuildClose, onMenuClose, onMode }: {
   guildNpc: NpcDef | null;
   menuOpen: boolean;
   jobLevel: number;
@@ -79,11 +83,12 @@ export function PartyModals({ guildNpc, menuOpen, jobLevel, load, save, candidat
   reroll: (guild: string, rkey: string) => Promise<ServerPartyCandidates>;
   onGuildClose: () => void;
   onMenuClose: () => void;
+  onMode?: PartyModeSave | undefined;
 }) {
   // 読み込み (load) は world の party を更新して ここを描き直す。候補の関数を毎回作ると GuildPartyModal の読み込みが
   // 取り消されて読み直しを繰り返し、窓が空のままになる。ギルドが同じあいだは同じ関数を渡す。
   const guildId = guildNpc?.id;
   const guildCandidates = useCallback(() => candidates(guildId ?? ''), [candidates, guildId]);
   if (guildNpc) return <GuildPartyModal guild={guildNpc} jobLevel={jobLevel} load={load} save={(ids, payRkey) => save(guildNpc.id, ids, payRkey)} candidates={guildCandidates} reroll={(rkey) => reroll(guildNpc.id, rkey)} onClose={onGuildClose} />;
-  return menuOpen ? <PartyModal jobLevel={jobLevel} load={load} onClose={onMenuClose} /> : null;
+  return menuOpen ? <PartyModal jobLevel={jobLevel} load={load} onClose={onMenuClose} onMode={onMode} /> : null;
 }

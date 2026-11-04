@@ -23,7 +23,7 @@ import {
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
-import { serverGear, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { serverGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
 import { GearModal } from '@/components/gear-modal';
 import { resolveGear } from '@/lib/gear';
@@ -50,6 +50,7 @@ import { QuestLogModal } from '@/components/quest-log-modal';
 import { PartyModals } from '@/components/party-modal';
 import { FieldSkillModal, fieldHealSkills } from '@/components/field-skill-modal';
 import { fieldMembers, useFieldHeal } from '@/lib/use-field-heal';
+import { useAllyOrders } from '@/lib/battle-ally-orders';
 import { guildReception } from '@/lib/npc-talk';
 import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
@@ -266,6 +267,8 @@ function WorldScreen() {
     agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave,
     inventory, setServerPower, archetypeRef, didRef,
   });
+  // めいれい の入力の順番 (D-PARTY-004)。主人公 → めいれい の仲間 → 送信。
+  const orders = useAllyOrders(battle?.state ?? null, battle ? `${battle.battleId}:${battle.state.turn}:${battle.phase}` : '', (h, allies) => onBattleCommand(h.command, h.skillIndex, h.itemId, h.targetIndex, allies));
   startEncounterRef.current = (encounter) => beginEncounter(encounter, battleRef, setBattle, setWipe);
   // message の最後の行に着いたターン (`battleId:turn`)。それまで上枠 HP/MP は前ターンの値 (#757)。
   const [revealedBattleTurn, setRevealedBattleTurn] = useState<string | null>(null);
@@ -529,12 +532,13 @@ function WorldScreen() {
               }}
             >
               <WorldBattleControls
-                state={battle.state}
+                state={orders.view ?? battle.state}
                 phase={battle.phase}
                 busy={battle.busy}
                 showEnemyVitals={canSeeEnemyVitals(archetype)}
                 resultLines={battle.resultLines ?? []}
-                onCommand={onBattleCommand}
+                onCommand={orders.onCommand}
+                allyOrder={orders.heading ? { heading: orders.heading, allyTurn: orders.allyTurn, onBack: orders.back, onAuto: orders.auto } : undefined}
                 onAdvance={() => void onMessageAdvance()}
                 prevState={battle.prevState}
                 onReveal={(turn) => setRevealedBattleTurn(`${battle.battleId}:${turn}`)}
@@ -666,7 +670,7 @@ function WorldScreen() {
         />
       )}
       {skillOpen && <FieldSkillModal members={members} cast={fieldHeal.castFieldSkill} onClose={() => setSkillOpen(false)} />}
-      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
+      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onMode={async (id, mode) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyMode(agent, id, mode)).party); }} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />

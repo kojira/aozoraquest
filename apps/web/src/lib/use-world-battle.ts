@@ -9,6 +9,7 @@ import { useLatestRef } from '@/lib/use-latest-ref';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import { asBattleState, type Vitals } from '@/lib/world-view';
 import { battleResultLines } from '@/lib/world-battle-result';
+import type { AllyOrderInput } from '@/lib/battle-ally-orders';
 
 export interface WorldBattle {
   /** サーバー権威の戦闘 state (seed は含まれない = 先読み不可)。描画のみに使う。 */
@@ -61,7 +62,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
   // 決着ターンの報酬 (XP/ドロップ/素材ロス) はサーバーが権威 state に確定し、awarded として返す。
   // タップ送り (onMessageAdvance) で「〜のダメージ！」を読んでから結果へ進む (DQ 風)。
   const onBattleCommand = useCallback(
-    (command: Command, skillIndex?: number, itemId?: string, targetIndex?: number) => {
+    (command: Command, skillIndex?: number, itemId?: string, targetIndex?: number, allies?: readonly AllyOrderInput[]) => {
       const b = battleRef.current;
       if (!b || b.busy || b.phase !== 'input') return;
       if (!agent) { setBattle({ ...b, errorText: 'サーバーに接続できず戦えない。' }); return; }
@@ -71,7 +72,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
       setBattle(busy);
       void (async () => {
         try {
-          const res = await serverTurn(agent, b.battleId, b.state.turn, command, skillIndex, itemId, targetIndex);
+          const res = await serverTurn(agent, b.battleId, b.state.turn, command, skillIndex, itemId, targetIndex, allies);
           const acting = { ...bClean, prevState: b.state, state: asBattleState(res.state), phase: 'message' as BattlePhase, busy: false,
             ...(res.awarded ? { awarded: res.awarded } : {}),
             ...(res.position ? { resultPos: res.position } : {}),

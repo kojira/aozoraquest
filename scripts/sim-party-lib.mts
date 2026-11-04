@@ -37,6 +37,8 @@ export interface FightOpts {
   gear?: import('../packages/core/src/index.js').GearSelection;
   /** 持ちこむ戦闘のどうぐ (id → 数)。主人公は手が空いたターン (やくそう・ためへの防御・全体技を使わないとき) に先頭から使う (ボスの糸口 §12)。 */
   battleItems?: Record<string, number>;
+  /** 仲間の さくせん (全員同じ。D-PARTY-004)。省略は おまかせ。 */
+  tactic?: import('../packages/core/src/index.js').AllyMode;
 }
 
 /** 1 戦。edge の sealEncounter と同じく、仲間を allies に並べる (ボスの HP は仲間の数で変えない。D-PARTY-002 §12)。 */
@@ -50,7 +52,7 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
   const members = partyMembers(defs, lv, o.carry ? { hp: o.carry.mates, mp: o.carry.matesMp } : {});
   if (members.length) {
     const enemies = s.enemies ?? [s.monster];
-    s = { ...s, allies: [s.player, ...members.map((m) => m.combatant)], enemies };
+    s = { ...s, allies: [s.player, ...members.map((m) => m.combatant)], enemies, ...(o.tactic ? { allyModes: [undefined, ...members.map(() => o.tactic)] } : {}) };
   }
   const multi = (s.enemies?.length ?? 1) > 1 || (s.allies?.length ?? 1) > 1;
   let turns = 0;

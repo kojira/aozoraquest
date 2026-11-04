@@ -6,11 +6,12 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
-import { LXM, type PartyRecruit, type PlacedKind, type PlacedReward, type RecruitCandidate, type StoryEffect } from '@aozoraquest/core';
+import { LXM, type AllyMode, type PartyRecruit, type PlacedKind, type PlacedReward, type RecruitCandidate, type StoryEffect } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
 import { EDGE_URL, EDGE_DID } from './edge-config';
+import type { AllyOrderInput } from './battle-ally-orders';
 
 const LXM_MOVE = LXM.worldMove;
 const LXM_TELEPORT = LXM.worldTeleport;
@@ -36,6 +37,7 @@ const LXM_INN_REST = LXM.innRest;
 const LXM_PARTY_SET = LXM.partySet;
 const LXM_PARTY_CANDIDATES = LXM.partyCandidates;
 const LXM_PARTY_REROLL = LXM.partyReroll;
+const LXM_PARTY_MODE = LXM.partyMode;
 const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
@@ -107,7 +109,7 @@ export interface ServerMoveResult {
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
 /** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
  *  members は生成の仲間の定義と経験値、xp はなじみの経験値 (D-PARTY-002)。 */
-export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number> }
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number>; mode?: Record<string, AllyMode> }
 /** きずなの ♥ が増えた仲間 (増えたあとの ♥ の数。D-PARTY-004)。 */
 export interface ServerBondUp { id: string; name: string; hearts: number }
 /** ギルドの今日の候補 (D-PARTY-002)。入れた人は含まない。 */
@@ -149,11 +151,11 @@ export function serverMove(agent: Agent, dx: number, dy: number, token?: string)
 }
 
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
-export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number, itemId?: string, targetIndex?: number): Promise<ServerTurnResult> {
+export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number, itemId?: string, targetIndex?: number, allies?: readonly AllyOrderInput[]): Promise<ServerTurnResult> {
   // skillIndex: とくぎ選択 (#436)。command==='skill' のときどのとくぎか。省略/0 は署名スキル。
   // itemId: command==='item' のときの戦闘用どうぐ (D-ITEM-001)。
   // targetIndex: 群れでねらう敵 (生きている敵の中で何番目か。D-PARTY-001)。省略/0 は先頭。
-  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}), ...(targetIndex ? { targetIndex } : {}) });
+  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}), ...(targetIndex ? { targetIndex } : {}), ...(allies?.length ? { allies } : {}) });
 }
 
 /** パーティの編成 (D-PARTY-001)。ギルドの受付の隣でだけ通る (位置は署名済みトークンで edge が確かめる)。
@@ -175,6 +177,11 @@ export function serverPartyReroll(agent: Agent, guild: string, rkey: string, tok
 /** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
 export function serverTeleport(agent: Agent, x: number, y: number): Promise<ServerTeleportResult> {
   return callEdge<ServerTeleportResult>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
+}
+
+/** 仲間の さくせん／めいれい (D-PARTY-004)。mode が null なら おまかせ。段階が足りなければ 400 bond_too_low。 */
+export function serverPartyMode(agent: Agent, id: string, mode: AllyMode | null): Promise<{ party: ServerParty }> {
+  return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_MODE, '/api/party/mode', { id, mode });
 }
 
 /** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。

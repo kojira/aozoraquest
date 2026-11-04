@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, worldOverlay, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
+import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, worldOverlay, type AllyMode, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -69,6 +69,8 @@ export interface PartyState {
   bond?: Record<string, number>;
   /** 回復で上がる きずな の端数 (最大 HP の千分率で 0〜249)。 */
   bondHeal?: Record<string, number>;
+  /** 仲間ごとの さくせん (♥2) ／めいれい (♥3)。無い＝おまかせ (D-PARTY-004)。 */
+  mode?: Record<string, AllyMode>;
 }
 
 /** 全快にした party (hp/mp を消す。ほかはそのまま)。party が無ければ undefined のまま。 */

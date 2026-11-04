@@ -10,7 +10,7 @@
 import { SKILLS } from './skills.js';
 import { skillMpCostOf, skillsForJob } from './battle-job-skills.js';
 import { type Combatant, playerCombatant } from './battle-combatant.js';
-import { type Command, type BattleState } from './battle-state.js';
+import { type AllyMode, type Command, type BattleState } from './battle-state.js';
 import { autoBattleAction } from './battle-auto.js';
 import type { RecruitDef } from './recruits.js';
 
@@ -24,6 +24,8 @@ export const PARTY_SIZE_FLAGS: ReadonlyArray<readonly [flag: string, size: numbe
 export const PARTY_ARMOR = { id: 'ar-cloth', fromLevel: 5 } as const;
 /** 全体回復を使う目安 (味方の誰かがこの割合を下回ったら)。 */
 const PARTY_HEAL_BELOW = 0.5;
+/** さくせん ごとの回復の目安 (D-PARTY-004 §1)。ガンガン・じゅもんせつやく は 25%、いのちだいじに は 65%。 */
+const TACTIC_HEAL_BELOW: Record<Exclude<AllyMode, 'manual'>, number> = { gangan: 0.25, inochi: 0.65, jumon: 0.25 };
 
 /** 主人公を含めた、いま入れられる人数。 */
 export function partyCapacity(flags: readonly string[]): number {
@@ -70,9 +72,41 @@ const isPartyHeal = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind
 const isOneAllyHeal = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'heal' && e.target === 'oneAlly');
 const isAreaAttack = (kind: string) => !!SKILLS[kind]?.effects.some((e) => (e.kind === 'damage' || e.kind === 'fixedDamage') && e.target === 'allEnemies');
 
+const isHealSkill = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'heal');
+const isDamageSkill = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'damage' || e.kind === 'fixedDamage');
+
 /** 仲間の 1 手。targetIndex は「生きている敵の中で何番目か」(resolveTargets の数え方)。
- *  味方 1 人を回復するとくぎのときだけ「生きている味方の中で何番目か」。 */
-export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?: number): { command: Command; skillIndex: number; targetIndex: number } {
+ *  味方 1 人を回復するとくぎのときだけ「生きている味方の中で何番目か」。
+ *  tactic (♥2 の さくせん。D-PARTY-004) は回復の目安と、とくぎの使い方だけを変える (新しい戦闘ルールは足さない):
+ *  - gangan: 回復は HP 25% 未満の時だけ。とくぎを優先 (1 対 1 の先読みが とくぎ を選ばなければ 攻撃のとくぎ)
+ *  - inochi: 回復は 65% 未満で。敵の「ため」には防御 (parry のとくぎがあれば parry)
+ *  - jumon: とくぎは使わず たたかう (回復だけは 25% 未満で使う) */
+export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?: number, tactic?: AllyMode): { command: Command; skillIndex: number; targetIndex: number } {
+  if (!tactic || tactic === 'manual') return baseAutoAction(state, allyIndex, turnSeed, PARTY_HEAL_BELOW);
+  const healBelow = TACTIC_HEAL_BELOW[tactic];
+  const allies = state.allies ?? [state.player];
+  const ally = allies[allyIndex]!;
+  const skills = ally.job ? skillsForJob(ally.job.archetype, ally.job.level) : [];
+  const canCast = ally.mp >= skillMpCostOf(ally);
+  const living = (state.enemies ?? [state.monster]).filter((e) => e.hp > 0);
+  if (tactic === 'inochi' && living.some((e) => e.charging)) {
+    const parry = skills.findIndex((k) => SKILLS[k.kind]?.parry);
+    return canCast && parry >= 0 ? { command: 'skill', skillIndex: parry, targetIndex: 0 } : { command: 'guard', skillIndex: 0, targetIndex: 0 };
+  }
+  const a = baseAutoAction(state, allyIndex, turnSeed, healBelow);
+  const kind = a.command === 'skill' ? skills[a.skillIndex]?.kind ?? '' : '';
+  if (tactic === 'jumon' && a.command === 'skill' && !isHealSkill(kind)) return { command: 'attack', skillIndex: 0, targetIndex: weakestIndex(living) };
+  if (tactic === 'gangan' && a.command !== 'skill' && canCast && living.length > 0) {
+    const dmg = skills.findIndex((k) => isDamageSkill(k.kind));
+    if (dmg >= 0) return { command: 'skill', skillIndex: dmg, targetIndex: a.targetIndex };
+  }
+  return a;
+}
+
+/** 生きている敵のうち HP がいちばん低い敵の番号。 */
+const weakestIndex = (living: readonly Combatant[]) => (living.length ? living.indexOf(living.reduce((a, b) => (b.hp < a.hp ? b : a))) : 0);
+
+function baseAutoAction(state: BattleState, allyIndex: number, turnSeed: number | undefined, healBelow: number): { command: Command; skillIndex: number; targetIndex: number } {
   const allies = state.allies ?? [state.player];
   const ally = allies[allyIndex]!;
   const skills = ally.job ? skillsForJob(ally.job.archetype, ally.job.level) : [];
@@ -81,7 +115,7 @@ export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?:
   const canCast = ally.mp >= cost;
   const heal = skills.findIndex((k) => isPartyHeal(k.kind));
   const livingAllies = allies.filter((a) => a.hp > 0);
-  const hurt = livingAllies.some((a) => a.hp < a.maxHp * PARTY_HEAL_BELOW);
+  const hurt = livingAllies.some((a) => a.hp < a.maxHp * healBelow);
   if (canCast && heal >= 0 && hurt) return { command: 'skill', skillIndex: heal, targetIndex: 0 };
   // 全体回復が無ければ、味方 1 人の回復を HP の割合がいちばん低い味方 (主人公を含む) に。
   const oneHeal = skills.findIndex((k) => isOneAllyHeal(k.kind));
@@ -92,8 +126,8 @@ export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?:
   const area = skills.findIndex((k) => isAreaAttack(k.kind));
   if (canCast && area >= 0 && living.length >= 2) return { command: 'skill', skillIndex: area, targetIndex: 0 };
   if (living.length === 0) return { command: 'attack', skillIndex: 0, targetIndex: 0 };
-  const target = living.reduce((a, b) => (b.hp < a.hp ? b : a));
-  const targetIndex = living.indexOf(target);
+  const targetIndex = weakestIndex(living);
+  const target = living[targetIndex]!;
   if (skills.length === 0) return { command: 'attack', skillIndex: 0, targetIndex };
   // その仲間から見た 1 対 1 にして、主人公の自動戦闘と同じ選び方を使う。道具は持たない。
   const view: BattleState = { ...state, player: ally, monster: target, playerSkill: skills[0]!, playerSkills: skills, herbs: 0, tonics: 0 };

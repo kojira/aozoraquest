@@ -32,3 +32,25 @@ test('なかま一覧に ♥、つよさに きずな と つぎの ♥ まで (
   await expect(page.getByText('きずな 72／150（つぎの ♥ まで 78）')).toBeVisible();
   await shot(page, 'ally-status-bond.png');
 });
+
+test('つよさの さくせん (♥3 なら めいれいさせろ も) (390px)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('http://127.0.0.1:4182/e2e/fixtures/party-bond.html?view=party');
+  await page.getByRole('button', { name: 'ソラの つよさ' }).click();
+  await expect(page.getByRole('radio', { name: '▸ めいれいさせろ' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'いのちだいじに' })).toBeInViewport();
+  await shot(page, 'ally-tactic-select.png');
+});
+
+test('めいれい: 主人公の次に ソラ の窓 (とくぎはソラのもの・もどる・おまかせ) (390px)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('http://127.0.0.1:4182/e2e/fixtures/party-bond.html?view=battle');
+  await expect(page.getByText('ゆうしゃ は どうする？（1/2）')).toBeVisible();
+  await page.getByRole('button', { name: 'ぼうぎょ' }).click();
+  await expect(page.getByText('ソラ は どうする？（2/2）')).toBeVisible();
+  for (const name of ['もどる', 'おまかせ']) await expect(page.getByRole('button', { name, exact: true })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'にげる' })).toHaveCount(0);
+  await shot(page, 'ally-order-panel.png');
+  await page.getByRole('button', { name: 'ぼうぎょ' }).click();
+  await expect(page.getByTestId('sent')).toContainText('"allies":[{"id":"g:s","command":"guard"}]');
+});

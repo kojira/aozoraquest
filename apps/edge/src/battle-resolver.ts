@@ -40,6 +40,7 @@ import { serverDeleteRecord } from './server-pds';
 import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
 import { partyWithBattleBond } from './party-bond';
+import { allyOrdersOf } from './battle-ally-orders';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 import { getRecord, PdsError } from './pds';
@@ -492,7 +493,7 @@ export interface TurnResult {
  * turn: 1 コマンドを**サーバーが**確定 pendingTurnSeed で解決する。
  * 決着なら報酬を fail-closed で確定 + ガード削除。未決着なら CAS で turn を進めてから応答。
  */
-export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0, itemId?: string): Promise<TurnResult> {
+export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0, itemId?: string, allyOrders?: unknown): Promise<TurnResult> {
   if (!VALID_COMMANDS.includes(command)) throw new ResolverError('不正なコマンド', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (!g) throw new ResolverError('戦闘中でない', 409);
@@ -518,7 +519,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   const isMulti = (enemies?.length ?? 0) > 1 || (allies?.length ?? 0) > 1;
   const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < Math.max(enemies?.length ?? 1, allies?.length ?? 1) ? targetIndex : 0;
   const next = isMulti
-    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx, itemId)
+    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx, itemId, allyOrdersOf(allyOrders, guard.state, guard.sealed.party ?? [], guard.sealed.manual ?? [])) // めいれい (D-PARTY-004)
     : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx, itemId);
 
   if (next.outcome !== 'ongoing') {
