@@ -156,3 +156,62 @@ describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
     expect(screen.queryByText('だれを ねらう？')).toBeNull();
   });
 });
+
+describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
+  const group = (enemyHps: number[], allyHps: number[] = [20]): BattleState => {
+    const s = state();
+    const enemies = enemyHps.map((hp, i) => fighter(['スライムA', 'スライムB', 'スライムC'][i]!, hp));
+    const allies = allyHps.map((hp, i) => fighter(['ゆうしゃ', 'カイト', 'ミオ'][i]!, hp));
+    return { ...s, player: allies[0]!, monster: enemies[0]!, allies, enemies, playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: 'かまえ', kind: 'warrior-charge' }] } as unknown as BattleState;
+  };
+  const input = (s: BattleState, onCommand = vi.fn()) => {
+    render(<WorldBattleControls state={s} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={onCommand} onAdvance={vi.fn()} />);
+    return onCommand;
+  };
+
+  it('敵 3 体を名前つきで並べ、倒れた敵は薄くする', () => {
+    input(group([10, 0, 7]));
+    for (const n of ['スライムA', 'スライムB', 'スライムC']) expect(screen.getByText(n)).toBeTruthy();
+    expect(screen.getByText('スライムB').closest<HTMLElement>('[data-enemy]')!.style.opacity).toBe('0.35');
+    expect(screen.getByText('スライムA').closest<HTMLElement>('[data-enemy]')!.style.opacity).toBe('1');
+  });
+
+  it('生きている敵が 2 体以上なら「たたかう」でねらう相手を選び、生きている敵の中の番号を送る', () => {
+    const onCommand = input(group([10, 0, 7]));
+    fireEvent.click(screen.getByRole('button', { name: 'たたかう' }));
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('だれを ねらう？')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'スライムB' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'スライムC' }));
+    expect(onCommand).toHaveBeenCalledWith('attack', undefined, undefined, 1);
+  });
+
+  it('単体ねらいのとくぎだけ選ぶ。自分にかけるとくぎはそのまま送る', () => {
+    const onCommand = input(group([10, 7]));
+    fireEvent.click(screen.getByRole('button', { name: 'かまえ' }));
+    expect(onCommand).toHaveBeenCalledWith('skill', 1);
+    fireEvent.click(screen.getByRole('button', { name: 'わざ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'スライムA' }));
+    expect(onCommand).toHaveBeenLastCalledWith('skill', 0, undefined, 0);
+  });
+
+  it('生きている敵が 1 体なら選ばずに送る', () => {
+    const onCommand = input(group([0, 7]));
+    fireEvent.click(screen.getByRole('button', { name: 'たたかう' }));
+    expect(onCommand).toHaveBeenCalledWith('attack');
+  });
+
+  it('仲間がいれば味方の段に 1 人 1 行で HP/MP を出し、倒れた仲間は薄くする', () => {
+    input(group([10], [20, 13, 0]));
+    const row = (n: string) => screen.getAllByText(n).map((e) => e.closest<HTMLElement>('[data-ally]')).find(Boolean)!;
+    expect(row('カイト').textContent).toContain('HP 13/30');
+    expect(row('カイト').textContent).toContain('MP 5/5');
+    expect(row('ミオ').style.opacity).toBe('0.4');
+    expect(row('ゆうしゃ').style.opacity).toBe('1');
+  });
+
+  it('1 人なら味方の段を出さない', () => {
+    input(group([10, 7]));
+    expect(document.querySelector('[data-ally]')).toBeNull();
+  });
+});

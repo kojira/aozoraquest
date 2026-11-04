@@ -1,11 +1,17 @@
 import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
-import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf, withCharacterNames } from '@aozoraquest/core';
+import { MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, skillMpCostOf, withCharacterNames } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
 import { battleHpOf, battleLineHps, battleMessageLines } from '@/lib/battle-message-lines';
 import { BattleItemRows, hasAnyBattleItem } from './battle-item-menu';
+import { BattleEnemyRow } from './battle-enemy-row';
+import { BattleAllyRow } from './battle-ally-row';
+import { BattleTargetPicker, needsTarget } from './battle-target-picker';
+
+/** 単体の敵をねらうとくぎか (群れのとき、ねらう相手を選ばせる。D-PARTY-001)。 */
+const skillTargetsOneEnemy = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneEnemy');
 
 /**
  * あおぞらワールドの戦闘 UI (DQ 風の配置)。
@@ -57,8 +63,9 @@ export function WorldBattleControls({
   showEnemyVitals: boolean;
   /** result フェーズで出す報酬行 (経験値・素材など)。message/input では未使用。 */
   resultLines: readonly string[];
-  /** itemId は command==='item' のときの戦闘用どうぐ (D-ITEM-001)。 */
-  onCommand: (c: Command, skillIndex?: number, itemId?: string) => void;
+  /** itemId は command==='item' のときの戦闘用どうぐ (D-ITEM-001)。targetIndex は群れでねらう敵
+   *  (生きている敵の中で何番目か。D-PARTY-001)。 */
+  onCommand: (c: Command, skillIndex?: number, itemId?: string, targetIndex?: number) => void;
   onAdvance: () => void;
   /** 直前ターンの state。message の最後の行までは敵の体力をこちらで見せる (#757)。 */
   prevState?: BattleState | undefined;
@@ -68,11 +75,21 @@ export function WorldBattleControls({
   onLineHp?: (turn: number, hp: number, hit: boolean) => void;
 }) {
   const [itemMenu, setItemMenu] = useState(false);
+  /** ねらう相手を選んでいるコマンド (群れのときだけ。D-PARTY-001)。 */
+  const [picking, setPicking] = useState<{ command: 'attack' } | { command: 'skill'; skillIndex: number } | null>(null);
   // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
   // 描画上は input のときだけ出るが、state が開きっぱなしだと次の入力で一瞬開いて見えうる (レビュー ★★)。
   useEffect(() => {
-    if (phase !== 'input') setItemMenu(false);
+    if (phase !== 'input') { setItemMenu(false); setPicking(null); }
   }, [phase]);
+  const attack = () => (needsTarget(state) ? setPicking({ command: 'attack' }) : onCommand('attack'));
+  const chooseSkill = (i: number, kind: string) => (needsTarget(state) && skillTargetsOneEnemy(kind) ? setPicking({ command: 'skill', skillIndex: i }) : onCommand('skill', i));
+  const pick = (targetIndex: number) => {
+    const p = picking;
+    setPicking(null);
+    if (p?.command === 'attack') onCommand('attack', undefined, undefined, targetIndex);
+    else if (p) onCommand('skill', p.skillIndex, undefined, targetIndex);
+  };
   const skillCost = skillMpCostOf(state.player); // 発明家 (匠) の MP 割引を反映
   const lowMp = state.player.mp < skillCost;
   // デプロイ跨ぎの旧 sealed state は playerSkills が無いことがある → 署名スキル 1 個にフォールバック。
@@ -105,7 +122,8 @@ export function WorldBattleControls({
   const lineHp = lineHps[lineIndex] ?? finalHp;
   const prevLineHp = lineIndex > 0 ? lineHps[lineIndex - 1] : prevState && lineHps.length > 0 ? battleHpOf(prevState) : undefined;
   const playerHit = !!prevLineHp && lineHp.player < prevLineHp.player;
-  const monsterHit = !!prevLineHp && lineHp.monsters.some((hp, i) => hp < (prevLineHp.monsters[i] ?? hp));
+  const enemyHit = lineHp.monsters.map((hp, i) => !!prevLineHp && hp < (prevLineHp.monsters[i] ?? hp));
+  const monsterHit = enemyHit.some(Boolean);
   const onLineHpRef = useRef(onLineHp);
   onLineHpRef.current = onLineHp;
   useEffect(() => {
@@ -130,7 +148,12 @@ export function WorldBattleControls({
           ここ (flex:1) の高さも一定 = 敵の位置がフェーズで動かない。 */}
       {/* 表示専用。message/result ではタップを背面の送り面へ通す。 */}
       <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', pointerEvents: phase === 'input' ? 'auto' : 'none' }}>
-        <BattleFieldEnemy state={state} monsterHp={lineHp.monsters[0] ?? state.monster.hp} hitKey={monsterHit ? `${state.turn}:${lineIndex}` : undefined} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
+        <BattleAllyRow state={state} hps={lineHp.allies} />
+        {(state.enemies?.length ?? 1) > 1 ? (
+          <BattleEnemyRow state={state} hps={lineHp.monsters} hitKeys={enemyHit.map((hit) => (hit ? `${state.turn}:${lineIndex}` : undefined))} showEnemyVitals={showEnemyVitals} />
+        ) : (
+          <BattleFieldEnemy state={state} monsterHp={lineHp.monsters[0] ?? state.monster.hp} hitKey={monsterHit ? `${state.turn}:${lineIndex}` : undefined} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
+        )}
       </div>
 
       {/* 下段: 常に BOTTOM_H の固定高さ */}
@@ -145,8 +168,8 @@ export function WorldBattleControls({
             {/* 左: 基本コマンド。**「とくぎ」は置かない** — とくぎは右にいつも出ているので、
                 1 タップ挟むだけ無駄だった。空いたぶん 1 行を大きく使える。 */}
             <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', rowGap: '0.1em' }}>
-              <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu} />
-              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
+              <DqRow label="たたかう" onClick={attack} disabled={busy || itemMenu} cursor={picking?.command === 'attack'} />
+              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu || !!picking} />
               {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
               <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || !hasAnyBattleItem(state)} cursor={itemMenu} />
               {/* 逃げられないストーリー戦 (canFlee: false) では出さない (D-STORY-009。サーバーも受け付けない)。 */}
@@ -157,7 +180,9 @@ export function WorldBattleControls({
                 minHeight:0 が無いと flex/grid の自動最小サイズで枠が伸び、overflow が
                 効かないまま外へあふれる (上の gridTemplateRows と対で必要)。 */}
             <div style={{ ...WINDOW, height: '100%', minHeight: 0, overflowY: 'auto', padding: '0.2em 0.4em', display: 'flex', flexDirection: 'column', rowGap: '0.1em' }}>
-              {itemMenu ? (
+              {picking ? (
+                <BattleTargetPicker state={state} busy={busy} Row={DqRow} onPick={pick} onCancel={() => setPicking(null)} />
+              ) : itemMenu ? (
                 <>
                   <DqRow fill={false} label={`やくそう ×${state.herbs}`} onClick={() => { setItemMenu(false); onCommand('herb'); }} disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp} />
                   <DqRow fill={false} label={`そらのしずく ×${state.tonics}`} onClick={() => { setItemMenu(false); onCommand('tonic'); }} disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp} />
@@ -174,7 +199,7 @@ export function WorldBattleControls({
                     key={`${sk.name}-${i}`}
                     fill={false}
                     label={sk.name}
-                    onClick={() => onCommand('skill', i)}
+                    onClick={() => chooseSkill(i, sk.kind)}
                     // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)
                     disabled={busy || lowMp || (isPureHealSkill(sk.kind) && state.player.hp >= state.player.maxHp)}
                   />

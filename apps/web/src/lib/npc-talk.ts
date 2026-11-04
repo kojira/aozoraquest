@@ -11,7 +11,8 @@ export interface NpcTalk {
   /** 会話データの場面から組み立てた行 (話者を行ごとに持つ。D-DIALOGUE-006)。あれば lines より優先して表示する。 */
   dialogue?: DialogueLine[];
   acceptQuestId?: string;
-  guild?: 'reunion' | 'menu' | 'detail' | 'message';
+  /** party = ギルドの編成画面 (会話窓の代わりに GuildPartyModal を出す。D-PARTY-001)。 */
+  guild?: 'reunion' | 'menu' | 'detail' | 'message' | 'party';
   choices?: DialogueChoice[];
   directList?: boolean;
   /** 会話の後に地の文で続けるシナリオのお知らせ (報告で発火。D-STORY-007)。 */

@@ -7,7 +7,7 @@ import {
   BATTLE_TUNING,
   canSeeEnemyVitals,
   favoredMonsterFor,
-  jobLevelFromXp,
+  jobLevelFromXp, partyCapacity,
   playerCombatant,
   playerLevelFromXp,
   regionAffinity,
@@ -46,6 +46,7 @@ import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-bles
 import { WELCOME_POWER, ONBOARDING_DONE_KEY } from '@/lib/onboarding-reset';
 import { questLogEntries } from '@/lib/game-quest';
 import { QuestLogModal } from '@/components/quest-log-modal';
+import { PartyModals } from '@/components/party-modal';
 import { guildReception } from '@/lib/npc-talk';
 import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
@@ -156,6 +157,7 @@ function WorldScreen() {
   const [itemsOpen, setItemsOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
   const [questLogOpen, setQuestLogOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [featherOpen, setFeatherOpen] = useState(false);
   const [showStarter, setShowStarter] = useState(false);
@@ -398,6 +400,7 @@ function WorldScreen() {
   const menuCommands: WorldMenuCommand[] = [
     { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
     { key: 'quests', label: 'クエスト', onSelect: () => setQuestLogOpen(true) },
+    ...(partyCapacity(flagsRef.current) > 1 ? [{ key: 'party', label: 'なかま', onSelect: () => setPartyOpen(true) } as WorldMenuCommand] : []),
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
     ...(inTown ? [] : [{ key: 'search', label: searchMenuLabel(ws, flagsRef.current, inventory.openedRef.current), onSelect: () => void searchHere() } as WorldMenuCommand]),
     { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
@@ -545,7 +548,7 @@ function WorldScreen() {
               onDone={() => { mapAcquisitionRef.current = false; setMapAcquisition(null); }}
             />
           )}
-          {!battle && npcTalk && !onboarding && mapAcquisition === null && (
+          {!battle && npcTalk && npcTalk.guild !== 'party' && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               // 段ごとに作り直さない (D-DIALOGUE-004)。setNpcTalk の新しい段で行・選択を数え直す。
               conversationStep={npcTalk}
@@ -648,6 +651,7 @@ function WorldScreen() {
           onClose={() => setItemsOpen(false)}
         />
       )}
+      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />

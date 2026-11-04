@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
-import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, questProgressLine, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
-import { scenarioMessagesOf, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { scenarioMessagesOf, serverPartySet, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { PARTY_LINES } from '@/lib/party-lines';
 import type { DialogueChoice } from '@/lib/dialogue';
 import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoiceTitle, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 import { guildReception, npcQuestCandidates, type NpcTalk } from '@/lib/npc-talk';
@@ -123,6 +124,8 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       const o = q.objective;
       const res = await serverQuestComplete(agent, q.id, o.kind === 'talk' ? tokenRef.current : undefined);
       setQuest(questStateOf(res));
+      // 章の終わりの依頼で入れられる人数が増えたら知らせる (D-PARTY-001 §8)。
+      const grown = !!res.flags && partyCapacity(res.flags) > partyCapacity(flagsRef.current);
       if (res.flags) flagsRef.current = res.flags;
       setServerPower(res.power);
       applyServerMaterials(res.materials);
@@ -131,7 +134,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
         r?.power ? `あおぞらパワー${r.power}` : null].filter(Boolean).join('と');
       // talk は相手のセリフ (いつものセリフの代わり) に続けて達成を出す (D-STORY-009)。
       const said = o.kind === 'talk' ? [o.line, `『${q.title}』を達成した！`] : q.done;
-      message([...said, ...(got ? [`${got}をもらった！`] : [])], scenarioMessagesOf(res.scenarioMessages, res.notices));
+      message([...said, ...(got ? [`${got}をもらった！`] : [])], [...scenarioMessagesOf(res.scenarioMessages, res.notices), ...(grown ? [{ text: PARTY_LINES.grown }] : [])]);
     } catch (e) {
       try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
       if (questRef.current.done.includes(q.id)) message(['この依頼は達成済みだよ。']);
@@ -184,13 +187,33 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     }
   };
 
+  // パーティ (D-PARTY-001): 権威 state の party と flags を読む / 編成を送る。編成画面とメニューの「なかま」が使う。
+  const partyLoad = useCallback(async () => {
+    if (!agent) throw new Error('サーバーに接続できない');
+    const { state } = await serverState(agent);
+    if (state.flags) flagsRef.current = state.flags;
+    return { party: state.party ?? { ids: [] }, flags: state.flags ?? [] };
+  }, [agent, flagsRef]);
+  const partySave = useCallback(async (guild: string, ids: string[]) => {
+    if (!agent) throw new Error('サーバーに接続できない');
+    return (await serverPartySet(agent, guild, ids, tokenRef.current)).party;
+  }, [agent, tokenRef]);
+  /** 受付の「話す」。倒れた仲間がいれば宿屋をすすめる (D-PARTY-001 §8)。 */
+  const guildTalk = async (npc: NpcDef) => {
+    const lines = npcLinesFor(npc, flagsRef.current, materialsRef.current);
+    const hurt = await partyLoad().then((r) => Object.values(r.party.hp ?? {}).some((hp) => hp <= 0), () => false);
+    guildMessage(npc, hurt ? [PARTY_LINES.hurt, ...lines] : lines);
+  };
+
   let npcChoices: DialogueChoice[] | undefined = npcTalk?.choices;
   if (npcTalk?.guild === 'menu') {
     const npc = npcTalk.npc;
+    const canParty = partyCapacity(flagsRef.current) > 1 && recruits().length > 0;
     npcChoices = [
       { label: '依頼を見る', onSelect: () => viewGuildQuest(npc) },
       { label: '報告する', onSelect: () => reportGuildQuest(npc) },
-      { label: '話す', onSelect: () => guildMessage(npc, npcLinesFor(npc, flagsRef.current, materialsRef.current)) },
+      ...(canParty ? [{ label: 'なかまを さがす', onSelect: () => setNpcTalk({ npc, guild: 'party', lines: [] }) }] : []),
+      { label: '話す', onSelect: () => void guildTalk(npc) },
       { label: 'やめる', onSelect: () => { waitForFreshDirectionRef.current = true; setNpcTalk(null); } },
     ];
   } else if (npcTalk?.guild === 'detail' && npcTalk.acceptQuestId) {
@@ -214,5 +237,5 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     });
   }
 
-  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle };
+  return { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle, partyLoad, partySave };
 }

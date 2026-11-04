@@ -32,6 +32,7 @@ const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_INN_REST = LXM.innRest;
+const LXM_PARTY_SET = LXM.partySet;
 const LXM_POWER_SPEND = LXM.powerSpend;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
@@ -101,7 +102,9 @@ export interface ServerMoveResult {
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; version: number; updatedAt: string }
+/** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。 */
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number> }
+export interface ServerGameState { party?: ServerParty; did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -120,7 +123,7 @@ export interface ServerAward {
     learned?: string[];
   };
 }
-export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
+export interface ServerTurnResult { party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
   activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
@@ -133,10 +136,16 @@ export function serverMove(agent: Agent, dx: number, dy: number, token?: string)
 }
 
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
-export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number, itemId?: string): Promise<ServerTurnResult> {
+export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number, itemId?: string, targetIndex?: number): Promise<ServerTurnResult> {
   // skillIndex: とくぎ選択 (#436)。command==='skill' のときどのとくぎか。省略/0 は署名スキル。
   // itemId: command==='item' のときの戦闘用どうぐ (D-ITEM-001)。
-  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}) });
+  // targetIndex: 群れでねらう敵 (生きている敵の中で何番目か。D-PARTY-001)。省略/0 は先頭。
+  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}), ...(targetIndex ? { targetIndex } : {}) });
+}
+
+/** パーティの編成 (D-PARTY-001)。ギルドの受付の隣でだけ通る (位置は署名済みトークンで edge が確かめる)。 */
+export function serverPartySet(agent: Agent, guild: string, ids: readonly string[], token?: string): Promise<{ party: ServerParty }> {
+  return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_SET, '/api/party', { guild, ids, ...(token ? { token } : {}) });
 }
 
 /** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
