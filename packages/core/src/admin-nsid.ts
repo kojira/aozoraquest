@@ -39,6 +39,7 @@ export const LXM = {
   worldSearch: `${AQ_NSID_ROOT}.world.search`,
   storyBattle: `${AQ_NSID_ROOT}.story.battle`,
   innRest: `${AQ_NSID_ROOT}.world.innRest`,
+  partySet: `${AQ_NSID_ROOT}.party.set`,
   worldReset: `${AQ_NSID_ROOT}.world.reset`,
   battleTurn: `${AQ_NSID_ROOT}.battle.turn`,
   xpClaim: `${AQ_NSID_ROOT}.xp.claim`,

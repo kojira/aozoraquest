@@ -299,6 +299,16 @@ describe('/api/admin/data (#695)', () => {
       expect(pds.puts).toHaveLength(0);
     });
 
+    it('冒険者のギルドが受付の NPC でなければ 400 (D-PARTY-001)', async () => {
+      const recruit = (guild: string) => ({ recruits: [{ id: 'r1', name: 'カイト', archetype: 'warrior', guild, line: 'よろしく。' }] });
+      expect(await put('story', recruit('elder'))).toBe(400);
+      store.set(COL('npcs'), { value: { npcs: [{ ...NPC, guildReception: true }] }, cid: 'npc2' });
+      resetAuthoredWorldCache();
+      expect(await put('story', recruit('elder'))).toBe(200);
+      expect(await put('story', recruit('nobody'))).toBe(400);
+      expect(pds.puts).toHaveLength(0);
+    });
+
     it('フィールドの町のマス・flag なしは 400', async () => {
       const town = worldOverlay().towns[0]!;
       expect(await put('story', { placedItems: [item({ mapId: 'world', x: town.x, y: town.y })] })).toBe(400);

@@ -30,8 +30,8 @@ function randomLiving(arr: readonly Combatant[], rng: () => number): Combatant |
 
 /** マルチ戦闘での敵1体の行動 (#453)。1v1 の monster act と同じ ability (charger/healer/caster) を、
  *  敵個体の monsterId で引いて実行する。ターゲットはランダムな生存味方 (挑発/かばうは後続)。
- *  flee は集団戦では意味が薄いので通常攻撃に退避する。 */
-function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState, rng: () => number, events: TurnEvent[]): void {
+ *  flee は群れでは通常攻撃に退避する。敵が 1 体だけなら (仲間がいても) 1 人戦と同じく逃げて終わる。 */
+function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant[], state: BattleState, rng: () => number, events: TurnEvent[]): void {
   const t = BATTLE_TUNING;
   const def = MONSTERS_BY_ID[enemy.monsterId ?? state.monsterId];
   // ため中なら宣言どおり強攻撃を解放 (mCommand は無視)。
@@ -42,6 +42,11 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState
     return;
   }
   const action = monsterCommand(enemy, state, rng);
+  if (action === 'flee' && enemies.length === 1) {
+    state.outcome = 'monster-fled';
+    events.push({ actor: 'monster', text: `${enemy.name}は逃げだした!` });
+    return;
+  }
   if (action === 'guard') {
     enemy.guarding = true; // 被ダメ軽減の宣言 (turn 頭で全体リセット済み)
     return;
@@ -246,7 +251,7 @@ export function resolveTurnMulti(
       if (target) doAttack(actor, target, rng, events, 'player');
     } else {
       // 敵: 個体ごとの ability (charger/healer/caster) で行動 (#453)。
-      multiEnemyAct(actor, allies, state, rng, events);
+      multiEnemyAct(actor, allies, enemies, state, rng, events);
     }
 
     if (consumed.length && actor.statuses) actor.statuses = actor.statuses.filter((s) => !consumed.includes(s));

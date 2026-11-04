@@ -21,7 +21,7 @@ import {
   activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
   currentDialogue, missingDialogueNpc, validateDialogue, type DialogueData,
   characterTextsInRecord, currentCharacters, missingCharacterRef, validateCharacters, type CharacterDef,
-  assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
+  assertStoryFlagTotal, currentStory, missingStoryBattle, recruitGuildIssue, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
@@ -176,7 +176,9 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
   if (name === 'story') {
     const story = (value ?? {}) as StoryData;
     const battles = listOf<StoryBattleDef>(story, 'battles');
-    validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters') });
+    validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters'), recruits: listOf(story, 'recruits') });
+    const guildIssue = recruitGuildIssue(listOf(story, 'recruits'), allNpcs());
+    if (guildIssue) return guildIssue;
     // 置いたマス (D-CHEST-001 §7): 新しく置いた・動かしたものだけ。管理画面の保存と同じ検査。
     const placedIssue = placedItemsSaveIssue(captureNpcPlacementWorld(allNpcs(), false), listOf(story, 'placedItems'), listOf(saved, 'placedItems'), allNpcs(), listOf(story, 'fieldMonsters'));
     return placedIssue ?? missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
