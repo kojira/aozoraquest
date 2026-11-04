@@ -9,8 +9,10 @@ import {
   describeDanglingRef,
   MonsterDataError,
   ITEMS,
+  STATUS_REGISTRY,
   type Element,
   type MonsterDef,
+  type StatusId,
   type Tier,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
@@ -30,6 +32,9 @@ import { monsterArtKey } from '@aozoraquest/core';
  * 読み込めるまで保存させない (直接開いて保存すると保存済みの編集を上書きする。#603)。
  * 保存はレコード全置換 (壊れた 1 体で全体を落とす検証つき)。
  */
+
+/** 「効かない状態」に出す状態 (どうぐ・とくぎで敵に付けるもの)。docs/25 §12 の statusResist。 */
+const RESISTABLE_STATUSES: readonly StatusId[] = ['poison', 'sleep', 'stun', 'restraint', 'atkDown', 'defDown', 'agiDown', 'accDown'];
 
 const ABILITY_LABELS: Record<string, string> = {
   charger: 'charger (ため→強攻撃)',
@@ -384,6 +389,24 @@ export function AdminMonsters() {
                 ))}
               </>
             )}
+            {field('効かない状態', (
+              <span style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2em 0.8em' }}>
+                {RESISTABLE_STATUSES.map((id) => (
+                  <label key={id} style={{ fontSize: '0.85em' }}>
+                    <input
+                      type="checkbox"
+                      checked={(current.statusResist ?? []).includes(id)}
+                      onChange={(e) => {
+                        const next = (current.statusResist ?? []).filter((x) => x !== id);
+                        if (e.target.checked) next.push(id);
+                        update(current.id, { statusResist: next.length ? next : undefined });
+                      }}
+                    />
+                    {STATUS_REGISTRY[id].name}
+                  </label>
+                ))}
+              </span>
+            ))}
             {field('ひとこと', <input value={current.intro} onChange={(e) => update(current.id, { intro: e.target.value })} style={{ width: '100%' }} />)}
             {drawing && (
               <TileArtEditor

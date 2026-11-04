@@ -1,6 +1,6 @@
 /**
  * 遭遇の組み立てと封印 (sealEncounter)。battle-resolver.ts から移した (800 行の上限。D-PARTY-001)。
- * パーティの仲間 (GameState.party) を allies に並べ、ストーリー戦なら敵の HP に仲間の数の倍率を掛ける。
+ * パーティの仲間 (GameState.party) を allies に並べる。ボスの強さは章の想定人数で合わせてあるので、仲間の数で HP を変えない (D-PARTY-002 §12)。
  * 台本負け (scripted) は 1 対 1 のまま (仲間は加わらない)。
  */
 import {
@@ -106,7 +106,7 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
     // 群れ (D-PARTY-001) はパーティを組めるようになってから (partyCapacity > 1 = futaba_letter_done)。ふたばの近くとストーリー戦は今のまま。
     ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : partyCapacity(state.flags ?? []) > 1 ? { group: true } : {}),
   });
-  const party = story?.scripted ? [] : joinParty(battle, state, jobLevel, !!story);
+  const party = story?.scripted ? [] : joinParty(battle, state, jobLevel);
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
@@ -127,18 +127,13 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
 }
 
-/** 仲間を allies に並べる (倒れた仲間・定義の消えた仲間は出ない)。仲間は自分の Lv で戦う (partyDefsOf。D-PARTY-002 §11)。ストーリー戦は敵の HP を
- *  ×(1 + bossHpPerAlly × 出た仲間の数) にする。戦闘に出た仲間の id を返す。 */
-function joinParty(battle: BattleState, state: GameState, jobLevel: number, story: boolean): string[] {
+/** 仲間を allies に並べる (倒れた仲間・定義の消えた仲間は出ない)。仲間は自分の Lv で戦う (partyDefsOf。D-PARTY-002 §11)。
+ *  戦闘に出た仲間の id を返す。 */
+function joinParty(battle: BattleState, state: GameState, jobLevel: number): string[] {
   const members = partyMembers(partyDefsOf(state.party, recruitById, jobLevel), jobLevel, partyCarryOf(state.party));
   if (members.length === 0) return [];
-  const enemies = battle.enemies ?? [battle.monster];
   battle.allies = [battle.player, ...members.map((m) => m.combatant)];
-  battle.enemies = enemies;
-  if (story) {
-    const factor = 1 + BATTLE_TUNING.bossHpPerAlly * members.length;
-    for (const e of enemies) { e.maxHp = Math.round(e.maxHp * factor); e.hp = e.maxHp; }
-  }
+  battle.enemies = battle.enemies ?? [battle.monster];
   return members.map((m) => m.id);
 }
 

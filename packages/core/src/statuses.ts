@@ -613,23 +613,24 @@ export function clearHitStatuses(c: Combatant): void {
   });
 }
 
-/** 状態を付与 (restack で重ね方を制御・免疫を尊重)。 */
-export function applyStatus(c: Combatant, inst: StatusInstance): void {
+/** 状態を付与 (restack で重ね方を制御・免疫と statusResist を尊重)。効かなかったら false (「きかなかった」を出すため)。 */
+export function applyStatus(c: Combatant, inst: StatusInstance): boolean {
   const def = STATUS_REGISTRY[inst.id];
-  if (!def) return;
-  if (def.immuneIf?.(c)) return;
+  if (!def) return false;
+  if (def.immuneIf?.(c) || c.statusResist?.includes(inst.id)) return false;
   if (!c.statuses) c.statuses = [];
   const existing = c.statuses.find((s) => s.id === inst.id);
   if (existing) {
     const mode = def.restack ?? 'refresh';
-    if (mode === 'ignore') return;
+    if (mode === 'ignore') return true;
     if (mode === 'refresh') {
       existing.turns = Math.max(existing.turns, inst.turns);
       if (inst.magnitude !== undefined) existing.magnitude = inst.magnitude;
       existing.fresh = true; // 再付与も当ターンは効かせ始めない (直感的な turns 意味を維持)
-      return;
+      return true;
     }
     // stack: 別インスタンスとして追加
   }
   c.statuses.push({ ...inst, fresh: true });
+  return true;
 }

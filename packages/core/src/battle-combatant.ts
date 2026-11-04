@@ -7,7 +7,7 @@ import { type Archetype, type StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearBonus, type GearSelection } from './equipment.js';
 import { type Element } from './elements.js';
-import { type StatusInstance } from './statuses.js';
+import { type StatusId, type StatusInstance } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { jobPassives } from './battle-job-skills.js';
 
@@ -54,6 +54,8 @@ export interface Combatant {
   element?: Element;
   /** すべての魔法を無効化 (メタル系。#455)。true だと fixedDamage/doMagic が最小 1。 */
   resistAllMagic?: boolean;
+  /** 効かない状態異常 (MonsterDef.statusResist から)。applyStatus が付与しない。 */
+  statusResist?: StatusId[];
   /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
    *  playerCombatant で毎戦闘 undefined から始まり、初回発動でハンドラが true にする。 */
   lethalGuardUsed?: boolean;

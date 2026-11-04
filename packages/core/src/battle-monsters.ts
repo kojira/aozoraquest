@@ -10,6 +10,7 @@ import { createRng } from './battle-rng.js';
 import { type Combatant, makeCombatant, monsterStats } from './battle-combatant.js';
 import { withCharacterNames } from './character-data.js';
 import type { SkillEffect } from './skills.js';
+import type { StatusId } from './statuses.js';
 
 // ─── モンスター ─────────────────────────────────────────────
 
@@ -119,6 +120,9 @@ export interface MonsterDef {
    *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。
    *  データ規約: min <= max (span 負を避ける)。caster の攻撃ラベルは skillName でなくこの name を使う。 */
   spell?: { name: string; element?: Element; min: number; max: number; intScale?: number };
+  /** 効かない状態異常 (docs/25 §12 の statusResist。D-PARTY-002 §12 のボスの糸口)。ここにある状態は付与されず
+   *  「きかなかった」になる。未指定は全部効く。 */
+  statusResist?: readonly StatusId[];
   /** 防御属性 (#455 / docs/25 §1)。被弾時の属性相性に使う。未指定 = 無属性 (常に等倍)。
    *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
   element?: Element;
@@ -435,6 +439,7 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   // 属性・魔法耐性 (#455)。属性相性はキャスターの弱点突き、resistAllMagic はメタルの魔法無効。
   if (def.element !== undefined) c.element = def.element;
   if (def.resistAllMagic) c.resistAllMagic = true;
+  if (def.statusResist?.length) c.statusResist = [...def.statusResist];
   c.monsterId = def.id; // マルチ戦闘で敵個体ごとに ability/spell を引く (#453)
   return c;
 }
