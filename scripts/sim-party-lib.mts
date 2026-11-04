@@ -69,7 +69,7 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
     const aoe = s.playerSkills.findIndex((k) => isAoe(k.kind));
     if (living.length >= 2 && aoe >= 0 && p.mp >= cost && !(s.herbs > 0 && p.hp < p.maxHp * 0.45)) { s = resolveTurnMulti(s, 'skill', undefined, aoe, 0); continue; }
     const tgt = living.reduce((a, b) => (b.hp < a.hp ? b : a));
-    if (item && !hurt && !living.some((e) => e.charging)) { s = resolveTurnMulti(s, 'item', undefined, 0, living.indexOf(tgt), item); continue; }
+    if (item && !hurt && !living.some((e) => e.charging)) { s = resolveTurnMulti(s, 'item', undefined, 0, core.itemTargetsOneAlly(item) ? 0 : living.indexOf(tgt), item); continue; }
     const view = { ...s, monster: tgt } as BattleState; delete view.allies; delete view.enemies;
     let a = autoBattleAction(view);
     if (living.some((e) => e.charging) && a.command !== 'skill') a = { command: 'guard', skillIndex: 0 };

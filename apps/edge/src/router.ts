@@ -241,6 +241,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     if (body.item !== 'herb' && body.item !== 'tonic') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     if (body.target !== undefined && typeof body.target !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
+      if (body.target !== undefined) await ensureAuthoredWorld(env, nowSec()); // なじみの仲間は world.story にいる
       return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req), undefined, body.target)), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
@@ -259,6 +260,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
     const body = (await req.json().catch(() => ({}))) as { caster?: unknown; skillId?: unknown; target?: unknown; rkey?: unknown };
     try {
+      await ensureAuthoredWorld(env, nowSec()); // なじみの仲間は world.story にいる
       return cors(json(await handleFieldSkill(env, did, body, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
