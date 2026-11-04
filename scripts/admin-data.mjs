@@ -53,7 +53,7 @@ function readKey() {
   return key;
 }
 
-async function request(method, name, body, blob) {
+export async function request(method, name, body, blob) {
   const edge = (process.env.AQ_ADMIN_DATA_EDGE || DEFAULT_EDGE).replace(/\/$/, '');
   const res = await fetch(blob ? `${edge}/api/admin/blob?kind=${blob.kind}` : `${edge}/api/admin/data/${name}`, {
     method,
