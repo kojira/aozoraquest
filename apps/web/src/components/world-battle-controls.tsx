@@ -1,6 +1,6 @@
 import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import type { BattleState, Command } from '@aozoraquest/core';
-import { MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, skillMpCostOf, withCharacterNames } from '@aozoraquest/core';
+import { ITEMS, MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, skillMpCostOf, withCharacterNames } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
@@ -12,6 +12,8 @@ import { BattleTargetPicker, needsTarget } from './battle-target-picker';
 
 /** 単体の敵をねらうとくぎか (群れのとき、ねらう相手を選ばせる。D-PARTY-001)。 */
 const skillTargetsOneEnemy = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneEnemy');
+/** 単体の敵をねらうどうぐか (D-ITEM-001 §5。味方をねらうどうぐはまだ無い)。 */
+const itemTargetsOneEnemy = (id: string) => !!ITEMS[id]?.battle?.effects.some((e) => effectTarget(e) === 'oneEnemy');
 
 /**
  * あおぞらワールドの戦闘 UI (DQ 風の配置)。
@@ -76,7 +78,7 @@ export function WorldBattleControls({
 }) {
   const [itemMenu, setItemMenu] = useState(false);
   /** ねらう相手を選んでいるコマンド (群れのときだけ。D-PARTY-001)。 */
-  const [picking, setPicking] = useState<{ command: 'attack' } | { command: 'skill'; skillIndex: number } | null>(null);
+  const [picking, setPicking] = useState<{ command: 'attack' } | { command: 'skill'; skillIndex: number } | { command: 'item'; itemId: string } | null>(null);
   // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
   // 描画上は input のときだけ出るが、state が開きっぱなしだと次の入力で一瞬開いて見えうる (レビュー ★★)。
   useEffect(() => {
@@ -88,7 +90,13 @@ export function WorldBattleControls({
     const p = picking;
     setPicking(null);
     if (p?.command === 'attack') onCommand('attack', undefined, undefined, targetIndex);
+    else if (p?.command === 'item') onCommand('item', undefined, p.itemId, targetIndex);
     else if (p) onCommand('skill', p.skillIndex, undefined, targetIndex);
+  };
+  const useItem = (id: string) => {
+    setItemMenu(false);
+    if (needsTarget(state) && itemTargetsOneEnemy(id)) setPicking({ command: 'item', itemId: id });
+    else onCommand('item', undefined, id);
   };
   const skillCost = skillMpCostOf(state.player); // 発明家 (匠) の MP 割引を反映
   const lowMp = state.player.mp < skillCost;
@@ -186,7 +194,7 @@ export function WorldBattleControls({
                 <>
                   <DqRow fill={false} label={`やくそう ×${state.herbs}`} onClick={() => { setItemMenu(false); onCommand('herb'); }} disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp} />
                   <DqRow fill={false} label={`そらのしずく ×${state.tonics}`} onClick={() => { setItemMenu(false); onCommand('tonic'); }} disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp} />
-                  <BattleItemRows state={state} busy={busy} Row={DqRow} onUse={(id) => { setItemMenu(false); onCommand('item', undefined, id); }} />
+                  <BattleItemRows state={state} busy={busy} Row={DqRow} onUse={useItem} />
                   <DqRow fill={false} label="もどる" onClick={() => setItemMenu(false)} disabled={busy} />
                 </>
               ) : (

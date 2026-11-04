@@ -122,7 +122,8 @@ describe('WorldBattleControls 行ごとの HP (#764)', () => {
 
 describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
   const NEMURI = { id: 'nemuri-kona', name: 'ねむりごな', battle: { effects: [{ kind: 'status' as const, status: 'sleep' as const, target: 'enemy' as const, chance: 0.7, turns: 3 }] } };
-  beforeEach(() => setItemOverrides({ items: [...activeItems(), NEMURI], equipment: [...activeEquipment()] }));
+  const KEMURI = { id: 'kemuri-dama', name: 'けむりだま', battle: { effects: [{ kind: 'status' as const, status: 'accDown' as const, target: 'allEnemies' as const, chance: 1, turns: 3 }] } };
+  beforeEach(() => setItemOverrides({ items: [...activeItems(), NEMURI, KEMURI], equipment: [...activeEquipment()] }));
   afterEach(() => setItemOverrides(null));
   const withItems = (battleItems: Record<string, number>, enemies = 1): BattleState => {
     const s = state();
@@ -149,10 +150,18 @@ describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
     expect((screen.getByRole('button', { name: 'どうぐ' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /ねむりごな/ })).toBeNull();
   });
-  it('敵が 2 体でも、ねらう相手の選択はまだ出さずにそのまま送る (1 体目に使う)', () => {
+  it('敵が 2 体で単体ねらいのどうぐなら、ねらう相手を選んで生きている敵の中の番号を送る (#847)', () => {
     const onCommand = openItems(withItems({ 'nemuri-kona': 1 }, 2));
     fireEvent.click(screen.getByRole('button', { name: 'ねむりごな ×1' }));
-    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona');
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('だれを ねらう？')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'スライムB' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona', 1);
+  });
+  it('敵全体をねらうどうぐは、敵が 2 体でも選ばずに送る (#847)', () => {
+    const onCommand = openItems(withItems({ 'kemuri-dama': 1 }, 2));
+    fireEvent.click(screen.getByRole('button', { name: 'けむりだま ×1' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'kemuri-dama');
     expect(screen.queryByText('だれを ねらう？')).toBeNull();
   });
 });
