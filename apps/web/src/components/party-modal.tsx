@@ -3,6 +3,7 @@ import { jobDisplayName, partyCombatants, partyDefsOf, recruitById, type NpcDef,
 import { ModalShell } from './world-item-modals';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 import { GuildPartyModal } from './guild-party-modal';
+import { AllyNameButton, AllyStatusModal } from './ally-status-modal';
 
 /** パーティの読み込み (権威 state の party と flags)。 */
 export type PartyLoad = () => Promise<{ party: ServerParty; flags: string[] }>;
@@ -18,8 +19,10 @@ export function partyMemberView(a: PartyAlly, party: ServerParty) {
   return { name: a.name, job: jobDisplayName(a.archetype), star: starText(a.star), level: a.level, hp: party.hp?.[a.id] ?? c.maxHp, maxHp: c.maxHp, mp: party.mp?.[a.id] ?? c.maxMp, maxMp: c.maxMp };
 }
 
-/** 仲間の一覧 (名前・職・★・Lv・HP/MP)。right はギルドの「はずす」など行ごとの操作。jobLevel は経験値の無いなじみの Lv。 */
+/** 仲間の一覧 (名前・職・★・Lv・HP/MP)。名前を押すと つよさ。right はギルドの「はずす」など行ごとの操作。jobLevel は経験値の無いなじみの Lv。 */
 export function PartyMemberList({ party, jobLevel, right }: { party: ServerParty; jobLevel: number; right?: (a: PartyAlly) => React.ReactNode }) {
+  const [viewing, setViewing] = useState<PartyAlly | null>(null);
+  const closeView = useCallback(() => setViewing(null), []);
   const members = partyDefsOf(party, recruitById, jobLevel);
   if (members.length === 0) return <p style={{ fontSize: '0.82em', ...muted, margin: '0.2em 0' }}>まだ だれも いない</p>;
   return (
@@ -29,16 +32,20 @@ export function PartyMemberList({ party, jobLevel, right }: { party: ServerParty
         return (
           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em', opacity: v.hp <= 0 ? 0.5 : 1 }}>
             <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <strong>{v.name}</strong> <span style={muted}>{v.job} Lv{v.level}</span> <span aria-label={`★${v.star.length}`} style={{ color: '#f5c542' }}>{v.star}</span>
+              <AllyNameButton name={v.name} onOpen={() => setViewing(r)} /> <span style={muted}>{v.job} Lv{v.level}</span> <span aria-label={`★${v.star.length}`} style={{ color: '#f5c542' }}>{v.star}</span>
               <span style={{ display: 'block', fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>HP {v.hp}/{v.maxHp}　MP {v.mp}/{v.maxMp}</span>
             </span>
             {right?.(r)}
           </div>
         );
       })}
+      {viewing && <AllyStatusModal ally={{ ...viewing, xp: ownXp(viewing, party) }} hp={party.hp?.[viewing.id]} mp={party.mp?.[viewing.id]} onClose={closeView} />}
     </>
   );
 }
+
+/** 仲間が自分で持っている経験値 (生成の仲間は members、なじみは party.xp)。§11 より前に入れたなじみには無い。 */
+const ownXp = (a: PartyAlly, party: ServerParty) => party.members?.find((m) => m.id === a.id)?.xp ?? party.xp?.[a.id];
 
 /** メニューの「なかま」: 一覧だけ (外すのはギルドで)。 */
 export function PartyModal({ jobLevel, load, onClose }: { jobLevel: number; load: PartyLoad; onClose: () => void }) {

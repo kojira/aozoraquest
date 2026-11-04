@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { jobDisplayName, overLevelPower, partyCapacity, partyDefsOf, recruitById, type NpcDef, type PartyAlly, type RecruitCandidate } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import { PartyMemberList, starText, type PartyLoad } from './party-modal';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 import { PARTY_LINES } from '@/lib/party-lines';
+import { AllyNameButton, AllyStatusModal } from './ally-status-modal';
 
 export { PARTY_LINES };
 
@@ -37,6 +38,9 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
   /** はずす前の確かめ。ids は確かめたあとに送る ids。 */
   const [parting, setParting] = useState<{ who: PartyAlly; ids: string[]; said: string; pay: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** つよさを開いている候補 (入ったときの Lv で見せる)。 */
+  const [viewing, setViewing] = useState<RecruitCandidate | null>(null);
+  const closeView = useCallback(() => setViewing(null), []);
   useEffect(() => {
     let live = true;
     Promise.all([load(), candidates()]).then(([r, c]) => {
@@ -123,7 +127,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
                 return (
                   <div key={c.id} data-candidate style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em' }}>
                     <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-                      <strong>{c.name}</strong> <span style={muted}>{jobDisplayName(c.archetype)} Lv{c.level}</span> <span aria-label={`★${c.star}`} style={{ color: '#f5c542' }}>{starText(c.star)}</span>
+                      <AllyNameButton name={c.name} onOpen={() => setViewing(c)} /> <span style={muted}>{jobDisplayName(c.archetype)} Lv{c.level}</span> <span aria-label={`★${c.star}`} style={{ color: '#f5c542' }}>{starText(c.star)}</span>
                       {locked && <span style={muted}>（Lv {c.minLevel} から）</span>}
                       <span style={{ display: 'block', fontSize: '0.9em' }}>「{c.line}」</span>
                     </span>
@@ -137,6 +141,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
           </>
         )}
       </div>
+      {viewing && <AllyStatusModal ally={viewing} onClose={closeView} />}
     </ModalShell>
   );
 }
