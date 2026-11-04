@@ -21,9 +21,12 @@ export interface RecruitDef {
   requireFlags?: string[];
   /** ひとこと (1 行・40 字まで)。紹介の一覧に出す。 */
   line: string;
+  /** 仲間にできる主人公のジョブ Lv の下限 (1〜99)。足りなくても一覧には出す (recruitLevelOk)。 */
+  minLevel?: number;
 }
 
-export const MAX_RECRUITS = 60;
+export const MAX_RECRUITS = 200;
+export const MAX_RECRUIT_LEVEL = 99;
 export const MAX_RECRUIT_NAME = 12;
 export const MAX_RECRUIT_LINE = 40;
 
@@ -37,6 +40,7 @@ export function recruitIssue(r: RecruitDef): string | null {
   if (typeof r.guild !== 'string' || r.guild.trim() === '') return `${r.id}: ギルドが空`;
   if (r.requireFlags !== undefined && (!Array.isArray(r.requireFlags) || !r.requireFlags.every(isFlagName))) return `${r.id}: 条件のフラグ名が不正`;
   if (!oneLine(r.line, MAX_RECRUIT_LINE)) return `${r.id}: ひとことは 1 行・${MAX_RECRUIT_LINE} 字まで`;
+  if (r.minLevel !== undefined && !(Number.isInteger(r.minLevel) && r.minLevel >= 1 && r.minLevel <= MAX_RECRUIT_LEVEL)) return `${r.id}: minLevel は 1〜${MAX_RECRUIT_LEVEL} の整数`;
   return null;
 }
 
@@ -48,7 +52,12 @@ export function recruitGuildIssue(recruits: readonly RecruitDef[], npcs: readonl
   return null;
 }
 
-/** そのギルドで、いま紹介できる冒険者 (定義の順)。 */
+/** 主人公のジョブ Lv で、その冒険者を仲間にできるか。紹介の一覧 (recruitsFor) とは別に見る。 */
+export function recruitLevelOk(r: RecruitDef, jobLevel: number): boolean {
+  return jobLevel >= (r.minLevel ?? 1);
+}
+
+/** そのギルドで、いま紹介できる冒険者 (定義の順)。Lv が足りない人も含む。 */
 export function recruitsFor(list: readonly RecruitDef[], guild: string, flags: readonly string[]): RecruitDef[] {
   return list.filter((r) => r.guild === guild && (r.requireFlags ?? []).every((f) => flags.includes(f)));
 }

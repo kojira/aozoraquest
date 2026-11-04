@@ -49,6 +49,16 @@ describe('GuildPartyModal', () => {
     expect(save).toHaveBeenLastCalledWith(['b']);
   });
 
+  it('ジョブ Lv が足りない冒険者も並べるが、「Lv N から」と出して くわえる は押せない', async () => {
+    setStory({ recruits: [{ ...R('a', 'カイト', 'warrior'), minLevel: 10 }, R('b', 'ミオ', 'miko')] });
+    render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party: { ids: [] }, flags: flags3 })} save={vi.fn()} onClose={vi.fn()} />);
+    await act(async () => {});
+    const offered = screen.getByRole('region', { name: PARTY_LINES.heading });
+    expect(offered.textContent).toContain('Lv 10 から');
+    expect((screen.getByRole('button', { name: 'カイトを くわえる' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'ミオを くわえる' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('紹介できる冒険者がいなければ そう言う', async () => {
     setStory({ recruits: [] });
     render(<GuildPartyModal guild={GUILD} jobLevel={6} load={async () => ({ party: { ids: [] }, flags: flags2 })} save={vi.fn()} onClose={vi.fn()} />);

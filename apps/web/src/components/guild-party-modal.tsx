@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { jobDisplayName, partyCapacity, recruitsAt, type NpcDef, type RecruitDef } from '@aozoraquest/core';
+import { jobDisplayName, partyCapacity, recruitLevelOk, recruitsAt, type NpcDef, type RecruitDef } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import { PartyMemberList, type PartyLoad } from './party-modal';
 import type { ServerParty } from '@/lib/world-server';
@@ -75,15 +75,19 @@ export function GuildPartyModal({ guild, jobLevel, load, save, onClose }: {
               {offered.length === 0 ? <p style={{ fontSize: '0.85em', margin: '0.2em 0' }}>{PARTY_LINES.none}</p> : (
                 <>
                   <div style={{ fontSize: '0.8em', margin: '0 0 4px' }}>{PARTY_LINES.heading}</div>
-                  {offered.map((r) => (
-                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em' }}>
-                      <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-                        <strong>{r.name}</strong> <span style={muted}>{jobDisplayName(r.archetype)}</span>
-                        <span style={{ display: 'block', fontSize: '0.9em' }}>「{r.line}」</span>
-                      </span>
-                      <button type="button" disabled={busy || !!swapIn} style={small} onClick={() => add(r)}>{r.name}を くわえる</button>
-                    </div>
-                  ))}
+                  {offered.map((r) => {
+                    const locked = !recruitLevelOk(r, jobLevel);
+                    return (
+                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em', ...(locked ? { opacity: 0.5 } : {}) }}>
+                        <span style={{ flex: '1 1 auto', minWidth: 0 }}>
+                          <strong>{r.name}</strong> <span style={muted}>{jobDisplayName(r.archetype)}</span>
+                          {locked && <span style={muted}>（Lv {r.minLevel} から）</span>}
+                          <span style={{ display: 'block', fontSize: '0.9em' }}>「{r.line}」</span>
+                        </span>
+                        <button type="button" disabled={busy || !!swapIn || locked} style={small} onClick={() => add(r)}>{r.name}を くわえる</button>
+                      </div>
+                    );
+                  })}
                 </>
               )}
             </section>

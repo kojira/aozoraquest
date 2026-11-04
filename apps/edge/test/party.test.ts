@@ -95,6 +95,7 @@ describe('パーティ (D-PARTY-001)', () => {
         { id: 'r-3', name: 'ソラ', archetype: 'mage', guild: 'g-bluesky', line: 'よろしく。' },
         { id: 'r-4', name: 'ハル', archetype: 'guardian', guild: 'g-bluesky', line: 'よろしく。' },
         { id: 'r-late', name: 'ユキ', archetype: 'sage', guild: 'g-bluesky', requireFlags: ['later'], line: 'よろしく。' },
+        { id: 'r-high', name: 'ゲン', archetype: 'ninja', guild: 'g-bluesky', minLevel: 99, line: 'よろしく。' },
       ],
     });
   });
@@ -138,6 +139,17 @@ describe('パーティ (D-PARTY-001)', () => {
       globalThis.fetch = m.fn;
       await handlePartySet(env, USER, 'g-bluesky', ['r-late', 'r-1'], near(env), NOW);
       expect(m.gs().party?.ids).toEqual(['r-late', 'r-1']);
+    });
+    it('ジョブ Lv が minLevel に足りない冒険者は新しく入れられず 400 recruit_level。もう入れている人は外れない', async () => {
+      const env = await makeEnv();
+      const m = pds(GS({ flags: [LETTER] }));
+      globalThis.fetch = m.fn;
+      await expect(handlePartySet(env, USER, 'g-bluesky', ['r-high'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'recruit_level' });
+      expect(m.gs().party).toBeUndefined();
+      const kept = pds(GS({ flags: [LETTER, 'yuuhi_feather_done'], party: { ids: ['r-high'] } }));
+      globalThis.fetch = kept.fn;
+      await handlePartySet(env, USER, 'g-bluesky', ['r-high', 'r-1'], near(env), NOW);
+      expect(kept.gs().party?.ids).toEqual(['r-high', 'r-1']);
     });
   });
 
