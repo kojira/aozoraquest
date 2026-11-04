@@ -149,7 +149,7 @@ describe('handleSearch の宝箱・キラキラ (D-CHEST-001)', () => {
     const res = await handleSearch(env, DID, at(env, SPARK), NOW, undefined, undefined, 'k2');
     expect(res.power).toBe(3);
     expect(res.placed).toBeUndefined();
-    expect(m.state().materials.herb ?? 0).toBeLessThanOrEqual(1);
+    expect(m.state().openedSpots).toEqual(['k-herb']); // 跡はもう取れない (普段のしらべるは乱数で herb を拾うことがある)
   });
 
   it('持ち物がいっぱいなら開けず、開封済みにもしない (パワーは減らない)', async () => {
