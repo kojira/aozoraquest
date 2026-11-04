@@ -19,6 +19,7 @@ import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
 import type { Town } from './world.js';
+import { ELEMENT_LABELS, type Element } from './elements.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
  *  可能にするため循環を避けてローカルに持つ。 */
@@ -109,6 +110,8 @@ export interface EquipmentDef {
   grade: 1 | 2 | 3;
   /** 値札: あおぞらパワー + 素材個数 (素材の種類は店側が地域ドロップから決める)。 */
   price: { power: number; materials: number };
+  /** 属性 (D-ELEM-001)。武器は通常攻撃の属性、防具 (頭・胴・足・お守り) は守りの染まり (gear-element.ts)。 */
+  element?: Element;
 }
 
 /** 装備適性マトリクス。common/cloth/charm は暗黙 ○。 */
@@ -387,10 +390,10 @@ export function isMasterwork(level: number): boolean {
   return level >= CRAFT_TUNING.masterworkLevel;
 }
 
-/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。 */
+/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。属性つきは横に属性 (「みずの つるぎ+2（水）」。D-ELEM-001)。 */
 export function leveledName(def: EquipmentDef, level: number): string {
-  if (level === 0) return def.name;
-  return `${def.name}${signed(level)}`;
+  const name = level === 0 ? def.name : `${def.name}${signed(level)}`;
+  return def.element ? `${name}（${ELEMENT_LABELS[def.element]}）` : name;
 }
 
 /** 装備中の個体。level 省略時は定義値そのまま (±0 相当)。

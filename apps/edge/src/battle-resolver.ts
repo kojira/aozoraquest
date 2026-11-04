@@ -14,7 +14,7 @@ import {
   resolveTurn, resolveTurnMulti, canUseBattleItem, materialsAfterBattleUse, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, dropBonusOf,
   terrainAt,
   isWalkableAt, wrap, townAt, encounterRateFor, worldOverlay, BATTLE_TUNING,
-  type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
+  type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection, adjacentArmorConflict,
   WORLD_MAP_ID,
   gateAt,
   gateHasLock,
@@ -483,6 +483,8 @@ export async function playerLuk(env: ResolverEnv, userDid: string, ns: string = 
 /** 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。
  *  forgeable だが §6-4 dev 無害・archetype と同じ信用レベル (M5 で再検討)。 */
 export async function handleGear(env: ResolverEnv, userDid: string, gear: GearSelection, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<{ ok: true }> {
+  // 隣り合う属性の防具は同時に着られない (D-ELEM-001 §13a。画面でも選べないが、直 POST もここで止める)。
+  if (adjacentArmorConflict(gear)) throw new ResolverError('隣り合う属性の防具は一緒に着られない', 400, 'element_conflict');
   await readModifyWrite(env, userDid, (cur) => ({ ...cur, gearSel: sanitizeGear(gear, cur.pieces ?? []) }),
     { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { ok: true };

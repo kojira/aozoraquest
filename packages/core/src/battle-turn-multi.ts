@@ -220,7 +220,7 @@ export function resolveTurnMulti(
       if (cmd === 'attack') {
         const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex: heroTargetIndex() })[0];
         if (target) {
-          doAttack(player, target, rng, events, 'player');
+          doAttack(player, target, rng, events, 'player', player.weaponElement ? { element: player.weaponElement } : {}); // 武器の属性 (D-ELEM-001)
           if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) player.mp = Math.min(player.maxMp, player.mp + state.mpAttackGain);
         }
       } else if (cmd === 'skill') {

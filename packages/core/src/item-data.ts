@@ -158,6 +158,10 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
     // **exclusive なのに jobOnly が無い品は誰も装備できない** (canEquip が安全側に倒す)。
     // 静かに死に筋を作らないよう保存で弾く。
     if (e.kind === 'exclusive' && !e.jobOnly) throw new ItemDataError(`${where}: exclusive には jobOnly が要る`);
+    if (e.element !== undefined) {
+      if (!['earth', 'water', 'fire', 'wind', 'void'].includes(e.element)) throw new ItemDataError(`${where}: element が不正 (${e.element})`);
+      if (e.slot === 'shield') throw new ItemDataError(`${where}: 盾には属性を付けられない (守りの染まりは頭・胴・足・お守り)`);
+    }
   }
   return defs;
 }
