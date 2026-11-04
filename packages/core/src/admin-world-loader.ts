@@ -29,6 +29,7 @@ import { WORLD_SIZE } from './world.js';
 import { loadTileArts, type TileArtRecord } from './tile-art.js';
 import { MonsterDataError, setMonsterOverrides } from './monster-data.js';
 import { decodeMonstersFromRecord } from './monster-record.js';
+import { decodeItemsFromRecord } from './item-record.js';
 import { setMonsterArts, type MonsterArtDef } from './monster-art.js';
 import { setItemOverrides, type ItemDefData } from './item-data.js';
 import type { EquipmentDef } from './equipment.js';
@@ -84,7 +85,8 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
   },
   items: (v) => {
     const rec = v as Rec<{ items: ItemDefData[]; equipment: EquipmentDef[] }>;
-    if (rec?.equipment?.length) setItemOverrides({ items: rec.items ?? [], equipment: rec.equipment });
+    // どうぐの効果の小数は文字列で保存 (monsters の #740 と同じ)
+    if (rec?.equipment?.length) setItemOverrides({ items: decodeItemsFromRecord(rec.items), equipment: rec.equipment });
   },
   shops: (v) => { const rec = v as Rec<{ shops: ShopOverride[] }>; if (rec?.shops) setShopOverrides(rec.shops); },
   npcs: (v) => { const rec = v as Rec<{ npcs: NpcDef[] }>; if (rec?.npcs) setNpcs(rec.npcs); },

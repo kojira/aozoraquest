@@ -17,8 +17,8 @@ import {
   npcStructuralPlacementError, sameNpcPosition, setInteriors, setShopOverrides, shopOverrides,
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
-  activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
-  activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
+  activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef,
+  activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, decodeItemsFromRecord, encodeItemsForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
   currentDialogue, missingDialogueNpc, validateDialogue, type DialogueData,
   characterTextsInRecord, currentCharacters, missingCharacterRef, validateCharacters, type CharacterDef,
   assertStoryFlagTotal, currentStory, missingStoryBattle, recruitGuildIssue, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
@@ -111,7 +111,7 @@ function npcPlacementIssues(npcs: NpcDef[], checkPlacement: (n: NpcDef) => boole
 /** items は装備が 1 品以上ある時だけ読み込みで適用される (admin-world-loader)。無視されるレコードは
  *  書かせない。管理画面と同じく参照中のアイテム・装備を消させず、core の検証を通したら元へ戻す。 */
 function validateItemsCandidate(value: unknown): string | null {
-  const items = listOf<ItemDefData>(value, 'items'), equipment = listOf<EquipmentDef>(value, 'equipment');
+  const items = decodeItemsFromRecord((value as Record<string, unknown>).items), equipment = listOf<EquipmentDef>(value, 'equipment');
   if (equipment.length === 0) return 'equipment が空 (読み込みで無視される)';
   const dangling = danglingRefs('item', items.map((it) => it?.id))[0] ?? danglingRefs('equipment', equipment.map((e) => e?.id))[0];
   if (dangling) return describeDanglingRef(dangling);
@@ -220,7 +220,8 @@ export async function handleAdminData(req: Request, env: AdminDataEnv, now: numb
     const saved = await getRecord<Record<string, unknown>>(repo.pdsUrl, repo.did, collection, RKEY);
     await loadSavedWorld(env, now);
     if (req.method === 'GET') {
-      const value = name === 'monsters' && saved?.value ? { ...saved.value, monsters: decodeMonstersFromRecord(saved.value.monsters) } : saved?.value ?? null;
+      const value = name === 'monsters' && saved?.value ? { ...saved.value, monsters: decodeMonstersFromRecord(saved.value.monsters) }
+        : name === 'items' && saved?.value ? { ...saved.value, items: decodeItemsFromRecord(saved.value.items) } : saved?.value ?? null;
       const body: Record<string, unknown> = { name, collection, cid: saved?.cid ?? null, value };
       if (name === 'npcs') body.placementIssues = npcPlacementIssues(listOf<NpcDef>(saved?.value, 'npcs'), () => true);
       return json(body);
@@ -246,7 +247,9 @@ async function putAdminData(req: Request, env: AdminDataEnv, now: number, name: 
   if (body.dryRun === true) return json({ ok: true, dryRun: true });
   const collection = collectionOf(env, name);
   const fields = value as Record<string, unknown>;
-  const recordValue = name === 'monsters' ? { ...fields, monsters: encodeMonstersForRecord(decodeMonstersFromRecord(fields.monsters)) } : fields;
+  // 小数は文字列で保存する (AT Protocol のレコードは整数以外の数値を持てない。monsters #740 / items D-ITEM-001)
+  const recordValue = name === 'monsters' ? { ...fields, monsters: encodeMonstersForRecord(decodeMonstersFromRecord(fields.monsters)) }
+    : name === 'items' ? { ...fields, items: encodeItemsForRecord(decodeItemsFromRecord(fields.items)) } : fields;
   const record = { ...recordValue, $type: collection, updatedAt: new Date(now * 1000).toISOString() };
   try {
     const { cid } = await serverPutRecord(env, now, collection, RKEY, record, body.swapCid);
