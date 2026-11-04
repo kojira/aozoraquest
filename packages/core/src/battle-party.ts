@@ -43,16 +43,22 @@ export type PartyMemberDef = Pick<RecruitDef, 'id' | 'name' | 'archetype'> & { l
 export function partyMembers(list: readonly PartyMemberDef[], jobLevel: number, carry: PartyCarry = {}): Array<{ id: string; combatant: Combatant }> {
   const out: Array<{ id: string; combatant: Combatant }> = [];
   for (const r of list) {
-    const lv = r.level ?? jobLevel;
-    const c = playerCombatant(r.archetype, lv, 1, r.name, undefined, lv >= PARTY_ARMOR.fromLevel ? [PARTY_ARMOR.id] : []);
-    const hp = carry.hp?.[r.id];
-    const mp = carry.mp?.[r.id];
-    if (hp !== undefined) c.hp = Math.max(0, Math.min(c.maxHp, Math.floor(hp)));
-    if (mp !== undefined) c.mp = Math.max(0, Math.min(c.maxMp, Math.floor(mp)));
+    const c = partyMemberCombatant(r, jobLevel, carry);
     if (c.hp <= 0) continue;
-    out.push({ id: r.id, combatant: { ...c, job: { archetype: r.archetype, level: lv } } });
+    out.push({ id: r.id, combatant: c });
   }
   return out;
+}
+
+/** 仲間 1 人の Combatant (持ちこしの HP/MP つき。倒れていても返す)。戦闘とフィールドの回復 (D-PARTY-003) が同じ強さで数える。 */
+export function partyMemberCombatant(r: PartyMemberDef, jobLevel: number, carry: PartyCarry = {}): Combatant {
+  const lv = r.level ?? jobLevel;
+  const c = playerCombatant(r.archetype, lv, 1, r.name, undefined, lv >= PARTY_ARMOR.fromLevel ? [PARTY_ARMOR.id] : []);
+  const hp = carry.hp?.[r.id];
+  const mp = carry.mp?.[r.id];
+  if (hp !== undefined) c.hp = Math.max(0, Math.min(c.maxHp, Math.floor(hp)));
+  if (mp !== undefined) c.mp = Math.max(0, Math.min(c.maxMp, Math.floor(mp)));
+  return { ...c, job: { archetype: r.archetype, level: lv } };
 }
 
 export function partyCombatants(list: readonly PartyMemberDef[], jobLevel: number, carry: PartyCarry = {}): Combatant[] {
@@ -60,9 +66,12 @@ export function partyCombatants(list: readonly PartyMemberDef[], jobLevel: numbe
 }
 
 const isPartyHeal = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'heal' && e.target === 'allAllies');
+/** 味方 1 人を回復するとくぎ (聖光の癒し など。D-PARTY-003)。 */
+const isOneAllyHeal = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'heal' && e.target === 'oneAlly');
 const isAreaAttack = (kind: string) => !!SKILLS[kind]?.effects.some((e) => (e.kind === 'damage' || e.kind === 'fixedDamage') && e.target === 'allEnemies');
 
-/** 仲間の 1 手。targetIndex は「生きている敵の中で何番目か」(resolveTargets の数え方)。 */
+/** 仲間の 1 手。targetIndex は「生きている敵の中で何番目か」(resolveTargets の数え方)。
+ *  味方 1 人を回復するとくぎのときだけ「生きている味方の中で何番目か」。 */
 export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?: number): { command: Command; skillIndex: number; targetIndex: number } {
   const allies = state.allies ?? [state.player];
   const ally = allies[allyIndex]!;
@@ -71,7 +80,15 @@ export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?:
   const living = (state.enemies ?? [state.monster]).filter((e) => e.hp > 0);
   const canCast = ally.mp >= cost;
   const heal = skills.findIndex((k) => isPartyHeal(k.kind));
-  if (canCast && heal >= 0 && allies.some((a) => a.hp > 0 && a.hp < a.maxHp * PARTY_HEAL_BELOW)) return { command: 'skill', skillIndex: heal, targetIndex: 0 };
+  const livingAllies = allies.filter((a) => a.hp > 0);
+  const hurt = livingAllies.some((a) => a.hp < a.maxHp * PARTY_HEAL_BELOW);
+  if (canCast && heal >= 0 && hurt) return { command: 'skill', skillIndex: heal, targetIndex: 0 };
+  // 全体回復が無ければ、味方 1 人の回復を HP の割合がいちばん低い味方 (主人公を含む) に。
+  const oneHeal = skills.findIndex((k) => isOneAllyHeal(k.kind));
+  if (canCast && oneHeal >= 0 && hurt) {
+    const lowest = livingAllies.reduce((a, b) => (b.hp / b.maxHp < a.hp / a.maxHp ? b : a));
+    return { command: 'skill', skillIndex: oneHeal, targetIndex: livingAllies.indexOf(lowest) };
+  }
   const area = skills.findIndex((k) => isAreaAttack(k.kind));
   if (canCast && area >= 0 && living.length >= 2) return { command: 'skill', skillIndex: area, targetIndex: 0 };
   if (living.length === 0) return { command: 'attack', skillIndex: 0, targetIndex: 0 };
@@ -83,7 +100,8 @@ export function allyAutoAction(state: BattleState, allyIndex: number, turnSeed?:
   delete view.allies;
   delete view.enemies;
   const a = autoBattleAction(view, turnSeed);
-  if (a.command === 'skill' && canCast) return { command: 'skill', skillIndex: a.skillIndex, targetIndex };
+  // 1 対 1 の先読みで味方 1 人の回復を選んだら、今までどおり自分に (敵の番号を味方の番号に使わない)。
+  if (a.command === 'skill' && canCast) return { command: 'skill', skillIndex: a.skillIndex, targetIndex: isOneAllyHeal(skills[a.skillIndex]?.kind ?? '') ? livingAllies.indexOf(ally) : targetIndex };
   if (a.command === 'guard') return { command: 'guard', skillIndex: 0, targetIndex };
   return { command: 'attack', skillIndex: 0, targetIndex };
 }

@@ -16,7 +16,8 @@ import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } from './xp-claim';
 import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError } from './shop';
-import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { handleFieldSkill, handleItem } from './field-heal';
 import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestComplete, GameQuestError } from './game-quest';
@@ -236,10 +237,29 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { item?: string };
+    const body = (await req.json().catch(() => ({}))) as { item?: string; target?: unknown };
     if (body.item !== 'herb' && body.item !== 'tonic') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    if (body.target !== undefined && typeof body.target !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req), undefined, body.target)), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // フィールドで回復のとくぎを唱える (D-PARTY-003)。唱える人・とくぎ・相手・MP はサーバーが確かめる。
+  if (req.method === 'POST' && url.pathname === '/api/world/skill') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience: env.WORKER_DID ?? 'did:web:edge.aozoraquest.app', lxm: LXM.worldSkill }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { caster?: unknown; skillId?: unknown; target?: unknown; rkey?: unknown };
+    try {
+      return cors(json(await handleFieldSkill(env, did, body, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }

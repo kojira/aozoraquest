@@ -93,6 +93,9 @@ export {
   battleItemsFrom,
   canUseBattleItem,
   materialsAfterBattleUse,
+  itemEffectTarget,
+  itemTargetsOneAlly,
+  skillTargetsOneAlly,
 } from './battle-items.js';
 export {
   autoBattleAction,
@@ -105,6 +108,7 @@ export {
   type PartyCarry,
   type PartyMemberDef,
   partyMembers,
+  partyMemberCombatant,
   partyCombatants,
   allyAutoAction,
 } from './battle-party.js';
