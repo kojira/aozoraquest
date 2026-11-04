@@ -8,13 +8,14 @@ import { resolveTargets, type CombatSides } from './combat-target.js';
 import { STATUS_REGISTRY, applyBeforeAct, tickStatuses } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
-import { skillMpCostOf, mpTraitFires } from './battle-job-skills.js';
+import { skillMpCostOf, skillsForJob, mpTraitFires } from './battle-job-skills.js';
 import { type Combatant } from './battle-combatant.js';
 import { MONSTERS_BY_ID } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
+import { allyAutoAction } from './battle-party.js';
 
 /** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
 function copyCombatant(c: Combatant): Combatant {
@@ -73,12 +74,44 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState
   if (target) doAttack(enemy, target, rng, events, 'monster');
 }
 
+/** 仲間 (job を持つ味方) の行動。手は allyAutoAction が決める (D-PARTY-001)。 */
+function partyMemberAct(actor: Combatant, index: number, state: BattleState, sides: CombatSides, rng: () => number, events: TurnEvent[], turnSeed?: number): void {
+  const a = allyAutoAction(state, index, turnSeed);
+  const skills = skillsForJob(actor.job!.archetype, actor.job!.level);
+  const skill = skills[a.skillIndex];
+  const def = skill ? SKILLS[skill.kind] : undefined;
+  const cost = skillMpCostOf(actor);
+  if (a.command === 'skill' && skill && def && actor.mp >= cost) {
+    actor.mp -= cost;
+    if (def.parry) {
+      actor.parrying = true;
+      events.push({ actor: 'player', text: `${actor.name}は${skill.name}の構え! (防御しつつ反撃)` });
+      return;
+    }
+    runSkillMulti(
+      def,
+      actor,
+      sides,
+      (defender) => ({ attacker: actor, defender, rng, events, skillName: skill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
+      { targetIndex: a.targetIndex, label: skill.name, events, actor: 'player' },
+    );
+    return;
+  }
+  if (a.command === 'guard') {
+    actor.guarding = true;
+    events.push({ actor: 'player', text: `${actor.name}はぼうぎょのかまえ!` });
+    return;
+  }
+  const target = resolveTargets(actor, 'oneEnemy', sides, { targetIndex: a.targetIndex })[0];
+  if (target) doAttack(actor, target, rng, events, 'player');
+}
+
 /**
  * マルチ戦闘のターン解決 (#453 / docs/25 §14.8)。**allies[] vs enemies[]** を全員 agi+乱数で
  * 並べ、順に行動させる。ソロ用 resolveTurn とは**別経路** (1v1 は一切変更しない)。
  *
- * 現ブロックの AI: プレイヤーは command + skillIndex + targetIndex、召喚/NPC 味方はランダムな敵へ
- * 通常攻撃、敵は個体ごとの ability (charger/healer/caster) でランダムな味方へ行動 (#453。挑発/かばう・
+ * 現ブロックの AI: プレイヤーは command + skillIndex + targetIndex、仲間 (job あり) は allyAutoAction、
+ * 召喚など job の無い味方はランダムな敵へ通常攻撃、敵は個体ごとの ability (charger/healer/caster) でランダムな味方へ行動 (#453。挑発/かばう・
  * 味方 autoBattle は後続)。
  */
 export function resolveTurnMulti(
@@ -160,11 +193,12 @@ export function resolveTurnMulti(
     .sort((a, b) => b.roll - a.roll)
     .map((x) => x.c);
 
-  const alliesDown = () => allies.every((a) => a.hp <= 0);
+  // 主人公が倒れたら負け (D-PARTY-001)。コマンドとやくそうを持つのは主人公だけなので、仲間だけ残っても続けない。
+  const heroDown = () => player.hp <= 0;
   const enemiesDown = () => enemies.every((e) => e.hp <= 0);
 
   for (const actor of order) {
-    if (state.outcome !== 'ongoing' || alliesDown() || enemiesDown()) break;
+    if (state.outcome !== 'ongoing' || heroDown() || enemiesDown()) break;
     if (actor.hp <= 0) continue; // このターン中に倒された
     const side: 'player' | 'monster' = isAlly(actor) ? 'player' : 'monster';
     if (applyBeforeAct(actor, { rng, events, actor: side })) continue; // 行動不能
@@ -204,8 +238,10 @@ export function resolveTurnMulti(
         useBattleItem(state, itemId!, sides, targetIndex, rng, events);
       }
       // guard / flee 失敗はこのターン行動なし
+    } else if (isAlly(actor) && actor.job) {
+      partyMemberAct(actor, allies.indexOf(actor), state, sides, rng, events, turnSeed);
     } else if (isAlly(actor)) {
-      // 召喚/NPC 味方: ランダムな敵へ通常攻撃 (味方版 autoBattle は後続で拡張)
+      // 召喚など job の無い味方: ランダムな敵へ通常攻撃
       const target = randomLiving(enemies, rng);
       if (target) doAttack(actor, target, rng, events, 'player');
     } else {
@@ -231,7 +267,7 @@ export function resolveTurnMulti(
     /* fled 等: 確定済み */
   } else if (enemiesDown()) {
     state.outcome = 'win';
-  } else if (alliesDown()) {
+  } else if (heroDown()) {
     state.outcome = 'lose';
   }
 

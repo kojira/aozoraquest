@@ -16,7 +16,7 @@ import { allNpcs } from './npc-data.js';
 import { gameQuests } from './quest-data.js';
 import { scenarioEvents } from './scenario.js';
 import { shopOverrides } from './shop-data.js';
-import { placedItems, placedRewards, storyBattles } from './story-data.js';
+import { placedItems, placedRewards, recruits, storyBattles } from './story-data.js';
 import { activeItems } from './item-data.js';
 import { allInteriors } from './interior.js';
 import { currentDialogue } from './dialogue-data.js';
@@ -85,6 +85,7 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
     }
   }
   if (kind === 'monster') for (const b of storyBattles()) push(b.monsterId, `戦闘「${b.id}」`);
+  if (kind === 'npc') for (const r of recruits()) push(r.guild, `冒険者「${r.name}」`);
   for (const s of shopOverrides()) {
     const from = `店 (${s.x}, ${s.y})`;
     if (kind === 'equipment') for (const id of s.equipment ?? []) push(id, from);

@@ -60,6 +60,9 @@ export interface Combatant {
   /** モンスター個体の def id (#453 マルチ戦闘で敵ごとに ability/spell を引くため)。プレイヤー/召喚は未設定。
    *  monsterCombatant が def.id を載せる。1v1 では state.monsterId と一致する。 */
   monsterId?: string;
+  /** 仲間の職と Lv (D-PARTY-001)。あれば resolveTurnMulti が allyAutoAction でとくぎを選ぶ。
+   *  主人公・召喚・モンスターは未設定 (召喚は今のまま通常攻撃)。 */
+  job?: { archetype: Archetype; level: number };
 }
 
 /** stats と HP/MP から Combatant を組む。HP/MP の導出は呼び出し側の責務 (プレイヤーと
