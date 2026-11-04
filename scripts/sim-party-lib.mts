@@ -15,6 +15,8 @@ const { TEST_MONSTERS } = (await import(`${resolve(here, '..')}/packages/core/sr
 /** MONSTERS_JSON = `node scripts/admin-data.mjs get monsters` の出力 (dev の実データ)。無ければ fixture。 */
 if (process.env.MONSTERS_JSON) core.setMonsterOverrides(core.decodeMonstersFromRecord(JSON.parse(readFileSync(process.env.MONSTERS_JSON, 'utf8')).value.monsters));
 else core.setMonsterOverrides(TEST_MONSTERS);
+/** ITEMS_JSON = `node scripts/admin-data.mjs get items` の出力 (戦闘のどうぐ)。無ければ同梱の品。 */
+if (process.env.ITEMS_JSON) { const v = JSON.parse(readFileSync(process.env.ITEMS_JSON, 'utf8')).value; core.setItemOverrides({ items: core.decodeItemsFromRecord(v.items), equipment: v.equipment }); }
 
 const { startBattle, resolveTurn, resolveTurnMulti, autoBattleAction, skillMpCostOf, battleXpFor, partyMembers, splitBattleXp, SKILLS, BATTLE_TUNING } = core;
 /** 仲間の Lv = 主人公の Lv + MATE_LV (★の上乗せを試す。D-PARTY-002 §8。仲間は自分の Lv で戦う §11)。 */
