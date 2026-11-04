@@ -2,7 +2,7 @@
  * しらべる (`POST /api/world/search`)。battle-resolver から分けた (D-STORY-009)。
  * 判定・消費・付与はすべて edge が権威。
  */
-import { jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, regionOf, tierForRegion, interiorById, WORLD_MAP_ID, MAX_FLAGS, placedItemAt, placedItemOpen, placedKind, placedRewards, placedSearchOutcome, type PlacedItemDef, type PlacedKind, type PlacedReward } from '@aozoraquest/core';
+import { jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, regionOf, tierForRegion, interiorById, WORLD_MAP_ID, MAX_FLAGS, placedItemAt, placedItemOpen, placedItemTaken, placedKind, placedRewards, placedSearchOutcome, type PlacedItemDef, type PlacedKind, type PlacedReward } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readState, readModifyWrite, MAX_OPENED_SPOTS, type GameState, type OwnedPiece } from './game-state';
 import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
@@ -88,10 +88,12 @@ async function takePlacedItem(env: ResolverEnv, userDid: string, item: PlacedIte
   const written = await readModifyWrite(env, userDid, (cur) => {
     took = false;
     scenarioBox.v = null;
-    if (key && (cur.shopOps ?? []).includes(key)) { took = true; return cur; } // 処理済みの再送
+    const done = !!key && (cur.shopOps ?? []).includes(key);
+    // 処理済みの再送は、このマスを取った後のときだけ (同じ opKey で別のマスを取った後なら普段どおり取る)。
+    if (done && placedItemTaken(item, cur.flags ?? [], cur.openedSpots ?? [])) { took = true; return cur; }
     if (!placedItemOpen(item, cur.flags ?? [], cur.openedSpots ?? [])) return cur;
     took = true;
-    const next: GameState = { ...grantPlacedRewards(cur, item), ...(key ? { shopOps: [...(cur.shopOps ?? []), key].slice(-MAX_SHOP_OPS) } : {}) };
+    const next: GameState = { ...grantPlacedRewards(cur, item), ...(key && !done ? { shopOps: [...(cur.shopOps ?? []), key].slice(-MAX_SHOP_OPS) } : {}) };
     scenarioBox.v = advanceScenario(next);
     return scenarioBox.v ? { ...next, flags: scenarioBox.v.flags } : next;
   }, { now, init });
@@ -133,7 +135,8 @@ export async function handleSearch(env: ResolverEnv, userDid: string, token: str
   if (placed) {
     let outcome = placedSearchOutcome(placed, state.flags ?? [], state.openedSpots ?? []);
     let latest = state;
-    if (outcome === 'take' || (placedKey && (state.shopOps ?? []).includes(placedKey))) {
+    const replay = !!placedKey && (state.shopOps ?? []).includes(placedKey) && placedItemTaken(placed, state.flags ?? [], state.openedSpots ?? []);
+    if (outcome === 'take' || replay) {
       const got = await takePlacedItem(env, userDid, placed, now, (d, iso) => migrateInitState(d, iso, ns, fetchImpl), placedKey);
       if (got.result) return got.result;
       latest = got.state; // 割り込みで取れなくなった: 最新の state で決め直す

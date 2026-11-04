@@ -22,7 +22,13 @@ describe('placedTakenText', () => {
 
   it('spot: 今どおり「○○を手に入れた!」', () => {
     expect(placedTakenText({ kind: 'spot', rewards: [{ item: 'herb', count: 2 }], itemId: 'herb', count: 2 })).toBe('やくそうを2こ手に入れた!');
-    expect(placedTakenText({ kind: 'spot', rewards: [{ item: 'herb', count: 1 }] })).toBe('やくそうを手に入れた!');
+    expect(placedTakenText({ kind: 'spot', rewards: [{ item: 'herb', count: 1 }], itemId: 'herb', count: 1 })).toBe('やくそうを手に入れた!');
+  });
+
+  it('spot: itemId が無い・報酬が複数なら、宝箱と同じ書き方で前置きなし', () => {
+    expect(placedTakenText({ kind: 'spot', rewards: [{ item: 'herb', count: 2 }, { power: 3 }], itemId: 'herb', count: 2 })).toBe('やくそう×2と あおぞらパワー3を手に入れた！');
+    expect(placedTakenText({ kind: 'spot', rewards: [{ power: 3 }] })).toBe('あおぞらパワーを 3 手に入れた！');
+    expect(placedTakenText({ kind: 'spot', rewards: [{ equipment: 'wp-knife' }] })).toBe('ナイフを手に入れた！（そうびで確認）');
   });
 });
 
@@ -37,7 +43,7 @@ describe('placedStateText', () => {
 describe('searchMenuLabel / placedSearchFreeAt', () => {
   afterEach(() => setStory(null));
 
-  it('取れる宝箱・空の宝箱・鍵の宝箱は「しらべる」(無料)、ほかは「しらべる (パワー1)」', () => {
+  it('取れる宝箱・空の宝箱は「しらべる」(無料)。条件のそろわない宝箱・取った後のキラキラ・ほかは「しらべる (パワー1)」', () => {
     setStory({ placedItems: [
       { id: 'c1', mapId: 'v', x: 1, y: 1, kind: 'chest', rewards: [{ power: 3 }] },
       { id: 'c2', mapId: 'v', x: 2, y: 1, kind: 'chest', rewards: [{ power: 3 }], requireFlags: ['key'] },
@@ -45,7 +51,9 @@ describe('searchMenuLabel / placedSearchFreeAt', () => {
     ] });
     expect(searchMenuLabel({ mapId: 'v', x: 1, y: 1 }, [], [])).toBe('しらべる');
     expect(searchMenuLabel({ mapId: 'v', x: 1, y: 1 }, [], ['c1'])).toBe('しらべる');
-    expect(searchMenuLabel({ mapId: 'v', x: 2, y: 1 }, [], [])).toBe('しらべる');
+    expect(searchMenuLabel({ mapId: 'v', x: 2, y: 1 }, [], [])).toBe('しらべる (パワー1)');
+    expect(placedSearchFreeAt({ mapId: 'v', x: 2, y: 1 }, [], [])).toBe(false);
+    expect(searchMenuLabel({ mapId: 'v', x: 2, y: 1 }, ['key'], [])).toBe('しらべる');
     expect(placedSearchFreeAt({ mapId: 'v', x: 3, y: 1 }, [], [])).toBe(true);
     expect(searchMenuLabel({ mapId: 'v', x: 3, y: 1 }, [], ['k1'])).toBe('しらべる (パワー1)');
     expect(searchMenuLabel({ mapId: 'v', x: 9, y: 9 }, [], [])).toBe('しらべる (パワー1)');

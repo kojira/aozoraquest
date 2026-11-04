@@ -58,6 +58,19 @@ describe('AdminStory', () => {
     expect(screen.getByText('old-spot', { selector: 'code' })).toBeTruthy();
   });
 
+  it('保存済みの置きアイテムは flag と種類を変えられない。新規は変えられる', async () => {
+    mount();
+    await screen.findByText(/フラグ 3\/500/);
+    fireEvent.click(screen.getByRole('button', { name: /old-spot/ }));
+    expect((screen.getByLabelText('立てるフラグ') as HTMLInputElement).readOnly).toBe(true);
+    expect((screen.getByLabelText('種類') as HTMLSelectElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('マップ'), { target: { value: 'room' } });
+    fireEvent.change(screen.getByLabelText('新しい id'), { target: { value: 'room-chest-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋宝箱' }));
+    expect((screen.getByLabelText('立てるフラグ') as HTMLInputElement).readOnly).toBe(false);
+    expect((screen.getByLabelText('種類') as HTMLSelectElement).disabled).toBe(false);
+  });
+
   it('宝箱を足して地図で置き、報酬を入れて保存すると、戦闘はそのまま書き戻す', async () => {
     mount();
     await screen.findByText(/フラグ 3\/500/);

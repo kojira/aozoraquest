@@ -68,11 +68,11 @@ export function placedItemOpen(p: PlacedItemDef, flags: readonly string[], opene
 
 /**
  * しらべた結果を決める (edge の分岐と web のメニュー表示が同じものを使う)。
- * hint の無い spot の鍵は、存在を漏らさないよう普段のしらべる (paid) のまま。
+ * 条件のそろわない宝箱 (描かれない) と hint の無い spot の鍵は、存在を漏らさないよう普段のしらべる (paid) のまま。
  */
 export function placedSearchOutcome(p: PlacedItemDef, flags: readonly string[], opened: readonly string[]): PlacedSearchOutcome {
   const kind = placedKind(p);
-  if (!(p.requireFlags ?? []).every((f) => flags.includes(f))) return kind === 'chest' || (kind === 'spot' && p.hint) ? 'locked' : 'paid';
+  if (!(p.requireFlags ?? []).every((f) => flags.includes(f))) return kind === 'spot' && p.hint ? 'locked' : 'paid';
   if (!placedItemTaken(p, flags, opened)) return 'take';
   return kind === 'chest' ? 'empty' : 'paid';
 }

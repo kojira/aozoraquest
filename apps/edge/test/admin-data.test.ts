@@ -289,6 +289,16 @@ describe('/api/admin/data (#695)', () => {
       expect(pds.puts).toHaveLength(0);
     });
 
+    it('保存済みの id の flag・kind は変えられない (400)。ほかの項目は変えられる (D-CHEST-001)', async () => {
+      const chest = (over: Record<string, unknown> = {}) => ({ id: 'c1', mapId: 'world', x: 301, y: 300, kind: 'chest', rewards: [{ power: 1 }], ...over });
+      store.set(COL('story'), { value: { placedItems: [chest({ flag: 'got-c1' })] }, cid: 'st1' });
+      expect(await put('story', { placedItems: [chest({ flag: 'got-c1-2' })] })).toBe(400);
+      expect(await put('story', { placedItems: [chest()] })).toBe(400);
+      expect(await put('story', { placedItems: [chest({ flag: 'got-c1', kind: 'sparkle' })] })).toBe(400);
+      expect(await put('story', { placedItems: [chest({ flag: 'got-c1', rewards: [{ power: 2 }], hint: 'あかない' })] })).toBe(200);
+      expect(pds.puts).toHaveLength(0);
+    });
+
     it('フィールドの町のマス・flag なしは 400', async () => {
       const town = worldOverlay().towns[0]!;
       expect(await put('story', { placedItems: [item({ mapId: 'world', x: town.x, y: town.y })] })).toBe(400);
