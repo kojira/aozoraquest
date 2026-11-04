@@ -2,6 +2,7 @@
  * sim-party / sim-party-boss の共通部 (D-PARTY-001)。core を読み、モンスターを入れ、パーティの 1 戦を回す。
  * 仲間の手は core の allyAutoAction (resolveTurnMulti の中で動く)。主人公の手は群れなら全体技 → 一番弱い敵に
  * 1 対 1 の autoBattleAction、1 対 1 なら autoBattleAction。主人公が倒れたら負け (core)。
+ * 仲間は自分の Lv (主人公の Lv + MATE_LV) で戦い、XP/戦は主人公の取り分 (人数で等分。D-PARTY-002 §11)。
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -15,10 +16,11 @@ const { TEST_MONSTERS } = (await import(`${resolve(here, '..')}/packages/core/sr
 if (process.env.MONSTERS_JSON) core.setMonsterOverrides(core.decodeMonstersFromRecord(JSON.parse(readFileSync(process.env.MONSTERS_JSON, 'utf8')).value.monsters));
 else core.setMonsterOverrides(TEST_MONSTERS);
 
-const { startBattle, resolveTurn, resolveTurnMulti, autoBattleAction, skillMpCostOf, battleXpFor, partyMembers, SKILLS, BATTLE_TUNING } = core;
+const { startBattle, resolveTurn, resolveTurnMulti, autoBattleAction, skillMpCostOf, battleXpFor, partyMembers, splitBattleXp, SKILLS, BATTLE_TUNING } = core;
+/** 仲間の Lv = 主人公の Lv + MATE_LV (★の上乗せを試す。D-PARTY-002 §8。仲間は自分の Lv で戦う §11)。 */
+const MATE_LV = Number(process.env.MATE_LV ?? 0);
 type Archetype = import('../packages/core/src/index.js').Archetype;
 type BattleState = import('../packages/core/src/index.js').BattleState;
-type RecruitDef = import('../packages/core/src/index.js').RecruitDef;
 
 /** 仲間の組み合わせ (主人公を除く)。 */
 export const PARTIES: Record<string, Archetype[]> = { solo: [], duo: ['warrior'], trio: ['warrior', 'miko'], full: ['warrior', 'mage', 'miko'] };
@@ -36,7 +38,7 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
     tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: true } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, equipIds: heroGear(lv),
     ...(o.monsterId ? { monsterId: o.monsterId } : {}), ...(o.story ? { story: { canFlee: false } } : {}),
   });
-  const defs: RecruitDef[] = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, guild: 'g', line: '.' }));
+  const defs = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, level: Math.max(1, lv + MATE_LV) }));
   const members = partyMembers(defs, lv, o.carry ? { hp: o.carry.mates, mp: o.carry.matesMp } : {});
   if (members.length) {
     const enemies = s.enemies ?? [s.monster];
@@ -61,7 +63,9 @@ export function fight(job: Archetype, lv: number, tier: number, seed: number, ma
   const killed = (s.enemies ?? [s.monster]).filter((e) => e.hp <= 0).map((e) => e.monsterId ?? s.monsterId);
   const mates2: Record<string, number> = { ...o.carry?.mates }, matesMp: Record<string, number> = { ...o.carry?.matesMp };
   members.forEach((m, i) => { const c = s.allies![i + 1]!; mates2[m.id] = c.hp; matesMp[m.id] = c.mp; });
-  return { outcome: s.outcome, turns, xp: s.outcome === 'win' ? killed.reduce((n, id) => n + battleXpFor(id), 0) : 0,
+  const total = s.outcome === 'win' ? killed.reduce((n, id) => n + battleXpFor(id), 0) : 0;
+  // xp は主人公の取り分 (戦闘に出た人数で等分。§11)。
+  return { outcome: s.outcome, turns, xp: splitBattleXp(total, 1 + members.length),
     carry: { hp: s.player.hp, mp: s.player.mp, herbs: s.herbs, mates: mates2, matesMp } satisfies PartyCarry };
 }
 

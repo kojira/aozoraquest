@@ -2,7 +2,8 @@
  * パーティの仲間 (D-PARTY-001)。ギルドで入れた冒険者を Combatant にし、戦闘で自動で動かす。
  * (公開 API は battle.ts から再エクスポート)
  *
- * - 強さは `playerCombatant(職, 主人公のジョブ Lv)`。仲間ごとの XP・Lv は持たない。
+ * - 強さは `playerCombatant(職, 仲間の Lv)`。仲間の Lv は自分の経験値から (D-PARTY-002 §11、partyDefsOf)。
+ *   level の無い定義 (RecruitDef) は主人公のジョブ Lv。
  * - 手は職のとくぎから: 全体回復 (味方の誰かが HP 50% 未満) → 敵 2 体以上なら全体技 →
  *   それ以外は HP がいちばん低い敵を相手にした 1 対 1 の autoBattleAction。
  */
@@ -35,22 +36,26 @@ export interface PartyCarry {
   mp?: Readonly<Record<string, number>>;
 }
 
+/** 仲間 1 人の定義。level があればその Lv、無ければ主人公のジョブ Lv で戦う。 */
+export type PartyMemberDef = Pick<RecruitDef, 'id' | 'name' | 'archetype'> & { level?: number };
+
 /** 戦闘に出る仲間 (倒れた仲間 = HP 0 の持ちこしは出ない) を、入れている順に。 */
-export function partyMembers(list: readonly RecruitDef[], jobLevel: number, carry: PartyCarry = {}): Array<{ id: string; combatant: Combatant }> {
+export function partyMembers(list: readonly PartyMemberDef[], jobLevel: number, carry: PartyCarry = {}): Array<{ id: string; combatant: Combatant }> {
   const out: Array<{ id: string; combatant: Combatant }> = [];
   for (const r of list) {
-    const c = playerCombatant(r.archetype, jobLevel, 1, r.name, undefined, jobLevel >= PARTY_ARMOR.fromLevel ? [PARTY_ARMOR.id] : []);
+    const lv = r.level ?? jobLevel;
+    const c = playerCombatant(r.archetype, lv, 1, r.name, undefined, lv >= PARTY_ARMOR.fromLevel ? [PARTY_ARMOR.id] : []);
     const hp = carry.hp?.[r.id];
     const mp = carry.mp?.[r.id];
     if (hp !== undefined) c.hp = Math.max(0, Math.min(c.maxHp, Math.floor(hp)));
     if (mp !== undefined) c.mp = Math.max(0, Math.min(c.maxMp, Math.floor(mp)));
     if (c.hp <= 0) continue;
-    out.push({ id: r.id, combatant: { ...c, job: { archetype: r.archetype, level: jobLevel } } });
+    out.push({ id: r.id, combatant: { ...c, job: { archetype: r.archetype, level: lv } } });
   }
   return out;
 }
 
-export function partyCombatants(list: readonly RecruitDef[], jobLevel: number, carry: PartyCarry = {}): Combatant[] {
+export function partyCombatants(list: readonly PartyMemberDef[], jobLevel: number, carry: PartyCarry = {}): Combatant[] {
   return partyMembers(list, jobLevel, carry).map((m) => m.combatant);
 }
 

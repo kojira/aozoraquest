@@ -100,6 +100,7 @@ export {
   PARTY_ARMOR,
   partyCapacity,
   type PartyCarry,
+  type PartyMemberDef,
   partyMembers,
   partyCombatants,
   allyAutoAction,
