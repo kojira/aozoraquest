@@ -10,6 +10,7 @@
  * BOSSES は「monsterId:想定 Lv:敵の数」をセミコロンで。既定は dev のボス 6 体 + itadaki-b-wisps (will-o-wisp ×3)。
  * 台本負けの x-rocket は入れない (1 対 1 のままで仲間は加わらず、負けて話が進む戦闘)。
  * ITEMS='{"heat-shroom-lord":{"mizu-bin":2}}' のように、ボスごとに持ちこむ戦闘のどうぐ (糸口。§12) を渡せる。
+ * GEAR='{"pave-golem":{"weapon":"wp-wind-sword","armor":"ar-wind-cloak"}}' で、ボスごとに主人公の装備 (属性装備。D-ELEM-001) を渡せる。
  */
 import { core, fight, PARTIES, median, minOf } from './sim-party-lib.mts';
 
@@ -17,6 +18,7 @@ const BOSSES = (process.env.BOSSES ?? 'heat-shroom-lord:3:1;echo-bat-lord:5:1;go
   .split(';').map((s) => { const [id, lv, n] = s.split(':'); return { id: id!, lv: Number(lv), n: Number(n ?? 1) }; });
 const N = Number(process.env.N ?? 100);
 const ITEMS: Record<string, Record<string, number>> = JSON.parse(process.env.ITEMS ?? '{}');
+const GEAR: Record<string, import('../packages/core/src/index.js').GearSelection> = JSON.parse(process.env.GEAR ?? '{}');
 
 for (const b of BOSSES) {
   const def = core.MONSTERS_BY_ID[b.id];
@@ -27,7 +29,7 @@ for (const b of BOSSES) {
     for (const job of core.ARCHETYPES) {
       let w = 0, t = 0;
       for (let sd = 0; sd < N; sd++) {
-        const r = fight(job, b.lv, def.tier, sd * 2654435761 + b.lv * 7919, PARTIES[pk]!, { monsterId: b.id, story: true, extraEnemies: b.n - 1, tonics: 1, ...(ITEMS[b.id] ? { battleItems: ITEMS[b.id] } : {}) });
+        const r = fight(job, b.lv, def.tier, sd * 2654435761 + b.lv * 7919, PARTIES[pk]!, { monsterId: b.id, story: true, extraEnemies: b.n - 1, tonics: 1, ...(ITEMS[b.id] ? { battleItems: ITEMS[b.id] } : {}), ...(GEAR[b.id] ? { gear: GEAR[b.id] } : {}) });
         if (r.outcome === 'win') { w++; t += r.turns; }
       }
       const rate = (w / N) * 100;
