@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SKILLS, effectTarget, isPureHealSkill, skillMpCostOf, skillsForJob, type Combatant, type JobSkill } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import type { ServerSkillResult } from '@/lib/world-server';
+import { bondUpLines } from '@/lib/bond-view';
 
 /** フィールドの回復に出てくる 1 人 (主人公は id 'hero')。c は持ちこしの HP/MP つき。 */
 export interface FieldMember { id: string; c: Combatant }
@@ -16,9 +17,9 @@ const picksTarget = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effect
 const healsAll = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'allAllies');
 
 /** 結果の 1 文 (「〇〇は △△を となえた！ □□の HPが N かいふくした。」)。 */
-export function fieldSkillMessage(r: Pick<ServerSkillResult, 'casterName' | 'skillName' | 'healed'>): string {
+export function fieldSkillMessage(r: Pick<ServerSkillResult, 'casterName' | 'skillName' | 'healed' | 'allyBondUp'>): string {
   const lines = r.healed.map((h) => `${h.name}の HPが ${h.amount} かいふくした。`).join(' ');
-  return `${r.casterName}は ${r.skillName}を となえた！ ${lines}`;
+  return [`${r.casterName}は ${r.skillName}を となえた！ ${lines}`, ...bondUpLines(r.allyBondUp)].join(' ');
 }
 
 const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em', padding: '0.4em 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.9em' };

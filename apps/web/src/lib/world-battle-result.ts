@@ -1,5 +1,6 @@
 import { ITEMS, withCharacterNames } from '@aozoraquest/core';
 import type { ServerAward } from '@/lib/world-server';
+import { bondUpLines } from '@/lib/bond-view';
 
 /**
  * 決着後の報酬メッセージ行 (経験値・素材・敗北・レベルアップ)。報酬を「同じ固定サイズの
@@ -57,5 +58,7 @@ export function battleResultLines(
   }
   // 仲間のレベルアップ (D-PARTY-002 §11)。上がった仲間は全快している。
   for (const a of awarded.allyLeveledUp ?? []) resultLines.push(`${a.name}のレベルが${a.to}に上がった！`);
+  // きずなの ♥ が増えたときだけ 1 行 (毎回の +1 は出さない。D-PARTY-004)。
+  resultLines.push(...bondUpLines(awarded.allyBondUp));
   return resultLines;
 }

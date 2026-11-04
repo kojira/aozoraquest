@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { jobDisplayName, partyCombatants, partyDefsOf, recruitById, type NpcDef, type PartyAlly } from '@aozoraquest/core';
+import { bondHearts, jobDisplayName, partyCombatants, partyDefsOf, recruitById, type NpcDef, type PartyAlly } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 import { GuildPartyModal } from './guild-party-modal';
 import { AllyNameButton, AllyStatusModal } from './ally-status-modal';
+import { heartsText } from '@/lib/bond-view';
 
 /** パーティの読み込み (権威 state の party と flags)。 */
 export type PartyLoad = () => Promise<{ party: ServerParty; flags: string[] }>;
@@ -32,14 +33,14 @@ export function PartyMemberList({ party, jobLevel, right }: { party: ServerParty
         return (
           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em', opacity: v.hp <= 0 ? 0.5 : 1 }}>
             <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <AllyNameButton name={v.name} onOpen={() => setViewing(r)} /> <span style={muted}>{v.job} Lv{v.level}</span> <span aria-label={`★${v.star.length}`} style={{ color: '#f5c542' }}>{v.star}</span>
+              <AllyNameButton name={v.name} onOpen={() => setViewing(r)} /> <span style={muted}>{v.job} Lv{v.level}</span> <span aria-label={`★${v.star.length}`} style={{ color: '#f5c542' }}>{v.star}</span> <span aria-label={`きずな ♥${bondHearts(party.bond?.[r.id])}`} style={{ color: '#e8667a' }}>{heartsText(party.bond?.[r.id])}</span>
               <span style={{ display: 'block', fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>HP {v.hp}/{v.maxHp}　MP {v.mp}/{v.maxMp}</span>
             </span>
             {right?.(r)}
           </div>
         );
       })}
-      {viewing && <AllyStatusModal ally={{ ...viewing, xp: ownXp(viewing, party) }} hp={party.hp?.[viewing.id]} mp={party.mp?.[viewing.id]} onClose={closeView} />}
+      {viewing && <AllyStatusModal ally={{ ...viewing, xp: ownXp(viewing, party), bond: party.bond?.[viewing.id] ?? 0 }} hp={party.hp?.[viewing.id]} mp={party.mp?.[viewing.id]} onClose={closeView} />}
     </>
   );
 }
