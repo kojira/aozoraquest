@@ -5,10 +5,11 @@
  * - 入れた人は候補の定義で保存 (client の送った名前は使わない)・候補の Lv から始まる
  * - その日に入れた人・はずした人は 400 recruit_gone。はずしたなじみ (parted) は候補に出てこない
  * - ids だけの古い state (なじみ) でも戦える
+ * - Lv の足りない人は payOverLevel でパワーを払って入れる (§14)。払うと言わなければ recruit_level・足りなければ not_enough_power・同じ rkey は 1 回だけ
  * - 戦闘の経験値は出た人数で等分 (主人公も仲間も同じだけ)。Lv が上がった仲間は全快
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { allyLevel, battleXpFor, jobLevelFromXp, RECRUIT_GACHA, setInteriors, setMonsterOverrides, setNpcs, setStory, storyBattleById, xpForAllyLevel, type MonsterDef } from '@aozoraquest/core';
+import { allyLevel, battleXpFor, jobLevelFromXp, overLevelPower, RECRUIT_GACHA, setInteriors, setMonsterOverrides, setNpcs, setStory, storyBattleById, xpForAllyLevel, type MonsterDef } from '@aozoraquest/core';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { handleTurn, sealEncounter } from '../src/battle-resolver';
 import { handlePartyCandidates, handlePartyReroll, handlePartySet } from '../src/party-route';
@@ -113,6 +114,42 @@ describe('ギルドの候補 (D-PARTY-002)', () => {
     await expect(handlePartySet(env, USER, 'g-bluesky', ['g:2000-01-01:g-bluesky:0:0'], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'unknown_recruit' });
     const locked = list.find((c) => c.minLevel > 1)!;
     await expect(handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'recruit_level' });
+  });
+
+  describe('Lv の足りない人をパワーで迎える (§14)', () => {
+    async function lockedPick(power: number) {
+      const env = await makeEnv();
+      const gs = GS({ flags: [LETTER], jobXp: {}, power });
+      const locked = (await candidates(env, gs)).candidates.find((c) => !c.named && c.minLevel > 1)!;
+      const m = pds(gs);
+      globalThis.fetch = m.fn;
+      return { env, m, locked, price: overLevelPower(locked.minLevel, jobLevelFromXp(0, 'warrior')) };
+    }
+
+    it('払うと 足りない Lv × 5 だけパワーが減って仲間になる。同じ rkey の再送は 1 回ぶんだけ', async () => {
+      const { env, m, locked, price } = await lockedPick(100);
+      expect(price).toBe(5 * (locked.minLevel - 1));
+      const r = await handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW, undefined, true, 'p1');
+      expect(r.power).toBe(100 - price);
+      expect(m.gs().power).toBe(100 - price);
+      expect(m.gs().party?.ids).toEqual([locked.id]);
+      expect(m.gs().party?.members?.[0]?.xp).toBe(xpForAllyLevel(locked.archetype, locked.level));
+      const again = await handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW, undefined, true, 'p1');
+      expect(again.power).toBe(100 - price);
+      expect(m.gs().power).toBe(100 - price);
+    });
+
+    it('払うと言わなければ 400 recruit_level。パワーが足りなければ 400 not_enough_power で、何も変わらない', async () => {
+      const { env, m, locked, price } = await lockedPick(0);
+      globalThis.fetch = pds(GS({ flags: [LETTER], jobXp: {}, power: 100 })).fn;
+      await expect(handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW)).rejects.toMatchObject({ status: 400, code: 'recruit_level' });
+      const low = pds(GS({ flags: [LETTER], jobXp: {}, power: price - 1 }));
+      globalThis.fetch = low.fn;
+      await expect(handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW, undefined, true, 'p2')).rejects.toMatchObject({ status: 400, code: 'not_enough_power' });
+      expect(low.gs().power).toBe(price - 1);
+      expect(low.gs().party).toBeUndefined();
+      expect(m.gs().party).toBeUndefined();
+    });
   });
 
   it('はずしたなじみ (parted) は候補に出てこず、入れようとすると recruit_gone', async () => {

@@ -150,9 +150,10 @@ export function serverTurn(agent: Agent, battleId: string, turn: number, command
   return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}), ...(targetIndex ? { targetIndex } : {}) });
 }
 
-/** パーティの編成 (D-PARTY-001)。ギルドの受付の隣でだけ通る (位置は署名済みトークンで edge が確かめる)。 */
-export function serverPartySet(agent: Agent, guild: string, ids: readonly string[], token?: string): Promise<{ party: ServerParty }> {
-  return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_SET, '/api/party', { guild, ids, ...(token ? { token } : {}) });
+/** パーティの編成 (D-PARTY-001)。ギルドの受付の隣でだけ通る (位置は署名済みトークンで edge が確かめる)。
+ *  payRkey があれば Lv の足りない人をパワーで迎える (D-PARTY-002 §14。rkey は 1 回の押下ごとに 1 つ)。 */
+export function serverPartySet(agent: Agent, guild: string, ids: readonly string[], token?: string, payRkey?: string): Promise<{ party: ServerParty; power: number }> {
+  return callEdge<{ party: ServerParty; power: number }>(agent, LXM_PARTY_SET, '/api/party', { guild, ids, ...(token ? { token } : {}), ...(payRkey ? { payOverLevel: true, rkey: payRkey } : {}) });
 }
 
 /** ギルドの今日の候補 (D-PARTY-002)。受付の隣でだけ通る。 */

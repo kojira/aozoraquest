@@ -17,4 +17,6 @@ export const PARTY_LINES = {
   /** 引き直しのボタン (§10)。 */
   reroll: (power: number) => `ほかの冒険者をさがす（パワー${power}）`,
   rerolled: '別の冒険者が来たよ。',
+  /** Lv の足りない人をパワーで迎えるボタン (§14)。 */
+  payJoin: (power: number) => `パワー${power}で くわえる`,
 };

@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ARCHETYPES, MAX_RECRUIT_LINE, MAX_RECRUIT_NAME, RECRUIT_GACHA, RECRUIT_LINES, RECRUIT_NAMES, RECRUIT_ROLE,
-  allyLevel, dailyRecruits, jobLevelFromXp, partyCombatants, partyDefsOf, partyRecruitIssue, partyRecruitOf, recruitTierLevel,
+  allyLevel, dailyRecruits, overLevelPower, jobLevelFromXp, partyCombatants, partyDefsOf, partyRecruitIssue, partyRecruitOf, recruitTierLevel,
   splitBattleXp, xpForAllyLevel, type DailyRecruitsInput, type RecruitDef,
 } from '../index.js';
 
@@ -131,5 +131,13 @@ describe('仲間の経験値と Lv (§11)', () => {
     const withXp = partyDefsOf({ ids: ['r-1'], xp: { 'r-1': xpForAllyLevel('miko', 9) } }, byId, 6);
     expect(withXp[0]!.level).toBe(9);
     expect(jobLevelFromXp(withXp[0]!.xp, 'miko')).toBe(9);
+  });
+
+  it('Lv の足りない候補を迎えるパワーは 足りない 1 Lv につき 5 (§14)。足りていれば 0', () => {
+    expect(RECRUIT_GACHA.overLevelPowerPerLv).toBe(5);
+    expect(overLevelPower(10, 6)).toBe(20);
+    expect(overLevelPower(7, 6)).toBe(5);
+    expect(overLevelPower(6, 6)).toBe(0);
+    expect(overLevelPower(3, 6)).toBe(0);
   });
 });

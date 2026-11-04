@@ -10,7 +10,9 @@
  *   - 入れられる人数 (主人公を含む) は partyCapacity(flags)。超えると 400 party_full、まだ組めなければ 400 party_locked
  *   - 新しく入れられるのは、今日このギルドの候補にいる人だけ (400 unknown_recruit。日付をまたいだときも)
  *   - その日に入れた人・はずしたなじみをまた入れようとすると 400 recruit_gone (はずしたら二度と会えない)
- *   - minLevel が主人公のジョブ Lv より上なら 400 recruit_level (もう入れている人は外さない)
+ *   - minLevel が主人公のジョブ Lv より上の人は、payOverLevel: true と rkey があれば パワー overLevelPower (足りない
+ *     1 Lv につき 5。§14) を払って入れられる。readModifyWrite の中で確かめて引き、同じ rkey は 1 回だけ (shopOps)。
+ *     払うと言わずに入れようとすると 400 recruit_level、パワーが足りなければ 400 not_enough_power (もう入れている人は外さない)
  *   - 名前・職・★・ひとことは edge が作りなおした候補のものを保存する (client の送ったものは使わない)
  *   - 入れた仲間は候補の Lv から始まる (その Lv になったばかりの経験値。§11)
  *   - はずした仲間の経験値・HP/MP は消える。なじみは parted に残る
@@ -18,7 +20,7 @@
  */
 import {
   allNpcs, dailyRecruits, interiorById, isGeneratedRecruitId, jobLevelFromXp, partyCapacity, partyRecruitOf, recruitById,
-  recruitsAt, regionOf, tierForRegion, xpForAllyLevel, MAX_RECRUITS, RECRUIT_GACHA, WORLD_MAP_ID,
+  overLevelPower, recruitsAt, regionOf, tierForRegion, xpForAllyLevel, MAX_RECRUITS, RECRUIT_GACHA, WORLD_MAP_ID,
   type Archetype, type NpcDef, type RecruitCandidate,
 } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type PartyState } from './game-state';
@@ -29,7 +31,9 @@ import { recruitSeed } from './world-token';
 import { dayKey } from './xp-claim';
 import { MAX_SHOP_OPS } from './shop';
 
-export interface PartySetResult { party: PartyState }
+export interface PartySetResult { party: PartyState; power: number }
+/** Lv の足りない候補を、パワーを払って迎える (§14)。op は shopOps に残す冪等キー。 */
+export interface OverLevelPayment { op: string }
 export interface PartyCandidatesResult {
   day: string;
   /** 今日の候補のうち、まだ入れていない人 (枠の順)。 */
@@ -68,8 +72,9 @@ export function guildCandidates(env: ResolverEnv, did: string, cur: GameState, g
   return dailyRecruits({ seed: recruitSeed(env, did, guild, day, roll), day, guild, roll, tier, named, skip: [...parted, ...(cur.party?.ids ?? [])] });
 }
 
-/** 新しい ids を検証して state に当てる (純関数。CAS のリトライで何度呼ばれても同じ)。offered は今日の候補。 */
-export function partyWith(cur: GameState, submitted: readonly string[], archetype: Archetype, offered: readonly RecruitCandidate[], day: string): GameState {
+/** 新しい ids を検証して state に当てる (純関数。CAS のリトライで何度呼ばれても同じ)。offered は今日の候補。
+ *  pay があれば、Lv の足りない人のパワーを引いて pay.op を shopOps に残す。 */
+export function partyWith(cur: GameState, submitted: readonly string[], archetype: Archetype, offered: readonly RecruitCandidate[], day: string, pay?: OverLevelPayment): GameState {
   const flags = cur.flags ?? [];
   const prev = cur.party;
   const known = (id: string) => !!recruitById(id) || !!prev?.members?.some((m) => m.id === id) || offered.some((c) => c.id === id);
@@ -84,14 +89,18 @@ export function partyWith(cur: GameState, submitted: readonly string[], archetyp
   const parted = prev?.parted ?? [];
   const jobLevel = jobLevelFromXp(jobXpOf(cur, archetype), archetype);
   const added: RecruitCandidate[] = [];
+  let price = 0;
   for (const id of ids) {
     if (had.includes(id)) continue;
     if (met.includes(id) || parted.includes(id)) throw new ResolverError('その 冒険者とは もう 会えない', 400, 'recruit_gone');
     const c = offered.find((o) => o.id === id);
     if (!c) throw new ResolverError('その 冒険者は ここに いない', 400, 'unknown_recruit');
-    if (jobLevel < c.minLevel) throw new ResolverError(`${c.name}は まだ 仲間に できない (Lv ${c.minLevel} から)`, 400, 'recruit_level');
+    if (jobLevel < c.minLevel && !pay) throw new ResolverError(`${c.name}は まだ 仲間に できない (Lv ${c.minLevel} から)`, 400, 'recruit_level');
+    price += overLevelPower(c.minLevel, jobLevel);
     added.push(c);
   }
+  if (price > cur.power) throw new ResolverError('あおぞらパワーが たりない', 400, 'not_enough_power');
+  const paid = price > 0 && pay ? { power: cur.power - price, shopOps: [...(cur.shopOps ?? []), pay.op].slice(-MAX_SHOP_OPS) } : {};
   const keep = <T>(rec: Record<string, T> | undefined) => {
     const out = Object.fromEntries(Object.entries(rec ?? {}).filter(([id]) => ids.includes(id)));
     return Object.keys(out).length ? out : undefined;
@@ -105,7 +114,7 @@ export function partyWith(cur: GameState, submitted: readonly string[], archetyp
   const gone = had.filter((id) => !ids.includes(id) && !isGeneratedRecruitId(id));
   const nextParted = [...parted, ...gone.filter((id) => !parted.includes(id))].slice(-MAX_RECRUITS);
   const nextMet = [...met, ...added.map((c) => c.id)].slice(-RECRUIT_GACHA.metMax);
-  if (!ids.length && !nextMet.length && !nextParted.length && prev?.rerolls?.day !== day) return { ...cur, party: undefined };
+  if (!ids.length && !nextMet.length && !nextParted.length && prev?.rerolls?.day !== day) return { ...cur, ...paid, party: undefined };
   const party: PartyState = {
     ids: [...ids],
     ...(hp ? { hp } : {}), ...(mp ? { mp } : {}),
@@ -114,7 +123,7 @@ export function partyWith(cur: GameState, submitted: readonly string[], archetyp
     ...(nextParted.length ? { parted: nextParted } : {}),
     ...(prev?.rerolls?.day === day ? { rerolls: prev.rerolls } : {}),
   };
-  return { ...cur, party };
+  return { ...cur, ...paid, party };
 }
 
 /** 受付のそばか確かめ、state・ジョブ Lv・ギルドの tier を返す。 */
@@ -154,13 +163,17 @@ export async function handlePartyReroll(env: ResolverEnv, did: string, guild: st
   return candidatesResult(env, did, after, guild, tier, day, archetype);
 }
 
-export async function handlePartySet(env: ResolverEnv, did: string, guild: string, ids: unknown, token: string | undefined, now: number, ns: string = DEFAULT_NS): Promise<PartySetResult> {
+/** 編成を送る。payOverLevel: true なら Lv の足りない人のパワーを払う (§14。rkey が要る。同じ rkey の再送は 1 回ぶんだけ)。 */
+export async function handlePartySet(env: ResolverEnv, did: string, guild: string, ids: unknown, token: string | undefined, now: number, ns: string = DEFAULT_NS, payOverLevel?: unknown, rkey?: unknown): Promise<PartySetResult> {
   if (!Array.isArray(ids) || !ids.every((v) => typeof v === 'string')) throw new ResolverError('ids が不正', 400, 'bad_request');
+  if (payOverLevel === true && (typeof rkey !== 'string' || !rkey || rkey.length > 128)) throw new ResolverError('rkey が不正', 400, 'bad_request');
   const { archetype, tier } = await atGuild(env, did, guild, token, now, ns);
   const day = dayKey(now);
+  const pay = payOverLevel === true ? { op: `recruit:${rkey as string}` } : undefined;
   const after = await readModifyWrite(env, did, (cur) => {
+    if (pay && (cur.shopOps ?? []).includes(pay.op)) return cur;
     const jobLevel = jobLevelFromXp(jobXpOf(cur, archetype), archetype);
-    return partyWith(cur, ids, archetype, guildCandidates(env, did, cur, guild, tier, day, jobLevel), day);
+    return partyWith(cur, ids, archetype, guildCandidates(env, did, cur, guild, tier, day, jobLevel), day, pay);
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns) });
-  return { party: after.party ?? { ids: [] } };
+  return { party: after.party ?? { ids: [] }, power: after.power };
 }
