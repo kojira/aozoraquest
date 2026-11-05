@@ -2,8 +2,10 @@
  * カードの「能力テキスト」+「フレーバーテキスト」を生成する。
  * MTG 風に: タイプ + マナコスト + 能力名 + 起動コスト + 効果説明 + フレーバーの 6 要素。
  *
- * 実行: LocalLLM (Gemini Nano 等) で 2 段階生成 (ability → flavor) → 解析。
- * 失敗時は archetype と primaryColor から fallback 値を合成。
+ * 実行: backend のプロンプト方式 (LocalLLM.cardPrompt) で分ける。
+ *  - two-stage (Gemini Nano): 2 段階生成 (ability → flavor) → 解析。失敗は CardTextError。
+ *  - four-line (ブルスコン): タイプ等は JS で決めて 4 行だけ書かせる (card-text-fourline.ts)。3 回とも駄目なら fallback。
+ * LLM が無ければ archetype と primaryColor から fallback 値を合成。
  */
 
 import type { Archetype, CardType, Color, DiagnosisResult, ManaCost, Rarity } from '@aozoraquest/core';
@@ -15,6 +17,7 @@ import { pickCardType, examplePowerFor, exampleToughnessFor, exampleCardNameFor 
 import { parseKeywordsString, parseStatNumber, parseManaCostString, parseCardTypeString, parseAbilityOutput, parseFlavorOutput } from './card-text-parse';
 import { buildAbilityPrompt, buildFlavorPrompt } from './card-text-prompts';
 import { TONE_LABEL, pickTone, pickAbilityTheme, pickStructure, type Tone, type StructureId } from './card-text-themes';
+import { generateFourLineCard } from './card-text-fourline';
 
 export { stripMarkdown, stripWrappers } from './card-text-parse';
 
@@ -226,6 +229,10 @@ export async function generateCardText(
   const llm = await pickLocalLLM();
   if (!llm) {
     return getFallbackCardText(result.archetype, opts.seed ?? Date.now(), rarity);
+  }
+  if (llm.cardPrompt === 'four-line') {
+    const seed = opts.seed ?? Date.now();
+    return (await generateFourLineCard(llm, result, rarity, seed)) ?? getFallbackCardText(result.archetype, seed, rarity);
   }
   const timeoutMs = opts.timeoutMs ?? 60000;
   const tone = pickTone(opts.seed);

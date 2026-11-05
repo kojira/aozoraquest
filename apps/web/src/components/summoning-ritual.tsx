@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
 import { RitualStage } from './ritual-stage';
-import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice } from '@/lib/local-llm';
+import { pickLocalLLM, resetLocalLLMChoice } from '@/lib/local-llm';
+import { GEMINI_NANO } from '@/lib/gemini-nano-llm';
 import { installSlm, SlmStorageFullError } from '@/lib/slm-llm';
 
 interface SummoningRitualProps {
@@ -71,7 +72,8 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, downloa
   useEffect(() => {
     let cancelled = false;
     // LLM 利用可能性は儀式の早い段階で並行 probe しておく (greeting 到達時に確定済)。
-    const llmProbe = pickLocalLLM().catch(() => null);
+    // 口上は Nano だけに任せる (ブルスコンに任せるのは D-SLM-CARD-001 の範囲外。ブルスコンなら手書きの口上)。
+    const llmProbe = pickLocalLLM().then((l) => (l?.id === GEMINI_NANO.id ? l : null)).catch(() => null);
     const slmInstall = download
       ? installSlmDuringRitual((loaded, total) => { if (!cancelled) setProgress({ loaded, total }); }, onStorageFull)
         .finally(() => { if (!cancelled) setProgress(null); })
@@ -100,10 +102,8 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, downloa
         // 儀式特有のタスク指示。`# あなたへの依頼` ヘッダで「今やること」を明示する。
         const taskBlock = `# あなたへの依頼\n${userName} があなたを初めて呼んだ。自己紹介と、これから短く話せる喜びを、1〜2 文で伝えてください。一人称は使わないでください。`;
         try {
-          const result = await generateWithLocalLLM(
-            { systemPrompt, history: [{ role: 'user', content: taskBlock }] },
-          );
-          welcome = cleanGenerated(result?.text ?? '');
+          const text = await llm.generate({ systemPrompt, history: [{ role: 'user', content: taskBlock }] });
+          welcome = cleanGenerated(text);
         } catch (e) {
           console.warn('[ritual] LLM failed, falling back to hand-crafted welcome', e);
           welcome = '';

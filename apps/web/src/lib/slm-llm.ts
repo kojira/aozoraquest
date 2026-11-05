@@ -76,21 +76,29 @@ async function generate(input: LLMInput, opts: LLMOptions = {}): Promise<string>
   if (!last || last.role !== 'user') throw new Error('last history entry must be a user turn');
   await loadSlm();
   return client.generate({
-    prompt: lfmChatPrompt(input),
+    prompt: lfmChatPrompt(input, opts.prefill),
     maxNewTokens: Math.min(opts.maxNewTokens ?? MAX_NEW_TOKENS, MAX_NEW_TOKENS),
     temperature: opts.temperature ?? 0,
-    repetitionPenalty: 1,
+    repetitionPenalty: opts.repetitionPenalty ?? 1,
     stopAtNewline: opts.stopAtNewline ?? false,
     signal: opts.signal,
   });
 }
 
+async function countPromptTokens(input: LLMInput, prefill?: string): Promise<number> {
+  await loadSlm();
+  return client.countTokens(lfmChatPrompt(input, prefill));
+}
+
+/** カード文 (general) と翻訳に使う。儀式の口上は Nano だけ (summoning-ritual.tsx が backend の id で限る)。 */
 export const SLM: LocalLLM = {
   id: 'lfm2.5-1.2b-jp',
   label: 'ブルスコン (LFM2.5-1.2B-JP)',
-  purposes: ['translation'],
+  purposes: ['general', 'translation'],
+  cardPrompt: 'four-line',
   async availability() {
     return (await isSlmEligible()) && (await isSlmInstalled());
   },
   generate,
+  countPromptTokens,
 };
