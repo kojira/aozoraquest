@@ -26,6 +26,8 @@ export * from './item-record.js';
 export * from './monster-art.js';
 export * from './item-data.js';
 export * from './shop-data.js';
+export * from './casino-data.js';
+export * from './casino.js';
 export * from './npc-data.js';
 export * from './npc-placement.js';
 export * from './placed-placement.js';

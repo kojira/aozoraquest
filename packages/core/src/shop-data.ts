@@ -102,9 +102,11 @@ export function setShopOverrides(list: readonly ShopOverride[] | null): void {
     if (next.has(key(s.x, s.y))) throw new ShopDataError(`同じ街の上書きが重複 ${where}`);
     for (const id of s.equipment ?? []) {
       if (!EQUIPMENT_BY_ID[id]) throw new ShopDataError(`${where}: 装備 id が存在しない (${id})`);
+      if (EQUIPMENT_BY_ID[id]!.casinoOnly) throw new ShopDataError(`${where}: カジノの景品は店に並べられない (${id})`);
     }
     for (const id of s.consumables ?? []) {
       if (!ITEMS[id]) throw new ShopDataError(`${where}: どうぐ id が存在しない (${id})`);
+      if (ITEMS[id]!.casinoOnly) throw new ShopDataError(`${where}: カジノの景品は店に並べられない (${id})`);
     }
     if (s.materialId !== undefined && !ITEMS[s.materialId]) {
       throw new ShopDataError(`${where}: 素材 id が存在しない (${s.materialId})`);

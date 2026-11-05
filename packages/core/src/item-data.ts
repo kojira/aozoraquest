@@ -105,6 +105,8 @@ function validateItemShopAndBattle(it: ItemDefData): void {
     }
   }
   if (it.shopTier !== undefined && ![1, 2, 3].includes(it.shopTier)) throw new ItemDataError(`${where}: shopTier は 1〜3`);
+  if (it.casinoOnly !== undefined && typeof it.casinoOnly !== 'boolean') throw new ItemDataError(`${where}: casinoOnly が不正`);
+  if (it.casinoOnly && (it.price !== undefined || it.shopTier !== undefined)) throw new ItemDataError(`${where}: カジノの景品に price・shopTier は付けられない`);
   if (it.battle === undefined) return;
   if (ITEMS_WITH_BATTLE_COMMAND.includes(it.id)) throw new ItemDataError(`${where}: 専用のコマンドで使う品に battle は付けられない`);
   if (it.key) throw new ItemDataError(`${where}: だいじなもの (key) は戦闘で使えない`);
@@ -158,6 +160,7 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
     // **exclusive なのに jobOnly が無い品は誰も装備できない** (canEquip が安全側に倒す)。
     // 静かに死に筋を作らないよう保存で弾く。
     if (e.kind === 'exclusive' && !e.jobOnly) throw new ItemDataError(`${where}: exclusive には jobOnly が要る`);
+    if (e.casinoOnly !== undefined && typeof e.casinoOnly !== 'boolean') throw new ItemDataError(`${where}: casinoOnly が不正`);
     if (e.element !== undefined) {
       if (!['earth', 'water', 'fire', 'wind', 'void'].includes(e.element)) throw new ItemDataError(`${where}: element が不正 (${e.element})`);
       if (e.slot === 'shield') throw new ItemDataError(`${where}: 盾には属性を付けられない (守りの染まりは頭・胴・足・お守り)`);
