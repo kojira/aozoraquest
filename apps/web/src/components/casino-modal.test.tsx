@@ -5,8 +5,14 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { Agent } from '@atproto/api';
+
+const serverStateMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/world-server', async (orig) => ({ ...(await orig<typeof import('@/lib/world-server')>()), serverState: serverStateMock }));
+
 import { CasinoModal, type CasinoActions } from './casino-modal';
 import { PartyModal } from './party-modal';
+import { useCasino } from '@/lib/use-casino';
 import { WorldServerError, type ServerParty } from '@/lib/world-server';
 
 const actions = (over: Partial<CasinoActions> = {}): CasinoActions => ({
@@ -55,6 +61,29 @@ describe('CasinoModal', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'くばる' })); });
     expect(screen.getByRole('button', { name: /^上/ })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: /^下/ })).toHaveProperty('disabled', false);
+  });
+
+  it('ハイロー: 窓を開き直すと、サーバーに残っている手 (casinoHL) を続きから出す。コイン 0 でも 選ぶ・やめる を押せる', async () => {
+    serverStateMock.mockResolvedValue({ state: { casinoCoins: 0, casinoHL: { first: 7, stake: 40, step: 2 } }, initialized: true });
+    function World() {
+      const c = useCasino({ agent: {} as Agent, tokenRef: { current: undefined }, setServerPower: () => {}, applyServerMaterials: () => {}, onPieces: () => {} });
+      return (
+        <>
+          <button type="button" onClick={() => c.openCasino({ kind: 'game', game: 'highlow' })}>ハイローの台</button>
+          {c.casinoSpot && <CasinoModal spot={c.casinoSpot} coins={c.casinoCoins} power={0} actions={c.casinoActions} pendingHighLow={c.casinoPendingHighLow} onClose={c.closeCasino} />}
+        </>
+      );
+    }
+    render(<World />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'ハイローの台' })); });
+    expect(screen.getByTestId('casino-coins').textContent).toContain('0');
+    expect(screen.getByLabelText('1 枚目 7').textContent).toBe('7');
+    expect(screen.getByText(/いま 40 枚 \(続けたのは 2 回\)/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^上/ })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: /^下/ })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'やめて 40 枚 受けとる' })).toHaveProperty('disabled', false);
+    expect(screen.queryByRole('button', { name: 'くばる' })).toBeNull();
+    serverStateMock.mockReset();
   });
 
   it('景品: コインが足りない品は押せない', async () => {
