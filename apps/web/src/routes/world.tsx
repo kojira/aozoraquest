@@ -742,7 +742,7 @@ function WorldScreen() {
           onClose={() => setShopOpen(false)}
         />
       )}
-      {casino.casinoSpot && <CasinoModal spot={casino.casinoSpot} coins={casino.casinoCoins} power={serverPower ?? 0} actions={casino.casinoActions} onClose={casino.closeCasino} />}
+      {casino.casinoSpot && <CasinoModal spot={casino.casinoSpot} coins={casino.casinoCoins} power={serverPower ?? 0} actions={casino.casinoActions} pendingHighLow={casino.casinoPendingHighLow} onClose={casino.closeCasino} />}
       {wipeOverlay}
       <WelcomeBlessingOverlay />
     </div>

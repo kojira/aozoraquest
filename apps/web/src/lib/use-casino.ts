@@ -9,7 +9,7 @@ import type { CasinoGame, CasinoSpot } from '@aozoraquest/core';
 import { serverPartyRename, serverState, WorldServerError, type ServerParty } from './world-server';
 import type { PartyRenameProps } from '@/components/party-rename';
 import { casinoBonus, casinoExchange, casinoPlay, casinoPrize, casinoRace, newCasinoRkey, type CasinoResult } from './casino-server';
-import type { CasinoActions } from '@/components/casino-modal';
+import type { CasinoActions, HighLowHand } from '@/components/casino-modal';
 
 export function useCasino({ agent, tokenRef, setServerPower, applyServerMaterials, onPieces }: {
   agent: Agent | null;
@@ -20,12 +20,15 @@ export function useCasino({ agent, tokenRef, setServerPower, applyServerMaterial
 }) {
   const [spot, setSpot] = useState<CasinoSpot | null>(null);
   const [coins, setCoins] = useState(0);
+  /** 開いたときに権威 state に残っていたハイローの手 (閉じたり読み直したりしても続きから遊べるように)。 */
+  const [pendingHighLow, setPendingHighLow] = useState<HighLowHand | null>(null);
   const pending = useRef(new Map<string, string>());
   const raceRkey = useRef(newCasinoRkey());
 
   const open = useCallback((s: CasinoSpot) => {
     setSpot(s);
-    if (agent) void serverState(agent).then((r) => setCoins(r.state.casinoCoins ?? 0), () => {});
+    setPendingHighLow(null);
+    if (agent) void serverState(agent).then((r) => { setCoins(r.state.casinoCoins ?? 0); setPendingHighLow(r.state.casinoHL ?? null); }, () => {});
   }, [agent]);
 
   const send = useCallback(async (kind: string, call: (rkey: string) => Promise<CasinoResult>, rkey?: string): Promise<CasinoResult> => {
@@ -83,5 +86,5 @@ export function useCasino({ agent, tokenRef, setServerPower, applyServerMaterial
     },
   }), [agent, applyServerMaterials]);
 
-  return { casinoSpot: spot, casinoCoins: coins, openCasino: open, closeCasino: useCallback(() => setSpot(null), []), casinoActions: actions, renameProps };
+  return { casinoSpot: spot, casinoCoins: coins, casinoPendingHighLow: pendingHighLow, openCasino: open, closeCasino: useCallback(() => setSpot(null), []), casinoActions: actions, renameProps };
 }

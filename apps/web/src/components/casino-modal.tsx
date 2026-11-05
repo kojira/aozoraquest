@@ -29,7 +29,10 @@ const FIRST_EXCHANGE_KEY = 'aozora:casino-first-exchange';
 const symbolName = (id: string) => casinoTables().slots.symbols.find((s) => s.id === id)?.name ?? id;
 const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : '通信に失敗しました。もういちどどうぞ。');
 
-export function CasinoModal({ spot, coins, power, actions, onClose }: { spot: CasinoSpot; coins: number; power: number; actions: CasinoActions; onClose: () => void }) {
+/** サーバーに残っているハイローの手 (GameState.casinoHL)。 */
+export type HighLowHand = { first: number; stake: number; step: number };
+
+export function CasinoModal({ spot, coins, power, actions, pendingHighLow, onClose }: { spot: CasinoSpot; coins: number; power: number; actions: CasinoActions; pendingHighLow?: HighLowHand | null; onClose: () => void }) {
   const title = spot.kind === 'game' ? TITLES[spot.game] : TITLES[spot.kind];
   return (
     <ModalShell title={`よあけの カジノ — ${title}`} onClose={onClose}>
@@ -37,7 +40,7 @@ export function CasinoModal({ spot, coins, power, actions, onClose }: { spot: Ca
       {spot.kind === 'exchange' && <ExchangePanel power={power} actions={actions} />}
       {spot.kind === 'prize' && <PrizePanel coins={coins} actions={actions} />}
       {spot.kind === 'game' && spot.game === 'slots' && <SlotsPanel coins={coins} actions={actions} />}
-      {spot.kind === 'game' && spot.game === 'highlow' && <HighLowPanel coins={coins} actions={actions} />}
+      {spot.kind === 'game' && spot.game === 'highlow' && <HighLowPanel coins={coins} actions={actions} pendingHand={pendingHighLow ?? null} />}
       {spot.kind === 'game' && spot.game === 'race' && <RacePanel coins={coins} actions={actions} />}
     </ModalShell>
   );
@@ -177,10 +180,12 @@ function SlotsPanel({ coins, actions }: { coins: number; actions: CasinoActions 
   );
 }
 
-function HighLowPanel({ coins, actions }: { coins: number; actions: CasinoActions }) {
+function HighLowPanel({ coins, actions, pendingHand }: { coins: number; actions: CasinoActions; pendingHand: HighLowHand | null }) {
   const a = useAction();
   const [bet, setBet] = useState(10);
-  const [hand, setHand] = useState<{ first: number; stake: number; step: number } | null>(null);
+  const [hand, setHand] = useState<HighLowHand | null>(pendingHand);
+  // 残っていた手はサーバーの state が届いてから来る。まだ手を見せていなければ、それを続きとして出す。
+  useEffect(() => { if (pendingHand) setHand((h) => h ?? pendingHand); }, [pendingHand]);
   const [second, setSecond] = useState<number | null>(null);
   const deal = () => void a.run(() => actions.play('highlow', { bet }), (r) => {
     setSecond(null);
