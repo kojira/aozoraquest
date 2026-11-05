@@ -4,12 +4,14 @@
  *   mode が null なら おまかせ に戻す (いつでも)。段階が足りない → 400 bond_too_low。パーティにいない → 400 bad_request。
  *   どこでも変えられる。いま戦闘中なら、次の戦闘から効く (封印の時点の値)。
  * - `POST /api/party/gear {id, gear}`: 仲間の装備 (party-gear.ts)。
+ * - `POST /api/party/rename {id, name, rkey}`: なまえのふだ (party-rename.ts。D-CASINO-001)。
  */
 import { ALLY_MODES, bondHearts, LXM, type AllyMode } from '@aozoraquest/core';
 import { readModifyWrite, type PartyState } from './game-state';
 import { ResolverError, migrateInitState, type ResolverEnv } from './battle-resolver';
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { handlePartyGear } from './party-gear';
+import { handlePartyRename } from './party-rename';
 import { ensureAuthoredWorld, type WorldAuthoringEnv } from './world-authoring';
 
 /** その mode に要る ♥ の数 (さくせん は ♥2、めいれい は ♥3)。 */
@@ -33,7 +35,7 @@ export async function handlePartyMode(env: ResolverEnv, did: string, id: unknown
   return { party: after.party ?? { ids: [] } };
 }
 
-const PATHS: Record<string, string> = { '/api/party/mode': LXM.partyMode, '/api/party/gear': LXM.partyGear };
+const PATHS: Record<string, string> = { '/api/party/mode': LXM.partyMode, '/api/party/gear': LXM.partyGear, '/api/party/rename': LXM.partyRename };
 
 /** ギルドの外の /api/party/* を受ける。この道でなければ null (router は次へ進む)。 */
 export async function handlePartyOrdersRoute(req: Request, url: URL, env: ResolverEnv & WorldAuthoringEnv & { WORKER_DID?: string }, now: number, ns: string, respond: (body: unknown, status?: number) => Response, onError: (e: unknown) => Response): Promise<Response | null> {
@@ -47,11 +49,15 @@ export async function handlePartyOrdersRoute(req: Request, url: URL, env: Resolv
   } catch (e) {
     return respond({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401);
   }
-  const body = (await req.json().catch(() => ({}))) as { id?: unknown; mode?: unknown; gear?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { id?: unknown; mode?: unknown; gear?: unknown; name?: unknown; rkey?: unknown };
   try {
     if (url.pathname === '/api/party/gear') {
       await ensureAuthoredWorld(env, now); // なじみの仲間は world.story、装備の定義は world.items
       return respond(await handlePartyGear(env, did, body.id, body.gear, now, ns));
+    }
+    if (url.pathname === '/api/party/rename') {
+      await ensureAuthoredWorld(env, now); // なじみの仲間は world.story
+      return respond(await handlePartyRename(env, did, body.id, body.name, body.rkey, now, ns));
     }
     return respond(await handlePartyMode(env, did, body.id, body.mode ?? null, now, ns));
   } catch (e) {

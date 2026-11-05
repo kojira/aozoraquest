@@ -59,6 +59,11 @@ export const LXM = {
   adminPdsUsage: `${AQ_NSID_ROOT}.admin.pdsUsage`,
   questAccept: `${AQ_NSID_ROOT}.quest.accept`,
   questComplete: `${AQ_NSID_ROOT}.quest.complete`,
+  casinoExchange: `${AQ_NSID_ROOT}.casino.exchange`,
+  casinoPlay: `${AQ_NSID_ROOT}.casino.play`,
+  casinoPrize: `${AQ_NSID_ROOT}.casino.prize`,
+  casinoBonus: `${AQ_NSID_ROOT}.casino.bonus`,
+  partyRename: `${AQ_NSID_ROOT}.party.rename`,
   oauthStart: `${AQ_NSID_ROOT}.oauth.start`,
   oauthStatus: `${AQ_NSID_ROOT}.oauth.status`,
 } as const;

@@ -137,7 +137,7 @@ describe('景品 (casinoOnly) は店と置きアイテムに出ない', () => {
     expect(EQUIPMENT_BY_ID['ar-star-robe']).toMatchObject({ bonus: { def: 20, luk: 3 }, element: 'void', casinoOnly: true });
     expect(EQUIPMENT_BY_ID['wp-star-dice']).toMatchObject({ kind: 'lucky', bonus: { luk: 16 }, casinoOnly: true });
     expect(EQUIPMENT_BY_ID['ch-lucky-charm']).toMatchObject({ slot: 'charm', bonus: { luk: 6, agi: 2 }, casinoOnly: true });
-    expect(DEFAULT_CASINO_TABLES.prizes.map((p) => p.coins)).toEqual([20_000, 15_000, 12_000, 6_000]);
+    expect(DEFAULT_CASINO_TABLES.prizes.map((p) => p.coins)).toEqual([20_000, 15_000, 12_000, 6_000, 1_000]); // + なまえのふだ (PR2)
   });
 
   it('どの街の生成の品ぞろえにも入らない', () => {

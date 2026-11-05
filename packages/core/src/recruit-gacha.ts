@@ -193,6 +193,8 @@ export interface PartyRoster {
   xp?: Readonly<Record<string, number>>;
   /** 仲間の装備 (D-PARTY-004)。 */
   gear?: Readonly<Record<string, GearSelection>>;
+  /** なまえのふだ で付けた名前 (D-CASINO-001)。無ければ元の名前。 */
+  names?: Readonly<Record<string, string>>;
 }
 
 /** 戦闘と表示に使う仲間 1 人 (partyMembers に渡す)。 */
@@ -217,11 +219,31 @@ export function partyDefsOf(party: PartyRoster | undefined, recruitById: (id: st
   for (const id of party?.ids ?? []) {
     const m = party?.members?.find((x) => x.id === id);
     const gear = party?.gear?.[id];
-    if (m) { out.push({ id, name: m.name, archetype: m.archetype, xp: m.xp, level: allyLevel(m.archetype, m.xp), star: m.star, ...(gear ? { gear } : {}) }); continue; }
+    const renamed = party?.names?.[id];
+    if (m) { out.push({ id, name: renamed ?? m.name, archetype: m.archetype, xp: m.xp, level: allyLevel(m.archetype, m.xp), star: m.star, ...(gear ? { gear } : {}) }); continue; }
     const r = recruitById(id);
     if (!r) continue;
     const xp = party?.xp?.[id] ?? xpForAllyLevel(r.archetype, fallbackLevel);
-    out.push({ id, name: r.name, archetype: r.archetype, xp, level: allyLevel(r.archetype, xp), star: 2, ...(gear ? { gear } : {}) });
+    out.push({ id, name: renamed ?? r.name, archetype: r.archetype, xp, level: allyLevel(r.archetype, xp), star: 2, ...(gear ? { gear } : {}) });
   }
   return out;
 }
+
+/** なまえのふだ で付けられる名前の長さ (D-CASINO-001 r2)。 */
+export const ALLY_NAME_MAX = 10;
+
+/**
+ * 仲間の新しい名前の問題 (無ければ null)。前後の空白は落としてから見る。
+ * 1〜10 字 (コードポイント)・制御文字と改行は不可・人物の差し込み `{c:` は不可・今の名前と同じは不可。
+ */
+export function allyNameIssue(raw: unknown, current: string): string | null {
+  if (typeof raw !== 'string') return 'なまえが ない';
+  const name = raw.trim();
+  const len = [...name].length;
+  if (len < 1 || len > ALLY_NAME_MAX) return `なまえは 1〜${ALLY_NAME_MAX} 文字`;
+  if (/\p{Cc}/u.test(name)) return 'つかえない 文字が ある';
+  if (name.includes('{c:')) return 'つかえない 文字が ある';
+  if (name === current) return 'いまと おなじ なまえ';
+  return null;
+}
+
