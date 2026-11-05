@@ -526,7 +526,7 @@ export function Card() {
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
           {slmEligible
             ? '精霊タブの『召喚の儀式』でブルスコンを呼び出すと引けます。'
-            : 'このブラウザでは AI モデルが使えないため引き直しできません。Chrome (デスクトップ版、Gemini Nano 対応) でお試しください。'}
+            : 'このブラウザではブルスコンを呼び出せないため、引き直しできません。'}
         </p>
       )}
 
@@ -537,7 +537,7 @@ export function Card() {
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'AI 確認中…' : llmAvailable === false ? 'AI 不可で引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (serverPower !== null && serverPower < 1) ? '引き直せない' : '引き直す (−1)'}
+            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'ブルスコンを確認中…' : llmAvailable === false ? 'ブルスコンがいなくて引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (serverPower !== null && serverPower < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>
