@@ -46,3 +46,12 @@ describe('同梱の絵', () => {
     });
   }
 });
+
+describe('カジノの絵 (D-CASINO-001)', () => {
+  it('5 枚が同梱され、左右対称', () => {
+    for (const k of ['casino-counter', 'slot-machine', 'card-table', 'race-board', 'sign-casino']) {
+      const art = decodeTileArt(INTERIOR_ARTS[k]!);
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 8; x++) expect(art.pixels[y * 16 + x], `${k} ${x},${y}`).toBe(art.pixels[y * 16 + 15 - x]);
+    }
+  });
+});
