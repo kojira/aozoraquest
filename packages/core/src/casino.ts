@@ -13,6 +13,7 @@ import {
   casinoShapeIssue, CasinoDataError, CASINO_TABLE_RTP_MAX, CASINO_TABLE_RTP_MIN, DEFAULT_CASINO_TABLES, HIGHLOW_CARDS, SLOT_BLANK, SLOT_REEL_SIZE,
   type CasinoGame, type CasinoTables, type SlotSymbol,
 } from './casino-data.js';
+import { MONSTERS } from './battle-monsters.js';
 
 let current: CasinoTables = structuredClone(DEFAULT_CASINO_TABLES);
 
@@ -36,6 +37,8 @@ export function setCasinoTables(rec: CasinoTables | null): void {
   if (issue) throw new CasinoDataError(issue);
   current = structuredClone({ slots: rec.slots, highlow: rec.highlow, race: rec.race, prizes: rec.prizes });
 }
+
+const RACE_LINEUP = 5;
 
 /** うんの効き: この値で上限。 */
 export const CASINO_LUK_CAP = 60;
@@ -228,4 +231,33 @@ export function playCasino<G extends CasinoGame>(
   let winner = runners.length - 1;
   for (let i = 0; i < runners.length; i++) { u -= runners[i]!.prob; if (u < 0) { winner = i; break; } }
   return { game: 'race', runner, winner, payout: winner === runner ? roundStochastic((bet * runners[runner]!.odds * scale) / 100, rng) : 0 };
+}
+
+/**
+ * レースに出る 5 ひき (にんきの順)。その tier の、物語だけの敵を除いたモンスターから乱数で選ぶ。
+ * 足りなければ 1 つ下の tier から足し、それでも足りなければ同じ敵を重ねて出す (名前の後ろに番号)。
+ */
+export function raceLineup(tier: number, rng: () => number): Array<{ id: string; name: string; species: string }> {
+  const out: Array<{ id: string; name: string; species: string }> = [];
+  for (let t = tier; t >= 1 && out.length < RACE_LINEUP; t--) {
+    const pool = MONSTERS.filter((m) => m.tier === t && !m.storyOnly && !out.some((o) => o.id === m.id));
+    while (pool.length && out.length < RACE_LINEUP) {
+      const m = pool.splice(Math.floor(rng() * pool.length), 1)[0]!;
+      out.push({ id: m.id, name: m.name, species: m.species });
+    }
+  }
+  const base = out.length ? [...out] : [{ id: 'slime', name: 'スライム', species: 'slime' }];
+  for (let i = 0; out.length < RACE_LINEUP; i++) {
+    const b = base[i % base.length]!;
+    out.push({ ...b, name: `${b.name}${out.length + 1}` });
+  }
+  return out;
+}
+
+
+/** レースの顔ぶれの seed (rkey から決まる。顔ぶれは見た目だけなので、画面が賭ける前に同じものを出せる)。 */
+export function raceLineupSeed(rkey: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < rkey.length; i++) h = Math.imul(h ^ rkey.charCodeAt(i), 0x01000193);
+  return h >>> 0;
 }

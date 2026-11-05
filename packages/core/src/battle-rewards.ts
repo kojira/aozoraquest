@@ -25,7 +25,8 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
   for (const [id, n] of Object.entries(materials)) {
     // **だいじなもの (シナリオアイテム) は失わない。** 進行に要るものが敗北で
     // 消えると、そのプレイヤーは筋書きを進められなくなる。
-    if (ITEMS[id]?.key) continue;
+    // カジノの景品 (コインで買ったどうぐ) も失わない (D-CASINO-001)。
+    if (ITEMS[id]?.key || ITEMS[id]?.casinoOnly) continue;
     for (let i = 0; i < n; i++) pool.push(id);
   }
   const lost: string[] = [];

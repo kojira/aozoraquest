@@ -214,6 +214,8 @@ export const ITEMS: Record<string, ItemDef> = {
   'raven-feather': { name: '夜鴉の風切羽' },
   'oni-horn': { name: '鬼の角' },
   'dragon-fang': { name: '竜の牙' },
+  // カジノの景品 (D-CASINO-001)。パーティの画面で仲間 1 人の名前を変える。
+  'name-tag': { name: 'なまえのふだ', desc: 'なかま 1人の なまえを かえられる', casinoOnly: true },
 };
 
 /** **全モンスター。コードには持たない** (D-MONSTER-001)。正は管理者 PDS の world.monsters レコードで、

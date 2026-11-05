@@ -73,6 +73,8 @@ export interface PartyState {
   mode?: Record<string, AllyMode>;
   /** 仲間の装備 (主人公の gearSel と同じ形。D-PARTY-004 §6)。ids にいる人だけ。品は pieces のまま (外せば もちもの に戻る)。 */
   gear?: Record<string, GearSelection>;
+  /** なまえのふだ で付けた名前 (D-CASINO-001)。ids にいる人だけ。 */
+  names?: Record<string, string>;
 }
 
 /** 全快にした party (hp/mp を消す。ほかはそのまま)。party が無ければ undefined のまま。 */
@@ -173,6 +175,18 @@ export interface GameState {
   activeQuests: Array<{ id: string; progress: number }>;
   /** 達成済みクエスト id (再受注させない)。全履歴を追記のみで保持 (#709)。 */
   questsDone?: string[];
+  /** カジノのコイン (D-CASINO-001)。サーバーだけが増減する。上限 CASINO_COIN_MAX。パワーには戻せない。 */
+  casinoCoins?: number;
+  /** 処理済みのカジノ操作の rkey (直近 MAX_CASINO_OPS 件)。再送で二重に払わない。 */
+  casinoOps?: string[];
+  /** 直近の結果 (同じ rkey の再送に同じ結果を返す)。 */
+  casinoLast?: { rkey: string; res: Record<string, unknown> };
+  /** 回数の上限 (1 分・1 日 JST)。 */
+  casinoRate?: { minute: number; perMinute: number; day: string; perDay: number };
+  /** 毎日のコインを受け取った日 (JST)。 */
+  casinoBonusDay?: string;
+  /** 途中のハイロー (1 枚目と、いま賭けているコイン、続けた回数)。 */
+  casinoHL?: { first: number; stake: number; step: number };
   version: number;
   updatedAt: string;
 }

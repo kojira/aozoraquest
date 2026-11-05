@@ -24,7 +24,7 @@ import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
 import { handlePartyCandidates, handlePartyReroll, handlePartySet } from './party-route';
-import { handlePartyOrdersRoute } from './party-orders-route';
+import { handlePartyOrdersRoute } from './party-orders-route'; import { handleCasinoRoute } from './casino-route';
 import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -587,6 +587,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   }
 
   const partyOrders = await handlePartyOrdersRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (partyOrders) return partyOrders; // さくせん (D-PARTY-004)
+  const casino = await handleCasinoRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (casino) return casino; // カジノ (D-CASINO-001)
   // パーティの編成・ギルドの候補・候補の引き直し (D-PARTY-001 / D-PARTY-002)。ギルドの受付のそばにいるかは edge が確かめる。
   if (req.method === 'POST' && LXM_PARTY_BY_PATH[url.pathname]) {
     const token = bearer(req);
