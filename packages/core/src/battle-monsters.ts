@@ -216,6 +216,8 @@ export const ITEMS: Record<string, ItemDef> = {
   'dragon-fang': { name: '竜の牙' },
   // カジノの景品 (D-CASINO-001)。パーティの画面で仲間 1 人の名前を変える。
   'name-tag': { name: 'なまえのふだ', desc: 'なかま 1人の なまえを かえられる', casinoOnly: true },
+  // カジノの景品 (D-CASINO-001。ふっかつのはね の代わり)。戦闘で 味方みんなの HP を 4 わり回復。
+  'holy-water': { name: 'せいなるみず', desc: 'みかた みんなの HPを 4わり かいふく', casinoOnly: true, battle: { effects: [{ kind: 'heal', ratio: 0.4, target: 'allAllies' }] } },
 };
 
 /** **全モンスター。コードには持たない** (D-MONSTER-001)。正は管理者 PDS の world.monsters レコードで、

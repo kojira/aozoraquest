@@ -46,6 +46,7 @@ const CONTENT_SECTIONS: Section[] = [
   { key: 'dialogue', title: '会話', desc: '冒頭・ギルド・宿屋・なんでも屋のセリフ (場面ごと)', to: '/admin/dialogue', issue: 786 },
   { key: 'items', title: 'アイテム', desc: 'そうび・どうぐ・素材の編集', to: '/admin/items', issue: 420 },
   { key: 'shops', title: 'お店', desc: '店ごとのラインナップ・値札の素材 (セリフは #422 で続き)', to: '/admin/shops', issue: 422 },
+  { key: 'casino', title: 'カジノ', desc: 'スロット・ハイロー・レースの表と景品 (RTP 85〜98% のみ保存)', to: '/admin/casino', issue: 932 },
   { key: 'flags', title: 'フラグ', desc: '進行フラグでゲート', issue: 426 },
 ];
 

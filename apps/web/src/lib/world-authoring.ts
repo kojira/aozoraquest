@@ -1,6 +1,8 @@
 import { captureNpcPlacementWorld } from './npc-placement';
 import type { Agent } from '@atproto/api';
 import {
+  setCasinoTables,
+  type CasinoTables,
   decodeWorldMap,
   loadAdminWorld,
   BASE_PARTS,
@@ -244,6 +246,14 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
   assertCharactersExist('shops', { shops });
   setShopOverrides(shops);
   await putRecord(agent, ADMIN_COL.shops, RKEY, { shops, updatedAt: new Date().toISOString() });
+}
+
+// ─── カジノ (D-CASINO-001) ─────────────────────────────────────
+
+/** カジノの表を保存する (形・RTP 85〜98%・景品は casinoOnly を core で検証してから)。 */
+export async function saveCasino(agent: Agent, tables: CasinoTables): Promise<void> {
+  setCasinoTables(tables);
+  await putRecord(agent, ADMIN_WORLD_COL.casino, RKEY, { ...tables, updatedAt: new Date().toISOString() });
 }
 
 // ─── NPC (#425) ─────────────────────────────────────────────

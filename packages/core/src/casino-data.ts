@@ -95,6 +95,7 @@ export const DEFAULT_CASINO_TABLES: CasinoTables = {
     { kind: 'equipment', id: 'ar-star-robe', coins: 15_000 },
     { kind: 'equipment', id: 'wp-star-dice', coins: 12_000 },
     { kind: 'equipment', id: 'ch-lucky-charm', coins: 6_000 },
+    { kind: 'item', id: 'holy-water', coins: 800 },
     { kind: 'item', id: 'name-tag', coins: 1_000 },
   ],
 };
