@@ -26,6 +26,8 @@ import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
 import { serverGear, serverPartyGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
+import { CasinoModal } from '@/components/casino-modal';
+import { useCasino } from '@/lib/use-casino';
 import { PartyGearModal } from '@/components/party-gear-modal';
 import { resolveGear } from '@/lib/gear';
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
@@ -58,7 +60,7 @@ import { useLatestRef } from '@/lib/use-latest-ref';
 import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
 import { useInnTalk } from '@/lib/use-inn-talk';
-import { useWorldShop } from '@/lib/use-world-shop';
+import { piecesFromServer, useWorldShop } from '@/lib/use-world-shop';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
@@ -216,6 +218,7 @@ function WorldScreen() {
   const { innTalk, innTalkRef, innBusy, innChoices, openInn, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
+  const casino = useCasino({ agent, tokenRef, setServerPower, applyServerMaterials: inventory.applyServerMaterials, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]) });
 
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
@@ -301,11 +304,11 @@ function WorldScreen() {
 
   const wipeRef = useLatestRef(wipe);
   /** 入力ガード用に、開いている窓・演出の最新値を 1 つの ref で読む (deps の狭い callback から)。 */
-  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter, skillOpen });
+  const overlaysRef = useLatestRef({ casinoOpen: !!casino.casinoSpot, mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter, skillOpen });
   // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中・各窓・会話・サーバー往復中は移動不可。
   const moveBlocked = useCallback(() => {
     const o = overlaysRef.current;
-    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter || o.skillOpen
+    return !!battleRef.current || o.casinoOpen || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter || o.skillOpen
       || moveBusyRef.current || !!npcTalkRef.current || !!innTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
   }, [battleRef, npcTalkRef, innTalkRef, overlaysRef, wipeRef]);
   // そらのはねの行き先えらび: 導入中・戦闘・演出・地図/店/そうび/つよさの窓では開かない。
@@ -317,7 +320,7 @@ function WorldScreen() {
   const move = useWorldMove({
     agent, did, wsRef, setWs, setScrollStep, inputBlocked: moveBlocked, moveBusyRef, tokenRef, flagsRef, materialsRef,
     guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice,
-    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
+    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, openCasino: casino.openCasino, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
   });
   const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
     agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower,
@@ -671,7 +674,7 @@ function WorldScreen() {
         />
       )}
       {skillOpen && <FieldSkillModal members={members} cast={fieldHeal.castFieldSkill} onClose={() => setSkillOpen(false)} />}
-      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onMode={async (id, mode) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyMode(agent, id, mode)).party); }} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} />
+      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onMode={async (id, mode) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyMode(agent, id, mode)).party); }} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} rename={casino.renameProps(materialsView, talk.setParty)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />
@@ -739,6 +742,7 @@ function WorldScreen() {
           onClose={() => setShopOpen(false)}
         />
       )}
+      {casino.casinoSpot && <CasinoModal spot={casino.casinoSpot} coins={casino.casinoCoins} power={serverPower ?? 0} actions={casino.casinoActions} onClose={casino.closeCasino} />}
       {wipeOverlay}
       <WelcomeBlessingOverlay />
     </div>
