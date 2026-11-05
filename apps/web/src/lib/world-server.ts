@@ -40,6 +40,7 @@ const LXM_PARTY_REROLL = LXM.partyReroll;
 const LXM_PARTY_MODE = LXM.partyMode;
 const LXM_PARTY_GEAR = LXM.partyGear;
 const LXM_POWER_SPEND = LXM.powerSpend;
+const LXM_PARTY_RENAME = LXM.partyRename;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
@@ -72,7 +73,7 @@ async function serviceToken(agent: Agent, lxm: string): Promise<string> {
   return data.token;
 }
 
-async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknown): Promise<T> {
+export async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknown): Promise<T> {
   if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
   const token = await serviceToken(agent, lxm);
   let res: Response;
@@ -110,12 +111,12 @@ export interface ServerMoveResult {
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
 /** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
  *  members は生成の仲間の定義と経験値、xp はなじみの経験値 (D-PARTY-002)。 */
-export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number>; mode?: Record<string, AllyMode>; gear?: Record<string, GearSelection> }
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number>; mode?: Record<string, AllyMode>; gear?: Record<string, GearSelection>; names?: Record<string, string> }
 /** きずなの ♥ が増えた仲間 (増えたあとの ♥ の数。D-PARTY-004)。 */
 export interface ServerBondUp { id: string; name: string; hearts: number }
 /** ギルドの今日の候補 (D-PARTY-002)。入れた人は含まない。 */
 export interface ServerPartyCandidates { day: string; candidates: RecruitCandidate[]; power: number; rerollPower: number }
-export interface ServerGameState { party?: ServerParty; did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; version: number; updatedAt: string }
+export interface ServerGameState { party?: ServerParty; did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; casinoCoins?: number; casinoHL?: { first: number; stake: number; step: number }; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -188,6 +189,11 @@ export function serverPartyMode(agent: Agent, id: string, mode: AllyMode | null)
 /** 仲間の装備 (D-PARTY-004)。gear は着る全部 ({id, level})。ほかの人が着ている品は 400 worn_by_other。 */
 export function serverPartyGear(agent: Agent, id: string, gear: GearSelection): Promise<{ party: ServerParty }> {
   return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_GEAR, '/api/party/gear', { id, gear });
+}
+
+/** なまえのふだ (D-CASINO-001): 仲間 1 人の名前を変える。ふだは名前を変えられたときだけ 1 枚へる。rkey で冪等。 */
+export function serverPartyRename(agent: Agent, id: string, name: string, rkey: string): Promise<{ party: ServerParty; materials: Record<string, number> }> {
+  return callEdge<{ party: ServerParty; materials: Record<string, number> }>(agent, LXM_PARTY_RENAME, '/api/party/rename', { id, name, rkey });
 }
 
 /** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。
