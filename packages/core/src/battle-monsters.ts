@@ -193,6 +193,8 @@ export interface ItemDef {
   shopTier?: 1 | 2 | 3;
   /** 戦闘で使えるどうぐ (1 回きりの MP のいらないとくぎ)。対象は effects の target から導く。 */
   battle?: { effects: SkillEffect[] };
+  /** カジノの景品 (D-CASINO-001)。店の品ぞろえ・置きアイテムには出せない (price・shopTier は付けられない)。 */
+  casinoOnly?: boolean;
 }
 
 export const ITEMS: Record<string, ItemDef> = {

@@ -89,6 +89,7 @@ export function placedItemIssue(p: PlacedItemDef): string | null {
     }
   } else {
     if (p.itemId === undefined || !ITEMS[p.itemId]) return `アイテムが存在しない (${p.itemId})`;
+    if (ITEMS[p.itemId]!.casinoOnly) return `カジノの景品は置けない (${p.itemId})`;
     if (!Number.isInteger(p.count) || p.count! < 1 || p.count! > 99) return '個数は 1〜99';
   }
   if (kind === 'spot' && p.flag === undefined) return 'しらべる場所はフラグが必須';
@@ -102,9 +103,14 @@ function rewardIssue(r: PlacedReward): string | null {
   const keys = Object.keys(r).sort().join(',');
   if (keys === 'count,item' && 'item' in r) {
     if (!ITEMS[r.item]) return `アイテムが存在しない (${r.item})`;
+    if (ITEMS[r.item]!.casinoOnly) return `カジノの景品は置けない (${r.item})`;
     return Number.isInteger(r.count) && r.count >= 1 && r.count <= 99 ? null : '個数は 1〜99';
   }
-  if (keys === 'equipment' && 'equipment' in r) return EQUIPMENT_BY_ID[r.equipment] ? null : `装備が存在しない (${r.equipment})`;
+  if (keys === 'equipment' && 'equipment' in r) {
+    const def = EQUIPMENT_BY_ID[r.equipment];
+    if (!def) return `装備が存在しない (${r.equipment})`;
+    return def.casinoOnly ? `カジノの景品は置けない (${r.equipment})` : null;
+  }
   if (keys === 'power' && 'power' in r) return Number.isInteger(r.power) && r.power >= 1 && r.power <= MAX_PLACED_POWER ? null : `パワーは 1〜${MAX_PLACED_POWER}`;
   return '報酬の形が不正';
 }
