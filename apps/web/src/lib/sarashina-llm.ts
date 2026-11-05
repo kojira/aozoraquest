@@ -12,7 +12,9 @@
 
 import type { LLMInput, LLMOptions, LocalLLM } from './local-llm';
 import { detectGeminiNano } from './gemini-nano-availability';
-import { isSarashinaCached } from './slm-wgsl/weights';
+import { isSlmCached, SARASHINA_SOURCE } from './slm-wgsl/weights';
+
+const isSarashinaCached = () => isSlmCached(SARASHINA_SOURCE);
 
 const IDLE_DISPOSE_MS = 3 * 60_000;
 /** 読み込み中にこの間 part が 1 つも届かなければ止まったとみなして Worker を捨てる (総時間の上限は設けない)。 */
@@ -96,7 +98,7 @@ function ensureWorker(allowNetwork: boolean): Promise<void> {
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', (ev) => { clearTimeout(stall); reject(new Error(`sarashina worker failed: ${ev.message}`)); }, { once: true });
-    w.postMessage({ type: 'init', allowNetwork });
+    w.postMessage({ type: 'init', model: 'sarashina', allowNetwork });
   });
   workerReady = ready;
   ready.catch((e: unknown) => { console.warn('[sarashina] init failed', e); if (worker === w) disposeWorker(); });
@@ -160,6 +162,7 @@ async function generate(input: LLMInput, opts: LLMOptions = {}): Promise<string>
         prompt: sarashinaChatPrompt(input),
         maxNewTokens: Math.min(opts.maxNewTokens ?? MAX_NEW_TOKENS, MAX_NEW_TOKENS),
         temperature: opts.temperature ?? 0,
+        repetitionPenalty: 1,
         stopAtNewline: true,
       });
     });

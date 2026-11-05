@@ -1,9 +1,10 @@
 /**
- * sarashina (Llama 系 decoder) 用の WGSL カーネル。形状は文字列テンプレートでモデルごとに焼き込む。
+ * 自前 WGSL エンジン (LFM2.5 と sarashina) の WGSL カーネル。形状は文字列テンプレートでモデルごとに焼き込む。
  *
  * q4 重み buffer の配置 (1 buffer = ある tensor の行範囲):
  *   u32 q[rows][K/8] (word の nibble i = 要素 j*8+i、値は -8 して使う)、続けて f16 scale [rows][K/32] を u32 に 2 個ずつ。
- * 試作 (~/.pi/slm-wgsl/web/src/kernels.ts) の Llama 経路だけを移植した (DeltaNet / q,k norm / bias / gate は持たない)。
+ * 試作 (~/.pi/slm-wgsl/web/src/kernels.ts) の Llama 経路と LFM2 の差分 (short conv・q/k RMSNorm・繰返し罰) を移植した
+ * (DeltaNet / bias / gate は持たない)。
  */
 
 export const DYN = /* wgsl */ `struct Dyn { T: u32, pos0: u32, a: u32, b: u32 };`;
@@ -131,21 +132,27 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }`;
 }
 
-export interface AttnDims { heads: number; kvHeads: number; hd: number; theta: number; maxCtx: number }
+export interface AttnDims { heads: number; kvHeads: number; hd: number; theta: number; eps: number; qkNorm: boolean; maxCtx: number }
 
-/** RoPE (rotate_half) を q/k に掛け、q → qb、k/v → f16 KV cache (位置 pos0+t)。1 workgroup = (head slot, t)。 */
+/**
+ * (qkNorm なら head ごとの q/k RMSNorm の後に) RoPE (rotate_half) を q/k に掛け、q → qb、k/v → f16 KV cache (位置 pos0+t)。
+ * 1 workgroup = (head slot, t)。qkNorm でないモデルも qn / kn の binding は持つ (中身は読まない)。
+ */
 export function qkprepWgsl(a: AttnDims): string {
   const inN = (a.heads + 2 * a.kvHeads) * a.hd;
   const half = a.hd / 2;
   return /* wgsl */ `
 ${DYN}
 @group(0) @binding(0) var<storage, read> inp: array<f32>;
-@group(0) @binding(1) var<storage, read_write> qb: array<f32>;
-@group(0) @binding(2) var<storage, read_write> kc: array<u32>;
-@group(0) @binding(3) var<storage, read_write> vc: array<u32>;
-@group(0) @binding(4) var<uniform> d: Dyn;
+@group(0) @binding(1) var<storage, read> qn: array<f32>;
+@group(0) @binding(2) var<storage, read> kn: array<f32>;
+@group(0) @binding(3) var<storage, read_write> qb: array<f32>;
+@group(0) @binding(4) var<storage, read_write> kc: array<u32>;
+@group(0) @binding(5) var<storage, read_write> vc: array<u32>;
+@group(0) @binding(6) var<uniform> d: Dyn;
 var<workgroup> v: array<f32, ${a.hd}>;
 var<workgroup> r: array<f32, ${a.hd}>;
+var<workgroup> red: array<f32, 128>;
 @compute @workgroup_size(128)
 fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
   let slot = wid.x;  // [0, heads) q、[heads, heads+kv) k、残り v
@@ -155,7 +162,15 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
   var kind = 0u;
   if (slot >= ${a.heads}u) { kind = select(2u, 1u, slot < ${a.heads + a.kvHeads}u); }
   let base = t * ${inN}u + slot * ${a.hd}u;
-  for (var i = lid.x; i < ${a.hd}u; i += 128u) { v[i] = inp[base + i]; }
+  var s = 0.0;
+  for (var i = lid.x; i < ${a.hd}u; i += 128u) { let e = inp[base + i]; v[i] = e; s += e * e; }
+  red[lid.x] = s;
+  workgroupBarrier();
+  for (var k = 64u; k > 0u; k >>= 1u) { if (lid.x < k) { red[lid.x] += red[lid.x + k]; } workgroupBarrier(); }
+  let inv = inverseSqrt(red[0] / ${a.hd}.0 + ${a.eps});
+  ${a.qkNorm ? `for (var i = lid.x; i < ${a.hd}u; i += 128u) {
+    if (kind == 0u) { v[i] = v[i] * inv * qn[i]; } else if (kind == 1u) { v[i] = v[i] * inv * kn[i]; }
+  }` : '_ = inv; _ = qn[0]; _ = kn[0];'}
   workgroupBarrier();
   for (var i = lid.x; i < ${a.hd}u; i += 128u) {
     var e = v[i];
@@ -248,6 +263,52 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
   }
 }`;
 }
+
+/**
+ * LFM2 の short conv: 融合 in_proj [T, 3H] (B, C, x の順) から y = C * conv(B * x)。
+ * 幅 K の因果 depthwise conv (bias・活性化なし)。状態 st は過去 K-1 個の B*x ([K-1][H])。1 スレッド = 1 チャンネル。
+ */
+export function shortConvWgsl(H: number, K: number): string {
+  const S = K - 1;
+  return /* wgsl */ `
+${DYN}
+@group(0) @binding(0) var<storage, read> inp: array<f32>;
+@group(0) @binding(1) var<storage, read> w: array<f32>;
+@group(0) @binding(2) var<storage, read_write> st: array<f32>;
+@group(0) @binding(3) var<storage, read_write> o: array<f32>;
+@group(0) @binding(4) var<uniform> d: Dyn;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let c = gid.x;
+  if (c >= ${H}u) { return; }
+  var win: array<f32, ${S}>;
+  for (var j = 0u; j < ${S}u; j++) { win[j] = st[j * ${H}u + c]; }
+  for (var t = 0u; t < d.T; t++) {
+    let b = t * ${3 * H}u;
+    let bx = inp[b + c] * inp[b + ${2 * H}u + c];
+    var s = w[c * ${K}u + ${S}u] * bx;
+    for (var j = 0u; j < ${S}u; j++) { s += w[c * ${K}u + j] * win[j]; }
+    for (var j = 0u; j + 1u < ${S}u; j++) { win[j] = win[j + 1u]; }
+    win[${S - 1}u] = bx;
+    o[t * ${H}u + c] = inp[b + ${H}u + c] * s;
+  }
+  for (var j = 0u; j < ${S}u; j++) { st[j * ${H}u + c] = win[j]; }
+}`;
+}
+
+/** 繰返し罰 (HF の repetition_penalty と同じ): ids に挙げた token の logit を、正なら割り、負なら掛ける。 */
+export const PENALTY_WGSL = /* wgsl */ `
+struct P { count: u32, penalty: f32, _a: u32, _b: u32 };
+@group(0) @binding(0) var<storage, read_write> logits: array<f32>;
+@group(0) @binding(1) var<storage, read> ids: array<u32>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= p.count) { return; }
+  let id = ids[gid.x];
+  let l = logits[id];
+  logits[id] = select(l * p.penalty, l / p.penalty, l > 0.0);
+}`;
 
 /** 反復 argmax による top-K。段 1: B 個ごとのブロック → K 候補、段 2 (indirect=true): 候補全体から K。 */
 export function topkWgsl(K: number, B: number, indirect: boolean): string {

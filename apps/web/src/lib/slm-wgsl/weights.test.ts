@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchHeader, fetchVerified, SarashinaNotCachedError, streamWeights, type SlmHeader } from './weights';
+import { fetchHeader, fetchVerified, SlmNotCachedError, streamWeights, type SlmHeader, type SlmWeightsSource } from './weights';
+
+const X: SlmWeightsSource = { baseUrl: 'https://x', headerSha256: '0'.repeat(64), cacheName: 'slm-wgsl-v1', arch: 'lfm2' };
 
 /** 翻訳時の読み込み (allowNetwork: false) は、キャッシュが欠けていても fetch を呼ばない (キャッシュ消去後に 430MB を勝手に取り直さない)。 */
 function stubCache(files: Record<string, ArrayBuffer>) {
@@ -26,7 +28,7 @@ describe('sarashina weights cache-only load', () => {
     stubCache({});
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    await expect(fetchHeader({ allowNetwork: false })).rejects.toBeInstanceOf(SarashinaNotCachedError);
+    await expect(fetchHeader(X, { allowNetwork: false })).rejects.toBeInstanceOf(SlmNotCachedError);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -43,8 +45,8 @@ describe('sarashina weights cache-only load', () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     const done: number[] = [];
-    await expect(streamWeights(fakeDevice, 'https://x', header, [], (d) => done.push(d), { allowNetwork: false }))
-      .rejects.toBeInstanceOf(SarashinaNotCachedError);
+    await expect(streamWeights(fakeDevice, X, header, [], (d) => done.push(d), { allowNetwork: false }))
+      .rejects.toBeInstanceOf(SlmNotCachedError);
     expect(done).toEqual([1]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -54,7 +56,7 @@ describe('sarashina weights cache-only load', () => {
     stubCache({});
     const fetchSpy = vi.fn(async () => new Response(buf));
     vi.stubGlobal('fetch', fetchSpy);
-    const got = await fetchVerified('https://x/tokenizer.json', { bytes: 4, sha256: await sha256Hex(buf) }, { allowNetwork: true });
+    const got = await fetchVerified(X, 'tokenizer.json', { bytes: 4, sha256: await sha256Hex(buf) }, { allowNetwork: true });
     expect(new Uint8Array(got)).toEqual(new Uint8Array(buf));
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
@@ -88,7 +90,7 @@ describe('sarashina weights download heartbeat', () => {
     let stalled = false;
     let stall = setTimeout(() => { stalled = true; }, LOAD_STALL_MS);
     const onHeartbeat = () => { clearTimeout(stall); stall = setTimeout(() => { stalled = true; }, LOAD_STALL_MS); };
-    const p = fetchVerified('https://x/part-000.bin', { bytes: bytes.byteLength, sha256: await sha256Hex(bytes) }, { allowNetwork: true, onHeartbeat });
+    const p = fetchVerified(X, 'part-000.bin', { bytes: bytes.byteLength, sha256: await sha256Hex(bytes) }, { allowNetwork: true, onHeartbeat });
     p.catch(() => undefined);
     await vi.advanceTimersByTimeAsync(gapsMs.reduce((a, b) => a + b, 0) + 1);
     clearTimeout(stall);
