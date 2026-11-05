@@ -3,15 +3,24 @@ import type { Agent } from '@atproto/api';
 import { SpiritIcon } from './spirit-icon';
 import { RitualStage } from './ritual-stage';
 import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice } from '@/lib/local-llm';
-import { installSarashina, isSarashinaEligible, isSarashinaInstalled } from '@/lib/sarashina-llm';
+import { installSlm, SlmStorageFullError } from '@/lib/slm-llm';
 
 interface SummoningRitualProps {
   agent: Agent;
   userName: string;
   systemPrompt: string;
+  /** 確認シートで承諾した時だけ true。儀式の間にブルスコン (約 660MB) を受け取る。 */
+  download: boolean;
   onComplete: (welcome: string) => Promise<void> | void;
+  /** 受け取りの途中で端末の空きが足りなくなった (儀式は手書きの口上で完走する)。 */
+  onStorageFull: () => void;
   onCancel: () => void;
 }
+
+/** 重みの受け取りの進捗 (byte)。 */
+interface DownloadProgress { loaded: number; total: number }
+
+const MB = 1_000_000;
 
 type Phase = 'gathering' | 'forming' | 'awakening' | 'greeting' | 'emerging' | 'done' | 'error';
 
@@ -45,24 +54,28 @@ const GREETING_NARRATION_INTERVAL = 3200;
 /**
  * ブルスコン召喚の儀式。
  *
- * LLM 利用可能性 (Nano など) のチェックと演出を並列で進める。Nano が無く WebGPU がある端末では、
- * 投稿翻訳用の sarashina をここでダウンロードし、終わるまで greeting で待つ (口上は手書き固定文のまま。
- * 失敗しても儀式は完走し、翻訳は使えないまま次の儀式・次の機会にやり直す)。演出は最低 ~7 秒、
+ * LLM 利用可能性 (Nano など) のチェックと演出を並列で進める。確認シートで承諾した (download) 時は、
+ * ブルスコン (LFM2.5) をここでダウンロードし、終わるまで greeting で待つ。受け取り中は hint に MB の進捗を出す
+ * (口上は手書き固定文のまま。失敗しても儀式は完走し、精霊タブのボタンからやり直せる)。演出は最低 ~7 秒、
  * LLM 応答が長引いた場合は greeting フェーズでナレーションを巡回させて間を持たせる。
  * LLM 応答完了 (or LLM 利用不可で hand-crafted 採用) の瞬間に 'emerging' フェーズへ
  * 遷移し、フラッシュ + 星弾けの演出をしてから閉じる。
  */
-export function SummoningRitual({ agent: _agent, userName, systemPrompt, onComplete, onCancel }: SummoningRitualProps) {
+export function SummoningRitual({ agent: _agent, userName, systemPrompt, download, onComplete, onStorageFull, onCancel }: SummoningRitualProps) {
   const [phase, setPhase] = useState<Phase>('gathering');
   const [greetingIdx, setGreetingIdx] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const startedAt = useRef(Date.now());
 
   useEffect(() => {
     let cancelled = false;
     // LLM 利用可能性は儀式の早い段階で並行 probe しておく (greeting 到達時に確定済)。
     const llmProbe = pickLocalLLM().catch(() => null);
-    const translatorInstall = installTranslatorIfNeeded();
+    const slmInstall = download
+      ? installSlmDuringRitual((loaded, total) => { if (!cancelled) setProgress({ loaded, total }); }, onStorageFull)
+        .finally(() => { if (!cancelled) setProgress(null); })
+      : Promise.resolve();
 
     async function run() {
       await sleep(MIN_PHASE_MS);
@@ -76,7 +89,7 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
 
       setPhase('greeting');
       const llm = await llmProbe;
-      await translatorInstall;
+      await slmInstall;
       if (cancelled) return;
 
       let welcome = '';
@@ -162,20 +175,22 @@ export function SummoningRitual({ agent: _agent, userName, systemPrompt, onCompl
       phase={phase}
       narration={narrationText}
       narrationKey={narrationKey}
-      hint={phase === 'greeting' && elapsed > 20000 ? 'もう少しで姿が現れる' : undefined}
+      hint={progress
+        ? `ブルスコンを呼び出し中 ${Math.floor(progress.loaded / MB)} / ${Math.round(progress.total / MB)} MB`
+        : phase === 'greeting' && elapsed > 20000 ? 'もう少しで姿が現れる' : undefined}
       label="精霊召喚の儀式"
     />
   );
 }
 
-/** sarashina の対象端末で未導入なら導入する。失敗は握りつぶす (儀式は手書きの口上で完走する)。 */
-async function installTranslatorIfNeeded(): Promise<void> {
+/** ブルスコンを受け取る。失敗しても儀式は手書きの口上で完走する (空きが足りなければ onStorageFull で知らせる)。 */
+async function installSlmDuringRitual(onProgress: (loaded: number, total: number) => void, onStorageFull: () => void): Promise<void> {
   try {
-    if (!(await isSarashinaEligible()) || (await isSarashinaInstalled())) return;
-    await installSarashina();
+    await installSlm(onProgress);
     resetLocalLLMChoice();
   } catch (e) {
-    console.warn('[ritual] translator install failed', e);
+    console.warn('[ritual] slm install failed', e);
+    if (e instanceof SlmStorageFullError) onStorageFull();
   }
 }
 

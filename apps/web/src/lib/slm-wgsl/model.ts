@@ -74,7 +74,7 @@ export class SlmModel {
   static async create(
     source: SlmWeightsSource,
     header: SlmHeader,
-    onPartDone: (done: number, total: number) => void,
+    onProgress: (loaded: number, total: number) => void,
     fetchOpts: SlmFetchOptions,
   ): Promise<SlmModel> {
     const gpu = (globalThis.navigator as Navigator | undefined)?.gpu;
@@ -96,7 +96,7 @@ export class SlmModel {
       let err: unknown = null;
       try {
         const maxB = Math.min(l.maxStorageBufferBindingSize, l.maxBufferSize, MAX_TENSOR_BUFFER);
-        await streamWeights(device, source, header, model.allocateWeights(maxB), onPartDone, fetchOpts);
+        await streamWeights(device, source, header, model.allocateWeights(maxB), onProgress, fetchOpts);
         model.allocateActivations();
         model.buildSteps();
         await model.forwardTopk([1, 2, 3], []); // warmup (pipeline compile)

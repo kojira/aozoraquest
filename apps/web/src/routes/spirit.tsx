@@ -22,9 +22,10 @@ import { useRuntimeConfig } from '@/components/config-provider';
 import { applyPromptTemplate } from '@/lib/prompt-template';
 import { bumpPower, loadPointsState, SUMMON_THRESHOLD, type PointsState } from '@/lib/points';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
-import { isSarashinaEligible, isSarashinaInstalled } from '@/lib/sarashina-llm';
+import { isSlmEligible, isSlmInstalled } from '@/lib/slm-llm';
+import { SLM_STORAGE_FULL_MESSAGE, SlmInstallSheet } from '@/components/slm-install-sheet';
 
-/** 「召喚の儀式を始める」ボタン (召喚前と、召喚済みで翻訳の端末内 AI が未導入の時で同じ見た目)。 */
+/** 「召喚の儀式を始める」ボタン (召喚前と、召喚済みでブルスコンが未導入の時で同じ見た目)。 */
 const RITUAL_BUTTON_STYLE = {
   marginTop: '1em',
   padding: '0.7em 1.6em',
@@ -34,6 +35,8 @@ const RITUAL_BUTTON_STYLE = {
   border: '3px solid var(--color-pill-border)',
   boxShadow: '0 0 20px rgba(159, 215, 255, 0.45)',
 } as const;
+
+const STORAGE_FULL_STYLE = { marginTop: '0.6em', fontSize: '0.85em', color: 'var(--color-muted)' } as const;
 
 /**
  * 精霊ブルスコンのページ。
@@ -63,10 +66,12 @@ export function Spirit() {
   const [questXp, setQuestXp] = useState(0);
   const { jobXp } = useJobXp();
   const [loaded, setLoaded] = useState(false);
-  const [ritualOpen, setRitualOpen] = useState(false);
-  // 召喚済みで、Nano が無く WebGPU がある端末なのに sarashina が未導入 (儀式は導入前に済ませた / キャッシュが消えた)。
-  // その時だけ儀式をもう一度できるようにする (導入は儀式だけが行う)。
-  const [translatorMissing, setTranslatorMissing] = useState(false);
+  // 儀式: closed → (ブルスコンの対象端末で未導入なら) 確認シート → 儀式。download は確認シートで承諾した時だけ true
+  const [ritual, setRitual] = useState<'closed' | 'sheet' | { download: boolean }>('closed');
+  // Nano が無く WebGPU がある端末なのにブルスコンが未導入 (確認シートを出す / 召喚済みなら儀式をもう一度できるようにする)。
+  // 導入は儀式だけが行う。
+  const [slmMissing, setSlmMissing] = useState(false);
+  const [storageFull, setStorageFull] = useState(false);
 
   const agent = session.agent ?? null;
   const did = session.did ?? null;
@@ -118,13 +123,23 @@ export function Spirit() {
   }, [session.status, agent, did]);
 
   const summoned = points?.summoned === true;
-  const checkTranslatorMissing = useCallback(async () => {
-    const missing = (await isSarashinaEligible().catch(() => false)) && !(await isSarashinaInstalled());
-    setTranslatorMissing(missing);
+  const checkSlmMissing = useCallback(async () => {
+    const missing = (await isSlmEligible().catch(() => false)) && !(await isSlmInstalled());
+    setSlmMissing(missing);
   }, []);
   useEffect(() => {
-    if (summoned) void checkTranslatorMissing();
-  }, [summoned, checkTranslatorMissing]);
+    if (loaded) void checkSlmMissing();
+  }, [loaded, checkSlmMissing]);
+
+  const openRitual = useCallback(() => {
+    setStorageFull(false);
+    setRitual(slmMissing ? 'sheet' : { download: false });
+  }, [slmMissing]);
+  // 確認シートで「今はやめる」: 召喚前は儀式を手書きの口上で終える (ダウンロードしない)。召喚済みは閉じるだけ
+  const onDeclineSheet = useCallback(() => {
+    setRitual(summoned ? 'closed' : { download: false });
+  }, [summoned]);
+  const onStorageFull = useCallback(() => setStorageFull(true), []);
 
   // 投稿直後にポイント再計算
   useOnPosted(() => {
@@ -147,7 +162,7 @@ export function Spirit() {
   }, [session.status, did, userName]);
 
   const onCancelRitual = useCallback(() => {
-    setRitualOpen(false);
+    setRitual('closed');
   }, []);
 
   const onCompleteRitual = useCallback(
@@ -168,16 +183,17 @@ export function Spirit() {
         console.warn('welcome message save failed', e);
         throw e;
       }
-      setRitualOpen(false);
+      setRitual('closed');
+      await checkSlmMissing();
     },
-    [agent, did],
+    [agent, did, checkSlmMissing],
   );
 
-  // 召喚済みの儀式 (翻訳の端末内 AI の導入だけ): spiritChat も summoned フラグも書かない。閉じるだけ。
+  // 召喚済みの儀式 (ブルスコンの導入だけ): spiritChat も summoned フラグも書かない。閉じるだけ。
   const onCompleteReinstall = useCallback(async () => {
-    setRitualOpen(false);
-    await checkTranslatorMissing();
-  }, [checkTranslatorMissing]);
+    setRitual('closed');
+    await checkSlmMissing();
+  }, [checkSlmMissing]);
 
   if (session.status === 'loading' || !loaded) {
     return (
@@ -244,9 +260,10 @@ export function Spirit() {
       {!points.summoned && points.viaPosts >= SUMMON_THRESHOLD && (
         <section style={{ marginTop: '1em', textAlign: 'center' }}>
           <SpiritBubble>十分な歩みが積まれた。今なら、召喚の儀式を始められる。</SpiritBubble>
-          <button onClick={() => setRitualOpen(true)} style={RITUAL_BUTTON_STYLE}>
+          <button onClick={openRitual} style={RITUAL_BUTTON_STYLE}>
             召喚の儀式を始める
           </button>
+          {storageFull && <p style={STORAGE_FULL_STYLE}>{SLM_STORAGE_FULL_MESSAGE}</p>}
         </section>
       )}
 
@@ -259,11 +276,12 @@ export function Spirit() {
             ))}
           </section>
 
-          {translatorMissing && (
+          {slmMissing && (
             <section style={{ marginTop: '1em', textAlign: 'center' }}>
-              <button onClick={() => setRitualOpen(true)} style={RITUAL_BUTTON_STYLE}>
+              <button onClick={openRitual} style={RITUAL_BUTTON_STYLE}>
                 召喚の儀式を始める
               </button>
+              {storageFull && <p style={STORAGE_FULL_STYLE}>{SLM_STORAGE_FULL_MESSAGE}</p>}
             </section>
           )}
 
@@ -311,12 +329,17 @@ export function Spirit() {
         </>
       )}
 
-      {ritualOpen && agent && (
+      {ritual === 'sheet' && (
+        <SlmInstallSheet onAccept={() => setRitual({ download: true })} onDecline={onDeclineSheet} />
+      )}
+      {typeof ritual === 'object' && agent && (
         <SummoningRitual
           agent={agent}
           userName={userName}
           systemPrompt={systemPrompt}
+          download={ritual.download}
           onComplete={points.summoned ? onCompleteReinstall : onCompleteRitual}
+          onStorageFull={onStorageFull}
           onCancel={onCancelRitual}
         />
       )}

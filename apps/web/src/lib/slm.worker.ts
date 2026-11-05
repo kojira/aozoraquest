@@ -4,8 +4,10 @@
  * メッセージ:
  *   { type: 'init', model, allowNetwork }              → { type: 'ready' } / { type: 'error', code? }
  *                                                        (model: 'lfm' | 'sarashina'。
- *                                                         読み込み中は重みの part ごと・ダウンロード中は約 1 秒ごとに { type: 'progress' } を送る。
- *                                                         allowNetwork: false はキャッシュだけで読み、欠けていれば code: 'not-cached')
+ *                                                         読み込み中は重みの part ごと・ダウンロード中は約 1 秒ごとに { type: 'progress', loaded?, total? } を送る
+ *                                                         (loaded / total は重み part の byte 数。header / tokenizer の取得中は数値なし)。
+ *                                                         allowNetwork: false はキャッシュだけで読み、欠けていれば code: 'not-cached'。
+ *                                                         Cache API に書けなければ code: 'storage-full')
  *   { type: 'generate', id, prompt, maxNewTokens, temperature, repetitionPenalty, stopAtNewline }
  *                                                      → { type: 'done', id, text } / { type: 'error', id }
  *                                                        (生成は 1 本ずつ順に実行する。model の pos / KV / readback は共有)
@@ -16,7 +18,7 @@ import { SlmModel, WebGpuUnsupportedError } from './slm-wgsl/model';
 import { createLfmTokenizer, type SlmTokenizer } from './slm-wgsl/lfm-tokenizer';
 import { SpTokenizer, type UnigramJson } from './slm-wgsl/sptok';
 import {
-  fetchHeader, fetchVerified, SARASHINA_SOURCE, SLM_SOURCE, SlmNotCachedError, type SlmFetchOptions, type SlmWeightsSource,
+  fetchHeader, fetchVerified, SARASHINA_SOURCE, SLM_SOURCE, SlmCacheWriteError, SlmNotCachedError, type SlmFetchOptions, type SlmWeightsSource,
 } from './slm-wgsl/weights';
 
 export type SlmWorkerModel = 'lfm' | 'sarashina';
@@ -53,7 +55,7 @@ function ensureReady(which: SlmWorkerModel, { allowNetwork }: SlmFetchOptions) {
       const header = await fetchHeader(source, opts);
       const tj = JSON.parse(new TextDecoder().decode(await fetchVerified(source, header.tokenizer.file, header.tokenizer, opts))) as object;
       const tok = which === 'lfm' ? createLfmTokenizer(tj) : new SpTokenizer(tj as UnigramJson);
-      const model = await SlmModel.create(source, header, () => post({ type: 'progress' }), opts);
+      const model = await SlmModel.create(source, header, (loaded, total) => post({ type: 'progress', loaded, total }), opts);
       void model.lost.then(() => { ready = null; post({ type: 'lost' }); });
       return { model, tok };
     })();
@@ -78,6 +80,7 @@ async function generate(m: GenerateMessage): Promise<string> {
 function errorCode(e: unknown): string | undefined {
   if (e instanceof WebGpuUnsupportedError) return 'webgpu-unsupported';
   if (e instanceof SlmNotCachedError) return 'not-cached';
+  if (e instanceof SlmCacheWriteError) return 'storage-full';
   return undefined;
 }
 

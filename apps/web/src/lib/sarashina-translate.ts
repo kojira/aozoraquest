@@ -27,16 +27,6 @@ export function sarashinaTranslateInput(paragraph: string): LLMInput {
   return { systemPrompt: SARASHINA_TRANSLATE_SYSTEM, history };
 }
 
-/** 出力上限: 英語 1 token ≒ 4 文字、訳は原文の 2 倍まで、最大 200。 */
-export function sarashinaMaxNewTokens(paragraph: string): number {
-  return Math.min(200, Math.ceil(paragraph.length / 2) + 16);
-}
-
-/** 空行で段落に分ける (段落内の改行は既存経路と同じく空白にまとめる)。 */
-export function splitParagraphs(body: string): string[] {
-  return body.split(/\n\s*\n/).map((p) => p.replace(/\s+/g, ' ').trim()).filter((p) => p !== '');
-}
-
 /**
  * 1 段落の出力を整える: 最初の改行までだけ使い、ラテン文字を含む括弧書き (語釈) と
  * 全体を囲む引用符を消す。cleanTranslation / looksLikeJapaneseTranslation は呼び出し側で既存どおり掛ける。
