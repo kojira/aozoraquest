@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchHeader, fetchVerified, SlmNotCachedError, streamWeights, type SlmHeader, type SlmWeightsSource } from './weights';
+import { fetchHeader, fetchVerified, SlmCacheWriteError, SlmNotCachedError, streamWeights, type SlmHeader, type SlmWeightsSource } from './weights';
 
 const X: SlmWeightsSource = { baseUrl: 'https://x', headerSha256: '0'.repeat(64), cacheName: 'slm-wgsl-v1', arch: 'lfm2' };
 
@@ -47,7 +47,7 @@ describe('sarashina weights cache-only load', () => {
     const done: number[] = [];
     await expect(streamWeights(fakeDevice, X, header, [], (d) => done.push(d), { allowNetwork: false }))
       .rejects.toBeInstanceOf(SlmNotCachedError);
-    expect(done).toEqual([1]);
+    expect(done).toEqual([4]); // part-000 (4 byte) を読み終えたところまで
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -59,6 +59,16 @@ describe('sarashina weights cache-only load', () => {
     const got = await fetchVerified(X, 'tokenizer.json', { bytes: 4, sha256: await sha256Hex(buf) }, { allowNetwork: true });
     expect(new Uint8Array(got)).toEqual(new Uint8Array(buf));
     expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it('install fails with SlmCacheWriteError when the file cannot be written to Cache API (no space)', async () => {
+    const buf = new Uint8Array([9, 9, 9, 9]).buffer;
+    vi.stubGlobal('caches', {
+      open: async () => ({ match: async () => undefined, put: async () => { throw new DOMException('quota', 'QuotaExceededError'); } }),
+    });
+    vi.stubGlobal('fetch', async () => new Response(buf));
+    await expect(fetchVerified(X, 'part-000.bin', { bytes: 4, sha256: await sha256Hex(buf) }, { allowNetwork: true }))
+      .rejects.toBeInstanceOf(SlmCacheWriteError);
   });
 });
 

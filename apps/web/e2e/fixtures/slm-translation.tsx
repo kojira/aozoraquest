@@ -1,10 +1,11 @@
-// Test entry only: Gemini Nano の無いブラウザで、ブルスコンタブの召喚の儀式 (sarashina の導入) → 英語投稿の翻訳 を本物のモジュールで動かす。
-// ?spirit は召喚済みユーザーのブルスコンタブ (本物の Spirit。PDS は書き込み回数を数えるだけの偽 agent)。
+// Test entry only: Gemini Nano の無いブラウザで、精霊タブの召喚の儀式 (確認シート → ブルスコン = LFM2.5 の導入) → 英語投稿の翻訳 を本物のモジュールで動かす。
+// ?spirit は召喚済みユーザーの精霊タブ (本物の Spirit。PDS は書き込み回数を数えるだけの偽 agent)。?privacy はプライバシーポリシー。
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import type { Agent } from '@atproto/api';
 import { PostBody } from '../../src/components/post-body';
 import { Spirit } from '../../src/routes/spirit';
+import { Privacy } from '../../src/routes/privacy';
 import { SessionContext } from '../../src/lib/session';
 import '../../src/styles.css';
 
@@ -19,9 +20,10 @@ function App() {
   );
 }
 
-const DID = 'did:plc:sarashinae2e';
+const DID = 'did:plc:slmtranslatione2e';
 w.pdsWrites = 0;
-const summonedPower = { viaPosts: 12, userMessages: 0, cardDraws: 0, summoned: true, updatedAt: '2026-01-01T00:00:00Z' };
+// ?unsummoned は召喚前 (投稿は足りている) のユーザー
+const summonedPower = { viaPosts: 12, userMessages: 0, cardDraws: 0, summoned: !new URLSearchParams(location.search).has('unsummoned'), updatedAt: '2026-01-01T00:00:00Z' };
 const fakeAgent = {
   assertDid: DID,
   com: { atproto: { repo: {
@@ -36,7 +38,10 @@ const fakeAgent = {
 } as unknown as Agent;
 
 const root = createRoot(document.getElementById('root')!);
-if (new URLSearchParams(location.search).has('spirit')) {
+const q = new URLSearchParams(location.search);
+if (q.has('privacy')) {
+  root.render(<div style={{ padding: '1em' }}><Privacy /></div>);
+} else if (q.has('spirit')) {
   root.render(
     <SessionContext.Provider value={{ status: 'signed-in', did: DID, handle: 'test.example', agent: fakeAgent }}>
       <MemoryRouter><div style={{ padding: '1em' }}><Spirit /></div></MemoryRouter>

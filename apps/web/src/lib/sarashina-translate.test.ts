@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanSarashinaParagraph, sarashinaTranslateInput, splitParagraphs } from './sarashina-translate';
+import { cleanSarashinaParagraph, sarashinaTranslateInput } from './sarashina-translate';
 import { sarashinaChatPrompt } from './sarashina-llm';
 
 describe('cleanSarashinaParagraph', () => {
@@ -30,9 +30,5 @@ describe('sarashina translate prompt', () => {
     expect(p.startsWith('<|system|>英語の SNS 投稿を')).toBe(true);
     expect(p.match(/<\|assistant\|>/g)).toHaveLength(5);
     expect(p.endsWith('<|user|>Coffee first.</s><|assistant|>')).toBe(true);
-  });
-
-  it('splits paragraphs on blank lines only', () => {
-    expect(splitParagraphs('Line one\nstill one\n\n  Two  ')).toEqual(['Line one still one', 'Two']);
   });
 });

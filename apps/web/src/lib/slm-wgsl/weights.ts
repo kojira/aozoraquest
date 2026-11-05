@@ -17,17 +17,21 @@ export const SLM_HF_COMMIT = '2469a7cb1621a4633f258b66558bd39aa0e50b00';
 export const SLM_BASE_URL = `${HF_REPO}/${SLM_HF_COMMIT}/wgsl/lfm2.5-1.2b-jp-q4`;
 /** header.json の sha256 (e2e の model-urls で HF の X-Linked-Etag と照合する)。 */
 export const SLM_HEADER_SHA256 = '6c83271516b3707fb4847c16f72d8f7175842721601a4c1a5ac567a62396d481';
-/** part 合計 (重み本体)。tokenizer.json (約 4.7MB) は別。 */
+/** part 合計 (重み本体)。tokenizer.json は別。 */
 export const SLM_TOTAL_BYTES = 658_762_752;
+export const SLM_TOKENIZER_BYTES = 4_733_020;
 export const SLM_CACHE_NAME = 'slm-wgsl-v1';
+/** LFM Open License v1.0 の原文 (HF に重みと一緒に置いた写し)。privacy のクレジットからリンクする。 */
+export const SLM_LICENSE_URL = `${SLM_BASE_URL}/LICENSE`;
 export const SLM_SOURCE: SlmWeightsSource = { baseUrl: SLM_BASE_URL, headerSha256: SLM_HEADER_SHA256, cacheName: SLM_CACHE_NAME, arch: 'lfm2' };
 
 /** sarashina2.2-0.5b (翻訳専用。LFM へ移した後に削る)。 */
 export const SARASHINA_HF_COMMIT = '5770ffdd050e24172b17f5bce878eccd8c731aa6';
 export const SARASHINA_BASE_URL = `${HF_REPO}/${SARASHINA_HF_COMMIT}/wgsl/sarashina2.2-0.5b-q4`;
 export const SARASHINA_HEADER_SHA256 = 'c6437f10c811287be4f39a1991a96174e0ec0109cb01d74957cc6ccef86810a1';
-/** part 合計 (重み本体)。tokenizer.json (約 3.6MB) は別。 */
+/** part 合計 (重み本体)。tokenizer.json は別。 */
 export const SARASHINA_TOTAL_BYTES = 446_305_280;
+export const SARASHINA_TOKENIZER_BYTES = 3_650_343;
 export const SARASHINA_CACHE_NAME = 'sarashina-wgsl-v1';
 export const SARASHINA_SOURCE: SlmWeightsSource = {
   baseUrl: SARASHINA_BASE_URL, headerSha256: SARASHINA_HEADER_SHA256, cacheName: SARASHINA_CACHE_NAME, arch: 'llama',
@@ -100,16 +104,25 @@ export class SlmNotCachedError extends Error {
   }
 }
 
+/** 取得したファイルを Cache API に書けなかった (端末の空きが足りない)。導入は失敗にする (中途半端なキャッシュは main 側が消す)。 */
+export class SlmCacheWriteError extends Error {
+  constructor(file: string, cause: unknown) {
+    super(`slm cache write failed (${file}): ${String((cause as Error)?.message ?? cause)}`);
+    this.name = 'SlmCacheWriteError';
+  }
+}
+
 /**
  * allowNetwork: false なら Cache API だけを読み、無ければ取得せず SlmNotCachedError。ネットワークから取るのは導入 (召喚の儀式) だけ。
- * onHeartbeat: ダウンロード中に byte が届いている間、最大 HEARTBEAT_MS に 1 回呼ぶ (低速回線で 32MB の part を待つ間も停止監視を進める。Refs #779)。
+ * onHeartbeat: ダウンロード中に byte が届いている間、最大 HEARTBEAT_MS に 1 回、そのファイルで届いた byte 数を渡して呼ぶ
+ * (低速回線で 32MB の part を待つ間も停止監視を進め、進捗を出す。Refs #779)。
  */
-export interface SlmFetchOptions { allowNetwork: boolean; onHeartbeat?: () => void }
+export interface SlmFetchOptions { allowNetwork: boolean; onHeartbeat?: (bytesRead: number) => void }
 
 const HEARTBEAT_MS = 1000;
 
 /** res.body を chunk ごとに読み、byte が届くたびに (間引いて) onHeartbeat を呼ぶ。bytes を超えたら打ち切る。 */
-async function readBody(res: Response, bytes: number, file: string, onHeartbeat?: () => void): Promise<ArrayBuffer> {
+async function readBody(res: Response, bytes: number, file: string, onHeartbeat?: (bytesRead: number) => void): Promise<ArrayBuffer> {
   if (!res.body) return res.arrayBuffer();
   const out = new Uint8Array(bytes);
   const reader = res.body.getReader();
@@ -124,7 +137,7 @@ async function readBody(res: Response, bytes: number, file: string, onHeartbeat?
     }
     out.set(value, n);
     n += value.byteLength;
-    if (onHeartbeat && Date.now() - last >= HEARTBEAT_MS) { last = Date.now(); onHeartbeat(); }
+    if (onHeartbeat && Date.now() - last >= HEARTBEAT_MS) { last = Date.now(); onHeartbeat(n); }
   }
   return n === bytes ? out.buffer : out.buffer.slice(0, n);
 }
@@ -151,7 +164,13 @@ export async function fetchVerified(
   if (buf.byteLength !== entry.bytes || await sha256Hex(buf) !== entry.sha256) {
     throw new Error(`slm file mismatch (${file})`);
   }
-  await cache?.put(url, new Response(buf)).catch((e: unknown) => console.warn('[slm] cache put failed', e));
+  if (cache) {
+    try {
+      await cache.put(url, new Response(buf));
+    } catch (e) {
+      throw new SlmCacheWriteError(file, e);
+    }
+  }
   return buf;
 }
 
@@ -192,20 +211,22 @@ export async function isSlmCached(source: SlmWeightsSource): Promise<boolean> {
 /**
  * part を順に読み、segments (ファイル順・4 byte 境界) に従って GPU buffer へ書く。
  * part の境界をまたぐ segment は part ごとに分けて書く。
+ * onProgress には読み終えた byte 数 (ダウンロード中の part は届いた分まで) と part の合計を渡す。
  */
 export async function streamWeights(
   device: GPUDevice,
   source: SlmWeightsSource,
   header: SlmHeader,
   segments: WeightSegment[],
-  onPartDone: (done: number, total: number) => void,
+  onProgress: (loaded: number, total: number) => void,
   opts: SlmFetchOptions,
 ): Promise<void> {
   let partStart = 0;
   let si = 0;
   for (let p = 0; p < header.parts.length; p++) {
     const part = header.parts[p]!;
-    const buf = await fetchVerified(source, part.file, part, opts);
+    const start = partStart;
+    const buf = await fetchVerified(source, part.file, part, { ...opts, onHeartbeat: (n) => onProgress(start + n, header.totalBytes) });
     const partEnd = partStart + part.bytes;
     while (si < segments.length && segments[si]!.start < partEnd) {
       const s = segments[si]!;
@@ -217,7 +238,7 @@ export async function streamWeights(
     }
     partStart = partEnd;
     await device.queue.onSubmittedWorkDone(); // 次の part を読む前に GPU 側のコピーを終わらせて CPU のメモリを返す
-    onPartDone(p + 1, header.parts.length);
+    onProgress(partEnd, header.totalBytes);
   }
   if (si < segments.length) throw new Error('slm weights ended early');
 }
