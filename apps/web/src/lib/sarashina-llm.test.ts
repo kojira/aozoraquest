@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * 送られ、結果が「未導入」として翻訳 backend の選択から外れることを確かめる。
  */
 const cache = vi.hoisted(() => ({ complete: true }));
-vi.mock('./slm-wgsl/weights', () => ({ isSarashinaCached: async () => cache.complete }));
+vi.mock('./slm-wgsl/weights', () => ({ SARASHINA_SOURCE: {}, isSlmCached: async () => cache.complete }));
 vi.mock('./gemini-nano-availability', () => ({ detectGeminiNano: async () => 'unavailable' }));
 vi.mock('./gemini-nano-llm', () => ({
   GEMINI_NANO: { id: 'gemini-nano', label: 'Nano', availability: async () => false, generate: async () => '' },
@@ -39,7 +39,7 @@ describe('sarashina translate-time load', () => {
     cache.complete = false; // その後ブラウザがキャッシュを消した
 
     await expect(loadSarashina()).rejects.toBeInstanceOf(SarashinaNotInstalledError);
-    expect(inits).toEqual([{ type: 'init', allowNetwork: false }]);
+    expect(inits).toEqual([{ type: 'init', model: 'sarashina', allowNetwork: false }]);
     expect(await isSarashinaInstalled()).toBe(false);
     resetLocalLLMChoice(); // translate.ts が SarashinaNotInstalledError で呼ぶ
     expect(await pickLocalLLM(false, 'translation')).toBeNull();
