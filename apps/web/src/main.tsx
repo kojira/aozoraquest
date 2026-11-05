@@ -23,6 +23,7 @@ const AdminMap = lazy(() => import('@/routes/admin-map').then(m => ({ default: m
 const AdminMonsters = lazy(() => import('@/routes/admin-monsters').then(m => ({ default: m.AdminMonsters })));
 const AdminItems = lazy(() => import('@/routes/admin-items').then(m => ({ default: m.AdminItems })));
 const AdminShops = lazy(() => import('@/routes/admin-shops').then(m => ({ default: m.AdminShops })));
+const AdminCasino = lazy(() => import('@/routes/admin-casino').then(m => ({ default: m.AdminCasino })));
 const AdminNpcs = lazy(() => import('@/routes/admin-npcs').then(m => ({ default: m.AdminNpcs })));
 const AdminQuests = lazy(() => import('@/routes/admin-quests').then(m => ({ default: m.AdminQuests })));
 const AdminJobs = lazy(() => import('@/routes/admin-jobs').then(m => ({ default: m.AdminJobs })));
@@ -95,6 +96,7 @@ const router = createBrowserRouter([
       { path: 'admin/monsters', element: <AdminMonsters /> },
       { path: 'admin/items', element: <AdminItems /> },
       { path: 'admin/shops', element: <AdminShops /> },
+      { path: 'admin/casino', element: <AdminCasino /> },
       { path: 'admin/npcs', element: <AdminNpcs /> },
       { path: 'admin/quests', element: <AdminQuests /> },
       { path: 'admin/jobs', element: <AdminJobs /> },

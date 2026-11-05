@@ -12,7 +12,7 @@ import { ADMIN_DID, assertAdminDid, assertProdTarget, parseArgs, planFor, PROMOT
 import { NAMES } from '../../../scripts/admin-data.mjs';
 
 describe('scripts/promote-admin-records.mjs', () => {
-  it('対象は admin-data.mjs の NAMES と同じ 11 種 (map / tileArt / jobs は含めない。characters が先頭 D-CHAR-001)', () => {
+  it('対象は admin-data.mjs の NAMES と同じ 12 種 (map / tileArt / jobs は含めない。characters が先頭 D-CHAR-001)', () => {
     expect([...PROMOTE_NAMES].sort()).toEqual([...NAMES].sort());
     expect(PROMOTE_NAMES[0]).toBe('characters');
     for (const n of ['map', 'tileArt', 'jobs']) expect(PROMOTE_NAMES).not.toContain(n);

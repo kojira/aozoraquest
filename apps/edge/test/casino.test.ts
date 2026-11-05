@@ -204,3 +204,12 @@ describe('カジノ (D-CASINO-001)', () => {
     });
   });
 });
+
+describe('せいなるみず (ふっかつのはね の代わり。D-CASINO-001 PR4)', () => {
+  it('景品の一覧に 800 枚で並び、戦闘で使える・店には出ない・負けても失わない', async () => {
+    const { casinoTables, isBattleItem, rollDefeatLoss: loss } = await import('@aozoraquest/core');
+    expect(casinoTables().prizes.find((p) => p.id === 'holy-water')).toMatchObject({ kind: 'item', coins: 800 });
+    expect(isBattleItem('holy-water')).toBe(true);
+    expect(loss({ 'holy-water': 3 }, 0, 1)).toEqual([]);
+  });
+});

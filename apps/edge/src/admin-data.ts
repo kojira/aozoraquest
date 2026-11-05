@@ -22,6 +22,7 @@ import {
   currentDialogue, missingDialogueNpc, validateDialogue, type DialogueData,
   characterTextsInRecord, currentCharacters, missingCharacterRef, validateCharacters, type CharacterDef,
   assertStoryFlagTotal, currentStory, missingStoryBattle, recruitGuildIssue, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
+  casinoTablesIssue, type CasinoTables,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
@@ -39,7 +40,7 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 const PATH_PREFIX = '/api/admin/data/';
 const RKEY = 'self';
 /** API で読み書きできる world.* レコード (core の ADMIN_WORLD_RECORDS の部分集合。CLI の NAMES と一致を検査)。 */
-export const ADMIN_DATA_NAMES = ['characters', 'monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
+export const ADMIN_DATA_NAMES = ['characters', 'monsters', 'monsterArt', 'items', 'casino', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
 const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
@@ -163,6 +164,7 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const dangling = danglingRefs('quest', quests.map((q) => q.id))[0];
     return dangling ? describeDanglingRef(dangling) : missingStoryBattle([], quests);
   }
+  if (name === 'casino') return casinoTablesIssue(value as CasinoTables); // 形・RTP 85〜98%・景品は casinoOnly (D-CASINO-001)
   if (name === 'items') return validateItemsCandidate(value);
   if (name === 'monsters') return validateMonstersCandidate(value);
   if (name === 'monsterArt') { validateMonsterArts(listOf<MonsterArtDef>(value, 'arts')); return null; }
