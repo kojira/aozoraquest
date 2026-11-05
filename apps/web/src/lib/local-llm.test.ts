@@ -7,7 +7,7 @@ vi.mock('./gemini-nano-llm', () => ({
   GEMINI_NANO: { id: 'gemini-nano', label: 'Nano', availability: async () => nano.available, generate: async () => '' },
 }));
 vi.mock('./slm-llm', () => ({
-  SLM: { id: 'lfm2.5-1.2b-jp', label: 'ブルスコン', purposes: ['translation'], availability: async () => slm.available, generate: async () => '' },
+  SLM: { id: 'lfm2.5-1.2b-jp', label: 'ブルスコン', purposes: ['general', 'translation'], availability: async () => slm.available, generate: async () => '' },
 }));
 vi.mock('./sarashina-llm', () => ({
   SARASHINA: { id: 'sarashina-0.5b', label: 'sarashina', purposes: ['translation'], availability: async () => sara.available, generate: async () => '' },
@@ -33,9 +33,13 @@ describe('pickLocalLLM', () => {
     expect((await pickLocalLLM(false, 'translation'))?.id).toBe('sarashina-0.5b');
   });
 
-  it('never picks the WGSL backends for greeting / card text yet', async () => {
-    slm.available = true; sara.available = true;
+  it('card text (general): Nano if available, else LFM if installed, else null (sarashina never)', async () => {
+    sara.available = true;
     expect(await pickLocalLLM()).toBeNull();
+    slm.available = true;
+    expect((await pickLocalLLM(true))?.id).toBe('lfm2.5-1.2b-jp');
+    nano.available = true;
+    expect((await pickLocalLLM(true))?.id).toBe('gemini-nano');
   });
 
   it('re-evaluates after resetLocalLLMChoice (install finished during the ritual)', async () => {

@@ -34,6 +34,10 @@ export interface LLMOptions {
   maxNewTokens?: number;
   /** 最初の改行で生成を止める (翻訳の 1 段落)。token 単位で止められる backend (ブルスコン) だけが従う。 */
   stopAtNewline?: boolean;
+  /** assistant の書き出し (カードの「カード名:」)。生成はその続きから。ブルスコンだけが従う。 */
+  prefill?: string;
+  /** 繰返し罰 (1 = なし)。ブルスコンだけが従う。 */
+  repetitionPenalty?: number;
   signal?: AbortSignal;
 }
 
@@ -48,6 +52,11 @@ export interface LocalLLM {
   readonly label: string;
   /** この backend を使ってよい用途。省略時はすべての用途。 */
   readonly purposes?: readonly LLMPurpose[];
+  /** カード文のプロンプト方式。'two-stage' (既定) = 能力とフレーバーを 2 段で書かせる (Nano)。
+   *  'four-line' = タイプ・マナ等は JS で決め、4 行 (カード名 / 能力名 / 説明 / フレーバー) だけ書かせる (ブルスコン)。 */
+  readonly cardPrompt?: 'two-stage' | 'four-line';
+  /** prompt の token 数 (prefill 込み)。ctx に収まるかを確かめる backend だけが持つ。 */
+  countPromptTokens?(input: LLMInput, prefill?: string): Promise<number>;
   /** 今このセッションで使えるか。memoize 推奨 (caller が連呼するため)。 */
   availability(): Promise<boolean>;
   /** 1 turn の生成。`history` 最後の user message への応答を返す。

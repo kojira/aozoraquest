@@ -11,6 +11,7 @@
  *   { type: 'generate', id, prompt, maxNewTokens, temperature, repetitionPenalty, stopAtNewline }
  *                                                      → { type: 'done', id, text } / { type: 'error', id }
  *                                                        (生成は 1 本ずつ順に実行する。model の pos / KV / readback は共有)
+ *   { type: 'count', id, prompt }                     → { type: 'counted', id, count } (prompt の token 数。カードの prompt が ctx に収まるか)
  *   { type: 'dispose' }                                → GPU buffer を destroy して { type: 'disposed' }
  * GPU device を失ったら { type: 'lost' } を送る (main 側が Worker ごと作り直す)。
  */
@@ -32,7 +33,11 @@ interface GenerateMessage {
   repetitionPenalty: number;
   stopAtNewline: boolean;
 }
-type IncomingMessage = { type: 'init'; model: SlmWorkerModel; allowNetwork: boolean } | GenerateMessage | { type: 'dispose' };
+type IncomingMessage =
+  | { type: 'init'; model: SlmWorkerModel; allowNetwork: boolean }
+  | GenerateMessage
+  | { type: 'count'; id: string; prompt: string }
+  | { type: 'dispose' };
 
 const TOP_P = 0.9;
 const SOURCES: Record<SlmWorkerModel, SlmWeightsSource> = { lfm: SLM_SOURCE, sarashina: SARASHINA_SOURCE };
@@ -95,6 +100,11 @@ self.addEventListener('message', (ev: MessageEvent<IncomingMessage>) => {
   } else if (m.type === 'generate') {
     generating = generating.then(() => generate(m)).then(
       (text) => post({ type: 'done', id: m.id, text }),
+      (e: unknown) => post({ type: 'error', id: m.id, error: String((e as Error)?.message ?? e) }),
+    );
+  } else if (m.type === 'count') {
+    ensureReady(loadedModel, { allowNetwork: false }).then(
+      ({ tok }) => post({ type: 'counted', id: m.id, count: tok.encode(m.prompt).length }),
       (e: unknown) => post({ type: 'error', id: m.id, error: String((e as Error)?.message ?? e) }),
     );
   } else if (m.type === 'dispose') {

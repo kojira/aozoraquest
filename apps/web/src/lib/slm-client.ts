@@ -47,6 +47,8 @@ export interface SlmClient {
   /** 読み込み済み / 読み込み中の Worker の完了を待つ (失敗は無視)。 */
   settle(): Promise<void>;
   generate(req: SlmGenerateRequest): Promise<string>;
+  /** prompt の token 数 (読み込み済みの tokenizer で数える)。 */
+  countTokens(prompt: string): Promise<number>;
   dispose(): void;
 }
 
@@ -99,6 +101,7 @@ export function createSlmClient(model: SlmWorkerModel): SlmClient {
       if (!p) return;
       pending.delete(m.id);
       if (m.type === 'done') p.resolve(m.text as string);
+      else if (m.type === 'counted') p.resolve(String(m.count));
       else p.reject(new Error(String(m.error)));
     });
     const ready = new Promise<void>((resolve, reject) => {
@@ -148,12 +151,25 @@ export function createSlmClient(model: SlmWorkerModel): SlmClient {
     }
   }
 
+  async function countTokens(prompt: string): Promise<number> {
+    await ensure(false);
+    const w = worker;
+    if (!w) throw new Error(`${model} worker disposed`);
+    const id = String(nextId++);
+    const n = await new Promise<string>((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      w.postMessage({ type: 'count', id, prompt });
+    });
+    return Number(n);
+  }
+
   if (typeof window !== 'undefined') window.addEventListener('pagehide', dispose);
 
   return {
     ensure,
     async settle() { if (workerReady) await workerReady.catch(() => undefined); },
     generate,
+    countTokens,
     dispose,
   };
 }
