@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import { zenTtsAssetsPlugin } from './vite-zen-tts-assets';
 
 /**
  * 各 environment 用の client-metadata.json を build 時に生成する。
@@ -50,7 +51,7 @@ function clientMetadataPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), clientMetadataPlugin()],
+  plugins: [react(), clientMetadataPlugin(), zenTtsAssetsPlugin()],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
