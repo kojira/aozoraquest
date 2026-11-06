@@ -5,12 +5,14 @@
  *   { type: 'init', allowNetwork }  → 取得中は { type: 'progress', loaded, total } → { type: 'ready', backend } / { type: 'error', code? }
  *                                     (声・G2P・CPU カーネルを tts-v1 から読む。allowNetwork: false で欠けていれば code: 'not-cached')
  *   { type: 'speak', id, text, emotion } → { type: 'spoken', id, pcm (transfer), sampleRate } / { type: 'error', id }
+ *                                     (文ごとに同じ感情で順に合成し、0.15 秒の無音でつないだ 1 本を返す)
  * WebGPU があれば GPU、無ければ ZEN-TTS 自身の CPU (WASM SIMD、さらにその中の Worker)。
  */
 import { ZenTts } from 'zen-tts';
 import { TTS_ASSETS, TTS_CACHE_NAME, TTS_CPU_WASM_URL, TTS_MODELS_URL, TTS_TOTAL_BYTES, TTS_ZTM_URL } from './tts-assets';
 import { fetchTtsAsset, TtsNotCachedError, type TtsCacheLike } from './tts-cache';
 import { cachedAssetFetch } from './tts-fetch';
+import { joinSentencePcm, splitSentences } from './split-sentences';
 import type { TtsEmotion } from './tts-voice';
 
 type Incoming = { type: 'init'; allowNetwork: boolean } | { type: 'speak'; id: string; text: string; emotion: TtsEmotion };
@@ -52,8 +54,15 @@ self.onmessage = (ev: MessageEvent<Incoming>) => {
     queue = queue.then(async () => {
       try {
         const tts = await load(false);
-        const r = await tts.speak(m.text, { emotion: m.emotion });
-        post({ type: 'spoken', id: m.id, pcm: r.audio, sampleRate: r.sampleRate }, [r.audio.buffer]);
+        const pieces: Float32Array[] = [];
+        let sampleRate = 0;
+        for (const sentence of splitSentences(m.text)) {
+          const r = await tts.speak(sentence, { emotion: m.emotion });
+          pieces.push(r.audio);
+          sampleRate = r.sampleRate;
+        }
+        const pcm = joinSentencePcm(pieces, sampleRate);
+        post({ type: 'spoken', id: m.id, pcm, sampleRate }, [pcm.buffer]);
       } catch (e) {
         post({ type: 'error', id: m.id, error: String((e as Error)?.message ?? e) });
       }
