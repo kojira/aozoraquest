@@ -28,6 +28,8 @@ import { withCharacterNames } from '@aozoraquest/core';
 import { NpcPortrait } from './npc-image';
 import { StoryEffectLayer } from './story-effect-layer';
 import { storyEffectState, transientStoryEffects } from '@/lib/story-effects';
+import { useLineVoice } from '@/lib/tts/use-line-voice';
+import { VoiceToggle } from './voice/voice-toggle';
 
 const CHAR_MS = 45;
 
@@ -220,6 +222,9 @@ export function DialogueWindow({
 
   const line = currentLine(lines, st);
   const asking = choicesAsked;
+  // Blueskyちゃんの声 (D-TTS-001)。行が変わる・窓が閉じると止まる。トグルは声つきの行がある会話だけ。
+  const voiced = useMemo(() => lines.some((l) => l.voice), [lines]);
+  useLineVoice(line && !st.done ? line : null, lines[st.index + 1], `${stepKey(step)}:${st.index}`);
   // Keep focus on the dialogue surface: held Enter must not select "はい".
   // 段つきの会話は done 後も最後の行を残す: 呼出側が次の段を渡すか閉じるまで、送り面と会話
   // イラストを外さない (外すと暗転アニメが最初から再生され、画面が明滅する)。
@@ -338,6 +343,12 @@ export function DialogueWindow({
             <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap mapSprite={shownPortrait.mapSprite} />
           </div>
         ) : <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} mapSprite={shownPortrait.mapSprite} />)}
+        {/* Blueskyちゃんの声 (D-TTS-001): 名前プレートの段の右端。本文の欄には入れない (本文を狭めない) */}
+        {voiced && (
+          <div style={onMap ? { position: 'absolute', right: 8, bottom: 'calc(35% + 0.5em + 0.4em)', zIndex: 1, pointerEvents: 'auto' } : { float: 'right', marginRight: 8, marginBottom: 2 }}>
+            <VoiceToggle variant="dialogue" />
+          </div>
+        )}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"
