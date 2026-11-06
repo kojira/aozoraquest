@@ -25,7 +25,8 @@
     "hls.js": "^1.6.16",
     "react": "^18",
     "react-dom": "^18",
-    "react-router-dom": "^7"
+    "react-router-dom": "^7",
+    "zen-tts": "github:zenryokukikai/zen-tts#34fc2288e682bc87a6fccaf8d158c5c0647adccc"
   },
   "devDependencies": {
     "@babel/core": "^7",

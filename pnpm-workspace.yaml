@@ -15,3 +15,8 @@ minimumReleaseAge: 10080
 # platform 別 optional dep で解決、playwright のブラウザは CI で別途 install)。よって
 # onlyBuiltDependencies は空のまま = postinstall を走らせない (攻撃面を減らす、サプライチェーン
 # 対策と一致)。特定依存の build script が必要になったらここに列挙する。
+#
+# zen-tts (D-TTS-001): npm に無く GitHub のタグ v1.2.0 の commit で固定して入れる。git 依存は dist を持たず、
+# prepare (tsc だけ) で作るので、この commit の tarball に限って build を許す。
+onlyBuiltDependencies:
+  - "zen-tts@https://codeload.github.com/zenryokukikai/zen-tts/tar.gz/34fc2288e682bc87a6fccaf8d158c5c0647adccc"
