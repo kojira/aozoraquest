@@ -2,6 +2,7 @@ import type { Agent } from '@atproto/api';
 import { assertNpcImage, assertNpcImageDimensions, inspectNpcImage, npcExpressionImage, NPC_IMAGE_BYTES, parseNpcLine, type NpcDef, type NpcImage, type NpcImageKind } from '@aozoraquest/core';
 import type { DialogueLine } from './dialogue';
 import { getPrimaryAdminDid } from './runtime-config';
+import { npcVoice } from './tts/tts-voice';
 import { EDGE_URL } from './edge-config';
 
 export interface PreparedNpcImage { image: NpcImage; blob: Blob; url: string; uploaded?: NpcImage }
@@ -24,14 +25,16 @@ export function npcImageUrl(id: string, kind: NpcImageKind, image: NpcImage, exp
  * NPC の台詞を会話窓の行にする (D-DIALOGUE-005)。先頭の表情タグは表示から外し、
  * 登録済みの表情画像があればその行だけの portrait にする。無ければ窓の通常 portrait のまま。
  * 演出タグ `[fx:…]` (E2) はその行の effects にする (お知らせと同じ演出層が再生する)。
+ * Blueskyちゃん (見た目 bluesky) の行には声の印 voice を付ける (D-TTS-001)。
  */
-export function npcDialogueLines(npc: Pick<NpcDef, 'id' | 'name' | 'expressionImages'>, lines: readonly string[],
+export function npcDialogueLines(npc: Pick<NpcDef, 'id' | 'name' | 'expressionImages' | 'spritePreset'>, lines: readonly string[],
   imageUrl: (expression: string, image: NpcImage) => string = (expression, image) => npcImageUrl(npc.id, 'portrait', image, expression)): DialogueLine[] {
+  const voice = npcVoice(npc);
   return lines.map((raw) => {
     const { expression, effects, text } = parseNpcLine(raw);
     const image = npcExpressionImage(npc, expression);
     return { speaker: npc.name, text, ...(image && expression ? { portrait: { src: imageUrl(expression, image), name: npc.name } } : {}),
-      ...(effects ? { effects } : {}) };
+      ...(effects ? { effects } : {}), ...(voice ? { voice: { voice, ...(expression ? { expression } : {}) } } : {}) };
   });
 }
 async function rawCid(blob: Blob): Promise<string> {

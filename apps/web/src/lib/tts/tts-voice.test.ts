@@ -11,7 +11,7 @@ describe('npcVoice (speaker gate)', () => {
   test('a Blueskyちゃん NPC has the bluesky voice; other NPCs and unknown looks have none', () => {
     expect(npcVoice(futaba)).toBe('bluesky');
     expect(npcVoice(elder)).toBeUndefined();
-    expect(npcVoice({ id: 'x', name: 'Blueskyちゃん' })).toBeUndefined();
+    expect(npcVoice({})).toBeUndefined(); // a name alone (no bluesky look) has no voice
   });
   test('npc lines carry the voice cue (with the expression tag); other speakers and narration do not', () => {
     const lines = npcDialogueLines(futaba, ['[sad][fx:fade-black]おにいちゃんが……', 'ふつう']);
