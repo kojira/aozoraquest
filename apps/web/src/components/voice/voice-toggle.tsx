@@ -16,11 +16,11 @@ export function ZenTtsCredit({ style }: { style?: CSSProperties }) {
   return <span style={style}>音声合成：ZEN-TTS（<a href={ZEN_URL} target="_blank" rel="noopener noreferrer">{ZEN_URL}</a> ）</span>;
 }
 
-function Progress({ loaded, total }: { loaded: number; total: number }) {
+function Progress({ loaded, total, compact }: { loaded: number; total: number; compact?: boolean }) {
   const all = total || TTS_TOTAL_BYTES;
   return (
     <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}>
-      <progress value={loaded} max={all} style={{ width: '6em' }} aria-label="声のダウンロード" />
+      <progress value={loaded} max={all} style={{ width: compact ? '3em' : '6em' }} aria-label="声のダウンロード" />
       <span>{MB(loaded)}/{MB(all)}MB</span>
     </span>
   );
@@ -44,12 +44,13 @@ export function VoiceToggle({ variant }: { variant: 'dialogue' | 'settings' }) {
     </button>
   );
   const status: ReactNode = installing
-    ? <Progress loaded={installing.loaded} total={installing.total} />
+    ? <Progress loaded={installing.loaded} total={installing.total} compact={variant === 'dialogue'} />
     : error ? <span role="alert" style={{ color: '#b00' }}>{error}</span>
       : variant === 'settings' ? <span>{enabled ? 'ON' : 'OFF'}</span> : null;
   if (variant === 'dialogue') {
     return (
-      <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em', fontSize: '0.85em', pointerEvents: 'auto' }}>
+      <span onClick={(e) => e.stopPropagation()} className={status ? 'dq-window' : undefined}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em', fontSize: '0.85em', pointerEvents: 'auto', ...(status ? { padding: '0.15em 0.4em', margin: 0 } : {}) }}>
         {status}
         {button}
       </span>

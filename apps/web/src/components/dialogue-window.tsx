@@ -343,6 +343,12 @@ export function DialogueWindow({
             <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} fitMap mapSprite={shownPortrait.mapSprite} />
           </div>
         ) : <NpcPortrait src={shownPortrait.src} name={shownPortrait.name} mapSprite={shownPortrait.mapSprite} />)}
+        {/* Blueskyちゃんの声 (D-TTS-001): 名前プレートの段の右端。本文の欄には入れない (本文を狭めない) */}
+        {voiced && (
+          <div style={onMap ? { position: 'absolute', right: 8, bottom: 'calc(35% + 0.5em + 0.4em)', zIndex: 1, pointerEvents: 'auto' } : { float: 'right', marginRight: 8, marginBottom: 2 }}>
+            <VoiceToggle variant="dialogue" />
+          </div>
+        )}
         {line.speaker && (
           <div
             className="dq-window aq-dialogue-pane"
@@ -379,9 +385,6 @@ export function DialogueWindow({
           {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
               先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は
               多くの SR が無視する — レビュー指摘) */}
-          {voiced && (
-            <span style={{ float: 'right', marginLeft: '0.5em' }}><VoiceToggle variant="dialogue" /></span>
-          )}
           <span style={SR_ONLY}>{line.text}</span>
           <span aria-hidden>{visibleText(line.text, st.chars)}</span>
           {complete && !asking && (
