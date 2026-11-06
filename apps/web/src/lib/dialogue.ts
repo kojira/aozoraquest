@@ -12,6 +12,7 @@
  */
 
 import type { StoryEffect } from '@aozoraquest/core';
+import type { DialogueVoiceCue } from './tts/tts-voice';
 
 export interface DialogueLine {
   /** 話者名 (名前プレートに出す)。省略時はプレートなし (地の文) */
@@ -22,6 +23,8 @@ export interface DialogueLine {
   text: string;
   /** この行が表示された瞬間に地図枠へ出す演出 (D-STORY-007)。 */
   effects?: readonly StoryEffect[];
+  /** この行を声で読む (Blueskyちゃんの行だけ。D-TTS-001)。 */
+  voice?: DialogueVoiceCue;
 }
 
 /** 最後の行を読み終えたあとに出す選択肢 (「はい / いいえ」)。選ぶと onSelect → done。 */

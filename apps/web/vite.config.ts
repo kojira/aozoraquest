@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import { zenTtsAssetsPlugin } from './vite-zen-tts-assets';
 
 /**
  * 各 environment 用の client-metadata.json を build 時に生成する。
@@ -50,10 +51,12 @@ function clientMetadataPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), clientMetadataPlugin()],
+  plugins: [react(), clientMetadataPlugin(), zenTtsAssetsPlugin()],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  // zen-tts は Worker の中で自分の cpu-worker.js を new URL(..., import.meta.url) で作るので、事前バンドルしない (D-TTS-001)
+  optimizeDeps: { exclude: ['zen-tts'] },
   server: { port: 9999, strictPort: true },
   preview: { port: 9999 },
   build: {

@@ -8,6 +8,7 @@ import {
   RURI_WGSL_MODEL_SHA256,
   RURI_WGSL_MODEL_URL,
 } from '../src/lib/cognitive-wgsl/weights';
+import { TTS_ASSETS, TTS_ZTM_URL } from '../src/lib/tts/tts-assets';
 import { SARASHINA_BASE_URL, SARASHINA_HEADER_SHA256, SLM_BASE_URL, SLM_HEADER_SHA256 } from '../src/lib/slm-wgsl/weights';
 
 /**
@@ -65,6 +66,8 @@ test.describe('HuggingFace model URLs are reachable', () => {
   for (const [label, url, sha256, bytes] of [
     ['model.aqw', COGNITIVE_WGSL_MODEL_URL, COGNITIVE_WGSL_MODEL_SHA256, COGNITIVE_WGSL_MODEL_BYTES],
     ['ruri-v3-30m.aqw', RURI_WGSL_MODEL_URL, RURI_WGSL_MODEL_SHA256, RURI_WGSL_MODEL_BYTES],
+    // Blueskyちゃんの声 (D-TTS-001。HF commit 固定)
+    ['bluesky.ztm', TTS_ZTM_URL, TTS_ASSETS.find((a) => a.url === TTS_ZTM_URL)!.sha256, TTS_ASSETS.find((a) => a.url === TTS_ZTM_URL)!.bytes],
   ] as const) {
     test(`WGSL weights (${label}) exist and match the pinned sha256`, async () => {
       const api = await request.newContext();

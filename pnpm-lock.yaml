@@ -157,6 +157,9 @@ importers:
       react-router-dom:
         specifier: ^7
         version: 7.14.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      zen-tts:
+        specifier: github:zenryokukikai/zen-tts#34fc2288e682bc87a6fccaf8d158c5c0647adccc
+        version: https://codeload.github.com/zenryokukikai/zen-tts/tar.gz/34fc2288e682bc87a6fccaf8d158c5c0647adccc
     devDependencies:
       '@babel/core':
         specifier: ^7
@@ -3123,6 +3126,11 @@ packages:
   youch@3.3.4:
     resolution: {integrity: sha512-UeVBXie8cA35DS6+nBkls68xaBBXCye0CNznrhszZjTbRVnJKQuNsyLKBTTL4ln1o1rh2PKtv35twV7irj5SEg==}
 
+  zen-tts@https://codeload.github.com/zenryokukikai/zen-tts/tar.gz/34fc2288e682bc87a6fccaf8d158c5c0647adccc:
+    resolution: {gitHosted: true, integrity: sha512-DlYw+62z9xW9TL4croc3tn5VKMxcLrFMSfX+GLZeolAXH3v30pMPwijYgVpcFeeRr5hu4L3EGOo0BbYb4HU5cA==, tarball: https://codeload.github.com/zenryokukikai/zen-tts/tar.gz/34fc2288e682bc87a6fccaf8d158c5c0647adccc}
+    version: 1.2.0
+    engines: {node: '>=26.12.1'}
+
   zod@3.22.3:
     resolution: {integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==}
 
@@ -5822,6 +5830,8 @@ snapshots:
       cookie: 0.7.2
       mustache: 4.2.0
       stacktracey: 2.2.0
+
+  zen-tts@https://codeload.github.com/zenryokukikai/zen-tts/tar.gz/34fc2288e682bc87a6fccaf8d158c5c0647adccc: {}
 
   zod@3.22.3: {}
 
