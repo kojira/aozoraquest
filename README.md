@@ -102,6 +102,15 @@
 5. **プライバシー**: 投稿の内容が第三者サーバーを経由する処理を避ける
 6. **商用化しない**。有料プランなし
 
+### ライセンスと出典
+
+このリポジトリのソースコードは [MIT License](LICENSE) で公開している。
+
+音声モデル：Blueskyちゃん（https://github.com/kojira/zen-tts-models ）／ ZEN-TTS（https://zenryokukikai.com ）
+
+- 音声モデル Blueskyちゃんは [zen-tts-models 音声モデル ライセンス 1.0](https://github.com/kojira/zen-tts-models/blob/main/LICENSE.md) に従う。
+- 音声合成エンジン ZEN-TTS は全力機械株式会社の [ZEN-TTS ライセンス 1.0](https://github.com/zenryokukikai/zen-tts/blob/main/LICENSE.md) に従い、MIT の対象外。改変・再配布はできない。
+
 ### 関連資料
 
 - AT Protocol: https://atproto.com
