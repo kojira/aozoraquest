@@ -12,6 +12,7 @@ import { getAutoTranslate, setAutoTranslate, getAnalyzePosts, setAnalyzePosts, g
 import { applyFontScale } from '@/lib/font-scale';
 import { applyTheme } from '@/lib/theme';
 import { APP_VERSION } from '@/lib/app-version';
+import { VoiceToggle } from '@/components/voice/voice-toggle';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
@@ -334,6 +335,7 @@ export function Settings() {
         <HideRepostsToggle />
         <OpenBskyLinksToggle />
         <PostQuestNotificationsToggle />
+        <VoiceToggle variant="settings" />
       </section>
 
       {/* 管理者なら本番でも出す。ダッシュボードの中身も本番で開ける (2026-07-27) —

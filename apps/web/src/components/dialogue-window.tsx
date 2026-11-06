@@ -28,6 +28,8 @@ import { withCharacterNames } from '@aozoraquest/core';
 import { NpcPortrait } from './npc-image';
 import { StoryEffectLayer } from './story-effect-layer';
 import { storyEffectState, transientStoryEffects } from '@/lib/story-effects';
+import { useLineVoice } from '@/lib/tts/use-line-voice';
+import { VoiceToggle } from './voice/voice-toggle';
 
 const CHAR_MS = 45;
 
@@ -220,6 +222,9 @@ export function DialogueWindow({
 
   const line = currentLine(lines, st);
   const asking = choicesAsked;
+  // Blueskyちゃんの声 (D-TTS-001)。行が変わる・窓が閉じると止まる。トグルは声つきの行がある会話だけ。
+  const voiced = useMemo(() => lines.some((l) => l.voice), [lines]);
+  useLineVoice(line && !st.done ? line : null, lines[st.index + 1], `${stepKey(step)}:${st.index}`);
   // Keep focus on the dialogue surface: held Enter must not select "はい".
   // 段つきの会話は done 後も最後の行を残す: 呼出側が次の段を渡すか閉じるまで、送り面と会話
   // イラストを外さない (外すと暗転アニメが最初から再生され、画面が明滅する)。
@@ -374,6 +379,9 @@ export function DialogueWindow({
           {/* 部分文字列の逐次読み上げは SR に不向きなので、全文を visually-hidden で
               先に置き、タイプ表示は aria-hidden にする (汎用要素の aria-label は
               多くの SR が無視する — レビュー指摘) */}
+          {voiced && (
+            <span style={{ float: 'right', marginLeft: '0.5em' }}><VoiceToggle variant="dialogue" /></span>
+          )}
           <span style={SR_ONLY}>{line.text}</span>
           <span aria-hidden>{visibleText(line.text, st.chars)}</span>
           {complete && !asking && (

@@ -39,12 +39,12 @@ describe('Blueskyちゃんの声 in the dialogue window (D-TTS-001)', () => {
     expect(speak).toHaveBeenCalledWith('ずっと逆光で、ごめんね。', { apologetic: 70, neutral: 30 }); // prefetch
     const surface = screen.getAllByRole('dialog')[0]!;
     stop.mockClear();
-    act(() => { fireEvent.click(surface); fireEvent.click(surface); });
+    act(() => { fireEvent.click(surface); }); act(() => { fireEvent.click(surface); });
     expect(stop).toHaveBeenCalled();
     await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(2));
     expect(speak.mock.calls.filter((c) => (c as unknown[])[0] === 'ずっと逆光で、ごめんね。')).toHaveLength(1); // the prefetch was used
     stop.mockClear();
-    act(() => { fireEvent.click(surface); fireEvent.click(surface); });
+    act(() => { fireEvent.click(surface); }); act(() => { fireEvent.click(surface); });
     expect(stop).toHaveBeenCalled(); // narration line: nothing plays
     stop.mockClear();
     unmount();
