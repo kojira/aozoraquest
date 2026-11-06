@@ -55,6 +55,8 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  // zen-tts は Worker の中で自分の cpu-worker.js を new URL(..., import.meta.url) で作るので、事前バンドルしない (D-TTS-001)
+  optimizeDeps: { exclude: ['zen-tts'] },
   server: { port: 9999, strictPort: true },
   preview: { port: 9999 },
   build: {
