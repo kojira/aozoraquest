@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { splitSentences } from './split-sentences';
+import { joinSentencePcm, splitSentences } from './split-sentences';
 
 // D-TTS-001 follow-up: each line is synthesized sentence by sentence (the owner heard 「Bluesky」 read correctly this way).
 describe('splitSentences', () => {
@@ -19,5 +19,14 @@ describe('splitSentences', () => {
   test('closing brackets and quotes stay with the sentence they close', () => {
     expect(splitSentences('……やったね！」ほんとうに。')).toEqual(['……やったね！」', 'ほんとうに。']);
     expect(splitSentences('「またね。」』そして')).toEqual(['「またね。」』', 'そして']);
+  });
+});
+
+describe('joinSentencePcm', () => {
+  test('joins the pieces with round(sampleRate*0.15) samples of silence between them', () => {
+    const out = joinSentencePcm([new Float32Array([0.5, 0.5]), new Float32Array([-0.5])], 20);
+    expect(Array.from(out)).toEqual([0.5, 0.5, 0, 0, 0, -0.5]);
+    expect(joinSentencePcm([new Float32Array([0.25])], 44100)).toEqual(new Float32Array([0.25]));
+    expect(joinSentencePcm([new Float32Array(1), new Float32Array(1)], 44100)).toHaveLength(2 + 6615);
   });
 });

@@ -7,3 +7,7 @@ const SENTENCE = /[^。！？!?]*[。！？!?]+[」』）)】〕〉》”’"']*
 export function splitSentences(text: string): string[] {
   return (text.match(SENTENCE) ?? []).map((s) => s.trim()).filter(Boolean);
 }
+
+export function joinSentencePcm(_pieces: Float32Array[], _sampleRate: number): Float32Array {
+  return new Float32Array(0);
+}
