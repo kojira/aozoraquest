@@ -97,13 +97,13 @@ export type SkillEffect =
       kind: 'heal';
       /** maxHp に対する回復割合 */
       ratio: number;
-      /** 対象。self=使用者 / allAllies=味方全体 (巫女の全体回復)。未指定は self。 */
-      target?: 'self' | 'allAllies';
+      /** 対象。self=使用者 / oneAlly=選んだ味方 1 人 (1 人戦は自分) / allAllies=味方全体 (巫女の全体回復)。未指定は self。 */
+      target?: 'self' | 'oneAlly' | 'allAllies';
     }
   | {
       kind: 'cleanse';
-      /** 状態異常回復 (浄化/払串)。self=使用者 / allAllies=味方全体。デバフのみ除去 (バフは残す)。 */
-      target: 'self' | 'allAllies';
+      /** 状態異常回復 (浄化/払串)。self=使用者 / oneAlly=選んだ味方 (治療のどうぐ) / allAllies=味方全体。デバフのみ除去 (バフは残す)。 */
+      target: 'self' | 'oneAlly' | 'allAllies';
     }
   | {
       kind: 'restoreMp';
@@ -222,12 +222,12 @@ const damageHandler: EffectHandler = (effect, ctx) => {
     if (effect.inflict && res.hit && !res.fatal) {
       const inf = effect.inflict;
       if (rng() < (inf.chance ?? 1)) {
-        applyStatus(defender, {
+        const took = applyStatus(defender, {
           id: inf.status,
           turns: inf.turns ?? DEFAULT_STATUS_TURNS,
           ...(inf.magnitude !== undefined ? { magnitude: inf.magnitude } : {}),
         });
-        events.push({ actor, text: statusApplyText(inf.status, defender.name) });
+        if (took) events.push({ actor, text: statusApplyText(inf.status, defender.name) });
       }
     }
   }
@@ -251,13 +251,13 @@ const statusHandler: EffectHandler = (effect, ctx) => {
   // 名演 (吟遊詩人): 付与する側 (attacker) の持続延長パッシブを適用 (none なら素通し)。歌の効果 +1 ターン。
   const hookCtx: HookCtx = { rng, events, actor };
   const turns = applyStatusDurationBonus(effect.turns ?? DEFAULT_STATUS_TURNS, attacker, hookCtx);
-  applyStatus(target, {
+  const took = applyStatus(target, {
     id: effect.status,
     turns,
     ...(mag !== undefined ? { magnitude: mag } : {}),
   });
-  // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。
-  events.push({ actor, text: statusApplyText(effect.status, target.name) });
+  // 付与を告知 (無告知だとプレイヤーが状態変化を認識できない。レビュー ★★)。効かなければ「きかなかった」(statusResist)。
+  events.push({ actor, text: took ? statusApplyText(effect.status, target.name) : `しかし ${target.name}には きかなかった!` });
 };
 
 /** 自己バフとして数える状態 (感情爆発の buffCount)。積み重ねてダメージに変換する。 */
@@ -290,12 +290,14 @@ const fixedDamageHandler: EffectHandler = (effect, ctx) => {
   });
 };
 
+/** 回復のとくぎで戻る HP (対象の maxHp の割合)。戦闘とフィールド (D-PARTY-003) で同じ値。 */
+export const healAmount = (maxHp: number, ratio: number): number => Math.round(maxHp * ratio);
 /** heal: 対象 (resolveTargets 済みの ctx.defender) の maxHp 割合ぶん回復。self は defender=attacker、
  *  allAllies は各味方に解決される (runSkillMulti が対象ごとに defender を差し替える)。 */
 const healHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'heal') return;
   const { defender, events, skillName } = ctx;
-  const heal = Math.round(defender.maxHp * effect.ratio);
+  const heal = healAmount(defender.maxHp, effect.ratio);
   defender.hp = Math.min(defender.maxHp, defender.hp + heal);
   events.push({ actor: ctx.actorSide ?? 'player', text: `${defender.name}は${skillName}! HPが${heal}回復。` });
 };
@@ -362,7 +364,7 @@ export const SKILLS: Record<string, SkillDef> = {
     effects: [{ kind: 'damage', stat: 'luk', gamble: { max: 2.6, lukFloorScale: 0.012, lukFloorCap: 0.6 } }],
   },
   // 回復 (#436): maxHp の 0.35 (= 旧 BATTLE_TUNING.skillHealRatio を移行)
-  heal: { id: 'heal', effects: [{ kind: 'heal', ratio: 0.35 }] },
+  heal: { id: 'heal', effects: [{ kind: 'heal', ratio: 0.35, target: 'oneAlly' }] },
 
   // ─── 魔法使い 確定キット (#456 / docs/25 §12。単体・int型・必中・def無視) ───
   // 数値 (範囲/intBonus/デバフ turns) は **sim 調整前提の暫定値**。覚える Lv に見合う endgame 敵
@@ -459,7 +461,7 @@ export const SKILLS: Record<string, SkillDef> = {
   // ─── 聖騎士 確定キット (#456 / docs/25 §12。前衛・聖なる支援・holy=無属性) ───
   // 数値は sim 調整前提の暫定値。裁きの光/女神降臨(全体)・聖光斬(int補正物理)・清き心(P魔法反射) は後続。
   // 光の加護は §14.7 のフラット加算バフだが、フラット機構は未実装のため暫定で乗算バフ (atk/def/agiUp)。
-  'paladin-heal': { id: 'paladin-heal', effects: [{ kind: 'heal', ratio: 0.3 }] }, // 聖光の癒し Lv3
+  'paladin-heal': { id: 'paladin-heal', effects: [{ kind: 'heal', ratio: 0.3, target: 'oneAlly' }] }, // 聖光の癒し Lv3 (味方 1 人。D-PARTY-003)
   // 光の加護 Lv5: 自分の攻/守/速を強化 (§14.7 フラット化は後続 issue)
   'paladin-blessing': {
     id: 'paladin-blessing',
@@ -516,7 +518,7 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   'sage-gale': { id: 'sage-gale', effects: [{ kind: 'fixedDamage', min: 10, max: 16, intBonus: 0.3, element: 'wind' }] }, // 疾風 Lv10
   'sage-revelation': { id: 'sage-revelation', effects: [{ kind: 'fixedDamage', min: 12, max: 18, intBonus: 0.3, element: 'void' }] }, // 天啓 Lv12 (空)
-  'sage-heal': { id: 'sage-heal', effects: [{ kind: 'heal', ratio: 0.35 }] }, // 賢者の癒し Lv16
+  'sage-heal': { id: 'sage-heal', effects: [{ kind: 'heal', ratio: 0.35, target: 'oneAlly' }] }, // 賢者の癒し Lv16 (味方 1 人。D-PARTY-003)
   'sage-starlight': { id: 'sage-starlight', effects: [{ kind: 'fixedDamage', min: 25, max: 40, intBonus: 0.4, element: 'void' }] }, // 星辰の大魔法 Lv22
 
   // ─── 予言者 確定キット (#456 / docs/25 §12。最高 int・破滅のオラクル・遅延) ───
@@ -770,7 +772,7 @@ export function runSkillMulti(
   attacker: Combatant,
   sides: CombatSides,
   makeCtx: (defender: Combatant) => SkillContext,
-  opts: { targetIndex?: number; label?: string; events?: TurnEvent[]; actor?: TurnEvent['actor'] } = {},
+  opts: { targetIndex?: number; allyIndex?: number; label?: string; events?: TurnEvent[]; actor?: TurnEvent['actor'] } = {},
 ): void {
   // **技名を名乗る**。純バフ・純回復の技は doAttack/doMagic を
   // 通らないので、以前は「xの素早さがあがった!」だけが出て、選んだ技が本当に出たのか

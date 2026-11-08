@@ -53,6 +53,10 @@ export {
   type Tier,
   DEMON_CASTLE_REGIONS,
   type MonsterDef,
+  type MonsterAbilityId,
+  type MonsterMoveTarget,
+  type MonsterDebuff,
+  type ItemDef,
   ITEMS,
   MONSTERS,
   MONSTERS_BY_ID,
@@ -71,6 +75,9 @@ export {
   type BattleOutcome,
   type TurnEvent,
   type BattleState,
+  type AllyMode,
+  type AllyOrder,
+  ALLY_MODES,
   combatSides,
   startBattle,
 } from './battle-state.js';
@@ -85,9 +92,35 @@ export {
   resolveTurnMulti,
 } from './battle-turn-multi.js';
 export {
+  pinAllyOrders,
+  runAllyOrder,
+  outOfStockText,
+} from './battle-ally-orders.js';
+export {
+  isBattleItem,
+  battleItemsFrom,
+  canUseBattleItem,
+  materialsAfterBattleUse,
+  itemEffectTarget,
+  itemTargetsOneAlly,
+  skillTargetsOneAlly,
+} from './battle-items.js';
+export {
   autoBattleAction,
   runAutoBattle,
 } from './battle-auto.js';
+export {
+  PARTY_SIZE_FLAGS,
+  PARTY_ARMOR,
+  partyCapacity,
+  type PartyCarry,
+  type PartyMemberDef,
+  partyMembers,
+  partyMemberCombatant,
+  partyMemberGear,
+  partyCombatants,
+  allyAutoAction,
+} from './battle-party.js';
 export {
   rollDefeatLoss,
   rollDrops,
@@ -98,3 +131,7 @@ export {
   TITLES,
   earnedTitles,
 } from './battle-rewards.js';
+export {
+  groupable,
+  encounterGroupSize,
+} from './battle-group.js';

@@ -8,8 +8,13 @@ import { useMapTap } from './use-map-tap';
 import './npc-placement-map.css';
 
 type Point = { x: number; y: number };
-export function NpcPlacementMap({ world, npc, draft, mapId, onPlace, disabled = false }: {
+/** 宝箱・キラキラの印 (D-CHEST-001 §7)。置きアイテムの編集でこの地図を使い回すときだけ渡す。 */
+export interface PlacementMarker { x: number; y: number; color: string; label: string; selected?: boolean }
+export function NpcPlacementMap({ world, npc, draft, mapId, onPlace, disabled = false, markers = [], validate }: {
   disabled?: boolean; world: NpcPlacementWorld; npc: NpcDef; draft: readonly NpcDef[]; mapId: string; onPlace: (position: Pick<NpcDef, 'mapId' | 'x' | 'y'>) => void;
+  markers?: readonly PlacementMarker[];
+  /** 置けない理由 (置けるなら null)。省略時は NPC の配置規則。 */
+  validate?: (p: Point) => string | null;
 }) {
   const interior = world.interiors.find((m) => m.id === mapId);
   const field = mapId === WORLD_MAP_ID;
@@ -35,7 +40,8 @@ export function NpcPlacementMap({ world, npc, draft, mapId, onPlace, disabled = 
   };
   const place = (p: Point) => {
     if (disabled) return;
-    const result = validateNpcPlacement(world, { ...npc, mapId, ...p }, draft);
+    const custom = validate?.(p);
+    const result = validate ? (custom ? { reason: custom } : { position: { mapId, ...p } }) : validateNpcPlacement(world, { ...npc, mapId, ...p }, draft);
     setCursor(p);
     if (result.reason) setNote(result.reason);
     else if (result.position) { onPlace(result.position); setNote(`(${result.position.x}, ${result.position.y}) に配置しました。未保存です`); }
@@ -56,6 +62,7 @@ export function NpcPlacementMap({ world, npc, draft, mapId, onPlace, disabled = 
       {!c.walkable && <path d="M3 3 L29 29 M29 3 L3 29" stroke="#201d28" strokeOpacity="0.4" strokeWidth="2" />}
       {label && <g><rect x="1" y="1" width="19" height="19" fill="#171923" opacity="0.85" /><text x="10" y="15" textAnchor="middle" fill="white" fontSize="14">{label}</text></g>}
       {occupant && <><NpcSprite npc={occupant} customArt={world.arts.get(npcArtKey(occupant.id)) ?? null} /><rect x="1.5" y="1.5" width="29" height="29" fill="none" stroke={selected ? '#fff051' : '#ffffff'} strokeDasharray={selected ? undefined : '3 2'} strokeWidth="2" /><title>{occupant.name}{selected ? '（選択中）' : '（他のNPC）'}</title></>}
+      {markers.filter((m) => m.x === p.x && m.y === p.y).map((m) => <g key="marker"><rect x="6" y="6" width="20" height="20" rx="4" fill={m.color} stroke={m.selected ? '#fff051' : '#201d28'} strokeWidth="2" /><text x="16" y="21" textAnchor="middle" fill="white" fontSize="12">{m.label}</text></g>)}
       {normalize(cursor).x === p.x && normalize(cursor).y === p.y && <rect x="4" y="4" width="24" height="24" fill="none" stroke="#002e65" strokeWidth="2" />}
       <rect width="32" height="32" fill="none" stroke="#161b22" strokeOpacity="0.25" />
     </g>);
@@ -80,8 +87,8 @@ export function NpcPlacementMap({ world, npc, draft, mapId, onPlace, disabled = 
         if (d[e.key]) {
           e.preventDefault(); const next = normalize({ x: cursor.x + d[e.key]!.x, y: cursor.y + d[e.key]!.y });
           setCursor(next); setCenter(next);
-          const r = validateNpcPlacement(world, { ...npc, mapId, ...next }, draft);
-          setNote(`(${next.x}, ${next.y}) ${r.reason ?? '配置できます。Enterで配置'}`);
+          const reason = validate ? validate(next) : validateNpcPlacement(world, { ...npc, mapId, ...next }, draft).reason;
+          setNote(`(${next.x}, ${next.y}) ${reason ?? '配置できます。Enterで配置'}`);
         } else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); place(normalize(cursor)); }
       }}>{cells}</svg>
     <div className="npc-map-controls npc-region-controls">

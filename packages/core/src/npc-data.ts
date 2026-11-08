@@ -15,6 +15,8 @@ import { ITEMS } from './battle.js';
 import { NPC_SPRITE_PRESET_IDS, type NpcSpritePresetId } from './npc-sprite-presets.js';
 import { WORLD_MAP_ID } from './map-id.js';
 import { assertNpcImage, type NpcImage } from './npc-image.js';
+import { MAX_STORY_EFFECTS, type StoryEffect } from './story-effect.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class NpcDataError extends Error {}
 
@@ -78,15 +80,53 @@ export const MAX_NPCS = 500;
 
 /** 表情名 (タグの中身)。一覧は持たない — 登録された画像が無ければ通常の絵になるだけ。 */
 export const NPC_EXPRESSION_NAME = /^[a-z]+$/;
-const EXPRESSION_TAG = /^\[([a-z]+)\]/;
+const LEADING_TAG = /^\[(fx:[a-z-]+|[a-z]+)\]/;
 
 /**
- * 台詞先頭の表情タグ `[name]` を 1 つだけ外す (D-DIALOGUE-005)。タグは表示しないが、
- * 保存データには残す (将来の読み上げ用)。先頭以外・大文字・数字入りはタグとみなさない。
+ * 台詞の演出タグ `[fx:name]` (E2)。お知らせと同じ StoryEffect に 1 対 1 で対応する。
+ * 一覧にない名前・先頭以外の `[fx:` は検証で弾く (typo のまま保存させない)。
  */
-export function parseNpcLine(raw: string): { expression?: string; text: string } {
-  const m = EXPRESSION_TAG.exec(raw);
-  return m ? { expression: m[1]!, text: raw.slice(m[0].length) } : { text: raw };
+export const NPC_LINE_EFFECT_TAGS: Readonly<Record<string, StoryEffect>> = {
+  'fade-black': { kind: 'fade', to: 'black' },
+  'fade-clear': { kind: 'fade', to: 'clear' },
+  'silhouette-on': { kind: 'silhouette', show: true },
+  'silhouette-off': { kind: 'silhouette', show: false },
+  'flash-white': { kind: 'flash', color: 'white' },
+  'flash-red': { kind: 'flash', color: 'red' },
+  'tint-red': { kind: 'tint', color: 'red' },
+};
+
+/**
+ * 台詞先頭のタグを外す。表情タグ `[name]` は 1 つだけ (D-DIALOGUE-005)、演出タグ `[fx:name]` は
+ * 何個でも (E2)。順不同。タグは表示しないが保存データには残す。先頭以外・大文字・数字入りはタグとみなさない。
+ */
+export function parseNpcLine(raw: string): { expression?: string; effects?: StoryEffect[]; text: string } {
+  let text = raw;
+  let expression: string | undefined;
+  const effects: StoryEffect[] = [];
+  for (let m = LEADING_TAG.exec(text); m; m = LEADING_TAG.exec(text)) {
+    const tag = m[1] ?? '';
+    if (tag.startsWith('fx:')) {
+      const effect = Object.hasOwn(NPC_LINE_EFFECT_TAGS, tag.slice(3)) ? NPC_LINE_EFFECT_TAGS[tag.slice(3)] : undefined;
+      if (!effect) break;
+      effects.push({ ...effect });
+    } else if (expression === undefined) expression = tag;
+    else break;
+    text = text.slice(m[0].length);
+  }
+  return { ...(expression !== undefined ? { expression } : {}), ...(effects.length ? { effects } : {}), text };
+}
+
+/** 台詞が保存できるか (空・長すぎ・演出タグの不正)。理由の文、問題なければ null。 */
+function npcLineIssue(l: unknown): string | null {
+  if (typeof l !== 'string') return 'セリフが文字列でない';
+  const { effects, text } = parseNpcLine(l);
+  if (text.includes('[fx:')) return `演出タグが不正 (使えるのは先頭の ${Object.keys(NPC_LINE_EFFECT_TAGS).map((t) => `[fx:${t}]`).join(' ')})`;
+  if ((effects?.length ?? 0) > MAX_STORY_EFFECTS) return `演出タグが多すぎる (${MAX_STORY_EFFECTS} 個まで)`;
+  const token = characterTokenIssue(text);
+  if (token) return token;
+  if (text.trim() === '' || l.length > MAX_NPC_LINE) return `空 or ${MAX_NPC_LINE} 文字超`;
+  return null;
 }
 
 /** その表情の登録画像 (無ければ undefined = 呼出側で通常の portraitImage)。 */
@@ -124,6 +164,8 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
     if (ids.has(n.id)) throw new NpcDataError(`NPC の id が重複 (${n.id})`);
     ids.add(n.id);
     if (typeof n.name !== 'string' || n.name.trim() === '') throw new NpcDataError(`${where}: 名前が空`);
+    const nameIssue = characterTokenIssue(n.name);
+    if (nameIssue) throw new NpcDataError(`${where}: 名前の${nameIssue}`);
     if (!Number.isInteger(n.x) || !Number.isInteger(n.y)) throw new NpcDataError(`${where}: 座標が整数でない`);
     // マップの実在・範囲はここでは見ない — NPC は内部マップより先に読み込まれる
     // (読み込み順に依存する検証は、順序が変わった日に全 NPC を落とす)。エディタが見る。
@@ -149,16 +191,14 @@ export function validateNpcs(list: readonly NpcDef[] | null): void {
     spots.add(k);
     if (!Array.isArray(n.lines) || n.lines.length === 0) throw new NpcDataError(`${where}: セリフが無い`);
     for (const l of n.lines) {
-      if (typeof l !== 'string' || parseNpcLine(l).text.trim() === '' || l.length > MAX_NPC_LINE) {
-        throw new NpcDataError(`${where}: セリフが不正 (空 or ${MAX_NPC_LINE} 文字超)`);
-      }
+      const issue = npcLineIssue(l);
+      if (issue) throw new NpcDataError(`${where}: セリフが不正 (${issue})`);
     }
     for (const alt of n.altLines ?? []) {
       if (!alt || !Array.isArray(alt.lines) || alt.lines.length === 0) throw new NpcDataError(`${where}: フラグ別セリフが空`);
       for (const l of alt.lines) {
-        if (typeof l !== 'string' || parseNpcLine(l).text.trim() === '' || l.length > MAX_NPC_LINE) {
-          throw new NpcDataError(`${where}: フラグ別セリフが不正`);
-        }
+        const issue = npcLineIssue(l);
+        if (issue) throw new NpcDataError(`${where}: フラグ別セリフが不正 (${issue})`);
       }
       assertItemRequirements(alt.items, where, (id) => !!ITEMS[id]);
       // 戦闘の実在は story の検証が見る (story は NPC より後に読み込まれる)。

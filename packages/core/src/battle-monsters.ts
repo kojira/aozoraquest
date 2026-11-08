@@ -8,8 +8,26 @@ import { type Element } from './elements.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng } from './battle-rng.js';
 import { type Combatant, makeCombatant, monsterStats } from './battle-combatant.js';
+import { withCharacterNames } from './character-data.js';
+import type { SkillEffect } from './skills.js';
+import type { StatusId } from './statuses.js';
 
 // ─── モンスター ─────────────────────────────────────────────
+
+export type MonsterAbilityId = 'charger' | 'healer' | 'fleer' | 'caster' | 'debuffer';
+/** 敵の技の対象。'one' = 味方 1 人 (ランダム)、'all' = 生きている味方全員 (1 人戦では主人公だけ)。 */
+export type MonsterMoveTarget = 'one' | 'all';
+/** 敵が使う弱体 (味方へ) か、自分への強化 (target 'self')。既存の状態エンジン (applyStatus) で付ける。 */
+export interface MonsterDebuff {
+  name: string;
+  status: StatusId;
+  /** 付く確率 (0〜1)。 */
+  chance: number;
+  turns: number;
+  magnitude?: number;
+  /** 既定 'one'。 */
+  target?: MonsterMoveTarget | 'self';
+}
 
 /** 絵のキー。monsterArt レコード (`world.monsterArt`) の id と同じ。対応する絵が無ければ「?」で描く
  *  (D-MONSTER-001 PR2: 種を足すのにコードを直さない)。tint が効くかどうかは絵に差し込み口があるかで決まる。 */
@@ -81,14 +99,14 @@ export interface MonsterDef {
    *  'fleer' = 毎ターン逃走を試みる (はぐれメタル型。倒す前に逃げられると報酬ゼロ)。
    *  'caster' = たまに魔法を撃つ (def 無視の属性魔撃。#456: 対物理型の看板 覇王/不動 の弱点=魔法を
    *    成立させ、後続 (#483) の清き心 (魔法反射) の前提にもなる。要 spell 定義)。 */
-  ability?: 'charger' | 'healer' | 'fleer' | 'caster';
+  ability?: MonsterAbilityId;
   /**
    * 複数の能力 (#592 段階 2)。**優先順は配列の順** — 毎ターン先頭から聞き、最初に
    * 特別な行動 (attack 以外) を返した能力を採る。全員 attack なら通常攻撃。
    * 「HP が減ったら回復、それ以外はためる」= ['healer', 'charger']。
    * 指定があれば `ability` (単数) より優先。単数は後方互換で残す。
    */
-  abilities?: readonly ('charger' | 'healer' | 'fleer' | 'caster')[];
+  abilities?: readonly MonsterAbilityId[];
   /** healer の回復技名 (省略時デフォルト)。 */
   healName?: string;
   /** healer の回復幅 (maxHp に対する割合 0〜1)。省略時は BATTLE_TUNING.healerHealRatio。
@@ -112,11 +130,20 @@ export interface MonsterDef {
     castChance?: number;
     /** fleer: 逃走の基礎確率 (0〜1。agi 補正の前)。 */
     fleeBase?: number;
+    /** debuffer: 弱体・自分の強化を使う確率 (0〜1)。 */
+    debuffChance?: number;
   };
   /** caster の魔法 (#456)。def 無視・属性つきの int スケール魔撃。ダメージ = min〜max + int*intScale。
    *  魔法致死は onLethal を通らない (物理耐性の覇王/不動 も魔法では死ぬ = 設計どおりの弱点)。
    *  データ規約: min <= max (span 負を避ける)。caster の攻撃ラベルは skillName でなくこの name を使う。 */
-  spell?: { name: string; element?: Element; min: number; max: number; intScale?: number };
+  spell?: { name: string; element?: Element; min: number; max: number; intScale?: number; target?: MonsterMoveTarget };
+  /** ため攻撃の対象 (D-PARTY-002 §12a)。'all' は生きている味方全員。既定 'one'。 */
+  chargedTarget?: MonsterMoveTarget;
+  /** debuffer の技 (D-PARTY-002 §12a。最大 2 つ)。先頭から見て、まだ付いていない状態のものを使う。 */
+  debuffs?: readonly MonsterDebuff[];
+  /** 効かない状態異常 (docs/25 §12 の statusResist。D-PARTY-002 §12 のボスの糸口)。ここにある状態は付与されず
+   *  「きかなかった」になる。未指定は全部効く。 */
+  statusResist?: readonly StatusId[];
   /** 防御属性 (#455 / docs/25 §1)。被弾時の属性相性に使う。未指定 = 無属性 (常に等倍)。
    *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
   element?: Element;
@@ -155,7 +182,22 @@ export interface MonsterDef {
  * `key: true` は**だいじなもの** (シナリオアイテム、#426/#545)。素材と違い
  * ひきとってもらえず、**負けても失わない** — 失うと進行不能になりうるため。
  */
-export const ITEMS: Record<string, { name: string; key?: boolean }> = {
+export interface ItemDef {
+  name: string;
+  key?: boolean;
+  /** 店と どうぐの一覧に出す 1 行 (D-ITEM-001)。 */
+  desc?: string;
+  /** 店で買える品だけ。素材はその店の値札の素材 (装備と同じ)。 */
+  price?: { power: number; materials: number };
+  /** この tier 以上の街の店に並ぶ。 */
+  shopTier?: 1 | 2 | 3;
+  /** 戦闘で使えるどうぐ (1 回きりの MP のいらないとくぎ)。対象は effects の target から導く。 */
+  battle?: { effects: SkillEffect[] };
+  /** カジノの景品 (D-CASINO-001)。店の品ぞろえ・置きアイテムには出せない (price・shopTier は付けられない)。 */
+  casinoOnly?: boolean;
+}
+
+export const ITEMS: Record<string, ItemDef> = {
   herb: { name: 'やくそう' },
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
@@ -172,6 +214,10 @@ export const ITEMS: Record<string, { name: string; key?: boolean }> = {
   'raven-feather': { name: '夜鴉の風切羽' },
   'oni-horn': { name: '鬼の角' },
   'dragon-fang': { name: '竜の牙' },
+  // カジノの景品 (D-CASINO-001)。パーティの画面で仲間 1 人の名前を変える。
+  'name-tag': { name: 'なまえのふだ', desc: 'なかま 1人の なまえを かえられる', casinoOnly: true },
+  // カジノの景品 (D-CASINO-001。ふっかつのはね の代わり)。戦闘で 味方みんなの HP を 4 わり回復。
+  'holy-water': { name: 'せいなるみず', desc: 'みかた みんなの HPを 4わり かいふく', casinoOnly: true, battle: { effects: [{ kind: 'heal', ratio: 0.4, target: 'allAllies' }] } },
 };
 
 /** **全モンスター。コードには持たない** (D-MONSTER-001)。正は管理者 PDS の world.monsters レコードで、
@@ -342,8 +388,12 @@ export function summonMonster(
   /** HP/MP の分散 (±割合)。0 のとき従来どおり固定 (rng も引かないので試練/既存テスト
    *  の乱数ストリームは不変)。world は BATTLE_TUNING.monsterVitalsVariance を渡す。 */
   variance = 0,
+  /** 群れの追加の敵を選ぶとき、入れられる敵だけにしぼる (D-PARTY-001。fleer・レアを除く)。 */
+  only?: (def: MonsterDef) => boolean,
 ): { def: MonsterDef; combatant: Combatant } {
   let pool = randomPool(tier);
+  // しぼって空なら、しぼらないプールのまま (下の帯に繰り下げない)。
+  if (only && pool.some(only)) pool = pool.filter(only);
   // **プールが空でも落とさない。** 落とすと edge の handleMove が 500 になり、
   // プレイヤーは**その場から一歩も動けなくなる** (遭遇はサーバー権威で、移動の応答が
   // 戦闘開始を含むため)。データ側の検証 (tier1 の 3 体下限) で普通は起きないが、
@@ -382,6 +432,12 @@ export function summonMonster(
   return { def, combatant: monsterCombatant(def, variance, rng) };
 }
 
+/** healer の 1 回の回復量。固定値 (healAmount) が最優先。無ければ maxHp × healRatio (省略時 BATTLE_TUNING.healerHealRatio)。
+ *  1 人戦 (resolveTurn) と群れ (resolveTurnMulti) の両方がこれを使う。 */
+export function monsterHealAmount(def: MonsterDef | undefined, maxHp: number): number {
+  return def?.healAmount ?? Math.round(maxHp * (def?.healRatio ?? BATTLE_TUNING.healerHealRatio));
+}
+
 /** モンスター def から戦闘値 (Combatant) を作る。tier 固定強度 (factor) + 明示 HP/MP 上書き +
  *  遭遇ごとの分散ジッター。variance=0 のときは rng を引かない (乱数ストリームを従来と一致させ
  *  テスト/決定論を保つ)。summonMonster (tier 抽選) と、模擬戦の敵指定の双方から使う。 */
@@ -390,7 +446,7 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   // モンスターは tier 係数の乗算 (プレイヤーとは別式)。HP/MP は明示値 (全モンスターが持つ)。
   const ms = monsterStats(def.stats, factor);
   const c = makeCombatant(
-    def.name,
+    withCharacterNames(def.name), // 名前の差し込み {c:id} (D-CHAR-001)。edge の戦闘の文もこの名前を使う
     ms,
     Math.round(BATTLE_TUNING.hpBase + ms[1] * BATTLE_TUNING.hpVitScale), // 明示 hp が無い敵のみ (直後に上書き)
     Math.round(BATTLE_TUNING.mpBase + ms[3]),
@@ -410,6 +466,7 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   // 属性・魔法耐性 (#455)。属性相性はキャスターの弱点突き、resistAllMagic はメタルの魔法無効。
   if (def.element !== undefined) c.element = def.element;
   if (def.resistAllMagic) c.resistAllMagic = true;
+  if (def.statusResist?.length) c.statusResist = [...def.statusResist];
   c.monsterId = def.id; // マルチ戦闘で敵個体ごとに ability/spell を引く (#453)
   return c;
 }

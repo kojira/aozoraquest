@@ -28,13 +28,14 @@ function alive(arr: readonly Combatant[]): Combatant[] {
  * 使用者 `caster` の視点で `target` を対象集合に解決する。
  * - caster が allies 側なら「味方=allies / 敵=enemies」、enemies 側なら反転 (敵もとくぎを撃つ #453)。
  * - one系は `targetIndex` で生存者の何番目かを選ぶ (未指定=先頭)。対象が全滅なら空配列。
+ *   oneAlly は `allyIndex` があればそちら (主人公が 1 手で敵と味方の番号を別々に持つとき。D-PARTY-003)。
  * - self は生死に関わらず caster 自身 (自己回復・自己バフ)。
  */
 export function resolveTargets(
   caster: Combatant,
   target: SkillTarget,
   sides: CombatSides,
-  opts: { targetIndex?: number } = {},
+  opts: { targetIndex?: number; allyIndex?: number } = {},
 ): Combatant[] {
   const isAlly = sides.allies.includes(caster);
   const ownSide = isAlly ? sides.allies : sides.enemies;
@@ -50,7 +51,7 @@ export function resolveTargets(
       // 味方単体。全滅時は caster に退避 (味方対象は最低でも自分に効く)。将来「戦闘不能の味方を
       // 蘇生」等を足す場合はここで死者を許容する分岐が要る (現状は生存者から選ぶ)。
       const list = alive(ownSide);
-      return [list[opts.targetIndex ?? 0] ?? caster];
+      return [list[opts.allyIndex ?? opts.targetIndex ?? 0] ?? caster];
     }
     case 'oneEnemy': {
       const list = alive(foeSide);

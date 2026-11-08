@@ -15,13 +15,16 @@ import { PdsError } from './pds';
 import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } from './xp-claim';
-import { shopCraft, shopSell, shopForge, shopDiscard, ShopError } from './shop';
-import { handleMove, handleTurn, handleTeleport, handleItem, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError } from './shop';
+import { handleMove, handleTurn, handleTeleport, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { handleFieldSkill, handleItem } from './field-heal';
 import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
 import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
+import { handlePartyCandidates, handlePartyReroll, handlePartySet } from './party-route';
+import { handlePartyOrdersRoute } from './party-orders-route'; import { handleCasinoRoute } from './casino-route';
 import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -65,6 +68,7 @@ const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
 const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
 const LXM_SHOP_CRAFT = LXM.shopCraft;
 const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_BUY = LXM.shopBuy;
 const LXM_SHOP_FORGE = LXM.shopForge;
 const LXM_SHOP_DISCARD = LXM.shopDiscard;
 const LXM_POWER_SPEND = LXM.powerSpend;
@@ -73,6 +77,8 @@ const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_INN_REST = LXM.innRest;
+const LXM_PARTY_SET = LXM.partySet;
+const LXM_PARTY_BY_PATH: Record<string, string> = { '/api/party': LXM_PARTY_SET, '/api/party/candidates': LXM.partyCandidates, '/api/party/reroll': LXM.partyReroll };
 
 const AOZORA_ORIGINS = new Set([
   'https://aozoraquest.app',
@@ -174,18 +180,20 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number };
+    const body = (await req.json().catch(() => ({}))) as { dx?: number; dy?: number; token?: string; battleId?: string; turn?: number; command?: string; skillIndex?: number; targetIndex?: number; itemId?: string; allies?: unknown };
     try {
       if (isTurn) {
         if (typeof body.battleId !== 'string' || typeof body.turn !== 'number' || typeof body.command !== 'string') {
           return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
         }
         const skillIndex = typeof body.skillIndex === 'number' ? body.skillIndex : 0; // とくぎ選択 (#436)。既定 0=署名
+        const targetIndex = typeof body.targetIndex === 'number' ? body.targetIndex : 0; // 群れでねらう敵 (生きている敵の何番目か)
+        const itemId = typeof body.itemId === 'string' ? body.itemId : undefined; // command==='item' のどうぐ (D-ITEM-001)
         // クエスト定義 (#423) の討伐カウントは勝利決着のこの経路で数える。コールド isolate だと
         // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
         // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
         await ensureAuthoredWorld(env, nowSec());
-        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex)), allowedOrigin);
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex, targetIndex, itemId, body.allies)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
       // **移動もワールドの読み込みを待つ。** ゲート (#424)・NPC (#425)・地図はここで効くので、
@@ -230,10 +238,31 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { item?: string };
+    const body = (await req.json().catch(() => ({}))) as { item?: string; target?: unknown };
     if (body.item !== 'herb' && body.item !== 'tonic') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    if (body.target !== undefined && typeof body.target !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      if (body.target !== undefined) await ensureAuthoredWorld(env, nowSec()); // なじみの仲間は world.story にいる
+      return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req), undefined, body.target)), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // フィールドで回復のとくぎを唱える (D-PARTY-003)。唱える人・とくぎ・相手・MP はサーバーが確かめる。
+  if (req.method === 'POST' && url.pathname === '/api/world/skill') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience: env.WORKER_DID ?? 'did:web:edge.aozoraquest.app', lxm: LXM.worldSkill }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { caster?: unknown; skillId?: unknown; target?: unknown; rkey?: unknown };
+    try {
+      await ensureAuthoredWorld(env, nowSec()); // なじみの仲間は world.story にいる
+      return cors(json(await handleFieldSkill(env, did, body, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -553,6 +582,56 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       await ensureAuthoredWorld(env, nowSec());
       return cors(json(await handleInnRest(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
     } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  const partyOrders = await handlePartyOrdersRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (partyOrders) return partyOrders; // さくせん (D-PARTY-004)
+  const casino = await handleCasinoRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (casino) return casino; // カジノ (D-CASINO-001)
+  // パーティの編成・ギルドの候補・候補の引き直し (D-PARTY-001 / D-PARTY-002)。ギルドの受付のそばにいるかは edge が確かめる。
+  if (req.method === 'POST' && LXM_PARTY_BY_PATH[url.pathname]) {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience: env.WORKER_DID ?? 'did:web:edge.aozoraquest.app', lxm: LXM_PARTY_BY_PATH[url.pathname]! }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { guild?: unknown; ids?: unknown; token?: unknown; rkey?: unknown; payOverLevel?: unknown };
+    if (typeof body.guild !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      await ensureAuthoredWorld(env, nowSec());
+      const pos = typeof body.token === 'string' ? body.token : undefined, ns = nsFromOrigin(req);
+      if (url.pathname === '/api/party/candidates') return cors(json(await handlePartyCandidates(env, did, body.guild, pos, nowSec(), ns)), allowedOrigin);
+      if (url.pathname === '/api/party/reroll') return cors(json(await handlePartyReroll(env, did, body.guild, body.rkey, pos, nowSec(), ns)), allowedOrigin);
+      return cors(json(await handlePartySet(env, did, body.guild, body.ids, pos, nowSec(), ns, body.payOverLevel, body.rkey)), allowedOrigin);
+    } catch (e) {
+      return cors(battleError(e), allowedOrigin);
+    }
+  }
+
+  // なんでも屋: どうぐを買う (D-ITEM-001)。品揃え・値段・在庫上限はサーバーが決める。
+  if (req.method === 'POST' && url.pathname === '/api/shop/buy') {
+    const token = bearer(req);
+    if (!token) return cors(json({ error: 'missing_token' }, 401), allowedOrigin);
+    const audience = env.WORKER_DID ?? 'did:web:edge.aozoraquest.app';
+    let did: string;
+    try {
+      ({ iss: did } = await verifyServiceAuth(token, { audience, lxm: LXM_SHOP_BUY }));
+    } catch (e) {
+      return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
+    }
+    const body = (await req.json().catch(() => ({}))) as { itemId?: unknown; rkey?: unknown; token?: unknown };
+    if (typeof body.itemId !== 'string' || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
+    try {
+      const ns = nsFromOrigin(req);
+      const pos = positionFrom(env, body.token, did);
+      // 値段と品揃えは管理データ (world.items) にしか無い。コールド isolate でも読み込みを待つ。
+      await ensureAuthoredWorld(env, nowSec());
+      return cors(json(await shopBuy(env, did, { itemId: body.itemId, rkey: body.rkey, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+    } catch (e) {
+      if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
     }
   }

@@ -6,8 +6,9 @@
 import { type Archetype, type StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearBonus, type GearSelection } from './equipment.js';
+import { armorDye, weaponElement } from './gear-element.js';
 import { type Element } from './elements.js';
-import { type StatusInstance } from './statuses.js';
+import { type StatusId, type StatusInstance } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { jobPassives } from './battle-job-skills.js';
 
@@ -38,6 +39,8 @@ export interface Combatant {
   /** ため中 (モンスター用): 次ターンに chargedPower のため攻撃を放つ。
    *  予告が出るので、プレイヤーは防御で応じるのが正解 (防御の存在意義)。 */
   charging: boolean;
+  /** 直前の行動が全体攻撃だった (モンスター用。D-PARTY-002 §12a: 全体攻撃を 2 ターン続けない)。 */
+  lastAoe?: boolean;
   /** ぼうぎょの余韻 (残りターン数)。>0 の間は回避 +guardFocusDodge。
    *  防御した次のターンまで「相手の動きを読めている」状態。 */
   focus: number;
@@ -54,12 +57,21 @@ export interface Combatant {
   element?: Element;
   /** すべての魔法を無効化 (メタル系。#455)。true だと fixedDamage/doMagic が最小 1。 */
   resistAllMagic?: boolean;
+  /** 武器の属性 (D-ELEM-001)。通常攻撃だけに使う。 */
+  weaponElement?: Element;
+  /** 防具の染まり (D-ELEM-001 §13a。属性 → 0〜1、合計 1 まで)。属性の攻撃の被ダメに掛かる。 */
+  armorDye?: Partial<Record<Element, number>>;
+  /** 効かない状態異常 (MonsterDef.statusResist から)。applyStatus が付与しない。 */
+  statusResist?: StatusId[];
   /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
    *  playerCombatant で毎戦闘 undefined から始まり、初回発動でハンドラが true にする。 */
   lethalGuardUsed?: boolean;
   /** モンスター個体の def id (#453 マルチ戦闘で敵ごとに ability/spell を引くため)。プレイヤー/召喚は未設定。
    *  monsterCombatant が def.id を載せる。1v1 では state.monsterId と一致する。 */
   monsterId?: string;
+  /** 仲間の職と Lv (D-PARTY-001)。あれば resolveTurnMulti が allyAutoAction でとくぎを選ぶ。
+   *  主人公・召喚・モンスターは未設定 (召喚は今のまま通常攻撃)。 */
+  job?: { archetype: Archetype; level: number };
 }
 
 /** stats と HP/MP から Combatant を組む。HP/MP の導出は呼び出し側の責務 (プレイヤーと
@@ -208,6 +220,13 @@ export function playerCombatant(
     c.hp = c.maxHp;
   }
   c.passives = jobPassives(archetype, jobLevel); // ジョブ Lv30 の innate パッシブ
+  // 装備の属性 (D-ELEM-001)。gear (個体) のときだけ。sim の equipIds 形は属性を持たない品が中心なので見ない。
+  if (gear && Object.keys(gear).length > 0) {
+    const wEl = weaponElement(gear);
+    if (wEl) c.weaponElement = wEl;
+    const dye = armorDye(gear);
+    if (Object.keys(dye).length > 0) c.armorDye = dye;
+  }
   return c;
 }
 

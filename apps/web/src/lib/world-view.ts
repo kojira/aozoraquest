@@ -1,6 +1,6 @@
-import type { BattleState } from '@aozoraquest/core';
+import { canSeeFieldDanger, partyDefsOf, recruitById, type BattleState } from '@aozoraquest/core';
 import type { StickDir } from '@/components/virtual-stick';
-import type { ServerBattleState } from '@/lib/world-server';
+import type { ServerBattleState, ServerParty } from '@/lib/world-server';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) の画面共通の定数と型。
@@ -29,9 +29,17 @@ const DANGER_LABELS = ['おだやか', 'すこし危険', '危険', 'とても�
 export const dangerLabel = (tier: number) =>
   DANGER_LABELS[Math.min(DANGER_LABELS.length - 1, Math.max(0, tier - 1))];
 
-/** フィールドの上枠ラベル (`危険度・深い森 / よく出る敵`)。モンスターが 0 体 (未読込) なら敵名を出さない (D-MONSTER-001)。 */
-export const fieldLocationLabel = (tier: number, forest: boolean, favoredMonsterName: string | undefined) =>
-  `${dangerLabel(tier)}${forest ? '・深い森' : ''}${favoredMonsterName ? ` / ${favoredMonsterName}` : ''}`;
+/** 主人公か いまのパーティの仲間に、フィールドの危険度が見える職がいるか (docs/25 §ジョブ特性 = パーティ価値)。 */
+export const seesFieldDanger = (archetype: string | null, party: ServerParty) =>
+  canSeeFieldDanger(archetype) || partyDefsOf(party, recruitById, 1).some((a) => canSeeFieldDanger(a.archetype));
+
+/** フィールドの上枠ラベル。見える職なら `危険度・深い森 / よく出る敵`、見えなければ地形だけ。
+ *  見えない職の森以外は伝えることが無いので null (= 右上の枠ごと出さない)。
+ *  モンスターが 0 体 (未読込) なら敵名を出さない (D-MONSTER-001)。 */
+export const fieldLocationLabel = (tier: number, forest: boolean, favoredMonsterName: string | undefined, seesDanger: boolean): string | null =>
+  seesDanger
+    ? `${dangerLabel(tier)}${forest ? '・深い森' : ''}${favoredMonsterName ? ` / ${favoredMonsterName}` : ''}`
+    : forest ? '深い森' : null;
 
 /** サーバーの ServerBattleState を描画用 BattleState として扱う (seed は実行時に存在しない = UI 未使用)。 */
 export const asBattleState = (s: ServerBattleState): BattleState => s as unknown as BattleState;

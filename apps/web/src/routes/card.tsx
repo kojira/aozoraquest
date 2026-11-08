@@ -12,6 +12,7 @@ import { serverSpendPower, serverState, worldServerEnabled, WorldServerError } f
 import { recordCardDraw } from '@/lib/card-power';
 import { generateCardText, getFallbackCardText, stripMarkdown, CardTextError, type CardText } from '@/lib/flavor-text';
 import { pickLocalLLM } from '@/lib/local-llm';
+import { isSlmEligible } from '@/lib/slm-llm';
 import { cardToPngBlob, cardToShareBlob, downloadBlob } from '@/lib/card-export';
 import { JobCard } from '@/components/job-card';
 import { CardPackOverlay } from '@/components/card-pack-overlay';
@@ -50,6 +51,8 @@ export function Card() {
   // (LLM 不可だと fallback 文言になり、ユーザーが「ハズレを引いた」感を持つので
   //  そもそも引けないようにする。)
   const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
+  // LLM が無い時、ブルスコンの対象端末 (Nano なし + WebGPU) なら呼び出し方を案内する
+  const [slmEligible, setSlmEligible] = useState(false);
   const [power, setPower] = useState<PointsState | null>(null);
   /** **権威側のパワー残高** (#551)。引き直しの可否はこちらで決める。 */
   const [serverPower, setServerPower] = useState<number | null>(null);
@@ -215,6 +218,10 @@ export function Card() {
     let cancelled = false;
     (async () => {
       const llm = await pickLocalLLM();
+      if (!llm) {
+        const eligible = await isSlmEligible().catch(() => false);
+        if (!cancelled) setSlmEligible(eligible);
+      }
       if (!cancelled) setLlmAvailable(llm !== null);
     })();
     return () => { cancelled = true; };
@@ -517,7 +524,9 @@ export function Card() {
 
       {llmAvailable === false && (
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)', marginTop: '0.4em' }}>
-          このブラウザでは AI モデルが使えないため引き直しできません。Chrome (デスクトップ版、Gemini Nano 対応) でお試しください。
+          {slmEligible
+            ? '精霊タブの『召喚の儀式』でブルスコンを呼び出すと引けます。'
+            : 'このブラウザではブルスコンを呼び出せないため、引き直しできません。'}
         </p>
       )}
 
@@ -528,7 +537,7 @@ export function Card() {
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35em' }}>
             <CasinoIcon size={16} />
-            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'AI 確認中…' : llmAvailable === false ? 'AI 不可で引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (serverPower !== null && serverPower < 1) ? '引き直せない' : '引き直す (−1)'}
+            {drawing ? '抽選中…' : flavorBusy ? '詩を探している…' : llmAvailable === null ? 'ブルスコンを確認中…' : llmAvailable === false ? 'ブルスコンがいなくて引けない' : IS_DEV ? '引き直す (dev: 無制限)' : (serverPower !== null && serverPower < 1) ? '引き直せない' : '引き直す (−1)'}
           </span>
         </button>
         <button disabled={shareBusy !== 'idle' || !card} onClick={() => void onDownload()}>

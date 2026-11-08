@@ -8,6 +8,7 @@ import {
   canEquip,
   equipHands,
   forgedLevel,
+  gearKey,
   isMasterwork,
   isSellableMaterial,
   parseNpcLine,
@@ -21,11 +22,13 @@ import {
   type Town,
   shopKeeperFor,
   worldOverlay,
+  withCharacterNames,
 } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
 import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
 import { sceneDialogue } from '@/lib/scene-dialogue';
+import { ShopItemSection } from './shop-item-section';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -41,14 +44,18 @@ export type LastShopAction =
   | { kind: 'craft' | 'forge'; piece: CraftedPiece }
   // ひきとりの結果もモーダル内のセリフ窓で出す (#607) — 以前は世界の通知行に出していて、
   // この全画面モーダルの背面に描かれてプレイヤーには見えなかった。
-  | { kind: 'sell'; materialId: string; count: number; powerGained: number };
+  | { kind: 'sell'; materialId: string; count: number; powerGained: number }
+  | { kind: 'buy'; itemId: string };
+
+const NO_ALLY_WORN: ReadonlyMap<string, number> = new Map();
 
 /** 初回チュートリアル (最初の街のなんでも屋) を出したか。 */
 const SHOP_TUTORIAL_KEY = 'aozora:shop-tutorial-done';
 
 /** アイテムごとの「合成できる最良の組」(同強化値 2 個体の最大レベル)。
- *  装備中の個体は候補から除外 (そうび中の武器が黙って燃えるのを防ぐ)。 */
-function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[]): { level: number; rkeys: [string, string] } | null {
+ *  装備中の個体は候補から除外 (そうび中の武器が黙って燃えるのを防ぐ)。
+ *  仲間の装備は (品・強化値) で持つので、その数だけ同じ強化値の個体を残す (D-PARTY-004 §6。サーバーも断る)。 */
+function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[], allyWorn: ReadonlyMap<string, number>): { level: number; rkeys: [string, string] } | null {
   const equipped = new Set(equippedRkeys);
   const byLevel = new Map<number, CraftedPiece[]>();
   for (const p of pieces) {
@@ -60,7 +67,8 @@ function bestForgePair(pieces: CraftedPiece[], equippedRkeys: readonly string[])
   }
   let best: { level: number; rkeys: [string, string] } | null = null;
   for (const [level, list] of byLevel) {
-    if (list.length >= 2 && (!best || level > best.level)) {
+    const free = list.length - (allyWorn.get(gearKey(list[0]!.itemId, level)) ?? 0);
+    if (free >= 2 && (!best || level > best.level)) {
       best = { level, rkeys: [list[0]!.rkey, list[1]!.rkey] };
     }
   }
@@ -75,6 +83,7 @@ export function ShopModal({
   materials,
   pieces,
   equippedRkeys,
+  allyWorn = NO_ALLY_WORN,
   busy,
   lastAction,
   errorText,
@@ -82,6 +91,7 @@ export function ShopModal({
   onCraft,
   onForge,
   onSell,
+  onBuy,
   onClose,
 }: {
   town: Town;
@@ -93,6 +103,8 @@ export function ShopModal({
   pieces: CraftedPiece[];
   /** 装備中の個体 rkey (合成候補から除外する) */
   equippedRkeys: readonly string[];
+  /** 仲間が着ている (品・強化値) → 人数 (core の equippedCounts)。その数だけ合成候補から残す。 */
+  allyWorn?: ReadonlyMap<string, number>;
   busy: boolean;
   lastAction: LastShopAction | null;
   /** 失敗の理由 (#551)。**モーダル内に出す** — ページ本体の通知行に出しても、
@@ -104,12 +116,14 @@ export function ShopModal({
   onForge: (def: EquipmentDef, level: number, rkeys: [string, string]) => void;
   /** 素材のひきとり (count は materialsPerPower の倍数) */
   onSell: (materialId: string, count: number) => void;
+  /** どうぐを 1 個買う (D-ITEM-001)。 */
+  onBuy: (itemId: string) => void;
   onClose: () => void;
 }) {
   const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
   // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
   const keeper = useMemo(() => shopKeeperFor(town.x, town.y), [town]);
-  const materialName = ITEMS[stock.materialId]?.name ?? stock.materialId;
+  const materialName = withCharacterNames(ITEMS[stock.materialId]?.name ?? stock.materialId);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const piecesByItem = useMemo(() => {
@@ -162,6 +176,10 @@ export function ShopModal({
   }, []);
   useEffect(() => {
     if (!lastAction) return;
+    if (lastAction.kind === 'buy') {
+      openTalk([{ text: `${withCharacterNames(ITEMS[lastAction.itemId]?.name ?? lastAction.itemId)}を 1こ かった!` }, say(keeper.sell)]);
+      return;
+    }
     if (lastAction.kind === 'sell') {
       openTalk([
         { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count}を引き取ってもらい、パワーが${lastAction.powerGained}増えた!` },
@@ -250,15 +268,16 @@ export function ShopModal({
           {noticeText}
         </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <ShopItemSection consumables={stock.consumables} materialId={stock.materialId} materialName={materialName} balance={balance} materials={materials} busy={busy} onBuy={onBuy} />
           {stock.equipment.map((id) => {
             const def = EQUIPMENT_BY_ID[id];
             if (!def) return null;
             const equipable = archetype ? canEquip(archetype, def) : false;
             const affordable = balance >= def.price.power && (materials[stock.materialId] ?? 0) >= def.price.materials;
             const owned = piecesByItem.get(id) ?? [];
-            const forge = bestForgePair(owned, equippedRkeys);
+            const forge = bestForgePair(owned, equippedRkeys, allyWorn);
             // 装備を外せば鍛えられる組があるのに、装備中除外で不成立の場合の注記
-            const forgeBlockedByEquip = !forge && bestForgePair(owned, []) !== null;
+            const forgeBlockedByEquip = !forge && bestForgePair(owned, [], NO_ALLY_WORN) !== null;
             const bestOwned = owned.length > 0 ? Math.max(...owned.map((p) => p.level)) : null;
             return (
               <div
@@ -276,7 +295,7 @@ export function ShopModal({
               >
                 <div style={{ minWidth: 0 }}>
                   <div>
-                    <strong>{def.name}</strong>
+                    <strong>{leveledName(def, 0)}</strong>{/* 属性つきは横に属性 (D-ELEM-001) */}
                     {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.8em', color: 'var(--color-muted)' }}>(両手)</span>}
                     {owned.length > 0 && (
                       <span style={{ marginLeft: '0.4em', color: 'var(--color-muted)' }}>
@@ -379,7 +398,7 @@ export function ShopModal({
                     return (
                       <div key={id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
                         <span>
-                          {ITEMS[id]?.name ?? id} ×{n}
+                          {withCharacterNames(ITEMS[id]?.name ?? id)} ×{n}
                         </span>
                         <button
                           type="button"

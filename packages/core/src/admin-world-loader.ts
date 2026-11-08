@@ -2,10 +2,11 @@
  * 管理者 PDS の world.* レコードを読んで core に適用する唯一の手順 (Refs #718)。
  * web (`loadAuthoredWorld`) と edge (`ensureAuthoredWorld`) はレコードの取り方だけを渡す。
  *
- * 順序 (ADMIN_WORLD_RECORDS): map → tileArt → monsters → monsterArt → items → shops → npcs → jobs → interiors → quests → scenario → story → dialogue。
- *   - shops は items の後 (検証が EQUIPMENT_BY_ID / ITEMS を引く)。
+ * 順序 (ADMIN_WORLD_RECORDS): characters → map → tileArt → monsters → monsterArt → items → casino → shops → npcs → jobs → interiors → quests → scenario → story → dialogue。
+ *   - shops は items の後 (検証が EQUIPMENT_BY_ID / ITEMS を引く)。casino も items の後 (景品の id を引く。D-CASINO-001)。
  *   - quests は npcs・monsters・items の後 (検証が実在を引く)。scenario は quests の後 (questId を引く)。
  *   - story は scenario の後 (フラグ数を scenario.setFlags と合わせて数える。D-STORY-009)。
+ *   - characters は先頭 (名前の差し込み {c:id} の解決先。他のレコードは id の有無を読み込みで見ない。D-CHAR-001)。
  *   - dialogue は最後 (NPC の実在は読み込みでは見ないので順序に依存しない。D-DIALOGUE-006)。
  *   - jobs と interiors は互いに独立: setJobOverrides は JOBS_BY_ID と装備カテゴリだけ、
  *     setInteriors は ITEMS と townAt だけを引く。旧 web は interiors→jobs、edge は jobs→interiors
@@ -28,10 +29,13 @@ import { WORLD_SIZE } from './world.js';
 import { loadTileArts, type TileArtRecord } from './tile-art.js';
 import { MonsterDataError, setMonsterOverrides } from './monster-data.js';
 import { decodeMonstersFromRecord } from './monster-record.js';
+import { decodeItemsFromRecord } from './item-record.js';
 import { setMonsterArts, type MonsterArtDef } from './monster-art.js';
 import { setItemOverrides, type ItemDefData } from './item-data.js';
 import type { EquipmentDef } from './equipment.js';
 import { setShopOverrides, type ShopOverride } from './shop-data.js';
+import { setCasinoTables } from './casino.js';
+import type { CasinoTables } from './casino-data.js';
 import { setNpcs, type NpcDef } from './npc-data.js';
 import { setJobOverrides, type JobOverride } from './job-data.js';
 import { setInteriors, type Gate, type InteriorMap } from './interior.js';
@@ -39,6 +43,7 @@ import { setGameQuests, type GameQuestDef } from './quest-data.js';
 import { setScenario, type ScenarioEvent } from './scenario.js';
 import { setStory, type StoryData } from './story-data.js';
 import { setDialogue, type DialogueData } from './dialogue-data.js';
+import { setCharacters, type CharacterDef } from './character-data.js';
 
 /** レコードの value を返す。**無ければ null**。通信失敗などは throw (そのレコードだけ飛ばす)。 */
 export type AdminWorldRecordFetch = (name: AdminWorldRecordName) => Promise<unknown>;
@@ -60,6 +65,7 @@ function fromBase64(b64: string): Uint8Array {
 type Rec<T> = Partial<T> | null | undefined;
 
 const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | void> = {
+  characters: (v) => { const rec = v as Rec<{ characters: CharacterDef[] }>; if (rec?.characters) setCharacters(rec.characters); },
   map: async (v) => {
     const rec = v as Rec<{ size: number; gz: string; palette: string[]; parts: WorldPart[]; towns: TownOverride[] }>;
     // 手編集が無ければ同梱の地図 (生成そのまま)。
@@ -81,8 +87,10 @@ const APPLY: Record<AdminWorldRecordName, (value: unknown) => Promise<void> | vo
   },
   items: (v) => {
     const rec = v as Rec<{ items: ItemDefData[]; equipment: EquipmentDef[] }>;
-    if (rec?.equipment?.length) setItemOverrides({ items: rec.items ?? [], equipment: rec.equipment });
+    // どうぐの効果の小数は文字列で保存 (monsters の #740 と同じ)
+    if (rec?.equipment?.length) setItemOverrides({ items: decodeItemsFromRecord(rec.items), equipment: rec.equipment });
   },
+  casino: (v) => { const rec = v as Rec<CasinoTables>; if (rec?.slots) setCasinoTables(rec as CasinoTables); },
   shops: (v) => { const rec = v as Rec<{ shops: ShopOverride[] }>; if (rec?.shops) setShopOverrides(rec.shops); },
   npcs: (v) => { const rec = v as Rec<{ npcs: NpcDef[] }>; if (rec?.npcs) setNpcs(rec.npcs); },
   jobs: (v) => { const rec = v as Rec<{ jobs: JobOverride[] }>; if (rec?.jobs) setJobOverrides(rec.jobs); },

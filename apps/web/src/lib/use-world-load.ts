@@ -5,7 +5,7 @@ import { getRecord } from '@/lib/atproto';
 import { COL } from '@/lib/collections';
 import { loadWorldState, saveWorldState } from '@/lib/world-state';
 import { loadBattleStats } from '@/lib/battle-log';
-import { serverState } from '@/lib/world-server';
+import { serverState, type ServerParty } from '@/lib/world-server';
 import { loadCraftInventory, type CraftedPiece } from '@/lib/crafting';
 import { loadGearRefs, type GearRefs } from '@/lib/gear';
 import { loadAuthoredWorld } from '@/lib/world-authoring';
@@ -25,6 +25,7 @@ export interface WorldLoadDeps {
   setServerPower: Dispatch<SetStateAction<number | null>>;
   setQuest: (next: QuestState) => void;
   flagsRef: MutableRefObject<string[]>;
+  setParty: (party: ServerParty) => void;
   tokenRef: MutableRefObject<string | undefined>;
   setCraftedPieces: Dispatch<SetStateAction<CraftedPiece[]>>;
   setGearRefs: Dispatch<SetStateAction<GearRefs>>;
@@ -47,7 +48,7 @@ export function useWorldLoad(d: WorldLoadDeps) {
   const { sessionStatus, agent, did, retryNonce, flushCraftLog, setQuest } = d;
   useEffect(() => {
     if (sessionStatus !== 'signed-in' || !agent || !did) return;
-    const { setLoadErr, setServerPower, flagsRef, tokenRef, setCraftedPieces, setGearRefs, setWs, setStarterBlessed, setShowStarter, setOnboarding, onboardingRef, setNotice, setAvatarUrl, setPlayerName, setDiag, inventory } = d;
+    const { setLoadErr, setServerPower, flagsRef, setParty, tokenRef, setCraftedPieces, setGearRefs, setWs, setStarterBlessed, setShowStarter, setOnboarding, onboardingRef, setNotice, setAvatarUrl, setPlayerName, setDiag, inventory } = d;
     const { setHerbStock, setTonicStock, setFeatherStock, materialsRef, setMaterialsView } = inventory;
     let cancelled = false;
     setLoadErr(false);
@@ -79,6 +80,8 @@ export function useWorldLoad(d: WorldLoadDeps) {
             setServerPower(ss.state.power ?? 0);
             setQuest(questStateOf(ss.state));
             flagsRef.current = ss.state.flags ?? [];
+            setParty(ss.state.party ?? { ids: [] });
+            inventory.openedRef.current = ss.state.openedSpots ?? [];
             serverMapId = ss.state.mapId;
             // **所持個体もサーバーが正** (#551 段階 2)。ユーザー PDS の craft レコードは
             // 記帳 (履歴) であって所持の根拠ではない。

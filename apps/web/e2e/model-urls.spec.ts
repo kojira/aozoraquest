@@ -8,7 +8,8 @@ import {
   RURI_WGSL_MODEL_SHA256,
   RURI_WGSL_MODEL_URL,
 } from '../src/lib/cognitive-wgsl/weights';
-import { SARASHINA_BASE_URL, SARASHINA_HEADER_SHA256 } from '../src/lib/slm-wgsl/weights';
+import { TTS_ASSETS, TTS_ZTM_URL } from '../src/lib/tts/tts-assets';
+import { SARASHINA_BASE_URL, SARASHINA_HEADER_SHA256, SLM_BASE_URL, SLM_HEADER_SHA256 } from '../src/lib/slm-wgsl/weights';
 
 /**
  * 公開先で使うモデル関連ファイルが実在することを確認。
@@ -65,6 +66,8 @@ test.describe('HuggingFace model URLs are reachable', () => {
   for (const [label, url, sha256, bytes] of [
     ['model.aqw', COGNITIVE_WGSL_MODEL_URL, COGNITIVE_WGSL_MODEL_SHA256, COGNITIVE_WGSL_MODEL_BYTES],
     ['ruri-v3-30m.aqw', RURI_WGSL_MODEL_URL, RURI_WGSL_MODEL_SHA256, RURI_WGSL_MODEL_BYTES],
+    // Blueskyちゃんの声 (D-TTS-001。HF commit 固定)
+    ['bluesky.ztm', TTS_ZTM_URL, TTS_ASSETS.find((a) => a.url === TTS_ZTM_URL)!.sha256, TTS_ASSETS.find((a) => a.url === TTS_ZTM_URL)!.bytes],
   ] as const) {
     test(`WGSL weights (${label}) exist and match the pinned sha256`, async () => {
       const api = await request.newContext();
@@ -82,37 +85,42 @@ test.describe('HuggingFace model URLs are reachable', () => {
     });
   }
 
-  // 翻訳用 sarashina (commit 固定)。header.json の sha256 をコードと照合し、header に載った各 part / tokenizer の
+  // 自前 WGSL のモデル (LFM2.5 = カードと翻訳、sarashina = 翻訳。commit 固定)。header.json の sha256 をコードと照合し、header に載った各 part / tokenizer の
   // sha256・byte 数を HF の X-Linked-ETag / X-Linked-Size と照合する (= header と HF 上のファイルが同じもの)。
-  test('sarashina WGSL weights: header matches the pinned sha256 and every part matches header', async () => {
-    const api = await request.newContext();
-    const res = await api.get(`${SARASHINA_BASE_URL}/header.json`);
-    if (res.status() === 429 || res.status() >= 500) {
-      // eslint-disable-next-line no-console
-      console.warn(`[model-urls] sarashina header: HF が ${res.status()} を返したため検証を skip (rate-limit/transient)`);
-      await api.dispose();
-      return;
-    }
-    expect(res.status()).toBeLessThan(400);
-    const body = await res.body();
-    expect(createHash('sha256').update(body).digest('hex')).toBe(SARASHINA_HEADER_SHA256);
-    const header = JSON.parse(body.toString('utf8')) as { parts: { file: string; bytes: number; sha256: string }[]; tokenizer: { file: string; bytes: number; sha256: string } };
-    for (const f of [...header.parts, header.tokenizer, { file: 'LICENSE' }]) {
-      const h = await api.head(`${SARASHINA_BASE_URL}/${f.file}`, { maxRedirects: 0 });
-      if (h.status() === 429 || h.status() >= 500) continue;
-      expect(h.status(), f.file).toBeLessThan(400);
-      if (!('sha256' in f)) continue;
-      if (/^"[0-9a-f]{64}"$/.test(h.headers()['x-linked-etag'] ?? '')) {
-        expect(h.headers()['x-linked-etag'], `${f.file} sha256`).toBe(`"${f.sha256}"`);
-        expect(h.headers()['x-linked-size'], `${f.file} size`).toBe(String(f.bytes));
-      } else {
-        // LFS 外 (tokenizer.json 3.6MB) は etag が git の blob sha (40 桁) なので中身を取って比べる
-        const g = await api.get(`${SARASHINA_BASE_URL}/${f.file}`);
-        expect(createHash('sha256').update(await g.body()).digest('hex'), `${f.file} sha256`).toBe(f.sha256);
+  for (const [label, baseUrl, headerSha256] of [
+    ['LFM2.5-1.2B-JP', SLM_BASE_URL, SLM_HEADER_SHA256],
+    ['sarashina', SARASHINA_BASE_URL, SARASHINA_HEADER_SHA256],
+  ] as const) {
+    test(`${label} WGSL weights: header matches the pinned sha256 and every part matches header`, async () => {
+      const api = await request.newContext();
+      const res = await api.get(`${baseUrl}/header.json`);
+      if (res.status() === 429 || res.status() >= 500) {
+        // eslint-disable-next-line no-console
+        console.warn(`[model-urls] ${label} header: HF が ${res.status()} を返したため検証を skip (rate-limit/transient)`);
+        await api.dispose();
+        return;
       }
-    }
-    await api.dispose();
-  });
+      expect(res.status()).toBeLessThan(400);
+      const body = await res.body();
+      expect(createHash('sha256').update(body).digest('hex')).toBe(headerSha256);
+      const header = JSON.parse(body.toString('utf8')) as { parts: { file: string; bytes: number; sha256: string }[]; tokenizer: { file: string; bytes: number; sha256: string } };
+      for (const f of [...header.parts, header.tokenizer, { file: 'LICENSE' }]) {
+        const h = await api.head(`${baseUrl}/${f.file}`, { maxRedirects: 0 });
+        if (h.status() === 429 || h.status() >= 500) continue;
+        expect(h.status(), f.file).toBeLessThan(400);
+        if (!('sha256' in f)) continue;
+        if (/^"[0-9a-f]{64}"$/.test(h.headers()['x-linked-etag'] ?? '')) {
+          expect(h.headers()['x-linked-etag'], `${f.file} sha256`).toBe(`"${f.sha256}"`);
+          expect(h.headers()['x-linked-size'], `${f.file} size`).toBe(String(f.bytes));
+        } else {
+          // LFS 外 (tokenizer.json) は etag が git の blob sha (40 桁) なので中身を取って比べる
+          const g = await api.get(`${baseUrl}/${f.file}`);
+          expect(createHash('sha256').update(await g.body()).digest('hex'), `${f.file} sha256`).toBe(f.sha256);
+        }
+      }
+      await api.dispose();
+    });
+  }
 
   test(`${GENERATOR_REPO}: tokenizer + model (q4) exist`, async () => {
     const api = await request.newContext();

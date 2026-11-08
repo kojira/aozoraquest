@@ -14,9 +14,9 @@ export const ADMIN_DID = process.env.ADMIN_DID ?? 'did:plc:47skrewud2vjha6o57wzz
 const ROOT = 'app.aozoraquest';
 const RKEY = 'self';
 /** 昇格してよいレコードだけ (汎用の昇格ツールにしない)。並びは core の読み込み順 (ADMIN_WORLD_RECORDS)。 */
-export const PROMOTE_NAMES = ['monsters', 'monsterArt', 'items', 'shops', 'npcs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'];
+export const PROMOTE_NAMES = ['characters', 'monsters', 'monsterArt', 'items', 'casino', 'shops', 'npcs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'];
 /** 要約で件数を数える一覧キー (admin-data.mjs の LIST_KEY と同じ)。 */
-const LIST_KEY = { monsters: 'monsters', monsterArt: 'arts', items: 'items', shops: 'shops', npcs: 'npcs', interiors: 'interiors', quests: 'quests', scenario: 'events', story: 'placedItems', dialogue: 'scenes' };
+const LIST_KEY = { characters: 'characters', monsters: 'monsters', monsterArt: 'arts', items: 'items', shops: 'shops', npcs: 'npcs', interiors: 'interiors', quests: 'quests', scenario: 'events', story: 'placedItems', dialogue: 'scenes' };
 
 export const devCollection = (name) => `${ROOT}.dev.world.${name}`;
 export const prodCollection = (name) => `${ROOT}.world.${name}`;

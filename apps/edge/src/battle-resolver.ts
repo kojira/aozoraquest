@@ -11,11 +11,11 @@
  *     (同一ターンの並行二重解決/引き直しを弾く)。
  */
 import {
-  startBattle, resolveTurn, resolveTurnMulti, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, dropBonusOf,
+  resolveTurn, resolveTurnMulti, canUseBattleItem, materialsAfterBattleUse, statVectorToArray, JOBS_BY_ID, normalizeStats, jobLevelFromXp, playerLevelFromXp, playerCombatant, dropBonusOf,
   terrainAt,
-  isWalkableAt, wrap, townAt, regionOf, tierForRegion, encounterRateFor, worldOverlay, BATTLE_TUNING, type Tier,
-  type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection,
-  WORLD_MAP_ID, WORLD_SIZE,
+  isWalkableAt, wrap, townAt, encounterRateFor, worldOverlay, BATTLE_TUNING,
+  type BattleState, type Command, type Archetype, type StatVector, type StatArray, type GearSelection, adjacentArmorConflict,
+  WORLD_MAP_ID,
   gateAt,
   gateHasLock,
   gateLockedNotice,
@@ -25,11 +25,11 @@ import {
   interiorTerrainAt,
   isInterior,
   walkableIn,
-  fieldMonsterAt, flagsAfterStoryBattle, storyBattleById, storyBattleOpen, type StoryBattleDef, activeMonsters,
+  fieldMonsterAt, flagsAfterStoryBattle, storyBattleById, storyBattleOpen, activeMonsters,
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
-import { readGuard, createGuard, advanceGuard, deleteGuard, type BattleGuard } from './battle-guard';
-import { readState, readModifyWrite, emptyState, rkeyForDid, GAME_STATE_COLLECTION, type GameStateEnv, type GameState } from './game-state';
+import { readGuard, advanceGuard, deleteGuard } from './battle-guard';
+import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, partyWithBattleXp, GAME_STATE_COLLECTION, type GameStateEnv, type GameState, type PartyState } from './game-state';
 import { advanceScenario, type ScenarioMessage } from './scenario-progress';
 import { sanitizeGear } from './game-state';
 // sanitizeGear は game-state へ移した (shop からも使うため。shop → battle-resolver は循環)。
@@ -39,63 +39,29 @@ import type { OwnedPiece } from './game-state';
 import { serverDeleteRecord } from './server-pds';
 import { signPosition, verifyPosition, enemyWindow, tileEncounter } from './world-token';
 import { applyBattleOutcome, type AwardBreakdown, type BattleDecision } from './battle-reward';
+import { partyWithBattleBond } from './party-bond';
+import { allyOrdersOf } from './battle-ally-orders';
+import { assertNotOverWorn } from './party-gear';
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 import { getRecord, PdsError } from './pds';
+import { GUARD_TTL_SEC, parseTileKey, sealEncounter, stripState, tileKey, type EncounterInfo, type Guard, type SealedMeta } from './battle-encounter';
+// 遭遇の組み立ては battle-encounter.ts に移した。既存の import 元を壊さないよう再輸出する。
+export { GUARD_TTL_SEC, sealEncounter, type EncounterInfo };
 
 /** NSID の既定 prefix (本番)。dev は `app.aozoraquest.dev`。edge は 1 デプロイで dev/prod を捌くので、
  *  リクエストの Origin から prefix を決めて渡す (#363)。既定=本番なのでテスト/既存呼び出しは従来通り。 */
 export const DEFAULT_NS = 'app.aozoraquest';
-export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', 'herb', 'tonic', 'flee'];
+export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', 'herb', 'tonic', 'flee', 'item'];
 
 /** 戦闘解決に必要な env (権威 state 読み書き + ユーザー診断 fetch)。 */
 export type ResolverEnv = GameStateEnv;
-
-/** ガードに封印する startBattle 由来のメタ (turn では state を使うが、報酬/撃破記録用に残す)。 */
-/** 遭遇タイルのキー。**mapId を含める** — フィールドと内部の同じ座標を別のマスとして扱う。
- *  フィールドは従来どおり "x,y" (旧ガード・旧 defeated と互換)。 */
-function tileKey(mapId: string, x: number, y: number): string {
-  return mapId === WORLD_MAP_ID ? `${x},${y}` : `${mapId}:${x},${y}`;
-}
-
-/** tileKey の逆。旧形式 ("x,y") も読める。 */
-function parseTileKey(key: string): { mapId: string; x: number; y: number } | null {
-  const colon = key.lastIndexOf(':');
-  const mapId = colon >= 0 ? key.slice(0, colon) : WORLD_MAP_ID;
-  const [x, y] = key.slice(colon + 1).split(',').map(Number);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { mapId, x: x!, y: y! };
-}
-
-interface SealedMeta {
-  archetype: string;
-  tier: Tier;
-  /** 遭遇したタイル "x,y" (撃破時に defeated へ入れ、その枠で再エンカウントさせない)。 */
-  tile: string;
-  /** 遭遇したマップ (#424)。**決着で位置を書き戻すときに要る** — 内部マップで
-   *  戦って mapId を落とすと、内部ローカル座標のままフィールドに放り出される。
-   *  省略 = フィールド (旧ガードとの互換)。 */
-  mapId?: string;
-  /** 遭遇時の素ステ。**決着でレベルアップの内訳を出すために封じておく** —
-   *  ここに無いと handleTurn が診断を読み直すことになり、決着のたびに PDS 往復が増える。 */
-  baseStats?: number[];
-  /** ストーリー戦 (D-STORY-009)。決着で立てるフラグを封印時に固定する (定義の読み込みを待たない)。 */
-  story?: { battleId: string; winFlag: string; loseFlag?: string };
-}
-
-type Guard = BattleGuard<SealedMeta, BattleState>;
 
 /** 解決エラー。上位が HTTP status に振り分ける。code はクライアントが文言を出し分ける用 (任意)。 */
 export class ResolverError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
   }
-}
-
-/** client 向けに BattleState から内部 seed を除去 (先読み防止 #348)。 */
-function stripState(s: BattleState) {
-  const { seed: _seed, ...rest } = s;
-  return rest;
 }
 
 /** ユーザーの PDS + handle を DID document から解決 (handle は alsoKnownAs の at:// から)。 */
@@ -236,72 +202,6 @@ export async function handleReset(env: ResolverEnv, userDid: string, now: number
   const existing = await readState(env, userDid);
   if (existing) await serverDeleteRecord(env, now, GAME_STATE_COLLECTION, rkeyForDid(userDid), existing.cid);
   return { ok: true };
-}
-
-/** バトルガードの寿命 (秒)。各ターンで更新。切れたガードは move 時に flush = クラッシュしても
- *  永久ロックアウトしない (docs/21 §5 lazy 敗北)。 */
-export const GUARD_TTL_SEC = 900;
-
-export interface EncounterInfo {
-  battleId: string;
-  monsterId: string;
-  /** seed を除いた戦闘 state (HP/MP・monster・events 等)。 */
-  state: Omit<BattleState, 'seed'>;
-  rewarded: boolean;
-}
-
-/** 遭遇を成立させ snapshot を封印してガードを作る。位置は**権威** (move が渡す) = tier を選べない。
- *  `monsterSeed` は tile+30分枠+秘密から決定的 (置かれた敵)。client には返さない。export はテスト用。 */
-export async function sealEncounter(env: ResolverEnv, userDid: string, state: GameState, x: number, y: number, monsterSeed: number, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch, mapId: string = WORLD_MAP_ID, story?: StoryBattleDef): Promise<EncounterInfo> {
-  // 互いに依存しない外部往復 (診断 / kuda / 既存ガード) は同時に始める。直列だと遭遇する一歩だけ
-  // 応答が数百 ms〜秒遅れ、client の次の歩行が止まって「引っかかる」。
-  // 失敗は従来の順 (診断 → kuda → ガード) で返す = 診断未実施はガードの読みに失敗しても 409。
-  const [diag, seed, guardRead] = await Promise.allSettled([
-    readDiagnosis(userDid, ns, fetchImpl),
-    entropyU32({ useKuda: true, apiKey: env.KUDA_API_KEY }),
-    readGuard<SealedMeta, BattleState>(env, userDid),
-  ]);
-  if (diag.status === 'rejected') throw diag.reason;
-  if (seed.status === 'rejected') throw seed.reason;
-  if (guardRead.status === 'rejected') throw guardRead.reason;
-  const { archetype, baseStats, handle, playerXp } = diag.value;
-  const pendingTurnSeed = seed.value.value;
-  const existing = guardRead.value;
-  // 内部マップ (#424) は座標が 0〜127 のローカル系で region が常に 0 になるため、
-  // 地域から tier を引くと**どの危険度を選んでも tier1 の敵しか出ない**。設定値を使う。
-  const interior = mapId !== WORLD_MAP_ID ? interiorById(mapId) : undefined;
-  const tier = (interior?.encounterTier ?? tierForRegion(regionOf(x, y))) as ReturnType<typeof tierForRegion>;
-  // Lv は権威 state 由来 (#534)。戦闘で使うレベルと、報酬を積む先が同じレコードになる。
-  const jobLevel = jobLevelFromXp(jobXpOf(state, archetype), archetype);
-  const playerLevel = playerLevelFromXp(playerXp);
-  // 戦闘ログの表示名は handle (DID ではなく)。startBattle の player 識別子に渡す。
-  // 在庫は materials マップに一本化 (client と同じモデル)。やくそう=herb / そらのしずく=sky-dew。
-  // ふたばの近辺だけ初回依頼の敵に揃える。通常移動の遭遇のみで、確率/内部/ボスは変えない。
-  const spawn = worldOverlay().spawn;
-  const distance = (a: number, b: number) => Math.min(wrap(a - b), WORLD_SIZE - wrap(a - b));
-  const nearFutaba = mapId === WORLD_MAP_ID && Math.max(distance(x, spawn.x), distance(y, spawn.y)) <= 8;
-  const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
-    baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
-    // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
-    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : {}),
-  });
-  const rewarded = state.power >= BATTLE_TUNING.powerCost;
-  const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
-  const nowIso = new Date(now * 1000).toISOString();
-  // move では毎歩ガードを読まない (ステートレス高速化)。**client は戦闘中は move しない**ので、ここに
-  // 来た時点で既存ガードは必ず孤立 (戦闘を終えず離脱した残骸)。期限内でも破棄して新しい遭遇を成立させる。
-  // これをしないと、離脱後にエンカウントタイル (30分固定=特定の場所) を踏むたび createGuard が InvalidSwap
-  // → 500「移動できなかった」で詰まる。孤立ガードの戦闘は未報酬なので破棄しても二重報酬にならない。
-  // 破棄は削除 + 作成の 2 往復ではなく、読んだ CID を期待する 1 回の置き換え (CAS) で行う。
-  const guard: Guard = {
-    did: userDid, battleId, turn: 0, sealed: { archetype, tier, tile: tileKey(mapId, x, y), ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), baseStats: [...baseStats],
-      ...(story ? { story: { battleId: story.id, winFlag: story.winFlag, ...(story.loseFlag ? { loseFlag: story.loseFlag } : {}) } } : {}) }, state: battle, pendingTurnSeed, rewarded,
-    expiresAt: new Date((now + GUARD_TTL_SEC) * 1000).toISOString(), createdAt: nowIso, updatedAt: nowIso,
-  };
-  // 読んだ後に別の遭遇がガードを作った/置き換えたら InvalidSwap → 上位で 409 (二重戦闘を作らせない)。
-  if (existing) await advanceGuard(env, now, guard, existing.cid);
-  else await createGuard(env, now, guard);
-  return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
 }
 
 export interface MoveResult {
@@ -449,7 +349,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   if (!inside && terrain === 'town') {
     // 街: HP/MP 全回復 + 位置 + 最後の街 (敗北帰還先) を gameState に確定 (稀なので PDS 書き OK)。
     // フィールドの街なので mapId は消す (位置は必ず (mapId,x,y) の 3 つ組で書く)。
-    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, lastTown: { x: nx, y: ny } }),
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, party: healedParty(cur.party), lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
     townArrival = { x: nx, y: ny };
@@ -534,45 +434,14 @@ export async function handleTeleport(env: ResolverEnv, userDid: string, x: numbe
     if (m['sky-feather'] <= 0) delete m['sky-feather'];
     // そらのはねはフィールドの街へ飛ぶ。**mapId を消さないと**「内部マップ × 街の座標」
     // という壊れた state が残り、次のリロードで動けなくなる (レビュー ★★★)。
-    return { ...cur, mapId: undefined, x: tx, y: ty, carryHp: undefined, carryMp: undefined, lastTown: { x: tx, y: ty }, materials: m };
+    return { ...cur, mapId: undefined, x: tx, y: ty, carryHp: undefined, carryMp: undefined, party: healedParty(cur.party), lastTown: { x: tx, y: ty }, materials: m };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   materials = written.materials;
   const token = signPosition(env, { did: userDid, x: tx, y: ty, counter: 0, iat: now });
   return { x: tx, y: ty, token, materials };
 }
 
-export interface ItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
-
-/** フィールドの道具使用 (やくそう=herb / そらのしずく=tonic)。サーバー在庫を 1 消費して carryHp/Mp を回復。
- *  maxHp/Mp はプレイヤーの archetype+Lv+装備から算出 (playerCombatant)。満タン/在庫切れは 400。 */
-export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb' | 'tonic', now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<ItemResult> {
-  const rec = await readState(env, userDid);
-  const state = rec?.state ?? (await migrateInitState(userDid, new Date(now * 1000).toISOString(), ns, fetchImpl));
-  const matId = item === 'herb' ? 'herb' : 'sky-dew';
-  if ((state.materials[matId] ?? 0) <= 0) throw new ResolverError(item === 'herb' ? 'やくそうを もっていない' : 'そらのしずくを もっていない', 400);
-  const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  const c = playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel);
-  let healed = 0;
-  const written = await readModifyWrite(env, userDid, (cur) => {
-    const have = cur.materials[matId] ?? 0;
-    if (have <= 0) throw new ResolverError('在庫切れ', 400);
-    const m = { ...cur.materials, [matId]: have - 1 };
-    if ((m[matId] ?? 0) <= 0) delete m[matId];
-    if (item === 'herb') {
-      const curHp = cur.carryHp ?? c.maxHp;
-      if (curHp >= c.maxHp) throw new ResolverError('HP は満タン', 400);
-      const newHp = Math.min(c.maxHp, curHp + Math.round(c.maxHp * BATTLE_TUNING.herbHealRatio));
-      healed = newHp - curHp;
-      return { ...cur, materials: m, carryHp: newHp >= c.maxHp ? undefined : newHp };
-    }
-    const curMp = cur.carryMp ?? c.maxMp;
-    if (curMp >= c.maxMp) throw new ResolverError('MP は満タン', 400);
-    const newMp = Math.min(c.maxMp, curMp + Math.max(1, Math.round(c.maxMp * BATTLE_TUNING.tonicMpRatio)));
-    healed = newMp - curMp;
-    return { ...cur, materials: m, carryMp: newMp >= c.maxMp ? undefined : newMp };
-  }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
-  return { carryHp: written.carryHp, carryMp: written.carryMp, materials: written.materials, healed };
-}
+// フィールドの道具使用 (handleItem) は field-heal.ts へ (D-PARTY-003)。
 
 /** 権威 state + 診断から luk (装備込み) を出す。**client 申告を使わない** —
  *  強化値の抽選に luk が効くので、client の値を信じると盛れる (#551)。 */
@@ -586,7 +455,9 @@ export async function playerLuk(env: ResolverEnv, userDid: string, ns: string = 
 /** 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。
  *  forgeable だが §6-4 dev 無害・archetype と同じ信用レベル (M5 で再検討)。 */
 export async function handleGear(env: ResolverEnv, userDid: string, gear: GearSelection, now: number, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<{ ok: true }> {
-  await readModifyWrite(env, userDid, (cur) => ({ ...cur, gearSel: sanitizeGear(gear, cur.pieces ?? []) }),
+  // 隣り合う属性の防具は同時に着られない (D-ELEM-001 §13a。画面でも選べないが、直 POST もここで止める)。
+  if (adjacentArmorConflict(gear)) throw new ResolverError('隣り合う属性の防具は一緒に着られない', 400, 'element_conflict');
+  await readModifyWrite(env, userDid, (cur) => { const next = { ...cur, gearSel: sanitizeGear(gear, cur.pieces ?? []) }; assertNotOverWorn(cur, next, cur.pieces ?? []); return next; }, // 仲間が着ている品は着られない (D-PARTY-004)
     { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   return { ok: true };
 }
@@ -605,6 +476,8 @@ export interface TurnResult {
   materials?: Record<string, number>;
   carryHp?: number;
   carryMp?: number;
+  /** 決着後のパーティ (仲間の HP/MP の持ちこし。D-PARTY-001)。仲間がいないときは省略。 */
+  party?: PartyState;
   /** 進行フラグ (#545)。決着でシナリオが進むと増える。 */
   flags?: string[];
   /** シナリオのお知らせ (一度だけ)。**発火済みは二度と返らない**ので、
@@ -621,7 +494,7 @@ export interface TurnResult {
  * turn: 1 コマンドを**サーバーが**確定 pendingTurnSeed で解決する。
  * 決着なら報酬を fail-closed で確定 + ガード削除。未決着なら CAS で turn を進めてから応答。
  */
-export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0): Promise<TurnResult> {
+export async function handleTurn(env: ResolverEnv, userDid: string, battleId: string, turn: number, command: Command, now: number, ns: string = DEFAULT_NS, skillIndex = 0, targetIndex = 0, itemId?: string, allyOrders?: unknown): Promise<TurnResult> {
   if (!VALID_COMMANDS.includes(command)) throw new ResolverError('不正なコマンド', 400);
   const g = await readGuard<SealedMeta, BattleState>(env, userDid);
   if (!g) throw new ResolverError('戦闘中でない', 409);
@@ -630,20 +503,25 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
   if (guard.battleId !== battleId || guard.turn !== turn) throw new ResolverError('ターン不一致 (やり直し/リプレイ)', 409);
   // 逃げられないストーリー戦 (canFlee: false)。web は「にげる」を出さない (D-STORY-009)。
   if (command === 'flee' && guard.state.story?.canFlee === false) throw new ResolverError('この たたかいからは にげられない', 400, 'cannot_flee');
+  // 封印した持ち込み数に無いどうぐは断る (ターンは進めない。D-ITEM-001)。
+  if (command === 'item' && !canUseBattleItem(guard.state, itemId)) throw new ResolverError('その どうぐを もっていない', 400, 'no_item');
 
   // とくぎ選択 (#436) はサーバー権威の sealed state で検証: 実際に習得済みのとくぎだけ選べる
   // (client が持っていない index を偽っても [0] = 署名スキルに落とす。詐称防止)。
   const skills = guard.state.playerSkills ?? [guard.state.playerSkill];
   const idx = Number.isInteger(skillIndex) && skillIndex >= 0 && skillIndex < skills.length ? skillIndex : 0;
-  // 群れ (#453): enemies が 2 体以上なら resolveTurnMulti で解決 + targetIndex を検証。1 体 (従来) は
-  // resolveTurn (1v1・挙動不変)。client が偽った targetIndex は敵配列の範囲に clamp、範囲外/非整数は
+  // 群れ (#453) か仲間がいる (D-PARTY-001) なら resolveTurnMulti で解決 + targetIndex を検証。1 対 1 (従来) は
+  // resolveTurn (挙動不変)。client が偽った targetIndex は敵配列の範囲に clamp、範囲外/非整数は
   // 主敵 [0] に落とす (詐称防止の fail-safe。死体を指定しても core の resolveTargets が空振りにする)。
+  // 味方をねらう手 (やくそう・回復のとくぎ。D-PARTY-003) では味方の番号なので、敵と味方の多いほうまで通す
+  // (core は選んだ相手がいなければ 主敵 / 主人公 に落とす)。
   const enemies = guard.state.enemies;
-  const isMulti = (enemies?.length ?? 0) > 1;
-  const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < enemies!.length ? targetIndex : 0;
+  const allies = guard.state.allies;
+  const isMulti = (enemies?.length ?? 0) > 1 || (allies?.length ?? 0) > 1;
+  const tIdx = isMulti && Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < Math.max(enemies?.length ?? 1, allies?.length ?? 1) ? targetIndex : 0;
   const next = isMulti
-    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx)
-    : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx);
+    ? resolveTurnMulti(guard.state, command, guard.pendingTurnSeed, idx, tIdx, itemId, allyOrdersOf(allyOrders, guard.state, guard.sealed.party ?? [], guard.sealed.manual ?? [])) // めいれい (D-PARTY-004)
+    : resolveTurn(guard.state, command, guard.pendingTurnSeed, idx, itemId);
 
   if (next.outcome !== 'ongoing') {
     // ── 決着: **まずガードを CAS 削除して「この決着ターンは自分が消費」を確定** ──
@@ -670,12 +548,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const noticeBox: { v: string[]; m: ScenarioMessage[] } = { v: [], m: [] };
     const window = enemyWindow(now);
     const written = await readModifyWrite(env, userDid, (cur: GameState): GameState => {
-      // 戦闘中に消費したやくそう/しずくを materials に反映してから報酬 (ドロップ/ロス) を適用。
+      // 戦闘中に消費したやくそう/しずく/どうぐを materials に反映してから報酬 (ドロップ/ロス) を適用。
       // 在庫 = 戦闘前の在庫 − 使った数。持ち込み数 (上限あり) で上書きすると残りが消える (#731)。
-      const consumedMaterials = { ...cur.materials };
-      const consume = (id: string, used: number) => { const n = (cur.materials[id] ?? 0) - used; if (n > 0) consumedMaterials[id] = n; else delete consumedMaterials[id]; };
-      consume('herb', next.herbsUsed ?? 0);
-      consume('sky-dew', next.tonicsUsed ?? 0);
+      const consumedMaterials = materialsAfterBattleUse(cur.materials, next);
       const r = scriptedLoss ? { next: { ...cur, materials: consumedMaterials }, awarded: {} } : applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
@@ -684,7 +559,14 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         // 群れ (#453): **倒した敵 (hp<=0) ぶんだけ**報酬。生存敵に報酬を出さない (レビュー ★★)。
         // 全滅勝ちなら全敵が hp<=0 で全頭ぶん。1 体戦は monsterId 単体。
         ...(isMulti ? { enemyIds: next.enemies!.filter((e) => e.hp <= 0).map((e) => e.monsterId ?? next.monsterId) } : {}),
+        // 戦闘の経験値は、出た人数 (主人公 + 封印した仲間。途中で倒れた仲間も数える) で等分 (D-PARTY-002 §11)。
+        heads: 1 + (guard.sealed.party?.length ?? 0),
       });
+      // 仲間にも同じ 1 人ぶんを足す。Lv が上がった仲間は、主人公と同じく全快する。
+      const allies = partyWithBattleXp(r.next.party, guard.sealed.party ?? [], r.awarded.xp ?? 0, jobLevelFromXp(jobXpOf(cur, guard.sealed.archetype), guard.sealed.archetype));
+      const bonded = partyWithBattleBond(allies.party, guard.sealed.party ?? [], next); // きずな (D-PARTY-004)
+      r.next = { ...r.next, party: bonded.party };
+      r.awarded = { ...r.awarded, ...(allies.leveled.length ? { allyLeveledUp: allies.leveled } : {}), ...(bonded.deepened.length ? { allyBondUp: bonded.deepened } : {}) };
       awarded = r.awarded;
       // 勝ったらそのタイルを「撃破済み」に記録し、同じ 30 分枠では再エンカウントさせない (無限狩り防止)。
       const prevDefeated = cur.defeatedWindow === window ? (cur.defeated ?? []) : [];
@@ -725,6 +607,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         // 決めた monsterStatFloor と JOB_LEVEL_PACE は引き直しが要る (#547)。
         carryHp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
         carryMp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
+        party: decision === 'lose' && !scriptedLoss || r.awarded.leveledUp ? healedParty(settled.party) : partyAfterBattle(settled.party, guard.sealed.party ?? [], next, (r.awarded.allyLeveledUp ?? []).map((a) => a.id)),
         defeated,
         defeatedWindow: window,
       };
@@ -732,7 +615,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     // 決着後の位置に対応する新トークンを発行 (敗北帰還で位置が変わるので client はこれで同期)。
     const token = signPosition(env, { did: userDid, ...(finalMapId !== WORLD_MAP_ID ? { mapId: finalMapId } : {}), x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
-      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp,
+      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp, ...(written.party ? { party: written.party } : {}),
       ...(written.flags ? { flags: written.flags } : {}),
       activeQuests: written.activeQuests, questsDone: written.questsDone ?? [],
       ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v, scenarioMessages: noticeBox.m } : {}) };
@@ -750,4 +633,20 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     throw e;
   }
   return { state: stripState(next), events: next.lastEvents, outcome: next.outcome };
+}
+
+/** 決着の後の party: 戦闘に出た仲間の HP/MP を持ちこす (満タンは書かない)。出なかった仲間 (倒れていた) はそのまま。
+ *  Lv が上がった仲間 (leveled) は全快。決着までの間に外された仲間は書かない (ids は今の state を正とする)。 */
+function partyAfterBattle(party: PartyState | undefined, fought: readonly string[], battle: BattleState, leveled: readonly string[]): PartyState | undefined {
+  if (!party) return undefined;
+  const { hp: _hp, mp: _mp, ...rest } = party;
+  const hp = { ...party.hp }, mp = { ...party.mp };
+  fought.forEach((id, i) => {
+    const c = battle.allies?.[i + 1];
+    if (!c || !party.ids.includes(id)) return;
+    const full = leveled.includes(id);
+    if (c.hp < c.maxHp && !full) hp[id] = c.hp; else delete hp[id];
+    if (c.mp < c.maxMp && !full) mp[id] = c.mp; else delete mp[id];
+  });
+  return { ...rest, ids: [...party.ids], ...(Object.keys(hp).length ? { hp } : {}), ...(Object.keys(mp).length ? { mp } : {}) };
 }

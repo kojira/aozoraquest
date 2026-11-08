@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { DialogueWindow } from './dialogue-window';
+import { npcDialogueLines } from '@/lib/npc-image';
 
 /**
  * **セリフ窓のタップは祖先に伝わってはいけない** (#638)。
@@ -150,6 +151,27 @@ describe('DialogueWindow: 救護導入の表情と操作遮断', () => {
     expect(screen.queryByRole('img')).toBeNull();
   });
 
+  it('マップのドット絵の行は、1コマ目を拡大した絵として出す (#907)', () => {
+    render(<DialogueWindow lines={[{ speaker: 'ほむら', text: 'よく寝た', portrait: { src: '/sprite.webp', name: 'ほむら', mapSprite: { frames: 2 } } }]} onDone={vi.fn()} />);
+    const sprite = screen.getByRole('img', { name: 'ほむらの会話イラスト' });
+    expect(sprite.getAttribute('data-map-sprite')).toBe('true');
+    expect(sprite.style.backgroundImage).toBe('url("/sprite.webp")');
+    expect(sprite.style.backgroundSize).toBe('200% 100%');
+    expect(sprite.style.imageRendering).toBe('pixelated');
+  });
+
+  it('窓の持ち主と違う話者の行には、窓全体の絵を出さない (#907: 絵の無い NPC の横に話しかけた相手の絵)', () => {
+    render(<DialogueWindow
+      lines={[{ speaker: '村長', text: '頼んだぞ' }, { speaker: 'ほむら', text: 'よく寝た' }]}
+      portrait={{ src: '/elder.webp', name: '村長' }} onDone={vi.fn()}
+    />);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/elder.webp');
+    const surface = screen.getByRole('dialog');
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByText('ほむら')).toBeTruthy();
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
   it('Tab/Shift+Tabは会話と選択肢の中だけで循環し、背後操作へ抜けない', () => {
     render(<><button>もちもの</button><DialogueWindow lines={[{ text: '受ける？' }]} onDone={vi.fn()}
       choices={[{ label: 'はい', onSelect: vi.fn() }, { label: 'いいえ', onSelect: vi.fn() }]} /></>);
@@ -212,5 +234,19 @@ describe('DialogueWindow: 演出層', () => {
   it('viewport 窓では演出層を出さない', () => {
     render(<DialogueWindow lines={STORY} onDone={() => {}} />);
     expect(screen.queryByTestId('story-effect-layer')).toBeNull();
+  });
+});
+
+describe('DialogueWindow: NPC 台詞の演出タグ (E2)', () => {
+  it('タグつきの行を出すと演出層が暗転し、タグの文字は出ない', () => {
+    const lines = npcDialogueLines({ id: 'x', name: '兄' }, ['……', '[fx:fade-black]さようなら']);
+    render(<DialogueWindow anchor="map" lines={lines} onDone={() => {}} />);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('0');
+    const surface = screen.getAllByRole('dialog')[0]!;
+    fireEvent.click(surface); fireEvent.click(surface);
+    expect(screen.getByTestId('story-black').style.opacity).toBe('1');
+    fireEvent.click(surface);
+    expect(document.body.textContent).toContain('さようなら');
+    expect(document.body.textContent).not.toContain('[fx:');
   });
 });

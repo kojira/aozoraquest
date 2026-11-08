@@ -46,6 +46,17 @@ describe('world-server (サーバー権威 API クライアント)', () => {
     expect(body).toEqual({ battleId: 'btl-1', turn: 2, command: 'attack' });
   });
 
+  it('serverTurn は item のとき itemId を送り、serverShopBuy は /api/shop/buy に itemId と rkey を送る (D-ITEM-001)', async () => {
+    const { serverTurn, serverShopBuy } = await import('../world-server');
+    const { agent } = mockAgent(Date.now() / 1000 + 300);
+    const seen: Array<{ url: string; body: unknown }> = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => { seen.push({ url, body: JSON.parse(init.body as string) }); return new Response(JSON.stringify({ state: {}, events: [], outcome: 'ongoing', power: 7, materials: {} }), { status: 200 }); }) as unknown as typeof fetch;
+    await serverTurn(agent, 'btl-1', 3, 'item', undefined, 'nemuri-kona');
+    await serverShopBuy(agent, 'nemuri-kona', 'b-1', 'tok');
+    expect(seen[0]).toEqual({ url: 'https://edge.test/api/battle/turn', body: { battleId: 'btl-1', turn: 3, command: 'item', itemId: 'nemuri-kona' } });
+    expect(seen[1]).toEqual({ url: 'https://edge.test/api/shop/buy', body: { itemId: 'nemuri-kona', rkey: 'b-1', token: 'tok' } });
+  });
+
   it('quest DTOs carry full arrays and route only the chosen ID with distinct auth scopes', async () => {
     const { serverQuestAccept, serverQuestComplete, serverState, serverTurn } = await import('../world-server');
     const scopes: string[] = [];

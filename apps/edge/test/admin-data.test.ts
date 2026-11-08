@@ -202,6 +202,22 @@ describe('/api/admin/data (#695)', () => {
     });
   });
 
+  describe('items の小数 (D-ITEM-001)', () => {
+    it('PUT items はどうぐの効果の小数を文字列でレコードに書き、GET は数値に戻して返す', async () => {
+      const NEMURI = { id: 'nemuri-kona', name: 'ねむりごな', price: { power: 3, materials: 1 }, shopTier: 1,
+        battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 0.7, turns: 3 }] } };
+      const value = { items: [...Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), NEMURI], equipment: activeEquipment().map((e) => ({ ...e })) };
+      const env = await makeEnv();
+      const res = await handleRequest(call('PUT', 'items', { body: { value, swapCid: null } }), env);
+      expect(await res.json()).toEqual({ ok: true, cid: 'new1' });
+      const floats: number[] = [];
+      JSON.stringify(pds.puts[0]!.record, (_k, v: unknown) => { if (typeof v === 'number' && !Number.isInteger(v)) floats.push(v); return v; });
+      expect(floats).toEqual([]); // PDS は整数以外の数値を拒否する
+      const got = await (await handleRequest(call('GET', 'items'), env)).json() as { value: { items: unknown[] } };
+      expect(got.value.items).toEqual(value.items);
+    });
+  });
+
   describe('monsters (D-STORY-009)', () => {
     const monsters = () => activeMonsters().map((m) => ({ ...m }));
     const BOSS = { ...activeMonsters()[0]!, id: 'story-boss', name: 'ぬしの影', storyOnly: true };
@@ -266,7 +282,7 @@ describe('/api/admin/data (#695)', () => {
 
   describe('story (D-STORY-009)', () => {
     const flags = (n: number) => Array.from({ length: n }, (_, i) => `f${i}`);
-    const item = (over: Record<string, unknown> = {}) => ({ id: 'pi-key', mapId: 'cave-1', x: 4, y: 7, itemId: 'herb', count: 1, flag: 'got-key', ...over });
+    const item = (over: Record<string, unknown> = {}) => ({ id: 'pi-key', mapId: 'world', x: 302, y: 300, itemId: 'herb', count: 1, flag: 'got-key', ...over }); // 歩けるマス (保存のときに置き場所を見る)
     const put = async (name: string, value: unknown) => (await handleRequest(call('PUT', name, { body: { value, swapCid: null, dryRun: true } }), await makeEnv())).status;
 
     it('シナリオと置きアイテムのフラグ数の合計が 500 を超えると、どちらを保存しても 400', async () => {
@@ -276,6 +292,36 @@ describe('/api/admin/data (#695)', () => {
       store.delete(COL('scenario')); setScenario(null); // レコードが無ければ読み込みは触らないので、前の適用を消す
       store.set(COL('story'), { value: { placedItems: [item()] }, cid: 'st1' });
       expect(await put('scenario', { events: [{ id: 'e1', title: 't', when: [], setFlags: flags(500) }] })).toBe(400);
+      expect(pds.puts).toHaveLength(0);
+    });
+
+    it('新しく置いた宝箱が歩けないマス・NPC の上なら 400 で書かない。動かしていない既存のものは通す (D-CHEST-001)', async () => {
+      const chest = (over: Record<string, unknown> = {}) => ({ id: 'c1', mapId: 'world', x: 301, y: 300, kind: 'chest', rewards: [{ power: 1 }], ...over });
+      expect(await put('story', { placedItems: [chest()] })).toBe(200);
+      expect(await put('story', { placedItems: [chest({ ...WATER })] })).toBe(400);
+      expect(await put('story', { placedItems: [chest({ x: NPC.x, y: NPC.y })] })).toBe(400);
+      store.set(COL('story'), { value: { placedItems: [chest({ ...WATER })] }, cid: 'st1' });
+      expect(await put('story', { placedItems: [chest({ ...WATER }), chest({ id: 'c2' })] })).toBe(200);
+      expect(pds.puts).toHaveLength(0);
+    });
+
+    it('保存済みの id の flag・kind は変えられない (400)。ほかの項目は変えられる (D-CHEST-001)', async () => {
+      const chest = (over: Record<string, unknown> = {}) => ({ id: 'c1', mapId: 'world', x: 301, y: 300, kind: 'chest', rewards: [{ power: 1 }], ...over });
+      store.set(COL('story'), { value: { placedItems: [chest({ flag: 'got-c1' })] }, cid: 'st1' });
+      expect(await put('story', { placedItems: [chest({ flag: 'got-c1-2' })] })).toBe(400);
+      expect(await put('story', { placedItems: [chest()] })).toBe(400);
+      expect(await put('story', { placedItems: [chest({ flag: 'got-c1', kind: 'sparkle' })] })).toBe(400);
+      expect(await put('story', { placedItems: [chest({ flag: 'got-c1', rewards: [{ power: 2 }], hint: 'あかない' })] })).toBe(200);
+      expect(pds.puts).toHaveLength(0);
+    });
+
+    it('冒険者のギルドが受付の NPC でなければ 400 (D-PARTY-001)', async () => {
+      const recruit = (guild: string) => ({ recruits: [{ id: 'r1', name: 'カイト', archetype: 'warrior', guild, line: 'よろしく。' }] });
+      expect(await put('story', recruit('elder'))).toBe(400);
+      store.set(COL('npcs'), { value: { npcs: [{ ...NPC, guildReception: true }] }, cid: 'npc2' });
+      resetAuthoredWorldCache();
+      expect(await put('story', recruit('elder'))).toBe(200);
+      expect(await put('story', recruit('nobody'))).toBe(400);
       expect(pds.puts).toHaveLength(0);
     });
 
@@ -309,6 +355,39 @@ describe('/api/admin/data (#695)', () => {
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining('futaba-bluesky') });
       expect(pds.puts).toHaveLength(0);
+    });
+  });
+
+  describe('characters (D-CHAR-001)', () => {
+    const chars = (list: Array<{ id: string; name: string }>) => ({ characters: list });
+    const put = async (name: string, value: unknown, swapCid: string | null = null) =>
+      handleRequest(call('PUT', name, { body: { value, swapCid } }), await makeEnv());
+
+    it('PUT characters は形を検証し、dev の characters コレクションへ CAS で書く', async () => {
+      const bad = await put('characters', chars([{ id: 'Twitter', name: 'Twitter' }]));
+      expect(bad.status).toBe(400);
+      expect(pds.puts).toHaveLength(0);
+      const ok = await put('characters', chars([{ id: 'twitter', name: 'Twitter' }]));
+      expect(await ok.json()).toEqual({ ok: true, cid: 'new1' });
+      expect(pds.puts.map((p) => p.collection)).toEqual([COL('characters')]);
+    });
+
+    it('文が無い人物 {c:id} を指すと保存できない (NPC)。人物があれば書く', async () => {
+      const npc = { ...NPC, name: '{c:bluesky}ちゃん' };
+      const res = await put('npcs', { npcs: [npc] }, 'npc1');
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining('bluesky') });
+      store.set(COL('characters'), { value: chars([{ id: 'bluesky', name: 'Bluesky' }]), cid: 'ch1' });
+      expect((await put('npcs', { npcs: [npc] }, 'npc1')).status).toBe(200);
+    });
+
+    it('使われている人物を characters から消すと保存できない', async () => {
+      store.set(COL('characters'), { value: chars([{ id: 'bluesky', name: 'Bluesky' }, { id: 'x', name: 'X' }]), cid: 'ch1' });
+      store.set(COL('npcs'), { value: { npcs: [{ ...NPC, lines: ['{c:x}を見た？'] }] }, cid: 'npc1' });
+      const res = await put('characters', chars([{ id: 'bluesky', name: 'Bluesky' }]), 'ch1');
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed', message: expect.stringContaining('「x」') });
+      expect((await put('characters', chars([{ id: 'x', name: 'エックス' }]), 'ch1')).status).toBe(200);
     });
   });
 });

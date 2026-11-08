@@ -1,5 +1,6 @@
 import { allNpcs, parseNpcLine, sceneLines, type DialogueSceneId, type DialogueVars, type NpcDef, type SceneLine } from '@aozoraquest/core';
 import type { DialogueLine } from './dialogue';
+import type { ScenarioMessage } from './world-server';
 import { npcDialogueLines, npcImageUrl } from './npc-image';
 
 /**
@@ -31,4 +32,19 @@ export function sceneDialogueLine(line: SceneLine, here?: HereSpeaker, npcs: rea
 /** その場面の行 (無ければ空 = 呼出側はその会話を出さない。コード側に代わりの文は持たない)。 */
 export function sceneDialogue(id: DialogueSceneId, opts: { vars?: DialogueVars; npcId?: string; here?: HereSpeaker } = {}): DialogueLine[] {
   return sceneLines(id, opts.vars, opts.npcId).map((l) => sceneDialogueLine(l, opts.here));
+}
+
+/**
+ * シナリオのお知らせを会話窓の行にする (#907)。`npcId` のある行はその NPC が話す (名前と会話イラスト)。
+ * 会話イラストの無い NPC はマップのドット絵を大きく出す (目を覚ました鳥が画面に出てくるように)。
+ */
+export function scenarioDialogueLines(messages: readonly ScenarioMessage[], npcs: readonly NpcDef[] = allNpcs()): DialogueLine[] {
+  return messages.map((m) => {
+    const npc = m.npcId !== undefined ? npcs.find((n) => n.id === m.npcId) : undefined;
+    if (!npc) return { text: m.text, ...(m.effects ? { effects: m.effects } : {}) };
+    const line = npcSceneLine(npc, m.text);
+    const sprite = !line.portrait && npc.spriteImage
+      ? { portrait: { src: npcImageUrl(npc.id, 'sprite', npc.spriteImage), name: npc.name, mapSprite: { frames: npc.spriteImage.width === npc.spriteImage.height * 2 ? 2 as const : 1 as const } } } : {};
+    return { ...line, ...sprite, ...(m.effects ? { effects: m.effects } : {}) };
+  });
 }

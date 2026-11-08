@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { EQUIPMENT_BY_ID, ITEMS, leveledName } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, ITEMS, leveledName, withCharacterNames } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
+import type { FieldMember } from './field-skill-modal';
 
 /**
  * あおぞらワールドのコマンドメニューから開く 2 つの窓 (docs/19 オーバーレイ化)。
@@ -55,6 +56,8 @@ export function ItemsModal({
   onUseTonic,
   onUseFeather,
   onClose,
+  members = [],
+  onUseOnAlly,
 }: {
   herbStock: number;
   tonicStock: number;
@@ -65,10 +68,40 @@ export function ItemsModal({
   onUseTonic: () => string | void;
   onUseFeather: () => void;
   onClose: () => void;
+  /** 主人公 ('hero') と仲間。仲間がいれば やくそう・しずくは相手を選ぶ (D-PARTY-003)。 */
+  members?: readonly FieldMember[];
+  onUseOnAlly?: (item: 'herb' | 'tonic', ally: FieldMember) => Promise<string>;
 }) {
   // 回復系は使っても閉じない (満タン等の結果をモーダル内に留めて見せる — レビュー ★★)。
   // そらのはねは街へ帰る (テレポート) ので閉じる。
   const [msg, setMsg] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<'herb' | 'tonic' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const withAllies = members.length > 1 && !!onUseOnAlly;
+  const applyTo = async (item: 'herb' | 'tonic', m: FieldMember) => {
+    setChoosing(null);
+    if (m.id === 'hero') { const r = (item === 'herb' ? onUseHerb : onUseTonic)(); setMsg(typeof r === 'string' ? r : null); return; }
+    setBusy(true);
+    setMsg(await onUseOnAlly!(item, m));
+    setBusy(false);
+  };
+  if (choosing) {
+    const full = (m: FieldMember) => (choosing === 'herb' ? m.c.hp >= m.c.maxHp : m.c.mp >= m.c.maxMp);
+    return (
+      <ModalShell title="どうぐ" onClose={onClose}>
+        <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0 0 2px' }}>{choosing === 'herb' ? 'やくそう' : 'そらのしずく'}を だれに つかう？</div>
+        {members.map((m) => (
+          <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em', padding: '0.4em 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.9em', opacity: m.c.hp <= 0 ? 0.5 : 1 }}>
+            <span>{m.c.name}<br /><span style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.85em', color: 'var(--color-muted)' }}>HP {m.c.hp}/{m.c.maxHp}　MP {m.c.mp}/{m.c.maxMp}</span></span>
+            <button type="button" disabled={busy || m.c.hp <= 0 || full(m)} onClick={() => void applyTo(choosing, m)} style={{ fontSize: '0.82em', padding: '0.4em 1em', touchAction: 'manipulation' }}>
+              {m.c.hp <= 0 ? 'たおれている' : full(m) ? 'まんたん' : 'つかう'}
+            </button>
+          </div>
+        ))}
+        <div style={{ marginTop: '0.4em' }}><button type="button" onClick={() => setChoosing(null)} style={{ fontSize: '0.82em', padding: '0.4em 1em' }}>もどる</button></div>
+      </ModalShell>
+    );
+  }
   const row = (label: string, count: number, note: string, disabled: boolean, onUse: () => string | void, closeAfter: boolean) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em', padding: '0.4em 0', borderBottom: '1px solid var(--color-border)' }}>
       <span style={{ fontSize: '0.9em' }}>
@@ -96,8 +129,8 @@ export function ItemsModal({
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>どうぐを持っていない。モンスターを倒すと手に入る。</p>
       ) : (
         <>
-          {row('やくそう', herbStock, 'HPを回復', herbStock <= 0 || !canUse, onUseHerb, false)}
-          {row('そらのしずく', tonicStock, 'MPを回復', tonicStock <= 0 || !canUse, onUseTonic, false)}
+          {row('やくそう', herbStock, 'HPを回復', busy || herbStock <= 0 || !canUse, withAllies ? () => setChoosing('herb') : onUseHerb, false)}
+          {row('そらのしずく', tonicStock, 'MPを回復', busy || tonicStock <= 0 || !canUse, withAllies ? () => setChoosing('tonic') : onUseTonic, false)}
           {row('そらのはね', featherStock, '行った街へ飛ぶ', featherStock <= 0, onUseFeather, true)}
           {featherStock <= 0 && (
             <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>
@@ -122,7 +155,9 @@ export function InventoryModal({
   pieces: CraftedPiece[];
   onClose: () => void;
 }) {
-  const mats = Object.entries(materials).filter(([, n]) => n > 0);
+  // 戦闘で使うどうぐ (D-ITEM-001) は素材と分けて、使い道の 1 行を添える。
+  const mats = Object.entries(materials).filter(([id, n]) => n > 0 && !ITEMS[id]?.battle);
+  const battleItems = Object.entries(materials).filter(([id, n]) => n > 0 && ITEMS[id]?.battle);
   const sortedPieces = [...pieces].sort((a, b) => b.level - a.level);
   return (
     <ModalShell title="もちもの" onClose={onClose}>
@@ -133,10 +168,23 @@ export function InventoryModal({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3em 0.8em', fontSize: '0.85em', marginBottom: '0.6em' }}>
           {mats.map(([id, n]) => (
             <span key={id}>
-              {ITEMS[id]?.name ?? id} <span style={{ color: 'var(--color-muted)' }}>×{n}</span>
+              {withCharacterNames(ITEMS[id]?.name ?? id)} <span style={{ color: 'var(--color-muted)' }}>×{n}</span>
             </span>
           ))}
         </div>
+      )}
+      {battleItems.length > 0 && (
+        <>
+          <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 2px' }}>戦闘でつかう どうぐ</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: '0.85em', marginBottom: '0.6em' }}>
+            {battleItems.map(([id, n]) => (
+              <div key={id}>
+                {withCharacterNames(ITEMS[id]!.name)} <span style={{ color: 'var(--color-muted)' }}>×{n}</span>
+                {ITEMS[id]!.desc && <div style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>{ITEMS[id]!.desc}</div>}
+              </div>
+            ))}
+          </div>
+        </>
       )}
       <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.4em 0 2px' }}>作った装備</div>
       {sortedPieces.length === 0 ? (

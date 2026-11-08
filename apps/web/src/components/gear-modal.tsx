@@ -7,7 +7,9 @@ import {
   bonusText,
   equipHands,
   gearBonusFromGear,
+  armorDyeSummary,
   jobDisplayName,
+  wouldConflict,
   leveledName,
   type Archetype,
   type EquipSlot,
@@ -33,6 +35,8 @@ export function GearModal({
   busy = false,
   errorText = null,
   onClose,
+  whose,
+  wornBy,
 }: {
   archetype: Archetype | null;
   /** 所持している全個体 */
@@ -48,6 +52,10 @@ export function GearModal({
    *  描画されず、すてるの主用途は街の外なので、無反応になってユーザーが連打する。 */
   errorText?: string | null;
   onClose: () => void;
+  /** 「だれの？」(主人公＋仲間。D-PARTY-004)。仲間がいなければ出さない。 */
+  whose?: { options: ReadonlyArray<{ who: string; name: string }>; current: string; onChange: (who: string) => void } | undefined;
+  /** ほかの人が着ている個体 (rkey → 名前)。「ミオが そうび中」と出して選べなくする。 */
+  wornBy?: ReadonlyMap<string, string> | undefined;
 }) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   // すてるは取り消せないので 2 段階。強化した品を 1 タップで失わせない。
@@ -69,6 +77,8 @@ export function GearModal({
 
   const total = useMemo(() => (archetype ? gearBonusFromGear(archetype, selection) : null), [archetype, selection]);
   const totalText = total ? bonusText(total) : '';
+  // 防具の染まり (D-ELEM-001 §13a。「火 75%・空 25%」)。属性の防具が無ければ出さない。
+  const dyeText = useMemo(() => armorDyeSummary(selection), [selection]);
 
   return (
     <div
@@ -98,9 +108,23 @@ export function GearModal({
             とじる
           </button>
         </div>
+        {whose && whose.options.length > 1 && (
+          <div role="radiogroup" aria-label="だれの？" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, margin: '0 0 0.5em', fontSize: '0.8em' }}>
+            <span style={{ color: 'var(--color-muted)' }}>だれの？</span>
+            {whose.options.map((o) => (
+              <button key={o.who} type="button" role="radio" aria-checked={o.who === whose.current} onClick={() => whose.onChange(o.who)}
+                className={o.who === whose.current ? undefined : 'secondary'} style={{ fontSize: '1em', padding: '0.3em 0.7em', touchAction: 'manipulation' }}>
+                {o.who === whose.current ? `▸ ${o.name}` : o.name}
+              </button>
+            ))}
+          </div>
+        )}
         <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)', minHeight: '1.4em' }} aria-live="polite">
           {totalText ? `そうびの効果: ${totalText}` : 'なにも装備していない。なんでも屋で作ってもらおう。'}
         </p>
+        {dyeText && (
+          <p data-testid="gear-dye" style={{ margin: '0 0 0.5em', fontSize: '0.75em' }}>守りの属性: {dyeText}</p>
+        )}
         {errorText && (
           <p role="alert" style={{ fontSize: '0.85em', color: 'var(--color-danger)', margin: '0 0 0.4em' }}>
             {errorText}
@@ -151,24 +175,33 @@ export function GearModal({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {candidates.map((p) => {
                       const def = EQUIPMENT_BY_ID[p.itemId]!;
-                      const equipable = archetype ? canEquip(archetype, def) : false;
+                      // 隣り合う属性の防具は一緒に着られない (D-ELEM-001 §13a。edge も 400 で止める)
+                      const conflict = wouldConflict(selection, slot, p.itemId);
+                      const equipable = (archetype ? canEquip(archetype, def) : false) && !conflict;
                       const isEquipped = p.rkey === equippedRkey;
+                      const other = wornBy?.get(p.rkey);
                       return (
                         <div key={p.rkey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
                           <span style={{ opacity: equipable ? 1 : 0.6 }}>
                             {leveledName(def, p.level)}
                             {equipHands(def) === 2 && <span style={{ marginLeft: '0.3em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(両手)</span>}
-                            {def.jobOnly && !equipable && (
+                            {def.jobOnly && !equipable && !conflict && (
                               <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-danger)' }}>
                                 (要: {jobDisplayName(def.jobOnly, 'default')})
                               </span>
                             )}
-                            {!def.jobOnly && !equipable && (
+                            {conflict && (
+                              <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(となりの属性とは いっしょに着られない)</span>
+                            )}
+                            {!def.jobOnly && !equipable && !conflict && (
                               <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(装備できない)</span>
                             )}
                           </span>
                           {isEquipped ? (
                             <span style={{ fontSize: '0.85em', color: 'var(--color-accent)' }}>そうび中</span>
+                          ) : other ? (
+                            // ほかの人が着ている品は選べない・すてられない (1 個は 1 人だけ。サーバーも 400)。
+                            <span style={{ fontSize: '0.85em', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>{other}が そうび中</span>
                           ) : confirmDiscard === p.rkey ? (
                             <span style={{ display: 'flex', gap: '0.3em', whiteSpace: 'nowrap' }}>
                               <button

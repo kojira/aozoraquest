@@ -11,8 +11,8 @@
 /** 本家の NSID の根。web は fork 用に VITE_NSID_ROOT で差し替えられる。 */
 export const AQ_NSID_ROOT = 'app.aozoraquest';
 
-/** 管理者 PDS の world.* レコード名。並びは loadAdminWorld の読み込み順。 */
-export const ADMIN_WORLD_RECORDS = ['map', 'tileArt', 'monsters', 'monsterArt', 'items', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'] as const;
+/** 管理者 PDS の world.* レコード名。並びは loadAdminWorld の読み込み順 (characters は先頭。D-CHAR-001)。 */
+export const ADMIN_WORLD_RECORDS = ['characters', 'map', 'tileArt', 'monsters', 'monsterArt', 'items', 'casino', 'shops', 'npcs', 'jobs', 'interiors', 'quests', 'scenario', 'story', 'dialogue'] as const;
 export type AdminWorldRecordName = (typeof ADMIN_WORLD_RECORDS)[number];
 
 /** 管理者 PDS の config.* レコード名。 */
@@ -35,10 +35,16 @@ export const LXM = {
   worldMove: `${AQ_NSID_ROOT}.world.move`,
   worldTeleport: `${AQ_NSID_ROOT}.world.teleport`,
   worldItem: `${AQ_NSID_ROOT}.world.item`,
+  worldSkill: `${AQ_NSID_ROOT}.world.skill`,
   worldGear: `${AQ_NSID_ROOT}.world.gear`,
   worldSearch: `${AQ_NSID_ROOT}.world.search`,
   storyBattle: `${AQ_NSID_ROOT}.story.battle`,
   innRest: `${AQ_NSID_ROOT}.world.innRest`,
+  partySet: `${AQ_NSID_ROOT}.party.set`,
+  partyCandidates: `${AQ_NSID_ROOT}.party.candidates`,
+  partyReroll: `${AQ_NSID_ROOT}.party.reroll`,
+  partyMode: `${AQ_NSID_ROOT}.party.mode`,
+  partyGear: `${AQ_NSID_ROOT}.party.gear`,
   worldReset: `${AQ_NSID_ROOT}.world.reset`,
   battleTurn: `${AQ_NSID_ROOT}.battle.turn`,
   xpClaim: `${AQ_NSID_ROOT}.xp.claim`,
@@ -47,11 +53,17 @@ export const LXM = {
   powerSpend: `${AQ_NSID_ROOT}.power.spend`,
   shopCraft: `${AQ_NSID_ROOT}.shop.craft`,
   shopSell: `${AQ_NSID_ROOT}.shop.sell`,
+  shopBuy: `${AQ_NSID_ROOT}.shop.buy`,
   shopForge: `${AQ_NSID_ROOT}.shop.forge`,
   shopDiscard: `${AQ_NSID_ROOT}.shop.discard`,
   adminPdsUsage: `${AQ_NSID_ROOT}.admin.pdsUsage`,
   questAccept: `${AQ_NSID_ROOT}.quest.accept`,
   questComplete: `${AQ_NSID_ROOT}.quest.complete`,
+  casinoExchange: `${AQ_NSID_ROOT}.casino.exchange`,
+  casinoPlay: `${AQ_NSID_ROOT}.casino.play`,
+  casinoPrize: `${AQ_NSID_ROOT}.casino.prize`,
+  casinoBonus: `${AQ_NSID_ROOT}.casino.bonus`,
+  partyRename: `${AQ_NSID_ROOT}.party.rename`,
   oauthStart: `${AQ_NSID_ROOT}.oauth.start`,
   oauthStatus: `${AQ_NSID_ROOT}.oauth.status`,
 } as const;

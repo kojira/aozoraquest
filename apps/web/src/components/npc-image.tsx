@@ -24,7 +24,19 @@ export function UploadedNpcSprite({ image, src, fallback }: { image: NpcImage; s
     </g>
   </g>;
 }
-export function NpcPortrait({ src, name, fitMap = false }: { src: string; name: string; fitMap?: boolean }) {
+/** マップのドット絵の1コマ目を、会話イラストの場所に拡大して出す (#907)。 */
+function NpcSpritePortrait({ src, name, frames, fitMap }: { src: string; name: string; frames: 1 | 2; fitMap: boolean }) {
+  const size = fitMap ? 'min(100%, 160px)' : 'min(40vw, 160px)';
+  return <div role="img" aria-label={`${name}の会話イラスト`} data-map-sprite="true" style={{
+    width: size, aspectRatio: '1 / 1', margin: '0 auto', pointerEvents: 'none', flex: '0 0 auto',
+    backgroundImage: `url("${src}")`, backgroundSize: `${frames * 100}% 100%`, backgroundPosition: '0 0', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated',
+  }} />;
+}
+export function NpcPortrait({ src, name, fitMap = false, mapSprite }: { src: string; name: string; fitMap?: boolean; mapSprite?: { frames: 1 | 2 } | undefined }) {
+  if (mapSprite) return <NpcSpritePortrait src={src} name={name} frames={mapSprite.frames} fitMap={fitMap} />;
+  return <NpcImagePortrait src={src} name={name} fitMap={fitMap} />;
+}
+function NpcImagePortrait({ src, name, fitMap }: { src: string; name: string; fitMap: boolean }) {
   const [failed, setFailed] = useState<string | null>(null);
   // Line-level expressions (D-DIALOGUE-005) switch src within one conversation. Each portrait keeps
   // its own mounted <img> (hidden when not current), and the previous one stays visible until the

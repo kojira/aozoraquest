@@ -23,10 +23,13 @@ const AdminMap = lazy(() => import('@/routes/admin-map').then(m => ({ default: m
 const AdminMonsters = lazy(() => import('@/routes/admin-monsters').then(m => ({ default: m.AdminMonsters })));
 const AdminItems = lazy(() => import('@/routes/admin-items').then(m => ({ default: m.AdminItems })));
 const AdminShops = lazy(() => import('@/routes/admin-shops').then(m => ({ default: m.AdminShops })));
+const AdminCasino = lazy(() => import('@/routes/admin-casino').then(m => ({ default: m.AdminCasino })));
 const AdminNpcs = lazy(() => import('@/routes/admin-npcs').then(m => ({ default: m.AdminNpcs })));
 const AdminQuests = lazy(() => import('@/routes/admin-quests').then(m => ({ default: m.AdminQuests })));
 const AdminJobs = lazy(() => import('@/routes/admin-jobs').then(m => ({ default: m.AdminJobs })));
 const AdminInteriors = lazy(() => import('@/routes/admin-interiors').then(m => ({ default: m.AdminInteriors })));
+const AdminCharacters = lazy(() => import('@/routes/admin-characters').then(m => ({ default: m.AdminCharacters })));
+const AdminStory = lazy(() => import('@/routes/admin-story').then(m => ({ default: m.AdminStory })));
 const AdminScenario = lazy(() => import('@/routes/admin-scenario').then(m => ({ default: m.AdminScenario })));
 const AdminDialogue = lazy(() => import('@/routes/admin-dialogue').then(m => ({ default: m.AdminDialogue })));
 const World = lazy(() => import('@/routes/world').then(m => ({ default: m.World })));
@@ -93,12 +96,15 @@ const router = createBrowserRouter([
       { path: 'admin/monsters', element: <AdminMonsters /> },
       { path: 'admin/items', element: <AdminItems /> },
       { path: 'admin/shops', element: <AdminShops /> },
+      { path: 'admin/casino', element: <AdminCasino /> },
       { path: 'admin/npcs', element: <AdminNpcs /> },
       { path: 'admin/quests', element: <AdminQuests /> },
       { path: 'admin/jobs', element: <AdminJobs /> },
       { path: 'admin/interiors', element: <AdminInteriors /> },
       { path: 'admin/scenario', element: <AdminScenario /> },
       { path: 'admin/dialogue', element: <AdminDialogue /> },
+      { path: 'admin/characters', element: <AdminCharacters /> },
+      { path: 'admin/story', element: <AdminStory /> },
       { path: 'world', element: <World /> },
       { path: 'onboarding', element: <Onboarding /> },
       { path: 'oauth/callback', element: <OAuthCallback /> },

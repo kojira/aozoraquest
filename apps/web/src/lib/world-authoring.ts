@@ -1,6 +1,8 @@
 import { captureNpcPlacementWorld } from './npc-placement';
 import type { Agent } from '@atproto/api';
 import {
+  setCasinoTables,
+  type CasinoTables,
   decodeWorldMap,
   loadAdminWorld,
   BASE_PARTS,
@@ -30,6 +32,8 @@ import {
   setMonsterOverrides,
   decodeMonstersFromRecord,
   encodeMonstersForRecord,
+  decodeItemsFromRecord,
+  encodeItemsForRecord,
   setNpcs,
   validateNpcs,
   setShopOverrides,
@@ -54,6 +58,21 @@ import {
   type TownOverride,
   type WorldPart,
   type AdminWorldRecordCache,
+  characterTextsInRecord,
+  currentCharacters,
+  missingCharacterRef,
+  setCharacters,
+  validateCharacters,
+  danglingRefs,
+  describeDanglingRef,
+  type CharacterDef,
+  type AdminWorldRecordName,
+  placedItemsSaveIssue,
+  setStory,
+  validateStory,
+  type NpcPlacementWorld,
+  type PlacedItemDef,
+  type StoryData,
 } from '@aozoraquest/core';
 import { EDGE_URL } from './edge-config';
 import { ADMIN_COL, ADMIN_WORLD_COL } from './collections';
@@ -73,6 +92,12 @@ import { getRecord, putRecord } from './atproto';
 
 /** 1 レコード 1 世界なので rkey は固定。 */
 const RKEY = 'self';
+
+/** 保存のときだけ見る: 文の人物の名前 {c:id} が、読み込み済みの characters にいること (edge の PUT と同じ検査。D-CHAR-001)。 */
+function assertCharactersExist(name: AdminWorldRecordName, value: unknown): void {
+  const missing = missingCharacterRef(characterTextsInRecord(name, value), new Set(currentCharacters().map((c) => c.id)));
+  if (missing) throw new Error(missing);
+}
 
 export interface WorldMapRecord {
   /** 一辺のタイル数 (現状 1024)。 */
@@ -190,6 +215,7 @@ export interface MonstersRecord {
 /** 編集したモンスターを保存する。 */
 export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promise<number> {
   // 保存前に core の検証を通す (壊れた 1 体で全体を落とす)。通れば適用もされる。
+  assertCharactersExist('monsters', { monsters });
   setMonsterOverrides(monsters);
   const rec: MonstersRecord = { monsters: encodeMonstersForRecord(monsters), updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.monsters, RKEY, rec);
@@ -198,16 +224,18 @@ export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promis
 
 // ─── どうぐ・装備 (#420) ────────────────────────────────────
 
+/** 保存レコードの形。どうぐの効果の小数の欄は文字列 (encodeItemsForRecord / decodeItemsFromRecord)。 */
 export interface ItemsRecordData {
-  items: ItemDefData[];
+  items: unknown[];
   equipment: EquipmentDef[];
   updatedAt: string;
 }
 
 /** 編集したどうぐ・装備を保存する (core の検証を通る = 壊れた 1 件で全体を落とす)。 */
 export async function saveItems(agent: Agent, items: ItemDefData[], equipment: EquipmentDef[]): Promise<void> {
+  assertCharactersExist('items', { items });
   setItemOverrides({ items, equipment });
-  const rec: ItemsRecordData = { items, equipment, updatedAt: new Date().toISOString() };
+  const rec: ItemsRecordData = { items: encodeItemsForRecord(items), equipment, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.items, RKEY, rec);
 }
 
@@ -215,8 +243,17 @@ export async function saveItems(agent: Agent, items: ItemDefData[], equipment: E
 
 /** 店ごとの上書きを保存する (core の検証を通る = 未知 id は保存で弾かれる)。 */
 export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<void> {
+  assertCharactersExist('shops', { shops });
   setShopOverrides(shops);
   await putRecord(agent, ADMIN_COL.shops, RKEY, { shops, updatedAt: new Date().toISOString() });
+}
+
+// ─── カジノ (D-CASINO-001) ─────────────────────────────────────
+
+/** カジノの表を保存する (形・RTP 85〜98%・景品は casinoOnly を core で検証してから)。 */
+export async function saveCasino(agent: Agent, tables: CasinoTables): Promise<void> {
+  setCasinoTables(tables);
+  await putRecord(agent, ADMIN_WORLD_COL.casino, RKEY, { ...tables, updatedAt: new Date().toISOString() });
 }
 
 // ─── NPC (#425) ─────────────────────────────────────────────
@@ -224,6 +261,7 @@ export async function saveShops(agent: Agent, shops: ShopOverride[]): Promise<vo
 /** NPC を保存する (core の検証を通る = 壊れた 1 人で全体が落ちる)。 */
 export async function saveNpcs(agent: Agent, npcs: NpcDef[], isCurrent = () => true): Promise<void> {
   validateNpcs(npcs);
+  assertCharactersExist('npcs', { npcs });
   // 会話データが話者・上書きに使っている NPC は消させない (edge と同じ検査。D-DIALOGUE-006)。
   const missing = missingStoryBattle(npcs, []) ?? missingDialogueNpc(currentDialogue(), new Set(npcs.map((n) => n.id)));
   if (missing) throw new Error(missing);
@@ -250,6 +288,7 @@ export async function loadJobsRecord(agent: Agent, adminDid: string): Promise<Jo
  * setInteriors が先に検証で落とす (行き先が無いゲートを保存させない)。
  */
 export async function saveInteriors(agent: Agent, maps: InteriorMap[], gates: Gate[]): Promise<void> {
+  assertCharactersExist('interiors', { interiors: maps });
   setInteriors(maps, gates);
   const interiors = [];
   for (const m of maps) {
@@ -275,6 +314,7 @@ export async function loadInteriorsRecord(agent: Agent, adminDid: string): Promi
 /** シナリオ (#545)。setScenario が先に検証で落とす (存在しないクエストを条件にさせない)。 */
 export async function saveScenario(agent: Agent, events: ScenarioEvent[]): Promise<void> {
   validateScenario(events);
+  assertCharactersExist('scenario', { events });
   assertStoryFlagTotal(events, currentStory());
   await putRecord(agent, ADMIN_COL.scenario, RKEY, { events, updatedAt: new Date().toISOString() });
   setScenario(events);
@@ -298,6 +338,7 @@ export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void>
 /** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */
 export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Promise<void> {
   validateGameQuests(quests);
+  assertCharactersExist('quests', { quests });
   const missing = missingStoryBattle([], quests);
   if (missing) throw new Error(missing);
   await putRecord(agent, ADMIN_COL.quests, RKEY, { quests, updatedAt: new Date().toISOString() });
@@ -360,6 +401,7 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   ]);
   // NPC の保存で参照チェックに使う (読めなければ保存させない)。
   const dialogue = await read<DialogueData>(ADMIN_WORLD_COL.dialogue);
+  const characters = await readCharacters(agent, adminDid);
   if (map && (typeof map.gz !== 'string' || map.size !== WORLD_SIZE)) throw new Error('地図レコードが不正');
   if (art && (!art.arts || typeof art.arts !== 'object' || Array.isArray(art.arts))) throw new Error('絵レコードが不正');
   if (items && (!Array.isArray(items.items) || !Array.isArray(items.equipment))) throw new Error('アイテムレコードが不正');
@@ -381,11 +423,12 @@ export async function loadNpcAuthoringRecords(agent: Agent, adminDid: string, is
   setWorldParts(parts);
   setWorldMap({ tiles, size: WORLD_SIZE, parts });
   setTownOverrides(map?.towns ?? null);
-  setItemOverrides(items ?? null);
+  setItemOverrides(items ? { items: decodeItemsFromRecord(items.items), equipment: items.equipment } : null);
   // monsters のレコードが無い (空) ときは触らない: loadAuthoredWorld で入った今の値 (edge cache 由来を含む) を残す。
   // 0 体にすると、quests があるのに setGameQuests の実在検査が落ちて NPC エディタが読み込めなくなる。
   const authoredMonsters = monsters ? decodeMonstersFromRecord(monsters.monsters) : [];
   if (authoredMonsters.length) setMonsterOverrides(authoredMonsters);
+  setCharacters(characters);
   setNpcs(npcs?.npcs ?? []);
   setInteriors(maps, interior?.gates ?? []);
   setGameQuests(quests?.quests ?? []);
@@ -405,6 +448,7 @@ export async function loadDialogueAuthoringRecords(agent: Agent, adminDid: strin
   if (npcs && !Array.isArray(npcs.npcs)) throw new Error('NPC レコードが不正');
   const rec = await getAuthoringRecord<DialogueData>(agent, adminDid, ADMIN_WORLD_COL.dialogue, RKEY);
   if (rec && !Array.isArray(rec.scenes)) throw new Error('会話レコードが不正');
+  setCharacters(await readCharacters(agent, adminDid));
   setNpcs(npcs?.npcs ?? []);
   return { npcs: npcs?.npcs ?? [], dialogue: rec ? { scenes: rec.scenes } : null };
 }
@@ -412,8 +456,66 @@ export async function loadDialogueAuthoringRecords(agent: Agent, adminDid: strin
 /** 会話を保存する。決まった場面がすべて揃い、話者の NPC が保存済みの NPC にいること (edge と同じ検査)。 */
 export async function saveDialogue(agent: Agent, data: DialogueData, npcIds: ReadonlySet<string>): Promise<void> {
   validateDialogue(data);
+  assertCharactersExist('dialogue', data);
   const missing = missingDialogueNpc(data, npcIds);
   if (missing) throw new Error(missing);
   await putRecord(agent, ADMIN_WORLD_COL.dialogue, RKEY, { scenes: data.scenes, updatedAt: new Date().toISOString() });
   setDialogue(data);
+}
+
+// ─── 人物の名前 (D-CHAR-001) ─────────────────────────────────
+
+/** 保存済みの人物を厳密に読む (無ければ空、読めなければ throw)。適用はしない。 */
+async function readCharacters(agent: Agent, adminDid: string): Promise<CharacterDef[]> {
+  const rec = await getAuthoringRecord<{ characters?: CharacterDef[] }>(agent, adminDid, ADMIN_WORLD_COL.characters, RKEY);
+  if (rec && !Array.isArray(rec.characters)) throw new Error('人物レコードが不正');
+  return rec?.characters ?? [];
+}
+
+/** 人物エディタの読み込み。読めたものを適用して返す (読めなければ throw = 保存させない)。 */
+export async function loadCharactersRecord(agent: Agent, adminDid: string): Promise<CharacterDef[]> {
+  const list = await readCharacters(agent, adminDid);
+  setCharacters(list);
+  return list;
+}
+
+/** 人物を保存する。使われている人物は消させない (edge の PUT と同じ検査)。 */
+export async function saveCharacters(agent: Agent, characters: CharacterDef[]): Promise<void> {
+  validateCharacters(characters);
+  const dangling = danglingRefs('character', characters.map((c) => c.id))[0];
+  if (dangling) throw new Error(describeDanglingRef(dangling));
+  await putRecord(agent, ADMIN_WORLD_COL.characters, RKEY, { characters, updatedAt: new Date().toISOString() });
+  setCharacters(characters);
+}
+
+// ─── 宝箱・キラキラ (D-CHEST-001 §7) ─────────────────────────
+
+/** story の編集用の読み込み。NPC エディタと同じ地図・NPC・内部マップに、シナリオと story を厳密に足す
+ *  (読めなければ throw = 保存させない。上書きで物語のキーアイテムが消えるのを防ぐ)。 */
+export async function loadStoryAuthoringRecords(agent: Agent, adminDid: string, isCurrent = () => true) {
+  const base = await loadNpcAuthoringRecords(agent, adminDid, isCurrent);
+  const scenario = await getAuthoringRecord<{ events?: ScenarioEvent[] }>(agent, adminDid, ADMIN_COL.scenario, RKEY);
+  if (scenario && !Array.isArray(scenario.events)) throw new Error('シナリオ レコードが不正');
+  const story = await getAuthoringRecord<StoryData>(agent, adminDid, ADMIN_WORLD_COL.story, RKEY);
+  if (story && story.placedItems !== undefined && !Array.isArray(story.placedItems)) throw new Error('story レコードが不正');
+  if (!isCurrent()) throw new Error('読み込みを取り消しました');
+  const events = scenario?.events ?? [];
+  setScenario(events);
+  setStory(story);
+  return { npcs: base.list, world: base.world, events, story: structuredClone(story ?? {}) };
+}
+
+/**
+ * 置きアイテムだけを差し替えて story を保存する。戦闘と固定モンスターは読んだ値をそのまま書き戻す。
+ * 検証は core の validateStory、置いたマスは新しく置いた・動かしたものだけ (edge の PUT と同じ)。
+ */
+export async function saveStoryPlacedItems(agent: Agent, saved: StoryData, placedItems: PlacedItemDef[], ctx: { world: NpcPlacementWorld; npcs: readonly NpcDef[]; events: readonly ScenarioEvent[] }): Promise<StoryData> {
+  const next: StoryData = { ...saved, placedItems };
+  validateStory(next, ctx.events);
+  const issue = placedItemsSaveIssue(ctx.world, placedItems, saved.placedItems ?? [], ctx.npcs, saved.fieldMonsters ?? []);
+  if (issue) throw new Error(issue);
+  const { updatedAt: _old, ...rest } = next as StoryData & { updatedAt?: string };
+  await putRecord(agent, ADMIN_WORLD_COL.story, RKEY, { ...rest, updatedAt: new Date().toISOString() });
+  setStory(next);
+  return next;
 }

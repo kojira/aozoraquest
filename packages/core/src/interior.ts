@@ -29,6 +29,8 @@ import { ITEMS } from './battle.js';
 import { townAt } from './world.js';
 import { npcAt } from './npc-data.js';
 import { WORLD_MAP_ID } from './map-id.js';
+import { characterTokenIssue } from './character-data.js';
+import { CASINO_GAMES, type CasinoGame } from './casino-data.js';
 
 export { WORLD_MAP_ID };
 
@@ -70,7 +72,22 @@ export interface InteriorMap {
    * (外へ出られない = 出入りはゲートだけ)。
    */
   exitTo?: { mapId: string; x: number; y: number };
+  /**
+   * **カジノ** (D-CASINO-001)。両替・景品・ゲームの台のマスに立つと画面が開く。
+   * town はレースに出るモンスターの地方 (なんでも屋の town と同じ考え方)。
+   */
+  casino?: InteriorCasino;
 }
+
+export interface InteriorCasino {
+  town: { x: number; y: number };
+  exchange: { x: number; y: number };
+  prize: { x: number; y: number };
+  games: Array<{ x: number; y: number; game: CasinoGame }>;
+}
+
+/** カジノのマスの種類。 */
+export type CasinoSpot = { kind: 'exchange' } | { kind: 'prize' } | { kind: 'game'; game: CasinoGame };
 
 /** 出入口 1 つ。踏んだ瞬間に `to` へ移る (一方通行。往復は 2 本書く)。 */
 export interface Gate {
@@ -127,6 +144,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.id === WORLD_MAP_ID) throw new InteriorError(`id に ${WORLD_MAP_ID} は使えない (フィールドの予約語)`);
     if (nextMaps.has(m.id)) throw new InteriorError(`内部マップの id が重複 (${m.id})`);
     if (typeof m.name !== 'string' || m.name.trim() === '') throw new InteriorError(`${where}: 名前が空`);
+    for (const t of [m.name, m.inn?.name ?? '', m.shop?.name ?? '']) { const issue = characterTokenIssue(t); if (issue) throw new InteriorError(`${where}: 名前の${issue}`); }
     if (!Number.isInteger(m.size) || m.size < 4 || m.size > MAX_INTERIOR_SIZE) {
       throw new InteriorError(`${where}: おおきさは 4〜${MAX_INTERIOR_SIZE}`);
     }
@@ -157,12 +175,13 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.shop && !townAt(m.shop.town.x, m.shop.town.y)) {
       throw new InteriorError(`${where}: なんでも屋の街が存在しない (${m.shop.town.x}, ${m.shop.town.y})`);
     }
+    if (m.casino) assertInteriorCasino(m, where);
     if (m.inn) {
       if (!Number.isInteger(m.inn.price) || m.inn.price < 0 || m.inn.price > MAX_INN_PRICE) {
         throw new InteriorError(`${where}: 宿代は 0〜${MAX_INN_PRICE}`);
       }
     }
-    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}), ...(m.exitTo ? { exitTo: { ...m.exitTo } } : {}) });
+    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}), ...(m.exitTo ? { exitTo: { ...m.exitTo } } : {}), ...(m.casino ? { casino: structuredClone(m.casino) } : {}) });
   }
   if (nextMaps.size > MAX_INTERIORS) throw new InteriorError(`内部マップが多すぎる (${nextMaps.size} > ${MAX_INTERIORS})`);
 
@@ -279,8 +298,35 @@ export function interiorShopAt(mapId: string, x: number, y: number): NonNullable
   return m.shop.x === x && m.shop.y === y ? m.shop : undefined;
 }
 
+/** カジノのマスの検証 (D-CASINO-001)。マップの中・歩けるマス・重ならない・街が実在する。 */
+function assertInteriorCasino(m: InteriorMap, where: string): void {
+  const c = m.casino!;
+  if (!c.town || !townAt(c.town.x, c.town.y)) throw new InteriorError(`${where}: カジノの街が存在しない`);
+  if (!Array.isArray(c.games)) throw new InteriorError(`${where}: カジノの台が不正`);
+  const seen = new Set<string>();
+  for (const [label, spot] of [['両替', c.exchange], ['景品', c.prize], ...c.games.map((g) => [`台 (${g?.game})`, g] as const)] as const) {
+    if (!spot || !Number.isInteger(spot.x) || !Number.isInteger(spot.y) || spot.x < 0 || spot.y < 0 || spot.x >= m.size || spot.y >= m.size) {
+      throw new InteriorError(`${where}: カジノの${label}がマップの外にある`);
+    }
+    if (!interiorWalkableAt(m, spot.x, spot.y)) throw new InteriorError(`${where}: カジノの${label}が歩けないマスにある`);
+    if (seen.has(`${spot.x},${spot.y}`)) throw new InteriorError(`${where}: カジノの${label}がほかのマスと重なる`);
+    seen.add(`${spot.x},${spot.y}`);
+  }
+  for (const g of c.games) if (!CASINO_GAMES.includes(g.game)) throw new InteriorError(`${where}: カジノのゲームが不正 (${g.game})`);
+}
+
+/** そのマスのカジノの施設 (無ければ undefined)。edge の位置の確かめと web の画面が共有する。 */
+export function casinoSpotAt(mapId: string, x: number, y: number): CasinoSpot | undefined {
+  const c = interiors.get(mapId)?.casino;
+  if (!c) return undefined;
+  if (c.exchange.x === x && c.exchange.y === y) return { kind: 'exchange' };
+  if (c.prize.x === x && c.prize.y === y) return { kind: 'prize' };
+  const g = c.games.find((s) => s.x === x && s.y === y);
+  return g ? { kind: 'game', game: g.game } : undefined;
+}
+
 /** そのマスにある施設の名前 (エディタの警告文にそのまま使う)。 */
-export type FacilityName = '宿屋' | 'なんでも屋' | 'ゲート';
+export type FacilityName = '宿屋' | 'なんでも屋' | 'カジノ' | 'ゲート';
 
 /**
  * **そのマスの施設** (宿屋 / なんでも屋 / ゲート)。無ければ undefined。
@@ -292,6 +338,7 @@ export type FacilityName = '宿屋' | 'なんでも屋' | 'ゲート';
 export function facilityAt(mapId: string, x: number, y: number): FacilityName | undefined {
   if (innAt(mapId, x, y)) return '宿屋';
   if (interiorShopAt(mapId, x, y)) return 'なんでも屋';
+  if (casinoSpotAt(mapId, x, y)) return 'カジノ';
   if (gateAt(mapId, x, y)) return 'ゲート';
   return undefined;
 }

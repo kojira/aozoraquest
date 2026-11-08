@@ -6,6 +6,7 @@ import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadDialogueAuthoringRecords, saveDialogue } from '@/lib/world-authoring';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { DialogueLineEditor } from '@/components/admin/dialogue-line-editor';
+import { CharacterIdList } from '@/components/admin/character-preview';
 import { DialogueScenePreview, SCENE_GROUPS, sceneLabel, sceneVars } from '@/components/admin/dialogue-scene-list';
 
 /**
@@ -105,6 +106,7 @@ export function AdminDialogue() {
                 <button type="button" onClick={() => setPreview(true)} disabled={current.lines.length === 0} style={{ marginLeft: 'auto' }}>プレビュー</button>
                 {current.id.includes(':') && <button type="button" className="secondary" onClick={() => { setScenes((xs) => xs.filter((s) => s.id !== current.id)); setSel('guild.first'); setDirty(true); }}>上書きを消す</button>}
               </div>
+              <CharacterIdList />
               {current.lines.map((l, i) => (
                 <DialogueLineEditor key={i} line={l} index={i} count={current.lines.length} npcs={npcs}
                   onChange={(next) => setLines(current.lines.map((x, j) => (j === i ? next : x)))}

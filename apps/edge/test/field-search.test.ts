@@ -12,6 +12,7 @@ import { ResolverError, type ResolverEnv } from '../src/battle-resolver';
 import { signPosition } from '../src/world-token';
 import { rkeyForDid, XP_EPOCH, type GameState } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
+import { MAX_OWNED_PIECES } from '../src/shop';
 
 const DID = 'did:plc:alice';
 const NOW = 1_700_000_000;
@@ -66,7 +67,7 @@ describe('handleSearch の置きアイテム (D-STORY-009)', () => {
     globalThis.fetch = m.fn;
     const token = signPosition(env, { did: DID, ...SPOT, counter: 1, iat: NOW });
     const res = await handleSearch(env, DID, token, NOW, undefined, undefined, 'k1');
-    expect(res.placed).toEqual({ itemId: 'herb', count: 2 });
+    expect(res.placed).toMatchObject({ itemId: 'herb', count: 2 });
     expect(res.power).toBe(0);
     expect(res.flags).toContain('got-old-key');
     expect(m.state().materials.herb).toBe(2);
@@ -87,5 +88,114 @@ describe('handleSearch の置きアイテム (D-STORY-009)', () => {
     await expect(handleSearch(env, DID, signPosition(env, { did: DID, mapId: SPOT.mapId, x: SPOT.x + 1, y: SPOT.y, counter: 1, iat: NOW }), NOW)).rejects.toMatchObject({ code: 'no_power' });
     await expect(handleSearch(env, DID, signPosition(env, { did: DID, mapId: WORLD_MAP_ID, x: SPOT.x, y: SPOT.y, counter: 1, iat: NOW }), NOW)).rejects.toMatchObject({ code: 'no_power' });
     expect(m2.state().flags).not.toContain('got-old-key');
+  });
+});
+
+describe('handleSearch の宝箱・キラキラ (D-CHEST-001)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; });
+  const CHEST = { id: 'c-gear', mapId: 'cave-1', x: 1, y: 1, kind: 'chest' as const, rewards: [{ equipment: 'wp-knife' }, { item: 'herb', count: 2 }, { power: 3 }] };
+  const LOCKED = { id: 'c-lock', mapId: 'cave-1', x: 2, y: 1, kind: 'chest' as const, rewards: [{ power: 5 }], requireFlags: ['has-key'], hint: 'かぎが かかっている。' };
+  const SPARK = { id: 'k-herb', mapId: 'cave-1', x: 3, y: 1, kind: 'sparkle' as const, rewards: [{ item: 'herb', count: 1 }] };
+  const OLD = { id: 'pi-old', mapId: 'cave-1', x: 4, y: 1, itemId: 'herb', count: 2, flag: 'got-old' };
+  const HINT_SPOT = { id: 'pi-hint', mapId: 'cave-1', x: 5, y: 1, itemId: 'herb', count: 1, flag: 'got-hint', requireFlags: ['has-key'], hint: 'まだ早い。' };
+  beforeAll(() => setStory({ placedItems: [CHEST, LOCKED, SPARK, OLD, HINT_SPOT] }));
+  afterAll(() => setStory(null));
+  const at = (env: ResolverEnv, p: { mapId: string; x: number; y: number }) => signPosition(env, { did: DID, mapId: p.mapId, x: p.x, y: p.y, counter: 1, iat: NOW });
+
+  it('宝箱はパワー 0 でも開き、装備の個体が 1 つ・素材・パワーが増える。2 回目は empty で state が変わらない', async () => {
+    const env = await makeEnv();
+    const m = pds(GS());
+    globalThis.fetch = m.fn;
+    const res = await handleSearch(env, DID, at(env, CHEST), NOW, undefined, undefined, 'k1');
+    expect(res.placed).toEqual({ kind: 'chest', rewards: CHEST.rewards });
+    expect(res.pieces).toEqual([{ rkey: 'chest-c-gear', itemId: 'wp-knife', level: 0 }]);
+    expect(res.openedSpots).toEqual(['c-gear']);
+    expect(res.power).toBe(3);
+    expect(m.state()).toMatchObject({ power: 3, materials: { herb: 2 }, openedSpots: ['c-gear'], pieces: [{ rkey: 'chest-c-gear', itemId: 'wp-knife', level: 0 }] });
+    expect(m.state().flags ?? []).toEqual([]);
+    const before = m.state();
+    const again = await handleSearch(env, DID, at(env, CHEST), NOW, undefined, undefined, 'k2');
+    expect(again).toMatchObject({ placedState: 'empty', power: 3 });
+    expect(again.placed).toBeUndefined();
+    expect(m.state()).toBe(before);
+  });
+
+  it('同じ opKey の再送は二重に付与せず、同じ結果をもう一度返す', async () => {
+    const env = await makeEnv();
+    const m = pds(GS());
+    globalThis.fetch = m.fn;
+    const first = await handleSearch(env, DID, at(env, CHEST), NOW, undefined, undefined, 'k1');
+    const replay = await handleSearch(env, DID, at(env, CHEST), NOW, undefined, undefined, 'k1');
+    expect(replay.placed).toEqual(first.placed);
+    expect(m.state()).toMatchObject({ power: 3, materials: { herb: 2 } });
+    expect(m.state().pieces).toHaveLength(1);
+  });
+
+  it('条件のそろわない宝箱は存在を漏らさず普段のしらべる (1 減る)。hint つき spot の鍵は locked と hint でパワーも state も変わらない', async () => {
+    const env = await makeEnv();
+    const m = pds(GS({ power: 4 }));
+    globalThis.fetch = m.fn;
+    const res = await handleSearch(env, DID, at(env, LOCKED), NOW, undefined, undefined, 'k1');
+    expect(res.power).toBe(3);
+    expect(res.placedState).toBeUndefined();
+    expect(res.hint).toBeUndefined();
+    expect(m.state().openedSpots).toBeUndefined();
+    const before = m.state();
+    const spot = await handleSearch(env, DID, at(env, HINT_SPOT), NOW, undefined, undefined, 'k2');
+    expect(spot).toMatchObject({ placedState: 'locked', hint: 'まだ早い。', power: 3 });
+    expect(m.state()).toBe(before);
+  });
+
+  it('opKey が別の置きアイテムで処理済みでも、まだ取っていないこのマスは取れて記録される', async () => {
+    const env = await makeEnv();
+    const m = pds(GS({ shopOps: ['placed:k1'], openedSpots: ['c-gear'] }));
+    globalThis.fetch = m.fn;
+    const res = await handleSearch(env, DID, at(env, SPARK), NOW, undefined, undefined, 'k1');
+    expect(res.placed).toEqual({ kind: 'sparkle', rewards: [{ item: 'herb', count: 1 }] });
+    expect(m.state()).toMatchObject({ materials: { herb: 1 }, openedSpots: ['c-gear', 'k-herb'] });
+  });
+
+  it('置きアイテムの無いマス・取った後のキラキラの跡では今どおり 1 減る', async () => {
+    const env = await makeEnv();
+    const m = pds(GS({ power: 5, openedSpots: ['k-herb'] }));
+    globalThis.fetch = m.fn;
+    expect((await handleSearch(env, DID, at(env, { mapId: 'cave-1', x: 9, y: 9 }), NOW, undefined, undefined, 'k1')).power).toBe(4);
+    const res = await handleSearch(env, DID, at(env, SPARK), NOW, undefined, undefined, 'k2');
+    expect(res.power).toBe(3);
+    expect(res.placed).toBeUndefined();
+    expect(m.state().openedSpots).toEqual(['k-herb']); // 跡はもう取れない (普段のしらべるは乱数で herb を拾うことがある)
+  });
+
+  it('持ち物がいっぱいなら開けず、開封済みにもしない (パワーは減らない)', async () => {
+    const env = await makeEnv();
+    const pieces = Array.from({ length: MAX_OWNED_PIECES }, (_, i) => ({ rkey: `p${i}`, itemId: 'wp-knife', level: 0 }));
+    const m = pds(GS({ power: 2, pieces }));
+    globalThis.fetch = m.fn;
+    await expect(handleSearch(env, DID, at(env, CHEST), NOW, undefined, undefined, 'k1')).rejects.toMatchObject({ code: 'pieces_full' });
+    expect(m.state()).toMatchObject({ power: 2 });
+    expect(m.state().openedSpots).toBeUndefined();
+    expect(m.state().pieces).toHaveLength(MAX_OWNED_PIECES);
+  });
+
+  it('古い形 (itemId/count/flag) の置きアイテムは今と同じに取れ、応答に itemId/count も残る', async () => {
+    const env = await makeEnv();
+    const m = pds(GS());
+    globalThis.fetch = m.fn;
+    const res = await handleSearch(env, DID, at(env, OLD), NOW, undefined, undefined, 'k1');
+    expect(res.placed).toEqual({ kind: 'spot', rewards: [{ item: 'herb', count: 2 }], itemId: 'herb', count: 2 });
+    expect(res.flags).toContain('got-old');
+    expect(m.state().materials.herb).toBe(2);
+    expect(m.state().openedSpots).toBeUndefined();
+  });
+
+  it('キラキラは取れて openedSpots に入る (フラグは使わない)', async () => {
+    const env = await makeEnv();
+    const m = pds(GS());
+    globalThis.fetch = m.fn;
+    const res = await handleSearch(env, DID, at(env, SPARK), NOW, undefined, undefined, 'k1');
+    expect(res.placed).toEqual({ kind: 'sparkle', rewards: [{ item: 'herb', count: 1 }] });
+    expect(m.state()).toMatchObject({ power: 0, materials: { herb: 1 }, openedSpots: ['k-herb'] });
+    expect(m.state().flags ?? []).toEqual([]);
   });
 });

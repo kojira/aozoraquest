@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * 送られ、結果が「未導入」として翻訳 backend の選択から外れることを確かめる。
  */
 const cache = vi.hoisted(() => ({ complete: true }));
-vi.mock('./slm-wgsl/weights', () => ({ isSarashinaCached: async () => cache.complete }));
+vi.mock('./slm-wgsl/weights', async (orig) => ({
+  ...(await orig<typeof import('./slm-wgsl/weights')>()),
+  isSlmCached: async (src: { arch: string }) => src.arch === 'llama' && cache.complete,
+}));
 vi.mock('./gemini-nano-availability', () => ({ detectGeminiNano: async () => 'unavailable' }));
 vi.mock('./gemini-nano-llm', () => ({
   GEMINI_NANO: { id: 'gemini-nano', label: 'Nano', availability: async () => false, generate: async () => '' },
@@ -32,16 +35,17 @@ describe('sarashina translate-time load', () => {
   it('rejects as not installed without network, and drops sarashina from translation', async () => {
     vi.stubGlobal('Worker', FakeWorker);
     vi.stubGlobal('navigator', { gpu: {} });
-    const { loadSarashina, isSarashinaInstalled, SarashinaNotInstalledError } = await import('./sarashina-llm');
+    const { loadSarashina, isSarashinaInstalled } = await import('./sarashina-llm');
+    const { SlmNotInstalledError } = await import('./slm-client');
     const { pickLocalLLM, resetLocalLLMChoice } = await import('./local-llm');
 
     expect((await pickLocalLLM(false, 'translation'))?.id).toBe('sarashina-0.5b'); // 導入済みと memoize された状態
     cache.complete = false; // その後ブラウザがキャッシュを消した
 
-    await expect(loadSarashina()).rejects.toBeInstanceOf(SarashinaNotInstalledError);
-    expect(inits).toEqual([{ type: 'init', allowNetwork: false }]);
+    await expect(loadSarashina()).rejects.toBeInstanceOf(SlmNotInstalledError);
+    expect(inits).toEqual([{ type: 'init', model: 'sarashina', allowNetwork: false }]);
     expect(await isSarashinaInstalled()).toBe(false);
-    resetLocalLLMChoice(); // translate.ts が SarashinaNotInstalledError で呼ぶ
+    resetLocalLLMChoice(); // translate.ts が SlmNotInstalledError で呼ぶ
     expect(await pickLocalLLM(false, 'translation')).toBeNull();
   });
 });

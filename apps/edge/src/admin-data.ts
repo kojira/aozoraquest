@@ -13,14 +13,16 @@
  * 対象外 name はすべて null を返す (呼び出し側は通常の not_found 404 に倒す)。
  */
 import {
-  captureNpcPlacementWorld, danglingRefs, decodeWorldMap, describeDanglingRef, allGates, allInteriors,
+  captureNpcPlacementWorld, placedItemsSaveIssue, danglingRefs, decodeWorldMap, describeDanglingRef, allGates, allInteriors,
   npcStructuralPlacementError, sameNpcPosition, setInteriors, setShopOverrides, shopOverrides,
   validateGameQuests, validateNpcPlacement, validateNpcs, validateScenario,
   assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES, readNpcImageBytes, type NpcImage,
-  activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef, type ItemDefData,
-  activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
+  activeEquipment, hasItemOverrides, ITEMS, setItemOverrides, type EquipmentDef,
+  activeMonsters, clearMonsters, decodeMonstersFromRecord, encodeMonstersForRecord, decodeItemsFromRecord, encodeItemsForRecord, setMonsterOverrides, validateMonsterArts, type MonsterArtDef,
   currentDialogue, missingDialogueNpc, validateDialogue, type DialogueData,
-  assertStoryFlagTotal, currentStory, missingStoryBattle, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
+  characterTextsInRecord, currentCharacters, missingCharacterRef, validateCharacters, type CharacterDef,
+  assertStoryFlagTotal, currentStory, missingStoryBattle, recruitGuildIssue, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
+  casinoTablesIssue, type CasinoTables,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
@@ -38,7 +40,7 @@ export interface AdminDataEnv extends ServerPdsEnv, WorldAuthoringEnv {
 const PATH_PREFIX = '/api/admin/data/';
 const RKEY = 'self';
 /** API で読み書きできる world.* レコード (core の ADMIN_WORLD_RECORDS の部分集合。CLI の NAMES と一致を検査)。 */
-export const ADMIN_DATA_NAMES = ['monsters', 'monsterArt', 'items', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
+export const ADMIN_DATA_NAMES = ['characters', 'monsters', 'monsterArt', 'items', 'casino', 'npcs', 'shops', 'quests', 'scenario', 'story', 'interiors', 'dialogue'] as const satisfies readonly AdminWorldRecordName[];
 type AdminDataName = (typeof ADMIN_DATA_NAMES)[number];
 
 const collectionOf = (env: AdminDataEnv, name: AdminDataName) => `${adminNsidRoot(env)}.world.${name}`;
@@ -110,7 +112,7 @@ function npcPlacementIssues(npcs: NpcDef[], checkPlacement: (n: NpcDef) => boole
 /** items は装備が 1 品以上ある時だけ読み込みで適用される (admin-world-loader)。無視されるレコードは
  *  書かせない。管理画面と同じく参照中のアイテム・装備を消させず、core の検証を通したら元へ戻す。 */
 function validateItemsCandidate(value: unknown): string | null {
-  const items = listOf<ItemDefData>(value, 'items'), equipment = listOf<EquipmentDef>(value, 'equipment');
+  const items = decodeItemsFromRecord((value as Record<string, unknown>).items), equipment = listOf<EquipmentDef>(value, 'equipment');
   if (equipment.length === 0) return 'equipment が空 (読み込みで無視される)';
   const dangling = danglingRefs('item', items.map((it) => it?.id))[0] ?? danglingRefs('equipment', equipment.map((e) => e?.id))[0];
   if (dangling) return describeDanglingRef(dangling);
@@ -135,6 +137,15 @@ function validateMonstersCandidate(value: unknown): string | null {
 /** 候補値を管理画面と同じ検証にかける。壊れていれば理由の文字列を返す。
  *  差し替えて検証する shops / interiors は、終わったら保存済みの値へ戻す。 */
 async function validateCandidate(name: AdminDataName, value: unknown, saved: unknown): Promise<string | null> {
+  // 人物の名前 {c:id} (D-CHAR-001): 使われている人物は消させない。他のレコードは保存済みの人物だけを指せる。
+  if (name === 'characters') {
+    const list = listOf<CharacterDef>(value, 'characters');
+    validateCharacters(list);
+    const dangling = danglingRefs('character', list.map((c) => c.id))[0];
+    return dangling ? describeDanglingRef(dangling) : null;
+  }
+  const missingChar = missingCharacterRef(characterTextsInRecord(name, value), new Set(currentCharacters().map((c) => c.id)));
+  if (missingChar) return missingChar;
   if (name === 'npcs') {
     const npcs = listOf<NpcDef>(value, 'npcs');
     validateNpcs(npcs);
@@ -153,6 +164,7 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const dangling = danglingRefs('quest', quests.map((q) => q.id))[0];
     return dangling ? describeDanglingRef(dangling) : missingStoryBattle([], quests);
   }
+  if (name === 'casino') return casinoTablesIssue(value as CasinoTables); // 形・RTP 85〜98%・景品は casinoOnly (D-CASINO-001)
   if (name === 'items') return validateItemsCandidate(value);
   if (name === 'monsters') return validateMonstersCandidate(value);
   if (name === 'monsterArt') { validateMonsterArts(listOf<MonsterArtDef>(value, 'arts')); return null; }
@@ -166,8 +178,12 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
   if (name === 'story') {
     const story = (value ?? {}) as StoryData;
     const battles = listOf<StoryBattleDef>(story, 'battles');
-    validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters') });
-    return missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
+    validateStory({ placedItems: listOf(story, 'placedItems'), battles, fieldMonsters: listOf(story, 'fieldMonsters'), recruits: listOf(story, 'recruits') });
+    const guildIssue = recruitGuildIssue(listOf(story, 'recruits'), allNpcs());
+    if (guildIssue) return guildIssue;
+    // 置いたマス (D-CHEST-001 §7): 新しく置いた・動かしたものだけ。管理画面の保存と同じ検査。
+    const placedIssue = placedItemsSaveIssue(captureNpcPlacementWorld(allNpcs(), false), listOf(story, 'placedItems'), listOf(saved, 'placedItems'), allNpcs(), listOf(story, 'fieldMonsters'));
+    return placedIssue ?? missingStoryBattle(allNpcs(), gameQuests(), new Set(battles.map((b) => b.id)));
   }
   if (name === 'dialogue') {
     const dialogue = value as DialogueData;
@@ -206,7 +222,8 @@ export async function handleAdminData(req: Request, env: AdminDataEnv, now: numb
     const saved = await getRecord<Record<string, unknown>>(repo.pdsUrl, repo.did, collection, RKEY);
     await loadSavedWorld(env, now);
     if (req.method === 'GET') {
-      const value = name === 'monsters' && saved?.value ? { ...saved.value, monsters: decodeMonstersFromRecord(saved.value.monsters) } : saved?.value ?? null;
+      const value = name === 'monsters' && saved?.value ? { ...saved.value, monsters: decodeMonstersFromRecord(saved.value.monsters) }
+        : name === 'items' && saved?.value ? { ...saved.value, items: decodeItemsFromRecord(saved.value.items) } : saved?.value ?? null;
       const body: Record<string, unknown> = { name, collection, cid: saved?.cid ?? null, value };
       if (name === 'npcs') body.placementIssues = npcPlacementIssues(listOf<NpcDef>(saved?.value, 'npcs'), () => true);
       return json(body);
@@ -232,7 +249,9 @@ async function putAdminData(req: Request, env: AdminDataEnv, now: number, name: 
   if (body.dryRun === true) return json({ ok: true, dryRun: true });
   const collection = collectionOf(env, name);
   const fields = value as Record<string, unknown>;
-  const recordValue = name === 'monsters' ? { ...fields, monsters: encodeMonstersForRecord(decodeMonstersFromRecord(fields.monsters)) } : fields;
+  // 小数は文字列で保存する (AT Protocol のレコードは整数以外の数値を持てない。monsters #740 / items D-ITEM-001)
+  const recordValue = name === 'monsters' ? { ...fields, monsters: encodeMonstersForRecord(decodeMonstersFromRecord(fields.monsters)) }
+    : name === 'items' ? { ...fields, items: encodeItemsForRecord(decodeItemsFromRecord(fields.items)) } : fields;
   const record = { ...recordValue, $type: collection, updatedAt: new Date(now * 1000).toISOString() };
   try {
     const { cid } = await serverPutRecord(env, now, collection, RKEY, record, body.swapCid);

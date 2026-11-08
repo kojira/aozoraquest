@@ -28,7 +28,7 @@ import type { CraftedPiece } from '@/lib/crafting';
 
 const SLOT_LABELS = GEAR_SLOT_LABELS;
 
-const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
+export const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
   { key: 'atk', label: 'こうげき' },
   { key: 'def', label: 'まもり' },
   { key: 'agi', label: 'すばやさ' },
@@ -217,7 +217,7 @@ export function StatusModal({
 }
 
 /** DQ の「つよさ」らしい枠付きセクション (枠の連なりを最後まで通す — レビュー ★★) */
-function Section({ title, children }: { title?: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <div
       style={{
@@ -237,7 +237,7 @@ function Section({ title, children }: { title?: string; children: React.ReactNod
 }
 
 /** HP/MP の主役行 (大きめ + バー) */
-function HeroRow({ label, value, max, bonus, color }: { label: string; value: number; max: number; bonus: number; color: string }) {
+export function HeroRow({ label, value, max, bonus, color }: { label: string; value: number; max: number; bonus: number; color: string }) {
   const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
   return (
     <div style={{ margin: '0.15em 0' }}>
@@ -259,7 +259,7 @@ function HeroRow({ label, value, max, bonus, color }: { label: string; value: nu
   );
 }
 
-function StatRow({ label, value, note }: { label: string; value: number; note?: string | undefined }) {
+export function StatRow({ label, value, note }: { label: string; value: number; note?: string | undefined }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em', lineHeight: 1.9 }}>
       <span>{label}</span>

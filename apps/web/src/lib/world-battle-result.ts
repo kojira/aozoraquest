@@ -1,5 +1,6 @@
-import { ITEMS } from '@aozoraquest/core';
+import { ITEMS, withCharacterNames } from '@aozoraquest/core';
 import type { ServerAward } from '@/lib/world-server';
+import { bondUpLines } from '@/lib/bond-view';
 
 /**
  * 決着後の報酬メッセージ行 (経験値・素材・敗北・レベルアップ)。報酬を「同じ固定サイズの
@@ -21,7 +22,7 @@ export function battleResultLines(
   for (const d of drops) dropCounts.set(d, (dropCounts.get(d) ?? 0) + 1);
   const lostCounts = new Map<string, number>();
   for (const d of lost) lostCounts.set(d, (lostCounts.get(d) ?? 0) + 1);
-  const nameOf = (id: string) => ITEMS[id]?.name ?? id;
+  const nameOf = (id: string) => withCharacterNames(ITEMS[id]?.name ?? id);
   const resultLines: string[] = [];
   // **パワー不足で報酬が出なかったことを必ず言う**。
   // 黙って何も起きないと「経験値が入ったように見えて実は入っていない」になる。
@@ -55,5 +56,9 @@ export function battleResultLines(
     for (const name of lv.learned ?? []) resultLines.push(`${name}を覚えた！`);
     resultLines.push('傷がすっかり癒えた！');
   }
+  // 仲間のレベルアップ (D-PARTY-002 §11)。上がった仲間は全快している。
+  for (const a of awarded.allyLeveledUp ?? []) resultLines.push(`${a.name}のレベルが${a.to}に上がった！`);
+  // きずなの ♥ が増えたときだけ 1 行 (毎回の +1 は出さない。D-PARTY-004)。
+  resultLines.push(...bondUpLines(awarded.allyBondUp));
   return resultLines;
 }

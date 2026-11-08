@@ -45,6 +45,12 @@ describe('setGameQuests の検証', () => {
     expect(gameQuestsByNpc('n1')).toEqual([]);
   });
 
+  it('personal (個人の頼みごと) は真偽値だけ受け付ける', () => {
+    setGameQuests([base({ personal: true })]);
+    expect(gameQuestById('q1')?.personal).toBe(true);
+    expect(() => setGameQuests([base({ personal: 'yes' as unknown as true })])).toThrow(QuestDataError);
+  });
+
   it('存在しない NPC を弾く', () => {
     expect(() => setGameQuests([base({ npcId: 'ghost' })])).toThrow(QuestDataError);
   });

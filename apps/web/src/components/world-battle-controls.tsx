@@ -1,10 +1,21 @@
 import { type MutableRefObject, useEffect, useRef, useState } from 'react';
-import type { BattleState, Command } from '@aozoraquest/core';
-import { MONSTERS_BY_ID, isPureHealSkill, skillMpCostOf } from '@aozoraquest/core';
+import type { BattleState, Combatant, Command } from '@aozoraquest/core';
+import { ITEMS, MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, itemTargetsOneAlly, skillMpCostOf, skillTargetsOneAlly, withCharacterNames } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
 import { battleHpOf, battleLineHps, battleMessageLines } from '@/lib/battle-message-lines';
+import { BattleItemRows, hasAnyBattleItem } from './battle-item-menu';
+import { BattleEnemyRow } from './battle-enemy-row';
+import { BattleAllyRow } from './battle-ally-row';
+import { BattleTargetPicker, livingAllies, needsAllyTarget, needsTarget } from './battle-target-picker';
+
+/** 単体の敵をねらうとくぎか (群れのとき、ねらう相手を選ばせる。D-PARTY-001)。 */
+const skillTargetsOneEnemy = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneEnemy');
+/** 単体の敵をねらうどうぐか (D-ITEM-001 §5)。味方 1 人のどうぐは itemTargetsOneAlly (D-PARTY-003)。 */
+const itemTargetsOneEnemy = (id: string) => !!ITEMS[id]?.battle?.effects.some((e) => effectTarget(e) === 'oneEnemy');
+const hpFull = (c: Combatant) => c.hp >= c.maxHp;
+const mpFull = (c: Combatant) => c.mp >= c.maxMp;
 
 /**
  * あおぞらワールドの戦闘 UI (DQ 風の配置)。
@@ -48,6 +59,7 @@ export function WorldBattleControls({
   prevState,
   onReveal,
   onLineHp,
+  allyOrder,
 }: {
   state: BattleState;
   phase: BattlePhase;
@@ -56,7 +68,9 @@ export function WorldBattleControls({
   showEnemyVitals: boolean;
   /** result フェーズで出す報酬行 (経験値・素材など)。message/input では未使用。 */
   resultLines: readonly string[];
-  onCommand: (c: Command, skillIndex?: number) => void;
+  /** itemId は command==='item' のときの戦闘用どうぐ (D-ITEM-001)。targetIndex は群れでねらう敵
+   *  (生きている敵の中で何番目か。D-PARTY-001)。 */
+  onCommand: (c: Command, skillIndex?: number, itemId?: string, targetIndex?: number) => void;
   onAdvance: () => void;
   /** 直前ターンの state。message の最後の行までは敵の体力をこちらで見せる (#757)。 */
   prevState?: BattleState | undefined;
@@ -64,13 +78,47 @@ export function WorldBattleControls({
   onReveal?: (turn: number) => void;
   /** 表示中の行の 自分の HP と、その行で 被弾したか (上枠 HP と揺れ用。#764)。 */
   onLineHp?: (turn: number, hp: number, hit: boolean) => void;
+  /** めいれい の入力 (D-PARTY-004)。heading は「ミオ は どうする？（2/3）」。仲間の番は にげる の代わりに もどる・おまかせ。 */
+  allyOrder?: { heading: string; allyTurn: boolean; onBack: () => void; onAuto: () => void } | undefined;
 }) {
   const [itemMenu, setItemMenu] = useState(false);
+  /** ねらう相手を選んでいるコマンド (群れのときだけ。D-PARTY-001)。ally は味方を選ぶ (回復。D-PARTY-003)。 */
+  type Picking = ({ command: 'attack' } | { command: 'skill'; skillIndex: number } | { command: 'item'; itemId: string } | { command: 'herb' | 'tonic' }) & { ally?: boolean };
+  const [picking, setPicking] = useState<Picking | null>(null);
   // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
   // 描画上は input のときだけ出るが、state が開きっぱなしだと次の入力で一瞬開いて見えうる (レビュー ★★)。
   useEffect(() => {
-    if (phase !== 'input') setItemMenu(false);
+    if (phase !== 'input') { setItemMenu(false); setPicking(null); }
   }, [phase]);
+  const attack = () => (needsTarget(state) ? setPicking({ command: 'attack' }) : onCommand('attack'));
+  const allyPick = needsAllyTarget(state);
+  const chooseSkill = (i: number, kind: string) => {
+    if (allyPick && skillTargetsOneAlly(kind)) setPicking({ command: 'skill', skillIndex: i, ally: true });
+    else if (needsTarget(state) && skillTargetsOneEnemy(kind)) setPicking({ command: 'skill', skillIndex: i });
+    else onCommand('skill', i);
+  };
+  const pick = (targetIndex: number) => {
+    const p = picking;
+    setPicking(null);
+    if (p?.command === 'attack') onCommand('attack', undefined, undefined, targetIndex);
+    else if (p?.command === 'item') onCommand('item', undefined, p.itemId, targetIndex);
+    else if (p?.command === 'skill') onCommand('skill', p.skillIndex, undefined, targetIndex);
+    else if (p) onCommand(p.command, undefined, undefined, targetIndex);
+  };
+  const useItem = (id: string) => {
+    setItemMenu(false);
+    if (allyPick && itemTargetsOneAlly(id)) setPicking({ command: 'item', itemId: id, ally: true });
+    else if (needsTarget(state) && itemTargetsOneEnemy(id)) setPicking({ command: 'item', itemId: id });
+    else onCommand('item', undefined, id);
+  };
+  // やくそう・しずく: 仲間がいれば相手を選ぶ (D-PARTY-003)。みんな満タンなら押せない。
+  const pickVital = (command: 'herb' | 'tonic') => {
+    setItemMenu(false);
+    if (allyPick) setPicking({ command, ally: true });
+    else onCommand(command);
+  };
+  const allHpFull = livingAllies(state).every(hpFull);
+  const allMpFull = livingAllies(state).every(mpFull);
   const skillCost = skillMpCostOf(state.player); // 発明家 (匠) の MP 割引を反映
   const lowMp = state.player.mp < skillCost;
   // デプロイ跨ぎの旧 sealed state は playerSkills が無いことがある → 署名スキル 1 個にフォールバック。
@@ -80,7 +128,7 @@ export function WorldBattleControls({
     phase === 'result'
       ? resultLines
       : state.turn === 0
-        ? [`${state.monster.name}があらわれた！　${monsterDef?.intro ?? ''}`]
+        ? [`${state.monster.name}があらわれた！　${withCharacterNames(monsterDef?.intro ?? '')}`]
         : battleMessageLines(state.lastEvents.map((e) => e.text));
   // message は 1 タップ 1 行。段 (phase+turn) が変わったら先頭から (古い段の index は捨てる)。
   const stepKey = `${phase}-${state.turn}`;
@@ -103,7 +151,8 @@ export function WorldBattleControls({
   const lineHp = lineHps[lineIndex] ?? finalHp;
   const prevLineHp = lineIndex > 0 ? lineHps[lineIndex - 1] : prevState && lineHps.length > 0 ? battleHpOf(prevState) : undefined;
   const playerHit = !!prevLineHp && lineHp.player < prevLineHp.player;
-  const monsterHit = !!prevLineHp && lineHp.monsters.some((hp, i) => hp < (prevLineHp.monsters[i] ?? hp));
+  const enemyHit = lineHp.monsters.map((hp, i) => !!prevLineHp && hp < (prevLineHp.monsters[i] ?? hp));
+  const monsterHit = enemyHit.some(Boolean);
   const onLineHpRef = useRef(onLineHp);
   onLineHpRef.current = onLineHp;
   useEffect(() => {
@@ -128,9 +177,17 @@ export function WorldBattleControls({
           ここ (flex:1) の高さも一定 = 敵の位置がフェーズで動かない。 */}
       {/* 表示専用。message/result ではタップを背面の送り面へ通す。 */}
       <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', pointerEvents: phase === 'input' ? 'auto' : 'none' }}>
-        <BattleFieldEnemy state={state} monsterHp={lineHp.monsters[0] ?? state.monster.hp} hitKey={monsterHit ? `${state.turn}:${lineIndex}` : undefined} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
+        <BattleAllyRow state={state} hps={lineHp.allies} />
+        {(state.enemies?.length ?? 1) > 1 ? (
+          <BattleEnemyRow state={state} hps={lineHp.monsters} hitKeys={enemyHit.map((hit) => (hit ? `${state.turn}:${lineIndex}` : undefined))} showEnemyVitals={showEnemyVitals} />
+        ) : (
+          <BattleFieldEnemy state={state} monsterHp={lineHp.monsters[0] ?? state.monster.hp} hitKey={monsterHit ? `${state.turn}:${lineIndex}` : undefined} showEnemyVitals={showEnemyVitals} defeated={phase === 'result' && state.outcome === 'win'} />
+        )}
       </div>
 
+      {phase === 'input' && allyOrder && (
+        <div data-ally-order-heading style={{ flex: '0 0 auto', fontSize: '0.85em', color: '#fff', textShadow: TEXT_SHADOW, padding: '0 0.2em 0.2em' }}>{allyOrder.heading}</div>
+      )}
       {/* 下段: 常に BOTTOM_H の固定高さ */}
       <div style={{ flex: `0 0 ${BOTTOM_H}`, height: BOTTOM_H }}>
         {phase === 'input' ? (
@@ -143,22 +200,34 @@ export function WorldBattleControls({
             {/* 左: 基本コマンド。**「とくぎ」は置かない** — とくぎは右にいつも出ているので、
                 1 タップ挟むだけ無駄だった。空いたぶん 1 行を大きく使える。 */}
             <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', rowGap: '0.1em' }}>
-              <DqRow label="たたかう" onClick={() => onCommand('attack')} disabled={busy || itemMenu} />
-              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu} />
+              <DqRow label="たたかう" onClick={attack} disabled={busy || itemMenu} cursor={picking?.command === 'attack'} />
+              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu || !!picking} />
               {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
-              <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || (state.herbs <= 0 && state.tonics <= 0)} cursor={itemMenu} />
+              <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || !hasAnyBattleItem(state)} cursor={itemMenu} />
               {/* 逃げられないストーリー戦 (canFlee: false) では出さない (D-STORY-009。サーバーも受け付けない)。 */}
-              {state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
+              {allyOrder?.allyTurn ? (
+                // めいれい の仲間の番: にげる は主人公だけ。代わりに 前の人へ／この人から後ろは おまかせ (D-PARTY-004 §2)。
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2em', minHeight: 0 }}>
+                  <DqRow label="もどる" onClick={allyOrder.onBack} disabled={busy} />
+                  <DqRow label="おまかせ" onClick={allyOrder.onAuto} disabled={busy} />
+                </div>
+              ) : state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
             </div>
             {/* 右: **既定でとくぎ一覧**。どうぐを開いている間だけ道具に入れ替わる。 */}
             {/* とくぎが増えるほど縦に伸びるので**この枠自体をスクロールさせる**。
                 minHeight:0 が無いと flex/grid の自動最小サイズで枠が伸び、overflow が
                 効かないまま外へあふれる (上の gridTemplateRows と対で必要)。 */}
             <div style={{ ...WINDOW, height: '100%', minHeight: 0, overflowY: 'auto', padding: '0.2em 0.4em', display: 'flex', flexDirection: 'column', rowGap: '0.1em' }}>
-              {itemMenu ? (
+              {picking ? (
+                <BattleTargetPicker
+                  state={state} busy={busy} Row={DqRow} onPick={pick} onCancel={() => setPicking(null)}
+                  {...(picking.ally ? { side: 'ally' as const, ...(picking.command === 'tonic' ? { full: mpFull } : picking.command === 'herb' || (picking.command === 'skill' && isPureHealSkill(skills[picking.skillIndex]?.kind ?? '')) ? { full: hpFull } : {}) } : {})}
+                />
+              ) : itemMenu ? (
                 <>
-                  <DqRow fill={false} label={`やくそう ×${state.herbs}`} onClick={() => { setItemMenu(false); onCommand('herb'); }} disabled={busy || state.herbs <= 0 || state.player.hp >= state.player.maxHp} />
-                  <DqRow fill={false} label={`そらのしずく ×${state.tonics}`} onClick={() => { setItemMenu(false); onCommand('tonic'); }} disabled={busy || state.tonics <= 0 || state.player.mp >= state.player.maxMp} />
+                  <DqRow fill={false} label={`やくそう ×${state.herbs}`} onClick={() => pickVital('herb')} disabled={busy || state.herbs <= 0 || allHpFull} />
+                  <DqRow fill={false} label={`そらのしずく ×${state.tonics}`} onClick={() => pickVital('tonic')} disabled={busy || state.tonics <= 0 || allMpFull} />
+                  <BattleItemRows state={state} busy={busy} Row={DqRow} onUse={useItem} />
                   <DqRow fill={false} label="もどる" onClick={() => setItemMenu(false)} disabled={busy} />
                 </>
               ) : (
@@ -171,9 +240,9 @@ export function WorldBattleControls({
                     key={`${sk.name}-${i}`}
                     fill={false}
                     label={sk.name}
-                    onClick={() => onCommand('skill', i)}
-                    // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)
-                    disabled={busy || lowMp || (isPureHealSkill(sk.kind) && state.player.hp >= state.player.maxHp)}
+                    onClick={() => chooseSkill(i, sk.kind)}
+                    // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)。味方にも使えるとくぎは みんな満タンのときだけ。
+                    disabled={busy || lowMp || (isPureHealSkill(sk.kind) && (skillTargetsOneAlly(sk.kind) || SKILLS[sk.kind]?.effects.some((e) => effectTarget(e) === 'allAllies') ? allHpFull : hpFull(state.player)))}
                   />
                 ))
               )}

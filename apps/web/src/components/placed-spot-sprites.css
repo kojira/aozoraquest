@@ -1,0 +1,9 @@
+/* キラキラ (D-CHEST-001): 2 コマを約 0.6 秒ごとに opacity で切り替える。 */
+@keyframes placed-sparkle-a { 0%, 49.99% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes placed-sparkle-b { 0%, 49.99% { opacity: 0; } 50%, 100% { opacity: 1; } }
+.placed-sparkle-frame[data-frame='0'] { animation: placed-sparkle-a 1.2s steps(1, end) infinite; }
+.placed-sparkle-frame[data-frame='1'] { opacity: 0; animation: placed-sparkle-b 1.2s steps(1, end) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .placed-sparkle-frame[data-frame='0'] { animation: none; opacity: 1; }
+  .placed-sparkle-frame[data-frame='1'] { animation: none; opacity: 0; }
+}

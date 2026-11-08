@@ -6,15 +6,17 @@
  * → 結果を返す。**クライアントは結果を描画するだけで、権威データ (パワー/XP/素材/位置) を自分の PDS
  * に書かない** = 改造してもチートできない。
  */
-import { LXM, type StoryEffect } from '@aozoraquest/core';
+import { LXM, type AllyMode, type GearSelection, type PartyRecruit, type PlacedKind, type PlacedReward, type RecruitCandidate, type StoryEffect } from '@aozoraquest/core';
 import type { Agent } from '@atproto/api';
 
 // エッジ URL/DID の環境別解決は edge-config に一元化 (world/連携が同じエッジを使う。#396)。
 import { EDGE_URL, EDGE_DID } from './edge-config';
+import type { AllyOrderInput } from './battle-ally-orders';
 
 const LXM_MOVE = LXM.worldMove;
 const LXM_TELEPORT = LXM.worldTeleport;
 const LXM_ITEM = LXM.worldItem;
+const LXM_SKILL = LXM.worldSkill;
 const LXM_GEAR = LXM.worldGear;
 const LXM_SEARCH = LXM.worldSearch;
 const LXM_RESET = LXM.worldReset;
@@ -25,13 +27,20 @@ const LXM_XP_ADMIN_SET = LXM.xpAdminSet;
 const LXM_POWER_ADMIN_GRANT = LXM.powerAdminGrant;
 const LXM_SHOP_CRAFT = LXM.shopCraft;
 const LXM_SHOP_SELL = LXM.shopSell;
+const LXM_SHOP_BUY = LXM.shopBuy;
 const LXM_SHOP_FORGE = LXM.shopForge;
 const LXM_SHOP_DISCARD = LXM.shopDiscard;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
 const LXM_INN_REST = LXM.innRest;
+const LXM_PARTY_SET = LXM.partySet;
+const LXM_PARTY_CANDIDATES = LXM.partyCandidates;
+const LXM_PARTY_REROLL = LXM.partyReroll;
+const LXM_PARTY_MODE = LXM.partyMode;
+const LXM_PARTY_GEAR = LXM.partyGear;
 const LXM_POWER_SPEND = LXM.powerSpend;
+const LXM_PARTY_RENAME = LXM.partyRename;
 const LXM_ADMIN_PDS_USAGE = LXM.adminPdsUsage;
 
 /** edge URL / DID が設定されていればサーバー権威モードを使える。 */
@@ -64,7 +73,7 @@ async function serviceToken(agent: Agent, lxm: string): Promise<string> {
   return data.token;
 }
 
-async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknown): Promise<T> {
+export async function callEdge<T>(agent: Agent, lxm: string, path: string, body: unknown): Promise<T> {
   if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
   const token = await serviceToken(agent, lxm);
   let res: Response;
@@ -100,7 +109,14 @@ export interface ServerMoveResult {
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
 /** 所持装備の 1 個体 (#551 段階 2)。**権威側が唯一の正**で、ここに無い個体は装備できない。 */
 export interface ServerOwnedPiece { rkey: string; itemId: string; level: number }
-export interface ServerGameState { did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; version: number; updatedAt: string }
+/** パーティ (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
+ *  members は生成の仲間の定義と経験値、xp はなじみの経験値 (D-PARTY-002)。 */
+export interface ServerParty { ids: string[]; hp?: Record<string, number>; mp?: Record<string, number>; members?: PartyRecruit[]; xp?: Record<string, number>; bond?: Record<string, number>; mode?: Record<string, AllyMode>; gear?: Record<string, GearSelection>; names?: Record<string, string> }
+/** きずなの ♥ が増えた仲間 (増えたあとの ♥ の数。D-PARTY-004)。 */
+export interface ServerBondUp { id: string; name: string; hearts: number }
+/** ギルドの今日の候補 (D-PARTY-002)。入れた人は含まない。 */
+export interface ServerPartyCandidates { day: string; candidates: RecruitCandidate[]; power: number; rerollPower: number }
+export interface ServerGameState { party?: ServerParty; did: string; power: number; playerXp: number; jobXp: Record<string, number>; materials: Record<string, number>; gear: string[]; pieces?: ServerOwnedPiece[]; x: number; y: number; carryHp?: number; carryMp?: number; herbs?: number; tonics?: number; mapId?: string; flags?: string[]; activeQuests: Array<{ id: string; progress: number }>; questsDone?: string[]; openedSpots?: string[]; casinoCoins?: number; casinoHL?: { first: number; stake: number; step: number }; version: number; updatedAt: string }
 export interface ServerStateResult { state: ServerGameState; initialized: boolean; token?: string }
 export interface ServerAward {
   /** パワー不足で報酬対象外だった (勝っても逃げても XP・素材が入らない)。 */
@@ -118,11 +134,16 @@ export interface ServerAward {
     /** 新しく覚えたとくぎの名前。 */
     learned?: string[];
   };
+  /** この決着で Lv が上がった仲間 (D-PARTY-002)。上がった仲間は全快している。 */
+  allyLeveledUp?: Array<{ id: string; name: string; from: number; to: number }>;
+  allyBondUp?: ServerBondUp[];
 }
-export interface ServerTurnResult { state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
+export interface ServerTurnResult { party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
   activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
-export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number }
+export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number; party?: ServerParty; allyBondUp?: ServerBondUp[] }
+/** フィールドの回復のとくぎの結果 (D-PARTY-003)。healed は回復した人ごと (全体回復は全員)。 */
+export interface ServerSkillResult { healed: Array<{ id: string; name: string; amount: number }>; casterName: string; skillName: string; carryHp?: number; carryMp?: number; party?: ServerParty; duplicate?: boolean; allyBondUp?: ServerBondUp[] }
 export interface ServerTeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
 
 /** 移動: 隣接1マス (dx,dy ∈ {-1,0,1})。位置トークン (署名済み) を渡し、遭遇判定 + 新トークンをサーバーが返す。
@@ -132,9 +153,27 @@ export function serverMove(agent: Agent, dx: number, dy: number, token?: string)
 }
 
 /** 攻撃 (1ターン): battleId + turn + command。解決 + 決着報酬はサーバー。 */
-export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number): Promise<ServerTurnResult> {
+export function serverTurn(agent: Agent, battleId: string, turn: number, command: string, skillIndex?: number, itemId?: string, targetIndex?: number, allies?: readonly AllyOrderInput[]): Promise<ServerTurnResult> {
   // skillIndex: とくぎ選択 (#436)。command==='skill' のときどのとくぎか。省略/0 は署名スキル。
-  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}) });
+  // itemId: command==='item' のときの戦闘用どうぐ (D-ITEM-001)。
+  // targetIndex: 群れでねらう敵 (生きている敵の中で何番目か。D-PARTY-001)。省略/0 は先頭。
+  return callEdge<ServerTurnResult>(agent, LXM_TURN, '/api/battle/turn', { battleId, turn, command, ...(skillIndex ? { skillIndex } : {}), ...(itemId ? { itemId } : {}), ...(targetIndex ? { targetIndex } : {}), ...(allies?.length ? { allies } : {}) });
+}
+
+/** パーティの編成 (D-PARTY-001)。ギルドの受付の隣でだけ通る (位置は署名済みトークンで edge が確かめる)。
+ *  payRkey があれば Lv の足りない人をパワーで迎える (D-PARTY-002 §14。rkey は 1 回の押下ごとに 1 つ)。 */
+export function serverPartySet(agent: Agent, guild: string, ids: readonly string[], token?: string, payRkey?: string): Promise<{ party: ServerParty; power: number }> {
+  return callEdge<{ party: ServerParty; power: number }>(agent, LXM_PARTY_SET, '/api/party', { guild, ids, ...(token ? { token } : {}), ...(payRkey ? { payOverLevel: true, rkey: payRkey } : {}) });
+}
+
+/** ギルドの今日の候補 (D-PARTY-002)。受付の隣でだけ通る。 */
+export function serverPartyCandidates(agent: Agent, guild: string, token?: string): Promise<ServerPartyCandidates> {
+  return callEdge<ServerPartyCandidates>(agent, LXM_PARTY_CANDIDATES, '/api/party/candidates', { guild, ...(token ? { token } : {}) });
+}
+
+/** 候補の引き直し (パワーを払う。D-PARTY-002 §10)。rkey は 1 回の押下ごとに 1 つ (再送で二重に引かれない)。 */
+export function serverPartyReroll(agent: Agent, guild: string, rkey: string, token?: string): Promise<ServerPartyCandidates> {
+  return callEdge<ServerPartyCandidates>(agent, LXM_PARTY_REROLL, '/api/party/reroll', { guild, rkey, ...(token ? { token } : {}) });
 }
 
 /** そらのはねワープ: 街 (x,y) へテレポート。位置・トークン・在庫 (そらのはね消費) をサーバーが返す。 */
@@ -142,9 +181,30 @@ export function serverTeleport(agent: Agent, x: number, y: number): Promise<Serv
   return callEdge<ServerTeleportResult>(agent, LXM_TELEPORT, '/api/world/teleport', { x, y });
 }
 
-/** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。 */
-export function serverItem(agent: Agent, item: 'herb' | 'tonic'): Promise<ServerItemResult> {
-  return callEdge<ServerItemResult>(agent, LXM_ITEM, '/api/world/item', { item });
+/** 仲間の さくせん／めいれい (D-PARTY-004)。mode が null なら おまかせ。段階が足りなければ 400 bond_too_low。 */
+export function serverPartyMode(agent: Agent, id: string, mode: AllyMode | null): Promise<{ party: ServerParty }> {
+  return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_MODE, '/api/party/mode', { id, mode });
+}
+
+/** 仲間の装備 (D-PARTY-004)。gear は着る全部 ({id, level})。ほかの人が着ている品は 400 worn_by_other。 */
+export function serverPartyGear(agent: Agent, id: string, gear: GearSelection): Promise<{ party: ServerParty }> {
+  return callEdge<{ party: ServerParty }>(agent, LXM_PARTY_GEAR, '/api/party/gear', { id, gear });
+}
+
+/** なまえのふだ (D-CASINO-001): 仲間 1 人の名前を変える。ふだは名前を変えられたときだけ 1 枚へる。rkey で冪等。 */
+export function serverPartyRename(agent: Agent, id: string, name: string, rkey: string): Promise<{ party: ServerParty; materials: Record<string, number> }> {
+  return callEdge<{ party: ServerParty; materials: Record<string, number> }>(agent, LXM_PARTY_RENAME, '/api/party/rename', { id, name, rkey });
+}
+
+/** フィールドの道具使用: やくそう=herb / そらのしずく=tonic。サーバー在庫を消費して HP/MP を回復。
+ *  target は仲間の id (省略は主人公。D-PARTY-003)。 */
+export function serverItem(agent: Agent, item: 'herb' | 'tonic', target?: string): Promise<ServerItemResult> {
+  return callEdge<ServerItemResult>(agent, LXM_ITEM, '/api/world/item', { item, ...(target ? { target } : {}) });
+}
+
+/** フィールドで回復のとくぎを唱える (D-PARTY-003)。caster / target は 'hero' か仲間の id。全体回復は target なし。rkey は 1 回の押下ごとに 1 つ。 */
+export function serverFieldSkill(agent: Agent, caster: string, skillId: string, target: string | undefined, rkey: string): Promise<ServerSkillResult> {
+  return callEdge<ServerSkillResult>(agent, LXM_SKILL, '/api/world/skill', { caster, skillId, rkey, ...(target ? { target } : {}) });
 }
 
 /** 装備ミラー: client が解決した装備 (GearSelection: 強化値つき) をサーバーへ送り、戦闘に反映させる (#377)。 */
@@ -158,9 +218,16 @@ export interface ServerSearchResult {
   found: string | null;
   materials: Record<string, number>;
   power: number;
-  /** 置きアイテムを取ったときだけ (D-STORY-009)。パワーは減らない。 */
-  placed?: { itemId: string; count: number };
+  /** 置きアイテムを取ったときだけ (D-STORY-009 / D-CHEST-001)。パワーは減らない。itemId/count は spot のときだけ。 */
+  placed?: { kind: PlacedKind; rewards: PlacedReward[]; itemId?: string; count?: number };
   flags?: string[];
+  /** 置きアイテムを取ったときだけ: 開けた宝箱・取ったキラキラ。 */
+  openedSpots?: string[];
+  /** 置きアイテムを取ったときだけ: 装備の個体 (宝箱から装備が出ると増える)。 */
+  pieces?: ServerOwnedPiece[];
+  /** 無料で何も起きないマス: 開封済みの宝箱 / 鍵。 */
+  placedState?: 'empty' | 'locked';
+  hint?: string;
   scenarioMessages?: ScenarioMessage[];
 }
 export function serverSearch(agent: Agent, token?: string, key?: string): Promise<ServerSearchResult> {
@@ -238,6 +305,9 @@ export interface ServerQuestResult {
   materials: Record<string, number>;
   /** 達成時のみ: 付与された報酬。 */
   rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 達成時のみ: きずなの ♥ が増えた仲間と、足したあとの party (D-PARTY-004)。 */
+  allyBondUp?: ServerBondUp[];
+  party?: ServerParty;
   /** 受注で始まる戦闘 (D-STORY-009)。サーバーが封印済み。 */
   encounter?: ServerEncounter;
   /** 進行フラグ (#545)。サーバーが立てた結果。 */
@@ -249,7 +319,7 @@ export interface ServerQuestResult {
 }
 
 /** シナリオのお知らせ 1 行と、その行に付く演出。 */
-export interface ScenarioMessage { text: string; effects?: StoryEffect[] }
+export interface ScenarioMessage { text: string; effects?: StoryEffect[]; /** 話す NPC の id (#907)。 */ npcId?: string }
 
 /** 新 edge の scenarioMessages を優先し、旧 edge の文字列だけのお知らせは演出なしで包む。 */
 export function scenarioMessagesOf(messages: ScenarioMessage[] | undefined, notices: string[] | undefined): ScenarioMessage[] {
@@ -281,6 +351,11 @@ export function serverInnRest(agent: Agent, token?: string): Promise<ServerInnRe
  *  talk は位置トークンで「相手の隣にいる」をサーバーが確かめる (D-STORY-009)。 */
 export function serverQuestComplete(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
   return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId, ...(token ? { token } : {}) });
+}
+
+/** なんでも屋: どうぐを 1 個買う (D-ITEM-001)。品揃え・値段・上限はサーバーが決める。rkey で冪等。 */
+export function serverShopBuy(agent: Agent, itemId: string, rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_BUY, '/api/shop/buy', { itemId, rkey, ...(token ? { token } : {}) });
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */

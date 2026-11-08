@@ -12,21 +12,27 @@
  */
 
 import type { StoryEffect } from '@aozoraquest/core';
+import type { DialogueVoiceCue } from './tts/tts-voice';
 
 export interface DialogueLine {
   /** 話者名 (名前プレートに出す)。省略時はプレートなし (地の文) */
   speaker?: string;
-  /** この行だけの表情。通常会話の管理画像は呼出側のportraitを使う。 */
-  portrait?: { src: string; name: string };
+  /** この行だけの表情。通常会話の管理画像は呼出側のportraitを使う。
+   *  `mapSprite` はマップのドット絵 (横長なら2コマ) の1コマ目を拡大して出す (#907。会話イラストの無い NPC)。 */
+  portrait?: { src: string; name: string; mapSprite?: { frames: 1 | 2 } };
   text: string;
   /** この行が表示された瞬間に地図枠へ出す演出 (D-STORY-007)。 */
   effects?: readonly StoryEffect[];
+  /** この行を声で読む (Blueskyちゃんの行だけ。D-TTS-001)。 */
+  voice?: DialogueVoiceCue;
 }
 
 /** 最後の行を読み終えたあとに出す選択肢 (「はい / いいえ」)。選ぶと onSelect → done。 */
 export interface DialogueChoice {
   label: string;
   onSelect: () => void | Promise<void>;
+  /** 窓の下端に張りつけて常に見せる短い操作 (一覧の 前へ・次へ・戻る など)。選ぶ肢が多くても抜け道が隠れない。 */
+  pinned?: boolean;
 }
 
 export interface DialogueState {

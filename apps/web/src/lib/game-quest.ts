@@ -5,7 +5,7 @@
  * 写した値だけで、client は自分で進めない (討伐数は勝利時に edge が数える)。
  * world.tsx はこの写しを state に持ち、NPC 会話と「クエスト」窓の受注一覧に使う。
  */
-import { ITEMS, allNpcs, gameQuestById, interiorById, questObjectiveText, questProgressLine, type GameQuestDef } from '@aozoraquest/core';
+import { ITEMS, allNpcs, gameQuestById, interiorById, questObjectiveText, questProgressLine, withCharacterNames, type GameQuestDef } from '@aozoraquest/core';
 import type { DialogueChoice } from './dialogue';
 
 export interface QuestProgress {
@@ -56,9 +56,10 @@ export function questLogEntries(st: QuestState, materials: Record<string, number
     return {
       id: q.id,
       section: guild ? 'guild' : 'personal',
-      title: def.title,
-      giver: `依頼: ${npc?.name ?? def.npcId}${where ? `（${where}）` : ''}`,
-      progress: questProgressLine(def, q.progress, materials),
+      // 人物の名前 {c:id} (D-CHAR-001) はここで置き換える (窓の外に出す一覧)。
+      title: withCharacterNames(def.title),
+      giver: withCharacterNames(`依頼: ${npc?.name ?? def.npcId}${where ? `（${where}）` : ''}`),
+      progress: withCharacterNames(questProgressLine(def, q.progress, materials)),
       ready: o.kind !== 'talk' && have >= o.count,
       detail: questTermsLine(def),
     };
@@ -79,7 +80,7 @@ export function questTermsLine(q: GameQuestDef): string {
     q.reward?.itemId ? `${ITEMS[q.reward.itemId]?.name ?? q.reward.itemId} ×${q.reward.count}` : null,
     q.reward?.power ? `あおぞらパワー${q.reward.power}` : null,
   ].filter(Boolean).join('と') || 'なし';
-  return `条件: ${questObjectiveText(q)}。報酬: ${reward}。`;
+  return withCharacterNames(`条件: ${questObjectiveText(q)}。報酬: ${reward}。`);
 }
 
 export const QUEST_ASK = 'うけますか？';

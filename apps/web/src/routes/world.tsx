@@ -3,15 +3,16 @@ import { Link } from 'react-router-dom';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForRegion,
+  withCharacterNames,
   BATTLE_TUNING,
   canSeeEnemyVitals,
+  equippedCounts,
   favoredMonsterFor,
-  jobLevelFromXp,
+  jobLevelFromXp, partyCapacity,
   playerCombatant,
   playerLevelFromXp,
   regionAffinity,
   regionOf,
-  SEARCH_TUNING,
   statVectorToArray,
   terrainAt,
   townAt,
@@ -23,9 +24,11 @@ import {
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
-import { serverGear, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { serverGear, serverPartyGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
-import { GearModal } from '@/components/gear-modal';
+import { CasinoModal } from '@/components/casino-modal';
+import { useCasino } from '@/lib/use-casino';
+import { PartyGearModal } from '@/components/party-gear-modal';
 import { resolveGear } from '@/lib/gear';
 import { useWorldScroll, type WorldScrollStep } from '@/lib/use-world-scroll';
 import { WORLD_PREVIEW_ENABLED } from '@/lib/world-preview';
@@ -37,6 +40,7 @@ import { VirtualStick } from '@/components/virtual-stick';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcDialogueLines } from '@/lib/npc-image';
+import { scenarioDialogueLines } from '@/lib/scene-dialogue';
 import { StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
@@ -46,21 +50,26 @@ import { WelcomeBlessingOverlay, notifyWelcome } from '@/components/welcome-bles
 import { WELCOME_POWER, ONBOARDING_DONE_KEY } from '@/lib/onboarding-reset';
 import { questLogEntries } from '@/lib/game-quest';
 import { QuestLogModal } from '@/components/quest-log-modal';
+import { PartyModals } from '@/components/party-modal';
+import { FieldSkillModal, fieldHealSkills } from '@/components/field-skill-modal';
+import { fieldMembers, useFieldHeal } from '@/lib/use-field-heal';
+import { useAllyOrders } from '@/lib/battle-ally-orders';
 import { guildReception } from '@/lib/npc-talk';
 import { guildMetKey, npcTalkPortrait } from '@/lib/guild-greeting';
 import { useLatestRef } from '@/lib/use-latest-ref';
 import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
 import { useInnTalk } from '@/lib/use-inn-talk';
-import { useWorldShop } from '@/lib/use-world-shop';
+import { piecesFromServer, useWorldShop } from '@/lib/use-world-shop';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
+import { searchMenuLabel } from '@/lib/placed-search-text';
 import { useWorldLoad } from '@/lib/use-world-load';
 import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
 import { openingLines, starterHandoffLines } from '@/lib/world-opening';
-import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, type Dir, type Vitals } from '@/lib/world-view';
+import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, seesFieldDanger, type Dir, type Vitals } from '@/lib/world-view';
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -121,7 +130,7 @@ function WorldScreen() {
     pendingNoticesRef.current = [];
     setScenarioTalk(list);
   }, []);
-  /** シナリオのお知らせ窓 (話者なしの地の文)。 */
+  /** シナリオのお知らせ窓 (地の文。npcId のある行はその NPC が話す。#907)。 */
   const [scenarioTalk, setScenarioTalk] = useState<ScenarioMessage[] | null>(null);
   const [onboarding, setOnboarding] = useState(false);
   const onboardingRef = useRef(false);
@@ -155,6 +164,8 @@ function WorldScreen() {
   const [itemsOpen, setItemsOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
   const [questLogOpen, setQuestLogOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
+  const [skillOpen, setSkillOpen] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [featherOpen, setFeatherOpen] = useState(false);
   const [showStarter, setShowStarter] = useState(false);
@@ -207,6 +218,7 @@ function WorldScreen() {
   const { innTalk, innTalkRef, innBusy, innChoices, openInn, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
+  const casino = useCasino({ agent, tokenRef, setServerPower, applyServerMaterials: inventory.applyServerMaterials, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]) });
 
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
   const resolvedGear = archetype ? resolveGear(gearRefs, craftedPieces, archetype) : null;
@@ -243,11 +255,14 @@ function WorldScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- baseArgs は下記 diag/archetype で代表
     [statusOpen, archetype, hereJobXp, diag?.playerLevel?.xp, diag?.rpgStats],
   );
+  // フィールドの回復 (D-PARTY-003): 主人公と仲間の持ちこし HP/MP。
+  const members = fieldMembers(combat && { ...combat, name: playerName }, archetype && hereJobXp !== null ? { archetype, level: jobLevelFromXp(hereJobXp, archetype) } : null, ws, talk.party);
+  const fieldHeal = useFieldHeal({ agent, inventory, setWs, setParty: talk.setParty });
   const curHp = combat ? Math.min(ws?.hp ?? combat.maxHp, combat.maxHp) : null;
   const curMp = combat ? Math.min(ws?.mp ?? combat.maxMp, combat.maxMp) : null;
 
   useWorldLoad({
-    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, tokenRef,
+    sessionStatus: session.status, agent, did, retryNonce, setLoadErr, setServerPower, setQuest, flagsRef, setParty: talk.setParty, tokenRef,
     setCraftedPieces, setGearRefs, setWs, setStarterBlessed, setShowStarter, setOnboarding, onboardingRef, setNotice,
     setAvatarUrl, setPlayerName, setDiag, inventory, flushCraftLog,
   });
@@ -256,6 +271,8 @@ function WorldScreen() {
     agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave,
     inventory, setServerPower, archetypeRef, didRef,
   });
+  // めいれい の入力の順番 (D-PARTY-004)。主人公 → めいれい の仲間 → 送信。
+  const orders = useAllyOrders(battle?.state ?? null, battle ? `${battle.battleId}:${battle.state.turn}:${battle.phase}` : '', (h, allies) => onBattleCommand(h.command, h.skillIndex, h.itemId, h.targetIndex, allies));
   startEncounterRef.current = (encounter) => beginEncounter(encounter, battleRef, setBattle, setWipe);
   // message の最後の行に着いたターン (`battleId:turn`)。それまで上枠 HP/MP は前ターンの値 (#757)。
   const [revealedBattleTurn, setRevealedBattleTurn] = useState<string | null>(null);
@@ -287,11 +304,11 @@ function WorldScreen() {
 
   const wipeRef = useLatestRef(wipe);
   /** 入力ガード用に、開いている窓・演出の最新値を 1 つの ref で読む (deps の狭い callback から)。 */
-  const overlaysRef = useLatestRef({ mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter });
+  const overlaysRef = useLatestRef({ casinoOpen: !!casino.casinoSpot, mapOpen, shopOpen, gearOpen, statusOpen, menuOpen, itemsOpen, invOpen, questLogOpen, searchMsg, featherOpen, showStarter, skillOpen });
   // 戦闘中・リザルト表示中・地図表示中・ワイプ演出中・各窓・会話・サーバー往復中は移動不可。
   const moveBlocked = useCallback(() => {
     const o = overlaysRef.current;
-    return !!battleRef.current || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter
+    return !!battleRef.current || o.casinoOpen || o.mapOpen || o.shopOpen || o.gearOpen || !!wipeRef.current || onboardingRef.current || o.statusOpen || o.menuOpen || o.itemsOpen || o.invOpen || o.questLogOpen || o.searchMsg !== null || o.featherOpen || o.showStarter || o.skillOpen
       || moveBusyRef.current || !!npcTalkRef.current || !!innTalkRef.current || mapAcquisitionRef.current; // 直前の移動がサーバー往復中 (トークン連鎖を直列化)
   }, [battleRef, npcTalkRef, innTalkRef, overlaysRef, wipeRef]);
   // そらのはねの行き先えらび: 導入中・戦闘・演出・地図/店/そうび/つよさの窓では開かない。
@@ -303,11 +320,11 @@ function WorldScreen() {
   const move = useWorldMove({
     agent, did, wsRef, setWs, setScrollStep, inputBlocked: moveBlocked, moveBusyRef, tokenRef, flagsRef, materialsRef,
     guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice,
-    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
+    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, openCasino: casino.openCasino, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
   });
   const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
     agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower,
-    setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked: featherBlocked,
+    setSearchMsg, setFeatherOpen, setWipe, fieldItemBlocked: featherBlocked, setCraftedPieces,
   });
 
   // オンボード用リセットは**設定画面**へ移設した (地図メニューから消し、新規と同じ
@@ -387,6 +404,8 @@ function WorldScreen() {
   // (常に region 0 になる)。内部では自分の危険度設定を使い、未設定なら「敵なし」。
   const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
   const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y)))?.name;
+  // 危険度・よく出る敵は 見える職 (主人公か仲間) がいるときだけ出す (docs/25 §ジョブ特性)。
+  const seesDanger = seesFieldDanger(archetype, talk.party);
 
   // 自分タップで開く DQ 風コマンド。街にいるときだけ「なんでも屋」を足す。
   // **フックは使わない** (この行は早期 return より後にあるので useMemo だと
@@ -395,10 +414,14 @@ function WorldScreen() {
   const inTown = !!town;
   const statusReady = !!combat && !!archetype;
   const menuCommands: WorldMenuCommand[] = [
-    { key: 'items', label: 'どうぐ', onSelect: () => setItemsOpen(true) },
+    // 仲間の HP/MP は戦闘・宿屋のあとで変わるので、開くときに読み直す (D-PARTY-003。読めなければ前のまま)。
+    { key: 'items', label: 'どうぐ', onSelect: () => { setItemsOpen(true); if (talk.party.ids.length) talk.partyLoad().catch(() => {}); } },
+    // 回復のとくぎを覚えている人がいるときだけ (D-PARTY-003)。
+    ...(members.some((m) => fieldHealSkills(m).length > 0) ? [{ key: 'skill', label: 'とくぎ', onSelect: () => { setSkillOpen(true); if (talk.party.ids.length) talk.partyLoad().catch(() => {}); } } as WorldMenuCommand] : []),
     { key: 'quests', label: 'クエスト', onSelect: () => setQuestLogOpen(true) },
+    ...(partyCapacity(flagsRef.current) > 1 ? [{ key: 'party', label: 'なかま', onSelect: () => setPartyOpen(true) } as WorldMenuCommand] : []),
     // しらべるは街の外だけ (街=安全地帯で地方素材は出ない)。コストをラベルに明記
-    ...(inTown ? [] : [{ key: 'search', label: `しらべる (パワー${SEARCH_TUNING.powerCost})`, onSelect: () => void searchHere() } as WorldMenuCommand]),
+    ...(inTown ? [] : [{ key: 'search', label: searchMenuLabel(ws, flagsRef.current, inventory.openedRef.current), onSelect: () => void searchHere() } as WorldMenuCommand]),
     { key: 'gear', label: 'そうび', onSelect: () => setGearOpen(true) },
     // ちずは世界地図なので内部では出さない (#613)。内部の座標を世界地図に重ねると
     // 現在地マーカーが region 0 (左上) に出る誤表示になる。
@@ -427,7 +450,7 @@ function WorldScreen() {
             aria-label="ワールドマップ"
           >
             <g ref={scrollLayerRef} data-world-scroll data-world-x={ws.x} data-world-y={ws.y}>
-              <WorldMapLayer at={ws} scrollPadding={scrollPadding} flags={flagsRef.current} />
+              <WorldMapLayer at={ws} scrollPadding={scrollPadding} flags={flagsRef.current} opened={inventory.openedRef.current} />
             </g>
             <ellipse
               cx={HALF * TILE + TILE / 2}
@@ -480,10 +503,10 @@ function WorldScreen() {
               maxMp={hudBattleState ? hudBattleState.player.maxMp : combat.maxMp}
               locationLabel={
                 // 内部では**そのマップの名前**を出す (どこに居るか分かる唯一の手掛かり)。
-                // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。
+                // 敵が出ない内部 (街の中・広間) では危険度も敵名も出さない。人物の名前 {c:id} は置き換える (D-CHAR-001)。
                 insideHere
-                  ? `🚪 ${insideHere.name}${insideHere.encounterTier !== undefined ? ` / ${dangerLabel(hereTier)}` : ''}`
-                  : town ? `🏘 ${town.name}` : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName)
+                  ? withCharacterNames(`🚪 ${insideHere.name}${insideHere.encounterTier !== undefined && seesDanger ? ` / ${dangerLabel(hereTier)}` : ''}`)
+                  : town ? withCharacterNames(`🏘 ${town.name}`) : fieldLocationLabel(hereTier, here === 'forest', favoredMonsterName, seesDanger)
               }
               // 戦闘/リザルト中は HP/MP を暗転オーバーレイより上に出して上枠で鮮明に
               // 見せる (下段の重複バーは廃止し上枠へ一本化)。
@@ -513,12 +536,13 @@ function WorldScreen() {
               }}
             >
               <WorldBattleControls
-                state={battle.state}
+                state={orders.view ?? battle.state}
                 phase={battle.phase}
                 busy={battle.busy}
                 showEnemyVitals={canSeeEnemyVitals(archetype)}
                 resultLines={battle.resultLines ?? []}
-                onCommand={onBattleCommand}
+                onCommand={orders.onCommand}
+                allyOrder={orders.heading ? { heading: orders.heading, allyTurn: orders.allyTurn, onBack: orders.back, onAuto: orders.auto } : undefined}
                 onAdvance={() => void onMessageAdvance()}
                 prevState={battle.prevState}
                 onReveal={(turn) => setRevealedBattleTurn(`${battle.battleId}:${turn}`)}
@@ -544,13 +568,13 @@ function WorldScreen() {
               onDone={() => { mapAcquisitionRef.current = false; setMapAcquisition(null); }}
             />
           )}
-          {!battle && npcTalk && !onboarding && mapAcquisition === null && (
+          {!battle && npcTalk && npcTalk.guild !== 'party' && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               // 段ごとに作り直さない (D-DIALOGUE-004)。setNpcTalk の新しい段で行・選択を数え直す。
               conversationStep={npcTalk}
               anchor="map"
               // 先頭の表情タグは外し、登録済みの表情画像だけ行ごとに出す (D-DIALOGUE-005)。
-              lines={[...(npcTalk.dialogue ?? npcDialogueLines(npcTalk.npc, npcTalk.lines)), ...(npcTalk.notices ?? [])]}
+              lines={[...(npcTalk.dialogue ?? npcDialogueLines(npcTalk.npc, npcTalk.lines)), ...scenarioDialogueLines(npcTalk.notices ?? [])]}
               portrait={npcTalkPortrait(npcTalk.npc)}
               // 依頼は「うけますか？」に はい と答えたときだけ受注する (#659)。いいえ は閉じるだけで、
               // また話せば聞ける。受注もサーバーが正。
@@ -577,7 +601,7 @@ function WorldScreen() {
           {!battle && scenarioTalk && !npcTalk && !innTalk && !onboarding && mapAcquisition === null && (
             <DialogueWindow
               anchor="map"
-              lines={scenarioTalk}
+              lines={scenarioDialogueLines(scenarioTalk)}
               onDone={() => setScenarioTalk(null)}
             />
           )}
@@ -645,8 +669,12 @@ function WorldScreen() {
           onUseTonic={useTonicOnField}
           onUseFeather={useFeatherOnField}
           onClose={() => setItemsOpen(false)}
+          members={members}
+          onUseOnAlly={fieldHeal.itemOnAlly}
         />
       )}
+      {skillOpen && <FieldSkillModal members={members} cast={fieldHeal.castFieldSkill} onClose={() => setSkillOpen(false)} />}
+      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onMode={async (id, mode) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyMode(agent, id, mode)).party); }} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} rename={casino.renameProps(materialsView, talk.setParty)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />
@@ -675,15 +703,19 @@ function WorldScreen() {
         />
       )}
       {gearOpen && (
-        <GearModal
+        <PartyGearModal
           archetype={archetype}
+          heroName={playerName || 'あなた'}
           pieces={craftedPieces}
           refs={gearRefs}
+          party={talk.party}
+          jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1}
           busy={craftBusy}
           errorText={shopError}
           onDiscard={shop.onDiscard}
           onEquip={shop.onEquip}
           onUnequip={shop.onUnequip}
+          saveAllyGear={async (id, gear) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyGear(agent, id, gear)).party); }}
           onClose={() => setGearOpen(false)}
         />
       )}
@@ -698,6 +730,7 @@ function WorldScreen() {
           // **参照している rkey 全部を保護する** (#609 レビュー)。resolved (実効) だけだと、
           // 手数で無効化中の盾が「そうび中」表示のまま きたえる で黙って燃える。
           equippedRkeys={Object.values(gearRefs ?? {}).filter((v): v is string => typeof v === 'string')}
+          allyWorn={equippedCounts(Object.entries(talk.party.gear ?? {}).filter(([id]) => talk.party.ids.includes(id)).map(([who, gear]) => ({ who, gear })))}
           busy={craftBusy}
           lastAction={shop.lastShopAction}
           errorText={shopError}
@@ -705,9 +738,11 @@ function WorldScreen() {
           onCraft={(def) => void shop.onCraft(def)}
           onForge={(def, level, rkeys) => void shop.onForge(def, level, rkeys)}
           onSell={(materialId, count) => void shop.onSell(materialId, count)}
+          onBuy={(itemId) => void shop.onBuy(itemId)}
           onClose={() => setShopOpen(false)}
         />
       )}
+      {casino.casinoSpot && <CasinoModal spot={casino.casinoSpot} coins={casino.casinoCoins} power={serverPower ?? 0} actions={casino.casinoActions} pendingHighLow={casino.casinoPendingHighLow} onClose={casino.closeCasino} />}
       {wipeOverlay}
       <WelcomeBlessingOverlay />
     </div>

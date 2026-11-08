@@ -344,8 +344,10 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await next();
     await expect(window).toContainText('ここが村の冒険者ギルド');
     await next();
-    const choose = (name: string) => page.getByRole('button', { name, exact: true }).click();
-    await expect(page.getByRole('button', { name: '依頼を見る', exact: true })).toBeVisible();
+    // 受付の「依頼を見る」「報告する」は件数つき (「依頼を見る(1)」。0件は件数なし)。
+    const menuButton = (name: string) => page.getByRole('button', { name: new RegExp(`^${name}(\\(\\d+\\))?$`) });
+    const choose = (name: string) => menuButton(name).click();
+    await expect(page.getByRole('button', { name: '依頼を見る(1)', exact: true })).toBeVisible();
     await captureMapDialogue(page, 'guild-menu');
     await choose('依頼を見る');
     await expect(window).toContainText('道具の手入れに');

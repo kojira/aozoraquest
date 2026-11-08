@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { JOBS, archetypeFromFunctionPair, canSeeEnemyVitals, currentJob, ENEMY_VITALS_ARCHETYPES, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
+import { JOBS, archetypeFromFunctionPair, canSeeEnemyVitals, canSeeFieldDanger, currentJob, ENEMY_VITALS_ARCHETYPES, FIELD_DANGER_ARCHETYPES, jobDisplayName, shapeSimilarity, wandererScore } from '../jobs.js';
 import { COGNITIVE_TO_RPG } from '../diagnosis.js';
 import { STATS, type CogFunction, type StatArray } from '../types.js';
 
@@ -143,5 +143,21 @@ describe('canSeeEnemyVitals', () => {
   test('対象は実在するジョブ ID のみ', () => {
     const ids = new Set(JOBS.map((j) => j.id));
     for (const id of ENEMY_VITALS_ARCHETYPES) expect(ids.has(id)).toBe(true);
+  });
+});
+
+describe('canSeeFieldDanger', () => {
+  test('docs/25 の 4 職 (賢者/予言者/忍者/遊び人) だけが true', () => {
+    for (const id of ['sage', 'seer', 'ninja', 'performer']) expect(canSeeFieldDanger(id)).toBe(true);
+    expect(FIELD_DANGER_ARCHETYPES.size).toBe(4);
+  });
+
+  test('それ以外の職・null・未知 ID は false', () => {
+    for (const id of ['warrior', 'guardian', 'shogun', 'bard', 'poet', 'paladin', 'explorer', 'fighter', 'artist', 'captain', 'miko', 'mage']) {
+      expect(canSeeFieldDanger(id)).toBe(false);
+    }
+    expect(canSeeFieldDanger(null)).toBe(false);
+    expect(canSeeFieldDanger(undefined)).toBe(false);
+    expect(canSeeFieldDanger('traveler')).toBe(false);
   });
 });

@@ -9,10 +9,12 @@ import { STATUS_REGISTRY, applyBeforeAct, tickStatuses } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
 import { type JobSkill, skillMpCostOf, mpTraitFires } from './battle-job-skills.js';
-import { MONSTERS_BY_ID } from './battle-monsters.js';
+import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
 import { type Command, type TurnEvent, type BattleState, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
+import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
+import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
   const { player, monster } = state;
@@ -48,7 +50,7 @@ function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => numbe
 /** 台本負けのストーリー戦が終わるターン。 */
 const SCRIPTED_LOSS_TURNS = 3;
 
-export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number, skillIndex = 0): BattleState {
+export function resolveTurn(prev: BattleState, command: Command, turnSeed?: number, skillIndex = 0, itemId?: string): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
 
   // コピー (Combatant は現状 flat なので spread で足りる)。
@@ -79,6 +81,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   // 外部供給 seed があればそれで (サーバー権威: 先読み不可)、無ければ seed 由来 (決定的)。
   const rng = turnSeed === undefined ? turnRng(state.seed, state.turn) : createRng(turnSeed >>> 0);
   const mCommand = monsterCommand(state.monster, state, rng);
+  // 弱体は選んだときの状態で決める (全体を 2 ターン続けない判定は直前の手 lastAoe を見る。D-PARTY-002 §12a)。
+  const mDebuff = mCommand === 'debuff' ? pickDebuff(MONSTERS_BY_ID[state.monsterId], state.monster, [state.player]) : undefined;
 
   // ── コマンドの実効化 ──
   // MP 不足の特技 / 在庫切れのやくそうは「たたかう」にフォールバック
@@ -94,6 +98,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     cmd = 'attack';
   } else if (command === 'tonic' && state.tonics <= 0) {
     events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
+    cmd = 'attack';
+  } else if (command === 'item' && !canUseBattleItem(state, itemId)) {
+    events.push({ actor: 'player', text: missingBattleItemText(itemId) });
     cmd = 'attack';
   }
   if (cmd === 'skill') {
@@ -157,7 +164,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
     const consumedOnAct = (self.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
     if (who === 'player') {
       if (cmd === 'attack') {
-        doAttack(state.player, state.monster, rng, events, 'player');
+        // 属性つき武器の通常攻撃はその属性 (D-ELEM-001)。とくぎは自分の属性のまま。
+        doAttack(state.player, state.monster, rng, events, 'player', state.player.weaponElement ? { element: state.player.weaponElement } : {});
         if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) {
           state.player.mp = Math.min(state.player.maxMp, state.player.mp + state.mpAttackGain);
         }
@@ -175,34 +183,32 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         state.tonics -= 1;
         state.tonicsUsed += 1;
         events.push({ actor: 'player', text: `${state.player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
+      } else if (cmd === 'item') {
+        useBattleItem(state, itemId!, { allies: [state.player], enemies: [state.monster] }, 0, rng, events);
       }
       // guard は宣言済み / flee 失敗はこのターン行動なし
     } else {
       // ため中なら宣言どおり解放 (mCommand は無視)。予告 → 解放の 2 ターン制で、
       // プレイヤーが予告を見て防御する読み合いを作る。
-      if (state.monster.charging) {
-        state.monster.charging = false;
-        const skillName = MONSTERS_BY_ID[state.monsterId]?.skillName ?? 'つよいこうげき';
-        doAttack(state.monster, state.player, rng, events, 'monster', {
-          power: BATTLE_TUNING.chargedPower,
-          hitBonus: -0.05,
-          label: skillName,
-        });
+      const mDef = MONSTERS_BY_ID[state.monsterId];
+      const solo = { allies: [state.player], one: () => state.player };
+      const charged = state.monster.charging;
+      if (!charged) state.monster.lastAoe = false; // この手番の技が全体なら技の側で立て直す
+      if (charged) {
+        releaseMonsterCharge(state.monster, mDef, solo, rng, events);
       } else if (mCommand === 'charge') {
         // このターンは攻撃せず「ため」を予告する (charger、MP 消費)
-        state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterChargeMpCost);
+        state.monster.mp = Math.max(0, state.monster.mp - chargeMpCost(mDef));
         state.monster.charging = true;
         events.push({ actor: 'monster', text: `${state.monster.name}は力をためている…!` });
       } else if (mCommand === 'heal') {
         // healer の自己回復 (MP 消費)。MP が尽きるまでの読み合いを作る
         state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterHealMpCost);
         // 固定値 (healAmount) が最優先。割合は HP の大きい敵ほど強くなるので原則使わない。
-        const mdef = MONSTERS_BY_ID[state.monsterId];
-        const healed = mdef?.healAmount
-          ?? Math.round(state.monster.maxHp * (mdef?.healRatio ?? BATTLE_TUNING.healerHealRatio));
+        const healed = monsterHealAmount(mDef, state.monster.maxHp);
         const before = state.monster.hp;
         state.monster.hp = Math.min(state.monster.maxHp, state.monster.hp + healed);
-        const name = MONSTERS_BY_ID[state.monsterId]?.healName ?? 'きずをいやす';
+        const name = mDef?.healName ?? 'きずをいやす';
         events.push({ actor: 'monster', text: `${state.monster.name}は${name}! HPが${state.monster.hp - before}回復。` });
       } else if (mCommand === 'flee') {
         // はぐれメタル型: 逃走成功 → 即決着 (報酬なし)。倒せなかった悔しさを残す。
@@ -211,19 +217,11 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       } else if (mCommand === 'cast') {
         // caster の属性魔撃 (MP 消費)。def 無視・int スケール。onLethal を通らないので物理耐性の
         // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。
-        const spell = MONSTERS_BY_ID[state.monsterId]?.spell;
-        if (spell) {
-          state.monster.mp = Math.max(0, state.monster.mp - BATTLE_TUNING.monsterCastMpCost);
-          const span = spell.max - spell.min;
-          const amount = spell.min + Math.floor(rng() * (span + 1)) + Math.round(state.monster.int * (spell.intScale ?? 0));
-          doMagic(state.monster, state.player, rng, events, 'monster', {
-            amount,
-            ...(spell.element ? { element: spell.element } : {}),
-            label: spell.name,
-          });
-        } else {
-          doAttack(state.monster, state.player, rng, events, 'monster');
-        }
+        if (mDef?.spell) castMonsterSpell(state.monster, mDef, solo, rng, events);
+        else doAttack(state.monster, state.player, rng, events, 'monster');
+      } else if (mCommand === 'debuff') {
+        if (mDebuff) useMonsterDebuff(state.monster, mDebuff, solo.allies, rng, events);
+        else doAttack(state.monster, state.player, rng, events, 'monster');
       } else if (mCommand === 'attack') {
         doAttack(state.monster, state.player, rng, events, 'monster');
       }

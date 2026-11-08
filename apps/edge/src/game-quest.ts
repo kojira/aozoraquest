@@ -13,6 +13,7 @@ import { allNpcs, gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER, WORLD_M
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
 import { verifyPosition, type PositionClaim } from './world-token';
 import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
+import { partyWithQuestBond, type AllyBondUp } from './party-bond';
 
 export class GameQuestError extends Error {
   constructor(
@@ -37,6 +38,10 @@ export interface QuestStateResult {
   notices?: string[];
   /** notices と同じ行 + 演出 (D-STORY-007)。新 web はこちらを使う。 */
   scenarioMessages?: ScenarioMessage[];
+  /** 達成時のみ: きずなの ♥ が増えた仲間 (D-PARTY-004)。 */
+  allyBondUp?: AllyBondUp[];
+  /** 達成時のみ: 仲間がいれば、きずなを足したあとの party。 */
+  party?: GameState['party'];
 }
 
 export async function handleQuestAccept(
@@ -101,6 +106,7 @@ export async function handleQuestComplete(
   const rewardPower = Math.min(def.reward?.power ?? 0, MAX_QUEST_REWARD_POWER);
   let rewarded: QuestStateResult['rewarded'];
   const scenarioBox: { v: ScenarioResult | null } = { v: null };
+  let bondUp: AllyBondUp[] = [];
   const next = await readModifyWrite(
     env,
     did,
@@ -136,8 +142,12 @@ export async function handleQuestComplete(
         ...(rewardPower > 0 ? { power: rewardPower } : {}),
         ...(def.reward?.itemId ? { itemId: def.reward.itemId, count: def.reward.count ?? 0 } : {}),
       };
+      // その時パーティにいる全員の きずな (本編 +10・それ以外 +5。D-PARTY-004)。
+      const bonded = partyWithQuestBond(cur.party, questId);
+      bondUp = bonded.deepened;
       const done: GameState = {
         ...cur,
+        ...(bonded.party ? { party: bonded.party } : {}),
         activeQuests: cur.activeQuests.filter(q => q.id !== questId),
         questsDone: [...(cur.questsDone ?? []), questId],
         power: cur.power + rewardPower,
@@ -154,6 +164,8 @@ export async function handleQuestComplete(
     activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials,
     ...(rewarded ? { rewarded } : {}),
     ...(next.flags ? { flags: next.flags } : {}),
+    ...(next.party ? { party: next.party } : {}),
+    ...(bondUp.length ? { allyBondUp: bondUp } : {}),
     ...(scenarioBox.v?.notices.length ? { notices: scenarioBox.v.notices, scenarioMessages: scenarioBox.v.messages } : {}),
   };
 }

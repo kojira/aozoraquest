@@ -6,19 +6,18 @@
  * - `useTranslation(uri, text)`: React フック。設定が ON なら自動で翻訳開始、
  *   OFF なら `triggerTranslate()` 手動呼び出しで開始。
  *
- * Backend は local-llm.ts の抽象に委譲 (Gemini Nano、Nano の無い端末は導入済みなら sarashina)。
- * sarashina だけはプロンプトと後処理が専用 (sarashina-translate.ts)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
+ * Backend は local-llm.ts の抽象に委譲 (Gemini Nano、Nano の無い端末は導入済みならブルスコン = LFM2.5)。
+ * ブルスコンはプロンプトと後処理が専用 (slm-translate.ts)。ブルスコンを入れる前に sarashina を導入済みの端末は、
+ * それまで sarashina で訳す (専用プロンプト sarashina-translate.ts。PR4 で削る)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice, type LocalLLM } from './local-llm';
-import { loadSarashina, SARASHINA, SarashinaNotInstalledError } from './sarashina-llm';
-import {
-  cleanSarashinaParagraph,
-  sarashinaMaxNewTokens,
-  sarashinaTranslateInput,
-  splitParagraphs,
-} from './sarashina-translate';
+import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice, type LLMInput, type LocalLLM } from './local-llm';
+import { loadSarashina, SARASHINA } from './sarashina-llm';
+import { cleanSarashinaParagraph, sarashinaTranslateInput } from './sarashina-translate';
+import { SlmNotInstalledError } from './slm-client';
+import { loadSlm, SLM } from './slm-llm';
+import { cleanSlmParagraph, paragraphMaxNewTokens, slmTranslateInput, splitParagraphs } from './slm-translate';
 import { hasJapanese, preprocessText } from './japanese-text';
 import { loadCachedTranslation, saveCachedTranslation } from './translation-idb';
 import { getAutoTranslate } from './prefs';
@@ -123,12 +122,23 @@ class NonJapaneseTranslationError extends Error {
 
 const TRANSLATE_SYSTEM_PROMPT = 'あなたは SNS 投稿を日本語に翻訳する翻訳者です。';
 
-/** sarashina: 段落ごとに専用プロンプトで訳して空行でつなぐ。 */
-async function runSarashina(llm: LocalLLM, body: string, temperature: number): Promise<string> {
+/** 自前 WGSL の backend (ブルスコン / sarashina): 読み込み・段落ごとのプロンプト・後処理。 */
+const PARAGRAPH_BACKENDS = new Map([
+  [SLM.id, { load: loadSlm, input: slmTranslateInput, clean: cleanSlmParagraph }],
+  [SARASHINA.id, { load: loadSarashina, input: sarashinaTranslateInput, clean: cleanSarashinaParagraph }],
+]);
+
+/** 段落ごとに専用プロンプトで訳して空行でつなぐ。 */
+async function runParagraphs(
+  llm: LocalLLM,
+  b: { input: (p: string) => LLMInput; clean: (s: string) => string },
+  body: string,
+  temperature: number,
+): Promise<string> {
   const out: string[] = [];
   for (const para of splitParagraphs(body)) {
-    const raw = await llm.generate(sarashinaTranslateInput(para), { temperature, maxNewTokens: sarashinaMaxNewTokens(para) });
-    out.push(cleanSarashinaParagraph(raw));
+    const raw = await llm.generate(b.input(para), { temperature, maxNewTokens: paragraphMaxNewTokens(para), stopAtNewline: true });
+    out.push(b.clean(raw));
   }
   return out.join('\n\n');
 }
@@ -150,9 +160,10 @@ async function runLLM(
 ): Promise<string> {
   const { body, trailing } = splitTranslatableText(text);
   if (!body) return trailing; // 本文なし → リンク等だけ返す
-  if (llm.id === SARASHINA.id) {
-    await loadSarashina(); // キャッシュだけから (再) 読み込み。止まれば sarashina-llm 側で打ち切る。60s の制限は生成だけに掛ける
-    const cleaned = cleanTranslation(await withTimeout(runSarashina(llm, body, temperature)));
+  const para = PARAGRAPH_BACKENDS.get(llm.id);
+  if (para) {
+    await para.load(); // キャッシュだけから (再) 読み込み。止まれば slm-client 側で打ち切る。60s の制限は生成だけに掛ける
+    const cleaned = cleanTranslation(await withTimeout(runParagraphs(llm, para, body, temperature)));
     const composed = trailing ? `${cleaned}\n${trailing}` : cleaned;
     if (!looksLikeJapaneseTranslation(cleaned)) throw new NonJapaneseTranslationError(composed);
     return composed;
@@ -214,7 +225,7 @@ async function runLLMWithRetry(
     try {
       return await runLLM(llm, text, langs, temp);
     } catch (e) {
-      if (e instanceof SarashinaNotInstalledError) {
+      if (e instanceof SlmNotInstalledError) {
         // キャッシュが消えていた: ダウンロードせず未導入に戻す (翻訳 UI は消え、次の召喚の儀式で入れ直す)
         resetLocalLLMChoice();
         throw e;
@@ -321,7 +332,7 @@ export function useTranslation(
         setState('done');
       } catch (e) {
         console.warn('[translate] failed', e);
-        // sarashina のキャッシュが消えて未導入に戻った等: LLM の無い端末と同じく翻訳 UI を消す
+        // ブルスコンのキャッシュが消えて未導入に戻った等: LLM の無い端末と同じく翻訳 UI を消す
         if (!(await pickLocalLLM(false, 'translation'))) {
           setLlmAvailable(false);
           setState('idle');

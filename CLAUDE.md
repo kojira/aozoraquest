@@ -95,6 +95,8 @@ dev に複数の feature PR が積まれた後、リリース単位で `dev → 
    (タグを打ったら忘れず `git checkout dev` で dev に戻る)
 7. dev ブランチは残す (= 次の機能開発用)
 
+ワールドの管理データ (world.*) を dev から本番へ移す手順は [docs/23-world-data-promote.md](docs/23-world-data-promote.md)。
+
 `APP_VERSION` は設定画面の隅に表示され、ユーザー/サポートが「どのリリースを見ているか」を特定するのに使う。package.json の version は semver 制約でこの日付表記を表せないため、表示用バージョンは app-version.ts を単一の出所とする。
 
 `main` / `dev` は GitHub の branch protection rule で守る:

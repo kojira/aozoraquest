@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, worldOverlay, type GearSelection } from '@aozoraquest/core';
+import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, worldOverlay, type AllyMode, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
@@ -36,6 +36,9 @@ export const GAME_STATE_VERSION = 1;
  */
 export const XP_EPOCH = 1;
 
+/** openedSpots の上限。置きアイテムの上限 (400) より大きいので、普段は溢れない。 */
+export const MAX_OPENED_SPOTS = 600;
+
 /** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
 export type GameStateEnv = ServerPdsEnv;
 
@@ -46,6 +49,61 @@ export interface OwnedPiece {
   itemId: string;
   /** 強化値 (+N)。サーバーが抽選/合成して決めた値だけが入る。 */
   level: number;
+}
+
+export interface PartyState {
+  ids: string[];
+  hp?: Record<string, number>;
+  mp?: Record<string, number>;
+  /** ギルドで入れた生成の仲間の定義と経験値 (D-PARTY-002)。ids にいる人だけ。 */
+  members?: PartyRecruit[];
+  /** なじみ (名前つきの冒険者) の経験値 (§11)。無ければ主人公のジョブ Lv から。 */
+  xp?: Record<string, number>;
+  /** その日 (JST) に入れた候補の id。日付が変わったら捨てる。 */
+  met?: { day: string; ids: string[] };
+  /** はずしたなじみの id (もう紹介しない)。 */
+  parted?: string[];
+  /** その日にギルドごとに引き直した回数 (§10)。日付が変わったら捨てる。 */
+  rerolls?: { day: string; byGuild: Record<string, number> };
+  /** 仲間との きずな (0〜150。D-PARTY-004)。ids にいる人だけ。 */
+  bond?: Record<string, number>;
+  /** 回復で上がる きずな の端数 (最大 HP の千分率で 0〜249)。 */
+  bondHeal?: Record<string, number>;
+  /** 仲間ごとの さくせん (♥2) ／めいれい (♥3)。無い＝おまかせ (D-PARTY-004)。 */
+  mode?: Record<string, AllyMode>;
+  /** 仲間の装備 (主人公の gearSel と同じ形。D-PARTY-004 §6)。ids にいる人だけ。品は pieces のまま (外せば もちもの に戻る)。 */
+  gear?: Record<string, GearSelection>;
+  /** なまえのふだ で付けた名前 (D-CASINO-001)。ids にいる人だけ。 */
+  names?: Record<string, string>;
+}
+
+/** 全快にした party (hp/mp を消す。ほかはそのまま)。party が無ければ undefined のまま。 */
+export function healedParty(party: PartyState | undefined): PartyState | undefined {
+  if (!party) return undefined;
+  const { hp: _hp, mp: _mp, ...rest } = party;
+  return { ...rest, ids: [...party.ids] };
+}
+
+/** 仲間の Lv が上がった内訳 (決着の応答に載せる)。 */
+export interface AllyLevelUp { id: string; name: string; from: number; to: number }
+
+/**
+ * 戦闘に出た仲間 (fought のうち、いまも ids にいる人) に、1 人ぶんの経験値 share を足す (D-PARTY-002 §11)。
+ * 生成の仲間は members[].xp、なじみは xp[id]。Lv が上がった人を返す。fallbackLevel は xp の無いなじみの Lv。
+ */
+export function partyWithBattleXp(party: PartyState | undefined, fought: readonly string[], share: number, fallbackLevel: number): { party: PartyState | undefined; leveled: AllyLevelUp[] } {
+  if (!party || share <= 0) return { party, leveled: [] };
+  const gains = (id: string) => fought.includes(id) && party.ids.includes(id);
+  const before = partyDefsOf(party, recruitById, fallbackLevel);
+  const members = party.members?.map((m) => (gains(m.id) ? { ...m, xp: m.xp + share } : m));
+  const xp = { ...party.xp };
+  for (const d of before) if (gains(d.id) && !isGeneratedRecruitId(d.id)) xp[d.id] = d.xp + share;
+  const next: PartyState = { ...party, ...(members ? { members } : {}), ...(Object.keys(xp).length ? { xp } : {}) };
+  const leveled = partyDefsOf(next, recruitById, fallbackLevel).flatMap((a) => {
+    const from = before.find((b) => b.id === a.id)?.level ?? a.level;
+    return gains(a.id) && a.level > from ? [{ id: a.id, name: a.name, from, to: a.level }] : [];
+  });
+  return { party: next, leveled };
 }
 
 export interface GameState {
@@ -72,6 +130,9 @@ export interface GameState {
   /** 戦闘をまたいで持続する HP/MP (docs/19)。未設定は全快で開始。 */
   carryHp?: number;
   carryMp?: number;
+  /** パーティの仲間 (D-PARTY-001)。ids は入れている順 (主人公は含めない)。hp/mp に値の無い仲間は全快。
+   *  主人公の carryHp/carryMp と同じところ (宿屋・街・そらのはね・負け) で hp/mp を消す。 */
+  party?: PartyState;
   /** 持ち込み消費アイテム (やくそう / そらのしずく)。 */
   herbs?: number;
   tonics?: number;
@@ -107,10 +168,25 @@ export interface GameState {
   /** 進行フラグ (#545/#426)。**サーバーだけが立てる** — client の自己申告で章が進むと
    *  クエスト解禁も報酬も破られる。シナリオのイベント条件が揃うと edge が追加する。 */
   flags?: string[];
+  /** 開けた宝箱・取ったキラキラの id (D-CHEST-001)。フラグと分けて覚える (フラグは古い順に
+   *  切り捨てられ、溢れると章の進行が壊れる)。上限 `MAX_OPENED_SPOTS`。切り捨てない。 */
+  openedSpots?: string[];
   /** 進行中のゲーム内クエスト (#423)。討伐数は勝利時に edge が数える。 */
   activeQuests: Array<{ id: string; progress: number }>;
   /** 達成済みクエスト id (再受注させない)。全履歴を追記のみで保持 (#709)。 */
   questsDone?: string[];
+  /** カジノのコイン (D-CASINO-001)。サーバーだけが増減する。上限 CASINO_COIN_MAX。パワーには戻せない。 */
+  casinoCoins?: number;
+  /** 処理済みのカジノ操作の rkey (直近 MAX_CASINO_OPS 件)。再送で二重に払わない。 */
+  casinoOps?: string[];
+  /** 直近の結果 (同じ rkey の再送に同じ結果を返す)。 */
+  casinoLast?: { rkey: string; res: Record<string, unknown> };
+  /** 回数の上限 (1 分・1 日 JST)。 */
+  casinoRate?: { minute: number; perMinute: number; day: string; perDay: number };
+  /** 毎日のコインを受け取った日 (JST)。 */
+  casinoBonusDay?: string;
+  /** 途中のハイロー (1 枚目と、いま賭けているコイン、続けた回数)。 */
+  casinoHL?: { first: number; stake: number; step: number };
   version: number;
   updatedAt: string;
 }
@@ -156,6 +232,7 @@ export function normalizeState(state: GameState): GameState {
     const { quest: _legacyQuest, ...rest } = state as GameState & { quest?: unknown };
     state = { ...rest, activeQuests: state.activeQuests ?? [] };
   }
+  if (state.openedSpots && new Set(state.openedSpots).size !== state.openedSpots.length) state = { ...state, openedSpots: [...new Set(state.openedSpots)] };
   if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
   // **位置も spawn に戻す。** Lv1 に戻したのに立ち位置が奥地のままだと、想定 Lv8 以上の
   // 敵に Lv1 で遭遇し、負けるたびに素材を失う死にループに入る (帰還先の lastTown も

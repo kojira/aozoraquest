@@ -15,6 +15,8 @@ import type { GameState } from './game-state';
 export interface ScenarioMessage {
   text: string;
   effects?: StoryEffect[];
+  /** 話す NPC の id (#907)。web がその NPC の名前と絵で出す。 */
+  npcId?: string;
 }
 
 /** 立てたフラグと、一度だけ出すお知らせ。`notices` は旧 web 向けに残す文字列だけの版。 */
@@ -43,7 +45,7 @@ export function advanceScenario(state: GameState): ScenarioResult | null {
     flags,
     notices: fired.map((e: ScenarioEvent) => e.notice).filter((n): n is string => !!n),
     messages: fired.filter((e: ScenarioEvent) => !!e.notice)
-      .map((e: ScenarioEvent) => ({ text: e.notice!, ...(e.effects?.length ? { effects: e.effects } : {}) })),
+      .map((e: ScenarioEvent) => ({ text: e.notice!, ...(e.effects?.length ? { effects: e.effects } : {}), ...(e.npcId ? { npcId: e.npcId } : {}) })),
     fired: fired.map((e: ScenarioEvent) => e.id),
   };
 }

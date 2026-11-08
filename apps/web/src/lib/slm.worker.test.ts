@@ -6,12 +6,13 @@ let maxActive = 0;
 const releases: Array<() => void> = [];
 
 vi.mock('./slm-wgsl/weights', () => ({
-  SARASHINA_BASE_URL: 'x',
+  SARASHINA_SOURCE: {},
+  SLM_SOURCE: {},
   fetchHeader: async () => ({ tokenizer: { file: 't' } }),
   fetchVerified: async () => new TextEncoder().encode('{}').buffer,
 }));
-vi.mock('./slm-wgsl/sptok', () => ({
-  SpTokenizer: class { encode() { return [1]; } decode() { return 'ok'; } },
+vi.mock('./slm-wgsl/lfm-tokenizer', () => ({
+  createLfmTokenizer: () => ({ encode: () => [1], decode: () => 'ok' }),
 }));
 vi.mock('./slm-wgsl/model', () => ({
   WebGpuUnsupportedError: class extends Error {},
@@ -38,7 +39,7 @@ describe('slm.worker generate', () => {
       postMessage: (m: { type: string }) => posted.push(m),
     });
     await import('./slm.worker');
-    const send = (id: string) => onMessage!({ data: { type: 'generate', id, prompt: 'p', maxNewTokens: 4, temperature: 0, stopAtNewline: false } });
+    const send = (id: string) => onMessage!({ data: { type: 'generate', id, prompt: 'p', maxNewTokens: 4, temperature: 0, repetitionPenalty: 1, stopAtNewline: false } });
     send('a');
     send('b');
     await vi.waitFor(() => expect(releases).toHaveLength(1));

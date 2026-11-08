@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
 import { EQUIPMENT, EQUIPMENT_BY_ID, ITEMS, setItemOverrides, SALE_TUNING, townShopStock, worldOverlay, BASE_PALETTE, setInteriors, type InteriorMap } from '@aozoraquest/core';
-import { shopCraft, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES } from '../src/shop';
-import { sanitizeGear } from '../src/battle-resolver';
+import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError, MAX_SHOP_OPS, MAX_OWNED_PIECES, MAX_ITEM_STACK } from '../src/shop';
+import { handleGear, sanitizeGear } from '../src/battle-resolver';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 
@@ -129,6 +129,63 @@ describe('shopCraft (装備を作ってもらう)', () => {
     const notInStock = Object.values(EQUIPMENT_BY_ID).find((e) => !STOCK.equipment.includes(e.id))!;
     globalThis.fetch = statefulPds(stateAt()).fn;
     await expect(shopCraft(env, DID, { itemId: notInStock.id, rkey: 'b', luk: 0 }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
+  });
+});
+
+describe('shopBuy (どうぐを買う、D-ITEM-001)', () => {
+  const orig = globalThis.fetch;
+  // tier1 の店に並ぶねむりごな・tier2 からのけむりだま・値段の無い品
+  const sale = (id: string, name: string, shopTier: 1 | 2) => ({ id, name, price: { power: 3, materials: 1 }, shopTier,
+    battle: { effects: [{ kind: 'status' as const, status: 'sleep' as const, target: 'enemy' as const, chance: 0.7, turns: 3 }] } });
+  const base = Object.entries(ITEMS).map(([id, v]) => ({ id, ...v }));
+  const withSale = () => setItemOverrides({ items: [...base, sale('nemuri-kona', 'ねむりごな', 1), sale('kemuri-dama', 'けむりだま', 2)], equipment: [...EQUIPMENT] });
+  afterEach(() => { globalThis.fetch = orig; setItemOverrides(null); });
+
+  it('パワーと値札の素材を引いて 1 個ふやす (tier1 の店に並ぶ)', async () => {
+    withSale();
+    const stock = townShopStock(TOWN, 0);
+    expect(stock.consumables).toContain('nemuri-kona');
+    expect(stock.consumables).not.toContain('kemuri-dama'); // tier2 からの品は tier1 の街に並ばない
+    const env = await makeEnv();
+    const m = statefulPds(stateAt({ power: 10, materials: { [STOCK.materialId]: 2, 'nemuri-kona': 1 } }));
+    globalThis.fetch = m.fn;
+    const r = await shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'b1' }, NOW);
+    expect(r.power).toBe(7);
+    expect(r.materials).toEqual({ [STOCK.materialId]: 1, 'nemuri-kona': 2 });
+    expect(stored(m.store).materials['nemuri-kona']).toBe(2);
+  });
+
+  it('品揃えにない・値段の無い品は買えない', async () => {
+    withSale();
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(stateAt()).fn;
+    await expect(shopBuy(env, DID, { itemId: 'kemuri-dama', rkey: 'n1' }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
+    await expect(shopBuy(env, DID, { itemId: 'slime-drop', rkey: 'n2' }, NOW)).rejects.toMatchObject({ code: 'not_for_sale' });
+  });
+
+  it('パワー・素材が足りない、上限まで持っている、街の外は 400', async () => {
+    withSale();
+    const env = await makeEnv();
+    globalThis.fetch = statefulPds(stateAt({ power: 2 })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'p' }, NOW)).rejects.toMatchObject({ code: 'no_power' });
+    globalThis.fetch = statefulPds(stateAt({ materials: {} })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'm' }, NOW)).rejects.toMatchObject({ code: 'no_material' });
+    globalThis.fetch = statefulPds(stateAt({ materials: { [STOCK.materialId]: 9, 'nemuri-kona': MAX_ITEM_STACK } })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 's' }, NOW)).rejects.toMatchObject({ code: 'stack_full' });
+    globalThis.fetch = statefulPds(stateAt({ x: TOWN.x + 7, y: TOWN.y + 7 })).fn;
+    await expect(shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'o' }, NOW)).rejects.toMatchObject({ code: 'not_in_town' });
+  });
+
+  it('同じ rkey は 1 回だけ (再送で二重に課金しない)', async () => {
+    withSale();
+    const env = await makeEnv();
+    const m = statefulPds(stateAt({ power: 10 }));
+    globalThis.fetch = m.fn;
+    await shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'same' }, NOW);
+    const again = await shopBuy(env, DID, { itemId: 'nemuri-kona', rkey: 'same' }, NOW);
+    expect(again.duplicate).toBe(true);
+    expect(stored(m.store).power).toBe(7);
+    expect(stored(m.store).materials['nemuri-kona']).toBe(1);
   });
 });
 
@@ -431,5 +488,23 @@ describe('村の中のなんでも屋 (#424/#636)', () => {
     await expect(shopCraft(await makeEnv(), DID,
       { itemId: ITEM.id, rkey: 'r2', luk: 0, pos: { x: 1, y: 1, mapId: 'in-town' } }, NOW),
     ).rejects.toMatchObject({ code: 'not_in_town' });
+  });
+});
+
+describe('handleGear: 隣り合う属性の防具 (D-ELEM-001 §13a)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setItemOverrides(null); });
+  const elem = (id: string, slot: 'armor' | 'head', element: 'water' | 'fire' | 'void') => ({ id, name: id, slot, kind: 'cloth' as const, grade: 1 as const, price: { power: 1, materials: 0 }, bonus: {}, element });
+
+  it('水の胴と火の頭は 400 element_conflict で保存しない。水と空は着られる', async () => {
+    setItemOverrides({ items: Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), equipment: [...EQUIPMENT.filter((e) => !e.element), elem('ar-w', 'armor', 'water'), elem('hd-f', 'head', 'fire'), elem('hd-v', 'head', 'void')] });
+    const pieces = [{ rkey: 'a', itemId: 'ar-w', level: 0 }, { rkey: 'b', itemId: 'hd-f', level: 0 }, { rkey: 'c', itemId: 'hd-v', level: 0 }];
+    const { fn, store } = statefulPds(stateAt({ pieces }));
+    globalThis.fetch = fn;
+    const env = await makeEnv();
+    await expect(handleGear(env, DID, { armor: { id: 'ar-w', level: 0 }, head: { id: 'hd-f', level: 0 } }, NOW)).rejects.toMatchObject({ status: 400, code: 'element_conflict' });
+    expect(stored(store).gearSel).toBeUndefined();
+    await handleGear(env, DID, { armor: { id: 'ar-w', level: 0 }, head: { id: 'hd-v', level: 0 } }, NOW);
+    expect(stored(store).gearSel).toEqual({ armor: { id: 'ar-w', level: 0 }, head: { id: 'hd-v', level: 0 } });
   });
 });

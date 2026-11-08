@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
 import { EQUIPMENT_BY_ID, equipHands, interiorShopAt, townAt, townShopStock, worldOverlay, type EquipmentDef } from '@aozoraquest/core';
-import { serverShopCraft, serverShopDiscard, serverShopForge, serverShopSell, serverState, WorldServerError, type ServerOwnedPiece } from '@/lib/world-server';
+import { serverShopBuy, serverShopCraft, serverShopDiscard, serverShopForge, serverShopSell, serverState, WorldServerError, type ServerOwnedPiece } from '@/lib/world-server';
 import { CraftLogError, craftItem, discardItems, forgeItems, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { enqueueCraftLog, flushCraftLogs } from '@/lib/craft-log-queue';
 import { saveGearRefs, type GearRefs } from '@/lib/gear';
@@ -81,6 +81,7 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
   const pendingDiscardRef = useRef<Record<string, string>>({});
   const pendingForgeRef = useRef<{ key: string; rkey: string } | null>(null);
   const pendingSaleRef = useRef<{ key: string; rkey: string } | null>(null);
+  const pendingBuyRef = useRef<{ key: string; rkey: string } | null>(null);
 
   /** 記帳 (ユーザー PDS の履歴) の失敗を保留に積む (#642)。所持の権威はサーバーなので
    *  品もパワーも動かないが、黙って捨てると履歴が永久に欠け、パワー会計もずれる。 */
@@ -248,6 +249,32 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
     [agent, did, craftBusy, keepCraftLog, applyServerMaterials, materialsRef, setServerPower, tokenRef],
   );
 
+  // どうぐを買う (D-ITEM-001)。値段と品揃えはサーバーが確かめ、結果の残高と在庫を正として写す。
+  const onBuy = useCallback(
+    async (itemId: string) => {
+      if (!agent || craftBusy) return;
+      // 失敗した直後の押し直しは同じ rkey (応答だけ落ちても二重に買わない)。
+      const brkey = pendingBuyRef.current?.key === itemId ? pendingBuyRef.current.rkey : `b-${newSaleRkey().slice(2)}`;
+      pendingBuyRef.current = { key: itemId, rkey: brkey };
+      setShopError(null);
+      setShopNotice(null);
+      setCraftBusy(true);
+      try {
+        const res = await serverShopBuy(agent, itemId, brkey, tokenRef.current);
+        pendingBuyRef.current = null;
+        setServerPower(res.power);
+        applyServerMaterials(res.materials);
+        setLastShopAction({ kind: 'buy', itemId });
+      } catch (e) {
+        console.warn('[world] buy failed', e);
+        setShopError(shopErrorText(e, 'かえなかった'));
+      } finally {
+        setCraftBusy(false);
+      }
+    },
+    [agent, craftBusy, applyServerMaterials, setServerPower, tokenRef],
+  );
+
   // 装備の着脱 (gear/self は rkey 参照 — 強化値は直書きしない。docs/20 W6c 契約)
   const gearSavingRef = useRef(false);
   const onEquipChange = useCallback(
@@ -307,6 +334,6 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
   return {
     shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs,
     craftBusy, shopError, shopNotice, lastShopAction, flushCraftLog, resetShopView, openShopFromMenu,
-    onCraft, onForge, onSell, onDiscard, onEquip, onUnequip,
+    onCraft, onForge, onSell, onBuy, onDiscard, onEquip, onUnequip,
   };
 }

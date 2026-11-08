@@ -19,6 +19,9 @@ const BEATS: Record<Element, Element | null> = {
   void: null,
 };
 
+/** 属性の表示名 (1 字。装備名の横・そうび画面の染まり・管理画面。D-ELEM-001)。 */
+export const ELEMENT_LABELS: Record<Element, string> = { earth: '地', water: '水', fire: '火', wind: '風', void: '空' };
+
 /** 有利/不利/空 の倍率 (数値は sim で調整可)。 */
 export const ELEMENT_MULT = {
   strong: 1.5, // 輪で強い (弱点を突く)

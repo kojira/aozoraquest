@@ -9,11 +9,15 @@ import {
   describeDanglingRef,
   MonsterDataError,
   ITEMS,
+  STATUS_REGISTRY,
   type Element,
   type MonsterDef,
+  type MonsterMoveTarget,
+  type StatusId,
   type Tier,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
+import { AdminMonsterDebuffs } from '@/components/admin-monster-debuffs';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
 import { simulateMonsterWinRate } from '@/lib/monster-simulation';
@@ -31,12 +35,17 @@ import { monsterArtKey } from '@aozoraquest/core';
  * 保存はレコード全置換 (壊れた 1 体で全体を落とす検証つき)。
  */
 
+/** 「効かない状態」に出す状態 (どうぐ・とくぎで敵に付けるもの)。docs/25 §12 の statusResist。 */
+const RESISTABLE_STATUSES: readonly StatusId[] = ['poison', 'sleep', 'stun', 'restraint', 'atkDown', 'defDown', 'agiDown', 'accDown'];
+
 const ABILITY_LABELS: Record<string, string> = {
   charger: 'charger (ため→強攻撃)',
   healer: 'healer (自己回復)',
   fleer: 'fleer (逃走)',
   caster: 'caster (魔法)',
+  debuffer: 'debuffer (弱体・自分の強化)',
 };
+const TARGET_OPTIONS = [['one', '1 人'], ['all', '全員']] as const;
 
 const STAT_LABELS = ['こうげき', 'まもり', 'すばやさ', 'かしこさ', 'うん'] as const;
 
@@ -159,6 +168,12 @@ export function AdminMonsters() {
     ));
   };
 
+  /** 対象 (1 人／全員)。'one' は既定なので欄ごと消す。 */
+  const targetSelect = (value: MonsterMoveTarget | undefined, set: (v: MonsterMoveTarget | undefined) => void) => (
+    <select value={value ?? 'one'} onChange={(e) => set(e.target.value === 'one' ? undefined : (e.target.value as MonsterMoveTarget))}>
+      {TARGET_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+    </select>
+  );
   const field = (label: string, input: React.ReactNode) => (
     <label className="admin-field">
       <span>{label}</span>
@@ -276,7 +291,7 @@ export function AdminMonsters() {
               <span style={{ display: 'flex', flexDirection: 'column', gap: '0.15em' }}>
                 {/* **複数選べる。優先順は上から** (毎ターン上から聞き、最初に動いた能力を採る)。
                     選択順を保持するので、後から選んだものが末尾に付く。 */}
-                {(['charger', 'healer', 'fleer', 'caster'] as const).map((id) => {
+                {(['charger', 'healer', 'fleer', 'caster', 'debuffer'] as const).map((id) => {
                   const selected = currentAbilities.includes(id);
                   const order = currentAbilities.indexOf(id);
                   return (
@@ -310,6 +325,7 @@ export function AdminMonsters() {
               <>
                 {field('技名', <input value={current.skillName ?? ''} onChange={(e) => update(current.id, { skillName: e.target.value || undefined })} />)}
                 {paramField('ため確率', 'chargeChance', 0.4)}
+                {field('ため攻撃の対象', targetSelect(current.chargedTarget, (v) => update(current.id, { chargedTarget: v })))}
               </>
             )}
             {currentAbilities.includes('healer') && (
@@ -358,6 +374,11 @@ export function AdminMonsters() {
                   </select>
                 ))}
                 {paramField('詠唱確率', 'castChance', 0.3)}
+                {field('魔法の対象', targetSelect(current.spell?.target, (v) => {
+                  const next = { name: '', min: 3, max: 6, ...current.spell } as NonNullable<MonsterDef['spell']>;
+                  if (v) next.target = v; else delete next.target;
+                  update(current.id, { spell: next });
+                }))}
                 {field('ダメージ', (
                   <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
                     <input
@@ -384,6 +405,30 @@ export function AdminMonsters() {
                 ))}
               </>
             )}
+            {currentAbilities.includes('debuffer') && (
+              <>
+                {paramField('技を使う確率', 'debuffChance', 0.3)}
+                {field('弱体・強化の技', <AdminMonsterDebuffs value={current.debuffs} onChange={(v) => update(current.id, { debuffs: v })} />)}
+              </>
+            )}
+            {field('効かない状態', (
+              <span style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2em 0.8em' }}>
+                {RESISTABLE_STATUSES.map((id) => (
+                  <label key={id} style={{ fontSize: '0.85em' }}>
+                    <input
+                      type="checkbox"
+                      checked={(current.statusResist ?? []).includes(id)}
+                      onChange={(e) => {
+                        const next = (current.statusResist ?? []).filter((x) => x !== id);
+                        if (e.target.checked) next.push(id);
+                        update(current.id, { statusResist: next.length ? next : undefined });
+                      }}
+                    />
+                    {STATUS_REGISTRY[id].name}
+                  </label>
+                ))}
+              </span>
+            ))}
             {field('ひとこと', <input value={current.intro} onChange={(e) => update(current.id, { intro: e.target.value })} style={{ width: '100%' }} />)}
             {drawing && (
               <TileArtEditor

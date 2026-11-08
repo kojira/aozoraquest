@@ -8,17 +8,19 @@
  * - **壊れた 1 件で全体を落とす** (部分適用しない)
  */
 import { ITEMS } from './battle.js';
+import { type ItemDef } from './battle-monsters.js';
+import { STATUS_REGISTRY } from './statuses.js';
+import type { SkillEffect } from './skills.js';
 import { EQUIPMENT, EQUIPMENT_BY_ID, JOB_EQUIP_KINDS, type EquipmentDef } from './equipment.js';
 import { JOBS_BY_ID } from './jobs.js';
+import { characterTokenIssue } from './character-data.js';
 
 export class ItemDataError extends Error {}
 
-/** どうぐ・素材 1 件 (ITEMS の 1 エントリ)。 */
-export interface ItemDefData {
+/** どうぐ・素材 1 件 (ITEMS の 1 エントリ)。key = **だいじなもの** (ひきとってもらえず、負けても失わない)。
+ *  desc / price / shopTier / battle は戦闘用のどうぐ・店で買える品だけ (D-ITEM-001)。 */
+export interface ItemDefData extends ItemDef {
   id: string;
-  name: string;
-  /** **だいじなもの** (シナリオアイテム)。ひきとってもらえず、負けても失わない。 */
-  key?: boolean;
 }
 
 /** 保存レコードの形。 */
@@ -28,7 +30,7 @@ export interface ItemsRecord {
   updatedAt: string;
 }
 
-const baselineItems: ReadonlyArray<ItemDefData> = Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name, ...(v.key ? { key: true } : {}) }));
+const baselineItems: ReadonlyArray<ItemDefData> = Object.entries(ITEMS).map(([id, v]) => ({ id, ...v }));
 const baselineEquipment: readonly EquipmentDef[] = EQUIPMENT.map((e) => ({ ...e }));
 
 let overridden = false;
@@ -53,7 +55,7 @@ export function setItemOverrides(rec: { items: readonly ItemDefData[]; equipment
   const equipment = rec === null ? baselineEquipment : validateEquipment(rec.equipment);
 
   for (const k of Object.keys(ITEMS)) delete ITEMS[k];
-  for (const it of items) ITEMS[it.id] = { name: it.name, ...(it.key ? { key: true } : {}) };
+  for (const { id, ...def } of items) ITEMS[id] = def;
 
   (EQUIPMENT as EquipmentDef[]).splice(0, EQUIPMENT.length, ...equipment.map((e) => ({ ...e })));
   for (const k of Object.keys(EQUIPMENT_BY_ID)) delete EQUIPMENT_BY_ID[k];
@@ -69,8 +71,63 @@ function validateItems(items: readonly ItemDefData[]): readonly ItemDefData[] {
     if (ids.has(it.id)) throw new ItemDataError(`どうぐの id が重複 (${it.id})`);
     ids.add(it.id);
     if (typeof it.name !== 'string' || it.name.trim() === '') throw new ItemDataError(`${it.id}: 名前が空`);
+    const issue = characterTokenIssue(it.name);
+    if (issue) throw new ItemDataError(`${it.id}: 名前の${issue}`);
+    validateItemShopAndBattle(it);
   }
   return items;
+}
+
+const ITEM_DESC_MAX = 60;
+/** どうぐに使える効果と、その効果で使える target (damage は使う人の攻撃力、recoil は反動なので不可)。 */
+const ITEM_EFFECT_TARGETS: Partial<Record<SkillEffect['kind'], readonly (string | undefined)[]>> = {
+  status: ['self', 'enemy', 'allEnemies', 'allAllies'],
+  heal: [undefined, 'self', 'allAllies'],
+  cleanse: ['self', 'allAllies'],
+  restoreMp: [undefined],
+  fixedDamage: [undefined, 'oneEnemy', 'allEnemies'],
+};
+
+/** 戦闘では専用のコマンド (やくそう・そらのしずく) で使う品 (D-ITEM-001 §0)。battle を付けると同じ手持ちを
+ *  「どうぐ」コマンドでも使えてしまうので、検証で弾き、管理画面も「戦闘でつかう」を出さない。 */
+export const ITEMS_WITH_BATTLE_COMMAND: readonly string[] = ['herb', 'sky-dew'];
+
+/** 店で買える品と戦闘で使えるどうぐの欄 (D-ITEM-001 §1)。 */
+function validateItemShopAndBattle(it: ItemDefData): void {
+  const where = it.id;
+  if (it.desc !== undefined && (typeof it.desc !== 'string' || it.desc.length > ITEM_DESC_MAX)) {
+    throw new ItemDataError(`${where}: desc は ${ITEM_DESC_MAX} 字まで`);
+  }
+  if (it.price !== undefined) {
+    const p = it.price;
+    if (!p || !Number.isInteger(p.power) || p.power < 0 || !Number.isInteger(p.materials) || p.materials < 0) {
+      throw new ItemDataError(`${where}: price が不正`);
+    }
+  }
+  if (it.shopTier !== undefined && ![1, 2, 3].includes(it.shopTier)) throw new ItemDataError(`${where}: shopTier は 1〜3`);
+  if (it.casinoOnly !== undefined && typeof it.casinoOnly !== 'boolean') throw new ItemDataError(`${where}: casinoOnly が不正`);
+  if (it.casinoOnly && (it.price !== undefined || it.shopTier !== undefined)) throw new ItemDataError(`${where}: カジノの景品に price・shopTier は付けられない`);
+  if (it.battle === undefined) return;
+  if (ITEMS_WITH_BATTLE_COMMAND.includes(it.id)) throw new ItemDataError(`${where}: 専用のコマンドで使う品に battle は付けられない`);
+  if (it.key) throw new ItemDataError(`${where}: だいじなもの (key) は戦闘で使えない`);
+  const effects = it.battle?.effects;
+  if (!Array.isArray(effects) || effects.length === 0) throw new ItemDataError(`${where}: battle.effects が空`);
+  for (const e of effects) {
+    const targets = e ? ITEM_EFFECT_TARGETS[e.kind] : undefined;
+    if (!targets) throw new ItemDataError(`${where}: どうぐに使えない効果 (${e?.kind})`);
+    if (!targets.includes((e as { target?: string }).target)) throw new ItemDataError(`${where}: ${e.kind} の target が不正`);
+    if (e.kind === 'status') {
+      if (!(e.status in STATUS_REGISTRY)) throw new ItemDataError(`${where}: 状態が不正 (${e.status})`);
+      if (e.chance !== undefined && !(e.chance >= 0 && e.chance <= 1)) throw new ItemDataError(`${where}: chance は 0〜1`);
+      if (e.turns !== undefined && !(Number.isInteger(e.turns) && e.turns >= 1 && e.turns <= 5)) throw new ItemDataError(`${where}: turns は 1〜5`);
+      if (e.magnitude !== undefined && !Number.isFinite(e.magnitude)) throw new ItemDataError(`${where}: magnitude が数値でない`);
+      if (e.magIntBonus !== undefined) throw new ItemDataError(`${where}: magIntBonus はどうぐに使えない`);
+    } else if (e.kind === 'heal' || e.kind === 'restoreMp') {
+      if (!(e.ratio > 0 && e.ratio <= 1)) throw new ItemDataError(`${where}: ratio は 0〜1`);
+    } else if (e.kind === 'fixedDamage') {
+      if (!(Number.isFinite(e.min) && Number.isFinite(e.max) && e.min >= 0 && e.max >= e.min)) throw new ItemDataError(`${where}: min/max が不正`);
+    }
+  }
 }
 
 function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef[] {
@@ -103,13 +160,20 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
     // **exclusive なのに jobOnly が無い品は誰も装備できない** (canEquip が安全側に倒す)。
     // 静かに死に筋を作らないよう保存で弾く。
     if (e.kind === 'exclusive' && !e.jobOnly) throw new ItemDataError(`${where}: exclusive には jobOnly が要る`);
+    if (e.casinoOnly !== undefined && typeof e.casinoOnly !== 'boolean') throw new ItemDataError(`${where}: casinoOnly が不正`);
+    if (e.element !== undefined) {
+      if (!['earth', 'water', 'fire', 'wind', 'void'].includes(e.element)) throw new ItemDataError(`${where}: element が不正 (${e.element})`);
+      if (e.slot === 'shield') throw new ItemDataError(`${where}: 盾には属性を付けられない (守りの染まりは頭・胴・足・お守り)`);
+    }
   }
   return defs;
 }
 
-/** エディタ用: 現在有効などうぐ一覧 (差し替え前ならコード直書き)。 */
+/** エディタ用: 現在有効などうぐ一覧 (差し替え前ならコード直書き)。**全部の欄を返す** —
+ *  名前だけだと、エディタで開いて保存したときに key・battle・price などが消える (#854)。
+ *  エディタが書き換えても ITEMS が変わらないよう、複製して返す。 */
 export function activeItems(): ItemDefData[] {
-  return Object.entries(ITEMS).map(([id, v]) => ({ id, name: v.name }));
+  return Object.entries(ITEMS).map(([id, v]) => structuredClone({ id, ...v }));
 }
 
 /** エディタ用: 現在有効な装備一覧。 */

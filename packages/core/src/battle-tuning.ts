@@ -173,6 +173,12 @@ export const BATTLE_TUNING = {
    *  = MP を削り切る/尽きるのを待つ読み合いを作る。 */
   monsterChargeMpCost: 5,
   monsterHealMpCost: 7,
+  /** debuffer の弱体・自分の強化の MP コスト (D-PARTY-002 §12a)。 */
+  monsterDebuffMpCost: 5,
+  /** debuffer が技を使う確率 (MP があり、まだ付いていない状態があるとき)。 */
+  debufferChance: 0.3,
+  /** 全体 (target 'all') の呪文・ため・弱体の MP は単体の何倍か (§12a: 全体は単体より重い)。 */
+  monsterAoeMpFactor: 2,
   /** MP: 特技のコスト。最大 MP = mpBase + int * mpIntScale (int 職は手数が多い)。
    *  戦闘中の MP 回復は **ジョブ特性 (JOB_MP_TRAITS) を持つジョブだけ** —
    *  全員一律の回復はジョブの差をぼやけさせる。
@@ -195,6 +201,8 @@ export const BATTLE_TUNING = {
   /** そらのしずく (MP 回復薬): maxMp のこの割合を回復。持ち込み上限 tonicCarryMax。 */
   tonicMpRatio: 0.5,
   tonicCarryMax: 2,
+  /** 戦闘用のどうぐ (D-ITEM-001): 1 戦に種類ごとこの数まで持ち込める (やくそうと同じ上限)。 */
+  battleItemCarryMax: 2,
   /** にげる: 成功率 = clamp(fleeBase + (自agi − 敵agi) * fleeAgiScale, min, max)。
    *  失敗するとターンを失い敵の攻撃を受ける。成功してもパワーは返さない。 */
   fleeBase: 0.5,
@@ -216,4 +224,7 @@ export const BATTLE_TUNING = {
   lossExtraLukScale: 0.004,
   lossExtraMin: 0.05,
   lossMax: 3,
+  /** 群れの確率 (D-PARTY-001 §4)。tier ごとの [2 体, 3 体]。t3 以上は 3 の値。敵は全員本来の強さ。
+   *  1 人でも本筋 (t1〜t2) は勝率の最低 91% (scripts/sim-party.mts)。t3 は「仲間を連れてくる場所」。 */
+  groupChance: { 1: [0.08, 0], 2: [0.15, 0.03], 3: [0.25, 0.1] } as Record<1 | 2 | 3, readonly [number, number]>,
 } as const;

@@ -19,6 +19,7 @@ import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
 import type { Town } from './world.js';
+import { ELEMENT_LABELS, type Element } from './elements.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
  *  可能にするため循環を避けてローカルに持つ。 */
@@ -109,6 +110,10 @@ export interface EquipmentDef {
   grade: 1 | 2 | 3;
   /** 値札: あおぞらパワー + 素材個数 (素材の種類は店側が地域ドロップから決める)。 */
   price: { power: number; materials: number };
+  /** 属性 (D-ELEM-001)。武器は通常攻撃の属性、防具 (頭・胴・足・お守り) は守りの染まり (gear-element.ts)。 */
+  element?: Element;
+  /** カジノの景品 (D-CASINO-001)。店の品ぞろえ・置きアイテムには出せない。 */
+  casinoOnly?: boolean;
 }
 
 /** 装備適性マトリクス。common/cloth/charm は暗黙 ○。 */
@@ -229,6 +234,11 @@ export const EQUIPMENT: EquipmentDef[] = [
   //     戦闘エンジンへのフック実装とセットで後続 PR — 効かない品は店に出さない) ───
   { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 3 }, grade: 2, price: { power: 16, materials: 3 } },
   { id: 'ch-traveler', name: 'たびびとのおまもり', slot: 'charm', kind: 'charm', bonus: { def: 2 }, grade: 1, price: { power: 6, materials: 1 } },
+  // ─── カジノの景品 (D-CASINO-001 r2)。コインでしか手に入らない (店に並ばない・値札はカジノの表) ───
+  { id: 'wp-star-sword', name: 'ほしのつるぎ', slot: 'weapon', kind: 'common', bonus: { atk: 18, luk: 4 }, element: 'void', grade: 3, price: { power: 0, materials: 0 }, casinoOnly: true },
+  { id: 'ar-star-robe', name: 'ほしのころも', slot: 'armor', kind: 'cloth', bonus: { def: 20, luk: 3 }, element: 'void', grade: 3, price: { power: 0, materials: 0 }, casinoOnly: true },
+  { id: 'wp-star-dice', name: 'ほしのダイス', slot: 'weapon', kind: 'lucky', bonus: { luk: 16 }, grade: 3, price: { power: 0, materials: 0 }, casinoOnly: true },
+  { id: 'ch-lucky-charm', name: 'ラッキーチャーム', slot: 'charm', kind: 'charm', bonus: { luk: 6, agi: 2 }, grade: 3, price: { power: 0, materials: 0 }, casinoOnly: true },
 ];
 
 export const EQUIPMENT_BY_ID: Record<string, EquipmentDef> = Object.fromEntries(EQUIPMENT.map((e) => [e.id, e]));
@@ -274,8 +284,11 @@ export const SALE_TUNING = {
   materialsPerPower: 5,
 } as const;
 
-/** 消耗品 (ひきとり対象外 — それぞれ固有の使い道がある)。 */
-export const CONSUMABLE_ITEMS: readonly string[] = ['herb', 'sky-dew', 'sky-feather'];
+/** 消耗品 (ひきとり対象外 — それぞれ固有の使い道がある)。後ろ 8 品は戦闘用のどうぐ (D-ITEM-001)。 */
+export const CONSUMABLE_ITEMS: readonly string[] = [
+  'herb', 'sky-dew', 'sky-feather',
+  'nemuri-kona', 'shibire-bari', 'doku-bin', 'kemuri-dama', 'yowari-gusa', 'moroi-suna', 'chikara-no-mi', 'mamori-no-ha',
+];
 
 /** ひきとり対象 (モンスター素材のみ)。battle.ts の MONSTERS drops と同期
  *  (equipment→battle は循環になるため静的リスト。整合はテストで固定)。 */
@@ -384,10 +397,10 @@ export function isMasterwork(level: number): boolean {
   return level >= CRAFT_TUNING.masterworkLevel;
 }
 
-/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。 */
+/** 表示名: 「ナイフ+3」「ナイフ-1」。±0 は素の名前。属性つきは横に属性 (「みずの つるぎ+2（水）」。D-ELEM-001)。 */
 export function leveledName(def: EquipmentDef, level: number): string {
-  if (level === 0) return def.name;
-  return `${def.name}${signed(level)}`;
+  const name = level === 0 ? def.name : `${def.name}${signed(level)}`;
+  return def.element ? `${name}（${ELEMENT_LABELS[def.element]}）` : name;
 }
 
 /** 装備中の個体。level 省略時は定義値そのまま (±0 相当)。
@@ -564,12 +577,14 @@ export function townShopStock(town: Town, townIndex: number): ShopStock {
 function generatedShopStock(town: Town, townIndex: number): ShopStock {
   const tier = tierForRegion(town.region);
   const rng = shopRng(((town.x * 73856093) ^ (town.y * 19349663)) >>> 0);
-  const consumables = ['herb', 'sky-dew', 'sky-feather'];
+  // 店で買えるどうぐ (D-ITEM-001): データで shopTier を持つ品を、その tier 以上の街に足す。
+  const base = ['herb', 'sky-dew', 'sky-feather'];
+  const consumables = [...base, ...Object.keys(ITEMS).filter((id) => !base.includes(id) && (ITEMS[id]!.shopTier ?? 99) <= tier)];
 
   const equipment: string[] = [];
   // 地域枠: 共用 + カテゴリ品から 3〜4 品 (grade1 中心、たまに grade2)
   const maxGrade = maxShopGradeForTier(tier);
-  const generic = EQUIPMENT.filter((e) => !e.jobOnly && e.slot !== 'charm' && e.grade <= maxGrade);
+  const generic = EQUIPMENT.filter((e) => !e.jobOnly && !e.casinoOnly && e.slot !== 'charm' && e.grade <= maxGrade);
   const genericCount = 3 + Math.floor(rng() * 2);
   const pool = [...generic];
   for (let i = 0; i < genericCount && pool.length > 0; i++) {
@@ -578,7 +593,7 @@ function generatedShopStock(town: Town, townIndex: number): ShopStock {
     pool.splice(idx, 1);
   }
   // お守り (低確率で 1 品)
-  const charms = EQUIPMENT.filter((e) => e.slot === 'charm' && e.grade <= maxGrade);
+  const charms = EQUIPMENT.filter((e) => e.slot === 'charm' && !e.casinoOnly && e.grade <= maxGrade);
   if (rng() < 0.4 && charms.length > 0) {
     equipment.push(charms[Math.floor(rng() * charms.length)]!.id);
   }

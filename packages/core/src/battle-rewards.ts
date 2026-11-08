@@ -25,7 +25,8 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
   for (const [id, n] of Object.entries(materials)) {
     // **だいじなもの (シナリオアイテム) は失わない。** 進行に要るものが敗北で
     // 消えると、そのプレイヤーは筋書きを進められなくなる。
-    if (ITEMS[id]?.key) continue;
+    // カジノの景品 (コインで買ったどうぐ) も失わない (D-CASINO-001)。
+    if (ITEMS[id]?.key || ITEMS[id]?.casinoOnly) continue;
     for (let i = 0; i < n; i++) pool.push(id);
   }
   const lost: string[] = [];
@@ -75,8 +76,8 @@ export const SEARCH_TUNING = {
 function tierMaterials(tier: Tier): string[] {
   const set = new Set<string>();
   for (const m of MONSTERS) if (m.tier === tier && !m.storyOnly) for (const d of m.drops) set.add(d.item);
-  // 消耗品ドロップ (herb/sky-dew/sky-feather) は除き、純粋な素材だけ
-  return [...set].filter((id) => id !== 'herb' && id !== 'sky-dew' && id !== 'sky-feather');
+  // 消耗品ドロップ (herb/sky-dew/sky-feather と戦闘用のどうぐ D-ITEM-001) は除き、純粋な素材だけ
+  return [...set].filter((id) => id !== 'herb' && id !== 'sky-dew' && id !== 'sky-feather' && !ITEMS[id]?.battle);
 }
 
 /**

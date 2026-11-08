@@ -4,7 +4,8 @@
  * 設計目的: 将来 LLM backend が増えたり差し替わったりしても、各 caller
  * (spirit / translate / flavor-text / summoning-ritual) を触らずに済むこと。
  *
- * backend: Gemini Nano (Chrome 148+ の LanguageModel API) と、Nano の無い端末の翻訳専用 sarashina (自前 WGSL)。将来想定:
+ * backend: Gemini Nano (Chrome 148+ の LanguageModel API) と、Nano の無い端末のブルスコン (LFM2.5、自前 WGSL)。
+ * sarashina (自前 WGSL、翻訳だけ) は、ブルスコンを導入するまでの翻訳に残している (D-SLM-CARD-001 PR4 で削る)。将来想定:
  *  - Edge 内蔵 AI / Safari 内蔵 AI (まだ無いが API は web 標準化提案中)
  *  - aozoraquest 自前 API (server fallback、Nano 不可環境向け)
  *  - 別ローカルモデル (transformers.js 製 など)
@@ -31,6 +32,12 @@ export interface LLMOptions {
   /** 出力長の soft cap。backend が厳密 token cap を持っていればそれ、
    *  持っていない (Nano など) なら文字数近似で打ち切る。 */
   maxNewTokens?: number;
+  /** 最初の改行で生成を止める (翻訳の 1 段落)。token 単位で止められる backend (ブルスコン) だけが従う。 */
+  stopAtNewline?: boolean;
+  /** assistant の書き出し (カードの「カード名:」)。生成はその続きから。ブルスコンだけが従う。 */
+  prefill?: string;
+  /** 繰返し罰 (1 = なし)。ブルスコンだけが従う。 */
+  repetitionPenalty?: number;
   signal?: AbortSignal;
 }
 
@@ -45,6 +52,11 @@ export interface LocalLLM {
   readonly label: string;
   /** この backend を使ってよい用途。省略時はすべての用途。 */
   readonly purposes?: readonly LLMPurpose[];
+  /** カード文のプロンプト方式。'two-stage' (既定) = 能力とフレーバーを 2 段で書かせる (Nano)。
+   *  'four-line' = タイプ・マナ等は JS で決め、4 行 (カード名 / 能力名 / 説明 / フレーバー) だけ書かせる (ブルスコン)。 */
+  readonly cardPrompt?: 'two-stage' | 'four-line';
+  /** prompt の token 数 (prefill 込み)。ctx に収まるかを確かめる backend だけが持つ。 */
+  countPromptTokens?(input: LLMInput, prefill?: string): Promise<number>;
   /** 今このセッションで使えるか。memoize 推奨 (caller が連呼するため)。 */
   availability(): Promise<boolean>;
   /** 1 turn の生成。`history` 最後の user message への応答を返す。
@@ -60,10 +72,11 @@ export interface LLMGenResult {
 
 import { GEMINI_NANO } from './gemini-nano-llm';
 import { SARASHINA } from './sarashina-llm';
+import { SLM } from './slm-llm';
 
 /** 優先順位順 backend リスト。先頭から availability() を問い合わせ、
  *  最初に true を返したものを採用する。新規 backend はここに追加するだけ。 */
-const BACKENDS: readonly LocalLLM[] = [GEMINI_NANO, SARASHINA];
+const BACKENDS: readonly LocalLLM[] = [GEMINI_NANO, SLM, SARASHINA];
 
 const cachedLLM = new Map<LLMPurpose, LocalLLM | null>();
 
@@ -83,7 +96,7 @@ export async function pickLocalLLM(force = false, purpose: LLMPurpose = 'general
   return null;
 }
 
-/** backend の導入 (sarashina の初回ダウンロード) が済んだ後に、memoize した選択を捨てる。 */
+/** backend の導入 (ブルスコンの初回ダウンロード) が済んだ後に、memoize した選択を捨てる。 */
 export function resetLocalLLMChoice(): void {
   cachedLLM.clear();
 }

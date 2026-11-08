@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { BattleState } from '@aozoraquest/core';
+import { activeEquipment, activeItems, setItemOverrides, type BattleState } from '@aozoraquest/core';
 import { WorldBattleControls, type BattlePhase } from './world-battle-controls';
 
 const fighter = (name: string, hp: number) => ({ name, hp, maxHp: 30, mp: 5, maxMp: 5, atk: 1, def: 1, agi: 1, int: 1, luk: 1, vit: 0, guarding: false, parrying: false, charging: false, focus: 0, statuses: [], passives: [] });
@@ -117,5 +117,152 @@ describe('WorldBattleControls 行ごとの HP (#764)', () => {
     fireEvent.click(layer()!); finishTyping();
     expect(enemyHp()).toBe('25 / 30');
     expect(onLineHp).toHaveBeenLastCalledWith(1, 12, true);
+  });
+});
+
+describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
+  const NEMURI = { id: 'nemuri-kona', name: 'ねむりごな', battle: { effects: [{ kind: 'status' as const, status: 'sleep' as const, target: 'enemy' as const, chance: 0.7, turns: 3 }] } };
+  const KEMURI = { id: 'kemuri-dama', name: 'けむりだま', battle: { effects: [{ kind: 'status' as const, status: 'accDown' as const, target: 'allEnemies' as const, chance: 1, turns: 3 }] } };
+  beforeEach(() => setItemOverrides({ items: [...activeItems(), NEMURI, KEMURI], equipment: [...activeEquipment()] }));
+  afterEach(() => setItemOverrides(null));
+  const withItems = (battleItems: Record<string, number>, enemies = 1): BattleState => {
+    const s = state();
+    const extra = enemies > 1 ? { allies: [s.player], enemies: [s.monster, fighter('スライムB', 10)] } : {};
+    return { ...s, battleItems, ...extra } as BattleState;
+  };
+  const openItems = (s: BattleState, onCommand = vi.fn()) => {
+    render(<WorldBattleControls state={s} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={onCommand} onAdvance={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'どうぐ' }));
+    return onCommand;
+  };
+
+  it('どうぐの行が「名前 ×N」で並び、押すと item と itemId を送る', () => {
+    const onCommand = openItems(withItems({ 'nemuri-kona': 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'ねむりごな ×2' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona');
+  });
+  it('やくそう・しずくが 0 でも、戦闘用のどうぐがあれば「どうぐ」を押せる', () => {
+    render(<WorldBattleControls state={withItems({ 'nemuri-kona': 1 })} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={vi.fn()} onAdvance={vi.fn()} />);
+    expect((screen.getByRole('button', { name: 'どうぐ' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it('0 個のどうぐは出さない (何もなければ「どうぐ」は押せない)', () => {
+    render(<WorldBattleControls state={withItems({ 'nemuri-kona': 0 })} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={vi.fn()} onAdvance={vi.fn()} />);
+    expect((screen.getByRole('button', { name: 'どうぐ' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /ねむりごな/ })).toBeNull();
+  });
+  it('敵が 2 体で単体ねらいのどうぐなら、ねらう相手を選んで生きている敵の中の番号を送る (#847)', () => {
+    const onCommand = openItems(withItems({ 'nemuri-kona': 1 }, 2));
+    fireEvent.click(screen.getByRole('button', { name: 'ねむりごな ×1' }));
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('だれを ねらう？')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'スライムB' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona', 1);
+  });
+  it('敵全体をねらうどうぐは、敵が 2 体でも選ばずに送る (#847)', () => {
+    const onCommand = openItems(withItems({ 'kemuri-dama': 1 }, 2));
+    fireEvent.click(screen.getByRole('button', { name: 'けむりだま ×1' }));
+    expect(onCommand).toHaveBeenCalledWith('item', undefined, 'kemuri-dama');
+    expect(screen.queryByText('だれを ねらう？')).toBeNull();
+  });
+});
+
+describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
+  const group = (enemyHps: number[], allyHps: number[] = [20]): BattleState => {
+    const s = state();
+    const enemies = enemyHps.map((hp, i) => fighter(['スライムA', 'スライムB', 'スライムC'][i]!, hp));
+    const allies = allyHps.map((hp, i) => fighter(['ゆうしゃ', 'カイト', 'ミオ'][i]!, hp));
+    return { ...s, player: allies[0]!, monster: enemies[0]!, allies, enemies, playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: 'かまえ', kind: 'warrior-charge' }] } as unknown as BattleState;
+  };
+  const input = (s: BattleState, onCommand = vi.fn()) => {
+    render(<WorldBattleControls state={s} phase="input" busy={false} showEnemyVitals={false} resultLines={[]} onCommand={onCommand} onAdvance={vi.fn()} />);
+    return onCommand;
+  };
+
+  it('敵 3 体を名前つきで並べ、倒れた敵は薄くする', () => {
+    input(group([10, 0, 7]));
+    for (const n of ['スライムA', 'スライムB', 'スライムC']) expect(screen.getByText(n)).toBeTruthy();
+    expect(screen.getByText('スライムB').closest<HTMLElement>('[data-enemy]')!.style.opacity).toBe('0.35');
+    expect(screen.getByText('スライムA').closest<HTMLElement>('[data-enemy]')!.style.opacity).toBe('1');
+  });
+
+  it('生きている敵が 2 体以上なら「たたかう」でねらう相手を選び、生きている敵の中の番号を送る', () => {
+    const onCommand = input(group([10, 0, 7]));
+    fireEvent.click(screen.getByRole('button', { name: 'たたかう' }));
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('だれを ねらう？')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'スライムB' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'スライムC' }));
+    expect(onCommand).toHaveBeenCalledWith('attack', undefined, undefined, 1);
+  });
+
+  it('単体ねらいのとくぎだけ選ぶ。自分にかけるとくぎはそのまま送る', () => {
+    const onCommand = input(group([10, 7]));
+    fireEvent.click(screen.getByRole('button', { name: 'かまえ' }));
+    expect(onCommand).toHaveBeenCalledWith('skill', 1);
+    fireEvent.click(screen.getByRole('button', { name: 'わざ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'スライムA' }));
+    expect(onCommand).toHaveBeenLastCalledWith('skill', 0, undefined, 0);
+  });
+
+  it('生きている敵が 1 体なら選ばずに送る', () => {
+    const onCommand = input(group([0, 7]));
+    fireEvent.click(screen.getByRole('button', { name: 'たたかう' }));
+    expect(onCommand).toHaveBeenCalledWith('attack');
+  });
+
+  it('仲間がいれば味方の段に 1 人 1 行で HP/MP を出し、倒れた仲間は薄くする', () => {
+    input(group([10], [20, 13, 0]));
+    const row = (n: string) => screen.getAllByText(n).map((e) => e.closest<HTMLElement>('[data-ally]')).find(Boolean)!;
+    expect(row('カイト').textContent).toContain('HP 13/30');
+    expect(row('カイト').textContent).toContain('MP 5/5');
+    expect(row('ミオ').style.opacity).toBe('0.4');
+    expect(row('ゆうしゃ').style.opacity).toBe('1');
+  });
+
+  it('味方の段は 数字に加えて HP/MP のバーを出す (HP バーは 残りで色が変わる)', () => {
+    input(group([10], [20, 13, 0]));
+    const bar = (n: string, kind: 'hp' | 'mp') => screen.getAllByText(n).map((e) => e.closest<HTMLElement>('[data-ally]')).find(Boolean)!.querySelector<HTMLElement>(`[data-bar="${kind}"]`)!;
+    expect(bar('カイト', 'hp').style.width).toBe(`${(13 / 30) * 100}%`);
+    expect(bar('カイト', 'hp').style.background).toBe('rgb(245, 197, 66)');
+    expect(bar('カイト', 'mp').style.width).toBe('100%');
+    expect(bar('ゆうしゃ', 'hp').style.background).toBe('rgb(95, 195, 126)');
+    expect(bar('ミオ', 'hp').style.width).toBe('0%');
+  });
+
+  it('仲間がいれば 聖光の癒し は「だれを かいふくする？」で生きている味方 (主人公を含む) から選び、その番号を送る (D-PARTY-003)', () => {
+    const s = { ...group([10], [20, 13, 0, 25].slice(0, 3)), playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: '聖光の癒し', kind: 'paladin-heal' }] } as BattleState;
+    const onCommand = input(s);
+    fireEvent.click(screen.getByRole('button', { name: '聖光の癒し' }));
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('だれを かいふくする？')).toBeTruthy();
+    const picker = screen.getByText('だれを かいふくする？').parentElement!;
+    const names = [...picker.querySelectorAll('button')].map((b) => b.textContent);
+    expect(names).toEqual(['ゆうしゃ', 'カイト', 'もどる']); // 倒れたミオは出ない
+    fireEvent.click([...picker.querySelectorAll('button')].find((b) => b.textContent === 'カイト')!);
+    expect(onCommand).toHaveBeenCalledWith('skill', 1, undefined, 1);
+  });
+
+  it('仲間がいれば やくそうも相手を選ぶ。満タンの人は押せない (D-PARTY-003)', () => {
+    const s = { ...group([10], [30, 13]), herbs: 2 } as BattleState;
+    const onCommand = input(s);
+    fireEvent.click(screen.getByRole('button', { name: 'どうぐ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'やくそう ×2' }));
+    const picker = screen.getByText('だれを かいふくする？').parentElement!;
+    const btn = (n: string) => [...picker.querySelectorAll('button')].find((b) => b.textContent === n)!;
+    expect(btn('ゆうしゃ').disabled).toBe(true);
+    fireEvent.click(btn('カイト'));
+    expect(onCommand).toHaveBeenCalledWith('herb', undefined, undefined, 1);
+  });
+
+  it('1 人戦の 聖光の癒し は選ばずに送る', () => {
+    const s = { ...state(), playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: '聖光の癒し', kind: 'paladin-heal' }] } as BattleState;
+    const onCommand = input(s);
+    fireEvent.click(screen.getByRole('button', { name: '聖光の癒し' }));
+    expect(onCommand).toHaveBeenCalledWith('skill', 1);
+  });
+
+  it('1 人なら味方の段を出さない', () => {
+    input(group([10, 7]));
+    expect(document.querySelector('[data-ally]')).toBeNull();
   });
 });

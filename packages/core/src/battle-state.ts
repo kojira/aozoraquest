@@ -11,10 +11,13 @@ import { createRng } from './battle-rng.js';
 import { type JobSkill, skillForJob, skillsForJob, mpGainsFor, mpTraitChanceOf } from './battle-job-skills.js';
 import { type Combatant, playerCombatant } from './battle-combatant.js';
 import { type Tier, MONSTERS_BY_ID, summonMonster, monsterCombatant } from './battle-monsters.js';
+import { encounterGroupSize, groupable } from './battle-group.js';
+import { carriedBattleItems } from './battle-items.js';
 
 // ─── バトル状態と解決 ───────────────────────────────────────
 
-export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee';
+/** item = 戦闘用のどうぐ (D-ITEM-001)。どれを使うかは resolveTurn の itemId で渡す。 */
+export type Command = 'attack' | 'guard' | 'skill' | 'herb' | 'tonic' | 'flee' | 'item';
 
 export type BattleOutcome = 'ongoing' | 'win' | 'lose' | 'fled' | 'monster-fled';
 
@@ -27,8 +30,9 @@ export interface TurnEvent {
   damage?: number;
   /** 対象が倒れたか */
   fatal?: boolean;
-  /** このイベント直後の HP (#764)。UI はダメージの行でこの値に変える。旧 state には無い。 */
-  hp?: { player: number; monsters: number[] };
+  /** このイベント直後の HP (#764)。UI はダメージの行でこの値に変える。旧 state には無い。
+   *  allies は仲間がいるときだけ (味方ごと。[0] が主人公。D-PARTY-001)。 */
+  hp?: { player: number; monsters: number[]; allies?: number[] };
 }
 
 export interface BattleState {
@@ -55,6 +59,10 @@ export interface BattleState {
   tonics: number;
   /** このバトルで使ったそらのしずく数 (記録用 → 在庫から差し引く)。 */
   tonicsUsed: number;
+  /** 持ち込んだ戦闘用のどうぐ (id → 残り数、D-ITEM-001)。旧 sealed state には無い (= 0 個)。 */
+  battleItems?: Record<string, number>;
+  /** このバトルで使ったどうぐ (id → 数。決着で手持ちから引く)。 */
+  battleItemsUsed?: Record<string, number>;
   /** たたかう / ぼうぎょ の MP 回復量 (ジョブ特性 JOB_MP_TRAITS 込み。UI 表示用にも使う) */
   mpAttackGain: number;
   mpGuardGain: number;
@@ -67,6 +75,24 @@ export interface BattleState {
   /** ストーリー戦 (D-STORY-009)。敵は逃げない。canFlee=false なら「にげる」を受け付けない。
    *  scripted = 台本負け (HP は 1 で止まり、倒れる手前か 3 ターン目の終わりで lose)。 */
   story?: { canFlee: boolean; scripted?: boolean };
+  /** ほかの人から受けた回復 (味方の位置ごと。戻った HP ÷ 最大 HP の合計)。決着できずなに足す (D-PARTY-004)。 */
+  healReceived?: number[];
+  /** 仲間ごとの さくせん／めいれい (allies と同じ並び。[0] の主人公は空。D-PARTY-004)。封印の時点の値。無い＝おまかせ。 */
+  allyModes?: Array<AllyMode | undefined>;
+  /** allies[1..] の仲間の id (allyModes があるときだけ。画面が めいれい を送る相手を知るため)。 */
+  partyIds?: string[];
+}
+
+/** 仲間の さくせん (♥2) と めいれい (♥3)。無い＝おまかせ (D-PARTY-004)。 */
+export type AllyMode = 'gangan' | 'inochi' | 'jumon' | 'manual';
+export const ALLY_MODES: readonly AllyMode[] = ['gangan', 'inochi', 'jumon', 'manual'];
+
+/** めいれい の仲間の 1 手 (主人公と同じ形。にげる は無い)。targetIndex は生きている敵 (味方をねらう手は味方) の何番目か。 */
+export interface AllyOrder {
+  command: Exclude<Command, 'flee'>;
+  skillIndex: number;
+  targetIndex: number;
+  itemId?: string;
 }
 
 /**
@@ -90,7 +116,8 @@ export function hpRecordingEvents(sides: () => CombatSides): TurnEvent[] {
   const push = (...items: TurnEvent[]): number => {
     const { allies, enemies } = sides();
     for (const e of items) {
-      Array.prototype.push.call(events, { ...e, hp: { player: allies[0]!.hp, monsters: enemies.map((m) => m.hp) } });
+      const hp = { player: allies[0]!.hp, monsters: enemies.map((m) => m.hp), ...(allies.length > 1 ? { allies: allies.map((a) => a.hp) } : {}) };
+      Array.prototype.push.call(events, { ...e, hp });
     }
     return events.length;
   };
@@ -131,6 +158,11 @@ export function startBattle(
     extraEnemies?: number;
     /** ストーリー戦 (D-STORY-009)。BattleState.story にそのまま載る。 */
     story?: { canFlee: boolean; scripted?: boolean };
+    /** 群れを使う (D-PARTY-001)。tier 抽選の主敵から encounterGroupSize で数を決め、追加の敵も同じ tier から選ぶ
+     *  (fleer・レアは入れない)。monsterId 固定や extraEnemies を渡したときは使わない。 */
+    group?: boolean;
+    /** 持ち込む戦闘用のどうぐ (id → 数)。種類ごとに battleItemCarryMax まで (D-ITEM-001)。 */
+    battleItems?: Readonly<Record<string, number>>;
   },
 ): BattleState {
   const player = playerCombatant(archetype, jobLevel, playerLevel, displayName, extras?.baseStats, extras?.equipIds, extras?.gear);
@@ -147,14 +179,16 @@ export function startBattle(
     : summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, variance);
   const gains = mpGainsFor(archetype);
   // #453 群れ: 追加の敵を別 seed で抽選 (最大 +2 = 計 3 体)。0 のとき enemies 未設定 = 従来ソロ。
-  const extraCount = Math.max(0, Math.min(2, Math.floor(extras?.extraEnemies ?? 0)));
+  // group (D-PARTY-001) は数を seed から決める。fleer・レアは追加の敵に選ばない。
+  const grouped = !!extras?.group && !forced && extras.extraEnemies === undefined;
+  const extraCount = grouped ? encounterGroupSize(tier, seed, def, true) - 1 : Math.max(0, Math.min(2, Math.floor(extras?.extraEnemies ?? 0)));
   const enemies: Combatant[] = [combatant];
   for (let i = 0; i < extraCount; i++) {
     const es = (seed ^ (0x9e3779b1 * (i + 1))) >>> 0;
     enemies.push(
       forced
         ? monsterCombatant(forced, variance, createRng((es ^ 0x2a9f) >>> 0))
-        : summonMonster(tier, playerLevel, es, jobLevel, extras?.affinity, variance).combatant,
+        : summonMonster(tier, playerLevel, es, jobLevel, extras?.affinity, variance, grouped ? groupable : undefined).combatant,
     );
   }
   return {
@@ -171,6 +205,7 @@ export function startBattle(
     herbsUsed: 0,
     tonics: Math.max(0, Math.min(BATTLE_TUNING.tonicCarryMax, Math.floor(extras?.tonics ?? 0))),
     tonicsUsed: 0,
+    ...(extras?.battleItems ? { battleItems: carriedBattleItems(extras.battleItems), battleItemsUsed: {} } : {}),
     mpAttackGain: gains.attackGain,
     mpGuardGain: gains.guardGain,
     ...(gains.traitName ? { mpTraitName: gains.traitName } : {}),

@@ -14,8 +14,9 @@
  * `craft` レコード) はまだユーザー PDS にあり、それを権威化するのは #551 段階 2。
  * ただし**強化値の抽選はサーバーが行い**、client はその結果を記帳するだけにしてある。
  */
-import { interiorShopAt, GEAR_SLOTS,
+import { interiorShopAt, GEAR_SLOTS, gearKey, overWorn,
   CRAFT_TUNING,
+  ITEMS,
   EQUIPMENT_BY_ID,
   SALE_TUNING,
   SEARCH_TUNING,
@@ -28,6 +29,7 @@ import { interiorShopAt, GEAR_SLOTS,
   worldOverlay,
 } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece, sanitizeGear } from './game-state';
+import { wearersOf } from './party-gear';
 
 /** 冪等キーを覚えておく件数 (`xpClaims` と同じ考え方)。再送・二重送信で二重に課金しない。 */
 export const MAX_SHOP_OPS = 100;
@@ -158,6 +160,51 @@ export async function shopCraft(
   return { power: next.power, materials: next.materials, level, duplicate, pieces: next.pieces ?? [] };
 }
 
+/** どうぐ 1 品あたりの所持上限 (買いすぎで権威レコードを膨らませない。D-ITEM-001)。 */
+export const MAX_ITEM_STACK = 99;
+
+/**
+ * どうぐを 1 個買う (D-ITEM-001)。値段は「パワー + その店の値札の素材」(装備と同じ)。
+ * 品揃え・値段はサーバーが街とデータから導く (client の申告を信じない)。同じ rkey は 1 回だけ。
+ */
+export async function shopBuy(
+  env: GameStateEnv,
+  did: string,
+  input: { itemId: string; rkey: string; pos?: { x: number; y: number; mapId?: string } },
+  now: number,
+  init?: (did: string, nowIso: string) => Promise<GameState>,
+): Promise<ShopResult> {
+  assertRkey(input.rkey);
+  const price = ITEMS[input.itemId]?.price;
+  if (!price) throw new ShopError('その品は売っていない', 400, 'not_for_sale');
+  const opKey = `buy:${input.rkey}`;
+
+  let duplicate = false;
+  const next = await readModifyWrite(
+    env,
+    did,
+    (cur) => {
+      if (alreadyDone(cur, opKey)) { duplicate = true; return cur; }
+      duplicate = false;
+      const { stock } = shopAt(cur, input.pos);
+      if (!stock.consumables.includes(input.itemId)) throw new ShopError('この街では扱っていない', 400, 'not_in_stock');
+      if (cur.power < price.power) throw new ShopError('あおぞらパワーが たりない', 400, 'no_power');
+      const have = cur.materials[stock.materialId] ?? 0;
+      if (have < price.materials) throw new ShopError('素材が たりない', 400, 'no_material');
+      const owned = cur.materials[input.itemId] ?? 0;
+      if (owned >= MAX_ITEM_STACK) throw new ShopError(`これ以上は もてない (${MAX_ITEM_STACK} 個)`, 400, 'stack_full');
+      const materials = { ...cur.materials };
+      const left = have - price.materials;
+      if (left > 0) materials[stock.materialId] = left;
+      else delete materials[stock.materialId];
+      materials[input.itemId] = (materials[input.itemId] ?? 0) + 1;
+      return { ...cur, power: cur.power - price.power, materials, shopOps: withOp(cur, opKey) };
+    },
+    init ? { now, init } : { now },
+  );
+  return { power: next.power, materials: next.materials, duplicate, pieces: next.pieces ?? [] };
+}
+
 /** 素材をひきとってもらう (素材 → パワー)。 */
 export async function shopSell(
   env: GameStateEnv,
@@ -235,9 +282,13 @@ export async function shopForge(
       if (!pa || !pb) throw new ShopError('その品を もっていない', 400, 'not_owned');
       if (pa.itemId !== pb.itemId || pa.level !== pb.level) throw new ShopError('同じ品・同じ強化値でないと きたえられない', 400, 'mismatch');
       if (pa.level >= CRAFT_TUNING.levelMax) throw new ShopError('これ以上は きたえられない', 400, 'max_level');
+      // 材料をのぞいた残りで 主人公＋仲間 の着ているぶんを賄えないなら断る (D-PARTY-004 §6・#917)。
+      // 通すと 1 個を 2 人が着た状態になり、そのあとの着がえ・すてる が全部 400 になる。
+      const rest = owned.filter((p) => p.rkey !== a && p.rkey !== b);
+      if (overWorn(wearersOf(cur), rest).includes(gearKey(pa.itemId, pa.level))) throw new ShopError('そうび中の品は きたえられない。さきに はずしてほしい', 400, 'equipped');
       level = pa.level + 1;
       const pieces: OwnedPiece[] = [
-        ...owned.filter((p) => p.rkey !== a && p.rkey !== b),
+        ...rest,
         { rkey: input.rkey, itemId: pa.itemId, level },
       ];
       return { ...cur, pieces, shopOps: withOp(cur, opKey) };
@@ -310,6 +361,8 @@ export async function shopDiscard(
           throw new ShopError('そうび中の品は すてられない。さきに はずしてほしい', 400, 'equipped');
         }
       }
+      // 仲間が着ている品も すてられない (D-PARTY-004 §6)。
+      if (overWorn(wearersOf({ gearSel: afterEquipped, party: cur.party }), rest).length) throw new ShopError('そうび中の品は すてられない。さきに はずしてほしい', 400, 'equipped');
       // 掃除も掛ける (古いデータで gearSel が既に宙に浮いている場合の後始末)。
       return { ...cur, pieces: rest, gearSel: afterEquipped, shopOps: withOp(cur, opKey) };
     },

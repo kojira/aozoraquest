@@ -7,12 +7,15 @@ import {
   activeEquipment,
   activeItems,
   canEquip,
+  CONSUMABLE_ITEMS,
   danglingRefs,
   describeDanglingRef,
   ItemDataError,
+  ITEMS_WITH_BATTLE_COMMAND,
   JOBS,
   JOB_EQUIP_KINDS,
   type BonusStat,
+  ELEMENT_LABELS,
   type EquipmentDef,
   type ItemDefData,
 } from '@aozoraquest/core';
@@ -21,6 +24,7 @@ import { isAdminDid } from '@/lib/runtime-config';
 import { saveItems } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
+import { ItemBattleEditor, ItemShopEditor } from '@/components/admin/item-battle-editor';
 
 /**
  * **アイテムエディタ** (#420)。そうび / どうぐ・素材 の 2 タブ。
@@ -149,7 +153,8 @@ export function AdminItems() {
       {tab === 'items' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2em', maxWidth: 460 }}>
           {items.map((it, i) => (
-            <div key={i} style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
+            <div key={i}>
+            <div style={{ display: 'flex', gap: '0.3em', alignItems: 'center' }}>
               <input
                 value={it.id}
                 onChange={(e) => { setItems((xs) => xs.map((x, j) => (j === i ? { ...x, id: e.target.value } : x))); setDirty(true); }}
@@ -177,6 +182,26 @@ export function AdminItems() {
                 />
                 だいじ
               </label>
+              {/* 戦闘でつかう どうぐ (D-ITEM-001)。入れると効果の欄が開く。やくそう・しずくは専用のコマンドで使うので出さない。 */}
+              {!ITEMS_WITH_BATTLE_COMMAND.includes(it.id) && (
+              <label style={{ display: 'flex', gap: '0.2em', alignItems: 'center', fontSize: '0.8em', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  aria-label={`${it.id} を戦闘でつかう`}
+                  checked={!!it.battle}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setItems((xs) => xs.map((x, j) => {
+                      if (j !== i) return x;
+                      if (!on) { const { battle: _b, ...rest } = x; return rest as ItemDefData; }
+                      return { ...x, battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 1, turns: 3 }] } };
+                    }));
+                    setDirty(true);
+                  }}
+                />
+                戦闘
+              </label>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -188,6 +213,15 @@ export function AdminItems() {
               >
                 ×
               </button>
+            </div>
+            {it.battle && (
+              <ItemBattleEditor item={it} onChange={(next) => { setItems((xs) => xs.map((x, j) => (j === i ? next : x))); setDirty(true); }} />
+            )}
+            {/* 説明・値段・店の tier は、戦闘で使うかどうかによらず消耗品なら出す (やくそう・しずく・はねの値段も付けられる)。
+                「戦闘」を外しても、すでに値段などを持つ品の欄は消さない。 */}
+            {(CONSUMABLE_ITEMS.includes(it.id) || it.battle || it.price || it.shopTier || it.desc !== undefined) && (
+              <ItemShopEditor item={it} onChange={(next) => { setItems((xs) => xs.map((x, j) => (j === i ? next : x))); setDirty(true); }} />
+            )}
             </div>
           ))}
           <button
@@ -278,6 +312,17 @@ export function AdminItems() {
                   <option value={1}>片手</option>
                   <option value={2}>両手 (盾と併用できない)</option>
                 </select>
+              ))}
+              {current.slot !== 'shield' && field('属性', (
+                <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                  <select value={current.element ?? ''} onChange={(e) => update(current.id, { element: (e.target.value || undefined) as EquipmentDef['element'] })}>
+                    <option value="">なし (無属性)</option>
+                    {(['earth', 'water', 'fire', 'wind', 'void'] as const).map((el) => <option key={el} value={el}>{ELEMENT_LABELS[el]}</option>)}
+                  </select>
+                  <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>
+                    {current.slot === 'weapon' ? '通常攻撃の属性' : '守りの染まり (その属性の攻撃を軽減)'}
+                  </span>
+                </span>
               ))}
               {field('系統', (
                 <select value={current.kind} onChange={(e) => update(current.id, { kind: e.target.value as EquipmentDef['kind'] })}>

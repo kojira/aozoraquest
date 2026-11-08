@@ -8,12 +8,17 @@ import { resolveTargets, type CombatSides } from './combat-target.js';
 import { STATUS_REGISTRY, applyBeforeAct, tickStatuses } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
-import { skillMpCostOf, mpTraitFires } from './battle-job-skills.js';
+import { skillMpCostOf, skillsForJob, mpTraitFires } from './battle-job-skills.js';
 import { type Combatant } from './battle-combatant.js';
-import { MONSTERS_BY_ID } from './battle-monsters.js';
-import { type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
+import { MONSTERS_BY_ID, monsterHealAmount } from './battle-monsters.js';
+import { type AllyOrder, type Command, type TurnEvent, type BattleState, combatSides, hpRecordingEvents } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
+import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
+import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
+import { allyAutoAction } from './battle-party.js';
+import { watchHeals } from './bond.js';
+import { outOfStockText, pinAllyOrders, runAllyOrder } from './battle-ally-orders.js';
 
 /** Combatant を 1 ターン分コピー (guarding リセット・statuses は deep copy)。 */
 function copyCombatant(c: Combatant): Combatant {
@@ -28,43 +33,49 @@ function randomLiving(arr: readonly Combatant[], rng: () => number): Combatant |
 
 /** マルチ戦闘での敵1体の行動 (#453)。1v1 の monster act と同じ ability (charger/healer/caster) を、
  *  敵個体の monsterId で引いて実行する。ターゲットはランダムな生存味方 (挑発/かばうは後続)。
- *  flee は集団戦では意味が薄いので通常攻撃に退避する。 */
-function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState, rng: () => number, events: TurnEvent[]): void {
+ *  flee は群れでは通常攻撃に退避する。敵が 1 体だけなら (仲間がいても) 1 人戦と同じく逃げて終わる。 */
+function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant[], state: BattleState, rng: () => number, events: TurnEvent[]): void {
   const t = BATTLE_TUNING;
   const def = MONSTERS_BY_ID[enemy.monsterId ?? state.monsterId];
   // ため中なら宣言どおり強攻撃を解放 (mCommand は無視)。
+  const to = { allies, one: () => randomLiving(allies, rng) };
   if (enemy.charging) {
-    enemy.charging = false;
-    const target = randomLiving(allies, rng);
-    if (target) doAttack(enemy, target, rng, events, 'monster', { power: t.chargedPower, hitBonus: -0.05, label: def?.skillName ?? 'つよいこうげき' });
+    releaseMonsterCharge(enemy, def, to, rng, events);
     return;
   }
   const action = monsterCommand(enemy, state, rng);
+  // 選ぶときは直前の手 (lastAoe) を見る。選んだら下ろし、この手番の技が全体なら技の側で立て直す。
+  const debuff = action === 'debuff' ? pickDebuff(def, enemy, allies) : undefined;
+  enemy.lastAoe = false;
+  if (action === 'flee' && enemies.length === 1) {
+    state.outcome = 'monster-fled';
+    events.push({ actor: 'monster', text: `${enemy.name}は逃げだした!` });
+    return;
+  }
   if (action === 'guard') {
     enemy.guarding = true; // 被ダメ軽減の宣言 (turn 頭で全体リセット済み)
     return;
   }
   if (action === 'charge') {
-    enemy.mp = Math.max(0, enemy.mp - t.monsterChargeMpCost);
+    enemy.mp = Math.max(0, enemy.mp - chargeMpCost(def));
     enemy.charging = true;
     events.push({ actor: 'monster', text: `${enemy.name}は力をためている…!` });
     return;
   }
   if (action === 'heal') {
     enemy.mp = Math.max(0, enemy.mp - t.monsterHealMpCost);
-    const healed = Math.round(enemy.maxHp * t.healerHealRatio);
+    const healed = monsterHealAmount(def, enemy.maxHp);
     const before = enemy.hp;
     enemy.hp = Math.min(enemy.maxHp, enemy.hp + healed);
     events.push({ actor: 'monster', text: `${enemy.name}は${def?.healName ?? 'きずをいやす'}! HPが${enemy.hp - before}回復。` });
     return;
   }
   if (action === 'cast' && def?.spell) {
-    enemy.mp = Math.max(0, enemy.mp - t.monsterCastMpCost);
-    const spell = def.spell;
-    const span = spell.max - spell.min;
-    const amount = spell.min + Math.floor(rng() * (span + 1)) + Math.round(enemy.int * (spell.intScale ?? 0));
-    const target = randomLiving(allies, rng);
-    if (target) doMagic(enemy, target, rng, events, 'monster', { amount, ...(spell.element ? { element: spell.element } : {}), label: spell.name });
+    castMonsterSpell(enemy, def, to, rng, events);
+    return;
+  }
+  if (debuff) {
+    useMonsterDebuff(enemy, debuff, allies, rng, events);
     return;
   }
   // attack / flee (集団戦は通常攻撃に退避) / spell 未定義の cast。
@@ -72,12 +83,44 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], state: BattleState
   if (target) doAttack(enemy, target, rng, events, 'monster');
 }
 
+/** 仲間 (job を持つ味方) の行動。手は allyAutoAction が決める (D-PARTY-001)。 */
+function partyMemberAct(actor: Combatant, index: number, state: BattleState, sides: CombatSides, rng: () => number, events: TurnEvent[], turnSeed?: number): void {
+  const a = allyAutoAction(state, index, turnSeed, state.allyModes?.[index]);
+  const skills = skillsForJob(actor.job!.archetype, actor.job!.level);
+  const skill = skills[a.skillIndex];
+  const def = skill ? SKILLS[skill.kind] : undefined;
+  const cost = skillMpCostOf(actor);
+  if (a.command === 'skill' && skill && def && actor.mp >= cost) {
+    actor.mp -= cost;
+    if (def.parry) {
+      actor.parrying = true;
+      events.push({ actor: 'player', text: `${actor.name}は${skill.name}の構え! (防御しつつ反撃)` });
+      return;
+    }
+    runSkillMulti(
+      def,
+      actor,
+      sides,
+      (defender) => ({ attacker: actor, defender, rng, events, skillName: skill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
+      { targetIndex: a.targetIndex, label: skill.name, events, actor: 'player' },
+    );
+    return;
+  }
+  if (a.command === 'guard') {
+    actor.guarding = true;
+    events.push({ actor: 'player', text: `${actor.name}はぼうぎょのかまえ!` });
+    return;
+  }
+  const target = resolveTargets(actor, 'oneEnemy', sides, { targetIndex: a.targetIndex })[0];
+  if (target) doAttack(actor, target, rng, events, 'player', actor.weaponElement ? { element: actor.weaponElement } : {}); // 武器の属性 (D-ELEM-001・仲間の装備 D-PARTY-004)
+}
+
 /**
  * マルチ戦闘のターン解決 (#453 / docs/25 §14.8)。**allies[] vs enemies[]** を全員 agi+乱数で
  * 並べ、順に行動させる。ソロ用 resolveTurn とは**別経路** (1v1 は一切変更しない)。
  *
- * 現ブロックの AI: プレイヤーは command + skillIndex + targetIndex、召喚/NPC 味方はランダムな敵へ
- * 通常攻撃、敵は個体ごとの ability (charger/healer/caster) でランダムな味方へ行動 (#453。挑発/かばう・
+ * 現ブロックの AI: プレイヤーは command + skillIndex + targetIndex、仲間 (job あり) は allyAutoAction、
+ * 召喚など job の無い味方はランダムな敵へ通常攻撃、敵は個体ごとの ability (charger/healer/caster) でランダムな味方へ行動 (#453。挑発/かばう・
  * 味方 autoBattle は後続)。
  */
 export function resolveTurnMulti(
@@ -86,6 +129,9 @@ export function resolveTurnMulti(
   turnSeed?: number,
   skillIndex = 0,
   targetIndex = 0,
+  itemId?: string,
+  /** めいれい の仲間の手 (allies と同じ並び。無い仲間は おまかせ／さくせん。D-PARTY-004)。 */
+  allyOrders?: ReadonlyArray<AllyOrder | undefined>,
 ): BattleState {
   if (prev.outcome !== 'ongoing') return prev;
   const t = BATTLE_TUNING;
@@ -115,6 +161,9 @@ export function resolveTurnMulti(
     cmd = 'attack';
   } else if (command === 'tonic' && state.tonics <= 0) {
     events.push({ actor: 'player', text: 'そらのしずくを持っていない!' });
+    cmd = 'attack';
+  } else if (command === 'item' && !canUseBattleItem(state, itemId)) {
+    events.push({ actor: 'player', text: missingBattleItemText(itemId) });
     cmd = 'attack';
   }
   if (cmd === 'skill') player.mp -= skillCost;
@@ -155,21 +204,39 @@ export function resolveTurnMulti(
     .sort((a, b) => b.roll - a.roll)
     .map((x) => x.c);
 
-  const alliesDown = () => allies.every((a) => a.hp <= 0);
+  // 主人公が倒れたら負け (D-PARTY-001)。コマンドとやくそうを持つのは主人公だけなので、仲間だけ残っても続けない。
+  const heroDown = () => player.hp <= 0;
   const enemiesDown = () => enemies.every((e) => e.hp <= 0);
+  // 主人公のねらう敵は、ターンの頭 (コマンドを選んだとき) に生きていた敵の targetIndex 番目。
+  // 先に動いた仲間がほかの敵を倒すと「生きている敵の何番目か」がずれるので、動く時点の番号へ数えなおす。
+  // その敵がもう倒れていれば、生きている先頭の敵 (0)。
+  const chosenFoe = enemies.filter((e) => e.hp > 0)[targetIndex];
+  const heroTargetIndex = () => Math.max(0, enemies.filter((e) => e.hp > 0).indexOf(chosenFoe!));
+  // 味方をねらう手 (やくそう・しずく・味方 1 人のとくぎ/どうぐ。D-PARTY-003) では targetIndex は「生きている味方の何番目か」。
+  // 敵と同じく、ターンの頭に生きていた味方を覚えておき、動く時点の番号へ数えなおす。先に倒れていたら主人公 (0)。
+  const aimsAlly = cmd === 'herb' || cmd === 'tonic' || (cmd === 'skill' && skillTargetsOneAlly(selectedSkill.kind)) || (cmd === 'item' && itemTargetsOneAlly(itemId!));
+  const chosenAlly = aimsAlly ? allies.filter((a) => a.hp > 0)[targetIndex] : undefined;
+  const heroAllyIndex = () => Math.max(0, allies.filter((a) => a.hp > 0).indexOf(chosenAlly!));
+  const heroAlly = () => allies.filter((a) => a.hp > 0)[heroAllyIndex()] ?? player;
+
+  const pinned = pinAllyOrders(allies, enemies, allyOrders);
 
   for (const actor of order) {
-    if (state.outcome !== 'ongoing' || alliesDown() || enemiesDown()) break;
+    if (state.outcome !== 'ongoing' || heroDown() || enemiesDown()) break;
     if (actor.hp <= 0) continue; // このターン中に倒された
     const side: 'player' | 'monster' = isAlly(actor) ? 'player' : 'monster';
     if (applyBeforeAct(actor, { rng, events, actor: side })) continue; // 行動不能
     const consumed = (actor.statuses ?? []).filter((s) => STATUS_REGISTRY[s.id]?.clearOnAct);
+    const healed = isAlly(actor) ? watchHeals(state, allies, actor) : undefined; // きずなの回復 (D-PARTY-004)
 
     if (actor === player) {
+      // 在庫は主人公と めいれい の仲間が行動順に使う。先に仲間が使い切っていたら たたかう (D-PARTY-004)。
+      const gone = cmd === 'herb' || cmd === 'tonic' || cmd === 'item' ? outOfStockText(state, cmd, itemId) : null;
+      if (gone) { events.push({ actor: 'player', text: gone }); cmd = 'attack'; }
       if (cmd === 'attack') {
-        const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex })[0];
+        const target = resolveTargets(player, 'oneEnemy', sides, { targetIndex: heroTargetIndex() })[0];
         if (target) {
-          doAttack(player, target, rng, events, 'player');
+          doAttack(player, target, rng, events, 'player', player.weaponElement ? { element: player.weaponElement } : {}); // 武器の属性 (D-ELEM-001)
           if (state.mpAttackGain > 0 && mpTraitFires(state.mpTraitChance, rng)) player.mp = Math.min(player.maxMp, player.mp + state.mpAttackGain);
         }
       } else if (cmd === 'skill') {
@@ -180,32 +247,43 @@ export function resolveTurnMulti(
             player,
             sides,
             (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
-            { targetIndex, label: selectedSkill.name, events, actor: 'player' },
+            { targetIndex: heroTargetIndex(), allyIndex: heroAllyIndex(), label: selectedSkill.name, events, actor: 'player' },
           );
         }
       } else if (cmd === 'herb') {
-        const heal = Math.round(player.maxHp * t.herbHealRatio);
-        player.hp = Math.min(player.maxHp, player.hp + heal);
+        const to = heroAlly();
+        const heal = Math.round(to.maxHp * t.herbHealRatio);
+        to.hp = Math.min(to.maxHp, to.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;
-        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! HPが${heal}回復。(残り${state.herbs})` });
+        const whose = to === player ? '' : `${to.name}の`;
+        events.push({ actor: 'player', text: `${player.name}はやくそうを使った! ${whose}HPが${heal}回復。(残り${state.herbs})` });
       } else if (cmd === 'tonic') {
-        const gain = Math.round(player.maxMp * t.tonicMpRatio);
-        player.mp = Math.min(player.maxMp, player.mp + gain);
+        const to = heroAlly();
+        const gain = Math.round(to.maxMp * t.tonicMpRatio);
+        to.mp = Math.min(to.maxMp, to.mp + gain);
         state.tonics -= 1;
         state.tonicsUsed += 1;
-        events.push({ actor: 'player', text: `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。(残り${state.tonics})` });
+        const text = to === player ? `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。` : `${player.name}は${to.name}に そらのしずくを飲ませた! MPが${gain}回復。`;
+        events.push({ actor: 'player', text: `${text}(残り${state.tonics})` });
+      } else if (cmd === 'item') {
+        useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events, heroAllyIndex());
       }
       // guard / flee 失敗はこのターン行動なし
+    } else if (isAlly(actor) && actor.job && pinned[allies.indexOf(actor)]) {
+      runAllyOrder(actor, pinned[allies.indexOf(actor)]!, state, sides, rng, events);
+    } else if (isAlly(actor) && actor.job) {
+      partyMemberAct(actor, allies.indexOf(actor), state, sides, rng, events, turnSeed);
     } else if (isAlly(actor)) {
-      // 召喚/NPC 味方: ランダムな敵へ通常攻撃 (味方版 autoBattle は後続で拡張)
+      // 召喚など job の無い味方: ランダムな敵へ通常攻撃
       const target = randomLiving(enemies, rng);
       if (target) doAttack(actor, target, rng, events, 'player');
     } else {
       // 敵: 個体ごとの ability (charger/healer/caster) で行動 (#453)。
-      multiEnemyAct(actor, allies, state, rng, events);
+      multiEnemyAct(actor, allies, enemies, state, rng, events);
     }
 
+    healed?.();
     if (consumed.length && actor.statuses) actor.statuses = actor.statuses.filter((s) => !consumed.includes(s));
   }
 
@@ -224,7 +302,7 @@ export function resolveTurnMulti(
     /* fled 等: 確定済み */
   } else if (enemiesDown()) {
     state.outcome = 'win';
-  } else if (alliesDown()) {
+  } else if (heroDown()) {
     state.outcome = 'lose';
   }
 

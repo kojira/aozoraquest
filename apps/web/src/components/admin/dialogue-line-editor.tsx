@@ -1,5 +1,6 @@
 import { MAX_NPC_LINE, type NpcDef, type SceneLine } from '@aozoraquest/core';
 import { ScenarioEffectsField } from '@/components/scenario-effects-field';
+import { CharacterPreview } from './character-preview';
 
 /** 話者の種類 (D-DIALOGUE-006 §5)。地の文 / NPC / 名前だけ / その場の人。 */
 type SpeakerKind = 'none' | 'npc' | 'name' | 'here';
@@ -48,6 +49,7 @@ export function DialogueLineEditor({ line, index, count, npcs, onChange, onMove,
       </div>
       <textarea aria-label={`${n} 行目の本文`} value={line.text} maxLength={MAX_NPC_LINE} rows={2}
         onChange={(e) => onChange({ ...line, text: e.target.value })} style={{ width: '100%', boxSizing: 'border-box' }} />
+      <CharacterPreview text={`${line.speaker ? `${line.speaker}: ` : ''}${line.text}`} />
       <ScenarioEffectsField effects={line.effects ?? []} disabled={false} label="演出 (この行を出す瞬間に地図へ)" idPrefix={`${n} 行目の`}
         onChange={(next) => {
           const { effects: _e, ...rest } = line;
