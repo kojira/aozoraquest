@@ -35,7 +35,7 @@ test.beforeAll(async () => {
       'import.meta.env.VITE_EDGE_URL': JSON.stringify('/fixture-api'),
       'import.meta.env.VITE_EDGE_DID': JSON.stringify('did:web:fixture.invalid'),
     },
-    server: { host: '127.0.0.1', port: 4181, strictPort: true },
+    server: { host: '127.0.0.1', port: 4189, strictPort: true },
   });
   await vite.listen();
 });
@@ -124,7 +124,7 @@ test('[sad] の行は表情イラストを出し、タグを表示しない。�
   const mark = (label: string) => page.evaluate((l) => (globalThis as unknown as { __frames: Frame[] }).__frames.push({ t: Math.round(performance.now()), mark: l }), label);
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('http://127.0.0.1:4181/e2e/fixtures/tutorial.html');
+    await page.goto('http://127.0.0.1:4189/e2e/fixtures/tutorial.html');
     await expect(page.getByLabel('ワールドマップ')).toBeVisible();
     await page.keyboard.press('ArrowUp'); // First visit: reunion lines, then menu.
     await expect(window).toContainText('来てくれたんだね。');

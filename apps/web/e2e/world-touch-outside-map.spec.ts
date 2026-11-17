@@ -18,7 +18,7 @@ test.beforeAll(async () => {
       'import.meta.env.VITE_ADMIN_DIDS': JSON.stringify('did:plc:tutorialadmin'),
       'import.meta.env.VITE_EDGE_URL': JSON.stringify('/fixture-api'),
       'import.meta.env.VITE_EDGE_DID': JSON.stringify('did:web:fixture.invalid'),
-    }, server: { host: '127.0.0.1', port: 4182, strictPort: true } });
+    }, server: { host: '127.0.0.1', port: 4190, strictPort: true } });
   await vite.listen();
 });
 test.afterAll(async () => { await vite?.close(); });
@@ -87,7 +87,7 @@ test('マップの下の黒い領域: ドラッグで歩き、タップは何も
   try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => localStorage.setItem('aq-world-onboarding-done', '1'));
-  await page.goto('http://127.0.0.1:4182/e2e/fixtures/world-shell.html');
+  await page.goto('http://127.0.0.1:4190/e2e/fixtures/world-shell.html');
   const map = page.getByLabel('ワールドマップ', { exact: true });
   await expect(map).toBeVisible();
   const worldY = () => page.locator('[data-world-scroll]').getAttribute('data-world-y').then(Number);

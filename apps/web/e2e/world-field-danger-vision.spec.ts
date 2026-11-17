@@ -18,7 +18,7 @@ test.beforeAll(async () => {
       'import.meta.env.VITE_ADMIN_DIDS': JSON.stringify('did:plc:tutorialadmin'),
       'import.meta.env.VITE_EDGE_URL': JSON.stringify('/fixture-api'),
       'import.meta.env.VITE_EDGE_DID': JSON.stringify('did:web:fixture.invalid'),
-    }, server: { host: '127.0.0.1', port: 4186, strictPort: true } });
+    }, server: { host: '127.0.0.1', port: 4194, strictPort: true } });
   await vite.listen();
 });
 test.afterAll(async () => { await vite?.close(); });
@@ -49,7 +49,7 @@ for (const archetype of ['warrior', 'sage'] as const) test(`フィールドの�
     await route.continue();
   });
   await page.addInitScript(() => localStorage.setItem('aq-world-onboarding-done', '1'));
-  await page.goto('http://127.0.0.1:4186/e2e/fixtures/world-shell.html');
+  await page.goto('http://127.0.0.1:4194/e2e/fixtures/world-shell.html');
   await expect(page.getByLabel('ワールドマップ', { exact: true })).toBeVisible();
   const region = regionOf(start.x, start.y), tier = tierForRegion(region);
   const monster = favoredMonsterFor(tier, regionAffinity(region))?.name;
