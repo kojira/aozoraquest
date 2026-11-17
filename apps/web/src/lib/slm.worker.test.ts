@@ -6,7 +6,6 @@ let maxActive = 0;
 const releases: Array<() => void> = [];
 
 vi.mock('./slm-wgsl/weights', () => ({
-  SARASHINA_SOURCE: {},
   SLM_SOURCE: {},
   fetchHeader: async () => ({ tokenizer: { file: 't' } }),
   fetchVerified: async () => new TextEncoder().encode('{}').buffer,

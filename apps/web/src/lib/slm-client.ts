@@ -1,16 +1,16 @@
 /**
- * 自前 WGSL の Worker (slm.worker.ts) を main thread から使うための client。1 client = 1 モデル (LFM か sarashina)。
+ * 自前 WGSL の Worker (slm.worker.ts) を main thread から使うための client (LFM2.5 = ブルスコン)。
  *
  * - Worker は初めて要る時に作り、最後の生成から 3 分で解放する。pagehide でも解放し、GPU device を失ったら作り直す。
  * - ensure(true) は導入 (召喚の儀式) だけが使う。翻訳・カードの読み込み (ensure(false) / generate) はキャッシュだけを読み、
  *   欠けていれば SlmNotInstalledError で失敗する (呼び出し側が未導入に戻す)。
  * - 端末の空きが足りず Cache API へ書けなかったら SlmStorageFullError で失敗する。
  */
-import type { SlmWorkerModel } from './slm.worker';
-
 const IDLE_DISPOSE_MS = 3 * 60_000;
 /** 読み込み中にこの間 progress が 1 つも届かなければ止まったとみなして Worker を捨てる (総時間の上限は設けない)。 */
 const LOAD_STALL_MS = 60_000;
+/** エラー文とログの接頭辞。 */
+const model = 'lfm';
 
 /** 読み込みで、導入済みのはずのキャッシュが欠けていた (ブラウザに消された)。 */
 export class SlmNotInstalledError extends Error {
@@ -52,7 +52,7 @@ export interface SlmClient {
   dispose(): void;
 }
 
-export function createSlmClient(model: SlmWorkerModel): SlmClient {
+export function createSlmClient(): SlmClient {
   let worker: Worker | null = null;
   let workerReady: Promise<void> | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -124,7 +124,7 @@ export function createSlmClient(model: SlmWorkerModel): SlmClient {
       };
       w.addEventListener('message', onMsg);
       w.addEventListener('error', (ev) => { clearTimeout(stall); reject(new Error(`${model} worker failed: ${ev.message}`)); }, { once: true });
-      w.postMessage({ type: 'init', model, allowNetwork });
+      w.postMessage({ type: 'init', allowNetwork });
     });
     workerReady = ready;
     ready.then(() => { progressListener = undefined; }, (e: unknown) => {

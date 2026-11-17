@@ -7,14 +7,11 @@
  *   OFF なら `triggerTranslate()` 手動呼び出しで開始。
  *
  * Backend は local-llm.ts の抽象に委譲 (Gemini Nano、Nano の無い端末は導入済みならブルスコン = LFM2.5)。
- * ブルスコンはプロンプトと後処理が専用 (slm-translate.ts)。ブルスコンを入れる前に sarashina を導入済みの端末は、
- * それまで sarashina で訳す (専用プロンプト sarashina-translate.ts。PR4 で削る)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
+ * ブルスコンはプロンプトと後処理が専用 (slm-translate.ts)。LLM 利用不可な環境では翻訳 OFF (caller 側で UI 非表示)。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { generateWithLocalLLM, pickLocalLLM, resetLocalLLMChoice, type LLMInput, type LocalLLM } from './local-llm';
-import { loadSarashina, SARASHINA } from './sarashina-llm';
-import { cleanSarashinaParagraph, sarashinaTranslateInput } from './sarashina-translate';
 import { SlmNotInstalledError } from './slm-client';
 import { loadSlm, SLM } from './slm-llm';
 import { cleanSlmParagraph, paragraphMaxNewTokens, slmTranslateInput, splitParagraphs } from './slm-translate';
@@ -122,10 +119,9 @@ class NonJapaneseTranslationError extends Error {
 
 const TRANSLATE_SYSTEM_PROMPT = 'あなたは SNS 投稿を日本語に翻訳する翻訳者です。';
 
-/** 自前 WGSL の backend (ブルスコン / sarashina): 読み込み・段落ごとのプロンプト・後処理。 */
+/** 自前 WGSL の backend (ブルスコン): 読み込み・段落ごとのプロンプト・後処理。 */
 const PARAGRAPH_BACKENDS = new Map([
   [SLM.id, { load: loadSlm, input: slmTranslateInput, clean: cleanSlmParagraph }],
-  [SARASHINA.id, { load: loadSarashina, input: sarashinaTranslateInput, clean: cleanSarashinaParagraph }],
 ]);
 
 /** 段落ごとに専用プロンプトで訳して空行でつなぐ。 */

@@ -1,5 +1,5 @@
 /**
- * 自前 WGSL エンジン (LFM2.5 と sarashina) の WGSL カーネル。形状は文字列テンプレートでモデルごとに焼き込む。
+ * 自前 WGSL エンジン (LFM2.5) の WGSL カーネル。形状は文字列テンプレートでモデルごとに焼き込む。
  *
  * q4 重み buffer の配置 (1 buffer = ある tensor の行範囲):
  *   u32 q[rows][K/8] (word の nibble i = 要素 j*8+i、値は -8 して使う)、続けて f16 scale [rows][K/32] を u32 に 2 個ずつ。
@@ -132,11 +132,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }`;
 }
 
-export interface AttnDims { heads: number; kvHeads: number; hd: number; theta: number; eps: number; qkNorm: boolean; maxCtx: number }
+export interface AttnDims { heads: number; kvHeads: number; hd: number; theta: number; eps: number; maxCtx: number }
 
 /**
- * (qkNorm なら head ごとの q/k RMSNorm の後に) RoPE (rotate_half) を q/k に掛け、q → qb、k/v → f16 KV cache (位置 pos0+t)。
- * 1 workgroup = (head slot, t)。qkNorm でないモデルも qn / kn の binding は持つ (中身は読まない)。
+ * head ごとの q/k RMSNorm の後に RoPE (rotate_half) を q/k に掛け、q → qb、k/v → f16 KV cache (位置 pos0+t)。
+ * 1 workgroup = (head slot, t)。
  */
 export function qkprepWgsl(a: AttnDims): string {
   const inN = (a.heads + 2 * a.kvHeads) * a.hd;
@@ -168,9 +168,9 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
   workgroupBarrier();
   for (var k = 64u; k > 0u; k >>= 1u) { if (lid.x < k) { red[lid.x] += red[lid.x + k]; } workgroupBarrier(); }
   let inv = inverseSqrt(red[0] / ${a.hd}.0 + ${a.eps});
-  ${a.qkNorm ? `for (var i = lid.x; i < ${a.hd}u; i += 128u) {
+  for (var i = lid.x; i < ${a.hd}u; i += 128u) {
     if (kind == 0u) { v[i] = v[i] * inv * qn[i]; } else if (kind == 1u) { v[i] = v[i] * inv * kn[i]; }
-  }` : '_ = inv; _ = qn[0]; _ = kn[0];'}
+  }
   workgroupBarrier();
   for (var i = lid.x; i < ${a.hd}u; i += 128u) {
     var e = v[i];
