@@ -21,7 +21,7 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
 
 const fakeDevice = { queue: { writeBuffer: () => undefined, onSubmittedWorkDone: async () => undefined } } as unknown as GPUDevice;
 
-describe('sarashina weights cache-only load', () => {
+describe('slm weights cache-only load', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it('header: throws not-cached without fetching when the cache is empty', async () => {
@@ -73,10 +73,10 @@ describe('sarashina weights cache-only load', () => {
 });
 
 /**
- * 低速回線 (Refs #779): 32MB の part が 60 秒 (sarashina-llm.ts の LOAD_STALL_MS) 以上かかっても、byte が届いている間は
+ * 低速回線 (Refs #779): 32MB の part が 60 秒 (slm-client.ts の LOAD_STALL_MS) 以上かかっても、byte が届いている間は
  * heartbeat で停止監視が進み、導入が失敗しない。byte が 60 秒届かなければ従来どおり停止と判定される。
  */
-describe('sarashina weights download heartbeat', () => {
+describe('slm weights download heartbeat', () => {
   const LOAD_STALL_MS = 60_000;
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -92,7 +92,7 @@ describe('sarashina weights download heartbeat', () => {
     });
   }
 
-  /** sarashina-llm.ts の停止監視と同じく、heartbeat ごとに LOAD_STALL_MS の timer を張り直す。 */
+  /** slm-client.ts の停止監視と同じく、heartbeat ごとに LOAD_STALL_MS の timer を張り直す。 */
   async function downloadWithWatchdog(gapsMs: number[]) {
     const bytes = new Uint8Array(gapsMs.map((_, i) => i)).buffer;
     stubCache({});

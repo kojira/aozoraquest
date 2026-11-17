@@ -1,5 +1,5 @@
 /**
- * 自前 WGSL エンジンの重み配布と GPU への流し込み (LFM2.5-1.2B-JP と sarashina2.2-0.5b)。
+ * 自前 WGSL エンジンの重み配布と GPU への流し込み (LFM2.5-1.2B-JP)。
  *
  * HF に 32MB の part として置き (header.json の parts に bytes と sha256)、part ごとに
  * fetch → sha256 照合 → Cache API へ保存 → 該当 tensor の GPU buffer へ書く。CPU に持つのは 1 part ぶんだけ。
@@ -8,7 +8,7 @@
  */
 
 /** 配布元 1 つぶん。arch は header.json の config.arch と一致しなければ読まない。 */
-export interface SlmWeightsSource { baseUrl: string; headerSha256: string; cacheName: string; arch: 'lfm2' | 'llama' }
+export interface SlmWeightsSource { baseUrl: string; headerSha256: string; cacheName: string; arch: 'lfm2' }
 
 const HF_REPO = 'https://huggingface.co/kojira/aozoraquest-cognitive-small/resolve';
 
@@ -24,18 +24,6 @@ export const SLM_CACHE_NAME = 'slm-wgsl-v1';
 /** LFM Open License v1.0 の原文 (HF に重みと一緒に置いた写し)。privacy のクレジットからリンクする。 */
 export const SLM_LICENSE_URL = `${SLM_BASE_URL}/LICENSE`;
 export const SLM_SOURCE: SlmWeightsSource = { baseUrl: SLM_BASE_URL, headerSha256: SLM_HEADER_SHA256, cacheName: SLM_CACHE_NAME, arch: 'lfm2' };
-
-/** sarashina2.2-0.5b (翻訳専用。LFM へ移した後に削る)。 */
-export const SARASHINA_HF_COMMIT = '5770ffdd050e24172b17f5bce878eccd8c731aa6';
-export const SARASHINA_BASE_URL = `${HF_REPO}/${SARASHINA_HF_COMMIT}/wgsl/sarashina2.2-0.5b-q4`;
-export const SARASHINA_HEADER_SHA256 = 'c6437f10c811287be4f39a1991a96174e0ec0109cb01d74957cc6ccef86810a1';
-/** part 合計 (重み本体)。tokenizer.json は別。 */
-export const SARASHINA_TOTAL_BYTES = 446_305_280;
-export const SARASHINA_TOKENIZER_BYTES = 3_650_343;
-export const SARASHINA_CACHE_NAME = 'sarashina-wgsl-v1';
-export const SARASHINA_SOURCE: SlmWeightsSource = {
-  baseUrl: SARASHINA_BASE_URL, headerSha256: SARASHINA_HEADER_SHA256, cacheName: SARASHINA_CACHE_NAME, arch: 'llama',
-};
 
 export interface SlmTensorEntry {
   name: string;
@@ -63,10 +51,6 @@ export interface SlmConfig {
   eps: number;
   eos: number[];
   maxCtx: number;
-  /** LFM2: attention の q/k に head ごとの RMSNorm を掛ける。 */
-  qkNorm?: boolean;
-  /** LFM2: LM head を embed と共用する (lm_head tensor は持たない)。 */
-  tied?: boolean;
   /** LFM2: short conv の幅。 */
   convK?: number;
 }

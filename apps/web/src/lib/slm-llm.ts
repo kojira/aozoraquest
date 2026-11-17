@@ -7,21 +7,21 @@
  *   翻訳時の読み込み (`loadSlm()` / generate()) はキャッシュだけを読み、ネットワークからは取らない。
  *   キャッシュが消されていたら SlmNotInstalledError で失敗し、未導入に戻す (翻訳 UI は消え、精霊タブの儀式ボタンが戻る)。
  * - 導入の前に空き容量を見て、足りなければ始めない (SlmStorageFullError)。書けなかった時も同じ扱いで、中途半端な LFM のキャッシュは消す。
- *   導入を確かめた後で、sarashina と古い版のキャッシュを消す (slm-install.ts)。
+ *   導入を確かめた後で、前に使っていた sarashina と古い版のキャッシュを消す (slm-install.ts)。
  */
 import type { LLMInput, LLMOptions, LocalLLM } from './local-llm';
 import { detectGeminiNano } from './gemini-nano-availability';
 import { createSlmClient, SlmNotInstalledError, SlmStorageFullError, type SlmProgress } from './slm-client';
-import { checkSlmStorage, dropStaleSlmCaches } from './slm-install';
+import { checkSlmStorage, dropStaleSlmCaches, SARASHINA_CACHE_NAME } from './slm-install';
 import { lfmChatPrompt } from './slm-wgsl/lfm-tokenizer';
-import { fetchHeader, isSlmCached, SARASHINA_CACHE_NAME, SLM_CACHE_NAME, SLM_SOURCE } from './slm-wgsl/weights';
+import { fetchHeader, isSlmCached, SLM_CACHE_NAME, SLM_SOURCE } from './slm-wgsl/weights';
 
 export { SlmNotInstalledError, SlmStorageFullError } from './slm-client';
 
 /** 1 回の出力上限 (カードは maxNewTokens で 160 を渡す)。 */
 const MAX_NEW_TOKENS = 200;
 
-const client = createSlmClient('lfm');
+const client = createSlmClient();
 let installed: boolean | null = null;
 
 /** ブルスコンを使う端末か (Nano が無く WebGPU がある)。導入済みかは問わない。 */

@@ -9,7 +9,7 @@ import {
   RURI_WGSL_MODEL_URL,
 } from '../src/lib/cognitive-wgsl/weights';
 import { TTS_ASSETS, TTS_ZTM_URL } from '../src/lib/tts/tts-assets';
-import { SARASHINA_BASE_URL, SARASHINA_HEADER_SHA256, SLM_BASE_URL, SLM_HEADER_SHA256 } from '../src/lib/slm-wgsl/weights';
+import { SLM_BASE_URL, SLM_HEADER_SHA256 } from '../src/lib/slm-wgsl/weights';
 
 /**
  * 公開先で使うモデル関連ファイルが実在することを確認。
@@ -85,11 +85,10 @@ test.describe('HuggingFace model URLs are reachable', () => {
     });
   }
 
-  // 自前 WGSL のモデル (LFM2.5 = カードと翻訳、sarashina = 翻訳。commit 固定)。header.json の sha256 をコードと照合し、header に載った各 part / tokenizer の
+  // 自前 WGSL のモデル (LFM2.5 = カードと翻訳。commit 固定)。header.json の sha256 をコードと照合し、header に載った各 part / tokenizer の
   // sha256・byte 数を HF の X-Linked-ETag / X-Linked-Size と照合する (= header と HF 上のファイルが同じもの)。
   for (const [label, baseUrl, headerSha256] of [
     ['LFM2.5-1.2B-JP', SLM_BASE_URL, SLM_HEADER_SHA256],
-    ['sarashina', SARASHINA_BASE_URL, SARASHINA_HEADER_SHA256],
   ] as const) {
     test(`${label} WGSL weights: header matches the pinned sha256 and every part matches header`, async () => {
       const api = await request.newContext();

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dropStaleSlmCaches, planSlmInstall, SLM_DOWNLOAD_BYTES } from './slm-install';
-import { SARASHINA_CACHE_NAME, SLM_BASE_URL, SLM_CACHE_NAME, type SlmHeader } from './slm-wgsl/weights';
+import { SLM_BASE_URL, SLM_CACHE_NAME, type SlmHeader } from './slm-wgsl/weights';
 
 const MB = 1_000_000;
 const need = Math.ceil(SLM_DOWNLOAD_BYTES * 1.1);
@@ -59,7 +59,7 @@ describe('dropStaleSlmCaches (自分の名前空間だけを消す)', () => {
       'cognitive-wgsl-v1': ['https://hf/model.aqw'],
       'transformers-cache': ['https://hf/tokenizer.json'],
       'someone-else': ['https://x/y'],
-      [SARASHINA_CACHE_NAME]: ['https://hf/sara/part-000.bin'],
+      'sarashina-wgsl-v1': ['https://hf/sara/part-000.bin'],
       'slm-wgsl-v0': ['https://hf/old/part-000.bin'],
       [SLM_CACHE_NAME]: [cur('header.json'), cur('part-000.bin'), cur('part-001.bin'), cur('tokenizer.json')],
     });

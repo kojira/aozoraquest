@@ -6,7 +6,7 @@
 import { Tokenizer } from '@huggingface/tokenizers';
 import type { LLMInput } from '../local-llm';
 
-/** slm.worker.ts が使う tokenizer の形 (sarashina の SpTokenizer と同じ)。 */
+/** slm.worker.ts が使う tokenizer の形。 */
 export interface SlmTokenizer {
   encode(text: string): number[];
   decode(ids: number[], opts?: { skip_special_tokens?: boolean }): string;

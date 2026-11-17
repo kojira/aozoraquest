@@ -1,5 +1,8 @@
 # Issue #777: Gemini Nano の無い端末で 投稿翻訳を 端末内 sarashina2.2-0.5b で動かす
 
+> 2026-11-17 追記: sarashina の経路は D-SLM-CARD-001 PR4 (Issue #961) で削った。翻訳は Gemini Nano と、Nano の無い端末のブルスコン (LFM2.5、`slm-llm.ts`) だけ。
+> 端末に残った `sarashina-wgsl-v1` のキャッシュは、ブルスコンを入れた時に `slm-install.ts` が消す。以下は当時の記録。
+
 オーナー承認 (2026-10-15)。検討メモ (試作・実測) は repo 外 `~/.pi/slm-wgsl/design-sarashina-app.md` と `report.md`。
 
 ## 決定事項

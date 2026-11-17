@@ -3,18 +3,17 @@
  *
  * - 消してよいのは自分の名前空間 (`slm-wgsl-*` と `sarashina-wgsl-*`) だけ。分類・埋め込み (`cognitive-wgsl-v1`) と
  *   tokenizer (`transformers-cache`)、名前を知らないキャッシュは触らない。
- * - sarashina のキャッシュは、空きがあれば LFM を全部入れて確かめた後で消す (途中で失敗しても sarashina の翻訳は残る)。
+ * - 前に使っていた sarashina2.2-0.5b (経路は D-SLM-CARD-001 PR4 で削った) のキャッシュが端末に残っていれば、LFM を全部入れて確かめた後で消す。
  *   空きが足りず、sarashina を消せば足りる時だけ先に消す。
  */
-import {
-  SARASHINA_CACHE_NAME, SARASHINA_TOKENIZER_BYTES, SARASHINA_TOTAL_BYTES, SLM_BASE_URL, SLM_CACHE_NAME, SLM_TOKENIZER_BYTES, SLM_TOTAL_BYTES,
-  type SlmHeader,
-} from './slm-wgsl/weights';
+import { SLM_BASE_URL, SLM_CACHE_NAME, SLM_TOKENIZER_BYTES, SLM_TOTAL_BYTES, type SlmHeader } from './slm-wgsl/weights';
 
 /** ダウンロードする量 (重み part と tokenizer.json)。 */
 export const SLM_DOWNLOAD_BYTES = SLM_TOTAL_BYTES + SLM_TOKENIZER_BYTES;
-/** sarashina のキャッシュが占める量 (重み part と tokenizer.json)。 */
-const SARASHINA_CACHED_BYTES = SARASHINA_TOTAL_BYTES + SARASHINA_TOKENIZER_BYTES;
+/** 前に使っていた sarashina のキャッシュ名 (端末に残っていれば消す)。 */
+export const SARASHINA_CACHE_NAME = 'sarashina-wgsl-v1';
+/** sarashina のキャッシュが占める量 (重み part 446,305,280 B と tokenizer.json 3,650,343 B)。 */
+const SARASHINA_CACHED_BYTES = 446_305_280 + 3_650_343;
 /** 空き容量に求める余裕 (ダウンロード量の 10%)。 */
 const MARGIN = 1.1;
 
