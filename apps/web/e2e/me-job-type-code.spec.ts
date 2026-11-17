@@ -13,7 +13,7 @@ test.beforeAll(async () => {
       'import.meta.env.VITE_NSID_ROOT': JSON.stringify('app.aozoraquest'),
       'import.meta.env.VITE_EDGE_URL': JSON.stringify('/fixture-api'),
       'import.meta.env.VITE_EDGE_DID': JSON.stringify('did:web:fixture.invalid'),
-    }, server: { host: '127.0.0.1', port: 4186, strictPort: true } });
+    }, server: { host: '127.0.0.1', port: 4193, strictPort: true } });
   await vite.listen();
 });
 test.afterAll(async () => { await vite?.close(); });
@@ -27,7 +27,7 @@ test('/me はジョブ名の右に 4 文字型を「賢者(INTJ)」の形で出�
     if (url.pathname.startsWith('/fixture-api/')) { await route.fulfill({ status: 404, json: {} }); return; }
     await route.continue();
   });
-  await page.goto('http://127.0.0.1:4186/e2e/fixtures/me-job-type-code.html');
+  await page.goto('http://127.0.0.1:4193/e2e/fixtures/me-job-type-code.html');
   const header = page.locator('p', { hasText: '今:' }).first();
   await expect(header).toContainText('賢者(INTJ)');
   await expect(header).toContainText('遠くを見通す戦略家');

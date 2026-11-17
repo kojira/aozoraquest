@@ -85,8 +85,8 @@ gh pr create --base dev --head feature/<topic>
 ### dev → main の本番リリース
 
 dev に複数の feature PR が積まれた後、リリース単位で `dev → main` の PR を作成:
-1. **`apps/web/src/lib/app-version.ts` の `APP_VERSION` をリリース日 + 枝番に更新** (形式 `YYYY.MM.DD-N`、その日最初は `-1`、同日追加リリースは `-2`, `-3` …)。feature ブランチでコミットして dev に入れておく
-2. `gh pr create --base main --head dev`
+1. **`apps/web/src/lib/app-version.ts` の `APP_VERSION` をリリース日 + 枝番に更新** (形式 `YYYY.MM.DD-N`、その日最初は `-1`、同日追加リリースは `-2`, `-3` …)。PR を作らず dev に直接コミットして push する
+2. すぐ `gh pr create --base main --head dev` (dev の push CI と PR の CI を同時に回す)
 3. CI 緑 + **第三者レビュー (§1.5) で指摘ゼロ or 全対応済み**
 4. オーナー承認
 5. **マージコミットで入れる** (`gh pr merge --merge`)。squash すると main と dev の履歴が分かれ、次のリリース PR が衝突する (#803)
