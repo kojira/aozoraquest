@@ -9,8 +9,8 @@ export default defineConfig({
   expect: { timeout: 30_000 },
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
-  // CI の ubuntu-24.04 は 4 vCPU。spec ごとの vite は別ポートなので 4 並列で回す。
-  workers: process.env.CI ? 4 : undefined,
+  // spec ごとの vite は別ポート。4 並列では me-job-type-code が retry で通る flaky が出たので 3 にする。
+  workers: process.env.CI ? 3 : undefined,
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
