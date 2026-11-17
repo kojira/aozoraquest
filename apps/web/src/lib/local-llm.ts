@@ -5,7 +5,7 @@
  * (spirit / translate / flavor-text / summoning-ritual) を触らずに済むこと。
  *
  * backend: Gemini Nano (Chrome 148+ の LanguageModel API) と、Nano の無い端末のブルスコン (LFM2.5、自前 WGSL)。
- * sarashina (自前 WGSL、翻訳だけ) は、ブルスコンを導入するまでの翻訳に残している (D-SLM-CARD-001 PR4 で削る)。将来想定:
+ * 将来想定:
  *  - Edge 内蔵 AI / Safari 内蔵 AI (まだ無いが API は web 標準化提案中)
  *  - aozoraquest 自前 API (server fallback、Nano 不可環境向け)
  *  - 別ローカルモデル (transformers.js 製 など)
@@ -71,12 +71,11 @@ export interface LLMGenResult {
 }
 
 import { GEMINI_NANO } from './gemini-nano-llm';
-import { SARASHINA } from './sarashina-llm';
 import { SLM } from './slm-llm';
 
 /** 優先順位順 backend リスト。先頭から availability() を問い合わせ、
  *  最初に true を返したものを採用する。新規 backend はここに追加するだけ。 */
-const BACKENDS: readonly LocalLLM[] = [GEMINI_NANO, SLM, SARASHINA];
+export const BACKENDS: readonly LocalLLM[] = [GEMINI_NANO, SLM];
 
 const cachedLLM = new Map<LLMPurpose, LocalLLM | null>();
 

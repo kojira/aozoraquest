@@ -1,7 +1,6 @@
 /**
  * 自前 WGSL エンジンの推論本体 (int4 g32)。Worker 内で使う。
- * LFM2.5-1.2B-JP (arch lfm2: short conv 層 + q/k RMSNorm 付き GQA 層、tied LM head、最終 norm は embedding_norm) と
- * sarashina2.2-0.5b (arch llama) を読む。llama の経路は sarashina を削る時に消す。
+ * LFM2.5-1.2B-JP (arch lfm2: short conv 層 + q/k RMSNorm 付き GQA 層、tied LM head、最終 norm は embedding_norm) を読む。
  *
  * - 重みは weights.ts が part ごとにストリームし、tensor ごとの GPU buffer へ直接書く (CPU に全体を持たない)。
  * - KV cache は f16 で GPU 常駐 (maxCtx ぶん事前確保)。prefill は PREFILL_CHUNK トークンずつ。
@@ -153,7 +152,7 @@ export class SlmModel {
 
   private get attn(): AttnDims {
     const c = this.header.config;
-    return { heads: c.heads, kvHeads: c.kvHeads, hd: c.headDim, theta: c.ropeTheta, eps: c.eps, qkNorm: c.qkNorm ?? false, maxCtx: c.maxCtx };
+    return { heads: c.heads, kvHeads: c.kvHeads, hd: c.headDim, theta: c.ropeTheta, eps: c.eps, maxCtx: c.maxCtx };
   }
 
   private uniform(words: number[]): GPUBuffer {
@@ -283,9 +282,7 @@ export class SlmModel {
       } else {
         addMM(this.mm(L + 'attn_in', a.xn!, a.big!, false, H, attnIn, d));
         const qk: BindKind[] = ['r', 'r', 'r', 'w', 'w', 'w', 'u'];
-        const qn = attn.qkNorm ? f32(L + 'q_norm') : a.dummy!;
-        const kn = attn.qkNorm ? f32(L + 'k_norm') : a.dummy!;
-        both({ pipe: this.pipeline('qkprep', qkprepWgsl(attn), qk), bind: this.bind(qk, [a.big!, qn, kn, a.qb!, a[`k${i}`]!, a[`v${i}`]!, d]), grid: (T) => [c.heads + 2 * c.kvHeads, T] });
+        both({ pipe: this.pipeline('qkprep', qkprepWgsl(attn), qk), bind: this.bind(qk, [a.big!, f32(L + 'q_norm'), f32(L + 'k_norm'), a.qb!, a[`k${i}`]!, a[`v${i}`]!, d]), grid: (T) => [c.heads + 2 * c.kvHeads, T] });
         const at: BindKind[] = ['r', 'r', 'r', 'w', 'u'];
         both({ pipe: this.pipeline('attn', attentionWgsl(attn), at), bind: this.bind(at, [a.qb!, a[`k${i}`]!, a[`v${i}`]!, a.mid!, d]), grid: (T) => [c.heads, T] });
         addMM(this.mm(L + 'attn_out', a.mid!, a.x!, true, c.heads * c.headDim, H, d));
@@ -296,9 +293,9 @@ export class SlmModel {
       both({ pipe: this.pipeline('swiglu', swigluWgsl(c.inter), sw), bind: this.bind(sw, [a.big!, a.mid!, d]), grid: (T) => [Math.ceil(c.inter / 256), T] });
       addMM(this.mm(L + 'mlp_out', a.mid!, a.x!, true, c.inter, H, d));
     });
-    // head: 最後の行だけ final norm → LM head (tied なら embed を共用) → (繰返し罰) → top-K (2 段)
+    // head: 最後の行だけ final norm → LM head (embed を共用) → (繰返し罰) → top-K (2 段)
     this.headSteps.push(norm(f32('final_norm'), a.last!, a.xn!, a.dynOne!));
-    this.headSteps.push(...this.mm(c.tied ? 'embed' : 'lm_head', a.xn!, a.logits!, false, H, c.vocab, a.dynOne!).decode);
+    this.headSteps.push(...this.mm('embed', a.xn!, a.logits!, false, H, c.vocab, a.dynOne!).decode);
     const pk: BindKind[] = ['w', 'r', 'u'];
     this.penaltyStep = { pipe: this.pipeline('penalty', PENALTY_WGSL, pk), bind: this.bind(pk, [a.logits!, a.penIds!, this.penaltyParams]), grid: () => [Math.ceil(c.maxCtx / 64), 1] };
     const tk: BindKind[] = ['w', 'r', 'w', 'w', 'u'];
