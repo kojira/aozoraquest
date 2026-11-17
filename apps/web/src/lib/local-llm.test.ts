@@ -28,9 +28,9 @@ describe('pickLocalLLM', () => {
     expect((await pickLocalLLM(false, 'translation'))?.id).toBe('lfm2.5-1.2b-jp');
   });
 
-  it('keeps translating with an installed sarashina until LFM is installed', async () => {
+  it('never translates with sarashina: backends are Nano then LFM only (D-SLM-CARD-001 PR4)', async () => {
     sara.available = true;
-    expect((await pickLocalLLM(false, 'translation'))?.id).toBe('sarashina-0.5b');
+    expect(await pickLocalLLM(false, 'translation')).toBeNull();
   });
 
   it('card text (general): Nano if available, else LFM if installed, else null (sarashina never)', async () => {
