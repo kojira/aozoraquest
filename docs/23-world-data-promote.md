@@ -91,4 +91,9 @@ characters → map → tileArt → monsters → monsterArt → items → shops �
 
 - **gameState は dev と本番で別。** dev エッジは `app.aozoraquest.dev.gameState`、本番エッジは `app.aozoraquest.gameState` に書く（D-ENV-002。Worker env の `ADMIN_NSID_ENV` で決まる）。dev で遊んだ進行は本番に持ち越されない。world.* を本番へ移しても進行は移らない。データを戻しても進行は戻らない。
 - **公開後の編集は dev で行い、この手順で本番へ移す**（オーナーの決定）。本番の管理画面（/admin/*）で直接保存すると本番の world.* へ書かれ、dev とずれるので使わない。
-- **NPC の画像は同じ repo の blob。** spriteImage・portraitImage・expressionImages は管理者 repo の blob なので、レコードを写せば本番でも同じ参照で出る。新しい画像は dev で `admin-data.mjs npc-image` で上げてから移す。
+- **画像は dev と共有しない**（D-ENV-002、オーナー決定 2026-11-18「本番リリース時にコピーして使ってください」）。
+  - 昇格スクリプトは、移すレコードが参照する blob（NPC の spriteImage・portraitImage・expressionImages。world.* で blob を持つのはここだけ）を全部ダウンロードする。本番の印を足して上げ直し（WebP は末尾に読み飛ばされる chunk `AQPR`、PNG は私用 chunk `aqPr`。画素は変わらない）、本番のレコードの参照を新しい CID に書き換える。
+  - 同じ repo なので、同じバイト列では同じ blob になってしまう。印でバイト列を変えて、別の blob にしている。同じ dev 画像からは毎回同じ本番 CID になる（何度昇格しても blob は増えない）。
+  - 本番のレコードが dev の CID を1つでも指していたら、スクリプトは書く前に止まる。dry-run の要約に「画像 N 件を本番コピーにする」と出る。
+  - 新しい画像は dev で `admin-data.mjs npc-image`（dev エッジ）か dev の /admin で上げる。どちらも dev のレコードにだけ書く。
+  - **今の本番 world.npcs は、dev と同じ blob を2つ指している**（bafkreidpne…, bafkreiggoe…。D-ENV-002 より前の昇格）。本番ワールドは閉じているので今は書き換えない。この変更のあとの最初の `npcs` の昇格で、本番コピーに置き換わる。
