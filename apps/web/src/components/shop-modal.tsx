@@ -29,6 +29,8 @@ import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
 import { sceneDialogue } from '@/lib/scene-dialogue';
 import { ShopItemSection } from './shop-item-section';
+import { SellPanel, ShopTabs, UsedShelf, type ShopTab } from './shop-market';
+import type { MarketView } from '@/lib/use-market';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -93,6 +95,7 @@ export function ShopModal({
   onSell,
   onBuy,
   onClose,
+  market,
 }: {
   town: Town;
   townIndex: number;
@@ -119,7 +122,10 @@ export function ShopModal({
   /** どうぐを 1 個買う (D-ITEM-001)。 */
   onBuy: (itemId: string) => void;
   onClose: () => void;
+  /** 中古・うる (D-MARKET-001)。無ければタブを出さない。 */
+  market?: MarketView;
 }) {
+  const [tab, setTab] = useState<ShopTab>('shop');
   // tier4 以上の店は自分の職の専用品が 1 つ並ぶ (D-ENDGAME-001。作れるかはサーバーが同じ規則で決める)。
   const stock = useMemo(() => townShopStock(town, townIndex, archetype ?? undefined), [town, townIndex, archetype]);
   // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
@@ -234,6 +240,7 @@ export function ShopModal({
             とじる
           </button>
         </div>
+        {market && <ShopTabs tab={tab} onTab={setTab} />}
         {/* 説明文は毎回出さない (#607) — 使い方は最初の街の初回チュートリアルで店主が話す。
             もちもの (残高) だけコンパクトに常設する。 */}
         <p style={{ margin: '0 0 0.5em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
@@ -253,7 +260,7 @@ export function ShopModal({
             color: 'var(--color-danger, #e8566a)',
           }}
         >
-          {errorText}
+          {market && tab !== 'shop' ? market.error : errorText}
         </p>
         {/* live region は**常設**して中身だけ差し替える (条件付きマウントは初回読み上げが
             落ちることがある — 上のエラー行と同じ理由。レビュー ★★) */}
@@ -269,6 +276,9 @@ export function ShopModal({
           {noticeText}
         </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {market && tab === 'used' && <UsedShelf shelf={market.shelf} me={market.me} archetype={archetype} balance={balance} busy={market.busy} onBuy={market.buy} />}
+          {market && tab === 'sell' && <SellPanel town={town} pieces={pieces} equippedRkeys={equippedRkeys} wornKeys={allyWorn} listings={market.listings} busy={market.busy} onList={market.list} onCancel={market.cancel} />}
+          {(!market || tab === 'shop') && <>
           <ShopItemSection consumables={stock.consumables} materialId={stock.materialId} materialName={materialName} balance={balance} materials={materials} busy={busy} onBuy={onBuy} />
           {stock.equipment.map((id) => {
             const def = EQUIPMENT_BY_ID[id];
@@ -416,6 +426,7 @@ export function ShopModal({
               </div>
             );
           })()}
+          </>}
         </div>
       </div>
       {talk && (
