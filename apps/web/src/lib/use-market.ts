@@ -2,7 +2,7 @@
  * なんでも屋の「中古」「うる」の状態と操作 (D-MARKET-001)。店を開いたときに 1 回だけ照合 (売上の受け取り・品の返却)
  * と棚の読み込みをする (定期的な読み直しはしない)。パワーと持ち物の正はサーバーが返した値。
  */
-import { useCallback, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
 import { marketBuy, marketCancel, marketList, marketMine, marketTown, newMarketRkey, type MarketMine, type MarketMyListing, type MarketShelfItem, type MarketSold } from './market-server';
 import { WorldServerError, type ServerOwnedPiece } from './world-server';
@@ -26,8 +26,10 @@ export interface MarketView {
 
 const errText = (e: unknown, fallback: string) => (e instanceof WorldServerError && e.message ? `${e.message}。` : `${fallback} (通信エラー)。もういちどどうぞ。`);
 
-export function useMarket({ agent, did, tokenRef, setServerPower, onPieces }: {
+export function useMarket({ agent, did, tokenRef, setServerPower, onPieces, openTown }: {
   agent: Agent | null;
+  /** 開いている店の街 (閉じていれば null)。開いた・街が変わったときに 1 回だけ照合と棚の読み込みをする。 */
+  openTown: { x: number; y: number } | null;
   did: string | null;
   tokenRef: MutableRefObject<string | undefined>;
   setServerPower: (power: number) => void;
@@ -97,5 +99,8 @@ export function useMarket({ agent, did, tokenRef, setServerPower, onPieces }: {
     }),
   }), [agent, did, shelf, listings, busy, error, sold, bought, run, applyMine, setServerPower, onPieces, tokenRef]);
 
-  return { market: view, openMarket };
+  const openKey = openTown ? `${openTown.x},${openTown.y}` : null;
+  useEffect(() => { if (openTown) openMarket(openTown); }, [openKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return view;
 }

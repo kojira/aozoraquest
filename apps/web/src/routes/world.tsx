@@ -60,7 +60,7 @@ import { useLatestRef } from '@/lib/use-latest-ref';
 import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
 import { useInnTalk } from '@/lib/use-inn-talk';
-import { piecesFromServer, useWorldShop } from '@/lib/use-world-shop';
+import { piecesFromServer, shopTownAt, useWorldShop } from '@/lib/use-world-shop';
 import { useMarket } from '@/lib/use-market';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
@@ -219,7 +219,8 @@ function WorldScreen() {
   const { innTalk, innTalkRef, innBusy, innChoices, openInn, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
-  const { market, openMarket } = useMarket({ agent, did, tokenRef, setServerPower, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]) }); // 中古・うる (D-MARKET-001)
+  // 中古・うる (D-MARKET-001)。店を開いたら 1 回だけ棚と自分の出品を合わせる (扉とメニューのどちらから開いても同じ)
+  const market = useMarket({ agent, did, tokenRef, setServerPower, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]), openTown: shopOpen ? shopTownAt(ws) : null });
   const casino = useCasino({ agent, tokenRef, setServerPower, applyServerMaterials: inventory.applyServerMaterials, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]) });
 
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
@@ -400,9 +401,6 @@ function WorldScreen() {
     ? (innerShop ? townAt(innerShop.town.x, innerShop.town.y) : null)
     : townAt(ws.x, ws.y);
   const here = insideHere ? interiorTerrainAt(insideHere, ws.x, ws.y) : terrainAt(ws.x, ws.y);
-  // 店を開いたら 1 回だけ、中古の棚と自分の出品を合わせる (扉とメニューのどちらから開いても同じ。D-MARKET-001)
-  const marketTownKey = shopOpen && town ? `${town.x},${town.y}` : null;
-  useEffect(() => { if (marketTownKey && town) openMarket(town); }, [marketTownKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // 地域相性: この地方で出やすいモンスター名を現地ヒントにする (相性が見えない導線対策)
   // 「このあたり」の見出しと「何が多いか」は同じ tier を見る (ラベルと中身が食い違わないように)。
   // 内部マップ (#424) の座標はローカル系なので、地域から引く危険度・敵は意味を持たない
