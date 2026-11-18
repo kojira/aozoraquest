@@ -48,6 +48,7 @@ export * from './character-data.js';
 export * from './equipment.js';
 export * from './gear-element.js';
 export * from './gear-owners.js';
+export * from './market.js';
 
 export * from './starter-town-shop.js';
 
