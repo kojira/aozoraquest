@@ -23,6 +23,12 @@ export function adminNsidPrefix(root: string, env: string | undefined): string {
   return env?.trim() ? `${root}.dev` : root;
 }
 
+/** 発見ディレクトリの collection (D-ENV-002)。web の ADMIN_COL.directory と毎時の自動更新
+ *  (scripts/refresh-directory.ts) が同じ規則を使う。dev = `<root>.dev.directory`、本番 = `<root>.directory`。 */
+export function directoryCollection(root: string, env: string | undefined): string {
+  return `${adminNsidPrefix(root, env)}.directory`;
+}
+
 /** `<prefix>.world.<name>`。 */
 export function adminWorldCollection(prefix: string, name: AdminWorldRecordName): string {
   return `${prefix}.world.${name}`;

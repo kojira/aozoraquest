@@ -14,7 +14,7 @@ import type { Agent } from '@atproto/api';
 import type { DiagnosisResult } from '@aozoraquest/core';
 import { ARCHETYPE_CACHE_TTL_MS } from '@aozoraquest/core';
 import { getRecord } from './atproto';
-import { ROOT_COL } from './collections';
+import { COL } from './collections';
 
 interface CacheEntry {
   analysis: DiagnosisResult | null;
@@ -36,8 +36,8 @@ export async function getAnalysis(agent: Agent, did: string): Promise<DiagnosisR
   if (existing) return existing;
   const p = (async () => {
     try {
-      // 他人の analysis は production NSID から (env 隔離は self 用)
-      const r = await getRecord<DiagnosisResult>(agent, did, ROOT_COL.analysis, 'self');
+      // 他人の analysis も自分の env の collection から (dev から本番を読まない D-ENV-002)
+      const r = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
       cache.set(did, { analysis: r ?? null, fetchedAt: Date.now() });
       return r ?? null;
     } catch {

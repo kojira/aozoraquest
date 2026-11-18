@@ -4,26 +4,26 @@
  * 環境変数:
  *   - VITE_NSID_ROOT (必須): プロジェクト固有の NSID prefix。
  *       例: 本家 = "app.aozoraquest", fork = "com.example.myapp"
- *   - VITE_NSID_ENV (任意): 同一プロジェクト内で env を分離する suffix。
- *       例: dev = "dev" → user 記録は "{ROOT}.dev.{name}" に書く。
- *       未指定 = production 扱いで "{ROOT}.{name}" に書く。
+ *   - VITE_NSID_ENV (任意): 同一プロジェクト内で env を分離する印 (D-ENV-002。表は docs/22)。
+ *       未指定 = 本番 "{ROOT}.{name}"。dev と local = "{ROOT}.dev.{name}" (local は dev エッジを叩くので
+ *       dev と同じデータ)。自動テスト用の test / e2etest は user 記録を "{ROOT}.test.*" /
+ *       "{ROOT}.e2etest.*" の隔離 sandbox に書く (dev にも本番にも触れない)。
+ *       管理データ (world.* / config.* / directory) は未指定以外すべて "{ROOT}.dev.*"。
+ *       **dev と本番で共有するデータは無い** (オーナー方針 2026-11-18)。他人の記録を読むときも
+ *       自分の env の collection だけを読む (dev から本番の記録を読まない)。
  *
  * Cloudflare Workers Builds の build env vars に必ず設定する。
  * 未指定だと build を失敗させる (silent に誤デプロイするのを防ぐ)。
  *
  * 区分:
- *   - user 系 (per-user PDS, env で分離する) → COL
- *       analysis / profile / spiritChat / questLog / cardDraw
- *   - admin 系 (主管理者の PDS) → ADMIN_COL
- *       world.* / config.* は env で分離する (#716): VITE_NSID_ENV が空でなければ
- *       "{ROOT}.dev.*" (ローカルも dev エッジを叩くので dev と同じ)、未指定 = 本番 "{ROOT}.*"。
- *       directory (毎時の自動更新が本番 Environment で書く) と questIndex (rkey で分離) は共有。
+ *   - user 系 (各ユーザーの PDS) → COL
+ *   - admin 系 (主管理者の PDS) → ADMIN_COL。world.* / config.* / directory も env で分ける。
  *
  * 注意:
  * - 実 Bluesky 投稿 (`app.bsky.feed.post`) は性質上分離不可、
  *   dev からの投稿も実投稿になる。
  */
-import { ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, type AdminWorldRecordName } from '@aozoraquest/core';
+import { ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, directoryCollection, type AdminWorldRecordName } from '@aozoraquest/core';
 
 const ROOT = (import.meta.env.VITE_NSID_ROOT as string | undefined)?.trim();
 if (!ROOT) {
@@ -33,9 +33,11 @@ if (!ROOT) {
   );
 }
 const ENV = (import.meta.env.VITE_NSID_ENV as string | undefined)?.trim();
-const USER_PREFIX = ENV ? `${ROOT}.${ENV}` : ROOT;
-/** 管理データ (world.* / config.*) の prefix。規則は core の adminNsidPrefix (edge と共通。#716)。 */
+/** 管理データの prefix。規則は core の adminNsidPrefix (edge の ADMIN_NSID_ENV と共通。#716)。 */
 const ADMIN_PREFIX = adminNsidPrefix(ROOT, ENV);
+/** user 記録の prefix (D-ENV-002)。local は dev エッジを叩くので dev と同じ (エッジは env で
+ *  `.dev.analysis` などを読む)。test / e2etest は隔離 sandbox。 */
+const USER_PREFIX = ENV === 'local' ? ADMIN_PREFIX : ENV ? `${ROOT}.${ENV}` : ROOT;
 
 export const COL = {
   analysis: `${USER_PREFIX}.analysis`,
@@ -66,26 +68,13 @@ export const COL = {
   questCompletion: `${USER_PREFIX}.questCompletion`,
 } as const;
 
-/**
- * 他ユーザーのレコードを読みに行くときの NSID (ROOT 直下 = production view)。
- *
- * 自分の WRITE は env-isolated な COL.* に行くが、他ユーザーは production
- * NSID にしか書いていない。dev 環境の resonance タイムラインや friends 画面で
- * 他者の archetype を表示するためには ROOT_COL から読む必要がある。
- *
- * production 環境 (VITE_NSID_ENV 未指定) では COL と ROOT_COL は同値になる。
- */
-export const ROOT_COL = {
-  analysis: `${ROOT}.analysis`,
-  profile: `${ROOT}.profile`,
-} as const;
-
 export const ADMIN_COL = {
   configFlags: `${ADMIN_PREFIX}.config.flags`,
   configMaintenance: `${ADMIN_PREFIX}.config.maintenance`,
   configBans: `${ADMIN_PREFIX}.config.bans`,
   configPrompts: `${ADMIN_PREFIX}.config.prompts`,
-  directory: `${ROOT}.directory`,
+  /** 発見ディレクトリ。毎時の自動更新 (scripts/refresh-directory.ts) も env ごとに書く。 */
+  directory: directoryCollection(ROOT, ENV),
   /** world.* (地形 #421・絵 #421・モンスター #419・アイテム #420・店 #422・NPC #425・
    *  クエスト #423・ジョブ #544・内部マップ #424・シナリオ #545)。名前は core の ADMIN_WORLD_RECORDS。 */
   worldMap: adminWorldCollection(ADMIN_PREFIX, 'map'),

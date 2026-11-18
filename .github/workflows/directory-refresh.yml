@@ -1,9 +1,11 @@
 name: directory-refresh
 
-# 発見ディレクトリ (app.aozoraquest.directory) を #aozoraquest 投稿から自動更新する。
+# 発見ディレクトリを #aozoraquest 投稿から自動更新する。dev と本番で別のレコードに書く (D-ENV-002):
+#   Environment main → app.aozoraquest.directory / Environment dev → app.aozoraquest.dev.directory
+#   (Environment の変数 VITE_NSID_ENV を NSID_ENV に渡す。web の ADMIN_COL.directory と同じ規則)
 # admin UI の「検索から更新 → 保存」を毎時 headless で実行する (scripts/refresh-directory.ts)。
 #
-# 必要な設定 (GitHub → Settings → Environments → main):
+# 必要な設定 (GitHub → Settings → Environments → main と dev の両方):
 #   secrets:
 #     BLUESKY_ADMIN_IDENTIFIER   管理者アカウントの handle か DID
 #     BLUESKY_ADMIN_APP_PASSWORD 管理者アカウントの app password (Bluesky 設定で発行・失効可)
@@ -24,8 +26,12 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # 本番の Environment に置いた secrets / variables を使う
-    environment: main
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [main, dev]
+    # その Environment に置いた secrets / variables を使う (本番と dev で書き先が分かれる)
+    environment: ${{ matrix.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +54,7 @@ jobs:
           BLUESKY_ADMIN_IDENTIFIER: ${{ secrets.BLUESKY_ADMIN_IDENTIFIER }}
           BLUESKY_ADMIN_APP_PASSWORD: ${{ secrets.BLUESKY_ADMIN_APP_PASSWORD }}
           NSID_ROOT: ${{ vars.VITE_NSID_ROOT }}
+          NSID_ENV: ${{ vars.VITE_NSID_ENV }}
           # web 読み取り先と書き込み先の取り違えを検知する (任意)。
           # 設定しておくと login DID と不一致のとき fail する。
           ADMIN_DIDS: ${{ vars.VITE_ADMIN_DIDS }}

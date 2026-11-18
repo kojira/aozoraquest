@@ -5,7 +5,7 @@
 ## 背景・原則
 
 エッジ Worker (`aozoraquest-edge`) は #363 で **1 デプロイで dev/本番を捌く**構成にした。
-環境の区別はリクエスト Origin → データ名前空間 (`dev.aozoraquest.app`→`app.aozoraquest.dev`) だけ。
+環境の区別はリクエスト Origin → データ名前空間 (`dev.aozoraquest.app`→`app.aozoraquest.dev`) だけだった (D-ENV-002 で Worker env に変更。下の表)。
 これは **データは分離するがコードは共有**する構成で、エッジをデプロイすると dev/本番が同時に変わる。
 
 **この構成は不可** (オーナー方針 2026-07-19):「dev が本番に影響のある構成を良しとするのはありえない」。
@@ -23,6 +23,18 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
   同じアカウントを認可するので、**独立した OAuth grant / 独立した refresh チェーン**になり本番と干渉しない。
   分けるのは「別 KV (別トークン保管) / 別 cron / 別 secrets」であって「別アカウント」ではない。
 - **KV / cron / secrets はすべて dev 専用**。dev の cron は自分のセッションのトークンだけ refresh する。
+- **dev と本番で共有するデータは無い** (オーナー方針 2026-11-18、D-ENV-002)。名前空間は配備ごとの設定で決まる
+  (エッジ = Worker env の `ADMIN_NSID_ENV`、web = build 時の `VITE_NSID_ENV`)。**リクエストの Origin では決めない**。
+
+  | 環境 | web `VITE_NSID_ENV` / エッジ `ADMIN_NSID_ENV` | user 記録 | 管理データ・サーバー repo (world.* / config.* / directory / gameState / battleGuard) |
+  |---|---|---|---|
+  | 本番 | 未設定 / 未設定 | `app.aozoraquest.*` | `app.aozoraquest.*` |
+  | dev | `dev` / `dev` | `app.aozoraquest.dev.*` | `app.aozoraquest.dev.*` |
+  | ローカル | `local` (dev エッジを叩く) | `app.aozoraquest.dev.*` (dev と同じデータ) | `app.aozoraquest.dev.*` |
+  | 自動テスト | `test` / `e2etest` | `app.aozoraquest.test.*` / `app.aozoraquest.e2etest.*` (隔離 sandbox) | `app.aozoraquest.dev.*` を読むだけ (fixture) |
+
+  他人の記録 (analysis など) を読むときも自分の env の collection だけを読む。発見ディレクトリの毎時更新は
+  Environment main と dev の両方で走り、それぞれの名前に書く。
 - **サーバー repo のゲーム権威レコードも dev と本番で分ける** (D-ENV-002)。repo は同じサーバーアカウントなので、
   collection 名で分ける: dev エッジ = `app.aozoraquest.dev.gameState` / `app.aozoraquest.dev.battleGuard`、
   本番エッジ = `app.aozoraquest.gameState` / `app.aozoraquest.battleGuard`。
