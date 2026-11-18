@@ -91,6 +91,7 @@ export {
 export {
   resolveTurnMulti,
 } from './battle-turn-multi.js';
+export { type PatternStep, type BossPattern, type PatternSet, type PatternCursor, upcomingStep } from './battle-boss-pattern.js';
 export {
   pinAllyOrders,
   runAllyOrder,

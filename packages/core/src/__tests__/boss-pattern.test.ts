@@ -90,7 +90,7 @@ describe('ボスの型 (D-ENDGAME-001 PR4)', () => {
     };
     const stopped = run(true);
     expect(stopped.lastEvents.some((e) => e.text === 'ひかりがこぼれて、仮面がよろめいた!')).toBe(true);
-    expect(stopped.monster.statuses.some((x) => x.id === 'defDown')).toBe(true);
+    expect((stopped.monster.statuses ?? []).some((x) => x.id === 'defDown')).toBe(true);
     const drained = run(false);
     expect(drained.lastEvents.some((e) => e.text.includes('のHPが') && e.text.includes('回復'))).toBe(true);
   });

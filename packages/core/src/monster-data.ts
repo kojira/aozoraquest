@@ -54,6 +54,37 @@ function replaceMonsters(next: readonly MonsterDef[]): void {
   recomputeMaxPopulatedTier();
 }
 
+import type { PatternStep } from './battle-boss-pattern.js';
+const PATTERN_MOVES = ['attack', 'cast', 'debuff', 'heal', 'strike', 'smash', 'drain'];
+/** ボスの型 (D-ENDGAME-001)。大技 (smash・drain) には前ぶれが要り、前ぶれは手ごとにちがう文。
+ *  戦いのはじめの手には前ぶれを出せないので、はじめの段の列の 1 手めは前ぶれの要らない手 (tell なし) にする。 */
+function validatePatternSets(m: MonsterDef, where: string): void {
+  const sets = m.patternSets!;
+  if (!Array.isArray(sets) || sets.length === 0) throw new MonsterDataError(`${where}: patternSets が空`);
+  const tellOf = new Map<string, string>();
+  let below = 1;
+  sets.forEach((ps, k) => {
+    if (k > 0 && !(typeof ps.below === 'number' && ps.below > 0 && ps.below < below)) throw new MonsterDataError(`${where}: patternSets[${k}].below は前の段より小さい 0〜1`);
+    if (k > 0) below = ps.below!;
+    if (!Array.isArray(ps.patterns) || ps.patterns.length === 0 || ps.patterns.length > 3) throw new MonsterDataError(`${where}: patternSets[${k}].patterns は 1〜3 通り`);
+    for (const p of ps.patterns) {
+      if (!(typeof p.weight === 'number' && p.weight > 0)) throw new MonsterDataError(`${where}: pattern の weight は正の数`);
+      if (!Array.isArray(p.steps) || p.steps.length < 2) throw new MonsterDataError(`${where}: pattern の steps は 2 手以上`);
+      (p.steps as readonly PatternStep[]).forEach((st, i) => {
+        if (!PATTERN_MOVES.includes(st.move)) throw new MonsterDataError(`${where}: pattern の move が不正 (${st.move})`);
+        if (st.move === 'debuff' && !m.debuffs?.[st.index ?? 0]) throw new MonsterDataError(`${where}: pattern の debuff の index が無い`);
+        if (st.move === 'cast' && !m.spell) throw new MonsterDataError(`${where}: pattern の cast には spell が要る`);
+        const big = st.move === 'strike' || st.move === 'smash' || st.move === 'drain';
+        if (big && !st.tell) throw new MonsterDataError(`${where}: 大技 (${st.name ?? st.move}) には tell (前ぶれ) が要る`);
+        if (st.tell && k === 0 && i === 0) throw new MonsterDataError(`${where}: はじめの段の 1 手めは前ぶれの要らない手にする (戦いの頭には前ぶれが出せない)`);
+        if (st.tell) { const key = `${st.move}:${st.name ?? ''}`; const seen = tellOf.get(st.tell); if (seen && seen !== key) throw new MonsterDataError(`${where}: ちがう手に同じ前ぶれ (${st.tell})`); tellOf.set(st.tell, key); }
+        for (const t of [st.name ?? '', st.tell ?? '']) { const issue = characterTokenIssue(t); if (issue) throw new MonsterDataError(`${where}: ${issue}`); }
+      });
+    }
+    if (ps.say) { const issue = characterTokenIssue(ps.say); if (issue) throw new MonsterDataError(`${where}: ${issue}`); }
+  });
+}
+
 function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
   if (defs.length === 0) throw new MonsterDataError('モンスターが 0 体');
   const ids = new Set<string>();
@@ -107,6 +138,7 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
         if (d.target !== undefined && ![...MOVE_TARGETS, 'self'].includes(d.target)) throw new MonsterDataError(`${where}: debuffs の target が不正 (${d.target})`);
       }
     }
+    if (m.patternSets !== undefined) validatePatternSets(m, where);
     if (m.chargedTarget !== undefined && !MOVE_TARGETS.includes(m.chargedTarget)) throw new MonsterDataError(`${where}: chargedTarget が不正 (${m.chargedTarget})`);
     if (m.healRatio !== undefined && !(m.healRatio > 0 && m.healRatio <= 1)) {
       throw new MonsterDataError(`${where}: healRatio は 0〜1 (${m.healRatio})`);

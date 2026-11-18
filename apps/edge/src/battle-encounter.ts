@@ -57,7 +57,9 @@ export type Guard = BattleGuard<SealedMeta, BattleState>;
 /** client 向けに BattleState から内部 seed を除去 (先読み防止 #348)。 */
 export function stripState(s: BattleState) {
   const { seed: _seed, ...rest } = s;
-  return rest;
+  // ボスの型の位置 (どの列の何手め) と drain の受けた量は画面へ送らない。見えるのは前ぶれのログだけ (D-ENDGAME-001)。
+  const hide = (c: BattleState['monster']) => { const { pattern: _p, weakDmg: _w, ...r } = c; return r; };
+  return { ...rest, monster: hide(rest.monster), ...(rest.enemies ? { enemies: rest.enemies.map(hide) } : {}) };
 }
 
 /** バトルガードの寿命 (秒)。各ターンで更新。切れたガードは move 時に flush = クラッシュしても

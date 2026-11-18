@@ -141,6 +141,7 @@ export function doAttack(
     defender.hp = 1;
   } else {
     defender.hp = Math.max(0, defender.hp - final);
+    if (eMult >= 1.5 && defender.weakDmg !== undefined) defender.weakDmg += final;
   }
   const fatal = defender.hp === 0;
   // 被弾で解ける状態 (かくれみ解除・眠り起床)。none なら no-op。
@@ -215,6 +216,7 @@ export function doMagic(
     return { hit: true, damage: 0, fatal: false, crit: false };
   }
   defender.hp = Math.max(0, defender.hp - final);
+  if (eMult >= 1.5 && defender.weakDmg !== undefined) defender.weakDmg += final;
   const fatal = defender.hp === 0;
   if (!fatal) clearHitStatuses(defender); // 被弾で解ける状態 (かくれみ/眠り)
   const fatalText = fatal

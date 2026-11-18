@@ -14,6 +14,7 @@ import { type Command, type TurnEvent, type BattleState, hpRecordingEvents } fro
 import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
+import { patternAct, patternEndOfTurn } from './battle-boss-pattern.js';
 import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
@@ -145,7 +146,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   }
   // ため中は防御宣言しない (このターンは必ず解放する。宣言すると「身を固めた直後に
   // ため攻撃」という矛盾イベント + 幻の防御半減が発生する)。
-  if (mCommand === 'guard' && !state.monster.charging) {
+  if (mCommand === 'guard' && !state.monster.charging && !MONSTERS_BY_ID[state.monsterId]?.patternSets?.length) {
     state.monster.guarding = true;
     events.push({ actor: 'monster', text: `${state.monster.name}は身を固めている。` });
   }
@@ -196,6 +197,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       if (!charged) state.monster.lastAoe = false; // この手番の技が全体なら技の側で立て直す
       if (charged) {
         releaseMonsterCharge(state.monster, mDef, solo, rng, events);
+      } else if (mDef?.patternSets?.length) {
+        patternAct(state.monster, mDef, solo.allies, rng, events);
       } else if (mCommand === 'charge') {
         // このターンは攻撃せず「ため」を予告する (charger、MP 消費)
         state.monster.mp = Math.max(0, state.monster.mp - chargeMpCost(mDef));
@@ -243,6 +246,8 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   if (state.outcome === 'ongoing') {
     tickStatuses(state.player, { rng, events, actor: 'player' });
     tickStatuses(state.monster, { rng, events, actor: 'monster' });
+    const pDef = MONSTERS_BY_ID[state.monsterId];
+    if (pDef?.patternSets?.length) patternEndOfTurn(state.monster, pDef, rng, events);
   }
 
   // 見切りは 1 ターン限り (発動しなかったら解除)。ぼうぎょの余韻 (focus) は 1 減衰。
