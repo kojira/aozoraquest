@@ -14,8 +14,8 @@ export const MARKET_LEVEL_MULTIPLIER: Readonly<Record<number, number>> = {
   [-1]: 0.5, 0: 1, 1: 1.5, 2: 2, 3: 3, 4: 4, 5: 6, 6: 12, 7: 24, 8: 48, 9: 96, 10: 192,
 };
 
-/** 上限 (オーナー決定 2026-07-27 / 2026-11-18)。1 人が出品中の数・1 つの街での数・1 つの街の棚の数。 */
-export const MARKET_LIMITS = { perUser: 10, perUserPerTown: 2, perTown: 200 } as const;
+/** 上限 (オーナー決定 2026-07-27 / 2026-11-18、1 人の合計は 2026-11-18 に 10 → 20)。1 人が出品中の数・1 つの街での数・1 つの街の棚の数。 */
+export const MARKET_LIMITS = { perUser: 20, perUserPerTown: 2, perTown: 200 } as const;
 
 /** 売れたときに消える手数料 (10 分の 1)。 */
 export const MARKET_FEE_TENTHS = 1;

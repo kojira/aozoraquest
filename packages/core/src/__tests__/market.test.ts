@@ -60,7 +60,7 @@ describe('手数料と上限', () => {
     for (const bad of [0, -1, 1.5, Number.NaN, '10', null]) expect(isValidMarketPrice(bad)).toBe(false);
   });
 
-  it('上限: 1 人 10 品・1 つの街に 2 品・街の棚 200 品', () => {
-    expect(MARKET_LIMITS).toEqual({ perUser: 10, perUserPerTown: 2, perTown: 200 });
+  it('上限: 1 人 20 品・1 つの街に 2 品・街の棚 200 品', () => {
+    expect(MARKET_LIMITS).toEqual({ perUser: 20, perUserPerTown: 2, perTown: 200 });
   });
 });
