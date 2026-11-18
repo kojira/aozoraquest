@@ -12,9 +12,10 @@
 import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, worldOverlay, type AllyMode, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
-import { getRecord, PdsError } from './pds';
+import { getRecord } from './pds';
 import { readServerTokens } from './oauth-store';
-import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
+import { ServerWriteError, type ServerPdsEnv } from './server-pds';
+import { casRecordLoop } from './cas-record';
 import { adminNsidRoot, type WorldAuthoringEnv } from './world-authoring';
 
 /**
@@ -295,30 +296,22 @@ export async function readModifyWrite(
   mutate: (current: GameState) => GameState,
   opts: RmwOptions,
 ): Promise<GameState> {
-  const rkey = rkeyForDid(targetDid);
   const init = opts.init ?? emptyState;
-  const retries = opts.retries ?? 5;
   const nowIso = new Date(opts.now * 1000).toISOString();
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const existing = await readState(env, targetDid);
-    const current = existing?.state ?? normalizeState(await init(targetDid, nowIso));
-    const mutated = mutate(current);
-    if (existing && mutated === current) return current; // 変更なし: 書かない (契約は doc 参照)
-    const next: GameState = { ...mutated, did: targetDid, version: GAME_STATE_VERSION, updatedAt: nowIso };
-    // 既存があればその CID を期待 (CAS)、無ければ null (新規作成のみ) で二重作成も防ぐ。
-    const swap = existing ? existing.cid : null;
-    try {
-      await serverPutRecord(env, opts.now, gameStateCollection(env), rkey, next, swap);
-      return next;
-    } catch (e) {
-      if (e instanceof PdsError && e.xrpcError === 'InvalidSwap') {
-        if (attempt < retries) continue; // 競合 → 再読込して mutate をやり直し
-        throw new PdsError('CAS リトライ上限 (競合が解消しない)', 409, 'CasExhausted');
-      }
-      throw e; // 非 InvalidSwap (ServerWriteError 含む) は即 throw
-    }
-  }
-  throw new PdsError('unreachable'); // ループは必ず return/throw する
+  return casRecordLoop<GameState>(env, {
+    collection: gameStateCollection(env),
+    rkey: rkeyForDid(targetDid),
+    now: opts.now,
+    retries: opts.retries ?? 5,
+    read: async () => {
+      const rec = await readState(env, targetDid);
+      return rec ? { value: rec.state, cid: rec.cid } : null;
+    },
+    fresh: async () => normalizeState(await init(targetDid, nowIso)),
+    mutate,
+    stamp: (next) => ({ ...next, did: targetDid, version: GAME_STATE_VERSION, updatedAt: nowIso }),
+    writeWhenCreated: true, // state がまだ無いときは「変更なし」でも書く (レコードの作成自体が変更)
+  });
 }
 
 /**
