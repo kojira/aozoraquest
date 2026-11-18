@@ -31,6 +31,7 @@ import { sceneDialogue } from '@/lib/scene-dialogue';
 import { ShopItemSection } from './shop-item-section';
 import { SellPanel, ShopTabs, UsedShelf, type ShopTab } from './shop-market';
 import type { MarketView } from '@/lib/use-market';
+import { useHandle } from '@/lib/handle-cache';
 
 /**
  * なんでも屋 (docs/20, W6b)。街に入ると開ける制作 + 合成モーダル。
@@ -181,6 +182,25 @@ export function ShopModal({
     // 入店時に 1 回だけ。keeper/town はモーダルの寿命中変わらない。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 売れた知らせ (開いたときに受け取った売上)・中古で買えた知らせ。店主のセリフ窓に出す (#607 と同じ形)。
+  const soldBuyer = useHandle(market?.sold[0]?.buyer ?? null);
+  useEffect(() => {
+    const sold = market?.sold ?? [];
+    if (sold.length === 0 || soldBuyer.state === 'loading') return; // @handle が決まってから 1 回だけ出す
+    const who = soldBuyer.state === 'resolved' && soldBuyer.handle ? `@${soldBuyer.handle}` : 'だれか';
+    openTalk([...sold.map((s, i) => {
+      const def = EQUIPMENT_BY_ID[s.itemId];
+      return { text: `${def ? leveledName(def, s.level) : s.itemId}が ${i === 0 ? who : 'だれか'} に 売れた！ パワー+${s.take}` };
+    }), say(keeper.sell)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market?.sold, soldBuyer.state]);
+  useEffect(() => {
+    const b = market?.bought;
+    const def = b ? EQUIPMENT_BY_ID[b.itemId] : undefined;
+    if (!b || !def) return;
+    openTalk([{ text: `${leveledName(def, b.level)}を かった!` }, say(keeper.sell)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market?.bought]);
   useEffect(() => {
     if (!lastAction) return;
     if (lastAction.kind === 'buy') {
