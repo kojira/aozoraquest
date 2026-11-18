@@ -11,7 +11,7 @@
  *   - 新しく入れられるのは、今日このギルドの候補にいる人だけ (400 unknown_recruit。日付をまたいだときも)
  *   - その日に入れた人・はずしたなじみをまた入れようとすると 400 recruit_gone (はずしたら二度と会えない)
  *   - minLevel が主人公のジョブ Lv より上の人は、payOverLevel: true と rkey があれば パワー overLevelPower (足りない
- *     1 Lv につき 5。§14) を払って入れられる。readModifyWrite の中で確かめて引き、同じ rkey は 1 回だけ (shopOps)。
+ *     1 Lv につき 100。§14) を払って入れられる。readModifyWrite の中で確かめて引き、同じ rkey は 1 回だけ (shopOps)。
  *     払うと言わずに入れようとすると 400 recruit_level、パワーが足りなければ 400 not_enough_power (もう入れている人は外さない)
  *   - 名前・職・★・ひとことは edge が作りなおした候補のものを保存する (client の送ったものは使わない)
  *   - 入れた仲間は候補の Lv から始まる (その Lv になったばかりの経験値。§11)

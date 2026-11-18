@@ -133,10 +133,10 @@ describe('仲間の経験値と Lv (§11)', () => {
     expect(jobLevelFromXp(withXp[0]!.xp, 'miko')).toBe(9);
   });
 
-  it('Lv の足りない候補を迎えるパワーは 足りない 1 Lv につき 5 (§14)。足りていれば 0', () => {
-    expect(RECRUIT_GACHA.overLevelPowerPerLv).toBe(5);
-    expect(overLevelPower(10, 6)).toBe(20);
-    expect(overLevelPower(7, 6)).toBe(5);
+  it('Lv の足りない候補を迎えるパワーは 足りない 1 Lv につき 100 (§14)。足りていれば 0', () => {
+    expect(RECRUIT_GACHA.overLevelPowerPerLv).toBe(100);
+    expect(overLevelPower(10, 6)).toBe(400);
+    expect(overLevelPower(7, 6)).toBe(100);
     expect(overLevelPower(6, 6)).toBe(0);
     expect(overLevelPower(3, 6)).toBe(0);
   });

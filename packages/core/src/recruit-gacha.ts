@@ -32,7 +32,7 @@ export const RECRUIT_GACHA = {
   /** 候補を引き直す 1 回のパワー (§10)。回数の上限はない。 */
   rerollPower: 5,
   /** 主人公のジョブ Lv が minLevel に足りない候補を迎える、足りない 1 Lv あたりのパワー (§14)。差の上限はない。 */
-  overLevelPowerPerLv: 5,
+  overLevelPowerPerLv: 100,
   /** その日に入れた候補の id を覚えておく上限。 */
   metMax: 30,
 } as const;
