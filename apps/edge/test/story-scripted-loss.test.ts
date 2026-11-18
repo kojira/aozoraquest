@@ -84,3 +84,46 @@ describe('台本負けのストーリー戦 (scripted)', () => {
     expect(m.hasGuard()).toBe(false);
   });
 });
+
+/** D-ENDGAME-001 PR3: 逃げられない本編のボス戦 (canFlee false) は、負けても素材・パワーを失わない。最後の街へは戻る。 */
+describe('本編のボス戦に負けたとき (canFlee false)', () => {
+  const orig = globalThis.fetch;
+  beforeAll(() => {
+    setMonsterOverrides([mon('a'), mon('b'), mon('c'), mon('boss', { storyOnly: true, tier: 1, level: 99, hp: 9999, stats: [999, 999, 999, 1, 1] })]);
+    setStory({ battles: [
+      { id: 'b-boss', monsterId: 'boss', count: 1, winFlag: 'beat-boss', loseFlag: 'lost-boss', canFlee: false },
+      { id: 'b-mob', monsterId: 'boss', count: 1, winFlag: 'beat-mob', canFlee: true },
+    ] });
+  });
+  afterAll(() => { setStory(null); setMonsterOverrides(TEST_MONSTERS); });
+  afterEach(() => { globalThis.fetch = orig; });
+
+  const fight = async (id: string) => {
+    const env = await makeEnv();
+    const before = GS({ power: 50, materials: { 'slime-drop': 5, 'bat-wing': 3 }, x: 4, y: 5, lastTown: { x: 320, y: 448 } });
+    const m = pds(before);
+    globalThis.fetch = m.fn;
+    const enc = await sealEncounter(env, USER, before, 4, 5, 1, NOW, undefined, undefined, undefined, storyBattleById(id));
+    const res = await handleTurn(env, USER, enc.battleId, 0, 'attack', NOW);
+    return { res, gs: m.gs(), m };
+  };
+
+  it('素材とパワーは戦闘前のまま。loseFlag が立ち、最後の街へ戻る', async () => {
+    const { res, gs, m } = await fight('b-boss');
+    expect(res.outcome).toBe('lose');
+    expect(gs.power).toBe(50);
+    expect(gs.materials).toEqual({ 'slime-drop': 5, 'bat-wing': 3 });
+    expect(res.awarded?.materialsLost ?? []).toEqual([]);
+    expect(res.awarded?.powerSpent ?? 0).toBe(0);
+    expect(gs.flags).toContain('lost-boss');
+    expect({ x: gs.x, y: gs.y }).toEqual({ x: 320, y: 448 });
+    expect(m.hasGuard()).toBe(false);
+  });
+
+  it('逃げられるストーリー戦 (雑魚) は いまどおり パワーが減る', async () => {
+    const { res, gs } = await fight('b-mob');
+    expect(res.outcome).toBe('lose');
+    expect(gs.power).toBe(49);
+  });
+});
+
