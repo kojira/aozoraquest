@@ -446,10 +446,15 @@ export async function handleTeleport(env: ResolverEnv, userDid: string, x: numbe
 /** 権威 state + 診断から luk (装備込み) を出す。**client 申告を使わない** —
  *  強化値の抽選に luk が効くので、client の値を信じると盛れる (#551)。 */
 export async function playerLuk(env: ResolverEnv, userDid: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<number> {
+  return (await playerLukAndJob(env, userDid, ns, fetchImpl)).luk;
+}
+
+/** 店で使う luk と職 (D-ENDGAME-001: tier4 以上の店は職の専用品を足す)。どちらもサーバーが診断から読む。 */
+export async function playerLukAndJob(env: ResolverEnv, userDid: string, ns: string = DEFAULT_NS, fetchImpl?: typeof fetch): Promise<{ luk: number; archetype: Archetype }> {
   const rec = await readState(env, userDid);
   const state = rec?.state ?? (await migrateInitState(userDid, new Date().toISOString(), ns, fetchImpl));
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
-  return playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk;
+  return { archetype, luk: playerCombatant(archetype, jobLevelFromXp(jobXpOf(state, archetype), archetype), playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel).luk };
 }
 
 /** 装備ミラー: client が解決した GearSelection (強化値つき) を gameState に保存 (戦闘に反映)。

@@ -27,6 +27,7 @@ import { interiorShopAt, GEAR_SLOTS, gearKey, overWorn,
   townAt,
   townShopStock,
   worldOverlay,
+  type Archetype,
 } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type GameStateEnv, type OwnedPiece, sanitizeGear } from './game-state';
 import { wearersOf } from './party-gear';
@@ -89,7 +90,7 @@ export interface ShopResult {
  * 街から野外へ数歩あるいても state の座標は街のまま残る = 世界のどこからでも
  * 買えてしまう。トークンが無い/無効なときだけ state に倒す (`handleSearch` と同じ作法)。
  */
-export function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: string }) {
+export function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: string }, archetype?: Archetype) {
   const x = pos?.x ?? state.x;
   const y = pos?.y ?? state.y;
   const mapId = pos?.mapId ?? state.mapId;
@@ -100,7 +101,8 @@ export function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: s
   if (!town) throw new ShopError('街の外では買えない', 400, 'not_in_town');
   const towns = worldOverlay().towns;
   const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
-  return { town, stock: townShopStock(town, townIndex) };
+  // tier4 以上の店は、買う人の職の専用品を 1 つ足す (D-ENDGAME-001)。職はサーバーが診断から読んだもの。
+  return { town, stock: townShopStock(town, townIndex, archetype) };
 }
 
 export function assertRkey(rkey: string): void {
@@ -125,7 +127,7 @@ export function withOp(state: GameState, key: string): string[] {
 export async function shopCraft(
   env: GameStateEnv,
   did: string,
-  input: { itemId: string; rkey: string; luk: number; pos?: { x: number; y: number; mapId?: string } },
+  input: { itemId: string; rkey: string; luk: number; pos?: { x: number; y: number; mapId?: string }; archetype?: Archetype },
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
 ): Promise<ShopResult> {
@@ -148,7 +150,7 @@ export async function shopCraft(
         return cur;
       }
       duplicate = false;
-      const { stock } = shopAt(cur, input.pos);
+      const { stock } = shopAt(cur, input.pos, input.archetype);
       if (!stock.equipment.includes(def.id)) throw new ShopError('この街では扱っていない', 400, 'not_in_stock');
       if (cur.power < def.price.power) throw new ShopError('あおぞらパワーが たりない', 400, 'no_power');
       const have = cur.materials[stock.materialId] ?? 0;

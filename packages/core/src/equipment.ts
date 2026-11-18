@@ -567,21 +567,35 @@ function rankAmongTier(town: Town, minTier: number): number {
  *  1 軒 1 品だと 16 職ぶんが世界に並ばない (7 < 16)。 */
 export const JOB_HIGH_PER_TOWN = 3;
 
-export function townShopStock(town: Town, townIndex: number): ShopStock {
+/** **自分のジョブの枠を足す帯** (D-ENDGAME-001・d-gear-002 決めること 4)。tier4 以上の街は 4 つしかなく、
+ *  16 職 × g4〜6 の専用品は店の並びに入りきらない。そこで tier4 以上の店では、買う人の職の専用品
+ *  (その店の grade) を 1 つ足す。権威は edge (診断から職を読む)。 */
+export const JOB_SLOT_MIN_TIER = 4;
+
+export function townShopStock(town: Town, townIndex: number, archetype?: Archetype): ShopStock {
   // **店ごとの上書きが最優先** (#422)。指定されたフィールドだけ置き換え、残りは生成。
   // 上書きが無い店は従来どおり = 全 53 店を手で埋めさせない。
   const over = shopOverrideAt(town.x, town.y);
   const generated = over && over.equipment && over.consumables && over.materialId
     ? null // 全フィールド上書きなら生成をスキップ (無駄な計算をしない)
     : generatedShopStock(town, townIndex);
-  if (over) {
-    return {
-      consumables: over.consumables ?? generated!.consumables,
-      equipment: over.equipment ?? generated!.equipment,
-      materialId: over.materialId ?? generated!.materialId,
-    };
-  }
-  return generated!;
+  const stock = over
+    ? {
+        consumables: over.consumables ?? generated!.consumables,
+        equipment: over.equipment ?? generated!.equipment,
+        materialId: over.materialId ?? generated!.materialId,
+      }
+    : generated!;
+  const own = archetype ? ownJobItemFor(town, archetype) : undefined;
+  return own && !stock.equipment.includes(own) ? { ...stock, equipment: [...stock.equipment, own] } : stock;
+}
+
+/** tier4 以上の店で足す、その職の専用品 (その店の grade の武器)。無ければ undefined。 */
+function ownJobItemFor(town: Town, archetype: Archetype): string | undefined {
+  const tier = tierForRegion(town.region);
+  if (tier < JOB_SLOT_MIN_TIER) return undefined;
+  const grade = maxShopGradeForTier(tier);
+  return EQUIPMENT.find((e) => e.jobOnly === archetype && e.grade === grade && e.slot === 'weapon' && !e.casinoOnly)?.id;
 }
 
 function generatedShopStock(town: Town, townIndex: number): ShopStock {

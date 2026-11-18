@@ -120,7 +120,8 @@ export function ShopModal({
   onBuy: (itemId: string) => void;
   onClose: () => void;
 }) {
-  const stock = useMemo(() => townShopStock(town, townIndex), [town, townIndex]);
+  // tier4 以上の店は自分の職の専用品が 1 つ並ぶ (D-ENDGAME-001。作れるかはサーバーが同じ規則で決める)。
+  const stock = useMemo(() => townShopStock(town, townIndex, archetype ?? undefined), [town, townIndex, archetype]);
   // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
   const keeper = useMemo(() => shopKeeperFor(town.x, town.y), [town]);
   const materialName = withCharacterNames(ITEMS[stock.materialId]?.name ?? stock.materialId);
