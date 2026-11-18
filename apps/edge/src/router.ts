@@ -16,7 +16,7 @@ import { readState } from './game-state';
 import { handleClientMetadata, handleOAuthStart, handleOAuthStatus, handleOAuthCallback, type OAuthRoutesEnv } from './oauth-routes';
 import { claimXp, adminSetJobXp, adminGrantPower, spendPower, XpClaimError } from './xp-claim';
 import { shopCraft, shopBuy, shopSell, shopForge, shopDiscard, ShopError } from './shop';
-import { handleMove, handleTurn, handleTeleport, handleGear, handleReset, migrateInitState, playerLuk, ResolverError } from './battle-resolver';
+import { handleMove, handleTurn, handleTeleport, handleGear, handleReset, migrateInitState, playerLukAndJob, ResolverError } from './battle-resolver';
 import { handleFieldSkill, handleItem } from './field-heal';
 import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
@@ -445,8 +445,8 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const ns = adminNsidRoot(env);
       const pos = positionFrom(env, body.token, did);
       // 強化値の抽選に効く luk はサーバーが出す (client 申告を使わない)。
-      const luk = await playerLuk(env, did, ns);
-      return cors(json(await shopCraft(env, did, { itemId: body.itemId, rkey: body.rkey, luk, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
+      const { luk, archetype } = await playerLukAndJob(env, did, ns);
+      return cors(json(await shopCraft(env, did, { itemId: body.itemId, rkey: body.rkey, luk, archetype, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

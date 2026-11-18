@@ -50,7 +50,7 @@ describe('shopCraft: tier4 以上の店の自分のジョブの枠', () => {
     globalThis.fetch = pds(state);
     const env = await makeEnv();
     const ok = await shopCraft(env, DID, { itemId: 'wp-sage-g4', rkey: 'r1', luk: 0, archetype: 'sage' }, NOW);
-    expect(ok.pieces.map((p) => p.itemId)).toContain('wp-sage-g4');
+    expect((ok.pieces ?? []).map((p) => p.itemId)).toContain('wp-sage-g4');
     await expect(shopCraft(env, DID, { itemId: 'wp-mage-g4', rkey: 'r2', luk: 0, archetype: 'sage' }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
     // 職を渡さない (古い呼び出し) ときは枠が無い
     await expect(shopCraft(env, DID, { itemId: 'wp-sage-g4', rkey: 'r3', luk: 0 }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
