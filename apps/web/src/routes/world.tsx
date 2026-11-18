@@ -60,7 +60,8 @@ import { useLatestRef } from '@/lib/use-latest-ref';
 import { useWorldInventory } from '@/lib/use-world-inventory';
 import { useNpcQuestTalk } from '@/lib/use-npc-quest-talk';
 import { useInnTalk } from '@/lib/use-inn-talk';
-import { piecesFromServer, useWorldShop } from '@/lib/use-world-shop';
+import { piecesFromServer, shopTownAt, useWorldShop } from '@/lib/use-world-shop';
+import { useMarket } from '@/lib/use-market';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
@@ -218,6 +219,8 @@ function WorldScreen() {
   const { innTalk, innTalkRef, innBusy, innChoices, openInn, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
+  // 中古・うる (D-MARKET-001)。店を開いたら 1 回だけ棚と自分の出品を合わせる (扉とメニューのどちらから開いても同じ)
+  const market = useMarket({ agent, did, tokenRef, setServerPower, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]), openTown: shopOpen ? shopTownAt(ws) : null });
   const casino = useCasino({ agent, tokenRef, setServerPower, applyServerMaterials: inventory.applyServerMaterials, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]) });
 
   // ジョブ/レベル由来の最大値 (フィールド HP/MP バーの分母)
@@ -740,6 +743,7 @@ function WorldScreen() {
           onSell={(materialId, count) => void shop.onSell(materialId, count)}
           onBuy={(itemId) => void shop.onBuy(itemId)}
           onClose={() => setShopOpen(false)}
+          market={market}
         />
       )}
       {casino.casinoSpot && <CasinoModal spot={casino.casinoSpot} coins={casino.casinoCoins} power={serverPower ?? 0} actions={casino.casinoActions} pendingHighLow={casino.casinoPendingHighLow} onClose={casino.closeCasino} />}
