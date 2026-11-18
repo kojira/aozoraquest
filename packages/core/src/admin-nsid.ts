@@ -74,6 +74,7 @@ export const LXM = {
   marketCancel: `${AQ_NSID_ROOT}.market.cancel`,
   marketMine: `${AQ_NSID_ROOT}.market.mine`,
   marketBuy: `${AQ_NSID_ROOT}.market.buy`,
+  marketAdminHide: `${AQ_NSID_ROOT}.market.adminHide`,
   oauthStart: `${AQ_NSID_ROOT}.oauth.start`,
   oauthStatus: `${AQ_NSID_ROOT}.oauth.status`,
 } as const;

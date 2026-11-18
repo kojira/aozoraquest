@@ -131,6 +131,12 @@ export async function marketCancel(env: GameStateEnv, did: string, input: { list
   return marketReconcile(env, did, now, init);
 }
 
+/**
+ * 管理者の非表示 (D-MARKET-001 §5)。棚から外して印を残す。品は消さない — 出品者が次に店を開いたときの照合で
+ * 持ち物に戻る。もう売れていたら 409。棚に無ければ 404。
+ */
+export async function marketAdminHide(_env: GameStateEnv, _input: { town: { x: number; y: number }; seller: string; listingId: string }, _now: number): Promise<{ hidden: true }> { return { hidden: true }; }
+
 /** 照合で決める、出品 1 件の行き先。'keep' はそのまま。'return' は持ち物に戻す。売れていれば売上を返す。 */
 export function listingFate(listing: MarketListing, seller: string, stock: TownStock | null, now: number): 'keep' | 'return' | ShelfSale {
   const sale = stock?.sales.find((s) => s.seller === seller && s.listingId === listing.id);
