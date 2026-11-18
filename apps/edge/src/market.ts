@@ -133,7 +133,8 @@ export async function marketCancel(env: GameStateEnv, did: string, input: { list
 
 /** 照合で決める、出品 1 件の行き先。'keep' はそのまま。'return' は持ち物に戻す。売れていれば売上を返す。 */
 export function listingFate(listing: MarketListing, seller: string, stock: TownStock | null, now: number): 'keep' | 'return' | ShelfSale {
-  if (stock?.sales.some((s) => s.seller === seller && s.listingId === listing.id)) return 'keep';
+  const sale = stock?.sales.find((s) => s.seller === seller && s.listingId === listing.id);
+  if (sale) return sale;
   if (stock?.listings.some((l) => sameListing(l, seller, listing.id))) return 'keep';
   if (stock?.closed.some((c) => sameListing(c, seller, listing.id))) return 'return';
   return now - listing.listedAt > LISTING_SETTLE_SEC ? 'return' : 'keep';

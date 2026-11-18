@@ -50,12 +50,12 @@ export const MAX_SHOP_OPS = 100;
 export const MAX_OWNED_PIECES = 100;
 
 /**
- * 上限に数える持ち物の数 = もちもの + 街に出品中の品 (D-MARKET-001)。出品中の品も数えておくと、
- * 取り下げや照合で品が戻るとき、もちものが いっぱいで戻せない、が起きない。
- * 出品は 1 人 MARKET_LIMITS.perUser 品までなので、もちものは少なくとも 100 − 20 = 80 個は持てる。
+ * 上限に数える持ち物の数 = もちもの + 街に出品中の品 + 買っている途中の品 (D-MARKET-001)。
+ * 出品中・買う途中の品も数えておくと、取り下げ・照合・購入の成立で品が戻る/入るとき、もちものが いっぱいで
+ * 入らない、が起きない。出品は 1 人 MARKET_LIMITS.perUser 品・預かりは 3 件までなので、もちものは少なくとも 77 個は持てる。
  */
-export function heldPieceCount(state: Pick<GameState, 'pieces' | 'listings'>): number {
-  return (state.pieces ?? []).length + (state.listings ?? []).length;
+export function heldPieceCount(state: Pick<GameState, 'pieces' | 'listings' | 'marketHolds'>): number {
+  return (state.pieces ?? []).length + (state.listings ?? []).length + (state.marketHolds ?? []).length;
 }
 
 export class ShopError extends Error {
