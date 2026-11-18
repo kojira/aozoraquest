@@ -55,7 +55,7 @@ export async function handleMarketRoute(req: Request, url: URL, env: MarketEnv, 
   } catch (e) {
     return respond({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401);
   }
-  void isEdgeAdmin;
+  if (url.pathname === '/api/admin/market/hide' && !isEdgeAdmin(env, did)) return respond({ error: 'forbidden' }, 403);
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const init = (d: string, iso: string) => migrateInitState(d, iso, ns);
   try {
