@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ADMIN_CONFIG_RECORDS, ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, allNpcs, AQ_NSID_ROOT, setNpcs } from '@aozoraquest/core';
+import { ADMIN_CONFIG_RECORDS, ADMIN_WORLD_RECORDS, adminNsidPrefix, adminWorldCollection, allNpcs, AQ_NSID_ROOT, directoryCollection, setNpcs } from '@aozoraquest/core';
 import { adminNsidRoot, ensureAuthoredWorld, resetAuthoredWorldCache } from '../src/world-authoring';
 import { handleNpcImage } from '../src/npc-image';
 import { ADMIN_DATA_NAMES } from '../src/admin-data';
@@ -25,6 +25,21 @@ describe('adminNsidRoot (#716)', () => {
     const devVars = toml.slice(toml.indexOf('[env.dev.vars]'));
     expect(devVars).toMatch(/^ADMIN_NSID_ENV = "dev"$/m);
     expect(toml.slice(0, toml.indexOf('[env.dev]'))).not.toMatch(/ADMIN_NSID_ENV/);
+  });
+});
+
+describe('発見ディレクトリの collection (D-ENV-002)', () => {
+  it('dev は app.aozoraquest.dev.directory、本番 (未設定) は app.aozoraquest.directory', () => {
+    expect(directoryCollection(AQ_NSID_ROOT, 'dev')).toBe('app.aozoraquest.dev.directory');
+    expect(directoryCollection(AQ_NSID_ROOT, undefined)).toBe('app.aozoraquest.directory');
+  });
+
+  it('毎時の自動更新は main と dev の両 Environment で走り、VITE_NSID_ENV を NSID_ENV に渡す', () => {
+    const yml = readFileSync(new URL('../../../.github/workflows/directory-refresh.yml', import.meta.url), 'utf8');
+    expect(yml).toMatch(/environment: \[main, dev\]/);
+    expect(yml).toMatch(/NSID_ENV: \$\{\{ vars\.VITE_NSID_ENV \}\}/);
+    const script = readFileSync(new URL('../../../scripts/refresh-directory.ts', import.meta.url), 'utf8');
+    expect(script).toMatch(/directoryCollection\(NSID_ROOT, process\.env\.NSID_ENV\)/);
   });
 });
 

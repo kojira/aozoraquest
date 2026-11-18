@@ -11,7 +11,7 @@ import type { Agent } from '@atproto/api';
 import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { ARCHETYPE_CACHE_TTL_MS, JOBS_BY_ID } from '@aozoraquest/core';
 import { getRecord } from './atproto';
-import { ROOT_COL } from './collections';
+import { COL } from './collections';
 import { loadCachedArchetype, saveCachedArchetype } from './archetype-idb';
 
 interface CacheEntry {
@@ -39,8 +39,8 @@ async function fetchOne(agent: Agent, did: string): Promise<Archetype | null> {
         cache.set(did, { archetype: cached, fetchedAt: Date.now() });
         return cached;
       }
-      // 2) IDB miss: PDS から取得 (他人の analysis は production NSID)
-      const r = await getRecord<DiagnosisResult>(agent, did, ROOT_COL.analysis, 'self');
+      // 2) IDB miss: PDS から取得 (自分の env の collection だけ。dev から本番を読まない D-ENV-002)
+      const r = await getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self');
       const a = r?.archetype;
       const valid = a && a in JOBS_BY_ID ? (a as Archetype) : null;
       cache.set(did, { archetype: valid, fetchedAt: Date.now() });

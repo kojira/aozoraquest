@@ -59,6 +59,7 @@ const GS = (over: Partial<GameState> = {}): GameState => ({ did: USER, activeQue
 function serverPds(seed: Record<string, GameState | object>) {
   const store = new Map<string, { value: unknown; cid: string }>(Object.entries(seed).map(([c, v]) => [c, { value: v, cid: `seed-${c}` }]));
   const touched: Array<{ op: 'get' | 'put' | 'delete'; collection: string }> = [];
+  const userReads: string[] = [];
   let n = 0;
   const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
   const fn = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -66,7 +67,10 @@ function serverPds(seed: Record<string, GameState | object>) {
     if (url.startsWith('https://plc.directory/')) {
       return json(200, { id: USER, verificationMethod: [{ id: `${USER}#atproto`, type: 'Multikey', publicKeyMultibase: userMultikey }], service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: USER_PDS }] });
     }
-    if (url.startsWith(USER_PDS)) return json(400, { error: 'RecordNotFound' }); // ユーザー repo (移行元) は空
+    if (url.startsWith(USER_PDS)) { // ユーザー repo (移行元) は空。読んだ collection を記録する
+      userReads.push(new URL(url).searchParams.get('collection')!);
+      return json(400, { error: 'RecordNotFound' });
+    }
     if (url.startsWith(`${SERVER_PDS}/xrpc/com.atproto.repo.getRecord?`)) {
       const q = new URL(url).searchParams;
       const col = q.get('collection')!;
@@ -91,7 +95,7 @@ function serverPds(seed: Record<string, GameState | object>) {
     }
     return json(404, { error: 'not_found' });
   }) as unknown as typeof fetch;
-  return { fn, store, touched };
+  return { fn, store, touched, userReads };
 }
 
 function call(path: string, lxm: string, origin: string | null, method = 'POST', body?: unknown): Request {
@@ -128,6 +132,19 @@ describe('D-ENV-002: gameState / battleGuard の collection は Worker env で�
       expect(cols.has(PROD_GUARD)).toBe(false);
       expect(cols.has(DEV_GS)).toBe(true);
     });
+  }
+
+  for (const [label, adminNsidEnv, ns] of [['dev', 'dev', 'app.aozoraquest.dev'], ['本番', undefined, 'app.aozoraquest']] as const) {
+    for (const origin of ORIGINS) {
+      it(`${label}エッジ (Origin=${origin ?? 'なし'}) がユーザー repo から読む移行元は ${ns}.* だけ`, async () => {
+        const env = await edgeEnv(adminNsidEnv);
+        const pds = serverPds({});
+        globalThis.fetch = pds.fn;
+        const res = await handleRequest(call('/api/me/state', LXM.meState, origin, 'GET'), env);
+        expect(res.status).toBe(200);
+        expect(pds.userReads.sort()).toEqual([`${ns}.analysis`, `${ns}.power`, `${ns}.world`]);
+      });
+    }
   }
 
   it('本番エッジ (ADMIN_NSID_ENV 未設定) は app.aozoraquest.gameState を読み書きする (今と同じ名前)', async () => {

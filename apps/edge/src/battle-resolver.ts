@@ -49,8 +49,8 @@ import { GUARD_TTL_SEC, parseTileKey, sealEncounter, stripState, tileKey, type E
 // 遭遇の組み立ては battle-encounter.ts に移した。既存の import 元を壊さないよう再輸出する。
 export { GUARD_TTL_SEC, sealEncounter, type EncounterInfo };
 
-/** NSID の既定 prefix (本番)。dev は `app.aozoraquest.dev`。edge は 1 デプロイで dev/prod を捌くので、
- *  リクエストの Origin から prefix を決めて渡す (#363)。既定=本番なのでテスト/既存呼び出しは従来通り。 */
+/** NSID の既定 prefix (本番)。dev は `app.aozoraquest.dev`。
+ *  router が Worker env (`adminNsidRoot(env)`) から決めて渡す (D-ENV-002。Origin では決めない)。既定=本番。 */
 export const DEFAULT_NS = 'app.aozoraquest';
 export const VALID_COMMANDS: readonly Command[] = ['attack', 'guard', 'skill', 'herb', 'tonic', 'flee', 'item'];
 
@@ -73,7 +73,7 @@ export async function resolveUserPds(userDid: string, fetchImpl?: typeof fetch):
 }
 
 /** ユーザーの診断 (archetype + baseStats) + handle を PDS から読む。無ければ ResolverError(409)。
- *  `ns` は NSID prefix (dev は `app.aozoraquest.dev`)。edge は 1 デプロイで dev/prod を捌くので Origin から決める。 */
+ *  `ns` は NSID prefix (dev は `app.aozoraquest.dev`)。router が Worker env から決める (D-ENV-002)。 */
 export async function readDiagnosis(userDid: string, ns: string, fetchImpl?: typeof fetch): Promise<{ archetype: Archetype; baseStats: ReturnType<typeof statVectorToArray>; handle: string; playerXp: number }> {
   const { pds, handle } = await resolveUserPds(userDid, fetchImpl);
   const rec = await getRecord<{ archetype: Archetype; rpgStats: StatVector; jobLevel?: { xp?: number }; playerLevel?: { xp?: number } }>(pds, userDid, `${ns}.analysis`, 'self');

@@ -1,5 +1,7 @@
 /**
- * 発見ディレクトリ (app.aozoraquest.directory) を #aozoraquest 投稿から自動更新する。
+ * 発見ディレクトリを #aozoraquest 投稿から自動更新する。書き先は env で分ける (D-ENV-002):
+ * NSID_ENV 未設定 (本番) = `app.aozoraquest.directory`、dev = `app.aozoraquest.dev.directory`。
+ * 規則は web / edge と同じ core の adminNsidPrefix。
  *
  * admin UI の「検索から更新 → 保存 (PDS に書き込み)」
  * (apps/admin/src/routes/directory.tsx) を headless で行うバージョン。
@@ -18,6 +20,7 @@
  * (record に `$type: collection` を付ける)。
  */
 import { AtpAgent } from '@atproto/api';
+import { directoryCollection } from '../packages/core/src/admin-nsid.js';
 
 interface Entry {
   did: string;
@@ -46,7 +49,7 @@ const EXPECTED_ADMIN_DIDS = (process.env.ADMIN_DIDS ?? process.env.VITE_ADMIN_DI
   .filter(Boolean);
 const OPTIN_TAG = process.env.OPTIN_TAG ?? 'aozoraquest';
 const MAX_PAGES = Math.max(1, Number(process.env.MAX_PAGES ?? '5') || 5);
-const COLLECTION = `${NSID_ROOT}.directory`;
+const COLLECTION = directoryCollection(NSID_ROOT, process.env.NSID_ENV);
 const RKEY = 'self';
 
 function isNotFound(e: unknown): boolean {

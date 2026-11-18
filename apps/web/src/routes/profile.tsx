@@ -5,7 +5,7 @@ import type { DiagnosisResult, ResonanceDetail, StatArray } from '@aozoraquest/c
 import { DIAGNOSIS_MIN_POST_COUNT, jobDisplayName, jobTagline, resonance, resonanceBreakdown, resonanceLabel, statVectorToArray } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { getRecord } from '@/lib/atproto';
-import { COL, ROOT_COL } from '@/lib/collections';
+import { COL } from '@/lib/collections';
 import { ActionLink } from '@/components/action-link';
 import { BookIcon } from '@/components/icons';
 import { runDiagnosisForOther } from '@/lib/diagnosis-flow';
@@ -55,8 +55,8 @@ export function ProfileView({ actor }: { actor: string }) {
         const theirDid = profile.did;
 
         const [theirDiag, myDiag] = await Promise.all([
-          // 他人 (theirDid) は production NSID、自分 (myDid) は env-isolated COL
-          getRecord<DiagnosisResult>(agent, theirDid, ROOT_COL.analysis, 'self').catch(() => null),
+          // 他人も自分も同じ env の COL (dev から本番を読まない D-ENV-002)
+          getRecord<DiagnosisResult>(agent, theirDid, COL.analysis, 'self').catch(() => null),
           myDid ? getRecord<DiagnosisResult>(agent, myDid, COL.analysis, 'self').catch(() => null) : Promise.resolve(null),
         ]);
         if (cancelled) return;

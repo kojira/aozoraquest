@@ -25,7 +25,7 @@ import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
 import { handlePartyCandidates, handlePartyReroll, handlePartySet } from './party-route';
 import { handlePartyOrdersRoute } from './party-orders-route'; import { handleCasinoRoute } from './casino-route';
-import { ensureAuthoredWorld, handleAdminCache } from './world-authoring';
+import { adminNsidRoot, ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
@@ -42,16 +42,6 @@ export interface Env extends OAuthRoutesEnv, AdminDataEnv {
 }
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
-
-/** リクエストの Origin から NSID prefix を決める (#363: edge は 1 デプロイで dev/prod を捌く)。
- *  client の VITE_NSID_ENV と一致させる: dev.aozoraquest.app→`app.aozoraquest.dev`、
- *  localhost→`app.aozoraquest.local`、本番→`app.aozoraquest`。 */
-function nsFromOrigin(req: Request): string {
-  const origin = req.headers.get('origin') ?? '';
-  if (origin.includes('dev.aozoraquest.app')) return 'app.aozoraquest.dev';
-  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return 'app.aozoraquest.local';
-  return 'app.aozoraquest';
-}
 
 /** service auth の lexicon method (lxm)。エンドポイントごとに別値。 */
 const LXM_WHOAMI = LXM.whoami;
@@ -157,7 +147,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     // PDS へは書かない = 初回 move で確定)。initialized はレコード実在を表す。
     try {
       const rec = await readState(env, did);
-      const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString(), nsFromOrigin(req)));
+      const state = rec?.state ?? (await migrateInitState(did, new Date().toISOString(), adminNsidRoot(env)));
       // 位置トークンも一緒に返す → client は初回から有効トークンを持て、初手 move の再同期/ワープを防ぐ。
       // mapId (#424) も載せる — 内部マップに居るまま再読み込みしたとき、
       // 初手 move がフィールド判定になって壁にめり込むのを防ぐ。
@@ -193,7 +183,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
         // index.ts の waitUntil ロードが間に合わず「倒したのに数えられない」が無言で起きるので待つ
         // (ロード済みならキャッシュ即返し。設計レビュー ★★)。
         await ensureAuthoredWorld(env, nowSec());
-        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), nsFromOrigin(req), skillIndex, targetIndex, itemId, body.allies)), allowedOrigin);
+        return cors(json(await handleTurn(env, did, body.battleId, body.turn, body.command as Command, nowSec(), adminNsidRoot(env), skillIndex, targetIndex, itemId, body.allies)), allowedOrigin);
       }
       if (typeof body.dx !== 'number' || typeof body.dy !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
       // **移動もワールドの読み込みを待つ。** ゲート (#424)・NPC (#425)・地図はここで効くので、
@@ -201,7 +191,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       // 「人がいない」が無言で起きる (実際に踏んだ)。ロード済みならキャッシュ即返しで
       // コストは乗らない。
       await ensureAuthoredWorld(env, nowSec());
-      return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleMove(env, did, body.dx, body.dy, typeof body.token === 'string' ? body.token : undefined, nowSec(), adminNsidRoot(env))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -221,7 +211,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { x?: number; y?: number };
     if (typeof body.x !== 'number' || typeof body.y !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      return cors(json(await handleTeleport(env, did, body.x, body.y, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleTeleport(env, did, body.x, body.y, nowSec(), adminNsidRoot(env))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -243,7 +233,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     if (body.target !== undefined && typeof body.target !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       if (body.target !== undefined) await ensureAuthoredWorld(env, nowSec()); // なじみの仲間は world.story にいる
-      return cors(json(await handleItem(env, did, body.item, nowSec(), nsFromOrigin(req), undefined, body.target)), allowedOrigin);
+      return cors(json(await handleItem(env, did, body.item, nowSec(), adminNsidRoot(env), undefined, body.target)), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -262,7 +252,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { caster?: unknown; skillId?: unknown; target?: unknown; rkey?: unknown };
     try {
       await ensureAuthoredWorld(env, nowSec()); // なじみの仲間は world.story にいる
-      return cors(json(await handleFieldSkill(env, did, body, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleFieldSkill(env, did, body, nowSec(), adminNsidRoot(env))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -282,7 +272,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { gear?: unknown };
     if (typeof body.gear !== 'object' || body.gear === null) return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      return cors(json(await handleGear(env, did, body.gear as Parameters<typeof handleGear>[2], nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleGear(env, did, body.gear as Parameters<typeof handleGear>[2], nowSec(), adminNsidRoot(env))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
@@ -303,7 +293,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     try {
       // 置きアイテムは管理データ由来。コールドスタート直後に未ロードだと普段のしらべるに落ちてパワーを使う。
       await ensureAuthoredWorld(env, nowSec());
-      return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req), undefined,
+      return cors(json(await handleSearch(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), adminNsidRoot(env), undefined,
         typeof body.key === 'string' && body.key.length <= 128 ? body.key : undefined)), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
@@ -332,7 +322,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       // ユーザー PDS のパワー残高・冒険はじめの持ち物・開始位置が取り込まれないまま固定される
       // (以後 readState が null を返さないので migrateInitState は二度と走らない)。
       // 「世界を開く前にホームから投稿する」だけで踏む経路なので致命的。
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       const result = await claimXp(env, did, { archetype: body.archetype, postUri: body.postUri }, nowSec(),
         (d, iso) => migrateInitState(d, iso, ns));
       return cors(json(result), allowedOrigin);
@@ -362,7 +352,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
     // 対象は自分のみ (他人の state は動かせない)。管理でも他人のデータは触らせない。
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       const r = await adminSetJobXp(env, did, body.archetype, body.level, nowSec(), (d, iso) => migrateInitState(d, iso, ns));
       return cors(json(r), allowedOrigin);
     } catch (e) {
@@ -404,7 +394,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { reason?: unknown; key?: unknown };
     if (body.reason !== 'card-draw' || typeof body.key !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       return cors(json(await spendPower(env, did, { reason: body.reason, key: body.key }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
@@ -429,7 +419,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { amount?: unknown };
     if (typeof body.amount !== 'number') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       return cors(json(await adminGrantPower(env, did, body.amount, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof XpClaimError) return cors(json({ error: 'bad_request', reason: e.message }, e.status), allowedOrigin);
@@ -452,7 +442,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { itemId?: unknown; rkey?: unknown; token?: unknown };
     if (typeof body.itemId !== 'string' || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       const pos = positionFrom(env, body.token, did);
       // 強化値の抽選に効く luk はサーバーが出す (client 申告を使わない)。
       const luk = await playerLuk(env, did, ns);
@@ -479,7 +469,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       ? (body.rkeys as [string, string]) : null;
     if (!pair || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       const pos = positionFrom(env, body.token, did);
       return cors(json(await shopForge(env, did, { rkeys: pair, rkey: body.rkey, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
@@ -505,7 +495,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       ? (body.rkeys as string[]) : null;
     if (!rkeys || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       return cors(json(await shopDiscard(env, did, { rkeys, rkey: body.rkey }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {
       if (e instanceof ShopError) return cors(json({ error: e.code ?? 'shop_error', message: e.message }, e.status), allowedOrigin);
@@ -529,7 +519,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { questId?: unknown; token?: unknown };
     if (typeof body.questId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       // コールドスタート直後だと定義が未ロードで「そのクエストは無い」に落ちるので、ここは待つ
       // (TTL 内はキャッシュ即返しでコスト無し)。
       await ensureAuthoredWorld(env, nowSec());
@@ -559,7 +549,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     if (typeof body.npcId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       await ensureAuthoredWorld(env, nowSec());
-      return cors(json(await handleStoryBattle(env, did, body.npcId, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleStoryBattle(env, did, body.npcId, typeof body.token === 'string' ? body.token : undefined, nowSec(), adminNsidRoot(env))), allowedOrigin);
     } catch (e) {
       if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);
@@ -580,14 +570,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { token?: unknown };
     try {
       await ensureAuthoredWorld(env, nowSec());
-      return cors(json(await handleInnRest(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), nsFromOrigin(req))), allowedOrigin);
+      return cors(json(await handleInnRest(env, did, typeof body.token === 'string' ? body.token : undefined, nowSec(), adminNsidRoot(env))), allowedOrigin);
     } catch (e) {
       return cors(battleError(e), allowedOrigin);
     }
   }
 
-  const partyOrders = await handlePartyOrdersRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (partyOrders) return partyOrders; // さくせん (D-PARTY-004)
-  const casino = await handleCasinoRoute(req, url, env, nowSec(), nsFromOrigin(req), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (casino) return casino; // カジノ (D-CASINO-001)
+  const partyOrders = await handlePartyOrdersRoute(req, url, env, nowSec(), adminNsidRoot(env), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (partyOrders) return partyOrders; // さくせん (D-PARTY-004)
+  const casino = await handleCasinoRoute(req, url, env, nowSec(), adminNsidRoot(env), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (casino) return casino; // カジノ (D-CASINO-001)
   // パーティの編成・ギルドの候補・候補の引き直し (D-PARTY-001 / D-PARTY-002)。ギルドの受付のそばにいるかは edge が確かめる。
   if (req.method === 'POST' && LXM_PARTY_BY_PATH[url.pathname]) {
     const token = bearer(req);
@@ -602,7 +592,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     if (typeof body.guild !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       await ensureAuthoredWorld(env, nowSec());
-      const pos = typeof body.token === 'string' ? body.token : undefined, ns = nsFromOrigin(req);
+      const pos = typeof body.token === 'string' ? body.token : undefined, ns = adminNsidRoot(env);
       if (url.pathname === '/api/party/candidates') return cors(json(await handlePartyCandidates(env, did, body.guild, pos, nowSec(), ns)), allowedOrigin);
       if (url.pathname === '/api/party/reroll') return cors(json(await handlePartyReroll(env, did, body.guild, body.rkey, pos, nowSec(), ns)), allowedOrigin);
       return cors(json(await handlePartySet(env, did, body.guild, body.ids, pos, nowSec(), ns, body.payOverLevel, body.rkey)), allowedOrigin);
@@ -625,7 +615,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { itemId?: unknown; rkey?: unknown; token?: unknown };
     if (typeof body.itemId !== 'string' || typeof body.rkey !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       const pos = positionFrom(env, body.token, did);
       // 値段と品揃えは管理データ (world.items) にしか無い。コールド isolate でも読み込みを待つ。
       await ensureAuthoredWorld(env, nowSec());
@@ -652,7 +642,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     }
     try {
-      const ns = nsFromOrigin(req);
+      const ns = adminNsidRoot(env);
       const pos = positionFrom(env, body.token, did);
       return cors(json(await shopSell(env, did, { materialId: body.materialId, count: body.count, rkey: body.rkey, ...(pos ? { pos } : {}) }, nowSec(), (d, iso) => migrateInitState(d, iso, ns))), allowedOrigin);
     } catch (e) {

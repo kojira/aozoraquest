@@ -11,7 +11,7 @@ import type { Archetype, DiagnosisResult, StatArray, StatVector } from '@aozoraq
 import { JOBS_BY_ID, resonance } from '@aozoraquest/core';
 import { fetchAuthorFeed, getRecord } from './atproto';
 import { seedArchetype } from './archetype-cache';
-import { ROOT_COL } from './collections';
+import { COL } from './collections';
 
 export interface ResonanceEntry {
   item: AppBskyFeedDefs.FeedViewPost;
@@ -50,8 +50,8 @@ export async function buildResonanceTimeline(
       try {
         const [feedRaw, otherDiag] = await Promise.all([
           fetchAuthorFeed(agent, did, perAuthor),
-          // 他人の analysis は production NSID から読む (env 隔離は self 用)
-          getRecord<DiagnosisResult>(agent, did, ROOT_COL.analysis, 'self'),
+          // 他人の analysis も自分の env の collection から (dev から本番を読まない D-ENV-002)
+          getRecord<DiagnosisResult>(agent, did, COL.analysis, 'self'),
         ]);
         // リポストを除外。getAuthorFeed は post 本人 + リポストを返すので、
         // 本人投稿だけに絞らないと directory に居ない他人の post が混入する。
