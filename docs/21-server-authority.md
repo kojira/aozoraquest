@@ -43,7 +43,8 @@
 - **`apps/edge` Worker** が app のサーバー用アカウント (依頼クエスト集約と同じ主管理者 PDS、
   または専用ゲームアカウント) の repo に、**ユーザー DID をキーにした 1 レコード/人**で権威 state
   (パワー残高・冒険 XP/Lv・素材インベントリ・装備 gear・位置) を持つ。ユーザーはこの repo に
-  書けない = 偽造不可。NSID 例 `app.aozoraquest.gameState`、rkey = DID の sanitized 形。
+  書けない = 偽造不可。NSID は本番 `app.aozoraquest.gameState`、dev エッジ `app.aozoraquest.dev.gameState`
+  (D-ENV-002。Worker env の `ADMIN_NSID_ENV` で分ける。docs/22)、rkey = DID の sanitized 形。
 - **Worker の PDS 書き込み手段**: サーバーアカウントの認証情報 (app-password か保存した
   OAuth トークン) を **Worker Secret** に置き、`@atproto/api` の Agent で `com.atproto.repo.putRecord`。
   **要 PoC**: `@atproto/api` (base Agent, fetch ベース) が Workers で動くか (oauth-client-node は

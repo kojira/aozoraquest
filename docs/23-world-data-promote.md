@@ -89,6 +89,6 @@ characters → map → tileArt → monsters → monsterArt → items → shops �
 
 ## 5. 注意
 
-- **gameState は dev と本番で共有。** `app.aozoraquest.gameState` は ns の前置きが無い1つの権威レコード。dev で遊んだ人は本番でも続きから始まる。データを戻しても進行は戻らない。
+- **gameState は dev と本番で別。** dev エッジは `app.aozoraquest.dev.gameState`、本番エッジは `app.aozoraquest.gameState` に書く（D-ENV-002。Worker env の `ADMIN_NSID_ENV` で決まる）。dev で遊んだ進行は本番に持ち越されない。world.* を本番へ移しても進行は移らない。データを戻しても進行は戻らない。
 - **公開後の編集は dev で行い、この手順で本番へ移す**（オーナーの決定）。本番の管理画面（/admin/*）で直接保存すると本番の world.* へ書かれ、dev とずれるので使わない。
 - **NPC の画像は同じ repo の blob。** spriteImage・portraitImage・expressionImages は管理者 repo の blob なので、レコードを写せば本番でも同じ参照で出る。新しい画像は dev で `admin-data.mjs npc-image` で上げてから移す。

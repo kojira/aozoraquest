@@ -29,7 +29,7 @@ import {
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, advanceGuard, deleteGuard } from './battle-guard';
-import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, partyWithBattleXp, GAME_STATE_COLLECTION, type GameStateEnv, type GameState, type PartyState } from './game-state';
+import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, partyWithBattleXp, gameStateCollection, type GameStateEnv, type GameState, type PartyState } from './game-state';
 import { advanceScenario, type ScenarioMessage } from './scenario-progress';
 import { sanitizeGear } from './game-state';
 // sanitizeGear は game-state へ移した (shop からも使うため。shop → battle-resolver は循環)。
@@ -200,7 +200,7 @@ export async function handleReset(env: ResolverEnv, userDid: string, now: number
   if (guard) await deleteGuard(env, now, userDid, guard.cid);
   // gameState レコードを削除 → 次の move/state で migrateInitState が初期状態を生成する。
   const existing = await readState(env, userDid);
-  if (existing) await serverDeleteRecord(env, now, GAME_STATE_COLLECTION, rkeyForDid(userDid), existing.cid);
+  if (existing) await serverDeleteRecord(env, now, gameStateCollection(env), rkeyForDid(userDid), existing.cid);
   return { ok: true };
 }
 

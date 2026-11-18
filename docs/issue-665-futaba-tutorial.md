@@ -150,6 +150,7 @@ collectは受注前の所持品も数える。報告で指定個数を渡すこ�
 - web `ADMIN_COL.world*` は環境共有prefix、world-authoringのrkeyは `self`。
 - edge `index.ts` と `router.ts` はworld loaderへのnsid導出が異なり得る。loaderのcacheはnsidごとでない。
 - `GAME_STATE_COLLECTION` は固定、rkeyはtarget DID hash。**同じサーバーrepoを使用していれば**devからも同じstateへ書く。コメントは共有と書くが、現稼働のSERVER_DID/token repo一致は未確認。
+  （後日: D-ENV-002 で collection を Worker env ごとに分けた。dev エッジは `app.aozoraquest.dev.gameState`。docs/22）
 - docs22はWorker/KV/secrets分離を定めるが、SERVER_DID同一を許容しており、実PDSレコードの分離証明にはならない。
 
 したがって、このブランチでは全authoring rkey変更やGameState分離を実装しない。stagingの新データ投入・実アカウント試験も保留。既存#664の配備承認を本件の共有管理データ上書き承認に流用しない。

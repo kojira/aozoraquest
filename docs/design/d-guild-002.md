@@ -147,7 +147,7 @@ activeQuests: Array<{ id: string; progress: number }>;
 
 ### 事実と範囲
 
-`game-state.ts:19` は固定collection `app.aozoraquest.gameState`、`:118-120` のrkeyは本人DIDのhash、`:135-139` のrepoはbootstrap token由来。Originのnamespaceはこのキーに含まれない。同ファイル`:24-32` はdev/prod共有を明記。`wrangler.toml` は `aozoraquest-edge` と `aozoraquest-edge-dev` が別Worker、KVも別だが、同じrepoを認可した場合stateは共通。
+`game-state.ts:19` は固定collection `app.aozoraquest.gameState`、`:118-120` のrkeyは本人DIDのhash、`:135-139` のrepoはbootstrap token由来。Originのnamespaceはこのキーに含まれない。同ファイル`:24-32` はdev/prod共有を明記。`wrangler.toml` は `aozoraquest-edge` と `aozoraquest-edge-dev` が別Worker、KVも別だが、同じrepoを認可した場合stateは共通。（後日: D-ENV-002 で collection を Worker env ごとに分けた。dev エッジは `app.aozoraquest.dev.gameState`。docs/22）
 
 `.github/workflows/edge-deploy.yml` はmainのedgeのみ自動配備、dev edgeは型/テストのあと別途手動。web更新だけでedgeが更新されたと思い込まない。今回live token/repo/稼働revisionは取得していない。未リリースであるというユーザー説明が実利用前提の正本であり、「稼働本番だから全員を保護する」という想定は置かない。
 

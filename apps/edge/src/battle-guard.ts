@@ -11,10 +11,15 @@
  */
 import { getRecord } from './pds';
 import { readServerTokens } from './oauth-store';
-import { serverPutRecord, serverDeleteRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
-import { rkeyForDid } from './game-state';
+import { serverPutRecord, serverDeleteRecord, ServerWriteError } from './server-pds';
+import { rkeyForDid, type GameStateEnv } from './game-state';
+import { adminNsidRoot } from './world-authoring';
 
-export const BATTLE_GUARD_COLLECTION = 'app.aozoraquest.battleGuard';
+/** バトルガードの collection (D-ENV-002)。gameState と同じく Worker env で dev と本番を分ける
+ *  (dev エッジ = `app.aozoraquest.dev.battleGuard`、本番 = `app.aozoraquest.battleGuard`)。 */
+export function battleGuardCollection(env: GameStateEnv): string {
+  return `${adminNsidRoot(env)}.battleGuard`;
+}
 
 export interface BattleGuard<Sealed = unknown, State = unknown> {
   /** どのユーザーの戦闘か (監査用。rkey は DID ハッシュ)。 */
@@ -39,7 +44,7 @@ export interface BattleGuard<Sealed = unknown, State = unknown> {
 }
 
 /** 読み書き先 repo をトークン由来にするため、書込先 pds を token から得る。無ければ fail-closed。 */
-async function guardRepo(env: ServerPdsEnv): Promise<{ pdsUrl: string; did: string }> {
+async function guardRepo(env: GameStateEnv): Promise<{ pdsUrl: string; did: string }> {
   if (!env.OAUTH_TOKENS) throw new ServerWriteError('KV 未 binding', 'no-kv');
   const t = await readServerTokens(env.OAUTH_TOKENS);
   if (!t) throw new ServerWriteError('サーバートークン未 bootstrap', 'not-bootstrapped');
@@ -48,17 +53,17 @@ async function guardRepo(env: ServerPdsEnv): Promise<{ pdsUrl: string; did: stri
 
 /** アクティブなバトルガードを取得 (無ければ null)。1 ユーザー 1 戦闘なので rkey は DID ハッシュ。 */
 export async function readGuard<S = unknown, St = unknown>(
-  env: ServerPdsEnv,
+  env: GameStateEnv,
   targetDid: string,
 ): Promise<{ guard: BattleGuard<S, St>; cid: string } | null> {
   const repo = await guardRepo(env);
-  const rec = await getRecord<BattleGuard<S, St>>(repo.pdsUrl, repo.did, BATTLE_GUARD_COLLECTION, rkeyForDid(targetDid));
+  const rec = await getRecord<BattleGuard<S, St>>(repo.pdsUrl, repo.did, battleGuardCollection(env), rkeyForDid(targetDid));
   return rec ? { guard: rec.value, cid: rec.cid } : null;
 }
 
 /** ガードを作成 (encounter)。既存があれば InvalidSwap (二重戦闘を作らせない)。 */
-export async function createGuard(env: ServerPdsEnv, now: number, guard: BattleGuard): Promise<{ cid: string }> {
-  const { cid } = await serverPutRecord(env, now, BATTLE_GUARD_COLLECTION, rkeyForDid(guard.did), guard, null);
+export async function createGuard(env: GameStateEnv, now: number, guard: BattleGuard): Promise<{ cid: string }> {
+  const { cid } = await serverPutRecord(env, now, battleGuardCollection(env), rkeyForDid(guard.did), guard, null);
   return { cid };
 }
 
@@ -67,12 +72,12 @@ export async function createGuard(env: ServerPdsEnv, now: number, guard: BattleG
  * resolver は「読取 → 確定 turnSeed で resolveTurn → advance を 1 CAS 書込」で **CAS の成否で応答を
  * ゲート**する (競合 = やり直し/リプレイ = 409、応答は返さない)。
  */
-export async function advanceGuard(env: ServerPdsEnv, now: number, guard: BattleGuard, expectedCid: string): Promise<{ cid: string }> {
-  const { cid } = await serverPutRecord(env, now, BATTLE_GUARD_COLLECTION, rkeyForDid(guard.did), guard, expectedCid);
+export async function advanceGuard(env: GameStateEnv, now: number, guard: BattleGuard, expectedCid: string): Promise<{ cid: string }> {
+  const { cid } = await serverPutRecord(env, now, battleGuardCollection(env), rkeyForDid(guard.did), guard, expectedCid);
   return { cid };
 }
 
 /** ガードを削除 (決着時)。CAS 付きで確実に「その CID のときだけ」消す。 */
-export async function deleteGuard(env: ServerPdsEnv, now: number, did: string, expectedCid: string): Promise<void> {
-  await serverDeleteRecord(env, now, BATTLE_GUARD_COLLECTION, rkeyForDid(did), expectedCid);
+export async function deleteGuard(env: GameStateEnv, now: number, did: string, expectedCid: string): Promise<void> {
+  await serverDeleteRecord(env, now, battleGuardCollection(env), rkeyForDid(did), expectedCid);
 }
