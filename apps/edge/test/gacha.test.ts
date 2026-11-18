@@ -126,17 +126,17 @@ describe('ギルドの候補 (D-PARTY-002)', () => {
       return { env, m, locked, price: overLevelPower(locked.minLevel, jobLevelFromXp(0, 'warrior')) };
     }
 
-    it('払うと 足りない Lv × 5 だけパワーが減って仲間になる。同じ rkey の再送は 1 回ぶんだけ', async () => {
-      const { env, m, locked, price } = await lockedPick(100);
-      expect(price).toBe(5 * (locked.minLevel - 1));
+    it('払うと 足りない Lv × 100 だけパワーが減って仲間になる。同じ rkey の再送は 1 回ぶんだけ', async () => {
+      const { env, m, locked, price } = await lockedPick(10000);
+      expect(price).toBe(100 * (locked.minLevel - 1));
       const r = await handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW, undefined, true, 'p1');
-      expect(r.power).toBe(100 - price);
-      expect(m.gs().power).toBe(100 - price);
+      expect(r.power).toBe(10000 - price);
+      expect(m.gs().power).toBe(10000 - price);
       expect(m.gs().party?.ids).toEqual([locked.id]);
       expect(m.gs().party?.members?.[0]?.xp).toBe(xpForAllyLevel(locked.archetype, locked.level));
       const again = await handlePartySet(env, USER, 'g-bluesky', [locked.id], near(env), NOW, undefined, true, 'p1');
-      expect(again.power).toBe(100 - price);
-      expect(m.gs().power).toBe(100 - price);
+      expect(again.power).toBe(10000 - price);
+      expect(m.gs().power).toBe(10000 - price);
     });
 
     it('払うと言わなければ 400 recruit_level。パワーが足りなければ 400 not_enough_power で、何も変わらない', async () => {

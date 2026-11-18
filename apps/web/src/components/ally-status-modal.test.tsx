@@ -61,6 +61,6 @@ describe('AllyStatusModal (#893)', () => {
     expect(box.textContent).toContain(skillsForJob('mage', 12).map((s) => s.name).join('、'));
     expect(box.textContent).not.toContain('けいけんち');
     fireEvent.click(within(box).getByRole('button', { name: 'とじる' }));
-    expect((screen.getByRole('button', { name: 'ソラを パワー30で くわえる' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'ソラを パワー600で くわえる' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

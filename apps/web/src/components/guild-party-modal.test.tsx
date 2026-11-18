@@ -49,18 +49,18 @@ describe('GuildPartyModal (D-PARTY-002)', () => {
   it('Lv が足りない人は「Lv N から」と「パワー◯で くわえる」。パワーが足りなければ押せない', async () => {
     await open({ ids: [] }, flags3);
     expect(region(PARTY_LINES.heading).textContent).toContain('Lv 10 から');
-    expect(PARTY_LINES.payJoin(20)).toBe('パワー20で くわえる');
-    const pay = button('ソラを パワー20で くわえる');
-    expect(pay.textContent).toBe('パワー20で くわえる');
+    expect(PARTY_LINES.payJoin(400)).toBe('パワー400で くわえる');
+    const pay = button('ソラを パワー400で くわえる');
+    expect(pay.textContent).toBe('パワー400で くわえる');
     expect(pay.disabled).toBe(true);
     expect(button('ミオを くわえる').disabled).toBe(false);
   });
 
   it('パワーが足りれば 払って くわえる (rkey つきで送る)。残りのパワーを出しなおす', async () => {
     const save = vi.fn(async (ids: string[]) => ({ party: { ids, members: [member(TODAY[2]!)] }, power: 5 }));
-    await open({ ids: [] }, flags3, { save, candidates: offer(TODAY, 25) });
-    expect(screen.getByText('パワー 25')).toBeTruthy();
-    const pay = button('ソラを パワー20で くわえる');
+    await open({ ids: [] }, flags3, { save, candidates: offer(TODAY, 405) });
+    expect(screen.getByText('パワー 405')).toBeTruthy();
+    const pay = button('ソラを パワー400で くわえる');
     expect(pay.disabled).toBe(false);
     await act(async () => { fireEvent.click(pay); });
     expect(save).toHaveBeenCalledTimes(1);
