@@ -106,8 +106,8 @@ export interface EquipmentDef {
   hands?: 1 | 2;
   /** 1 職専用 (指定があればカテゴリ不問でそのジョブのみ装備可)。 */
   jobOnly?: Archetype;
-  /** 品揃え生成の階級。1=初級 2=中位 3=上位 (特色枠)。 */
-  grade: 1 | 2 | 3;
+  /** 装備の段階 (1〜6。D-ENDGAME-001)。grade g の品は tier g 以上の店に並ぶ。値の目安は gear-ladder.ts。 */
+  grade: 1 | 2 | 3 | 4 | 5 | 6;
   /** 値札: あおぞらパワー + 素材個数 (素材の種類は店側が地域ドロップから決める)。 */
   price: { power: number; materials: number };
   /** 属性 (D-ELEM-001)。武器は通常攻撃の属性、防具 (頭・胴・足・お守り) は守りの染まり (gear-element.ts)。 */
@@ -372,15 +372,22 @@ export function craftLevelRoll(seed: number, luk: number): number {
   return pool[pool.length - 1]![0];
 }
 
-/** 強化値を適用した装備ボーナス: 主効果 (最大のボーナス) に +level (最低 1 は保証)。 */
+/** 強化 1 段あたりの伸び = 主効果の この割合 (D-ENDGAME-001 §A3)。+10 で 2 倍になり、1 段上の
+ *  grade の品と同じくらいになる (鍛えれば 1 段は飛べる)。以前は「主効果 + level」だったので、
+ *  値の小さい g1〜3 では +5 が 2 段ぶんになり、値の大きい g6 では +10 でも 1 割しか伸びなかった。 */
+export const FORGE_STEP_RATIO = 0.1;
+
+/** 強化値を適用した装備ボーナス: 主効果 (最大のボーナス) に 段 × 主効果 × FORGE_STEP_RATIO
+ *  (合計を四捨五入。強化していれば最低 ±1)。主効果は 1 未満にならない。 */
 export function bonusWithLevel(def: EquipmentDef, level: number): EquipmentDef['bonus'] {
   const lv = Math.max(CRAFT_TUNING.craftMin, Math.min(CRAFT_TUNING.levelMax, Math.round(level)));
   const entries = Object.entries(def.bonus).filter(([, v]) => v !== undefined) as Array<[string, number]>;
   if (entries.length === 0 || lv === 0) return { ...def.bonus };
   let primary = entries[0]!;
   for (const e of entries) if (e[1] > primary[1]) primary = e;
+  const delta = Math.sign(lv) * Math.max(1, Math.round(Math.abs(primary[1]) * FORGE_STEP_RATIO * Math.abs(lv)));
   const out: EquipmentDef['bonus'] = { ...def.bonus };
-  out[primary[0] as keyof EquipmentDef['bonus']] = Math.max(1, primary[1] + lv);
+  out[primary[0] as keyof EquipmentDef['bonus']] = Math.max(1, primary[1] + delta);
   return out;
 }
 
@@ -497,16 +504,19 @@ export interface ShopStock {
 /** 店の素材は tier ごと。**その帯の敵が実際に落とすものだけ**を並べる。
  *  帯を 2 tier ぶん幅で丸めていた頃は、tier1 の街が tier2 でしか落ちない
  *  wisp-ember を要求していた (= 一段上の地方まで行かないと値札が読めない)。 */
-const SHOP_MATERIALS_BY_TIER: readonly [readonly string[], readonly string[], readonly string[]] = [
+const SHOP_MATERIALS_BY_TIER: readonly (readonly string[])[] = [
   ['slime-drop', 'bat-wing', 'mush-spore'], // tier1 (spawn 近辺)
   ['dusk-wing', 'crimson-spore', 'wisp-ember'], // tier2
-  ['golem-core', 'serpent-scale', 'metal-shard'], // tier3 以上 (中盤〜)
+  ['golem-core', 'serpent-scale', 'metal-shard'], // tier3
+  ['serpent-scale', 'golem-core'], // tier4 (D-ENDGAME-001。D1 で帯の敵の素材に合わせる)
+  ['raven-feather', 'oni-horn'], // tier5
+  ['dragon-fang', 'oni-horn'], // tier6
 ];
 /** tier → 素材帯。**equipment.test がこの関数で期待値を組む**ので、帯の定義を
  *  ここ 1 か所に閉じる (テスト側に同じ式を複製すると、敵の tier を動かしたときに
  *  片方だけ直して「テストは緑なのに店が地元で狩れない素材を要求する」に戻る)。 */
-export function shopMaterialBand(tier: number): 0 | 1 | 2 {
-  return Math.min(2, Math.max(0, tier - 1)) as 0 | 1 | 2;
+export function shopMaterialBand(tier: number): number {
+  return Math.min(SHOP_MATERIALS_BY_TIER.length - 1, Math.max(0, tier - 1));
 }
 
 /**
@@ -519,7 +529,7 @@ export function shopMaterialBand(tier: number): 0 | 1 | 2 {
  * 実測で全 53 街のうち tier1 の 24 街に grade2 が 69 品・grade3 が 10 品並んでいた。
  */
 export function maxShopGradeForTier(tier: number): number {
-  return Math.min(3, Math.max(1, tier));
+  return Math.min(6, Math.max(1, tier));
 }
 export function shopMaterialFor(town: Town): string {
   const tier = tierForRegion(town.region);

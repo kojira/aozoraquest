@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  GEAR_GRADES,
   GEAR_SLOTS,
   BONUS_STAT_LABELS,
   GEAR_SLOT_LABELS,
@@ -332,9 +333,9 @@ export function AdminItems() {
               {field('grade', (
                 <span style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
                   <select value={current.grade} onChange={(e) => update(current.id, { grade: Number(e.target.value) as EquipmentDef['grade'] })}>
-                    {[1, 2, 3].map((g) => <option key={g} value={g}>{g}</option>)}
+                    {GEAR_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
                   </select>
-                  <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>売られる街の帯 (1=tier1〜 2=tier2〜 3=tier3〜)</span>
+                  <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>売られる街の帯 (g の品は tier g〜 の店。1〜6)</span>
                 </span>
               ))}
               {field('専用ジョブ', (

@@ -145,7 +145,7 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
       if (e.slot !== 'weapon' && e.slot !== 'shield') throw new ItemDataError(`${where}: hands は武器と盾だけ`);
     }
     if (!KINDS.has(e.kind)) throw new ItemDataError(`${where}: kind が不正 (${e.kind})`);
-    if (![1, 2, 3].includes(e.grade)) throw new ItemDataError(`${where}: grade は 1〜3 (${e.grade})`);
+    if (![1, 2, 3, 4, 5, 6].includes(e.grade)) throw new ItemDataError(`${where}: grade は 1〜6 (${e.grade})`);
     if (!e.price || !(e.price.power >= 0) || !(e.price.materials >= 0)) {
       throw new ItemDataError(`${where}: price が不正`);
     }

@@ -566,14 +566,27 @@ export function regionDanger(region: number): number {
   return Math.max(0, Math.min(7, Math.floor(raw)));
 }
 
-/** 敵の顔ぶれが揃っている帯のうち、**距離で到達できる最大 tier** (#536)。
- *  tier7/8 は魔王の城の専用枠なので距離では出さない (`tierForRegion` が別途返す)。
+/** **距離から出す帯の上限** (D-ENDGAME-001 §A4・d-gear-002 案B)。距離の引き伸ばしは tier3 で止め、
+ *  それより上は `DEEP_REGION_TIERS` の表だけが出す。上限を敵の数で伸ばしていた頃は、tier4〜6 の敵を
+ *  足したとたんに世界全体の帯がつけなおされ、本編の街 (かすみ・いしだたみ・いただき・けものみち) が
+ *  tier3〜4 に上がり、tier1 のリージョンも 32 → 17 に減った (d-gear-002 §3 で測った)。
  *  battle → equipment → world → battle の循環があるので、**関数の中で読む**
  *  (トップレベルで評価すると `MAX_POPULATED_TIER` の初期化前に触って落ちる)。 */
-const maxTierByDistance = () => Math.min(6, MAX_POPULATED_TIER) as Tier;
+const DISTANCE_TIER_MAX = 3;
+const maxTierByDistance = () => Math.min(DISTANCE_TIER_MAX, MAX_POPULATED_TIER) as Tier;
 
-/** danger → 遭遇モンスター tier の対応 (単一の正)。遭遇・店の素材プール・
- *  テストはすべてこれを参照する — 3 箇所コピペで静かにデシンクした前科の再発防止
+/** **深いリージョンの帯** (案B)。どれも danger 6〜7 で、本編の道 (17・18・26・29・33・34・36・37・
+ *  41〜44・49・50) の外。ここに無いリージョンは距離で決まる (tier1〜3)。敵が 3 体そろっていない帯は
+ *  `MAX_POPULATED_TIER` まで下げる (空の帯に入ると `summonMonster` が落ちて街から出られなくなる)。 */
+export const DEEP_REGION_TIERS: Readonly<Record<number, Tier>> = {
+  45: 3, 51: 3, 55: 3, 60: 3, // おにび・よあけ (カジノ)・はてし
+  52: 4, 54: 4, // さかみち・くらやみ
+  61: 5, // おおわし
+  53: 6, // やまねこ (いちばん奥)
+};
+
+/** danger → 遭遇モンスター tier の対応 (距離で決まる帯。単一の正)。遭遇・店の素材プール・
+ *  テストは `tierForRegion` を通して参照する — 3 箇所コピペで静かにデシンクした前科の再発防止
  *  (PR #305 レビュー指摘)。 */
 export function tierForDanger(danger: number): Tier {
   // **danger の帯を tier の数に合わせて引き伸ばす** (#536)。
@@ -583,8 +596,7 @@ export function tierForDanger(danger: number): Tier {
   // 7 / 6 に縮み、世界の 73% が tier3 一色になった。spawn から 3 リージョン歩けば
   // 想定 Lv8 の帯、という「入口が一番大事」に真っ向から反する地形になる。
   //
-  // 引き伸ばしなら、敵が 3 体しか揃っていない今は tier1 が danger 0..3 (= 30 リージョン)
-  // を占め、敵を足して帯が増えるほど**傾斜が細かくなるだけで世界の形は変わらない**。
+  // 引き伸ばしは距離の帯 (tier1〜3) の中だけで使う。tier4 以上は表 (`DEEP_REGION_TIERS`)。
   //
   // danger 0..2 を一律 tier1 にするのは、spawn 周辺に「ノイズで急に強くなる」場所を
   // 作らないため (jitter が 0.9 あるので距離 2 までは揺れで前後する)。
@@ -597,19 +609,17 @@ export function tierForDanger(danger: number): Tier {
 
 /**
  * リージョンの tier (#536)。**遭遇・店の素材・現地ヒントはすべてここを見る**
- * (`tierForDanger` を直接呼ぶと、リージョン固有の上書きが反映されず静かにデシンクする)。
- *
- * 将来は魔王の城のリージョンだけ距離を無視して tier7 を返す。今は保留 (下記)。
+ * (`tierForDanger` を直接呼ぶと、リージョン固有の表が反映されず静かにデシンクする)。
  */
 export function tierForRegion(region: number): Tier {
   // **魔王の城 (tier7) はまだ適用しない** (#536)。候補リージョンを地形で確かめたところ、
   // 「山に囲まれた閉領域」ではなかった:
   //   - region#27 は歩行可能 52%、tier1/tier2 のリージョンと 109 タイル接している
   //   - region#28 には**街「おおたきの宿」がある** (歩行可能 26% / 49 タイル接触)
-  // つまり今のままでは「tier2 (想定 Lv5) から 1 歩で tier7 (想定 Lv34)」に入れてしまい、
-  // しかも城が未実装で tier7 の敵が 0 体なので `summonMonster` が落ちて move が 500 になる
-  // (= その街から出られなくなる)。城の実装と、そこへ至る段階 (tier5→6) の配置ができてから
-  // 有効化する。`DEMON_CASTLE_REGIONS` は場所の記録として残す。
+  // 決戦 (D-ENDGAME-001) は内部マップ「仮面の道」の encounterTier で上の帯を出すので、
+  // ここでは城を使わない。`DEMON_CASTLE_REGIONS` は場所の記録として残す。
+  const deep = DEEP_REGION_TIERS[region];
+  if (deep !== undefined) return Math.min(deep, MAX_POPULATED_TIER) as Tier;
   return tierForDanger(regionDanger(region));
 }
 
