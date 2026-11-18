@@ -48,7 +48,7 @@ function grantPlacedRewards(cur: GameState, item: PlacedItemDef): GameState {
     else {
       const rkey = chestPieceRkey(item.id, i);
       if (pieces.some((p) => p.rkey === rkey)) return;
-      if (heldPieceCount({ pieces, listings: cur.listings }) >= MAX_OWNED_PIECES) throw new ResolverError('もちものが いっぱいだ。', 400, 'pieces_full');
+      if (heldPieceCount({ ...cur, pieces }) >= MAX_OWNED_PIECES) throw new ResolverError('もちものが いっぱいだ。', 400, 'pieces_full');
       pieces.push({ rkey, itemId: r.equipment, level: 0 });
     }
   });

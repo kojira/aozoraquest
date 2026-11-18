@@ -75,6 +75,19 @@ export interface MarketListing {
   listedAt: number;
 }
 
+/** 買う途中の預かり (D-MARKET-001 §2)。op は買い手の端末が決めた rkey。 */
+export interface MarketHold {
+  op: string;
+  listingId: string;
+  seller: string;
+  town: { x: number; y: number };
+  itemId: string;
+  level: number;
+  price: number;
+  /** 預かった時刻 (epoch 秒)。 */
+  at: number;
+}
+
 export interface PartyState {
   ids: string[];
   hp?: Record<string, number>;
@@ -189,6 +202,8 @@ export interface GameState {
   pieces?: OwnedPiece[];
   /** 街に出品中の品 (D-MARKET-001)。売れるか取り下げるまで残る。pieces と合わせて MAX_OWNED_PIECES まで。 */
   listings?: MarketListing[];
+  /** 買っている途中の品の預かり (D-MARKET-001 §2)。パワーは引いてある。成立すれば品に、しなければパワーに戻す。 */
+  marketHolds?: MarketHold[];
   /** 今いるマップ (#424)。省略 = フィールド ('world')。内部マップ (街の中・城) に居るとき id が入る。 */
   mapId?: string;
   /** 進行フラグ (#545/#426)。**サーバーだけが立てる** — client の自己申告で章が進むと

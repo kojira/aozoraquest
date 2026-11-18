@@ -3,7 +3,9 @@
  * - `GET /api/market/town?x&y`: 街の棚を安い順に (認証なしで読むだけ)
  * - `POST /api/market/list {pieceRkey, price, rkey, token}`: 出品する (値段は出品者が決める。1 以上の整数)
  * - `POST /api/market/cancel {listingId}`: 取り下げる (持ち物に戻る)
- * - `POST /api/market/mine {}`: 店を開いたときの照合。棚に無い自分の品を持ち物に戻し、出品中の一覧を返す
+ * - `POST /api/market/buy {seller, listingId, rkey, token}`: 棚の品を買う (値段は棚の値)
+ * - `POST /api/market/mine {}`: 店を開いたときの照合。売れた品の売上を受け取り、棚に無い自分の品を持ち物に戻し、
+ *   止まった購入の預かりを片づけて、出品中の一覧を返す
  * 位置は署名トークン (無ければ state)。
  */
 import { LXM, townAt } from '@aozoraquest/core';
@@ -14,11 +16,13 @@ import { verifyPosition } from './world-token';
 import { ShopError } from './shop';
 import { marketCancel, marketList, marketReconcile, shelfCheapestFirst } from './market';
 import { readTownStock } from './market-stock';
+import { marketBuy, settleOldHolds } from './market-buy';
 
 const PATHS: Record<string, string> = {
   '/api/market/list': LXM.marketList,
   '/api/market/cancel': LXM.marketCancel,
   '/api/market/mine': LXM.marketMine,
+  '/api/market/buy': LXM.marketBuy,
 };
 
 type MarketEnv = ResolverEnv & WorldAuthoringEnv & { WORKER_DID?: string };
@@ -61,6 +65,11 @@ export async function handleMarketRoute(req: Request, url: URL, env: MarketEnv, 
       if (typeof body.listingId !== 'string') return respond({ error: 'bad_request' }, 400);
       return respond(await marketCancel(env, did, { listingId: body.listingId }, now, init));
     }
+    if (url.pathname === '/api/market/buy') {
+      const pos = positionOf(env, body.token, did, now);
+      return respond(await marketBuy(env, did, { seller: body.seller, listingId: body.listingId, rkey: body.rkey, ...(pos ? { pos } : {}) }, now, init));
+    }
+    await settleOldHolds(env, did, now, init); // 止まった購入の返金 (10 分を過ぎた預かり)
     return respond(await marketReconcile(env, did, now, init));
   } catch (e) {
     return fail(e);

@@ -12,6 +12,7 @@ import { ServerWriteError } from './server-pds';
 import { casRecordLoop } from './cas-record';
 import { adminNsidRoot } from './world-authoring';
 import type { GameStateEnv } from './game-state';
+import { ShopError } from './shop';
 
 export const TOWN_STOCK_VERSION = 1;
 
@@ -110,6 +111,11 @@ export async function modifyTownStock(env: GameStateEnv, town: { x: number; y: n
     stamp: (next) => ({ ...next, closed: next.closed.filter((c) => now - c.at <= LISTING_SETTLE_SEC).slice(-MAX_CLOSED_MARKS), version: TOWN_STOCK_VERSION, updatedAt: nowIso }),
     writeWhenCreated: false,
   });
+}
+
+/** 出品・購入の rkey (棚の大きさを決めるので短く)。 */
+export function assertMarketRkey(rkey: unknown): asserts rkey is string {
+  if (typeof rkey !== 'string' || !/^[A-Za-z0-9._:~-]+$/.test(rkey) || rkey.length > MARKET_RKEY_MAX) throw new ShopError('rkey が不正', 400, 'bad_rkey');
 }
 
 /** 同じ品か (棚の品は seller と id の組で 1 つ)。 */

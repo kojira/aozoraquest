@@ -1,6 +1,8 @@
 /**
  * 装備を街で売る (委託販売。D-MARKET-001 §1・§2)。出品・取り下げ・照合。
  *
+ * 購入と売上の受け取りの流れは market-buy.ts。
+ *
  * 出品は 2 回書く。1) 出品者の GameState: pieces → listings。2) 街の棚 townStock: 棚に足す。
  * 途中で止まっても、次に出品者が店を開いたときの照合 (`marketReconcile`) で続きから直す。
  * - 棚に足すのは listedAt から LISTING_WRITE_WINDOW_SEC (5 分) 以内だけ。照合は LISTING_SETTLE_SEC (10 分) を
@@ -8,20 +10,34 @@
  * - 取り下げ・満杯で断った品は棚の closed に印を残す。印のある品は遅れて届いた書き込みでも棚に載らず、照合ですぐ戻る
  * - 期限は無い。売れるか取り下げるまで並ぶ
  */
-import { EQUIPMENT_BY_ID, gearKey, isValidMarketPrice, listable, MARKET_LIMITS, overWorn } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, gearKey, isValidMarketPrice, listable, MARKET_LIMITS, marketSellerTake, overWorn } from '@aozoraquest/core';
 import { readModifyWrite, readState, type GameState, type GameStateEnv, type MarketListing, type OwnedPiece } from './game-state';
 import { wearersOf } from './party-gear';
 import { alreadyDone, shopAt, ShopError, withOp } from './shop';
-import { LISTING_SETTLE_SEC, LISTING_WRITE_WINDOW_SEC, MARKET_RKEY_MAX, modifyTownStock, readTownStock, sameListing, type ShelfListing, type TownStock } from './market-stock';
+import { assertMarketRkey, LISTING_SETTLE_SEC, LISTING_WRITE_WINDOW_SEC, modifyTownStock, readTownStock, sameListing, townStockRkey, type ShelfListing, type ShelfSale, type TownStock } from './market-stock';
 
 type Init = (did: string, nowIso: string) => Promise<GameState>;
 type Pos = { x: number; y: number; mapId?: string };
+
+/** 売れた知らせ (出品者が受け取ったとき)。 */
+export interface MarketSoldNotice {
+  listingId: string;
+  itemId: string;
+  level: number;
+  price: number;
+  /** 出品者に入ったパワー (手数料 1 割を消したあと)。 */
+  take: number;
+  buyer: string;
+}
 
 export interface MarketMineResult {
   pieces: OwnedPiece[];
   listings: MarketListing[];
   /** 照合で持ち物に戻した品。 */
   returned: MarketListing[];
+  /** 照合で受け取った売上。 */
+  sold: MarketSoldNotice[];
+  power: number;
 }
 export interface MarketListResult extends MarketMineResult {
   /** 出品した品 (再送で、もう片づいていた品なら無い)。 */
@@ -29,11 +45,6 @@ export interface MarketListResult extends MarketMineResult {
   duplicate: boolean;
   /** 棚に並んだか (満杯などで断られたら false。品は持ち物に戻っている)。 */
   onShelf: boolean;
-}
-
-/** 出品・購入の rkey (棚の大きさを決めるので短く)。 */
-function assertMarketRkey(rkey: unknown): asserts rkey is string {
-  if (typeof rkey !== 'string' || !/^[A-Za-z0-9._:~-]+$/.test(rkey) || rkey.length > MARKET_RKEY_MAX) throw new ShopError('rkey が不正', 400, 'bad_rkey');
 }
 
 const sameTown = (a: { x: number; y: number }, b: { x: number; y: number }) => a.x === b.x && a.y === b.y;
@@ -77,7 +88,8 @@ export async function listOnShelf(env: GameStateEnv, seller: string, listing: Ma
     if (cur.sales.some((s) => s.seller === seller && s.listingId === listing.id)) return cur;
     if (cur.closed.some((c) => sameListing(c, seller, listing.id))) return cur;
     if (now - listing.listedAt > LISTING_WRITE_WINDOW_SEC) return cur;
-    if (cur.listings.length >= MARKET_LIMITS.perTown) return { ...cur, closed: [...cur.closed, { id: listing.id, seller, at: now }] };
+    // 棚も売上も 200 件まで (受け取られていない売上がたまっても、レコードの大きさが決まった範囲に収まる)。
+    if (cur.listings.length >= MARKET_LIMITS.perTown || cur.sales.length >= MARKET_LIMITS.perTown) return { ...cur, closed: [...cur.closed, { id: listing.id, seller, at: now }] };
     const shelf: ShelfListing = { id: listing.id, seller, itemId: listing.itemId, level: listing.level, price: listing.price, listedAt: listing.listedAt };
     onShelf = true;
     return { ...cur, listings: [...cur.listings, shelf] };
@@ -94,9 +106,9 @@ export async function marketList(env: GameStateEnv, did: string, input: { pieceR
   if (!isValidMarketPrice(input.price)) throw new ShopError('値段は 1 以上の整数で', 400, 'bad_price');
   const seller = await listOnSeller(env, did, { pieceRkey: input.pieceRkey, price: input.price, rkey: input.rkey, ...(input.pos ? { pos: input.pos } : {}) }, now, init);
   // 再送だが、もう照合で片づいた (戻った・売れた) 品。
-  if (!seller.listing) return { pieces: seller.state.pieces ?? [], listings: seller.state.listings ?? [], returned: [], duplicate: true, onShelf: false };
+  if (!seller.listing) return { pieces: seller.state.pieces ?? [], listings: seller.state.listings ?? [], returned: [], sold: [], power: seller.state.power, duplicate: true, onShelf: false };
   const onShelf = await listOnShelf(env, did, seller.listing, now);
-  if (onShelf) return { pieces: seller.state.pieces ?? [], listings: seller.state.listings ?? [], returned: [], listing: seller.listing, duplicate: seller.duplicate, onShelf };
+  if (onShelf) return { pieces: seller.state.pieces ?? [], listings: seller.state.listings ?? [], returned: [], sold: [], power: seller.state.power, listing: seller.listing, duplicate: seller.duplicate, onShelf };
   const mine = await marketReconcile(env, did, now, init);
   if (mine.returned.some((l) => l.id === seller.listing!.id)) throw new ShopError(`この街の棚は いっぱいだ (${MARKET_LIMITS.perTown} 品)`, 400, 'shelf_full');
   return { ...mine, listing: seller.listing, duplicate: seller.duplicate, onShelf };
@@ -119,38 +131,48 @@ export async function marketCancel(env: GameStateEnv, did: string, input: { list
   return marketReconcile(env, did, now, init);
 }
 
-/** 照合で決める、出品 1 件の行き先。'keep' はそのまま。'return' は持ち物に戻す。 */
-export function listingFate(listing: MarketListing, seller: string, stock: TownStock | null, now: number): 'keep' | 'return' {
+/** 照合で決める、出品 1 件の行き先。'keep' はそのまま。'return' は持ち物に戻す。売れていれば売上を返す。 */
+export function listingFate(listing: MarketListing, seller: string, stock: TownStock | null, now: number): 'keep' | 'return' | ShelfSale {
+  const sale = stock?.sales.find((s) => s.seller === seller && s.listingId === listing.id);
+  if (sale) return sale;
   if (stock?.listings.some((l) => sameListing(l, seller, listing.id))) return 'keep';
-  if (stock?.sales.some((s) => s.seller === seller && s.listingId === listing.id)) return 'keep'; // 売上の受け取りは PR3
   if (stock?.closed.some((c) => sameListing(c, seller, listing.id))) return 'return';
   return now - listing.listedAt > LISTING_SETTLE_SEC ? 'return' : 'keep';
 }
 
 /**
- * 照合 (店を開いたとき)。自分の listings にある街の棚を読み (同じ街はまとめる)、棚に無い品を持ち物に戻す。
- * 戻す目印は「listings にまだその品がある」ことだけ (二重に戻さない)。書くのは戻す品があるときの 1 回だけ。
+ * 照合 (店を開いたとき)。自分の listings にある街の棚を読み (同じ街はまとめる)、
+ * 売れた品はパワー floor(値段 × 0.9) を受け取り、棚に無い品は持ち物に戻す。書くのは 1 回だけ。
+ * 二重に払わない・二重に戻さない目印は「listings にまだその品がある」ことだけ (shopOps の枠に頼らない)。
  */
 export async function marketReconcile(env: GameStateEnv, did: string, now: number, init?: Init): Promise<MarketMineResult> {
   const rec = await readState(env, did);
   const listings = rec?.state.listings ?? [];
-  if (!rec || listings.length === 0) return { pieces: rec?.state.pieces ?? [], listings, returned: [] };
+  const unchanged = (st: GameState | undefined): MarketMineResult => ({ pieces: st?.pieces ?? [], listings: st?.listings ?? [], returned: [], sold: [], power: st?.power ?? 0 });
+  if (!rec || listings.length === 0) return unchanged(rec?.state);
   const stocks = new Map<string, TownStock | null>();
   for (const l of listings) {
-    const k = `${l.town.x}_${l.town.y}`;
+    const k = townStockRkey(l.town);
     if (!stocks.has(k)) stocks.set(k, (await readTownStock(env, l.town))?.stock ?? null);
   }
-  const back = new Set(listings.filter((l) => listingFate(l, did, stocks.get(`${l.town.x}_${l.town.y}`) ?? null, now) === 'return').map((l) => l.id));
-  if (back.size === 0) return { pieces: rec.state.pieces ?? [], listings, returned: [] };
+  const fates = new Map(listings.map((l) => [l.id, listingFate(l, did, stocks.get(townStockRkey(l.town)) ?? null, now)] as const));
+  if ([...fates.values()].every((f) => f === 'keep')) return unchanged(rec.state);
   let returned: MarketListing[] = [];
+  let sold: MarketSoldNotice[] = [];
   const next = await readModifyWrite(env, did, (cur) => {
-    returned = (cur.listings ?? []).filter((l) => back.has(l.id));
-    if (returned.length === 0) return cur;
-    const pieces = [...(cur.pieces ?? []), ...returned.map((l) => ({ rkey: l.pieceRkey, itemId: l.itemId, level: l.level }))];
+    const mine = cur.listings ?? [];
+    returned = mine.filter((l) => fates.get(l.id) === 'return');
+    sold = mine.flatMap((l) => {
+      const f = fates.get(l.id);
+      return typeof f === 'object' ? [{ listingId: l.id, itemId: l.itemId, level: l.level, price: f.price, take: marketSellerTake(f.price), buyer: f.buyer }] : [];
+    });
+    if (returned.length === 0 && sold.length === 0) return cur;
+    const done = new Set([...returned.map((l) => l.id), ...sold.map((s) => s.listingId)]);
     // pieces + listings の数は変わらない (heldPieceCount)。上限はそこで数えているので、戻して溢れることはない。
-    return { ...cur, pieces, listings: (cur.listings ?? []).filter((l) => !back.has(l.id)) };
+    const pieces = [...(cur.pieces ?? []), ...returned.map((l) => ({ rkey: l.pieceRkey, itemId: l.itemId, level: l.level }))];
+    return { ...cur, power: cur.power + sold.reduce((n, s) => n + s.take, 0), pieces, listings: mine.filter((l) => !done.has(l.id)) };
   }, init ? { now, init } : { now });
-  return { pieces: next.pieces ?? [], listings: next.listings ?? [], returned };
+  return { pieces: next.pieces ?? [], listings: next.listings ?? [], returned, sold, power: next.power };
 }
 
 /** 棚の品を安い順に (同じ値段は先に出したほうから)。GET /api/market/town が返す。 */
