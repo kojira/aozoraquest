@@ -131,6 +131,24 @@ export async function marketCancel(env: GameStateEnv, did: string, input: { list
   return marketReconcile(env, did, now, init);
 }
 
+/**
+ * 管理者の非表示 (D-MARKET-001 §5)。棚から外して印を残す。品は消さない — 出品者が次に店を開いたときの照合で
+ * 持ち物に戻る。もう売れていたら 409。棚に無ければ 404。
+ */
+export async function marketAdminHide(env: GameStateEnv, input: { town: { x: number; y: number }; seller: string; listingId: string }, now: number): Promise<{ hidden: true }> {
+  assertMarketRkey(input.listingId);
+  let found = 'none' as 'shelf' | 'sold' | 'none';
+  await modifyTownStock(env, input.town, (cur) => {
+    if (cur.sales.some((s) => s.seller === input.seller && s.listingId === input.listingId)) { found = 'sold'; return cur; }
+    if (!cur.listings.some((l) => sameListing(l, input.seller, input.listingId))) { found = 'none'; return cur; }
+    found = 'shelf';
+    return { ...cur, listings: cur.listings.filter((l) => !sameListing(l, input.seller, input.listingId)), closed: [...cur.closed, { id: input.listingId, seller: input.seller, at: now }] };
+  }, now);
+  if (found === 'sold') throw new ShopError('その品は もう売れた', 409, 'already_sold');
+  if (found === 'none') throw new ShopError('その品は 棚に無い', 404, 'not_on_shelf');
+  return { hidden: true };
+}
+
 /** 照合で決める、出品 1 件の行き先。'keep' はそのまま。'return' は持ち物に戻す。売れていれば売上を返す。 */
 export function listingFate(listing: MarketListing, seller: string, stock: TownStock | null, now: number): 'keep' | 'return' | ShelfSale {
   const sale = stock?.sales.find((s) => s.seller === seller && s.listingId === listing.id);

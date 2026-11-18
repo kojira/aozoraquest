@@ -1,6 +1,7 @@
 /** 街で売る (D-MARKET-001) の edge テストの共通部 (market.test.ts・market-buy.test.ts)。PDS は fetch の差し替え。 */
 import { p256 } from '@noble/curves/p256';
-import { base64urlnopad } from '@scure/base';
+import { sha256 } from '@noble/hashes/sha256';
+import { base58, base64urlnopad } from '@scure/base';
 import { worldOverlay } from '@aozoraquest/core';
 import type { Env } from '../../src/router';
 import { rkeyForDid, XP_EPOCH, type GameState, type GameStateEnv, type MarketListing } from '../../src/game-state';
@@ -20,10 +21,11 @@ function jwkJson(fill: number): string {
   const d = new Uint8Array(32).fill(fill), pub = p256.getPublicKey(d, false);
   return JSON.stringify({ kty: 'EC', crv: 'P-256', x: base64urlnopad.encode(pub.slice(1, 33)), y: base64urlnopad.encode(pub.slice(33, 65)), d: base64urlnopad.encode(d), kid: `k${fill}` });
 }
-export async function makeEnv(adminNsidEnv: string | null = 'dev'): Promise<GameStateEnv & Env> {
+/** tokenUntil: サーバートークンの期限 (epoch 秒)。router を通すテストは本物の時計なので先に延ばす。 */
+export async function makeEnv(adminNsidEnv: string | null = 'dev', tokenUntil = NOW + 7200): Promise<GameStateEnv & Env> {
   const m = new Map<string, string>();
   const kv = { get: async (k: string) => m.get(k) ?? null, put: async (k: string, v: string) => { m.set(k, v); }, delete: async (k: string) => { m.delete(k); } } as unknown as KVNamespace;
-  await writeServerTokens(kv, { did: 'did:plc:server', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: NOW + 7200, pdsUrl: 'https://pds.example', authServer: 'https://bsky.social', updatedAt: NOW });
+  await writeServerTokens(kv, { did: 'did:plc:server', accessToken: 'AT', refreshToken: 'RT', tokenType: 'DPoP', expiresAt: tokenUntil, pdsUrl: 'https://pds.example', authServer: 'https://bsky.social', updatedAt: NOW });
   return { SERVER_DID: 'did:plc:server', OAUTH_CLIENT_PRIVATE_JWK: jwkJson(3), OAUTH_DPOP_PRIVATE_JWK: jwkJson(5), WORKER_DID: 'did:web:edge.test', OAUTH_TOKENS: kv, ...(adminNsidEnv ? { ADMIN_NSID_ENV: adminNsidEnv } : {}) };
 }
 
@@ -37,6 +39,10 @@ export function serverPds(seed: Record<string, unknown> = {}) {
   const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
   const fn = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://plc.directory/')) {
+      const did = decodeURIComponent(url.slice('https://plc.directory/'.length));
+      return json(200, { id: did, verificationMethod: [{ id: `${did}#atproto`, type: 'Multikey', publicKeyMultibase: userMultikey }] });
+    }
     if (url.includes('com.atproto.repo.getRecord')) {
       const q = new URL(url).searchParams;
       touched.add(q.get('collection')!);
@@ -71,3 +77,15 @@ export const seedGs = (s: GameState, did = DID) => ({ [`app.aozoraquest.dev.game
 export const listingIn = (t: { x: number; y: number }, id: string): MarketListing => ({ id, town: { x: t.x, y: t.y }, pieceRkey: `lp-${id}`, itemId: ITEM, level: 0, price: 5, listedAt: NOW - 60 });
 export const onShelfAs = (l: MarketListing, seller = DID): ShelfListing => ({ id: l.id, seller, itemId: l.itemId, level: l.level, price: l.price, listedAt: l.listedAt });
 
+
+/** service auth の JWT (どの did でも同じテスト鍵で署名し、plc.directory のふりがその鍵を返す)。 */
+const userPriv = p256.utils.randomPrivateKey();
+const userMultikey = 'z' + base58.encode(new Uint8Array([0x80, 0x24, ...p256.getPublicKey(userPriv, true)]));
+const b64 = (o: unknown) => base64urlnopad.encode(new TextEncoder().encode(JSON.stringify(o)));
+export function serviceJwt(iss: string, lxm: string, aud = 'did:web:edge.test'): string {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64({ alg: 'ES256', typ: 'JWT' });
+  const body = b64({ iss, aud, lxm, exp: now + 60, iat: now });
+  const sig = p256.sign(sha256(new TextEncoder().encode(`${head}.${body}`)), userPriv, { lowS: true }).toCompactRawBytes();
+  return `${head}.${body}.${base64urlnopad.encode(sig)}`;
+}

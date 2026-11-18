@@ -4,6 +4,7 @@
  * - `POST /api/market/list {pieceRkey, price, rkey, token}`: 出品する (値段は出品者が決める。1 以上の整数)
  * - `POST /api/market/cancel {listingId}`: 取り下げる (持ち物に戻る)
  * - `POST /api/market/buy {seller, listingId, rkey, token}`: 棚の品を買う (値段は棚の値)
+ * - `POST /api/admin/market/hide {town:{x,y}, seller, listingId}`: 管理者 (ADMIN_DIDS) だけ。棚から外し、品は出品者の照合で戻る
  * - `POST /api/market/mine {}`: 店を開いたときの照合。売れた品の売上を受け取り、棚に無い自分の品を持ち物に戻し、
  *   止まった購入の預かりを片づけて、出品中の一覧を返す
  * 位置は署名トークン (無ければ state)。
@@ -14,7 +15,8 @@ import { ensureAuthoredWorld, type WorldAuthoringEnv } from './world-authoring';
 import { migrateInitState, type ResolverEnv } from './battle-resolver';
 import { verifyPosition } from './world-token';
 import { ShopError } from './shop';
-import { marketCancel, marketList, marketReconcile, shelfCheapestFirst } from './market';
+import { marketAdminHide, marketCancel, marketList, marketReconcile, shelfCheapestFirst } from './market';
+import { isEdgeAdmin } from './oauth-config';
 import { readTownStock } from './market-stock';
 import { marketBuy, settleOldHolds } from './market-buy';
 
@@ -23,6 +25,7 @@ const PATHS: Record<string, string> = {
   '/api/market/cancel': LXM.marketCancel,
   '/api/market/mine': LXM.marketMine,
   '/api/market/buy': LXM.marketBuy,
+  '/api/admin/market/hide': LXM.marketAdminHide,
 };
 
 type MarketEnv = ResolverEnv & WorldAuthoringEnv & { WORKER_DID?: string };
@@ -52,6 +55,7 @@ export async function handleMarketRoute(req: Request, url: URL, env: MarketEnv, 
   } catch (e) {
     return respond({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401);
   }
+  if (url.pathname === '/api/admin/market/hide' && !isEdgeAdmin(env, did)) return respond({ error: 'forbidden' }, 403);
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const init = (d: string, iso: string) => migrateInitState(d, iso, ns);
   try {
@@ -64,6 +68,11 @@ export async function handleMarketRoute(req: Request, url: URL, env: MarketEnv, 
     if (url.pathname === '/api/market/cancel') {
       if (typeof body.listingId !== 'string') return respond({ error: 'bad_request' }, 400);
       return respond(await marketCancel(env, did, { listingId: body.listingId }, now, init));
+    }
+    if (url.pathname === '/api/admin/market/hide') {
+      const t = body.town as { x?: unknown; y?: unknown } | undefined;
+      if (!t || !Number.isInteger(t.x) || !Number.isInteger(t.y) || typeof body.seller !== 'string' || typeof body.listingId !== 'string') return respond({ error: 'bad_request' }, 400);
+      return respond(await marketAdminHide(env, { town: { x: t.x as number, y: t.y as number }, seller: body.seller, listingId: body.listingId }, now));
     }
     if (url.pathname === '/api/market/buy') {
       const pos = positionOf(env, body.token, did, now);
