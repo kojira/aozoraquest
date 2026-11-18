@@ -538,6 +538,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     const decision: BattleDecision = next.outcome;
     // 台本負け (scripted): 素材・パワーは動かさず、その場に残り HP/MP 1 で続ける。
     const scriptedLoss = decision === 'lose' && guard.state.story?.scripted === true;
+    // 本編のボス (逃げられないストーリー戦) に負けても素材・パワーは減らさない。前ぶれを覚えて挑みなおす戦いなので (D-ENDGAME-001)。
+    // 台本負けと違い、最後の街へは戻る。
+    const bossLoss = decision === 'lose' && guard.state.story?.canFlee === false;
     try {
       await deleteGuard(env, now, userDid, cid);
     } catch (e) {
@@ -556,7 +559,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
       // 戦闘中に消費したやくそう/しずく/どうぐを materials に反映してから報酬 (ドロップ/ロス) を適用。
       // 在庫 = 戦闘前の在庫 − 使った数。持ち込み数 (上限あり) で上書きすると残りが消える (#731)。
       const consumedMaterials = materialsAfterBattleUse(cur.materials, next);
-      const r = scriptedLoss ? { next: { ...cur, materials: consumedMaterials }, awarded: {} } : applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
+      const r = scriptedLoss || bossLoss ? { next: { ...cur, materials: consumedMaterials }, awarded: {} } : applyBattleOutcome({ ...cur, materials: consumedMaterials }, {
         outcome: decision, monsterId: next.monsterId, archetype: guard.sealed.archetype,
         luk: next.player.luk, dropBonus: dropBonusOf(next.player), rewardSeed, lossSeed, rewarded: guard.rewarded,
         // レベルアップの内訳 (「ちから +2」) を素ステ込みで出すため。
