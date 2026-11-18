@@ -49,6 +49,15 @@ export const MAX_SHOP_OPS = 100;
  */
 export const MAX_OWNED_PIECES = 100;
 
+/**
+ * 上限に数える持ち物の数 = もちもの + 街に出品中の品 (D-MARKET-001)。出品中の品も数えておくと、
+ * 取り下げや照合で品が戻るとき、もちものが いっぱいで戻せない、が起きない。
+ * 出品は 1 人 MARKET_LIMITS.perUser 品までなので、もちものは少なくとも 100 − 20 = 80 個は持てる。
+ */
+export function heldPieceCount(state: Pick<GameState, 'pieces' | 'listings'>): number {
+  return (state.pieces ?? []).length + (state.listings ?? []).length;
+}
+
 export class ShopError extends Error {
   constructor(
     message: string,
@@ -80,7 +89,7 @@ export interface ShopResult {
  * 街から野外へ数歩あるいても state の座標は街のまま残る = 世界のどこからでも
  * 買えてしまう。トークンが無い/無効なときだけ state に倒す (`handleSearch` と同じ作法)。
  */
-function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: string }) {
+export function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: string }) {
   const x = pos?.x ?? state.x;
   const y = pos?.y ?? state.y;
   const mapId = pos?.mapId ?? state.mapId;
@@ -94,16 +103,16 @@ function shopAt(state: GameState, pos?: { x: number; y: number; mapId?: string }
   return { town, stock: townShopStock(town, townIndex) };
 }
 
-function assertRkey(rkey: string): void {
+export function assertRkey(rkey: string): void {
   if (!rkey || rkey.length > 128) throw new ShopError('rkey が不正', 400);
 }
 
 /** 既に処理済みの操作か。処理済みなら現状をそのまま返して二重課金を防ぐ。 */
-function alreadyDone(state: GameState, key: string): boolean {
+export function alreadyDone(state: GameState, key: string): boolean {
   return (state.shopOps ?? []).includes(key);
 }
 
-function withOp(state: GameState, key: string): string[] {
+export function withOp(state: GameState, key: string): string[] {
   return [...(state.shopOps ?? []), key].slice(-MAX_SHOP_OPS);
 }
 
@@ -303,7 +312,7 @@ export async function shopForge(
  * 消すと「知らないうちに装備が無くなっていた」になり、原因も追えない。
  */
 function assertRoomForPiece(state: GameState): void {
-  if ((state.pieces ?? []).length >= MAX_OWNED_PIECES) {
+  if (heldPieceCount(state) >= MAX_OWNED_PIECES) {
     throw new ShopError(`もちものが いっぱいだ (${MAX_OWNED_PIECES} 個)。すてるか きたえて へらしてほしい`, 400, 'pieces_full');
   }
 }
