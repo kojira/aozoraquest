@@ -235,11 +235,11 @@ describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => 
     }
   });
 
-  it('強化値は主効果に加算され (「ナイフ+3」)、−1 でも 1 未満に潰れない', async () => {
+  it('強化値は 1 段で主効果の 1 割が乗り (「ナイフ+3」)、−1 でも 1 未満に潰れない', async () => {
     const { bonusWithLevel, leveledName, EQUIPMENT_BY_ID: BY_ID } = await import('../equipment.js');
     const harp = BY_ID['wp-bard-mid']!; // luk +8
-    expect(bonusWithLevel(harp, 3).luk).toBe(11);
-    expect(bonusWithLevel(harp, -1).luk).toBe(7);
+    expect(bonusWithLevel(harp, 3).luk).toBe(10); // 8 + round(8 × 0.1 × 3) (D-ENDGAME-001 §A3)
+    expect(bonusWithLevel(harp, -1).luk).toBe(7); // 1 段は最低 1
     expect(bonusWithLevel(harp, 0)).toEqual(harp.bonus);
     const knife = BY_ID['wp-knife']!; // atk +2
     expect(bonusWithLevel(knife, -1).atk).toBe(1);
@@ -247,7 +247,7 @@ describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => 
     // DQ 級スケールで maxHp を 14→4 に縮めたため、primary は maxHp から atk に移った。
     const taito = BY_ID['wp-shogun-high']!;
     const b = bonusWithLevel(taito, 4);
-    expect(b.atk).toBe(taito.bonus.atk! + 4); // 主効果 atk が +4
+    expect(b.atk).toBe(taito.bonus.atk! + 4); // 主効果 atk 10 が +round(10 × 0.1 × 4)
     expect(b.maxHp).toBe(taito.bonus.maxHp); // 副効果 maxHp は据え置き (4)
     expect(leveledName(harp, 3)).toBe('竪琴+3');
     expect(leveledName(harp, -1)).toBe('竪琴-1');
@@ -275,7 +275,7 @@ describe('制作の強化値 (craftLevelRoll / bonusWithLevel / 合成)', () => 
     expect(canForge(10)).toBe(false);
     expect(CRAFT_TUNING.levelMax).toBe(10);
     const g = gearBonusFromGear('bard', { weapon: { id: 'wp-bard-mid', level: 10 } });
-    expect(g.luk).toBe(18); // 8 + 10
+    expect(g.luk).toBe(16); // +10 で 2 倍 (8 + 8)
   });
 });
 
@@ -284,10 +284,10 @@ describe('playerCombatant の gear (GearSelection) 適用', () => {
     const { playerStatsAt: raw } = await import('../battle.js');
     const bare = playerCombatant('bard', 1, 1, 'x');
     const geared = playerCombatant('bard', 1, 1, 'x', undefined, undefined, {
-      weapon: { id: 'wp-bard-mid', level: 3 }, // 竪琴+3 = luk 8+3
+      weapon: { id: 'wp-bard-mid', level: 3 }, // 竪琴+3 = luk 8 + round(2.4)
       charm: { id: 'ch-life', level: 0 },
     });
-    expect(geared.luk).toBe(bare.luk + 11);
+    expect(geared.luk).toBe(bare.luk + 10);
     expect(geared.maxHp).toBe(bare.maxHp + 3);
     const r = raw('bard', 1, 1, undefined, undefined, {
       weapon: { id: 'wp-bard-mid', level: 3 },
