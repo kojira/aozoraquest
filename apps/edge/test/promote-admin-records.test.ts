@@ -6,8 +6,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { assertNpcImage, inspectNpcImage, NPC_IMAGE_BYTES } from '@aozoraquest/core';
+import { cidFor, imageFixture, png } from '../../../packages/core/src/__tests__/helpers/npc-images';
 // @ts-expect-error -- 型定義の無い Node スクリプト
-import { ADMIN_DID, assertAdminDid, assertProdTarget, parseArgs, planFor, PROMOTE_NAMES, restorePlan, writeBackup } from '../../../scripts/promote-admin-records.mjs';
+import { ADMIN_DID, assertAdminDid, assertProdTarget, blobCid, blobRefs, markProdImage, NPC_IMAGE_BYTES as SCRIPT_NPC_IMAGE_BYTES, parseArgs, planFor, PROMOTE_NAMES, restorePlan, withProdBlobs, writeBackup } from '../../../scripts/promote-admin-records.mjs';
 // @ts-expect-error -- 型定義の無い Node スクリプト
 import { NAMES } from '../../../scripts/admin-data.mjs';
 
@@ -70,5 +72,70 @@ describe('scripts/promote-admin-records.mjs', () => {
     const bad = join(dir, 'bad.json');
     writeFileSync(bad, JSON.stringify({ name: 'map', collection: 'app.aozoraquest.world.map', cid: 'x', value: {} }));
     expect(() => restorePlan(bad, null)).toThrow();
+  });
+});
+
+/**
+ * D-ENV-002: 本番の world.* は dev の画像 (blob) を指さない (オーナー決定 2026-11-18)。
+ * 昇格のとき blob を全部、本番の印つきのバイト列 (= 別の CID) で上げ直し、参照を書き換える。
+ */
+describe('promote: 画像は本番コピーにする (D-ENV-002)', () => {
+  const webp = (name: string) => new Uint8Array(imageFixture(name));
+  const ref = (bytes: Uint8Array, mimeType = 'image/webp') => ({ $type: 'blob', ref: { $link: cidFor(bytes) }, mimeType, size: bytes.length });
+  const sprite = webp('64x32.webp'), portrait = webp('300x450.webp'), sad = webp('32x32.webp'), pngBytes = new Uint8Array(png(32, 32));
+  const blobs = new Map([sprite, portrait, sad, pngBytes].map((b) => [cidFor(b), b]));
+  const fetchBlob = async (cid: string) => blobs.get(cid)!;
+  const dev = {
+    npcs: [
+      { id: 'a', spriteImage: { blob: ref(sprite), width: 64, height: 32 }, portraitImage: { blob: ref(portrait), width: 300, height: 450 }, expressionImages: { sad: { blob: ref(sad), width: 32, height: 32 } } },
+      { id: 'b', spriteImage: { blob: ref(sprite), width: 64, height: 32 }, portraitImage: { blob: ref(pngBytes, 'image/png'), width: 32, height: 32 } },
+    ],
+  };
+
+  it('core と同じ CID の計算・容量上限を使う', () => {
+    for (const b of blobs.values()) expect(blobCid(b)).toBe(cidFor(b));
+    expect(SCRIPT_NPC_IMAGE_BYTES).toEqual(NPC_IMAGE_BYTES);
+  });
+
+  it('本番のレコードは dev の CID を 1 つも指さず、同じ dev blob は同じ本番 blob 1 つになる', async () => {
+    const { record, uploads } = await withProdBlobs(dev, fetchBlob);
+    const devCids = new Set(blobRefs(dev).map((r: { cid: string }) => r.cid));
+    const prodRefs = blobRefs(record) as Array<{ cid: string; size: number }>;
+    expect(prodRefs).toHaveLength(5);
+    for (const r of prodRefs) expect(devCids.has(r.cid)).toBe(false);
+    expect(uploads).toHaveLength(4); // sprite は 2 人で 1 つ
+    for (const u of uploads as Array<{ cid: string; bytes: Uint8Array }>) expect(blobCid(u.bytes)).toBe(u.cid);
+    expect(record.npcs[0].spriteImage.blob.ref.$link).toBe(record.npcs[1].spriteImage.blob.ref.$link);
+    expect(record.npcs[0].spriteImage.blob.size).toBe(sprite.length + 24);
+    expect(dev.npcs[0].spriteImage.blob.ref.$link).toBe(cidFor(sprite)); // 元のレコードは変えない
+  });
+
+  it('決定的: 同じ dev blob を何度昇格しても同じ本番 CID (blob が増えない)', async () => {
+    const a = await withProdBlobs(dev, fetchBlob), b = await withProdBlobs(dev, fetchBlob);
+    expect(blobRefs(a.record)).toEqual(blobRefs(b.record));
+    expect(markProdImage(sprite, 'image/webp')).toEqual(markProdImage(sprite, 'image/webp'));
+  });
+
+  it('印つきの画像も NPC 画像の規格を通る (形式・大きさ・CID・容量)', async () => {
+    const { record, uploads } = await withProdBlobs(dev, fetchBlob);
+    const bytesOf = new Map((uploads as Array<{ cid: string; bytes: Uint8Array }>).map((u) => [u.cid, u.bytes]));
+    const check = (image: { blob: { ref: { $link: string } }; width: number; height: number }, kind: 'sprite' | 'portrait') => {
+      assertNpcImage(image, kind);
+      expect(inspectNpcImage(bytesOf.get(image.blob.ref.$link)!, kind)).toMatchObject({ width: image.width, height: image.height });
+    };
+    check(record.npcs[0].spriteImage, 'sprite');
+    check(record.npcs[0].portraitImage, 'portrait');
+    check(record.npcs[0].expressionImages.sad, 'portrait');
+    check(record.npcs[1].portraitImage, 'portrait');
+  });
+
+  it('中身が CID と合わない blob・知らない形式・上限超えは止める', async () => {
+    await expect(withProdBlobs(dev, async () => sad)).rejects.toThrow(/CID と合わない/);
+    expect(() => markProdImage(sprite, 'image/gif')).toThrow(/対応していない/);
+    // sprite の上限ちょうどの RIFF (中身は読み飛ばす chunk)。印を足すと上限を超える。
+    const full = new Uint8Array(SCRIPT_NPC_IMAGE_BYTES.sprite), view = new DataView(full.buffer);
+    full.set(new TextEncoder().encode('RIFF'), 0); view.setUint32(4, full.length - 8, true); full.set(new TextEncoder().encode('WEBPJUNK'), 8); view.setUint32(16, full.length - 20, true);
+    const big = { npcs: [{ id: 'c', spriteImage: { blob: ref(full), width: 64, height: 32 } }] };
+    await expect(withProdBlobs(big, async () => full)).rejects.toThrow(/上限/);
   });
 });
