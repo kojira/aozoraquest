@@ -6,7 +6,7 @@ import { jobLevelFromXp, playerLevelFromXp, playerCombatant, rollSearch, regionO
 import { entropyU32 } from './kuda';
 import { readState, readModifyWrite, MAX_OPENED_SPOTS, type GameState, type OwnedPiece } from './game-state';
 import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
-import { SEARCH_POWER_COST, MAX_SHOP_OPS, MAX_OWNED_PIECES } from './shop';
+import { SEARCH_POWER_COST, MAX_SHOP_OPS, MAX_OWNED_PIECES, heldPieceCount } from './shop';
 import { verifyPosition } from './world-token';
 import { DEFAULT_NS, ResolverError, jobXpOf, migrateInitState, readDiagnosis, type ResolverEnv } from './battle-resolver';
 
@@ -48,7 +48,7 @@ function grantPlacedRewards(cur: GameState, item: PlacedItemDef): GameState {
     else {
       const rkey = chestPieceRkey(item.id, i);
       if (pieces.some((p) => p.rkey === rkey)) return;
-      if (pieces.length >= MAX_OWNED_PIECES) throw new ResolverError('もちものが いっぱいだ。', 400, 'pieces_full');
+      if (heldPieceCount({ pieces, listings: cur.listings }) >= MAX_OWNED_PIECES) throw new ResolverError('もちものが いっぱいだ。', 400, 'pieces_full');
       pieces.push({ rkey, itemId: r.equipment, level: 0 });
     }
   });

@@ -70,6 +70,9 @@ export const LXM = {
   casinoPrize: `${AQ_NSID_ROOT}.casino.prize`,
   casinoBonus: `${AQ_NSID_ROOT}.casino.bonus`,
   partyRename: `${AQ_NSID_ROOT}.party.rename`,
+  marketList: `${AQ_NSID_ROOT}.market.list`,
+  marketCancel: `${AQ_NSID_ROOT}.market.cancel`,
+  marketMine: `${AQ_NSID_ROOT}.market.mine`,
   oauthStart: `${AQ_NSID_ROOT}.oauth.start`,
   oauthStatus: `${AQ_NSID_ROOT}.oauth.status`,
 } as const;

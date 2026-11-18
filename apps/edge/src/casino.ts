@@ -20,7 +20,7 @@ import {
 } from '@aozoraquest/core';
 import { createRng } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type OwnedPiece } from './game-state';
-import { MAX_ITEM_STACK, MAX_OWNED_PIECES } from './shop';
+import { heldPieceCount, MAX_ITEM_STACK, MAX_OWNED_PIECES } from './shop';
 import { ResolverError } from './battle-resolver';
 import { dayKey } from './xp-claim';
 
@@ -141,7 +141,7 @@ export async function casinoPrize(env: Parameters<typeof readModifyWrite>[0], di
     const base = { ...cur, casinoCoins: have - prize.coins };
     if (prize.kind === 'equipment') {
       const pieces = cur.pieces ?? [];
-      if (pieces.length >= MAX_OWNED_PIECES) throw err(`もちものが いっぱいだ (${MAX_OWNED_PIECES} 個)`, 'pieces_full');
+      if (heldPieceCount(cur) >= MAX_OWNED_PIECES) throw err(`もちものが いっぱいだ (${MAX_OWNED_PIECES} 個)`, 'pieces_full');
       const next = [...pieces, { rkey, itemId: prize.id, level: 0 }];
       return { next: { ...base, pieces: next }, res: { pieces: next } };
     }

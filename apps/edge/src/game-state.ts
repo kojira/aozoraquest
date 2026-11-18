@@ -63,6 +63,18 @@ export interface OwnedPiece {
   level: number;
 }
 
+/** 出品中の 1 品 (D-MARKET-001)。id は出品者の端末が決める rkey。品を戻すときは pieceRkey で pieces に戻す。 */
+export interface MarketListing {
+  id: string;
+  town: { x: number; y: number };
+  pieceRkey: string;
+  itemId: string;
+  level: number;
+  price: number;
+  /** サーバーの時刻 (epoch 秒)。 */
+  listedAt: number;
+}
+
 export interface PartyState {
   ids: string[];
   hp?: Record<string, number>;
@@ -175,6 +187,8 @@ export interface GameState {
    *  client の申告を**所持の検証なしで**保存していたため、`{weapon:{id:'wp-shogun-high',plus:99}}`
    *  を送るだけで戦闘に効いた。ここに無い個体は装備できない。 */
   pieces?: OwnedPiece[];
+  /** 街に出品中の品 (D-MARKET-001)。売れるか取り下げるまで残る。pieces と合わせて MAX_OWNED_PIECES まで。 */
+  listings?: MarketListing[];
   /** 今いるマップ (#424)。省略 = フィールド ('world')。内部マップ (街の中・城) に居るとき id が入る。 */
   mapId?: string;
   /** 進行フラグ (#545/#426)。**サーバーだけが立てる** — client の自己申告で章が進むと
