@@ -139,6 +139,10 @@ export interface MonsterDef {
   spell?: { name: string; element?: Element; min: number; max: number; intScale?: number; target?: MonsterMoveTarget };
   /** ため攻撃の対象 (D-PARTY-002 §12a)。'all' は生きている味方全員。既定 'one'。 */
   chargedTarget?: MonsterMoveTarget;
+  /** ボスの型 (D-ENDGAME-001)。HP の段ごとに 2〜3 通りの手の列。あれば ability より先に使い、MP は使わない。 */
+  patternSets?: readonly import('./battle-boss-pattern.js').PatternSet[];
+  /** drain が止まる、前ぶれのあとに弱点で受けた量。 */
+  drainBreak?: number;
   /** debuffer の技 (D-PARTY-002 §12a。最大 2 つ)。先頭から見て、まだ付いていない状態のものを使う。 */
   debuffs?: readonly MonsterDebuff[];
   /** 効かない状態異常 (docs/25 §12 の statusResist。D-PARTY-002 §12 のボスの糸口)。ここにある状態は付与されず

@@ -30,6 +30,8 @@ function mapMonster(m: unknown, f: (v: unknown, key: string) => unknown): unknow
   if (isObj(m.spell)) out.spell = mapFields(m.spell, ['intScale'], f);
   if (Array.isArray(m.debuffs)) out.debuffs = m.debuffs.map((d) => (isObj(d) ? mapFields(d, ['chance', 'magnitude'], f) : d));
   if (isObj(m.abilityParams)) out.abilityParams = mapFields(m.abilityParams, ABILITY_PARAM_FIELDS, f);
+  // ボスの型 (D-ENDGAME-001): 段の below、列の weight、手の power・amount・heal。
+  if (Array.isArray(m.patternSets)) out.patternSets = m.patternSets.map((ps) => (isObj(ps) ? { ...mapFields(ps, ['below'], f), ...(Array.isArray(ps.patterns) ? { patterns: ps.patterns.map((p) => (isObj(p) ? { ...mapFields(p, ['weight'], f), ...(Array.isArray(p.steps) ? { steps: p.steps.map((st) => (isObj(st) ? mapFields(st, ['power', 'amount', 'heal'], f) : st)) } : {}) } : p)) } : {}) } : ps));
   return out;
 }
 

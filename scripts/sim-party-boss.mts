@@ -11,14 +11,19 @@
  * 台本負けの x-rocket は入れない (1 対 1 のままで仲間は加わらず、負けて話が進む戦闘)。
  * ITEMS='{"heat-shroom-lord":{"mizu-bin":2}}' のように、ボスごとに持ちこむ戦闘のどうぐ (糸口。§12) を渡せる。
  * GEAR='{"pave-golem":{"weapon":"wp-wind-sword","armor":"ar-wind-cloak"}}' で、ボスごとに主人公の装備 (属性装備。D-ELEM-001) を渡せる。
+ * GRADE='{"golden-lantern":2}' で、主人公と仲間に その grade の 1 式 (職ごとに選ぶ。scripts/eg-gear.mts) を着せる (章の装備。D-ENDGAME-001 §A5)。
+ * TONICS (既定 1)。
  */
 import { core, fight, PARTIES, median, minOf } from './sim-party-lib.mts';
+import { bestGearFor } from './eg-gear.mts';
 
 const BOSSES = (process.env.BOSSES ?? 'heat-shroom-lord:3:1;echo-bat-lord:5:1;golden-lantern:6:1;pave-golem:8:1;bridge-crab-lord:10:1;kamen-yatagarasu:11:1;will-o-wisp:9:3')
   .split(';').map((s) => { const [id, lv, n] = s.split(':'); return { id: id!, lv: Number(lv), n: Number(n ?? 1) }; });
 const N = Number(process.env.N ?? 100);
 const ITEMS: Record<string, Record<string, number>> = JSON.parse(process.env.ITEMS ?? '{}');
 const GEAR: Record<string, import('../packages/core/src/index.js').GearSelection> = JSON.parse(process.env.GEAR ?? '{}');
+const GRADE: Record<string, number> = JSON.parse(process.env.GRADE ?? '{}');
+const TONICS = Number(process.env.TONICS ?? 1);
 
 for (const b of BOSSES) {
   const def = core.MONSTERS_BY_ID[b.id];
@@ -29,7 +34,9 @@ for (const b of BOSSES) {
     for (const job of core.ARCHETYPES) {
       let w = 0, t = 0;
       for (let sd = 0; sd < N; sd++) {
-        const r = fight(job, b.lv, def.tier, sd * 2654435761 + b.lv * 7919, PARTIES[pk]!, { monsterId: b.id, story: true, extraEnemies: b.n - 1, tonics: 1, ...(ITEMS[b.id] ? { battleItems: ITEMS[b.id] } : {}), ...(GEAR[b.id] ? { gear: GEAR[b.id] } : {}) });
+        const g = GRADE[b.id];
+        const graded = g !== undefined ? { gear: bestGearFor(core, job, g), mateGear: bestGearFor(core, 'warrior', g) } : {};
+        const r = fight(job, b.lv, def.tier, sd * 2654435761 + b.lv * 7919, PARTIES[pk]!, { monsterId: b.id, story: true, extraEnemies: b.n - 1, tonics: TONICS, ...(ITEMS[b.id] ? { battleItems: ITEMS[b.id] } : {}), ...graded, ...(GEAR[b.id] ? { gear: GEAR[b.id] } : {}) });
         if (r.outcome === 'win') { w++; t += r.turns; }
       }
       const rate = (w / N) * 100;

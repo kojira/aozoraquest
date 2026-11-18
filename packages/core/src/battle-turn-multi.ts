@@ -17,6 +17,7 @@ import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
+import { actsLast, patternAct, patternEndOfTurn } from './battle-boss-pattern.js';
 import { watchHeals } from './bond.js';
 import { outOfStockText, pinAllyOrders, runAllyOrder } from './battle-ally-orders.js';
 
@@ -43,6 +44,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
     releaseMonsterCharge(enemy, def, to, rng, events);
     return;
   }
+  if (def?.patternSets?.length) { patternAct(enemy, def, allies, rng, events); return; }
   const action = monsterCommand(enemy, state, rng);
   // 選ぶときは直前の手 (lastAoe) を見る。選んだら下ろし、この手番の技が全体なら技の側で立て直す。
   const debuff = action === 'debuff' ? pickDebuff(def, enemy, allies) : undefined;
@@ -203,6 +205,7 @@ export function resolveTurnMulti(
     .map((c) => ({ c, roll: c.agi + rng() * 20 }))
     .sort((a, b) => b.roll - a.roll)
     .map((x) => x.c);
+  order.sort((a, b) => Number(!isAlly(a) && actsLast(MONSTERS_BY_ID[a.monsterId ?? state.monsterId], a)) - Number(!isAlly(b) && actsLast(MONSTERS_BY_ID[b.monsterId ?? state.monsterId], b)));
 
   // 主人公が倒れたら負け (D-PARTY-001)。コマンドとやくそうを持つのは主人公だけなので、仲間だけ残っても続けない。
   const heroDown = () => player.hp <= 0;
@@ -220,6 +223,10 @@ export function resolveTurnMulti(
   const heroAlly = () => allies.filter((a) => a.hp > 0)[heroAllyIndex()] ?? player;
 
   const pinned = pinAllyOrders(allies, enemies, allyOrders);
+  // めいれい の ぼうぎょ・見切り も主人公と同じくターンの頭で構える (行動順によらず大技に間にあう)。
+  allies.forEach((a, i) => { const o = pinned[i]?.order; if (!o || !a.job || a.hp <= 0) return;
+    if (o.command === 'guard') a.guarding = true;
+    else if (o.command === 'skill') { const k = skillsForJob(a.job.archetype, a.job.level)[o.skillIndex]; if (k && SKILLS[k.kind]?.parry && a.mp >= skillMpCostOf(a)) a.parrying = true; } });
 
   for (const actor of order) {
     if (state.outcome !== 'ongoing' || heroDown() || enemiesDown()) break;
@@ -292,6 +299,7 @@ export function resolveTurnMulti(
     for (const c of [...allies, ...enemies]) {
       tickStatuses(c, { rng, events, actor: isAlly(c) ? 'player' : 'monster' });
     }
+    for (const e of enemies) { const d = MONSTERS_BY_ID[e.monsterId ?? state.monsterId]; if (d?.patternSets?.length) patternEndOfTurn(e, d, rng, events); }
   }
   // 見切り/余韻の後始末
   for (const c of [...allies, ...enemies]) c.parrying = false;
