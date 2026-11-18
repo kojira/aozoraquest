@@ -23,6 +23,12 @@ dev は本番に**一切**触れられないのが原則。Web アプリが `aoz
   同じアカウントを認可するので、**独立した OAuth grant / 独立した refresh チェーン**になり本番と干渉しない。
   分けるのは「別 KV (別トークン保管) / 別 cron / 別 secrets」であって「別アカウント」ではない。
 - **KV / cron / secrets はすべて dev 専用**。dev の cron は自分のセッションのトークンだけ refresh する。
+- **サーバー repo のゲーム権威レコードも dev と本番で分ける** (D-ENV-002)。repo は同じサーバーアカウントなので、
+  collection 名で分ける: dev エッジ = `app.aozoraquest.dev.gameState` / `app.aozoraquest.dev.battleGuard`、
+  本番エッジ = `app.aozoraquest.gameState` / `app.aozoraquest.battleGuard`。
+  決めるのは Worker env の `ADMIN_NSID_ENV` (world.* と同じ `adminNsidRoot`)。**リクエストの Origin では決めない**
+  — Origin の無い呼び出し・偽の Origin でも dev エッジが本番の state に触れないため。ローカル (127.0.0.1) は
+  dev エッジを叩くので dev と同じ collection を使う。
 
 ## 進捗 (2026-07-20)
 
