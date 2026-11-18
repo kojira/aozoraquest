@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { readGuard, createGuard, advanceGuard, deleteGuard, BATTLE_GUARD_COLLECTION, type BattleGuard } from '../src/battle-guard';
+import { readGuard, createGuard, advanceGuard, deleteGuard, battleGuardCollection, type BattleGuard } from '../src/battle-guard';
 import { rkeyForDid } from '../src/game-state';
 import { writeServerTokens } from '../src/oauth-store';
 import type { ServerPdsEnv } from '../src/server-pds';
@@ -74,7 +74,8 @@ describe('battle-guard (OAuth 権威書き込み)', () => {
     const r = await readGuard(env, DID);
     expect(r?.guard.battleId).toBe('btl-1');
     expect(m.store.has(rkeyForDid(DID))).toBe(true);
-    expect(BATTLE_GUARD_COLLECTION).toBe('app.aozoraquest.battleGuard');
+    expect(battleGuardCollection(env)).toBe('app.aozoraquest.battleGuard');
+    expect(battleGuardCollection({ ...env, ADMIN_NSID_ENV: 'dev' })).toBe('app.aozoraquest.dev.battleGuard');
   });
 
   it('既存があると createGuard は InvalidSwap (二重戦闘を作らせない)', async () => {

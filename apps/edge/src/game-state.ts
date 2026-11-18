@@ -15,8 +15,18 @@ import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord, PdsError } from './pds';
 import { readServerTokens } from './oauth-store';
 import { serverPutRecord, ServerWriteError, type ServerPdsEnv } from './server-pds';
+import { adminNsidRoot, type WorldAuthoringEnv } from './world-authoring';
 
-export const GAME_STATE_COLLECTION = 'app.aozoraquest.gameState';
+/**
+ * 権威 state の collection (D-ENV-002)。**Worker env で dev と本番を分ける**:
+ * dev エッジ (ADMIN_NSID_ENV="dev") = `app.aozoraquest.dev.gameState`、本番 = `app.aozoraquest.gameState`。
+ * world.* と同じ 1 つの規則 (`adminNsidRoot`)。リクエストの Origin では決めない — Origin の無い
+ * 呼び出しや偽の Origin でも、dev エッジが本番の state に触れないため。ローカル (127.0.0.1) は
+ * dev エッジを叩くので dev と同じ collection を使う。
+ */
+export function gameStateCollection(env: GameStateEnv): string {
+  return `${adminNsidRoot(env)}.gameState`;
+}
 export const GAME_STATE_VERSION = 1;
 
 /**
@@ -26,9 +36,9 @@ export const GAME_STATE_VERSION = 1;
  * **`version` を使ってはいけない。** `readModifyWrite` は書き込みのたびに `version` を
  * 現在値で上書きするので、片道の移行マーカーにならない。実際に困るのは 2 つ:
  *
- * - **dev と本番が同じ権威レコードを共有している** (`GAME_STATE_COLLECTION` は ns 前置きされず、
- *   repo はサーバーアカウント。docs/22)。dev だけ新コードの期間、本番で 1 歩動くたびに
- *   旧 version が刻まれ、次に dev を開くと **jobXp がまた 0 になる**
+ * - 旧コードと新コードが同じレコードを書く期間がある (当時は dev と本番が同じ権威レコードを
+ *   共有していた。D-ENV-002 で collection を env ごとに分けた)。旧コードが 1 歩動くたびに
+ *   旧 version が刻まれ、次に新コードで開くと **jobXp がまた 0 になる**
  * - 本番をロールバックすると同じことが起きる
  *
  * `xpEpoch` は旧コードが知らないフィールドだが、`{...cur}` のスプレッドで保存されるので
@@ -39,8 +49,9 @@ export const XP_EPOCH = 1;
 /** openedSpots の上限。置きアイテムの上限 (400) より大きいので、普段は溢れない。 */
 export const MAX_OPENED_SPOTS = 600;
 
-/** 権威 state の読み書きに必要な env (OAuth トークン KV)。読み書きとも repo はトークン由来で一致。 */
-export type GameStateEnv = ServerPdsEnv;
+/** 権威 state の読み書きに必要な env (OAuth トークン KV + collection を決める ADMIN_NSID_ENV)。
+ *  読み書きとも repo はトークン由来で一致。 */
+export type GameStateEnv = ServerPdsEnv & Pick<WorldAuthoringEnv, 'ADMIN_NSID_ENV'>;
 
 /** 所持装備の 1 個体 (#551 段階 2)。rkey は制作時に client が採番した冪等キーと同じ値で、
  *  ユーザー PDS 側の記帳レコードと対応づけるために持つ。 */
@@ -212,7 +223,7 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
   if (!env.OAUTH_TOKENS) throw new ServerWriteError('KV 未 binding', 'no-kv');
   const tokens = await readServerTokens(env.OAUTH_TOKENS);
   if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
-  const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, GAME_STATE_COLLECTION, rkeyForDid(targetDid));
+  const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, gameStateCollection(env), rkeyForDid(targetDid));
   return rec ? { state: normalizeState(rec.value), cid: rec.cid } : null;
 }
 
@@ -297,7 +308,7 @@ export async function readModifyWrite(
     // 既存があればその CID を期待 (CAS)、無ければ null (新規作成のみ) で二重作成も防ぐ。
     const swap = existing ? existing.cid : null;
     try {
-      await serverPutRecord(env, opts.now, GAME_STATE_COLLECTION, rkey, next, swap);
+      await serverPutRecord(env, opts.now, gameStateCollection(env), rkey, next, swap);
       return next;
     } catch (e) {
       if (e instanceof PdsError && e.xrpcError === 'InvalidSwap') {
