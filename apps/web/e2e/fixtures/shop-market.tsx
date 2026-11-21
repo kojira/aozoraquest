@@ -46,7 +46,7 @@ function App() {
   };
   return (
     <div style={{ minHeight: '100svh', background: '#223' }}>
-      <ShopModal town={town} townIndex={0} archetype="warrior" balance={80} materials={{}} pieces={pieces} equippedRkeys={['p2']}
+      <ShopModal town={town} townIndex={0} archetype="warrior" balance={80} materials={{}} pieces={pieces} equippedRkeys={['p2']} gear={{ weapon: { id: 'wp-club', level: 0 }, armor: { id: 'ar-leather', level: 0 } }}
         busy={false} lastAction={null} errorText={null} onCraft={() => {}} onForge={() => {}} onSell={() => {}} onBuy={() => {}} onClose={() => {}} market={market} />
     </div>
   );

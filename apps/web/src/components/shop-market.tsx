@@ -9,9 +9,10 @@
 import { useState } from 'react';
 import {
   EQUIPMENT_BY_ID, MARKET_LIMITS, bonusText, bonusWithLevel, canEquip, isValidMarketPrice, leveledName, listable, marketPrice, marketSellerTake, townAt,
-  type Archetype, type Town, type UnlistableReason,
+  type Archetype, type GearSelection, type Town, type UnlistableReason,
 } from '@aozoraquest/core';
 import { useHandle } from '@/lib/handle-cache';
+import { GearDeltaText } from './gear-delta-text';
 import type { CraftedPiece } from '@/lib/crafting';
 import type { MarketMyListing, MarketShelfItem } from '@/lib/market-server';
 
@@ -47,10 +48,12 @@ export function SellerHandle({ did }: { did: string }) {
 }
 
 /** 中古: その街の棚 (安い順はサーバーが並べる)。 */
-export function UsedShelf({ shelf, me, archetype, balance, busy, onBuy }: {
+export function UsedShelf({ shelf, me, archetype, gear, balance, busy, onBuy }: {
   shelf: MarketShelfItem[] | null;
   me: string | null;
   archetype: Archetype | null;
+  /** 主人公のいまの装備 (いまとの差を出す。D-GEAR-DIFF-001)。 */
+  gear?: GearSelection | undefined;
   balance: number;
   busy: boolean;
   onBuy: (item: MarketShelfItem) => void;
@@ -74,6 +77,7 @@ export function UsedShelf({ shelf, me, archetype, balance, busy, onBuy }: {
                 {bonusText(bonusWithLevel(def, it.level))}
                 {!equipable && <span style={{ marginLeft: '0.5em' }}>(いまのジョブでは装備できない)</span>}
               </div>
+              {archetype && equipable && gear && <GearDeltaText archetype={archetype} gear={gear} slot={def.slot} piece={{ id: it.itemId, level: it.level }} prefix="いまと比べて" />}
               <div style={{ fontSize: '0.85em', display: 'flex', gap: '0.3em', minWidth: 0 }}>
                 <span style={{ flexShrink: 0, opacity: balance >= it.price ? 1 : 0.65 }}>パワー{it.price} ・</span>
                 <SellerHandle did={it.seller} />

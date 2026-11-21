@@ -60,9 +60,14 @@ test('そうびの「だれの？」: ほかの人が着ている品は「ソラ
   await page.goto('http://127.0.0.1:4182/e2e/fixtures/party-bond.html?view=gear');
   await expect(page.getByRole('radiogroup', { name: 'だれの？' })).toBeVisible();
   await expect(page.getByText('ソラが そうび中')).toBeInViewport();
+  // そうびする前の差 (D-GEAR-DIFF-001): こんぼう+1 (こうげき 5) を持つ主人公に ナイフ は -3、かわのぼうし は +2
+  await expect(page.getByTestId('gear-delta')).toHaveText(['こうげき -3', 'まもり +2']);
   await shot(page, 'gear-whose-worn.png');
   await page.getByRole('radio', { name: 'ソラ' }).click();
   await expect(page.getByRole('radio', { name: '▸ ソラ' })).toBeVisible();
-  await expect(page.getByText('ゆうしゃが そうび中')).toBeVisible();
+  await expect(page.getByText('ゆうしゃが そうび中').first()).toBeVisible();
+  // ソラは たびのつるぎ (こうげき 7) を着ている。ナイフは -5、ぼうしは +2
+  await expect(page.getByTestId('gear-delta')).toHaveText(['こうげき -5', 'まもり +2']);
+  for (const d of await page.getByTestId('gear-delta').all()) expect((await d.boundingBox())!.x + (await d.boundingBox())!.width).toBeLessThanOrEqual(390);
   await shot(page, 'gear-whose-ally.png');
 });
