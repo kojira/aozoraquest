@@ -17,6 +17,7 @@ import {
 } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
 import { resolveGear, type GearRefs } from '@/lib/gear';
+import { GearDeltaText } from './gear-delta-text';
 
 /**
  * そうび画面 (docs/20 W6c)。3 スロット (武器/防具/お守り) の着脱。
@@ -37,6 +38,7 @@ export function GearModal({
   onClose,
   whose,
   wornBy,
+  battleGear,
 }: {
   archetype: Archetype | null;
   /** 所持している全個体 */
@@ -56,6 +58,8 @@ export function GearModal({
   whose?: { options: ReadonlyArray<{ who: string; name: string }>; current: string; onChange: (who: string) => void } | undefined;
   /** ほかの人が着ている個体 (rkey → 名前)。「ミオが そうび中」と出して選べなくする。 */
   wornBy?: ReadonlyMap<string, string> | undefined;
+  /** 戦闘で実際に着る形 (仲間はからだが空なら PARTY_ARMOR を着る = partyMemberGear)。差 (D-GEAR-DIFF-001) をこの形で数える。 */
+  battleGear?: ((g: GearSelection) => GearSelection) | undefined;
 }) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   // すてるは取り消せないので 2 段階。強化した品を 1 タップで失わせない。
@@ -195,6 +199,10 @@ export function GearModal({
                             )}
                             {!def.jobOnly && !equipable && !conflict && (
                               <span style={{ marginLeft: '0.4em', fontSize: '0.85em', color: 'var(--color-muted)' }}>(装備できない)</span>
+                            )}
+                            {/* 着ける前の差 (D-GEAR-DIFF-001)。装備できない品・ほかの人が着ている品は理由だけ。 */}
+                            {archetype && equipable && !isEquipped && !other && (
+                              <GearDeltaText archetype={archetype} gear={selection} slot={slot} piece={{ id: p.itemId, level: p.level }} battleGear={battleGear} />
                             )}
                           </span>
                           {isEquipped ? (

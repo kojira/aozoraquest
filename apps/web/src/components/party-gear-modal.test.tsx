@@ -55,4 +55,11 @@ describe('そうびの「だれの？」(D-PARTY-004)', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'そうびする' })); });
     expect(screen.getByRole('alert').textContent).toBe('その品は ほかの人が そうびしている');
   });
+
+  it('ミオを選ぶと、差はミオの装備と比べる (からだが空でも ぬののふく を着て戦うので、たびのマントは まもり +10)。ほかの人が着ている品には差を出さない', () => {
+    open({ pieces: [piece('m', 'ar-travel-cloak'), piece('h', 'ar-travel-cloak'), piece('s', SWORD)], refs: { armor: 'h' }, party: { ids: [MIO.id], members: [MIO], gear: { [MIO.id]: { weapon: { id: SWORD, level: 0 } } } } });
+    fireEvent.click(screen.getByRole('radio', { name: 'ミオ' }));
+    const deltas = screen.getAllByTestId('gear-delta').map((d) => d.textContent);
+    expect(deltas).toEqual(['まもり +10']); // 主人公が着ている 1 着には出ず、空いている 1 着だけ
+  });
 });

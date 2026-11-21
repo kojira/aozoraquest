@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { partyDefsOf, recruitById, type Archetype, type EquipSlot, type GearSelection } from '@aozoraquest/core';
+import { partyDefsOf, partyMemberGear, recruitById, type Archetype, type EquipSlot, type GearSelection } from '@aozoraquest/core';
 import { GearModal } from './gear-modal';
 import { equipWithHands } from '@/lib/use-world-shop';
 import { refsOfSelection, selectionOfRefs, wornByOthers, type GearWearer } from '@/lib/gear-who';
@@ -67,6 +67,7 @@ export function PartyGearModal({ archetype, heroName, pieces, refs, party, jobLe
       onClose={onClose}
       whose={whose}
       wornBy={wornBy}
+      battleGear={ally ? (g) => partyMemberGear(g, ally.level) : undefined}
     />
   );
 }
