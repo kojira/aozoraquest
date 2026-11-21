@@ -744,6 +744,7 @@ function WorldScreen() {
           onBuy={(itemId) => void shop.onBuy(itemId)}
           onClose={() => setShopOpen(false)}
           market={market}
+          gear={resolvedGear?.selection}
         />
       )}
       {casino.casinoSpot && <CasinoModal spot={casino.casinoSpot} coins={casino.casinoCoins} power={serverPower ?? 0} actions={casino.casinoActions} pendingHighLow={casino.casinoPendingHighLow} onClose={casino.closeCasino} />}

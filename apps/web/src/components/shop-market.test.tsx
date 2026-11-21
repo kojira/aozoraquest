@@ -127,3 +127,23 @@ describe('売れた知らせ (D-MARKET-001)', () => {
     expect(screen.getByText('ナイフ+3が @bob.bsky.social に 売れた！ パワー+36')).toBeTruthy();
   });
 });
+
+describe('なんでも屋の いまとの差 (D-GEAR-DIFF-001)', () => {
+  afterEach(cleanup);
+  const withGear = (m: MarketView) => render(
+    <ShopModal town={town} townIndex={0} archetype={'warrior'} balance={100} materials={{}} pieces={[]} equippedRkeys={[]} gear={{ weapon: { id: 'wp-club', level: 0 } }}
+      busy={false} lastAction={null} errorText={null} onCraft={vi.fn()} onForge={vi.fn()} onSell={vi.fn()} onBuy={vi.fn()} onClose={vi.fn()} market={m} />,
+  );
+
+  it('中古のナイフ+2 は、こんぼうを持っている主人公と比べて「いまと比べて こうげき -1」', () => {
+    withGear(market({ shelf: [item({})] }));
+    fireEvent.click(screen.getByRole('tab', { name: '中古' }));
+    // ナイフ+2 = こうげき 2 + 強化 (bonusWithLevel) 1 = 3。こんぼう 4 より 1 低い
+    expect(screen.getByTestId('gear-delta').textContent).toBe('いまと比べてこうげき -1');
+  });
+
+  it('「みせ」の装備にも いまとの差が出る (強化値 ±0 で比べる)', () => {
+    withGear(market());
+    expect(screen.getAllByTestId('gear-delta').length).toBeGreaterThan(0);
+  });
+});

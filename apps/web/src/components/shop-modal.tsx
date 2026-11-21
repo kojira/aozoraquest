@@ -19,6 +19,7 @@ import {
   townShopStock,
   type Archetype,
   type EquipmentDef,
+  type GearSelection,
   type Town,
   shopKeeperFor,
   worldOverlay,
@@ -29,6 +30,7 @@ import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
 import { sceneDialogue } from '@/lib/scene-dialogue';
 import { ShopItemSection } from './shop-item-section';
+import { GearDeltaText } from './gear-delta-text';
 import { SellPanel, ShopTabs, UsedShelf, type ShopTab } from './shop-market';
 import type { MarketView } from '@/lib/use-market';
 import { useHandle } from '@/lib/handle-cache';
@@ -97,6 +99,7 @@ export function ShopModal({
   onBuy,
   onClose,
   market,
+  gear,
 }: {
   town: Town;
   townIndex: number;
@@ -125,6 +128,8 @@ export function ShopModal({
   onClose: () => void;
   /** 中古・うる (D-MARKET-001)。無ければタブを出さない。 */
   market?: MarketView;
+  /** 主人公のいまの装備。品ごとに「いまと比べて こうげき +3」を出す (D-GEAR-DIFF-001)。 */
+  gear?: GearSelection | undefined;
 }) {
   const [tab, setTab] = useState<ShopTab>('shop');
   // tier4 以上の店は自分の職の専用品が 1 つ並ぶ (D-ENDGAME-001。作れるかはサーバーが同じ規則で決める)。
@@ -296,7 +301,7 @@ export function ShopModal({
           {noticeText}
         </p>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {market && tab === 'used' && <UsedShelf shelf={market.shelf} me={market.me} archetype={archetype} balance={balance} busy={market.busy} onBuy={market.buy} />}
+          {market && tab === 'used' && <UsedShelf shelf={market.shelf} me={market.me} archetype={archetype} gear={gear} balance={balance} busy={market.busy} onBuy={market.buy} />}
           {market && tab === 'sell' && <SellPanel town={town} pieces={pieces} equippedRkeys={equippedRkeys} wornKeys={allyWorn} listings={market.listings} busy={market.busy} onList={market.list} onCancel={market.cancel} />}
           {(!market || tab === 'shop') && <>
           <ShopItemSection consumables={stock.consumables} materialId={stock.materialId} materialName={materialName} balance={balance} materials={materials} busy={busy} onBuy={onBuy} />
@@ -345,6 +350,8 @@ export function ShopModal({
                       <span style={{ marginLeft: '0.5em' }}>(いまのジョブでは装備できない)</span>
                     )}
                   </div>
+                  {/* できあがりの強化値は つくるまで分からないので ±0 で比べる */}
+                  {archetype && equipable && gear && <GearDeltaText archetype={archetype} gear={gear} slot={def.slot} piece={{ id, level: 0 }} prefix="いまと比べて" />}
                   <div style={{ fontSize: '0.85em', opacity: affordable ? 1 : 0.65 }}>
                     {def.price.materials > 0
                       ? `パワー${def.price.power} + ${materialName} ×${def.price.materials}`
