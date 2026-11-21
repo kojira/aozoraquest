@@ -46,10 +46,16 @@ async function fits(page: Page) {
 test('中古: 安い順・@handle・じぶんの・だれか (390px)', async ({ page }) => {
   await open(page, 'used');
   await closeTalk(page);
+  // 「みせ」の装備にも いまとの差 (D-GEAR-DIFF-001)
+  await expect(page.getByTestId('gear-delta').first()).toBeVisible();
+  await fits(page);
+  await shot(page, 'market-shop.png');
   await page.getByRole('tab', { name: '中古' }).click();
   await expect(page.getByRole('link', { name: '@bob.bsky.social' })).toBeVisible();
   await expect(page.getByText('じぶんの')).toBeVisible();
   await expect(page.getByRole('link', { name: 'だれか' })).toBeVisible();
+  // いまとの差 (D-GEAR-DIFF-001): こんぼう (こうげき 4) と比べて ナイフ+2 (こうげき 3) は -1
+  await expect(page.getByTestId('gear-delta').first()).toHaveText('いまと比べてこうげき -1');
   await fits(page);
   await shot(page, 'market-used.png');
   await page.getByRole('button', { name: 'かう' }).first().click();

@@ -41,9 +41,10 @@ function Gear() {
   const pieces = [
     { rkey: 'p1', itemId: 'wp-travel-sword', level: 0, at: '' }, { rkey: 'p2', itemId: 'wp-club', level: 1, at: '' },
     { rkey: 'p3', itemId: 'ar-leather', level: 0, at: '' }, { rkey: 'p4', itemId: 'hd-leather-hat', level: 0, at: '' },
+    { rkey: 'p5', itemId: 'wp-knife', level: 0, at: '' },
   ];
   const gearParty: ServerParty = { ...party, gear: { [SORA.id]: { weapon: { id: 'wp-travel-sword', level: 0 } } } };
-  return <PartyGearModal archetype="warrior" heroName="ゆうしゃ" pieces={pieces} refs={{ armor: 'p3' }} party={gearParty} jobLevel={7}
+  return <PartyGearModal archetype="warrior" heroName="ゆうしゃ" pieces={pieces} refs={{ armor: 'p3', weapon: 'p2' }} party={gearParty} jobLevel={7}
     onEquip={() => {}} onUnequip={() => {}} onDiscard={() => {}} saveAllyGear={async () => {}} onClose={() => {}} />;
 }
 
