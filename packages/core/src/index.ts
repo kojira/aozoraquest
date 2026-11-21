@@ -47,6 +47,7 @@ export * from './dialogue-data.js';
 export * from './character-data.js';
 export * from './equipment.js';
 export * from './gear-element.js';
+export * from './gear-delta.js';
 export * from './gear-ladder.js';
 export * from './gear-owners.js';
 export * from './market.js';
