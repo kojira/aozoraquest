@@ -10,6 +10,7 @@ import type { WorldInventory } from '@/lib/use-world-inventory';
 import { asBattleState, type Vitals } from '@/lib/world-view';
 import { battleResultLines } from '@/lib/world-battle-result';
 import type { AllyOrderInput } from '@/lib/battle-ally-orders';
+import { useBattleResync } from '@/lib/use-battle-resync';
 
 export interface WorldBattle {
   /** サーバー権威の戦闘 state (seed は含まれない = 先読み不可)。描画のみに使う。 */
@@ -54,9 +55,10 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
   archetypeRef: MutableRefObject<string | null>;
   didRef: MutableRefObject<string | null>;
 }) {
-  const { setHerbStock, setTonicStock, setFeatherStock, materialsRef, setMaterialsView } = inventory;
+  const { setHerbStock, setTonicStock, setFeatherStock, materialsRef, setMaterialsView, applyServerMaterials } = inventory;
   const [battle, setBattle] = useState<WorldBattle | null>(null);
   const battleRef = useLatestRef(battle);
+  const resync = useBattleResync({ agent, battleRef, setBattle, setWs, setNotice, scheduleSave, setQuest, flagsRef, tokenRef, applyServerMaterials, setServerPower, didRef });
 
   // 戦闘コマンドも**毎回サーバーが解決する** (docs/21 §5)。クライアントは battleId + turn + command を送るだけ。
   // 決着ターンの報酬 (XP/ドロップ/素材ロス) はサーバーが権威 state に確定し、awarded として返す。
@@ -94,16 +96,25 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
           if (!cur) return;
           let errorText = '攻撃を送れなかった (通信エラー)。もう一度どうぞ。';
           if (e instanceof WorldServerError && e.status === 503) errorText = 'サーバーに記録できなかった (報酬なし)。電波のよい場所でもう一度どうぞ。';
-          else if (e instanceof WorldServerError && e.status === 409) errorText = 'ターンがずれた。もう一度どうぞ。';
+          else if (e instanceof WorldServerError && e.status === 409) errorText = 'つづきから。'; // すぐ下で読み直す (#1006)
           else if (e instanceof WorldServerError && (e.code === 'timeout' || e.code === 'network')) errorText = 'サーバーが応答しない。電波のよい場所でもう一度どうぞ。';
           else console.warn('[world] serverTurn failed', e);
           const revert = { ...cur, busy: false, errorText };
           battleRef.current = revert;
           setBattle(revert);
+          // 409 = サーバーの戦闘が先へ進んだ・終わった (裏に回っている間に答えを取りこぼした。#1006)。
+          // 同じ番号で送り直しても通らないので、サーバーのいまの戦闘を読み直してそこから続ける。
+          if (e instanceof WorldServerError && e.status === 409) {
+            resync().catch((re: unknown) => {
+              console.warn('[world] battle resync failed', re);
+              const b2 = battleRef.current;
+              if (b2 === revert) { const failed = { ...b2, errorText: 'サーバーが応答しない。電波のよい場所でもう一度どうぞ。' }; battleRef.current = failed; setBattle(failed); }
+            });
+          }
         }
       })();
     },
-    [agent, setQuest, battleRef, flagsRef, pendingNoticesRef],
+    [agent, setQuest, battleRef, flagsRef, pendingNoticesRef, resync],
   );
 
   // メッセージ窓のタップ送り。開幕/継戦は入力へ、決着は確定処理してリザルトへ。
