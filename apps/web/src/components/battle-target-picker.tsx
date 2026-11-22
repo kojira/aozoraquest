@@ -21,8 +21,8 @@ export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 
       {living.map((e, i) => (
         <Row key={i} fill={false} plain label={e.name} onClick={() => onPick(i)} disabled={busy || !!full?.(e)} />
       ))}
-      {/* 見出しは出さず、行は枠なし (#1004)。390px で 2 体 + もどる が収まる。3 体以上は窓がスクロールするので「もどる」を下に張りつける。 */}
-      <div data-picker-back style={{ position: 'sticky', bottom: 0, flexShrink: 0, background: 'rgb(16,18,26)' }}>
+      {/* 見出しは出さず、行は枠なし (#1004)。窓は中身に合わせて上へ伸びるので (D-PARTY-005)、敵 5 体・味方 4 人でも もどる まで見える。 */}
+      <div data-picker-back style={{ flexShrink: 0 }}>
         <Row fill={false} plain label="もどる" onClick={onCancel} disabled={busy} />
       </div>
     </>

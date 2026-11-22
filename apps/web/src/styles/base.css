@@ -250,8 +250,9 @@ button:disabled {
 .dq-command:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.16);
 }
-/* 枠なしの行 (相手を選ぶ窓 #1004)。button の内側の線を消し、ふれた・フォーカスした・
-   押した行だけ ▸ と背景で示す。▸ は幅を先に取っておき、出ても文字がずれない。 */
+/* 枠なしの行 (相手を選ぶ窓 #1004・左のコマンド D-PARTY-005)。button の内側の線を消し、ふれた・フォーカスした・
+   押した行だけ ▸ と背景で示す。▸ は幅を先に取っておき、出ても文字がずれない。
+   .dq-command-current は開いているコマンド (どうぐ・たたかうの相手選び) で、▸ を出したままにする。 */
 .dq-command-plain,
 .dq-command-plain:active:not(:disabled) {
   box-shadow: none;
@@ -262,8 +263,15 @@ button:disabled {
   visibility: hidden;
   margin-right: 0.3em;
 }
-.dq-command-plain:is(:hover, :focus-visible, :active):not(:disabled)::before {
+.dq-command-plain:is(:hover, :focus-visible, :active):not(:disabled)::before,
+.dq-command-current::before {
   visibility: visible;
+}
+/* 戦闘の右の窓 (とくぎ・どうぐ・相手を選ぶ) が 2.4em の行のままでは入らないときだけ、行をつめる (D-PARTY-005)。 */
+.dq-window-compact .dq-command {
+  min-height: 1.75em;
+  padding-top: 0.1em;
+  padding-bottom: 0.1em;
 }
 /* 戦闘の全幅メッセージ窓。タップ送りの押下感を極短で返す (▼ 等の記号は足さず、
    沈み込み + 明るさだけで「送れた」を伝える — 情報量を増やさない方針)。 */

@@ -1,4 +1,4 @@
-import { type MutableRefObject, useEffect, useRef, useState } from 'react';
+import { type MutableRefObject, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BattleState, Combatant, Command } from '@aozoraquest/core';
 import { ITEMS, MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, itemTargetsOneAlly, skillMpCostOf, skillTargetsOneAlly, withCharacterNames } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
@@ -165,6 +165,12 @@ export function WorldBattleControls({
     else if (!lastLine) setStep({ key: stepKey, index: lineIndex + 1 });
     else onAdvance();
   };
+  // 右の窓 (とくぎ・どうぐ・相手を選ぶ) は中身に合わせて上へ伸びる (D-PARTY-005)。伸ばせるのはフィールドの上端まで。
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const windowRoom = useWindowRoom(fieldRef, bottomRef);
+  const windowRef = useRef<HTMLDivElement>(null);
+  const compact = useCompactRows(windowRef, windowRoom, `${picking ? JSON.stringify(picking) : ''}|${itemMenu}|${skills.length}`);
   return (
     <>
       {/* 全画面の送り面 (会話の送り面と同じ作法)。fixed なので地図・黒い領域・footer まで覆う。
@@ -176,7 +182,7 @@ export function WorldBattleControls({
       {/* フィールド: 敵スプライト (+ 見抜ける職業のみ体力)。下段が固定高さなので
           ここ (flex:1) の高さも一定 = 敵の位置がフェーズで動かない。 */}
       {/* 表示専用。message/result ではタップを背面の送り面へ通す。 */}
-      <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', pointerEvents: phase === 'input' ? 'auto' : 'none' }}>
+      <div ref={fieldRef} style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', pointerEvents: phase === 'input' ? 'auto' : 'none' }}>
         <BattleAllyRow state={state} hps={lineHp.allies} />
         {(state.enemies?.length ?? 1) > 1 ? (
           <BattleEnemyRow state={state} hps={lineHp.monsters} hitKeys={enemyHit.map((hit) => (hit ? `${state.turn}:${lineIndex}` : undefined))} showEnemyVitals={showEnemyVitals} />
@@ -189,7 +195,7 @@ export function WorldBattleControls({
         <div data-ally-order-heading style={{ flex: '0 0 auto', fontSize: '0.85em', color: '#fff', textShadow: TEXT_SHADOW, padding: '0 0.2em 0.2em' }}>{allyOrder.heading}</div>
       )}
       {/* 下段: 常に BOTTOM_H の固定高さ */}
-      <div style={{ flex: `0 0 ${BOTTOM_H}`, height: BOTTOM_H }}>
+      <div ref={bottomRef} style={{ flex: `0 0 ${BOTTOM_H}`, height: BOTTOM_H }}>
         {phase === 'input' ? (
           // **`gridTemplateRows` を明示する。** 省くと暗黙行が max-content になり、右の
           // とくぎ一覧が伸びたぶんだけグリッド全体が BOTTOM_H を突き抜ける。はみ出しは
@@ -198,26 +204,30 @@ export function WorldBattleControls({
           // (職 Lv10 でとくぎ 5 個から発生。レビュー ★★★ 2026-07-27)。
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '0.4em', height: '100%' }}>
             {/* 左: 基本コマンド。**「とくぎ」は置かない** — とくぎは右にいつも出ているので、
-                1 タップ挟むだけ無駄だった。空いたぶん 1 行を大きく使える。 */}
-            <div style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', rowGap: '0.1em' }}>
-              <DqRow label="たたかう" onClick={attack} disabled={busy || itemMenu} cursor={picking?.command === 'attack'} />
-              <DqRow label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu || !!picking} />
+                1 タップ挟むだけ無駄だった。空いたぶん 1 行を大きく使える。
+                行は枠なしの文字だけ (相手を選ぶ窓と同じ。D-PARTY-005)。開いているコマンドは ▸ を出したまま。 */}
+            <div data-battle-commands style={{ ...WINDOW, height: '100%', padding: '0.2em 0.3em', display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', rowGap: '0.1em' }}>
+              <DqRow plain label="たたかう" onClick={attack} disabled={busy || itemMenu} cursor={picking?.command === 'attack'} />
+              <DqRow plain label="ぼうぎょ" onClick={() => onCommand('guard')} disabled={busy || itemMenu || !!picking} />
               {/* どうぐ: 再タップで閉じる (DQ の戻る慣習)。開くと右がとくぎ→どうぐに変わる。 */}
-              <DqRow label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || !hasAnyBattleItem(state)} cursor={itemMenu} />
+              <DqRow plain label="どうぐ" onClick={() => setItemMenu((v) => !v)} disabled={busy || !hasAnyBattleItem(state)} cursor={itemMenu} />
               {/* 逃げられないストーリー戦 (canFlee: false) では出さない (D-STORY-009。サーバーも受け付けない)。 */}
               {allyOrder?.allyTurn ? (
                 // めいれい の仲間の番: にげる は主人公だけ。代わりに 前の人へ／この人から後ろは おまかせ (D-PARTY-004 §2)。
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2em', minHeight: 0 }}>
-                  <DqRow label="もどる" onClick={allyOrder.onBack} disabled={busy} />
-                  <DqRow label="おまかせ" onClick={allyOrder.onAuto} disabled={busy} />
+                  <DqRow plain label="もどる" onClick={allyOrder.onBack} disabled={busy} />
+                  <DqRow plain label="おまかせ" onClick={allyOrder.onAuto} disabled={busy} />
                 </div>
-              ) : state.story?.canFlee !== false && <DqRow label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
+              ) : state.story?.canFlee !== false && <DqRow plain label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
             </div>
             {/* 右: **既定でとくぎ一覧**。どうぐを開いている間だけ道具に入れ替わる。 */}
-            {/* とくぎが増えるほど縦に伸びるので**この枠自体をスクロールさせる**。
-                minHeight:0 が無いと flex/grid の自動最小サイズで枠が伸び、overflow が
-                効かないまま外へあふれる (上の gridTemplateRows と対で必要)。 */}
-            <div style={{ ...WINDOW, height: '100%', minHeight: 0, overflowY: 'auto', padding: '0.2em 0.4em', display: 'flex', flexDirection: 'column', rowGap: '0.1em' }}>
+            {/* 窓は中身に合わせて**上へ伸びる** (D-PARTY-005。下段の高さは変えず、フィールドの上にかぶさる。
+                オーナー決定: 下が隠れてもよいのでスクロールさせない)。セルの下端につけて、少なくともセルの高さ。
+                フィールドの上端 (windowRoom) より高くなるときだけ、窓の中をスクロールする。
+                セルの minHeight:0 は上の gridTemplateRows と対 (セルが伸びて左のコマンドを押し出さない)。 */}
+            <div style={{ position: 'relative', minHeight: 0 }}>
+            <div ref={windowRef} data-battle-window className={compact ? 'dq-window-compact' : undefined} style={{ ...WINDOW, background: 'rgb(16,18,26)', position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: '100%', boxSizing: 'border-box', zIndex: 1,
+              ...(windowRoom ? { maxHeight: windowRoom } : {}), overflowY: 'auto', padding: '0.2em 0.4em', display: 'flex', flexDirection: 'column', rowGap: '0.1em' }}>
               {picking ? (
                 <BattleTargetPicker
                   state={state} busy={busy} Row={DqRow} onPick={pick} onCancel={() => setPicking(null)}
@@ -246,6 +256,7 @@ export function WorldBattleControls({
                   />
                 ))
               )}
+            </div>
             </div>
           </div>
         ) : (
@@ -319,6 +330,41 @@ function BattleFieldEnemy({ state, monsterHp, hitKey, showEnemyVitals, defeated 
   );
 }
 
+/** 右の窓が伸びてよい高さ (px) = フィールドの上端から下段の下端まで。測れないとき (jsdom など) は undefined。 */
+function useWindowRoom(fieldRef: RefObject<HTMLDivElement | null>, bottomRef: RefObject<HTMLDivElement | null>): number | undefined {
+  const [room, setRoom] = useState<number>();
+  useLayoutEffect(() => {
+    const field = fieldRef.current, bottom = bottomRef.current;
+    if (!field || !bottom || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const h = bottom.getBoundingClientRect().bottom - field.getBoundingClientRect().top;
+      setRoom(h > 0 ? Math.floor(h) : undefined);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(field);
+    ro.observe(bottom);
+    return () => ro.disconnect();
+  }, [fieldRef, bottomRef]);
+  return room;
+}
+
+/** 行がタップの下限 (2.4em) のままでは窓が伸びられる高さに入らないとき true。行を少しつめて (.dq-window-compact)
+ *  スクロールなしで入れる。行の数から決めるので、つめたあとに測りなおして揺れることはない。 */
+function useCompactRows(windowRef: RefObject<HTMLDivElement | null>, room: number | undefined, contentKey: string): boolean {
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const el = windowRef.current;
+    if (!el || room === undefined) { setCompact(false); return; }
+    const rows = el.querySelectorAll('button').length;
+    const em = parseFloat(getComputedStyle(el.querySelector('button') ?? el).fontSize) || 16;
+    const st = getComputedStyle(el);
+    const chrome = parseFloat(st.paddingTop) + parseFloat(st.paddingBottom) + parseFloat(st.borderTopWidth) + parseFloat(st.borderBottomWidth) + parseFloat(st.rowGap || '0') * Math.max(0, rows - 1);
+    setCompact(rows * em * 2.4 + chrome > room);
+  }, [windowRef, room, contentKey]);
+  return compact;
+}
+
 /**
  * DQ 風コマンド窓の 1 行 (styles.css の .dq-command)。
  *
@@ -327,18 +373,19 @@ function BattleFieldEnemy({ state, monsterHp, hitKey, showEnemyVitals, defeated 
  * `.dq-command { min-height: 2.4em }` (= 自分で決めたタップ下限) を残したまま
  * `flexShrink: 0` で縮まないようにする。両方とも縮めると、枠に収まっているように
  * 見えて 1 行 0.7em まで潰れ、押せない行が並ぶ (レビュー実測 ★★★)。
- * `plain` は枠なしの行 (相手を選ぶ窓。styles の .dq-command-plain)。
+ * `plain` は枠なしの行 (左のコマンドと相手を選ぶ窓。styles の .dq-command-plain)。plain の cursor は ▸ を出したままにする
+ * (文字に ▸ を足さないので、ボタンの名前は変わらない)。
  */
 function DqRow({ label, onClick, disabled, cursor = false, fill = true, plain = false }: { label: string; onClick: () => void; disabled: boolean; cursor?: boolean; fill?: boolean; plain?: boolean }) {
   return (
     <button
       type="button"
-      className={plain ? 'dq-command dq-command-plain' : 'dq-command'}
+      className={plain ? `dq-command dq-command-plain${cursor ? ' dq-command-current' : ''}` : 'dq-command'}
       onClick={onClick}
       disabled={disabled}
       style={fill ? { width: '100%', minHeight: 0 } : { width: '100%', flexShrink: 0 }}
     >
-      {cursor ? `▸ ${label}` : label}
+      {cursor && !plain ? `▸ ${label}` : label}
     </button>
   );
 }
