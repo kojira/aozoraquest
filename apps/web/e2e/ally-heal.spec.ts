@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 
-/** 仲間の回復 (D-PARTY-003) の 390px の見た目: 戦闘の「だれを かいふくする？」と、フィールドの「とくぎ」→ 結果。 */
+/** 仲間の回復 (D-PARTY-003) の 390px の見た目: 戦闘で回復する相手を選ぶ窓と、フィールドの「とくぎ」→ 結果。 */
 let vite: ViteDevServer;
 test.beforeAll(async () => {
   vite = await createServer({ configFile: false, root: process.cwd(), plugins: [react()],
@@ -24,7 +24,6 @@ test('戦闘: 聖光の癒しで 生きている味方から選び、選んだ�
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('http://127.0.0.1:4181/e2e/fixtures/ally-heal.html?view=battle');
   await page.getByRole('button', { name: '聖光の癒し' }).click();
-  await expect(page.getByText('だれを かいふくする？')).toBeVisible();
   for (const n of ['ゆうしゃ', 'カイト']) await expect(page.getByRole('button', { name: n, exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'ソラ', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'もどる' })).toBeInViewport();

@@ -250,6 +250,21 @@ button:disabled {
 .dq-command:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.16);
 }
+/* 枠なしの行 (相手を選ぶ窓 #1004)。button の内側の線を消し、ふれた・フォーカスした・
+   押した行だけ ▸ と背景で示す。▸ は幅を先に取っておき、出ても文字がずれない。 */
+.dq-command-plain,
+.dq-command-plain:active:not(:disabled) {
+  box-shadow: none;
+  transform: none;
+}
+.dq-command-plain::before {
+  content: '▸' / '';
+  visibility: hidden;
+  margin-right: 0.3em;
+}
+.dq-command-plain:is(:hover, :focus-visible, :active):not(:disabled)::before {
+  visibility: visible;
+}
 /* 戦闘の全幅メッセージ窓。タップ送りの押下感を極短で返す (▼ 等の記号は足さず、
    沈み込み + 明るさだけで「送れた」を伝える — 情報量を増やさない方針)。 */
 .dq-message:active {

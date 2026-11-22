@@ -327,12 +327,13 @@ function BattleFieldEnemy({ state, monsterHp, hitKey, showEnemyVitals, defeated 
  * `.dq-command { min-height: 2.4em }` (= 自分で決めたタップ下限) を残したまま
  * `flexShrink: 0` で縮まないようにする。両方とも縮めると、枠に収まっているように
  * 見えて 1 行 0.7em まで潰れ、押せない行が並ぶ (レビュー実測 ★★★)。
+ * `plain` は枠なしの行 (相手を選ぶ窓。styles の .dq-command-plain)。
  */
-function DqRow({ label, onClick, disabled, cursor = false, fill = true }: { label: string; onClick: () => void; disabled: boolean; cursor?: boolean; fill?: boolean }) {
+function DqRow({ label, onClick, disabled, cursor = false, fill = true, plain = false }: { label: string; onClick: () => void; disabled: boolean; cursor?: boolean; fill?: boolean; plain?: boolean }) {
   return (
     <button
       type="button"
-      className="dq-command"
+      className={plain ? 'dq-command dq-command-plain' : 'dq-command'}
       onClick={onClick}
       disabled={disabled}
       style={fill ? { width: '100%', minHeight: 0 } : { width: '100%', flexShrink: 0 }}
