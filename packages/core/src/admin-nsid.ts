@@ -53,6 +53,7 @@ export const LXM = {
   partyGear: `${AQ_NSID_ROOT}.party.gear`,
   worldReset: `${AQ_NSID_ROOT}.world.reset`,
   battleTurn: `${AQ_NSID_ROOT}.battle.turn`,
+  battleCurrent: `${AQ_NSID_ROOT}.battle.current`,
   xpClaim: `${AQ_NSID_ROOT}.xp.claim`,
   xpAdminSet: `${AQ_NSID_ROOT}.xp.adminSet`,
   powerAdminGrant: `${AQ_NSID_ROOT}.power.adminGrant`,

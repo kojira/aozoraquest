@@ -40,6 +40,12 @@ describe('edge router', () => {
     expect(body).toMatchObject({ error: 'not_found' });
   });
 
+  it('GET /api/battle/current はトークンが無ければ 401 (#1006)', async () => {
+    const res = await handleRequest(new Request('https://x/api/battle/current'), env);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ error: 'missing_token' });
+  });
+
   it('responses are JSON content-type', async () => {
     const res = await handleRequest(new Request('https://x/healthz'), env);
     expect(res.headers.get('content-type')).toContain('application/json');

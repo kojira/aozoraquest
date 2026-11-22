@@ -397,21 +397,31 @@ export function serverAdminGrantPower(agent: Agent, amount: number): Promise<{ p
   return callEdge<{ power: number }>(agent, LXM_POWER_ADMIN_GRANT, '/api/power/admin-grant', { amount });
 }
 
-/** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */
-export async function serverState(agent: Agent): Promise<ServerStateResult> {
+/** edge の GET (lxm 付き JWT で本人確認)。失敗は callEdge と同じ WorldServerError。 */
+async function getEdge<T>(agent: Agent, lxm: string, path: string): Promise<T> {
   if (!EDGE_URL || !EDGE_DID) throw new WorldServerError('サーバー権威 API 未設定', 0, 'not_configured');
-  const token = await serviceToken(agent, LXM_STATE);
+  const token = await serviceToken(agent, lxm);
   let res: Response;
   try {
-    res = await fetch(`${EDGE_URL}/api/me/state`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
+    res = await fetch(`${EDGE_URL}${path}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
   } catch (e) {
     const timedOut = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
     throw new WorldServerError(timedOut ? 'サーバーが応答しません' : '通信に失敗しました', 0, timedOut ? 'timeout' : 'network');
   }
-  const data = (await res.json().catch(() => ({}))) as ServerStateResult & { error?: string };
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
-    if (res.status === 401) tokenCache.delete(LXM_STATE);
+    if (res.status === 401) tokenCache.delete(lxm);
     throw new WorldServerError(data.error ?? `edge ${res.status}`, res.status, data.error);
   }
   return data;
+}
+
+/** 権威 GameState を読む (表示用: パワー/XP/素材/位置)。GET だが lxm 付き JWT で本人確認。 */
+export function serverState(agent: Agent): Promise<ServerStateResult> {
+  return getEdge<ServerStateResult>(agent, LXM_STATE, '/api/me/state');
+}
+
+/** サーバーのいまの戦闘 (#1006)。読むだけでターンは進まない。戦闘が無ければ battle: null (決着ずみ・置き換え)。 */
+export function serverBattleCurrent(agent: Agent): Promise<{ battle: { battleId: string; turn: number; state: ServerBattleState } | null }> {
+  return getEdge(agent, LXM.battleCurrent, '/api/battle/current');
 }
