@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import {
   GEAR_SLOTS,
   GEAR_SLOT_LABELS,
@@ -12,17 +12,17 @@ import {
   signed,
   type Archetype,
   type Combatant,
-  type EquipSlot,
+  type GearSelection,
 } from '@aozoraquest/core';
 import { Avatar } from './avatar';
-import type { CraftedPiece } from '@/lib/crafting';
+import { bondDetailText, heartsText } from '@/lib/bond-view';
 
 /**
- * つよさ画面 (戦闘ステータスの可視化。issue #285)。
+ * つよさ画面の中身 (戦闘ステータスの可視化。issue #285)。主人公も仲間もこれ 1 つで出す (#1003)。
  *
  * DQ の「つよさ」に寄せた 1 枚窓: 名前/ジョブ/レベル → HP/MP → 戦闘ステータス
  * (装備込みの実効値 + 装備ぶんの内訳) → とくぎ/とくせい → そうび。
- * 値は world.tsx が戦闘に渡しているのと同じ combat (playerCombatant の結果) を
+ * 値は戦闘に渡しているのと同じ combat (主人公は playerCombatant、仲間は partyMemberCombatant) を
  * そのまま表示する — 「つよさ画面の数字 = 戦闘の数字」を崩さない。
  */
 
@@ -36,25 +36,14 @@ export const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; l
   { key: 'luk', label: 'うん' },
 ];
 
-export function StatusModal({
-  name,
-  avatarUrl,
-  archetype,
-  jobLv,
-  jobXp,
-  combat,
-  combatBase,
-  hp,
-  mp,
-  gearPieces,
-  onClose,
-}: {
-  /** 表示名 (Bluesky の displayName / handle) */
+export function StatusSheet({ name, avatarUrl, archetype, jobLv, jobXp, combat, combatBase, hp, mp, gear, trait, star, bond, tactic }: {
+  /** 表示名 (主人公は Bluesky の displayName / handle、仲間は名前) */
   name: string;
-  avatarUrl: string | null;
+  avatarUrl?: string | null | undefined;
   archetype: Archetype;
   jobLv: number;
-  jobXp: number;
+  /** けいけんち。仲間が自分の経験値を持たないとき (§11 より前のなじみ・ギルドの候補) は出さない。 */
+  jobXp?: number | undefined;
   /** 装備込みの実効値 (戦闘に渡すものと同一) */
   combat: Combatant;
   /** 装備なしの素の値 (装備ぶんの内訳表示用) */
@@ -62,157 +51,134 @@ export function StatusModal({
   /** フィールドの現在 HP/MP (null = 全快) */
   hp: number | null;
   mp: number | null;
-  /** スロットごとの解決済み装備 (resolveGear の結果) */
-  gearPieces: Partial<Record<EquipSlot, CraftedPiece>>;
-  onClose: () => void;
+  /** 戦闘で着ている装備 (combat を作ったのと同じもの) */
+  gear: GearSelection;
+  /** とくせい (MP の回復) を出すか。戦闘で効くのは主人公だけ。 */
+  trait: boolean;
+  /** 仲間の ★ と きずな (D-PARTY-004)。 */
+  star?: number | undefined;
+  bond?: number | undefined;
+  /** さくせん の切りかえ (仲間で ♥2 から)。 */
+  tactic?: ReactNode;
 }) {
-  const closeBtnRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeBtnRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   // 現在のとくぎ列 (署名スキル + 習得済みキット技) を出す。戦闘の playerSkills と同じ列。
   const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
   const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
-  const jobNext = useMemo(() => jobXpToNextLevel(jobXp, archetype), [jobXp, archetype]);
+  const jobNext = useMemo(() => (jobXp === undefined ? null : jobXpToNextLevel(jobXp, archetype)), [jobXp, archetype]);
+  const stars = star === undefined ? null : Math.max(1, Math.min(3, star));
 
   const num = { fontFamily: 'ui-monospace, monospace' as const };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="つよさ"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 300,
-        background: 'rgba(0, 0, 0, 0.72)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1em',
-      }}
-    >
-      <div
-        className="dq-window"
-        onClick={(e) => e.stopPropagation()}
-        style={{ padding: 10, width: 'min(94vw, 420px)', maxHeight: '86svh', display: 'flex', flexDirection: 'column' }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <strong style={{ fontSize: '0.95em' }}>💪 つよさ</strong>
-          <button ref={closeBtnRef} type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
-            とじる
-          </button>
-        </div>
-        <div style={{ overflowY: 'auto' }}>
-          {/* 名前とレベル */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6em', marginBottom: 6 }}>
-            <Avatar src={avatarUrl ?? undefined} size={44} archetype={archetype} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || 'ぼうけんしゃ'}</div>
-              <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span>
-              </div>
-            </div>
+    <>
+      {/* 名前とレベル */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6em', marginBottom: 6 }}>
+        <Avatar src={avatarUrl ?? undefined} size={44} archetype={archetype} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {name || 'ぼうけんしゃ'}
+            {stars !== null && <> <span aria-label={`★${stars}`} style={{ color: '#f5c542', fontWeight: 400 }}>{'★'.repeat(stars)}</span></>}
+            {bond !== undefined && <> <span style={{ color: '#e8667a', fontWeight: 400 }}>{heartsText(bond)}</span></>}
           </div>
-
-          {/* HP/MP — 主役なので大きめ・太字で立てる (レビュー ★)。装備で最大値が
-              上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
-          <Section>
-            <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
-            {/* たいりょく (#518) は HP の元。せんとうのうりょくに並べると HP と離れて
-                「何の数字か」が伝わらないので、HP の直下に小さく添える (行を増やさず
-                派生関係だけ見せる)。**装備の maxHp ボーナスは vit を経由せず HP に直接
-                加算される**ので、装備時は HP ≠ 6 + たいりょく × 2 になる (HP 行の
-                「そうび +N」がその差分)。関係を画面に出すかは #526。 */}
-            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.2em', marginBottom: '0.7em' }}>
-              たいりょく<span style={num}>{combat.vit}</span>
-            </div>
-            <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
-          </Section>
-
-          {/* 戦闘ステータス */}
-          <Section title="せんとうのうりょく">
-            {STAT_ROWS.map(({ key, label }) => {
-              const bonus = combat[key] - combatBase[key];
-              return (
-                <StatRow
-                  key={key}
-                  label={label}
-                  value={combat[key]}
-                  note={bonus !== 0 ? `そうび${signed(bonus)}` : undefined}
-                />
-              );
-            })}
-          </Section>
-
-          {/* とくぎ / とくせい */}
-          <Section title="とくぎ・とくせい">
-            <div style={{ lineHeight: 1.8 }}>
-              <div>
-                とくぎ: <strong>{skills.map((s) => s.name).join('、')}</strong>{' '}
-                {skills.length === 1 && skillKindLabel(skills[0]!.kind) ? (
-                  <span style={{ color: 'var(--color-muted)' }}>({skillKindLabel(skills[0]!.kind)})</span>
-                ) : null}
-              </div>
-              {mpTrait.traitName ? (
-                <div>
-                  とくせい: <strong>{mpTrait.traitName}</strong>{' '}
-                  <span style={{ color: 'var(--color-muted)' }}>
-                    {/* 確率発動の特性は「ときどき」を付ける (毎回もらえると誤読させない)。
-                        確率の数値は出さないが、**うんで上がることは出す** — 装備で
-                        うんを盛る動機になる情報で、知らないと選べない。 */}
-                    ({mpTrait.chance !== undefined ? 'ときどき (「うん」で上がる) ' : ''}
-                    たたかう MP+{mpTrait.attackGain} / ぼうぎょ MP+{mpTrait.guardGain})
-                  </span>
-                </div>
-              ) : (
-                <div style={{ color: 'var(--color-muted)' }}>とくせい: なし</div>
-              )}
-            </div>
-          </Section>
-
-          {/* そうび */}
-          <Section title="そうび">
-            <div style={{ lineHeight: 1.8 }}>
-              {GEAR_SLOTS.map((slot) => {
-                const piece = gearPieces[slot];
-                const def = piece ? EQUIPMENT_BY_ID[piece.itemId] : undefined;
-                return (
-                  <div key={slot} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em' }}>
-                    <span style={{ color: 'var(--color-muted)' }}>{SLOT_LABELS[slot]}</span>
-                    {piece && def ? <strong>{leveledName(def, piece.level)}</strong> : <span style={{ color: 'var(--color-muted)' }}>なし</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </Section>
-
-          {/* けいけんち: **いまの累計**と、つぎのレベルまで。
-              「あと N」だけだと、戦って本当に入っているのかが分からない
-              (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。 */}
-          <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
-            <div>
-              けいけんち<span style={num}>{jobXp.toLocaleString()}</span>
-            </div>
-            <div>
-              {jobNext.next > 0 ? (
-                <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1}まであと<span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
-              ) : (
-                <>{jobDisplayName(archetype, 'default')} Lvは最大に達した!</>
-              )}
-            </div>
+          <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
+            {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span>
           </div>
+          {bond !== undefined && <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>{bondDetailText(bond)}</div>}
         </div>
       </div>
-    </div>
+
+      {/* HP/MP — 主役なので大きめ・太字で立てる (レビュー ★)。装備で最大値が
+          上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
+      <Section>
+        <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
+        {/* たいりょく (#518) は HP の元。せんとうのうりょくに並べると HP と離れて
+            「何の数字か」が伝わらないので、HP の直下に小さく添える (行を増やさず
+            派生関係だけ見せる)。**装備の maxHp ボーナスは vit を経由せず HP に直接
+            加算される**ので、装備時は HP ≠ 6 + たいりょく × 2 になる (HP 行の
+            「そうび +N」がその差分)。関係を画面に出すかは #526。 */}
+        <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.2em', marginBottom: '0.7em' }}>
+          たいりょく<span style={num}>{combat.vit}</span>
+        </div>
+        <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
+      </Section>
+
+      {tactic && <Section title="さくせん">{tactic}</Section>}
+
+      {/* 戦闘ステータス */}
+      <Section title="せんとうのうりょく">
+        {STAT_ROWS.map(({ key, label }) => {
+          const bonus = combat[key] - combatBase[key];
+          return (
+            <StatRow
+              key={key}
+              label={label}
+              value={combat[key]}
+              note={bonus !== 0 ? `そうび${signed(bonus)}` : undefined}
+            />
+          );
+        })}
+      </Section>
+
+      {/* とくぎ / とくせい */}
+      <Section title={trait ? 'とくぎ・とくせい' : 'とくぎ'}>
+        <div style={{ lineHeight: 1.8 }}>
+          <div>
+            とくぎ: <strong>{skills.map((s) => s.name).join('、')}</strong>{' '}
+            {skills.length === 1 && skillKindLabel(skills[0]!.kind) ? (
+              <span style={{ color: 'var(--color-muted)' }}>({skillKindLabel(skills[0]!.kind)})</span>
+            ) : null}
+          </div>
+          {!trait ? null : mpTrait.traitName ? (
+            <div>
+              とくせい: <strong>{mpTrait.traitName}</strong>{' '}
+              <span style={{ color: 'var(--color-muted)' }}>
+                {/* 確率発動の特性は「ときどき」を付ける (毎回もらえると誤読させない)。
+                    確率の数値は出さないが、**うんで上がることは出す** — 装備で
+                    うんを盛る動機になる情報で、知らないと選べない。 */}
+                ({mpTrait.chance !== undefined ? 'ときどき (「うん」で上がる) ' : ''}
+                たたかう MP+{mpTrait.attackGain} / ぼうぎょ MP+{mpTrait.guardGain})
+              </span>
+            </div>
+          ) : (
+            <div style={{ color: 'var(--color-muted)' }}>とくせい: なし</div>
+          )}
+        </div>
+      </Section>
+
+      {/* そうび */}
+      <Section title="そうび">
+        <div style={{ lineHeight: 1.8 }}>
+          {GEAR_SLOTS.map((slot) => {
+            const piece = gear[slot];
+            const def = piece ? EQUIPMENT_BY_ID[typeof piece === 'string' ? piece : piece.id] : undefined;
+            return (
+              <div key={slot} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em' }}>
+                <span style={{ color: 'var(--color-muted)' }}>{SLOT_LABELS[slot]}</span>
+                {def ? <strong>{leveledName(def, typeof piece === 'string' ? 0 : piece?.level ?? 0)}</strong> : <span style={{ color: 'var(--color-muted)' }}>なし</span>}
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* けいけんち: **いまの累計**と、つぎのレベルまで。
+          「あと N」だけだと、戦って本当に入っているのかが分からない
+          (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。 */}
+      {jobNext && (
+        <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
+          <div>
+            けいけんち<span style={num}>{jobXp!.toLocaleString()}</span>
+          </div>
+          <div>
+            {jobNext.next > 0 ? (
+              <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1}まであと<span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
+            ) : (
+              <>{jobDisplayName(archetype, 'default')} Lvは最大に達した!</>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
