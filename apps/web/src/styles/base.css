@@ -194,6 +194,20 @@ button {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
+/* ワールドを開いている間 (<html> に付くクラス。src/lib/world-text-select.ts) は画面全体で
+   文字選択と長押しメニューを止める (#996)。スマホで選択ができると、次の指の動きが選択の
+   伸ばしに取られて移動できなくなるため。入力欄だけは選べるまま。 */
+html.aq-world-no-select,
+html.aq-world-no-select * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+html.aq-world-no-select :is(input, textarea, [contenteditable=""], [contenteditable="true"]) {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
 button:hover:not(:disabled) {
   background: var(--color-window-bg-alt);
 }
