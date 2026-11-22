@@ -1,7 +1,7 @@
 /** 遭遇の開始 (beginEncounter)。始められない遭遇を無言で捨てない (敵が出ないのに何も起きない、を防ぐ)。 */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Dispatch, SetStateAction } from 'react';
-import { beginEncounter } from './use-world-move';
+import { beginEncounter, ENCOUNTER_FAILED_NOTICE } from './use-world-move';
 import type { ServerEncounter } from './world-server';
 import type { WorldBattle } from './use-world-battle';
 import type { WipePhase } from '@/components/encounter-wipe';
@@ -38,7 +38,7 @@ describe('beginEncounter', () => {
     const broken = { ...encounter(), state: { ...encounter().state, monster: undefined } } as unknown as ServerEncounter;
     h.begin(broken);
     expect(error).toHaveBeenCalledWith(expect.stringContaining('[world] battle start failed'), expect.anything());
-    expect(h.setNotice).toHaveBeenCalledWith(expect.stringContaining('モンスター'));
+    expect(h.setNotice).toHaveBeenCalledWith(ENCOUNTER_FAILED_NOTICE);
     expect(h.battleRef.current).toBeNull();
     expect(h.setWipe).not.toHaveBeenCalled();
   });

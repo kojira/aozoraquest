@@ -13,14 +13,22 @@ import type { NpcTalk } from '@/lib/npc-talk';
 import type { WorldBattle } from '@/lib/use-world-battle';
 import { DIRS, asBattleState, type Dir, type Vitals } from '@/lib/world-view';
 
+/** 遭遇を始められなかったときの画面の一言 (サーバーが封印に失敗したときも同じ。#998)。 */
+export const ENCOUNTER_FAILED_NOTICE = 'モンスターの気配がしたが、戦いを始められなかった。';
+
+/** 始められなかった遭遇を console.error と画面の一言で知らせる (黙って何も起きない、を作らない)。 */
+export function noticeEncounterFailed(reason: string, detail: unknown, setNotice: Dispatch<SetStateAction<string | null>>): void {
+  console.error(`[world] battle start failed: ${reason}`, detail);
+  setNotice(ENCOUNTER_FAILED_NOTICE);
+}
+
 /** サーバーが封印した遭遇を始める (移動・会話の後・受注の後で共通)。ワイプで覆ってからバトルへ。
  *  **始められない遭遇を無言で捨てない** — 戦闘の形が壊れていると画面は止まったように見えるだけで
  *  「敵が出ない」の原因が追えない。console.error と画面の一言を出し、戦闘もワイプも始めない (歩き続けられる)。 */
 export function beginEncounter(encounter: ServerEncounter, battleRef: MutableRefObject<WorldBattle | null>, setBattle: Dispatch<SetStateAction<WorldBattle | null>>, setWipe: Dispatch<SetStateAction<WipePhase | null>>, setNotice: Dispatch<SetStateAction<string | null>>): void {
   const s = encounter?.state;
   if (!encounter?.battleId || !s || !s.player || !s.monster || typeof s.turn !== 'number') {
-    console.error('[world] battle start failed: 遭遇の戦闘 state が壊れている', encounter);
-    setNotice('モンスターの気配がしたが、戦いを始められなかった。');
+    noticeEncounterFailed('遭遇の戦闘 state が壊れている', encounter, setNotice);
     return;
   }
   const pending = { state: asBattleState(encounter.state), busy: false, phase: 'message' as BattlePhase, battleId: encounter.battleId };
@@ -180,6 +188,8 @@ export function useWorldMove(d: WorldMoveDeps) {
           }
           // 遭遇: サーバーが封印済み (guard 作成・seed 非公開)。ワイプで覆ってからバトルへ。
           if (res.encounter) beginEncounter(res.encounter, battleRef, setBattle, setWipe, setNotice);
+          // サーバーが遭遇を封印できなかった (戦いの記録の書き込みに失敗など)。移動は通っている (#998)。
+          else if (res.encounterFailed) noticeEncounterFailed('サーバーが遭遇を封印できなかった', res, setNotice);
         } catch (e) {
           // 失敗: 楽観移動をロールバック (元の位置へ戻す)。トークンは前回成功時のまま = 次歩で再同期される。
           wsRef.current = s;

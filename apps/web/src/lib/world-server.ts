@@ -104,6 +104,8 @@ export interface ServerEncounter { battleId: string; monsterId: string; state: S
 export interface ServerMoveResult {
   /** 移動後のマップ (#424)。省略 = フィールド。 */
   mapId?: string; x: number; y: number; terrain: string; healed?: boolean; token: string; encounter?: ServerEncounter;
+  /** 遭遇したがサーバーが封印に失敗した (#998)。画面で知らせる。 */
+  encounterFailed?: true;
   /** 到着した街のフィールド座標 (内部マップ座標ではない)。探索メモ用。 */
   townArrival?: { x: number; y: number } }
 /** 権威 GameState (パワー/XP/素材/位置/carry HP-MP 等)。表示はこれを正とする。 */
