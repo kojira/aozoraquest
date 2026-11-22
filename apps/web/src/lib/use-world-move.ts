@@ -13,8 +13,16 @@ import type { NpcTalk } from '@/lib/npc-talk';
 import type { WorldBattle } from '@/lib/use-world-battle';
 import { DIRS, asBattleState, type Dir, type Vitals } from '@/lib/world-view';
 
-/** サーバーが封印した遭遇を始める (移動・会話の後・受注の後で共通)。ワイプで覆ってからバトルへ。 */
-export function beginEncounter(encounter: ServerEncounter, battleRef: MutableRefObject<WorldBattle | null>, setBattle: Dispatch<SetStateAction<WorldBattle | null>>, setWipe: Dispatch<SetStateAction<WipePhase | null>>): void {
+/** サーバーが封印した遭遇を始める (移動・会話の後・受注の後で共通)。ワイプで覆ってからバトルへ。
+ *  **始められない遭遇を無言で捨てない** — 戦闘の形が壊れていると画面は止まったように見えるだけで
+ *  「敵が出ない」の原因が追えない。console.error と画面の一言を出し、戦闘もワイプも始めない (歩き続けられる)。 */
+export function beginEncounter(encounter: ServerEncounter, battleRef: MutableRefObject<WorldBattle | null>, setBattle: Dispatch<SetStateAction<WorldBattle | null>>, setWipe: Dispatch<SetStateAction<WipePhase | null>>, setNotice: Dispatch<SetStateAction<string | null>>): void {
+  const s = encounter?.state;
+  if (!encounter?.battleId || !s || !s.player || !s.monster || typeof s.turn !== 'number') {
+    console.error('[world] battle start failed: 遭遇の戦闘 state が壊れている', encounter);
+    setNotice('モンスターの気配がしたが、戦いを始められなかった。');
+    return;
+  }
   const pending = { state: asBattleState(encounter.state), busy: false, phase: 'message' as BattlePhase, battleId: encounter.battleId };
   battleRef.current = pending;
   setBattle(pending);
@@ -171,7 +179,7 @@ export function useWorldMove(d: WorldMoveDeps) {
             scheduleSave();
           }
           // 遭遇: サーバーが封印済み (guard 作成・seed 非公開)。ワイプで覆ってからバトルへ。
-          if (res.encounter) beginEncounter(res.encounter, battleRef, setBattle, setWipe);
+          if (res.encounter) beginEncounter(res.encounter, battleRef, setBattle, setWipe, setNotice);
         } catch (e) {
           // 失敗: 楽観移動をロールバック (元の位置へ戻す)。トークンは前回成功時のまま = 次歩で再同期される。
           wsRef.current = s;

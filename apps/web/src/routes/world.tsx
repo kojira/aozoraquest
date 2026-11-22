@@ -278,7 +278,7 @@ function WorldScreen() {
   });
   // めいれい の入力の順番 (D-PARTY-004)。主人公 → めいれい の仲間 → 送信。
   const orders = useAllyOrders(battle?.state ?? null, battle ? `${battle.battleId}:${battle.state.turn}:${battle.phase}` : '', (h, allies) => onBattleCommand(h.command, h.skillIndex, h.itemId, h.targetIndex, allies));
-  startEncounterRef.current = (encounter) => beginEncounter(encounter, battleRef, setBattle, setWipe);
+  startEncounterRef.current = (encounter) => beginEncounter(encounter, battleRef, setBattle, setWipe, setNotice);
   // message の最後の行に着いたターン (`battleId:turn`)。それまで上枠 HP/MP は前ターンの値 (#757)。
   const [revealedBattleTurn, setRevealedBattleTurn] = useState<string | null>(null);
   const hudBattleState = battle && battle.phase === 'message' && battle.prevState && revealedBattleTurn !== `${battle.battleId}:${battle.state.turn}`
