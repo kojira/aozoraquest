@@ -134,5 +134,7 @@ export {
 } from './battle-rewards.js';
 export {
   groupable,
+  groupChanceFor,
   encounterGroupSize,
+  MAX_GROUP_SIZE,
 } from './battle-group.js';

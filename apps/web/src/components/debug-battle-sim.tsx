@@ -6,6 +6,7 @@ import {
   JOB_XP_CURVE,
   MONSTERS,
   MONSTERS_BY_ID,
+  MAX_GROUP_SIZE,
   autoBattleAction,
   battleXpFor,
   isPureHealSkill,
@@ -94,7 +95,7 @@ export function DebugBattleSim() {
   /** 1 戦を開始 (variance を指定)。tier は敵に付随 (monsterId 固定なので抽選はされない)。
    *  入力は clampInt で NaN/範囲外を潰してから渡す。 */
   // extra = 追加の敵数。バッチ (runAutoBattle) は 1v1 専用なので 0 固定で呼ぶ (群れ統計は未対応)。
-  const start = (seed: number, variance: number, extra = clampInt(extraEnemies, 0, 0, 2)): BattleState =>
+  const start = (seed: number, variance: number, extra = clampInt(extraEnemies, 0, 0, MAX_GROUP_SIZE - 1)): BattleState =>
     startBattle(
       job,
       clampInt(jobLv, 1, 1, 50),
@@ -235,9 +236,9 @@ export function DebugBattleSim() {
         </label>
         <label>追加の敵 (#453 群れ・1戦のみ)
           <select value={extraEnemies} onChange={(e) => setExtraEnemies(Number(e.target.value))} style={{ width: '100%' }}>
-            <option value={0}>0 (ソロ 1 体)</option>
-            <option value={1}>+1 (計 2 体)</option>
-            <option value={2}>+2 (計 3 体)</option>
+            {Array.from({ length: MAX_GROUP_SIZE }, (_, n) => (
+              <option key={n} value={n}>{n === 0 ? '0 (ソロ 1 体)' : `+${n} (計 ${n + 1} 体)`}</option>
+            ))}
           </select>
         </label>
       </div>

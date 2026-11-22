@@ -104,13 +104,16 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const spawn = worldOverlay().spawn;
   const distance = (a: number, b: number) => Math.min(wrap(a - b), WORLD_SIZE - wrap(a - b));
   const nearFutaba = mapId === WORLD_MAP_ID && Math.max(distance(x, spawn.x), distance(y, spawn.y)) <= 8;
+  // 戦闘に出る仲間は先に決める。群れの数 (D-PARTY-005) はこの人数で引き、同じ仲間を allies に並べる。
+  const members = story?.scripted ? [] : partyMembers(partyDefsOf(state.party, recruitById, jobLevel), jobLevel, partyCarryOf(state.party));
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, battleItems: battleItemsFrom(state.materials), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
     // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
-    // 群れ (D-PARTY-001) はパーティを組めるようになってから (partyCapacity > 1 = futaba_letter_done)。ふたばの近くとストーリー戦は今のまま。
-    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : partyCapacity(state.flags ?? []) > 1 ? { group: true } : {}),
+    // 群れ (D-PARTY-001) はパーティを組めるようになってから (partyCapacity > 1 = futaba_letter_done)。数は戦闘に出る人数で決まる (D-PARTY-005)。
+    // ふたばの近くとストーリー戦は今のまま。
+    ...(story ? { monsterId: story.monsterId, extraEnemies: story.count - 1, story: { canFlee: story.canFlee !== false, ...(story.scripted ? { scripted: true } : {}) } } : nearFutaba ? { monsterId: 'sky-slime' } : partyCapacity(state.flags ?? []) > 1 ? { group: { partySize: 1 + members.length } } : {}),
   });
-  const party = story?.scripted ? [] : joinParty(battle, state, jobLevel);
+  const party = joinParty(battle, state, members);
   const rewarded = state.power >= BATTLE_TUNING.powerCost;
   const battleId = 'b' + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const nowIso = new Date(now * 1000).toISOString();
@@ -131,10 +134,9 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   return { battleId, monsterId: battle.monsterId, state: stripState(battle), rewarded };
 }
 
-/** 仲間を allies に並べる (倒れた仲間・定義の消えた仲間は出ない)。仲間は自分の Lv で戦う (partyDefsOf。D-PARTY-002 §11)。
+/** 仲間を allies に並べる。members は partyMembers (倒れた仲間・定義の消えた仲間は出ない。仲間は自分の Lv で戦う。D-PARTY-002 §11)。
  *  戦闘に出た仲間の id を返す。 */
-function joinParty(battle: BattleState, state: GameState, jobLevel: number): string[] {
-  const members = partyMembers(partyDefsOf(state.party, recruitById, jobLevel), jobLevel, partyCarryOf(state.party));
+function joinParty(battle: BattleState, state: GameState, members: ReturnType<typeof partyMembers>): string[] {
   if (members.length === 0) return [];
   battle.allies = [battle.player, ...members.map((m) => m.combatant)];
   battle.enemies = battle.enemies ?? [battle.monster];
