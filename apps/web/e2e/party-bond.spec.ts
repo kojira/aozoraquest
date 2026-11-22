@@ -71,3 +71,19 @@ test('そうびの「だれの？」: ほかの人が着ている品は「ソラ
   for (const d of await page.getByTestId('gear-delta').all()) expect((await d.boundingBox())!.x + (await d.boundingBox())!.width).toBeLessThanOrEqual(390);
   await shot(page, 'gear-whose-ally.png');
 });
+
+test('つよさの「だれの？」: ゆうしゃ と 仲間 を切りかえる (390px)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('http://127.0.0.1:4182/e2e/fixtures/party-bond.html?view=status');
+  const who = page.getByRole('radiogroup', { name: 'だれの？' });
+  await expect(who.getByRole('radio')).toHaveText(['▸ ゆうしゃ', 'ミオ', 'カイト', 'ソラ']);
+  for (const r of await who.getByRole('radio').all()) expect((await r.boundingBox())!.x + (await r.boundingBox())!.width).toBeLessThanOrEqual(390);
+  await expect(page.getByText('こんぼう+1')).toBeVisible();
+  await shot(page, 'status-whose-hero.png');
+  await page.getByRole('radio', { name: 'ソラ' }).click();
+  const box = page.getByRole('dialog', { name: 'ソラの つよさ' });
+  await expect(box.getByText('たびのつるぎ')).toBeVisible();
+  await expect(box.getByText('ぬののふく')).toBeVisible();
+  await expect(box.getByText(/きずな 150／150/)).toBeVisible();
+  await shot(page, 'status-whose-ally.png');
+});
