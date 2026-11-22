@@ -118,12 +118,14 @@ describe('battle-guard (OAuth 権威書き込み)', () => {
     expect((await readGuard(env, DID))?.guard.state).toEqual(next);
   });
 
-  it('文字列化より前のガード (state がオブジェクト) も読める', async () => {
+  it('前の形のガードも読める: 印の無い記録 / state を JSON 文字列で書いた記録 (#1000)', async () => {
     const env = await makeEnv();
     const m = guardPds();
     globalThis.fetch = m.fn;
     m.store.set(rkeyForDid(DID), { value: guard(3), cid: 'old' });
     expect((await readGuard(env, DID))?.guard).toEqual(guard(3));
+    m.store.set(rkeyForDid(DID), { value: { ...guard(4), state: JSON.stringify({ hp: 7, armorDye: { water: 0.5 } }) }, cid: 'json' });
+    expect((await readGuard(env, DID))?.guard.state).toEqual({ hp: 7, armorDye: { water: 0.5 } });
   });
 
   it('deleteGuard は CID 一致で削除 / 不一致は InvalidSwap', async () => {

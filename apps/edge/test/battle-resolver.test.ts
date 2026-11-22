@@ -722,6 +722,29 @@ describe('属性のある防具を着て歩く (#998)', () => {
     expect(encounter).toBeDefined();
     expect(encounter!.state.player.armorDye).toEqual({ void: 0.5 });
   });
+
+  it('遭遇の封印 (戦いの記録の書き込み) に失敗したら、移動は通して encounterFailed を返す (画面で知らせるため)', async () => {
+    const env = await makeEnv();
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS() });
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes('putRecord') && (JSON.parse(init!.body as string) as { collection: string }).collection.endsWith('.battleGuard')) {
+        return new Response(JSON.stringify({ error: 'InvalidRequest', message: 'rejected' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      }
+      return m.fn(url, init);
+    }) as unknown as typeof fetch;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let failed: Awaited<ReturnType<typeof handleMove>> | undefined;
+    for (let x = 30; x < 400 && !failed; x++) {
+      const y = 40;
+      if (!isWalkable(terrainAt(x, y)) || !isWalkable(terrainAt(x + 1, y)) || terrainAt(x + 1, y) === 'town') continue;
+      const token = signPosition(env, { did: USER, x, y, counter: 1, iat: NOW });
+      const r = await handleMove(env, USER, 1, 0, token, NOW);
+      expect(r.encounter).toBeUndefined();
+      if (r.encounterFailed) failed = r;
+    }
+    expect(failed).toMatchObject({ encounterFailed: true });
+    expect(typeof failed!.token).toBe('string'); // 移動は通っている
+  });
 });
 
 describe('モンスターが 0 体のときの移動 (D-MONSTER-001)', () => {

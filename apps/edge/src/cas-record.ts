@@ -9,6 +9,7 @@
  */
 import { PdsError } from './pds';
 import { serverPutRecord, type ServerPdsEnv } from './server-pds';
+import { encodeRecordNumbers } from './record-numbers';
 
 export interface CasRecordLoop<T extends object> {
   collection: string;
@@ -36,7 +37,8 @@ export async function casRecordLoop<T extends object>(env: ServerPdsEnv, loop: C
     const next = loop.stamp(mutated);
     // 既存があればその CID を期待 (CAS)、無ければ null (新規作成のみ) で二重作成も防ぐ。
     try {
-      await serverPutRecord(env, loop.now, loop.collection, loop.rkey, next, existing ? existing.cid : null);
+      // 小数は文字列で書く (PDS は整数以外の数値を拒む。#998)。読み側 (read) が戻す。
+      await serverPutRecord(env, loop.now, loop.collection, loop.rkey, encodeRecordNumbers(next), existing ? existing.cid : null);
       return next;
     } catch (e) {
       if (e instanceof PdsError && e.xrpcError === 'InvalidSwap') {

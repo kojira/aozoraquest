@@ -218,6 +218,8 @@ export interface MoveResult {
   token: string;
   /** サーバーが遭遇を判定した場合のみ。 */
   encounter?: EncounterInfo;
+  /** 遭遇したが封印 (戦いの記録の書き込みなど) に失敗した (#998)。移動は通し、画面で知らせる。 */
+  encounterFailed?: true;
 }
 
 /**
@@ -359,6 +361,8 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
 
   const nextToken = signPosition(env, { did: userDid, mapId, x: nx, y: ny, counter: counter + 1, iat: now });
 
+  // 遭遇の封印に失敗したら、移動は通して返り値で知らせる (画面に「戦いを始められなかった」を出す。#998)。
+  let encounterFailed = false;
   // 固定モンスター (D-STORY-009 M3)。ランダム遭遇より先に見る。定義のあるマスだけ state を読む。
   const fixed = fieldMonsterAt(mapId, nx, ny);
   const fixedBattle = fixed ? storyBattleById(fixed.battleId) : undefined;
@@ -372,6 +376,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
         return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, token: nextToken, encounter };
       } catch (e) {
         console.error('story encounter failed (移動は通す)', e);
+        encounterFailed = true;
       }
     }
   }
@@ -404,6 +409,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
           return { ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain, token: nextToken, encounter };
         } catch (e) {
           console.error('encounter failed (移動は通す)', e);
+          encounterFailed = true;
         }
       }
     }
@@ -412,6 +418,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     ...(mapId !== WORLD_MAP_ID ? { mapId } : {}), x: nx, y: ny, terrain,
     healed: healed || undefined, token: nextToken,
     ...(townArrival ? { townArrival } : {}),
+    ...(encounterFailed ? { encounterFailed: true as const } : {}),
   };
 }
 

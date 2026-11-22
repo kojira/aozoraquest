@@ -10,6 +10,7 @@ import { getRecord } from './pds';
 import { readServerTokens } from './oauth-store';
 import { ServerWriteError } from './server-pds';
 import { casRecordLoop } from './cas-record';
+import { decodeRecordNumbers } from './record-numbers';
 import { adminNsidRoot } from './world-authoring';
 import type { GameStateEnv } from './game-state';
 import { ShopError } from './shop';
@@ -88,7 +89,7 @@ export async function readTownStock(env: GameStateEnv, town: { x: number; y: num
   const tokens = await readServerTokens(env.OAUTH_TOKENS);
   if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
   const rec = await getRecord<Partial<TownStock>>(tokens.pdsUrl, tokens.did, townStockCollection(env), townStockRkey(town));
-  return rec ? { stock: normalizeStock(rec.value, town), cid: rec.cid } : null;
+  return rec ? { stock: normalizeStock(decodeRecordNumbers(rec.value), town), cid: rec.cid } : null; // 小数は文字列で書いてある (#998)
 }
 
 /**

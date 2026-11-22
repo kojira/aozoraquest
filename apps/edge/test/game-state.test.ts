@@ -84,6 +84,16 @@ describe('game-state (OAuth 権威書き込み)', () => {
     expect(s2.power).toBe(9);
   });
 
+  it('小数は文字列で書き (PDS は整数以外の数値を拒む)、読むと同じ値に戻る (#998)', async () => {
+    const env = await makeEnv();
+    const m = statefulPds();
+    globalThis.fetch = m.fn;
+    await readModifyWrite(env, DID, (c) => ({ ...c, carryHp: 12.5 } as GameState), { now: NOW });
+    const raw = m.store.get(rkeyForDid(DID))!.value as Record<string, unknown>;
+    expect(raw.carryHp).toBe('~n:12.5');
+    expect((await readState(env, DID))?.state.carryHp).toBe(12.5);
+  });
+
   it('CAS 競合時は最新を読み直して再評価する (二重使用を通さない = ★★★ 契約)', async () => {
     const env = await makeEnv();
     // 先に power:100 を作る
