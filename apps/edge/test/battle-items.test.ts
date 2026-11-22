@@ -11,7 +11,7 @@ import { activeEquipment, activeItems, setItemOverrides, type ItemDefData } from
 import { handleTurn, sealEncounter, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { XP_EPOCH, type GameState } from '../src/game-state';
-import type { BattleGuard } from '../src/battle-guard';
+import { guardFromRecord, type BattleGuard } from '../src/battle-guard';
 
 const USER = 'did:plc:alice';
 const NOW = 1_700_000_000;
@@ -60,7 +60,7 @@ function pdsMock(gameState: GameState) {
   }) as unknown as typeof fetch;
   return { fn, store };
 }
-const guardOf = (store: Map<string, { value: unknown }>) => store.get('guard')?.value as BattleGuard<unknown, { battleItems?: Record<string, number> }> | undefined;
+const guardOf = (store: Map<string, { value: unknown }>) => { const v = store.get('guard')?.value; return v ? guardFromRecord(v as Parameters<typeof guardFromRecord>[0]) as BattleGuard<unknown, { battleItems?: Record<string, number> }> : undefined; };
 const gsOf = (store: Map<string, { value: unknown }>) => store.get('gs')!.value as GameState;
 
 describe('戦闘のどうぐ (edge, D-ITEM-001)', () => {

@@ -4,6 +4,7 @@ import { base64urlnopad } from '@scure/base';
 import { BASE_PALETTE, type InteriorMap, type NpcDef } from '@aozoraquest/core';
 import type { ResolverEnv } from '../../src/battle-resolver';
 import { writeServerTokens } from '../../src/oauth-store';
+import { guardFromRecord } from '../../src/battle-guard';
 import { signPosition } from '../../src/world-token';
 import { XP_EPOCH, type GameState } from '../../src/game-state';
 
@@ -43,7 +44,7 @@ export function pds(seed: GameState) {
     store.set(k, { value: b.record, cid: `c${++n}` });
     return json(200, { uri: 'x', cid: `c${n}` });
   }) as unknown as typeof fetch;
-  return { fn, gs: () => store.get('gs')!.value as GameState, guard: () => store.get('guard')?.value as { state: { allies?: unknown[]; enemies?: Array<{ hp: number; maxHp: number }>; monster: { maxHp: number } } } | undefined };
+  return { fn, gs: () => store.get('gs')!.value as GameState, guard: (): { state: { allies?: unknown[]; enemies?: Array<{ hp: number; maxHp: number }>; monster: { maxHp: number } } } | undefined => { const v = store.get('guard')?.value; return v ? guardFromRecord(v as Parameters<typeof guardFromRecord>[0]) as never : undefined; } };
 }
 
 

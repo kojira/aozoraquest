@@ -31,6 +31,14 @@ const guard = (turn: number): BattleGuard => ({
   expiresAt: '', createdAt: '', updatedAt: '',
 });
 
+/** レコードの中の整数以外の数値 (最初の 1 つ)。 */
+function findFloat(v: unknown, path = ''): { path: string; value: number } | null {
+  if (typeof v === 'number') return Number.isInteger(v) ? null : { path, value: v };
+  if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) { const f = findFloat(v[i], `${path}[${i}]`); if (f) return f; } return null; }
+  if (v && typeof v === 'object') { for (const [k, x] of Object.entries(v)) { const f = findFloat(x, `${path}.${k}`); if (f) return f; } }
+  return null;
+}
+
 /** getRecord(public GET) + DPoP putRecord/deleteRecord の swapRecord CAS を実装するモック。 */
 function guardPds() {
   const store = new Map<string, { value: unknown; cid: string }>();
@@ -45,6 +53,9 @@ function guardPds() {
     const b = JSON.parse(init.body as string) as { rkey: string; record?: unknown; swapRecord?: string | null };
     const cur = store.get(b.rkey);
     if (url.includes('putRecord')) {
+      // 本物の PDS と同じく、整数以外の数値を持つレコードは 400 で拒む (AT Protocol のデータモデル)。
+      const float = findFloat(b.record);
+      if (float) return json(400, { error: 'InvalidRequest', message: `Expected one of null, boolean, integer, string, cid, bytes, array or object value type (got ${float.value}) at $.record${float.path}` });
       if (b.swapRecord === null && cur) return json(400, { error: 'InvalidSwap' });
       if (typeof b.swapRecord === 'string' && (!cur || cur.cid !== b.swapRecord)) return json(400, { error: 'InvalidSwap' });
       const cid = `cid${++counter}`;
@@ -93,6 +104,26 @@ describe('battle-guard (OAuth 権威書き込み)', () => {
     expect(c1).not.toBe(c0);
     await expect(advanceGuard(env, NOW, guard(1), c0)).rejects.toMatchObject({ xrpcError: 'InvalidSwap' });
     await expect(advanceGuard(env, NOW, guard(2), c1)).resolves.toBeTruthy();
+  });
+
+  it('戦闘の state に小数 (防具の染まり armorDye 0.5 など) があっても書けて、読むと同じ値に戻る (#998)', async () => {
+    const env = await makeEnv();
+    const m = guardPds();
+    globalThis.fetch = m.fn;
+    const state = { turn: 0, player: { hp: 30, armorDye: { water: 0.5 } }, monster: { hp: 9, statuses: [{ id: 'atkDown', turns: 2, magnitude: 0.75 }] } };
+    const { cid } = await createGuard(env, NOW, { ...guard(0), state });
+    expect((await readGuard(env, DID))?.guard.state).toEqual(state);
+    const next = { ...state, turn: 1, player: { hp: 25, armorDye: { water: 0.55 } } };
+    await advanceGuard(env, NOW, { ...guard(1), state: next }, cid);
+    expect((await readGuard(env, DID))?.guard.state).toEqual(next);
+  });
+
+  it('文字列化より前のガード (state がオブジェクト) も読める', async () => {
+    const env = await makeEnv();
+    const m = guardPds();
+    globalThis.fetch = m.fn;
+    m.store.set(rkeyForDid(DID), { value: guard(3), cid: 'old' });
+    expect((await readGuard(env, DID))?.guard).toEqual(guard(3));
   });
 
   it('deleteGuard は CID 一致で削除 / 不一致は InvalidSwap', async () => {
