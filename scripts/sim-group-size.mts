@@ -4,7 +4,7 @@
  * 人数 × tier ごとに、敵の数の分布・勝率 (min / 中央値)・ターン (勝った戦の平均)・敵の数ごとの勝率 (1〜5 体) を出す。
  *
  * 使い方:
- *   MONSTERS_JSON=/tmp/monsters.json ITEMS_JSON=/tmp/items.json pnpm --filter @aozoraquest/core exec tsx ../../scripts/sim-group-size.mts
+ *   MONSTERS_JSON=/tmp/monsters.json ITEMS_JSON=/tmp/items.json pnpm --filter @aozoraquest/core sim:group-size
  * 環境変数:
  *   GROUP  BATTLE_TUNING.groupChance の上書き (同じ形の JSON。試すとき)。無ければ core の値
  *   PARTY  sim-party-lib の PARTIES のキー (既定 solo,duo,trio,full)

@@ -15,7 +15,8 @@
     "sim:gear-early": "tsx ../../scripts/sim-gear-early.mts",
     "sim:gear-matrix": "tsx ../../scripts/sim-gear-matrix.mts",
     "sim:party": "tsx ../../scripts/sim-party.mts",
-    "sim:party-boss": "tsx ../../scripts/sim-party-boss.mts"
+    "sim:party-boss": "tsx ../../scripts/sim-party-boss.mts",
+    "sim:group-size": "tsx ../../scripts/sim-group-size.mts"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
