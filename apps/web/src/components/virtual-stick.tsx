@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clearStraySelection } from '@/lib/world-text-select';
 
 /**
  * 仮想スティック (あおぞらワールドの移動操作)。
@@ -156,6 +157,8 @@ export function VirtualStick({
       if (pointerIdRef.current !== null) return; // マルチタッチの 2 本目は無視
       if (e.pointerType === 'mouse' && e.button !== 0) return; // 右/中ドラッグでは歩かない
       e.preventDefault();
+      // 残っている文字選択があると、スマホでは指の動きが選択の伸ばしに取られる (#996)
+      clearStraySelection();
       e.currentTarget.setPointerCapture(e.pointerId);
       pointerIdRef.current = e.pointerId;
       originRef.current = { clientX: e.clientX, clientY: e.clientY };

@@ -37,6 +37,7 @@ import { WorldBattleControls, battleOverlayZ } from '@/components/world-battle-c
 import { EncounterWipe, type WipePhase } from '@/components/encounter-wipe';
 import { DoorFade, type DoorFadePhase } from '@/components/door-fade';
 import { VirtualStick } from '@/components/virtual-stick';
+import { clearStraySelection, useWorldTextSelectGuard } from '@/lib/world-text-select';
 import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcDialogueLines } from '@/lib/npc-image';
@@ -104,6 +105,7 @@ export function World() {
 }
 
 function WorldScreen() {
+  useWorldTextSelectGuard();
   const session = useSession();
   const agent = session.agent ?? null;
   const did = session.did ?? null;
@@ -348,6 +350,7 @@ function WorldScreen() {
         // 入手前から押しっぱなしのキーは、読了後も新しい押下まで再開しない。
         if (mapAcquisitionRef.current || (waitForFreshDirectionRef.current && e.repeat)) return;
         waitForFreshDirectionRef.current = false;
+        clearStraySelection();
         move(dir);
       }
     };
@@ -441,7 +444,7 @@ function WorldScreen() {
   const avatarSize = Math.max(16, Math.round(tilePx * 1.15));
 
   return (
-    <div className="world-screen" style={{ maxWidth: 560, margin: '0 auto', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
+    <div className="world-screen" style={{ maxWidth: 560, margin: '0 auto' }}>
       {/* HUD (HP/MP + 現在地) はマップ上にオーバーレイ表示する — 縦スクロールを
           なくして没入感を上げるため。マップ外に置いて
           いた HP/MP バー・場所ヘッダーは廃止し、下記 WorldHud に集約した。 */}
