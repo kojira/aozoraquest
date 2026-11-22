@@ -14,6 +14,7 @@ import { readServerTokens } from './oauth-store';
 import { serverPutRecord, serverDeleteRecord, ServerWriteError } from './server-pds';
 import { rkeyForDid, type GameStateEnv } from './game-state';
 import { adminNsidRoot } from './world-authoring';
+import { decodeRecordNumbers, encodeRecordNumbers } from './record-numbers';
 
 /** バトルガードの collection (D-ENV-002)。gameState と同じく Worker env で dev と本番を分ける
  *  (dev エッジ = `app.aozoraquest.dev.battleGuard`、本番 = `app.aozoraquest.battleGuard`)。 */
@@ -44,20 +45,20 @@ export interface BattleGuard<Sealed = unknown, State = unknown> {
 }
 
 /**
- * ガードのレコードの形。**state は JSON の文字列で持つ** — AT Protocol のレコードは整数以外の数値を
- * 持てず、戦闘の state には小数がある (防具の染まり armorDye 0.5 など。D-ELEM-001)。数値のまま書くと
- * PDS が putRecord を 400 で拒み、遭遇が「encounter failed (移動は通す)」で黙って消えていた (#998)。
- * 読みは文字列と、文字列化より前のオブジェクトの両方を受ける。
+ * ガードの記録の形。**小数は文字列で持つ** (record-numbers.ts。#998)。戦闘の state には防具の染まり
+ * (armorDye 0.5) などの小数があり、数値のまま書くと PDS が拒んで遭遇が黙って消えていた。
+ * 読みは、印の無い記録と、一時的に state を JSON 文字列で書いていた記録 (#1000) も受ける。
  */
 type GuardRecord<S, St> = Omit<BattleGuard<S, St>, 'state'> & { state: string | St };
 
-function guardToRecord<S, St>(guard: BattleGuard<S, St>): GuardRecord<S, St> {
-  return { ...guard, state: JSON.stringify(guard.state) };
+function guardToRecord<S, St>(guard: BattleGuard<S, St>): BattleGuard<S, St> {
+  return encodeRecordNumbers(guard);
 }
 
-/** レコードの値をガードに戻す (テストがストアの中身を読むときにも使う)。 */
+/** 記録の値をガードに戻す (テストがストアの中身を読むときにも使う)。 */
 export function guardFromRecord<S = unknown, St = unknown>(rec: GuardRecord<S, St>): BattleGuard<S, St> {
-  return { ...rec, state: typeof rec.state === 'string' ? (JSON.parse(rec.state) as St) : rec.state };
+  const g = decodeRecordNumbers(rec);
+  return { ...g, state: typeof g.state === 'string' ? (JSON.parse(g.state) as St) : g.state };
 }
 
 /** 読み書き先 repo をトークン由来にするため、書込先 pds を token から得る。無ければ fail-closed。 */

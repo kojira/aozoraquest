@@ -16,6 +16,7 @@ import { getRecord } from './pds';
 import { readServerTokens } from './oauth-store';
 import { ServerWriteError, type ServerPdsEnv } from './server-pds';
 import { casRecordLoop } from './cas-record';
+import { decodeRecordNumbers } from './record-numbers';
 import { adminNsidRoot, type WorldAuthoringEnv } from './world-authoring';
 
 /**
@@ -254,7 +255,7 @@ export async function readState(env: GameStateEnv, targetDid: string): Promise<{
   const tokens = await readServerTokens(env.OAUTH_TOKENS);
   if (!tokens) throw new ServerWriteError('サーバートークン未 bootstrap (管理画面で OAuth 連携が必要)', 'not-bootstrapped');
   const rec = await getRecord<GameState>(tokens.pdsUrl, tokens.did, gameStateCollection(env), rkeyForDid(targetDid));
-  return rec ? { state: normalizeState(rec.value), cid: rec.cid } : null;
+  return rec ? { state: normalizeState(decodeRecordNumbers(rec.value)), cid: rec.cid } : null; // 小数は文字列で書いてある (#998)
 }
 
 /**
