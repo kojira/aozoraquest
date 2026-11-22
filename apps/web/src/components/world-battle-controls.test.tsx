@@ -154,7 +154,7 @@ describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
     const onCommand = openItems(withItems({ 'nemuri-kona': 1 }, 2));
     fireEvent.click(screen.getByRole('button', { name: 'ねむりごな ×1' }));
     expect(onCommand).not.toHaveBeenCalled();
-    expect(screen.getByText('だれを ねらう？')).toBeTruthy();
+    expect(screen.queryByText('だれを ねらう？')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'スライムB' }));
     expect(onCommand).toHaveBeenCalledWith('item', undefined, 'nemuri-kona', 1);
   });
@@ -162,7 +162,7 @@ describe('WorldBattleControls 戦闘のどうぐ (D-ITEM-001)', () => {
     const onCommand = openItems(withItems({ 'kemuri-dama': 1 }, 2));
     fireEvent.click(screen.getByRole('button', { name: 'けむりだま ×1' }));
     expect(onCommand).toHaveBeenCalledWith('item', undefined, 'kemuri-dama');
-    expect(screen.queryByText('だれを ねらう？')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'スライムB' })).toBeNull();
   });
 });
 
@@ -189,7 +189,8 @@ describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
     const onCommand = input(group([10, 0, 7]));
     fireEvent.click(screen.getByRole('button', { name: 'たたかう' }));
     expect(onCommand).not.toHaveBeenCalled();
-    expect(screen.getByText('だれを ねらう？')).toBeTruthy();
+    expect(screen.queryByText('だれを ねらう？')).toBeNull();
+    expect(screen.getByRole('button', { name: 'スライムA' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'スライムB' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'スライムC' }));
     expect(onCommand).toHaveBeenCalledWith('attack', undefined, undefined, 1);
@@ -229,13 +230,13 @@ describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
     expect(bar('ミオ', 'hp').style.width).toBe('0%');
   });
 
-  it('仲間がいれば 聖光の癒し は「だれを かいふくする？」で生きている味方 (主人公を含む) から選び、その番号を送る (D-PARTY-003)', () => {
+  it('仲間がいれば 聖光の癒し は見出しなしで生きている味方 (主人公を含む) から選び、その番号を送る (D-PARTY-003)', () => {
     const s = { ...group([10], [20, 13, 0, 25].slice(0, 3)), playerSkills: [{ name: 'わざ', kind: 'smash' }, { name: '聖光の癒し', kind: 'paladin-heal' }] } as BattleState;
     const onCommand = input(s);
     fireEvent.click(screen.getByRole('button', { name: '聖光の癒し' }));
     expect(onCommand).not.toHaveBeenCalled();
-    expect(screen.getByText('だれを かいふくする？')).toBeTruthy();
-    const picker = screen.getByText('だれを かいふくする？').parentElement!;
+    expect(screen.queryByText('だれを かいふくする？')).toBeNull();
+    const picker = document.querySelector('[data-picker-back]')!.parentElement!;
     const names = [...picker.querySelectorAll('button')].map((b) => b.textContent);
     expect(names).toEqual(['ゆうしゃ', 'カイト', 'もどる']); // 倒れたミオは出ない
     fireEvent.click([...picker.querySelectorAll('button')].find((b) => b.textContent === 'カイト')!);
@@ -247,7 +248,7 @@ describe('WorldBattleControls パーティと群れ (D-PARTY-001)', () => {
     const onCommand = input(s);
     fireEvent.click(screen.getByRole('button', { name: 'どうぐ' }));
     fireEvent.click(screen.getByRole('button', { name: 'やくそう ×2' }));
-    const picker = screen.getByText('だれを かいふくする？').parentElement!;
+    const picker = document.querySelector('[data-picker-back]')!.parentElement!;
     const btn = (n: string) => [...picker.querySelectorAll('button')].find((b) => b.textContent === n)!;
     expect(btn('ゆうしゃ').disabled).toBe(true);
     fireEvent.click(btn('カイト'));

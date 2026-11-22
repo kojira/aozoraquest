@@ -9,7 +9,7 @@ import type { BattleState, Combatant } from '@aozoraquest/core';
 export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 'enemy', full }: {
   state: BattleState;
   busy: boolean;
-  Row: (p: { label: string; onClick: () => void; disabled: boolean; fill?: boolean }) => React.ReactNode;
+  Row: (p: { label: string; onClick: () => void; disabled: boolean; fill?: boolean; plain?: boolean }) => React.ReactNode;
   onPick: (targetIndex: number) => void;
   onCancel: () => void;
   side?: 'enemy' | 'ally';
@@ -18,13 +18,12 @@ export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 
   const living = side === 'ally' ? livingAllies(state) : (state.enemies ?? [state.monster]).filter((e) => e.hp > 0);
   return (
     <>
-      <div style={{ fontSize: '0.8em', color: 'rgba(255,255,255,0.85)', padding: '0.1em 0.2em' }}>{side === 'ally' ? 'だれを かいふくする？' : 'だれを ねらう？'}</div>
       {living.map((e, i) => (
-        <Row key={i} fill={false} label={e.name} onClick={() => onPick(i)} disabled={busy || !!full?.(e)} />
+        <Row key={i} fill={false} plain label={e.name} onClick={() => onPick(i)} disabled={busy || !!full?.(e)} />
       ))}
-      {/* 窓は固定の高さでスクロールする。敵が 2 体以上だと 390px で「もどる」が下で切れるので、下に張りつける。 */}
-      <div data-picker-back style={{ position: 'sticky', bottom: 0, flexShrink: 0, background: 'rgba(16,18,26,0.95)' }}>
-        <Row fill={false} label="もどる" onClick={onCancel} disabled={busy} />
+      {/* 見出しは出さず、行は枠なし (#1004)。390px で 2 体 + もどる が収まる。3 体以上は窓がスクロールするので「もどる」を下に張りつける。 */}
+      <div data-picker-back style={{ position: 'sticky', bottom: 0, flexShrink: 0, background: 'rgb(16,18,26)' }}>
+        <Row fill={false} plain label="もどる" onClick={onCancel} disabled={busy} />
       </div>
     </>
   );
