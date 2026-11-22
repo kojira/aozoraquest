@@ -67,6 +67,28 @@ describe('マルチ戦闘ターンループ (#453)', () => {
     expect(pack.enemies![0]).toBe(pack.monster); // enemies[0]=主敵と同期
   });
 
+  it('敵 5 体 (D-PARTY-005): 5 体目をねらえる・全体技は 5 体に当たる・5 体とも動く・決着する', () => {
+    const five = () => startBattle('bard', 30, 30, '勇者', 1, 9, 0, undefined, { extraEnemies: 4 });
+    const s0 = five();
+    expect(s0.enemies).toHaveLength(5);
+    // 5 体目 (index 4) をねらった通常攻撃は 5 体目だけを削る
+    const hit = resolveTurnMulti(s0, 'attack', 7, 0, 4);
+    expect(hit.enemies![4]!.hp).toBeLessThan(s0.enemies![4]!.hp);
+    expect(hit.enemies!.slice(0, 4).map((e) => e.hp)).toEqual(s0.enemies!.slice(0, 4).map((e) => e.hp));
+    // 全体技 (bard-desperado) は 5 体ともに当たる
+    const aoe = s0.playerSkills.findIndex((k) => k.kind === 'bard-desperado');
+    expect(aoe).toBeGreaterThanOrEqual(0);
+    const s1 = resolveTurnMulti({ ...s0, player: { ...s0.player, mp: 99 }, allies: [{ ...s0.player, mp: 99 }] }, 'skill', 7, aoe, 0);
+    s1.enemies!.forEach((e, i) => expect(e.hp).toBeLessThan(s0.enemies![i]!.hp));
+    // 敵 5 体がそれぞれ動く (防御のターンに、敵の行動が 5 つ)
+    const g = resolveTurnMulti(s0, 'guard', 7);
+    expect(g.lastEvents.filter((e) => e.actor === 'monster').length).toBeGreaterThanOrEqual(5);
+    expect(g.lastEvents.every((e) => !e.hp || e.hp.monsters.length === 5)).toBe(true);
+    let s = s0;
+    for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) s = resolveTurnMulti(s, 'attack', i, 0, s.enemies!.findIndex((e) => e.hp > 0));
+    expect(s.outcome).toBe('win');
+  });
+
   it('敵は個体ごとの ability で行動する — caster (night-raven) がマルチで魔法を撃つ (#453)', () => {
     const spellName = 'かまいたち'; // night-raven の spell
     let cast = false;

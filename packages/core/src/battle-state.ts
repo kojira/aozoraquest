@@ -11,7 +11,7 @@ import { createRng } from './battle-rng.js';
 import { type JobSkill, skillForJob, skillsForJob, mpGainsFor, mpTraitChanceOf } from './battle-job-skills.js';
 import { type Combatant, playerCombatant } from './battle-combatant.js';
 import { type Tier, MONSTERS_BY_ID, summonMonster, monsterCombatant } from './battle-monsters.js';
-import { encounterGroupSize, groupable } from './battle-group.js';
+import { encounterGroupSize, groupable, MAX_GROUP_SIZE } from './battle-group.js';
 import { carriedBattleItems } from './battle-items.js';
 
 // ─── バトル状態と解決 ───────────────────────────────────────
@@ -153,14 +153,15 @@ export function startBattle(
     /** 出現を tier 抽選せず**この id のモンスターに固定**する (模擬戦シミュレータ用)。
      *  未知 id は無視して従来どおり tier 抽選。 */
     monsterId?: string;
-    /** 追加の敵数 (#453 マルチ戦闘: 群れ)。0=ソロ (従来・enemies 未設定)、1〜2 で計 2〜3 体。
+    /** 追加の敵数 (#453 マルチ戦闘: 群れ)。0=ソロ (従来・enemies 未設定)、1〜4 で計 2〜5 体 (MAX_GROUP_SIZE)。
      *  各追加敵は同 tier から別 seed で抽選し monsterId を保持。allies=[player]・enemies=[主敵, …追加] を設定。 */
     extraEnemies?: number;
     /** ストーリー戦 (D-STORY-009)。BattleState.story にそのまま載る。 */
     story?: { canFlee: boolean; scripted?: boolean };
     /** 群れを使う (D-PARTY-001)。tier 抽選の主敵から encounterGroupSize で数を決め、追加の敵も同じ tier から選ぶ
-     *  (fleer・レアは入れない)。monsterId 固定や extraEnemies を渡したときは使わない。 */
-    group?: boolean;
+     *  (fleer・レアは入れない)。monsterId 固定や extraEnemies を渡したときは使わない。
+     *  partySize = この戦闘に出る人数 (主人公を含む。D-PARTY-005: 人数が多いほど群れが大きい)。 */
+    group?: { partySize: number };
     /** 持ち込む戦闘用のどうぐ (id → 数)。種類ごとに battleItemCarryMax まで (D-ITEM-001)。 */
     battleItems?: Readonly<Record<string, number>>;
   },
@@ -178,10 +179,12 @@ export function startBattle(
     ? { def: forced, combatant: monsterCombatant(forced, variance, createRng((seed ^ 0x2a9f) >>> 0)) }
     : summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, variance);
   const gains = mpGainsFor(archetype);
-  // #453 群れ: 追加の敵を別 seed で抽選 (最大 +2 = 計 3 体)。0 のとき enemies 未設定 = 従来ソロ。
+  // #453 群れ: 追加の敵を別 seed で抽選 (最大 計 MAX_GROUP_SIZE 体)。0 のとき enemies 未設定 = 従来ソロ。
   // group (D-PARTY-001) は数を seed から決める。fleer・レアは追加の敵に選ばない。
   const grouped = !!extras?.group && !forced && extras.extraEnemies === undefined;
-  const extraCount = grouped ? encounterGroupSize(tier, seed, def, true) - 1 : Math.max(0, Math.min(2, Math.floor(extras?.extraEnemies ?? 0)));
+  const extraCount = grouped
+    ? encounterGroupSize(tier, seed, def, true, extras.group!.partySize) - 1
+    : Math.max(0, Math.min(MAX_GROUP_SIZE - 1, Math.floor(extras?.extraEnemies ?? 0)));
   const enemies: Combatant[] = [combatant];
   for (let i = 0; i < extraCount; i++) {
     const es = (seed ^ (0x9e3779b1 * (i + 1))) >>> 0;

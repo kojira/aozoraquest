@@ -11,7 +11,7 @@
  *   CASES  [[Lv, tier], ...] (既定 [[1,1],[3,1],[5,2],[8,2],[8,3],[11,3]])
  *   NS     敵の数の列 (既定 [1,2,3])。GROUP があれば無視
  *   GROUP  tier ごとの [2 体の確率, 3 体の確率]。遭遇の seed で決める (確率を試すとき)。
- *          GROUP=core なら core の群れ (startBattle の group = encounterGroupSize・BATTLE_TUNING.groupChance) をそのまま使う
+ *          GROUP=core なら core の群れ (startBattle の group = encounterGroupSize・BATTLE_TUNING.groupChance。人数つき) をそのまま使う
  *   N      職ごとの単発の戦闘数 (既定 100)、ENDU 連戦の試行数 (既定 10。0 で連戦を出さない)
  */
 import { core, fight, PARTIES, median, minOf } from './sim-party-lib.mts';

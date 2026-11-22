@@ -43,15 +43,15 @@ export interface FightOpts {
   mateGear?: import('../packages/core/src/index.js').GearSelection;
 }
 
-/** 1 戦。edge の sealEncounter と同じく、仲間を allies に並べる (ボスの HP は仲間の数で変えない。D-PARTY-002 §12)。 */
+/** 1 戦。edge の sealEncounter と同じく、群れの数は戦闘に出る人数で引き (D-PARTY-005)、仲間を allies に並べる (ボスの HP は仲間の数で変えない。D-PARTY-002 §12)。 */
 export function fight(job: Archetype, lv: number, tier: number, seed: number, mates: readonly Archetype[], o: FightOpts) {
   const herbs = o.carry?.herbs ?? BATTLE_TUNING.herbCarryMax;
-  let s: BattleState = startBattle(job, lv, 1, 'hero', tier as never, seed >>> 0, herbs, o.carry ? { hp: o.carry.hp, mp: o.carry.mp } : undefined, {
-    tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: true } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, ...(o.gear ? { gear: o.gear } : { equipIds: heroGear(lv) }),
-    ...(o.monsterId ? { monsterId: o.monsterId } : {}), ...(o.story ? { story: { canFlee: false } } : {}), ...(o.battleItems ? { battleItems: o.battleItems } : {}),
-  });
   const defs = mates.map((a, i) => ({ id: `m${i}`, name: `mate${i}`, archetype: a, level: Math.max(1, lv + MATE_LV), ...(o.mateGear ? { gear: o.mateGear } : {}) }));
   const members = partyMembers(defs, lv, o.carry ? { hp: o.carry.mates, mp: o.carry.matesMp } : {});
+  let s: BattleState = startBattle(job, lv, 1, 'hero', tier as never, seed >>> 0, herbs, o.carry ? { hp: o.carry.hp, mp: o.carry.mp } : undefined, {
+    tonics: o.tonics ?? BATTLE_TUNING.tonicCarryMax, ...(o.extraEnemies !== undefined ? { extraEnemies: o.extraEnemies } : {}), ...(o.group ? { group: { partySize: 1 + members.length } } : {}), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance, ...(o.gear ? { gear: o.gear } : { equipIds: heroGear(lv) }),
+    ...(o.monsterId ? { monsterId: o.monsterId } : {}), ...(o.story ? { story: { canFlee: false } } : {}), ...(o.battleItems ? { battleItems: o.battleItems } : {}),
+  });
   if (members.length) {
     const enemies = s.enemies ?? [s.monster];
     s = { ...s, allies: [s.player, ...members.map((m) => m.combatant)], enemies, ...(o.tactic ? { allyModes: [undefined, ...members.map(() => o.tactic)] } : {}) };

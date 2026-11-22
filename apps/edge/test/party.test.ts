@@ -221,7 +221,7 @@ describe('群れ (D-PARTY-001 P4)', () => {
     const { encounterGroupSize, MONSTERS_BY_ID, startBattle, tierForRegion, regionOf } = await import('@aozoraquest/core');
     for (let seed = 1; seed < 5000; seed++) {
       const b = startBattle('warrior', 1, 1, 't', tierForRegion(regionOf(x, y)), seed);
-      if (encounterGroupSize(tierForRegion(regionOf(x, y)), seed, MONSTERS_BY_ID[b.monsterId]!, true) > 1) return seed;
+      if (encounterGroupSize(tierForRegion(regionOf(x, y)), seed, MONSTERS_BY_ID[b.monsterId]!, true, 1) > 1) return seed;
     }
     throw new Error('群れの seed が無い');
   };
@@ -237,6 +237,29 @@ describe('群れ (D-PARTY-001 P4)', () => {
     globalThis.fetch = pds(GS({ flags: [LETTER] })).fn;
     const after = await sealEncounter(env, USER, GS({ flags: [LETTER] }), x, y, seed, NOW);
     expect(after.state.enemies!.length).toBeGreaterThan(1);
+  });
+
+  it('群れの数は戦闘に出る人数で引く (D-PARTY-005。倒れた仲間は数えない)', async () => {
+    const env = await makeEnv();
+    const { encounterGroupSize, MONSTERS_BY_ID, tierForRegion, regionOf } = await import('@aozoraquest/core');
+    const { x, y } = far();
+    const tier = tierForRegion(regionOf(x, y));
+    setStory({ battles: [], recruits: ['warrior', 'miko', 'mage'].map((archetype, i) => ({ id: `r-${i + 1}`, name: `n${i}`, archetype: archetype as 'warrior', guild: 'g-bluesky', line: 'よろしく。' })) });
+    const flags = [LETTER, 'yuuhi_feather_done', 'soyogi_feather_done'];
+    const full = { ids: ['r-1', 'r-2', 'r-3'] };
+    const oneDown = { ids: ['r-1', 'r-2', 'r-3'], hp: { 'r-3': 0 } };
+    let differ = 0;
+    for (let seed = 1; seed < 400; seed++) {
+      for (const [party, size] of [[full, 4], [oneDown, 3], [undefined, 1]] as const) {
+        globalThis.fetch = pds(GS({ flags, ...(party ? { party } : {}) })).fn;
+        const r = await sealEncounter(env, USER, GS({ flags, ...(party ? { party } : {}) }), x, y, seed, NOW);
+        expect(r.state.allies?.length ?? 1).toBe(size);
+        expect(r.state.enemies?.length ?? 1).toBe(encounterGroupSize(tier, seed, MONSTERS_BY_ID[r.monsterId]!, true, size));
+      }
+      const main = MONSTERS_BY_ID[(await sealEncounter(env, USER, GS({ flags }), x, y, seed, NOW)).monsterId]!;
+      if (encounterGroupSize(tier, seed, main, true, 4) !== encounterGroupSize(tier, seed, main, true, 1)) differ++;
+    }
+    expect(differ).toBeGreaterThan(10);
   });
 
   it('ふたばの近く (sky-slime 固定) とストーリー戦は今のまま', async () => {
