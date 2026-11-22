@@ -22,7 +22,7 @@ export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 
         <Row key={i} fill={false} plain label={e.name} onClick={() => onPick(i)} disabled={busy || !!full?.(e)} />
       ))}
       {/* 見出しは出さず、行は枠なし (#1004)。390px で 2 体 + もどる が収まる。3 体以上は窓がスクロールするので「もどる」を下に張りつける。 */}
-      <div data-picker-back style={{ position: 'sticky', bottom: 0, flexShrink: 0, background: 'rgba(16,18,26,0.95)' }}>
+      <div data-picker-back style={{ position: 'sticky', bottom: 0, flexShrink: 0, background: 'rgb(16,18,26)' }}>
         <Row fill={false} plain label="もどる" onClick={onCancel} disabled={busy} />
       </div>
     </>
