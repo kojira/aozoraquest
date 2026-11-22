@@ -695,6 +695,35 @@ describe('街の内部へ入ると帰還先も更新する (#424)', () => {
   });
 });
 
+describe('属性のある防具を着て歩く (#998)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; vi.restoreAllMocks(); });
+
+  it('防具の染まり (小数) があっても遭遇が成立する — PDS は整数以外の数値を拒むので、ガードにそのまま書くと遭遇が黙って消えていた', async () => {
+    const env = await makeEnv();
+    // ほしのころも (void, 染まり 0.5)。オーナーは みずの ころも (water, 0.5) で同じことが起きた。
+    const m = resolverMock({ diagnosis: DIAG, gameState: GS({ gearSel: { armor: { id: 'ar-star-robe', level: 0 } } }) });
+    const hasFloat = (v: unknown): boolean => typeof v === 'number' ? !Number.isInteger(v) : Array.isArray(v) ? v.some(hasFloat) : !!v && typeof v === 'object' && Object.values(v).some(hasFloat);
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes('putRecord') && hasFloat((JSON.parse(init!.body as string) as { record: unknown }).record)) {
+        return new Response(JSON.stringify({ error: 'InvalidRequest', message: 'Expected one of null, boolean, integer, string, cid, bytes, array or object value type (got 0.5)' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      }
+      return m.fn(url, init);
+    }) as unknown as typeof fetch;
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let encounter: Awaited<ReturnType<typeof handleMove>>['encounter'];
+    for (let x = 30; x < 400 && !encounter; x++) {
+      const y = 40;
+      if (!isWalkable(terrainAt(x, y)) || !isWalkable(terrainAt(x + 1, y)) || terrainAt(x + 1, y) === 'town') continue;
+      const token = signPosition(env, { did: USER, x, y, counter: 1, iat: NOW });
+      encounter = (await handleMove(env, USER, 1, 0, token, NOW)).encounter;
+    }
+    expect(error).not.toHaveBeenCalled();
+    expect(encounter).toBeDefined();
+    expect(encounter!.state.player.armorDye).toEqual({ void: 0.5 });
+  });
+});
+
 describe('モンスターが 0 体のときの移動 (D-MONSTER-001)', () => {
   const orig = globalThis.fetch;
   afterEach(() => { globalThis.fetch = orig; setMonsterOverrides(TEST_MONSTERS); vi.restoreAllMocks(); });

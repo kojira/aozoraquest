@@ -43,6 +43,23 @@ export interface BattleGuard<Sealed = unknown, State = unknown> {
   updatedAt: string;
 }
 
+/**
+ * ガードのレコードの形。**state は JSON の文字列で持つ** — AT Protocol のレコードは整数以外の数値を
+ * 持てず、戦闘の state には小数がある (防具の染まり armorDye 0.5 など。D-ELEM-001)。数値のまま書くと
+ * PDS が putRecord を 400 で拒み、遭遇が「encounter failed (移動は通す)」で黙って消えていた (#998)。
+ * 読みは文字列と、文字列化より前のオブジェクトの両方を受ける。
+ */
+type GuardRecord<S, St> = Omit<BattleGuard<S, St>, 'state'> & { state: string | St };
+
+function guardToRecord<S, St>(guard: BattleGuard<S, St>): GuardRecord<S, St> {
+  return { ...guard, state: JSON.stringify(guard.state) };
+}
+
+/** レコードの値をガードに戻す (テストがストアの中身を読むときにも使う)。 */
+export function guardFromRecord<S = unknown, St = unknown>(rec: GuardRecord<S, St>): BattleGuard<S, St> {
+  return { ...rec, state: typeof rec.state === 'string' ? (JSON.parse(rec.state) as St) : rec.state };
+}
+
 /** 読み書き先 repo をトークン由来にするため、書込先 pds を token から得る。無ければ fail-closed。 */
 async function guardRepo(env: GameStateEnv): Promise<{ pdsUrl: string; did: string }> {
   if (!env.OAUTH_TOKENS) throw new ServerWriteError('KV 未 binding', 'no-kv');
@@ -57,13 +74,13 @@ export async function readGuard<S = unknown, St = unknown>(
   targetDid: string,
 ): Promise<{ guard: BattleGuard<S, St>; cid: string } | null> {
   const repo = await guardRepo(env);
-  const rec = await getRecord<BattleGuard<S, St>>(repo.pdsUrl, repo.did, battleGuardCollection(env), rkeyForDid(targetDid));
-  return rec ? { guard: rec.value, cid: rec.cid } : null;
+  const rec = await getRecord<GuardRecord<S, St>>(repo.pdsUrl, repo.did, battleGuardCollection(env), rkeyForDid(targetDid));
+  return rec ? { guard: guardFromRecord(rec.value), cid: rec.cid } : null;
 }
 
 /** ガードを作成 (encounter)。既存があれば InvalidSwap (二重戦闘を作らせない)。 */
 export async function createGuard(env: GameStateEnv, now: number, guard: BattleGuard): Promise<{ cid: string }> {
-  const { cid } = await serverPutRecord(env, now, battleGuardCollection(env), rkeyForDid(guard.did), guard, null);
+  const { cid } = await serverPutRecord(env, now, battleGuardCollection(env), rkeyForDid(guard.did), guardToRecord(guard), null);
   return { cid };
 }
 
@@ -73,7 +90,7 @@ export async function createGuard(env: GameStateEnv, now: number, guard: BattleG
  * ゲート**する (競合 = やり直し/リプレイ = 409、応答は返さない)。
  */
 export async function advanceGuard(env: GameStateEnv, now: number, guard: BattleGuard, expectedCid: string): Promise<{ cid: string }> {
-  const { cid } = await serverPutRecord(env, now, battleGuardCollection(env), rkeyForDid(guard.did), guard, expectedCid);
+  const { cid } = await serverPutRecord(env, now, battleGuardCollection(env), rkeyForDid(guard.did), guardToRecord(guard), expectedCid);
   return { cid };
 }
 
