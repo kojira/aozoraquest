@@ -377,6 +377,9 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   }
   // 固定モンスターのマスは、居ないあいだもランダム遭遇のない普通のマス (設計 M3)。
 
+  // **敵が 0 体なら毎回 (間引いて) error を出す。** monsters の読み込みに失敗すると遭遇が無言で止まり、
+  // 「敵がまったく出ない」の原因がログに残らない (isolate 起動時の warn 1 回だけでは追えない)。
+  if (activeMonsters().length === 0) logNoMonsters(now);
   // エンカウント: tile+30分枠+秘密から決定的 (見えない・予測不可・30分でリポップ)。街では出さない。
   // **内部マップは encounterTier を設定したときだけ敵が出る** (街の中・城の広間は無し)。
   if (!fixed && terrain !== 'town' && (!inside || inside.encounterTier !== undefined) && activeMonsters().length > 0) {
@@ -410,6 +413,21 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
     healed: healed || undefined, token: nextToken,
     ...(townArrival ? { townArrival } : {}),
   };
+}
+
+/** 敵 0 体の error を出した時刻 (isolate ごと)。移動のたびに出すとログが埋まるので 60 秒に 1 回。 */
+let noMonstersLoggedAt = -Infinity;
+const NO_MONSTERS_LOG_INTERVAL_SEC = 60;
+
+function logNoMonsters(now: number): void {
+  if (now - noMonstersLoggedAt < NO_MONSTERS_LOG_INTERVAL_SEC) return;
+  noMonstersLoggedAt = now;
+  console.error('no monsters loaded: random encounters are off (world.monsters を読めていない)');
+}
+
+/** テスト用: 間引きの時刻を戻す。 */
+export function resetNoMonstersLog(): void {
+  noMonstersLoggedAt = -Infinity;
 }
 
 export interface TeleportResult { x: number; y: number; token: string; materials: Record<string, number> }
