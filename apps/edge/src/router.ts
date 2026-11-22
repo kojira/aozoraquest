@@ -24,7 +24,7 @@ import { handleQuestComplete, GameQuestError } from './game-quest';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
 import { handlePartyCandidates, handlePartyReroll, handlePartySet } from './party-route';
-import { handlePartyOrdersRoute } from './party-orders-route'; import { handleCasinoRoute } from './casino-route'; import { handleMarketRoute } from './market-route';
+import { handlePartyOrdersRoute } from './party-orders-route'; import { handleBattleCurrentRoute } from './battle-current'; import { handleCasinoRoute } from './casino-route'; import { handleMarketRoute } from './market-route';
 import { adminNsidRoot, ensureAuthoredWorld, handleAdminCache } from './world-authoring';
 import { handleAdminBlob, handleAdminData, type AdminDataEnv } from './admin-data';
 import { ServerWriteError } from './server-pds';
@@ -576,6 +576,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     }
   }
 
+  const battleCurrent = await handleBattleCurrentRoute(req, url, env, (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (battleCurrent) return battleCurrent; // 戦闘の読み直し (#1006)
   const partyOrders = await handlePartyOrdersRoute(req, url, env, nowSec(), adminNsidRoot(env), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (partyOrders) return partyOrders; // さくせん (D-PARTY-004)
   const casino = await handleCasinoRoute(req, url, env, nowSec(), adminNsidRoot(env), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (casino) return casino; // カジノ (D-CASINO-001)
   const market = await handleMarketRoute(req, url, env, nowSec(), adminNsidRoot(env), (b, st) => cors(json(b, st), allowedOrigin), (e) => cors(battleError(e), allowedOrigin)); if (market) return market; // 装備を街で売る (D-MARKET-001)
