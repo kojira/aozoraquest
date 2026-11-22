@@ -1,55 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
-import {
-  GEAR_SLOTS,
-  GEAR_SLOT_LABELS,
-  EQUIPMENT_BY_ID,
-  skillKindLabel,
-  skillsForJob,
-  jobDisplayName,
-  jobXpToNextLevel,
-  leveledName,
-  mpGainsFor,
-  signed,
-  type Archetype,
-  type Combatant,
-  type EquipSlot,
-} from '@aozoraquest/core';
-import { Avatar } from './avatar';
-import type { CraftedPiece } from '@/lib/crafting';
+import { useEffect, useRef, useState } from 'react';
+import { partyDefsOf, partyMemberCombatant, partyMemberGear, playerCombatant, recruitById, type AllyMode, type Archetype, type Combatant, type GearSelection, type PartyAlly, type RecruitStar } from '@aozoraquest/core';
+import { StatusSheet } from './status-sheet';
+import { WhosePicker } from './whose-picker';
+import { AllyTacticSelect } from './ally-tactic-select';
+import type { ServerParty } from '@/lib/world-server';
 
-/**
- * つよさ画面 (戦闘ステータスの可視化。issue #285)。
- *
- * DQ の「つよさ」に寄せた 1 枚窓: 名前/ジョブ/レベル → HP/MP → 戦闘ステータス
- * (装備込みの実効値 + 装備ぶんの内訳) → とくぎ/とくせい → そうび。
- * 値は world.tsx が戦闘に渡しているのと同じ combat (playerCombatant の結果) を
- * そのまま表示する — 「つよさ画面の数字 = 戦闘の数字」を崩さない。
- */
-
-const SLOT_LABELS = GEAR_SLOT_LABELS;
-
-export const STAT_ROWS: readonly { key: 'atk' | 'def' | 'agi' | 'int' | 'luk'; label: string }[] = [
-  { key: 'atk', label: 'こうげき' },
-  { key: 'def', label: 'まもり' },
-  { key: 'agi', label: 'すばやさ' },
-  { key: 'int', label: 'かしこさ' },
-  { key: 'luk', label: 'うん' },
-];
-
-export function StatusModal({
-  name,
-  avatarUrl,
-  archetype,
-  jobLv,
-  jobXp,
-  combat,
-  combatBase,
-  hp,
-  mp,
-  gearPieces,
-  onClose,
-}: {
-  /** 表示名 (Bluesky の displayName / handle) */
+/** つよさの主人公 (world.tsx が戦闘に渡すのと同じ combat)。 */
+export interface HeroStatus {
   name: string;
   avatarUrl: string | null;
   archetype: Archetype;
@@ -62,211 +19,108 @@ export function StatusModal({
   /** フィールドの現在 HP/MP (null = 全快) */
   hp: number | null;
   mp: number | null;
-  /** スロットごとの解決済み装備 (resolveGear の結果) */
-  gearPieces: Partial<Record<EquipSlot, CraftedPiece>>;
+  /** 戦闘で着ている装備 (resolveGear の selection) */
+  gear: GearSelection;
+}
+
+/** つよさに出す仲間 (パーティの仲間か、ギルドの候補)。xp は仲間が自分の経験値を持つときだけ (D-PARTY-002 §11)。 */
+export interface AllyStatusTarget {
+  id: string;
+  name: string;
+  archetype: Archetype;
+  star?: RecruitStar | undefined;
+  level: number;
+  xp?: number | undefined;
+  /** 着ている装備 (D-PARTY-004)。戦闘では からだが空なら ぬののふく を着る (partyMemberGear)。 */
+  gear?: GearSelection | undefined;
+  /** 持ちこしの HP/MP (無い＝全快)。 */
+  hp?: number | undefined;
+  mp?: number | undefined;
+  /** パーティの仲間の きずな (D-PARTY-004)。ギルドの候補には無い。 */
+  bond?: number | undefined;
+  /** いまの さくせん (無い＝おまかせ)。 */
+  mode?: AllyMode | undefined;
+}
+
+/** パーティの仲間 1 人を つよさ に出す形に (経験値・きずな・さくせん・持ちこしの HP/MP は party から)。 */
+export function partyStatusTarget(a: PartyAlly, party: ServerParty): AllyStatusTarget {
+  // 仲間が自分で持っている経験値 (生成の仲間は members、なじみは party.xp)。§11 より前に入れたなじみには無い。
+  const xp = party.members?.find((m) => m.id === a.id)?.xp ?? party.xp?.[a.id];
+  return { ...a, xp, bond: party.bond?.[a.id] ?? 0, mode: party.mode?.[a.id], hp: party.hp?.[a.id], mp: party.mp?.[a.id] };
+}
+
+/** パーティの仲間全員 (入れている順)。jobLevel は経験値の無いなじみの Lv。 */
+export function partyStatusTargets(party: ServerParty, jobLevel: number): AllyStatusTarget[] {
+  return partyDefsOf(party, recruitById, jobLevel).map((a) => partyStatusTarget(a, party));
+}
+
+/**
+ * つよさの窓 (#285)。メニューからは主人公＋仲間を「だれの？」(そうびと同じ切りかえ。#1003) で選べる。
+ * なかま・ギルドの窓からは、名前を押した仲間を選んだ状態で開く。仲間の値は戦闘と同じ partyMemberCombatant (着ている装備込み)。
+ * over: ほかの窓の上に重ねて開く。Escape は先に (capture で) 受けてこの窓だけを閉じ、窓は不透明 (下の一覧を透かさない)。
+ */
+export function StatusModal({ hero, allies, initial, over = false, onMode, onClose }: {
+  hero?: HeroStatus | undefined;
+  allies: readonly AllyStatusTarget[];
+  /** はじめに出す人 ('hero' か 仲間の id)。無ければ主人公 (主人公がいなければ最初の仲間)。 */
+  initial?: string | undefined;
+  over?: boolean;
+  /** さくせん を変える (♥2 から。パーティの仲間だけ)。 */
+  onMode?: ((id: string, mode: AllyMode | null) => Promise<void>) | undefined;
   onClose: () => void;
 }) {
+  const [who, setWho] = useState(initial ?? (hero ? 'hero' : allies[0]?.id ?? 'hero'));
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (over) e.stopPropagation();
+      onClose();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  // 現在のとくぎ列 (署名スキル + 習得済みキット技) を出す。戦闘の playerSkills と同じ列。
-  const skills = useMemo(() => skillsForJob(archetype, jobLv), [archetype, jobLv]);
-  const mpTrait = useMemo(() => mpGainsFor(archetype), [archetype]);
-  const jobNext = useMemo(() => jobXpToNextLevel(jobXp, archetype), [jobXp, archetype]);
-
-  const num = { fontFamily: 'ui-monospace, monospace' as const };
-
+    window.addEventListener('keydown', onKey, over);
+    return () => window.removeEventListener('keydown', onKey, over);
+  }, [onClose, over]);
+  const ally = allies.find((a) => a.id === who);
+  const options = [...(hero ? [{ who: 'hero', name: hero.name || 'ぼうけんしゃ' }] : []), ...allies.map((a) => ({ who: a.id, name: a.name }))];
+  const whose = hero && allies.length ? { options, current: ally?.id ?? 'hero', onChange: setWho } : undefined;
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="つよさ"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 300,
-        background: 'rgba(0, 0, 0, 0.72)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1em',
-      }}
-    >
-      <div
-        className="dq-window"
-        onClick={(e) => e.stopPropagation()}
-        style={{ padding: 10, width: 'min(94vw, 420px)', maxHeight: '86svh', display: 'flex', flexDirection: 'column' }}
-      >
+    <div role="dialog" aria-modal="true" aria-label={ally ? `${ally.name}の つよさ` : 'つよさ'} onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: over ? 310 : 300, background: 'rgba(0, 0, 0, 0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1em' }}>
+      <div className="dq-window" onClick={(e) => e.stopPropagation()}
+        style={{ ...(over ? { background: 'var(--color-window-solid)' } : {}), padding: 10, width: 'min(94vw, 420px)', maxHeight: '86svh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
           <strong style={{ fontSize: '0.95em' }}>💪 つよさ</strong>
           <button ref={closeBtnRef} type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
             とじる
           </button>
         </div>
+        <WhosePicker whose={whose} />
         <div style={{ overflowY: 'auto' }}>
-          {/* 名前とレベル */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6em', marginBottom: 6 }}>
-            <Avatar src={avatarUrl ?? undefined} size={44} archetype={archetype} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || 'ぼうけんしゃ'}</div>
-              <div style={{ fontSize: '0.8em', color: 'var(--color-muted)' }}>
-                {jobDisplayName(archetype, 'default')} Lv <span style={num}>{jobLv}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* HP/MP — 主役なので大きめ・太字で立てる (レビュー ★)。装備で最大値が
-              上がる防具/お守りがあるので、5 ステと同じく「そうび +N」内訳を出す */}
-          <Section>
-            <HeroRow label="HP" value={hp ?? combat.maxHp} max={combat.maxHp} bonus={combat.maxHp - combatBase.maxHp} color="#5fc37e" />
-            {/* たいりょく (#518) は HP の元。せんとうのうりょくに並べると HP と離れて
-                「何の数字か」が伝わらないので、HP の直下に小さく添える (行を増やさず
-                派生関係だけ見せる)。**装備の maxHp ボーナスは vit を経由せず HP に直接
-                加算される**ので、装備時は HP ≠ 6 + たいりょく × 2 になる (HP 行の
-                「そうび +N」がその差分)。関係を画面に出すかは #526。 */}
-            <div style={{ textAlign: 'right', fontSize: '0.72em', color: 'var(--color-muted)', marginTop: '-0.2em', marginBottom: '0.7em' }}>
-              たいりょく<span style={num}>{combat.vit}</span>
-            </div>
-            <HeroRow label="MP" value={mp ?? combat.maxMp} max={combat.maxMp} bonus={combat.maxMp - combatBase.maxMp} color="#5a9ae8" />
-          </Section>
-
-          {/* 戦闘ステータス */}
-          <Section title="せんとうのうりょく">
-            {STAT_ROWS.map(({ key, label }) => {
-              const bonus = combat[key] - combatBase[key];
-              return (
-                <StatRow
-                  key={key}
-                  label={label}
-                  value={combat[key]}
-                  note={bonus !== 0 ? `そうび${signed(bonus)}` : undefined}
-                />
-              );
-            })}
-          </Section>
-
-          {/* とくぎ / とくせい */}
-          <Section title="とくぎ・とくせい">
-            <div style={{ lineHeight: 1.8 }}>
-              <div>
-                とくぎ: <strong>{skills.map((s) => s.name).join('、')}</strong>{' '}
-                {skills.length === 1 && skillKindLabel(skills[0]!.kind) ? (
-                  <span style={{ color: 'var(--color-muted)' }}>({skillKindLabel(skills[0]!.kind)})</span>
-                ) : null}
-              </div>
-              {mpTrait.traitName ? (
-                <div>
-                  とくせい: <strong>{mpTrait.traitName}</strong>{' '}
-                  <span style={{ color: 'var(--color-muted)' }}>
-                    {/* 確率発動の特性は「ときどき」を付ける (毎回もらえると誤読させない)。
-                        確率の数値は出さないが、**うんで上がることは出す** — 装備で
-                        うんを盛る動機になる情報で、知らないと選べない。 */}
-                    ({mpTrait.chance !== undefined ? 'ときどき (「うん」で上がる) ' : ''}
-                    たたかう MP+{mpTrait.attackGain} / ぼうぎょ MP+{mpTrait.guardGain})
-                  </span>
-                </div>
-              ) : (
-                <div style={{ color: 'var(--color-muted)' }}>とくせい: なし</div>
-              )}
-            </div>
-          </Section>
-
-          {/* そうび */}
-          <Section title="そうび">
-            <div style={{ lineHeight: 1.8 }}>
-              {GEAR_SLOTS.map((slot) => {
-                const piece = gearPieces[slot];
-                const def = piece ? EQUIPMENT_BY_ID[piece.itemId] : undefined;
-                return (
-                  <div key={slot} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em' }}>
-                    <span style={{ color: 'var(--color-muted)' }}>{SLOT_LABELS[slot]}</span>
-                    {piece && def ? <strong>{leveledName(def, piece.level)}</strong> : <span style={{ color: 'var(--color-muted)' }}>なし</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </Section>
-
-          {/* けいけんち: **いまの累計**と、つぎのレベルまで。
-              「あと N」だけだと、戦って本当に入っているのかが分からない
-              (レベルが上がるまで数字が一切動かない = 入っていないのと区別できない)。 */}
-          <div style={{ fontSize: '0.75em', color: 'var(--color-muted)', margin: '0.6em 0 0', lineHeight: 1.7 }}>
-            <div>
-              けいけんち<span style={num}>{jobXp.toLocaleString()}</span>
-            </div>
-            <div>
-              {jobNext.next > 0 ? (
-                <>{jobDisplayName(archetype, 'default')} Lv {jobNext.level + 1}まであと<span style={num}>{Math.max(0, jobNext.next - jobNext.current)}</span></>
-              ) : (
-                <>{jobDisplayName(archetype, 'default')} Lvは最大に達した!</>
-              )}
-            </div>
-          </div>
+          {ally ? <AllySheet key={ally.id} ally={ally} onMode={onMode} /> : hero ? <StatusSheet {...hero} trait /> : null}
         </div>
       </div>
     </div>
   );
 }
 
-/** DQ の「つよさ」らしい枠付きセクション (枠の連なりを最後まで通す — レビュー ★★) */
-export function Section({ title, children }: { title?: string; children: React.ReactNode }) {
+/** 仲間 1 人の中身。強さは戦闘と同じ partyMemberCombatant、内訳は装備なしの playerCombatant との差。 */
+function AllySheet({ ally, onMode }: { ally: AllyStatusTarget; onMode?: ((id: string, mode: AllyMode | null) => Promise<void>) | undefined }) {
+  const combat = partyMemberCombatant(ally, ally.level);
+  const combatBase = playerCombatant(ally.archetype, ally.level, 1, ally.name);
+  const tactic = onMode && ally.bond !== undefined ? <AllyTacticSelect bond={ally.bond} mode={ally.mode} onChange={(m) => onMode(ally.id, m)} /> : undefined;
   return (
-    <div
-      style={{
-        border: '2px solid var(--color-border)',
-        borderRadius: 4,
-        padding: '0.4em 0.7em 0.5em',
-        marginTop: 8,
-        fontSize: '0.85em',
-      }}
-    >
-      {title && (
-        <div style={{ fontSize: '0.72em', color: 'var(--color-muted)', letterSpacing: '0.04em', marginBottom: 2 }}>{title}</div>
-      )}
-      {children}
-    </div>
+    <StatusSheet name={ally.name} archetype={ally.archetype} jobLv={ally.level} jobXp={ally.xp} combat={combat} combatBase={combatBase}
+      hp={ally.hp ?? null} mp={ally.mp ?? null} gear={partyMemberGear(ally.gear, ally.level)} trait={false} star={ally.star ?? 1} bond={ally.bond} tactic={tactic} />
   );
 }
 
-/** HP/MP の主役行 (大きめ + バー) */
-export function HeroRow({ label, value, max, bonus, color }: { label: string; value: number; max: number; bonus: number; color: string }) {
-  const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+/** 一覧の名前 (押すと つよさを開く)。見た目は今の太字の名前のまま。 */
+export function AllyNameButton({ name, onOpen }: { name: string; onOpen: () => void }) {
   return (
-    <div style={{ margin: '0.15em 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontWeight: 700, fontSize: '1.05em' }}>{label}</span>
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, fontSize: '1.05em', whiteSpace: 'nowrap' }}>
-          {value} <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>/ {max}</span>
-          {bonus !== 0 && (
-            <span style={{ fontFamily: 'inherit', fontSize: '0.68em', fontWeight: 400, color: 'var(--color-accent)', marginLeft: '0.5em' }}>
-              (そうび{signed(bonus)})
-            </span>
-          )}
-        </span>
-      </div>
-      <div style={{ height: 6, background: 'var(--color-track-bg)', borderRadius: 3, overflow: 'hidden', marginTop: 2 }}>
-        <div style={{ width: `${ratio * 100}%`, height: '100%', background: color }} />
-      </div>
-    </div>
-  );
-}
-
-export function StatRow({ label, value, note }: { label: string; value: number; note?: string | undefined }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5em', lineHeight: 1.9 }}>
-      <span>{label}</span>
-      <span style={{ fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap' }}>
-        {value}
-        {note && <span style={{ fontFamily: 'inherit', fontSize: '0.78em', color: 'var(--color-accent)', marginLeft: '0.5em' }}>({note})</span>}
-      </span>
-    </div>
+    <button type="button" className="secondary" aria-label={`${name}の つよさ`} onClick={onOpen}
+      style={{ border: 'none', boxShadow: 'none', padding: 0, fontWeight: 700, fontSize: '1em', textDecoration: 'underline dotted', textUnderlineOffset: '0.2em', touchAction: 'manipulation' }}>
+      {name}
+    </button>
   );
 }

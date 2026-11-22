@@ -18,6 +18,7 @@ import {
 import type { CraftedPiece } from '@/lib/crafting';
 import { resolveGear, type GearRefs } from '@/lib/gear';
 import { GearDeltaText } from './gear-delta-text';
+import { WhosePicker, type Whose } from './whose-picker';
 
 /**
  * そうび画面 (docs/20 W6c)。3 スロット (武器/防具/お守り) の着脱。
@@ -55,7 +56,7 @@ export function GearModal({
   errorText?: string | null;
   onClose: () => void;
   /** 「だれの？」(主人公＋仲間。D-PARTY-004)。仲間がいなければ出さない。 */
-  whose?: { options: ReadonlyArray<{ who: string; name: string }>; current: string; onChange: (who: string) => void } | undefined;
+  whose?: Whose | undefined;
   /** ほかの人が着ている個体 (rkey → 名前)。「ミオが そうび中」と出して選べなくする。 */
   wornBy?: ReadonlyMap<string, string> | undefined;
   /** 戦闘で実際に着る形 (仲間はからだが空なら PARTY_ARMOR を着る = partyMemberGear)。差 (D-GEAR-DIFF-001) をこの形で数える。 */
@@ -112,17 +113,7 @@ export function GearModal({
             とじる
           </button>
         </div>
-        {whose && whose.options.length > 1 && (
-          <div role="radiogroup" aria-label="だれの？" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, margin: '0 0 0.5em', fontSize: '0.8em' }}>
-            <span style={{ color: 'var(--color-muted)' }}>だれの？</span>
-            {whose.options.map((o) => (
-              <button key={o.who} type="button" role="radio" aria-checked={o.who === whose.current} onClick={() => whose.onChange(o.who)}
-                className={o.who === whose.current ? undefined : 'secondary'} style={{ fontSize: '1em', padding: '0.3em 0.7em', touchAction: 'manipulation' }}>
-                {o.who === whose.current ? `▸ ${o.name}` : o.name}
-              </button>
-            ))}
-          </div>
-        )}
+        <WhosePicker whose={whose} />
         <p style={{ margin: '0 0 0.5em', fontSize: '0.75em', color: 'var(--color-muted)', minHeight: '1.4em' }} aria-live="polite">
           {totalText ? `そうびの効果: ${totalText}` : 'なにも装備していない。なんでも屋で作ってもらおう。'}
         </p>

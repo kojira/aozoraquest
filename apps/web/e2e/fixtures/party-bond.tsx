@@ -5,6 +5,7 @@ import { playerCombatant, setMonsterOverrides, startBattle, xpForAllyLevel, type
 import { TEST_MONSTERS } from '@aozoraquest/core/src/__tests__/helpers/monster-fixture';
 import { PartyModal } from '../../src/components/party-modal';
 import { PartyGearModal } from '../../src/components/party-gear-modal';
+import { partyStatusTargets, StatusModal } from '../../src/components/status-modal';
 import { WorldBattleControls } from '../../src/components/world-battle-controls';
 import { useAllyOrders } from '../../src/lib/battle-ally-orders';
 import type { ServerParty } from '../../src/lib/world-server';
@@ -48,4 +49,12 @@ function Gear() {
     onEquip={() => {}} onUnequip={() => {}} onDiscard={() => {}} saveAllyGear={async () => {}} onClose={() => {}} />;
 }
 
-createRoot(document.getElementById('root')!).render(view === 'battle' ? <Battle /> : view === 'gear' ? <Gear /> : <Party />);
+/** つよさ: ゆうしゃ (こんぼう+1・かわのよろい) と 仲間 3 人。ソラ は たびのつるぎ を着ている (#1003)。 */
+function Status() {
+  const gear = { weapon: { id: 'wp-club', level: 1 }, armor: { id: 'ar-leather', level: 0 } };
+  const hero = { name: 'ゆうしゃ', avatarUrl: null, archetype: 'warrior' as const, jobLv: 7, jobXp: 900, combat: playerCombatant('warrior', 7, 1, '', undefined, undefined, gear), combatBase: playerCombatant('warrior', 7, 1, ''), hp: 30, mp: null, gear };
+  const statusParty: ServerParty = { ...party, gear: { [SORA.id]: { weapon: { id: 'wp-travel-sword', level: 0 } } } };
+  return <StatusModal hero={hero} allies={partyStatusTargets(statusParty, 7)} onMode={async () => {}} onClose={() => {}} />;
+}
+
+createRoot(document.getElementById('root')!).render(view === 'battle' ? <Battle /> : view === 'gear' ? <Gear /> : view === 'status' ? <Status /> : <Party />);

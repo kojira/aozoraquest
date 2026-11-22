@@ -3,7 +3,7 @@ import { type AllyMode, bondHearts, jobDisplayName, partyCombatants, partyDefsOf
 import { ModalShell } from './world-item-modals';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 import { GuildPartyModal } from './guild-party-modal';
-import { AllyNameButton, AllyStatusModal } from './ally-status-modal';
+import { AllyNameButton, partyStatusTarget, StatusModal } from './status-modal';
 import { heartsText } from '@/lib/bond-view';
 import { RenameButton, type PartyRenameProps } from './party-rename';
 
@@ -45,14 +45,10 @@ export function PartyMemberList({ party, jobLevel, right, onMode, rename }: { pa
           </div>
         );
       })}
-      {viewing && <AllyStatusModal ally={{ ...viewing, xp: ownXp(viewing, party), bond: party.bond?.[viewing.id] ?? 0, mode: party.mode?.[viewing.id] }} hp={party.hp?.[viewing.id]} mp={party.mp?.[viewing.id]} onClose={closeView}
-        {...(onMode ? { onMode: (m: AllyMode | null) => onMode(viewing.id, m) } : {})} />}
+      {viewing && <StatusModal allies={[partyStatusTarget(viewing, party)]} over onClose={closeView} onMode={onMode} />}
     </>
   );
 }
-
-/** 仲間が自分で持っている経験値 (生成の仲間は members、なじみは party.xp)。§11 より前に入れたなじみには無い。 */
-const ownXp = (a: PartyAlly, party: ServerParty) => party.members?.find((m) => m.id === a.id)?.xp ?? party.xp?.[a.id];
 
 /** メニューの「なかま」: 一覧だけ (外すのはギルドで)。 */
 export function PartyModal({ jobLevel, load, onClose, onMode, rename }: { jobLevel: number; load: PartyLoad; onClose: () => void; onMode?: PartyModeSave | undefined; rename?: PartyRenameProps | undefined }) {

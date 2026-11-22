@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { DiagnosisResult } from '@aozoraquest/core';
+import type { AllyMode, DiagnosisResult } from '@aozoraquest/core';
 import {
   tierForRegion,
   withCharacterNames,
@@ -42,7 +42,7 @@ import { WorldMapModal } from '@/components/world-map-modal';
 import { DialogueWindow } from '@/components/dialogue-window';
 import { npcDialogueLines } from '@/lib/npc-image';
 import { scenarioDialogueLines } from '@/lib/scene-dialogue';
-import { StatusModal } from '@/components/status-modal';
+import { partyStatusTargets, StatusModal } from '@/components/status-modal';
 import { WorldHud, HUD_Z } from '@/components/world-hud';
 import { WorldMenu, type WorldMenuCommand } from '@/components/world-menu';
 import { ItemsModal, InventoryModal } from '@/components/world-item-modals';
@@ -418,6 +418,8 @@ function WorldScreen() {
   // フック数が可変になり React error #310 でクラッシュする — 2026-07-18 事故)。
   // 毎レンダー生成でも、メニューは開いている間だけマウントされるので実害は無い。
   const inTown = !!town;
+  // さくせん を変える (なかま・つよさ の窓。D-PARTY-004)。
+  const savePartyMode = async (id: string, mode: AllyMode | null) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyMode(agent, id, mode)).party); };
   const statusReady = !!combat && !!archetype;
   const menuCommands: WorldMenuCommand[] = [
     // 仲間の HP/MP は戦闘・宿屋のあとで変わるので、開くときに読み直す (D-PARTY-003。読めなければ前のまま)。
@@ -434,7 +436,7 @@ function WorldScreen() {
     ...(insideHere ? [] : [{ key: 'map', label: 'ちず', onSelect: () => setMapOpen(true) } as WorldMenuCommand]),
     { key: 'inventory', label: 'もちもの', onSelect: () => setInvOpen(true) },
     // 使えないコマンドはグレーで残さず消す (なんでも屋と同じポリシー — レビュー ★★)
-    ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => setStatusOpen(true) } as WorldMenuCommand] : []),
+    ...(statusReady ? [{ key: 'status', label: 'つよさ', onSelect: () => { setStatusOpen(true); if (talk.party.ids.length) talk.partyLoad().catch(() => {}); } } as WorldMenuCommand] : []),
     ...(inTown
       ? [{ key: 'shop', label: 'なんでも屋', onSelect: shop.openShopFromMenu } as WorldMenuCommand]
       : []),
@@ -680,7 +682,7 @@ function WorldScreen() {
         />
       )}
       {skillOpen && <FieldSkillModal members={members} cast={fieldHeal.castFieldSkill} onClose={() => setSkillOpen(false)} />}
-      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onMode={async (id, mode) => { if (!agent) throw new Error('サーバーに接続できない'); talk.setParty((await serverPartyMode(agent, id, mode)).party); }} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} rename={casino.renameProps(materialsView, talk.setParty)} />
+      <PartyModals guildNpc={!battle && npcTalk?.guild === 'party' ? npcTalk.npc : null} menuOpen={partyOpen} jobLevel={archetype ? jobLevelFromXp(hereJobXp ?? 0, archetype) : 1} load={talk.partyLoad} save={talk.partySave} candidates={talk.partyCandidates} reroll={talk.partyReroll} onMode={savePartyMode} onGuildClose={() => setNpcTalk(guildReception(npcTalk!.npc))} onMenuClose={() => setPartyOpen(false)} rename={casino.renameProps(materialsView, talk.setParty)} />
       {questLogOpen && <QuestLogModal entries={questLogEntries(quest, materialsView)} onClose={() => setQuestLogOpen(false)} />}
       {invOpen && (
         <InventoryModal materials={materialsRef.current} pieces={craftedPieces} onClose={() => setInvOpen(false)} />
@@ -695,16 +697,9 @@ function WorldScreen() {
       )}
       {statusOpen && combat && combatBase && archetype && (
         <StatusModal
-          name={playerName}
-          avatarUrl={avatarUrl}
-          archetype={archetype}
-          jobLv={jobLevelFromXp(hereJobXp ?? 0, archetype)}
-          jobXp={hereJobXp ?? 0}
-          combat={combat}
-          combatBase={combatBase}
-          hp={curHp}
-          mp={curMp}
-          gearPieces={resolvedGear?.pieces ?? {}}
+          hero={{ name: playerName, avatarUrl, archetype, jobLv: jobLevelFromXp(hereJobXp ?? 0, archetype), jobXp: hereJobXp ?? 0, combat, combatBase, hp: curHp, mp: curMp, gear: resolvedGear?.selection ?? {} }}
+          allies={partyStatusTargets(talk.party, jobLevelFromXp(hereJobXp ?? 0, archetype))}
+          onMode={savePartyMode}
           onClose={() => setStatusOpen(false)}
         />
       )}

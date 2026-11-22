@@ -4,7 +4,7 @@ import { ModalShell } from './world-item-modals';
 import { PartyMemberList, starText, type PartyLoad } from './party-modal';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
 import { PARTY_LINES } from '@/lib/party-lines';
-import { AllyNameButton, AllyStatusModal } from './ally-status-modal';
+import { AllyNameButton, StatusModal } from './status-modal';
 
 export { PARTY_LINES };
 
@@ -141,7 +141,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
           </>
         )}
       </div>
-      {viewing && <AllyStatusModal ally={viewing} onClose={closeView} />}
+      {viewing && <StatusModal allies={[viewing]} over onClose={closeView} />}
     </ModalShell>
   );
 }
