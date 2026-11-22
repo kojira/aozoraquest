@@ -90,7 +90,7 @@ export function StatusModal({ hero, allies, initial, over = false, onMode, onClo
       <div className="dq-window" onClick={(e) => e.stopPropagation()}
         style={{ ...(over ? { background: 'var(--color-window-solid)' } : {}), padding: 10, width: 'min(94vw, 420px)', maxHeight: '86svh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <strong style={{ fontSize: '0.95em' }}>💪 つよさ</strong>
+          <strong style={{ fontSize: '0.95em' }}>つよさ</strong>
           <button ref={closeBtnRef} type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
             とじる
           </button>
