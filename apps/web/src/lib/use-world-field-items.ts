@@ -8,6 +8,7 @@ import type { CraftedPiece } from '@/lib/crafting';
 import type { WipePhase } from '@/components/encounter-wipe';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import type { Vitals } from '@/lib/world-view';
+import { soundPlayer } from '@/lib/sound/sound-player';
 
 /**
  * フィールドで使う どうぐ (やくそう/そらのしずく/そらのはね) と しらべる、
@@ -212,12 +213,14 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
         if (res.openedSpots) openedRef.current = res.openedSpots;
         if (res.pieces) setCraftedPieces(piecesFromServer(res.pieces));
         if (res.scenarioMessages?.length) pendingNoticesRef.current = [...pendingNoticesRef.current, ...res.scenarioMessages];
+        soundPlayer.playSe(res.placed.kind === 'chest' ? 'chest' : 'item');
         setSearchMsg(placedTakenText(res.placed));
         return;
       }
       if (res.placedState) { setSearchMsg(placedStateText(res.placedState, res.hint)); return; }
       if (!res.found) { setSearchMsg(`あたりを調べたが、何もなかった… (残りパワー${res.power})`); return; }
       const isConsumable = res.found === 'herb' || res.found === 'sky-dew';
+      soundPlayer.playSe('item');
       setSearchMsg(`調べると、${ITEMS[res.found]?.name ?? res.found}を1つ見つけた! (${isConsumable ? 'どうぐ' : 'もちもの'}で確認 / 残りパワー${res.power})`);
     } catch (e) {
       console.warn('[world] search failed', e);

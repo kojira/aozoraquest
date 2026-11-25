@@ -65,6 +65,8 @@ import { piecesFromServer, shopTownAt, useWorldShop } from '@/lib/use-world-shop
 import { useMarket } from '@/lib/use-market';
 import { useWorldBattle } from '@/lib/use-world-battle';
 import { useWorldSound } from '@/lib/sound/use-world-sound';
+import { soundPlayer } from '@/lib/sound/sound-player';
+import { worldSound } from '@/lib/sound/world-sound-scene';
 import { SoundMuteButton } from '@/components/sound/sound-mute-button';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
@@ -74,6 +76,7 @@ import { WorldMapLayer } from '@/components/world-map-layer';
 import { WorldMenuHint } from '@/components/world-menu-hint';
 import { openingLines, starterHandoffLines } from '@/lib/world-opening';
 import { HALF, MENU_HINT_DONE_KEY, TILE, VIEW, dangerLabel, fieldLocationLabel, seesFieldDanger, type Dir, type Vitals } from '@/lib/world-view';
+
 
 /**
  * あおぞらワールド (docs/19-overworld.md) — 散歩 + 遭遇プレビュー。
@@ -289,10 +292,8 @@ function WorldScreen() {
   const [lineHp, setLineHp] = useState<{ key: string; hp: number; hit: boolean } | null>(null);
   const lineHpKey = battle ? `${battle.battleId}:${battle.state.turn}` : '';
   const hudLineHp = battle?.phase === 'message' && lineHp?.key === lineHpKey ? lineHp : null;
-  // BGM (D-SOUND-001): 戦闘中は battle、外を歩いているときは field (街・建物の中はまだ曲なし)。決着でレベルが上がったらジングル。
-  const awarded = battle?.phase === 'result' ? battle.awarded : undefined;
-  useWorldSound(!ws ? null : battle ? 'battle' : ws.mapId || townAt(ws.x, ws.y) ? null : 'field',
-    awarded?.leveledUp || awarded?.allyLeveledUp?.length ? battle!.battleId : null);
+  // BGM (D-SOUND-001): 場面 (外・街と建物の中・戦闘・ボス・決着) から曲を決める。
+  useWorldSound(worldSound(!!ws, battle, !!ws && (!!ws.mapId || !!townAt(ws.x, ws.y))));
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -500,6 +501,7 @@ function WorldScreen() {
               // 導入/手渡し/受付中はキーボード経由の自己タップも遮断する。
               if (wipeRef.current || battleRef.current || mapAcquisitionRef.current || onboardingRef.current || overlaysRef.current.showStarter || npcTalkRef.current || innTalkRef.current) return;
               dismissMenuHint();
+              soundPlayer.playSe('cursor');
               setMenuOpen(true);
             }}
           />}

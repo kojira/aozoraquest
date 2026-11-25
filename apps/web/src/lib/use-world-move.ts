@@ -12,6 +12,7 @@ import { guildEntryTalk, guildMetKey } from '@/lib/guild-greeting';
 import type { NpcTalk } from '@/lib/npc-talk';
 import type { WorldBattle } from '@/lib/use-world-battle';
 import { DIRS, asBattleState, type Dir, type Vitals } from '@/lib/world-view';
+import { soundPlayer } from '@/lib/sound/sound-player';
 
 /** 遭遇を始められなかったときの画面の一言 (サーバーが封印に失敗したときも同じ。#998)。 */
 export const ENCOUNTER_FAILED_NOTICE = 'モンスターの気配がしたが、戦いを始められなかった。';
@@ -110,12 +111,14 @@ export function useWorldMove(d: WorldMoveDeps) {
       // ここで止めないと「歩けたのに弾かれる」1 手が毎回発生する。
       const gate = gateAt(s.mapId ?? WORLD_MAP_ID, nx, ny);
       if (gate && !gateOpen(gate, flagsRef.current, materialsRef.current)) {
+        soundPlayer.playSe('blocked');
         setNotice(gateLockedNotice(gate));
         return;
       }
       // 端から外へ出られるマップ (#626) は、範囲外でも止めない (サーバーが外へ出す)。
       const leaving = cur ? interiorExitFor(cur, nx, ny) : undefined;
       if (!leaving && !walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
+        soundPlayer.playSe('blocked');
         setNotice('そっちには進めない!');
         return;
       }
@@ -143,7 +146,7 @@ export function useWorldMove(d: WorldMoveDeps) {
           if (res.healed) { next.hp = null; next.mp = null; }
           // **マップが変わったら扉の演出** (#626)。パッと切り替わると「どこへ来たのか」が
           // 分からない。戦闘の渦巻きとは別の、白い光がふわっと引くフェードにする。
-          if ((res.mapId ?? null) !== (cur.mapId ?? null)) setDoorFade('out');
+          if ((res.mapId ?? null) !== (cur.mapId ?? null)) { setDoorFade('out'); soundPlayer.playSe('door'); }
           // **なんでも屋の扉に入ったら店を開く** (#424)。メニューを開かせないと
           // 店だと気づけない (実機で「なんでも屋がどこか分からない」と指摘)。
           if (res.mapId) {

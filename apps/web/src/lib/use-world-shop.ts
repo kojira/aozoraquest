@@ -7,6 +7,7 @@ import { enqueueCraftLog, flushCraftLogs } from '@/lib/craft-log-queue';
 import { saveGearRefs, type GearRefs } from '@/lib/gear';
 import type { LastShopAction } from '@/components/shop-modal';
 import type { WorldInventory } from '@/lib/use-world-inventory';
+import { soundPlayer } from '@/lib/sound/sound-player';
 
 /** お店のエラーを、サーバーが返した理由でそのまま伝える。「通信エラー」で片付けると
  *  「パワーが足りない」「街の外」といった直せる理由が消える (#551)。 */
@@ -238,6 +239,7 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
         // 記帳 (履歴)。数量とパワーはサーバーが確定した値で書く。
         await sellMaterials(agent, { materialId, materialCount: count }, srkey).catch((e) => keepCraftLog('sale', e));
         // 結果はモーダル内のセリフ窓で出す (#607)。世界の通知行はモーダルの背面で見えない。
+        soundPlayer.playSe('coin');
         setLastShopAction({ kind: 'sell', materialId, count, powerGained: res.powerGained ?? 0 });
       } catch (e) {
         console.warn('[world] sell failed', e);
@@ -264,6 +266,7 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
         pendingBuyRef.current = null;
         setServerPower(res.power);
         applyServerMaterials(res.materials);
+        soundPlayer.playSe('coin');
         setLastShopAction({ kind: 'buy', itemId });
       } catch (e) {
         console.warn('[world] buy failed', e);

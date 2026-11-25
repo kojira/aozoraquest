@@ -11,7 +11,7 @@
 import { audioContext, existingAudioContext, isVoiceSpeaking, masterOutput, subscribeVoiceSpeaking, unlockAudio } from '../audio/audio-context';
 import { voicePlayer } from '../tts/voice-player';
 import { renderSong, type ChipPcm, type ChipSong } from './chip-synth';
-import { SONGS, type SongId } from './songs';
+import { JINGLES, SONGS, type JingleId, type SongId } from './songs';
 import { SE, type SeId } from './se';
 import { getSoundSettings, subscribeSoundSettings } from './sound-store';
 
@@ -44,7 +44,7 @@ function pcmOf(song: ChipSong, keep: 'song' | 'jingle'): ChipPcm {
   const p = renderSong(song);
   songCache.set(song.id, p);
   if (keep === 'song') {
-    const songs = [...songCache.keys()].filter((k) => k !== 'levelup');
+    const songs = [...songCache.keys()].filter((k) => !(JINGLES as readonly string[]).includes(k));
     if (songs.length > 2) songCache.delete(songs[0]!);
   }
   return p;
@@ -142,8 +142,8 @@ export const soundPlayer = {
     src.connect(b.se);
     src.start();
   },
-  /** 短い曲 (レベルアップ)。BGM は止めずに下げ、終わったら戻す。BGM の設定に従う。 */
-  playJingle(id: 'levelup'): void {
+  /** 短い曲 (レベルアップ・宿屋・負け)。BGM は止めずに下げ、終わったら戻す。BGM の設定に従う。 */
+  playJingle(id: JingleId): void {
     if (!canPlay('bgm')) return;
     const b = buses();
     if (!b) return;
