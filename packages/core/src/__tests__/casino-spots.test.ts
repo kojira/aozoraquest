@@ -1,6 +1,6 @@
 /** カジノのマス (InteriorMap.casino)・なまえのふだ の名前 (D-CASINO-001 PR2)。 */
 import { afterEach, describe, expect, it } from 'vitest';
-import { allyNameIssue, BASE_PALETTE, blockedSpotHint, casinoSpotAt, facilityAt, partyDefsOf, recruitById, setInteriors, worldOverlay, type InteriorMap } from '../index.js';
+import { allyNameIssue, BASE_PALETTE, blockedSpotHint, casinoSpotAt, casinoSpots, tileArtFor, facilityAt, partyDefsOf, recruitById, setInteriors, worldOverlay, type InteriorMap } from '../index.js';
 
 const F = BASE_PALETTE.indexOf('plains');
 const room = (over: Partial<NonNullable<InteriorMap['casino']>> = {}): InteriorMap => {
@@ -17,6 +17,23 @@ describe('InteriorMap.casino', () => {
     expect(casinoSpotAt('c', 3, 3)).toEqual({ kind: 'game', game: 'race' });
     expect(casinoSpotAt('c', 4, 4)).toBeUndefined();
     expect(facilityAt('c', 3, 3)).toBe('カジノ');
+  });
+  it('床の印 (D-EARLY-002) に使う一覧: 両替・景品・台をデータから。カジノの無いマップは空', () => {
+    setInteriors([room({ games: [{ x: 3, y: 3, game: 'race' }, { x: 4, y: 3, game: 'slots' }] }), { id: 'plain', name: 'へや', size: 8, tiles: new Uint8Array(64).fill(F) }], []);
+    expect(casinoSpots('c')).toEqual([
+      { x: 1, y: 1, spot: { kind: 'exchange' } },
+      { x: 2, y: 1, spot: { kind: 'prize' } },
+      { x: 3, y: 3, spot: { kind: 'game', game: 'race' } },
+      { x: 4, y: 3, spot: { kind: 'game', game: 'slots' } },
+    ]);
+    for (const { x, y } of casinoSpots('c')) expect(casinoSpotAt('c', x, y)).toBeDefined();
+    expect(casinoSpots('plain')).toEqual([]);
+    expect(casinoSpots('nowhere')).toEqual([]);
+    // 同梱の絵がある (/admin の絵の編集で上書きできるキー)。真ん中は透明 = 床が見える
+    const art = tileArtFor('spot-mark')!;
+    expect(art.size).toBe(16);
+    expect(art.palette[art.pixels[8 * 16 + 8]!]).toBe('');
+    expect(art.palette[art.pixels[1 * 16 + 1]!]).not.toBe('');
   });
   it('マップの外・重なり・知らないゲーム・無い街は保存で弾く', () => {
     expect(() => setInteriors([room({ prize: { x: 9, y: 1 } })], [])).toThrow(/景品がマップの外/);

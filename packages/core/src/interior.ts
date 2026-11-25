@@ -325,6 +325,17 @@ export function casinoSpotAt(mapId: string, x: number, y: number): CasinoSpot | 
   return g ? { kind: 'game', game: g.game } : undefined;
 }
 
+/** その内部マップのカジノのマス (両替・景品・台) の一覧。床の印 (D-EARLY-002) を描くのに使う。カジノが無ければ空。 */
+export function casinoSpots(mapId: string): Array<{ x: number; y: number; spot: CasinoSpot }> {
+  const c = interiors.get(mapId)?.casino;
+  if (!c) return [];
+  return [
+    { x: c.exchange.x, y: c.exchange.y, spot: { kind: 'exchange' } },
+    { x: c.prize.x, y: c.prize.y, spot: { kind: 'prize' } },
+    ...c.games.map((g) => ({ x: g.x, y: g.y, spot: { kind: 'game', game: g.game } as CasinoSpot })),
+  ];
+}
+
 /**
  * **歩けないマスにぶつかったときのヒント** (I-06)。カジノのマスは台・カウンターの手前の床にあり、
  * 台そのものを押しても開かない (宿屋・なんでも屋の扉と同じく、マスに立つと開く)。
