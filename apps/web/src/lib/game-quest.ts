@@ -85,14 +85,11 @@ export function questTermsLine(q: GameQuestDef): string {
 
 export const QUEST_ASK = 'うけますか？';
 
-/** 受付でも管理データの条件・報酬を表示し、納品による消費を受注前に伝える。 */
+/** 受付でも管理データの条件・報酬を表示し、納品による消費を受注前に伝える。
+ *  条件・報酬の後は 1 行にまとめる (同じことを何ページも送らせない。I-07)。 */
 export function guildQuestDetailLines(q: GameQuestDef): string[] {
-  return [
-    `『${q.title}』`, ...q.intro,
-    questTermsLine(q),
-    ...(q.objective.kind === 'collect' ? [`報告が成功すると${questObjectiveText(q)}渡します。今の所持品も使えます。`] : []),
-    '一人一度の依頼です。',
-  ];
+  const handIn = q.objective.kind === 'collect' ? `報告が成功すると${questObjectiveText(q)}渡します。今の所持品も使えます。` : '';
+  return [`『${q.title}』`, ...q.intro, questTermsLine(q), `${handIn}一人一度の依頼です。`];
 }
 
 /** 依頼のセリフ。読み終えたら「うけますか？」で はい/いいえ を聞く。 */
