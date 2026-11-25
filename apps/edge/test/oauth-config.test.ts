@@ -59,3 +59,23 @@ describe('oauth-config', () => {
     expect(keys[0]!.use).toBe('sig');
   });
 });
+
+describe('oauth-config: ローカル PDS 用の loopback client (#1018)', () => {
+  it('未設定なら client_id は edge の client-metadata.json のまま', () => {
+    const c = loadOAuthConfig({ ...baseEnv(), PUBLIC_ORIGIN: 'http://127.0.0.1:8788' });
+    expect(c.clientId).toBe('http://127.0.0.1:8788/client-metadata.json');
+  });
+
+  it('OAUTH_LOOPBACK_CLIENT=1 なら loopback client_id (redirect_uri と scope を埋めた http://localhost)', () => {
+    const c = loadOAuthConfig({ ...baseEnv(), PUBLIC_ORIGIN: 'http://127.0.0.1:8788', OAUTH_LOOPBACK_CLIENT: '1' });
+    expect(c.redirectUri).toBe('http://127.0.0.1:8788/oauth/callback');
+    const u = new URL(c.clientId);
+    expect(u.origin).toBe('http://localhost');
+    expect(u.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:8788/oauth/callback');
+    expect(u.searchParams.get('scope')).toBe('atproto transition:generic');
+  });
+
+  it('OAUTH_LOOPBACK_CLIENT=1 でも https の公開 origin では使えない (本番/dev の誤設定を弾く)', () => {
+    expect(() => loadOAuthConfig({ ...baseEnv(), OAUTH_LOOPBACK_CLIENT: '1' })).toThrow(OAuthConfigError);
+  });
+});

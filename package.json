@@ -16,7 +16,8 @@
     "validate:data": "tsx scripts/validate-data.ts",
     "smoke": "tsx scripts/smoke.ts",
     "refresh:directory": "tsx scripts/refresh-directory.ts",
-    "gen:world": "tsx scripts/gen-world-data.ts"
+    "gen:world": "tsx scripts/gen-world-data.ts",
+    "local:world": "pnpm --dir scripts/local-world install --frozen-lockfile && node scripts/local-world/start.mjs"
   },
   "devDependencies": {
     "@atproto/api": "^0.17",

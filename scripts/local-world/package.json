@@ -1,0 +1,11 @@
+{
+  "name": "aozoraquest-local-world",
+  "private": true,
+  "type": "module",
+  "description": "ローカルだけで動くあおぞらワールド (PDS + PLC + edge + web)。D-LOCAL-PLAY-001 / #1018",
+  "dependencies": {
+    "@atproto/dev-env": "0.7.15",
+    "@atproto/crypto": "0.5.7",
+    "playwright": "1.59.1"
+  }
+}

@@ -1,0 +1,7 @@
+# ローカル環境専用の独立した小さな workspace (ルートの workspace には入れない = 本体の依存を太らせない)。
+# サプライチェーン対策はルートと同じ (公開から 7 日未満のバージョンは入れない)。
+packages: []
+minimumReleaseAge: 10080
+# ローカル PDS の sqlite (better-sqlite3) はネイティブビルドが要る。
+onlyBuiltDependencies:
+  - better-sqlite3

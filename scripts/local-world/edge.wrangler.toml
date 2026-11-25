@@ -1,0 +1,14 @@
+# ローカル環境の edge (wrangler dev 専用)。D-LOCAL-PLAY-001 / #1018。
+# **dev / 本番の KV・secret・cron は使わない**: KV は wrangler dev のローカル (Miniflare) で、
+# 変数と鍵は seed.mjs がローカル用に作る (.state/edge.dev.vars)。dev / 本番には deploy しない。
+name = "aozoraquest-edge-local"
+main = "../../apps/edge/src/index.ts"
+compatibility_date = "2026-04-24"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "OAUTH_TOKENS"
+id = "local-oauth-tokens"
+
+[triggers]
+crons = ["*/10 * * * *"]
