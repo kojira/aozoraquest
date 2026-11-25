@@ -1,8 +1,8 @@
 import { SHORE_NEIGHBORS, shoreGroundKey, shoreMaskAt, usesStandardShore } from '@/lib/shore-autotile';
 import { NpcSprite } from '@/components/npc-sprite';
 import { MonsterSvg } from '@/components/monster-svg';
-import { MONSTERS_BY_ID, WORLD_MAP_ID, fieldMonsters, interiorById, interiorPartAt, interiorTerrainAt, mappedPartAt, npcsOn, storyBattleById, storyBattleOpen, terrainAt, tileDetailAt, wrap } from '@aozoraquest/core';
-import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, shoreTile } from '@/components/world-tiles';
+import { MONSTERS_BY_ID, WORLD_MAP_ID, casinoSpots, fieldMonsters, interiorById, interiorPartAt, interiorTerrainAt, mappedPartAt, npcsOn, storyBattleById, storyBattleOpen, terrainAt, tileArtFor, tileDetailAt, wrap } from '@aozoraquest/core';
+import { PLAINS_VARIANTS, TERRAIN_TILES, fallbackTile, pixelPart, pixelTile, renderArt, shoreTile } from '@/components/world-tiles';
 import { isFutabaGuild } from '@/lib/futaba-guild';
 import { HALF, TILE, VIEW } from '@/lib/world-view';
 import { placedSpotSprites } from '@/components/placed-spot-sprites';
@@ -86,6 +86,14 @@ export function WorldMapLayer({ at, scrollPadding, flags, opened = [] }: { at: {
     );
   }
 
+  // 立つと開くマスの床の印 (D-EARLY-002)。カジノの両替・景品・台の前の床に、うすい四すみのかぎ。
+  // マスはデータ (InteriorMap.casino) から引くので、どの内部マップのカジノにも付く。絵は tileArt の spot-mark。
+  const spotMarks = inside ? casinoSpots(inside.id).flatMap(({ x, y }) => {
+    const vx = x - (at.x - HALF), vy = y - (at.y - HALF);
+    if (vx < -scrollPadding || vy < -scrollPadding || vx >= VIEW + scrollPadding || vy >= VIEW + scrollPadding) return [];
+    return [<svg key={`spot-mark-${x}-${y}`} data-spot-mark={`${x},${y}`} x={vx * TILE} y={vy * TILE} width={TILE} height={TILE} viewBox="0 0 32 32" opacity={0.75}>{renderArt(tileArtFor('spot-mark'))}</svg>];
+  }) : [];
+
   // 宝箱・キラキラ (D-CHEST-001)。NPC と固定モンスターの下に重ねる。
   const placedSprites = placedSpotSprites({ mapId: inside?.id ?? WORLD_MAP_ID, inside: !!inside, at, scrollPadding, flags, opened });
 
@@ -106,5 +114,5 @@ export function WorldMapLayer({ at, scrollPadding, flags, opened = [] }: { at: {
     );
   }
 
-  return <>{tiles}{placedSprites}{npcSprites}</>;
+  return <>{tiles}{spotMarks}{placedSprites}{npcSprites}</>;
 }
