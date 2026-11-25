@@ -64,6 +64,8 @@ import { useInnTalk } from '@/lib/use-inn-talk';
 import { piecesFromServer, shopTownAt, useWorldShop } from '@/lib/use-world-shop';
 import { useMarket } from '@/lib/use-market';
 import { useWorldBattle } from '@/lib/use-world-battle';
+import { useWorldSound } from '@/lib/sound/use-world-sound';
+import { SoundMuteButton } from '@/components/sound/sound-mute-button';
 import { beginEncounter, useWorldMove } from '@/lib/use-world-move';
 import { useWorldFieldItems } from '@/lib/use-world-field-items';
 import { searchMenuLabel } from '@/lib/placed-search-text';
@@ -287,6 +289,10 @@ function WorldScreen() {
   const [lineHp, setLineHp] = useState<{ key: string; hp: number; hit: boolean } | null>(null);
   const lineHpKey = battle ? `${battle.battleId}:${battle.state.turn}` : '';
   const hudLineHp = battle?.phase === 'message' && lineHp?.key === lineHpKey ? lineHp : null;
+  // BGM (D-SOUND-001): 戦闘中は battle、外を歩いているときは field (街・建物の中はまだ曲なし)。決着でレベルが上がったらジングル。
+  const awarded = battle?.phase === 'result' ? battle.awarded : undefined;
+  useWorldSound(!ws ? null : battle ? 'battle' : ws.mapId || townAt(ws.x, ws.y) ? null : 'field',
+    awarded?.leveledUp || awarded?.allyLeveledUp?.length ? battle!.battleId : null);
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {
@@ -523,6 +529,7 @@ function WorldScreen() {
               zIndex={inBattle && battle ? battleOverlayZ(battle.phase) + 1 : HUD_Z}
             />
           )}
+          <SoundMuteButton />
           {menuHint && !onboarding && !showStarter && !menuOpen && <WorldMenuHint />}
           {menuOpen && <WorldMenu commands={menuCommands} onClose={() => setMenuOpen(false)} />}
           {/* 戦闘: 暗転したマップ枠内で完結 (DQ1 風。ページ遷移なし・縦スクロールなし)。

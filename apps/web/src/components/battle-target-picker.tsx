@@ -9,7 +9,7 @@ import type { BattleState, Combatant } from '@aozoraquest/core';
 export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 'enemy', full }: {
   state: BattleState;
   busy: boolean;
-  Row: (p: { label: string; onClick: () => void; disabled: boolean; fill?: boolean; plain?: boolean }) => React.ReactNode;
+  Row: (p: { label: string; onClick: () => void; disabled: boolean; fill?: boolean; plain?: boolean; se?: 'cancel' }) => React.ReactNode;
   onPick: (targetIndex: number) => void;
   onCancel: () => void;
   side?: 'enemy' | 'ally';
@@ -23,7 +23,7 @@ export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 
       ))}
       {/* 見出しは出さず、行は枠なし (#1004)。窓は中身に合わせて上へ伸びるので (D-PARTY-005)、敵 5 体・味方 4 人でも もどる まで見える。 */}
       <div data-picker-back style={{ flexShrink: 0 }}>
-        <Row fill={false} plain label="もどる" onClick={onCancel} disabled={busy} />
+        <Row fill={false} plain label="もどる" se="cancel" onClick={onCancel} disabled={busy} />
       </div>
     </>
   );

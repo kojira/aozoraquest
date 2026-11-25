@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { OVERLAY_Z } from './world-hud';
+import { soundPlayer } from '@/lib/sound/sound-player';
 
 /**
  * あおぞらワールドの DQ 風コマンドメニュー。マップ上の自分を押すと開く。
@@ -55,6 +56,7 @@ export function WorldMenu({ commands, onClose }: {
               type="button"
               disabled={c.disabled}
               onClick={() => {
+                soundPlayer.playSe('select');
                 onClose();
                 c.onSelect();
               }}
@@ -69,7 +71,7 @@ export function WorldMenu({ commands, onClose }: {
               {c.label}
             </button>
           ))}
-          <button type="button" onClick={onClose}>閉じる</button>
+          <button type="button" onClick={() => { soundPlayer.playSe('cancel'); onClose(); }}>閉じる</button>
         </div>
       </div>
     </div>
