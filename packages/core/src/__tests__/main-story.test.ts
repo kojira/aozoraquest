@@ -43,9 +43,9 @@ function setup(order: 'main-first' | 'side-first' = 'main-first') {
   ]);
   const main = [
     quest('futaba-slimes', 'elder'),
-    quest('futaba-letter', 'guide', { requireFlags: ['futaba_slimes_done'], reward: { itemId: 'slime-drop', count: 1 } }),
+    quest('futaba-letter', 'guide', { requireFlags: ['futaba_slimes_done'], reward: { itemId: 'stone-water', count: 1 } }),
     // 次の街の依頼は「手紙を持っていたら」開く (フラグでなくアイテム)
-    quest('homura-slimes', 'homura-elder', { requireItems: [{ itemId: 'slime-drop' }] }),
+    quest('homura-slimes', 'homura-elder', { requireItems: [{ itemId: 'stone-water' }] }),
     quest('homura-ember', 'bird', { requireFlags: ['homura_awake'] }),
     quest('tanima-hands', 'otaki-host', { requireFlags: ['homura_feather_done'] }),
   ];
@@ -68,7 +68,7 @@ function setup(order: 'main-first' | 'side-first' = 'main-first') {
 const fresh = (over: Partial<StoryProgress> = {}): StoryProgress => ({ flags: [], questsDone: [], activeQuests: [], materials: {}, ...over });
 /** ふたばの手紙まで終えた新しいプレイヤー (報酬の手紙を持っている)。 */
 const afterFutaba = fresh({
-  flags: ['futaba_slimes_done', 'futaba_letter_done'], questsDone: ['futaba-slimes', 'futaba-letter'], materials: { 'slime-drop': 1 },
+  flags: ['futaba_slimes_done', 'futaba_letter_done'], questsDone: ['futaba-slimes', 'futaba-letter'], materials: { 'stone-water': 1 },
 });
 
 describe('本編の次の目的地 (D-EARLY-002)', () => {
@@ -121,16 +121,16 @@ describe('本編の次の目的地 (D-EARLY-002)', () => {
     setup();
     // つぎの本編 (gate) は品物 3 個で開く。品物は本編の main-a と、サイドの side-s (先に並ぶ・誰でも受けられる) の両方が出す
     setGameQuests([
-      quest('side-s', 'innkeeper', { reward: { itemId: 'slime-drop', count: 3 } }),
-      quest('main-a', 'elder', { reward: { itemId: 'slime-drop', count: 3 } }),
-      quest('gate', 'otaki-host', { requireItems: [{ itemId: 'slime-drop', count: 3 }] }),
+      quest('side-s', 'innkeeper', { reward: { itemId: 'stone-water', count: 3 } }),
+      quest('main-a', 'elder', { reward: { itemId: 'stone-water', count: 3 } }),
+      quest('gate', 'otaki-host', { requireItems: [{ itemId: 'stone-water', count: 3 }] }),
     ]);
     setScenario([{ id: 'end', title: 'e', when: [{ kind: 'questDone', questId: 'gate' }], setFlags: [STORY_END_FLAG] }]);
-    const afterA = fresh({ questsDone: ['main-a'], materials: { 'slime-drop': 3 } });
+    const afterA = fresh({ questsDone: ['main-a'], materials: { 'stone-water': 3 } });
     expect(nextMainQuest(afterA)?.id).toBe('gate');
     expect(nextStoryTown(afterA)).toEqual(townAt(OTAKI.x, OTAKI.y));
     // 足りなければ、まだ品物を出せる道が目的になる
-    expect(nextMainQuest(fresh({ questsDone: ['main-a'], materials: { 'slime-drop': 1 } }))?.id).toBe('side-s');
+    expect(nextMainQuest(fresh({ questsDone: ['main-a'], materials: { 'stone-water': 1 } }))?.id).toBe('side-s');
     // 受注中の本編は、品物を使い切っていても目的
     expect(nextMainQuest(fresh({ questsDone: ['main-a'], activeQuests: [{ id: 'gate' }] }))?.id).toBe('gate');
   });

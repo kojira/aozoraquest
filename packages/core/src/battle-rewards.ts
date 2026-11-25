@@ -6,6 +6,7 @@
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng } from './battle-rng.js';
 import { type Tier, ITEMS, MONSTERS_BY_ID, MONSTERS } from './battle-monsters.js';
+import { LEGACY_MATERIAL_IDS, STONE_IDS, STONE_RULES, isStoneId, monsterStoneElement, rollStoneDrops } from './mana-stones.js';
 
 // ─── ドロップ・称号 ─────────────────────────────────────────
 
@@ -13,7 +14,7 @@ import { type Tier, ITEMS, MONSTERS_BY_ID, MONSTERS } from './battle-monsters.js
  * 敗北時に落とす素材を決定的に判定する (luk が高いほど落としにくい)。
  * - 手持ち (materials: id → 個数) から個数重みで 1 個は必ず落ちる (手持ちが空なら何も落ちない)。
  * - 以降は clamp(lossExtraBase − luk*lossExtraLukScale, lossExtraMin, 1) の確率で
- *   追加 1 個、最大 lossMax 個まで (luk が高いほど追加を引きにくい)。
+ *   追加 1 回、最大 lossMax 回まで (luk が高いほど追加を引きにくい)。魔石は 1 回で 3 個 (最大 9 個)。
  * - seed から決定的。ただし入力の在庫スナップショットはレコードに残らないため、
  *   記録単体からの再現・検証はできない (materialsLost は他の戦闘結果と同じく
  *   クライアント申告値。検証可能化は W3 のサーバー権威で扱う)。
@@ -31,29 +32,37 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
   }
   const lost: string[] = [];
   const extraChance = Math.min(1, Math.max(t.lossExtraMin, t.lossExtraBase - luk * t.lossExtraLukScale));
-  while (pool.length > 0 && lost.length < t.lossMax) {
-    if (lost.length > 0 && rng() >= extraChance) break;
+  for (let picks = 0; pool.length > 0 && picks < t.lossMax; picks++) {
+    if (picks > 0 && rng() >= extraChance) break;
     const i = Math.floor(rng() * pool.length);
-    lost.push(pool[i]!);
-    pool.splice(i, 1);
+    const id = pool[i]!;
+    // 魔石は 1 回で lossStonesPerPick 個まで (旧素材 1 個 = 魔石 3 個の値打ち。D-MATERIAL-001)。
+    for (let k = 0; k < (isStoneId(id) ? STONE_RULES.lossStonesPerPick : 1); k++) {
+      const j = k === 0 ? i : pool.indexOf(id);
+      if (j < 0) break;
+      lost.push(id);
+      pool.splice(j, 1);
+    }
   }
   return lost;
 }
 
-/** 勝利時のドロップ判定。luk で上振れ。決定的 (seed 依存)。dropBonus = 巫女の直感の加算 (#456)。 */
+/** 勝利時のドロップ判定 (消耗品は確率、魔石は必ず)。luk で上振れ。決定的 (seed 依存)。dropBonus = 巫女の直感の加算 (#456)。 */
 export function rollDrops(monsterId: string, luk: number, seed: number, dropBonus = 0): string[] {
   const def = MONSTERS_BY_ID[monsterId];
   if (!def) return [];
   const rng = createRng((seed ^ 0x2545f491) >>> 0);
   const out: string[] = [];
   for (const d of def.drops) {
+    // 旧素材 (魔石になる前の id) は落とさない。魔石は rollStoneDrops (別の乱数) で必ず落ちる (D-MATERIAL-001)。
+    if (LEGACY_MATERIAL_IDS.includes(d.item)) continue;
     // luk ボーナス + 巫女の直感 dropBonus を合算し 0.95 で clamp。dropBonus は luk 補正と天井 (0.95) を
     // **共有**するので、高 luk 職 (巫女=luk37) では既にドロップ率が高い素材で +0.1 の限界効用が逓減する
     // (青天井を防ぐ意図的な設計。数値は sim 前提の暫定値)。
     const chance = Math.min(0.95, d.chance + luk * BATTLE_TUNING.dropLukScale + dropBonus);
     if (rng() < chance) out.push(d.item);
   }
-  return out;
+  return [...out, ...rollStoneDrops(monsterId, luk, seed, dropBonus)];
 }
 
 /** 「しらべる」(フィールドコマンド) の調整値。luk に連動して入手、パワーを 1 消費。 */
@@ -72,12 +81,11 @@ export const SEARCH_TUNING = {
   materialMax: 0.7,
 } as const;
 
-/** tier のモンスターが落とす素材 (しらべるで見つかる地方素材の母集団)。 */
+/** tier の敵が落とす魔石 (しらべるで見つかる地方素材の母集団。D-MATERIAL-001)。 */
 function tierMaterials(tier: Tier): string[] {
   const set = new Set<string>();
-  for (const m of MONSTERS) if (m.tier === tier && !m.storyOnly) for (const d of m.drops) set.add(d.item);
-  // 消耗品ドロップ (herb/sky-dew/sky-feather と戦闘用のどうぐ D-ITEM-001) は除き、純粋な素材だけ
-  return [...set].filter((id) => id !== 'herb' && id !== 'sky-dew' && id !== 'sky-feather' && !ITEMS[id]?.battle);
+  for (const m of MONSTERS) if (m.tier === tier && !m.storyOnly) set.add(STONE_IDS[monsterStoneElement(m)]);
+  return [...set];
 }
 
 /**

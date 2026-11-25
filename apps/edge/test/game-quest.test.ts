@@ -386,13 +386,13 @@ describe('ふたばの村: 受注から報告・制作・次の依頼へ', () =>
     await handleQuestAccept(env, DID, 'futaba-herbs', NOW);
     m.store.set(rkeyForDid(DID), { value: { ...stored(m.store), materials: { herb: 2 } }, cid: 'collected-2' });
     await expect(handleQuestComplete(env, DID, 'futaba-herbs', NOW)).rejects.toMatchObject({ code: 'not_ready' });
-    m.store.set(rkeyForDid(DID), { value: { ...stored(m.store), materials: { herb: 3, 'bat-wing': 2 } }, cid: 'collected-3' });
+    m.store.set(rkeyForDid(DID), { value: { ...stored(m.store), materials: { herb: 3, 'stone-wind': 2 } }, cid: 'collected-3' });
     await handleQuestComplete(env, DID, 'futaba-herbs', NOW);
     expect(stored(m.store).materials.herb).toBe(1);
     expect(stored(m.store).flags).toContain('futaba_herbs_done');
     await handleQuestAccept(env, DID, 'futaba-wings', NOW);
     await handleQuestComplete(env, DID, 'futaba-wings', NOW);
-    expect(stored(m.store).materials['bat-wing'] ?? 0).toBe(0);
+    expect(stored(m.store).materials['stone-wind'] ?? 0).toBe(0);
     expect(stored(m.store).flags).toContain('futaba_wings_done');
     expect(stored(m.store).questsDone).toEqual(['futaba-slimes', 'futaba-herbs', 'futaba-wings']);
     expect(stored(m.store).activeQuests).toEqual([]);
@@ -406,7 +406,7 @@ describe('ギルド素材納品 (#707): 既存在庫と一度だけの権威報�
 
   it('不足・未受注では消費せず、成功時のみ消費2/やくそう2/power5、並行/再送は一度だけ', async () => {
     setNpcs(starterTownNpcs()); setGameQuests(starterTownQuests());
-    const m = statefulPds(stateAt({ materials: { 'slime-drop': 1, herb: 4 } }));
+    const m = statefulPds(stateAt({ materials: { 'stone-water': 1, herb: 4 } }));
     globalThis.fetch = m.fn;
     const env = await makeEnv();
     const id = 'futaba-tool-care';
@@ -415,10 +415,10 @@ describe('ギルド素材納品 (#707): 既存在庫と一度だけの権威報�
     const before = stored(m.store);
     await expect(handleQuestComplete(env, DID, id, NOW)).rejects.toMatchObject({ code: 'not_ready' });
     expect(stored(m.store)).toEqual(before);
-    m.store.set(rkeyForDid(DID), { value: { ...before, materials: { 'slime-drop': 3, herb: 4 } }, cid: 'gathered' });
+    m.store.set(rkeyForDid(DID), { value: { ...before, materials: { 'stone-water': 3, herb: 4 } }, cid: 'gathered' });
     const results = await Promise.allSettled([handleQuestComplete(env, DID, id, NOW), handleQuestComplete(env, DID, id, NOW)]);
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
-    expect(stored(m.store).materials).toEqual({ 'slime-drop': 1, herb: 6 });
+    expect(stored(m.store).materials).toEqual({ 'stone-water': 1, herb: 6 });
     expect(stored(m.store).power).toBe(15);
     const done = stored(m.store);
     await expect(handleQuestComplete(env, DID, id, NOW)).rejects.toMatchObject({ code: 'already_done' });
@@ -428,7 +428,7 @@ describe('ギルド素材納品 (#707): 既存在庫と一度だけの権威報�
 
   it('既存討伐の保存進捗を保持し、直接報告後は受注前の在庫をそのまま納品できる', async () => {
     setNpcs(starterTownNpcs()); setGameQuests(starterTownQuests()); setScenario(starterTownScenario());
-    const m = statefulPds(stateAt({ activeQuests: [{ id: 'futaba-slimes', progress: 3 }], materials: { 'slime-drop': 2 } }));
+    const m = statefulPds(stateAt({ activeQuests: [{ id: 'futaba-slimes', progress: 3 }], materials: { 'stone-water': 2 } }));
     globalThis.fetch = m.fn;
     const env = await makeEnv();
     await handleQuestAccept(env, DID, 'futaba-tool-care', NOW);
@@ -438,7 +438,7 @@ describe('ギルド素材納品 (#707): 既存在庫と一度だけの権威報�
     await handleQuestAccept(env, DID, 'futaba-tool-care', NOW);
     await handleQuestComplete(env, DID, 'futaba-tool-care', NOW);
     expect(stored(m.store).questsDone).toEqual(['futaba-slimes', 'futaba-tool-care']);
-    expect(stored(m.store).materials).toEqual({ 'slime-drop': 1, herb: 2 });
+    expect(stored(m.store).materials).toEqual({ 'stone-water': 1, herb: 2 });
     expect(stored(m.store).power).toBe(19);
   });
 });
@@ -449,7 +449,7 @@ describe('D-GUILD-002 multi-active authority', () => {
 
   it('parallel independent acceptance preserves both; guild report preserves defeat progress and story locks', async () => {
     setNpcs(starterTownNpcs()); setGameQuests(starterTownQuests()); setScenario(starterTownScenario());
-    const m = statefulPds(stateAt({ activeQuests: [], materials: { 'slime-drop': 2 } }));
+    const m = statefulPds(stateAt({ activeQuests: [], materials: { 'stone-water': 2 } }));
     globalThis.fetch = m.fn;
     const env = await makeEnv();
     const accepted = await Promise.allSettled(['futaba-slimes', 'futaba-tool-care'].map(id => handleQuestAccept(env, DID, id, NOW)));
@@ -481,14 +481,14 @@ describe('D-GUILD-002 multi-active authority', () => {
   it('selected B alone completes; same-material reward is added after consumption', async () => {
     setNpcs(starterTownNpcs());
     const a = starterTownQuests().find(q => q.id === 'futaba-tool-care')!;
-    const b = { ...a, id: 'fixture-b', reward: { itemId: 'slime-drop', count: 1, power: 8 } };
+    const b = { ...a, id: 'fixture-b', reward: { itemId: 'stone-water', count: 1, power: 8 } };
     setGameQuests([a, b]);
-    const m = statefulPds(stateAt({ activeQuests: [{ id: a.id, progress: 4 }, { id: b.id, progress: 0 }], materials: { 'slime-drop': 2 } }));
+    const m = statefulPds(stateAt({ activeQuests: [{ id: a.id, progress: 4 }, { id: b.id, progress: 0 }], materials: { 'stone-water': 2 } }));
     globalThis.fetch = m.fn;
     const res = await handleQuestComplete(await makeEnv(), DID, b.id, NOW);
     expect(res.activeQuests).toEqual([{ id: a.id, progress: 4 }]);
     expect(res.questsDone).toEqual([b.id]);
-    expect(res.materials).toEqual({ 'slime-drop': 1 });
+    expect(res.materials).toEqual({ 'stone-water': 1 });
     expect(res.power).toBe(18);
   });
 
@@ -497,12 +497,12 @@ describe('D-GUILD-002 multi-active authority', () => {
     const a = starterTownQuests().find(q => q.id === 'futaba-tool-care')!;
     const b = { ...a, id: 'fixture-b', reward: { power: 8 } };
     setGameQuests([a, b]);
-    const m = statefulPds(stateAt({ activeQuests: [a, b].map(q => ({ id: q.id, progress: 0 })), materials: { 'slime-drop': count } }));
+    const m = statefulPds(stateAt({ activeQuests: [a, b].map(q => ({ id: q.id, progress: 0 })), materials: { 'stone-water': count } }));
     globalThis.fetch = m.fn;
     const env = await makeEnv();
     const results = await Promise.allSettled([a, b].map(q => handleQuestComplete(env, DID, q.id, NOW)));
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(count / 2);
-    expect(stored(m.store).materials['slime-drop'] ?? 0).toBe(0);
+    expect(stored(m.store).materials['stone-water'] ?? 0).toBe(0);
     expect(stored(m.store).activeQuests).toHaveLength(2 - count / 2);
     expect(stored(m.store).power).toBe(count === 4 ? 23 : 15);
     if (count === 2) expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'not_ready' } });

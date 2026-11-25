@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { activeEquipment, activeItems, setItemOverrides, setMonsterOverrides } from '../index.js';
 import { TEST_MONSTERS } from './helpers/monster-fixture.js';
+import { STONE_IDS } from '../mana-stones.js';
 import {
   BATTLE_TUNING,
   rollDefeatLoss,
@@ -14,18 +15,18 @@ import {
 } from '../battle.js';
 
 describe('rollDefeatLoss (敗北時の素材ドロップ)', () => {
-  const inv = { herb: 2, 'slime-drop': 3, 'sky-dew': 1 };
+  const inv = { herb: 2, 'stone-water': 3, 'sky-dew': 1 };
 
   it('決定的 (同じ seed で同じ結果) で、手持ちが空なら何も落ちない', () => {
     expect(rollDefeatLoss(inv, 20, 42)).toEqual(rollDefeatLoss(inv, 20, 42));
     expect(rollDefeatLoss({}, 5, 1)).toEqual([]);
   });
 
-  it('手持ちがあれば必ず 1 個以上、lossMax 以下。落ちるのは手持ちにある物だけで個数を超えない', () => {
+  it('手持ちがあれば必ず 1 個以上、lossMax 回 (魔石は 1 回 3 個) 以下。落ちるのは手持ちにある物だけで個数を超えない', () => {
     for (let seed = 0; seed < 200; seed++) {
       const lost = rollDefeatLoss(inv, 20, seed);
       expect(lost.length).toBeGreaterThanOrEqual(1);
-      expect(lost.length).toBeLessThanOrEqual(BATTLE_TUNING.lossMax);
+      expect(lost.length).toBeLessThanOrEqual(BATTLE_TUNING.lossMax * 3);
       const counts: Record<string, number> = {};
       for (const id of lost) counts[id] = (counts[id] ?? 0) + 1;
       for (const [id, n] of Object.entries(counts)) {
@@ -51,12 +52,12 @@ describe('rollDrops', () => {
   it('未知のモンスター ID は空配列', () => {
     expect(rollDrops('nope', 10, 1)).toEqual([]);
   });
-  it('ドロップは定義済み素材のみ', () => {
+  it('ドロップは定義済み素材のみ (データのドロップか、その敵の属性の魔石)', () => {
     for (let seed = 0; seed < 50; seed++) {
       for (const m of MONSTERS) {
         for (const item of rollDrops(m.id, 30, seed)) {
           expect(ITEMS[item]).toBeDefined();
-          expect(MONSTERS_BY_ID[m.id]!.drops.some((d) => d.item === item)).toBe(true);
+          expect(MONSTERS_BY_ID[m.id]!.drops.some((d) => d.item === item) || item === STONE_IDS[m.element ?? 'void']).toBe(true);
         }
       }
     }
@@ -91,7 +92,7 @@ describe('rollSearch (しらべる — luk 連動でアイテム発見)', () => 
     expect(rollSearch(12345, 20, 1)).toBe(rollSearch(12345, 20, 1));
   });
   it('見つかったものは実在の素材 or 消耗品 id', () => {
-    const valid = new Set(['herb', 'sky-dew', ...MONSTERS.filter((m) => m.tier === 1).flatMap((m) => m.drops.map((d) => d.item))]);
+    const valid = new Set(['herb', 'sky-dew', ...MONSTERS.filter((m) => m.tier === 1).map((m) => STONE_IDS[m.element ?? 'void'])]);
     for (let seed = 0; seed < 200; seed++) {
       const r = rollSearch(seed, 10, 1);
       if (r !== null) expect(valid.has(r)).toBe(true);
@@ -118,11 +119,11 @@ describe('rollSearch (しらべる — luk 連動でアイテム発見)', () => 
       const found = new Set<string>();
       for (let seed = 0; seed < 500; seed++) { const r = rollSearch(seed, 80, 1); if (r) found.add(r); }
       expect(found.has('nemuri-kona')).toBe(false);
-      expect([...found].sort()).toEqual(['herb', 'sky-dew']);
+      expect([...found].filter((id) => !id.startsWith('stone-')).sort()).toEqual(['herb', 'sky-dew']);
     });
   });
   it('tier3 では tier3 素材が出うる (地方連動)', () => {
-    const t3 = new Set(MONSTERS.filter((m) => m.tier === 3).flatMap((m) => m.drops.map((d) => d.item)));
+    const t3 = new Set(MONSTERS.filter((m) => m.tier === 3).map((m) => STONE_IDS[m.element ?? 'void']));
     let sawT3 = false;
     for (let seed = 0; seed < 500 && !sawT3; seed++) {
       const r = rollSearch(seed, 80, 3);

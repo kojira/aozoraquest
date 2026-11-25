@@ -128,7 +128,7 @@
       },
       "reward": {
         "power": 4,
-        "itemId": "slime-drop",
+        "itemId": "stone-water",
         "count": 1
       },
       "intro": [
@@ -182,12 +182,12 @@
       "npcId": "futaba-shopfront",
       "objective": {
         "kind": "collect",
-        "itemId": "bat-wing",
+        "itemId": "stone-wind",
         "count": 2
       },
       "reward": {
         "power": 4,
-        "itemId": "slime-drop",
+        "itemId": "stone-water",
         "count": 1
       },
       "requireFlags": [
@@ -212,7 +212,7 @@
       "npcId": "futaba-bluesky",
       "objective": {
         "kind": "collect",
-        "itemId": "slime-drop",
+        "itemId": "stone-water",
         "count": 2
       },
       "reward": {
@@ -320,7 +320,7 @@
         },
         {
           "kind": "itemCount",
-          "itemId": "slime-drop",
+          "itemId": "stone-water",
           "count": 1
         }
       ],

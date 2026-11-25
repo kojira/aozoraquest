@@ -12,6 +12,6 @@ export function starterTownShop(
     x: town.x,
     y: town.y,
     equipment: [...new Set([...stock.equipment, 'ar-cloth'])],
-    materialId: 'slime-drop',
+    theme: 'water',
   };
 }

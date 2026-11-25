@@ -9,7 +9,7 @@ it('ギルドは既存3依頼とは別の素材納品で、消費と承認済み
   setGameQuests(starterTownQuests());
   const q = gameQuestsByNpc('futaba-bluesky')[0];
   expect(q?.title).toBe('道具の手入れに');
-  expect(q?.objective).toEqual({ kind: 'collect', itemId: 'slime-drop', count: 2 });
+  expect(q?.objective).toEqual({ kind: 'collect', itemId: 'stone-water', count: 2 });
   expect(q?.reward).toEqual({ itemId: 'herb', count: 2, power: 5 });
   expect(q?.intro.join('\n')).toContain('村の道具屋');
   expect(q?.intro.join('\n')).toContain('2こ渡します');

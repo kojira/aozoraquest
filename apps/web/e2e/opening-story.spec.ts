@@ -395,14 +395,14 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await next();
     await expect(window).toContainText('まだ0/2こ');
     await readAll(page);
-    expect(state.materials['slime-drop'] ?? 0).toBe(0);
+    expect(state.materials['stone-water'] ?? 0).toBe(0);
     expect(state.power).toBe(0);
     await choose('話す');
     await expect(window).toContainText('おにいちゃんが、いなくなっちゃったの。');
     await readAll(page);
     await choose('やめる');
     // 隔離PDSで素材入手後を再現する。実環境の戦闘/ドロップの受入ではない。
-    await reenter({ materials: { ...state.materials, 'slime-drop': 2 } });
+    await reenter({ materials: { ...state.materials, 'stone-water': 2 } });
     await bump('ArrowUp');
     await choose('依頼を見る');
     for (let i = 0; i < 12 && !(await window.innerText()).includes('(2/2)'); i++) await next();
@@ -418,7 +418,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await next();
     await expect(window).toContainText('やくそう ×2とあおぞらパワー5');
     await captureMapDialogue(page, 'guild-completed');
-    expect(state.materials['slime-drop'] ?? 0).toBe(0);
+    expect(state.materials['stone-water'] ?? 0).toBe(0);
     expect(state.materials.herb).toBe(herbsBefore + 2);
     expect(state.power).toBe(powerBefore + 5);
     expect(state.activeQuests).toEqual([{ id: 'futaba-slimes', progress: 3 }]);
@@ -489,7 +489,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     const guildBase = quests.find(q => q.id === 'futaba-tool-care')!;
     const multi = ['fixture-a', 'fixture-b', 'fixture-c', 'fixture-d'].map((id, i) => ({ ...guildBase, id, reward: { power: i + 1 } }));
     setGameQuests(multi); records['app.aozoraquest.dev.world.quests'] = { quests: multi };
-    await reenter({ x: bluesky.x, y: bluesky.y + 1, questsDone: [], activeQuests: multi.map(q => ({ id: q.id, progress: 0 })), materials: { 'slime-drop': 2 }, power: 10 });
+    await reenter({ x: bluesky.x, y: bluesky.y + 1, questsDone: [], activeQuests: multi.map(q => ({ id: q.id, progress: 0 })), materials: { 'stone-water': 2 }, power: 10 });
     await bump('ArrowUp'); await choose('報告する');
     await expect(window).toContainText('どの依頼を報告する？（1/2）');
     const beforeReports = reported.length;
@@ -501,7 +501,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
     await expect.poll(() => state.questsDone).toEqual(['fixture-b']);
     expect(reported.slice(beforeReports)).toEqual(['fixture-b']);
     expect(state.power).toBe(12);
-    expect(state.materials['slime-drop'] ?? 0).toBe(0);
+    expect(state.materials['stone-water'] ?? 0).toBe(0);
     expect(state.activeQuests.map(q => q.id)).toEqual(['fixture-a', 'fixture-c', 'fixture-d']);
     await readAll(page); await choose('報告する');
     await expect(page.getByRole('button', { name: /fixture-a/ })).toContainText('(0/2)');
@@ -509,7 +509,7 @@ test('ふたば: 救護/表情/マップ内表示 → ギルド再会/退出 →
 
     const direct = multi.map(q => ({ ...q, npcId: elder.id }));
     setGameQuests(direct); records['app.aozoraquest.dev.world.quests'] = { quests: direct };
-    await reenter({ x: elder.x, y: elder.y + 1, questsDone: [], activeQuests: [{ id: 'fixture-a', progress: 0 }], materials: { 'slime-drop': 2 } });
+    await reenter({ x: elder.x, y: elder.y + 1, questsDone: [], activeQuests: [{ id: 'fixture-a', progress: 0 }], materials: { 'stone-water': 2 } });
     await bump('ArrowUp');
     const directBefore = reported.length;
     await captureQuestChoices(page, 'direct-identical-choices');

@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   activeEquipment,
-  activeItems,
+  ITEMS,
+  STONE_IDS,
   maxShopGradeForTier,
   shopKeeperFor,
   shopOverrides,
@@ -11,9 +12,12 @@ import {
   tierForRegion,
   townShopStock,
   worldOverlay,
+  type Element,
   type ShopOverride,
   type Town,
 } from '@aozoraquest/core';
+
+const ELEMENTS: readonly Element[] = ['earth', 'water', 'fire', 'wind', 'void'];
 import { useSession } from '@/lib/session';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveShops } from '@/lib/world-authoring';
@@ -40,7 +44,6 @@ export function AdminShops() {
   const towns = useMemo(() => worldOverlay().towns, [loaded]);
 
   const equipment = activeEquipment();
-  const items = activeItems();
 
   const overrideOf = useCallback(
     (t: Town) => overrides.find((o) => o.x === t.x && o.y === t.y),
@@ -68,7 +71,7 @@ export function AdminShops() {
       // 「空の上書き」と判定されて一覧から捨てられ、**打った文字が即座に消えていた**
       // (実機で「テキスト入力欄が入力できない」と指摘)。
       const hasKeeper = !!m.keeper && Object.values(m.keeper).some((v) => v !== undefined && v !== '');
-      const empty = !m.equipment && !m.consumables && !m.materialId && !hasKeeper;
+      const empty = !m.equipment && !m.consumables && !m.theme && !m.favoredMonsterId && !m.exchange?.length && !hasKeeper;
       return empty ? rest : [...rest, m];
     });
     setDirty(true);
@@ -194,15 +197,15 @@ export function AdminShops() {
               </div>
             </div>
 
-            {/* 値札の素材 */}
+            {/* 町のテーマの属性 (D-MATERIAL-001)。値札の魔石と、まわりの「よく出る敵」が決まる。 */}
             <label style={{ display: 'flex', gap: '0.4em', alignItems: 'center', fontSize: '0.8em' }}>
-              <span style={{ color: 'var(--color-muted)' }}>値札の素材</span>
+              <span style={{ color: 'var(--color-muted)' }}>町のテーマ</span>
               <select
-                value={cur?.materialId ?? ''}
-                onChange={(e) => setField(sel, { materialId: e.target.value || undefined })}
+                value={cur?.theme ?? ''}
+                onChange={(e) => setField(sel, { theme: (e.target.value || undefined) as Element | undefined })}
               >
-                <option value="">生成のまま ({items.find((i) => i.id === eff.materialId)?.name ?? eff.materialId})</option>
-                {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                <option value="">よく出る敵のまま ({ITEMS[eff.materialId]?.name ?? eff.materialId})</option>
+                {ELEMENTS.map((el) => <option key={el} value={el}>{ITEMS[STONE_IDS[el]]?.name ?? el}</option>)}
               </select>
             </label>
 

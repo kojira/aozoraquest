@@ -83,7 +83,7 @@ describe('モンスターのレコード差し替え (#419)', () => {
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', hp: 0 })])).toThrow(MonsterDataError);
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', stats: [1, 2, 3] as never })])).toThrow(MonsterDataError);
     expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', ability: 'caster' })])).toThrow(MonsterDataError); // spell なし
-    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', drops: [{ item: 'slime-drop', chance: 2 }] })])).toThrow(MonsterDataError);
+    expect(() => setMonsterOverrides([...trio(1, 'a'), base({ id: 'x', drops: [{ item: 'stone-water', chance: 2 }] })])).toThrow(MonsterDataError);
   });
 
   it('**tier1 が 3 体を下回る差し替えは拒否** (遭遇が壊れて街から出られなくなる)', () => {
@@ -295,10 +295,10 @@ describe('店のラインナップ上書き (#422)', () => {
     const beforeA = core.townShopStock(a, 0);
     const beforeB = core.townShopStock(b, 1);
 
-    core.setShopOverrides([{ x: a.x, y: a.y, equipment: ['wp-knife'], materialId: 'slime-drop' }]);
+    core.setShopOverrides([{ x: a.x, y: a.y, equipment: ['wp-knife'], theme: 'fire' }]);
     const afterA = core.townShopStock(a, 0);
     expect(afterA.equipment).toEqual(['wp-knife']);
-    expect(afterA.materialId).toBe('slime-drop');
+    expect(afterA.materialId).toBe('stone-fire');
     expect(afterA.consumables).toEqual(beforeA.consumables); // 指定しないフィールドは生成のまま
     expect(core.townShopStock(b, 1)).toEqual(beforeB); // 他の店は不変
 
@@ -309,7 +309,7 @@ describe('店のラインナップ上書き (#422)', () => {
   it('**未知の id は保存で弾く** (「並んでいるのに買えない店」を静かに作らない)', () => {
     const t = core.worldOverlay().towns[0]!;
     expect(() => core.setShopOverrides([{ x: t.x, y: t.y, equipment: ['zzz-nope'] }])).toThrow(core.ShopDataError);
-    expect(() => core.setShopOverrides([{ x: t.x, y: t.y, materialId: 'zzz' }])).toThrow(core.ShopDataError);
+    expect(() => core.setShopOverrides([{ x: t.x, y: t.y, exchange: [{ itemId: 'zzz', stones: 3 }] }])).toThrow(core.ShopDataError);
     expect(() => core.setShopOverrides([{ x: t.x, y: t.y }, { x: t.x, y: t.y }])).toThrow(core.ShopDataError); // 重複
     // 全体が落ちている (部分適用していない)
     expect(core.shopOverrides()).toEqual([]);

@@ -175,6 +175,8 @@ export interface MonsterDef {
    *  `atk*0.9 − def*0.45` も同じ 2:1 なので、255 なら atk 127 以下の全員が 0 になる
    *  (最高の Lv50 将軍でも atk 103) = 会心のみが道。 */
   flatDef?: number;
+  /** 勝ったときに必ず落とす魔石の数の上書き (整数。D-MATERIAL-001)。省略時は mana-stones.ts の式。 */
+  stones?: number;
   /** **ストーリー専用** (D-STORY-009)。ランダム遭遇・「このあたり多い」・tier の判定・
    *  しらべるの地方素材には出さない。ボスなど、戦闘定義 (world.story の battles) からだけ戦う敵。 */
   storyOnly?: boolean;
@@ -205,19 +207,15 @@ export const ITEMS: Record<string, ItemDef> = {
   herb: { name: 'やくそう' },
   'sky-dew': { name: 'そらのしずく' }, // MP 回復薬。青空の朝露 (世界観準拠の命名)
   'sky-feather': { name: 'そらのはね' }, // 最後に立ち寄った街へ帰還 (フィールド専用)
-  'slime-drop': { name: 'スライムのしずく' },
-  'red-jelly': { name: 'あかいゼリー' }, // あかいスライム(強い版)のドロップ。現状は換金専用 (P4 クラフト素材に転用予定)
-  'metal-shard': { name: 'はぐれのかけら' }, // はぐれスライムの希少ドロップ。現状は換金専用 (将来レア装備素材に転用予定)
-  'dusk-wing': { name: 'よいやみの翼膜' }, // よるのコウモリ(強い版)のドロップ。現状は換金専用 (P4 クラフト素材に転用予定)
-  'crimson-spore': { name: 'べにの胞子' }, // べにヒカリダケ(強い版)のドロップ。現状は換金専用 (P4 クラフト素材に転用予定)
-  'bat-wing': { name: 'コウモリの翼膜' },
-  'mush-spore': { name: 'ヒカリダケの胞子' },
-  'golem-core': { name: 'ゴーレムの核片' },
-  'wisp-ember': { name: '鬼火の残り火' },
-  'serpent-scale': { name: '大蛇の鱗' },
-  'raven-feather': { name: '夜鴉の風切羽' },
-  'oni-horn': { name: '鬼の角' },
-  'dragon-fang': { name: '竜の牙' },
+  // 属性の魔石 (D-MATERIAL-001)。きまりは mana-stones.ts。どうぐのレコードに無くても item-data が足す。
+  'stone-earth': { name: '地の魔石' },
+  'stone-water': { name: '水の魔石' },
+  'stone-fire': { name: '火の魔石' },
+  'stone-wind': { name: '風の魔石' },
+  'stone-void': { name: '空の魔石' },
+  // 本筋の だいじなもの (かすみの 3 か所・いしだたみの蔵に置いてある。敵は落とさない)。
+  'dusk-wing': { name: 'よいやみのきれはし', key: true },
+  'crimson-spore': { name: 'べにいろのくすり', key: true },
   // カジノの景品 (D-CASINO-001)。パーティの画面で仲間 1 人の名前を変える。
   'name-tag': { name: 'なまえのふだ', desc: 'なかま 1人の なまえを かえられる', casinoOnly: true },
   // カジノの景品 (D-CASINO-001。ふっかつのはね の代わり)。戦闘で 味方みんなの HP を 4 わり回復。
@@ -388,7 +386,7 @@ function withFocus(pool: readonly MonsterDef[], weights: number[], focus: readon
 }
 
 /** ランダム遭遇の候補 (ストーリー専用の敵は除く)。 */
-function randomPool(tier: Tier): MonsterDef[] {
+export function randomPool(tier: Tier): MonsterDef[] {
   return MONSTERS.filter((m) => m.tier === tier && !m.storyOnly);
 }
 

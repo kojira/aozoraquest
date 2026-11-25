@@ -67,7 +67,7 @@ describe('ふたばの村の導入データ', () => {
     expect(over.keeper).toEqual(existing.keeper);
     expect(over.equipment).toEqual([...new Set([...stock.equipment, 'ar-cloth'])]);
     setShopOverrides([over]);
-    expect(townShopStock(town, 0).materialId).toBe('slime-drop');
+    expect(townShopStock(town, 0).materialId).toBe('stone-water');
     const reward = starterTownQuests()[0]!.reward!;
     const cloth = EQUIPMENT_BY_ID['ar-cloth']!;
     expect(reward.power).toBe(cloth.price.power);
