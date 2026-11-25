@@ -40,7 +40,7 @@ beforeEach(() => {
       requireItems: [{ itemId: ITEM3 }],
     },
   ]);
-  setShopOverrides([{ x: 10, y: 10, equipment: [EQ], consumables: [ITEM5], materialId: ITEM6 }]);
+  setShopOverrides([{ x: 10, y: 10, equipment: [EQ], consumables: [ITEM5], exchange: [{ itemId: ITEM6, stones: 3 }] }]);
   setInteriors([], [{ from: { mapId: WORLD_MAP_ID, x: 1, y: 1 }, to: { mapId: WORLD_MAP_ID, x: 2, y: 2 }, requireItems: [{ itemId: ITEM3, count: 2 }] }]);
   setScenario([{ id: 'e1', title: 'はじまり', when: [{ kind: 'questDone', questId: 'q1' }, { kind: 'itemCount', itemId: ITEM4, count: 1 }], setFlags: ['started'] }]);
 });
@@ -66,13 +66,13 @@ describe('worldRefs: 参照の種類ごとに全部挙がる', () => {
     expect(froms('monster', MON2)).toEqual([]);
   });
 
-  it('アイテム ← クエスト (収集/報酬/解禁)・店 (どうぐ/素材)・ゲート・NPC のセリフ・シナリオ', () => {
+  it('アイテム ← クエスト (収集/報酬/解禁)・店 (どうぐ/魔石の交換)・ゲート・NPC のセリフ・シナリオ', () => {
     expect(froms('item', ITEM)).toEqual(['クエスト「あつめ」']);
     expect(froms('item', ITEM2)).toEqual(['クエスト「あつめ」']);
     expect(froms('item', ITEM3)).toEqual(['クエスト「あつめ」', `ゲート (${WORLD_MAP_ID} 1,1)`]);
     expect(froms('item', ITEM4)).toEqual(['NPC「むらびと」のセリフ', 'シナリオ「はじまり」']);
     expect(froms('item', ITEM5)).toEqual(['店 (10, 10)']);
-    expect(froms('item', ITEM6)).toEqual(['店 (10, 10)']);
+    expect(froms('item', ITEM6)).toEqual(['店 (10, 10) の魔石の交換']);
   });
 
   it('アイテム ← モンスターのドロップ', () => {

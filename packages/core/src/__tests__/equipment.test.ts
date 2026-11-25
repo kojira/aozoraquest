@@ -7,7 +7,6 @@ import { isSellableMaterial,
   gearBonus,
   gearBonusFromGear,
   townShopStock,
-  shopMaterialBand,
   maxShopGradeForTier,
   JOB_HIGH_PER_TOWN,
 } from '../equipment.js';
@@ -173,34 +172,22 @@ describe('専用装備の弱点補完 (将軍)', () => {
 });
 
 describe('素材のひきとり (SALE_TUNING)', () => {
-  it('ひきとり対象は MONSTERS の素材ドロップと同期している (消耗品は対象外)', async () => {
-    const { MONSTERS } = await import('../battle.js');
+  it('ひきとり対象は属性の魔石 5 種だけ (消耗品・だいじなものは対象外。D-MATERIAL-001)', async () => {
     const { SELLABLE_MATERIALS, isSellableMaterial } = await import('../equipment.js');
-    const { CONSUMABLE_ITEMS } = await import('../equipment.js');
-    const consumables = new Set(CONSUMABLE_ITEMS);
-    const dropIds = new Set<string>();
-    for (const m of MONSTERS) for (const d of m.drops) if (!consumables.has(d.item)) dropIds.add(d.item);
-    expect([...dropIds].sort()).toEqual([...SELLABLE_MATERIALS].sort());
+    expect([...SELLABLE_MATERIALS].sort()).toEqual(['stone-earth', 'stone-fire', 'stone-void', 'stone-water', 'stone-wind']);
     expect(isSellableMaterial('herb')).toBe(false);
-    expect(isSellableMaterial('slime-drop')).toBe(true);
+    expect(isSellableMaterial('stone-water')).toBe(true);
   });
 
-  it('レートは戦闘→換金ループが赤字になる水準 (cap 基準の最悪値で仮定フリー)', async () => {
+  it('レートは戦闘→換金ループが赤字になる水準 (うん上限の +1 込みの最悪値でも 1 戦のパワー 1 を取りもどせない)', async () => {
     const { MONSTERS } = await import('../battle.js');
-    const { CONSUMABLE_ITEMS, SALE_TUNING, salePowerFor } = await import('../equipment.js');
-    // 各売却可能ドロップの率を cap 0.95 とみなす最悪値 (luk 仮定なし) でも
-    // 1 戦のパワー 1 を回収できないことを固定
-    let worst = 0;
-    const consumables = new Set(CONSUMABLE_ITEMS);
-    for (const m of MONSTERS) {
-      let ev = 0;
-      for (const d of m.drops) if (!consumables.has(d.item)) ev += 0.95;
-      worst = Math.max(worst, ev);
-    }
+    const { SALE_TUNING, salePowerFor } = await import('../equipment.js');
+    const { stonesFor } = await import('../mana-stones.js');
+    const worst = Math.max(...MONSTERS.filter((m) => !m.storyOnly && (m.spawnWeight ?? 1) >= 1).map((m) => stonesFor(m) + 1));
     expect(worst / SALE_TUNING.materialsPerPower).toBeLessThan(1);
-    expect(salePowerFor(4)).toBe(0);
-    expect(salePowerFor(5)).toBe(1);
-    expect(salePowerFor(12)).toBe(2);
+    expect(salePowerFor(14)).toBe(0);
+    expect(salePowerFor(15)).toBe(1);
+    expect(salePowerFor(31)).toBe(2);
   });
 });
 
@@ -331,28 +318,17 @@ describe('townShopStock (品揃えの決定的生成)', () => {
     }
   });
 
-  it('店の素材種は決定的で、その街の危険度で狩れるモンスターの素材 (地元で稼げる)', async () => {
+  it('店の魔石は決定的で、その街の tier で狩れる敵の属性の魔石 (地元で稼げる。D-MATERIAL-001)', async () => {
     const { MONSTERS } = await import('../battle.js');
-    const { regionDanger, tierForRegion } = await import('../world.js');
-    // tier → その tier のモンスターがドロップする素材集合
-    // 店の素材は tier を 3 帯に丸めて引く (#536 で tier が 6 段階になった)。
-    // 期待値も同じ帯で作る = 「その帯の敵が落とす素材か」を検証する。
-    // 帯の定義は equipment.ts の `shopMaterialBand` が単一の正。ここで同じ式を書くと
-    // 敵の tier を動かしたときに片方だけ直して事故る (#536 で実際に起きた)。
-    const dropsOfBand = (tier: number) => {
-      const band = shopMaterialBand(tier);
-      const set = new Set<string>();
-      for (const m of MONSTERS) if (shopMaterialBand(m.tier) === band) for (const d of m.drops) set.add(d.item);
-      return set;
-    };
+    const { tierForRegion } = await import('../world.js');
+    const { STONE_IDS, monsterStoneElement } = await import('../mana-stones.js');
     towns.forEach((t, i) => {
       const stock = townShopStock(t, i);
       expect(townShopStock(t, i).materialId).toBe(stock.materialId); // 決定的
-      const danger = regionDanger(t.region);
       const tier = tierForRegion(t.region); // 店も遭遇も tierForRegion が単一の正
-      expect(dropsOfBand(tier).has(stock.materialId), `${t.name} (danger${danger}) → ${stock.materialId}`).toBe(true);
-      // 消耗品 (やくそう等) が値札に混入する回帰も塞ぐ — ドロップには含まれるため上の検証だけでは通ってしまう
-      expect(isSellableMaterial(stock.materialId), `${t.name} → ${stock.materialId} はひきとり可能素材ではない`).toBe(true);
+      const local = new Set(MONSTERS.filter((m) => m.tier === tier && !m.storyOnly).map((m) => STONE_IDS[monsterStoneElement(m)]));
+      expect(local.has(stock.materialId), `${t.name} (tier${tier}) → ${stock.materialId}`).toBe(true);
+      expect(isSellableMaterial(stock.materialId), `${t.name} → ${stock.materialId} はひきとれる魔石ではない`).toBe(true);
     });
   });
 

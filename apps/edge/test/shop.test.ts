@@ -160,7 +160,7 @@ describe('shopBuy (どうぐを買う、D-ITEM-001)', () => {
     const env = await makeEnv();
     globalThis.fetch = statefulPds(stateAt()).fn;
     await expect(shopBuy(env, DID, { itemId: 'kemuri-dama', rkey: 'n1' }, NOW)).rejects.toMatchObject({ code: 'not_in_stock' });
-    await expect(shopBuy(env, DID, { itemId: 'slime-drop', rkey: 'n2' }, NOW)).rejects.toMatchObject({ code: 'not_for_sale' });
+    await expect(shopBuy(env, DID, { itemId: 'stone-water', rkey: 'n2' }, NOW)).rejects.toMatchObject({ code: 'not_for_sale' });
   });
 
   it('パワー・素材が足りない、上限まで持っている、街の外は 400', async () => {

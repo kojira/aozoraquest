@@ -20,6 +20,8 @@ import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
 import type { Town } from './world.js';
 import { ELEMENT_LABELS, type Element } from './elements.js';
+import { STONE_IDS, allStoneIds, stonePrice } from './mana-stones.js';
+import { townTheme } from './town-theme.js';
 
 /** mulberry32 (battle.ts の createRng と同型)。battle → equipment の import を
  *  可能にするため循環を避けてローカルに持つ。 */
@@ -275,13 +277,12 @@ export function gearBonus(archetype: Archetype, equipIds: readonly string[]): Ge
 
 // ─── 素材のひきとり (素材 → パワー変換) ─────────────────────
 
-/** ひきとりチューニング (素材 → あおぞらパワー。無限ループ防止のためレートは低め)。
- *  レート根拠: 1 戦 = パワー 1 に対し**売却可能素材** (消耗品除く) の期待値は
- *  最大 ~0.7 個 (luk 上振れ cap 0.95) → 5:1 なら回収 ≤0.19 パワーの強い赤字 =
- *  戦闘→換金ループは成立しない (テストで cap 基準の最悪値を固定)。 */
+/** ひきとりチューニング (魔石 → あおぞらパワー。無限ループ防止のためレートは低め)。
+ *  レート根拠 (D-MATERIAL-001): 1 戦 = パワー 1 に対し、1 戦でもらえる魔石は平均 1.1〜3.1 個
+ *  (ひとり・群れなし) → 15:1 なら回収 ≤0.21 パワーの強い赤字 = 戦闘→換金ループは成立しない。 */
 export const SALE_TUNING = {
-  /** この個数の素材 = パワー 1 */
-  materialsPerPower: 5,
+  /** この個数の魔石 = パワー 1 */
+  materialsPerPower: 15,
 } as const;
 
 /** 消耗品 (ひきとり対象外 — それぞれ固有の使い道がある)。後ろ 8 品は戦闘用のどうぐ (D-ITEM-001)。 */
@@ -290,23 +291,8 @@ export const CONSUMABLE_ITEMS: readonly string[] = [
   'nemuri-kona', 'shibire-bari', 'doku-bin', 'kemuri-dama', 'yowari-gusa', 'moroi-suna', 'chikara-no-mi', 'mamori-no-ha',
 ];
 
-/** ひきとり対象 (モンスター素材のみ)。battle.ts の MONSTERS drops と同期
- *  (equipment→battle は循環になるため静的リスト。整合はテストで固定)。 */
-export const SELLABLE_MATERIALS: readonly string[] = [
-  'slime-drop',
-  'red-jelly',
-  'metal-shard',
-  'bat-wing',
-  'dusk-wing',
-  'mush-spore',
-  'crimson-spore',
-  'golem-core',
-  'wisp-ember',
-  'serpent-scale',
-  'raven-feather',
-  'oni-horn',
-  'dragon-fang',
-];
+/** ひきとり対象 = 属性の魔石 5 種 (D-MATERIAL-001)。 */
+export const SELLABLE_MATERIALS: readonly string[] = allStoneIds();
 
 export function isSellableMaterial(id: string): boolean {
   // **だいじなもの (シナリオアイテム) は換金しない** (#426)。売れると進行に要るものを
@@ -487,36 +473,15 @@ export interface ShopStock {
   consumables: string[];
   /** 装備 (EQUIPMENT の id)。特色枠のジョブ専用品を含む */
   equipment: string[];
-  /** この店の値札で要求される素材の種類 (price.materials の個数分)。
-   *  地域のモンスター素材から決定的に選ぶ — 「その地域で狩って買う」ループ */
+  /** 町のテーマの属性 (D-MATERIAL-001)。値札は `shopPriceStones` で、この属性と品の属性から決まる。 */
+  theme: Element;
+  /** 町の魔石 (= STONE_IDS[theme])。属性の無い品・どうぐは、値札の数だけこの魔石で払う。 */
   materialId: string;
 }
 
-/** 店が値札に使う素材の種類 (街ハッシュから決定的)。**その街の危険度で狩れる
- *  モンスターの素材から選ぶ** — 初版は全素材からのハッシュ乱択で、低危険度の
- *  街 23 件中 11 件が周辺で狩れない tier2 素材を要求し「素材が必要だから装備まで
- *  たどり着けない」詰みを作っていた。
- *  街の tier は `tierForRegion` (遭遇と同じ単一の正)。`tierForDanger` を直接呼ぶと
- *  リージョン固有の上書きが反映されず、遭遇 tier7 の街が tier3 の素材を要求する。
- *  素材 id は battle.ts の MONSTERS ドロップ表の直書き複製 — battle → equipment の
- *  既存依存があり MONSTERS から derive すると循環するため。テスト (equipment.test)
- *  が全街ぶんドロップ表と突き合わせて同期を保証する。 */
-/** 店の素材は tier ごと。**その帯の敵が実際に落とすものだけ**を並べる。
- *  帯を 2 tier ぶん幅で丸めていた頃は、tier1 の街が tier2 でしか落ちない
- *  wisp-ember を要求していた (= 一段上の地方まで行かないと値札が読めない)。 */
-const SHOP_MATERIALS_BY_TIER: readonly (readonly string[])[] = [
-  ['slime-drop', 'bat-wing', 'mush-spore'], // tier1 (spawn 近辺)
-  ['dusk-wing', 'crimson-spore', 'wisp-ember'], // tier2
-  ['golem-core', 'serpent-scale', 'metal-shard'], // tier3
-  ['serpent-scale', 'golem-core'], // tier4 (D-ENDGAME-001。D1 で帯の敵の素材に合わせる)
-  ['raven-feather', 'oni-horn'], // tier5
-  ['dragon-fang', 'oni-horn'], // tier6
-];
-/** tier → 素材帯。**equipment.test がこの関数で期待値を組む**ので、帯の定義を
- *  ここ 1 か所に閉じる (テスト側に同じ式を複製すると、敵の tier を動かしたときに
- *  片方だけ直して「テストは緑なのに店が地元で狩れない素材を要求する」に戻る)。 */
+/** 帯 (tier → 0 始まりの段)。**equipment.test がこの関数で期待値を組む**ので、帯の定義をここ 1 か所に閉じる。 */
 export function shopMaterialBand(tier: number): number {
-  return Math.min(SHOP_MATERIALS_BY_TIER.length - 1, Math.max(0, tier - 1));
+  return Math.min(5, Math.max(0, tier - 1));
 }
 
 /**
@@ -531,11 +496,14 @@ export function shopMaterialBand(tier: number): number {
 export function maxShopGradeForTier(tier: number): number {
   return Math.min(6, Math.max(1, tier));
 }
+/** 店の値札の魔石 (町の魔石の id)。 */
 export function shopMaterialFor(town: Town): string {
-  const tier = tierForRegion(town.region);
-  const pool = SHOP_MATERIALS_BY_TIER[shopMaterialBand(tier)]!;
-  const rng = shopRng(((town.x * 40503) ^ (town.y * 89917)) >>> 0);
-  return pool[Math.floor(rng() * pool.length)]!;
+  return STONE_IDS[townTheme(town, tierForRegion(town.region))];
+}
+
+/** その店で、その品を作る/買うときの魔石 (魔石の id → 個数)。品の属性があれば 3 分の 1 をその属性で払う。 */
+export function shopPriceStones(stock: Pick<ShopStock, 'theme'>, price: { materials: number }, element?: Element): Record<string, number> {
+  return stonePrice(price.materials, stock.theme, element);
 }
 
 /**
@@ -576,14 +544,16 @@ export function townShopStock(town: Town, townIndex: number, archetype?: Archety
   // **店ごとの上書きが最優先** (#422)。指定されたフィールドだけ置き換え、残りは生成。
   // 上書きが無い店は従来どおり = 全 53 店を手で埋めさせない。
   const over = shopOverrideAt(town.x, town.y);
-  const generated = over && over.equipment && over.consumables && over.materialId
+  const generated = over && over.equipment && over.consumables
     ? null // 全フィールド上書きなら生成をスキップ (無駄な計算をしない)
     : generatedShopStock(town, townIndex);
+  const theme = townTheme(town, tierForRegion(town.region));
   const stock = over
     ? {
         consumables: over.consumables ?? generated!.consumables,
         equipment: over.equipment ?? generated!.equipment,
-        materialId: over.materialId ?? generated!.materialId,
+        theme,
+        materialId: STONE_IDS[theme],
       }
     : generated!;
   const own = archetype ? ownJobItemFor(town, archetype) : undefined;
@@ -642,5 +612,6 @@ function generatedShopStock(town: Town, townIndex: number): ShopStock {
     }
   }
 
-  return { consumables, equipment, materialId: shopMaterialFor(town) };
+  const theme = townTheme(town, tier);
+  return { consumables, equipment, theme, materialId: STONE_IDS[theme] };
 }

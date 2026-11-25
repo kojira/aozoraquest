@@ -89,10 +89,12 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
   for (const s of shopOverrides()) {
     const from = `店 (${s.x}, ${s.y})`;
     if (kind === 'equipment') for (const id of s.equipment ?? []) push(id, from);
-    if (kind === 'item') {
-      for (const id of s.consumables ?? []) push(id, from);
-      push(s.materialId, from);
+    if (kind === 'item') for (const id of s.consumables ?? []) push(id, from);
+    for (const e of s.exchange ?? []) {
+      if (kind === 'item') push(e.itemId, `${from} の魔石の交換`);
+      if (kind === 'equipment') push(e.equipmentId, `${from} の魔石の交換`);
     }
+    if (kind === 'monster') push(s.favoredMonsterId, from);
   }
   if (kind === 'item') {
     // ドロップ先が消えると、勝利のたびに存在しない id が素材に入る (検証は id の実在を見ない)。

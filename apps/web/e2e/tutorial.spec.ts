@@ -189,7 +189,7 @@ test('Worldの本物の会話・受注・復帰・報告・制作/装備を隔�
     await page.getByRole('button', { name: 'とじる', exact: true }).click();
     // Materials already collected before accepting are handed over by the real handler.
     for (const [id, x, y] of [['futaba-herbs', 9, 13], ['futaba-wings', 22, 13]] as const) {
-      state = { ...state, x, y, materials: { ...state.materials, herb: 3, 'bat-wing': 2 } };
+      state = { ...state, x, y, materials: { ...state.materials, herb: 3, 'stone-wind': 2 } };
       await page.reload();
       await expect(page.getByLabel('ワールドマップ')).toBeVisible();
       await page.keyboard.press('ArrowUp'); await readAll(page);

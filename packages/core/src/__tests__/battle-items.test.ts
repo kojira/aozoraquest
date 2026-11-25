@@ -83,7 +83,7 @@ describe('戦闘のどうぐ (D-ITEM-001)', () => {
     const s = solo({ 'nemuri-kona': 9, 'kemuri-dama': 1, herb: 5 });
     expect(BATTLE_TUNING.battleItemCarryMax).toBe(2);
     expect(s.battleItems).toEqual({ 'nemuri-kona': 2, 'kemuri-dama': 1 });
-    expect(battleItemsFrom({ 'nemuri-kona': 9, herb: 3, 'slime-drop': 4 })).toEqual({ 'nemuri-kona': 9 });
+    expect(battleItemsFrom({ 'nemuri-kona': 9, herb: 3, 'stone-water': 4 })).toEqual({ 'nemuri-kona': 9 });
   });
 
   it('群れで targetIndex=1 なら 2 体目にだけ効く', () => {
@@ -107,10 +107,10 @@ describe('戦闘のどうぐ (D-ITEM-001)', () => {
 
   it('決着で使った数を materials から引く (やくそう・しずくもまとめて、0 は消す)', () => {
     const m = materialsAfterBattleUse(
-      { herb: 3, 'sky-dew': 1, 'nemuri-kona': 2, 'slime-drop': 4 },
+      { herb: 3, 'sky-dew': 1, 'nemuri-kona': 2, 'stone-water': 4 },
       { herbsUsed: 1, tonicsUsed: 1, battleItemsUsed: { 'nemuri-kona': 2 } },
     );
-    expect(m).toEqual({ herb: 2, 'slime-drop': 4 });
+    expect(m).toEqual({ herb: 2, 'stone-water': 4 });
   });
 
   it('古い封印 state (battleItems の欄なし) でも動き、item は たたかう に落ちる', () => {

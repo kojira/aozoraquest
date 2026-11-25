@@ -12,6 +12,7 @@ import {
   MONSTERS_BY_ID,
   ITEMS,
 } from '../battle.js';
+import { formulaStonesFor, stonesFor } from '../mana-stones.js';
 
 describe('summonMonster', () => {
   it('tier ごとのプールから決定的に選ぶ', () => {
@@ -38,21 +39,14 @@ describe('summonMonster', () => {
     expect(stray?.hp).toBeDefined();
   });
 
-  it('色違い強い版: tint + 専用素材 + レア出現 (spawnWeight<1) で差別化されている', () => {
-    // 強い版と専用素材の対応 (変種ごとに専用素材)
-    const variants: Array<[string, string]> = [
-      ['red-slime', 'red-jelly'],
-      ['dusk-bat', 'dusk-wing'],
-      ['crimson-shroom', 'crimson-spore'],
-    ];
-    for (const [id, mat] of variants) {
+  it('色違い強い版: tint + レア出現 (spawnWeight<1) で差別化されている (落とす魔石は 3 倍。D-MATERIAL-001)', () => {
+    for (const id of ['red-slime', 'dusk-bat', 'crimson-shroom']) {
       const m = MONSTERS_BY_ID[id];
       // tier は 6→8 段階になった (#536)。色違いは序盤帯 (tier1-2) にいることを固定する。
       expect(m?.tier).toBeLessThanOrEqual(2);
       expect(m?.tint).toMatch(/^#[0-9a-f]{6}$/i); // 色違い (明示色)
       expect(m?.spawnWeight).toBeLessThan(1); // 出現は base より稀
-      expect(m?.drops.some((d) => d.item === mat)).toBe(true); // 専用素材を落とす
-      expect(ITEMS[mat]).toBeDefined();
+      expect(stonesFor(m!)).toBe(3 * formulaStonesFor({ ...m!, spawnWeight: 1 }));
     }
     // そらいろスライムは最弱の練習敵 (式で最低クラスの XP)。強い版 (red-slime) より低い。
     expect(battleXpFor('sky-slime')).toBeLessThan(battleXpFor('red-slime'));

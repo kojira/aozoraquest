@@ -69,7 +69,7 @@ describe('戦闘のどうぐ (edge, D-ITEM-001)', () => {
   afterEach(() => { globalThis.fetch = orig; setItemOverrides(null); });
 
   it('封印に手持ちの戦闘用どうぐが写る (種類ごと 2 個まで・素材は写らない)', async () => {
-    const gs = GS({ materials: { 'nemuri-kona': 5, herb: 3, 'slime-drop': 2 } });
+    const gs = GS({ materials: { 'nemuri-kona': 5, herb: 3, 'stone-water': 2 } });
     const m = pdsMock(gs);
     globalThis.fetch = m.fn;
     const enc = await sealEncounter(await makeEnv(), USER, gs, 5, 5, 12345, NOW);

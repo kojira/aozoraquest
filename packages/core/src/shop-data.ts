@@ -13,7 +13,8 @@
  * - **壊れた 1 件で全体を落とす** (部分適用しない)
  */
 import { EQUIPMENT_BY_ID } from './equipment.js';
-import { ITEMS } from './battle.js';
+import { ITEMS, MONSTERS_BY_ID } from './battle.js';
+import { ELEMENT_LABELS, type Element } from './elements.js';
 import { characterTokenIssue } from './character-data.js';
 
 export class ShopDataError extends Error {}
@@ -41,11 +42,21 @@ export interface ShopOverride {
   equipment?: string[];
   /** 消耗品 (ITEMS の id)。 */
   consumables?: string[];
-  /** 値札の素材 (ITEMS の id)。 */
-  materialId?: string;
+  /** 町のテーマの属性 (D-MATERIAL-001)。値札・魔石の交換の魔石と、まわりの「よく出る敵」が決まる。 */
+  theme?: Element;
+  /** まわりの「よく出る敵」の上書き (その tier の敵の id)。無ければテーマの属性の敵。 */
+  favoredMonsterId?: string;
+  /** 魔石の交換 (その町の魔石だけで買える品。パワーはいらない)。 */
+  exchange?: ShopExchangeEntry[];
   /** 店主 (#385)。 */
   keeper?: ShopKeeper;
 }
+
+/** 魔石の交換の 1 品。どうぐ (ITEMS) か装備 (EQUIPMENT) のどちらか 1 つと、町の魔石の数。 */
+export type ShopExchangeEntry = ({ itemId: string; equipmentId?: undefined } | { equipmentId: string; itemId?: undefined }) & { stones: number };
+
+/** 1 店の交換の品の数の上限。 */
+export const MAX_SHOP_EXCHANGE = 4;
 
 /** セリフの最大長。長文は DQ の窓に収まらず、情報量の美意識にも反する。 */
 export const MAX_KEEPER_LINE = 60;
@@ -108,9 +119,12 @@ export function setShopOverrides(list: readonly ShopOverride[] | null): void {
       if (!ITEMS[id]) throw new ShopDataError(`${where}: どうぐ id が存在しない (${id})`);
       if (ITEMS[id]!.casinoOnly) throw new ShopDataError(`${where}: カジノの景品は店に並べられない (${id})`);
     }
-    if (s.materialId !== undefined && !ITEMS[s.materialId]) {
-      throw new ShopDataError(`${where}: 素材 id が存在しない (${s.materialId})`);
+    if (s.theme !== undefined && !(s.theme in ELEMENT_LABELS)) throw new ShopDataError(`${where}: テーマの属性が不正 (${String(s.theme)})`);
+    if (s.favoredMonsterId !== undefined && !MONSTERS_BY_ID[s.favoredMonsterId]) {
+      throw new ShopDataError(`${where}: よく出る敵の id が存在しない (${s.favoredMonsterId})`);
     }
+    const exchangeIssue = exchangeIssueOf(s.exchange);
+    if (exchangeIssue) throw new ShopDataError(`${where}: 魔石の交換の${exchangeIssue}`);
     if (s.keeper) {
       for (const [k, v] of Object.entries(s.keeper)) {
         if (v !== undefined && (typeof v !== 'string' || v.length > MAX_KEEPER_LINE)) {
@@ -120,7 +134,12 @@ export function setShopOverrides(list: readonly ShopOverride[] | null): void {
         if (issue) throw new ShopDataError(`${where}: 店主の ${k} の${issue}`);
       }
     }
-    next.set(key(s.x, s.y), { ...s, equipment: s.equipment ? [...s.equipment] : undefined, consumables: s.consumables ? [...s.consumables] : undefined } as ShopOverride);
+    next.set(key(s.x, s.y), {
+      ...s,
+      equipment: s.equipment ? [...s.equipment] : undefined,
+      consumables: s.consumables ? [...s.consumables] : undefined,
+      exchange: s.exchange ? s.exchange.map((e) => ({ ...e })) : undefined,
+    } as ShopOverride);
   }
   overrides = next;
 }
@@ -133,4 +152,28 @@ export function shopOverrideAt(x: number, y: number): ShopOverride | undefined {
 /** エディタ用: 現在の上書き一覧。 */
 export function shopOverrides(): ShopOverride[] {
   return [...overrides.values()].map((s) => ({ ...s }));
+}
+
+/** 交換の品の形を確かめる (問題なければ null)。 */
+function exchangeIssueOf(list: readonly ShopExchangeEntry[] | undefined): string | null {
+  if (list === undefined) return null;
+  if (!Array.isArray(list) || list.length > MAX_SHOP_EXCHANGE) return `品は ${MAX_SHOP_EXCHANGE} 品まで`;
+  const seen = new Set<string>();
+  for (const e of list) {
+    if (!e || typeof e !== 'object') return '形が不正';
+    if (!Number.isInteger(e.stones) || e.stones < 1 || e.stones > 99) return `魔石の数は 1〜99 の整数 (${String(e.stones)})`;
+    const hasItem = typeof e.itemId === 'string';
+    const hasEquip = typeof e.equipmentId === 'string';
+    if (hasItem === hasEquip) return 'itemId か equipmentId のどちらか 1 つ';
+    const id = (hasItem ? e.itemId : e.equipmentId)!;
+    if (seen.has(id)) return `品が重複 (${id})`;
+    seen.add(id);
+    if (hasItem) {
+      if (!ITEMS[id]) return `どうぐ id が存在しない (${id})`;
+      if (ITEMS[id]!.key) return `だいじなものは置けない (${id})`;
+    } else {
+      if (!EQUIPMENT_BY_ID[id]) return `装備 id が存在しない (${id})`;
+    }
+  }
+  return null;
 }

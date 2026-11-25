@@ -11,7 +11,7 @@ import type { ShopOverride } from '@aozoraquest/core';
 /** setField と同じ判定 (実装を変えたらここも落ちる)。 */
 function isEmpty(m: ShopOverride): boolean {
   const hasKeeper = !!m.keeper && Object.values(m.keeper).some((v) => v !== undefined && v !== '');
-  return !m.equipment && !m.consumables && !m.materialId && !hasKeeper;
+  return !m.equipment && !m.consumables && !m.theme && !m.favoredMonsterId && !m.exchange?.length && !hasKeeper;
 }
 
 describe('店の上書きの空判定', () => {
@@ -31,8 +31,9 @@ describe('店の上書きの空判定', () => {
     expect(isEmpty({ ...base, keeper: { name: '' } })).toBe(true);
   });
 
-  it('品揃え・値札があれば空ではない', () => {
+  it('品揃え・町のテーマ・魔石の交換があれば空ではない', () => {
     expect(isEmpty({ ...base, equipment: ['wp-knife'] })).toBe(false);
-    expect(isEmpty({ ...base, materialId: 'herb' })).toBe(false);
+    expect(isEmpty({ ...base, theme: 'fire' })).toBe(false);
+    expect(isEmpty({ ...base, exchange: [{ itemId: 'herb', stones: 3 }] })).toBe(false);
   });
 });

@@ -280,10 +280,10 @@ describe('だいじなもの (シナリオアイテム) (#426)', () => {
 describe('レビュー指摘の回帰 (#426)', () => {
   it('だいじなものは換金できない (既存素材にだいじを付けた場合も)', () => {
     // 敗北ロス除外だけ実装され、換金は静的 allowlist のままだった (レビュー ★★)。
-    expect(isSellableMaterial('slime-drop')).toBe(true);
+    expect(isSellableMaterial('stone-water')).toBe(true);
     try {
-      setItemOverrides({ items: [{ id: 'slime-drop', name: 'スライムのしずく', key: true }], equipment: activeEquipment() });
-      expect(isSellableMaterial('slime-drop')).toBe(false);
+      setItemOverrides({ items: [{ id: 'stone-water', name: 'スライムのしずく', key: true }], equipment: activeEquipment() });
+      expect(isSellableMaterial('stone-water')).toBe(false);
     } finally {
       setItemOverrides(null);
     }
@@ -317,13 +317,13 @@ describe('サンプルシナリオ (#545)', () => {
 
     // 3 段目: 2 段目のフラグ + しずく
     setScenario([SAMPLE_SCENARIO[2]!]);
-    expect(pendingScenario(progress({ materials: { 'slime-drop': 1 } })).fired).toHaveLength(0);
-    expect(pendingScenario(progress({ flags: ['ch2_herbs'], materials: { 'slime-drop': 1 } })).fired.map((e) => e.id)).toEqual(['sample-3']);
+    expect(pendingScenario(progress({ materials: { 'stone-water': 1 } })).fired).toHaveLength(0);
+    expect(pendingScenario(progress({ flags: ['ch2_herbs'], materials: { 'stone-water': 1 } })).fired.map((e) => e.id)).toEqual(['sample-3']);
   });
 
   it('条件が一度に揃えば 3 つまとめて発火する (連鎖が 1 回で解ける)', () => {
     setScenario(SAMPLE_SCENARIO);
-    const r = pendingScenario(progress({ materials: { herb: 3, 'slime-drop': 1 } }));
+    const r = pendingScenario(progress({ materials: { herb: 3, 'stone-water': 1 } }));
     expect(r.fired.map((e) => e.id)).toEqual(['sample-1', 'sample-2', 'sample-3']);
     expect(r.flags).toEqual(['ch1_start', 'ch2_herbs', 'ch3_proof']);
   });

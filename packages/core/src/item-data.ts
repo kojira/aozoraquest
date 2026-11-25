@@ -14,6 +14,7 @@ import type { SkillEffect } from './skills.js';
 import { EQUIPMENT, EQUIPMENT_BY_ID, JOB_EQUIP_KINDS, type EquipmentDef } from './equipment.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { characterTokenIssue } from './character-data.js';
+import { STONE_IDS, STONE_NAMES } from './mana-stones.js';
 
 export class ItemDataError extends Error {}
 
@@ -56,6 +57,8 @@ export function setItemOverrides(rec: { items: readonly ItemDefData[]; equipment
 
   for (const k of Object.keys(ITEMS)) delete ITEMS[k];
   for (const { id, ...def } of items) ITEMS[id] = def;
+  // 魔石 5 種はコードのきまり (D-MATERIAL-001)。レコードに無くても必ずある (名前だけはレコードで変えられる)。
+  for (const e of Object.keys(STONE_IDS) as (keyof typeof STONE_IDS)[]) ITEMS[STONE_IDS[e]] ??= { name: STONE_NAMES[e] };
 
   (EQUIPMENT as EquipmentDef[]).splice(0, EQUIPMENT.length, ...equipment.map((e) => ({ ...e })));
   for (const k of Object.keys(EQUIPMENT_BY_ID)) delete EQUIPMENT_BY_ID[k];

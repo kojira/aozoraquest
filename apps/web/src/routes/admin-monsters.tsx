@@ -477,7 +477,7 @@ export function AdminMonsters() {
               ))}
               <button
                 type="button"
-                onClick={() => update(current.id, { drops: [...current.drops, { item: 'slime-drop', chance: 0.2 }] })}
+                onClick={() => update(current.id, { drops: [...current.drops, { item: 'herb', chance: 0.2 }] })}
                 style={{ fontSize: '0.8em', marginTop: '0.2em' }}
               >
                 ＋ドロップ

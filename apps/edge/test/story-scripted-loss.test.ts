@@ -65,7 +65,7 @@ describe('台本負けのストーリー戦 (scripted)', () => {
 
   it('負けても素材・パワーは減らず、その場 (内部マップ) に残る。HP/MP は 1。loseFlag とお知らせが返る', async () => {
     const env = await makeEnv();
-    const before = GS({ power: 50, materials: { 'slime-drop': 5, 'bat-wing': 3 }, mapId: 'nest', x: 4, y: 5, lastTown: { x: 320, y: 448 } });
+    const before = GS({ power: 50, materials: { 'stone-water': 5, 'stone-wind': 3 }, mapId: 'nest', x: 4, y: 5, lastTown: { x: 320, y: 448 } });
     const m = pds(before);
     globalThis.fetch = m.fn;
     const enc = await sealEncounter(env, USER, before, 4, 5, 1, NOW, undefined, undefined, 'nest', storyBattleById('b-x'));
@@ -77,7 +77,7 @@ describe('台本負けのストーリー戦 (scripted)', () => {
     expect(res.scenarioNotices).toEqual(['とどめは来なかった。']);
     const gs = m.gs();
     expect(gs.power).toBe(50);
-    expect(gs.materials).toEqual({ 'slime-drop': 5, 'bat-wing': 3 });
+    expect(gs.materials).toEqual({ 'stone-water': 5, 'stone-wind': 3 });
     expect({ mapId: gs.mapId, x: gs.x, y: gs.y }).toEqual({ mapId: 'nest', x: 4, y: 5 });
     expect({ hp: gs.carryHp, mp: gs.carryMp }).toEqual({ hp: 1, mp: 1 });
     expect(gs.flags).toEqual(['lost-x', 'x-spared']);
@@ -100,7 +100,7 @@ describe('本編のボス戦に負けたとき (canFlee false)', () => {
 
   const fight = async (id: string) => {
     const env = await makeEnv();
-    const before = GS({ power: 50, materials: { 'slime-drop': 5, 'bat-wing': 3 }, x: 4, y: 5, lastTown: { x: 320, y: 448 } });
+    const before = GS({ power: 50, materials: { 'stone-water': 5, 'stone-wind': 3 }, x: 4, y: 5, lastTown: { x: 320, y: 448 } });
     const m = pds(before);
     globalThis.fetch = m.fn;
     const enc = await sealEncounter(env, USER, before, 4, 5, 1, NOW, undefined, undefined, undefined, storyBattleById(id));
@@ -112,7 +112,7 @@ describe('本編のボス戦に負けたとき (canFlee false)', () => {
     const { res, gs, m } = await fight('b-boss');
     expect(res.outcome).toBe('lose');
     expect(gs.power).toBe(50);
-    expect(gs.materials).toEqual({ 'slime-drop': 5, 'bat-wing': 3 });
+    expect(gs.materials).toEqual({ 'stone-water': 5, 'stone-wind': 3 });
     expect(res.awarded?.materialsLost ?? []).toEqual([]);
     expect(res.awarded?.powerSpent ?? 0).toBe(0);
     expect(gs.flags).toContain('lost-boss');

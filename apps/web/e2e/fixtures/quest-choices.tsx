@@ -11,7 +11,7 @@ const WELL: NpcDef = { id: 'well', name: '井戸番', x: 1, y: 1, lines: ['井�
 const KID: NpcDef = { id: 'kid', name: '町の こども', x: 2, y: 1, lines: ['あそぼ'] };
 const talk = (id: string, title: string, npcId: string): GameQuestDef => ({ id, title, npcId: 'well', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'talk', npcId, line: 'やあ' } });
 const quests = [talk('well-lord', 'かれ井戸の ぬし', 'well'), talk('well-seed', 'かれ井戸の たね', 'kid'),
-  { ...talk('well-drop', 'しずくあつめ', 'well'), objective: { kind: 'collect' as const, itemId: 'slime-drop', count: 2 } }];
+  { ...talk('well-drop', 'しずくあつめ', 'well'), objective: { kind: 'collect' as const, itemId: 'stone-water', count: 2 } }];
 setNpcs([WELL, KID]);
 setGameQuests(quests);
 
