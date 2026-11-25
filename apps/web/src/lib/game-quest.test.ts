@@ -93,3 +93,16 @@ it('条件/報酬の行はギルド詳細と「クエスト」窓で同じ', () 
   expect(questTermsLine(q)).toBe(`条件: ${MON.name}を3体。報酬: あおぞらパワー3。`);
   expect(guildQuestDetailLines(q)).toContain(questTermsLine(q));
 });
+
+it('ギルド詳細は条件・報酬・納品・一人一度を 1 回ずつだけ言う (I-07)', () => {
+  const q = { ...Q2, reward: { itemId: 'herb', count: 2, power: 5 } };
+  const lines = guildQuestDetailLines(q);
+  const count = (re: RegExp) => lines.filter(l => re.test(l)).length;
+  expect(count(/報酬/)).toBe(1);
+  expect(count(/渡します/)).toBe(1);
+  expect(count(/一人一度/)).toBe(1);
+  // 条件・報酬の行の後は 1 行にまとめる (390px の会話窓で送る回数を減らす)
+  expect(lines.slice(lines.indexOf(questTermsLine(q)) + 1)).toEqual(['報告が成功するとやくそうを2こ渡します。今の所持品も使えます。一人一度の依頼です。']);
+  // 討伐の依頼は納品の説明が無く、一人一度だけ
+  expect(guildQuestDetailLines(Q1).slice(-1)).toEqual(['一人一度の依頼です。']);
+});
