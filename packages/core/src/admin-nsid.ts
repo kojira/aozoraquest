@@ -63,6 +63,7 @@ export const LXM = {
   shopBuy: `${AQ_NSID_ROOT}.shop.buy`,
   shopForge: `${AQ_NSID_ROOT}.shop.forge`,
   shopDiscard: `${AQ_NSID_ROOT}.shop.discard`,
+  shopExchange: `${AQ_NSID_ROOT}.shop.exchange`,
   adminPdsUsage: `${AQ_NSID_ROOT}.admin.pdsUsage`,
   questAccept: `${AQ_NSID_ROOT}.quest.accept`,
   questComplete: `${AQ_NSID_ROOT}.quest.complete`,

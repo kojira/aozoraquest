@@ -5,7 +5,7 @@
  */
 import {
   startBattle, battleItemsFrom, jobLevelFromXp, playerLevelFromXp, partyCapacity, partyDefsOf, partyMembers, recruitById,
-  wrap, regionOf, regionAffinity, questEncounterFocus, tierForRegion, worldOverlay, BATTLE_TUNING, type Tier,
+  wrap, regionOf, regionFavorAffinity, questEncounterFocus, tierForRegion, worldOverlay, BATTLE_TUNING, type Tier,
   type BattleState,
   WORLD_MAP_ID, WORLD_SIZE,
   interiorById,
@@ -108,9 +108,9 @@ export async function sealEncounter(env: ResolverEnv, userDid: string, state: Ga
   const members = story?.scripted ? [] : partyMembers(partyDefsOf(state.party, recruitById, jobLevel), jobLevel, partyCarryOf(state.party));
   const battle = startBattle(archetype, jobLevel, playerLevel, handle, tier, monsterSeed, state.materials['herb'] ?? 0, { hp: state.carryHp, mp: state.carryMp }, {
     baseStats, gear: state.gearSel, tonics: state.materials['sky-dew'] ?? 0, battleItems: battleItemsFrom(state.materials), vitalsVariance: BATTLE_TUNING.monsterVitalsVariance,
-    // 地域の相性 (docs/19)。フィールドだけ (内部マップは region が常に 0)。画面の「よく出る敵」と同じ値 (#1022)。
+    // 地域の相性 (docs/19)。フィールドだけ (内部マップは region が常に 0)。画面の「よく出る敵」と同じ値 (#1022)。町の地方はテーマの属性の敵 (D-MATERIAL-001)。
     // 受注中の討伐依頼の敵は、依頼主の街のリージョンで出やすい (D-EARLY-001)。相性と同じくフィールドだけ。
-    ...(mapId === WORLD_MAP_ID ? { affinity: regionAffinity(regionOf(x, y)), focus: questEncounterFocus(state.activeQuests, regionOf(x, y)) } : {}),
+    ...(mapId === WORLD_MAP_ID ? { affinity: regionFavorAffinity(tier, regionOf(x, y)), focus: questEncounterFocus(state.activeQuests, regionOf(x, y)) } : {}),
     // ストーリー戦は定義の敵で固定 (ふたばの近くでも)。同じ敵を count 体。
     // 群れ (D-PARTY-001) はパーティを組めるようになってから (partyCapacity > 1 = futaba_letter_done)。数は戦闘に出る人数で決まる (D-PARTY-005)。
     // ふたばの近くとストーリー戦は今のまま。
