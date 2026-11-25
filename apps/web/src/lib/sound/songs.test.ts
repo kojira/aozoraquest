@@ -13,7 +13,7 @@ describe('曲と効果音のデータ (D-SOUND-001)', () => {
     expect(peak).toBeLessThan(1);
   });
   it('場面の曲はループし、ループの終わり = PCM の終わり (継ぎ目がずれない)。ジングルはループしない', () => {
-    for (const song of [SONGS.field, SONGS.town, SONGS.battle, SONGS.boss, SONGS.victory]) {
+    for (const song of [SONGS.field, SONGS.field2, SONGS.field3, SONGS.town, SONGS.title, SONGS.battle, SONGS.boss, SONGS.final, SONGS.victory, SONGS.casino]) {
       const p = renderSong(song);
       expect(p.loopStart).toBeGreaterThanOrEqual(0);
       expect(p.loopStart!).toBeLessThan(p.loopEnd!);

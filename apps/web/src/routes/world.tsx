@@ -292,8 +292,11 @@ function WorldScreen() {
   const [lineHp, setLineHp] = useState<{ key: string; hp: number; hit: boolean } | null>(null);
   const lineHpKey = battle ? `${battle.battleId}:${battle.state.turn}` : '';
   const hudLineHp = battle?.phase === 'message' && lineHp?.key === lineHpKey ? lineHp : null;
-  // BGM (D-SOUND-001): 場面 (外・街と建物の中・戦闘・ボス・決着) から曲を決める。
-  useWorldSound(worldSound(!!ws, battle, !!ws && (!!ws.mapId || !!townAt(ws.x, ws.y))));
+  // BGM (D-SOUND-001): 場面 (外の地方・街と建物の中・導入・カジノ・戦闘・ボス・決着) から曲を決める。
+  useWorldSound(worldSound({
+    loaded: !!ws, battle, indoors: !!ws && (!!ws.mapId || !!townAt(ws.x, ws.y)), tier: ws ? tierForRegion(regionOf(ws.x, ws.y)) : 1,
+    opening: !!onboarding, casino: !!casino.casinoSpot,
+  }));
 
   // タイル実寸の追従 (アバターオーバーレイ用)
   useEffect(() => {

@@ -1,7 +1,9 @@
 /** D-SOUND-001 §3: 場面ごとの曲とジングル。 */
 import { describe, expect, it } from 'vitest';
 import { MONSTERS, setMonsterOverrides } from '@aozoraquest/core';
-import { worldSound, type WorldSoundBattle } from './world-sound-scene';
+import { worldSound as worldSoundOf, type WorldSoundBattle } from './world-sound-scene';
+
+const worldSound = (loaded: boolean, battle: WorldSoundBattle | null, indoors: boolean) => worldSoundOf({ loaded, battle, indoors, tier: 1, opening: false, casino: false });
 import { battleLineSe } from './battle-line-se';
 
 const b = (over: Partial<WorldSoundBattle> & { outcome?: string; monsterId?: string; story?: { canFlee: boolean } }): WorldSoundBattle => ({
@@ -40,5 +42,22 @@ describe('戦闘の行の効果音 (D-SOUND-001 §4)', () => {
     expect(battleLineSe('たびびとの魔法!')).toBe('spell');
     expect(battleLineSe('スライムに5のダメージ。スライムをたおした!')).toBe('defeat');
     expect(battleLineSe('HPが12回復。')).toBe('heal');
+  });
+});
+
+describe('地方・タイトル・イービル・マスク・カジノ (D-SOUND-001 PR3)', () => {
+  const at = (over: Partial<Parameters<typeof worldSoundOf>[0]>) => worldSoundOf({ loaded: true, battle: null, indoors: false, tier: 1, opening: false, casino: false, ...over }).scene;
+  it('外の曲は地方の危険度で 3 つ: tier 1–2 field / 3–5 field2 / 6–8 field3', () => {
+    expect([1, 2, 3, 5, 6, 8].map((tier) => at({ tier }))).toEqual(['field', 'field', 'field2', 'field2', 'field3', 'field3']);
+    expect(at({ tier: 7, indoors: true })).toBe('town');
+  });
+  it('はじめての開始の会話は title、カジノを開いている間は casino', () => {
+    expect(at({ opening: true, indoors: true })).toBe('title');
+    expect(at({ casino: true, indoors: true })).toBe('casino');
+  });
+  it('イービル・マスク (2 つめの姿も) は final。勝てば victory', () => {
+    expect(at({ battle: b({ monsterId: 'mask-1', story: { canFlee: false } }) })).toBe('final');
+    expect(at({ battle: b({ monsterId: 'mask-2', story: { canFlee: false } }) })).toBe('final');
+    expect(at({ battle: b({ monsterId: 'mask-2', phase: 'result', outcome: 'win' }) })).toBe('victory');
   });
 });
