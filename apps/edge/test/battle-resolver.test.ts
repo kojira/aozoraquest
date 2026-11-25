@@ -4,7 +4,7 @@ import { base64urlnopad } from '@scure/base';
 import { sealEncounter, handleMove, handleTeleport, handleTurn, handleReset, migrateInitState, initialPosition, resetNoMonstersLog, ResolverError, GUARD_TTL_SEC, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { handleInnRest } from '../src/inn-rest';
-import { clearMonsters, setMonsterOverrides, startBattle, tierForRegion, regionOf, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
+import { clearMonsters, setMonsterOverrides, startBattle, tierForRegion, regionOf, regionAffinity, wrap, BASE_PALETTE, setGameQuests, setInteriors, setNpcs, terrainAt, isWalkable, worldOverlay, type Command, type InteriorMap } from '@aozoraquest/core';
 import { XP_EPOCH, type GameState } from '../src/game-state';
 import { signPosition } from '../src/world-token';
 import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
@@ -87,7 +87,7 @@ describe('battle-resolver (サーバー権威 移動/戦闘)', () => {
         expect(r.monsterId).toBe('sky-slime');
       }
       const x = wrap(c.x + 9), y = c.y;
-      const expected = startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(x, y)), seed).monsterId;
+      const expected = startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(x, y)), seed, 0, undefined, { affinity: regionAffinity(regionOf(x, y)) }).monsterId;
       expect((await sealEncounter(env, USER, GS(), x, y, seed, NOW)).monsterId).toBe(expected);
       const inside = await sealEncounter(env, USER, GS(), c.x, c.y, seed, NOW, undefined, undefined, 'test-interior');
       expect(inside.monsterId).toBe(startBattle('warrior', 1, 1, 'test', tierForRegion(regionOf(c.x, c.y)), seed).monsterId);
