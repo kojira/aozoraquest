@@ -4,7 +4,7 @@ import { ITEMS, MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, itemTarge
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
-import { battleHpOf, battleLineHps, battleMessageLines } from '@/lib/battle-message-lines';
+import { battleHpOf, battleLineHps, battleMessageLines, splitBattleLine } from '@/lib/battle-message-lines';
 import { BattleItemRows, hasAnyBattleItem } from './battle-item-menu';
 import { BattleEnemyRow } from './battle-enemy-row';
 import { BattleAllyRow } from './battle-ally-row';
@@ -161,12 +161,13 @@ export function WorldBattleControls({
   useEffect(() => {
     onLineHpRef.current?.(state.turn, lineHp.player, playerHit);
   }, [state.turn, lineIndex, lineHp.player, playerHit]);
-  // 行が出たときの効果音 (D-SOUND-001 §4): ダメージの行は hit、回復の行は heal。
+  // 行が出たときの効果音 (D-SOUND-001 §4): 味方の攻撃は hit、敵からは damage、会心・じゅもん・回復・たおした。
   const shownLine = phase === 'message' ? messageLines[lineIndex] ?? '' : '';
+  const shownActor = phase === 'message' && state.turn > 0 ? state.lastEvents.flatMap((e) => splitBattleLine(e.text).map(() => e.actor))[lineIndex] : undefined;
   useEffect(() => {
-    const se = battleLineSe(shownLine);
+    const se = battleLineSe(shownLine, shownActor);
     if (se) soundPlayer.playSe(se);
-  }, [typingKey, shownLine]);
+  }, [typingKey, shownLine]); // eslint-disable-line react-hooks/exhaustive-deps -- 行が変わったときだけ
   /** 送り (窓・全画面送り面の共通): タイプ中→全文 / 次の行あり→1 行出す / 最後→onAdvance。 */
   const advance = () => {
     if (busy) return; // 処理中は送らない

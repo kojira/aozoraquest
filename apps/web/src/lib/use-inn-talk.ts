@@ -5,6 +5,7 @@ import type { DialogueChoice, DialogueLine } from '@/lib/dialogue';
 import { serverInnRest, WorldServerError } from '@/lib/world-server';
 import { hereName, sceneDialogue } from '@/lib/scene-dialogue';
 import type { Vitals } from '@/lib/world-view';
+import { soundPlayer } from '@/lib/sound/sound-player';
 
 /** 宿屋の会話の段 (#766)。ask の段だけ はい/いいえ を出す。 */
 export interface InnTalk { lines: DialogueLine[]; ask?: { price: number } }
@@ -49,6 +50,7 @@ export function useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServ
       if (res.inn) {
         setServerPower(res.inn.power);
         if (res.inn.paid > 0) {
+          soundPlayer.playJingle('inn');
           const cur = wsRef.current;
           if (cur) {
             const next = { ...cur, hp: null, mp: null };
