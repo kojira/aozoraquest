@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
-import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, RECRUIT_GACHA, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, RECRUIT_GACHA, withCharacterNames, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import { scenarioMessagesOf, serverPartyCandidates, serverPartyReroll, serverPartySet, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter, type ServerParty } from '@/lib/world-server';
 import { PARTY_LINES } from '@/lib/party-lines';
 import { bondUpLines } from '@/lib/bond-view';
@@ -63,7 +63,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       const res = await serverQuestAccept(agent, questId, tokenRef.current);
       setQuest(questStateOf(res));
       if (res.flags) flagsRef.current = res.flags;
-      setNotice(`「${gameQuestById(questId)?.title ?? questId}」を請け負った!`);
+      setNotice(`「${withCharacterNames(gameQuestById(questId)?.title ?? questId)}」を請け負った!`); // 地図の下の知らせは会話窓を通らないので名前をここで入れる (D-CHAR-001)
       setNpcTalk(null);
       // 受注で始まる戦闘 (startBattle)。受注のセリフの直後に始まる。
       if (res.encounter) startEncounterRef.current(res.encounter);
@@ -270,7 +270,7 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       { label: '受注する', onSelect: async () => {
         try {
           if (await acceptQuest(acceptQuestId)) return;
-          guildMessage(npc, [`『${gameQuestById(acceptQuestId)?.title ?? acceptQuestId}』を請け負った！`, 'そろったらギルドで報告してね。']);
+          guildMessage(npc, [`『${withCharacterNames(gameQuestById(acceptQuestId)?.title ?? acceptQuestId)}』を請け負った！`, 'そろったらギルドで報告してね。']);
         } catch (e) {
           guildMessage(npc, [e instanceof WorldServerError ? e.message : '通信に失敗した…もう一度確かめてね。']);
         }
