@@ -9,7 +9,7 @@
  * 読み取りは public getRecord (SERVER_PDS_URL/SERVER_DID、認証不要)。**書き込みは M2.5 の OAuth
  * (DPoP) トークン経由** (server-pds)。ユーザー由来のリクエストは書き込みトークンを持てない。
  */
-import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, worldOverlay, type AllyMode, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
+import { dropShieldIfHandsExceeded, EQUIPMENT_BY_ID, GEAR_SLOTS, isGeneratedRecruitId, partyDefsOf, recruitById, withoutLegacyMaterials, worldOverlay, type AllyMode, type GearSelection, type PartyRecruit } from '@aozoraquest/core';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { getRecord } from './pds';
@@ -275,6 +275,9 @@ export function normalizeState(state: GameState): GameState {
     state = { ...rest, activeQuests: state.activeQuests ?? [] };
   }
   if (state.openedSpots && new Set(state.openedSpots).size !== state.openedSpots.length) state = { ...state, openedSpots: [...new Set(state.openedSpots)] };
+  // 魔石になる前の素材は捨てる (D-MATERIAL-001。dev は誰も遊んでいないので移しかえない)。
+  const materials = withoutLegacyMaterials(state.materials ?? {});
+  if (materials !== state.materials) state = { ...state, materials };
   if ((state.xpEpoch ?? 0) >= XP_EPOCH) return state;
   // **位置も spawn に戻す。** Lv1 に戻したのに立ち位置が奥地のままだと、想定 Lv8 以上の
   // 敵に Lv1 で遭遇し、負けるたびに素材を失う死にループに入る (帰還先の lastTown も

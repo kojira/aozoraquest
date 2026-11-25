@@ -22,7 +22,10 @@ import { interiorShopAt, GEAR_SLOTS, gearKey, overWorn,
   SEARCH_TUNING,
   craftLevelRoll,
   craftSeedFromRkey,
+  canPayStones,
   isSellableMaterial,
+  payStones,
+  shopPriceStones,
   salePowerFor,
   townAt,
   townShopStock,
@@ -153,14 +156,12 @@ export async function shopCraft(
       const { stock } = shopAt(cur, input.pos, input.archetype);
       if (!stock.equipment.includes(def.id)) throw new ShopError('この街では扱っていない', 400, 'not_in_stock');
       if (cur.power < def.price.power) throw new ShopError('あおぞらパワーが たりない', 400, 'no_power');
-      const have = cur.materials[stock.materialId] ?? 0;
-      if (have < def.price.materials) throw new ShopError('素材が たりない', 400, 'no_material');
+      // 値札は町の魔石。属性つきの品は 3 分の 1 をその属性の魔石で払う (D-MATERIAL-001。きまりは core)。
+      const cost = shopPriceStones(stock, def.price, def.element);
+      if (!canPayStones(cur.materials, cost)) throw new ShopError('魔石が たりない', 400, 'no_material');
       // 強化値は rkey から決定的に引く (同じ rkey の再試行で値が変わらない = 冪等)。
       level = craftLevelRoll(craftSeedFromRkey(input.rkey), input.luk);
-      const materials = { ...cur.materials };
-      const left = have - def.price.materials;
-      if (left > 0) materials[stock.materialId] = left;
-      else delete materials[stock.materialId];
+      const materials = payStones(cur.materials, cost);
       // **個体も権威側で持つ** (#551 段階 2)。ここに無い個体は装備できない。
       assertRoomForPiece(cur);
       const pieces: OwnedPiece[] = [...(cur.pieces ?? []), { rkey: input.rkey, itemId: def.id, level }];
@@ -200,14 +201,11 @@ export async function shopBuy(
       const { stock } = shopAt(cur, input.pos);
       if (!stock.consumables.includes(input.itemId)) throw new ShopError('この街では扱っていない', 400, 'not_in_stock');
       if (cur.power < price.power) throw new ShopError('あおぞらパワーが たりない', 400, 'no_power');
-      const have = cur.materials[stock.materialId] ?? 0;
-      if (have < price.materials) throw new ShopError('素材が たりない', 400, 'no_material');
+      const cost = shopPriceStones(stock, price);
+      if (!canPayStones(cur.materials, cost)) throw new ShopError('魔石が たりない', 400, 'no_material');
       const owned = cur.materials[input.itemId] ?? 0;
       if (owned >= MAX_ITEM_STACK) throw new ShopError(`これ以上は もてない (${MAX_ITEM_STACK} 個)`, 400, 'stack_full');
-      const materials = { ...cur.materials };
-      const left = have - price.materials;
-      if (left > 0) materials[stock.materialId] = left;
-      else delete materials[stock.materialId];
+      const materials = payStones(cur.materials, cost);
       materials[input.itemId] = (materials[input.itemId] ?? 0) + 1;
       return { ...cur, power: cur.power - price.power, materials, shopOps: withOp(cur, opKey) };
     },
@@ -240,7 +238,7 @@ export async function shopSell(
       duplicate = false;
       shopAt(cur, input.pos); // 街の外ではひきとってもらえない
       const have = cur.materials[input.materialId] ?? 0;
-      if (have < count) throw new ShopError('素材が たりない', 400, 'no_material');
+      if (have < count) throw new ShopError('魔石が たりない', 400, 'no_material');
       // 端数は切り捨て (レートは core が単一の正)。実際に減らすのは換算できたぶんだけ。
       powerGained = salePowerFor(count);
       if (powerGained <= 0) throw new ShopError(`${SALE_TUNING.materialsPerPower} 個から ひきとれる`, 400, 'too_few');
@@ -313,7 +311,7 @@ export async function shopForge(
  * 所持上限に空きがあるか。**上限に達したら黙って古いものを消さず、断る。**
  * 消すと「知らないうちに装備が無くなっていた」になり、原因も追えない。
  */
-function assertRoomForPiece(state: GameState): void {
+export function assertRoomForPiece(state: GameState): void {
   if (heldPieceCount(state) >= MAX_OWNED_PIECES) {
     throw new ShopError(`もちものが いっぱいだ (${MAX_OWNED_PIECES} 個)。すてるか きたえて へらしてほしい`, 400, 'pieces_full');
   }
