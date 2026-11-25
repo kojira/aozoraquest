@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { revealedTowns, nearestTown } from './world-map-modal';
+import { revealedTowns, nearestTown, visibleStoryTown } from './world-map-modal';
 import type { Town } from '@aozoraquest/core';
 
 const towns: Town[] = [
@@ -34,5 +34,17 @@ describe('revealedTowns (ちずのかけらの開示フィルタ)', () => {
   it('かけらゼロなら街もゼロ (全図が見える回帰を塞ぐ)', () => {
     const towns = [{ x: 10, y: 10, region: 0, name: 'a' }] as any[];
     expect(revealedTowns(towns, [])).toEqual([]);
+  });
+});
+
+describe('visibleStoryTown (次の目的地は霧の外だけ。D-EARLY-002)', () => {
+  const homura = { x: 320, y: 448, region: 26, name: 'ほむらの街' };
+  it('解禁済みリージョンの街なら出す', () => {
+    expect(visibleStoryTown(homura, [17, 26])).toEqual(homura);
+  });
+  it('霧の中・目的地なしなら出さない', () => {
+    expect(visibleStoryTown(homura, [17, 18])).toBeNull();
+    expect(visibleStoryTown(null, [26])).toBeNull();
+    expect(visibleStoryTown(undefined, [26])).toBeNull();
   });
 });

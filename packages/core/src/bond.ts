@@ -70,7 +70,7 @@ export function bondAfter(rec: BondRecord, gains: readonly BondGain[]): BondResu
   };
 }
 
-/** 本編のクエストか (シナリオの条件 questDone に出てくる)。 */
+/** 本編のクエストか (シナリオの条件 questDone に出てくる)。地図の次の目的地は、終わりに至る鎖だけを見る別の基準 (main-story.ts の mainStorySteps)。 */
 export function isMainQuest(questId: string): boolean {
   return scenarioEvents().some((e) => e.when.some((c) => c.kind === 'questDone' && c.questId === questId));
 }
