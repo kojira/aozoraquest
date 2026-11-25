@@ -117,6 +117,42 @@ describe('本編の次の目的地 (D-EARLY-002)', () => {
     expect(nextMainQuest(fresh({ questsDone: ['a-second'] }))?.id).toBe('a-first');
   });
 
+  it('同じアイテムを本編とサイドの両方が出すとき、本編で手に入れたらサイドは目的にならない', () => {
+    setup();
+    // つぎの本編 (gate) は品物 3 個で開く。品物は本編の main-a と、サイドの side-s (先に並ぶ・誰でも受けられる) の両方が出す
+    setGameQuests([
+      quest('side-s', 'innkeeper', { reward: { itemId: 'slime-drop', count: 3 } }),
+      quest('main-a', 'elder', { reward: { itemId: 'slime-drop', count: 3 } }),
+      quest('gate', 'otaki-host', { requireItems: [{ itemId: 'slime-drop', count: 3 }] }),
+    ]);
+    setScenario([{ id: 'end', title: 'e', when: [{ kind: 'questDone', questId: 'gate' }], setFlags: [STORY_END_FLAG] }]);
+    const afterA = fresh({ questsDone: ['main-a'], materials: { 'slime-drop': 3 } });
+    expect(nextMainQuest(afterA)?.id).toBe('gate');
+    expect(nextStoryTown(afterA)).toEqual(townAt(OTAKI.x, OTAKI.y));
+    // 足りなければ、まだ品物を出せる道が目的になる
+    expect(nextMainQuest(fresh({ questsDone: ['main-a'], materials: { 'slime-drop': 1 } }))?.id).toBe('side-s');
+    // 受注中の本編は、品物を使い切っていても目的
+    expect(nextMainQuest(fresh({ questsDone: ['main-a'], activeQuests: [{ id: 'gate' }] }))?.id).toBe('gate');
+  });
+
+  it('深さ = 要る本編クエストの数。条件なしのイベントのフラグも、誰も出さないアイテムも、要る本編は 0 件', () => {
+    setup();
+    setGameQuests([
+      quest('q-after', 'elder', { requireFlags: ['first_done'] }),
+      quest('q-drop', 'elder', { requireItems: [{ itemId: 'herb' }] }),
+      quest('q-open', 'elder', { requireFlags: ['opening_seen'] }),
+      quest('q-first', 'elder'),
+    ]);
+    setScenario([
+      { id: 'opening', title: 'o', when: [], setFlags: ['opening_seen'] },
+      { id: 'first', title: 'f', when: [{ kind: 'questDone', questId: 'q-first' }], setFlags: ['first_done'] },
+      { id: 'end', title: 'e', when: ['q-after', 'q-drop', 'q-open'].map((questId) => ({ kind: 'questDone' as const, questId })), setFlags: [STORY_END_FLAG] },
+    ]);
+    expect(mainStorySteps().map((s) => [s.quest.id, s.depth])).toEqual([
+      ['q-drop', 0], ['q-open', 0], ['q-first', 0], ['q-after', 1],
+    ]);
+  });
+
   it('ending_seen が立ったら出さない。本編が無いデータも出さない', () => {
     setup();
     expect(nextStoryTown(fresh({ flags: [STORY_END_FLAG] }))).toBeNull();
