@@ -12,6 +12,8 @@
  * docs/19-overworld.md「マップ上オーバーレイの層」に対応。
  */
 
+import { SOUND_MUTE_BUTTON_SIZE } from './sound/sound-mute-button';
+
 export const HUD_Z = 2;
 /** 操作オーバーレイ (コマンドメニュー・戦闘、pointerEvents: auto)。HUD の 1 つ上。 */
 export const OVERLAY_Z = HUD_Z + 1;
@@ -91,12 +93,12 @@ export function WorldHud({
           </div>
         )}
       </div>
-      {/* 右上: 現在地 */}
+      {/* 右上: 現在地。いちばん右は 🔊/🔇 (SoundMuteButton) の場所なので、その左に置く */}
       {locationLabel !== null && <div
         data-hud-location
         style={{
           ...panel,
-          right: 6,
+          right: 6 + SOUND_MUTE_BUTTON_SIZE + 4,
           maxWidth: '52%',
           fontSize: 11,
           color: '#fff',

@@ -30,6 +30,7 @@ import { StoryEffectLayer } from './story-effect-layer';
 import { storyEffectState, transientStoryEffects } from '@/lib/story-effects';
 import { useLineVoice } from '@/lib/tts/use-line-voice';
 import { VoiceToggle } from './voice/voice-toggle';
+import { soundPlayer } from '@/lib/sound/sound-player';
 
 const CHAR_MS = 45;
 
@@ -261,6 +262,7 @@ export function DialogueWindow({
           }
         };
         const retry = () => { if (choosingRef.current === chosen) choosingRef.current = null; };
+        soundPlayer.playSe('confirm');
         try {
           const result = c.onSelect();
           if (result && typeof result.then === 'function') {

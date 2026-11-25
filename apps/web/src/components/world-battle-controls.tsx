@@ -9,6 +9,9 @@ import { BattleItemRows, hasAnyBattleItem } from './battle-item-menu';
 import { BattleEnemyRow } from './battle-enemy-row';
 import { BattleAllyRow } from './battle-ally-row';
 import { BattleTargetPicker, livingAllies, needsAllyTarget, needsTarget } from './battle-target-picker';
+import { soundPlayer } from '@/lib/sound/sound-player';
+import { battleLineSe } from '@/lib/sound/battle-line-se';
+import type { SeId } from '@/lib/sound/se';
 
 /** 単体の敵をねらうとくぎか (群れのとき、ねらう相手を選ばせる。D-PARTY-001)。 */
 const skillTargetsOneEnemy = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneEnemy');
@@ -158,6 +161,12 @@ export function WorldBattleControls({
   useEffect(() => {
     onLineHpRef.current?.(state.turn, lineHp.player, playerHit);
   }, [state.turn, lineIndex, lineHp.player, playerHit]);
+  // 行が出たときの効果音 (D-SOUND-001 §4): ダメージの行は hit、回復の行は heal。
+  const shownLine = phase === 'message' ? messageLines[lineIndex] ?? '' : '';
+  useEffect(() => {
+    const se = battleLineSe(shownLine);
+    if (se) soundPlayer.playSe(se);
+  }, [typingKey, shownLine]);
   /** 送り (窓・全画面送り面の共通): タイプ中→全文 / 次の行あり→1 行出す / 最後→onAdvance。 */
   const advance = () => {
     if (busy) return; // 処理中は送らない
@@ -215,7 +224,7 @@ export function WorldBattleControls({
               {allyOrder?.allyTurn ? (
                 // めいれい の仲間の番: にげる は主人公だけ。代わりに 前の人へ／この人から後ろは おまかせ (D-PARTY-004 §2)。
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2em', minHeight: 0 }}>
-                  <DqRow plain label="もどる" onClick={allyOrder.onBack} disabled={busy} />
+                  <DqRow plain label="もどる" se="cancel" onClick={allyOrder.onBack} disabled={busy} />
                   <DqRow plain label="おまかせ" onClick={allyOrder.onAuto} disabled={busy} />
                 </div>
               ) : state.story?.canFlee !== false && <DqRow plain label="にげる" onClick={() => onCommand('flee')} disabled={busy || itemMenu} />}
@@ -238,7 +247,7 @@ export function WorldBattleControls({
                   <DqRow fill={false} label={`やくそう ×${state.herbs}`} onClick={() => pickVital('herb')} disabled={busy || state.herbs <= 0 || allHpFull} />
                   <DqRow fill={false} label={`そらのしずく ×${state.tonics}`} onClick={() => pickVital('tonic')} disabled={busy || state.tonics <= 0 || allMpFull} />
                   <BattleItemRows state={state} busy={busy} Row={DqRow} onUse={useItem} />
-                  <DqRow fill={false} label="もどる" onClick={() => setItemMenu(false)} disabled={busy} />
+                  <DqRow fill={false} label="もどる" se="cancel" onClick={() => setItemMenu(false)} disabled={busy} />
                 </>
               ) : (
                 // **MP コストは行に出さない。** skillMpCostOf は全とくぎ共通の単一値なので
@@ -376,12 +385,13 @@ function useCompactRows(windowRef: RefObject<HTMLDivElement | null>, room: numbe
  * `plain` は枠なしの行 (左のコマンドと相手を選ぶ窓。styles の .dq-command-plain)。plain の cursor は ▸ を出したままにする
  * (文字に ▸ を足さないので、ボタンの名前は変わらない)。
  */
-function DqRow({ label, onClick, disabled, cursor = false, fill = true, plain = false }: { label: string; onClick: () => void; disabled: boolean; cursor?: boolean; fill?: boolean; plain?: boolean }) {
+/** se: 押したときの効果音 (D-SOUND-001)。ふつうは select、もどる は cancel。 */
+function DqRow({ label, onClick, disabled, cursor = false, fill = true, plain = false, se = 'select' }: { label: string; onClick: () => void; disabled: boolean; cursor?: boolean; fill?: boolean; plain?: boolean; se?: SeId }) {
   return (
     <button
       type="button"
       className={plain ? `dq-command dq-command-plain${cursor ? ' dq-command-current' : ''}` : 'dq-command'}
-      onClick={onClick}
+      onClick={() => { soundPlayer.playSe(se); onClick(); }}
       disabled={disabled}
       style={fill ? { width: '100%', minHeight: 0 } : { width: '100%', flexShrink: 0 }}
     >

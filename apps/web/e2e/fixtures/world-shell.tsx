@@ -6,6 +6,7 @@ import { jsonToLex, type Agent } from '@atproto/api';
 import { SessionContext } from '../../src/lib/session';
 import { AppShell } from '../../src/components/app-shell';
 import { World } from '../../src/routes/world';
+import { Settings } from '../../src/routes/settings';
 import '../../src/styles.css';
 
 async function repoCall(op: string, params: unknown) {
@@ -29,11 +30,12 @@ const agent = {
   } },
 } as unknown as Agent;
 createRoot(document.getElementById('root')!).render(
-  <MemoryRouter initialEntries={['/world']}>
+  <MemoryRouter initialEntries={[new URLSearchParams(location.search).get('path') ?? '/world']}>
     <SessionContext.Provider value={{ status: 'signed-in', did: agent.assertDid, agent }}>
       <Routes>
         <Route path="/" element={<AppShell />}>
           <Route path="world" element={<World />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="board" element={<p>クエスト掲示板 (fixture)</p>} />
         </Route>
       </Routes>
