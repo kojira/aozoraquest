@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { MONSTERS, setGameQuests, setNpcs, setStory, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { MONSTERS, setCharacters, setGameQuests, setNpcs, setStory, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import { guildReception } from './npc-talk';
 import { PARTY_LINES } from './party-lines';
 import { useNpcQuestTalk } from './use-npc-quest-talk';
+
+const accept = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/world-server', async (orig) => ({ ...(await orig<typeof import('@/lib/world-server')>()), serverQuestAccept: accept }));
 
 const MON = MONSTERS[0]!;
 const quest = (id: string, title: string): GameQuestDef => ({ id, title, npcId: 'desk', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat', monsterId: MON.id, count: 1 } });
@@ -142,5 +145,29 @@ describe('useNpcQuestTalk 受付のメニューと「話す」', () => {
     act(() => result.current.setNpcTalk(guildReception(FUTABA)));
     choose(result, '報告する(1)');
     expect(result.current.npcChoices?.map(c => c.label)).toEqual(['ことりのおれい（やくそうを1こ (0/1)）', '戻る']);
+  });
+});
+
+describe('useNpcQuestTalk 受注の知らせ (I-01)', () => {
+  const GUILD: NpcDef = { ...DESK, guildReception: true };
+  const named: GameQuestDef = { ...quest('feather', '{c:homura}の はね'), npcId: 'desk' };
+  beforeEach(() => {
+    setCharacters([{ id: 'homura', name: 'ほむら' }]);
+    setNpcs([GUILD]); setGameQuests([named]);
+    accept.mockReset(); accept.mockResolvedValue({ activeQuests: [{ id: 'feather', progress: 0 }], questsDone: [] });
+  });
+  afterEach(() => { setGameQuests(null); setNpcs(null); setCharacters(null); });
+
+  it('地図の下の知らせとギルドの会話で、クエスト名の {c:id} を名前にする', async () => {
+    const notices: (string | null)[] = [];
+    const { result } = renderHook(() => useNpcQuestTalk({
+      agent: {} as never, moveBusyRef: { current: false }, tokenRef: { current: undefined }, flagsRef: { current: [] }, materialsRef: { current: {} },
+      applyServerMaterials: () => {}, setServerPower: () => {}, setNotice: (n) => { notices.push(n); }, waitForFreshDirectionRef: { current: false }, startEncounterRef: { current: () => {} },
+    }));
+    act(() => result.current.setNpcTalk(guildReception(GUILD)));
+    act(() => { void result.current.npcChoices!.find(c => c.label.startsWith('依頼を見る'))!.onSelect(); });
+    await act(async () => { await result.current.npcChoices!.find(c => c.label === '受注する')!.onSelect(); });
+    expect(notices).toContain('「ほむらの はね」を請け負った!');
+    expect(result.current.npcTalk?.lines[0]).toBe('『ほむらの はね』を請け負った！');
   });
 });
