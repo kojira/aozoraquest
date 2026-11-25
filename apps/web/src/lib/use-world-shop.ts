@@ -1,13 +1,14 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
 import { EQUIPMENT_BY_ID, equipHands, interiorShopAt, townAt, townShopStock, worldOverlay, type EquipmentDef } from '@aozoraquest/core';
-import { serverShopBuy, serverShopCraft, serverShopDiscard, serverShopForge, serverShopSell, serverState, WorldServerError, type ServerOwnedPiece } from '@/lib/world-server';
+import { serverShopBuy, serverShopCraft, serverShopDiscard, serverShopExchange, serverShopForge, serverShopSell, serverState, WorldServerError, type ServerOwnedPiece } from '@/lib/world-server';
 import { CraftLogError, craftItem, discardItems, forgeItems, newCraftRkey, newDiscardRkey, newForgeRkey, newSaleRkey, sellMaterials, type CraftedPiece } from '@/lib/crafting';
 import { enqueueCraftLog, flushCraftLogs } from '@/lib/craft-log-queue';
 import { saveGearRefs, type GearRefs } from '@/lib/gear';
 import type { LastShopAction } from '@/components/shop-modal';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import { soundPlayer } from '@/lib/sound/sound-player';
+import { canAffordStonePrice } from '@/lib/stone-price';
 
 /** お店のエラーを、サーバーが返した理由でそのまま伝える。「通信エラー」で片付けると
  *  「パワーが足りない」「街の外」といった直せる理由が消える (#551)。 */
@@ -132,9 +133,8 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
       const towns = worldOverlay().towns;
       const townIndex = Math.max(0, towns.findIndex((t) => t.x === town.x && t.y === town.y));
       const stock = townShopStock(town, townIndex);
-      const have = materialsRef.current[stock.materialId] ?? 0;
-      // 残高と素材の判定は**サーバーが正**。ここは押せるかの目安 (先読み) だけ。
-      if ((serverPowerRef.current ?? 0) < def.price.power || have < def.price.materials) return;
+      // 残高と魔石の判定は**サーバーが正**。ここは押せるかの目安 (先読み) だけ。
+      if (!canAffordStonePrice(stock, def.price, serverPowerRef.current ?? 0, materialsRef.current, def.element)) return;
       // 冪等化: 直前に同じ品で失敗していたら同じ rkey で再試行する
       // (createRecord は同 rkey で衝突するため 2 重制作が構造的に起きない。レビュー指摘)
       const rkey = pendingCraftRef.current?.defId === def.id ? pendingCraftRef.current.rkey : newCraftRkey();
@@ -278,6 +278,34 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
     [agent, craftBusy, applyServerMaterials, setServerPower, tokenRef],
   );
 
+  // 魔石の交換 (D-MATERIAL-001)。どうぐは在庫に、装備は所持個体に入る。結果はサーバーの値を写す。
+  const pendingExchangeRef = useRef<{ key: string; rkey: string } | null>(null);
+  const onExchange = useCallback(
+    async (id: string) => {
+      if (!agent || craftBusy) return;
+      const xrkey = pendingExchangeRef.current?.key === id ? pendingExchangeRef.current.rkey : `x-${newSaleRkey().slice(2)}`;
+      pendingExchangeRef.current = { key: id, rkey: xrkey };
+      setShopError(null);
+      setShopNotice(null);
+      setCraftBusy(true);
+      try {
+        const res = await serverShopExchange(agent, id, xrkey, tokenRef.current);
+        pendingExchangeRef.current = null;
+        setServerPower(res.power);
+        applyServerMaterials(res.materials);
+        if (res.pieces) setCraftedPieces(piecesFromServer(res.pieces));
+        soundPlayer.playSe('coin');
+        setLastShopAction({ kind: 'exchange', id });
+      } catch (e) {
+        console.warn('[world] exchange failed', e);
+        setShopError(shopErrorText(e, 'こうかんできなかった'));
+      } finally {
+        setCraftBusy(false);
+      }
+    },
+    [agent, craftBusy, applyServerMaterials, setServerPower, tokenRef],
+  );
+
   // 装備の着脱 (gear/self は rkey 参照 — 強化値は直書きしない。docs/20 W6c 契約)
   const gearSavingRef = useRef(false);
   const onEquipChange = useCallback(
@@ -337,6 +365,6 @@ export function useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, se
   return {
     shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs,
     craftBusy, shopError, shopNotice, lastShopAction, flushCraftLog, resetShopView, openShopFromMenu,
-    onCraft, onForge, onSell, onBuy, onDiscard, onEquip, onUnequip,
+    onCraft, onForge, onSell, onBuy, onExchange, onDiscard, onEquip, onUnequip,
   };
 }

@@ -23,6 +23,7 @@ import { isAdminDid } from '@/lib/runtime-config';
 import { saveShops } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
+import { ShopExchangeEditor } from '@/components/admin/shop-exchange-editor';
 
 /**
  * **お店のラインナップエディタ** (#422)。
@@ -208,6 +209,8 @@ export function AdminShops() {
                 {ELEMENTS.map((el) => <option key={el} value={el}>{ITEMS[STONE_IDS[el]]?.name ?? el}</option>)}
               </select>
             </label>
+
+            <ShopExchangeEditor entries={cur?.exchange ?? []} onChange={(exchange) => setField(sel, { exchange })} />
 
             {/* 店主 (#385)。空欄 = 街ごとの既定 (placeholder に表示)。 */}
             <div style={{ fontSize: '0.8em', display: 'flex', flexDirection: 'column', gap: '0.25em' }}>

@@ -18,6 +18,7 @@ import {
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { AdminMonsterDebuffs } from '@/components/admin-monster-debuffs';
+import { MonsterStonesEditor } from '@/components/admin/monster-stones-editor';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
 import { simulateMonsterWinRate } from '@/lib/monster-simulation';
@@ -445,7 +446,8 @@ export function AdminMonsters() {
                 } satisfies ArtSubject]}
               />
             )}
-            {/* ドロップ */}
+            <MonsterStonesEditor monster={current} onChange={(stones) => update(current.id, { stones })} />
+            {/* ドロップ (消耗品だけ。魔石は上の欄で必ず落ちる) */}
             <div style={{ fontSize: '0.8em' }}>
               <span style={{ color: 'var(--color-muted)' }}>ドロップ</span>
               {current.drops.map((d, i) => (
