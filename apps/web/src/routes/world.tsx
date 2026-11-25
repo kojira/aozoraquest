@@ -20,6 +20,7 @@ import {
   interiorById,
   interiorShopAt,
   interiorTerrainAt,
+  nextStoryTown,
 } from '@aozoraquest/core';
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
@@ -678,7 +679,7 @@ function WorldScreen() {
       )}
       {mapAcquisition === null && !inBattle && <VirtualStick onMove={move} inset="0 36px" showHint={false} />}
       </div>
-      {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} onClose={() => setMapOpen(false)} />}
+      {mapOpen && <WorldMapModal x={ws.x} y={ws.y} regions={ws.regions} storyTown={nextStoryTown({ flags: flagsRef.current, questsDone: quest.done, activeQuests: quest.activeQuests, materials: materialsView })} onClose={() => setMapOpen(false)} />}
       {itemsOpen && (
         <ItemsModal
           herbStock={herbStock}

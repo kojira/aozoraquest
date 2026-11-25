@@ -14,6 +14,8 @@ import { REGIONS_PER_SIDE, REGION_COUNT, REGION_SIZE, WORLD_SIZE, regionOf, terr
  * - 描画は 32 行ずつ rAF 分割 (同期一括だと実測 ~200ms、モバイルは数倍の
  *   ロングタスクになる — レビュー指摘)。結果はモジュールキャッシュ。
  * - 橋 = 茶のドット (渡河点はこの地図の主目的)、街 = 金ドット、現在地 = 点滅。
+ * - 本編の次の目的地の街 = 点滅する輪と街の名前 (D-EARLY-002。決め方は core の nextStoryTown)。
+ *   霧の中の街は出さない (かけらの開示規則のまま)。reduced-motion では点滅させず輪だけ。
  * - タップの街判定は **画面 px 基準** (ワールド固定半径だとモバイルで実質
  *   7px になり当たらない — レビュー ★★★)。
  */
@@ -61,6 +63,11 @@ export function revealedTowns(towns: readonly Town[], regions: readonly number[]
   return towns.filter((t) => set.has(t.region));
 }
 
+/** 地図に出す次の目的地: 解禁済みリージョンの街だけ (霧の中は出さない)。純関数 (テスト対象)。 */
+export function visibleStoryTown(town: Town | null | undefined, regions: readonly number[]): Town | null {
+  return town && regions.includes(town.region) ? town : null;
+}
+
 /** 最寄りの街 (トーラス距離)。radiusWorld タイル以内、無ければ null。純関数 (テスト対象)。 */
 export function nearestTown(wx: number, wy: number, towns: readonly Town[], radiusWorld: number): Town | null {
   let best: { town: Town; d: number } | null = null;
@@ -77,6 +84,7 @@ export function WorldMapModal({
   x,
   y,
   regions,
+  storyTown,
   onClose,
 }: {
   /** プレイヤーの現在地 (ワールド座標) */
@@ -84,6 +92,8 @@ export function WorldMapModal({
   y: number;
   /** ちずのかけらで解禁済みのリージョン */
   regions: readonly number[];
+  /** 本編の次の目的地の街 (core の nextStoryTown)。無ければ出さない。 */
+  storyTown?: Town | null;
   onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,6 +103,7 @@ export function WorldMapModal({
   const overlay = useMemo(() => worldOverlay(), []);
   const regionSet = useMemo(() => new Set(regions), [regions]);
   const towns = useMemo(() => revealedTowns(overlay.towns, regions), [overlay, regions]);
+  const goal = visibleStoryTown(storyTown, regions);
 
   // Escape で閉じる (既存モーダル群と同じ規約) + 開いた時に「とじる」へフォーカス
   useEffect(() => {
@@ -251,6 +262,48 @@ export function WorldMapModal({
               }}
             />
           )}
+          {/* 次の目的地 (D-EARLY-002)。金の輪が点滅し、下に街の名前。名前は地図の端で切れないよう寄せる */}
+          {goal && (
+            <>
+              <div
+                aria-hidden
+                className="aq-map-goal"
+                data-testid="map-story-goal"
+                style={{
+                  position: 'absolute',
+                  left: `${(goal.x / WORLD_SIZE) * 100}%`,
+                  top: `${(goal.y / WORLD_SIZE) * 100}%`,
+                  width: 18,
+                  height: 18,
+                  transform: 'translate(-50%, -50%)',
+                  borderRadius: '50%',
+                  border: `3px solid ${TOWN_DOT}`,
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.75), 0 0 8px rgba(245, 212, 66, 0.9)',
+                  pointerEvents: 'none',
+                }}
+              />
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min(84, Math.max(16, (goal.x / WORLD_SIZE) * 100))}%`,
+                  top: `calc(${(goal.y / WORLD_SIZE) * 100}% ${goal.y / WORLD_SIZE > 0.85 ? '- 26px' : '+ 12px'})`,
+                  transform: 'translateX(-50%)',
+                  padding: '0 4px',
+                  borderRadius: 3,
+                  background: 'rgba(20, 22, 30, 0.82)',
+                  color: TOWN_DOT,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  lineHeight: 1.5,
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                }}
+              >
+                {goal.name}
+              </div>
+            </>
+          )}
           {/* 現在地マーカー (canvas 外の HTML で点滅。reduced-motion では点滅停止) */}
           <div
             aria-hidden
@@ -271,14 +324,18 @@ export function WorldMapModal({
           />
           <style>{`
 @keyframes aq-map-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.35; } }
+@keyframes aq-map-goal-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .aq-map-here { animation: aq-map-blink 1.1s step-end infinite; }
-@media (prefers-reduced-motion: reduce) { .aq-map-here { animation: none; } }
+.aq-map-goal { animation: aq-map-goal-blink 0.9s step-end infinite; }
+@media (prefers-reduced-motion: reduce) { .aq-map-here, .aq-map-goal { animation: none; } }
 `}</style>
         </div>
         <p style={{ margin: '0.5em 0 0', fontSize: '0.75em', color: 'var(--color-muted)', lineHeight: 1.6 }}>
           <span style={{ color: '#e8566a' }}>●</span> いまここ ({x}, {y}) /{' '}
           <span style={{ color: TOWN_DOT, textShadow: '0 0 1px rgba(0,0,0,0.7)' }}>●</span> 街 ({towns.length}) /{' '}
-          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。暗いところはまだ地図がない (街に入ると広がる)。
+          <span style={{ color: BRIDGE_DOT }}>▪</span> 橋。
+          {goal && <> <span style={{ color: TOWN_DOT, textShadow: '0 0 1px rgba(0,0,0,0.7)' }}>◎</span> つぎは {goal.name}。</>}
+          暗いところはまだ地図がない (街に入ると広がる)。
           ちずのかけら: {regions.length}/{REGION_COUNT}ちほう。
           {picked ? (
             <strong style={{ color: 'var(--color-fg)', marginLeft: '0.4em' }}>🏘 {picked.name}</strong>
