@@ -22,6 +22,10 @@ export interface OAuthEnv {
   PUBLIC_ORIGIN?: string;
   /** OAuth scope。既定 'atproto transition:generic'。 */
   OAUTH_SCOPE?: string;
+  /** "1" のとき loopback client (http://localhost?redirect_uri=…) として振る舞う。**ローカル環境専用** (#1018):
+   *  ローカル PDS の認可サーバーは http の client-metadata.json を取りに行けないため。公開 origin が
+   *  http://127.0.0.1 / http://localhost のときだけ有効 (https の origin で立てたら設定エラー)。 */
+  OAUTH_LOOPBACK_CLIENT?: string;
   /** kuda 物理乱数 API のキー (Bearer)。Secret。未設定なら kuda を使わず CSPRNG のみ (fail-safe)。 */
   KUDA_API_KEY?: string;
 }
@@ -56,20 +60,31 @@ export interface OAuthConfig {
   dpopJwk: EcJwk;
   serverDid: string;
   publicOrigin: string;
+  /** loopback client (token_endpoint_auth_method=none。client_assertion を送らない)。ローカル環境専用。 */
+  loopbackClient: boolean;
 }
 
 /** env から設定を読む。秘密鍵の未設定/不正・SERVER_DID 欠落は OAuthConfigError (fail-closed)。 */
 export function loadOAuthConfig(env: OAuthEnv): OAuthConfig {
   const origin = publicOrigin(env);
   if (!env.SERVER_DID) throw new OAuthConfigError('SERVER_DID が未設定');
+  const redirectUri = `${origin}/oauth/callback`;
+  const scope = env.OAUTH_SCOPE ?? 'atproto transition:generic';
+  const loopbackClient = env.OAUTH_LOOPBACK_CLIENT?.trim() === '1';
+  if (loopbackClient && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
+    throw new OAuthConfigError('OAUTH_LOOPBACK_CLIENT はローカル (http://127.0.0.1 / http://localhost) の edge でだけ使える');
+  }
   return {
-    clientId: `${origin}/client-metadata.json`,
-    redirectUri: `${origin}/oauth/callback`,
-    scope: env.OAUTH_SCOPE ?? 'atproto transition:generic',
+    clientId: loopbackClient
+      ? `http://localhost?${new URLSearchParams({ redirect_uri: redirectUri, scope })}`
+      : `${origin}/client-metadata.json`,
+    redirectUri,
+    scope,
     clientJwk: parseJwk(env.OAUTH_CLIENT_PRIVATE_JWK, 'OAUTH_CLIENT_PRIVATE_JWK'),
     dpopJwk: parseJwk(env.OAUTH_DPOP_PRIVATE_JWK, 'OAUTH_DPOP_PRIVATE_JWK'),
     serverDid: env.SERVER_DID,
     publicOrigin: origin,
+    loopbackClient,
   };
 }
 

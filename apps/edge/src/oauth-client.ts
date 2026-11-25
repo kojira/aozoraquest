@@ -44,12 +44,16 @@ interface ClientConfig {
   scope: string;
   clientJwk: EcJwk; // private_key_jwt 署名鍵
   dpopJwk: EcJwk; // DPoP 鍵
+  /** loopback client (ローカル環境専用 #1018): token_endpoint_auth_method=none なので client_assertion を送らない。 */
+  loopbackClient?: boolean;
   now: number; // epoch 秒
   fetchImpl?: typeof fetch;
 }
 
-function assertion(cfg: ClientConfig, authServer: AuthServerMetadata): string {
-  return clientAssertion({ jwk: cfg.clientJwk, clientId: cfg.clientId, audience: authServer.issuer, now: cfg.now });
+/** クライアント認証のフォーム項目 (private_key_jwt)。loopback client は認証なし (none) なので空。 */
+function clientAuth(cfg: ClientConfig, authServer: AuthServerMetadata): Record<string, string> {
+  if (cfg.loopbackClient) return {};
+  return { client_assertion_type: CLIENT_ASSERTION_TYPE, client_assertion: clientAssertion({ jwk: cfg.clientJwk, clientId: cfg.clientId, audience: authServer.issuer, now: cfg.now }) };
 }
 
 async function postForm<T>(url: string, form: URLSearchParams, cfg: ClientConfig): Promise<T> {
@@ -82,8 +86,7 @@ export async function buildAuthorizeUrl(
     state,
     code_challenge: pkce.challenge,
     code_challenge_method: 'S256',
-    client_assertion_type: CLIENT_ASSERTION_TYPE,
-    client_assertion: assertion(cfg, authServer),
+    ...clientAuth(cfg, authServer),
   });
   if (opts.loginHint) form.set('login_hint', opts.loginHint);
   const par = await postForm<{ request_uri: string }>(authServer.pushed_authorization_request_endpoint, form, cfg);
@@ -128,8 +131,7 @@ export async function exchangeCode(
     redirect_uri: cfg.redirectUri,
     code_verifier: verifier,
     client_id: cfg.clientId,
-    client_assertion_type: CLIENT_ASSERTION_TYPE,
-    client_assertion: assertion(cfg, authServer),
+    ...clientAuth(cfg, authServer),
   });
   const t = await postForm<TokenResponse>(authServer.token_endpoint, form, cfg);
   return normalize(t, authServer, cfg.now, pdsUrl, expectedDid, { requireSub: true });
@@ -147,8 +149,7 @@ export async function refreshTokens(
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: cfg.clientId,
-    client_assertion_type: CLIENT_ASSERTION_TYPE,
-    client_assertion: assertion(cfg, authServer),
+    ...clientAuth(cfg, authServer),
   });
   const t = await postForm<TokenResponse>(authServer.token_endpoint, form, cfg);
   return normalize(t, authServer, cfg.now, pdsUrl, expectedDid);

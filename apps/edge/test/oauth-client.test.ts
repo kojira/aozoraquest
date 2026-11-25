@@ -106,3 +106,26 @@ describe('oauth-client', () => {
     await expect(exchangeCode({ ...cfg(), fetchImpl: f }, AS, 'C', 'V', 'https://pds.example', 'did:plc:x')).rejects.toThrow(/invalid_grant/);
   });
 });
+
+describe('oauth-client: loopback client (ローカル環境専用 #1018)', () => {
+  it('loopbackClient なら PAR / token / refresh に client_assertion を付けない (既定では付ける)', async () => {
+    const bodies: string[] = [];
+    const f = (async (_u: string, init: RequestInit) => {
+      bodies.push(init.body as string);
+      return json({ request_uri: 'urn:req:x', access_token: 'AT', token_type: 'DPoP', refresh_token: 'RT', expires_in: 3600, sub: 'did:plc:testserver' });
+    }) as unknown as typeof fetch;
+    const lc = { ...cfg(), clientId: 'http://localhost?redirect_uri=x', loopbackClient: true, fetchImpl: f };
+    await buildAuthorizeUrl(lc, AS);
+    await exchangeCode(lc, AS, 'CODE', 'VER', 'http://localhost:2583', 'did:plc:testserver');
+    await refreshTokens(lc, AS, 'RT', 'http://localhost:2583', 'did:plc:testserver');
+    for (const b of bodies) {
+      const form = new URLSearchParams(b);
+      expect(form.get('client_assertion')).toBeNull();
+      expect(form.get('client_assertion_type')).toBeNull();
+      expect(form.get('client_id')).toBe('http://localhost?redirect_uri=x');
+    }
+    bodies.length = 0;
+    await buildAuthorizeUrl({ ...cfg(), fetchImpl: f }, AS);
+    expect(new URLSearchParams(bodies[0]).get('client_assertion')).toBeTruthy();
+  });
+});
