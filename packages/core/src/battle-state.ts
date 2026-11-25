@@ -148,6 +148,8 @@ export function startBattle(
     gear?: GearSelection;
     /** 地域の相性 (regionAffinity)。指定するとその型のモンスターが出やすくなる。 */
     affinity?: number;
+    /** 受注中の討伐依頼の敵 id (questEncounterFocus)。主敵と群れの追加の敵の抽選で出やすくなる (D-EARLY-001)。 */
+    focus?: readonly string[];
     /** 敵 HP/MP の分散 (±割合)。world 遭遇のみ指定、trial は未指定 = 0 (固定)。 */
     vitalsVariance?: number;
     /** 出現を tier 抽選せず**この id のモンスターに固定**する (模擬戦シミュレータ用)。
@@ -177,7 +179,7 @@ export function startBattle(
   const forced = extras?.monsterId ? MONSTERS_BY_ID[extras.monsterId] : undefined;
   const { def, combatant } = forced
     ? { def: forced, combatant: monsterCombatant(forced, variance, createRng((seed ^ 0x2a9f) >>> 0)) }
-    : summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, variance);
+    : summonMonster(tier, playerLevel, seed, jobLevel, extras?.affinity, variance, undefined, extras?.focus);
   const gains = mpGainsFor(archetype);
   // #453 群れ: 追加の敵を別 seed で抽選 (最大 計 MAX_GROUP_SIZE 体)。0 のとき enemies 未設定 = 従来ソロ。
   // group (D-PARTY-001) は数を seed から決める。fleer・レアは追加の敵に選ばない。
@@ -191,7 +193,7 @@ export function startBattle(
     enemies.push(
       forced
         ? monsterCombatant(forced, variance, createRng((es ^ 0x2a9f) >>> 0))
-        : summonMonster(tier, playerLevel, es, jobLevel, extras?.affinity, variance, grouped ? groupable : undefined).combatant,
+        : summonMonster(tier, playerLevel, es, jobLevel, extras?.affinity, variance, grouped ? groupable : undefined, extras?.focus).combatant,
     );
   }
   return {

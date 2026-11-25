@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { favoredMonsterFor, regionAffinity, regionOf, startBattle, tierForRegion, worldOverlay, wrap } from '@aozoraquest/core';
+import { favoredMonsterFor, regionAffinity, regionOf, setGameQuests, setNpcs, startBattle, tierForRegion, worldOverlay, wrap } from '@aozoraquest/core';
 import { sealEncounter, type ResolverEnv } from '../src/battle-resolver';
 import { writeServerTokens } from '../src/oauth-store';
 import { XP_EPOCH, type GameState } from '../src/game-state';
@@ -60,5 +60,32 @@ describe('サーバーの遭遇と地域の相性 (#1022)', () => {
     // 相性なしなら 1/プール数。×3 の重みで、それよりはっきり多い。
     const pool = TEST_MONSTERS.filter((m) => m.tier === tier && !m.storyOnly).length;
     expect(hits / N).toBeGreaterThan(1.5 / pool);
+  });
+});
+
+describe('サーバーの遭遇と受注中の討伐依頼 (D-EARLY-001)', () => {
+  const orig = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = orig; setGameQuests(null); setNpcs(null); });
+
+  it('依頼主の街のリージョンでは、討伐依頼の敵が封印された遭遇で 4 割以上出る。数がそろったら元に戻る', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = pdsFetch;
+    const c = worldOverlay().spawn;
+    const x = wrap(c.x + 20), y = c.y;
+    const region = regionOf(x, y);
+    const tier = tierForRegion(region);
+    const target = TEST_MONSTERS.find((m) => m.tier === tier && !m.storyOnly && (m.spawnWeight ?? 1) >= 1 && m.id !== favoredMonsterFor(tier, regionAffinity(region))!.id)!.id;
+    setNpcs([{ id: 'giver', name: 'いらいぬし', x, y: wrap(y + 1), lines: ['や'] }]);
+    setGameQuests([{ id: 'q', title: 'q', npcId: 'giver', intro: ['た'], done: ['あ'], objective: { kind: 'defeat', monsterId: target, count: 5 } }]);
+    const rate = async (progress: number) => {
+      let hits = 0;
+      for (let seed = 1; seed <= 80; seed++) {
+        const r = await sealEncounter(env, USER, { ...GS, activeQuests: [{ id: 'q', progress }] }, x, y, seed, NOW);
+        if (r.monsterId === target) hits++;
+      }
+      return hits / 80;
+    };
+    expect(await rate(0)).toBeGreaterThan(0.35);
+    expect(await rate(5)).toBeLessThan(0.2);
   });
 });

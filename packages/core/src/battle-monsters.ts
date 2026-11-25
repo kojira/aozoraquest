@@ -365,6 +365,28 @@ const MONSTER_DEFAULT_VIT = 8;
  *  約 6 割 (残り 2 種が各 2 割) で出る = 地域の顔が立つ水準。 */
 const AFFINITY_WEIGHT = 3;
 
+/** 受注中の討伐依頼の敵 (focus) 1 種がしめる遭遇の割合 (D-EARLY-001)。0.45 = 5 体の依頼が 1 人でおよそ 11 戦。 */
+const FOCUS_SHARE = 0.45;
+/** focus の敵をあわせた割合の上限。ほかの敵も出つづける (同じ地方で討伐依頼を 2 つ受けたら 4 割ずつ)。 */
+const FOCUS_TOTAL_MAX = 0.8;
+
+/** 討伐依頼で出やすくできる敵か。レア (spawnWeight<1) と逃げる敵 (fleer) は今の出にくさのまま。 */
+function focusable(def: MonsterDef): boolean {
+  const abilities = def.abilities ?? (def.ability ? [def.ability] : []);
+  return (def.spawnWeight ?? 1) >= 1 && !abilities.includes('fleer');
+}
+
+/** focus の敵の重みを、それぞれ FOCUS_SHARE (合計 FOCUS_TOTAL_MAX まで) になるまで上げる。もとの重みより下げない。 */
+function withFocus(pool: readonly MonsterDef[], weights: number[], focus: readonly string[] | undefined): number[] {
+  const hit = pool.map((m) => !!focus?.includes(m.id) && focusable(m));
+  const n = hit.filter(Boolean).length;
+  const others = weights.reduce((a, w, i) => (hit[i] ? a : a + w), 0);
+  if (n === 0 || others <= 0) return weights;
+  const share = Math.min(FOCUS_SHARE, FOCUS_TOTAL_MAX / n);
+  const target = (share * others) / (1 - n * share);
+  return weights.map((w, i) => (hit[i] ? Math.max(w, target) : w));
+}
+
 /** ランダム遭遇の候補 (ストーリー専用の敵は除く)。 */
 function randomPool(tier: Tier): MonsterDef[] {
   return MONSTERS.filter((m) => m.tier === tier && !m.storyOnly);
@@ -394,6 +416,8 @@ export function summonMonster(
   variance = 0,
   /** 群れの追加の敵を選ぶとき、入れられる敵だけにしぼる (D-PARTY-001。fleer・レアを除く)。 */
   only?: (def: MonsterDef) => boolean,
+  /** 受注中の討伐依頼の敵 id (questEncounterFocus)。プールにいる敵だけ出やすくなる (D-EARLY-001)。 */
+  focus?: readonly string[],
 ): { def: MonsterDef; combatant: Combatant } {
   let pool = randomPool(tier);
   // しぼって空なら、しぼらないプールのまま (下の帯に繰り下げない)。
@@ -416,10 +440,10 @@ export function summonMonster(
   // レア敵 (spawnWeight<1) は favor 対象にしない = どの地域でもごく稀のまま
   // (地域相性で「はぐれメタルが出やすい街」を作らない — レビュー ★★)。重み付き累積抽選 (決定的)。
   const favored = affinity === undefined ? -1 : ((affinity % pool.length) + pool.length) % pool.length;
-  const weights = pool.map((m, i) => {
+  const weights = withFocus(pool, pool.map((m, i) => {
     const w = m.spawnWeight ?? 1;
     return w * (i === favored && w >= 1 ? AFFINITY_WEIGHT : 1);
-  });
+  }), focus);
   const total = weights.reduce((a, b) => a + b, 0);
   let pick = rng() * total;
   let idx = 0;
