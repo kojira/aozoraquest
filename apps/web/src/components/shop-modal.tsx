@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CRAFT_TUNING,
+  allStoneIds,
   EQUIPMENT_BY_ID,
   ITEMS,
   SALE_TUNING,
@@ -30,6 +31,8 @@ import { DialogueWindow } from '@/components/dialogue-window';
 import type { DialogueLine } from '@/lib/dialogue';
 import { sceneDialogue } from '@/lib/scene-dialogue';
 import { ShopItemSection } from './shop-item-section';
+import { ShopExchangeSection } from './shop-exchange-section';
+import { canAffordStonePrice, stonePriceText } from '@/lib/stone-price';
 import { GearDeltaText } from './gear-delta-text';
 import { SellPanel, ShopTabs, UsedShelf, type ShopTab } from './shop-market';
 import type { MarketView } from '@/lib/use-market';
@@ -50,7 +53,8 @@ export type LastShopAction =
   // ひきとりの結果もモーダル内のセリフ窓で出す (#607) — 以前は世界の通知行に出していて、
   // この全画面モーダルの背面に描かれてプレイヤーには見えなかった。
   | { kind: 'sell'; materialId: string; count: number; powerGained: number }
-  | { kind: 'buy'; itemId: string };
+  | { kind: 'buy'; itemId: string }
+  | { kind: 'exchange'; id: string };
 
 const NO_ALLY_WORN: ReadonlyMap<string, number> = new Map();
 
@@ -97,6 +101,7 @@ export function ShopModal({
   onForge,
   onSell,
   onBuy,
+  onExchange,
   onClose,
   market,
   gear,
@@ -125,6 +130,8 @@ export function ShopModal({
   onSell: (materialId: string, count: number) => void;
   /** どうぐを 1 個買う (D-ITEM-001)。 */
   onBuy: (itemId: string) => void;
+  /** 魔石の交換 (D-MATERIAL-001)。町の魔石だけで買う。無ければ段を出さない。 */
+  onExchange?: (id: string) => void;
   onClose: () => void;
   /** 中古・うる (D-MARKET-001)。無ければタブを出さない。 */
   market?: MarketView;
@@ -136,7 +143,6 @@ export function ShopModal({
   const stock = useMemo(() => townShopStock(town, townIndex, archetype ?? undefined), [town, townIndex, archetype]);
   // 店主 (#385)。既定は街ごとに決定的な口調で、エディタ (#422) から上書きできる。
   const keeper = useMemo(() => shopKeeperFor(town.x, town.y), [town]);
-  const materialName = withCharacterNames(ITEMS[stock.materialId]?.name ?? stock.materialId);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const piecesByItem = useMemo(() => {
@@ -212,6 +218,11 @@ export function ShopModal({
       openTalk([{ text: `${withCharacterNames(ITEMS[lastAction.itemId]?.name ?? lastAction.itemId)}を 1こ かった!` }, say(keeper.sell)]);
       return;
     }
+    if (lastAction.kind === 'exchange') {
+      const name = ITEMS[lastAction.id]?.name ?? EQUIPMENT_BY_ID[lastAction.id]?.name ?? lastAction.id;
+      openTalk([{ text: `魔石と ${withCharacterNames(name)}を こうかんした!` }, say(keeper.sell)]);
+      return;
+    }
     if (lastAction.kind === 'sell') {
       openTalk([
         { text: `${ITEMS[lastAction.materialId]?.name ?? lastAction.materialId} ×${lastAction.count}を引き取ってもらい、パワーが${lastAction.powerGained}増えた!` },
@@ -269,8 +280,10 @@ export function ShopModal({
         {/* 説明文は毎回出さない (#607) — 使い方は最初の街の初回チュートリアルで店主が話す。
             もちもの (残高) だけコンパクトに常設する。 */}
         <p style={{ margin: '0 0 0.5em', fontSize: '0.8em', color: 'var(--color-muted)' }}>
-          もちもの: パワー<strong style={{ color: 'var(--color-fg)' }}>{balance}</strong> / {materialName}{' '}
-          <strong style={{ color: 'var(--color-fg)' }}>×{materials[stock.materialId] ?? 0}</strong>
+          もちもの: パワー<strong style={{ color: 'var(--color-fg)' }}>{balance}</strong>
+          {allStoneIds().filter((id) => (materials[id] ?? 0) > 0 || id === stock.materialId).map((id) => (
+            <span key={id}> / {withCharacterNames(ITEMS[id]?.name ?? id)} <strong style={{ color: 'var(--color-fg)' }}>×{materials[id] ?? 0}</strong></span>
+          ))}
         </p>
         {/* 失敗の理由はボタンのそばに残す (セリフ窓に出すと閉じた瞬間に消えて読み逃す)。
             live region は常設して中身を差し替える (条件付きマウントは初回読み上げが
@@ -304,12 +317,13 @@ export function ShopModal({
           {market && tab === 'used' && <UsedShelf shelf={market.shelf} me={market.me} archetype={archetype} gear={gear} balance={balance} busy={market.busy} onBuy={market.buy} />}
           {market && tab === 'sell' && <SellPanel town={town} pieces={pieces} equippedRkeys={equippedRkeys} wornKeys={allyWorn} listings={market.listings} busy={market.busy} onList={market.list} onCancel={market.cancel} />}
           {(!market || tab === 'shop') && <>
-          <ShopItemSection consumables={stock.consumables} materialId={stock.materialId} materialName={materialName} balance={balance} materials={materials} busy={busy} onBuy={onBuy} />
+          <ShopItemSection stock={stock} balance={balance} materials={materials} busy={busy} onBuy={onBuy} />
+          {onExchange && <ShopExchangeSection town={town} materials={materials} busy={busy} onExchange={onExchange} />}
           {stock.equipment.map((id) => {
             const def = EQUIPMENT_BY_ID[id];
             if (!def) return null;
             const equipable = archetype ? canEquip(archetype, def) : false;
-            const affordable = balance >= def.price.power && (materials[stock.materialId] ?? 0) >= def.price.materials;
+            const affordable = canAffordStonePrice(stock, def.price, balance, materials, def.element);
             const owned = piecesByItem.get(id) ?? [];
             const forge = bestForgePair(owned, equippedRkeys, allyWorn);
             // 装備を外せば鍛えられる組があるのに、装備中除外で不成立の場合の注記
@@ -353,9 +367,7 @@ export function ShopModal({
                   {/* できあがりの強化値は つくるまで分からないので ±0 で比べる */}
                   {archetype && equipable && gear && <GearDeltaText archetype={archetype} gear={gear} slot={def.slot} piece={{ id, level: 0 }} prefix="いまと比べて" />}
                   <div style={{ fontSize: '0.85em', opacity: affordable ? 1 : 0.65 }}>
-                    {def.price.materials > 0
-                      ? `パワー${def.price.power} + ${materialName} ×${def.price.materials}`
-                      : `パワー${def.price.power}`}
+                    {stonePriceText(stock, def.price, def.element)}
                   </div>
                 </div>
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch' }}>
@@ -424,9 +436,9 @@ export function ShopModal({
             return (
               <div style={{ border: '2px solid var(--color-border)', borderRadius: 4, padding: '0.4em 0.6em', fontSize: '0.85em' }}>
                 <div style={{ marginBottom: 4 }}>
-                  <strong>素材のひきとり</strong>{' '}
+                  <strong>魔石のひきとり</strong>{' '}
                   <span style={{ color: 'var(--color-muted)', fontSize: '0.85em' }}>
-                    ({SALE_TUNING.materialsPerPower}個 = パワー1)
+                    (魔石{SALE_TUNING.materialsPerPower}個 = パワー1)
                   </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

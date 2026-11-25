@@ -11,7 +11,7 @@ import {
   jobLevelFromXp, partyCapacity,
   playerCombatant,
   playerLevelFromXp,
-  regionAffinity,
+  regionFavorAffinity,
   regionOf,
   statVectorToArray,
   terrainAt,
@@ -420,7 +420,7 @@ function WorldScreen() {
   // 内部マップ (#424) の座標はローカル系なので、地域から引く危険度・敵は意味を持たない
   // (常に region 0 になる)。内部では自分の危険度設定を使い、未設定なら「敵なし」。
   const hereTier = insideHere ? ((insideHere.encounterTier ?? 1) as ReturnType<typeof tierForRegion>) : tierForRegion(regionOf(ws.x, ws.y));
-  const favoredMonsterName = favoredMonsterFor(hereTier, regionAffinity(regionOf(ws.x, ws.y)))?.name;
+  const favoredMonsterName = favoredMonsterFor(hereTier, regionFavorAffinity(hereTier, regionOf(ws.x, ws.y)))?.name; // 町の地方はテーマの属性の敵 (D-MATERIAL-001)
   // 危険度・よく出る敵は 見える職 (主人公か仲間) がいるときだけ出す (docs/25 §ジョブ特性)。
   const seesDanger = seesFieldDanger(archetype, talk.party);
 
@@ -753,6 +753,7 @@ function WorldScreen() {
           onForge={(def, level, rkeys) => void shop.onForge(def, level, rkeys)}
           onSell={(materialId, count) => void shop.onSell(materialId, count)}
           onBuy={(itemId) => void shop.onBuy(itemId)}
+          onExchange={(id) => void shop.onExchange(id)}
           onClose={() => setShopOpen(false)}
           market={market}
           gear={resolvedGear?.selection}

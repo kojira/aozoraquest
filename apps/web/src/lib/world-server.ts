@@ -30,6 +30,7 @@ const LXM_SHOP_SELL = LXM.shopSell;
 const LXM_SHOP_BUY = LXM.shopBuy;
 const LXM_SHOP_FORGE = LXM.shopForge;
 const LXM_SHOP_DISCARD = LXM.shopDiscard;
+const LXM_SHOP_EXCHANGE = LXM.shopExchange;
 const LXM_QUEST_ACCEPT = LXM.questAccept;
 const LXM_QUEST_COMPLETE = LXM.questComplete;
 const LXM_STORY_BATTLE = LXM.storyBattle;
@@ -358,6 +359,11 @@ export function serverQuestComplete(agent: Agent, questId: string, token?: strin
 /** なんでも屋: どうぐを 1 個買う (D-ITEM-001)。品揃え・値段・上限はサーバーが決める。rkey で冪等。 */
 export function serverShopBuy(agent: Agent, itemId: string, rkey: string, token?: string): Promise<ServerShopResult> {
   return callEdge<ServerShopResult>(agent, LXM_SHOP_BUY, '/api/shop/buy', { itemId, rkey, ...(token ? { token } : {}) });
+}
+
+/** 魔石の交換 (D-MATERIAL-001)。品と数はサーバーが町のデータから決める。rkey で冪等。 */
+export function serverShopExchange(agent: Agent, id: string, rkey: string, token?: string): Promise<ServerShopResult> {
+  return callEdge<ServerShopResult>(agent, LXM_SHOP_EXCHANGE, '/api/shop/exchange', { id, rkey, ...(token ? { token } : {}) });
 }
 
 /** なんでも屋: 素材のひきとり (#551)。権威側の在庫と残高を動かす。 */
