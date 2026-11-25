@@ -113,8 +113,9 @@ export const POWER_COLLECTION = 'app.aozoraquest.power';
  *  移行は M5 で再検討 (§9-4 未解決)**。真の偽造対策は M4 の投稿 XP 権威化で、これは絶対値の暴走を切る
  *  緩いサニティ上限。長期ユーザーの正当残高 (viaPosts 累積) を切り詰めない大きさにする。値の根拠はコミット参照。 */
 export const MAX_MIGRATE_POWER = 100_000; // 正当ユーザー (投稿数=残高上限) を十分上回る緩い上限
-/** 新規の初期パワーの下限 (#795)。投稿が少ない人でも、ふたばの店で最初の装備を買える。 */
-export const STARTER_POWER = 20;
+/** 新規の初期パワーの下限 (#795)。投稿が少ない人でも、ふたばの店で最初の装備を買える。
+ *  20 では最初の村の依頼の途中で尽きた (1 戦 = 1 パワー) ので 50 (#1034)。gameState を初めて作るときだけ効く。 */
+export const STARTER_POWER = 50;
 export const MAX_MIGRATE_PLAYER_XP = 500_000; // lvl 99 ≈ 457k を上回る安全上限
 
 const finiteNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
