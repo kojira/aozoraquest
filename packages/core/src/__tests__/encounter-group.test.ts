@@ -7,7 +7,7 @@
  * - 同じ seed なら同じ群れ
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { BATTLE_TUNING, encounterGroupSize, setMonsterOverrides, startBattle, MONSTERS_BY_ID, type MonsterDef } from '../index.js';
+import { BATTLE_TUNING, encounterGroupSize, favoredMonsterFor, setMonsterOverrides, startBattle, MONSTERS_BY_ID, type MonsterDef } from '../index.js';
 import { TEST_MONSTERS } from './helpers/monster-fixture.js';
 
 const mon = (id: string, tier: 1 | 2 | 3, over: Partial<MonsterDef> = {}): MonsterDef => ({ id, name: id, species: 'slime', level: 1, tier, stats: [7, 5, 6, 2, 4], hp: 5, drops: [], intro: 'て。', ...over });
@@ -103,6 +103,22 @@ describe('encounterGroupSize', () => {
       for (const e of (a.enemies ?? []).slice(1)) expect(['runner', 'rare']).not.toContain(e.monsterId);
     }
     expect(groups).toBeGreaterThan(30);
+  });
+
+  it('地域の相性: 追加の敵も、主の敵・「よく出る敵」(favoredMonsterFor) と同じ敵が出やすい (プールのレアの逃げる敵より後ろでも)', () => {
+    // tier2 のプール = [d, stray (レアの逃げる敵), e, h]。affinity 2 のよく出る敵は e。
+    // 群れに入れられる敵にしぼると [d, e, h] になり、番号 2 は h になる (しぼる前の番号で決める)。
+    setMonsterOverrides([mon('a', 1), mon('b', 1), mon('c', 1), mon('d', 2), mon('stray', 2, { ability: 'fleer', spawnWeight: 0.5 }), mon('e', 2), mon('h', 2)]);
+    const favored = favoredMonsterFor(2, 2)!.id;
+    expect(favored).toBe('e');
+    const n: Record<string, number> = {};
+    for (let seed = 0; seed < 2000; seed++) {
+      const s = startBattle('warrior', 8, 8, 'x', 2, seed, 0, undefined, { group: { partySize: 4 }, affinity: 2 });
+      for (const e of (s.enemies ?? []).slice(1)) n[e.monsterId!] = (n[e.monsterId!] ?? 0) + 1;
+    }
+    expect(n.stray ?? 0).toBe(0);
+    expect(n[favored]!).toBeGreaterThan(n.d! * 2);
+    expect(n[favored]!).toBeGreaterThan(n.h! * 2);
   });
 
   it('group を渡さなければ今のまま 1 体 (monsterId 固定・extraEnemies も今のまま)', () => {

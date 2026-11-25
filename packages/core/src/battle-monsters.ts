@@ -420,6 +420,8 @@ export function summonMonster(
   focus?: readonly string[],
 ): { def: MonsterDef; combatant: Combatant } {
   let pool = randomPool(tier);
+  // よく出る敵は、しぼる前のプールで決める (「よく出る敵」の表示・主の敵と同じ敵)。しぼって外れたら相性の重みなし。
+  const favoredId = affinity === undefined ? undefined : favoredMonsterFor(tier, affinity)?.id;
   // しぼって空なら、しぼらないプールのまま (下の帯に繰り下げない)。
   if (only && pool.some(only)) pool = pool.filter(only);
   // **プールが空でも落とさない。** 落とすと edge の handleMove が 500 になり、
@@ -439,10 +441,9 @@ export function summonMonster(
   // 出現重み = spawnWeight (default 1) × affinity 補正 (favor 対象を重く)。ただし
   // レア敵 (spawnWeight<1) は favor 対象にしない = どの地域でもごく稀のまま
   // (地域相性で「はぐれメタルが出やすい街」を作らない — レビュー ★★)。重み付き累積抽選 (決定的)。
-  const favored = affinity === undefined ? -1 : ((affinity % pool.length) + pool.length) % pool.length;
-  const weights = withFocus(pool, pool.map((m, i) => {
+  const weights = withFocus(pool, pool.map((m) => {
     const w = m.spawnWeight ?? 1;
-    return w * (i === favored && w >= 1 ? AFFINITY_WEIGHT : 1);
+    return w * (m.id === favoredId && w >= 1 ? AFFINITY_WEIGHT : 1);
   }), focus);
   const total = weights.reduce((a, b) => a + b, 0);
   let pick = rng() * total;
