@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { WORLD_MAP_ID, casinoSpotAt, gateAt, gateLockedNotice, gateOpen, innAt, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type CasinoSpot, type InteriorMap, type NpcDef } from '@aozoraquest/core';
+import { WORLD_MAP_ID, blockedSpotHint, casinoSpotAt, gateAt, gateLockedNotice, gateOpen, innAt, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type CasinoSpot, type InteriorMap, type NpcDef } from '@aozoraquest/core';
 import { serverMove, worldServerEnabled, WorldServerError, type ServerEncounter } from '@/lib/world-server';
 import { recordTownArrival, saveWorldState } from '@/lib/world-state';
 import type { WorldScrollStep } from '@/lib/use-world-scroll';
@@ -70,6 +70,11 @@ export interface WorldMoveDeps {
   scheduleSave: () => void;
 }
 
+/** 進めないときの一文。カジノの台・カウンターなら、前に立てばよいと伝える (I-06)。 */
+export function blockedNotice(mapId: string | undefined, x: number, y: number): string {
+  return (mapId ? blockedSpotHint(mapId, x, y) : undefined) ?? 'そっちには進めない!';
+}
+
 // 移動は**サーバー (edge Worker) が権威判定する** (docs/21 §5 再設計)。クライアントは方向 (隣接1マス) と
 // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
 // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
@@ -119,7 +124,7 @@ export function useWorldMove(d: WorldMoveDeps) {
       const leaving = cur ? interiorExitFor(cur, nx, ny) : undefined;
       if (!leaving && !walkableIn(s.mapId ?? WORLD_MAP_ID, nx, ny, isWalkableAt)) {
         soundPlayer.playSe('blocked');
-        setNotice('そっちには進めない!');
+        setNotice(blockedNotice(s.mapId, nx, ny));
         return;
       }
       // 楽観描画: サーバー応答を待たずに即座に1マス進める (歩行を軽快に)。位置はサーバーが権威だが

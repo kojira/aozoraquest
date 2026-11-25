@@ -1,6 +1,6 @@
 /** カジノのマス (InteriorMap.casino)・なまえのふだ の名前 (D-CASINO-001 PR2)。 */
 import { afterEach, describe, expect, it } from 'vitest';
-import { allyNameIssue, BASE_PALETTE, casinoSpotAt, facilityAt, partyDefsOf, recruitById, setInteriors, worldOverlay, type InteriorMap } from '../index.js';
+import { allyNameIssue, BASE_PALETTE, blockedSpotHint, casinoSpotAt, facilityAt, partyDefsOf, recruitById, setInteriors, worldOverlay, type InteriorMap } from '../index.js';
 
 const F = BASE_PALETTE.indexOf('plains');
 const room = (over: Partial<NonNullable<InteriorMap['casino']>> = {}): InteriorMap => {
@@ -40,5 +40,33 @@ describe('なまえのふだ の名前', () => {
   it('partyDefsOf は付けた名前を使う (生成の仲間・なじみ)', () => {
     const party = { ids: ['g-1'], members: [{ id: 'g-1', name: 'ミオ', archetype: 'miko' as const, xp: 0, star: 1 as const, minLevel: 1, line: 'よろしく。' }], names: { 'g-1': 'ソラ' } };
     expect(partyDefsOf(party, recruitById, 1)[0]!.name).toBe('ソラ');
+  });
+});
+
+describe('blockedSpotHint (I-06: 台やカウンターにぶつかったら、前に立てばよいと知らせる)', () => {
+  const W = BASE_PALETTE.indexOf('mountain'); // 歩けないマス (台・カウンター・壁)
+  // y=0 は壁の列。台 (3,2) の前 (3,3) が台のマス、カウンター (1,0) の前 (1,1) が両替のマス。
+  const map = (): InteriorMap => {
+    const r = room();
+    const tiles = new Uint8Array(64).fill(F);
+    for (let x = 0; x < 8; x++) tiles[x] = W;
+    tiles[2 * 8 + 3] = W; // 台
+    tiles[7 * 8 + 7] = W; // ただの壁 (どのマスにもとなりあわない)
+    return { ...r, tiles };
+  };
+  it('台にぶつかると「台の前に立つと遊べるよ。」、両替・景品のカウンターは「カウンターの前に立つと話せるよ。」', () => {
+    setInteriors([map()], []);
+    expect(blockedSpotHint('c', 3, 2)).toBe('台の前に立つと遊べるよ。');
+    expect(blockedSpotHint('c', 1, 0)).toBe('カウンターの前に立つと話せるよ。');
+    expect(blockedSpotHint('c', 2, 0)).toBe('カウンターの前に立つと話せるよ。');
+  });
+  it('ただの壁・歩けるマス・カジノの無いマップ・フィールドでは出さない (いつもの「そっちには進めない!」のまま)', () => {
+    const { casino: _casino, ...plain } = map();
+    setInteriors([map(), { ...plain, id: 'plain' }], []);
+    expect(blockedSpotHint('c', 7, 7)).toBeUndefined();
+    expect(blockedSpotHint('c', 5, 5)).toBeUndefined();
+    expect(blockedSpotHint('c', 0, 0)).toBeUndefined();
+    expect(blockedSpotHint('plain', 3, 2)).toBeUndefined();
+    expect(blockedSpotHint('world', 3, 2)).toBeUndefined();
   });
 });

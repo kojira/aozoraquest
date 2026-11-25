@@ -325,6 +325,21 @@ export function casinoSpotAt(mapId: string, x: number, y: number): CasinoSpot | 
   return g ? { kind: 'game', game: g.game } : undefined;
 }
 
+/**
+ * **歩けないマスにぶつかったときのヒント** (I-06)。カジノのマスは台・カウンターの手前の床にあり、
+ * 台そのものを押しても開かない (宿屋・なんでも屋の扉と同じく、マスに立つと開く)。
+ * ぶつかったマスのとなりにカジノのマスがあれば、前に立てばよいと伝える。無ければ undefined (いつもの一文)。
+ */
+export function blockedSpotHint(mapId: string, x: number, y: number): string | undefined {
+  const m = interiors.get(mapId);
+  if (!m?.casino || interiorWalkableAt(m, x, y)) return undefined;
+  for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+    const spot = casinoSpotAt(mapId, x + dx, y + dy);
+    if (spot) return spot.kind === 'game' ? '台の前に立つと遊べるよ。' : 'カウンターの前に立つと話せるよ。';
+  }
+  return undefined;
+}
+
 /** そのマスにある施設の名前 (エディタの警告文にそのまま使う)。 */
 export type FacilityName = '宿屋' | 'なんでも屋' | 'カジノ' | 'ゲート';
 
