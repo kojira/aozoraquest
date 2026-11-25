@@ -1,7 +1,8 @@
 /** 遭遇の開始 (beginEncounter)。始められない遭遇を無言で捨てない (敵が出ないのに何も起きない、を防ぐ)。 */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Dispatch, SetStateAction } from 'react';
-import { beginEncounter, ENCOUNTER_FAILED_NOTICE } from './use-world-move';
+import { BASE_PALETTE, setInteriors, worldOverlay, type InteriorMap } from '@aozoraquest/core';
+import { beginEncounter, blockedNotice, ENCOUNTER_FAILED_NOTICE } from './use-world-move';
 import type { ServerEncounter } from './world-server';
 import type { WorldBattle } from './use-world-battle';
 import type { WipePhase } from '@/components/encounter-wipe';
@@ -41,5 +42,20 @@ describe('beginEncounter', () => {
     expect(h.setNotice).toHaveBeenCalledWith(ENCOUNTER_FAILED_NOTICE);
     expect(h.battleRef.current).toBeNull();
     expect(h.setWipe).not.toHaveBeenCalled();
+  });
+});
+
+describe('blockedNotice (I-06)', () => {
+  afterEach(() => setInteriors(null, null));
+  it('カジノの台にぶつかると前に立てばよいと出し、ただの壁は「そっちには進めない!」のまま', () => {
+    const F = BASE_PALETTE.indexOf('plains'), W = BASE_PALETTE.indexOf('mountain');
+    const tiles = new Uint8Array(64).fill(F);
+    tiles[2 * 8 + 3] = W; tiles[7 * 8 + 7] = W;
+    const t = worldOverlay().towns[0]!;
+    const room: InteriorMap = { id: 'casino', name: 'カジノ', size: 8, tiles, casino: { town: { x: t.x, y: t.y }, exchange: { x: 1, y: 5 }, prize: { x: 2, y: 5 }, games: [{ x: 3, y: 3, game: 'slots' }] } };
+    setInteriors([room], []);
+    expect(blockedNotice('casino', 3, 2)).toBe('台の前に立つと遊べるよ。');
+    expect(blockedNotice('casino', 7, 7)).toBe('そっちには進めない!');
+    expect(blockedNotice(undefined, 3, 2)).toBe('そっちには進めない!');
   });
 });
