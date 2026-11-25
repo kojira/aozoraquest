@@ -34,8 +34,8 @@ import {
   questPath,
 } from '@/lib/quest-api';
 import { Handle, RewardPoints } from '@/components/handle';
+import { PUBLIC_APPVIEW_URL } from '@/lib/atproto-endpoints';
 
-const PUBLIC_APPVIEW = 'https://api.bsky.app';
 
 export function Portfolio() {
   const session = useSession();
@@ -55,7 +55,7 @@ export function PublicPortfolio() {
   useEffect(() => {
     if (!handle) return;
     let cancelled = false;
-    const agent = new AtpAgent({ service: PUBLIC_APPVIEW });
+    const agent = new AtpAgent({ service: PUBLIC_APPVIEW_URL });
     agent.getProfile({ actor: handle })
       .then((res) => { if (!cancelled) setDid(res.data.did); })
       .catch((e) => { if (!cancelled) setResolveErr(String((e as Error)?.message ?? e)); });
@@ -69,7 +69,7 @@ export function PublicPortfolio() {
   // 他人視点では session.agent (= 認証済み) があれば listRecords は通る。
   // 公開 read だけなら publicAgent でも十分だが、認証済みエージェントを優先する。
   // AtpAgent と Agent は内部実装が同等なので、PortfolioView 側では unknown 経由で受ける。
-  const agent: Agent = session.agent ?? (new AtpAgent({ service: PUBLIC_APPVIEW }) as unknown as Agent);
+  const agent: Agent = session.agent ?? (new AtpAgent({ service: PUBLIC_APPVIEW_URL }) as unknown as Agent);
   const isSelf = session.did === did;
   return <PortfolioView did={did} agent={agent} isSelf={isSelf} signedIn={session.status === 'signed-in'} />;
 }

@@ -8,6 +8,7 @@
  * DID 解決は service-auth の `resolveDidDocument` を再利用 (did:plc / did:web、SSRF 対策込み)。
  */
 import { resolveDidDocument, ServiceAuthError } from './service-auth';
+import { isAllowedServiceUrl } from './atproto-endpoints';
 
 /** service 配列込みの DID document (service-auth 側は verificationMethod だけの狭い型)。 */
 interface DidDocWithService {
@@ -32,7 +33,7 @@ export interface AuthServerMetadata {
 export function pdsEndpointFromDoc(doc: DidDocWithService, did: string): string {
   const svc = doc.service?.find((s) => s.id === '#atproto_pds' || s.id === `${did}#atproto_pds` || s.type === 'AtprotoPersonalDataServer');
   const ep = svc?.serviceEndpoint;
-  if (!ep || !/^https:\/\//.test(ep)) throw new ServiceAuthError(`#atproto_pds エンドポイントが見つからない: ${did}`);
+  if (!ep || !isAllowedServiceUrl(ep)) throw new ServiceAuthError(`#atproto_pds エンドポイントが見つからない: ${did}`);
   return ep.replace(/\/$/, '');
 }
 
@@ -51,7 +52,7 @@ async function fetchJson<T>(url: string, f: typeof fetch): Promise<T> {
 export async function discoverAuthServer(pdsUrl: string, fetchImpl: typeof fetch = fetch): Promise<AuthServerMetadata> {
   const pr = await fetchJson<{ authorization_servers?: string[] }>(`${pdsUrl}/.well-known/oauth-protected-resource`, fetchImpl);
   const as0 = pr.authorization_servers?.[0];
-  if (!as0 || !/^https:\/\//.test(as0)) throw new ServiceAuthError('protected-resource に authorization_servers が無い');
+  if (!as0 || !isAllowedServiceUrl(as0)) throw new ServiceAuthError('protected-resource に authorization_servers が無い');
   const issuerBase = as0.replace(/\/$/, '');
 
   const meta = await fetchJson<AuthServerMetadata>(`${issuerBase}/.well-known/oauth-authorization-server`, fetchImpl);

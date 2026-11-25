@@ -1,4 +1,5 @@
 import { BrowserOAuthClient, type OAuthSession } from '@atproto/oauth-client-browser';
+import { ATPROTO_ALLOW_HTTP, HANDLE_RESOLVER_URL, PLC_DIRECTORY_URL } from './atproto-endpoints';
 
 /**
  * OAuth クライアントをシングルトンで初期化する。
@@ -69,6 +70,8 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
   const isDev = import.meta.env.DEV;
   const appUrl = import.meta.env.VITE_APP_URL || location.origin;
   const hooks = buildHooks();
+  // つなぎ先は atproto-endpoints が唯一の出所 (既定 = 本物の Bluesky。ローカル環境だけ差し替える #1018)。
+  const resolverOptions = { handleResolver: HANDLE_RESOLVER_URL, plcDirectoryUrl: PLC_DIRECTORY_URL, allowHttp: ATPROTO_ALLOW_HTTP };
 
   if (isDev) {
     // RFC 8252: ループバック redirect_uri には 127.0.0.1 を使う (localhost は不可)。
@@ -78,7 +81,7 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
     const redirectUri = `${loopbackUri}/oauth/callback`;
     clientPromise = BrowserOAuthClient.load({
       clientId: `http://localhost?redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('atproto transition:generic')}`,
-      handleResolver: 'https://bsky.social',
+      ...resolverOptions,
       ...hooks,
     });
   } else {
@@ -88,7 +91,7 @@ export function getOAuthClient(): Promise<BrowserOAuthClient> {
     // 同じ origin を使う。
     clientPromise = BrowserOAuthClient.load({
       clientId: `${appUrl}/client-metadata.json`,
-      handleResolver: 'https://bsky.social',
+      ...resolverOptions,
       ...hooks,
     });
   }

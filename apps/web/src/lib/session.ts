@@ -1,14 +1,14 @@
 import { Agent, AtpAgent } from '@atproto/api';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { PUBLIC_APPVIEW_URL as PUBLIC_APPVIEW } from './atproto-endpoints';
 import { breakStaleOAuthLock, clearOAuthStorage, onSessionDeleted, restoreSession, signOut } from './oauth';
 
 /**
- * 公開 AppView エンドポイント。OAuth セッションの PDS は app.bsky.* を
+ * 公開 AppView エンドポイント (atproto-endpoints)。OAuth セッションの PDS は app.bsky.* を
  * プロキシするはずだが、一部のケース (session 復元直後など) で 401 を返す。
  * 名前解決のような公開読み取りはこちらから引く。
  */
-const PUBLIC_APPVIEW = 'https://api.bsky.app';
 
 /** warmup (getSession) の上限。復元は本来 <1s なので、これを超えたら「ハングした古い/壊れた
  *  セッション」とみなし signed-out へ倒す (遅いだけの valid セッションを誤って切らない余裕を持たせる)。 */

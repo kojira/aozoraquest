@@ -5,11 +5,13 @@ import wasmModule from './vendor/secp256k1-verify/secp256k1_verify_bg.wasm';
 import { initSecp256k1 } from './secp256k1-wasm';
 import { runCronRefresh } from './oauth-cron';
 import { ensureAuthoredWorld } from './world-authoring';
+import { configureAtprotoEndpoints } from './atproto-endpoints';
 
 initSecp256k1(wasmModule);
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    configureAtprotoEndpoints(env); // 外部つなぎ先 (既定 = 本物の Bluesky。ローカル環境だけ差し替える #1018)
     // 手編集した世界を読む (#421)。**移動判定はここ (edge) が権威**なので、web と同じ
     // 地図を見ていないと「画面では歩けるのにサーバーが弾く」= その場から動けなくなる。
     //
@@ -24,6 +26,7 @@ export default {
 
   // OAuth トークンの唯一の refresh 実行者 (docs/21 §12)。Cron Trigger から定期起動。
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    configureAtprotoEndpoints(env);
     const r = await runCronRefresh(env, Math.floor(Date.now() / 1000));
     if (r.status === 'error' || r.status === 'not-configured') {
       console.error(`oauth cron refresh: ${r.status} ${r.detail ?? ''}`);

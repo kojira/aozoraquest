@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { JobCard } from '@/components/job-card';
 import type { Archetype, CardType, DiagnosisResult, ManaCost, Rarity } from '@aozoraquest/core';
 import { isArchetype, isCardType, isRarity, sanitizeManaCost } from '@aozoraquest/core';
+import { PUBLIC_APPVIEW_URL } from '@/lib/atproto-endpoints';
 
 /** 同 origin の fetch → blob → dataURL で inline。CORS が通れば成功。 */
 async function fetchAsDataUrl(url: string): Promise<string | null> {
@@ -47,7 +48,7 @@ export function DebugCard() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`https://api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
+        const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
         if (!res.ok) throw new Error(`profile fetch ${res.status}`);
         const data = await res.json();
         if (cancelled) return;

@@ -18,6 +18,7 @@ import { Avatar } from '@/components/avatar';
 import { Spinner } from '@/components/spinner';
 import { BookIcon, BoardIcon } from '@/components/icons';
 import { ActionLink } from '@/components/action-link';
+import { PUBLIC_APPVIEW_URL } from '@/lib/atproto-endpoints';
 
 type DiagnosisState =
   | { status: 'idle' }
@@ -66,7 +67,7 @@ export function MyProfile() {
     // 自分の Bluesky プロフィールのアバター画像を取る (公開 AppView 経由)
     (async () => {
       try {
-        const publicAgent = new AtpAgent({ service: 'https://api.bsky.app' });
+        const publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW_URL });
         const res = await publicAgent.getProfile({ actor: did });
         if (!cancelled && res.data.avatar) setAvatarUrl(res.data.avatar);
       } catch (e) {

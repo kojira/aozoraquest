@@ -17,6 +17,7 @@ import { SoundSettings } from '@/components/sound/sound-settings';
 import { TextField } from '@/components/text-field';
 import { RadarChart } from '@/components/radar-chart';
 import { Avatar } from '@/components/avatar';
+import { PUBLIC_APPVIEW_URL } from '@/lib/atproto-endpoints';
 
 const OPTIN_TAG = 'aozoraquest';
 
@@ -68,7 +69,7 @@ export function Settings() {
     // アバター URL を公開 AppView から取得 (目指す姿の各ボタンで使う)
     (async () => {
       try {
-        const publicAgent = new AtpAgent({ service: 'https://api.bsky.app' });
+        const publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW_URL });
         const res = await publicAgent.getProfile({ actor: did });
         if (!cancelled && res.data.avatar) setAvatarUrl(res.data.avatar);
       } catch (e) {

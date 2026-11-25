@@ -16,6 +16,7 @@ import { p256 } from '@noble/curves/p256';
 import { sha256 } from '@noble/hashes/sha256';
 import { base58, base64urlnopad } from '@scure/base';
 import { verifySecp256k1 } from './secp256k1-wasm';
+import { plcDirectoryUrl } from './atproto-endpoints';
 
 export type Curve = 'secp256k1' | 'p256';
 export interface SigningKey {
@@ -69,7 +70,7 @@ function isUnsafeDidWebHost(host: string): boolean {
 const DID_DOC_TTL_MS = 10 * 60 * 1000;
 const didDocCache = new Map<string, { doc: DidDocument; expiresAt: number }>();
 
-/** DID document を解決 (did:plc → plc.directory / did:web → .well-known)。fetchFn は差し替え可 (テスト)。
+/** DID document を解決 (did:plc → PLC (既定 plc.directory、atproto-endpoints) / did:web → .well-known)。fetchFn は差し替え可 (テスト)。
  *  結果は 10 分キャッシュ (テスト用に fetchFn を渡した場合はキャッシュしない)。 */
 export async function resolveDidDocument(did: string, fetchFn: typeof fetch = fetch): Promise<DidDocument> {
   const useCache = fetchFn === fetch;
@@ -80,7 +81,7 @@ export async function resolveDidDocument(did: string, fetchFn: typeof fetch = fe
   }
   let url: string;
   if (did.startsWith('did:plc:')) {
-    url = `https://plc.directory/${encodeURIComponent(did)}`;
+    url = `${plcDirectoryUrl()}/${encodeURIComponent(did)}`;
   } else if (did.startsWith('did:web:')) {
     const rest = did.slice('did:web:'.length);
     const parts = rest.split(':').map(decodeURIComponent);

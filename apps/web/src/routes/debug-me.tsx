@@ -18,6 +18,7 @@ import type { Archetype, DiagnosisResult } from '@aozoraquest/core';
 import { JOBS_BY_ID, jobDisplayName, jobLevelFromXp, jobTagline } from '@aozoraquest/core';
 import { Avatar } from '@/components/avatar';
 import { ResultView } from './me';
+import { PLC_DIRECTORY_URL, PUBLIC_APPVIEW_URL } from '@/lib/atproto-endpoints';
 
 interface BskyProfile {
   did: string;
@@ -47,12 +48,12 @@ export function DebugMe() {
     (async () => {
       try {
         // 1) handle → DID + Bluesky プロフィール
-        const profRes = await fetch(`https://api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
+        const profRes = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
         if (!profRes.ok) throw new Error(`profile ${profRes.status}`);
         const profData = await profRes.json();
 
         // 2) DID → PDS endpoint
-        const plcRes = await fetch(`https://plc.directory/${profData.did}`);
+        const plcRes = await fetch(`${PLC_DIRECTORY_URL}/${profData.did}`);
         if (!plcRes.ok) throw new Error(`plc ${plcRes.status}`);
         const plcData = await plcRes.json();
         const pds = (plcData.service ?? []).find((s: { id: string; serviceEndpoint: string }) => s.id === '#atproto_pds')?.serviceEndpoint;

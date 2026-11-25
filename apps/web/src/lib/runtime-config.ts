@@ -14,8 +14,7 @@
 import { AtpAgent } from '@atproto/api';
 import { DEFAULT_RUNTIME_CONFIG, type RuntimeConfig } from '@aozoraquest/types';
 import { ADMIN_COL } from './collections';
-
-const PLC_DIRECTORY = 'https://plc.directory';
+import { PLC_DIRECTORY_URL } from './atproto-endpoints';
 
 /** VITE_ADMIN_DIDS (カンマ区切り) を trim + 空要素除去して配列化。
  *  パース仕様を 1 箇所に集約し getPrimaryAdminDid / isAdminDid の食い違いを防ぐ。 */
@@ -39,7 +38,7 @@ export function isAdminDid(did: string | null | undefined): boolean {
 }
 
 /** DID を PDS エンドポイントに解決する (公開 read の宛先決定に使う唯一の実装)。
- *  did:plc:* は plc.directory、did:web:* はドメイン直 .well-known/did.json。 */
+ *  did:plc:* は PLC (既定 plc.directory、atproto-endpoints)、did:web:* はドメイン直 .well-known/did.json。 */
 export async function resolveDidToPds(did: string): Promise<string> {
   const pickPds = (doc: { service?: { id?: string; type?: string; serviceEndpoint?: string }[] }) => {
     const svc = (doc.service ?? []).find(
@@ -49,7 +48,7 @@ export async function resolveDidToPds(did: string): Promise<string> {
     return svc.serviceEndpoint;
   };
   if (did.startsWith('did:plc:')) {
-    const res = await fetch(`${PLC_DIRECTORY}/${encodeURIComponent(did)}`);
+    const res = await fetch(`${PLC_DIRECTORY_URL}/${encodeURIComponent(did)}`);
     if (!res.ok) throw new Error(`plc.directory ${res.status}`);
     return pickPds(await res.json());
   }

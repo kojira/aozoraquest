@@ -12,8 +12,8 @@
 
 import { useEffect, useState } from 'react';
 import { AtpAgent } from '@atproto/api';
+import { PUBLIC_APPVIEW_URL as PUBLIC_APPVIEW } from './atproto-endpoints';
 
-const PUBLIC_APPVIEW = 'https://api.bsky.app';
 const KEY = 'aozoraquest:handleCache';
 const TTL_MS = 24 * 60 * 60 * 1000;
 
