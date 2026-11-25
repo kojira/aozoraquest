@@ -31,9 +31,10 @@ import { ServerWriteError } from './server-pds';
 import { isEdgeAdmin } from './oauth-config';
 import { readPdsUsage, opsRemaining, PUT_RECORD_POINTS } from './pds-usage';
 import { LXM, type Command } from '@aozoraquest/core';
+import type { AtprotoEndpointsEnv } from './atproto-endpoints';
 
 /** WORKER_DID / SERVER_DID / OAUTH_* / ADMIN_DIDS / OAUTH_TOKENS は OAuthRoutesEnv から継承。 */
-export interface Env extends OAuthRoutesEnv, AdminDataEnv {
+export interface Env extends OAuthRoutesEnv, AdminDataEnv, AtprotoEndpointsEnv {
   ENVIRONMENT?: string;
   /** カンマ区切り。空 or 未設定なら CORS 全許可 (dev 用)。production では必ず設定する */
   ALLOWED_ORIGINS?: string;

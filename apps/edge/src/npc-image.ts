@@ -2,6 +2,7 @@ import { assertNpcImage, npcExpressionImage, NPC_EXPRESSION_NAME, NPC_IMAGE_BYTE
 import { resolveDidDocument } from './service-auth';
 import { pdsEndpointFromDoc } from './oauth-metadata';
 import { adminNsidRoot, type WorldAuthoringEnv } from './world-authoring';
+import { isAllowedLoopbackHttp } from './atproto-endpoints';
 
 /** This route never accepts an upstream URL/DID. Only the configured primary author's saved NPCs are public. */
 export async function handleNpcImage(req: Request, env: WorldAuthoringEnv): Promise<Response> {
@@ -21,8 +22,9 @@ export async function handleNpcImage(req: Request, env: WorldAuthoringEnv): Prom
     const pds = new URL(pdsEndpointFromDoc(doc as Parameters<typeof pdsEndpointFromDoc>[0], did));
     // A configured DID may migrate PDS, but must not turn this image route into a private-network proxy.
     const host = pds.hostname.toLowerCase();
-    if (pds.protocol !== 'https:' || pds.username || pds.password || pds.port || pds.search || pds.hash || pds.pathname !== '/' ||
-      !host.includes('.') || /(^|\.)(localhost|local|internal|test|invalid)$/.test(host) || /^[\d.]+$/.test(host) || host.includes(':') || host.startsWith('[')) return fail(502);
+    // ローカル環境 (ALLOW_LOOPBACK_HTTP=1) の loopback PDS だけは例外 (#1018。既定では拒否のまま)。
+    if (!isAllowedLoopbackHttp(pds) && (pds.protocol !== 'https:' || pds.username || pds.password || pds.port || pds.search || pds.hash || pds.pathname !== '/' ||
+      !host.includes('.') || /(^|\.)(localhost|local|internal|test|invalid)$/.test(host) || /^[\d.]+$/.test(host) || host.includes(':') || host.startsWith('['))) return fail(502);
     const fetchBounded = async (path: string, max: number) => {
       // Workers fetch rejects redirect: 'error'; 'manual' returns the 3xx itself, which is refused without following Location.
       const response = await fetch(`${pds.origin}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(10000) });

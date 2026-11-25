@@ -16,6 +16,7 @@ import { fetchFollows, fetchLatestPostAt, fetchUserPostsForDiagnosis, type Follo
 import { getAnalysis } from './analysis-cache';
 import { loadCachedAnalysis, saveCachedAnalysis } from './analysis-idb';
 import { diagnoseGivenPosts } from './diagnosis-flow';
+import { PUBLIC_APPVIEW_URL } from './atproto-endpoints';
 
 /**
  * 他人の公開投稿を読むときは認証済 agent を使わず、公開 AppView に直接叩く。
@@ -28,7 +29,7 @@ import { diagnoseGivenPosts } from './diagnosis-flow';
  */
 let _publicAgent: AtpAgent | null = null;
 function getPublicAgent(): AtpAgent {
-  if (!_publicAgent) _publicAgent = new AtpAgent({ service: 'https://api.bsky.app' });
+  if (!_publicAgent) _publicAgent = new AtpAgent({ service: PUBLIC_APPVIEW_URL });
   return _publicAgent;
 }
 

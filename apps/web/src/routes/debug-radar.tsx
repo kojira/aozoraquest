@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useSession } from '@/lib/session';
 import { RadarChart } from '@/components/radar-chart';
 import type { StatVector } from '@aozoraquest/core';
+import { PLC_DIRECTORY_URL, PUBLIC_APPVIEW_URL } from '@/lib/atproto-endpoints';
 
 /**
  * ヒーロー画像 (README) 用に、指定ハンドル (もしくはログイン中ユーザー) の analysis を
@@ -31,12 +32,12 @@ export function DebugRadar() {
     (async () => {
       try {
         // 1) handle → DID
-        const profRes = await fetch(`https://api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
+        const profRes = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
         if (!profRes.ok) throw new Error(`profile ${profRes.status}`);
         const { did } = await profRes.json();
 
         // 2) DID → PDS endpoint
-        const plcRes = await fetch(`https://plc.directory/${did}`);
+        const plcRes = await fetch(`${PLC_DIRECTORY_URL}/${did}`);
         if (!plcRes.ok) throw new Error(`plc ${plcRes.status}`);
         const plcData = await plcRes.json();
         const pds = (plcData.service ?? []).find((s: { id: string; serviceEndpoint: string }) => s.id === '#atproto_pds')?.serviceEndpoint;
