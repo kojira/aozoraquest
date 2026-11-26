@@ -137,11 +137,15 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   };
 
   /** 長いサイドストーリーの最後: 主人公と仲間に合う品から 1 つ選ぶ (D-RARE-GEAR-001)。「あとで」なら進行中のまま。 */
-  const askRewardChoice = (npc: NpcDef, q: GameQuestDef, guild: boolean, directList: boolean, lines: string[]) => {
+  //  1 ページは依頼の一覧と同じ QUEST_CHOICES_PER_PAGE 品 (390px の会話窓に収まる数)。前へ・次へ・あとで は下端に張りつける。
+  const askRewardChoice = (npc: NpcDef, q: GameQuestDef, guild: boolean, directList: boolean, lines: string[], page = 0) => {
     const options = rewardChoicesFor(q, archetypeRef?.current ?? null, party);
-    const choices: DialogueChoice[] = options.map((id) => ({ label: rewardChoiceLabel(id), onSelect: () => reportQuest(npc, q, guild, directList, id) }));
+    const start = page * QUEST_CHOICES_PER_PAGE;
+    const choices: DialogueChoice[] = options.slice(start, start + QUEST_CHOICES_PER_PAGE).map((id) => ({ label: rewardChoiceLabel(id), onSelect: () => reportQuest(npc, q, guild, directList, id) }));
+    if (page > 0) choices.push({ label: '前へ', pinned: true, onSelect: () => askRewardChoice(npc, q, guild, directList, [], page - 1) });
+    if (start + QUEST_CHOICES_PER_PAGE < options.length) choices.push({ label: '次へ', pinned: true, onSelect: () => askRewardChoice(npc, q, guild, directList, [], page + 1) });
     choices.push({ label: 'あとで', pinned: true, onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
-    setNpcTalk({ npc, lines: [...lines, 'おれいに、すきなものを ひとつ えらんでほしい。'], choices, ...(guild ? { guild: 'message' as const } : {}) });
+    setNpcTalk({ npc, lines: [...lines, 'おれいを ひとつ えらんでね。'], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
 
   const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false, choice?: string) => {
