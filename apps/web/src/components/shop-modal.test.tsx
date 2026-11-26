@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { EQUIPMENT, EQUIPMENT_BY_ID, ITEMS, setItemOverrides, townShopStock, worldOverlay } from '@aozoraquest/core';
+import { EQUIPMENT, EQUIPMENT_BY_ID, ITEMS, setItemOverrides, tierForRegion, townShopStock, worldOverlay } from '@aozoraquest/core';
 import { ShopModal } from './shop-modal';
 
 describe('ShopModal の値段表示', () => {
@@ -24,6 +24,23 @@ describe('ShopModal の値段表示', () => {
     expect(screen.getAllByText(`パワー${free.price.power}`).length).toBeGreaterThan(0);
     expect(screen.queryByText(`パワー${free.price.power} + ${materialName} ×0`)).toBeNull();
     expect(screen.getByText(`パワー${paid.price.power} + ${materialName} ×${paid.price.materials}`)).toBeTruthy();
+  });
+});
+
+describe('ShopModal の「おすすめ」(D-BALANCE-002)', () => {
+  afterEach(() => cleanup());
+
+  it('店名の下に、その街の帯のおすすめ (装備の段と Lv) を出す', () => {
+    const t1 = worldOverlay().towns.find((t) => tierForRegion(t.region) === 1)!;
+    const t2 = worldOverlay().towns.find((t) => tierForRegion(t.region) === 2)!;
+    for (const [town, want] of [[t1, 'おすすめ：1段目の装備・Lv3'], [t2, 'おすすめ：2段目の装備・Lv11']] as const) {
+      render(
+        <ShopModal town={town} townIndex={0} archetype={null} balance={0} materials={{}} pieces={[]} equippedRkeys={[]}
+          busy={false} lastAction={null} errorText={null} onCraft={vi.fn()} onForge={vi.fn()} onSell={vi.fn()} onBuy={vi.fn()} onClose={vi.fn()} />,
+      );
+      expect(screen.getByTestId('tier-recommend').textContent).toBe(want);
+      cleanup();
+    }
   });
 });
 

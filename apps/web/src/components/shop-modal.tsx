@@ -17,6 +17,8 @@ import {
   leveledName,
   salePowerFor,
   signed,
+  tierForRegion,
+  tierRecommendLabel,
   townShopStock,
   type Archetype,
   type EquipmentDef,
@@ -271,7 +273,11 @@ export function ShopModal({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-          <strong style={{ fontSize: '0.95em' }}>🔨 {town.name}のなんでも屋</strong>
+          <span style={{ minWidth: 0 }}>
+            <strong style={{ fontSize: '0.95em' }}>🔨 {town.name}のなんでも屋</strong>
+            {/* この帯のおすすめ (D-BALANCE-002 TIER_RECOMMEND)。店名の下に小さく 1 行 */}
+            <span data-testid="tier-recommend" style={{ display: 'block', fontSize: '0.72em', color: 'var(--color-muted)' }}>{tierRecommendLabel(tierForRegion(town.region))}</span>
+          </span>
           <button ref={closeBtnRef} type="button" onClick={onClose} style={{ fontSize: '0.8em', padding: '0.3em 0.9em' }}>
             とじる
           </button>
