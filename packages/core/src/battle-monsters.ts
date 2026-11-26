@@ -14,7 +14,7 @@ import type { StatusId } from './statuses.js';
 
 // ─── モンスター ─────────────────────────────────────────────
 
-export type MonsterAbilityId = 'charger' | 'healer' | 'fleer' | 'caster' | 'debuffer';
+export type MonsterAbilityId = 'charger' | 'healer' | 'fleer' | 'caster' | 'debuffer' | 'selfDestruct';
 /** 敵の技の対象。'one' = 味方 1 人 (ランダム)、'all' = 生きている味方全員 (1 人戦では主人公だけ)。 */
 export type MonsterMoveTarget = 'one' | 'all';
 /** 敵が使う弱体 (味方へ) か、自分への強化 (target 'self')。既存の状態エンジン (applyStatus) で付ける。 */
@@ -25,8 +25,8 @@ export interface MonsterDebuff {
   chance: number;
   turns: number;
   magnitude?: number;
-  /** 既定 'one'。 */
-  target?: MonsterMoveTarget | 'self';
+  /** 既定 'one'。'allies' = 自分の群れの敵みんな (battle-group-buff.ts。1 体の戦いでは自分だけ)。 */
+  target?: MonsterMoveTarget | 'self' | 'allies';
 }
 
 /** 絵のキー。monsterArt レコード (`world.monsterArt`) の id と同じ。対応する絵が無ければ「?」で描く
@@ -148,6 +148,11 @@ export interface MonsterDef {
   /** 効かない状態異常 (docs/25 §12 の statusResist。D-PARTY-002 §12 のボスの糸口)。ここにある状態は付与されず
    *  「きかなかった」になる。未指定は全部効く。 */
   statusResist?: readonly StatusId[];
+  /** 効かない属性 (battle-element-immunity.ts)。その属性の攻撃 (物理・呪文・どうぐ) は 0 倍。無属性は効く。 */
+  immune?: readonly Element[];
+  /** HP が減ると自爆する (能力 'selfDestruct'。battle-self-destruct.ts)。tell = 前のターンに出す前ぶれ、name = 技名。
+   *  below (最大HP の割合。既定 0.3) を下回った手番に前ぶれ、つぎの手番で味方みんなに物理の大技 (power 倍。既定 2.2) を打って倒れる。 */
+  selfDestruct?: { name: string; tell: string; below?: number; power?: number };
   /** 防御属性 (#455 / docs/25 §1)。被弾時の属性相性に使う。未指定 = 無属性 (常に等倍)。
    *  キャスターが弱点を突く駆け引きの導線 (賢者/魔法使いの属性撃ち分けが機能する)。 */
   element?: Element;
@@ -471,7 +476,7 @@ export function monsterHealAmount(def: MonsterDef | undefined, maxHp: number): n
 export function monsterCombatant(def: MonsterDef, variance: number, rng: () => number): Combatant {
   const factor = monsterLevelFactor(def);
   // モンスターは tier 係数の乗算 (プレイヤーとは別式)。HP/MP は明示値 (全モンスターが持つ)。
-  const ms = monsterStats(def.stats, factor);
+  const ms = monsterStats(def.stats, factor, def.tier);
   const c = makeCombatant(
     withCharacterNames(def.name), // 名前の差し込み {c:id} (D-CHAR-001)。edge の戦闘の文もこの名前を使う
     ms,
@@ -494,6 +499,7 @@ export function monsterCombatant(def: MonsterDef, variance: number, rng: () => n
   if (def.element !== undefined) c.element = def.element;
   if (def.resistAllMagic) c.resistAllMagic = true;
   if (def.statusResist?.length) c.statusResist = [...def.statusResist];
+  if (def.immune?.length) c.immuneElements = [...def.immune];
   c.monsterId = def.id; // マルチ戦闘で敵個体ごとに ability/spell を引く (#453)
   return c;
 }

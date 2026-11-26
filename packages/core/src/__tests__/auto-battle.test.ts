@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { startBattle, resolveTurn, runAutoBattle, autoBattleAction, skillMpCostOf, SKILLS, JOBS, type BattleState, type Command } from '../index.js';
+import { startBattle, resolveTurn, runAutoBattle, autoBattleAction, skillMpCostOf, SKILLS, JOBS, TIER_RECOMMEND, type BattleState, type Command } from '../index.js';
 
 /**
  * 自動戦闘の**とくぎ選択** (#521)。
@@ -138,7 +138,8 @@ describe('autoBattleAction (#521)', () => {
   it('全16職が想定レベル帯で成立する (tier1=Lv1 / tier2=Lv10 / tier3=Lv20)', () => {
     // 「キャスターが成立しない」という誤診を再発させないための土台。ツールが壊れると
     // ここが落ちる。閾値は現状 (最低 73%) から余裕を見て 60% に置く。
-    for (const [tier, lv] of [[1, 1], [2, 10], [3, 20]] as const) {
+    // tier1 は D-BALANCE-002 で下駄 10 にしたので、Lv1 ではなく tier1 のおすすめ Lv (3)。
+    for (const [tier, lv] of [[1, TIER_RECOMMEND[1].level], [2, 10], [3, 20]] as const) {
       for (const j of JOBS) {
         let win = 0;
         for (let seed = 0; seed < 60; seed++) {

@@ -55,7 +55,7 @@ export function autoBattleAction(s: BattleState, turnSeed?: number): { command: 
   // (残 HP が多い等) を選べる。`find` の先頭優先だと選択規則が 2 本に分かれる。
   if (cands.some((c) => c.after.outcome === 'win')) return bestOf(cands, s);
 
-  if (s.monster.charging) return parryIdx >= 0 && p.mp >= skillCost ? { command: 'skill', skillIndex: parryIdx } : none('guard');
+  if (s.monster.charging || s.monster.fuse) return parryIdx >= 0 && p.mp >= skillCost ? { command: 'skill', skillIndex: parryIdx } : none('guard');
   if (s.herbs > 0 && p.hp < p.maxHp * 0.45) return none('herb');
   if (s.tonics > 0 && p.mp < skillCost && p.maxMp >= skillCost * 2) return none('tonic');
   if (p.mp < skillCost) return none('attack');

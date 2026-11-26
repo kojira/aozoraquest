@@ -183,7 +183,7 @@ export const EQUIPMENT: EquipmentDef[] = [
   { id: 'wp-travel-sword', name: 'たびのつるぎ', slot: 'weapon', kind: 'common', bonus: { atk: 7 }, grade: 2, price: { power: 14, materials: 3 } },
   // 両手武器 (#609): 盾を捨てるぶん同 grade の片手より atk 高め (数値は暫定)
   { id: 'wp-great-club', name: 'おおきづち', slot: 'weapon', kind: 'common', hands: 2, bonus: { atk: 7 }, grade: 1, price: { power: 12, materials: 2 } },
-  { id: 'wp-great-sword', name: 'グレートソード', slot: 'weapon', kind: 'sword', hands: 2, bonus: { atk: 13 }, grade: 2, price: { power: 24, materials: 4 } },
+  { id: 'wp-great-sword', name: 'グレートソード', slot: 'weapon', kind: 'sword', hands: 2, bonus: { atk: 13 }, grade: 2, price: { power: 11, materials: 4 } },
   // ─── 系統カテゴリ武器 (初級 +4、意匠なしの汎用) ───
   { id: 'wp-axe', name: '戦斧', slot: 'weapon', kind: 'axe', bonus: { atk: 4 }, grade: 1, price: { power: 10, materials: 2 } },
   { id: 'wp-swift-dagger', name: '疾風の短刀', slot: 'weapon', kind: 'dagger', bonus: { agi: 4 }, grade: 1, price: { power: 10, materials: 2 } },
@@ -215,26 +215,26 @@ export const EQUIPMENT: EquipmentDef[] = [
   // ─── 盾 (#609)。片手が空いているときだけ持てる。両手盾は武器と併用不可 ───
   { id: 'sh-wood', name: '木の盾', slot: 'shield', kind: 'shield', bonus: { def: 3 }, grade: 1, price: { power: 6, materials: 1 } },
   { id: 'wp-iron-shield', name: '鉄の盾', slot: 'shield', kind: 'shield', bonus: { def: 4 }, grade: 1, price: { power: 10, materials: 2 } },
-  { id: 'sh-tower', name: '騎士の大盾', slot: 'shield', kind: 'shield', hands: 2, bonus: { def: 12 }, grade: 2, price: { power: 22, materials: 4 } },
+  { id: 'sh-tower', name: '騎士の大盾', slot: 'shield', kind: 'shield', hands: 2, bonus: { def: 12 }, grade: 2, price: { power: 9, materials: 4 } },
   // ─── 頭 (#609) ───
   { id: 'hd-leather-hat', name: 'かわのぼうし', slot: 'head', kind: 'cloth', bonus: { def: 2 }, grade: 1, price: { power: 5, materials: 1 } },
-  { id: 'hd-iron-helm', name: '鉄かぶと', slot: 'head', kind: 'heavy', bonus: { def: 7 }, grade: 2, price: { power: 16, materials: 3 } },
-  { id: 'hd-sage-hood', name: 'かしこさのずきん', slot: 'head', kind: 'robe', bonus: { def: 4, int: 2 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'hd-iron-helm', name: '鉄かぶと', slot: 'head', kind: 'heavy', bonus: { def: 7 }, grade: 2, price: { power: 5, materials: 3 } },
+  { id: 'hd-sage-hood', name: 'かしこさのずきん', slot: 'head', kind: 'robe', bonus: { def: 4, int: 2 }, grade: 2, price: { power: 5, materials: 3 } },
   // ─── 足 (#609) ───
   { id: 'ft-cloth-shoes', name: 'ぬののくつ', slot: 'feet', kind: 'cloth', bonus: { def: 1, agi: 1 }, grade: 1, price: { power: 4, materials: 1 } },
-  { id: 'ft-leather-boots', name: 'かわのブーツ', slot: 'feet', kind: 'light', bonus: { def: 3, agi: 2 }, grade: 2, price: { power: 14, materials: 3 } },
-  { id: 'ft-iron-greaves', name: '鉄のすねあて', slot: 'feet', kind: 'heavy', bonus: { def: 6 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'ft-leather-boots', name: 'かわのブーツ', slot: 'feet', kind: 'light', bonus: { def: 3, agi: 2 }, grade: 2, price: { power: 5, materials: 3 } },
+  { id: 'ft-iron-greaves', name: '鉄のすねあて', slot: 'feet', kind: 'heavy', bonus: { def: 6 }, grade: 2, price: { power: 5, materials: 3 } },
   // ─── 防具 ───
   { id: 'ar-cloth', name: 'ぬののふく', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 4, materials: 1 } },
   { id: 'ar-leather', name: 'かわのよろい', slot: 'armor', kind: 'cloth', bonus: { def: 5 }, grade: 1, price: { power: 8, materials: 2 } },
   { id: 'ar-travel-cloak', name: 'たびのマント', slot: 'armor', kind: 'cloth', bonus: { def: 15 }, grade: 2, price: { power: 14, materials: 3 } },
-  { id: 'ar-iron', name: '鉄のよろい', slot: 'armor', kind: 'heavy', bonus: { def: 15 }, grade: 2, price: { power: 20, materials: 4 } },
-  { id: 'ar-nimble', name: 'かるわざの衣', slot: 'armor', kind: 'light', bonus: { def: 15, agi: 3 }, grade: 2, price: { power: 20, materials: 4 } },
-  { id: 'ar-scholar', name: 'まなびのローブ', slot: 'armor', kind: 'robe', bonus: { def: 15, int: 3 }, grade: 2, price: { power: 20, materials: 4 } },
-  { id: 'ar-fortune', name: 'しあわせの衣', slot: 'armor', kind: 'light', bonus: { def: 15, luk: 3 }, grade: 2, price: { power: 20, materials: 4 } },
+  { id: 'ar-iron', name: '鉄のよろい', slot: 'armor', kind: 'heavy', bonus: { def: 15 }, grade: 2, price: { power: 8, materials: 4 } },
+  { id: 'ar-nimble', name: 'かるわざの衣', slot: 'armor', kind: 'light', bonus: { def: 15, agi: 3 }, grade: 2, price: { power: 8, materials: 4 } },
+  { id: 'ar-scholar', name: 'まなびのローブ', slot: 'armor', kind: 'robe', bonus: { def: 15, int: 3 }, grade: 2, price: { power: 8, materials: 4 } },
+  { id: 'ar-fortune', name: 'しあわせの衣', slot: 'armor', kind: 'light', bonus: { def: 15, luk: 3 }, grade: 2, price: { power: 8, materials: 4 } },
   // ─── お守り (W6a はステータス系のみ。挙動系 (回避/にげる/ドロップ/MP減) は
   //     戦闘エンジンへのフック実装とセットで後続 PR — 効かない品は店に出さない) ───
-  { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 3 }, grade: 2, price: { power: 16, materials: 3 } },
+  { id: 'ch-life', name: 'いのちのペンダント', slot: 'charm', kind: 'charm', bonus: { maxHp: 3 }, grade: 2, price: { power: 6, materials: 3 } },
   { id: 'ch-traveler', name: 'たびびとのおまもり', slot: 'charm', kind: 'charm', bonus: { def: 2 }, grade: 1, price: { power: 6, materials: 1 } },
   // ─── カジノの景品 (D-CASINO-001 r2)。コインでしか手に入らない (店に並ばない・値札はカジノの表) ───
   { id: 'wp-star-sword', name: 'ほしのつるぎ', slot: 'weapon', kind: 'common', bonus: { atk: 18, luk: 4 }, element: 'void', grade: 3, price: { power: 0, materials: 0 }, casinoOnly: true },

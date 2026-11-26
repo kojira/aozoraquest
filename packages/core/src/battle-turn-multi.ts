@@ -18,6 +18,7 @@ import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMo
 import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
 import { actsLast, patternAct, patternEndOfTurn } from './battle-boss-pattern.js';
+import { runSelfDestruct } from './battle-self-destruct.js';
 import { watchHeals } from './bond.js';
 import { outOfStockText, pinAllyOrders, runAllyOrder } from './battle-ally-orders.js';
 
@@ -47,7 +48,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
   if (def?.patternSets?.length) { patternAct(enemy, def, allies, rng, events); return; }
   const action = monsterCommand(enemy, state, rng);
   // 選ぶときは直前の手 (lastAoe) を見る。選んだら下ろし、この手番の技が全体なら技の側で立て直す。
-  const debuff = action === 'debuff' ? pickDebuff(def, enemy, allies) : undefined;
+  const debuff = action === 'debuff' ? pickDebuff(def, enemy, allies, enemies) : undefined;
   enemy.lastAoe = false;
   if (action === 'flee' && enemies.length === 1) {
     state.outcome = 'monster-fled';
@@ -76,8 +77,13 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
     castMonsterSpell(enemy, def, to, rng, events);
     return;
   }
+  if (action === 'selfDestruct' && def) {
+    runSelfDestruct(enemy, def, allies, rng, events);
+    if (allies[0]!.hp <= 0) state.outcome = 'lose'; // 主人公がまきこまれて倒れたら負け
+    return;
+  }
   if (debuff) {
-    useMonsterDebuff(enemy, debuff, allies, rng, events);
+    useMonsterDebuff(enemy, debuff, allies, rng, events, enemies);
     return;
   }
   // attack / flee (集団戦は通常攻撃に退避) / spell 未定義の cast。

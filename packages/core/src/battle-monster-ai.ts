@@ -8,10 +8,11 @@ import { type Combatant } from './battle-combatant.js';
 import { type MonsterDef, MONSTERS_BY_ID } from './battle-monsters.js';
 import { type BattleState } from './battle-state.js';
 import { chargeMpCost, pickDebuff, spellMpCost } from './battle-monster-moves.js';
+import { wantsSelfDestruct } from './battle-self-destruct.js';
 
 /** モンスターの行動選択 (tier が高いほど賢い)。 */
 /** モンスターの行動。'charge' = ため宣言、'heal' = 自己回復 (プレイヤーの Command とは別)。 */
-type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee' | 'cast' | 'debuff';
+type MonsterAction = 'attack' | 'guard' | 'charge' | 'heal' | 'flee' | 'cast' | 'debuff' | 'selfDestruct';
 
 /** モンスター能力プラグイン (#452 / docs/25 §5)。行動 AI を ability id → データ定義に置き、
  *  monsterCommand の if 分岐を排す。null を返すと通常判定 (plain) にフォールバック。 */
@@ -77,9 +78,14 @@ const MONSTER_ABILITIES: Record<string, AbilityDef> = {
     decideAction: ({ state, monster, r, t, monsterDef }) => {
       const chance = monsterDef?.abilityParams?.debuffChance ?? t.debufferChance;
       const allies = state.allies ?? [state.player];
-      if (r < chance && pickDebuff(monsterDef, monster, allies)) return 'debuff';
+      if (r < chance && pickDebuff(monsterDef, monster, allies, state.enemies)) return 'debuff';
       return 'attack';
     },
+  },
+  // selfDestruct: HP が減ったら前ぶれ、つぎの手番で自爆 (battle-self-destruct.ts)。
+  selfDestruct: {
+    id: 'selfDestruct',
+    decideAction: ({ monster, monsterDef }) => (wantsSelfDestruct(monster, monsterDef) ? 'selfDestruct' : 'attack'),
   },
   // fleer: 毎ターン逃走を試みる (はぐれメタル型)。逃走率は**基準 agi (レベル非依存)** で決める —
   // factor でスケールする state.monster.agi を使うと高レベルほど逃走率が cap に張り付き、HP も
@@ -112,6 +118,7 @@ export function monsterCommand(monster: Combatant, state: BattleState, rng: () =
   // 'attack' は「この能力は今回何もしない」の意味なので、次の能力に回す
   // (先頭が attack を返した瞬間に確定すると、2 番目以降が永久に発動しない)。
   const ids = def?.abilities ?? (def?.ability ? [def.ability] : []);
+  if (monster.fuse) return 'selfDestruct'; // 前ぶれを出したら、つぎの手番は必ず自爆
   for (const id of ids) {
     const action = MONSTER_ABILITIES[id]?.decideAction({ state, monster, r, t, hpRatio, canGuard, monsterDef: def });
     // ストーリー戦の敵は逃げない (D-STORY-009。逃げられると話が進まない)。

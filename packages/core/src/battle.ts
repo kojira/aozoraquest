@@ -18,6 +18,7 @@
 
 export {
   BATTLE_TUNING,
+  monsterStatFloorFor,
 } from './battle-tuning.js';
 export {
   createRng,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { jobXpCurveFor, jobLevelFromXpFor, jobXpToNextLevelFor, JOB_XP_CURVE, JOB_LEVEL_PACE, JOB_LEVEL_PACE_BASIS, JOBS, MONSTERS, battleXpFor, startBattle, runAutoBattle } from '../index.js';
+import { jobXpCurveFor, jobLevelFromXpFor, jobXpToNextLevelFor, JOB_XP_CURVE, JOB_LEVEL_PACE, JOB_LEVEL_PACE_BASIS, JOBS, MONSTERS, BATTLE_TUNING, battleXpFor, startBattle, runAutoBattle } from '../index.js';
 
 /**
  * 職ごとのレベル曲線 (#536)。**DQ3 を参照して設計した** — DQ3 も職業ごとに必要経験値が違い、
@@ -129,7 +129,12 @@ describe('職ごとのレベル曲線 (#536)', () => {
     // 他のテストは緑のまま通る**。それだと「データ化したのにずれても気づかない」ままなので、
     // ここで**実際に戦わせて**突き合わせる。試行数は落として速度を優先し、
     // 許容はそのぶん広めに取る (順序と桁が合っていれば導出は再現できる)。
+    // BASIS は tier1 の下駄 4.3 のときに測った値。D-BALANCE-002 で tier1 の下駄を 10 にしたが、
+    // XP 曲線 (JOB_LEVEL_PACE) は動かさないと決めたので、測ったときの下駄に戻して突き合わせる。
+    const floor = BATTLE_TUNING.monsterStatFloor;
+    (BATTLE_TUNING as { monsterStatFloor: Readonly<Record<number, number>> }).monsterStatFloor = { 1: 4.3 };
     const measured: Record<string, number> = {};
+    try {
     for (const j of JOBS) {
       let total = 0;
       const TRIALS = 12;
@@ -153,6 +158,7 @@ describe('職ごとのレベル曲線 (#536)', () => {
       }
       measured[j.id] = total / TRIALS;
     }
+    } finally { (BATTLE_TUNING as { monsterStatFloor: Readonly<Record<number, number>> }).monsterStatFloor = floor; }
     // 順序が一致していること。**隣接の入れ替わりは試行数を落としたぶんのばらつきで
     // 普通に起きる**ので、順位そのものではなく「BASIS が 1.5 倍以上離れている組」だけを見る。
     // (sage 5.6 と miko 5.7 のような僅差は入れ替わってよい。mage 4.2 と guardian 12.9 が

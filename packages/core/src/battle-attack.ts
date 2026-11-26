@@ -21,6 +21,7 @@ import {
 } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { armorElementMultiplier } from './gear-element.js';
+import { elementImmunityMultiplier, elementImmunityText } from './battle-element-immunity.js';
 import { type Combatant } from './battle-combatant.js';
 import { type TurnEvent } from './battle-state.js';
 
@@ -122,7 +123,7 @@ export function doAttack(
   dmg *= applyIncomingCalc(1, defender, defCtx);
   // 属性相性 (#452 §1): 攻撃属性 × 防御属性。両者 undefined (無属性) なら ×1 = 従来挙動。
   // モンスター/装備への属性付与は #455/#456 で配線。慧眼 (賢者) は弱点時さらに増幅 (none なら素通し)。
-  const eMult = applyElementBonus(elementMultiplier(opts.element, defender.element), attacker, atkCtx);
+  const eMult = applyElementBonus(elementMultiplier(opts.element, defender.element), attacker, atkCtx) * elementImmunityMultiplier(defender, opts.element);
   dmg *= eMult;
   // 防具の染まり (D-ELEM-001 §13a): 属性の攻撃だけ。無属性 (物理の通常攻撃) は 1。
   if (defender.armorDye) dmg *= armorElementMultiplier(defender.armorDye, opts.element);
@@ -162,6 +163,7 @@ export function doAttack(
   // 属性つき武器の通常攻撃でも、弱点・耐性を告げる (doMagic と同じ文。D-ELEM-001)。
   if (opts.element) {
     if (eMult >= 1.5) events.push({ actor, text: `${defender.name}の弱点を突いた!` });
+    else if (eMult === 0) events.push({ actor, text: elementImmunityText(defender) });
     else if (eMult <= 0.5) events.push({ actor, text: `${defender.name}には効果がいまひとつのようだ…` });
   }
   const result: AttackResult = { hit: true, damage: final, fatal, crit };
@@ -201,7 +203,7 @@ export function doMagic(
   const atkCtx: HookCtx = { rng, events, actor };
   let dmg = opts.amount;
   // 属性相性 (無属性は ×1)。慧眼 (賢者) は弱点時さらに増幅 (none なら素通し)。
-  const eMult = applyElementBonus(elementMultiplier(opts.element, defender.element), attacker, atkCtx);
+  const eMult = applyElementBonus(elementMultiplier(opts.element, defender.element), attacker, atkCtx) * elementImmunityMultiplier(defender, opts.element);
   dmg *= eMult;
   if (defender.armorDye) dmg *= armorElementMultiplier(defender.armorDye, opts.element); // 防具の染まり (D-ELEM-001)
   dmg *= applyTargetBonus(1, attacker, defender, atkCtx); // 審美眼: 状態異常の敵に与ダメ↑ (none 素通し)
@@ -234,6 +236,7 @@ export function doMagic(
   // 撃破時も出す (弱点を突いて倒した実感)。メタルの魔法無効時は出さず「効かない」を数値 1 で伝える。
   if (!defender.resistAllMagic) {
     if (eMult >= 1.5) events.push({ actor, text: `${defender.name}の弱点を突いた!` });
+    else if (eMult === 0) events.push({ actor, text: elementImmunityText(defender) });
     else if (eMult <= 0.5) events.push({ actor, text: `${defender.name}には効果がいまひとつのようだ…` });
   }
   return { hit: true, damage: final, fatal, crit: false };

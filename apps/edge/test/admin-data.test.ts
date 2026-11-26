@@ -200,6 +200,16 @@ describe('/api/admin/data (#695)', () => {
       expect(await ok.json()).toEqual({ ok: true, dryRun: true });
       expect(Object.keys(ITEMS)).toContain('herb');
     });
+
+    it('値段が GEAR_LADDER の目安から大きくずれた装備は 400 で書かない (D-BALANCE-002)', async () => {
+      const env = await makeEnv();
+      const eq = equipment();
+      const i = eq.findIndex((e) => e.grade === 2 && e.slot === 'armor' && !e.jobOnly);
+      eq[i] = { ...eq[i]!, price: { ...eq[i]!.price, power: 40 } };
+      const res = await handleRequest(call('PUT', 'items', { body: { value: { items: items(), equipment: eq }, swapCid: null, dryRun: true } }), env);
+      expect(res.status).toBe(400);
+      expect((await res.json() as { message: string }).message).toContain(`${eq[i]!.id}: 値段 40 パワーが目安 8 から外れている`);
+    });
   });
 
   describe('items の小数 (D-ITEM-001)', () => {
