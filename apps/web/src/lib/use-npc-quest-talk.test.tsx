@@ -197,7 +197,7 @@ describe('useNpcQuestTalk 報酬の装備を選ぶ (D-RARE-GEAR-001)', () => {
     const { result } = renderTalk('guardian');
     act(() => result.current.setQuest({ activeQuests: [{ id: side.id, progress: 0 }], done: [] }));
     await act(async () => { result.current.openDirectNpc(PAINTER); });
-    expect(result.current.npcTalk?.lines).toEqual(['ありがとう！', 'おれいに、すきなものを ひとつ えらんでほしい。']);
+    expect(result.current.npcTalk?.lines).toEqual(['ありがとう！', 'おれいを ひとつ えらんでね。']);
     expect(result.current.npcChoices!.map((c) => c.label)).toEqual(['そらいろのつるぎ（ぶき こうげき +7）', 'あとで']);
     expect(result.current.npcChoices!.at(-1)!.pinned).toBe(true);
     await act(async () => { await result.current.npcChoices![0]!.onSelect(); });
@@ -213,6 +213,18 @@ describe('useNpcQuestTalk 報酬の装備を選ぶ (D-RARE-GEAR-001)', () => {
     expect(result.current.npcChoices!.map((c) => c.label)).toEqual(['そらいろのつえ（ぶき こうげき +5 かしこさ +4）', 'あとで']);
     act(() => { void result.current.npcChoices!.at(-1)!.onSelect(); });
     expect(result.current.npcTalk).toBeNull();
+  });
+
+  it('合う品が 3 つ以上なら 2 品ずつのページにし、次へ・前へ を下端に張りつける', async () => {
+    complete.mockRejectedValueOnce(new WorldServerError('ほうびを えらんでほしい', 400, 'choice_required'));
+    setGameQuests([{ ...side, reward: { power: 5, choices: [SWORD.id, STAFF.id, 'wp-knife'] } }]);
+    const { result } = renderTalk('fighter'); // 剣・杖・共用 すべて装備できる
+    act(() => result.current.setQuest({ activeQuests: [{ id: side.id, progress: 0 }], done: [] }));
+    await act(async () => { result.current.openDirectNpc(PAINTER); });
+    expect(result.current.npcChoices!.map((c) => c.label)).toEqual([expect.stringContaining('そらいろのつるぎ'), expect.stringContaining('そらいろのつえ'), '次へ', 'あとで']);
+    act(() => { void result.current.npcChoices!.find((c) => c.label === '次へ')!.onSelect(); });
+    expect(result.current.npcChoices!.map((c) => c.label)).toEqual([expect.stringContaining('ナイフ'), '前へ', 'あとで']);
+    expect(result.current.npcChoices!.filter((c) => c.pinned).map((c) => c.label)).toEqual(['前へ', 'あとで']);
     expect(result.current.quest.activeQuests).toEqual([{ id: side.id, progress: 0 }]);
   });
 });
