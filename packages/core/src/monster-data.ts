@@ -111,6 +111,13 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
         throw new MonsterDataError(`${where}: drop が不正`);
       }
     }
+    if (m.gearDrop !== undefined) {
+      const g = m.gearDrop;
+      // 品の実在と「貴重な装備か」は保存の検査 (preciousIssue)。モンスターは どうぐ より先に読むので、ここでは形だけ。
+      if (!g || typeof g.equipment !== 'string' || g.equipment.trim() === '' || !Number.isInteger(g.permille) || g.permille < 1 || g.permille > 1000) {
+        throw new MonsterDataError(`${where}: gearDrop は {equipment, permille 1〜1000 の整数}`);
+      }
+    }
     if (m.ability !== undefined && !(ABILITIES as readonly string[]).includes(m.ability)) {
       throw new MonsterDataError(`${where}: ability が不正 (${m.ability})`);
     }

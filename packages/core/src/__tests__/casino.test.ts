@@ -147,7 +147,7 @@ describe('景品 (casinoOnly) は店と置きアイテムに出ない', () => {
   });
 
   it('店の上書きに書くと保存で弾く', () => {
-    expect(() => setShopOverrides([{ x: 1, y: 1, equipment: ['wp-star-sword'] }])).toThrow(/カジノの景品は店に並べられない/);
+    expect(() => setShopOverrides([{ x: 1, y: 1, equipment: ['wp-star-sword'] }])).toThrow(/店に並べられない装備 \(カジノの景品/);
   });
 
   it('置きアイテム (宝箱の装備) に書くと弾く', () => {

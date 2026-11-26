@@ -12,7 +12,7 @@
  *   web だけが上書きを見ていると「見えるのに買えない」が起きる
  * - **壊れた 1 件で全体を落とす** (部分適用しない)
  */
-import { EQUIPMENT_BY_ID } from './equipment.js';
+import { EQUIPMENT_BY_ID, isShopForbiddenEquipment } from './equipment.js';
 import { ITEMS, MONSTERS_BY_ID } from './battle.js';
 import { isShopForbiddenItem } from './revive.js';
 import { ELEMENT_LABELS, type Element } from './elements.js';
@@ -114,7 +114,7 @@ export function setShopOverrides(list: readonly ShopOverride[] | null): void {
     if (next.has(key(s.x, s.y))) throw new ShopDataError(`同じ街の上書きが重複 ${where}`);
     for (const id of s.equipment ?? []) {
       if (!EQUIPMENT_BY_ID[id]) throw new ShopDataError(`${where}: 装備 id が存在しない (${id})`);
-      if (EQUIPMENT_BY_ID[id]!.casinoOnly) throw new ShopDataError(`${where}: カジノの景品は店に並べられない (${id})`);
+      if (isShopForbiddenEquipment(id)) throw new ShopDataError(`${where}: 店に並べられない装備 (カジノの景品・貴重な装備) (${id})`);
     }
     for (const id of s.consumables ?? []) {
       if (!ITEMS[id]) throw new ShopDataError(`${where}: どうぐ id が存在しない (${id})`);
@@ -174,6 +174,7 @@ function exchangeIssueOf(list: readonly ShopExchangeEntry[] | undefined): string
       if (ITEMS[id]!.key) return `だいじなものは置けない (${id})`;
     } else {
       if (!EQUIPMENT_BY_ID[id]) return `装備 id が存在しない (${id})`;
+      if (isShopForbiddenEquipment(id)) return `店に並べられない装備は置けない (${id})`;
     }
   }
   return null;

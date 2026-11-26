@@ -77,6 +77,7 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
       push(q.reward?.itemId, from);
       for (const r of q.requireItems ?? []) push(r.itemId, from);
     }
+    if (kind === 'equipment') for (const id of [q.reward?.equipment, ...(q.reward?.choices ?? [])]) push(id, `${from} の報酬`);
   }
   for (const p of placedItems()) {
     for (const r of placedRewards(p)) {
@@ -101,6 +102,9 @@ export function worldRefs(kind: WorldRefKind): WorldRef[] {
     for (const m of MONSTERS) {
       for (const d of m.drops) push(d.item, `モンスター「${m.name}」のドロップ`);
     }
+  }
+  if (kind === 'equipment') for (const m of MONSTERS) push(m.gearDrop?.equipment, `モンスター「${m.name}」のまれなドロップ`);
+  if (kind === 'item') {
     for (const g of allGates()) {
       for (const r of g.requireItems ?? []) push(r.itemId, `ゲート (${g.from.mapId} ${g.from.x},${g.from.y})`);
     }

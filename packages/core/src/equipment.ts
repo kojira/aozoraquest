@@ -15,7 +15,8 @@
  */
 
 import { ITEMS } from './battle.js';
-import { isShopForbiddenItem } from './revive.js';
+import { isShopForbiddenItem, shopForbiddenDef } from './revive.js';
+import type { StatusId } from './statuses.js';
 import { JOB_SET_MIN_TIER, jobGradeSet } from './job-shop-set.js';
 import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
@@ -118,6 +119,13 @@ export interface EquipmentDef {
   element?: Element;
   /** カジノの景品 (D-CASINO-001)。店の品ぞろえ・置きアイテムには出せない。 */
   casinoOnly?: boolean;
+  /** **貴重な装備** (D-RARE-GEAR-001)。店・生成の品ぞろえ・職の枠・バザーに出ない (isShopForbiddenEquipment)。値札は 0。
+   *  まれなドロップ・本編の報酬・宝箱・サイドストーリーの選ぶ報酬で手に入る。 */
+  precious?: boolean;
+  /** 着ている間 効かない状態異常 (戦闘の Combatant.statusResist に入る。gear-passives.ts)。 */
+  statusResist?: StatusId[];
+  /** 着ている間のパッシブ (GEAR_PASSIVES の id。gear-passives.ts)。 */
+  passive?: string;
 }
 
 /** 装備適性マトリクス。common/cloth/charm は暗黙 ○。 */
@@ -246,6 +254,12 @@ export const EQUIPMENT: EquipmentDef[] = [
 ];
 
 export const EQUIPMENT_BY_ID: Record<string, EquipmentDef> = Object.fromEntries(EQUIPMENT.map((e) => [e.id, e]));
+
+/** **店に並べてはいけない装備** (カジノの景品・貴重な装備)。きまりは どうぐ と同じ shopForbiddenDef (revive.ts) の 1 か所。 */
+export function isShopForbiddenEquipment(id: string): boolean {
+  const def = EQUIPMENT_BY_ID[id];
+  return !!def && shopForbiddenDef(def);
+}
 
 /** 装備できるか。jobOnly があればそれだけで判定 (カテゴリ不問)。 */
 export function canEquip(archetype: Archetype, def: EquipmentDef): boolean {
@@ -564,7 +578,7 @@ export function townShopStock(town: Town, townIndex: number, archetype?: Archety
   const set = archetype && tier >= JOB_SET_MIN_TIER ? jobGradeSet(archetype, maxShopGradeForTier(tier)) : [];
   // 店に並べてはいけない品 (生き返らせる・割合で回復・貴重なもの・カジノの景品) は、生成でも上書きでも落とす (D-REVIVE-001)。
   // 買う処理 (edge) はこの並びにある品しか売らないので、ここ 1 か所で なんでも屋 から消える。
-  const equipment = [...new Set([...stock.equipment, ...(own ? [own] : []), ...set])];
+  const equipment = [...new Set([...stock.equipment, ...(own ? [own] : []), ...set])].filter((id) => !isShopForbiddenEquipment(id));
   return { ...stock, equipment, consumables: stock.consumables.filter((id) => !isShopForbiddenItem(id)) };
 }
 
@@ -573,7 +587,7 @@ function ownJobItemFor(town: Town, archetype: Archetype): string | undefined {
   const tier = tierForRegion(town.region);
   if (tier < JOB_SLOT_MIN_TIER) return undefined;
   const grade = maxShopGradeForTier(tier);
-  return EQUIPMENT.find((e) => e.jobOnly === archetype && e.grade === grade && e.slot === 'weapon' && !e.casinoOnly)?.id;
+  return EQUIPMENT.find((e) => e.jobOnly === archetype && e.grade === grade && e.slot === 'weapon' && !shopForbiddenDef(e))?.id;
 }
 
 function generatedShopStock(town: Town, townIndex: number): ShopStock {
@@ -586,7 +600,7 @@ function generatedShopStock(town: Town, townIndex: number): ShopStock {
   const equipment: string[] = [];
   // 地域枠: 共用 + カテゴリ品から 3〜4 品 (grade1 中心、たまに grade2)
   const maxGrade = maxShopGradeForTier(tier);
-  const generic = EQUIPMENT.filter((e) => !e.jobOnly && !e.casinoOnly && e.slot !== 'charm' && e.grade <= maxGrade);
+  const generic = EQUIPMENT.filter((e) => !e.jobOnly && !shopForbiddenDef(e) && e.slot !== 'charm' && e.grade <= maxGrade);
   const genericCount = 3 + Math.floor(rng() * 2);
   const pool = [...generic];
   for (let i = 0; i < genericCount && pool.length > 0; i++) {
@@ -595,7 +609,7 @@ function generatedShopStock(town: Town, townIndex: number): ShopStock {
     pool.splice(idx, 1);
   }
   // お守り (低確率で 1 品)
-  const charms = EQUIPMENT.filter((e) => e.slot === 'charm' && !e.casinoOnly && e.grade <= maxGrade);
+  const charms = EQUIPMENT.filter((e) => e.slot === 'charm' && !shopForbiddenDef(e) && e.grade <= maxGrade);
   if (rng() < 0.4 && charms.length > 0) {
     equipment.push(charms[Math.floor(rng() * charms.length)]!.id);
   }
@@ -603,8 +617,8 @@ function generatedShopStock(town: Town, townIndex: number): ShopStock {
   // 上位は 1/3 の街だけが持つレア枠だが、こちらも巡回 (歩幅 11) で **全 16 職の
   // 上位品が世界のどこかに必ず並ぶ** (初版のハッシュ乱択は sage/mage/guardian の
   // 上位が全店欠品する恒久欠けを起こした — レビュー実測)
-  const jobMid = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 2);
-  const jobHigh = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 3);
+  const jobMid = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 2 && !shopForbiddenDef(e));
+  const jobHigh = EQUIPMENT.filter((e) => e.jobOnly && e.grade === 3 && !shopForbiddenDef(e));
   // **中位 (grade2) は tier2 以上の街だけ。** 巡回割当は tier2+ の街の中での通し番号で行う
   // (全街の index で回すと、tier1 を飛ばしたぶん割当が歯抜けになって並ばない職が出る)。
   if (maxGrade >= 2 && jobMid.length > 0) {

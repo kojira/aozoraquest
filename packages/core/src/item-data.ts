@@ -16,6 +16,7 @@ import { JOBS_BY_ID } from './jobs.js';
 import { characterTokenIssue } from './character-data.js';
 import { STONE_IDS, STONE_NAMES } from './mana-stones.js';
 import { shopForbiddenDef } from './revive.js';
+import { GEAR_PASSIVES } from './gear-passives.js';
 
 export class ItemDataError extends Error {}
 
@@ -173,6 +174,12 @@ function validateEquipment(defs: readonly EquipmentDef[]): readonly EquipmentDef
     // 静かに死に筋を作らないよう保存で弾く。
     if (e.kind === 'exclusive' && !e.jobOnly) throw new ItemDataError(`${where}: exclusive には jobOnly が要る`);
     if (e.casinoOnly !== undefined && typeof e.casinoOnly !== 'boolean') throw new ItemDataError(`${where}: casinoOnly が不正`);
+    if (e.precious !== undefined && typeof e.precious !== 'boolean') throw new ItemDataError(`${where}: precious が不正`);
+    if (e.statusResist !== undefined) {
+      if (!Array.isArray(e.statusResist) || e.statusResist.some((s) => !(s in STATUS_REGISTRY))) throw new ItemDataError(`${where}: statusResist に不正な状態`);
+      if (new Set(e.statusResist).size !== e.statusResist.length) throw new ItemDataError(`${where}: statusResist が重複している`);
+    }
+    if (e.passive !== undefined && !(typeof e.passive === 'string' && e.passive in GEAR_PASSIVES)) throw new ItemDataError(`${where}: passive が不正 (${String(e.passive)})`);
     if (e.element !== undefined) {
       if (!['earth', 'water', 'fire', 'wind', 'void'].includes(e.element)) throw new ItemDataError(`${where}: element が不正 (${e.element})`);
       if (e.slot === 'shield') throw new ItemDataError(`${where}: 盾には属性を付けられない (守りの染まりは頭・胴・足・お守り)`);

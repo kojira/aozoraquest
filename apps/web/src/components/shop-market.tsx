@@ -102,6 +102,7 @@ export function UsedShelf({ shelf, me, archetype, gear, balance, busy, onBuy }: 
 
 const REASON_TEXT: Record<UnlistableReason | 'equipped', string> = {
   casino: 'カジノの けいひんは うれない',
+  precious: 'きちょうな品は うれない',
   no_price: 'うれない品',
   bad_level: 'うれない品',
   grade_over_town: 'この街では あつかえない',

@@ -43,8 +43,9 @@ export interface GameQuestDef {
   /** 進行中に話しかけたときのセリフ (省略時は「たのんだよ」風の既定)。 */
   progress?: string[];
   objective: QuestObjective;
-  /** 報酬。省略可 (お礼のセリフだけのクエストも作れる)。 */
-  reward?: { power?: number; itemId?: string; count?: number };
+  /** 報酬。省略可 (お礼のセリフだけのクエストも作れる)。
+   *  equipment = 装備 1 品 (本編の節目の貴重な装備)。choices = 主人公・仲間に合う品から 1 つ選ぶ (2〜6 品。quest-reward.ts)。D-RARE-GEAR-001 */
+  reward?: { power?: number; itemId?: string; count?: number; equipment?: string; choices?: string[] };
   /** **解禁フラグ** (#545)。すべて立つまでこのクエストは受注できない (NPC も依頼を話さない)。 */
   requireFlags?: string[];
   /** **解禁に要る持ち物** (#426)。フラグの代わりに「これを持っていたら受けられる」を書ける。 */
@@ -62,6 +63,9 @@ export interface GameQuestsRecord {
 
 export const MAX_GAME_QUESTS = 200;
 export const MAX_QUEST_LINE = 120;
+/** 選べる品の数 (D-RARE-GEAR-001)。 */
+export const MIN_REWARD_CHOICES = 2;
+export const MAX_REWARD_CHOICES = 6;
 /** 報酬パワーの上限 (打ち間違いで経済を壊さない)。 */
 export const MAX_QUEST_REWARD_POWER = 500;
 
@@ -133,6 +137,14 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
         if (!ITEMS[q.reward.itemId]) throw new QuestDataError(`${where}: 報酬アイテムが存在しない (${q.reward.itemId})`);
         if (!(Number.isInteger(q.reward.count) && (q.reward.count ?? 0) > 0)) throw new QuestDataError(`${where}: 報酬アイテムの個数が不正`);
       }
+      // 装備の実在・カジノの景品でないこと・16 職が選べることは保存の検査 (preciousIssue)。装備は どうぐ のレコードにあるので形だけ見る。
+      if (q.reward.equipment !== undefined && (typeof q.reward.equipment !== 'string' || q.reward.equipment.trim() === '')) throw new QuestDataError(`${where}: 報酬の装備 id が不正`);
+      const ch = q.reward.choices;
+      if (ch !== undefined) {
+        if (!Array.isArray(ch) || ch.length < MIN_REWARD_CHOICES || ch.length > MAX_REWARD_CHOICES || ch.some((id) => typeof id !== 'string' || id.trim() === '')) throw new QuestDataError(`${where}: 選べる品は ${MIN_REWARD_CHOICES}〜${MAX_REWARD_CHOICES} 品の装備 id`);
+        if (new Set(ch).size !== ch.length) throw new QuestDataError(`${where}: 選べる品が重複している`);
+        if (q.reward.equipment !== undefined) throw new QuestDataError(`${where}: 報酬の装備と選べる品は同時に付けられない`);
+      }
     }
   }
 }
@@ -140,7 +152,7 @@ export function validateGameQuests(list: readonly GameQuestDef[] | null): void {
 export function setGameQuests(list: readonly GameQuestDef[] | null): void {
   validateGameQuests(list);
   const next = list ?? [];
-  quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}), ...(q.requireItems ? { requireItems: q.requireItems.map((r) => ({ ...r })) } : {}) }));
+  quests = next.map((q) => ({ ...q, intro: [...q.intro], done: [...q.done], ...(q.progress ? { progress: [...q.progress] } : {}), ...(q.requireFlags ? { requireFlags: [...q.requireFlags] } : {}), ...(q.requireItems ? { requireItems: q.requireItems.map((r) => ({ ...r })) } : {}), ...(q.reward ? { reward: { ...q.reward, ...(q.reward.choices ? { choices: [...q.reward.choices] } : {}) } } : {}) }));
   byId = new Map(quests.map((q) => [q.id, q]));
   byNpc = new Map();
   for (const q of quests) byNpc.set(q.npcId, [...(byNpc.get(q.npcId) ?? []), q]);

@@ -7,6 +7,7 @@
  * - 期限は無い。売れるか取り下げるまで並ぶ
  */
 import { maxShopGradeForTier, type EquipmentDef } from './equipment.js';
+import { shopForbiddenDef } from './revive.js';
 import { tierForRegion, type Town } from './world.js';
 
 /** 強化値 (−1〜+10) ごとの目安の倍率。+5 までは制作の引き直し、+6 からは合成で 2 倍ずつ (D-MARKET-001 §1)。 */
@@ -38,11 +39,12 @@ export function isValidMarketPrice(price: unknown): price is number {
 }
 
 /** 出せない理由。装備中かどうかは持ち主の state が要るので edge (`overWorn`) で見る。 */
-export type UnlistableReason = 'casino' | 'no_price' | 'bad_level' | 'grade_over_town';
+export type UnlistableReason = 'casino' | 'precious' | 'no_price' | 'bad_level' | 'grade_over_town';
 
 /** その品をその街に出せるか。出せなければ理由を返す (画面で薄い字で出す)。 */
 export function listable(def: EquipmentDef, level: number, town: Town): { ok: true } | { ok: false; reason: UnlistableReason } {
   if (def.casinoOnly) return { ok: false, reason: 'casino' };
+  if (shopForbiddenDef(def)) return { ok: false, reason: 'precious' }; // 貴重な装備 (D-RARE-GEAR-001)
   if (def.price.power <= 0) return { ok: false, reason: 'no_price' };
   if (MARKET_LEVEL_MULTIPLIER[level] === undefined) return { ok: false, reason: 'bad_level' };
   if (def.grade > maxShopGradeForTier(tierForRegion(town.region))) return { ok: false, reason: 'grade_over_town' };
