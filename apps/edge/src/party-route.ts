@@ -19,8 +19,8 @@
  *   - 今のデータに無い id は state からも送られた ids からも落とす (確かめる前・数える前)
  */
 import {
-  allNpcs, dailyRecruits, isGeneratedRecruitId, jobLevelFromXp, npcFieldPosition, partyCapacity, partyRecruitOf, recruitById,
-  overLevelPower, recruitsAt, regionOf, tierForRegion, xpForAllyLevel, MAX_RECRUITS, RECRUIT_GACHA,
+  allNpcs, dailyRecruits, isGeneratedRecruitId, jobLevelFromXp, npcTownTier, partyCapacity, partyRecruitOf, recruitById,
+  overLevelPower, recruitsAt, xpForAllyLevel, MAX_RECRUITS, RECRUIT_GACHA,
   type Archetype, type NpcDef, type RecruitCandidate,
 } from '@aozoraquest/core';
 import { readModifyWrite, type GameState, type PartyState } from './game-state';
@@ -43,10 +43,7 @@ export interface PartyCandidatesResult {
 }
 
 /** ギルドの街の tier (受付のいる内部マップが指す街、無ければ受付の座標)。 */
-function guildTier(npc: NpcDef): number {
-  const at = npcFieldPosition(npc);
-  return at ? tierForRegion(regionOf(at.x, at.y)) : 1;
-}
+const guildTier = (npc: NpcDef): number => npcTownTier(npc);
 
 function guildNpc(guild: string): NpcDef {
   const npc = allNpcs().find((n) => n.id === guild && n.guildReception === true);

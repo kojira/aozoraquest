@@ -10,7 +10,7 @@
 import { gameQuestById } from './quest-data.js';
 import { allNpcs, type NpcDef } from './npc-data.js';
 import { interiorById } from './interior.js';
-import { regionOf } from './world.js';
+import { regionOf, tierForRegion } from './world.js';
 import { WORLD_MAP_ID } from './map-id.js';
 
 /**
@@ -23,6 +23,12 @@ export function npcFieldPosition(npc: Pick<NpcDef, 'mapId' | 'x' | 'y'>): { x: n
   if (!map) return undefined;
   const at = map.shop?.town ?? (map.exitTo?.mapId === WORLD_MAP_ID ? map.exitTo : undefined);
   return at ? { x: at.x, y: at.y } : undefined;
+}
+
+/** NPC のいる街の tier (ギルドの候補の Lv・画面の「おすすめ」)。街が分からなければ 1。 */
+export function npcTownTier(npc: Pick<NpcDef, 'mapId' | 'x' | 'y'>): number {
+  const at = npcFieldPosition(npc);
+  return at ? tierForRegion(regionOf(at.x, at.y)) : 1;
 }
 
 /** このリージョンで出やすくする敵 id。受注中で、まだ数がそろっていない討伐依頼のうち、依頼主の街がこのリージョンにあるもの。 */

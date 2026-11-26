@@ -35,6 +35,11 @@ const region = (name: string) => screen.getByRole('region', { name });
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
 
 describe('GuildPartyModal (D-PARTY-002)', () => {
+  it('受付の街の帯のおすすめ (装備の段と Lv) を出す (D-BALANCE-002)', async () => {
+    await open({ ids: [] }, flags2);
+    expect(screen.getByTestId('tier-recommend').textContent).toBe('おすすめ：1段目の装備・Lv3');
+  });
+
   it('今日の候補を ★・Lv・ひとこと つきで並べ、一期一会のお知らせを出す', async () => {
     await open({ ids: [] }, flags3);
     const offered = region(PARTY_LINES.heading);

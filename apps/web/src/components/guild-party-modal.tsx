@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { jobDisplayName, overLevelPower, partyCapacity, partyDefsOf, recruitById, type NpcDef, type PartyAlly, type RecruitCandidate } from '@aozoraquest/core';
+import { jobDisplayName, npcTownTier, overLevelPower, partyCapacity, partyDefsOf, recruitById, tierRecommendLabel, type NpcDef, type PartyAlly, type RecruitCandidate } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import { PartyMemberList, starText, type PartyLoad } from './party-modal';
 import type { ServerParty, ServerPartyCandidates } from '@/lib/world-server';
@@ -121,6 +121,7 @@ export function GuildPartyModal({ guild, jobLevel, load, save, candidates, rerol
             <section aria-label={PARTY_LINES.heading}>
               <div style={{ fontSize: '0.8em', margin: '0 0 2px' }}>{PARTY_LINES.heading}</div>
               <div style={{ fontSize: '0.72em', ...muted, margin: '0 0 4px' }}>{PARTY_LINES.onceOnly}</div>
+              <div data-testid="tier-recommend" style={{ fontSize: '0.72em', ...muted, margin: '0 0 4px' }}>{tierRecommendLabel(npcTownTier(guild))}</div>
               {offered.length === 0 ? <p style={{ fontSize: '0.85em', margin: '0.2em 0' }}>{PARTY_LINES.goneToday}</p> : offered.map((c) => {
                 const price = overLevelPower(c.minLevel, jobLevel);
                 const locked = price > 0;
