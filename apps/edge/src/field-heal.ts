@@ -4,7 +4,7 @@
  * - 回復のとくぎ (`POST /api/world/skill`): 主人公か、その Lv で回復のとくぎを覚えている仲間が、選んだ相手 (全体回復は全員) に唱える。
  *   MP は唱えた人の持ちこしから。回復量は戦闘と同じ (相手の maxHp の割合)。同じ rkey の再送は 1 回だけ。
  * 主人公の持ちこしは carryHp/carryMp、仲間は party.hp[id]/party.mp[id] (満タンは書かない)。最大 HP/MP は戦闘と同じ組み立て方。
- * 倒れた仲間 (HP 0) は回復できない (生き返らせるのは入れていない)。
+ * 倒れた仲間 (HP 0) は回復できない。起こすのは 目覚めの祈り (ここ)・生き返らせるどうぐ と ほこら (field-revive.ts。D-REVIVE-001)。
  */
 import {
   BATTLE_TUNING, SKILLS, itemHealAmount, effectTarget, healAmount, isPureHealSkill, jobLevelFromXp, partyDefsOf, partyMemberCombatant, playerCombatant, playerLevelFromXp, recruitById, skillMpCostOf, skillsForJob,
@@ -21,14 +21,14 @@ export const HERO_TARGET = 'hero';
 interface Member { id: string; c: Combatant }
 
 /** 主人公と仲間 (入れている順) を、持ちこしの HP/MP つきで。 */
-function membersOf(state: GameState, hero: Combatant, jobLevel: number): Member[] {
+export function membersOf(state: GameState, hero: Combatant, jobLevel: number): Member[] {
   const h = { ...hero, hp: state.carryHp ?? hero.maxHp, mp: state.carryMp ?? hero.maxMp };
   const carry = { ...(state.party?.hp ? { hp: state.party.hp } : {}), ...(state.party?.mp ? { mp: state.party.mp } : {}) };
   return [{ id: HERO_TARGET, c: h }, ...partyDefsOf(state.party, recruitById, jobLevel).map((d) => ({ id: d.id, c: partyMemberCombatant(d, jobLevel, carry) }))];
 }
 
 /** 持ちこしを書き戻す (満タンは消す)。 */
-function withVitals(state: GameState, id: string, c: Combatant): GameState {
+export function withVitals(state: GameState, id: string, c: Combatant): GameState {
   const hp = c.hp >= c.maxHp ? undefined : c.hp;
   const mp = c.mp >= c.maxMp ? undefined : c.mp;
   if (id === HERO_TARGET) return { ...state, carryHp: hp, carryMp: mp };
@@ -41,19 +41,19 @@ function withVitals(state: GameState, id: string, c: Combatant): GameState {
 }
 
 /** ほかの人から回復を受けた仲間の きずな (D-PARTY-004)。戻った HP ÷ 最大 HP。主人公・自分で自分を回復したぶんは数えない。 */
-function withHealBond(state: GameState, casterId: string, healed: ReadonlyArray<{ id: string; amount: number; maxHp: number }>): { state: GameState; deepened: AllyBondUp[] } {
+export function withHealBond(state: GameState, casterId: string, healed: ReadonlyArray<{ id: string; amount: number; maxHp: number }>): { state: GameState; deepened: AllyBondUp[] } {
   const gains = healed.filter((h) => h.id !== HERO_TARGET && h.id !== casterId && h.amount > 0).map((h) => ({ id: h.id, healRatio: h.amount / h.maxHp }));
   const r = partyWithBond(state.party, gains);
   return { state: r.party ? { ...state, party: r.party } : state, deepened: r.deepened };
 }
 
-function pick(members: Member[], id: string | undefined, what: string): Member {
+export function pick(members: Member[], id: string | undefined, what: string): Member {
   const m = members.find((x) => x.id === (id ?? HERO_TARGET));
   if (!m) throw new ResolverError(`${what}が パーティに いない`, 400, 'bad_target');
   return m;
 }
 
-async function heroOf(userDid: string, state: GameState, ns: string, fetchImpl?: typeof fetch) {
+export async function heroOf(userDid: string, state: GameState, ns: string, fetchImpl?: typeof fetch) {
   const { archetype, baseStats, handle, playerXp } = await readDiagnosis(userDid, ns, fetchImpl);
   const jobLevel = jobLevelFromXp(jobXpOf(state, archetype), archetype);
   return { hero: { ...playerCombatant(archetype, jobLevel, playerLevelFromXp(playerXp), handle, baseStats, undefined, state.gearSel), job: { archetype, level: jobLevel } }, jobLevel };
@@ -143,7 +143,7 @@ export async function handleFieldSkill(
     // 回復だけのとくぎ (聖光の癒し・癒しの鈴など)。サボるのような MP 回復つきは戦闘だけ。
     if (!def || !isPureHealSkill(skill.kind)) throw new ResolverError('フィールドで つかえるのは 回復の とくぎだけ', 400, 'not_heal_skill');
     if (from.c.hp <= 0) throw new ResolverError(`${from.c.name}は たおれている`, 400, 'caster_down');
-    const cost = skillMpCostOf(from.c);
+    const cost = skillMpCostOf(from.c, skill.kind);
     if (from.c.mp < cost) throw new ResolverError('MPが たりない', 400, 'not_enough_mp');
     const caster2 = { ...from.c, mp: from.c.mp - cost };
     const after = new Map<string, Combatant>([[from.id, caster2]]);
@@ -153,9 +153,10 @@ export async function handleFieldSkill(
     for (const effect of def.effects) {
       if (effect.kind !== 'heal') continue;
       const to = effectTarget(effect);
-      const targets = to === 'allAllies' ? living : to === 'oneAlly' ? [pick(members, target, 'かいふくする相手')] : [from];
+      const targets = to === 'allAllies' ? living : to === 'oneAlly' || to === 'oneDownAlly' ? [pick(members, target, 'かいふくする相手')] : [from];
       for (const t of targets) {
-        if (t.c.hp <= 0) throw new ResolverError(`${t.c.name}は たおれている`, 400, 'target_down');
+        // 生き返らせるとくぎは倒れた人だけ、ほかは生きている人だけ (D-REVIVE-001)。主人公はフィールドで倒れない。
+        if (to === 'oneDownAlly' ? t.c.hp > 0 : t.c.hp <= 0) throw new ResolverError(to === 'oneDownAlly' ? `${t.c.name}は たおれていない` : `${t.c.name}は たおれている`, 400, to === 'oneDownAlly' ? 'target_up' : 'target_down');
         const c = { ...(after.get(t.id) ?? t.c) };
         const hp = Math.min(c.maxHp, c.hp + (effect.amount ?? healAmount(c.maxHp, effect.ratio ?? 0)));
         healed.push({ id: t.id, name: c.name, amount: hp - c.hp });

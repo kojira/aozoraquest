@@ -57,6 +57,8 @@ export interface InteriorMap {
    * **有料**にしてタダの回復をやめる。
    */
   inn?: { x: number; y: number; price: number; name?: string };
+  /** **ほこら** (D-REVIVE-001)。話すと、倒れた仲間をみんな起こす (パワーを払う)。宿屋では起きない。 */
+  shrine?: { x: number; y: number; price: number; name?: string };
   /**
    * **なんでも屋** (#424)。そのマスに入ると店が開く。
    *
@@ -126,6 +128,8 @@ export const MAX_INTERIORS = 100;
 export const MAX_GATES = 500;
 /** 宿代の上限 (打ち間違いで経済を壊さない)。 */
 export const MAX_INN_PRICE = 100;
+/** ほこらの おそなえ (パワー) の上限 (D-REVIVE-001)。 */
+export const MAX_SHRINE_PRICE = 500;
 
 let interiors = new Map<string, InteriorMap>();
 let gates = new Map<string, Gate>();
@@ -144,7 +148,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.id === WORLD_MAP_ID) throw new InteriorError(`id に ${WORLD_MAP_ID} は使えない (フィールドの予約語)`);
     if (nextMaps.has(m.id)) throw new InteriorError(`内部マップの id が重複 (${m.id})`);
     if (typeof m.name !== 'string' || m.name.trim() === '') throw new InteriorError(`${where}: 名前が空`);
-    for (const t of [m.name, m.inn?.name ?? '', m.shop?.name ?? '']) { const issue = characterTokenIssue(t); if (issue) throw new InteriorError(`${where}: 名前の${issue}`); }
+    for (const t of [m.name, m.inn?.name ?? '', m.shop?.name ?? '', m.shrine?.name ?? '']) { const issue = characterTokenIssue(t); if (issue) throw new InteriorError(`${where}: 名前の${issue}`); }
     if (!Number.isInteger(m.size) || m.size < 4 || m.size > MAX_INTERIOR_SIZE) {
       throw new InteriorError(`${where}: おおきさは 4〜${MAX_INTERIOR_SIZE}`);
     }
@@ -154,7 +158,7 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
     if (m.encounterTier !== undefined && (!Number.isInteger(m.encounterTier) || m.encounterTier < 1 || m.encounterTier > 8)) {
       throw new InteriorError(`${where}: 危険度は 1〜8 (省略で敵が出ない)`);
     }
-    for (const [label, spot] of [['宿屋', m.inn], ['なんでも屋', m.shop]] as const) {
+    for (const [label, spot] of [['宿屋', m.inn], ['なんでも屋', m.shop], ['ほこら', m.shrine]] as const) {
       if (!spot) continue;
       if (!Number.isInteger(spot.x) || !Number.isInteger(spot.y) || spot.x < 0 || spot.y < 0 || spot.x >= m.size || spot.y >= m.size) {
         throw new InteriorError(`${where}: ${label}がマップの外にある`);
@@ -181,7 +185,10 @@ export function setInteriors(list: readonly InteriorMap[] | null, gateList: read
         throw new InteriorError(`${where}: 宿代は 0〜${MAX_INN_PRICE}`);
       }
     }
-    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}), ...(m.exitTo ? { exitTo: { ...m.exitTo } } : {}), ...(m.casino ? { casino: structuredClone(m.casino) } : {}) });
+    if (m.shrine && (!Number.isInteger(m.shrine.price) || m.shrine.price < 0 || m.shrine.price > MAX_SHRINE_PRICE)) {
+      throw new InteriorError(`${where}: ほこらの おそなえは 0〜${MAX_SHRINE_PRICE}`);
+    }
+    nextMaps.set(m.id, { ...m, tiles: new Uint8Array(m.tiles), ...(m.parts ? { parts: m.parts.map((p) => ({ ...p })) } : {}), ...(m.inn ? { inn: { ...m.inn } } : {}), ...(m.shrine ? { shrine: { ...m.shrine } } : {}), ...(m.shop ? { shop: { ...m.shop, town: { ...m.shop.town } } } : {}), ...(m.exitTo ? { exitTo: { ...m.exitTo } } : {}), ...(m.casino ? { casino: structuredClone(m.casino) } : {}) });
   }
   if (nextMaps.size > MAX_INTERIORS) throw new InteriorError(`内部マップが多すぎる (${nextMaps.size} > ${MAX_INTERIORS})`);
 
@@ -281,6 +288,12 @@ export function innAt(mapId: string, x: number, y: number): NonNullable<Interior
   return m.inn.x === x && m.inn.y === y ? m.inn : undefined;
 }
 
+/** そのマスがほこらか (無ければ undefined。D-REVIVE-001)。 */
+export function shrineAt(mapId: string, x: number, y: number): NonNullable<InteriorMap['shrine']> | undefined {
+  const s = interiors.get(mapId)?.shrine;
+  return s && s.x === x && s.y === y ? s : undefined;
+}
+
 /**
  * **端から出る先** (#626)。マップの外へ踏み出したときだけ返す (中を歩く分には undefined)。
  * edge と web が同じ判断をする — 片方だけだと「歩けたのに弾かれる」。
@@ -352,7 +365,7 @@ export function blockedSpotHint(mapId: string, x: number, y: number): string | u
 }
 
 /** そのマスにある施設の名前 (エディタの警告文にそのまま使う)。 */
-export type FacilityName = '宿屋' | 'なんでも屋' | 'カジノ' | 'ゲート';
+export type FacilityName = '宿屋' | 'なんでも屋' | 'ほこら' | 'カジノ' | 'ゲート';
 
 /**
  * **そのマスの施設** (宿屋 / なんでも屋 / ゲート)。無ければ undefined。
@@ -364,6 +377,7 @@ export type FacilityName = '宿屋' | 'なんでも屋' | 'カジノ' | 'ゲー�
 export function facilityAt(mapId: string, x: number, y: number): FacilityName | undefined {
   if (innAt(mapId, x, y)) return '宿屋';
   if (interiorShopAt(mapId, x, y)) return 'なんでも屋';
+  if (shrineAt(mapId, x, y)) return 'ほこら';
   if (casinoSpotAt(mapId, x, y)) return 'カジノ';
   if (gateAt(mapId, x, y)) return 'ゲート';
   return undefined;
