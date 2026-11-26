@@ -150,7 +150,8 @@ describe('ボスの ねらいうち (strike target mate)', () => {
     for (let seed = 0; seed < 20; seed++) {
       const allies = [{ ...hero }, { ...s.allies![1]! }, { ...sora, hp: sora.maxHp }];
       let r = seed; const rng = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
-      patternAct({ ...boss, pattern: undefined }, def as never, allies, rng, []);
+      const b = { ...boss }; delete b.pattern;
+      patternAct(b, def as never, allies, rng, []);
       expect(allies[0]!.hp).toBe(hero.hp);
       if (allies[2]!.hp < sora.maxHp) hits++;
     }
