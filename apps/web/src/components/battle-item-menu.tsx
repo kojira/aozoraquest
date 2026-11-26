@@ -1,4 +1,4 @@
-import { ITEMS, withCharacterNames, type BattleState } from '@aozoraquest/core';
+import { ITEMS, itemTargetsDownAlly, withCharacterNames, type BattleState } from '@aozoraquest/core';
 
 /**
  * 戦闘の「どうぐ」に並べる戦闘用のどうぐ (D-ITEM-001)。数は封印した state.battleItems。
@@ -24,7 +24,8 @@ export function BattleItemRows({ state, busy, onUse, Row }: {
   return (
     <>
       {battleItemEntries(state).map((it) => (
-        <Row key={it.id} fill={false} label={`${it.name} ×${it.count}`} onClick={() => onUse(it.id)} disabled={busy} />
+        // 生き返らせるどうぐは、倒れた味方がいるときだけ押せる (D-REVIVE-001)。
+        <Row key={it.id} fill={false} label={`${it.name} ×${it.count}`} onClick={() => onUse(it.id)} disabled={busy || (itemTargetsDownAlly(it.id) && !(state.allies ?? []).some((a) => a.hp <= 0))} />
       ))}
     </>
   );

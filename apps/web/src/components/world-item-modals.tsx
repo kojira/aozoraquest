@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EQUIPMENT_BY_ID, ITEMS, leveledName, withCharacterNames } from '@aozoraquest/core';
 import type { CraftedPiece } from '@/lib/crafting';
+import { FieldHealItemRows, fieldHealItems } from './field-heal-items';
 import type { FieldMember } from './field-skill-modal';
 
 /**
@@ -58,6 +59,8 @@ export function ItemsModal({
   onClose,
   members = [],
   onUseOnAlly,
+  materials = {},
+  onUseHealItem,
 }: {
   herbStock: number;
   tonicStock: number;
@@ -71,6 +74,9 @@ export function ItemsModal({
   /** 主人公 ('hero') と仲間。仲間がいれば やくそう・しずくは相手を選ぶ (D-PARTY-003)。 */
   members?: readonly FieldMember[];
   onUseOnAlly?: (item: 'herb' | 'tonic', ally: FieldMember) => Promise<string>;
+  /** 手持ち (回復・生き返らせるどうぐの行を出す。D-REVIVE-001) と、それを使う (結果の 1 文)。 */
+  materials?: Readonly<Record<string, number>>;
+  onUseHealItem?: (itemId: string, target: FieldMember) => Promise<string>;
 }) {
   // 回復系は使っても閉じない (満タン等の結果をモーダル内に留めて見せる — レビュー ★★)。
   // そらのはねは街へ帰る (テレポート) ので閉じる。
@@ -125,12 +131,13 @@ export function ItemsModal({
   );
   return (
     <ModalShell title="どうぐ" onClose={onClose}>
-      {herbStock <= 0 && tonicStock <= 0 && featherStock <= 0 ? (
+      {herbStock <= 0 && tonicStock <= 0 && featherStock <= 0 && fieldHealItems(materials).length === 0 ? (
         <p style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>どうぐを持っていない。モンスターを倒すと手に入る。</p>
       ) : (
         <>
           {row('やくそう', herbStock, 'HPを回復', busy || herbStock <= 0 || !canUse, withAllies ? () => setChoosing('herb') : onUseHerb, false)}
           {row('そらのしずく', tonicStock, 'MPを回復', busy || tonicStock <= 0 || !canUse, withAllies ? () => setChoosing('tonic') : onUseTonic, false)}
+          {onUseHealItem && <FieldHealItemRows materials={materials} members={members} use={onUseHealItem} onMessage={setMsg} />}
           {row('そらのはね', featherStock, '行った街へ飛ぶ', featherStock <= 0, onUseFeather, true)}
           {featherStock <= 0 && (
             <p style={{ fontSize: '0.72em', color: 'var(--color-muted)', margin: '0.2em 0 0' }}>

@@ -34,7 +34,7 @@ export function BattleAllyRow({ state, hps }: {
         const ratio = a.maxHp > 0 ? hp / a.maxHp : 0;
         return (
           <div key={i} data-ally style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', alignItems: 'center', gap: '0.6em', opacity: hp <= 0 ? 0.4 : 1 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}{hp <= 0 && i > 0 ? <span data-down style={{ fontSize: '0.85em' }}> たおれている</span> : null}</span>
             <Gauge kind="hp" label="HP" value={hp} max={a.maxHp} textColor={ratio > 0.5 ? '#fff' : ratio > 0.25 ? '#f5c542' : '#e8566a'} barColor={ratio > 0.5 ? '#5fc37e' : ratio > 0.25 ? '#f5c542' : '#e8566a'} />
             <Gauge kind="mp" label="MP" value={a.mp} max={a.maxMp} textColor="#fff" barColor="#8ab6f0" />
           </div>

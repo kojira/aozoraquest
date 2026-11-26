@@ -224,7 +224,7 @@ function WorldScreen() {
     setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef,
   });
   const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle } = talk;
-  const { innTalk, innTalkRef, innBusy, innChoices, openInn, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef });
+  const { innTalk, innTalkRef, innBusy, innChoices, openInn, openShrine, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef, setParty: talk.setParty });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
   // 中古・うる (D-MARKET-001)。店を開いたら 1 回だけ棚と自分の出品を合わせる (扉とメニューのどちらから開いても同じ)
@@ -336,7 +336,7 @@ function WorldScreen() {
   const move = useWorldMove({
     agent, did, wsRef, setWs, setScrollStep, inputBlocked: moveBlocked, moveBusyRef, tokenRef, flagsRef, materialsRef,
     guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice,
-    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, openCasino: casino.openCasino, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
+    setMapAcquisition, setNpcTalk, openDirectNpc, openInn, openShrine, openCasino: casino.openCasino, resetShopView: shop.resetShopView, setShopOpen, scheduleSave,
   });
   const { onCoverDone, onRevealDone, onHoldTimeout, useHerbOnField, useTonicOnField, useFeatherOnField, flyToTown, searchHere } = useWorldFieldItems({
     agent, did, combat, inventory, wsRef, setWs, setNotice, scheduleSave, moveBusyRef, tokenRef, flagsRef, pendingNoticesRef, serverPowerRef, setServerPower,
@@ -691,7 +691,7 @@ function WorldScreen() {
           onUseFeather={useFeatherOnField}
           onClose={() => setItemsOpen(false)}
           members={members}
-          onUseOnAlly={fieldHeal.itemOnAlly}
+          onUseOnAlly={fieldHeal.itemOnAlly} materials={materialsView} onUseHealItem={fieldHeal.useHealItem}
         />
       )}
       {skillOpen && <FieldSkillModal members={members} cast={fieldHeal.castFieldSkill} onClose={() => setSkillOpen(false)} />}

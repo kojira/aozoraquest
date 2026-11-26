@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
 import { partyDefsOf, partyMemberCombatant, recruitById, type Archetype, type Combatant } from '@aozoraquest/core';
-import { serverFieldSkill, serverItem, type ServerParty, type ServerSkillResult } from '@/lib/world-server';
+import { serverFieldSkill, serverFieldUse, serverItem, type ServerParty, type ServerSkillResult } from '@/lib/world-server';
 import type { FieldMember } from '@/components/field-skill-modal';
 import type { WorldInventory } from '@/lib/use-world-inventory';
 import type { Vitals } from '@/lib/world-view';
@@ -54,5 +54,21 @@ export function useFieldHeal({ agent, inventory, setWs, setParty }: {
     }
   }, [agent, applyVitals, inventory]);
 
-  return { castFieldSkill, itemOnAlly };
+  /** 回復のどうぐ・生き返らせるどうぐ をフィールドで使う (D-REVIVE-001)。結果の 1 文を返す。 */
+  const useHealItem = useCallback(async (itemId: string, to: FieldMember): Promise<string> => {
+    if (!agent) return 'サーバーに つながらない';
+    try {
+      const r = await serverFieldUse(agent, itemId, to.id, newRkey());
+      inventory.applyServerMaterials(r.materials);
+      // MP は変わらないので HP だけ合わせる (応答に carryMp は無い)。
+      setWs((s) => (s ? { ...s, hp: r.carryHp ?? null } : s));
+      if (r.party) setParty(r.party);
+      const said = r.revived ? `${to.c.name}が いきかえった! (HP ${r.amount})` : `${to.c.name}の HPが${r.amount}回復。`;
+      return [said, ...bondUpLines(r.allyBondUp)].join(' ');
+    } catch (e) {
+      return e instanceof Error && e.message ? e.message : 'つかえなかった (通信エラー)。';
+    }
+  }, [agent, inventory, setParty, setWs]);
+
+  return { castFieldSkill, itemOnAlly, useHealItem };
 }
