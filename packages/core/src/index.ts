@@ -63,3 +63,4 @@ export * from './npc-sprite-presets.js';
 export * from "./npc-image.js";
 export * from './admin-nsid.js';
 export * from './admin-world-loader.js';
+export * from './revive.js';

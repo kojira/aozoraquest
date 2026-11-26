@@ -71,7 +71,7 @@ describe('どうぐを仲間に (D-PARTY-003)', () => {
     const s = partyBattle();
     const next = resolveTurnMulti(s, 'herb', 7, 0, 2);
     const a2 = next.allies![2]!;
-    expect(a2.hp).toBe(Math.min(a2.maxHp, 4 + Math.round(a2.maxHp * BATTLE_TUNING.herbHealRatio)));
+    expect(a2.hp).toBe(Math.min(a2.maxHp, 4 + BATTLE_TUNING.herbHealAmount));
     expect(next.allies![0]!.hp).toBe(6);
     expect(next.herbs).toBe(1);
     expect(next.lastEvents.some((e) => e.text.startsWith('ゆうしゃはやくそうを使った! ソラのHPが'))).toBe(true);

@@ -160,9 +160,9 @@ describe('どうぐの検証 (validateItems)', () => {
     expect(bad({ battle: { effects: [{ kind: 'recoil', ratio: 0.1 }] } })).toThrow(/使えない効果/);
     expect(bad({ battle: { effects: [{ kind: 'cleanse', target: 'enemy' as 'self' }] } })).toThrow(/target/);
   });
-  it('price は 0 以上、desc は 60 字まで、shopTier は 1〜3', () => {
+  it('price は 0 以上、desc は 60 字まで、shopTier は 1〜6', () => {
     expect(bad({ price: { power: -1, materials: 0 } })).toThrow(/price/);
     expect(bad({ desc: 'あ'.repeat(61) })).toThrow(/desc/);
-    expect(bad({ shopTier: 4 as 1 })).toThrow(/shopTier/);
+    expect(bad({ shopTier: 7 as 1 })).toThrow(/shopTier/);
   });
 });

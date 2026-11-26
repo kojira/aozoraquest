@@ -17,6 +17,7 @@ import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMo
 import { patternAct, patternEndOfTurn } from './battle-boss-pattern.js';
 import { runSelfDestruct } from './battle-self-destruct.js';
 import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
+import { itemHealAmount } from './revive.js';
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
   const { player, monster } = state;
@@ -91,7 +92,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
   // (UI は disabled にする前提。エンジン側の防御的措置で、ターンを無駄にしない)。
   const t = BATTLE_TUNING;
   let cmd: Command = command;
-  const skillCost = skillMpCostOf(state.player); // 発明家/巫女の MP 割引を反映
+  const skillCost = skillMpCostOf(state.player, selectedSkill.kind); // 発明家/巫女の MP 割引・とくぎの倍率を反映
   if (command === 'skill' && state.player.mp < skillCost) {
     events.push({ actor: 'player', text: `MPが足りない! (${state.player.mp}/${skillCost})` });
     cmd = 'attack';
@@ -174,7 +175,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       } else if (cmd === 'skill') {
         playerSkillAction(state, selectedSkill, rng, events);
       } else if (cmd === 'herb') {
-        const heal = Math.round(state.player.maxHp * t.herbHealRatio);
+        const heal = itemHealAmount('herb');
         state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;

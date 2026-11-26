@@ -15,6 +15,7 @@
  */
 
 import { ITEMS } from './battle.js';
+import { isShopForbiddenItem } from './revive.js';
 import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
@@ -557,7 +558,10 @@ export function townShopStock(town: Town, townIndex: number, archetype?: Archety
       }
     : generated!;
   const own = archetype ? ownJobItemFor(town, archetype) : undefined;
-  return own && !stock.equipment.includes(own) ? { ...stock, equipment: [...stock.equipment, own] } : stock;
+  // 店に並べてはいけない品 (生き返らせる・割合で回復・貴重なもの・カジノの景品) は、生成でも上書きでも落とす (D-REVIVE-001)。
+  // 買う処理 (edge) はこの並びにある品しか売らないので、ここ 1 か所で なんでも屋 から消える。
+  const sold = { ...stock, consumables: stock.consumables.filter((id) => !isShopForbiddenItem(id)) };
+  return own && !sold.equipment.includes(own) ? { ...sold, equipment: [...sold.equipment, own] } : sold;
 }
 
 /** tier4 以上の店で足す、その職の専用品 (その店の grade の武器)。無ければ undefined。 */

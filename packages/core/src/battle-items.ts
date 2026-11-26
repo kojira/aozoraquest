@@ -5,7 +5,8 @@
  */
 
 import { EFFECT_HANDLERS, SKILLS, effectTarget, type SkillEffect } from './skills.js';
-import { resolveTargets, type CombatSides, type SkillTarget } from './combat-target.js';
+import { downed, resolveTargets, type CombatSides, type SkillTarget } from './combat-target.js';
+import { itemTargetsDownAlly } from './revive.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { ITEMS } from './battle-monsters.js';
 import { type TurnEvent, type BattleState } from './battle-state.js';
@@ -38,6 +39,8 @@ export function carriedBattleItems(items: Readonly<Record<string, number>> | und
  *  どうぐを使うのは主人公だけなので、self = 主人公 だったものを、仲間にも使えるようにする。 */
 export function itemEffectTarget(effect: SkillEffect): SkillTarget {
   if (effect.kind === 'cleanse' && effect.target === 'self') return 'oneAlly';
+  // 回復のどうぐ (target なし・self) も、やくそうと同じく選んだ味方 1 人に (D-REVIVE-001)。
+  if (effect.kind === 'heal' && (effect.target ?? 'self') === 'self') return 'oneAlly';
   return effectTarget(effect);
 }
 
@@ -79,6 +82,11 @@ export function useBattleItem(
   const def = ITEMS[itemId];
   const player = user;
   const name = def?.name ?? itemId;
+  // 生き返らせるどうぐは、倒れた味方がいないときは使わない (なくさない。D-REVIVE-001)。
+  if (itemTargetsDownAlly(itemId) && downed(sides.allies).length === 0) {
+    events.push({ actor: 'player', text: `${name}を つかう あいてが いない!` });
+    return;
+  }
   events.push({ actor: 'player', text: `${player.name}は ${name}を つかった!` });
   for (const raw of def?.battle?.effects ?? []) {
     const to = itemEffectTarget(raw);

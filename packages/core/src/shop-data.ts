@@ -14,6 +14,7 @@
  */
 import { EQUIPMENT_BY_ID } from './equipment.js';
 import { ITEMS, MONSTERS_BY_ID } from './battle.js';
+import { isShopForbiddenItem } from './revive.js';
 import { ELEMENT_LABELS, type Element } from './elements.js';
 import { characterTokenIssue } from './character-data.js';
 
@@ -117,7 +118,7 @@ export function setShopOverrides(list: readonly ShopOverride[] | null): void {
     }
     for (const id of s.consumables ?? []) {
       if (!ITEMS[id]) throw new ShopDataError(`${where}: どうぐ id が存在しない (${id})`);
-      if (ITEMS[id]!.casinoOnly) throw new ShopDataError(`${where}: カジノの景品は店に並べられない (${id})`);
+      if (isShopForbiddenItem(id)) throw new ShopDataError(`${where}: 店に並べられない品 (カジノの景品・生き返らせる・割合で回復・貴重なもの) (${id})`);
     }
     if (s.theme !== undefined && !(s.theme in ELEMENT_LABELS)) throw new ShopDataError(`${where}: テーマの属性が不正 (${String(s.theme)})`);
     if (s.favoredMonsterId !== undefined && !MONSTERS_BY_ID[s.favoredMonsterId]) {

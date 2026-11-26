@@ -201,11 +201,13 @@ export interface ItemDef {
   /** 店で買える品だけ。素材はその店の値札の素材 (装備と同じ)。 */
   price?: { power: number; materials: number };
   /** この tier 以上の街の店に並ぶ。 */
-  shopTier?: 1 | 2 | 3;
+  shopTier?: 1 | 2 | 3 | 4 | 5 | 6;
   /** 戦闘で使えるどうぐ (1 回きりの MP のいらないとくぎ)。対象は effects の target から導く。 */
   battle?: { effects: SkillEffect[] };
   /** カジノの景品 (D-CASINO-001)。店の品ぞろえ・置きアイテムには出せない (price・shopTier は付けられない)。 */
   casinoOnly?: boolean;
+  /** **貴重なもの** (D-REVIVE-001)。店には並ばず (isShopForbiddenItem)、負けても失わない。宝箱・ボス・魔石の交換で手に入る。 */
+  precious?: boolean;
 }
 
 export const ITEMS: Record<string, ItemDef> = {
@@ -224,7 +226,7 @@ export const ITEMS: Record<string, ItemDef> = {
   // カジノの景品 (D-CASINO-001)。パーティの画面で仲間 1 人の名前を変える。
   'name-tag': { name: 'なまえのふだ', desc: 'なかま 1人の なまえを かえられる', casinoOnly: true },
   // カジノの景品 (D-CASINO-001。ふっかつのはね の代わり)。戦闘で 味方みんなの HP を 4 わり回復。
-  'holy-water': { name: 'せいなるみず', desc: 'みかた みんなの HPを 4わり かいふく', casinoOnly: true, battle: { effects: [{ kind: 'heal', ratio: 0.4, target: 'allAllies' }] } },
+  'holy-water': { name: 'せいなるみず', desc: 'みかた みんなの HPを 60 かいふく', casinoOnly: true, battle: { effects: [{ kind: 'heal', amount: 60, target: 'allAllies' }] } },
 };
 
 /** **全モンスター。コードには持たない** (D-MONSTER-001)。正は管理者 PDS の world.monsters レコードで、

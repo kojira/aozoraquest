@@ -15,7 +15,7 @@ function nonIntegerPaths(v: unknown, path = ''): string[] {
 
 const NEMURI: ItemDefData = {
   id: 'nemuri-kona', name: 'ねむりごな', price: { power: 3, materials: 1 }, shopTier: 1,
-  battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 0.7, turns: 3, magnitude: 1.5 }, { kind: 'heal', ratio: 0.25 }] },
+  battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 0.7, turns: 3, magnitude: 1.5 }, { kind: 'restoreMp', ratio: 0.25 }] },
 };
 
 describe('items レコードの小数 (D-ITEM-001)', () => {

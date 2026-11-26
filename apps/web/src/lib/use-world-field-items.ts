@@ -1,6 +1,6 @@
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
+import { BATTLE_TUNING, ITEMS, itemHealAmount, SEARCH_TUNING, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
 import { serverItem, serverSearch, serverTeleport, WorldServerError, type ScenarioMessage } from '@/lib/world-server';
 import { placedSearchFreeAt, placedStateText, placedTakenText } from '@/lib/placed-search-text';
 import { piecesFromServer } from '@/lib/use-world-shop';
@@ -110,7 +110,7 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       setNotice('HPは満タンだ。');
       return 'HPは満タンだ。';
     }
-    const heal = Math.round(combat.maxHp * BATTLE_TUNING.herbHealRatio);
+    const heal = itemHealAmount('herb');
     const healed = Math.min(combat.maxHp, hpNow + heal);
     // 楽観更新 (即応) → サーバー権威で確定 (在庫消費 + HP 回復を gameState に)。失敗ならロールバック。
     setHerbStock((n) => n - 1);

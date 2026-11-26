@@ -88,6 +88,7 @@ function candidateActions(
   ];
   if (s.player.mp >= skillCost) {
     for (let i = 0; i < s.playerSkills.length; i++) {
+      if (s.player.mp < skillMpCostOf(s.player, s.playerSkills[i]!.kind)) continue; // 高いとくぎ (D-REVIVE-001) は MP が足りるときだけ
       out.push({ action: { command: 'skill', skillIndex: i }, after: resolveTurn(s, 'skill', turnSeed, i) });
     }
   }

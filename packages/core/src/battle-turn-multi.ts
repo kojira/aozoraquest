@@ -4,7 +4,7 @@
  */
 
 import { SKILLS, runSkillMulti } from './skills.js';
-import { resolveTargets, type CombatSides } from './combat-target.js';
+import { downed, resolveTargets, type CombatSides } from './combat-target.js';
 import { STATUS_REGISTRY, applyBeforeAct, tickStatuses } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { createRng, turnRng } from './battle-rng.js';
@@ -17,6 +17,7 @@ import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 import { allyAutoAction } from './battle-party.js';
+import { itemHealAmount, itemTargetsDownAlly, skillTargetsDownAlly } from './revive.js';
 import { actsLast, patternAct, patternEndOfTurn } from './battle-boss-pattern.js';
 import { runSelfDestruct } from './battle-self-destruct.js';
 import { watchHeals } from './bond.js';
@@ -97,7 +98,7 @@ function partyMemberAct(actor: Combatant, index: number, state: BattleState, sid
   const skills = skillsForJob(actor.job!.archetype, actor.job!.level);
   const skill = skills[a.skillIndex];
   const def = skill ? SKILLS[skill.kind] : undefined;
-  const cost = skillMpCostOf(actor);
+  const cost = skillMpCostOf(actor, skill?.kind);
   if (a.command === 'skill' && skill && def && actor.mp >= cost) {
     actor.mp -= cost;
     if (def.parry) {
@@ -160,7 +161,7 @@ export function resolveTurnMulti(
 
   // ── コマンド実効化 (ソロと同じ防御的措置) ──
   let cmd: Command = command;
-  const skillCost = skillMpCostOf(player); // 発明家/巫女の MP 割引を反映
+  const skillCost = skillMpCostOf(player, selectedSkill.kind); // 発明家/巫女の MP 割引・とくぎの倍率を反映
   if (command === 'skill' && player.mp < skillCost) {
     events.push({ actor: 'player', text: `MPが足りない! (${player.mp}/${skillCost})` });
     cmd = 'attack';
@@ -227,6 +228,10 @@ export function resolveTurnMulti(
   const chosenAlly = aimsAlly ? allies.filter((a) => a.hp > 0)[targetIndex] : undefined;
   const heroAllyIndex = () => Math.max(0, allies.filter((a) => a.hp > 0).indexOf(chosenAlly!));
   const heroAlly = () => allies.filter((a) => a.hp > 0)[heroAllyIndex()] ?? player;
+  // 生き返らせる手 (D-REVIVE-001) では targetIndex は「倒れた味方の何番目か」。先に起きていたら、まだ倒れている先頭。
+  const aimsDown = (cmd === 'skill' && skillTargetsDownAlly(selectedSkill.kind)) || (cmd === 'item' && itemTargetsDownAlly(itemId!));
+  const chosenDown = aimsDown ? downed(allies)[targetIndex] : undefined;
+  const heroPickIndex = () => (aimsDown ? Math.max(0, downed(allies).indexOf(chosenDown!)) : heroAllyIndex());
 
   const pinned = pinAllyOrders(allies, enemies, allyOrders);
   // めいれい の ぼうぎょ・見切り も主人公と同じくターンの頭で構える (行動順によらず大技に間にあう)。
@@ -260,12 +265,12 @@ export function resolveTurnMulti(
             player,
             sides,
             (defender) => ({ attacker: player, defender, rng, events, skillName: selectedSkill.name, actorSide: 'player', engine: { doAttack, doMagic } }),
-            { targetIndex: heroTargetIndex(), allyIndex: heroAllyIndex(), label: selectedSkill.name, events, actor: 'player' },
+            { targetIndex: heroTargetIndex(), allyIndex: heroPickIndex(), label: selectedSkill.name, events, actor: 'player' },
           );
         }
       } else if (cmd === 'herb') {
         const to = heroAlly();
-        const heal = Math.round(to.maxHp * t.herbHealRatio);
+        const heal = itemHealAmount('herb');
         to.hp = Math.min(to.maxHp, to.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;
@@ -280,7 +285,7 @@ export function resolveTurnMulti(
         const text = to === player ? `${player.name}はそらのしずくを飲んだ! MPが${gain}回復。` : `${player.name}は${to.name}に そらのしずくを飲ませた! MPが${gain}回復。`;
         events.push({ actor: 'player', text: `${text}(残り${state.tonics})` });
       } else if (cmd === 'item') {
-        useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events, heroAllyIndex());
+        useBattleItem(state, itemId!, sides, heroTargetIndex(), rng, events, heroPickIndex());
       }
       // guard / flee 失敗はこのターン行動なし
     } else if (isAlly(actor) && actor.job && pinned[allies.indexOf(actor)]) {
