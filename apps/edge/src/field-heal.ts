@@ -7,7 +7,7 @@
  * 倒れた仲間 (HP 0) は回復できない (生き返らせるのは入れていない)。
  */
 import {
-  BATTLE_TUNING, SKILLS, effectTarget, healAmount, isPureHealSkill, jobLevelFromXp, partyDefsOf, partyMemberCombatant, playerCombatant, playerLevelFromXp, recruitById, skillMpCostOf, skillsForJob,
+  BATTLE_TUNING, SKILLS, itemHealAmount, effectTarget, healAmount, isPureHealSkill, jobLevelFromXp, partyDefsOf, partyMemberCombatant, playerCombatant, playerLevelFromXp, recruitById, skillMpCostOf, skillsForJob,
   type Combatant,
 } from '@aozoraquest/core';
 import { readModifyWrite, readState, type GameState } from './game-state';
@@ -90,7 +90,7 @@ export async function handleItem(env: ResolverEnv, userDid: string, item: 'herb'
     if ((m[matId] ?? 0) <= 0) delete m[matId];
     if (item === 'herb') {
       if (c.hp >= c.maxHp) throw new ResolverError('HP は満タン', 400);
-      const hp = Math.min(c.maxHp, c.hp + Math.round(c.maxHp * BATTLE_TUNING.herbHealRatio));
+      const hp = Math.min(c.maxHp, c.hp + itemHealAmount('herb'));
       healed = hp - c.hp;
       c.hp = hp;
     } else {
@@ -157,7 +157,7 @@ export async function handleFieldSkill(
       for (const t of targets) {
         if (t.c.hp <= 0) throw new ResolverError(`${t.c.name}は たおれている`, 400, 'target_down');
         const c = { ...(after.get(t.id) ?? t.c) };
-        const hp = Math.min(c.maxHp, c.hp + healAmount(c.maxHp, effect.ratio));
+        const hp = Math.min(c.maxHp, c.hp + (effect.amount ?? healAmount(c.maxHp, effect.ratio ?? 0)));
         healed.push({ id: t.id, name: c.name, amount: hp - c.hp });
         restored.push({ id: t.id, amount: hp - c.hp, maxHp: c.maxHp });
         c.hp = hp;

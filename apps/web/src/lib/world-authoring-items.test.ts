@@ -31,7 +31,7 @@ describe('saveItems', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })));
     const nemuri: ItemDefData = {
       id: 'nemuri-kona', name: 'ねむりごな', desc: '敵 1 体を眠らせる', price: { power: 3, materials: 1 }, shopTier: 1,
-      battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 0.7, turns: 3, magnitude: 1.5 }, { kind: 'heal', ratio: 0.25 }] },
+      battle: { effects: [{ kind: 'status', status: 'sleep', target: 'enemy', chance: 0.7, turns: 3, magnitude: 1.5 }, { kind: 'restoreMp', ratio: 0.25 }] },
     };
     const items = [...activeItems(), nemuri];
     await saveItems({} as Agent, items, [...activeEquipment()]);

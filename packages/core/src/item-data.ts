@@ -86,7 +86,7 @@ const ITEM_DESC_MAX = 60;
 /** どうぐに使える効果と、その効果で使える target (damage は使う人の攻撃力、recoil は反動なので不可)。 */
 const ITEM_EFFECT_TARGETS: Partial<Record<SkillEffect['kind'], readonly (string | undefined)[]>> = {
   status: ['self', 'enemy', 'allEnemies', 'allAllies'],
-  heal: [undefined, 'self', 'allAllies', 'oneDownAlly'],
+  heal: [undefined, 'self', 'oneAlly', 'allAllies', 'oneDownAlly'],
   cleanse: ['self', 'allAllies'],
   restoreMp: [undefined],
   fixedDamage: [undefined, 'oneEnemy', 'allEnemies'],

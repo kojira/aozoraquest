@@ -13,6 +13,7 @@ const STATUS_IDS = Object.keys(STATUS_REGISTRY) as StatusId[];
 function defaultEffect(kind: ItemEffect['kind']): ItemEffect {
   if (kind === 'status') return { kind, status: 'sleep', target: 'enemy', chance: 1, turns: 3 };
   if (kind === 'cleanse') return { kind, target: 'self' };
+  if (kind === 'heal') return { kind, amount: 30 }; // どうぐの回復は決まった量 (D-REVIVE-001)
   return { kind, ratio: 0.3 };
 }
 
@@ -56,7 +57,18 @@ export function ItemBattleEditor({ item, onChange }: { item: ItemDefData; onChan
               <option value="allAllies">味方全体</option>
             </select>
           )}
-          {(e.kind === 'heal' || e.kind === 'restoreMp') && (
+          {e.kind === 'heal' && (
+            <>
+              <label>量 <input aria-label="回復量" type="number" min="1" max="999" value={e.amount ?? ''} onChange={(ev) => setEffect(i, { amount: num(ev.target.value), ratio: undefined })} style={{ width: '4em' }} /></label>
+              <select aria-label="対象" value={e.target ?? 'self'} onChange={(ev) => setEffect(i, { target: ev.target.value === 'self' ? undefined : ev.target.value })}>
+                <option value="self">自分</option>
+                <option value="oneAlly">味方1人</option>
+                <option value="allAllies">味方全体</option>
+                <option value="oneDownAlly">倒れた味方1人 (生き返らせる)</option>
+              </select>
+            </>
+          )}
+          {e.kind === 'restoreMp' && (
             <label>割合 <input aria-label="割合" type="number" step="0.05" min="0" max="1" value={e.ratio} onChange={(ev) => setEffect(i, { ratio: Number(ev.target.value) })} style={{ width: '4em' }} /></label>
           )}
           <button type="button" aria-label="効果を消す" onClick={() => setEffects(effects.filter((_, j) => j !== i))} style={small}>×</button>

@@ -26,7 +26,7 @@ describe('フィールドの回復 (D-PARTY-003)', () => {
     globalThis.fetch = m.fn;
     const r = await handleItem(env, USER, 'herb', NOW, undefined, undefined, 'g:p');
     const max = maxOf(PAL).maxHp;
-    const want = Math.min(max, 2 + Math.round(max * BATTLE_TUNING.herbHealRatio));
+    const want = Math.min(max, 2 + BATTLE_TUNING.herbHealAmount);
     expect(m.gs().party?.hp?.['g:p'] ?? max).toBe(want);
     expect(r.healed).toBe(want - 2);
     expect(m.gs().carryHp).toBe(3);
