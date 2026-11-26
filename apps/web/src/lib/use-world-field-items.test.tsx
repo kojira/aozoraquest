@@ -9,19 +9,20 @@ import type { Agent } from '@atproto/api';
 import { setStory } from '@aozoraquest/core';
 
 const search = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/world-server', async (orig) => ({ ...(await orig<typeof import('@/lib/world-server')>()), serverSearch: search }));
+const item = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/world-server', async (orig) => ({ ...(await orig<typeof import('@/lib/world-server')>()), serverSearch: search, serverItem: item }));
 
 import { useWorldFieldItems } from './use-world-field-items';
 import { useWorldInventory } from './use-world-inventory';
 
-function setup(at: { mapId: string; x: number; y: number }) {
+function setup(at: { mapId: string; x: number; y: number }, combat: { maxHp: number; maxMp: number } | null = null, hp: number | null = null) {
   const msgs: Array<string | null> = [];
   const setCraftedPieces = vi.fn();
   const hook = renderHook(() => {
     const inventory = useWorldInventory();
     const items = useWorldFieldItems({
-      agent: {} as Agent, did: 'did:test', combat: null, inventory,
-      wsRef: { current: { ...at, hp: null, mp: null, lastTown: null, regions: [], visitedTowns: [], gotStarterFeather: true } },
+      agent: {} as Agent, did: 'did:test', combat, inventory,
+      wsRef: { current: { ...at, hp, mp: null, lastTown: null, regions: [], visitedTowns: [], gotStarterFeather: true } },
       setWs: () => {}, setNotice: () => {}, scheduleSave: () => {}, moveBusyRef: { current: false }, tokenRef: { current: undefined },
       flagsRef: { current: [] }, pendingNoticesRef: { current: [] }, serverPowerRef: { current: 0 }, setServerPower: () => {},
       setSearchMsg: (m) => { msgs.push(typeof m === 'function' ? null : m); }, setFeatherOpen: () => {}, setWipe: () => {},
@@ -56,5 +57,20 @@ describe('useWorldFieldItems の しらべる (宝箱・キラキラ)', () => {
     await act(() => other.hook.result.current.items.searchHere());
     expect(search).toHaveBeenCalledOnce();
     expect(other.msgs.at(-1)).toMatch(/^パワーが足りない/);
+  });
+});
+
+describe('フィールドの やくそう (D-HEAL-RANGE-001)', () => {
+  afterEach(() => item.mockReset());
+
+  it('回復の量は サーバーの応答 (healed) を出す。画面では決めない', async () => {
+    item.mockResolvedValue({ carryHp: 13, materials: { herb: 1 }, healed: 11 });
+    const { hook } = setup({ mapId: 'w', x: 0, y: 0 }, { maxHp: 40, maxMp: 10 }, 2);
+    act(() => { hook.result.current.inventory.setHerbStock(2); });
+    let said: string | void = undefined;
+    await act(async () => { said = await hook.result.current.items.useHerbOnField(); });
+    expect(item).toHaveBeenCalledWith(expect.anything(), 'herb');
+    expect(said).toBe('やくそうを使った! HPが11回復。');
+    expect(hook.result.current.inventory.herbStock).toBe(1);
   });
 });

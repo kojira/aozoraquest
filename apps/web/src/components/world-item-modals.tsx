@@ -67,7 +67,7 @@ export function ItemsModal({
   featherStock: number;
   /** 戦闘値が解決済み (HP/MP 回復が計算できる) か */
   canUse: boolean;
-  onUseHerb: () => string | void;
+  onUseHerb: () => string | void | Promise<string | void>;
   onUseTonic: () => string | void;
   onUseFeather: () => void;
   onClose: () => void;
@@ -86,7 +86,7 @@ export function ItemsModal({
   const withAllies = members.length > 1 && !!onUseOnAlly;
   const applyTo = async (item: 'herb' | 'tonic', m: FieldMember) => {
     setChoosing(null);
-    if (m.id === 'hero') { const r = (item === 'herb' ? onUseHerb : onUseTonic)(); setMsg(typeof r === 'string' ? r : null); return; }
+    if (m.id === 'hero') { const r = await (item === 'herb' ? onUseHerb : onUseTonic)(); setMsg(typeof r === 'string' ? r : null); return; }
     setBusy(true);
     setMsg(await onUseOnAlly!(item, m));
     setBusy(false);
@@ -108,7 +108,7 @@ export function ItemsModal({
       </ModalShell>
     );
   }
-  const row = (label: string, count: number, note: string, disabled: boolean, onUse: () => string | void, closeAfter: boolean) => (
+  const row = (label: string, count: number, note: string, disabled: boolean, onUse: () => string | void | Promise<string | void>, closeAfter: boolean) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em', padding: '0.4em 0', borderBottom: '1px solid var(--color-border)' }}>
       <span style={{ fontSize: '0.9em' }}>
         {label} <span style={{ color: 'var(--color-muted)' }}>×{count}</span>
@@ -118,8 +118,8 @@ export function ItemsModal({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => {
-          const r = onUse();
+        onClick={async () => {
+          const r = await onUse();
           if (closeAfter) onClose();
           else setMsg(typeof r === 'string' ? r : null);
         }}

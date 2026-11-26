@@ -22,6 +22,7 @@ import {
 } from './statuses.js';
 import type { Element } from './elements.js';
 import { resolveTargets, type SkillTarget, type CombatSides } from './combat-target.js';
+import { rolledHeal } from './heal-roll.js';
 
 /** ダメージの基準にする支配ステータス。int は魔撃 (必中・防御半減)、agi/luk は物理。 */
 export type DamageStat = 'atk' | 'int' | 'agi' | 'luk' | 'def';
@@ -291,14 +292,12 @@ const fixedDamageHandler: EffectHandler = (effect, ctx) => {
   });
 };
 
-/** 回復のとくぎで戻る HP (対象の maxHp の割合)。戦闘とフィールド (D-PARTY-003) で同じ値。 */
-export const healAmount = (maxHp: number, ratio: number): number => Math.round(maxHp * ratio);
 /** heal: 対象 (resolveTargets 済みの ctx.defender) の maxHp 割合ぶん回復。self は defender=attacker、
  *  allAllies は各味方に解決される (runSkillMulti が対象ごとに defender を差し替える)。 */
 const healHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'heal') return;
   const { defender, events, skillName } = ctx;
-  const heal = effect.amount ?? healAmount(defender.maxHp, effect.ratio ?? 0), down = defender.hp <= 0; // 倒れた人を起こす (D-REVIVE-001)
+  const heal = rolledHeal(effect, defender.maxHp, ctx.attacker.luk, ctx.rng), down = defender.hp <= 0; // 幅と うん (D-HEAL-RANGE-001)・倒れた人を起こす (D-REVIVE-001)
   defender.hp = Math.min(defender.maxHp, defender.hp + heal);
   events.push({ actor: ctx.actorSide ?? 'player', text: down ? `${skillName}で ${defender.name}が いきかえった! (HP ${defender.hp})` : `${defender.name}は${skillName}! HPが${heal}回復。` });
 };

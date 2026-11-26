@@ -175,7 +175,7 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
       } else if (cmd === 'skill') {
         playerSkillAction(state, selectedSkill, rng, events);
       } else if (cmd === 'herb') {
-        const heal = itemHealAmount('herb');
+        const heal = itemHealAmount('herb', { luk: state.player.luk, rng });
         state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;

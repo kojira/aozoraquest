@@ -32,9 +32,11 @@ describe('味方 1 人の回復とくぎ (D-PARTY-003)', () => {
     expect(i).toBeGreaterThan(0);
     const next = resolveTurnMulti(s, 'skill', 7, i, 1);
     const ally = next.allies![1]!;
-    expect(ally.hp).toBe(Math.min(ally.maxHp, 5 + Math.round(ally.maxHp * 0.3)));
+    const base = Math.round(ally.maxHp * 0.3), healed = ally.hp - 5; // 幅つき (D-HEAL-RANGE-001)
+    expect(healed).toBeGreaterThanOrEqual(Math.min(ally.maxHp - 5, Math.round(base * 0.85)));
+    expect(healed).toBeLessThanOrEqual(Math.round(base * 1.15));
     expect(next.allies![0]!.hp).toBe(6);
-    expect(next.lastEvents.some((e) => e.text === `カイトは聖光の癒し! HPが${Math.round(ally.maxHp * 0.3)}回復。`)).toBe(true);
+    expect(next.lastEvents.some((e) => e.text.startsWith('カイトは聖光の癒し! HPが'))).toBe(true);
   });
 
   it('1 人戦では今までどおり自分に効く', () => {
@@ -71,7 +73,8 @@ describe('どうぐを仲間に (D-PARTY-003)', () => {
     const s = partyBattle();
     const next = resolveTurnMulti(s, 'herb', 7, 0, 2);
     const a2 = next.allies![2]!;
-    expect(a2.hp).toBe(Math.min(a2.maxHp, 4 + BATTLE_TUNING.herbHealAmount));
+    expect(a2.hp).toBeGreaterThanOrEqual(Math.min(a2.maxHp, 4 + Math.round(BATTLE_TUNING.herbHealAmount * 0.85))); // 幅つき (D-HEAL-RANGE-001)
+    expect(a2.hp).toBeLessThanOrEqual(4 + Math.round(BATTLE_TUNING.herbHealAmount * 1.15));
     expect(next.allies![0]!.hp).toBe(6);
     expect(next.herbs).toBe(1);
     expect(next.lastEvents.some((e) => e.text.startsWith('ゆうしゃはやくそうを使った! ソラのHPが'))).toBe(true);

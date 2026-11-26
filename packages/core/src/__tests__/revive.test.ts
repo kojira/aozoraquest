@@ -42,7 +42,9 @@ describe('目覚めの祈り (巫女 Lv16)', () => {
     const mp = s.player.mp;
     const next = resolveTurnMulti(s, 'skill', 7, i, 0);
     const kaito = next.allies![1]!;
-    expect(kaito.hp).toBe(Math.round(kaito.maxHp * 0.4));
+    const base = Math.round(kaito.maxHp * 0.4); // 幅つき (D-HEAL-RANGE-001)
+    expect(kaito.hp).toBeGreaterThanOrEqual(Math.round(base * 0.85));
+    expect(kaito.hp).toBeLessThanOrEqual(Math.round(base * 1.15));
     expect(next.player.mp).toBe(mp - skillMpCostOf(s.player, 'revive-prayer'));
     expect(skillMpCostOf(s.player, 'revive-prayer')).toBeGreaterThan(skillMpCostOf(s.player));
     expect(next.lastEvents.some((e) => e.text.includes('カイトが いきかえった'))).toBe(true);
@@ -92,10 +94,11 @@ describe('どうぐの回復は決まった量', () => {
   it('やくそうは herbHealAmount ぶん (1 人戦・群れ)', () => {
     const base = startBattle('warrior', 20, 1, 'x', 1, 3, 2);
     const s = { ...base, player: { ...base.player, hp: 10 }, monster: { ...base.monster, atk: 0, agi: 0 } };
-    expect(resolveTurn(s, 'herb', 7).player.hp).toBe(10 + BATTLE_TUNING.herbHealAmount);
+    const inRange = (hp: number) => hp >= 10 + Math.round(BATTLE_TUNING.herbHealAmount * 0.85) && hp <= 10 + Math.round(BATTLE_TUNING.herbHealAmount * 1.15);
+    expect(inRange(resolveTurn(s, 'herb', 7).player.hp)).toBe(true); // 幅つき (D-HEAL-RANGE-001)
     expect(itemHealAmount('herb')).toBe(BATTLE_TUNING.herbHealAmount);
     const multi = { ...s, allies: [s.player], enemies: [s.monster] };
-    expect(resolveTurnMulti(multi, 'herb', 7, 0, 0).player.hp).toBe(10 + BATTLE_TUNING.herbHealAmount);
+    expect(inRange(resolveTurnMulti(multi, 'herb', 7, 0, 0).player.hp)).toBe(true);
   });
 
   it('戦闘のどうぐの amount で回復し、最大 HP の割合では回復しない', () => {
@@ -103,13 +106,16 @@ describe('どうぐの回復は決まった量', () => {
     expect(itemHealAmount('kizu-gusuri')).toBe(60);
     const base = startBattle('warrior', 30, 1, 'x', 1, 3, 0, undefined, { battleItems: { 'kizu-gusuri': 1 } });
     const s = { ...base, player: { ...base.player, hp: 10 }, monster: { ...base.monster, atk: 0, agi: 0 } };
-    expect(resolveTurn(s, 'item', 7, 0, 'kizu-gusuri').player.hp).toBe(70);
+    const hp = resolveTurn(s, 'item', 7, 0, 'kizu-gusuri').player.hp; // 60 の ±15% (D-HEAL-RANGE-001)
+    expect(hp).toBeGreaterThanOrEqual(10 + 51);
+    expect(hp).toBeLessThanOrEqual(10 + 69);
   });
 
   it('めざめのはねは倒れた仲間を決まった量で起こす', () => {
     withItems(FEATHER);
     const next = resolveTurnMulti(downBattle(), 'item', 7, 0, 0, 'mezame-hane');
-    expect(next.allies![1]!.hp).toBe(40);
+    expect(next.allies![1]!.hp).toBeGreaterThanOrEqual(34); // 40 の ±15% (D-HEAL-RANGE-001)
+    expect(next.allies![1]!.hp).toBeLessThanOrEqual(46);
     expect(next.battleItems!['mezame-hane']).toBe(1);
   });
 });

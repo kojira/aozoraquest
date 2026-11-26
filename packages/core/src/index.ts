@@ -64,6 +64,7 @@ export * from "./npc-image.js";
 export * from './admin-nsid.js';
 export * from './admin-world-loader.js';
 export * from './revive.js';
+export * from './heal-roll.js';
 export * from './shrine.js';
 export * from './job-shop-set.js';
 export * from './gear-passives.js';

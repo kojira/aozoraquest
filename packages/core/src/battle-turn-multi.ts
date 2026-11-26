@@ -270,7 +270,7 @@ export function resolveTurnMulti(
         }
       } else if (cmd === 'herb') {
         const to = heroAlly();
-        const heal = itemHealAmount('herb');
+        const heal = itemHealAmount('herb', { luk: player.luk, rng });
         to.hp = Math.min(to.maxHp, to.hp + heal);
         state.herbs -= 1;
         state.herbsUsed += 1;

@@ -11,6 +11,7 @@
 import { SKILLS, effectTarget, type SkillDef, type SkillEffect } from './skills.js';
 import { ITEMS, type ItemDef } from './battle-monsters.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
+import { spreadHeal } from './heal-roll.js';
 
 /** 足すとくぎ。 */
 export const REVIVE_SKILLS: Readonly<Record<string, SkillDef>> = {
@@ -61,11 +62,12 @@ export function shopForbiddenDef(def: Pick<ItemDef, 'casinoOnly' | 'precious' | 
 }
 
 /**
- * どうぐ 1 つで戻る HP (決まった量)。やくそうは BATTLE_TUNING.herbHealAmount、
- * ほかは戦闘の効果の amount (1 人ぶん)。回復しない品は 0。最大 HP を超えるぶんは呼ぶ側で切る。
+ * どうぐ 1 つで戻る HP。やくそうは BATTLE_TUNING.herbHealAmount、ほかは戦闘の効果の amount (1 人ぶん)。
+ * 回復しない品は 0。最大 HP を超えるぶんは呼ぶ側で切る。
+ * roll (使う人の うん と乱数) を渡すと幅つきの量 (D-HEAL-RANGE-001)、渡さなければ もとの量 (説明・並べかえ用)。
  */
-export function itemHealAmount(itemId: string): number {
-  if (itemId === 'herb') return BATTLE_TUNING.herbHealAmount;
+export function itemHealAmount(itemId: string, roll?: { luk: number; rng: () => number }): number {
   const heal = ITEMS[itemId]?.battle?.effects.find((e) => e.kind === 'heal');
-  return heal?.kind === 'heal' ? (heal.amount ?? 0) : 0;
+  const base = itemId === 'herb' ? BATTLE_TUNING.herbHealAmount : heal?.kind === 'heal' ? (heal.amount ?? 0) : 0;
+  return roll ? spreadHeal(base, roll.luk, roll.rng) : base;
 }
