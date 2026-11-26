@@ -29,7 +29,7 @@ import {
 } from '@aozoraquest/core';
 import { entropyU32 } from './kuda';
 import { readGuard, advanceGuard, deleteGuard } from './battle-guard';
-import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, partyWithBattleXp, gameStateCollection, type GameStateEnv, type GameState, type PartyState } from './game-state';
+import { readState, readModifyWrite, emptyState, rkeyForDid, healedParty, restedParty, partyWithBattleXp, gameStateCollection, type GameStateEnv, type GameState, type PartyState } from './game-state';
 import { advanceScenario, type ScenarioMessage } from './scenario-progress';
 import { sanitizeGear } from './game-state';
 // sanitizeGear は game-state へ移した (shop からも使うため。shop → battle-resolver は循環)。
@@ -352,7 +352,7 @@ export async function handleMove(env: ResolverEnv, userDid: string, dx: number, 
   if (!inside && terrain === 'town') {
     // 街: HP/MP 全回復 + 位置 + 最後の街 (敗北帰還先) を gameState に確定 (稀なので PDS 書き OK)。
     // フィールドの街なので mapId は消す (位置は必ず (mapId,x,y) の 3 つ組で書く)。
-    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, party: healedParty(cur.party), lastTown: { x: nx, y: ny } }),
+    await readModifyWrite(env, userDid, (cur) => ({ ...cur, mapId: undefined, x: nx, y: ny, carryHp: undefined, carryMp: undefined, party: restedParty(cur.party), lastTown: { x: nx, y: ny } }),
       { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
     healed = true;
     townArrival = { x: nx, y: ny };
@@ -460,7 +460,7 @@ export async function handleTeleport(env: ResolverEnv, userDid: string, x: numbe
     if (m['sky-feather'] <= 0) delete m['sky-feather'];
     // そらのはねはフィールドの街へ飛ぶ。**mapId を消さないと**「内部マップ × 街の座標」
     // という壊れた state が残り、次のリロードで動けなくなる (レビュー ★★★)。
-    return { ...cur, mapId: undefined, x: tx, y: ty, carryHp: undefined, carryMp: undefined, party: healedParty(cur.party), lastTown: { x: tx, y: ty }, materials: m };
+    return { ...cur, mapId: undefined, x: tx, y: ty, carryHp: undefined, carryMp: undefined, party: restedParty(cur.party), lastTown: { x: tx, y: ty }, materials: m };
   }, { now, init: (d, iso) => migrateInitState(d, iso, ns, fetchImpl) });
   materials = written.materials;
   const token = signPosition(env, { did: userDid, x: tx, y: ty, counter: 0, iat: now });
@@ -597,7 +597,9 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         heads: 1 + (guard.sealed.party?.length ?? 0),
       });
       // 仲間にも同じ 1 人ぶんを足す。Lv が上がった仲間は、主人公と同じく全快する。
-      const allies = partyWithBattleXp(r.next.party, guard.sealed.party ?? [], r.awarded.xp ?? 0, jobLevelFromXp(jobXpOf(cur, guard.sealed.archetype), guard.sealed.archetype));
+      // 決着のときに倒れている仲間には経験値が入らない (D-REVIVE-001)。
+      const standing = (guard.sealed.party ?? []).filter((_, i) => (next.allies?.[i + 1]?.hp ?? 1) > 0);
+      const allies = partyWithBattleXp(r.next.party, standing, r.awarded.xp ?? 0, jobLevelFromXp(jobXpOf(cur, guard.sealed.archetype), guard.sealed.archetype));
       const bonded = partyWithBattleBond(allies.party, guard.sealed.party ?? [], next); // きずな (D-PARTY-004)
       r.next = { ...r.next, party: bonded.party };
       r.awarded = { ...r.awarded, ...(allies.leveled.length ? { allyLeveledUp: allies.leveled } : {}), ...(bonded.deepened.length ? { allyBondUp: bonded.deepened } : {}) };
@@ -641,7 +643,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
         // 決めた monsterStatFloor と JOB_LEVEL_PACE は引き直しが要る (#547)。
         carryHp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.hp,
         carryMp: scriptedLoss ? 1 : decision === 'lose' || r.awarded.leveledUp ? undefined : next.player.mp,
-        party: decision === 'lose' && !scriptedLoss || r.awarded.leveledUp ? healedParty(settled.party) : partyAfterBattle(settled.party, guard.sealed.party ?? [], next, (r.awarded.allyLeveledUp ?? []).map((a) => a.id)),
+        party: decision === 'lose' && !scriptedLoss ? healedParty(settled.party) : r.awarded.leveledUp ? restedParty(partyAfterBattle(settled.party, guard.sealed.party ?? [], next, [])) : partyAfterBattle(settled.party, guard.sealed.party ?? [], next, (r.awarded.allyLeveledUp ?? []).map((a) => a.id)),
         defeated,
         defeatedWindow: window,
       };
@@ -678,7 +680,7 @@ function partyAfterBattle(party: PartyState | undefined, fought: readonly string
   fought.forEach((id, i) => {
     const c = battle.allies?.[i + 1];
     if (!c || !party.ids.includes(id)) return;
-    const full = leveled.includes(id);
+    const full = leveled.includes(id) && c.hp > 0; // 倒れた仲間は Lv が上がっても起きない (D-REVIVE-001)
     if (c.hp < c.maxHp && !full) hp[id] = c.hp; else delete hp[id];
     if (c.mp < c.maxMp && !full) mp[id] = c.mp; else delete mp[id];
   });

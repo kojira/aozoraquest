@@ -122,6 +122,20 @@ export function healedParty(party: PartyState | undefined): PartyState | undefin
   return { ...rest, ids: [...party.ids] };
 }
 
+/** 休んだ party (宿屋・街・そらのはね・主人公のレベルアップ)。生きている仲間だけ全快し、**倒れた仲間 (HP 0) は倒れたまま** (D-REVIVE-001)。
+ *  起こすのは ほこら・目覚めの祈り・生き返らせるどうぐ だけ。負けて町へ戻るときは healedParty (全員全快)。 */
+export function restedParty(party: PartyState | undefined): PartyState | undefined {
+  if (!party) return undefined;
+  const { hp: _hp, mp: _mp, ...rest } = party;
+  const down = Object.fromEntries(Object.entries(party.hp ?? {}).filter(([id, v]) => v <= 0 && party.ids.includes(id)));
+  return { ...rest, ids: [...party.ids], ...(Object.keys(down).length ? { hp: down } : {}) };
+}
+
+/** 倒れている仲間の id (party.hp が 0)。 */
+export function downedIds(party: PartyState | undefined): string[] {
+  return (party?.ids ?? []).filter((id) => (party?.hp?.[id] ?? 1) <= 0);
+}
+
 /** 仲間の Lv が上がった内訳 (決着の応答に載せる)。 */
 export interface AllyLevelUp { id: string; name: string; from: number; to: number }
 
