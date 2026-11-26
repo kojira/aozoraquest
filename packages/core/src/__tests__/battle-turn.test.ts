@@ -405,7 +405,8 @@ describe('resolveTurn', () => {
     // + T2/T3 強化 (#444 の敵 atk 底上げ) 後は tier3 の競り合い帯が上がり、warrior は
     // jobLv15 (T3 ~42%) が拮抗帯 (#507 でジョブ Lv 基準に貼り直し)。ここで予告防御 (reactive) が attack 連打 (spam) を上回る
     // = 防御の存在意義。強化された charger の予告を防がないと事故死するため差が明確に出る。
-    const HERBS = 2;
+    // やくそうは決まった量 (D-REVIVE-001) で tier3 の HP には小さく、両方の手で差がつかないので持たせない (防御の差だけを見る)。
+    const HERBS = 0;
     const reactive = (seed: number) => {
       let s = startBattle('warrior', 15, 1, '戦士', 5, seed, HERBS);
       for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {

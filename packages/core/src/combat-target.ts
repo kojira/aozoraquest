@@ -11,7 +11,8 @@
 import type { Combatant } from './battle.js';
 
 /** とくぎの対象種別 (docs/25 §14.4)。 */
-export type SkillTarget = 'self' | 'oneEnemy' | 'allEnemies' | 'oneAlly' | 'allAllies';
+/** oneDownAlly = 倒れた味方 1 人 (生き返らせる手。D-REVIVE-001)。 */
+export type SkillTarget = 'self' | 'oneEnemy' | 'allEnemies' | 'oneAlly' | 'allAllies' | 'oneDownAlly';
 
 /** 戦闘の両陣営 (味方 = player+召喚+NPC / 敵 = モンスター群)。 */
 export interface CombatSides {
@@ -22,6 +23,11 @@ export interface CombatSides {
 /** 生存者のみ (hp>0)。 */
 function alive(arr: readonly Combatant[]): Combatant[] {
   return arr.filter((c) => c.hp > 0);
+}
+
+/** 倒れた人のみ (hp<=0)。生き返らせる相手の並び (D-REVIVE-001)。 */
+export function downed(arr: readonly Combatant[]): Combatant[] {
+  return arr.filter((c) => c.hp <= 0);
 }
 
 /**
@@ -48,10 +54,15 @@ export function resolveTargets(
     case 'allEnemies':
       return alive(foeSide);
     case 'oneAlly': {
-      // 味方単体。全滅時は caster に退避 (味方対象は最低でも自分に効く)。将来「戦闘不能の味方を
-      // 蘇生」等を足す場合はここで死者を許容する分岐が要る (現状は生存者から選ぶ)。
+      // 味方単体 (生きている味方から)。全滅時は caster に退避 (味方対象は最低でも自分に効く)。
       const list = alive(ownSide);
       return [list[opts.allyIndex ?? opts.targetIndex ?? 0] ?? caster];
+    }
+    case 'oneDownAlly': {
+      // 倒れた味方から選ぶ (生き返らせる手。D-REVIVE-001)。番号は「倒れた味方の何番目か」。誰も倒れていなければ空。
+      const list = downed(ownSide);
+      const picked = list[opts.allyIndex ?? opts.targetIndex ?? 0];
+      return picked ? [picked] : [];
     }
     case 'oneEnemy': {
       const list = alive(foeSide);
@@ -68,5 +79,5 @@ export function targetsEnemies(target: SkillTarget): boolean {
 
 /** その target が単体指定か (UI で対象を選ばせる必要があるか)。 */
 export function isSingleTarget(target: SkillTarget): boolean {
-  return target === 'oneEnemy' || target === 'oneAlly';
+  return target === 'oneEnemy' || target === 'oneAlly' || target === 'oneDownAlly';
 }

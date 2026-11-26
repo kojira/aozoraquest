@@ -95,10 +95,11 @@ export type SkillEffect =
     }
   | {
       kind: 'heal';
-      /** maxHp に対する回復割合 */
-      ratio: number;
+      /** maxHp に対する回復割合 (とくぎ)。どうぐは amount (決まった量。D-REVIVE-001) を使う */
+      ratio?: number;
+      amount?: number;
       /** 対象。self=使用者 / oneAlly=選んだ味方 1 人 (1 人戦は自分) / allAllies=味方全体 (巫女の全体回復)。未指定は self。 */
-      target?: 'self' | 'oneAlly' | 'allAllies';
+      target?: 'self' | 'oneAlly' | 'allAllies' | 'oneDownAlly';
     }
   | {
       kind: 'cleanse';
@@ -297,9 +298,9 @@ export const healAmount = (maxHp: number, ratio: number): number => Math.round(m
 const healHandler: EffectHandler = (effect, ctx) => {
   if (effect.kind !== 'heal') return;
   const { defender, events, skillName } = ctx;
-  const heal = healAmount(defender.maxHp, effect.ratio);
+  const heal = effect.amount ?? healAmount(defender.maxHp, effect.ratio ?? 0), down = defender.hp <= 0; // 倒れた人を起こす (D-REVIVE-001)
   defender.hp = Math.min(defender.maxHp, defender.hp + heal);
-  events.push({ actor: ctx.actorSide ?? 'player', text: `${defender.name}は${skillName}! HPが${heal}回復。` });
+  events.push({ actor: ctx.actorSide ?? 'player', text: down ? `${skillName}で ${defender.name}が いきかえった! (HP ${defender.hp})` : `${defender.name}は${skillName}! HPが${heal}回復。` });
 };
 
 /** cleanse: 味方対象のデバフを除去 (浄化)。バフは残す。self は使用者、それ以外は解決済みの味方。 */

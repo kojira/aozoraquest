@@ -12,6 +12,8 @@ import { skillMpCostOf, skillsForJob } from './battle-job-skills.js';
 import { type Combatant, playerCombatant } from './battle-combatant.js';
 import { type AllyMode, type Command, type BattleState } from './battle-state.js';
 import { autoBattleAction } from './battle-auto.js';
+import { downed } from './combat-target.js';
+import { skillTargetsDownAlly } from './revive.js';
 import type { RecruitDef } from './recruits.js';
 import type { GearSelection } from './equipment.js';
 
@@ -78,6 +80,17 @@ const isPartyHeal = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind
 const isOneAllyHeal = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'heal' && e.target === 'oneAlly');
 const isAreaAttack = (kind: string) => !!SKILLS[kind]?.effects.some((e) => (e.kind === 'damage' || e.kind === 'fixedDamage') && e.target === 'allEnemies');
 
+/** 全回復 (割合 1) を使う目安: いちばん弱った人の HP がこの割合を下回ったとき (D-REVIVE-001)。 */
+const FULL_HEAL_BELOW = 0.3;
+const healRatioOf = (kind: string) => Math.max(0, ...(SKILLS[kind]?.effects ?? []).map((e) => (e.kind === 'heal' ? e.ratio ?? 0 : 0)));
+/** 条件に合う回復のとくぎの番号。MP が足りるものだけ。弱った人が FULL_HEAL_BELOW 未満なら いちばん大きい回復、ほかは いちばん小さい回復。 */
+function healPick(skills: readonly { kind: string }[], ally: Combatant, pred: (kind: string) => boolean, worst: number): number {
+  const ok = skills.map((k, i) => ({ i, r: healRatioOf(k.kind) })).filter(({ i }) => pred(skills[i]!.kind) && ally.mp >= skillMpCostOf(ally, skills[i]!.kind));
+  if (!ok.length) return -1;
+  const pick = ok.reduce((a, b) => (worst < FULL_HEAL_BELOW ? (b.r > a.r ? b : a) : b.r < a.r ? b : a));
+  return pick.i;
+}
+
 const isHealSkill = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'heal');
 const isDamageSkill = (kind: string) => !!SKILLS[kind]?.effects.some((e) => e.kind === 'damage' || e.kind === 'fixedDamage');
 
@@ -119,13 +132,18 @@ function baseAutoAction(state: BattleState, allyIndex: number, turnSeed: number 
   const cost = skillMpCostOf(ally);
   const living = (state.enemies ?? [state.monster]).filter((e) => e.hp > 0);
   const canCast = ally.mp >= cost;
-  const heal = skills.findIndex((k) => isPartyHeal(k.kind));
+  // 倒れた仲間がいて、生き返らせるとくぎの MP があれば、まず起こす (D-REVIVE-001。番号は倒れた味方の何番目か = 先頭)。
+  const revive = skills.findIndex((k) => skillTargetsDownAlly(k.kind) && ally.mp >= skillMpCostOf(ally, k.kind));
+  if (revive >= 0 && downed(allies).length > 0) return { command: 'skill', skillIndex: revive, targetIndex: 0 };
   const livingAllies = allies.filter((a) => a.hp > 0);
   const hurt = livingAllies.some((a) => a.hp < a.maxHp * healBelow);
-  if (canCast && heal >= 0 && hurt) return { command: 'skill', skillIndex: heal, targetIndex: 0 };
+  // 回復は、いちばん弱った人が FULL_HEAL_BELOW を下回れば 全回復 (MP が足りれば)、ほかは いつもの回復。
+  const worst = livingAllies.length ? Math.min(...livingAllies.map((a) => a.hp / a.maxHp)) : 1;
+  const heal = healPick(skills, ally, isPartyHeal, worst);
+  if (heal >= 0 && hurt) return { command: 'skill', skillIndex: heal, targetIndex: 0 };
   // 全体回復が無ければ、味方 1 人の回復を HP の割合がいちばん低い味方 (主人公を含む) に。
-  const oneHeal = skills.findIndex((k) => isOneAllyHeal(k.kind));
-  if (canCast && oneHeal >= 0 && hurt) {
+  const oneHeal = healPick(skills, ally, isOneAllyHeal, worst);
+  if (oneHeal >= 0 && hurt) {
     const lowest = livingAllies.reduce((a, b) => (b.hp / b.maxHp < a.hp / a.maxHp ? b : a));
     return { command: 'skill', skillIndex: oneHeal, targetIndex: livingAllies.indexOf(lowest) };
   }

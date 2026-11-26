@@ -198,10 +198,10 @@ export const BATTLE_TUNING = {
   mpGuardGain: 0,
   /** ぼうぎょの翌ターン回避ボーナス (身構えて相手の動きを読む)。 */
   guardFocusDodge: 0.15,
-  /** やくそう: 使うと maxHp のこの割合を回復 (1 ターン消費)。持ち込み上限 herbCarryMax。
-   *  0.4/3 個ではガード+薬草の tier3 勝率が 97% まで上がり真剣勝負が作業化した
-   *  (レビューのシミュレーション実測) ため 0.3/2 個に抑制。天井はテストで固定。 */
-  herbHealRatio: 0.3,
+  /** やくそう: 使うとこの量の HP を回復 (1 ターン消費。決まった量。D-REVIVE-001)。持ち込み上限 herbCarryMax。
+   *  もとは最大 HP の 3 割 (0.4/3 個では tier3 が 97% で作業化した #270/#283/#301)。割合だと Lv が上がるほど
+   *  回復しすぎるので、量にした。回復の量はどうぐごとに itemHealAmount (revive.ts) が返す。 */
+  herbHealAmount: 10,
   herbCarryMax: 2,
   /** そらのしずく (MP 回復薬): maxMp のこの割合を回復。持ち込み上限 tonicCarryMax。 */
   tonicMpRatio: 0.5,

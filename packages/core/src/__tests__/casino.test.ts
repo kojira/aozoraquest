@@ -157,7 +157,7 @@ describe('景品 (casinoOnly) は店と置きアイテムに出ない', () => {
   it('casinoOnly のどうぐは店 (shopTier) にも置きアイテムにも出せない', () => {
     const items = [...Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), { id: 'casino-token', name: 'ためしのふだ', casinoOnly: true }];
     setItemOverrides({ items, equipment: [...EQUIPMENT] });
-    expect(() => setShopOverrides([{ x: 1, y: 1, consumables: ['casino-token'] }])).toThrow(/カジノの景品は店に並べられない/);
+    expect(() => setShopOverrides([{ x: 1, y: 1, consumables: ['casino-token'] }])).toThrow(/店に並べられない品/);
     expect(placedItemIssue({ id: 'c2', mapId: 'world', x: 1, y: 1, kind: 'chest', rewards: [{ item: 'casino-token', count: 1 }] })).toMatch(/カジノの景品は置けない/);
     expect(() => setItemOverrides({ items: [...items.slice(0, -1), { id: 'casino-token', name: 'x', casinoOnly: true, shopTier: 1 }], equipment: [...EQUIPMENT] })).toThrow(/price・shopTier/);
   });

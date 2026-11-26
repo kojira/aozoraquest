@@ -15,6 +15,7 @@ import { EQUIPMENT, EQUIPMENT_BY_ID, JOB_EQUIP_KINDS, type EquipmentDef } from '
 import { JOBS_BY_ID } from './jobs.js';
 import { characterTokenIssue } from './character-data.js';
 import { STONE_IDS, STONE_NAMES } from './mana-stones.js';
+import { shopForbiddenDef } from './revive.js';
 
 export class ItemDataError extends Error {}
 
@@ -85,7 +86,7 @@ const ITEM_DESC_MAX = 60;
 /** どうぐに使える効果と、その効果で使える target (damage は使う人の攻撃力、recoil は反動なので不可)。 */
 const ITEM_EFFECT_TARGETS: Partial<Record<SkillEffect['kind'], readonly (string | undefined)[]>> = {
   status: ['self', 'enemy', 'allEnemies', 'allAllies'],
-  heal: [undefined, 'self', 'allAllies'],
+  heal: [undefined, 'self', 'allAllies', 'oneDownAlly'],
   cleanse: ['self', 'allAllies'],
   restoreMp: [undefined],
   fixedDamage: [undefined, 'oneEnemy', 'allEnemies'],
@@ -107,9 +108,11 @@ function validateItemShopAndBattle(it: ItemDefData): void {
       throw new ItemDataError(`${where}: price が不正`);
     }
   }
-  if (it.shopTier !== undefined && ![1, 2, 3].includes(it.shopTier)) throw new ItemDataError(`${where}: shopTier は 1〜3`);
+  if (it.shopTier !== undefined && ![1, 2, 3, 4, 5, 6].includes(it.shopTier)) throw new ItemDataError(`${where}: shopTier は 1〜6`);
   if (it.casinoOnly !== undefined && typeof it.casinoOnly !== 'boolean') throw new ItemDataError(`${where}: casinoOnly が不正`);
   if (it.casinoOnly && (it.price !== undefined || it.shopTier !== undefined)) throw new ItemDataError(`${where}: カジノの景品に price・shopTier は付けられない`);
+  if (it.precious !== undefined && typeof it.precious !== 'boolean') throw new ItemDataError(`${where}: precious が不正`);
+  if (shopForbiddenDef(it) && (it.price !== undefined || it.shopTier !== undefined)) throw new ItemDataError(`${where}: 店に並ばない品 (生き返らせる・割合で回復・貴重なもの) に price・shopTier は付けられない`);
   if (it.battle === undefined) return;
   if (ITEMS_WITH_BATTLE_COMMAND.includes(it.id)) throw new ItemDataError(`${where}: 専用のコマンドで使う品に battle は付けられない`);
   if (it.key) throw new ItemDataError(`${where}: だいじなもの (key) は戦闘で使えない`);
@@ -125,7 +128,13 @@ function validateItemShopAndBattle(it: ItemDefData): void {
       if (e.turns !== undefined && !(Number.isInteger(e.turns) && e.turns >= 1 && e.turns <= 5)) throw new ItemDataError(`${where}: turns は 1〜5`);
       if (e.magnitude !== undefined && !Number.isFinite(e.magnitude)) throw new ItemDataError(`${where}: magnitude が数値でない`);
       if (e.magIntBonus !== undefined) throw new ItemDataError(`${where}: magIntBonus はどうぐに使えない`);
-    } else if (e.kind === 'heal' || e.kind === 'restoreMp') {
+    } else if (e.kind === 'heal') {
+      // どうぐの回復は決まった量 amount で書く (D-REVIVE-001。割合は Lv が上がるほど回復しすぎる)。
+      // ratio は、量にする前に保存したレコードを読めるように残す (割合の品は店に並ばない = isShopForbiddenItem)。
+      if ((e.amount === undefined) === (e.ratio === undefined)) throw new ItemDataError(`${where}: heal は amount か ratio のどちらか 1 つ`);
+      if (e.amount !== undefined && !(Number.isInteger(e.amount) && e.amount >= 1 && e.amount <= 999)) throw new ItemDataError(`${where}: amount は 1〜999 の整数`);
+      if (e.ratio !== undefined && !(e.ratio > 0 && e.ratio <= 1)) throw new ItemDataError(`${where}: ratio は 0〜1`);
+    } else if (e.kind === 'restoreMp') {
       if (!(e.ratio > 0 && e.ratio <= 1)) throw new ItemDataError(`${where}: ratio は 0〜1`);
     } else if (e.kind === 'fixedDamage') {
       if (!(Number.isFinite(e.min) && Number.isFinite(e.max) && e.min >= 0 && e.max >= e.min)) throw new ItemDataError(`${where}: min/max が不正`);

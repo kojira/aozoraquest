@@ -8,6 +8,7 @@ import { JOBS_BY_ID } from './jobs.js';
 import { mpCostFactorOf } from './statuses.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { type Combatant } from './battle-combatant.js';
+import { SKILL_MP_FACTOR } from './revive.js';
 
 // ─── 特技 (ジョブの支配ステータスで決まる) ──────────────────
 
@@ -113,6 +114,8 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
     { id: 'paladin-lightblade', name: '光の剣', learnAt: 8 },
     { id: 'paladin-guard', name: '聖なる守り', learnAt: 15 },
     { id: 'paladin-purify', name: '浄化', learnAt: 18 },
+    { id: 'full-heal-one', name: '聖光の大癒し', learnAt: 20 }, // 味方 1 人を全回復 (D-REVIVE-001。revive.ts)
+    { id: 'revive-prayer', name: '目覚めの祈り', learnAt: 22 }, // 倒れた味方 1 人を起こす
   ],
   // 将軍: 最強 atk・最脆 def・物理一本・対キャスター。全体技/覇王(P)/魔法かき消し・見切りの魔法回避は後続。
   shogun: [
@@ -168,8 +171,11 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
     { id: 'miko-sleep-bell', name: '眠りの鈴', learnAt: 8 },
     { id: 'miko-blessing', name: '加護', learnAt: 12 },
     { id: 'miko-purify-dance', name: '破魔の舞', learnAt: 15 },
+    { id: 'revive-prayer', name: '目覚めの祈り', learnAt: 16 }, // D-REVIVE-001: tier5 のおすすめ Lv (19) より前に覚える
     { id: 'miko-heal-kagura', name: '癒し神楽', learnAt: 18 },
+    { id: 'full-heal-one', name: '癒しの大神楽', learnAt: 20 }, // D-REVIVE-001 (revive.ts)
     { id: 'miko-cleanse', name: '払串', learnAt: 22 },
+    { id: 'full-heal-all', name: '天つ神楽', learnAt: 25 },
   ],
   // 吟遊詩人: agi/luk型・空属性・歌でバフ/デバフ/眠り・回復なし。スタッカート/カプリッチョ/英雄叙事詩/名演(P)は後続。
   bard: [
@@ -215,7 +221,9 @@ const JOB_KITS: Record<Archetype, readonly KitSkill[]> = {
     { id: 'sage-gale', name: '疾風', learnAt: 10 },
     { id: 'sage-revelation', name: '天啓', learnAt: 12 },
     { id: 'sage-heal', name: '賢者の癒し', learnAt: 16 },
+    { id: 'full-heal-one', name: '賢者の大癒し', learnAt: 20 }, // D-REVIVE-001 (revive.ts)
     { id: 'sage-starlight', name: '星辰の大魔法', learnAt: 22 },
+    { id: 'full-heal-all', name: '慈雨の大魔法', learnAt: 26 },
   ],
 };
 
@@ -255,9 +263,10 @@ export function jobPassives(archetype: Archetype, jobLevel: number): string[] {
   return pid && jobLevel >= 30 ? [pid] : [];
 }
 
-/** c のとくぎ MP コスト (発明家/巫女の直感の割引を反映)。最低 1。 */
-export function skillMpCostOf(c: Combatant): number {
-  return Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * mpCostFactorOf(c)));
+/** c のとくぎ MP コスト (発明家/巫女の直感の割引を反映)。最低 1。
+ *  kind を渡すと、そのとくぎの倍率 (SKILL_MP_FACTOR。生き返らせる・全回復は高い。D-REVIVE-001) を掛ける。 */
+export function skillMpCostOf(c: Combatant, kind?: string): number {
+  return Math.max(1, Math.round(BATTLE_TUNING.skillMpCost * (kind ? SKILL_MP_FACTOR[kind] ?? 1 : 1) * mpCostFactorOf(c)));
 }
 
 /** MP 回復のジョブ特性。

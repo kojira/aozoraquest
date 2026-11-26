@@ -6,16 +6,17 @@
  * (公開 API は battle.ts から再エクスポート)
  */
 import { SKILLS, runSkillMulti } from './skills.js';
-import { resolveTargets, type CombatSides } from './combat-target.js';
+import { downed, resolveTargets, type CombatSides } from './combat-target.js';
 import { BATTLE_TUNING } from './battle-tuning.js';
 import { skillMpCostOf, skillsForJob } from './battle-job-skills.js';
 import { type Combatant } from './battle-combatant.js';
 import { type AllyOrder, type BattleState, type Command, type TurnEvent } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
+import { itemHealAmount, itemTargetsDownAlly, skillTargetsDownAlly } from './revive.js';
 import { canUseBattleItem, itemTargetsOneAlly, missingBattleItemText, skillTargetsOneAlly, useBattleItem } from './battle-items.js';
 
 /** ターンの頭に決めた めいれい (ねらう相手を覚えておく)。 */
-export interface PinnedOrder { order: AllyOrder; foe?: Combatant | undefined; mate?: Combatant | undefined }
+export interface PinnedOrder { order: AllyOrder; foe?: Combatant | undefined; mate?: Combatant | undefined; down?: Combatant | undefined }
 
 const living = (arr: readonly Combatant[]) => arr.filter((c) => c.hp > 0);
 
@@ -27,12 +28,19 @@ function aimsAlly(actor: Combatant, o: AllyOrder): boolean {
   return skillTargetsOneAlly(skillsForJob(actor.job.archetype, actor.job.level)[o.skillIndex]?.kind ?? '');
 }
 
+/** 倒れた味方をねらう手か (生き返らせるとくぎ・どうぐ。D-REVIVE-001)。 */
+function aimsDown(actor: Combatant, o: AllyOrder): boolean {
+  if (o.command === 'item') return !!o.itemId && itemTargetsDownAlly(o.itemId);
+  if (o.command !== 'skill' || !actor.job) return false;
+  return skillTargetsDownAlly(skillsForJob(actor.job.archetype, actor.job.level)[o.skillIndex]?.kind ?? '');
+}
+
 /** allies の並びの めいれい を、ターンの頭の相手つきに。仲間 (job あり) のぶんだけ。 */
 export function pinAllyOrders(allies: readonly Combatant[], enemies: readonly Combatant[], orders: ReadonlyArray<AllyOrder | undefined> | undefined): Array<PinnedOrder | undefined> {
   return allies.map((a, i) => {
     const order = i > 0 && a.job ? orders?.[i] : undefined;
     if (!order) return undefined;
-    return { order, foe: living(enemies)[order.targetIndex], mate: aimsAlly(a, order) ? living(allies)[order.targetIndex] : undefined };
+    return { order, foe: living(enemies)[order.targetIndex], mate: aimsAlly(a, order) ? living(allies)[order.targetIndex] : undefined, down: aimsDown(a, order) ? downed(allies)[order.targetIndex] : undefined };
   });
 }
 
@@ -49,15 +57,15 @@ export function runAllyOrder(actor: Combatant, pinned: PinnedOrder, state: Battl
   const { order } = pinned;
   const skills = skillsForJob(actor.job!.archetype, actor.job!.level);
   const skill = skills[order.skillIndex];
-  const cost = skillMpCostOf(actor);
+  const cost = skillMpCostOf(actor, skill?.kind);
   let cmd: AllyOrder['command'] = order.command;
   const missing = outOfStockText(state, cmd, order.itemId);
   if (missing) { events.push({ actor: 'player', text: missing }); cmd = 'attack'; }
   if (cmd === 'skill' && (!skill || !SKILLS[skill.kind])) cmd = 'attack';
   if (cmd === 'skill' && actor.mp < cost) { events.push({ actor: 'player', text: `${actor.name}は MPが足りない! (${actor.mp}/${cost})` }); cmd = 'attack'; }
   const foeIndex = Math.max(0, living(sides.enemies).indexOf(pinned.foe!));
-  const mateIndex = Math.max(0, living(sides.allies).indexOf(pinned.mate!));
-  const mate = living(sides.allies)[mateIndex] ?? actor;
+  const mateIndex = pinned.down ? Math.max(0, downed(sides.allies).indexOf(pinned.down)) : Math.max(0, living(sides.allies).indexOf(pinned.mate!));
+  const mate = pinned.down ? actor : living(sides.allies)[mateIndex] ?? actor;
   if (cmd === 'attack') {
     const target = resolveTargets(actor, 'oneEnemy', sides, { targetIndex: foeIndex })[0];
     if (target) doAttack(actor, target, rng, events, 'player', actor.weaponElement ? { element: actor.weaponElement } : {});
@@ -75,7 +83,7 @@ export function runAllyOrder(actor: Combatant, pinned: PinnedOrder, state: Battl
     runSkillMulti(def, actor, sides, (defender) => ({ attacker: actor, defender, rng, events, skillName: skill!.name, actorSide: 'player', engine: { doAttack, doMagic } }),
       { targetIndex: foeIndex, allyIndex: mateIndex, label: skill!.name, events, actor: 'player' });
   } else if (cmd === 'herb') {
-    const heal = Math.round(mate.maxHp * BATTLE_TUNING.herbHealRatio);
+    const heal = itemHealAmount('herb');
     mate.hp = Math.min(mate.maxHp, mate.hp + heal);
     state.herbs -= 1;
     state.herbsUsed += 1;

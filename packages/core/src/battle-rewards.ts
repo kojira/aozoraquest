@@ -27,7 +27,7 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
     // **だいじなもの (シナリオアイテム) は失わない。** 進行に要るものが敗北で
     // 消えると、そのプレイヤーは筋書きを進められなくなる。
     // カジノの景品 (コインで買ったどうぐ) も失わない (D-CASINO-001)。
-    if (ITEMS[id]?.key || ITEMS[id]?.casinoOnly) continue;
+    if (ITEMS[id]?.key || ITEMS[id]?.casinoOnly || ITEMS[id]?.precious) continue; // 貴重なもの (D-REVIVE-001) も
     for (let i = 0; i < n; i++) pool.push(id);
   }
   const lost: string[] = [];
