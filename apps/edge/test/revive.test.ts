@@ -105,7 +105,8 @@ describe('倒れた仲間 (D-REVIVE-001)', () => {
     await expect(handleFieldUse(env, USER, { itemId: 'mezame-hane', target: 'g:m', rkey: 'u0' }, NOW, 'app.aozoraquest')).rejects.toMatchObject({ code: 'target_up' });
     const r = await handleFieldUse(env, USER, { itemId: 'mezame-hane', target: 'g:k', rkey: 'u1' }, NOW, 'app.aozoraquest');
     expect(r.revived).toBe(true);
-    expect(m.gs().party?.hp?.['g:k']).toBe(15);
+    expect(m.gs().party?.hp?.['g:k']).toBeGreaterThanOrEqual(13); // 15 の ±15% (D-HEAL-RANGE-001)
+    expect(m.gs().party?.hp?.['g:k']).toBeLessThanOrEqual(17);
     expect(m.gs().materials['mezame-hane']).toBeUndefined();
   });
 
@@ -115,7 +116,8 @@ describe('倒れた仲間 (D-REVIVE-001)', () => {
     globalThis.fetch = m.fn;
     await expect(handleFieldUse(env, USER, { itemId: 'kizu-gusuri', target: 'g:k', rkey: 'u0' }, NOW, 'app.aozoraquest')).rejects.toMatchObject({ code: 'target_down' });
     await handleFieldUse(env, USER, { itemId: 'kizu-gusuri', target: 'g:m', rkey: 'u1' }, NOW, 'app.aozoraquest');
-    expect(m.gs().party?.hp?.['g:m']).toBe(9);
+    expect(m.gs().party?.hp?.['g:m']).toBeGreaterThanOrEqual(3 + 5); // 6 の ±15% (D-HEAL-RANGE-001)
+    expect(m.gs().party?.hp?.['g:m']).toBeLessThanOrEqual(3 + 7);
   });
 
   it('フィールド: 目覚めの祈り は倒れた仲間を起こし、MP を多く使う', async () => {
@@ -125,7 +127,9 @@ describe('倒れた仲間 (D-REVIVE-001)', () => {
     globalThis.fetch = m.fn;
     const r = await handleFieldSkill(env, USER, { caster: 'g:m', skillId: 'revive-prayer', target: 'g:k', rkey: 's1' }, NOW);
     expect(r.healed[0]!.id).toBe('g:k');
-    expect(m.gs().party?.hp?.['g:k']).toBe(Math.round(max(KAI, 5) * 0.4));
+    const base = Math.round(max(KAI, 5) * 0.4); // 幅つき (D-HEAL-RANGE-001)
+    expect(m.gs().party?.hp?.['g:k']).toBeGreaterThanOrEqual(Math.round(base * 0.85));
+    expect(m.gs().party?.hp?.['g:k']).toBeLessThanOrEqual(Math.round(base * 1.15));
     expect(m.gs().party?.mp?.['g:m']).toBe(mio.maxMp - skillMpCostOf(mio, 'revive-prayer'));
   });
 

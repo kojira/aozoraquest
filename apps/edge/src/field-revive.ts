@@ -5,10 +5,10 @@
  * - `POST /api/shrine/pray {rkey, token}`: ほこら のマスで おそなえ を払い、倒れた仲間をみんな最大 HP の半分で起こす。
  * どちらもサーバーが確かめて権威 state を書く。同じ rkey は 1 回だけ (shopOps)。
  */
-import { ITEMS, LXM, SHRINE_REVIVE_RATIO, WORLD_MAP_ID, effectTarget, partyDefsOf, partyMemberCombatant, recruitById, shrineAt } from '@aozoraquest/core';
+import { ITEMS, LXM, createRng, itemHealAmount, SHRINE_REVIVE_RATIO, WORLD_MAP_ID, effectTarget, partyDefsOf, partyMemberCombatant, recruitById, shrineAt } from '@aozoraquest/core';
 import { downedIds, readModifyWrite, readState, type GameState } from './game-state';
 import { ResolverError, migrateInitState, type ResolverEnv } from './battle-resolver';
-import { HERO_TARGET, heroOf, membersOf, pick, withHealBond, withVitals } from './field-heal';
+import { HERO_TARGET, fieldHealSeed, heroOf, membersOf, pick, withHealBond, withVitals } from './field-heal';
 import { MAX_SHOP_OPS } from './shop';
 import { verifyServiceAuth, ServiceAuthError } from './service-auth';
 import { ensureAuthoredWorld, type WorldAuthoringEnv } from './world-authoring';
@@ -50,6 +50,7 @@ export async function handleFieldUse(env: ResolverEnv, did: string, input: { ite
   const state = rec?.state ?? (await migrateInitState(did, new Date(now * 1000).toISOString(), ns, fetchImpl));
   const { hero, jobLevel } = await heroOf(did, state, ns, fetchImpl);
   const op = `use:${rkey}`;
+  const seed = await fieldHealSeed(env);
   let out: Omit<FieldUseResult, 'materials' | 'carryHp' | 'party'> = { itemId, target, name: '', amount: 0, revived: revive };
   const written = await readModifyWrite(env, did, (cur) => {
     if ((cur.shopOps ?? []).includes(op)) { out = { ...out, duplicate: true }; return cur; }
@@ -59,7 +60,7 @@ export async function handleFieldUse(env: ResolverEnv, did: string, input: { ite
     const c = { ...to.c };
     if (revive ? c.hp > 0 : c.hp <= 0) throw new ResolverError(revive ? `${c.name}は たおれていない` : `${c.name}は たおれている`, 400, revive ? 'target_up' : 'target_down');
     if (!revive && c.hp >= c.maxHp) throw new ResolverError('HP は満タン', 400, 'full');
-    const hp = Math.min(c.maxHp, c.hp + heal.amount!);
+    const hp = Math.min(c.maxHp, c.hp + itemHealAmount(itemId, { luk: hero.luk, rng: createRng(seed) })); // 幅と うん (D-HEAL-RANGE-001)
     out = { ...out, name: c.name, amount: hp - c.hp };
     c.hp = hp;
     const m = { ...cur.materials, [itemId]: have - 1 };

@@ -1,6 +1,6 @@
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { BATTLE_TUNING, ITEMS, itemHealAmount, SEARCH_TUNING, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
+import { BATTLE_TUNING, ITEMS, SEARCH_TUNING, regionOf, regionsAround, townAt, worldOverlay } from '@aozoraquest/core';
 import { serverItem, serverSearch, serverTeleport, WorldServerError, type ScenarioMessage } from '@/lib/world-server';
 import { placedSearchFreeAt, placedStateText, placedTakenText } from '@/lib/placed-search-text';
 import { piecesFromServer } from '@/lib/use-world-shop';
@@ -100,8 +100,9 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
     setWipe('reveal');
   }, [setNotice, setWipe]);
 
-  // フィールドでやくそうを使う (移動せずに回復。消費の保存は TODO(W3) で DO に)
-  const useHerbOnField = useCallback((): string | void => {
+  // フィールドでやくそうを使う (移動せずに回復)。回復の量はサーバーが引く (幅と うん。D-HEAL-RANGE-001) ので、
+  // 応答の healed を出す。在庫は先に減らし、失敗なら戻す。
+  const useHerbOnField = useCallback(async (): Promise<string | void> => {
     if (!combat || herbStock <= 0) return;
     const cur = wsRef.current;
     if (!cur) return;
@@ -110,22 +111,26 @@ export function useWorldFieldItems({ agent, did, combat, inventory, wsRef, setWs
       setNotice('HPは満タンだ。');
       return 'HPは満タンだ。';
     }
-    const heal = itemHealAmount('herb');
-    const healed = Math.min(combat.maxHp, hpNow + heal);
-    // 楽観更新 (即応) → サーバー権威で確定 (在庫消費 + HP 回復を gameState に)。失敗ならロールバック。
+    if (!agent) return 'サーバーに つながらない';
     setHerbStock((n) => n - 1);
     subtractMaterial('herb', 1);
-    setWs({ ...cur, hp: healed >= combat.maxHp ? null : healed });
-    if (agent) void serverItem(agent, 'herb').then((res) => {
+    try {
+      const res = await serverItem(agent, 'herb');
       setHerbStock(res.materials['herb'] ?? 0);
       materialsRef.current = res.materials;
       setMaterialsView({ ...res.materials });
       setWs((s) => (s ? { ...s, hp: res.carryHp ?? null } : s));
-    }).catch((e) => { console.warn('[world] herb use failed', e); setHerbStock((n) => n + 1); setNotice('やくそうを使えなかった (通信エラー)。'); });
-    const m = `やくそうを使った! HPが${healed - hpNow}回復。`;
-    setNotice(m);
-    scheduleSave();
-    return m;
+      const m = `やくそうを使った! HPが${res.healed}回復。`;
+      setNotice(m);
+      scheduleSave();
+      return m;
+    } catch (e) {
+      console.warn('[world] herb use failed', e);
+      setHerbStock((n) => n + 1);
+      const m = 'やくそうを使えなかった (通信エラー)。';
+      setNotice(m);
+      return m;
+    }
   }, [combat, herbStock, agent, scheduleSave, subtractMaterial, materialsRef, setHerbStock, setMaterialsView, setNotice, setWs, wsRef]);
 
   // フィールドでそらのしずくを使う (MP 回復)

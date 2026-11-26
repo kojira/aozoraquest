@@ -259,7 +259,10 @@ describe('巫女 確定キット (#456。luk支援・全体技のソロ退化)',
     const before = s.player.hp;
     const idx = s.playerSkills.findIndex((sk) => sk.name === '癒しの鈴');
     const next: BattleState = resolveTurn(s, 'skill', 999, idx);
-    expect(next.player.hp).toBeGreaterThan(before);
+    // 回復の量は幅つきで乱数を引く (D-HEAL-RANGE-001) ので、敵の 1 撃と比べず回復のしらせで見る。
+    const healed = Number(/巫は癒しの鈴! HPが(\d+)回復/.exec(next.lastEvents.map((e) => e.text).join(' '))?.[1] ?? 0);
+    expect(healed).toBeGreaterThan(0);
+    expect(before).toBeLessThan(s.player.maxHp);
   });
 
   it('眠りの鈴 (sleep allEnemies) はソロで敵を眠らせる', () => {

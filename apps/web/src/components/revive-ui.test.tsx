@@ -80,7 +80,7 @@ describe('フィールドの 回復・生き返らせるどうぐ', () => {
     const onMessage = vi.fn();
     render(<FieldHealItemRows materials={{ 'mezame-hane': 1, 'kizu-gusuri': 1 }} members={members} use={use} onMessage={onMessage} />);
     expect(screen.getByText('たおれた なかまを おこす')).toBeTruthy();
-    expect(screen.getByText('HPを 30 回復')).toBeTruthy();
+    expect(screen.getByText('HPを やく30 回復')).toBeTruthy();
     fireEvent.click(screen.getByText('めざめのはね').closest('div')!.querySelector('button')!);
     expect(screen.queryByText('ゆうしゃ')).toBeNull();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'つかう' })); });

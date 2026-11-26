@@ -99,7 +99,9 @@ describe('とくぎプラグイン基盤 (#452)', () => {
     const target = makeCombatant({ maxHp: 100, hp: 50 });
     const { calls, ctx } = runWithSpy('heal', makeCombatant(), target);
     expect(calls).toHaveLength(0); // 攻撃しない
-    expect(target.hp).toBe(85); // 50 + round(100*0.35)=85
+    // 50 + round(100*0.35)=35 の ±15% (D-HEAL-RANGE-001)
+    expect(target.hp).toBeGreaterThanOrEqual(50 + Math.round(35 * 0.85));
+    expect(target.hp).toBeLessThanOrEqual(50 + Math.round(35 * 1.15));
     expect(ctx.events.some((e) => e.text.includes('回復'))).toBe(true);
   });
 

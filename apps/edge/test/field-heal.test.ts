@@ -26,9 +26,10 @@ describe('フィールドの回復 (D-PARTY-003)', () => {
     globalThis.fetch = m.fn;
     const r = await handleItem(env, USER, 'herb', NOW, undefined, undefined, 'g:p');
     const max = maxOf(PAL).maxHp;
-    const want = Math.min(max, 2 + BATTLE_TUNING.herbHealAmount);
-    expect(m.gs().party?.hp?.['g:p'] ?? max).toBe(want);
-    expect(r.healed).toBe(want - 2);
+    const hp = m.gs().party?.hp?.['g:p'] ?? max; // 幅つき (D-HEAL-RANGE-001。値は field-heal-range.test.ts)
+    expect(hp - 2).toBeGreaterThanOrEqual(Math.min(max - 2, Math.round(BATTLE_TUNING.herbHealAmount * 0.85)));
+    expect(hp - 2).toBeLessThanOrEqual(Math.round(BATTLE_TUNING.herbHealAmount * 1.15));
+    expect(r.healed).toBe(hp - 2);
     expect(m.gs().carryHp).toBe(3);
     expect(m.gs().materials.herb).toBe(1);
   });
@@ -47,9 +48,12 @@ describe('フィールドの回復 (D-PARTY-003)', () => {
     globalThis.fetch = m.fn;
     const r = await handleFieldSkill(env, USER, { caster: 'g:p', skillId: 'paladin-heal', target: 'hero', rkey: 'k1' }, NOW);
     const caster = maxOf(PAL);
-    const amount = Math.round(heroMax() * 0.3);
+    const base = Math.round(heroMax() * 0.3); // 幅つき (D-HEAL-RANGE-001)
     expect(m.gs().party?.mp?.['g:p']).toBe(caster.maxMp - skillMpCostOf(caster));
+    const amount = r.healed[0]!.amount;
     expect(r.healed).toEqual([{ id: 'hero', name: USER, amount }]);
+    expect(amount).toBeGreaterThanOrEqual(Math.round(base * 0.85));
+    expect(amount).toBeLessThanOrEqual(Math.round(base * 1.15));
     expect(m.gs().carryHp).toBe(2 + amount);
     expect(r).toMatchObject({ casterName: 'ハル', skillName: '聖光の癒し' });
   });
@@ -61,7 +65,9 @@ describe('フィールドの回復 (D-PARTY-003)', () => {
     const r = await handleFieldSkill(env, USER, { caster: 'g:m', skillId: 'miko-heal-bell', rkey: 'k1' }, NOW);
     expect(r.healed.map((h) => h.id)).toEqual(['hero', 'g:m']);
     const miko = maxOf(MIKO);
-    expect(m.gs().party?.hp?.['g:m']).toBe(Math.min(miko.maxHp, 3 + Math.round(miko.maxHp * 0.2)));
+    const mikoHp = m.gs().party?.hp?.['g:m'] ?? miko.maxHp; // 幅つき (D-HEAL-RANGE-001)
+    expect(mikoHp - 3).toBeGreaterThanOrEqual(Math.min(miko.maxHp - 3, Math.round(Math.round(miko.maxHp * 0.2) * 0.85)));
+    expect(mikoHp - 3).toBeLessThanOrEqual(Math.round(Math.round(miko.maxHp * 0.2) * 1.15));
     expect(m.gs().party?.hp?.['g:p']).toBe(0);
   });
 

@@ -49,7 +49,7 @@ export function FieldHealItemRows({ materials, members, use, onMessage }: {
     <>
       {items.map((it) => (
         <div key={it.id} style={rowStyle}>
-          <span>{it.name} <span style={muted}>×{it.count}</span><br /><span style={{ fontSize: '0.78em', ...muted }}>{it.revive ? 'たおれた なかまを おこす' : `HPを ${itemHealAmount(it.id)} 回復`}</span></span>
+          <span>{it.name} <span style={muted}>×{it.count}</span><br /><span style={{ fontSize: '0.78em', ...muted }}>{it.revive ? 'たおれた なかまを おこす' : `HPを やく${itemHealAmount(it.id)} 回復`}</span></span>
           <button type="button" disabled={busy || (it.revive && !members.some((m) => m.c.hp <= 0))} onClick={() => setChoosing(it)} style={btn}>つかう</button>
         </div>
       ))}

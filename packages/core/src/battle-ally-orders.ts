@@ -83,7 +83,7 @@ export function runAllyOrder(actor: Combatant, pinned: PinnedOrder, state: Battl
     runSkillMulti(def, actor, sides, (defender) => ({ attacker: actor, defender, rng, events, skillName: skill!.name, actorSide: 'player', engine: { doAttack, doMagic } }),
       { targetIndex: foeIndex, allyIndex: mateIndex, label: skill!.name, events, actor: 'player' });
   } else if (cmd === 'herb') {
-    const heal = itemHealAmount('herb');
+    const heal = itemHealAmount('herb', { luk: actor.luk, rng });
     mate.hp = Math.min(mate.maxHp, mate.hp + heal);
     state.herbs -= 1;
     state.herbsUsed += 1;

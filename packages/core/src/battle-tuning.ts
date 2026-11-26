@@ -205,6 +205,11 @@ export const BATTLE_TUNING = {
   /** 量にしたあとは 3 個にしても tier1〜4 の 1 戦の勝率は変わらない (sim: t2 Lv11 g2 1 人 87.4→88.0%、t3 62→64%、t4 66→67%。D-REVIVE-001)。
    *  量の回復は Lv が上がるほど効きが小さくなるので、#270 の「作業化」は起きない。戦闘のどうぐ (battleItemCarryMax) は 2 のまま。 */
   herbCarryMax: 3,
+  /** 回復の量の幅 (D-HEAL-RANGE-001): どうぐ・とくぎ・起こしたときの HP は もとの量 × (1 ± healSpread) の整数。全回復は幅なし。 */
+  healSpread: 0.15,
+  /** 回復の幅で上のほうが出やすくなる うん の効き (u^(1/(1 + luk × healLukScale)))。幅は超えない。
+   *  平均の倍率: うん 0 で 1.00、60 で 1.08、100 で 1.10 (0.85 + 0.3 × k/(k+1)、k = 1 + luk × healLukScale)。 */
+  healLukScale: 0.035,
   /** そらのしずく (MP 回復薬): maxMp のこの割合を回復。持ち込み上限 tonicCarryMax。 */
   tonicMpRatio: 0.5,
   tonicCarryMax: 2,
