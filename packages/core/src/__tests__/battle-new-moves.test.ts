@@ -117,3 +117,16 @@ describe('自爆 (selfDestruct)', () => {
     expect(() => battle({ ...bomb, selfDestruct: { name: 'x', tell: '' } })).toThrow(MonsterDataError);
   });
 });
+
+describe('自爆: 戦っている敵の定義で動く', () => {
+  it('state.monsterId がほかの敵でも、前ぶれ済みの敵は自分の selfDestruct で自爆する (仲間の 1 対 1 の先読み)', () => {
+    const bomb: MonsterDef = { ...BASE, id: 'nm-bomb', abilities: ['selfDestruct'], selfDestruct: { name: 'だいばくはつ', tell: 'ふくらんでいる…!' } };
+    setMonsterOverrides([...TEST_MONSTERS, BASE, bomb]);
+    const s0 = startBattle('warrior', 12, 12, '勇者', 3, 3, 0, undefined, { monsterId: 'nm' });
+    const fused = { ...s0.monster, monsterId: 'nm-bomb', fuse: true };
+    // 仲間の先読みと同じ形: monster だけ別の敵、monsterId は主の敵のまま
+    const next = resolveTurn({ ...s0, monster: fused }, 'guard', 12);
+    expect(next.lastEvents.some((e) => e.text.includes('だいばくはつ'))).toBe(true);
+    expect(next.monster.hp).toBe(0);
+  });
+});

@@ -77,7 +77,7 @@ function multiEnemyAct(enemy: Combatant, allies: Combatant[], enemies: Combatant
     castMonsterSpell(enemy, def, to, rng, events);
     return;
   }
-  if (action === 'selfDestruct' && def) {
+  if (action === 'selfDestruct') {
     runSelfDestruct(enemy, def, allies, rng, events);
     if (allies[0]!.hp <= 0) state.outcome = 'lose'; // 主人公がまきこまれて倒れたら負け
     return;

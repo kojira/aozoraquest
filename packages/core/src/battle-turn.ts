@@ -223,8 +223,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。
         if (mDef?.spell) castMonsterSpell(state.monster, mDef, solo, rng, events);
         else doAttack(state.monster, state.player, rng, events, 'monster');
-      } else if (mCommand === 'selfDestruct' && mDef) {
-        runSelfDestruct(state.monster, mDef, solo.allies, rng, events);
+      } else if (mCommand === 'selfDestruct') {
+        // その敵自身の定義で (仲間の先読みでは state.monsterId が主の敵のまま。monsterCommand と同じ引き方)
+        runSelfDestruct(state.monster, MONSTERS_BY_ID[state.monster.monsterId ?? state.monsterId], solo.allies, rng, events);
         if (state.player.hp === 0) state.outcome = 'lose'; // まきこまれて倒れたら負け (敵が倒れても)
       } else if (mCommand === 'debuff') {
         if (mDebuff) useMonsterDebuff(state.monster, mDebuff, solo.allies, rng, events);

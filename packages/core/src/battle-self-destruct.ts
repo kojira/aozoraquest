@@ -21,8 +21,9 @@ export function wantsSelfDestruct(monster: Combatant, def: MonsterDef | undefine
 }
 
 /** 前ぶれを出す (まだなら) か、自爆する。 */
-export function runSelfDestruct(enemy: Combatant, def: MonsterDef, allies: readonly Combatant[], rng: () => number, events: TurnEvent[]): void {
-  const sd = def.selfDestruct!;
+export function runSelfDestruct(enemy: Combatant, def: MonsterDef | undefined, allies: readonly Combatant[], rng: () => number, events: TurnEvent[]): void {
+  const sd = def?.selfDestruct;
+  if (!sd) { enemy.fuse = false; return; } // 定義が消えた敵 (データの差し替え) は何もしない
   if (!enemy.fuse) {
     enemy.fuse = true;
     events.push({ actor: 'monster', text: sd.tell });
