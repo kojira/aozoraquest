@@ -56,9 +56,10 @@ function pds(seed: GameState) {
 
 const mon = (id: string, over: Partial<MonsterDef> = {}): MonsterDef => ({ id, name: id, species: 'slime', level: 1, tier: 1, stats: [7, 5, 6, 2, 4], hp: 5, drops: [], intro: 'て。', ...over });
 const MONS = [mon('a'), mon('b'), mon('c'),
-  mon('weak', { storyOnly: true, hp: 1, stats: [1, 1, 1, 1, 1] }),
+  // weak・runner は tier2 (下駄 4.3)。tier1 の下駄は 10 なので、弱い敵の stats が効かなくなる (D-BALANCE-002)。
+  mon('weak', { storyOnly: true, tier: 2, hp: 1, stats: [1, 1, 1, 1, 1] }),
   mon('strong', { storyOnly: true, tier: 3, level: 99, hp: 9999, stats: [999, 999, 1, 1, 1] }),
-  mon('runner', { storyOnly: true, hp: 9999, stats: [1, 999, 999, 1, 1], ability: 'fleer' })];
+  mon('runner', { storyOnly: true, tier: 2, hp: 9999, stats: [1, 999, 999, 1, 1], ability: 'fleer' })];
 
 /** walkable な (10,10) の隣を探す。 */
 function step() {

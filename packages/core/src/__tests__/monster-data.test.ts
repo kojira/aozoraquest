@@ -203,7 +203,7 @@ describe('複数の能力 (#592 段階 2)', () => {
     setMonsterOverrides([
       ...trio(1, 'a'),
       base({
-        id: 'combo', name: 'こんぼ', hp: 60, mp: 60, stats: [10, 5, 1, 20, 4],
+        id: 'combo', name: 'こんぼ', hp: 60, mp: 60, stats: [10, 5, 1, 20, 4], tier: 2, // tier1 の下駄 10 だと Lv1 の戦士が削れない (D-BALANCE-002)
         abilities: ['healer', 'charger'], skillName: 'ためどん',
         abilityParams: { healChance: 1, lowHpRatio: 0.6, chargeChance: 1 },
       }),

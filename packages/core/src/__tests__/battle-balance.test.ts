@@ -10,14 +10,16 @@ import {
   monsterCombatant,
   levelUpGains,
   playerStatsAt,
+  monsterStatFloorFor,
 } from '../battle.js';
+import { TIER_RECOMMEND } from '../gear-ladder.js';
 import { JOBS } from '../jobs.js';
 import type { Archetype, StatArray } from '../types.js';
 
 describe('序盤バランス (「序盤の敵が強すぎる」への調整を固定)', () => {
   /** 現実的な操作: ため予告に防御 (見切り職は構え)、HP45% 未満でやくそう、MP があれば特技 */
-  const play = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3, seed: number) => {
-    let s = startBattle(job, jobLv, playerLv, 'x', tier, seed);
+  const play = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3, seed: number, equipIds?: string[]) => {
+    let s = startBattle(job, jobLv, playerLv, 'x', tier, seed, 0, undefined, equipIds ? { equipIds } : {});
     const isParry = s.playerSkill.kind === 'parry';
     for (let i = 0; i < 60 && s.outcome === 'ongoing'; i++) {
       const p = s.player;
@@ -32,15 +34,18 @@ describe('序盤バランス (「序盤の敵が強すぎる」への調整を�
     }
     return s.outcome;
   };
-  const winRate = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3) => {
+  const winRate = (job: Archetype, jobLv: number, playerLv: number, tier: 1 | 2 | 3, equipIds?: string[]) => {
     let wins = 0;
-    for (let seed = 0; seed < 100; seed++) if (play(job, jobLv, playerLv, tier, seed) === 'win') wins++;
+    for (let seed = 0; seed < 100; seed++) if (play(job, jobLv, playerLv, tier, seed, equipIds) === 'win') wins++;
     return wins;
   };
 
-  it('Lv1 tier1: 全ジョブが単戦 80% 以上勝てる (はじまりの街近辺で詰まない)', () => {
+  it('tier1 のおすすめ (TIER_RECOMMEND: grade1・Lv3) なら、ぬののふくだけで全ジョブが単戦 80% 以上勝てる (詰まない)', () => {
+    // D-BALANCE-002 案D: tier1 の下駄を 10 にしたので、Lv1 はだかでは勝てない職が出る (それが tier1 の段)。
+    // 詰まないことは「おすすめの Lv で、ふたばで買える grade1 の服 1 枚」で固定する。
+    const lv = TIER_RECOMMEND[1].level;
     for (const job of JOBS) {
-      expect(winRate(job.id, 1, 1, 1), job.id).toBeGreaterThanOrEqual(80);
+      expect(winRate(job.id, lv, 1, 1, ['ar-cloth']), job.id).toBeGreaterThanOrEqual(80);
     }
   });
 
@@ -65,9 +70,9 @@ describe('序盤バランス (「序盤の敵が強すぎる」への調整を�
     expect(warrior.mpAttackGain).toBe(BATTLE_TUNING.mpAttackGain);
     expect(warrior.mpGuardGain).toBe(BATTLE_TUNING.mpGuardGain);
     expect(warrior.mpTraitName).toBeUndefined();
-    // たたかう で実際に特性分回復する (seed 6 は 2 ターン目まで決着しないことを固定。
-    // #518 でステータスが上がり、seed 5 は 1 ターン目で決着するようになった)
-    let s = startBattle('bard', 1, 1, 'x', 1, 6);
+    // たたかう で実際に特性分回復する (seed 11 は 2 ターン目まで決着しないことを固定。
+    // #518 でステータスが上がり seed 5 → 6、D-BALANCE-002 で tier1 の下駄が 10 になり 6 → 11)
+    let s = startBattle('bard', 1, 1, 'x', 1, 11);
     s = resolveTurn(s, 'skill'); // MP -4
     expect(s.outcome).toBe('ongoing');
     const before = s.player.mp;
@@ -157,10 +162,15 @@ describe('モンスターの tier = 想定プレイヤーレベル (#518/#509)',
       const ms = MONSTERS.filter((m) => m.tier === t && m.id !== 'stray-slime');
       return ms.reduce((s, m) => s + monsterCombatant(m, 0, () => 0.5)[k], 0) / ms.length;
     };
-    for (const k of ['atk', 'def', 'maxHp'] as const) {
-      expect(avg(2, k), `tier2 ${k}`).toBeGreaterThan(avg(1, k));
-      expect(avg(3, k), `tier3 ${k}`).toBeGreaterThan(avg(2, k));
+    // atk・def は tier ごとの下駄 (monsterStatFloorFor) を引いた「成長式のぶん」で比べる (D-BALANCE-002:
+    // tier1 だけ下駄が 10 で、tier1 の強さはほぼ下駄。テスト用の敵の tier2 は dev のデータより弱い古い値)。
+    const grown = (t: 1 | 2 | 3, k: 'atk' | 'def') => avg(t, k) - monsterStatFloorFor(t);
+    for (const k of ['atk', 'def'] as const) {
+      expect(grown(2, k), `tier2 ${k}`).toBeGreaterThan(grown(1, k));
+      expect(grown(3, k), `tier3 ${k}`).toBeGreaterThan(grown(2, k));
     }
+    expect(avg(2, 'maxHp'), 'tier2 maxHp').toBeGreaterThan(avg(1, 'maxHp'));
+    expect(avg(3, 'maxHp'), 'tier3 maxHp').toBeGreaterThan(avg(2, 'maxHp'));
     // HP が tier2→3 でほぼ横ばい (旧実装の欠陥) に戻っていないこと
     expect(avg(3, 'maxHp')).toBeGreaterThan(avg(2, 'maxHp') * 1.3);
   });
@@ -169,10 +179,11 @@ describe('モンスターの tier = 想定プレイヤーレベル (#518/#509)',
     // **とくぎ込みで測る。** 通常攻撃だけを基準にすると、魔法使い (atk 比率 7) のような
     // 「殴るべきでない職」を詰み扱いしてしまう (実測 15%)。とくぎを使えば 95% 勝てるので
     // 詰んでいない。#521/#538 で自動戦闘が手を選べるようになったので、それを使って測る。
+    // D-BALANCE-002: Lv1 はだかではなく、tier1 のおすすめ Lv (はだか)。
     for (const j of JOBS) {
       let win = 0;
       for (let seed = 0; seed < 120; seed++) {
-        if (runAutoBattle(startBattle(j.id, 1, 1, 'x', 1, seed, 2)).outcome === 'win') win++;
+        if (runAutoBattle(startBattle(j.id, TIER_RECOMMEND[1].level, 1, 'x', 1, seed, 2)).outcome === 'win') win++;
       }
       expect(win / 120, `${j.id} tier1 勝率`).toBeGreaterThan(0.8);
     }

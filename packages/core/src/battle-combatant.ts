@@ -9,7 +9,7 @@ import { gearBonus, gearBonusFromGear, type GearBonus, type GearSelection } from
 import { armorDye, weaponElement } from './gear-element.js';
 import { type Element } from './elements.js';
 import { type StatusId, type StatusInstance } from './statuses.js';
-import { BATTLE_TUNING } from './battle-tuning.js';
+import { BATTLE_TUNING, monsterStatFloorFor } from './battle-tuning.js';
 import { jobPassives } from './battle-job-skills.js';
 
 // ─── 戦闘参加者 ─────────────────────────────────────────────
@@ -65,6 +65,10 @@ export interface Combatant {
   weaponElement?: Element;
   /** 防具の染まり (D-ELEM-001 §13a。属性 → 0〜1、合計 1 まで)。属性の攻撃の被ダメに掛かる。 */
   armorDye?: Partial<Record<Element, number>>;
+  /** 効かない属性 (MonsterDef.immune から。battle-element-immunity.ts)。 */
+  immuneElements?: Element[];
+  /** 自爆の前ぶれを出した (つぎの手番で自爆する。battle-self-destruct.ts)。 */
+  fuse?: boolean;
   /** 効かない状態異常 (MonsterDef.statusResist から)。applyStatus が付与しない。 */
   statusResist?: StatusId[];
   /** onLethal (覇王/不動) を戦闘中に発動済みか (#456)。物理致死を耐える切り札は 1 戦闘 1 回のみ。
@@ -105,10 +109,11 @@ export function makeCombatant(name: string, stats: StatArray, maxHp: number, max
 
 /** モンスターの戦闘値。stats は tier 係数の**乗算**でスケールする (プレイヤーとは別式)。
  *  HP/MP は MonsterDef の明示値 (全モンスターが持つ) を使い、無い場合だけ def/int から導出。 */
-export function monsterStats(stats: StatArray, tierFactor: number): StatArray {
+export function monsterStats(stats: StatArray, tierFactor: number, tier: number): StatArray {
   // モンスターは防具を持たないので def にも下駄を掛ける (プレイヤーとの非対称は statFloor 参照)。
-  // 下駄はモンスター専用の小さい値 (monsterStatFloor) — 詳細はその doc を参照 (#536)。
-  const s = (v: number) => Math.round(BATTLE_TUNING.monsterStatFloor + v * tierFactor);
+  // 下駄はモンスター専用の値で tier ごとの表 (monsterStatFloor) — 詳細はその doc を参照 (#536・D-BALANCE-002)。
+  const floor = monsterStatFloorFor(tier);
+  const s = (v: number) => Math.round(floor + v * tierFactor);
   return [s(stats[0]), s(stats[1]), s(stats[2]), s(stats[3]), s(stats[4])];
 }
 

@@ -15,6 +15,7 @@ import { doAttack, doMagic } from './battle-attack.js';
 import { monsterCommand } from './battle-monster-ai.js';
 import { castMonsterSpell, chargeMpCost, pickDebuff, releaseMonsterCharge, useMonsterDebuff } from './battle-monster-moves.js';
 import { patternAct, patternEndOfTurn } from './battle-boss-pattern.js';
+import { runSelfDestruct } from './battle-self-destruct.js';
 import { canUseBattleItem, missingBattleItemText, useBattleItem } from './battle-items.js';
 
 function playerSkillAction(state: BattleState, skill: JobSkill, rng: () => number, events: TurnEvent[]): void {
@@ -222,6 +223,9 @@ export function resolveTurn(prev: BattleState, command: Command, turnSeed?: numb
         // 覇王/不動 も魔法致死では死ぬ (設計どおりの弱点)。聖騎士の清き心 (魔法反射) はこの doMagic 内で発火する。
         if (mDef?.spell) castMonsterSpell(state.monster, mDef, solo, rng, events);
         else doAttack(state.monster, state.player, rng, events, 'monster');
+      } else if (mCommand === 'selfDestruct' && mDef) {
+        runSelfDestruct(state.monster, mDef, solo.allies, rng, events);
+        if (state.player.hp === 0) state.outcome = 'lose'; // まきこまれて倒れたら負け (敵が倒れても)
       } else if (mCommand === 'debuff') {
         if (mDebuff) useMonsterDebuff(state.monster, mDebuff, solo.allies, rng, events);
         else doAttack(state.monster, state.player, rng, events, 'monster');

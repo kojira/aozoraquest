@@ -33,7 +33,8 @@ describe('めいれい (allyOrders)', () => {
   it('めいれい の とくぎは その仲間のとくぎと MP。MP 不足は たたかう', () => {
     const miko = mate('miko', 5, 'ミオ');
     const s = party([miko]);
-    const hurt = { ...s, player: { ...s.player, hp: 3 } };
+    // 主人公は削れているが、このターンの敵 2 体の攻撃では倒れない HP (tier1 の下駄 10。D-BALANCE-002)。
+    const hurt = { ...s, player: { ...s.player, hp: Math.round(s.player.maxHp * 0.6) } };
     hurt.allies = [hurt.player, miko];
     const cast = resolveTurnMulti(hurt, 'guard', 42, 0, 0, undefined, [undefined, { command: 'skill', skillIndex: bell, targetIndex: 0 }]);
     expect(cast.lastEvents.some((e) => e.text.includes('癒しの鈴'))).toBe(true);

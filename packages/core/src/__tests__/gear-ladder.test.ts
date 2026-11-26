@@ -9,8 +9,15 @@ import {
   TIER_LEVEL,
   bonusWithLevel,
   gearGradeGaps,
+  gearPowerPrice,
+  gearPriceDrift,
   maxShopGradeForTier,
+  monsterStatFloorFor,
   playerCombatant,
+  recruitTierLevel,
+  tierRecommend,
+  tierRecommendLabel,
+  TIER_RECOMMEND,
   setItemOverrides,
   setMonsterOverrides,
   shopMaterialBand,
@@ -104,8 +111,10 @@ describe('梯子の値: 守りを上げると必ず効く (床の上)', () => {
   const t = BATTLE_TUNING;
   const raw = (atk: number, def: number) => atk * t.atkCoef - def * t.defCoef;
 
-  it('1 つ下の装備で受けるダメージは床より上で、その帯の装備にすると減る (tier2〜6・16 職)', () => {
-    for (const g of [2, 3, 4, 5, 6] as const) {
+  // grade3 は外す: D-BALANCE-002 案D で grade2 を ×1.6 にしたので、tier3 では 1 つ下 (grade2) の守りが床に近い職が出る
+  // (詩人・戦士・守り人・巫女。tier3 の sim で 1 人 Lv14 の grade2 は 68 → 79%、grade3 は 82.5% のまま)。
+  it('1 つ下の装備で受けるダメージは床より上で、その帯の装備にすると減る (tier2・4〜6・16 職)', () => {
+    for (const g of [2, 4, 5, 6] as const) {
       const step = GEAR_LADDER[g];
       const below = GEAR_LADDER[(g - 1) as 1];
       expect(step.level).toBe(TIER_LEVEL[g]);
@@ -119,8 +128,8 @@ describe('梯子の値: 守りを上げると必ず効く (床の上)', () => {
     }
   });
 
-  it('武器を 1 段上げると、帯の敵を倒す回数がはっきり減る', () => {
-    for (const g of [2, 3, 4, 5, 6] as const) {
+  it('武器を 1 段上げると、帯の敵を倒す回数がはっきり減る (grade3 は上と同じ理由で外す)', () => {
+    for (const g of [2, 4, 5, 6] as const) {
       const step = GEAR_LADDER[g];
       const below = GEAR_LADDER[(g - 1) as 1];
       const atk = playerCombatant('warrior', step.level, 1, 'h').atk;
@@ -146,5 +155,48 @@ describe('強化値は 1 段で主効果の 1 割 (D-ENDGAME-001 §A3)', () => {
     expect(bonusWithLevel(knife, 10).atk).toBe(8);
     expect(bonusWithLevel(knife, -1).atk).toBe(3);
     expect(bonusWithLevel({ ...knife, bonus: { atk: 1 } }, -1).atk).toBe(1);
+  });
+});
+
+describe('D-BALANCE-002 案D: 梯子の値・値段・おすすめ', () => {
+  it('grade1 は ×1.5、grade2 は ×1.6 (武器と守りの合計)。grade3〜6 は変えない', () => {
+    expect([GEAR_LADDER[1].weaponAtk, GEAR_LADDER[1].armorTotal]).toEqual([6, 9]);
+    expect([GEAR_LADDER[2].weaponAtk, GEAR_LADDER[2].armorTotal]).toEqual([19, 35]);
+    expect([3, 4, 5, 6].map((g) => GEAR_LADDER[g as 3].weaponAtk)).toEqual([24, 41, 70, 108]);
+  });
+
+  it('値段の目安: grade2 の片手武器・胴は 8 パワー。頭・足は 0.6 倍、お守り・盾は 0.8 倍、専用は 1.3 倍、両手は 1.4 倍', () => {
+    const w = { slot: 'weapon' as const, grade: 2 as const };
+    expect(gearPowerPrice(w)).toBe(8);
+    expect(gearPowerPrice({ ...w, slot: 'armor' })).toBe(8);
+    expect(gearPowerPrice({ ...w, slot: 'head' })).toBe(5);
+    expect(gearPowerPrice({ ...w, slot: 'charm' })).toBe(6);
+    expect(gearPowerPrice({ ...w, jobOnly: 'mage' })).toBe(10);
+    expect(gearPowerPrice({ ...w, hands: 2 })).toBe(11);
+    // grade3〜6 は今のデータの値段 (40 / 70 / 110 / 160) のまま
+    expect([3, 4, 5, 6].map((g) => gearPowerPrice({ slot: 'weapon', grade: g as 3 }))).toEqual([40, 70, 110, 160]);
+  });
+
+  it('値段が目安から 0.5〜2 倍の外にずれた品を知らせる (カジノ品・パワー 0 の品は見ない)', () => {
+    const at = (id: string, power: number, over: Partial<EquipmentDef> = {}): EquipmentDef => ({ id, name: id, slot: 'weapon', kind: 'common', bonus: { atk: 1 }, grade: 2, price: { power, materials: 9 }, ...over });
+    expect(gearPriceDrift([at('ok', 8), at('ok-hi', 16), at('ok-lo', 4)])).toEqual([]);
+    expect(gearPriceDrift([at('old', 17), at('cheap', 3)]).map((d) => d.id)).toEqual(['old', 'cheap']);
+    expect(gearPriceDrift([at('casino', 999, { casinoOnly: true }), at('gift', 0)])).toEqual([]);
+  });
+
+  it('おすすめは tier ごとに 1 か所 (grade = tier、Lv は 3・11・8・13・19・26)。tier7 以上は 6 の値', () => {
+    expect([1, 2, 3, 4, 5, 6].map((t) => tierRecommend(t))).toEqual([
+      { grade: 1, level: 3 }, { grade: 2, level: 11 }, { grade: 3, level: 8 }, { grade: 4, level: 13 }, { grade: 5, level: 19 }, { grade: 6, level: 26 },
+    ]);
+    expect(tierRecommend(8)).toEqual(TIER_RECOMMEND[6]);
+    expect(tierRecommendLabel(2)).toBe('おすすめ：2段目の装備・Lv11');
+  });
+
+  it('ギルドの Lv (recruitTierLevel) はおすすめとは別のまま (着いた Lv で雇える)', () => {
+    expect([1, 2, 3, 4].map(recruitTierLevel)).toEqual([2, 5, 8, 11]);
+  });
+
+  it('敵の下駄は tier の表: tier1 = 10、tier2 以上 = 4.3', () => {
+    expect([1, 2, 3, 6, 8].map(monsterStatFloorFor)).toEqual([10, 4.3, 4.3, 4.3, 4.3]);
   });
 });

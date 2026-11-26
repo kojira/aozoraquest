@@ -10,8 +10,9 @@ import { type MonsterDef, type MonsterDebuff, type MonsterMoveTarget } from './b
 import { type TurnEvent } from './battle-state.js';
 import { doAttack, doMagic } from './battle-attack.js';
 import { applyStatus, statusApplyText } from './statuses.js';
+import { groupBuffTargets } from './battle-group-buff.js';
 
-const aoeFactor = (target: MonsterMoveTarget | 'self' | undefined) => (target === 'all' ? BATTLE_TUNING.monsterAoeMpFactor : 1);
+const aoeFactor = (target: MonsterMoveTarget | 'self' | 'allies' | undefined) => (target === 'all' || target === 'allies' ? BATTLE_TUNING.monsterAoeMpFactor : 1);
 
 /** 呪文の MP。 */
 export function spellMpCost(def: MonsterDef | undefined): number {
@@ -36,12 +37,14 @@ export interface MonsterTargets {
 }
 const hasStatus = (c: Combatant, id: string) => (c.statuses ?? []).some((s) => s.id === id);
 
-/** いま使える弱体・強化 (先頭から: MP が足り、直前が全体なら全体以外、まだ付いていない状態があるもの)。 */
-export function pickDebuff(def: MonsterDef | undefined, self: Combatant, allies: readonly Combatant[]): MonsterDebuff | undefined {
+/** いま使える弱体・強化 (先頭から: MP が足り、直前が全体なら全体以外、まだ付いていない状態があるもの)。
+ *  group = その敵の群れ (target 'allies' の相手。1 人戦は省略 = 自分だけ)。 */
+export function pickDebuff(def: MonsterDef | undefined, self: Combatant, allies: readonly Combatant[], group?: readonly Combatant[]): MonsterDebuff | undefined {
   return (def?.debuffs ?? []).find((d) => {
     if (self.mp < debuffMpCost(d)) return false;
     if (d.target === 'all' && self.lastAoe) return false;
     if (d.target === 'self') return !hasStatus(self, d.status);
+    if (d.target === 'allies') return groupBuffTargets(self, group).some((c) => !hasStatus(c, d.status));
     return living(allies).some((a) => !hasStatus(a, d.status));
   });
 }
@@ -73,14 +76,14 @@ export function releaseMonsterCharge(enemy: Combatant, def: MonsterDef | undefin
   enemy.lastAoe = all;
 }
 
-/** 弱体 (味方へ) か自分への強化を使う (MP を払う)。付かなければ「きかなかった」。 */
-export function useMonsterDebuff(enemy: Combatant, d: MonsterDebuff, allies: readonly Combatant[], rng: () => number, events: TurnEvent[]): void {
+/** 弱体 (味方へ) か自分・群れへの強化を使う (MP を払う)。付かなければ「きかなかった」。 */
+export function useMonsterDebuff(enemy: Combatant, d: MonsterDebuff, allies: readonly Combatant[], rng: () => number, events: TurnEvent[], group?: readonly Combatant[]): void {
   enemy.mp = Math.max(0, enemy.mp - debuffMpCost(d));
   events.push({ actor: 'monster', text: `${enemy.name}の ${d.name}!` });
   // 単体はまだ付いていない味方から選ぶ (1 人なら引かない)。
   const free = living(allies).filter((a) => !hasStatus(a, d.status));
   const one = free.length > 1 ? free[Math.floor(rng() * free.length)] : free[0];
-  const targets = d.target === 'self' ? [enemy] : d.target === 'all' ? living(allies) : [one].filter((c): c is Combatant => !!c);
+  const targets = d.target === 'self' ? [enemy] : d.target === 'allies' ? groupBuffTargets(enemy, group) : d.target === 'all' ? living(allies) : [one].filter((c): c is Combatant => !!c);
   for (const target of targets) {
     const took = rng() < d.chance && applyStatus(target, { id: d.status, turns: d.turns, ...(d.magnitude !== undefined ? { magnitude: d.magnitude } : {}) });
     events.push({ actor: 'monster', text: took ? statusApplyText(d.status, target.name) : `しかし ${target.name}には きかなかった!` });

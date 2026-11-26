@@ -107,7 +107,8 @@ describe('自分への強化: 反射', () => {
   });
 
   it('ボスが自分にかけた thorns は物理攻撃をはね返す', () => {
-    const s0 = solo({ abilities: ['debuffer'], debuffs: [{ name: 'いばらの よろい', status: 'thorns', chance: 1, turns: 3, target: 'self' }], abilityParams: always, stats: [0, 5, 0, 20, 5] });
+    // tier2 (下駄 4.3) にして素早さを 0 近くに保つ (tier1 の下駄 10 だと身をかわして反射が起きない。D-BALANCE-002)。
+    const s0 = solo({ abilities: ['debuffer'], debuffs: [{ name: 'いばらの よろい', status: 'thorns', chance: 1, turns: 3, target: 'self' }], abilityParams: always, stats: [0, 5, 0, 20, 5], tier: 2 });
     let s = resolveTurn(s0, 'guard', 11);
     expect(has(s.monster, 'thorns')).toBe(true);
     expect(s.lastEvents.some((e) => e.text === `${s0.monster.name}は とげの盾を構えた!` || e.text === `${s0.monster.name}はとげの盾を構えた!`)).toBe(true);

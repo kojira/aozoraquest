@@ -23,11 +23,12 @@ import {
 
 import { characterTokenIssue } from './character-data.js';
 import { STATUS_REGISTRY } from './statuses.js';
+import { ELEMENT_LABELS } from './elements.js';
 
 export class MonsterDataError extends Error {}
 
 /** ability として受け付ける id (#537 論点 1: 列挙にとどめる。実装は core に残す)。 */
-const ABILITIES = ['charger', 'healer', 'fleer', 'caster', 'debuffer'] as const;
+const ABILITIES = ['charger', 'healer', 'fleer', 'caster', 'debuffer', 'selfDestruct'] as const;
 /** debuffs の数の上限 (D-PARTY-002 §12a: 弱体 1 つと自分への強化 1 つまで)。 */
 const MAX_DEBUFFS = 2;
 const MOVE_TARGETS = ['one', 'all'];
@@ -135,8 +136,20 @@ function validate(defs: readonly MonsterDef[]): readonly MonsterDef[] {
         if (!(typeof d.chance === 'number' && d.chance >= 0 && d.chance <= 1)) throw new MonsterDataError(`${where}: debuffs の chance は 0〜1`);
         if (!(Number.isInteger(d.turns) && d.turns >= 1 && d.turns <= 5)) throw new MonsterDataError(`${where}: debuffs の turns は 1〜5`);
         if (d.magnitude !== undefined && !(typeof d.magnitude === 'number' && Number.isFinite(d.magnitude))) throw new MonsterDataError(`${where}: debuffs の magnitude が数値でない`);
-        if (d.target !== undefined && ![...MOVE_TARGETS, 'self'].includes(d.target)) throw new MonsterDataError(`${where}: debuffs の target が不正 (${d.target})`);
+        if (d.target !== undefined && ![...MOVE_TARGETS, 'self', 'allies'].includes(d.target)) throw new MonsterDataError(`${where}: debuffs の target が不正 (${d.target})`);
       }
+    }
+    const hasSelfDestruct = m.ability === 'selfDestruct' || (m.abilities ?? []).includes('selfDestruct');
+    if (hasSelfDestruct && !m.selfDestruct) throw new MonsterDataError(`${where}: selfDestruct の能力には selfDestruct (name・tell) が要る`);
+    if (m.selfDestruct !== undefined) {
+      const sd = m.selfDestruct;
+      if (!sd || typeof sd.name !== 'string' || sd.name.trim() === '' || typeof sd.tell !== 'string' || sd.tell.trim() === '') throw new MonsterDataError(`${where}: selfDestruct の name・tell が空`);
+      if (sd.below !== undefined && !(typeof sd.below === 'number' && sd.below > 0 && sd.below < 1)) throw new MonsterDataError(`${where}: selfDestruct の below は 0〜1`);
+      if (sd.power !== undefined && !(typeof sd.power === 'number' && sd.power > 0 && sd.power <= 5)) throw new MonsterDataError(`${where}: selfDestruct の power は 0〜5`);
+    }
+    if (m.immune !== undefined) {
+      if (!Array.isArray(m.immune) || m.immune.length === 0 || m.immune.some((e) => !(e in ELEMENT_LABELS))) throw new MonsterDataError(`${where}: immune に不正な属性`);
+      if (new Set(m.immune).size !== m.immune.length) throw new MonsterDataError(`${where}: immune が重複している`);
     }
     if (m.patternSets !== undefined) validatePatternSets(m, where);
     if (m.chargedTarget !== undefined && !MOVE_TARGETS.includes(m.chargedTarget)) throw new MonsterDataError(`${where}: chargedTarget が不正 (${m.chargedTarget})`);

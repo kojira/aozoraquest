@@ -24,6 +24,7 @@ import {
   assertStoryFlagTotal, currentStory, missingStoryBattle, recruitGuildIssue, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   casinoTablesIssue, type CasinoTables,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
+  gearPriceDrift,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
 import { readServerTokens } from './oauth-store';
@@ -120,7 +121,9 @@ function validateItemsCandidate(value: unknown): string | null {
     ? { items: Object.entries(ITEMS).map(([id, v]) => ({ id, ...v })), equipment: activeEquipment().map((e) => ({ ...e })) }
     : null;
   try { setItemOverrides({ items, equipment }); } finally { setItemOverrides(prev); }
-  return null;
+  // 値段の目安は GEAR_LADDER の 1 か所 (D-BALANCE-002)。大きくずれた品は書かせない。
+  const drift = gearPriceDrift(equipment)[0];
+  return drift ? `${drift.id}: 値段 ${drift.power} パワーが目安 ${drift.target} から外れている (0.5〜2 倍。GEAR_LADDER)` : null;
 }
 
 /** monsters は管理画面 (/admin/monsters) と同じく参照中の敵 (クエストの討伐対象・ストーリー戦闘) を消させず、

@@ -79,8 +79,13 @@ export const BATTLE_TUNING = {
    *  3 を採るのは、入口 (7.24) と中盤 (7.87) が揃うから。4 だと入口 4.65 に対し
    *  tier3 が 5.84 で「入口が一番きつい」逆転が残る。
    *
-   *  上の表は dev と同一ハーネスで測ったもの。 */
-  monsterStatFloor: 4.3,
+   *  上の表は dev と同一ハーネスで測ったもの。
+   *
+   *  **tier ごとの表** (D-BALANCE-002 案D)。表に無い tier は、それより下で一番近い tier の値
+   *  (`monsterStatFloorFor`)。tier1 は比率が小さく下駄が強さの大半なので、ここが tier1 の段になる
+   *  (4.3 のままだと Lv を 3 下げても 1 戦 100%・HP 減 1〜3%)。10 で、はだか 92%・grade1 99.5%
+   *  (Lv3・1 人)。tier2 以上は 4.3 のまま (tier3〜6 と決戦は D-ENDGAME-001 の梯子で決めてある)。 */
+  monsterStatFloor: { 1: 10, 2: 4.3 } as Readonly<Record<number, number>>,
   statGrow: 0.05,
   /** まもりだけ伸びを抑える (#518)。**守備力は防具が主役**という DQ の構造に寄せるため
    *  (FC版〜:「すばやさ÷2 + 防具」/ DQ3 HD-2D〜:「みのまもり + 防具」— いずれも防具が大きい)。
@@ -236,3 +241,10 @@ export const BATTLE_TUNING = {
     4: { 1: [0.3, 0.1, 0.02, 0], 2: [0.3, 0.15, 0.04, 0], 3: [0.3, 0.18, 0.05, 0.01], 4: [0.3, 0.18, 0.05, 0.02], 5: [0.25, 0.1, 0.03, 0.02] },
   } as Record<1 | 2 | 3 | 4, Readonly<Partial<Record<number, readonly [number, number, number, number]>>>>,
 } as const;
+
+/** その tier の敵の下駄 (`BATTLE_TUNING.monsterStatFloor` の表。無い tier はそれより下で一番近い tier の値)。 */
+export function monsterStatFloorFor(tier: number): number {
+  const table = BATTLE_TUNING.monsterStatFloor;
+  const keys = Object.keys(table).map(Number).filter((k) => k <= tier).sort((a, b) => b - a);
+  return table[keys[0] ?? Math.min(...Object.keys(table).map(Number))]!;
+}

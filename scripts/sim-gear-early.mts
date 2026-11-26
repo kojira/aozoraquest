@@ -41,7 +41,7 @@ const LOADOUTS: Array<{ name: string; gear?: Record<string, { id: string; level:
   { name: 'grade2 防具 (まなびのローブ+1)', gear: { armor: { id: 'ar-scholar', level: 1 } } },
 ];
 
-console.log(`job=${JOB} Lv${LV}  atkCoef=${BATTLE_TUNING.atkCoef} defCoef=${BATTLE_TUNING.defCoef} floor=${BATTLE_TUNING.monsterStatFloor}`);
+console.log(`job=${JOB} Lv${LV}  atkCoef=${BATTLE_TUNING.atkCoef} defCoef=${BATTLE_TUNING.defCoef} floor=${JSON.stringify(BATTLE_TUNING.monsterStatFloor)}`);
 
 for (const TIER of TIERS) {
 // tier の敵の素の攻撃力を見ておく (0 ダメージの構造的な原因確認)
