@@ -126,6 +126,10 @@ export interface ServerAward {
   unrewarded?: true;
   xp?: number;
   drops?: string[];
+  /** まれなドロップで手に入れた貴重な装備 (D-RARE-GEAR-001)。持ち物 (pieces) は ServerTurnResult.pieces。 */
+  gearDrops?: string[];
+  /** 落ちたが、持ち物がいっぱいで持ちかえれなかった貴重な装備。 */
+  gearDropsLost?: string[];
   materialsLost?: string[];
   powerSpent?: number;
   /** この決着でジョブ Lv が上がったか (#534)。上がったら HP/MP が全回復している。 */
@@ -141,7 +145,7 @@ export interface ServerAward {
   allyLeveledUp?: Array<{ id: string; name: string; from: number; to: number }>;
   allyBondUp?: ServerBondUp[];
 }
-export interface ServerTurnResult { party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
+export interface ServerTurnResult { pieces?: ServerOwnedPiece[]; party?: ServerParty; state: ServerBattleState; events: { actor: string; text: string }[]; outcome: string; awarded?: ServerAward; position?: { x: number; y: number }; token?: string; materials?: Record<string, number>; carryHp?: number; carryMp?: number; flags?: string[]; scenarioNotices?: string[]; scenarioMessages?: ScenarioMessage[];
   /** 決着の全受注snapshot（空も明示）。未決着では省略。 */
   activeQuests?: Array<{ id: string; progress: number }>; questsDone?: string[] }
 export interface ServerItemResult { carryHp?: number; carryMp?: number; materials: Record<string, number>; healed: number; party?: ServerParty; allyBondUp?: ServerBondUp[] }
@@ -306,8 +310,10 @@ export interface ServerQuestResult {
   questsDone?: string[];
   power: number;
   materials: Record<string, number>;
-  /** 達成時のみ: 付与された報酬。 */
-  rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 達成時のみ: 付与された報酬。equipment = もらった装備 (D-RARE-GEAR-001)。 */
+  rewarded?: { power?: number; itemId?: string; count?: number; equipment?: string };
+  /** 装備をもらったときの持ち物。 */
+  pieces?: ServerOwnedPiece[];
   /** 達成時のみ: きずなの ♥ が増えた仲間と、足したあとの party (D-PARTY-004)。 */
   allyBondUp?: ServerBondUp[];
   party?: ServerParty;
@@ -373,8 +379,8 @@ export function serverInnRest(agent: Agent, token?: string): Promise<ServerInnRe
 
 /** ゲーム内クエスト (#423): 達成。**条件も報酬もサーバーが検証・付与する** (collect は素材を引き取られる)。
  *  talk は位置トークンで「相手の隣にいる」をサーバーが確かめる (D-STORY-009)。 */
-export function serverQuestComplete(agent: Agent, questId: string, token?: string): Promise<ServerQuestResult> {
-  return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId, ...(token ? { token } : {}) });
+export function serverQuestComplete(agent: Agent, questId: string, token?: string, choice?: string): Promise<ServerQuestResult> {
+  return callEdge<ServerQuestResult>(agent, LXM_QUEST_COMPLETE, '/api/quest/complete', { questId, ...(token ? { token } : {}), ...(choice ? { choice } : {}) });
 }
 
 /** なんでも屋: どうぐを 1 個買う (D-ITEM-001)。品揃え・値段・上限はサーバーが決める。rkey で冪等。 */

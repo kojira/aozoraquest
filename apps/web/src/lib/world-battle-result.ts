@@ -1,4 +1,4 @@
-import { ITEMS, withCharacterNames } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, ITEMS, withCharacterNames } from '@aozoraquest/core';
 import type { ServerAward } from '@/lib/world-server';
 import { bondUpLines } from '@/lib/bond-view';
 
@@ -34,6 +34,10 @@ export function battleResultLines(
   if (awarded.xp && awarded.xp > 0) resultLines.push(`けいけんちを${awarded.xp}獲得！`);
 
   for (const [id, n] of dropCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''}を手に入れた！`);
+  // 貴重な装備のまれなドロップ (D-RARE-GEAR-001)。
+  const gearName = (id: string) => withCharacterNames(EQUIPMENT_BY_ID[id]?.name ?? id);
+  for (const id of awarded.gearDrops ?? []) resultLines.push(`なんと！ ${gearName(id)}を手に入れた！`);
+  for (const id of awarded.gearDropsLost ?? []) resultLines.push(`もちものがいっぱいで、${gearName(id)}を持ちかえれなかった…`);
   for (const [id, n] of lostCounts) resultLines.push(`${nameOf(id)}${n > 1 ? ` ×${n}` : ''}を落としてしまった…`);
   if (outcome === 'lose') {
     resultLines.push(loseTownName ? `倒れてしまった…気がつくと「${loseTownName}」で手当てされていた。` : '倒れてしまった…気がつくと街で手当てされていた。');

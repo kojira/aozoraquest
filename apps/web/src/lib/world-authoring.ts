@@ -16,6 +16,7 @@ import {
   loadTileArts,
   setGameQuests,
   validateGameQuests,
+  preciousIssue,
   validateScenario,
   assertStoryFlagTotal,
   currentStory,
@@ -216,6 +217,8 @@ export interface MonstersRecord {
 export async function saveMonsters(agent: Agent, monsters: MonsterDef[]): Promise<number> {
   // 保存前に core の検証を通す (壊れた 1 体で全体を落とす)。通れば適用もされる。
   assertCharactersExist('monsters', { monsters });
+  const precious = preciousIssue({ monsters }); // まれなドロップは貴重な装備 (D-RARE-GEAR-001)
+  if (precious) throw new Error(precious);
   setMonsterOverrides(monsters);
   const rec: MonstersRecord = { monsters: encodeMonstersForRecord(monsters), updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.monsters, RKEY, rec);
@@ -234,6 +237,8 @@ export interface ItemsRecordData {
 /** 編集したどうぐ・装備を保存する (core の検証を通る = 壊れた 1 件で全体を落とす)。 */
 export async function saveItems(agent: Agent, items: ItemDefData[], equipment: EquipmentDef[]): Promise<void> {
   assertCharactersExist('items', { items });
+  const precious = preciousIssue({ equipment }); // 貴重な装備の値札・段 (D-RARE-GEAR-001)
+  if (precious) throw new Error(precious);
   setItemOverrides({ items, equipment });
   const rec: ItemsRecordData = { items: encodeItemsForRecord(items), equipment, updatedAt: new Date().toISOString() };
   await putRecord(agent, ADMIN_COL.items, RKEY, rec);
@@ -338,6 +343,8 @@ export async function saveJobs(agent: Agent, jobs: JobOverride[]): Promise<void>
 /** ゲーム内クエスト (#423)。setGameQuests が先に検証で落とす (壊れた定義を保存させない)。 */
 export async function saveGameQuests(agent: Agent, quests: GameQuestDef[]): Promise<void> {
   validateGameQuests(quests);
+  const precious = preciousIssue({ quests }); // 報酬の装備 (D-RARE-GEAR-001。edge の管理 API と同じ検査)
+  if (precious) throw new Error(precious);
   assertCharactersExist('quests', { quests });
   const missing = missingStoryBattle([], quests);
   if (missing) throw new Error(missing);

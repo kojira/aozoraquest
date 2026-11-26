@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ITEMS } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, ITEMS } from '@aozoraquest/core';
 import { battleResultLines } from './world-battle-result';
 
 describe('battleResultLines', () => {
@@ -34,3 +34,13 @@ describe('battleResultLines', () => {
     expect(battleResultLines({ xp: 4, allyLeveledUp: [{ id: 'g:1', name: 'カイト', from: 5, to: 6 }] }, 'win', null)).toEqual(['けいけんちを4獲得！', 'カイトのレベルが6に上がった！']);
   });
 });
+
+describe('battleResultLines 貴重な装備のまれなドロップ (D-RARE-GEAR-001)', () => {
+  it('手に入れた品と、持ちかえれなかった品を 1 行ずつ出す', () => {
+    const name = EQUIPMENT_BY_ID['wp-knife']!.name;
+    expect(battleResultLines({ xp: 3, gearDrops: ['wp-knife'], gearDropsLost: ['wp-knife'] }, 'win', null)).toEqual([
+      'けいけんちを3獲得！', `なんと！ ${name}を手に入れた！`, `もちものがいっぱいで、${name}を持ちかえれなかった…`,
+    ]);
+  });
+});
+

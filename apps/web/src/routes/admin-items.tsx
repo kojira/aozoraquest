@@ -26,6 +26,7 @@ import { saveItems } from '@/lib/world-authoring';
 import { useAuthoredWorld } from '@/lib/use-authored-world';
 import { AuthoredWorldGate } from '@/components/admin/authored-world-gate';
 import { ItemBattleEditor, ItemShopEditor } from '@/components/admin/item-battle-editor';
+import { PreciousGearFields } from '@/components/admin/precious-gear-editor';
 
 /**
  * **アイテムエディタ** (#420)。そうび / どうぐ・素材 の 2 タブ。
@@ -338,6 +339,7 @@ export function AdminItems() {
                   <span style={{ fontSize: '0.85em', color: 'var(--color-muted)' }}>売られる街の帯 (g の品は tier g〜 の店。1〜6)</span>
                 </span>
               ))}
+              {field('貴重', <PreciousGearFields value={current} onChange={(patch) => update(current.id, patch)} />)}
               {field('専用ジョブ', (
                 <select
                   value={current.jobOnly ?? ''}
