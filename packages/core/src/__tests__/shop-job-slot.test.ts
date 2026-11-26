@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ARCHETYPES,
   EQUIPMENT,
+  EQUIPMENT_BY_ID,
+  canEquip,
+  jobGradeSet,
+  maxShopGradeForTier,
   TIER_LEVEL,
   activeItems,
   setItemOverrides,
@@ -50,10 +54,22 @@ describe('tier4 以上の店の、自分のジョブの枠', () => {
     }
   });
 
-  it('tier3 以下の店と、職を渡さないときは今と同じ', () => {
+  it('tier1 の店は、職を渡さないときと同じ', () => {
     for (const { t, i, tier } of setup()) {
-      if (tier >= 4) continue;
+      if (tier >= 2) continue;
       expect(townShopStock(t, i, 'sage').equipment, t.name).toEqual(townShopStock(t, i).equipment);
+    }
+  });
+
+  it('tier2 以上の店は、買う人の職の その grade の 1 式 (武器・頭・胴。盾・足・お守りはデータにあれば) を並べる (D-REVIVE-001 addendum 3)', () => {
+    for (const { t, i, tier } of setup()) {
+      if (tier < 2) continue;
+      for (const job of ['warrior', 'mage', 'guardian'] as const) {
+        const set = jobGradeSet(job, maxShopGradeForTier(tier));
+        if (tier === 2) expect(set.map((id) => EQUIPMENT_BY_ID[id]!.slot), `${t.name} ${job}`).toEqual(expect.arrayContaining(['weapon', 'head', 'armor']));
+        expect(townShopStock(t, i, job).equipment, `${t.name} ${job}`).toEqual(expect.arrayContaining(set));
+        for (const id of set) expect(canEquip(job, EQUIPMENT_BY_ID[id]!)).toBe(true);
+      }
     }
   });
 

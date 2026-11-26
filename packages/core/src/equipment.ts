@@ -16,6 +16,7 @@
 
 import { ITEMS } from './battle.js';
 import { isShopForbiddenItem } from './revive.js';
+import { JOB_SET_MIN_TIER, jobGradeSet } from './job-shop-set.js';
 import type { Archetype } from './types.js';
 import { tierForRegion, worldOverlay } from './world.js';
 import { shopOverrideAt } from './shop-data.js';
@@ -558,10 +559,13 @@ export function townShopStock(town: Town, townIndex: number, archetype?: Archety
       }
     : generated!;
   const own = archetype ? ownJobItemFor(town, archetype) : undefined;
+  // tier2 以上は、買う人の職の その grade の 1 式も足す (job-shop-set.ts)。上書きの店でも足す (店ごとに手で埋めない)。
+  const tier = tierForRegion(town.region);
+  const set = archetype && tier >= JOB_SET_MIN_TIER ? jobGradeSet(archetype, maxShopGradeForTier(tier)) : [];
   // 店に並べてはいけない品 (生き返らせる・割合で回復・貴重なもの・カジノの景品) は、生成でも上書きでも落とす (D-REVIVE-001)。
   // 買う処理 (edge) はこの並びにある品しか売らないので、ここ 1 か所で なんでも屋 から消える。
-  const sold = { ...stock, consumables: stock.consumables.filter((id) => !isShopForbiddenItem(id)) };
-  return own && !sold.equipment.includes(own) ? { ...sold, equipment: [...sold.equipment, own] } : sold;
+  const equipment = [...new Set([...stock.equipment, ...(own ? [own] : []), ...set])];
+  return { ...stock, equipment, consumables: stock.consumables.filter((id) => !isShopForbiddenItem(id)) };
 }
 
 /** tier4 以上の店で足す、その職の専用品 (その店の grade の武器)。無ければ undefined。 */

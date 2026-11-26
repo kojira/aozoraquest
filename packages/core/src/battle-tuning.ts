@@ -202,7 +202,9 @@ export const BATTLE_TUNING = {
    *  もとは最大 HP の 3 割 (0.4/3 個では tier3 が 97% で作業化した #270/#283/#301)。割合だと Lv が上がるほど
    *  回復しすぎるので、量にした。回復の量はどうぐごとに itemHealAmount (revive.ts) が返す。 */
   herbHealAmount: 10,
-  herbCarryMax: 2,
+  /** 量にしたあとは 3 個にしても tier1〜4 の 1 戦の勝率は変わらない (sim: t2 Lv11 g2 1 人 87.4→88.0%、t3 62→64%、t4 66→67%。D-REVIVE-001)。
+   *  量の回復は Lv が上がるほど効きが小さくなるので、#270 の「作業化」は起きない。戦闘のどうぐ (battleItemCarryMax) は 2 のまま。 */
+  herbCarryMax: 3,
   /** そらのしずく (MP 回復薬): maxMp のこの割合を回復。持ち込み上限 tonicCarryMax。 */
   tonicMpRatio: 0.5,
   tonicCarryMax: 2,
