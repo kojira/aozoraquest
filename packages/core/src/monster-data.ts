@@ -75,6 +75,7 @@ function validatePatternSets(m: MonsterDef, where: string): void {
         if (!PATTERN_MOVES.includes(st.move)) throw new MonsterDataError(`${where}: pattern の move が不正 (${st.move})`);
         if (st.move === 'debuff' && !m.debuffs?.[st.index ?? 0]) throw new MonsterDataError(`${where}: pattern の debuff の index が無い`);
         if (st.move === 'cast' && !m.spell) throw new MonsterDataError(`${where}: pattern の cast には spell が要る`);
+        if (st.target !== undefined && !['one', 'all', 'mate'].includes(st.target)) throw new MonsterDataError(`${where}: pattern の target が不正 (${st.target})`);
         const big = st.move === 'strike' || st.move === 'smash' || st.move === 'drain';
         if (big && !st.tell) throw new MonsterDataError(`${where}: 大技 (${st.name ?? st.move}) には tell (前ぶれ) が要る`);
         if (st.tell && k === 0 && i === 0) throw new MonsterDataError(`${where}: はじめの段の 1 手めは前ぶれの要らない手にする (戦いの頭には前ぶれが出せない)`);

@@ -14,8 +14,8 @@ import { BATTLE_TUNING } from './battle-tuning.js';
 
 /** 足すとくぎ。 */
 export const REVIVE_SKILLS: Readonly<Record<string, SkillDef>> = {
-  // 目覚めの祈り: 倒れた味方 1 人を最大 HP の 3 割で起こす (巫女・聖騎士)。
-  'revive-prayer': { id: 'revive-prayer', effects: [{ kind: 'heal', ratio: 0.3, target: 'oneDownAlly' }] },
+  // 目覚めの祈り: 倒れた味方 1 人を最大 HP の 4 割で起こす (巫女・聖騎士)。3 割だと決戦で起こしてもすぐ倒れる (sim 59→64%)。
+  'revive-prayer': { id: 'revive-prayer', effects: [{ kind: 'heal', ratio: 0.4, target: 'oneDownAlly' }] },
   // 味方 1 人を全回復 (賢者・巫女・聖騎士)。
   'full-heal-one': { id: 'full-heal-one', effects: [{ kind: 'heal', ratio: 1, target: 'oneAlly' }] },
   // 味方みんなを全回復 (賢者・巫女)。HP だけ (状態異常は治らない)。
@@ -25,7 +25,7 @@ Object.assign(SKILLS, REVIVE_SKILLS);
 
 /** とくぎの MP の倍率 (ここに無いとくぎは 1 倍)。 */
 export const SKILL_MP_FACTOR: Readonly<Record<string, number>> = {
-  'revive-prayer': 3,
+  'revive-prayer': 2, // 3 倍だと決戦で 1 回しか唱えられない (sim)
   'full-heal-one': 3,
   'full-heal-all': 5,
 };
