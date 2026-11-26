@@ -15,6 +15,7 @@
  */
 import { battleXpFor, splitBattleXp, rollDrops, rollDefeatLoss, jobLevelFromXp, levelUpGains, skillsForJob, BATTLE_TUNING, type Archetype, type StatArray , gameQuestById } from '@aozoraquest/core';
 import type { GameState } from './game-state';
+import { grantGearDrops } from './battle-gear-drop';
 
 /** BattleOutcome から 'ongoing' を除いた決着。'monster-fled' = 敵が逃げた (無報酬・無消費)。 */
 export type BattleDecision = 'win' | 'lose' | 'fled' | 'monster-fled';
@@ -66,6 +67,10 @@ export interface AwardBreakdown {
     learned?: string[];
   };
   drops?: string[];
+  /** まれなドロップで手に入れた貴重な装備 (D-RARE-GEAR-001)。 */
+  gearDrops?: string[];
+  /** 落ちたが、持ち物がいっぱいで持ちかえれなかった貴重な装備。 */
+  gearDropsLost?: string[];
   materialsLost?: string[];
   powerSpent?: number;
 }
@@ -148,8 +153,10 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       const kills = objective?.kind === 'defeat' ? ids.filter(id => id === objective.monsterId).length : 0;
       return kills ? { ...q, progress: q.progress + kills } : q;
     });
+    const gear = grantGearDrops(state, ids, o.luk, o.rewardSeed, o.dropBonus ?? 0);
     const next: GameState = {
       ...state,
+      ...(gear.pieces ? { pieces: gear.pieces } : {}),
       // #507/#508: プレイヤー XP は**加算しない**。プレイヤーレベルは戦闘力に一切影響しない
       // ことにしたので (docs/19)、増え続ける数字だけが残ると「上げると強くなる」と誤解させる。
       // 既存の値は互換のため保持する (state からフィールドを消すと古い client が壊れる)。
@@ -159,7 +166,7 @@ export function applyBattleOutcome(state: GameState, o: BattleOutcomeInput): { n
       activeQuests,
     };
     const lv = levelUpOf(state, next, o.archetype, o.baseStats);
-    return { next, awarded: { xp, drops, powerSpent: POWER_COST, ...(lv ? { leveledUp: lv } : {}) } };
+    return { next, awarded: { xp, drops, powerSpent: POWER_COST, ...(gear.gearDrops.length ? { gearDrops: gear.gearDrops } : {}), ...(gear.gearDropsLost.length ? { gearDropsLost: gear.gearDropsLost } : {}), ...(lv ? { leveledUp: lv } : {}) } };
   }
 
   if (o.outcome === 'lose') {

@@ -21,7 +21,7 @@ import { handleMove, handleTurn, handleTeleport, handleGear, handleReset, migrat
 import { handleFieldSkill, handleItem } from './field-heal';
 import { handleSearch } from './field-search';
 import { signPosition, verifyPosition } from './world-token';
-import { handleQuestComplete, GameQuestError } from './game-quest';
+import { handleQuestComplete, GameQuestError } from './game-quest'; import { questRewardInput } from './quest-equipment';
 import { handleQuestAcceptWithBattle, handleStoryBattle } from './story-battle';
 import { handleInnRest } from './inn-rest';
 import { handleFieldReviveRoute } from './field-revive';
@@ -520,7 +520,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     } catch (e) {
       return cors(json({ error: 'unauthorized', reason: e instanceof ServiceAuthError ? e.message : 'verify_failed' }, 401), allowedOrigin);
     }
-    const body = (await req.json().catch(() => ({}))) as { questId?: unknown; token?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { questId?: unknown; token?: unknown; choice?: unknown };
     if (typeof body.questId !== 'string') return cors(json({ error: 'bad_request' }, 400), allowedOrigin);
     try {
       const ns = adminNsidRoot(env);
@@ -531,7 +531,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
       const posToken = typeof body.token === 'string' ? body.token : undefined;
       return cors(json(accept
         ? await handleQuestAcceptWithBattle(env, did, body.questId, posToken, nowSec(), ns)
-        : await handleQuestComplete(env, did, body.questId, nowSec(), init, posToken)), allowedOrigin);
+        : await handleQuestComplete(env, did, body.questId, nowSec(), init, posToken, questRewardInput(did, ns, body.choice))), allowedOrigin);
     } catch (e) {
       if (e instanceof GameQuestError) return cors(json({ error: e.code ?? 'quest_error', message: e.message }, e.status), allowedOrigin);
       return cors(battleError(e), allowedOrigin);

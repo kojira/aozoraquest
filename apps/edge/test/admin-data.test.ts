@@ -212,6 +212,25 @@ describe('/api/admin/data (#695)', () => {
     });
   });
 
+  describe('貴重な装備の保存の検査 (D-RARE-GEAR-001)', () => {
+    const PIECE = { id: 'pc-test-ribbon', name: 'くもいろのリボン', slot: 'head', kind: 'cloth', bonus: { def: 2 }, grade: 1, price: { power: 0, materials: 0 }, precious: true };
+    const items = () => Object.entries(ITEMS).map(([id, v]) => ({ id, ...v }));
+    it('貴重な装備の値札が 0 でなければ 400。0 なら通る', async () => {
+      const env = await makeEnv();
+      const put = (piece: typeof PIECE) => handleRequest(call('PUT', 'items', { body: { value: { items: items(), equipment: [...activeEquipment(), piece] }, swapCid: null, dryRun: true } }), env);
+      const bad = await put({ ...PIECE, price: { power: 5, materials: 0 } });
+      expect(bad.status).toBe(400);
+      expect((await bad.json() as { message: string }).message).toContain('値札は 0');
+      expect((await put(PIECE)).status).toBe(200);
+    });
+    it('敵のまれなドロップが貴重でない装備を指すと 400', async () => {
+      const value = { monsters: activeMonsters().map((m, i) => (i === 0 ? { ...m, gearDrop: { equipment: 'wp-knife', permille: 20 } } : { ...m })) };
+      const res = await handleRequest(call('PUT', 'monsters', { body: { value, swapCid: null, dryRun: true } }), await makeEnv());
+      expect(res.status).toBe(400);
+      expect((await res.json() as { message: string }).message).toContain('貴重な装備にする');
+    });
+  });
+
   describe('items の小数 (D-ITEM-001)', () => {
     it('PUT items はどうぐの効果の小数を文字列でレコードに書き、GET は数値に戻して返す', async () => {
       const NEMURI = { id: 'nemuri-kona', name: 'ねむりごな', price: { power: 3, materials: 1 }, shopTier: 1,
