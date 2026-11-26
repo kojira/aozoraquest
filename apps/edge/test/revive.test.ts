@@ -118,14 +118,14 @@ describe('倒れた仲間 (D-REVIVE-001)', () => {
     expect(m.gs().party?.hp?.['g:m']).toBe(9);
   });
 
-  it('フィールド: 目覚めの祈り は倒れた仲間を起こし、MP を 3 倍使う', async () => {
+  it('フィールド: 目覚めの祈り は倒れた仲間を起こし、MP を多く使う', async () => {
     const env = await makeEnv();
     const mio = partyMemberCombatant({ ...MIO, level: 20 }, 20);
     const m = pds(GS({ party: { ids: ['g:k', 'g:m'], members: [KAI, MIO], hp: { 'g:k': 0 } } }));
     globalThis.fetch = m.fn;
     const r = await handleFieldSkill(env, USER, { caster: 'g:m', skillId: 'revive-prayer', target: 'g:k', rkey: 's1' }, NOW);
     expect(r.healed[0]!.id).toBe('g:k');
-    expect(m.gs().party?.hp?.['g:k']).toBe(Math.round(max(KAI, 5) * 0.3));
+    expect(m.gs().party?.hp?.['g:k']).toBe(Math.round(max(KAI, 5) * 0.4));
     expect(m.gs().party?.mp?.['g:m']).toBe(mio.maxMp - skillMpCostOf(mio, 'revive-prayer'));
   });
 

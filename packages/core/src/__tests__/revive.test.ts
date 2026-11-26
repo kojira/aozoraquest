@@ -35,14 +35,14 @@ describe('倒れた味方をねらう (oneDownAlly)', () => {
 });
 
 describe('目覚めの祈り (巫女 Lv16)', () => {
-  it('倒れた仲間を最大 HP の 3 割で起こし、MP を 3 倍使う', () => {
+  it('倒れた仲間を最大 HP の 4 割で起こし、MP をふつうより多く使う', () => {
     const s = downBattle();
     const i = s.playerSkills.findIndex((k) => k.kind === 'revive-prayer');
     expect(i).toBeGreaterThan(0);
     const mp = s.player.mp;
     const next = resolveTurnMulti(s, 'skill', 7, i, 0);
     const kaito = next.allies![1]!;
-    expect(kaito.hp).toBe(Math.round(kaito.maxHp * 0.3));
+    expect(kaito.hp).toBe(Math.round(kaito.maxHp * 0.4));
     expect(next.player.mp).toBe(mp - skillMpCostOf(s.player, 'revive-prayer'));
     expect(skillMpCostOf(s.player, 'revive-prayer')).toBeGreaterThan(skillMpCostOf(s.player));
     expect(next.lastEvents.some((e) => e.text.includes('カイトが いきかえった'))).toBe(true);
@@ -135,5 +135,25 @@ describe('店に並べない品 (オーナー: 生き返らせるどうぐは �
     const town = worldOverlay().towns[0]!;
     ITEMS['mezame-hane'] = { ...ITEMS['mezame-hane']!, shopTier: 1 }; // 検査をすりぬけた定義でも
     expect(townShopStock(town, 0).consumables).not.toContain('mezame-hane');
+  });
+});
+
+describe('ボスの ねらいうち (strike target mate)', () => {
+  it('主人公ではなく、生きている仲間を 1 人ねらう', async () => {
+    const { patternAct } = await import('../battle-boss-pattern.js');
+    const s = downBattle('warrior', 20);
+    const hero = s.allies![0]!, sora = s.allies![2]!;
+    const boss = { ...s.monster, atk: 200, hp: 999, maxHp: 999 };
+    const def = { id: 'b', name: 'b', species: 'x', level: 1, tier: 6, stats: [1, 1, 1, 1, 1], hp: 999, drops: [], intro: 'x',
+      patternSets: [{ patterns: [{ weight: 1, steps: [{ move: 'strike' as const, target: 'mate' as const, power: 3, name: 'ねらいうち', tell: 'にらんでいる' }, { move: 'attack' as const }] }] }] };
+    let hits = 0;
+    for (let seed = 0; seed < 20; seed++) {
+      const allies = [{ ...hero }, { ...s.allies![1]! }, { ...sora, hp: sora.maxHp }];
+      let r = seed; const rng = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
+      patternAct({ ...boss, pattern: undefined }, def as never, allies, rng, []);
+      expect(allies[0]!.hp).toBe(hero.hp);
+      if (allies[2]!.hp < sora.maxHp) hits++;
+    }
+    expect(hits).toBeGreaterThan(10);
   });
 });

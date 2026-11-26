@@ -23,7 +23,8 @@ export interface PatternStep {
   power?: number;
   amount?: number;
   heal?: number;
-  target?: 'one' | 'all';
+  /** one = 生きている味方から 1 人 / all = みんな / mate = 主人公でない仲間から 1 人 (いなければ主人公。ねらいうち。D-REVIVE-001)。 */
+  target?: 'one' | 'all' | 'mate';
   name?: string;
   /** drain を止めたときの 1 行 (ごほうびの守備↓ 2T のしらせ)。 */
   broken?: string;
@@ -79,7 +80,8 @@ export function patternAct(enemy: Combatant, def: MonsterDef, allies: readonly C
   else if (st.move === 'cast' && def.spell) castMonsterSpell(enemy, def, to, rng, events);
   else if (st.move === 'debuff') useMonsterDebuff(enemy, def.debuffs![st.index ?? 0]!, allies, rng, events);
   else if (st.move === 'strike') {
-    const targets = st.target === 'all' ? living(allies) : [to.one()].filter((c): c is Combatant => !!c);
+    const mates = living(allies.slice(1));
+    const targets = st.target === 'all' ? living(allies) : st.target === 'mate' && mates.length ? [mates[Math.floor(rng() * mates.length)]!] : [to.one()].filter((c): c is Combatant => !!c);
     for (const tg of targets) { if (enemy.hp <= 0) break; doAttack(enemy, tg, rng, events, 'monster', { power: st.power ?? BATTLE_TUNING.chargedPower, hitBonus: -0.05, label: st.name ?? 'つよいこうげき' }); }
   } else if (st.move === 'heal') {
     const before = enemy.hp; enemy.hp = Math.min(enemy.maxHp, enemy.hp + monsterHealAmount(def, enemy.maxHp));
