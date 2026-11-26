@@ -7,10 +7,10 @@
  *   - 達成済みは再受注・再達成できない (二重報酬防止)
  *   - 報酬パワーは定義の値だけ。上限 MAX_QUEST_REWARD_POWER で clamp
  */
-import { describe, it, expect, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, afterEach, afterAll, beforeAll } from 'vitest';
 import { p256 } from '@noble/curves/p256';
 import { base64urlnopad } from '@scure/base';
-import { starterTownShop, setShopOverrides, worldOverlay, townShopStock, MONSTERS, setGameQuests, setNpcs, setScenario, allNpcs, type GameQuestDef } from '@aozoraquest/core';
+import { starterTownShop, setShopOverrides, worldOverlay, townShopStock, MONSTERS, setGameQuests, setNpcs, setScenario, allNpcs, activeEquipment, activeItems, setItemOverrides, type EquipmentDef, type GameQuestDef, type PartyRecruit } from '@aozoraquest/core';
 import { starterTownNpcs, starterTownQuests, starterTownScenario } from '../../../packages/core/src/__tests__/helpers/starter-town-fixture';
 import { handleQuestAccept, handleQuestComplete, GameQuestError } from '../src/game-quest';
 import { applyBattleOutcome } from '../src/battle-reward';
@@ -508,3 +508,66 @@ describe('D-GUILD-002 multi-active authority', () => {
     if (count === 2) expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'not_ready' } });
   });
 });
+
+describe('クエストの報酬の装備・選べる品 (D-RARE-GEAR-001)', () => {
+  const orig = globalThis.fetch;
+  const PIECE: EquipmentDef = { id: 'pc-test-hood', name: 'べにのずきん', slot: 'head', kind: 'cloth', bonus: { def: 5 }, grade: 2, price: { power: 0, materials: 0 }, precious: true };
+  const SWORD: EquipmentDef = { id: 'pc-test-sword', name: 'そらいろのつるぎ', slot: 'weapon', kind: 'sword', bonus: { atk: 7 }, grade: 1, price: { power: 0, materials: 0 }, precious: true };
+  const STAFF: EquipmentDef = { id: 'pc-test-staff', name: 'そらいろのつえ', slot: 'weapon', kind: 'staff', bonus: { atk: 5, int: 4 }, grade: 1, price: { power: 0, materials: 0 }, precious: true };
+  const STORY_Q: GameQuestDef = { ...TALK_Q, id: 'q-story', reward: { power: 3, equipment: PIECE.id } };
+  const SIDE_Q: GameQuestDef = { ...TALK_Q, id: 'q-side', reward: { power: 3, choices: [SWORD.id, STAFF.id] } };
+  const atSmith = { mapId: 'old-town', x: 5, y: 6 };
+  const accepted = (id: string, over: Partial<GameState> = {}) => stateAt({ ...atSmith, activeQuests: [{ id, progress: 0 }], ...over });
+  beforeAll(() => {
+    setNpcs([
+      { id: 'npc-t1', name: 'そんちょう', x: 5, y: 5, lines: ['こんにちは'] },
+      { id: 'npc-smith', name: 'かじや', mapId: 'old-town', x: 6, y: 6, lines: ['いらっしゃい'] },
+    ]);
+    setItemOverrides({ items: activeItems(), equipment: [...activeEquipment(), PIECE, SWORD, STAFF] });
+    setGameQuests([STORY_Q, SIDE_Q]);
+  });
+  afterAll(() => { setItemOverrides(null); setGameQuests(null); setNpcs(null); });
+  afterEach(() => { globalThis.fetch = orig; });
+  const guardian = { heroArchetype: async () => 'guardian' as const };
+
+  it('本編の 1 品: 達成で持ち物に入る (rkey quest-<id>)', async () => {
+    const m = statefulPds(accepted('q-story'));
+    globalThis.fetch = m.fn;
+    const res = await handleQuestComplete(await makeEnv(), DID, 'q-story', NOW);
+    expect(res.rewarded).toEqual({ power: 3, equipment: PIECE.id });
+    expect(stored(m.store).pieces).toEqual([{ rkey: 'quest-q-story', itemId: PIECE.id, level: 0 }]);
+    expect(stored(m.store).questsDone).toEqual(['q-story']);
+  });
+
+  it('持ち物がいっぱいなら達成しない (pieces_full)', async () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({ rkey: `p${i}`, itemId: 'wp-knife', level: 0 }));
+    const m = statefulPds(accepted('q-story', { pieces: full }));
+    globalThis.fetch = m.fn;
+    await expect(handleQuestComplete(await makeEnv(), DID, 'q-story', NOW)).rejects.toMatchObject({ code: 'pieces_full' });
+    expect(stored(m.store).questsDone ?? []).toEqual([]);
+  });
+
+  it('選べる品: 選ばずに来たら choice_required、主人公にも仲間にも合わない品は choice_invalid (進行中のまま)', async () => {
+    const m = statefulPds(accepted('q-side'));
+    globalThis.fetch = m.fn;
+    const env = await makeEnv();
+    await expect(handleQuestComplete(env, DID, 'q-side', NOW, undefined, undefined, { ...guardian })).rejects.toMatchObject({ code: 'choice_required' });
+    await expect(handleQuestComplete(env, DID, 'q-side', NOW, undefined, undefined, { ...guardian, choice: STAFF.id })).rejects.toMatchObject({ code: 'choice_invalid' });
+    await expect(handleQuestComplete(env, DID, 'q-side', NOW, undefined, undefined, { ...guardian, choice: 'wp-knife' })).rejects.toMatchObject({ code: 'choice_invalid' });
+    expect(stored(m.store).activeQuests).toEqual([{ id: 'q-side', progress: 0 }]);
+  });
+
+  it('選べる品: 主人公の職に合う品を選ぶともらえる。仲間の職に合う品も選べる', async () => {
+    const m = statefulPds(accepted('q-side'));
+    globalThis.fetch = m.fn;
+    const res = await handleQuestComplete(await makeEnv(), DID, 'q-side', NOW, undefined, undefined, { ...guardian, choice: SWORD.id });
+    expect(res.rewarded?.equipment).toBe(SWORD.id);
+    expect(stored(m.store).pieces).toEqual([{ rkey: 'quest-q-side', itemId: SWORD.id, level: 0 }]);
+    const mage: PartyRecruit = { id: 'g:m', name: 'ミナ', archetype: 'mage', star: 2, minLevel: 1, line: 'よろしく。', xp: 0 };
+    const m2 = statefulPds(accepted('q-side', { party: { ids: [mage.id], members: [mage] } }));
+    globalThis.fetch = m2.fn;
+    const res2 = await handleQuestComplete(await makeEnv(), DID, 'q-side', NOW, undefined, undefined, { ...guardian, choice: STAFF.id });
+    expect(res2.rewarded?.equipment).toBe(STAFF.id);
+  });
+});
+

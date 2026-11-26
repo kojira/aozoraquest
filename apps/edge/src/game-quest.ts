@@ -9,7 +9,8 @@
  *   - talk: 相手の NPC の上下左右の隣にいること (署名済みの位置トークン、無ければ state の位置。D-STORY-009)
  * - 報酬のパワーは定義の値だけ。client は金額を送らない (サーバー権威)
  */
-import { allNpcs, gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER, WORLD_MAP_ID, WORLD_SIZE, type NpcDef } from '@aozoraquest/core';
+import { allNpcs, gameQuestById, itemsSatisfied, MAX_QUEST_REWARD_POWER, WORLD_MAP_ID, WORLD_SIZE, type Archetype, type NpcDef } from '@aozoraquest/core';
+import { questEquipmentReward } from './quest-equipment';
 import { readModifyWrite, type GameState, type GameStateEnv } from './game-state';
 import { verifyPosition, type PositionClaim } from './world-token';
 import { advanceScenario, type ScenarioMessage, type ScenarioResult } from './scenario-progress';
@@ -30,8 +31,10 @@ export interface QuestStateResult {
   questsDone?: string[];
   power: number;
   materials: Record<string, number>;
-  /** 達成時のみ: 付与した報酬。 */
-  rewarded?: { power?: number; itemId?: string; count?: number };
+  /** 達成時のみ: 付与した報酬。equipment = もらった装備 (本編の 1 品か、選んだ品。D-RARE-GEAR-001)。 */
+  rewarded?: { power?: number; itemId?: string; count?: number; equipment?: string };
+  /** 装備をもらったときの持ち物。 */
+  pieces?: GameState['pieces'];
   /** 進行フラグ (#545)。達成でシナリオが進むと増える。 */
   flags?: string[];
   /** シナリオのお知らせ (「東の橋が直ったらしい」)。一度だけ出す。 */
@@ -96,9 +99,13 @@ export async function handleQuestComplete(
   now: number,
   init?: (did: string, nowIso: string) => Promise<GameState>,
   token?: string,
+  /** 選べる品の報酬 (D-RARE-GEAR-001): 選んだ品の id と、主人公の職 (診断。サーバーが読む)。 */
+  reward?: { choice?: unknown; heroArchetype?: () => Promise<Archetype> },
 ): Promise<QuestStateResult> {
   const def = gameQuestById(questId);
   if (!def) throw new GameQuestError('そのクエストは無い', 404, 'unknown_quest');
+  // 選べる品の一覧は主人公の職で変わる。職は診断 (サーバーが読む) から。client の申告は使わない。
+  const hero = def.reward?.choices?.length && reward?.heroArchetype ? await reward.heroArchetype() : undefined;
   // talk の位置は署名済みトークンが正。無い/無効なら state の位置に倒す (handleSearch と同じ作法)。
   let claim: PositionClaim | null = null;
   try { claim = verifyPosition(env, token ?? '', did, now); } catch { claim = null; }
@@ -138,9 +145,12 @@ export async function handleQuestComplete(
         materials = { ...materials };
         materials[def.reward.itemId] = (materials[def.reward.itemId] ?? 0) + (def.reward.count ?? 0);
       }
+      // 装備 (本編の 1 品・選んだ品)。選んでいない・一覧に無い・持ち物がいっぱいなら達成しない。
+      const equip = questEquipmentReward(cur, def, reward?.choice, hero);
       rewarded = {
         ...(rewardPower > 0 ? { power: rewardPower } : {}),
         ...(def.reward?.itemId ? { itemId: def.reward.itemId, count: def.reward.count ?? 0 } : {}),
+        ...(equip ? { equipment: equip.equipment } : {}),
       };
       // その時パーティにいる全員の きずな (本編 +10・それ以外 +5。D-PARTY-004)。
       const bonded = partyWithQuestBond(cur.party, questId);
@@ -152,6 +162,7 @@ export async function handleQuestComplete(
         questsDone: [...(cur.questsDone ?? []), questId],
         power: cur.power + rewardPower,
         materials,
+        ...(equip ? { pieces: equip.pieces } : {}),
       };
       // 達成はシナリオが動く主な経路 (#545)。フラグと お知らせ をここで確定する。
       // mutate は純関数なので、リトライで複数回走っても同じ結果になる。
@@ -163,6 +174,7 @@ export async function handleQuestComplete(
   return {
     activeQuests: next.activeQuests, questsDone: next.questsDone, power: next.power, materials: next.materials,
     ...(rewarded ? { rewarded } : {}),
+    ...(rewarded?.equipment ? { pieces: next.pieces ?? [] } : {}),
     ...(next.flags ? { flags: next.flags } : {}),
     ...(next.party ? { party: next.party } : {}),
     ...(bondUp.length ? { allyBondUp: bondUp } : {}),

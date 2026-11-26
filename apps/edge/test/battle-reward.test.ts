@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { TEST_MONSTERS } from '../../../packages/core/src/__tests__/helpers/monster-fixture';
 import { applyBattleOutcome, type BattleOutcomeInput } from '../src/battle-reward';
 import { MONSTERS, battleXpFor, jobXpToNextLevelFor, BATTLE_TUNING, setGameQuests, setNpcs } from '@aozoraquest/core';
 import * as coreForTest from '@aozoraquest/core';
@@ -234,3 +235,33 @@ describe('ゲーム内クエストの討伐カウント (#423/#659)', () => {
     expect(applyBattleOutcome(base({ power: 0, activeQuests: [{ id: 'q1', progress: 1 }] }), input({ outcome: 'win', rewarded: false })).next.activeQuests).toEqual([{ id: 'q1', progress: 1 }]);
   }));
 });
+
+describe('貴重な装備のまれなドロップ (D-RARE-GEAR-001)', () => {
+  const PIECE = { id: 'pc-test-ribbon', name: 'くもいろのリボン', slot: 'head' as const, kind: 'cloth' as const, bonus: { def: 2 }, grade: 1 as const, price: { power: 0, materials: 0 }, precious: true };
+  beforeAll(() => {
+    coreForTest.setItemOverrides({ items: coreForTest.activeItems(), equipment: [...coreForTest.activeEquipment(), PIECE] });
+    coreForTest.setMonsterOverrides([...coreForTest.activeMonsters().filter((m) => m.id !== mon.id), { ...mon, gearDrop: { equipment: PIECE.id, permille: 1000 } }]);
+  });
+  afterAll(() => { coreForTest.setItemOverrides(null); coreForTest.setMonsterOverrides(TEST_MONSTERS); });
+
+  it('勝つと持ち物に入り、awarded.gearDrops で知らせる (rkey drop-<seed>-<i>。リトライで同じ結果)', () => {
+    const { next, awarded } = applyBattleOutcome(base(), input());
+    expect(awarded.gearDrops).toEqual([PIECE.id]);
+    expect(next.pieces).toEqual([{ rkey: 'drop-12345-0', itemId: PIECE.id, level: 0 }]);
+    expect(applyBattleOutcome(base(), input()).next.pieces).toEqual(next.pieces);
+  });
+
+  it('持ち物がいっぱいなら入れず、gearDropsLost で知らせる', () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({ rkey: `p${i}`, itemId: 'wp-knife', level: 0 }));
+    const { next, awarded } = applyBattleOutcome(base({ pieces: full }), input());
+    expect(awarded.gearDrops).toBeUndefined();
+    expect(awarded.gearDropsLost).toEqual([PIECE.id]);
+    expect(next.pieces).toHaveLength(100);
+  });
+
+  it('負け・パワー無しでは落ちない', () => {
+    expect(applyBattleOutcome(base(), input({ outcome: 'lose' })).awarded.gearDrops).toBeUndefined();
+    expect(applyBattleOutcome(base(), input({ rewarded: false })).next.pieces).toBeUndefined();
+  });
+});
+

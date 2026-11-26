@@ -24,7 +24,7 @@ import {
   assertStoryFlagTotal, currentStory, missingStoryBattle, recruitGuildIssue, validateStory, allNpcs, gameQuests, type StoryBattleDef, type StoryData,
   casinoTablesIssue, type CasinoTables,
   type AdminWorldRecordName, type GameQuestDef, type Gate, type InteriorMap, type NpcDef, type ScenarioEvent, type ShopOverride,
-  gearPriceDrift,
+  gearPriceDrift, preciousIssue,
 } from '@aozoraquest/core';
 import { getRecord, PdsError } from './pds';
 import { readServerTokens } from './oauth-store';
@@ -123,7 +123,8 @@ function validateItemsCandidate(value: unknown): string | null {
   try { setItemOverrides({ items, equipment }); } finally { setItemOverrides(prev); }
   // 値段の目安は GEAR_LADDER の 1 か所 (D-BALANCE-002)。大きくずれた品は書かせない。
   const drift = gearPriceDrift(equipment)[0];
-  return drift ? `${drift.id}: 値段 ${drift.power} パワーが目安 ${drift.target} から外れている (0.5〜2 倍。GEAR_LADDER)` : null;
+  if (drift) return `${drift.id}: 値段 ${drift.power} パワーが目安 ${drift.target} から外れている (0.5〜2 倍。GEAR_LADDER)`;
+  return preciousIssue({ equipment }); // 貴重な装備の値札・段・参照 (D-RARE-GEAR-001)
 }
 
 /** monsters は管理画面 (/admin/monsters) と同じく参照中の敵 (クエストの討伐対象・ストーリー戦闘) を消させず、
@@ -134,7 +135,7 @@ function validateMonstersCandidate(value: unknown): string | null {
   if (dangling) return describeDanglingRef(dangling);
   const prev = activeMonsters().map((m) => ({ ...m }));
   try { setMonsterOverrides(monsters); } finally { if (prev.length) setMonsterOverrides(prev); else clearMonsters(); }
-  return null;
+  return preciousIssue({ monsters }); // まれなドロップは貴重な装備 (D-RARE-GEAR-001)
 }
 
 /** 候補値を管理画面と同じ検証にかける。壊れていれば理由の文字列を返す。
@@ -165,7 +166,7 @@ async function validateCandidate(name: AdminDataName, value: unknown, saved: unk
     const quests = listOf<GameQuestDef>(value, 'quests');
     validateGameQuests(quests);
     const dangling = danglingRefs('quest', quests.map((q) => q.id))[0];
-    return dangling ? describeDanglingRef(dangling) : missingStoryBattle([], quests);
+    return dangling ? describeDanglingRef(dangling) : missingStoryBattle([], quests) ?? preciousIssue({ quests }); // 報酬の装備 (D-RARE-GEAR-001)
   }
   if (name === 'casino') return casinoTablesIssue(value as CasinoTables); // 形・RTP 85〜98%・景品は casinoOnly (D-CASINO-001)
   if (name === 'items') return validateItemsCandidate(value);
