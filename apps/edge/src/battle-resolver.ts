@@ -651,7 +651,7 @@ export async function handleTurn(env: ResolverEnv, userDid: string, battleId: st
     // 決着後の位置に対応する新トークンを発行 (敗北帰還で位置が変わるので client はこれで同期)。
     const token = signPosition(env, { did: userDid, ...(finalMapId !== WORLD_MAP_ID ? { mapId: finalMapId } : {}), x: finalPos.x, y: finalPos.y, counter: 0, iat: now });
     return { state: stripState(next), events: next.lastEvents, outcome: next.outcome, awarded, position: finalPos, token,
-      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp, ...(written.party ? { party: written.party } : {}),
+      materials: written.materials, carryHp: written.carryHp, carryMp: written.carryMp, ...(written.party ? { party: written.party } : {}), ...(awarded.gearDrops ? { pieces: written.pieces ?? [] } : {}), // 貴重な装備のドロップ (D-RARE-GEAR-001)
       ...(written.flags ? { flags: written.flags } : {}),
       activeQuests: written.activeQuests, questsDone: written.questsDone ?? [],
       ...(noticeBox.v.length ? { scenarioNotices: noticeBox.v, scenarioMessages: noticeBox.m } : {}) };
