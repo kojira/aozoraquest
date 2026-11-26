@@ -25,7 +25,7 @@ import {
 import { useSession } from '@/lib/session';
 import { useJobXp, xpOfJob } from '@/lib/use-job-xp';
 import { saveWorldState } from '@/lib/world-state';
-import { serverGear, serverPartyGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter } from '@/lib/world-server';
+import { serverGear, serverPartyGear, serverPartyMode, worldServerEnabled, type ScenarioMessage, type ServerEncounter, type ServerOwnedPiece } from '@/lib/world-server';
 import { ShopModal } from '@/components/shop-modal';
 import { CasinoModal } from '@/components/casino-modal';
 import { useCasino } from '@/lib/use-casino';
@@ -219,14 +219,17 @@ function WorldScreen() {
 
   // 会話・受注の後の戦闘 (D-STORY-009)。戦闘フックは会話フックの後に作られるので ref でつなぐ。
   const startEncounterRef = useRef<(encounter: ServerEncounter) => void>(() => {});
+  // クエストの報酬の装備 (D-RARE-GEAR-001)。店のフックは後で作られるので ref でつなぐ。
+  const questPiecesRef = useRef<(pieces: ServerOwnedPiece[]) => void>(() => {});
   const talk = useNpcQuestTalk({
     agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials: inventory.applyServerMaterials,
-    setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef,
+    setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef, archetypeRef, onPieces: useCallback((p: ServerOwnedPiece[]) => questPiecesRef.current(p), []),
   });
   const { npcTalk, setNpcTalk, npcTalkRef, quest, setQuest, questPending, npcChoices, openDirectNpc, directQuestList, startStoryBattle } = talk;
   const { innTalk, innTalkRef, innBusy, innChoices, openInn, openShrine, innDone } = useInnTalk({ agent, moveBusyRef, tokenRef, wsRef, setWs, setServerPower, scheduleSave, waitForFreshDirectionRef, setParty: talk.setParty });
   const shop = useWorldShop({ agent, did, inventory, lukRef, serverPowerRef, setServerPower, tokenRef, wsRef, setNotice });
   const { shopOpen, setShopOpen, gearOpen, setGearOpen, craftedPieces, setCraftedPieces, gearRefs, setGearRefs, craftBusy, shopError, flushCraftLog } = shop;
+  questPiecesRef.current = (p) => setCraftedPieces(piecesFromServer(p));
   // 中古・うる (D-MARKET-001)。店を開いたら 1 回だけ棚と自分の出品を合わせる (扉とメニューのどちらから開いても同じ)
   const market = useMarket({ agent, did, tokenRef, setServerPower, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]), openTown: shopOpen ? shopTownAt(ws) : null });
   const casino = useCasino({ agent, tokenRef, setServerPower, applyServerMaterials: inventory.applyServerMaterials, onPieces: useCallback((p) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]) });
@@ -280,7 +283,7 @@ function WorldScreen() {
 
   const { battle, battleRef, setBattle, onBattleCommand, onMessageAdvance } = useWorldBattle({
     agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave,
-    inventory, setServerPower, archetypeRef, didRef,
+    inventory, setServerPower, archetypeRef, didRef, onPieces: useCallback((p: ServerOwnedPiece[]) => setCraftedPieces(piecesFromServer(p)), [setCraftedPieces]),
   });
   // めいれい の入力の順番 (D-PARTY-004)。主人公 → めいれい の仲間 → 送信。
   const orders = useAllyOrders(battle?.state ?? null, battle ? `${battle.battleId}:${battle.state.turn}:${battle.phase}` : '', (h, allies) => onBattleCommand(h.command, h.skillIndex, h.itemId, h.targetIndex, allies));

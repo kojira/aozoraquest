@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { Agent } from '@atproto/api';
-import { ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, RECRUIT_GACHA, withCharacterNames, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { EQUIPMENT_BY_ID, ITEMS, gameQuestById, gameQuestsByNpc, npcAltLineFor, npcLinesFor, partyCapacity, questProgressLine, recruits, RECRUIT_GACHA, withCharacterNames, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
 import { scenarioMessagesOf, serverPartyCandidates, serverPartyReroll, serverPartySet, serverQuestAccept, serverQuestComplete, serverState, serverStoryBattle, WorldServerError, type ScenarioMessage, type ServerEncounter, type ServerParty } from '@/lib/world-server';
 import { PARTY_LINES } from '@/lib/party-lines';
 import { bondUpLines } from '@/lib/bond-view';
@@ -8,6 +8,8 @@ import type { DialogueChoice } from '@/lib/dialogue';
 import { EMPTY_QUEST_STATE, guildQuestDetailLines, questAcceptChoices, questChoiceTitle, questOfferLines, questStateOf, type QuestState } from '@/lib/game-quest';
 import { guildReception, npcQuestCandidates, type NpcTalk } from '@/lib/npc-talk';
 import { useLatestRef } from '@/lib/use-latest-ref';
+import { rewardChoiceLabel, rewardChoicesFor } from '@/lib/quest-reward-choice';
+import type { ServerOwnedPiece } from '@/lib/world-server';
 
 /** 依頼一覧の 1 ページの件数。390px の地図に貼った会話窓 (高さ 35%) に、見出し + 依頼 + 下端の操作の段が収まる数。 */
 export const QUEST_CHOICES_PER_PAGE = 2;
@@ -16,7 +18,7 @@ export const QUEST_CHOICES_PER_PAGE = 2;
  * NPC 会話とゲーム内クエスト (#423/#425/#659) の状態と遷移。受注・報告・進捗は
  * **サーバーが正** で、ここは応答を会話の段 (npcTalk) と表示用の quest に写す。
  */
-export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials, setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef }: {
+export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materialsRef, applyServerMaterials, setServerPower, setNotice, waitForFreshDirectionRef, startEncounterRef, archetypeRef, onPieces }: {
   agent: Agent | null;
   moveBusyRef: MutableRefObject<boolean>;
   /** 位置トークン。話しかけクエスト (talk) の達成で「相手の隣にいる」をサーバーが確かめる。 */
@@ -29,6 +31,10 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
   waitForFreshDirectionRef: MutableRefObject<boolean>;
   /** サーバーが封印した戦闘を始める (会話・受注の後の戦闘。D-STORY-009)。戦闘フックが後で作られるので ref。 */
   startEncounterRef: MutableRefObject<(encounter: ServerEncounter) => void>;
+  /** 主人公の職 (選べる報酬の一覧を作る。D-RARE-GEAR-001)。 */
+  archetypeRef?: MutableRefObject<string | null>;
+  /** 報酬で装備をもらったときの持ち物。 */
+  onPieces?: (pieces: ServerOwnedPiece[]) => void;
 }) {
   const [npcTalk, setNpcTalk] = useState<NpcTalk | null>(null);
   /** いまのパーティの仲間 id (D-PARTY-001)。危険度が見えるか (seesFieldDanger) に使う。権威 state の読み・編成の応答だけが書く。 */
@@ -130,14 +136,23 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
     setNpcTalk({ npc, lines: [...lead, `${heading}（${page + 1}/${pages}）`], choices, ...(guild ? { guild: 'message' as const } : {}) });
   };
 
-  const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false) => {
+  /** 長いサイドストーリーの最後: 主人公と仲間に合う品から 1 つ選ぶ (D-RARE-GEAR-001)。「あとで」なら進行中のまま。 */
+  const askRewardChoice = (npc: NpcDef, q: GameQuestDef, guild: boolean, directList: boolean, lines: string[]) => {
+    const options = rewardChoicesFor(q, archetypeRef?.current ?? null, party);
+    const choices: DialogueChoice[] = options.map((id) => ({ label: rewardChoiceLabel(id), onSelect: () => reportQuest(npc, q, guild, directList, id) }));
+    choices.push({ label: 'あとで', pinned: true, onSelect: () => setNpcTalk(guild ? guildReception(npc) : null) });
+    setNpcTalk({ npc, lines: [...lines, 'おれいに、すきなものを ひとつ えらんでほしい。'], choices, ...(guild ? { guild: 'message' as const } : {}) });
+  };
+
+  const reportQuest = async (npc: NpcDef, q: GameQuestDef, guild: boolean, directList = false, choice?: string) => {
     if (!agent || moveBusyRef.current) return;
     const message = (lines: string[], notices: ScenarioMessage[] = []) => setNpcTalk({ npc, lines, ...(notices.length ? { notices } : {}), ...(guild ? { guild: 'message' as const } : { directList }) });
     moveBusyRef.current = true;
     setQuestPending(true);
+    const o = q.objective;
+    const said = o.kind === 'talk' ? [o.line, `『${q.title}』を達成した！`] : q.done;
     try {
-      const o = q.objective;
-      const res = await serverQuestComplete(agent, q.id, o.kind === 'talk' ? tokenRef.current : undefined);
+      const res = await serverQuestComplete(agent, q.id, o.kind === 'talk' ? tokenRef.current : undefined, choice);
       setQuest(questStateOf(res));
       // 章の終わりの依頼で入れられる人数が増えたら知らせる (D-PARTY-001 §8)。
       const grown = !!res.flags && partyCapacity(res.flags) > partyCapacity(flagsRef.current);
@@ -145,13 +160,16 @@ export function useNpcQuestTalk({ agent, moveBusyRef, tokenRef, flagsRef, materi
       setServerPower(res.power);
       applyServerMaterials(res.materials);
       if (res.party) setParty(res.party); // きずなを足したあとの party (D-PARTY-004)
+      if (res.pieces) onPieces?.(res.pieces);
       const r = res.rewarded;
       const got = [r?.itemId ? `${ITEMS[r.itemId]?.name ?? r.itemId} ×${r.count}` : null,
+        r?.equipment ? withCharacterNames(EQUIPMENT_BY_ID[r.equipment]?.name ?? r.equipment) : null,
         r?.power ? `あおぞらパワー${r.power}` : null].filter(Boolean).join('と');
       // talk は相手のセリフ (いつものセリフの代わり) に続けて達成を出す (D-STORY-009)。
-      const said = o.kind === 'talk' ? [o.line, `『${q.title}』を達成した！`] : q.done;
       message([...said, ...(got ? [`${got}をもらった！`] : []), ...bondUpLines(res.allyBondUp)], [...scenarioMessagesOf(res.scenarioMessages, res.notices), ...(grown ? [{ text: PARTY_LINES.grown }] : [])]);
     } catch (e) {
+      // 選ぶ品がある依頼: 条件はそろっている (サーバーが先に確かめる)。お礼のあとに選んでもらう。
+      if (e instanceof WorldServerError && e.code === 'choice_required') { askRewardChoice(npc, q, guild, directList, said); return; }
       try { await refreshQuestState(); } catch { /* Keep only the last confirmed snapshot. */ }
       if (questRef.current.done.includes(q.id)) message(['この依頼は達成済みだよ。']);
       else if (e instanceof WorldServerError && e.code === 'not_ready' && q.objective.kind !== 'talk') message([...(q.progress ?? []), e.message, 'そろったらまた報告してね。']);

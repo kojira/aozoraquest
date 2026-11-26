@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { MONSTERS, setCharacters, setGameQuests, setNpcs, setStory, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { EQUIPMENT, MONSTERS, activeItems, setCharacters, setGameQuests, setItemOverrides, setNpcs, setStory, type EquipmentDef, type GameQuestDef, type NpcDef } from '@aozoraquest/core';
+import { WorldServerError } from './world-server';
 import { guildReception } from './npc-talk';
 import { PARTY_LINES } from './party-lines';
 import { useNpcQuestTalk } from './use-npc-quest-talk';
 
 const accept = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/world-server', async (orig) => ({ ...(await orig<typeof import('@/lib/world-server')>()), serverQuestAccept: accept }));
+const complete = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/world-server', async (orig) => ({ ...(await orig<typeof import('@/lib/world-server')>()), serverQuestAccept: accept, serverQuestComplete: complete }));
 
 const MON = MONSTERS[0]!;
 const quest = (id: string, title: string): GameQuestDef => ({ id, title, npcId: 'desk', intro: ['たのむ'], done: ['ありがとう'], objective: { kind: 'defeat', monsterId: MON.id, count: 1 } });
@@ -171,3 +173,47 @@ describe('useNpcQuestTalk 受注の知らせ (I-01)', () => {
     expect(result.current.npcTalk?.lines[0]).toBe('『ほむらの はね』を請け負った！');
   });
 });
+
+describe('useNpcQuestTalk 報酬の装備を選ぶ (D-RARE-GEAR-001)', () => {
+  const SWORD: EquipmentDef = { id: 'pc-t-sword', name: 'そらいろのつるぎ', slot: 'weapon', kind: 'sword', bonus: { atk: 7 }, grade: 1, price: { power: 0, materials: 0 }, precious: true };
+  const STAFF: EquipmentDef = { id: 'pc-t-staff', name: 'そらいろのつえ', slot: 'weapon', kind: 'staff', bonus: { atk: 5, int: 4 }, grade: 1, price: { power: 0, materials: 0 }, precious: true };
+  const PAINTER: NpcDef = { id: 'painter', name: 'えかき', x: 3, y: 3, lines: ['やあ'] };
+  const side: GameQuestDef = { id: 'side-paint-blue', title: '空色のえのぐ', npcId: 'painter', intro: ['たのむ'], done: ['ありがとう！'], objective: { kind: 'collect', itemId: 'herb', count: 1 }, reward: { power: 5, choices: [SWORD.id, STAFF.id] } };
+  beforeEach(() => {
+    setItemOverrides({ items: activeItems(), equipment: [...EQUIPMENT, SWORD, STAFF] });
+    setNpcs([PAINTER]); setGameQuests([side]);
+    complete.mockReset();
+  });
+  afterEach(() => { setGameQuests(null); setNpcs(null); setItemOverrides(null); });
+  const renderTalk = (archetype: string) => renderHook(() => useNpcQuestTalk({
+    agent: {} as never, moveBusyRef: { current: false }, tokenRef: { current: undefined }, flagsRef: { current: [] }, materialsRef: { current: { herb: 1 } },
+    applyServerMaterials: () => {}, setServerPower: () => {}, setNotice: () => {}, waitForFreshDirectionRef: { current: false }, startEncounterRef: { current: () => {} },
+    archetypeRef: { current: archetype },
+  }));
+
+  it('お礼のあとに、主人公の職に合う品だけを「名前（部位 値）」で出し、「あとで」を張りつける。選ぶと choice を送ってもらう', async () => {
+    complete.mockRejectedValueOnce(new WorldServerError('ほうびを えらんでほしい', 400, 'choice_required'));
+    complete.mockResolvedValueOnce({ activeQuests: [], questsDone: [side.id], power: 10, materials: {}, rewarded: { power: 5, equipment: SWORD.id }, pieces: [{ rkey: 'quest-side-paint-blue', itemId: SWORD.id, level: 0 }] });
+    const { result } = renderTalk('guardian');
+    act(() => result.current.setQuest({ activeQuests: [{ id: side.id, progress: 0 }], done: [] }));
+    await act(async () => { result.current.openDirectNpc(PAINTER); });
+    expect(result.current.npcTalk?.lines).toEqual(['ありがとう！', 'おれいに、すきなものを ひとつ えらんでほしい。']);
+    expect(result.current.npcChoices!.map((c) => c.label)).toEqual(['そらいろのつるぎ（ぶき こうげき +7）', 'あとで']);
+    expect(result.current.npcChoices!.at(-1)!.pinned).toBe(true);
+    await act(async () => { await result.current.npcChoices![0]!.onSelect(); });
+    expect(complete).toHaveBeenLastCalledWith(expect.anything(), side.id, undefined, SWORD.id);
+    expect(result.current.npcTalk?.lines.at(-1)).toBe('そらいろのつるぎとあおぞらパワー5をもらった！');
+  });
+
+  it('「あとで」を選ぶと会話を閉じ、クエストは進行中のまま', async () => {
+    complete.mockRejectedValueOnce(new WorldServerError('ほうびを えらんでほしい', 400, 'choice_required'));
+    const { result } = renderTalk('mage');
+    act(() => result.current.setQuest({ activeQuests: [{ id: side.id, progress: 0 }], done: [] }));
+    await act(async () => { result.current.openDirectNpc(PAINTER); });
+    expect(result.current.npcChoices!.map((c) => c.label)).toEqual(['そらいろのつえ（ぶき こうげき +5 かしこさ +4）', 'あとで']);
+    act(() => { void result.current.npcChoices!.at(-1)!.onSelect(); });
+    expect(result.current.npcTalk).toBeNull();
+    expect(result.current.quest.activeQuests).toEqual([{ id: side.id, progress: 0 }]);
+  });
+});
+

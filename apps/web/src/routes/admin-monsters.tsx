@@ -19,6 +19,7 @@ import {
 import { useSession } from '@/lib/session';
 import { AdminMonsterDebuffs } from '@/components/admin-monster-debuffs';
 import { MonsterStonesEditor } from '@/components/admin/monster-stones-editor';
+import { MonsterGearDropField } from '@/components/admin/precious-gear-editor';
 import { isAdminDid } from '@/lib/runtime-config';
 import { saveMonsters } from '@/lib/world-authoring';
 import { simulateMonsterWinRate } from '@/lib/monster-simulation';
@@ -447,6 +448,7 @@ export function AdminMonsters() {
               />
             )}
             <MonsterStonesEditor monster={current} onChange={(stones) => update(current.id, { stones })} />
+            <MonsterGearDropField value={current} onChange={(patch) => update(current.id, patch)} />
             {/* ドロップ (消耗品だけ。魔石は上の欄で必ず落ちる) */}
             <div style={{ fontSize: '0.8em' }}>
               <span style={{ color: 'var(--color-muted)' }}>ドロップ</span>

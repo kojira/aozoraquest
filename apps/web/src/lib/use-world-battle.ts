@@ -1,7 +1,7 @@
 import { useCallback, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
 import { townAt, type BattleState, type Command } from '@aozoraquest/core';
-import { scenarioMessagesOf, serverTurn, WorldServerError, type ServerAward, type ScenarioMessage } from '@/lib/world-server';
+import { scenarioMessagesOf, serverTurn, WorldServerError, type ServerAward, type ServerOwnedPiece, type ScenarioMessage } from '@/lib/world-server';
 import { bumpJobXp } from '@/lib/use-job-xp';
 import { questAfterBattle, type QuestState } from '@/lib/game-quest';
 import type { BattlePhase } from '@/components/world-battle-controls';
@@ -36,11 +36,13 @@ export interface WorldBattle {
   resultToken?: string;
   /** 決着後の権威在庫/HP (materials 一本化)。決着タップで表示を同期する。 */
   resultMaterials?: Record<string, number>;
+  /** 貴重な装備が落ちた決着の持ち物 (D-RARE-GEAR-001)。 */
+  resultPieces?: ServerOwnedPiece[];
   resultCarryHp?: number;
   resultCarryMp?: number;
 }
 
-export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave, inventory, setServerPower, archetypeRef, didRef }: {
+export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, flushScenarioNotices, tokenRef, setWs, setNotice, scheduleSave, inventory, setServerPower, archetypeRef, didRef, onPieces }: {
   agent: Agent | null;
   setQuest: (next: (s: QuestState) => QuestState) => void;
   flagsRef: MutableRefObject<string[]>;
@@ -54,6 +56,8 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
   setServerPower: Dispatch<SetStateAction<number | null>>;
   archetypeRef: MutableRefObject<string | null>;
   didRef: MutableRefObject<string | null>;
+  /** 決着で持ち物が変わった (貴重な装備のドロップ)。 */
+  onPieces: (pieces: ServerOwnedPiece[]) => void;
 }) {
   const { setHerbStock, setTonicStock, setFeatherStock, materialsRef, setMaterialsView, applyServerMaterials } = inventory;
   const [battle, setBattle] = useState<WorldBattle | null>(null);
@@ -79,7 +83,8 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
             ...(res.awarded ? { awarded: res.awarded } : {}),
             ...(res.position ? { resultPos: res.position } : {}),
             ...(res.token ? { resultToken: res.token } : {}),
-            ...(res.materials ? { resultMaterials: res.materials, resultCarryHp: res.carryHp, resultCarryMp: res.carryMp } : {}) };
+            ...(res.materials ? { resultMaterials: res.materials, resultCarryHp: res.carryHp, resultCarryMp: res.carryMp } : {}),
+            ...(res.pieces ? { resultPieces: res.pieces } : {}) };
           // シナリオ (#545) は決着でも進む (ジョブ Lv 条件はここでしか動かない)。
           // **拾わないと永久に失われる** — 発火済みのお知らせは二度と返らない。
           if (res.flags) flagsRef.current = res.flags;
@@ -159,6 +164,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
         setWs((s) => (s ? { ...s, hp: b.resultCarryHp ?? null, mp: b.resultCarryMp ?? null, ...(resultPos ? { x: resultPos.x, y: resultPos.y } : {}) } : s));
       }
       scheduleSave();
+      if (b.resultPieces) onPieces(b.resultPieces);
       // 在庫表示をサーバー権威 (turn 結果の materials) で同期。取得できなければ従来のミラーで best-effort。
       if (b.resultMaterials) {
         const m = b.resultMaterials;
@@ -202,7 +208,7 @@ export function useWorldBattle({ agent, setQuest, flagsRef, pendingNoticesRef, f
         setBattle(done);
       }
     },
-    [scheduleSave, archetypeRef, battleRef, didRef, flushScenarioNotices, materialsRef, setFeatherStock, setHerbStock, setMaterialsView, setNotice, setServerPower, setTonicStock, setWs, tokenRef],
+    [scheduleSave, archetypeRef, battleRef, didRef, flushScenarioNotices, materialsRef, setFeatherStock, setHerbStock, setMaterialsView, setNotice, setServerPower, setTonicStock, setWs, tokenRef, onPieces],
   );
 
   return { battle, setBattle, battleRef, onBattleCommand, onMessageAdvance };

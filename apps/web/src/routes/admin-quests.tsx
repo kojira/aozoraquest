@@ -11,6 +11,7 @@ import {
   type GameQuestDef,
   type QuestObjective,
 } from '@aozoraquest/core';
+import { QuestGearRewardField } from '@/components/admin/precious-gear-editor';
 import { useSession } from '@/lib/session';
 import { getPrimaryAdminDid, isAdminDid } from '@/lib/runtime-config';
 import { loadAuthoredWorld, loadQuestAuthoringRecords, loadScenarioRecord, saveGameQuests } from '@/lib/world-authoring';
@@ -351,6 +352,7 @@ export function AdminQuests() {
                 )}
               </span>
             ))}
+            {field('報酬の装備', <QuestGearRewardField value={current} onChange={(reward) => update(current.id, { reward } as Partial<GameQuestDef>)} />)}
             {field('解禁フラグ', (
               <span style={{ display: 'flex', gap: '0.3em', alignItems: 'center', flex: 1 }}>
                 <input

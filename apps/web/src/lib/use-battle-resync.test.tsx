@@ -34,7 +34,7 @@ function setup() {
     const b = useWorldBattle({
       agent: {} as Agent, setQuest: () => {}, flagsRef: { current: [] }, pendingNoticesRef: { current: [] }, flushScenarioNotices: () => {},
       tokenRef: { current: undefined }, setWs: (f) => { ws = typeof f === 'function' ? f(ws) : f; }, setNotice: (n) => { notices.push(n); },
-      scheduleSave: () => {}, inventory, setServerPower, archetypeRef: { current: null }, didRef: { current: null },
+      scheduleSave: () => {}, inventory, setServerPower, archetypeRef: { current: null }, didRef: { current: null }, onPieces: () => {},
     });
     return { inventory, b };
   });
