@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SKILLS, effectTarget, isPureHealSkill, skillMpCostOf, skillsForJob, type Combatant, type JobSkill } from '@aozoraquest/core';
+import { SKILLS, effectTarget, isPureHealSkill, skillMpCostOf, skillTargetsDownAlly, skillsForJob, type Combatant, type JobSkill } from '@aozoraquest/core';
 import { ModalShell } from './world-item-modals';
 import type { ServerSkillResult } from '@/lib/world-server';
 import { bondUpLines } from '@/lib/bond-view';
@@ -13,12 +13,13 @@ export function fieldHealSkills(m: FieldMember): JobSkill[] {
 }
 
 /** 相手を選ぶとくぎか (全体回復・自分だけは選ばない)。 */
-const picksTarget = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneAlly');
+const picksTarget = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'oneAlly' || effectTarget(e) === 'oneDownAlly');
 const healsAll = (kind: string) => !!SKILLS[kind]?.effects.some((e) => effectTarget(e) === 'allAllies');
 
 /** 結果の 1 文 (「〇〇は △△を となえた！ □□の HPが N かいふくした。」)。 */
-export function fieldSkillMessage(r: Pick<ServerSkillResult, 'casterName' | 'skillName' | 'healed' | 'allyBondUp'>): string {
-  const lines = r.healed.map((h) => `${h.name}の HPが ${h.amount} かいふくした。`).join(' ');
+export function fieldSkillMessage(r: Pick<ServerSkillResult, 'casterName' | 'skillName' | 'healed' | 'allyBondUp'> & { skillId?: string }): string {
+  const revive = skillTargetsDownAlly(r.skillId ?? '');
+  const lines = r.healed.map((h) => (revive ? `${h.name}が いきかえった! (HP ${h.amount})` : `${h.name}の HPが ${h.amount} かいふくした。`)).join(' ');
   return [`${r.casterName}は ${r.skillName}を となえた！ ${lines}`, ...bondUpLines(r.allyBondUp)].join(' ');
 }
 
@@ -43,15 +44,17 @@ export function FieldSkillModal({ members, cast, onClose }: {
   const living = members.filter((m) => m.c.hp > 0);
   const from = members.find((m) => m.id === caster);
   const casters = living.filter((m) => fieldHealSkills(m).length > 0);
-  const canCast = (m: FieldMember) => m.c.mp >= skillMpCostOf(m.c);
+  const canCast = (m: FieldMember) => fieldHealSkills(m).some((k) => m.c.mp >= skillMpCostOf(m.c, k.kind));
   const allFull = living.every((m) => m.c.hp >= m.c.maxHp);
+  const anyDown = members.some((m) => m.c.hp <= 0);
+  const revive = !!skill && skillTargetsDownAlly(skill.kind);
 
   const run = async (skillId: string, target: string | undefined) => {
     if (!from) return;
     setBusy(true);
     try {
       const r = await cast(from.id, skillId, target);
-      setMsg(fieldSkillMessage(r));
+      setMsg(fieldSkillMessage({ ...r, skillId }));
     } catch (e) {
       setMsg(e instanceof Error && e.message ? e.message : 'となえられなかった…');
     } finally {
@@ -84,11 +87,11 @@ export function FieldSkillModal({ members, cast, onClose }: {
   } else if (!skill) {
     body = (
       <>
-        <div style={{ fontSize: '0.75em', ...muted, margin: '0 0 2px' }}>{from.c.name}の とくぎ (MP {skillMpCostOf(from.c)})</div>
+        <div style={{ fontSize: '0.75em', ...muted, margin: '0 0 2px' }}>{from.c.name}の とくぎ (MP {from.c.mp})</div>
         {fieldHealSkills(from).map((k) => (
           <div key={k.kind} style={row}>
-            <span>{k.name}<br /><span style={{ fontSize: '0.8em', ...muted }}>{healsAll(k.kind) ? 'みんなの HPを かいふく' : '1人の HPを かいふく'}</span></span>
-            <button type="button" disabled={busy || allFull} onClick={() => chooseSkill(k)} style={btn}>となえる</button>
+            <span>{k.name} <span style={{ fontSize: '0.8em', ...muted }}>MP{skillMpCostOf(from.c, k.kind)}</span><br /><span style={{ fontSize: '0.8em', ...muted }}>{skillTargetsDownAlly(k.kind) ? 'たおれた なかまを おこす' : healsAll(k.kind) ? 'みんなの HPを かいふく' : '1人の HPを かいふく'}</span></span>
+            <button type="button" disabled={busy || from.c.mp < skillMpCostOf(from.c, k.kind) || (skillTargetsDownAlly(k.kind) ? !anyDown : allFull)} onClick={() => chooseSkill(k)} style={btn}>となえる</button>
           </div>
         ))}
         {back('もどる', () => setCaster(null))}
@@ -97,8 +100,13 @@ export function FieldSkillModal({ members, cast, onClose }: {
   } else {
     body = (
       <>
-        <div style={{ fontSize: '0.75em', ...muted, margin: '0 0 2px' }}>だれを かいふくする？</div>
-        {living.map((m) => (
+        <div style={{ fontSize: '0.75em', ...muted, margin: '0 0 2px' }}>{revive ? 'だれを おこす？' : 'だれを かいふくする？'}</div>
+        {revive ? members.filter((m) => m.c.hp <= 0).map((m) => (
+          <div key={m.id} style={row}>
+            <span>{m.c.name}<br /><span style={{ fontSize: '0.85em', ...muted }}>たおれている</span></span>
+            <button type="button" disabled={busy} onClick={() => void run(skill.kind, m.id)} style={btn}>おこす</button>
+          </div>
+        )) : living.map((m) => (
           <div key={m.id} style={row}>
             <span>{m.c.name}<br />{vitals(m.c)}</span>
             <button type="button" disabled={busy || m.c.hp >= m.c.maxHp} onClick={() => void run(skill.kind, m.id)} style={btn}>{m.c.hp >= m.c.maxHp ? 'まんたん' : 'かいふく'}</button>

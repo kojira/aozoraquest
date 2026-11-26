@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Agent } from '@atproto/api';
-import { WORLD_MAP_ID, blockedSpotHint, casinoSpotAt, gateAt, gateLockedNotice, gateOpen, innAt, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type CasinoSpot, type InteriorMap, type NpcDef } from '@aozoraquest/core';
+import { WORLD_MAP_ID, blockedSpotHint, casinoSpotAt, gateAt, gateLockedNotice, gateOpen, innAt, shrineAt, interiorById, interiorExitFor, interiorShopAt, isWalkableAt, npcAt, townAt, walkableIn, wrap, type CasinoSpot, type InteriorMap, type NpcDef } from '@aozoraquest/core';
 import { serverMove, worldServerEnabled, WorldServerError, type ServerEncounter } from '@/lib/world-server';
 import { recordTownArrival, saveWorldState } from '@/lib/world-state';
 import type { WorldScrollStep } from '@/lib/use-world-scroll';
@@ -63,6 +63,8 @@ export interface WorldMoveDeps {
   openDirectNpc: (npc: NpcDef) => void;
   /** 宿屋の扉に入ったら開く会話 (#766)。泊まるかは「はい」で edge に聞く。 */
   openInn: (inn: NonNullable<InteriorMap['inn']>) => void;
+  /** ほこら のマスに立ったら いのるか聞く (D-REVIVE-001)。 */
+  openShrine: (shrine: NonNullable<InteriorMap['shrine']>) => void;
   /** カジノの★のマスに入ったら開く窓 (D-CASINO-001)。 */
   openCasino: (spot: CasinoSpot) => void;
   resetShopView: () => void;
@@ -79,7 +81,7 @@ export function blockedNotice(mapId: string | undefined, x: number, y: number): 
 // 位置トークンを送るだけで、位置も遭遇も tier も報酬もサーバーが決める = 改造してもチートできない。
 // 体感を軽くするため**楽観描画** (応答を待たず即座に1マス進め、サーバー応答で照合)。
 export function useWorldMove(d: WorldMoveDeps) {
-  const { agent, did, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setNpcTalk, openDirectNpc, openInn, openCasino, resetShopView, setShopOpen, scheduleSave, inputBlocked } = d;
+  const { agent, did, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setNpcTalk, openDirectNpc, openInn, openShrine, openCasino, resetShopView, setShopOpen, scheduleSave, inputBlocked } = d;
   return useCallback(
     (dir: Dir) => {
       const s = wsRef.current;
@@ -166,6 +168,8 @@ export function useWorldMove(d: WorldMoveDeps) {
           // **宿屋の扉に入ったら宿の人と話す** (#766)。入るだけでは泊まらない (なんでも屋と同じ扉の作法)。
           const inn = res.mapId ? innAt(res.mapId, res.x, res.y) : undefined;
           if (inn) openInn(inn);
+          const shrine = res.mapId ? shrineAt(res.mapId, res.x, res.y) : undefined;
+          if (shrine) openShrine(shrine);
           const casino = res.mapId ? casinoSpotAt(res.mapId, res.x, res.y) : undefined;
           if (casino) { openCasino(casino); setNotice(null); }
           if (res.townArrival) {
@@ -217,6 +221,6 @@ export function useWorldMove(d: WorldMoveDeps) {
         }
       })();
     },
-    [scheduleSave, agent, did, resetShopView, openDirectNpc, openInn, openCasino, inputBlocked, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setNpcTalk, setShopOpen],
+    [scheduleSave, agent, did, resetShopView, openDirectNpc, openInn, openShrine, openCasino, inputBlocked, wsRef, setWs, setScrollStep, moveBusyRef, tokenRef, flagsRef, materialsRef, guildExitBlockedRef, mapAcquisitionRef, waitForFreshDirectionRef, battleRef, setBattle, setWipe, setDoorFade, setNotice, setMapAcquisition, setNpcTalk, setShopOpen],
   );
 }

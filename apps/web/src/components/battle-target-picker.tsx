@@ -5,6 +5,7 @@ import type { BattleState, Combatant } from '@aozoraquest/core';
  * 返す番号は「生きている敵の中で何番目か」(core の resolveTargets がその並びで数える)。
  * side='ally' は味方を選ぶ (回復のとくぎ・やくそうなど。D-PARTY-003): 生きている味方 (主人公を含む) を並べ、
  * 「生きている味方の中で何番目か」を返す。full の人 (満タンで効かない) は押せない。
+ * side='down' は倒れた味方だけを並べ、「倒れた味方の中で何番目か」を返す (生き返らせる手。D-REVIVE-001)。
  */
 export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 'enemy', full }: {
   state: BattleState;
@@ -12,10 +13,10 @@ export function BattleTargetPicker({ state, busy, Row, onPick, onCancel, side = 
   Row: (p: { label: string; onClick: () => void; disabled: boolean; fill?: boolean; plain?: boolean; se?: 'cancel' }) => React.ReactNode;
   onPick: (targetIndex: number) => void;
   onCancel: () => void;
-  side?: 'enemy' | 'ally';
+  side?: 'enemy' | 'ally' | 'down';
   full?: (c: Combatant) => boolean;
 }) {
-  const living = side === 'ally' ? livingAllies(state) : (state.enemies ?? [state.monster]).filter((e) => e.hp > 0);
+  const living = side === 'down' ? downedAllies(state) : side === 'ally' ? livingAllies(state) : (state.enemies ?? [state.monster]).filter((e) => e.hp > 0);
   return (
     <>
       {living.map((e, i) => (
@@ -37,6 +38,11 @@ export function needsTarget(state: BattleState): boolean {
 /** 生きている味方 (主人公を含む・並びは allies の順)。1 人戦は主人公だけ。 */
 export function livingAllies(state: BattleState): Combatant[] {
   return (state.allies ?? [state.player]).filter((a) => a.hp > 0);
+}
+
+/** 倒れた味方 (並びは allies の順)。生き返らせる相手 (D-REVIVE-001)。 */
+export function downedAllies(state: BattleState): Combatant[] {
+  return (state.allies ?? [state.player]).filter((a) => a.hp <= 0);
 }
 
 /** 生きている味方が 2 人以上か (回復の相手を選ぶ画面を出すか。D-PARTY-003)。 */

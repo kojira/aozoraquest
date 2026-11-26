@@ -1,6 +1,6 @@
 import { type MutableRefObject, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BattleState, Combatant, Command } from '@aozoraquest/core';
-import { ITEMS, MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, itemTargetsOneAlly, skillMpCostOf, skillTargetsOneAlly, withCharacterNames } from '@aozoraquest/core';
+import { ITEMS, MONSTERS_BY_ID, SKILLS, effectTarget, isPureHealSkill, itemTargetsDownAlly, itemTargetsOneAlly, skillMpCostOf, skillTargetsDownAlly, skillTargetsOneAlly, withCharacterNames } from '@aozoraquest/core';
 import { MonsterSvg } from './monster-svg';
 import { HpBar, TypedLines } from './battle-view';
 import { OVERLAY_Z } from './world-hud';
@@ -8,7 +8,7 @@ import { battleHpOf, battleLineHps, battleMessageLines, splitBattleLine } from '
 import { BattleItemRows, hasAnyBattleItem } from './battle-item-menu';
 import { BattleEnemyRow } from './battle-enemy-row';
 import { BattleAllyRow } from './battle-ally-row';
-import { BattleTargetPicker, livingAllies, needsAllyTarget, needsTarget } from './battle-target-picker';
+import { BattleTargetPicker, downedAllies, livingAllies, needsAllyTarget, needsTarget } from './battle-target-picker';
 import { soundPlayer } from '@/lib/sound/sound-player';
 import { battleLineSe } from '@/lib/sound/battle-line-se';
 import type { SeId } from '@/lib/sound/se';
@@ -86,7 +86,7 @@ export function WorldBattleControls({
 }) {
   const [itemMenu, setItemMenu] = useState(false);
   /** ねらう相手を選んでいるコマンド (群れのときだけ。D-PARTY-001)。ally は味方を選ぶ (回復。D-PARTY-003)。 */
-  type Picking = ({ command: 'attack' } | { command: 'skill'; skillIndex: number } | { command: 'item'; itemId: string } | { command: 'herb' | 'tonic' }) & { ally?: boolean };
+  type Picking = ({ command: 'attack' } | { command: 'skill'; skillIndex: number } | { command: 'item'; itemId: string } | { command: 'herb' | 'tonic' }) & { ally?: boolean; down?: boolean };
   const [picking, setPicking] = useState<Picking | null>(null);
   // 入力フェーズを離れたら (メッセージ送り/リザルト) どうぐを閉じておく。
   // 描画上は input のときだけ出るが、state が開きっぱなしだと次の入力で一瞬開いて見えうる (レビュー ★★)。
@@ -96,7 +96,8 @@ export function WorldBattleControls({
   const attack = () => (needsTarget(state) ? setPicking({ command: 'attack' }) : onCommand('attack'));
   const allyPick = needsAllyTarget(state);
   const chooseSkill = (i: number, kind: string) => {
-    if (allyPick && skillTargetsOneAlly(kind)) setPicking({ command: 'skill', skillIndex: i, ally: true });
+    if (skillTargetsDownAlly(kind)) setPicking({ command: 'skill', skillIndex: i, down: true }); // 生き返らせる相手は倒れた人から (D-REVIVE-001)
+    else if (allyPick && skillTargetsOneAlly(kind)) setPicking({ command: 'skill', skillIndex: i, ally: true });
     else if (needsTarget(state) && skillTargetsOneEnemy(kind)) setPicking({ command: 'skill', skillIndex: i });
     else onCommand('skill', i);
   };
@@ -110,7 +111,8 @@ export function WorldBattleControls({
   };
   const useItem = (id: string) => {
     setItemMenu(false);
-    if (allyPick && itemTargetsOneAlly(id)) setPicking({ command: 'item', itemId: id, ally: true });
+    if (itemTargetsDownAlly(id)) setPicking({ command: 'item', itemId: id, down: true });
+    else if (allyPick && itemTargetsOneAlly(id)) setPicking({ command: 'item', itemId: id, ally: true });
     else if (needsTarget(state) && itemTargetsOneEnemy(id)) setPicking({ command: 'item', itemId: id });
     else onCommand('item', undefined, id);
   };
@@ -122,8 +124,7 @@ export function WorldBattleControls({
   };
   const allHpFull = livingAllies(state).every(hpFull);
   const allMpFull = livingAllies(state).every(mpFull);
-  const skillCost = skillMpCostOf(state.player); // 発明家 (匠) の MP 割引を反映
-  const lowMp = state.player.mp < skillCost;
+  const anyDown = downedAllies(state).length > 0;
   // デプロイ跨ぎの旧 sealed state は playerSkills が無いことがある → 署名スキル 1 個にフォールバック。
   const skills = state.playerSkills ?? [state.playerSkill];
   const monsterDef = MONSTERS_BY_ID[state.monsterId];
@@ -241,7 +242,7 @@ export function WorldBattleControls({
               {picking ? (
                 <BattleTargetPicker
                   state={state} busy={busy} Row={DqRow} onPick={pick} onCancel={() => setPicking(null)}
-                  {...(picking.ally ? { side: 'ally' as const, ...(picking.command === 'tonic' ? { full: mpFull } : picking.command === 'herb' || (picking.command === 'skill' && isPureHealSkill(skills[picking.skillIndex]?.kind ?? '')) ? { full: hpFull } : {}) } : {})}
+                  {...(picking.down ? { side: 'down' as const } : picking.ally ? { side: 'ally' as const, ...(picking.command === 'tonic' ? { full: mpFull } : picking.command === 'herb' || (picking.command === 'skill' && isPureHealSkill(skills[picking.skillIndex]?.kind ?? '')) ? { full: hpFull } : {}) } : {})}
                 />
               ) : itemMenu ? (
                 <>
@@ -262,7 +263,7 @@ export function WorldBattleControls({
                     label={sk.name}
                     onClick={() => chooseSkill(i, sk.kind)}
                     // 純回復技は満タンなら無意味 → 無効化 (キット技も効果ベースで判定)。味方にも使えるとくぎは みんな満タンのときだけ。
-                    disabled={busy || lowMp || (isPureHealSkill(sk.kind) && (skillTargetsOneAlly(sk.kind) || SKILLS[sk.kind]?.effects.some((e) => effectTarget(e) === 'allAllies') ? allHpFull : hpFull(state.player)))}
+                    disabled={busy || state.player.mp < skillMpCostOf(state.player, sk.kind) || (skillTargetsDownAlly(sk.kind) && !anyDown) || (isPureHealSkill(sk.kind) && (skillTargetsOneAlly(sk.kind) || SKILLS[sk.kind]?.effects.some((e) => effectTarget(e) === 'allAllies') ? allHpFull : hpFull(state.player)))}
                   />
                 ))
               )}

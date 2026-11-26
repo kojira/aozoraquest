@@ -345,6 +345,27 @@ export interface ServerInnRestResult {
   inn?: { name?: string; paid: number; power: number };
   /** パワーが足りず泊まれなかった。 */
   innDenied?: { name?: string; price: number; power: number };
+  /** 倒れたままの仲間の数と、いちばん近い ほこら の町 (宿では起きない。D-REVIVE-001)。 */
+  downed?: { count: number; shrineTown?: string };
+}
+
+/** ほこらで いのる (D-REVIVE-001)。ほこらの上にいるか・倒れた仲間・おそなえ は edge が決める。rkey で 1 回だけ。 */
+export interface ServerShrineResult {
+  revived: Array<{ id: string; name: string; hp: number }>;
+  paid: number;
+  power: number;
+  party?: ServerParty;
+  denied?: { price: number };
+  name?: string;
+}
+export function serverShrinePray(agent: Agent, rkey: string, token?: string): Promise<ServerShrineResult> {
+  return callEdge<ServerShrineResult>(agent, LXM.shrinePray, '/api/shrine/pray', { rkey, ...(token ? { token } : {}) });
+}
+
+/** フィールドで 回復のどうぐ・生き返らせるどうぐ を使う (D-REVIVE-001)。target は 'hero' か仲間の id。 */
+export interface ServerFieldUseResult { itemId: string; name: string; amount: number; revived: boolean; materials: Record<string, number>; carryHp?: number; party?: ServerParty; allyBondUp?: ServerBondUp[] }
+export function serverFieldUse(agent: Agent, itemId: string, target: string, rkey: string): Promise<ServerFieldUseResult> {
+  return callEdge<ServerFieldUseResult>(agent, LXM.worldItem, '/api/world/use', { itemId, target, rkey });
 }
 export function serverInnRest(agent: Agent, token?: string): Promise<ServerInnRestResult> {
   return callEdge<ServerInnRestResult>(agent, LXM_INN_REST, '/api/inn/rest', token ? { token } : {});

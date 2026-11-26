@@ -38,7 +38,7 @@ export function PartyMemberList({ party, jobLevel, right, onMode, rename }: { pa
           <div key={r.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5em', padding: '0.35em 0.4em', margin: '0 0 4px', fontSize: '0.85em', opacity: v.hp <= 0 ? 0.5 : 1 }}>
             <span style={{ flex: '1 1 auto', minWidth: 0 }}>
               <AllyNameButton name={v.name} onOpen={() => setViewing(r)} /> <span style={muted}>{v.job} Lv{v.level}</span> <span aria-label={`★${v.star.length}`} style={{ color: '#f5c542' }}>{v.star}</span> <span aria-label={`きずな ♥${bondHearts(party.bond?.[r.id])}`} style={{ color: '#e8667a' }}>{heartsText(party.bond?.[r.id])}</span>
-              <span style={{ display: 'block', fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>HP {v.hp}/{v.maxHp}　MP {v.mp}/{v.maxMp}</span>
+              <span style={{ display: 'block', fontFamily: 'ui-monospace, monospace', fontSize: '0.9em' }}>HP {v.hp}/{v.maxHp}　MP {v.mp}/{v.maxMp}{v.hp <= 0 && <span data-down style={{ fontFamily: 'inherit', marginLeft: '0.5em' }}>たおれている</span>}</span>
             </span>
             {right?.(r)}
             {rename && <RenameButton ally={r} rename={rename} />}
