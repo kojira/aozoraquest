@@ -9,6 +9,7 @@
 import type { Archetype } from './types.js';
 import { ARCHETYPES } from './types.js';
 import { canEquip, type EquipmentDef } from './equipment.js';
+import { shopForbiddenDef } from './revive.js';
 
 /** 装備の段階。grade g の品は tier g の店から並ぶ (`maxShopGradeForTier`)。 */
 export type GearGrade = 1 | 2 | 3 | 4 | 5 | 6;
@@ -53,12 +54,12 @@ export function gearPowerPrice(def: Pick<EquipmentDef, 'grade' | 'slot' | 'jobOn
   return Math.round(step.power * SLOT_PRICE_RATIO[def.slot] * (def.jobOnly ? JOB_PRICE_RATIO : 1) * (def.hands === 2 ? TWO_HAND_PRICE_RATIO : 1));
 }
 
-/** 値段が目安 (`gearPowerPrice`) から大きくずれた品。カジノの景品と、パワーで売らない品 (power 0) は見ない。
+/** 値段が目安 (`gearPowerPrice`) から大きくずれた品。店に並べない品 (カジノの景品・貴重な装備) と、パワーで売らない品 (power 0) は見ない。
  *  管理データの書き込み (edge・管理画面) がこれで止める。読み込みでは止めない (本番の古いデータを落とさない)。 */
 export function gearPriceDrift(equipment: readonly EquipmentDef[]): Array<{ id: string; power: number; target: number }> {
   const out: Array<{ id: string; power: number; target: number }> = [];
   for (const e of equipment) {
-    if (e.casinoOnly || !(e.price?.power > 0)) continue;
+    if (shopForbiddenDef(e) || !(e.price?.power > 0)) continue;
     const target = gearPowerPrice(e);
     if (target > 0 && (e.price.power < target * PRICE_DRIFT_RANGE[0] || e.price.power > target * PRICE_DRIFT_RANGE[1])) out.push({ id: e.id, power: e.price.power, target });
   }
@@ -95,7 +96,7 @@ export function tierRecommendLabel(tier: number): string {
 }
 
 /** grade ごとに、その職が装備できる武器と胴が 1 つもないところ。データを書く前の検査に使う
- *  (casinoOnly は店に並ばないので数えない)。空なら 16 職がどの grade でもそろえられる。 */
+ *  (店に並ばない品 = カジノの景品・貴重な装備 は数えない)。空なら 16 職がどの grade でもそろえられる。 */
 export function gearGradeGaps(
   equipment: readonly EquipmentDef[],
   grades: readonly GearGrade[] = GEAR_GRADES,
@@ -104,7 +105,7 @@ export function gearGradeGaps(
   for (const grade of grades) {
     for (const job of ARCHETYPES) {
       for (const slot of ['weapon', 'armor'] as const) {
-        if (!equipment.some((e) => e.grade === grade && e.slot === slot && !e.casinoOnly && canEquip(job, e))) gaps.push({ grade, job, slot });
+        if (!equipment.some((e) => e.grade === grade && e.slot === slot && !shopForbiddenDef(e) && canEquip(job, e))) gaps.push({ grade, job, slot });
       }
     }
   }

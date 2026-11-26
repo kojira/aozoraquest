@@ -47,6 +47,15 @@ export function rollDefeatLoss(materials: Record<string, number>, luk: number, s
   return lost;
 }
 
+/**
+ * **ドロップの確率の式** (1 か所)。`min(0.95, base + (luk × dropLukScale + dropBonus) × lift)`。
+ * 運と巫女の直感 (dropBonus) で必ず上がる。lift はその上乗せの倍率で、ふつうのドロップは 1、
+ * 貴重な装備のまれなドロップは BATTLE_TUNING.rareGearLukLift (D-RARE-GEAR-001)。
+ */
+export function dropChance(base: number, luk: number, dropBonus = 0, lift = 1): number {
+  return Math.min(0.95, base + (luk * BATTLE_TUNING.dropLukScale + dropBonus) * lift);
+}
+
 /** 勝利時のドロップ判定 (消耗品は確率、魔石は必ず)。luk で上振れ。決定的 (seed 依存)。dropBonus = 巫女の直感の加算 (#456)。 */
 export function rollDrops(monsterId: string, luk: number, seed: number, dropBonus = 0): string[] {
   const def = MONSTERS_BY_ID[monsterId];
@@ -59,8 +68,7 @@ export function rollDrops(monsterId: string, luk: number, seed: number, dropBonu
     // luk ボーナス + 巫女の直感 dropBonus を合算し 0.95 で clamp。dropBonus は luk 補正と天井 (0.95) を
     // **共有**するので、高 luk 職 (巫女=luk37) では既にドロップ率が高い素材で +0.1 の限界効用が逓減する
     // (青天井を防ぐ意図的な設計。数値は sim 前提の暫定値)。
-    const chance = Math.min(0.95, d.chance + luk * BATTLE_TUNING.dropLukScale + dropBonus);
-    if (rng() < chance) out.push(d.item);
+    if (rng() < dropChance(d.chance, luk, dropBonus)) out.push(d.item);
   }
   return [...out, ...rollStoneDrops(monsterId, luk, seed, dropBonus)];
 }

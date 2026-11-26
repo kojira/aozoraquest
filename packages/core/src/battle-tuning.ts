@@ -224,6 +224,9 @@ export const BATTLE_TUNING = {
   monsterFleeMax: 0.75,
   /** ドロップ率の luk ボーナス = luk * dropLukScale (加算) */
   dropLukScale: 0.003,
+  /** 貴重な装備のまれなドロップ (D-RARE-GEAR-001) で、運と巫女の直感の上乗せに掛ける倍率 (dropChance の lift)。
+   *  1 のままだと運 100 で 2% が 32% になり、まれでなくなる。0.1 で 2% → 5% (運 100)、巫女の直感 +1pt。 */
+  rareGearLukLift: 0.1,
   /** 敗北ペナルティ: 手持ち素材をランダムに落とす。
    *  1 個は必ず落ち、以降は lossExtraBase − luk*lossExtraLukScale の確率で
    *  追加ドロップ (運が悪いと複数落ちる)。上限 lossMax。 */

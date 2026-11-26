@@ -7,6 +7,7 @@ import { type Archetype, type StatArray } from './types.js';
 import { JOBS_BY_ID } from './jobs.js';
 import { gearBonus, gearBonusFromGear, type GearBonus, type GearSelection } from './equipment.js';
 import { armorDye, weaponElement } from './gear-element.js';
+import { gearEffects } from './gear-passives.js';
 import { type Element } from './elements.js';
 import { type StatusId, type StatusInstance } from './statuses.js';
 import { BATTLE_TUNING, monsterStatFloorFor } from './battle-tuning.js';
@@ -235,6 +236,9 @@ export function playerCombatant(
     if (wEl) c.weaponElement = wEl;
     const dye = armorDye(gear);
     if (Object.keys(dye).length > 0) c.armorDye = dye;
+    const fx = gearEffects(archetype, gear); // 貴重な装備のパッシブ・効かない状態 (D-RARE-GEAR-001)
+    if (fx.passives.length) c.passives = [...c.passives, ...fx.passives];
+    if (fx.statusResist.length) c.statusResist = fx.statusResist;
   }
   return c;
 }

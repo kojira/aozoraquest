@@ -88,6 +88,9 @@ export interface MonsterDef {
    *  はぐれメタル型ジャックポットや、式が合わない上位 tier はここで明示する。 */
   xp?: number;
   drops: readonly DropDef[];
+  /** **貴重な装備のまれなドロップ** (D-RARE-GEAR-001)。1 体に 1 品。permille = 1000 分のいくつ (整数。PDS に小数を入れない)。
+   *  確率は dropChance (運・巫女の直感で上がる。上がり方は rareGearLukLift)。決めるのは gear-drops.ts。 */
+  gearDrop?: { equipment: string; permille: number };
   /** ひとこと (召喚時の口上に使う) */
   intro: string;
   /** 強攻撃 (charger の ため攻撃) の技名。charger 以外は省略可。 */

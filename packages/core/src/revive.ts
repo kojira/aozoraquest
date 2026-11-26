@@ -47,14 +47,15 @@ export function itemTargetsDownAlly(itemId: string): boolean {
  * **店に並べてはいけない品** (オーナーの決まり: 生き返らせるどうぐは なんでも屋 で買えない)。
  * カジノの景品・貴重なもの (precious)・生き返らせるどうぐ・割合で回復するどうぐ。
  * 生成の品ぞろえ・店の上書き・買う処理が、みなここを見る。
+ * 装備も同じきまり (shopForbiddenDef に装備の定義を渡す。貴重な装備 D-RARE-GEAR-001)。
  */
 export function isShopForbiddenItem(id: string): boolean {
   const def = ITEMS[id];
   return !!def && shopForbiddenDef(def);
 }
 
-/** isShopForbiddenItem の中身 (保存の検査が、入れ替える前の定義で使う)。 */
-export function shopForbiddenDef(def: ItemDef): boolean {
+/** isShopForbiddenItem の中身 (保存の検査が、入れ替える前の定義で使う)。どうぐと装備の両方の定義を受ける。 */
+export function shopForbiddenDef(def: Pick<ItemDef, 'casinoOnly' | 'precious' | 'battle'>): boolean {
   if (def.casinoOnly || def.precious) return true;
   return !!def.battle?.effects.some((e) => isReviveEffect(e) || (e.kind === 'heal' && e.amount === undefined));
 }

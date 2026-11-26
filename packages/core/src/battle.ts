@@ -126,6 +126,7 @@ export {
 export {
   rollDefeatLoss,
   rollDrops,
+  dropChance,
   SEARCH_TUNING,
   rollSearch,
   type BattleRecordSummary,
